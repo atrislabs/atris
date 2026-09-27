@@ -3,10 +3,10 @@
 // A heavy roster worker can ask for a prep pass ("prep: search"): the search
 // job's lead reads the task first and writes a trimmed brief, and the heavy
 // worker works from that brief. Also covers the run record's own upkeep: the
-// file is trimmed when it grows past its cap, and a hand-edited line with odd
-// field types never crashes the view. Every room is a scratch project with a
-// scratch home, fake engines sit on PATH, and the clock is injected, so the
-// real ~/.atris is never read or written.
+// log rotates aside once it passes its size cap, and a hand-edited line with
+// odd field types never crashes the view. Every room is a scratch project
+// with a scratch home, fake engines sit on PATH, and the clock is injected,
+// so the real ~/.atris is never read or written.
 
 const test = require('node:test');
 const assert = require('node:assert/strict');
@@ -71,10 +71,11 @@ function command(root, args) {
 
 // --- the run record's own upkeep ------------------------------------------
 
-test('the run record is trimmed to its newest whole lines once it passes its size cap', async () => {
+test('the run record rotates aside at its size cap and every record still reads', async () => {
   await withRoom(async ({ root }) => {
     const runs = require('../lib/roster-runs');
     const file = runs.rosterRunsPath(root);
+    const rotated = runs.rotatedRunsPath(root);
     fs.mkdirSync(path.dirname(file), { recursive: true });
     const line = (i) => JSON.stringify({ at: new Date(NOW).toISOString(), job: 'build', engine: 'cursor', outcome: 'landed', task: `CLI-${i}`, detail: 'x'.repeat(200) });
     const lines = [];
@@ -86,12 +87,20 @@ test('the run record is trimmed to its newest whole lines once it passes its siz
     }
     fs.writeFileSync(file, lines.join(''));
     runs.appendRosterRun(root, { at: new Date(NOW).toISOString(), job: 'build', engine: 'devin', outcome: 'landed', task: 'CLI-LAST' });
-    const after = fs.readFileSync(file, 'utf8');
-    assert.ok(Buffer.byteLength(after) <= runs.RUNS_KEEP_BYTES, `kept ${Buffer.byteLength(after)} bytes`);
-    const kept = after.split('\n').filter(Boolean);
-    for (const row of kept) JSON.parse(row);
-    assert.equal(JSON.parse(kept[kept.length - 1]).task, 'CLI-LAST');
-    assert.ok(kept.length > 100);
+    // The old file moved aside whole; the new line starts a fresh log.
+    assert.equal(fs.readFileSync(rotated, 'utf8'), lines.join(''));
+    assert.equal(fs.readFileSync(file, 'utf8').trim().split('\n').length, 1);
+    // Nothing is cut away: every seeded line and the new one still reads.
+    const tasks = runs.readRosterRuns(root, { now: NOW + 60000, tailBytes: bytes + 4096 }).map((row) => row.task);
+    assert.equal(tasks.length, lines.length + 1);
+    assert.equal(tasks[0], 'CLI-0');
+    assert.equal(tasks[tasks.length - 1], 'CLI-LAST');
+    // A second rotation replaces the old .1.
+    fs.writeFileSync(rotated, 'sentinel\n');
+    fs.writeFileSync(file, lines.join(''));
+    runs.appendRosterRun(root, { at: new Date(NOW).toISOString(), job: 'build', engine: 'grok', outcome: 'landed', task: 'CLI-NEWEST' });
+    assert.equal(fs.readFileSync(rotated, 'utf8'), lines.join(''));
+    assert.equal(fs.readFileSync(file, 'utf8').trim().split('\n').length, 1);
     assert.equal(fs.readdirSync(path.dirname(file)).filter((name) => name.includes('.tmp')).length, 0);
   });
 });
@@ -537,74 +546,23 @@ test('a reviewer past a credit wall reuses the brief when the next reviewer also
   }, { roster: '# roster\n\n## search\n- claude, model: haiku\n' });
 });
 
-test('an append that lands while the record is being trimmed is kept', async () => {
+test('an append after rotation lands in the fresh file, and a raced write stays readable', async () => {
   await withRoom(async ({ root }) => {
     const runs = require('../lib/roster-runs');
     const file = runs.rosterRunsPath(root);
+    const rotated = runs.rotatedRunsPath(root);
     fs.mkdirSync(path.dirname(file), { recursive: true });
-    const line = (i) => `${JSON.stringify({ at: new Date(NOW).toISOString(), job: 'build', engine: 'cursor', outcome: 'landed', task: `CLI-${i}`, detail: 'x'.repeat(200) })}\n`;
-    const lines = [];
-    let bytes = 0;
-    for (let i = 0; bytes <= runs.RUNS_ROTATE_BYTES; i += 1) {
-      lines.push(line(i));
-      bytes += Buffer.byteLength(lines[lines.length - 1]);
-    }
-    fs.writeFileSync(file, lines.join(''));
-    const marker = path.join(root, 'other-writer.done');
-    const script = [
-      `const runs = require(${JSON.stringify(path.join(__dirname, '..', 'lib', 'roster-runs'))});`,
-      `runs.appendRosterRun(${JSON.stringify(root)}, { at: ${JSON.stringify(new Date(NOW).toISOString())}, job: 'build', engine: 'grok', outcome: 'landed', task: 'CLI-OTHER' });`,
-      `require('fs').writeFileSync(${JSON.stringify(marker)}, 'done');`,
-    ].join('\n');
-    // A second process appends while this one sits between reading the
-    // tail and renaming the trimmed copy over the log.
-    const originalRename = fs.renameSync;
-    let child = null;
-    fs.renameSync = (from, to) => {
-      if (to === file && !child) {
-        const { spawn } = require('node:child_process');
-        child = spawn(process.execPath, ['-e', script], { stdio: 'ignore' });
-        const until = Date.now() + 500;
-        const pause = new Int32Array(new SharedArrayBuffer(4));
-        while (!fs.existsSync(marker) && Date.now() < until) Atomics.wait(pause, 0, 0, 10);
-      }
-      return originalRename(from, to);
-    };
-    try {
-      runs.appendRosterRun(root, { at: new Date(NOW).toISOString(), job: 'build', engine: 'devin', outcome: 'landed', task: 'CLI-LAST' });
-    } finally {
-      fs.renameSync = originalRename;
-    }
-    assert.ok(child, 'the trim reached its rename');
-    await new Promise((resolve) => (child.exitCode !== null ? resolve() : child.on('exit', resolve)));
-    const tasks = fs.readFileSync(file, 'utf8').split('\n').filter(Boolean).map((row) => JSON.parse(row).task);
-    assert.ok(tasks.includes('CLI-LAST'));
-    assert.ok(tasks.includes('CLI-OTHER'), 'the other writer\'s line survived the trim');
-    assert.ok(Buffer.byteLength(fs.readFileSync(file)) < runs.RUNS_ROTATE_BYTES);
-    assert.equal(fs.existsSync(`${file}.lock`), false, 'the lock is released');
-  });
-});
-
-test('a lock left behind by a crashed writer is taken back, and a held lock never blocks recording', async () => {
-  await withRoom(async ({ root }) => {
-    const runs = require('../lib/roster-runs');
-    const file = runs.rosterRunsPath(root);
-    fs.mkdirSync(path.dirname(file), { recursive: true });
-    const lock = `${file}.lock`;
-    // Stale: older than the stale window, so the next writer removes it.
-    fs.writeFileSync(lock, '99999');
-    const old = new Date(Date.now() - runs.RUNS_LOCK_STALE_MS - 1000);
-    fs.utimesSync(lock, old, old);
-    assert.ok(runs.appendRosterRun(root, { job: 'build', engine: 'devin', outcome: 'landed', task: 'CLI-1' }));
-    assert.equal(fs.existsSync(lock), false);
-    // Fresh: held by someone else, so the append waits briefly, lands in the
-    // pending side file, and leaves the other writer's lock alone.
-    fs.writeFileSync(lock, '99999');
-    const started = Date.now();
-    assert.ok(runs.appendRosterRun(root, { job: 'build', engine: 'grok', outcome: 'landed', task: 'CLI-2' }));
-    assert.ok(Date.now() - started < runs.RUNS_LOCK_WAIT_MS + 1000);
-    assert.equal(fs.existsSync(lock), true);
-    const tasks = runs.readRosterRuns(root).map((row) => row.task);
-    assert.deepEqual(tasks, ['CLI-1', 'CLI-2']);
+    const pad = `"${'pad'.repeat(40000)}"\n`;
+    fs.writeFileSync(file, pad.repeat(Math.ceil((runs.RUNS_ROTATE_BYTES + 65536) / pad.length)));
+    runs.appendRosterRun(root, { at: new Date(NOW).toISOString(), job: 'build', engine: 'devin', outcome: 'landed', task: 'CLI-1' });
+    assert.ok(fs.existsSync(rotated), 'the full log rotated aside');
+    // A write that raced the rename lands inside the rotated file; readers
+    // still see it because they read both files.
+    fs.appendFileSync(rotated, `${JSON.stringify({ at: new Date(NOW).toISOString(), job: 'build', engine: 'grok', outcome: 'landed', task: 'CLI-RACED' })}\n`);
+    runs.appendRosterRun(root, { at: new Date(NOW).toISOString(), job: 'build', engine: 'cursor', outcome: 'landed', task: 'CLI-2' });
+    const tasks = fs.readFileSync(file, 'utf8').trim().split('\n').map((line) => JSON.parse(line).task);
+    assert.deepEqual(tasks, ['CLI-1', 'CLI-2'], 'appends after rotation land in the fresh file');
+    const all = runs.readRosterRuns(root, { now: NOW + 60000 }).map((row) => row.task);
+    assert.deepEqual(all, ['CLI-RACED', 'CLI-1', 'CLI-2'], 'the raced line still reads from the rotated file');
   });
 });

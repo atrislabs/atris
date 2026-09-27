@@ -1377,7 +1377,7 @@ function runAssignCommand(args, root, now = new Date()) {
     return 2;
   }
   try {
-    setRosterPick(job, engine, { ...flags, clear, add, session, everywhere, now }, root);
+    setRosterPick(job, engine, { ...flags, clear, add, session, everywhere, now, note: (text) => console.log(text) }, root);
     printJobRoster(root, now);
     return 0;
   } catch (err) {
