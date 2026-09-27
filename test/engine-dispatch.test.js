@@ -13,7 +13,7 @@ const path = require('node:path');
 const fleet = require('../lib/fleet');
 const engine = require('../commands/engine');
 const { resolveDefaultVerifier } = require('../lib/default-verifier');
-const { readEngineRegistry } = require('../lib/engine-registry');
+const { readEngineRegistry, setEngineHealth } = require('../lib/engine-registry');
 
 // runDispatchFlight writes a receipt under <root>/atris/runs, so flight tests
 // need a real writable directory (a fake path like '/root' cannot mkdir).
@@ -1053,10 +1053,11 @@ test('runDispatchFlight pauses when the build itself fails, keeping the worktree
   }
 });
 
-test('fable handoff names empty exit zero, benches it, and never lands it', async () => {
+test('fable handoff names empty exit zero, pauses it, and never lands it', async () => {
   const tmpRoot = makeTempRoot();
   try {
     const { cli, calls } = ownCliFake({ tasks: { 'CLI-900': TASK }, worktreeFor: (task) => `/wt/${task}` });
+    setEngineHealth('fable', 'ready', tmpRoot);
     const lines = [];
     const flight = await fleet.runDispatchFlight({
       root: tmpRoot,
@@ -1074,7 +1075,9 @@ test('fable handoff names empty exit zero, benches it, and never lands it', asyn
     assert.equal(flight.results[0].deadEngine.reason, 'no_output');
     assert.ok(!calls.some((call) => call.startsWith('worktree ship')));
     const registry = readEngineRegistry(tmpRoot, { persist: false });
-    assert.equal(registry.engines.find((entry) => entry.id === 'fable').health.status, 'error');
+    // A run that produced no output is a real task failure: the flight pauses
+    // but the engine's health must stay untouched.
+    assert.equal(registry.engines.find((entry) => entry.id === 'fable').health.status, 'ready');
     const failureLine = lines.find((line) => line.includes('fable handoff failed:'));
     assert.match(failureLine, /^  fable handoff failed: the engine returned no output[.] receipt: atris\/runs\/dispatch-.+[.]json$/);
   } finally {
