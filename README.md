@@ -24,7 +24,7 @@ atris init && atris
 
 ## For Coding Agents
 
-**Read [`FOR_AGENTS.md`](FOR_AGENTS.md) first** — why agents adopt Atris, 60-second start, spread-it instructions.
+**Read [`FOR_AGENTS.md`](FOR_AGENTS.md) first**: why agents adopt Atris, 60-second start, spread-it instructions.
 
 If you're an agent, run:
 
@@ -123,7 +123,7 @@ ax --max "reason through this hard decision"
 ax --doctor
 ```
 
-Use Fast for quick chat and low-latency Atris loops. Use Pro for deeper tool loops. Use Max for the hardest jobs — it runs the highest-reasoning model and takes longer per turn. Advanced local workspace mode is opt-in with `--local` plus `AX_BACKEND_URL`.
+Use Fast for quick chat and low-latency Atris loops. Use Pro for deeper tool loops. Use Max for the hardest jobs; it runs the highest-reasoning model and takes longer per turn. Advanced local workspace mode is opt-in with `--local` plus `AX_BACKEND_URL`.
 
 ## Play AgentXP
 
@@ -267,9 +267,30 @@ atris business record atris/reports/2026-04-12-operator-recap.md --outcome mixed
 
 ## Engines
 
-An engine is the intelligence that builds a mission. Every installed headless coding CLI is a swappable worker behind one contract: a bounded prompt goes in, verified proof comes out, and engines never self-certify their own work. The house default is `atris-fast` (`ax`); the roster also covers `claude`, `codex`, `cursor`, and `devin` when their CLIs are installed.
+An engine is the intelligence that builds a mission. Every installed headless coding CLI is a swappable worker behind one contract: a bounded prompt goes in, verified proof comes out, and engines never self-certify their own work. The house default is `atris-fast` (`ax`); `claude`, `codex`, `cursor`, `devin`, `grok`, and others join when their CLIs are installed.
 
-Show the roster and the current default:
+### Who does each job
+
+`ROSTER.md` says which tool and model does each job. Edit it any time; every project, team member, and new chat follows it.
+
+```markdown
+## build
+- claude code, model: opus 5.5
+
+## review
+- codex, model: gpt-6-astra, effort: medium, max: 20 min, prep: search
+- claude code, model: opus 5.5
+```
+
+The first ready worker leads and the rest are backups. `~/.atris/ROSTER.md` covers every project on the machine; `atris/ROSTER.md` overrides it for one project. A worker that stalls sits out 30 minutes and the next one takes over.
+
+```bash
+atris engine roster                                   # who does what, with each worker's recent record
+atris engine assign build claude --model "opus 5.5"   # change a job's lead
+atris engine roster --available                       # tools and models on this machine
+```
+
+Show every installed engine and the current default:
 
 ```bash
 atris engine
@@ -290,7 +311,7 @@ atris mission run "fix the flaky login test" --engine codex
 
 ### Fleet Flight
 
-`atris mission run --fleet` staffs every idle installed engine on the board's claimable safe-lane tasks — one mission per task, one worktree per engine. Builds run in parallel; arrivals land serially with rebase-before-ship, so a rebase conflict pauses that landing (never auto-resolved) and keeps its worktree instead of orphaning work. Each flight writes a receipt to `atris/runs/fleet-<stamp>.json`.
+`atris mission run --fleet` staffs every idle installed engine on the board's claimable safe-lane tasks: one mission per task, one worktree per engine. Builds run in parallel; arrivals land serially with rebase-before-ship, so a rebase conflict pauses that landing (never auto-resolved) and keeps its worktree instead of orphaning work. Each flight writes a receipt to `atris/runs/fleet-<stamp>.json`.
 
 ```bash
 atris mission run --fleet --slots 3          # staff up to 3 engines
