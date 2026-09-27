@@ -37,6 +37,7 @@ const { isFreshWorkspace, speakFirstMinute } = require('../lib/first-minute');
 const { teamRosterView } = require('../lib/member-engine');
 const { engineRunsView, availableModels } = require('../lib/roster-models');
 const { readRosterRuns, workerRuns, summarizeRuns, recentRuns, renderRunLine, DEFAULT_DAYS: RUN_DAYS } = require('../lib/roster-runs');
+const { attachSuggestions } = require('../lib/roster-suggest');
 const {
   ENGINE_ROLES,
   ENGINE_JOBS,
@@ -1172,7 +1173,8 @@ function renderJobRoster(rows) {
           : date;
     const where = row.file ? `${row.from} (${row.file})` : row.from;
     const head = `${label} ${owner} ${backup.padEnd(backupWidth)} ${cap}${status}, ${where}`.trimEnd();
-    return [head, ...renderWorkerLines(row), ...renderWorkerRecords(row)].join('\n');
+    const suggestion = row.suggestion ? [`  suggestion: ${row.suggestion.text}`] : [];
+    return [head, ...renderWorkerLines(row), ...renderWorkerRecords(row), ...suggestion].join('\n');
   }).join('\n');
 }
 
@@ -1254,9 +1256,11 @@ function runRosterSessionCommand(rest, json, root, now) {
   return 0;
 }
 
-// Attach each worker's recent record (last 7 days) to the roster report. Only
-// the roster command reads the run file, so the boot line and the team view
-// never pay for it.
+// Attach each worker's recent record (last 7 days) to the roster report, and
+// at most one suggestion per job when that record says the order is wrong.
+// Only the roster command reads the whole tail of the run file; the boot
+// line reads a smaller tail just to count suggestions. Nothing here writes
+// the roster: a suggestion is a line to read and a command a person may run.
 function attachRunRecords(report, root, now = new Date()) {
   const runs = readRosterRuns(root, { now, days: RUN_DAYS });
   if (!runs.length) return report;
@@ -1267,6 +1271,7 @@ function attachRunRecords(report, root, now = new Date()) {
       if (record) worker.record = record;
     }
   }
+  attachSuggestions(report.jobs, runs);
   return report;
 }
 
