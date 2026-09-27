@@ -179,3 +179,50 @@ test('a line written while the lock is held lands in the pending file, stays vis
     assert.ok(tasks.includes('CLI-4'), 'the locked line landed too');
   });
 });
+
+const WORKER_ROSTER = [
+  '# roster',
+  '',
+  '## build',
+  '- devin, model: swe-2-max, max: 20 min, prep: search <!-- keep the handoff -->',
+  '- grok, max: 20 min',
+  '- claude',
+  '',
+].join('\n');
+
+function workerLines(root) {
+  return fs.readFileSync(path.join(root, 'atris', 'ROSTER.md'), 'utf8')
+    .split('\n')
+    .filter((line) => line.startsWith('- '));
+}
+
+test('the suggested command promotes the challenger line without rewriting any worker', async () => {
+  await withRoom(async ({ root }) => {
+    const before = workerLines(root);
+    const at = (minutesAgo) => new Date(NOW - minutesAgo * 60000).toISOString();
+    for (const [index, outcome] of ['stalled', 'stalled', 'stalled'].entries()) {
+      appendRosterRun(root, { at: at(300 - index), job: 'build', engine: 'devin', model: 'swe-2-max', outcome, seconds: 1200 });
+    }
+    for (const [index, outcome] of ['landed', 'landed'].entries()) {
+      appendRosterRun(root, { at: at(200 - index), job: 'build', engine: 'grok', outcome, seconds: 600 });
+    }
+    const report = JSON.parse(command(root, ['roster', '--json']).out);
+    const suggestion = report.jobs.find((row) => row.job === 'build').suggestion;
+    assert.ok(suggestion, 'a suggestion is offered');
+    assert.match(suggestion.command, /^atris engine assign build --promote grok$/);
+
+    // Running the suggested command moves the whole line, notes and all.
+    assert.equal(command(root, suggestion.args).exit, 0);
+    assert.deepEqual(workerLines(root), [before[1], before[0], before[2]]);
+
+    // --promote matches on tool and model, and says plainly when nothing does.
+    assert.equal(command(root, ['assign', 'build', '--promote', 'devin swe-2-max']).exit, 0);
+    assert.deepEqual(workerLines(root), before);
+    const none = command(root, ['assign', 'build', '--promote', 'cursor']);
+    assert.equal(none.exit, 2);
+    assert.match(none.err, /has no cursor worker/);
+    const mixed = command(root, ['assign', 'build', '--promote', 'grok', '--model', 'x']);
+    assert.equal(mixed.exit, 2);
+    assert.deepEqual(workerLines(root), before, 'a refused promote writes nothing');
+  }, { roster: WORKER_ROSTER, registry: true });
+});
