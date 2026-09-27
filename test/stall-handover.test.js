@@ -9,6 +9,7 @@ const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
+const { spawnSync } = require('node:child_process');
 const { engineCommand } = require('../commands/engine');
 const {
   readEngineRegistry,
@@ -96,13 +97,29 @@ function fakeEngines(dir, behavior) {
       : mode === 'fail'
         ? 'echo "2 tests failed"; exit 1'
         : 'echo "built the widget"; exit 0';
-    fs.writeFileSync(path.join(bin, name), `#!/bin/sh\necho "${name} $*" >> "${logFile}"\n${body}\n`);
+    fs.writeFileSync(path.join(bin, name), [
+      '#!/bin/sh',
+      'm=""; prev=""',
+      'for a in "$@"; do if [ "$prev" = "--model" ]; then m="$a"; fi; prev="$a"; done',
+      `echo "${name} model=$m" >> "${logFile}"`,
+      body,
+      '',
+    ].join('\n'));
     fs.chmodSync(path.join(bin, name), 0o755);
   }
   process.env.PATH = `${bin}${path.delimiter}${process.env.PATH}`;
   return {
     calls: () => (fs.existsSync(logFile) ? fs.readFileSync(logFile, 'utf8').trim().split('\n').filter(Boolean) : []),
   };
+}
+
+// A scratch git checkout for the engine to build in; dispatch refuses to run
+// outside one.
+function scratchWorktree(root, home) {
+  spawnSync('git', ['init', '-q', root]);
+  const worktree = fs.mkdtempSync(path.join(home, 'wt-'));
+  spawnSync('git', ['init', '-q', worktree]);
+  return worktree;
 }
 
 function ownCliFake(worktree) {
@@ -217,15 +234,15 @@ test('roster view and engine list show the benched worker', async () => {
 
 test('fleet dispatch hands a stalled run to the backup with its own model and stops after success', async () => {
   await withRoom(async (root, home) => {
-    const worktree = fs.mkdtempSync(path.join(home, 'wt-'));
+    const worktree = scratchWorktree(root, home);
     const engines = fakeEngines(home, { devin: 'stall', grok: 'ok', cursor: 'ok' });
     const team = resolveJobTeam('build', root).team;
     const { cli, calls } = ownCliFake(worktree);
     const flight = await dispatchFlight(root, worktree, cli, team[0]);
     const ran = engines.calls();
     assert.equal(ran.length, 2, ran.join('\n'));
-    assert.match(ran[0], /^devin .*--model swe-2-max/);
-    assert.match(ran[1], new RegExp(`^grok .*--model ${team[1].roster_model.replace(/[.]/g, '\\.')}`));
+    assert.equal(ran[0], 'devin model=swe-2-max');
+    assert.equal(ran[1], `grok model=${team[1].roster_model}`);
     assert.equal(flight.results[0].engine, 'grok');
     assert.deepEqual(flight.results[0].handover.reasons, ['devin stalled at 1s; grok took over']);
     assert.equal(flight.paused.length, 0);
@@ -246,7 +263,7 @@ test('a team that runs out returns the last failure with every reason', async ()
 - grok, model: grok 4.7 fast, max: 1 s
 `;
   await withRoom(async (root, home) => {
-    const worktree = fs.mkdtempSync(path.join(home, 'wt-'));
+    const worktree = scratchWorktree(root, home);
     const engines = fakeEngines(home, { devin: 'stall', grok: 'stall' });
     const team = resolveJobTeam('build', root).team;
     const { cli } = ownCliFake(worktree);
@@ -266,7 +283,7 @@ test('a team that runs out returns the last failure with every reason', async ()
 
 test('a real task failure is not handed over', async () => {
   await withRoom(async (root, home) => {
-    const worktree = fs.mkdtempSync(path.join(home, 'wt-'));
+    const worktree = scratchWorktree(root, home);
     const engines = fakeEngines(home, { devin: 'fail', grok: 'ok', cursor: 'ok' });
     const team = resolveJobTeam('build', root).team;
     const { cli } = ownCliFake(worktree);
