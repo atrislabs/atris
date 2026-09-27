@@ -100,7 +100,7 @@ test('a lead that keeps stalling and a later worker that keeps landing gets one 
     assert.equal(view.exit, 0);
     const lines = view.out.split('\n').filter((line) => /suggestion:/.test(line));
     assert.equal(lines.length, 1);
-    assert.match(lines[0], /^ {2}suggestion: devin \S.* stalled 3 of its last 5 runs; grok \S.* landed 4 of 4\. to move grok up: atris engine assign "small build" grok --model "?grok[^"]*"? --max "30 min" --backup "devin [^"]+"$/);
+    assert.match(lines[0], /^ {2}suggestion: devin \S.* stalled 3 of its last 5 runs; grok \S.* landed 4 of 4\. to move grok up: atris engine assign "small build" --promote "grok [^"]+"$/);
     assert.equal(rosterText(root), before, 'the roster file is never written');
   });
 });
@@ -118,7 +118,7 @@ test('--json carries the suggestion as data, and its command really reorders the
     assert.equal(suggestion.challenger.runs, 2);
     assert.equal(suggestion.challenger.landed, 2);
     assert.match(suggestion.text, /devin \S.* landed 0 of its last 3 runs; grok/);
-    assert.ok(suggestion.command.startsWith('atris engine assign "small build" grok'));
+    assert.ok(suggestion.command.startsWith('atris engine assign "small build" --promote "grok'));
     assert.equal(rosterText(root), before, 'reading the suggestion never writes the roster');
     // A person running the suggested command puts grok first and keeps devin next.
     assert.equal(command(root, suggestion.args).exit, 0);
