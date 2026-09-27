@@ -65,6 +65,86 @@ test('joining creates an ignore file inside the private folder', (t) => {
   assert.equal(fs.readFileSync(ignore, 'utf8'), '*\n');
 });
 
+test('personal joins and imports leave people uncontacted', (t) => {
+  const root = workspace(t);
+  assert.deepEqual(JSON.parse(run(root, 'host', 'setup', '--room', 'personal', '--json')), { room: 'personal' });
+  run(root, 'host', 'join', '--id', 'friend:maya', '--name', 'Maya');
+  const file = importRows(root, 'friends.jsonl', [
+    { person: { id: 'friend:dev', name: 'Dev' } },
+    { person: { id: 'friend:eli', name: 'Eli' } },
+  ]);
+  assert.equal(hostAction(root, 'import', { file }).added, 2);
+  for (const id of ['friend:maya', 'friend:dev', 'friend:eli']) assert.equal(privateData(root, id).told_host_sees_at, null);
+  assert.deepEqual(outbox(root), []);
+});
+
+test('switching to personal removes queued welcomes and drafts existing messages', (t) => {
+  const root = workspace(t);
+  hostAction(root, 'join', { id: 'maya', name: 'Maya' });
+  const asked = hostAction(root, 'ask', { id: 'maya', question: "What's Maya obsessed with lately?" });
+  assert.equal(outbox(root).length, 2);
+  hostAction(root, 'setup', { room: 'personal' });
+  const messages = outbox(root);
+  assert.deepEqual(messages.map((message) => message.id), [asked.message_id]);
+  assert.equal(messages[0].draft, true);
+  const saved = JSON.parse(fs.readFileSync(path.join(root, 'atris', 'team', 'host', 'private', 'outbox', `${asked.message_id}.json`), 'utf8'));
+  assert.equal(saved.draft, true);
+});
+
+test('personal outbox messages are drafts across questions and introductions', (t) => {
+  const root = workspace(t);
+  const now = '2026-09-27T12:00:00.000Z';
+  hostAction(root, 'setup', { room: 'personal' });
+  hostAction(root, 'join', { id: 'maya', name: 'Maya', now });
+  hostAction(root, 'join', { id: 'dev', name: 'Dev', now });
+  hostAction(root, 'ask', { id: 'maya', question: "What's Maya obsessed with lately?", now });
+  hostAction(root, 'propose', { a: 'maya', b: 'dev', reason: 'They could help each other.', activity: 'coffee', text: 'Maya, meet Dev.', now });
+  hostAction(root, 'receive', { eventId: 'maya-yes', from: 'maya', text: 'yes', now });
+  hostAction(root, 'receive', { eventId: 'dev-yes', from: 'dev', text: 'yes', now });
+  const early = hostAction(root, 'outbox', { now });
+  hostAction(root, 'outbox', { now: future(now, 4) });
+  const messages = [...early, ...hostAction(root, 'outbox', { now: future(now, 15) })];
+  for (const kind of ['question', 'intro_ask', 'intro', 'nudge', 'followup']) assert.ok(messages.some((message) => message.kind === kind), kind);
+  assert.ok(messages.every((message) => message.draft === true));
+  for (const message of hostAction(root, 'outbox', { now: future(now, 15) })) {
+    const saved = JSON.parse(fs.readFileSync(path.join(root, 'atris', 'team', 'host', 'private', 'outbox', `${message.id}.json`), 'utf8'));
+    assert.equal(saved.draft, true);
+  }
+});
+
+test('the owner can answer a personal question for one person', (t) => {
+  const root = workspace(t);
+  run(root, 'host', 'setup', '--room', 'personal');
+  hostAction(root, 'join', { id: 'maya', name: 'Maya' });
+  hostAction(root, 'join', { id: 'dev', name: 'Dev' });
+  hostAction(root, 'ask', { id: 'maya', question: "What's Maya obsessed with lately?" });
+  const reply = JSON.parse(run(root, 'host', 'receive', '--event-id', 'owner-maya-1', '--from', 'maya', '--text', 'Ceramics.', '--json'));
+  assert.deepEqual({ id: reply.id, kind: reply.kind }, { id: 'maya', kind: 'answer' });
+  assert.match(fs.readFileSync(privateFile(root, 'maya'), 'utf8'), /Q: What's Maya obsessed with lately\?\n\nA: Ceramics\./);
+  assert.doesNotMatch(fs.readFileSync(privateFile(root, 'dev'), 'utf8'), /Ceramics/);
+});
+
+test('setup rejects unknown rooms and preserves legacy numeric validation', (t) => {
+  const root = workspace(t);
+  hostAction(root, 'join', { id: 'ann', name: 'Ann' });
+  const file = path.join(root, 'atris', 'team', 'host', 'private', 'config.json');
+  const settings = JSON.parse(fs.readFileSync(file, 'utf8'));
+  delete settings.room;
+  fs.writeFileSync(file, JSON.stringify(settings));
+  hostAction(root, 'join', { id: 'ben', name: 'Ben' });
+  assert.equal(outbox(root).filter((message) => message.kind === 'welcome').length, 2);
+  const invalid = spawnSync(process.execPath, [cli, 'host', 'setup', '--room', 'unknown'], { cwd: root, encoding: 'utf8', env: { ...process.env, ATRIS_SKIP_UPDATE_CHECK: '1' } });
+  assert.equal(invalid.status, 1);
+  assert.match(invalid.stderr, /room must be personal or group/);
+  assert.equal(Object.hasOwn(JSON.parse(fs.readFileSync(file, 'utf8')), 'room'), false);
+  fs.writeFileSync(file, JSON.stringify({ ...settings, room: 'unknown' }));
+  assert.throws(() => hostAction(root, 'due'), /malformed config/);
+  fs.writeFileSync(file, JSON.stringify({ ...settings, cadence_days: 1.5 }));
+  assert.throws(() => hostAction(root, 'due'), /malformed config/);
+  fs.writeFileSync(file, JSON.stringify(settings));
+  assert.deepEqual(hostAction(root, 'setup', { room: 'group' }), { room: 'group' });
+});
+
 test('import adds people before links and skips existing, forgotten, and repeated records', (t) => {
   const root = workspace(t);
   hostAction(root, 'join', { id: 'existing:a', name: 'Ada' });
@@ -742,6 +822,8 @@ test('the host skill limits links and intro reasons to published facts', () => {
   assert.match(skill, /"Wants to meet" belongs on the card, not in links\./);
   assert.match(skill, /Use only what is on both published cards, never private answers\./);
   assert.match(skill, /never read anyone's messages/);
+  assert.match(skill, /^## In a personal room$/m);
+  assert.match(skill, /^## The morning read$/m);
 });
 
 test('two child processes can receive at once without losing either reply', async (t) => {

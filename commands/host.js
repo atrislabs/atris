@@ -5,7 +5,7 @@ const { hostAction } = require('../lib/host');
 function parse(argv) {
   const options = {};
   const positionals = [];
-  const flags = new Set(['id', 'name', 'team', 'manager', 'door', 'now', 'started', 'question', 'event-id', 'from', 'text', 'reply-to', 'reply-to-ref', 'ref', 'decision', 'patch', 'expected-revision', 'source', 'evidence', 'reason', 'activity', 'as', 'when', 'at']);
+  const flags = new Set(['id', 'name', 'team', 'manager', 'door', 'now', 'started', 'question', 'event-id', 'from', 'text', 'reply-to', 'reply-to-ref', 'ref', 'decision', 'patch', 'expected-revision', 'source', 'evidence', 'reason', 'activity', 'as', 'when', 'at', 'room']);
   for (let i = 0; i < argv.length; i += 1) {
     const item = argv[i];
     if (item === '--json') { options.json = true; continue; }
@@ -42,7 +42,7 @@ function hostCommand(argv = process.argv.slice(3), root = process.cwd()) {
   try {
     const [command, ...rest] = argv;
     if (!command || command === '--help' || command === '-h') {
-      const usage = 'usage: atris host join|import|leave|pause|resume|forget|due|ask|receive|card|link|propose|people|outbox|sent|room|view|schedule|scheduled [options]';
+      const usage = 'usage: atris host setup|join|import|leave|pause|resume|forget|due|ask|receive|card|link|propose|people|outbox|sent|room|view|schedule|scheduled [options]';
       console.log(jsonOutput ? JSON.stringify({ usage }) : usage);
       return;
     }

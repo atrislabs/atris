@@ -51,3 +51,11 @@ The reason and activity are read inside a sentence ("I thought you and Sam might
 ## How to read a reply
 
 Pass what the person meant. "Hell yeah, I'm in" is yes. "Who is it?" is unclear, so pass nothing and the Host asks again. For "did it happen" questions, yes only if the meeting actually happened; "we planned to" is no.
+
+## In a personal room
+
+The owner is the host and the only person you talk to. Ask the owner about one person at a time ("What's Maya obsessed with lately?", "What's something Dev is quietly going for?"), and record the owner's answer with `atris host receive --from <person id>`. Every outbox message is a draft: the owner edits it and sends it from his own phone in his own voice, then marks it sent. Never contact anyone in the room directly.
+
+## The morning read
+
+When the host asks what's up, or each morning in a personal room, write one short screen from `atris host people --json` and `atris host room`: three people worth reaching out to today, each with one line of why from their card and a first message in the host's own voice; one thing worth celebrating; and one introduction worth making, if there is one. Never "you haven't talked to X in N days". Nothing sends.
