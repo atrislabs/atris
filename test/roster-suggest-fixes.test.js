@@ -141,6 +141,41 @@ test('the suggested command promotes the challenger line without rewriting any w
   }, { roster: WORKER_ROSTER, registry: true });
 });
 
+test('--promote with a tool and no model moves only a line with no model', async () => {
+  await withRoom(async ({ root }) => {
+    const at = (minutesAgo) => new Date(NOW - minutesAgo * 60000).toISOString();
+    // The pinned claude lead keeps missing; the unpinned claude at the end
+    // of the list keeps landing. The suggestion can only mean the unpinned
+    // line, but a tool-only promote used to match the pinned one first.
+    for (const [index, outcome] of ['stalled', 'stalled', 'stalled'].entries()) {
+      appendRosterRun(root, { at: at(300 - index), job: 'build', engine: 'claude', model: 'claude-opus-5-5', outcome, seconds: 1200 });
+    }
+    for (const [index, outcome] of ['landed', 'landed'].entries()) {
+      appendRosterRun(root, { at: at(200 - index), job: 'build', engine: 'claude', outcome, seconds: 600 });
+    }
+    const report = JSON.parse(command(root, ['roster', '--json']).out);
+    const suggestion = report.jobs.find((row) => row.job === 'build').suggestion;
+    assert.ok(suggestion, 'a suggestion is offered');
+    assert.equal(suggestion.challenger.engine, 'claude');
+    assert.equal(suggestion.challenger.model, null);
+    assert.equal(command(root, suggestion.args).exit, 0);
+    assert.deepEqual(workerLines(root), [
+      '- claude',
+      '- claude, model: opus 5.5',
+      '- devin',
+    ], 'the third line moves, not the pinned first line');
+  }, { roster: '# roster\n\n## build\n- claude, model: opus 5.5\n- devin\n- claude\n', registry: true });
+});
+
+test('--promote moves the first of several matching lines and says so in one plain line', async () => {
+  await withRoom(async ({ root }) => {
+    const moved = command(root, ['assign', 'build', '--promote', 'claude code']);
+    assert.equal(moved.exit, 0);
+    assert.match(moved.out, /build has 2 workers named claude code; the first moved up/);
+    assert.deepEqual(workerLines(root), ['- claude', '- devin', '- claude']);
+  }, { roster: '# roster\n\n## build\n- devin\n- claude\n- claude\n', registry: true });
+});
+
 function writeDispatchReceipt(root, name, results) {
   const dir = path.join(root, 'atris', 'runs');
   fs.mkdirSync(dir, { recursive: true });
