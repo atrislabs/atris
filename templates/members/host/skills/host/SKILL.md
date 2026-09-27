@@ -8,6 +8,8 @@ Run in a workspace with `atris/`. Use `atris host <subcommand> --json` for machi
 
 The private folder ignores itself in git; never copy its contents elsewhere.
 
+After upgrading atris, run `atris member install host --update` to pick up the latest Host judgment; room files are never touched.
+
 1. `atris host due`: for each person due, pick one question (see How to ask), then `atris host ask <id> --question "..."`.
 2. Doors hand replies to `atris host receive --event-id <id> --from <door> --text "..." --reply-to <message-id>` (or `--reply-to-ref <provider-ref>`). When a reply is not a plain yes or no, pass `--decision yes|no` with what the person meant (see How to read a reply).
 3. After answers arrive, update cards: `atris host card <id> --patch <file.json> --expected-revision <revision>` (see How to write a card).

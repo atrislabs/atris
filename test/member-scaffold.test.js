@@ -6,7 +6,7 @@ const path = require('node:path');
 
 const { spawnSync } = require('node:child_process');
 
-const { ensureMemberBundle, memberMarkdown, memberBundlePresent } = require('../lib/member-scaffold');
+const { ensureMemberBundle, memberMarkdown, memberBundlePresent, updateMemberSkills } = require('../lib/member-scaffold');
 
 const repoRoot = path.resolve(__dirname, '..');
 const cliPath = path.join(repoRoot, 'bin', 'atris.js');
@@ -115,6 +115,35 @@ test('member install second run is a no-op', () => withTempWorkspace(workspace =
   assert.equal(second.status, 0, `stdout:\n${second.stdout}\nstderr:\n${second.stderr}`);
   assert.equal(second.stdout, 'MEMBER already installed for guide\n');
   assert.equal(fs.readFileSync(path.join(memberDir, 'MEMBER.md'), 'utf8'), before);
+}));
+
+test('member skill update replaces old skills, adds new skills, and keeps room files', () => withTempWorkspace(workspace => {
+  const templateDir = path.join(workspace, 'template');
+  const memberDir = path.join(workspace, 'atris', 'team', 'host');
+  const oldSkill = path.join('skills', 'host', 'SKILL.md');
+  const newSkill = path.join('skills', 'new', 'SKILL.md');
+  for (const dir of [path.dirname(path.join(templateDir, oldSkill)), path.dirname(path.join(templateDir, newSkill)), path.dirname(path.join(memberDir, oldSkill))]) {
+    fs.mkdirSync(dir, { recursive: true });
+  }
+  fs.writeFileSync(path.join(templateDir, oldSkill), 'latest judgment\n');
+  fs.writeFileSync(path.join(templateDir, newSkill), 'new skill\n');
+  fs.writeFileSync(path.join(memberDir, oldSkill), 'old judgment\n');
+  fs.writeFileSync(path.join(memberDir, 'SOUL.md'), 'room soul\n');
+  fs.writeFileSync(path.join(memberDir, 'MEMBER.md'), 'room member\n');
+
+  assert.deepEqual(updateMemberSkills(templateDir, memberDir), [oldSkill, newSkill]);
+  assert.equal(fs.readFileSync(path.join(memberDir, oldSkill), 'utf8'), 'latest judgment\n');
+  assert.equal(fs.readFileSync(path.join(memberDir, newSkill), 'utf8'), 'new skill\n');
+  assert.equal(fs.readFileSync(path.join(memberDir, 'SOUL.md'), 'utf8'), 'room soul\n');
+  assert.equal(fs.readFileSync(path.join(memberDir, 'MEMBER.md'), 'utf8'), 'room member\n');
+  assert.deepEqual(updateMemberSkills(templateDir, memberDir), []);
+}));
+
+test('member install update requires a packaged template', () => withTempWorkspace(workspace => {
+  const result = runCli(workspace, ['member', 'install', 'unknown-member', '--update']);
+  assert.equal(result.status, 1);
+  assert.match(result.stderr, /No member template for unknown-member\./);
+  assert.equal(fs.existsSync(path.join(workspace, 'atris', 'team', 'unknown-member')), false);
 }));
 
 test('atris install writes the brain files', () => withTempWorkspace(workspace => {
