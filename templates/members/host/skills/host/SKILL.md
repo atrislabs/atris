@@ -14,7 +14,7 @@ Run in a workspace with `atris/`. Use `atris host <subcommand> --json` for machi
 6. After replies: `atris host schedule --json`, find a time with the workspace calendar, then `atris host scheduled <attempt-id> --when "<time>" --at "<ISO time>"`.
 7. Weekly: `atris host room`. A gentle prompt for the human host, never a report card.
 
-When importing an existing team, pass `--started <ISO date>` to `atris host join` with each person's real start date, so long-time staff are not counted as new. On `leave`, `pause`, or `forget`, respect the choice.
+For any existing team or network, prefer `atris host import <file>` with JSON Lines person and link entries, and pass each person's real `started` date so long-time staff are not counted as new. On `leave`, `pause`, or `forget`, respect the choice.
 
 ## How to ask
 
