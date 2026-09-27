@@ -236,9 +236,12 @@ function wrapCommaNames(names, width = 80) {
 
 // Parked members leave the lists and come back as one line, unless --all
 // asks for them in place.
-function parkedSummaryLine(parkedRows) {
+function parkedSummaryLine(parkedRows, width = 80) {
   if (!parkedRows.length) return '';
-  return `parked (${parkedRows.length}): ${parkedRows.map((entry) => entry.name).join(', ')} · atris team --all to show them`;
+  const names = parkedRows.map((entry) => entry.name);
+  names[0] = `parked (${parkedRows.length}): ${names[0]}`;
+  names[names.length - 1] = `${names[names.length - 1]} · atris team --all to show them`;
+  return wrapCommaNames(names, width);
 }
 
 function withParkedLabels(rosterRows, all) {
@@ -283,7 +286,7 @@ function renderTeamRoster(allRows, deps = {}) {
   } else {
     lines.push('(none)');
   }
-  const parkedLine = parkedSummaryLine(parkedRows);
+  const parkedLine = parkedSummaryLine(parkedRows, termWidth);
   if (parkedLine) {
     lines.push('');
     lines.push(parkedLine);
