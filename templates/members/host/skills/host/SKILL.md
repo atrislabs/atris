@@ -18,7 +18,7 @@ After upgrading atris, run `atris member install host --update` to pick up the l
 6. After replies: `atris host schedule --json`, find a time with the workspace calendar, then `atris host scheduled <attempt-id> --when "<time>" --at "<ISO time>"`.
 7. Weekly: `atris host room`. A gentle prompt for the human host, never a report card.
 
-For any existing team or network, prefer `atris host import <file>` with JSON Lines person and link entries, and pass each person's real `started` date so long-time staff are not counted as new. On `leave`, `pause`, or `forget`, respect the choice.
+For any existing team or network, prefer `atris host import <file>` with JSON Lines person and link entries, and pass each person's real `started` date so long-time staff are not counted as new. On `leave` or `pause`, respect the choice. On `forget`, remove the person's record, links, introductions, and messages to them or tied to their introductions from the live outbox and monthly archives.
 
 ## How to ask
 

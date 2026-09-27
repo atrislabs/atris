@@ -869,6 +869,36 @@ test('forget removes records, links, introductions, and messages; room stays kin
   assert.throws(() => hostAction(root, 'join', { id: ids[0], name: 'Ada' }), /forgotten/);
 });
 
+test('forget removes matching archived messages and deletes an empty archive', (t) => {
+  const root = workspace(t);
+  const january = '2026-01-01T12:00:00.000Z';
+  const february = '2026-02-01T12:00:00.000Z';
+  const march = '2026-03-10T12:00:00.000Z';
+  for (const name of ['Ada', 'Ben', 'Cora']) hostAction(root, 'join', { id: name.toLowerCase(), name, now: january });
+  const welcome = hostAction(root, 'outbox', { now: january }).find((message) => message.to === 'ada' && message.kind === 'welcome');
+  hostAction(root, 'sent', { id: welcome.id, now: january });
+
+  const intro = hostAction(root, 'propose', { a: 'ada', b: 'ben', reason: 'They both enjoy coffee.', activity: 'a coffee tasting', text: 'Ada, meet Ben.', now: february });
+  const introMessages = hostAction(root, 'outbox', { now: february }).filter((message) => message.attempt_id === intro.attempt_id);
+  assert.deepEqual(introMessages.map((message) => message.to).sort(), ['ada', 'ben']);
+  for (const message of introMessages) hostAction(root, 'sent', { id: message.id, now: february });
+  const question = hostAction(root, 'ask', { id: 'cora', question: 'What made you smile?', now: february });
+  hostAction(root, 'sent', { id: question.message_id, now: february });
+
+  hostAction(root, 'outbox', { now: march });
+  const archive = path.join(root, 'atris', 'team', 'host', 'private', 'outbox', 'archive');
+  const januaryFile = path.join(archive, '2026-01.jsonl');
+  const februaryFile = path.join(archive, '2026-02.jsonl');
+  const archived = (file) => fs.readFileSync(file, 'utf8').trim().split('\n').map(JSON.parse);
+  assert.deepEqual(archived(januaryFile).map((message) => message.id), [welcome.id]);
+  assert.deepEqual(archived(februaryFile).map((message) => message.id).sort(), [...introMessages.map((message) => message.id), question.message_id].sort());
+  assert.ok(archived(februaryFile).some((message) => message.to === 'ben' && message.attempt_id === intro.attempt_id));
+
+  hostAction(root, 'forget', { id: 'ada', now: march });
+  assert.equal(fs.existsSync(januaryFile), false);
+  assert.deepEqual(archived(februaryFile).map((message) => message.id), [question.message_id]);
+});
+
 test('forget clears the forgotten manager from other people', (t) => {
   const root = workspace(t);
   const [ada, ben] = people(root);
