@@ -11,6 +11,7 @@ const {
   computeEngineTaskStats,
   rankEngines,
 } = require('../lib/router-brain');
+const { appendRosterRun } = require('../lib/roster-runs');
 const { resolveEngineForRole } = require('../lib/engine-registry');
 
 const NOW = Date.parse('2026-07-21T12:00:00.000Z');
@@ -212,6 +213,45 @@ test('missing and malformed history is ignored without changing legacy routing',
       rankEngines(candidates(), { root, taskType: 'executor', now: NOW }).map((row) => row.id),
       ['codex', 'cursor'],
     );
+  } finally {
+    cleanup(root);
+  }
+});
+
+test('pairing never counts more observations than runs', () => {
+  const root = makeRoot();
+  try {
+    const at = (minutes) => new Date(NOW + minutes * 60000).toISOString();
+    // Runs at -4 and +1 minutes, receipts at 0 and +4: grabbing the closest
+    // run for the first receipt strands the second receipt and counts three
+    // observations for two runs.
+    for (const [name, minutes] of [['early', 0], ['late', 4]]) {
+      writeDispatchReceipt(root, name, [{
+        task: 'CLI-1', engine: 'cursor', task_type: 'executor', verified_passed: true,
+        duration_ms: 60000, at: at(minutes), exitCode: 0,
+      }]);
+    }
+    appendRosterRun(root, { at: at(-4), job: 'build', engine: 'cursor', outcome: 'landed', task: 'CLI-1', seconds: 60 });
+    appendRosterRun(root, { at: at(1), job: 'build', engine: 'cursor', outcome: 'failed', task: 'CLI-1', seconds: 60 });
+    assert.equal(loadRouterHistory(root, { now: NOW + 60000 }).length, 2);
+  } finally {
+    cleanup(root);
+  }
+});
+
+test('one receipt between two runs pairs once and the other run still counts', () => {
+  const root = makeRoot();
+  try {
+    const at = (minutes) => new Date(NOW + minutes * 60000).toISOString();
+    writeDispatchReceipt(root, 'solo', [{
+      task: 'CLI-1', engine: 'cursor', task_type: 'executor', verified_passed: true,
+      duration_ms: 60000, at: at(0), exitCode: 0,
+    }]);
+    appendRosterRun(root, { at: at(-4), job: 'build', engine: 'cursor', outcome: 'landed', task: 'CLI-1', seconds: 60 });
+    appendRosterRun(root, { at: at(1), job: 'build', engine: 'cursor', outcome: 'failed', task: 'CLI-1', seconds: 60 });
+    const history = loadRouterHistory(root, { now: NOW + 60000 });
+    assert.equal(history.length, 2, 'the receipt pairs once; the unpaired run counts on its own');
+    assert.equal(history.filter((row) => row.source === '.atris/state/roster_runs.jsonl').length, 1);
   } finally {
     cleanup(root);
   }
