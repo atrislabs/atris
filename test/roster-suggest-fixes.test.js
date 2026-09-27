@@ -230,3 +230,27 @@ test('a landed dispatch counts once when its receipt and run record share the ta
     assert.equal(history.length, 4);
   });
 });
+
+test('one receipt cancels at most one run of the same task and engine', async () => {
+  const { loadRouterHistory } = require('../lib/router-brain');
+  await withRoom(({ root }) => {
+    writeDispatchReceipt(root, 'one', [{
+      task: 'CLI-1', engine: 'cursor', task_type: 'executor', verified_passed: true,
+      duration_ms: 120000, at: '2026-09-27T11:00:00.000Z', exitCode: 0,
+    }]);
+    appendRosterRun(root, {
+      at: '2026-09-27T10:58:00.000Z', job: 'build', engine: 'cursor', outcome: 'landed',
+      task: 'CLI-1', source: 'dispatch', seconds: 120,
+    });
+    // A failed retry a minute later sits inside the same five-minute window,
+    // but the receipt already spent its one pairing on the landed run.
+    appendRosterRun(root, {
+      at: '2026-09-27T11:02:00.000Z', job: 'build', engine: 'cursor', outcome: 'failed',
+      task: 'CLI-1', source: 'dispatch', seconds: 60,
+    });
+    const history = loadRouterHistory(root, { now: NOW });
+    assert.equal(history.length, 2, 'the receipt pairs with the closest run; the retry still counts');
+    assert.deepEqual(history.map((row) => row.verified_passed).sort(), [false, true]);
+    assert.ok(history.some((row) => row.source === 'atris/runs/dispatch-one.json#results[0]'));
+  });
+});
