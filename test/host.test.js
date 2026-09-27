@@ -39,6 +39,11 @@ function introData(root) {
 }
 function future(iso, days) { return new Date(Date.parse(iso) + days * 86400000).toISOString(); }
 function propose(root, a, b) { return hostAction(root, 'propose', { a, b, reason: 'Ada has a new coffee event and Cora wants a welcoming place for her poetry group.', activity: 'a fifteen minute tasting', text: 'Ada, meet Cora. Try a tasting together.' }); }
+function importRows(root, name, entries) {
+  const file = path.join(root, name);
+  fs.writeFileSync(file, entries.map((entry) => typeof entry === 'string' ? entry : JSON.stringify(entry)).join('\n') + '\n');
+  return file;
+}
 
 test('install copies the packaged host and preserves local edits', (t) => {
   const root = workspace(t);
@@ -51,6 +56,63 @@ test('install copies the packaged host and preserves local edits', (t) => {
   assert.match(fs.readFileSync(path.join(target, 'MEMBER.md'), 'utf8'), /two private yeses/);
   run(root, 'member', 'install', 'host');
   assert.equal(fs.readFileSync(path.join(target, 'SOUL.md'), 'utf8'), 'local soul\n');
+});
+
+test('import adds people before links and skips existing, forgotten, and repeated records', (t) => {
+  const root = workspace(t);
+  hostAction(root, 'join', { id: 'existing:a', name: 'Ada' });
+  hostAction(root, 'join', { id: 'existing:b', name: 'Ben' });
+  hostAction(root, 'join', { id: 'forgotten:c', name: 'Cora' });
+  hostAction(root, 'forget', { id: 'forgotten:c' });
+  hostAction(root, 'link', { a: 'existing:a', b: 'existing:b', source: 'channel', evidence: 'Team room' });
+  const file = importRows(root, 'team.jsonl', [
+    { person: { id: 'new:d', name: 'Dev', team: 'Coffee', started: '2024-01-10', door: 'slack:dev' } },
+    { link: { a: 'new:d', b: 'new:e', source: 'answer', evidence: 'Worked together' } },
+    { person: { id: 'existing:a', name: 'Ada' } },
+    { person: { id: 'forgotten:c', name: 'Cora' } },
+    { person: { id: 'new:e', name: 'Eli', manager: 'new:d' } },
+    { link: { a: 'existing:b', b: 'existing:a', source: 'channel', evidence: 'Team room' } },
+    { link: { a: 'new:e', b: 'existing:a', source: 'card', evidence: 'They already know each other' } },
+    { link: { a: 'new:e', b: 'new:d', source: 'answer', evidence: 'Worked together' } },
+    '',
+  ]);
+  const first = { added: 2, skipped: 1, refused: 1, links_added: 2, links_skipped: 2 };
+  assert.deepEqual(JSON.parse(run(root, 'host', 'import', file, '--json')), first);
+  assert.equal(privateData(root, 'new:d').started_at, '2024-01-10T00:00:00.000Z');
+  assert.equal(privateData(root, 'new:e').manager_id, 'new:d');
+  assert.equal(fs.existsSync(privateFile(root, 'forgotten:c')), false);
+  assert.deepEqual(outbox(root).filter((message) => message.kind === 'welcome' && message.to.startsWith('new:')).map((message) => message.to).sort(), ['new:d', 'new:e']);
+  assert.match(run(root, 'host', 'import', file), /import complete: 0 added, 3 skipped, 1 refused, 0 links added, 4 links skipped/);
+  assert.deepEqual(JSON.parse(run(root, 'host', 'import', file, '--json')), { added: 0, skipped: 3, refused: 1, links_added: 0, links_skipped: 4 });
+  assert.equal(fs.readFileSync(path.join(root, 'atris', 'team', 'host', 'private', 'links.jsonl'), 'utf8').trim().split('\n').length, 3);
+  assert.equal(outbox(root).filter((message) => message.kind === 'welcome' && message.to.startsWith('new:')).length, 2);
+});
+
+test('an invalid import line leaves every host record unchanged', (t) => {
+  const root = workspace(t);
+  hostAction(root, 'join', { id: 'existing:a', name: 'Ada' });
+  const privateRoot = path.join(root, 'atris', 'team', 'host', 'private');
+  const snapshot = (dir) => fs.existsSync(dir) ? fs.readdirSync(dir, { withFileTypes: true }).sort((a, b) => a.name.localeCompare(b.name)).map((entry) => [entry.name, entry.isDirectory() ? snapshot(path.join(dir, entry.name)) : fs.readFileSync(path.join(dir, entry.name), 'utf8')]) : null;
+  const beforePrivate = snapshot(privateRoot);
+  const beforeCards = snapshot(path.join(root, 'atris', 'wiki', 'people'));
+  const file = importRows(root, 'invalid.jsonl', [
+    { person: { id: 'new:b', name: 'Ben' } },
+    '',
+    { link: { a: 'existing:a', b: 'new:b', source: 'channel', evidence: 'Team room' } },
+    { link: { a: 'existing:a', b: 'new:b', source: 'unknown', evidence: 'Bad source' } },
+  ]);
+  assert.throws(() => hostAction(root, 'import', { file }), /line 4: invalid link source/);
+  assert.deepEqual(snapshot(privateRoot), beforePrivate);
+  assert.deepEqual(snapshot(path.join(root, 'atris', 'wiki', 'people')), beforeCards);
+  const malformed = importRows(root, 'malformed.jsonl', [{ person: { id: 'new:b', name: 'Ben' } }, '{']);
+  assert.throws(() => hostAction(root, 'import', { file: malformed }), /line 2: malformed json/);
+  assert.deepEqual(snapshot(privateRoot), beforePrivate);
+});
+
+test('import handles 500 people in one call', (t) => {
+  const root = workspace(t);
+  const file = importRows(root, 'large.jsonl', Array.from({ length: 500 }, (_, index) => ({ person: { id: `bulk:${index}`, name: `Person ${index}` } })));
+  assert.deepEqual(hostAction(root, 'import', { file }), { added: 500, skipped: 0, refused: 0, links_added: 0, links_skipped: 0 });
 });
 
 test('questions, event dedupe, expiry, and a quiet pause', (t) => {

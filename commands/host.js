@@ -20,6 +20,7 @@ function parse(argv) {
 
 function human(command, result) {
   if (command === 'room') return result.text;
+  if (command === 'import') return `import complete: ${result.added} added, ${result.skipped} skipped, ${result.refused} refused, ${result.links_added} links added, ${result.links_skipped} links skipped`;
   if (command === 'due') return result.length ? result.map((entry) => `${entry.name} (${entry.id}) is due for a question.`).join('\n') : 'no questions due';
   if (command === 'outbox') return result.length ? result.map((entry) => `${entry.id} ${entry.kind} to ${entry.to}: ${entry.text}`).join('\n') : 'outbox empty';
   if (command === 'schedule') return result.length ? result.map((entry) => `${entry.attempt_id}: ${entry.names.a} (${entry.a}) and ${entry.names.b} (${entry.b}), ${entry.activity}`).join('\n') : 'no introductions need scheduling';
@@ -41,13 +42,14 @@ function hostCommand(argv = process.argv.slice(3), root = process.cwd()) {
   try {
     const [command, ...rest] = argv;
     if (!command || command === '--help' || command === '-h') {
-      const usage = 'usage: atris host join|leave|pause|resume|forget|due|ask|receive|card|link|propose|people|outbox|sent|room|view|schedule|scheduled [options]';
+      const usage = 'usage: atris host join|import|leave|pause|resume|forget|due|ask|receive|card|link|propose|people|outbox|sent|room|view|schedule|scheduled [options]';
       console.log(jsonOutput ? JSON.stringify({ usage }) : usage);
       return;
     }
     const { options, positionals } = parse(rest);
     jsonOutput = options.json;
     const args = { ...options };
+    if (command === 'import') args.file = positionals[0];
     if (['leave', 'pause', 'resume', 'forget', 'ask', 'card', 'sent', 'scheduled'].includes(command)) args.id = positionals[0];
     if (['link', 'propose'].includes(command)) { args.a = positionals[0]; args.b = positionals[1]; }
     if (command === 'receive') args.eventId = options.eventId;
