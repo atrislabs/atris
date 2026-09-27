@@ -7,6 +7,7 @@ const os = require('node:os');
 const path = require('node:path');
 const { spawn, spawnSync } = require('node:child_process');
 const { hostAction } = require('../lib/host');
+const { hostCommand, parse } = require('../commands/host');
 
 const cli = path.join(__dirname, '..', 'bin', 'atris.js');
 function workspace(t) {
@@ -19,6 +20,14 @@ function run(root, ...args) {
   const result = spawnSync(process.execPath, [cli, ...args], { cwd: root, encoding: 'utf8', env: { ...process.env, ATRIS_SKIP_UPDATE_CHECK: '1' } });
   assert.equal(result.status, 0, result.stderr);
   return result.stdout;
+}
+function hostOutput(root, ...args) {
+  const originalLog = console.log;
+  let output;
+  console.log = (line) => { output = line; };
+  try { hostCommand(args, root); }
+  finally { console.log = originalLog; }
+  return output;
 }
 function people(root) {
   const names = ['Ada', 'Ben', 'Cora', 'Dev', 'Eli', 'Fern', 'Gio', 'Hana', 'Ivy', 'Jules'];
@@ -44,6 +53,32 @@ function importRows(root, name, entries) {
   fs.writeFileSync(file, entries.map((entry) => typeof entry === 'string' ? entry : JSON.stringify(entry)).join('\n') + '\n');
   return file;
 }
+
+test('host flag parser maps every supported option and rejects invalid flags', () => {
+  const flags = [
+    ['id', 'id'], ['name', 'name'], ['team', 'team'], ['manager', 'manager'], ['door', 'door'],
+    ['now', 'now'], ['started', 'started'], ['question', 'question'], ['event-id', 'eventId'],
+    ['from', 'from'], ['text', 'text'], ['reply-to', 'replyTo'], ['reply-to-ref', 'replyToRef'],
+    ['ref', 'ref'], ['decision', 'decision'], ['patch', 'patch'],
+    ['expected-revision', 'expectedRevision'], ['source', 'source'], ['evidence', 'evidence'],
+    ['reason', 'reason'], ['activity', 'activity'], ['as', 'as'], ['when', 'when'],
+    ['at', 'at'], ['room', 'room'],
+  ];
+  const argv = ['people.jsonl', ...flags.flatMap(([flag]) => [`--${flag}`, flag]), '--json'];
+  assert.deepEqual(parse(argv), {
+    options: { ...Object.fromEntries(flags.map(([flag, key]) => [key, flag])), json: true },
+    positionals: ['people.jsonl'],
+  });
+  assert.throws(() => parse(['--unknown', 'value']), /invalid --unknown value/);
+  assert.throws(() => parse(['--id']), /invalid --id value/);
+  assert.throws(() => parse(['--name', '--json']), /invalid --name value/);
+});
+
+test('host CLI help and JSON output smoke', (t) => {
+  const root = workspace(t);
+  assert.match(run(root, 'host', '--help'), /usage: atris host setup\|join\|import/);
+  assert.deepEqual(JSON.parse(run(root, 'host', 'setup', '--room', 'personal', '--json')), { room: 'personal' });
+});
 
 test('install copies the packaged host and preserves local edits', (t) => {
   const root = workspace(t);
@@ -84,8 +119,8 @@ test('joining creates an ignore file inside the private folder', (t) => {
 
 test('personal joins and imports leave people uncontacted', (t) => {
   const root = workspace(t);
-  assert.deepEqual(JSON.parse(run(root, 'host', 'setup', '--room', 'personal', '--json')), { room: 'personal' });
-  run(root, 'host', 'join', '--id', 'friend:maya', '--name', 'Maya');
+  assert.deepEqual(hostAction(root, 'setup', { room: 'personal' }), { room: 'personal' });
+  hostAction(root, 'join', { id: 'friend:maya', name: 'Maya' });
   const file = importRows(root, 'friends.jsonl', [
     { person: { id: 'friend:dev', name: 'Dev' } },
     { person: { id: 'friend:eli', name: 'Eli' } },
@@ -131,11 +166,11 @@ test('personal outbox messages are drafts across questions and introductions', (
 
 test('the owner can answer a personal question for one person', (t) => {
   const root = workspace(t);
-  run(root, 'host', 'setup', '--room', 'personal');
+  hostAction(root, 'setup', { room: 'personal' });
   hostAction(root, 'join', { id: 'maya', name: 'Maya' });
   hostAction(root, 'join', { id: 'dev', name: 'Dev' });
   hostAction(root, 'ask', { id: 'maya', question: "What's Maya obsessed with lately?" });
-  const reply = JSON.parse(run(root, 'host', 'receive', '--event-id', 'owner-maya-1', '--from', 'maya', '--text', 'Ceramics.', '--json'));
+  const reply = hostAction(root, 'receive', { eventId: 'owner-maya-1', from: 'maya', text: 'Ceramics.' });
   assert.deepEqual({ id: reply.id, kind: reply.kind }, { id: 'maya', kind: 'answer' });
   assert.match(fs.readFileSync(privateFile(root, 'maya'), 'utf8'), /Q: What's Maya obsessed with lately\?\n\nA: Ceramics\./);
   assert.doesNotMatch(fs.readFileSync(privateFile(root, 'dev'), 'utf8'), /Ceramics/);
@@ -150,9 +185,7 @@ test('setup rejects unknown rooms and preserves legacy numeric validation', (t) 
   fs.writeFileSync(file, JSON.stringify(settings));
   hostAction(root, 'join', { id: 'ben', name: 'Ben' });
   assert.equal(outbox(root).filter((message) => message.kind === 'welcome').length, 2);
-  const invalid = spawnSync(process.execPath, [cli, 'host', 'setup', '--room', 'unknown'], { cwd: root, encoding: 'utf8', env: { ...process.env, ATRIS_SKIP_UPDATE_CHECK: '1' } });
-  assert.equal(invalid.status, 1);
-  assert.match(invalid.stderr, /room must be personal or group/);
+  assert.throws(() => hostAction(root, 'setup', { room: 'unknown' }), /room must be personal or group/);
   assert.equal(Object.hasOwn(JSON.parse(fs.readFileSync(file, 'utf8')), 'room'), false);
   fs.writeFileSync(file, JSON.stringify({ ...settings, room: 'unknown' }));
   assert.throws(() => hostAction(root, 'due'), /malformed config/);
@@ -181,13 +214,13 @@ test('import adds people before links and skips existing, forgotten, and repeate
     '',
   ]);
   const first = { added: 2, skipped: 1, refused: 1, links_added: 2, links_skipped: 2 };
-  assert.deepEqual(JSON.parse(run(root, 'host', 'import', file, '--json')), first);
+  assert.deepEqual(hostAction(root, 'import', { file }), first);
   assert.equal(privateData(root, 'new:d').started_at, '2024-01-10T00:00:00.000Z');
   assert.equal(privateData(root, 'new:e').manager_id, 'new:d');
   assert.equal(fs.existsSync(privateFile(root, 'forgotten:c')), false);
   assert.deepEqual(outbox(root).filter((message) => message.kind === 'welcome' && message.to.startsWith('new:')).map((message) => message.to).sort(), ['new:d', 'new:e']);
-  assert.match(run(root, 'host', 'import', file), /import complete: 0 added, 3 skipped, 1 refused, 0 links added, 4 links skipped/);
-  assert.deepEqual(JSON.parse(run(root, 'host', 'import', file, '--json')), { added: 0, skipped: 3, refused: 1, links_added: 0, links_skipped: 4 });
+  assert.match(hostOutput(root, 'import', file), /import complete: 0 added, 3 skipped, 1 refused, 0 links added, 4 links skipped/);
+  assert.deepEqual(hostAction(root, 'import', { file }), { added: 0, skipped: 3, refused: 1, links_added: 0, links_skipped: 4 });
   assert.equal(fs.readFileSync(path.join(root, 'atris', 'team', 'host', 'private', 'links.jsonl'), 'utf8').trim().split('\n').length, 3);
   assert.equal(outbox(root).filter((message) => message.kind === 'welcome' && message.to.startsWith('new:')).length, 2);
 });
@@ -310,7 +343,7 @@ test('reply-to routes a fun answer to its question while an intro ask is open', 
   const [ada, , cora] = people(root);
   const asked = hostAction(root, 'ask', { id: ada, question: 'What made you smile?' });
   propose(root, ada, cora);
-  const reply = JSON.parse(run(root, 'host', 'receive', '--event-id', 'threaded-answer', '--from', ada, '--text', 'A tiny concert.', '--reply-to', asked.message_id, '--json'));
+  const reply = hostAction(root, 'receive', { eventId: 'threaded-answer', from: ada, text: 'A tiny concert.', replyTo: asked.message_id });
   assert.equal(reply.kind, 'answer');
   assert.equal(privateData(root, ada).pending_question_id, null);
   assert.equal(introData(root).a_said, null);
@@ -323,11 +356,11 @@ test('sent stores an optional provider reference and validates its size', (t) =>
   const adaMessage = outbox(root).find((message) => message.to === ada);
   const benMessage = outbox(root).find((message) => message.to === ben);
   const ref = 'x'.repeat(200);
-  assert.deepEqual(JSON.parse(run(root, 'host', 'sent', adaMessage.id, '--ref', ref, '--json')), { id: adaMessage.id, state: 'sent' });
+  assert.deepEqual(hostAction(root, 'sent', { id: adaMessage.id, ref }), { id: adaMessage.id, state: 'sent' });
   const saved = JSON.parse(fs.readFileSync(path.join(root, 'atris', 'team', 'host', 'private', 'outbox', `${adaMessage.id}.json`), 'utf8'));
   assert.equal(saved.ref, ref);
   assert.equal(saved.state, 'sent');
-  run(root, 'host', 'sent', benMessage.id, '--json');
+  hostAction(root, 'sent', { id: benMessage.id });
   const withoutRef = JSON.parse(fs.readFileSync(path.join(root, 'atris', 'team', 'host', 'private', 'outbox', `${benMessage.id}.json`), 'utf8'));
   assert.equal(Object.hasOwn(withoutRef, 'ref'), false);
   assert.throws(() => hostAction(root, 'sent', { id: benMessage.id, ref: 'x\ny' }), /ref must be one line/);
@@ -343,16 +376,14 @@ test('reply-to-ref routes by provider reference and sender, with unknown refs un
   const adaQuestion = hostAction(root, 'ask', { id: ada, question: 'What made you smile?' });
   hostAction(root, 'sent', { id: adaQuestion.message_id, ref });
   propose(root, ada, cora);
-  const reply = JSON.parse(run(root, 'host', 'receive', '--event-id', 'provider-answer', '--from', ada, '--text', 'A tiny concert.', '--reply-to-ref', ref, '--json'));
+  const reply = hostAction(root, 'receive', { eventId: 'provider-answer', from: ada, text: 'A tiny concert.', replyToRef: ref });
   assert.equal(reply.kind, 'answer');
   assert.equal(privateData(root, ada).pending_question_id, null);
   assert.ok(privateData(root, ben).pending_question_id);
   assert.equal(introData(root).a_said, null);
-  const unknown = JSON.parse(run(root, 'host', 'receive', '--event-id', 'unknown-provider-ref', '--from', ada, '--text', 'Yes!', '--reply-to-ref', 'missing', '--json'));
+  const unknown = hostAction(root, 'receive', { eventId: 'unknown-provider-ref', from: ada, text: 'Yes!', replyToRef: 'missing' });
   assert.equal(unknown.kind, 'intro_yes');
-  const conflict = spawnSync(process.execPath, [cli, 'host', 'receive', '--event-id', 'conflicting-refs', '--from', ada, '--text', 'Yes!', '--reply-to', adaQuestion.message_id, '--reply-to-ref', ref, '--json'], { cwd: root, encoding: 'utf8', env: { ...process.env, ATRIS_SKIP_UPDATE_CHECK: '1' } });
-  assert.equal(conflict.status, 1);
-  assert.match(conflict.stderr, /choose --reply-to or --reply-to-ref/);
+  assert.throws(() => hostAction(root, 'receive', { eventId: 'conflicting-refs', from: ada, text: 'Yes!', replyTo: adaQuestion.message_id, replyToRef: ref }), /choose --reply-to or --reply-to-ref/);
 });
 
 test('an unknown reply-to stays a note instead of answering another open prompt', (t) => {
@@ -408,14 +439,14 @@ test('people exposes only published cards and introduction availability', (t) =>
   const [ada, , cora] = people(root);
   hostAction(root, 'receive', { eventId: 'private-note', from: ada, text: 'My secret answer.' });
   propose(root, ada, cora);
-  const roster = JSON.parse(run(root, 'host', 'people', '--json'));
+  const roster = hostAction(root, 'people');
   assert.equal(roster.length, 10);
   assert.equal(roster.find((entry) => entry.id === ada).can_be_introduced, false);
   assert.equal(roster.find((entry) => entry.id === cora).can_be_introduced, false);
   assert.equal(roster.find((entry) => entry.name === 'Eli').can_be_introduced, true);
   assert.deepEqual(Object.keys(roster[0]).sort(), ['id', 'name', 'team', 'manager_id', 'status', 'can_be_introduced', 'into_lately', 'going_for', 'great_at', 'wants_to_meet', 'worth_celebrating'].sort());
   assert.doesNotMatch(JSON.stringify(roster), /secret answer|declin|response_rate/i);
-  assert.match(run(root, 'host', 'people'), /can be introduced: no/);
+  assert.match(hostOutput(root, 'people'), /can be introduced: no/);
 });
 
 test('newcomers can have three sequential introductions while older people honor a saved cap of one', (t) => {
@@ -563,7 +594,7 @@ test('a booked calendar time moves an unsent followup until after the meeting', 
   const introduced = introData(root).introduced_at;
   const bookingAt = future(introduced, 20);
   const meetingAt = future(introduced, 21);
-  const booked = JSON.parse(run(root, 'host', 'scheduled', attempt, '--when', 'Tuesday at 2 pm', '--at', meetingAt, '--now', bookingAt, '--json'));
+  const booked = hostAction(root, 'scheduled', { id: attempt, when: 'Tuesday at 2 pm', at: meetingAt, now: bookingAt });
   assert.equal(booked.scheduled_for, 'Tuesday at 2 pm');
   assert.equal(introData(root).scheduled_at, meetingAt);
   assert.equal(introData(root).followup_at, future(meetingAt, 1));
@@ -583,15 +614,13 @@ test('a model decision overrides the first word for routed intro, clarify, and f
   const [ada, , cora] = people(root);
   propose(root, ada, cora);
   const ask = outbox(root).find((message) => message.to === ada && message.kind === 'intro_ask');
-  const invalid = spawnSync(process.execPath, [cli, 'host', 'receive', '--event-id', 'bad-decision', '--from', ada, '--text', 'Maybe', '--decision', 'maybe'], { cwd: root, encoding: 'utf8', env: { ...process.env, ATRIS_SKIP_UPDATE_CHECK: '1' } });
-  assert.equal(invalid.status, 1);
-  assert.match(invalid.stderr, /decision must be yes or no/);
+  assert.throws(() => hostAction(root, 'receive', { eventId: 'bad-decision', from: ada, text: 'Maybe', decision: 'maybe' }), /decision must be yes or no/);
   assert.equal(introData(root).a_said, null);
-  assert.equal(JSON.parse(run(root, 'host', 'receive', '--event-id', 'model-intro', '--from', ada, '--text', 'No, wait, I would love to', '--reply-to', ask.id, '--decision', 'yes', '--json')).kind, 'intro_yes');
+  assert.equal(hostAction(root, 'receive', { eventId: 'model-intro', from: ada, text: 'No, wait, I would love to', replyTo: ask.id, decision: 'yes' }).kind, 'intro_yes');
   assert.equal(introData(root).a_said, 'yes');
   assert.equal(hostAction(root, 'receive', { eventId: 'need-clarity', from: cora, text: 'Tell me more.' }).kind, 'clarify');
   const clarify = outbox(root).find((message) => message.to === cora && message.kind === 'clarify');
-  assert.equal(JSON.parse(run(root, 'host', 'receive', '--event-id', 'model-clarify', '--from', cora, '--text', 'Sounds like a plan', '--reply-to', clarify.id, '--decision', 'yes', '--json')).kind, 'introduced');
+  assert.equal(hostAction(root, 'receive', { eventId: 'model-clarify', from: cora, text: 'Sounds like a plan', replyTo: clarify.id, decision: 'yes' }).kind, 'introduced');
   const when = introData(root).followup_at;
   const followup = hostAction(root, 'outbox', { now: when }).find((message) => message.to === ada && message.kind === 'followup');
   assert.equal(hostAction(root, 'receive', { eventId: 'model-followup', from: ada, text: 'Honestly, we did a quick coffee', replyTo: followup.id, decision: 'yes', now: when }).kind, 'followup');
@@ -620,10 +649,10 @@ test('one nudge per person can request a time and booking closes the schedule re
   assert.equal(hostAction(root, 'receive', { eventId: 'nudge-no', from: cora, text: 'Maybe later', decision: 'no', replyTo: nudges.find((message) => message.to === cora).id, now: intro.nudge_at }).kind, 'nudge');
   assert.equal(hostAction(root, 'schedule', { now: intro.nudge_at }).length, 0);
   assert.equal(hostAction(root, 'receive', { eventId: 'nudge-yes', from: ada, text: 'yes', now: intro.nudge_at }).kind, 'nudge');
-  const requested = JSON.parse(run(root, 'host', 'schedule', '--json'));
+  const requested = hostAction(root, 'schedule');
   assert.deepEqual(requested, [{ attempt_id: attempt, a: ada, b: cora, names: { a: 'Ada', b: 'Cora' }, activity: 'a fifteen minute tasting' }]);
-  assert.match(run(root, 'host', 'schedule'), /Ada .* Cora/);
-  const booked = JSON.parse(run(root, 'host', 'scheduled', attempt, '--when', 'Friday at 2 pm', '--json'));
+  assert.match(hostOutput(root, 'schedule'), /Ada .* Cora/);
+  const booked = hostAction(root, 'scheduled', { id: attempt, when: 'Friday at 2 pm' });
   assert.equal(booked.scheduled_for, 'Friday at 2 pm');
   assert.equal(introData(root).scheduled_at, null);
   assert.equal(introData(root).followup_at, intro.followup_at);
@@ -778,7 +807,7 @@ test('imported staff use company start dates for welcomes and first-month covera
   const cohortStart = future(now, -60);
   const old = ['Old One', 'Old Two', 'Old Three'].map((name, index) => {
     const id = `old:${index}`;
-    run(root, 'host', 'join', '--id', id, '--name', name, '--now', now, '--started', oldStart);
+    hostAction(root, 'join', { id, name, now, started: oldStart });
     assert.equal(privateData(root, id).joined_at, now);
     assert.equal(privateData(root, id).started_at, '2024-09-26T00:00:00.000Z');
     return id;
@@ -789,7 +818,7 @@ test('imported staff use company start dates for welcomes and first-month covera
     return id;
   });
   const fresh = 'fresh:1';
-  run(root, 'host', 'join', '--id', fresh, '--name', 'Fresh', '--now', now);
+  hostAction(root, 'join', { id: fresh, name: 'Fresh', now });
   assert.equal(privateData(root, fresh).started_at, now);
   assert.throws(() => hostAction(root, 'join', { id: 'invalid:1', name: 'Invalid', now, started: 'yesterday' }), /started must be an ISO date or time/);
 
@@ -840,9 +869,7 @@ test('malformed private frontmatter is an error, not a reset', (t) => {
   const root = workspace(t);
   const [ada] = people(root);
   fs.writeFileSync(privateFile(root, ada), 'broken\n');
-  const result = spawnSync(process.execPath, [cli, 'host', 'due', '--json'], { cwd: root, encoding: 'utf8', env: { ...process.env, ATRIS_SKIP_UPDATE_CHECK: '1' } });
-  assert.notEqual(result.status, 0);
-  assert.match(result.stderr, /malformed record/);
+  assert.throws(() => hostAction(root, 'due'), /malformed record/);
   assert.equal(fs.readFileSync(privateFile(root, ada), 'utf8'), 'broken\n');
 });
 

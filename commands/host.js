@@ -61,4 +61,4 @@ function hostCommand(argv = process.argv.slice(3), root = process.cwd()) {
   }
 }
 
-module.exports = { hostCommand };
+module.exports = { hostCommand, parse };
