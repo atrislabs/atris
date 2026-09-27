@@ -7,7 +7,7 @@ const os = require('node:os');
 const path = require('node:path');
 const { spawn, spawnSync } = require('node:child_process');
 const { hostAction } = require('../lib/host');
-const { hostCommand, parse } = require('../commands/host');
+const { hostCommand, hostDeliver, parse } = require('../commands/host');
 
 const cli = path.join(__dirname, '..', 'bin', 'atris.js');
 function workspace(t) {
@@ -41,6 +41,16 @@ function privateData(root, id) {
   return Object.fromEntries(front.map((line) => { const i = line.indexOf(': '); return [line.slice(0, i), JSON.parse(line.slice(i + 2))]; }));
 }
 function outbox(root) { return hostAction(root, 'outbox'); }
+function deliveryMessages(root, entries) {
+  const dir = path.join(root, 'atris', 'team', 'host', 'private', 'outbox');
+  fs.mkdirSync(dir, { recursive: true });
+  return entries.map((entry, index) => {
+    const message = { id: `00000000-0000-4000-8000-${String(index + 1).padStart(12, '0')}`, to: `person-${index + 1}`, door: 'slack:U123', kind: 'question', text: `message ${index + 1}`, created_at: new Date(Date.parse('2026-09-27T12:00:00Z') + index * 1000).toISOString(), state: 'queued', ...entry };
+    fs.writeFileSync(path.join(dir, `${message.id}.json`), JSON.stringify(message));
+    return message;
+  });
+}
+function savedMessage(root, id) { return JSON.parse(fs.readFileSync(path.join(root, 'atris', 'team', 'host', 'private', 'outbox', `${id}.json`), 'utf8')); }
 function introFiles(root) { return fs.readdirSync(path.join(root, 'atris', 'team', 'host', 'private', 'intros')).filter((name) => name.endsWith('.md')); }
 function introFile(root) { return path.join(root, 'atris', 'team', 'host', 'private', 'intros', introFiles(root)[0]); }
 function introData(root) {
@@ -62,7 +72,7 @@ test('host flag parser maps every supported option and rejects invalid flags', (
     ['ref', 'ref'], ['decision', 'decision'], ['patch', 'patch'],
     ['expected-revision', 'expectedRevision'], ['source', 'source'], ['evidence', 'evidence'],
     ['reason', 'reason'], ['activity', 'activity'], ['as', 'as'], ['when', 'when'],
-    ['at', 'at'], ['room', 'room'],
+    ['at', 'at'], ['room', 'room'], ['slack-business', 'slackBusiness'], ['limit', 'limit'],
   ];
   const argv = ['people.jsonl', ...flags.flatMap(([flag]) => [`--${flag}`, flag]), '--json'];
   assert.deepEqual(parse(argv), {
@@ -72,12 +82,103 @@ test('host flag parser maps every supported option and rejects invalid flags', (
   assert.throws(() => parse(['--unknown', 'value']), /invalid --unknown value/);
   assert.throws(() => parse(['--id']), /invalid --id value/);
   assert.throws(() => parse(['--name', '--json']), /invalid --name value/);
+  assert.deepEqual(parse(['deliver', '--dry-run']).options, { dryRun: true });
 });
 
 test('host CLI help and JSON output smoke', (t) => {
   const root = workspace(t);
   assert.match(run(root, 'host', '--help'), /usage: atris host setup\|join\|import/);
   assert.deepEqual(JSON.parse(run(root, 'host', 'setup', '--room', 'personal', '--json')), { room: 'personal' });
+  assert.deepEqual(JSON.parse(run(root, 'host', 'setup', '--slack-business', 'biz-1', '--json')), { slack_business_id: 'biz-1' });
+  assert.deepEqual(JSON.parse(run(root, 'host', 'setup', '--room', 'group', '--json')), { room: 'group' });
+  assert.deepEqual(JSON.parse(run(root, 'host', 'deliver', '--dry-run', '--json')), { sent: 0, skipped: 0, failed: 0, would_send: [] });
+});
+
+test('deliver sends queued Slack messages oldest first and records each timestamp', async (t) => {
+  const root = workspace(t);
+  hostAction(root, 'setup', { slackBusiness: 'biz-1' });
+  const [first, second] = deliveryMessages(root, [
+    { door: 'slack:U111', text: 'first' },
+    { door: 'slack:W222', kind: 'intro', text: 'second' },
+  ]);
+  const calls = [];
+  const result = await hostDeliver(root, {}, {
+    loadCredentials: () => ({ token: 'user-token' }),
+    apiRequestJson: async (pathname, options) => {
+      assert.equal(fs.existsSync(path.join(root, 'atris', 'team', 'host', 'private', '.lock')), false);
+      calls.push({ pathname, options });
+      return { ok: true, data: { ts: `123.00${calls.length}`, channel: 'D123' } };
+    },
+  });
+  assert.deepEqual(result, { sent: 2, skipped: 0, failed: 0 });
+  assert.deepEqual(calls.map(({ pathname, options }) => ({ pathname, method: options.method, token: options.token, retries: options.retries, body: options.body })), [
+    { pathname: '/business/biz-1/host/slack/send', method: 'POST', token: 'user-token', retries: 0, body: { slack_user_id: 'U111', text: 'first', host_message_id: first.id } },
+    { pathname: '/business/biz-1/host/slack/send', method: 'POST', token: 'user-token', retries: 0, body: { slack_user_id: 'W222', text: 'second', host_message_id: second.id } },
+  ]);
+  assert.deepEqual([savedMessage(root, first.id).ref, savedMessage(root, second.id).ref], ['123.001', '123.002']);
+  assert.deepEqual([savedMessage(root, first.id).state, savedMessage(root, second.id).state], ['sent', 'sent']);
+});
+
+test('deliver stops on the first HTTP failure and leaves later messages queued', async (t) => {
+  const root = workspace(t);
+  hostAction(root, 'setup', { slackBusiness: 'biz-1' });
+  const messages = deliveryMessages(root, [{}, {}, {}]);
+  let calls = 0;
+  const result = await hostDeliver(root, {}, {
+    loadCredentials: () => ({ token: 'user-token' }),
+    apiRequestJson: async () => ++calls === 1 ? { ok: true, data: { ts: '123.001' } } : { ok: false, status: 503, error: 'Slack is unavailable' },
+  });
+  assert.deepEqual(result, { sent: 1, skipped: 0, failed: 1, failure: { id: messages[1].id, reason: 'http 503: Slack is unavailable' } });
+  assert.equal(calls, 2);
+  assert.equal(savedMessage(root, messages[0].id).state, 'sent');
+  assert.deepEqual(messages.slice(1).map((message) => savedMessage(root, message.id).state), ['queued', 'queued']);
+});
+
+test('deliver reports a network error without marking the message sent', async (t) => {
+  const root = workspace(t);
+  hostAction(root, 'setup', { slackBusiness: 'biz-1' });
+  const [message] = deliveryMessages(root, [{}]);
+  const result = await hostDeliver(root, {}, {
+    loadCredentials: () => ({ token: 'user-token' }),
+    apiRequestJson: async () => { throw new Error('connection reset'); },
+  });
+  assert.deepEqual(result, { sent: 0, skipped: 0, failed: 1, failure: { id: message.id, reason: 'connection reset' } });
+  assert.equal(savedMessage(root, message.id).state, 'queued');
+});
+
+test('deliver skips drafts and other doors, and dry run and limit never send extra messages', async (t) => {
+  const root = workspace(t);
+  hostAction(root, 'setup', { slackBusiness: 'biz-1' });
+  const messages = deliveryMessages(root, [
+    { door: 'slack:U111', text: 'a'.repeat(90) },
+    { door: 'slack:U222', draft: true },
+    { door: 'email:person@example.com' },
+    { door: 'slack:W333' },
+  ]);
+  let calls = 0;
+  const deps = { loadCredentials: () => ({ token: 'user-token' }), apiRequestJson: async () => { calls += 1; return { ok: true, data: { ts: `123.00${calls}` } }; } };
+  const preview = await hostDeliver(root, { dryRun: true }, deps);
+  assert.deepEqual(preview.would_send.map(({ id, to, kind, text }) => ({ id, to, kind, text })), [
+    { id: messages[0].id, to: 'U111', kind: 'question', text: 'a'.repeat(80) },
+    { id: messages[3].id, to: 'W333', kind: 'question', text: 'message 4' },
+  ]);
+  assert.equal(preview.skipped, 2);
+  assert.equal(calls, 0);
+  assert.equal(savedMessage(root, messages[0].id).state, 'queued');
+  assert.deepEqual(await hostDeliver(root, { limit: '1' }, deps), { sent: 1, skipped: 2, failed: 0 });
+  assert.equal(calls, 1);
+  assert.equal(savedMessage(root, messages[3].id).state, 'queued');
+});
+
+test('deliver requires a business id and a user login', async (t) => {
+  const root = workspace(t);
+  deliveryMessages(root, [{}]);
+  await assert.rejects(hostDeliver(root, {}, { loadCredentials: () => null, apiRequestJson: () => { throw new Error('unexpected network'); } }), /slack business id is missing/);
+  assert.throws(() => hostAction(root, 'setup', { slackBusiness: '  ' }), /slack business id is required/);
+  hostAction(root, 'setup', { slackBusiness: 'biz-1' });
+  await assert.rejects(hostDeliver(root, {}, { loadCredentials: () => null, apiRequestJson: () => { throw new Error('unexpected network'); } }), /log in as an Atris user/);
+  hostAction(root, 'setup', { room: 'personal' });
+  await assert.rejects(hostDeliver(root, {}, { loadCredentials: () => ({ token: 'user-token' }), apiRequestJson: () => { throw new Error('unexpected network'); } }), /group rooms only/);
 });
 
 test('install copies the packaged host and preserves local edits', (t) => {
