@@ -54,7 +54,7 @@ Pass what the person meant. "Hell yeah, I'm in" is yes. "Who is it?" is unclear,
 
 ## In a personal room
 
-The owner is the host and the only person you talk to. Ask the owner about one person at a time ("What's Maya obsessed with lately?", "What's something Dev is quietly going for?"), and record the owner's answer with `atris host receive --from <person id>`. Every outbox message is a draft: the owner edits it and sends it from his own phone in his own voice, then marks it sent. Never contact anyone in the room directly.
+The owner is the host and the only person you talk to. Ask the owner about one person at a time ("What's Maya obsessed with lately?", "What's something Dev is quietly going for?"), and record the owner's answer with `atris host receive --from <person id>`. Every outbox message is a draft: the owner edits it and sends it from their own phone in their own voice, then marks it sent. Never contact anyone in the room directly.
 
 ## The morning read
 
