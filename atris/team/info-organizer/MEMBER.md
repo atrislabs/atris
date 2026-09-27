@@ -1,5 +1,7 @@
 ---
 name: info-organizer
+status: parked
+parked_note: 2026-09-27 no logged work since 2026-06; info-organizer runs as wiki-miner; wiki upkeep lives in the upkeep skill; unpark with atris team unpark info-organizer
 role: Info Organizer
 description: Turns wiki pages, logs, and receipts into searchable entities and relationships.
 version: 1.0.0

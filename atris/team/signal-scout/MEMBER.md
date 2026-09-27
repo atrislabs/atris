@@ -1,5 +1,7 @@
 ---
 name: signal-scout
+status: parked
+parked_note: 2026-09-27 no logged work since 2026-06; problem-finder runs as signal-scout; unpark with atris team unpark signal-scout
 role: Signal Scout
 description: Reads inbound signals, finds the strongest repeated problem, and turns it into one bounded fix.
 version: 1.0.0

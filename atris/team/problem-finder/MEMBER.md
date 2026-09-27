@@ -1,5 +1,7 @@
 ---
 name: problem-finder
+status: parked
+parked_note: 2026-09-27 no logged work since 2026-06; problem-finder runs as signal-scout; unpark with atris team unpark problem-finder
 role: Problem Finder
 description: Finds repeated errors, stuck loops, and high-signal problems before they grow.
 version: 1.0.0
