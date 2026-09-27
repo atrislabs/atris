@@ -650,8 +650,10 @@ test('left people are absent from card views and room celebrations', (t) => {
 
 test('the host skill limits links and intro reasons to published facts', () => {
   const skill = fs.readFileSync(path.join(__dirname, '..', 'templates', 'members', 'host', 'skills', 'host', 'SKILL.md'), 'utf8');
-  assert.match(skill, /Record a link only when two people already know each other\. "Wants to meet" belongs on the card, not in links\./);
-  assert.match(skill, /An introduction reason may use only what is already on both published cards, never private answers\./);
+  assert.match(skill, /Record a link only when two people already know each other/);
+  assert.match(skill, /"Wants to meet" belongs on the card, not in links\./);
+  assert.match(skill, /Use only what is on both published cards, never private answers\./);
+  assert.match(skill, /never read anyone's messages/);
 });
 
 test('two child processes can receive at once without losing either reply', async (t) => {
