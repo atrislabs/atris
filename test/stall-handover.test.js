@@ -347,3 +347,31 @@ test('with no roster anywhere a stalled dispatch restaffs exactly as before', as
     assert.equal(flight.results[0].restaffed.to, 'codex');
   }, { roster: '' });
 });
+
+test('an autopilot phase that stalls benches its roster worker for the next phase run', async () => {
+  const roster = `# roster
+
+## review
+- codex, max: 1 s
+- claude code, model: opus 5.5
+`;
+  await withRoom(async (root, home) => {
+    const { executePhaseDetailed, buildPhaseRunnerCommand } = require('../commands/autopilot');
+    fakeEngines(home, { codex: 'stall' });
+    const prompt = path.join(root, 'prompt.md');
+    assert.match(buildPhaseRunnerCommand('review', prompt, root), /^codex exec /);
+    const cwd = process.cwd();
+    process.chdir(root);
+    let thrown;
+    try {
+      executePhaseDetailed('review', { task: 'fixture', kind: 'endgame' }, { verbose: false });
+    } catch (err) {
+      thrown = err;
+    } finally {
+      process.chdir(cwd);
+    }
+    assert.match(String(thrown && thrown.message), /^review phase timed out after 1s/);
+    assert.equal(health(root, 'codex').status, 'cooling');
+    assert.match(buildPhaseRunnerCommand('review', prompt, root), /^claude -p /);
+  }, { roster });
+});
