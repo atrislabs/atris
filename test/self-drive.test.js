@@ -46,6 +46,9 @@ function harness({ engine = { id: 'codex' }, httpPost, loadSwarloApiKey } = {}) 
     resolveEngineForRole: () => engine,
     createAgentWorktree: () => ({ path: '/tmp/self-drive-worktree' }),
     dispatchToEngine: () => { dispatches += 1; return { exitCode: 0 }; },
+    // The run record and engine health have their own test; keep this one
+    // off the disk.
+    recordDispatchOutcome: () => null,
     // Never hit the real swarlo hub from tests: default to a no-key stub
     // (postBlockerToFleet short-circuits before any network call).
     loadSwarloApiKey: loadSwarloApiKey || (() => null),

@@ -394,7 +394,27 @@ function rosterTickPins(engine) {
   return {
     ...(engine && engine.roster_effort ? { roster_effort: engine.roster_effort } : {}),
     ...(engine && engine.roster_max_seconds ? { roster_max_seconds: engine.roster_max_seconds } : {}),
+    ...(engine && engine.roster_prep ? { roster_prep: engine.roster_prep } : {}),
   };
+}
+
+// A tick whose roster worker asks for prep ("prep: search") runs the same
+// prep pass fleet runs before the worker starts, and the worker's prompt
+// gets the brief. No prep line means the prompt goes out as it was.
+async function missionTickPrep(root, { mission, runtimeMission, job, prompt, ask } = {}) {
+  const prepJob = String(runtimeMission && runtimeMission.roster_prep || '').trim();
+  if (!prepJob) return { prompt, prep: null };
+  const { runPrepPass, withPrepBrief } = require('../lib/roster-prep');
+  const prep = await runPrepPass({
+    prepJob,
+    forJob: job || 'build',
+    task: { display_id: (mission && mission.id) || '', title: (mission && (mission.objective || mission.slug)) || '' },
+    prompt,
+    root,
+    record: { member: (mission && mission.owner) || '' },
+    ...(ask ? { ask } : {}),
+  });
+  return { prompt: withPrepBrief(prompt, prep), prep };
 }
 
 // A tick's time limit: the time left on the mission, capped by the roster
@@ -476,10 +496,11 @@ function missionTickRunOutcome(result, verifierResult, maxSeconds) {
   return { outcome: 'failed', detail: summary && summary !== 'error' ? summary : String(result && result.reason || 'the tick failed').replace(/-/g, ' ') };
 }
 
-function recordMissionTickRosterRun(root, { mission, runtimeMission, engineId, job, result, verifierResult, startedAt, endedMs, usage } = {}) {
+function recordMissionTickRosterRun(root, { mission, runtimeMission, engineId, job, result, verifierResult, startedAt, endedMs, usage, prep = null } = {}) {
   if (!engineId) return null;
   try {
     const { engineRunsView } = require('../lib/roster-models');
+    const { prepRecordFields } = require('../lib/roster-prep');
     const run = runtimeMission || mission || {};
     const startedMs = Date.parse(startedAt);
     const maxSeconds = Number(run.roster_max_seconds) || 0;
@@ -494,6 +515,7 @@ function recordMissionTickRosterRun(root, { mission, runtimeMission, engineId, j
       seconds: Number.isFinite(startedMs) ? Math.max(0, (endedMs - startedMs) / 1000) : undefined,
       task: (mission && mission.id) || '',
       source: 'mission',
+      ...prepRecordFields(prep),
       ...(usage || {}),
       ...missionTickRunOutcome(result, verifierResult, maxSeconds),
     });
@@ -9783,6 +9805,17 @@ async function executeMissionRunTicksPhase(context) {
         const pingDrain = consumeMissionPings(mission, cwd);
         mission = pingDrain.mission;
         runtimeMission = runtimeView(mission);
+        let tickPrep = null;
+        let workerPrompt = prompt;
+        if (tickEngineId) {
+          ({ prompt: workerPrompt, prep: tickPrep } = await missionTickPrep(cwd, {
+            mission,
+            runtimeMission: tickRuntimeMission,
+            job: tickSelection.roster_job || 'build',
+            prompt,
+          }));
+        }
+        const workerStartedAt = tickPrep ? stampIso() : tickStart;
         const restoreTickRunnerProfile = tickEngineId ? applyMissionRunnerProfile(tickEngineId) : () => {};
         let claudeResult;
         let sessionBusyRetried = false;
@@ -9793,7 +9826,7 @@ async function executeMissionRunTicksPhase(context) {
             tickRuntimeMission,
             (maxWallSeconds - ((Date.now() - startedAt) / 1000)) * 1000,
           ),
-          prompt,
+          prompt: workerPrompt,
           model: resolveMissionTickRunnerModel(tickRuntimeMission),
         });
         try {
@@ -9813,7 +9846,7 @@ async function executeMissionRunTicksPhase(context) {
         } finally {
           restoreTickRunnerProfile();
         }
-        tickWorkerRun = { endedMs: Date.now(), usage: (claudeResult && claudeResult.run_usage) || {} };
+        tickWorkerRun = { endedMs: Date.now(), usage: (claudeResult && claudeResult.run_usage) || {}, prep: tickPrep, startedAt: workerStartedAt };
         result.claude = {
           ok: claudeResult.ok,
           reason: claudeResult.reason,
@@ -9928,9 +9961,10 @@ async function executeMissionRunTicksPhase(context) {
           job: tickSelection.roster_job || 'build',
           result,
           verifierResult,
-          startedAt: tickStart,
+          startedAt: tickWorkerRun.startedAt || tickStart,
           endedMs: tickWorkerRun.endedMs,
           usage: tickWorkerRun.usage,
+          prep: tickWorkerRun.prep || null,
         });
       }
       let receiptPath = cachedStep ? cachedStep.receipt_path : null;
@@ -11866,6 +11900,7 @@ module.exports = {
   engineFailureHealthStatus,
   recordMissionEngineTickOutcome,
   recordMissionTickRosterRun,
+  missionTickPrep,
   tickMadeProgress,
   consecutiveNoProgressTicks,
   consecutiveIdenticalSummaryTicks,

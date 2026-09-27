@@ -530,6 +530,7 @@ function buildPhaseRunner(phase, promptFile, cwd = process.cwd(), allowedTools =
       effort: picked.engine.roster_effort || '',
       job: picked.job || '',
       member: AUTOPILOT_PHASE_MEMBERS[phase],
+      prep: picked.engine.roster_prep || '',
     };
   } finally {
     if (previous === undefined) delete process.env.ATRIS_RUNNER_PROFILE;
@@ -547,6 +548,7 @@ function recordPhaseRosterRun(root, phase, runner, startedMs, outcome, err = nul
   try {
     const { appendRosterRun, parseRunUsage } = require('../lib/roster-runs');
     const { engineRunsView } = require('../lib/roster-models');
+    const { prepRecordFields } = require('../lib/roster-prep');
     appendRosterRun(root, {
       at: new Date(startedMs).toISOString(),
       job: runner.job || '',
@@ -558,6 +560,7 @@ function recordPhaseRosterRun(root, phase, runner, startedMs, outcome, err = nul
       seconds: Math.max(0, (Date.now() - startedMs) / 1000),
       task: `autopilot ${phase}`,
       source: 'autopilot',
+      ...prepRecordFields(runner.prepResult),
       ...parseRunUsage({ stdout: outcome.stdout || (err && err.stdout) || '', stderr: (err && err.stderr) || '' }),
       outcome: outcome.outcome,
       ...(outcome.detail ? { detail: outcome.detail } : {}),
@@ -580,6 +583,13 @@ function phaseFailureOutcome(err, runner) {
   return { outcome: 'failed', detail: line || `exited ${err && err.status}` };
 }
 
+// What the prep worker reads as the task: the tick's task title.
+function autopilotPhaseTaskTitle(context, phase) {
+  const task = context && context.task;
+  if (task && typeof task === 'object') return String(task.title || task.display_id || `autopilot ${phase}`);
+  return String(task || `autopilot ${phase}`);
+}
+
 /**
  * Run a phase via the configured runner subprocess.
  */
@@ -587,7 +597,7 @@ function executePhaseDetailed(phase, context, options = {}) {
   const { verbose = false } = options;
   let timeout = options.timeout || PHASE_TIMEOUT;
 
-  const prompt = buildPrompt(phase, context, options);
+  let prompt = buildPrompt(phase, context, options);
   const tmpFile = path.join(process.cwd(), '.autopilot-prompt.tmp');
   fs.writeFileSync(tmpFile, prompt);
 
@@ -598,6 +608,21 @@ function executePhaseDetailed(phase, context, options = {}) {
     if (!cmd) {
       const runner = buildPhaseRunner(phase, tmpFile);
       if (runner.engineId) rosterRunner = runner;
+      // A worker whose roster line asks for prep gets its brief first, the
+      // same pass fleet runs; the launch reads the prompt file, brief added.
+      if (runner.engineId && runner.prep) {
+        const { runPrepPassSync, withPrepBrief } = require('../lib/roster-prep');
+        runner.prepResult = runPrepPassSync({
+          prepJob: runner.prep,
+          forJob: runner.job || AUTOPILOT_PHASE_MEMBERS[phase],
+          task: { display_id: `autopilot ${phase}`, title: autopilotPhaseTaskTitle(context, phase) },
+          prompt,
+          root: process.cwd(),
+          record: { member: runner.member || '' },
+        });
+        prompt = withPrepBrief(prompt, runner.prepResult);
+        fs.writeFileSync(tmpFile, prompt);
+      }
       cmd = runner.command;
       // A roster time cap stops the phase at that time.
       if (runner.timeoutMs) timeout = runner.timeoutMs;
