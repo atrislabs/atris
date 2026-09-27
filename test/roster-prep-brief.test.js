@@ -597,14 +597,14 @@ test('a lock left behind by a crashed writer is taken back, and a held lock neve
     fs.utimesSync(lock, old, old);
     assert.ok(runs.appendRosterRun(root, { job: 'build', engine: 'devin', outcome: 'landed', task: 'CLI-1' }));
     assert.equal(fs.existsSync(lock), false);
-    // Fresh: held by someone else, so the append waits briefly, writes anyway,
-    // and leaves the other writer's lock alone.
+    // Fresh: held by someone else, so the append waits briefly, lands in the
+    // pending side file, and leaves the other writer's lock alone.
     fs.writeFileSync(lock, '99999');
     const started = Date.now();
     assert.ok(runs.appendRosterRun(root, { job: 'build', engine: 'grok', outcome: 'landed', task: 'CLI-2' }));
     assert.ok(Date.now() - started < runs.RUNS_LOCK_WAIT_MS + 1000);
     assert.equal(fs.existsSync(lock), true);
-    const tasks = fs.readFileSync(file, 'utf8').split('\n').filter(Boolean).map((row) => JSON.parse(row).task);
+    const tasks = runs.readRosterRuns(root).map((row) => row.task);
     assert.deepEqual(tasks, ['CLI-1', 'CLI-2']);
   });
 });
