@@ -323,3 +323,26 @@ test('stream reads worktree owner and task with one git config call per root', (
     fs.rmSync(root, { recursive: true, force: true });
   }
 });
+
+test('cpu-hotspots analyzer ranks self time and spawnSync chains by app frames', () => {
+  const { analyzeProfile } = require('../scripts/det/cpu-hotspots');
+  const app = '/app';
+  const frame = (functionName, url, lineNumber = 0) => ({ functionName, url, lineNumber, columnNumber: 0 });
+  const profile = {
+    nodes: [
+      { id: 1, callFrame: frame('(root)', ''), children: [2] },
+      { id: 2, callFrame: frame('main', 'file:///app/bin/cli.js', 9), children: [3, 6] },
+      { id: 3, callFrame: frame('cherry', 'file:///app/commands/land.js', 99), children: [4] },
+      { id: 4, callFrame: frame('spawnSync', 'node:child_process', 1), children: [5] },
+      { id: 5, callFrame: frame('spawnSync', 'node:internal/child_process', 2), children: [] },
+      { id: 6, callFrame: frame('parse', 'file:///app/lib/parse.js', 4), children: [] },
+    ],
+    samples: [5, 5, 6, 2],
+    timeDeltas: [3000, 2000, 4000, 1000],
+  };
+  const report = analyzeProfile(profile, { appRoot: app, top: 5 });
+  assert.equal(report.total_ms, 10);
+  assert.equal(report.spawn_ms, 5);
+  assert.deepEqual(report.hotspots[0], { frame: 'spawnSync node:internal/child_process:3', ms: 5 });
+  assert.deepEqual(report.spawn_chains, [{ chain: 'cherry commands/land.js:100 < main bin/cli.js:10', ms: 5 }]);
+});
