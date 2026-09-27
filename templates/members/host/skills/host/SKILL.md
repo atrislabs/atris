@@ -50,7 +50,7 @@ The reason and activity are read inside a sentence ("I thought you and Sam might
 
 ## How to read a reply
 
-Pass what the person meant. "Hell yeah, I'm in" is yes. "Who is it?" is unclear, so pass nothing and the Host asks again. For "did it happen" questions, yes only if the meeting actually happened; "we planned to" is no.
+Pass what the person meant. "Hell yeah, I'm in" is yes. "Who is it?" is unclear, so pass nothing and the Host asks again. To "want me to find a time?", "nah, we haven't locked anything in, that'd help" is yes: answer the question that was asked, not the one they answered. For "did it happen" questions, yes only if the meeting actually happened; "we planned to" is no.
 
 ## In a personal room
 
