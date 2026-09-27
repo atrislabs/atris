@@ -1,0 +1,10 @@
+{
+  "lib/engine-registry.js": 14,
+  "lib/roster-models.js": 1,
+  "lib/runner-command.js": 5,
+  "lib/team-lineup.js": 1,
+  "commands/computer.js": 1,
+  "commands/improve.js": 2,
+  "commands/workflow.js": 1,
+  "commands/youtube.js": 1
+}
