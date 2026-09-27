@@ -521,7 +521,16 @@ function buildPhaseRunner(phase, promptFile, cwd = process.cwd(), allowedTools =
       ...(picked.engine.roster_effort ? { effort: picked.engine.roster_effort } : {}),
     });
     const maxSeconds = Number(picked.engine.roster_max_seconds) || 0;
-    return { command, timeoutMs: maxSeconds > 0 ? maxSeconds * 1000 : null, engineId: picked.engine.id, maxSeconds };
+    return {
+      command,
+      timeoutMs: maxSeconds > 0 ? maxSeconds * 1000 : null,
+      engineId: picked.engine.id,
+      maxSeconds,
+      model: picked.model || '',
+      effort: picked.engine.roster_effort || '',
+      job: picked.job || '',
+      member: AUTOPILOT_PHASE_MEMBERS[phase],
+    };
   } finally {
     if (previous === undefined) delete process.env.ATRIS_RUNNER_PROFILE;
     else process.env.ATRIS_RUNNER_PROFILE = previous;
@@ -530,6 +539,45 @@ function buildPhaseRunner(phase, promptFile, cwd = process.cwd(), allowedTools =
 
 function buildPhaseRunnerCommand(phase, promptFile, cwd = process.cwd()) {
   return buildPhaseRunner(phase, promptFile, cwd).command;
+}
+
+// One run-record line for a phase a roster worker ran. Never throws.
+function recordPhaseRosterRun(root, phase, runner, startedMs, outcome, err = null) {
+  if (!runner || !runner.engineId) return;
+  try {
+    const { appendRosterRun, parseRunUsage } = require('../lib/roster-runs');
+    const { engineRunsView } = require('../lib/roster-models');
+    appendRosterRun(root, {
+      at: new Date(startedMs).toISOString(),
+      job: runner.job || '',
+      member: runner.member || '',
+      engine: runner.engineId,
+      model: runner.model || engineRunsView(runner.engineId).model || '',
+      effort: runner.effort || '',
+      max_seconds: runner.maxSeconds || 0,
+      seconds: Math.max(0, (Date.now() - startedMs) / 1000),
+      task: `autopilot ${phase}`,
+      source: 'autopilot',
+      ...parseRunUsage({ stdout: outcome.stdout || (err && err.stdout) || '', stderr: (err && err.stderr) || '' }),
+      outcome: outcome.outcome,
+      ...(outcome.detail ? { detail: outcome.detail } : {}),
+    });
+  } catch { /* best effort */ }
+}
+
+// How a phase ended when its command threw: a timeout stalled, a signal or
+// nonzero exit failed, a credit wall on stderr is credit out.
+function phaseFailureOutcome(err, runner) {
+  if (isPhaseTimeoutError(err)) {
+    const cap = Number(runner && runner.maxSeconds) || 0;
+    return { outcome: 'stalled', detail: cap >= 60 ? `stalled at ${Math.round(cap / 60)} min` : cap > 0 ? `stalled at ${cap}s` : 'hit its time limit' };
+  }
+  if (isPhaseKillError(err)) return { outcome: 'failed', detail: `stopped by ${err.signal || 'a signal'}` };
+  const { engineFailureHealthStatus } = require('../lib/engine-registry');
+  const stderr = String(err && err.stderr || '');
+  if (engineFailureHealthStatus({ status: 'errored', stderr }) === 'credit_out') return { outcome: 'credit out', detail: 'the engine hit its usage limit' };
+  const line = stderr.trim().split('\n').pop() || String(err && err.message || '').split('\n')[0];
+  return { outcome: 'failed', detail: line || `exited ${err && err.status}` };
 }
 
 /**
@@ -544,6 +592,7 @@ function executePhaseDetailed(phase, context, options = {}) {
   fs.writeFileSync(tmpFile, prompt);
 
   let rosterRunner = null;
+  let startedMs = Date.now();
   try {
     let cmd = options.cmdOverride;
     if (!cmd) {
@@ -555,6 +604,7 @@ function executePhaseDetailed(phase, context, options = {}) {
     }
     const env = { ...process.env };
     delete env.CLAUDECODE;
+    startedMs = Date.now();
     const output = execPhaseCommandSync(cmd, {
       cwd: process.cwd(),
       encoding: 'utf8',
@@ -565,9 +615,11 @@ function executePhaseDetailed(phase, context, options = {}) {
     });
 
     try { fs.unlinkSync(tmpFile); } catch {}
+    recordPhaseRosterRun(process.cwd(), phase, rosterRunner, startedMs, { outcome: 'landed', stdout: output || '' });
     return { prompt, output: output || '' };
   } catch (err) {
     try { fs.unlinkSync(tmpFile); } catch {}
+    recordPhaseRosterRun(process.cwd(), phase, rosterRunner, startedMs, phaseFailureOutcome(err, rosterRunner), err);
     if (isPhaseTimeoutError(err)) {
       // A roster worker that stalls sits out the cooldown, so the next
       // phase run goes to the job's backup.
@@ -1428,7 +1480,7 @@ function parseProposedBlock(lines) {
 // behind it, the configured runner runs exactly as before.
 function buildPlanReviewRunner(promptFile, cwd = process.cwd(), timeout = 180000) {
   const runner = buildPhaseRunner('review', promptFile, cwd, 'Bash,Read,Grep,Glob');
-  return { command: runner.command, timeoutMs: runner.timeoutMs || timeout };
+  return { ...runner, command: runner.command, timeoutMs: runner.timeoutMs || timeout };
 }
 
 /**
@@ -1438,12 +1490,15 @@ function buildPlanReviewRunner(promptFile, cwd = process.cwd(), timeout = 180000
 function defaultPlanReviewExecutor(prompt, { cwd, timeout = 180000 } = {}) {
   const tmpFile = path.join(cwd, '.autopilot-plan-review.tmp');
   fs.writeFileSync(tmpFile, prompt);
+  let runner = null;
+  let startedMs = Date.now();
   try {
-    const runner = buildPlanReviewRunner(tmpFile, cwd, timeout);
+    runner = buildPlanReviewRunner(tmpFile, cwd, timeout);
     const cmd = runner.command;
     timeout = runner.timeoutMs;
     const env = { ...process.env };
     delete env.CLAUDECODE;
+    startedMs = Date.now();
     const output = execPhaseCommandSync(cmd, {
       cwd,
       encoding: 'utf8',
@@ -1452,8 +1507,10 @@ function defaultPlanReviewExecutor(prompt, { cwd, timeout = 180000 } = {}) {
       maxBuffer: 10 * 1024 * 1024,
       env,
     });
+    recordPhaseRosterRun(cwd, 'plan review', runner, startedMs, { outcome: 'landed', stdout: output || '' });
     return output || '';
   } catch (err) {
+    recordPhaseRosterRun(cwd, 'plan review', runner, startedMs, phaseFailureOutcome(err, runner), err);
     if (err.stdout) return err.stdout;
     throw err;
   } finally {
