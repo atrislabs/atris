@@ -256,7 +256,9 @@ function cachedCherryStats(cache, cwd, base, baseSha, ref, refSha) {
     cache.used[key] = hit;
     return { landedElsewhere: hit.landedElsewhere, unique: hit.unique };
   }
-  const result = runGit(['cherry', base, ref], { cwd, check: false });
+  // Cherry the exact commits the key names, so a ref that moves mid-run
+  // can never file one pair's result under another pair's key.
+  const result = runGit(['cherry', baseSha, refSha], { cwd, check: false });
   if (result.status !== 0) return { landedElsewhere: 0, unique: 0 };
   const stats = { landedElsewhere: 0, unique: 0 };
   for (const line of result.stdout.split(/\r?\n/).filter(Boolean)) {
