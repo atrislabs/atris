@@ -406,6 +406,7 @@ test('command prints labeled statuses and writes its receipt plus engine health'
   const originalLog = console.log;
   console.log = (line = '') => output.push(String(line));
   try {
+    setEngineHealth('cursor', 'ready', root);
     const code = await runEngineAskCommand([
       'one question',
       '--engine', 'codex',
@@ -452,9 +453,11 @@ test('command prints labeled statuses and writes its receipt plus engine health'
     assert.equal(fs.existsSync(path.join(root, '.git')), false);
     const registry = readEngineRegistry(root, { persist: false });
     assert.equal(registry.engines.find((engine) => engine.id === 'codex').health.status, 'ready');
-    assert.equal(registry.engines.find((engine) => engine.id === 'cursor').health.status, 'error');
-    // A timeout is transient: 'error' keeps the engine routable instead of
-    // dropping it from routing as if the binary were missing.
+    // A silent failure is a real task failure: health stays untouched instead
+    // of benching the engine.
+    assert.equal(registry.engines.find((engine) => engine.id === 'cursor').health.status, 'ready');
+    // A timeout is a stall, so the 'error' marker lands and the engine sits
+    // out the bench window instead of dropping from routing for good.
     assert.equal(registry.engines.find((engine) => engine.id === 'claude').health.status, 'error');
   } finally {
     console.log = originalLog;
