@@ -75,7 +75,6 @@ test('the run record rotates aside at its size cap and every record still reads'
   await withRoom(async ({ root }) => {
     const runs = require('../lib/roster-runs');
     const file = runs.rosterRunsPath(root);
-    const rotated = runs.rotatedRunsPath(root);
     fs.mkdirSync(path.dirname(file), { recursive: true });
     const line = (i) => JSON.stringify({ at: new Date(NOW).toISOString(), job: 'build', engine: 'cursor', outcome: 'landed', task: `CLI-${i}`, detail: 'x'.repeat(200) });
     const lines = [];
@@ -86,22 +85,80 @@ test('the run record rotates aside at its size cap and every record still reads'
       bytes += Buffer.byteLength(text);
     }
     fs.writeFileSync(file, lines.join(''));
-    runs.appendRosterRun(root, { at: new Date(NOW).toISOString(), job: 'build', engine: 'devin', outcome: 'landed', task: 'CLI-LAST' });
+    runs.appendRosterRun(root, { at: new Date(NOW).toISOString(), job: 'build', engine: 'devin', outcome: 'landed', task: 'CLI-LAST' }, { now: NOW });
     // The old file moved aside whole; the new line starts a fresh log.
-    assert.equal(fs.readFileSync(rotated, 'utf8'), lines.join(''));
-    assert.equal(fs.readFileSync(file, 'utf8').trim().split('\n').length, 1);
+    const first = runs.rotatedRunsPaths(root);
+    assert.equal(first.length, 1);
+    assert.equal(fs.readFileSync(first[0], 'utf8'), lines.join(''));
+    const fresh = fs.readFileSync(file, 'utf8');
+    assert.equal(fresh.trim().split('\n').length, 1);
     // Nothing is cut away: every seeded line and the new one still reads.
     const tasks = runs.readRosterRuns(root, { now: NOW + 60000, tailBytes: bytes + 4096 }).map((row) => row.task);
     assert.equal(tasks.length, lines.length + 1);
     assert.equal(tasks[0], 'CLI-0');
     assert.equal(tasks[tasks.length - 1], 'CLI-LAST');
-    // A second rotation replaces the old .1.
-    fs.writeFileSync(rotated, 'sentinel\n');
-    fs.writeFileSync(file, lines.join(''));
-    runs.appendRosterRun(root, { at: new Date(NOW).toISOString(), job: 'build', engine: 'grok', outcome: 'landed', task: 'CLI-NEWEST' });
-    assert.equal(fs.readFileSync(rotated, 'utf8'), lines.join(''));
+    // A second rotation adds a stamped file; the first is never replaced.
+    fs.appendFileSync(file, lines.join(''));
+    runs.appendRosterRun(root, { at: new Date(NOW).toISOString(), job: 'build', engine: 'grok', outcome: 'landed', task: 'CLI-NEWEST' }, { now: NOW + 1000 });
+    const second = runs.rotatedRunsPaths(root);
+    assert.equal(second.length, 2, 'two rotations in a row keep both rotated files');
+    assert.equal(fs.readFileSync(second[0], 'utf8'), lines.join(''));
+    assert.equal(fs.readFileSync(second[1], 'utf8'), fresh + lines.join(''));
     assert.equal(fs.readFileSync(file, 'utf8').trim().split('\n').length, 1);
+    const all = runs.readRosterRuns(root, { now: NOW + 60000, tailBytes: bytes + 4096 }).map((row) => row.task);
+    assert.equal(all.length, lines.length * 2 + 2, 'every record still reads');
+    assert.equal(all[all.length - 1], 'CLI-NEWEST');
     assert.equal(fs.readdirSync(path.dirname(file)).filter((name) => name.includes('.tmp')).length, 0);
+  });
+});
+
+test('a rename that fails deletes nothing and the append still lands', async () => {
+  await withRoom(async ({ root }) => {
+    const runs = require('../lib/roster-runs');
+    const file = runs.rosterRunsPath(root);
+    const dir = path.dirname(file);
+    fs.mkdirSync(dir, { recursive: true });
+    const rotated = path.join(dir, 'roster_runs.20200101T000000.000Z-1.jsonl');
+    fs.writeFileSync(rotated, `${JSON.stringify({ at: new Date(NOW - 60000).toISOString(), job: 'build', engine: 'grok', outcome: 'landed', task: 'CLI-OLD' })}\n`);
+    fs.writeFileSync(file, `${JSON.stringify({ at: new Date(NOW).toISOString(), job: 'build', engine: 'cursor', outcome: 'landed', task: 'CLI-BIG', detail: 'x'.repeat(runs.RUNS_ROTATE_BYTES) })}\n`);
+    const realRename = fs.renameSync;
+    fs.renameSync = () => {
+      const err = new Error('the log vanished mid-rotation');
+      err.code = 'ENOENT';
+      throw err;
+    };
+    try {
+      runs.appendRosterRun(root, { at: new Date(NOW).toISOString(), job: 'build', engine: 'devin', outcome: 'landed', task: 'CLI-NEW' });
+    } finally {
+      fs.renameSync = realRename;
+    }
+    assert.equal(runs.rotatedRunsPaths(root).length, 1, 'no rotated file was made or removed');
+    assert.ok(fs.readFileSync(rotated, 'utf8').includes('CLI-OLD'), 'the existing rotated file was not deleted');
+    const current = fs.readFileSync(file, 'utf8');
+    assert.ok(current.includes('CLI-BIG') && current.includes('CLI-NEW'), 'the append still landed in the live log');
+  });
+});
+
+test('only the newest rotated files remain after many rotations', async () => {
+  await withRoom(async ({ root }) => {
+    const runs = require('../lib/roster-runs');
+    const file = runs.rosterRunsPath(root);
+    fs.mkdirSync(path.dirname(file), { recursive: true });
+    const big = `"${'x'.repeat(runs.RUNS_ROTATE_BYTES)}"\n`;
+    for (let i = 0; i < 5; i += 1) {
+      fs.writeFileSync(file, big);
+      runs.appendRosterRun(root, { at: new Date(NOW + i).toISOString(), job: 'build', engine: 'devin', outcome: 'landed', task: `CLI-${i}` }, { now: NOW + i });
+    }
+    const names = runs.rotatedRunsPaths(root).map((name) => path.basename(name));
+    assert.deepEqual(
+      names.map((name) => name.replace(`${process.pid}`, 'PID')),
+      [
+        'roster_runs.20260927T120000.002Z-PID.jsonl',
+        'roster_runs.20260927T120000.003Z-PID.jsonl',
+        'roster_runs.20260927T120000.004Z-PID.jsonl',
+      ],
+      'only the newest 3 rotated files remain',
+    );
   });
 });
 
@@ -550,12 +607,12 @@ test('an append after rotation lands in the fresh file, and a raced write stays 
   await withRoom(async ({ root }) => {
     const runs = require('../lib/roster-runs');
     const file = runs.rosterRunsPath(root);
-    const rotated = runs.rotatedRunsPath(root);
     fs.mkdirSync(path.dirname(file), { recursive: true });
     const pad = `"${'pad'.repeat(40000)}"\n`;
     fs.writeFileSync(file, pad.repeat(Math.ceil((runs.RUNS_ROTATE_BYTES + 65536) / pad.length)));
     runs.appendRosterRun(root, { at: new Date(NOW).toISOString(), job: 'build', engine: 'devin', outcome: 'landed', task: 'CLI-1' });
-    assert.ok(fs.existsSync(rotated), 'the full log rotated aside');
+    const [rotated] = runs.rotatedRunsPaths(root);
+    assert.ok(rotated, 'the full log rotated aside');
     // A write that raced the rename lands inside the rotated file; readers
     // still see it because they read both files.
     fs.appendFileSync(rotated, `${JSON.stringify({ at: new Date(NOW).toISOString(), job: 'build', engine: 'grok', outcome: 'landed', task: 'CLI-RACED' })}\n`);

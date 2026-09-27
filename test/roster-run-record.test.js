@@ -321,9 +321,9 @@ test('a corrupt line or a missing file is skipped, never an error', async () => 
     appendRosterRun(root, { at: new Date(NOW).toISOString(), job: 'build', engine: 'devin', outcome: 'landed', seconds: 60 });
     fs.appendFileSync(rosterRunsPath(root), '{"at": "2026-09-27T12:01:00.000Z", "engine": "grok", \nnot json at all\n{"engine":"grok","outcome":"exploded","at":"2026-09-27T12:02:00.000Z"}\n');
     appendRosterRun(root, { at: new Date(NOW + 180000).toISOString(), job: 'build', engine: 'cursor', outcome: 'failed', seconds: 60 });
-    // A bad line in the rotated file is skipped the same way.
-    const { rotatedRunsPath } = require('../lib/roster-runs');
-    fs.writeFileSync(rotatedRunsPath(root), `not json either\n${JSON.stringify({ at: new Date(NOW - 60000).toISOString(), job: 'build', engine: 'grok', outcome: 'landed' })}\n`);
+    // A bad line in a rotated file is skipped the same way.
+    const rotated = path.join(path.dirname(rosterRunsPath(root)), 'roster_runs.20200101T000000.000Z-1.jsonl');
+    fs.writeFileSync(rotated, `not json either\n${JSON.stringify({ at: new Date(NOW - 60000).toISOString(), job: 'build', engine: 'grok', outcome: 'landed' })}\n`);
     assert.deepEqual(runs(root).map((row) => row.engine), ['grok', 'devin', 'cursor']);
     const view = command(root, ['roster', '--runs']);
     assert.equal(view.exit, 0);
