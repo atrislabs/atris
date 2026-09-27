@@ -5,7 +5,7 @@ const { hostAction } = require('../lib/host');
 function parse(argv) {
   const options = {};
   const positionals = [];
-  const flags = new Set(['id', 'name', 'team', 'manager', 'door', 'now', 'question', 'event-id', 'from', 'text', 'reply-to', 'reply-to-ref', 'ref', 'decision', 'patch', 'expected-revision', 'source', 'evidence', 'reason', 'activity', 'as', 'when', 'at']);
+  const flags = new Set(['id', 'name', 'team', 'manager', 'door', 'now', 'started', 'question', 'event-id', 'from', 'text', 'reply-to', 'reply-to-ref', 'ref', 'decision', 'patch', 'expected-revision', 'source', 'evidence', 'reason', 'activity', 'as', 'when', 'at']);
   for (let i = 0; i < argv.length; i += 1) {
     const item = argv[i];
     if (item === '--json') { options.json = true; continue; }

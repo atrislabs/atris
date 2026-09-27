@@ -515,6 +515,58 @@ test('room reports first-month connections for a completed cohort', (t) => {
   assert.doesNotMatch(coverage, /Ada|Cora|Dev|New/);
 });
 
+test('imported staff use company start dates for welcomes and first-month coverage', (t) => {
+  const root = workspace(t);
+  const now = '2026-09-26T12:00:00.000Z';
+  const oldStart = '2024-09-26';
+  const cohortStart = future(now, -60);
+  const old = ['Old One', 'Old Two', 'Old Three'].map((name, index) => {
+    const id = `old:${index}`;
+    run(root, 'host', 'join', '--id', id, '--name', name, '--now', now, '--started', oldStart);
+    assert.equal(privateData(root, id).joined_at, now);
+    assert.equal(privateData(root, id).started_at, '2024-09-26T00:00:00.000Z');
+    return id;
+  });
+  const cohort = Array.from({ length: 10 }, (_, index) => {
+    const id = `cohort:${index}`;
+    hostAction(root, 'join', { id, name: `Cohort ${index}`, now, started: cohortStart });
+    return id;
+  });
+  const fresh = 'fresh:1';
+  run(root, 'host', 'join', '--id', fresh, '--name', 'Fresh', '--now', now);
+  assert.equal(privateData(root, fresh).started_at, now);
+  assert.throws(() => hostAction(root, 'join', { id: 'invalid:1', name: 'Invalid', now, started: 'yesterday' }), /started must be an ISO date or time/);
+
+  const settingsFile = path.join(root, 'atris', 'team', 'host', 'private', 'config.json');
+  const settings = JSON.parse(fs.readFileSync(settingsFile, 'utf8'));
+  settings.intros_per_person_per_30d = 1;
+  fs.writeFileSync(settingsFile, JSON.stringify(settings));
+  for (const [index, id] of [...old, fresh].entries()) {
+    hostAction(root, 'propose', { a: id, b: cohort[index], reason: 'A shared project.', activity: 'coffee', text: 'Meet for coffee.', now });
+    hostAction(root, 'receive', { eventId: `yes-${index}-a`, from: id, text: 'yes', now });
+    hostAction(root, 'receive', { eventId: `yes-${index}-b`, from: cohort[index], text: 'yes', now });
+  }
+  const available = hostAction(root, 'people', { now });
+  for (const id of old) assert.equal(available.find((entry) => entry.id === id).can_be_introduced, false);
+  assert.equal(available.find((entry) => entry.id === fresh).can_be_introduced, true);
+
+  const oldRecord = privateFile(root, fresh);
+  fs.writeFileSync(oldRecord, fs.readFileSync(oldRecord, 'utf8').replace(/^started_at: .*\n/m, ''));
+  assert.equal(hostAction(root, 'view', { as: fresh }).own.started_at, null);
+  assert.equal(hostAction(root, 'people', { now }).find((entry) => entry.id === fresh).can_be_introduced, true);
+  const room = hostAction(root, 'room', { now }).text;
+  assert.match(room, /0 of 10 people who joined in the last few months/);
+  assert.match(room, /In their first month now: 1/);
+  assert.equal(room.split('## Suggested welcomes\n\n')[1].trim(), 'Fresh');
+
+  hostAction(root, 'link', { a: cohort[4], b: cohort[5], source: 'met', evidence: 'Met after install.', now });
+  hostAction(root, 'link', { a: cohort[4], b: cohort[6], source: 'met', evidence: 'Met after install.', now });
+  assert.match(hostAction(root, 'room', { now }).text, /0 of 10 people who joined in the last few months/);
+  hostAction(root, 'link', { a: cohort[7], b: cohort[8], source: 'met', evidence: 'Met in the first month.', now: future(cohortStart, 20) });
+  hostAction(root, 'link', { a: cohort[7], b: cohort[9], source: 'met', evidence: 'Met in the first month.', now: future(cohortStart, 20) });
+  assert.match(hostAction(root, 'room', { now }).text, /1 of 10 people who joined in the last few months/);
+});
+
 test('expired introductions disappear from the outbox and sent messages stay recorded', (t) => {
   const root = workspace(t);
   const [ada, , cora] = people(root);
