@@ -327,3 +327,73 @@ test('a corrupt line or a missing file is skipped, never an error', async () => 
     assert.equal(view.out.split('\n').length, 3);
   });
 });
+
+test('a mission tick on a roster engine records its outcome, time, and reported usage', async () => {
+  const { recordMissionTickRosterRun } = require('../commands/mission');
+  await withRoom(async ({ root }) => {
+    const startedAt = new Date(NOW).toISOString();
+    const mission = { id: 'm-7', owner: 'fixer' };
+    const runtimeMission = { ...mission, runner: 'devin', model: 'swe-2-max', roster_max_seconds: 1200 };
+    recordMissionTickRosterRun(root, {
+      mission, runtimeMission, engineId: 'devin', job: 'small build',
+      result: { status: 'ran' }, verifierResult: { passed: true },
+      startedAt, endedMs: NOW + 300000, usage: { tokens: 4200, cost_usd: 0.3 },
+    });
+    recordMissionTickRosterRun(root, {
+      mission, runtimeMission, engineId: 'devin', job: 'small build',
+      result: { status: 'errored', reason: 'claude-timeout', claude: { timed_out: true } },
+      startedAt, endedMs: NOW + 1200000, usage: {},
+    });
+    recordMissionTickRosterRun(root, {
+      mission, runtimeMission, engineId: 'devin',
+      result: { status: 'ran' }, verifierResult: { passed: false },
+      startedAt, endedMs: NOW + 60000,
+    });
+    const rows = runs(root);
+    assert.deepEqual(rows.map((row) => [row.job, row.member, row.outcome, row.detail || '', row.seconds]), [
+      ['small build', 'fixer', 'landed', '', 300],
+      ['small build', 'fixer', 'stalled', 'stalled at 20 min', 1200],
+      ['build', 'fixer', 'failed', 'the verifier failed', 60],
+    ]);
+    assert.equal(rows[0].tokens, 4200);
+    assert.equal(rows[0].cost_usd, 0.3);
+    assert.equal(rows[0].model, 'swe-2-max');
+    assert.equal(rows[0].source, 'mission');
+    assert.equal('tokens' in rows[1], false);
+  });
+});
+
+test('an autopilot phase on a roster worker records landed with tokens, or stalled at its cap', async () => {
+  const roster = `# roster
+
+## review
+- codex, max: 1 s
+`;
+  await withRoom(async ({ root, bin }) => {
+    const { executePhaseDetailed } = require('../commands/autopilot');
+    const cwd = process.cwd();
+    // A passing phase hands back stdout only, so only a usage line there counts.
+    fakeEngine(bin, 'codex', { stdout: 'SIGNOFF\ntokens used\n812\n' });
+    process.chdir(root);
+    try {
+      executePhaseDetailed('review', { task: 'fixture', kind: 'endgame' }, { verbose: false });
+    } finally {
+      process.chdir(cwd);
+    }
+    fs.writeFileSync(path.join(bin, 'codex'), '#!/bin/sh\nsleep 30\n');
+    process.chdir(root);
+    try {
+      assert.throws(() => executePhaseDetailed('review', { task: 'fixture', kind: 'endgame' }, { verbose: false }), /timed out/);
+    } finally {
+      process.chdir(cwd);
+    }
+    const rows = readRosterRuns(root);
+    assert.deepEqual(rows.map((row) => [row.job, row.member, row.engine, row.outcome, row.detail || '']), [
+      ['review', 'validator', 'codex', 'landed', ''],
+      ['review', 'validator', 'codex', 'stalled', 'stalled at 1s'],
+    ]);
+    assert.equal(rows[0].tokens, 812);
+    assert.equal(rows[1].max_seconds, 1);
+    assert.equal(rows[0].source, 'autopilot');
+  }, { roster });
+});

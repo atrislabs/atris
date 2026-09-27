@@ -32,9 +32,11 @@ const {
 const {
   resolveEngineForRoleWithPreference,
   engineFailureHealthStatus,
+  engineStallReason,
   recordEngineRunHealth,
   setEngineHealth,
 } = require('../lib/engine-registry');
+const { appendRosterRun, parseRunUsage } = require('../lib/roster-runs');
 const {
   FUNCTIONAL_MEMBER_TOPICS,
   listWorkspaceMemberSlugs,
@@ -428,6 +430,7 @@ function resolveMissionTickRunner(mission, root = process.cwd(), options = {}) {
         requested_engine: null,
         engine_fallback_reason: null,
         member_engine_reason: member.reason,
+        roster_job: member.job || 'build',
       };
     }
   }
@@ -453,6 +456,50 @@ function recordMissionEngineTickOutcome(engineId, result, root = process.cwd()) 
   if (result && result.status === 'ran') return setEngineHealth(engineId, 'ready', root);
   if (!engineFailureHealthStatus(result)) return null;
   return recordEngineRunHealth(engineId, result, root);
+}
+
+// One run-record line per engine tick: how long the worker ran, and how it
+// ended. A tick that ran and passed (or had no verifier) landed; a failing
+// verifier or a real error failed; a time cap or dropped connection stalled;
+// a closed credit window is credit out. Never throws into the tick.
+function missionTickRunOutcome(result, verifierResult, maxSeconds) {
+  if (result && result.status === 'ran') {
+    return verifierResult && verifierResult.passed === false
+      ? { outcome: 'failed', detail: 'the verifier failed' }
+      : { outcome: 'landed' };
+  }
+  if (engineFailureHealthStatus(result) === 'credit_out') return { outcome: 'credit out', detail: 'the engine hit its usage limit' };
+  const stall = engineStallReason({ ...result, ...(maxSeconds ? { max_seconds: maxSeconds } : {}) });
+  if (stall) return { outcome: 'stalled', detail: stall.text };
+  if (/wall-exceeded/.test(String(result && result.reason || ''))) return { outcome: 'failed', detail: 'the mission ran out of time' };
+  const summary = String(result && result.claude && result.claude.summary || '').split('\n')[0].trim();
+  return { outcome: 'failed', detail: summary && summary !== 'error' ? summary : String(result && result.reason || 'the tick failed').replace(/-/g, ' ') };
+}
+
+function recordMissionTickRosterRun(root, { mission, runtimeMission, engineId, job, result, verifierResult, startedAt, endedMs, usage } = {}) {
+  if (!engineId) return null;
+  try {
+    const { engineRunsView } = require('../lib/roster-models');
+    const run = runtimeMission || mission || {};
+    const startedMs = Date.parse(startedAt);
+    const maxSeconds = Number(run.roster_max_seconds) || 0;
+    return appendRosterRun(root, {
+      at: startedAt,
+      job: job || 'build',
+      member: (mission && mission.owner) || '',
+      engine: engineId,
+      model: run.model || engineRunsView(engineId).model || '',
+      effort: run.roster_effort || '',
+      max_seconds: maxSeconds,
+      seconds: Number.isFinite(startedMs) ? Math.max(0, (endedMs - startedMs) / 1000) : undefined,
+      task: (mission && mission.id) || '',
+      source: 'mission',
+      ...(usage || {}),
+      ...missionTickRunOutcome(result, verifierResult, maxSeconds),
+    });
+  } catch {
+    return null;
+  }
 }
 
 function runnerModelPatch(runner, model) {
@@ -8908,6 +8955,7 @@ function spawnGenericRunnerTick(mission, opts) {
         stop_reason: null,
         stderr: errStr,
         parse_errors: 0,
+        run_usage: parseRunUsage({ stdout, stderr }),
       });
     });
 
@@ -9012,6 +9060,7 @@ function spawnClaudeTick(mission, opts) {
     let numTurns = null;
     let rateLimitInfo = null;
     let stopReason = null;
+    let usage = null;
     let parseErrors = 0;
     let stderr = '';
     let timedOut = false;
@@ -9051,6 +9100,7 @@ function spawnClaudeTick(mission, opts) {
             if (typeof ev.duration_api_ms === 'number') durationApiMs = ev.duration_api_ms;
             if (typeof ev.num_turns === 'number') numTurns = ev.num_turns;
             if (ev.stop_reason) stopReason = ev.stop_reason;
+            if (ev.usage && typeof ev.usage === 'object') usage = ev.usage;
           }
         } catch {
           parseErrors++;
@@ -9087,6 +9137,7 @@ function spawnClaudeTick(mission, opts) {
         rate_limit_info: rateLimitInfo,
         stderr: errStr,
         parse_errors: parseErrors,
+        run_usage: parseRunUsage({ usage, cost_usd: costEstimate }),
       });
     });
 
@@ -9575,6 +9626,9 @@ async function executeMissionRunTicksPhase(context) {
       const tickStart = stampIso();
       const tickWorktreeBefore = gitWorktreeSnapshot(cwd);
       let result = { status: 'skipped', reason: 'unknown', tick_index: tickIdx, ran: false, started_at: tickStart };
+      // Set when a roster engine really ran this tick: when it stopped and the
+      // usage it printed. The run record is written after the verifier.
+      let tickWorkerRun = null;
       let cachedStep = findCachedMissionStepReceipt(cwd, { missionId: mission.id, tickIndex: tickIdx });
       let cachedVerifierResult = cachedStep ? cachedStep.verifier_result : null;
       const tickSelection = resolveMissionTickRunner(runtimeMission, cwd);
@@ -9711,6 +9765,7 @@ async function executeMissionRunTicksPhase(context) {
             backend_unavailable: isTransientAtris2BackendError(turn.error) || undefined,
             receipt_text: String(turn.text || '').slice(0, 4000),
           };
+          tickWorkerRun = { endedMs: Date.now(), usage: {} };
           if (controller.signal.aborted) { pauseReason = 'aborted-during-atris2'; break; }
           if (turn.error === 'not-logged-in') { pauseReason = 'auth-required'; break; }
           if (wallExpired) {
@@ -9758,6 +9813,7 @@ async function executeMissionRunTicksPhase(context) {
         } finally {
           restoreTickRunnerProfile();
         }
+        tickWorkerRun = { endedMs: Date.now(), usage: (claudeResult && claudeResult.run_usage) || {} };
         result.claude = {
           ok: claudeResult.ok,
           reason: claudeResult.reason,
@@ -9864,6 +9920,19 @@ async function executeMissionRunTicksPhase(context) {
       }
       pauseReason = context.pauseReason;
       context.currentTick = null;
+      if (tickEngineId && !cachedStep && tickWorkerRun) {
+        recordMissionTickRosterRun(cwd, {
+          mission,
+          runtimeMission: tickRuntimeMission,
+          engineId: tickEngineId,
+          job: tickSelection.roster_job || 'build',
+          result,
+          verifierResult,
+          startedAt: tickStart,
+          endedMs: tickWorkerRun.endedMs,
+          usage: tickWorkerRun.usage,
+        });
+      }
       let receiptPath = cachedStep ? cachedStep.receipt_path : null;
 
       // Review-lane drain: always-on loops sweep the agent-safe review actions
@@ -11796,6 +11865,7 @@ module.exports = {
   missionTickTimeoutMs,
   engineFailureHealthStatus,
   recordMissionEngineTickOutcome,
+  recordMissionTickRosterRun,
   tickMadeProgress,
   consecutiveNoProgressTicks,
   consecutiveIdenticalSummaryTicks,
