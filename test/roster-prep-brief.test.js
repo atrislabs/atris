@@ -180,3 +180,283 @@ test('assign --prep writes the field, and refuses a job prepping for itself', as
     assert.match(bad.out, /is not a job name/);
   });
 });
+
+// --- the prep pass at launch -----------------------------------------------
+
+const TASK = {
+  display_id: 'CLI-900',
+  status: 'open',
+  title: 'Fix the widget. Done: widget renders once. Check: node --test test/widget.test.js.',
+};
+
+const BRIEF = '- lib/widget.js:12 renders twice here\n    render(); render();\n- test/widget.test.js:3 the check';
+
+// Each call moves the clock 90 seconds.
+function stepClock(start = NOW, step = 90000) {
+  let at = start;
+  return () => {
+    const value = at;
+    at += step;
+    return value;
+  };
+}
+
+// A fake engine binary: logs that it ran and every argument it got (the
+// prompt rides in as an argument), then prints stdout or sleeps past its cap.
+function fakeEngine(bin, name, { stdout = '', exit = 0, sleep = 0 } = {}) {
+  const file = path.join(bin, name);
+  fs.writeFileSync(`${file}.out`, stdout);
+  fs.writeFileSync(file, [
+    '#!/bin/sh',
+    `echo "${name}" >> "${path.join(bin, 'calls.log')}"`,
+    `printf '%s\\n' "$@" > "${file}.args"`,
+    sleep ? `sleep ${sleep}` : '',
+    `cat "${file}.out"`,
+    `exit ${exit}`,
+    '',
+  ].join('\n'));
+  fs.chmodSync(file, 0o755);
+}
+
+function calls(bin) {
+  const file = path.join(bin, 'calls.log');
+  return fs.existsSync(file) ? fs.readFileSync(file, 'utf8').trim().split('\n').filter(Boolean) : [];
+}
+
+function argsOf(bin, name) {
+  const file = path.join(bin, `${name}.args`);
+  return fs.existsSync(file) ? fs.readFileSync(file, 'utf8') : '';
+}
+
+function ownCli(wt) {
+  return (args) => {
+    if (args[0] === 'task' && args[1] === 'show') return { status: 0, stdout: JSON.stringify(TASK), stderr: '' };
+    if (args[0] === 'worktree' && args[1] === 'start') return { status: 0, stdout: `next: cd ${wt}\n`, stderr: '' };
+    return { status: 0, stdout: 'done: worktree shipped\n', stderr: '' };
+  };
+}
+
+// The same flight `atris engine dispatch --engine cursor` starts: the build
+// line's pins for cursor, prep included, ride along.
+function dispatchAsCommand(root, wt, options = {}) {
+  const { rosterPinFor } = require('../lib/engine-registry');
+  const fleet = require('../lib/fleet');
+  const pin = rosterPinFor('executor', 'cursor', root);
+  return fleet.runDispatchFlight({
+    root,
+    taskIds: ['CLI-900'],
+    engine: 'cursor',
+    installedEngines: [],
+    ownCli: ownCli(wt),
+    rebase: () => ({ ok: true, stage: 'rebased' }),
+    verifier: () => ({ status: 0, stdout: '# pass 1\n', stderr: '' }),
+    scoutAsk: false,
+    log: () => {},
+    clock: stepClock(),
+    ...(pin.roster_max_seconds ? { maxSeconds: pin.roster_max_seconds } : {}),
+    ...(pin.roster_prep ? { prep: pin.roster_prep } : {}),
+    ...options,
+  });
+}
+
+function runs(root) {
+  return require('../lib/roster-runs').readRosterRuns(root, { now: NOW + 3600000 });
+}
+
+test('a worker with prep: search runs the search lead first and gets a prompt with the brief', async () => {
+  await withRoom(async ({ root, bin, wt }) => {
+    fakeEngine(bin, 'claude', { stdout: `${BRIEF}\n` });
+    fakeEngine(bin, 'cursor-agent', { stdout: 'built the widget\n' });
+    const flight = await dispatchAsCommand(root, wt);
+    assert.equal(flight.landed.length, 1);
+    assert.deepEqual(calls(bin), ['claude', 'cursor-agent']);
+    const prepArgs = argsOf(bin, 'claude');
+    assert.match(prepArgs, /prep pass for a heavier build worker/);
+    assert.match(prepArgs, /Fix the widget/);
+    const prompt = argsOf(bin, 'cursor-agent');
+    assert.match(prompt, /## brief from the prep pass \(search, claude\)/);
+    assert.match(prompt, /Work from this brief\. Open other files only if the brief is missing something, and say in your final report what was missing\./);
+    assert.match(prompt, /lib\/widget\.js:12 renders twice here/);
+    // Two lines: the prep pass, then the heavy run with the brief size.
+    const rows = runs(root);
+    assert.deepEqual(rows.map((row) => [row.job, row.engine, row.outcome]), [
+      ['search', 'claude', 'landed'],
+      ['build', 'cursor', 'landed'],
+    ]);
+    assert.equal(rows[0].source, 'prep');
+    assert.equal(rows[0].task, 'CLI-900');
+    assert.equal(rows[0].max_seconds, 120);
+    assert.match(rows[0].detail, /^brief for build, 3 lines, /);
+    assert.equal(rows[1].prep, 'prepped by search');
+    assert.equal(rows[1].brief_lines, 3);
+    assert.equal(rows[1].brief_bytes, Buffer.byteLength(BRIEF));
+    const listed = command(root, ['roster', '--runs']);
+    assert.match(listed.out, /build CLI-900: cursor .*landed, prepped by search \(\d+ bytes brief\)/);
+  }, { roster: PREP_ROSTER });
+});
+
+test('the brief is capped at its line and size limits', async () => {
+  const { capBrief, PREP_MAX_LINES, PREP_MAX_BYTES } = require('../lib/roster-prep');
+  const long = Array.from({ length: 1000 }, (_, i) => `- lib/file${i}.js:${i} note`).join('\n');
+  const byLines = capBrief(long);
+  assert.equal(byLines.cut, true);
+  assert.ok(byLines.text.split('\n').length <= PREP_MAX_LINES);
+  assert.ok(byLines.bytes <= PREP_MAX_BYTES);
+  assert.match(byLines.text, /brief cut to fit its size cap\)$/);
+  const wide = Array.from({ length: 100 }, () => 'x'.repeat(1000)).join('\n');
+  const byBytes = capBrief(wide);
+  assert.ok(byBytes.bytes <= PREP_MAX_BYTES);
+  assert.ok(byBytes.text.split('\n').every((line) => line === 'x'.repeat(1000) || /cut to fit/.test(line)));
+  assert.deepEqual(capBrief('  \n \n'), { text: '', lines: 0, bytes: 0, cut: false });
+
+  await withRoom(async ({ root, bin, wt }) => {
+    fakeEngine(bin, 'claude', { stdout: `${long}\n` });
+    fakeEngine(bin, 'cursor-agent', { stdout: 'built the widget\n' });
+    await dispatchAsCommand(root, wt);
+    const prompt = argsOf(bin, 'cursor-agent');
+    assert.match(prompt, /lib\/file0\.js:0 note/);
+    assert.doesNotMatch(prompt, /lib\/file999\.js/);
+    const heavy = runs(root).find((row) => row.job === 'build');
+    assert.ok(heavy.brief_lines <= PREP_MAX_LINES);
+    assert.ok(heavy.brief_bytes <= PREP_MAX_BYTES);
+  }, { roster: PREP_ROSTER });
+});
+
+test('a prep stall or empty answer still runs the heavy worker and records "prep skipped"', async () => {
+  const stallRoster = PREP_ROSTER.replace('- claude, model: haiku, max: 2 min', '- claude, model: haiku, max: 1s');
+  await withRoom(async ({ root, bin, wt }) => {
+    fakeEngine(bin, 'claude', { stdout: BRIEF, sleep: 30 });
+    fakeEngine(bin, 'cursor-agent', { stdout: 'built the widget\n' });
+    const flight = await dispatchAsCommand(root, wt);
+    assert.equal(flight.landed.length, 1);
+    assert.doesNotMatch(argsOf(bin, 'cursor-agent'), /brief from the prep pass/);
+    const rows = runs(root);
+    assert.deepEqual(rows.map((row) => [row.job, row.engine, row.outcome]), [
+      ['search', 'claude', 'stalled'],
+      ['build', 'cursor', 'landed'],
+    ]);
+    assert.equal(rows[0].detail, 'stalled at 1s');
+    assert.equal(rows[1].prep, 'prep skipped: stalled at 1s');
+    assert.equal('brief_bytes' in rows[1], false);
+  }, { roster: stallRoster });
+  await withRoom(async ({ root, bin, wt }) => {
+    fakeEngine(bin, 'claude', { stdout: '   \n' });
+    fakeEngine(bin, 'cursor-agent', { stdout: 'built the widget\n' });
+    const flight = await dispatchAsCommand(root, wt);
+    assert.equal(flight.landed.length, 1);
+    assert.doesNotMatch(argsOf(bin, 'cursor-agent'), /brief from the prep pass/);
+    const rows = runs(root);
+    assert.deepEqual(rows.map((row) => [row.job, row.outcome]), [['search', 'failed'], ['build', 'landed']]);
+    assert.equal(rows[1].prep, 'prep skipped: returned nothing');
+  }, { roster: PREP_ROSTER });
+  await withRoom(async ({ root, bin, wt }) => {
+    fakeEngine(bin, 'claude', { stdout: 'boom\n', exit: 3 });
+    fakeEngine(bin, 'cursor-agent', { stdout: 'built the widget\n' });
+    await dispatchAsCommand(root, wt);
+    assert.equal(runs(root)[1].prep, 'prep skipped: claude exited 3');
+  }, { roster: PREP_ROSTER });
+});
+
+test('prep naming its own job runs the worker without prep', async () => {
+  await withRoom(async ({ root, bin, wt }) => {
+    fakeEngine(bin, 'claude', { stdout: BRIEF });
+    fakeEngine(bin, 'cursor-agent', { stdout: 'built the widget\n' });
+    const flight = await dispatchAsCommand(root, wt);
+    assert.equal(flight.landed.length, 1);
+    assert.deepEqual(calls(bin), ['cursor-agent']);
+    assert.deepEqual(runs(root).map((row) => [row.job, row.prep || '']), [['build', '']]);
+    // Handed a prep job equal to its own job at launch, the pass refuses too.
+    const { runPrepPass } = require('../lib/roster-prep');
+    const refused = await runPrepPass({ prepJob: 'build', forJob: 'build', task: TASK, root });
+    assert.deepEqual([refused.ok, refused.reason], [false, 'build cannot prep for itself']);
+  }, { roster: '# roster\n\n## search\n- claude, model: haiku\n\n## build\n- cursor, prep: build\n' });
+});
+
+test('a worker without prep runs exactly as before', async () => {
+  await withRoom(async ({ root, bin, wt }) => {
+    fakeEngine(bin, 'claude', { stdout: BRIEF });
+    fakeEngine(bin, 'cursor-agent', { stdout: 'built the widget\n' });
+    const flight = await dispatchAsCommand(root, wt);
+    assert.equal(flight.landed.length, 1);
+    assert.deepEqual(calls(bin), ['cursor-agent']);
+    assert.doesNotMatch(argsOf(bin, 'cursor-agent'), /brief from the prep pass/);
+    const rows = runs(root);
+    assert.equal(rows.length, 1);
+    assert.deepEqual(Object.keys(rows[0]).filter((key) => /prep|brief/.test(key)), []);
+  }, { roster: '# roster\n\n## search\n- claude, model: haiku\n\n## build\n- cursor, max: 20 min\n' });
+});
+
+test('a handover backup preps only when its own line asks', async () => {
+  const roster = '# roster\n\n## search\n- claude, model: haiku\n\n## build\n- devin, model: swe-2-max, max: 1s\n- cursor, prep: search\n';
+  await withRoom(async ({ root, bin, wt }) => {
+    fakeEngine(bin, 'claude', { stdout: BRIEF });
+    fakeEngine(bin, 'devin', { stdout: 'never', sleep: 30 });
+    fakeEngine(bin, 'cursor-agent', { stdout: 'built the widget\n' });
+    const fleet = require('../lib/fleet');
+    const flight = await fleet.runDispatchFlight({
+      root,
+      taskIds: ['CLI-900'],
+      engine: 'devin',
+      installedEngines: [],
+      model: 'swe-2-max',
+      maxSeconds: 1,
+      ownCli: ownCli(wt),
+      rebase: () => ({ ok: true, stage: 'rebased' }),
+      verifier: () => ({ status: 0, stdout: '# pass 1\n', stderr: '' }),
+      scoutAsk: false,
+      log: () => {},
+      clock: stepClock(),
+    });
+    assert.equal(flight.landed.length, 1);
+    assert.deepEqual(calls(bin), ['devin', 'claude', 'cursor-agent']);
+    assert.doesNotMatch(argsOf(bin, 'devin'), /brief from the prep pass/);
+    assert.match(argsOf(bin, 'cursor-agent'), /brief from the prep pass/);
+    const rows = runs(root);
+    assert.deepEqual(rows.map((row) => [row.job, row.engine, row.outcome, row.prep || '']), [
+      ['search', 'claude', 'landed', ''],
+      ['build', 'devin', 'stalled', ''],
+      ['build', 'cursor', 'landed', 'prepped by search'],
+    ]);
+  }, { roster });
+});
+
+test('a one-lap reviewer with prep reads the brief before it reviews', async () => {
+  await withRoom(async ({ root, bin, wt }) => {
+    fakeEngine(bin, 'claude', { stdout: BRIEF });
+    const fleet = require('../lib/fleet');
+    const prompts = [];
+    const flight = await fleet.runDispatchFlight({
+      root,
+      taskIds: ['CLI-900'],
+      engine: 'cursor',
+      reviewOnly: true,
+      verifierCommand: 'node --test test/widget.test.js',
+      receiptContext: { source: 'one_lap', objective: 'Fix the widget' },
+      ownCli: ownCli(wt),
+      dispatcher: () => Promise.resolve({ exitCode: 0, report: 'built the widget' }),
+      rebase: () => ({ ok: true, stage: 'rebased' }),
+      verifier: () => ({ status: 0, stdout: '# pass 1\n', stderr: '' }),
+      validatorEngines: ['codex'],
+      validatorModels: { codex: { model: '', effort: 'high', max_seconds: 0, prep: 'navigator' } },
+      validatorDispatcher: ({ prompt }) => {
+        prompts.push(prompt);
+        return Promise.resolve({ exitCode: 0, report: 'read the diff\nSIGNOFF: widget renders once' });
+      },
+      validatorStateInspector: () => ({ ok: true, head: 'abc', digest: 'clean-state' }),
+      changeInspector: () => ({ has_change: true, base: 'a', head: 'b', commit: 'b', dirty: false }),
+      scoutAsk: false,
+      clock: stepClock(),
+      log: () => {},
+    });
+    assert.equal(flight.ready.length, 1);
+    assert.equal(prompts.length, 1);
+    assert.match(prompts[0], /## brief from the prep pass \(search, claude\)/);
+    assert.match(argsOf(bin, 'claude'), /prep pass for a heavier review worker/);
+    const rows = runs(root);
+    assert.deepEqual(rows.map((row) => [row.job, row.engine, row.prep || '']), [
+      ['search', 'claude', ''],
+      ['review', 'codex', 'prepped by search'],
+      ['build', 'cursor', ''],
+    ]);
+  }, { roster: '# roster\n\n## search\n- claude, model: haiku\n' });
+});

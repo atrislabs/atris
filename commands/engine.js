@@ -2006,8 +2006,8 @@ function runDispatchCommand(args, root) {
       : `engine dispatch: ${err.message}`);
     return 2;
   }
-  // The build line's model, effort, and time cap ride along when the roster
-  // picks this same engine for build.
+  // The build line's model, effort, time cap, and prep job ride along when
+  // the roster picks this same engine for build.
   const pin = rosterPinFor('executor', canonical, root);
   return runDispatchFlight({
     root,
@@ -2019,6 +2019,7 @@ function runDispatchCommand(args, root) {
     ...(pin.roster_model ? { model: pin.roster_model } : {}),
     ...(pin.roster_effort ? { effort: pin.roster_effort } : {}),
     ...(pin.roster_max_seconds ? { maxSeconds: pin.roster_max_seconds } : {}),
+    ...(pin.roster_prep ? { prep: pin.roster_prep } : {}),
   }).then((flight) => {
     if (json) console.log(JSON.stringify(flight, null, 2));
     return flight.paused.length ? 1 : 0;
