@@ -4102,6 +4102,8 @@ function memberList(...flags) {
   const asJson = flags.includes('--json') || process.argv.includes('--json');
   const teamDir = path.join(process.cwd(), 'atris', 'team');
   const members = findAllMembers(teamDir);
+  const { isMemberParked } = require('../lib/member-park');
+  const parked = new Set(members.filter((m) => isMemberParked(process.cwd(), m.name)).map((m) => m.name));
 
   if (asJson) {
     console.log(JSON.stringify({
@@ -4109,6 +4111,7 @@ function memberList(...flags) {
       count: members.length,
       members: members.map((m) => ({
         name: m.name,
+        ...(parked.has(m.name) ? { parked: true } : {}),
         role: m.role,
         format: m.format,
         skills: m.format === 'directory' ? m.skillCount : null,
@@ -4156,12 +4159,14 @@ function memberList(...flags) {
       clipCell(m.format === 'directory' ? 'dir' : 'flat', fmtW) +
       clipCell(skills, skillW) +
       clipCell(context, ctxW) +
-      (m.version || '-')
+      (m.version || '-') +
+      (parked.has(m.name) ? '  parked' : '')
     );
   }
 
   console.log('');
-  console.log(`${members.length} ${members.length === 1 ? 'member' : 'members'} found.`);
+  const parkedNote = parked.size ? ` (${parked.size} parked; unpark with atris team unpark <name>)` : '';
+  console.log(`${members.length} ${members.length === 1 ? 'member' : 'members'} found.${parkedNote}`);
 }
 
 // --- CREATE subcommand ---
