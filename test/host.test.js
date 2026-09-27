@@ -58,6 +58,13 @@ test('install copies the packaged host and preserves local edits', (t) => {
   assert.equal(fs.readFileSync(path.join(target, 'SOUL.md'), 'utf8'), 'local soul\n');
 });
 
+test('joining creates an ignore file inside the private folder', (t) => {
+  const root = workspace(t);
+  hostAction(root, 'join', { id: 'A1', name: 'Ann' });
+  const ignore = path.join(root, 'atris', 'team', 'host', 'private', '.gitignore');
+  assert.equal(fs.readFileSync(ignore, 'utf8'), '*\n');
+});
+
 test('import adds people before links and skips existing, forgotten, and repeated records', (t) => {
   const root = workspace(t);
   hostAction(root, 'join', { id: 'existing:a', name: 'Ada' });
@@ -86,6 +93,25 @@ test('import adds people before links and skips existing, forgotten, and repeate
   assert.deepEqual(JSON.parse(run(root, 'host', 'import', file, '--json')), { added: 0, skipped: 3, refused: 1, links_added: 0, links_skipped: 4 });
   assert.equal(fs.readFileSync(path.join(root, 'atris', 'team', 'host', 'private', 'links.jsonl'), 'utf8').trim().split('\n').length, 3);
   assert.equal(outbox(root).filter((message) => message.kind === 'welcome' && message.to.startsWith('new:')).length, 2);
+});
+
+test('import saves 1,000 links with one write and skips repeated links', (t) => {
+  const root = workspace(t);
+  hostAction(root, 'join', { id: 'A1', name: 'Ann' });
+  hostAction(root, 'join', { id: 'B1', name: 'Bo' });
+  hostAction(root, 'link', { a: 'A1', b: 'B1', source: 'channel', evidence: 'existing' });
+  const link = (evidence) => ({ link: { a: 'B1', b: 'A1', source: 'channel', evidence } });
+  const file = importRows(root, 'links.jsonl', [link('existing'), ...Array.from({ length: 998 }, (_, index) => link(`connection ${index}`)), link('connection 0')]);
+  const linksFile = path.join(root, 'atris', 'team', 'host', 'private', 'links.jsonl');
+  const originalRename = fs.renameSync;
+  let writes = 0;
+  fs.renameSync = function (from, to) { if (to === linksFile) writes += 1; return originalRename.call(this, from, to); };
+  let counts;
+  try { counts = hostAction(root, 'import', { file }); }
+  finally { fs.renameSync = originalRename; }
+  assert.deepEqual(counts, { added: 0, skipped: 0, refused: 0, links_added: 998, links_skipped: 2 });
+  assert.equal(writes, 1);
+  assert.equal(fs.readFileSync(linksFile, 'utf8').trim().split('\n').length, 999);
 });
 
 test('an invalid import line leaves every host record unchanged', (t) => {
