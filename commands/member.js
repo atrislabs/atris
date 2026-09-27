@@ -1078,6 +1078,13 @@ function memberRun(name, ...args) {
 
   const asJson = hasFlag(args, '--json');
   const paths = requireMemberDir(name);
+  // Parking only hides a member from the team views; a run by name still goes.
+  const { isParkedText } = require('../lib/member-park');
+  try {
+    if (isParkedText(fs.readFileSync(paths.memberFile, 'utf8'))) {
+      console.error(`${name} is parked; running anyway`);
+    }
+  } catch { /* an unreadable card is requireMemberDir's problem, not this notice's */ }
   const requestedVerifier = readFlag(args, '--verify', '') || memberRunConfiguredVerifier(paths);
   const missionText = memberRunMissionText(args);
   const hasMissionOverride = Boolean(readFlag(args, '--mission', '') || readFlag(args, '--mission-id', ''));

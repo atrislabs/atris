@@ -1,5 +1,7 @@
 ---
 name: codex-executor
+status: parked
+parked_note: 2026-09-27 the roster picks the build tool now; pin codex with a team line if needed; unpark with atris team unpark codex-executor
 role: Builder (Codex lane)
 description: Executor variant that routes mechanical build steps to OpenAI Codex, saving Claude limits for planning and review
 version: 1.0.0

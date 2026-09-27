@@ -7,6 +7,7 @@ const { canonicalEngineName } = require('../lib/engine-registry');
 const taskDb = require('../lib/task-db');
 const { buildTeamPresence, DEFAULT_FRESHNESS_WINDOW_MS, renderTeamPresence } = require('../lib/team-presence');
 const { LINEUP_UNREADABLE, memberLineup, readLineupSafe, renderLineup } = require('../lib/team-lineup');
+const { isParkedFrontmatter, setMemberParked } = require('../lib/member-park');
 const { readEngineRegistry } = require('./engine');
 const { listMissions, listWorktreeRollupMissions } = require('./mission');
 const { collectSnapshot, collectStreamEvents, repoRoot } = require('./stream');
@@ -210,6 +211,7 @@ function collectTeamRoster(deps = {}) {
         now: rawNow,
         focus,
         active,
+        parked: isParkedFrontmatter(member?.frontmatter),
       };
     })
     .filter((entry) => entry.name)
@@ -232,10 +234,30 @@ function wrapCommaNames(names, width = 80) {
   return lines.join('\n');
 }
 
-function renderTeamRoster(rosterRows, deps = {}) {
-  if (!rosterRows.length) {
+// Parked members leave the lists and come back as one line, unless --all
+// asks for them in place.
+function parkedSummaryLine(parkedRows, width = 80) {
+  if (!parkedRows.length) return '';
+  const names = parkedRows.map((entry) => entry.name);
+  names[0] = `parked (${parkedRows.length}): ${names[0]}`;
+  names[names.length - 1] = `${names[names.length - 1]} · atris team --all to show them`;
+  return wrapCommaNames(names, width);
+}
+
+function withParkedLabels(rosterRows, all) {
+  const parkedRows = rosterRows.filter((entry) => entry.parked);
+  if (!all) return { rows: rosterRows.filter((entry) => !entry.parked), parkedRows };
+  return {
+    rows: rosterRows.map((entry) => (entry.parked ? { ...entry, name: `${entry.name} (parked)` } : entry)),
+    parkedRows: [],
+  };
+}
+
+function renderTeamRoster(allRows, deps = {}) {
+  if (!allRows.length) {
     return 'no team members yet. create one with: atris member create <name> --role="..."';
   }
+  const { rows: rosterRows, parkedRows } = withParkedLabels(allRows, Boolean(deps.all));
   const activeRows = rosterRows.filter((entry) => entry.active);
   const restRows = rosterRows.filter((entry) => !entry.active);
   const termWidth = deps.termWidth || process.stdout.columns || 80;
@@ -264,6 +286,11 @@ function renderTeamRoster(rosterRows, deps = {}) {
   } else {
     lines.push('(none)');
   }
+  const parkedLine = parkedSummaryLine(parkedRows, termWidth);
+  if (parkedLine) {
+    lines.push('');
+    lines.push(parkedLine);
+  }
   return lines.join('\n');
 }
 
@@ -277,7 +304,8 @@ function renderTeamWithLineup(rosterRows, lineup, deps = {}) {
   return block ? `${block}\n\n${today}` : today;
 }
 
-function renderTeamRosterHtml(rosterRows, meta = {}) {
+function renderTeamRosterHtml(allRows, meta = {}) {
+  const rosterRows = withParkedLabels(allRows, Boolean(meta.all)).rows;
   const activeRows = rosterRows.filter((entry) => entry.active);
   const restRows = rosterRows.filter((entry) => !entry.active);
   const generatedAt = meta.generatedAt || new Date().toISOString();
@@ -422,6 +450,7 @@ function writeTeamBoardHtml(rosterRows, deps = {}) {
   const outPath = path.join(workspace, 'atris', 'team', 'team-board.html');
   fs.mkdirSync(path.dirname(outPath), { recursive: true });
   const html = renderTeamRosterHtml(rosterRows, {
+    all: Boolean(deps.all),
     workspace,
     generatedAt: deps.generatedAt || new Date().toISOString(),
   });
@@ -501,12 +530,45 @@ function renderTeamPrune(report, days = DEFAULT_PRUNE_DAYS) {
 function helpText() {
   return [
     'atris team - who does each job, with its tool and model, then active members and the rest',
+    'atris team --all - also list parked members in place',
     'atris team presence - show who is awake and what they are doing',
     'atris team prune - flag members with no recent activity; deletes nothing',
+    'atris team park <name> [--note "<reason>"] - hide a member from the team views; it still runs by name',
+    'atris team unpark <name> - bring a parked member back',
     '',
-    'usage: atris team [roster|presence] [--json] [--html]',
+    'usage: atris team [roster|presence] [--all] [--json] [--html]',
     'usage: atris team prune [--days N] [--json]',
+    'usage: atris team park <name> [--note "<reason>"] | atris team unpark <name>',
   ].join('\n');
+}
+
+const PARK_USAGE = 'usage: atris team park <name> [--note "<reason>"] | atris team unpark <name>';
+
+function teamParkCommand(parked, rest, deps = {}) {
+  const write = deps.write || process.stdout.write.bind(process.stdout);
+  const error = deps.error || process.stderr.write.bind(process.stderr);
+  let name = '';
+  let note = '';
+  let bad = false;
+  for (let i = 0; i < rest.length; i += 1) {
+    const arg = rest[i];
+    if (parked && arg === '--note') { i += 1; note = rest[i] || ''; if (!note) bad = true; continue; }
+    if (parked && arg.startsWith('--note=')) { note = arg.slice('--note='.length); continue; }
+    if (arg.startsWith('-') || name) { bad = true; continue; }
+    name = arg;
+  }
+  if (bad || !name) {
+    error(`${PARK_USAGE}\n`);
+    return 2;
+  }
+  const root = deps.root || repoRoot(deps.cwd || process.cwd());
+  const result = setMemberParked(root, name, { parked, note, now: deps.now ? new Date(deps.now()) : new Date() });
+  if (!result.ok) {
+    error(`${result.error}\n`);
+    return 1;
+  }
+  write(`${result.message}\n`);
+  return 0;
 }
 
 function teamCommand(args = [], deps = {}) {
@@ -535,18 +597,22 @@ function teamCommand(args = [], deps = {}) {
     (deps.write || process.stdout.write.bind(process.stdout))(`${output}\n`);
     return 0;
   }
+  if (args[0] === 'park' || args[0] === 'unpark') {
+    return teamParkCommand(args[0] === 'park', args.slice(1), deps);
+  }
   const rosterArgs = args.filter((arg) => arg !== 'roster');
-  const rosterFlags = new Set(['--json', '--html']);
+  const rosterFlags = new Set(['--json', '--html', '--all']);
   if (args[0] !== 'presence' && rosterArgs.every((arg) => rosterFlags.has(arg))) {
     const html = rosterArgs.includes('--html');
     const json = rosterArgs.includes('--json');
+    const all = rosterArgs.includes('--all');
     if (html && json) {
       (deps.error || process.stderr.write.bind(process.stderr))('usage: atris team [--json] [--html] (not both)\n');
       return 2;
     }
     const roster = deps.roster || collectTeamRoster(deps);
     if (html) {
-      const outPath = writeTeamBoardHtml(roster, deps);
+      const outPath = writeTeamBoardHtml(roster, { ...deps, all });
       (deps.write || process.stdout.write.bind(process.stdout))(`${outPath}\n`);
       return 0;
     }
@@ -558,12 +624,12 @@ function teamCommand(args = [], deps = {}) {
       : readLineupSafe(deps.root || repoRoot(deps.cwd || process.cwd()), deps.lineupNow || new Date());
     const output = json
       ? JSON.stringify(roster.map((entry) => ({ ...entry, lineup: memberLineup(lineup, entry.name) })), null, 2)
-      : renderTeamWithLineup(roster, lineup, deps);
+      : renderTeamWithLineup(roster, lineup, { ...deps, all });
     (deps.write || process.stdout.write.bind(process.stdout))(`${output}\n`);
     return 0;
   }
   if (args[0] !== 'presence' || args.some((arg, index) => index > 0 && arg !== '--json')) {
-    (deps.error || process.stderr.write.bind(process.stderr))('usage: atris team [roster|presence|prune] [--json] [--html]\n');
+    (deps.error || process.stderr.write.bind(process.stderr))('usage: atris team [roster|presence|prune|park|unpark] [--all] [--json] [--html]\n');
     return 2;
   }
   const presence = deps.presence || collectTeamPresence(deps);

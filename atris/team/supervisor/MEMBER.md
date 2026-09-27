@@ -1,5 +1,7 @@
 ---
 name: supervisor
+status: parked
+parked_note: 2026-09-27 no logged work since 2026-06; coordinator runs as supervisor; unpark with atris team unpark supervisor
 role: Supervisor
 description: Reviews member performance and recommends better routing, ownership, and handoffs.
 version: 1.0.0

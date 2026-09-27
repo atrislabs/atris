@@ -1,5 +1,7 @@
 ---
 name: objective-generator
+status: parked
+parked_note: 2026-09-27 task-planner is the active name for this worker; unpark with atris team unpark objective-generator
 role: Objective Generator
 description: Finds valuable next objectives from project knowledge and proposes one scoped task.
 version: 1.0.0

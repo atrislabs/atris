@@ -48,7 +48,7 @@ The first worker that is ready and not expired leads; the rest are backups in or
 
 **Heavy models.** Astra and Fable should judge, not explore. Give their line `prep: search`: the search lead writes a brief of at most 300 lines first, and if prep fails the worker runs as usual.
 
-**Team members.** Navigators, researchers, and scouts do search; validators, reviewers, and judges do review; everyone else builds. A `## team` line overrides: `- researcher: search` or `- judge: claude code, model: opus 5.5`. `member run`, owned missions, and autopilot phases use the member's pick; `--engine` still wins.
+**Team members.** Navigators, researchers, and scouts do search; validators, reviewers, and judges do review; everyone else builds. A `## team` line overrides: `- researcher: search` or `- judge: claude code, model: opus 5.5`. `member run`, owned missions, and autopilot phases use the member's pick; `--engine` still wins. Parked members are skipped; `atris team park <name>` and `atris team unpark <name>` toggle it.
 
 ## three verbs
 

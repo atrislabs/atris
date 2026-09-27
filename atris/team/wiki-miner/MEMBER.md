@@ -1,5 +1,7 @@
 ---
 name: wiki-miner
+status: parked
+parked_note: 2026-09-27 no logged work since 2026-06; info-organizer runs as wiki-miner; wiki upkeep lives in the upkeep skill; unpark with atris team unpark wiki-miner
 role: Wiki Miner
 description: Extracts useful project entities and relationships from wiki pages, logs, and receipts.
 version: 1.0.0

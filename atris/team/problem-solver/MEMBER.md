@@ -1,5 +1,7 @@
 ---
 name: problem-solver
+status: parked
+parked_note: 2026-09-27 no logged work since 2026-06; problem-solver runs as generalist; unpark with atris team unpark problem-solver
 role: Problem Solver
 description: Builds a model of a domain and proposes a practical solution plan.
 version: 1.0.0
