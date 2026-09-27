@@ -124,3 +124,59 @@ test('a record line with odd field types reads cleanly and never crashes the run
     assert.match(listed.out, /\$0\.42/);
   });
 });
+
+// --- the prep field on a roster line ---------------------------------------
+
+const PREP_ROSTER = `# roster
+
+## search
+- claude, model: haiku, max: 2 min
+
+## build
+- cursor, max: 20 min, prep: search
+- devin, model: swe-2-max
+`;
+
+test('a worker line reads "prep: search" and the roster view says "prepped by search"', async () => {
+  await withRoom(async ({ root }) => {
+    const { readRosterState } = require('../lib/engine-registry');
+    const picks = readRosterState(root).project.picks;
+    assert.equal(picks.executor.workers[0].prep, 'navigator');
+    assert.equal('prep' in picks.executor.workers[1], false);
+    const view = command(root, ['roster']);
+    assert.equal(view.exit, 0);
+    assert.match(view.out, /build .*prepped by search/);
+    const json = JSON.parse(command(root, ['roster', '--json']).out);
+    const build = json.jobs.find((row) => row.job === 'build');
+    assert.equal(build.prep, 'search');
+    assert.deepEqual(build.workers.map((worker) => worker.prep), ['search', null]);
+  }, { roster: PREP_ROSTER });
+});
+
+test('prep naming its own job warns in plain words and the worker still counts', async () => {
+  await withRoom(async ({ root }) => {
+    const { readRosterState } = require('../lib/engine-registry');
+    const layer = readRosterState(root).project;
+    assert.equal(layer.picks.executor.engine, 'cursor');
+    assert.equal('prep' in layer.picks.executor.workers[0], false);
+    assert.match(layer.warnings.map((w) => w.message).join('\n'), /asks build to prep for itself, so this worker runs without prep/);
+    const view = command(root, ['roster']);
+    assert.equal(view.exit, 0);
+    assert.doesNotMatch(view.out, /prepped by/);
+  }, { roster: '# roster\n\n## build\n- cursor, prep: build\n' });
+});
+
+test('assign --prep writes the field, and refuses a job prepping for itself', async () => {
+  await withRoom(async ({ root }) => {
+    const written = command(root, ['assign', 'review', 'claude', '--prep', 'search']);
+    assert.equal(written.exit, 0, written.out);
+    assert.match(fs.readFileSync(path.join(root, 'atris', 'ROSTER.md'), 'utf8'), /## review\n- claude code, prep: search\n/);
+    assert.match(written.out, /review .*prepped by search/);
+    const refused = command(root, ['assign', 'build', 'cursor', '--prep', 'build']);
+    assert.equal(refused.exit, 2);
+    assert.match(refused.out, /build cannot prep for itself/);
+    const bad = command(root, ['assign', 'build', 'cursor', '--prep', '???']);
+    assert.equal(bad.exit, 2);
+    assert.match(bad.out, /is not a job name/);
+  });
+});
