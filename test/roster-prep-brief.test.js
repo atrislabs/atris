@@ -460,3 +460,33 @@ test('a one-lap reviewer with prep reads the brief before it reviews', async () 
     ]);
   }, { roster: '# roster\n\n## search\n- claude, model: haiku\n' });
 });
+
+test('a fleet build on the build lead honors its prep line', async () => {
+  await withRoom(async ({ root, bin, wt }) => {
+    fakeEngine(bin, 'claude', { stdout: BRIEF });
+    fs.mkdirSync(path.join(root, '.atris', 'state'), { recursive: true });
+    fs.writeFileSync(path.join(root, '.atris', 'state', 'tasks.projection.json'), JSON.stringify({
+      tasks: [{ display_id: 'CLI-900', status: 'open', title: TASK.title }],
+    }));
+    const prompts = [];
+    const fleet = require('../lib/fleet');
+    await fleet.runFleetFlight({
+      root,
+      engines: ['cursor'],
+      ownCli: ownCli(wt),
+      dispatcher: (entry) => {
+        prompts.push(entry.prompt);
+        return Promise.resolve({ exitCode: 0, report: 'built the widget' });
+      },
+      lander: () => ({ ok: false, stage: 'test_stop', detail: 'stop here' }),
+      rebase: () => ({ ok: true, stage: 'rebased' }),
+      guardCliLink: () => ({ ok: true, changed: false }),
+      scoutAsk: false,
+      clock: stepClock(),
+      log: () => {},
+    });
+    assert.equal(prompts.length, 1);
+    assert.match(prompts[0], /## brief from the prep pass \(search, claude\)/);
+    assert.equal(runs(root)[0].job, 'search');
+  }, { roster: PREP_ROSTER });
+});
