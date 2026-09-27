@@ -7,7 +7,7 @@ const { canonicalEngineName } = require('../lib/engine-registry');
 const taskDb = require('../lib/task-db');
 const { buildTeamPresence, DEFAULT_FRESHNESS_WINDOW_MS, renderTeamPresence } = require('../lib/team-presence');
 const { LINEUP_UNREADABLE, memberLineup, readLineupSafe, renderLineup } = require('../lib/team-lineup');
-const { isParkedFrontmatter, setMemberParked } = require('../lib/member-park');
+const { isMemberParked, isParkedFrontmatter, setMemberParked } = require('../lib/member-park');
 const { readEngineRegistry } = require('./engine');
 const { listMissions, listWorktreeRollupMissions } = require('./mission');
 const { collectSnapshot, collectStreamEvents, repoRoot } = require('./stream');
@@ -498,6 +498,8 @@ function collectTeamPrune(deps = {}) {
   for (const member of collectMembers(root, deps)) {
     const name = String(member?.name || '').trim().toLowerCase();
     if (!name) continue;
+    // A parked member is already set aside on purpose; flagging it again is noise.
+    if (isMemberParked(root, name)) continue;
     const signalMs = newestSignalMs(member);
     if (activeOwners.has(name) || (signalMs && nowMs - signalMs < days * DAY_MS)) {
       activeCount += 1;

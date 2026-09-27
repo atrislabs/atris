@@ -211,3 +211,51 @@ test('a parked runtime folder still answers to its alias name', () => withRoom((
   assert.match(result.stderr, /^problem-solver is parked; running anyway$/m);
   assert.equal(JSON.parse(result.stdout).started, true);
 }, [['generalist', 'generalist']]));
+
+test('team prune leaves parked members out of the quiet list', () => withRoom((root) => {
+  const { collectTeamPrune } = require('../commands/team');
+  setMemberParked(root, 'wiki-miner', { parked: true, note: 'set aside' });
+  // Age every card so each member reads as quiet; only parking should differ.
+  const old = new Date(NOW() - 90 * 24 * 60 * 60 * 1000);
+  for (const name of ['coder', 'navigator', 'wiki-miner', 'signal-scout']) {
+    const dir = path.join(root, 'atris', 'team', name);
+    for (const file of fs.readdirSync(dir)) fs.utimesSync(path.join(dir, file), old, old);
+    fs.utimesSync(dir, old, old);
+  }
+  const report = collectTeamPrune({ root, now: NOW, missions: [] });
+  const quiet = report.quiet.map((row) => row.name);
+  assert.ok(quiet.includes('coder'), 'an unparked quiet member is still flagged');
+  assert.ok(!quiet.includes('wiki-miner'), 'a parked member is not flagged again');
+}));
+
+test('member list marks parked members in text and json', () => withRoom((root) => {
+  setMemberParked(root, 'signal-scout', { parked: true, note: 'set aside' });
+  const json = spawnSync(process.execPath, [cli, 'member', 'list', '--json'], { cwd: root, encoding: 'utf8' });
+  assert.equal(json.status, 0, json.stderr);
+  const rows = JSON.parse(json.stdout).members;
+  assert.equal(rows.find((row) => row.name === 'signal-scout').parked, true);
+  assert.equal(rows.find((row) => row.name === 'coder').parked, undefined);
+  const text = spawnSync(process.execPath, [cli, 'member', 'list'], { cwd: root, encoding: 'utf8' });
+  assert.match(text.stdout, /signal-scout .* parked\n/);
+  assert.match(text.stdout, /\(1 parked; unpark with atris team unpark <name>\)/);
+}));
+
+test('park and unpark leave the body and mixed line endings byte for byte', () => withRoom((root) => {
+  const write = (name, text) => {
+    fs.mkdirSync(path.join(root, 'atris', 'team', name), { recursive: true });
+    fs.writeFileSync(path.join(root, 'atris', 'team', name, 'MEMBER.md'), text);
+  };
+  const read = (name) => fs.readFileSync(path.join(root, 'atris', 'team', name, 'MEMBER.md'), 'utf8');
+  // An empty header block, with a body that looks like another header.
+  write('empty-head', '---\n---\n# body\n\n---\nstatus: body text\n');
+  // A header that mixes CRLF and LF lines.
+  write('mixed-ends', '---\r\nname: mixed-ends\nrole: x\r\n---\r\nbody\n');
+  for (const name of ['empty-head', 'mixed-ends']) {
+    const before = read(name);
+    setMemberParked(root, name, { parked: true, note: 'set aside', now: new Date(2026, 8, 27) });
+    assert.equal(isMemberParked(root, name), true);
+    assert.ok(read(name).includes('status: body text\n') || name !== 'empty-head', 'the body line is untouched');
+    setMemberParked(root, name, { parked: false });
+    assert.equal(read(name), before, `${name} comes back byte for byte`);
+  }
+}));
