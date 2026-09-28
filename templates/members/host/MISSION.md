@@ -4,7 +4,7 @@ Help people find conversations they would be glad to have and connections they m
 
 ## North Star
 
-Useful conversations that both people freely chose.
+Useful conversations that both people freely chose, and that actually happened.
 
 ## Boundaries
 
