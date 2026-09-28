@@ -160,3 +160,43 @@ test('--model still wins over the ask job pin', async () => {
     assert.doesNotMatch(args, /haiku/);
   }, { roster });
 });
+
+// --- 2. a claude error result keeps its text --------------------------------
+
+const CLAUDE_RESULT = JSON.stringify({
+  type: 'result',
+  subtype: 'success',
+  is_error: false,
+  result: 'built the widget',
+  usage: { input_tokens: 1000, output_tokens: 234, cache_read_input_tokens: 66 },
+  total_cost_usd: 0.05,
+});
+
+const CLAUDE_ERROR_RESULT = JSON.stringify({
+  type: 'result',
+  subtype: 'error_during_execution',
+  is_error: true,
+  errors: ['rate limit hit', 'slow down and retry'],
+});
+
+test('a claude error result still writes its error text into the report', async () => {
+  await withRoom(async ({ root, bin, wt }) => {
+    fakeEngine(bin, 'claude', { json: `${CLAUDE_ERROR_RESULT}\n`, exit: 1 });
+    const fleet = require('../lib/fleet');
+    const direct = fleet.dispatchToEngine({ task: TASK, engine: 'claude', worktreePath: wt, root, skipBriefCapture: true });
+    assert.equal(direct.exitCode, 1);
+    assert.match(direct.report, /error_during_execution/);
+    assert.match(direct.report, /rate limit hit/);
+    assert.match(direct.report, /slow down and retry/);
+  });
+});
+
+test('a claude success result keeps its result text unchanged', async () => {
+  await withRoom(async ({ root, bin, wt }) => {
+    fakeEngine(bin, 'claude', { json: `${CLAUDE_RESULT}\n` });
+    const fleet = require('../lib/fleet');
+    const direct = fleet.dispatchToEngine({ task: TASK, engine: 'claude', worktreePath: wt, root, skipBriefCapture: true });
+    assert.equal(direct.exitCode, 0);
+    assert.equal(direct.report, 'built the widget');
+  });
+});
