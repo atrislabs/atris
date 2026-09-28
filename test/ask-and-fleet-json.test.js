@@ -200,3 +200,81 @@ test('a claude success result keeps its result text unchanged', async () => {
     assert.equal(direct.report, 'built the widget');
   });
 });
+
+// --- 3. the live log streams claude's stdout lines as they land -------------
+
+function waitUntil(check, timeoutMs = 5000) {
+  const started = Date.now();
+  return new Promise((resolve, reject) => {
+    const tick = () => {
+      let ok = false;
+      try { ok = check(); } catch {}
+      if (ok) return resolve();
+      if (Date.now() - started > timeoutMs) return reject(new Error('waitUntil timed out'));
+      setTimeout(tick, 50);
+    };
+    tick();
+  });
+}
+
+test('a claude run streams its plain stdout lines to the live log while it runs', async () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'fleet-claude-live-root-'));
+  const wt = fs.mkdtempSync(path.join(os.tmpdir(), 'fleet-claude-live-wt-'));
+  const binDir = path.join(root, 'bin');
+  const liveLogPath = path.join(root, 'atris', 'runs', 'dispatch-live.live.log');
+  const resultPath = path.join(root, 'result.json');
+  const runnerPath = path.join(root, 'runner.js');
+  fs.mkdirSync(binDir, { recursive: true });
+  const fakeClaude = path.join(binDir, 'claude');
+  fs.writeFileSync(fakeClaude, [
+    '#!/usr/bin/env node',
+    "process.stdout.write('live line one\\n');",
+    "process.stdout.write('live line two\\n');",
+    'setTimeout(() => {',
+    `  process.stdout.write(${JSON.stringify(CLAUDE_RESULT)} + '\\n');`,
+    '  setTimeout(() => process.exit(0), 400);',
+    '}, 1500);',
+    '',
+  ].join('\n'));
+  fs.chmodSync(fakeClaude, 0o755);
+  fs.writeFileSync(runnerPath, [
+    `'use strict';`,
+    `const fs = require('node:fs');`,
+    `const path = require('node:path');`,
+    `const fleet = require(${JSON.stringify(path.join(__dirname, '..', 'lib', 'fleet.js'))});`,
+    `process.env.PATH = ${JSON.stringify(binDir)} + path.delimiter + process.env.PATH;`,
+    `Promise.resolve(fleet.dispatchToEngine({`,
+    `  task: ${JSON.stringify(TASK)},`,
+    `  engine: 'claude',`,
+    `  worktreePath: ${JSON.stringify(wt)},`,
+    `  root: ${JSON.stringify(process.cwd())},`,
+    `  briefId: 'test-live-brief',`,
+    `  skipBriefCapture: true,`,
+    `  liveLogPath: ${JSON.stringify(liveLogPath)},`,
+    `})).then((result) => {`,
+    `  fs.writeFileSync(${JSON.stringify(resultPath)}, JSON.stringify(result));`,
+    `});`,
+    '',
+  ].join('\n'));
+  const child = spawn(process.execPath, [runnerPath], { cwd: root, stdio: 'ignore' });
+  let closed = false;
+  const childClosed = new Promise((resolve) => child.once('close', (code) => { closed = true; resolve(code); }));
+  try {
+    await waitUntil(() => fs.existsSync(liveLogPath) && fs.readFileSync(liveLogPath, 'utf8').includes('live line two'), 5000);
+    assert.equal(closed, false, 'the engine must still be running when its plain lines are readable');
+    const midRun = fs.readFileSync(liveLogPath, 'utf8');
+    assert.match(midRun, /live line one\nlive line two\n/);
+    assert.doesNotMatch(midRun, /built the widget|"type":"result"/);
+    assert.equal(await childClosed, 0);
+    const finished = fs.readFileSync(liveLogPath, 'utf8');
+    assert.match(finished, /live line one\nlive line two\nbuilt the widget/);
+    assert.doesNotMatch(finished, /"type":"result"/);
+    const result = JSON.parse(fs.readFileSync(resultPath, 'utf8'));
+    assert.equal(result.exitCode, 0);
+    assert.equal(result.report, 'built the widget');
+  } finally {
+    try { child.kill('SIGKILL'); } catch {}
+    fs.rmSync(root, { recursive: true, force: true });
+    fs.rmSync(wt, { recursive: true, force: true });
+  }
+});
