@@ -1,0 +1,344 @@
+'use strict';
+
+// Fixes a reviewer confirmed on the roster-coverage work: a bare engine ask
+// was taking the search line's model (questions are not searches), a claude
+// error result came back with empty report text, the fleet live log held all
+// of claude's stdout until the run ended, and an autopilot phase's time cap
+// ignored the prep pass that ran inside it. Every room is a scratch project
+// with a scratch home, fake engines sit on PATH, and the real ~/.atris is
+// never read or written.
+
+const test = require('node:test');
+const assert = require('node:assert/strict');
+const fs = require('node:fs');
+const os = require('node:os');
+const path = require('node:path');
+const { spawn, spawnSync } = require('node:child_process');
+
+const repoRoot = path.resolve(__dirname, '..');
+const cliPath = path.join(repoRoot, 'bin', 'atris.js');
+
+const ENV_KEYS = [
+  'ATRIS_MACHINE_ROSTER_PATH', 'ATRIS_MACHINE_ROSTER_MD_PATH', 'ATRIS_ROUTER_EXPLAIN', 'ATRIS_ROSTER_SESSION',
+  'ATRIS_ROSTER_SESSIONS_DIR', 'ATRIS_CODEX_MODELS_CACHE_PATH', 'ATRIS_CODEX_CONFIG_PATH',
+  'ATRIS_RUNNER_PROFILE', 'ATRIS_RUNNER_MODEL', 'ATRIS_RUNNER_BIN', 'ATRIS_RUNNER_COMMAND_TEMPLATE',
+  'ATRIS_CLAUDE_MODEL', 'ATRIS_CLAUDE_BIN', 'ATRIS_CLAUDE_COMMAND_TEMPLATE', 'ATRIS_ENGINE_COOLDOWN_MINUTES',
+  'PATH',
+];
+
+const TASK = {
+  display_id: 'CLI-901',
+  status: 'open',
+  title: 'Fix the widget. Done: widget renders once. Check: node --test test/widget.test.js.',
+};
+
+async function withRoom(fn, { roster = '' } = {}) {
+  const { readEngineRegistry, setEngineHealth } = require('../lib/engine-registry');
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'atris-ask-fleet-'));
+  const home = fs.mkdtempSync(path.join(os.tmpdir(), 'atris-ask-fleet-home-'));
+  const bin = fs.mkdtempSync(path.join(os.tmpdir(), 'atris-ask-fleet-bin-'));
+  const wt = fs.mkdtempSync(path.join(os.tmpdir(), 'atris-ask-fleet-wt-'));
+  spawnSync('git', ['init', '-q', root]);
+  spawnSync('git', ['init', '-q', wt]);
+  fs.mkdirSync(path.join(root, 'atris'));
+  if (roster) fs.writeFileSync(path.join(root, 'atris', 'ROSTER.md'), roster);
+  const saved = new Map(ENV_KEYS.map((key) => [key, process.env[key]]));
+  for (const key of ENV_KEYS) if (key !== 'PATH') delete process.env[key];
+  process.env.ATRIS_MACHINE_ROSTER_PATH = path.join(home, '.atris', 'roster.json');
+  process.env.ATRIS_ROUTER_EXPLAIN = '0';
+  process.env.PATH = `${bin}${path.delimiter}${saved.get('PATH') || ''}`;
+  readEngineRegistry(root);
+  for (const name of ['devin', 'grok', 'cursor', 'codex', 'claude', 'haiku']) setEngineHealth(name, 'ready', root);
+  try {
+    return await fn({ root, home, bin, wt });
+  } finally {
+    for (const [key, value] of saved) {
+      if (value === undefined) delete process.env[key];
+      else process.env[key] = value;
+    }
+    for (const dir of [root, home, bin, wt]) fs.rmSync(dir, { recursive: true, force: true });
+  }
+}
+
+// A fake engine: logs that it ran and every argument it got (the prompt
+// rides in as an argument), then prints its output. `json` is printed instead
+// when the launch asks for --output-format json.
+function fakeEngine(bin, name, { stdout = '', json = '', exit = 0 } = {}) {
+  const file = path.join(bin, name);
+  fs.writeFileSync(`${file}.out`, stdout);
+  fs.writeFileSync(`${file}.json`, json);
+  fs.writeFileSync(file, [
+    '#!/bin/sh',
+    `echo "${name}" >> "${path.join(bin, 'calls.log')}"`,
+    `printf '%s\\n' "$@" > "${file}.args"`,
+    `if [ -s "${file}.json" ]; then for a in "$@"; do if [ "$a" = "--output-format" ]; then cat "${file}.json"; exit ${exit}; fi; done; fi`,
+    `cat "${file}.out"`,
+    `exit ${exit}`,
+    '',
+  ].join('\n'));
+  fs.chmodSync(file, 0o755);
+}
+
+function calls(bin) {
+  const file = path.join(bin, 'calls.log');
+  return fs.existsSync(file) ? fs.readFileSync(file, 'utf8').trim().split('\n').filter(Boolean) : [];
+}
+
+function argsOf(bin, name) {
+  const file = path.join(bin, `${name}.args`);
+  return fs.existsSync(file) ? fs.readFileSync(file, 'utf8') : '';
+}
+
+function runs(root) {
+  return require('../lib/roster-runs').readRosterRuns(root, { now: Date.now() + 3600000 });
+}
+
+async function askEngine(args, root) {
+  const { runEngineAskCommand } = require('../lib/engine-ask');
+  const originalLog = console.log;
+  const logs = [];
+  console.log = (...parts) => logs.push(parts.join(' '));
+  try {
+    const code = await runEngineAskCommand(args, root);
+    return { code, logs };
+  } finally {
+    console.log = originalLog;
+  }
+}
+
+// --- 1. engine ask takes the ask job's pin, not the search line -------------
+
+test('a bare ask with only a search line runs the engine default, not the search model', async () => {
+  const roster = '# roster\n\n## search\n- claude, model: haiku, effort: low\n';
+  await withRoom(async ({ root, bin }) => {
+    fakeEngine(bin, 'claude', { stdout: 'the answer is 42\n' });
+    const { code, logs } = await askEngine(['what is the answer', '--engine', 'claude'], root);
+    assert.equal(code, 0, logs.join('\n'));
+    const args = argsOf(bin, 'claude');
+    assert.match(args, /\n--model\nclaude-opus-5-5\n/);
+    assert.doesNotMatch(args, /haiku/);
+    assert.doesNotMatch(args, /\n--effort\n/);
+    const rows = runs(root);
+    assert.equal(rows.length, 1);
+    assert.deepEqual([rows[0].job, rows[0].engine, rows[0].outcome, rows[0].source], ['ask', 'claude', 'landed', 'ask']);
+  }, { roster });
+});
+
+test('an ask job that lists this engine pins its model and effort', async () => {
+  const roster = '# roster\n\n## ask (like search)\n- claude, model: haiku, effort: low\n';
+  await withRoom(async ({ root, bin }) => {
+    fakeEngine(bin, 'claude', { stdout: 'the answer is 42\n' });
+    const { code, logs } = await askEngine(['what is the answer', '--engine', 'claude'], root);
+    assert.equal(code, 0, logs.join('\n'));
+    assert.match(argsOf(bin, 'claude'), /\n--model\nhaiku\n--effort\nlow\n/);
+    const rows = runs(root);
+    assert.equal(rows.length, 1);
+    assert.deepEqual([rows[0].job, rows[0].engine, rows[0].model, rows[0].effort], ['ask', 'claude', 'haiku', 'low']);
+  }, { roster });
+});
+
+test('an ask job that lists another engine leaves this one unpinned', async () => {
+  const roster = '# roster\n\n## ask (like search)\n- codex, effort: high\n';
+  await withRoom(async ({ root, bin }) => {
+    fakeEngine(bin, 'claude', { stdout: 'the answer is 42\n' });
+    const { code, logs } = await askEngine(['what is the answer', '--engine', 'claude'], root);
+    assert.equal(code, 0, logs.join('\n'));
+    const args = argsOf(bin, 'claude');
+    assert.match(args, /\n--model\nclaude-opus-5-5\n/);
+    assert.doesNotMatch(args, /\n--effort\n/);
+  }, { roster });
+});
+
+test('--model still wins over the ask job pin', async () => {
+  const roster = '# roster\n\n## ask (like search)\n- claude, model: haiku, effort: low\n';
+  await withRoom(async ({ root, bin }) => {
+    fakeEngine(bin, 'claude', { stdout: 'the answer is 42\n' });
+    const { code, logs } = await askEngine(['what is the answer', '--engine', 'claude', '--model', 'opus'], root);
+    assert.equal(code, 0, logs.join('\n'));
+    const args = argsOf(bin, 'claude');
+    assert.match(args, /\n--model\nopus\n/);
+    assert.doesNotMatch(args, /haiku/);
+  }, { roster });
+});
+
+// --- 2. a claude error result keeps its text --------------------------------
+
+const CLAUDE_RESULT = JSON.stringify({
+  type: 'result',
+  subtype: 'success',
+  is_error: false,
+  result: 'built the widget',
+  usage: { input_tokens: 1000, output_tokens: 234, cache_read_input_tokens: 66 },
+  total_cost_usd: 0.05,
+});
+
+const CLAUDE_ERROR_RESULT = JSON.stringify({
+  type: 'result',
+  subtype: 'error_during_execution',
+  is_error: true,
+  errors: ['rate limit hit', 'slow down and retry'],
+});
+
+test('a claude error result still writes its error text into the report', async () => {
+  await withRoom(async ({ root, bin, wt }) => {
+    fakeEngine(bin, 'claude', { json: `${CLAUDE_ERROR_RESULT}\n`, exit: 1 });
+    const fleet = require('../lib/fleet');
+    const direct = fleet.dispatchToEngine({ task: TASK, engine: 'claude', worktreePath: wt, root, skipBriefCapture: true });
+    assert.equal(direct.exitCode, 1);
+    assert.match(direct.report, /error_during_execution/);
+    assert.match(direct.report, /rate limit hit/);
+    assert.match(direct.report, /slow down and retry/);
+  });
+});
+
+test('a claude success result keeps its result text unchanged', async () => {
+  await withRoom(async ({ root, bin, wt }) => {
+    fakeEngine(bin, 'claude', { json: `${CLAUDE_RESULT}\n` });
+    const fleet = require('../lib/fleet');
+    const direct = fleet.dispatchToEngine({ task: TASK, engine: 'claude', worktreePath: wt, root, skipBriefCapture: true });
+    assert.equal(direct.exitCode, 0);
+    assert.equal(direct.report, 'built the widget');
+  });
+});
+
+// --- 3. the live log streams claude's stdout lines as they land -------------
+
+function waitUntil(check, timeoutMs = 5000) {
+  const started = Date.now();
+  return new Promise((resolve, reject) => {
+    const tick = () => {
+      let ok = false;
+      try { ok = check(); } catch {}
+      if (ok) return resolve();
+      if (Date.now() - started > timeoutMs) return reject(new Error('waitUntil timed out'));
+      setTimeout(tick, 50);
+    };
+    tick();
+  });
+}
+
+test('a claude run streams its plain stdout lines to the live log while it runs', async () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'fleet-claude-live-root-'));
+  const wt = fs.mkdtempSync(path.join(os.tmpdir(), 'fleet-claude-live-wt-'));
+  const binDir = path.join(root, 'bin');
+  const liveLogPath = path.join(root, 'atris', 'runs', 'dispatch-live.live.log');
+  const resultPath = path.join(root, 'result.json');
+  const runnerPath = path.join(root, 'runner.js');
+  fs.mkdirSync(binDir, { recursive: true });
+  const fakeClaude = path.join(binDir, 'claude');
+  fs.writeFileSync(fakeClaude, [
+    '#!/usr/bin/env node',
+    "process.stdout.write('live line one\\n');",
+    "process.stdout.write('live line two\\n');",
+    'setTimeout(() => {',
+    `  process.stdout.write(${JSON.stringify(CLAUDE_RESULT)} + '\\n');`,
+    '  setTimeout(() => process.exit(0), 400);',
+    '}, 1500);',
+    '',
+  ].join('\n'));
+  fs.chmodSync(fakeClaude, 0o755);
+  fs.writeFileSync(runnerPath, [
+    `'use strict';`,
+    `const fs = require('node:fs');`,
+    `const path = require('node:path');`,
+    `const fleet = require(${JSON.stringify(path.join(__dirname, '..', 'lib', 'fleet.js'))});`,
+    `process.env.PATH = ${JSON.stringify(binDir)} + path.delimiter + process.env.PATH;`,
+    `Promise.resolve(fleet.dispatchToEngine({`,
+    `  task: ${JSON.stringify(TASK)},`,
+    `  engine: 'claude',`,
+    `  worktreePath: ${JSON.stringify(wt)},`,
+    `  root: ${JSON.stringify(process.cwd())},`,
+    `  briefId: 'test-live-brief',`,
+    `  skipBriefCapture: true,`,
+    `  liveLogPath: ${JSON.stringify(liveLogPath)},`,
+    `})).then((result) => {`,
+    `  fs.writeFileSync(${JSON.stringify(resultPath)}, JSON.stringify(result));`,
+    `});`,
+    '',
+  ].join('\n'));
+  const child = spawn(process.execPath, [runnerPath], { cwd: root, stdio: 'ignore' });
+  let closed = false;
+  const childClosed = new Promise((resolve) => child.once('close', (code) => { closed = true; resolve(code); }));
+  try {
+    await waitUntil(() => fs.existsSync(liveLogPath) && fs.readFileSync(liveLogPath, 'utf8').includes('live line two'), 5000);
+    assert.equal(closed, false, 'the engine must still be running when its plain lines are readable');
+    const midRun = fs.readFileSync(liveLogPath, 'utf8');
+    assert.match(midRun, /live line one\nlive line two\n/);
+    assert.doesNotMatch(midRun, /built the widget|"type":"result"/);
+    assert.equal(await childClosed, 0);
+    const finished = fs.readFileSync(liveLogPath, 'utf8');
+    assert.match(finished, /live line one\nlive line two\nbuilt the widget/);
+    assert.doesNotMatch(finished, /"type":"result"/);
+    const result = JSON.parse(fs.readFileSync(resultPath, 'utf8'));
+    assert.equal(result.exitCode, 0);
+    assert.equal(result.report, 'built the widget');
+  } finally {
+    try { child.kill('SIGKILL'); } catch {}
+    fs.rmSync(root, { recursive: true, force: true });
+    fs.rmSync(wt, { recursive: true, force: true });
+  }
+});
+
+// --- 4. an autopilot phase cap covers its prep time -------------------------
+
+test('a phase whose worker preps first gets only the cap time that remains', async () => {
+  // The phase cap must cover the prep pass too: a roster worker with
+  // "max: 90s, prep: search" whose prep takes a few seconds leaves the
+  // phase only the remainder, never less than a small floor. The phase
+  // runs in a child process so the execSync wrapper that reads the real
+  // timeout is installed before the autopilot module loads.
+  const roster = '# roster\n\n## search\n- claude\n\n## review\n- codex, max: 90s, prep: search\n';
+  await withRoom(async ({ root, home, bin }) => {
+    fs.writeFileSync(path.join(bin, 'claude'), [
+      '#!/bin/sh',
+      `echo "claude" >> "${path.join(bin, 'calls.log')}"`,
+      'sleep 3',
+      'printf "brief line one\\n"',
+      '',
+    ].join('\n'));
+    fs.chmodSync(path.join(bin, 'claude'), 0o755);
+    fakeEngine(bin, 'codex', { stdout: 'SIGNOFF\n' });
+    const resultPath = path.join(root, 'phase-result.json');
+    const runnerPath = path.join(root, 'phase-runner.js');
+    fs.writeFileSync(runnerPath, [
+      `'use strict';`,
+      `const cp = require('node:child_process');`,
+      `const realExecSync = cp.execSync;`,
+      `const seen = [];`,
+      `cp.execSync = function (cmd, opts) {`,
+      `  seen.push({ cmd: String(cmd), timeout: opts && opts.timeout });`,
+      `  return realExecSync.apply(this, arguments);`,
+      `};`,
+      `const fs = require('node:fs');`,
+      `const { executePhaseDetailed } = require(${JSON.stringify(path.join(repoRoot, 'commands', 'autopilot.js'))});`,
+      `try {`,
+      `  executePhaseDetailed('review', { task: 'fix the widget', kind: 'endgame' }, { verbose: false });`,
+      `  fs.writeFileSync(${JSON.stringify(resultPath)}, JSON.stringify({ ok: true, calls: seen }));`,
+      `} catch (error) {`,
+      `  fs.writeFileSync(${JSON.stringify(resultPath)}, JSON.stringify({ ok: false, error: String(error && error.message || error), calls: seen }));`,
+      `}`,
+      '',
+    ].join('\n'));
+    const env = {
+      ...process.env,
+      ATRIS_MACHINE_ROSTER_PATH: path.join(home, '.atris', 'roster.json'),
+      ATRIS_ROUTER_EXPLAIN: '0',
+      PATH: `${bin}${path.delimiter}${process.env.PATH}`,
+      HOME: home,
+    };
+    const child = spawnSync(process.execPath, [runnerPath], { cwd: root, encoding: 'utf8', env, timeout: 90000 });
+    assert.equal(child.status, 0, child.stderr || child.stdout);
+    const out = JSON.parse(fs.readFileSync(resultPath, 'utf8'));
+    assert.equal(out.ok, true, out.error || 'phase failed');
+    assert.deepEqual(calls(bin), ['claude', 'codex']);
+    const phaseCall = out.calls.find((entry) => entry.cmd.includes('.autopilot-prompt.tmp'));
+    assert.ok(phaseCall, 'the phase command ran through execSync');
+    assert.ok(phaseCall.timeout <= 87000, `cap minus prep should be under 87s, got ${phaseCall.timeout}ms`);
+    assert.ok(phaseCall.timeout >= 30000, `the phase keeps a 30s floor, got ${phaseCall.timeout}ms`);
+    const rows = runs(root);
+    assert.deepEqual(rows.map((row) => [row.job, row.engine, row.source, row.outcome]), [
+      ['search', 'claude', 'prep', 'landed'],
+      ['review', 'codex', 'autopilot', 'landed'],
+    ]);
+  }, { roster });
+});

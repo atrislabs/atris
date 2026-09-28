@@ -231,8 +231,8 @@ test('a claude stand-in that prints plain text still lands, with no tokens', asy
 
 // --- 4. engine ask ------------------------------------------------------------
 
-test('engine ask passes the search line\'s model and effort, and records an ask run line', async () => {
-  const roster = '# roster\n\n## search\n- claude, model: haiku, effort: low\n';
+test('engine ask passes the ask line\'s model and effort, and records an ask run line', async () => {
+  const roster = '# roster\n\n## ask (like search)\n- claude, model: haiku, effort: low\n';
   await withRoom(async ({ root, bin }) => {
     fakeEngine(bin, 'claude', { stdout: `the answer is 42\n${CLAUDE_RESULT}\n` });
     const { runEngineAskCommand } = require('../lib/engine-ask');
@@ -254,7 +254,7 @@ test('engine ask passes the search line\'s model and effort, and records an ask 
   }, { roster });
 });
 
-test('an ask whose engine is not on the search line runs as before and still records its line', async () => {
+test('an ask with no ask line runs unpinned and still records its line', async () => {
   const roster = '# roster\n\n## search\n- claude, model: haiku, effort: low\n';
   await withRoom(async ({ root, bin }) => {
     fakeEngine(bin, 'codex', { stdout: 'boom\n', exit: 3 });

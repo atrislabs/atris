@@ -31,6 +31,10 @@ const { ownerIdentity } = require('../utils/owner-identity');
 const pkg = require('../package.json');
 
 const PHASE_TIMEOUT = 600000; // 10 min per phase
+// A phase's cap covers its prep pass too: prep's elapsed time comes out of
+// the cap before the phase command starts. The floor keeps a slow prep from
+// leaving the phase no room at all.
+const PHASE_MIN_AFTER_PREP_MS = 30000;
 
 function looksOwnerClaimed(claimed) {
   const text = String(claimed || '').trim().toLowerCase();
@@ -608,9 +612,14 @@ function executePhaseDetailed(phase, context, options = {}) {
     if (!cmd) {
       const runner = buildPhaseRunner(phase, tmpFile);
       if (runner.engineId) rosterRunner = runner;
+      // A roster time cap stops the phase at that time, and prep runs inside
+      // it: the phase gets what remains after the pass, floored so it can
+      // still try.
+      if (runner.timeoutMs) timeout = runner.timeoutMs;
       // A worker whose roster line asks for prep gets its brief first, the
       // same pass fleet runs; the launch reads the prompt file, brief added.
       if (runner.engineId && runner.prep) {
+        const prepStartedMs = Date.now();
         const { runPrepPassSync, withPrepBrief } = require('../lib/roster-prep');
         runner.prepResult = runPrepPassSync({
           prepJob: runner.prep,
@@ -622,10 +631,9 @@ function executePhaseDetailed(phase, context, options = {}) {
         });
         prompt = withPrepBrief(prompt, runner.prepResult);
         fs.writeFileSync(tmpFile, prompt);
+        timeout = Math.max(PHASE_MIN_AFTER_PREP_MS, timeout - (Date.now() - prepStartedMs));
       }
       cmd = runner.command;
-      // A roster time cap stops the phase at that time.
-      if (runner.timeoutMs) timeout = runner.timeoutMs;
     }
     const env = { ...process.env };
     delete env.CLAUDECODE;
