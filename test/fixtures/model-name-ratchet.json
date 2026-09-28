@@ -1,8 +1,10 @@
 {
-  "lib/engine-registry.js": 37,
+  "lib/engine-registry.js": 18,
   "lib/member-engine.js": 1,
+  "lib/roster-assign.js": 1,
   "lib/roster-markdown.js": 2,
   "lib/roster-models.js": 7,
+  "lib/roster-words.js": 16,
   "lib/runner-command.js": 7,
   "lib/team-lineup.js": 3,
   "commands/computer.js": 1,

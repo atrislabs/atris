@@ -205,7 +205,7 @@ const PREP_ROSTER = `# roster
 
 test('a worker line reads "prep: search" and the roster view says "prepped by search"', async () => {
   await withRoom(async ({ root }) => {
-    const { readRosterState } = require('../lib/engine-registry');
+    const { readRosterState } = require('../lib/roster');
     const picks = readRosterState(root).project.picks;
     assert.equal(picks.executor.workers[0].prep, 'navigator');
     assert.equal('prep' in picks.executor.workers[1], false);
@@ -221,7 +221,7 @@ test('a worker line reads "prep: search" and the roster view says "prepped by se
 
 test('prep naming its own job warns in plain words and the worker still counts', async () => {
   await withRoom(async ({ root }) => {
-    const { readRosterState } = require('../lib/engine-registry');
+    const { readRosterState } = require('../lib/roster');
     const layer = readRosterState(root).project;
     assert.equal(layer.picks.executor.engine, 'cursor');
     assert.equal('prep' in layer.picks.executor.workers[0], false);

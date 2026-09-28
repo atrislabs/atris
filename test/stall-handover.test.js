@@ -15,9 +15,9 @@ const {
   readEngineRegistry,
   recordEngineRunHealth,
   resolveEngineForRoleRanked,
-  resolveJobTeam,
   setEngineHealth,
 } = require('../lib/engine-registry');
+const { resolveJobTeam } = require('../lib/roster');
 const { recordMissionEngineTickOutcome, resolveMissionTickRunner } = require('../commands/mission');
 const fleet = require('../lib/fleet');
 

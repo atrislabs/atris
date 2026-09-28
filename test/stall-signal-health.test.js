@@ -20,9 +20,9 @@ const {
   recordEngineRunHealth,
   resolveEngineForRoleRanked,
   resolveEngineForRoleWithPreference,
-  resolveJobTeam,
   setEngineHealth,
 } = require('../lib/engine-registry');
+const { resolveJobTeam } = require('../lib/roster');
 const fleet = require('../lib/fleet');
 
 const ENV_KEYS = [

@@ -217,7 +217,7 @@ test('a roster reader that throws drops the team line and the boot still finishe
   try {
     seedRosterRoom(dir, BOOT_ROSTER);
     const preload = path.join(dir, 'break-roster.js');
-    fs.writeFileSync(preload, `const engine = require(${JSON.stringify(path.join(repoRoot, 'commands', 'engine.js'))});\nengine.jobRosterView = () => { throw new Error('roster exploded'); };\n`, 'utf8');
+    fs.writeFileSync(preload, `const view = require(${JSON.stringify(path.join(repoRoot, 'lib', 'roster-view.js'))});\nview.jobRosterView = () => { throw new Error('roster exploded'); };\n`, 'utf8');
     const result = spawnSync(process.execPath, ['-r', preload, cliPath, 'atris.md'], {
       cwd: dir,
       encoding: 'utf8',

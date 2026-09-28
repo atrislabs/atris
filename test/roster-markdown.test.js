@@ -13,13 +13,12 @@ const { buildRunnerCommand } = require('../lib/runner-command');
 const {
   engineRegistryFile,
   readEngineRegistry,
-  readRosterState,
   resolveEngineForRoleRanked,
-  rosterJobKey,
-  rosterJobRole,
   setEngineHealth,
-  setRosterPick,
 } = require('../lib/engine-registry');
+const { readRosterState, rosterJobRole } = require('../lib/roster');
+const { rosterJobKey } = require('../lib/roster-words');
+const { setRosterPick } = require('../lib/roster-assign');
 const { autoJobForMember, resolveEngineForMember } = require('../lib/member-engine');
 
 const NOW = new Date('2026-09-24T12:00:00.000Z');

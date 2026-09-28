@@ -17,11 +17,10 @@ const { buildRunnerCommand } = require('../lib/runner-command');
 const { readCodexSettings, engineRunsView } = require('../lib/roster-models');
 const {
   readEngineRegistry,
-  readRosterState,
   resolveEngineForRoleRanked,
-  rosterJobRole,
   setEngineHealth,
 } = require('../lib/engine-registry');
+const { readRosterState, rosterJobRole } = require('../lib/roster');
 const { memberRosterEngine, resolveEngineForMember } = require('../lib/member-engine');
 
 const NOW = new Date('2026-09-24T12:00:00.000Z');

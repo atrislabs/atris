@@ -11,18 +11,19 @@ const { readyExecutor, readyValidators, lapModelPins } = require('../commands/on
 const { buildEngineCommand } = require('../lib/fleet');
 const { handleMissionBlocker } = require('../lib/self-drive');
 const {
-  normalizeRosterModel,
-  parseRosterUntil,
-  rosterPickExpired,
   engineRegistryFile,
   readEngineRegistry,
   resolveEngineForRoleRanked,
   setEngineHealth,
-  setRosterPick,
-  confirmRoster,
   resolveEngineForRoleWithPreference,
-  readRosterState,
 } = require('../lib/engine-registry');
+const { readRosterState } = require('../lib/roster');
+const {
+  normalizeRosterModel,
+  parseRosterUntil,
+  rosterPickExpired,
+} = require('../lib/roster-words');
+const { setRosterPick, confirmRoster } = require('../lib/roster-assign');
 const { auditWish, inferBudgetTier } = require('../lib/wish-audit');
 
 const NOW = new Date('2026-09-24T12:00:00.000Z');

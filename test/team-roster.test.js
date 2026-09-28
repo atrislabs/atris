@@ -304,14 +304,14 @@ test('a lineup that cannot be read still prints today\'s team plus one plain lin
 
 test('a throwing roster reader is caught by readLineupSafe', () => {
   const lineup = require('../lib/team-lineup');
-  const engine = require('../commands/engine');
-  const original = engine.rosterReport;
-  engine.rosterReport = () => { throw new Error('bad roster'); };
+  const view = require('../lib/roster-view');
+  const original = view.rosterReport;
+  view.rosterReport = () => { throw new Error('bad roster'); };
   try {
     const read = lineup.readLineupSafe('/fake/root');
     assert.equal(read.ok, false);
     assert.match(read.error, /bad roster/);
   } finally {
-    engine.rosterReport = original;
+    view.rosterReport = original;
   }
 });

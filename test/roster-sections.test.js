@@ -14,12 +14,11 @@ const path = require('node:path');
 const { engineCommand } = require('../commands/engine');
 const {
   readEngineRegistry,
-  readRosterState,
   resolveEngineForRoleRanked,
-  resolveJobTeam,
   setEngineHealth,
-  setRosterPick,
 } = require('../lib/engine-registry');
+const { readRosterState, resolveJobTeam } = require('../lib/roster');
+const { setRosterPick } = require('../lib/roster-assign');
 const { resolveEngineForMember } = require('../lib/member-engine');
 
 const NOW = new Date('2026-09-24T12:00:00.000Z');

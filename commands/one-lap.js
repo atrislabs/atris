@@ -14,8 +14,8 @@ const {
   resolveRegisteredEngine,
   rosterPinFor,
   ROSTER_PIN_FIELDS,
-  rosterDecided,
 } = require('../lib/engine-registry');
+const { rosterDecided } = require('../lib/roster');
 const { parseVerifyCommand } = require('../lib/auto-accept-certified');
 const fleet = require('../lib/fleet');
 

@@ -13,11 +13,11 @@ const path = require('node:path');
 const { spawn } = require('node:child_process');
 const {
   readEngineRegistry,
-  readRosterState,
   resolveEngineForRoleRanked,
   setEngineHealth,
-  setRosterPick,
 } = require('../lib/engine-registry');
+const { readRosterState } = require('../lib/roster');
+const { setRosterPick } = require('../lib/roster-assign');
 
 const NOW = new Date('2026-09-24T12:00:00.000Z');
 const ENV_KEYS = [
