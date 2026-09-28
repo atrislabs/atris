@@ -16,8 +16,7 @@ const {
   resolveEngineForRoleRanked,
   setEngineHealth,
 } = require('../lib/engine-registry');
-const { readRosterState } = require('../lib/roster');
-const { setRosterPick } = require('../lib/roster-assign');
+const { readRosterState, setRosterPick } = require('../lib/roster');
 
 const NOW = new Date('2026-09-24T12:00:00.000Z');
 const ENV_KEYS = [

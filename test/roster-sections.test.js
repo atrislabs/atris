@@ -17,8 +17,7 @@ const {
   resolveEngineForRoleRanked,
   setEngineHealth,
 } = require('../lib/engine-registry');
-const { readRosterState, resolveJobTeam } = require('../lib/roster');
-const { setRosterPick } = require('../lib/roster-assign');
+const { readRosterState, resolveJobTeam, setRosterPick } = require('../lib/roster');
 const { resolveEngineForMember } = require('../lib/member-engine');
 
 const NOW = new Date('2026-09-24T12:00:00.000Z');

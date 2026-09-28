@@ -35,9 +35,10 @@ const {
 const { parseScopeFlag } = require('../lib/cli-scope');
 const { isFreshWorkspace, speakFirstMinute } = require('../lib/first-minute');
 const { readRosterRuns, recentRuns, renderRunLine } = require('../lib/roster-runs');
-const { rosterSessionKey, clearSessionRoster, NO_SESSION_MESSAGE, rosterJobRole } = require('../lib/roster');
+const {
+  rosterSessionKey, clearSessionRoster, NO_SESSION_MESSAGE, rosterJobRole, setRosterPick, confirmRoster,
+} = require('../lib/roster');
 const { rosterJobKey, rosterJobNameError } = require('../lib/roster-words');
-const { setRosterPick, confirmRoster } = require('../lib/roster-assign');
 const {
   AVAILABLE_HINT,
   attachRunRecords,
