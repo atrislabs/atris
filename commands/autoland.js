@@ -135,8 +135,19 @@ function runOwnCli(root, cliArgs) {
   // target root or a global `atris` breaks whenever the tick runs a project
   // that isn't the CLI repo on a machine without a global install (CI, cron).
   const bin = path.resolve(__dirname, '..', 'bin', 'atris.js');
-  const result = spawnSync(process.execPath, [bin, ...cliArgs], { cwd: root, encoding: 'utf8', timeout: 300000 });
-  return { status: result.status, stdout: String(result.stdout || ''), stderr: String(result.stderr || '') };
+  // spawnSync keeps 1 MB of stdout by default and kills the child past it
+  // (ENOBUFS) with empty stderr. A real certify-and-land sweep over 150+
+  // review rows prints more than that, which read as "auto-accept output
+  // unreadable" on most ticks since 2026-09-27. Allow 64 MB and report why a
+  // run ended.
+  const result = spawnSync(process.execPath, [bin, ...cliArgs], { cwd: root, encoding: 'utf8', timeout: 300000, maxBuffer: 64 * 1024 * 1024 });
+  return {
+    status: result.status,
+    signal: result.signal || null,
+    errorCode: result.error && result.error.code ? result.error.code : null,
+    stdout: String(result.stdout || ''),
+    stderr: String(result.stderr || ''),
+  };
 }
 
 function readProjection(root) {
@@ -802,6 +813,13 @@ async function runTickBody(root, { json, policy, receipt, engineValidationDeps =
     receipt.undercounted = Boolean(parsed.undercounted);
   } catch (err) {
     receipt.accept_error = accept.stderr.slice(0, 200) || 'auto-accept output unreadable';
+    receipt.accept_exit = {
+      status: accept.status,
+      signal: accept.signal || null,
+      error_code: accept.errorCode || null,
+      stdout_bytes: accept.stdout.length,
+      stdout_tail: accept.stdout.slice(-200),
+    };
   }
 
   // 2b. tell the operator the moment something lands: one text, one landing
