@@ -278,3 +278,67 @@ test('a claude run streams its plain stdout lines to the live log while it runs'
     fs.rmSync(wt, { recursive: true, force: true });
   }
 });
+
+// --- 4. an autopilot phase cap covers its prep time -------------------------
+
+test('a phase whose worker preps first gets only the cap time that remains', async () => {
+  // The phase cap must cover the prep pass too: a roster worker with
+  // "max: 90s, prep: search" whose prep takes a few seconds leaves the
+  // phase only the remainder, never less than a small floor. The phase
+  // runs in a child process so the execSync wrapper that reads the real
+  // timeout is installed before the autopilot module loads.
+  const roster = '# roster\n\n## search\n- claude\n\n## review\n- codex, max: 90s, prep: search\n';
+  await withRoom(async ({ root, home, bin }) => {
+    fs.writeFileSync(path.join(bin, 'claude'), [
+      '#!/bin/sh',
+      `echo "claude" >> "${path.join(bin, 'calls.log')}"`,
+      'sleep 3',
+      'printf "brief line one\\n"',
+      '',
+    ].join('\n'));
+    fs.chmodSync(path.join(bin, 'claude'), 0o755);
+    fakeEngine(bin, 'codex', { stdout: 'SIGNOFF\n' });
+    const resultPath = path.join(root, 'phase-result.json');
+    const runnerPath = path.join(root, 'phase-runner.js');
+    fs.writeFileSync(runnerPath, [
+      `'use strict';`,
+      `const cp = require('node:child_process');`,
+      `const realExecSync = cp.execSync;`,
+      `const seen = [];`,
+      `cp.execSync = function (cmd, opts) {`,
+      `  seen.push({ cmd: String(cmd), timeout: opts && opts.timeout });`,
+      `  return realExecSync.apply(this, arguments);`,
+      `};`,
+      `const fs = require('node:fs');`,
+      `const { executePhaseDetailed } = require(${JSON.stringify(path.join(repoRoot, 'commands', 'autopilot.js'))});`,
+      `try {`,
+      `  executePhaseDetailed('review', { task: 'fix the widget', kind: 'endgame' }, { verbose: false });`,
+      `  fs.writeFileSync(${JSON.stringify(resultPath)}, JSON.stringify({ ok: true, calls: seen }));`,
+      `} catch (error) {`,
+      `  fs.writeFileSync(${JSON.stringify(resultPath)}, JSON.stringify({ ok: false, error: String(error && error.message || error), calls: seen }));`,
+      `}`,
+      '',
+    ].join('\n'));
+    const env = {
+      ...process.env,
+      ATRIS_MACHINE_ROSTER_PATH: path.join(home, '.atris', 'roster.json'),
+      ATRIS_ROUTER_EXPLAIN: '0',
+      PATH: `${bin}${path.delimiter}${process.env.PATH}`,
+      HOME: home,
+    };
+    const child = spawnSync(process.execPath, [runnerPath], { cwd: root, encoding: 'utf8', env, timeout: 90000 });
+    assert.equal(child.status, 0, child.stderr || child.stdout);
+    const out = JSON.parse(fs.readFileSync(resultPath, 'utf8'));
+    assert.equal(out.ok, true, out.error || 'phase failed');
+    assert.deepEqual(calls(bin), ['claude', 'codex']);
+    const phaseCall = out.calls.find((entry) => entry.cmd.includes('.autopilot-prompt.tmp'));
+    assert.ok(phaseCall, 'the phase command ran through execSync');
+    assert.ok(phaseCall.timeout <= 87000, `cap minus prep should be under 87s, got ${phaseCall.timeout}ms`);
+    assert.ok(phaseCall.timeout >= 30000, `the phase keeps a 30s floor, got ${phaseCall.timeout}ms`);
+    const rows = runs(root);
+    assert.deepEqual(rows.map((row) => [row.job, row.engine, row.source, row.outcome]), [
+      ['search', 'claude', 'prep', 'landed'],
+      ['review', 'codex', 'autopilot', 'landed'],
+    ]);
+  }, { roster });
+});
