@@ -87,6 +87,19 @@ test('a runner bin named codex is treated as codex even with no profile', () => 
   assert.equal(cmd, '/opt/bin/codex exec "$(cat /tmp/prompt.md)"');
 });
 
+// No template at all: the default spawn shape still checks the program.
+test('a runner bin named codex with no template never gets a claude model', () => {
+  for (const profile of ['', 'claude']) {
+    for (const model of [undefined, 'opus', 'claude-opus-5-5', 'default[1m]']) {
+      const env = { ATRIS_RUNNER_BIN: '/opt/bin/codex' };
+      const cmd = withProfile(profile, () => buildRunnerCommand({ promptFile: '/tmp/prompt.md', ...(model ? { model } : {}) }), env);
+      assert.equal(cmd, `/opt/bin/codex -p "$(cat '/tmp/prompt.md')"`, `${profile} ${model}: ${cmd}`);
+    }
+  }
+  const pinned = withProfile('claude', () => buildRunnerCommand({ promptFile: '/tmp/prompt.md', model: 'gpt-6-sol' }), { ATRIS_RUNNER_BIN: '/opt/bin/codex' });
+  assert.equal(pinned, `/opt/bin/codex -p "$(cat '/tmp/prompt.md')" --model gpt-6-sol`);
+});
+
 test('a dropped model takes a literal model flag in the template with it', () => {
   for (const template of [
     '{bin} exec --model {model} {prompt}',

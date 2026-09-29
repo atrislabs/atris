@@ -87,6 +87,19 @@ test('a runner bin named grok is treated as grok even with no profile', () => {
   assert.equal(cmd, '/opt/bin/grok -p "$(cat /tmp/prompt.md)"');
 });
 
+// No template at all: the default spawn shape still checks the program.
+test('a runner bin named grok with no template never gets a claude model', () => {
+  for (const profile of ['', 'claude']) {
+    for (const model of [undefined, 'opus', 'claude-opus-5-5', 'default[1m]']) {
+      const env = { ATRIS_RUNNER_BIN: '/opt/bin/grok' };
+      const cmd = withProfile(profile, () => buildRunnerCommand({ promptFile: '/tmp/prompt.md', ...(model ? { model } : {}) }), env);
+      assert.equal(cmd, `/opt/bin/grok -p "$(cat '/tmp/prompt.md')"`, `${profile} ${model}: ${cmd}`);
+    }
+  }
+  const pinned = withProfile('claude', () => buildRunnerCommand({ promptFile: '/tmp/prompt.md', model: 'grok-4.7' }), { ATRIS_RUNNER_BIN: '/opt/bin/grok' });
+  assert.equal(pinned, `/opt/bin/grok -p "$(cat '/tmp/prompt.md')" --model grok-4.7`);
+});
+
 test('a dropped model takes a literal model flag in a grok template with it', () => {
   for (const template of [
     '{bin} --model {model} -p {prompt}',
