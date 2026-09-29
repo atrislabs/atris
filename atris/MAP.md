@@ -23,6 +23,7 @@ checks the refs in both files; `atris doc-health --fix-refs` moves drifted ones.
 | where ~/.atris state lives (test fence) | `lib/state-home.js`, `lib/task-db.js:191` | under node --test with the real home, tasks.db and other ~/.atris files go to a throwaway folder; ATRIS_TEST_REAL_HOME=1 opts back in; `test/test-state-fence.test.js` |
 | task command surface | `commands/task.js` | claim, ready, accept, render, keep, day |
 | task list keeper | `lib/task-list-keeper.js` | one lookup; puts away only rows ready to leave |
+| test junk cleanup in the task database | `commands/task.js:9827`, `lib/task-prune.js:55`, `lib/task-prune.js:83`, `lib/task-prune.js:188`, `lib/task-prune.js:226` | `atris task prune-test-junk` counts rows whose project folder is under a temp directory (read-only handle, nothing written); `--yes` writes a `VACUUM INTO` backup next to the db, checks it, plans from the backup, then deletes those tasks with their history and `part_uses` rows in 500-row transactions; rows touched in the last hour or with real-project history stay; `--vacuum` shrinks the file; `test/task-prune-test-junk.test.js` |
 | task projection file | `commands/task.js` | writes the readable view at .atris/state/tasks.projection.json (local, gitignored) |
 | todo fallback | `lib/todo-fallback.js` | legacy TODO read |
 | mission command | `commands/mission.js` | start, run, tick, complete, error streaks |

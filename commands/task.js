@@ -253,6 +253,8 @@ atris task - durable local task state (SQLite, gitignored)
                                            Sweep off-roadmap/duplicate work as archived (not failed);
                                            --from-failed opts in to relabel a fail-closed row (never done)
   atris task clear-done [--before <days>] [--dry-run] [--json]  Archive completed rows, oldest first
+  atris task prune-test-junk [--yes] [--vacuum] [--json]
+                                           Count rows test runs left from temp folders; --yes backs up the db, then removes them
   atris task keep [--json]                 Put away finished and untouched work, then refresh the list
   atris task reap-mission-blockers [--json] Close blocker rows whose missions are complete or stopped
   atris task relabel-archived [--dry-run|--apply]
@@ -9814,6 +9816,75 @@ function cmdClearDone(args) {
   console.log(`cleared ${candidates.length} completed task(s).`);
 }
 
+function formatBytes(bytes) {
+  const mb = Number(bytes || 0) / (1024 * 1024);
+  return mb >= 1 ? `${mb.toFixed(1)} MB` : `${Math.round(Number(bytes || 0) / 1024)} KB`;
+}
+
+// Test runs that forgot ATRIS_TASKS_DB left rows in the shared database
+// under temp folders. Default is a read-only count; --yes backs up, then
+// removes those rows and their history. Real project rows are never touched.
+function cmdPruneTestJunk(args) {
+  const taskDb = getTaskDb();
+  const prune = require('../lib/task-prune');
+  const dbPath = taskDb.getDbPath();
+  const apply = hasFlag(args, '--yes') && !hasFlag(args, '--dry-run');
+  const vacuum = apply && hasFlag(args, '--vacuum');
+  if (!apply) {
+    const plan = prune.dryRun(dbPath);
+    const { rows, strays, ...summary } = plan;
+    if (wantsJson(args)) {
+      printJson({ ok: true, action: 'prune-test-junk', dry_run: true, ...summary });
+      return;
+    }
+    if (plan.missing) {
+      console.log(`no task database at ${dbPath}. nothing to prune.`);
+      return;
+    }
+    const r = plan.remove;
+    console.log('prune-test-junk dry run: nothing was changed.');
+    console.log(`database: ${dbPath} (${formatBytes(plan.db_bytes)}, ${plan.total_tasks} tasks)`);
+    console.log(`would remove ${r.tasks} test task(s) from temp folders, ${r.history_rows} history row(s), `
+      + `${r.stray_history_rows} stray history row(s), ${r.part_uses} part use row(s).`);
+    for (const g of plan.groups) {
+      console.log(`  ${g.prefix.padEnd(22)} ${String(g.tasks).padStart(7)} tasks  ${String(g.history_rows + g.stray_history_rows).padStart(8)} history rows`);
+    }
+    console.log(`kept: ${plan.kept.recent} temp task(s) touched in the last ${plan.grace_hours} hour(s), `
+      + `${plan.kept.held} with history from a real project.`);
+    if (r.tasks || r.stray_history_rows) {
+      console.log('run with --yes to remove them. a backup copy is written next to the database first.');
+    }
+    return;
+  }
+
+  if (vacuum && !wantsJson(args)) {
+    console.log('note: --vacuum rewrites the whole file and needs every other atris process idle; it waits a few seconds, then gives up.');
+  }
+  let result;
+  try {
+    result = prune.applyPrune(dbPath, { vacuum });
+  } catch (err) {
+    failTask('atris task prune-test-junk', 'prune_failed', `prune-test-junk stopped: ${err && err.message || err}`, 1);
+  }
+  if (wantsJson(args)) {
+    printJson({ ok: true, action: 'prune-test-junk', dry_run: false, ...result });
+    return;
+  }
+  if (result.missing) {
+    console.log(`no task database at ${dbPath}. nothing to prune.`);
+    return;
+  }
+  const r = result.removed;
+  console.log(`backup: ${result.backup_path} (${result.backup_tasks} tasks)`);
+  console.log(`removed ${r.tasks} test task(s), ${r.history_rows} history row(s), `
+    + `${r.stray_history_rows} stray history row(s), ${r.part_uses} part use row(s).`);
+  if (result.skipped.held || result.skipped.changed_since_backup) {
+    console.log(`left ${result.skipped.changed_since_backup} that changed after the backup and ${result.skipped.held} with real-project history.`);
+  }
+  console.log(`database now has ${result.total_tasks} tasks, ${formatBytes(result.bytes_after)} on disk`
+    + (result.vacuumed ? ' after vacuum.' : '. run again with --yes --vacuum to shrink the file.'));
+}
+
 function cmdReapMissionBlockers(args) {
   const taskDb = getTaskDb();
   const db = taskDb.open();
@@ -13374,6 +13445,7 @@ async function runTaskCommand(args) {
     case 'fail':   return cmdDone([...rest, '--failed']);
     case 'archive': return cmdArchive(rest);
     case 'clear-done': return cmdClearDone(rest);
+    case 'prune-test-junk': return cmdPruneTestJunk(rest);
     case 'keep': return cmdKeep(rest);
     case 'reap-mission-blockers':
     case 'reap-blockers':
