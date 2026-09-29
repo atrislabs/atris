@@ -1011,6 +1011,9 @@ function showAuthHelp(commandName) {
     console.log('  --agent                   Mint a scoped agent token from the stored login.');
     console.log('  --scopes <list>           Comma-separated scopes (default: x-search,youtube).');
     console.log('  --daily-credit-cap <n>    Daily credit cap (default: 50).');
+    console.log('  --commerce                Commerce key: scopes commerce:quote,transactions:read. Can quote, never pay.');
+    console.log('  --commerce-max-usd <n>    Largest single quote a commerce key may ask for, 1 to 500 (default: 200).');
+    console.log('  --print-key               Print the minted key once, for an agent on another machine.');
   } else if (commandName === 'switch') {
     console.log('  --global, -g     Switch the account for all terminals.');
   }
