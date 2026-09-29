@@ -211,34 +211,28 @@ test('task reaper closes blocker rows for complete and stopped missions only', (
   }
 });
 
-test('task reap-stale-claims releases only claims whose holder is provably dead; dry run writes nothing', () => {
+test('task reap-stale-claims releases only silent loop claims; recent notes, persons, and dry run leave rows alone', () => {
   const root = makeWorkspace();
   const home = path.join(root, 'home');
   fs.mkdirSync(home, { recursive: true });
   const dbPath = path.join(root, 'tasks.db');
-  const env = { HOME: home, ATRIS_TASKS_DB: dbPath, ATRIS_AGENT_PROOF_ONLY: '0', ATRIS_AGENT_ID: 'reaper-test', ATRIS_HOLDER_PID: '' };
-  // A pid that existed and has exited: the child is reaped before spawnSync returns.
-  const child = spawnSync(process.execPath, ['-e', ''], { encoding: 'utf8' });
-  const deadPid = child.pid;
-  assert.ok(Number.isInteger(deadPid) && deadPid > 0);
+  const env = { HOME: home, ATRIS_TASKS_DB: dbPath, ATRIS_AGENT_PROOF_ONLY: '0', ATRIS_AGENT_ID: 'reaper-test' };
   try {
     let db = taskStore.open(dbPath);
     const add = title => taskStore.addTask(db, { title, workspaceRoot: root }).id;
-    const deadHolder = add('claim held by a runner that died');
-    const liveHolder = add('claim held by a live runner');
-    const idleLoop = add('idle loop claim with no runner recorded');
+    const idleLoop = add('idle loop claim');
+    const idleFleet = add('idle fleet claim');
     const idleButNoted = add('idle loop claim with a recent note');
     const idlePerson = add('idle person claim');
     const freshLoop = add('fresh loop claim');
     taskStore.close();
 
-    const claim = (id, as, holderPid) => {
-      const r = runCli(['task', 'claim', id, '--as', as, '--json'], { cwd: root, env: { ...env, ATRIS_HOLDER_PID: holderPid ? String(holderPid) : '' } });
+    const claim = (id, as) => {
+      const r = runCli(['task', 'claim', id, '--as', as, '--json'], { cwd: root, env });
       assert.equal(r.status, 0, r.stderr || r.stdout);
     };
-    claim(deadHolder, 'atris', deadPid);
-    claim(liveHolder, 'atris', process.pid);
     claim(idleLoop, 'atris');
+    claim(idleFleet, 'fleet-codex');
     claim(idleButNoted, 'atris');
     claim(idlePerson, 'keshavrao');
     claim(freshLoop, 'atris');
@@ -249,14 +243,13 @@ test('task reap-stale-claims releases only claims whose holder is provably dead;
       db.prepare('UPDATE tasks SET claimed_at = ?, updated_at = ? WHERE id = ?').run(ts, ts, id);
       db.prepare('UPDATE task_events SET created_at = ? WHERE task_id = ?').run(ts, id);
     };
-    age(liveHolder, 30);
     age(idleLoop, 20);
+    age(idleFleet, 15);
     age(idleButNoted, 20);
     age(idlePerson, 30);
     age(freshLoop, 1);
+    // A note is history, not a row update: it still counts as a sign of life.
     taskStore.noteTask(db, { id: idleButNoted, actor: 'atris', content: 'still working on it' });
-    const claimEvent = taskStore.listTaskEvents(db, { taskId: deadHolder }).find(e => e.event_type === 'claimed');
-    assert.equal(claimEvent.payload.holder_pid, deadPid);
     const before = JSON.stringify(db.prepare('SELECT * FROM tasks ORDER BY id').all());
     const eventsBefore = db.prepare('SELECT COUNT(*) AS n FROM task_events').get().n;
     taskStore.close();
@@ -265,11 +258,9 @@ test('task reap-stale-claims releases only claims whose holder is provably dead;
     assert.equal(dry.status, 0, dry.stderr);
     const dryPayload = JSON.parse(dry.stdout);
     assert.equal(dryPayload.dry_run, true);
-    assert.deepEqual(dryPayload.sample.map(s => s.id).sort(), [deadHolder, idleLoop].sort());
-    assert.equal(dryPayload.sample.find(s => s.id === deadHolder).reason, 'holder_process_gone');
-    assert.equal(dryPayload.sample.find(s => s.id === idleLoop).reason, 'no_heartbeat');
+    assert.deepEqual(dryPayload.sample.map(s => s.id).sort(), [idleLoop, idleFleet].sort());
     assert.equal(dryPayload.skipped_person_count, 1);
-    assert.equal(dryPayload.kept_live_count, 1);
+    assert.equal(dryPayload.skipped_person_sample[0].id, idlePerson);
 
     db = taskStore.open(dbPath);
     assert.equal(JSON.stringify(db.prepare('SELECT * FROM tasks ORDER BY id').all()), before);
@@ -280,10 +271,10 @@ test('task reap-stale-claims releases only claims whose holder is provably dead;
     assert.equal(apply.status, 0, apply.stderr);
     const applyPayload = JSON.parse(apply.stdout);
     assert.equal(applyPayload.dry_run, false);
-    assert.deepEqual(applyPayload.ids.slice().sort(), [deadHolder, idleLoop].sort());
+    assert.deepEqual(applyPayload.ids.slice().sort(), [idleLoop, idleFleet].sort());
 
     db = taskStore.open(dbPath);
-    for (const id of [deadHolder, idleLoop]) {
+    for (const id of [idleLoop, idleFleet]) {
       const row = taskStore.getTask(db, id);
       assert.equal(row.status, 'open');
       assert.equal(row.claimed_by, null);
@@ -291,17 +282,19 @@ test('task reap-stale-claims releases only claims whose holder is provably dead;
       assert.ok(events.some(e => e.event_type === 'claim_reaped'));
       assert.ok(events.some(e => e.event_type === 'message' && /stale claim released/.test((e.payload && e.payload.content) || '')));
     }
-    for (const id of [liveHolder, idleButNoted, idlePerson, freshLoop]) {
+    for (const id of [idleButNoted, idlePerson, freshLoop]) {
       assert.equal(taskStore.getTask(db, id).status, 'claimed', id);
     }
     taskStore.close();
 
-    const again = runCli(['task', 'reap-stale-claims', '--older-than', '14', '--apply', '--include-persons', '--json'], { cwd: root, env });
-    assert.equal(again.status, 0, again.stderr);
-    assert.deepEqual(JSON.parse(again.stdout).ids, [idlePerson]);
-    db = taskStore.open(dbPath);
-    assert.equal(taskStore.getTask(db, liveHolder).status, 'claimed');
-    taskStore.close();
+    const persons = runCli(['task', 'reap-stale-claims', '--older-than', '14', '--apply', '--include-persons', '--json'], { cwd: root, env });
+    assert.equal(persons.status, 0, persons.stderr);
+    assert.deepEqual(JSON.parse(persons.stdout).ids, [idlePerson]);
+
+    const again = runCli(['task', 'reap-stale-claims', '--older-than', '14', '--json'], { cwd: root, env });
+    assert.equal(JSON.parse(again.stdout).count, 0);
+    const bad = runCli(['task', 'reap-stale-claims', '--older-than', '0', '--json'], { cwd: root, env });
+    assert.notEqual(bad.status, 0);
   } finally {
     taskStore.close();
     fs.rmSync(root, { recursive: true, force: true });

@@ -258,9 +258,9 @@ atris task - durable local task state (SQLite, gitignored)
   atris task keep [--json]                 Put away finished and untouched work, then refresh the list
   atris task reap-mission-blockers [--json] Close blocker rows whose missions are complete or stopped
   atris task reap-stale-claims [--older-than <days>] [--include-persons] [--apply] [--json]
-                                           Preview (default) or release claims whose holder is provably dead:
-                                           its recorded process is gone, or a loop claim (atris, fleet-*) went
-                                           <days> (default 14) with no update; live holders are always kept
+                                           Preview (default) or release loop claims (atris, fleet-*) with no
+                                           update or history for <days> (default 14); person/member claims
+                                           are skipped unless --include-persons
   atris task relabel-archived [--dry-run|--apply]
                                            One-time OBL-1622 migration: relabel June-10 backlog-reset rows failed -> archived
   atris task finish <id> --proof "..."     Legacy alias for done with proof
@@ -9923,8 +9923,8 @@ function cmdReapMissionBlockers(args) {
 }
 
 // Dead loop ticks leave claims that owner-scoped `task release` refuses
-// with held_by_other. Default is a preview; --apply releases only the rows
-// taskDb.reapStaleClaims proves dead, and notes why on each one.
+// with held_by_other. Default is a preview; --apply releases the rows
+// taskDb.reapStaleClaims finds silent past the threshold, with a note on each.
 function cmdReapStaleClaims(args) {
   const apply = hasFlag(args, '--apply');
   const includePersons = hasFlag(args, '--include-persons');
@@ -9955,16 +9955,14 @@ function cmdReapStaleClaims(args) {
     });
     return;
   }
-  const why = s => (s.reason === 'holder_process_gone' ? `process ${s.holder_pid} is gone` : `idle ${s.idle_days}d`);
   if (!apply) {
-    console.log(`reap-stale-claims (dry run): ${result.count} claim(s) with a dead holder.`);
-    for (const s of result.sample) console.log(`  - ${refFor(s.id)} held by ${s.claimed_by}, ${why(s)}`);
+    console.log(`reap-stale-claims (dry run): ${result.count} claim(s) idle ${olderThanDays}+ day(s).`);
+    for (const s of result.sample) console.log(`  - ${refFor(s.id)} held by ${s.claimed_by}, idle ${s.idle_days}d`);
     if (result.count > result.sample.length) console.log(`  ...and ${result.count - result.sample.length} more`);
   } else {
-    console.log(`released ${result.count} dead claim(s) back to open.`);
+    console.log(`released ${result.count} stale claim(s) back to open.`);
     for (const id of result.ids || []) console.log(`released ${refFor(id)}`);
   }
-  if (result.kept_live_count > 0) console.log(`kept ${result.kept_live_count} claim(s) whose holder is still running.`);
   if (result.skipped_person_count > 0) {
     console.log(`skipped ${result.skipped_person_count} idle person/member claim(s); pass --include-persons to release them too.`);
   }
