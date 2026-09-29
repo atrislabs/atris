@@ -34,3 +34,12 @@ test('kill cause names other spawn failures and signals', () => {
   assert.equal(describeAcceptKillCause({ signal: 'SIGKILL' }), 'auto-accept killed by SIGKILL');
   assert.equal(describeAcceptKillCause({}), null);
 });
+
+test('a sweep that prints more than 1 MB still comes back whole', () => {
+  const { spawnCapture } = require('../commands/autoland');
+  const bytes = 3 * 1024 * 1024;
+  const result = spawnCapture(['-e', `process.stdout.write('x'.repeat(${bytes}))`], { timeoutMs: 30000 });
+  assert.equal(result.error_code, null);
+  assert.equal(result.status, 0);
+  assert.equal(result.stdout.length, bytes);
+});

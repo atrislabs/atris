@@ -135,7 +135,16 @@ function runOwnCli(root, cliArgs, timeoutMs = 300000) {
   // target root or a global `atris` breaks whenever the tick runs a project
   // that isn't the CLI repo on a machine without a global install (CI, cron).
   const bin = path.resolve(__dirname, '..', 'bin', 'atris.js');
-  const result = spawnSync(process.execPath, [bin, ...cliArgs], { cwd: root, encoding: 'utf8', timeout: timeoutMs });
+  return spawnCapture([bin, ...cliArgs], { cwd: root, timeoutMs });
+}
+
+// spawnSync keeps 1 MB of stdout by default and kills the child past it
+// (ENOBUFS). A certify-and-land sweep over 150+ review rows prints more than
+// that, so the accept step read as unreadable on most ticks. Allow 64 MB.
+const OWN_CLI_MAX_BUFFER = 64 * 1024 * 1024;
+
+function spawnCapture(nodeArgs, { cwd, timeoutMs = 300000 } = {}) {
+  const result = spawnSync(process.execPath, nodeArgs, { cwd, encoding: 'utf8', timeout: timeoutMs, maxBuffer: OWN_CLI_MAX_BUFFER });
   return {
     status: result.status,
     stdout: String(result.stdout || ''),
@@ -1139,6 +1148,7 @@ module.exports = {
   digestNextMoves,
   acceptSweepTimeoutMs,
   describeAcceptKillCause,
+  spawnCapture,
   digestStoryRows,
   digestTickStatus,
   engineAnswerValidationLine,
