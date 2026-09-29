@@ -72,30 +72,39 @@ test('forced phase timeout throws the named phase message, not raw spawnSync', (
 // `process.kill(-pid, 'SIGKILL')` group sweep in the timeout catch.
 test('phase timeout kills the whole process group, not just the shell', () => {
   const pidFile = path.join(os.tmpdir(), `autopilot-grandchild-${process.pid}.pid`);
-  try { fs.unlinkSync(pidFile); } catch {}
 
-  // The grandchild (`sleep 30`) records its pid before the 500ms wall hits.
+  // The grandchild (`sleep 30`) records its pid, then the wall hits. Under a
+  // loaded machine the shell may not even start before a 500ms wall, which
+  // leaves nothing to prove, so a run that never recorded a pid retries with
+  // a wider wall. Every run that did record one must see it die.
+  let grandchildPid = 0;
   let thrown;
-  try {
-    executePhaseDetailed(
-      'do',
-      { task: 'fixture', kind: 'endgame' },
-      {
-        verbose: false,
-        timeout: 500,
-        cmdOverride: `sh -c 'sleep 30 & echo $! > "${pidFile}"; wait'`
-      }
-    );
-  } catch (err) {
-    thrown = err;
+  for (const wallMs of [500, 2000, 8000]) {
+    try { fs.unlinkSync(pidFile); } catch {}
+    thrown = undefined;
+    try {
+      executePhaseDetailed(
+        'do',
+        { task: 'fixture', kind: 'endgame' },
+        {
+          verbose: false,
+          timeout: wallMs,
+          cmdOverride: `sh -c 'sleep 30 & echo $! > "${pidFile}"; wait'`
+        }
+      );
+    } catch (err) {
+      thrown = err;
+    }
+    assert.ok(thrown, 'expected the forced timeout to throw');
+    assert.match(thrown.message, new RegExp(`^do phase timed out after ${String(wallMs / 1000).replace('.', '\\.')}s`), 'T31 named-message contract must survive the sweep');
+    let recorded = '';
+    try { recorded = fs.readFileSync(pidFile, 'utf8').trim(); } catch {}
+    grandchildPid = parseInt(recorded, 10);
+    if (Number.isInteger(grandchildPid) && grandchildPid > 0) break;
   }
-  assert.ok(thrown, 'expected the forced timeout to throw');
-  assert.match(thrown.message, /^do phase timed out after 0\.5s/, 'T31 named-message contract must survive the sweep');
+  assert.ok(Number.isInteger(grandchildPid) && grandchildPid > 0, 'grandchild pid was not recorded even with an 8s wall');
 
-  const grandchildPid = parseInt(fs.readFileSync(pidFile, 'utf8').trim(), 10);
-  assert.ok(Number.isInteger(grandchildPid) && grandchildPid > 0, 'grandchild pid was not recorded');
-
-  // The "gap closes" proof: signal 0 must throw ESRCH — the grandchild died
+  // The "gap closes" proof: signal 0 must throw ESRCH: the grandchild died
   // with the group instead of outliving the wall. Allow a short reap window.
   const deadline = Date.now() + 2000;
   let dead = false;
@@ -110,7 +119,7 @@ test('phase timeout kills the whole process group, not just the shell', () => {
     execSync('sleep 0.05');
   }
   try { fs.unlinkSync(pidFile); } catch {}
-  assert.ok(dead, `grandchild ${grandchildPid} survived the phase timeout — process group was not swept`);
+  assert.ok(dead, `grandchild ${grandchildPid} survived the phase timeout, so the process group was not swept`);
 });
 
 test('non-timeout failure with stdout still returns partial output', () => {

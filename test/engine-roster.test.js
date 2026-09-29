@@ -303,8 +303,9 @@ test('the pinned model reaches one-lap builds and reviews and missions that alre
   assert.equal(kept.model, 'sonnet');
 }));
 
-test('self-drive hands the pinned model to the dispatch', () => {
+test('self-drive hands the pinned model to the dispatch', () => withRoom((root) => {
   const dispatched = [];
+  const recorded = [];
   const rows = [];
   const taskDb = {
     open: () => ({}),
@@ -326,19 +327,23 @@ test('self-drive hands the pinned model to the dispatch', () => {
   const result = handleMissionBlocker({
     mission: { id: 'mission-1', objective: 'ship reliable missions', status: 'paused' },
     stopReason: 'repeated-error:runner-failed',
-    workspaceRoot: '/tmp/workspace',
+    workspaceRoot: root,
     appendEvent: () => {},
   }, {
     taskDb,
     resolveEngineForRole: () => ({ id: 'claude', roster_model: 'claude-opus-5-5' }),
-    createAgentWorktree: () => ({ path: '/tmp/self-drive-worktree' }),
+    createAgentWorktree: () => ({ path: path.join(root, 'self-drive-worktree') }),
     dispatchToEngine: (args) => { dispatched.push(args); return { exitCode: 0 }; },
+    recordDispatchOutcome: (recordRoot, run) => { recorded.push({ recordRoot, run }); return null; },
     loadSwarloApiKey: () => null,
     httpPost: () => { throw new Error('unexpected network call in test'); },
   });
   assert.equal(result.dispatched, true, result.reason);
   assert.equal(dispatched[0].model, 'claude-opus-5-5');
-});
+  assert.equal(recorded.length, 1);
+  assert.equal(recorded[0].recordRoot, root);
+  assert.equal(recorded[0].run.pin.model, 'claude-opus-5-5');
+}));
 
 test('claude and haiku can own search, and with no roster search still goes to atris-fast', () => withRoom((root) => {
   ready(root, 'atris-fast', 'composer', 'claude', 'haiku');

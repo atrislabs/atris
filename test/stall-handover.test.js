@@ -137,7 +137,7 @@ function ownCliFake(worktree) {
 
 // The same call `atris engine dispatch --engine devin` makes when the build
 // roster picks devin: the lead's own model and time cap ride along.
-function dispatchFlight(root, worktree, cli, lead) {
+function dispatchFlight(root, worktree, cli, lead, maxSeconds = 1) {
   return fleet.runDispatchFlight({
     root,
     taskIds: ['CLI-900'],
@@ -149,7 +149,7 @@ function dispatchFlight(root, worktree, cli, lead) {
     rebase: () => ({ ok: true, stage: 'rebased' }),
     verifier: () => ({ status: 0, stdout: '# pass 1\n# fail 0\n', stderr: '' }),
     model: lead.roster_model || '',
-    maxSeconds: 1,
+    maxSeconds,
   });
 }
 
@@ -233,52 +233,68 @@ test('roster view and engine list show the benched worker', async () => {
 });
 
 test('fleet dispatch hands a stalled run to the backup with its own model and stops after success', async () => {
-  await withRoom(async (root, home) => {
-    const worktree = scratchWorktree(root, home);
-    const engines = fakeEngines(home, { devin: 'stall', grok: 'ok', cursor: 'ok' });
-    const team = resolveJobTeam('build', root).team;
-    const { cli, calls } = ownCliFake(worktree);
-    const flight = await dispatchFlight(root, worktree, cli, team[0]);
-    const ran = engines.calls();
-    assert.equal(ran.length, 2, ran.join('\n'));
-    assert.equal(ran[0], 'devin model=swe-2-max');
-    assert.equal(ran[1], `grok model=${team[1].roster_model}`);
-    assert.equal(flight.results[0].engine, 'grok');
-    assert.deepEqual(flight.results[0].handover.reasons, ['devin stalled at 1s; grok took over']);
-    assert.equal(flight.paused.length, 0);
-    assert.deepEqual(flight.landed.map((row) => row.task), ['CLI-900']);
-    assert.ok(calls.some((call) => call.startsWith('task ready CLI-900')));
-    assert.equal(health(root, 'devin').status, 'cooling');
-    assert.equal(health(root, 'grok').status, 'ready');
-    const receipt = JSON.parse(fs.readFileSync(flight.receipt, 'utf8'));
-    assert.deepEqual(receipt.results[0].handover.reasons, flight.results[0].handover.reasons);
-  });
+  // The lead's cap is the wall that makes it stall. On a loaded machine a 1s
+  // wall can land before the fake devin even logs its call, which proves
+  // nothing about the handover, so only that case retries in a fresh room
+  // with a wider wall. Every assertion runs on a flight where devin started.
+  for (const cap of [1, 3, 10]) {
+    const proved = await withRoom(async (root, home) => {
+      const worktree = scratchWorktree(root, home);
+      const engines = fakeEngines(home, { devin: 'stall', grok: 'ok', cursor: 'ok' });
+      const team = resolveJobTeam('build', root).team;
+      const { cli, calls } = ownCliFake(worktree);
+      const flight = await dispatchFlight(root, worktree, cli, team[0], cap);
+      const ran = engines.calls();
+      if (!ran.some((line) => line.startsWith('devin ')) && cap < 10) return false;
+      assert.equal(ran.length, 2, ran.join('\n'));
+      assert.equal(ran[0], 'devin model=swe-2-max');
+      assert.equal(ran[1], `grok model=${team[1].roster_model}`);
+      assert.equal(flight.results[0].engine, 'grok');
+      assert.deepEqual(flight.results[0].handover.reasons, [`devin stalled at ${cap}s; grok took over`]);
+      assert.equal(flight.paused.length, 0);
+      assert.deepEqual(flight.landed.map((row) => row.task), ['CLI-900']);
+      assert.ok(calls.some((call) => call.startsWith('task ready CLI-900')));
+      assert.equal(health(root, 'devin').status, 'cooling');
+      assert.equal(health(root, 'grok').status, 'ready');
+      const receipt = JSON.parse(fs.readFileSync(flight.receipt, 'utf8'));
+      assert.deepEqual(receipt.results[0].handover.reasons, flight.results[0].handover.reasons);
+      return true;
+    });
+    if (proved) return;
+  }
 });
 
 test('a team that runs out returns the last failure with every reason', async () => {
-  const roster = `# roster
+  // Both workers must start before their walls hit for the record to prove
+  // anything; a loaded machine that kills one before it logs retries wider.
+  for (const cap of [1, 3, 10]) {
+    const roster = `# roster
 
 ## build
-- devin, model: swe-2-max, max: 1 s
-- grok, model: grok 4.7 fast, max: 1 s
+- devin, model: swe-2-max, max: ${cap} s
+- grok, model: grok 4.7 fast, max: ${cap} s
 `;
-  await withRoom(async (root, home) => {
-    const worktree = scratchWorktree(root, home);
-    const engines = fakeEngines(home, { devin: 'stall', grok: 'stall' });
-    const team = resolveJobTeam('build', root).team;
-    const { cli } = ownCliFake(worktree);
-    const flight = await dispatchFlight(root, worktree, cli, team[0]);
-    assert.equal(engines.calls().length, 2);
-    assert.equal(flight.landed.length, 0);
-    assert.equal(flight.paused[0].engine, 'grok');
-    assert.equal(flight.paused[0].stage, 'build');
-    assert.deepEqual(flight.paused[0].handover.reasons, [
-      'devin stalled at 1s; grok took over',
-      'grok stalled at 1s; no one left on the build team',
-    ]);
-    assert.equal(flight.paused[0].handover.failed_legs[0].engine, 'devin');
-    assert.equal(health(root, 'grok').status, 'cooling');
-  }, { roster });
+    const proved = await withRoom(async (root, home) => {
+      const worktree = scratchWorktree(root, home);
+      const engines = fakeEngines(home, { devin: 'stall', grok: 'stall' });
+      const team = resolveJobTeam('build', root).team;
+      const { cli } = ownCliFake(worktree);
+      const flight = await dispatchFlight(root, worktree, cli, team[0], cap);
+      if (engines.calls().length < 2 && cap < 10) return false;
+      assert.equal(engines.calls().length, 2);
+      assert.equal(flight.landed.length, 0);
+      assert.equal(flight.paused[0].engine, 'grok');
+      assert.equal(flight.paused[0].stage, 'build');
+      assert.deepEqual(flight.paused[0].handover.reasons, [
+        `devin stalled at ${cap}s; grok took over`,
+        `grok stalled at ${cap}s; no one left on the build team`,
+      ]);
+      assert.equal(flight.paused[0].handover.failed_legs[0].engine, 'devin');
+      assert.equal(health(root, 'grok').status, 'cooling');
+      return true;
+    }, { roster });
+    if (proved) return;
+  }
 });
 
 test('a real task failure is not handed over', async () => {
@@ -287,7 +303,9 @@ test('a real task failure is not handed over', async () => {
     const engines = fakeEngines(home, { devin: 'fail', grok: 'ok', cursor: 'ok' });
     const team = resolveJobTeam('build', root).team;
     const { cli } = ownCliFake(worktree);
-    const flight = await dispatchFlight(root, worktree, cli, team[0]);
+    // A wide wall: devin exits on its own with a task failure, and a 1s wall
+    // on a loaded machine would turn that into a stall.
+    const flight = await dispatchFlight(root, worktree, cli, team[0], 60);
     assert.equal(engines.calls().length, 1);
     assert.equal(flight.results[0].engine, 'devin');
     assert.equal(flight.results[0].handover, undefined);
