@@ -717,6 +717,8 @@ function showHelpAll() {
   console.log('  usage      - Show developer API usage');
   console.log('  api-key    - Create, list, rotate, or revoke a developer API key');
   console.log('  topup      - Buy credits and print a Stripe checkout URL');
+  console.log('  buy        - Quote a purchase or stock order; the person approves before anything is charged');
+  console.log('  transactions - List what you bought, paid in fees, traded, or sent');
   console.log('  design     - Extract a site design system, check brand adherence, search brands');
   console.log('  mcp        - Run the atris MCP server (stdio) for Claude Desktop and Cursor');
   console.log('');
@@ -2366,6 +2368,15 @@ if (command === 'guide') {
     .catch((err) => { console.error(String(err.message || err).replace(/\s+/g, ' ')); process.exit(1); });
 } else if (command === 'topup') {
   Promise.resolve(require('../commands/topup').topupCommand(process.argv.slice(3)))
+    .then((code) => process.exit(typeof code === 'number' ? code : 0))
+    .catch((err) => { console.error(String(err.message || err).replace(/\s+/g, ' ')); process.exit(1); });
+} else if (command === 'buy') {
+  // Buy: quote, then hand the person the approval step. Never charges.
+  Promise.resolve(require('../commands/buy').buyCommand(process.argv.slice(3)))
+    .then((code) => process.exit(typeof code === 'number' ? code : 0))
+    .catch((err) => { console.error(String(err.message || err).replace(/\s+/g, ' ')); process.exit(1); });
+} else if (command === 'transactions') {
+  Promise.resolve(require('../commands/transactions').transactionsCommand(process.argv.slice(3)))
     .then((code) => process.exit(typeof code === 'number' ? code : 0))
     .catch((err) => { console.error(String(err.message || err).replace(/\s+/g, ' ')); process.exit(1); });
 } else if (command === '_resolve') {

@@ -17258,6 +17258,8 @@ test('workspace-free help smoke sweep covers common entrypoints', () => {
     ['usage', '--help'],
     ['api-key', '--help'],
     ['topup', '--help'],
+    ['buy', '--help'],
+    ['transactions', '--help'],
     ['integrations', '--help'],
     ['skill', '--help'],
     ['member', '--help'],
