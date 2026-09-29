@@ -22,6 +22,7 @@ const fs = require('fs');
 const os = require('os');
 const path = require('path');
 const { spawnSync } = require('child_process');
+const gitSpawn = require('../lib/git-spawn');
 const { apiRequestJson, getApiBaseUrl } = require('../utils/api');
 const { loadCredentials } = require('../utils/auth');
 const pulse = require('../lib/pulse');
@@ -1085,8 +1086,9 @@ function parseRevisionsArgs(argv = []) {
   return opts;
 }
 
-function gitLines(cwdRoot, gitArgs) {
-  const r = spawnSync('git', gitArgs, { cwd: cwdRoot, encoding: 'utf8' });
+// Through the module object so tests can count git spawns with a spy.
+function gitLines(cwdRoot, gitArgs, { input, maxBuffer } = {}) {
+  const r = gitSpawn.runGit(gitArgs, { cwd: cwdRoot, check: false, input, maxBuffer });
   if (r.status !== 0) {
     const err = new Error(String(r.stderr || `git ${gitArgs[0]} exited ${r.status}`).trim());
     err.gitFailed = true;
@@ -1106,6 +1108,81 @@ function commitFiles(cwdRoot, commit) {
     ? gitLines(cwdRoot, ['diff', '--name-only', `${commit.hash}^1`, commit.hash])
     : gitLines(cwdRoot, ['diff-tree', '--no-commit-id', '--name-only', '-r', '--root', commit.hash]);
   return out.split('\n').map((line) => line.trim()).filter(Boolean);
+}
+
+/**
+ * Files changed by many plain commits in one git process: the same diff-tree
+ * per-commit call above, fed every hash on stdin. --always prints the hash
+ * line even for an empty commit, so each commit's files sit under its hash
+ * in the order the hashes went in.
+ */
+function plainCommitFiles(cwdRoot, commits) {
+  const found = new Map(commits.map((commit) => [commit.hash, []]));
+  if (!commits.length) return found;
+  const hashes = commits.map((commit) => commit.hash);
+  const out = gitLines(cwdRoot, ['diff-tree', '--stdin', '--always', '--name-only', '-r', '--root'], {
+    input: `${hashes.join('\n')}\n`,
+    // Many commits' lists in one reply; the per-commit calls each had 1MB.
+    maxBuffer: Math.max(1, hashes.length) * 1024 * 1024,
+  });
+  let next = 0;
+  let current = null;
+  for (const raw of out.split('\n')) {
+    const line = raw.trim();
+    if (!line) continue;
+    if (next < hashes.length && line === hashes[next]) {
+      current = found.get(line);
+      next += 1;
+    } else if (current) {
+      current.push(line);
+    }
+  }
+  return found;
+}
+
+// A commit's file list never changes, so it is saved by hash under .atris and
+// the gauge (shown on every boot) only asks git about commits it has not seen.
+// Hashes this read used come first; older ones stay until the cap, so a 7-day
+// boot read and a 14-day report read do not keep evicting each other.
+const REVISION_FILES_CACHE = path.join('.atris', 'state', 'revision-files-cache.json');
+const REVISION_FILES_CACHE_MAX = 5000;
+
+function loadRevisionFilesCache(root) {
+  const cache = { file: path.join(root, REVISION_FILES_CACHE), entries: {}, used: {}, dirty: false, writable: false };
+  try {
+    cache.writable = fs.statSync(path.join(root, '.atris')).isDirectory();
+  } catch {
+    cache.writable = false;
+  }
+  if (!cache.writable) return cache;
+  try {
+    const parsed = JSON.parse(fs.readFileSync(cache.file, 'utf8'));
+    if (parsed && parsed.version === 1 && parsed.entries && typeof parsed.entries === 'object') cache.entries = parsed.entries;
+  } catch {
+    cache.entries = {};
+  }
+  return cache;
+}
+
+function saveRevisionFilesCache(cache) {
+  if (!cache.writable) return;
+  if (!cache.dirty) return;
+  const entries = { ...cache.used };
+  let count = Object.keys(entries).length;
+  for (const [hash, files] of Object.entries(cache.entries)) {
+    if (count >= REVISION_FILES_CACHE_MAX) break;
+    if (entries[hash] || !Array.isArray(files)) continue;
+    entries[hash] = files;
+    count += 1;
+  }
+  try {
+    fs.mkdirSync(path.dirname(cache.file), { recursive: true });
+    const tmp = `${cache.file}.${process.pid}.tmp`;
+    fs.writeFileSync(tmp, `${JSON.stringify({ version: 1, entries })}\n`);
+    fs.renameSync(tmp, cache.file);
+  } catch {
+    // The cache is only a speedup; a failed write costs a git call next time.
+  }
 }
 
 /**
@@ -1150,10 +1227,27 @@ function collectRevisionSignals(root, options = {}) {
   // commits count as revision signals.
   const humans = commits.filter((c) => !c.isAgent && c.parents.length < 2);
 
-  const filesCache = new Map();
+  // Every landing's files are needed, and a human commit's only when it falls
+  // inside some landing's window. Plain commits missing from the cache are
+  // read in one batch; merges keep their own first-parent diff.
+  const cache = loadRevisionFilesCache(root);
+  const needed = [...landings, ...humans.filter((human) => landings.some((landing) => human.ms > landing.ms && human.ms <= landing.ms + REVISION_WINDOW_MS))];
+  const missing = [];
+  for (const commit of needed) {
+    const hit = cache.entries[commit.hash];
+    if (Array.isArray(hit)) cache.used[commit.hash] = hit;
+    else if (commit.parents.length < 2) missing.push(commit);
+  }
+  for (const [hash, files] of plainCommitFiles(root, missing)) {
+    cache.used[hash] = files;
+    cache.dirty = true;
+  }
   const filesOf = (commit) => {
-    if (!filesCache.has(commit.hash)) filesCache.set(commit.hash, commitFiles(root, commit));
-    return filesCache.get(commit.hash);
+    if (!cache.used[commit.hash]) {
+      cache.used[commit.hash] = commitFiles(root, commit);
+      cache.dirty = true;
+    }
+    return cache.used[commit.hash];
   };
 
   const revisions = [];
@@ -1177,6 +1271,7 @@ function collectRevisionSignals(root, options = {}) {
       });
     }
   }
+  saveRevisionFilesCache(cache);
 
   return {
     schema: REVISIONS_SCHEMA,

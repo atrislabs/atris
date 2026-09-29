@@ -266,3 +266,72 @@ test('shared journal files never count as revision overlap', () => {
     cleanup(cwd);
   }
 });
+
+// Boot shows this gauge on every session start. One git process per commit
+// cost seconds on a busy repo, so the history is one git log, every plain
+// commit's files come back from one batched diff-tree, and a commit's files
+// are saved by hash so the next read asks git only for the history.
+function countGitCalls(fn) {
+  const gitSpawn = require('../lib/git-spawn');
+  const original = gitSpawn.runGit;
+  const calls = [];
+  gitSpawn.runGit = (args, opts) => { calls.push(args[0]); return original(args, opts); };
+  try {
+    return { value: fn(), calls };
+  } finally {
+    gitSpawn.runGit = original;
+  }
+}
+
+function buildBusyRepo({ atris }) {
+  const cwd = initRepo();
+  const now = Date.now();
+  const base = now - 3 * 24 * HOUR;
+  if (atris) {
+    fs.appendFileSync(path.join(cwd, '.git', 'info', 'exclude'), '.atris/\n');
+    fs.mkdirSync(path.join(cwd, '.atris', 'state'), { recursive: true });
+  }
+  for (let i = 0; i < 6; i++) {
+    commitFile(cwd, `f${i}.js`, 'v1\n', `bot lands f${i}`, { bot: true, atMs: base + i * 2 * HOUR });
+    commitFile(cwd, `f${i}.js`, 'v2\n', `human fixes f${i}`, { atMs: base + (i * 2 + 1) * HOUR });
+  }
+  return { cwd, now };
+}
+
+function assertBusySummary(summary) {
+  assert.strictEqual(summary.landings, 6);
+  assert.strictEqual(summary.revised, 6);
+  assert.deepStrictEqual(summary.revisions.map((r) => r.files), [['f5.js'], ['f4.js'], ['f3.js'], ['f2.js'], ['f1.js'], ['f0.js']]);
+}
+
+test('the gauge reads history in two git calls, not one per commit', () => {
+  const { cwd, now } = buildBusyRepo({ atris: false });
+  try {
+    const run = countGitCalls(() => collectRevisionSignals(cwd, { days: 14, now }));
+    assertBusySummary(run.value);
+    assert.deepStrictEqual(run.calls, ['log', 'diff-tree']);
+    assert.strictEqual(fs.existsSync(path.join(cwd, '.atris')), false, 'no cache file outside a workspace');
+  } finally {
+    cleanup(cwd);
+  }
+});
+
+test('a second read reuses saved commit files and only asks git for history', () => {
+  const { cwd, now } = buildBusyRepo({ atris: true });
+  try {
+    const first = countGitCalls(() => collectRevisionSignals(cwd, { days: 14, now }));
+    assert.deepStrictEqual(first.calls, ['log', 'diff-tree']);
+    const second = countGitCalls(() => collectRevisionSignals(cwd, { days: 14, now }));
+    assert.deepStrictEqual(second.calls, ['log']);
+    assert.deepStrictEqual(second.value, first.value);
+    assertBusySummary(second.value);
+
+    // A new commit is the only one git is asked about.
+    commitFile(cwd, 'f0.js', 'v3\n', 'bot lands f0 again', { bot: true, atMs: now - HOUR });
+    const third = countGitCalls(() => collectRevisionSignals(cwd, { days: 14, now }));
+    assert.deepStrictEqual(third.calls, ['log', 'diff-tree']);
+    assert.strictEqual(third.value.landings, 7);
+  } finally {
+    cleanup(cwd);
+  }
+});
