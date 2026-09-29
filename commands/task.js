@@ -9832,7 +9832,7 @@ function cmdPruneTestJunk(args) {
   const vacuum = apply && hasFlag(args, '--vacuum');
   if (!apply) {
     const plan = prune.dryRun(dbPath);
-    const { rows, strays, ...summary } = plan;
+    const { rows, ...summary } = plan;
     if (wantsJson(args)) {
       printJson({ ok: true, action: 'prune-test-junk', dry_run: true, ...summary });
       return;
@@ -9849,8 +9849,9 @@ function cmdPruneTestJunk(args) {
     for (const g of plan.groups) {
       console.log(`  ${g.prefix.padEnd(22)} ${String(g.tasks).padStart(7)} tasks  ${String(g.history_rows + g.stray_history_rows).padStart(8)} history rows`);
     }
-    console.log(`kept: ${plan.kept.recent} temp task(s) touched in the last ${plan.grace_hours} hour(s), `
-      + `${plan.kept.held} with history from a real project.`);
+    const k = plan.kept;
+    console.log(`kept: ${k.folder_exists} temp task(s) whose folder still exists, ${k.recent} active in the last ${plan.grace_hours} hour(s), `
+      + `${k.held} with history from a real project, ${k.stray_held + k.stray_recent} leftover history set(s) that are recent or name a real project.`);
     if (r.tasks || r.stray_history_rows) {
       console.log('run with --yes to remove them. a backup copy is written next to the database first.');
     }
@@ -9878,8 +9879,10 @@ function cmdPruneTestJunk(args) {
   console.log(`backup: ${result.backup_path} (${result.backup_tasks} tasks)`);
   console.log(`removed ${r.tasks} test task(s), ${r.history_rows} history row(s), `
     + `${r.stray_history_rows} stray history row(s), ${r.part_uses} part use row(s).`);
-  if (result.skipped.held || result.skipped.changed_since_backup) {
-    console.log(`left ${result.skipped.changed_since_backup} that changed after the backup and ${result.skipped.held} with real-project history.`);
+  const sk = result.skipped;
+  if (sk.held || sk.changed_since_backup || sk.recent || sk.folder_exists) {
+    console.log(`left ${sk.changed_since_backup} that changed after the backup, ${sk.recent} that became active, `
+      + `${sk.folder_exists} whose folder came back, and ${sk.held} with real-project history.`);
   }
   console.log(`database now has ${result.total_tasks} tasks, ${formatBytes(result.bytes_after)} on disk`
     + (result.vacuumed ? ' after vacuum.' : '. run again with --yes --vacuum to shrink the file.'));

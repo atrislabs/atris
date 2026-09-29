@@ -72,7 +72,9 @@ function dump(dbPath) {
     return {
       tasks: db.prepare('SELECT * FROM tasks ORDER BY id').all(),
       events: db.prepare('SELECT * FROM task_events ORDER BY event_id').all(),
-      uses: db.prepare('SELECT * FROM part_uses ORDER BY id').all(),
+      uses: db.prepare("SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'part_uses'").get()
+        ? db.prepare('SELECT * FROM part_uses ORDER BY id').all()
+        : [],
     };
   } finally {
     db.close();
@@ -172,5 +174,178 @@ test('prune-test-junk --yes backs up, removes only temp rows and their history, 
     assert.deepEqual(dump(out.backup_path), before);
   } finally {
     fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+// Review round one: location alone is not enough, history counts as
+// activity, orphan history keeps the real-project guard, and deletes use the
+// task-id index with transactions bounded by rows.
+
+function libFixture() {
+  const dir = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'atris-prune-lib-')));
+  const dbPath = path.join(dir, 'tasks.db');
+  const taskStore = require('../lib/task-db');
+  const db = taskStore.open(dbPath);
+  const old = Date.now() - 48 * HOUR;
+  let seq = 0;
+  const api = {
+    dir,
+    dbPath,
+    old,
+    task(id, root, at = old) {
+      db.prepare(`INSERT INTO tasks (id, title, status, workspace_root, created_at, updated_at)
+        VALUES (?, ?, 'open', ?, ?, ?)`).run(id, id, root, at, at);
+    },
+    event(taskId, root, at = old) {
+      db.prepare(`INSERT INTO task_events (event_id, task_id, version, workspace_root, event_type, created_at)
+        VALUES (?, ?, ?, ?, 'message', ?)`).run(`E${++seq}`, taskId, seq, root, at);
+    },
+    done() { taskStore.close(); },
+    cleanup() { taskStore.close(); fs.rmSync(dir, { recursive: true, force: true }); },
+  };
+  return api;
+}
+
+test('a temp-folder project that still exists on disk is never junk, in either /var spelling', () => {
+  if (!hasNodeSqlite()) return;
+  const prune = require('../lib/task-prune');
+  const fx = libFixture();
+  try {
+    const live = path.join(fx.dir, 'live-worktree');
+    fs.mkdirSync(live);
+    const real = fs.realpathSync(live);
+    const other = real.startsWith('/private/') ? real.slice('/private'.length) : `/private${real}`;
+    fx.task('LIVE_REAL', real);
+    fx.task('LIVE_OTHER', other);
+    fx.task('GONE', path.join(fx.dir, 'removed-by-test'));
+    fx.done();
+    const plan = prune.dryRun(fx.dbPath);
+    assert.equal(plan.remove.tasks, 1);
+    assert.equal(plan.kept.folder_exists, fs.existsSync(other) ? 2 : 1);
+    const out = prune.applyPrune(fx.dbPath);
+    assert.equal(out.removed.tasks, 1);
+    const left = dump(fx.dbPath).tasks.map(r => r.id);
+    assert.ok(left.includes('LIVE_REAL'));
+    assert.ok(left.includes('LIVE_OTHER'));
+    assert.ok(!left.includes('GONE'));
+  } finally {
+    fx.cleanup();
+  }
+});
+
+test('a custom TMPDIR counts as temp through its symlink and its real path', () => {
+  const prune = require('../lib/task-prune');
+  const base = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'atris-prune-tmpdir-')));
+  try {
+    const realTmp = path.join(base, 'real-tmp');
+    const link = path.join(base, 'link-tmp');
+    fs.mkdirSync(realTmp);
+    fs.symlinkSync(realTmp, link);
+    // No named roots: only the custom TMPDIR decides.
+    const viaLink = prune.tempRoots({ tmpdir: link, named: [] });
+    assert.ok(prune.tempPrefixFor(path.join(realTmp, 'gone'), viaLink));
+    assert.ok(prune.tempPrefixFor(path.join(link, 'gone'), viaLink));
+    const viaReal = prune.tempRoots({ tmpdir: realTmp, named: [] });
+    assert.ok(prune.tempPrefixFor(path.join(link, 'gone'), viaReal));
+    assert.equal(prune.tempPrefixFor(path.join(base, 'elsewhere'), viaReal), null);
+  } finally {
+    fs.rmSync(base, { recursive: true, force: true });
+  }
+});
+
+test('new history counts as activity, and a note written after the backup keeps the task', () => {
+  if (!hasNodeSqlite()) return;
+  const prune = require('../lib/task-prune');
+  const fx = libFixture();
+  try {
+    fx.task('FRESH_NOTE', path.join(fx.dir, 'gone-a'));
+    fx.event('FRESH_NOTE', path.join(fx.dir, 'gone-a'), Date.now());
+    fx.task('NOTED_LATER', path.join(fx.dir, 'gone-b'));
+    fx.event('NOTED_LATER', path.join(fx.dir, 'gone-b'));
+    fx.task('PLAIN', path.join(fx.dir, 'gone-c'));
+    fx.done();
+    const plan = prune.dryRun(fx.dbPath);
+    assert.equal(plan.kept.recent, 1, 'a fresh history row makes the task recent');
+    assert.equal(plan.remove.tasks, 2);
+
+    const out = prune.applyPrune(fx.dbPath, {
+      afterBackup() {
+        // noteTask appends history without bumping tasks.updated_at.
+        const taskStore = require('../lib/task-db');
+        const db = taskStore.open(fx.dbPath);
+        const noted = taskStore.noteTask(db, { id: 'NOTED_LATER', actor: 'live-agent', content: 'still working' });
+        assert.equal(noted.noted, true);
+        taskStore.close();
+      },
+    });
+    assert.equal(out.removed.tasks, 1);
+    assert.equal(out.skipped.changed_since_backup, 1);
+    const after = dump(fx.dbPath);
+    assert.deepEqual(after.tasks.map(r => r.id).sort(), ['FRESH_NOTE', 'NOTED_LATER']);
+    assert.equal(after.events.filter(e => e.task_id === 'NOTED_LATER').length, 2);
+  } finally {
+    fx.cleanup();
+  }
+});
+
+test('history of a missing task stays whole when any of it names a real project', () => {
+  if (!hasNodeSqlite()) return;
+  const prune = require('../lib/task-prune');
+  const fx = libFixture();
+  try {
+    fx.task('ANCHOR', REAL);
+    fx.event('MIXED', path.join(fx.dir, 'gone-x'));
+    fx.event('MIXED', REAL);
+    fx.event('ONLY_TEMP', path.join(fx.dir, 'gone-y'));
+    fx.done();
+    const plan = prune.dryRun(fx.dbPath);
+    assert.equal(plan.remove.stray_history_rows, 1);
+    assert.equal(plan.kept.stray_held, 1);
+    prune.applyPrune(fx.dbPath);
+    const left = dump(fx.dbPath).events.map(e => e.task_id).sort();
+    assert.deepEqual(left, ['MIXED', 'MIXED']);
+  } finally {
+    fx.cleanup();
+  }
+});
+
+test('deletes look up history by task id, and each transaction is bounded by rows', () => {
+  if (!hasNodeSqlite()) return;
+  const prune = require('../lib/task-prune');
+  const { DatabaseSync } = require('node:sqlite');
+  const fx = libFixture();
+  try {
+    for (let i = 0; i < 6; i++) {
+      fx.task(`T${i}`, path.join(fx.dir, `gone-${i}`));
+      fx.event(`T${i}`, path.join(fx.dir, `gone-${i}`));
+      fx.event(`T${i}`, path.join(fx.dir, `gone-${i}`));
+    }
+    fx.event('ORPHAN', path.join(fx.dir, 'gone-orphan'));
+    fx.done();
+    // A database that lost the task-id index gets the house index back.
+    const raw = new DatabaseSync(fx.dbPath);
+    raw.exec('DROP INDEX idx_task_events_task');
+    raw.close();
+
+    const out = prune.applyPrune(fx.dbPath, { maxRowsPerBatch: 4 });
+    assert.equal(out.removed.tasks, 6);
+    assert.equal(out.removed.history_rows, 12);
+    assert.equal(out.removed.stray_history_rows, 1);
+    // 6 tasks x 3 rows each plus 1 orphan row, at most 4 rows per batch:
+    // one task per batch, and the orphan row rides with the last task.
+    assert.equal(out.batches, 6);
+
+    const check = new DatabaseSync(fx.dbPath, { readOnly: true });
+    try {
+      for (const sql of Object.values(prune.EVENT_SQL)) {
+        const plan = check.prepare(`EXPLAIN QUERY PLAN ${sql}`).all('x').map(r => r.detail).join(' | ');
+        assert.match(plan, /idx_task_events_task/, `${sql} -> ${plan}`);
+        assert.doesNotMatch(plan, /idx_task_events_ws/);
+      }
+    } finally {
+      check.close();
+    }
+  } finally {
+    fx.cleanup();
   }
 });
