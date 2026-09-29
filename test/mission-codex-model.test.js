@@ -16,10 +16,11 @@ const RUNNER_ENV = [
   'ATRIS_CLAUDE_MODEL', 'ATRIS_CLAUDE_BIN', 'ATRIS_CLAUDE_COMMAND_TEMPLATE',
 ];
 
-function withProfile(profile, fn) {
+function withProfile(profile, fn, env = {}) {
   const saved = Object.fromEntries(RUNNER_ENV.map((name) => [name, process.env[name]]));
   for (const name of RUNNER_ENV) delete process.env[name];
   if (profile) process.env.ATRIS_RUNNER_PROFILE = profile;
+  Object.assign(process.env, env);
   try {
     return fn();
   } finally {
@@ -32,11 +33,11 @@ function withProfile(profile, fn) {
 
 // The command a mission tick would launch for this mission, built the way the
 // tick builds it: the mission's engine as the profile, the tick's model.
-function tickCommand(mission) {
+function tickCommand(mission, env = {}) {
   return withProfile(mission.runner, () => buildRunnerCommand({
     promptFile: '/tmp/prompt.md',
     model: resolveMissionTickRunnerModel(mission),
-  }));
+  }), env);
 }
 
 test('a codex step carries a codex model pin', () => {
@@ -47,7 +48,7 @@ test('a codex step carries a codex model pin', () => {
 });
 
 test('a claude model never reaches codex; codex rides its own default', () => {
-  for (const model of ['claude-opus-5-5', 'claude-fable-5', 'opus', 'sonnet', 'haiku', 'fable', 'opus 5.5', 'claude-haiku-4-5[1m]']) {
+  for (const model of ['claude-opus-5-5', 'claude-fable-5', 'opus', 'sonnet', 'haiku', 'fable', 'opus 5.5', 'claude-haiku-4-5[1m]', 'default', 'default[1m]', 'opusplan']) {
     assert.equal(withProfile('codex', () => resolveMissionTickRunnerModel({ runner: 'codex', model })), '', model);
     const cmd = tickCommand({ runner: 'codex', model });
     assert.doesNotMatch(cmd, /--model|-m /, `${model}: ${cmd}`);
@@ -55,10 +56,25 @@ test('a claude model never reaches codex; codex rides its own default', () => {
   }
 });
 
+test('a custom codex template never fills its model slot with a claude default', () => {
+  const template = { ATRIS_RUNNER_COMMAND_TEMPLATE: '{bin} exec {modelFlag} {prompt}' };
+  for (const env of [template, { ...template, ATRIS_RUNNER_MODEL: 'claude-opus-5-5' }, { ...template, ATRIS_CLAUDE_MODEL: 'sonnet' }]) {
+    for (const model of [undefined, 'claude-opus-5-5', 'default']) {
+      const cmd = tickCommand({ runner: 'codex', ...(model ? { model } : {}) }, env);
+      assert.match(cmd, /^codex exec "\$\(cat /, `${model}: ${cmd}`);
+    }
+  }
+  assert.match(tickCommand({ runner: 'codex', model: 'gpt-6-sol' }, template), /^codex exec --model gpt-6-sol /);
+  assert.match(tickCommand({ runner: 'codex' }, { ...template, ATRIS_RUNNER_MODEL: 'gpt-6-terra' }), /^codex exec --model gpt-6-terra /);
+});
+
 test('claude steps keep their model pin', () => {
   assert.match(tickCommand({ runner: 'claude', model: 'claude-opus-5-5' }), /^claude -p .* --model claude-opus-5-5$/);
   assert.match(tickCommand({ runner: 'claude' }), /--model claude-opus-5-5$/);
   assert.match(tickCommand({ runner: 'fable' }), /--model claude-fable-5$/);
+  const template = { ATRIS_RUNNER_COMMAND_TEMPLATE: '{bin} -p {prompt} {modelFlag}' };
+  assert.match(tickCommand({ runner: 'claude' }, template), /--model claude-opus-5-5$/);
+  assert.match(tickCommand({ runner: 'claude', model: 'default' }, template), /--model default$/);
 });
 
 function writeBin(binDir, name, body) {

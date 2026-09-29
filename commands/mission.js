@@ -22,6 +22,7 @@ const {
 const {
   resolveClaudeRunnerModel,
   resolvePinnedRunnerModel,
+  runnerModelFor,
   resolveClaudeRunnerBin,
   resolveClaudeRunnerCommandTemplate,
   buildRunnerCommand,
@@ -31,7 +32,6 @@ const {
 } = require('../lib/runner-command');
 const {
   resolveEngineForRoleWithPreference,
-  modelEngineName,
   engineFailureHealthStatus,
   engineStallReason,
   recordEngineRunHealth,
@@ -569,20 +569,16 @@ function applyMissionRunnerProfile(runner) {
 // default model pin. Every other engine's CLI rejects a claude model name, so
 // it only ever takes an explicit pin (the mission's model or the roster
 // line's); '' lets the engine ride its own default.
+// A mission often still carries the claude model it was created with; an
+// engine that runs only its own models (codex) drops it.
 const CLAUDE_FAMILY_RUNNER_ENGINES = new Set(['claude', 'fable', 'haiku']);
-// Codex only runs OpenAI models, and a mission often still carries the claude
-// model it was created with. That name is dropped so codex rides its default.
-const OWN_MODELS_ONLY_RUNNER_ENGINES = new Set(['codex']);
 
 function resolveMissionTickRunnerModel(mission) {
   const engine = canonicalEngineName(mission && mission.runner);
   if (!engine || CLAUDE_FAMILY_RUNNER_ENGINES.has(engine)) {
     return resolveClaudeRunnerModel(mission);
   }
-  const pinned = resolvePinnedRunnerModel(mission);
-  if (pinned && OWN_MODELS_ONLY_RUNNER_ENGINES.has(engine)
-    && CLAUDE_FAMILY_RUNNER_ENGINES.has(modelEngineName(pinned))) return '';
-  return pinned;
+  return runnerModelFor(engine, resolvePinnedRunnerModel(mission));
 }
 
 function exitMissionError(message, code = 1, asJson = false) {
