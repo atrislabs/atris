@@ -266,3 +266,175 @@ test('shared journal files never count as revision overlap', () => {
     cleanup(cwd);
   }
 });
+
+// Boot shows this gauge on every session start. One git process per commit
+// cost seconds on a busy repo, so the history is one git log, every plain
+// commit's files come back from one batched diff-tree, and a commit's files
+// are saved by hash so the next read asks git only for the history.
+function countGitCalls(fn) {
+  const gitSpawn = require('../lib/git-spawn');
+  const original = gitSpawn.runGit;
+  const calls = [];
+  // Record the subcommand, past any -c settings in front of it.
+  const subcommand = (args) => { let i = 0; while (args[i] === '-c') i += 2; return args[i]; };
+  gitSpawn.runGit = (args, opts) => { calls.push(subcommand(args)); return original(args, opts); };
+  try {
+    return { value: fn(), calls };
+  } finally {
+    gitSpawn.runGit = original;
+  }
+}
+
+function buildBusyRepo({ atris }) {
+  const cwd = initRepo();
+  const now = Date.now();
+  const base = now - 3 * 24 * HOUR;
+  if (atris) {
+    fs.appendFileSync(path.join(cwd, '.git', 'info', 'exclude'), '.atris/\n');
+    fs.mkdirSync(path.join(cwd, '.atris', 'state'), { recursive: true });
+  }
+  for (let i = 0; i < 6; i++) {
+    commitFile(cwd, `f${i}.js`, 'v1\n', `bot lands f${i}`, { bot: true, atMs: base + i * 2 * HOUR });
+    commitFile(cwd, `f${i}.js`, 'v2\n', `human fixes f${i}`, { atMs: base + (i * 2 + 1) * HOUR });
+  }
+  return { cwd, now };
+}
+
+function assertBusySummary(summary) {
+  assert.strictEqual(summary.landings, 6);
+  assert.strictEqual(summary.revised, 6);
+  assert.deepStrictEqual(summary.revisions.map((r) => r.files), [['f5.js'], ['f4.js'], ['f3.js'], ['f2.js'], ['f1.js'], ['f0.js']]);
+}
+
+test('the gauge reads history in two git calls, not one per commit', () => {
+  const { cwd, now } = buildBusyRepo({ atris: false });
+  try {
+    const run = countGitCalls(() => collectRevisionSignals(cwd, { days: 14, now }));
+    assertBusySummary(run.value);
+    assert.deepStrictEqual(run.calls, ['log', 'diff-tree']);
+    assert.strictEqual(fs.existsSync(path.join(cwd, '.atris')), false, 'no cache file outside a workspace');
+  } finally {
+    cleanup(cwd);
+  }
+});
+
+test('a second read reuses saved commit files and only asks git for history', () => {
+  const { cwd, now } = buildBusyRepo({ atris: true });
+  try {
+    const first = countGitCalls(() => collectRevisionSignals(cwd, { days: 14, now }));
+    assert.deepStrictEqual(first.calls, ['log', 'diff-tree']);
+    const second = countGitCalls(() => collectRevisionSignals(cwd, { days: 14, now }));
+    assert.deepStrictEqual(second.calls, ['log']);
+    assert.deepStrictEqual(second.value, first.value);
+    assertBusySummary(second.value);
+
+    // A new commit is the only one git is asked about.
+    commitFile(cwd, 'f0.js', 'v3\n', 'bot lands f0 again', { bot: true, atMs: now - HOUR });
+    const third = countGitCalls(() => collectRevisionSignals(cwd, { days: 14, now }));
+    assert.deepStrictEqual(third.calls, ['log', 'diff-tree']);
+    assert.strictEqual(third.value.landings, 7);
+  } finally {
+    cleanup(cwd);
+  }
+});
+
+test('file names read the same fresh and from the cache, whatever core.quotePath says', () => {
+  const cwd = initRepo();
+  const now = Date.now();
+  const base = now - 2 * 24 * HOUR;
+  try {
+    execSync('git config core.quotePath true', { cwd, stdio: 'pipe' });
+    fs.appendFileSync(path.join(cwd, '.git', 'info', 'exclude'), '.atris/\n');
+    fs.mkdirSync(path.join(cwd, '.atris'), { recursive: true });
+    commitFile(cwd, 'caf\u00e9.js', 'v1\n', 'bot lands the cafe page', { bot: true, atMs: base });
+    commitFile(cwd, 'caf\u00e9.js', 'v2\n', 'human fixes the cafe page', { atMs: base + HOUR });
+    const fresh = collectRevisionSignals(cwd, { days: 14, now });
+    assert.deepStrictEqual(fresh.revisions.map((r) => r.files), [['caf\u00e9.js']]);
+    execSync('git config core.quotePath false', { cwd, stdio: 'pipe' });
+    const cached = countGitCalls(() => collectRevisionSignals(cwd, { days: 14, now }));
+    assert.deepStrictEqual(cached.calls, ['log']);
+    assert.deepStrictEqual(cached.value, fresh);
+  } finally {
+    cleanup(cwd);
+  }
+});
+
+test('saved commit files are dropped when the shallow boundary changes', () => {
+  const { cwd, now } = buildBusyRepo({ atris: true });
+  try {
+    collectRevisionSignals(cwd, { days: 14, now });
+    const warm = countGitCalls(() => collectRevisionSignals(cwd, { days: 14, now }));
+    assert.deepStrictEqual(warm.calls, ['log']);
+
+    // Cut history at the oldest commit, the way a shallow clone does: that
+    // commit now reads as a root. The saved lists must not be trusted.
+    const oldest = execSync('git rev-list --max-parents=0 HEAD', { cwd, encoding: 'utf8' }).trim();
+    const second = execSync('git rev-list --reverse HEAD', { cwd, encoding: 'utf8' }).split('\n')[1];
+    fs.writeFileSync(path.join(cwd, '.git', 'shallow'), `${second}\n`);
+    const shallow = countGitCalls(() => collectRevisionSignals(cwd, { days: 14, now }));
+    assert.deepStrictEqual(shallow.calls, ['log', 'diff-tree']);
+
+    // Fetching the full history again changes the boundary back.
+    fs.rmSync(path.join(cwd, '.git', 'shallow'));
+    const unshallow = countGitCalls(() => collectRevisionSignals(cwd, { days: 14, now }));
+    assert.deepStrictEqual(unshallow.calls, ['log', 'diff-tree']);
+    assert.ok(oldest);
+    assertBusySummary(unshallow.value);
+  } finally {
+    cleanup(cwd);
+  }
+});
+
+test('a user diff.renames setting does not change which files a merge landed', () => {
+  const read = (renames) => {
+    const cwd = initRepo();
+    const now = Date.now();
+    const base = now - 3 * 24 * HOUR;
+    try {
+      execSync(`git config diff.renames ${renames}`, { cwd, stdio: 'pipe' });
+      commitFile(cwd, 'a.js', 'seed\n', 'seed', { atMs: base - HOUR });
+      execSync('git checkout -q -b side && git mv a.js b.js', { cwd, stdio: 'pipe' });
+      const at = new Date(base).toISOString();
+      execSync('git commit -q -m "move a to b"', { cwd, stdio: 'pipe', env: { ...process.env, GIT_AUTHOR_DATE: at, GIT_COMMITTER_DATE: at } });
+      execSync('git checkout -q -', { cwd, stdio: 'pipe' });
+      const mergeDate = new Date(base + HOUR).toISOString();
+      fs.writeFileSync(path.join(cwd, '.git', 'COMMIT_MSG_FIXTURE'), `merge bot work\n\n${BOT_TRAILER}\n`, 'utf8');
+      execSync('git merge -q --no-ff side -F .git/COMMIT_MSG_FIXTURE', {
+        cwd, stdio: 'pipe', env: { ...process.env, GIT_AUTHOR_DATE: mergeDate, GIT_COMMITTER_DATE: mergeDate },
+      });
+      // A human brings back the old name. The merge landed b.js, a rename,
+      // so this is not a fix to the merge.
+      commitFile(cwd, 'a.js', 'back\n', 'human restores a', { atMs: base + 2 * HOUR });
+      return collectRevisionSignals(cwd, { days: 14, now });
+    } finally {
+      cleanup(cwd);
+    }
+  };
+  const on = read('true');
+  const off = read('false');
+  assert.strictEqual(on.landings, 1);
+  assert.strictEqual(on.revised, 0);
+  assert.strictEqual(off.revised, on.revised);
+});
+
+test('a file named like a commit hash stays a file of its own commit', () => {
+  const cwd = initRepo();
+  const now = Date.now();
+  const base = now - 3 * 24 * HOUR;
+  try {
+    commitFile(cwd, 'x.js', 'v1\n', 'bot lands x', { bot: true, atMs: base });
+    const earlier = execSync('git rev-parse HEAD', { cwd, encoding: 'utf8' }).trim();
+    // The later landing adds a file spelled exactly like the earlier commit's
+    // hash, which is the next hash in the batch, plus z.js after it.
+    fs.writeFileSync(path.join(cwd, earlier), 'looks like a hash\n', 'utf8');
+    commitFile(cwd, 'z.js', 'v1\n', 'bot lands z', { bot: true, atMs: base + 10 * HOUR });
+    commitFile(cwd, 'z.js', 'v2\n', 'human fixes z', { atMs: base + 11 * HOUR });
+    const summary = collectRevisionSignals(cwd, { days: 14, now });
+    assert.strictEqual(summary.landings, 2);
+    assert.strictEqual(summary.revised, 1);
+    assert.strictEqual(summary.revisions[0].landing.subject, 'bot lands z');
+    assert.deepStrictEqual(summary.revisions[0].files, ['z.js']);
+  } finally {
+    cleanup(cwd);
+  }
+});

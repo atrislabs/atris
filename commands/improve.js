@@ -18,10 +18,13 @@
  * fallback, and scorecard writes can all be faked in tests.
  */
 
+const crypto = require('crypto');
 const fs = require('fs');
 const os = require('os');
 const path = require('path');
 const { spawnSync } = require('child_process');
+const gitSpawn = require('../lib/git-spawn');
+const ignoredCache = require('../lib/ignored-cache');
 const { apiRequestJson, getApiBaseUrl } = require('../utils/api');
 const { loadCredentials } = require('../utils/auth');
 const pulse = require('../lib/pulse');
@@ -1085,8 +1088,9 @@ function parseRevisionsArgs(argv = []) {
   return opts;
 }
 
-function gitLines(cwdRoot, gitArgs) {
-  const r = spawnSync('git', gitArgs, { cwd: cwdRoot, encoding: 'utf8' });
+// Through the module object so tests can count git spawns with a spy.
+function gitLines(cwdRoot, gitArgs, { input, maxBuffer } = {}) {
+  const r = gitSpawn.runGit(gitArgs, { cwd: cwdRoot, check: false, input, maxBuffer });
   if (r.status !== 0) {
     const err = new Error(String(r.stderr || `git ${gitArgs[0]} exited ${r.status}`).trim());
     err.gitFailed = true;
@@ -1095,17 +1099,129 @@ function gitLines(cwdRoot, gitArgs) {
   return String(r.stdout || '');
 }
 
+// File names come back NUL-separated and never quoted, whatever core.quotePath
+// says, so a name reads the same fresh from git and from the saved cache.
+const NAME_ARGS = ['-c', 'core.quotePath=false'];
+
+function splitNames(out) {
+  return String(out || '').split('\0').filter(Boolean);
+}
+
 /**
  * Files changed by one commit. Merge commits are attributed by their
  * first-parent diff (what the merge actually brought onto the mainline);
  * plain commits use diff-tree. Root commits list their initial files.
+ * The rename choice is spelled out so a user's diff.renames setting cannot
+ * change the lists: merges find renames (git diff's default), plain commits
+ * do not (diff-tree's default).
  */
 function commitFiles(cwdRoot, commit) {
   const parents = commit.parents;
   const out = parents.length >= 2
-    ? gitLines(cwdRoot, ['diff', '--name-only', `${commit.hash}^1`, commit.hash])
-    : gitLines(cwdRoot, ['diff-tree', '--no-commit-id', '--name-only', '-r', '--root', commit.hash]);
-  return out.split('\n').map((line) => line.trim()).filter(Boolean);
+    ? gitLines(cwdRoot, [...NAME_ARGS, 'diff', '--name-only', '--find-renames', '-z', `${commit.hash}^1`, commit.hash])
+    : gitLines(cwdRoot, [...NAME_ARGS, 'diff-tree', '--no-commit-id', '--name-only', '--no-renames', '-z', '-r', '--root', commit.hash]);
+  return splitNames(out);
+}
+
+/**
+ * Files changed by many plain commits in one git process: the same diff-tree
+ * per-commit call above, fed every hash on stdin. --always prints the hash
+ * even for an empty commit. Raw output frames every file as a ':'-led status
+ * field followed by its path, so a path is never mistaken for a commit hash,
+ * even a path spelled exactly like the next one.
+ */
+function plainCommitFiles(cwdRoot, commits) {
+  const found = new Map(commits.map((commit) => [commit.hash, []]));
+  if (!commits.length) return found;
+  const hashes = commits.map((commit) => commit.hash);
+  const out = gitLines(cwdRoot, [...NAME_ARGS, 'diff-tree', '--stdin', '--always', '--raw', '--no-renames', '-z', '-r', '--root'], {
+    input: `${hashes.join('\n')}\n`,
+    // Many commits' lists in one reply; the per-commit calls each had 1MB.
+    maxBuffer: Math.max(1, hashes.length) * 1024 * 1024,
+  });
+  const fields = splitNames(out);
+  let current = null;
+  for (let i = 0; i < fields.length; i++) {
+    const field = fields[i];
+    if (field.startsWith(':')) {
+      // Status field; with --no-renames exactly one path follows it.
+      if (current && i + 1 < fields.length) current.push(fields[i + 1]);
+      i += 1;
+    } else {
+      current = found.get(field) || null;
+    }
+  }
+  return found;
+}
+
+// Where git keeps state shared by every checkout of this repo (a linked
+// worktree points at its main repo). null when it cannot be found on disk.
+function gitCommonDir(root) {
+  if (process.env.GIT_DIR || process.env.GIT_COMMON_DIR) return null;
+  let dir = path.resolve(root);
+  for (;;) {
+    const dotGit = path.join(dir, '.git');
+    let stat = null;
+    try { stat = fs.statSync(dotGit); } catch { stat = null; }
+    if (stat && stat.isDirectory()) return dotGit;
+    if (stat && stat.isFile()) {
+      const match = fs.readFileSync(dotGit, 'utf8').match(/^gitdir:\s*(.+)$/m);
+      if (!match) return null;
+      const gitDir = path.resolve(dir, match[1].trim());
+      try {
+        return path.resolve(gitDir, fs.readFileSync(path.join(gitDir, 'commondir'), 'utf8').trim());
+      } catch {
+        return gitDir;
+      }
+    }
+    const parent = path.dirname(dir);
+    if (parent === dir) return null;
+    dir = parent;
+  }
+}
+
+// A shallow clone cuts history at boundary commits, and those commits list
+// different files once the history is fetched. The saved lists are only good
+// for the shallow state they were read under; null means do not cache.
+function shallowStamp(root) {
+  const common = gitCommonDir(root);
+  if (!common) return null;
+  try {
+    return crypto.createHash('sha1').update(fs.readFileSync(path.join(common, 'shallow'))).digest('hex');
+  } catch (error) {
+    return error.code === 'ENOENT' ? 'full' : null;
+  }
+}
+
+// A commit's file list never changes, so it is saved by hash in the ignored
+// .atris/cache and the gauge (shown on every boot) only asks git about commits
+// it has not seen. Hashes this read used come first; older ones stay until the
+// cap, so a 7-day boot read and a 14-day report read do not evict each other.
+const REVISION_FILES_CACHE = 'revision-files.json';
+const REVISION_FILES_CACHE_MAX = 5000;
+
+function loadRevisionFilesCache(root) {
+  const shallow = ignoredCache.cacheEnabled(root) ? shallowStamp(root) : null;
+  const cache = { root, shallow, entries: {}, used: {}, dirty: false, writable: Boolean(shallow) };
+  if (!cache.writable) return cache;
+  const parsed = ignoredCache.readCacheJson(root, REVISION_FILES_CACHE);
+  if (parsed && parsed.version === 1 && parsed.shallow === shallow && parsed.entries && typeof parsed.entries === 'object') {
+    cache.entries = parsed.entries;
+  }
+  return cache;
+}
+
+function saveRevisionFilesCache(cache) {
+  if (!cache.writable || !cache.dirty) return;
+  const entries = { ...cache.used };
+  let count = Object.keys(entries).length;
+  for (const [hash, files] of Object.entries(cache.entries)) {
+    if (count >= REVISION_FILES_CACHE_MAX) break;
+    if (entries[hash] || !Array.isArray(files)) continue;
+    entries[hash] = files;
+    count += 1;
+  }
+  ignoredCache.writeCacheJson(cache.root, REVISION_FILES_CACHE, { version: 1, shallow: cache.shallow, entries });
 }
 
 /**
@@ -1150,10 +1266,27 @@ function collectRevisionSignals(root, options = {}) {
   // commits count as revision signals.
   const humans = commits.filter((c) => !c.isAgent && c.parents.length < 2);
 
-  const filesCache = new Map();
+  // Every landing's files are needed, and a human commit's only when it falls
+  // inside some landing's window. Plain commits missing from the cache are
+  // read in one batch; merges keep their own first-parent diff.
+  const cache = loadRevisionFilesCache(root);
+  const needed = [...landings, ...humans.filter((human) => landings.some((landing) => human.ms > landing.ms && human.ms <= landing.ms + REVISION_WINDOW_MS))];
+  const missing = [];
+  for (const commit of needed) {
+    const hit = cache.entries[commit.hash];
+    if (Array.isArray(hit)) cache.used[commit.hash] = hit;
+    else if (commit.parents.length < 2) missing.push(commit);
+  }
+  for (const [hash, files] of plainCommitFiles(root, missing)) {
+    cache.used[hash] = files;
+    cache.dirty = true;
+  }
   const filesOf = (commit) => {
-    if (!filesCache.has(commit.hash)) filesCache.set(commit.hash, commitFiles(root, commit));
-    return filesCache.get(commit.hash);
+    if (!cache.used[commit.hash]) {
+      cache.used[commit.hash] = commitFiles(root, commit);
+      cache.dirty = true;
+    }
+    return cache.used[commit.hash];
   };
 
   const revisions = [];
@@ -1177,6 +1310,7 @@ function collectRevisionSignals(root, options = {}) {
       });
     }
   }
+  saveRevisionFilesCache(cache);
 
   return {
     schema: REVISIONS_SCHEMA,
