@@ -23,6 +23,8 @@ cd "$WORK"
 # Printed metadata and a written English VTT are a hit even when yt-dlp exits 429.
 # A leaked WARNING|ERROR print line is not the video id.
 # Manual English is --write-subs. Auto English is often en-orig / en-US / en-GB.
+# Plain auto "en" is YouTube's machine translation and returns HTTP 429, which
+# made yt-dlp quit before writing en-orig. Ask for en-orig first, keep going.
 # Teach parses leftover yt_<id>.clean.txt stamps as cues.
 # Empty --print still keeps a VTT written in this run (id from the watch /
 # shorts / embed / live / e / nocookie embed URL or the new filename). A copied
@@ -30,13 +32,13 @@ cd "$WORK"
 # gone, leftover yt_<id>.clean.txt from a prior notes run is still a keep.
 # Another video's leftover clean.txt is not invent-keep.
 existing=""
-for name in yt_*.en.vtt yt_*.en-orig.vtt yt_*.en-US.vtt yt_*.en-GB.vtt; do
+for name in yt_*.en-orig.vtt yt_*.en.vtt yt_*.en-US.vtt yt_*.en-GB.vtt; do
   [ -e "$name" ] || continue
   existing="$existing $name"
 done
 
 META=$(yt-dlp --no-update --quiet --no-warnings --skip-download \
-  --write-subs --write-auto-subs --sub-format vtt --sub-langs "en,en-orig,en-US,en-GB" \
+  --write-subs --write-auto-subs --sub-format vtt --sub-langs "en-orig,en,en-US,en-GB" --ignore-errors \
   --no-simulate \
   -o "yt_%(id)s" \
   --print "%(id)s|%(title)s|%(channel)s|%(duration_string)s" \
@@ -114,7 +116,7 @@ fi
 
 VTT=""
 if [ -n "$ID" ]; then
-  for name in "yt_${ID}.en.vtt" "yt_${ID}.en-orig.vtt" "yt_${ID}.en-US.vtt" "yt_${ID}.en-GB.vtt"; do
+  for name in "yt_${ID}.en-orig.vtt" "yt_${ID}.en.vtt" "yt_${ID}.en-US.vtt" "yt_${ID}.en-GB.vtt"; do
     if [ -s "$name" ]; then
       VTT="$name"
       break
@@ -122,7 +124,7 @@ if [ -n "$ID" ]; then
   done
 fi
 if [ -z "$VTT" ]; then
-  for name in yt_*.en.vtt yt_*.en-orig.vtt yt_*.en-US.vtt yt_*.en-GB.vtt; do
+  for name in yt_*.en-orig.vtt yt_*.en.vtt yt_*.en-US.vtt yt_*.en-GB.vtt; do
     [ -s "$name" ] || continue
     case " $existing " in
       *" $name "*) continue ;;

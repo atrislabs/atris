@@ -53,6 +53,57 @@ test('ytnotes keeps a written vtt when yt-dlp exits 429', () => {
   assert.doesNotMatch(`${result.stdout}\n${result.stderr}`, /No English captions/);
 });
 
+// Mimics real yt-dlp: subtitle languages download in the order asked, the
+// machine-translated "en" track returns 429, and without --ignore-errors the
+// first failure stops the run before later languages are written.
+test('ytnotes gets en-orig when the translated en track is rate limited', () => {
+  const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'atris-ytnotes-enorig-'));
+  const bin = path.join(tmp, 'bin');
+  const work = path.join(tmp, 'work');
+  fs.mkdirSync(bin);
+  fs.mkdirSync(work);
+
+  writeExec(path.join(bin, 'yt-dlp'), [
+    '#!/bin/bash',
+    'langs=""; ignore=0; prev=""',
+    'for a in "$@"; do',
+    '  [ "$prev" = "--sub-langs" ] && langs="$a"',
+    '  [ "$a" = "--ignore-errors" ] && ignore=1',
+    '  prev="$a"',
+    'done',
+    'printf "%s\\n" "ntorig1|Real Captions|Chan|0:02"',
+    'IFS=, read -ra list <<< "$langs"',
+    'for l in "${list[@]}"; do',
+    '  case "$l" in',
+    '    en-orig) printf "%s\\n" "WEBVTT" "" "00:00:00.000 --> 00:00:02.000" "The spoken words are here." > yt_ntorig1.en-orig.vtt ;;',
+    '    en) echo "ERROR: Unable to download video subtitles for \'en\': HTTP Error 429: Too Many Requests" >&2',
+    '        [ "$ignore" = 1 ] || exit 1 ;;',
+    '  esac',
+    'done',
+    '',
+  ].join('\n'));
+
+  writeExec(path.join(bin, 'claude'), [
+    '#!/bin/sh',
+    'printf "%s\\n" "# Real Captions" "" "The spoken words are here."',
+    '',
+  ].join('\n'));
+
+  const result = spawnSync(YTNOTES, ['https://www.youtube.com/watch?v=ntorig1'], {
+    encoding: 'utf8',
+    timeout: 20000,
+    env: {
+      ...process.env,
+      PATH: `${bin}:${process.env.PATH || '/usr/bin'}`,
+      TMPDIR: work,
+    },
+  });
+
+  assert.equal(result.status, 0, result.stderr || result.stdout);
+  assert.match(fs.readFileSync(path.join(work, 'ytnotes', 'yt_ntorig1.md'), 'utf8'), /spoken words/);
+  assert.doesNotMatch(`${result.stdout}\n${result.stderr}`, /No English captions/);
+});
+
 test('ytnotes skips a leaked warning print line when choosing the video id', () => {
   const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'atris-ytnotes-warn-id-'));
   const bin = path.join(tmp, 'bin');

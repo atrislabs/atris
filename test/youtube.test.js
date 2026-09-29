@@ -589,6 +589,49 @@ test('extractLocalTranscript preserves VTT timestamps', async () => {
   assert.equal(result.durationSeconds, 61);
 });
 
+const JSON3_CAPTION = JSON.stringify({ events: [{ tStartMs: 0, segs: [{ utf8: 'Real words' }] }] });
+const track = (lang) => [{ ext: 'json3', url: `https://www.youtube.com/api/timedtext?lang=${lang}` }];
+
+test('extractLocalTranscript takes the spoken en-orig track over the rate-limited en translation', async () => {
+  const tried = [];
+  const result = await extractLocalTranscript('https://youtube.com/watch?v=Am7IWP8IpEc', {
+    spawnSync: () => ({
+      status: 0,
+      stdout: JSON.stringify({
+        automatic_captions: { ab: track('ab'), en: track('en'), 'en-orig': track('en-orig') },
+      }),
+    }),
+    fetchCaptionText: async (url) => {
+      tried.push(url.split('lang=')[1]);
+      return url.endsWith('lang=en') ? null : JSON3_CAPTION;
+    },
+  });
+
+  assert.deepEqual(tried, ['en-orig']);
+  assert.equal(result.language, 'en-orig');
+  assert.equal(result.transcriptText, '[00:00] Real words');
+});
+
+test('extractLocalTranscript falls through a blocked track and never picks a random translation', async () => {
+  const tried = [];
+  const result = await extractLocalTranscript('https://youtube.com/watch?v=abc123', {
+    spawnSync: () => ({
+      status: 0,
+      stdout: JSON.stringify({
+        subtitles: { live_chat: track('live_chat') },
+        automatic_captions: { ab: track('ab'), en: track('en'), 'es-orig': track('es-orig') },
+      }),
+    }),
+    fetchCaptionText: async (url) => {
+      tried.push(url.split('lang=')[1]);
+      return url.endsWith('lang=es-orig') ? null : JSON3_CAPTION;
+    },
+  });
+
+  assert.deepEqual(tried, ['es-orig', 'en']);
+  assert.equal(result.language, 'en');
+});
+
 test('youtube notes with no url exits 2 and prints usage', async () => {
   const output = [];
   const status = await youtubeCommand(['notes'], {
