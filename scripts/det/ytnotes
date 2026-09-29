@@ -47,6 +47,23 @@ if ! command -v yt-dlp >/dev/null 2>&1; then
   exit 2
 fi
 
+# YouTube blocks old yt-dlp copies, and the failure looks like "no captions".
+# Warn when the version date (YYYY.MM.DD, maybe .N) is too old; keep going.
+# A version that does not parse stays silent.
+YTDLP_VERSION=$(yt-dlp --version 2>/dev/null) || true
+YTDLP_AGE=$(perl -MTime::Local -e '
+  my ($v, $max) = @ARGV;
+  exit 0 unless $max =~ /\A\d+\z/;
+  my ($y, $m, $d) = $v =~ /\A\s*(\d{4})\.(\d{1,2})\.(\d{1,2})(?:\.\d+)?\s*\z/ or exit 0;
+  my $t = eval { timelocal(0, 0, 12, $d, $m - 1, $y) };
+  exit 0 unless defined $t;
+  my $age = int((time - $t) / 86400);
+  print $age if $age > $max;
+' "$YTDLP_VERSION" "${ATRIS_YTNOTES_YTDLP_MAX_AGE_DAYS:-60}" 2>/dev/null) || true
+if [ -n "$YTDLP_AGE" ]; then
+  echo "Your yt-dlp is $YTDLP_AGE days old, and YouTube often blocks old copies. Update it: brew upgrade yt-dlp (Mac) or pipx upgrade yt-dlp" >&2
+fi
+
 existing=""
 for name in yt_*.en-orig.vtt yt_*.en.vtt yt_*.en-US.vtt yt_*.en-GB.vtt; do
   [ -e "$name" ] || continue
@@ -390,6 +407,7 @@ run_auto() {
     fi
     if out=$(run_writer "$cmd" 2>>"$WORK/yt_${ID}.engine.err") && printf '%s' "$out" | grep -q '[[:alnum:]]'; then
       printf '%s\n' "$out"
+      echo "notes by $label" >&2
       return 0
     fi
     tried="$label"
@@ -429,6 +447,8 @@ if ! grep -q '[[:alnum:]]' "yt_${ID}.md"; then
   echo "Paid notes, 5 credits, refunded if it fails: atris youtube process \"$URL\"" >&2
   exit 3
 fi
+# auto names its writer above; a pinned engine is named here.
+[ "$ENGINE" = "auto" ] || echo "notes by $ENGINE" >&2
 cat "yt_${ID}.md"
 
 node "$SCRIPT_DIR/ytquote-repair.js" "yt_${ID}.md" "yt_${ID}.clean.txt"

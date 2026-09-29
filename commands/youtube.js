@@ -40,6 +40,7 @@ function showYoutubeHelp(output = console.log, commandName = 'atris youtube') {
   output(`       ${commandName} watch list`);
   output(`       ${commandName} watch remove <number>`);
   output(`       ${commandName} watch tick`);
+  output(`       ${commandName} bench [--quick] [--case <name>]`);
   output(`       ${commandName} <youtube-url> [options]`);
   output('');
   output('search = free local discovery (ytsearch / yt-dlp), returns youtu.be links; rich free search writes one apply and a failing keep/revert pack; thin hands off to teach');
@@ -50,6 +51,7 @@ function showYoutubeHelp(output = console.log, commandName = 'atris youtube') {
   output('process = 5 credits cloud knowledge (needs a filled Apply); rich process writes one apply and a failing keep/revert pack');
   output('digest = one decision page from this week\'s video briefs; rich digest writes one apply and a failing keep/revert pack');
   output('watch = subscribed channels turn into briefs without a human; add hands off to tick; tick hands off to teach when it briefed');
+  output('bench = run notes on real videos, uncached, and grade what a user gets; --quick runs the short video and the stranger checks');
   output('Process a YouTube video through Atris using timestamped transcript-first analysis.');
   output('Falls back to cloud video processing when local captions are unavailable.');
   output('');
@@ -3851,6 +3853,20 @@ async function runYoutubeTeach(args = [], deps = {}) {
   return applyCode;
 }
 
+// Bench the notes feature end to end. The script prints its own lines.
+function runYoutubeBench(argv, deps = {}) {
+  const run = (deps.spawnSync || spawnSync)(
+    process.execPath,
+    [path.join(__dirname, '..', 'scripts', 'det', 'ytrail-bench.js'), ...argv],
+    { stdio: 'inherit' },
+  );
+  if (run.error) {
+    (deps.output || console.error)(`bench did not start: ${run.error.message}`);
+    return 1;
+  }
+  return typeof run.status === 'number' ? run.status : 1;
+}
+
 async function youtubeCommand(argv = process.argv.slice(3), deps = {}) {
   const output = deps.output || ((line = '') => console.log(line));
   if (argv[0] === 'search') {
@@ -3878,6 +3894,11 @@ async function youtubeCommand(argv = process.argv.slice(3), deps = {}) {
   if (argv[0] === 'digest') {
     const code = runYoutubeDigest(argv.slice(1), { ...deps, output });
     if (!deps.output && !deps.runner) process.exit(code);
+    return code;
+  }
+  if (argv[0] === 'bench') {
+    const code = runYoutubeBench(argv.slice(1), deps);
+    if (!deps.output && !deps.spawnSync) process.exit(code);
     return code;
   }
   if (argv[0] === 'watch') {
@@ -3978,5 +3999,6 @@ module.exports = {
   searchApplyRel,
   firstRichWatchLesson,
   fileTeachExperiment,
+  runYoutubeBench,
   youtubeCommand,
 };
