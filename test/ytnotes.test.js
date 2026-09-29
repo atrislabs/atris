@@ -732,6 +732,8 @@ function runNoCaptionNotes(label, { withWhisper, whisperVtt, extraEnv = {}, audi
       HOME: tmp,
       PATH: `${bin}:${path.dirname(process.execPath)}:/usr/bin:/bin`,
       TMPDIR: work,
+      // The real roster lookup is its own tests below; keep it out of the rest.
+      ATRIS_YTNOTES_ROSTER: '0',
       ...extraEnv,
     },
   });
@@ -939,4 +941,94 @@ test('ytnotes names a pinned writer once the notes are written', () => {
 
   assert.equal(result.status, 0, result.stderr || result.stdout);
   assert.match(result.stderr, /^notes by haiku$/m);
+});
+
+// A writer that records its arguments, so tests can see the model and effort.
+function recordingWriter(name, heading) {
+  return `#!/bin/sh\necho "$@" > "$TMPDIR/${name}.args"\nprintf "%s\\n" "# ${heading}" "" "Spoken only in audio."\n`;
+}
+
+function resolveCmd(json) {
+  return `printf '%s' '${JSON.stringify(json)}'`;
+}
+
+test('ytnotes auto writer follows the roster lead and passes its model through', () => {
+  const { result, dir } = runNoCaptionNotes('roster1', {
+    withWhisper: true,
+    whisperVtt: LOCAL_VTT,
+    withClaude: false,
+    extraEnv: {
+      ATRIS_YTNOTES_ENGINE: 'auto',
+      ATRIS_YTNOTES_ROSTER: '1',
+      ATRIS_YTNOTES_RESOLVE_CMD: resolveCmd({ job: 'notes', engine: 'claude', model: 'haiku', effort: null, backup: [{ engine: 'agy', model: 'gemini-3.8-flash', effort: 'low' }], source: 'roster' }),
+    },
+    extraBins: { claude: recordingWriter('claude', 'From Claude'), agy: recordingWriter('agy', 'From Gemini') },
+  });
+
+  assert.equal(result.status, 0, result.stderr || result.stdout);
+  assert.match(fs.readFileSync(path.join(dir, 'yt_roster1.md'), 'utf8'), /# From Claude/);
+  assert.match(result.stderr, /notes by Haiku/);
+  const work = path.dirname(dir);
+  assert.match(fs.readFileSync(path.join(work, 'claude.args'), 'utf8'), /--model haiku/);
+  assert.equal(fs.existsSync(path.join(work, 'agy.args')), false, 'the backup never ran');
+});
+
+test('ytnotes passes the roster effort to Gemini and keeps low as the floor', () => {
+  const high = runNoCaptionNotes('roster2', {
+    withWhisper: true,
+    whisperVtt: LOCAL_VTT,
+    extraEnv: {
+      ATRIS_YTNOTES_ENGINE: 'auto',
+      ATRIS_YTNOTES_ROSTER: '1',
+      ATRIS_YTNOTES_RESOLVE_CMD: resolveCmd({ engine: 'agy', model: 'gemini-3.8-flash', effort: 'high', backup: [] }),
+    },
+    extraBins: { agy: recordingWriter('agy', 'From Gemini') },
+  });
+  assert.equal(high.result.status, 0, high.result.stderr);
+  assert.match(fs.readFileSync(path.join(path.dirname(high.dir), 'agy.args'), 'utf8'), /--model gemini-3\.8-flash --effort high/);
+
+  const unset = runNoCaptionNotes('roster3', {
+    withWhisper: true,
+    whisperVtt: LOCAL_VTT,
+    extraEnv: {
+      ATRIS_YTNOTES_ENGINE: 'auto',
+      ATRIS_YTNOTES_ROSTER: '1',
+      ATRIS_YTNOTES_RESOLVE_CMD: resolveCmd({ engine: 'agy', model: 'gemini-3.8-flash', effort: null, backup: [] }),
+    },
+    extraBins: { agy: recordingWriter('agy', 'From Gemini') },
+  });
+  assert.equal(unset.result.status, 0, unset.result.stderr);
+  assert.match(fs.readFileSync(path.join(path.dirname(unset.dir), 'agy.args'), 'utf8'), /--effort low/);
+});
+
+test('ytnotes falls back to the built-in order when the roster lookup fails, is slow, or names a missing writer', () => {
+  const cases = [
+    ['roster4', 'exit 1'],
+    ['roster5', 'sleep 5'],
+    ['roster6', resolveCmd({ engine: 'codex', model: 'gpt-6', effort: null, backup: [{ engine: 'cursor', model: null }] })],
+    ['roster7', "printf 'not json'"],
+  ];
+  for (const [label, cmd] of cases) {
+    const started = Date.now();
+    const { result, dir } = runNoCaptionNotes(label, {
+      withWhisper: true,
+      whisperVtt: LOCAL_VTT,
+      extraEnv: { ATRIS_YTNOTES_ENGINE: 'auto', ATRIS_YTNOTES_ROSTER: '1', ATRIS_YTNOTES_RESOLVE_CMD: cmd },
+      extraBins: { agy: recordingWriter('agy', 'From Gemini') },
+    });
+    assert.equal(result.status, 0, `${label}: ${result.stderr}`);
+    assert.match(fs.readFileSync(path.join(dir, `yt_${label}.md`), 'utf8'), /# From Gemini/, label);
+    assert.ok(Date.now() - started < 10000, `${label} took too long`);
+  }
+});
+
+test('ytnotes with ATRIS_YTNOTES_ROSTER=0 never asks the roster', () => {
+  const { result, dir } = runNoCaptionNotes('roster8', {
+    withWhisper: true,
+    whisperVtt: LOCAL_VTT,
+    extraEnv: { ATRIS_YTNOTES_ENGINE: 'auto', ATRIS_YTNOTES_ROSTER: '0', ATRIS_YTNOTES_RESOLVE_CMD: 'touch "$TMPDIR/asked"' },
+    extraBins: { agy: recordingWriter('agy', 'From Gemini') },
+  });
+  assert.equal(result.status, 0, result.stderr);
+  assert.equal(fs.existsSync(path.join(path.dirname(dir), 'asked')), false);
 });

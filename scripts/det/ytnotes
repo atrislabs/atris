@@ -4,8 +4,9 @@
 # No captions: if mlx_whisper is installed (uv tool install mlx-whisper, Apple
 # silicon), the audio is transcribed on this machine instead. Otherwise the
 # script prints the paid command. ATRIS_YTNOTES_LOCAL_TRANSCRIBE=0 turns it off.
-# Engines: auto (default: fastest installed writer that answers: Gemini
-# Flash through agy, then Haiku, Codex, Cursor),
+# Engines: auto (default: the team's notes writer from the roster, then the
+# fastest installed writer that answers: Gemini Flash through agy, then Haiku,
+# Codex, Cursor),
 # gemini, haiku, atris-fast, grok, codex, cursor. ATRIS_YTNOTES_ENGINE sets the default.
 # Outputs: $WORK/yt_${ID}.clean.txt (transcript), $WORK/yt_${ID}.md (notes).
 set -euo pipefail
@@ -372,40 +373,85 @@ run_grok() {
 }
 
 run_haiku() {
-  run_with_timeout 240 claude -p "$PROMPT" --model claude-haiku-4-5
+  run_with_timeout 240 claude -p "$PROMPT" --model "${1:-claude-haiku-4-5}"
 }
 
 # Gemini Flash through the Antigravity CLI (agy). On an 85-minute transcript it
 # writes notes in about 8s; Haiku takes 30-40s. The old gemini CLI is retired.
+# Low effort is the floor for notes: high effort is slower and not sharper here.
 run_gemini() {
   command -v agy >/dev/null 2>&1 || { echo "agy is not installed" >&2; return 127; }
-  run_with_timeout 120 agy -p "$PROMPT" --model "${ATRIS_YTNOTES_GEMINI_MODEL:-gemini-3.8-flash}" \
-    --effort low --print-timeout 110s </dev/null
+  run_with_timeout 120 agy -p "$PROMPT" --model "${ATRIS_YTNOTES_GEMINI_MODEL:-${1:-gemini-3.8-flash}}" \
+    --effort "${2:-low}" --print-timeout 110s </dev/null
 }
 
 # Fastest installed writer that answers: Gemini, Haiku, Codex, Cursor.
+# Entries are cmd|model|effort|label; an empty model or effort means the default.
 # Buffered so a failed or empty answer never reaches the notes file.
-AUTO_WRITERS="agy:Gemini claude:Haiku codex:Codex cursor-agent:Cursor"
+AUTO_WRITERS="agy|||Gemini claude|||Haiku codex|||Codex cursor-agent|||Cursor"
+
+# The team's "notes" writer, from `atris engine resolve notes --json`, run from
+# the caller's project with this same package. It only reorders: any failure,
+# a slow answer (2s), or a writer that is not installed falls back to the order
+# above. ATRIS_YTNOTES_ROSTER=0 skips it.
+resolve_roster_writers() {
+  [ "${ATRIS_YTNOTES_ROSTER:-1}" = "0" ] && return 0
+  local json=""
+  if [ -n "${ATRIS_YTNOTES_RESOLVE_CMD:-}" ]; then
+    json=$(cd "$CALLER_CWD" && run_with_timeout 2 sh -c "$ATRIS_YTNOTES_RESOLVE_CMD" 2>/dev/null) || return 0
+  else
+    [ -f "$SCRIPT_DIR/../../bin/atris.js" ] || return 0
+    json=$(cd "$CALLER_CWD" && ATRIS_AUTO_UPDATE=off run_with_timeout 2 node "$SCRIPT_DIR/../../bin/atris.js" engine resolve notes --json 2>/dev/null) || return 0
+  fi
+  printf '%s' "$json" | node -e '
+    const s = require("fs").readFileSync(0, "utf8");
+    const d = JSON.parse(s.slice(s.indexOf("{"), s.lastIndexOf("}") + 1));
+    const cmds = { agy: "agy", gemini: "agy", haiku: "claude", claude: "claude", codex: "codex", cursor: "cursor-agent", "cursor-agent": "cursor-agent" };
+    const clean = (v) => (v == null ? "" : String(v).replace(/[^A-Za-z0-9._:\/-]/g, ""));
+    const label = (cmd, model) => ({ agy: "Gemini", codex: "Codex", "cursor-agent": "Cursor" }[cmd]
+      || (/haiku/i.test(model || "haiku") ? "Haiku" : "Claude"));
+    const out = [];
+    for (const w of [d, ...(Array.isArray(d.backup) ? d.backup : [])]) {
+      const cmd = cmds[String((w && w.engine) || "").toLowerCase()];
+      if (!cmd) continue;
+      const model = clean(w.model);
+      out.push([cmd, model, clean(w.effort), label(cmd, model)].join("|"));
+    }
+    process.stdout.write(out.join(" "));
+  ' 2>/dev/null || true
+}
+
+# Roster writers first, then the rest of the built-in order, one entry per cmd.
+writer_list() {
+  local entry cmd seen=" " list=""
+  for entry in $(resolve_roster_writers) $AUTO_WRITERS; do
+    cmd="${entry%%|*}"
+    case "$seen" in *" $cmd "*) continue ;; esac
+    seen="$seen$cmd "
+    list="$list $entry"
+  done
+  printf '%s' "$list"
+}
 
 run_writer() {
+  local model="${2:-}"
   case "$1" in
-    agy) run_gemini ;;
-    claude) run_haiku ;;
-    codex) run_with_timeout 240 codex exec --sandbox read-only --skip-git-repo-check "$PROMPT" </dev/null ;;
-    cursor-agent) run_with_timeout 240 cursor-agent --trust -p "$PROMPT" ;;
+    agy) run_gemini "$model" "${3:-}" ;;
+    claude) run_haiku "$model" ;;
+    codex) run_with_timeout 240 codex exec ${model:+-m "$model"} --sandbox read-only --skip-git-repo-check "$PROMPT" </dev/null ;;
+    cursor-agent) run_with_timeout 240 cursor-agent --trust ${model:+--model "$model"} -p "$PROMPT" ;;
   esac
 }
 
 run_auto() {
-  local entry cmd label out tried=""
-  for entry in $AUTO_WRITERS; do
-    cmd="${entry%%:*}"
-    label="${entry#*:}"
+  local entry cmd model effort label out tried=""
+  for entry in $(writer_list); do
+    IFS='|' read -r cmd model effort label <<< "$entry"
     command -v "$cmd" >/dev/null 2>&1 || continue
     if [ -n "$tried" ]; then
       echo "$tried did not answer; writing the notes with $label instead." >&2
     fi
-    if out=$(run_writer "$cmd" 2>>"$WORK/yt_${ID}.engine.err") && printf '%s' "$out" | grep -q '[[:alnum:]]'; then
+    if out=$(run_writer "$cmd" "$model" "$effort" 2>>"$WORK/yt_${ID}.engine.err") && printf '%s' "$out" | grep -q '[[:alnum:]]'; then
       printf '%s\n' "$out"
       echo "notes by $label" >&2
       return 0
