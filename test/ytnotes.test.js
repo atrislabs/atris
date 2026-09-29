@@ -644,7 +644,7 @@ test('ytnotes still fails a 429 when no captions were written', () => {
   assert.equal(fs.existsSync(path.join(work, 'ytnotes', 'yt_empty429.md')), false);
 });
 
-function runNoCaptionNotes(label, { withWhisper, whisperVtt, extraEnv = {} }) {
+function runNoCaptionNotes(label, { withWhisper, whisperVtt, extraEnv = {}, audioFailures = 0 }) {
   const tmp = fs.mkdtempSync(path.join(os.tmpdir(), `atris-ytnotes-${label}-`));
   const bin = path.join(tmp, 'bin');
   const work = path.join(tmp, 'work');
@@ -660,7 +660,8 @@ function runNoCaptionNotes(label, { withWhisper, whisperVtt, extraEnv = {} }) {
     '  [ "$prev" = "-f" ] && audio=1',
     '  prev="$a"',
     'done',
-    'if [ "$audio" = 1 ]; then printf "fake-audio" > "${out/\\%(ext)s/m4a}"; exit 0; fi',
+    // The first audioFailures audio requests get a 403, like real YouTube.
+    `if [ "$audio" = 1 ]; then n=$(cat "${'$'}{TMPDIR}/audio_tries" 2>/dev/null || echo 0); echo $((n + 1)) > "${'$'}{TMPDIR}/audio_tries"; if [ "$n" -lt ${audioFailures} ]; then echo "ERROR: unable to download video data: HTTP Error 403: Forbidden" >&2; exit 1; fi; printf "fake-audio" > "${'$'}{out/\\%(ext)s/m4a}"; exit 0; fi`,
     `printf "%s\\n" "${label}|No Caption Talk|Chan|1:02:00"`,
     '',
   ].join('\n'));
@@ -739,5 +740,30 @@ test('ytnotes local transcription can be turned off', () => {
 
   assert.equal(result.status, 2);
   assert.doesNotMatch(result.stderr, /Transcribing/);
+  assert.match(result.stderr, /atris youtube process/);
+});
+
+test('ytnotes retries a refused audio download', () => {
+  const { result, dir } = runNoCaptionNotes('nocap4', {
+    withWhisper: true,
+    whisperVtt: LOCAL_VTT,
+    audioFailures: 2,
+    extraEnv: { ATRIS_YTNOTES_RETRY_SECONDS: '0' },
+  });
+
+  assert.equal(result.status, 0, result.stderr || result.stdout);
+  assert.match(fs.readFileSync(path.join(dir, 'yt_nocap4.clean.txt'), 'utf8'), /Spoken only in audio/);
+});
+
+test('ytnotes gives up after three refused audio downloads', () => {
+  const { result } = runNoCaptionNotes('nocap5', {
+    withWhisper: true,
+    whisperVtt: LOCAL_VTT,
+    audioFailures: 3,
+    extraEnv: { ATRIS_YTNOTES_RETRY_SECONDS: '0' },
+  });
+
+  assert.equal(result.status, 2);
+  assert.match(result.stderr, /Local transcription failed \(download: ERROR: unable to download video data: HTTP Error 403/);
   assert.match(result.stderr, /atris youtube process/);
 });

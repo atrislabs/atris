@@ -157,8 +157,17 @@ transcribe_locally() {
   fi
   echo "No captions on this video. Transcribing the audio on this computer (free, about 1 minute per 15 minutes of video)." >&2
   rm -f "yt_${ID}".audio.*
-  if ! yt-dlp --no-update --quiet --no-warnings --no-playlist \
-      -f "bestaudio[ext=m4a]/bestaudio/best" -o "yt_${ID}.audio.%(ext)s" "$URL" 2>"yt_${ID}.audio.err"; then
+  # YouTube refuses some media requests at random (HTTP 403) and allows the
+  # next one, so try the download three times before giving up.
+  local attempt downloaded=0
+  for attempt in 1 2 3; do
+    if yt-dlp --no-update --quiet --no-warnings --no-playlist \
+        -f "bestaudio[ext=m4a]/bestaudio/best" -o "yt_${ID}.audio.%(ext)s" "$URL" 2>"yt_${ID}.audio.err"; then
+      downloaded=1; break
+    fi
+    [ "$attempt" = 3 ] || sleep "$((attempt * ${ATRIS_YTNOTES_RETRY_SECONDS:-3}))"
+  done
+  if [ "$downloaded" != 1 ]; then
     LOCAL_FAIL="download: $(grep -m1 ERROR "yt_${ID}.audio.err" 2>/dev/null || echo "yt-dlp failed")"
     rm -f "yt_${ID}".audio.*
     return 1
