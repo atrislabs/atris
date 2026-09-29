@@ -153,9 +153,10 @@ test('confirm renews all picks for thirty days and roster views show three jobs'
   setRosterPick('review', 'haiku', { backup: 'claude', days: 1, now: NOW }, root);
   const before = command(root, ['roster']);
   assert.equal(before.exit, 0, before.err);
-  assert.equal(viewLines(before.out).length, 3);
+  // Three job lines, then one heads-up line: both dated workers end tomorrow.
+  assert.equal(viewLines(before.out).length, 4);
   assert.match(before.out, /search\s+no pick, router decides: atris-fast \(atris:fast, atris default\)/);
-  assert.match(before.out, /build\s+claude \(opus 5\.5\).*backup codex.*until sep 25, this project/);
+  assert.match(before.out, /build\s+claude \(opus 5\.5\).*backup codex.*until sep 25, ends tomorrow, this project/);
   const json = command(root, ['roster', '--json']);
   assert.equal(json.exit, 0, json.err);
   assert.equal(JSON.parse(json.out).jobs.length, 3);
@@ -218,7 +219,7 @@ test('an until date that is not a real YYYY-MM-DD day counts as expired; the unt
   assert.equal(rosterPickExpired({ until: '2026-09-24' }, new Date(2026, 8, 24, 23, 59)), false);
   assert.equal(rosterPickExpired({ until: '2026-09-24' }, new Date(2026, 8, 25, 0, 1)), true);
   const roster = command(root, ['roster']);
-  assert.match(roster.out, /build\s+claude.*expired, router decides: codex \(its own default\), this project/);
+  assert.match(roster.out, /build\s+claude.*ended sep 23, skipped, router decides: codex \(its own default\), this project/);
 }));
 
 test('an all-projects pick applies where the project has none', () => withRoom((root, machineFile) => {

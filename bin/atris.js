@@ -1859,9 +1859,15 @@ function showWelcomeVisualization() {
   // Every new chat sees which tool and model does each job, from the same
   // resolver as atris engine roster. A roster that cannot be read drops the
   // line; it never stops the boot.
+  // A roster worker that ends within seven days gets one line, so the job
+  // does not quietly fall to its backup when the date passes.
   try {
-    const teamLine = require('../lib/team-lineup').bootTeamLine(cwd, { width: 80 - 11 });
+    const engineView = require('../commands/engine');
+    const jobs = engineView.jobRosterView(cwd);
+    const teamLine = require('../lib/team-lineup').bootTeamLine(cwd, { width: 80 - 11, jobs });
     if (teamLine) console.log(row('team', teamLine));
+    const endsLine = engineView.bootExpiringLine(engineView.expiringWorkers(jobs));
+    if (endsLine) console.log(row('roster', endsLine));
   } catch {
     // Silent: the lineup is a hint, not a gate.
   }

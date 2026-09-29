@@ -339,7 +339,7 @@ test('the view shows every worker in order with who leads and why others are ski
   assert.equal(view.exit, 0, view.err);
   assert.match(view.out, /^search\s+claude \(haiku 4\.5\)\s+backup atris-fast .*not ready, using devin \(swe-1\.7-lightning\), this project/m);
   assert.match(view.out, /^ {2}1\. claude \(haiku 4\.5\)\s+skipped, down$/m);
-  assert.match(view.out, /^ {2}2\. atris-fast \(atris:fast, atris default\)\s+skipped, expired, until 2026-09-01$/m);
+  assert.match(view.out, /^ {2}2\. atris-fast \(atris:fast, atris default\)\s+ended sep 1, skipped$/m);
   assert.match(view.out, /^ {2}3\. devin \(swe-1\.7-lightning\)\s+leads now$/m);
   assert.match(view.out, /^ {2}4\. - pizza oven\s+skipped, bad line: "pizza oven" is not an engine or a model atris knows$/m);
   assert.match(view.out, /^see which tools and models this machine has: atris engine roster --available$/m);
