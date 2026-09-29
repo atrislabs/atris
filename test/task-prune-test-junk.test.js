@@ -215,18 +215,20 @@ test('a temp-folder project that still exists on disk is never junk, in either /
     fs.mkdirSync(live);
     const real = fs.realpathSync(live);
     const other = real.startsWith('/private/') ? real.slice('/private'.length) : `/private${real}`;
+    // The other spelling only exists where /var and /tmp are aliases (macOS).
+    const hasAlias = fs.existsSync(other);
     fx.task('LIVE_REAL', real);
-    fx.task('LIVE_OTHER', other);
+    if (hasAlias) fx.task('LIVE_OTHER', other);
     fx.task('GONE', path.join(fx.dir, 'removed-by-test'));
     fx.done();
     const plan = prune.dryRun(fx.dbPath);
     assert.equal(plan.remove.tasks, 1);
-    assert.equal(plan.kept.folder_exists, fs.existsSync(other) ? 2 : 1);
+    assert.equal(plan.kept.folder_exists, hasAlias ? 2 : 1);
     const out = prune.applyPrune(fx.dbPath);
     assert.equal(out.removed.tasks, 1);
     const left = dump(fx.dbPath).tasks.map(r => r.id);
     assert.ok(left.includes('LIVE_REAL'));
-    assert.ok(left.includes('LIVE_OTHER'));
+    if (hasAlias) assert.ok(left.includes('LIVE_OTHER'));
     assert.ok(!left.includes('GONE'));
   } finally {
     fx.cleanup();
@@ -345,6 +347,46 @@ test('deletes look up history by task id, and each transaction is bounded by row
     } finally {
       check.close();
     }
+  } finally {
+    fx.cleanup();
+  }
+});
+
+test('a missing folder reached through a symlink out of the temp root is not junk', () => {
+  if (!hasNodeSqlite()) return;
+  const prune = require('../lib/task-prune');
+  const fx = libFixture();
+  try {
+    // fake-tmp is the only temp root; fake-tmp/projects points outside it,
+    // like /tmp/projects -> /Users/me/projects.
+    const fakeTmp = path.join(fx.dir, 'fake-tmp');
+    const outside = path.join(fx.dir, 'outside', 'projects');
+    fs.mkdirSync(fakeTmp);
+    fs.mkdirSync(outside, { recursive: true });
+    fs.symlinkSync(outside, path.join(fakeTmp, 'projects'));
+    const roots = prune.tempRoots({ tmpdir: fakeTmp, named: [] });
+    const viaLink = path.join(fakeTmp, 'projects', 'old-repo');
+    const plainGone = path.join(fakeTmp, 'removed-by-test');
+    assert.equal(prune.tempPrefixFor(viaLink, roots), null);
+    assert.ok(prune.tempPrefixFor(plainGone, roots));
+
+    fx.task('LINKED', viaLink);
+    fx.task('JUNK', plainGone);
+    fx.event('ORPHAN_LINKED', viaLink);
+    fx.event('ORPHAN_MIXED', plainGone);
+    fx.event('ORPHAN_MIXED', viaLink);
+    fx.event('ORPHAN_JUNK', plainGone);
+    fx.done();
+
+    const plan = prune.dryRun(fx.dbPath, { roots });
+    assert.equal(plan.remove.tasks, 1);
+    assert.equal(plan.remove.stray_history_rows, 1);
+    assert.equal(plan.kept.stray_held, 1);
+    const out = prune.applyPrune(fx.dbPath, { roots });
+    assert.equal(out.removed.tasks, 1);
+    const after = dump(fx.dbPath);
+    assert.deepEqual(after.tasks.map(r => r.id), ['LINKED']);
+    assert.deepEqual(after.events.map(e => e.task_id).sort(), ['ORPHAN_LINKED', 'ORPHAN_MIXED', 'ORPHAN_MIXED']);
   } finally {
     fx.cleanup();
   }
