@@ -14,13 +14,13 @@ const path = require('node:path');
 
 const { checkMapDocs } = require('../lib/map-refs');
 
-const CACHE = path.join('.atris', 'state', 'map-refs-cache.json');
+const CACHE = path.join('.atris', 'cache', 'map-refs.json');
 
 function makeRoot({ atris = true } = {}) {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'atris-map-refs-cache-'));
   fs.mkdirSync(path.join(root, 'atris'), { recursive: true });
   fs.mkdirSync(path.join(root, 'lib'), { recursive: true });
-  if (atris) fs.mkdirSync(path.join(root, '.atris', 'state'), { recursive: true });
+  if (atris) fs.mkdirSync(path.join(root, '.atris'), { recursive: true });
   fs.writeFileSync(path.join(root, 'atris', 'MAP.md'), '# map\n\n- `lib/a.js:2` `alpha` does the thing\n');
   fs.writeFileSync(path.join(root, 'lib', 'a.js'), '// a\nfunction alpha() {}\n');
   return root;
@@ -56,6 +56,35 @@ test('a second check reuses the cached result without reading the code again', (
   assert.deepEqual(second.value, first.value);
 });
 
+test('an edit that keeps the size and modified time still recomputes the result', (t) => {
+  const root = makeRoot();
+  t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+  const code = path.join(root, 'lib', 'a.js');
+  const stamp = 1700000000;
+  fs.utimesSync(code, stamp, stamp);
+  const before = fs.statSync(code);
+  assert.equal(checkMapDocs(root).refs[0].status, 'ok');
+  // Same length, alpha pushed off its line, modified time put back by hand.
+  fs.writeFileSync(code, '// a\nfunction omega() {}\n');
+  fs.utimesSync(code, stamp, stamp);
+  assert.equal(fs.statSync(code).size, before.size);
+  assert.equal(fs.statSync(code).mtimeMs, before.mtimeMs);
+  assert.equal(checkMapDocs(root).refs[0].status, 'missing');
+});
+
+test('the cache folder ignores itself, so git add -A never stages it', (t) => {
+  const root = makeRoot();
+  t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+  const { execSync } = require('node:child_process');
+  execSync('git init -q', { cwd: root, stdio: 'pipe' });
+  checkMapDocs(root);
+  assert.ok(fs.existsSync(path.join(root, CACHE)));
+  execSync('git add -A', { cwd: root, stdio: 'pipe' });
+  const staged = execSync('git diff --cached --name-only', { cwd: root, encoding: 'utf8' }).split('\n').filter(Boolean);
+  assert.deepEqual(staged.filter((file) => file.startsWith('.atris/')), []);
+  assert.ok(staged.includes('atris/MAP.md'), 'the rest of the folder still stages');
+});
+
 test('editing the code the map points at recomputes the result', (t) => {
   const root = makeRoot();
   t.after(() => fs.rmSync(root, { recursive: true, force: true }));
@@ -87,6 +116,7 @@ test('editing the map text recomputes the result', (t) => {
 test('a corrupt cache file is ignored and rewritten', (t) => {
   const root = makeRoot();
   t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+  fs.mkdirSync(path.dirname(path.join(root, CACHE)), { recursive: true });
   fs.writeFileSync(path.join(root, CACHE), '{not json');
   assert.equal(checkMapDocs(root).refs[0].status, 'ok');
   assert.equal(JSON.parse(fs.readFileSync(path.join(root, CACHE), 'utf8')).version, 1);

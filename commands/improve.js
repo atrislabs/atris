@@ -18,11 +18,13 @@
  * fallback, and scorecard writes can all be faked in tests.
  */
 
+const crypto = require('crypto');
 const fs = require('fs');
 const os = require('os');
 const path = require('path');
 const { spawnSync } = require('child_process');
 const gitSpawn = require('../lib/git-spawn');
+const ignoredCache = require('../lib/ignored-cache');
 const { apiRequestJson, getApiBaseUrl } = require('../utils/api');
 const { loadCredentials } = require('../utils/auth');
 const pulse = require('../lib/pulse');
@@ -1097,6 +1099,14 @@ function gitLines(cwdRoot, gitArgs, { input, maxBuffer } = {}) {
   return String(r.stdout || '');
 }
 
+// File names come back NUL-separated and never quoted, whatever core.quotePath
+// says, so a name reads the same fresh from git and from the saved cache.
+const NAME_ARGS = ['-c', 'core.quotePath=false'];
+
+function splitNames(out) {
+  return String(out || '').split('\0').filter(Boolean);
+}
+
 /**
  * Files changed by one commit. Merge commits are attributed by their
  * first-parent diff (what the merge actually brought onto the mainline);
@@ -1105,68 +1115,98 @@ function gitLines(cwdRoot, gitArgs, { input, maxBuffer } = {}) {
 function commitFiles(cwdRoot, commit) {
   const parents = commit.parents;
   const out = parents.length >= 2
-    ? gitLines(cwdRoot, ['diff', '--name-only', `${commit.hash}^1`, commit.hash])
-    : gitLines(cwdRoot, ['diff-tree', '--no-commit-id', '--name-only', '-r', '--root', commit.hash]);
-  return out.split('\n').map((line) => line.trim()).filter(Boolean);
+    ? gitLines(cwdRoot, [...NAME_ARGS, 'diff', '--name-only', '-z', `${commit.hash}^1`, commit.hash])
+    : gitLines(cwdRoot, [...NAME_ARGS, 'diff-tree', '--no-commit-id', '--name-only', '-z', '-r', '--root', commit.hash]);
+  return splitNames(out);
 }
 
 /**
  * Files changed by many plain commits in one git process: the same diff-tree
  * per-commit call above, fed every hash on stdin. --always prints the hash
- * line even for an empty commit, so each commit's files sit under its hash
- * in the order the hashes went in.
+ * even for an empty commit, so each commit's files sit under its hash in the
+ * order the hashes went in.
  */
 function plainCommitFiles(cwdRoot, commits) {
   const found = new Map(commits.map((commit) => [commit.hash, []]));
   if (!commits.length) return found;
   const hashes = commits.map((commit) => commit.hash);
-  const out = gitLines(cwdRoot, ['diff-tree', '--stdin', '--always', '--name-only', '-r', '--root'], {
+  const out = gitLines(cwdRoot, [...NAME_ARGS, 'diff-tree', '--stdin', '--always', '--name-only', '-z', '-r', '--root'], {
     input: `${hashes.join('\n')}\n`,
     // Many commits' lists in one reply; the per-commit calls each had 1MB.
     maxBuffer: Math.max(1, hashes.length) * 1024 * 1024,
   });
   let next = 0;
   let current = null;
-  for (const raw of out.split('\n')) {
-    const line = raw.trim();
-    if (!line) continue;
-    if (next < hashes.length && line === hashes[next]) {
-      current = found.get(line);
+  for (const name of splitNames(out)) {
+    if (next < hashes.length && name === hashes[next]) {
+      current = found.get(name);
       next += 1;
     } else if (current) {
-      current.push(line);
+      current.push(name);
     }
   }
   return found;
 }
 
-// A commit's file list never changes, so it is saved by hash under .atris and
-// the gauge (shown on every boot) only asks git about commits it has not seen.
-// Hashes this read used come first; older ones stay until the cap, so a 7-day
-// boot read and a 14-day report read do not keep evicting each other.
-const REVISION_FILES_CACHE = path.join('.atris', 'state', 'revision-files-cache.json');
+// Where git keeps state shared by every checkout of this repo (a linked
+// worktree points at its main repo). null when it cannot be found on disk.
+function gitCommonDir(root) {
+  if (process.env.GIT_DIR || process.env.GIT_COMMON_DIR) return null;
+  let dir = path.resolve(root);
+  for (;;) {
+    const dotGit = path.join(dir, '.git');
+    let stat = null;
+    try { stat = fs.statSync(dotGit); } catch { stat = null; }
+    if (stat && stat.isDirectory()) return dotGit;
+    if (stat && stat.isFile()) {
+      const match = fs.readFileSync(dotGit, 'utf8').match(/^gitdir:\s*(.+)$/m);
+      if (!match) return null;
+      const gitDir = path.resolve(dir, match[1].trim());
+      try {
+        return path.resolve(gitDir, fs.readFileSync(path.join(gitDir, 'commondir'), 'utf8').trim());
+      } catch {
+        return gitDir;
+      }
+    }
+    const parent = path.dirname(dir);
+    if (parent === dir) return null;
+    dir = parent;
+  }
+}
+
+// A shallow clone cuts history at boundary commits, and those commits list
+// different files once the history is fetched. The saved lists are only good
+// for the shallow state they were read under; null means do not cache.
+function shallowStamp(root) {
+  const common = gitCommonDir(root);
+  if (!common) return null;
+  try {
+    return crypto.createHash('sha1').update(fs.readFileSync(path.join(common, 'shallow'))).digest('hex');
+  } catch (error) {
+    return error.code === 'ENOENT' ? 'full' : null;
+  }
+}
+
+// A commit's file list never changes, so it is saved by hash in the ignored
+// .atris/cache and the gauge (shown on every boot) only asks git about commits
+// it has not seen. Hashes this read used come first; older ones stay until the
+// cap, so a 7-day boot read and a 14-day report read do not evict each other.
+const REVISION_FILES_CACHE = 'revision-files.json';
 const REVISION_FILES_CACHE_MAX = 5000;
 
 function loadRevisionFilesCache(root) {
-  const cache = { file: path.join(root, REVISION_FILES_CACHE), entries: {}, used: {}, dirty: false, writable: false };
-  try {
-    cache.writable = fs.statSync(path.join(root, '.atris')).isDirectory();
-  } catch {
-    cache.writable = false;
-  }
+  const shallow = ignoredCache.cacheEnabled(root) ? shallowStamp(root) : null;
+  const cache = { root, shallow, entries: {}, used: {}, dirty: false, writable: Boolean(shallow) };
   if (!cache.writable) return cache;
-  try {
-    const parsed = JSON.parse(fs.readFileSync(cache.file, 'utf8'));
-    if (parsed && parsed.version === 1 && parsed.entries && typeof parsed.entries === 'object') cache.entries = parsed.entries;
-  } catch {
-    cache.entries = {};
+  const parsed = ignoredCache.readCacheJson(root, REVISION_FILES_CACHE);
+  if (parsed && parsed.version === 1 && parsed.shallow === shallow && parsed.entries && typeof parsed.entries === 'object') {
+    cache.entries = parsed.entries;
   }
   return cache;
 }
 
 function saveRevisionFilesCache(cache) {
-  if (!cache.writable) return;
-  if (!cache.dirty) return;
+  if (!cache.writable || !cache.dirty) return;
   const entries = { ...cache.used };
   let count = Object.keys(entries).length;
   for (const [hash, files] of Object.entries(cache.entries)) {
@@ -1175,14 +1215,7 @@ function saveRevisionFilesCache(cache) {
     entries[hash] = files;
     count += 1;
   }
-  try {
-    fs.mkdirSync(path.dirname(cache.file), { recursive: true });
-    const tmp = `${cache.file}.${process.pid}.tmp`;
-    fs.writeFileSync(tmp, `${JSON.stringify({ version: 1, entries })}\n`);
-    fs.renameSync(tmp, cache.file);
-  } catch {
-    // The cache is only a speedup; a failed write costs a git call next time.
-  }
+  ignoredCache.writeCacheJson(cache.root, REVISION_FILES_CACHE, { version: 1, shallow: cache.shallow, entries });
 }
 
 /**

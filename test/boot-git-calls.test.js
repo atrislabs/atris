@@ -32,8 +32,8 @@ function makeWorkspace() {
   git(['config', 'user.email', 'test@example.com'], repo);
   git(['config', 'user.name', 'Test'], repo);
   git(['config', 'commit.gpgsign', 'false'], repo);
-  fs.appendFileSync(path.join(repo, '.git', 'info', 'exclude'), '.atris/\n');
-  fs.mkdirSync(path.join(repo, '.atris', 'state'), { recursive: true });
+  // No ignore rule for .atris on purpose: user projects often have none.
+  fs.mkdirSync(path.join(repo, '.atris'), { recursive: true });
   const start = Date.now() - 3 * 24 * HOUR;
   for (let i = 0; i < 12; i++) {
     fs.writeFileSync(path.join(repo, `f${Math.floor(i / 2) % 3}.js`), `v${i}\n`);
@@ -84,4 +84,10 @@ test('boot asks git for commit files once, then not at all on the next boot', { 
   assert.equal(second.count('diff'), 0);
   assert.equal(second.stdout, first.stdout, 'the cache does not change what boot prints');
   assert.match(first.stdout, /landings? this week needed a human fix/);
+
+  // The saved caches exist and can never be committed by accident.
+  assert.ok(fs.existsSync(path.join(repo, '.atris', 'cache', 'revision-files.json')));
+  git(['add', '-A'], repo);
+  const staged = git(['diff', '--cached', '--name-only'], repo).split('\n').filter(Boolean);
+  assert.deepEqual(staged.filter((file) => file.startsWith('.atris/cache')), []);
 });

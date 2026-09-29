@@ -275,7 +275,9 @@ function countGitCalls(fn) {
   const gitSpawn = require('../lib/git-spawn');
   const original = gitSpawn.runGit;
   const calls = [];
-  gitSpawn.runGit = (args, opts) => { calls.push(args[0]); return original(args, opts); };
+  // Record the subcommand, past any -c settings in front of it.
+  const subcommand = (args) => { let i = 0; while (args[i] === '-c') i += 2; return args[i]; };
+  gitSpawn.runGit = (args, opts) => { calls.push(subcommand(args)); return original(args, opts); };
   try {
     return { value: fn(), calls };
   } finally {
@@ -331,6 +333,53 @@ test('a second read reuses saved commit files and only asks git for history', ()
     const third = countGitCalls(() => collectRevisionSignals(cwd, { days: 14, now }));
     assert.deepStrictEqual(third.calls, ['log', 'diff-tree']);
     assert.strictEqual(third.value.landings, 7);
+  } finally {
+    cleanup(cwd);
+  }
+});
+
+test('file names read the same fresh and from the cache, whatever core.quotePath says', () => {
+  const cwd = initRepo();
+  const now = Date.now();
+  const base = now - 2 * 24 * HOUR;
+  try {
+    execSync('git config core.quotePath true', { cwd, stdio: 'pipe' });
+    fs.appendFileSync(path.join(cwd, '.git', 'info', 'exclude'), '.atris/\n');
+    fs.mkdirSync(path.join(cwd, '.atris'), { recursive: true });
+    commitFile(cwd, 'caf\u00e9.js', 'v1\n', 'bot lands the cafe page', { bot: true, atMs: base });
+    commitFile(cwd, 'caf\u00e9.js', 'v2\n', 'human fixes the cafe page', { atMs: base + HOUR });
+    const fresh = collectRevisionSignals(cwd, { days: 14, now });
+    assert.deepStrictEqual(fresh.revisions.map((r) => r.files), [['caf\u00e9.js']]);
+    execSync('git config core.quotePath false', { cwd, stdio: 'pipe' });
+    const cached = countGitCalls(() => collectRevisionSignals(cwd, { days: 14, now }));
+    assert.deepStrictEqual(cached.calls, ['log']);
+    assert.deepStrictEqual(cached.value, fresh);
+  } finally {
+    cleanup(cwd);
+  }
+});
+
+test('saved commit files are dropped when the shallow boundary changes', () => {
+  const { cwd, now } = buildBusyRepo({ atris: true });
+  try {
+    collectRevisionSignals(cwd, { days: 14, now });
+    const warm = countGitCalls(() => collectRevisionSignals(cwd, { days: 14, now }));
+    assert.deepStrictEqual(warm.calls, ['log']);
+
+    // Cut history at the oldest commit, the way a shallow clone does: that
+    // commit now reads as a root. The saved lists must not be trusted.
+    const oldest = execSync('git rev-list --max-parents=0 HEAD', { cwd, encoding: 'utf8' }).trim();
+    const second = execSync('git rev-list --reverse HEAD', { cwd, encoding: 'utf8' }).split('\n')[1];
+    fs.writeFileSync(path.join(cwd, '.git', 'shallow'), `${second}\n`);
+    const shallow = countGitCalls(() => collectRevisionSignals(cwd, { days: 14, now }));
+    assert.deepStrictEqual(shallow.calls, ['log', 'diff-tree']);
+
+    // Fetching the full history again changes the boundary back.
+    fs.rmSync(path.join(cwd, '.git', 'shallow'));
+    const unshallow = countGitCalls(() => collectRevisionSignals(cwd, { days: 14, now }));
+    assert.deepStrictEqual(unshallow.calls, ['log', 'diff-tree']);
+    assert.ok(oldest);
+    assertBusySummary(unshallow.value);
   } finally {
     cleanup(cwd);
   }
