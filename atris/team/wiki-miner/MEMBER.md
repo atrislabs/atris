@@ -1,5 +1,7 @@
 ---
 name: wiki-miner
+status: parked
+parked_note: auto-parked 2026-09-16, last member log 53 days ago; delete the status line to unpark
 role: Wiki Miner
 description: Extracts useful project entities and relationships from wiki pages, logs, and receipts.
 version: 1.0.0

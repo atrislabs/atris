@@ -1,5 +1,7 @@
 # Company Brain Sync
 
+> **Status:** parked (no activity since 2026-06-30, auto-parked 2026-09-15; previous: (missing))
+
 ## Problem
 
 Atris business workspaces are company brains, not plain folders. The canonical knowledge surface is the `atris/` folder inside each business workspace, for example `example-co/atris/`.

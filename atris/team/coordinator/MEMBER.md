@@ -1,5 +1,7 @@
 ---
 name: coordinator
+status: parked
+parked_note: auto-parked 2026-09-16, no member log; delete the status line to unpark
 role: Coordinator
 description: Watches member performance and recommends better routing, ownership, and handoffs.
 version: 1.0.0

@@ -577,26 +577,32 @@ test('mission run keeps sleeping Atris2 backend missions running for retry', asy
       objective: 'sleeping atris2 backend mission',
       status: 'running',
       runner: 'atris2',
+      last_tick_status: 'errored',
+      last_tick_reason: 'claude-error',
+      error_streak_count: 5,
       verifier: 'true',
       created_at: '2026-05-02T00:00:00.000Z',
       updated_at: '2026-05-02T00:00:00.000Z',
     });
 
-    const run = await runCliAsync(['mission', 'run', 'sleeping-atris2-backend', '--max-ticks', '1', '--json'], {
-      cwd: dir,
-      env: {
-        ATRIS_TOKEN: 'fake-token',
-        ATRIS_API_URL: `http://127.0.0.1:${port}/api`,
-      },
-    });
-    assert.equal(run.status, 0, run.stderr || run.stdout);
-    const payload = JSON.parse(run.stdout);
-    assert.equal(payload.pause_reason, null);
-    assert.equal(payload.mission.status, 'running');
-    assert.equal(payload.ticks.length, 1);
-    assert.equal(payload.ticks[0].status, 'errored');
-    assert.equal(payload.ticks[0].reason, 'atris2-backend-unavailable');
-    assert.equal(payload.ticks[0].atris2.backend_unavailable, true);
+    for (let attempt = 1; attempt <= 3; attempt++) {
+      const run = await runCliAsync(['mission', 'run', 'sleeping-atris2-backend', '--max-ticks', '1', '--json'], {
+        cwd: dir,
+        env: {
+          ATRIS_TOKEN: 'fake-token',
+          ATRIS_API_URL: `http://127.0.0.1:${port}/api`,
+        },
+      });
+      assert.equal(run.status, 0, run.stderr || run.stdout);
+      const payload = JSON.parse(run.stdout);
+      assert.equal(payload.pause_reason, null);
+      assert.equal(payload.mission.status, 'running');
+      assert.equal(payload.ticks.length, 1);
+      assert.equal(payload.ticks[0].status, 'errored');
+      assert.equal(payload.ticks[0].reason, 'atris2-backend-unavailable');
+      assert.equal(payload.ticks[0].atris2.backend_unavailable, true);
+      assert.equal(payload.mission.error_streak_count, attempt, 'changed reason resets prior streak; sleeping backend remains retryable across runs');
+    }
 
     const status = runCli(['mission', 'status', '--status', 'running', '--json'], { cwd: dir });
     assert.equal(status.status, 0, status.stderr || status.stdout);

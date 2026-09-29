@@ -1,5 +1,7 @@
 ---
 name: signal-scout
+status: parked
+parked_note: auto-parked 2026-09-16, last member log 45 days ago; delete the status line to unpark
 role: Signal Scout
 description: Reads inbound signals, finds the strongest repeated problem, and turns it into one bounded fix.
 version: 1.0.0

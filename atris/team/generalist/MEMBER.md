@@ -1,5 +1,7 @@
 ---
 name: generalist
+status: parked
+parked_note: auto-parked 2026-09-16, no member log; delete the status line to unpark
 role: Generalist
 description: Builds a model of a domain and proposes a practical solution plan.
 version: 1.0.0

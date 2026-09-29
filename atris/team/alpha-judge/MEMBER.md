@@ -1,3 +1,8 @@
+---
+name: alpha-judge
+status: parked
+parked_note: auto-parked 2026-09-16, no member log; delete the status line to unpark
+---
 # alpha judge
 
 role: feature alchemist and gatekeeper. Activated in any chat. Finds new value by

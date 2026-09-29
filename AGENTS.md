@@ -6,12 +6,12 @@
 
 ## The way of talking (every reply, no exceptions)
 
-Talk like a person. This governs every message you send the operator: boot, status, summaries, everything.
+Talk like a person. Canonical source: `atris/atris.md` `## voice`; this block is the adapter copy.
 
-- Plain words. Say what happened and what it means for the reader, cause and effect. Not the machinery.
-- No task codes, branch names, commit hashes, PR numbers, or system nouns (worktree, verifier, projection, tick) in the message body. If the reader needs a command, put ONE copyable line at the end.
+- Plain words, outcome first, cause and effect. Not the machinery.
+- No task codes, branch names, commit hashes, PR numbers, or system nouns (worktree, verifier, projection, tick) in the body. If the reader needs a command, put ONE copyable line at the end.
 - No insider terms without defining them in the same breath. A sharp non-engineer must follow it on first read.
-- Lead with the outcome. Complete sentences, one or two per paragraph, blank line between. No headers, bullet stacks, or tables in chat replies; those belong in files.
+- One or two sentences per paragraph, blank line between. No headers, bullet stacks, or tables in chat replies; those belong in files.
 - Detail lives in files and receipts. Offer "want the detail?" instead of dumping it.
 - No em dashes anywhere; use a comma, colon, or period.
 - The test before sending: read it fried at 2am. If decoding takes work, rewrite it.
@@ -20,8 +20,6 @@ copy these shapes:
 - **Status:** "The reply check is built. I am running the final checks now, so the result is not ready yet."
 - **Landing:** "Replies now get a plain-language check before they reach you. The checks passed, and the change is ready."
 - **Failure:** "The plain-language check could not run because its model was unavailable. Your reply still went through, so no work was blocked."
-
-Canonical source: `atris/atris.md` `## voice`. This block is a copy for tools that only read `AGENTS.md`; if they differ, atris.md wins.
 
 ## Quick Start
 
@@ -32,13 +30,8 @@ atris task claim <id> --as <agent>
 ```
 
 Run `atris` first. It prints repo state, the files to read, and the next command.
-
-If there is no existing task, create one before editing:
-
-```bash
-atris task new "<small concrete title>" --tag <area>
-atris task claim <id> --as <agent>
-```
+No existing task? Create one before editing:
+`atris task new "<small concrete title>" --tag <area>`, then claim it.
 
 ## Core Files
 
@@ -63,7 +56,7 @@ to be found, compared, shared, or kept concise.
 
 ## Agent Contract
 
-Every agent should leave four artifacts another agent can trust:
+Every agent leaves four artifacts another agent can trust, on disk not in chat:
 
 | Artifact | Where |
 |----------|-------|
@@ -74,36 +67,19 @@ Every agent should leave four artifacts another agent can trust:
 | Accept | `atris task accept <id>` by a human, or autoland lands certified work when the owner flipped `atris autoland on` (protected lanes still wait) |
 | Land or reap | merge your branch or delete it before you stop; `atris land` shows limbo, `atris land --reap` clears it |
 
-Do not rely on chat context. Put the task, file pointers, and proof on disk.
-Do not write new operating doctrine here first; add it to Atris policy, skills,
-wiki, or `atris/atris.md`, then regenerate this adapter if needed.
+New operating doctrine goes to Atris policy, skills, wiki, or `atris/atris.md`
+first; regenerate this adapter after.
 
-Native goals and task approval are separate gates:
+Two gates stay separate: agent proof ready can complete a native goal; human
+accept marks the task Done and awards AgentXP. Always-on agents move
+proof-backed work to Review, complete their native goal, then stop that task.
+Agents never run `atris task accept` or claim AgentXP themselves.
 
-```text
-Agent proof ready -> native goal can complete
-Human accept      -> task Done + AgentXP awarded
-```
-
-Always-on agents should move proof-backed work to Review, complete their native
-goal, then stop that task. The next goal or recurring monitor starts in a new
-dedicated task. They must not run
-`atris task accept` or claim AgentXP themselves; acceptance comes from a human
-or from the owner's standing `atris autoland` policy, never from the agent.
-
-Mission-shaped user intent wins before normal task selection. If the user
-message starts with `atris mission run`, execute that command first, then run
-`atris mission goal --json` and mirror `goal.visible_goal` into the native chat
-goal. If the user asks for a mission, loop, overnight run, "keep going", "fix
-this", or sends a screenshot with task intent and no mission exists yet, start
-one with `atris mission run "<inferred objective>" --owner <member>` instead of
-falling back to manual task/worktree flow.
-
-Codex agents with native goal tools should run `atris mission goal --json`
-before choosing work. If the payload includes `goal.visible_goal`, mirror
-`goal.objective` when this active task has no goal yet or its goal already
-matches; never reuse a completed task or complete unrelated active goals just to
-make room.
+Mission-shaped intent wins before task selection: run `atris mission run ...`
+first, then `atris mission goal --json` and mirror `goal.visible_goal`; if the
+user asks for a mission, loop, or "keep going" with none active, start one with
+`atris mission run "<inferred objective>" --owner <member>`. Mirror
+`goal.objective` only when this task has no goal or already matches.
 
 ## Workflow
 
@@ -116,9 +92,8 @@ CHECK → atris review (verify + cleanup)
 ## Parallel Member Worktrees
 
 Default to the current checkout for small, clean, single-agent fixes. Use an
-isolated checkout only when the launcher is dirty, multiple agents may edit in
-parallel, proof will run for a long time, the change is risky, or release/publish
-work needs a clean tree.
+isolated checkout only when the launcher is dirty, agents may edit in parallel,
+proof runs long, the change is risky, or release work needs a clean tree.
 
 ```bash
 atris worktree guide
@@ -128,57 +103,39 @@ cd <printed path>
 atris worktree ship --message "<commit summary>" --verify "<test command>" --merge
 ```
 
-This ties member/agent identity, mission/member state, branch name, isolated checkout, optional Swarlo claim, verification, push, PR, and merge together. Use `atris worktree status` before broad staging and `atris worktree cleanup` / `atris worktree cleanup --apply` to remove clean merged worktrees.
+`atris worktree status` before broad staging; `atris worktree cleanup --apply`
+removes clean merged worktrees.
 
 ## Mission Autonomy
 
-Use `atris mission` when work should survive this chat or run as an autonomous loop.
+Use `atris mission` when work should survive this chat or run as a loop.
 
 ```
 member -> mission start --verify -> status --status active -> one bounded step -> mission tick --verify -> receipt -> complete|run|stop
 ```
 
-- Start current-agent work: `atris mission start "<objective>" --owner <member> --runner codex_goal --lane code --verify "<cmd>" --stop "<condition>"`
-- Start headless Claude work: add `--runner claude --cadence "15m" --always-on`, then use `atris mission run <id> --max-ticks 4 --complete-on-pass`.
-- Resume: `atris mission status --status active --json`, then pick the mission matching your owner/member.
-- Prove: after one bounded step, run `atris mission tick <id> --verify --summary "<what changed>"`.
-- Close: if the verifier passes, run `atris mission complete <id> --proof "<receipt_path>"`; if current-agent work should keep going, repeat status -> step -> tick.
-- Rollout: `atrisos-backend` and `atrisos-web` agents must check active missions before picking work; if no active mission exists and autonomy was requested, create one with owner, verifier, lane, and stop condition first.
+- Start: `atris mission start "<objective>" --owner <member> --runner codex_goal --lane code --verify "<cmd>" --stop "<condition>"`; headless Claude adds `--runner claude --cadence "15m" --always-on`, driven by `atris mission run <id> --max-ticks 4 --complete-on-pass`.
+- Resume: `atris mission status --status active --json`, pick the mission matching your owner.
+- Prove: one bounded step, then `atris mission tick <id> --verify --summary "<what changed>"`.
+- Close: verifier pass -> `atris mission complete <id> --proof "<receipt_path>"`; otherwise repeat status -> step -> tick.
+- `atrisos-backend`/`atrisos-web` agents check active missions first; if autonomy was requested and none exists, create one first.
 
 ## Build Craft: what decides acceptance
 
-Mined from this repo's receipts (803 receipts, 1711 episodes): proofs naming a
-runnable verify command were accepted 670/674 at the gate; 24 of 28 bounces
-named none. These rules are the difference, in priority order:
+Mined from this repo's receipts: proofs naming a runnable verify command are
+accepted at the gate; bounces name none. These rules are the difference, in
+priority order:
 
-1. **Name a runnable verify command in every proof**, and run it bare; never
-   `test | tail` or `| grep`; a pipe replaces your exit code with the filter's.
-2. **A task naming a spec file (`atris/features/<name>/idea.md`) is a contract.**
-   Read it before writing code; build the named slice only; use its verify
-   command verbatim. Do not improvise adjacent improvements.
-3. **Zero new dependencies.** This CLI runs on Node built-ins only (fs, path,
-   child_process, readline, https, crypto). A `package.json` dependency change
-   is an automatic bounce.
-4. **New CLI command = router entry too.** A `commands/<name>.js` branch is dead
-   until the name is in `knownCommands` in `bin/atris.js`. When adding an
-   engine, three test files assert the exact profile-name list (runner-command,
-   engine, cli-smoke).
-5. **Output voice:** lowercase CLI output, plain sentences, no em dash
-   character, no ALL CAPS, no ULIDs or test counts on human-facing lines.
-6. **Git discipline:** `git status` first; stage only files you changed; never
-   revert another agent's work; never destructive git; land against
-   `origin/master` (the board measures master, not your launcher branch).
-7. **Final report = files changed + verify command + its exact exit/output.**
-   Judges read the worktree diff, not your prose; an empty report with a clean
-   diff beats a confident report with no diff.
-8. **Update `atris/MAP.md` sections you touched** (file:line refs drift on
-   their own clock; stale refs contradict closed lessons for months).
-9. **Real runtime over mocks:** if you fixed live behavior, the regression test
-   reproduces it against the real runtime, not a mock that can stay green
-   through breakage.
-10. **When your engine dies mid-build (credits, limits), that is a staffing
-    event, not a failure**; leave the worktree intact with a note; the
-    conductor restaffs it.
+1. Name a runnable verify command in every proof and run it bare; a pipe replaces your exit code with the filter's.
+2. A task naming a spec file (`atris/features/<name>/idea.md`) is a contract: read it, build the named slice only, use its verify command verbatim.
+3. Zero new dependencies: Node built-ins only (fs, path, child_process, readline, https, crypto). A `package.json` dependency change is an automatic bounce.
+4. New CLI command = router entry too: a `commands/<name>.js` branch is dead until the name is in `knownCommands` in `bin/atris.js`; engine profiles are asserted by three test files.
+5. Output voice: lowercase CLI output, plain sentences, no em dash character, no ALL CAPS, no ULIDs or test counts on human-facing lines.
+6. Git discipline: `git status` first; stage only files you changed; never revert another agent's work; never destructive git; land against `origin/master`.
+7. Final report = files changed + verify command + its exact exit/output. Judges read the diff, not your prose.
+8. Update `atris/MAP.md` sections you touched; stale refs contradict closed lessons for months.
+9. Real runtime over mocks: the regression test reproduces live behavior, not a mock that stays green through breakage.
+10. When your engine dies mid-build (credits, limits), that is staffing, not failure: leave the worktree intact with a note; the conductor restaffs it.
 
 ## Rules
 

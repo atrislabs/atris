@@ -2,6 +2,10 @@
 
 const { test } = require('node:test');
 const assert = require('node:assert');
+const fs = require('node:fs');
+const os = require('node:os');
+const path = require('node:path');
+const { spawnSync } = require('node:child_process');
 
 const {
   DEFAULT_CLAUDE_RUNNER_MODEL,
@@ -231,6 +235,26 @@ test('grok runner profile uses grok --always-approve and pins grok-4.6', () => {
   });
 });
 
+test('codex runner profile rides its own config default when nothing is pinned', () => {
+  withRunnerEnv({ ATRIS_RUNNER_PROFILE: 'codex' }, () => {
+    assert.deepEqual(resolveRunnerProfile(), RUNNER_PROFILE_DEFS.codex);
+    // No pin: the Claude fallback must NOT leak into the codex spawn.
+    assert.equal(buildRunnerCommand({ promptFile: '/tmp/p.tmp' }), 'codex exec "$(cat /tmp/p.tmp)"');
+  });
+});
+
+test('codex runner profile honors a pinned model for builds (mission pin and env)', () => {
+  withRunnerEnv({ ATRIS_RUNNER_PROFILE: 'codex' }, () => {
+    assert.equal(
+      buildRunnerCommand({ promptFile: '/tmp/p.tmp', model: 'gpt-5.6-astra' }),
+      'codex exec --model gpt-5.6-astra "$(cat /tmp/p.tmp)"',
+    );
+  });
+  withRunnerEnv({ ATRIS_RUNNER_PROFILE: 'codex', ATRIS_RUNNER_MODEL: 'gpt-5.6-sol' }, () => {
+    assert.equal(buildRunnerCommand({ promptFile: '/tmp/p.tmp' }), 'codex exec --model gpt-5.6-sol "$(cat /tmp/p.tmp)"');
+  });
+});
+
 test('agy runner profile uses Antigravity accept-edits print mode', () => {
   withRunnerEnv({ ATRIS_RUNNER_PROFILE: 'agy' }, () => {
     assert.deepEqual(resolveRunnerProfile(), RUNNER_PROFILE_DEFS.agy);
@@ -303,7 +327,7 @@ test('buildRunnerCommand always emits --model', () => {
     withEnv(undefined, () => {
       const cmd = buildRunnerCommand({ promptFile: '/tmp/p.tmp', allowedTools: 'Bash,Read' });
       assert.match(cmd, /--model claude-opus-4-8\b/);
-      assert.match(cmd, /claude -p "\$\(cat '\/tmp\/p\.tmp'\)"/);
+      assert.match(cmd, /claude -p "\$\(cat \/tmp\/p\.tmp\)"/);
       assert.match(cmd, /--allowedTools 'Bash,Read'/);
     });
   });
@@ -396,4 +420,37 @@ test('buildRunnerCommand escapes single quotes in the prompt path', () => {
 test('buildRunnerCommand requires a promptFile', () => {
   assert.throws(() => buildRunnerCommand({ allowedTools: 'Bash' }), /promptFile is required/);
   assert.throws(() => buildRunnerCommand(), /promptFile is required/);
+});
+
+
+test('default and custom runner commands preserve arguments through the real shell', () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'atris-runner-spaces-'));
+  const runner = path.join(dir, "worker  one's");
+  const promptFile = path.join(dir, "prompt  one's.txt");
+  fs.writeFileSync(runner, "#!/bin/sh\nprintf '%s\\n' \"$@\"\n", { mode: 0o755 });
+  fs.writeFileSync(promptFile, 'read  this exactly');
+  try {
+    withRunnerEnv({ ATRIS_RUNNER_BIN: runner }, () => {
+      for (const allowedTools of [undefined, "Bash,Read,O'Reilly"]) {
+        const model = "chosen  model's";
+        const result = spawnSync('/bin/sh', ['-c', buildRunnerCommand({ promptFile, model, allowedTools })], { encoding: 'utf8' });
+        assert.equal(result.status, 0, result.stderr);
+        assert.equal(result.stdout, ['-p', 'read  this exactly', '--model', model, ...(allowedTools ? ['--allowedTools', allowedTools] : []), ''].join('\n'));
+      }
+    });
+    withRunnerEnv({ ATRIS_RUNNER_PROFILE: 'codex', ATRIS_RUNNER_BIN: runner, ATRIS_CLAUDE_MODEL: 'claude-only' }, () => {
+      for (const model of [undefined, "chosen  model's"]) {
+        const result = spawnSync('/bin/sh', ['-c', buildRunnerCommand({ promptFile, model })], { encoding: 'utf8' });
+        assert.equal(result.status, 0, result.stderr);
+        assert.equal(result.stdout, ['exec', ...(model ? ['--model', model] : []), 'read  this exactly', ''].join('\n'));
+      }
+    });
+    withRunnerEnv({ ATRIS_RUNNER_BIN: runner, ATRIS_RUNNER_COMMAND_TEMPLATE: '{bin} "literal  spaces" {modelFlag} {prompt}' }, () => {
+      const result = spawnSync('/bin/sh', ['-c', buildRunnerCommand({ promptFile, model: 'chosen  model' })], { encoding: 'utf8' });
+      assert.equal(result.status, 0, result.stderr);
+      assert.equal(result.stdout, 'literal  spaces\n--model\nchosen  model\nread  this exactly\n');
+    });
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
 });

@@ -1,5 +1,7 @@
 ---
 name: codex-executor
+status: parked
+parked_note: auto-parked 2026-09-16, last member log 33 days ago; delete the status line to unpark
 role: Builder (Codex lane)
 description: Executor variant that routes mechanical build steps to OpenAI Codex, saving Claude limits for planning and review
 version: 1.0.0

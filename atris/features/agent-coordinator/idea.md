@@ -1,6 +1,6 @@
 # Agent Coordinator
 
-> Status: planning
+> **Status:** parked (no activity since 2026-06-30, auto-parked 2026-09-15; previous: planning)
 > Picked: 2026-04-08
 > Source: inbox idea — multi-agent collision on `commands/autopilot.js`
 

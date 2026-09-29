@@ -1239,6 +1239,7 @@ if (!command || !knownCommands.includes(command)) {
       error: command ? `unknown command: ${command}` : 'unknown command',
       command: command || null,
       input: rawNaturalArgs.join(' '),
+      suggestions: suggestCommands(command),
       usage: 'atris help',
     }, null, 2));
     process.exit(2);
@@ -1627,7 +1628,15 @@ function showWelcomeVisualization() {
   const isInitialized = fs.existsSync(atrisDir);
   let endgameState = { slug: 'unset', horizon: '' };
 
+  let keptCount = 0;
   if (isInitialized) {
+    try {
+      const kept = require('../lib/task-list-keeper').keepWorkspaceTaskList(cwd);
+      keptCount = (kept.put_away || []).length + (kept.reaped || []).length;
+      if (keptCount > 0) require('../commands/task').refreshKeptTaskList(cwd);
+    } catch {
+      keptCount = 0;
+    }
     try {
       glance = getTaskGlance(atrisDir);
     } catch {
@@ -1710,6 +1719,10 @@ function showWelcomeVisualization() {
   // Show the work itself, not counts. A newcomer in any domain (code, docs,
   // a travel plan) should read actual task names and know what's happening.
   // Waiting-on-you comes first: the one thing only a human can do.
+  if (keptCount > 0) {
+    const noun = keptCount === 1 ? 'item' : 'items';
+    console.log(row('kept', `put away ${keptCount} ${noun} that were finished or sitting still`));
+  }
   if (glance.reviewCertified > 0) {
     console.log(row('you', `${glance.reviewCertified} done, waiting for your ok:`));
     glance.certifiedTitles.forEach((t) => console.log(sub(trimTitle(t))));

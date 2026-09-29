@@ -68,4 +68,5 @@ One lesson format. Boot reads it in one place, writes it in one place — no amb
 - 2026-07-07T10:17:11.252Z - Good Results Instead Mission Room: get good results instead of generating from scratch
 - 2026-07-07T10:19:50.260Z - Each Test 07 Mission Room: say mission-2026-07-07-create-deterministic-code-sc-bae71e09 concrete targets: build scripts under scripts/ or lib/ that replace common llm generation with deterministic code,...
 - 2026-08-28T15:16:02.495Z - Cap Closure Queue Mission Room: cap the closure queue at ten active slots with a parked log: an open loop must have an action the system can take now plus a machine-checkable closing test
+- 2026-09-04T20:01:23.749Z - Work Reconcile Landed Mission Room: Reconcile landed work with task truth so completed endgame work stops appearing unfinished; prove the fix and leave human approval intact
 <!-- ATRIS_MISSION_ROOM_SIGNALS:END -->

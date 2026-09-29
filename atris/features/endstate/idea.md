@@ -1,6 +1,6 @@
 # Project Endstate
 
-> **Status:** v2 — harness verified 2026-04-08
+> **Status:** parked (no activity since 2026-04-09, auto-parked 2026-09-15; previous: v2 - harness verified 2026-04-08)
 > **Created:** 2026-04-07
 > **Last Updated:** 2026-04-08
 

@@ -1,5 +1,7 @@
 ---
 name: researcher
+status: parked
+parked_note: auto-parked 2026-09-16, last member log 47 days ago; delete the status line to unpark
 role: Deep Researcher
 description: Find ground truth on any topic — competitors, standards, technologies, markets
 version: 1.0.0

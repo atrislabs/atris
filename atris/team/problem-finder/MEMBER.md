@@ -1,5 +1,7 @@
 ---
 name: problem-finder
+status: parked
+parked_note: auto-parked 2026-09-16, last member log 43 days ago; delete the status line to unpark
 role: Problem Finder
 description: Finds repeated errors, stuck loops, and high-signal problems before they grow.
 version: 1.0.0

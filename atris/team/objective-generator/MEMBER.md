@@ -1,5 +1,7 @@
 ---
 name: objective-generator
+status: parked
+parked_note: auto-parked 2026-09-16, no member log; delete the status line to unpark
 role: Objective Generator
 description: Finds valuable next objectives from project knowledge and proposes one scoped task.
 version: 1.0.0

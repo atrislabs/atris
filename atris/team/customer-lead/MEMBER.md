@@ -1,5 +1,7 @@
 ---
 name: customer-lead
+status: parked
+parked_note: auto-parked 2026-09-16, no member log; delete the status line to unpark
 role: Customer Lead
 description: Keeps customer commitments visible, spots retention risk, and turns evidence into the next useful follow-up.
 version: 1.0.0
