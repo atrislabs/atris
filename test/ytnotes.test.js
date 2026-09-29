@@ -648,7 +648,7 @@ test('ytnotes still fails a 429 when no captions were written', () => {
   assert.equal(fs.existsSync(path.join(work, 'ytnotes', 'yt_empty429.md')), false);
 });
 
-function runNoCaptionNotes(label, { withWhisper, whisperVtt, extraEnv = {}, audioFailures = 0, extraBins = {} }) {
+function runNoCaptionNotes(label, { withWhisper, whisperVtt, extraEnv = {}, audioFailures = 0, extraBins = {}, withClaude = true, withYtDlp = true }) {
   const tmp = fs.mkdtempSync(path.join(os.tmpdir(), `atris-ytnotes-${label}-`));
   const bin = path.join(tmp, 'bin');
   const work = path.join(tmp, 'work');
@@ -685,12 +685,15 @@ function runNoCaptionNotes(label, { withWhisper, whisperVtt, extraEnv = {}, audi
     ].join('\n'));
   }
 
-  writeExec(path.join(bin, 'claude'), [
-    '#!/bin/sh',
-    'cat > /dev/null',
-    'printf "%s\\n" "# No Caption Talk" "" "Spoken only in audio."',
-    '',
-  ].join('\n'));
+  if (withClaude) {
+    writeExec(path.join(bin, 'claude'), [
+      '#!/bin/sh',
+      'cat > /dev/null',
+      'printf "%s\\n" "# No Caption Talk" "" "Spoken only in audio."',
+      '',
+    ].join('\n'));
+  }
+  if (!withYtDlp) fs.rmSync(path.join(bin, 'yt-dlp'));
   for (const [name, body] of Object.entries(extraBins)) writeExec(path.join(bin, name), body);
 
   // Keep the real ~/.local/bin (and any real mlx_whisper) off PATH.
@@ -808,4 +811,56 @@ test('ytnotes auto writer falls back to Haiku when agy is not installed', () => 
 
   assert.equal(result.status, 0, result.stderr || result.stdout);
   assert.match(fs.readFileSync(path.join(dir, 'yt_auto3.md'), 'utf8'), /# No Caption Talk/);
+});
+
+test('ytnotes auto writer uses Codex when neither Gemini nor Claude is installed', () => {
+  const { result, dir } = runNoCaptionNotes('auto4', {
+    withWhisper: true,
+    whisperVtt: LOCAL_VTT,
+    withClaude: false,
+    extraEnv: { ATRIS_YTNOTES_ENGINE: 'auto' },
+    extraBins: { codex: '#!/bin/sh\nprintf "%s\\n" "# From Codex" "" "Spoken only in audio."\n' },
+  });
+
+  assert.equal(result.status, 0, result.stderr || result.stdout);
+  assert.match(fs.readFileSync(path.join(dir, 'yt_auto4.md'), 'utf8'), /# From Codex/);
+});
+
+test('ytnotes with no AI writer says what to install and leaves no empty notes', () => {
+  const { result, dir } = runNoCaptionNotes('auto5', {
+    withWhisper: true,
+    whisperVtt: LOCAL_VTT,
+    withClaude: false,
+    extraEnv: { ATRIS_YTNOTES_ENGINE: 'auto' },
+  });
+
+  assert.equal(result.status, 3);
+  assert.match(result.stderr, /No AI writer is installed on this computer/);
+  assert.match(result.stderr, /Claude Code \(claude\)/);
+  assert.match(result.stderr, /atris youtube process/);
+  assert.equal(fs.existsSync(path.join(dir, 'yt_auto5.md')), false);
+  assert.equal(fs.existsSync(path.join(dir, 'yt_auto5.clean.txt')), true);
+});
+
+test('ytnotes with a pinned writer that is missing fails instead of printing nothing', () => {
+  const { result, dir } = runNoCaptionNotes('auto6', {
+    withWhisper: true,
+    whisperVtt: LOCAL_VTT,
+    withClaude: false,
+    extraEnv: { ATRIS_YTNOTES_ENGINE: 'haiku' },
+  });
+
+  assert.equal(result.status, 3);
+  assert.match(result.stderr, /claude: not installed/);
+  assert.match(result.stderr, /No notes were written/);
+  assert.equal(fs.existsSync(path.join(dir, 'yt_auto6.md')), false);
+});
+
+test('ytnotes without yt-dlp says to install it instead of blaming captions', () => {
+  const { result } = runNoCaptionNotes('noytdlp', { withWhisper: false, withYtDlp: false });
+
+  assert.equal(result.status, 2);
+  assert.match(result.stderr, /missing yt-dlp/);
+  assert.match(result.stderr, /brew install yt-dlp/);
+  assert.doesNotMatch(result.stderr, /No English captions/);
 });
