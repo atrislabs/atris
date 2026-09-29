@@ -8,6 +8,13 @@ const path = require('path');
 const AGENT_TOKEN_PATH = '/auth/agent-token';
 const DEFAULT_AGENT_SCOPES = ['x-search', 'youtube'];
 const DEFAULT_DAILY_CREDIT_CAP = 50;
+// Commerce keys can ask for prices and start the owner's approval. They can
+// never pay: every dollar still needs the owner's own tap or text. They live
+// in their own slot so an x-search or YouTube mint never overwrites them.
+const COMMERCE_QUOTE_SCOPE = 'commerce:quote';
+const COMMERCE_SCOPES = [COMMERCE_QUOTE_SCOPE, 'transactions:read'];
+const COMMERCE_MAX_USD_LIMIT = 500;
+const COMMERCE_NEVER_PAYS = 'this key can ask for prices and start your approval, it can never pay.';
 const NO_STORED_JWT_MESSAGE = 'not signed in. run atris login first.';
 
 function firstNonEmptyString(...values) {
@@ -23,8 +30,12 @@ function wantsAgentToken(args = []) {
   return first === 'agent-token';
 }
 
-function parseScopeList(raw) {
-  if (!raw) return [...DEFAULT_AGENT_SCOPES];
+function isCommerceKey(scopes = []) {
+  return Array.isArray(scopes) && scopes.some((scope) => COMMERCE_SCOPES.includes(String(scope)));
+}
+
+function parseScopeList(raw, fallback = DEFAULT_AGENT_SCOPES) {
+  if (!raw) return [...fallback];
   const scopes = String(raw).split(',').map((part) => part.trim()).filter(Boolean);
   if (scopes.length === 0) {
     throw new Error('scopes must list at least one value');
@@ -43,11 +54,29 @@ function parseDailyCreditCap(args) {
   return value;
 }
 
+function parseCommerceMaxUsd(args, scopes) {
+  const present = args.some((arg) => arg === '--commerce-max-usd' || String(arg).startsWith('--commerce-max-usd='));
+  if (!present) return null;
+  const raw = String(readFlag(args, '--commerce-max-usd', '')).replace(/^\$/, '');
+  const value = Number(raw);
+  if (!Number.isInteger(value) || value < 1 || value > COMMERCE_MAX_USD_LIMIT) {
+    throw new Error(`commerce max must be a whole dollar amount from 1 to ${COMMERCE_MAX_USD_LIMIT}`);
+  }
+  if (!scopes.includes(COMMERCE_QUOTE_SCOPE)) {
+    throw new Error('--commerce-max-usd needs the commerce:quote scope (try --commerce)');
+  }
+  return value;
+}
+
 function parseAgentTokenArgs(args = []) {
+  const commerce = hasFlag(args, '--commerce');
+  const scopes = parseScopeList(readFlag(args, '--scopes', ''), commerce ? COMMERCE_SCOPES : DEFAULT_AGENT_SCOPES);
   return {
     agent: wantsAgentToken(args),
-    scopes: parseScopeList(readFlag(args, '--scopes', '')),
+    scopes,
     dailyCreditCap: parseDailyCreditCap(args),
+    commerceMaxUsd: parseCommerceMaxUsd(args, scopes),
+    printKey: hasFlag(args, '--print-key'),
     json: wantsJson(args),
     help: hasFlag(args, '--help') || hasFlag(args, '-h') || args[0] === 'help',
   };
@@ -82,7 +111,14 @@ function extractAgentTokenMeta(data, requested, token) {
   const dailyCreditCap = Number.isFinite(Number(rawCap)) ? Number(rawCap) : requested.dailyCreditCap;
   const expiresAt = expiryFromValue(payload.expires_at ?? payload.expiry ?? payload.expires ?? payload.exp)
     || expiryFromValue(getTokenExpiryEpochSeconds(token));
-  return { scopes, dailyCreditCap, expiresAt };
+  const rawMax = payload.commerce_max_quote_usd;
+  const commerceMaxUsd = Number.isFinite(Number(rawMax)) && rawMax !== null && rawMax !== undefined
+    ? Number(rawMax)
+    : (requested.commerceMaxUsd || null);
+  const commerceDailyQuotes = Number.isFinite(Number(payload.commerce_daily_quotes)) && payload.commerce_daily_quotes != null
+    ? Number(payload.commerce_daily_quotes)
+    : null;
+  return { scopes, dailyCreditCap, expiresAt, commerceMaxUsd, commerceDailyQuotes };
 }
 
 function isAgentAccessToken(token) {
@@ -116,12 +152,22 @@ function persistMintedAgentToken(credentials, token, extras = {}) {
   if (isAgentAccessToken(credentials.token)) {
     throw new Error('Refusing to save a scoped agent token as the login token; keep it under agent_token');
   }
+  const slot = isCommerceKey(extras.scopes)
+    ? {
+      commerce_agent_token: token,
+      commerce_agent_token_scopes: extras.scopes || [],
+      commerce_agent_token_expires_at: extras.expiresAt || null,
+      commerce_max_quote_usd: extras.commerceMaxUsd || null,
+    }
+    : {
+      agent_token: token,
+      agent_token_scopes: extras.scopes || [],
+      agent_token_expires_at: extras.expiresAt || null,
+    };
   const next = {
     ...credentials,
     refresh_token: extras.refresh_token || credentials.refresh_token || null,
-    agent_token: token,
-    agent_token_scopes: extras.scopes || [],
-    agent_token_expires_at: extras.expiresAt || null,
+    ...slot,
   };
   if (credentials.source_profile) {
     saveProfile(credentials.source_profile, next);
@@ -132,10 +178,14 @@ function persistMintedAgentToken(credentials, token, extras = {}) {
 }
 
 function printAgentTokenMint(meta, output) {
-  output('minted scoped agent token');
+  const commerce = isCommerceKey(meta.scopes);
+  output(commerce ? 'minted commerce agent key' : 'minted scoped agent token');
   output(`scopes: ${meta.scopes.join(', ')}`);
+  if (meta.commerceMaxUsd) output(`largest single quote: $${meta.commerceMaxUsd}`);
+  if (meta.commerceDailyQuotes) output(`quotes per day: ${meta.commerceDailyQuotes}`);
   output(`daily credit cap: ${meta.dailyCreditCap}`);
   if (meta.expiresAt) output(`expires: ${meta.expiresAt}`);
+  if (commerce) output(COMMERCE_NEVER_PAYS);
 }
 
 function redactSecret(text, secret) {
@@ -175,10 +225,16 @@ async function mintScopedAgentToken(requested = {}, deps = {}) {
     return { ok: false, code: 'not_logged_in', error: NO_STORED_JWT_MESSAGE };
   }
 
+  const commerceMaxUsd = Number.isInteger(requested.commerceMaxUsd) ? requested.commerceMaxUsd : null;
+  if (commerceMaxUsd !== null && !scopes.includes(COMMERCE_QUOTE_SCOPE)) {
+    return { ok: false, code: 'invalid_scopes', error: '--commerce-max-usd needs the commerce:quote scope' };
+  }
+
   const body = {
     scopes,
     daily_credit_cap: dailyCreditCap,
   };
+  if (commerceMaxUsd !== null) body.commerce_max_quote_usd = commerceMaxUsd;
   let authToken = isAgentAccessToken(accessToken) ? refreshToken : (accessToken || refreshToken);
   let result = await postAgentToken(api, authToken, body);
   if (!result.ok && result.status === 401 && refreshToken && authToken !== refreshToken) {
@@ -201,7 +257,7 @@ async function mintScopedAgentToken(requested = {}, deps = {}) {
     return { ok: false, code: 'missing_token', error: 'backend did not return an agent token' };
   }
 
-  const meta = extractAgentTokenMeta(result.data, { scopes, dailyCreditCap }, minted);
+  const meta = extractAgentTokenMeta(result.data, { scopes, dailyCreditCap, commerceMaxUsd }, minted);
   persist(credentials, minted, {
     ...meta,
     refresh_token: firstNonEmptyString(result.data && result.data.refresh_token) || refreshToken,
@@ -212,7 +268,7 @@ async function mintScopedAgentToken(requested = {}, deps = {}) {
     ok: true,
     token: minted,
     meta,
-    storedIn: credentials.source_profile ? `profile ${credentials.source_profile}, agent_token` : '~/.atris/credentials.json, agent_token',
+    storedIn: `${credentials.source_profile ? `profile ${credentials.source_profile}` : '~/.atris/credentials.json'}, ${isCommerceKey(meta.scopes) ? 'commerce_agent_token' : 'agent_token'}`,
   };
 }
 
@@ -276,6 +332,7 @@ async function mintAgentToken(args = [], deps = {}) {
   const minted = await mintScopedAgentToken({
     scopes: options.scopes,
     dailyCreditCap: options.dailyCreditCap,
+    commerceMaxUsd: options.commerceMaxUsd,
   }, deps);
 
   if (!minted.ok) {
@@ -302,12 +359,24 @@ async function mintAgentToken(args = [], deps = {}) {
       scopes: minted.meta.scopes,
       daily_credit_cap: minted.meta.dailyCreditCap,
       expires_at: minted.meta.expiresAt,
+      ...(isCommerceKey(minted.meta.scopes) ? {
+        commerce_max_quote_usd: minted.meta.commerceMaxUsd,
+        commerce_daily_quotes: minted.meta.commerceDailyQuotes,
+        can_pay: false,
+        note: COMMERCE_NEVER_PAYS,
+      } : {}),
+      ...(options.printKey ? { key: minted.token } : {}),
     }, null, 2));
     return 0;
   }
 
   printAgentTokenMint(minted.meta, output);
   output(`stored in ${minted.storedIn}`);
+  if (options.printKey) {
+    // Only on request: an outside agent needs the raw key once.
+    output('key (shown once, give it to the agent as ATRIS_TOKEN, do not paste it into chat):');
+    output(minted.token);
+  }
   return 0;
 }
 

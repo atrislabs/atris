@@ -13,6 +13,30 @@ You can quote and ask. Only the human can pay. Every dollar leaves only after
 the person acts themselves: a tap in their Link app, a payment page they
 fill in, or a text from their own phone.
 
+## Get a key
+
+The person mints a commerce key from their own signed-in CLI. It can ask for
+prices and start their approval. It can never pay.
+
+```bash
+atris login --agent --commerce --commerce-max-usd 150
+# scopes: commerce:quote, transactions:read
+# largest single quote: $150   (1 to 500, default 200)
+# this key can ask for prices and start your approval, it can never pay.
+```
+
+- Same machine: nothing else to do. The key is stored in its own slot
+  (`commerce_agent_token` in `~/.atris/credentials.json`), and `atris buy` and
+  `atris transactions` use it. Minting an x-search or YouTube key later does not
+  replace it.
+- Agent on another machine: add `--print-key` to show the key once. The person
+  hands it to the agent as `ATRIS_TOKEN` (CLI) or `ATRIS_API_KEY` (curl below).
+  Never paste it into a chat.
+- Narrower key: `--scopes commerce:quote` (quote, approve, status) or
+  `--scopes transactions:read` (history only).
+- Quotes over the key's cap are refused, and each key gets 50 quotes a day (UTC). A developer key (`atris api-key`) or the
+  person's own login also works, without those per-key limits.
+
 ## The loop
 
 1. Quote. `atris buy quote --kind <kind> [fields]`.

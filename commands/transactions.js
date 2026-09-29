@@ -5,8 +5,8 @@
 
 const { apiRequestJson } = require('../utils/api');
 const { loadCredentials } = require('../utils/auth');
-const { NOT_LOGGED_IN, tokenFrom, oneLine, printResult } = require('../lib/developer-api');
-const { parseFlags, formatCents, errorFrom } = require('../lib/commerce');
+const { NOT_LOGGED_IN, oneLine, printResult } = require('../lib/developer-api');
+const { parseFlags, formatCents, errorFrom, commerceToken } = require('../lib/commerce');
 
 const TX_KINDS = ['ticket', 'shop', 'flight', 'test_purchase', 'fee', 'trade', 'wallet_send'];
 
@@ -98,7 +98,7 @@ async function transactionsCommand(args = [], deps = {}) {
 
   const load = deps.loadCredentials || loadCredentials;
   const request = deps.apiRequestJson || apiRequestJson;
-  const token = tokenFrom(load());
+  const token = commerceToken(load(), 'transactions:read', deps.now ? deps.now() : Date.now());
   if (!token) return fail(NOT_LOGGED_IN);
 
   try {
