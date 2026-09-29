@@ -7,7 +7,7 @@ const os = require('os');
 const path = require('path');
 const https = require('https');
 
-const YTNOTES_USAGE = 'usage: ytnotes <youtube-url> [youtube-url-or-playlist...] [haiku|atris-fast|gemini|grok|codex|cursor]';
+const YTNOTES_USAGE = 'usage: ytnotes <youtube-url> [youtube-url-or-playlist...] [auto|gemini|haiku|atris-fast|grok|codex|cursor]';
 const YTNOTES_HINT = 'zero credits, local captions + a fast engine';
 const NOTES_PLAYLIST_CAP = 10;
 
