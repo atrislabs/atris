@@ -8,7 +8,7 @@
 
 ## Human check
 
-Run `atris youtube notes 'https://www.youtube.com/watch?v=Am7IWP8IpEc'` and look at the last line. It should say `quotes: N kept, ...` with N above 0, in under about 20 seconds.
+Run `atris youtube notes 'https://www.youtube.com/watch?v=Am7IWP8IpEc'` and find the line that starts with `quotes:`. It should say `quotes: N kept, ...` with N above 0, and the run should finish in under about 20 seconds.
 
 ---
 
@@ -29,7 +29,7 @@ Run `atris youtube notes 'https://www.youtube.com/watch?v=Am7IWP8IpEc'` and look
 ### Step 1: Captioned long video (happy path)
 
 - **Action:** `time atris youtube notes 'https://www.youtube.com/watch?v=Am7IWP8IpEc'`
-- **Expect:** Exit code 0, notes on screen, and a saved copy at `$TMPDIR/ytnotes/yt_Am7IWP8IpEc.md`. The last line reads `quotes: N kept, N repaired, N dropped` with kept above 0, and the whole run takes under about 20 seconds with Gemini (measured 11 to 19 seconds; Haiku alone took 65).
+- **Expect:** Exit code 0, notes on screen, and a saved copy at `$TMPDIR/ytnotes/yt_Am7IWP8IpEc.md`. A line reads `quotes: N kept, N repaired, N dropped` with kept above 0, and the whole run takes under about 20 seconds with Gemini (measured 11 to 19 seconds; Haiku alone took 65).
 
 ### Step 2: Video with no captions
 
