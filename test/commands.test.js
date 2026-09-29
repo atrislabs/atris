@@ -4030,7 +4030,7 @@ test('member alive install blocks execute on dirty git', () => {
       '--confirm-autonomy-policy',
       '--json',
     ], { cwd: dir });
-    assert.equal(install.status, 0, install.stderr || install.stdout);
+    assert.equal(install.status, 1, install.stderr || install.stdout);
     const payload = JSON.parse(install.stdout);
     assert.equal(payload.action, 'alive_install');
     assert.equal(payload.status, 'blocked');
@@ -4044,7 +4044,7 @@ test('member alive install blocks execute on dirty git', () => {
   }
 });
 
-test('member alive install without confirmation keeps its existing exit status', () => {
+test('member alive install without confirmation exits 1', () => {
   const dir = makeTempDir();
   try {
     fs.mkdirSync(path.join(dir, 'atris'), { recursive: true });
@@ -4053,7 +4053,7 @@ test('member alive install without confirmation keeps its existing exit status',
     const install = runCli([
       'member', 'alive', 'mission-lead', '--install', '--execute', '--json',
     ], { cwd: dir });
-    assert.equal(install.status, 0, install.stderr || install.stdout);
+    assert.equal(install.status, 1, install.stderr || install.stdout);
     const payload = JSON.parse(install.stdout);
     assert.equal(payload.status, 'blocked');
     assert.equal(payload.reason, 'execute_requires_confirm_autonomy_policy');
