@@ -22,6 +22,7 @@ const {
 const {
   resolveClaudeRunnerModel,
   resolvePinnedRunnerModel,
+  runnerModelFor,
   resolveClaudeRunnerBin,
   resolveClaudeRunnerCommandTemplate,
   buildRunnerCommand,
@@ -568,6 +569,8 @@ function applyMissionRunnerProfile(runner) {
 // default model pin. Every other engine's CLI rejects a claude model name, so
 // it only ever takes an explicit pin (the mission's model or the roster
 // line's); '' lets the engine ride its own default.
+// A mission often still carries the claude model it was created with; an
+// engine that runs only its own models (codex) drops it.
 const CLAUDE_FAMILY_RUNNER_ENGINES = new Set(['claude', 'fable', 'haiku']);
 
 function resolveMissionTickRunnerModel(mission) {
@@ -575,7 +578,7 @@ function resolveMissionTickRunnerModel(mission) {
   if (!engine || CLAUDE_FAMILY_RUNNER_ENGINES.has(engine)) {
     return resolveClaudeRunnerModel(mission);
   }
-  return resolvePinnedRunnerModel(mission);
+  return runnerModelFor(engine, resolvePinnedRunnerModel(mission));
 }
 
 function exitMissionError(message, code = 1, asJson = false) {
