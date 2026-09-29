@@ -210,3 +210,100 @@ test('task reaper closes blocker rows for complete and stopped missions only', (
     fs.rmSync(root, { recursive: true, force: true });
   }
 });
+
+test('task reap-stale-claims releases only claims whose holder is provably dead; dry run writes nothing', () => {
+  const root = makeWorkspace();
+  const home = path.join(root, 'home');
+  fs.mkdirSync(home, { recursive: true });
+  const dbPath = path.join(root, 'tasks.db');
+  const env = { HOME: home, ATRIS_TASKS_DB: dbPath, ATRIS_AGENT_PROOF_ONLY: '0', ATRIS_AGENT_ID: 'reaper-test', ATRIS_HOLDER_PID: '' };
+  // A pid that existed and has exited: the child is reaped before spawnSync returns.
+  const child = spawnSync(process.execPath, ['-e', ''], { encoding: 'utf8' });
+  const deadPid = child.pid;
+  assert.ok(Number.isInteger(deadPid) && deadPid > 0);
+  try {
+    let db = taskStore.open(dbPath);
+    const add = title => taskStore.addTask(db, { title, workspaceRoot: root }).id;
+    const deadHolder = add('claim held by a runner that died');
+    const liveHolder = add('claim held by a live runner');
+    const idleLoop = add('idle loop claim with no runner recorded');
+    const idleButNoted = add('idle loop claim with a recent note');
+    const idlePerson = add('idle person claim');
+    const freshLoop = add('fresh loop claim');
+    taskStore.close();
+
+    const claim = (id, as, holderPid) => {
+      const r = runCli(['task', 'claim', id, '--as', as, '--json'], { cwd: root, env: { ...env, ATRIS_HOLDER_PID: holderPid ? String(holderPid) : '' } });
+      assert.equal(r.status, 0, r.stderr || r.stdout);
+    };
+    claim(deadHolder, 'atris', deadPid);
+    claim(liveHolder, 'atris', process.pid);
+    claim(idleLoop, 'atris');
+    claim(idleButNoted, 'atris');
+    claim(idlePerson, 'keshavrao');
+    claim(freshLoop, 'atris');
+
+    db = taskStore.open(dbPath);
+    const age = (id, days) => {
+      const ts = Date.now() - days * 86400000;
+      db.prepare('UPDATE tasks SET claimed_at = ?, updated_at = ? WHERE id = ?').run(ts, ts, id);
+      db.prepare('UPDATE task_events SET created_at = ? WHERE task_id = ?').run(ts, id);
+    };
+    age(liveHolder, 30);
+    age(idleLoop, 20);
+    age(idleButNoted, 20);
+    age(idlePerson, 30);
+    age(freshLoop, 1);
+    taskStore.noteTask(db, { id: idleButNoted, actor: 'atris', content: 'still working on it' });
+    const claimEvent = taskStore.listTaskEvents(db, { taskId: deadHolder }).find(e => e.event_type === 'claimed');
+    assert.equal(claimEvent.payload.holder_pid, deadPid);
+    const before = JSON.stringify(db.prepare('SELECT * FROM tasks ORDER BY id').all());
+    const eventsBefore = db.prepare('SELECT COUNT(*) AS n FROM task_events').get().n;
+    taskStore.close();
+
+    const dry = runCli(['task', 'reap-stale-claims', '--older-than', '14', '--json'], { cwd: root, env });
+    assert.equal(dry.status, 0, dry.stderr);
+    const dryPayload = JSON.parse(dry.stdout);
+    assert.equal(dryPayload.dry_run, true);
+    assert.deepEqual(dryPayload.sample.map(s => s.id).sort(), [deadHolder, idleLoop].sort());
+    assert.equal(dryPayload.sample.find(s => s.id === deadHolder).reason, 'holder_process_gone');
+    assert.equal(dryPayload.sample.find(s => s.id === idleLoop).reason, 'no_heartbeat');
+    assert.equal(dryPayload.skipped_person_count, 1);
+    assert.equal(dryPayload.kept_live_count, 1);
+
+    db = taskStore.open(dbPath);
+    assert.equal(JSON.stringify(db.prepare('SELECT * FROM tasks ORDER BY id').all()), before);
+    assert.equal(db.prepare('SELECT COUNT(*) AS n FROM task_events').get().n, eventsBefore);
+    taskStore.close();
+
+    const apply = runCli(['task', 'reap-stale-claims', '--older-than', '14', '--apply', '--json'], { cwd: root, env });
+    assert.equal(apply.status, 0, apply.stderr);
+    const applyPayload = JSON.parse(apply.stdout);
+    assert.equal(applyPayload.dry_run, false);
+    assert.deepEqual(applyPayload.ids.slice().sort(), [deadHolder, idleLoop].sort());
+
+    db = taskStore.open(dbPath);
+    for (const id of [deadHolder, idleLoop]) {
+      const row = taskStore.getTask(db, id);
+      assert.equal(row.status, 'open');
+      assert.equal(row.claimed_by, null);
+      const events = taskStore.listTaskEvents(db, { taskId: id });
+      assert.ok(events.some(e => e.event_type === 'claim_reaped'));
+      assert.ok(events.some(e => e.event_type === 'message' && /stale claim released/.test((e.payload && e.payload.content) || '')));
+    }
+    for (const id of [liveHolder, idleButNoted, idlePerson, freshLoop]) {
+      assert.equal(taskStore.getTask(db, id).status, 'claimed', id);
+    }
+    taskStore.close();
+
+    const again = runCli(['task', 'reap-stale-claims', '--older-than', '14', '--apply', '--include-persons', '--json'], { cwd: root, env });
+    assert.equal(again.status, 0, again.stderr);
+    assert.deepEqual(JSON.parse(again.stdout).ids, [idlePerson]);
+    db = taskStore.open(dbPath);
+    assert.equal(taskStore.getTask(db, liveHolder).status, 'claimed');
+    taskStore.close();
+  } finally {
+    taskStore.close();
+    fs.rmSync(root, { recursive: true, force: true });
+  }
+});

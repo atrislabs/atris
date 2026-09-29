@@ -257,6 +257,10 @@ atris task - durable local task state (SQLite, gitignored)
                                            Count rows test runs left from temp folders; --yes backs up the db, then removes them
   atris task keep [--json]                 Put away finished and untouched work, then refresh the list
   atris task reap-mission-blockers [--json] Close blocker rows whose missions are complete or stopped
+  atris task reap-stale-claims [--older-than <days>] [--include-persons] [--apply] [--json]
+                                           Preview (default) or release claims whose holder is provably dead:
+                                           its recorded process is gone, or a loop claim (atris, fleet-*) went
+                                           <days> (default 14) with no update; live holders are always kept
   atris task relabel-archived [--dry-run|--apply]
                                            One-time OBL-1622 migration: relabel June-10 backlog-reset rows failed -> archived
   atris task finish <id> --proof "..."     Legacy alias for done with proof
@@ -9918,6 +9922,55 @@ function cmdReapMissionBlockers(args) {
   }
 }
 
+// Dead loop ticks leave claims that owner-scoped `task release` refuses
+// with held_by_other. Default is a preview; --apply releases only the rows
+// taskDb.reapStaleClaims proves dead, and notes why on each one.
+function cmdReapStaleClaims(args) {
+  const apply = hasFlag(args, '--apply');
+  const includePersons = hasFlag(args, '--include-persons');
+  const rawDays = flag(args, '--older-than');
+  const olderThanDays = rawDays === null || rawDays === undefined || rawDays === true ? 14 : Number(rawDays);
+  if (!Number.isFinite(olderThanDays) || olderThanDays <= 0) {
+    failTask('atris task reap-stale-claims', 'invalid_older_than', '--older-than must be a positive number of days', 2);
+  }
+  const taskDb = getTaskDb();
+  const db = taskDb.open();
+  const workspaceRoot = taskDb.workspaceRoot();
+  const actor = String(flag(args, '--as') || DEFAULT_OWNER);
+  const result = taskDb.reapStaleClaims(db, { workspaceRoot, olderThanDays, apply, actor, includePersons });
+  const projectionPath = apply ? writeDefaultProjection(taskDb, db).outPath : null;
+  const taskById = new Map(taskDb.withTaskDisplayRefs(taskDb.listTasks(db, { workspaceRoot, limit: null }))
+    .map(task => [task.id, task]));
+  const refFor = id => (taskById.has(id) ? taskRef(taskById.get(id)) : id);
+  if (wantsJson(args)) {
+    printJson({
+      ok: true,
+      action: apply ? 'reaped_stale_claims' : 'preview',
+      dry_run: !apply,
+      workspace_root: workspaceRoot,
+      older_than_days: olderThanDays,
+      include_persons: includePersons,
+      ...result,
+      projection_path: projectionPath,
+    });
+    return;
+  }
+  const why = s => (s.reason === 'holder_process_gone' ? `process ${s.holder_pid} is gone` : `idle ${s.idle_days}d`);
+  if (!apply) {
+    console.log(`reap-stale-claims (dry run): ${result.count} claim(s) with a dead holder.`);
+    for (const s of result.sample) console.log(`  - ${refFor(s.id)} held by ${s.claimed_by}, ${why(s)}`);
+    if (result.count > result.sample.length) console.log(`  ...and ${result.count - result.sample.length} more`);
+  } else {
+    console.log(`released ${result.count} dead claim(s) back to open.`);
+    for (const id of result.ids || []) console.log(`released ${refFor(id)}`);
+  }
+  if (result.kept_live_count > 0) console.log(`kept ${result.kept_live_count} claim(s) whose holder is still running.`);
+  if (result.skipped_person_count > 0) {
+    console.log(`skipped ${result.skipped_person_count} idle person/member claim(s); pass --include-persons to release them too.`);
+  }
+  if (!apply && result.count > 0) console.log('run again with --apply to release them.');
+}
+
 // One-time migration for OBL-1622: the 2026-06-10 "first-principles backlog
 // reset" archived ~125 certified, proof-backed tasks by writing status
 // 'failed' (no distinct archived status existed yet). This relabels exactly
@@ -13460,6 +13513,7 @@ async function runTaskCommand(args) {
     case 'reap-mission-blockers':
     case 'reap-blockers':
       return cmdReapMissionBlockers(rest);
+    case 'reap-stale-claims': return cmdReapStaleClaims(rest);
     case 'relabel-archived': return cmdRelabelArchived(rest);
     case 'review': return cmdReview(rest);
     case 'reviews':
@@ -13500,7 +13554,7 @@ const MUTATING_TASK_COMMANDS = new Set([
   'continue-work', 'continue', 'chat', 'note', 'say', 'retitle', 'tag', 'tags', 'step',
   'ready', 'result', 'accept', 'landing', 'land-review', 'auto-accept-certified',
   'auto-accept', 'sweep', 'audit', 'certify-verified', 'accept-group', 'revise',
-  'done', 'finish', 'fail', 'archive', 'clear-done', 'reap-mission-blockers', 'reap-blockers', 'relabel-archived', 'review', 'import',
+  'done', 'finish', 'fail', 'archive', 'clear-done', 'reap-mission-blockers', 'reap-blockers', 'reap-stale-claims', 'relabel-archived', 'review', 'import',
   'setup', 'review-lane-act', 'review-act', 'act-review', 'review-lane-loop',
   'review-loop', 'loop-review', 'review-lane-run', 'review-run', 'run-review',
 ]);
@@ -13545,7 +13599,8 @@ async function run(args) {
     return;
   }
   const result = await runTaskCommand(raw);
-  const skipsRender = sub === 'clear-done' && hasFlag(raw, '--dry-run');
+  const skipsRender = (sub === 'clear-done' && hasFlag(raw, '--dry-run'))
+    || (sub === 'reap-stale-claims' && !hasFlag(raw, '--apply'));
   if (MUTATING_TASK_COMMANDS.has(sub) && !skipsRender) autoRenderTodoFromDb();
   return result;
 }
