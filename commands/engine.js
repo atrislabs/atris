@@ -1000,10 +1000,41 @@ function rosterPickEntry(value) {
 
 const WORKER_SKIP_WORDS = Object.freeze({ 'not ready': 'down', expired: 'expired', 'bad model': 'names a model it cannot run' });
 
+// A worker whose end date is this many days away or fewer gets a heads-up.
+const ENDS_SOON_DAYS = 7;
+const RENEW_COMMAND = 'atris engine roster confirm';
+
+// Whole local days from today to a worker's end date: 0 on its last day,
+// negative once it has ended, null when it has no valid end date.
+function endsInDays(until, now = new Date()) {
+  const end = parseRosterUntil(until);
+  if (!end) return null;
+  const date = new Date(now);
+  if (Number.isNaN(date.getTime())) return null;
+  const today = new Date(date.getFullYear(), date.getMonth(), date.getDate());
+  return Math.round((end.getTime() - today.getTime()) / 86400000);
+}
+
+function endsSoon(days) {
+  return days !== null && days >= 0 && days <= ENDS_SOON_DAYS;
+}
+
+function endsInText(days) {
+  if (days === 0) return 'ends today';
+  if (days === 1) return 'ends tomorrow';
+  return `ends in ${days} days`;
+}
+
+function shortDay(until) {
+  const date = parseRosterUntil(until);
+  return date ? date.toLocaleDateString('en-US', { month: 'short', day: 'numeric' }).toLowerCase() : '';
+}
+
 // One worker of a job's team as the view shows it: what it runs, and whether
 // it leads now, backs up, or is skipped and why.
-function workerRow(step, index, leadIndex) {
+function workerRow(step, index, leadIndex, now = new Date()) {
   const { worker } = step;
+  const endsIn = endsInDays(worker.until, now);
   const runs = worker.error ? null : engineRunsView(worker.engine, { model: worker.model || '', effort: worker.effort || '' });
   const status = index === leadIndex ? 'leads' : step.skip ? 'skipped' : 'backup';
   const why = step.skip === 'bad line' ? `bad line: ${worker.error}`
@@ -1016,6 +1047,8 @@ function workerRow(step, index, leadIndex) {
     max_seconds: Number(worker.max_seconds) > 0 ? Number(worker.max_seconds) : null,
     prep: worker.prep ? rosterJobLabel(worker.prep) : null,
     until: worker.until || null,
+    ends_in_days: endsIn,
+    expiring_soon: endsSoon(endsIn),
     line: worker.line || null,
     ...(worker.error ? { text: worker.text || '' } : {}),
     status,
@@ -1055,6 +1088,7 @@ function jobRosterRow(job, role, root, state, registry, now, key = role) {
       : good[1] && leadIndex === good[1].index ? 'backup'
         : 'later';
   const kind = Object.keys(ENGINE_JOBS).find((name) => ENGINE_JOBS[name] === role);
+  const pickEndsIn = pick ? endsInDays(pick.until, now) : null;
   // What the job really runs: its first two good workers, each with its own
   // model and effort, or the router's engine when no line decides.
   const runsOf = (entry) => (entry ? engineRunsView(entry.step.worker.engine, { model: entry.step.worker.model || '', effort: entry.step.worker.effort || '' }) : null);
@@ -1076,12 +1110,14 @@ function jobRosterRow(job, role, root, state, registry, now, key = role) {
     model: resolved.engine && resolved.engine.roster_model ? resolved.engine.roster_model : null,
     effort: resolved.engine && resolved.engine.roster_effort ? resolved.engine.roster_effort : null,
     max_seconds: pick && Number(pick.max_seconds) > 0 ? Number(pick.max_seconds) : null,
+    ends_in_days: pickEndsIn,
+    expiring_soon: endsSoon(pickEndsIn),
     prep: first && first.step.worker.prep ? rosterJobLabel(first.step.worker.prep) : null,
     backup_prep: good[1] && good[1].step.worker.prep ? rosterJobLabel(good[1].step.worker.prep) : null,
     runs: runs || nowRuns,
     backup_runs: runsOf(good[1]),
     now_runs: nowRuns,
-    workers: walk.map((step, index) => workerRow(step, index, leadIndex)),
+    workers: walk.map((step, index) => workerRow(step, index, leadIndex, now)),
     lead,
     status,
     ...(status === 'cooling' ? { cooling: first.step.cooling.text } : {}),
@@ -1114,8 +1150,11 @@ function rosterReport(root = process.cwd(), now = new Date()) {
   const state = readRosterState(root, { now });
   const jobs = jobRosterView(root, now, state);
   const team = teamRosterView(root, { now, rosterState: state });
+  const expiring = expiringWorkers(jobs);
   return {
     jobs,
+    expiring,
+    renew_command: expiring.length ? RENEW_COMMAND : null,
     team: team.rows,
     warnings: [...state.session.warnings, ...state.project.warnings, ...state.machine.warnings, ...team.warnings],
     files: {
@@ -1127,10 +1166,50 @@ function rosterReport(root = process.cwd(), now = new Date()) {
   };
 }
 
-function untilText(worker) {
+// Every worker, in any job, whose end date is today or within the next
+// seven days. Workers already past their date show on their own lines. A
+// job set for this shell only is skipped: roster confirm does not renew it.
+function expiringWorkers(jobs) {
+  const list = [];
+  for (const row of jobs || []) {
+    if (row.session_pick) continue;
+    for (const worker of row.workers || []) {
+      if (!worker.expiring_soon) continue;
+      list.push({
+        job: row.job,
+        engine: worker.engine,
+        model: worker.model,
+        tool: worker.runs ? worker.runs.text : worker.engine,
+        until: worker.until,
+        ends_in_days: worker.ends_in_days,
+        from: row.from,
+      });
+    }
+  }
+  return list;
+}
+
+function untilText(worker, days = null) {
   const until = parseRosterUntil(worker.until);
-  if (until) return `until ${until.toLocaleDateString('en-US', { month: 'short', day: 'numeric' }).toLowerCase()}`;
+  if (until) return `until ${shortDay(worker.until)}${endsSoon(days) ? `, ${endsInText(days)}` : ''}`;
   return worker.never_expires ? 'no end date' : 'until no valid date';
+}
+
+// One line under the jobs when any worker ends within seven days, naming
+// each one and the command that keeps it going.
+function renderExpiringLine(expiring) {
+  if (!expiring || !expiring.length) return '';
+  const names = expiring.map((item) => `${item.tool} on ${item.job} ${endsInText(item.ends_in_days)}`);
+  const them = expiring.length === 1 ? 'it' : 'them';
+  return `heads up: ${names.join(', ')}. to keep ${them} 30 more days, run: ${RENEW_COMMAND}`;
+}
+
+// The same heads-up, short enough for one boot line.
+function bootExpiringLine(expiring) {
+  if (!expiring || !expiring.length) return '';
+  const [first] = expiring;
+  const more = expiring.length > 1 ? ` and ${expiring.length - 1} more` : '';
+  return `${first.tool} on ${first.job} ${endsInText(first.ends_in_days)}${more}. renew: ${RENEW_COMMAND}`;
 }
 
 // Every worker under its job, numbered in order, when the job has more than
@@ -1140,8 +1219,11 @@ function renderWorkerLines(row) {
   const width = Math.max(...row.workers.map((worker) => (worker.runs ? worker.runs.text : worker.text || '').length));
   return row.workers.map((worker, index) => {
     const what = (worker.runs ? worker.runs.text : worker.text || '').padEnd(width);
-    const extras = [worker.max_seconds ? rosterMaxText(worker.max_seconds) : '', worker.prep ? `prepped by ${worker.prep}` : '', worker.until ? `until ${worker.until}` : ''].filter(Boolean);
-    const state = worker.status === 'leads' ? 'leads now' : worker.status === 'backup' ? 'backup' : `skipped, ${worker.why}`;
+    const ended = worker.status === 'skipped' && worker.why === 'expired' && worker.ends_in_days !== null;
+    const until = !worker.until || ended ? '' : `until ${worker.until}${worker.expiring_soon ? `, ${endsInText(worker.ends_in_days)}` : ''}`;
+    const extras = [worker.max_seconds ? rosterMaxText(worker.max_seconds) : '', worker.prep ? `prepped by ${worker.prep}` : '', until].filter(Boolean);
+    const state = worker.status === 'leads' ? 'leads now' : worker.status === 'backup' ? 'backup'
+      : ended ? `ended ${shortDay(worker.until)}, skipped` : `skipped, ${worker.why}`;
     return `  ${index + 1}. ${what} ${[state, ...extras].join(', ')}`.trimEnd();
   });
 }
@@ -1165,9 +1247,10 @@ function renderJobRoster(rows) {
     const owner = row.runs.text.padEnd(ownerWidth);
     const backup = row.backup_runs ? `backup ${row.backup_runs.text}${row.backup_prep ? ` prepped by ${row.backup_prep}` : ''}` : 'no backup';
     const cap = `${row.max_seconds ? `${rosterMaxText(row.max_seconds)}, ` : ''}${row.prep ? `prepped by ${row.prep}, ` : ''}`;
-    const date = untilText(row.pick);
+    const date = untilText(row.pick, row.ends_in_days);
     const fallback = row.lead === 'backup' ? 'using backup' : row.lead === 'later' ? `using ${nowText}` : fallsTo;
-    const status = row.status === 'expired' ? `expired, ${fallback}`
+    const ended = row.ends_in_days !== null && row.ends_in_days !== undefined ? `ended ${shortDay(row.pick.until)}, skipped` : 'expired';
+    const status = row.status === 'expired' ? `${ended}, ${fallback}`
       : row.status === 'cooling' ? `${row.cooling}, ${fallback}`
         : row.status === 'not ready' ? `not ready, ${fallback}`
           : date;
@@ -1195,7 +1278,8 @@ function renderRosterWarnings(warnings) {
 }
 
 function renderRosterReport(report) {
-  return [renderJobRoster(report.jobs), renderTeamRoster(report.team), renderRosterWarnings(report.warnings)]
+  const jobs = [renderJobRoster(report.jobs), renderExpiringLine(report.expiring)].filter(Boolean).join('\n');
+  return [jobs, renderTeamRoster(report.team), renderRosterWarnings(report.warnings)]
     .filter(Boolean)
     .join('\n\n');
 }
@@ -2210,6 +2294,8 @@ module.exports = {
   roster,
   rosterReport,
   jobRosterView,
+  expiringWorkers,
+  bootExpiringLine,
   engineRegistryFile,
   readEngineRegistry,
   resolveEngineForRole,
