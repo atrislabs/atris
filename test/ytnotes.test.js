@@ -643,3 +643,101 @@ test('ytnotes still fails a 429 when no captions were written', () => {
   assert.match(result.stderr || '', /No English captions/);
   assert.equal(fs.existsSync(path.join(work, 'ytnotes', 'yt_empty429.md')), false);
 });
+
+function runNoCaptionNotes(label, { withWhisper, whisperVtt, extraEnv = {} }) {
+  const tmp = fs.mkdtempSync(path.join(os.tmpdir(), `atris-ytnotes-${label}-`));
+  const bin = path.join(tmp, 'bin');
+  const work = path.join(tmp, 'work');
+  fs.mkdirSync(bin);
+  fs.mkdirSync(work);
+
+  // Captions request writes nothing; the audio request (-f bestaudio) writes audio.
+  writeExec(path.join(bin, 'yt-dlp'), [
+    '#!/bin/bash',
+    'out=""; audio=0; prev=""',
+    'for a in "$@"; do',
+    '  [ "$prev" = "-o" ] && out="$a"',
+    '  [ "$prev" = "-f" ] && audio=1',
+    '  prev="$a"',
+    'done',
+    'if [ "$audio" = 1 ]; then printf "fake-audio" > "${out/\\%(ext)s/m4a}"; exit 0; fi',
+    `printf "%s\\n" "${label}|No Caption Talk|Chan|1:02:00"`,
+    '',
+  ].join('\n'));
+
+  if (withWhisper) {
+    writeExec(path.join(bin, 'mlx_whisper'), [
+      '#!/bin/bash',
+      'dir=""; name=""; prev=""',
+      'for a in "$@"; do',
+      '  [ "$prev" = "--output-dir" ] && dir="$a"',
+      '  [ "$prev" = "--output-name" ] && name="$a"',
+      '  prev="$a"',
+      'done',
+      // Like the real CLI: anything after a dot in --output-name is dropped.
+      `printf "%s\\n" ${whisperVtt.map((line) => JSON.stringify(line)).join(' ')} > "$dir/\${name%.*}.vtt"`,
+      '',
+    ].join('\n'));
+  }
+
+  writeExec(path.join(bin, 'claude'), [
+    '#!/bin/sh',
+    'cat > /dev/null',
+    'printf "%s\\n" "# No Caption Talk" "" "Spoken only in audio."',
+    '',
+  ].join('\n'));
+
+  // Keep the real ~/.local/bin (and any real mlx_whisper) off PATH.
+  const result = spawnSync(YTNOTES, [`https://www.youtube.com/watch?v=${label}`], {
+    encoding: 'utf8',
+    timeout: 20000,
+    env: {
+      ...process.env,
+      HOME: tmp,
+      PATH: `${bin}:${path.dirname(process.execPath)}:/usr/bin:/bin`,
+      TMPDIR: work,
+      ...extraEnv,
+    },
+  });
+  return { result, dir: path.join(work, 'ytnotes') };
+}
+
+const LOCAL_VTT = [
+  'WEBVTT', '',
+  '00:05.000 --> 00:07.000', 'Spoken only in audio.', '',
+  '01:01:40.000 --> 01:01:42.000', 'Last words after an hour.', '',
+];
+
+test('ytnotes transcribes the audio locally when a video has no captions', () => {
+  const { result, dir } = runNoCaptionNotes('nocap1', { withWhisper: true, whisperVtt: LOCAL_VTT });
+
+  assert.equal(result.status, 0, result.stderr || result.stdout);
+  assert.match(result.stderr, /Transcribing the audio on this computer/);
+  assert.doesNotMatch(result.stderr, /No English captions/);
+  const clean = fs.readFileSync(path.join(dir, 'yt_nocap1.clean.txt'), 'utf8');
+  assert.match(clean, /\[00:05\]\nSpoken only in audio\./);
+  assert.match(clean, /\[01:01:40\]\nLast words after an hour\./);
+  assert.equal(fs.readdirSync(dir).some((f) => f.includes('.audio.')), false, 'audio is deleted');
+});
+
+test('ytnotes without a local speech model prints the paid command', () => {
+  const { result, dir } = runNoCaptionNotes('nocap2', { withWhisper: false });
+
+  assert.equal(result.status, 2);
+  assert.match(result.stderr, /No English captions found/);
+  assert.match(result.stderr, /no local speech model/);
+  assert.match(result.stderr, /atris youtube process "https:\/\/www\.youtube\.com\/watch\?v=nocap2"/);
+  assert.equal(fs.existsSync(path.join(dir, 'yt_nocap2.md')), false);
+});
+
+test('ytnotes local transcription can be turned off', () => {
+  const { result } = runNoCaptionNotes('nocap3', {
+    withWhisper: true,
+    whisperVtt: LOCAL_VTT,
+    extraEnv: { ATRIS_YTNOTES_LOCAL_TRANSCRIBE: '0' },
+  });
+
+  assert.equal(result.status, 2);
+  assert.doesNotMatch(result.stderr, /Transcribing/);
+  assert.match(result.stderr, /atris youtube process/);
+});
