@@ -41,88 +41,85 @@ function tickCommand(mission, env = {}) {
   }), env);
 }
 
-test('a codex step carries a codex model pin', () => {
-  for (const model of ['gpt-6-sol', 'gpt-6-terra']) {
-    const cmd = tickCommand({ runner: 'codex', model });
-    assert.match(cmd, new RegExp(`^codex exec --model ${model} `));
+test('a grok step carries a grok model pin', () => {
+  for (const model of ['grok-4.7', 'grok-4.7-build-fast']) {
+    const cmd = tickCommand({ runner: 'grok', model });
+    assert.match(cmd, new RegExp(`^grok --always-approve --model ${model} -p `));
   }
 });
 
-test('a claude model never reaches codex; codex rides its own default', () => {
+test('a claude model never reaches grok; grok rides its own default', () => {
   for (const model of ['claude-opus-5-5', 'claude-fable-5', 'opus', 'sonnet', 'haiku', 'fable', 'opus 5.5', 'claude-haiku-4-5[1m]', 'default', 'default[1m]', 'opusplan']) {
-    assert.equal(withProfile('codex', () => resolveMissionTickRunnerModel({ runner: 'codex', model })), '', model);
-    const cmd = tickCommand({ runner: 'codex', model });
+    assert.equal(withProfile('grok', () => resolveMissionTickRunnerModel({ runner: 'grok', model })), '', model);
+    const cmd = tickCommand({ runner: 'grok', model });
     assert.doesNotMatch(cmd, /--model|-m /, `${model}: ${cmd}`);
-    assert.match(cmd, /^codex exec "\$\(cat /);
+    assert.match(cmd, /^grok --always-approve -p "\$\(cat /);
   }
 });
 
-test('a custom codex template never fills its model slot with a claude default', () => {
-  const template = { ATRIS_RUNNER_COMMAND_TEMPLATE: '{bin} exec {modelFlag} {prompt}' };
+test('a custom grok template never fills its model slot with a claude default', () => {
+  const template = { ATRIS_RUNNER_COMMAND_TEMPLATE: '{bin} {modelFlag} -p {prompt}' };
   for (const env of [template, { ...template, ATRIS_RUNNER_MODEL: 'claude-opus-5-5' }, { ...template, ATRIS_CLAUDE_MODEL: 'sonnet' }]) {
     for (const model of [undefined, 'claude-opus-5-5', 'default']) {
-      const cmd = tickCommand({ runner: 'codex', ...(model ? { model } : {}) }, env);
-      assert.match(cmd, /^codex exec "\$\(cat /, `${model}: ${cmd}`);
+      const cmd = tickCommand({ runner: 'grok', ...(model ? { model } : {}) }, env);
+      assert.match(cmd, /^grok -p "\$\(cat /, `${model}: ${cmd}`);
     }
   }
-  assert.match(tickCommand({ runner: 'codex', model: 'gpt-6-sol' }, template), /^codex exec --model gpt-6-sol /);
-  assert.match(tickCommand({ runner: 'codex' }, { ...template, ATRIS_RUNNER_MODEL: 'gpt-6-terra' }), /^codex exec --model gpt-6-terra /);
+  assert.match(tickCommand({ runner: 'grok', model: 'grok-4.7' }, template), /^grok --model grok-4\.7 -p /);
+  assert.match(tickCommand({ runner: 'grok' }, { ...template, ATRIS_RUNNER_MODEL: 'grok-4.6' }), /^grok --model grok-4\.6 -p /);
 });
 
-test('a runner bin named codex is treated as codex even with no profile', () => {
-  for (const bin of ['codex', '/opt/tools/bin/codex']) {
-    for (const template of ['{bin} exec {modelFlag} {prompt}', '{bin} exec {pinnedModelFlag} {prompt}']) {
+test('a runner bin named grok is treated as grok even with no profile', () => {
+  for (const bin of ['grok', '/Users/me/.grok/bin/grok']) {
+    for (const template of ['{bin} {modelFlag} -p {prompt}', '{bin} {pinnedModelFlag} -p {prompt}']) {
       const env = { ATRIS_RUNNER_BIN: bin, ATRIS_RUNNER_COMMAND_TEMPLATE: template };
       for (const model of ['default[1m]', 'claude-opus-5-5']) {
         const cmd = withProfile('', () => buildRunnerCommand({ promptFile: '/tmp/prompt.md', model }), env);
         assert.doesNotMatch(cmd, /--model/, `${bin} ${model}: ${cmd}`);
       }
-      const pinned = withProfile('', () => buildRunnerCommand({ promptFile: '/tmp/prompt.md', model: 'gpt-6-sol' }), env);
-      assert.match(pinned, /exec --model gpt-6-sol /);
+      const pinned = withProfile('', () => buildRunnerCommand({ promptFile: '/tmp/prompt.md', model: 'grok-4.7' }), env);
+      assert.match(pinned, /--model grok-4\.7 -p /);
     }
   }
   // The program that runs is what counts, even under a claude profile.
-  const env = { ATRIS_RUNNER_BIN: '/opt/bin/codex', ATRIS_RUNNER_COMMAND_TEMPLATE: '{bin} exec {modelFlag} {prompt}' };
+  const env = { ATRIS_RUNNER_BIN: '/opt/bin/grok', ATRIS_RUNNER_COMMAND_TEMPLATE: '{bin} {modelFlag} -p {prompt}' };
   const cmd = withProfile('claude', () => buildRunnerCommand({ promptFile: '/tmp/prompt.md', model: 'opus' }), env);
-  assert.equal(cmd, '/opt/bin/codex exec "$(cat /tmp/prompt.md)"');
+  assert.equal(cmd, '/opt/bin/grok -p "$(cat /tmp/prompt.md)"');
 });
 
 // No template at all: the default spawn shape still checks the program.
-test('a runner bin named codex with no template never gets a claude model', () => {
+test('a runner bin named grok with no template never gets a claude model', () => {
   for (const profile of ['', 'claude']) {
     for (const model of [undefined, 'opus', 'claude-opus-5-5', 'default[1m]']) {
-      const env = { ATRIS_RUNNER_BIN: '/opt/bin/codex' };
+      const env = { ATRIS_RUNNER_BIN: '/opt/bin/grok' };
       const cmd = withProfile(profile, () => buildRunnerCommand({ promptFile: '/tmp/prompt.md', ...(model ? { model } : {}) }), env);
-      assert.equal(cmd, `/opt/bin/codex -p "$(cat '/tmp/prompt.md')"`, `${profile} ${model}: ${cmd}`);
+      assert.equal(cmd, `/opt/bin/grok -p "$(cat '/tmp/prompt.md')"`, `${profile} ${model}: ${cmd}`);
     }
   }
-  const pinned = withProfile('claude', () => buildRunnerCommand({ promptFile: '/tmp/prompt.md', model: 'gpt-6-sol' }), { ATRIS_RUNNER_BIN: '/opt/bin/codex' });
-  assert.equal(pinned, `/opt/bin/codex -p "$(cat '/tmp/prompt.md')" --model gpt-6-sol`);
+  const pinned = withProfile('claude', () => buildRunnerCommand({ promptFile: '/tmp/prompt.md', model: 'grok-4.7' }), { ATRIS_RUNNER_BIN: '/opt/bin/grok' });
+  assert.equal(pinned, `/opt/bin/grok -p "$(cat '/tmp/prompt.md')" --model grok-4.7`);
 });
 
-test('a dropped model takes a literal model flag in the template with it', () => {
+test('a dropped model takes a literal model flag in a grok template with it', () => {
   for (const template of [
-    '{bin} exec --model {model} {prompt}',
-    '{bin} exec -m {model} {prompt}',
-    '{bin} exec --model={model} {prompt}',
-    '{bin} exec --model "{model}" {prompt}',
-    "{bin} exec --model '{model}' {prompt}",
-    '{bin} exec -m{model} {prompt}',
+    '{bin} --model {model} -p {prompt}',
+    '{bin} -m {model} -p {prompt}',
+    '{bin} --model={model} -p {prompt}',
+    '{bin} --model "{model}" -p {prompt}',
   ]) {
     const env = { ATRIS_RUNNER_COMMAND_TEMPLATE: template };
-    const cmd = tickCommand({ runner: 'codex', model: 'claude-opus-5-5' }, env);
-    assert.equal(cmd, 'codex exec "$(cat /tmp/prompt.md)"', template);
-    assert.match(tickCommand({ runner: 'codex', model: 'gpt-6-sol' }, env), /exec (--model[ =]|-m ?)["']?gpt-6-sol["']? /);
+    const cmd = tickCommand({ runner: 'grok', model: 'claude-opus-5-5' }, env);
+    assert.equal(cmd, 'grok -p "$(cat /tmp/prompt.md)"', template);
+    assert.match(tickCommand({ runner: 'grok', model: 'grok-4.7' }, env), /^grok (--model[ =]|-m )"?grok-4\.7"? -p /);
   }
 });
 
-test('claude steps keep their model pin', () => {
-  assert.match(tickCommand({ runner: 'claude', model: 'claude-opus-5-5' }), /^claude -p .* --model claude-opus-5-5$/);
-  assert.match(tickCommand({ runner: 'claude' }), /--model claude-opus-5-5$/);
-  assert.match(tickCommand({ runner: 'fable' }), /--model claude-fable-5$/);
-  const template = { ATRIS_RUNNER_COMMAND_TEMPLATE: '{bin} -p {prompt} {modelFlag}' };
-  assert.match(tickCommand({ runner: 'claude' }, template), /--model claude-opus-5-5$/);
-  assert.match(tickCommand({ runner: 'claude', model: 'default' }, template), /--model default$/);
+// Engines that can run claude models keep a claude pin: only an engine that
+// runs its own vendor's models alone drops it.
+test('engines that can run claude models keep a claude pin', () => {
+  for (const runner of ['agy', 'cursor', 'devin', 'opencode']) {
+    assert.match(tickCommand({ runner, model: 'claude-opus-5-5' }), /--model claude-opus-5-5 /, runner);
+  }
 });
 
 function writeBin(binDir, name, body) {
@@ -140,7 +137,7 @@ function scratchStateEnv(dir) {
   return {
     HOME: home,
     ATRIS_TASKS_DB: path.join(dir, '.atris', 'tasks.db'),
-    CODEX_HOME: path.join(home, '.codex'),
+    GROK_HOME: path.join(home, '.grok'),
     ATRIS_MACHINE_ROSTER_PATH: path.join(home, 'roster.json'),
     ATRIS_MACHINE_ROSTER_MD_PATH: path.join(home, 'roster.md'),
     ATRIS_ROSTER_SESSIONS_DIR: path.join(home, 'roster-sessions'),
@@ -158,20 +155,20 @@ function runCli(args, cwd, env) {
   });
 }
 
-// Real mission run: a codex mission whose stored model is a claude name runs
-// codex with no model flag, and a codex pin reaches codex as typed.
-test('mission run hands codex its own model and never a claude one', () => {
-  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'atris-mission-codex-model-'));
+// Real mission run: a grok mission whose stored model is a claude name runs
+// grok with no model flag, and a grok pin reaches grok as typed.
+test('mission run hands grok its own model and never a claude one', () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'atris-mission-grok-model-'));
   try {
     const binDir = path.join(dir, 'bin');
-    const argsLog = path.join(dir, 'codex-args.log');
-    writeBin(binDir, 'codex', `printf '%s\\n' "$@" | grep -v '^You are' > "${argsLog}"\necho codex tick`);
+    const argsLog = path.join(dir, 'grok-args.log');
+    writeBin(binDir, 'grok', `printf '%s\\n' "$@" | grep -v '^You are' > "${argsLog}"\necho grok tick`);
     const env = { PATH: `${binDir}${path.delimiter}/usr/bin${path.delimiter}/bin` };
 
-    for (const [model, expected] of [['claude-opus-5-5', null], ['gpt-6-sol', 'gpt-6-sol']]) {
+    for (const [model, expected] of [['claude-opus-5-5', null], ['grok-4.7', 'grok-4.7']]) {
       const started = runCli([
-        'mission', 'start', `codex model ${model}`, '--owner', 'mission-lead',
-        '--runner', 'codex', '--model', model, '--no-verify', '--json',
+        'mission', 'start', `grok model ${model}`, '--owner', 'mission-lead',
+        '--runner', 'grok', '--model', model, '--no-verify', '--json',
       ], dir, env);
       assert.equal(started.status, 0, started.stderr || started.stdout);
       const mission = JSON.parse(started.stdout).mission;
@@ -184,7 +181,7 @@ test('mission run hands codex its own model and never a claude one', () => {
       assert.equal(run.status, 0, run.stderr || run.stdout);
       assert.ok(fs.existsSync(path.join(dir, '.atris', 'tasks.db')), 'the run writes its tasks to the scratch database');
       const argv = fs.readFileSync(argsLog, 'utf8').split('\n');
-      assert.equal(argv[0], 'exec');
+      assert.equal(argv[0], '--always-approve');
       if (expected) {
         assert.equal(argv[1], '--model');
         assert.equal(argv[2], expected);
