@@ -86,6 +86,14 @@ None.
 
 ### Completed Features
 
+#### youtube-notes
+Free, fast, checked notes from any YouTube link
+- **Files:** commands/youtube.js, scripts/det/ytnotes, scripts/det/ytquote-repair.js, test/ytnotes.test.js, test/ytquote-repair.test.js, test/youtube.test.js, atris/features/youtube-notes/*
+- **Status:** complete; the `atris youtube bench` scorecard is in review
+- **Keywords:** youtube, notes, captions, transcript, whisper, quotes
+- **What:** `atris youtube notes <url>` reads the real English captions, transcribes on an Apple silicon Mac when there are none, writes with the fastest installed AI, and checks every quote against the transcript
+- **Completed:** 2026-09-28
+
 #### audit-gaps
 Close remaining audit gaps from self-audit
 - **Files:** atris/team/*/MEMBER.md, atris/features/README.md, atris/features/audit-gaps/*
