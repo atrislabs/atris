@@ -18,7 +18,7 @@
     "1972000000000000006": null
   },
   "expect": {
-    "all_up": { "checked": 3, "unmatched": 1, "unknown": 0, "other_sources": 3 },
-    "one_down": { "down_id": "1972000000000000004", "checked": 2, "unmatched": 0, "unknown": 2 }
+    "all_up": { "checked": 3, "unverified": 1, "unknown": 0, "other_sources": 3 },
+    "one_down": { "down_id": "1972000000000000004", "checked": 2, "unverified": 0, "unknown": 2 }
   }
 }

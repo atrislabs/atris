@@ -11,7 +11,8 @@ const {
   parseCitations,
   fetchXPost,
   textAgrees,
-  matchPosts,
+  quotedSpans,
+  matchAnswer,
   checkXPosts,
   annotateContent,
   formatTally,
@@ -24,6 +25,7 @@ const {
   parseArgs,
   selectCases,
   parseTally,
+  postCount,
   judgePaid,
   judgeStranger,
   fixtureFetch,
@@ -182,40 +184,116 @@ test('textAgrees accepts truncated quotes and word overlap, rejects other posts'
   assert.equal(textAgrees('Launched my new AI agent that books every flight', 'Spent the whole day fixing my server.'), false);
 });
 
-test('matchPosts marks checked, unmatched, and unknown', () => {
-  const posts = parsePosts(fixture.content);
-  const up = fixture.citations.map((url) => url.split('/').pop()).map((id) => {
+function fixtureResults(downId = null) {
+  return fixture.citations.map((url) => url.split('/').pop()).map((id) => {
+    if (id === downId) return { id, ok: false, error: 'timeout' };
     const post = fixture.embeds[id];
     return post ? { id, ok: true, post: { ...post, id } } : { id, ok: true, post: null };
   });
-  const checks = matchPosts(posts, up);
-  assert.deepEqual(checks.map((c) => c.status), ['checked', 'checked', 'unmatched', 'checked']);
-  assert.equal(checks[1].url, 'https://x.com/GarryTan/status/1972000000000000002', 'link uses the real handle');
+}
 
-  const down = up.map((r) => (r.id === '1972000000000000004' ? { id: r.id, ok: false, error: 'timeout' } : r));
-  assert.deepEqual(matchPosts(posts, down).map((c) => c.status), ['checked', 'checked', 'unknown', 'unknown']);
+function tallyOf(checks) {
+  const t = { checked: 0, unverified: 0, unknown: 0 };
+  for (const c of checks) t[c.status] += 1;
+  return t;
+}
+
+// The same four posts, laid out five different ways.
+const POSTS = [
+  { handle: 'shivanipod', name: 'Shivani Poddar', date: 'Mon, 28 Sep 2026 17:27:49 GMT', text: "I led engineering at Google DeepMind. Today, I'm proud to introduce Fo ..." },
+  { handle: 'garrytan', name: 'Garry Tan', date: 'Mon, 28 Sep 2026 15:02:11 GMT', text: 'Agent startups in this YC batch went from zero to real revenue in weeks, not years.' },
+  { handle: 'levelsio', name: 'Pieter Levels', date: 'Sun, 27 Sep 2026 22:40:03 GMT', text: 'Launched my new AI agent that books every flight for you and it already has 10,000 users' },
+  { handle: 'swyx', name: 'swyx', date: 'Sun, 27 Sep 2026 19:15:44 GMT', text: 'The agent engineer is the new full stack engineer, and the launches this week prove it.' },
+];
+
+const LAYOUTS = {
+  'numbered, Full tweet text': fixture.content,
+  'numbered, (@handle) and curly quotes': ['Top posts:', ...POSTS.map((p, i) => `${i + 1}. ${p.name} (@${p.handle}) on ${p.date}:\n   “${p.text.replace(/'/g, '’')}”\n   Likes: 100`)].join('\n'),
+  'live: bold number, colon inside bold': ['**Here are the posts**', '', ...POSTS.map((p, i) => `**${i + 1}. Author: @${p.handle}**  \n**Exact date/time: ${p.date}**  \n**Full tweet text:** "${p.text}"\n`)].join('\n'),
+  'markdown table': ['| # | Author | Date | Post | Likes |', '|---|---|---|---|---|', ...POSTS.map((p, i) => `| ${i + 1} | @${p.handle} | ${p.date} | "${p.text}" | 100 |`)].join('\n'),
+  'prose paragraph': `This week in agents: @${POSTS[0].handle} announced "${POSTS[0].text}" while @${POSTS[1].handle} noted that “${POSTS[1].text}” Meanwhile @${POSTS[2].handle} claimed "${POSTS[2].text}" and @${POSTS[3].handle} argued "${POSTS[3].text}" Overall a busy week.`,
+};
+
+test('the same answer in five layouts gets the same checked and unverified counts', () => {
+  for (const [name, content] of Object.entries(LAYOUTS)) {
+    assert.deepEqual(tallyOf(matchAnswer(content, fixtureResults())), { checked: 3, unverified: 1, unknown: 0 }, name);
+    assert.deepEqual(tallyOf(matchAnswer(content, fixtureResults('1972000000000000004'))), { checked: 2, unverified: 0, unknown: 2 }, `${name}, X down`);
+  }
 });
 
-test('matchPosts needs the handle to agree, not just the words', () => {
-  const posts = [{ index: 1, handle: 'someoneelse', text: 'The agent engineer is the new full stack engineer' }];
-  const results = [{ id: '4', ok: true, post: { id: '4', handle: 'swyx', text: 'The agent engineer is the new full stack engineer' } }];
-  assert.equal(matchPosts(posts, results)[0].status, 'unmatched');
+test('links go inline in post blocks, and in a Checked posts list for tables and prose', async () => {
+  for (const [name, content] of Object.entries(LAYOUTS)) {
+    const result = await checkXPosts({ content, citations: fixture.citations, fetchPost: fixtureFetch(fixture.embeds) });
+    const text = annotateContent(content, result);
+    const listed = /Checked posts:/.test(text);
+    const flat = name === 'markdown table' || name === 'prose paragraph';
+    assert.equal(listed, flat, name);
+    assert.match(text, /https:\/\/x\.com\/swyx\/status\/1972000000000000004 \(checked\)/, name);
+    assert.match(text, /could not find this post on X, treat as unverified/, name);
+    if (flat) {
+      assert.match(text, /^ {2}@GarryTan: https:\/\/x\.com\/GarryTan\/status\/1972000000000000002 \(checked\)$/m, name);
+      assert.match(text, /^Unverified quotes:\n {2}"Launched my new AI agent that books every flight for you\.\.\." \(could not find/m, name);
+    }
+  }
 });
 
-test('checkXPosts puts noise citations in other sources and returns null with no posts', async () => {
+test('a real post counts even when the answer never quotes it', () => {
+  const content = 'Garry Tan (@garrytan) said agent startups in this YC batch went from zero to real revenue in weeks, which is fast.';
+  const checks = matchAnswer(content, fixtureResults());
+  assert.deepEqual(checks.map((c) => [c.status, c.handle]), [['checked', 'GarryTan']]);
+});
+
+test('near the handle, a 6-word run from the middle of the post counts', () => {
+  const results = [{ id: '9', ok: true, post: { id: '9', handle: 'swyx', text: 'Hot take. The agent engineer is the new full stack engineer and nobody is ready for it' } }];
+  assert.equal(matchAnswer('@swyx says the new full stack engineer and', results)[0]?.status, 'checked');
+  assert.equal(matchAnswer('someone says the new full stack engineer and', results).length, 0, 'without the handle, a middle run is not enough');
+});
+
+test('a short quote never shifts the pairing (the 2026-09-29 miss)', () => {
+  const content = 'posts matching "AI agent startups launch," by engagement:\n\n**1. Author:** @a  \n**Full tweet text:** "Sorry folks Agentic AI is not coming. It is already here, eight launches"  \n**Engagement:** Likes=235 "ok"';
+  assert.deepEqual(quotedSpans(content).map((sp) => sp.text), ['Sorry folks Agentic AI is not coming. It is already here, eight launches']);
+});
+
+test('the live 2026-09-29 answer that failed the bench now checks every post it can', async () => {
+  const live = JSON.parse(fs.readFileSync(path.join(path.dirname(FIXTURE), 'xsearch-live-2026-09-29.json'), 'utf8'));
+  assert.equal(live.citations.length, 17);
+  const capped = await checkXPosts({ content: live.content, citations: live.citations, fetchPost: fixtureFetch(live.embeds) });
+  assert.deepEqual(capped.tally, { checked: 4, unverified: 0, unknown: 1 }, 'the post past the 15-id cap is unknown, not unverified');
+  assert.equal(capped.otherSources.length, 13);
+  const everyId = Object.entries(live.embeds).map(([id, post]) => ({ id, ok: true, post: post && { id, ...post } }));
+  const all = matchAnswer(live.content, everyId);
+  assert.deepEqual(all.map((c) => [c.status, c.handle]), [
+    ['checked', 'DanKornas'],
+    ['checked', 'technohustler'],
+    ['checked', 'abouelatta_ali'],
+    ['checked', 'legionbirdman'],
+    ['checked', 'TradexWhisperer'],
+  ]);
+});
+
+test('quotedSpans finds 40+ character quotes, straight or curly, and ignores short ones', () => {
+  const spans = quotedSpans('He said "short one" then “this one is long enough to count as a real quote” and "another long enough quote with straight marks here".');
+  assert.deepEqual(spans.map((sp) => sp.text), [
+    'this one is long enough to count as a real quote',
+    'another long enough quote with straight marks here',
+  ]);
+});
+
+test('checkXPosts puts noise citations in other sources and returns null with nothing to check', async () => {
   const result = await checkXPosts({ content: fixture.content, citations: fixture.citations, fetchPost: fixtureFetch(fixture.embeds) });
-  assert.deepEqual(result.tally, { checked: 3, unmatched: 1, unknown: 0 });
+  assert.deepEqual(result.tally, { checked: 3, unverified: 1, unknown: 0 });
   assert.deepEqual(result.otherSources, [
     'https://x.com/i/status/1972000000000000003',
     'https://x.com/i/status/1972000000000000005',
     'https://x.com/i/status/1972000000000000006',
   ]);
-  assert.equal(await checkXPosts({ content: 'no posts here', citations: fixture.citations, fetchPost: noNetwork() }), null);
+  assert.equal(await checkXPosts({ content: 'no posts here', citations: [], fetchPost: noNetwork() }), null);
+  assert.equal(await checkXPosts({ content: 'no posts here', citations: ['https://x.com/i/status/1972000000000000005'], fetchPost: fixtureFetch(fixture.embeds) }), null);
 });
 
 test('checkXPosts treats a throwing lookup as unknown, never as fake', async () => {
   const result = await checkXPosts({ content: fixture.content, citations: fixture.citations, fetchPost: noNetwork() });
-  assert.deepEqual(result.tally, { checked: 0, unmatched: 0, unknown: 4 });
+  assert.deepEqual(result.tally, { checked: 0, unverified: 0, unknown: 4 });
 });
 
 test('checkXPosts looks up at most 15 ids', async () => {
@@ -289,16 +367,8 @@ test('x-search --json adds a checks list and nothing else', async () => {
   const parsed = JSON.parse(output[0]);
   assert.deepEqual(Object.keys(parsed), ['status', 'credits_used', 'credits_remaining', 'data', 'checks']);
   assert.deepEqual(parsed.data.citations, fixture.citations);
-  assert.deepEqual(parsed.checks.map((c) => c.status), ['checked', 'checked', 'unmatched', 'checked']);
-});
-
-test('x-search person passes the handle so posts without @ still get checked', async () => {
-  let seenHandle;
-  const { deps } = searchDeps({
-    checkXPosts: async (args) => { seenHandle = args.defaultHandle; return null; },
-  });
-  await xSearchCommand(['person', '--name', 'Garry Tan', '--handle', 'garrytan'], deps);
-  assert.equal(seenHandle, 'garrytan');
+  assert.deepEqual(parsed.checks.map((c) => c.status), ['checked', 'checked', 'checked', 'unverified']);
+  assert.deepEqual(parsed.checks.map((c) => c.handle), ['shivanipod', 'GarryTan', 'swyx', null]);
 });
 
 test('a throwing checker falls back to the original output', async () => {
@@ -334,6 +404,8 @@ test('bench parses the tally and judges paid runs', () => {
   const tally = parseTally('...\nposts: 4 checked, 1 unverified, 0 unknown\n');
   assert.deepEqual(tally, { checked: 4, unverified: 1, unknown: 0 });
   assert.equal(parseTally('no tally'), null);
+  assert.equal(postCount({ checked: 4, unverified: 1, unknown: 7 }), 5, 'unknown counts neither way');
+  assert.equal(judgePaid({ status: 0, tally: { checked: 3, unverified: 0, unknown: 5 }, minPosts: 3 }).pass, true);
   assert.equal(judgePaid({ status: 0, tally, minPosts: 3 }).pass, true);
   assert.equal(judgePaid({ status: 0, tally: { checked: 1, unverified: 2, unknown: 0 }, minPosts: 3 }).pass, false);
   assert.equal(judgePaid({ status: 0, tally: { checked: 2, unverified: 0, unknown: 0 }, minPosts: 3 }).pass, false);

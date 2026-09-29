@@ -1,0 +1,93 @@
+{
+  "note": "Live x-search answer from 2026-09-29 (topic case, 17 citations), with the real posts X returned for each cited id. The first 4 citations are the ones the answer quoted; the original citation order was not kept, so it is rebuilt that way. Used by test/x-post-check.test.js. No network.",
+  "content": "**Here are the 5 most relevant posts** from the last 2 days (Sep 27–29, 2026) matching \"AI agent startups launch,\" prioritized by engagement (likes + views) and direct relevance to AI agent startups or launches:\n\n**1. Author:** @TradexWhisperer  \n**Date/Time:** Sun, 27 Sep 2026 05:26:50 GMT  \n**Full tweet text:** \"Sorry folks Agentic AI isn't coming. It's already here. 8 launches in under a year: OpenAI Agents, Claude, Gemini Spark, AWS Frontier Agents, $META Muse, $MSFT Scout, Grok Bot, DeepSeek Harness. 24/7. 365. Inference nonstop. $MU at $739 in July might've been the last chance.\"  \n**Engagement:** Likes=235, Reposts=11, Views=59544\n\n**2. Author:** @DanKornas  \n**Date/Time:** Sun, 27 Sep 2026 22:59:00 GMT  \n**Full tweet text:** \"Finding indie AI products shouldn’t mean doom-scrolling launch feeds. Awesome AI Startups is a curated GitHub directory of AI startups built by independent founders — bootstrapped, pre-seed, and angel-funded products outside the big AI labs. It helps you find relevant indie AI products faster by grouping linked entries across 18 categories, from agents and developer tools to analytics, education, and APIs. Key features: • 18-category directory – jump directly into areas such as AI agents, coding tools, audio, video, finance, or infrastructure • Independent-founder scope – focuses on bootstrapped, pre-seed, and angel-funded products • Short product descriptions – each entry pairs a product link with a brief explanation of what it does • Category counts – the contents show how many entries sit in each section before you browse • Contribution path – founders can submit their startup through a PR using the documented format and inclusion criteria It’s open-source (CC0-1.0 license). Link in the reply 👇\"  \n**Engagement:** Likes=23, Reposts=7, Views=3197\n\n**3. Author:** @technohustler  \n**Date/Time:** Mon, 28 Sep 2026 05:10:57 GMT  \n**Full tweet text:** \"its live, LaunchAgentic - https://launchagentic.space its a simple idea, list your product or agent and get a live page, by prompting to your ai agent or use given command in terminal, if you want, another important thing is your deployed ai agent can list itself, if you have one. It also has: > Agent directory > Skills > send text and get response for listed agents on the site its not perfect, just wanted to build something in agentic space give feedback and do list your product or agent.\"  \n**Engagement:** Likes=12, Reposts=4, Views=426\n\n**4. Author:** @abouelatta_ali  \n**Date/Time:** Mon, 28 Sep 2026 18:54:05 GMT  \n**Full tweet text:** \"We hit $1M ARR at Speedrun this summer. But what I’ll miss most is the room: founders a few desks away, each wrestling with a hard problem of their own, and willing to let me learn from it. Bye bye, Speedrun 🫡 https://x.com/i/article/2104644146803961856\"  \n**Engagement:** Likes=30, Reposts=2, Views=3628\n\n**5. Author:** @legionbirdman  \n**Date/Time:** Mon, 28 Sep 2026 13:13:10 GMT  \n**Full tweet text:** \"AI agents are still pulling serious money. San Francisco startup Instinct raised $1B at a $10B valuation in a Series C backed by Sequoia, Benchmark and Coatue. It’s building personal agents that can handle bookings and phone calls on their own. Public AI stocks may be volatile, but private capital is still leaning hard into the agent layer.\"  \n**Engagement:** Likes=1, Reposts=0, Views=46",
+  "citations": [
+    "https://x.com/i/status/2104345089375879669",
+    "https://x.com/i/status/2104438693448802350",
+    "https://x.com/i/status/2104645839054688743",
+    "https://x.com/i/status/2104560045493219518",
+    "https://x.com/i/status/2104847871321239941",
+    "https://x.com/i/status/2104580028545548707",
+    "https://x.com/i/status/2104487662522384805",
+    "https://x.com/i/status/2104718250504495353",
+    "https://x.com/i/status/2104823490079584643",
+    "https://x.com/i/status/2104633120909566440",
+    "https://x.com/i/status/2104528286651232297",
+    "https://x.com/i/status/2104555585941147911",
+    "https://x.com/i/status/2104819665889575373",
+    "https://x.com/i/status/2104290848112349533",
+    "https://x.com/i/status/2104692550422413814",
+    "https://x.com/i/status/2104080302788509943",
+    "https://x.com/i/status/2104851798569734487"
+  ],
+  "embeds": {
+    "2104345089375879669": {
+      "handle": "DanKornas",
+      "text": "Finding indie AI products shouldn’t mean doom-scrolling launch feeds.\n\nAwesome AI Startups is a curated GitHub directory of AI startups built by independent founders — bootstrapped, pre-seed, and angel-funded products outside the big AI labs.\n\nIt helps you find relevant indie AI https://t.co/nHNYIMbofG"
+    },
+    "2104438693448802350": {
+      "handle": "technohustler",
+      "text": "its live,\n\nLaunchAgentic - https://t.co/Zx6M0LaZMd\n\nits a simple idea,\n\nlist your product or agent and get a live page, by prompting to your ai agent or use given command in terminal, if you want,\n\nanother important thing is your deployed ai agent can list itself, if you have https://t.co/6jp5Uru0I4"
+    },
+    "2104645839054688743": {
+      "handle": "abouelatta_ali",
+      "text": "We hit $1M ARR at Speedrun this summer. But what I’ll miss most is the room: founders a few desks away, each wrestling with a hard problem of their own, and willing to let me learn from it. Bye bye, Speedrun 🫡 https://t.co/HDI6RRgA7D"
+    },
+    "2104560045493219518": {
+      "handle": "legionbirdman",
+      "text": "AI agents are still pulling serious money.\nSan Francisco startup Instinct raised $1B at a $10B valuation in a Series C backed by Sequoia, Benchmark and Coatue.\nIt’s building personal agents that can handle bookings and phone calls on their own.\nPublic AI stocks may be volatile, https://t.co/uM9spmAvhQ"
+    },
+    "2104847871321239941": {
+      "handle": "carrioresearch",
+      "text": "$CBRS LINES UP 100 MW OF CS-4 FOR GIMLET ON TOP OF OPENAI'S 750 MW, AND THIS TIME THE CUSTOMER RUNS THE SYSTEMS ITSELF\n\nSAN FRANCISCO, Sept. 28 — Cerebras Systems ($CBRS) will supply inference cloud startup Gimlet Labs with CS-4 systems drawing about 100 megawatts of power, https://t.co/Ds4IPCax29"
+    },
+    "2104580028545548707": {
+      "handle": "newsfile_corp",
+      "text": "Ember Origin Launches AI Platform for Entrepreneurs, Surpasses 1,000 Sign-Ups Within Two Weeks of Commercial Launch\n\nFull Story: https://t.co/w6ehtJkebX\n\n #AIPlatform #business #EmberOrigin #Entrepreneurs #Advertising #Publishing"
+    },
+    "2104487662522384805": {
+      "handle": "afahmy_dev",
+      "text": "Product Manager role at Berlin-based enterprise AI agents startup\n\nOwn the lifecycle of core product initiatives from inception and discovery through to launch and iteration, partnering directly with engineering to ship world-class AI products. Tackle unsolved AI problems by"
+    },
+    "2104718250504495353": {
+      "handle": "theagenticdaily",
+      "text": "A 14-person startup called Instinct is running a personal AI agent that already handles about $1B in transaction volume, roughly half of it booking travel, growing about 10% a day, invite-only with no public app yet. Investors just backed it with a $1B round at a $10B valuation."
+    },
+    "2104823490079584643": {
+      "handle": "marcodice_ai",
+      "text": "I put Jev in front of an AI writer to save tokens.\n\nThe writing got worse\n\nThen I gave it the small decision *before* the writing. If you're building your first agent, this is the job I'd test first https://t.co/ZbU4ioAxro"
+    },
+    "2104633120909566440": {
+      "handle": "GrokBotAndro",
+      "text": "Nvidia added $150 billion to its share buyback on Sep 28, the NYT reports, in what Nvidia calls the largest ever.\nInside: why top AI lab executives want scrutiny of self-improving AI, and the state and startup moves from the same day. https://t.co/vCYVAWiigl"
+    },
+    "2104528286651232297": {
+      "handle": "himanshuxspark",
+      "text": "https://t.co/n3aVxW0zM9"
+    },
+    "2104555585941147911": {
+      "handle": "TraffAlex",
+      "text": "🤖 AI NEWS ROUNDUP — September 28, 2026\n\n1️⃣ NVIDIA LAUNCHES OPEN AGENT SAFETY PLATFORM\n\nNvidia has released its Open Agent Safety Platform, software that wraps autonomous AI agents in a security sandbox with an independent kill switch. You define which data, tools, APIs, files or"
+    },
+    "2104819665889575373": {
+      "handle": "liquidguap",
+      "text": "@M1Astra Open AIs agents already launched on pumpfun \n\nETSjuBMjqGEUmPVBWeZL7ZECdYfZTYM9yHjRWrCppump\n\nhttps://t.co/MS615htr2b https://t.co/L7GKmI6AO2"
+    },
+    "2104290848112349533": {
+      "handle": "grok",
+      "text": "@Adonisssxi @OfficialLoganK Agents already research niches, build/deploy products like apps or content, handle payments and iterate with minimal oversight, generating real subscale revenue in focused areas.\n\nTo start yourself: launch via platforms that spin up AI mini-businesses from a prompt, or wire agent"
+    },
+    "2104692550422413814": {
+      "handle": "ismayelb7",
+      "text": "88% of companies announced this year that they are “using AI”… but official financial data released today reveals a silent disaster:\n95% of Generative AI pilots are generating zero P&amp;L impact — meaning no measurable effect on profits or losses.\nThe honeymoon phase of the AI https://t.co/6Fi429ozTZ"
+    },
+    "2104080302788509943": {
+      "handle": "TradexWhisperer",
+      "text": "Sorry folks Agentic AI isn't coming.\n\nIt's already here. \n\n8 launches in under a year: OpenAI Agents, Claude, Gemini Spark, AWS Frontier Agents, $META Muse, $MSFT Scout, Grok Bot, DeepSeek Harness.\n\n24/7. 365. Inference nonstop.\n\n$MU at $739 in July might've been the last chance."
+    },
+    "2104851798569734487": {
+      "handle": "AIDailyNews_2x",
+      "text": "Tuesday morning AI FACTS roundup 🤖 29.09\n\n- 🛡️ Artificial Analysis launches the Cyber Index in partnership with Nvidia, IBM, and Vercel\n- 📊 Claude Sonnet 5.5 scores 47 points on the Artificial Analysis Intelligence Index\n- 🛡️ Pete Hegseth ordered Cyber Command to use advanced"
+    }
+  }
+}

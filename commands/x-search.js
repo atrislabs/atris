@@ -650,7 +650,6 @@ async function checkXSearchPosts(data, options, deps = {}) {
     return await (deps.checkXPosts || checkXPosts)({
       content: xSearchContent(data),
       citations: xSearchCitations(data),
-      defaultHandle: options.mode === 'person' ? options.handle : null,
       fetchPost: deps.fetchPost,
       fetch: deps.fetch,
     });

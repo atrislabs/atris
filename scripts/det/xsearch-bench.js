@@ -64,8 +64,14 @@ function parseTally(stdout) {
 }
 
 // Pure pass/fail rules. Each takes a finished run and returns { pass, note }.
+// Posts = checked citations plus unverified quotes. Unknown (X could not be
+// reached) counts neither way.
+function postCount(tally) {
+  return tally ? tally.checked + tally.unverified : 0;
+}
+
 function judgePaid({ status, tally, minPosts }) {
-  const posts = tally ? tally.checked + tally.unverified + tally.unknown : 0;
+  const posts = postCount(tally);
   const share = posts ? tally.checked / posts : 0;
   if (status !== 0) return { pass: false, posts, note: 'search failed' };
   if (!tally) return { pass: false, posts, note: 'no posts found to check' };
@@ -105,16 +111,16 @@ async function runOfflineCheck(fixture = JSON.parse(fs.readFileSync(FIXTURE, 'ut
   const want = fixture.expect;
   const upOk = Boolean(up)
     && up.tally.checked === want.all_up.checked
-    && up.tally.unmatched === want.all_up.unmatched
+    && up.tally.unverified === want.all_up.unverified
     && up.tally.unknown === want.all_up.unknown
     && up.otherSources.length === want.all_up.other_sources;
   const downOk = Boolean(down)
     && down.tally.checked === want.one_down.checked
-    && down.tally.unmatched === want.one_down.unmatched
+    && down.tally.unverified === want.one_down.unverified
     && down.tally.unknown === want.one_down.unknown;
   return {
     pass: upOk && downOk,
-    tally: up ? { checked: up.tally.checked, unverified: up.tally.unmatched, unknown: up.tally.unknown } : null,
+    tally: up ? up.tally : null,
     note: !upOk ? 'wrong result with X answering' : !downOk ? 'wrong result with X down' : 'checked, unverified, and unknown all land right',
   };
 }
@@ -188,7 +194,7 @@ function lastLines(text, n = 3) {
 }
 
 function tallyText(t) {
-  return t ? `posts=${t.checked + t.unverified + t.unknown} checked=${t.checked} unverified=${t.unverified} unknown=${t.unknown}` : 'posts=0';
+  return t ? `posts=${postCount(t)} checked=${t.checked} unverified=${t.unverified} unknown=${t.unknown}` : 'posts=0';
 }
 
 // Keep what a failed paid search printed, so the miss can be read later
@@ -216,7 +222,7 @@ async function runCase(c, outDir) {
       line: `${c.name} ${verdict.pass ? 'pass' : 'fail'} ${seconds}s (${verdict.note}) ${tallyText(t)}`,
       row: {
         ts, case: c.name, seconds, pass: verdict.pass, exit: null,
-        posts: t ? t.checked + t.unverified + t.unknown : 0,
+        posts: postCount(t),
         checked: t ? t.checked : 0, unverified: t ? t.unverified : 0, unknown: t ? t.unknown : 0,
       },
     };
@@ -291,6 +297,7 @@ module.exports = {
   parseArgs,
   selectCases,
   parseTally,
+  postCount,
   judgePaid,
   judgeStranger,
   fixtureFetch,
