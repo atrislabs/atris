@@ -17,6 +17,7 @@
 
 const fs = require('fs');
 const path = require('path');
+const { stateHome } = require('../lib/state-home');
 const { loadCredentials } = require('../utils/auth');
 const { apiRequestJson } = require('../utils/api');
 const {
@@ -297,8 +298,7 @@ function resolveBusinessArg(value) {
   // Full UUID, trust it
   if (/^[0-9a-f-]{32,}$/i.test(value)) return value;
   // Otherwise treat as slug and look up in ~/.atris/businesses.json
-  const home = require('os').homedir();
-  const file = path.join(home, '.atris', 'businesses.json');
+  const file = path.join(stateHome(), '.atris', 'businesses.json');
   if (!fs.existsSync(file)) return null;
   try {
     const map = JSON.parse(fs.readFileSync(file, 'utf8'));

@@ -1,5 +1,6 @@
 const fs = require('fs');
 const path = require('path');
+const { stateHome } = require('../lib/state-home');
 const os = require('os');
 const { loadCredentials } = require('../utils/auth');
 const { apiRequestJson } = require('../utils/api');
@@ -18,8 +19,7 @@ function businessWorkspaceBase() {
 }
 
 function getBusinessConfigPath() {
-  const home = require('os').homedir();
-  const dir = path.join(home, '.atris');
+  const dir = path.join(stateHome(), '.atris');
   if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
   return path.join(dir, 'businesses.json');
 }
@@ -3139,7 +3139,7 @@ async function connectService(connector, ...flags) {
   }
 
   // Create local secrets directory
-  const secretsDir = path.join(require('os').homedir(), '.atris', 'secrets', connector);
+  const secretsDir = path.join(stateHome(), '.atris', 'secrets', connector);
   if (!fs.existsSync(secretsDir)) {
     fs.mkdirSync(secretsDir, { recursive: true });
     console.log(`\n  Created secrets dir: ${secretsDir}/`);

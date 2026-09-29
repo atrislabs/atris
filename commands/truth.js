@@ -7,7 +7,7 @@
 
 const fs = require('fs');
 const path = require('path');
-const os = require('os');
+const { stateHome } = require('../lib/state-home');
 const { execFileSync } = require('child_process');
 const taskDb = require('../lib/task-db');
 const { parseScopeFlag } = require('../lib/cli-scope');
@@ -172,7 +172,7 @@ function loadFeatures(cwd) {
 }
 
 function loadHeartbeats() {
-  const hbDir = path.join(os.homedir(), '.atris', 'heartbeat');
+  const hbDir = path.join(stateHome(), '.atris', 'heartbeat');
   const registry = readJson(path.join(hbDir, 'registry.json'));
   const state = readJson(path.join(hbDir, 'state.json')) || {};
   if (!registry || !Array.isArray(registry.jobs)) return [];

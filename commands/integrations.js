@@ -33,11 +33,12 @@ const {
 const fs = require('fs');
 const os = require('os');
 const path = require('path');
+const { stateHome } = require('../lib/state-home');
 const readline = require('readline');
 const { spawnSync } = require('child_process');
 const { sleepSync } = require('../lib/sleep-sync');
 
-const CALENDAR_CACHE_PATH = path.join(os.homedir(), '.atris', 'calendar-events-cache.json');
+const CALENDAR_CACHE_PATH = path.join(stateHome(), '.atris', 'calendar-events-cache.json');
 const GMAIL_CONNECT_POLL_MS = 3000;
 const GMAIL_CONNECT_TIMEOUT_MS = 3 * 60 * 1000;
 const GMAIL_SEND_USAGE = 'usage: atris gmail send <to> <subject> <body...> [--body-file <path>] [--account <id>]';
@@ -182,7 +183,7 @@ function parseGmailVerdictsArgs(args = []) {
 
 function gmailAccountStatePath() {
   return process.env.ATRIS_GMAIL_ACCOUNT_FILE
-    || path.join(os.homedir(), '.atris', 'gmail-account.json');
+    || path.join(stateHome(), '.atris', 'gmail-account.json');
 }
 
 function readGmailStickyAccount() {
@@ -1794,7 +1795,7 @@ function normalizeContactLabel(value) {
 }
 
 function imessageLookupCachePath() {
-  return path.join(os.homedir(), '.atris', 'cache', 'imessage-contacts.json');
+  return path.join(stateHome(), '.atris', 'cache', 'imessage-contacts.json');
 }
 
 function readImessageLookupCache() {

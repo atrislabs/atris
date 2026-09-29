@@ -1,6 +1,6 @@
 const fs = require('fs');
 const path = require('path');
-const os = require('os');
+const { stateHome } = require('../lib/state-home');
 const { loadCredentials } = require('../utils/auth');
 const { apiRequestJson } = require('../utils/api');
 
@@ -104,7 +104,7 @@ async function publishAtris() {
   }
 
   // Save local copy
-  const localDir = path.join(os.homedir(), '.atris', 'templates', name.toLowerCase().replace(/[^a-z0-9-]/g, '-'));
+  const localDir = path.join(stateHome(), '.atris', 'templates', name.toLowerCase().replace(/[^a-z0-9-]/g, '-'));
   fs.mkdirSync(localDir, { recursive: true });
 
   for (const f of files) {

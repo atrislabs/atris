@@ -20,6 +20,7 @@ checks the refs in both files; `atris doc-health --fix-refs` moves drifted ones.
 | plain english to a command | `lib/intents.js` `commands/guide.js`, `lib/intents.js:100`, `lib/intents.js:107` | atris guide; agents translate, users never learn verbs; "who does what" goes to `atris engine roster`, "change the builder" to `atris engine assign` and asks first |
 | project initialization | `commands/init.js` | init and update scaffold user projects |
 | task database and TODO markdown renderer | `lib/task-db.js` | SQLite task store, renderTodoMarkdown |
+| where ~/.atris state lives (test fence) | `lib/state-home.js`, `lib/task-db.js:191` | under node --test with the real home, tasks.db and other ~/.atris files go to a throwaway folder; ATRIS_TEST_REAL_HOME=1 opts back in; `test/test-state-fence.test.js` |
 | task command surface | `commands/task.js` | claim, ready, accept, render, keep, day |
 | task list keeper | `lib/task-list-keeper.js` | one lookup; puts away only rows ready to leave |
 | task projection file | `commands/task.js` | writes the readable view at .atris/state/tasks.projection.json (local, gitignored) |

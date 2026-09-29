@@ -3,6 +3,7 @@
 const fs = require('fs');
 const os = require('os');
 const path = require('path');
+const { stateHome } = require('../lib/state-home');
 const { execFileSync } = require('child_process');
 const { parseScopeFlag, pathUnderRoot } = require('../lib/cli-scope');
 
@@ -346,7 +347,7 @@ function loadBusinessCollaboration(root, deps, team = {}, scorecardCount = count
   const business = readJsonFile(path.join(root, '.atris', 'business.json'), deps, null);
   const runtime = readJsonFile(path.join(root, '.atris', 'state', 'runtime.json'), deps, null);
   const sync = readJsonFile(path.join(root, '.atris', 'state', '_sync.json'), deps, null);
-  const cache = readJsonFile(path.join(deps.homeDir || os.homedir(), '.atris', 'businesses.json'), deps, {}) || {};
+  const cache = readJsonFile(path.join(deps.homeDir || stateHome(), '.atris', 'businesses.json'), deps, {}) || {};
   const slug = business?.slug || sync?.workspace_slug || null;
   const cacheEntry = slug && cache ? cache[slug] : null;
   const hasAtris = deps.exists(path.join(root, 'atris'));
