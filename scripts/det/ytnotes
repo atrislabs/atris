@@ -4,7 +4,8 @@
 # No captions: if mlx_whisper is installed (uv tool install mlx-whisper, Apple
 # silicon), the audio is transcribed on this machine instead. Otherwise the
 # script prints the paid command. ATRIS_YTNOTES_LOCAL_TRANSCRIBE=0 turns it off.
-# Engines: auto (default: Gemini Flash through agy, Haiku if that fails),
+# Engines: auto (default: fastest installed writer that answers: Gemini
+# Flash through agy, then Haiku, Codex, Cursor),
 # gemini, haiku, atris-fast, grok, codex, cursor. ATRIS_YTNOTES_ENGINE sets the default.
 # Outputs: $WORK/yt_${ID}.clean.txt (transcript), $WORK/yt_${ID}.md (notes).
 set -euo pipefail
@@ -39,6 +40,13 @@ cd "$WORK"
 # #t= timestamp is stripped so leftover yt_<id> files still match. When VTT is
 # gone, leftover yt_<id>.clean.txt from a prior notes run is still a keep.
 # Another video's leftover clean.txt is not invent-keep.
+if ! command -v yt-dlp >/dev/null 2>&1; then
+  echo "This computer is missing yt-dlp, the free tool that reads YouTube captions." >&2
+  echo "Install it, then run the same command again:" >&2
+  echo "  Mac: brew install yt-dlp    Any computer: pipx install yt-dlp" >&2
+  exit 2
+fi
+
 existing=""
 for name in yt_*.en-orig.vtt yt_*.en.vtt yt_*.en-US.vtt yt_*.en-GB.vtt; do
   [ -e "$name" ] || continue
@@ -262,7 +270,7 @@ $TRANSCRIPT"
 run_with_timeout() {
   local seconds="$1"
   shift
-  perl -e '$seconds = shift @ARGV; alarm $seconds; exec @ARGV' "$seconds" "$@"
+  perl -e '$seconds = shift @ARGV; alarm $seconds; exec @ARGV or do { print STDERR "$ARGV[0]: not installed\n"; exit 127 }' "$seconds" "$@"
 }
 
 run_atris_fast() {
@@ -358,16 +366,40 @@ run_gemini() {
     --effort low --print-timeout 110s </dev/null
 }
 
-# Fastest writer that answers: Gemini, then Haiku. Buffered so a failed or
-# empty Gemini answer never reaches the notes file.
+# Fastest installed writer that answers: Gemini, Haiku, Codex, Cursor.
+# Buffered so a failed or empty answer never reaches the notes file.
+AUTO_WRITERS="agy:Gemini claude:Haiku codex:Codex cursor-agent:Cursor"
+
+run_writer() {
+  case "$1" in
+    agy) run_gemini ;;
+    claude) run_haiku ;;
+    codex) run_with_timeout 240 codex exec --sandbox read-only --skip-git-repo-check "$PROMPT" </dev/null ;;
+    cursor-agent) run_with_timeout 240 cursor-agent --trust -p "$PROMPT" ;;
+  esac
+}
+
 run_auto() {
-  local out=""
-  if out=$(run_gemini 2>"$WORK/yt_${ID}.engine.err") && printf '%s' "$out" | grep -q '[[:alnum:]]'; then
-    printf '%s\n' "$out"
-    return 0
+  local entry cmd label out tried=""
+  for entry in $AUTO_WRITERS; do
+    cmd="${entry%%:*}"
+    label="${entry#*:}"
+    command -v "$cmd" >/dev/null 2>&1 || continue
+    if [ -n "$tried" ]; then
+      echo "$tried did not answer; writing the notes with $label instead." >&2
+    fi
+    if out=$(run_writer "$cmd" 2>>"$WORK/yt_${ID}.engine.err") && printf '%s' "$out" | grep -q '[[:alnum:]]'; then
+      printf '%s\n' "$out"
+      return 0
+    fi
+    tried="$label"
+  done
+  if [ -n "$tried" ]; then
+    echo "$tried did not answer, and no other AI writer is installed." >&2
+  else
+    echo "No AI writer is installed on this computer. Install one of: Claude Code (claude), Antigravity (agy), Codex (codex), Cursor (cursor-agent)." >&2
   fi
-  echo "Gemini did not answer; writing the notes with Haiku instead." >&2
-  run_haiku
+  return 3
 }
 
 {
@@ -385,10 +417,18 @@ run_auto() {
       run_gemini
       ;;
     grok)   run_grok ;;
-    codex)  run_with_timeout 240 codex exec --sandbox read-only --skip-git-repo-check "$PROMPT" </dev/null ;;
-    cursor) run_with_timeout 240 cursor-agent --trust -p "$PROMPT" ;;
+    codex)  run_writer codex ;;
+    cursor) run_writer cursor-agent ;;
     *) echo "unknown engine: $ENGINE (auto|gemini|haiku|atris-fast|grok|codex|cursor)" >&2; exit 1 ;;
   esac
-} | perl -0pe 's/\A.*?(?=# )//s' | tee "yt_${ID}.md"
+} | perl -0pe 's/\A.*?(?=# )//s' > "yt_${ID}.md" || true
+
+if ! grep -q '[[:alnum:]]' "yt_${ID}.md"; then
+  rm -f "yt_${ID}.md"
+  echo "No notes were written. The transcript is saved at $WORK/yt_${ID}.clean.txt" >&2
+  echo "Paid notes, 5 credits, refunded if it fails: atris youtube process \"$URL\"" >&2
+  exit 3
+fi
+cat "yt_${ID}.md"
 
 node "$SCRIPT_DIR/ytquote-repair.js" "yt_${ID}.md" "yt_${ID}.clean.txt"
