@@ -9937,7 +9937,10 @@ function cmdReapStaleClaims(args) {
   const db = taskDb.open();
   const workspaceRoot = taskDb.workspaceRoot();
   const actor = String(flag(args, '--as') || DEFAULT_OWNER);
-  const result = taskDb.reapStaleClaims(db, { workspaceRoot, olderThanDays, apply, actor, includePersons });
+  const missionCmd = require('./mission');
+  // Sibling worktrees carry their own missions; a claim tied to any of them counts.
+  const missions = [...missionCmd.listMissions(workspaceRoot), ...missionCmd.listWorktreeRollupMissions(workspaceRoot)];
+  const result = taskDb.reapStaleClaims(db, { workspaceRoot, olderThanDays, apply, actor, includePersons, missions });
   const projectionPath = apply ? writeDefaultProjection(taskDb, db).outPath : null;
   const taskById = new Map(taskDb.withTaskDisplayRefs(taskDb.listTasks(db, { workspaceRoot, limit: null }))
     .map(task => [task.id, task]));
@@ -9965,6 +9968,9 @@ function cmdReapStaleClaims(args) {
   }
   if (result.skipped_person_count > 0) {
     console.log(`skipped ${result.skipped_person_count} idle person/member claim(s); pass --include-persons to release them too.`);
+  }
+  if (result.skipped_mission_count > 0) {
+    console.log(`kept ${result.skipped_mission_count} idle claim(s) whose mission has not ended or cannot be found.`);
   }
   if (!apply && result.count > 0) console.log('run again with --apply to release them.');
 }
@@ -13594,6 +13600,14 @@ async function run(args) {
   // a task card or the encyclopedia, so never list or show just to show usage.
   if (sub === 'show' && argsWantHelp(raw.slice(1))) {
     console.log('Usage: atris task show <id> [--json]');
+    return;
+  }
+  // `task reap-stale-claims --help` is a help request, not a run. --apply
+  // releases claims, so never open the db or render TODO just to show usage.
+  if (sub === 'reap-stale-claims' && argsWantHelp(raw.slice(1))) {
+    console.log('Usage: atris task reap-stale-claims [--older-than <days>] [--include-persons] [--apply] [--json]');
+    console.log('Lists loop claims (atris, fleet-*) with no update or history for <days> (default 14); --apply releases them.');
+    console.log('Claims tied to a mission that has not ended are kept.');
     return;
   }
   const result = await runTaskCommand(raw);

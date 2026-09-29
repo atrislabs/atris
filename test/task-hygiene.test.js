@@ -300,3 +300,90 @@ test('task reap-stale-claims releases only silent loop claims; recent notes, per
     fs.rmSync(root, { recursive: true, force: true });
   }
 });
+
+test('task reap-stale-claims never reaps a claim whose linked mission is still going, and counts ended mission activity', () => {
+  const root = makeWorkspace();
+  const home = path.join(root, 'home');
+  fs.mkdirSync(home, { recursive: true });
+  const dbPath = path.join(root, 'tasks.db');
+  const env = { HOME: home, ATRIS_TASKS_DB: dbPath, ATRIS_AGENT_PROOF_ONLY: '0', ATRIS_AGENT_ID: 'reaper-test' };
+  const daysAgo = d => new Date(Date.now() - d * 86400000).toISOString();
+  try {
+    const db = taskStore.open(dbPath);
+    const stale = Date.now() - 20 * 86400000;
+    const add = (title, metadata) => {
+      const id = taskStore.addTask(db, { title, workspaceRoot: root, metadata }).id;
+      db.prepare(`UPDATE tasks SET status = 'claimed', claimed_by = 'atris', claimed_at = ?, updated_at = ? WHERE id = ?`).run(stale, stale, id);
+      db.prepare('UPDATE task_events SET created_at = ? WHERE task_id = ?').run(stale, id);
+      return id;
+    };
+    const runningByMeta = add('claim for a running mission', { mission_id: 'm-run' });
+    const pausedByGoal = add('claim for a paused mission', { goal_id: 'm-paused' });
+    const listedByMission = add('claim the mission lists by task id', null);
+    const recentlyEnded = add('claim for a mission that ended two days ago', { mission_id: 'm-done-recent' });
+    const longEnded = add('claim for a mission that ended a month ago', { mission_id: 'm-done-old' });
+    const unknownMission = add('claim for a mission this workspace cannot find', { mission_id: 'm-missing' });
+    taskStore.close();
+    fs.writeFileSync(path.join(root, '.atris', 'state', 'missions.jsonl'), [
+      { id: 'm-run', objective: 'running work', status: 'running', updated_at: daysAgo(30), last_tick_at: daysAgo(30) },
+      { id: 'm-paused', objective: 'paused work', status: 'paused', updated_at: daysAgo(30) },
+      { id: 'm-listed', objective: 'listed work', status: 'ready', updated_at: daysAgo(30), task_ids: [listedByMission] },
+      { id: 'm-done-recent', objective: 'recent work', status: 'complete', updated_at: daysAgo(2), last_tick_at: daysAgo(2) },
+      { id: 'm-done-old', objective: 'old work', status: 'complete', updated_at: daysAgo(30), last_tick_at: daysAgo(30) },
+    ].map(m => JSON.stringify(m)).join('\n') + '\n', 'utf8');
+
+    const apply = runCli(['task', 'reap-stale-claims', '--older-than', '14', '--apply', '--json'], { cwd: root, env });
+    assert.equal(apply.status, 0, apply.stderr);
+    const payload = JSON.parse(apply.stdout);
+    assert.deepEqual(payload.ids, [longEnded]);
+    assert.equal(payload.skipped_mission_count, 4);
+
+    const check = taskStore.open(dbPath);
+    assert.equal(taskStore.getTask(check, longEnded).status, 'open');
+    for (const id of [runningByMeta, pausedByGoal, listedByMission, recentlyEnded, unknownMission]) {
+      assert.equal(taskStore.getTask(check, id).status, 'claimed', id);
+    }
+  } finally {
+    taskStore.close();
+    fs.rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test('task reap-stale-claims finds an old claim behind more than 5000 fresh ones', () => {
+  const root = makeWorkspace();
+  const dbPath = path.join(root, 'tasks.db');
+  try {
+    const db = taskStore.open(dbPath);
+    const stale = Date.now() - 30 * 86400000;
+    const old = taskStore.addTask(db, { title: 'the one old claim', workspaceRoot: root }).id;
+    db.prepare(`UPDATE tasks SET status = 'claimed', claimed_by = 'atris', claimed_at = ?, updated_at = ? WHERE id = ?`).run(stale, stale, old);
+    db.prepare('UPDATE task_events SET created_at = ? WHERE task_id = ?').run(stale, old);
+    const now = Date.now();
+    const insert = db.prepare(`INSERT INTO tasks (id, title, status, workspace_root, claimed_by, claimed_at, created_at, updated_at)
+      VALUES (?, ?, 'claimed', ?, 'atris', ?, ?, ?)`);
+    db.exec('BEGIN');
+    for (let i = 0; i < 5100; i += 1) insert.run(`fresh-${i}`, `fresh claim ${i}`, root, now, now + i, now + i);
+    db.exec('COMMIT');
+    const result = taskStore.reapStaleClaims(db, { workspaceRoot: root, olderThanDays: 14 });
+    assert.equal(result.count, 1);
+    assert.equal(result.sample[0].id, old);
+  } finally {
+    taskStore.close();
+    fs.rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test('task reap-stale-claims --apply --help prints usage and touches nothing', () => {
+  const root = makeWorkspace();
+  const dbPath = path.join(root, 'tasks.db');
+  const env = { HOME: path.join(root, 'home'), ATRIS_TASKS_DB: dbPath, ATRIS_AGENT_PROOF_ONLY: '0' };
+  try {
+    const r = runCli(['task', 'reap-stale-claims', '--apply', '--help'], { cwd: root, env });
+    assert.equal(r.status, 0, r.stderr);
+    assert.match(r.stdout, /Usage: atris task reap-stale-claims/);
+    assert.equal(fs.existsSync(dbPath), false);
+    assert.equal(fs.existsSync(path.join(root, 'atris', 'TODO.md')), false);
+  } finally {
+    fs.rmSync(root, { recursive: true, force: true });
+  }
+});
