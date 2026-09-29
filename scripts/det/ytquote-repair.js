@@ -7,7 +7,9 @@
 
 const fs = require('node:fs');
 
+// Models put the timestamp on either side: > "quote" [mm:ss] or > [mm:ss] "quote".
 const QUOTE_LINE = /^(\s*>\s*)(["“])(.+?)(["”])(\s*\[(\d{1,2}:\d{2}(?::\d{2})?)\])\s*$/;
+const QUOTE_LINE_TIME_FIRST = /^(\s*>\s*\[(\d{1,2}:\d{2}(?::\d{2})?)\]\s*)(["“])(.+?)(["”])\s*$/;
 const ANCHOR_LINE = /^\[(\d{1,2}:\d{2}(?::\d{2})?)\]\s*$/;
 const NEAR_SEC = 60;
 const OVERLAP_MIN = 0.6;
@@ -27,6 +29,18 @@ function parseTimestamp(ts) {
   if (!parts.length || parts.some((n) => Number.isNaN(n))) return null;
   if (parts.length === 2) return parts[0] * 60 + parts[1];
   if (parts.length === 3) return parts[0] * 3600 + parts[1] * 60 + parts[2];
+  return null;
+}
+
+function parseQuoteLine(line) {
+  const after = line.match(QUOTE_LINE);
+  if (after) {
+    return { quote: after[3], time: after[6], rebuild: (text) => `${after[1]}"${text}"${after[5]}` };
+  }
+  const first = line.match(QUOTE_LINE_TIME_FIRST);
+  if (first) {
+    return { quote: first[4], time: first[2], rebuild: (text) => `${first[1]}"${text}"` };
+  }
   return null;
 }
 
@@ -112,20 +126,20 @@ function repairNotes(notes, transcript) {
   let dropped = 0;
 
   for (const line of lines) {
-    const match = line.match(QUOTE_LINE);
+    const match = parseQuoteLine(line);
     if (!match) {
       out.push(line);
       continue;
     }
 
-    const quote = match[3];
+    const quote = match.quote;
     if (probeHits(quote, flat)) {
       out.push(line);
       kept += 1;
       continue;
     }
 
-    const time = parseTimestamp(match[6]);
+    const time = parseTimestamp(match.time);
     const quoteWords = normalizeText(quote).split(' ').filter(Boolean);
     const repairedText = time == null ? null : bestWindow(quoteWords, nearbyWords(segments, time));
     if (!repairedText) {
@@ -133,7 +147,7 @@ function repairNotes(notes, transcript) {
       continue;
     }
 
-    out.push(`${match[1]}"${repairedText}"${match[5]}`);
+    out.push(match.rebuild(repairedText));
     repaired += 1;
   }
 
