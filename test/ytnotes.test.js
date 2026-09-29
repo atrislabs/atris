@@ -13,6 +13,17 @@ const YTNOTES = path.resolve(__dirname, '..', 'scripts', 'det', 'ytnotes');
 // never answers; the auto writer has its own tests below.
 process.env.ATRIS_YTNOTES_ENGINE = process.env.ATRIS_YTNOTES_ENGINE || 'haiku';
 
+// Today's date as a yt-dlp version, YYYY.MM.DD in local time.
+function versionToday() {
+  const d = new Date();
+  return `${d.getFullYear()}.${String(d.getMonth() + 1).padStart(2, '0')}.${String(d.getDate()).padStart(2, '0')}`;
+}
+
+// ytnotes asks the fake yt-dlp for --version before anything else.
+function answerVersion(version = versionToday()) {
+  return `if [ "$1" = "--version" ]; then echo "${version}"; exit 0; fi`;
+}
+
 function writeExec(file, body) {
   fs.writeFileSync(file, body);
   fs.chmodSync(file, 0o755);
@@ -27,6 +38,7 @@ test('ytnotes keeps a written vtt when yt-dlp exits 429', () => {
 
   writeExec(path.join(bin, 'yt-dlp'), [
     '#!/bin/sh',
+    answerVersion(),
     'printf "%s\\n" "WEBVTT" "" "00:00:00.000 --> 00:00:02.000" "The omakase model has 80 people." > yt_ntrate1.en.vtt',
     'printf "%s\\n" "ntrate1|Omakase Clip|37signals|0:02"',
     'echo "ERROR: [youtube] HTTP Error 429: Too Many Requests" >&2',
@@ -69,6 +81,7 @@ test('ytnotes gets en-orig when the translated en track is rate limited', () => 
 
   writeExec(path.join(bin, 'yt-dlp'), [
     '#!/bin/bash',
+    answerVersion(),
     'langs=""; ignore=0; prev=""',
     'for a in "$@"; do',
     '  [ "$prev" = "--sub-langs" ] && langs="$a"',
@@ -117,6 +130,7 @@ test('ytnotes skips a leaked warning print line when choosing the video id', () 
 
   writeExec(path.join(bin, 'yt-dlp'), [
     '#!/bin/sh',
+    answerVersion(),
     'printf "%s\\n" "WEBVTT" "" "00:00:00.000 --> 00:00:02.000" "The omakase model has 80 people." > yt_ntwarn1.en.vtt',
     'printf "%s\\n" "WARNING: [youtube] Incomplete data | retrying"',
     'printf "%s\\n" "ntwarn1|Omakase Clip|37signals|0:02"',
@@ -160,6 +174,7 @@ test('ytnotes skips a None print line when choosing the video id', () => {
 
   writeExec(path.join(bin, 'yt-dlp'), [
     '#!/bin/sh',
+    answerVersion(),
     'printf "%s\\n" "WEBVTT" "" "00:00:00.000 --> 00:00:02.000" "The omakase model has 80 people." > yt_ntnone1.en.vtt',
     'printf "%s\\n" "ntnone1|Omakase Clip|37signals|0:02"',
     'printf "%s\\n" "None|not a video id"',
@@ -203,6 +218,7 @@ test('ytnotes keeps a written manual English vtt when auto captions are absent',
 
   writeExec(path.join(bin, 'yt-dlp'), [
     '#!/bin/sh',
+    answerVersion(),
     'has_write_subs=0',
     'for arg in "$@"; do',
     '  [ "$arg" = "--write-subs" ] && has_write_subs=1',
@@ -248,6 +264,7 @@ test('ytnotes keeps a written auto English vtt when manual captions are absent',
 
   writeExec(path.join(bin, 'yt-dlp'), [
     '#!/bin/sh',
+    answerVersion(),
     'has_write_auto=0',
     'for arg in "$@"; do',
     '  [ "$arg" = "--write-auto-subs" ] && has_write_auto=1',
@@ -293,6 +310,7 @@ test('ytnotes keeps a written en-orig vtt when yt-dlp skips .en.vtt', () => {
 
   writeExec(path.join(bin, 'yt-dlp'), [
     '#!/bin/sh',
+    answerVersion(),
     'printf "%s\\n" "WEBVTT" "" "00:00:00.000 --> 00:00:02.000" "The omakase model has 80 people." > yt_ntrate2.en-orig.vtt',
     'printf "%s\\n" "ntrate2|Omakase Clip|37signals|0:02"',
     'echo "ERROR: [youtube] HTTP Error 429: Too Many Requests" >&2',
@@ -332,6 +350,7 @@ test('ytnotes keeps a written vtt when yt-dlp print is empty', () => {
 
   writeExec(path.join(bin, 'yt-dlp'), [
     '#!/bin/sh',
+    answerVersion(),
     'printf "%s\\n" "WEBVTT" "" "00:00:00.000 --> 00:00:02.000" "The omakase model has 80 people." > yt_ntprint1.en.vtt',
     'echo "ERROR: [youtube] HTTP Error 429: Too Many Requests" >&2',
     'exit 1',
@@ -378,6 +397,7 @@ test('ytnotes keeps a leftover vtt for a copied #t= url when print is empty', ()
 
   writeExec(path.join(bin, 'yt-dlp'), [
     '#!/bin/sh',
+    answerVersion(),
     'echo "ERROR: [youtube] HTTP Error 429: Too Many Requests" >&2',
     'exit 1',
     '',
@@ -423,6 +443,7 @@ test('ytnotes keeps a leftover vtt for an /e/ url when print is empty', () => {
 
   writeExec(path.join(bin, 'yt-dlp'), [
     '#!/bin/sh',
+    answerVersion(),
     'echo "ERROR: [youtube] HTTP Error 429: Too Many Requests" >&2',
     'exit 1',
     '',
@@ -460,6 +481,7 @@ test('ytnotes keeps a written vtt for a shorts url when print is empty', () => {
 
   writeExec(path.join(bin, 'yt-dlp'), [
     '#!/bin/sh',
+    answerVersion(),
     'printf "%s\\n" "WEBVTT" "" "00:00:00.000 --> 00:00:02.000" "The omakase model has 80 people." > yt_ntshort1.en.vtt',
     'echo "ERROR: [youtube] HTTP Error 429: Too Many Requests" >&2',
     'exit 1',
@@ -498,6 +520,7 @@ test('ytnotes keeps a written vtt for a nocookie embed url when print is empty',
 
   writeExec(path.join(bin, 'yt-dlp'), [
     '#!/bin/sh',
+    answerVersion(),
     'printf "%s\\n" "WEBVTT" "" "00:00:00.000 --> 00:00:02.000" "The omakase model has 80 people." > yt_ntcookie1.en.vtt',
     'echo "ERROR: [youtube] HTTP Error 429: Too Many Requests" >&2',
     'exit 1',
@@ -542,6 +565,7 @@ test('ytnotes keeps leftover clean.txt when captions are gone', () => {
 
   writeExec(path.join(bin, 'yt-dlp'), [
     '#!/bin/sh',
+    answerVersion(),
     'echo "ERROR: [youtube] HTTP Error 429: Too Many Requests" >&2',
     'exit 1',
     '',
@@ -585,6 +609,7 @@ test('ytnotes does not invent-keep another video leftover clean.txt', () => {
 
   writeExec(path.join(bin, 'yt-dlp'), [
     '#!/bin/sh',
+    answerVersion(),
     'echo "ERROR: [youtube] HTTP Error 429: Too Many Requests" >&2',
     'exit 1',
     '',
@@ -621,6 +646,7 @@ test('ytnotes still fails a 429 when no captions were written', () => {
 
   writeExec(path.join(bin, 'yt-dlp'), [
     '#!/bin/sh',
+    answerVersion(),
     'echo "ERROR: [youtube] HTTP Error 429: Too Many Requests" >&2',
     'exit 1',
     '',
@@ -648,7 +674,7 @@ test('ytnotes still fails a 429 when no captions were written', () => {
   assert.equal(fs.existsSync(path.join(work, 'ytnotes', 'yt_empty429.md')), false);
 });
 
-function runNoCaptionNotes(label, { withWhisper, whisperVtt, extraEnv = {}, audioFailures = 0, extraBins = {}, withClaude = true, withYtDlp = true }) {
+function runNoCaptionNotes(label, { withWhisper, whisperVtt, extraEnv = {}, audioFailures = 0, extraBins = {}, withClaude = true, withYtDlp = true, ytDlpVersion }) {
   const tmp = fs.mkdtempSync(path.join(os.tmpdir(), `atris-ytnotes-${label}-`));
   const bin = path.join(tmp, 'bin');
   const work = path.join(tmp, 'work');
@@ -658,6 +684,7 @@ function runNoCaptionNotes(label, { withWhisper, whisperVtt, extraEnv = {}, audi
   // Captions request writes nothing; the audio request (-f bestaudio) writes audio.
   writeExec(path.join(bin, 'yt-dlp'), [
     '#!/bin/bash',
+    answerVersion(ytDlpVersion),
     'out=""; audio=0; prev=""',
     'for a in "$@"; do',
     '  [ "$prev" = "-o" ] && out="$a"',
@@ -863,4 +890,53 @@ test('ytnotes without yt-dlp says to install it instead of blaming captions', ()
   assert.match(result.stderr, /missing yt-dlp/);
   assert.match(result.stderr, /brew install yt-dlp/);
   assert.doesNotMatch(result.stderr, /No English captions/);
+});
+
+test('ytnotes warns when yt-dlp is old and still writes the notes', () => {
+  const { result, dir } = runNoCaptionNotes('stale1', {
+    withWhisper: true,
+    whisperVtt: LOCAL_VTT,
+    ytDlpVersion: '2025.01.01',
+  });
+
+  assert.equal(result.status, 0, result.stderr || result.stdout);
+  assert.match(result.stderr, /Your yt-dlp is \d+ days old, and YouTube often blocks old copies\. Update it: brew upgrade yt-dlp \(Mac\) or pipx upgrade yt-dlp/);
+  assert.match(fs.readFileSync(path.join(dir, 'yt_stale1.md'), 'utf8'), /# No Caption Talk/);
+});
+
+test('ytnotes says nothing about a yt-dlp released today', () => {
+  const { result } = runNoCaptionNotes('fresh1', { withWhisper: true, whisperVtt: LOCAL_VTT });
+
+  assert.equal(result.status, 0, result.stderr || result.stdout);
+  assert.doesNotMatch(result.stderr, /yt-dlp is/);
+});
+
+test('ytnotes says nothing when the yt-dlp version does not parse', () => {
+  const { result } = runNoCaptionNotes('oddver1', {
+    withWhisper: true,
+    whisperVtt: LOCAL_VTT,
+    ytDlpVersion: 'nightly',
+  });
+
+  assert.equal(result.status, 0, result.stderr || result.stdout);
+  assert.doesNotMatch(result.stderr, /yt-dlp is/);
+});
+
+test('ytnotes auto names the writer that wrote the notes', () => {
+  const { result } = runNoCaptionNotes('byline1', {
+    withWhisper: true,
+    whisperVtt: LOCAL_VTT,
+    extraEnv: { ATRIS_YTNOTES_ENGINE: 'auto' },
+    extraBins: { agy: '#!/bin/sh\nprintf "%s\\n" "# From Gemini" "" "Spoken only in audio."\n' },
+  });
+
+  assert.equal(result.status, 0, result.stderr || result.stdout);
+  assert.match(result.stderr, /^notes by Gemini$/m);
+});
+
+test('ytnotes names a pinned writer once the notes are written', () => {
+  const { result } = runNoCaptionNotes('byline2', { withWhisper: true, whisperVtt: LOCAL_VTT });
+
+  assert.equal(result.status, 0, result.stderr || result.stdout);
+  assert.match(result.stderr, /^notes by haiku$/m);
 });
