@@ -102,10 +102,15 @@ function auditQuestions(text) {
   const dir = makeTempDir();
   try {
     const fakeBin = makeFakeEngines(dir);
+    // Start from an unseeded registry so the fake codex and claude are what
+    // gets found, not whatever an earlier test or this machine left behind.
     return withRepoEngineRegistryRestored(() => withProcessEnv({
       PATH: `${fakeBin}:${systemPath}`,
       NODE_NO_WARNINGS: '1',
-    }, () => auditWish(text, repoRoot).questions));
+    }, () => {
+      fs.rmSync(engineRegistryPath, { force: true });
+      return auditWish(text, repoRoot).questions;
+    }));
   } finally {
     cleanupTempDir(dir);
   }

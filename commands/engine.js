@@ -945,7 +945,7 @@ function printRoster(root, { scope = 'workspace' } = {}) {
   const list = roster(root);
   const scoped = scope === 'global'
     ? list
-    : list.filter((engine) => engine.installed || engine.default || engine.health.status === 'ready');
+    : list.filter((engine) => engine.installed || engine.default || ['ready', 'cooling'].includes(engine.health.status));
   const found = scoped.filter((e) => e.installed).length;
   const current = resolveDefaultEngine(root);
   console.log('');

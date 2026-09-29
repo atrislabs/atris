@@ -466,7 +466,7 @@ test('a pick saved as a string or a list shows as no pick', () => withRoom((root
 }));
 
 test('codex can be picked as the reviewer here or everywhere, and one-lap reviews with it', () => withRoom((root, machineFile) => {
-  ready(root, 'codex', 'claude', 'haiku');
+  ready(root, 'codex', 'claude', 'fable', 'haiku', 'commandcode');
   const everywhere = command(root, ['assign', 'review', 'codex', '--everywhere']);
   assert.equal(everywhere.exit, 0, everywhere.err);
   assert.equal(machinePicks(root).validator.engine, 'codex');
@@ -487,7 +487,7 @@ test('codex can be picked as the reviewer here or everywhere, and one-lap review
 }));
 
 test('with no roster, review routing is unchanged and codex stays out, fresh or saved', () => withRoom((root) => {
-  ready(root, 'codex', 'claude', 'haiku');
+  ready(root, 'codex', 'claude', 'fable', 'haiku', 'commandcode');
   const before = ['claude', 'fable', 'haiku', 'commandcode'];
   const fresh = resolveEngineForRoleRanked('validator', root, { now: NOW });
   assert.equal(fresh.source, 'router');

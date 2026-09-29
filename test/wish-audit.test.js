@@ -11,6 +11,7 @@ const { auditWish } = require('../lib/wish-audit');
 const repoRoot = path.resolve(__dirname, '..');
 const cliPath = path.join(repoRoot, 'bin', 'atris.js');
 const systemPath = '/usr/bin:/bin:/usr/sbin:/sbin';
+const engineRegistryPath = path.join(repoRoot, '.atris', 'state', 'engines.json');
 
 function makeTempDir() {
   return fs.mkdtempSync(path.join(os.tmpdir(), 'atris-wish-audit-'));
@@ -53,6 +54,21 @@ function auditQuestions(text) {
   return auditQuestionsInRoot(text, repoRoot);
 }
 
+// The repo root keeps a saved engine registry that other tests write. Audit
+// against a freshly seeded one (fake codex and claude only), then put it back.
+function withRepoEngineRegistryRestored(root, fn) {
+  if (root !== repoRoot) return fn();
+  const existed = fs.existsSync(engineRegistryPath);
+  const previous = existed ? fs.readFileSync(engineRegistryPath, 'utf8') : '';
+  fs.rmSync(engineRegistryPath, { force: true });
+  try {
+    return fn();
+  } finally {
+    if (existed) fs.writeFileSync(engineRegistryPath, previous, 'utf8');
+    else fs.rmSync(engineRegistryPath, { force: true });
+  }
+}
+
 function auditQuestionsInRoot(text, root) {
   const dir = makeTempDir();
   try {
@@ -60,7 +76,7 @@ function auditQuestionsInRoot(text, root) {
     return withProcessEnv({
       PATH: `${fakeBin}:${systemPath}`,
       NODE_NO_WARNINGS: '1',
-    }, () => auditWish(text, root).questions);
+    }, () => withRepoEngineRegistryRestored(root, () => auditWish(text, root).questions));
   } finally {
     cleanupTempDir(dir);
   }
