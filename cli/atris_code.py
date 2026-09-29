@@ -12,11 +12,13 @@ from __future__ import annotations
 
 import argparse
 import asyncio
+import getpass
 import json
 import logging
 import os
 import subprocess
 import sys
+import tempfile
 import time
 from dataclasses import dataclass
 from pathlib import Path
@@ -36,7 +38,29 @@ RED = "\033[91m"
 
 PACKAGE_ROOT = Path(__file__).resolve().parent.parent
 TEAM_DIR = PACKAGE_ROOT / "atris" / "team"
-STATE_DIR = Path.home() / ".atris"
+
+
+def _same_dir(a: str, b: str) -> bool:
+    try:
+        return os.path.samefile(a, b)
+    except OSError:
+        return False
+
+
+def _state_home() -> Path:
+    """Mirror lib/state-home.js: a test run never writes the real ~/.atris."""
+    env, home = os.environ, Path.home()
+    under_test = env.get("NODE_TEST_CONTEXT") or env.get("ATRIS_TEST_STATE_DIR")
+    if env.get("ATRIS_TEST_REAL_HOME") == "1" or not under_test:
+        return home
+    real = [os.path.expanduser("~" + getpass.getuser()), env.get("ATRIS_TEST_PROTECTED_HOME", "")]
+    if not any(r and _same_dir(str(home), r) for r in real):
+        return home
+    user = os.getuid() if hasattr(os, "getuid") else getpass.getuser()
+    return Path(env.get("ATRIS_TEST_STATE_DIR") or os.path.join(tempfile.gettempdir(), f"atris-test-home-{user}"))
+
+
+STATE_DIR = _state_home() / ".atris"
 SESSION_STATE_FILE = STATE_DIR / "computer_sessions.json"
 AUDIT_LOG_FILE = STATE_DIR / "computer_audit.jsonl"
 RESUME_MAX_AGE_SECONDS = 6 * 60 * 60

@@ -1,6 +1,6 @@
 const fs = require('fs');
 const path = require('path');
-const os = require('os');
+const { stateHome } = require('../lib/state-home');
 const { loadCredentials } = require('../utils/auth');
 const { apiRequestJson } = require('../utils/api');
 
@@ -34,7 +34,7 @@ async function browseAtris() {
   if (!result.ok) {
     // API failed, try local templates
     console.log('  API unavailable, checking local templates...');
-    const localDir = path.join(os.homedir(), '.atris', 'templates');
+    const localDir = path.join(stateHome(), '.atris', 'templates');
     if (!fs.existsSync(localDir)) {
       console.error('  No templates found locally or from API.');
       process.exit(1);

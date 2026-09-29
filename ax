@@ -5,6 +5,7 @@ const http = require('http');
 const https = require('https');
 const os = require('os');
 const path = require('path');
+const { stateHome } = require('./lib/state-home');
 const readline = require('readline');
 const crypto = require('crypto');
 const { Readable } = require('stream');
@@ -230,7 +231,7 @@ function createRunLogger({ cwd = process.cwd(), mode = 'pro', kind = 'play', out
 
   const baseDir = fs.existsSync(path.join(cwd, 'atris'))
     ? path.join(cwd, 'atris', 'runs')
-    : path.join(os.homedir(), '.atris', 'runs');
+    : path.join(stateHome(), '.atris', 'runs');
   fs.mkdirSync(baseDir, { recursive: true });
   const logPath = path.join(baseDir, `ax-${kind}-${timestampForFile()}.log`);
   fs.appendFileSync(logPath, [
@@ -995,7 +996,7 @@ function normalizeMode(mode) {
 function autoPickLogPath(options = {}) {
   return options.pickLogPath
     || process.env.ATRIS_ROUTER_PICKS_PATH
-    || path.join(os.homedir(), '.atris', 'ax-auto-picks.jsonl');
+    || path.join(stateHome(), '.atris', 'ax-auto-picks.jsonl');
 }
 
 function autoMessageWords(message) {
@@ -2328,7 +2329,7 @@ function formatTaskPreviewRows(receipt, options = {}) {
 }
 
 function approvalStorePath(options = {}) {
-  return options.storePath || process.env.AX_APPROVAL_STORE || path.join(os.homedir(), '.atris', 'ax-approvals.json');
+  return options.storePath || process.env.AX_APPROVAL_STORE || path.join(stateHome(), '.atris', 'ax-approvals.json');
 }
 
 function approvalMaxAgeMs(options = {}) {

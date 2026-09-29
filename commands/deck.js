@@ -15,8 +15,8 @@
 
 const fs = require('fs');
 const https = require('https');
-const os = require('os');
 const path = require('path');
+const { stateHome } = require('../lib/state-home');
 const { hasFlag } = require('../lib/arg-parser');
 const { buildDeck, THEMES, notesRequests } = require('../lib/slides-deck');
 const {
@@ -34,7 +34,7 @@ const BASE = 'api.atris.ai';
 const PFX = '/api/integrations/google-slides';
 
 function token() {
-  try { return require(path.join(os.homedir(), '.atris/credentials.json')).token; }
+  try { return require(path.join(stateHome(), '.atris/credentials.json')).token; }
   catch { return null; }
 }
 

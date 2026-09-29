@@ -1,5 +1,6 @@
 const os = require('os');
 const path = require('path');
+const { stateHome } = require('../lib/state-home');
 const fs = require('fs');
 const { exec } = require('child_process');
 const readline = require('readline');
@@ -171,8 +172,7 @@ function restrictToOwner(filePath) {
 }
 
 function getAtrisDir() {
-  const homeDir = os.homedir();
-  return mkPrivateDir(path.join(homeDir, '.atris'));
+  return mkPrivateDir(path.join(stateHome(), '.atris'));
 }
 
 function getCredentialsPath() {
@@ -182,7 +182,7 @@ function getCredentialsPath() {
 function getPlacedAgentTokenPath() {
   const override = process.env.ATRIS_AGENT_TOKEN_FILE;
   if (override && override.trim()) return override.trim();
-  return path.join(os.homedir(), '.atris', 'agent-token.json');
+  return path.join(stateHome(), '.atris', 'agent-token.json');
 }
 
 function expiryTimeMs(value) {

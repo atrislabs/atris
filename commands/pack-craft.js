@@ -1,8 +1,8 @@
 'use strict';
 
 const fs = require('fs');
-const os = require('os');
 const path = require('path');
+const { stateHome } = require('../lib/state-home');
 
 function slugify(value, fallback = 'atris-pack') {
   return String(value || fallback)
@@ -69,7 +69,7 @@ function isNonEmptyTarget(targetDir) {
 function defaultAuthor() {
   try {
     const creds = JSON.parse(
-      fs.readFileSync(path.join(os.homedir(), '.atris', 'credentials.json'), 'utf8')
+      fs.readFileSync(path.join(stateHome(), '.atris', 'credentials.json'), 'utf8')
     );
     if (creds && typeof creds.email === 'string' && creds.email.trim()) return creds.email.trim();
   } catch {

@@ -12,6 +12,7 @@ const { spawnSync } = require('node:child_process');
 const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
+const { stateHome } = require('../../lib/state-home');
 const { evaluate, appendRow } = require('./ytrail-eval');
 
 const YTNOTES = path.join(__dirname, 'ytnotes');
@@ -186,7 +187,7 @@ function main() {
     console.error('usage: ytrail-bench [--quick] [--case <name>]');
     process.exit(2);
   }
-  const outDir = process.env.YTRAIL_OUT_DIR || path.join(os.homedir(), '.atris', 'benchmarks');
+  const outDir = process.env.YTRAIL_OUT_DIR || path.join(stateHome(), '.atris', 'benchmarks');
   const started = Date.now();
   const results = [];
   for (const c of cases) {

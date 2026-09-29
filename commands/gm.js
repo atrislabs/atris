@@ -3,6 +3,7 @@
 const fs = require('fs');
 const os = require('os');
 const path = require('path');
+const { stateHome } = require('../lib/state-home');
 const { hasFlag: hasExactFlag } = require('../lib/arg-parser');
 
 const AGENTXP_LEADERBOARD_URL = 'https://api.atris.ai/api/agentxp/leaderboard';
@@ -452,7 +453,7 @@ function feedPostId(post) {
 }
 
 function credentialsFileExists() {
-  return fs.existsSync(path.join(os.homedir(), '.atris', 'credentials.json'));
+  return fs.existsSync(path.join(stateHome(), '.atris', 'credentials.json'));
 }
 
 async function fetchFeedEvents(workspaceRoot) {

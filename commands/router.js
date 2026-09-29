@@ -2,8 +2,8 @@
 
 const crypto = require('node:crypto');
 const fs = require('node:fs');
-const os = require('node:os');
 const path = require('node:path');
+const { stateHome } = require('../lib/state-home');
 const { spawnSync } = require('node:child_process');
 const { loadOverrides, pickLane } = require('../lib/ax-auto-lane');
 
@@ -28,7 +28,7 @@ function readFirstNamedFlag(args, names) {
 }
 
 function resolveRouterPaths(args = [], env = process.env) {
-  const home = env.HOME || os.homedir();
+  const home = stateHome(env);
   return {
     picks: path.resolve(readFirstNamedFlag(args, ['--picks', '--picks-path'])
       || env.ATRIS_ROUTER_PICKS_PATH

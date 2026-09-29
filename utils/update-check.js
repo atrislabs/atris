@@ -1,13 +1,13 @@
 const https = require('https');
 const fs = require('fs');
 const path = require('path');
-const os = require('os');
+const { stateHome } = require('../lib/state-home');
 const { spawn, spawnSync } = require('child_process');
 
 const PACKAGE_NAME = 'atris';
 const NPM_SELF_UPDATE_COMMAND = `npm install -g ${PACKAGE_NAME}@latest`;
 const CHECK_INTERVAL_MS = 60 * 60 * 1000; // 1 hour
-const ATRIS_DIR = path.join(os.homedir(), '.atris');
+const ATRIS_DIR = path.join(stateHome(), '.atris');
 const CACHE_FILE = path.join(ATRIS_DIR, '.update-check');
 
 /**

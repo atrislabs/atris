@@ -5,6 +5,7 @@ const { spawnSync } = require('child_process');
 const fs = require('fs');
 const os = require('os');
 const path = require('path');
+const { stateHome } = require('../lib/state-home');
 const https = require('https');
 
 const YTNOTES_USAGE = 'usage: ytnotes <youtube-url> [youtube-url-or-playlist...] [auto|gemini|haiku|atris-fast|grok|codex|cursor]';
@@ -2256,7 +2257,7 @@ function searchCacheTtlMs(deps = {}) {
 
 function resolveSearchCachePath(deps = {}) {
   if (deps.searchCachePath) return deps.searchCachePath;
-  const homeDir = deps.homeDir || os.homedir();
+  const homeDir = deps.homeDir || stateHome();
   return path.join(homeDir, '.atris', LOCAL_SEARCH_CACHE_FILE);
 }
 

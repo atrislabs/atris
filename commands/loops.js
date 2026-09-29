@@ -13,6 +13,7 @@
 const fs = require('fs');
 const os = require('os');
 const path = require('path');
+const { stateHome } = require('../lib/state-home');
 const { execSync, spawnSync } = require('child_process');
 
 const MAX_LOG_AGE_DAYS = 14;
@@ -26,7 +27,7 @@ const SCAFFOLD_FILES = [
 ];
 
 function heartbeatDir() {
-  return process.env.ATRIS_HEARTBEAT_DIR || path.join(os.homedir(), '.atris', 'heartbeat');
+  return process.env.ATRIS_HEARTBEAT_DIR || path.join(stateHome(), '.atris', 'heartbeat');
 }
 
 function readJson(filePath, fallback) {
