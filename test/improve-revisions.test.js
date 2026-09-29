@@ -384,3 +384,57 @@ test('saved commit files are dropped when the shallow boundary changes', () => {
     cleanup(cwd);
   }
 });
+
+test('a user diff.renames setting does not change which files a merge landed', () => {
+  const read = (renames) => {
+    const cwd = initRepo();
+    const now = Date.now();
+    const base = now - 3 * 24 * HOUR;
+    try {
+      execSync(`git config diff.renames ${renames}`, { cwd, stdio: 'pipe' });
+      commitFile(cwd, 'a.js', 'seed\n', 'seed', { atMs: base - HOUR });
+      execSync('git checkout -q -b side && git mv a.js b.js', { cwd, stdio: 'pipe' });
+      const at = new Date(base).toISOString();
+      execSync('git commit -q -m "move a to b"', { cwd, stdio: 'pipe', env: { ...process.env, GIT_AUTHOR_DATE: at, GIT_COMMITTER_DATE: at } });
+      execSync('git checkout -q -', { cwd, stdio: 'pipe' });
+      const mergeDate = new Date(base + HOUR).toISOString();
+      fs.writeFileSync(path.join(cwd, '.git', 'COMMIT_MSG_FIXTURE'), `merge bot work\n\n${BOT_TRAILER}\n`, 'utf8');
+      execSync('git merge -q --no-ff side -F .git/COMMIT_MSG_FIXTURE', {
+        cwd, stdio: 'pipe', env: { ...process.env, GIT_AUTHOR_DATE: mergeDate, GIT_COMMITTER_DATE: mergeDate },
+      });
+      // A human brings back the old name. The merge landed b.js, a rename,
+      // so this is not a fix to the merge.
+      commitFile(cwd, 'a.js', 'back\n', 'human restores a', { atMs: base + 2 * HOUR });
+      return collectRevisionSignals(cwd, { days: 14, now });
+    } finally {
+      cleanup(cwd);
+    }
+  };
+  const on = read('true');
+  const off = read('false');
+  assert.strictEqual(on.landings, 1);
+  assert.strictEqual(on.revised, 0);
+  assert.strictEqual(off.revised, on.revised);
+});
+
+test('a file named like a commit hash stays a file of its own commit', () => {
+  const cwd = initRepo();
+  const now = Date.now();
+  const base = now - 3 * 24 * HOUR;
+  try {
+    commitFile(cwd, 'x.js', 'v1\n', 'bot lands x', { bot: true, atMs: base });
+    const earlier = execSync('git rev-parse HEAD', { cwd, encoding: 'utf8' }).trim();
+    // The later landing adds a file spelled exactly like the earlier commit's
+    // hash, which is the next hash in the batch, plus z.js after it.
+    fs.writeFileSync(path.join(cwd, earlier), 'looks like a hash\n', 'utf8');
+    commitFile(cwd, 'z.js', 'v1\n', 'bot lands z', { bot: true, atMs: base + 10 * HOUR });
+    commitFile(cwd, 'z.js', 'v2\n', 'human fixes z', { atMs: base + 11 * HOUR });
+    const summary = collectRevisionSignals(cwd, { days: 14, now });
+    assert.strictEqual(summary.landings, 2);
+    assert.strictEqual(summary.revised, 1);
+    assert.strictEqual(summary.revisions[0].landing.subject, 'bot lands z');
+    assert.deepStrictEqual(summary.revisions[0].files, ['z.js']);
+  } finally {
+    cleanup(cwd);
+  }
+});

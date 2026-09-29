@@ -1111,38 +1111,44 @@ function splitNames(out) {
  * Files changed by one commit. Merge commits are attributed by their
  * first-parent diff (what the merge actually brought onto the mainline);
  * plain commits use diff-tree. Root commits list their initial files.
+ * The rename choice is spelled out so a user's diff.renames setting cannot
+ * change the lists: merges find renames (git diff's default), plain commits
+ * do not (diff-tree's default).
  */
 function commitFiles(cwdRoot, commit) {
   const parents = commit.parents;
   const out = parents.length >= 2
-    ? gitLines(cwdRoot, [...NAME_ARGS, 'diff', '--name-only', '-z', `${commit.hash}^1`, commit.hash])
-    : gitLines(cwdRoot, [...NAME_ARGS, 'diff-tree', '--no-commit-id', '--name-only', '-z', '-r', '--root', commit.hash]);
+    ? gitLines(cwdRoot, [...NAME_ARGS, 'diff', '--name-only', '--find-renames', '-z', `${commit.hash}^1`, commit.hash])
+    : gitLines(cwdRoot, [...NAME_ARGS, 'diff-tree', '--no-commit-id', '--name-only', '--no-renames', '-z', '-r', '--root', commit.hash]);
   return splitNames(out);
 }
 
 /**
  * Files changed by many plain commits in one git process: the same diff-tree
  * per-commit call above, fed every hash on stdin. --always prints the hash
- * even for an empty commit, so each commit's files sit under its hash in the
- * order the hashes went in.
+ * even for an empty commit. Raw output frames every file as a ':'-led status
+ * field followed by its path, so a path is never mistaken for a commit hash,
+ * even a path spelled exactly like the next one.
  */
 function plainCommitFiles(cwdRoot, commits) {
   const found = new Map(commits.map((commit) => [commit.hash, []]));
   if (!commits.length) return found;
   const hashes = commits.map((commit) => commit.hash);
-  const out = gitLines(cwdRoot, [...NAME_ARGS, 'diff-tree', '--stdin', '--always', '--name-only', '-z', '-r', '--root'], {
+  const out = gitLines(cwdRoot, [...NAME_ARGS, 'diff-tree', '--stdin', '--always', '--raw', '--no-renames', '-z', '-r', '--root'], {
     input: `${hashes.join('\n')}\n`,
     // Many commits' lists in one reply; the per-commit calls each had 1MB.
     maxBuffer: Math.max(1, hashes.length) * 1024 * 1024,
   });
-  let next = 0;
+  const fields = splitNames(out);
   let current = null;
-  for (const name of splitNames(out)) {
-    if (next < hashes.length && name === hashes[next]) {
-      current = found.get(name);
-      next += 1;
-    } else if (current) {
-      current.push(name);
+  for (let i = 0; i < fields.length; i++) {
+    const field = fields[i];
+    if (field.startsWith(':')) {
+      // Status field; with --no-renames exactly one path follows it.
+      if (current && i + 1 < fields.length) current.push(fields[i + 1]);
+      i += 1;
+    } else {
+      current = found.get(field) || null;
     }
   }
   return found;

@@ -44,13 +44,26 @@ function makeWorkspace() {
   return { base, repo };
 }
 
-// A git that writes each subcommand to a log, then runs the real git.
+// A git that writes each subcommand to a log, then runs the real git. Leading
+// `-c key=value` settings are skipped so `git -c ... diff-tree` logs diff-tree.
 function makeGitLogger(base) {
   const realGit = spawnSync('sh', ['-c', 'command -v git'], { encoding: 'utf8' }).stdout.trim();
   const bin = path.join(base, 'bin');
   const log = path.join(base, 'git-calls.log');
   fs.mkdirSync(bin);
-  fs.writeFileSync(path.join(bin, 'git'), `#!/bin/sh\necho "$1" >> "${log}"\nexec "${realGit}" "$@"\n`, { mode: 0o755 });
+  fs.writeFileSync(path.join(bin, 'git'), [
+    '#!/bin/sh',
+    'sub=""',
+    'skip=0',
+    'for arg in "$@"; do',
+    '  if [ "$skip" = 1 ]; then skip=0; continue; fi',
+    '  if [ "$arg" = "-c" ]; then skip=1; continue; fi',
+    '  sub="$arg"; break',
+    'done',
+    `echo "$sub" >> "${log}"`,
+    `exec "${realGit}" "$@"`,
+    '',
+  ].join('\n'), { mode: 0o755 });
   return { bin, log };
 }
 
@@ -83,6 +96,14 @@ test('boot asks git for commit files once, then not at all on the next boot', { 
   assert.equal(second.count('diff-tree'), 0, `saved commit files are reused: ${second.calls.join(', ')}`);
   assert.equal(second.count('diff'), 0);
   assert.equal(second.stdout, first.stdout, 'the cache does not change what boot prints');
+  assert.ok(!second.calls.includes('-c'), `every call is logged by its subcommand: ${second.calls.join(', ')}`);
+
+  // Control: with the cache gone the next boot asks git for commit files
+  // again, so the zero above is the cache at work and not a blind logger.
+  fs.rmSync(path.join(repo, '.atris', 'cache'), { recursive: true, force: true });
+  const cold = boot(repo, logger);
+  assert.equal(cold.count('diff-tree'), 1, `a cold boot batches commit files: ${cold.calls.join(', ')}`);
+  assert.equal(cold.stdout, first.stdout);
   assert.match(first.stdout, /landings? this week needed a human fix/);
 
   // The saved caches exist and can never be committed by accident.
