@@ -46,21 +46,21 @@ function seedDb(dbPath) {
   event('REAL2', '/tmp/../Users/someone/other');
   addTask.run('LOOK', 'looks like tmp but is not', '/tmpfoo/project', old, old);
 
-  addTask.run('TMP1', 'test junk', '/var/folders/ab/xyz/T/atris-test-1', old, old);
-  event('TMP1', '/var/folders/ab/xyz/T/atris-test-1');
-  event('TMP1', '/var/folders/ab/xyz/T/atris-test-1');
-  event('TMP1', '/var/folders/ab/xyz/T/atris-test-1');
+  addTask.run('TMP1', 'test junk', '/var/folders/ab/xyz/T/atris-test-A1b2C3', old, old);
+  event('TMP1', '/var/folders/ab/xyz/T/atris-test-A1b2C3');
+  event('TMP1', '/var/folders/ab/xyz/T/atris-test-A1b2C3');
+  event('TMP1', '/var/folders/ab/xyz/T/atris-test-A1b2C3');
   use.run('TMP1', old);
-  addTask.run('TMP2', 'test junk', '/private/tmp/atris-x', old, old);
-  event('TMP2', '/private/tmp/atris-x');
-  addTask.run('TMP3', 'test junk', '/tmp/atris-y', old, old);
+  addTask.run('TMP2', 'test junk', '/private/tmp/atris-x-B2c3D4', old, old);
+  event('TMP2', '/private/tmp/atris-x-B2c3D4');
+  addTask.run('TMP3', 'test junk', '/tmp/atris-y-C3d4E5', old, old);
 
-  addTask.run('RECENT', 'a test that may still be running', '/tmp/atris-recent', now, now);
-  event('RECENT', '/tmp/atris-recent', now);
-  addTask.run('HELD', 'temp task with real-project history', '/tmp/atris-held', old, old);
+  addTask.run('RECENT', 'a test that may still be running', '/tmp/atris-recent-D4e5F6', now, now);
+  event('RECENT', '/tmp/atris-recent-D4e5F6', now);
+  addTask.run('HELD', 'temp task with real-project history', '/tmp/atris-held-E5f6G7', old, old);
   event('HELD', REAL);
 
-  event('GONE1', '/var/folders/zz/T/stray');
+  event('GONE1', '/var/folders/zz/T/stray-F6g7H8');
   event('GONE2', REAL);
   taskStore.close();
 }
@@ -211,7 +211,7 @@ test('a temp-folder project that still exists on disk is never junk, in either /
   const prune = require('../lib/task-prune');
   const fx = libFixture();
   try {
-    const live = path.join(fx.dir, 'live-worktree');
+    const live = path.join(fx.dir, 'live-worktree-Lv9Wt8');
     fs.mkdirSync(live);
     const real = fs.realpathSync(live);
     const other = real.startsWith('/private/') ? real.slice('/private'.length) : `/private${real}`;
@@ -219,7 +219,7 @@ test('a temp-folder project that still exists on disk is never junk, in either /
     const hasAlias = fs.existsSync(other);
     fx.task('LIVE_REAL', real);
     if (hasAlias) fx.task('LIVE_OTHER', other);
-    fx.task('GONE', path.join(fx.dir, 'removed-by-test'));
+    fx.task('GONE', path.join(fx.dir, 'removed-by-test-Mk7tmp'));
     fx.done();
     const plan = prune.dryRun(fx.dbPath);
     assert.equal(plan.remove.tasks, 1);
@@ -245,12 +245,12 @@ test('a custom TMPDIR counts as temp through its symlink and its real path', () 
     fs.symlinkSync(realTmp, link);
     // No named roots: only the custom TMPDIR decides.
     const viaLink = prune.tempRoots({ tmpdir: link, named: [] });
-    assert.ok(prune.tempPrefixFor(path.join(realTmp, 'gone'), viaLink));
-    assert.ok(prune.tempPrefixFor(path.join(link, 'gone'), viaLink));
+    assert.ok(prune.tempPrefixFor(path.join(realTmp, 'gone-Mk7tmp'), viaLink));
+    assert.ok(prune.tempPrefixFor(path.join(link, 'gone-Mk7tmp'), viaLink));
     const viaReal = prune.tempRoots({ tmpdir: realTmp, named: [] });
-    assert.ok(prune.tempPrefixFor(path.join(realTmp, 'gone'), viaReal));
+    assert.ok(prune.tempPrefixFor(path.join(realTmp, 'gone-Mk7tmp'), viaReal));
     // A path spelled through a link that is not itself a temp root stays.
-    assert.equal(prune.tempPrefixFor(path.join(link, 'gone'), viaReal), null);
+    assert.equal(prune.tempPrefixFor(path.join(link, 'gone-Mk7tmp'), viaReal), null);
     assert.equal(prune.tempPrefixFor(path.join(base, 'elsewhere'), viaReal), null);
   } finally {
     fs.rmSync(base, { recursive: true, force: true });
@@ -262,11 +262,11 @@ test('new history counts as activity, and a note written after the backup keeps 
   const prune = require('../lib/task-prune');
   const fx = libFixture();
   try {
-    fx.task('FRESH_NOTE', path.join(fx.dir, 'gone-a'));
-    fx.event('FRESH_NOTE', path.join(fx.dir, 'gone-a'), Date.now());
-    fx.task('NOTED_LATER', path.join(fx.dir, 'gone-b'));
-    fx.event('NOTED_LATER', path.join(fx.dir, 'gone-b'));
-    fx.task('PLAIN', path.join(fx.dir, 'gone-c'));
+    fx.task('FRESH_NOTE', path.join(fx.dir, 'gone-a-Mk7tmp'));
+    fx.event('FRESH_NOTE', path.join(fx.dir, 'gone-a-Mk7tmp'), Date.now());
+    fx.task('NOTED_LATER', path.join(fx.dir, 'gone-b-Mk7tmp'));
+    fx.event('NOTED_LATER', path.join(fx.dir, 'gone-b-Mk7tmp'));
+    fx.task('PLAIN', path.join(fx.dir, 'gone-c-Mk7tmp'));
     fx.done();
     const plan = prune.dryRun(fx.dbPath);
     assert.equal(plan.kept.recent, 1, 'a fresh history row makes the task recent');
@@ -298,9 +298,9 @@ test('history of a missing task stays whole when any of it names a real project'
   const fx = libFixture();
   try {
     fx.task('ANCHOR', REAL);
-    fx.event('MIXED', path.join(fx.dir, 'gone-x'));
+    fx.event('MIXED', path.join(fx.dir, 'gone-x-Mk7tmp'));
     fx.event('MIXED', REAL);
-    fx.event('ONLY_TEMP', path.join(fx.dir, 'gone-y'));
+    fx.event('ONLY_TEMP', path.join(fx.dir, 'gone-y-Mk7tmp'));
     fx.done();
     const plan = prune.dryRun(fx.dbPath);
     assert.equal(plan.remove.stray_history_rows, 1);
@@ -320,11 +320,11 @@ test('deletes look up history by task id, and each transaction is bounded by row
   const fx = libFixture();
   try {
     for (let i = 0; i < 6; i++) {
-      fx.task(`T${i}`, path.join(fx.dir, `gone-${i}`));
-      fx.event(`T${i}`, path.join(fx.dir, `gone-${i}`));
-      fx.event(`T${i}`, path.join(fx.dir, `gone-${i}`));
+      fx.task(`T${i}`, path.join(fx.dir, `gone-${i}-Mk7tmp`));
+      fx.event(`T${i}`, path.join(fx.dir, `gone-${i}-Mk7tmp`));
+      fx.event(`T${i}`, path.join(fx.dir, `gone-${i}-Mk7tmp`));
     }
-    fx.event('ORPHAN', path.join(fx.dir, 'gone-orphan'));
+    fx.event('ORPHAN', path.join(fx.dir, 'gone-orphan-Mk7tmp'));
     fx.done();
     // A database that lost the task-id index gets the house index back.
     const raw = new DatabaseSync(fx.dbPath);
@@ -368,7 +368,7 @@ test('a missing folder reached through a symlink out of the temp root is not jun
     fs.symlinkSync(outside, path.join(fakeTmp, 'projects'));
     const roots = prune.tempRoots({ tmpdir: fakeTmp, named: [] });
     const viaLink = path.join(fakeTmp, 'projects', 'old-repo');
-    const plainGone = path.join(fakeTmp, 'removed-by-test');
+    const plainGone = path.join(fakeTmp, 'removed-by-test-Mk7tmp');
     assert.equal(prune.tempPrefixFor(viaLink, roots), null);
     assert.ok(prune.tempPrefixFor(plainGone, roots));
 
@@ -404,17 +404,43 @@ test('dangling links, links below the temp root, and dot segments keep the row',
     fs.symlinkSync(path.join(fakeTmp, 'real-sub'), path.join(fakeTmp, 'inner-link'));
     const roots = prune.tempRoots({ tmpdir: fakeTmp, named: [] });
 
-    assert.ok(prune.tempPrefixFor(path.join(fakeTmp, 'gone'), roots), 'control: a plain missing folder is temp');
+    assert.ok(prune.tempPrefixFor(path.join(fakeTmp, 'gone-Mk7tmp'), roots), 'control: a plain missing folder is temp');
     // A dangling link exists on disk; it is not a missing folder.
     assert.equal(prune.tempPrefixFor(path.join(fakeTmp, 'dangle'), roots), null);
     assert.equal(prune.tempPrefixFor(path.join(fakeTmp, 'dangle', 'sub'), roots), null);
     assert.equal(prune.folderGone(path.join(fakeTmp, 'dangle')), false);
     // Any link below the temp root keeps the row, even one that stays inside.
-    assert.equal(prune.tempPrefixFor(path.join(fakeTmp, 'inner-link', 'gone'), roots), null);
+    assert.equal(prune.tempPrefixFor(path.join(fakeTmp, 'inner-link', 'gone-Mk7tmp'), roots), null);
     // Dot segments can mean something else through a link; never junk.
-    assert.equal(prune.tempPrefixFor(`${fakeTmp}/./gone`, roots), null);
-    assert.equal(prune.tempPrefixFor(`${fakeTmp}/real-sub/../gone`, roots), null);
+    assert.equal(prune.tempPrefixFor(`${fakeTmp}/./gone-Mk7tmp`, roots), null);
+    assert.equal(prune.tempPrefixFor(`${fakeTmp}/real-sub/../gone-Mk7tmp`, roots), null);
   } finally {
     fs.rmSync(base, { recursive: true, force: true });
+  }
+});
+
+test('only a mkdtemp-named folder is junk; hand-named folders and the bare temp root stay', () => {
+  if (!hasNodeSqlite()) return;
+  const prune = require('../lib/task-prune');
+  const fx = libFixture();
+  try {
+    // A temp root whose own name looks like mkdtemp output is still a root.
+    const fakeRoot = path.join(fx.dir, 'tmp-Q1w2E3');
+    fs.mkdirSync(fakeRoot);
+    const rootOnly = prune.tempRoots({ tmpdir: fakeRoot, named: [] });
+    assert.equal(prune.tempPrefixFor(fakeRoot, rootOnly), null, 'the bare temp root is never junk');
+
+    const handNamed = path.join(fx.dir, 'atrisos-backend-agentxp-audit');
+    const mkdtempNamed = path.join(fx.dir, 'atris-test-q7Zk2P');
+    const nested = path.join(fx.dir, 'atris-test-a1B2c3', 'project');
+    fx.task('HAND', handNamed);
+    fx.task('MKDTEMP', mkdtempNamed);
+    fx.task('NESTED', nested);
+    fx.done();
+    const out = prune.applyPrune(fx.dbPath);
+    assert.equal(out.removed.tasks, 1);
+    assert.deepEqual(dump(fx.dbPath).tasks.map(r => r.id).sort(), ['HAND', 'NESTED']);
+  } finally {
+    fx.cleanup();
   }
 });
