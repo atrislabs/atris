@@ -199,3 +199,55 @@ test('ax logs and approvals, radar business cache, and the ytrail bench stay off
     fs.rmSync(root, { recursive: true, force: true });
   }
 });
+
+test('the real home is recognized under other spellings: symlink, letter case, macOS firmlink', () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'atris-fence-test-'));
+  const home = path.join(root, 'home');
+  const workspace = path.join(root, 'ws');
+  const stateDir = path.join(root, 'fenced');
+  fs.mkdirSync(path.join(home, '.atris'), { recursive: true });
+  fs.mkdirSync(path.join(workspace, 'atris'), { recursive: true });
+  const link = path.join(root, 'home-link');
+  fs.symlinkSync(home, link);
+  const spellings = [link];
+  if (process.platform === 'darwin' || process.platform === 'win32') spellings.push(home.toUpperCase());
+  const firmlink = path.join('/System/Volumes/Data', fs.realpathSync(home));
+  if (process.platform === 'darwin' && fs.existsSync(firmlink)) spellings.push(firmlink);
+  try {
+    for (const spelled of spellings) {
+      const r = runCli(['task', 'where', '--json'], {
+        cwd: workspace,
+        env: cleanEnv({ HOME: spelled, ATRIS_TEST_PROTECTED_HOME: home, ATRIS_TEST_STATE_DIR: stateDir }),
+      });
+      assert.equal(r.status, 0, r.stderr || r.stdout);
+      assert.equal(JSON.parse(r.stdout).db, path.join(stateDir, '.atris', 'tasks.db'), `HOME=${spelled}`);
+    }
+  } finally {
+    fs.rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test('the python terminal writes its audit log inside the fence too', { skip: !spawnSync('python3', ['--version']).stdout }, () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'atris-fence-test-'));
+  const home = path.join(root, 'home');
+  const tmp = path.join(root, 'tmp');
+  fs.mkdirSync(home, { recursive: true });
+  fs.mkdirSync(tmp);
+  const probe = 'import sys; sys.path.insert(0, "cli"); import atris_code; print(atris_code.STATE_DIR)';
+  const run = (extra) => {
+    const r = spawnSync('python3', ['-c', probe], {
+      cwd: repoRoot, encoding: 'utf8', timeout: 30000,
+      env: cleanEnv({ HOME: home, ATRIS_TEST_PROTECTED_HOME: home, TMPDIR: tmp, ...extra }),
+    });
+    assert.equal(r.status, 0, r.stderr || r.stdout);
+    return r.stdout.trim();
+  };
+  try {
+    const uid = typeof process.getuid === 'function' ? process.getuid() : os.userInfo().username;
+    assert.equal(run({ ATRIS_TEST_STATE_DIR: path.join(root, 'fenced') }), path.join(root, 'fenced', '.atris'));
+    assert.equal(run({}), path.join(tmp, `atris-test-home-${uid}`, '.atris'));
+    assert.equal(run({ ATRIS_TEST_REAL_HOME: '1' }), path.join(home, '.atris'));
+  } finally {
+    fs.rmSync(root, { recursive: true, force: true });
+  }
+});
