@@ -81,6 +81,10 @@ test('a runner bin named codex is treated as codex even with no profile', () => 
       assert.match(pinned, /exec --model gpt-6-sol /);
     }
   }
+  // The program that runs is what counts, even under a claude profile.
+  const env = { ATRIS_RUNNER_BIN: '/opt/bin/codex', ATRIS_RUNNER_COMMAND_TEMPLATE: '{bin} exec {modelFlag} {prompt}' };
+  const cmd = withProfile('claude', () => buildRunnerCommand({ promptFile: '/tmp/prompt.md', model: 'opus' }), env);
+  assert.equal(cmd, '/opt/bin/codex exec "$(cat /tmp/prompt.md)"');
 });
 
 test('a dropped model takes a literal model flag in the template with it', () => {
@@ -88,11 +92,14 @@ test('a dropped model takes a literal model flag in the template with it', () =>
     '{bin} exec --model {model} {prompt}',
     '{bin} exec -m {model} {prompt}',
     '{bin} exec --model={model} {prompt}',
+    '{bin} exec --model "{model}" {prompt}',
+    "{bin} exec --model '{model}' {prompt}",
+    '{bin} exec -m{model} {prompt}',
   ]) {
     const env = { ATRIS_RUNNER_COMMAND_TEMPLATE: template };
     const cmd = tickCommand({ runner: 'codex', model: 'claude-opus-5-5' }, env);
     assert.equal(cmd, 'codex exec "$(cat /tmp/prompt.md)"', template);
-    assert.match(tickCommand({ runner: 'codex', model: 'gpt-6-sol' }, env), /exec (--model[ =]|-m )gpt-6-sol /);
+    assert.match(tickCommand({ runner: 'codex', model: 'gpt-6-sol' }, env), /exec (--model[ =]|-m ?)["']?gpt-6-sol["']? /);
   }
 });
 
