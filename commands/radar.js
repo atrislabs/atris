@@ -805,7 +805,7 @@ function collectRadar(options = {}) {
     readlink: options.readlinkSync || fs.readlinkSync,
     readdir: options.readdirSync || fs.readdirSync,
     platform: options.platform || os.platform(),
-    homeDir: options.homeDir || os.homedir(),
+    homeDir: options.homeDir || stateHome(),
   };
   const nowMs = options.nowMs || Date.now();
   const tasks = loadTasks(root, deps);
