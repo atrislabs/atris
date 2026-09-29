@@ -9,6 +9,10 @@ const { spawnSync } = require('node:child_process');
 
 const YTNOTES = path.resolve(__dirname, '..', 'scripts', 'det', 'ytnotes');
 
+// These tests fake `claude`. Pin the writer so a real agy on this machine
+// never answers; the auto writer has its own tests below.
+process.env.ATRIS_YTNOTES_ENGINE = process.env.ATRIS_YTNOTES_ENGINE || 'haiku';
+
 function writeExec(file, body) {
   fs.writeFileSync(file, body);
   fs.chmodSync(file, 0o755);
@@ -644,7 +648,7 @@ test('ytnotes still fails a 429 when no captions were written', () => {
   assert.equal(fs.existsSync(path.join(work, 'ytnotes', 'yt_empty429.md')), false);
 });
 
-function runNoCaptionNotes(label, { withWhisper, whisperVtt, extraEnv = {}, audioFailures = 0 }) {
+function runNoCaptionNotes(label, { withWhisper, whisperVtt, extraEnv = {}, audioFailures = 0, extraBins = {} }) {
   const tmp = fs.mkdtempSync(path.join(os.tmpdir(), `atris-ytnotes-${label}-`));
   const bin = path.join(tmp, 'bin');
   const work = path.join(tmp, 'work');
@@ -687,6 +691,7 @@ function runNoCaptionNotes(label, { withWhisper, whisperVtt, extraEnv = {}, audi
     'printf "%s\\n" "# No Caption Talk" "" "Spoken only in audio."',
     '',
   ].join('\n'));
+  for (const [name, body] of Object.entries(extraBins)) writeExec(path.join(bin, name), body);
 
   // Keep the real ~/.local/bin (and any real mlx_whisper) off PATH.
   const result = spawnSync(YTNOTES, [`https://www.youtube.com/watch?v=${label}`], {
@@ -766,4 +771,41 @@ test('ytnotes gives up after three refused audio downloads', () => {
   assert.equal(result.status, 2);
   assert.match(result.stderr, /Local transcription failed \(download: ERROR: unable to download video data: HTTP Error 403/);
   assert.match(result.stderr, /atris youtube process/);
+});
+
+test('ytnotes auto writer uses Gemini through agy when it answers', () => {
+  const { result, dir } = runNoCaptionNotes('auto1', {
+    withWhisper: true,
+    whisperVtt: LOCAL_VTT,
+    extraEnv: { ATRIS_YTNOTES_ENGINE: 'auto' },
+    extraBins: { agy: '#!/bin/sh\nprintf "%s\\n" "# From Gemini" "" "Spoken only in audio."\n' },
+  });
+
+  assert.equal(result.status, 0, result.stderr || result.stdout);
+  assert.match(fs.readFileSync(path.join(dir, 'yt_auto1.md'), 'utf8'), /# From Gemini/);
+  assert.doesNotMatch(result.stderr, /Haiku instead/);
+});
+
+test('ytnotes auto writer falls back to Haiku when Gemini fails', () => {
+  const { result, dir } = runNoCaptionNotes('auto2', {
+    withWhisper: true,
+    whisperVtt: LOCAL_VTT,
+    extraEnv: { ATRIS_YTNOTES_ENGINE: 'auto' },
+    extraBins: { agy: '#!/bin/sh\necho "quota exceeded" >&2\nexit 1\n' },
+  });
+
+  assert.equal(result.status, 0, result.stderr || result.stdout);
+  assert.match(result.stderr, /writing the notes with Haiku instead/);
+  assert.match(fs.readFileSync(path.join(dir, 'yt_auto2.md'), 'utf8'), /# No Caption Talk/);
+});
+
+test('ytnotes auto writer falls back to Haiku when agy is not installed', () => {
+  const { result, dir } = runNoCaptionNotes('auto3', {
+    withWhisper: true,
+    whisperVtt: LOCAL_VTT,
+    extraEnv: { ATRIS_YTNOTES_ENGINE: 'auto' },
+  });
+
+  assert.equal(result.status, 0, result.stderr || result.stdout);
+  assert.match(fs.readFileSync(path.join(dir, 'yt_auto3.md'), 'utf8'), /# No Caption Talk/);
 });

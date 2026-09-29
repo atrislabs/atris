@@ -4,11 +4,12 @@
 # No captions: if mlx_whisper is installed (uv tool install mlx-whisper, Apple
 # silicon), the audio is transcribed on this machine instead. Otherwise the
 # script prints the paid command. ATRIS_YTNOTES_LOCAL_TRANSCRIBE=0 turns it off.
-# Engines: haiku (default), atris-fast, gemini, grok, codex, cursor.
+# Engines: auto (default: Gemini Flash through agy, Haiku if that fails),
+# gemini, haiku, atris-fast, grok, codex, cursor. ATRIS_YTNOTES_ENGINE sets the default.
 # Outputs: $WORK/yt_${ID}.clean.txt (transcript), $WORK/yt_${ID}.md (notes).
 set -euo pipefail
 
-USAGE="usage: ytnotes <youtube-url> [haiku|atris-fast|gemini|grok|codex|cursor]"
+USAGE="usage: ytnotes <youtube-url> [auto|gemini|haiku|atris-fast|grok|codex|cursor]"
 
 case "${1:-}" in
   *youtube.com*|*youtu.be*|*youtube-nocookie.com*) ;;
@@ -16,7 +17,7 @@ case "${1:-}" in
 esac
 
 URL="$1"
-ENGINE="${2:-haiku}"
+ENGINE="${2:-${ATRIS_YTNOTES_ENGINE:-auto}}"
 CALLER_CWD="$PWD"
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 WORK="${TMPDIR:-/tmp}/ytnotes"
@@ -349,26 +350,44 @@ run_haiku() {
   run_with_timeout 240 claude -p "$PROMPT" --model claude-haiku-4-5
 }
 
+# Gemini Flash through the Antigravity CLI (agy). On an 85-minute transcript it
+# writes notes in about 8s; Haiku takes 30-40s. The old gemini CLI is retired.
+run_gemini() {
+  command -v agy >/dev/null 2>&1 || { echo "agy is not installed" >&2; return 127; }
+  run_with_timeout 120 agy -p "$PROMPT" --model "${ATRIS_YTNOTES_GEMINI_MODEL:-gemini-3.8-flash}" \
+    --effort low --print-timeout 110s </dev/null
+}
+
+# Fastest writer that answers: Gemini, then Haiku. Buffered so a failed or
+# empty Gemini answer never reaches the notes file.
+run_auto() {
+  local out=""
+  if out=$(run_gemini 2>"$WORK/yt_${ID}.engine.err") && printf '%s' "$out" | grep -q '[[:alnum:]]'; then
+    printf '%s\n' "$out"
+    return 0
+  fi
+  echo "Gemini did not answer; writing the notes with Haiku instead." >&2
+  run_haiku
+}
+
 {
   case "$ENGINE" in
+    auto)
+      run_auto
+      ;;
     haiku)
       run_haiku
       ;;
     atris-fast|fast|atris)
       run_atris_fast
       ;;
-    gemini|gemini-3.7-flash)
-      run_with_timeout 120 gemini -m gemini-3.7-flash --skip-trust \
-        --approval-mode plan -o text -p "$PROMPT"
-      ;;
-    gemini-3.6-flash)
-      run_with_timeout 120 gemini -m gemini-3.6-flash --skip-trust \
-        --approval-mode plan -o text -p "$PROMPT"
+    gemini|agy)
+      run_gemini
       ;;
     grok)   run_grok ;;
     codex)  run_with_timeout 240 codex exec --sandbox read-only --skip-git-repo-check "$PROMPT" </dev/null ;;
     cursor) run_with_timeout 240 cursor-agent --trust -p "$PROMPT" ;;
-    *) echo "unknown engine: $ENGINE (haiku|atris-fast|gemini|grok|codex|cursor)" >&2; exit 1 ;;
+    *) echo "unknown engine: $ENGINE (auto|gemini|haiku|atris-fast|grok|codex|cursor)" >&2; exit 1 ;;
   esac
 } | perl -0pe 's/\A.*?(?=# )//s' | tee "yt_${ID}.md"
 
