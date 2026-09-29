@@ -1,6 +1,9 @@
 #!/bin/bash
 # ytnotes <youtube-url> [engine]: local YouTube notes, tweet-feed one-screen.
 # Zero Atris credits. yt-dlp pulls captions, a fast engine writes the notes.
+# No captions: if mlx_whisper is installed (uv tool install mlx-whisper, Apple
+# silicon), the audio is transcribed on this machine instead. Otherwise the
+# script prints the paid command. ATRIS_YTNOTES_LOCAL_TRANSCRIBE=0 turns it off.
 # Engines: haiku (default), atris-fast, gemini, grok, codex, cursor.
 # Outputs: $WORK/yt_${ID}.clean.txt (transcript), $WORK/yt_${ID}.md (notes).
 set -euo pipefail
@@ -17,6 +20,10 @@ ENGINE="${2:-haiku}"
 CALLER_CWD="$PWD"
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 WORK="${TMPDIR:-/tmp}/ytnotes"
+# uv tool installs (yt-dlp, mlx_whisper) live here; appended so it never
+# shadows anything already on PATH.
+PATH="$PATH:$HOME/.local/bin"
+WHISPER_MODEL="${ATRIS_YTNOTES_WHISPER_MODEL:-mlx-community/whisper-large-v3-turbo}"
 mkdir -p "$WORK"
 cd "$WORK"
 
@@ -116,7 +123,7 @@ fi
 
 VTT=""
 if [ -n "$ID" ]; then
-  for name in "yt_${ID}.en-orig.vtt" "yt_${ID}.en.vtt" "yt_${ID}.en-US.vtt" "yt_${ID}.en-GB.vtt"; do
+  for name in "yt_${ID}.en-orig.vtt" "yt_${ID}.en.vtt" "yt_${ID}.en-US.vtt" "yt_${ID}.en-GB.vtt" "yt_${ID}.local.vtt"; do
     if [ -s "$name" ]; then
       VTT="$name"
       break
@@ -137,11 +144,58 @@ if [ -z "$VTT" ]; then
     break
   done
 fi
+# No captions: transcribe the audio on this machine. Writes yt_<id>.local.vtt
+# and deletes the audio. Returns non-zero, with the reason in LOCAL_FAIL, when
+# the model is missing or a step fails.
+LOCAL_FAIL=""
+transcribe_locally() {
+  if [ "${ATRIS_YTNOTES_LOCAL_TRANSCRIBE:-1}" = "0" ]; then
+    LOCAL_FAIL="off"; return 1
+  fi
+  if ! command -v mlx_whisper >/dev/null 2>&1; then
+    LOCAL_FAIL="no-model"; return 1
+  fi
+  echo "No captions on this video. Transcribing the audio on this computer (free, about 1 minute per 15 minutes of video)." >&2
+  rm -f "yt_${ID}".audio.*
+  if ! yt-dlp --no-update --quiet --no-warnings --no-playlist \
+      -f "bestaudio[ext=m4a]/bestaudio/best" -o "yt_${ID}.audio.%(ext)s" "$URL" 2>"yt_${ID}.audio.err"; then
+    LOCAL_FAIL="download: $(grep -m1 ERROR "yt_${ID}.audio.err" 2>/dev/null || echo "yt-dlp failed")"
+    rm -f "yt_${ID}".audio.*
+    return 1
+  fi
+  local audio=""
+  for f in "yt_${ID}".audio.*; do
+    case "$f" in *.err|*.part) continue ;; esac
+    [ -s "$f" ] && audio="$f" && break
+  done
+  if [ -z "$audio" ]; then
+    LOCAL_FAIL="download: no audio file"; rm -f "yt_${ID}".audio.*; return 1
+  fi
+  if ! mlx_whisper "$audio" --model "$WHISPER_MODEL" --output-format vtt \
+      --output-dir "$WORK" --output-name "whisper_${ID}" --verbose False >"yt_${ID}.whisper.log" 2>&1; then
+    LOCAL_FAIL="transcribe: $(tail -n 1 "yt_${ID}.whisper.log")"
+    rm -f "yt_${ID}".audio.* "whisper_${ID}.vtt"
+    return 1
+  fi
+  # mlx_whisper drops anything after a dot in --output-name, so write a
+  # dot-free name and rename it.
+  mv -f "whisper_${ID}.vtt" "yt_${ID}.local.vtt" 2>/dev/null || true
+  rm -f "yt_${ID}".audio.* "yt_${ID}.whisper.log"
+  [ -s "yt_${ID}.local.vtt" ] || { LOCAL_FAIL="transcribe: empty transcript"; return 1; }
+}
+
 if [ -z "$VTT" ]; then
   if [ -n "$ID" ] && [ -s "yt_${ID}.clean.txt" ]; then
     : # leftover cleaned transcript from a prior notes run
+  elif [ -n "$ID" ] && transcribe_locally; then
+    VTT="yt_${ID}.local.vtt"
   else
-    echo "No English captions found for $URL. Falling back is manual (atris youtube process, 5 credits)." >&2
+    echo "No English captions found for $URL." >&2
+    case "$LOCAL_FAIL" in
+      no-model) echo "This computer has no local speech model to transcribe it." >&2 ;;
+      download:*|transcribe:*) echo "Local transcription failed (${LOCAL_FAIL})." >&2 ;;
+    esac
+    echo "Paid notes, 5 credits, refunded if it fails: atris youtube process \"$URL\"" >&2
     exit 2
   fi
 fi
@@ -152,10 +206,12 @@ fi
 # Leftover clean.txt is already cleaned; do not overwrite it with an empty VTT pass.
 if [ -n "$VTT" ]; then
 sed -E 's/<[^>]*>//g; s/&gt;/>/g; s/&amp;/\&/g; s/&quot;/"/g' "$VTT" | awk '
-function seconds(ts, parts) {
-  split(ts, parts, ":")
+function seconds(ts, parts, n) {
+  n = split(ts, parts, ":")
+  if (n == 2) return (parts[1] * 60) + int(parts[2])
   return (parts[1] * 3600) + (parts[2] * 60) + int(parts[3])
 }
+BEGIN { last_bucket = -1 }
 /^(WEBVTT|Kind:|Language:)/ { next }
 /-->/ { cue_seconds = seconds($1); next }
 {

@@ -486,12 +486,14 @@ function parseYtDlpInfoJson(result) {
 }
 
 function localCaptionNames(id) {
-  // scripts/det/ytnotes keeps these VTT names plus leftover yt_<id>.clean.txt.
+  // scripts/det/ytnotes keeps these VTT names (.local.vtt = transcribed on this
+  // machine when the video had no captions) plus leftover yt_<id>.clean.txt.
   return [
     `yt_${id}.en.vtt`,
     `yt_${id}.en-orig.vtt`,
     `yt_${id}.en-US.vtt`,
     `yt_${id}.en-GB.vtt`,
+    `yt_${id}.local.vtt`,
     `yt_${id}.clean.txt`,
   ];
 }
