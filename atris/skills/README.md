@@ -34,6 +34,7 @@ cp -r atris/skills/[name] ~/.codex/skills/
 | backend | Backend architecture policy | `policies/atris-backend.md` |
 | blocks | Author Atris block documents: docs, decks, reports | - |
 | calendar | Google Calendar via AtrisOS API | - |
+| commerce | Quote a purchase or stock order; the person approves before anything is charged | - |
 | copy-editor | Detects and fixes AI writing patterns | - |
 | create-app | Build and deploy an Atris app from a description | - |
 | create-member | Create and manage MEMBER.md team members | - |
