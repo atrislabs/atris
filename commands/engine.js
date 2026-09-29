@@ -1167,10 +1167,12 @@ function rosterReport(root = process.cwd(), now = new Date()) {
 }
 
 // Every worker, in any job, whose end date is today or within the next
-// seven days. Workers already past their date show on their own lines.
+// seven days. Workers already past their date show on their own lines. A
+// job set for this shell only is skipped: roster confirm does not renew it.
 function expiringWorkers(jobs) {
   const list = [];
   for (const row of jobs || []) {
+    if (row.session_pick) continue;
     for (const worker of row.workers || []) {
       if (!worker.expiring_soon) continue;
       list.push({

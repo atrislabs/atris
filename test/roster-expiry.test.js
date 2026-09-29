@@ -165,3 +165,12 @@ test('the boot line names the first worker that ends soon and the renew command'
   assert.equal(bootExpiringLine(expiring), 'claude on build ends in 3 days and 1 more. renew: atris engine roster confirm');
   assert.equal(bootExpiringLine(expiring.slice(1)), 'haiku on review ends today. renew: atris engine roster confirm');
 });
+
+test('a job set for this shell only gets no renew heads-up', () => {
+  const worker = { engine: 'claude', model: 'opus 5.5', until: '2026-09-27', ends_in_days: 3, expiring_soon: true };
+  const jobs = [
+    { job: 'build', session_pick: { engine: 'claude' }, workers: [worker] },
+    { job: 'review', session_pick: null, workers: [{ ...worker }] },
+  ];
+  assert.deepEqual(expiringWorkers(jobs).map((item) => item.job), ['review']);
+});
