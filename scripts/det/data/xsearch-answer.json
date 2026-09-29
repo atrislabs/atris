@@ -1,0 +1,24 @@
+{
+  "note": "Saved x-search answer in the shape Grok returned on 2026-09-29, plus the embed results X would return for each cited id. Used by the offline-check bench case and test/x-post-check.test.js. No network.",
+  "content": "Here are the most notable recent posts about AI agent startups launching:\n\n1. **@shivanipod** (Shivani Poddar)\n   **Exact date/time**: Mon, 28 Sep 2026 17:27:49 GMT\n   **Full tweet text**: \"I led engineering at Google DeepMind. Today, I'm proud to introduce Fo ...\"\n   **Engagement**: Likes=4750, Reposts=512, Replies=230\n\n2. **@garrytan** (Garry Tan)\n   **Exact date/time**: Mon, 28 Sep 2026 15:02:11 GMT\n   **Full tweet text**: \"Agent startups in this YC batch went from zero to real revenue in weeks, not years.\"\n   **Engagement**: Likes=2100, Reposts=190, Replies=88\n\n3. **@levelsio** (Pieter Levels)\n   **Exact date/time**: Sun, 27 Sep 2026 22:40:03 GMT\n   **Full tweet text**: \"Launched my new AI agent that books every flight for you and it already has 10,000 users\"\n   **Engagement**: Likes=900, Reposts=40, Replies=61\n\n4. **@swyx** (swyx)\n   **Exact date/time**: Sun, 27 Sep 2026 19:15:44 GMT\n   **Full tweet text**: \"The agent engineer is the new full stack engineer, and the launches this week prove it.\"\n   **Engagement**: Likes=1300, Reposts=120, Replies=45\n\nOverall, launches cluster around coding agents and back-office automation.",
+  "citations": [
+    "https://x.com/i/status/1972000000000000001",
+    "https://x.com/i/status/1972000000000000002",
+    "https://x.com/i/status/1972000000000000003",
+    "https://x.com/i/status/1972000000000000004",
+    "https://x.com/i/status/1972000000000000005",
+    "https://x.com/i/status/1972000000000000006"
+  ],
+  "embeds": {
+    "1972000000000000001": { "handle": "shivanipod", "text": "I led engineering at Google DeepMind. Today, I'm proud to introduce Forge, the agent that ships your backlog. https://t.co/abc123" },
+    "1972000000000000002": { "handle": "GarryTan", "text": "Agent startups in this YC batch went from zero to real revenue in weeks, not years. The speed is unreal." },
+    "1972000000000000003": { "handle": "levelsio", "text": "Spent the whole day fixing my server. Coffee is the real agent." },
+    "1972000000000000004": { "handle": "swyx", "text": "The agent engineer is the new full stack engineer, and the launches this week prove it." },
+    "1972000000000000005": { "handle": "randomuser", "text": "Totally unrelated post about the weather in Lisbon today." },
+    "1972000000000000006": null
+  },
+  "expect": {
+    "all_up": { "checked": 3, "unmatched": 1, "unknown": 0, "other_sources": 3 },
+    "one_down": { "down_id": "1972000000000000004", "checked": 2, "unmatched": 0, "unknown": 2 }
+  }
+}

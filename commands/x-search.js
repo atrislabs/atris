@@ -4,7 +4,9 @@ const fs = require('fs');
 const path = require('path');
 const { apiRequestJson } = require('../utils/api');
 const { ensureBilledCommandAuth } = require('./auth');
+const { spawnSync } = require('child_process');
 const applyGate = require('../lib/apply-gate');
+const { checkXPosts, annotateContent, formatTally } = require('../lib/x-post-check');
 const {
   fileTeachExperiment,
   extractTeachNumbers,
@@ -23,9 +25,10 @@ const KEEP_RULE = 'keep only if measure.py moves 0→1. scores 1 only when the f
 
 function showXSearchHelp(output = console.log, commandName = 'atris x-search') {
   output('');
-  output(`Usage: ${commandName} "<query>" [--limit N] [--days N] [--save] [--json]`);
-  output(`       ${commandName} person --name <name> [--handle <h>] [--company <c>] [--context <text>] [--save] [--json]`);
+  output(`Usage: ${commandName} "<query>" [--limit N] [--days N] [--save] [--json] [--no-check]`);
+  output(`       ${commandName} person --name <name> [--handle <h>] [--company <c>] [--context <text>] [--save] [--json] [--no-check]`);
   output(`       ${commandName} unsave <query-or-source>`);
+  output(`       ${commandName} bench [--quick|--free]`);
   output('');
   output(`Search X/Twitter via Atris (${COST_HINT}).`);
   output('Requires login. Same auth path as atris youtube process.');
@@ -33,13 +36,15 @@ function showXSearchHelp(output = console.log, commandName = 'atris x-search') {
   output('--save files a brief only when the result is rich.');
   output('unsave deletes the filed brief, apply stub, and matching experiment pack (no paid calls).');
   output('Empty or failed search prints credits refunded only when the server marks a refund.');
+  output('Each quoted post is looked up on X for free and marked checked, unverified, or unknown.');
   output('');
   output('Options:');
   output('  --limit <n>         Max results hint (search only)');
   output('  --days <n>          Only tweets from the last N days (search only)');
   output('  --save              File brief, journal, apply; rich results mint a keep/revert experiment');
   output('  --unsave            Delete filed brief, apply stub, and matching experiment pack (no paid calls)');
-  output('  --json              Print the raw JSON response');
+  output('  --json              Print the raw JSON response (plus a checks list)');
+  output('  --no-check          Skip looking up the quoted posts on X');
   output('  -h, --help          This help');
   output('');
   output('Person options:');
@@ -55,6 +60,7 @@ function showXSearchHelp(output = console.log, commandName = 'atris x-search') {
   output(`  ${commandName} person --name "Leah Bonvissuto" --handle leahbon`);
   output(`  ${commandName} unsave "MCP agents"`);
   output(`  ${commandName} --unsave "MCP agents"`);
+  output(`  ${commandName} bench --free`);
   output('');
 }
 
@@ -81,6 +87,7 @@ function parseSearchArgs(argv = []) {
     json: false,
     save: false,
     unsave: false,
+    check: true,
     query: null,
     limit: null,
     daysBack: null,
@@ -100,6 +107,8 @@ function parseSearchArgs(argv = []) {
       options.json = true;
     } else if (arg === '--save') {
       options.save = true;
+    } else if (arg === '--no-check') {
+      options.check = false;
     } else if (arg === '--unsave') {
       options.unsave = true;
     } else if (arg === '--limit') {
@@ -153,6 +162,7 @@ function parsePersonArgs(argv = []) {
     help: false,
     json: false,
     save: false,
+    check: true,
     name: null,
     handle: null,
     company: null,
@@ -173,6 +183,8 @@ function parsePersonArgs(argv = []) {
       options.json = true;
     } else if (arg === '--save') {
       options.save = true;
+    } else if (arg === '--no-check') {
+      options.check = false;
     } else if (arg === '--name') {
       options.name = readValue(args, i, arg);
       i++;
@@ -592,23 +604,26 @@ function ensureXSearchApply({ cwd, source, packRel, now, output } = {}) {
   });
 }
 
-function formatXSearchResult(data) {
+// check is the result of checkXPosts. With it, each post carries its own
+// link or warning, and citations no post uses are listed as other sources.
+function formatXSearchResult(data, check = null) {
   const lines = [];
   const content = xSearchContent(data);
   const citations = xSearchCitations(data);
 
   if (content) {
-    lines.push(content);
+    lines.push(check ? annotateContent(content, check) : content);
   } else if (data?.message) {
     lines.push(String(data.message).trim());
   } else {
     lines.push('X search completed');
   }
 
-  if (citations.length) {
+  const listed = check ? check.otherSources : citations;
+  if (listed.length) {
     lines.push('');
-    lines.push('Citations:');
-    for (const cite of citations) {
+    lines.push(check ? 'Other sources:' : 'Citations:');
+    for (const cite of listed) {
       lines.push(`  ${cite}`);
     }
   }
@@ -619,7 +634,53 @@ function formatXSearchResult(data) {
     lines.push(...creditLines);
   }
 
+  if (check) {
+    lines.push('');
+    lines.push(formatTally(check.tally));
+  }
+
   return lines.join('\n');
+}
+
+// Look the quoted posts up on X. Free, and never fatal: any failure means no
+// check, and the original output prints unchanged.
+async function checkXSearchPosts(data, options, deps = {}) {
+  if (options.check === false) return null;
+  try {
+    return await (deps.checkXPosts || checkXPosts)({
+      content: xSearchContent(data),
+      citations: xSearchCitations(data),
+      defaultHandle: options.mode === 'person' ? options.handle : null,
+      fetchPost: deps.fetchPost,
+      fetch: deps.fetch,
+    });
+  } catch {
+    return null;
+  }
+}
+
+function renderXSearchResult(data, check) {
+  if (check) {
+    try {
+      return formatXSearchResult(data, check);
+    } catch {
+      // fall through to the original output
+    }
+  }
+  return formatXSearchResult(data);
+}
+
+function runXSearchBench(argv, deps = {}) {
+  const run = (deps.spawnSync || spawnSync)(
+    process.execPath,
+    [path.join(__dirname, '..', 'scripts', 'det', 'xsearch-bench.js'), ...argv],
+    { stdio: 'inherit' },
+  );
+  if (run.error) {
+    (deps.output || console.error)(`bench did not start: ${run.error.message}`);
+    return 1;
+  }
+  return typeof run.status === 'number' ? run.status : 1;
 }
 
 function formatEmptyXSearchResult(data) {
@@ -634,6 +695,11 @@ function formatEmptyXSearchResult(data) {
 
 async function xSearchCommand(argv = process.argv.slice(3), deps = {}) {
   const output = deps.output || ((line = '') => console.log(line));
+  if (argv[0] === 'bench') {
+    const code = runXSearchBench(argv.slice(1), deps);
+    if (!deps.output && !deps.spawnSync) process.exit(code);
+    return code;
+  }
   let options;
   try {
     options = parseXSearchArgs(argv);
@@ -655,10 +721,14 @@ async function xSearchCommand(argv = process.argv.slice(3), deps = {}) {
   try {
     const data = await runXSearch(options, deps);
     const hasResults = xSearchHasResults(data);
+    const check = hasResults ? await checkXSearchPosts(data, options, deps) : null;
     if (options.json) {
-      output(JSON.stringify(data, null, 2));
+      const withChecks = check && data && typeof data === 'object' && !Array.isArray(data)
+        ? { ...data, checks: check.checks }
+        : data;
+      output(JSON.stringify(withChecks, null, 2));
     } else {
-      output(hasResults ? formatXSearchResult(data) : formatEmptyXSearchResult(data));
+      output(hasResults ? renderXSearchResult(data, check) : formatEmptyXSearchResult(data));
     }
     if (!hasResults) {
       if (
@@ -734,5 +804,7 @@ module.exports = {
   xSearchExperimentSlug,
   xSearchExperimentRel,
   unsaveXSearch,
+  formatXSearchResult,
+  runXSearchBench,
   xSearchCommand,
 };

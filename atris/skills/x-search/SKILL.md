@@ -49,7 +49,9 @@ atris x-search person --name "Leah Bonvissuto" --handle leahbon
 atris x-search --help
 ```
 
-Add `--json` for the raw API payload. Curl below is the raw API for debugging only.
+Each quoted post is looked up on X for free (the public embed endpoint, 5s cap). A post that matches prints its own `https://x.com/<handle>/status/<id> (checked)` link under it; one that does not says `(could not find this post on X, treat as unverified)`; one X could not be reached for says so and is never called fake. Citations no post uses print as `Other sources:`. The last line is `posts: N checked, N unverified, N unknown`. `--no-check` skips the lookup. Bench it with `atris x-search bench --free` (0 credits) or `--quick` (5 credits).
+
+Add `--json` for the raw API payload (plus a `checks` list). Curl below is the raw API for debugging only.
 
 ## Bootstrap (ALWAYS Run First)
 
