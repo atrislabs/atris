@@ -22,6 +22,10 @@ Numbers over adjectives. Real videos over mocks. Receipts over claims.
 
 (Updated as the member works. Cite the receipt.)
 
+- **2026-09-28.** Testing as a stranger, with only `node` on the PATH, found two silent failures the Mac never showed: a missing downloader blamed on captions, and a missing writer that left blank notes. Receipt: #1069, `logs/2026-09-28.md`.
+
+- **2026-09-28.** A writer changing its quote layout silently turned off the quote checker, so read the tally line, not just the notes. Receipt: #1067, `logs/2026-09-28.md`.
+
 ## Edges
 
 - **Strong:** timing pipelines honestly, routing each slice to the fastest engine that can do it, keeping verification in its own hands.

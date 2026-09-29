@@ -4,7 +4,7 @@
 
 ## North Star
 
-Youtube watch feeder: every morning, brief the newest uploads from subscribed channels into the wiki
+Fastest honest YouTube notes on any computer. Under 20 seconds for a captioned video, and never a blank or misleading failure.
 
 ## How To Choose Goals
 
