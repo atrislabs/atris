@@ -75,3 +75,30 @@ test('ytquote-repair keeps exact quotes, repairs paraphrases, drops fabrications
 
   fs.rmSync(dir, { recursive: true, force: true });
 });
+
+test('ytquote-repair checks quotes whose timestamp comes first', () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'ytquote-repair-'));
+  const notesPath = path.join(dir, 'notes.md');
+  const transcriptPath = path.join(dir, 'clean.txt');
+  const timeFirst = NOTES
+    .replace('> "The ocean is a desert with its life underground" [00:00]', '> [00:00] "The ocean is a desert with its life underground"')
+    .replace('> "Haste is the only moat that compounds without a meeting" [02:00]', '> [02:00] "Haste is the only moat that compounds without a meeting"')
+    .replace('> "Unicorns invented quantum breakfast in the basement laboratory yesterday" [00:30]', '> [00:30] "Unicorns invented quantum breakfast in the basement laboratory yesterday"');
+  fs.writeFileSync(notesPath, timeFirst);
+  fs.writeFileSync(transcriptPath, TRANSCRIPT);
+
+  const result = spawnSync(process.execPath, [SCRIPT, notesPath, transcriptPath], {
+    encoding: 'utf8',
+  });
+
+  assert.equal(result.status, 0);
+  assert.equal(result.stderr.trim(), 'quotes: 1 kept, 1 repaired, 1 dropped');
+
+  const repaired = fs.readFileSync(notesPath, 'utf8');
+  assert.match(repaired, /> \[00:00\] "The ocean is a desert with its life underground"/);
+  assert.match(repaired, /> \[02:00\] "Speed is the only moat that compounds without a meeting"/);
+  assert.doesNotMatch(repaired, /Haste is the only moat/);
+  assert.doesNotMatch(repaired, /Unicorns invented quantum breakfast/);
+
+  fs.rmSync(dir, { recursive: true, force: true });
+});

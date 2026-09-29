@@ -252,7 +252,7 @@ fi
 
 TRANSCRIPT=$(<"yt_${ID}.clean.txt")
 
-STYLE_PROMPT="Write one-screen tweet-feed notes on this YouTube transcript ($INFO). Markdown only, start with # title then a 'Channel · Duration' line, 6-8 beats each opening with a **Bold hook.**, 4-6 verbatim quotes in double quotes with [mm:ss] timestamps on their own '> ' lines, end with a 2-item **Takeaway**. No preamble, no em dashes, fits one screen."
+STYLE_PROMPT="Write one-screen tweet-feed notes on this YouTube transcript ($INFO). Markdown only, start with # title then a 'Channel · Duration' line, 6-8 beats each opening with a **Bold hook.**, 4-6 verbatim quotes, each on its own line shaped exactly > \"quote\" [mm:ss], end with a 2-item **Takeaway**. No preamble, no em dashes, fits one screen."
 
 PROMPT="$STYLE_PROMPT
 
