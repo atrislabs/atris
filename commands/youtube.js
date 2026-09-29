@@ -236,23 +236,31 @@ function captionHostAllowed(urlString) {
   }
 }
 
-function chooseCaptionTrack(info = {}) {
-  const preferred = ['en', 'en-orig', 'en-US', 'en-GB'];
-  const chooseFrom = (trackSets = {}) => {
-    for (const language of preferred) {
-      for (const track of trackSets[language] || []) {
-        if (track?.url && ['json3', 'vtt', 'srv3', 'ttml'].includes(track.ext)) return { language, track };
-      }
+// Caption tracks in the order to try them. Human subtitles first, then the
+// auto track in the language actually spoken ("en-orig", "es-orig"). YouTube's
+// machine-translated tracks (plain "en" on most English videos) are rate
+// limited with HTTP 429, so they only come after every real track.
+function captionTrackCandidates(info = {}) {
+  const candidates = [];
+  const add = (trackSets = {}, languages) => {
+    for (const language of languages) {
+      if (language === 'live_chat') continue;
+      const tracks = (trackSets[language] || []).filter((track) => track?.url);
+      const track = tracks.find((t) => ['json3', 'vtt', 'srv3', 'ttml'].includes(t.ext)) || tracks[0];
+      if (track && !candidates.some((c) => c.track === track)) candidates.push({ language, track });
     }
-    for (const [language, tracks] of Object.entries(trackSets)) {
-      for (const track of tracks || []) {
-        if (track?.url) return { language, track };
-      }
-    }
-    return null;
   };
+  const manual = info.subtitles || {};
+  const auto = info.automatic_captions || {};
+  add(manual, ['en', 'en-US', 'en-GB', ...Object.keys(manual).filter((l) => l.startsWith('en-'))]);
+  add(manual, Object.keys(manual));
+  add(auto, ['en-orig', ...Object.keys(auto).filter((l) => l.endsWith('-orig'))]);
+  add(auto, ['en', 'en-US', 'en-GB']);
+  return candidates;
+}
 
-  return chooseFrom(info.subtitles) || chooseFrom(info.automatic_captions);
+function chooseCaptionTrack(info = {}) {
+  return captionTrackCandidates(info)[0] || null;
 }
 
 function formatTimestampFromMs(ms) {
@@ -521,14 +529,14 @@ function readLocalCaptionText({ url, id, workDir } = {}) {
 
 async function loadCaptionRaw(info, youtubeUrl, deps = {}) {
   const payload = info && typeof info === 'object' ? info : {};
-  const selected = chooseCaptionTrack(payload);
-  let raw = '';
-  if (selected?.track?.url) {
-    raw = await (deps.fetchCaptionText || fetchCaptionText)(selected.track.url);
+  const fetchText = deps.fetchCaptionText || fetchCaptionText;
+  // A blocked track (429) falls through to the next one instead of failing.
+  const candidates = captionTrackCandidates(payload).slice(0, 4);
+  for (const candidate of candidates) {
+    const raw = await fetchText(candidate.track.url);
+    if (String(raw || '').trim()) return { raw, language: candidate.language };
   }
-  if (String(raw || '').trim()) {
-    return { raw, language: selected?.language || 'unknown' };
-  }
+  const selected = candidates[0];
   const local = readLocalCaptionText({
     url: youtubeUrl,
     id: payload.id,
@@ -559,7 +567,7 @@ async function extractLocalTranscript(youtubeUrl, deps = {}) {
   const result = runner('yt-dlp', ytDlpInfoArgs(youtubeUrl), {
     encoding: 'utf8',
     timeout: 20000,
-    maxBuffer: 10 * 1024 * 1024,
+    maxBuffer: 64 * 1024 * 1024,
   });
   const info = parseYtDlpInfoJson(result);
   const loaded = await loadCaptionRaw(info, youtubeUrl, deps);
@@ -3697,7 +3705,7 @@ async function extractTeachSource(youtubeUrl, deps = {}) {
   const result = runner('yt-dlp', ytDlpInfoArgs(youtubeUrl), {
     encoding: 'utf8',
     timeout: 20000,
-    maxBuffer: 10 * 1024 * 1024,
+    maxBuffer: 64 * 1024 * 1024,
   });
   const info = parseYtDlpInfoJson(result);
   const loaded = await loadCaptionRaw(info, youtubeUrl, deps);
