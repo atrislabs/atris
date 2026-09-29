@@ -258,8 +258,8 @@ test('the live 2026-09-29 answer that failed the bench now checks every post it 
   const live = JSON.parse(fs.readFileSync(path.join(path.dirname(FIXTURE), 'xsearch-live-2026-09-29.json'), 'utf8'));
   assert.equal(live.citations.length, 17);
   const capped = await checkXPosts({ content: live.content, citations: live.citations, fetchPost: fixtureFetch(live.embeds) });
-  assert.deepEqual(capped.tally, { checked: 4, unverified: 0, unknown: 1 }, 'the post past the 15-id cap is unknown, not unverified');
-  assert.equal(capped.otherSources.length, 13);
+  assert.deepEqual(capped.tally, { checked: 5, unverified: 0, unknown: 0 }, 'all 17 cited ids fit under the lookup cap');
+  assert.equal(capped.otherSources.length, 12);
   const everyId = Object.entries(live.embeds).map(([id, post]) => ({ id, ok: true, post: post && { id, ...post } }));
   const all = matchAnswer(live.content, everyId);
   assert.deepEqual(all.map((c) => [c.status, c.handle]), [
@@ -296,11 +296,11 @@ test('checkXPosts treats a throwing lookup as unknown, never as fake', async () 
   assert.deepEqual(result.tally, { checked: 0, unverified: 0, unknown: 4 });
 });
 
-test('checkXPosts looks up at most 15 ids', async () => {
+test('checkXPosts looks up at most 25 ids', async () => {
   const seen = [];
   const citations = Array.from({ length: 30 }, (_, i) => `https://x.com/i/status/${100000 + i}`);
   await checkXPosts({ content: fixture.content, citations, fetchPost: async (id) => { seen.push(id); return { ok: true, post: null }; } });
-  assert.equal(seen.length, 15);
+  assert.equal(seen.length, 25);
 });
 
 test('fetchXPost reads the embed json and tells missing from unreachable', async () => {
