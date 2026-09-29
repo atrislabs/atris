@@ -151,3 +151,4 @@ test/youtube.test.js
 test/youtube-teach.test.js
 test/codex-flight-brief.test.js
 test/avail.test.js
+test/member-type.test.js

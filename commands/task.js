@@ -7922,6 +7922,8 @@ function publicWords(value) {
     ]).has(word));
 }
 
+const { memberTypeOf } = require('../lib/member-type');
+
 function parseMemberFrontmatter(text) {
   const source = String(text || '');
   if (!source.startsWith('---')) return {};
@@ -7952,6 +7954,7 @@ function readTeamMembers(root = process.cwd()) {
         slug,
         role: cleanPublicText(frontmatter.role || slug.replace(/[-_]/g, ' '), 120),
         description: cleanPublicText(frontmatter.description || '', 240),
+        type: memberTypeOf(frontmatter).type,
         path: memberPath,
       };
     })
@@ -8018,6 +8021,8 @@ function chooseTaskOwner({ purpose, tag, requestedOwner, root = process.cwd() } 
   const words = publicWords(`${purpose || ''} ${tag || ''}`);
   let best = null;
   for (const member of members) {
+    // A person can be named as an owner, but routing never hands them work as if they were an AI.
+    if (member.type !== 'ai') continue;
     const score = scoreTeamMember(member, words, tag);
     if (!best || score > best.score) best = { member, score };
   }
@@ -13465,6 +13470,8 @@ async function run(args) {
 
 module.exports = {
   run,
+  chooseTaskOwner,
+  readTeamMembers,
   createTaskApiServer,
   taskDayGroups,
   taskDayTextGroups,

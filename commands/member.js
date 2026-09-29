@@ -7,6 +7,7 @@ const { loadCredentials } = require('../utils/auth');
 const { resolveBackendRoot } = require('../utils/backend-root');
 const { apiRequestJson } = require('../utils/api');
 const { runAliveTick } = require('../lib/member-alive');
+const { memberRefusalReason } = require('../lib/member-type');
 const { defaultObjectiveRunner } = require('../lib/default-runner');
 const { readJson, writeJson } = require('../lib/json-file');
 const { sleepSync } = require('../lib/sleep-sync');
@@ -304,6 +305,28 @@ function nearestMemberSlug(name, slugs) {
     }
   }
   return bestScore <= Math.max(2, Math.floor(needle.length / 3)) ? best : null;
+}
+
+// A person is never run as an agent. Reads the member's own type and returns
+// the plain refusal sentence, or '' when the member can run.
+function memberRefusalFor(name, memberFile) {
+  try {
+    return memberRefusalReason(name, parseFrontmatter(fs.readFileSync(memberFile, 'utf8')) || {});
+  } catch {
+    return '';
+  }
+}
+
+// Same as requireMemberDir, then stops with a non-zero exit for a human or
+// odd-typed member. Every path that runs a member as an agent starts here.
+function requireRunnableMember(name) {
+  const paths = requireMemberDir(name);
+  const reason = memberRefusalFor(name, paths.memberFile);
+  if (reason) {
+    console.error(reason);
+    process.exit(1);
+  }
+  return paths;
 }
 
 function requireMemberDir(name) {
@@ -1077,7 +1100,7 @@ function memberRun(name, ...args) {
   }
 
   const asJson = hasFlag(args, '--json');
-  const paths = requireMemberDir(name);
+  const paths = requireRunnableMember(name);
   // Parking only hides a member from the team views; a run by name still goes.
   const { isParkedText } = require('../lib/member-park');
   try {
@@ -4221,6 +4244,8 @@ name: ${name}
 role: ${role}
 description: ${description || `Handles ${role.toLowerCase()} tasks`}
 version: 1.0.0
+# ai or human; a human member is a person and Atris never acts as them
+type: ai
 
 skills: []
 
@@ -7863,6 +7888,8 @@ function wakeMemberEngine(name, root = process.cwd()) {
 
 async function runMemberWake(name, { execute = false, confirmed = false, force = false, domainInput = {} } = {}) {
   const paths = requireMemberDir(name);
+  const refusal = memberRefusalFor(name, paths.memberFile);
+  if (refusal) throw new Error(refusal);
   const runtimeKind = paths.runtimeKind || memberRuntimeKind(name);
   if (runtimeKind === 'auto-improver') {
     return runAutoImproverWake(name, paths, { execute, confirmed });
@@ -8176,6 +8203,7 @@ function clipText(value, max = 70) {
 }
 
 async function memberWake(name, ...args) {
+  if (name) requireRunnableMember(name);
   const asJson = hasFlag(args, '--json');
   const execute = hasFlag(args, '--execute') && !hasFlag(args, '--dry-run');
   const confirmed = hasFlag(args, '--confirm-autonomy-policy');
@@ -8223,14 +8251,15 @@ function collectFleetActivationRows(root = process.cwd()) {
       const goalPlane = memberGoalPlaneStatus(slug, paths);
       const activeMission = memberLiveMission(slug, missionMap);
       const latestMission = memberLatestMission(slug, missionMap);
-      const skipped = !goalPlane.goal && !activeMission;
+      const refusal = memberRefusalFor(slug, paths.memberFile);
+      const skipped = Boolean(refusal) || (!goalPlane.goal && !activeMission);
       return {
         member: slug,
         goal: goalPlane.goal || null,
         active_mission: activeMission || null,
         latest_mission: latestMission || null,
         skipped,
-        skip_reason: skipped ? 'no_goal_and_no_active_mission' : null,
+        skip_reason: refusal ? 'not_ai' : skipped ? 'no_goal_and_no_active_mission' : null,
       };
     })
     .sort((a, b) => a.member.localeCompare(b.member));
@@ -8263,7 +8292,7 @@ async function memberLoopAll(kind, ...args) {
   for (const row of rows) {
     if (row.skipped) {
       skipped.push(row);
-      if (!asJson) console.log(`Skip ${row.member}: no goal and no active mission.`);
+      if (!asJson) console.log(`Skip ${row.member}: ${row.skip_reason === 'not_ai' ? 'not an AI member.' : 'no goal and no active mission.'}`);
       continue;
     }
     if (!asJson) console.log(`Activate ${row.member}: ${row.goal ? 'goal' : `mission ${row.active_mission?.id || 'active'}`}`);
@@ -8675,7 +8704,7 @@ function memberLoopRecordResult(name, paths, lease, run) {
 // Driver: the phases above do the work; this reads as setup -> gate -> run -> record.
 async function memberLoop(name, ...args) {
   if (name === '--all' || name === 'all') return memberLoopAll('loop', ...args);
-  requireMemberDir(name);
+  requireRunnableMember(name);
   const asJson = hasFlag(args, '--json');
   const aliveMode = hasFlag(args, '--alive');
   const execute = hasFlag(args, '--execute');
@@ -8739,7 +8768,7 @@ async function memberLoop(name, ...args) {
 }
 
 async function memberTick(name, ...args) {
-  const paths = requireMemberDir(name);
+  const paths = requireRunnableMember(name);
   const asJson = hasFlag(args, '--json');
   const force = hasFlag(args, '--force');
   const goalId = readFlag(args, '--goal', '');
