@@ -11,13 +11,14 @@ const { parseFlags, formatCents, errorFrom } = require('../lib/commerce');
 const TX_KINDS = ['ticket', 'shop', 'flight', 'test_purchase', 'fee', 'trade', 'wallet_send'];
 
 function showTransactionsHelp(log = console.log) {
-  log(`usage: atris transactions [--since YYYY-MM-DD] [--kind k[,k]] [--limit n] [--json]
+  log(`usage: atris transactions [--since YYYY-MM-DD] [--kind k[,k]] [--limit n] [--include-quotes] [--json]
 
 list what you bought, paid in fees, traded, or sent, newest first. read only.
 
   --since   only rows on or after this date, like 2026-09-01
   --kind    ${TX_KINDS.join(', ')}
-  --limit   1 to 200 (default 50)`);
+  --limit   1 to 200 (default 50)
+  --include-quotes  also list quotes nobody approved`);
 }
 
 function clip(text, width) {
@@ -74,6 +75,7 @@ function buildQuery(flags) {
     if (!Number.isInteger(limit) || limit < 1 || limit > 200) return { ok: false, error: '--limit must be a number from 1 to 200' };
     params.set('limit', String(limit));
   }
+  if (flags.include_quotes === true) params.set('include_quotes', 'true');
   const qs = params.toString();
   return { ok: true, path: qs ? `/transactions?${qs}` : '/transactions' };
 }

@@ -7,7 +7,8 @@
 //   atris buy status ord_<id>
 //
 // Nothing is ever charged by this command. Approve only starts the human step:
-// a tap in their Link app, a payment page, or a phrase texted from their phone.
+// a tap in their Link app, a payment page, or a reply to the confirm code Atris
+// texts to their own phone. The code never comes back to this command.
 
 const { apiRequestJson } = require('../utils/api');
 const { loadCredentials } = require('../utils/auth');
@@ -17,6 +18,7 @@ const { parseFlags, formatCents, untilText, errorFrom } = require('../lib/commer
 const KINDS = ['ticket', 'shop', 'trade', 'flight'];
 const NOTHING_CHARGED = 'Nothing is charged until the person approves it themselves.';
 const CONTROL_FLAGS = new Set(['json', 'help', 'intent', 'details']);
+const TRADE_CONFIRM = 'We texted you a confirm code. Reply to that text to place the trade.';
 
 function showBuyHelp(log = console.log) {
   log(`usage: atris buy <quote|approve|status> [flags] [--json]
@@ -38,7 +40,7 @@ quote fields (flags, kebab-case is fine):
 approve fields:
   ticket  --pick 1 --delivery-email you@example.com
   shop    --delivery-email you@example.com [--options '<json>'] [--address '<json>'] [--accept-extras]
-  trade   none. the person texts the one-time phrase from their own phone.
+  trade   none. Atris texts the person a confirm code; they reply to that text.
 
 examples:
   atris buy quote --kind trade --side buy --symbol VTI --dollars 25
@@ -65,7 +67,8 @@ function jsonFlag(flags, name) {
 function approvalLines(approval) {
   if (!approval || typeof approval !== 'object') return [];
   const lines = [];
-  if (approval.how === 'text_confirm' && approval.phrase) lines.push(`Text Atris from your own phone: ${approval.phrase}`);
+  // The backend sends trade confirm codes only to the person's own texts.
+  if (approval.how === 'text_confirm') return [TRADE_CONFIRM];
   if (approval.url) {
     const label = approval.how === 'connect_link' ? 'Connect Link first'
       : approval.how === 'payment_page' ? 'Pay on this page'
@@ -163,6 +166,7 @@ function renderStatus(data = {}) {
   if (data.detail) lines.push(`Detail: ${data.detail}`);
   if (data.counterparty) lines.push(`With: ${data.counterparty}`);
   if (data.receipt_url) lines.push(`Receipt: ${data.receipt_url}`);
+  if (data.fee_payment_url) lines.push(`Pay the Atris fee: ${data.fee_payment_url}`);
   const approval = approvalLines(data.approval);
   if (approval.length) {
     lines.push('Waiting on the person:');

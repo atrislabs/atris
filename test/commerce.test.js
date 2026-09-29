@@ -120,22 +120,26 @@ test('buy approve prints the human step and never claims a charge', async () => 
   assert.match(out, /Nothing has been charged yet/);
 });
 
-test('buy approve for a trade shows the phrase to text', async () => {
+test('buy approve for a trade points to the texted confirm code, never prints one', async () => {
   const io = capture();
   const d = deps(io, () => ({
     ok: true,
     status: 200,
     data: {
       status: 'pending_approval', id: 'inv_7', kind: 'trade',
-      approval: { who: 'human', how: 'text_confirm', phrase: 'yes 4821', text: 'From your own phone, text Atris exactly: yes 4821.' },
+      message: 'Staged: buy $25.00 of VTI. Check your texts for the confirm code.',
+      approval: { who: 'human', how: 'text_confirm',
+        text: 'Check your texts. Atris sent the order and a one-time code to your own text thread.' },
       total_cents: 2500, fee_cents: 0, currency: 'usd', expires_at: '2026-09-29T18:05:00Z',
     },
   }));
   assert.equal(await buyCommand(['approve', 'trq_abc'], d), 0);
   assert.deepEqual(d.calls[0].options.body, {});
   const out = io.stdout.join('\n');
-  assert.match(out, /Text Atris from your own phone: yes 4821/);
+  assert.match(out, /We texted you a confirm code\. Reply to that text to place the trade\./);
+  assert.doesNotMatch(out, /yes \d{4}/);
   assert.match(out, /in 5 min/);
+  assert.match(out, /Nothing has been charged yet/);
 });
 
 test('buy approve refused and needs_setup say nothing was charged', async () => {
@@ -161,7 +165,8 @@ test('buy status reads one id, and a bare 404 means the backend is not deployed'
     ok: true,
     status: 200,
     data: { id: 'ord_9', kind: 'ticket', state: 'pending_approval', what: 'Phish, 2 tickets', amount_cents: 18400,
-      currency: 'usd', approval: { who: 'human', how: 'link_app', url: 'https://link.example/a' } },
+      currency: 'usd', fee_payment_url: 'https://pay.example/fee',
+      approval: { who: 'human', how: 'link_app', url: 'https://link.example/a' } },
   }));
   assert.equal(await buyCommand(['status', 'ord_9'], d), 0);
   assert.equal(d.calls[0].pathname, '/commerce/ord_9');
@@ -170,6 +175,7 @@ test('buy status reads one id, and a bare 404 means the backend is not deployed'
   assert.match(out, /PENDING_APPROVAL/);
   assert.match(out, /Amount: \$184\.00/);
   assert.match(out, /Approve in Link: https:\/\/link\.example\/a/);
+  assert.match(out, /Pay the Atris fee: https:\/\/pay\.example\/fee/);
 
   const io404 = capture();
   const d404 = deps(io404, () => ({ ok: false, status: 404, data: { detail: 'Not Found' }, error: 'Not Found' }));
@@ -203,12 +209,12 @@ test('transactions builds the query and prints a compact table', async () => {
         { id: 'inv_2', kind: 'trade', when: '2026-09-19T14:00:00+00:00', what: 'Buy $25.00 of VTI', amount_cents: 2500, currency: 'usd', state: 'failed' },
       ],
       count: 2,
-      sources: { purchases: 'ok', trades: 'ok', wallet: 'unavailable' },
+      sources: { purchases: 'ok', trades: 'ok', wallet: 'failed' },
     },
   }));
-  const code = await transactionsCommand(['--since', '2026-09-01', '--kind', 'ticket,trade', '--limit', '10'], d);
+  const code = await transactionsCommand(['--since', '2026-09-01', '--kind', 'ticket,trade', '--limit', '10', '--include-quotes'], d);
   assert.equal(code, 0, io.stderr.join('\n'));
-  assert.equal(d.calls[0].pathname, '/transactions?since=2026-09-01&kinds=ticket%2Ctrade&limit=10');
+  assert.equal(d.calls[0].pathname, '/transactions?since=2026-09-01&kinds=ticket%2Ctrade&limit=10&include_quotes=true');
   assert.equal(d.calls[0].options.method, 'GET');
   const out = io.stdout.join('\n');
   assert.match(out, /^WHEN\s+KIND\s+WHAT\s+AMOUNT\s+STATE/);
