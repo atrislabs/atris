@@ -570,7 +570,7 @@ function applyMissionRunnerProfile(runner) {
 // it only ever takes an explicit pin (the mission's model or the roster
 // line's); '' lets the engine ride its own default.
 // A mission often still carries the claude model it was created with; an
-// engine that runs only its own models (codex) drops it.
+// engine that runs only its own models (codex, grok) drops it.
 const CLAUDE_FAMILY_RUNNER_ENGINES = new Set(['claude', 'fable', 'haiku']);
 
 function resolveMissionTickRunnerModel(mission) {
