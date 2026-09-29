@@ -248,7 +248,9 @@ test('a custom TMPDIR counts as temp through its symlink and its real path', () 
     assert.ok(prune.tempPrefixFor(path.join(realTmp, 'gone'), viaLink));
     assert.ok(prune.tempPrefixFor(path.join(link, 'gone'), viaLink));
     const viaReal = prune.tempRoots({ tmpdir: realTmp, named: [] });
-    assert.ok(prune.tempPrefixFor(path.join(link, 'gone'), viaReal));
+    assert.ok(prune.tempPrefixFor(path.join(realTmp, 'gone'), viaReal));
+    // A path spelled through a link that is not itself a temp root stays.
+    assert.equal(prune.tempPrefixFor(path.join(link, 'gone'), viaReal), null);
     assert.equal(prune.tempPrefixFor(path.join(base, 'elsewhere'), viaReal), null);
   } finally {
     fs.rmSync(base, { recursive: true, force: true });
@@ -389,5 +391,30 @@ test('a missing folder reached through a symlink out of the temp root is not jun
     assert.deepEqual(after.events.map(e => e.task_id).sort(), ['ORPHAN_LINKED', 'ORPHAN_MIXED', 'ORPHAN_MIXED']);
   } finally {
     fx.cleanup();
+  }
+});
+
+test('dangling links, links below the temp root, and dot segments keep the row', () => {
+  const prune = require('../lib/task-prune');
+  const base = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'atris-prune-edges-')));
+  try {
+    const fakeTmp = path.join(base, 'fake-tmp');
+    fs.mkdirSync(path.join(fakeTmp, 'real-sub'), { recursive: true });
+    fs.symlinkSync(path.join(base, 'nowhere'), path.join(fakeTmp, 'dangle'));
+    fs.symlinkSync(path.join(fakeTmp, 'real-sub'), path.join(fakeTmp, 'inner-link'));
+    const roots = prune.tempRoots({ tmpdir: fakeTmp, named: [] });
+
+    assert.ok(prune.tempPrefixFor(path.join(fakeTmp, 'gone'), roots), 'control: a plain missing folder is temp');
+    // A dangling link exists on disk; it is not a missing folder.
+    assert.equal(prune.tempPrefixFor(path.join(fakeTmp, 'dangle'), roots), null);
+    assert.equal(prune.tempPrefixFor(path.join(fakeTmp, 'dangle', 'sub'), roots), null);
+    assert.equal(prune.folderGone(path.join(fakeTmp, 'dangle')), false);
+    // Any link below the temp root keeps the row, even one that stays inside.
+    assert.equal(prune.tempPrefixFor(path.join(fakeTmp, 'inner-link', 'gone'), roots), null);
+    // Dot segments can mean something else through a link; never junk.
+    assert.equal(prune.tempPrefixFor(`${fakeTmp}/./gone`, roots), null);
+    assert.equal(prune.tempPrefixFor(`${fakeTmp}/real-sub/../gone`, roots), null);
+  } finally {
+    fs.rmSync(base, { recursive: true, force: true });
   }
 });
