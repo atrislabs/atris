@@ -44,6 +44,7 @@ test('engine roster lists every profile with detection state', () => {
     assert.deepEqual(parsed.engines.find((e) => e.id === 'grok').models, ['grok 4.7 fast', 'grok 4.7']);
     assert.deepEqual(parsed.engines.find((e) => e.id === 'devin').models, ['built-in router']);
     assert.deepEqual(parsed.engines.find((e) => e.id === 'agy').models, [
+      'gemini-3.8-flash',
       'gemini-3.8-flash-high',
       'gemini-3.7-flash-high',
       'gemini-3.1-pro-high',
