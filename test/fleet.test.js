@@ -72,6 +72,7 @@ test('buildFleetPrompt is generated, bounded, and carries the contract', () => {
   assert.match(prompt, /split anything larger into separate PRs/i);
   assert.match(prompt, /git history guides future agents/i);
   assert.match(prompt, /small PRs are cheap to revert and bisect/i);
+  assert.match(prompt, /must hold on every path to the thing it protects/);
   assert.match(prompt, /Final report/);
 });
 
