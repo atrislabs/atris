@@ -11,7 +11,9 @@ const {
   buildTeamPresence,
   DEFAULT_FRESHNESS_WINDOW_MS,
   IDLE_AFTER_DAYS,
+  activeWindowStartDay,
   logFileDay,
+  memberActivityRows,
   parseGitLog,
   renderTeamPresence,
 } = require('../lib/team-presence');
@@ -561,6 +563,42 @@ function renderTeamRosterHtml(allRows, meta = {}) {
 </html>`;
 }
 
+// The self-improvement loop's feed: one row per member per day, so it can
+// compare member and model pairs over time. Each record rewrites only the
+// last 7 days (the window it can see); older rows and lines it cannot read
+// stay exactly as they were. The file lives in the main checkout, so every
+// worktree of a project feeds one history.
+const MEMBER_ACTIVITY_FILE = path.join('.atris', 'state', 'member_activity.jsonl');
+
+function memberActivityFile(root) {
+  const main = mainCheckoutRoot(root);
+  return path.join(main && fs.existsSync(main) ? main : root, MEMBER_ACTIVITY_FILE);
+}
+
+function recordMemberActivity(root, rosterRows, nowMs = Date.now()) {
+  const file = memberActivityFile(root);
+  const rows = memberActivityRows(rosterRows.map((entry) => entry.activity).filter(Boolean), nowMs);
+  const since = activeWindowStartDay(nowMs);
+  let kept = [];
+  try {
+    kept = fs.readFileSync(file, 'utf8').split(/\r?\n/).filter((line) => {
+      if (!line.trim()) return false;
+      try {
+        const row = JSON.parse(line);
+        return !(row && typeof row.day === 'string' && row.day >= since);
+      } catch {
+        return true;
+      }
+    });
+  } catch { /* no file yet */ }
+  const body = [...kept, ...rows.map((row) => JSON.stringify(row))].join('\n');
+  fs.mkdirSync(path.dirname(file), { recursive: true });
+  const tmp = `${file}.${process.pid}.${Date.now()}.tmp`;
+  fs.writeFileSync(tmp, body ? `${body}\n` : '', 'utf8');
+  fs.renameSync(tmp, file);
+  return { file, rows: rows.length, members: new Set(rows.map((row) => row.member)).size };
+}
+
 function writeTeamBoardHtml(rosterRows, deps = {}) {
   const workspace = deps.cwd || process.cwd();
   const outPath = path.join(workspace, 'atris', 'team', 'team-board.html');
@@ -649,12 +687,13 @@ function helpText() {
   return [
     'atris team - who does each job, with its tool and model, then who really worked in the last 7 days, then quiet and idle members',
     'atris team --all - also list parked members in place',
+    'atris team --record - also save one row per member per day to .atris/state/member_activity.jsonl',
     'atris team presence - show who is awake and what they are doing',
     'atris team prune - flag members with no recent activity; deletes nothing',
     'atris team park <name> [--note "<reason>"] - hide a member from the team views; it still runs by name',
     'atris team unpark <name> - bring a parked member back',
     '',
-    'usage: atris team [roster|presence] [--all] [--json] [--html]',
+    'usage: atris team [roster|presence] [--all] [--json] [--html] [--record]',
     'usage: atris team prune [--days N] [--json]',
     'usage: atris team park <name> [--note "<reason>"] | atris team unpark <name>',
   ].join('\n');
@@ -719,7 +758,7 @@ function teamCommand(args = [], deps = {}) {
     return teamParkCommand(args[0] === 'park', args.slice(1), deps);
   }
   const rosterArgs = args.filter((arg) => arg !== 'roster');
-  const rosterFlags = new Set(['--json', '--html', '--all']);
+  const rosterFlags = new Set(['--json', '--html', '--all', '--record']);
   if (args[0] !== 'presence' && rosterArgs.every((arg) => rosterFlags.has(arg))) {
     const html = rosterArgs.includes('--html');
     const json = rosterArgs.includes('--json');
@@ -729,6 +768,15 @@ function teamCommand(args = [], deps = {}) {
       return 2;
     }
     const roster = deps.roster || collectTeamRoster(deps);
+    let recordNote = '';
+    if (rosterArgs.includes('--record')) {
+      const root = deps.root || repoRoot(deps.cwd || process.cwd());
+      const nowMs = typeof deps.now === 'function' ? deps.now() : Date.now();
+      const saved = recordMemberActivity(root, roster, nowMs);
+      recordNote = `recorded ${saved.rows} day${saved.rows === 1 ? '' : 's'} of work for ${saved.members} member${saved.members === 1 ? '' : 's'} to ${saved.file}\n`;
+      // --json and --html keep stdout to their one answer; the note goes to stderr.
+      if (json || html) (deps.error || process.stderr.write.bind(process.stderr))(recordNote);
+    }
     if (html) {
       const outPath = writeTeamBoardHtml(roster, { ...deps, all });
       (deps.write || process.stdout.write.bind(process.stdout))(`${outPath}\n`);
@@ -744,6 +792,7 @@ function teamCommand(args = [], deps = {}) {
       ? JSON.stringify(roster.map((entry) => ({ ...entry, lineup: memberLineup(lineup, entry.name) })), null, 2)
       : renderTeamWithLineup(roster, lineup, { ...deps, all });
     (deps.write || process.stdout.write.bind(process.stdout))(`${output}\n`);
+    if (recordNote && !json) (deps.write || process.stdout.write.bind(process.stdout))(`\n${recordNote}`);
     return 0;
   }
   if (args[0] !== 'presence' || args.some((arg, index) => index > 0 && arg !== '--json')) {
@@ -761,6 +810,8 @@ function teamCommand(args = [], deps = {}) {
 module.exports = {
   collectMemberActivity,
   collectTeamPrune,
+  memberActivityFile,
+  recordMemberActivity,
   collectTeamRoster,
   renderTeamPrune,
   renderTeamRoster,

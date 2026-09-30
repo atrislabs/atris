@@ -14,9 +14,10 @@ const {
   buildMemberActivity,
   commitMembers,
   logFileDay,
+  memberActivityRows,
   parseGitLog,
 } = require('../lib/team-presence');
-const { collectMemberActivity, teamCommand } = require('../commands/team');
+const { collectMemberActivity, recordMemberActivity, teamCommand } = require('../commands/team');
 
 const NOW = new Date(2026, 8, 30, 15, 0, 0).getTime();
 const at = (month, day, hour = 12) => new Date(2026, month - 1, day, hour, 0, 0).toISOString();
@@ -108,6 +109,45 @@ test('no evidence in 14 days is idle, 8 to 14 days is quiet', () => {
   assert.deepEqual(rows['old-timer'].days, {});
 });
 
+test('the feed has one row per member per day in the last 7 days', () => {
+  const rows = memberActivityRows(buildMemberActivity(fixture()), NOW);
+  assert.deepEqual(rows.map((row) => `${row.day} ${row.member}`), [
+    '2026-09-26 builder',
+    '2026-09-27 scout',
+    '2026-09-28 notes',
+    '2026-09-29 builder',
+    '2026-09-30 builder',
+  ]);
+  assert.deepEqual(rows[4], { member: 'builder', day: '2026-09-30', runs: 2, engine: 'codex', model: 'gpt-6.1-sol', landed: 1, failed: 1, reverted: 0 });
+});
+
+test('recording rewrites only the last 7 days and keeps older rows and unreadable lines', () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'member-activity-'));
+  try {
+    const file = path.join(root, '.atris', 'state', 'member_activity.jsonl');
+    fs.mkdirSync(path.dirname(file), { recursive: true });
+    fs.writeFileSync(file, [
+      JSON.stringify({ member: 'builder', day: '2026-09-01', runs: 4 }),
+      JSON.stringify({ member: 'builder', day: '2026-09-30', runs: 99 }),
+      'not json',
+      '',
+    ].join('\n'));
+    const activity = buildMemberActivity(fixture());
+    const roster = activity.map((row) => ({ name: row.name, activity: row }));
+    const first = recordMemberActivity(root, roster, NOW);
+    assert.equal(first.rows, 5);
+    assert.equal(first.members, 3);
+    recordMemberActivity(root, roster, NOW);
+    const lines = fs.readFileSync(file, 'utf8').trim().split('\n');
+    assert.equal(lines.length, 7, 'old row, bad line, and five fresh rows, even after two records');
+    assert.equal(lines[0], JSON.stringify({ member: 'builder', day: '2026-09-01', runs: 4 }));
+    assert.equal(lines[1], 'not json');
+    assert.ok(!lines.some((line) => line.includes('"runs":99')));
+  } finally {
+    fs.rmSync(root, { recursive: true, force: true });
+  }
+});
+
 test('collecting reads each log folder and runs git once for the whole team', () => {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'member-activity-collect-'));
   try {
@@ -152,4 +192,36 @@ test('atris team shows each active member on one line and idle members on one li
   assert.equal(code, 0);
   assert.match(out, /^builder +last active today, 5 runs in 7 days, on codex gpt-6\.1-sol, 2 landed, 2 failed, 1 reverted$/m);
   assert.match(out, /^idle, nothing in 14 days \(2\): old-timer, sleeper$/m);
+});
+
+test('atris team --record writes the feed and says where; --json stays parseable', () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'member-activity-cmd-'));
+  try {
+    const activity = buildMemberActivity(fixture());
+    const deps = {
+      root,
+      now: () => NOW,
+      members: MEMBERS.map((name) => ({ name, role: '' })),
+      missions: [],
+      presence: { members: [] },
+      activity,
+      lineup: { ok: true, jobs: [], team: [] },
+    };
+    let out = '';
+    assert.equal(teamCommand(['--record'], { ...deps, write: (s) => { out += s; } }), 0);
+    assert.match(out, /^builder +last active today, 5 runs in 7 days, on codex gpt-6\.1-sol, 2 landed, 2 failed, 1 reverted$/m);
+    assert.match(out, /^idle, nothing in 14 days \(2\): old-timer, sleeper$/m);
+    assert.match(out, /recorded 5 days of work for 3 members to .*member_activity\.jsonl/);
+    const file = path.join(root, '.atris', 'state', 'member_activity.jsonl');
+    assert.equal(fs.readFileSync(file, 'utf8').trim().split('\n').length, 5);
+
+    let json = '';
+    let err = '';
+    assert.equal(teamCommand(['--json', '--record'], { ...deps, write: (s) => { json += s; }, error: (s) => { err += s; } }), 0);
+    const parsed = JSON.parse(json);
+    assert.equal(parsed.find((entry) => entry.name === 'builder').activity.runs_7d, 5);
+    assert.match(err, /recorded 5 days/);
+  } finally {
+    fs.rmSync(root, { recursive: true, force: true });
+  }
 });
