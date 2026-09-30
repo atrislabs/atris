@@ -347,7 +347,8 @@ function lastActiveText(activity) {
   return `last active ${shortDate(activity.last_active)}`;
 }
 
-// "on codex gpt-6.1-sol" or "on opus 5.5", only when a run recorded it.
+// "on <tool> <model>", or just the model for claude-family tools, only
+// when a run recorded it.
 function activityEngineText(activity) {
   if (!activity || !activity.engine) return '';
   if (!activity.model) return `on ${activity.engine}`;
@@ -810,7 +811,6 @@ function teamCommand(args = [], deps = {}) {
 module.exports = {
   collectMemberActivity,
   collectTeamPrune,
-  memberActivityFile,
   recordMemberActivity,
   collectTeamRoster,
   renderTeamPrune,
