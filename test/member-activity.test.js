@@ -6,6 +6,7 @@
 
 const fs = require('fs');
 const os = require('os');
+const { spawnSync } = require('child_process');
 const path = require('path');
 const test = require('node:test');
 const assert = require('node:assert/strict');
@@ -18,6 +19,7 @@ const {
   parseGitLog,
 } = require('../lib/team-presence');
 const { collectMemberActivity, recordMemberActivity, teamCommand } = require('../commands/team');
+const { collectStreamEvents } = require('../commands/stream');
 
 const NOW = new Date(2026, 8, 30, 15, 0, 0).getTime();
 const at = (month, day, hour = 12) => new Date(2026, month - 1, day, hour, 0, 0).toISOString();
@@ -223,5 +225,79 @@ test('atris team --record writes the feed and says where; --json stays parseable
     assert.match(err, /recorded 5 days/);
   } finally {
     fs.rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test('a day on three engine and model pairs reports one pair that really ran', () => {
+  const rows = buildMemberActivity({
+    nowMs: NOW,
+    members: ['builder'],
+    runs: [
+      { at: at(9, 30, 9), member: 'builder', engine: 'codex', model: 'gpt-A', outcome: 'landed' },
+      { at: at(9, 30, 10), member: 'builder', engine: 'claude', model: 'opus-B', outcome: 'landed' },
+      { at: at(9, 30, 11), member: 'builder', engine: 'claude', model: 'sonnet-C', outcome: 'landed' },
+    ],
+  });
+  const ran = new Set(['codex gpt-A', 'claude opus-B', 'claude sonnet-C']);
+  const day = rows[0].days['2026-09-30'];
+  assert.ok(ran.has(`${day.engine} ${day.model}`), `day pair ${day.engine} ${day.model} never ran`);
+  assert.equal(day.engine, 'claude');
+  assert.ok(ran.has(`${rows[0].engine} ${rows[0].model}`));
+  const [feed] = memberActivityRows(rows, NOW);
+  assert.ok(ran.has(`${feed.engine} ${feed.model}`), `feed pair ${feed.engine} ${feed.model} never ran`);
+});
+
+test('recording from a checkout without a member keeps that member\'s rows', () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'member-activity-keep-'));
+  try {
+    const file = path.join(root, '.atris', 'state', 'member_activity.jsonl');
+    fs.mkdirSync(path.dirname(file), { recursive: true });
+    const scoutRow = JSON.stringify({ member: 'scout', day: '2026-09-30', runs: 3 });
+    fs.writeFileSync(file, `${scoutRow}\n${JSON.stringify({ member: 'builder', day: '2026-09-30', runs: 99 })}\n`);
+    // This checkout only knows builder.
+    const activity = buildMemberActivity({ ...fixture(), members: ['builder'] });
+    recordMemberActivity(root, activity.map((row) => ({ name: row.name, activity: row })), NOW);
+    const lines = fs.readFileSync(file, 'utf8').trim().split('\n');
+    assert.ok(lines.includes(scoutRow), 'scout was not seen here, so its row stays');
+    assert.ok(!lines.some((line) => line.includes('"runs":99')), 'builder was seen here, so its row is replaced');
+    assert.equal(lines.filter((line) => JSON.parse(line).member === 'builder').length, 3);
+  } finally {
+    fs.rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test('a fresh side copy cut from someone else\'s commit shows no work for its owner', () => {
+  const base = fs.mkdtempSync(path.join(os.tmpdir(), 'member-activity-wt-'));
+  const git = (cwd, ...args) => {
+    const result = spawnSync('git', args, {
+      cwd,
+      encoding: 'utf8',
+      env: { ...process.env, GIT_AUTHOR_NAME: 'someone', GIT_AUTHOR_EMAIL: 's@x', GIT_COMMITTER_NAME: 'someone', GIT_COMMITTER_EMAIL: 's@x' },
+    });
+    assert.equal(result.status, 0, result.stderr);
+    return result.stdout;
+  };
+  try {
+    const main = path.join(base, 'main');
+    const copy = path.join(base, 'scout-copy');
+    fs.mkdirSync(main);
+    git(main, 'init', '-q', '-b', 'master');
+    git(main, 'commit', '-q', '--allow-empty', '-m', 'unrelated change from someone else');
+    git(main, 'worktree', 'add', '-q', '-b', 'scout-sweep', copy);
+    git(main, 'config', 'branch.scout-sweep.atris-owner', 'scout');
+    const nowMs = Date.now();
+    const scoutCommits = () => collectStreamEvents({ root: copy, nowMs, skipLanding: true })
+      .filter((event) => event.event === 'worktree_commit' && event.agent === 'scout');
+
+    assert.deepEqual(scoutCommits(), [], 'the inherited commit is not scout\'s work');
+    const idle = buildMemberActivity({ nowMs, members: ['scout'], events: collectStreamEvents({ root: copy, nowMs, skipLanding: true }) });
+    assert.equal(idle[0].runs_7d, 0);
+
+    git(copy, 'commit', '-q', '--allow-empty', '-m', 'scout: first real sweep');
+    const own = scoutCommits();
+    assert.equal(own.length, 1);
+    assert.match(own[0].summary, /scout: first real sweep/);
+  } finally {
+    fs.rmSync(base, { recursive: true, force: true });
   }
 });

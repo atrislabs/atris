@@ -566,9 +566,10 @@ function renderTeamRosterHtml(allRows, meta = {}) {
 
 // The self-improvement loop's feed: one row per member per day, so it can
 // compare member and model pairs over time. Each record rewrites only the
-// last 7 days (the window it can see); older rows and lines it cannot read
-// stay exactly as they were. The file lives in the main checkout, so every
-// worktree of a project feeds one history.
+// last 7 days (the window it can see) of the members this checkout knows;
+// a member missing here keeps its rows, and older rows and lines it cannot
+// read stay exactly as they were. The file lives in the main checkout, so
+// every worktree of a project feeds one history.
 const MEMBER_ACTIVITY_FILE = path.join('.atris', 'state', 'member_activity.jsonl');
 
 function memberActivityFile(root) {
@@ -578,7 +579,9 @@ function memberActivityFile(root) {
 
 function recordMemberActivity(root, rosterRows, nowMs = Date.now()) {
   const file = memberActivityFile(root);
-  const rows = memberActivityRows(rosterRows.map((entry) => entry.activity).filter(Boolean), nowMs);
+  const activity = rosterRows.map((entry) => entry.activity).filter(Boolean);
+  const rows = memberActivityRows(activity, nowMs);
+  const observed = new Set(activity.map((member) => String(member.name || '').toLowerCase()));
   const since = activeWindowStartDay(nowMs);
   let kept = [];
   try {
@@ -586,7 +589,8 @@ function recordMemberActivity(root, rosterRows, nowMs = Date.now()) {
       if (!line.trim()) return false;
       try {
         const row = JSON.parse(line);
-        return !(row && typeof row.day === 'string' && row.day >= since);
+        return !(row && typeof row.day === 'string' && row.day >= since
+          && observed.has(String(row.member || '').toLowerCase()));
       } catch {
         return true;
       }

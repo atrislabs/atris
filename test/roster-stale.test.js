@@ -34,6 +34,15 @@ test('a newer version in the same prefix is found; the owner case gpt-6-astra to
   assert.equal(newerModel('claude-haiku-4-5', CLAUDE), null);
 });
 
+test('a context tag and the claude- prefix do not hide an upgrade', () => {
+  assert.deepEqual(modelFamily('claude-opus-4-6[1m]'), { prefix: 'opus', version: [4, 6], variant: '' });
+  assert.equal(newerModel('claude-opus-4-6[1m]', ['opus 5.5']), 'opus 5.5');
+  assert.equal(newerModel('claude-opus-4-6 [1m]', CLAUDE), 'opus 5.5');
+  assert.equal(newerModel('claude-opus-4-6-thinking', ['claude-opus-5-5-thinking']), 'claude-opus-5-5-thinking');
+  assert.equal(newerModel('claude-opus-5-5[1m]', CLAUDE), null);
+  assert.equal(newerModel('claude-sonnet-4-6[1m]', ['opus 5.5']), null);
+});
+
 test('models with a different prefix never compare', () => {
   assert.equal(newerModel('sonnet 4.6', ['opus 5.5']), null);
   assert.equal(newerModel('gemini-3.7-flash-high', ['gpt-9']), null);

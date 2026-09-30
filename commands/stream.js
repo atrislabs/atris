@@ -589,12 +589,33 @@ function worktreeTask(root, deps) {
   return worktreeConfig(root, deps).task;
 }
 
+// The branches a side copy starts from. A commit reachable from any of them
+// was inherited, not made in the copy.
+const WORKTREE_BASE_REFS = Object.freeze([
+  'refs/remotes/origin/HEAD',
+  'refs/remotes/origin/main',
+  'refs/remotes/origin/master',
+  'refs/heads/main',
+  'refs/heads/master',
+]);
+
+function worktreeBaseRefs(root, deps) {
+  const result = runGit(root, ['for-each-ref', '--format=%(refname)', ...WORKTREE_BASE_REFS], deps);
+  if (result.status !== 0) return [];
+  return String(result.stdout || '').split(/\r?\n/).map((line) => line.trim()).filter((ref) => WORKTREE_BASE_REFS.includes(ref));
+}
+
+// Only a commit the copy added on top of its base counts. A fresh copy cut
+// from someone else's commit has none, so its owner shows no work. A repo
+// with no main, master, or origin default keeps the newest commit.
 function collectWorktreeActivityEvents(root, deps, events) {
   const roots = collectWorkspaceRoots(root, deps);
   for (const item of roots) {
     const owner = worktreeOwner(item.root, deps);
     if (!owner) continue;
-    const log = runGit(item.root, ['log', '-1', '--format=%cI%x09%an%x09%s'], deps);
+    const bases = worktreeBaseRefs(item.root, deps);
+    const range = bases.length ? ['HEAD', '--not', ...bases] : [];
+    const log = runGit(item.root, ['log', '-1', '--format=%cI%x09%an%x09%s', ...range], deps);
     if (log.status !== 0 || !String(log.stdout || '').trim()) continue;
     const [ts, author, subject] = String(log.stdout || '').trim().split('\t');
     pushEvent(events, {
