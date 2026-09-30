@@ -295,10 +295,14 @@ An engine is the intelligence that builds a mission. Every installed headless co
 
 The first ready worker leads and the rest are backups. `~/.atris/ROSTER.md` covers every project on the machine; `atris/ROSTER.md` overrides it for one project. A worker that stalls sits out 30 minutes and the next one takes over.
 
+The roster warns when a worker runs an old model and a newer one in the same family is on this machine, and prints the command that moves it. It also warns when a pinned model has no proof in 30 days. A landed run is proof; so is `verified 2026-09-30` on the line after a quick smoke test.
+
 ```bash
 atris engine roster                                   # who does what, with each worker's recent record
 atris engine assign build claude --model "opus 5.5"   # change a job's lead
 atris engine roster --available                       # tools and models on this machine
+atris team                                            # who really worked in the last 7 days, then quiet and idle
+atris team --record                                   # also save one row per member per day for the learning loop
 ```
 
 Show every installed engine and the current default:

@@ -109,7 +109,7 @@ test('a stale lead gets one line with an assign command that keeps its settings'
   assert.equal(review.workers[0].stale_model, true);
   const line = out.stale.find((item) => item.job === 'review' && item.engine === 'codex');
   assert.equal(line.text, 'review: codex runs gpt-6-astra, newer gpt-6.1-sol is available. renew: atris engine assign review codex --model gpt-6.1-sol --effort medium --max "20 min" --prep search --everywhere');
-  assert.ok(!line.text.includes('—'));
+  assert.ok(!line.text.includes('\u2014'));
 });
 
 test('a stale backup points at its own line instead of an assign that would make it lead', () => {
