@@ -1,7 +1,8 @@
 'use strict';
 
 // One team view: atris team merges member folders (atris/team/*/MEMBER.md)
-// with active/rest sections. Active = engine frontmatter, awake presence, or now.md focus.
+// with active/rest sections. Active = awake presence or real work in the
+// last 7 days; an engine in MEMBER.md or a now.md focus line is not work.
 
 const fs = require('fs');
 const os = require('os');
@@ -59,7 +60,7 @@ test('heading-only now.md renders dash in now field', () => {
   assert.equal(roster[0].active, false);
 });
 
-test('member with engine frontmatter appears in active section with engine string', () => {
+test('an engine in MEMBER.md alone does not make a member active', () => {
   const members = [
     {
       name: 'coder',
@@ -68,27 +69,54 @@ test('member with engine frontmatter appears in active section with engine strin
     },
     { name: 'scout', role: '' },
   ];
-  const roster = collectTeamRoster(rosterDeps({ members }));
+  const roster = collectTeamRoster(rosterDeps({ members, activity: [] }));
   const coder = roster.find((entry) => entry.name === 'coder');
   assert.equal(coder.engine, 'codex gpt-5.6-sol');
-  assert.equal(coder.active, true);
+  assert.equal(coder.active, false);
 
   const rendered = renderTeamRoster(roster);
-  assert.match(rendered, /active team:/);
-  assert.match(rendered, /coder\s+\|\s+codex gpt-5\.6-sol\s+\|\s+assigned\s+\|\s+-/);
-  assert.match(rendered, /rest of the team:/);
-  assert.match(rendered, /scout/);
-  assert.ok(!rendered.match(/active team:[\s\S]*scout \|/));
+  assert.match(rendered, /active team:\n\(none\)/);
+  assert.match(rendered, /rest of the team:\nidle, nothing in 14 days \(2\): coder, scout/);
+});
+
+test('a member with work in the last 7 days is active with its facts on one line', () => {
+  const members = [
+    { name: 'coder', role: 'builder', frontmatter: { engine: 'codex' } },
+    { name: 'scout', role: '' },
+  ];
+  const activity = [{
+    name: 'coder', status: 'active', last_active: '2026-09-28', days_since: 2, runs_7d: 3,
+    engine: 'codex', model: 'gpt-6.1-sol', landed: 2, failed: 1, reverted: 0,
+  }];
+  const roster = collectTeamRoster(rosterDeps({ members, activity }));
+  assert.equal(roster.find((entry) => entry.name === 'coder').active, true);
+  const rendered = renderTeamRoster(roster);
+  assert.match(rendered, /^coder   last active sep 28, 3 runs in 7 days, on codex gpt-6\.1-sol, 2 landed, 1 failed$/m);
+  assert.ok(!rendered.match(/active team:[\s\S]*scout  /));
+  assert.ok(!rendered.includes('\u2014'));
 });
 
 test('bare member without engine, presence, or now lands in rest section', () => {
   const members = [{ name: 'quiet', role: 'idle member' }];
-  const roster = collectTeamRoster(rosterDeps({ members }));
+  const roster = collectTeamRoster(rosterDeps({ members, activity: [] }));
   assert.equal(roster[0].active, false);
 
   const rendered = renderTeamRoster(roster);
-  assert.match(rendered, /rest of the team:\nquiet/);
+  assert.match(rendered, /rest of the team:\nidle, nothing in 14 days \(1\): quiet/);
   assert.match(rendered, /active team:\n\(none\)/);
+});
+
+test('quiet and idle members collapse into one line each', () => {
+  const members = ['alpha', 'beta', 'gamma', 'delta'].map((name) => ({ name, role: '' }));
+  const activity = [
+    { name: 'alpha', status: 'quiet', last_active: '2026-09-20', days_since: 10, runs_7d: 0 },
+    { name: 'beta', status: 'quiet', last_active: '2026-09-19', days_since: 11, runs_7d: 0 },
+    { name: 'gamma', status: 'idle', last_active: '2026-07-01', days_since: 91, runs_7d: 0 },
+  ];
+  const rendered = renderTeamRoster(collectTeamRoster(rosterDeps({ members, activity })), { termWidth: 200 });
+  assert.match(rendered, /^quiet 8 to 14 days \(2\): alpha, beta$/m);
+  assert.match(rendered, /^idle, nothing in 14 days \(2\): delta, gamma$/m);
+  assert.equal(rendered.split('\n').filter((line) => /alpha|beta|gamma|delta/.test(line)).length, 2);
 });
 
 test('awake member is active with dash engine and live focus suffix', () => {
@@ -102,6 +130,7 @@ test('awake member is active with dash engine and live focus suffix', () => {
     members,
     root: tmpDir,
     presence: { members: [{ name: 'scout' }] },
+    activity: [],
   }));
   const scout = roster.find((entry) => entry.name === 'scout');
   assert.equal(scout.active, true);
@@ -109,21 +138,22 @@ test('awake member is active with dash engine and live focus suffix', () => {
   assert.equal(scout.focus, 'watch the perimeter (live)');
 
   const rendered = renderTeamRoster(roster);
-  assert.match(rendered, /scout\s+\|\s+-\s+\|\s+live\s+\|\s+watch the perimeter \(live\)/);
+  assert.match(rendered, /^scout   live now: watch the perimeter$/m);
 });
 
-test('alwayson member with no now task shows always on focus when active', () => {
+test('alwayson member with no now task keeps its always on focus but needs work to be active', () => {
   const members = [{
     name: 'daemon',
     role: 'always running',
     frontmatter: { alwayson: true, engine: 'codex' },
   }];
-  const roster = collectTeamRoster(rosterDeps({ members }));
-  assert.equal(roster[0].active, true);
+  const roster = collectTeamRoster(rosterDeps({ members, activity: [] }));
+  assert.equal(roster[0].active, false);
   assert.equal(roster[0].focus, 'always on');
 
-  const rendered = renderTeamRoster(roster);
-  assert.match(rendered, /daemon\s+\|\s+codex\s+\|\s+assigned\s+\|\s+always on/);
+  const live = collectTeamRoster(rosterDeps({ members, activity: [], presence: { members: [{ name: 'daemon' }] } }));
+  assert.equal(live[0].active, true);
+  assert.match(renderTeamRoster(live), /^daemon  live now: always on$/m);
 });
 
 test('mission engines are kept on roster json as mission_engine', () => {

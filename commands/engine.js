@@ -1265,14 +1265,29 @@ function renderJobRoster(rows) {
   }).join('\n');
 }
 
+// "active sep 30, 3 runs" or "quiet 8 to 14 days", from the same evidence
+// atris team reads. Idle members get no tag, so the list stays quiet; atris
+// team names them on one line. '' when activity was not read.
+function teamActivityTag(activity) {
+  if (!activity || activity.status === 'idle') return '';
+  if (activity.status === 'quiet') return 'quiet 8 to 14 days';
+  const runs = Number(activity.runs_7d) || 0;
+  const day = activity.days_since === 0 ? 'today' : activity.days_since === 1 ? 'yesterday' : shortDay(activity.last_active);
+  return `active ${day}, ${runs} run${runs === 1 ? '' : 's'}`;
+}
+
 function renderTeamRoster(rows) {
   if (!rows.length) return '';
   const width = Math.max(6, ...rows.map((row) => row.member.length));
   const jobWidth = Math.max(6, ...rows.map((row) => String(row.job || '').length));
-  const lines = rows.map((row) => {
-    const engine = row.engine ? engineRunsView(row.engine, { model: row.model || '', effort: row.effort || '' }).text : 'no ready engine';
-    const how = row.source === 'file' ? `from ${row.file}` : 'automatic';
-    return `${row.member.padEnd(width)} ${String(row.job || '').padEnd(jobWidth)} ${engine.padEnd(24)} ${how}`.trimEnd();
+  const engines = rows.map((row) => (row.engine ? engineRunsView(row.engine, { model: row.model || '', effort: row.effort || '' }).text : 'no ready engine'));
+  const engineWidth = Math.max(24, ...engines.map((text) => text.length));
+  const hows = rows.map((row) => (row.source === 'file' ? `from ${row.file}` : 'automatic'));
+  const howWidth = Math.max(...hows.map((text) => text.length));
+  const lines = rows.map((row, index) => {
+    const tag = teamActivityTag(row.activity);
+    const how = tag ? hows[index].padEnd(howWidth) : hows[index];
+    return `${row.member.padEnd(width)} ${String(row.job || '').padEnd(jobWidth)} ${engines[index].padEnd(engineWidth)} ${how} ${tag}`.trimEnd();
   });
   return ['team', ...lines].join('\n');
 }
@@ -1368,6 +1383,23 @@ function attachRunRecords(report, root, now = new Date()) {
 // the look-back reaches well past that.
 const STALE_PROOF_DAYS = 90;
 
+// Each team row gets the member's activity (last 7 days, quiet, or idle)
+// from the same evidence atris team reads: dated logs, commits that name
+// the member, roster runs, and stream events, read once for the team.
+function attachTeamActivity(report, root, now = new Date()) {
+  const rows = report.team || [];
+  if (!rows.length) return report;
+  try {
+    const { collectMemberActivity } = require('./team');
+    const activity = collectMemberActivity(root, rows.map((row) => ({ name: row.member })), { nowMs: new Date(now).getTime() });
+    const byName = new Map(activity.map(({ days, ...rest }) => [rest.name, rest]));
+    for (const row of rows) row.activity = byName.get(String(row.member).toLowerCase()) || null;
+  } catch {
+    // Activity is a view; a read that fails leaves the roster as it was.
+  }
+  return report;
+}
+
 // Mark workers that run an outdated model or an unproven old pin. Local
 // files only: the registry, codex's models cache, and the run record.
 function attachStaleCheck(report, root, now = new Date()) {
@@ -1425,7 +1457,7 @@ function runRosterCommand(args, root, now = new Date()) {
   }
   if (rest[0] === 'session') return runRosterSessionCommand(rest, json, root, now);
   if (rest[0] === 'confirm') confirmRoster(root, now);
-  const report = attachStaleCheck(attachRunRecords(rosterReport(root, now), root, now), root, now);
+  const report = attachTeamActivity(attachStaleCheck(attachRunRecords(rosterReport(root, now), root, now), root, now), root, now);
   if (json) console.log(JSON.stringify(report, null, 2));
   else console.log(`${renderRosterReport(report)}\n\n${AVAILABLE_HINT}`);
   return 0;
