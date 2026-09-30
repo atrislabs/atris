@@ -439,9 +439,12 @@ test('each member resolves to its job pick automatically, and the view shows the
   assert.match(view.out, /^researcher\s+search\s+claude \(haiku\)\s+from atris\/ROSTER\.md$/m);
   assert.match(view.out, /^judge\s+review\s+claude \(opus 5\.5\)\s+from atris\/ROSTER\.md$/m);
   const json = JSON.parse(command(root, ['roster', '--json']).out);
-  assert.deepEqual(json.team.find((row) => row.member === 'closer'), {
+  const { activity, ...closer } = json.team.find((row) => row.member === 'closer');
+  assert.deepEqual(closer, {
     member: 'closer', job: 'build', engine: 'claude', model: 'claude-opus-5-5', effort: null, max_seconds: null, source: 'auto', file: null, reason: 'closer does build: claude opus 5.5',
   });
+  // A member with no logs, commits, runs, or events in 14 days reads as idle.
+  assert.equal(activity.status, 'idle');
 }));
 
 test('a team line can name a job, a custom job, or engine and model words', () => withRoom((root, machine) => {

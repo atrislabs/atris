@@ -2,10 +2,23 @@
 
 const fs = require('fs');
 const path = require('path');
+const { spawnSync } = require('child_process');
 
-const { canonicalEngineName } = require('../lib/engine-registry');
+const { canonicalEngineName, mainCheckoutRoot } = require('../lib/engine-registry');
 const taskDb = require('../lib/task-db');
-const { buildTeamPresence, DEFAULT_FRESHNESS_WINDOW_MS, renderTeamPresence } = require('../lib/team-presence');
+const {
+  buildMemberActivity,
+  buildTeamPresence,
+  DEFAULT_FRESHNESS_WINDOW_MS,
+  IDLE_AFTER_DAYS,
+  activeWindowStartDay,
+  logFileDay,
+  memberActivityRows,
+  parseGitLog,
+  renderTeamPresence,
+} = require('../lib/team-presence');
+const { readRosterRuns } = require('../lib/roster-runs');
+const { modelLabel } = require('../lib/roster-models');
 const { LINEUP_UNREADABLE, memberLineup, readLineupSafe, renderLineup } = require('../lib/team-lineup');
 const { isMemberParked, isParkedFrontmatter, setMemberParked } = require('../lib/member-park');
 const { readEngineRegistry } = require('./engine');
@@ -148,22 +161,78 @@ function memberFocus(rawNow, { awake, alwaysOn }) {
   return focus;
 }
 
-function memberIsActive({ frontmatterEngine, awake }) {
-  // A stale focus line in now.md does not make a member active, only an
-  // assigned engine or live presence does.
-  return Boolean(frontmatterEngine) || awake;
+function memberIsActive({ awake, activity }) {
+  // Only real work makes a member active: live presence, or evidence in the
+  // last 7 days (a dated log, a commit that names it, a recorded run, a task
+  // or mission event). An engine in MEMBER.md or a focus line in now.md is
+  // a plan, not work.
+  return Boolean(awake) || Boolean(activity && activity.status === 'active');
 }
 
-function clipCell(text, max) {
-  const value = String(text || '').trim();
-  if (!max || value.length <= max) return value;
-  if (max <= 0) return '';
-  return value.slice(0, max);
+// --- activity evidence, read once for the whole team ----------------------
+
+const ACTIVITY_WINDOW_MS = IDLE_AFTER_DAYS * 24 * 60 * 60 * 1000;
+
+// Dated file names under the member's logs/ folder and one level below it
+// (logs/2026/2026-09-28.md). The date in the name, never the file time: a
+// fresh checkout stamps every file with today.
+function memberLogDays(member, root) {
+  const dir = member?.dir
+    ? path.join(member.dir, 'logs')
+    : path.join(root, 'atris', 'team', String(member?.name || '').trim(), 'logs');
+  const days = [];
+  let entries = [];
+  try { entries = fs.readdirSync(dir, { withFileTypes: true }); } catch { return days; }
+  for (const entry of entries) {
+    if (entry.isDirectory()) {
+      let inner = [];
+      try { inner = fs.readdirSync(path.join(dir, entry.name)); } catch { inner = []; }
+      for (const name of inner) {
+        const day = logFileDay(name);
+        if (day) days.push(day);
+      }
+      continue;
+    }
+    const day = logFileDay(entry.name);
+    if (day) days.push(day);
+  }
+  return days;
+}
+
+// One git log for the window, for every member at once.
+function readTeamCommits(root, sinceMs, deps = {}) {
+  if (Array.isArray(deps.commits)) return deps.commits;
+  const run = deps.runGit || ((args) => spawnSync('git', args, { cwd: root, encoding: 'utf8', timeout: 5000, maxBuffer: 32 * 1024 * 1024 }));
+  const result = run(['log', `--since=${new Date(sinceMs).toISOString()}`, '--format=%x1e%aI%x1f%B', 'HEAD']);
+  if (!result || result.status !== 0) return [];
+  return parseGitLog(result.stdout);
+}
+
+// Activity per member name (lowercase), without the per-day buckets.
+function collectMemberActivity(root, members, deps = {}) {
+  const nowMs = deps.nowMs || (typeof deps.now === 'function' ? deps.now() : Date.now());
+  const sinceMs = nowMs - ACTIVITY_WINDOW_MS;
+  const logDays = {};
+  for (const member of members) {
+    const name = String(member?.name || '').trim().toLowerCase();
+    if (name) logDays[name] = memberLogDays(member, root);
+  }
+  const events = Array.isArray(deps.streamEvents)
+    ? deps.streamEvents
+    : collectStreamEvents({ root, sinceMs, nowMs, deps: deps.streamDeps, skipLanding: true });
+  return buildMemberActivity({
+    nowMs,
+    members: Object.keys(logDays),
+    logDays,
+    commits: readTeamCommits(root, sinceMs, deps),
+    runs: Array.isArray(deps.runs) ? deps.runs : readRosterRuns(root, { now: nowMs, days: IDLE_AFTER_DAYS }),
+    events,
+  });
 }
 
 function rosterStatus(entry) {
   if (entry.status === 'awake') return 'live';
-  if (String(entry.engine || '').trim()) return 'assigned';
+  if (entry.active) return 'active';
   return 'idle';
 }
 
@@ -177,21 +246,30 @@ function escapeHtml(text) {
 
 function collectTeamRoster(deps = {}) {
   const root = deps.root || repoRoot(deps.cwd || process.cwd());
+  const nowMs = typeof deps.now === 'function' ? deps.now() : Date.now();
+  const missions = collectMissions(root, deps);
+  const members = collectMembers(root, deps).filter((member) => !isTemplateMember(member));
+  // One read of the stream feeds both views: presence keeps its 15-minute
+  // awake window, activity looks back 14 days.
+  const streamEvents = Array.isArray(deps.streamEvents) || deps.activity
+    ? (deps.streamEvents || [])
+    : collectStreamEvents({ root, sinceMs: nowMs - ACTIVITY_WINDOW_MS, nowMs, deps: deps.streamDeps, skipLanding: true });
   // The roster only reads who is awake, never the landing wait, so it skips
   // the landing board entirely.
-  const presence = deps.presence || collectTeamPresence({ ...deps, skipLanding: true });
+  const presence = deps.presence || collectTeamPresence({ ...deps, missions, streamEvents, skipLanding: true });
   const awake = new Set(presence.members.map((member) => String(member.name || '').trim().toLowerCase()));
+  const activityRows = deps.activity || collectMemberActivity(root, members, { ...deps, nowMs, streamEvents });
+  const activityByName = new Map(activityRows.map((row) => [row.name, row]));
   const engineRoster = deps.engineRoster || readEngineRegistry(root, { persist: false }).engines;
   const engineByOwner = new Map();
-  for (const mission of collectMissions(root, deps)) {
+  for (const mission of missions) {
     if (!ROSTER_LIVE_MISSION_STATUSES.has(String(mission?.status || '').toLowerCase())) continue;
     const owner = String(mission?.owner || mission?.member || '').trim().toLowerCase();
     const engine = missionEngine(mission);
     // Missions arrive newest-first; the first live one per owner wins.
     if (owner && engine && !engineByOwner.has(owner)) engineByOwner.set(owner, engine);
   }
-  return collectMembers(root, deps)
-    .filter((member) => !isTemplateMember(member))
+  return members
     .map((member) => {
       const name = String(member?.name || '').trim().toLowerCase();
       const missionEngine = engineByOwner.get(name) || '';
@@ -199,7 +277,8 @@ function collectTeamRoster(deps = {}) {
       const alwaysOn = memberAlwaysOn(member);
       const isAwake = awake.has(name);
       const rawNow = readMemberNow(member, root);
-      const active = memberIsActive({ frontmatterEngine, awake: isAwake, rawNow });
+      const activity = activityByName.get(name) || null;
+      const active = memberIsActive({ awake: isAwake, activity });
       const focus = memberFocus(rawNow, { awake: isAwake, alwaysOn });
       return {
         name,
@@ -211,6 +290,7 @@ function collectTeamRoster(deps = {}) {
         now: rawNow,
         focus,
         active,
+        activity,
         parked: isParkedFrontmatter(member?.frontmatter),
       };
     })
@@ -253,6 +333,49 @@ function withParkedLabels(rosterRows, all) {
   };
 }
 
+function shortDate(day) {
+  const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(String(day || ''));
+  if (!match) return '';
+  const date = new Date(Number(match[1]), Number(match[2]) - 1, Number(match[3]));
+  return date.toLocaleDateString('en-US', { month: 'short', day: 'numeric' }).toLowerCase();
+}
+
+function lastActiveText(activity) {
+  if (!activity || !activity.last_active) return '';
+  if (activity.days_since === 0) return 'last active today';
+  if (activity.days_since === 1) return 'last active yesterday';
+  return `last active ${shortDate(activity.last_active)}`;
+}
+
+// "on <tool> <model>", or just the model for claude-family tools, only
+// when a run recorded it.
+function activityEngineText(activity) {
+  if (!activity || !activity.engine) return '';
+  if (!activity.model) return `on ${activity.engine}`;
+  const label = modelLabel(activity.model);
+  return label.startsWith(activity.engine) || ['claude', 'fable', 'haiku'].includes(activity.engine)
+    ? `on ${label}`
+    : `on ${activity.engine} ${label}`;
+}
+
+// One line of facts per active member: when, how much, on what, how it went.
+function activityLine(entry) {
+  const activity = entry.activity || {};
+  const parts = [];
+  if (entry.status === 'awake') parts.push(entry.focus && entry.focus !== '-' ? `live now: ${entry.focus.replace(/ \(live\)$/, '')}` : 'live now');
+  const last = lastActiveText(activity);
+  if (last && !(entry.status === 'awake' && activity.days_since === 0)) parts.push(last);
+  const runs = Number(activity.runs_7d) || 0;
+  if (runs) parts.push(`${runs} run${runs === 1 ? '' : 's'} in 7 days`);
+  const engine = activityEngineText(activity);
+  if (engine) parts.push(engine);
+  for (const outcome of ['landed', 'failed', 'reverted']) {
+    if (Number(activity[outcome]) > 0) parts.push(`${activity[outcome]} ${outcome}`);
+  }
+  return parts.join(', ');
+}
+
+// Active members one line each; quiet and idle members one line per group.
 function renderTeamRoster(allRows, deps = {}) {
   if (!allRows.length) {
     return 'no team members yet. create one with: atris member create <name> --role="..."';
@@ -260,32 +383,28 @@ function renderTeamRoster(allRows, deps = {}) {
   const { rows: rosterRows, parkedRows } = withParkedLabels(allRows, Boolean(deps.all));
   const activeRows = rosterRows.filter((entry) => entry.active);
   const restRows = rosterRows.filter((entry) => !entry.active);
+  const quietRows = restRows.filter((entry) => entry.activity && entry.activity.status === 'quiet');
+  const idleRows = restRows.filter((entry) => !quietRows.includes(entry));
   const termWidth = deps.termWidth || process.stdout.columns || 80;
   const memberW = Math.max(6, ...activeRows.map((entry) => entry.name.length));
-  const engineW = Math.max(6, ...activeRows.map((entry) => (entry.engine || '-').length));
-  const statusW = 8;
-  const sep = 3;
-  const focusW = Math.max(8, termWidth - memberW - engineW - statusW - sep * 3);
   const lines = ['active team:'];
   if (activeRows.length) {
     for (const entry of activeRows) {
-      const engine = entry.engine || '-';
-      const status = rosterStatus(entry);
-      const focus = clipCell(entry.focus || '-', focusW);
-      lines.push(
-        `${clipCell(entry.name, memberW).padEnd(memberW)} | ${clipCell(engine, engineW).padEnd(engineW)} | ${status.padEnd(statusW)} | ${focus}`,
-      );
+      // Never clipped: a cut count or outcome would say less than happened.
+      lines.push(`${entry.name.padEnd(memberW)}  ${activityLine(entry)}`.trimEnd());
     }
   } else {
     lines.push('(none)');
   }
   lines.push('');
   lines.push('rest of the team:');
-  if (restRows.length) {
-    lines.push(wrapCommaNames(restRows.map((entry) => entry.name), termWidth));
-  } else {
-    lines.push('(none)');
+  if (quietRows.length) {
+    lines.push(wrapCommaNames([`quiet 8 to 14 days (${quietRows.length}): ${quietRows[0].name}`, ...quietRows.slice(1).map((entry) => entry.name)], termWidth));
   }
+  if (idleRows.length) {
+    lines.push(wrapCommaNames([`idle, nothing in 14 days (${idleRows.length}): ${idleRows[0].name}`, ...idleRows.slice(1).map((entry) => entry.name)], termWidth));
+  }
+  if (!restRows.length) lines.push('(none)');
   const parkedLine = parkedSummaryLine(parkedRows, termWidth);
   if (parkedLine) {
     lines.push('');
@@ -314,7 +433,7 @@ function renderTeamRosterHtml(allRows, meta = {}) {
   const statusDot = (entry) => {
     const status = rosterStatus(entry);
     if (status === 'live') return '<span class="dot dot-live" title="live"></span><span class="status-label">live</span>';
-    if (status === 'assigned') return '<span class="dot dot-assigned" title="assigned"></span><span class="status-label">assigned</span>';
+    if (status === 'active') return '<span class="dot dot-assigned" title="active this week"></span><span class="status-label">active</span>';
     return '<span class="dot dot-idle" title="idle"></span><span class="status-label">idle</span>';
   };
 
@@ -324,7 +443,7 @@ function renderTeamRosterHtml(allRows, meta = {}) {
           <td class="col-member">${escapeHtml(entry.name)}</td>
           <td class="col-engine">${escapeHtml(entry.engine || '-')}</td>
           <td class="col-status">${statusDot(entry)}</td>
-          <td class="col-focus">${escapeHtml(entry.focus || '-')}</td>
+          <td class="col-focus">${escapeHtml(activityLine(entry) || entry.focus || '-')}</td>
         </tr>`).join('')
     : '<tr><td colspan="4" class="empty">(none)</td></tr>';
 
@@ -445,6 +564,46 @@ function renderTeamRosterHtml(allRows, meta = {}) {
 </html>`;
 }
 
+// The self-improvement loop's feed: one row per member per day, so it can
+// compare member and model pairs over time. Each record rewrites only the
+// last 7 days (the window it can see) of the members this checkout knows;
+// a member missing here keeps its rows, and older rows and lines it cannot
+// read stay exactly as they were. The file lives in the main checkout, so
+// every worktree of a project feeds one history.
+const MEMBER_ACTIVITY_FILE = path.join('.atris', 'state', 'member_activity.jsonl');
+
+function memberActivityFile(root) {
+  const main = mainCheckoutRoot(root);
+  return path.join(main && fs.existsSync(main) ? main : root, MEMBER_ACTIVITY_FILE);
+}
+
+function recordMemberActivity(root, rosterRows, nowMs = Date.now()) {
+  const file = memberActivityFile(root);
+  const activity = rosterRows.map((entry) => entry.activity).filter(Boolean);
+  const rows = memberActivityRows(activity, nowMs);
+  const observed = new Set(activity.map((member) => String(member.name || '').toLowerCase()));
+  const since = activeWindowStartDay(nowMs);
+  let kept = [];
+  try {
+    kept = fs.readFileSync(file, 'utf8').split(/\r?\n/).filter((line) => {
+      if (!line.trim()) return false;
+      try {
+        const row = JSON.parse(line);
+        return !(row && typeof row.day === 'string' && row.day >= since
+          && observed.has(String(row.member || '').toLowerCase()));
+      } catch {
+        return true;
+      }
+    });
+  } catch { /* no file yet */ }
+  const body = [...kept, ...rows.map((row) => JSON.stringify(row))].join('\n');
+  fs.mkdirSync(path.dirname(file), { recursive: true });
+  const tmp = `${file}.${process.pid}.${Date.now()}.tmp`;
+  fs.writeFileSync(tmp, body ? `${body}\n` : '', 'utf8');
+  fs.renameSync(tmp, file);
+  return { file, rows: rows.length, members: new Set(rows.map((row) => row.member)).size };
+}
+
 function writeTeamBoardHtml(rosterRows, deps = {}) {
   const workspace = deps.cwd || process.cwd();
   const outPath = path.join(workspace, 'atris', 'team', 'team-board.html');
@@ -531,14 +690,15 @@ function renderTeamPrune(report, days = DEFAULT_PRUNE_DAYS) {
 
 function helpText() {
   return [
-    'atris team - who does each job, with its tool and model, then active members and the rest',
+    'atris team - who does each job, with its tool and model, then who really worked in the last 7 days, then quiet and idle members',
     'atris team --all - also list parked members in place',
+    'atris team --record - also save one row per member per day to .atris/state/member_activity.jsonl',
     'atris team presence - show who is awake and what they are doing',
     'atris team prune - flag members with no recent activity; deletes nothing',
     'atris team park <name> [--note "<reason>"] - hide a member from the team views; it still runs by name',
     'atris team unpark <name> - bring a parked member back',
     '',
-    'usage: atris team [roster|presence] [--all] [--json] [--html]',
+    'usage: atris team [roster|presence] [--all] [--json] [--html] [--record]',
     'usage: atris team prune [--days N] [--json]',
     'usage: atris team park <name> [--note "<reason>"] | atris team unpark <name>',
   ].join('\n');
@@ -603,7 +763,7 @@ function teamCommand(args = [], deps = {}) {
     return teamParkCommand(args[0] === 'park', args.slice(1), deps);
   }
   const rosterArgs = args.filter((arg) => arg !== 'roster');
-  const rosterFlags = new Set(['--json', '--html', '--all']);
+  const rosterFlags = new Set(['--json', '--html', '--all', '--record']);
   if (args[0] !== 'presence' && rosterArgs.every((arg) => rosterFlags.has(arg))) {
     const html = rosterArgs.includes('--html');
     const json = rosterArgs.includes('--json');
@@ -613,6 +773,15 @@ function teamCommand(args = [], deps = {}) {
       return 2;
     }
     const roster = deps.roster || collectTeamRoster(deps);
+    let recordNote = '';
+    if (rosterArgs.includes('--record')) {
+      const root = deps.root || repoRoot(deps.cwd || process.cwd());
+      const nowMs = typeof deps.now === 'function' ? deps.now() : Date.now();
+      const saved = recordMemberActivity(root, roster, nowMs);
+      recordNote = `recorded ${saved.rows} day${saved.rows === 1 ? '' : 's'} of work for ${saved.members} member${saved.members === 1 ? '' : 's'} to ${saved.file}\n`;
+      // --json and --html keep stdout to their one answer; the note goes to stderr.
+      if (json || html) (deps.error || process.stderr.write.bind(process.stderr))(recordNote);
+    }
     if (html) {
       const outPath = writeTeamBoardHtml(roster, { ...deps, all });
       (deps.write || process.stdout.write.bind(process.stdout))(`${outPath}\n`);
@@ -628,6 +797,7 @@ function teamCommand(args = [], deps = {}) {
       ? JSON.stringify(roster.map((entry) => ({ ...entry, lineup: memberLineup(lineup, entry.name) })), null, 2)
       : renderTeamWithLineup(roster, lineup, { ...deps, all });
     (deps.write || process.stdout.write.bind(process.stdout))(`${output}\n`);
+    if (recordNote && !json) (deps.write || process.stdout.write.bind(process.stdout))(`\n${recordNote}`);
     return 0;
   }
   if (args[0] !== 'presence' || args.some((arg, index) => index > 0 && arg !== '--json')) {
@@ -643,7 +813,9 @@ function teamCommand(args = [], deps = {}) {
 }
 
 module.exports = {
+  collectMemberActivity,
   collectTeamPrune,
+  recordMemberActivity,
   collectTeamRoster,
   renderTeamPrune,
   renderTeamRoster,
