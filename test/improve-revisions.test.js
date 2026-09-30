@@ -268,9 +268,10 @@ test('shared journal files never count as revision overlap', () => {
 });
 
 // Boot shows this gauge on every session start. One git process per commit
-// cost seconds on a busy repo, so the history is one git log, every plain
-// commit's files come back from one batched diff-tree, and a commit's files
-// are saved by hash so the next read asks git only for the history.
+// cost seconds on a busy repo, so one for-each-ref finds the default branch,
+// the history is one git log, every plain commit's files come back from one
+// batched diff-tree, and a commit's files are saved by hash so the next read
+// asks git only for the branch and the history.
 function countGitCalls(fn) {
   const gitSpawn = require('../lib/git-spawn');
   const original = gitSpawn.runGit;
@@ -306,12 +307,12 @@ function assertBusySummary(summary) {
   assert.deepStrictEqual(summary.revisions.map((r) => r.files), [['f5.js'], ['f4.js'], ['f3.js'], ['f2.js'], ['f1.js'], ['f0.js']]);
 }
 
-test('the gauge reads history in two git calls, not one per commit', () => {
+test('the gauge reads history in three git calls, not one per commit', () => {
   const { cwd, now } = buildBusyRepo({ atris: false });
   try {
     const run = countGitCalls(() => collectRevisionSignals(cwd, { days: 14, now }));
     assertBusySummary(run.value);
-    assert.deepStrictEqual(run.calls, ['log', 'diff-tree']);
+    assert.deepStrictEqual(run.calls, ['for-each-ref', 'log', 'diff-tree']);
     assert.strictEqual(fs.existsSync(path.join(cwd, '.atris')), false, 'no cache file outside a workspace');
   } finally {
     cleanup(cwd);
@@ -322,16 +323,16 @@ test('a second read reuses saved commit files and only asks git for history', ()
   const { cwd, now } = buildBusyRepo({ atris: true });
   try {
     const first = countGitCalls(() => collectRevisionSignals(cwd, { days: 14, now }));
-    assert.deepStrictEqual(first.calls, ['log', 'diff-tree']);
+    assert.deepStrictEqual(first.calls, ['for-each-ref', 'log', 'diff-tree']);
     const second = countGitCalls(() => collectRevisionSignals(cwd, { days: 14, now }));
-    assert.deepStrictEqual(second.calls, ['log']);
+    assert.deepStrictEqual(second.calls, ['for-each-ref', 'log']);
     assert.deepStrictEqual(second.value, first.value);
     assertBusySummary(second.value);
 
     // A new commit is the only one git is asked about.
     commitFile(cwd, 'f0.js', 'v3\n', 'bot lands f0 again', { bot: true, atMs: now - HOUR });
     const third = countGitCalls(() => collectRevisionSignals(cwd, { days: 14, now }));
-    assert.deepStrictEqual(third.calls, ['log', 'diff-tree']);
+    assert.deepStrictEqual(third.calls, ['for-each-ref', 'log', 'diff-tree']);
     assert.strictEqual(third.value.landings, 7);
   } finally {
     cleanup(cwd);
@@ -352,7 +353,7 @@ test('file names read the same fresh and from the cache, whatever core.quotePath
     assert.deepStrictEqual(fresh.revisions.map((r) => r.files), [['caf\u00e9.js']]);
     execSync('git config core.quotePath false', { cwd, stdio: 'pipe' });
     const cached = countGitCalls(() => collectRevisionSignals(cwd, { days: 14, now }));
-    assert.deepStrictEqual(cached.calls, ['log']);
+    assert.deepStrictEqual(cached.calls, ['for-each-ref', 'log']);
     assert.deepStrictEqual(cached.value, fresh);
   } finally {
     cleanup(cwd);
@@ -364,7 +365,7 @@ test('saved commit files are dropped when the shallow boundary changes', () => {
   try {
     collectRevisionSignals(cwd, { days: 14, now });
     const warm = countGitCalls(() => collectRevisionSignals(cwd, { days: 14, now }));
-    assert.deepStrictEqual(warm.calls, ['log']);
+    assert.deepStrictEqual(warm.calls, ['for-each-ref', 'log']);
 
     // Cut history at the oldest commit, the way a shallow clone does: that
     // commit now reads as a root. The saved lists must not be trusted.
@@ -372,12 +373,12 @@ test('saved commit files are dropped when the shallow boundary changes', () => {
     const second = execSync('git rev-list --reverse HEAD', { cwd, encoding: 'utf8' }).split('\n')[1];
     fs.writeFileSync(path.join(cwd, '.git', 'shallow'), `${second}\n`);
     const shallow = countGitCalls(() => collectRevisionSignals(cwd, { days: 14, now }));
-    assert.deepStrictEqual(shallow.calls, ['log', 'diff-tree']);
+    assert.deepStrictEqual(shallow.calls, ['for-each-ref', 'log', 'diff-tree']);
 
     // Fetching the full history again changes the boundary back.
     fs.rmSync(path.join(cwd, '.git', 'shallow'));
     const unshallow = countGitCalls(() => collectRevisionSignals(cwd, { days: 14, now }));
-    assert.deepStrictEqual(unshallow.calls, ['log', 'diff-tree']);
+    assert.deepStrictEqual(unshallow.calls, ['for-each-ref', 'log', 'diff-tree']);
     assert.ok(oldest);
     assertBusySummary(unshallow.value);
   } finally {
@@ -436,5 +437,65 @@ test('a file named like a commit hash stays a file of its own commit', () => {
     assert.deepStrictEqual(summary.revisions[0].files, ['z.js']);
   } finally {
     cleanup(cwd);
+  }
+});
+
+// The vitals once read the checked-out branch, so a stale feature branch
+// showed "zero landings" while fifteen pull requests merged to master that
+// day. Landings are merged work on the default branch, walked first-parent:
+// squash merges of pull requests and merge commits both count.
+function buildMergedWorkRepo() {
+  const cwd = initRepo();
+  const now = Date.now();
+  const base = now - 3 * 24 * HOUR;
+  execSync('git checkout -q -b master', { cwd, stdio: 'pipe' });
+  commitFile(cwd, 'seed.js', 'v1\n', 'seed', { atMs: now - 40 * 24 * HOUR });
+  // squash merge of an agent pull request, trailer kept in the body
+  commitFile(cwd, 'a.js', 'v1\n', 'Agent builds a (#1)', { bot: true, atMs: base });
+  // squash merge of a pull request with no trailer
+  commitFile(cwd, 'b.js', 'v1\n', 'Builds b (#2)', { atMs: base + HOUR });
+  // a pull request merge commit; its branch commits stay off the count
+  execSync('git checkout -q -b side', { cwd, stdio: 'pipe' });
+  commitFile(cwd, 'c.js', 'v1\n', 'bot builds c', { bot: true, atMs: base + 2 * HOUR });
+  commitFile(cwd, 'c.js', 'v2\n', 'bot polishes c', { bot: true, atMs: base + 3 * HOUR });
+  execSync('git checkout -q master', { cwd, stdio: 'pipe' });
+  const mergeDate = new Date(base + 4 * HOUR).toISOString();
+  execSync('git merge -q --no-ff side -m "Merge pull request #3 from org/side"', {
+    cwd, stdio: 'pipe', env: { ...process.env, GIT_AUTHOR_DATE: mergeDate, GIT_COMMITTER_DATE: mergeDate },
+  });
+  // a human fixes b directly on master
+  commitFile(cwd, 'b.js', 'v2\n', 'human fixes b', { atMs: base + 5 * HOUR });
+  return { cwd, now };
+}
+
+test('landings are merged work on the default branch, whatever branch is checked out', () => {
+  const { cwd, now } = buildMergedWorkRepo();
+  try {
+    // the checkout sits on an old branch with nothing this fortnight
+    execSync('git checkout -q -b stale-feature HEAD~4', { cwd, stdio: 'pipe' });
+    const summary = collectRevisionSignals(cwd, { days: 14, now });
+    assert.strictEqual(summary.landings, 3);
+    assert.strictEqual(summary.revised, 1);
+    assert.strictEqual(summary.revisions[0].landing.subject, 'Builds b (#2)');
+    const vitals = collectImproveVitals({ workspace: cwd, now }, {});
+    assert.strictEqual(vitals.guarantee.sentence, 'three landings this fortnight, one needed a human fix.');
+  } finally {
+    cleanup(cwd);
+  }
+});
+
+test('a clone reads the remote default branch even when local master is behind', () => {
+  const { cwd: origin, now } = buildMergedWorkRepo();
+  const clone = fs.mkdtempSync(path.join(os.tmpdir(), 'atris-improve-revisions-clone-'));
+  try {
+    execSync(`git clone -q "${origin}" "${clone}/repo"`, { stdio: 'pipe' });
+    const repo = path.join(clone, 'repo');
+    execSync('git config user.email t@t && git config user.name t && git checkout -q -b stale-feature HEAD~4 && git branch -f master HEAD', { cwd: repo, stdio: 'pipe' });
+    const summary = collectRevisionSignals(repo, { days: 14, now });
+    assert.strictEqual(summary.landings, 3);
+    assert.strictEqual(summary.revised, 1);
+  } finally {
+    cleanup(origin);
+    cleanup(clone);
   }
 });

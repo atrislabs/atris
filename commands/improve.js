@@ -27,8 +27,7 @@ const gitSpawn = require('../lib/git-spawn');
 const ignoredCache = require('../lib/ignored-cache');
 const { apiRequestJson, getApiBaseUrl } = require('../utils/api');
 const { loadCredentials } = require('../utils/auth');
-const pulse = require('../lib/pulse');
-const { cronInstalled } = require('./pulse');
+const autoland = require('../lib/autoland');
 const close = require('./close');
 const { readUsage } = require('../lib/usage');
 const { knownCommands } = require('../lib/known-commands');
@@ -361,12 +360,6 @@ function countWord(n) {
   return n >= 0 && n < SMALL_NUMBER_WORDS.length ? SMALL_NUMBER_WORDS[n] : String(n);
 }
 
-function formatReward(value) {
-  const n = Number(value) || 0;
-  if (Number.isInteger(n)) return String(n);
-  return String(Number(n.toFixed(2)));
-}
-
 function agePhrase(ts, nowMs = Date.now()) {
   const ms = timestampMs(ts);
   if (ms == null) return null;
@@ -385,100 +378,35 @@ function plainSentence(value) {
     .toLowerCase();
 }
 
-function latestByTime(rows, fields) {
-  let latest = null;
-  let latestMs = -Infinity;
-  for (const row of Array.isArray(rows) ? rows : []) {
-    for (const field of fields) {
-      const ms = timestampMs(row && row[field]);
-      if (ms != null && ms > latestMs) {
-        latest = row;
-        latestMs = ms;
-      }
-    }
-  }
-  return latest ? { row: latest, ms: latestMs } : null;
-}
-
-function scoutFindingLanded(row = {}) {
-  if (!row || typeof row !== 'object') return false;
-  if (row.finding_landed === true || row.finding === true) return true;
-  if (Array.isArray(row.findings) && row.findings.length > 0) return true;
-  if (row.result && typeof row.result === 'object') {
-    if (row.result.finding_landed === true || row.result.finding === true) return true;
-    if (Array.isArray(row.result.findings) && row.result.findings.length > 0) return true;
-  }
-  const landing = row.last_landing || (row.result && row.result.landing) || row.landing;
-  if (landing && typeof landing === 'object') {
-    const text = `${landing.finding || ''} ${landing.findings || ''}`.trim();
-    if (text) return true;
-  }
-  return false;
-}
-
 function collectImproveVitals(options = {}, deps = {}) {
   const root = expandHome(options.workspace || process.cwd());
   const nowDate = options.now ? new Date(options.now) : new Date();
   const nowMs = Number.isFinite(nowDate.getTime()) ? nowDate.getTime() : Date.now();
   const today = localDateKey(new Date(nowMs));
 
-  const readPulse = deps.readPulseReceipts || pulse.readPulseReceipts;
-  const pulsePath = (deps.pulseReceiptsPath || pulse.pulseReceiptsPath)(root);
-  const receipts = readPulse(root);
-  const finished = (Array.isArray(receipts) ? receipts : []).filter((row) => row && row.phase === 'finished');
-  const latestPulse = latestByTime(finished, ['ts']);
-  const rewardSince = nowMs - DAY_MS;
-  const rewardToday = finished.reduce((sum, row) => {
-    const ms = timestampMs(row.ts);
-    return ms != null && ms >= rewardSince ? sum + (Number(row.reward) || 0) : sum;
-  }, 0);
-  const heartbeatAge = latestPulse ? agePhrase(latestPulse.row.ts, nowMs) : null;
-  const heartbeatSentence = latestPulse
-    ? `the scheduled improve heartbeat last beat ${heartbeatAge} and earned ${formatReward(rewardToday)} reward today.`
-    : `the scheduled improve heartbeat has not beaten yet and earned ${formatReward(rewardToday)} reward today.`;
-  const cronFn = deps.cronInstalled || cronInstalled;
-  // Per-repo slots (pr 310): the crontab marker is derived from the root, so
-  // the check must ask about THIS repo's markers, not the legacy default.
-  const slot = (() => {
-    try { return pulse.resolvePulseSlot(root); } catch { return null; }
-  })();
-  const slotMarkers = slot ? slot.markers : undefined;
-  const legacyCronInstalled = Boolean(slotMarkers ? cronFn(slotMarkers) : cronFn());
-  const homeDir = deps.homeDir || os.homedir();
-  const launchdInstalled = (() => {
-    if (!slot) return false;
-    const label = `com.atris.pulse.${slot.marker.toLowerCase().replace(/^atris_pulse_/, '').replace(/[^a-z0-9]+/g, '-')}`;
-    const plistPath = path.join(homeDir, 'Library', 'LaunchAgents', `${label}.plist`);
-    return fs.existsSync(plistPath);
-  })();
-  const installed = launchdInstalled || legacyCronInstalled;
-  const installNudge = installed ? null : 'the scheduled improve loop is off. turn it on: atris pulse install --model claude-sonnet-5';
+  // The cron pulse loops were retired on 2026-07-20. The unattended loop that
+  // still runs is the hourly autoland tick: it lands certified work, reaps
+  // stale worktrees, and dispatches wishes, and leaves a receipt every hour.
+  // Receipts live in the checkout the cron runs in, so a linked worktree
+  // falls back to its main checkout before saying the heartbeat never ran.
+  const readTick = deps.lastAutolandTick || autoland.lastTickReceipt;
+  const commonDir = gitCommonDir(root);
+  const mainCheckout = commonDir && path.basename(commonDir) === '.git' ? path.dirname(commonDir) : null;
+  const lastTick = readTick(root) || (mainCheckout && path.resolve(mainCheckout) !== path.resolve(root) ? readTick(mainCheckout) : null);
+  const tickAge = lastTick ? agePhrase(new Date(lastTick.ms).toISOString(), nowMs) : null;
+  const tickLive = Boolean(lastTick) && nowMs - lastTick.ms <= autoland.HEARTBEAT_LIVE_HOURS * 60 * 60 * 1000;
+  const heartbeatSentence = lastTick
+    ? `the hourly heartbeat that lands finished work last ran ${tickAge}.`
+    : 'the hourly heartbeat that lands finished work has not run here yet.';
+  let installNudge = null;
+  if (!lastTick) installNudge = 'turn it on: atris autoland on';
+  else if (!tickLive) installNudge = 'it has gone quiet. turn it back on: atris autoland on';
 
   const experimentsPath = path.join(root, '.atris', 'state', 'experiments-daily.json');
   const experiments = readJsonFile(experimentsPath, {});
   const history = Array.isArray(experiments && experiments.history) ? experiments.history : [];
   const experimentRanToday = String(experiments && experiments.last_run_date || '') === today;
   const exploitSentence = `${experimentRanToday ? 'todays experiment already ran' : 'no experiment yet today'}, with ${plural(history.length, 'total experiment')}.`;
-
-  const missionsPath = path.join(root, '.atris', 'state', 'missions.jsonl');
-  const missions = readJsonlFile(missionsPath);
-  const scoutMissions = missions.filter((row) => {
-    const owner = String(row && row.owner || '').toLowerCase();
-    return owner === 'scout' || owner === 'signal-scout' || owner.endsWith('-scout');
-  });
-  const latestScout = latestByTime(scoutMissions, [
-    'last_tick_at',
-    'last_tick_finished_at',
-    'finished_at',
-    'updated_at',
-    'created_at',
-    'started_at',
-  ]);
-  const scoutAge = latestScout ? agePhrase(new Date(latestScout.ms).toISOString(), nowMs) : null;
-  const findingLanded = latestScout ? scoutFindingLanded(latestScout.row) : false;
-  const exploreSentence = latestScout
-    ? `the scout last explored ${scoutAge} and ${findingLanded ? 'landed a finding' : 'no finding landed'}.`
-    : 'the scout has not explored yet and no finding landed.';
 
   const openFlags = (deps.openFlags || close.openFlags)(root, { now: new Date(nowMs) });
   const sweep = (deps.sweepState || close.sweepState)(root, new Date(nowMs), { dryRun: true });
@@ -495,11 +423,10 @@ function collectImproveVitals(options = {}, deps = {}) {
   const usageSentence = `you used ${usedThisWeek.size} of ${known.length} known commands this week.`;
 
   const heartbeat = {
-    receipts_path_exists: fs.existsSync(pulsePath),
-    last_finished_at: latestPulse ? latestPulse.row.ts : null,
-    last_finished_ago: heartbeatAge,
-    reward_last_24h: Number(formatReward(rewardToday)),
-    cron_installed: installed,
+    source: 'autoland',
+    last_ran_at: lastTick ? new Date(lastTick.ms).toISOString() : null,
+    last_ran_ago: tickAge,
+    live: tickLive,
     sentence: plainSentence(heartbeatSentence),
   };
   const exploit = {
@@ -507,13 +434,6 @@ function collectImproveVitals(options = {}, deps = {}) {
     total_experiments: history.length,
     last_run_date: experiments && experiments.last_run_date || null,
     sentence: plainSentence(exploitSentence),
-  };
-  const explore = {
-    total_scout_missions: scoutMissions.length,
-    last_tick_at: latestScout ? new Date(latestScout.ms).toISOString() : null,
-    last_tick_ago: scoutAge,
-    finding_landed: findingLanded,
-    sentence: plainSentence(exploreSentence),
   };
   const excrete = {
     open: openFlags.length,
@@ -550,7 +470,6 @@ function collectImproveVitals(options = {}, deps = {}) {
   const sentences = [
     heartbeat.sentence,
     exploit.sentence,
-    explore.sentence,
     excrete.sentence,
     ...(topOverdueSentence ? [`the top overdue loop says ${topOverdueSentence}`] : []),
     usage.sentence,
@@ -559,7 +478,6 @@ function collectImproveVitals(options = {}, deps = {}) {
   const groups = [
     [heartbeat.sentence, installNudge].filter(Boolean),
     [exploit.sentence],
-    [explore.sentence],
     [excrete.sentence, ...(topOverdueSentence ? [`the top overdue loop says ${topOverdueSentence}`] : [])],
     [usage.sentence],
     ...(guarantee ? [[guarantee.sentence]] : []),
@@ -570,7 +488,6 @@ function collectImproveVitals(options = {}, deps = {}) {
     generated_at: new Date(nowMs).toISOString(),
     heartbeat,
     exploit,
-    explore,
     excrete,
     usage,
     guarantee,
@@ -1224,22 +1141,68 @@ function saveRevisionFilesCache(cache) {
   ignoredCache.writeCacheJson(cache.root, REVISION_FILES_CACHE, { version: 1, shallow: cache.shallow, entries });
 }
 
+// A squash merge of a pull request keeps the pull request number at the end
+// of its subject, the way GitHub writes it: "fix the thing (#1075)".
+const PULL_REQUEST_SUBJECT = /\(#\d+\)\s*$/;
+
 /**
- * Read the last N days of history and pair every agent landing with the
- * human commits that touched the same files within the 72-hour window.
+ * The branch merged work lands on. The checked-out branch is the wrong
+ * answer: a stale feature branch read "zero landings" on a night fifteen pull
+ * requests merged to master. origin's HEAD names the default branch; without
+ * it, main then master. When both the remote and the local copy exist, the
+ * one with the newer tip wins, so unpushed local work and a fresh fetch both
+ * count. One git call; HEAD when nothing matches.
+ */
+function defaultBranchRef(root) {
+  let out = '';
+  try {
+    out = gitLines(root, [
+      'for-each-ref',
+      '--format=%(refname)%09%(symref)%09%(committerdate:unix)',
+      'refs/remotes/origin/HEAD',
+      'refs/remotes/origin/main',
+      'refs/remotes/origin/master',
+      'refs/heads/main',
+      'refs/heads/master',
+    ]);
+  } catch {
+    return 'HEAD';
+  }
+  const tips = new Map();
+  let originHead = '';
+  for (const line of out.split('\n')) {
+    const [name, symref, date] = line.split('\t');
+    if (!name) continue;
+    if (name === 'refs/remotes/origin/HEAD') originHead = String(symref || '').trim();
+    else tips.set(name, Number(date) || 0);
+  }
+  const named = originHead.replace(/^refs\/remotes\/origin\//, '');
+  for (const branch of named ? [named] : ['main', 'master']) {
+    const found = [`refs/remotes/origin/${branch}`, `refs/heads/${branch}`].filter((ref) => tips.has(ref));
+    if (found.length) return found.sort((a, b) => tips.get(b) - tips.get(a))[0];
+  }
+  return originHead || 'HEAD';
+}
+
+/**
+ * Read the last N days of merged work on the default branch and pair every
+ * landing with the human commits that touched the same files within the
+ * 72-hour window. The walk is first-parent, so a pull request counts once,
+ * as its squash commit or its merge commit, never as its branch commits.
  */
 function collectRevisionSignals(root, options = {}) {
   const days = Number.isFinite(options.days) && options.days > 0 ? Math.round(options.days) : DEFAULT_REVISIONS_DAYS;
   const nowMs = options.now != null ? new Date(options.now).getTime() : Date.now();
   const sinceIso = new Date(nowMs - days * DAY_MS).toISOString();
+  const ref = options.ref || defaultBranchRef(root);
 
   let raw = '';
   try {
-    raw = gitLines(root, ['log', `--since=${sinceIso}`, '--date=iso-strict', '--pretty=format:%H%x1f%P%x1f%aI%x1f%s%x1f%B%x1e']);
+    raw = gitLines(root, ['log', '--first-parent', `--since=${sinceIso}`, '--date=iso-strict', '--pretty=format:%H%x1f%P%x1f%aI%x1f%s%x1f%B%x1e', ref, '--']);
   } catch (e) {
     // a repo with no commits yet exits non-zero on `git log`; that is the
     // empty-history case, not an error. anything else (not a repo) rethrows.
-    if (!/does not have any commits|bad default revision|unknown revision/i.test(e.message)) throw e;
+    if (!/does not have any commits|bad default revision|unknown revision|bad revision/i.test(e.message)) throw e;
     raw = '';
   }
 
@@ -1248,23 +1211,25 @@ function collectRevisionSignals(root, options = {}) {
     .filter((chunk) => chunk.trim())
     .map((chunk) => {
       const [hash, parents, at, subject, body] = chunk.split('\x1f');
+      const parentList = String(parents || '').trim().split(/\s+/).filter(Boolean);
+      const cleanSubject = String(subject || '').trim();
       return {
         hash: String(hash || '').trim(),
-        parents: String(parents || '').trim().split(/\s+/).filter(Boolean),
+        parents: parentList,
         at: String(at || '').trim(),
         ms: timestampMs(at),
-        subject: String(subject || '').trim(),
-        isAgent: isAgentCommitBody(body),
+        subject: cleanSubject,
+        // Merged work: an agent trailer, a merge commit, or a pull request
+        // squash. Counting merges as revisions made the first live reading
+        // say 85 percent on a healthy repo; a merge is a landing action.
+        isLanding: isAgentCommitBody(body) || parentList.length >= 2 || PULL_REQUEST_SUBJECT.test(cleanSubject),
       };
     })
     .filter((c) => c.hash && c.ms != null);
 
-  const landings = commits.filter((c) => c.isAgent);
-  // A merge that carries agent work onto the mainline is a landing action,
-  // not a human correction; counting merges as revisions made the first live
-  // reading say 85 percent on a healthy repo. Only single-parent human
-  // commits count as revision signals.
-  const humans = commits.filter((c) => !c.isAgent && c.parents.length < 2);
+  const landings = commits.filter((c) => c.isLanding);
+  // Only direct commits a human made on the default branch count as fixes.
+  const humans = commits.filter((c) => !c.isLanding);
 
   // Every landing's files are needed, and a human commit's only when it falls
   // inside some landing's window. Plain commits missing from the cache are

@@ -47,12 +47,22 @@ async function captureConsole(fn) {
   }
 }
 
+// An hourly autoland tick receipt, stamped at a fixed time so ages are exact.
+function writeAutolandTick(dir, at) {
+  const runsDir = path.join(dir, 'atris', 'runs');
+  fs.mkdirSync(runsDir, { recursive: true });
+  const file = path.join(runsDir, `autoland-tick-${at.replace(/[:.]/g, '-')}.json`);
+  fs.writeFileSync(file, `${JSON.stringify({ at, landed: [] })}\n`, 'utf8');
+  const when = new Date(at);
+  fs.utimesSync(file, when, when);
+}
+
 function writeVitalsFixtures(dir) {
+  // Retired cron pulse receipts linger on disk; the vitals must not read them.
   writeJsonl(pulse.pulseReceiptsPath(dir), [
-    { schema: pulse.PULSE_RECEIPT_SCHEMA, phase: 'finished', ts: '2026-07-07T10:00:00.000Z', reward: 9 },
-    { schema: pulse.PULSE_RECEIPT_SCHEMA, phase: 'started', ts: '2026-07-08T11:40:00.000Z', reward: 0 },
     { schema: pulse.PULSE_RECEIPT_SCHEMA, phase: 'finished', ts: '2026-07-08T11:48:00.000Z', reward: 2 },
   ]);
+  writeAutolandTick(dir, '2026-07-08T11:14:00.000Z');
 
   writeJson(path.join(dir, '.atris', 'state', 'experiments-daily.json'), {
     last_run_date: '2026-07-08',
@@ -60,6 +70,7 @@ function writeVitalsFixtures(dir) {
   });
 
   writeJsonl(path.join(dir, '.atris', 'state', 'missions.jsonl'), [
+    // A leftover scout mission row: its writer is retired, so no line shows it.
     { schema: 'atris.mission.v1', owner: 'scout', updated_at: '2026-07-08T10:00:00.000Z', finding_landed: true },
     { schema: 'atris.mission.v1', owner: 'mission-lead', updated_at: '2026-07-08T11:00:00.000Z' },
   ]);
@@ -102,7 +113,6 @@ test('collectImproveVitals reads metabolism fixtures and renders plain lowercase
       'generated_at',
       'heartbeat',
       'exploit',
-      'explore',
       'excrete',
       'usage',
       'guarantee',
@@ -110,27 +120,23 @@ test('collectImproveVitals reads metabolism fixtures and renders plain lowercase
       'sentences',
       'groups',
     ]);
-    assert.equal(vitals.heartbeat.last_finished_ago, '12 minutes ago');
-    assert.equal(vitals.heartbeat.reward_last_24h, 2);
-    assert.equal(vitals.heartbeat.cron_installed, false);
+    assert.equal(vitals.heartbeat.source, 'autoland');
+    assert.equal(vitals.heartbeat.last_ran_ago, '46 minutes ago');
+    assert.equal(vitals.heartbeat.live, true);
+    assert.equal(vitals.install_nudge, null);
     assert.equal(vitals.exploit.ran_today, true);
     assert.equal(vitals.exploit.total_experiments, 2);
-    assert.equal(vitals.explore.finding_landed, true);
-    assert.equal(vitals.explore.last_tick_ago, '2 hours ago');
     assert.equal(vitals.excrete.open, 1);
     assert.equal(vitals.excrete.overdue, 1);
     assert.equal(vitals.usage.used_this_week, 2);
     assert.equal(vitals.usage.known_commands, knownCommands.length);
-    assert.equal(vitals.install_nudge, 'the scheduled improve loop is off. turn it on: atris pulse install --model claude-sonnet-5');
     // The fixture dir has no git history, so the guarantee gauge stays silent.
     assert.equal(vitals.guarantee, null);
     assert.ok(!vitals.sentences.some((s) => /fortnight/.test(s)));
 
     const output = formatImproveVitals(vitals);
-    assert.match(output, /the scheduled improve heartbeat last beat 12 minutes ago and earned 2 reward today\./);
-    assert.match(output, /the scheduled improve loop is off\. turn it on: atris pulse install --model claude-sonnet-5/);
+    assert.match(output, /the hourly heartbeat that lands finished work last ran 46 minutes ago\./);
     assert.match(output, /todays experiment already ran, with 2 total experiments\./);
-    assert.match(output, /the scout last explored 2 hours ago and landed a finding\./);
     assert.match(output, /the excretion loop has 1 open loop and 1 overdue loop\./);
     assert.match(output, /the top overdue loop says approve payroll is waiting on you, 1 day late, close it when payroll is approved\./);
     assert.match(output, new RegExp(`you used 2 of ${knownCommands.length} known commands this week\\.`));
@@ -151,9 +157,8 @@ test('run --json returns vitals json for the bare front door', async () => {
   const vitals = {
     schema: IMPROVE_VITALS_SCHEMA,
     generated_at: '2026-07-08T12:00:00.000Z',
-    heartbeat: { sentence: 'the heartbeat has not beaten yet and earned 0 reward today.' },
+    heartbeat: { sentence: 'the hourly heartbeat that lands finished work has not run here yet.' },
     exploit: { sentence: 'no experiment yet today, with 0 total experiments.' },
-    explore: { sentence: 'the scout has not explored yet and no finding landed.' },
     excrete: { sentence: 'the excretion loop has 0 open loops and 0 overdue loops.' },
     usage: { sentence: 'you used 0 of 1 known commands this week.' },
     install_nudge: null,
@@ -189,4 +194,58 @@ test('run routes tick subcommand and flagged legacy invocations to the old tick 
   assert.equal(flagged.code, 0);
   assert.equal(JSON.parse(flagged.stdout).source, 'api');
   assert.equal(seen[1].json, true);
+});
+
+// The cron pulse loops were retired on 2026-07-20 and the scout missions
+// stopped being written when the scout cadence was switched off. No vitals
+// line may send anyone to a retired mechanism or show a date only a retired
+// writer could move.
+test('no vitals line recommends pulse install or reports the retired scout', () => {
+  const cases = [
+    { name: 'no tick yet', tick: null, nudge: 'turn it on: atris autoland on', heartbeat: /has not run here yet/ },
+    { name: 'quiet tick', tick: '2026-07-05T10:00:00.000Z', nudge: 'it has gone quiet. turn it back on: atris autoland on', heartbeat: /last ran 3 days ago\./ },
+    { name: 'live tick', tick: '2026-07-08T11:14:00.000Z', nudge: null, heartbeat: /last ran 46 minutes ago\./ },
+  ];
+  for (const c of cases) {
+    const dir = makeTempDir();
+    try {
+      writeVitalsFixtures(dir);
+      fs.rmSync(path.join(dir, 'atris', 'runs'), { recursive: true, force: true });
+      if (c.tick) writeAutolandTick(dir, c.tick);
+      // Even with a retired pulse schedule reported missing, nothing nudges pulse.
+      const vitals = collectImproveVitals(
+        { workspace: dir, now: '2026-07-08T12:00:00.000Z' },
+        { cronInstalled: () => false }
+      );
+      assert.equal(vitals.install_nudge, c.nudge, c.name);
+      const lines = formatImproveVitals(vitals).split('\n');
+      assert.match(vitals.heartbeat.sentence, c.heartbeat, c.name);
+      for (const line of lines) {
+        assert.doesNotMatch(line, /pulse install/, `${c.name}: ${line}`);
+        assert.doesNotMatch(line, /\bpulse\b/, `${c.name}: ${line}`);
+        assert.doesNotMatch(line, /scout/, `${c.name}: ${line}`);
+      }
+      assert.equal(vitals.explore, undefined);
+    } finally {
+      cleanupTempDir(dir);
+    }
+  }
+});
+
+test('a linked worktree reads the heartbeat from its main checkout', () => {
+  const { execSync } = require('node:child_process');
+  const dir = makeTempDir();
+  const main = path.join(dir, 'main');
+  const linked = path.join(dir, 'linked');
+  try {
+    fs.mkdirSync(main);
+    execSync('git init -q && git config user.email t@t && git config user.name t && git commit -q --allow-empty -m seed', { cwd: main, stdio: 'pipe' });
+    execSync(`git worktree add -q "${linked}"`, { cwd: main, stdio: 'pipe' });
+    writeAutolandTick(main, '2026-07-08T11:14:00.000Z');
+    const vitals = collectImproveVitals({ workspace: linked, now: '2026-07-08T12:00:00.000Z' }, {});
+    assert.equal(vitals.heartbeat.last_ran_ago, '46 minutes ago');
+    assert.equal(vitals.install_nudge, null);
+  } finally {
+    cleanupTempDir(dir);
+  }
 });
