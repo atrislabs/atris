@@ -54,9 +54,14 @@ async function withRoom(fn, { roster = TEAM } = {}) {
   process.env.ATRIS_ROUTER_EXPLAIN = '0';
   readEngineRegistry(root);
   for (const name of ['devin', 'grok', 'cursor', 'codex', 'claude']) setEngineHealth(name, 'ready', root);
+  // A wide terminal, so a table never wraps: where a narrow one would wrap
+  // depends on which engines this machine has, and the tests read whole rows.
+  const columns = process.stdout.columns;
+  process.stdout.columns = 200;
   try {
     return await fn(root, home);
   } finally {
+    process.stdout.columns = columns;
     for (const [key, value] of saved) {
       if (value === undefined) delete process.env[key];
       else process.env[key] = value;
@@ -225,8 +230,8 @@ test('roster view and engine list show the benched worker', async () => {
     assert.equal(roster.exit, 0);
     // The lead stays first on its row, the note says it is cooling and the
     // backup runs; the backups are listed in order under BACKUP.
-    assert.match(roster.out, new RegExp(`^build +devin · swe-2-max +grok · grok 4\\.7 fast .*cooling until ${clock} \\(stalled\\),`, 'm'));
-    assert.match(roster.out, /^ +cursor · own default +using backup$/m);
+    assert.match(roster.out, new RegExp(`^build +devin · swe-2-max +grok · grok 4\\.7 fast .*cooling until ${clock} \\(stalled\\), using backup$`, 'm'));
+    assert.match(roster.out, /^ +cursor · own default$/m);
     const list = capture(() => engineCommand([], { root }));
     assert.match(list.out, /devin\s+cooling/);
     assert.match(list.out, new RegExp(`cooling until ${clock} \\(stalled\\)`));
