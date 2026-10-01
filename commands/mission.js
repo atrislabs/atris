@@ -7,6 +7,7 @@ const readline = require('readline');
 const { spawn, spawnSync } = require('child_process');
 const { hasFlag, readFlag, readIntFlag } = require('../lib/arg-parser');
 const { memberProcessPrompt } = require('../lib/member-context');
+const { memberIdentityLine, missionObjectiveLine } = require('../lib/member-identity');
 const {
   compactErrorPayload,
   compactSuccessPayload,
@@ -8634,7 +8635,7 @@ function buildTickPrompt(mission, tickIndex, maxTicks, frozen, pings = [], cwd =
     `# Mission Tick ${tickIndex}/${maxTicks}`,
     ...pingLines,
     ``,
-    `**Objective:** ${mission.objective}`,
+    missionObjectiveLine(mission.objective),
     `**Owner:** ${mission.owner}`,
     `**Lane:** ${frozen.lane}`,
     `**Cadence:** ${mission.cadence}`,
@@ -8648,7 +8649,7 @@ function buildTickPrompt(mission, tickIndex, maxTicks, frozen, pings = [], cwd =
     ``,
     `## Your task`,
     `Do ONE increment of work toward the stop condition. ONE. No more.`,
-    `- You are the member "${mission.owner}". Read atris/team/${mission.owner}/MEMBER.md (and SOUL.md if present) before acting, work in that identity, inside its scope and stop rules. After your work, append what you did and what you learned to atris/team/${mission.owner}/logs/<today's date>.md.`,
+    `- ${memberIdentityLine(mission.owner)} Read atris/team/${mission.owner}/MEMBER.md (and SOUL.md if present) before acting, work in that identity, inside its scope and stop rules. After your work, append what you did and what you learned to atris/team/${mission.owner}/logs/<today's date>.md.`,
     `- FIRST: inspect current mission/task state before acting. Read the relevant files, run \`atris mission status ${mission.id}\`, \`git status\`, or \`atris task list\` as needed so you know what's already done.`,
     `- Pick the smallest concrete action that moves the mission forward.`,
     `- Before acting, state your single next move in one sentence.`,

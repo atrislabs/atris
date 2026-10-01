@@ -15,7 +15,8 @@ const { spawnSync } = require('node:child_process');
 const { parseEngineProcess } = require('../lib/engine-processes');
 const { RUNNER_PROFILE_DEFS, buildRunnerCommand } = require('../lib/runner-command');
 const { buildReadOnlyEngineInvocation } = require('../lib/engine-ask');
-const { commandForEngine } = require('../commands/agent-spawn');
+const { ALLOWED_ENGINES, commandForEngine } = require('../commands/agent-spawn');
+const { buildTickPrompt } = require('../commands/mission');
 const { buildEngineCommand } = require('../lib/fleet');
 
 const ROOT = path.join(__dirname, '..');
@@ -25,11 +26,12 @@ const DOING = 'Review the diff for PR 7 Keep it short.';
 // The program name at the front of a launch -> the engine the view shows.
 const BINARY_ENGINE = {
   codex: 'codex', claude: 'claude', 'cursor-agent': 'cursor', devin: 'devin', grok: 'grok', agy: 'agy',
-  opencode: 'opencode', ax: 'atris-fast', cmd: 'commandcode',
+  opencode: 'opencode', ax: 'atris-fast', cmd: 'commandcode', droid: 'droid',
 };
 const MODEL_FOR_BIN = {
   codex: 'gpt-6.1-sol', claude: 'claude-opus-5-5', 'cursor-agent': 'composer-2.5', devin: 'swe-2-max',
   grok: 'grok-4.7', agy: 'gemini-3.8-flash-high', opencode: 'opencode/muse-spark-1.3', cmd: 'cmd-model-2',
+  droid: 'glm-5.2',
 };
 const RUNNER_ENV = ['ATRIS_RUNNER_PROFILE', 'ATRIS_RUNNER_BIN', 'ATRIS_RUNNER_MODEL', 'ATRIS_RUNNER_COMMAND_TEMPLATE',
   'ATRIS_CLAUDE_BIN', 'ATRIS_CLAUDE_MODEL', 'ATRIS_CLAUDE_COMMAND_TEMPLATE'];
@@ -82,6 +84,7 @@ function expectedFrom(argv) {
 }
 
 function assertReads(label, argv, { member = 'validator', doing = DOING } = {}) {
+  assert.ok(BINARY_ENGINE[path.basename(argv[0])], `${label}: a launcher runs ${path.basename(argv[0])}; add it here and to lib/engine-processes.js`);
   const run = parseEngineProcess({ pid: 1, ppid: 0, elapsed_seconds: 5, command: psLine(argv) });
   assert.ok(run, `${label}: the launch was not read as a run\n${psLine(argv)}`);
   assert.deepEqual(
@@ -147,9 +150,12 @@ test('every fleet launch reads back, plain, sealed, and yolo', () => {
   }
 });
 
-test('every agent spawn launch reads back, including cursor with no -p', () => {
-  for (const engine of ['codex', 'claude', 'cursor', 'devin']) {
+test('every agent spawn launch reads back, including cursor with no -p and droid', () => {
+  const engines = [...ALLOWED_ENGINES].filter((engine) => engine !== 'manual');
+  assert.ok(engines.includes('droid'));
+  for (const engine of engines) {
     const command = commandForEngine({ engine, role: 'reviewer', task: 'Review the diff for PR 7', cwd: '/w' });
+    assert.ok(command, `agent spawn offers ${engine} but builds no launch for it`);
     const argv = shellArgv(command);
     assertReads(`spawn ${engine}`, argv, {
       member: null,
@@ -189,4 +195,45 @@ test('every launch in the engines skill reads back', () => {
       `${name}\n${psLine(argv)}`,
     );
   }
+});
+
+test('a member run (atris member run, mission ticks) reads back as that member, doing its objective', () => {
+  const mission = {
+    id: 'mission-7', objective: 'Make the team table honest', owner: 'validator', cadence: 'hourly',
+    stop_condition: 'the table matches ps', status: 'running', last_tick_at: null,
+  };
+  const tickFile = path.join(dir, 'tick.md');
+  fs.writeFileSync(tickFile, buildTickPrompt(mission, 1, 5, { lane: 'build', verifier: '' }, [], dir));
+  for (const profile of Object.keys(RUNNER_PROFILE_DEFS)) {
+    const bin = RUNNER_PROFILE_DEFS[profile].bin;
+    const command = withRunnerEnv(profile, () => buildRunnerCommand({ promptFile: tickFile, model: MODEL_FOR_BIN[bin] || '' }));
+    assertReads(`tick ${profile}`, shellArgv(command), { doing: 'Make the team table honest' });
+  }
+});
+
+test('settings after a prompt are read right to left, so a prompt that names a model keeps it', () => {
+  const tricky = path.join(dir, 'tricky.md');
+  fs.writeFileSync(tricky, 'You are acting as validator. Explain --model gpt-6.1-sol');
+  const covered = new Set();
+  const launches = [];
+  for (const profile of Object.keys(RUNNER_PROFILE_DEFS)) {
+    const bin = RUNNER_PROFILE_DEFS[profile].bin;
+    const model = MODEL_FOR_BIN[bin] || '';
+    launches.push([`runner ${profile}`, profile, withRunnerEnv(profile, () => shellArgv(buildRunnerCommand({ promptFile: tricky, model })))]);
+    launches.push([`fleet ${profile}`, profile, shellArgv(withRunnerEnv('', () => buildEngineCommand(profile, tricky, { watchdogPath: watchdog, model, sealed: true })))]);
+    try {
+      const ask = buildReadOnlyEngineInvocation(profile, 'You are acting as validator. Explain --model gpt-6.1-sol', model);
+      launches.push([`ask ${profile}`, profile, [path.join(binDir, ask.bin), ...ask.args]]);
+    } catch (error) {
+      if (error.reason !== 'model_not_supported') throw error;
+    }
+  }
+  for (const [label, profile, argv] of launches) {
+    const promptAt = argv.findIndex((word) => word.includes('acting as validator'));
+    // Only launches whose launcher puts its own model after the prompt.
+    if (!argv.slice(promptAt + 1).includes('--model')) continue;
+    covered.add(profile);
+    assertReads(label, argv, { doing: 'Explain --model gpt-6.1-sol' });
+  }
+  for (const profile of ['claude', 'fable', 'haiku', 'devin']) assert.ok(covered.has(profile), `${profile} was not covered`);
 });

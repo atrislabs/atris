@@ -465,6 +465,7 @@ function agentSpawnStatusCommand(args = [], deps = {}) {
 }
 
 module.exports = {
+  ALLOWED_ENGINES,
   parseSpawnArgs,
   commandForEngine,
   createSpawnRequest,
