@@ -76,7 +76,12 @@ function withRoom(fn) {
     machine: path.join(home, '.atris', 'ROSTER.md'),
     sessions: path.join(home, '.atris', 'sessions'),
   };
+  // A wide terminal, so a table never wraps: where a narrow one would wrap
+  // depends on which engines this machine has, and the tests read whole rows.
+  const columns = process.stdout.columns;
+  process.stdout.columns = 200;
   try { return fn(root, paths); } finally {
+    process.stdout.columns = columns;
     for (const [key, value] of saved) {
       if (value === undefined) delete process.env[key];
       else process.env[key] = value;
@@ -341,8 +346,8 @@ test('the view shows every worker in order with who leads and why others are ski
   // skipped one says why; the note says who really runs.
   const lines = view.out.split('\n');
   const at = lines.findIndex((line) => line.startsWith('search '));
-  assert.match(lines[at], /^search +claude · haiku 4\.5 +atris-fast · atris:fast \(ended sep 1\) +- +- +not ready, using/);
-  assert.match(lines[at + 1], /^ +devin · swe-1\.7-lightning +devin ·$/);
+  assert.match(lines[at], /^search +claude · haiku 4\.5 +atris-fast · atris:fast \(ended sep 1\) +- +- +not ready, using devin · swe-1\.7-lightning$/);
+  assert.match(lines[at + 1], /^ +devin · swe-1\.7-lightning$/);
   assert.match(view.out, /^warning: atris\/ROSTER\.md line 6 "- pizza oven" "pizza oven" is not an engine or a model atris knows, so search skips this worker\.$/m);
   assert.match(view.out, /^change who does a job: atris engine assign <job> <tool> --model <model>$/m);
   const row = JSON.parse(command(root, ['roster', '--json']).out).jobs.find((entry) => entry.job === 'search');

@@ -1245,7 +1245,7 @@ function backupSkipText(worker) {
   return worker.why || 'skipped';
 }
 
-// "newer gpt-6.2-sol out" or "pin 45 days old": the outdated-model flags,
+// "newer <model> out" or "pin 45 days old": the outdated-model flags,
 // short enough for the note column. The full line with its fix prints
 // under the table.
 function staleNote(worker) {
