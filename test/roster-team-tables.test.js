@@ -99,6 +99,51 @@ test('a dispatcher above a run is hidden, and an unnamed child takes its member'
   assert.equal(runs[1].doing, 'fix the flaky test');
 });
 
+test('a prompt that mentions the orchestrator is still a run; only the orchestrator program is skipped', () => {
+  const run = parseEngineProcess({ pid: 7, ppid: 1, elapsed_seconds: 30, command: 'codex exec You are acting as validator. Review orchestrator.py' });
+  assert.deepEqual([run.engine, run.member, run.doing], ['codex', 'validator', 'Review orchestrator.py']);
+  assert.equal(parseEngineProcess({ pid: 8, ppid: 1, elapsed_seconds: 30, command: 'node /x/bin/orchestrator.js codex exec fix it' }), null);
+  assert.equal(parseEngineProcess({ pid: 9, ppid: 1, elapsed_seconds: 30, command: '/usr/local/bin/orchestrator --loop' }), null);
+});
+
+test('two separate processes asking the same thing are two runs; only a wrapper and its own child fold', () => {
+  const command = 'codex exec -m gpt-6.1-sol You are acting as validator. Review the diff';
+  const runs = liveEngineRuns([
+    { pid: 50, ppid: 1, elapsed_seconds: 20, command },
+    { pid: 60, ppid: 2, elapsed_seconds: 10, command },
+    { pid: 70, ppid: 1, elapsed_seconds: 5, command: `node /x/bin/${command}` },
+    { pid: 71, ppid: 70, elapsed_seconds: 5, command: `/x/vendor/${command}` },
+  ], { selfPid: 0 });
+  assert.deepEqual(runs.map((run) => run.pid), [71, 60, 50]);
+});
+
+test('settings are read only before the prompt; flag words inside a prompt stay in the prompt', () => {
+  const dashed = parseEngineProcess({ pid: 1, ppid: 0, elapsed_seconds: 1, command: 'codex exec -- You are acting as validator. Fix --model parsing and --effort high' });
+  assert.deepEqual([dashed.model, dashed.effort, dashed.doing], [null, null, 'Fix --model parsing and --effort high']);
+  const bare = parseEngineProcess({ pid: 2, ppid: 0, elapsed_seconds: 1, command: 'codex exec -m gpt-6.1-sol -c model_reasoning_effort=high Fix --model parsing' });
+  assert.deepEqual([bare.model, bare.effort, bare.doing], ['gpt-6.1-sol', 'high', 'Fix --model parsing']);
+  const devin = parseEngineProcess({ pid: 3, ppid: 0, elapsed_seconds: 1, command: 'devin -p --model swe-2-max -- rename --model to --engine' });
+  assert.deepEqual([devin.model, devin.doing], ['swe-2-max', 'rename --model to --engine']);
+  // claude takes its settings after the prompt, in the shape atris launches.
+  const claude = parseEngineProcess({ pid: 4, ppid: 0, elapsed_seconds: 1, command: 'claude -p You are acting as executor. Fix --model parsing --model claude-opus-5-5 --effort high --allowedTools Bash,Read' });
+  assert.deepEqual([claude.model, claude.effort, claude.doing], ['claude-opus-5-5', 'high', 'Fix --model parsing']);
+  const loose = parseEngineProcess({ pid: 5, ppid: 0, elapsed_seconds: 1, command: 'claude -p You are acting as executor. Fix --model parsing' });
+  assert.deepEqual([loose.model, loose.effort, loose.doing], [null, null, 'Fix --model parsing']);
+});
+
+test('Atris Fast, Composer, and Command Code runs show under the names the roster uses', () => {
+  const fast = parseEngineProcess({ pid: 1, ppid: 0, elapsed_seconds: 1, command: 'node /Users/k/.local/bin/ax --fast You are acting as executor. Fix the footer' });
+  assert.deepEqual([fast.engine, fast.model, fast.member, fast.doing], ['atris-fast', 'atris:fast', 'executor', 'Fix the footer']);
+  const cmd = parseEngineProcess({ pid: 2, ppid: 0, elapsed_seconds: 1, command: 'node /opt/homebrew/bin/cmd -p You are acting as researcher. Find the docs' });
+  assert.deepEqual([cmd.engine, cmd.model, cmd.member, cmd.doing], ['commandcode', null, 'researcher', 'Find the docs']);
+  const pkg = parseEngineProcess({ pid: 3, ppid: 0, elapsed_seconds: 1, command: 'node /opt/homebrew/lib/node_modules/command-code/dist/index.mjs -p tidy up' });
+  assert.equal(pkg.engine, 'commandcode');
+  // A chat, doctor, or bare call is a person at a terminal, not a run.
+  for (const command of ['ax --rapid --chat', 'ax --fast --doctor', 'ax --approvals', 'ax --fast', 'cmd', 'cmd --help']) {
+    assert.equal(parseEngineProcess({ pid: 4, ppid: 0, elapsed_seconds: 1, command }), null, command);
+  }
+});
+
 test('a ps that fails or throws means no runs, never an error', () => {
   assert.deepEqual(listLiveEngineRuns({ runPs: () => ({ status: 1, stdout: '' }) }), []);
   assert.deepEqual(listLiveEngineRuns({ runPs: () => { throw new Error('no ps'); } }), []);
