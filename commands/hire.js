@@ -101,7 +101,8 @@ function hireLine(h = {}, now = Date.now()) {
 function windowText(label, w) {
   if (!w || w.sent == null) return '';
   const replies = Number(w.replies) || 0;
-  const rate = w.reply_rate == null ? '' : ` (${Math.round(Number(w.reply_rate) * 100)}%)`;
+  const value = w.reply_rate == null || w.reply_rate === '' ? NaN : Number(w.reply_rate);
+  const rate = Number.isFinite(value) ? ` (${Math.round(value * 100)}%)` : '';
   const parts = [`sent ${w.sent}`, `${replies} ${replies === 1 ? 'reply' : 'replies'}${rate}`,
     `${Number(w.bounces) || 0} bounced`];
   if (w.spend_cents != null) parts.push(`spent ${dollars(Number(w.spend_cents) / 100)}`);

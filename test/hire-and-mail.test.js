@@ -192,6 +192,16 @@ test('the scoreboard line leaves out what the backend does not share', () => {
     + ' · counts cover only the newest mail');  // someone else's spending key: no spend shown
 });
 
+test('the reply percent shows only for a real number', () => {
+  const { scoreLine } = require('../commands/hire');
+  for (const bad of ['abc', 'NaN', Infinity, -Infinity, {}, [1, 2], '']) {
+    const line = scoreLine({ last_24h: { sent: 4, replies: 1, reply_rate: bad, bounces: 0 } }, NOW);
+    assert.equal(line, '  last 24h: sent 4, 1 reply, 0 bounced', String(bad));
+  }
+  assert.equal(scoreLine({ last_24h: { sent: 4, replies: 1, reply_rate: '0.25', bounces: 0 } }, NOW),
+    '  last 24h: sent 4, 1 reply (25%), 0 bounced');
+});
+
 test('a hire that has not run yet says when it will', () => {
   const line = hireLine({ name: 'Ada', emails_last_24h: { sent: 0, received: 0 }, allowance: {},
     next_run_at: '2026-10-02T09:00:00Z', schedule: { enabled: true } }, NOW);
