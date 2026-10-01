@@ -223,9 +223,10 @@ test('roster view and engine list show the benched worker', async () => {
     const clock = `${String(until.getHours()).padStart(2, '0')}:${String(until.getMinutes()).padStart(2, '0')}`;
     const roster = capture(() => engineCommand(['roster'], { root }));
     assert.equal(roster.exit, 0);
-    assert.match(roster.out, new RegExp(`cooling until ${clock} \\(stalled\\), using backup`));
-    assert.match(roster.out, new RegExp(`1\\. .*skipped, cooling until ${clock} \\(stalled\\)`));
-    assert.match(roster.out, /2\. .*leads now/);
+    // The lead stays first on its row, the note says it is cooling and the
+    // backup runs; the backups are listed in order under BACKUP.
+    assert.match(roster.out, new RegExp(`^build +devin · swe-2-max +grok · grok 4\\.7 fast .*cooling until ${clock} \\(stalled\\),`, 'm'));
+    assert.match(roster.out, /^ +cursor · own default +using backup$/m);
     const list = capture(() => engineCommand([], { root }));
     assert.match(list.out, /devin\s+cooling/);
     assert.match(list.out, new RegExp(`cooling until ${clock} \\(stalled\\)`));

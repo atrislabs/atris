@@ -98,9 +98,9 @@ test('a lead that keeps stalling and a later worker that keeps landing gets one 
     seed(root, 'grok', ['landed', 'landed', 'landed', 'landed'], GROK);
     const view = command(root, ['roster']);
     assert.equal(view.exit, 0);
-    const lines = view.out.split('\n').filter((line) => /suggestion:/.test(line));
+    const lines = view.out.split('\n').filter((line) => /^suggestion for /.test(line));
     assert.equal(lines.length, 1);
-    assert.match(lines[0], /^ {2}suggestion: devin \S.* stalled 3 of its last 5 runs; grok \S.* landed 4 of 4\. to move grok up: atris engine assign "small build" --promote "grok [^"]+"$/);
+    assert.match(lines[0], /^suggestion for small build: devin \S.* stalled 3 of its last 5 runs; grok \S.* landed 4 of 4\. to move grok up: atris engine assign "small build" --promote "grok [^"]+"$/);
     assert.equal(rosterText(root), before, 'the roster file is never written');
   });
 });

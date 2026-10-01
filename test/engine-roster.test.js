@@ -62,8 +62,14 @@ function ready(root, ...names) {
 }
 
 // The job and team lines of a roster view, without the closing hint.
+// The table rows and notes of a roster view: no heading, header row,
+// blank line, or footer command.
 function viewLines(out) {
-  return out.trim().split('\n').filter((line) => !line.startsWith('see which tools') && line.trim());
+  return out.trim().split('\n').filter((line) => line.trim()
+    && !/^jobs(,|$)/.test(line)
+    && !/^JOB  /.test(line)
+    && !line.startsWith('change who does a job:')
+    && !line.startsWith('launch a member:'));
 }
 
 function command(root, args, now = NOW) {
@@ -153,10 +159,10 @@ test('confirm renews all picks for thirty days and roster views show three jobs'
   setRosterPick('review', 'haiku', { backup: 'claude', days: 1, now: NOW }, root);
   const before = command(root, ['roster']);
   assert.equal(before.exit, 0, before.err);
-  // Three job lines, then one heads-up line: both dated workers end tomorrow.
+  // Three job rows, then one heads-up line: both dated workers end tomorrow.
   assert.equal(viewLines(before.out).length, 4);
-  assert.match(before.out, /search\s+no pick, router decides: atris-fast \(atris:fast, atris default\)/);
-  assert.match(before.out, /build\s+claude \(opus 5\.5\).*backup codex.*until sep 25, ends tomorrow, this project/);
+  assert.match(before.out, /^search +atris-fast · atris:fast +none +- +- +no pick, router decides$/m);
+  assert.match(before.out, /^build +claude · opus 5\.5 +codex.* +- +2026-09-25 +ends tomorrow$/m);
   const json = command(root, ['roster', '--json']);
   assert.equal(json.exit, 0, json.err);
   assert.equal(JSON.parse(json.out).jobs.length, 3);
@@ -189,7 +195,7 @@ test('assign saves the model id the claude cli accepts, whatever the spelling', 
     const result = command(root, ['assign', 'review', engine, '--model', typed]);
     assert.equal(result.exit, 0, `${typed}: ${result.err}`);
     assert.equal(projectPicks(root).validator.model, saved, typed);
-    assert.ok(result.out.includes(`${engine} (${shown})`), `${typed}: ${result.out}`);
+    assert.ok(result.out.includes(`${engine} · ${shown}`), `${typed}: ${result.out}`);
   }
 }));
 
@@ -219,7 +225,7 @@ test('an until date that is not a real YYYY-MM-DD day counts as expired; the unt
   assert.equal(rosterPickExpired({ until: '2026-09-24' }, new Date(2026, 8, 24, 23, 59)), false);
   assert.equal(rosterPickExpired({ until: '2026-09-24' }, new Date(2026, 8, 25, 0, 1)), true);
   const roster = command(root, ['roster']);
-  assert.match(roster.out, /build\s+claude.*ended sep 23, skipped, router decides: codex \(its own default\), this project/);
+  assert.match(roster.out, /^build +claude · opus 5\.5 +none +- +2026-09-23 +ended sep 23, router decides: codex$/m);
 }));
 
 test('an all-projects pick applies where the project has none', () => withRoom((root, machineFile) => {
@@ -236,7 +242,8 @@ test('an all-projects pick applies where the project has none', () => withRoom((
   assert.equal(chosen.engine.roster_model, 'claude-opus-5-5');
   assert.equal(chosen.source, 'machine');
   assert.equal(chosen.reason, 'roster pick for build (all projects): claude');
-  assert.match(assigned.out, /build\s+claude \(opus 5\.5\).*backup cursor.*no end date, all projects/);
+  assert.match(assigned.out, /^build +claude · opus 5\.5 +cursor · own default +- +- +-$/m);
+  assert.match(assigned.out, /^jobs, from .*\.atris\/ROSTER\.md$/m);
   // A second project on this machine gets the same pick with no extra step.
   withRoom((other) => {
     process.env.ATRIS_MACHINE_ROSTER_PATH = machineFile;
@@ -354,7 +361,7 @@ test('claude and haiku can own search, and with no roster search still goes to a
   setEngineHealth('atris-fast', 'ready', root);
   const assigned = command(root, ['assign', 'search', 'claude', '--model', 'haiku', '--backup', 'atris-fast']);
   assert.equal(assigned.exit, 0, assigned.err);
-  assert.match(assigned.out, /search\s+claude \(haiku\)\s+backup atris-fast/);
+  assert.match(assigned.out, /^search +claude · haiku +atris-fast · atris:fast +- +- +-$/m);
   const chosen = resolveEngineForRoleRanked('navigator', root, { now: NOW });
   assert.equal(chosen.engine.id, 'claude');
   assert.equal(chosen.engine.roster_model, 'haiku');
@@ -462,7 +469,7 @@ test('a pick saved as a string or a list shows as no pick', () => withRoom((root
   const view = command(root, ['roster']);
   assert.equal(view.exit, 0, view.err);
   assert.doesNotMatch(view.out, /undefined/);
-  for (const job of ['search', 'build', 'review']) assert.match(view.out, new RegExp(`${job}\\s+no pick, router decides`));
+  for (const job of ['search', 'build', 'review']) assert.match(view.out, new RegExp(`^${job} .* no pick, router decides$`, 'm'));
   const json = JSON.parse(command(root, ['roster', '--json']).out);
   for (const row of json.jobs) {
     assert.equal(row.pick, null);
@@ -543,8 +550,8 @@ test('any job name can be assigned: the name says its kind or --like does, and c
   const order = ['search', 'build', 'review', 'quick fixes', 'deep search', 'small build'];
   assert.equal(lines.length, order.length);
   order.forEach((label, index) => assert.ok(lines[index].startsWith(`${label} `), lines[index]));
-  assert.match(view.out, /small build\s+devin \(swe-2-max\)\s+backup grok \(its own default\)\s+until oct 24, all projects/);
-  assert.match(view.out, /quick fixes\s+claude \(opus 5\.5, atris default\)\s+no backup\s+no end date, this project/);
+  assert.match(view.out, /^small build +devin · swe-2-max +grok · own default +- +2026-10-24 +from all projects$/m);
+  assert.match(view.out, /^quick fixes +claude · opus 5\.5 +none +- +- +-$/m);
   const json = JSON.parse(command(root, ['roster', '--json']).out).jobs;
   assert.equal(json.length, 6);
   const row = json.find((entry) => entry.job === 'small build');
@@ -596,7 +603,7 @@ test('the job option asks for a job by name, then falls back to its kind, then t
   assert.equal(kind.reason, 'roster pick for build: claude');
   const view = JSON.parse(command(root, ['roster', '--json']).out).jobs.find((entry) => entry.job === 'small build');
   assert.equal(view.status, 'not ready');
-  assert.match(command(root, ['roster']).out, /small build\s+devin \(swe-2-max\).*not ready, falls back to build: claude \(opus 5\.5\), this project/);
+  assert.match(command(root, ['roster']).out, /^small build +devin · swe-2-max +none +- +- +not ready, falls back to build$/m);
 
   assert.equal(command(root, ['assign', 'build', '--clear']).exit, 0);
   assert.equal(resolveEngineForRoleRanked('executor', root, { now: NOW, job: 'small build' }).source, 'router');
@@ -653,7 +660,7 @@ test('grok friendly names save as grok ids, devin names save as typed, and names
   assert.equal(assigned.exit, 0, assigned.err);
   assert.equal(projectPicks(root)['small-build'].model, 'grok-4.7-build-fast');
   assert.match(projectRosterText(root), /^## small build\n- grok, model: grok 4\.7 fast$/m);
-  assert.match(assigned.out, /small build\s+grok \(grok 4\.7 fast\)/);
+  assert.match(assigned.out, /^small build +grok · grok 4\.7 fast /m);
   const refused = command(root, ['assign', 'build', 'grok', '--model', 'sonnet 5']);
   assert.equal(refused.exit, 2);
   assert.match(refused.err, /grok does not know the model "sonnet 5"/);
@@ -678,7 +685,7 @@ test('a roster saved before custom jobs reads, routes, and renders the same', ()
   assert.equal(resolveEngineForRoleRanked('validator', root, { now: NOW }).engine.id, 'haiku');
   const view = command(root, ['roster']);
   assert.equal(viewLines(view.out).length, 3);
-  assert.match(view.out, /build\s+claude \(opus 5\.5\)\s+backup codex \(its own default\)\s+until oct 24, this project/);
+  assert.match(view.out, /^build +claude · opus 5\.5 +codex · own default +- +2026-10-24 +-$/m);
   // A normal build and a low-stakes build with no small build pick match.
   assert.equal(resolveEngineForRoleRanked('executor', root, { now: NOW, lowStakes: true }).engine.id, 'claude');
   assert.equal(command(root, ['roster', 'confirm'], '2026-09-27T12:00:00Z').exit, 0);

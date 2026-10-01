@@ -91,7 +91,7 @@ test('installed reads the saved registry, never a probe', () => withRoom((root) 
 test('an assigned notes job answers with its pick and backup', () => withRoom((root) => {
   const assigned = command(root, ['assign', 'notes', 'agy', '--model', 'gemini-3.8-flash-high', '--backup', 'claude haiku']);
   assert.equal(assigned.exit, 0, assigned.err);
-  assert.match(assigned.out, /^notes\s+agy \(gemini-3\.8-flash-high\)\s+backup claude \(haiku\)/m);
+  assert.match(assigned.out, /^notes +agy · gemini-3\.8-flash-high +claude · haiku /m);
   assert.deepEqual(resolveNotes(root), {
     job: 'notes',
     engine: 'agy',

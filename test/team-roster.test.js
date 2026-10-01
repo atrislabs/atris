@@ -24,16 +24,20 @@ function rosterDeps(overrides = {}) {
     members: MEMBERS,
     missions: [],
     presence: { members: [] },
+    liveRuns: [],
     ...overrides,
   };
 }
 
-test('roster renders active team and rest of the team sections', () => {
+test('the team renders as one table with a header row and two copyable commands', () => {
   const roster = collectTeamRoster(rosterDeps());
   const rendered = renderTeamRoster(roster);
-
-  assert.match(rendered, /active team:/);
-  assert.match(rendered, /rest of the team:/);
+  const lines = rendered.split('\n');
+  assert.match(lines[0], /^MEMBER +JOB +ENGINE · MODEL +STATUS +DOING +LAST$/);
+  for (const name of ['linguist', 'orb', 'scout']) assert.match(rendered, new RegExp(`^${name} +`, 'm'));
+  assert.equal(lines[lines.length - 2], 'change who does a job: atris engine assign <job> <tool> --model <model>');
+  assert.equal(lines[lines.length - 1], 'launch a member: atris member run <member> "<goal>" --minutes 30');
+  assert.ok(!rendered.includes('|'), 'no pipes');
   assert.ok(!rendered.includes('\u2014'), 'no em dashes in output');
 });
 
@@ -75,8 +79,9 @@ test('an engine in MEMBER.md alone does not make a member active', () => {
   assert.equal(coder.active, false);
 
   const rendered = renderTeamRoster(roster);
-  assert.match(rendered, /active team:\n\(none\)/);
-  assert.match(rendered, /rest of the team:\nidle, nothing in 14 days \(2\): coder, scout/);
+  assert.match(rendered, /^coder +- +- +quiet +- +-$/m);
+  assert.match(rendered, /^scout +- +- +quiet +- +-$/m);
+  assert.ok(!rendered.includes('codex'), 'the frontmatter engine is not the roster');
 });
 
 test('a member with work in the last 7 days is active with its facts on one line', () => {
@@ -90,9 +95,11 @@ test('a member with work in the last 7 days is active with its facts on one line
   }];
   const roster = collectTeamRoster(rosterDeps({ members, activity }));
   assert.equal(roster.find((entry) => entry.name === 'coder').active, true);
-  const rendered = renderTeamRoster(roster);
-  assert.match(rendered, /^coder   last active sep 28, 3 runs in 7 days, on codex gpt-6\.1-sol, 2 landed, 1 failed$/m);
-  assert.ok(!rendered.match(/active team:[\s\S]*scout  /));
+  const rendered = renderTeamRoster(roster, { termWidth: 200 });
+  assert.match(rendered, /^coder +- +- +this week +3 runs this week, 2 landed, 1 failed +2d$/m);
+  const lines = rendered.split('\n');
+  assert.ok(lines.findIndex((line) => line.startsWith('coder')) < lines.findIndex((line) => line.startsWith('scout')), 'this week sorts above quiet');
+  assert.match(rendered, /^scout +- +- +quiet +- +-$/m);
   assert.ok(!rendered.includes('\u2014'));
 });
 
@@ -102,11 +109,10 @@ test('bare member without engine, presence, or now lands in rest section', () =>
   assert.equal(roster[0].active, false);
 
   const rendered = renderTeamRoster(roster);
-  assert.match(rendered, /rest of the team:\nidle, nothing in 14 days \(1\): quiet/);
-  assert.match(rendered, /active team:\n\(none\)/);
+  assert.match(rendered, /^quiet +- +- +quiet +- +-$/m);
 });
 
-test('quiet and idle members collapse into one line each', () => {
+test('quiet and idle members each get a row, longest-quiet last, with days since', () => {
   const members = ['alpha', 'beta', 'gamma', 'delta'].map((name) => ({ name, role: '' }));
   const activity = [
     { name: 'alpha', status: 'quiet', last_active: '2026-09-20', days_since: 10, runs_7d: 0 },
@@ -114,9 +120,11 @@ test('quiet and idle members collapse into one line each', () => {
     { name: 'gamma', status: 'idle', last_active: '2026-07-01', days_since: 91, runs_7d: 0 },
   ];
   const rendered = renderTeamRoster(collectTeamRoster(rosterDeps({ members, activity })), { termWidth: 200 });
-  assert.match(rendered, /^quiet 8 to 14 days \(2\): alpha, beta$/m);
-  assert.match(rendered, /^idle, nothing in 14 days \(2\): delta, gamma$/m);
-  assert.equal(rendered.split('\n').filter((line) => /alpha|beta|gamma|delta/.test(line)).length, 2);
+  const rows = rendered.split('\n').filter((line) => /^(alpha|beta|gamma|delta) /.test(line));
+  assert.deepEqual(rows.map((line) => line.split(/\s+/)[0]), ['alpha', 'beta', 'gamma', 'delta']);
+  assert.match(rendered, /^alpha +- +- +quiet +- +10d$/m);
+  assert.match(rendered, /^gamma +- +- +quiet +- +91d$/m);
+  assert.match(rendered, /^delta +- +- +quiet +- +-$/m);
 });
 
 test('awake member is active with dash engine and live focus suffix', () => {
@@ -138,7 +146,7 @@ test('awake member is active with dash engine and live focus suffix', () => {
   assert.equal(scout.focus, 'watch the perimeter (live)');
 
   const rendered = renderTeamRoster(roster);
-  assert.match(rendered, /^scout   live now: watch the perimeter$/m);
+  assert.match(rendered, /^scout +- +- +this week +watch the perimeter +-$/m);
 });
 
 test('alwayson member with no now task keeps its always on focus but needs work to be active', () => {
@@ -153,7 +161,7 @@ test('alwayson member with no now task keeps its always on focus but needs work 
 
   const live = collectTeamRoster(rosterDeps({ members, activity: [], presence: { members: [{ name: 'daemon' }] } }));
   assert.equal(live[0].active, true);
-  assert.match(renderTeamRoster(live), /^daemon  live now: always on$/m);
+  assert.match(renderTeamRoster(live), /^daemon +- +- +this week +always on +-$/m);
 });
 
 test('mission engines are kept on roster json as mission_engine', () => {
@@ -178,8 +186,7 @@ test('team command renders the roster on bare invocation and roster --json', () 
   let out = '';
   const code = teamCommand(['roster'], rosterDeps({ write: (s) => { out += s; } }));
   assert.equal(code, 0);
-  assert.match(out, /active team:/);
-  assert.match(out, /rest of the team:/);
+  assert.match(out, /^MEMBER +JOB +ENGINE · MODEL +STATUS +DOING +LAST$/m);
 
   let jsonOut = '';
   const jsonCode = teamCommand(['roster', '--json'], rosterDeps({ write: (s) => { jsonOut += s; } }));
@@ -280,23 +287,19 @@ function lineupMembers() {
   return ['coder', 'alpha-judge', 'navigator', 'researcher'].map((name) => ({ name, role: 'test' }));
 }
 
-test('atris team shows who does each job and each member with its job, tool, and model', () => withLineupRoom((root) => {
+test('atris team shows each member with its job, tool, and model from the roster in one table', () => withLineupRoom((root) => {
   let out = '';
   const code = teamCommand([], rosterDeps({ root, members: lineupMembers(), termWidth: 80, write: (s) => { out += s; } }));
   assert.equal(code, 0);
   const lines = out.split('\n');
-  const jobsAt = lines.indexOf('who does each job:');
-  const membersAt = lines.indexOf('who is on each job:');
-  assert.ok(jobsAt >= 0 && membersAt > jobsAt, out);
-  assert.ok(lines.indexOf('active team:') > membersAt, 'the lineup comes before the active list');
-  assert.match(out, /^  build +claude \(opus 5\.5\)$/m);
-  assert.match(out, /^  review +codex \(gpt-6-astra, medium\)$/m);
-  assert.match(out, /^  search +claude \(haiku 4\.5\)$/m);
-  assert.match(out, /^  build +coder$/m);
-  assert.match(out, /^  review +alpha-judge$/m);
+  assert.match(lines[0], /^MEMBER +JOB +ENGINE · MODEL +STATUS +DOING +LAST$/);
+  assert.match(out, /^coder +build +claude · opus 5\.5 +quiet +- +-$/m);
+  assert.match(out, /^alpha-judge +review +codex · gpt-6-astra +quiet +- +-$/m);
+  assert.match(out, /^navigator +search +claude · haiku 4\.5 +quiet +- +-$/m);
   // researcher's team line puts it on a different model than its job.
-  assert.match(out, /^  search +navigator, researcher on claude \(opus 5\.5\)$/m);
-  assert.match(out, /rest of the team:/);
+  assert.match(out, /^researcher +search +claude · opus 5\.5 +quiet +- +-$/m);
+  assert.ok(!out.includes('who does each job'), 'the old lineup blocks are gone');
+  assert.ok(!out.includes('active team:'), 'the old active list is gone');
   lines.forEach((line) => assert.ok(line.length <= 80, `too wide: ${line}`));
   assert.ok(!out.includes('—'));
 }));
@@ -321,16 +324,90 @@ test('a lineup that cannot be read still prints today\'s team plus one plain lin
   let out = '';
   const code = teamCommand([], rosterDeps({ lineup: { ok: false, error: 'boom', jobs: [], team: [] }, write: (s) => { out += s; } }));
   assert.equal(code, 0);
-  assert.match(out, /active team:/);
-  assert.match(out, /rest of the team:/);
+  assert.match(out, /^MEMBER +JOB/m);
+  assert.match(out, /^linguist +- +- +quiet/m);
   const lines = out.trim().split('\n');
-  assert.equal(lines[lines.length - 1], 'could not read who does each job, so tools and models are not shown. try: atris engine roster');
+  assert.ok(lines.includes('could not read who does each job, so tools and models are not shown. try: atris engine roster'), out);
   assert.equal(lines.filter((line) => line.includes('could not read')).length, 1);
 
   let json = '';
   teamCommand(['--json'], rosterDeps({ lineup: { ok: false, error: 'boom', jobs: [], team: [] }, write: (s) => { json += s; } }));
   assert.equal(JSON.parse(json)[0].lineup, null);
 });
+
+// --- working now: live engine runs on this machine -------------------------
+
+const LIVE_RUNS = [
+  { pid: 11, engine: 'codex', model: 'gpt-6.1-sol', effort: 'medium', member: 'alpha-judge', doing: 'second-round review of PR 3972', elapsed_seconds: 75 },
+  { pid: 12, engine: 'devin', model: 'swe-2-max', effort: null, member: null, doing: 'You are the night shift for the Atris backend. You have this one run, with no human awake, to land ONE real, verified improvement.', elapsed_seconds: 380 },
+];
+
+test('a member named by a live run is working now, first, on the engine it really runs', () => withLineupRoom((root) => {
+  let out = '';
+  const activity = [{ name: 'coder', status: 'active', last_active: '2026-09-29', days_since: 2, runs_7d: 4, landed: 1 }];
+  const code = teamCommand([], rosterDeps({ root, members: lineupMembers(), activity, liveRuns: LIVE_RUNS, termWidth: 120, write: (s) => { out += s; } }));
+  assert.equal(code, 0);
+  const rows = out.split('\n').slice(1, 6);
+  assert.match(rows[0], /^alpha-judge +review +codex · gpt-6\.1-sol +working now +second-round review of PR 3972 +1m$/);
+  assert.match(rows[1], /^\(no member\) +- +devin · swe-2-max +working now +You are the night shift.*… +6m$/);
+  assert.match(rows[2], /^coder +build +claude · opus 5\.5 +this week +4 runs this week, 1 landed +2d$/);
+  assert.match(rows[3], /^navigator +search +claude · haiku 4\.5 +quiet +- +-$/);
+  out.split('\n').forEach((line) => assert.ok(line.length <= 120, `too wide: ${line}`));
+}));
+
+test('a narrow terminal clips DOING with an ellipsis and never clips MEMBER or ENGINE', () => withLineupRoom((root) => {
+  let out = '';
+  teamCommand([], rosterDeps({ root, members: lineupMembers(), liveRuns: LIVE_RUNS, termWidth: 80, write: (s) => { out += s; } }));
+  const row = out.split('\n').find((line) => line.startsWith('alpha-judge'));
+  assert.ok(row.length <= 80, row);
+  assert.match(row, /^alpha-judge +review +codex · gpt-6\.1-sol +working now +second-round re.*… +1m$/);
+}));
+
+test('several live runs for one member make one row that counts them', () => {
+  const runs = [
+    { pid: 1, engine: 'codex', model: 'gpt-6.1-sol', member: 'orb', doing: 'newest', elapsed_seconds: 30 },
+    { pid: 2, engine: 'codex', model: 'gpt-6.1-sol', member: 'orb', doing: 'older', elapsed_seconds: 900 },
+  ];
+  const rendered = renderTeamRoster(collectTeamRoster(rosterDeps({ activity: [] })), { liveRuns: runs, termWidth: 200 });
+  assert.match(rendered, /^orb +- +codex · gpt-6\.1-sol +working now +2 runs: newest +now$/m);
+  assert.equal(rendered.split('\n').filter((line) => line.startsWith('orb ')).length, 1);
+});
+
+test('a live run that names no member of this team is unattached and keeps the name it gave', () => {
+  const runs = [{ pid: 1, engine: 'claude', model: 'claude-opus-5-5', member: 'visitor', doing: 'fix the docs', elapsed_seconds: 120 }];
+  const rendered = renderTeamRoster(collectTeamRoster(rosterDeps({ activity: [] })), { liveRuns: runs, termWidth: 200 });
+  assert.match(rendered, /^\(no member\) +- +claude · opus 5\.5 +working now +as visitor: fix the docs +2m$/m);
+  assert.ok(!/^visitor /m.test(rendered));
+});
+
+test('atris team --json gives agents the same rows, plus runs that name no member', () => withLineupRoom((root) => {
+  let out = '';
+  teamCommand(['--json'], rosterDeps({ root, members: lineupMembers(), liveRuns: LIVE_RUNS, write: (s) => { out += s; } }));
+  const parsed = JSON.parse(out);
+  const judge = parsed.find((entry) => entry.name === 'alpha-judge');
+  assert.equal(judge.state, 'working now');
+  assert.equal(judge.engine_model, 'codex · gpt-6.1-sol');
+  assert.equal(judge.job, 'review');
+  assert.equal(judge.last, '1m');
+  assert.equal(judge.live_runs.length, 1);
+  assert.equal(judge.live_runs[0].pid, 11);
+  const loose = parsed.filter((entry) => entry.name === '(no member)');
+  assert.equal(loose.length, 1);
+  assert.equal(loose[0].member, false);
+  assert.equal(loose[0].engine_model, 'devin · swe-2-max');
+  assert.equal(parsed.find((entry) => entry.name === 'coder').state, 'quiet');
+}));
+
+test('teamCommand reads live runs through deps.runPs, never the real machine, when a test passes one', () => withLineupRoom((root) => {
+  const stdout = [
+    '  101     1   01:15 node /Users/x/.bun/bin/codex exec --ephemeral -m gpt-6.1-sol -s read-only -o /tmp/r.md You are acting as navigator. Find the auth router',
+  ].join('\n');
+  let out = '';
+  const deps = rosterDeps({ root, members: lineupMembers(), termWidth: 160, write: (s) => { out += s; } });
+  delete deps.liveRuns;
+  teamCommand([], { ...deps, runPs: () => ({ status: 0, stdout }) });
+  assert.match(out, /^navigator +search +codex · gpt-6\.1-sol +working now +Find the auth router +1m$/m);
+}));
 
 test('a throwing roster reader is caught by readLineupSafe', () => {
   const lineup = require('../lib/team-lineup');

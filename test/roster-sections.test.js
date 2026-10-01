@@ -337,12 +337,14 @@ test('the view shows every worker in order with who leads and why others are ski
   ].join('\n'));
   const view = command(root, ['roster']);
   assert.equal(view.exit, 0, view.err);
-  assert.match(view.out, /^search\s+claude \(haiku 4\.5\)\s+backup atris-fast .*not ready, using devin \(swe-1\.7-lightning\), this project/m);
-  assert.match(view.out, /^ {2}1\. claude \(haiku 4\.5\)\s+skipped, down$/m);
-  assert.match(view.out, /^ {2}2\. atris-fast \(atris:fast, atris default\)\s+ended sep 1, skipped$/m);
-  assert.match(view.out, /^ {2}3\. devin \(swe-1\.7-lightning\)\s+leads now$/m);
-  assert.match(view.out, /^ {2}4\. - pizza oven\s+skipped, bad line: "pizza oven" is not an engine or a model atris knows$/m);
-  assert.match(view.out, /^see which tools and models this machine has: atris engine roster --available$/m);
+  // The first worker leads the row; every backup sits under it in order, a
+  // skipped one says why; the note says who really runs.
+  const lines = view.out.split('\n');
+  const at = lines.findIndex((line) => line.startsWith('search '));
+  assert.match(lines[at], /^search +claude · haiku 4\.5 +atris-fast · atris:fast \(ended sep 1\) +- +- +not ready, using/);
+  assert.match(lines[at + 1], /^ +devin · swe-1\.7-lightning +devin ·$/);
+  assert.match(view.out, /^warning: atris\/ROSTER\.md line 6 "- pizza oven" "pizza oven" is not an engine or a model atris knows, so search skips this worker\.$/m);
+  assert.match(view.out, /^change who does a job: atris engine assign <job> <tool> --model <model>$/m);
   const row = JSON.parse(command(root, ['roster', '--json']).out).jobs.find((entry) => entry.job === 'search');
   assert.deepEqual(row.workers.map((worker) => [worker.engine, worker.status, worker.why]), [
     ['claude', 'skipped', 'down'],
@@ -422,8 +424,8 @@ test('a session change beats this project and all projects for that job only', (
   assert.equal(resolveEngineForRoleRanked('validator', root, { now: NOW }).engine.id, 'codex');
   assert.equal(resolveEngineForRoleRanked('validator', root, { now: NOW }).source, 'project');
   assert.equal(resolveEngineForRoleRanked('navigator', root, { now: NOW, job: 'deep search' }).source, 'machine');
-  assert.match(assigned.out, /^build\s+codex \(gpt-6-sol\)\s+no backup\s+no end date, this session \(/m);
-  assert.match(assigned.out, /^review\s+codex \(gpt-6-astra, medium\).*this project/m);
+  assert.match(assigned.out, /^build +codex · gpt-6-sol +none +- +- +from this session$/m);
+  assert.match(assigned.out, /^review +codex · gpt-6-astra +claude · opus 5\.5 +- +- +-\n +\(medium effort\)$/m);
   // A session list replaces the job's whole list, not just its lead.
   assert.deepEqual(resolveJobTeam('build', root, { now: NOW }).team.map((engine) => engine.id), ['codex']);
   // When nothing in the session list can run, the project decides again.
@@ -434,7 +436,7 @@ test('a session change beats this project and all projects for that job only', (
   const shown = command(root, ['roster', 'session']);
   assert.equal(shown.exit, 0, shown.err);
   assert.match(shown.out, /^this session \(agent one\) changes, from /m);
-  assert.match(shown.out, /^build\s+codex \(gpt-6-sol\)/m);
+  assert.match(shown.out, /^build +codex · gpt-6-sol +none /m);
   assert.doesNotMatch(shown.out, /^review/m);
   assert.deepEqual(JSON.parse(command(root, ['roster', 'session', '--json']).out).jobs.map((row) => row.job), ['build']);
   const cleared = command(root, ['roster', 'session', 'clear']);

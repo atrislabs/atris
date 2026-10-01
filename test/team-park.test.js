@@ -60,6 +60,7 @@ function team(root, args) {
     missions: [],
     presence: { members: [] },
     lineup: { ok: true, jobs: [], team: [] },
+    liveRuns: [],
     termWidth: 200,
     now: NOW,
     write: (s) => { out += s; },
@@ -131,8 +132,8 @@ test('atris team folds parked members into one line, --all lists them in place, 
 
   const all = team(root, ['--all']);
   assert.equal(all.code, 0, all.err);
-  assert.match(all.out, /signal-scout \(parked\)/);
-  assert.match(all.out, /wiki-miner \(parked\)/);
+  assert.match(all.out, /^signal-scout +- +- +parked /m);
+  assert.match(all.out, /^wiki-miner +- +- +parked /m);
   assert.ok(!all.out.includes('parked (2)'));
 
   const json = JSON.parse(team(root, ['--json']).out);

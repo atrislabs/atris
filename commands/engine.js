@@ -35,10 +35,12 @@ const {
 const { parseScopeFlag } = require('../lib/cli-scope');
 const { isFreshWorkspace, speakFirstMinute } = require('../lib/first-minute');
 const { teamRosterView } = require('../lib/member-engine');
-const { engineRunsView, availableModels } = require('../lib/roster-models');
+const { engineModelText, engineRunsView, availableModels, modelLabel } = require('../lib/roster-models');
+const { renderTable } = require('../lib/text-table');
+const { TEAM_FOOTER } = require('../lib/team-lineup');
 const { readRosterRuns, workerRuns, summarizeRuns, recentRuns, renderRunLine, DEFAULT_DAYS: RUN_DAYS } = require('../lib/roster-runs');
 const { attachSuggestions } = require('../lib/roster-suggest');
-const { attachStaleModels, modelCatalog } = require('../lib/roster-stale');
+const { PIN_MAX_AGE_DAYS: PIN_STALE_DAYS, attachStaleModels, modelCatalog } = require('../lib/roster-stale');
 const {
   ENGINE_ROLES,
   ENGINE_JOBS,
@@ -1216,90 +1218,157 @@ function bootExpiringLine(expiring) {
   return `${first.tool} on ${first.job} ${endsInText(first.ends_in_days)}${more}. renew: ${RENEW_COMMAND}`;
 }
 
-// Every worker under its job, numbered in order, when the job has more than
-// the lead and one backup (the job's own line already shows those two).
-function renderWorkerLines(row) {
-  if (!row.workers || row.workers.length <= 2) return [];
-  const width = Math.max(...row.workers.map((worker) => (worker.runs ? worker.runs.text : worker.text || '').length));
-  return row.workers.map((worker, index) => {
-    const what = (worker.runs ? worker.runs.text : worker.text || '').padEnd(width);
-    const ended = worker.status === 'skipped' && worker.why === 'expired' && worker.ends_in_days !== null;
-    const until = !worker.until || ended ? '' : `until ${worker.until}${worker.expiring_soon ? `, ${endsInText(worker.ends_in_days)}` : ''}`;
-    const extras = [worker.max_seconds ? rosterMaxText(worker.max_seconds) : '', worker.prep ? `prepped by ${worker.prep}` : '', until].filter(Boolean);
-    const state = worker.status === 'leads' ? 'leads now' : worker.status === 'backup' ? 'backup'
-      : ended ? `ended ${shortDay(worker.until)}, skipped` : `skipped, ${worker.why}`;
-    return `  ${index + 1}. ${what} ${[state, ...extras].join(', ')}`.trimEnd();
-  });
+// --- the roster as tables -------------------------------------------------
+//
+// One row per job, one row per member. Plain columns, a header row, two
+// spaces between; a cell that needs more than one line (effort, several
+// backups) carries on underneath in its own column.
+
+function workerCellText(view) {
+  return view ? engineModelText(view.engine, view.model) : '';
 }
 
-// Each worker's recent record under its job, only for workers with runs.
-function renderWorkerRecords(row) {
-  return (row.workers || [])
-    .filter((worker) => worker.record)
-    .map((worker) => `  ${worker.runs ? worker.runs.text : worker.engine}: ${worker.record.text}`);
+function maxCellText(seconds) {
+  const text = rosterMaxText(seconds);
+  return text ? text.replace(/^max /, '') : '-';
 }
 
-function renderJobRoster(rows) {
-  const width = Math.max(7, ...rows.map((row) => row.job.length));
-  const ownerWidth = Math.max(24, ...rows.filter((row) => row.pick && row.runs).map((row) => row.runs.text.length));
-  const backupWidth = Math.max(16, ...rows.filter((row) => row.backup_runs).map((row) => row.backup_runs.text.length + 7));
-  return rows.map((row) => {
-    const label = row.job.padEnd(width);
-    const nowText = row.now_runs ? row.now_runs.text : 'no ready engine';
-    const fallsTo = `${row.like ? `falls back to ${row.like}` : 'router decides'}: ${nowText}`;
-    if (!row.pick) return `${label} no pick, ${fallsTo}`;
-    const owner = row.runs.text.padEnd(ownerWidth);
-    const backup = row.backup_runs ? `backup ${row.backup_runs.text}${row.backup_prep ? ` prepped by ${row.backup_prep}` : ''}` : 'no backup';
-    const cap = `${row.max_seconds ? `${rosterMaxText(row.max_seconds)}, ` : ''}${row.prep ? `prepped by ${row.prep}, ` : ''}`;
-    const date = untilText(row.pick, row.ends_in_days);
-    const fallback = row.lead === 'backup' ? 'using backup' : row.lead === 'later' ? `using ${nowText}` : fallsTo;
-    const ended = row.ends_in_days !== null && row.ends_in_days !== undefined ? `ended ${shortDay(row.pick.until)}, skipped` : 'expired';
-    const status = row.status === 'expired' ? `${ended}, ${fallback}`
-      : row.status === 'cooling' ? `${row.cooling}, ${fallback}`
-        : row.status === 'not ready' ? `not ready, ${fallback}`
-          : date;
-    const where = row.file ? `${row.from} (${row.file})` : row.from;
-    const head = `${label} ${owner} ${backup.padEnd(backupWidth)} ${cap}${status}, ${where}`.trimEnd();
-    const suggestion = row.suggestion ? [`  suggestion: ${row.suggestion.text}`] : [];
-    return [head, ...renderWorkerLines(row), ...renderWorkerRecords(row), ...suggestion].join('\n');
-  }).join('\n');
+// Workers that name a tool the roster can run, in written order.
+function goodWorkers(row) {
+  return (row.workers || []).filter((worker) => worker.engine && worker.runs);
 }
 
-// "active sep 30, 3 runs" or "quiet 8 to 14 days", from the same evidence
-// atris team reads. Idle members get no tag, so the list stays quiet; atris
-// team names them on one line. '' when activity was not read.
+// Why a backup is passed over, in two or three words.
+function backupSkipText(worker) {
+  if (worker.status !== 'skipped') return '';
+  if (worker.why === 'expired' && worker.ends_in_days !== null && worker.ends_in_days !== undefined) return `ended ${shortDay(worker.until)}`;
+  return worker.why || 'skipped';
+}
+
+// "newer gpt-6.2-sol out" or "pin 45 days old": the outdated-model flags,
+// short enough for the note column. The full line with its fix prints
+// under the table.
+function staleNote(worker) {
+  if (worker.stale_model && worker.newer_model) return `newer ${modelLabel(worker.newer_model)} out`;
+  if (worker.pin_age_days !== null && worker.pin_age_days !== undefined && worker.pin_age_days > PIN_STALE_DAYS) return `pin ${worker.pin_age_days} days old`;
+  return '';
+}
+
+function jobNoteText(row, lead, backups, mainFrom) {
+  // A tool on its own default model is named alone here, to keep notes short.
+  const nowText = !row.now_runs ? 'no ready engine' : row.now_runs.model ? workerCellText(row.now_runs) : row.now_runs.engine;
+  if (!row.pick) return row.like ? `no pick, same as ${row.like}` : 'no pick, router decides';
+  const fallback = row.lead === 'backup' ? 'using backup'
+    : row.lead === 'later' ? `using ${nowText}`
+      : row.like ? `falls back to ${row.like}` : `router decides: ${nowText}`;
+  const ended = row.ends_in_days !== null && row.ends_in_days !== undefined ? `ended ${shortDay(row.pick.until)}` : 'expired';
+  const parts = [];
+  if (row.status === 'expired') parts.push(`${ended}, ${fallback}`);
+  else if (row.status === 'cooling') parts.push(`${row.cooling}, ${fallback}`);
+  else if (row.status === 'not ready') parts.push(`not ready, ${fallback}`);
+  else if (row.expiring_soon) parts.push(endsInText(row.ends_in_days));
+  if (lead && lead.prep) parts.push(`prep: ${lead.prep}`);
+  if (lead && staleNote(lead)) parts.push(staleNote(lead));
+  for (const worker of backups) if (staleNote(worker)) parts.push(`backup ${staleNote(worker)}`);
+  if (row.from && row.from !== mainFrom) parts.push(`from ${row.from}`);
+  return parts.join(', ');
+}
+
+// The roster file most jobs come from; the table heading names it.
+function mainRosterSource(rows) {
+  const counts = new Map();
+  for (const row of rows) if (row.pick && row.from) counts.set(row.from, (counts.get(row.from) || 0) + 1);
+  const [from] = [...counts.entries()].sort((a, b) => b[1] - a[1])[0] || [];
+  const row = rows.find((item) => item.from === from);
+  return { from: from || null, file: row ? row.file : null };
+}
+
+function jobTableRow(row, mainFrom) {
+  const [lead, ...backups] = row.pick ? goodWorkers(row) : [];
+  const leadView = row.pick ? (lead && lead.runs) : row.now_runs;
+  const leads = leadView
+    ? [workerCellText(leadView), leadView.effort ? `(${leadView.effort} effort)` : null]
+    : [row.pick ? 'no ready tool' : 'no ready engine'];
+  const backupCell = backups.length
+    ? backups.map((worker) => {
+      // Effort, max time, and prep for a backup stay in --json; the cell keeps
+      // what changes who runs: a skip reason or an end date.
+      const skip = backupSkipText(worker);
+      const until = !skip && parseRosterUntil(worker.until) ? `until ${shortDay(worker.until)}${worker.expiring_soon ? `, ${endsInText(worker.ends_in_days)}` : ''}` : '';
+      const extras = [skip, until].filter(Boolean);
+      return `${workerCellText(worker.runs)}${extras.length ? ` (${extras.join(', ')})` : ''}`;
+    })
+    : ['none'];
+  const until = lead && parseRosterUntil(lead.until) ? lead.until : '-';
+  return [
+    row.job,
+    leads,
+    backupCell,
+    lead ? maxCellText(lead.max_seconds) : '-',
+    until,
+    jobNoteText(row, lead, backups, mainFrom) || '-',
+  ];
+}
+
+function renderJobRoster(rows, { width, heading = true } = {}) {
+  if (!rows.length) return '';
+  const { from, file } = mainRosterSource(rows);
+  const columns = [
+    { header: 'JOB' }, { header: 'LEADS' }, { header: 'BACKUP' }, { header: 'MAX' }, { header: 'UNTIL' },
+    { header: 'NOTE', wrap: true, min: 16 },
+  ];
+  const table = renderTable(columns, rows.map((row) => jobTableRow(row, from)), { width });
+  const title = !heading ? '' : file ? `jobs, from ${file}` : 'jobs';
+  const suggestions = rows.filter((row) => row.suggestion).map((row) => `suggestion for ${row.job}: ${row.suggestion.text}`);
+  return [title, table, ...renderWorkerRecords(rows, { width }), ...suggestions].filter(Boolean).join('\n');
+}
+
+// Each worker's recent record (last 7 days), only for workers with runs, as
+// one small table under the jobs.
+function renderWorkerRecords(rows, { width } = {}) {
+  const records = [];
+  for (const row of rows) {
+    for (const worker of row.workers || []) {
+      if (worker.record) records.push([row.job, worker.runs ? workerCellText(worker.runs) : worker.engine, worker.record.text.replace(/^last \d+ days: /, '')]);
+    }
+  }
+  if (!records.length) return [];
+  return ['\nlast 7 days', renderTable([{ header: 'JOB' }, { header: 'WORKER' }, { header: 'RECORD', clip: true, min: 20 }], records, { width })];
+}
+
+// "sep 30, 3 runs" or "quiet 8 to 14 days", from the same evidence atris
+// team reads. '-' for idle members and when activity was not read.
 function teamActivityTag(activity) {
-  if (!activity || activity.status === 'idle') return '';
+  if (!activity || activity.status === 'idle') return '-';
   if (activity.status === 'quiet') return 'quiet 8 to 14 days';
   const runs = Number(activity.runs_7d) || 0;
   const day = activity.days_since === 0 ? 'today' : activity.days_since === 1 ? 'yesterday' : shortDay(activity.last_active);
-  return `active ${day}, ${runs} run${runs === 1 ? '' : 's'}`;
+  return `${day}, ${runs} run${runs === 1 ? '' : 's'}`;
 }
 
-function renderTeamRoster(rows) {
+function renderTeamRoster(rows, { width } = {}) {
   if (!rows.length) return '';
-  const width = Math.max(6, ...rows.map((row) => row.member.length));
-  const jobWidth = Math.max(6, ...rows.map((row) => String(row.job || '').length));
-  const engines = rows.map((row) => (row.engine ? engineRunsView(row.engine, { model: row.model || '', effort: row.effort || '' }).text : 'no ready engine'));
-  const engineWidth = Math.max(24, ...engines.map((text) => text.length));
-  const hows = rows.map((row) => (row.source === 'file' ? `from ${row.file}` : 'automatic'));
-  const howWidth = Math.max(...hows.map((text) => text.length));
-  const lines = rows.map((row, index) => {
-    const tag = teamActivityTag(row.activity);
-    const how = tag ? hows[index].padEnd(howWidth) : hows[index];
-    return `${row.member.padEnd(width)} ${String(row.job || '').padEnd(jobWidth)} ${engines[index].padEnd(engineWidth)} ${how} ${tag}`.trimEnd();
+  const showActivity = rows.some((row) => row.activity !== undefined);
+  const columns = [{ header: 'MEMBER' }, { header: 'JOB' }, { header: 'ENGINE · MODEL' }, { header: 'SOURCE' }];
+  if (showActivity) columns.push({ header: 'LAST 7 DAYS', clip: true, min: 11 });
+  const cells = rows.map((row) => {
+    const engine = row.engine ? workerCellText(engineRunsView(row.engine, { model: row.model || '', effort: row.effort || '' })) : 'no ready engine';
+    const stale = row.stale_model && row.newer_model ? ` (newer ${modelLabel(row.newer_model)} out)` : '';
+    const cell = [row.member, row.job || '-', `${engine}${stale}`, row.source === 'file' ? (row.file || 'roster file') : 'automatic'];
+    if (showActivity) cell.push(teamActivityTag(row.activity));
+    return cell;
   });
-  return ['team', ...lines].join('\n');
+  return ['team', renderTable(columns, cells, { width })].join('\n');
 }
 
 function renderRosterWarnings(warnings) {
   return warnings.map((warning) => `warning: ${warning.file} line ${warning.line} "${warning.text}" ${warning.message}.`).join('\n');
 }
 
-function renderRosterReport(report) {
+function renderRosterReport(report, { width } = {}) {
   const stale = (report.stale || []).map((item) => item.text);
-  const jobs = [renderJobRoster(report.jobs), renderExpiringLine(report.expiring), ...stale].filter(Boolean).join('\n');
-  return [jobs, renderTeamRoster(report.team), renderRosterWarnings(report.warnings)]
+  const jobs = [renderJobRoster(report.jobs, { width }), renderExpiringLine(report.expiring), ...stale].filter(Boolean).join('\n');
+  return [jobs, renderTeamRoster(report.team, { width }), renderRosterWarnings(report.warnings)]
     .filter(Boolean)
     .join('\n\n');
 }
@@ -1307,8 +1376,6 @@ function renderRosterReport(report) {
 function printJobRoster(root, now = new Date()) {
   console.log(renderRosterReport(rosterReport(root, now)));
 }
-
-const AVAILABLE_HINT = 'see which tools and models this machine has: atris engine roster --available';
 
 // Each installed tool and the models it offers, from local files only.
 function availableReport(root) {
@@ -1330,7 +1397,7 @@ function renderSessionRoster(report, key) {
   const team = report.team.filter((row) => row.source === 'file' && row.file === report.files.session);
   if (!jobs.length && !team.length) return `this session (${key}) has no roster changes. add one with: atris engine assign <job> <tool> --session`;
   const head = `this session (${key}) changes${report.files.session ? `, from ${report.files.session}` : ''}`;
-  return [head, renderJobRoster(jobs), renderTeamRoster(team)].filter(Boolean).join('\n\n');
+  return [head, renderJobRoster(jobs, { heading: false }), renderTeamRoster(team)].filter(Boolean).join('\n\n');
 }
 
 function runRosterSessionCommand(rest, json, root, now) {
@@ -1459,7 +1526,7 @@ function runRosterCommand(args, root, now = new Date()) {
   if (rest[0] === 'confirm') confirmRoster(root, now);
   const report = attachTeamActivity(attachStaleCheck(attachRunRecords(rosterReport(root, now), root, now), root, now), root, now);
   if (json) console.log(JSON.stringify(report, null, 2));
-  else console.log(`${renderRosterReport(report)}\n\n${AVAILABLE_HINT}`);
+  else console.log(`${renderRosterReport(report)}\n\n${TEAM_FOOTER.join('\n')}`);
   return 0;
 }
 
@@ -2366,6 +2433,7 @@ module.exports = {
   readSavedEngine,
   roster,
   rosterReport,
+  renderRosterReport,
   jobRosterView,
   expiringWorkers,
   bootExpiringLine,

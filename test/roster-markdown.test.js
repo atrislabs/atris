@@ -335,8 +335,9 @@ test('a project line beats the all-projects line per job, and the view names eac
   assert.equal(review.engine.id, 'codex');
   assert.equal(review.source, 'machine');
   const view = command(root, ['roster']);
-  assert.match(view.out, /build\s+cursor \(its own default\)\s+no backup\s+no end date, this project \(atris\/ROSTER\.md\)/);
-  assert.match(view.out, /review\s+codex \(its own default\)\s+no backup\s+no end date, all projects \(.*ROSTER\.md\)/);
+  assert.match(view.out, /^jobs, from atris\/ROSTER\.md$/m);
+  assert.match(view.out, /^build +cursor · own default +none +- +- +-$/m);
+  assert.match(view.out, /^review +codex · own default +none +- +- +from all projects$/m);
   const json = JSON.parse(command(root, ['roster', '--json']).out);
   assert.equal(json.files.project, path.join('atris', 'ROSTER.md'));
   assert.equal(json.files.machine.endsWith('ROSTER.md'), true);
@@ -358,8 +359,9 @@ test('with no markdown the JSON rosters keep working, and a markdown file wins o
   assert.equal(resolveEngineForRoleRanked('executor', root, { now: NOW }).engine.id, 'claude');
   assert.equal(resolveEngineForRoleRanked('validator', root, { now: NOW }).engine.id, 'haiku');
   const view = command(root, ['roster']);
-  assert.match(view.out, /build\s+claude \(opus 5\.5\).*until oct 24, this project \(\.atris\/state\/engines\.json\)/);
-  assert.match(view.out, /review\s+haiku.*until oct 24, all projects \(.*roster\.json\)/);
+  assert.match(view.out, /^jobs, from \.atris\/state\/engines\.json$/m);
+  assert.match(view.out, /^build +claude · opus 5\.5 +none +- +2026-10-24 +-$/m);
+  assert.match(view.out, /^review +haiku.* +2026-10-24 +from all projects$/m);
   writeRoster(root, '# roster\nbuild: cursor\n');
   assert.equal(resolveEngineForRoleRanked('executor', root, { now: NOW }).engine.id, 'cursor');
   writeRoster(root, '# roster\n');
@@ -435,9 +437,10 @@ test('each member resolves to its job pick automatically, and the view shows the
   assert.equal(pick('researcher').source, 'file');
   const view = command(root, ['roster']);
   assert.match(view.out, /^team$/m);
-  assert.match(view.out, /^navigator\s+search\s+claude \(haiku\)\s+automatic$/m);
-  assert.match(view.out, /^researcher\s+search\s+claude \(haiku\)\s+from atris\/ROSTER\.md$/m);
-  assert.match(view.out, /^judge\s+review\s+claude \(opus 5\.5\)\s+from atris\/ROSTER\.md$/m);
+  assert.match(view.out, /^MEMBER +JOB +ENGINE · MODEL +SOURCE/m);
+  assert.match(view.out, /^navigator +search +claude · haiku +automatic\b/m);
+  assert.match(view.out, /^researcher +search +claude · haiku +atris\/ROSTER\.md\b/m);
+  assert.match(view.out, /^judge +review +claude · opus 5\.5 +atris\/ROSTER\.md\b/m);
   const json = JSON.parse(command(root, ['roster', '--json']).out);
   const { activity, ...closer } = json.team.find((row) => row.member === 'closer');
   assert.deepEqual(closer, {
@@ -549,5 +552,5 @@ test('with no roster anywhere, member runs, owned missions, and autopilot route 
   for (const phase of ['plan', 'do', 'review']) assert.equal(buildPhaseRunnerCommand(phase, prompt, root), base, phase);
   assert.equal(fs.existsSync(path.join(root, 'atris', 'ROSTER.md')), false);
   const view = command(root, ['roster']);
-  assert.match(view.out, /^researcher\s+search\s+atris-fast \(atris:fast, atris default\)\s+automatic$/m);
+  assert.match(view.out, /^researcher +search +atris-fast · atris:fast +automatic\b/m);
 }));
