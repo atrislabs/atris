@@ -175,9 +175,25 @@ test('flag words inside a prompt never make a run headless, hide it, or set its 
   assert.deepEqual([doctor.engine, doctor.doing], ['atris-fast', 'Fix --doctor parsing']);
   assert.equal(run('claude -- Explain the -p flag'), null);
   assert.equal(run('cmd -- Explain the --print flag'), null);
-  // The tail atris puts after a claude prompt counts only in its exact shape.
-  const extra = run('claude -p --verbose Fix it --model claude-opus-5-5');
-  assert.deepEqual([extra.model, extra.doing], [null, 'Fix it --model claude-opus-5-5']);
+  // Settings after a prompt count only when they read as real settings to the end.
+  const tail = run('claude -p --verbose Fix it --model claude-opus-5-5 --no-session-persistence');
+  assert.deepEqual([tail.model, tail.doing], ['claude-opus-5-5', 'Fix it']);
+  const prose = run('claude -p Fix the --model flag so it reads --model parsing');
+  assert.deepEqual([prose.model, prose.doing], [null, 'Fix the --model flag so it reads --model parsing']);
+});
+
+test('a launch with a flag nobody knows is still a row, with the model left unknown', () => {
+  const run = (command) => parseEngineProcess({ pid: 1, ppid: 0, elapsed_seconds: 1, command });
+  const grok = run('grok --brand-new-flag fast --model grok-4.7 -p You are acting as validator. Check the diff');
+  assert.deepEqual([grok.engine, grok.model, grok.member, grok.doing], ['grok', null, 'validator', 'Check the diff']);
+  const claude = run('claude --new-thing on -p Fix the footer');
+  assert.deepEqual([claude.engine, claude.model, claude.doing], ['claude', null, 'Fix the footer']);
+  // An interactive session still looks like one.
+  assert.equal(run('claude'), null);
+  assert.equal(run('codex resume'), null);
+  assert.equal(run('cursor-agent'), null);
+  // The codex watchdog is atris's wrapper, not codex.
+  assert.equal(run('node /x/scripts/det/codex-watchdog.js --startup-deadline 90 -- sh -c codex exec fix'), null);
 });
 
 test('a ps that fails or throws means no runs, never an error', () => {

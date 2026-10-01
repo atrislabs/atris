@@ -153,3 +153,4 @@ test/codex-flight-brief.test.js
 test/avail.test.js
 test/member-type.test.js
 test/roster-team-tables.test.js
+test/engine-launch-shapes.test.js
