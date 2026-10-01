@@ -7,8 +7,10 @@
 const { apiRequestJson } = require('../utils/api');
 const { NOT_LOGGED_IN } = require('../lib/developer-api');
 const {
-  NO_BUSINESS, parseArgs, resolveBusiness, loginToken, errorText, relativeTime, dollars, clip,
+  parseArgs, businessOrSay, loginToken, errorText, relativeTime, dollars, clip,
 } = require('../lib/business-target');
+
+const HIRE_FLAGS = { switches: ['outreach'], values: ['job', 'budget', 'schedule', 'timezone'] };
 
 function hireHelp(log = console.log) {
   log(`usage: atris hire "<name>" --job "<idea>" [--budget 50] [--outreach] [--schedule nightly] [--business <slug>] [--json]
@@ -68,7 +70,8 @@ function renderHire(data = {}, now = Date.now()) {
 function hireLine(h = {}, now = Date.now()) {
   const parts = [];
   if (h.status && h.status !== 'active') {
-    const why = { needs_inbox: 'paused, no inbox yet', needs_allowance: 'paused, allowance not set up', setting_up: 'still setting up' };
+    const why = { needs_inbox: 'paused, no inbox yet', needs_allowance: 'paused, allowance not set up', setting_up: 'still setting up',
+      pending_schedule: 'set up, nightly work not switched on yet (run the same hire again)' };
     parts.push(why[h.status] || `paused (${h.status})`);
   }
   const mail = h.emails_last_24h;
@@ -105,8 +108,9 @@ function io(deps) {
 
 async function hireCommand(args = [], deps = {}) {
   const out = io(deps);
-  const { flags, pos } = parseArgs(args, ['outreach']);
+  const { flags, pos, error } = parseArgs(args, HIRE_FLAGS);
   if (flags.help || pos[0] === 'help') { hireHelp(out.log); return 0; }
+  if (error) { out.err(`${error}. see: atris hire --help`); return 1; }
 
   const name = pos.join(' ').trim();
   const job = typeof flags.job === 'string' ? flags.job.trim() : '';
@@ -125,8 +129,8 @@ async function hireCommand(args = [], deps = {}) {
   const tz = typeof flags.timezone === 'string' ? flags.timezone : (deps.timezone || localTimezone());
   if (tz) body.timezone = tz;
 
-  const business = resolveBusiness(flags, deps);
-  if (!business) { out.err(NO_BUSINESS); return 1; }
+  const business = businessOrSay(flags, deps, out.err);
+  if (!business) return 1;
   const token = await loginToken(deps);
   if (!token) { out.err(NOT_LOGGED_IN); return 1; }
 
@@ -142,10 +146,12 @@ async function hireCommand(args = [], deps = {}) {
 
 async function hiresCommand(args = [], deps = {}) {
   const out = io(deps);
-  const { flags, pos } = parseArgs(args);
+  const { flags, pos, error } = parseArgs(args, {});
   if (flags.help || pos[0] === 'help') { hiresHelp(out.log); return 0; }
-  const business = resolveBusiness(flags, deps);
-  if (!business) { out.err(NO_BUSINESS); return 1; }
+  if (error) { out.err(`${error}. see: atris hires --help`); return 1; }
+  if (pos.length) { out.err(`atris hires takes no other words (got "${pos[0]}"). see: atris hires --help`); return 1; }
+  const business = businessOrSay(flags, deps, out.err);
+  if (!business) return 1;
   const token = await loginToken(deps);
   if (!token) { out.err(NOT_LOGGED_IN); return 1; }
 

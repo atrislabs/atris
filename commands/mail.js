@@ -8,20 +8,30 @@ const readline = require('readline');
 const { apiRequestJson } = require('../utils/api');
 const { NOT_LOGGED_IN } = require('../lib/developer-api');
 const {
-  NO_BUSINESS, parseArgs, resolveBusiness, loginToken, errorText, clip,
+  parseArgs, businessOrSay, loginToken, errorText, clip,
 } = require('../lib/business-target');
+
+// The only flags each subcommand takes (plus --help, --json, --business).
+const MAIL_FLAGS = {
+  inboxes: {},
+  read: { values: ['limit'] },
+  send: { switches: ['yes', 'dry_run'], values: ['to', 'subject', 'body'] },
+};
+const ALL_MAIL_FLAGS = { switches: ['yes', 'dry_run'], values: ['limit', 'to', 'subject', 'body'] };
 
 function mailHelp(log = console.log) {
   log(`usage: atris mail inboxes [--business <slug>] [--json]
        atris mail read <inbox> [--limit 10] [--json]
-       atris mail send <inbox> --to <address> --subject "<subject>" --body "<text>" [--yes]
+       atris mail send <inbox> --to <address> --subject "<subject>" --body "<text>" [--yes] [--dry-run]
 
 your agents' own email inboxes (not your Gmail; for that use atris gmail).
 <inbox> is the address, the part before the @, or the inbox id.
 
   inboxes   list every agent inbox in this business
   read      newest messages first (--limit 1 to 200, default 10)
-  send      send one email from an agent inbox. asks before sending unless --yes`);
+  send      send one email from an agent inbox. asks before sending unless --yes.
+            --dry-run prints the email and sends nothing.
+            unknown flags are refused, so a typo never sends anything.`);
 }
 
 function toList(value) {
@@ -75,16 +85,25 @@ function askYesNo(question) {
 
 async function mailCommand(args = [], deps = {}) {
   const out = { log: deps.log || console.log, err: deps.err || console.error };
-  const { flags, pos } = parseArgs(args);
+  const { flags, pos } = parseArgs(args, ALL_MAIL_FLAGS);
   const sub = pos[0];
   if (flags.help || !sub || sub === 'help') { mailHelp(out.log); return sub || flags.help ? 0 : 1; }
-  if (!['inboxes', 'read', 'send'].includes(sub)) {
+  if (!MAIL_FLAGS[sub]) {
     out.err(`unknown mail command: ${sub}. try: atris mail inboxes | read | send`);
     return 1;
   }
+  // Checked against this subcommand's own flags, before any request: an
+  // unknown or mistyped flag on send must never turn into a real email.
+  const { error } = parseArgs(args, MAIL_FLAGS[sub]);
+  if (error) { out.err(`${error}. see: atris mail --help`); return 1; }
+  const words = sub === 'inboxes' ? 1 : 2;
+  if (pos.length > words) {
+    out.err(`atris mail ${sub} got an extra word: "${pos[words]}". put text in quotes, like --body "hi there"`);
+    return 1;
+  }
 
-  const business = resolveBusiness(flags, deps);
-  if (!business) { out.err(NO_BUSINESS); return 1; }
+  const business = businessOrSay(flags, deps, out.err);
+  if (!business) return 1;
   const token = await loginToken(deps);
   if (!token) { out.err(NOT_LOGGED_IN); return 1; }
   const request = deps.apiRequestJson || apiRequestJson;
@@ -118,8 +137,14 @@ async function mailCommand(args = [], deps = {}) {
   const subject = typeof flags.subject === 'string' ? flags.subject : '';
   const text = typeof flags.body === 'string' ? flags.body : '';
   if (!to || !subject || !text) { out.err('send needs --to, --subject, and --body'); return 1; }
-  if (!flags.yes) {
-    out.log(`From:    ${inbox.email_address}\nTo:      ${to}\nSubject: ${subject}\n\n${text}\n`);
+  const preview = `From:    ${inbox.email_address}\nTo:      ${to}\nSubject: ${subject}\n\n${text}\n`;
+  if (flags.dry_run === true) {
+    out.log(`${preview}\nDry run: nothing was sent.`);
+    return 0;
+  }
+  // Only a bare --yes (or -y) skips the question; the parser refuses --yes=<anything>.
+  if (flags.yes !== true) {
+    out.log(preview);
     const ok = await (deps.confirm || askYesNo)('Send this email? (y/N) ');
     if (!ok) {
       out.log(process.stdin.isTTY || deps.confirm ? 'Not sent.' : 'Not sent. Add --yes to send without asking.');

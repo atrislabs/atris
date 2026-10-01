@@ -9,7 +9,7 @@ const { spawnSync } = require('node:child_process');
 
 const { hireCommand, hiresCommand, hireLine } = require('../commands/hire');
 const { mailCommand, findInbox } = require('../commands/mail');
-const { parseArgs } = require('../lib/business-target');
+const { parseArgs, resolveBusiness } = require('../lib/business-target');
 const { NOT_LOGGED_IN } = require('../lib/developer-api');
 const { knownCommands } = require('../lib/known-commands');
 
@@ -233,4 +233,80 @@ test('atris mail send needs every field and a real inbox', async () => {
   const unknown = mailHarness();
   assert.equal(await mailCommand(['read', 'ghost'], unknown.deps), 1);
   assert.match(unknown.stderr[0], /No inbox matches "ghost"/);
+});
+
+// ------------------------------------------------------------------ send safety
+
+const SEND = ['send', 'maya', '--to', 'pat@example.com', '--subject', 'Hi', '--body', 'Hello Pat'];
+
+test('--yes=false (or any value on --yes) is refused and nothing is sent', async () => {
+  for (const flag of ['--yes=false', '--yes=true', '--yes=0', '--dry-run=no']) {
+    const h = mailHarness({ confirm: async () => { throw new Error('should not ask'); } });
+    assert.equal(await mailCommand([...SEND, flag], h.deps), 1, flag);
+    assert.equal(h.calls.length, 0, `${flag} made a request`);
+    assert.match(h.stderr[0], /is a switch and takes no value/);
+  }
+});
+
+test('only a bare --yes skips the question', async () => {
+  const asked = [];
+  const h = mailHarness({ confirm: async (q) => { asked.push(q); return false; } });
+  assert.equal(await mailCommand(SEND, h.deps), 1);
+  assert.equal(asked.length, 1);
+  assert.equal(h.calls.some((c) => c.pathname.endsWith('/send')), false);
+  const y = mailHarness({ confirm: async () => { throw new Error('should not ask'); } });
+  assert.equal(await mailCommand([...SEND, '-y'], y.deps), 0, y.stderr.join('\n'));
+  assert.equal(y.calls.filter((c) => c.pathname.endsWith('/send')).length, 1);
+});
+
+test('unknown flags are refused before any request, on every command', async () => {
+  const cases = [
+    [mailCommand, [...SEND, '--yes', '--dryrun']],
+    [mailCommand, [...SEND, '--yes', '--cc', 'boss@example.com']],
+    [mailCommand, ['read', 'maya', '--limt', '5']],
+    [mailCommand, ['read', 'maya', '--yes']],
+    [mailCommand, ['inboxes', '--to', 'x']],
+    [mailCommand, [...SEND, '--yes', '--to', 'other@example.com']],
+    [mailCommand, ['send', 'maya', 'oops', '--to', 'pat@example.com', '--subject', 'Hi', '--body', 'x', '--yes']],
+    [hireCommand, ['Maya', '--job', 'x', '--budjet', '50']],
+    [hireCommand, ['Maya', '--job', 'x', '--outreach=false']],
+    [hireCommand, ['Maya', '--job', 'x', '-n']],
+    [hiresCommand, ['--all']],
+    [hiresCommand, ['extra']],
+  ];
+  for (const [command, args] of cases) {
+    const h = mailHarness({ confirm: async () => true });
+    assert.equal(await command(args, h.deps), 1, args.join(' '));
+    assert.equal(h.calls.length, 0, `${args.join(' ')} made a request`);
+    assert.ok(h.stderr[0], args.join(' '));
+  }
+});
+
+test('send --dry-run prints the email and sends nothing, even with --yes', async () => {
+  const h = mailHarness({ confirm: async () => { throw new Error('should not ask'); } });
+  assert.equal(await mailCommand([...SEND, '--yes', '--dry-run'], h.deps), 0, h.stderr.join('\n'));
+  assert.equal(h.calls.some((c) => c.options.method === 'POST'), false);
+  const out = h.stdout.join('\n');
+  assert.match(out, /From: {4}maya@atrismail\.com\nTo: {6}pat@example\.com\nSubject: Hi\n\nHello Pat/);
+  assert.match(out, /Dry run: nothing was sent\./);
+});
+
+test('a given --business must be valid and never falls back to this folder', async () => {
+  for (const args of [['--business'], ['--business', ''], ['--business=  '], ['--business', '--json']]) {
+    const h = harness(() => { throw new Error('should not call'); });
+    assert.equal(await hiresCommand(args, h.deps), 1, JSON.stringify(args));
+    assert.equal(h.calls.length, 0);
+    assert.match(h.stderr[0], /--business needs a value/);
+  }
+  const send = mailHarness();
+  assert.equal(await mailCommand([...SEND, '--yes', '--business='], send.deps), 1);
+  assert.equal(send.calls.length, 0);
+  const hire = harness(() => { throw new Error('should not call'); });
+  assert.equal(await hireCommand(['Maya', '--job', 'x', '--business'], hire.deps), 1);
+  assert.equal(hire.calls.length, 0);
+  // resolveBusiness itself refuses an empty value instead of using the folder.
+  const folder = () => ({ businessId: 'folder-biz' });
+  assert.deepEqual(resolveBusiness({ business: '' }, { findBusiness: folder }), { error: '--business needs a business slug or id' });
+  assert.deepEqual(resolveBusiness({ business: true }, { findBusiness: folder }), { error: '--business needs a business slug or id' });
+  assert.deepEqual(resolveBusiness({}, { findBusiness: folder }), { id: 'folder-biz', name: 'this business' });
 });
