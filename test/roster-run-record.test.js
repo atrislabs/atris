@@ -278,8 +278,9 @@ test('the roster shows each worker\'s recent record, and nothing when there are 
       { at: at(50), job: 'search', engine: 'devin', model: 'swe-2-max', outcome: 'landed', seconds: 30 },
     ]);
     const view = command(root, ['roster']);
-    assert.match(view.out, /: last 7 days: 3 runs, 1 landed, 1 stalled, 1 failed, median 11 min/);
-    assert.match(view.out, /: last 7 days: 1 run, 1 landed, median 5 min/);
+    assert.match(view.out, /^last 7 days\nJOB +WORKER +RECORD$/m);
+    assert.match(view.out, /^build +devin · swe-2-max +3 runs, 1 landed, 1 stalled, 1 failed, median 11 min$/m);
+    assert.match(view.out, /^build +cursor · own default +1 run, 1 landed, median 5 min$/m);
     const json = JSON.parse(command(root, ['roster', '--json']).out);
     const build = json.jobs.find((row) => row.job === 'build');
     const devin = build.workers.find((worker) => worker.engine === 'devin');

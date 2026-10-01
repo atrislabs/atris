@@ -228,17 +228,18 @@ test('the owner\'s roster shows the real model and its source on every line, in 
   addMember(root, 'codex-executor', 'Builder');
   const view = command(root, ['roster']);
   assert.equal(view.exit, 0, view.err);
-  assert.match(view.out, /^search\s+claude \(haiku\)\s+no backup\s+no end date, this project/m);
-  assert.match(view.out, /^build\s+claude \(opus 5\.5\)\s+no backup\s+no end date/m);
-  assert.match(view.out, /^review\s+codex \(gpt-6-sol, xhigh, from codex settings\)\s+backup claude \(opus 5\.5\)\s+no end date/m);
-  assert.match(view.out, /^small build\s+devin \(swe-2-max\)\s+backup grok \(its own default\)\s+until oct 24/m);
-  assert.match(view.out, /^researcher\s+search\s+claude \(opus 5\.5\)\s+from atris\/ROSTER\.md$/m);
-  assert.match(view.out, /^codex-executor\s+build\s+codex \(gpt-6-sol, xhigh, from codex settings\)\s+from atris\/ROSTER\.md$/m);
-  // Never a bare engine name and never an empty model.
-  for (const line of view.out.split('\n').filter((text) => text && text !== 'team' && !text.startsWith('warning') && !text.startsWith('see which tools'))) {
-    assert.match(line, /\b[a-z-]+ \([^)]+\)/, line);
-    assert.doesNotMatch(line, /\(\)/, line);
-  }
+  assert.match(view.out, /^search +claude · haiku +none +- +- +-$/m);
+  assert.match(view.out, /^build +claude · opus 5\.5 +none +- +- +-$/m);
+  // The model codex settings pick shows like a pinned one, effort underneath.
+  assert.match(view.out, /^review +codex · gpt-6-sol +claude · opus 5\.5 +- +- +-\n +\(xhigh effort\)$/m);
+  assert.match(view.out, /^small build +devin · swe-2-max +grok · own default +- +2026-10-24 +-$/m);
+  assert.match(view.out, /^researcher +search +claude · opus 5\.5 +atris\/ROSTER\.md\b/m);
+  assert.match(view.out, /^codex-executor +build +codex · gpt-6-sol +atris\/ROSTER\.md\b/m);
+  // Never a bare engine name and never an empty model: every job and member
+  // row names a tool and a model (or "own default").
+  const rows = view.out.split('\n').filter((text) => /^(search|build|review|small build|researcher|codex-executor) /.test(text));
+  assert.equal(rows.length, 6);
+  for (const line of rows) assert.match(line, /\b[a-z-]+ · [a-z0-9]/, line);
   const json = JSON.parse(command(root, ['roster', '--json']).out);
   const review = json.jobs.find((row) => row.job === 'review');
   assert.deepEqual(
@@ -394,7 +395,7 @@ test('until needs a year: a year-less date is a bad line that suggests the full 
   assert.equal(report.exit, 0, report.err);
   assert.match(report.out, /line 2 "build: codex, backup claude opus 5\.5, until oct 24" has no year in its until date, so build counts as expired; write until 2026-10-24\./);
   assert.match(report.out, /line 6 "judge: codex, until oct 24" has no year in its until date, so it counts as expired; write until 2026-10-24\./);
-  assert.match(report.out, /^build\s+codex \(its own default\).*expired, using backup/m);
+  assert.match(report.out, /^build +codex · own default +claude · opus 5\.5 +- +- +expired, using backup$/m);
   // The judge's own line does not decide; the review line does.
   assert.equal(resolveEngineForMember('judge', root, { now: NOW }).pick_source, 'project');
   // An unrelated edit much later never revives it.

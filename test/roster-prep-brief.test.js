@@ -203,7 +203,7 @@ const PREP_ROSTER = `# roster
 - devin, model: swe-2-max
 `;
 
-test('a worker line reads "prep: search" and the roster view says "prepped by search"', async () => {
+test('a worker line reads "prep: search" and the roster view notes "prep: search"', async () => {
   await withRoom(async ({ root }) => {
     const { readRosterState } = require('../lib/engine-registry');
     const picks = readRosterState(root).project.picks;
@@ -211,7 +211,7 @@ test('a worker line reads "prep: search" and the roster view says "prepped by se
     assert.equal('prep' in picks.executor.workers[1], false);
     const view = command(root, ['roster']);
     assert.equal(view.exit, 0);
-    assert.match(view.out, /build .*prepped by search/);
+    assert.match(view.out, /^build +.* prep: search$/m);
     const json = JSON.parse(command(root, ['roster', '--json']).out);
     const build = json.jobs.find((row) => row.job === 'build');
     assert.equal(build.prep, 'search');
@@ -228,7 +228,7 @@ test('prep naming its own job warns in plain words and the worker still counts',
     assert.match(layer.warnings.map((w) => w.message).join('\n'), /asks build to prep for itself, so this worker runs without prep/);
     const view = command(root, ['roster']);
     assert.equal(view.exit, 0);
-    assert.doesNotMatch(view.out, /prepped by/);
+    assert.doesNotMatch(view.out, /^build .*prep: /m);
   }, { roster: '# roster\n\n## build\n- cursor, prep: build\n' });
 });
 
@@ -237,7 +237,7 @@ test('assign --prep writes the field, and refuses a job prepping for itself', as
     const written = command(root, ['assign', 'review', 'claude', '--prep', 'search']);
     assert.equal(written.exit, 0, written.out);
     assert.match(fs.readFileSync(path.join(root, 'atris', 'ROSTER.md'), 'utf8'), /## review\n- claude code, prep: search\n/);
-    assert.match(written.out, /review .*prepped by search/);
+    assert.match(written.out, /^review +.* prep: search$/m);
     const refused = command(root, ['assign', 'build', 'cursor', '--prep', 'build']);
     assert.equal(refused.exit, 2);
     assert.match(refused.out, /build cannot prep for itself/);

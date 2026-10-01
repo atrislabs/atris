@@ -1,0 +1,262 @@
+'use strict';
+
+// atris engine roster and atris team print plain aligned tables: a header
+// row, two spaces between columns, no pipes. atris team marks a member
+// "working now" from live engine runs read through one ps call.
+
+const test = require('node:test');
+const assert = require('node:assert/strict');
+
+const { renderTable } = require('../lib/text-table');
+const { listLiveEngineRuns, liveEngineRuns, parseEngineProcess, parsePsLine, shortElapsed, splitArgs } = require('../lib/engine-processes');
+const { attachStaleModels } = require('../lib/roster-stale');
+const { renderRosterReport } = require('../commands/engine');
+
+// --- the table ---------------------------------------------------------------
+
+test('a table aligns columns two spaces apart under a header, with extra cell lines underneath', () => {
+  const out = renderTable(
+    [{ header: 'JOB' }, { header: 'LEADS' }, { header: 'MAX' }],
+    [['review', ['codex · gpt-6.1-sol', '(medium effort)'], '20 min'], ['search', 'claude · haiku 4.5', '-']],
+    { width: 100 },
+  );
+  assert.equal(out, [
+    'JOB     LEADS                MAX',
+    'review  codex · gpt-6.1-sol  20 min',
+    '        (medium effort)',
+    'search  claude · haiku 4.5   -',
+  ].join('\n'));
+  assert.ok(!out.includes('|'));
+});
+
+test('only a clip column shrinks to fit, ending in an ellipsis; a wrap column carries on underneath', () => {
+  const columns = [{ header: 'MEMBER' }, { header: 'DOING', clip: true }, { header: 'LAST' }];
+  const clipped = renderTable(columns, [['backend-independent-validator', 'second-round review of a long diff', '1m']], { width: 50 });
+  const row = clipped.split('\n')[1];
+  assert.ok(row.length <= 50, row);
+  assert.match(row, /^backend-independent-validator  second-round\S*…  1m$/);
+
+  const wrapped = renderTable([{ header: 'JOB' }, { header: 'NOTE', wrap: true }], [['build', 'not ready, falls back to build']], { width: 24 });
+  assert.deepEqual(wrapped.split('\n'), ['JOB    NOTE', 'build  not ready, falls', '       back to build']);
+});
+
+// --- live engine runs --------------------------------------------------------
+
+// Lines as `ps -axo pid=,ppid=,etime=,command=` prints them on this Mac.
+const PS = [
+  '  500     1  02:39:31 /Users/k/arena/atrisos-backend/venv/bin/python -u /Users/k/arena/atrisos-backend/scripts/orchestrator.py --loop --interval 60',
+  '31162 31146     06:18 devin -p --permission-mode dangerous --model swe-2-max -- You are the night shift for the Atris backend. You have this one run, with no human awake, to land ONE real, verified improvement.\\012\\012Working tree: /tmp/night',
+  '33648 31131     13:24 node /opt/homebrew/bin/codex exec --cd /Users/k/night-2026-10-01-0 --dangerously-bypass-approvals-and-sandbox --skip-git-repo-check -m gpt-5.6-sol -o /tmp/x You are the night shift for the Atris backend.',
+  '33654 33648     13:24 /opt/homebrew/lib/node_modules/@openai/codex/node_modules/@openai/codex-darwin-arm64/vendor/aarch64-apple-darwin/bin/codex exec --cd /Users/k/night-2026-10-01-0 --dangerously-bypass-approvals-and-sandbox --skip-git-repo-check -m gpt-5.6-sol -o /tmp/x You are the night shift for the Atris backend.',
+  '40001 40000     01:05 node /Users/keshavrao/.bun/bin/codex exec --ephemeral -m gpt-6.1-sol -c model_reasoning_effort=medium -s read-only -o /tmp/review2-3972.md You are acting as backend-independent-validator. Second-round review of git diff origin/master...HEAD for PR 3972',
+  '40002 40001     01:05 /Users/keshavrao/.bun/install/global/node_modules/@openai/codex/vendor/codex exec --ephemeral -m gpt-6.1-sol -c model_reasoning_effort=medium -s read-only -o /tmp/review2-3972.md You are acting as backend-independent-validator. Second-round review of git diff origin/master...HEAD for PR 3972',
+  '41000     1     00:40 claude --dangerously-skip-permissions',
+  '42000     1     00:01 ps -axo pid=,ppid=,etime=,command=',
+].join('\n');
+
+test('ps lines parse into pid, parent, elapsed seconds, and the command', () => {
+  assert.deepEqual(parsePsLine('31162 31146     06:18 devin -p x'), { pid: 31162, ppid: 31146, elapsed_seconds: 378, command: 'devin -p x' });
+  assert.equal(parsePsLine('1 0 1-02:03:04 x').elapsed_seconds, 93784);
+  assert.equal(shortElapsed(30), 'now');
+  assert.equal(shortElapsed(378), '6m');
+  assert.equal(shortElapsed(7200), '2h');
+  assert.equal(shortElapsed(200000), '2d');
+});
+
+test('one ps read finds each real run once, with its member, engine, model, and what it is doing', () => {
+  const runs = listLiveEngineRuns({ runPs: () => ({ status: 0, stdout: PS }), selfPid: 42000 });
+  assert.equal(runs.length, 3, JSON.stringify(runs, null, 2));
+  const [review, devin, night] = runs;
+  assert.deepEqual(
+    [review.member, review.engine, review.model, review.effort, review.elapsed_seconds],
+    ['backend-independent-validator', 'codex', 'gpt-6.1-sol', 'medium', 65],
+  );
+  assert.equal(review.doing, 'Second-round review of git diff origin/master...HEAD for PR 3972');
+  // The node wrapper and the native binary are one run: the child is kept.
+  assert.equal(review.pid, 40002);
+  assert.equal(night.pid, 33654);
+  assert.deepEqual([night.member, night.engine, night.model], [null, 'codex', 'gpt-5.6-sol']);
+  assert.match(night.doing, /^You are the night shift for the Atris backend\.$/);
+  assert.deepEqual([devin.member, devin.engine, devin.model], [null, 'devin', 'swe-2-max']);
+  // ps writes a newline as \012; the prompt reads as one line.
+  assert.match(devin.doing, /verified improvement\. Working tree: \/tmp\/night$/);
+  assert.ok(!runs.some((run) => run.pid === 500), 'the orchestrator daemon is not a run');
+  assert.ok(!runs.some((run) => run.pid === 41000), 'an interactive claude is a person, not a run');
+});
+
+test('a dispatcher above a run is hidden, and an unnamed child takes its member', () => {
+  const entries = [
+    { pid: 10, ppid: 1, elapsed_seconds: 100, command: 'node /usr/local/bin/atris engine dispatch T-1 --engine codex' },
+    { pid: 11, ppid: 10, elapsed_seconds: 99, command: '/bin/zsh -c codex exec -m gpt-6.1-sol fix it' },
+    { pid: 12, ppid: 11, elapsed_seconds: 99, command: 'codex exec -m gpt-6.1-sol fix the flaky test' },
+    { pid: 20, ppid: 1, elapsed_seconds: 50, command: 'claude -p You are acting as executor. Build the table' },
+    { pid: 21, ppid: 20, elapsed_seconds: 40, command: 'codex exec -s read-only check the diff' },
+    { pid: 30, ppid: 1, elapsed_seconds: 10, command: 'node /x/bin/atris.js engine roster' },
+  ];
+  const runs = liveEngineRuns(entries, { selfPid: 0 });
+  assert.deepEqual(runs.map((run) => [run.pid, run.engine, run.member]), [[21, 'codex', 'executor'], [12, 'codex', null]]);
+  assert.equal(runs[0].doing, 'check the diff');
+  assert.equal(runs[1].doing, 'fix the flaky test');
+});
+
+test('a prompt that mentions the orchestrator is still a run; only the orchestrator program is skipped', () => {
+  const run = parseEngineProcess({ pid: 7, ppid: 1, elapsed_seconds: 30, command: 'codex exec You are acting as validator. Review orchestrator.py' });
+  assert.deepEqual([run.engine, run.member, run.doing], ['codex', 'validator', 'Review orchestrator.py']);
+  assert.equal(parseEngineProcess({ pid: 8, ppid: 1, elapsed_seconds: 30, command: 'node /x/bin/orchestrator.js codex exec fix it' }), null);
+  assert.equal(parseEngineProcess({ pid: 9, ppid: 1, elapsed_seconds: 30, command: '/usr/local/bin/orchestrator --loop' }), null);
+});
+
+test('two separate processes asking the same thing are two runs; only a wrapper and its own child fold', () => {
+  const command = 'codex exec -m gpt-6.1-sol You are acting as validator. Review the diff';
+  const runs = liveEngineRuns([
+    { pid: 50, ppid: 1, elapsed_seconds: 20, command },
+    { pid: 60, ppid: 2, elapsed_seconds: 10, command },
+    { pid: 70, ppid: 1, elapsed_seconds: 5, command: `node /x/bin/${command}` },
+    { pid: 71, ppid: 70, elapsed_seconds: 5, command: `/x/vendor/${command}` },
+  ], { selfPid: 0 });
+  assert.deepEqual(runs.map((run) => run.pid), [71, 60, 50]);
+});
+
+test('settings are read only before the prompt; flag words inside a prompt stay in the prompt', () => {
+  const dashed = parseEngineProcess({ pid: 1, ppid: 0, elapsed_seconds: 1, command: 'codex exec -- You are acting as validator. Fix --model parsing and --effort high' });
+  assert.deepEqual([dashed.model, dashed.effort, dashed.doing], [null, null, 'Fix --model parsing and --effort high']);
+  const bare = parseEngineProcess({ pid: 2, ppid: 0, elapsed_seconds: 1, command: 'codex exec -m gpt-6.1-sol -c model_reasoning_effort=high Fix --model parsing' });
+  assert.deepEqual([bare.model, bare.effort, bare.doing], ['gpt-6.1-sol', 'high', 'Fix --model parsing']);
+  const devin = parseEngineProcess({ pid: 3, ppid: 0, elapsed_seconds: 1, command: 'devin -p --model swe-2-max -- rename --model to --engine' });
+  assert.deepEqual([devin.model, devin.doing], ['swe-2-max', 'rename --model to --engine']);
+  // claude takes its settings after the prompt, in the shape atris launches.
+  const claude = parseEngineProcess({ pid: 4, ppid: 0, elapsed_seconds: 1, command: 'claude -p You are acting as executor. Fix --model parsing --model claude-opus-5-5 --effort high --allowedTools Bash,Read' });
+  assert.deepEqual([claude.model, claude.effort, claude.doing], ['claude-opus-5-5', 'high', 'Fix --model parsing']);
+  const loose = parseEngineProcess({ pid: 5, ppid: 0, elapsed_seconds: 1, command: 'claude -p You are acting as executor. Fix --model parsing' });
+  assert.deepEqual([loose.model, loose.effort, loose.doing], [null, null, 'Fix --model parsing']);
+});
+
+test('Atris Fast, Composer, and Command Code runs show under the names the roster uses', () => {
+  const fast = parseEngineProcess({ pid: 1, ppid: 0, elapsed_seconds: 1, command: 'node /Users/k/.local/bin/ax --fast You are acting as executor. Fix the footer' });
+  assert.deepEqual([fast.engine, fast.model, fast.member, fast.doing], ['atris-fast', 'atris:fast', 'executor', 'Fix the footer']);
+  const cmd = parseEngineProcess({ pid: 2, ppid: 0, elapsed_seconds: 1, command: 'node /opt/homebrew/bin/cmd -p You are acting as researcher. Find the docs' });
+  assert.deepEqual([cmd.engine, cmd.model, cmd.member, cmd.doing], ['commandcode', null, 'researcher', 'Find the docs']);
+  const pkg = parseEngineProcess({ pid: 3, ppid: 0, elapsed_seconds: 1, command: 'node /opt/homebrew/lib/node_modules/command-code/dist/index.mjs -p tidy up' });
+  assert.equal(pkg.engine, 'commandcode');
+  // A chat, doctor, or bare call is a person at a terminal, not a run.
+  for (const command of ['ax --rapid --chat', 'ax --fast --doctor', 'ax --approvals', 'ax --fast', 'cmd', 'cmd --help']) {
+    assert.equal(parseEngineProcess({ pid: 4, ppid: 0, elapsed_seconds: 1, command }), null, command);
+  }
+});
+
+test('one splitter separates settings from the prompt for every engine', () => {
+  const cases = [
+    ['claude', 'claude -p -- Document --model opus --effort high', { flags: [['-p', true]], prompt: 'Document --model opus --effort high', dashed: true }],
+    ['claude', 'claude -- Explain the -p flag', { flags: [], prompt: 'Explain the -p flag', dashed: true }],
+    ['claude', 'claude -p --model claude-opus-5-5 Fix it', { flags: [['-p', true], ['--model', 'claude-opus-5-5']], prompt: 'Fix it', dashed: false }],
+    ['commandcode', 'cmd -- Explain the --print flag', { flags: [], prompt: 'Explain the --print flag', dashed: true }],
+    ['atris-fast', 'ax --fast Fix --doctor parsing', { flags: [['--fast', true]], prompt: 'Fix --doctor parsing', dashed: false }],
+    ['codex', 'codex exec -- Fix --model parsing', { command: ['exec'], flags: [], prompt: 'Fix --model parsing', dashed: true }],
+    ['codex', 'codex exec -m gpt-6.1-sol -c model_reasoning_effort=high Fix --model parsing',
+      { command: ['exec'], flags: [['-m', 'gpt-6.1-sol'], ['-c', 'model_reasoning_effort=high']], prompt: 'Fix --model parsing', dashed: false }],
+    ['devin', 'devin -p --model swe-2-max -- rename --model', { flags: [['-p', true], ['--model', 'swe-2-max']], prompt: 'rename --model', dashed: true }],
+    ['opencode', 'opencode run --variant=high tidy up', { command: ['run'], flags: [['--variant', 'high']], prompt: 'tidy up', dashed: false }],
+  ];
+  for (const [engine, line, expected] of cases) {
+    const split = splitArgs(engine, line.split(' ').slice(1));
+    assert.deepEqual(
+      { command: split.command, flags: split.flags, prompt: split.prompt.join(' '), dashed: split.dashed },
+      { command: [], ...expected },
+      line,
+    );
+  }
+});
+
+test('flag words inside a prompt never make a run headless, hide it, or set its model', () => {
+  const run = (command) => parseEngineProcess({ pid: 1, ppid: 0, elapsed_seconds: 1, command });
+  const documented = run('claude -p -- Document --model opus --effort high');
+  assert.deepEqual([documented.model, documented.effort, documented.doing], [null, null, 'Document --model opus --effort high']);
+  const doctor = run('ax --fast Fix --doctor parsing');
+  assert.deepEqual([doctor.engine, doctor.doing], ['atris-fast', 'Fix --doctor parsing']);
+  assert.equal(run('claude -- Explain the -p flag'), null);
+  assert.equal(run('cmd -- Explain the --print flag'), null);
+  // Settings after a prompt count only when they read as real settings to the end.
+  const tail = run('claude -p --verbose Fix it --model claude-opus-5-5 --no-session-persistence');
+  assert.deepEqual([tail.model, tail.doing], ['claude-opus-5-5', 'Fix it']);
+  const prose = run('claude -p Fix the --model flag so it reads --model parsing');
+  assert.deepEqual([prose.model, prose.doing], [null, 'Fix the --model flag so it reads --model parsing']);
+});
+
+test('a launch with a flag nobody knows is still a row, with the model left unknown', () => {
+  const run = (command) => parseEngineProcess({ pid: 1, ppid: 0, elapsed_seconds: 1, command });
+  const grok = run('grok --brand-new-flag fast --model grok-4.7 -p You are acting as validator. Check the diff');
+  assert.deepEqual([grok.engine, grok.model, grok.member, grok.doing], ['grok', null, 'validator', 'Check the diff']);
+  const claude = run('claude --new-thing on -p Fix the footer');
+  assert.deepEqual([claude.engine, claude.model, claude.doing], ['claude', null, 'Fix the footer']);
+  // An interactive session still looks like one.
+  assert.equal(run('claude'), null);
+  assert.equal(run('codex resume'), null);
+  assert.equal(run('cursor-agent'), null);
+  // The codex watchdog is atris's wrapper, not codex.
+  assert.equal(run('node /x/scripts/det/codex-watchdog.js --startup-deadline 90 -- sh -c codex exec fix'), null);
+});
+
+test('a ps that fails or throws means no runs, never an error', () => {
+  assert.deepEqual(listLiveEngineRuns({ runPs: () => ({ status: 1, stdout: '' }) }), []);
+  assert.deepEqual(listLiveEngineRuns({ runPs: () => { throw new Error('no ps'); } }), []);
+  assert.equal(parseEngineProcess({ pid: 1, ppid: 0, command: 'opencode serve' }), null);
+  assert.equal(parseEngineProcess({ pid: 1, ppid: 0, command: 'opencode run fix it' }).doing, 'fix it');
+});
+
+// --- the roster table keeps the outdated-model flags --------------------------
+
+function view(engine, model, effort = '') {
+  return { engine, model, model_source: 'roster', effort, text: `${engine} (${model})` };
+}
+
+function staleReport() {
+  const worker = (engine, model, extra = {}) => ({ engine, model, status: 'backup', why: '', runs: view(engine, model, extra.effort || ''), ...extra });
+  return {
+    jobs: [
+      {
+        job: 'review',
+        from: 'all projects',
+        file: '~/.atris/ROSTER.md',
+        pick: { engine: 'codex', model: 'gpt-6-astra' },
+        status: 'picked',
+        lead: 'first',
+        now_runs: view('codex', 'gpt-6-astra', 'medium'),
+        workers: [
+          worker('codex', 'gpt-6-astra', { status: 'leads', effort: 'medium', max_seconds: 1200, prep: 'search', line: 11 }),
+          worker('claude', 'claude-opus-5', { line: 12 }),
+          worker('grok', 'grok-4.7-build-fast', { line: 13, until: '2026-10-24' }),
+        ],
+      },
+      {
+        job: 'hard problem',
+        from: 'all projects',
+        file: '~/.atris/ROSTER.md',
+        pick: { engine: 'codex', model: 'gpt-6.1-sol' },
+        status: 'picked',
+        lead: 'first',
+        now_runs: view('codex', 'gpt-6.1-sol'),
+        workers: [worker('codex', 'gpt-6.1-sol', { status: 'leads', line: 15, verified: '2026-08-15' })],
+      },
+    ],
+    team: [{ member: 'orb', job: 'review', engine: 'claude', model: 'claude-opus-4-6', source: 'file', file: '~/.atris/ROSTER.md' }],
+    expiring: [],
+    warnings: [],
+  };
+}
+
+test('the roster table flags an outdated lead, an outdated backup, and an old pin, and keeps every backup', () => {
+  const catalog = { codex: ['gpt-6.1-sol', 'gpt-6-astra'], claude: ['opus 5.5', 'opus 5', 'opus 4.6'] };
+  const report = attachStaleModels(staleReport(), { catalog, runs: [], now: new Date(2026, 8, 30, 12) });
+  const out = renderRosterReport(report, { width: 200 });
+  const lines = out.split('\n');
+  assert.equal(lines[0], 'jobs, from ~/.atris/ROSTER.md');
+  assert.match(lines[1], /^JOB +LEADS +BACKUP +MAX +UNTIL +NOTE$/);
+  assert.match(lines[2], /^review +codex · gpt-6-astra +claude · opus 5 +20 min +- +prep: search, newer gpt-6\.1-sol out, backup newer opus 5\.5 out$/);
+  assert.match(lines[3], /^ +\(medium effort\) +grok · grok 4\.7 fast \(until oct 24\)$/);
+  assert.match(lines[4], /^hard problem +codex · gpt-6\.1-sol +none +- +- +pin 46 days old$/);
+  // The full lines with their fix commands still print under the table.
+  assert.match(out, /^review: codex runs gpt-6-astra, newer gpt-6\.1-sol is available\. renew: atris engine assign review codex/m);
+  assert.match(out, /^MEMBER +JOB +ENGINE · MODEL +SOURCE$/m);
+  assert.match(out, /^orb +review +claude · opus 4\.6 \(newer opus 5\.5 out\) +~\/\.atris\/ROSTER\.md$/m);
+  assert.ok(!out.includes('|'));
+});

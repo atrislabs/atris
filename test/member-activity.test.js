@@ -178,7 +178,7 @@ test('collecting reads each log folder and runs git once for the whole team', ()
   }
 });
 
-test('atris team shows each active member on one line and idle members on one line', () => {
+test('atris team shows each member as one row: this week with its record, quiet with days since', () => {
   const activity = buildMemberActivity(fixture());
   let out = '';
   const code = teamCommand([], {
@@ -189,11 +189,14 @@ test('atris team shows each active member on one line and idle members on one li
     presence: { members: [] },
     activity,
     lineup: { ok: true, jobs: [], team: [] },
+    liveRuns: [],
+    termWidth: 200,
     write: (s) => { out += s; },
   });
   assert.equal(code, 0);
-  assert.match(out, /^builder +last active today, 5 runs in 7 days, on codex gpt-6\.1-sol, 2 landed, 2 failed, 1 reverted$/m);
-  assert.match(out, /^idle, nothing in 14 days \(2\): old-timer, sleeper$/m);
+  assert.match(out, /^builder +- +- +this week +5 runs this week, 2 landed, 2 failed, 1 reverted +today$/m);
+  assert.match(out, /^sleeper +- +- +quiet +- +-$/m);
+  assert.match(out, /^old-timer +- +- +quiet +- +91d$/m);
 });
 
 test('atris team --record writes the feed and says where; --json stays parseable', () => {
@@ -208,11 +211,13 @@ test('atris team --record writes the feed and says where; --json stays parseable
       presence: { members: [] },
       activity,
       lineup: { ok: true, jobs: [], team: [] },
+      liveRuns: [],
+      termWidth: 200,
     };
     let out = '';
     assert.equal(teamCommand(['--record'], { ...deps, write: (s) => { out += s; } }), 0);
-    assert.match(out, /^builder +last active today, 5 runs in 7 days, on codex gpt-6\.1-sol, 2 landed, 2 failed, 1 reverted$/m);
-    assert.match(out, /^idle, nothing in 14 days \(2\): old-timer, sleeper$/m);
+    assert.match(out, /^builder +- +- +this week +5 runs this week, 2 landed, 2 failed, 1 reverted +today$/m);
+    assert.match(out, /^old-timer +- +- +quiet +- +91d$/m);
     assert.match(out, /recorded 5 days of work for 3 members to .*member_activity\.jsonl/);
     const file = path.join(root, '.atris', 'state', 'member_activity.jsonl');
     assert.equal(fs.readFileSync(file, 'utf8').trim().split('\n').length, 5);

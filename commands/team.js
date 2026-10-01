@@ -18,8 +18,10 @@ const {
   renderTeamPresence,
 } = require('../lib/team-presence');
 const { readRosterRuns } = require('../lib/roster-runs');
-const { modelLabel } = require('../lib/roster-models');
-const { LINEUP_UNREADABLE, memberLineup, readLineupSafe, renderLineup } = require('../lib/team-lineup');
+const { engineModelText, engineRunsView, modelLabel } = require('../lib/roster-models');
+const { LINEUP_UNREADABLE, TEAM_FOOTER, memberLineup, readLineupSafe } = require('../lib/team-lineup');
+const { listLiveEngineRuns, liveRunEngineText, shortElapsed } = require('../lib/engine-processes');
+const { renderTable, terminalWidth } = require('../lib/text-table');
 const { isMemberParked, isParkedFrontmatter, setMemberParked } = require('../lib/member-park');
 const { readEngineRegistry } = require('./engine');
 const { listMissions, listWorktreeRollupMissions } = require('./mission');
@@ -375,52 +377,164 @@ function activityLine(entry) {
   return parts.join(', ');
 }
 
-// Active members one line each; quiet and idle members one line per group.
+// --- the team table --------------------------------------------------------
+//
+// One row per member: its job and engine from the roster (the roster file is
+// the truth, MEMBER.md frontmatter is not), whether it is working now (a live
+// engine run names it), worked this week, or is quiet, what it is doing, and
+// when it last did anything. Runs that name no member get their own rows.
+// DOING is the live prompt for a running member; for a member that worked
+// this week it is the week's record (runs and outcomes), which is fresher
+// than the status line in now.md, used only when there is no record.
+
+const STATE_ORDER = Object.freeze({ 'working now': 0, 'this week': 1, quiet: 2, parked: 3 });
+
+// "today", "2d", or "-" when nothing was ever seen.
+function lastSeenText(activity) {
+  const days = activity ? activity.days_since : null;
+  if (days === null || days === undefined || !Number.isFinite(Number(days))) return '-';
+  return Number(days) === 0 ? 'today' : `${days}d`;
+}
+
+// "23 runs this week, 2 landed", from the activity evidence.
+function activityFacts(activity) {
+  if (!activity) return '';
+  const runs = Number(activity.runs_7d) || 0;
+  const parts = runs ? [`${runs} run${runs === 1 ? '' : 's'} this week`] : [];
+  for (const outcome of ['landed', 'failed', 'reverted']) {
+    if (Number(activity[outcome]) > 0) parts.push(`${activity[outcome]} ${outcome}`);
+  }
+  return parts.join(', ');
+}
+
+// The tool and model a member runs per the roster, with the model each tool
+// picks on its own filled in (claude's atris default, codex settings).
+function placedEngineText(place) {
+  const view = engineRunsView(place.engine, { model: place.model || '', effort: place.effort || '' });
+  return engineModelText(view.engine, view.model);
+}
+
+function liveDoing(runs) {
+  const [first] = runs;
+  const text = first.doing && first.doing !== '-' ? first.doing : 'running';
+  return runs.length > 1 ? `${runs.length} runs: ${text}` : text;
+}
+
+function liveRunJson(run) {
+  return {
+    pid: run.pid,
+    engine: run.engine,
+    model: run.model || null,
+    effort: run.effort || null,
+    member: run.member || null,
+    doing: run.doing,
+    elapsed_seconds: run.elapsed_seconds,
+  };
+}
+
+// The table's rows, in order, for text and json alike. Parked members are
+// left out unless `all` (or unless they are working right now).
+function teamTableRows(rosterRows, { lineup = null, liveRuns = [], all = false } = {}) {
+  const runsByMember = new Map();
+  const loose = [];
+  const members = new Set(rosterRows.map((entry) => entry.name));
+  for (const run of Array.isArray(liveRuns) ? liveRuns : []) {
+    // "acting as <name>" that names no member here ("acting as an expert",
+    // a member of another project) is an unattached run that keeps the name.
+    if (!run.member || !members.has(run.member)) { loose.push(run); continue; }
+    if (!runsByMember.has(run.member)) runsByMember.set(run.member, []);
+    runsByMember.get(run.member).push(run);
+  }
+  const rows = [];
+  const placed = (name) => memberLineup(lineup, name);
+  const add = (entry, name, runs) => {
+    const place = placed(name);
+    const working = runs.length > 0;
+    const state = working ? 'working now' : entry && entry.parked ? 'parked' : entry && entry.active ? 'this week' : 'quiet';
+    const focus = entry ? String(entry.focus || '').replace(/ \(live\)$/, '').replace(/^-$/, '') : '';
+    const doing = working ? liveDoing(runs)
+      : state === 'this week' ? (activityFacts(entry.activity) || focus || '-')
+        : '-';
+    rows.push({
+      member: name,
+      job: place && place.job ? place.job : '-',
+      engine_model: working ? liveRunEngineText(runs[0]) : place && place.engine ? placedEngineText(place) : '-',
+      state,
+      doing,
+      last: working ? shortElapsed(runs[0].elapsed_seconds) : lastSeenText(entry && entry.activity),
+      days_since: entry && entry.activity && Number.isFinite(Number(entry.activity.days_since)) ? Number(entry.activity.days_since) : null,
+      elapsed_seconds: working ? runs[0].elapsed_seconds : null,
+      live_runs: runs.map(liveRunJson),
+      entry,
+    });
+  };
+  for (const entry of rosterRows) {
+    const runs = runsByMember.get(entry.name) || [];
+    if (entry.parked && !all && !runs.length) continue;
+    add(entry, entry.name, runs);
+  }
+  for (const run of loose) {
+    rows.push({
+      member: '(no member)',
+      job: '-',
+      engine_model: liveRunEngineText(run),
+      state: 'working now',
+      doing: run.member ? `as ${run.member}: ${run.doing || '-'}` : (run.doing || '-'),
+      last: shortElapsed(run.elapsed_seconds),
+      days_since: null,
+      elapsed_seconds: run.elapsed_seconds,
+      live_runs: [liveRunJson(run)],
+      entry: null,
+    });
+  }
+  const far = (value) => (value === null || value === undefined ? Infinity : value);
+  return rows.sort((a, b) => STATE_ORDER[a.state] - STATE_ORDER[b.state]
+    || far(a.elapsed_seconds) - far(b.elapsed_seconds)
+    || far(a.days_since) - far(b.days_since)
+    || (a.member === '(no member)') - (b.member === '(no member)')
+    || a.member.localeCompare(b.member));
+}
+
+const TEAM_COLUMNS = Object.freeze([
+  { header: 'MEMBER' },
+  { header: 'JOB' },
+  { header: 'ENGINE · MODEL' },
+  { header: 'STATUS' },
+  { header: 'DOING', clip: true, min: 12 },
+  { header: 'LAST' },
+]);
+
+// The whole `atris team` text view: the table, the parked line, and two
+// copyable commands. Pure: live runs and the lineup come in through deps.
 function renderTeamRoster(allRows, deps = {}) {
-  if (!allRows.length) {
+  const liveRuns = Array.isArray(deps.liveRuns) ? deps.liveRuns : [];
+  if (!allRows.length && !liveRuns.length) {
     return 'no team members yet. create one with: atris member create <name> --role="..."';
   }
-  const { rows: rosterRows, parkedRows } = withParkedLabels(allRows, Boolean(deps.all));
-  const activeRows = rosterRows.filter((entry) => entry.active);
-  const restRows = rosterRows.filter((entry) => !entry.active);
-  const quietRows = restRows.filter((entry) => entry.activity && entry.activity.status === 'quiet');
-  const idleRows = restRows.filter((entry) => !quietRows.includes(entry));
-  const termWidth = deps.termWidth || process.stdout.columns || 80;
-  const memberW = Math.max(6, ...activeRows.map((entry) => entry.name.length));
-  const lines = ['active team:'];
-  if (activeRows.length) {
-    for (const entry of activeRows) {
-      // Never clipped: a cut count or outcome would say less than happened.
-      lines.push(`${entry.name.padEnd(memberW)}  ${activityLine(entry)}`.trimEnd());
-    }
-  } else {
-    lines.push('(none)');
-  }
-  lines.push('');
-  lines.push('rest of the team:');
-  if (quietRows.length) {
-    lines.push(wrapCommaNames([`quiet 8 to 14 days (${quietRows.length}): ${quietRows[0].name}`, ...quietRows.slice(1).map((entry) => entry.name)], termWidth));
-  }
-  if (idleRows.length) {
-    lines.push(wrapCommaNames([`idle, nothing in 14 days (${idleRows.length}): ${idleRows[0].name}`, ...idleRows.slice(1).map((entry) => entry.name)], termWidth));
-  }
-  if (!restRows.length) lines.push('(none)');
-  const parkedLine = parkedSummaryLine(parkedRows, termWidth);
-  if (parkedLine) {
-    lines.push('');
-    lines.push(parkedLine);
-  }
+  const width = terminalWidth(deps.termWidth);
+  const all = Boolean(deps.all);
+  const lineup = deps.lineup && deps.lineup.ok ? deps.lineup : null;
+  const rows = teamTableRows(allRows, { lineup, liveRuns, all });
+  // DOING sits before LAST, so it is clipped first and LAST keeps its place.
+  const table = renderTable(TEAM_COLUMNS, rows.map((row) => [row.member, row.job, row.engine_model, row.state, row.doing, row.last]), { width });
+  const lines = [table];
+  const parkedRows = all ? [] : allRows.filter((entry) => entry.parked && !rows.some((row) => row.entry === entry));
+  const parkedLine = parkedSummaryLine(parkedRows, width);
+  if (parkedLine) lines.push('', parkedLine);
+  if (deps.lineup && !deps.lineup.ok) lines.push('', LINEUP_UNREADABLE);
+  lines.push('', ...TEAM_FOOTER);
   return lines.join('\n');
 }
 
-// The lineup (who does each job, who is on each job) above today's active
-// and rest lists.
-function renderTeamWithLineup(rosterRows, lineup, deps = {}) {
-  const width = Math.min(deps.termWidth || process.stdout.columns || 80, 100);
-  const today = renderTeamRoster(rosterRows, deps);
-  if (!lineup || !lineup.ok) return `${today}\n\n${LINEUP_UNREADABLE}`;
-  const block = renderLineup(lineup, { width });
-  return block ? `${block}\n\n${today}` : today;
+// For --json: every member (parked ones say so), with the table's fields
+// next to today's, then one entry per run that names no member.
+function teamJsonRows(allRows, deps = {}) {
+  const rows = teamTableRows(allRows, { lineup: deps.lineup && deps.lineup.ok ? deps.lineup : null, liveRuns: deps.liveRuns || [], all: true });
+  const byEntry = new Map(rows.filter((row) => row.entry).map((row) => [row.entry, row]));
+  const table = (row) => ({ job: row.job, engine_model: row.engine_model, state: row.state, doing: row.doing, last: row.last, live_runs: row.live_runs });
+  const members = allRows.map((entry) => ({ ...entry, lineup: memberLineup(deps.lineup, entry.name), ...table(byEntry.get(entry)) }));
+  const others = rows.filter((row) => !row.entry).map((row) => ({ name: row.member, member: row.member !== '(no member)', lineup: null, ...table(row) }));
+  return [...members, ...others];
 }
 
 function renderTeamRosterHtml(allRows, meta = {}) {
@@ -690,7 +804,7 @@ function renderTeamPrune(report, days = DEFAULT_PRUNE_DAYS) {
 
 function helpText() {
   return [
-    'atris team - who does each job, with its tool and model, then who really worked in the last 7 days, then quiet and idle members',
+    'atris team - one table, one row per member: job, tool and model from the roster, working now / this week / quiet, what it is doing, and when it last worked',
     'atris team --all - also list parked members in place',
     'atris team --record - also save one row per member per day to .atris/state/member_activity.jsonl',
     'atris team presence - show who is awake and what they are doing',
@@ -793,9 +907,11 @@ function teamCommand(args = [], deps = {}) {
     const lineup = deps.lineup !== undefined
       ? deps.lineup
       : readLineupSafe(deps.root || repoRoot(deps.cwd || process.cwd()), deps.lineupNow || new Date());
+    // Who is working this minute: live engine runs on this machine.
+    const liveRuns = Array.isArray(deps.liveRuns) ? deps.liveRuns : listLiveEngineRuns(deps);
     const output = json
-      ? JSON.stringify(roster.map((entry) => ({ ...entry, lineup: memberLineup(lineup, entry.name) })), null, 2)
-      : renderTeamWithLineup(roster, lineup, { ...deps, all });
+      ? JSON.stringify(teamJsonRows(roster, { lineup, liveRuns }), null, 2)
+      : renderTeamRoster(roster, { ...deps, lineup, liveRuns, all });
     (deps.write || process.stdout.write.bind(process.stdout))(`${output}\n`);
     if (recordNote && !json) (deps.write || process.stdout.write.bind(process.stdout))(`\n${recordNote}`);
     return 0;
