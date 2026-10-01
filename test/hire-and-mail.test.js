@@ -152,6 +152,46 @@ test('atris hires prints one plain line per hire', async () => {
   ]);
 });
 
+test('atris hires shows each hire its 24h and 7 day scoreboard under its line', async () => {
+  const scoreboard = {
+    last_24h: { sent: 2, replies: 1, reply_rate: 0.5, bounces: 0, complaints: 0, spend_cents: 0 },
+    last_7d: { sent: 14, replies: 3, reply_rate: 0.214, bounces: 1, complaints: 0, spend_cents: 1550 },
+    last_action_at: '2026-10-01T13:00:00+00:00',
+    capped: false,
+  };
+  const h = harness(() => ({
+    ok: true,
+    status: 200,
+    data: {
+      hires: [{
+        name: 'Maya', status: 'active', emails_last_24h: { sent: 2, received: 1 },
+        allowance: { monthly_usd: 50, spent_this_month_usd: 12.5 },
+        last_run_at: '2026-10-01T09:00:00+00:00', last_result: 'Drafted 3 newsletter ideas',
+        schedule: { enabled: true }, scoreboard,
+      }],
+    },
+  }));
+  assert.equal(await hiresCommand([], h.deps), 0);
+  assert.deepEqual(h.stdout.join('\n').split('\n'), [
+    'Maya: sent 2, got 1 emails today · spent $12.50 of $50 · last ran 6 h ago: Drafted 3 newsletter ideas',
+    '  last 24h: sent 2, 1 reply (50%), 0 bounced, spent $0 · '
+      + 'last 7 days: sent 14, 3 replies (21%), 1 bounced, spent $15.50 · last action 2 h ago',
+  ]);
+});
+
+test('the scoreboard line leaves out what the backend does not share', () => {
+  const { scoreLine } = require('../commands/hire');
+  assert.equal(scoreLine(undefined, NOW), '');  // an older backend: no second line
+  assert.equal(scoreLine({ last_24h: { sent: null }, last_7d: { sent: null } }, NOW), '');  // no inbox
+  const line = scoreLine({
+    last_24h: { sent: 0, replies: 0, reply_rate: null, bounces: 0, spend_cents: null },
+    last_7d: { sent: 3, replies: 0, reply_rate: 0, bounces: 0, spend_cents: null },
+    capped: true,
+  }, NOW);
+  assert.equal(line, '  last 24h: sent 0, 0 replies, 0 bounced · last 7 days: sent 3, 0 replies (0%), 0 bounced'
+    + ' · counts cover only the newest mail');  // someone else's spending key: no spend shown
+});
+
 test('a hire that has not run yet says when it will', () => {
   const line = hireLine({ name: 'Ada', emails_last_24h: { sent: 0, received: 0 }, allowance: {},
     next_run_at: '2026-10-02T09:00:00Z', schedule: { enabled: true } }, NOW);

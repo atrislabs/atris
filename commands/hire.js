@@ -1,7 +1,7 @@
 'use strict';
 
 // atris hire "<name>" --job "<idea>"   one call: member, inbox, allowance, nightly loop
-// atris hires                         the morning check-in, one line per hire
+// atris hires                         the morning check-in: one line per hire, then its 24h / 7d scoreboard
 // Backend: POST /api/business/{id}/hire, GET /api/business/{id}/hires
 
 const { apiRequestJson } = require('../utils/api');
@@ -36,7 +36,9 @@ function hiresHelp(log = console.log) {
   log(`usage: atris hires [--business <slug>] [--json]
 
 the morning check-in: one line per hire with its email in the last day,
-what it spent this month, and what its last overnight run did.`);
+what it spent this month, and what its last overnight run did. under it,
+its scoreboard for the last 24 hours and 7 days: emails sent, how many got
+a reply from a person, bounces, and spend.`);
 }
 
 function localTimezone() {
@@ -96,10 +98,30 @@ function hireLine(h = {}, now = Date.now()) {
   return `${h.name}: ${parts.join(' · ')}`;
 }
 
+function windowText(label, w) {
+  if (!w || w.sent == null) return '';
+  const replies = Number(w.replies) || 0;
+  const rate = w.reply_rate == null ? '' : ` (${Math.round(Number(w.reply_rate) * 100)}%)`;
+  const parts = [`sent ${w.sent}`, `${replies} ${replies === 1 ? 'reply' : 'replies'}${rate}`,
+    `${Number(w.bounces) || 0} bounced`];
+  if (w.spend_cents != null) parts.push(`spent ${dollars(Number(w.spend_cents) / 100)}`);
+  return `${label}: ${parts.join(', ')}`;
+}
+
+// The second line under a hire: how its mail is landing. Empty for an older backend.
+function scoreLine(board, now = Date.now()) {
+  if (!board) return '';
+  const parts = [windowText('last 24h', board.last_24h), windowText('last 7 days', board.last_7d)].filter(Boolean);
+  if (!parts.length) return '';
+  if (board.last_action_at) parts.push(`last action ${relativeTime(board.last_action_at, now)}`);
+  if (board.capped) parts.push('counts cover only the newest mail');
+  return `  ${parts.join(' · ')}`;
+}
+
 function renderHires(data = {}, now = Date.now()) {
   const rows = Array.isArray(data.hires) ? data.hires : [];
   if (!rows.length) return 'No hires yet. Start one: atris hire "Maya" --job "grow the newsletter"';
-  return rows.map((h) => hireLine(h, now)).join('\n');
+  return rows.map((h) => [hireLine(h, now), scoreLine(h.scoreboard, now)].filter(Boolean).join('\n')).join('\n');
 }
 
 function io(deps) {
@@ -163,4 +185,4 @@ async function hiresCommand(args = [], deps = {}) {
   return 0;
 }
 
-module.exports = { hireCommand, hiresCommand, renderHire, renderHires, hireLine };
+module.exports = { hireCommand, hiresCommand, renderHire, renderHires, hireLine, scoreLine };
