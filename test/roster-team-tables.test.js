@@ -8,7 +8,7 @@ const test = require('node:test');
 const assert = require('node:assert/strict');
 
 const { renderTable } = require('../lib/text-table');
-const { listLiveEngineRuns, liveEngineRuns, parseEngineProcess, parsePsLine, shortElapsed } = require('../lib/engine-processes');
+const { listLiveEngineRuns, liveEngineRuns, parseEngineProcess, parsePsLine, shortElapsed, splitArgs } = require('../lib/engine-processes');
 const { attachStaleModels } = require('../lib/roster-stale');
 const { renderRosterReport } = require('../commands/engine');
 
@@ -142,6 +142,42 @@ test('Atris Fast, Composer, and Command Code runs show under the names the roste
   for (const command of ['ax --rapid --chat', 'ax --fast --doctor', 'ax --approvals', 'ax --fast', 'cmd', 'cmd --help']) {
     assert.equal(parseEngineProcess({ pid: 4, ppid: 0, elapsed_seconds: 1, command }), null, command);
   }
+});
+
+test('one splitter separates settings from the prompt for every engine', () => {
+  const cases = [
+    ['claude', 'claude -p -- Document --model opus --effort high', { flags: [['-p', true]], prompt: 'Document --model opus --effort high', dashed: true }],
+    ['claude', 'claude -- Explain the -p flag', { flags: [], prompt: 'Explain the -p flag', dashed: true }],
+    ['claude', 'claude -p --model claude-opus-5-5 Fix it', { flags: [['-p', true], ['--model', 'claude-opus-5-5']], prompt: 'Fix it', dashed: false }],
+    ['commandcode', 'cmd -- Explain the --print flag', { flags: [], prompt: 'Explain the --print flag', dashed: true }],
+    ['atris-fast', 'ax --fast Fix --doctor parsing', { flags: [['--fast', true]], prompt: 'Fix --doctor parsing', dashed: false }],
+    ['codex', 'codex exec -- Fix --model parsing', { command: ['exec'], flags: [], prompt: 'Fix --model parsing', dashed: true }],
+    ['codex', 'codex exec -m gpt-6.1-sol -c model_reasoning_effort=high Fix --model parsing',
+      { command: ['exec'], flags: [['-m', 'gpt-6.1-sol'], ['-c', 'model_reasoning_effort=high']], prompt: 'Fix --model parsing', dashed: false }],
+    ['devin', 'devin -p --model swe-2-max -- rename --model', { flags: [['-p', true], ['--model', 'swe-2-max']], prompt: 'rename --model', dashed: true }],
+    ['opencode', 'opencode run --variant=high tidy up', { command: ['run'], flags: [['--variant', 'high']], prompt: 'tidy up', dashed: false }],
+  ];
+  for (const [engine, line, expected] of cases) {
+    const split = splitArgs(engine, line.split(' ').slice(1));
+    assert.deepEqual(
+      { command: split.command, flags: split.flags, prompt: split.prompt.join(' '), dashed: split.dashed },
+      { command: [], ...expected },
+      line,
+    );
+  }
+});
+
+test('flag words inside a prompt never make a run headless, hide it, or set its model', () => {
+  const run = (command) => parseEngineProcess({ pid: 1, ppid: 0, elapsed_seconds: 1, command });
+  const documented = run('claude -p -- Document --model opus --effort high');
+  assert.deepEqual([documented.model, documented.effort, documented.doing], [null, null, 'Document --model opus --effort high']);
+  const doctor = run('ax --fast Fix --doctor parsing');
+  assert.deepEqual([doctor.engine, doctor.doing], ['atris-fast', 'Fix --doctor parsing']);
+  assert.equal(run('claude -- Explain the -p flag'), null);
+  assert.equal(run('cmd -- Explain the --print flag'), null);
+  // The tail atris puts after a claude prompt counts only in its exact shape.
+  const extra = run('claude -p --verbose Fix it --model claude-opus-5-5');
+  assert.deepEqual([extra.model, extra.doing], [null, 'Fix it --model claude-opus-5-5']);
 });
 
 test('a ps that fails or throws means no runs, never an error', () => {
