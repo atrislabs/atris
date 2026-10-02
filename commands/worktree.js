@@ -7,6 +7,7 @@ const { hasFlag, readFlag } = require('../lib/arg-parser');
 const { stampLatestOpenBriefForWorktree } = require('../lib/brief-ledger');
 const { isConductorArtifact } = require('../lib/conductor-artifacts');
 const { fixMapDocs } = require('../lib/map-refs');
+const reaper = require('../lib/worktree-reaper');
 const close = require('./close');
 
 const REGEN_ADAPTER_FILES = ['AGENTS.md', 'CLAUDE.md', 'GEMINI.md'];
@@ -140,7 +141,10 @@ function parseWorktrees(text) {
         let branch = current.branch || 'detached';
         branch = branch.replace(/^refs\/heads\//, '');
         const item = { path: current.worktree, branch, head: current.HEAD || '' };
-        if (current.locked) item.locked = true;
+        if (current.locked) {
+          item.locked = true;
+          if (typeof current.locked === 'string') item.lock_reason = current.locked;
+        }
         if (current.prunable) item.prunable = true;
         out.push(item);
       }
@@ -470,8 +474,13 @@ function createAgentWorktree({ root = repoRoot(), member = '', agent = '', task,
   // uncommitted changes remain protected by cleanupWorktrees.
   let reapedBeforeStart = [];
   let cachePrunedBeforeStart = [];
+  // A full copy of a large repo is close to 1 GB. Under 15 GB free, put
+  // finished copies away across every repo first; under 5 GB, refuse.
+  assertDiskRoom(root);
   try {
-    const cleaned = cleanupWorktrees({ root, base: defaultMainlineBase(root), apply: true });
+    // GitHub is not asked here: a start must stay fast. Squash-merged copies
+    // are put away by the hourly sweep and by the low-disk sweep above.
+    const cleaned = cleanupWorktrees({ root, base: defaultMainlineBase(root), apply: true, prLookup: false });
     reapedBeforeStart = cleaned.removed;
     cachePrunedBeforeStart = cleaned.cachePruned;
   } catch {}
@@ -508,6 +517,24 @@ function createAgentWorktree({ root = repoRoot(), member = '', agent = '', task,
     'utf8'
   );
   return { path: target, branch, base: shipBase, checkoutBase, owner, reapedBeforeStart, cachePrunedBeforeStart };
+}
+
+function arenaFor(root) {
+  try {
+    const primary = listWorktrees(root)[0]?.path;
+    return path.dirname(primary || root);
+  } catch {
+    return path.dirname(root);
+  }
+}
+
+function assertDiskRoom(root, { log = (line) => console.error(line) } = {}) {
+  const arena = arenaFor(root);
+  const room = reaper.ensureDiskRoom({ target: root, arena, log });
+  if (room.ok) return room;
+  const error = new Error(room.message);
+  error.code = 'ATRIS_DISK_FULL';
+  throw error;
 }
 
 function startWorktree(args) {
@@ -1036,7 +1063,12 @@ function canonicalPath(value) {
   }
 }
 
+// Every path a process holds open (cwd and open files), so a copy someone is
+// still reading or writing is never removed. Falls back to working
+// directories only when the full listing is unavailable.
 function listActiveProcessCwds() {
+  const open = reaper.listOpenPaths();
+  if (Array.isArray(open)) return open.map(canonicalPath);
   const result = spawnSync('lsof', ['-n', '-a', '-d', 'cwd', '-F', 'n'], {
     encoding: 'utf8',
     maxBuffer: COMMAND_MAX_BUFFER_BYTES,
@@ -1079,12 +1111,93 @@ function pruneGeneratedWorktreeCaches(worktreePath, { apply = false } = {}) {
   return { candidates, pruned };
 }
 
-function cleanupWorktrees({ root = repoRoot(), base: baseOverride = '', apply = false, activeCwds: activeCwdsOverride } = {}) {
+// Long-lived lanes that are never put away, whatever their git state.
+const PERMANENT_WORKTREE_PATTERNS = [/atrisos-backend-serve/, /overnight-master-runner/];
+
+let sharedPrLookup = null;
+function defaultPrLookup() {
+  if (!sharedPrLookup) sharedPrLookup = reaper.createPrLookup();
+  return sharedPrLookup;
+}
+
+function hasOriginRemote(root) {
+  return runGit(['remote'], { cwd: root, check: false }).stdout.split(/\r?\n/).includes('origin');
+}
+
+// Is every commit of this checkout on GitHub? A remote branch that contains
+// HEAD proves it. So does a PR whose head is HEAD (or carries HEAD), which
+// still holds after a squash merge deleted the remote branch.
+function headIsPushed(root, head, prs = []) {
+  const remote = runGit(['for-each-ref', '--count=1', '--contains', head, '--format=%(refname)', 'refs/remotes'], { cwd: root, check: false });
+  if (remote.status === 0 && remote.stdout.trim()) return true;
+  for (const pr of prs) {
+    const oid = String(pr.headRefOid || '');
+    if (!oid) continue;
+    if (oid === head) return true;
+    if (runGit(['merge-base', '--is-ancestor', head, oid], { cwd: root, check: false }).status === 0) return true;
+  }
+  return false;
+}
+
+// Landed without being an ancestor of base: the same changes are already in
+// base (rebase or cherry-pick), or the branch's PR was squash-merged or
+// closed on GitHub after every commit was pushed.
+function landedOutsideAncestry(root, wt, base, prLookup) {
+  const cherry = runGit(['cherry', base, wt.head], { cwd: root, check: false });
+  if (cherry.status === 0) {
+    const lines = cherry.stdout.split(/\r?\n/).filter(Boolean);
+    if (lines.length && !lines.some((line) => line.startsWith('+ '))) {
+      return { landed: true, reason: 'same_changes_in_base', pushed: true };
+    }
+  }
+  const branch = wt.branch && wt.branch !== 'detached' ? wt.branch : '';
+  let pr = { state: 'none', prs: [] };
+  if (branch && prLookup !== false && hasOriginRemote(root)) {
+    try {
+      pr = (prLookup || defaultPrLookup())(root, branch, wt.head) || pr;
+    } catch {
+      pr = { state: 'unknown', prs: [] };
+    }
+  }
+  const pushed = headIsPushed(root, wt.head, pr.prs || []);
+  const number = (pr.prs || []).find((item) => item.state === (pr.state === 'open' ? 'OPEN' : pr.state.toUpperCase()));
+  const label = number ? `#${number.number}` : '';
+  if (pushed && (pr.state === 'merged' || pr.state === 'closed')) {
+    return { landed: true, reason: pr.state === 'merged' ? 'pr_merged' : 'pr_closed', detail: label, pushed };
+  }
+  let detail = pushed ? 'pushed, no PR yet' : 'has commits not on GitHub';
+  if (pr.state === 'open') detail = `PR ${label} still open`;
+  else if (pr.state === 'unknown') detail = pushed ? 'pushed, could not ask GitHub about the PR' : 'has commits not on GitHub';
+  else if ((pr.state === 'merged' || pr.state === 'closed') && !pushed) detail = `PR ${label} ${pr.state}, but newer commits are not on GitHub`;
+  return { landed: false, pushed, detail };
+}
+
+function cleanupWorktrees({
+  root = repoRoot(),
+  base: baseOverride = '',
+  apply = false,
+  activeCwds: activeCwdsOverride,
+  mainline = false,
+  prLookup = null,
+  protectPaths = [],
+  beforeRemove = null,
+  ignoreGrace = false,
+  only = null,
+  agentCopiesOnly = false,
+} = {}) {
   const worktrees = listWorktrees(root);
   const primary = worktrees[0]?.path ? path.resolve(worktrees[0].path) : '';
   const current = path.resolve(root);
-  const activeCwds = Array.isArray(activeCwdsOverride) ? activeCwdsOverride.map(canonicalPath) : listActiveProcessCwds();
-  const base = normalizeTargetRef(root, baseOverride || defaultShipTarget(root));
+  const protectedPaths = protectPaths.filter(Boolean).map(canonicalPath);
+  const onlyPaths = Array.isArray(only) ? new Set(only.map(canonicalPath)) : null;
+  // Listing open files takes a few seconds, so ask once and only when some
+  // copy actually reaches that check.
+  let activeCwds = Array.isArray(activeCwdsOverride) ? activeCwdsOverride.map(canonicalPath) : null;
+  const activePaths = () => {
+    if (!activeCwds) activeCwds = listActiveProcessCwds();
+    return activeCwds;
+  };
+  const base = normalizeTargetRef(root, baseOverride || (mainline ? defaultMainlineBase(root) : defaultShipTarget(root)));
   refreshRemoteRef(root, base);
   const candidates = [];
   const kept = [];
@@ -1097,9 +1210,30 @@ function cleanupWorktrees({ root = repoRoot(), base: baseOverride = '', apply = 
     cacheCandidates.push(...caches.candidates);
     cachePruned.push(...caches.pruned);
   };
+  const removeCandidate = (wt, item, candidate, { force = false, staleLock = null } = {}) => {
+    candidates.push(candidate);
+    if (!apply) return;
+    if (typeof beforeRemove === 'function') {
+      try { beforeRemove(wt.path); } catch {}
+    }
+    // A lock whose owner process has exited no longer protects anything,
+    // but git still refuses to remove a locked tree until it is unlocked.
+    if (staleLock) runGit(['worktree', 'unlock', wt.path], { cwd: root, check: false });
+    const removeArgs = ['worktree', 'remove'];
+    if (force) removeArgs.push('--force');
+    removeArgs.push(wt.path);
+    const removedResult = runGit(removeArgs, { cwd: root, check: false });
+    if (removedResult.status === 0) {
+      removed.push(candidate);
+    } else {
+      kept.push({ ...item, reason: 'remove_failed', error: (removedResult.stderr || removedResult.stdout || '').trim() });
+    }
+  };
 
   for (const wt of worktrees) {
     const wtPath = path.resolve(wt.path);
+    const wtCanonical = canonicalPath(wt.path);
+    if (onlyPaths && !onlyPaths.has(wtCanonical) && wtPath !== primary) continue;
     const item = { path: wt.path, branch: wt.branch, head: wt.head };
     if (wtPath === primary) {
       kept.push({ ...item, reason: 'primary_checkout' });
@@ -1109,15 +1243,42 @@ function cleanupWorktrees({ root = repoRoot(), base: baseOverride = '', apply = 
       kept.push({ ...item, reason: 'current_checkout' });
       continue;
     }
-    if (wt.locked) {
-      kept.push({ ...item, reason: 'locked' });
+    if (protectedPaths.some((value) => value === wtCanonical || value.startsWith(`${wtCanonical}${path.sep}`))) {
+      kept.push({ ...item, reason: 'current_checkout' });
       continue;
+    }
+    if (PERMANENT_WORKTREE_PATTERNS.some((pattern) => pattern.test(wt.path))) {
+      kept.push({ ...item, reason: 'permanent_lane' });
+      continue;
+    }
+    if (agentCopiesOnly && !reaper.isAgentCopyPath(wt.path)) {
+      kept.push({ ...item, reason: 'not_agent_copy' });
+      continue;
+    }
+    let staleLock = null;
+    if (wt.locked) {
+      const lock = reaper.lockState(wt.lock_reason || true);
+      if (lock.live) {
+        kept.push({
+          ...item,
+          reason: lock.pid ? 'locked_by_live_agent' : 'locked',
+          ...(lock.pid ? { pid: lock.pid } : {}),
+          ...(lock.reason ? { detail: lock.reason } : {}),
+        });
+        continue;
+      }
+      staleLock = lock;
+      item.stale_lock_pid = lock.pid;
     }
     if (PROTECTED_BRANCHES.has(wt.branch)) {
       kept.push({ ...item, reason: 'protected_branch' });
       continue;
     }
-    if (worktreeHasActiveProcess(wtPath, activeCwds)) {
+    if (!fs.existsSync(wt.path)) {
+      kept.push({ ...item, reason: 'missing_or_unreadable' });
+      continue;
+    }
+    if (worktreeHasActiveProcess(wtPath, activePaths())) {
       kept.push({ ...item, reason: 'active_process' });
       continue;
     }
@@ -1141,56 +1302,76 @@ function cleanupWorktrees({ root = repoRoot(), base: baseOverride = '', apply = 
       (rawCounts.staged || rawCounts.unstaged || rawCounts.untracked)
       && !(counts.staged || counts.unstaged || counts.untracked)
     );
-    const merged = runGit(['merge-base', '--is-ancestor', wt.head, base], { cwd: root, check: false }).status === 0;
-    if (!merged) {
+    const ancestor = runGit(['merge-base', '--is-ancestor', wt.head, base], { cwd: root, check: false }).status === 0;
+    const landed = ancestor ? { landed: true, reason: 'merged_into_base' } : landedOutsideAncestry(root, wt, base, prLookup);
+    if (!landed.landed) {
+      const detached = !wt.branch || wt.branch === 'detached';
       const completedAgeMs = completedAgentOutputAgeMs(wtPath);
-      if (completedAgeMs === null || completedAgeMs < COMPLETED_UNMERGED_REAP_MS) {
+      // A detached copy has no branch to keep its commits once the checkout
+      // goes, so unlanded detached work stays until it is pushed.
+      if (detached || completedAgeMs === null || completedAgeMs < COMPLETED_UNMERGED_REAP_MS) {
         pruneCachesForKept(wtPath);
         kept.push({
           ...item,
-          reason: completedAgeMs === null ? 'unmerged' : 'completed_unmerged_retention',
-          ...(completedAgeMs === null ? {} : { retention_hours: 1 }),
+          reason: completedAgeMs === null || detached ? 'unmerged' : 'completed_unmerged_retention',
+          ...(completedAgeMs === null || detached ? {} : { retention_hours: 1 }),
+          ...(landed.detail ? { detail: landed.detail } : {}),
         });
         continue;
       }
-      const candidate = {
+      removeCandidate(wt, item, {
         ...item,
         reason: 'completed_unmerged_checkout_expired',
         branch_preserved: true,
         artifact_only_dirty: artifactOnlyDirty,
-      };
-      candidates.push(candidate);
-      if (!apply) continue;
-      const removeArgs = ['worktree', 'remove'];
-      if (artifactOnlyDirty) removeArgs.push('--force');
-      removeArgs.push(wt.path);
-      const removedResult = runGit(removeArgs, { cwd: root, check: false });
-      if (removedResult.status === 0) {
-        removed.push(candidate);
-      } else {
-        kept.push({ ...item, reason: 'remove_failed', error: (removedResult.stderr || removedResult.stdout || '').trim() });
-      }
+      }, { force: artifactOnlyDirty, staleLock });
       continue;
     }
-    if (worktreeWithinReapGrace(wtPath)) {
+    if (!ignoreGrace && !staleLock && worktreeWithinReapGrace(wtPath)) {
       kept.push({ ...item, reason: 'fresh_worktree_grace' });
       continue;
     }
-    const candidate = { ...item, reason: 'merged_into_base', artifact_only_dirty: artifactOnlyDirty };
-    candidates.push(candidate);
-    if (!apply) continue;
-    const removeArgs = ['worktree', 'remove'];
-    if (artifactOnlyDirty) removeArgs.push('--force');
-    removeArgs.push(wt.path);
-    const removedResult = runGit(removeArgs, { cwd: root, check: false });
-    if (removedResult.status === 0) {
-      removed.push(candidate);
-    } else {
-      kept.push({ ...item, reason: 'remove_failed', error: (removedResult.stderr || removedResult.stdout || '').trim() });
-    }
+    removeCandidate(wt, item, {
+      ...item,
+      reason: landed.reason,
+      ...(landed.detail ? { detail: landed.detail } : {}),
+      ...(staleLock ? { stale_lock_pid: staleLock.pid } : {}),
+      artifact_only_dirty: artifactOnlyDirty,
+    }, { force: artifactOnlyDirty, staleLock });
   }
 
   return { apply, base, candidates, removed, kept, cacheCandidates, cachePruned };
+}
+
+// After atris lands a PR it created, put that copy away now instead of on
+// the next sweep. Same rules as every sweep, minus the fresh-copy grace: the
+// landing itself proves the copy is finished.
+function reapLandedWorktree(worktreePath, { root = '', activeCwds } = {}) {
+  if (!worktreePath || !fs.existsSync(worktreePath)) return { removed: false, reason: 'missing' };
+  let home = root;
+  if (!home) {
+    const common = runGit(['rev-parse', '--path-format=absolute', '--git-common-dir'], { cwd: worktreePath, check: false });
+    if (common.status !== 0) return { removed: false, reason: 'not_a_worktree' };
+    home = path.dirname(common.stdout.trim());
+  }
+  try {
+    const result = cleanupWorktrees({
+      root: home,
+      apply: true,
+      mainline: true,
+      ignoreGrace: true,
+      only: [worktreePath],
+      ...(activeCwds ? { activeCwds } : {}),
+    });
+    if (result.removed.length) {
+      runGit(['worktree', 'prune'], { cwd: home, check: false });
+      return { removed: true, reason: result.removed[0].reason };
+    }
+    const keptRow = result.kept.find((row) => canonicalPath(row.path) === canonicalPath(worktreePath));
+    return { removed: false, reason: keptRow ? keptRow.reason : 'not_found' };
+  } catch (error) {
+    return { removed: false, reason: 'error', error: String((error && error.message) || error).slice(0, 200) };
+  }
 }
 
 function cleanup(args) {
@@ -1217,6 +1398,51 @@ function cleanup(args) {
   }
   console.log(`kept: ${result.kept.length}`);
   if (!result.apply && result.candidates.length) console.log('next: atris worktree cleanup --apply');
+  return 0;
+}
+
+// atris worktree reap: one sweep over every repo under the arena (default
+// the arena folder, or --arena <dir>). Dry run by default: prints every work copy with
+// its size, verdict, and reason. --apply removes the finished ones (the
+// hourly launchd job runs this). Branches are always kept.
+function reapCommand(args) {
+  const apply = hasFlag(args, '--apply');
+  const asJson = hasFlag(args, '--json');
+  const arena = readFlag(args, '--arena') || reaper.arenaRoot();
+  const sizes = hasFlag(args, '--no-sizes') ? false : (apply && !hasFlag(args, '--sizes') ? 'removed' : 'all');
+  const report = reaper.reapArena({ arena: path.resolve(arena), apply, sizes });
+  if (asJson) {
+    console.log(JSON.stringify({ ok: report.errors.length === 0, ...report }, null, 2));
+    return 0;
+  }
+  const stamp = new Date().toISOString().replace(/\.\d+Z$/, 'Z');
+  console.log(`worktree reap ${apply ? 'applied' : 'dry run'} ${stamp} arena=${report.arena}`);
+  console.log(reaper.renderReapTable(report, { all: !apply || hasFlag(args, '--all') }));
+  if (!apply && report.removable) console.log('next: atris worktree reap --apply');
+  return 0;
+}
+
+// atris worktree room: the disk check every launcher runs before making a
+// work copy, for launchers outside this CLI (night shift, member runs).
+// Exit 0 when there is room (after putting finished copies away if needed),
+// exit 3 with a plain message when there is not (1 stays a crash, 2 usage).
+function roomCommand(args) {
+  const need = Number(readFlag(args, '--need'));
+  const refuse = Number(readFlag(args, '--refuse'));
+  const arena = readFlag(args, '--arena') || reaper.arenaRoot();
+  const room = reaper.ensureDiskRoom({
+    target: path.resolve(arena),
+    arena: path.resolve(arena),
+    ...(Number.isFinite(need) && need > 0 ? { roomGb: need } : {}),
+    ...(Number.isFinite(refuse) && refuse >= 0 ? { refuseGb: refuse } : {}),
+    force: true,
+    log: (line) => console.error(line),
+  });
+  if (!room.ok) {
+    console.error(room.message);
+    return 3;
+  }
+  console.log(`room: ${reaper.formatGb(room.freeBytes)} free`);
   return 0;
 }
 
@@ -1248,6 +1474,8 @@ function guide() {
   console.log('5. Cleanup is part of creation and the janitor; run it directly any time:');
   console.log('   atris worktree cleanup');
   console.log('   atris worktree cleanup --apply');
+  console.log('   atris worktree reap            every repo in the arena folder, with sizes');
+  console.log('   atris worktree reap --apply    the hourly job runs this');
   console.log('');
   console.log('Notes: start uses the current upstream/default remote base, not dirty local HEAD.');
   console.log('Start reaps completed checkouts first. Cleanup preserves branches and source changes, skips live work, and prunes only ignored build caches.');
@@ -1270,6 +1498,8 @@ function help() {
   console.log('  atris worktree guard [--allow-primary] [--allow-dirty]');
   console.log('  atris worktree prune [--apply]');
   console.log('  atris worktree cleanup [--apply] [--json] [--base origin/master]  reap completed checkouts and ignored build caches');
+  console.log('  atris worktree reap [--apply] [--json] [--arena <dir>]  put away finished work copies in every repo (dry run by default)');
+  console.log('  atris worktree room [--need 15] [--refuse 5]  make disk room before a new work copy; exit 3 when there is none');
 }
 
 function worktreeCommand(args = []) {
@@ -1289,6 +1519,8 @@ function worktreeCommand(args = []) {
   if (sub === 'guard') return guard(rest);
   if (sub === 'prune') return prune(rest);
   if (sub === 'cleanup' || sub === 'clean') return cleanup(rest);
+  if (sub === 'reap') return reapCommand(rest);
+  if (sub === 'room') return roomCommand(rest);
   help();
   return 2;
 }
@@ -1301,6 +1533,7 @@ module.exports = {
   createOrFindPr,
   cleanupWorktrees,
   defaultMainlineBase,
+  reapLandedWorktree,
   defaultStartBase,
   describeFlightAge,
   flightStampMs,
