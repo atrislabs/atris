@@ -113,6 +113,9 @@ test('copies proven finished are put away, with the branch kept', () => withAren
   fs.mkdirSync(path.join(junk.path, '__pycache__'));
   fs.writeFileSync(path.join(junk.path, '__pycache__', 'a.pyc'), 'x');
   fs.writeFileSync(path.join(junk.path, '.DS_Store'), 'x');
+  fs.mkdirSync(path.join(junk.path, '.atris', 'cache'), { recursive: true });
+  fs.writeFileSync(path.join(junk.path, '.atris', 'cache', '.gitignore'), '*\n');
+  fs.writeFileSync(path.join(junk.path, '.atris', 'cache', 'map-refs.json'), '{}\n');
   backdate(junk.path);
   const prLookup = lookupReturning({
     squashed: merged(squashed.head),
@@ -193,6 +196,20 @@ const KEEP_CASES = [
     setup: (arena, root) => {
       const copy = addCopy(root, arena, 'agent-output');
       fs.writeFileSync(path.join(copy.path, '.codex-last-message.txt'), 'finished\n');
+      backdate(copy.path);
+      return { copy };
+    },
+    reason: 'untracked_files',
+  },
+  {
+    finding: 'atris files outside its cache folder are kept',
+    setup: (arena, root) => {
+      const copy = addCopy(root, arena, 'atris-notes');
+      fs.mkdirSync(path.join(copy.path, '.atris', 'cache'), { recursive: true });
+      fs.writeFileSync(path.join(copy.path, '.atris', 'cache', 'map-refs.json'), '{}\n');
+      fs.writeFileSync(path.join(copy.path, '.atris', 'notes.md'), 'agent notes\n');
+      fs.mkdirSync(path.join(copy.path, 'sub', '.atris', 'cache'), { recursive: true });
+      fs.writeFileSync(path.join(copy.path, 'sub', '.atris', 'cache', 'x.json'), '{}\n');
       backdate(copy.path);
       return { copy };
     },
