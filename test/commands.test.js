@@ -470,45 +470,51 @@ test('worktree guide prints the agent mission ship recipe', () => {
   }
 });
 
-test('worktree cleanup removes only clean merged sibling worktrees', () => {
+test('worktree cleanup removes only clean merged copies in the launcher folder', () => {
   const dir = makeTempDir();
-  let cleanWorktree;
-  let dirtyWorktree;
+  const arena = fs.realpathSync(dir);
+  const root = path.join(arena, 'repo');
   try {
-    const runGit = (args, cwd = dir) => {
+    const runGit = (args, cwd = root) => {
       const result = spawnSync('git', args, { cwd, encoding: 'utf8' });
       assert.equal(result.status, 0, result.stderr || result.stdout);
       return result.stdout.trim();
     };
-    runGit(['init', '-q']);
+    fs.mkdirSync(root);
+    runGit(['init', '-q', '--bare', path.join(arena, 'origin.git')], arena);
+    runGit(['init', '-q', '-b', 'master']);
     runGit(['config', 'user.email', 'test@example.com']);
     runGit(['config', 'user.name', 'Test User']);
-    fs.writeFileSync(path.join(dir, 'README.md'), 'hello\n');
+    fs.writeFileSync(path.join(root, 'README.md'), 'hello\n');
     runGit(['add', '.']);
     runGit(['commit', '-qm', 'init']);
+    runGit(['remote', 'add', 'origin', path.join(arena, 'origin.git')]);
+    runGit(['push', '-q', 'origin', 'master']);
 
-    cleanWorktree = path.join(dir, '..', `${path.basename(dir)}-clean-worktree`);
-    dirtyWorktree = path.join(dir, '..', `${path.basename(dir)}-dirty-worktree`);
-    runGit(['worktree', 'add', '-q', '-b', 'clean-done', cleanWorktree, 'HEAD']);
-    runGit(['worktree', 'add', '-q', '-b', 'dirty-done', dirtyWorktree, 'HEAD']);
+    const cleanWorktree = path.join(arena, '.agent-worktrees', 'repo', 'clean');
+    const dirtyWorktree = path.join(arena, '.agent-worktrees', 'repo', 'dirty');
+    const siblingWorktree = path.join(arena, 'repo-sibling');
+    runGit(['worktree', 'add', '-q', '-b', 'clean-done', cleanWorktree, 'origin/master']);
+    runGit(['worktree', 'add', '-q', '-b', 'dirty-done', dirtyWorktree, 'origin/master']);
+    runGit(['worktree', 'add', '-q', '-b', 'sibling-done', siblingWorktree, 'origin/master']);
     fs.writeFileSync(path.join(dirtyWorktree, 'dirty.txt'), 'keep me\n');
-    // age both past the fresh-worktree grace window so cleanup may consider them
+    // age them past the fresh-worktree grace window so cleanup may consider them
     const staleStamp = new Date(Date.now() - 61 * 60 * 1000);
-    fs.utimesSync(cleanWorktree, staleStamp, staleStamp);
-    fs.utimesSync(dirtyWorktree, staleStamp, staleStamp);
+    for (const wt of [cleanWorktree, dirtyWorktree, siblingWorktree]) fs.utimesSync(wt, staleStamp, staleStamp);
+    const options = { root, activeCwds: [], prLookup: () => ({ state: 'none', prs: [] }) };
 
-    const dryRun = cleanupWorktrees({ root: dir, base: 'HEAD' });
-    assert.deepEqual(dryRun.candidates.map(item => fs.realpathSync(item.path)), [fs.realpathSync(cleanWorktree)]);
-    assert(dryRun.kept.some(item => fs.realpathSync(item.path) === fs.realpathSync(dirtyWorktree) && item.reason === 'dirty'));
-    const cleanCandidatePath = dryRun.candidates[0].path;
+    const dryRun = cleanupWorktrees(options);
+    assert.deepEqual(dryRun.candidates.map(item => item.path), [cleanWorktree]);
+    const reasons = Object.fromEntries(dryRun.kept.map(item => [item.path, item.reason]));
+    assert.equal(reasons[dirtyWorktree], 'untracked_files');
+    assert.equal(reasons[siblingWorktree], 'not_agent_copy');
 
-    const applied = cleanupWorktrees({ root: dir, base: 'HEAD', apply: true });
-    assert.deepEqual(applied.removed.map(item => item.path), [cleanCandidatePath]);
+    const applied = cleanupWorktrees({ ...options, apply: true });
+    assert.deepEqual(applied.removed.map(item => item.path), [cleanWorktree]);
     assert.equal(fs.existsSync(cleanWorktree), false);
     assert.equal(fs.existsSync(dirtyWorktree), true);
+    assert.equal(fs.existsSync(siblingWorktree), true);
   } finally {
-    if (dirtyWorktree) spawnSync('git', ['worktree', 'remove', '--force', dirtyWorktree], { cwd: dir, encoding: 'utf8' });
-    if (cleanWorktree) spawnSync('git', ['worktree', 'remove', '--force', cleanWorktree], { cwd: dir, encoding: 'utf8' });
     cleanupTempDir(dir);
   }
 });
