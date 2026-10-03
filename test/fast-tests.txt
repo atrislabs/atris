@@ -154,3 +154,5 @@ test/avail.test.js
 test/member-type.test.js
 test/roster-team-tables.test.js
 test/engine-launch-shapes.test.js
+test/link-command.test.js
+test/member-result.test.js
