@@ -632,6 +632,7 @@ function showHelpAll() {
   console.log('  rsi        - Read the Dream-RSI attempt ledger (trees, attempts, policy, dreams)');
   console.log(`  autoland   - Approve the policy once; ${require('../lib/autoland').certifiedWorkLandsPhrase(process.cwd())}, you keep irreversible calls`);
   console.log('  engine     - engine registry, answer validation, dispatch flights, and live progress');
+  console.log('  link       - What two things could become together: one line, why, a first thing to make, who makes it');
   console.log('  ci         - run github actions jobs locally with runs-on: atris');
   console.log('  router     - inspect ax lane outcomes and promote gated reflex overrides');
   console.log('  sign       - Co-author trailer on every commit in an atris workspace (on/off/status)');
@@ -752,6 +753,7 @@ function showHelpAll() {
   console.log('  member list          - Show all team members');
   console.log('  member activate <n>  - Activate a member (link skills, show context)');
   console.log('  member upgrade <n>   - Convert flat file to directory format');
+  console.log('  member result <n>    - Newest run of a member: run record, receipt, artifacts, result number');
   console.log('');
   console.log('Plugin:');
   console.log('  plugin build        - Package skills as .plugin for Cowork');
@@ -3169,6 +3171,11 @@ if (command === 'guide') {
   // both (mirrors the `compile` command dispatch just above).
   const engineArgs = command === 'engines' && process.argv.length <= 3 ? [] : process.argv.slice(3);
   Promise.resolve(require('../commands/engine').engineCommand(engineArgs))
+    .then((code) => process.exit(typeof code === 'number' ? code : 0))
+    .catch((err) => { console.error(`\n✗ Error: ${err.message || err}`); process.exit(1); });
+} else if (command === 'link') {
+  // Link: ask the roster's engine what two things could become together.
+  Promise.resolve(require('../commands/link').linkCommand(process.argv.slice(3)))
     .then((code) => process.exit(typeof code === 'number' ? code : 0))
     .catch((err) => { console.error(`\n✗ Error: ${err.message || err}`); process.exit(1); });
 } else if (command === 'playbook') {

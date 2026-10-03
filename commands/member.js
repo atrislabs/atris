@@ -9412,7 +9412,7 @@ async function memberCommand(subcommand, ...args) {
   // Subcommands that take a member name as args[0] otherwise treat `--help` as
   // a name and error with "Member '--help' not found". `create`/`new` handle
   // help themselves (with subcommand-specific usage), leave those alone.
-  const HELP_AWARE_SUBCOMMANDS = new Set(['create', 'new', 'run', 'install']);
+  const HELP_AWARE_SUBCOMMANDS = new Set(['create', 'new', 'run', 'install', 'result']);
   if (!HELP_AWARE_SUBCOMMANDS.has(subcommand) && (args[0] === '-h' || args[0] === '--help')) {
     subcommand = undefined;
   }
@@ -9449,6 +9449,11 @@ async function memberCommand(subcommand, ...args) {
       return memberWake(args[0], ...args.slice(1));
     case 'run':
       return memberRun(args[0], ...args.slice(1));
+    case 'result': {
+      const code = require('../lib/member-result').memberResultCommand(args);
+      if (code) process.exitCode = code;
+      return undefined;
+    }
     case 'ping':
       return memberPing(args[0], ...args.slice(1));
     case 'loop':
@@ -9498,6 +9503,7 @@ async function memberCommand(subcommand, ...args) {
       console.log('  goal-from-score <name>    Create/reuse an active goal from Team score evidence');
       console.log('  wake <name>         Read Mission state and decide tick/wait/ask/stop');
       console.log('  run <name> ["..."]  Start a budgeted member mission, or run its active Mission Runtime');
+      console.log('  result <name>       Newest run result: run record, receipt, artifacts, number [--since <iso>] [--json]');
       console.log('  loop <name|--all>   Repeat wake on a bounded cadence with a no-overlap lease');
       console.log('  tick <name>         Propose the next bounded experiment');
       console.log('  review <name> <id>  Accept/discard an experiment with proof');
@@ -9533,6 +9539,7 @@ async function memberCommand(subcommand, ...args) {
       console.log('  atris member wake growth --json');
       console.log('  atris member run growth "improve onboarding proof" --verify "npm test" --minutes 30 --json');
       console.log('  atris member run growth --mission <mission-id> --max-ticks 1 --json');
+      console.log('  atris member result growth --json');
       console.log('  atris member wake growth --execute --confirm-autonomy-policy');
       console.log('  atris member supervisor recommendations --json');
       console.log('  atris member objective-generator proposals --json');
