@@ -142,6 +142,43 @@ test('one branch per tick by default; the rest wait with a named reason', () => 
   }
 });
 
+test('an erroring branch does not eat the tick: the next candidate still lands', () => {
+  const root = makeRepo();
+  try {
+    // The broken branch is the most stale, so it is tried first.
+    branchWith(root, 'member/broken', (dir) => fs.writeFileSync(path.join(dir, 'package-lock.json'), 'not json\n'), {
+      when: new Date(Date.now() - 4 * 24 * 3600 * 1000).toISOString(),
+    });
+    branchWith(root, 'member/green', (dir) => fs.writeFileSync(path.join(dir, 'feature.txt'), 'shipped\n'));
+    const result = landStaleGreenBranches(root, { push: false, limit: 1, runCli: () => ({ status: 0, stdout: '' }) });
+    const byBranch = Object.fromEntries(result.verdicts.map((v) => [v.branch, v]));
+    assert.equal(byBranch['member/broken'].action, 'error', JSON.stringify(result.verdicts));
+    assert.equal(byBranch['member/broken'].reason, 'install_failed');
+    assert.deepEqual(result.landed, ['member/green']);
+  } finally {
+    fs.rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test('a queue of erroring branches stops after a bounded run of misses', () => {
+  const root = makeRepo();
+  try {
+    for (let i = 0; i < 5; i += 1) {
+      branchWith(root, `member/broken-${i}`, (dir) => fs.writeFileSync(path.join(dir, 'package-lock.json'), 'not json\n'), {
+        when: new Date(Date.now() - (3 + i * 0.5) * 24 * 3600 * 1000).toISOString(),
+      });
+    }
+    const result = landStaleGreenBranches(root, { push: false, limit: 1, runCli: () => ({ status: 0, stdout: '' }) });
+    const errors = result.verdicts.filter((v) => v.action === 'error' && v.reason === 'install_failed');
+    const capped = result.verdicts.filter((v) => v.reason === 'attempt_cap');
+    assert.equal(errors.length, 4, JSON.stringify(result.verdicts));
+    assert.equal(capped.length, 1);
+    assert.deepEqual(result.landed, []);
+  } finally {
+    fs.rmSync(root, { recursive: true, force: true });
+  }
+});
+
 test('dry run names the eligible branch without touching master', () => {
   const root = makeRepo();
   try {
