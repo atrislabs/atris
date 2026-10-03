@@ -6280,7 +6280,7 @@ function delegateHandoff(task, owner, via, tag) {
 
 function delegateTask(args, options = {}) {
   const pos = positional(args);
-  const title = pos.join(' ').trim();
+  let title = pos.join(' ').trim();
   if (!title) {
     failTask('atris task delegate', 'missing_title', 'title required');
   }
@@ -6297,6 +6297,19 @@ function delegateTask(args, options = {}) {
   const taskDb = getTaskDb();
   const db = taskDb.open();
   const ws = taskDb.workspaceRoot();
+  let inheritedVerify = null;
+  if (/^[A-Z][A-Z0-9]*-[0-9]+$/.test(title)) {
+    const ref = title;
+    const resolved = resolveTaskRef(taskDb, db, ref);
+    if (!resolved.ok) {
+      failTask('atris task delegate', 'bare_ref_title', `title "${ref}" is only a task ref that does not resolve; pass real words describing the work`);
+    }
+    const parent = resolved.row || {};
+    title = `Follow-up on ${parent.title || ref}`;
+    if (!(typeof verify === 'string' && verify.trim()) && parent.metadata && typeof parent.metadata.verify === 'string' && parent.metadata.verify.trim()) {
+      inheritedVerify = parent.metadata.verify.trim();
+    }
+  }
   const operatorTitleWarning = warnIfTaskTitleNeedsOperatorWhy(title, { print: options.warnOperatorTitle !== false });
   const ownerResolution = resolveFunctionalTaskOwner({
     requestedOwner: requestedOwner && requestedOwner !== true ? requestedOwner : null,
@@ -6329,6 +6342,7 @@ function delegateTask(args, options = {}) {
     metadata.goal_objective = String(goalObjective);
   }
   if (typeof verify === 'string' && verify.trim()) metadata.verify = verify.trim();
+  else if (inheritedVerify) metadata.verify = inheritedVerify;
   Object.assign(metadata, explanationFlags(args));
   const result = taskDb.addTask(db, {
     title,
