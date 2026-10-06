@@ -1778,9 +1778,28 @@ function showWelcomeVisualization() {
     // Document health is advisory and must never prevent startup.
   }
 
+  // What the background cleanup did lately, in its own plain words: the
+  // newest line the hourly autoland tick or a project job left in the
+  // journal, plus agent branches parked for a person.
+  try {
+    const lately = require('../lib/cleanup-summary').latestCleanupLine(cwd);
+    if (lately) console.log(row('lately', lately));
+  } catch {
+    // Advisory only; never blocks boot.
+  }
+
+  // When the hourly autoland tick is alive it lands, salvages, and clears
+  // finished branches and old agent copies itself, so boot must not hand the
+  // owner that chore ("39 finished pieces to put away"). Only a dead or
+  // missing heartbeat brings the tidy counts and `land --reap` back.
+  let autolandAlive = false;
+  try { autolandAlive = require('../lib/autoland').heartbeatIsLive(cwd); } catch { autolandAlive = false; }
+
   // landSummary is expensive (git board classification) - compute once per boot.
   let landInfo = null;
-  try { landInfo = require('../commands/land').landSummary(cwd); } catch (err) { landInfo = null; }
+  if (!autolandAlive) {
+    try { landInfo = require('../commands/land').landSummary(cwd); } catch (err) { landInfo = null; }
+  }
   let rotInfo = null;
   try {
     const { parseLessons } = require('../lib/memory-view');
@@ -1794,7 +1813,7 @@ function showWelcomeVisualization() {
       worktreeDir = path.join(path.dirname(resolved), '.agent-worktrees', path.basename(resolved));
     }
     let worktrees = 0;
-    if (fs.existsSync(worktreeDir)) {
+    if (!autolandAlive && fs.existsSync(worktreeDir)) {
       worktrees = fs.readdirSync(worktreeDir, { withFileTypes: true })
         .filter((entry) => entry.isDirectory()).length;
     }

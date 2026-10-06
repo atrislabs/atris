@@ -555,6 +555,21 @@ function showStatus(root, args) {
     console.log('');
     console.log(`  waiting on a human right now: ${waiting.length}, oldest ${waiting[0].hours}h`);
   }
+  // What the next tick's idle sweep will do, read-only (no check runs here).
+  if (enabled && policy.janitor !== false && policy.idle_sweep !== false) {
+    try {
+      const idle = require('../lib/idle-review-sweep').sweepIdleReviews(root, { tasks, policy, dryRun: true });
+      const days = Number(policy.idle_close_days) > 0 ? Number(policy.idle_close_days) : 7;
+      if (idle.closed.length) {
+        console.log(`  closing on the next tick: ${idle.closed.length} idle over ${days} days that can never land on their own, each with a plain reason.`);
+      }
+      if (idle.human_waiting.length) {
+        console.log(`  staying with you: ${idle.human_waiting.length} in money, deploys, security, or customer work; idle time never closes these.`);
+      }
+    } catch {
+      // Preview only.
+    }
+  }
   console.log('');
   if (!enabled) console.log("  flip it on: atris autoland on   (one decision; everything after is receipts)");
   console.log('');
@@ -798,9 +813,11 @@ async function runTickBody(root, { json, policy, receipt, engineValidationDeps =
     .filter((task) => String(task.review?.approval_status || task.metadata?.approval_status || 'pending') === 'pending')
     .length;
   const accept = runOwnCli(root, cliArgs, acceptSweepTimeoutMs(pendingReviewRows));
+  let acceptResults = [];
   try {
     const parsed = JSON.parse(accept.stdout);
     const results = Array.isArray(parsed.results) ? parsed.results : [];
+    acceptResults = results;
     // A refused sweep (ok:false, a guard tripped, policy race) carries no
     // summary fields. Name the reason instead of leaving nulls that read as
     // "no work": a blind heartbeat must say WHY it is blind.
@@ -961,6 +978,51 @@ async function runTickBody(root, { json, policy, receipt, engineValidationDeps =
   } catch (err) {
     receipt.reap_error = String((err && err.message) || err).slice(0, 200);
     recordLandingSweepState(state, null, { error: receipt.reap_error });
+  }
+
+  // 3c2. idle work resolves itself, every tick. Finished work that sat still
+  // past the grace period (policy.idle_close_days, default 7) and can never
+  // land on its own is closed with a plain reason; done and long-idle rows
+  // leave the list. This used to run only when someone opened a session, so
+  // nights and trips piled up work nobody would ever land. Protected lanes
+  // (money, deploys, security, customer, outward) are never closed by idle
+  // time. Off switch: policy.idle_sweep === false or policy.janitor === false.
+  if (policy.janitor !== false && policy.idle_sweep !== false) {
+    try {
+      const liveReasons = new Map(acceptResults
+        .filter((r) => r && r.ref && r.reason && r.action !== 'accepted')
+        .map((r) => [r.ref, r.reason]));
+      const kept = require('../lib/task-list-keeper').keepWorkspaceTaskList(root, { actor: 'autoland', includeDone: false });
+      const idle = require('../lib/idle-review-sweep').sweepIdleReviews(root, {
+        tasks: readProjection(root),
+        policy,
+        liveReasons,
+      });
+      const putAway = (kept.put_away || []).length + (kept.reaped || []).length;
+      if (putAway + idle.closed.length > 0) require('./task').refreshKeptTaskList(root);
+      receipt.idle_sweep = {
+        closed: idle.closed.map((c) => ({ ref: c.ref, reason: c.reason })),
+        put_away: putAway,
+        human_waiting: idle.human_waiting.length,
+      };
+    } catch (err) {
+      receipt.idle_sweep_error = String((err && err.message) || err).slice(0, 200);
+    }
+  }
+  try {
+    const { appendOvernightNote, tickSummaryLine } = require('../lib/cleanup-summary');
+    const line = tickSummaryLine({
+      landed: (receipt.landed || []).length,
+      closed: receipt.idle_sweep ? receipt.idle_sweep.closed.length : 0,
+      putAway: receipt.idle_sweep ? receipt.idle_sweep.put_away : 0,
+      needYou: receipt.idle_sweep ? receipt.idle_sweep.human_waiting : protectedWaiting.length,
+    });
+    if (line) {
+      appendOvernightNote(root, line);
+      receipt.summary_line = line;
+    }
+  } catch {
+    // The journal line is a courtesy; it never fails the tick.
   }
 
   // 3d. wish sweep: queued wishes are allowed to wake a mission without a

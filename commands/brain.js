@@ -1140,6 +1140,10 @@ function taskEpisodeScorecard(root, episode, workspace, ts = new Date().toISOStr
     task_title: episode.state && episode.state.title || null,
     task_tag: episode.state && episode.state.tag || null,
     actor: episode.action && episode.action.actor || null,
+    // Who built the work. `actor` is the reviewer; trust is earned by the builder.
+    builder: episode.state && episode.state.metadata && episode.state.metadata.built_by
+      || episode.state && episode.state.claimed_by
+      || null,
     reward: Number.isFinite(reward) ? reward : 0,
     reward_source: episode.reward && episode.reward.source || 'task_review',
     lesson: episode.lesson || '',

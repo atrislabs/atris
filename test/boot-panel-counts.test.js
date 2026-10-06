@@ -248,3 +248,58 @@ test('boot panel stays silent when no landing needed a human fix', () => {
     cleanupTempDir(dir);
   }
 });
+
+// The hourly autoland tick puts away finished branches and old agent copies
+// itself; while it is alive, boot must not hand the owner that chore.
+test('boot panel drops the put-away nag while the hourly autoland tick is alive', () => {
+  const base = makeTempDir();
+  const dir = path.join(base, 'myrepo');
+  try {
+    fs.mkdirSync(path.join(dir, 'atris', 'runs'), { recursive: true });
+    fs.mkdirSync(path.join(base, '.agent-worktrees', 'myrepo', 'agent-one'), { recursive: true });
+    fs.writeFileSync(path.join(dir, 'atris', 'runs', 'autoland-tick-2026-10-06T12-00-00.json'), '{}\n');
+    const boot = runCli(['atris.md'], { cwd: dir });
+    assert.equal(boot.status, 0, boot.stderr);
+    assert.doesNotMatch(boot.stdout, /old cop(y|ies) to toss/);
+    assert.doesNotMatch(boot.stdout, /finished pieces? to put away/);
+    assert.doesNotMatch(boot.stdout, /atris land --reap/);
+  } finally {
+    cleanupTempDir(base);
+  }
+});
+
+test('boot panel shows the latest plain cleanup summary from the journal', () => {
+  const dir = makeTempDir();
+  try {
+    const now = new Date();
+    const day = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
+    fs.mkdirSync(path.join(dir, 'atris', 'logs', String(now.getFullYear())), { recursive: true });
+    fs.mkdirSync(path.join(dir, 'atris', 'reports'), { recursive: true });
+    fs.writeFileSync(path.join(dir, 'atris', 'logs', String(now.getFullYear()), `${day}.md`), [
+      '# journal',
+      '',
+      '## demo overnight',
+      '- Saved team notes to GitHub: 3 members.',
+      '- Autoland: Landed 12 finished items; closed 40 idle items that could never land on their own, each with a plain reason; 6 need you (money, deploys, security, or customers).',
+      '',
+      '## 14:00 · Task accepted',
+      '- id: T-1',
+      '',
+    ].join('\n'));
+    fs.writeFileSync(path.join(dir, 'atris', 'reports', 'parked-branches.md'), [
+      '# Parked branches',
+      '- 2026-10-06 · demo · "a" (1 commit) · not merged because x · branch `a`.',
+      '- 2026-10-06 · demo · "b" (1 commit) · not merged because y · branch `b`.',
+      '',
+    ].join('\n'));
+    const boot = runCli(['atris.md'], { cwd: dir });
+    assert.equal(boot.status, 0, boot.stderr);
+    const line = boot.stdout.split('\n').find((l) => /^\s*lately\s/.test(l));
+    assert.ok(line, boot.stdout);
+    assert.match(line, /Landed 12 finished items/);
+    assert.match(line, /2 agent branches parked for you/);
+    assert.ok(line.length <= 170, line);
+  } finally {
+    cleanupTempDir(dir);
+  }
+});
