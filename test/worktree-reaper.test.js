@@ -153,6 +153,94 @@ const KEEP_CASES = [
     reason: 'open_files_unknown',
   },
   {
+    finding: 'r2-6: lsof listed one process and warned it could not see the rest',
+    setup: (arena, root) => ({ copy: addCopy(root, arena, 'lsof-p123'), activeCwds: undefined,
+      runner: runnerWith((cmd) => (cmd === 'lsof'
+        ? { status: 0, stdout: 'p123\n', stderr: 'lsof: WARNING: can\'t stat() some file systems; information may be incomplete.\n' }
+        : null)) }),
+    reason: 'open_files_unknown',
+  },
+  {
+    finding: 'r2-6: lsof output was cut off mid-record',
+    setup: (arena, root) => ({ copy: addCopy(root, arena, 'lsof-cut'), activeCwds: undefined,
+      runner: runnerWith((cmd) => (cmd === 'lsof' ? { status: 0, stdout: 'p123\nfcwd\nn/Users/some', stderr: '' } : null)) }),
+    reason: 'open_files_unknown',
+  },
+  {
+    finding: 'r2-2: an unknown file inside atris\'s cache folder',
+    setup: (arena, root) => {
+      const copy = addCopy(root, arena, 'cache-patch');
+      fs.mkdirSync(path.join(copy.path, '.atris', 'cache'), { recursive: true });
+      fs.writeFileSync(path.join(copy.path, '.atris', 'cache', 'map-refs.json'), '{}\n');
+      fs.writeFileSync(path.join(copy.path, '.atris', 'cache', 'recovery.patch'), 'the only copy of a fix\n');
+      backdate(copy.path);
+      return { copy, after: () => assert.equal(fs.existsSync(path.join(copy.path, '.atris', 'cache', 'recovery.patch')), true) };
+    },
+    reason: 'untracked_files',
+  },
+  {
+    finding: 'r2-3: an edit hidden by assume-unchanged',
+    setup: (arena, root) => {
+      const copy = addCopy(root, arena, 'assume-unchanged');
+      git(copy.path, ['update-index', '--assume-unchanged', 'README.md']);
+      fs.writeFileSync(path.join(copy.path, 'README.md'), 'edited and hidden\n');
+      backdate(copy.path);
+      return { copy, after: () => assert.equal(fs.readFileSync(path.join(copy.path, 'README.md'), 'utf8'), 'edited and hidden\n') };
+    },
+    reason: 'hidden_changes',
+  },
+  {
+    finding: 'r2-3: an edit hidden by skip-worktree',
+    setup: (arena, root) => {
+      const copy = addCopy(root, arena, 'skip-worktree');
+      git(copy.path, ['update-index', '--skip-worktree', 'README.md']);
+      fs.writeFileSync(path.join(copy.path, 'README.md'), 'edited and hidden\n');
+      backdate(copy.path);
+      return { copy };
+    },
+    reason: 'hidden_changes',
+  },
+  {
+    finding: 'r2-3: a copy with a submodule git is told to ignore',
+    setup: (arena, root) => {
+      const copy = addCopy(root, arena, 'submodule');
+      git(copy.path, ['update-index', '--add', '--cacheinfo', `160000,${copy.head},vendor/lib`]);
+      git(copy.path, ['commit', '-qm', 'add submodule']);
+      git(copy.path, ['push', '-q', 'origin', 'HEAD:master']);
+      // Told to ignore submodules, git status shows nothing at all.
+      git(copy.path, ['config', 'diff.ignoreSubmodules', 'all']);
+      assert.equal(git(copy.path, ['status', '--porcelain']), '');
+      backdate(copy.path);
+      return { copy };
+    },
+    reason: 'has_submodule',
+  },
+  {
+    finding: 'r2-4: an unpushed commit only in this copy\'s HEAD history',
+    setup: (arena, root) => {
+      const copy = addCopy(root, arena, 'reflog-only');
+      git(copy.path, ['checkout', '-q', '--detach']);
+      fs.writeFileSync(path.join(copy.path, 'lost.txt'), 'x\n');
+      git(copy.path, ['add', 'lost.txt']);
+      git(copy.path, ['commit', '-qm', 'detached work']);
+      git(copy.path, ['checkout', '-q', 'origin/master']);
+      backdate(copy.path);
+      return { copy };
+    },
+    reason: 'history_not_on_github',
+  },
+  {
+    finding: 'r2-4: an unpushed commit held only by this copy\'s own ref',
+    setup: (arena, root) => {
+      const copy = addCopy(root, arena, 'worktree-ref');
+      const blob = git(copy.path, ['commit-tree', '-m', 'kept by a per-copy ref', `${copy.head}^{tree}`]);
+      git(copy.path, ['update-ref', 'refs/worktree/keep', blob]);
+      backdate(copy.path);
+      return { copy };
+    },
+    reason: 'history_not_on_github',
+  },
+  {
     finding: '1: a file is open inside',
     setup: (arena, root) => {
       const copy = addCopy(root, arena, 'busy');
@@ -361,6 +449,63 @@ for (const row of KEEP_CASES) {
     if (setup.after) setup.after();
   }));
 }
+
+test('r2-1: a file written just before removal survives, and the stale lock is put back', () => withArena((arena, root) => {
+  const copy = addCopy(root, arena, 'late-write');
+  fs.mkdirSync(path.join(copy.path, '__pycache__'));
+  fs.writeFileSync(path.join(copy.path, '__pycache__', 'a.pyc'), 'x');
+  const lock = 'claude agent a (pid 99999996 start Thu Oct  1 09:34:10 2026)';
+  git(root, ['worktree', 'lock', '--reason', lock, copy.path]);
+  backdate(copy.path);
+  // An agent writes real work after the last check, as git is asked to remove.
+  const runner = runnerWith((cmd, args) => {
+    if (cmd === 'git' && args[0] === 'worktree' && args[1] === 'remove') {
+      fs.writeFileSync(path.join(copy.path, 'fix.py'), 'the work\n');
+    }
+    return null;
+  });
+  const result = cleanupWorktrees({ root, base: 'origin/master', apply: true, activeCwds: [], prLookup: lookupReturning({}), runner });
+  assert.equal(result.removed.length, 0);
+  assert.equal(fs.readFileSync(path.join(copy.path, 'fix.py'), 'utf8'), 'the work\n');
+  assert.equal(result.kept[0].reason, 'remove_failed');
+  assert.match(git(root, ['worktree', 'list', '--porcelain']), /locked claude agent a \(pid 99999996/);
+}));
+
+test('r2-6: a lock that changes after the last file check is never unlocked', () => withArena((arena, root) => {
+  const copy = addCopy(root, arena, 'relocked');
+  git(root, ['worktree', 'lock', '--reason', 'claude agent a (pid 99999996 start Thu Oct  1 09:34:10 2026)', copy.path]);
+  backdate(copy.path);
+  let flagChecks = 0;
+  const runner = runnerWith((cmd, args) => {
+    // The third hidden-flag check is the last one before unlocking.
+    if (cmd === 'git' && args[0] === 'ls-files' && args[1] === '-v' && ++flagChecks === 3) {
+      git(root, ['worktree', 'unlock', copy.path]);
+      git(root, ['worktree', 'lock', '--reason', 'claude agent b (pid 99999995 start Fri Oct  2 01:00:00 2026)', copy.path]);
+    }
+    return null;
+  });
+  const result = cleanupWorktrees({ root, base: 'origin/master', apply: true, activeCwds: [], prLookup: lookupReturning({}), runner });
+  assert.equal(result.removed.length, 0);
+  assert.equal(result.kept[0].reason, 'lock_changed');
+  assert.equal(fs.existsSync(copy.path), true);
+  assert.match(git(root, ['worktree', 'list', '--porcelain']), /agent b \(pid 99999995/);
+}));
+
+test('r2-5: putting one copy away never prunes the records of another', () => withArena((arena, root) => {
+  addCopy(root, arena, 'finished');
+  const moved = addCopy(root, arena, 'moved-away');
+  const elsewhere = path.join(arena, 'parked');
+  fs.renameSync(moved.path, elsewhere);
+  const result = cleanupWorktrees({ root, base: 'origin/master', apply: true, activeCwds: [], prLookup: lookupReturning({}) });
+  assert.deepEqual(result.removed.map((row) => path.basename(row.path)), ['finished']);
+  assert.match(git(root, ['worktree', 'list', '--porcelain']), /moved-away/);
+}));
+
+test('no removal path passes --force or prunes the whole repo', () => {
+  const source = fs.readFileSync(path.join(__dirname, '..', 'lib', 'worktree-reaper.js'), 'utf8');
+  assert.doesNotMatch(source, /'--force'/);
+  assert.doesNotMatch(source, /'worktree', 'prune'/);
+});
 
 test('keeps, finding 4: the main checkout and folders git does not know about', () => withArena((arena, root) => {
   const stray = path.join(arena, '.agent-worktrees', 'repo', 'stray');
