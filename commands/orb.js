@@ -42,7 +42,7 @@ function parseEngine(args) {
 }
 
 function engineInvocation(engine, prompt) {
-  if (engine === 'codex') return { command: 'codex', args: ['exec', prompt] };
+  if (engine === 'codex') return { command: 'codex', args: ['exec', '--skip-git-repo-check', prompt] };
   if (engine === 'fast') return { command: 'ax', args: ['--fast', '--print', prompt] };
   return { command: 'claude', args: ['-p', prompt] };
 }

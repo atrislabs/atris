@@ -239,6 +239,8 @@ test('model-capable engines receive exact model flags without weakening read-onl
   const codex = buildReadOnlyEngineInvocation('codex', 'inspect the router', 'gpt-5.6');
   assert.deepEqual(codex.args.slice(1, 3), ['-m', 'gpt-5.6']);
   assert.deepEqual(codex.args.slice(3, 6), ['--sandbox', 'read-only', '--ephemeral']);
+  // Asks run from scratch folders too, which are often not git repositories.
+  assert.ok(codex.args.includes('--skip-git-repo-check'));
 
   const cursor = buildReadOnlyEngineInvocation('cursor', 'inspect the router', 'kimi-k2.5');
   assert.ok(cursor.args.includes('ask'));
