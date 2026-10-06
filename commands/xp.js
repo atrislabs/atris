@@ -933,6 +933,8 @@ function receiptFromTaskEpisode(episode, treeHash) {
     source_episode_id: episodeId,
     workspace_root: episode.workspace_root || null,
     actor: episode.action?.actor || null,
+    // Who built the work. `actor` is the reviewer; trust is earned by the builder.
+    builder: episode.state?.metadata?.built_by || episode.state?.claimed_by || null,
     outcome: rejected ? 'rejected' : 'accepted',
     xp: rejected ? 0 : reward,
     reward: rejected ? 0 : reward,
