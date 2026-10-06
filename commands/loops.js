@@ -276,7 +276,10 @@ function structuralProblems({ root, filePath, text, nowMs }) {
 
   const owner = text.match(/\*\*Owner:\*\*\s*`team\/([^`]+)`/)?.[1]?.trim();
   if (!owner) problems.push('no Owner field');
-  else if (!fs.existsSync(path.join(root, 'team', owner))) problems.push(`owner team/${owner} does not exist`);
+  // Members live in atris/team/; older workspaces kept a root team/ folder.
+  else if (![path.join(root, 'atris', 'team', owner), path.join(root, 'team', owner)].some((dir) => fs.existsSync(dir))) {
+    problems.push(`owner team/${owner} does not exist`);
+  }
 
   const wiki = text.match(/\*\*Wiki:\*\*\s*\[[^\]]+\]\(([^)]+)\)/)?.[1]?.trim();
   if (!wiki) {
