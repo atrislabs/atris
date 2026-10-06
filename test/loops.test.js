@@ -122,6 +122,17 @@ test('loops audit checks structural contract and optional Check command', () => 
   assert.match(res.stdout, /SELF-IMPROVING: NOT YET/);
 });
 
+test('loops audit finds owners that live in atris/team', () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'atris-loops-owner-'));
+  assert.equal(runCli(['loops', 'init'], dir).status, 0);
+  const loopPath = path.join(dir, 'atris', 'loops', 'feedback.md');
+  fs.writeFileSync(loopPath, fs.readFileSync(loopPath, 'utf8').replace(/\*\*Owner:\*\*\s*`team\/[^`]+`/, '**Owner:** `team/validator`'));
+  fs.mkdirSync(path.join(dir, 'atris', 'team', 'validator'), { recursive: true });
+
+  const res = runCli(['loops', 'audit'], dir);
+  assert.doesNotMatch(res.stdout, /owner team\/validator does not exist/);
+});
+
 test('loops tick prints project tick protocol', () => {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'atris-loops-tick-'));
   assert.equal(runCli(['loops', 'init'], dir).status, 0);

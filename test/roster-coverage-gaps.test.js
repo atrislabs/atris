@@ -286,7 +286,8 @@ test('claude takes effort as --effort, and an engine with no effort flag gets no
 
 function blockerDeps(root, dispatched) {
   const rows = [];
-  let at = Date.parse('2026-09-27T12:00:00.000Z');
+  // Relative to now: run history only reads recent rows, so a fixed date expires.
+  let at = Date.now() - 3600000;
   return {
     taskDb: {
       open: () => ({}),
