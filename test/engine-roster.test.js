@@ -399,7 +399,7 @@ test('a registry saved before claude learned search still lets search be assigne
   const saved = JSON.parse(fs.readFileSync(file, 'utf8'));
   saved.engines.find((entry) => entry.id === 'claude').roles = ['validator', 'executor'];
   fs.writeFileSync(file, `${JSON.stringify(saved)}\n`);
-  assert.notEqual(resolveEngineForRoleRanked('navigator', root, { now: NOW }).engine.id, 'claude');
+  assert.notEqual(resolveEngineForRoleRanked('navigator', root, { now: NOW, loggedIn: true }).engine.id, 'claude');
   assert.equal(command(root, ['assign', 'search', 'claude']).exit, 0);
   assert.equal(resolveEngineForRoleRanked('navigator', root, { now: NOW }).engine.id, 'claude');
 }));
