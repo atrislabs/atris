@@ -163,7 +163,7 @@ test('confirm renews all picks for thirty days and roster views show three jobs'
   assert.equal(before.exit, 0, before.err);
   // Three job rows, then one heads-up line: both dated workers end tomorrow.
   assert.equal(viewLines(before.out).length, 4);
-  assert.match(before.out, /^search +atris-fast · atris:fast +none +- +- +no pick, router decides$/m);
+  assert.match(before.out, /^search +haiku · haiku 5\.5 +none +- +- +no pick, router decides$/m);
   assert.match(before.out, /^build +claude · opus 5\.5 +codex.* +- +2026-09-25 +ends tomorrow$/m);
   const json = command(root, ['roster', '--json']);
   assert.equal(json.exit, 0, json.err);
@@ -376,12 +376,14 @@ test('self-drive hands the pinned model to the dispatch', () => withRoom((root) 
   assert.equal(recorded[0].run.pin.model, 'claude-opus-5-5');
 }));
 
-test('claude and haiku can own search, and with no roster search still goes to atris-fast', () => withRoom((root) => {
+test('claude can own search when picked; with no roster, haiku searches first and atris-fast comes last', () => withRoom((root) => {
   ready(root, 'atris-fast', 'composer', 'claude', 'haiku');
-  assert.equal(resolveEngineForRoleRanked('navigator', root, { now: NOW }).engine.id, 'atris-fast');
-  setEngineHealth('atris-fast', 'credit_out', root);
-  assert.notEqual(resolveEngineForRoleRanked('navigator', root, { now: NOW }).engine, null);
-  setEngineHealth('atris-fast', 'ready', root);
+  const routed = resolveEngineForRoleRanked('navigator', root, { now: NOW, loggedIn: true });
+  assert.equal(routed.engine.id, 'haiku');
+  assert.deepEqual(routed.ranked.map((engine) => engine.id), ['haiku', 'atris-fast', 'composer']);
+  setEngineHealth('haiku', 'credit_out', root);
+  assert.equal(resolveEngineForRoleRanked('navigator', root, { now: NOW, loggedIn: true }).engine.id, 'atris-fast');
+  setEngineHealth('haiku', 'ready', root);
   const assigned = command(root, ['assign', 'search', 'claude', '--model', 'haiku', '--backup', 'atris-fast']);
   assert.equal(assigned.exit, 0, assigned.err);
   assert.match(assigned.out, /^search +claude · haiku +atris-fast · atris:fast +- +- +-$/m);
@@ -397,7 +399,7 @@ test('a registry saved before claude learned search still lets search be assigne
   const saved = JSON.parse(fs.readFileSync(file, 'utf8'));
   saved.engines.find((entry) => entry.id === 'claude').roles = ['validator', 'executor'];
   fs.writeFileSync(file, `${JSON.stringify(saved)}\n`);
-  assert.equal(resolveEngineForRoleRanked('navigator', root, { now: NOW }).engine.id, 'atris-fast');
+  assert.notEqual(resolveEngineForRoleRanked('navigator', root, { now: NOW }).engine.id, 'claude');
   assert.equal(command(root, ['assign', 'search', 'claude']).exit, 0);
   assert.equal(resolveEngineForRoleRanked('navigator', root, { now: NOW }).engine.id, 'claude');
 }));
@@ -463,21 +465,21 @@ test('a saved claude model that cannot be normalized skips to the backup, then t
   assert.equal(next.source, 'machine');
 }));
 
-test('with no roster and atris-fast not ready, search goes to composer, fresh or saved', () => withRoom((root) => {
-  ready(root, 'composer', 'claude', 'haiku');
-  setEngineHealth('atris-fast', 'credit_out', root);
-  const fresh = resolveEngineForRoleRanked('navigator', root, { now: NOW });
-  assert.equal(fresh.engine.id, 'composer');
-  assert.deepEqual(fresh.ranked.map((engine) => engine.id), ['composer']);
+test('with no roster and haiku not ready, search goes to the hosted engines, atris-fast first, fresh or saved', () => withRoom((root) => {
+  ready(root, 'atris-fast', 'composer', 'claude', 'haiku');
+  setEngineHealth('haiku', 'credit_out', root);
+  const fresh = resolveEngineForRoleRanked('navigator', root, { now: NOW, loggedIn: true });
+  assert.equal(fresh.engine.id, 'atris-fast');
+  assert.deepEqual(fresh.ranked.map((engine) => engine.id), ['atris-fast', 'composer']);
   const file = engineRegistryFile(root);
   for (const shape of [['validator', 'executor', 'navigator'], ['validator', 'executor']]) {
     const saved = JSON.parse(fs.readFileSync(file, 'utf8'));
     saved.engines.find((entry) => entry.id === 'claude').roles = shape;
-    saved.engines.find((entry) => entry.id === 'haiku').roles = shape.filter((role) => role !== 'executor');
     fs.writeFileSync(file, `${JSON.stringify(saved)}\n`);
-    const chosen = resolveEngineForRoleRanked('navigator', root, { now: NOW });
-    assert.deepEqual(chosen.ranked.map((engine) => engine.id), ['composer'], shape.join(','));
+    const chosen = resolveEngineForRoleRanked('navigator', root, { now: NOW, loggedIn: true });
+    assert.deepEqual(chosen.ranked.map((engine) => engine.id), ['atris-fast', 'composer'], shape.join(','));
   }
+  setEngineHealth('haiku', 'ready', root);
   assert.equal(command(root, ['assign', 'search', 'haiku']).exit, 0);
   assert.equal(resolveEngineForRoleRanked('navigator', root, { now: NOW }).engine.id, 'haiku');
 }));
