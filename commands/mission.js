@@ -10057,6 +10057,15 @@ async function executeMissionRunTicksPhase(context) {
           ? Number(latestOnDisk.error_streak_count || 0) + 1
           : 1)
         : 0;
+      // Same one-tick-per-invocation gap for the no-progress and verifier-fail
+      // breakers: persist trailing counts so heartbeat runs trip them across
+      // invocations exactly like error_streak_count above.
+      const noProgressStreakCount = tickMadeProgress(tickRecord)
+        ? 0
+        : Number(latestOnDisk.no_progress_streak_count || 0) + 1;
+      const verifierFailStreakCount = result.status === 'ran' && result.verifier_passed === false
+        ? Number(latestOnDisk.verifier_fail_streak_count || 0) + 1
+        : 0;
       // Base on latestOnDisk so mid-tick complete proof/completed_at survive.
       mission = saveMission({
         ...latestOnDisk,
@@ -10070,6 +10079,8 @@ async function executeMissionRunTicksPhase(context) {
         last_tick_layer: result.layer,
         last_tick_layer_source: result.layer_source,
         error_streak_count: errorStreakCount,
+        no_progress_streak_count: noProgressStreakCount,
+        verifier_fail_streak_count: verifierFailStreakCount,
         verifier_result: verifierResult || (verifyEach && result.protected_lane_guard && result.protected_lane_guard.allowed === false ? null : latestOnDisk.verifier_result) || null,
         last_check_feedback: verifierResult
           ? extractCheckFeedback(verifierResult)
@@ -10134,8 +10145,10 @@ async function executeMissionRunTicksPhase(context) {
       // structural trace is a manufactured-busywork loop, not progress. Stop
       // honestly (clean stop, not a pause/blocker) rather than burn the rest
       // of the tick budget on heartbeats.
-      if (consecutiveNoProgressTicks(ticks) >= 2) { pauseReason = 'no-progress'; break; }
-      if (consecutiveVerifierFails(ticks) >= 2) { pauseReason = 'consecutive-verifier-fails'; break; }
+      const noProgressCount = Math.max(consecutiveNoProgressTicks(ticks), Number(mission.no_progress_streak_count || 0));
+      if (noProgressCount >= 2) { pauseReason = 'no-progress'; break; }
+      const verifierFailCount = Math.max(consecutiveVerifierFails(ticks), Number(mission.verifier_fail_streak_count || 0));
+      if (verifierFailCount >= 2) { pauseReason = 'consecutive-verifier-fails'; break; }
       if (result.status === 'errored' && result.reason === 'too-deep') { pauseReason = 'too-deep'; break; }
       if (consecutiveIdenticalSummaryTicks(ticks) >= 3) { pauseReason = 'stuck-repeating'; break; }
       // A retired/inaccessible model is deterministic: the id is fixed for the run, so
@@ -10319,7 +10332,7 @@ function completeMissionRunPhase(context) {
     // status=stopped, a receipt, no escalation, no blocker.
     if (pauseReason === 'no-progress') {
       const stoppedAt = stampIso();
-      const idleCount = consecutiveNoProgressTicks(ticks);
+      const idleCount = Math.max(consecutiveNoProgressTicks(ticks), Number(mission.no_progress_streak_count || 0));
       const noProgressReason = `no-progress: ${idleCount} consecutive tick(s) with no new/cleared dirty files and no verifier pass`;
       const snapshot = gitWorktreeSnapshot(cwd);
       const stopWorktree = worktreeReceipt(snapshot, snapshot, { verifier: frozen.verifier, baseline: runWorktreeBaseline });
