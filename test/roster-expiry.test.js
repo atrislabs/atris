@@ -76,7 +76,7 @@ test('the roster view marks ends in 3 days, ends today, ended yesterday, and lea
   // Every backup stays in view, one per line under the first.
   assert.match(lines[buildAt + 1], /^ +cursor · own default \(ended sep 23\)$/);
   const review = lines.find((line) => line.startsWith('review'));
-  assert.match(review, /^review +haiku · haiku 4\.5 +none +- +2026-09-24 +ends today$/);
+  assert.match(review, /^review +haiku · haiku 5\.5 +none +- +2026-09-24 +ends today$/);
   assert.doesNotMatch(view.out, /skipped, expired/);
   const heads = lines.filter((line) => line.startsWith('heads up:'));
   assert.equal(heads.length, 1);

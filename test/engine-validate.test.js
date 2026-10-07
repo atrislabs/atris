@@ -95,7 +95,7 @@ test('judge engine cannot equal the worker engine', async () => {
     writeAskReceipt(root, 'engine-ask-haiku.json', {
       at: '2026-08-12T20:00:00.000Z',
       engine: 'haiku',
-      model: 'claude-haiku-4-5',
+      model: 'claude-haiku-5-5',
     });
     const code = await engineCommand(['validate', 'latest'], {
       root,
@@ -141,7 +141,7 @@ test('validation writes the verdict receipt and flat jsonl row from a fake refer
       executeAskJob: (job) => {
         prompts.push(job.prompt);
         assert.equal(job.engine, 'haiku');
-        assert.equal(job.model, 'claude-haiku-4-5');
+        assert.equal(job.model, 'claude-haiku-5-5');
         assert.match(job.prompt, /VERDICT: pass\|fail\|unsure\nREASON:/);
         return runAskProcess(fakeReplyInvocation('VERDICT: pass\nREASON: the answer gives the requested result.'), {
           cwd: root,
@@ -163,7 +163,7 @@ test('validation writes the verdict receipt and flat jsonl row from a fake refer
     assert.equal(receipt.schema, VALIDATION_SCHEMA);
     assert.equal(receipt.source_receipt, 'atris/runs/engine-ask-source.json');
     assert.equal(receipt.referee_engine, 'haiku');
-    assert.equal(receipt.referee_model, 'claude-haiku-4-5');
+    assert.equal(receipt.referee_model, 'claude-haiku-5-5');
     assert.equal(receipt.verdicts.length, 2);
     assert.deepEqual({
       worker_engine: receipt.verdicts[0].worker_engine,

@@ -66,7 +66,7 @@ test('atris dream writes model cards', async () => {
     assert.match(result.stdout, /Dreamed 2 cards\./);
     assert.match(result.stdout, /Run me nightly: atris dream/);
     assert.equal(calls.length, 1);
-    assert.equal(calls[0].model, 'claude-haiku-4-5');
+    assert.equal(calls[0].model, 'claude-haiku-5-5');
     assert.match(calls[0].prompt, /shipped a loop/);
 
     const rows = readDreamRows(root);
@@ -150,7 +150,7 @@ test('spawn failure retries once and writes a noop row', async () => {
 
     assert.equal(result.code, 0);
     assert.match(result.stdout, /^No dreams tonight: model could not start/m);
-    assert.deepEqual(models, ['claude-haiku-4-5', DEFAULT_CLAUDE_RUNNER_MODEL]);
+    assert.deepEqual(models, ['claude-haiku-5-5', DEFAULT_CLAUDE_RUNNER_MODEL]);
     const rows = readDreamRows(root);
     assert.equal(rows.length, 1);
     assert.equal(rows[0].kind, 'dream_noop');

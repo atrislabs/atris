@@ -529,7 +529,7 @@ test('autopilot plan, do, and review run on their member picks; a runner in the 
   const prompt = path.join(root, 'prompt.md');
   writeRoster(root, '# roster\nreview: codex\n\n## team\nnavigator: haiku\n');
   assert.match(buildPhaseRunnerCommand('review', prompt, root), /^codex exec /);
-  assert.match(buildPhaseRunnerCommand('plan', prompt, root), /^claude -p .*--model claude-haiku-4-5 /);
+  assert.match(buildPhaseRunnerCommand('plan', prompt, root), /^claude -p .*--model claude-haiku-5-5 /);
   assert.equal(buildPhaseRunnerCommand('do', prompt, root), buildRunnerCommand({ promptFile: prompt, allowedTools: 'Bash,Read,Write,Edit,Glob,Grep' }));
   process.env.ATRIS_RUNNER_PROFILE = 'claude';
   assert.match(buildPhaseRunnerCommand('review', prompt, root), /^claude -p /);

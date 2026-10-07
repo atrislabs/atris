@@ -1229,7 +1229,7 @@ function buildDigestPrompt(briefs = []) {
 
 function defaultDigestRunner(prompt, deps = {}) {
   const spawn = deps.spawnSync || spawnSync;
-  return spawn('claude', ['-p', prompt, '--model', 'claude-haiku-4-5'], {
+  return spawn('claude', ['-p', prompt, '--model', 'claude-haiku-5-5'], {
     encoding: 'utf8',
     timeout: DIGEST_ENGINE_TIMEOUT_MS,
     maxBuffer: 10 * 1024 * 1024,
