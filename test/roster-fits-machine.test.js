@@ -3,7 +3,7 @@
 // The roster fits each machine: with no pick, every job goes to the best tool
 // installed here, search to haiku when claude code is installed, and the
 // hosted atris-fast takes the search or review no installed tool can, only
-// for someone logged in. A missing tool is looked for again after an hour. A job that
+// for someone logged in. A missing tool is looked for again after a minute. A job that
 // lands somewhere other than its pick says so in one line.
 const test = require('node:test');
 const assert = require('node:assert/strict');
@@ -136,20 +136,20 @@ test('a notice prints once per run, on stderr, however often the job resolves', 
   assert.deepEqual(notices, ['second look review: no tool here can take it, so atris 2.5 fast took it (uses your atris tokens).']);
 }));
 
-test('a saved not_installed is rechecked once its check is an hour old, and doctor clears it', () => onMachine([], (root, bin) => {
+test('a saved not_installed is rechecked once its check is a minute old, and doctor clears it', () => onMachine([], (root, bin) => {
   readEngineRegistry(root);
   const file = engineRegistryFile(root);
   const codexHealth = () => JSON.parse(fs.readFileSync(file, 'utf8')).engines.find((entry) => entry.id === 'codex').health;
   assert.equal(codexHealth().status, 'not_installed');
   assert.ok(codexHealth().checked_at, 'the first look is stamped');
 
-  // Codex arrives. Within the hour the saved answer stands, no probe.
+  // Codex arrives. Within the minute the saved answer stands, no probe.
   fs.writeFileSync(path.join(bin, 'codex'), '#!/bin/sh\nexit 0\n', { mode: 0o755 });
   assert.equal(readEngineRegistry(root).engines.find((entry) => entry.id === 'codex').health.status, 'not_installed');
 
-  // An hour later the next read looks again and finds it.
+  // A minute later the next read looks again and finds it.
   const saved = JSON.parse(fs.readFileSync(file, 'utf8'));
-  saved.engines.find((entry) => entry.id === 'codex').health.checked_at = new Date(Date.now() - 61 * 60000).toISOString();
+  saved.engines.find((entry) => entry.id === 'codex').health.checked_at = new Date(Date.now() - 61000).toISOString();
   fs.writeFileSync(file, `${JSON.stringify(saved)}\n`);
   assert.equal(resolveEngineForRoleRanked('executor', root, { loggedIn: false, quiet: true }).engine.id, 'codex');
   assert.equal(codexHealth().status, 'ready');
