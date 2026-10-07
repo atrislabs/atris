@@ -552,5 +552,5 @@ test('with no roster anywhere, member runs, owned missions, and autopilot route 
   for (const phase of ['plan', 'do', 'review']) assert.equal(buildPhaseRunnerCommand(phase, prompt, root), base, phase);
   assert.equal(fs.existsSync(path.join(root, 'atris', 'ROSTER.md')), false);
   const view = command(root, ['roster']);
-  assert.match(view.out, /^researcher +search +atris-fast · atris:fast +automatic\b/m);
+  assert.match(view.out, /^researcher +search +haiku · haiku 5\.5 +automatic\b/m);
 }));

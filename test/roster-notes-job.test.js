@@ -19,6 +19,7 @@ const BIN = path.join(__dirname, '..', 'bin', 'atris.js');
 
 // A scratch room whose engines.json already settles every engine, so no
 // machine probe runs and installed is known. overrides: { id: { installed, status } }.
+// A missing engine carries a fresh check stamp, so the hourly recheck waits.
 function withRoom(fn, overrides = {}) {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'atris-notes-room-'));
   const home = fs.mkdtempSync(path.join(os.tmpdir(), 'atris-notes-home-'));
@@ -26,7 +27,9 @@ function withRoom(fn, overrides = {}) {
   fs.mkdirSync(path.join(root, '.atris', 'state'), { recursive: true });
   const engines = Object.keys(RUNNER_PROFILE_DEFS).map((id) => {
     const o = overrides[id] || {};
-    return { id, installed: o.installed !== undefined ? o.installed : true, health: { status: o.status || 'ready' } };
+    const status = o.status || 'ready';
+    const health = status === 'not_installed' ? { status, checked_at: new Date().toISOString() } : { status };
+    return { id, installed: o.installed !== undefined ? o.installed : true, health };
   });
   fs.writeFileSync(path.join(root, '.atris', 'state', 'engines.json'), JSON.stringify({ engines }, null, 2));
   const machineFile = path.join(home, '.atris', 'roster.json');
