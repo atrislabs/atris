@@ -40,7 +40,7 @@ const EXAMPLE = `# roster
 - claude code, model: opus 5.5
 
 ## search
-- claude code, model: haiku 4.5
+- claude code, model: haiku 5.5
 - devin, model: swe-1.7-lightning
 - atris fast
 
@@ -173,7 +173,7 @@ test('the example roster parses exactly: every worker names its tool and model, 
     { engine: 'claude', model: 'claude-opus-5-5', until: '', never_expires: true },
   ]);
   assert.deepEqual(layer.picks.navigator.workers.map(bare), [
-    { engine: 'claude', model: 'claude-haiku-4-5-20251001', until: '', never_expires: true },
+    { engine: 'claude', model: 'claude-haiku-5-5', until: '', never_expires: true },
     { engine: 'devin', model: 'swe-1.7-lightning', until: '', never_expires: true },
     { engine: 'atris-fast', model: '', until: '', never_expires: true },
   ]);
@@ -215,10 +215,10 @@ test('friendly tool names read as their engines, in lines and in assign', () => 
   ]);
   assert.equal(layer.picks.navigator.engine, 'atris-fast');
   // A tool of several words works unquoted on the command line.
-  const assigned = command(root, ['assign', 'review', 'claude', 'code', '--model', 'haiku 4.5']);
+  const assigned = command(root, ['assign', 'review', 'claude', 'code', '--model', 'haiku 5.5']);
   assert.equal(assigned.exit, 0, assigned.err);
-  assert.match(readRoster(root), /^## review\n- claude code, model: haiku 4\.5$/m);
-  assert.equal(project(root).picks.validator.model, 'claude-haiku-4-5-20251001');
+  assert.match(readRoster(root), /^## review\n- claude code, model: haiku 5\.5$/m);
+  assert.equal(project(root).picks.validator.model, 'claude-haiku-5-5');
 }));
 
 test('the one-line shape still parses exactly as before, with no worker list', () => withRoom((root) => {
@@ -334,7 +334,7 @@ test('the view shows every worker in order with who leads and why others are ski
   writeRoster(root, [
     '# roster',
     '## search',
-    '- claude code, model: haiku 4.5',
+    '- claude code, model: haiku 5.5',
     '- atris fast, until 2026-09-01',
     '- devin, model: swe-1.7-lightning',
     '- pizza oven',
@@ -346,7 +346,7 @@ test('the view shows every worker in order with who leads and why others are ski
   // skipped one says why; the note says who really runs.
   const lines = view.out.split('\n');
   const at = lines.findIndex((line) => line.startsWith('search '));
-  assert.match(lines[at], /^search +claude · haiku 4\.5 +atris-fast · atris:fast \(ended sep 1\) +- +- +not ready, using devin · swe-1\.7-lightning$/);
+  assert.match(lines[at], /^search +claude · haiku 5\.5 +atris-fast · atris:fast \(ended sep 1\) +- +- +not ready, using devin · swe-1\.7-lightning$/);
   assert.match(lines[at + 1], /^ +devin · swe-1\.7-lightning$/);
   assert.match(view.out, /^warning: atris\/ROSTER\.md line 6 "- pizza oven" "pizza oven" is not an engine or a model atris knows, so search skips this worker\.$/m);
   assert.match(view.out, /^change who does a job: atris engine assign <job> <tool> --model <model>$/m);
@@ -369,19 +369,19 @@ test('assign sets the lead and keeps the rest; --add, --remove, --backup, and --
   writeRoster(root, EXAMPLE);
   assert.equal(command(root, ['assign', 'search', 'haiku']).exit, 0);
   assert.match(readRoster(root), /^## search\n- haiku\n- devin, model: swe-1\.7-lightning\n- atris fast\n\n## small build/m);
-  assert.equal(command(root, ['assign', 'search', 'claude', '--model', 'haiku 4.5', '--add']).exit, 0);
-  assert.match(readRoster(root), /^- atris fast\n- claude code, model: haiku 4\.5\n\n## small build/m);
+  assert.equal(command(root, ['assign', 'search', 'claude', '--model', 'haiku 5.5', '--add']).exit, 0);
+  assert.match(readRoster(root), /^- atris fast\n- claude code, model: haiku 5\.5\n\n## small build/m);
   assert.deepEqual(resolveJobTeam('search', root, { now: NOW }).team.map((engine) => engine.id), ['haiku', 'devin', 'atris-fast', 'claude']);
   const removed = command(root, ['assign', 'search', '--remove', 'devin']);
   assert.equal(removed.exit, 0, removed.err);
-  assert.match(readRoster(root), /^## search\n- haiku\n- atris fast\n- claude code, model: haiku 4\.5\n/m);
+  assert.match(readRoster(root), /^## search\n- haiku\n- atris fast\n- claude code, model: haiku 5\.5\n/m);
   assert.match(command(root, ['assign', 'search', '--remove', 'grok']).err, /^search has no grok worker to remove$/);
   // --backup replaces the second worker, the way it replaced a one-line backup.
   assert.equal(command(root, ['assign', 'search', 'haiku', '--add']).exit, 0);
   assert.equal(command(root, ['assign', 'search', 'atris', 'fast', '--backup', 'claude haiku']).exit, 0);
-  // claude on "haiku" and claude on "haiku 4.5" are written as different
+  // claude on "haiku" and claude on "haiku 5.5" are written as different
   // models, so both stay; only an exact tool and model repeat is dropped.
-  assert.match(readRoster(root), /^## search\n- atris fast\n- claude code, model: haiku\n- haiku\n- claude code, model: haiku 4\.5\n\n/m);
+  assert.match(readRoster(root), /^## search\n- atris fast\n- claude code, model: haiku\n- haiku\n- claude code, model: haiku 5\.5\n\n/m);
   // Setting the lead to a worker already further down does not repeat it.
   assert.equal(command(root, ['assign', 'review', 'claude', '--model', 'opus 5.5', '--effort', 'high', '--max', '30 min', '--days', '3']).exit, 0);
   assert.match(readRoster(root), /^## review\n- claude code, model: opus 5\.5, effort: high, max: 30 min, until 2026-09-27\n\n/m);
@@ -518,7 +518,7 @@ test('--available lists installed tools and their models from local files only',
   assert.equal(view.exit, 0, view.err);
   assert.match(view.out, /^on this machine$/m);
   assert.match(view.out, /^codex\s+gpt-6-astra, gpt-6-sol, gpt-6-luna\s+\(from .*models_cache\.json\)$/m);
-  assert.match(view.out, /^claude code\s+opus 5\.5, opus 5, sonnet 5, haiku 4\.5, fable 5\.1\s+\(known names\)$/m);
+  assert.match(view.out, /^claude code\s+opus 5\.5, opus 5, sonnet 5, haiku 5\.5, fable 5\.1\s+\(known names\)$/m);
   assert.match(view.out, /^grok\s+grok 4\.7 fast, grok 4\.7\s+\(known names\)$/m);
   const json = JSON.parse(command(root, ['roster', '--available', '--json']).out).tools;
   assert.deepEqual(json.find((row) => row.engine === 'codex').models, ['gpt-6-astra', 'gpt-6-sol', 'gpt-6-luna']);

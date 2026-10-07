@@ -57,6 +57,8 @@ const {
   rosterJobNameError,
   rosterJobRole,
   readRosterState,
+  retiredModelsNamed,
+  RETIRED_CLAUDE_MODELS,
   customRosterJobKeys,
   setRosterPick,
   confirmRoster,
@@ -1161,6 +1163,7 @@ function rosterReport(root = process.cwd(), now = new Date()) {
     jobs,
     expiring,
     renew_command: expiring.length ? RENEW_COMMAND : null,
+    upgraded: upgradedModels(state),
     team: team.rows,
     warnings: [...state.session.warnings, ...state.project.warnings, ...state.machine.warnings, ...team.warnings],
     files: {
@@ -1170,6 +1173,25 @@ function rosterReport(root = process.cwd(), now = new Date()) {
     },
     session: state.session.key || null,
   };
+}
+
+// Retired models a roster file still names. Every read runs them as their
+// replacement, so this is only a heads-up; nobody has to edit the file.
+function upgradedModels(state) {
+  const found = [];
+  for (const layer of [state.session, state.project, state.machine]) {
+    if (!layer || layer.format === 'none' || !layer.path) continue;
+    let text = '';
+    try { text = fs.readFileSync(layer.path, 'utf8'); } catch { continue; }
+    for (const from of retiredModelsNamed(text)) {
+      if (!found.some((item) => item.from === from)) found.push({ from, to: RETIRED_CLAUDE_MODELS[from] });
+    }
+  }
+  return found;
+}
+
+function renderUpgradedLine(upgraded) {
+  return (upgraded || []).map((item) => `note: ${modelLabel(item.from)} is retired, so your roster runs ${modelLabel(item.to)} in its place. no edit needed.`).join('\n');
 }
 
 // Every worker, in any job, whose end date is today or within the next
@@ -1367,7 +1389,7 @@ function renderRosterWarnings(warnings) {
 
 function renderRosterReport(report, { width } = {}) {
   const stale = (report.stale || []).map((item) => item.text);
-  const jobs = [renderJobRoster(report.jobs, { width }), renderExpiringLine(report.expiring), ...stale].filter(Boolean).join('\n');
+  const jobs = [renderJobRoster(report.jobs, { width }), renderExpiringLine(report.expiring), ...stale, renderUpgradedLine(report.upgraded)].filter(Boolean).join('\n');
   return [jobs, renderTeamRoster(report.team, { width }), renderRosterWarnings(report.warnings)]
     .filter(Boolean)
     .join('\n\n');

@@ -112,7 +112,7 @@ function betaHit(fixture) {
 test('the scout ask is Haiku in read-only plan mode with local tools only', () => {
   const invocation = buildScoutInvocation({ engine: 'haiku', model: '', prompt: 'inspect allowed files' });
   assert.equal(invocation.bin, 'claude');
-  assert.match(invocation.args.join(' '), /--model claude-haiku-4-5/);
+  assert.match(invocation.args.join(' '), /--model claude-haiku-5-5/);
   assert.match(invocation.args.join(' '), /--permission-mode plan/);
   assert.doesNotMatch(invocation.args.join(' '), /--safe-mode/);
   assert.match(invocation.args.join(' '), /--no-session-persistence/);

@@ -276,8 +276,8 @@ test('an ask with no ask line runs unpinned and still records its line', async (
 
 test('claude takes effort as --effort, and an engine with no effort flag gets none', () => {
   const { buildReadOnlyEngineInvocation } = require('../lib/engine-ask');
-  const claude = buildReadOnlyEngineInvocation('claude', 'q', 'claude-haiku-4-5', { effort: 'low' });
-  assert.deepEqual(claude.args.slice(2, 6), ['--model', 'claude-haiku-4-5', '--effort', 'low']);
+  const claude = buildReadOnlyEngineInvocation('claude', 'q', 'claude-haiku-5-5', { effort: 'low' });
+  assert.deepEqual(claude.args.slice(2, 6), ['--model', 'claude-haiku-5-5', '--effort', 'low']);
   const cursor = buildReadOnlyEngineInvocation('cursor', 'q', '', { effort: 'high' });
   assert.equal(cursor.args.includes('high'), false);
 });

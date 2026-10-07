@@ -95,7 +95,7 @@ Smoke: `reply with the word OK`, run from `$HOME`, 120s cap, one at a time on a 
 | Cursor | `cursor-agent --trust --model composer-2.5 -p "<prompt>"` (run from the target repo) | `composer-2.5` | 2026-09-23 | 37.5 | `--trust` required for non-interactive. |
 | Fable | `atris engine fable --timeout 120 --json "<question>"` | `claude-fable-5` | 2026-09-23 | 21.4 | Canonical read-only FABLE ask with receipt; scale `--timeout` to the work. |
 | Composer | `cursor-agent --trust --model composer-2.5 -p "<prompt>"` | `composer-2.5` via Cursor | 2026-09-23 | 37.5 | Same binary as Cursor. |
-| Haiku | `claude -p "<prompt>" --model claude-haiku-4-5 --output-format json --no-session-persistence` | `claude-haiku-4-5` | 2026-09-23 | 19.0 | Fast validation and bounded read-only checks. |
+| Haiku | `claude -p "<prompt>" --model claude-haiku-5-5 --output-format json --no-session-persistence` | `claude-haiku-5-5` | 2026-10-07 | 9.5 | Fast validation and bounded read-only checks. |
 | Devin (build) | `devin -p --permission-mode dangerous --model swe-2-max --prompt-file <brief>` (run from an isolated worktree) | `swe-2-max` (Free tag in `devin models list`, 2026-09-23) | 2026-09-23 | 14.0 | In `-p` mode the default permission mode rejects shell commands too, so even a read-only audit dies after one step (2026-09-23). Keep the brief outside the worktree. Long runs (5+ min) can print nothing even on success: judge by the worktree diff. `devin cloud` outlives this machine. |
 | Devin (search) | `devin -p --permission-mode dangerous --model swe-1.7-lightning -- "<prompt>"` | `swe-1.7-lightning` (paid, no Free tag on 2026-09-23) | 2026-09-23 | 13.9 | |
 | Grok | `grok --always-approve --model grok-4.7 -p "<prompt>"` (run from the target repo) | `grok-4.7` | 2026-09-23 | 11.7 | Unpinned default is now `grok-4.7-build-fast`; `grok models` lists the menu. Uses grok.com login. `--best-of-n <N>` for tricky bounded builds. |
@@ -119,7 +119,7 @@ Headless dispatch permissions (verified 2026-08-11): `codex exec`, `grok`, and `
 
 | Engine | Flag | Alternates on the live menu |
 |--------|------|-----------------------------|
-| Claude | `--model <id>` | `claude-opus-5-5`, `claude-haiku-4-5` |
+| Claude | `--model <id>` | `claude-opus-5-5`, `claude-haiku-5-5` |
 | Devin | `--model <id>` | `swe-2-max`, `swe-2-high`, `swe-2-medium` (Free); `claude-opus-5-5-high`, `gpt-6-sol` (paid) |
 | Cursor | `--model <id>` | `composer-2.5`, `grok-4.7-xhigh`, `claude-opus-5-thinking-high`; `--list-models` |
 | Grok | `--model <id>` | `grok-4.7`, `grok-4.7-build-fast` (default), `grok-4.6`, `grok-4.5`; `grok models` |

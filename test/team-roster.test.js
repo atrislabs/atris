@@ -260,7 +260,7 @@ function withLineupRoom(fn) {
       '## review',
       '- codex, model: gpt-6-astra, effort: medium',
       '## search',
-      '- claude code, model: haiku 4.5',
+      '- claude code, model: haiku 5.5',
       '## team',
       '- researcher: claude code, model: opus 5.5',
       '',
@@ -295,7 +295,7 @@ test('atris team shows each member with its job, tool, and model from the roster
   assert.match(lines[0], /^MEMBER +JOB +ENGINE · MODEL +STATUS +DOING +LAST$/);
   assert.match(out, /^coder +build +claude · opus 5\.5 +quiet +- +-$/m);
   assert.match(out, /^alpha-judge +review +codex · gpt-6-astra +quiet +- +-$/m);
-  assert.match(out, /^navigator +search +claude · haiku 4\.5 +quiet +- +-$/m);
+  assert.match(out, /^navigator +search +claude · haiku 5\.5 +quiet +- +-$/m);
   // researcher's team line puts it on a different model than its job.
   assert.match(out, /^researcher +search +claude · opus 5\.5 +quiet +- +-$/m);
   assert.ok(!out.includes('who does each job'), 'the old lineup blocks are gone');
@@ -351,7 +351,7 @@ test('a member named by a live run is working now, first, on the engine it reall
   assert.match(rows[0], /^alpha-judge +review +codex · gpt-6\.1-sol +working now +second-round review of PR 3972 +1m$/);
   assert.match(rows[1], /^\(no member\) +- +devin · swe-2-max +working now +You are the night shift.*… +6m$/);
   assert.match(rows[2], /^coder +build +claude · opus 5\.5 +this week +4 runs this week, 1 landed +2d$/);
-  assert.match(rows[3], /^navigator +search +claude · haiku 4\.5 +quiet +- +-$/);
+  assert.match(rows[3], /^navigator +search +claude · haiku 5\.5 +quiet +- +-$/);
   out.split('\n').forEach((line) => assert.ok(line.length <= 120, `too wide: ${line}`));
 }));
 

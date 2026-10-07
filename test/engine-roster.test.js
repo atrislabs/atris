@@ -9,6 +9,8 @@ const { engineCommand } = require('../commands/engine');
 const { resolveMissionTickRunner } = require('../commands/mission');
 const { readyExecutor, readyValidators, lapModelPins } = require('../commands/one-lap');
 const { buildEngineCommand } = require('../lib/fleet');
+const { runnerModelFor } = require('../lib/runner-command');
+const { buildReadOnlyEngineInvocation } = require('../lib/engine-ask');
 const { handleMissionBlocker } = require('../lib/self-drive');
 const {
   normalizeRosterModel,
@@ -184,7 +186,8 @@ test('assign saves the model id the claude cli accepts, whatever the spelling', 
     ['claude', 'opus5.5', 'claude-opus-5-5', 'opus 5.5'],
     ['claude', 'claude-opus-5-5', 'claude-opus-5-5', 'opus 5.5'],
     ['claude', 'sonnet 5', 'claude-sonnet-5', 'sonnet 5'],
-    ['haiku', 'haiku 4.5', 'claude-haiku-4-5-20251001', 'haiku 4.5'],
+    ['haiku', 'haiku 5.5', 'claude-haiku-5-5', 'haiku 5.5'],
+    ['haiku', 'haiku 4.5', 'claude-haiku-5-5', 'haiku 5.5'],
     ['fable', 'fable 5.1', 'claude-fable-5-1', 'fable 5.1'],
     ['claude', 'opus', 'opus', 'opus'],
     ['claude', 'sonnet', 'sonnet', 'sonnet'],
@@ -197,6 +200,26 @@ test('assign saves the model id the claude cli accepts, whatever the spelling', 
     assert.equal(projectPicks(root).validator.model, saved, typed);
     assert.ok(result.out.includes(`${engine} · ${shown}`), `${typed}: ${result.out}`);
   }
+}));
+
+test('a retired haiku 4.5 runs as haiku 5.5, however it was saved or typed', () => withRoom((root) => {
+  for (const typed of ['haiku 4.5', 'claude-haiku-4-5', 'claude-haiku-4-5-20251001', 'Haiku-4.5']) {
+    assert.equal(normalizeRosterModel('claude', typed), 'claude-haiku-5-5', typed);
+    assert.equal(normalizeRosterModel('haiku', typed), 'claude-haiku-5-5', typed);
+  }
+  assert.equal(normalizeRosterModel('claude', 'claude-haiku-4-5[1m]'), 'claude-haiku-5-5[1m]');
+  assert.equal(runnerModelFor('', 'claude-haiku-4-5-20251001'), 'claude-haiku-5-5');
+  assert.equal(runnerModelFor('codex', 'claude-haiku-4-5'), '');
+  assert.deepEqual(buildReadOnlyEngineInvocation('claude', 'q', 'claude-haiku-4-5').args.slice(2, 4), ['--model', 'claude-haiku-5-5']);
+
+  ready(root, 'claude', 'haiku');
+  fs.writeFileSync(path.join(root, 'atris', 'ROSTER.md'), '# roster\n\n## search\n- claude code, model: haiku 4.5\n');
+  assert.equal(projectPicks(root).navigator.model, 'claude-haiku-5-5');
+  const shown = command(root, ['roster']);
+  assert.equal(shown.exit, 0, shown.err);
+  assert.match(shown.out, /claude · haiku 5\.5/);
+  assert.doesNotMatch(shown.out, /claude · haiku 4\.5/);
+  assert.match(shown.out, /^note: haiku 4\.5 is retired, so your roster runs haiku 5\.5 in its place\. no edit needed\.$/m);
 }));
 
 test('a claude model the cli would reject is refused at assign, other engines save as typed', () => withRoom((root) => {
@@ -287,7 +310,7 @@ test('roster confirm renews this project and the all-projects picks', () => with
 test('the pinned model reaches one-lap builds and reviews and missions that already named the engine', () => withRoom((root) => {
   ready(root, 'codex', 'claude', 'haiku');
   setRosterPick('build', 'claude', { model: 'opus 5.5', now: NOW }, root);
-  setRosterPick('review', 'haiku', { model: 'haiku 4.5', now: NOW }, root);
+  setRosterPick('review', 'haiku', { model: 'haiku 5.5', now: NOW }, root);
   const routed = readyExecutor(root);
   assert.equal(routed.id, 'claude');
   assert.equal(routed.roster_model, 'claude-opus-5-5');
@@ -298,7 +321,7 @@ test('the pinned model reaches one-lap builds and reviews and missions that alre
   assert.equal(validators[0].id, 'haiku');
   assert.deepEqual(lapModelPins(routed, validators), {
     model: 'claude-opus-5-5',
-    validatorModels: { haiku: 'claude-haiku-4-5-20251001' },
+    validatorModels: { haiku: 'claude-haiku-5-5' },
   });
   const spawn = buildEngineCommand('claude', '/tmp/prompt.md', { model: 'claude-opus-5-5' });
   assert.match(spawn, /--model claude-opus-5-5 /);

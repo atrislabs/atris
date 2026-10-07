@@ -164,7 +164,7 @@ const BOOT_ROSTER = [
   '## review',
   '- codex, model: gpt-6-astra, effort: medium',
   '## search',
-  '- claude code, model: haiku 4.5',
+  '- claude code, model: haiku 5.5',
   '',
 ].join('\n');
 
@@ -175,7 +175,7 @@ test('boot shows which tool and model leads each built-in job', () => {
     const boot = runCli(['atris.md'], { cwd: dir, env: lineupEnv(dir) });
     assert.equal(boot.status, 0, boot.stderr);
     // The custom job does not fit on the line, so it stops at the built-ins.
-    assert.deepEqual(teamLines(boot.stdout), ['  team     build opus 5.5 · review codex gpt-6-astra · search haiku 4.5']);
+    assert.deepEqual(teamLines(boot.stdout), ['  team     build opus 5.5 · review codex gpt-6-astra · search haiku 5.5']);
   } finally {
     cleanupTempDir(dir);
   }
@@ -185,13 +185,13 @@ test('boot adds custom jobs when they still fit on one line', () => {
   const dir = makeTempDir();
   try {
     seedRosterRoom(dir, [
-      '# roster', '## build', '- codex', '## review', '- claude code, model: opus 5.5', '## search', '- claude code, model: haiku 4.5',
+      '# roster', '## build', '- codex', '## review', '- claude code, model: opus 5.5', '## search', '- claude code, model: haiku 5.5',
       '## quick build', '- grok', '',
     ].join('\n'));
     const boot = runCli(['atris.md'], { cwd: dir, env: lineupEnv(dir) });
     assert.equal(boot.status, 0, boot.stderr);
     const [line] = teamLines(boot.stdout);
-    assert.equal(line, '  team     build codex · review opus 5.5 · search haiku 4.5 · quick build grok');
+    assert.equal(line, '  team     build codex · review opus 5.5 · search haiku 5.5 · quick build grok');
     assert.ok(line.length <= 80);
   } finally {
     cleanupTempDir(dir);

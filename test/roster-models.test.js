@@ -256,7 +256,7 @@ test('the owner\'s roster shows the real model and its source on every line, in 
 test('with no pin, each engine names where its model comes from', () => withRoom(() => {
   assert.equal(engineRunsView('codex').text, 'codex (its own default)');
   assert.equal(engineRunsView('claude').text, 'claude (opus 5.5, atris default)');
-  assert.equal(engineRunsView('haiku').text, 'haiku (haiku 4.5, atris default)');
+  assert.equal(engineRunsView('haiku').text, 'haiku (haiku 5.5, atris default)');
   assert.equal(engineRunsView('grok').text, 'grok (its own default)');
   assert.equal(engineRunsView('devin').text, 'devin (its own default)');
   assert.equal(engineRunsView('claude', { effort: 'high' }).text, 'claude (opus 5.5 by atris default, high)');

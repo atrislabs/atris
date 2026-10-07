@@ -205,9 +205,9 @@ test('compat runner profiles resolve to concrete runner configs', () => {
     {
       profile: 'haiku',
       bin: 'claude',
-      model: 'claude-haiku-4-5',
+      model: 'claude-haiku-5-5',
       template: '',
-      command: /claude -p .*--model claude-haiku-4-5\b/,
+      command: /claude -p .*--model claude-haiku-5-5\b/,
     },
   ];
   for (const entry of cases) {

@@ -373,7 +373,7 @@ run_grok() {
 }
 
 run_haiku() {
-  run_with_timeout 240 claude -p "$PROMPT" --model "${1:-claude-haiku-4-5}"
+  run_with_timeout 240 claude -p "$PROMPT" --model "${1:-claude-haiku-5-5}"
 }
 
 # Gemini Flash through the Antigravity CLI (agy). On an 85-minute transcript it
