@@ -11,8 +11,10 @@
 // Backend: backend/routers/agent_auth_router.py (POST /auth/agent/signup).
 
 const crypto = require('crypto');
+const fs = require('fs');
 const { apiRequestJson, getApiBaseUrl } = require('../utils/api');
-const { saveCredentials } = require('../utils/auth');
+const { saveCredentials, saveProfile, saveAgentClientCredentials, getCredentialsPath } = require('../utils/auth');
+const agentClient = require('../utils/agent-client');
 const { argsWantHelp, isHelpToken } = require('../lib/noninteractive');
 
 // Mirror the server rule exactly (^[a-z0-9]{3,30}$) so we fail fast and friendly
@@ -43,6 +45,36 @@ function solvePow(handle) {
 function parseHandle(args = []) {
   const positional = args.find((a) => a && !a.startsWith('-') && !isHelpToken(a));
   return (positional || '').trim().toLowerCase();
+}
+
+// Newer servers also hand back an agent client (id + secret) so the agent can
+// renew its own login forever. Store it the way `atris login` does with the
+// secret in ATRIS_CLIENT_SECRET: a private 0600 copy under
+// ~/.atris/agent-clients/, then make the client the active login. The 30-day
+// token just saved stays reachable as a profile named after the handle.
+// Returns { ok: true } or { ok: false, secretFile, clientId }. Never throws,
+// never prints the secret or a token.
+async function adoptSignupClient(client, handle, deps = {}) {
+  const clientId = client && typeof client.client_id === 'string' ? client.client_id.trim() : '';
+  const secret = client && typeof client.client_secret === 'string' ? client.client_secret.trim() : '';
+  if (!clientId.startsWith(agentClient.CLIENT_ID_PREFIX) || !secret) return { ok: false };
+
+  let secretFile = null;
+  try {
+    const target = agentClient.managedSecretPath(clientId);
+    agentClient.writeFileAtomic(target, `${secret}\n`);
+    secretFile = target;
+    const entry = await agentClient.requestClientToken({ clientId, secret, scope: null }, deps);
+
+    // Keep the 30-day login as a profile named after the handle, then switch.
+    const fallback = JSON.parse(fs.readFileSync(getCredentialsPath(), 'utf8'));
+    saveProfile(handle, fallback);
+    saveAgentClientCredentials({ client_id: clientId, client_secret_file: secretFile, scope: null });
+    agentClient.writeTokenCache(clientId, entry);
+    return { ok: true, clientId };
+  } catch (error) {
+    return { ok: false, clientId, secretFile, reason: agentClient.scrub(error && error.message, [secret]) };
+  }
 }
 
 function printSignupUsage() {
@@ -79,9 +111,20 @@ async function signupCommand(args = []) {
     const { token, email, user_id: userId } = res.data;
     const identity = email || `${handle}@atrismail.com`;
     saveCredentials(token, null, identity, userId || null, 'atrisos');
+    const hasClient = Boolean(res.data.client);
+    const adopted = hasClient ? await adoptSignupClient(res.data.client, handle) : { ok: false };
     console.log(`\n✓ You're in: ${identity}`);
+    if (adopted.ok) console.log('This agent renews its own login; no human needed.');
     console.log('  Inert starter account (0 credits): identity is free, capability is earned.');
     console.log('  Saved to your active profile.');
+    if (adopted.ok) {
+      console.log(`  The 30-day login is kept as a backup. switch to it: atris switch ${handle} --global`);
+    } else if (hasClient && adopted.secretFile) {
+      console.log(`  Could not sign in with the agent client yet${adopted.reason ? ` (${adopted.reason})` : ''}. Using the 30-day login for now.`);
+      console.log(`  Try again: atris login --client-id ${adopted.clientId} --client-secret-file ${adopted.secretFile}`);
+    } else if (hasClient || typeof res.data.client_error === 'string') {
+      console.log('  This login lasts 30 days; after that, renewing it will need a fresh signup login.');
+    }
     console.log('\nNext:');
     console.log('  atris play     # claim a starter mission and earn your first proof-backed rep');
     console.log('  atris xp       # see where you stand on the board');
@@ -107,4 +150,4 @@ async function signupCommand(args = []) {
   return 1;
 }
 
-module.exports = { signupCommand, parseHandle, HANDLE_RE };
+module.exports = { signupCommand, parseHandle, HANDLE_RE, adoptSignupClient };
