@@ -5624,6 +5624,26 @@ function fallbackSupervisorAnalysis(receipts) {
 async function runSupervisorWake(name, paths, { execute = false } = {}) {
   const mode = execute ? 'execute' : 'dry_run';
   const root = process.cwd();
+  const llmConfigured = Boolean(process.env.ATRIS_SUPERVISOR_LLM_JSON)
+    || process.env.ATRIS_SUPERVISOR_LLM === '1';
+  if (!execute && !llmConfigured) {
+    return {
+      ok: true,
+      skipped: true,
+      action: 'wake',
+      member: name,
+      mode,
+      decision: 'wait',
+      reason: 'skipped_llm_not_configured',
+      executed: false,
+      needs_user: false,
+      ask: null,
+      next_command: null,
+      receipt_path: null,
+      log_path: null,
+      recommendations_path: supervisorRecommendationsPath(root),
+    };
+  }
   const receipts = listRecentSupervisorReceipts(root);
   const logs = readSupervisorMemberLogs(root);
   let llm = null;
@@ -6025,6 +6045,22 @@ function createAutoObjectiveTask(proposal) {
 
 async function runObjectiveGeneratorWake(name, paths, { execute = false } = {}) {
   const mode = execute ? 'execute' : 'dry_run';
+  const llmConfigured = Boolean(process.env.ATRIS_OBJECTIVE_GENERATOR_LLM_JSON)
+    || process.env.ATRIS_OBJECTIVE_GENERATOR_LLM === '1';
+  if (!execute && !llmConfigured) {
+    return {
+      ok: true,
+      action: 'wake',
+      member: name,
+      mode,
+      decision: 'generate_objective',
+      reason: 'llm_not_configured',
+      executed: false,
+      needs_user: false,
+      ask: null,
+      next_command: 'atris member objective-generator proposals',
+    };
+  }
   const root = process.cwd();
   const graph = readObjectiveGeneratorWorldModel(root);
   const recommendations = readSupervisorRecommendations(root);
@@ -7818,6 +7854,7 @@ const WAKE_REASON_TEXT = {
   heuristic_objective_proposal_written: 'it drafted an objective proposal using its built-in heuristics',
   install_requires_clean_git: 'installing needs a clean git tree first',
   insufficient_world_model_data: 'its world model is too thin to act on yet',
+  skipped_llm_not_configured: 'no model is configured here, so it skipped quietly instead of writing another dry-run receipt',
   llm_json_parse_failed: 'the model reply did not parse, so it stopped rather than act on garbage',
   llm_json_parse_failed_heuristic_used: 'the model reply did not parse, so it fell back to built-in heuristics',
   missing_domain_input: 'it needs a domain file or domain text from you to work on',
@@ -7909,7 +7946,9 @@ function wakeBootLines(name, result) {
       || /^open_experiment_/.test(result.reason || '');
     lines.push('', `  ${s.bold(ballWithHuman ? 'Your move' : 'Next step')}`, `    ${s.cyan(result.next_command)}`);
   }
-  lines.push('', `  ${s.dim(`receipt \u00b7 ${path.relative(process.cwd(), result.receipt_path)}`)}`, '');
+  if (result.receipt_path) {
+    lines.push('', `  ${s.dim(`receipt \u00b7 ${path.relative(process.cwd(), result.receipt_path)}`)}`, '');
+  }
   return lines;
 }
 
