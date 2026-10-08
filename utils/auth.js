@@ -396,10 +396,43 @@ function listProfiles() {
   }
 }
 
+// A saved agent client profile holds only the client id and the secret file
+// path; attach its cached token like the credentials.json path does.
+function activeProfile(profile) {
+  return agentClient.isAgentClientCredential(profile) ? agentClient.withCachedToken(profile) : profile;
+}
+
+function readStoredCredentialsFile() {
+  try {
+    return JSON.parse(fs.readFileSync(getCredentialsPath(), 'utf8'));
+  } catch {
+    return null;
+  }
+}
+
+// Before anything overwrites credentials.json, keep an agent client login as
+// a profile named after its client id, so `atris switch <client_id>` brings
+// it back with its token cache and secret file intact. Returns the name.
+function preserveAgentClientLogin() {
+  const stored = readStoredCredentialsFile();
+  if (!agentClient.isAgentClientCredential(stored)) return null;
+  const name = agentClient.profileNameForClient(stored.client_id);
+  saveProfile(name, stored);
+  return name;
+}
+
 function deleteProfile(name) {
   const profilePath = path.join(getProfilesDir(), `${name}.json`);
   if (fs.existsSync(profilePath)) {
+    const profile = loadProfile(name);
     fs.unlinkSync(profilePath);
+    if (agentClient.isAgentClientCredential(profile)) {
+      // Last reference to this client gone: drop its token cache and secret copy.
+      const stored = readStoredCredentialsFile();
+      if (!agentClient.isAgentClientCredential(stored) || stored.client_id !== profile.client_id) {
+        agentClient.deleteAgentClientFiles(profile.client_id);
+      }
+    }
     return true;
   }
   return false;
@@ -416,6 +449,7 @@ function saveCredentials(token, refreshToken, email, userId, provider, extras = 
   if (decodeJwtClaims(token)?.type === 'agent_access') {
     throw new Error('Refusing to save a scoped agent token as the login token; keep it under agent_token');
   }
+  preserveAgentClientLogin();
   const credentialsPath = getCredentialsPath();
   const credentials = {
     ...extras,
@@ -526,7 +560,7 @@ function readCredentials() {
   const profileOverride = process.env.ATRIS_PROFILE;
   if (profileOverride) {
     const profile = loadProfile(profileOverride);
-    if (profile) return { ...profile, source_profile: profileOverride };
+    if (profile) return { ...activeProfile(profile), source_profile: profileOverride };
     const profiles = listProfiles();
     const q = profileOverride.toLowerCase();
     const match = profiles.find(p => p.toLowerCase() === q)
@@ -534,7 +568,7 @@ function readCredentials() {
       || profiles.find(p => p.toLowerCase().includes(q));
     if (match) {
       const matched = loadProfile(match);
-      if (matched) return { ...matched, source_profile: match };
+      if (matched) return { ...activeProfile(matched), source_profile: match };
     }
   }
 
@@ -542,7 +576,7 @@ function readCredentials() {
   const sessionProfile = getSessionProfile();
   if (sessionProfile) {
     const profile = loadProfile(sessionProfile);
-    if (profile) return { ...profile, source_profile: sessionProfile };
+    if (profile) return { ...activeProfile(profile), source_profile: sessionProfile };
   }
 
   // 4. Global credentials.json
@@ -590,10 +624,12 @@ function saveAgentClientCredentials(record) {
 function deleteCredentials() {
   const credentialsPath = getCredentialsPath();
 
-  try {
-    const stored = JSON.parse(fs.readFileSync(credentialsPath, 'utf8'));
-    if (agentClient.isAgentClientCredential(stored)) agentClient.deleteAgentClientFiles(stored.client_id);
-  } catch {}
+  const stored = readStoredCredentialsFile();
+  if (agentClient.isAgentClientCredential(stored)
+    && !loadProfile(agentClient.profileNameForClient(stored.client_id))) {
+    // No saved profile still points at this client, so its files go too.
+    agentClient.deleteAgentClientFiles(stored.client_id);
+  }
 
   if (fs.existsSync(credentialsPath)) {
     fs.unlinkSync(credentialsPath);
@@ -910,6 +946,7 @@ module.exports = {
   loadCredentials,
   readActiveCredentials: readCredentials,
   deleteCredentials,
+  preserveAgentClientLogin,
   openBrowser,
   promptUser,
   validateAccessToken,

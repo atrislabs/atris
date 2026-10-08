@@ -195,8 +195,10 @@ its own; the secret and token are never printed:
 atris login --client-id atc_... --client-secret-file ./bot.secret
 ```
 
-Or skip the login step and set `ATRIS_CLIENT_ID` plus `ATRIS_CLIENT_SECRET_FILE`
-(or `ATRIS_CLIENT_SECRET`). `ATRIS_TOKEN`, when set, still wins.
+Or set `ATRIS_CLIENT_ID` plus `ATRIS_CLIENT_SECRET_FILE` (or
+`ATRIS_CLIENT_SECRET`) and run `atris login` once. It reads them, no flags
+needed, and opens no browser. After that every command renews the token on
+its own. `ATRIS_TOKEN`, when set, still wins.
 
 ## Business Owners
 

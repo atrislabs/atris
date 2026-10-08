@@ -362,7 +362,7 @@ test('atris login with ATRIS_CLIENT_ID + ATRIS_CLIENT_SECRET keeps a private 060
   }
 });
 
-test('ATRIS_CLIENT_ID + ATRIS_CLIENT_SECRET_FILE work without a login step', async () => {
+test('whoami signs in from ATRIS_CLIENT_ID + ATRIS_CLIENT_SECRET_FILE and later processes reuse the cache', async () => {
   const { dir, home } = makeTemp();
   const counter = { n: 0 };
   const { server, url } = await startServer((req) => (req.url === '/oauth/token' ? tokenHandler(counter)() : { status: 404 }));
@@ -405,6 +405,99 @@ test('a failed sign-in never echoes the secret, and a secret on the command line
     assertNoSecrets(inline.stdout + inline.stderr);
   } finally {
     server.close();
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test('bare atris login with env set signs the agent in, no browser, and says where the secret copy went', async () => {
+  const { dir, home } = makeTemp();
+  const counter = { n: 0 };
+  const { server, requests, url } = await startServer((req) => (req.url === '/oauth/token' ? tokenHandler(counter)() : { status: 404 }));
+  try {
+    // No --json, no ATRIS_NONINTERACTIVE: the same call a person would type.
+    const result = await runCli(['login'], {
+      cwd: dir,
+      env: { HOME: home, ATRIS_API_URL: `${url}/api`, ATRIS_NONINTERACTIVE: '', ATRIS_CLIENT_ID: CLIENT_ID, ATRIS_CLIENT_SECRET: SECRET },
+    });
+    assert.equal(result.status, 0, result.stderr);
+    assert.match(result.stdout, /signed in as agent client atc_test123/);
+    assert.doesNotMatch(result.stdout, /Choose login method|Opening browser/);
+    const managed = path.join(home, '.atris', 'agent-clients', `${CLIENT_ID}.secret`);
+    assert.ok(result.stdout.includes(`copied the secret from ATRIS_CLIENT_SECRET to ${managed}`));
+    assertNoSecrets(result.stdout + result.stderr, [agentJwt(1)]);
+    assert.equal(requests.filter((r) => r.url === '/oauth/token').length, 1);
+
+    // After that one login, a command that only reads the saved login sees the token.
+    await withEnv({ HOME: home, ATRIS_CLIENT_ID: CLIENT_ID, ATRIS_CLIENT_SECRET: SECRET }, () => {
+      const { auth } = freshModules();
+      assert.equal(auth.loadCredentials().token, agentJwt(1));
+    });
+  } finally {
+    server.close();
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test('atris switch --global away from an agent client keeps it as a profile, and switching back works', async () => {
+  const { dir, home } = makeTemp();
+  const counter = { n: 0 };
+  const { server, url } = await startServer((req) => (req.url === '/oauth/token' ? tokenHandler(counter)() : { status: 404 }));
+  try {
+    const env = { HOME: home, ATRIS_API_URL: `${url}/api` };
+    writeHumanLogin(home);
+    const secretFile = writeSecretFile(dir);
+    const login = await runCli(['login', '--client-id', CLIENT_ID, '--client-secret-file', secretFile], { cwd: dir, env });
+    assert.equal(login.status, 0, login.stderr);
+    const credsPath = path.join(home, '.atris', 'credentials.json');
+    const cachePath = path.join(home, '.atris', 'agent-clients', `${CLIENT_ID}.token.json`);
+
+    const away = await runCli(['switch', 'owner', '--global'], { cwd: dir, env });
+    assert.equal(away.status, 0, away.stderr);
+    assert.match(away.stdout, /Switched to owner@example\.com/);
+    assert.match(away.stdout, /Switch back: atris switch atc_test123 --global/);
+    assert.equal(JSON.parse(fs.readFileSync(credsPath, 'utf8')).email, 'owner@example.com');
+    const profilePath = path.join(home, '.atris', 'profiles', `${CLIENT_ID}.json`);
+    const profile = JSON.parse(fs.readFileSync(profilePath, 'utf8'));
+    assert.equal(profile.client_id, CLIENT_ID);
+    assert.ok(!fs.readFileSync(profilePath, 'utf8').includes(SECRET));
+    assert.equal(mode(profilePath), 0o600);
+    assert.ok(fs.existsSync(cachePath), 'token cache kept');
+
+    const back = await runCli(['switch', CLIENT_ID, '--global'], { cwd: dir, env });
+    assert.equal(back.status, 0, back.stderr);
+    assert.match(back.stdout, /Switched to agent client atc_test123/);
+    const whoami = await runCli(['whoami', '--json'], { cwd: dir, env });
+    assert.equal(whoami.status, 0, whoami.stderr);
+    assert.equal(JSON.parse(whoami.stdout).client_id, CLIENT_ID);
+    assert.equal(counter.n, 1, 'switching back reused the cached token');
+
+    // The shell wrapper's hidden global switch keeps it too.
+    fs.rmSync(profilePath);
+    const hidden = await runCli(['_activate', 'owner'], { cwd: dir, env });
+    assert.equal(hidden.status, 0, hidden.stderr);
+    assert.equal(JSON.parse(fs.readFileSync(profilePath, 'utf8')).client_id, CLIENT_ID);
+    assertNoSecrets(login.stdout + login.stderr + away.stdout + away.stderr + back.stdout + back.stderr, [agentJwt(1)]);
+  } finally {
+    server.close();
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test('removing the last agent client profile cleans up its files; logout keeps them while a profile still points at them', async () => {
+  const { dir, home } = makeTemp();
+  try {
+    await withEnv({ HOME: home }, () => {
+      const secretFile = writeSecretFile(dir);
+      setupAgentClientLogin(home, secretFile, { token: agentJwt('x'), expiresAt: Date.now() + 600 * 1000 });
+      const cachePath = path.join(home, '.atris', 'agent-clients', `${CLIENT_ID}.token.json`);
+      const { auth } = freshModules();
+      assert.equal(auth.preserveAgentClientLogin(), CLIENT_ID);
+      auth.deleteCredentials();
+      assert.ok(fs.existsSync(cachePath), 'profile still points at the client');
+      auth.deleteProfile(CLIENT_ID);
+      assert.ok(!fs.existsSync(cachePath), 'last reference gone, files gone');
+    });
+  } finally {
     fs.rmSync(dir, { recursive: true, force: true });
   }
 });

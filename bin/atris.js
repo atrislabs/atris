@@ -1025,7 +1025,7 @@ function showAuthHelp(commandName) {
     console.log('  --client-id <atc_...>     Sign in as an agent client (no browser, no person).');
     console.log('  --client-secret-file <p>  File holding the agent client secret (chmod 600).');
     console.log('  --scope "a b"             Ask for fewer scopes than the client has.');
-    console.log('  Env instead of flags: ATRIS_CLIENT_ID plus ATRIS_CLIENT_SECRET_FILE or ATRIS_CLIENT_SECRET.');
+    console.log('  Or set ATRIS_CLIENT_ID plus ATRIS_CLIENT_SECRET_FILE or ATRIS_CLIENT_SECRET, then run atris login once.');
   } else if (commandName === 'switch') {
     console.log('  --global, -g     Switch the account for all terminals.');
   }

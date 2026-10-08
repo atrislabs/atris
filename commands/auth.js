@@ -1,4 +1,4 @@
-const { AGENT_TOKEN_EXPIRED_DETAIL, decodeJwtClaims, loadCredentials, saveCredentials, saveAgentClientCredentials, deleteCredentials, getCredentialsPath, openBrowser, promptUser, displayAccountSummary, ensureValidCredentials, loadProfile, listProfiles, profileNameFromEmail, deleteProfile, saveProfile, getTokenExpiryEpochSeconds, getTerminalSessionId, setSessionProfile, getSessionProfile, clearSessionProfile, cleanStaleSessions, getSessionsDir } = require('../utils/auth');
+const { AGENT_TOKEN_EXPIRED_DETAIL, decodeJwtClaims, loadCredentials, saveCredentials, saveAgentClientCredentials, preserveAgentClientLogin, deleteCredentials, getCredentialsPath, openBrowser, promptUser, displayAccountSummary, ensureValidCredentials, loadProfile, listProfiles, profileNameFromEmail, deleteProfile, saveProfile, getTokenExpiryEpochSeconds, getTerminalSessionId, setSessionProfile, getSessionProfile, clearSessionProfile, cleanStaleSessions, getSessionsDir } = require('../utils/auth');
 const { getAppBaseUrl, apiRequestJson } = require('../utils/api');
 const { isNonInteractive, wantsJson } = require('../lib/noninteractive');
 const { hasFlag, readFlag } = require('../lib/arg-parser');
@@ -496,10 +496,14 @@ function agentClientLoginRequest(args = [], env = process.env) {
 
 // Keep the person's own login reachable with `atris switch` after the agent
 // client takes over credentials.json.
-function keepHumanLoginAsProfile() {
+function keepHumanLoginAsProfile(nextClientId) {
   try {
     const stored = JSON.parse(fs.readFileSync(getCredentialsPath(), 'utf8'));
-    if (!stored || agentClient.isAgentClientCredential(stored) || !stored.token) return null;
+    if (agentClient.isAgentClientCredential(stored)) {
+      // A different agent client was signed in: keep it switchable too.
+      return stored.client_id === nextClientId ? null : preserveAgentClientLogin();
+    }
+    if (!stored || !stored.token) return null;
     const name = profileNameFromEmail(stored.email);
     if (!name) return null;
     if (!loadProfile(name)) saveProfile(name, stored);
@@ -552,14 +556,16 @@ async function loginAgentClient(request, deps = {}) {
   }
 
   let secretFile = request.secretFile;
+  let copiedSecretTo = null;
   if (!secretFile) {
     // The secret came from ATRIS_CLIENT_SECRET. Keep a private copy so later
     // commands can renew without the variable.
     secretFile = agentClient.managedSecretPath(request.clientId);
     agentClient.writeFileAtomic(secretFile, `${secret}\n`);
+    copiedSecretTo = secretFile;
   }
 
-  const keptProfile = keepHumanLoginAsProfile();
+  const keptProfile = keepHumanLoginAsProfile(request.clientId);
   saveAgentClientCredentials({ client_id: request.clientId, client_secret_file: secretFile, scope: request.scope });
   agentClient.writeTokenCache(request.clientId, entry);
 
@@ -575,6 +581,7 @@ async function loginAgentClient(request, deps = {}) {
       client_id: request.clientId,
       scopes,
       token_expires_at: entry.expires_at,
+      ...(copiedSecretTo ? { secret_copied_to: copiedSecretTo } : {}),
       warnings,
     }, null, 2));
     return 0;
@@ -582,7 +589,8 @@ async function loginAgentClient(request, deps = {}) {
   output(`signed in as agent client ${request.clientId}`);
   output(`scopes: ${scopes.length ? scopes.join(', ') : 'all granted to this client'}`);
   output('the token renews on its own before it runs out.');
-  if (keptProfile) output(`your own login is saved. switch back: atris switch ${keptProfile}`);
+  if (copiedSecretTo) output(`copied the secret from ATRIS_CLIENT_SECRET to ${copiedSecretTo} (only you can read it).`);
+  if (keptProfile) output(`the previous login is saved. switch back: atris switch ${keptProfile} --global`);
   warnings.forEach((line) => outputError(line));
   return 0;
 }
@@ -832,14 +840,14 @@ async function switchAccount() {
   }
 
   const current = loadCredentials();
-  const currentName = profileNameFromEmail(current?.email);
+  const currentName = activeProfileName(current);
 
   if (!targetName) {
     // Interactive: show list and let user pick
     console.log('Switch account:\n');
     profiles.forEach((name, i) => {
       const profile = loadProfile(name);
-      const email = profile?.email || 'unknown';
+      const email = profile ? profileLabel(profile, 'unknown') : 'unknown';
       const marker = name === currentName ? '  ← active' : '';
       console.log(`  ${i + 1}. ${name}, ${email}${marker}`);
     });
@@ -883,6 +891,32 @@ async function switchAccount() {
   return activateProfile(match, currentName, { global: globalFlag });
 }
 
+// A profile can be switched to if it has a login token or is a saved agent client.
+function usableProfile(profile) {
+  return Boolean(profile && (profile.token || agentClient.isAgentClientCredential(profile)));
+}
+
+function profileLabel(profile, name) {
+  if (profile?.email) return profile.email;
+  if (agentClient.isAgentClientCredential(profile)) return `agent client ${profile.client_id}`;
+  return name;
+}
+
+function activeProfileName(credentials) {
+  if (agentClient.isAgentClientCredential(credentials)) return agentClient.profileNameForClient(credentials.client_id);
+  return profileNameFromEmail(credentials?.email);
+}
+
+// Overwrite credentials.json with a profile. An agent client login there is
+// saved as a profile first, so its token cache and secret file stay reachable.
+function writeGlobalCredentials(profile) {
+  const kept = preserveAgentClientLogin();
+  const credentialsPath = getCredentialsPath();
+  fs.writeFileSync(credentialsPath, JSON.stringify(profile, null, 2));
+  try { fs.chmodSync(credentialsPath, 0o600); } catch {}
+  return kept;
+}
+
 function activateProfile(name, currentName, { global = false } = {}) {
   if (name === currentName) {
     console.log(`Already on "${name}".`);
@@ -890,21 +924,20 @@ function activateProfile(name, currentName, { global = false } = {}) {
   }
 
   const profile = loadProfile(name);
-  if (!profile || !profile.token) {
+  if (!usableProfile(profile)) {
     console.error(`Profile "${name}" is corrupted. Run "atris login" to fix.`);
     process.exit(1);
   }
 
   if (global || !getTerminalSessionId()) {
     // Global switch, write to credentials.json (affects all terminals)
-    const credentialsPath = getCredentialsPath();
-    fs.writeFileSync(credentialsPath, JSON.stringify(profile, null, 2));
-    try { fs.chmodSync(credentialsPath, 0o600); } catch {}
-    console.log(`Switched to ${profile.email || name} (global, all terminals)`);
+    const kept = writeGlobalCredentials(profile);
+    console.log(`Switched to ${profileLabel(profile, name)} (global, all terminals)`);
+    if (kept && kept !== name) console.log(`The agent client login is saved. Switch back: atris switch ${kept} --global`);
   } else {
     // Per-terminal switch, write session file (only this terminal)
     setSessionProfile(name);
-    console.log(`Switched to ${profile.email || name}`);
+    console.log(`Switched to ${profileLabel(profile, name)}`);
   }
 }
 
@@ -1132,10 +1165,8 @@ function activateGlobal() {
   const name = process.argv[3];
   if (!name) { process.exit(1); }
   const profile = loadProfile(name);
-  if (!profile || !profile.token) { process.exit(1); }
-  const credentialsPath = getCredentialsPath();
-  fs.writeFileSync(credentialsPath, JSON.stringify(profile, null, 2));
-  try { fs.chmodSync(credentialsPath, 0o600); } catch {}
+  if (!usableProfile(profile)) { process.exit(1); }
+  writeGlobalCredentials(profile);
   process.exit(0);
 }
 
@@ -1148,7 +1179,7 @@ function switchSession() {
   if (!name) { process.exit(1); }
 
   const profile = loadProfile(name);
-  if (!profile || !profile.token) { process.exit(1); }
+  if (!usableProfile(profile)) { process.exit(1); }
 
   // Accept explicit session ID from the shell wrapper (more reliable than
   // detecting it from inside a child process where TTY env vars may be missing).
@@ -1170,9 +1201,7 @@ function switchSession() {
       setSessionProfile(name);
     } else {
       // No terminal ID, global fallback
-      const credentialsPath = getCredentialsPath();
-      fs.writeFileSync(credentialsPath, JSON.stringify(profile, null, 2));
-      try { fs.chmodSync(credentialsPath, 0o600); } catch {}
+      writeGlobalCredentials(profile);
     }
   }
   process.exit(0);

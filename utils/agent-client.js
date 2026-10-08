@@ -34,6 +34,11 @@ function safeClientId(clientId) {
   return String(clientId).replace(/[^a-zA-Z0-9_-]/g, '-').slice(0, 96);
 }
 
+// Saved agent client logins live as a profile named after the client id.
+function profileNameForClient(clientId) {
+  return safeClientId(clientId);
+}
+
 function tokenCachePath(clientId) {
   return path.join(clientsDir(), `${safeClientId(clientId)}.token.json`);
 }
@@ -349,6 +354,7 @@ module.exports = {
   writeTokenCache,
   readTokenCache,
   managedSecretPath,
+  profileNameForClient,
   tokenCachePath,
   deleteAgentClientFiles,
   scopeList,
