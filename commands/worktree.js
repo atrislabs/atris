@@ -25,6 +25,39 @@ function runGit(args, { cwd = process.cwd(), check = true, timeout } = {}) {
   return result;
 }
 
+const GIT_PUSH_TIMEOUT_MS = 10000;
+
+function gitTimedOut(result) {
+  return Boolean(result) && (result.error?.code === 'ETIMEDOUT' || (result.status === null && result.signal === 'SIGTERM'));
+}
+
+function originHttpsUrl(root) {
+  const res = runGit(['remote', 'get-url', 'origin'], { cwd: root, check: false });
+  const url = String(res.stdout || '').trim();
+  if (/^https:\/\//.test(url)) return url;
+  const ssh = /^(?:git@|ssh:\/\/git@)([^:/]+)[:/](.+?)(?:\.git)?$/.exec(url);
+  return ssh ? `https://${ssh[1]}/${ssh[2]}.git` : null;
+}
+
+// A blocked SSH port makes `git push` hang forever; bound it and retry once
+// against the HTTPS form of origin before failing loudly.
+function pushBranchWithFallback(root, branch) {
+  const first = runGit(['push', '-u', 'origin', branch], { cwd: root, check: false, timeout: GIT_PUSH_TIMEOUT_MS });
+  if (first.status === 0) return;
+  if (!gitTimedOut(first)) {
+    throw new Error((first.stderr || first.stdout || 'git push failed').trim());
+  }
+  const httpsUrl = originHttpsUrl(root);
+  if (!httpsUrl) {
+    throw new Error(`git push origin ${branch} timed out after ${GIT_PUSH_TIMEOUT_MS}ms (likely a blocked SSH port) and origin has no HTTPS form to retry`);
+  }
+  console.log(`push: timed out, retrying ${httpsUrl}`);
+  const retry = runGit(['push', '-u', httpsUrl, branch], { cwd: root, check: false, timeout: GIT_PUSH_TIMEOUT_MS });
+  if (retry.status !== 0) {
+    throw new Error((retry.stderr || retry.stdout || `git push ${httpsUrl} ${branch} failed`).trim());
+  }
+}
+
 function runCommand(command, { cwd = process.cwd(), check = true } = {}) {
   const result = spawnSync(command, {
     cwd,
@@ -921,7 +954,7 @@ function shipWorktree(args) {
   }
 
   console.log(`push: origin ${branch}`);
-  if (!dryRun) runGit(['push', '-u', 'origin', branch], { cwd: root });
+  if (!dryRun) pushBranchWithFallback(root, branch);
 
   if (!noPr || merge) {
     const title = message || branch;
@@ -942,7 +975,7 @@ function shipWorktree(args) {
           throw new Error(`gh pr merge reported the PR was already merged (stale PR reused): ${(merged.stdout || merged.stderr).trim()}`);
         }
         console.log('merge: merged');
-        const deleted = runGit(['push', 'origin', '--delete', branch], { cwd: root, check: false });
+        const deleted = runGit(['push', 'origin', '--delete', branch], { cwd: root, check: false, timeout: GIT_PUSH_TIMEOUT_MS });
         if (deleted.status === 0) {
           console.log(`merge: remote branch deleted ${branch}`);
         } else {
