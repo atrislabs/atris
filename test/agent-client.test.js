@@ -32,6 +32,12 @@ function agentJwt(n) {
   return jwt({ type: 'agent_access', n, exp: Math.floor(Date.now() / 1000) + 3600 });
 }
 
+// Which minted token this is. The exp claim moves with the clock, so tests
+// compare the counter, never the whole string.
+function tokenNumber(token) {
+  return JSON.parse(Buffer.from(String(token).split('.')[1], 'base64url').toString()).n;
+}
+
 function humanJwt() {
   return jwt({ sub: 'user-1', exp: Math.floor(Date.now() / 1000) + 3600 });
 }
@@ -314,7 +320,7 @@ test('atris login --client-id --client-secret-file stores a 0600 reference, cach
 
     const cachePath = path.join(home, '.atris', 'agent-clients', `${CLIENT_ID}.token.json`);
     const cache = JSON.parse(fs.readFileSync(cachePath, 'utf8'));
-    assert.equal(cache.access_token, agentJwt(1));
+    assert.equal(tokenNumber(cache.access_token), 1);
     assert.ok(Date.parse(cache.expires_at) > Date.now() + 800 * 1000);
     assert.equal(mode(cachePath), 0o600);
     assert.ok(fs.existsSync(path.join(home, '.atris', 'profiles', 'owner.json')), 'human login kept as a profile');
@@ -430,7 +436,7 @@ test('bare atris login with env set signs the agent in, no browser, and says whe
     // After that one login, a command that only reads the saved login sees the token.
     await withEnv({ HOME: home, ATRIS_CLIENT_ID: CLIENT_ID, ATRIS_CLIENT_SECRET: SECRET }, () => {
       const { auth } = freshModules();
-      assert.equal(auth.loadCredentials().token, agentJwt(1));
+      assert.equal(tokenNumber(auth.loadCredentials().token), 1);
     });
   } finally {
     server.close();
@@ -522,14 +528,14 @@ test('a token within 60 seconds of expiry is renewed before the call', async () 
 
       const ensured = await auth.ensureValidCredentials(api.apiRequestJson);
       assert.equal(ensured.source, 'agent_client');
-      assert.equal(ensured.credentials.token, agentJwt(101));
+      assert.equal(tokenNumber(ensured.credentials.token), 101);
       assert.equal(counter.n, 101);
 
       // A caller still holding the old cached token: the shared helper renews too.
       setupAgentClientLogin(home, secretFile, { token: oldToken, expiresAt: Date.now() + 10 * 1000 });
       const res = await api.apiRequestJson('/ping', { token: oldToken });
       assert.equal(res.ok, true);
-      assert.equal(seen.pop(), `Bearer ${agentJwt(102)}`);
+      assert.equal(tokenNumber(seen.pop().replace(/^Bearer /, '')), 102);
 
       // Far from expiry: no token request.
       const before = counter.n;
