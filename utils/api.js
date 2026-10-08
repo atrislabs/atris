@@ -118,11 +118,21 @@ function httpRequest(urlString, options) {
   });
 }
 
+// Agent client tokens are short and renewed by asking again with the secret.
+// Loaded lazily: ./agent-client requires this file.
+function agentClientRenewal() {
+  return require('./agent-client');
+}
+
 async function apiRequestJson(pathname, options = {}) {
   const url = buildApiUrl(pathname);
   const headers = { ...(options.headers || {}) };
-  if (options.token) {
-    headers.Authorization = `Bearer ${options.token}`;
+  let authToken = options.token;
+  if (authToken) {
+    // Renew first if this is the active agent client's token and it is
+    // missing or within 60 seconds of expiry. Any other token is untouched.
+    authToken = await agentClientRenewal().freshTokenFor(authToken);
+    headers.Authorization = `Bearer ${authToken}`;
   }
   if (!headers['User-Agent'] && !headers['user-agent']) {
     headers['User-Agent'] = DEFAULT_USER_AGENT;
@@ -166,6 +176,14 @@ async function apiRequestJson(pathname, options = {}) {
       }
 
       const ok = result.status >= 200 && result.status < 300;
+
+      // A 401 on an agent client token: fetch a new token once, retry once.
+      if (result.status === 401 && authToken && !options.agentClientRetried) {
+        const renewed = await agentClientRenewal().tokenAfterUnauthorized(authToken);
+        if (renewed) {
+          return apiRequestJson(pathname, { ...options, token: renewed, agentClientRetried: true });
+        }
+      }
 
       // Retry on transient server errors
       if (!ok && retryableStatus.has(result.status) && attempt < maxRetries) {

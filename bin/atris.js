@@ -717,6 +717,7 @@ function showHelpAll() {
   console.log('  balance    - Show credit balance in dollars');
   console.log('  usage      - Show developer API usage');
   console.log('  api-key    - Create, list, rotate, or revoke a developer API key');
+  console.log('  agent-client - Let an agent sign itself in: create, list, revoke, rotate (secret shown once)');
   console.log('  topup      - Buy credits and print a Stripe checkout URL');
   console.log('  buy        - Quote a purchase or stock order; the person approves before anything is charged');
   console.log('  transactions - List what you bought, paid in fees, traded, or sent');
@@ -983,7 +984,7 @@ function showReleaseHelp() {
 
 function showAuthHelp(commandName) {
   const usage = {
-    login: 'Usage: atris login [--token <token>] [--force] [--agent]',
+    login: 'Usage: atris login [--token <token>] [--force] [--agent] [--client-id <atc_...> --client-secret-file <path>]',
     logout: 'Usage: atris logout',
     whoami: 'Usage: atris whoami [--json]',
     switch: 'Usage: atris switch [account] [--global]',
@@ -997,6 +998,8 @@ function showAuthHelp(commandName) {
   if (commandName === 'login') {
     console.log('  Sign in with browser OAuth or a pasted API token.');
     console.log('  --agent mints a scoped agent token from stored credentials. No browser.');
+    console.log('  --client-id signs an agent in by itself with an agent client (see atris agent-client).');
+    console.log('  The token renews on its own; the secret is never printed.');
   } else if (commandName === 'logout') {
     console.log('  Sign out of the current Atris account.');
   } else if (commandName === 'whoami') {
@@ -1019,6 +1022,10 @@ function showAuthHelp(commandName) {
     console.log('  --commerce                Commerce key: scopes commerce:quote,transactions:read. Can quote, never pay.');
     console.log('  --commerce-max-usd <n>    Largest single quote a commerce key may ask for, 1 to 500 (default: 200).');
     console.log('  --print-key               Print the minted key once, for an agent on another machine.');
+    console.log('  --client-id <atc_...>     Sign in as an agent client (no browser, no person).');
+    console.log('  --client-secret-file <p>  File holding the agent client secret (chmod 600).');
+    console.log('  --scope "a b"             Ask for fewer scopes than the client has.');
+    console.log('  Or set ATRIS_CLIENT_ID plus ATRIS_CLIENT_SECRET_FILE or ATRIS_CLIENT_SECRET, then run atris login once.');
   } else if (commandName === 'switch') {
     console.log('  --global, -g     Switch the account for all terminals.');
   }
@@ -2395,6 +2402,11 @@ if (command === 'guide') {
   Promise.resolve(require('../commands/usage').usageCommand(process.argv.slice(3)))
     .then((code) => process.exit(typeof code === 'number' ? code : 0))
     .catch((err) => { console.error(String(err.message || err).replace(/\s+/g, ' ')); process.exit(1); });
+} else if (command === 'agent-client') {
+  // Owner side of agent self-login: create, list, revoke, rotate agent clients.
+  Promise.resolve(require('../commands/agent-client').agentClientCommand(process.argv.slice(3)))
+    .then((code) => process.exit(typeof code === 'number' ? code : 0))
+    .catch((err) => { console.error(require('../utils/agent-client').scrub(err && err.message, [])); process.exit(1); });
 } else if (command === 'api-key') {
   Promise.resolve(require('../commands/api-key').apiKeyCommand(process.argv.slice(3)))
     .then((code) => process.exit(typeof code === 'number' ? code : 0))
