@@ -173,6 +173,31 @@ No proof, no AgentXP. `atris task done --proof` records review/RL context, but
 only human `atris task accept` mints Career XP for the local card or hosted
 leaderboard.
 
+## Agents That Sign In On Their Own
+
+`atris login` signs a person in. An agent can sign itself in with an agent
+client, so no one has to hand it a login token.
+
+The owner makes the client once. The secret is shown one time, or written to a
+private file with `--secret-file`:
+
+```bash
+atris agent-client create --name nightly-bot --scopes mcp:read,x-search --secret-file ./bot.secret
+atris agent-client list
+atris agent-client rotate <client_id>
+atris agent-client revoke <client_id>
+```
+
+The agent signs in with the id and the secret file. Its short token renews on
+its own; the secret and token are never printed:
+
+```bash
+atris login --client-id atc_... --client-secret-file ./bot.secret
+```
+
+Or skip the login step and set `ATRIS_CLIENT_ID` plus `ATRIS_CLIENT_SECRET_FILE`
+(or `ATRIS_CLIENT_SECRET`). `ATRIS_TOKEN`, when set, still wins.
+
 ## Business Owners
 
 If you want a shared owner for a company, lab, collective, community, artist, team, or project, use the business command instead of raw `atris init`.

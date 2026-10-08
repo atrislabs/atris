@@ -1,7 +1,8 @@
-const { AGENT_TOKEN_EXPIRED_DETAIL, decodeJwtClaims, loadCredentials, saveCredentials, deleteCredentials, getCredentialsPath, openBrowser, promptUser, displayAccountSummary, ensureValidCredentials, loadProfile, listProfiles, profileNameFromEmail, deleteProfile, saveProfile, getTokenExpiryEpochSeconds, getTerminalSessionId, setSessionProfile, getSessionProfile, clearSessionProfile, cleanStaleSessions, getSessionsDir } = require('../utils/auth');
+const { AGENT_TOKEN_EXPIRED_DETAIL, decodeJwtClaims, loadCredentials, saveCredentials, saveAgentClientCredentials, deleteCredentials, getCredentialsPath, openBrowser, promptUser, displayAccountSummary, ensureValidCredentials, loadProfile, listProfiles, profileNameFromEmail, deleteProfile, saveProfile, getTokenExpiryEpochSeconds, getTerminalSessionId, setSessionProfile, getSessionProfile, clearSessionProfile, cleanStaleSessions, getSessionsDir } = require('../utils/auth');
 const { getAppBaseUrl, apiRequestJson } = require('../utils/api');
 const { isNonInteractive, wantsJson } = require('../lib/noninteractive');
 const { hasFlag, readFlag } = require('../lib/arg-parser');
+const agentClient = require('../utils/agent-client');
 const fs = require('fs');
 const path = require('path');
 
@@ -128,7 +129,8 @@ function isAgentAccessToken(token) {
 function scopedTokenCandidate(credentials = {}) {
   if (credentials.agent_token) return credentials.agent_token;
   if (
-    credentials.source === 'env'
+    credentials.source === agentClient.AUTH_TYPE
+    || credentials.source === 'env'
     || credentials.source === 'agent_token_file'
     || isAgentAccessToken(credentials.token)
   ) {
@@ -290,9 +292,14 @@ async function ensureBilledCommandAuth(scope, deps = {}) {
   const scopes = claims?.scopes || credentials.agent_token_scopes || credentials.scopes || [];
   const expiry = claims?.exp
     ? claims.exp * 1000
-    : Date.parse(credentials.agent_token_expires_at || credentials.expires_at);
+    : Date.parse(credentials.agent_token_expires_at || credentials.expires_at || credentials.token_expires_at);
   if (!deps.forceMint && candidate && Array.isArray(scopes) && scopes.includes(wanted) && Number.isFinite(expiry) && expiry > Date.now()) {
     return { ok: true, token: candidate, minted: false, credentials };
+  }
+
+  if (credentials.source === agentClient.AUTH_TYPE) {
+    // An agent client cannot mint itself more scope; the owner grants it.
+    return { ok: false, error: `this agent client does not have the ${wanted} scope. ask its owner to create one that does.` };
   }
 
   if (!canMintFromLogin(credentials)) {
@@ -382,6 +389,26 @@ async function mintAgentToken(args = [], deps = {}) {
 
 async function printWhoamiPayload(asJson) {
   const ensured = await ensureValidCredentials(apiRequestJson);
+  if (!ensured.error && ensured.source === 'agent_client') {
+    const creds = ensured.credentials || {};
+    const payload = {
+      ok: true,
+      logged_in: true,
+      auth_type: agentClient.AUTH_TYPE,
+      client_id: creds.client_id,
+      scopes: creds.scopes || [],
+      token_expires_at: creds.token_expires_at || null,
+    };
+    if (asJson) {
+      console.log(JSON.stringify(payload, null, 2));
+    } else {
+      console.log('Status: Logged in ✓ (agent client)');
+      console.log(`Client ID: ${payload.client_id}`);
+      console.log(`Scopes: ${payload.scopes.length ? payload.scopes.join(', ') : 'unknown'}`);
+      if (payload.token_expires_at) console.log(`Token renews before: ${payload.token_expires_at}`);
+    }
+    process.exit(0);
+  }
   if (ensured.error) {
     if (!asJson && ensured.detail === AGENT_TOKEN_EXPIRED_DETAIL) {
       console.error('the agent key expired.');
@@ -430,6 +457,136 @@ async function printWhoamiPayload(asJson) {
   process.exit(0);
 }
 
+function flagPresent(args, name) {
+  return args.some((arg) => arg === name || String(arg).startsWith(`${name}=`));
+}
+
+function envValue(env, name) {
+  return typeof env[name] === 'string' ? env[name].trim() : '';
+}
+
+// Decide whether this `atris login` is an agent client sign-in. Returns null
+// for every other login path so those stay exactly as they were.
+function agentClientLoginRequest(args = [], env = process.env) {
+  if (flagPresent(args, '--client-secret')) {
+    return { error: 'do not put the secret on the command line. use --client-secret-file <path> or ATRIS_CLIENT_SECRET.' };
+  }
+  const usesFlags = flagPresent(args, '--client-id') || flagPresent(args, '--client-secret-file');
+  const envId = envValue(env, 'ATRIS_CLIENT_ID');
+  if (!usesFlags && (!envId || flagPresent(args, '--token') || wantsAgentToken(args))) return null;
+  const clientId = readFlag(args, '--client-id', '') || envId;
+  if (!clientId) return { error: '--client-id needs a client id (atc_...)' };
+  if (!clientId.startsWith(agentClient.CLIENT_ID_PREFIX)) {
+    return { error: `client ids start with ${agentClient.CLIENT_ID_PREFIX}` };
+  }
+  const flagFile = readFlag(args, '--client-secret-file', '');
+  if (flagPresent(args, '--client-secret-file') && !flagFile) {
+    return { error: '--client-secret-file needs a path' };
+  }
+  const secretFile = flagFile || envValue(env, 'ATRIS_CLIENT_SECRET_FILE');
+  if (!secretFile && !envValue(env, 'ATRIS_CLIENT_SECRET')) {
+    return { error: 'no client secret. pass --client-secret-file <path>, or set ATRIS_CLIENT_SECRET_FILE or ATRIS_CLIENT_SECRET.' };
+  }
+  return {
+    clientId,
+    secretFile: secretFile ? path.resolve(secretFile) : null,
+    scope: agentClient.scopeList(readFlag(args, '--scope', '') || readFlag(args, '--scopes', '')).join(' ') || null,
+  };
+}
+
+// Keep the person's own login reachable with `atris switch` after the agent
+// client takes over credentials.json.
+function keepHumanLoginAsProfile() {
+  try {
+    const stored = JSON.parse(fs.readFileSync(getCredentialsPath(), 'utf8'));
+    if (!stored || agentClient.isAgentClientCredential(stored) || !stored.token) return null;
+    const name = profileNameFromEmail(stored.email);
+    if (!name) return null;
+    if (!loadProfile(name)) saveProfile(name, stored);
+    return name;
+  } catch {
+    return null;
+  }
+}
+
+async function loginAgentClient(request, deps = {}) {
+  const env = deps.env || process.env;
+  const json = Boolean(deps.json);
+  const output = deps.output || console.log;
+  const outputError = deps.outputError || console.error;
+  const fail = (message, code) => {
+    if (json) output(JSON.stringify({ ok: false, logged_in: false, error: code || 'agent_client_login_failed', detail: message }, null, 2));
+    else outputError(message);
+    return 1;
+  };
+
+  const warnings = [];
+  if (request.secretFile) {
+    let stat;
+    try {
+      stat = fs.statSync(request.secretFile);
+    } catch (error) {
+      return fail(`could not read the client secret file ${request.secretFile}${error.code ? ` (${error.code})` : ''}`, 'secret_missing');
+    }
+    if (!stat.isFile()) return fail(`${request.secretFile} is not a file`, 'secret_missing');
+    if (process.platform !== 'win32' && (stat.mode & 0o077)) {
+      warnings.push(`other users on this machine can read ${request.secretFile}. run: chmod 600 ${request.secretFile}`);
+    }
+  }
+
+  const pending = {
+    auth_type: agentClient.AUTH_TYPE,
+    client_id: request.clientId,
+    client_secret_file: request.secretFile,
+    client_secret_env: request.secretFile ? null : 'ATRIS_CLIENT_SECRET',
+    scope: request.scope,
+  };
+
+  let secret;
+  let entry;
+  try {
+    secret = agentClient.readClientSecret(pending, env);
+    entry = await agentClient.requestClientToken({ clientId: request.clientId, secret, scope: request.scope }, deps);
+  } catch (error) {
+    return fail(agentClient.scrub(error && error.message, [secret]), error && error.code);
+  }
+
+  let secretFile = request.secretFile;
+  if (!secretFile) {
+    // The secret came from ATRIS_CLIENT_SECRET. Keep a private copy so later
+    // commands can renew without the variable.
+    secretFile = agentClient.managedSecretPath(request.clientId);
+    agentClient.writeFileAtomic(secretFile, `${secret}\n`);
+  }
+
+  const keptProfile = keepHumanLoginAsProfile();
+  saveAgentClientCredentials({ client_id: request.clientId, client_secret_file: secretFile, scope: request.scope });
+  agentClient.writeTokenCache(request.clientId, entry);
+
+  const scopes = agentClient.scopeList(entry.scope);
+  if (envValue(env, 'ATRIS_TOKEN')) {
+    warnings.push('ATRIS_TOKEN is set in this shell and takes priority. unset it to use the agent client.');
+  }
+  if (json) {
+    output(JSON.stringify({
+      ok: true,
+      logged_in: true,
+      auth_type: agentClient.AUTH_TYPE,
+      client_id: request.clientId,
+      scopes,
+      token_expires_at: entry.expires_at,
+      warnings,
+    }, null, 2));
+    return 0;
+  }
+  output(`signed in as agent client ${request.clientId}`);
+  output(`scopes: ${scopes.length ? scopes.join(', ') : 'all granted to this client'}`);
+  output('the token renews on its own before it runs out.');
+  if (keptProfile) output(`your own login is saved. switch back: atris switch ${keptProfile}`);
+  warnings.forEach((line) => outputError(line));
+  return 0;
+}
+
 async function loginAtris(options = {}) {
   // Support: atris login --token <token> --force
   const args = process.argv.slice(3);
@@ -440,6 +597,16 @@ async function loginAtris(options = {}) {
   const nonInteractive = isNonInteractive(args);
 
   try {
+    const clientLogin = agentClientLoginRequest(args, process.env);
+    if (clientLogin) {
+      if (clientLogin.error) {
+        if (asJson) console.log(JSON.stringify({ ok: false, logged_in: false, error: clientLogin.error }, null, 2));
+        else console.error(clientLogin.error);
+        process.exit(1);
+      }
+      process.exit(await loginAgentClient(clientLogin, { json: asJson }));
+    }
+
     const existing = loadCredentials();
 
     if (wantsAgentToken(args)) {
@@ -487,12 +654,13 @@ async function loginAtris(options = {}) {
           email,
           user_id: userId,
           provider,
+          ...(existing.client_id ? { auth_type: agentClient.AUTH_TYPE, client_id: existing.client_id } : {}),
           credentials_saved: existing.saved_at || null,
           next: 'atris whoami --json',
         }, null, 2));
         process.exit(0);
       }
-      console.log(`Currently signed in as: ${email || userId || 'unknown'}`);
+      console.log(`Currently signed in as: ${email || userId || (existing.client_id ? `agent client ${existing.client_id}` : 'unknown')}`);
       if (provider) console.log(`Provider: ${provider}`);
       console.log('Next: atris whoami');
       process.exit(0);
@@ -608,11 +776,17 @@ function logoutAtris() {
     process.exit(0);
   }
 
+  if (credentials.from_env) {
+    console.log(`This agent client (${credentials.client_id}) comes from ATRIS_CLIENT_ID in your environment.`);
+    console.log('Unset ATRIS_CLIENT_ID to sign it out.');
+    process.exit(0);
+  }
+
   const profiles = listProfiles();
   const currentName = profileNameFromEmail(credentials?.email);
 
   deleteCredentials();
-  console.log(`✓ Signed out from ${credentials.email || 'current account'}`);
+  console.log(`✓ Signed out from ${credentials.email || (credentials.client_id ? `agent client ${credentials.client_id}` : 'current account')}`);
 
   // Remind about other profiles
   const remaining = profiles.filter(p => p !== currentName);
@@ -1087,4 +1261,5 @@ module.exports = {
   persistMintedAgentToken,
   ensureBilledCommandAuth,
   wantsAgentToken,
+  agentClientLoginRequest,
 };

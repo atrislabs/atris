@@ -4,6 +4,7 @@ const { stateHome } = require('../lib/state-home');
 const fs = require('fs');
 const { exec } = require('child_process');
 const readline = require('readline');
+const agentClient = require('./agent-client');
 
 /**
  * Open a URL in the system's default browser.
@@ -436,6 +437,11 @@ function saveCredentials(token, refreshToken, email, userId, provider, extras = 
 // Supplying the auth client enables asynchronous repair. Local-only readers stay synchronous.
 function loadCredentials(apiRequestJson) {
   const credentials = readCredentials();
+  if (agentClient.isAgentClientCredential(credentials)) {
+    // Given the API helper, renew a missing or nearly expired token first.
+    if (!apiRequestJson || !agentClient.needsRenewal(credentials)) return credentials;
+    return agentClient.ensureAgentClientToken(credentials).catch(() => credentials);
+  }
   if (!credentials || credentials.source || decodeJwtClaims(credentials.token)?.type !== 'agent_access') {
     return credentials;
   }
@@ -502,6 +508,13 @@ function readCredentials() {
     return { token: normalizedEnvToken, provider: null, source: 'env' };
   }
 
+  // 0b. Agent client named by env (ATRIS_CLIENT_ID + secret). ATRIS_TOKEN
+  //     above still wins, so boxes that inject a raw token are unchanged.
+  const envClient = agentClient.envAgentClient();
+  if (envClient) {
+    return agentClient.withCachedToken(envClient);
+  }
+
   // 1. Backend-placed key for per-user cloud computers. Missing, malformed,
   //    incomplete, and expired files are ignored so later sources keep their
   //    existing order.
@@ -542,6 +555,10 @@ function readCredentials() {
   try {
     const data = fs.readFileSync(credentialsPath, 'utf8');
     const parsed = JSON.parse(data);
+    if (agentClient.isAgentClientCredential(parsed)) {
+      // Saved by `atris login --client-id`. The token lives in its own cache.
+      return agentClient.withCachedToken(parsed);
+    }
     if (!parsed.provider) {
       parsed.provider = null;
     }
@@ -554,8 +571,29 @@ function readCredentials() {
   }
 }
 
+// Save an agent client as the active login. The secret itself is never
+// written here, only the file that holds it. Atomic, owner-only.
+function saveAgentClientCredentials(record) {
+  const credentialsPath = getCredentialsPath();
+  agentClient.writeFileAtomic(credentialsPath, JSON.stringify({
+    auth_type: agentClient.AUTH_TYPE,
+    client_id: record.client_id,
+    client_secret_file: record.client_secret_file,
+    scope: record.scope || null,
+    provider: agentClient.AUTH_TYPE,
+    email: null,
+    user_id: null,
+    saved_at: new Date().toISOString(),
+  }, null, 2));
+}
+
 function deleteCredentials() {
   const credentialsPath = getCredentialsPath();
+
+  try {
+    const stored = JSON.parse(fs.readFileSync(credentialsPath, 'utf8'));
+    if (agentClient.isAgentClientCredential(stored)) agentClient.deleteAgentClientFiles(stored.client_id);
+  } catch {}
 
   if (fs.existsSync(credentialsPath)) {
     fs.unlinkSync(credentialsPath);
@@ -709,6 +747,14 @@ async function performTokenRefresh(credentials, apiRequestJson) {
 
 async function ensureValidCredentials(apiRequestJson, options = {}) {
   let credentials = await loadCredentials(apiRequestJson);
+  if (agentClient.isAgentClientCredential(credentials)) {
+    try {
+      const fresh = await agentClient.ensureAgentClientToken(credentials);
+      return { credentials: fresh, user: null, source: 'agent_client' };
+    } catch (error) {
+      return { error: 'token_invalid', detail: agentClient.scrub(error && error.message, []) };
+    }
+  }
   if (!credentials || !credentials.token) {
     return { error: 'not_logged_in' };
   }
@@ -860,7 +906,9 @@ module.exports = {
   shouldRefreshToken,
   getCredentialsPath,
   saveCredentials,
+  saveAgentClientCredentials,
   loadCredentials,
+  readActiveCredentials: readCredentials,
   deleteCredentials,
   openBrowser,
   promptUser,
