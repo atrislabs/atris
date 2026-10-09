@@ -14,16 +14,30 @@ function git(root, args) {
   return String(result.stdout || '').trim();
 }
 
-function initRepo() {
-  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'atris-worktree-retention-'));
-  git(root, ['init', '-q']);
+// <arena>/repo with a bare origin; copies go where launchers put them,
+// <arena>/.agent-worktrees/repo/<name>.
+function initArena() {
+  const arena = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'atris-worktree-retention-')));
+  const root = path.join(arena, 'repo');
+  const bare = path.join(arena, 'origin.git');
+  fs.mkdirSync(root);
+  git(arena, ['init', '-q', '--bare', bare]);
+  git(root, ['init', '-q', '-b', 'master']);
   git(root, ['config', 'user.email', 'test@example.com']);
   git(root, ['config', 'user.name', 'Test User']);
   fs.writeFileSync(path.join(root, 'README.md'), 'hello\n');
   fs.writeFileSync(path.join(root, '.gitignore'), '.derivedData/\n');
   git(root, ['add', 'README.md', '.gitignore']);
   git(root, ['commit', '-qm', 'init']);
-  return root;
+  git(root, ['remote', 'add', 'origin', bare]);
+  git(root, ['push', '-q', 'origin', 'master']);
+  return { arena, root };
+}
+
+function copyPath(arena, name) {
+  const wt = path.join(arena, '.agent-worktrees', 'repo', name);
+  fs.mkdirSync(path.dirname(wt), { recursive: true });
+  return wt;
 }
 
 function backdate(target, hours) {
@@ -31,109 +45,94 @@ function backdate(target, hours) {
   fs.utimesSync(target, stamp, stamp);
 }
 
-test('cleanup removes merged worktrees dirtied only by the agent output file', () => {
-  const root = initRepo();
-  const worktree = `${root}-merged-output`;
+const noPrs = () => ({ state: 'none', prs: [] });
+
+test('cleanup keeps a merged copy that still holds the agent output file', () => {
+  const { arena, root } = initArena();
   try {
-    git(root, ['worktree', 'add', '-q', '-b', 'merged-output', worktree, 'HEAD']);
-    const output = path.join(worktree, '.codex-last-message.txt');
-    fs.writeFileSync(output, 'finished\n');
-    backdate(output, 2);
+    const worktree = copyPath(arena, 'merged-output');
+    git(root, ['worktree', 'add', '-q', '-b', 'merged-output', worktree, 'origin/master']);
+    fs.writeFileSync(path.join(worktree, '.codex-last-message.txt'), 'finished\n');
     backdate(worktree, 2);
 
-    const dryRun = cleanupWorktrees({ root, base: 'HEAD' });
-    assert.equal(dryRun.candidates.length, 1);
-    assert.equal(dryRun.candidates[0].artifact_only_dirty, true);
-
-    const applied = cleanupWorktrees({ root, base: 'HEAD', apply: true });
-    assert.equal(applied.removed.length, 1);
-    assert.equal(fs.existsSync(worktree), false);
-    assert.equal(git(root, ['show-ref', '--verify', '--hash', 'refs/heads/merged-output']).length > 0, true);
+    const applied = cleanupWorktrees({ root, apply: true, activeCwds: [], prLookup: noPrs });
+    assert.equal(applied.removed.length, 0);
+    assert.equal(applied.kept[0].reason, 'untracked_files');
+    assert.equal(fs.existsSync(path.join(worktree, '.codex-last-message.txt')), true);
   } finally {
-    spawnSync('git', ['worktree', 'remove', '--force', worktree], { cwd: root });
-    fs.rmSync(root, { recursive: true, force: true });
+    fs.rmSync(arena, { recursive: true, force: true });
   }
 });
 
-test('cleanup expires a completed clean unmerged checkout but preserves its branch', () => {
-  const root = initRepo();
-  const worktree = `${root}-unmerged-output`;
+test('cleanup never expires a finished copy whose work has not landed', () => {
+  const { arena, root } = initArena();
   try {
-    git(root, ['worktree', 'add', '-q', '-b', 'unmerged-output', worktree, 'HEAD']);
+    const worktree = copyPath(arena, 'unmerged-output');
+    git(root, ['worktree', 'add', '-q', '-b', 'unmerged-output', worktree, 'origin/master']);
     fs.writeFileSync(path.join(worktree, 'work.txt'), 'kept in branch\n');
     git(worktree, ['add', 'work.txt']);
     git(worktree, ['commit', '-qm', 'unmerged work']);
-    const output = path.join(worktree, '.codex-last-message.txt');
-    fs.writeFileSync(output, 'finished\n');
-    backdate(output, 2);
+    backdate(worktree, 5);
 
-    const applied = cleanupWorktrees({ root, base: 'HEAD', apply: true });
-    assert.equal(applied.removed.length, 1);
-    assert.equal(applied.removed[0].reason, 'completed_unmerged_checkout_expired');
-    assert.equal(applied.removed[0].branch_preserved, true);
-    assert.equal(fs.existsSync(worktree), false);
-    assert.equal(git(root, ['show-ref', '--verify', '--hash', 'refs/heads/unmerged-output']).length > 0, true);
+    const applied = cleanupWorktrees({ root, apply: true, activeCwds: [], prLookup: noPrs });
+    assert.equal(applied.removed.length, 0);
+    assert.equal(applied.kept[0].reason, 'not_on_github');
+    assert.equal(fs.existsSync(worktree), true);
   } finally {
-    spawnSync('git', ['worktree', 'remove', '--force', worktree], { cwd: root });
-    fs.rmSync(root, { recursive: true, force: true });
+    fs.rmSync(arena, { recursive: true, force: true });
   }
 });
 
 test('cleanup never removes an old merged worktree with a live process cwd', () => {
-  const root = initRepo();
-  const worktree = `${root}-active`;
+  const { arena, root } = initArena();
   try {
-    git(root, ['worktree', 'add', '-q', '-b', 'active-worktree', worktree, 'HEAD']);
+    const worktree = copyPath(arena, 'active');
+    git(root, ['worktree', 'add', '-q', '-b', 'active-worktree', worktree, 'origin/master']);
     backdate(worktree, 2);
 
-    const applied = cleanupWorktrees({ root, base: 'HEAD', apply: true, activeCwds: [worktree] });
+    const applied = cleanupWorktrees({ root, apply: true, activeCwds: [worktree], prLookup: noPrs });
     assert.equal(applied.removed.length, 0);
     assert.equal(applied.kept.some((item) => item.reason === 'active_process'), true);
     assert.equal(fs.existsSync(worktree), true);
   } finally {
-    spawnSync('git', ['worktree', 'remove', '--force', worktree], { cwd: root });
-    fs.rmSync(root, { recursive: true, force: true });
+    fs.rmSync(arena, { recursive: true, force: true });
   }
 });
 
-test('starting a worktree reaps completed checkout debt before creating another copy', () => {
-  const root = initRepo();
-  const oldWorktree = `${root}-old`;
+test('starting a worktree puts a finished copy away before creating another', () => {
+  const { arena, root } = initArena();
   let created;
   try {
-    git(root, ['worktree', 'add', '-q', '-b', 'old-worktree', oldWorktree, 'HEAD']);
+    const oldWorktree = copyPath(arena, 'old');
+    git(root, ['worktree', 'add', '-q', '-b', 'old-worktree', oldWorktree, 'origin/master']);
     backdate(oldWorktree, 2);
-
+    // Nothing else may be open in the old copy for it to go; no test process is.
     created = createAgentWorktree({ root, agent: 'tester', task: 'new worktree' });
     assert.equal(created.reapedBeforeStart.length, 1);
     assert.equal(fs.existsSync(oldWorktree), false);
     assert.equal(fs.existsSync(created.path), true);
   } finally {
-    if (created) spawnSync('git', ['worktree', 'remove', '--force', created.path], { cwd: root });
-    spawnSync('git', ['worktree', 'remove', '--force', oldWorktree], { cwd: root });
-    fs.rmSync(root, { recursive: true, force: true });
+    fs.rmSync(arena, { recursive: true, force: true });
   }
 });
 
-test('cleanup prunes ignored build caches from old dirty worktrees without touching source changes', () => {
-  const root = initRepo();
-  const worktree = `${root}-dirty-cache`;
+test('cleanup never deletes cache folders inside a copy it keeps', () => {
+  const { arena, root } = initArena();
   try {
-    git(root, ['worktree', 'add', '-q', '-b', 'dirty-cache', worktree, 'HEAD']);
+    const worktree = copyPath(arena, 'dirty-cache');
+    git(root, ['worktree', 'add', '-q', '-b', 'dirty-cache', worktree, 'origin/master']);
     fs.writeFileSync(path.join(worktree, 'README.md'), 'real source change\n');
     const cache = path.join(worktree, '.derivedData');
     fs.mkdirSync(cache, { recursive: true });
     fs.writeFileSync(path.join(cache, 'cache.bin'), 'generated\n');
     backdate(worktree, 2);
 
-    const applied = cleanupWorktrees({ root, base: 'HEAD', apply: true, activeCwds: [] });
+    const applied = cleanupWorktrees({ root, apply: true, activeCwds: [], prLookup: noPrs });
     assert.equal(applied.removed.length, 0);
-    assert.equal(applied.cachePruned.length, 1);
-    assert.equal(fs.existsSync(cache), false);
+    assert.equal(fs.existsSync(path.join(cache, 'cache.bin')), true);
     assert.equal(fs.readFileSync(path.join(worktree, 'README.md'), 'utf8'), 'real source change\n');
-    assert.equal(applied.kept.some((item) => item.reason === 'dirty'), true);
+    assert.equal(applied.kept[0].reason, 'uncommitted_changes');
   } finally {
-    spawnSync('git', ['worktree', 'remove', '--force', worktree], { cwd: root });
-    fs.rmSync(root, { recursive: true, force: true });
+    fs.rmSync(arena, { recursive: true, force: true });
   }
 });

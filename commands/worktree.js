@@ -7,6 +7,7 @@ const { hasFlag, readFlag } = require('../lib/arg-parser');
 const { stampLatestOpenBriefForWorktree } = require('../lib/brief-ledger');
 const { isConductorArtifact } = require('../lib/conductor-artifacts');
 const { fixMapDocs } = require('../lib/map-refs');
+const reaper = require('../lib/worktree-reaper');
 const close = require('./close');
 
 const REGEN_ADAPTER_FILES = ['AGENTS.md', 'CLAUDE.md', 'GEMINI.md'];
@@ -140,7 +141,10 @@ function parseWorktrees(text) {
         let branch = current.branch || 'detached';
         branch = branch.replace(/^refs\/heads\//, '');
         const item = { path: current.worktree, branch, head: current.HEAD || '' };
-        if (current.locked) item.locked = true;
+        if (current.locked) {
+          item.locked = true;
+          if (typeof current.locked === 'string') item.lock_reason = current.locked;
+        }
         if (current.prunable) item.prunable = true;
         out.push(item);
       }
@@ -351,7 +355,7 @@ function defaultShipTarget(root) {
 function refreshRemoteRef(root, ref) {
   if (!ref.startsWith('origin/')) return;
   const remoteBranch = ref.slice('origin/'.length);
-  runGit(['fetch', 'origin', remoteBranch], { cwd: root, check: false });
+  runGit(['fetch', 'origin', remoteBranch], { cwd: root, check: false, timeout: 60 * 1000 });
 }
 
 function baseBranchName(ref) {
@@ -465,15 +469,15 @@ function printStatus() {
 function createAgentWorktree({ root = repoRoot(), member = '', agent = '', task, branch: branchOverride, path: pathOverride, base: baseOverride, now = new Date() } = {}) {
   const owner = member || agent;
   if (!owner || !task) throw new Error('createAgentWorktree: owner (member/agent) and task required');
-  // Every new flight pays down completed checkout debt before adding another
-  // full repo copy. Branches and commits survive worktree removal, while real
-  // uncommitted changes remain protected by cleanupWorktrees.
+  // Every new flight puts this repo's finished copies away before adding
+  // another full copy. Under 15 GB free that sweep runs first (up to a
+  // minute); under 5 GB, refuse.
+  assertDiskRoom(root);
   let reapedBeforeStart = [];
-  let cachePrunedBeforeStart = [];
   try {
-    const cleaned = cleanupWorktrees({ root, base: defaultMainlineBase(root), apply: true });
-    reapedBeforeStart = cleaned.removed;
-    cachePrunedBeforeStart = cleaned.cachePruned;
+    // GitHub is not asked here: a start must stay fast. Squash-merged copies
+    // are put away by the hourly sweep.
+    reapedBeforeStart = cleanupWorktrees({ root, apply: true, prLookup: false, deadline: Date.now() + 60 * 1000 }).removed;
   } catch {}
   const branch = branchOverride || branchName(owner, task, now);
   const target = path.resolve(pathOverride || defaultWorktreePath(root, owner, task, now));
@@ -507,7 +511,23 @@ function createAgentWorktree({ root = repoRoot(), member = '', agent = '', task,
     }, null, 2) + '\n',
     'utf8'
   );
-  return { path: target, branch, base: shipBase, checkoutBase, owner, reapedBeforeStart, cachePrunedBeforeStart };
+  return { path: target, branch, base: shipBase, checkoutBase, owner, reapedBeforeStart };
+}
+
+function primaryCheckout(root) {
+  try {
+    return listWorktrees(root)[0]?.path || root;
+  } catch {
+    return root;
+  }
+}
+
+function assertDiskRoom(root, { log = (line) => console.error(line) } = {}) {
+  const room = reaper.ensureDiskRoom({ target: root, repos: [primaryCheckout(root)], log });
+  if (room.ok) return room;
+  const error = new Error(room.message);
+  error.code = 'ATRIS_DISK_FULL';
+  throw error;
 }
 
 function startWorktree(args) {
@@ -563,9 +583,6 @@ function startWorktree(args) {
 
   if (created.reapedBeforeStart.length) {
     console.log(`cleanup: reaped ${created.reapedBeforeStart.length} completed ${created.reapedBeforeStart.length === 1 ? 'worktree' : 'worktrees'}`);
-  }
-  if (created.cachePrunedBeforeStart.length) {
-    console.log(`cleanup: pruned ${created.cachePrunedBeforeStart.length} generated ${created.cachePrunedBeforeStart.length === 1 ? 'cache' : 'caches'}`);
   }
 
   const counts = statusCounts(root);
@@ -996,201 +1013,75 @@ function prune(args) {
   return result.status || 0;
 }
 
-const PROTECTED_BRANCHES = new Set(['main', 'master']);
-
-// A worktree fresh off `worktree start` is merged into base by definition
-// (zero commits yet), so without a grace window the janitor reaps it while
-// the engine that requested it is still booting inside.
-const WORKTREE_REAP_GRACE_MS = 60 * 60 * 1000;
-const COMPLETED_UNMERGED_REAP_MS = WORKTREE_REAP_GRACE_MS;
-const GENERATED_WORKTREE_CACHE_DIRS = [
-  '.derivedData',
-  '.next',
-  '.swiftpm',
-  '.cache/swiftpm',
-  'node_modules/.cache',
-];
-
-function worktreeWithinReapGrace(worktreePath, now = Date.now()) {
-  try {
-    return now - fs.statSync(worktreePath).mtimeMs < WORKTREE_REAP_GRACE_MS;
-  } catch {
-    return false;
-  }
+let sharedPrLookup = null;
+function defaultPrLookup() {
+  if (!sharedPrLookup) sharedPrLookup = reaper.createPrLookup();
+  return sharedPrLookup;
 }
 
-function completedAgentOutputAgeMs(worktreePath, now = Date.now()) {
-  try {
-    const output = path.join(worktreePath, '.codex-last-message.txt');
-    return now - fs.statSync(output).mtimeMs;
-  } catch {
-    return null;
-  }
-}
-
-function canonicalPath(value) {
-  try {
-    return fs.realpathSync(value);
-  } catch {
-    return path.resolve(value);
-  }
-}
-
-function listActiveProcessCwds() {
-  const result = spawnSync('lsof', ['-n', '-a', '-d', 'cwd', '-F', 'n'], {
-    encoding: 'utf8',
-    maxBuffer: COMMAND_MAX_BUFFER_BYTES,
-  });
-  if (result.status !== 0) return [];
-  return String(result.stdout || '')
-    .split(/\r?\n/)
-    .filter((line) => line.startsWith('n'))
-    .map((line) => canonicalPath(line.slice(1)))
-    .filter(Boolean);
-}
-
-function worktreeHasActiveProcess(worktreePath, activeCwds) {
-  const resolved = canonicalPath(worktreePath);
-  const prefix = `${resolved}${path.sep}`;
-  return activeCwds.some((cwd) => {
-    const active = canonicalPath(cwd);
-    return active === resolved || active.startsWith(prefix);
+// Put away this repo's finished work copies. Every decision is the reaper's
+// one proof (lib/worktree-reaper.js provablySafeToRemove): a copy goes only
+// when it sits in a launcher folder, has no changes or files beyond caches,
+// every commit is in the main branch or on GitHub with its PR finished, and
+// nothing holds it. Any doubt keeps it. prLookup: false skips GitHub (a copy
+// not yet in the main branch is then kept).
+function cleanupWorktrees({
+  root = repoRoot(),
+  base = '',
+  apply = false,
+  activeCwds,
+  prLookup = null,
+  protectPaths = [],
+  beforeRemove = null,
+  ignoreGrace = false,
+  only = null,
+  roots = null,
+  deadline = 0,
+  runner = null,
+} = {}) {
+  return reaper.sweepRepo({
+    repo: root,
+    base: base ? normalizeTargetRef(root, base) : '',
+    apply,
+    openPaths: Array.isArray(activeCwds) ? activeCwds.map(reaper.canonicalPath) : undefined,
+    prLookup: prLookup === false ? false : (prLookup || defaultPrLookup()),
+    protectPaths,
+    beforeRemove,
+    ignoreGrace,
+    only,
+    roots,
+    deadline,
+    runner,
   });
 }
 
-function pruneGeneratedWorktreeCaches(worktreePath, { apply = false } = {}) {
-  const candidates = [];
-  const pruned = [];
-  for (const relative of GENERATED_WORKTREE_CACHE_DIRS) {
-    const target = path.join(worktreePath, relative);
-    if (!fs.existsSync(target)) continue;
-    const ignored = runGit(['check-ignore', '-q', '--', relative], { cwd: worktreePath, check: false });
-    if (ignored.status !== 0) continue;
-    const item = { worktree: worktreePath, path: target, relative };
-    candidates.push(item);
-    if (!apply) continue;
-    try {
-      fs.rmSync(target, { recursive: true, force: true });
-      pruned.push(item);
-    } catch (error) {
-      item.error = String((error && error.message) || error);
-    }
+// After atris lands a PR it created, put that copy away now instead of on
+// the next sweep. Same rules as every sweep, minus the fresh-copy grace: the
+// landing itself proves the copy is finished.
+function reapLandedWorktree(worktreePath, { root = '', activeCwds } = {}) {
+  if (!worktreePath || !fs.existsSync(worktreePath)) return { removed: false, reason: 'missing' };
+  let home = root;
+  if (!home) {
+    const common = runGit(['rev-parse', '--path-format=absolute', '--git-common-dir'], { cwd: worktreePath, check: false });
+    if (common.status !== 0) return { removed: false, reason: 'not_a_worktree' };
+    home = path.dirname(common.stdout.trim());
   }
-  return { candidates, pruned };
-}
-
-function cleanupWorktrees({ root = repoRoot(), base: baseOverride = '', apply = false, activeCwds: activeCwdsOverride } = {}) {
-  const worktrees = listWorktrees(root);
-  const primary = worktrees[0]?.path ? path.resolve(worktrees[0].path) : '';
-  const current = path.resolve(root);
-  const activeCwds = Array.isArray(activeCwdsOverride) ? activeCwdsOverride.map(canonicalPath) : listActiveProcessCwds();
-  const base = normalizeTargetRef(root, baseOverride || defaultShipTarget(root));
-  refreshRemoteRef(root, base);
-  const candidates = [];
-  const kept = [];
-  const removed = [];
-  const cacheCandidates = [];
-  const cachePruned = [];
-  const pruneCachesForKept = (wtPath) => {
-    if (worktreeWithinReapGrace(wtPath)) return;
-    const caches = pruneGeneratedWorktreeCaches(wtPath, { apply });
-    cacheCandidates.push(...caches.candidates);
-    cachePruned.push(...caches.pruned);
-  };
-
-  for (const wt of worktrees) {
-    const wtPath = path.resolve(wt.path);
-    const item = { path: wt.path, branch: wt.branch, head: wt.head };
-    if (wtPath === primary) {
-      kept.push({ ...item, reason: 'primary_checkout' });
-      continue;
+  try {
+    const result = cleanupWorktrees({
+      root: home,
+      apply: true,
+      ignoreGrace: true,
+      only: [worktreePath],
+      ...(activeCwds ? { activeCwds } : {}),
+    });
+    if (result.removed.length) {
+      return { removed: true, reason: result.removed[0].reason };
     }
-    if (wtPath === current) {
-      kept.push({ ...item, reason: 'current_checkout' });
-      continue;
-    }
-    if (wt.locked) {
-      kept.push({ ...item, reason: 'locked' });
-      continue;
-    }
-    if (PROTECTED_BRANCHES.has(wt.branch)) {
-      kept.push({ ...item, reason: 'protected_branch' });
-      continue;
-    }
-    if (worktreeHasActiveProcess(wtPath, activeCwds)) {
-      kept.push({ ...item, reason: 'active_process' });
-      continue;
-    }
-    const rawCounts = statusCounts(wt.path);
-    const counts = statusCounts(wt.path, { ignoreAny: isConductorArtifact });
-    if (!rawCounts || !counts) {
-      kept.push({ ...item, reason: 'missing_or_unreadable' });
-      continue;
-    }
-    if (counts.staged || counts.unstaged || counts.untracked) {
-      pruneCachesForKept(wtPath);
-      kept.push({ ...item, reason: 'dirty', staged: counts.staged, unstaged: counts.unstaged, untracked: counts.untracked });
-      continue;
-    }
-    if (!wt.head) {
-      pruneCachesForKept(wtPath);
-      kept.push({ ...item, reason: 'missing_head' });
-      continue;
-    }
-    const artifactOnlyDirty = Boolean(
-      (rawCounts.staged || rawCounts.unstaged || rawCounts.untracked)
-      && !(counts.staged || counts.unstaged || counts.untracked)
-    );
-    const merged = runGit(['merge-base', '--is-ancestor', wt.head, base], { cwd: root, check: false }).status === 0;
-    if (!merged) {
-      const completedAgeMs = completedAgentOutputAgeMs(wtPath);
-      if (completedAgeMs === null || completedAgeMs < COMPLETED_UNMERGED_REAP_MS) {
-        pruneCachesForKept(wtPath);
-        kept.push({
-          ...item,
-          reason: completedAgeMs === null ? 'unmerged' : 'completed_unmerged_retention',
-          ...(completedAgeMs === null ? {} : { retention_hours: 1 }),
-        });
-        continue;
-      }
-      const candidate = {
-        ...item,
-        reason: 'completed_unmerged_checkout_expired',
-        branch_preserved: true,
-        artifact_only_dirty: artifactOnlyDirty,
-      };
-      candidates.push(candidate);
-      if (!apply) continue;
-      const removeArgs = ['worktree', 'remove'];
-      if (artifactOnlyDirty) removeArgs.push('--force');
-      removeArgs.push(wt.path);
-      const removedResult = runGit(removeArgs, { cwd: root, check: false });
-      if (removedResult.status === 0) {
-        removed.push(candidate);
-      } else {
-        kept.push({ ...item, reason: 'remove_failed', error: (removedResult.stderr || removedResult.stdout || '').trim() });
-      }
-      continue;
-    }
-    if (worktreeWithinReapGrace(wtPath)) {
-      kept.push({ ...item, reason: 'fresh_worktree_grace' });
-      continue;
-    }
-    const candidate = { ...item, reason: 'merged_into_base', artifact_only_dirty: artifactOnlyDirty };
-    candidates.push(candidate);
-    if (!apply) continue;
-    const removeArgs = ['worktree', 'remove'];
-    if (artifactOnlyDirty) removeArgs.push('--force');
-    removeArgs.push(wt.path);
-    const removedResult = runGit(removeArgs, { cwd: root, check: false });
-    if (removedResult.status === 0) {
-      removed.push(candidate);
-    } else {
-      kept.push({ ...item, reason: 'remove_failed', error: (removedResult.stderr || removedResult.stdout || '').trim() });
-    }
+    const keptRow = result.kept.find((row) => reaper.canonicalPath(row.path) === reaper.canonicalPath(worktreePath));
+    return { removed: false, reason: keptRow ? keptRow.reason : 'not_found' };
+  } catch (error) {
+    return { removed: false, reason: 'error', error: String((error && error.message) || error).slice(0, 200) };
   }
-
-  return { apply, base, candidates, removed, kept, cacheCandidates, cachePruned };
 }
 
 function cleanup(args) {
@@ -1210,13 +1101,88 @@ function cleanup(args) {
   for (const item of result.apply ? result.removed : result.candidates) {
     console.log(`${action}: ${item.path} branch=${item.branch} reason=${item.reason}`);
   }
-  const cacheAction = result.apply ? 'cache_pruned' : 'cache_candidate';
-  console.log(`${cacheAction}s: ${result.apply ? result.cachePruned.length : result.cacheCandidates.length}`);
-  for (const item of result.apply ? result.cachePruned : result.cacheCandidates) {
-    console.log(`${cacheAction}: ${item.path}`);
-  }
   console.log(`kept: ${result.kept.length}`);
+  for (const item of result.kept) {
+    console.log(`kept: ${item.path} branch=${item.branch} reason=${item.reason}${item.detail ? ` (${item.detail})` : ''}`);
+  }
   if (!result.apply && result.candidates.length) console.log('next: atris worktree cleanup --apply');
+  return 0;
+}
+
+// atris worktree reap: one sweep over every repo under the arena (default
+// the arena folder, or --arena <dir>). Dry run by default: prints every work
+// copy with its size, verdict, and reason. --apply removes the ones proven
+// finished (the hourly launchd job runs this). --path <copy> judges one copy
+// only, for launchers outside this CLI. Branches are always kept.
+function reapCommand(args) {
+  const apply = hasFlag(args, '--apply');
+  const asJson = hasFlag(args, '--json');
+  const onePath = readFlag(args, '--path');
+  let arena = readFlag(args, '--arena') || reaper.arenaRoot();
+  let repos = null;
+  if (onePath) {
+    const common = runGit(['rev-parse', '--path-format=absolute', '--git-common-dir'], { cwd: onePath, check: false, timeout: 30 * 1000 });
+    if (common.status !== 0) {
+      console.error(`reap: ${onePath} is not a git work copy; nothing removed`);
+      return 1;
+    }
+    repos = [path.dirname(common.stdout.trim())];
+    arena = path.dirname(repos[0]);
+  }
+  const sizes = hasFlag(args, '--no-sizes') ? false : (apply && !hasFlag(args, '--sizes') ? 'removed' : 'all');
+  const report = reaper.reapArena({
+    arena: path.resolve(arena),
+    repos,
+    apply,
+    sizes,
+    ...(onePath ? { only: [onePath] } : {}),
+  });
+  if (asJson) {
+    console.log(JSON.stringify({ ok: report.errors.length === 0, ...report }, null, 2));
+    return 0;
+  }
+  const stamp = new Date().toISOString().replace(/\.\d+Z$/, 'Z');
+  console.log(`worktree reap ${apply ? 'applied' : 'dry run'} ${stamp} arena=${report.arena}`);
+  console.log(reaper.renderReapTable(report, { all: !apply || hasFlag(args, '--all') || Boolean(onePath) }));
+  if (!apply && report.removable) console.log(`next: atris worktree reap --apply${onePath ? ` --path ${onePath}` : ''}`);
+  return 0;
+}
+
+function numberFlag(args, name) {
+  const raw = readFlag(args, name);
+  if (raw === '' || raw === undefined || raw === null) return null;
+  const value = Number(raw);
+  return Number.isFinite(value) && value >= 0 ? value : null;
+}
+
+// atris worktree room: the disk check every launcher runs before making a
+// work copy, for launchers outside this CLI (night shift, member runs).
+// Under --need GB (default 15) it first puts finished copies of --repo (or
+// the repo it runs in) away, for at most a minute. Exit 0 when there is
+// room, exit 3 with a plain message under --refuse GB (default 5); 1 stays
+// a crash, 2 usage.
+function roomCommand(args) {
+  const need = numberFlag(args, '--need');
+  const refuse = numberFlag(args, '--refuse');
+  let repo = readFlag(args, '--repo');
+  if (!repo) {
+    const top = runGit(['rev-parse', '--show-toplevel'], { check: false, timeout: 30 * 1000 });
+    repo = top.status === 0 ? top.stdout.trim() : '';
+  }
+  const repos = repo ? [primaryCheckout(path.resolve(repo))] : [];
+  const room = reaper.ensureDiskRoom({
+    target: repos[0] || reaper.arenaRoot(),
+    repos,
+    ...(need !== null && need > 0 ? { roomGb: need } : {}),
+    ...(refuse !== null ? { refuseGb: refuse } : {}),
+    force: true,
+    log: (line) => console.error(line),
+  });
+  if (!room.ok) {
+    console.error(room.message);
+    return 3;
+  }
+  console.log(`room: ${reaper.formatGb(room.freeBytes)} free`);
   return 0;
 }
 
@@ -1248,9 +1214,11 @@ function guide() {
   console.log('5. Cleanup is part of creation and the janitor; run it directly any time:');
   console.log('   atris worktree cleanup');
   console.log('   atris worktree cleanup --apply');
+  console.log('   atris worktree reap            every repo in the arena folder, with sizes');
+  console.log('   atris worktree reap --apply    the hourly job runs this');
   console.log('');
   console.log('Notes: start uses the current upstream/default remote base, not dirty local HEAD.');
-  console.log('Start reaps completed checkouts first. Cleanup preserves branches and source changes, skips live work, and prunes only ignored build caches.');
+  console.log('Start puts finished copies away first. A copy goes only with proof nothing in it is lost; any doubt keeps it. Branches are always kept.');
   console.log('Use `atris worktree status` to see all worktrees and dirty counts.');
   return 0;
 }
@@ -1269,7 +1237,9 @@ function help() {
   console.log('  atris worktree status');
   console.log('  atris worktree guard [--allow-primary] [--allow-dirty]');
   console.log('  atris worktree prune [--apply]');
-  console.log('  atris worktree cleanup [--apply] [--json] [--base origin/master]  reap completed checkouts and ignored build caches');
+  console.log('  atris worktree cleanup [--apply] [--json] [--base origin/master]  put away this repo\'s finished copies');
+  console.log('  atris worktree reap [--apply] [--json] [--arena <dir>] [--path <copy>]  put away finished work copies in every repo (dry run by default)');
+  console.log('  atris worktree room [--need 15] [--refuse 5] [--repo <dir>]  make disk room before a new work copy; exit 3 when there is none');
 }
 
 function worktreeCommand(args = []) {
@@ -1289,6 +1259,8 @@ function worktreeCommand(args = []) {
   if (sub === 'guard') return guard(rest);
   if (sub === 'prune') return prune(rest);
   if (sub === 'cleanup' || sub === 'clean') return cleanup(rest);
+  if (sub === 'reap') return reapCommand(rest);
+  if (sub === 'room') return roomCommand(rest);
   help();
   return 2;
 }
@@ -1301,6 +1273,7 @@ module.exports = {
   createOrFindPr,
   cleanupWorktrees,
   defaultMainlineBase,
+  reapLandedWorktree,
   defaultStartBase,
   describeFlightAge,
   flightStampMs,
