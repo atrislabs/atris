@@ -6321,6 +6321,22 @@ function createAutoObjectiveTask(proposal) {
 
 async function runObjectiveGeneratorWake(name, paths, { execute = false } = {}) {
   const mode = execute ? 'execute' : 'dry_run';
+  const llmConfigured = Boolean(process.env.ATRIS_OBJECTIVE_GENERATOR_LLM_JSON)
+    || process.env.ATRIS_OBJECTIVE_GENERATOR_LLM === '1';
+  if (!execute && !llmConfigured) {
+    return {
+      ok: true,
+      action: 'wake',
+      member: name,
+      mode,
+      decision: 'generate_objective',
+      reason: 'llm_not_configured',
+      executed: false,
+      needs_user: false,
+      ask: null,
+      next_command: 'atris member objective-generator proposals',
+    };
+  }
   const root = process.cwd();
   const graph = readObjectiveGeneratorWorldModel(root);
   const recommendations = readSupervisorRecommendations(root);
