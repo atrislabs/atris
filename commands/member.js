@@ -3965,6 +3965,26 @@ function appendMemberGoalLog(memberDir, name, title, fields = {}) {
   return logPath;
 }
 
+function memberGoalBlockedLoggedWithin24h(memberDir) {
+  const logsDir = path.join(memberDir, 'logs');
+  const now = new Date();
+  const cutoff = now.getTime() - 24 * 60 * 60 * 1000;
+  for (let back = 0; back < 2; back += 1) {
+    const day = new Date(now.getTime() - back * 24 * 60 * 60 * 1000);
+    const dayName = `${day.getFullYear()}-${String(day.getMonth() + 1).padStart(2, '0')}-${String(day.getDate()).padStart(2, '0')}`;
+    const file = path.join(logsDir, `${dayName}.md`);
+    if (!fs.existsSync(file)) continue;
+    const text = fs.readFileSync(file, 'utf8');
+    const re = /^## (\d{2}:\d{2}) · Member goal-from-mission blocked/gm;
+    let match;
+    while ((match = re.exec(text))) {
+      const when = new Date(`${dayName}T${match[1]}:00`);
+      if (when.getTime() >= cutoff && when.getTime() <= now.getTime()) return true;
+    }
+  }
+  return false;
+}
+
 function appendProjectLog(title, fields = {}) {
   const today = todayLogName();
   const year = today.slice(0, 4);
@@ -4883,7 +4903,7 @@ function memberGoalFromMission(name, ...args) {
 
   const state = loadMemberGoals(name, paths);
   const runtime = purpose.runtimeMission;
-  const runtimeFocus = runtime.heading || purpose.northStar;
+  let runtimeFocus = runtime.heading || purpose.northStar;
   if (lowerCompact(runtime.status || '') === 'blocked') {
     const ask = runtime.next
       ? `${compactSentence(runtimeFocus, 120)} is blocked. ${compactSentence(runtime.next, 180)}`
@@ -4919,47 +4939,95 @@ function memberGoalFromMission(name, ...args) {
     return;
   }
   if (MISSION_TERMINAL_STATUSES.has(lowerCompact(runtime.status || ''))) {
-    // A finished mission must not mint or re-point an active goal; that recreated the
-    // stale-goal defect class (OBL-1961, OBL-2212, OBL-2232) after every retire. --force
-    // cannot bypass this, it only widens the existing-goal match on a living mission.
+    // A finished mission must not keep an active goal pinned to it; the hourly
+    // blocked ask just repeated forever (OBL-3086). Retire the stale goals here,
+    // then fall through so MISSION.md mints a fresh goal with no dead mission
+    // pointer. --force still cannot bypass this gate, it only widens the
+    // existing-goal match on a living mission.
     const staleGoals = state.goals.filter((goal) => (
       goal.source === 'mission' && goal.status === 'active'
       && runtime.id && goal.mission_id === runtime.id
     ));
-    const staleList = staleGoals.map((goal) => goal.title || goal.id).join('; ');
-    const ask = staleGoals.length
-      ? `Mission ${runtime.id || compactSentence(runtimeFocus, 88)} is ${runtime.status}, so its active goal is stale. Retire ${compactSentence(staleList, 140)} by setting its status in goals.json, or start a living mission and run: atris member goal-from-mission ${name} --force`
-      : `Mission ${runtime.id || compactSentence(runtimeFocus, 88)} is ${runtime.status}. Start a living mission, then run: atris member goal-from-mission ${name} --force`;
-    const logPath = appendMemberGoalLog(paths.memberDir, name, 'Member goal-from-mission blocked', {
-      ask,
-      mission_id: runtime.id || '',
-      mission_status: runtime.status || '',
-      stale_goals: staleGoals.map((goal) => goal.id),
-    });
-    printJsonOrText(
-      {
-        ok: true,
-        action: 'needs_user',
-        member: name,
-        needs_user: true,
+    if (staleGoals.length) {
+      const stamp = stampIso();
+      for (const staleGoal of staleGoals) {
+        staleGoal.status = 'completed';
+        staleGoal.history = Array.isArray(staleGoal.history) ? staleGoal.history : [];
+        staleGoal.history.push({
+          at: stamp,
+          event: 'goal_auto_retired_mission_terminal',
+          mission_id: runtime.id || null,
+          mission_status: runtime.status || '',
+        });
+      }
+      writeMemberGoals(paths, state);
+      appendMemberGoalLog(paths.memberDir, name, 'Member goal auto retired', {
+        goals: staleGoals.map((goal) => goal.id).join('; '),
+        mission_id: runtime.id || '',
+        mission_status: runtime.status || '',
+      });
+      runtime.id = null;
+      runtime.status = null;
+      runtime.heading = null;
+      runtimeFocus = purpose.northStar;
+    } else {
+      const ask = `Mission ${runtime.id || compactSentence(runtimeFocus, 88)} is ${runtime.status}. Start a living mission, then run: atris member goal-from-mission ${name} --force`;
+      if (memberGoalBlockedLoggedWithin24h(paths.memberDir)) {
+        printJsonOrText(
+          {
+            ok: true,
+            action: 'needs_user',
+            member: name,
+            needs_user: true,
+            throttled: true,
+            ask,
+            stale_goals: staleGoals,
+            mission: {
+              north_star: purpose.northStar,
+              runtime_id: runtime.id || null,
+              runtime_status: runtime.status || null,
+              runtime_next: runtime.next || null,
+            },
+            mission_file: paths.missionFile,
+          },
+          [
+            `Blocked for ${name}: mission ${runtime.id || 'in now.md'} is ${runtime.status}. The same ask is already in the member log from the last 24h.`,
+            `Ask: ${ask}`,
+          ],
+          asJson,
+        );
+        return;
+      }
+      const logPath = appendMemberGoalLog(paths.memberDir, name, 'Member goal-from-mission blocked', {
         ask,
-        stale_goals: staleGoals,
-        mission: {
-          north_star: purpose.northStar,
-          runtime_id: runtime.id || null,
-          runtime_status: runtime.status || null,
-          runtime_next: runtime.next || null,
+        mission_id: runtime.id || '',
+        mission_status: runtime.status || '',
+      });
+      printJsonOrText(
+        {
+          ok: true,
+          action: 'needs_user',
+          member: name,
+          needs_user: true,
+          ask,
+          stale_goals: staleGoals,
+          mission: {
+            north_star: purpose.northStar,
+            runtime_id: runtime.id || null,
+            runtime_status: runtime.status || null,
+            runtime_next: runtime.next || null,
+          },
+          mission_file: paths.missionFile,
+          log_path: logPath,
         },
-        mission_file: paths.missionFile,
-        log_path: logPath,
-      },
-      [
-        `Blocked for ${name}: mission ${runtime.id || 'in now.md'} is ${runtime.status}, a finished mission cannot drive an active goal.`,
-        `Ask: ${ask}`,
-      ],
-      asJson,
-    );
-    return;
+        [
+          `Blocked for ${name}: mission ${runtime.id || 'in now.md'} is ${runtime.status}, a finished mission cannot drive an active goal.`,
+          `Ask: ${ask}`,
+        ],
+        asJson,
+      );
+      return;
+    }
   }
   // The title IS the mission focus, no boilerplate prefix; the acceptance list already
   // says "one bounded step" and the why carries the full sentence.

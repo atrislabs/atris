@@ -1404,7 +1404,7 @@ test('member goal-from-mission stops when active mission is complete and --force
   }
 });
 
-test('member goal-from-mission names stale goals when the mission turns stopped', () => {
+test('member goal-from-mission auto retires the stale goal and mints a fresh one when the mission turns stopped', () => {
   const dir = makeTempDir();
   try {
     fs.mkdirSync(path.join(dir, 'atris'), { recursive: true });
@@ -1421,10 +1421,10 @@ test('member goal-from-mission names stale goals when the mission turns stopped'
     assert.equal(createdGoal.status, 'active');
     const goalsPath = path.join(dir, 'atris', 'team', 'mission-lead', 'goals.json');
     const before = JSON.parse(fs.readFileSync(goalsPath, 'utf8'));
-    const unlinked = { ...createdGoal, id: 'unlinked-goal', title: 'Unlinked work' };
+    const unlinked = { ...createdGoal, id: 'unlinked-goal', title: 'Unlinked work', mission_north_star: 'Other north star' };
     delete unlinked.mission_id;
     before.goals.push(
-      { ...createdGoal, id: 'living-goal', title: 'Living mission work', mission_id: 'living-mission' },
+      { ...createdGoal, id: 'living-goal', title: 'Living mission work', mission_id: 'living-mission', mission_north_star: 'Other north star' },
       unlinked,
     );
     fs.writeFileSync(goalsPath, JSON.stringify(before, null, 2), 'utf8');
@@ -1436,16 +1436,57 @@ test('member goal-from-mission names stale goals when the mission turns stopped'
     const res = runCli(['member', 'goal-from-mission', 'mission-lead', '--json'], { cwd: dir });
     assert.equal(res.status, 0, res.stderr || res.stdout);
     const payload = JSON.parse(res.stdout);
-    assert.equal(payload.action, 'needs_user');
-    assert.equal(payload.needs_user, true);
-    assert.match(payload.ask, /stopped/i);
-    assert.match(payload.ask, new RegExp(createdGoal.title.replace(/[.*+?^${}()|[\]\\]/g, '\\$&').slice(0, 40)));
-    assert.equal(payload.stale_goals.length, 1);
-    assert.equal(payload.stale_goals[0].id, createdGoal.id);
-    assert.doesNotMatch(payload.ask, /Living mission work|Unlinked work/);
+    assert.equal(payload.action, 'goal_from_mission_created');
+    assert.equal(payload.goal.source, 'mission');
+    assert.equal(payload.goal.mission_id, null, 'fresh goal must not point at the finished mission');
 
     const state = JSON.parse(fs.readFileSync(goalsPath, 'utf8'));
-    assert.deepEqual(state, before, 'guard must preserve goals and only identify the finished mission’s own goal');
+    const retired = state.goals.find((goal) => goal.id === createdGoal.id);
+    assert.equal(retired.status, 'completed');
+    assert.ok(retired.history.some((entry) => entry.event === 'goal_auto_retired_mission_terminal'));
+    assert.equal(state.goals.find((goal) => goal.id === 'living-goal').status, 'active');
+    assert.equal(state.goals.find((goal) => goal.id === 'unlinked-goal').status, 'active');
+
+    const logText = fs.readFileSync(path.join(dir, 'atris', 'team', 'mission-lead', 'logs', `${new Date().toISOString().slice(0, 10)}.md`), 'utf8');
+    assert.match(logText, /Member goal auto retired/);
+    assert.doesNotMatch(logText, /Member goal-from-mission blocked/);
+  } finally {
+    cleanupTempDir(dir);
+  }
+});
+
+test('member goal-from-mission with a terminal mission and no stale goal asks once a day, not every leg', () => {
+  const dir = makeTempDir();
+  try {
+    fs.mkdirSync(path.join(dir, 'atris'), { recursive: true });
+    assert.equal(runCli(['member', 'create', 'mission-lead', '--description="Make Missions change the world with self-generated goals"'], { cwd: dir }).status, 0);
+    assert.equal(runCli([
+      'mission', 'start', '--no-verify', 'Make Missions change the world with self-generated goals',
+      '--owner', 'mission-lead',
+      '--json',
+    ], { cwd: dir }).status, 0);
+
+    const nowPath = path.join(dir, 'atris', 'team', 'mission-lead', 'now.md');
+    const nowText = fs.readFileSync(nowPath, 'utf8');
+    fs.writeFileSync(nowPath, nowText.replace(/^- status: .+$/m, '- status: stopped'), 'utf8');
+
+    const first = runCli(['member', 'goal-from-mission', 'mission-lead', '--json'], { cwd: dir });
+    assert.equal(first.status, 0, first.stderr || first.stdout);
+    const firstPayload = JSON.parse(first.stdout);
+    assert.equal(firstPayload.action, 'needs_user');
+    assert.equal(firstPayload.throttled, undefined);
+    assert.ok(firstPayload.log_path);
+
+    const second = runCli(['member', 'goal-from-mission', 'mission-lead', '--json'], { cwd: dir });
+    assert.equal(second.status, 0, second.stderr || second.stdout);
+    const secondPayload = JSON.parse(second.stdout);
+    assert.equal(secondPayload.action, 'needs_user');
+    assert.equal(secondPayload.throttled, true);
+    assert.equal(secondPayload.log_path, undefined);
+
+    const logText = fs.readFileSync(firstPayload.log_path, 'utf8');
+    const blockedCount = (logText.match(/Member goal-from-mission blocked/g) || []).length;
+    assert.equal(blockedCount, 1, 'the same blocked ask must not log twice in 24h');
   } finally {
     cleanupTempDir(dir);
   }
