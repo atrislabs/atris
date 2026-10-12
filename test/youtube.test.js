@@ -1478,9 +1478,33 @@ test('youtube process without apply exits 2 and never calls the api', async () =
   assert.equal(extractCalls, 0);
   assert.equal(authCalls, 0);
   assert.equal(output.includes(PROCESS_APPLY_MESSAGE), true);
+  assert.equal(output.includes('next: fill change: and receipt: in atris/wiki/briefs/youtube-proc01.apply.md, then rerun process'), true);
   const stub = fs.readFileSync(path.join(cwd, 'atris', 'wiki', 'briefs', 'youtube-proc01.apply.md'), 'utf8');
   assert.match(stub, /^change: fill this$/m);
   assert.match(stub, /^receipt: fill this$/m);
+});
+
+test('youtube process without an atris wiki names the apply file to create', async () => {
+  const cwd = fs.mkdtempSync(path.join(os.tmpdir(), 'atris-yt-process-nowiki-'));
+  const output = [];
+  let apiCalls = 0;
+
+  const status = await youtubeCommand(['process', 'https://youtu.be/proc03'], {
+    cwd,
+    now: '2026-08-26',
+    output: (line) => output.push(line),
+    extractLocalTranscript: async () => null,
+    apiRequestJson: async () => {
+      apiCalls += 1;
+      return { ok: true, status: 200, data: {} };
+    },
+  });
+
+  assert.equal(status, 2);
+  assert.equal(apiCalls, 0);
+  assert.equal(output.includes(PROCESS_APPLY_MESSAGE), true);
+  assert.equal(output.includes('next: create atris/wiki/briefs/youtube-proc03.apply.md with change: and receipt: lines, then rerun process'), true);
+  assert.equal(fs.existsSync(path.join(cwd, 'atris')), false);
 });
 
 test('youtube process with a stub-only apply refuses without rewriting it', async () => {

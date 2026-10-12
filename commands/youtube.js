@@ -1021,16 +1021,26 @@ function runYoutubeUnsave(args = [], deps = {}) {
 
 function ensureProcessApply({ cwd, url, now, output } = {}) {
   const id = videoIdFromUrl(url);
-  return applyGate.ensureApply({
+  const rel = id ? applySidecarRel(id) : null;
+  const code = applyGate.ensureApply({
     cwd,
     source: url,
-    rel: id ? applySidecarRel(id) : null,
+    rel,
     now,
     output,
     incompleteMessage: PROCESS_APPLY_MESSAGE,
     required: true,
     human: true,
   });
+  if (code !== 0 && rel) {
+    // Name the file so the gate is passable, including in a workspace with no atris/wiki yet.
+    const print = typeof output === 'function' ? output : (line = '') => console.error(line);
+    const exists = Boolean(cwd) && fs.existsSync(path.join(cwd, rel));
+    print(exists
+      ? `next: fill change: and receipt: in ${rel}, then rerun process`
+      : `next: create ${rel} with change: and receipt: lines, then rerun process`);
+  }
+  return code;
 }
 
 function processExperimentSlug(id) {

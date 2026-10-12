@@ -1,7 +1,7 @@
 ---
 name: youtube
 description: "YouTube discovery and learning. Get watch permalinks with atris youtube search QUERY (free, local ytsearch/yt-dlp). On 429 use printed rows if any; else the CLI retries once, then cached rows if printed, else STOP. Never run --paid after a 429. --paid only when the user explicitly asked to buy permalinks (5 credits). After a URL is picked, atris youtube notes URL (free, ephemeral unless --save). atris youtube process only to store knowledge (5 credits). Never paste tokens. Never /auth/cli. Mint with atris login --agent from a stored login. Never summarize a video from model memory. Triggers on: youtube search, find videos, paid youtube search, any youtube.com or youtu.be link, youtube, video, watch this, notes on this."
-version: 2.18.23
+version: 2.18.24
 tags:
   - youtube
   - research
@@ -10,6 +10,17 @@ tags:
 ---
 
 # YouTube Skill
+
+## Route first: learning vs product
+
+Two rails. Pick one before running anything.
+
+- **Learning rail (free):** `atris youtube notes URL` or `atris youtube teach URL`. Local yt-dlp captions plus a local AI writer, zero credits, no login. Use it when the ask is "learn from", "notes on", "alpha", "rabbit hole", "what does this say". This replaces the old alpha-learn skill.
+- **Product rail (5 credits):** `atris youtube process URL` (bare `atris youtube URL` is the same call). Stores the analysis in the Atris backend, needs a stored login, and is gated on a filled Apply. Use it only when the ask is "process", "store", "add to knowledge", or `--agent ID --store`.
+
+Process is gated. It exits 2 with `write one apply (change + receipt) before process.` until `atris/wiki/briefs/youtube-<id>.apply.md` (relative to the current directory) has real `change:` and `receipt:` lines. `fill this` does not count, and a notes/search keep-sidecar (`change: apply atris/experiments/...`) does not count. The CLI prints the exact file on the next line. It writes a fill-this stub there only when `atris/wiki/` already exists; otherwise create the file yourself. The gate runs before any login or billing, so a refusal never spends credits. Write the Apply from what the person will actually change, not a placeholder.
+
+Notes writer: Gemini Flash through the Antigravity CLI (`agy -p`) when installed, else Haiku (`claude`), then Codex, then Cursor. The Antigravity editor's own `agy` launcher has no `-p` mode and is skipped. `notes by <writer>` names who wrote them. `check: fill this` after notes, teach, or search means the video had no number or named mechanism to build a check from; it is not an error.
 
 ## Feature map
 

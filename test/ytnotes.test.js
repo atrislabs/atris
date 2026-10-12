@@ -831,6 +831,27 @@ test('ytnotes auto writer falls back to Haiku when Gemini fails', () => {
   assert.match(fs.readFileSync(path.join(dir, 'yt_auto2.md'), 'utf8'), /# No Caption Talk/);
 });
 
+test('ytnotes auto writer skips the Antigravity editor launcher named agy', () => {
+  const launcher = [
+    '#!/usr/bin/env bash',
+    '# when run in remote terminal, use the remote cli',
+    'if [ -n "$VSCODE_IPC_HOOK_CLI" ]; then exit 0; fi',
+    'echo "Warning: \'p\' is not in the list of known options" >&2',
+    '',
+  ].join('\n');
+  const { result, dir } = runNoCaptionNotes('auto5', {
+    withWhisper: true,
+    whisperVtt: LOCAL_VTT,
+    extraEnv: { ATRIS_YTNOTES_ENGINE: 'auto' },
+    extraBins: { agy: launcher },
+  });
+
+  assert.equal(result.status, 0, result.stderr || result.stdout);
+  assert.match(fs.readFileSync(path.join(dir, 'yt_auto5.md'), 'utf8'), /# No Caption Talk/);
+  assert.doesNotMatch(result.stderr, /Gemini did not answer/);
+  assert.match(result.stderr, /^notes by Haiku$/m);
+});
+
 test('ytnotes auto writer falls back to Haiku when agy is not installed', () => {
   const { result, dir } = runNoCaptionNotes('auto3', {
     withWhisper: true,
