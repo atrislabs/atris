@@ -78,10 +78,14 @@ const {
   isBareAtrisFlag,
   isFirstTalkLine,
   isLeftoverVerbLook,
+  isWhatsNextLine,
   listUserVisibleWork,
+  loadLocalTasks,
   personName,
   renderFirstTalk,
+  renderWhatsNextAsk,
   firstTalkBuilder,
+  shippedHumanStarter,
   shouldAutoInitFresh,
 } = require('../lib/first-minute');
 
@@ -513,6 +517,7 @@ function showHelpShort() {
   console.log('  atris later "..."                remember without a room');
   console.log('  atris guide "..."                translate your words');
   console.log('  atris do                         work already here');
+  console.log('  atris done                       land what your agent built');
   console.log('  atris spaceship                  Keep working for a few hours');
   console.log('  atris autopilot                  Keep working until you stop');
   console.log('  atris mission                    the one goal');
@@ -524,6 +529,7 @@ function helpCatalog() {
   return [
     { name: 'init', summary: 'scaffold atris/ in this project', json: false, interactive_risk: 'medium' },
     { name: 'guide', summary: 'translate plain english into the right atris move', json: true, interactive_risk: 'none' },
+    { name: 'done', summary: 'land what your coding agent built: check, accept, sign', json: true, interactive_risk: 'low' },
     { name: 'task', summary: 'local task plane: new, claim, ready, accept', json: true, interactive_risk: 'low' },
     { name: 'review', summary: 'validate work and capture learnings', json: false, interactive_risk: 'low' },
     { name: 'recap', summary: 'spoken recap of what your team did', json: true, interactive_risk: 'low' },
@@ -544,6 +550,7 @@ function showHelpAll() {
   console.log('  atris later "..."                remember without a room');
   console.log('  atris guide "..."                translate your words');
   console.log('  atris do                         work already here');
+  console.log('  atris done                       land what your agent built');
   console.log('  atris spaceship                  Keep working for a few hours');
   console.log('  atris autopilot                  Keep working until you stop');
   console.log('  atris mission                    the one goal');
@@ -1531,6 +1538,23 @@ async function interactiveEntry(userInput, options = {}) {
   // Placeholder or missing MAP is already a first-minute job. Do not send the
   // operator to a rewrite lobby, and do not treat `test` as a new first task.
   if (mapStatus !== 'ready') {
+    // A person who already shipped their first want here can say the next one.
+    // It becomes their new task, the same way the first one did.
+    const nextWant = String(userInput || '').trim();
+    const shipped = nextWant && !options.asJson ? shippedHumanStarter(loadLocalTasks(workspaceDir)) : null;
+    if (shipped && !isLeftoverVerbLook(nextWant) && !isFlagLikeAnswer(nextWant) && !isAtrisMetaQuestion(nextWant)) {
+      const who = personName();
+      const room = folderName(workspaceDir);
+      console.log('');
+      if (isWhatsNextLine(nextWant) || isFirstTalkLine(nextWant)) {
+        console.log(renderWhatsNextAsk({ person: who, task: shipped, folder: room }));
+        return 0;
+      }
+      saveContextProfile(workspaceDir, nextWant, { source: 'next_talk' });
+      const starter = createStarterTask(workspaceDir, nextWant);
+      console.log(renderFirstTalk({ person: who, folder: room, starter, builder: firstTalkBuilder() }));
+      return 0;
+    }
     const screenOptions = {
       root: workspaceDir,
       context,
@@ -2241,6 +2265,9 @@ if (command === 'guide') {
 } else if (command === 'later') {
   const laterCode = require('../commands/later').laterAtris(process.argv.slice(3));
   process.exit(Number.isInteger(laterCode) ? laterCode : 0);
+} else if (command === 'done') {
+  const doneCode = require('../commands/done').doneAtris(process.argv.slice(3));
+  process.exit(Number.isInteger(doneCode) ? doneCode : 0);
 } else if (command === 'activate') {
   const args = process.argv.slice(3);
   if (args.includes('--help') || args.includes('-h') || args[0] === 'help') {
