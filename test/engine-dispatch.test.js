@@ -689,6 +689,7 @@ test('resolveDispatchLandTarget uses the workspace protected branch, honoring ex
     git(['config', 'user.name', 'test'], repo);
     git(['commit', '-q', '--allow-empty', '-m', 'base'], repo);
     const head = git(['rev-parse', 'HEAD'], repo);
+    git(['remote', 'add', 'origin', path.join(repo, 'unused.git')], repo);
     git(['update-ref', 'refs/remotes/origin/main', head], repo);
     git(['symbolic-ref', 'refs/remotes/origin/HEAD', 'refs/remotes/origin/main'], repo);
     assert.equal(fleet.resolveDispatchLandTarget(repo, null), 'origin/main');
