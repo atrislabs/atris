@@ -430,10 +430,13 @@ agy_signed_in() {
   ! printf '%s' "$out" | grep -qi 'sign in'
 }
 
+# Auto mode probes agy before it gets here; AGY_READY=1 skips a second 2-3s probe.
 run_gemini() {
-  command -v agy >/dev/null 2>&1 || { echo "agy is not installed" >&2; return 127; }
-  agy_is_cli || { echo "agy on PATH is the Antigravity editor launcher, which has no -p mode. Install the Antigravity CLI for Gemini notes." >&2; return 127; }
-  agy_signed_in || { echo "agy is installed but not signed in. Run: agy (sign in once) for Gemini notes." >&2; return 127; }
+  if [ "${AGY_READY:-}" != 1 ]; then
+    command -v agy >/dev/null 2>&1 || { echo "agy is not installed" >&2; return 127; }
+    agy_is_cli || { echo "agy on PATH is the Antigravity editor launcher, which has no -p mode. Install the Antigravity CLI for Gemini notes." >&2; return 127; }
+    agy_signed_in || { echo "agy is installed but not signed in. Run: agy (sign in once) for Gemini notes." >&2; return 127; }
+  fi
   run_with_timeout 120 agy -p "$PROMPT" --model "${ATRIS_YTNOTES_GEMINI_MODEL:-${1:-gemini-3.8-flash}}" \
     --effort "${2:-low}" --print-timeout 110s </dev/null
 }
@@ -489,7 +492,7 @@ writer_list() {
 run_writer() {
   local model="${2:-}"
   case "$1" in
-    agy) run_gemini "$model" "${3:-}" ;;
+    agy) AGY_READY=1 run_gemini "$model" "${3:-}" ;;
     claude) run_haiku "$model" ;;
     codex) run_with_timeout 240 codex exec ${model:+-m "$model"} --sandbox read-only --skip-git-repo-check "$PROMPT" </dev/null ;;
     cursor-agent) run_with_timeout 240 cursor-agent --trust ${model:+--model "$model"} -p "$PROMPT" ;;
