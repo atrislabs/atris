@@ -68,7 +68,7 @@ checks the refs in both files; `atris doc-health --fix-refs` moves drifted ones.
 | stored auth token reader | `utils/auth.js` | local credentials loaded and stored |
 | api client | `utils/api.js` | HTTPS calls |
 | cli config | `utils/config.js` | local config |
-| backend root and owner identity | `utils/backend-root.js` `utils/owner-identity.js` | portable local roots, no laptop paths |
+| backend root and owner identity | `utils/backend-root.js` `utils/owner-identity.js` | portable local roots; installed CLI sibling fenced under node tests, ATRIS_BACKEND_INSTALL_SIBLING=1 opts in and 0 disables the probe |
 | update check | `utils/update-check.js` | version check |
 | swarlo client | `lib/self-drive.js` | hub URL and keys |
 | member command | `commands/member.js` | member goals, alive loop |

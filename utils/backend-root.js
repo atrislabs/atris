@@ -24,6 +24,10 @@ function resolveBackendRoot(cwd = process.cwd()) {
 
   const sibling = path.resolve(workspace, '..', 'atrisos-backend');
   if (fs.existsSync(sibling) && fs.statSync(sibling).isDirectory()) return sibling;
+  // Test children inherit NODE_TEST_CONTEXT: do not discover the developer's
+  // backend beside this CLI install unless a test explicitly opts in.
+  const installSibling = process.env.ATRIS_BACKEND_INSTALL_SIBLING;
+  if (installSibling === '0' || (process.env.NODE_TEST_CONTEXT && installSibling !== '1')) return null;
   const installedSibling = path.resolve(__dirname, '..', '..', 'atrisos-backend');
   return fs.existsSync(installedSibling) && fs.statSync(installedSibling).isDirectory() ? installedSibling : null;
 }
