@@ -91,7 +91,7 @@ test('spaceship supervisor survives halts and classifies outcomes', () => {
     const out = execFileSync('bash', [
       SCRIPT,
       '--repo', repo,
-      '--hours', '0.003',     // ~10s budget
+      '--hours', '0.005',     // ~18s budget: the idle alert needs tick 7, ~1.5s per tick
       '--interval', '1',
       '--tick-timeout', '20',
       '--idle-alert', '3',
