@@ -30,6 +30,54 @@ WHISPER_MODEL="${ATRIS_YTNOTES_WHISPER_MODEL:-mlx-community/whisper-large-v3-tur
 mkdir -p "$WORK"
 cd "$WORK"
 
+run_with_timeout() {
+  local seconds="$1"
+  shift
+  perl -e '$seconds = shift @ARGV; alarm $seconds; exec @ARGV or do { print STDERR "$ARGV[0]: not installed\n"; exit 127 }' "$seconds" "$@"
+}
+
+# The Antigravity editor ships its own `agy` (a VS Code-style launcher script).
+# It has no -p mode: it hands -p and --model to Electron and prints nothing, so
+# it is not a writer. Only the Antigravity CLI is.
+agy_is_cli() {
+  local bin
+  bin=$(command -v agy 2>/dev/null) || return 1
+  ! head -c 4096 "$bin" 2>/dev/null | grep -q 'VSCODE_IPC_HOOK_CLI'
+}
+
+# An agy that is not signed in opens a Google login and waits up to 60s, which
+# also pops the Antigravity app. `agy models` fails fast with "Please sign in"
+# and opens nothing, so probe with it. Only that message counts as signed out:
+# any other result (including a slow or odd probe) lets the writer run.
+# The probe takes about 2s, so it starts in the background before the captions
+# download and agy_signed_in reads its answer once the writer needs it.
+agy_signed_in() {
+  local out
+  if [ -n "${AGY_PROBE_PID:-}" ]; then
+    # The writer runs in a pipeline subshell, where wait cannot see this pid.
+    while kill -0 "$AGY_PROBE_PID" 2>/dev/null; do sleep 0.05; done
+    AGY_PROBE_PID=""
+    AGY_PROBE_OUT=$(cat "$WORK/agy_probe.$$" 2>/dev/null) || true
+    rm -f "$WORK/agy_probe.$$"
+  fi
+  if [ -n "${AGY_PROBE_OUT+set}" ]; then
+    out="$AGY_PROBE_OUT"
+  else
+    out=$(run_with_timeout 10 agy models </dev/null 2>&1) || true
+  fi
+  ! printf '%s' "$out" | grep -qi 'sign in'
+}
+
+case "$ENGINE" in
+  auto|gemini|agy)
+    if agy_is_cli; then
+      run_with_timeout 10 agy models </dev/null >"$WORK/agy_probe.$$" 2>&1 &
+      AGY_PROBE_PID=$!
+      trap 'kill "$AGY_PROBE_PID" 2>/dev/null || true; rm -f "$WORK/agy_probe.$$"' EXIT
+    fi
+    ;;
+esac
+
 # Printed metadata and a written English VTT are a hit even when yt-dlp exits 429.
 # A leaked WARNING|ERROR print line is not the video id.
 # Manual English is --write-subs. Auto English is often en-orig / en-US / en-GB.
@@ -309,12 +357,6 @@ PROMPT="$STYLE_PROMPT
 Transcript:
 $TRANSCRIPT"
 
-run_with_timeout() {
-  local seconds="$1"
-  shift
-  perl -e '$seconds = shift @ARGV; alarm $seconds; exec @ARGV or do { print STDERR "$ARGV[0]: not installed\n"; exit 127 }' "$seconds" "$@"
-}
-
 run_atris_fast() {
   if [ ! -d "$CALLER_CWD/atris" ]; then
     echo "atris-fast requires ytnotes to run from an initialized Atris workspace" >&2
@@ -411,25 +453,6 @@ run_haiku() {
 # Gemini Flash through the Antigravity CLI (agy). On an 85-minute transcript it
 # writes notes in about 8s; Haiku takes 30-40s. The old gemini CLI is retired.
 # Low effort is the floor for notes: high effort is slower and not sharper here.
-# The Antigravity editor ships its own `agy` (a VS Code-style launcher script).
-# It has no -p mode: it hands -p and --model to Electron and prints nothing, so
-# it is not a writer. Only the Antigravity CLI is.
-agy_is_cli() {
-  local bin
-  bin=$(command -v agy 2>/dev/null) || return 1
-  ! head -c 4096 "$bin" 2>/dev/null | grep -q 'VSCODE_IPC_HOOK_CLI'
-}
-
-# An agy that is not signed in opens a Google login and waits up to 60s, which
-# also pops the Antigravity app. `agy models` fails fast with "Please sign in"
-# and opens nothing, so probe with it. Only that message counts as signed out:
-# any other result (including a slow or odd probe) lets the writer run.
-agy_signed_in() {
-  local out
-  out=$(run_with_timeout 10 agy models </dev/null 2>&1) || true
-  ! printf '%s' "$out" | grep -qi 'sign in'
-}
-
 # Auto mode probes agy before it gets here; AGY_READY=1 skips a second 2-3s probe.
 run_gemini() {
   if [ "${AGY_READY:-}" != 1 ]; then

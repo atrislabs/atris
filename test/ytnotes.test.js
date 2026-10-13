@@ -1114,7 +1114,10 @@ test('ytnotes auto writer follows the roster lead and passes its model through',
   assert.match(result.stderr, /notes by Haiku/);
   const work = path.dirname(dir);
   assert.match(fs.readFileSync(path.join(work, 'claude.args'), 'utf8'), /--model haiku/);
-  assert.equal(fs.existsSync(path.join(work, 'agy.args')), false, 'the backup never ran');
+  // Auto mode checks Gemini's sign-in while captions download; that check is
+  // the only agy call allowed here. The backup never writes.
+  const agyArgs = fs.existsSync(path.join(work, 'agy.args')) ? fs.readFileSync(path.join(work, 'agy.args'), 'utf8').trim() : '';
+  assert.ok(agyArgs === '' || agyArgs === 'models', `the backup never ran: ${agyArgs}`);
 });
 
 test('ytnotes passes the roster effort to Gemini and keeps low as the floor', () => {
