@@ -104,6 +104,7 @@ const {
   openHumanAsks,
 } = require('../lib/mission-human-asks');
 const { missionLinkedTaskGate } = require('../lib/mission-task-gate');
+const { memberApprovalAsks, runBlockingAsks } = require('../lib/member-approval');
 const {
   inspectMissionProtectedDiff,
   prepareMissionGitGuard,
@@ -2986,7 +2987,8 @@ function missionFromArgs(args) {
   assertMissionVerifier(verifier, wantsJson(args));
   const stopCondition = readFlag(args, '--stop', budgetStopCondition(budgetContract) || (verifier ? 'verifier passes and no human asks remain' : 'human marks complete with proof'));
   const taskIds = readRepeatedFlag(args, '--task');
-  const humanAsks = readRepeatedFlag(args, '--ask');
+  // MEMBER.md approval-required becomes an open human ask the owner must clear.
+  const humanAsks = [...readRepeatedFlag(args, '--ask'), ...memberApprovalAsks(owner, process.cwd())];
   const drive = missionDrive(readFlag(args, '--destination', ''));
   const alwaysOn = hasFlag(args, '--always-on');
   const xpTaskEnabled = hasFlag(args, '--xp-task') || hasFlag(args, '--agent-xp');
@@ -9452,6 +9454,30 @@ async function resolveMissionRunPhase(context) {
     }
     console.error(`Mission ${mission.id} is ${mission.status}; nothing to run.`);
     process.exit(0);
+  }
+  // An explicit run must respect open human asks the same way auto-selection
+  // does (missionIsRunnable), instead of ticking straight past them.
+  const blockingAsks = runBlockingAsks(mission.human_asks);
+  if (blockingAsks.length) {
+    detachedDriverLifecycle?.setExitReason('human_asks_open');
+    const lines = [
+      `Mission ${mission.id} is waiting on ${blockingAsks.length} human ask${blockingAsks.length === 1 ? '' : 's'}; not ticking.`,
+      ...blockingAsks.map((ask) => `  - ${ask.text}${ask.answered_at ? ' (answered no)' : ''}`),
+      'Answer with: atris decide   (then atris decide <n> y), and re-run.',
+    ];
+    if (asJson) {
+      printJsonOrText({
+        ok: false,
+        action: 'run_blocked',
+        reason: 'human_asks_open',
+        mission_id: mission.id,
+        human_asks: blockingAsks.map((ask) => ask.text),
+        next_command: 'atris decide',
+      }, [], true);
+    } else {
+      for (const line of lines) console.error(line);
+    }
+    process.exit(2);
   }
   if (hasFlag(args, '--detach')) {
     detachMissionRun(args, mission, cwd, asJson);
