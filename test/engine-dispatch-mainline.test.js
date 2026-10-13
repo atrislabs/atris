@@ -49,6 +49,42 @@ function withEngine(t, dir, source) {
   });
 }
 
+function traceNetworkGit(t, setup, failFetch = false) {
+  const realGit = spawnSync('sh', ['-c', 'command -v git'], { encoding: 'utf8' }).stdout.trim();
+  const bin = path.join(setup.dir, 'bin');
+  const trace = path.join(setup.dir, 'git-network.jsonl');
+  fs.mkdirSync(bin);
+  fs.writeFileSync(path.join(bin, 'git'), `#!${process.execPath}
+const fs = require('node:fs');
+const { spawnSync } = require('node:child_process');
+const args = process.argv.slice(2);
+if (['ls-remote', 'fetch'].includes(args[0])) {
+  fs.appendFileSync(${JSON.stringify(trace)}, JSON.stringify({ args, prompt: process.env.GIT_TERMINAL_PROMPT, ssh: process.env.GIT_SSH_COMMAND }) + '\\n');
+  if (${failFetch} && args[0] === 'fetch') process.exit(1);
+}
+const run = spawnSync(${JSON.stringify(realGit)}, args, { stdio: 'inherit' });
+process.exit(run.status === null ? 1 : run.status);
+`, { mode: 0o755 });
+  const saved = { PATH: process.env.PATH, GIT_TERMINAL_PROMPT: process.env.GIT_TERMINAL_PROMPT, GIT_SSH_COMMAND: process.env.GIT_SSH_COMMAND };
+  process.env.PATH = bin + path.delimiter + process.env.PATH;
+  process.env.GIT_TERMINAL_PROMPT = '1';
+  process.env.GIT_SSH_COMMAND = 'ssh -i /tmp/test-key';
+  t.after(() => {
+    for (const [key, value] of Object.entries(saved)) {
+      if (value === undefined) delete process.env[key];
+      else process.env[key] = value;
+    }
+  });
+  return () => fs.existsSync(trace) ? fs.readFileSync(trace, 'utf8').trim().split('\n').map(JSON.parse) : [];
+}
+
+function renameRemote(setup) {
+  setup.git(['update-ref', 'refs/heads/main', setup.git(['rev-parse', 'HEAD'])], setup.origin);
+  setup.git(['symbolic-ref', 'HEAD', 'refs/heads/main'], setup.origin);
+  setup.git(['update-ref', '-d', 'refs/heads/master'], setup.origin);
+  assert.equal(spawnSync('git', ['rev-parse', '--verify', 'refs/remotes/origin/main'], { cwd: setup.root }).status, 128);
+}
+
 const TASK = { display_id: 'CLI-900', status: 'open', tag: 'code', title: 'Correct result.txt. Done: result is after. Check: node --test check.test.cjs.' };
 
 function flightCli(setup, calls) {
@@ -205,12 +241,96 @@ console.log('saved the result');
 
 test('default branch follows a remote rename even while the saved remote HEAD and master ref survive', (t) => {
   const setup = room(t, 'master');
-  setup.git(['push', '-q', 'origin', 'HEAD:main']);
-  setup.git(['symbolic-ref', 'HEAD', 'refs/heads/main'], setup.origin);
+  renameRemote(setup);
   assert.equal(setup.git(['symbolic-ref', '--short', 'refs/remotes/origin/HEAD']), 'origin/master');
   assert.equal(defaultMainlineBase(setup.root), 'origin/main');
   assert.equal(fleet.resolveDispatchLandTarget(setup.root), 'origin/main');
   assert.equal(collectBoard(setup.root).base, 'origin/main');
+});
+
+test('a known live default branch never falls back when fetching its missing ref fails', (t) => {
+  const setup = room(t, 'master');
+  renameRemote(setup);
+  traceNetworkGit(t, setup, true);
+  assert.throws(() => defaultMainlineBase(setup.root), /could not fetch the remote default branch/);
+  assert.throws(() => fleet.resolveDispatchLandTarget(setup.root), /could not fetch the remote default branch/);
+});
+
+test('worktree creation looks up the branch once and disables prompts on every network call', (t) => {
+  const setup = room(t);
+  const readTrace = traceNetworkGit(t, setup);
+  const worker = createAgentWorktree({ root: setup.root, agent: 'tester', task: 'default', path: setup.worktree });
+  assert.equal(setup.git(['config', '--get', `branch.${worker.branch}.atris-base`]), 'origin/main');
+  const calls = readTrace();
+  assert.ok(calls.some(call => call.args[0] === 'fetch'));
+  for (const call of calls) {
+    assert.equal(call.prompt, '0', JSON.stringify(call));
+    assert.equal(call.ssh, 'ssh -i /tmp/test-key -o BatchMode=yes');
+  }
+  assert.equal(calls.filter(call => call.args.includes('--symref')).length, 1);
+});
+
+test('checking a build that landed itself also disables network prompts', (t) => {
+  const setup = room(t);
+  const startCommit = setup.git(['rev-parse', 'HEAD']);
+  fs.writeFileSync(path.join(setup.root, 'result.txt'), 'after\n');
+  setup.git(['add', 'result.txt']);
+  setup.git(['commit', '-qm', 'correct result']);
+  setup.git(['push', '-q', 'origin', 'main']);
+  const readTrace = traceNetworkGit(t, setup);
+  assert.equal(fleet.defaultSelfLandCheck({ worktreePath: setup.root, targetRef: 'origin/main', startCommit }).ok, true);
+  const calls = readTrace();
+  assert.equal(calls.length, 1);
+  assert.equal(calls[0].args[0], 'fetch');
+  assert.equal(calls[0].prompt, '0');
+  assert.match(calls[0].ssh, /-o BatchMode=yes$/);
+});
+
+for (const mode of ['dispatch', 'fleet']) {
+  test(`${mode} pins the renamed remote branch once for the whole flight`, async (t) => {
+    const setup = room(t, 'master');
+    renameRemote(setup);
+    withEngine(t, setup.dir, `
+const fs = require('node:fs');
+const { spawnSync } = require('node:child_process');
+fs.writeFileSync('result.txt', 'after\\n');
+for (const args of [['add', 'result.txt'], ['commit', '-qm', 'correct result']]) {
+  if (spawnSync('git', args).status !== 0) process.exit(1);
+}
+console.log('saved the result');
+`);
+    fs.mkdirSync(path.join(setup.root, '.atris/state'), { recursive: true });
+    fs.writeFileSync(path.join(setup.root, '.atris/state/tasks.projection.json'), JSON.stringify({ tasks: [TASK] }));
+    const readTrace = traceNetworkGit(t, setup);
+    const calls = [];
+    const options = { root: setup.root, ownCli: flightCli(setup, calls), scoutAsk: async () => null, log: () => {} };
+    const flight = mode === 'dispatch'
+      ? await fleet.runDispatchFlight({ ...options, taskIds: [TASK.display_id], engine: 'devin', installedEngines: [] })
+      : await fleet.runFleetFlight({ ...options, slots: 1, engines: ['devin'], guardCliLink: () => ({ ok: true }) });
+    assert.deepEqual(flight.paused, [], JSON.stringify(flight.paused));
+    assert.equal(flight.landed.length, 1);
+    assert.equal(readTrace().filter(call => call.args.includes('--symref')).length, 1);
+    for (const call of readTrace()) {
+      assert.equal(call.prompt, '0', JSON.stringify(call));
+      assert.match(call.ssh, /-o BatchMode=yes$/);
+    }
+    for (const [verb, flag] of [['start', '--base'], ['ship', '--target']]) {
+      const call = calls.find(args => args[0] === 'worktree' && args[1] === verb);
+      assert.equal(call[call.indexOf(flag) + 1], 'origin/main');
+    }
+    assert.equal(setup.git(['ls-remote', '--heads', 'origin', 'master']), '');
+  });
+}
+
+test('failed codex tool output is not an engine refusal and credit failures take precedence', (t) => {
+  const transcript = 'OpenAI Codex\n--------\nexec\natris whoami\nNot logged in. Run: atris login\n';
+  assert.deepEqual(fleet.detectDeadEngineDispatch({ exitCode: 1, stderr: transcript }), { reason: 'nonzero_exit', exitCode: 1 });
+  assert.equal(fleet.detectDeadEngineDispatch({ exitCode: 0, stderr: transcript }), null);
+  assert.equal(fleet.detectDeadEngineDispatch({ exitCode: 1, stderr: 'Not logged in. Run: atris login\nusage limit reached' }).reason, 'usage_limit');
+  const setup = room(t);
+  withEngine(t, setup.dir, `console.error(${JSON.stringify(transcript)}); process.exit(1);`);
+  const run = fleet.dispatchToEngine({ task: TASK, engine: 'codex', worktreePath: setup.root });
+  assert.deepEqual(fleet.detectDeadEngineDispatch(run), { reason: 'nonzero_exit', exitCode: 1 });
 });
 
 test('an origin without known branch refs never invents origin/master', (t) => {
