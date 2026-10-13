@@ -38,7 +38,7 @@ const { teamRosterView } = require('../lib/member-engine');
 const { engineModelText, engineRunsView, availableModels, modelLabel } = require('../lib/roster-models');
 const { renderTable } = require('../lib/text-table');
 const { TEAM_FOOTER } = require('../lib/team-lineup');
-const { readRosterRuns, workerRuns, summarizeRuns, recentRuns, renderRunLine, DEFAULT_DAYS: RUN_DAYS } = require('../lib/roster-runs');
+const { readRosterRuns, workerRuns, summarizeRuns, recentRuns, renderRunLine, runView, DEFAULT_DAYS: RUN_DAYS } = require('../lib/roster-runs');
 const { attachSuggestions } = require('../lib/roster-suggest');
 const { PIN_MAX_AGE_DAYS: PIN_STALE_DAYS, attachStaleModels, modelCatalog } = require('../lib/roster-stale');
 const {
@@ -1507,7 +1507,7 @@ const RUNS_LIST_LIMIT = 20;
 function runRosterRunsCommand(job, json, root, now) {
   const runs = recentRuns(readRosterRuns(root, { now, days: RUNS_LIST_DAYS }), { job, limit: RUNS_LIST_LIMIT });
   if (json) {
-    console.log(JSON.stringify({ job: job || null, days: RUNS_LIST_DAYS, runs }, null, 2));
+    console.log(JSON.stringify({ job: job || null, days: RUNS_LIST_DAYS, runs: runs.map(runView) }, null, 2));
     return 0;
   }
   if (!runs.length) {

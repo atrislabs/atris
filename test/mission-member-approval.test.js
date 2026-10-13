@@ -87,6 +87,62 @@ test('objectiveNamesCategory ignores a category the objective forbids', () => {
   assert.equal(objectiveNamesCategory('edit the router copy', category), true);
 });
 
+test('a plain-word synonym under a negation seeds no question, elsewhere it does', () => {
+  assert.equal(objectiveNamesCategory('report only; do not delete the old logs', 'destructive-file-action'), false);
+  assert.equal(objectiveNamesCategory('never email the client without asking', 'external-send'), false);
+  assert.equal(objectiveNamesCategory('do not remove the cache, but wipe the temp folder', 'destructive-file-action'), true);
+  assert.equal(objectiveNamesCategory('without a refund, charge the card', 'billing-change'), true);
+});
+
+test('plain words seed the question for policy-worded categories', () => {
+  const cases = [
+    ['destructive-file-action', ['delete the old logs', 'remove the temp directory', 'wipe the cache folder', 'wiping the cache folder', 'purge stale builds', 'deleting stale files', 'removal of the cache']],
+    ['external-send', ['send the weekly report', 'email the client', 'publish the changelog', 'emailing every user', 'sending the invoice']],
+    ['billing-change', ['charge the card on file', 'refund the customer', 'spend the ad budget']],
+    ['spend', ['charge the card', 'refund the order', 'purchase more seats']],
+    ['send-message-to-third-party', ['email the vendor', 'send a note to the vendor']],
+  ];
+  for (const [category, objectives] of cases) {
+    for (const objective of objectives) {
+      assert.equal(objectiveNamesCategory(objective, category), true, `${category} should match "${objective}"`);
+    }
+  }
+});
+
+test('the synonyms stay narrow: ordinary work does not seed a question', () => {
+  const quiet = [
+    'fix the typo in the readme',
+    'refactor the parser and add tests',
+    'rename the sender header helper',
+    'make the removable media list scroll',
+    'write a unit test for the loader',
+    'update the docs for the new flag',
+    'tidy the commit message template',
+    'add a discharge summary field to the form',
+  ];
+  for (const category of ['destructive-file-action', 'external-send', 'billing-change', 'spend']) {
+    for (const objective of quiet) {
+      assert.equal(objectiveNamesCategory(objective, category), false, `${category} should not match "${objective}"`);
+    }
+  }
+  // a category with no synonym entry still matches only its own head word
+  assert.equal(objectiveNamesCategory('remove the temp files', 'merge'), false);
+  assert.equal(objectiveNamesCategory('email the client', 'merge'), false);
+  assert.equal(objectiveNamesCategory('send it', 'refactor-outside-scope'), false);
+});
+
+test('a member who lists external-send gets the question for "email the client"', () => {
+  const dir = makeWorkspace('  approval-required: [destructive-file-action, external-send]');
+  try {
+    const asks = memberApprovalAsks('game-manager', dir, 'email the client and remove the old drafts');
+    assert.equal(asks.length, 1);
+    assert.deepEqual(asks[0].categories, ['destructive-file-action', 'external-send']);
+    assert.deepEqual(memberApprovalAsks('game-manager', dir, 'fix the typo in the readme'), []);
+  } finally {
+    cleanup(dir);
+  }
+});
+
 test('memberApprovalAsks seeds one open ask for the categories the objective names, nothing otherwise', () => {
   const dir = makeWorkspace('  approval-required: [merge, delete, publish]');
   try {
