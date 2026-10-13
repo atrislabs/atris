@@ -10787,7 +10787,14 @@ function receiptShowsPass(receipt) {
 // final transition consumes the receipts instead of trusting free text.
 function missionCompletionGate(mission, proof, root = process.cwd()) {
   const base = missionVerifierCompletionGate(mission, proof, root);
-  if (!base.ok) return base;
+  if (!base.ok) {
+    // The check not passing is the first thing to fix, but a linked task that
+    // is not accepted would refuse the next try too: say so now.
+    const pending = missionLinkedTaskGate(mission, root);
+    if (pending.ok) return base;
+    const how = pending.accept_command ? ` (${pending.accept_command})` : '';
+    return { ...base, linked_task_note: `Also, ${pending.reason}${how}` };
+  }
   // Done means an accepted task plus a receipt: a passing verifier is not
   // enough when the mission is linked to task(s) a human has not accepted.
   const linked = missionLinkedTaskGate(mission, root);
@@ -10797,14 +10804,16 @@ function missionCompletionGate(mission, proof, root = process.cwd()) {
       source: 'linked_task',
       reason: linked.reason,
       task_id: linked.task_id,
+      task_ref: linked.task_ref,
       accept_command: linked.accept_command,
+      archived_only: linked.archived_only === true,
     };
   }
   return linked.tasks.length ? { ...base, linked_tasks: linked.tasks } : base;
 }
 
 function missionAcceptNextAction(mission, gate) {
-  const how = gate.accept_command || 'attach a receipt to it';
+  const how = gate.accept_command || (gate.archived_only ? 'link a live task and accept it' : 'attach a receipt to it');
   return `verifier passed but ${gate.reason}; accept it (${how}), then: atris mission complete ${mission.id} --proof "<receipt>"`;
 }
 
@@ -10854,9 +10863,10 @@ function completeMission(args) {
     const fix = gate.source === 'linked_task'
       ? (gate.accept_command
         ? `Accept it first: ${gate.accept_command}, then re-run mission complete`
-        : 'Attach a receipt to it first')
+        : (gate.archived_only ? 'Link a live task to the mission and accept it first' : 'Attach a receipt to it first'))
       : `Run: atris mission tick ${mission.id} --verify`;
-    exitMissionError(`[mission complete] ${gate.reason}. ${fix} (or override as operator with --force)`, 2, asJson);
+    const also = gate.linked_task_note ? ` ${gate.linked_task_note}.` : '';
+    exitMissionError(`[mission complete] ${gate.reason}. ${fix}.${also} (or override as operator with --force)`, 2, asJson);
   }
   if (!gate.ok && force && gate.source === 'linked_task') {
     console.error(`[mission complete] WARNING --force overrides the accepted-task gate: ${gate.reason}. Recorded as completion_gate.forced.`);

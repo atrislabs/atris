@@ -170,16 +170,35 @@ test('claude and fable ask spawn env pins USER to the OS username when a parent 
 
 test('Fable defaults to the real model and gets a deep-reasoning timeout', () => {
   const parsed = parseEngineAskArgs(['find the real cause', '--engine', 'fable']);
-  assert.equal(parsed.jobs[0].model, 'claude-fable-5');
+  assert.equal(parsed.jobs[0].model, 'claude-fable-5-1');
   assert.equal(parsed.timeoutMs, 10 * 60 * 1000);
 
   const overridden = parseEngineAskArgs(['find the real cause', '--engine', 'fable', '--timeout', '30']);
   assert.equal(overridden.timeoutMs, 30000);
 
   const invocation = buildReadOnlyEngineInvocation('fable', 'find the real cause');
-  assert.deepEqual(invocation.args.slice(2, 4), ['--model', 'claude-fable-5']);
+  assert.deepEqual(invocation.args.slice(2, 4), ['--model', 'claude-fable-5-1']);
   assert.equal(invocation.args[invocation.args.indexOf('--permission-mode') + 1], 'plan');
   assert.ok(!invocation.args.includes('--safe-mode'));
+});
+
+test('engine claude --model "opus 5.5" hands the claude cli the id, not the display name', () => {
+  for (const [engine, typed, id] of [
+    ['claude', 'opus 5.5', 'claude-opus-5-5'],
+    ['claude', 'fable 5.1', 'claude-fable-5-1'],
+    ['haiku', 'haiku 5.5', 'claude-haiku-5-5'],
+    ['fable', 'Fable 5.1', 'claude-fable-5-1'],
+  ]) {
+    const invocation = buildReadOnlyEngineInvocation(engine, 'a question', typed);
+    assert.deepEqual(invocation.args.slice(2, 4), ['--model', id], `${engine} ${typed}`);
+    assert.equal(parseEngineAskArgs(['a question', '--engine', engine, '--model', typed]).jobs[0].model, id, 'the job carries the id');
+  }
+  for (const same of ['claude-opus-5-5', 'opus', 'claude-sonnet-4-6[1m]']) {
+    assert.deepEqual(buildReadOnlyEngineInvocation('claude', 'q', same).args.slice(2, 4), ['--model', same]);
+  }
+  // other engines get their own model names exactly as typed
+  assert.ok(buildReadOnlyEngineInvocation('codex', 'q', 'gpt-6-astra').args.includes('gpt-6-astra'));
+  assert.ok(buildReadOnlyEngineInvocation('devin', 'q', 'swe-2-max').args.includes('swe-2-max'));
 });
 
 test('explicit long agy asks receive the same deadline and classify its native timeout', async () => {

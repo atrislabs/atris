@@ -18,6 +18,7 @@ const {
   buildRunnerAvailabilityCommand,
   runnerAvailabilityFailureMessage,
   buildRunnerCommand,
+  runnerModelFor,
 } = require('../lib/runner-command');
 
 const RUNNER_ENV_KEYS = [
@@ -193,7 +194,7 @@ test('compat runner profiles resolve to concrete runner configs', () => {
       bin: 'claude',
       model: DEFAULT_FABLE_RUNNER_MODEL,
       template: '',
-      command: /claude -p .*--model claude-fable-5\b/,
+      command: /claude -p .*--model claude-fable-5-1\b/,
     },
     {
       profile: 'composer',
@@ -301,7 +302,7 @@ test('runnerAvailabilityFailureMessage reports unknown profiles without rethrowi
 // does not resolve differently across Claude Code versions or account rollouts.
 test('default model is pinned to Opus 5.5', () => {
   assert.equal(DEFAULT_CLAUDE_RUNNER_MODEL, 'claude-opus-5-5');
-  assert.equal(DEFAULT_FABLE_RUNNER_MODEL, 'claude-fable-5');
+  assert.equal(DEFAULT_FABLE_RUNNER_MODEL, 'claude-fable-5-1');
 });
 
 // --- buildRunnerCommand: --model always injected ---
@@ -404,4 +405,57 @@ test('buildRunnerCommand escapes single quotes in the prompt path', () => {
 test('buildRunnerCommand requires a promptFile', () => {
   assert.throws(() => buildRunnerCommand({ allowedTools: 'Bash' }), /promptFile is required/);
   assert.throws(() => buildRunnerCommand(), /promptFile is required/);
+});
+
+test('the fable profile runs Fable 5.1, not the stale claude-fable-5', () => {
+  assert.equal(RUNNER_PROFILE_DEFS.fable.model, 'claude-fable-5-1');
+  withRunnerEnv({ ATRIS_RUNNER_PROFILE: 'fable' }, () => {
+    const cmd = buildRunnerCommand({ promptFile: '/tmp/p.tmp' });
+    assert.match(cmd, /--model claude-fable-5-1(\s|$)/);
+    assert.doesNotMatch(cmd, /claude-fable-5(\s|$)/);
+  });
+});
+
+test('a display name with a space becomes the id the claude cli accepts', () => {
+  for (const [typed, id] of [
+    ['opus 5.5', 'claude-opus-5-5'],
+    ['Opus 5.5', 'claude-opus-5-5'],
+    ['fable 5.1', 'claude-fable-5-1'],
+    ['haiku 5.5', 'claude-haiku-5-5'],
+    ['sonnet 5', 'claude-sonnet-5'],
+    ['opus 5.5[1m]', 'claude-opus-5-5[1m]'],
+  ]) {
+    assert.equal(runnerModelFor('claude', typed), id, typed);
+    assert.equal(runnerModelFor('', typed), id, typed);
+    withRunnerEnv({}, () => {
+      assert.match(buildRunnerCommand({ promptFile: '/tmp/p.tmp', model: typed }), new RegExp(`--model '?${id.replace(/[[\]]/g, '\\$&')}'?(\\s|$)`), typed);
+    });
+  }
+  assert.equal(runnerModelFor('fable', 'fable 5.1'), 'claude-fable-5-1');
+  assert.equal(runnerModelFor('haiku', 'haiku 4.5'), 'claude-haiku-5-5', 'a retired version still upgrades');
+});
+
+test('ids, aliases and other engines model names pass through unchanged', () => {
+  for (const same of ['claude-opus-5-5', 'claude-fable-5-1', 'claude-sonnet-4-6[1m]', 'opus', 'sonnet', 'opusplan', 'default']) {
+    assert.equal(runnerModelFor('claude', same), same, same);
+  }
+  assert.equal(runnerModelFor('devin', 'swe-2-max'), 'swe-2-max');
+  assert.equal(runnerModelFor('grok', 'grok-4.7-build-fast'), 'grok-4.7-build-fast');
+  assert.equal(runnerModelFor('agy', 'gemini 3.8 flash'), 'gemini 3.8 flash');
+  assert.equal(runnerModelFor('opencode', 'anthropic/claude-opus-5-5'), 'anthropic/claude-opus-5-5');
+  // an engine that is not the claude cli never reads "opus 5.5" as a claude id
+  assert.equal(runnerModelFor('devin', 'opus 5.5'), 'opus 5.5');
+  assert.equal(runnerModelFor('cursor', 'sonnet 5'), 'sonnet 5');
+  withRunnerEnv({ ATRIS_RUNNER_PROFILE: 'devin' }, () => {
+    assert.match(buildRunnerCommand({ promptFile: '/tmp/p.tmp', model: 'opus 5.5' }), /--model 'opus 5\.5'/);
+  });
+});
+
+test('a roster pick or mission model still saved as claude-fable-5 runs as Fable 5.1', () => {
+  assert.equal(runnerModelFor('fable', 'claude-fable-5'), 'claude-fable-5-1');
+  assert.equal(runnerModelFor('claude', 'claude-fable-5[1m]'), 'claude-fable-5-1[1m]');
+  assert.equal(runnerModelFor('claude', 'claude-fable-5-1'), 'claude-fable-5-1');
+  withRunnerEnv({}, () => {
+    assert.match(buildRunnerCommand({ promptFile: '/tmp/p.tmp', model: 'claude-fable-5' }), /--model claude-fable-5-1(\s|$)/);
+  });
 });

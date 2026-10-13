@@ -316,6 +316,41 @@ test('--runs lists attempts newest first, at most 20, and can pick one job', asy
   });
 });
 
+test('--runs --json gives every run its model and every run that did not land a one-line reason', async () => {
+  await withRoom(async ({ root }) => {
+    const at = (minutes) => new Date(NOW - minutes * 60000).toISOString();
+    // Lines written before reasons were stored carry none; write them raw, as an older atris would have.
+    const file = rosterRunsPath(root);
+    fs.mkdirSync(path.dirname(file), { recursive: true });
+    const old = [
+      { at: at(4), job: 'build', engine: 'cursor', outcome: 'failed', seconds: 30, task: 'CLI-2' },
+      { at: at(2), job: 'build', engine: 'grok', model: 'grok-4.7', outcome: 'stalled', seconds: 600, task: 'CLI-4' },
+      { at: at(1), job: 'build', engine: 'claude', model: 'claude-opus-5-5', outcome: 'credit out', seconds: 5, task: 'CLI-5' },
+    ];
+    fs.appendFileSync(file, old.map((row) => JSON.stringify(row)).join('\n') + '\n');
+    seed(root, [
+      { at: at(5), job: 'build', engine: 'devin', model: 'swe-2-max', outcome: 'landed', seconds: 60, task: 'CLI-1' },
+      { at: at(3), job: 'build', engine: 'codex', model: 'gpt-6-astra', outcome: 'failed', detail: 'codex exited 1', seconds: 30, task: 'CLI-3' },
+    ]);
+    const json = JSON.parse(command(root, ['roster', '--runs', '--json']).out);
+    const byTask = Object.fromEntries(json.runs.map((run) => [run.task, run]));
+    assert.equal(byTask['CLI-1'].model, 'swe-2-max');
+    assert.equal(byTask['CLI-1'].reason, undefined, 'a landed run needs no reason');
+    assert.equal(byTask['CLI-2'].model, null, 'no recorded model is null, not a made-up name');
+    assert.match(byTask['CLI-2'].model_note, /not recorded/);
+    assert.equal(byTask['CLI-1'].model_note, undefined);
+    assert.equal(byTask['CLI-2'].reason, 'it failed and the tool gave no reason');
+    assert.equal(byTask['CLI-3'].reason, 'codex exited 1', 'a reason the writer gave is kept');
+    assert.equal(byTask['CLI-3'].model, 'gpt-6-astra');
+    assert.equal(byTask['CLI-4'].reason, 'it did not finish in time');
+    assert.equal(byTask['CLI-5'].reason, 'the engine hit its usage limit');
+    for (const run of json.runs) {
+      assert.ok('model' in run, `${run.task} has a model key`);
+      if (run.outcome !== 'landed') assert.ok(run.reason && !run.reason.includes('\n'), `${run.task} has a one-line reason`);
+    }
+  });
+});
+
 test('a corrupt line or a missing file is skipped, never an error', async () => {
   await withRoom(async ({ root }) => {
     assert.deepEqual(runs(root), []);

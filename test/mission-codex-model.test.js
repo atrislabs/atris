@@ -119,7 +119,7 @@ test('a dropped model takes a literal model flag in the template with it', () =>
 test('claude steps keep their model pin', () => {
   assert.match(tickCommand({ runner: 'claude', model: 'claude-opus-5-5' }), /^claude -p .* --model claude-opus-5-5$/);
   assert.match(tickCommand({ runner: 'claude' }), /--model claude-opus-5-5$/);
-  assert.match(tickCommand({ runner: 'fable' }), /--model claude-fable-5$/);
+  assert.match(tickCommand({ runner: 'fable' }), /--model claude-fable-5-1$/);
   const template = { ATRIS_RUNNER_COMMAND_TEMPLATE: '{bin} -p {prompt} {modelFlag}' };
   assert.match(tickCommand({ runner: 'claude' }, template), /--model claude-opus-5-5$/);
   assert.match(tickCommand({ runner: 'claude', model: 'default' }, template), /--model default$/);
