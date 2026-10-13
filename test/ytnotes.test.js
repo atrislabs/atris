@@ -674,7 +674,7 @@ test('ytnotes still fails a 429 when no captions were written', () => {
   assert.equal(fs.existsSync(path.join(work, 'ytnotes', 'yt_empty429.md')), false);
 });
 
-function runNoCaptionNotes(label, { withWhisper, whisperVtt, extraEnv = {}, audioFailures = 0, extraBins = {}, withClaude = true, withYtDlp = true, ytDlpVersion }) {
+function runNoCaptionNotes(label, { withWhisper, whisperVtt, extraEnv = {}, audioFailures = 0, botClients = [], extraBins = {}, withClaude = true, withYtDlp = true, ytDlpVersion }) {
   const tmp = fs.mkdtempSync(path.join(os.tmpdir(), `atris-ytnotes-${label}-`));
   const bin = path.join(tmp, 'bin');
   const work = path.join(tmp, 'work');
@@ -685,12 +685,15 @@ function runNoCaptionNotes(label, { withWhisper, whisperVtt, extraEnv = {}, audi
   writeExec(path.join(bin, 'yt-dlp'), [
     '#!/bin/bash',
     answerVersion(ytDlpVersion),
-    'out=""; audio=0; prev=""',
+    'out=""; audio=0; prev=""; client=default',
     'for a in "$@"; do',
     '  [ "$prev" = "-o" ] && out="$a"',
     '  [ "$prev" = "-f" ] && audio=1',
+    '  [ "$prev" = "--extractor-args" ] && client="${a#youtube:player_client=}"',
     '  prev="$a"',
     'done',
+    // Log each audio request as "<client> <args>"; botClients get the bot wall.
+    `if [ "$audio" = 1 ]; then echo "$client $*" >> "${'$'}{TMPDIR}/audio_args"; case " ${botClients.join(' ')} " in *" $client "*) echo "ERROR: [youtube] ${label}: Sign in to confirm you're not a bot. Use --cookies-from-browser or --cookies for the authentication." >&2; exit 1 ;; esac; fi`,
     // The first audioFailures audio requests get a 403, like real YouTube.
     `if [ "$audio" = 1 ]; then n=$(cat "${'$'}{TMPDIR}/audio_tries" 2>/dev/null || echo 0); echo $((n + 1)) > "${'$'}{TMPDIR}/audio_tries"; if [ "$n" -lt ${audioFailures} ]; then echo "ERROR: unable to download video data: HTTP Error 403: Forbidden" >&2; exit 1; fi; printf "fake-audio" > "${'$'}{out/\\%(ext)s/m4a}"; exit 0; fi`,
     `printf "%s\\n" "${label}|No Caption Talk|Chan|1:02:00"`,
@@ -792,17 +795,115 @@ test('ytnotes retries a refused audio download', () => {
   assert.match(fs.readFileSync(path.join(dir, 'yt_nocap4.clean.txt'), 'utf8'), /Spoken only in audio/);
 });
 
-test('ytnotes gives up after three refused audio downloads', () => {
-  const { result } = runNoCaptionNotes('nocap5', {
+// Audio requests the fake yt-dlp saw, one "<client> <args>" line each.
+function audioCalls(dir) {
+  const file = path.join(path.dirname(dir), 'audio_args');
+  return fs.existsSync(file) ? fs.readFileSync(file, 'utf8').trim().split('\n') : [];
+}
+
+test('ytnotes gives up after three refused audio downloads per client', () => {
+  const { result, dir } = runNoCaptionNotes('nocap5', {
     withWhisper: true,
     whisperVtt: LOCAL_VTT,
-    audioFailures: 3,
+    // Three tries for each of the two default clients.
+    audioFailures: 6,
     extraEnv: { ATRIS_YTNOTES_RETRY_SECONDS: '0' },
   });
 
   assert.equal(result.status, 2);
+  assert.equal(audioCalls(dir).length, 6);
   assert.match(result.stderr, /Local transcription failed \(download: ERROR: unable to download video data: HTTP Error 403/);
+  assert.doesNotMatch(result.stderr, /YouTube is blocking/);
   assert.match(result.stderr, /atris youtube process/);
+});
+
+test('ytnotes tries the embedded player first for audio', () => {
+  const { result, dir } = runNoCaptionNotes('nocapbot0', { withWhisper: true, whisperVtt: LOCAL_VTT });
+
+  assert.equal(result.status, 0, result.stderr || result.stdout);
+  const calls = audioCalls(dir);
+  assert.equal(calls.length, 1, calls.join('\n'));
+  assert.match(calls[0], /^web_embedded .*--extractor-args youtube:player_client=web_embedded/);
+  assert.doesNotMatch(calls[0], /--cookies-from-browser/, 'cookies stay off by default');
+});
+
+test('ytnotes moves to the next client at once on a bot wall', () => {
+  const { result, dir } = runNoCaptionNotes('nocapbot1', {
+    withWhisper: true,
+    whisperVtt: LOCAL_VTT,
+    botClients: ['web_embedded'],
+    extraEnv: { ATRIS_YTNOTES_RETRY_SECONDS: '0' },
+  });
+
+  assert.equal(result.status, 0, result.stderr || result.stdout);
+  const calls = audioCalls(dir);
+  assert.deepEqual(calls.map((c) => c.split(' ')[0]), ['web_embedded', 'default'], calls.join('\n'));
+  assert.doesNotMatch(calls[1], /--extractor-args/, 'default lets yt-dlp pick its own client');
+  assert.doesNotMatch(calls.join('\n'), /--cookies-from-browser/, 'cookies stay off by default');
+  assert.match(fs.readFileSync(path.join(dir, 'yt_nocapbot1.clean.txt'), 'utf8'), /Spoken only in audio/);
+});
+
+test('ytnotes keeps three tries per client for a refused (403) download', () => {
+  const { result, dir } = runNoCaptionNotes('nocapbot2', {
+    withWhisper: true,
+    whisperVtt: LOCAL_VTT,
+    // web_embedded is refused three times, default once, then default works.
+    audioFailures: 4,
+    extraEnv: { ATRIS_YTNOTES_RETRY_SECONDS: '0' },
+  });
+
+  assert.equal(result.status, 0, result.stderr || result.stdout);
+  const calls = audioCalls(dir);
+  assert.deepEqual(calls.map((c) => c.split(' ')[0]),
+    ['web_embedded', 'web_embedded', 'web_embedded', 'default', 'default'], calls.join('\n'));
+});
+
+test('ytnotes says plainly when YouTube blocks every audio client, before the paid hint', () => {
+  const { result, dir } = runNoCaptionNotes('nocapbot3', {
+    withWhisper: true,
+    whisperVtt: LOCAL_VTT,
+    botClients: ['web_embedded', 'default'],
+    extraEnv: { ATRIS_YTNOTES_RETRY_SECONDS: '0' },
+  });
+
+  assert.equal(result.status, 2);
+  assert.equal(audioCalls(dir).length, 2, 'a bot wall is never retried');
+  const blocked = result.stderr.indexOf('YouTube is blocking audio downloads from this internet connection');
+  const paid = result.stderr.indexOf('atris youtube process');
+  assert.ok(blocked >= 0, result.stderr);
+  assert.ok(paid > blocked, 'the blocked line comes before the paid hint');
+  assert.match(result.stderr, /ATRIS_YTNOTES_COOKIES_FROM_BROWSER=safari/);
+  assert.doesNotMatch(result.stderr, /Local transcription failed/);
+  assert.equal(fs.existsSync(path.join(dir, 'yt_nocapbot3.md')), false);
+});
+
+test('ytnotes passes browser cookies to yt-dlp only when opted in', () => {
+  const { result, dir } = runNoCaptionNotes('nocapbot4', {
+    withWhisper: true,
+    whisperVtt: LOCAL_VTT,
+    botClients: ['web_embedded'],
+    extraEnv: { ATRIS_YTNOTES_COOKIES_FROM_BROWSER: 'safari', ATRIS_YTNOTES_RETRY_SECONDS: '0' },
+  });
+
+  assert.equal(result.status, 0, result.stderr || result.stdout);
+  const calls = audioCalls(dir);
+  assert.equal(calls.length, 2, calls.join('\n'));
+  for (const call of calls) assert.match(call, /--cookies-from-browser safari/);
+});
+
+test('ytnotes ATRIS_YTNOTES_AUDIO_CLIENTS sets the client order', () => {
+  const { result, dir } = runNoCaptionNotes('nocapbot5', {
+    withWhisper: true,
+    whisperVtt: LOCAL_VTT,
+    botClients: ['mweb'],
+    extraEnv: { ATRIS_YTNOTES_AUDIO_CLIENTS: 'mweb tv', ATRIS_YTNOTES_RETRY_SECONDS: '0' },
+  });
+
+  assert.equal(result.status, 0, result.stderr || result.stdout);
+  const calls = audioCalls(dir);
+  assert.deepEqual(calls.map((c) => c.split(' ')[0]), ['mweb', 'tv'], calls.join('\n'));
+  assert.match(calls[1], /--extractor-args youtube:player_client=tv/);
+  assert.doesNotMatch(calls.join('\n'), /web_embedded/);
 });
 
 test('ytnotes auto writer uses Gemini through agy when it answers', () => {
@@ -850,6 +951,28 @@ test('ytnotes auto writer skips the Antigravity editor launcher named agy', () =
   assert.match(fs.readFileSync(path.join(dir, 'yt_auto5.md'), 'utf8'), /# No Caption Talk/);
   assert.doesNotMatch(result.stderr, /Gemini did not answer/);
   assert.match(result.stderr, /^notes by Haiku$/m);
+});
+
+test('ytnotes auto writer skips a signed-out agy without running it', () => {
+  const signedOut = [
+    '#!/bin/sh',
+    'if [ "$1" = models ]; then echo "Error: Please sign in to view available models." >&2; exit 1; fi',
+    'echo "agy ran" > "$(dirname "$0")/agy.ran"',
+    'echo "# From Gemini"',
+    '',
+  ].join('\n');
+  const { result, dir } = runNoCaptionNotes('auto6', {
+    withWhisper: true,
+    whisperVtt: LOCAL_VTT,
+    extraEnv: { ATRIS_YTNOTES_ENGINE: 'auto' },
+    extraBins: { agy: signedOut },
+  });
+
+  assert.equal(result.status, 0, result.stderr || result.stdout);
+  assert.match(fs.readFileSync(path.join(dir, 'yt_auto6.md'), 'utf8'), /# No Caption Talk/);
+  assert.match(result.stderr, /not signed in; skipping Gemini/);
+  assert.match(result.stderr, /^notes by Haiku$/m);
+  assert.equal(fs.existsSync(path.join(dir, 'agy.ran')) || fs.existsSync(path.join(path.dirname(dir), 'agy.ran')), false, 'the signed-out agy never ran a prompt');
 });
 
 test('ytnotes auto writer falls back to Haiku when agy is not installed', () => {
