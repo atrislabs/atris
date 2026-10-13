@@ -276,7 +276,7 @@ test('restaffing keeps legacy rotation when history is thin and follows rich exe
 test('landArrival rebases clean arrivals and pauses on conflict without resolving', () => {
   const log = [];
   const gitOk = (args) => { log.push(args[0]); return { status: 0, stdout: '', stderr: '' }; };
-  const clean = fleet.landArrival({ worktreePath: '/wt', git: gitOk });
+  const clean = fleet.landArrival({ worktreePath: '/wt', targetRef: 'origin/master', git: gitOk });
   assert.deepEqual(clean, { ok: true, stage: 'rebased' });
 
   const conflictGit = (args) => {
@@ -285,7 +285,7 @@ test('landArrival rebases clean arrivals and pauses on conflict without resolvin
     if (args[0] === 'diff') return { status: 0, stdout: 'commands/mission.js\n', stderr: '' };
     return { status: 0, stdout: '', stderr: '' };
   };
-  const paused = fleet.landArrival({ worktreePath: '/wt', git: conflictGit });
+  const paused = fleet.landArrival({ worktreePath: '/wt', targetRef: 'origin/master', git: conflictGit });
   assert.equal(paused.ok, false);
   assert.equal(paused.stage, 'rebase_conflict');
   assert.deepEqual(paused.conflicts, ['commands/mission.js']);
@@ -306,7 +306,7 @@ test('landArrival reports dirty_worktree, not an empty rebase_conflict', () => {
     if (args[0] === 'status') return { status: 0, stdout: ' M lib/web.js\n?? scratch.txt\n', stderr: '' };
     return { status: 0, stdout: '', stderr: '' };
   };
-  const dirty = fleet.landArrival({ worktreePath: '/wt', git: dirtyGit });
+  const dirty = fleet.landArrival({ worktreePath: '/wt', targetRef: 'origin/master', git: dirtyGit });
   assert.equal(dirty.ok, false);
   assert.equal(dirty.stage, 'dirty_worktree');
   assert.deepEqual(dirty.dirty, ['lib/web.js', 'scratch.txt']);
@@ -338,6 +338,23 @@ test('detectDeadEngineDispatch flags a signalled leg distinctly from a plain non
   assert.deepEqual(fleet.detectDeadEngineDispatch({ exitCode: 2, report: 'boom' }), { reason: 'nonzero_exit', exitCode: 2 });
 });
 
+test('only failed or empty engine-level output can refuse a build', () => {
+  const sentence = 'Not logged in. Run: atris login';
+  for (const field of ['report', 'stdout']) {
+    assert.equal(fleet.detectDeadEngineDispatch({ exitCode: 0, [field]: sentence }), null);
+    assert.equal(fleet.detectDeadEngineDispatch({ exitCode: 0, [field]: 'committed work', stderr: sentence }), null);
+    assert.deepEqual(fleet.detectDeadEngineDispatch({ exitCode: 1, [field]: sentence }), { reason: 'nonzero_exit', exitCode: 1 });
+  }
+  for (const run of [
+    { exitCode: 1, stderr: sentence },
+    { exitCode: 0, stderr: sentence },
+    { exitCode: 1, error: new Error(sentence) },
+    { exitCode: 0, report: 'work', error: new Error(sentence) },
+  ]) {
+    assert.deepEqual(fleet.detectDeadEngineDispatch(run), { reason: 'engine_refused', detail: sentence, exitCode: run.exitCode });
+  }
+});
+
 test('empty exit zero is no_output and missing exit metadata is unknown', () => {
   assert.deepEqual(fleet.detectDeadEngineDispatch({ exitCode: 0, report: ' \n', stderr: '' }), { reason: 'no_output', exitCode: 0 });
   assert.deepEqual(fleet.detectDeadEngineDispatch({ report: 'claimed success' }), { reason: 'unknown', exitCode: null });
@@ -361,6 +378,7 @@ test('defaultSelfLandCheck fetches the target ref and checks HEAD ancestry', () 
   const calls = [];
   const result = fleet.defaultSelfLandCheck({
     worktreePath: '/wt',
+    targetRef: 'origin/master',
     startCommit: 'base-commit',
     git: (args) => {
       calls.push(args);
@@ -700,7 +718,7 @@ function baseAfter(call) {
   return i > -1 ? call[i + 1] : null;
 }
 
-test('runFleetFlight cuts build worktrees from origin/master by default', async () => {
+test('runFleetFlight uses HEAD when no remote mainline is known', async () => {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'fleet-base-'));
   try {
     const stateDir = path.join(root, '.atris', 'state');
@@ -725,7 +743,7 @@ test('runFleetFlight cuts build worktrees from origin/master by default', async 
       lander: () => ({ ok: true, stage: 'shipped' }),
     });
     assert.equal(startCalls.length, 1);
-    assert.equal(baseAfter(startCalls[0]), 'origin/master', 'default fleet worktree must cut from origin/master');
+    assert.equal(baseAfter(startCalls[0]), 'HEAD', 'unknown mainline must not invent origin/master');
   } finally {
     fs.rmSync(root, { recursive: true, force: true });
   }
@@ -762,7 +780,7 @@ test('runFleetFlight keeps launcher-HEAD only when checkoutBase is explicit', as
   }
 });
 
-test('runDispatchFlight cuts its worktree from origin/master by default', async () => {
+test('runDispatchFlight uses HEAD when no remote mainline is known', async () => {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'dispatch-base-'));
   try {
     const startCalls = [];
@@ -786,7 +804,7 @@ test('runDispatchFlight cuts its worktree from origin/master by default', async 
       lander: () => ({ ok: true, stage: 'shipped', check: 'node --test test/a.test.js', verifyOutput: 'ok' }),
     });
     assert.equal(startCalls.length, 1);
-    assert.equal(baseAfter(startCalls[0]), 'origin/master', 'default dispatch worktree must cut from origin/master');
+    assert.equal(baseAfter(startCalls[0]), 'HEAD', 'unknown mainline must not invent origin/master');
   } finally {
     fs.rmSync(root, { recursive: true, force: true });
   }
@@ -795,7 +813,8 @@ test('runDispatchFlight cuts its worktree from origin/master by default', async 
 test('fleet landings ship with an explicit master target, never the launcher branch base', () => {
   const args = fleet.fleetShipArgs(
     { task: { display_id: 'F-9', title: 'fix the thing. Done: x.' }, engine: 'cursor' },
-    'node --test test/a.test.js'
+    'node --test test/a.test.js',
+    'origin/master'
   );
   const target = args.indexOf('--target');
   assert.ok(target > -1, 'ship args must carry --target');

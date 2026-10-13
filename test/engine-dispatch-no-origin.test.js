@@ -74,7 +74,7 @@ printf 'saved the local result\\n'
       if (origin) {
         assert.equal(dispatched.status, 1);
         assert.equal(receipt.paused[0].stage, 'worktree_start');
-        assert.match(receipt.paused[0].detail, /invalid reference: origin\/master/);
+        assert.match(receipt.paused[0].detail, /invalid reference: origin\/HEAD/);
         assert.equal(receipt.paused[0].claim_released, true);
         assert.equal(receipt.local_only, undefined);
         assert.equal(fs.existsSync(env.ATRIS_TEST_PROMPT), false, 'the engine cannot start without the protected base');

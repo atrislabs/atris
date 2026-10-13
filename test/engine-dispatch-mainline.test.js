@@ -79,17 +79,18 @@ for (const args of [['add', 'result.txt'], ['commit', '-qm', 'correct the result
   const run = spawnSync('git', args);
   if (run.status !== 0) process.exit(1);
 }
-console.log('saved the result');
+console.log('Not logged in. Run: atris login');
 `);
       fs.mkdirSync(path.join(setup.root, '.atris/state'), { recursive: true });
       fs.writeFileSync(path.join(setup.root, '.atris/state/tasks.projection.json'), JSON.stringify({ tasks: [TASK] }));
       const calls = [];
-      const options = { root: setup.root, ownCli: flightCli(setup, calls), scoutAsk: false, log: () => {} };
+      const options = { root: setup.root, ownCli: flightCli(setup, calls), scoutAsk: async () => null, log: () => {} };
       const flight = mode === 'dispatch'
-        ? await fleet.runDispatchFlight({ ...options, taskIds: [TASK.display_id], engine: 'cursor', installedEngines: [] })
-        : await fleet.runFleetFlight({ ...options, engines: ['cursor'], guardCliLink: () => ({ ok: true }) });
+        ? await fleet.runDispatchFlight({ ...options, taskIds: [TASK.display_id], engine: 'cursor', installedEngines: ['devin'] })
+        : await fleet.runFleetFlight({ ...options, slots: 1, engines: ['cursor', 'devin'], guardCliLink: () => ({ ok: true }) });
       assert.deepEqual(flight.paused, [], JSON.stringify(flight.paused));
       assert.equal(flight.landed.length, 1);
+      assert.equal(flight.results[0].restaffed, undefined);
       assert.equal(fs.readFileSync(path.join(setup.root, 'result.txt'), 'utf8'), 'after\n');
       for (const [verb, flag] of [['start', '--base'], ['ship', '--target']]) {
         const call = calls.find(args => args[0] === 'worktree' && args[1] === verb);
@@ -102,7 +103,7 @@ console.log('saved the result');
 
 for (const mode of ['dispatch', 'fleet']) {
   for (const [stream, status, sentence] of [
-    ['stdout', 0, 'Refusing to run in an untrusted workspace'],
+    ['stderr', 0, 'Refusing to run in an untrusted workspace'],
     ['stderr', 1, 'Not logged in. Please log in to continue.'],
   ]) {
     test(`${mode} preserves the exact refusal from ${stream} at exit ${status}`, async (t) => {
@@ -112,7 +113,7 @@ for (const mode of ['dispatch', 'fleet']) {
       fs.writeFileSync(path.join(setup.root, '.atris/state/tasks.projection.json'), JSON.stringify({ tasks: [TASK] }));
       const calls = [];
       const lines = [];
-      const options = { root: setup.root, ownCli: flightCli(setup, calls), scoutAsk: false, log: line => lines.push(line) };
+      const options = { root: setup.root, ownCli: flightCli(setup, calls), scoutAsk: async () => null, log: line => lines.push(line) };
       const flight = mode === 'dispatch'
         ? await fleet.runDispatchFlight({ ...options, taskIds: [TASK.display_id], engine: 'devin', installedEngines: [] })
         : await fleet.runFleetFlight({ ...options, engines: ['devin'], guardCliLink: () => ({ ok: true }) });
@@ -143,6 +144,7 @@ test('remote HEAD wins over main and master; absent HEAD prefers main; worktree 
   finally { console.log = savedLog; }
   assert.match(lines[0], /origin\/trunk$/);
   setup.git(['symbolic-ref', '--delete', 'refs/remotes/origin/HEAD']);
+  setup.git(['remote', 'set-url', 'origin', path.join(setup.dir, 'offline.git')]);
   assert.equal(defaultMainlineBase(setup.root), 'origin/main');
   assert.equal(collectBoard(setup.root).base, 'origin/main');
   setup.git(['update-ref', '-d', 'refs/remotes/origin/main']);
@@ -162,4 +164,75 @@ test('claim cleanup without a known base preserves committed local work', (t) =>
     worktreeByTask: new Map(), actorByTask: new Map([[TASK.display_id, 'fleet-devin']]),
   });
   assert.deepEqual(calls, []);
+});
+
+for (const mode of ['dispatch', 'fleet']) {
+  test(`${mode} retains a refusal in the receipt and printed handoff when a backup lands`, async (t) => {
+    const setup = room(t);
+    const marker = path.join(setup.dir, 'attempted');
+    const sentence = 'Not logged in. Please log in to continue.';
+    withEngine(t, setup.dir, `
+const fs = require('node:fs');
+const { spawnSync } = require('node:child_process');
+const marker = ${JSON.stringify(marker)};
+if (!fs.existsSync(marker)) {
+  fs.writeFileSync(marker, 'first');
+  console.error(${JSON.stringify(sentence)});
+  process.exit(1);
+}
+fs.writeFileSync('result.txt', 'after\\n');
+for (const args of [['add', 'result.txt'], ['commit', '-qm', 'correct the result']]) {
+  if (spawnSync('git', args).status !== 0) process.exit(1);
+}
+console.log('saved the result');
+`);
+    fs.mkdirSync(path.join(setup.root, '.atris/state'), { recursive: true });
+    fs.writeFileSync(path.join(setup.root, '.atris/state/tasks.projection.json'), JSON.stringify({ tasks: [TASK] }));
+    const lines = [];
+    const options = { root: setup.root, ownCli: flightCli(setup, []), scoutAsk: async () => null, log: line => lines.push(line) };
+    const flight = mode === 'dispatch'
+      ? await fleet.runDispatchFlight({ ...options, taskIds: [TASK.display_id], engine: 'devin', installedEngines: ['cursor'] })
+      : await fleet.runFleetFlight({ ...options, slots: 1, engines: ['devin', 'cursor'], guardCliLink: () => ({ ok: true }) });
+    assert.deepEqual(flight.paused, []);
+    assert.equal(flight.landed.length, 1);
+    assert.equal(flight.results[0].restaffed.detail, sentence);
+    const receipt = JSON.parse(fs.readFileSync(flight.receipt, 'utf8'));
+    assert.equal(receipt.results[0].restaffed.detail, sentence);
+    assert.equal(receipt.landed[0].restaffed.detail, sentence);
+    assert.ok(lines.some(line => line.includes(sentence)), lines.join('\n'));
+  });
+}
+
+test('default branch follows a remote rename even while the saved remote HEAD and master ref survive', (t) => {
+  const setup = room(t, 'master');
+  setup.git(['push', '-q', 'origin', 'HEAD:main']);
+  setup.git(['symbolic-ref', 'HEAD', 'refs/heads/main'], setup.origin);
+  assert.equal(setup.git(['symbolic-ref', '--short', 'refs/remotes/origin/HEAD']), 'origin/master');
+  assert.equal(defaultMainlineBase(setup.root), 'origin/main');
+  assert.equal(fleet.resolveDispatchLandTarget(setup.root), 'origin/main');
+  assert.equal(collectBoard(setup.root).base, 'origin/main');
+});
+
+test('an origin without known branch refs never invents origin/master', (t) => {
+  const setup = room(t);
+  setup.git(['symbolic-ref', '--delete', 'refs/remotes/origin/HEAD']);
+  setup.git(['update-ref', '-d', 'refs/remotes/origin/main']);
+  setup.git(['remote', 'set-url', 'origin', path.join(setup.dir, 'offline.git')]);
+  assert.equal(fleet.resolveDispatchLandTarget(setup.root), 'origin/HEAD');
+});
+
+test('local landing skips fetch without origin and still rebases and checks source dirt', (t) => {
+  const setup = room(t);
+  const base = setup.git(['rev-parse', 'HEAD']);
+  setup.git(['remote', 'remove', 'origin']);
+  const calls = [];
+  const git = args => {
+    calls.push(args);
+    return spawnSync('git', args, { cwd: setup.root, encoding: 'utf8' });
+  };
+  assert.deepEqual(fleet.landArrival({ worktreePath: setup.root, targetRef: base, git }), { ok: true, stage: 'rebased' });
+  assert.equal(calls.some(args => args[0] === 'fetch'), false);
+  assert.ok(calls.some(args => args[0] === 'rebase' && args[1] === base));
+  fs.writeFileSync(path.join(setup.root, 'result.txt'), 'dirty\n');
+  assert.equal(fleet.landArrival({ worktreePath: setup.root, targetRef: base, git }).stage, 'dirty_worktree');
 });

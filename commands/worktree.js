@@ -296,6 +296,14 @@ function currentUpstream(root) {
 }
 
 function remoteHead(root) {
+  // The saved origin/HEAD survives branch renames. Ask the remote before
+  // trusting it, keeping the offline fallback when the remote is unavailable.
+  const remote = runGit(['remote', 'get-url', 'origin'], { cwd: root, check: false });
+  if (remote.status === 0) {
+    const live = runGit(['ls-remote', '--symref', 'origin', 'HEAD'], { cwd: root, check: false, timeout: 5000 });
+    const match = live.status === 0 && String(live.stdout || '').match(/^ref: refs\/heads\/(.+)\s+HEAD$/m);
+    if (match) return `origin/${match[1]}`;
+  }
   const result = runGit(['symbolic-ref', '--quiet', '--short', 'refs/remotes/origin/HEAD'], { cwd: root, check: false });
   return result.status === 0 ? result.stdout.trim() : '';
 }
