@@ -9,6 +9,7 @@ const { spawnSync } = require('node:child_process');
 const { scrubAgentEnv } = require('./helpers/agent-env');
 const {
   memberApprovalAsks,
+  objectiveNamesCategory,
   parseApprovalRequired,
   runBlockingAsks,
 } = require('../lib/member-approval');
@@ -64,15 +65,25 @@ test('parseApprovalRequired reads inline, block, nested and top-level lists and 
   assert.deepEqual(parseApprovalRequired('---\napproval-required: [send]\n---\n'), ['send']);
 });
 
-test('memberApprovalAsks seeds one open ask per mission and nothing for unknown or empty members', () => {
-  const dir = makeWorkspace('  approval-required: [merge, delete]');
+test('objectiveNamesCategory matches the head word of a category as a stem', () => {
+  assert.equal(objectiveNamesCategory('delete the old logs', 'delete'), true);
+  assert.equal(objectiveNamesCategory('deleting stale files', 'delete'), true);
+  assert.equal(objectiveNamesCategory('Publish the post', 'publish'), true);
+  assert.equal(objectiveNamesCategory('clean up destructive scripts', 'destructive-file-action'), true);
+  assert.equal(objectiveNamesCategory('fix the bug', 'delete'), false);
+  assert.equal(objectiveNamesCategory('anything', ''), false);
+});
+
+test('memberApprovalAsks seeds one open ask for the categories the objective names, nothing otherwise', () => {
+  const dir = makeWorkspace('  approval-required: [merge, delete, publish]');
   try {
-    const asks = memberApprovalAsks('game-manager', dir);
+    const asks = memberApprovalAsks('game-manager', dir, 'merge the branch and delete the temp files');
     assert.equal(asks.length, 1);
     assert.deepEqual(asks[0].categories, ['merge', 'delete']);
     assert.equal(asks[0].answered_at, null);
-    assert.deepEqual(memberApprovalAsks('nobody', dir), []);
-    assert.deepEqual(memberApprovalAsks('../etc', dir), []);
+    assert.deepEqual(memberApprovalAsks('game-manager', dir, 'fix the typo in the readme'), []);
+    assert.deepEqual(memberApprovalAsks('nobody', dir, 'merge it'), []);
+    assert.deepEqual(memberApprovalAsks('../etc', dir, 'merge it'), []);
   } finally {
     cleanup(dir);
   }
@@ -91,10 +102,20 @@ test('runBlockingAsks keeps open asks and a denied approval ask, drops answered 
 test('mission start seeds a human ask from the owner MEMBER.md approval-required', () => {
   const dir = makeWorkspace('  approval-required: [merge, delete]');
   try {
-    const mission = startMission(dir, 'Ship the thing that needs approval');
+    const mission = startMission(dir, 'Merge the thing and delete the scratch files');
     assert.equal(mission.human_asks.length, 1);
     assert.match(mission.human_asks[0].text, /game-manager acting on: merge, delete/);
     assert.equal(mission.human_asks[0].answered_at, null);
+  } finally {
+    cleanup(dir);
+  }
+});
+
+test('an objective that names no approval category seeds no ask, so default members keep running', () => {
+  const dir = makeWorkspace('  approval-required: [delete, refactor-outside-scope]');
+  try {
+    const mission = startMission(dir, 'Add a version flag to the cli');
+    assert.deepEqual(mission.human_asks, []);
   } finally {
     cleanup(dir);
   }
@@ -113,7 +134,7 @@ test('a member with approval-required: [] seeds no ask', () => {
 test('explicit mission run stops on an open human ask without ticking, and resumes after yes', () => {
   const dir = makeWorkspace('  approval-required: [merge]');
   try {
-    const mission = startMission(dir, 'Ship the gated thing');
+    const mission = startMission(dir, 'Merge the gated thing');
     const blocked = runCli(dir, ['mission', 'run', mission.id, '--max-ticks', '1', '--json']);
     assert.equal(blocked.status, 2, blocked.stderr || blocked.stdout);
     const payload = JSON.parse(blocked.stdout);
@@ -140,7 +161,7 @@ test('explicit mission run stops on an open human ask without ticking, and resum
 test('answering no does not clear a seeded approval ask for an explicit run', () => {
   const dir = makeWorkspace('  approval-required: [delete]');
   try {
-    const mission = startMission(dir, 'Ship the denied thing');
+    const mission = startMission(dir, 'Delete the denied thing');
     const no = runCli(dir, ['decide', '1', 'n', '--json']);
     assert.equal(no.status, 0, no.stderr || no.stdout);
     const blocked = runCli(dir, ['mission', 'run', mission.id, '--max-ticks', '1', '--json']);

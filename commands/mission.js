@@ -2988,7 +2988,7 @@ function missionFromArgs(args) {
   const stopCondition = readFlag(args, '--stop', budgetStopCondition(budgetContract) || (verifier ? 'verifier passes and no human asks remain' : 'human marks complete with proof'));
   const taskIds = readRepeatedFlag(args, '--task');
   // MEMBER.md approval-required becomes an open human ask the owner must clear.
-  const humanAsks = [...readRepeatedFlag(args, '--ask'), ...memberApprovalAsks(owner, process.cwd())];
+  const humanAsks = [...readRepeatedFlag(args, '--ask'), ...memberApprovalAsks(owner, process.cwd(), objective)];
   const drive = missionDrive(readFlag(args, '--destination', ''));
   const alwaysOn = hasFlag(args, '--always-on');
   const xpTaskEnabled = hasFlag(args, '--xp-task') || hasFlag(args, '--agent-xp');
