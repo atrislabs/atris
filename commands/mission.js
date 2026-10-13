@@ -9698,6 +9698,7 @@ async function executeMissionRunTicksPhase(context) {
       const tickEngineId = engineBackedTick ? (tickSelection.engine_id || inferredEngineId) : null;
       if (engineBackedTick) {
         result.engine_id = tickEngineId;
+        if (tickRuntimeMission.model) result.model = tickRuntimeMission.model;
         result.requested_engine = tickSelection.requested_engine;
         result.engine_fallback_reason = tickSelection.engine_fallback_reason;
       }

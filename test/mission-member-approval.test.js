@@ -74,6 +74,19 @@ test('objectiveNamesCategory matches the head word of a category as a stem', () 
   assert.equal(objectiveNamesCategory('anything', ''), false);
 });
 
+// Seen live 2026-10-13: "report the baseline read-only; do not edit files"
+// seeded an approval ask for edit-production-texting-router and the run never
+// started. A forbidden action is not a request for it.
+test('objectiveNamesCategory ignores a category the objective forbids', () => {
+  const category = 'edit-production-texting-router-without-texting-review';
+  assert.equal(objectiveNamesCategory('report the baseline read-only; do not edit files', category), false);
+  assert.equal(objectiveNamesCategory("don't edit anything, just read", category), false);
+  assert.equal(objectiveNamesCategory('summarize the logs without deleting them', 'delete'), false);
+  assert.equal(objectiveNamesCategory('never publish drafts', 'publish'), false);
+  assert.equal(objectiveNamesCategory('do not edit the docs, but edit the router', category), true);
+  assert.equal(objectiveNamesCategory('edit the router copy', category), true);
+});
+
 test('memberApprovalAsks seeds one open ask for the categories the objective names, nothing otherwise', () => {
   const dir = makeWorkspace('  approval-required: [merge, delete, publish]');
   try {

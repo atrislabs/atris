@@ -23,9 +23,14 @@ const MISSION_DRIVER_VARS = [
   'ATRIS_MISSION_DRIVER_PARENT_PID',
 ];
 
+// A codex session exports its thread id into every shell it runs, and member
+// run reads it as "a codex caller is here". Tests that exercise that set it.
+const CALLER_SESSION_VARS = ['CODEX_THREAD_ID', 'CODEX_SESSION_ID', 'ATRIS_CALLER_RUNTIME'];
+
 function scrubAgentEnv(base = process.env) {
   const env = { ...base };
   for (const marker of AGENT_ENV_MARKERS) delete env[marker];
+  for (const key of CALLER_SESSION_VARS) delete env[key];
   delete env.ATRIS_AGENT_PROOF_ONLY;
   for (const key of PLAYER_IDENTITY_VARS) delete env[key];
   for (const key of MISSION_DRIVER_VARS) delete env[key];

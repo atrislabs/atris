@@ -9,6 +9,9 @@ const { spawn, spawnSync } = require('node:child_process');
 
 const cli = path.resolve(__dirname, '..', 'bin', 'atris.js');
 
+// A codex session around the suite would make member run pick codex_goal.
+for (const name of ['CODEX_THREAD_ID', 'CODEX_SESSION_ID', 'ATRIS_CALLER_RUNTIME']) delete process.env[name];
+
 function workspace(t) {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'atris-member-run-start-'));
   t.after(() => fs.rmSync(root, { recursive: true, force: true }));

@@ -7,6 +7,9 @@ const { spawnSync } = require('node:child_process');
 
 const repoRoot = path.resolve(__dirname, '..');
 const cliPath = path.join(repoRoot, 'bin', 'atris.js');
+
+// A codex session around the suite would make member run pick codex_goal.
+for (const name of ['CODEX_THREAD_ID', 'CODEX_SESSION_ID', 'ATRIS_CALLER_RUNTIME']) delete process.env[name];
 const { withMissionFullJson } = require('./helpers/mission-json');
 
 function runCli(args, cwd, extraEnv = {}) {
