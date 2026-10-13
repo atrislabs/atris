@@ -398,11 +398,12 @@ run_grok() {
 
 # Notes need no tools, MCP servers, hooks, skills, or a saved session. Skipping
 # them takes about 5s off a 21-minute video (19s to 15s) and keeps the stored
-# login, unlike --bare.
+# login, unlike --bare. Under an agent or a pipe that never closes, claude
+# waits 3s for stdin before it starts; </dev/null skips that wait.
 run_haiku() {
   run_with_timeout 240 claude -p "$PROMPT" --model "${1:-claude-haiku-5-5}" \
     --tools "" --strict-mcp-config --setting-sources "" \
-    --no-session-persistence --disable-slash-commands
+    --no-session-persistence --disable-slash-commands </dev/null
 }
 
 # Gemini Flash through the Antigravity CLI (agy). On an 85-minute transcript it
