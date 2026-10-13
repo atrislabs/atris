@@ -7,11 +7,10 @@ const os = require('node:os');
 const path = require('node:path');
 const { spawnSync } = require('node:child_process');
 const fleet = require('../lib/fleet');
-const { createAgentWorktree, defaultMainlineBase } = require('../commands/worktree');
+const { createAgentWorktree, defaultMainlineBase, gitNetworkEnvironment } = require('../commands/worktree');
 const { collectBoard } = require('../commands/land');
 const { dispatchCodexFlight } = require('../lib/codex-flight');
 const cliPath = path.resolve(__dirname, '../bin/atris.js');
-const SSH_GUARDS = '-o BatchMode=yes -o ConnectTimeout=10 -o ServerAliveInterval=15';
 
 function room(t, branch = 'main') {
   const dir = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'atris-mainline-')));
@@ -268,7 +267,7 @@ test('worktree creation looks up the branch once and disables prompts on every n
   assert.ok(calls.some(call => call.args[0] === 'fetch'));
   for (const call of calls) {
     assert.equal(call.prompt, '0', JSON.stringify(call));
-    assert.equal(call.ssh, `ssh -i /tmp/test-key ${SSH_GUARDS}`);
+    assert.equal(call.ssh, 'ssh -i /tmp/test-key');
   }
   assert.equal(calls.filter(call => call.args.includes('--symref')).length, 1);
 });
@@ -286,7 +285,7 @@ test('checking a build that landed itself also disables network prompts', (t) =>
   assert.equal(calls.length, 1);
   assert.equal(calls[0].args[0], 'fetch');
   assert.equal(calls[0].prompt, '0');
-  assert.equal(calls[0].ssh, `ssh -i /tmp/test-key ${SSH_GUARDS}`);
+  assert.equal(calls[0].ssh, 'ssh -i /tmp/test-key');
 });
 
 test('network git keeps the repo ssh command and leaves a GIT_SSH program alone', (t) => {
@@ -299,7 +298,7 @@ test('network git keeps the repo ssh command and leaves a GIT_SSH program alone'
   assert.deepEqual(calls.map(call => call.args[0]), ['fetch', 'ls-remote']);
   for (const call of calls) {
     assert.equal(call.prompt, '0', JSON.stringify(call));
-    assert.equal(call.ssh, `ssh -i ~/.ssh/work_key -F ~/.ssh/work_config ${SSH_GUARDS}`);
+    assert.equal(call.ssh, undefined);
   }
   fs.rmSync(path.join(setup.dir, 'bin'), { recursive: true });
   fs.rmSync(path.join(setup.dir, 'git-network.jsonl'));
@@ -338,7 +337,7 @@ console.log('saved the result');
     assert.equal(readTrace().filter(call => call.args.includes('--symref')).length, 1);
     for (const call of readTrace()) {
       assert.equal(call.prompt, '0', JSON.stringify(call));
-      assert.equal(call.ssh, `ssh -i /tmp/test-key ${SSH_GUARDS}`);
+      assert.equal(call.ssh, 'ssh -i /tmp/test-key');
     }
     for (const [verb, flag] of [['start', '--base'], ['ship', '--target']]) {
       const call = calls.find(args => args[0] === 'worktree' && args[1] === verb);
@@ -381,4 +380,37 @@ test('local landing skips fetch without origin and still rebases and checks sour
   assert.ok(calls.some(args => args[0] === 'rebase' && args[1] === base));
   fs.writeFileSync(path.join(setup.root, 'result.txt'), 'dirty\n');
   assert.equal(fleet.landArrival({ worktreePath: setup.root, targetRef: base, git }).stage, 'dirty_worktree');
+});
+
+test('custom SSH wrappers stay exact and default SSH is noninteractive', (t) => {
+  const setup = room(t);
+  const command = 'company-ssh --profile work';
+  assert.equal(gitNetworkEnvironment({ GIT_SSH_COMMAND: command }, setup.root).GIT_SSH_COMMAND, command);
+  setup.git(['config', 'core.sshCommand', command]);
+  assert.equal(gitNetworkEnvironment({}, setup.root).GIT_SSH_COMMAND, undefined);
+  setup.git(['config', '--unset', 'core.sshCommand']);
+  assert.equal(gitNetworkEnvironment({}, setup.root).GIT_SSH_COMMAND,
+    'ssh -o BatchMode=yes -o ConnectTimeout=10 -o ServerAliveInterval=15');
+});
+
+test('a remote lookup that ignores termination cannot stall the flight', (t) => {
+  const setup = room(t);
+  traceNetworkGit(t, setup);
+  const wrapper = path.join(setup.dir, 'bin', 'git');
+  const source = fs.readFileSync(wrapper, 'utf8');
+  fs.writeFileSync(wrapper, source.replace("const args = process.argv.slice(2);", `
+const args = process.argv.slice(2);
+if (['ls-remote', 'fetch'].includes(args[0])) {
+  process.on('SIGTERM', () => {});
+  setInterval(() => {}, 1000);
+  return;
+}`));
+  const started = Date.now();
+  assert.equal(defaultMainlineBase(setup.root), 'origin/main');
+  assert.ok(Date.now() - started < 10000, 'lookup must stop at its process timeout');
+  const landingStarted = Date.now();
+  const landing = fleet.landArrival({ worktreePath: setup.root, targetRef: 'origin/main' });
+  assert.equal(landing.ok, false);
+  assert.equal(landing.stage, 'fetch');
+  assert.ok(Date.now() - landingStarted < 20000, 'landing fetch must also stop at its process timeout');
 });

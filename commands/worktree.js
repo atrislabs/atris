@@ -19,22 +19,21 @@ const SHIP_HEALTH_SOURCE = 'ship-health:experiments-daily';
 
 function gitNetworkEnvironment(source = process.env, cwd = process.cwd()) {
   const env = { ...source, GIT_TERMINAL_PROMPT: '0' };
-  // GIT_SSH_COMMAND outranks core.sshCommand and GIT_SSH, so build on the
-  // person's own ssh command. A GIT_SSH program may not take ssh flags; leave it.
-  let ssh = source.GIT_SSH_COMMAND;
-  if (!ssh && source.GIT_SSH) return env;
-  if (!ssh) {
-    const configured = spawnSync('git', ['config', '--get', 'core.sshCommand'], { cwd, encoding: 'utf8', env: source });
-    ssh = (configured.status === 0 && String(configured.stdout || '').trim()) || 'ssh';
-  }
-  // Bound connect and dead-link waits so a push or fetch with no spawn timeout
-  // cannot hang a flight on a slow or dropped network.
-  env.GIT_SSH_COMMAND = `${ssh} -o BatchMode=yes -o ConnectTimeout=10 -o ServerAliveInterval=15`;
+  // Custom commands may be wrappers that do not accept OpenSSH flags.
+  // Leave Git's own command/config/program precedence intact.
+  if (source.GIT_SSH_COMMAND || source.GIT_SSH) return env;
+  const configured = spawnSync('git', ['config', '--get', 'core.sshCommand'], {
+    cwd, encoding: 'utf8', env: source, timeout: 5000, killSignal: 'SIGKILL',
+  });
+  if (configured.status === 0 && String(configured.stdout || '').trim()) return env;
+  env.GIT_SSH_COMMAND = 'ssh -o BatchMode=yes -o ConnectTimeout=10 -o ServerAliveInterval=15';
   return env;
 }
 
 function runGit(args, { cwd = process.cwd(), check = true, timeout } = {}) {
-  const options = { cwd, encoding: 'utf8', timeout, env: gitNetworkEnvironment(process.env, cwd) };
+  const network = ['fetch', 'push', 'ls-remote'].includes(args[0]);
+  const options = { cwd, encoding: 'utf8', timeout: timeout ?? (network ? 30000 : undefined),
+    killSignal: 'SIGKILL', env: gitNetworkEnvironment(process.env, cwd) };
   let result = spawnSync('git', args, options);
   // Linked checkouts share config. A concurrent start must not silently lose
   // its owner/base metadata, but real config errors still stop immediately.
