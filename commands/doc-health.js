@@ -359,7 +359,8 @@ function renderDocHealth(payload) {
 
 function docHealthCommand(args = [], options = {}) {
   if (args.includes('--help') || args.includes('-h') || args[0] === 'help') {
-    console.log('usage: atris doc-health [--json] [--questions <path>] [--fix-refs]');
+    console.log('usage: atris doc-health [--json] [--score] [--questions <path>] [--fix-refs]');
+    console.log('  --score     one member score line: the total out of 100, higher is better');
     console.log('  --fix-refs  rewrite map line refs whose code moved; list the ones a human must fix');
     return 0;
   }
@@ -375,6 +376,11 @@ function docHealthCommand(args = [], options = {}) {
   const questions = index >= 0 && args[index + 1] && !args[index + 1].startsWith('--') ? args[index + 1]
     : args.find(arg => arg.startsWith('--questions='))?.slice('--questions='.length);
   const payload = collectDocHealth({ ...options, ...(questions ? { questions } : {}) });
+  if (args.includes('--score')) {
+    // The member score shape (lib/member-score.js), so launcher can gate on it.
+    console.log(JSON.stringify({ schema: 'atris.member_score.v1', pass: payload.ok ? 1 : 0, total: 1, value: payload.overall.total, unit: '', better: 'higher' }));
+    return payload.ok ? 0 : 1;
+  }
   console.log(args.includes('--json') ? JSON.stringify(payload, null, 2) : renderDocHealth(payload));
   return payload.ok ? 0 : 1;
 }

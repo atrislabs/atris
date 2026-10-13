@@ -17,6 +17,10 @@ permissions:
   approval-required: []
 
 tools: []
+
+score: atris doc-health --score
+score_margin: 0.005
+verify: atris member score launcher --gate
 ---
 
 # Launcher — The Closer

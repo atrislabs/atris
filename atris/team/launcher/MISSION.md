@@ -8,7 +8,7 @@ Any agent finds the right file in one hop, and the docs never drift from the cod
 
 ## Score
 
-`atris doc-health --json` overall total, higher is better (87.4 on 2026-10-13). It is free, steady, and runs in about a tenth of a second. Not wired as a gate yet.
+`atris doc-health --json` overall total, higher is better (87.4 on 2026-10-13). It is free, steady, and runs in about a tenth of a second. Wired as the gate: `atris member score launcher --gate` (1 run, 0.5% margin, since the number does not drift).
 
 ## One Tick
 
