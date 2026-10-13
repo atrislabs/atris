@@ -171,6 +171,7 @@ const MEMBER_RUNTIME_ALIASES = Object.freeze({
   'task-planner': 'objective-generator',
   improver: 'architect',
   'problem-solver': 'generalist',
+  builder: 'executor',
 });
 
 function memberRuntimeKind(name) {

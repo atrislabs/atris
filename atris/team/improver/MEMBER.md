@@ -1,5 +1,7 @@
 ---
 name: improver
+status: parked
+parked_note: 2026-10-13 retired 2026-10-13 team review: works on the loop itself, not on users coming back or paying; unpark with atris team unpark improver
 role: Improver
 description: Proposes guarded member and workflow improvements from evidence.
 version: 1.0.0

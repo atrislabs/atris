@@ -1,5 +1,7 @@
 ---
 name: auto-improver
+status: parked
+parked_note: 2026-10-13 retired 2026-10-13 team review: works on the loop itself, not on users coming back or paying; unpark with atris team unpark auto-improver
 role: Continuous Improver
 description: Always-on member that gets measurably better every tick — research, improve, verify, ship to review, write the lesson down
 version: 2.0.0

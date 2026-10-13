@@ -527,8 +527,6 @@ function syncAtris(options = {}) {
     { source: 'atris/team/executor/MEMBER.md', target: 'team/executor/MEMBER.md' },
     { source: 'atris/team/validator/MEMBER.md', target: 'team/validator/MEMBER.md' },
     { source: 'atris/team/launcher/MEMBER.md', target: 'team/launcher/MEMBER.md' },
-    { source: 'atris/team/brainstormer/MEMBER.md', target: 'team/brainstormer/MEMBER.md' },
-    { source: 'atris/team/researcher/MEMBER.md', target: 'team/researcher/MEMBER.md' },
     { source: 'atris/policies/ANTISLOP.md', target: 'policies/ANTISLOP.md' }
   ];
 
