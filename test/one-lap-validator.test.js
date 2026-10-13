@@ -10,10 +10,11 @@ const {
 test('one-lap validator prompt requires an independent read-only diff and verifier pass', () => {
   const prompt = buildOneLapValidatorPrompt({ display_id: 'CLI-939', title: 'fix the auth bug' }, {
     executorEngine: 'codex',
+    baseRef: 'origin/main',
     verifierCommand: 'node --test',
   });
   assert.match(prompt, /independent validator/);
-  assert.match(prompt, /git diff origin\/master\.\.\.HEAD/);
+  assert.match(prompt, /git diff origin\/main\.\.\.HEAD/);
   assert.match(prompt, /git diff HEAD/);
   assert.match(prompt, /Required verifier: node --test/);
   assert.match(prompt, /Do not edit files/);
