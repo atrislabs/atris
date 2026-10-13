@@ -101,5 +101,8 @@
   "bugs": {
     "url": "https://github.com/atrislabs/atris/issues"
   },
-  "homepage": "https://github.com/atrislabs/atris#readme"
+  "homepage": "https://github.com/atrislabs/atris#readme",
+  "engines": {
+    "node": ">=22.13"
+  }
 }
