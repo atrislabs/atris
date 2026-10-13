@@ -396,8 +396,13 @@ run_grok() {
     --disable-web-search --max-turns 3 -p "$PROMPT"
 }
 
+# Notes need no tools, MCP servers, hooks, skills, or a saved session. Skipping
+# them takes about 5s off a 21-minute video (19s to 15s) and keeps the stored
+# login, unlike --bare.
 run_haiku() {
-  run_with_timeout 240 claude -p "$PROMPT" --model "${1:-claude-haiku-5-5}"
+  run_with_timeout 240 claude -p "$PROMPT" --model "${1:-claude-haiku-5-5}" \
+    --tools "" --strict-mcp-config --setting-sources "" \
+    --no-session-persistence --disable-slash-commands
 }
 
 # Gemini Flash through the Antigravity CLI (agy). On an 85-minute transcript it
