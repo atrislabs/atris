@@ -465,7 +465,7 @@ test('runDispatchFlight review-only verifies explicitly, readies the task, and l
     assert.match(flight.ready[0].verifier_result.output, /# pass 1/);
     assert.match(flight.ready[0].next_action, /^cd \/wt\/dispatch-cli-900 && atris worktree ship /);
     assert.match(flight.ready[0].next_action, /--verify 'node --test test\/one-lap-review\.test\.js'/);
-    assert.match(flight.ready[0].next_action, /--target origin\/master --merge$/);
+    assert.match(flight.ready[0].next_action, /--target HEAD --merge$/);
     assert.ok(!calls.some((call) => call.startsWith('worktree ship')), 'review-only path must not invoke the master landing gate');
 
     const readyCall = calls.find((call) => call.startsWith('task ready CLI-900'));
@@ -653,7 +653,7 @@ test('prepareReviewSandbox clears the git-top-level guard for a real repository'
     const result = fleet.prepareReviewSandbox({ root: gitRoot, taskId: 'CLI-900', engine: 'cursor' });
     assert.equal(result.ok, false);
     assert.doesNotMatch(result.detail, /its own git repository/, 'a real repo must clear the ownership guard');
-    assert.match(result.detail, /protected origin\/master/);
+    assert.match(result.detail, /protected HEAD/);
   } finally {
     fs.rmSync(gitRoot, { recursive: true, force: true });
   }
@@ -670,12 +670,11 @@ test('resolveDispatchLandTarget uses the workspace protected branch, honoring ex
   // Explicit base always wins, untouched.
   assert.equal(fleet.resolveDispatchLandTarget('/does/not/matter', 'origin/release'), 'origin/release');
 
-  // A non-git root cannot resolve a protected branch; fall back to origin/master
-  // so single-branch repos and test fixtures keep the historical default.
+  // An unknown mainline must not invent a remote branch.
   const nonGit = fs.mkdtempSync(path.join(os.tmpdir(), 'land-target-nongit-'));
   try {
     assert.equal(fleet.resolveDispatchLandTarget(nonGit, null), fleet.DISPATCH_SELF_LAND_TARGET);
-    assert.equal(fleet.DISPATCH_SELF_LAND_TARGET, 'origin/master');
+    assert.equal(fleet.DISPATCH_SELF_LAND_TARGET, 'HEAD');
   } finally {
     fs.rmSync(nonGit, { recursive: true, force: true });
   }
@@ -921,7 +920,7 @@ test('runDispatchFlight yolo records self-landed tasks and receipt state', async
     assert.equal(receipt.yolo, true);
     assert.equal(receipt.landed[0].landing, 'self');
     assert.equal(receipt.result.passed, true);
-    assert.equal(receipt.result.verifier_result.command, 'HEAD and its tree differ from dispatch start commit; git merge-base --is-ancestor HEAD origin/master');
+    assert.equal(receipt.result.verifier_result.command, 'HEAD and its tree differ from dispatch start commit; git merge-base --is-ancestor HEAD HEAD');
     assert.equal(receipt.result.verifier_result.passed, true);
     assert.equal(receipt.results[0].start_commit, 'base-commit');
     assert.equal(receipt.results[0].verified_passed, null);
@@ -1271,7 +1270,7 @@ test('runDispatchFlight builds multiple task ids in parallel worktrees and lands
   }
 });
 
-test('runDispatchFlight ship args always target origin/master, never the launcher branch', async () => {
+test('runDispatchFlight ship args explicitly target HEAD when no remote mainline is known', async () => {
   const tmpRoot = makeTempRoot();
   try {    const { cli, calls } = ownCliFake({ tasks: { 'CLI-900': TASK }, worktreeFor: (t) => `/wt/${t}` });
     await fleet.runDispatchFlight({
@@ -1285,7 +1284,7 @@ test('runDispatchFlight ship args always target origin/master, never the launche
     });
     const shipCall = calls.find((c) => c.startsWith('worktree ship'));
     assert.ok(shipCall, 'default lander ships via the fleet ship-args builder');
-    assert.match(shipCall, /--target origin\/master/);
+    assert.match(shipCall, /--target HEAD/);
     assert.match(shipCall, /--merge/);
   } finally {
     fs.rmSync(tmpRoot, { recursive: true, force: true });
