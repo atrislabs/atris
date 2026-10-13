@@ -8,6 +8,9 @@ const path = require('node:path');
 const { spawn } = require('node:child_process');
 
 const {
+  DEFAULT_ASK_TIMEOUT_MS,
+  DEFAULT_GROK_ASK_TIMEOUT_MS,
+  MIN_ANSWER_CHARS,
   MAX_ASK_CONCURRENCY,
   MAX_ASK_JOBS,
   MAX_ASK_PROMPT_BYTES,
@@ -17,6 +20,7 @@ const {
   runAskProcess,
   runEngineAskJobs,
   runEngineAskCommand,
+  engineAskReceipt,
 } = require('../lib/engine-ask');
 const {
   readEngineRegistry,
@@ -28,6 +32,26 @@ const { engineCommand } = require('../commands/engine');
 // a fresh node child can take seconds to boot on a busy machine; a shorter ask
 // deadline kills it before it runs a line, and the test checks nothing real.
 const ASK_CHILD_BOOT_MS = 3000;
+
+// A real answer is at least MIN_ANSWER_CHARS long; shorter replies are
+// classified incomplete. Fixtures that mean "answered" pad to clear it.
+const PAD = ` ${'x'.repeat(220)}`;
+const GROK_PREAMBLE = "I'll look up public biology and cancer benchmarks that sit on real lab data, and only keep the fields I can confirm.";
+
+function okResult(stdout) {
+  return {
+    ok: true,
+    reason: 'ok',
+    exit_code: 0,
+    signal: null,
+    timed_out: false,
+    cancelled: false,
+    stdout,
+    stderr: '',
+    output_truncated: false,
+    duration_ms: 5,
+  };
+}
 
 function tempRoot() {
   return fs.mkdtempSync(path.join(os.tmpdir(), 'atris-engine-ask-'));
@@ -312,7 +336,7 @@ test('fake engine commands run in parallel up to the cap and preserve every answ
       active += 1;
       peak = Math.max(peak, active);
       const result = await runAskProcess(fakeReplyInvocation({
-        stdout: job.label === 'two' ? '' : `${job.label} answer`,
+        stdout: job.label === 'two' ? '' : `${job.label} answer${PAD}`,
         stderr: job.label === 'two' ? 'engine failed' : '',
         delayMs: 40,
         exitCode: job.label === 'two' ? 7 : 0,
@@ -323,9 +347,9 @@ test('fake engine commands run in parallel up to the cap and preserve every answ
   });
   assert.equal(peak, 2);
   assert.deepEqual(answers.map((answer) => answer.label), ['one', 'two', 'three', 'four']);
-  assert.equal(answers[0].stdout.trim(), 'one answer');
+  assert.equal(answers[0].stdout.trim(), `one answer${PAD}`);
   assert.equal(answers[1].reason, 'exit_7');
-  assert.equal(answers[3].stdout.trim(), 'four answer');
+  assert.equal(answers[3].stdout.trim(), `four answer${PAD}`);
 });
 
 test('timeout kills only the process group launched for that ask', async () => {
@@ -420,7 +444,7 @@ test('command prints labeled statuses and writes its receipt plus engine health'
       now: () => new Date('2026-08-12T05:30:00.000Z'),
       executeAskJob: async (job) => {
         if (job.engine === 'codex') {
-          return runAskProcess(fakeReplyInvocation({ stdout: 'codex answer' }), { cwd: root, timeoutMs: 1000 });
+          return runAskProcess(fakeReplyInvocation({ stdout: `codex answer${PAD}` }), { cwd: root, timeoutMs: 1000 });
         }
         if (job.engine === 'cursor') {
           return runAskProcess(fakeReplyInvocation(), { cwd: root, timeoutMs: 1000 });
@@ -443,7 +467,7 @@ test('command prints labeled statuses and writes its receipt plus engine health'
     assert.equal(receiptFiles.length, 1);
     const receipt = JSON.parse(fs.readFileSync(path.join(runsDir, receiptFiles[0]), 'utf8'));
     assert.equal(receipt.read_only, true);
-    assert.deepEqual(receipt.summary, { answered: 1, failed: 1, timed_out: 1, cancelled: 0 });
+    assert.deepEqual(receipt.summary, { answered: 1, incomplete: 0, failed: 1, timed_out: 1, cancelled: 0 });
     assert.equal(receipt.status, 'timed_out');
     assert.match(receipt.live_log, /^atris\/runs\/engine-ask-.+[.]live[.]log$/);
     assert.equal(fs.existsSync(path.join(root, receipt.live_log)), true);
@@ -500,7 +524,7 @@ test('engine ask benches an expired subscription and a later answer restores rea
         signal: null,
         timed_out: false,
         cancelled: false,
-        stdout: 'access restored',
+        stdout: `access restored${PAD}`,
         stderr: '',
         output_truncated: false,
         duration_ms: 1,
@@ -518,7 +542,7 @@ test('engine ask benches an expired subscription and a later answer restores rea
 test('chunked engine output reaches the receipt live log before process exit', async () => {
   const root = tempRoot();
   const engineScript = [
-    "process.stdout.write('first live chunk\\n');",
+    `process.stdout.write('first live chunk${PAD}\\n');`,
     "setTimeout(() => process.stderr.write('second live chunk\\n'), 350);",
     'setTimeout(() => process.exit(0), 700);',
   ].join('\n');
@@ -668,7 +692,7 @@ test('engine name with model and trailing text routes through ask without changi
             signal: null,
             timed_out: false,
             cancelled: false,
-            stdout: 'answer',
+            stdout: `answer${PAD}`,
             stderr: '',
             output_truncated: false,
             duration_ms: 1,
@@ -712,4 +736,102 @@ test('unsupported shorthand model fails before ask and names known-good examples
     console.error = originalError;
     fs.rmSync(root, { recursive: true, force: true });
   }
+});
+
+test('a preamble-only reply is incomplete, retried once with the same command, and counted in the summary', async () => {
+  assert.ok(GROK_PREAMBLE.length < MIN_ANSWER_CHARS);
+  const calls = [];
+  const [stillShort] = await runEngineAskJobs([
+    { engine: 'grok', model: '', prompt: 'list cancer benchmarks', label: 'grok' },
+  ], {
+    minAnswerChars: MIN_ANSWER_CHARS,
+    executeAskJob: async (job, context) => {
+      calls.push({ job, attempt: context.attempt });
+      return okResult(GROK_PREAMBLE);
+    },
+  });
+  assert.equal(calls.length, 2, 'exactly one retry');
+  assert.deepEqual(calls.map((call) => call.attempt), [1, 2]);
+  assert.equal(calls[0].job, calls[1].job, 'the retry reuses the same job, so the same command and flags');
+  assert.equal(stillShort.ok, false);
+  assert.equal(stillShort.reason, 'incomplete');
+  assert.equal(stillShort.attempts, 2);
+  assert.equal(stillShort.duration_ms, 10);
+
+  let call = 0;
+  const [recovered] = await runEngineAskJobs([
+    { engine: 'grok', model: '', prompt: 'list cancer benchmarks', label: 'grok' },
+  ], {
+    minAnswerChars: MIN_ANSWER_CHARS,
+    executeAskJob: async () => {
+      call += 1;
+      return okResult(call === 1 ? GROK_PREAMBLE : `${GROK_PREAMBLE}${PAD}`);
+    },
+  });
+  assert.equal(call, 2);
+  assert.equal(recovered.ok, true);
+  assert.equal(recovered.reason, 'ok');
+  assert.equal(recovered.attempts, 2);
+
+  let fullCalls = 0;
+  const [full] = await runEngineAskJobs([
+    { engine: 'codex', model: '', prompt: 'q', label: 'codex' },
+  ], { minAnswerChars: MIN_ANSWER_CHARS, executeAskJob: async () => { fullCalls += 1; return okResult(`full answer${PAD}`); } });
+  assert.equal(fullCalls, 1, 'a full answer is never retried');
+  assert.equal(full.attempts, 1);
+
+  // Whitespace does not count toward the length.
+  const [padded] = await runEngineAskJobs([
+    { engine: 'codex', model: '', prompt: 'q', label: 'codex' },
+  ], { minAnswerChars: MIN_ANSWER_CHARS, executeAskJob: async () => okResult(`${' '.repeat(300)}short${'\n'.repeat(300)}`) });
+  assert.equal(padded.reason, 'incomplete');
+
+  // Callers that expect short replies (the validate referee's verdict) leave
+  // the check off, so a short reply stays answered and is not retried.
+  let refereeCalls = 0;
+  const [verdict] = await runEngineAskJobs([
+    { engine: 'haiku', model: '', prompt: 'judge', label: 'referee' },
+  ], { executeAskJob: async () => { refereeCalls += 1; return okResult('VERDICT: pass\nREASON: ok'); } });
+  assert.equal(refereeCalls, 1);
+  assert.equal(verdict.ok, true);
+
+  const receipt = engineAskReceipt([stillShort, recovered], { concurrency: 1, timeoutMs: 1000 });
+  assert.deepEqual(receipt.summary, { answered: 1, incomplete: 1, failed: 0, timed_out: 0, cancelled: 0 });
+  assert.deepEqual(receipt.answers.map((answer) => answer.status), ['incomplete', 'answered']);
+  assert.deepEqual(receipt.answers.map((answer) => answer.attempts), [2, 2]);
+});
+
+test('the command marks a preamble-only receipt incomplete and exits non-zero', async () => {
+  const root = tempRoot();
+  const output = [];
+  const originalLog = console.log;
+  console.log = (line = '') => output.push(String(line));
+  try {
+    const code = await runEngineAskCommand(['list cancer benchmarks', '--engine', 'grok'], root, {
+      executeAskJob: async () => runAskProcess(fakeReplyInvocation({ stdout: GROK_PREAMBLE }), { cwd: root, timeoutMs: ASK_CHILD_BOOT_MS }),
+    });
+    assert.equal(code, 1);
+    const runsDir = path.join(root, 'atris', 'runs');
+    const receiptFile = fs.readdirSync(runsDir).find((file) => file.startsWith('engine-ask-') && file.endsWith('.json'));
+    const receipt = JSON.parse(fs.readFileSync(path.join(runsDir, receiptFile), 'utf8'));
+    assert.equal(receipt.status, 'incomplete');
+    assert.equal(receipt.summary.answered, 0);
+    assert.equal(receipt.summary.incomplete, 1);
+    assert.equal(receipt.answers[0].status, 'incomplete');
+    assert.equal(receipt.answers[0].attempts, 2);
+    assert.match(output.join('\n'), /grok \(grok\): incomplete/);
+  } finally {
+    console.log = originalLog;
+    fs.rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test('grok asks default to a 300 second deadline while the global default stays 120', () => {
+  assert.equal(DEFAULT_ASK_TIMEOUT_MS, 120000);
+  assert.equal(DEFAULT_GROK_ASK_TIMEOUT_MS, 300000);
+  assert.equal(parseEngineAskArgs(['q', '--engine', 'grok']).timeoutMs, 300000);
+  assert.equal(parseEngineAskArgs(['q', '--engine', 'codex']).timeoutMs, 120000);
+  assert.equal(parseEngineAskArgs(['q', '--engine', 'grok', '--timeout', '45']).timeoutMs, 45000);
+  // Fable's longer deep-reasoning deadline still wins in a mixed run.
+  assert.equal(parseEngineAskArgs(['q', '--engine', 'grok', '--engine', 'fable']).timeoutMs, 10 * 60 * 1000);
 });

@@ -111,7 +111,7 @@ async function askEngine(args, root) {
 test('a bare ask with only a search line runs the engine default, not the search model', async () => {
   const roster = '# roster\n\n## search\n- claude, model: haiku, effort: low\n';
   await withRoom(async ({ root, bin }) => {
-    fakeEngine(bin, 'claude', { stdout: 'the answer is 42\n' });
+    fakeEngine(bin, 'claude', { stdout: `the answer is 42${' and here is why.'.repeat(15)}\n` });
     const { code, logs } = await askEngine(['what is the answer', '--engine', 'claude'], root);
     assert.equal(code, 0, logs.join('\n'));
     const args = argsOf(bin, 'claude');
@@ -127,7 +127,7 @@ test('a bare ask with only a search line runs the engine default, not the search
 test('an ask job that lists this engine pins its model and effort', async () => {
   const roster = '# roster\n\n## ask (like search)\n- claude, model: haiku, effort: low\n';
   await withRoom(async ({ root, bin }) => {
-    fakeEngine(bin, 'claude', { stdout: 'the answer is 42\n' });
+    fakeEngine(bin, 'claude', { stdout: `the answer is 42${' and here is why.'.repeat(15)}\n` });
     const { code, logs } = await askEngine(['what is the answer', '--engine', 'claude'], root);
     assert.equal(code, 0, logs.join('\n'));
     assert.match(argsOf(bin, 'claude'), /\n--model\nhaiku\n--effort\nlow\n/);
@@ -140,7 +140,7 @@ test('an ask job that lists this engine pins its model and effort', async () => 
 test('an ask job that lists another engine leaves this one unpinned', async () => {
   const roster = '# roster\n\n## ask (like search)\n- codex, effort: high\n';
   await withRoom(async ({ root, bin }) => {
-    fakeEngine(bin, 'claude', { stdout: 'the answer is 42\n' });
+    fakeEngine(bin, 'claude', { stdout: `the answer is 42${' and here is why.'.repeat(15)}\n` });
     const { code, logs } = await askEngine(['what is the answer', '--engine', 'claude'], root);
     assert.equal(code, 0, logs.join('\n'));
     const args = argsOf(bin, 'claude');
@@ -152,7 +152,7 @@ test('an ask job that lists another engine leaves this one unpinned', async () =
 test('--model still wins over the ask job pin', async () => {
   const roster = '# roster\n\n## ask (like search)\n- claude, model: haiku, effort: low\n';
   await withRoom(async ({ root, bin }) => {
-    fakeEngine(bin, 'claude', { stdout: 'the answer is 42\n' });
+    fakeEngine(bin, 'claude', { stdout: `the answer is 42${' and here is why.'.repeat(15)}\n` });
     const { code, logs } = await askEngine(['what is the answer', '--engine', 'claude', '--model', 'opus'], root);
     assert.equal(code, 0, logs.join('\n'));
     const args = argsOf(bin, 'claude');

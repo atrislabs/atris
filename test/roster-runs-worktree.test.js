@@ -237,7 +237,7 @@ test('a mission tick run in its worktree records in the main checkout', async ()
 test('an engine ask from a worktree records in the main checkout', async () => {
   const { runEngineAskCommand } = require('../lib/engine-ask');
   await withRoom(async ({ root, linked, bin }) => {
-    fakeEngine(bin, 'claude', { stdout: 'the answer is 42\n' });
+    fakeEngine(bin, 'claude', { stdout: `the answer is 42${' and here is why.'.repeat(15)}\n` });
     const code = await quietly(() => runEngineAskCommand(['what is the answer', '--engine', 'claude'], linked));
     assert.equal(code, 0);
     const rows = assertRecordedInMain(root, linked);
