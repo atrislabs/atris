@@ -8,7 +8,7 @@ const { resolveBackendRoot } = require('../utils/backend-root');
 const { apiRequestJson } = require('../utils/api');
 const { runAliveTick } = require('../lib/member-alive');
 const { memberRefusalReason } = require('../lib/member-type');
-const { defaultObjectiveRunner } = require('../lib/default-runner');
+const { callerRuntime, defaultObjectiveRunner } = require('../lib/default-runner');
 const { readJson, writeJson } = require('../lib/json-file');
 const { sleepSync } = require('../lib/sleep-sync');
 const { hasFlag, readFlag, readNumberFlag } = require('../lib/arg-parser');
@@ -992,16 +992,96 @@ function memberRunConfiguredVerifier(paths) {
   return typeof check === 'string' ? check.trim() : '';
 }
 
-function printMemberRunResult(result, asJson) {
-  if (asJson) {
+function printMemberRunResult(result, asJson, { quiet = false } = {}) {
+  if (quiet) {
+    // A caller (member wake) prints this result inside its own report.
+  } else if (asJson) {
     console.log(JSON.stringify(result));
   } else if (result.started) {
     console.log(`started ${result.mission_id} (${result.state})`);
   }
+  if (!quiet && !asJson && result.ask) console.error(result.ask);
   if (result.ok === false || (!result.started && result.ok !== true)) {
-    if (!result.errorReported) console.error(result.error);
+    if (!quiet && !result.errorReported && !result.ask) console.error(result.error);
     process.exitCode = 1;
   }
+  return result;
+}
+
+// Runners that hand the mission to the agent session that called Atris. From
+// a plain terminal nothing is on the other end of them.
+const MEMBER_RUN_CALLER_SESSION_RUNNERS = new Set(['codex_goal', 'caller_session', 'current_agent']);
+
+function memberRunUsesCallerSession(runner) {
+  return MEMBER_RUN_CALLER_SESSION_RUNNERS.has(String(runner || '').trim().toLowerCase());
+}
+
+// A mission whose runner waits on a caller session cannot do anything when
+// no such session started this run. Swap in the roster engine for this run
+// ("auto" resolves the owner's roster pick per tick) instead of waiting on a
+// native goal nothing will start. An explicit --runner or --engine on this
+// command still wins, and a real codex caller keeps its native goal.
+function memberRunRunnerSwap(mission, args, caller) {
+  if (!memberRunUsesCallerSession(mission?.runner)) return null;
+  if (caller === 'codex') return null;
+  if (readFlag(args, '--runner', '') || readFlag(args, '--engine', '')) return null;
+  return {
+    from: String(mission.runner),
+    to: 'auto',
+    reason: `no ${String(mission.runner) === 'codex_goal' ? 'codex' : 'agent'} session started this run, so the member's roster engine does the work`,
+  };
+}
+
+function memberRunTickDurationMs(tick) {
+  const start = Date.parse(tick?.started_at || '');
+  const end = Date.parse(tick?.finished_at || '');
+  return Number.isFinite(start) && Number.isFinite(end) && end >= start ? end - start : null;
+}
+
+// One plain record of the work step this run executed (or why none ran), so
+// a reader never has to dig through mission internals to learn what happened.
+function memberRunWorkStep(payload, finalMission) {
+  const ticks = Array.isArray(payload?.ticks) ? payload.ticks : [];
+  const ran = [...ticks].reverse().find((tick) => tick && tick.ran === true) || null;
+  const last = ran || ticks[ticks.length - 1] || null;
+  const worker = last?.claude || last?.atris2 || null;
+  return {
+    ran: Boolean(ran),
+    ticks_ran: Number(payload?.ran_ticks) || 0,
+    engine: last?.engine_id || finalMission?.runner || null,
+    model: last?.model || worker?.model || finalMission?.model || null,
+    duration_ms: last ? memberRunTickDurationMs(last) : null,
+    status: last?.status || null,
+    reason: last?.reason || null,
+    summary: worker?.summary ? String(worker.summary).slice(0, 400) : null,
+    receipt_path: payload?.summary_receipt || finalMission?.receipt_path || null,
+  };
+}
+
+// The protected-surface guard keeps the staged work and pauses for a person.
+// Say so in one line, with the command that shows the work.
+function memberRunReviewAsk(name, payload, mission, cwd) {
+  const ticks = Array.isArray(payload?.ticks) ? payload.ticks : [];
+  const guarded = ticks.find((tick) => tick?.protected_lane_guard && tick.protected_lane_guard.allowed === false);
+  const guard = guarded?.protected_lane_guard || null;
+  if (!guard) return null;
+  const surfaces = Array.isArray(guard.surfaces) && guard.surfaces.length ? guard.surfaces.join(', ') : 'a protected surface';
+  if (guard.unreadable) {
+    return {
+      needs_review: true,
+      ask: `${name} paused: Atris could not read the mission diff; fix that, then rerun.`,
+      next_command: `atris mission tick ${mission.id} --verify`,
+      review_path: cwd,
+    };
+  }
+  const where = JSON.stringify(cwd);
+  return {
+    needs_review: true,
+    ask: `${name} staged a change that touches ${surfaces}; it is kept in ${cwd} for you to review, land, or discard.`,
+    next_command: `git -C ${where} status --short && git -C ${where} diff HEAD`,
+    resume_command: `atris mission run ${mission.id}`,
+    review_path: cwd,
+  };
 }
 
 // atris member ping <name> "<message>": talk to a busy member mid-run.
@@ -1087,6 +1167,10 @@ function memberPing(name, ...args) {
 }
 
 function memberRun(name, ...args) {
+  return memberRunWith(name, args);
+}
+
+function memberRunWith(name, args, { quiet = false } = {}) {
   if (!name || name === '--help' || name === '-h' || hasFlag(args, '--help') || hasFlag(args, '-h')) {
     console.log('usage: atris member run <name> ["mission text"] [--verify "<cmd>"] [--minutes N|--hours N] [--json]');
     console.log('new mission: atris member run growth "improve onboarding proof" --verify "npm test" --minutes 30 --json');
@@ -1118,9 +1202,8 @@ function memberRun(name, ...args) {
   if (missionText && !hasMissionOverride) {
     const start = startMemberRunMission(name, missionText, requestedVerifier ? [...args, '--verify', requestedVerifier] : args);
     if (start.status !== 0 || !start.payload?.mission) {
-      printMemberRunResult({ started: false, state: null, mission_id: start.payload?.mission?.id || null,
-        error: start.payload?.detail || start.payload?.error || start.stderr || 'mission creation failed' }, asJson);
-      return;
+      return printMemberRunResult({ started: false, state: null, mission_id: start.payload?.mission?.id || null,
+        error: start.payload?.detail || start.payload?.error || start.stderr || 'mission creation failed' }, asJson, { quiet });
     }
     mission = start.payload.mission;
     startedNewMission = true;
@@ -1131,9 +1214,8 @@ function memberRun(name, ...args) {
     if (!missionId) {
       const start = startMemberRunMission(name, memberRunAutoMissionText(name, args), requestedVerifier ? [...args, '--verify', requestedVerifier] : args);
       if (start.status !== 0 || !start.payload?.mission) {
-        printMemberRunResult({ started: false, state: null, mission_id: start.payload?.mission?.id || null,
-          error: start.payload?.detail || start.payload?.error || start.stderr || 'mission creation failed' }, asJson);
-        return;
+        return printMemberRunResult({ started: false, state: null, mission_id: start.payload?.mission?.id || null,
+          error: start.payload?.detail || start.payload?.error || start.stderr || 'mission creation failed' }, asJson, { quiet });
       }
       mission = start.payload.mission;
       startedNewMission = true;
@@ -1142,8 +1224,7 @@ function memberRun(name, ...args) {
     } else {
       mission = require('./mission').resolveMission(missionId);
       if (!mission) {
-        printMemberRunResult({ started: false, state: null, mission_id: missionId, error: `mission ${missionId} was not found` }, asJson);
-        return;
+        return printMemberRunResult({ started: false, state: null, mission_id: missionId, error: `mission ${missionId} was not found` }, asJson, { quiet });
       }
     }
   }
@@ -1158,9 +1239,8 @@ function memberRun(name, ...args) {
   if (verifier && verifier !== mission.verifier) {
     const changed = memberRunCli(['mission', 'set-verifier', mission.id, verifier, '--json'], cwd);
     if (changed.status !== 0) {
-      printMemberRunResult({ started: false, state: mission.status, mission_id: mission.id, mission,
-        error: changed.payload?.detail || changed.payload?.error || changed.stderr || 'could not set mission check' }, asJson);
-      return;
+      return printMemberRunResult({ started: false, state: mission.status, mission_id: mission.id, mission,
+        error: changed.payload?.detail || changed.payload?.error || changed.stderr || 'could not set mission check' }, asJson, { quiet });
     }
     mission.verifier = verifier;
   }
@@ -1175,16 +1255,46 @@ function memberRun(name, ...args) {
     runArgs.push('--max-ticks', budgetSeconds ? String(Math.max(4, Math.ceil(budgetSeconds / 300))) : '1');
   }
   if (!readFlag(runArgs, '--max-wall', '')) runArgs.push('--max-wall', String(budgetSeconds || 900));
-  const run = memberRunCli(['mission', 'run', mission.id, ...runArgs], cwd, { live: !asJson, missionId: mission.id });
+  const caller = callerRuntime(args);
+  const runnerSwap = memberRunRunnerSwap(mission, args, caller);
+  if (runnerSwap) runArgs.push('--engine', runnerSwap.to);
+  const run = memberRunCli(['mission', 'run', mission.id, ...runArgs], cwd, { live: !asJson && !quiet, missionId: mission.id });
   const payload = run.payload || {};
   const finalMission = payload.mission || require('./mission').resolveMission(mission.id, cwd) || mission;
   const started = run.status === 0 && payload.ok !== false && Number(payload.ran_ticks) > 0;
+  // Inside a real codex session the native goal is the work step: the caller
+  // starts it with the action below, so waiting on it is not a failure.
+  const waitingOnNativeGoal = caller === 'codex' && payload.requires_native_goal_start === true
+    && memberRunUsesCallerSession(finalMission.runner);
   const noWorkStepExpected = hasFlag(runArgs, '--detach') || hasFlag(runArgs, '--dry-run');
-  const ok = run.status === 0 && payload.ok !== false && (started || noWorkStepExpected);
-  printMemberRunResult({ ...payload, ok, started, state: finalMission.status, mission_id: mission.id,
+  const ok = (run.status === 0 && payload.ok !== false && (started || noWorkStepExpected)) || waitingOnNativeGoal;
+  const reviewAsk = memberRunReviewAsk(name, payload, finalMission, cwd);
+  const result = { ...payload, ok, started, state: finalMission.status, mission_id: mission.id,
     mission: finalMission, node_modules_linked: nodeModulesLinked, node_modules_source: nodeModulesSource,
-    errorReported: run.errorReported,
-    ...(!ok ? { error: payload.detail || payload.error || payload.reason || run.stderr || 'mission did not run a work step' } : {}) }, asJson);
+    caller_runtime: caller,
+    runner_swap: runnerSwap,
+    work_step: memberRunWorkStep(payload, finalMission),
+    errorReported: run.errorReported };
+  // The goal-controller view describes whichever mission holds the codex goal
+  // slot, often an older one. On a run that is not a native goal it reads as
+  // "waiting on create_goal" after this run already worked, so leave it out.
+  if (runnerSwap || !memberRunUsesCallerSession(finalMission.runner)) {
+    delete result.codex_goal_state;
+  }
+  if (waitingOnNativeGoal) {
+    result.waiting_on = 'native_goal_start';
+    result.next_command = payload.next_action || payload.next_command || null;
+  }
+  if (reviewAsk) Object.assign(result, reviewAsk);
+  if (!reviewAsk && payload.reason === 'human_asks_open' && Array.isArray(payload.human_asks) && payload.human_asks.length) {
+    result.ask = `${name} is waiting on you: ${payload.human_asks[0]}`;
+    result.next_command = payload.next_command || 'atris decide';
+  }
+  if (!ok) {
+    result.error = result.ask || payload.detail || payload.error || payload.reason || payload.next_action
+      || run.stderr || 'mission did not run a work step';
+  }
+  return printMemberRunResult(result, asJson, { quiet });
 }
 
 function loadTeamScoreEvidence(scoreJsonPath) {
@@ -8292,7 +8402,91 @@ async function memberWake(name, ...args) {
     // switch store unreadable: fail open and continue wake
   }
   const result = await runMemberWake(name, { execute, confirmed, force, domainInput });
-  printJsonOrText(result, wakeBootLines(name, result), asJson);
+  const work = wakeWorkStepPlan(name, args, result, { execute });
+  if (!work.run) {
+    if (work.reason) result.work_step = { ran: false, skipped: true, reason: work.reason };
+    printJsonOrText(result, wakeBootLines(name, result), asJson);
+    return result;
+  }
+  // Wake then work: one bounded member run on the roster engine, so waking a
+  // member from a terminal (or cron) does something instead of only deciding.
+  if (!asJson) printJsonOrText(result, wakeBootLines(name, result), false);
+  const runArgs = [...(work.objective ? [work.objective] : []), ...work.flags, ...(asJson ? ['--json'] : [])];
+  const run = memberRunWith(name, runArgs, { quiet: asJson });
+  result.work_step = wakeWorkStepSummary(run, work);
+  if (asJson) printJsonOrText(result, [], true);
+  else for (const line of wakeWorkStepLines(result.work_step)) console.log(line);
+  return result;
+}
+
+// Wake decisions that leave a member free to work now. Everything else
+// (ask, wait on a review or dirty files, stop for another reason) keeps the
+// member's own judgment and only reports it.
+const WAKE_WORK_DECISIONS = new Set(['tick', 'set_objective', 'create_task']);
+
+// Whether this wake also runs one bounded work step, and on what. A wake from
+// a plain terminal (or cron) runs one when the roster names the member's
+// engine. --plan or --dry-run only plans; --run forces the step; the legacy
+// --execute path keeps proposing experiments; a codex or agent session around
+// the CLI does the work itself, so it only plans.
+function wakeWorkStepPlan(name, args, result, { execute = false } = {}) {
+  if (!name || !result || result.ok === false || result.skipped) return { run: false };
+  if (hasFlag(args, '--plan') || hasFlag(args, '--dry-run')) return { run: false };
+  const forced = hasFlag(args, '--run') || hasFlag(args, '--work');
+  if (execute && !forced) return { run: false };
+  const caller = callerRuntime(args);
+  if (!forced && caller !== 'terminal') return { run: false, reason: `${caller} session does the work itself` };
+  const decision = String(result.decision || '');
+  const freeToWork = WAKE_WORK_DECISIONS.has(decision)
+    || (decision === 'stop' && result.reason === 'no_active_goal');
+  if (result.needs_user || !freeToWork) {
+    return { run: false, reason: `wake decided ${decision || 'nothing'} (${result.reason || 'no reason'})` };
+  }
+  if (!forced) {
+    const { memberRosterEngine } = require('../lib/member-engine');
+    if (!memberRosterEngine(name)) return { run: false, reason: 'no roster engine for this member; add a build pick to ROSTER.md or pass --run' };
+  }
+  const objective = decision === 'tick'
+    ? String(result.active_goal?.title || '').trim()
+    : String(result.autonomous_problem?.problem || result.autonomous_problem?.title || '').trim();
+  const flags = [];
+  for (const flag of ['--minutes', '--hours', '--verify']) {
+    const value = readFlag(args, flag, '');
+    if (value) flags.push(flag, value);
+  }
+  if (!readFlag(args, '--minutes', '') && !readFlag(args, '--hours', '')) flags.push('--minutes', '15');
+  if (!readFlag(args, '--verify', '')) flags.push('--no-verify');
+  return { run: true, objective, flags, caller };
+}
+
+function wakeWorkStepSummary(run, work) {
+  const step = run?.work_step || {};
+  return {
+    ran: step.ran === true,
+    ok: run?.ok === true,
+    mission_id: run?.mission_id || null,
+    objective: work.objective || run?.mission?.objective || null,
+    engine: step.engine || null,
+    model: step.model || null,
+    duration_ms: step.duration_ms == null ? null : step.duration_ms,
+    summary: step.summary || null,
+    receipt_path: step.receipt_path || null,
+    review_path: run?.mission?.worktree?.path || null,
+    ...(run?.needs_review ? { needs_review: true, ask: run.ask, next_command: run.next_command } : {}),
+    ...(run?.ok === false && !run?.needs_review ? { error: run.error || 'the work step did not run' } : {}),
+  };
+}
+
+function wakeWorkStepLines(step) {
+  if (!step) return [];
+  if (step.needs_review) return ['', `  ${step.ask}`, `    ${step.next_command}`];
+  if (!step.ran) return ['', `  work step did not run: ${step.error || step.reason || 'unknown'}`];
+  const seconds = step.duration_ms == null ? '' : ` in ${Math.round(step.duration_ms / 1000)}s`;
+  return [
+    '',
+    `  worked on ${step.engine}${step.model ? ` ${step.model}` : ''}${seconds}`,
+    ...(step.receipt_path ? [`  receipt \u00b7 ${step.receipt_path}`] : []),
+  ];
 }
 
 function memberAlive(name, ...args) {
@@ -9524,7 +9718,7 @@ async function memberCommand(subcommand, ...args) {
       console.log('  goal <name> "..."   Create/update a member long-term goal');
       console.log('  goal-from-mission <name>  Create/reuse a goal from MISSION.md and now.md');
       console.log('  goal-from-score <name>    Create/reuse an active goal from Team score evidence');
-      console.log('  wake <name>         Read Mission state and decide tick/wait/ask/stop');
+      console.log('  wake <name>         Decide tick/wait/ask/stop, then run one bounded work step on the roster engine (--plan to only decide)');
       console.log('  run <name> ["..."]  Start a budgeted member mission, or run its active Mission Runtime');
       console.log('  result <name>       Newest run result: run record, receipt, artifacts, number [--since <iso>] [--json]');
       console.log('  loop <name|--all>   Repeat wake on a bounded cadence with a no-overlap lease');
