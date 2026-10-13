@@ -91,19 +91,26 @@ test('backend root finds the CLI install sibling from a business workspace', () 
     fs.symlinkSync(packageRoot, path.join(arena, 'atris-cli'), 'dir');
     fs.mkdirSync(path.join(workspace, 'atris'), { recursive: true });
     fs.mkdirSync(backend);
-    const resolveFrom = (cwd) => {
+    const resolveFrom = (cwd, env = {}) => {
       const result = spawnSync(process.execPath, [
         '--preserve-symlinks', '-e',
         'process.stdout.write(require(process.argv[1]).resolveBackendRoot(process.argv[2]) || "")',
         path.join(arena, 'atris-cli', 'utils', 'backend-root.js'), cwd,
-      ], { cwd, encoding: 'utf8', env: process.env });
+      ], { cwd, encoding: 'utf8', env: { ...process.env, ATRIS_BACKEND_INSTALL_SIBLING: '1', ...env } });
       assert.equal(result.status, 0, result.stderr);
       return result.stdout;
     };
     assert.equal(fs.realpathSync(resolveFrom(arena)), fs.realpathSync(backend));
     assert.equal(fs.realpathSync(resolveFrom(workspace)), fs.realpathSync(backend));
+    assert.equal(resolveFrom(workspace, { ATRIS_BACKEND_INSTALL_SIBLING: '0' }), '');
+    assert.equal(resolveFrom(workspace, { ATRIS_BACKEND_INSTALL_SIBLING: '', NODE_TEST_CONTEXT: 'child-v8' }), '');
+    // Outside tests the install sibling is still discovered by default.
+    const normalEnv = { ATRIS_BACKEND_INSTALL_SIBLING: '', NODE_TEST_CONTEXT: '' };
+    assert.equal(fs.realpathSync(resolveFrom(workspace, normalEnv)), fs.realpathSync(backend));
+    assert.equal(resolveFrom(workspace, { ...normalEnv, ATRIS_BACKEND_INSTALL_SIBLING: '0' }), '');
     fs.mkdirSync(workspaceSibling);
     assert.equal(fs.realpathSync(resolveFrom(workspace)), fs.realpathSync(workspaceSibling));
+    assert.equal(fs.realpathSync(resolveFrom(workspace, { ATRIS_BACKEND_INSTALL_SIBLING: '0' })), fs.realpathSync(workspaceSibling));
   } finally {
     for (const [key, value] of Object.entries({ ATRIS_BACKEND_ROOT: previous.root, ATRIS_BACKEND_DIR: previous.dir })) {
       if (value === undefined) delete process.env[key]; else process.env[key] = value;
