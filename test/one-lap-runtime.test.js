@@ -214,7 +214,7 @@ esac
 `;
 }
 
-function setupRuntime(mode) {
+function setupRuntime(mode, mainBranch = 'master') {
   const base = fs.mkdtempSync(path.join(os.tmpdir(), `atris-one-lap-${mode}-`));
   const workspace = path.join(base, 'workspace');
   const origin = path.join(base, 'origin.git');
@@ -271,7 +271,7 @@ function setupRuntime(mode) {
     fs.writeFileSync(env[key], '');
   }
 
-  git(['init', '-b', 'master'], workspace, env);
+  git(['init', '-b', mainBranch], workspace, env);
   git(['config', 'user.email', 'one-lap@example.invalid'], workspace, env);
   git(['config', 'user.name', 'One Lap Test'], workspace, env);
   const initialized = cli(['init', '--yes'], { workspace, env });
@@ -326,11 +326,11 @@ function setupRuntime(mode) {
   git(['add', '.'], workspace, env);
   assert.equal(git(['ls-files', 'test/lap-marker.test.js'], workspace, env), 'test/lap-marker.test.js');
   git(['commit', '-m', 'initial one lap workspace'], workspace, env);
-  git(['init', '--bare', '--initial-branch=master', origin], base, env);
+  git(['init', '--bare', `--initial-branch=${mainBranch}`, origin], base, env);
   git(['remote', 'add', 'origin', origin], workspace, env);
-  git(['push', '-u', 'origin', 'master'], workspace, env);
-  git(['symbolic-ref', 'refs/remotes/origin/HEAD', 'refs/remotes/origin/master'], workspace, env);
-  const masterBefore = git(['rev-parse', 'origin/master'], workspace, env);
+  git(['push', '-u', 'origin', mainBranch], workspace, env);
+  git(['symbolic-ref', 'refs/remotes/origin/HEAD', `refs/remotes/origin/${mainBranch}`], workspace, env);
+  const masterBefore = git(['rev-parse', `origin/${mainBranch}`], workspace, env);
   const sentinelResult = cli(['task', 'new', 'unrelated sentinel stays open', '--tag', 'test', '--json'], { workspace, env });
   assert.equal(sentinelResult.status, 0, sentinelResult.stderr || sentinelResult.stdout);
   const sentinelPayload = json(sentinelResult, 'sentinel task');
@@ -340,6 +340,7 @@ function setupRuntime(mode) {
     origin,
     env,
     masterBefore,
+    mainBranch,
     sentinel: sentinelPayload.task && sentinelPayload.task.display_id || sentinelPayload.task_id,
     worktrees: [],
   };
@@ -358,9 +359,9 @@ function cleanupRuntime(setup) {
 }
 
 function assertMasterUnchanged(setup) {
-  assert.equal(git(['--git-dir', setup.origin, 'rev-parse', 'master'], setup.base, setup.env), setup.masterBefore);
-  assert.equal(git(['rev-parse', 'origin/master'], setup.workspace, setup.env), setup.masterBefore);
-  const marker = run('git', ['--git-dir', setup.origin, 'show', 'master:lap-marker.txt'], { cwd: setup.base, env: setup.env });
+  assert.equal(git(['--git-dir', setup.origin, 'rev-parse', setup.mainBranch], setup.base, setup.env), setup.masterBefore);
+  assert.equal(git(['rev-parse', `origin/${setup.mainBranch}`], setup.workspace, setup.env), setup.masterBefore);
+  const marker = run('git', ['--git-dir', setup.origin, 'show', `${setup.mainBranch}:lap-marker.txt`], { cwd: setup.base, env: setup.env });
   assert.notEqual(marker.status, 0, 'default one lap must not change origin/master');
 }
 
@@ -903,6 +904,25 @@ test('one lap blocks validator git metadata mutations before Review', { timeout:
     const task = json(cli(['task', 'show', payload.task_id, '--json'], setup), 'mutated validator task');
     assert.equal(task.status, 'claimed');
     assertMasterUnchanged(setup);
+  } finally {
+    cleanupRuntime(setup);
+  }
+});
+
+
+test('a real isolated review on main preserves the protected branch and imports the verified build', { timeout: LAP_TEST_TIMEOUT_MS }, () => {
+  const setup = setupRuntime('pass', 'main');
+  try {
+    const result = cli([ASK, '--engine', 'codex', '--json'], setup);
+    assert.equal(result.status, 0, result.stderr || result.stdout);
+    const payload = json(result, 'main branch review');
+    setup.worktrees.push(payload.worktree);
+    assert.equal(payload.result.passed, true);
+    assert.equal(fs.readFileSync(path.join(payload.worktree, 'lap-marker.txt'), 'utf8'), 'one lap\n');
+    assert.equal(json(cli(['task', 'show', payload.task_id, '--json'], setup), 'review task').status, 'review');
+    assertMasterUnchanged(setup);
+    const prompt = fs.readFileSync(setup.env.ATRIS_VALIDATOR_PROMPT, 'utf8');
+    assert.ok(prompt.includes(`git diff ${setup.masterBefore}...HEAD`), prompt);
   } finally {
     cleanupRuntime(setup);
   }

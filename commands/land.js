@@ -2,7 +2,7 @@ const fs = require('fs');
 const path = require('path');
 const gitSpawn = require('../lib/git-spawn');
 const { compactErrorPayload, printCliJson } = require('../lib/cli-json');
-const { listWorktrees, statusCounts } = require('./worktree');
+const { listWorktrees, statusCounts, defaultMainlineBase } = require('./worktree');
 
 const DEFAULT_TTL_DAYS = 7;
 const DEFAULT_STALE_HOURS = 48;
@@ -38,10 +38,11 @@ function refExists(root, ref) {
 
 function baseBranch(root, override = '') {
   if (override && refExists(root, override)) return override;
-  if (refExists(root, 'origin/master')) return 'origin/master';
-  if (refExists(root, 'origin/main')) return 'origin/main';
-  if (refExists(root, 'master')) return 'master';
-  if (refExists(root, 'main')) return 'main';
+  const mainline = defaultMainlineBase(root);
+  if (mainline !== 'HEAD') return mainline;
+  for (const candidate of ['main', 'master']) {
+    if (refExists(root, candidate)) return candidate;
+  }
   return '';
 }
 
@@ -309,7 +310,7 @@ function collectBoard(root, { ttlDays = DEFAULT_TTL_DAYS, staleHours = DEFAULT_S
   const cherryCache = loadCherryCache(root);
   const baseSha = resolveSha(root, base);
   for (const branch of listBranches(root, base)) {
-    if (PROTECTED_BRANCHES.has(branch.name)) continue;
+    if (PROTECTED_BRANCHES.has(branch.name) || branch.name === base.replace(/^origin\//, '')) continue;
     const lastCommitMs = Number(branch.lastCommitUnix) * 1000;
     if (Number.isFinite(lastCommitMs)) lastCommitMsByBranch.set(branch.name, lastCommitMs);
     const ahead = branch.ahead !== undefined ? branch.ahead : aheadCount(root, base, branch.name);

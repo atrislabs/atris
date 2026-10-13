@@ -322,7 +322,7 @@ function normalizeTargetRef(root, target) {
 function defaultMainlineBase(root) {
   const head = remoteHead(root);
   if (head && refExists(root, head)) return head;
-  for (const candidate of ['origin/master', 'origin/main']) {
+  for (const candidate of ['origin/main', 'origin/master']) {
     if (refExists(root, candidate)) return candidate;
   }
   return 'HEAD';
@@ -353,7 +353,7 @@ function defaultShipTarget(root) {
   }
   const head = remoteHead(root);
   if (head && refExists(root, head)) return head;
-  for (const candidate of ['origin/master', 'origin/main']) {
+  for (const candidate of ['origin/main', 'origin/master']) {
     if (refExists(root, candidate)) return candidate;
   }
   return 'HEAD';
@@ -467,7 +467,7 @@ function printStatus() {
 // worktree ship` targets, recorded as branch.<branch>.atris-base) are kept
 // separate on purpose. checkoutBase defaults to the launcher's own
 // upstream/default remote base, so the agent starts from current work.
-// shipBase defaults to origin/master for agent/member worktrees regardless of
+// shipBase defaults to the remote mainline for agent/member worktrees regardless of
 // what branch the launcher happened to have checked out. recording the
 // launcher's own feature branch as the ship target false-landed two PRs on
 // 2026-07-04 (ship merged into the launcher's branch, never reached master).
@@ -494,7 +494,7 @@ function createAgentWorktree({ root = repoRoot(), member = '', agent = '', task,
   // in-progress feature branch (2026-07-09: an auth fix arrived carrying 13
   // unpushed commits from a parallel session and could not merge).
   const checkoutBase = normalizeTargetRef(root, baseOverride || defaultMainlineBase(root));
-  const shipBase = explicitBase ? checkoutBase : normalizeTargetRef(root, 'origin/master');
+  const shipBase = explicitBase ? checkoutBase : normalizeTargetRef(root, defaultMainlineBase(root));
   if (fs.existsSync(target)) throw new Error(`worktree path already exists: ${target}`);
   fs.mkdirSync(path.dirname(target), { recursive: true });
   refreshRemoteRef(root, checkoutBase);
