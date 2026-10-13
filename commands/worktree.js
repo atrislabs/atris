@@ -517,7 +517,7 @@ function createAgentWorktree({ root = repoRoot(), member = '', agent = '', task,
   let reapedBeforeStart = [];
   let cachePrunedBeforeStart = [];
   try {
-    const cleaned = cleanupWorktrees({ root, base: mainline, apply: true });
+    const cleaned = cleanupWorktrees({ root, base: mainline, apply: true, by: 'atris worktree start' });
     reapedBeforeStart = cleaned.removed;
     cachePrunedBeforeStart = cleaned.cachePruned;
   } catch {}
@@ -1135,6 +1135,20 @@ function worktreeHasActiveProcess(worktreePath, activeCwds) {
   });
 }
 
+// Every work-folder removal leaves one line naming who removed it and why, in
+// the main checkout's state so the line outlives the folder it describes.
+function recordWorktreeRemoval(root, { path: removedPath, branch = '', by, reason }) {
+  try {
+    const common = runGit(['rev-parse', '--path-format=absolute', '--git-common-dir'], { cwd: root, check: false });
+    const main = common.status === 0 ? path.dirname(common.stdout.trim()) : root;
+    const file = path.join(main, '.atris', 'state', 'worktree_removals.jsonl');
+    fs.mkdirSync(path.dirname(file), { recursive: true });
+    fs.appendFileSync(file, `${JSON.stringify({
+      at: new Date().toISOString(), path: removedPath, branch: branch || null, by, reason, pid: process.pid,
+    })}\n`);
+  } catch {}
+}
+
 function pruneGeneratedWorktreeCaches(worktreePath, { apply = false } = {}) {
   const candidates = [];
   const pruned = [];
@@ -1156,7 +1170,7 @@ function pruneGeneratedWorktreeCaches(worktreePath, { apply = false } = {}) {
   return { candidates, pruned };
 }
 
-function cleanupWorktrees({ root = repoRoot(), base: baseOverride = '', apply = false, activeCwds: activeCwdsOverride } = {}) {
+function cleanupWorktrees({ root = repoRoot(), base: baseOverride = '', apply = false, activeCwds: activeCwdsOverride, by = 'atris worktree cleanup' } = {}) {
   const worktrees = listWorktrees(root);
   const primary = worktrees[0]?.path ? path.resolve(worktrees[0].path) : '';
   const current = path.resolve(root);
@@ -1244,6 +1258,7 @@ function cleanupWorktrees({ root = repoRoot(), base: baseOverride = '', apply = 
       const removedResult = runGit(removeArgs, { cwd: root, check: false });
       if (removedResult.status === 0) {
         removed.push(candidate);
+        recordWorktreeRemoval(root, { path: wt.path, branch: wt.branch, by, reason: candidate.reason });
       } else {
         kept.push({ ...item, reason: 'remove_failed', error: (removedResult.stderr || removedResult.stdout || '').trim() });
       }
@@ -1262,6 +1277,7 @@ function cleanupWorktrees({ root = repoRoot(), base: baseOverride = '', apply = 
     const removedResult = runGit(removeArgs, { cwd: root, check: false });
     if (removedResult.status === 0) {
       removed.push(candidate);
+      recordWorktreeRemoval(root, { path: wt.path, branch: wt.branch, by, reason: candidate.reason });
     } else {
       kept.push({ ...item, reason: 'remove_failed', error: (removedResult.stderr || removedResult.stdout || '').trim() });
     }
@@ -1382,10 +1398,12 @@ module.exports = {
   gitNetworkEnvironment,
   describeFlightAge,
   flightStampMs,
+  listActiveProcessCwds,
   listWorktrees,
   parseAgentFlightName,
   parseWorktrees,
   normalizeTargetRef,
+  recordWorktreeRemoval,
   refreshMovedMapRefs,
   slugify,
   taskTokens,
@@ -1393,4 +1411,5 @@ module.exports = {
   swarloClaim,
   runShipHealthCheck,
   worktreeCommand,
+  worktreeHasActiveProcess,
 };

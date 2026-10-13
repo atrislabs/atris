@@ -379,6 +379,7 @@ function sweepLanding(root, { ttlDays, staleHours, now = Date.now() } = {}) {
     remote: false,
     includeDetached: false,
     now,
+    by: 'atris autoland',
   });
   const afterBoard = collectBoard(root, { ttlDays, staleHours, now, light: true });
   const human = [];
@@ -926,7 +927,7 @@ async function runTickBody(root, { json, policy, receipt, engineValidationDeps =
     }
     try {
       const { cleanupWorktrees } = require('./worktree');
-      const cleaned = cleanupWorktrees({ root, apply: true });
+      const cleaned = cleanupWorktrees({ root, apply: true, by: 'atris autoland' });
       receipt.worktrees_reaped = cleaned.removed.length;
       if (cleaned.removed.length > 0) receipt.worktrees_reaped_paths = cleaned.removed.map((w) => w.path);
     } catch (err) {
