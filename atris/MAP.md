@@ -51,12 +51,12 @@ checks the refs in both files; `atris doc-health --fix-refs` moves drifted ones.
 | stalled worker handover | `lib/engine-registry.js:68`, `lib/engine-registry.js:1923`, `lib/engine-registry.js:1959`, `lib/engine-registry.js:50`, `lib/fleet.js:852`, `commands/mission.js:451`, `commands/autopilot.js:576` | a time cap, watchdog exit, or dropped connection benches the engine as cooling for 30 minutes (`ATRIS_ENGINE_COOLDOWN_MINUTES`), every resolver skips it until then, and it comes back on its own; a stalled dispatch walks the build team once per worker with each worker's own pins; mission ticks and autopilot phases rely on the bench; `test/stall-handover.test.js` |
 | small build pick | `lib/engine-registry.js:1649`, `lib/wish-audit.js:436` | a low-stakes build or the job option checks the "small build" pick first; quick wishes ask for it |
 | read-only engine asks | `lib/engine-ask.js` | per-engine headless ask argv |
-| fleet flights | `lib/fleet.js` | parallel engine builds, ship gate, landed proof handoff |
+| fleet flights | `lib/fleet.js`, `lib/conductor-artifacts.js`, `test/fleet-landing-dirt.test.js` | parallel engine builds, wait for engine closure, reject source dirt while ignoring untracked run receipts, ship gate, landed proof handoff |
 | engine dispatch without origin | `lib/fleet.js`, `test/engine-dispatch-no-origin.test.js` | pin local HEAD when origin is absent, verify and stop ready with a local merge command; origin and sealed review paths retain their gates |
 | dispatch run history from a linked checkout | `test/roster-runs-worktree.test.js` | remote-landing test creates a local bare origin so it keeps asserting landed and records history in the main checkout |
 | autopilot | `commands/autopilot.js` | one tick plan, do, review |
 | wish intake | `commands/wish.js` | wish to build slices |
-| worktree command | `commands/worktree.js` | isolated checkouts |
+| worktree command | `commands/worktree.js`, `test/worktree-start-retry.test.js` | isolated checkouts, bounded config-lock retries and cleanup of failed starts |
 | brain compile command | `commands/brain.js` | brain artifacts compiled here |
 | activate command | `commands/activate.js` | load context |
 | context gatherer | `lib/context-gatherer.js` | first-contact gather |

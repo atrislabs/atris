@@ -7,6 +7,7 @@ const { hasFlag, readFlag } = require('../lib/arg-parser');
 const { stampLatestOpenBriefForWorktree } = require('../lib/brief-ledger');
 const { isConductorArtifact } = require('../lib/conductor-artifacts');
 const { fixMapDocs } = require('../lib/map-refs');
+const { sleepSync } = require('../lib/sleep-sync');
 const close = require('./close');
 
 const REGEN_ADAPTER_FILES = ['AGENTS.md', 'CLAUDE.md', 'GEMINI.md'];
@@ -17,12 +18,22 @@ const DAY_MS = 24 * 60 * 60 * 1000;
 const SHIP_HEALTH_SOURCE = 'ship-health:experiments-daily';
 
 function runGit(args, { cwd = process.cwd(), check = true, timeout } = {}) {
-  const result = spawnSync('git', args, { cwd, encoding: 'utf8', timeout });
+  let result = spawnSync('git', args, { cwd, encoding: 'utf8', timeout });
+  // Linked checkouts share config. A concurrent start must not silently lose
+  // its owner/base metadata, but real config errors still stop immediately.
+  for (let retry = 1; args[0] === 'config' && retry < 3 && configLocked(result); retry += 1) {
+    sleepSync(100 * retry);
+    result = spawnSync('git', args, { cwd, encoding: 'utf8', timeout });
+  }
   if (check && result.status !== 0) {
     const msg = (result.stderr || result.stdout || `git ${args.join(' ')} failed`).trim();
     throw new Error(msg);
   }
   return result;
+}
+
+function configLocked(result) {
+  return result.status !== 0 && /could not lock config file/i.test(`${result.stderr || ''}${result.stdout || ''}`);
 }
 
 function runCommand(command, { cwd = process.cwd(), check = true } = {}) {
@@ -487,26 +498,58 @@ function createAgentWorktree({ root = repoRoot(), member = '', agent = '', task,
   if (fs.existsSync(target)) throw new Error(`worktree path already exists: ${target}`);
   fs.mkdirSync(path.dirname(target), { recursive: true });
   refreshRemoteRef(root, checkoutBase);
-  runGit(['worktree', 'add', '-b', branch, target, checkoutBase], { cwd: root });
-  runGit(['config', `branch.${branch}.atris-base`, shipBase], { cwd: target, check: false });
-  runGit(['config', `branch.${branch}.atris-owner`, owner], { cwd: target, check: false });
-  runGit(['config', `branch.${branch}.atris-task`, task], { cwd: target, check: false });
-  fs.mkdirSync(path.join(target, '.atris'), { recursive: true });
-  fs.writeFileSync(
-    path.join(target, '.atris', 'agent-worktree.json'),
-    JSON.stringify({
-      agent: agent || null,
-      member: member || null,
-      owner,
-      task,
-      branch,
-      base: shipBase,
-      checkout_base: checkoutBase,
-      workspace_root: root,
-      created_at: now.toISOString(),
-    }, null, 2) + '\n',
-    'utf8'
-  );
+  const ref = `refs/heads/${branch}`;
+  const existed = runGit(['show-ref', '--verify', '--quiet', ref], { cwd: root, check: false }).status !== 1;
+  const baseCommit = runGit(['rev-parse', '--verify', `${checkoutBase}^{commit}`], { cwd: root, check: false });
+  const startCommit = baseCommit.status === 0 ? baseCommit.stdout.trim() : '';
+  const discardFailedStart = () => {
+    if (existed || !startCommit) return;
+    const registered = listWorktrees(root).find((wt) => wt.branch === branch);
+    if (registered) {
+      if (!fs.existsSync(target) || fs.realpathSync(registered.path) !== fs.realpathSync(target)
+        || registered.head !== startCommit) return;
+      const dirt = statusCounts(target, { ignoreUntracked: isConductorArtifact });
+      if (!dirt || dirt.staged || dirt.unstaged || dirt.untracked) return;
+      // No engine has started. Normal removal still refuses unexpected dirt.
+      runGit(['worktree', 'remove', target], { cwd: root });
+    }
+    if (!fs.existsSync(target)) runGit(['update-ref', '-d', ref, startCommit], { cwd: root });
+  };
+  for (let attempt = 0; attempt < 3; attempt += 1) {
+    const added = runGit(['worktree', 'add', '-b', branch, target, checkoutBase], { cwd: root, check: false });
+    if (added.status === 0) break;
+    // Git can create the branch before failing to write its tracking config.
+    // Drop only that untouched ref, never an existing branch or a checkout.
+    if (!/already exists|already used by worktree/i.test(added.stderr || '')) discardFailedStart();
+    if (!configLocked(added) || attempt === 2) {
+      throw new Error(String(added.stderr || added.stdout || 'worktree start failed').trim());
+    }
+    sleepSync(100 * (attempt + 1));
+  }
+  try {
+    runGit(['config', `branch.${branch}.atris-base`, shipBase], { cwd: target });
+    runGit(['config', `branch.${branch}.atris-owner`, owner], { cwd: target });
+    runGit(['config', `branch.${branch}.atris-task`, task], { cwd: target });
+    fs.mkdirSync(path.join(target, '.atris'), { recursive: true });
+    fs.writeFileSync(
+      path.join(target, '.atris', 'agent-worktree.json'),
+      JSON.stringify({
+        agent: agent || null,
+        member: member || null,
+        owner,
+        task,
+        branch,
+        base: shipBase,
+        checkout_base: checkoutBase,
+        workspace_root: root,
+        created_at: now.toISOString(),
+      }, null, 2) + '\n',
+      'utf8'
+    );
+  } catch (error) {
+    discardFailedStart();
+    throw error;
+  }
   return { path: target, branch, base: shipBase, checkoutBase, owner, reapedBeforeStart, cachePrunedBeforeStart };
 }
 
@@ -903,7 +946,7 @@ function shipWorktree(args) {
             throw new Error((switched.stderr || switched.stdout || `git switch ${targetBranch} failed`).trim());
           }
         }
-        const primaryCounts = statusCounts(primary) || { staged: 0, unstaged: 0, untracked: 0 };
+        const primaryCounts = statusCounts(primary, { ignoreUntracked: isConductorArtifact }) || { staged: 0, unstaged: 0, untracked: 0 };
         if (primaryCounts.staged || primaryCounts.unstaged || primaryCounts.untracked) {
           throw new Error(
             `primary checkout dirty staged=${primaryCounts.staged} ` +
