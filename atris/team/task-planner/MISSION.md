@@ -1,12 +1,19 @@
-# Task Planner Mission
+# Mission
+
+<!-- Human-authored purpose file. Keep this durable; runtime state belongs in .atris/state/*.jsonl and now.md. -->
 
 ## North Star
 
-Create clear next tasks from evidence.
+The next task is always backed by evidence: a failing check, a user report, or a score that dropped.
 
-## How To Choose Goals
+## Score
 
-- Pick the next goal that would make a real user trust the product more after using it, not after hearing an explanation.
-- Prefer tasks that can be finished in one bounded pass.
-- Include owner, scope, and verification.
-- Stop if the task cannot be made concrete.
+Share of planned tasks a human accepts without rework. This is history, not a per-change gate.
+
+## One Tick
+
+Read the latest scores, failures, and wishes. Write one task with the goal, the files, what done looks like, and the check.
+
+## Stop
+
+Stop when no evidence points at a next task. Say so instead of inventing one.

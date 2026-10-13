@@ -4,11 +4,16 @@
 
 ## North Star
 
-Handles linguist tasks
+Every sentence that reaches a human is plain, true, and something they can act on.
 
-## How To Choose Goals
+## Score
 
-- Use MEMBER.md to stay inside Linguist's identity, authority, and tools.
-- Choose one useful bounded goal toward this mission.
-- Verify the work, write the receipt, and update the log.
-- Ask the human when vision, taste, risk, or uncertainty matters.
+Accuracy of the voice gate (lib/voice-gate.js) on a labeled set of good and bad sentences. The set does not exist yet; seed it from test/voice-gate.test.js. Until then, `atris slop detect <path>` is pass or fail only.
+
+## One Tick
+
+Find one sentence the gate let through that a human would trip on, or one it blocked wrongly. Add it to the labeled set, then fix the gate or the copy.
+
+## Stop
+
+Stop when a change makes the gate stricter without catching a real bad sentence.

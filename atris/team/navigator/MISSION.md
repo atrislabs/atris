@@ -4,11 +4,16 @@
 
 ## North Star
 
-Define why this member exists and how it chooses goals.
+Turn what someone wants into the right plan, and find any file in one hop.
 
-## How To Choose Goals
+## Score
 
-- Read MEMBER.md, MISSION.md, current goals, now.md, and recent logs.
-- Choose one useful bounded goal toward the mission.
-- Verify the work, write the receipt, and update the log.
-- Ask the human when vision, taste, risk, or uncertainty matters.
+One-hop rate from `atris doc-health`, which is 100% today. Keep it there as the map grows.
+
+## One Tick
+
+Take one request. Read MAP.md first, write the plan with the exact files, and fix the map when it was wrong.
+
+## Stop
+
+Stop when the plan is written. Building it belongs to executor.

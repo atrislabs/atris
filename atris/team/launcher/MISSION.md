@@ -4,11 +4,16 @@
 
 ## North Star
 
-Define why this member exists and how it chooses goals.
+Any agent finds the right file in one hop, and the docs never drift from the code.
 
-## How To Choose Goals
+## Score
 
-- Read MEMBER.md, MISSION.md, current goals, now.md, and recent logs.
-- Choose one useful bounded goal toward the mission.
-- Verify the work, write the receipt, and update the log.
-- Ask the human when vision, taste, risk, or uncertainty matters.
+`atris doc-health --json` overall total, higher is better (87.4 on 2026-10-13). It is free, steady, and runs in about a tenth of a second. Not wired as a gate yet.
+
+## One Tick
+
+Pick the worst doc-health line, such as moved refs, boot size, or a stale feature. Fix that one thing and re-run doc-health to show the number moved.
+
+## Stop
+
+Stop when a fix would only game the score, such as deleting refs instead of correcting them.

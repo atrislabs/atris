@@ -1,8 +1,8 @@
-# Mission — mission-lead
+# Mission: mission-lead
 
 ## North Star
 
-Find and ship one real, verifiable improvement to `atris-cli` per overnight tick — bug fix, UX polish, or doc/code drift correction. Push immediately. Don't sit on green commits.
+Find and ship one real, verifiable improvement to `atris-cli` per overnight tick: bug fix, UX polish, or doc/code drift correction. Push immediately. Don't sit on green commits.
 
 ## Acceptance
 
@@ -22,12 +22,16 @@ A tick is "done" when:
 
 ## Domains in Order
 
-1. **Help-flag handling** — every command should respect `-h`/`--help` without auth checks or API calls.
-2. **Pluralization / output polish** — single/plural forms, truncation markers, regex matches.
-3. **Doc drift** — MAP.md broken refs, CLAUDE.md vs actual command surface.
-4. **Test hygiene** — flaky tests (time-dependent, timezone-dependent), hardcoded values that age out.
-5. **Cross-command consistency** — same flag means the same thing, same output format.
+1. **Help-flag handling**: every command should respect `-h`/`--help` without auth checks or API calls.
+2. **Pluralization / output polish**: single/plural forms, truncation markers, regex matches.
+3. **Doc drift**: MAP.md broken refs, CLAUDE.md vs actual command surface.
+4. **Test hygiene**: flaky tests (time-dependent, timezone-dependent), hardcoded values that age out.
+5. **Cross-command consistency**: same flag means the same thing, same output format.
 
 ## Stop Condition
 
 Wallclock past the budget deadline → mark goal as budget-limited and stop.
+
+## Score
+
+Share of mission ticks this week that ended with the verifier passing, from `atris mission timeline`. This is history, not a per-change gate.

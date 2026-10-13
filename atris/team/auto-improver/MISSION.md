@@ -42,3 +42,7 @@ To prevent naraka - suffering that comes from problems accumulating unnoticed un
 - Wiki shows clear evidence of prevention
 - Logs prove continuous improvement
 - Naraka decreases over time
+
+## Score
+
+Repeat problems that reached a third occurrence this week. Lower is better. This is history, not a per-change gate.
