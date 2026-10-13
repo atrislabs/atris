@@ -59,6 +59,7 @@ checks the refs in both files; `atris doc-health --fix-refs` moves drifted ones.
 | activate command | `commands/activate.js` | load context |
 | context gatherer | `lib/context-gatherer.js` | first-contact gather |
 | first minute boot flow | `lib/first-minute.js` | bare atris screen |
+| atris done command | `commands/done.js` | land what a coding agent built: check, accept, sign |
 | document health | `commands/doc-health.js` `lib/map-refs.js` | document health measurements: boot size, map coverage, lookup hops, freshness, map line refs |
 | doc health questions | `atris/doc-health/questions.jsonl` | lookup test set, ten questions |
 | doctor health check | `commands/doctor.js` | workspace readiness checked by doctor |

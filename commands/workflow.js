@@ -83,7 +83,7 @@ function reviewSoftTitle(title, maxWords = 5) {
 
 function isHumanDeskNext(command) {
   const text = String(command || '');
-  return /^atris do\b/.test(text) || /^atris task (?:claim|show|ready|accept)\b/.test(text);
+  return /^atris do\b/.test(text) || /^atris done\b/.test(text) || /^atris task (?:claim|show|ready|accept)\b/.test(text);
 }
 
 function loadReviewTasks(root = process.cwd()) {
