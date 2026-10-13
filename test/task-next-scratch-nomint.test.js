@@ -140,7 +140,7 @@ test('talk line still starts a room and task next then names the claim', () => {
   try {
     const talk = runCli(['what do you want here?'], { cwd: dir, env, timeout: 60000 });
     assert.equal(talk.status, 0, talk.stderr || talk.stdout);
-    assert.match(talk.stdout, /this folder is ready\./);
+    assert.match(talk.stdout, /this folder is started\. nothing is built yet\./);
     assert.doesNotMatch(talk.stdout, /I saved a first step|first useful step/i);
     assert.match(nextLine(talk.stdout), /^atris task ready \S+ --verify "git diff --check"$/);
     assert.doesNotMatch(talk.stdout, /atris task (claim|show) /);
