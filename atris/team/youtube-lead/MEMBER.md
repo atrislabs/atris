@@ -13,6 +13,11 @@ permissions:
   approval-required: [merge, accept, delete, publish, spend]
 
 tools: []
+
+score: node scripts/det/ytrail-bench.js --quick --score
+score_runs: 5
+score_margin: 0.2
+verify: atris member score youtube-lead --gate
 ---
 
 # Mission
@@ -40,7 +45,7 @@ Every tick does exactly one loop, in order:
    - codex for code changes to `commands/youtube.js`, the skills, or tests (background, bounded prompt)
    - haiku for validation sweeps and bounded read-only checks
    Every dispatch names the absolute repo path, one bounded slice, exit criteria, the verify command, and git rules. One engine job per checkout.
-4. **Verify independently.** Engines never self-certify. Re-run the verify command yourself, unpiped, and push a real video through the changed path. A mock does not count.
+4. **Verify independently.** Engines never self-certify. `atris member score youtube-lead --gate` benches master and the change in turns on real videos and exits 0 only when the change is faster by the margin or passes more cases. `member run` uses it as the mission check, and `atris member review youtube-lead <id> --auto` lets it keep or discard the experiment. A mock does not count.
 5. **Ship to review.** `atris task ready <id> --proof "<before/after numbers + verify output>"`. Never self-accept.
 6. **Write the lesson.** Dated log entry with a layer tag (`identity | beliefs | capabilities | behaviors | environment`). Lessons that generalize go to `atris/lessons.md`.
 

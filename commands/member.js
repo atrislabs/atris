@@ -1175,6 +1175,12 @@ function memberRun(name, ...args) {
     runArgs.push('--max-ticks', budgetSeconds ? String(Math.max(4, Math.ceil(budgetSeconds / 300))) : '1');
   }
   if (!readFlag(runArgs, '--max-wall', '')) runArgs.push('--max-wall', String(budgetSeconds || 900));
+  // A score gate benches master and this change several times each, which
+  // outlasts the default two-minute check window; give it room unless the
+  // operator already chose a window.
+  if (memberScoreConfig(paths) && !process.env.ATRIS_MISSION_VERIFIER_TIMEOUT_MS) {
+    process.env.ATRIS_MISSION_VERIFIER_TIMEOUT_MS = String(MEMBER_SCORE_VERIFIER_TIMEOUT_MS);
+  }
   const run = memberRunCli(['mission', 'run', mission.id, ...runArgs], cwd, { live: !asJson, missionId: mission.id });
   const payload = run.payload || {};
   const finalMission = payload.mission || require('./mission').resolveMission(mission.id, cwd) || mission;
@@ -8890,16 +8896,118 @@ async function memberTick(name, ...args) {
   );
 }
 
+// atris member score <name> [--gate] [--json]: run the member's own score
+// command (`score:` in MEMBER.md). Plain run records one row in the
+// member's scoreboard; --gate A/Bs this checkout against its base commit and
+// exits 0 only when the score got better, so it works as a mission verifier.
+const MEMBER_SCORE_VERIFIER_TIMEOUT_MS = 20 * 60 * 1000;
+
+function memberScoreConfig(paths) {
+  const frontmatter = parseFrontmatter(fs.readFileSync(paths.memberFile, 'utf8')) || {};
+  return require('../lib/member-score').scoreConfig(frontmatter);
+}
+
+function memberScoreGate(name, paths, cwd = process.cwd()) {
+  const scoring = require('../lib/member-score');
+  const config = memberScoreConfig(paths);
+  if (!config) return { ok: false, error: `${name} has no score command; add "score: <command>" to its MEMBER.md` };
+  let result;
+  try {
+    result = scoring.gate(config, cwd);
+  } catch (error) {
+    result = { ok: false, error: error.message };
+  }
+  if (result.ok) {
+    scoring.appendHistory(name, {
+      kind: 'gate',
+      better: result.better,
+      reason: result.reason,
+      base: result.base,
+      candidate: result.candidate,
+      base_commit: result.base_commit,
+      head: result.head,
+      dirty: result.dirty,
+      command: config.command,
+    }, cwd);
+  }
+  return result;
+}
+
+function memberScore(name, ...args) {
+  if (!name || name === '--help' || name === '-h') {
+    console.log('Usage: atris member score <name> [--gate] [--json]');
+    console.log('Runs the "score:" command from the member card. --gate compares this checkout against master and exits 0 only when the score got better.');
+    return;
+  }
+  const paths = requireMemberDir(name);
+  const asJson = hasFlag(args, '--json');
+  const scoring = require('../lib/member-score');
+  if (hasFlag(args, '--gate')) {
+    const result = memberScoreGate(name, paths);
+    if (!result.ok) {
+      if (asJson) console.log(JSON.stringify({ ok: false, member: name, error: result.error }));
+      else console.error(`score gate did not run: ${result.error}`);
+      process.exitCode = 2;
+      return;
+    }
+    printJsonOrText(
+      { ok: true, action: 'score_gate', member: name, ...result },
+      [`${result.better ? 'better' : 'not better'}: ${result.reason}`],
+      asJson,
+    );
+    if (!result.better) process.exitCode = 1;
+    return;
+  }
+  const config = memberScoreConfig(paths);
+  if (!config) {
+    console.error(`${name} has no score command; add "score: <command>" to its MEMBER.md`);
+    process.exitCode = 2;
+    return;
+  }
+  const runs = [];
+  for (let i = 0; i < config.runs; i += 1) {
+    const run = scoring.runOnce(config.command, process.cwd());
+    if (!run.ok) {
+      console.error(run.error);
+      process.exitCode = 2;
+      return;
+    }
+    runs.push(run.score);
+  }
+  const score = scoring.combine(runs);
+  scoring.appendHistory(name, { kind: 'measure', score, command: config.command }, process.cwd());
+  printJsonOrText(
+    { ok: true, action: 'score', member: name, score },
+    [`${name}: ${score.pass}/${score.total} pass, ${score.value}${score.unit} (${score.better} is better, ${score.runs} run${score.runs === 1 ? '' : 's'})`],
+    asJson,
+  );
+}
+
 function memberReview(name, experimentId, ...args) {
   const paths = requireMemberDir(name);
   const asJson = hasFlag(args, '--json');
-  const accepted = hasFlag(args, '--accept');
-  const discarded = hasFlag(args, '--discard');
-  if (!experimentId || accepted === discarded) {
-    console.error('Usage: atris member review <name> <experiment-id> (--accept|--discard) --proof "..." [--lesson "..."] [--next "..."]');
+  let accepted = hasFlag(args, '--accept');
+  let discarded = hasFlag(args, '--discard');
+  const auto = hasFlag(args, '--auto');
+  if (!experimentId || (auto ? (accepted || discarded) : accepted === discarded)) {
+    console.error('Usage: atris member review <name> <experiment-id> (--accept|--discard|--auto) --proof "..." [--lesson "..."] [--next "..."]');
     process.exit(1);
   }
-  const proof = readFlag(args, '--proof', '');
+  let proof = readFlag(args, '--proof', '');
+  let scoreGate = null;
+  if (auto) {
+    // The member's own score judges: better than master keeps it, anything
+    // else discards it. No human click in the loop.
+    scoreGate = memberScoreGate(name, paths);
+    if (!scoreGate.ok) {
+      console.error(`Refusing auto review: ${scoreGate.error}`);
+      process.exit(1);
+    }
+    accepted = scoreGate.better;
+    discarded = !scoreGate.better;
+    const judged = `score gate ${scoreGate.better ? 'better' : 'not better'}: ${scoreGate.reason}`;
+    proof = proof ? `${proof}; ${judged}` : judged;
+  }
   if (!proof) {
     console.error('Refusing review without --proof.');
     process.exit(1);
@@ -8924,6 +9032,10 @@ function memberReview(name, experimentId, ...args) {
   experiment.status = accepted ? 'accepted' : 'discarded';
   experiment.reviewed_at = stampIso();
   experiment.proof = proof;
+  if (scoreGate) {
+    experiment.judged_by = 'score_gate';
+    experiment.score = { base: scoreGate.base, candidate: scoreGate.candidate, base_commit: scoreGate.base_commit, head: scoreGate.head };
+  }
   if (value != null) experiment.value = value;
   if (lesson) experiment.lesson = lesson;
   let nextExperiment = null;
@@ -8946,6 +9058,7 @@ function memberReview(name, experimentId, ...args) {
     experiment_id: experiment.id,
     next_experiment_id: nextExperiment?.id,
     value,
+    ...(scoreGate ? { judged_by: 'score_gate' } : {}),
   });
   writeMemberGoals(paths, state);
   const logPath = appendMemberGoalLog(paths.memberDir, name, accepted ? 'Member experiment accepted' : 'Member experiment discarded', {
@@ -9485,6 +9598,8 @@ async function memberCommand(subcommand, ...args) {
       return memberAlive(args[0], ...args.slice(1));
     case 'review':
       return memberReview(args[0], args[1], ...args.slice(2));
+    case 'score':
+      return memberScore(args[0], ...args.slice(1));
     case 'block':
       return memberBlock(args[0], args[1], ...args.slice(2));
     case 'status':
@@ -9529,7 +9644,8 @@ async function memberCommand(subcommand, ...args) {
       console.log('  result <name>       Newest run result: run record, receipt, artifacts, number [--since <iso>] [--json]');
       console.log('  loop <name|--all>   Repeat wake on a bounded cadence with a no-overlap lease');
       console.log('  tick <name>         Propose the next bounded experiment');
-      console.log('  review <name> <id>  Accept/discard an experiment with proof');
+      console.log('  review <name> <id>  Accept/discard an experiment with proof (--auto: the member score decides)');
+      console.log('  score <name>        Run the member\'s score command; --gate exits 0 only when this checkout beats master');
       console.log('  block <name> <id>   Mark an experiment blocked with a human/orchestrator ask');
       console.log('  status <name|--all> Show goal, mission, activity, value, ask, and recent log');
       console.log('  live                Show backend member projection (what iOS/web render) [--scope business --scope-id <id>]');

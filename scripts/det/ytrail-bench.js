@@ -2,9 +2,10 @@
 'use strict';
 
 // Bench what users get from `atris youtube notes`, end to end, uncached.
-// Usage: node scripts/det/ytrail-bench.js [--quick] [--case <name>]
+// Usage: node scripts/det/ytrail-bench.js [--quick] [--case <name>] [--score]
 // Prints one line per case and a final "bench: X/Y passed in Ns"; exits 1 if
-// any case fails. Rows (with a `case` field) go to $YTRAIL_OUT_DIR/ytrail.jsonl,
+// any case fails. --score adds one last JSON line in the member score shape
+// (lib/member-score.js) so `atris member score` can compare runs. Rows (with a `case` field) go to $YTRAIL_OUT_DIR/ytrail.jsonl,
 // default ~/.atris/benchmarks, outside any git repo.
 // ytnotes is resolved next to this file, so an installed copy benches itself.
 
@@ -27,9 +28,10 @@ const CASES = [
 ];
 
 function parseArgs(argv) {
-  const opts = { quick: false, only: null };
+  const opts = { quick: false, only: null, score: false };
   for (let i = 0; i < argv.length; i += 1) {
     if (argv[i] === '--quick') opts.quick = true;
+    else if (argv[i] === '--score') opts.score = true;
     else if (argv[i] === '--case') opts.only = argv[++i] || '';
     else if (argv[i].startsWith('--case=')) opts.only = argv[i].slice('--case='.length);
     else throw new Error(`unknown option: ${argv[i]}`);
@@ -135,6 +137,7 @@ function runCase(c) {
       q ? `quotes=${q.kept} kept/${q.repaired} repaired/${q.dropped} dropped` : null,
     ].filter(Boolean);
     return {
+      graded: true,
       pass: verdict.pass,
       line: parts.join(' '),
       detail: verdict.pass ? '' : lastLines(stderr),
@@ -178,13 +181,31 @@ function summary(results, seconds) {
   return `bench: ${passed}/${ran.length} passed in ${seconds}s${skipped ? ` (${skipped} skipped)` : ''}`;
 }
 
+// The member score: cases passed, and seconds from link to checked notes
+// summed over the graded cases (what a user waits for). Lower is better.
+function scoreLine(results) {
+  const ran = results.filter((r) => !r.skipped);
+  const graded = ran.filter((r) => r.graded);
+  const seconds = graded.reduce((sum, r) => sum + (Number(r.row.seconds) || 0), 0);
+  return JSON.stringify({
+    schema: 'atris.member_score.v1',
+    pass: ran.filter((r) => r.pass).length,
+    total: ran.length,
+    value: Number(seconds.toFixed(1)),
+    unit: 's',
+    better: 'lower',
+  });
+}
+
 function main() {
   let cases;
+  let opts;
   try {
-    cases = selectCases(parseArgs(process.argv.slice(2)));
+    opts = parseArgs(process.argv.slice(2));
+    cases = selectCases(opts);
   } catch (err) {
     console.error(err.message);
-    console.error('usage: ytrail-bench [--quick] [--case <name>]');
+    console.error('usage: ytrail-bench [--quick] [--case <name>] [--score]');
     process.exit(2);
   }
   const outDir = process.env.YTRAIL_OUT_DIR || path.join(stateHome(), '.atris', 'benchmarks');
@@ -198,6 +219,7 @@ function main() {
     appendRow(outDir, result.row);
   }
   console.log(summary(results, Math.round((Date.now() - started) / 1000)));
+  if (opts.score) console.log(scoreLine(results));
   process.exit(results.some((r) => !r.skipped && !r.pass) ? 1 : 0);
 }
 
@@ -212,4 +234,5 @@ module.exports = {
   judgeNoDownloader,
   judgeNoWriter,
   summary,
+  scoreLine,
 };
