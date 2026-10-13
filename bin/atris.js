@@ -6,6 +6,17 @@ process.on('unhandledRejection', (err) => {
   process.exit(1);
 });
 
+// node:sqlite (task state) ships unflagged in Node 22.13. On older Node the
+// first require crashes with ERR_UNKNOWN_BUILTIN_MODULE before any help prints.
+{
+  const [major, minor] = process.versions.node.split('.').map(Number);
+  if (major < 22 || (major === 22 && minor < 13)) {
+    console.error(`atris needs Node 22.13 or newer. this is Node ${process.versions.node}.`);
+    console.error('upgrade from https://nodejs.org, then run atris again.');
+    process.exit(1);
+  }
+}
+
 const fs = require('fs');
 const path = require('path');
 const { exec, spawnSync } = require('child_process');
