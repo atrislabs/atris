@@ -144,6 +144,11 @@ test('a run recorded from a worktree lands in the main checkout; a worktree whos
 
 test('fleet dispatch from a worktree records the build in the main checkout', async () => {
   await withRoom(async ({ root, linked, bin, wt }) => {
+    // This test covers remote landing; a committed repo without origin now stops in Review.
+    const origin = path.join(root, 'origin.git');
+    git(root, ['clone', '--bare', '-q', root, origin]);
+    git(root, ['remote', 'add', 'origin', origin]);
+    git(root, ['fetch', '-q', 'origin']);
     fakeEngine(bin, 'devin', { stdout: 'built the widget\n' });
     const flight = await fleet.runDispatchFlight({
       root: linked,

@@ -52,6 +52,8 @@ checks the refs in both files; `atris doc-health --fix-refs` moves drifted ones.
 | small build pick | `lib/engine-registry.js:1649`, `lib/wish-audit.js:436` | a low-stakes build or the job option checks the "small build" pick first; quick wishes ask for it |
 | read-only engine asks | `lib/engine-ask.js` | per-engine headless ask argv |
 | fleet flights | `lib/fleet.js` | parallel engine builds, ship gate, landed proof handoff |
+| engine dispatch without origin | `lib/fleet.js`, `test/engine-dispatch-no-origin.test.js` | pin local HEAD when origin is absent, verify and stop ready with a local merge command; origin and sealed review paths retain their gates |
+| dispatch run history from a linked checkout | `test/roster-runs-worktree.test.js` | remote-landing test creates a local bare origin so it keeps asserting landed and records history in the main checkout |
 | autopilot | `commands/autopilot.js` | one tick plan, do, review |
 | wish intake | `commands/wish.js` | wish to build slices |
 | worktree command | `commands/worktree.js` | isolated checkouts |

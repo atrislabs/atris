@@ -35,6 +35,8 @@ for (const mode of ['fleet', 'dispatch']) {
         git(['config', 'user.email', 'handoff@example.test']);
         git(['config', 'commit.gpgsign', 'false']);
         git(['config', 'core.hooksPath', '/dev/null']);
+        // This fixture exercises the existing remote landing handoff.
+        git(['remote', 'add', 'origin', path.join(dir, 'unused.git')]);
         fs.writeFileSync(path.join(root, '.gitignore'), 'atris/\n.atris/\n');
         fs.writeFileSync(path.join(root, 'result.txt'), 'before');
         fs.writeFileSync(path.join(root, 'check.test.cjs'), "require('node:assert/strict').equal(require('node:fs').readFileSync('result.txt', 'utf8'), 'after');\n");
