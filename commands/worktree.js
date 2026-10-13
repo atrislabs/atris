@@ -30,10 +30,17 @@ function gitNetworkEnvironment(source = process.env, cwd = process.cwd()) {
   return env;
 }
 
+// A killed network call leaves stderr empty; name the timeout instead.
+function gitFailureDetail(result) {
+  if (result && result.error && result.error.code === 'ETIMEDOUT') return 'timed out';
+  return String((result && (result.stderr || result.stdout)) || '').trim();
+}
+
 function runGit(args, { cwd = process.cwd(), check = true, timeout } = {}) {
   const network = ['fetch', 'push', 'ls-remote'].includes(args[0]);
+  // Only network calls need the SSH probe; local calls skip its extra git spawn.
   const options = { cwd, encoding: 'utf8', timeout: timeout ?? (network ? 30000 : undefined),
-    killSignal: 'SIGKILL', env: gitNetworkEnvironment(process.env, cwd) };
+    killSignal: 'SIGKILL', env: network ? gitNetworkEnvironment(process.env, cwd) : undefined };
   let result = spawnSync('git', args, options);
   // Linked checkouts share config. A concurrent start must not silently lose
   // its owner/base metadata, but real config errors still stop immediately.
@@ -42,8 +49,8 @@ function runGit(args, { cwd = process.cwd(), check = true, timeout } = {}) {
     result = spawnSync('git', args, options);
   }
   if (check && result.status !== 0) {
-    const msg = (result.stderr || result.stdout || `git ${args.join(' ')} failed`).trim();
-    throw new Error(msg);
+    const detail = gitFailureDetail(result);
+    throw new Error(detail === 'timed out' ? `git ${args[0]} timed out` : (detail || `git ${args.join(' ')} failed`));
   }
   return result;
 }
@@ -395,7 +402,8 @@ function defaultShipTarget(root) {
 function refreshRemoteRef(root, ref) {
   if (!ref.startsWith('origin/')) return;
   const remoteBranch = ref.slice('origin/'.length);
-  runGit(['fetch', 'origin', remoteBranch], { cwd: root, check: false, timeout: 5000 });
+  const fetched = runGit(['fetch', 'origin', remoteBranch], { cwd: root, check: false, timeout: 5000 });
+  return fetched.status === 0 ? '' : (gitFailureDetail(fetched) || 'fetch failed');
 }
 
 function baseBranchName(ref) {
@@ -531,11 +539,15 @@ function createAgentWorktree({ root = repoRoot(), member = '', agent = '', task,
   const shipBase = checkoutBase;
   if (fs.existsSync(target)) throw new Error(`worktree path already exists: ${target}`);
   fs.mkdirSync(path.dirname(target), { recursive: true });
-  refreshRemoteRef(root, checkoutBase);
+  const staleBase = refreshRemoteRef(root, checkoutBase);
   const ref = `refs/heads/${branch}`;
   const existed = runGit(['show-ref', '--verify', '--quiet', ref], { cwd: root, check: false }).status !== 1;
   const baseCommit = runGit(['rev-parse', '--verify', `${checkoutBase}^{commit}`], { cwd: root, check: false });
   const startCommit = baseCommit.status === 0 ? baseCommit.stdout.trim() : '';
+  // With no local copy the start fails on its own; only a real cut gets the warning.
+  if (staleBase && startCommit) {
+    console.error(`warning: could not refresh ${checkoutBase} (${staleBase.split('\n')[0]}); the new worktree starts from the local copy, which may be behind`);
+  }
   const discardFailedStart = () => {
     if (existed || !startCommit) return;
     const registered = listWorktrees(root).find((wt) => wt.branch === branch);
@@ -1395,6 +1407,7 @@ module.exports = {
   cleanupWorktrees,
   defaultMainlineBase,
   defaultStartBase,
+  gitFailureDetail,
   gitNetworkEnvironment,
   describeFlightAge,
   flightStampMs,
