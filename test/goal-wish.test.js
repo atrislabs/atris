@@ -55,9 +55,10 @@ test('goal set also files a wish, prints its id and the next step, and keeps the
     const wishId = rows[0].id;
     assert.equal(rows[0].text, SENTENCE, 'wish keeps the original casing');
     assert.match(set.stdout, new RegExp(`wish id\\s+${wishId}`));
-    assert.match(set.stdout, new RegExp(`next\\s+atris wish again ${wishId} `));
+    // With a working builder the next step is `wish again`; with none (CI) the wish asks which builder to use.
+    assert.match(set.stdout, new RegExp(`next\\s+atris wish (again ${wishId} |answer )`));
     // capture only: no mission, no driver
-    assert.ok(rows.some((row) => row.status === 'captured_no_mission'));
+    assert.ok(rows.some((row) => row.status === 'captured_no_mission' || row.status === 'needs_input'));
     assert.equal(fs.existsSync(path.join(dir, '.atris', 'state', 'missions.jsonl')), false);
     // existing behavior intact
     const scoreboard = JSON.parse(fs.readFileSync(path.join(dir, '.atris', 'state', 'scoreboard.json'), 'utf8'));
