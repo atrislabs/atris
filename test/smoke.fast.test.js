@@ -69,7 +69,13 @@ test('real atris binary fast smoke covers core read-only commands', () => {
     const payload = JSON.parse(engines.stdout);
     assert.equal(typeof payload.default, 'string');
     assert.ok(Array.isArray(payload.engines));
-    assert.ok(payload.engines.some((engine) => engine.id === 'atris-fast'));
+    assert.ok(payload.engines.some((engine) => engine.id === payload.default));
+
+    // Hosted atris-fast is only ready for a logged-in user, so it shows on
+    // this machine's list only then; the full registry always carries it.
+    const all = runCli(['engine', 'list', '--json', '--global'], { cwd: dir, env: { HOME: home, PATH: systemPath } });
+    assert.equal(all.status, 0, all.stderr || all.stdout);
+    assert.ok(JSON.parse(all.stdout).engines.some((engine) => engine.id === 'atris-fast'));
   } finally {
     cleanupTempDir(dir);
   }
