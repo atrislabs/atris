@@ -1702,9 +1702,14 @@ test('janitor: a zombie paused mission and a merged worktree disappear on the ne
       { schema: 'atris.mission.v1', id: 'mission-alive', owner: 'neo', objective: 'still running', status: 'running', created_at: threeDaysAgo, updated_at: threeDaysAgo },
     ];
     fs.writeFileSync(path.join(stateDir, 'missions.jsonl'), missions.map((m) => JSON.stringify(m)).join('\n') + '\n');
-    // a clean worktree whose head is already merged into base, backdated
-    // past the fresh-worktree grace window so the janitor may reap it
-    const wtPath = path.join(base, 'merged-wt');
+    // a clean copy in the launcher folder whose head is already in the main
+    // branch on the remote, backdated past the fresh-copy hour so the janitor
+    // may put it away
+    runGit(['init', '-q', '--bare', path.join(base, 'origin.git')], base);
+    runGit(['remote', 'add', 'origin', path.join(base, 'origin.git')], repo);
+    runGit(['push', '-q', 'origin', 'master'], repo);
+    const wtPath = path.join(fs.realpathSync(base), '.agent-worktrees', 'repo', 'merged-wt');
+    fs.mkdirSync(path.dirname(wtPath), { recursive: true });
     runGit(['worktree', 'add', '-b', 'task/merged-fixture', wtPath], repo);
     const staleStamp = new Date(Date.now() - 61 * 60 * 1000);
     fs.utimesSync(wtPath, staleStamp, staleStamp);

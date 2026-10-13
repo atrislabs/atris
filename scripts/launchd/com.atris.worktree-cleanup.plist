@@ -1,0 +1,45 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!--
+  Hourly: put away finished agent work copies in every repo under ~/arena.
+  Replaces the hand-written ~/.atris/worktree-cleanup.sh under the same label,
+  so there is one cleanup job, and it runs the same rules as every launcher.
+  Install (swaps the old job out):
+    cp scripts/launchd/com.atris.worktree-cleanup.plist ~/Library/LaunchAgents/ && launchctl bootout gui/$(id -u)/com.atris.worktree-cleanup 2>/dev/null; launchctl bootstrap gui/$(id -u) ~/Library/LaunchAgents/com.atris.worktree-cleanup.plist
+-->
+<plist version="1.0">
+<dict>
+  <key>Label</key>
+  <string>com.atris.worktree-cleanup</string>
+  <key>ProgramArguments</key>
+  <array>
+    <string>/opt/homebrew/bin/atris</string>
+    <string>worktree</string>
+    <string>reap</string>
+    <string>--apply</string>
+  </array>
+  <key>StartInterval</key>
+  <integer>3600</integer>
+  <key>RunAtLoad</key>
+  <true/>
+  <key>ProcessType</key>
+  <string>Background</string>
+  <key>Nice</key>
+  <integer>10</integer>
+  <key>WorkingDirectory</key>
+  <string>/Users/keshavrao</string>
+  <key>EnvironmentVariables</key>
+  <dict>
+    <key>PATH</key>
+    <string>/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin</string>
+    <key>HOME</key>
+    <string>/Users/keshavrao</string>
+    <key>ATRIS_SKIP_UPDATE_CHECK</key>
+    <string>1</string>
+  </dict>
+  <key>StandardOutPath</key>
+  <string>/Users/keshavrao/.atris/worktree-cleanup.log</string>
+  <key>StandardErrorPath</key>
+  <string>/Users/keshavrao/.atris/worktree-cleanup.log</string>
+</dict>
+</plist>
