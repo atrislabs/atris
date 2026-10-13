@@ -629,6 +629,7 @@ test('ytnotes does not invent-keep another video leftover clean.txt', () => {
       ...process.env,
       PATH: `${bin}:${process.env.PATH || '/usr/bin'}`,
       TMPDIR: work,
+      ATRIS_YTNOTES_RETRY_SECONDS: '0',
     },
   });
 
@@ -666,6 +667,7 @@ test('ytnotes still fails a 429 when no captions were written', () => {
       ...process.env,
       PATH: `${bin}:${process.env.PATH || '/usr/bin'}`,
       TMPDIR: work,
+      ATRIS_YTNOTES_RETRY_SECONDS: '0',
     },
   });
 
