@@ -2,7 +2,7 @@ const fs = require('fs');
 const path = require('path');
 const gitSpawn = require('../lib/git-spawn');
 const { compactErrorPayload, printCliJson } = require('../lib/cli-json');
-const { listWorktrees, statusCounts, defaultMainlineBase } = require('./worktree');
+const { listWorktrees, statusCounts, defaultMainlineBase, listActiveProcessCwds, worktreeHasActiveProcess, recordWorktreeRemoval } = require('./worktree');
 
 const DEFAULT_TTL_DAYS = 7;
 const DEFAULT_STALE_HOURS = 48;
@@ -528,6 +528,15 @@ function salvageWorktree(w, dir, receipt) {
   }
 }
 
+function reapReason(w, board, ttlDays, force) {
+  const state = (board.branches.find((b) => b.name === w.branch) || {}).state;
+  if (state === 'landed') return 'branch_landed';
+  if (state === 'due') return 'branch_past_ttl';
+  if (w.state === 'detached') return 'detached_head';
+  if (typeof w.ageDays === 'number' && w.ageDays > ttlDays) return 'worktree_past_ttl';
+  return force ? 'forced' : 'unlanded_commits';
+}
+
 // Reap: salvage then delete everything landed (residue) or past TTL.
 // Salvage first, always: unlanded commits go into a git bundle, dirty
 // worktrees into patch files + untracked-file copies, so a reap is never
@@ -535,7 +544,9 @@ function salvageWorktree(w, dir, receipt) {
 // includeDetached: detached-HEAD worktrees have no branch, so the salvage
 // bundle cannot cover their commits, unattended reaps (autoland) pass false
 // and leave them for a human reap.
-function reap(root, { ttlDays = DEFAULT_TTL_DAYS, staleHours = DEFAULT_STALE_HOURS, base: baseOverride = '', dryRun = false, remote = true, includeDetached = true, protectCurrent = true, force = false, now = Date.now() } = {}) {
+function reap(root, { ttlDays = DEFAULT_TTL_DAYS, staleHours = DEFAULT_STALE_HOURS, base: baseOverride = '', dryRun = false, remote = true, includeDetached = true, protectCurrent = true, force = false, now = Date.now(), activeCwds: activeCwdsOverride, by = 'atris land --reap' } = {}) {
+  const readActiveCwds = () => (Array.isArray(activeCwdsOverride) ? activeCwdsOverride : listActiveProcessCwds());
+  let activeCwds = null;
   const board = collectBoard(root, { ttlDays, staleHours, base: baseOverride, now });
   const targets = board.branches.filter((b) => b.state === 'landed' || b.state === 'due');
   const targetNames = new Set(targets.map((b) => b.name));
@@ -553,6 +564,13 @@ function reap(root, { ttlDays = DEFAULT_TTL_DAYS, staleHours = DEFAULT_STALE_HOU
     // no salvage machinery.
     if (protectCurrent && path.resolve(w.path) === current) {
       protectedWorktrees.push({ ...w, reason: 'current_checkout' });
+      continue;
+    }
+    // A run working inside the folder outranks --force: removing it pulls
+    // the floor out from under a live engine.
+    if (!activeCwds) activeCwds = readActiveCwds();
+    if (worktreeHasActiveProcess(w.path, activeCwds)) {
+      protectedWorktrees.push({ ...w, reason: 'active_process' });
       continue;
     }
     if (worktreeWithinReapGrace(w.path, now)) {
@@ -643,7 +661,14 @@ function reap(root, { ttlDays = DEFAULT_TTL_DAYS, staleHours = DEFAULT_STALE_HOU
   const survivingWorktreeTargets = worktreeTargets.filter(
     (w) => targetNames.has(w.branch) || (includeDetached && w.state === 'detached')
   );
+  const activeAtRemoval = survivingWorktreeTargets.length ? readActiveCwds() : [];
   for (const w of survivingWorktreeTargets) {
+    // A run can start in the folder while the bundle is built; look again.
+    if (worktreeHasActiveProcess(w.path, activeAtRemoval)) {
+      receipt.keptWorktrees.push(`${w.path} (active_process)`);
+      if (w.branch) targetNames.delete(w.branch);
+      continue;
+    }
     // The grace check ran at scan time, and a bundle build can sit between it
     // and removal — an engine that booted mid-sweep refreshes the directory
     // mtime in that gap. Stat once more at removal time, the cheapest place
@@ -666,6 +691,7 @@ function reap(root, { ttlDays = DEFAULT_TTL_DAYS, staleHours = DEFAULT_STALE_HOU
     const removed = runGit(['worktree', 'remove', '--force', w.path], { cwd: root, check: false });
     if (removed.status === 0) {
       receipt.removedWorktrees.push(w.path);
+      recordWorktreeRemoval(root, { path: w.path, branch: w.branch, by, reason: reapReason(w, board, ttlDays, force) });
     } else {
       // A locked worktree fails here and, unreported, reap re-salvages the
       // same patches every pass forever. Say what blocked it so a human can
