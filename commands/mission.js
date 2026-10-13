@@ -103,6 +103,7 @@ const {
   normalizeHumanAsks,
   openHumanAsks,
 } = require('../lib/mission-human-asks');
+const { missionLinkedTaskGate } = require('../lib/mission-task-gate');
 const {
   inspectMissionProtectedDiff,
   prepareMissionGitGuard,
@@ -10017,9 +10018,14 @@ async function executeMissionRunTicksPhase(context) {
       // reopen closed rooms, mission 32 complete@19:23:33 → ready@19:23:48).
       const latestOnDisk = loadMissionMap(cwd).get(mission.id) || mission;
       const alreadyTerminal = TERMINAL_STATUSES.has(String(latestOnDisk.status || ''));
+      // A passing verifier alone never completes a mission whose linked task
+      // is not accepted: park it ready and name the accept command instead.
+      const acceptGate = (verifierResult?.passed && completeOnPass && !fullBudgetMode && !mission.always_on && !xpReadyAction)
+        ? missionLinkedTaskGate(mission, cwd)
+        : { ok: true };
       let newStatus = (verifierResult?.passed && mission.always_on) ? 'ready' :
                         (verifierResult?.passed && xpReadyAction) ? 'ready' :
-                        (verifierResult?.passed && completeOnPass && !fullBudgetMode) ? 'complete' :
+                        (verifierResult?.passed && completeOnPass && !fullBudgetMode && acceptGate.ok) ? 'complete' :
                         (verifierResult?.passed && fullBudgetMode) ? 'running' :
                         (verifierResult?.passed ? 'ready' :
                         (verifierResult ? 'blocked' :
@@ -10033,6 +10039,8 @@ async function executeMissionRunTicksPhase(context) {
         nextAction = nextCandidateTickAction(mission);
       } else if (verifierResult?.passed && xpReadyAction) {
         nextAction = xpReadyAction;
+      } else if (verifierResult?.passed && completeOnPass && !fullBudgetMode && !acceptGate.ok) {
+        nextAction = missionAcceptNextAction(mission, acceptGate);
       } else if (verifierResult?.passed && completeOnPass && !fullBudgetMode) {
         nextAction = 'mission complete';
       } else if (verifierResult?.passed && fullBudgetMode) {
@@ -10601,10 +10609,14 @@ function tickMission(args) {
       const xpReadyAction = missionXpReadyAction(mission, receiptPath);
       const budgetRemainingSeconds = missionFullBudgetRemainingSeconds(mission);
       const budgetOpen = budgetRemainingSeconds > 0;
-      status = (completeOnPass && !mission.always_on && !xpReadyAction && !budgetOpen) ? 'complete'
+      const acceptGate = (completeOnPass && !mission.always_on && !xpReadyAction && !budgetOpen)
+        ? missionLinkedTaskGate(mission, process.cwd())
+        : { ok: true };
+      status = (completeOnPass && !mission.always_on && !xpReadyAction && !budgetOpen && acceptGate.ok) ? 'complete'
         : (budgetOpen && !mission.always_on && !xpReadyAction ? 'running' : 'ready');
       nextAction = mission.always_on ? nextCandidateTickAction(mission) :
         (xpReadyAction
+          || (!acceptGate.ok ? missionAcceptNextAction(mission, acceptGate) : null)
           || (budgetOpen
             ? `proof passed with ${durationLabel(budgetRemainingSeconds)} left on the budget; pick the next useful move, then: atris mission tick ${mission.id} --verify --summary "<what changed>"`
             : (completeOnPass ? 'mission complete' : `review proof then run: atris mission complete ${mission.id} --proof "${receiptPath}"`)));
@@ -10747,6 +10759,29 @@ function receiptShowsPass(receipt) {
 // verifier passed. Mirrors the task plane's proof-only accept guard so the
 // final transition consumes the receipts instead of trusting free text.
 function missionCompletionGate(mission, proof, root = process.cwd()) {
+  const base = missionVerifierCompletionGate(mission, proof, root);
+  if (!base.ok) return base;
+  // Done means an accepted task plus a receipt: a passing verifier is not
+  // enough when the mission is linked to task(s) a human has not accepted.
+  const linked = missionLinkedTaskGate(mission, root);
+  if (!linked.ok) {
+    return {
+      ok: false,
+      source: 'linked_task',
+      reason: linked.reason,
+      task_id: linked.task_id,
+      accept_command: linked.accept_command,
+    };
+  }
+  return linked.tasks.length ? { ...base, linked_tasks: linked.tasks } : base;
+}
+
+function missionAcceptNextAction(mission, gate) {
+  const how = gate.accept_command || 'attach a receipt to it';
+  return `verifier passed but ${gate.reason}; accept it (${how}), then: atris mission complete ${mission.id} --proof "<receipt>"`;
+}
+
+function missionVerifierCompletionGate(mission, proof, root = process.cwd()) {
   const remainingSeconds = missionFullBudgetRemainingSeconds(mission);
   if (remainingSeconds > 0) {
     return {
@@ -10789,10 +10824,18 @@ function completeMission(args) {
   }
   const gate = missionCompletionGate(mission, proof, root);
   if (!gate.ok && !force) {
-    exitMissionError(`[mission complete] ${gate.reason}. Run: atris mission tick ${mission.id} --verify (or override as operator with --force)`, 2, asJson);
+    const fix = gate.source === 'linked_task'
+      ? (gate.accept_command
+        ? `Accept it first: ${gate.accept_command}, then re-run mission complete`
+        : 'Attach a receipt to it first')
+      : `Run: atris mission tick ${mission.id} --verify`;
+    exitMissionError(`[mission complete] ${gate.reason}. ${fix} (or override as operator with --force)`, 2, asJson);
+  }
+  if (!gate.ok && force && gate.source === 'linked_task') {
+    console.error(`[mission complete] WARNING --force overrides the accepted-task gate: ${gate.reason}. Recorded as completion_gate.forced.`);
   }
   const baselineSummary = pruneMissionWorktreeBaseline(mission, root);
-  const completionGate = { ...gate, forced: force && !gate.ok };
+  const completionGate = { ...gate, forced: force && !gate.ok, ...(force && !gate.ok ? { forced_reason: gate.reason } : {}) };
   const baseNext = {
     ...mission,
     status: 'complete',
