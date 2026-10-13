@@ -388,9 +388,20 @@ agy_is_cli() {
   ! head -c 4096 "$bin" 2>/dev/null | grep -q 'VSCODE_IPC_HOOK_CLI'
 }
 
+# An agy that is not signed in opens a Google login and waits up to 60s, which
+# also pops the Antigravity app. `agy models` fails fast with "Please sign in"
+# and opens nothing, so probe with it. Only that message counts as signed out:
+# any other result (including a slow or odd probe) lets the writer run.
+agy_signed_in() {
+  local out
+  out=$(run_with_timeout 10 agy models </dev/null 2>&1) || true
+  ! printf '%s' "$out" | grep -qi 'sign in'
+}
+
 run_gemini() {
   command -v agy >/dev/null 2>&1 || { echo "agy is not installed" >&2; return 127; }
   agy_is_cli || { echo "agy on PATH is the Antigravity editor launcher, which has no -p mode. Install the Antigravity CLI for Gemini notes." >&2; return 127; }
+  agy_signed_in || { echo "agy is installed but not signed in. Run: agy (sign in once) for Gemini notes." >&2; return 127; }
   run_with_timeout 120 agy -p "$PROMPT" --model "${ATRIS_YTNOTES_GEMINI_MODEL:-${1:-gemini-3.8-flash}}" \
     --effort "${2:-low}" --print-timeout 110s </dev/null
 }
@@ -459,6 +470,10 @@ run_auto() {
     IFS='|' read -r cmd model effort label <<< "$entry"
     command -v "$cmd" >/dev/null 2>&1 || continue
     if [ "$cmd" = agy ] && ! agy_is_cli; then continue; fi
+    if [ "$cmd" = agy ] && ! agy_signed_in; then
+      echo "agy is installed but not signed in; skipping Gemini. Run: agy (sign in once)." >&2
+      continue
+    fi
     if [ -n "$tried" ]; then
       echo "$tried did not answer; writing the notes with $label instead." >&2
     fi

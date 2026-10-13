@@ -852,6 +852,28 @@ test('ytnotes auto writer skips the Antigravity editor launcher named agy', () =
   assert.match(result.stderr, /^notes by Haiku$/m);
 });
 
+test('ytnotes auto writer skips a signed-out agy without running it', () => {
+  const signedOut = [
+    '#!/bin/sh',
+    'if [ "$1" = models ]; then echo "Error: Please sign in to view available models." >&2; exit 1; fi',
+    'echo "agy ran" > "$(dirname "$0")/agy.ran"',
+    'echo "# From Gemini"',
+    '',
+  ].join('\n');
+  const { result, dir } = runNoCaptionNotes('auto6', {
+    withWhisper: true,
+    whisperVtt: LOCAL_VTT,
+    extraEnv: { ATRIS_YTNOTES_ENGINE: 'auto' },
+    extraBins: { agy: signedOut },
+  });
+
+  assert.equal(result.status, 0, result.stderr || result.stdout);
+  assert.match(fs.readFileSync(path.join(dir, 'yt_auto6.md'), 'utf8'), /# No Caption Talk/);
+  assert.match(result.stderr, /not signed in; skipping Gemini/);
+  assert.match(result.stderr, /^notes by Haiku$/m);
+  assert.equal(fs.existsSync(path.join(dir, 'agy.ran')) || fs.existsSync(path.join(path.dirname(dir), 'agy.ran')), false, 'the signed-out agy never ran a prompt');
+});
+
 test('ytnotes auto writer falls back to Haiku when agy is not installed', () => {
   const { result, dir } = runNoCaptionNotes('auto3', {
     withWhisper: true,
