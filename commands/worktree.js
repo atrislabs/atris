@@ -17,16 +17,23 @@ const ONE_LAP_PROOF_REF_PATTERN = /^refs\/atris\/one-lap\/([0-9a-f]{40,64})$/;
 const DAY_MS = 24 * 60 * 60 * 1000;
 const SHIP_HEALTH_SOURCE = 'ship-health:experiments-daily';
 
-function gitNetworkEnvironment(source = process.env) {
-  return {
-    ...source,
-    GIT_TERMINAL_PROMPT: '0',
-    GIT_SSH_COMMAND: `${source.GIT_SSH_COMMAND || 'ssh'} -o BatchMode=yes`,
-  };
+function gitNetworkEnvironment(source = process.env, cwd = process.cwd()) {
+  const env = { ...source, GIT_TERMINAL_PROMPT: '0' };
+  // Custom commands may be wrappers that do not accept OpenSSH flags.
+  // Leave Git's own command/config/program precedence intact.
+  if (source.GIT_SSH_COMMAND || source.GIT_SSH) return env;
+  const configured = spawnSync('git', ['config', '--get', 'core.sshCommand'], {
+    cwd, encoding: 'utf8', env: source, timeout: 5000, killSignal: 'SIGKILL',
+  });
+  if (configured.status === 0 && String(configured.stdout || '').trim()) return env;
+  env.GIT_SSH_COMMAND = 'ssh -o BatchMode=yes -o ConnectTimeout=10 -o ServerAliveInterval=15';
+  return env;
 }
 
 function runGit(args, { cwd = process.cwd(), check = true, timeout } = {}) {
-  const options = { cwd, encoding: 'utf8', timeout, env: gitNetworkEnvironment() };
+  const network = ['fetch', 'push', 'ls-remote'].includes(args[0]);
+  const options = { cwd, encoding: 'utf8', timeout: timeout ?? (network ? 30000 : undefined),
+    killSignal: 'SIGKILL', env: gitNetworkEnvironment(process.env, cwd) };
   let result = spawnSync('git', args, options);
   // Linked checkouts share config. A concurrent start must not silently lose
   // its owner/base metadata, but real config errors still stop immediately.
