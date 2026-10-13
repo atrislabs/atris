@@ -266,7 +266,8 @@ test('help works outside a workspace and the repository ships ten questions with
   const root = workspace(t);
   const help = run(root, ['--help']);
   assert.equal(help.status, 0, help.stderr);
-  assert.match(help.stdout, /usage: atris doc-health \[--json\] \[--questions <path>\]/);
+  assert.match(help.stdout, /usage: atris doc-health \[--json\] \[--score\] \[--questions <path>\] \[--fix-refs\]/);
+  assert.match(help.stdout, /--score +one member score line/);
   const repo = path.resolve(__dirname, '..');
   const questions = fs.readFileSync(path.join(repo, 'atris/doc-health/questions.jsonl'), 'utf8').trim().split('\n').map(line => JSON.parse(line));
   assert.equal(questions.length, 10);
