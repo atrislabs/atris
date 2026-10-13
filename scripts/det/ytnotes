@@ -184,18 +184,41 @@ transcribe_locally() {
   fi
   echo "No captions on this video. Transcribing the audio on this computer (free, about 1 minute per 15 minutes of video)." >&2
   rm -f "yt_${ID}".audio.*
-  # YouTube refuses some media requests at random (HTTP 403) and allows the
-  # next one, so try the download three times before giving up.
-  local attempt downloaded=0
-  for attempt in 1 2 3; do
-    if yt-dlp --no-update --quiet --no-warnings --no-playlist \
-        -f "bestaudio[ext=m4a]/bestaudio/best" -o "yt_${ID}.audio.%(ext)s" "$URL" 2>"yt_${ID}.audio.err"; then
-      downloaded=1; break
-    fi
-    [ "$attempt" = 3 ] || sleep "$((attempt * ${ATRIS_YTNOTES_RETRY_SECONDS:-3}))"
+  # When YouTube flags a connection it answers "Sign in to confirm you're not
+  # a bot" to the default player, but the embedded-player client still gets
+  # audio. Try each client in ATRIS_YTNOTES_AUDIO_CLIENTS in order ("default"
+  # = yt-dlp's own pick). A bot answer moves to the next client at once.
+  # YouTube also refuses some media requests at random (HTTP 403) and allows
+  # the next one, so each client gets three tries for any other error.
+  # Browser cookies are opt-in only: ATRIS_YTNOTES_COOKIES_FROM_BROWSER=safari.
+  local cookie_args=()
+  if [ -n "${ATRIS_YTNOTES_COOKIES_FROM_BROWSER:-}" ]; then
+    cookie_args=(--cookies-from-browser "$ATRIS_YTNOTES_COOKIES_FROM_BROWSER")
+  fi
+  local client attempt downloaded=0 blocked=1
+  for client in ${ATRIS_YTNOTES_AUDIO_CLIENTS:-web_embedded default}; do
+    local client_args=()
+    [ "$client" = default ] || client_args=(--extractor-args "youtube:player_client=$client")
+    for attempt in 1 2 3; do
+      # ${a[@]+...} keeps empty arrays safe under set -u in macOS bash 3.2.
+      if yt-dlp --no-update --quiet --no-warnings --no-playlist \
+          ${client_args[@]+"${client_args[@]}"} ${cookie_args[@]+"${cookie_args[@]}"} \
+          -f "bestaudio[ext=m4a]/bestaudio/best" -o "yt_${ID}.audio.%(ext)s" "$URL" 2>"yt_${ID}.audio.err"; then
+        downloaded=1; break 2
+      fi
+      if grep -qiE "not a bot|sign in to confirm" "yt_${ID}.audio.err" 2>/dev/null; then
+        break
+      fi
+      blocked=0
+      [ "$attempt" = 3 ] || sleep "$((attempt * ${ATRIS_YTNOTES_RETRY_SECONDS:-3}))"
+    done
   done
   if [ "$downloaded" != 1 ]; then
-    LOCAL_FAIL="download: $(grep -m1 ERROR "yt_${ID}.audio.err" 2>/dev/null || echo "yt-dlp failed")"
+    if [ "$blocked" = 1 ] && grep -qiE "not a bot|sign in to confirm" "yt_${ID}.audio.err" 2>/dev/null; then
+      LOCAL_FAIL="blocked"
+    else
+      LOCAL_FAIL="download: $(grep -m1 ERROR "yt_${ID}.audio.err" 2>/dev/null || echo "yt-dlp failed")"
+    fi
     rm -f "yt_${ID}".audio.*
     return 1
   fi
@@ -229,6 +252,7 @@ if [ -z "$VTT" ]; then
     echo "No English captions found for $URL." >&2
     case "$LOCAL_FAIL" in
       no-model) echo "This computer has no local speech model to transcribe it." >&2 ;;
+      blocked) echo "YouTube is blocking audio downloads from this internet connection right now (it asks to sign in). Try again in a few hours or on another network, or opt in to your browser login: ATRIS_YTNOTES_COOKIES_FROM_BROWSER=safari" >&2 ;;
       download:*|transcribe:*) echo "Local transcription failed (${LOCAL_FAIL})." >&2 ;;
     esac
     echo "Paid notes, 5 credits, refunded if it fails: atris youtube process \"$URL\"" >&2
