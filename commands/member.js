@@ -8935,7 +8935,7 @@ function memberScoreGate(name, paths, cwd = process.cwd()) {
 }
 
 function memberScore(name, ...args) {
-  if (!name || name === '--help' || name === '-h') {
+  if (!name || name === '--help' || name === '-h' || hasFlag(args, '--help') || hasFlag(args, '-h')) {
     console.log('Usage: atris member score <name> [--gate] [--json]');
     console.log('Runs the "score:" command from the member card. --gate compares this checkout against master and exits 0 only when the score got better.');
     return;

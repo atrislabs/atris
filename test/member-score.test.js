@@ -157,6 +157,23 @@ test('member score --gate and review --auto keep only a real gain', () => {
   }
 });
 
+test('ATRIS_SCORE_BASE moves the comparison to another branch', () => {
+  const dir = scratchRepo();
+  try {
+    git(dir, 'checkout', '-qb', 'feature');
+    fs.writeFileSync(path.join(dir, 'value.txt'), '60');
+    git(dir, '-c', 'user.email=t@t', '-c', 'user.name=t', 'commit', '-qam', 'feature');
+    fs.writeFileSync(path.join(dir, 'value.txt'), '55');
+    const r = spawnSync(process.execPath, [cliPath, 'member', 'score', 'speedy', '--gate', '--json'], {
+      cwd: dir, encoding: 'utf8', env: { ...scrubAgentEnv(), ATRIS_SKIP_UPDATE_CHECK: '1', ATRIS_SCORE_BASE: 'feature' },
+    });
+    assert.equal(r.status, 1, '60 -> 55 is inside the 20% margin, though 100 -> 55 would pass');
+    assert.equal(JSON.parse(r.stdout).base.value, 60);
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
 test('review --auto refuses a member with no score command', () => {
   const dir = scratchRepo();
   try {
@@ -168,4 +185,10 @@ test('review --auto refuses a member with no score command', () => {
   } finally {
     fs.rmSync(dir, { recursive: true, force: true });
   }
+});
+
+test('a mission verifier that runs a score gate gets the wider window', () => {
+  const { runVerifier } = require('../commands/mission');
+  assert.equal(runVerifier('echo member score speedy --gate').timeout_ms, 20 * 60 * 1000);
+  assert.equal(runVerifier('echo plain check').timeout_ms < 20 * 60 * 1000, true);
 });

@@ -6342,11 +6342,18 @@ function resolveVerifierCommand(command) {
   return `${leading}${shellQuote(process.execPath)} ${shellQuote(cliPath)}${trimmed.slice('atris'.length)}`;
 }
 
+const SCORE_GATE_VERIFIER_TIMEOUT_MS = 20 * 60 * 1000;
+
 function runVerifier(command, root = process.cwd()) {
   if (!command) return null;
   const resolvedCommand = resolveVerifierCommand(command);
   const { envWithNodeDir } = require('../lib/spawn-env');
-  const timeoutMs = missionVerifierTimeoutMs();
+  // A member score gate benches base and change several times each, so it
+  // gets a wider window than a test command, whoever launched the mission
+  // (member run, the desktop loop, or a scheduled tick).
+  const timeoutMs = /\bmember\s+score\b.*--gate\b/.test(command)
+    ? Math.max(missionVerifierTimeoutMs(), SCORE_GATE_VERIFIER_TIMEOUT_MS)
+    : missionVerifierTimeoutMs();
   const startedAt = Date.now();
   const result = spawnSync(resolvedCommand, {
     cwd: root,
