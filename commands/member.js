@@ -8913,11 +8913,14 @@ function memberScoreGate(name, paths, cwd = process.cwd()) {
   const config = memberScoreConfig(paths);
   if (!config) return { ok: false, error: `${name} has no score command; add "score: <command>" to its MEMBER.md` };
   let result;
+  const kept = scoring.ratchetBase(name, cwd);
   try {
-    result = scoring.gate(config, cwd);
+    result = scoring.gate(config, cwd, { base: kept });
   } catch (error) {
     result = { ok: false, error: error.message };
   }
+  // A committed gain becomes the bar for the next gate.
+  if (result.ok && result.better && !result.dirty) result.ratchet = scoring.keepRatchet(name, cwd, result.head);
   if (result.ok) {
     scoring.appendHistory(name, {
       kind: 'gate',

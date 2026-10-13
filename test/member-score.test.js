@@ -192,3 +192,22 @@ test('a mission verifier that runs a score gate gets the wider window', () => {
   assert.equal(runVerifier('echo member score speedy --gate').timeout_ms, 20 * 60 * 1000);
   assert.equal(runVerifier('echo plain check').timeout_ms < 20 * 60 * 1000, true);
 });
+
+test('a kept gain becomes the bar: the same gain cannot pass twice', () => {
+  const dir = scratchRepo();
+  try {
+    git(dir, 'checkout', '-qb', 'member-work');
+    fs.writeFileSync(path.join(dir, 'value.txt'), '50');
+    git(dir, '-c', 'user.email=t@t', '-c', 'user.name=t', 'commit', '-qam', 'faster');
+    assert.equal(cli(dir, ['member', 'score', 'speedy', '--gate']).status, 0, '100 -> 50 passes and is kept');
+    assert.ok(git(dir, 'rev-parse', 'refs/atris-score/speedy'));
+    fs.writeFileSync(path.join(dir, 'notes.txt'), 'unrelated');
+    git(dir, '-c', 'user.email=t@t', '-c', 'user.name=t', 'add', 'notes.txt');
+    git(dir, '-c', 'user.email=t@t', '-c', 'user.name=t', 'commit', '-qm', 'no speed change');
+    const again = cli(dir, ['member', 'score', 'speedy', '--gate', '--json']);
+    assert.equal(again.status, 1, 'compared to the kept 50, nothing moved');
+    assert.equal(JSON.parse(again.stdout).base.value, 50);
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
