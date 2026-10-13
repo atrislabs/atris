@@ -399,8 +399,10 @@ run_grok() {
 # Notes need no tools, MCP servers, hooks, skills, or a saved session. Skipping
 # them takes about 5s off a 21-minute video (19s to 15s) and keeps the stored
 # login, unlike --bare. Under an agent or a pipe that never closes, claude
-# waits 3s for stdin before it starts; </dev/null skips that wait.
+# waits 3s for stdin before it starts; </dev/null skips that wait. Skipping
+# the update check and telemetry calls takes startup from about 2.8s to 2.0s.
 run_haiku() {
+  CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC=1 \
   run_with_timeout 240 claude -p "$PROMPT" --model "${1:-claude-haiku-5-5}" \
     --tools "" --strict-mcp-config --setting-sources "" \
     --no-session-persistence --disable-slash-commands </dev/null
