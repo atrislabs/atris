@@ -17,13 +17,22 @@ const ONE_LAP_PROOF_REF_PATTERN = /^refs\/atris\/one-lap\/([0-9a-f]{40,64})$/;
 const DAY_MS = 24 * 60 * 60 * 1000;
 const SHIP_HEALTH_SOURCE = 'ship-health:experiments-daily';
 
+function gitNetworkEnvironment(source = process.env) {
+  return {
+    ...source,
+    GIT_TERMINAL_PROMPT: '0',
+    GIT_SSH_COMMAND: `${source.GIT_SSH_COMMAND || 'ssh'} -o BatchMode=yes`,
+  };
+}
+
 function runGit(args, { cwd = process.cwd(), check = true, timeout } = {}) {
-  let result = spawnSync('git', args, { cwd, encoding: 'utf8', timeout });
+  const options = { cwd, encoding: 'utf8', timeout, env: gitNetworkEnvironment() };
+  let result = spawnSync('git', args, options);
   // Linked checkouts share config. A concurrent start must not silently lose
   // its owner/base metadata, but real config errors still stop immediately.
   for (let retry = 1; args[0] === 'config' && retry < 3 && configLocked(result); retry += 1) {
     sleepSync(100 * retry);
-    result = spawnSync('git', args, { cwd, encoding: 'utf8', timeout });
+    result = spawnSync('git', args, options);
   }
   if (check && result.status !== 0) {
     const msg = (result.stderr || result.stdout || `git ${args.join(' ')} failed`).trim();
@@ -302,7 +311,16 @@ function remoteHead(root) {
   if (remote.status === 0) {
     const live = runGit(['ls-remote', '--symref', 'origin', 'HEAD'], { cwd: root, check: false, timeout: 5000 });
     const match = live.status === 0 && String(live.stdout || '').match(/^ref: refs\/heads\/(.+)\s+HEAD$/m);
-    if (match) return `origin/${match[1]}`;
+    if (match) {
+      const head = `origin/${match[1]}`;
+      if (!refExists(root, head)) {
+        const fetched = runGit(['fetch', 'origin', `refs/heads/${match[1]}:refs/remotes/${head}`], { cwd: root, check: false, timeout: 5000 });
+        if (fetched.status !== 0 || !refExists(root, head)) {
+          throw new Error('could not fetch the remote default branch; stop and retry when the remote is available');
+        }
+      }
+      return head;
+    }
   }
   const result = runGit(['symbolic-ref', '--quiet', '--short', 'refs/remotes/origin/HEAD'], { cwd: root, check: false });
   return result.status === 0 ? result.stdout.trim() : '';
@@ -370,7 +388,7 @@ function defaultShipTarget(root) {
 function refreshRemoteRef(root, ref) {
   if (!ref.startsWith('origin/')) return;
   const remoteBranch = ref.slice('origin/'.length);
-  runGit(['fetch', 'origin', remoteBranch], { cwd: root, check: false });
+  runGit(['fetch', 'origin', remoteBranch], { cwd: root, check: false, timeout: 5000 });
 }
 
 function baseBranchName(ref) {
@@ -484,25 +502,26 @@ function printStatus() {
 function createAgentWorktree({ root = repoRoot(), member = '', agent = '', task, branch: branchOverride, path: pathOverride, base: baseOverride, now = new Date() } = {}) {
   const owner = member || agent;
   if (!owner || !task) throw new Error('createAgentWorktree: owner (member/agent) and task required');
+  // Pin the caller's flight base, or resolve it once for this new flight.
+  const mainline = baseOverride || defaultMainlineBase(root);
   // Every new flight pays down completed checkout debt before adding another
   // full repo copy. Branches and commits survive worktree removal, while real
   // uncommitted changes remain protected by cleanupWorktrees.
   let reapedBeforeStart = [];
   let cachePrunedBeforeStart = [];
   try {
-    const cleaned = cleanupWorktrees({ root, base: defaultMainlineBase(root), apply: true });
+    const cleaned = cleanupWorktrees({ root, base: mainline, apply: true });
     reapedBeforeStart = cleaned.removed;
     cachePrunedBeforeStart = cleaned.cachePruned;
   } catch {}
   const branch = branchOverride || branchName(owner, task, now);
   const target = path.resolve(pathOverride || defaultWorktreePath(root, owner, task, now));
-  const explicitBase = Boolean(baseOverride);
   // Agent/member worktrees always cut from the mainline: honoring the
   // launcher checkout's upstream let a dispatch inherit another session's
   // in-progress feature branch (2026-07-09: an auth fix arrived carrying 13
   // unpushed commits from a parallel session and could not merge).
-  const checkoutBase = normalizeTargetRef(root, baseOverride || defaultMainlineBase(root));
-  const shipBase = explicitBase ? checkoutBase : normalizeTargetRef(root, defaultMainlineBase(root));
+  const checkoutBase = normalizeTargetRef(root, mainline);
+  const shipBase = checkoutBase;
   if (fs.existsSync(target)) throw new Error(`worktree path already exists: ${target}`);
   fs.mkdirSync(path.dirname(target), { recursive: true });
   refreshRemoteRef(root, checkoutBase);
@@ -1353,6 +1372,7 @@ module.exports = {
   cleanupWorktrees,
   defaultMainlineBase,
   defaultStartBase,
+  gitNetworkEnvironment,
   describeFlightAge,
   flightStampMs,
   listWorktrees,
