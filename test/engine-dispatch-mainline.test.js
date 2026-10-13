@@ -11,6 +11,7 @@ const { createAgentWorktree, defaultMainlineBase } = require('../commands/worktr
 const { collectBoard } = require('../commands/land');
 const { dispatchCodexFlight } = require('../lib/codex-flight');
 const cliPath = path.resolve(__dirname, '../bin/atris.js');
+const SSH_GUARDS = '-o BatchMode=yes -o ConnectTimeout=10 -o ServerAliveInterval=15';
 
 function room(t, branch = 'main') {
   const dir = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'atris-mainline-')));
@@ -49,7 +50,7 @@ function withEngine(t, dir, source) {
   });
 }
 
-function traceNetworkGit(t, setup, failFetch = false) {
+function traceNetworkGit(t, setup, failFetch = false, ssh = { GIT_SSH_COMMAND: 'ssh -i /tmp/test-key' }) {
   const realGit = spawnSync('sh', ['-c', 'command -v git'], { encoding: 'utf8' }).stdout.trim();
   const bin = path.join(setup.dir, 'bin');
   const trace = path.join(setup.dir, 'git-network.jsonl');
@@ -59,16 +60,18 @@ const fs = require('node:fs');
 const { spawnSync } = require('node:child_process');
 const args = process.argv.slice(2);
 if (['ls-remote', 'fetch'].includes(args[0])) {
-  fs.appendFileSync(${JSON.stringify(trace)}, JSON.stringify({ args, prompt: process.env.GIT_TERMINAL_PROMPT, ssh: process.env.GIT_SSH_COMMAND }) + '\\n');
+  fs.appendFileSync(${JSON.stringify(trace)}, JSON.stringify({ args, prompt: process.env.GIT_TERMINAL_PROMPT, ssh: process.env.GIT_SSH_COMMAND, program: process.env.GIT_SSH }) + '\\n');
   if (${failFetch} && args[0] === 'fetch') process.exit(1);
 }
 const run = spawnSync(${JSON.stringify(realGit)}, args, { stdio: 'inherit' });
 process.exit(run.status === null ? 1 : run.status);
 `, { mode: 0o755 });
-  const saved = { PATH: process.env.PATH, GIT_TERMINAL_PROMPT: process.env.GIT_TERMINAL_PROMPT, GIT_SSH_COMMAND: process.env.GIT_SSH_COMMAND };
+  const saved = { PATH: process.env.PATH, GIT_TERMINAL_PROMPT: process.env.GIT_TERMINAL_PROMPT, GIT_SSH_COMMAND: process.env.GIT_SSH_COMMAND, GIT_SSH: process.env.GIT_SSH };
   process.env.PATH = bin + path.delimiter + process.env.PATH;
   process.env.GIT_TERMINAL_PROMPT = '1';
-  process.env.GIT_SSH_COMMAND = 'ssh -i /tmp/test-key';
+  delete process.env.GIT_SSH_COMMAND;
+  delete process.env.GIT_SSH;
+  Object.assign(process.env, ssh);
   t.after(() => {
     for (const [key, value] of Object.entries(saved)) {
       if (value === undefined) delete process.env[key];
@@ -265,7 +268,7 @@ test('worktree creation looks up the branch once and disables prompts on every n
   assert.ok(calls.some(call => call.args[0] === 'fetch'));
   for (const call of calls) {
     assert.equal(call.prompt, '0', JSON.stringify(call));
-    assert.equal(call.ssh, 'ssh -i /tmp/test-key -o BatchMode=yes');
+    assert.equal(call.ssh, `ssh -i /tmp/test-key ${SSH_GUARDS}`);
   }
   assert.equal(calls.filter(call => call.args.includes('--symref')).length, 1);
 });
@@ -283,7 +286,30 @@ test('checking a build that landed itself also disables network prompts', (t) =>
   assert.equal(calls.length, 1);
   assert.equal(calls[0].args[0], 'fetch');
   assert.equal(calls[0].prompt, '0');
-  assert.match(calls[0].ssh, /-o BatchMode=yes$/);
+  assert.equal(calls[0].ssh, `ssh -i /tmp/test-key ${SSH_GUARDS}`);
+});
+
+test('network git keeps the repo ssh command and leaves a GIT_SSH program alone', (t) => {
+  const setup = room(t);
+  setup.git(['config', 'core.sshCommand', 'ssh -i ~/.ssh/work_key -F ~/.ssh/work_config']);
+  let readTrace = traceNetworkGit(t, setup, false, {});
+  assert.equal(fleet.landArrival({ worktreePath: setup.root, targetRef: 'origin/main' }).ok, true);
+  assert.equal(defaultMainlineBase(setup.root), 'origin/main');
+  let calls = readTrace();
+  assert.deepEqual(calls.map(call => call.args[0]), ['fetch', 'ls-remote']);
+  for (const call of calls) {
+    assert.equal(call.prompt, '0', JSON.stringify(call));
+    assert.equal(call.ssh, `ssh -i ~/.ssh/work_key -F ~/.ssh/work_config ${SSH_GUARDS}`);
+  }
+  fs.rmSync(path.join(setup.dir, 'bin'), { recursive: true });
+  fs.rmSync(path.join(setup.dir, 'git-network.jsonl'));
+  readTrace = traceNetworkGit(t, setup, false, { GIT_SSH: '/usr/local/bin/plink' });
+  assert.equal(fleet.landArrival({ worktreePath: setup.root, targetRef: 'origin/main' }).ok, true);
+  calls = readTrace();
+  assert.equal(calls.length, 1);
+  assert.equal(calls[0].ssh, undefined);
+  assert.equal(calls[0].program, '/usr/local/bin/plink');
+  assert.equal(calls[0].prompt, '0');
 });
 
 for (const mode of ['dispatch', 'fleet']) {
@@ -312,7 +338,7 @@ console.log('saved the result');
     assert.equal(readTrace().filter(call => call.args.includes('--symref')).length, 1);
     for (const call of readTrace()) {
       assert.equal(call.prompt, '0', JSON.stringify(call));
-      assert.match(call.ssh, /-o BatchMode=yes$/);
+      assert.equal(call.ssh, `ssh -i /tmp/test-key ${SSH_GUARDS}`);
     }
     for (const [verb, flag] of [['start', '--base'], ['ship', '--target']]) {
       const call = calls.find(args => args[0] === 'worktree' && args[1] === verb);
