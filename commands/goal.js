@@ -168,9 +168,65 @@ function renderGoalView(view) {
   return lines.join('\n');
 }
 
+// A goal that never becomes a mission run is a wish. `goal set` therefore also
+// files the sentence through the normal wish capture path (capture only: no
+// mission, no driver), so the goal -> wish -> mission -> run chain starts here.
+// Wish capture is best-effort: it must never fail or undo the goal itself.
+function wishNextStep(wish, goal) {
+  return wish.status === 'needs_input'
+    ? 'atris wish answer "your words"'
+    : `atris wish again ${wish.id} "${goal}"`;
+}
+
+function captureGoalWish(sentence, root) {
+  const goal = String(sentence || '').replace(/\s+/g, ' ').trim();
+  const { isFreshWorkspace } = require('../lib/first-minute');
+  if (isFreshWorkspace(root)) {
+    console.error('note: wish not filed, no atris/ workspace here. run: atris init');
+    return null;
+  }
+  const previous = process.cwd();
+  let wish = null;
+  try {
+    if (previous !== root) process.chdir(root);
+    // Re-setting the same goal must not stack duplicate wishes.
+    const { readWishes } = require('../lib/wish-store');
+    const open = readWishes(root).find((w) => (
+      normalizeText(w.text) === normalizeText(goal)
+      && ['captured', 'captured_no_mission', 'needs_input'].includes(w.status)
+    ));
+    if (open) {
+      console.log(`wish already filed: ${open.id}`);
+      console.log(`next      ${wishNextStep(open, goal)}`);
+      return open;
+    }
+    const { runCapturedWish } = require('../lib/wish-delegate');
+    runCapturedWish(goal, root, {
+      noMission: true,
+      afterCapture: (captured) => { wish = captured; },
+    });
+  } catch (error) {
+    console.error(`warning: goal set, but wish capture failed: ${normalizeText(error?.message || error)}`);
+    return null;
+  } finally {
+    if (process.cwd() !== previous) process.chdir(previous);
+  }
+  if (!wish) return null;
+  let latest = wish;
+  try {
+    const { readWishes } = require('../lib/wish-store');
+    latest = readWishes(root).find((w) => w.id === wish.id) || wish;
+  } catch {
+    latest = wish;
+  }
+  console.log(`wish id   ${wish.id}`);
+  console.log(`next      ${wishNextStep(latest, goal)}`);
+  return latest;
+}
+
 function printHelp() {
   console.log('usage: atris goal [--json]');
-  console.log('       atris goal set "<sentence>"');
+  console.log('       atris goal set "<sentence>" [--no-wish]');
   console.log('       atris goal metric <name> <value>');
   console.log('       atris goal metric <name> --rm');
 }
@@ -187,7 +243,9 @@ function run(args = [], context = {}) {
     }
 
     if (command === 'set') {
-      const goal = normalizeText(args.slice(1).join(' '));
+      const noWish = args.includes('--no-wish');
+      const sentence = args.slice(1).filter((arg) => arg !== '--no-wish').join(' ');
+      const goal = normalizeText(sentence);
       if (!goal) {
         console.error('error: goal sentence is required');
         return 2;
@@ -195,6 +253,7 @@ function run(args = [], context = {}) {
       const scoreboard = readScoreboard(root);
       writeScoreboard({ ...scoreboard, goal }, root);
       console.log('goal set.');
+      if (!noWish) captureGoalWish(sentence, root);
       return 0;
     }
 
