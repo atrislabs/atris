@@ -22,6 +22,7 @@ const {
   laterNextCommand,
   laterNotePath,
   renderFirstTalk,
+  firstTalkBuilder,
   renderFresh,
   renderLaterRemember,
   renderWorkspace,
@@ -961,7 +962,7 @@ test('first talk files the user sentence and names it as the win', () => {
 
     const talk = runCli(['a notes app for keshav'], { cwd: dir, env, timeout: 60000 });
     assert.equal(talk.status, 0, talk.stderr || talk.stdout);
-    assert.match(talk.stdout, /hey keshav, a notes app for keshav is ready\./);
+    assert.match(talk.stdout, /hey keshav, a notes app for keshav is started\. nothing is built yet\./);
     assertKeepWorkingNext(talk.stdout);
     assert.doesNotMatch(talk.stdout, /atris task (claim|show) |I saved a first step|first useful step/i);
     assert.doesNotMatch(talk.stdout.split('\n')[0], /[A-Z0-9]+-\d+/);
@@ -1074,7 +1075,7 @@ test('later remembers words in an unbound folder without minting a room', () => 
 
     const talk = runCli(['a notes app for keshav'], { cwd: dir, env, timeout: 60000 });
     assert.equal(talk.status, 0, talk.stderr || talk.stdout);
-    assert.match(talk.stdout, /hey keshav, a notes app for keshav is ready\./);
+    assert.match(talk.stdout, /hey keshav, a notes app for keshav is started\. nothing is built yet\./);
     assertKeepWorkingNext(talk.stdout);
     assert.ok(fs.existsSync(path.join(dir, 'atris', 'TODO.md')));
   } finally {
@@ -1135,7 +1136,7 @@ test('unbound folder with notes.txt names the file and does not mint', () => {
 
     const talk = runCli(['a notes app for keshav'], { cwd: dir, env, timeout: 60000 });
     assert.equal(talk.status, 0, talk.stderr || talk.stdout);
-    assert.match(talk.stdout, /hey keshav, a notes app for keshav is ready\./);
+    assert.match(talk.stdout, /hey keshav, a notes app for keshav is started\. nothing is built yet\./);
     assertKeepWorkingNext(talk.stdout);
     assert.doesNotMatch(talk.stdout, /atris task (claim|show) /);
     assert.equal(spokenLineCount(talk.stdout), 2);
@@ -1260,7 +1261,7 @@ test('unbound git folder names the last commit and does not mint', () => {
 
     const doit = runCli(['do'], { cwd: dir, env, timeout: 60000 });
     assert.equal(doit.status, 0, doit.stderr || doit.stdout);
-    assert.match(doit.stdout, /hey keshav, this folder is ready\./);
+    assert.match(doit.stdout, /hey keshav, this folder is started\. nothing is built yet\./);
     assertKeepWorkingNext(doit.stdout);
     assert.doesNotMatch(doit.stdout, /already here|atris task (claim|show) |PROMPT ONLY|executor\.md/);
     assert.ok(fs.existsSync(path.join(dir, 'atris', 'TODO.md')));
@@ -1364,7 +1365,7 @@ test('unbound dirty git folder names open work and does not mint', () => {
 
     const talk = runCli(['a notes app for keshav'], { cwd: dir, env, timeout: 60000 });
     assert.equal(talk.status, 0, talk.stderr || talk.stdout);
-    assert.match(talk.stdout, /hey keshav, a notes app for keshav is ready\./);
+    assert.match(talk.stdout, /hey keshav, a notes app for keshav is started\. nothing is built yet\./);
     assertKeepWorkingNext(talk.stdout);
     assert.doesNotMatch(talk.stdout, /still open|already here|atris task (claim|show) /);
     assert.ok(fs.existsSync(path.join(dir, 'atris', 'TODO.md')));
@@ -1467,7 +1468,7 @@ test('unbound git folder on a feature branch names the branch and does not mint'
     gitOk(dir, ['checkout', '-q', 'notes-app']);
     const talk = runCli(['a notes app for keshav'], { cwd: dir, env, timeout: 60000 });
     assert.equal(talk.status, 0, talk.stderr || talk.stdout);
-    assert.match(talk.stdout, /hey keshav, a notes app for keshav is ready\./);
+    assert.match(talk.stdout, /hey keshav, a notes app for keshav is started\. nothing is built yet\./);
     assertKeepWorkingNext(talk.stdout);
     assert.doesNotMatch(talk.stdout, /notes-app is already here|still open|atris task (claim|show) /);
     assert.ok(fs.existsSync(path.join(dir, 'atris', 'TODO.md')));
@@ -1654,7 +1655,7 @@ test('atris do in an unbound folder starts from files already here', () => {
 
     const doit = runCli(['do'], { cwd: dir, env, timeout: 60000 });
     assert.equal(doit.status, 0, doit.stderr || doit.stdout);
-    assert.match(doit.stdout, /hey keshav, notes.txt is ready\./);
+    assert.match(doit.stdout, /hey keshav, notes.txt is started\. nothing is built yet\./);
     assertKeepWorkingNext(doit.stdout);
     assert.doesNotMatch(doit.stdout, /already here|this folder is empty|atris task (claim|show) /);
     assert.doesNotMatch(doit.stdout, /PROMPT ONLY|Atris Do|What do you want to build|executor\.md|Run "atris init"/);
@@ -1700,7 +1701,7 @@ test('atris do in an unbound folder starts from a few files with one title', () 
 
     const doit = runCli(['do'], { cwd: dir, env, timeout: 60000 });
     assert.equal(doit.status, 0, doit.stderr || doit.stdout);
-    assert.match(doit.stdout, /hey keshav, draft.md and notes.txt is ready\./);
+    assert.match(doit.stdout, /hey keshav, draft.md and notes.txt is started\. nothing is built yet\./);
     assertKeepWorkingNext(doit.stdout);
     assert.doesNotMatch(doit.stdout, /already here|PROMPT ONLY|executor\.md|atris task (claim|show) /);
     assert.equal(spokenLineCount(doit.stdout), 2);
@@ -1715,7 +1716,7 @@ test('atris do in an unbound folder starts from a few files with one title', () 
     try {
       const manyDo = runCli(['do'], { cwd: manyDir, env: manyEnv, timeout: 60000 });
       assert.equal(manyDo.status, 0, manyDo.stderr || manyDo.stdout);
-      assert.match(manyDo.stdout, /hey keshav, this folder is ready\./);
+      assert.match(manyDo.stdout, /hey keshav, this folder is started\. nothing is built yet\./);
       assertKeepWorkingNext(manyDo.stdout);
       assert.doesNotMatch(manyDo.stdout, /already here|a\.txt|PROMPT ONLY|atris task (claim|show) /);
     } finally {
@@ -2568,7 +2569,7 @@ test('atris launchpad after minting a file folder talks keep-working, not factor
   try {
     const firstDo = runCli(['do'], { cwd: dir, env, timeout: 60000 });
     assert.equal(firstDo.status, 0, firstDo.stderr || firstDo.stdout);
-    assert.match(firstDo.stdout, /hey keshav, notes.md is ready\./);
+    assert.match(firstDo.stdout, /hey keshav, notes.md is started\. nothing is built yet\./);
     const keepWorking = assertKeepWorkingNext(firstDo.stdout);
     assert.ok(fs.existsSync(path.join(dir, 'atris', 'TODO.md')));
     assert.equal(fs.existsSync(path.join(dir, '.atris', 'business.json')), false);
@@ -2728,7 +2729,7 @@ test('atris status after minting a file folder talks keep-working, not factory l
   try {
     const firstDo = runCli(['do'], { cwd: dir, env, timeout: 60000 });
     assert.equal(firstDo.status, 0, firstDo.stderr || firstDo.stdout);
-    assert.match(firstDo.stdout, /hey keshav, notes.md is ready\./);
+    assert.match(firstDo.stdout, /hey keshav, notes.md is started\. nothing is built yet\./);
     const keepWorking = assertKeepWorkingNext(firstDo.stdout);
     assert.ok(fs.existsSync(path.join(dir, 'atris', 'TODO.md')));
     assert.equal(fs.existsSync(path.join(dir, '.atris', 'business.json')), false);
@@ -2825,7 +2826,7 @@ test('atris stop after minting a file folder talks keep-working, not cloud-compu
   try {
     const firstDo = runCli(['do'], { cwd: dir, env, timeout: 60000 });
     assert.equal(firstDo.status, 0, firstDo.stderr || firstDo.stdout);
-    assert.match(firstDo.stdout, /hey keshav, notes.txt is ready\./);
+    assert.match(firstDo.stdout, /hey keshav, notes.txt is started\. nothing is built yet\./);
     const keepWorking = assertKeepWorkingNext(firstDo.stdout);
     assert.ok(fs.existsSync(path.join(dir, 'atris', 'TODO.md')));
     assert.equal(fs.existsSync(path.join(dir, '.atris', 'business.json')), false);
@@ -3975,7 +3976,7 @@ test('named empty folder next command starts a first task when pasted', () => {
 
     const pasted = runCli(['what do you want here?'], { cwd: dir, env, timeout: 60000 });
     assert.equal(pasted.status, 0, pasted.stderr || pasted.stdout);
-    assert.match(pasted.stdout, /hey keshav, launch-day is ready\./);
+    assert.match(pasted.stdout, /hey keshav, launch-day is started\. nothing is built yet\./);
     assert.doesNotMatch(pasted.stdout, /I saved a first step|first useful step/i);
     assert.doesNotMatch(pasted.stdout, /launch-day is empty/);
     assert.doesNotMatch(pasted.stdout, /atris initialized|What do you want to build|minimal scaffold/i);
@@ -4014,11 +4015,31 @@ test('named empty folder next command starts a first task when pasted', () => {
       folder: 'launch-day',
       starter: { display_id: 'LDY-1', title: 'launch-day', status: 'claimed' },
     }), [
-      'hey keshav, launch-day is ready.',
+      'hey keshav, launch-day is started. nothing is built yet.',
       '',
       `next: ${keepWorkingNext('LDY-1')}`,
     ].join('\n'));
   } finally {
     cleanupTempDir(parent);
   }
+});
+
+test('first talk makes building the one next step, or installing a builder', () => {
+  const starter = { display_id: 'DOG-1', title: 'a landing page for my "dog" walking', status: 'claimed' };
+  const withCodex = renderFirstTalk({ person: 'keshav', folder: 'dog', starter, builder: 'codex' });
+  assert.equal(withCodex, [
+    'hey keshav, a landing page for my "dog" walking is started. nothing is built yet.',
+    '',
+    'next: codex "a landing page for my \\"dog\\" walking"',
+  ].join('\n'));
+  assert.equal(nextLine(renderFirstTalk({ person: 'keshav', folder: 'dog', starter, builder: null })),
+    'npm install -g @anthropic-ai/claude-code');
+  assert.equal(nextLine(renderFirstTalk({ person: 'keshav', folder: 'dog', starter })), keepWorkingNext('DOG-1'));
+
+  const seen = [];
+  const probe = (bin) => { seen.push(bin); return bin === 'codex' ? { status: 0, stdout: '/bin/codex\n' } : { status: 1, stdout: '' }; };
+  assert.equal(firstTalkBuilder(probe), 'codex');
+  assert.deepEqual(seen, ['claude', 'codex']);
+  assert.equal(firstTalkBuilder(() => ({ status: 1, stdout: '' })), null);
+  assert.equal(firstTalkBuilder(), undefined, 'no machine probe inside a test runner');
 });

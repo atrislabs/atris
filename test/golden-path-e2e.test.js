@@ -324,7 +324,7 @@ test('packed golden path follows printed talk do ready and autoland handoffs', (
 
     const talk = runInstalled(doArgs, { timeout: 30000 });
     assertGoldenPathStep(talk, 'printed do from files already here');
-    assert.match(talk.stdout, /README\.md is ready\./);
+    assert.match(talk.stdout, /README\.md is started\. nothing is built yet\./);
     assert.match(talk.stdout, /^next: atris task ready \S+ --verify "git diff --check"$/m);
     assert.doesNotMatch(talk.stdout, /I saved a first step|first useful step/i);
     assert.doesNotMatch(talk.stdout, /atris initialized|What do you want to build|minimal scaffold/i);

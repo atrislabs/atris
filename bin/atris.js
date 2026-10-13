@@ -70,6 +70,7 @@ const {
   listUserVisibleWork,
   personName,
   renderFirstTalk,
+  firstTalkBuilder,
   shouldAutoInitFresh,
 } = require('../lib/first-minute');
 
@@ -1430,7 +1431,7 @@ async function interactiveEntry(userInput, options = {}) {
       return 0;
     }
     console.log('');
-    console.log(renderFirstTalk({ person: who, folder: room, starter }));
+    console.log(renderFirstTalk({ person: who, folder: room, starter, builder: firstTalkBuilder() }));
     return 0;
   }
 
