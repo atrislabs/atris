@@ -9,7 +9,7 @@ const autoland = require('../lib/autoland');
 const { gateForHuman, plainLandingReason } = require('../lib/voice-gate');
 const { evaluateAutoAccept } = require('../lib/auto-accept-certified');
 const { sweepEngineAskReceipts } = require('../lib/engine-receipt-sweep');
-const { readSshAgents, findLeakedSshAgents, stopLeakedSshAgents, closeLostRuns, readResourceHistory } = require('../lib/engine-resource');
+const { readSshAgents, findLeakedSshAgents, stopLeakedSshAgents, closeLostRuns, readResourceHistory, leakGrowthNote } = require('../lib/engine-resource');
 const { validateRecentAskReceipts } = require('../lib/engine-validate');
 const { operatorReady, hasAgentJargon, explainResult } = autoland;
 const MISSION_AUTO_VERIFY_STATUSES = new Set(['planning', 'paused', 'ready']);
@@ -811,16 +811,6 @@ function countLeakedSshAgents(deps = {}) {
   } catch {
     return 0;
   }
-}
-
-// Growth since the oldest count a run start recorded in the last day; quiet
-// when the pile has not grown, so only a filling machine reads as urgent.
-function leakGrowthNote(reading, now, at = Date.now()) {
-  if (!reading || !(now > reading.leaked_ssh_agents)) return '';
-  const when = `${String(reading.at || '').slice(0, 16).replace('T', ' ')} UTC`;
-  const hours = (at - Date.parse(reading.at)) / 3600000;
-  const rate = hours >= 0.25 ? `, about ${Math.round((now - reading.leaked_ssh_agents) / hours)} more an hour` : '';
-  return `, up from ${reading.leaked_ssh_agents} at ${when}${rate}`;
 }
 
 // Shell startup files that start an ssh-agent per shell leave one behind

@@ -2327,7 +2327,7 @@ function formatAgentAge(seconds) {
 // behind. With --apply it rechecks each one and stops it with SIGTERM, and
 // writes a parent gone end line for each run whose parent process is gone.
 function runEngineSweepCommand(args, root, deps = {}) {
-  const { readSshAgents, findLeakedSshAgents, stopLeakedSshAgents, closeLostRuns, readResourceHistory, LEAK_MIN_AGE_SEC } = require('../lib/engine-resource');
+  const { readSshAgents, findLeakedSshAgents, stopLeakedSshAgents, closeLostRuns, readResourceHistory, leakGrowthNote, LEAK_MIN_AGE_SEC } = require('../lib/engine-resource');
   const read = deps.read || readSshAgents;
   const { agents, referenced } = read();
   const uid = deps.uid !== undefined ? deps.uid : process.getuid();
@@ -2352,14 +2352,15 @@ function runEngineSweepCommand(args, root, deps = {}) {
     return code;
   }
   const shown = 20;
+  const history = readResourceHistory(root);
   const lines = [
-    `${plural(agents.length, 'ssh-agent')} running, ${leaked.length} ${leaked.length === 1 ? 'looks' : 'look'} leaked`
+    `${plural(agents.length, 'ssh-agent')} running, ${leaked.length} ${leaked.length === 1 ? 'looks' : 'look'} leaked${leakGrowthNote(history.first_day_leak_reading, leaked.length)}`
       + ` (no parent, older than ${LEAK_MIN_AGE_SEC / 60} min, not in use by any live shell)`,
     ...leaked.slice(0, shown).map((agent) => `  pid ${String(agent.pid).padEnd(6)} ${formatAgentAge(agent.age_sec)}`),
   ];
   if (leaked.length > shown) lines.push(`  and ${leaked.length - shown} more`);
   lines.push(leaked.length ? 'nothing was stopped. run atris engine sweep --apply to stop them.' : 'nothing was stopped.');
-  lines.push('', ...resourceHistoryLines(readResourceHistory(root)));
+  lines.push('', ...resourceHistoryLines(history));
   console.log(lines.join('\n'));
   return 0;
 }

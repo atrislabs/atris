@@ -836,3 +836,36 @@ test('the landing status says how fast leaked ssh-agents grew since the oldest r
     fs.rmSync(root, { recursive: true, force: true });
   }
 });
+
+test('atris engine sweep says how fast leaked ssh-agents grew, the same way the landing status does', () => {
+  const { engineCommand } = require('../commands/engine');
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'engine-sweep-agent-growth-'));
+  const file = path.join(root, RESOURCE_LOG);
+  const agent = (pid) => ({ pid, ppid: 1, uid: 501, age_sec: 3600, args: 'ssh-agent -s' });
+  const hour = 3600 * 1000;
+  const sweep = (n) => {
+    const out = [];
+    const original = console.log;
+    console.log = (line) => out.push(String(line));
+    try {
+      engineCommand(['sweep'], { root, engineSweep: { read: () => ({ agents: Array.from({ length: n }, (_, i) => agent(200 + i)), referenced: new Set() }), uid: 501 } });
+    } finally {
+      console.log = original;
+    }
+    return out.join('\n');
+  };
+  try {
+    fs.mkdirSync(path.dirname(file), { recursive: true });
+    const at = new Date(Date.now() - 2 * hour).toISOString();
+    fs.writeFileSync(file, [
+      JSON.stringify({ at, phase: 'start', engine: 'claude', task: 'A', run_id: 'A', leaked_ssh_agents: 1 }),
+      JSON.stringify({ at: new Date().toISOString(), phase: 'end', engine: 'claude', task: 'A', run_id: 'A' }),
+      '',
+    ].join('\n'));
+    const first = at.slice(0, 16).replace('T', ' ');
+    assert.match(sweep(5), new RegExp(`5 ssh-agents running, 5 look leaked, up from 1 at ${first} UTC, about 2 more an hour \\(no parent`));
+    assert.match(sweep(1), /1 ssh-agent running, 1 looks leaked \(no parent/, 'no growth, no growth note');
+  } finally {
+    fs.rmSync(root, { recursive: true, force: true });
+  }
+});
