@@ -1902,6 +1902,23 @@ test('fix stacks no comma on a quoted question when the sentence goes on', () =>
   ]);
 });
 
+test('fix closes the first half of a "when" or "if" sentence with a comma', () => {
+  // a sentence that opens with "when" or "if" and has no comma yet is only
+  // its first half; the fix used to cut it with a semicolon. A comma already
+  // there, even inside a quote, closed that half, so the clause still joins.
+  const file = tmpFile('opening-half.md', [
+    'When Sushanth asks "how is the pipeline?" \u2014 you answer with numbers.',
+    'If an animation does not do at least one \u2014 remove it.',
+    'If a loop needs "external proof," it must ask the owner \u2014 it may not pick one.',
+  ].join('\n\n'));
+  const { changes } = applyFixes([file], RULES, { write: false });
+  assert.deepEqual(changes.map((c) => c.after), [
+    'When Sushanth asks "how is the pipeline?", you answer with numbers.',
+    'If an animation does not do at least one, remove it.',
+    'If a loop needs "external proof," it must ask the owner; it may not pick one.',
+  ]);
+});
+
 test('fix keeps a journal heading that ends in a time readable for its hour', () => {
   // analytics reads the hour after a dash or a spaced hyphen at the end of a
   // heading; the fix wrote "### Watch: 19:05", which hides it, and glued

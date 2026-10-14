@@ -365,8 +365,13 @@ const ONLY_CLAUSE_AFTER_DASH = new RegExp(`(?<=[\\w)\\]"'*_\`\\u201d\\u2019\\uE0
 // takes a colon: "Not exhaustive: the frontier was not extended". A quoted
 // term alone is being defined, so the clause after it explains the term and
 // takes a colon too: '"Democratic dictatorship": everyone has a voice'.
+// A sentence that opens with "when", "if" or their kin and has no comma yet
+// is only its first half, so the dash closes that half with a comma: "When
+// a lead asks about the pipeline, you answer with numbers". A comma or colon
+// already there, even inside a quote or after a bold label, closed it.
 function clauseJoin(left) {
   const opener = left.replace(/^(?:(?:[-*+>]|\d+[.)]|\*\*|__)\s*)+/, '');
+  if (/^(?:when|whenever|if|unless|until|once|because|since|although|though|while)\b/i.test(opener) && !/[,:]["'\u201d\u2019*_]*\s/.test(opener)) return ', ';
   if (/^not\b/i.test(opener) && opener.split(/\s+/).length <= 3) return ': ';
   return /^(?:"[^"]+"|\u201c[^\u201c\u201d]+\u201d)$/.test(opener) ? ': ' : '; ';
 }
