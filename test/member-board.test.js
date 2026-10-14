@@ -160,28 +160,32 @@ test('died and failed members sort to the top, newest first inside each group', 
   }
 });
 
-test('members that finished over an hour ago hide unless --all', () => {
+test('members that ended over an hour ago, finished or died, hide unless --all', () => {
+  const gone = 2147483646;
   const dir = fakeDir({
     old: [`${at(7200)} m-8 started: yesterday's job`, `${at(3700)} m-8 finished: ok`],
     fresh: [`${at(600)} m-9 started: just landed`, `${at(500)} m-9 finished: failed`],
     stuck: [`${at(9000)} m-10 started: long quiet`, `${at(8000)} m-10 running: npm test`],
+    crashed: [`${at(9000)} m-11 started: [pid ${gone} engine claude] old crash`, `${at(8000)} m-11 running: npm test`],
+    broke: [`${at(300)} m-12 started: [pid ${gone} engine claude] new crash`, `${at(200)} m-12 running: npm test`],
   });
   try {
-    assert.deepEqual(readBoard({ dir, now: NOW }).map((r) => r.member), ['fresh', 'stuck']);
-    assert.deepEqual(readBoard({ dir, now: NOW, all: true }).map((r) => r.member), ['fresh', 'old', 'stuck']);
+    assert.deepEqual(readBoard({ dir, now: NOW }).map((r) => r.member), ['broke', 'fresh', 'stuck'], 'a crash under an hour old stays');
+    assert.deepEqual(readBoard({ dir, now: NOW, all: true }).map((r) => r.member), ['broke', 'fresh', 'crashed', 'old', 'stuck']);
 
     const env = { ...process.env, ATRIS_PROGRESS_DIR: dir };
     // Real clock: the fake logs are from 2026-10-13, so every finished member is old.
     const res = spawnSync(process.execPath, [cliPath, 'member', 'board'], { cwd: dir, env, encoding: 'utf8' });
     assert.equal(res.status, 0, res.stderr);
-    assert.doesNotMatch(res.stdout, /^(old|fresh)\s/m);
+    assert.doesNotMatch(res.stdout, /^(old|fresh|crashed|broke)\s/m);
     assert.match(res.stdout, /^stuck\s+quiet/m);
-    assert.match(res.stdout, /^2 finished over an hour ago, hidden\. --all shows them$/m);
+    assert.match(res.stdout, /^4 ended over an hour ago, hidden\. --all shows them$/m);
 
     const all = spawnSync(process.execPath, [cliPath, 'member', 'board', '--all'], { cwd: dir, env, encoding: 'utf8' });
     assert.equal(all.status, 0, all.stderr);
     assert.match(all.stdout, /^old\s+done ok/m);
     assert.match(all.stdout, /^fresh\s+done failed/m);
+    assert.match(all.stdout, /^crashed\s+died/m);
     assert.doesNotMatch(all.stdout, /hidden/);
 
     const json = spawnSync(process.execPath, [cliPath, 'member', 'board', '--json'], { cwd: dir, env, encoding: 'utf8' });
@@ -192,7 +196,7 @@ test('members that finished over an hour ago hide unless --all', () => {
 });
 
 test('board says nobody is working when every member is hidden', () => {
-  assert.equal(renderBoard([], '/x', 3), 'nobody is working right now. 3 finished over an hour ago, hidden. --all shows them');
+  assert.equal(renderBoard([], '/x', 3), 'nobody is working right now. 3 ended over an hour ago, hidden. --all shows them');
 });
 
 test('atris member board reads ATRIS_PROGRESS_DIR for real', () => {
