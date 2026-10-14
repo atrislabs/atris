@@ -90,6 +90,11 @@ const LIST_AFTER_DASH = new RegExp(`(?<=[\\w)\\]*_\`])\\s*\u2014\\s*(?!(?:and|bu
 // only before a verb, so "the gap, this time with tests" stays a comma.
 // A masked code span before the dash counts as the word: "Do not use `PUT`".
 const CLAUSE_AFTER_DASH = /(?<=[\w)\]"'*_`\u201d\u2019\uE001])\s*\u2014\s*(?=(?:(?:it|we|they|you|I|he|she)(?:['\u2019](?:s|re|ll|ve|d|m))?|(?:this|that|these|those|there)(?:['\u2019]s|\s+(?:is|are|was|were|used|will|would|can|cannot|must|should|has|have))\b)\s+[^\s\u2014])/g;
+// After a "not" sentence, a noun subject and its helping verb start a second
+// sentence too: "is not a twin, restart is allowed". Up to five plain words
+// reach the verb, none of them a joining word, so "not X, even when the
+// build is red" keeps its comma.
+const NOUN_CLAUSE_AFTER_DASH = /(?<=[\w)\]"'*_`\u201d\u2019\uE001])\s*\u2014\s*(?=(?:(?!(?:and|but|or|nor|so|yet|then|not|even|when|if|unless|until|because|since|while|where|which|who|as|after|before|though|although|once|just|only)\b)(?:[A-Za-z0-9_/'-]+(?:\.[A-Za-z0-9_]+)*|\ue000\d+\uE001)\s+){1,5}(?:is|are|was|were|will|would|can|cannot|must|should|has|have|exists)\s+[^\s\u2014])/g;
 
 function fixEmDash(s, { endsBlock = false } = {}) {
   // a table cell that holds only a dash means "nothing here"; a hyphen keeps
@@ -138,6 +143,10 @@ function fixEmDash(s, { endsBlock = false } = {}) {
     // The left side needs two words of its own sentence to be a clause, so
     // an opener like "Then" keeps its comma.
     .replace(CLAUSE_AFTER_DASH, (m, at, whole) => (whole.slice(0, at).split(/[.!?:]\s/).pop().trim().split(/\s+/).length >= 2 ? '; ' : m))
+    .replace(NOUN_CLAUSE_AFTER_DASH, (m, at, whole) => {
+      const left = whole.slice(0, at).split(/[.!?:]\s/).pop().trim();
+      return /\b(?:not|cannot)\b/i.test(left) && left.split(/\s+/).length >= 2 ? '; ' : m;
+    })
     // keep punctuation the writer already put beside the dash instead of
     // stacking a comma on it, and never leave a trailing space. A dash pressed
     // against a closing quote or bracket takes its comma with no space after.

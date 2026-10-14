@@ -893,6 +893,28 @@ test('fix joins two full clauses with a semicolon, not a comma splice', () => {
   ]);
 });
 
+test('fix joins a noun clause after a "not" sentence with a semicolon', () => {
+  // from the land, mission, and endgame files; 7 repo lines moved and each was read
+  const file = tmpFile('not-clause.md', [
+    'A stopped mission is not a twin \u2014 restart is allowed.',
+    'Do NOT put examples here \u2014 every `- ` line under `## Pending` is read.',
+    'The command is not yet wired \u2014 the template exists but no verb.',
+    'It is not green \u2014 even when the build is red.',
+    'Not sends, not laps \u2014 replies. A reply is the market.',
+    // without a "not" the left side is too often a label, so the rule waits
+    'The tool is fast \u2014 the build is green.',
+  ].join('\n'));
+  const { changes } = applyFixes([file], RULES);
+  assert.deepEqual(changes.map((c) => c.after), [
+    'A stopped mission is not a twin; restart is allowed.',
+    'Do NOT put examples here; every `- ` line under `## Pending` is read.',
+    'The command is not yet wired; the template exists but no verb.',
+    'It is not green, even when the build is red.',
+    'Not sends, not laps, replies. A reply is the market.',
+    'The tool is fast, the build is green.',
+  ]);
+});
+
 test('fix attributes a quote with no stop of its own with a comma', () => {
   // a README testimonial; of 22 repo lines with a dash after a closing quote,
   // none read better with another mark, so the comma is the settled choice
