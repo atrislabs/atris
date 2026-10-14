@@ -976,6 +976,12 @@ test('fix joins a noun clause after the dash with a semicolon', () => {
     'Your journal tracks how ideas evolve \u2014 the navigator reads it to understand context.',
     'Ship it \u2014 the gate checks them.',
     'Command tests for autopilot \u2014 the decision helpers it uses.',
+    // "once", "when" or "if" with a comma and a subject after it starts a
+    // second sentence; with no subject after the comma it only adds a condition
+    'This is the archive \u2014 once the endgame closes, future runs can read this.',
+    'Run the gate \u2014 when it passes, the branch lands.',
+    'It fails \u2014 when the disk is full.',
+    'Ship it \u2014 if you can, after lunch.',
   ].join('\n'));
   const { changes } = applyFixes([file], RULES);
   assert.deepEqual(changes.map((c) => c.after), [
@@ -1024,6 +1030,10 @@ test('fix joins a noun clause after the dash with a semicolon', () => {
     'Your journal tracks how ideas evolve; the navigator reads it to understand context.',
     'Ship it; the gate checks them.',
     'Command tests for autopilot, the decision helpers it uses.',
+    'This is the archive; once the endgame closes, future runs can read this.',
+    'Run the gate; when it passes, the branch lands.',
+    'It fails, when the disk is full.',
+    'Ship it, if you can, after lunch.',
   ]);
 });
 
