@@ -20655,7 +20655,7 @@ test('wiki loop alias runs the same upkeep analysis', () => {
 test('getVerifyCommand finds task-specific verify commands before and after task moves', () => {
   const dir = makeTempDir();
   try {
-    initWorkspace(dir);
+    fs.mkdirSync(path.join(dir, 'atris'), { recursive: true });
     const todoPath = path.join(dir, 'atris', 'TODO.md');
     fs.writeFileSync(todoPath, `# TODO.md
 
