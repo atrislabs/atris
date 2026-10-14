@@ -101,3 +101,22 @@ test('a finished job does not block adding it again', () => {
     assert.notEqual(again.task_id, first.task_id);
   });
 });
+
+test('a job already handed in for review does not block adding it again', () => {
+  withWorkspace((dir) => {
+    const first = addJson(dir, 'Tidy the docs');
+    const claimed = runCli(['task', 'claim', first.task_id, '--as', 'probe-agent'], { cwd: dir });
+    assert.equal(claimed.status, 0, claimed.stderr || claimed.stdout);
+
+    const whileClaimed = addJson(dir, 'Tidy the docs');
+    assert.equal(whileClaimed.action, 'reused');
+    assert.equal(whileClaimed.task_id, first.task_id);
+
+    const ready = runCli(['task', 'ready', first.task_id, '--proof', 'docs tidied, see atris/runs/tidy.json', '--result', 'Readers can now find the docs faster because they are tidy.'], { cwd: dir });
+    assert.equal(ready.status, 0, ready.stderr || ready.stdout);
+
+    const again = addJson(dir, 'Tidy the docs');
+    assert.equal(again.action, 'created');
+    assert.notEqual(again.task_id, first.task_id);
+  });
+});

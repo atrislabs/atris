@@ -6243,8 +6243,8 @@ function cmdAdd(args) {
   const taskDb = getTaskDb();
   const db = taskDb.open();
   const ws = taskDb.workspaceRoot();
-  // Filing a job that is already open, claimed, or in review hands back that
-  // job instead of making a copy.
+  // Filing a job that is already open or claimed hands back that job instead
+  // of making a copy. Work already handed in for review can be filed again.
   const existing = taskDb.findUnfinishedTaskByTitle(db, { workspaceRoot: ws, title });
   if (existing) {
     const { projection, outPath } = writeDefaultProjection(taskDb, db);
