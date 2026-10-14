@@ -1682,3 +1682,19 @@ test('fix joins a direct question after a full clause with a semicolon', () => {
     'We keep two lists, what ships and what waits.',
   ]);
 });
+
+test('fix joins "let\'s" after a full clause with a semicolon, like an order', () => {
+  // from dream-gtm's outreach openers, which came out "Congrats on the 2023
+  // Top Performer Award, let's discuss easing staffing pains"
+  const file = tmpFile('lets.md', [
+    'Congrats on the 2023 Top Performer Award \u2014 let\'s discuss easing staffing pains.',
+    'Your mother\'s journey inspired your business \u2014 let us connect this week.',
+    'Next steps \u2014 let\'s pick a day.',
+  ].join('\n'));
+  const { changes } = applyFixes([file], RULES);
+  assert.deepEqual(changes.map((c) => c.after), [
+    'Congrats on the 2023 Top Performer Award; let\'s discuss easing staffing pains.',
+    'Your mother\'s journey inspired your business; let us connect this week.',
+    'Next steps: let\'s pick a day.',
+  ]);
+});
