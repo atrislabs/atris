@@ -1312,6 +1312,7 @@ function memberRunWith(name, args, { quiet = false } = {}) {
     const progressDir = process.env.ATRIS_PROGRESS_DIR || '~/.atris/progress';
     console.log(`watch: tail -f ${progressDir}/${String(name).replace(/[^A-Za-z0-9._-]/g, '_')}.log`);
     console.log('board: atris member board --watch');
+    console.log('stop: atris member stop <name>');
   }
 
   const cwd = mission.worktree?.path || process.cwd();
@@ -11134,6 +11135,8 @@ async function memberCommand(subcommand, ...args) {
       return memberFeed(...args);
     case 'board':
       return require('../lib/member-board').memberBoardCommand(...args);
+    case 'stop':
+      return require('../lib/member-board').memberStopCommand(args[0]);
     case 'card':
     case 'cards':
       return memberCard(args[0], ...args.slice(1));
