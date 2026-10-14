@@ -654,6 +654,10 @@ test('fix gives a heading title and subtitle a colon, but not before a joining w
     '## What this is \u2014 and is not',
     '## Status: COMPLETE \u2014 both classes exhausted',
     'A plain line \u2014 not a heading',
+    // a last dash before a joining word goes on with the subtitle
+    '## Setup \u2014 install it \u2014 then run it',
+    '## Audit \u2014 the gaps \u2014 and the plan',
+    '## Plan \u2014 a \u2014 b \u2014 then c',
   ].join('\n'));
   const { changes } = applyFixes([file], RULES);
   assert.deepEqual(changes.map((c) => c.after), [
@@ -662,6 +666,9 @@ test('fix gives a heading title and subtitle a colon, but not before a joining w
     '## What this is, and is not',
     '## Status: COMPLETE, both classes exhausted',
     'A plain line, not a heading',
+    '## Setup: install it, then run it',
+    '## Audit: the gaps, and the plan',
+    '## Plan, a, b, then c',
   ]);
 });
 

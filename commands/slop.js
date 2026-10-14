@@ -59,7 +59,9 @@ const NUMBERED_LABEL_DASH = /^(\s*(?:>\s*)*(?:(?:\*\*|__)[^*_\u2014]+:(?:\*\*|__
 // A heading with one dash is a title and a subtitle, so the dash becomes a
 // colon: "Audit Gaps: Build Plan". It stays a comma when a colon already
 // sits before it, or when the subtitle opens with a joining word ("and").
-const HEADING_DASH = /^(\s{0,3}#{1,6}\s+[^\u2014:]*[^\s\u2014,;:.!?])\s*\u2014\s*(?!(?:and|but|or|nor|so|yet)\b)(?=[^\s\u2014][^\u2014]*$)/i;
+// A last dash before a joining word goes on with the subtitle and takes a
+// comma: "## Setup: install it, then run it".
+const HEADING_DASH = /^(\s{0,3}#{1,6}\s+[^\u2014:]*[^\s\u2014,;:.!?])\s*\u2014\s*(?!(?:and|but|or|nor|so|yet)\b)(?=[^\s\u2014][^\u2014]*(?:\u2014\s*(?:and|but|or|nor|so|yet|then)\b[^\u2014]*)?$)/i;
 // A bold phrase that is the whole line stands as a heading and gets the same
 // colon: "**Source A: arxiv API**". A dash inside parentheses is left alone.
 // A name that opens a paragraph, then a dash, is a term being defined, so the
@@ -168,7 +170,10 @@ function fixEmDash(s, { endsBlock = false, startsBlock = false } = {}) {
   s = s.replace(/\u2014(?:\s*\u2014)+/g, '\u2014').replace(/(\d)\s*\u2014\s*(?=\d+(?![\d-]))/g, '$1-').replace(/^(\s*(?:>\s*)*)\u2014\s*/, '$1');
   if (endsBlock) s = s.replace(/([.,;:!?]?)\s*\u2014\s*$/, (m, p) => p || '.');
   const heading = [HEADING_DASH, BOLD_HEADING_DASH].find((re) => re.test(s));
-  if (heading) return s.replace(heading, '$1: ');
+  if (heading) {
+    const m = heading.exec(s);
+    return `${m[1]}: ${fixEmDash(s.slice(m[0].length), { endsBlock })}`;
+  }
   let label = LIST_LABEL_DASH.exec(s) || LINE_LABEL_DASH.exec(s) || NUMBERED_LABEL_DASH.exec(s);
   // a plain-word label whose dash opens an aside closed by a second dash in
   // the same sentence is a subject, not a label: "Retries (up to 3) happen
