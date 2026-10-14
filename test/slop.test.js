@@ -3594,3 +3594,22 @@ test('fix gives a quoted phrase and its verb after a dash a semicolon', () => {
     '- **Rule**: "done" is a claim until checked.',
   ]);
 });
+
+test('fix gives a search order after a full clause a semicolon', () => {
+  // from the math-night report: "search" leads an order like "run" does, so
+  // a comma before it is a splice; a lone "search" in a list stays a phrase
+  const D = String.fromCharCode(0x2014);
+  const file = tmpFile('search-order.md', [
+    `(112,100) is 89% dense ${D} search over the 12 zero positions plus sign pattern.`,
+    '',
+    `The box is empty ${D} search the inbox first.`,
+    '',
+    `Each agent gets one tool ${D} search, nothing else.`,
+  ].join('\n'));
+  const { changes } = applyFixes([file], RULES);
+  assert.deepEqual(changes.map((c) => c.after), [
+    '(112,100) is 89% dense; search over the 12 zero positions plus sign pattern.',
+    'The box is empty; search the inbox first.',
+    'Each agent gets one tool, search, nothing else.',
+  ]);
+});
