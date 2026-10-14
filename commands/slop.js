@@ -373,13 +373,19 @@ function fixEmDash(s, { endsBlock = false, startsBlock = false } = {}) {
       return left ? clauseJoin(left) : m;
     })
     // one word in an open bracket, "(IMPORTANT, use this)", or a quoted
-    // title, '"AI Engine Optimization, write content"', is no clause.
+    // title, '"AI Engine Optimization, write content"', is no clause. Two
+    // words name a thing, so the order explains it and takes a colon:
+    // "progressive disclosure: start simple, reveal complexity". A bold label
+    // before them is not counted, and an indented line that carries on a
+    // wrapped sentence is no name, so it keeps its semicolon.
     .replace(ORDER_CLAUSE_AFTER_DASH, (m, at, whole) => {
       const left = clauseLeft(at, whole);
       if (!left) return m;
       const inner = left.split('(').pop();
       const words = (left.includes('(') && !inner.includes(')') ? inner : left).replace(/^[\s"'*_]+/, '').split(/\s+/);
-      return words.length < 2 || words.every((w) => /^[A-Z][A-Za-z0-9'-]*$/.test(w)) ? m : clauseJoin(left);
+      if (words.length < 2 || words.every((w) => /^[A-Z][A-Za-z0-9'-]*$/.test(w))) return m;
+      const named = left.replace(/^(?:\*\*[^*]+:\*\*\s*)/, '').split(/\s+/).length === 2;
+      return named && !/^\s+[a-z]/.test(whole) ? ': ' : clauseJoin(left);
     })
     // a stop right before the dash ended the sentence, so the lowercase word
     // after it starts the next one: "why bother? Nobody reads it", never

@@ -1587,3 +1587,21 @@ test('fix starts the next sentence with a capital after a quote that ends its ow
     'the banner says "it will retry." transactions stay unfinished.',
   ]);
 });
+
+test('fix gives an order a colon after two words that name a thing', () => {
+  // from atris-library, which came out "progressive disclosure; start simple"
+  const file = tmpFile('named-order.md', [
+    '**Interaction:** progressive disclosure \u2014 start simple, reveal complexity.',
+    '*(none yet \u2014 add when you discover surprising failures)*',
+    'Pruning the worktree deletes proof \u2014 copy receipts out first.',
+    '- Piping it to head kills it before the',
+    '  app-out write \u2014 run it to completion.',
+  ].join('\n'));
+  const { changes } = applyFixes([file], RULES);
+  assert.deepEqual(changes.map((c) => c.after), [
+    '**Interaction:** progressive disclosure: start simple, reveal complexity.',
+    '*(none yet: add when you discover surprising failures)*',
+    'Pruning the worktree deletes proof; copy receipts out first.',
+    '  app-out write; run it to completion.',
+  ]);
+});
