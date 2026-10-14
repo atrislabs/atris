@@ -19,10 +19,12 @@ Details for any task: atris task show <ID>
 
 ## In Progress
 
-- **[AIT-3]** Use short poll intervals in MCP retry tests · auto-improver
+(Empty)
 
 ## Review
 
+- **[AIT-3]** Use short poll intervals in MCP retry tests · auto-improver
+  **Done looks like:** Developers can run the same retry checks faster and spend less time waiting for results.
 - **[AIT-2]** Replace fixed MCP test waits with response completion · auto-improver
   **Done looks like:** Developers can run the same checks faster, saving time while waiting for failures.
 - **[AIT-1]** Give the smoke test its own engine so fast checks do not fail on different machines · auto-improver
