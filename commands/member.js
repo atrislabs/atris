@@ -11422,7 +11422,7 @@ async function memberCommand(subcommand, ...args) {
       console.log('  wake <name>         Decide tick/wait/ask/stop, then run one bounded work step on the roster engine (--plan to only decide; --keep keeps it working)');
       console.log('  run "<job>"         Pick the best member for the job and run it (same as dispatch "<job>" --ignite)');
       console.log('  run <name> ["..."]  Start a budgeted member mission, or run its active Mission Runtime');
-      console.log('  report [--since 2h] Short summary per member: merged, finished, turned down, waiting on you [--json]');
+      console.log('  report [--since 2h] Short summary per member: merged, finished, turned down, done but not merged yet [--json]');
       console.log('  result <name>       Newest run result: run record, receipt, artifacts, number [--since <iso>] [--json]');
       console.log('  dispatch "<idea>"   Route an idea to the best specialist member and start work');
       console.log('  up [--max N] [--only a,b]  Keep the team working: start free members on fitting tasks every minute (wake 5 / wake a b)');

@@ -74,7 +74,7 @@ test('each member gets merged with links, finished in plain words, and turned do
 
   const text = formatReport(report);
   assert.match(text, /what the team did since 00:00/);
-  assert.match(text, /1 merged, 1 finished, 1 turned down, 0 waiting on you/);
+  assert.match(text, /1 merged, 1 finished, 1 turned down, 0 not merged yet/);
   assert.match(text, /merged\s+Stop works for codex\s+https:\/\/github\.com\/acme\/repo\/pull\/42/);
   assert.match(text, /finished\s+The board now opens in half the time\.\n/);
   assert.match(text, /turned down\s+Report shows the team: printed a raw log, not a summary/);
@@ -98,7 +98,7 @@ test('tasks a person sent back and tasks waiting on a person come from the task 
   assert.deepEqual(report.members.map((row) => row.member), ['builder']);
   assert.deepEqual(report.members[0].waiting, [{ title: 'Board shows last result' }]);
   assert.deepEqual(report.members[0].turned_down, [{ title: 'Report v1', reason: 'too long' }]);
-  assert.match(formatReport(report), /waiting on you\s+Board shows last result/);
+  assert.match(formatReport(report), /not merged yet\s+Board shows last result/);
 });
 
 test('a busy member shows three lines per group and a count for the rest', (t) => {
@@ -136,9 +136,9 @@ test('atris member report runs for real against diaries and a task list', (t) =>
 
   const run = spawnSync(process.execPath, [BIN, 'member', 'report', '--since', '1h'], { cwd: root, env, encoding: 'utf8' });
   assert.equal(run.status, 0, run.stderr);
-  assert.match(run.stdout, /1 merged, 0 finished, 0 turned down, 1 waiting on you/);
+  assert.match(run.stdout, /1 merged, 0 finished, 0 turned down, 1 not merged yet/);
   assert.match(run.stdout, /merged\s+Ship it\s+https:\/\/github\.com\/acme\/repo\/pull\/7/);
-  assert.match(run.stdout, /waiting on you\s+Needs your yes/);
+  assert.match(run.stdout, /not merged yet\s+Needs your yes/);
 
   const json = spawnSync(process.execPath, [BIN, 'member', 'report', '--json'], { cwd: root, env, encoding: 'utf8' });
   assert.equal(json.status, 0, json.stderr);
