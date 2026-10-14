@@ -109,12 +109,58 @@ const MODEL_ALIASES = Object.freeze({
   alpha: 'alpha',
 });
 
+// The /model pick list. Each row answered as itself on the backend 2026-10-14.
+const MODEL_CHOICES = Object.freeze([
+  { mode: 'fast', label: 'Atris 2 Fast' },
+  { mode: 'pro', label: 'Atris 2 Pro' },
+  { mode: 'max', label: 'Atris 2 Max' },
+  { mode: 'rapid', label: 'Atris Rapid' },
+  { mode: 'alpha', label: 'Atris Alpha' },
+  { mode: 'mercury', label: 'Mercury 3 (test)' },
+  { mode: 'model:openrouter:anthropic/claude-opus-5.5', label: 'Claude Opus 5.5' },
+  { mode: 'model:openai:gpt-6-astra', label: 'GPT-6 Astra' },
+  { mode: 'model:openai:gpt-5.6-terra', label: 'GPT-5.6 Terra' },
+  { mode: 'model:openrouter:google/gemini-3.8-flash', label: 'Gemini 3.8 Flash' },
+  { mode: 'model:xai:grok-4.6', label: 'Grok 4.6' },
+  { mode: 'model:openrouter:deepseek/deepseek-v4.1-flash', label: 'DeepSeek V4.1 Flash' },
+  { mode: 'model:openrouter:z-ai/glm-5.3-flash', label: 'GLM 5.3 Flash' },
+].map(choice => Object.freeze(choice)));
+
+function squashModelName(value) {
+  return String(value || '').toLowerCase().replace(/[^a-z0-9]/g, '');
+}
+
 function modeForModelName(name) {
   const raw = String(name || '').trim();
   if (!raw) return null;
+  if (/^\d+$/.test(raw)) {
+    const choice = MODEL_CHOICES[Number(raw) - 1];
+    return choice ? choice.mode : null;
+  }
   const alias = MODEL_ALIASES[raw.toLowerCase()];
   if (alias) return alias;
+  // "opus", "gemini", "gpt-6": a unique start of a pick-list name picks it.
+  const query = squashModelName(raw);
+  const exact = MODEL_CHOICES.find(choice => squashModelName(choice.label) === query);
+  if (exact) return exact.mode;
+  const hits = MODEL_CHOICES.filter(choice => squashModelName(choice.label).includes(query));
+  if (hits.length === 1) return hits[0].mode;
+  if (!raw.includes(':')) return null;
   return `model:${raw}`;
+}
+
+function modelChoiceList(currentMode, options = {}) {
+  const width = MODEL_CHOICES.reduce((max, choice) => Math.max(max, choice.label.length), 0);
+  const rows = MODEL_CHOICES.map((choice, index) => {
+    const mark = choice.mode === currentMode ? '●' : ' ';
+    const num = String(index + 1).padStart(2);
+    const id = choice.mode.startsWith('model:') ? choice.mode.slice('model:'.length) : modelForMode(choice.mode);
+    return `  ${mark} ${num}  ${paint(choice.label.padEnd(width), [tierColor(choice.mode)], options)}  ${paint(id, [ANSI.muted], options)}`;
+  });
+  if (String(currentMode || '').startsWith('model:') && !MODEL_CHOICES.some(choice => choice.mode === currentMode)) {
+    rows.push(`  ●  -  ${currentMode.slice('model:'.length)}`);
+  }
+  return [...rows, paint('  pick: /model 6  ·  /model opus  ·  /model provider:model-name', [ANSI.muted], options)].join('\n');
 }
 
 function modelForMode(mode) {
@@ -169,7 +215,10 @@ function formatSeconds(totalSeconds) {
 }
 
 function tierLabel(mode) {
-  if (String(mode || '').startsWith('model:')) return mode.slice('model:'.length);
+  if (String(mode || '').startsWith('model:')) {
+    const choice = MODEL_CHOICES.find(item => item.mode === mode);
+    return choice ? choice.label : mode.slice('model:'.length);
+  }
   if (mode === 'code-fast') return 'Atris Code Fast';
   if (mode === 'mercury') return 'mercury 3 (test model)';
   if (mode === 'max') return 'Atris 2 Max';
@@ -184,7 +233,7 @@ function formatHeader({ mode = 'pro', cwd = process.cwd(), chat = false, reasoni
   return [
     paint(`${tierLabel(mode)}${chat ? ' chat' : ''}${effortSuffix}`, [ANSI.bold, tierColor(normalizeMode(mode))], options),
     cwd,
-    chat ? paint('shift-tab bypass · /auto /log /today /now /who · /fast /pro /max /rapid /alpha /effort · exit to leave', [ANSI.muted], options) : '',
+    chat ? paint('shift-tab bypass · /auto /log /today /now /who · /model to switch models · /effort · exit to leave', [ANSI.muted], options) : '',
   ].filter(Boolean).join('\n');
 }
 
@@ -1142,7 +1191,9 @@ function nextApproveMode(arg, current) {
 function formatPrompt(mode, options = {}) {
   if (!mode) return '› ';
   const tier = normalizeMode(mode);
-  const label = paint(tier, [ANSI.bold, tierColor(tier)], options);
+  // Picked models show their short name: "claude-opus-5.5", not "model:openrouter:...".
+  const short = tier.startsWith('model:') ? tier.split(/[:/]/).pop() : tier;
+  const label = paint(short, [ANSI.bold, tierColor(tier)], options);
   const tag = approveModeTag(options.approveMode);
   if (tag) {
     return `${label} ${paint(`[${tag}]`, [ANSI.muted], options)} › `;
@@ -1196,7 +1247,7 @@ function formatReasoningEffortLabel(value) {
 
 const CHAT_COMMANDS = Object.freeze([
   { name: '/help', description: 'list all commands', type: 'help' },
-  { name: '/model', description: 'show the model, or switch: /model mercury | /model <provider:model>', type: 'model' },
+  { name: '/model', description: 'pick a model from the list', type: 'model' },
   { name: '/status', description: 'show runtime health', type: 'status' },
   { name: '/fast', description: 'switch to quick answers with low latency', type: 'tier', mode: 'fast' },
   { name: '/pro', description: 'switch to a deeper tool loop', type: 'tier', mode: 'pro' },
@@ -1330,12 +1381,12 @@ function runChatSlash(line, options = {}) {
   if (command.type === 'model') {
     if (parsed.arg) {
       const next = modeForModelName(parsed.arg);
+      if (!next) {
+        return { type: 'model', output: `no single model matches "${parsed.arg}"\n${modelChoiceList(mode, options)}` };
+      }
       return { type: 'tier', mode: next, output: `· ${tierLabel(next)}` };
     }
-    return {
-      type: 'model',
-      output: `· current lane: ${tierLabel(mode)} · effort: ${formatReasoningEffortLabel(options.reasoningEffort)} · switch with /fast /pro /max /rapid /alpha or /model <name> · effort with /effort`,
-    };
+    return { type: 'model', output: modelChoiceList(mode, options) };
   }
   if (command.type === 'effort') {
     const current = formatReasoningEffortLabel(options.reasoningEffort);
@@ -3274,6 +3325,13 @@ function handleEvent(event, state, output) {
   }
 
   if (event.type === 'receipt' && event.receipt) {
+    // A picked model the backend could not reach is swapped silently; say so.
+    const answeredBy = String(event.receipt.model || '');
+    const asked = String(state.requestedModel || '');
+    if (answeredBy && asked && !asked.startsWith('atris:') && !asked.endsWith(answeredBy) && !answeredBy.endsWith(asked.split(':').pop())) {
+      flushPendingText(state, output);
+      writeAuxLine(state, output, paint(`· ${asked} did not answer; fell back to ${answeredBy}`, [ANSI.muted], output));
+    }
     const approvalLine = formatApprovalReceipt(event.receipt);
     const previewRows = formatTaskPreviewRows(event.receipt, output);
     if (approvalLine) {
@@ -3359,6 +3417,7 @@ async function postTurn(message, options = {}) {
     startedAt,
     firstTextMs: null,
     diffuse: Boolean(payload.diffuse),
+    requestedModel: String(payload.model || ''),
     snapshotCount: 0,
     snapshotRows: 0,
     lastChar: '\n',
@@ -3790,7 +3849,7 @@ async function chat(options = {}) {
       }
       if (logger) logger.write(`${trimmed}\n`);
       const color = slash.mode ? [tierColor(slash.mode)] : [ANSI.muted];
-      const preservesOwnFormatting = slash.type === 'help' || slash.type === 'status';
+      const preservesOwnFormatting = slash.type === 'help' || slash.type === 'status' || slash.type === 'model';
       output.write(`${preservesOwnFormatting ? slash.output : paint(slash.output, color, output)}\n\n`);
       return false;
     }

@@ -293,7 +293,7 @@ test('ax never shows model ids to the user and swaps tiers in chat', () => {
   }
   assert.match(ax.formatHeader({ mode: 'pro', cwd: '/tmp/project', chat: true }), /shift-tab bypass/);
   assert.match(ax.formatHeader({ mode: 'pro', cwd: '/tmp/project', chat: true }), /\/auto \/log \/today \/now \/who/);
-  assert.match(ax.formatHeader({ mode: 'pro', cwd: '/tmp/project', chat: true }), /\/fast \/pro \/max \/rapid/);
+  assert.match(ax.formatHeader({ mode: 'pro', cwd: '/tmp/project', chat: true }), /\/model to switch models/);
 
   const profileText = ax.formatRunProfile(ax.buildRunProfile({ mode: 'max', cwd: '/tmp/project' }), { color: false });
   assert.doesNotMatch(profileText, modelPattern);
@@ -580,7 +580,13 @@ test('ax chat slash commands log and inspect without a model turn', () => {
   try {
     assert.equal(ax.parseChatSlash('hello'), null);
     assert.equal(ax.runChatSlash('/who', { mode: 'rapid', color: false }).output, '· Atris Rapid · effort lane default · cheap chat and first-hop tools');
-    assert.equal(ax.runChatSlash('/model', { mode: 'pro', color: false }).output, '· current lane: Atris 2 Pro · effort: lane default · switch with /fast /pro /max /rapid /alpha or /model <name> · effort with /effort');
+    const list = ax.runChatSlash('/model', { mode: 'pro', color: false }).output;
+    assert.match(list, /● {2}2 {2}Atris 2 Pro/);
+    assert.match(list, /6 {2}Mercury 3 \(test\)/);
+    assert.equal(ax.runChatSlash('/model 7', { mode: 'pro', color: false }).mode, 'model:openrouter:anthropic/claude-opus-5.5');
+    assert.equal(ax.runChatSlash('/model gemini', { mode: 'pro', color: false }).mode, 'model:openrouter:google/gemini-3.8-flash');
+    assert.equal(ax.runChatSlash('/model gpt', { mode: 'pro', color: false }).type, 'model');
+    assert.equal(ax.formatPrompt('model:openrouter:anthropic/claude-opus-5.5', { color: false }), 'claude-opus-5.5 › ');
     assert.deepEqual(ax.runChatSlash('/model mercury', { mode: 'pro', color: false }), { type: 'tier', mode: 'mercury', output: '· mercury 3 (test model)' });
     const picked = ax.runChatSlash('/model openrouter:z-ai/glm-5.3-flash', { mode: 'pro', color: false });
     assert.equal(picked.mode, 'model:openrouter:z-ai/glm-5.3-flash');
