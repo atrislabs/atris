@@ -2266,3 +2266,5 @@ npm publish
 - Regression: `test/engine-dispatch-mainline.test.js:1` uses real engines and Git for main/trunk dispatch and fleet landings, successful login-related output with backups available, engine-only refusals, backup refusal receipts, a server-only rename without a local tracking ref, failed fetch refusal, one lookup per flight, traced network prompt settings, failed Codex tool transcripts, absent-origin landing, and branch fallback priority. `test/one-lap-runtime.test.js:913` covers sealed review and import on main; `test/engine-dispatch-no-origin.test.js:1` covers absent and unavailable origin.
 
 MCP retry cadence: `mcp/atris-mcp/index.mjs:93` reads the positive finite design poll interval; `test/mcp.test.js:76` supplies 25ms; `test/mcp.test.js:419` asserts three attempts on permanent failures.
+
+Command test SQLite capability: `test/commands.test.js:4926` caches the real child probe for the fixed Node executable; database tests retain their existing checks.

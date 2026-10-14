@@ -23,6 +23,8 @@ Details for any task: atris task show <ID>
 
 ## Review
 
+- **[AIT-4]** Cache the command test SQLite availability probe · auto-improver
+  **Done looks like:** Developers wait less for command checks because database support is checked once while every assertion remains.
 - **[AIT-3]** Use short poll intervals in MCP retry tests · auto-improver
   **Done looks like:** Developers can run the same retry checks faster and spend less time waiting for results.
 - **[AIT-2]** Replace fixed MCP test waits with response completion · auto-improver

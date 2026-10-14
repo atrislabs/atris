@@ -4921,12 +4921,17 @@ test('healthy claude sessions rotate for context refresh after N ran ticks', () 
   }
 });
 
+// The executable's SQLite support is fixed for this test process. Probe it
+// lazily once instead of starting another Node child for every database test.
+let nodeSqliteAvailable;
 function hasNodeSqlite() {
+  if (nodeSqliteAvailable !== undefined) return nodeSqliteAvailable;
   const result = spawnSync(process.execPath, ['-e', 'require("node:sqlite")'], {
     encoding: 'utf8',
     env: { ...process.env, NODE_NO_WARNINGS: '1' },
   });
-  return result.status === 0;
+  nodeSqliteAvailable = result.status === 0;
+  return nodeSqliteAvailable;
 }
 
 function waitForOutput(child, pattern, timeoutMs = 5000) {
