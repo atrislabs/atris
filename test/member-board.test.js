@@ -346,6 +346,39 @@ test('the widths where a wider board shows less are known', () => {
   }
 });
 
+test('a signed out row costs a wider board only the widths it is known to', () => {
+  const dir = fakeDir({
+    builder: [`${at(180)} m-1 started: fix the login flow`, `${at(60)} m-1 editing lib/auth/session.js to refresh tokens`],
+    scout: [`${at(1800)} m-2 started: write release notes`, `${at(1500)} m-2 reading CHANGELOG.md and the merged pull requests`, `${at(1200)} m-2 finished: ok`],
+    editor: [`${at(2400)} m-3 started: tidy the docs folder`, `${at(2100)} m-3 running: node --test test/docs.test.js`, `${at(1980)} m-3 finished: failed (bad exit 2)`],
+    locked: [`${at(900)} m-4 started: ship the pricing page`, `${at(850)} m-4 reading pages/pricing.md`, `${at(800)} m-4 finished: failed (signed out)`],
+  });
+  try {
+    const rows = readBoard({ dir, now: NOW }).map((r) => (r.member === 'builder' ? { ...r, alive: true, engine: 'codex', running_for: '3m' }
+      : r.member === 'locked' ? { ...r, engine: 'claude' } : r));
+    // "done" gave way for the fix at some width, so it stays away while it
+    // would cost a job or step; it used to come back at 60, 83, 87, 91, 110.
+    assert.deepEqual(cliffs(rows.filter((r) => r.member !== 'builder'), dir, 50, 140), [
+      // Open: the step column returns and the fix moves there as "sign in".
+      '75 locked job 36->21 step 0->7',
+      // Open: the engine column returns for the signed out row alone.
+      '87 scout job 19->19 step 22->15',
+      '87 editor job 20->20 step 22->15',
+    ]);
+    // Open: the same live-run cliff as above, whole jobs or the live step.
+    assert.deepEqual(cliffs(rows, dir, 50, 140), [
+      '74 builder job 18->10 step 0->11',
+      '74 locked job 17->10 step 0->7',
+      '74 scout job 19->10 step 0->11',
+      '74 editor job 20->10 step 0->11',
+    ]);
+    assert.match(renderBoard(rows.filter((r) => r.member !== 'builder'), dir, 0, 60), /^scout\s+ok\s+-\s+20m ago\s+write release notes$/m,
+      'one column past where the fix needed it, "done" still stays away so no job is cut');
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
 test('a tiny terminal keeps member states and common failure reasons within its width', () => {
   const dir = fakeDir({
     builder: [`${at(100)} m-1 started: build`, `${at(80)} m-1 finished: failed (timed out)`],
