@@ -521,6 +521,23 @@ test('a board too tall for its screen drops ended runs\' last steps before any m
   assert.equal(tall.filter((l) => l.startsWith('  last step:')).length, 4, 'with room, every step shows');
 });
 
+test('a board gives up the order words before it puts last steps on their own lines', () => {
+  const now = Date.parse('2026-10-14T13:00:00Z');
+  const hist = (ends) => ends.flatMap((e, i) => [`2026-10-14T12:1${i}:00Z m-${i} started: run ${i}`, `2026-10-14T12:1${i}:30Z m-${i} finished: ${e}`]);
+  const rows = [
+    memberRow('architect', [...hist(['ok', 'ok', 'failed']), '2026-10-14T12:50:00Z m-9 started: Finish work-folder protection across the fleet', '2026-10-14T12:59:30Z m-9 running: node --test test/worktree-removal-guard.test.js', ''].join('\n'), now),
+    memberRow('builder', [...hist(['ok']), '2026-10-14T12:55:00Z m-8 started: Improve atris member board in lib/member-board.js', '2026-10-14T12:59:40Z m-8 running: git status -sb', ''].join('\n'), now),
+  ];
+  const lines = (w) => renderBoard(rows, '/x', 0, w).split('\n');
+  assert.match(lines(120)[2], /^member\s+state\s+before, newest first\s+run time\s+ago\s+job\s+last step$/, 'room for the words and both columns: they stay');
+  const at100 = lines(100);
+  assert.match(at100[2], /^member\s+state\s+before\s+run time\s+ago\s+job\s+last step$/, `dropping the words keeps the step beside the job:\n${at100.join('\n')}`);
+  assert.ok(!at100.some((l) => l.startsWith('  last step:')) && at100.every((l) => l.length <= 100), at100.join('\n'));
+  assert.match(at100.join('\n'), /^architect\s+working\s+failed ok ok\s/m, 'every ending still shows');
+  const at92 = lines(92);
+  assert.match(at92[2], /^member\s+state\s+before, newest first\s+run time\s+ago\s+job$/, `too narrow even without them: the words stay and the step moves down:\n${at92.join('\n')}`);
+});
+
 test('a wider board never gives the job less than its 24 columns beside the step', () => {
   const now = Date.parse('2026-10-14T13:00:00Z');
   const rows = [memberRow('builder', `2026-10-14T12:50:00Z m-1 started: [pid ${process.pid} engine claude] keep the job readable when the screen is wide enough\n2026-10-14T12:59:30Z m-1 running: node --test test/member-board.test.js test/member-result.test.js\n`, now)];
