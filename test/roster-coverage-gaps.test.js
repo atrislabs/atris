@@ -345,3 +345,33 @@ test('a mission blocker build that lands keeps its engine ready and records land
     assert.deepEqual([rows[0].outcome, rows[0].tokens], ['landed', 300]);
   });
 });
+
+test('a member job with no time given gets the roster limit plus review time, never less than 15 minutes', async () => {
+  const { memberRunDefaultWallSeconds } = require('../commands/member');
+  const addBuilder = (root) => {
+    fs.mkdirSync(path.join(root, 'atris', 'team', 'builder'), { recursive: true });
+    fs.writeFileSync(path.join(root, 'atris', 'team', 'builder', 'MEMBER.md'), '---\nname: builder\nrole: builds\n---\n\n# builder\n');
+  };
+  await withRoom(async ({ root }) => {
+    addBuilder(root);
+    assert.equal(memberRunDefaultWallSeconds('builder', root), 45 * 60 + 600);
+  }, { roster: '# roster\n\n## build\n- claude, max: 45 min\n' });
+  await withRoom(async ({ root }) => {
+    addBuilder(root);
+    assert.equal(memberRunDefaultWallSeconds('builder', root), 900);
+  }, { roster: '# roster\n\n## build\n- claude, max: 2 min\n' });
+});
+
+test('a mission that names its engine still gets the roster time limit for that engine', async () => {
+  const { resolveMissionTickRunner, missionTickTimeoutMs } = require('../commands/mission');
+  const hour = 60 * 60 * 1000;
+  await withRoom(async ({ root }) => {
+    const picked = resolveMissionTickRunner({ id: 'm-1', runner: 'claude', owner: 'builder' }, root);
+    assert.equal(picked.mission.roster_max_seconds, 45 * 60);
+    assert.equal(missionTickTimeoutMs(picked.mission, hour), 45 * 60 * 1000);
+    // A different engine than the roster's pick keeps the default limit.
+    const other = resolveMissionTickRunner({ id: 'm-2', runner: 'codex', owner: 'builder' }, root);
+    assert.equal(other.mission.roster_max_seconds, undefined);
+    assert.equal(missionTickTimeoutMs(other.mission, hour), 10 * 60 * 1000);
+  }, { roster: '# roster\n\n## build\n- claude, max: 45 min\n' });
+});

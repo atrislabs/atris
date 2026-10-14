@@ -9,7 +9,12 @@ const path = require('node:path');
 const { engineCommand } = require('../commands/engine');
 const { runAskProcess } = require('../lib/engine-ask');
 const {
+  MAX_REFEREE_ANSWER_CHARS,
+  MAX_REFEREE_PROMPT_CHARS,
   VALIDATION_SCHEMA,
+  buildRefereeInvocation,
+  buildRefereePrompt,
+  formatRefereeFailureReason,
   parseRefereeOutput,
   resolveAskReceipt,
   runEngineValidateCommand,
@@ -287,3 +292,117 @@ test('malformed fake referee output records unsure and ends with stronger-judge 
     fs.rmSync(root, { recursive: true, force: true });
   }
 });
+
+test('buildRefereePrompt truncates oversized prompts and answers and forbids tool use', () => {
+  const hugePrompt = `PROMPT_HEAD_${'p'.repeat(MAX_REFEREE_PROMPT_CHARS + 500)}_PROMPT_TAIL`;
+  const hugeAnswer = `ANSWER_HEAD_${'a'.repeat(MAX_REFEREE_ANSWER_CHARS + 1200)}_ANSWER_TAIL`;
+  const built = buildRefereePrompt(hugePrompt, hugeAnswer);
+
+  assert.match(built, /do not use tools or read files/);
+  assert.doesNotMatch(built, /reading the cited files with your read tools/);
+  assert.match(built, /PROMPT_HEAD_/);
+  assert.match(built, /_PROMPT_TAIL/);
+  assert.match(built, /ANSWER_HEAD_/);
+  assert.match(built, /_ANSWER_TAIL/);
+  assert.match(built, /\[truncated \d+ chars\]/);
+  assert.ok(built.length < MAX_REFEREE_PROMPT_CHARS + MAX_REFEREE_ANSWER_CHARS + 800);
+});
+
+test('buildRefereeInvocation disables tools, permissions, all hooks, and resolves ~/.local/bin in cron PATH', () => {
+  const fakeHome = tempRoot();
+  try {
+    const localBin = path.join(fakeHome, '.local', 'bin');
+    fs.mkdirSync(localBin, { recursive: true });
+    const fakeClaude = path.join(localBin, 'claude');
+    fs.writeFileSync(fakeClaude, '#!/bin/sh\nexit 0\n', { mode: 0o755 });
+
+    const invocation = buildRefereeInvocation({
+      engine: 'haiku',
+      model: 'claude-haiku-5-5',
+      prompt: 'judge this',
+    }, {
+      timeoutMs: 120000,
+      env: { PATH: '/usr/bin:/bin', HOME: fakeHome },
+      homeDir: fakeHome,
+    });
+
+    assert.equal(invocation.bin, fakeClaude);
+    const settingsIndex = invocation.args.indexOf('--settings');
+    assert.ok(settingsIndex !== -1);
+    assert.deepEqual(JSON.parse(invocation.args[settingsIndex + 1]), { disableAllHooks: true });
+    assert.ok(invocation.env.PATH.split(path.delimiter).includes(localBin));
+    const toolsIdx = invocation.args.indexOf('--tools');
+    assert.notEqual(toolsIdx, -1);
+    assert.equal(invocation.args[toolsIdx + 1], '');
+    const permIdx = invocation.args.indexOf('--permission-mode');
+    assert.notEqual(permIdx, -1);
+    assert.equal(invocation.args[permIdx + 1], 'dontAsk');
+    assert.ok(invocation.args.includes('--strict-mcp-config'));
+    const sourcesIdx = invocation.args.indexOf('--setting-sources');
+    assert.notEqual(sourcesIdx, -1);
+    assert.equal(invocation.args[sourcesIdx + 1], 'user');
+    const effortIdx = invocation.args.indexOf('--effort');
+    assert.notEqual(effortIdx, -1);
+    assert.equal(invocation.args[effortIdx + 1], 'low');
+  } finally {
+    fs.rmSync(fakeHome, { recursive: true, force: true });
+  }
+});
+
+test('failed referee runs record timeout, exit code, empty output, and spawn error details with stderr tail', async () => {
+  assert.equal(
+    formatRefereeFailureReason({
+      timed_out: true,
+      reason: 'timeout',
+      duration_ms: 120000,
+      stderr: 'line one\nwaiting on tool turn',
+    }),
+    'referee timed out after 120s: line one | waiting on tool turn.'
+  );
+  assert.equal(
+    formatRefereeFailureReason({
+      reason: 'spawn_error',
+      stderr: 'spawn claude ENOENT',
+    }),
+    'referee spawn error: spawn claude ENOENT.'
+  );
+  assert.equal(
+    formatRefereeFailureReason({
+      reason: 'exit_2',
+      exit_code: 2,
+      stderr: 'unknown option --bad-flag',
+    }),
+    'referee exited with code 2: unknown option --bad-flag.'
+  );
+  assert.equal(
+    formatRefereeFailureReason({
+      reason: 'no_output',
+      exit_code: 0,
+      stdout: '',
+      stderr: '',
+    }),
+    'referee returned empty output.'
+  );
+
+  const root = tempRoot();
+  try {
+    writeAskReceipt(root, 'engine-ask-timeout.json', { at: '2026-08-12T20:00:00.000Z' });
+    const code = await runEngineValidateCommand(['latest'], root, {
+      log: () => {},
+      executeAskJob: () => runAskProcess({
+        bin: process.execPath,
+        args: ['-e', 'process.stderr.write("stuck thinking\\n"); setTimeout(() => {}, 5000);'],
+      }, {
+        cwd: root,
+        timeoutMs: 80,
+      }),
+    });
+    assert.equal(code, 0);
+    const row = JSON.parse(fs.readFileSync(path.join(root, 'atris', 'benchmarks', 'validations.jsonl'), 'utf8').trim());
+    assert.equal(row.verdict, 'unsure');
+    assert.match(row.reason, /^referee timed out after \d+ms: stuck thinking[.]$/);
+  } finally {
+    fs.rmSync(root, { recursive: true, force: true });
+  }
+});
+
