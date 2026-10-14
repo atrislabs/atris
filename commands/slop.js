@@ -93,7 +93,9 @@ const NAME_ADDRESS_DASH = /((?:^|[\s(])["\u201c])((?:Dr\.\s+)?[A-Z][a-z]+(?:-[A-
 // A dated lesson, "- **[2026-05-11] slug** \u2014 pass \u2014 what was learned", is
 // read back by the lesson tools, which take a dash or a hyphen between its
 // parts and nothing else, so those dashes become spaced hyphens; a colon or
-// parentheses there would hide the lesson from them.
+// parentheses there would hide the lesson from them. A scorecard is the same
+// head with a run of fields after it, "shipped: 3/4 \u2014 halt: 0% \u2014 reward: 12",
+// and its reader needs a hyphen between every field.
 const LESSON_DASH = /^(\s*[-*]\s+\*\*\[\d{4}-\d{2}-\d{2}\]\s+[^*]+\*\*)\s*\u2014\s*(?:(pass|fail)\s*\u2014\s*)?/i;
 // A journal heading that ends in a clock time, "### Tick 14 \u2014 21:25", is read
 // back by analytics for the hour, which takes a dash or a spaced hyphen before
@@ -418,7 +420,8 @@ function fixEmDash(s, { endsBlock = false, startsBlock = false } = {}) {
   // sign, which makes it a score: "reward: +4, 404 on missing routes"
   // A dash that opens a line, a quote or a list item names nothing and goes.
   s = s.replace(/\u2014(?:\s*\u2014)+/g, '\u2014').replace(/(?<![+-]\d*)(\d+)\s*\u2014\s*(?=(\d+)(?![\d-]))/g, (m, a, b) => (isRange(a, b) ? `${a}-` : m)).replace(/^(\s*(?:>\s*)*)(?:([-*+]|\d+\.)\s+)?\u2014\s*/, (m, lead, marker) => (marker ? lead + marker + ' ' : lead));
-  s = s.replace(LESSON_DASH, (m, head, verdict) => `${head} - ${verdict ? `${verdict} - ` : ''}`);
+  s = s.replace(LESSON_DASH, (m, head, verdict) => `${head} - ${verdict ? `${verdict} - ` : ''}`)
+    .replace(/^(\s*[-*]\s+\*\*\[[^\]]+\][^*]+\*\* - [a-z][\w-]*:\s.*)$/, (line) => line.replace(/\s*\u2014\s*(?=[a-z][\w-]*:\s)/g, ' - '));
   s = s.replace(NAME_ADDRESS_DASH, '$1$2, ');
   const greeting = GREETING_DASH.exec(s);
   if (greeting) {

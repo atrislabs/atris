@@ -1785,6 +1785,18 @@ test('fix turns a padded dash into spaces so a column of descriptions stays in l
   for (const c of changes.slice(0, 4)) assert.equal(c.after.length, c.before.length);
 });
 
+test('fix keeps a scorecard line readable field by field', () => {
+  // the scorecard reader needs a hyphen between every field; the fix used to
+  // keep only the first one and turn the rest into commas, so it read nothing
+  const { getScorecardsPath, readScorecards } = require('../lib/scorecard');
+  const atrisDir = fs.mkdtempSync(path.join(os.tmpdir(), 'slop-scorecard-'));
+  const file = getScorecardsPath(atrisDir);
+  fs.writeFileSync(file, '- **[2026-04-11] check-before-acting** \u2014 shipped: 2/3 \u2014 wall-clock: 5.3h \u2014 halt: 0% \u2014 reward: 12 \u2014 lessons: 2\n');
+  const { changes } = applyFixes([file], RULES);
+  assert.deepEqual(changes.map((c) => c.after), ['- **[2026-04-11] check-before-acting** - shipped: 2/3 - wall-clock: 5.3h - halt: 0% - reward: 12 - lessons: 2']);
+  assert.deepEqual(readScorecards(atrisDir).map((s) => [s.slug, s.tasksShipped, s.wallClockHours, s.totalReward, s.lessonsGenerated]), [['check-before-acting', 2, 5.3, 12, 2]]);
+});
+
 test('fix keeps a journal heading that ends in a time readable for its hour', () => {
   // analytics reads the hour after a dash or a spaced hyphen at the end of a
   // heading; the fix wrote "### Watch: 19:05", which hides it, and glued
