@@ -6,9 +6,12 @@
 // fixer from a git ref (default HEAD) and the fixer in the working copy over
 // them, and prints the lines where the two disagree. A fixer change that
 // should move one line and moves forty shows up here before it lands.
+// With --paragraphs it feeds whole paragraphs instead, so a change that
+// reads across lines (a dash that opens a wrapped line) is counted too.
 //
 //   node scripts/slop-fix-diff.js ~/notes ../other-repo
 //   node scripts/slop-fix-diff.js --base master --limit 50 docs/
+//   node scripts/slop-fix-diff.js --paragraphs ~/notes
 
 const fs = require('fs');
 const os = require('os');
@@ -54,6 +57,32 @@ function dashedLines(files) {
   return [...seen];
 }
 
+// Unique paragraphs that hold a dash: runs of lines with no blank line
+// between them, outside fenced code, up to PARAGRAPH_LINES long. A fence
+// marker ends a paragraph, so code never joins the prose around it.
+const PARAGRAPH_LINES = 12;
+function dashedParagraphs(files) {
+  const { fencedLines } = require(path.join(ROOT, 'commands', 'slop.js'));
+  const seen = new Set();
+  for (const file of files) {
+    let text = '';
+    try { text = fs.readFileSync(file, 'utf8'); } catch { continue; }
+    const lines = text.split('\n');
+    const fenced = /\.mdx?$/i.test(file) ? fencedLines(lines) : new Set();
+    let run = [];
+    const close = () => {
+      if (run.length && run.length <= PARAGRAPH_LINES && run.some((l) => l.includes(DASH))) seen.add(run.join('\n'));
+      run = [];
+    };
+    lines.forEach((line, i) => {
+      if (!line.trim() || fenced.has(i) || line.includes('```') || line.length >= 400) close();
+      else run.push(line);
+    });
+    close();
+  }
+  return [...seen];
+}
+
 // Load commands/slop.js as it was at a git ref, compiled in memory under the
 // real path so its relative requires still resolve.
 function loadFixerAt(ref) {
@@ -83,22 +112,26 @@ function fixAll(fixer, lines, dir) {
 function main(argv) {
   let base = 'HEAD';
   let limit = 25;
+  let paragraphs = false;
   const targets = [];
   for (let i = 0; i < argv.length; i += 1) {
     if (argv[i] === '--base') base = argv[++i];
     else if (argv[i] === '--limit') limit = Number(argv[++i]) || 0;
+    else if (argv[i] === '--paragraphs') paragraphs = true;
     else if (argv[i] === '--help' || argv[i] === '-h') {
-      console.log('usage: node scripts/slop-fix-diff.js [--base <ref>] [--limit <n>] <folder or file>...');
+      console.log('usage: node scripts/slop-fix-diff.js [--base <ref>] [--limit <n>] [--paragraphs] <folder or file>...');
       return 0;
     } else targets.push(argv[i]);
   }
   if (!targets.length) {
-    console.error('usage: node scripts/slop-fix-diff.js [--base <ref>] [--limit <n>] <folder or file>...');
+    console.error('usage: node scripts/slop-fix-diff.js [--base <ref>] [--limit <n>] [--paragraphs] <folder or file>...');
     return 2;
   }
   const files = [];
   for (const t of targets) collectFiles(path.resolve(t), files);
-  const lines = dashedLines(files);
+  const lines = paragraphs ? dashedParagraphs(files) : dashedLines(files);
+  const unit = paragraphs ? 'dashed paragraph' : 'dashed line';
+  const show = (text) => text.split('\n').join(' / ');
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'slop-fix-diff-'));
   try {
     const before = fixAll(loadFixerAt(base), lines, dir);
@@ -106,10 +139,10 @@ function main(argv) {
     const moved = [];
     lines.forEach((line, i) => { if (before[i] !== after[i]) moved.push({ line, before: before[i], after: after[i] }); });
     for (const m of moved.slice(0, limit)) {
-      console.log(`  was  ${m.before}`);
-      console.log(`  now  ${m.after}\n`);
+      console.log(`  was  ${show(m.before)}`);
+      console.log(`  now  ${show(m.after)}\n`);
     }
-    console.log(`${lines.length} dashed line${lines.length === 1 ? '' : 's'} in ${files.length} file${files.length === 1 ? '' : 's'}; ${moved.length} moved against ${base}`);
+    console.log(`${lines.length} ${unit}${lines.length === 1 ? '' : 's'} in ${files.length} file${files.length === 1 ? '' : 's'}; ${moved.length} moved against ${base}`);
   } finally {
     fs.rmSync(dir, { recursive: true, force: true });
   }

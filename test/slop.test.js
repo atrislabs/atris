@@ -2535,3 +2535,22 @@ test('the fix diff script counts dashed lines and moves none against the same fi
   assert.match(r.stdout, /^1 dashed line in 1 file; \d+ moved against HEAD$/m);
   assert.equal(spawnSync(process.execPath, [script], { encoding: 'utf8' }).status, 2);
 });
+
+test('the fix diff script feeds whole paragraphs with --paragraphs', () => {
+  const { spawnSync } = require('node:child_process');
+  // a wrapped line that opens with a dash is fixed against the line above,
+  // so it only shows up when both lines go in together; fenced code never does
+  const dir = path.dirname(tmpFile('paragraphs.md', [
+    'Run the specific checks below',
+    '\u2014 these are the reward function.',
+    '',
+    'No dash in this one.',
+    '```',
+    'people/   \u2014 one page',
+    '```',
+  ].join('\n')));
+  const script = path.join(__dirname, '..', 'scripts', 'slop-fix-diff.js');
+  const r = spawnSync(process.execPath, [script, '--paragraphs', '--base', 'HEAD', dir], { encoding: 'utf8', cwd: path.join(__dirname, '..') });
+  assert.equal(r.status, 0, r.stderr);
+  assert.match(r.stdout, /^1 dashed paragraph in 1 file; \d+ moved against HEAD$/m);
+});
