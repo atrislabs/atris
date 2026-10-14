@@ -70,10 +70,14 @@ function fixEmDash(s, { endsBlock = false } = {}) {
   const label = LIST_LABEL_DASH.exec(s) || LINE_LABEL_DASH.exec(s);
   // a label that already ends in its own punctuation, "**what is it?**",
   // keeps it and just loses the dash, so no colon stacks on top
-  if (label) return `${label[1]}${label[2]}${/[.,;:!?][*_`]*$/.test(label[2]) ? '' : ':'}${s.length > label[0].length ? ' ' : ''}${fixEmDash(s.slice(label[0].length), { endsBlock })}`;
+  if (label) return `${label[1]}${label[2]}${/[.,;:!?][*_`"'\u201d\u2019]*$/.test(label[2]) ? '' : ':'}${s.length > label[0].length ? ' ' : ''}${fixEmDash(s.slice(label[0].length), { endsBlock })}`;
   return s
     // an aside never crosses a sentence end; dashes split by one are fixed alone
     .replace(/\s*\u2014\s*((?:(?![.!?]["'\u201d\u2019)]*\s)[^\u2014])*[^\s\u2014])\s*\u2014\s*(?=(.?))/g, (m, aside, next) => ` ${wrappedInParens(aside) ? aside : `(${aside})`}${next && !/[.,;:!?)]/.test(next) ? ' ' : ''}`)
+    // a leftover dash after a quote that already ends its sentence goes, and
+    // the quote keeps its own stop: 'backward." Steve Jobs', not '.",'.
+    // A quoted question before a lowercase word keeps the comma below.
+    .replace(/(\.["'\u201d\u2019]+|[!?]["'\u201d\u2019]+(?=\s*\u2014\s*[A-Z]))\s*\u2014\s*(?=\S)/g, '$1 ')
     // keep punctuation the writer already put beside the dash instead of
     // stacking a comma on it, and never leave a trailing space. A dash pressed
     // against a closing quote or bracket takes its comma with no space after.

@@ -628,6 +628,25 @@ test('fix gives a heading title and subtitle a colon, but not before a joining w
   ]);
 });
 
+test('fix drops a dash after a quote that already ends its sentence', () => {
+  // from this repo's feature notes, policies, and the endgame skill
+  const file = tmpFile('quote-end.md', [
+    'He said "the gap is wiring." \u2014 PERSONA.md exists.',
+    '"Connect them looking backward." \u2014 Steve Jobs',
+    'Ask "what did we miss?" \u2014 Then read the calls.',
+    'They think "who made this?" \u2014 that is the goal.',
+    '- "What did we miss?" \u2014 summarizes calls',
+  ].join('\n'));
+  const { changes } = applyFixes([file], RULES);
+  assert.deepEqual(changes.map((c) => c.after), [
+    'He said "the gap is wiring." PERSONA.md exists.',
+    '"Connect them looking backward." Steve Jobs',
+    'Ask "what did we miss?" Then read the calls.',
+    'They think "who made this?", that is the goal.',
+    '- "What did we miss?" summarizes calls',
+  ]);
+});
+
 test('fix never pairs two dashes across a sentence end', () => {
   // shapes taken from this repo's own docs, where the old fixer opened a
   // parenthesis in one sentence and closed it in the next
