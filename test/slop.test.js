@@ -1756,6 +1756,26 @@ test('fix reads a word in "ed" as part of a noun and a helper at a line wrap as 
   ]);
 });
 
+test('fix gives a field with a short value a comma instead of a second colon', () => {
+  // from tick receipts, which came out "risk: none: verification only"
+  const file = tmpFile('fields.md', [
+    '- risk: none \u2014 verification only, nothing changed',
+    '- sweep 2026-08-19T02:37:52Z: 16 green, 1 red \u2014 RED: code-health',
+    '- state: nothing changed \u2014 the gate stays closed',
+    // a longer value is a sentence its dash explains, and a plain label keeps its colon
+    '- iMessage truth: the scheduled bridge never worked once \u2014 10,146 permission errors',
+    '- Pattern recognition \u2014 detect mirroring rewards',
+  ].join('\n'));
+  const { changes } = applyFixes([file], RULES);
+  assert.deepEqual(changes.map((c) => c.after), [
+    '- risk: none, verification only, nothing changed',
+    '- sweep 2026-08-19T02:37:52Z: 16 green, 1 red, RED: code-health',
+    '- state: nothing changed; the gate stays closed',
+    '- iMessage truth: the scheduled bridge never worked once: 10,146 permission errors',
+    '- Pattern recognition: detect mirroring rewards',
+  ]);
+});
+
 test('fix starts the next sentence after a stop that sits before a dash', () => {
   // from the terrace repo, which came out "fine with try? the cost"
   const file = tmpFile('stop.md', [

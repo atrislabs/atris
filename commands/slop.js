@@ -43,7 +43,11 @@ const SKIP_DIRS = new Set(['node_modules', '.git', 'dist', 'build', '.next', '.a
 // A dash before a joining word ("Redis, SQS, and more") continues the
 // sentence, so a list item like that is not a label and keeps a comma.
 // A list item inside a quote ("> - item") is a label the same way.
-const LIST_LABEL_DASH = /^(\s*(?:>\s*)*(?:[-*+]|\d+[.)])\s+)([^\u2014]{0,59}[^\s\u2014,;:.])\s*\u2014\s*(?!\s|(?:and|but|or|nor|so|yet)\b)/i;
+// An item that already holds a colon and a short value of four words or
+// fewer is a field, so the dash goes on with the value instead of stacking
+// a second colon: "risk: none, verification only", never "risk: none:
+// verification only". A longer value is a sentence its dash explains.
+const LIST_LABEL_DASH = /^(\s*(?:>\s*)*(?:[-*+]|\d+[.)])\s+)((?![^\u2014]*:\s+(?:[^\s\u2014]+\s+){0,3}[^\s\u2014]+\s*\u2014)[^\u2014]{0,59}[^\s\u2014,;:.])\s*\u2014\s*(?!\s|(?:and|but|or|nor|so|yet)\b)/i;
 // A bold or italic label or a code span that opens a line or a quote, not a
 // list item, gets the same colon: "`npm test` then a dash then 9 tests",
 // "_Note_: requires Node 18". An italic mark must touch its word, so a "* "
