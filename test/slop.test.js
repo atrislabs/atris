@@ -893,7 +893,7 @@ test('fix joins two full clauses with a semicolon, not a comma splice', () => {
   ]);
 });
 
-test('fix joins a noun clause after a "not" sentence with a semicolon', () => {
+test('fix joins a noun clause after the dash with a semicolon', () => {
   // from the land, mission, and endgame files; 7 repo lines moved and each was read
   const file = tmpFile('not-clause.md', [
     'A stopped mission is not a twin \u2014 restart is allowed.',
@@ -901,7 +901,8 @@ test('fix joins a noun clause after a "not" sentence with a semicolon', () => {
     'The command is not yet wired \u2014 the template exists but no verb.',
     'It is not green \u2014 even when the build is red.',
     'Not sends, not laps \u2014 replies. A reply is the market.',
-    // without a "not" the left side is too often a label, so the rule waits
+    // a helping verb joins with no "not" too, unless a second "the" or a
+    // "that" makes the right side one phrase; a plain verb still needs "not"
     'The tool is fast \u2014 the build is green.',
     // a short "not" opener has no verb, so the clause explains it with a colon
     'Zero hits. Not exhaustive \u2014 the frontier was not extended.',
@@ -914,6 +915,10 @@ test('fix joins a noun clause after a "not" sentence with a semicolon', () => {
     'Name the owner, not a fix \u2014 the changes from whoever saw it.',
     'It is not the cause \u2014 the old tests from CI.',
     'Every pending row, not just the first 12 \u2014 the bug this fix closes.',
+    'Null engine fails every task \u2014 the exam is not rigged to pass.',
+    'Pin it for `tick` \u2014 the verb the fleet runs every cycle.',
+    'Tick history (the compounding signal \u2014 proves the loop is recursive).',
+    'Command tests for autopilot \u2014 the decision helpers the CLI uses.',
   ].join('\n'));
   const { changes } = applyFixes([file], RULES);
   assert.deepEqual(changes.map((c) => c.after), [
@@ -922,7 +927,7 @@ test('fix joins a noun clause after a "not" sentence with a semicolon', () => {
     'The command is not yet wired; the template exists but no verb.',
     'It is not green, even when the build is red.',
     'Not sends, not laps, replies. A reply is the market.',
-    'The tool is fast, the build is green.',
+    'The tool is fast; the build is green.',
     'Zero hits. Not exhaustive: the frontier was not extended.',
     'Not yet: it ships Friday.',
     '- **Not yet**: it ships Friday.',
@@ -932,6 +937,10 @@ test('fix joins a noun clause after a "not" sentence with a semicolon', () => {
     'Name the owner, not a fix, the changes from whoever saw it.',
     'It is not the cause, the old tests from CI.',
     'Every pending row, not just the first 12, the bug this fix closes.',
+    'Null engine fails every task; the exam is not rigged to pass.',
+    'Pin it for `tick`, the verb the fleet runs every cycle.',
+    'Tick history (the compounding signal, proves the loop is recursive).',
+    'Command tests for autopilot, the decision helpers the CLI uses.',
   ]);
 });
 
