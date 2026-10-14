@@ -1465,6 +1465,13 @@ test('the count line says how many quiet runs most likely ended, when it stays o
   const done = memberRow('shipper', '2026-10-14T11:00:00Z m-3 started: ship\n2026-10-14T11:30:00Z m-3 finished: ok\n', now);
   assert.equal(renderBoard([old, fresh, done], '/x').split('\n')[0], '3 members: 2 quiet (1 likely ended), 1 done ok');
   assert.equal(renderBoard([old, fresh], '/x').split('\n')[0], '2 members, all quiet (1 likely ended)');
+  const older = memberRow('orb', '2026-10-14T03:00:00Z m-4 started: x\n2026-10-14T05:00:00Z m-4 running: rg y\n', now);
+  const third = memberRow('cy', '2026-10-14T03:00:00Z m-5 started: x\n2026-10-14T05:00:00Z m-5 running: rg y\n', now);
+  assert.equal(renderBoard([old, done], '/x').split('\n')[0], '2 members: 1 quiet (likely ended), 1 done ok', 'the count is not said twice');
+  assert.equal(renderBoard([old, older, done], '/x').split('\n')[0], '3 members: 2 quiet (both likely ended), 1 done ok');
+  assert.equal(renderBoard([old, older, third, done], '/x').split('\n')[0], '4 members: 3 quiet (all likely ended), 1 done ok');
+  assert.equal(renderBoard([old, older], '/x').split('\n')[0], '2 members, all quiet and likely ended');
+  assert.equal(renderBoard([old], '/x').split('\n')[0], '1 member, quiet (likely ended)');
   assert.equal(renderBoard([fresh, done], '/x').split('\n')[0], '2 members: 1 quiet, 1 done ok', 'a pause adds nothing');
   assert.equal(renderBoard([old, fresh, done], '/x', 0, 30).split('\n')[0], '3 members: 2 quiet, 1 done ok', 'too narrow for both: the count keeps one line and the note below names it');
 });
