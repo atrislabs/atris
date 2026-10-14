@@ -658,7 +658,10 @@ function fixEmDash(s, { endsBlock = false, startsBlock = false, spans = [] } = {
       // comma stacks on it: '"T35b: DONE (navigator), Name it"', never "T35b:,".
       // One emphasized word alone is stress, not an aside, so it takes commas
       // too: "We ship, *fast*, every day", never "We ship (*fast*) every day".
-      const stressed = /^(\*{1,2}|_{1,2})[\w'-]+\1$/.test(aside);
+      // So is a lone word that only says how often or how sure: "The gate,
+      // always, blocks it". A lone name keeps its brackets: "the tool (Redis)".
+      const stressed = /^(\*{1,2}|_{1,2})[\w'-]+\1$/.test(aside)
+        || /^(?:always|never|often|still|again|sometimes|usually|rarely|seldom|maybe|perhaps|probably|certainly|surely|honestly|finally|eventually)$/i.test(aside);
       if (holdsParens || stressed || insideParens(whole.slice(0, at))) return `${/[,;:]$/.test(whole.slice(0, at)) ? ' ' : ', '}${aside}${gap ? ', ' : ''}`;
       // the closing dash also stood in for the comma before a "which" remark:
       // "scale (model size, data), which is a bet", never "data) which is".

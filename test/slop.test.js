@@ -1888,6 +1888,23 @@ test('fix gives a pair of dashes around one emphasized word commas', () => {
   ]);
 });
 
+test('fix gives a pair of dashes around a lone how-often word commas', () => {
+  // "always" read as a bracketed aside: "The gate (always) blocks it"
+  const file = tmpFile('adverb-dash-pair.md', [
+    'The gate \u2014 always \u2014 blocks it.',
+    '',
+    'It will \u2014 eventually \u2014 ship.',
+    '',
+    'The tool \u2014 Redis \u2014 runs it.',
+  ].join('\n'));
+  const { changes } = applyFixes([file], RULES);
+  assert.deepEqual(changes.map((c) => c.after), [
+    'The gate, always, blocks it.',
+    'It will, eventually, ship.',
+    'The tool (Redis) runs it.',
+  ]);
+});
+
 test('fix reads no word that only says when as the subject of a clause', () => {
   // "now ships" after a dash read as a bare subject and a verb
   const file = tmpFile('when-word.md', [
