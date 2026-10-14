@@ -53,7 +53,7 @@ not ok 10 - mission tick does not flag pre-existing workspace dirt as unverified
   error: |-
     atris needs Node 22.13 or newer. this is Node 20.18.0.
     upgrade from https://nodejs.org, then run atris again.
-    
+
   code: 'ERR_ASSERTION'
   name: 'AssertionError'
   expected: 0
@@ -79,7 +79,7 @@ not ok 11 - mission tick still flags dirt created after mission start
   error: |-
     atris needs Node 22.13 or newer. this is Node 20.18.0.
     upgrade from https://nodejs.org, then run atris again.
-    
+
   code: 'ERR_ASSERTION'
   name: 'AssertionError'
   expected: 0
@@ -104,7 +104,7 @@ not ok 12 - missions without a baseline sidecar fall back to tick-start baseline
   error: |-
     atris needs Node 22.13 or newer. this is Node 20.18.0.
     upgrade from https://nodejs.org, then run atris again.
-    
+
   code: 'ERR_ASSERTION'
   name: 'AssertionError'
   expected: 0
@@ -129,7 +129,7 @@ not ok 13 - mission tick receipt surfaces dirty worktree when no verifier exists
   error: |-
     atris needs Node 22.13 or newer. this is Node 20.18.0.
     upgrade from https://nodejs.org, then run atris again.
-    
+
   code: 'ERR_ASSERTION'
   name: 'AssertionError'
   expected: 0
@@ -155,7 +155,7 @@ not ok 14 - mission run receipt records verifier worktree deltas
   error: |-
     atris needs Node 22.13 or newer. this is Node 20.18.0.
     upgrade from https://nodejs.org, then run atris again.
-    
+
   code: 'ERR_ASSERTION'
   name: 'AssertionError'
   expected: 0
@@ -180,7 +180,7 @@ not ok 15 - mission start --worktree creates an isolated checkout holding the mi
   error: |-
     atris needs Node 22.13 or newer. this is Node 20.18.0.
     upgrade from https://nodejs.org, then run atris again.
-    
+
   code: 'ERR_ASSERTION'
   name: 'AssertionError'
   expected: 0
@@ -205,7 +205,7 @@ not ok 16 - mission worktree links existing dependencies from the source checkou
   error: |-
     atris needs Node 22.13 or newer. this is Node 20.18.0.
     upgrade from https://nodejs.org, then run atris again.
-    
+
   code: 'ERR_ASSERTION'
   name: 'AssertionError'
   expected: 0
@@ -229,7 +229,7 @@ not ok 17 - mission start continues when creating the dependency link fails
   error: |-
     atris needs Node 22.13 or newer. this is Node 20.18.0.
     upgrade from https://nodejs.org, then run atris again.
-    
+
   code: 'ERR_ASSERTION'
   name: 'AssertionError'
   expected: 0
@@ -253,7 +253,7 @@ not ok 18 - mission start keeps its worktree when the source package manifest is
   error: |-
     atris needs Node 22.13 or newer. this is Node 20.18.0.
     upgrade from https://nodejs.org, then run atris again.
-    
+
   code: 'ERR_ASSERTION'
   name: 'AssertionError'
   expected: 0
@@ -277,7 +277,7 @@ not ok 19 - mission start leaves an existing dead node_modules link alone
   error: |-
     atris needs Node 22.13 or newer. this is Node 20.18.0.
     upgrade from https://nodejs.org, then run atris again.
-    
+
   code: 'ERR_ASSERTION'
   name: 'AssertionError'
   expected: 0
@@ -301,7 +301,7 @@ not ok 20 - ticks inside the mission worktree run against a clean mission_start 
   error: |-
     atris needs Node 22.13 or newer. this is Node 20.18.0.
     upgrade from https://nodejs.org, then run atris again.
-    
+
   code: 'ERR_ASSERTION'
   name: 'AssertionError'
   expected: 0
@@ -344,7 +344,7 @@ not ok 22 - mission start without --worktree keeps the current-directory behavio
   error: |-
     atris needs Node 22.13 or newer. this is Node 20.18.0.
     upgrade from https://nodejs.org, then run atris again.
-    
+
   code: 'ERR_ASSERTION'
   name: 'AssertionError'
   expected: 0
@@ -413,7 +413,7 @@ not ok 31 - task added and claimed from a worktree shows in the main checkout li
   error: |-
     atris needs Node 22.13 or newer. this is Node 20.18.0.
     upgrade from https://nodejs.org, then run atris again.
-    
+
   code: 'ERR_ASSERTION'
   name: 'AssertionError'
   expected: 0
@@ -638,7 +638,7 @@ not ok 72 - worktree ship creates and pushes a branch from detached head
   error: |-
     atris needs Node 22.13 or newer. this is Node 20.18.0.
     upgrade from https://nodejs.org, then run atris again.
-    
+
   code: 'ERR_ASSERTION'
   name: 'AssertionError'
   expected: 0
@@ -663,7 +663,7 @@ not ok 73 - worktree ship skips unstaged adapter churn while committing real wor
   error: |-
     atris needs Node 22.13 or newer. this is Node 20.18.0.
     upgrade from https://nodejs.org, then run atris again.
-    
+
   code: 'ERR_ASSERTION'
   name: 'AssertionError'
   expected: 0
@@ -687,7 +687,7 @@ not ok 74 - worktree ship respects explicitly staged adapter files
   error: |-
     atris needs Node 22.13 or newer. this is Node 20.18.0.
     upgrade from https://nodejs.org, then run atris again.
-    
+
   code: 'ERR_ASSERTION'
   name: 'AssertionError'
   expected: 0
@@ -711,7 +711,7 @@ not ok 75 - worktree ship treats adapter-only churn as clean after restore
   error: |-
     atris needs Node 22.13 or newer. this is Node 20.18.0.
     upgrade from https://nodejs.org, then run atris again.
-    
+
   code: 'ERR_ASSERTION'
   name: 'AssertionError'
   expected: 0
@@ -735,7 +735,7 @@ not ok 76 - worktree ship names dirt created during verification and stops befor
   error: |-
     atris needs Node 22.13 or newer. this is Node 20.18.0.
     upgrade from https://nodejs.org, then run atris again.
-    
+
   code: 'ERR_ASSERTION'
   name: 'AssertionError'
   expected: 0
@@ -759,7 +759,7 @@ not ok 77 - worktree ship still blocks from master
   error: |-
     atris needs Node 22.13 or newer. this is Node 20.18.0.
     upgrade from https://nodejs.org, then run atris again.
-    
+
   code: 'ERR_ASSERTION'
   name: 'AssertionError'
   expected: 2
@@ -783,7 +783,7 @@ not ok 78 - worktree ship blocks detached head on primary checkout
   error: |-
     atris needs Node 22.13 or newer. this is Node 20.18.0.
     upgrade from https://nodejs.org, then run atris again.
-    
+
   code: 'ERR_ASSERTION'
   name: 'AssertionError'
   expected: 2
@@ -822,7 +822,7 @@ not ok 82 - corrupted experiment state reports one note without breaking a merge
   error: |-
     atris needs Node 22.13 or newer. this is Node 20.18.0.
     upgrade from https://nodejs.org, then run atris again.
-    
+
   code: 'ERR_ASSERTION'
   name: 'AssertionError'
   expected: 0
@@ -846,7 +846,7 @@ not ok 83 - worktree ship --help documents --target without touching the repo
   error: |-
     atris needs Node 22.13 or newer. this is Node 20.18.0.
     upgrade from https://nodejs.org, then run atris again.
-    
+
   code: 'ERR_ASSERTION'
   name: 'AssertionError'
   expected: 0
@@ -871,7 +871,7 @@ not ok 84 - worktree help documents ship --target
   error: |-
     atris needs Node 22.13 or newer. this is Node 20.18.0.
     upgrade from https://nodejs.org, then run atris again.
-    
+
   code: 'ERR_ASSERTION'
   name: 'AssertionError'
   expected: 0
@@ -940,7 +940,7 @@ not ok 94 - an exhausted start removes its new branch so the next start is not a
   error: |-
     atris needs Node 22.13 or newer. this is Node 20.18.0.
     upgrade from https://nodejs.org, then run atris again.
-    
+
   code: 'ERR_ASSERTION'
   name: 'AssertionError'
   expected: 0

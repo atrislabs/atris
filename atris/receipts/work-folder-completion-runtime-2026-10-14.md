@@ -26,7 +26,7 @@ Reproduction command: bash -lc 'node --test test/*worktree*.test.js test/*tidy*.
 # fail 25
 ```
 
-Full output: work-folder-completion-rerun-2026-10-14.tap. Twenty-four failures explicitly report "atris needs Node 22.13 or newer. this is Node 20.18.0." The remaining failure is "Unexpected end of JSON input" in the outside-Git mission-start test, which parses CLI stdout without checking startup stderr. That attribution is an inference; the supported-runtime control resolves all 25 failures.
+Full output: work-folder-completion-rerun-2026-10-14.tap, with trailing spaces removed from blank diagnostic lines. Twenty-four failures explicitly report "atris needs Node 22.13 or newer. this is Node 20.18.0." The remaining failure is "Unexpected end of JSON input" in the outside-Git mission-start test, which parses CLI stdout without checking startup stderr. That attribution is an inference; the supported-runtime control resolves all 25 failures.
 
 Control command: bash -lc '/opt/homebrew/Cellar/node/25.6.1/bin/node --test test/*worktree*.test.js test/*tidy*.test.js'. Exit 0:
 
