@@ -253,8 +253,8 @@ test('a job that can read whole gets its room before the last step', () => {
     assert.ok(board.split('\n').every((line) => line.length <= 73), board);
     assert.match(board, /^scribe\s+done failed\s+bad exit 2\s+6m ago\s+write release notes\s+editin\.\.\.$/m, board);
     assert.match(board, /^builder\s+done failed\s+timed out\s+5m ago\s+fix the login flow\s+readin\.\.\.$/m, board);
-    assert.match(renderBoard(rows, dir, 0, 72), /^scribe\s+.*\s+write rele\.\.\.\s+editing lib\.\.\.$/m,
-      'no room to keep the last step at its heading width: they split the room');
+    assert.match(renderBoard(rows, dir, 0, 72), /^scribe\s+.*\s+write release notes$/m,
+      'no room to keep the last step at its heading width: with no live run, the step leaves rather than cut a whole job');
     const busy = rows.map((r) => (r.member === 'scribe' ? { ...r, state: 'working' } : r));
     assert.match(renderBoard(busy, dir, 0, 73), /^scribe\s+working\s.*\s+write relea\.\.\.\s+editing lib\.\.\.$/m,
       'a live step says what the run is doing now, so the job never cuts it');
@@ -338,6 +338,9 @@ test('the widths where a wider board shows less are known', () => {
       // old step gives up the room.
       '121 scout job 19->19 step 49->42',
     ]);
+    // With no live run, a finished row's step is old news, so it never cuts
+    // a job that reads whole without it, and no width shows less.
+    assert.deepEqual(cliffs(rows.filter((r) => r.member !== 'builder'), dir, 60, 130), []);
   } finally {
     fs.rmSync(dir, { recursive: true, force: true });
   }
