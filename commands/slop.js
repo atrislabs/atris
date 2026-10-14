@@ -205,10 +205,14 @@ const NOUN_CLAUSE_AFTER_DASH = new RegExp(`(?<=[\\w)\\]"'*_\`\\u201d\\u2019\\uE0
 // A count and a plural noun before a verb in "ed" are one too: "the fix is
 // small, two lines in the fixer changed". A verb in "ed" before "by", "as",
 // "for" and their kin describes the noun instead, so "two tests marked as
-// flaky" and "12 files touched by the sweep" keep their comma.
+// flaky" and "12 files touched by the sweep" keep their comma. A common verb
+// in the present counts as well: "PASS on Monday; both packs validate
+// cleanly", "done; all tests pass now". The list is short on purpose, so
+// "two weeks ago" and "three tests flaky" stay asides.
+const PRESENT_PLURAL_VERB = '(?:pass|fail|run|work|break|hold|match|agree|validate|load|build|ship|land|compile|apply|need|stay|remain|exist|show|point|wait|block|return)';
 const COUNT_WORD = '(?:one|two|three|four|five|six|seven|eight|nine|ten|eleven|twelve|all|most|some|none|half|both|many|few|\\d+)';
 const OF_QUANTITY = `${COUNT_WORD}\\s+of\\s+(?:(?:the|our|its|their|${COUNT_WORD})\\s+)?(?:[^\\s\\u2014]+\\s+){0,2}[^\\s\\u2014]*s["'\\u201d\\uE001]?\\s+(?!(?:from|of|in|on|for|with|at|by|to|and|or|but|that|which|who|like|than|as|into|per|across|today|now|here|there|too|also|only|so)\\b)(?![a-z]+ly\\b)(?:${HELPING_VERB}|[a-z]{2,})\\b`;
-const QUANTITY_CLAUSE_AFTER_DASH = new RegExp(`(?<=[\\w)\\]"'*_\`\\u201d\\u2019\\uE001])\\s*\\u2014\\s*(?=(?:(?:nothing|everything|nobody|everyone)\\s+(?:else\\s+)?${PLACE_PHRASE}[a-z]{2,}(?:ed|[a-rt-z]s)|(?:two|three|four|five|six|seven|eight|nine|ten|both|several|many|few|\\d+)\\s+(?:[a-z]+\\s+)?[a-z]+s\\s+${PLACE_PHRASE}[a-z]{2,}ed(?!\\s+(?:by|as|for|from|to|into|with|under)\\b)|${OF_QUANTITY})(?:\\s+[^\\s\\u2014]|[.!?;,]|$))`, 'g');
+const QUANTITY_CLAUSE_AFTER_DASH = new RegExp(`(?<=[\\w)\\]"'*_\`\\u201d\\u2019\\uE001])\\s*\\u2014\\s*(?=(?:(?:nothing|everything|nobody|everyone)\\s+(?:else\\s+)?${PLACE_PHRASE}[a-z]{2,}(?:ed|[a-rt-z]s)|(?:two|three|four|five|six|seven|eight|nine|ten|both|several|many|few|\\d+)\\s+(?:[a-z]+\\s+)?[a-z]+s\\s+${PLACE_PHRASE}[a-z]{2,}ed(?!\\s+(?:by|as|for|from|to|into|with|under)\\b)|(?:all|two|three|four|five|six|seven|eight|nine|ten|both|several|many|few|\\d+)\\s+(?:[a-z]+\\s+)?[a-z]+s\\s+${PRESENT_PLURAL_VERB}\\b(?![-'])|${OF_QUANTITY})(?:\\s+[^\\s\\u2014]|[.!?;,]|$))`, 'g');
 // "The" and up to three words before a verb in "ed" start one only when a
 // stop, a word like "out" or "working", or an object like "every" follows, so
 // "the slow tests timed out" joins but "the new signed build" and "the files

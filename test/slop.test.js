@@ -2827,6 +2827,24 @@ test('fix reads a long hyphen arrow mid-line as an arrow, in prose, tables and b
   ]);
 });
 
+test('fix joins a count and a plural noun before a common present verb as a clause', () => {
+  // a full sentence after the dash got a comma splice: "PASS on 2026-04-08,
+  // both packs validate cleanly"
+  const file = tmpFile('count-present.md', [
+    '- Result: PASS on 2026-04-08 \u2014 both packs validate cleanly.',
+    'The sweep is finished \u2014 all tests pass on the branch.',
+    'We kept it \u2014 three tests flaky, two green.',
+    'Fixed the gap \u2014 three tools that work with it.',
+  ].join('\n\n'));
+  const { changes } = applyFixes([file], RULES, { write: false });
+  assert.deepEqual(changes.map((c) => c.after), [
+    '- Result: PASS on 2026-04-08; both packs validate cleanly.',
+    'The sweep is finished; all tests pass on the branch.',
+    'We kept it, three tests flaky, two green.',
+    'Fixed the gap, three tools that work with it.',
+  ]);
+});
+
 test('fix keeps a journal heading that ends in a time readable for its hour', () => {
   // analytics reads the hour after a dash or a spaced hyphen at the end of a
   // heading; the fix wrote "### Watch: 19:05", which hides it, and glued
