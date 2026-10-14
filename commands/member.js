@@ -10537,10 +10537,19 @@ function memberGoFinishTask(owner, task, result, thrown = null) {
     : (result && result.error) || (result && result.started ? 'the check did not pass' : 'the run did not start');
   const reason = String(why || 'the run did not finish').split(/\r?\n/)[0].trim().slice(0, 200);
   try { taskDb.noteTask(db, { id: task.id, actor: owner, content: `Released by ${owner}: ${reason}` }); } catch {}
+  // Work staged on a protected surface waits for a person to review it; a
+  // member picking the task again would only redo it and stop again.
+  let held = false;
+  const forReview = Boolean(!thrown && result && result.needs_review === true);
+  if (forReview) {
+    try {
+      held = taskDb.tagTask(db, { id: task.id, actor: owner, add: ['needs-human'] }).tagged === true;
+      if (held) taskDb.noteTask(db, { id: task.id, actor: owner, content: `Held for a person to review: ${reason}` });
+    } catch {}
+  }
   // Third failure in a row: hold the task for a person instead of letting
   // members pick it up again forever.
-  let held = false;
-  if (memberGoFailStreak(taskDb, db, task.id) >= MEMBER_GO_STRIKES) {
+  if (!held && memberGoFailStreak(taskDb, db, task.id) >= MEMBER_GO_STRIKES) {
     try {
       held = taskDb.tagTask(db, { id: task.id, actor: owner, add: ['needs-human'] }).tagged === true;
       if (held) taskDb.noteTask(db, { id: task.id, actor: owner,
@@ -10549,7 +10558,7 @@ function memberGoFinishTask(owner, task, result, thrown = null) {
   }
   const released = taskDb.releaseTask(db, { id: task.id, actor: owner });
   const outcome = released.released ? (held ? 'needs_human' : 'released') : 'left_claimed';
-  return { id: task.id, title: task.title, outcome, reason };
+  return { id: task.id, title: task.title, outcome, reason, ...(held && forReview ? { held_for: 'review' } : {}) };
 }
 
 const MEMBER_GO_STRIKES = 3;
@@ -10748,6 +10757,7 @@ async function memberSteerOrDispatchWith({ pullTask = false } = {}, rawArgs = []
     ? { task, work_step: { summary: result?.work_step?.summary || null }, error: result?.error || null }
     : merged));
   else if (task.outcome === 'review') console.log(`Task "${task.title}" is ready for review.`);
+  else if (task.outcome === 'needs_human' && task.held_for === 'review') console.log(`Task "${task.title}" waits for a person to review it: ${task.reason}`);
   else if (task.outcome === 'needs_human') console.log(`Task "${task.title}" failed three times in a row and now waits for a person: ${task.reason}`);
   else console.log(`Task "${task.title}" went back on the list: ${task.reason}`);
   return merged;
@@ -11590,6 +11600,7 @@ module.exports = {
   memberRunWantsReferee,
   proposalPromptForGoal,
   memberGoFinishTask,
+  memberRunReviewAsk,
   appendMemberGoalLog,
   appendProjectLog,
   memberCommand,
