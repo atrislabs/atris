@@ -1576,6 +1576,9 @@ test('fix joins a subject with a "not" contraction or "still" before its verb wi
     'Two helpers survived \u2014 `findAppsTab` still reached for the tab bar.',
     'Trigger it as sections enter \u2014 but don\'t mess with scroll speed.',
     'It computes a leaderboard \u2014 not just likes.',
+    // after a plural, a verb with no "s" counts when more words follow it
+    'Goal still pursuing \u2014 diminishing returns now suggest moving on.',
+    'Check whether the flag is set \u2014 dead sheets still cause conflicts.',
   ].join('\n'));
   const { changes } = applyFixes([file], RULES);
   assert.deepEqual(changes.map((c) => c.after), [
@@ -1588,6 +1591,8 @@ test('fix joins a subject with a "not" contraction or "still" before its verb wi
     'Two helpers survived; `findAppsTab` still reached for the tab bar.',
     'Trigger it as sections enter, but don\'t mess with scroll speed.',
     'It computes a leaderboard, not just likes.',
+    'Goal still pursuing; diminishing returns now suggest moving on.',
+    'Check whether the flag is set; dead sheets still cause conflicts.',
   ]);
 });
 
