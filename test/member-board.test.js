@@ -971,6 +971,10 @@ test('a left-off note names as many members as fit on one line and counts the re
   assert.equal(note(60, 6), '4 more members did not fit: health-sentinel and 3 others', 'names that would wrap: as many as fit, then a count');
   assert.equal(note(66, 7), '3 more members did not fit: frontend-dev, voice-owner and 1 other', 'one left over reads singular');
   assert.equal(note(40, 6), '4 more members did not fit', 'no room for even one name: the count alone');
+  const quiet = memberRow('launcher', '2026-10-14T05:00:00Z m-2 started: score launcher\n2026-10-14T06:00:00Z m-2 running: npm test\n', now);
+  assert.equal(quiet.state, 'quiet');
+  const withQuiet = renderBoard([...rows, quiet], '/x', 0, 60, [], 6).split('\n');
+  assert.match(withQuiet.at(-1), /^5 more members did not fit: launcher and 4 others$/, `the live run is named ahead of newer finished runs:\n${withQuiet.join('\n')}`);
 });
 
 test('watch fits a screen LINES tall, footer included', () => {
