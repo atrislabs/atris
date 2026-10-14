@@ -59,7 +59,7 @@ test('mission run objective --budget long maps through mission start and max-tic
     const res = runCli([
       'mission', 'run', 'ship a tiered run objective',
       '--owner', 'tester',
-      '--runner', 'manual',
+      '--runner', 'codex_goal',
       '--budget', 'long',
       '--max-ticks', '2',
       '--no-preflight',

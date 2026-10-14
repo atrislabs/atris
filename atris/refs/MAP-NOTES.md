@@ -2275,3 +2275,5 @@ npm publish
 ## One-run member outcomes
 
 - `commands/member.js:1037` preserves tick check results when reading the live run receipt; `commands/member.js:1346` makes a failed explicit completion check return failure; `commands/member.js:1374` names the failed check. `commands/member.js:4249` removes only matching outer quotes from saved member settings. `test/member-run-one-run-outcome.test.js:1` runs the real CLI in initialized, committed temporary projects with a fake engine.
+
+- Plain goal execution: `commands/mission.js:4699` selects the shared `lib/default-runner.js` caller-aware default; `commands/mission.js:4843` returns executable missions to `commands/mission.js:9800` for the existing locked run loop instead of printing a planning-only result. Caller-session runners retain their native handoff. Regression: `test/mission-run-plain-goal.test.js`.

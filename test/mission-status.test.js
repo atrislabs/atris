@@ -110,6 +110,8 @@ function isolatedCliEnv(overrides = {}) {
   return {
     ...inherited,
     ATRIS_SKIP_UPDATE_CHECK: '1',
+    // This suite exercises the native goal bridge; terminal execution has its own suite.
+    ATRIS_CALLER_RUNTIME: 'codex',
     ...overrides,
   };
 }
@@ -4903,15 +4905,15 @@ test('mission run with atris2 runner writes Atris-owned goal state without Codex
   try {
     fs.mkdirSync(path.join(dir, 'atris'), { recursive: true });
 
-    const run = runCli(['mission', 'run', 'ax fast visible goal', '--runner', 'atris2', '--no-preflight', '--json'], { cwd: dir });
+    const run = runCli(['mission', 'run', 'ax fast visible goal', '--runner', 'atris2', '--no-preflight', '--no-claude', '--no-verify', '--max-ticks', '1', '--json'], { cwd: dir });
     assert.equal(run.status, 0, run.stderr || run.stdout);
     const payload = JSON.parse(run.stdout);
-    assert.equal(payload.action, 'mission_run_started');
+    assert.equal(payload.action, 'mission_run');
     assert.equal(payload.mission.runner, 'atris2');
     assert.equal(payload.mission.model, 'atris:fast');
-    assert.equal(payload.requires_native_goal_start, false);
-    assert.equal(payload.native_goal_action, null);
-    assert.equal(payload.codex_goal_state, null);
+    assert.equal(payload.requires_native_goal_start, undefined);
+    assert.equal(payload.native_goal_action, undefined);
+    assert.equal(payload.codex_goal_state.action, 'no_goal_candidate');
     assert.equal(payload.atris_goal_state.action, 'atris_goal_candidate');
     assert.equal(payload.atris_goal_state.goal.objective, 'ax fast visible goal');
     assert.equal(payload.atris_goal_state.goal.runner, 'atris2');

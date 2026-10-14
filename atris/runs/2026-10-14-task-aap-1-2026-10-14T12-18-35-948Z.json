@@ -1,0 +1,13 @@
+{
+  "schema": "atris.task_receipt.v1",
+  "task_id": "AAP-1",
+  "command": "node --test test/mission-run-plain-goal.test.js",
+  "at": "2026-10-14T12:18:35.948Z",
+  "commit": "17bb1a57ac4202e1c2caf89bb04d2369fd03563e",
+  "result": {
+    "passed": true,
+    "exit": 0,
+    "signal": null,
+    "output": "✔ a plain terminal goal runs a worker and its frozen check in one command (1409.273042ms)\n✔ an explicit caller goal retains the native goal handoff without launching a worker (503.065542ms)\n✔ a live C\n...\n (556.3555ms)\n✔ a new objective also executes an explicitly selected built-in worker (1421.749084ms)\nℹ tests 4\nℹ suites 0\nℹ pass 4\nℹ fail 0\nℹ cancelled 0\nℹ skipped 0\nℹ todo 0\nℹ duration_ms 3982.875459"
+  }
+}

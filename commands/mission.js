@@ -6,6 +6,7 @@ const crypto = require('crypto');
 const readline = require('readline');
 const { spawn, spawnSync } = require('child_process');
 const { hasFlag, readFlag, readIntFlag } = require('../lib/arg-parser');
+const { defaultObjectiveRunner } = require('../lib/default-runner');
 const { memberProcessPrompt } = require('../lib/member-context');
 const { memberIdentityLine, missionObjectiveLine } = require('../lib/member-identity');
 const { formatToolStep, formatCodexEvent, appendProgress, reportProgress, startedLine, newRunToken, runMarker } = require('../lib/member-progress');
@@ -3268,7 +3269,7 @@ function missionRunSmokeVerifier() {
     "const root=fs.mkdtempSync(path.join(os.tmpdir(),'atris-mission-run-verifier-'))",
     "process.on('exit',()=>fs.rmSync(root,{recursive:true,force:true}))",
     "fs.mkdirSync(path.join(root,'atris'),{recursive:true})",
-    "const r=spawnSync('atris',['mission','run','verifier smoke objective','--json'],{cwd:root,encoding:'utf8',env:{...process.env,ATRIS_SKIP_UPDATE_CHECK:'1'}})",
+    "const r=spawnSync('atris',['mission','run','verifier smoke objective','--runner','codex_goal','--json'],{cwd:root,encoding:'utf8',env:{...process.env,ATRIS_SKIP_UPDATE_CHECK:'1'}})",
     "if(r.status!==0){process.stderr.write(r.stderr||r.stdout);process.exit(1)}",
     "const p=JSON.parse(r.stdout)",
     "if(p.action!=='mission_run_started')process.exit(2)",
@@ -4693,13 +4694,9 @@ async function startMissionFromRunObjective(objective, args) {
     '--owner',
     runOwner,
     '--runner',
-    // `mission run` is the codex-native shaping surface: it always builds
-    // codex_goal_state and asks a live codex session to start the native goal
-    // (requires_native_goal_start). So it defaults to codex_goal. The headless
-    // footgun (codex_goal stalls with no live session) is handled on the
-    // `member run` path (commands/member.js), where cron/fleet loops default to
-    // the self-driving claude runner instead. An explicit --runner always wins.
-    readFlag(args, '--runner', 'codex_goal'),
+    // A shell needs a worker; a live Codex session owns its native goal.
+    // Use the same selection as member run and respect explicit choices.
+    readFlag(args, '--runner', defaultObjectiveRunner(args)),
     '--lane',
     readFlag(args, '--lane', 'workspace'),
     '--cadence',
@@ -4841,6 +4838,9 @@ async function startMissionFromRunObjective(objective, args) {
     ? refreshCodexGoalController(process.cwd(), { missionId: saved.id, ...nativeGoalOptions })
     : null;
   const outputMission = resolveMission(saved.id, process.cwd()) || saved;
+  // Executable runners continue through the normal locked run loop. Return
+  // the record without printing a second JSON document or a planning-only win.
+  if (!runnerUsesCallerSession(saved.runner)) return outputMission;
   const nativeGoal = codexGoalState?.native_goal_action
     || (codexGoalState?.goal?.requires_native_goal_start ? codexGoalState.goal.native_goal_action : null);
   const nextCommand = codexGoalState?.next_command || codexGoalState?.goal?.next_command || atrisGoalState.goal?.next_command || `atris mission tick ${saved.id} --summary "<what changed>"`;
@@ -9797,17 +9797,20 @@ async function resolveMissionRunPhase(context) {
   } = context;
   let { cwd, maxTicks, maxWallSeconds } = context;
 
+  let mission = null;
   if (!dueMode && !ref) {
     if (asJson || !process.stdin.isTTY || !process.stderr.isTTY) {
       missionRunInputRequired(asJson, input.owner);
     }
     const prompted = await promptMissionRunInput(runArgs);
-    await startMissionFromRunObjective(prompted.objective, prompted.args);
-    context.handled = true;
-    return;
+    mission = await startMissionFromRunObjective(prompted.objective, prompted.args);
+    if (!mission) {
+      context.handled = true;
+      return;
+    }
   }
 
-  let mission = dueMode && !ref ? selectDueMission(cwd, new Date(), { headlessOnly }) : resolveMission(ref, cwd);
+  mission = mission || (dueMode && !ref ? selectDueMission(cwd, new Date(), { headlessOnly }) : resolveMission(ref, cwd));
   if (!mission && dueMode && !ref) {
     printJsonOrText(
       { ok: true, action: 'run_skipped', reason: 'no_due_mission', mission: null },
@@ -9827,9 +9830,11 @@ async function resolveMissionRunPhase(context) {
     exitMissingMission(ref, 1, asJson);
   }
   if (!mission && ref) {
-    await startMissionFromRunObjective(ref, runArgs);
-    context.handled = true;
-    return;
+    mission = await startMissionFromRunObjective(ref, runArgs);
+    if (!mission) {
+      context.handled = true;
+      return;
+    }
   }
   if (!mission) {
     exitMissionError('Usage: atris mission run <id|objective> [--max-ticks 4] [--max-wall 3600]', 1, asJson);
