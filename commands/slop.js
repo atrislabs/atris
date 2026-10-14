@@ -524,7 +524,12 @@ function fixEmDash(s, { endsBlock = false, startsBlock = false, spans = [] } = {
     return `${greeting[1].replace(/,$/, '')},${rest ? ` ${fixEmDash(rest, { endsBlock })}` : ''}`;
   }
   if (endsBlock) s = s.replace(/([.,;:!?]?)\s*\u2014\s*$/, (m, p) => p || '.');
-  const heading = [HEADING_DASH, BOLD_HEADING_DASH].find((re) => re.test(s));
+  // a bold sentence that is the whole line or the whole list item goes on
+  // past a dash before "through", "via" or "with", which only says how, so
+  // the dash takes a comma: "**Add each step as a task, through the task
+  // db.**", never a colon that reads as a title and a subtitle
+  s = s.replace(/^(\s*(?:>\s*)*(?:(?:[-*+]|\d+[.)])\s+)?(?:\*\*|__)[^\u2014*_]*[^\s\u2014,;:*_])\s*\u2014\s*(?=(?:through|via|with)\b[^\u2014*_]*(?:\*\*|__)\s*$)/i, '$1, ');
+  const heading =[HEADING_DASH, BOLD_HEADING_DASH].find((re) => re.test(s));
   if (heading) {
     const m = heading.exec(s);
     return `${m[1]}: ${fixEmDash(s.slice(m[0].length), { endsBlock })}`;

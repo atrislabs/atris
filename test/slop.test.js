@@ -1708,6 +1708,24 @@ test('fix joins a full clause after a field value with a semicolon, not a second
   ]);
 });
 
+test('fix gives a whole-line bold sentence a comma before through, via or with', () => {
+  // from the endgame skill, where the dash took a colon like a subtitle
+  const file = tmpFile('bold-how.md', [
+    '2. **Add each REVERSE PATH step as a tagged task \u2014 through the task db when one exists.**',
+    '**Ship the build \u2014 with the new flag on.**',
+    '- **Ship the build \u2014 via the queue.**',
+    // a bold title with a plain subtitle keeps its colon
+    '**Source A \u2014 arxiv API**',
+  ].join('\n'));
+  const { changes } = applyFixes([file], RULES);
+  assert.deepEqual(changes.map((c) => c.after), [
+    '2. **Add each REVERSE PATH step as a tagged task, through the task db when one exists.**',
+    '**Ship the build, with the new flag on.**',
+    '- **Ship the build, via the queue.**',
+    '**Source A: arxiv API**',
+  ]);
+});
+
 test('fix reads no word that only says when as the subject of a clause', () => {
   // "now ships" after a dash read as a bare subject and a verb
   const file = tmpFile('when-word.md', [
