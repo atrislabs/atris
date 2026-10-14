@@ -14222,9 +14222,11 @@ test('task review groups are capped by default for human scan', () => {
   try {
     fs.mkdirSync(path.join(dir, 'atris'), { recursive: true });
 
-    // Create and claim straight in the task store; ready and review still
-    // run through the CLI because the review queue reads what they write.
+    // The first eleven tasks go straight through the task store. The last one
+    // is readied and reviewed through the CLI, so the review queue still reads
+    // what the CLI writes, and its write lands after every task exists.
     const workspaceRoot = taskStore.workspaceRoot(dir);
+    const proof = 'node --check test/commands.test.js passed';
     for (let index = 1; index <= 12; index += 1) {
       const tag = `tag-${String(index).padStart(2, '0')}`;
       const db = taskStore.open(dbPath);
@@ -14232,11 +14234,17 @@ test('task review groups are capped by default for human scan', () => {
       try {
         taskId = taskStore.addTask(db, { title: `Grouped approval ${index}`, tag, workspaceRoot }).id;
         assert.equal(taskStore.claimTask(db, { id: taskId, claimedBy: 'codex' }).claimed, true);
+        if (index < 12) {
+          assert.equal(taskStore.readyTask(db, { id: taskId, actor: 'codex', proof, result: FIXTURE_RESULT_SENTENCE }).ready, true);
+          assert.equal(taskStore.reviewTask(db, { id: taskId, actor: 'validator', reward: 0 }).reviewed, true);
+        }
       } finally {
         taskStore.close();
       }
-      assert.equal(runCli(['task', 'ready', taskId, '--proof', 'node --check test/commands.test.js passed', '--as', 'codex'], { cwd: dir, env }).status, 0);
-      assert.equal(runCli(['task', 'review', taskId, '--reward', '0', '--as', 'validator'], { cwd: dir, env }).status, 0);
+      if (index === 12) {
+        assert.equal(runCli(['task', 'ready', taskId, '--proof', proof, '--as', 'codex'], { cwd: dir, env }).status, 0);
+        assert.equal(runCli(['task', 'review', taskId, '--reward', '0', '--as', 'validator'], { cwd: dir, env }).status, 0);
+      }
     }
 
     const grouped = runCli(['task', 'reviews', '--group-by', 'tag'], { cwd: dir, env });
