@@ -2349,3 +2349,7 @@ npm publish
 ## Earlier step selection fixture setup
 
 - `test/commands.test.js:7723` checks that the earlier pass stays selected after the later pass is planned more recently. Ordered real-store creation at `test/commands.test.js:7733` saves two setup launches and closes the store in finally; both plan calls and current selection still exercise the CLI with every behavior assertion preserved.
+
+## Certified checkpoint selection fixture setup
+
+- `test/commands.test.js:12583` checks scoped next selection without unrelated Endgame fallback. Real-store creation at `test/commands.test.js:12602` saves one setup launch and closes in finally; claim, ready, review and all three next calls remain on the CLI with every behavior assertion preserved.
