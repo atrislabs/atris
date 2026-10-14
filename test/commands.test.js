@@ -8013,8 +8013,20 @@ test('task display refs stay stable in filtered list views', () => {
   try {
     fs.mkdirSync(path.join(dir, 'atris'), { recursive: true });
 
-    const older = JSON.parse(runCli(['task', 'add', 'Older closed task', '--json'], { cwd: dir, env }).stdout);
-    const current = JSON.parse(runCli(['task', 'add', 'Current open task', '--json'], { cwd: dir, env }).stdout);
+    // Seed setup in order; completion and filtered lists still use the CLI.
+    const workspaceRoot = taskStore.workspaceRoot(dir);
+    const db = taskStore.open(dbPath);
+    let older;
+    let current;
+    try {
+      const olderSeed = addSeedTask(db, { title: 'Older closed task', workspaceRoot });
+      const currentSeed = addSeedTask(db, { title: 'Current open task', workspaceRoot });
+      const refs = taskStore.taskDisplayRefMap(taskStore.listTasks(db, { workspaceRoot }));
+      older = { task: { ...olderSeed, display_id: refs.get(olderSeed.id) } };
+      current = { task: { ...currentSeed, display_id: refs.get(currentSeed.id) } };
+    } finally {
+      taskStore.close();
+    }
     assert.equal(runCli(['task', 'done', older.task.display_id, '--proof', 'node --test test/commands.test.js passed'], { cwd: dir, env }).status, 0);
 
     const open = runCli(['task', 'list', '--status', 'open'], { cwd: dir, env });

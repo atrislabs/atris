@@ -2339,3 +2339,7 @@ npm publish
 ## Stale generated markdown fixture setup
 
 - `test/commands.test.js:7896` checks legacy row migration followed by generated row cleanup. An ordered real-store task seed and real-store claim save two setup launches and close in finally; ready and both renders still exercise the CLI with every assertion preserved.
+
+## Filtered task reference fixture setup
+
+- `test/commands.test.js:8008` checks stable display references across open and done list filters. Two ordered real-store seeds replace two creation launches, and the database closes in finally. Completion and all three list calls still exercise the CLI with every assertion preserved.
