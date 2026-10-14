@@ -290,6 +290,20 @@ test('before says died only when the cut-off run had a process id that is gone',
   assert.deepEqual(memberRow('builder', '2026-10-14T12:50:00Z m-1 started: build\n2026-10-14T12:59:00Z m-2 started: next\n', now).before, ['replaced']);
 });
 
+test('board names an earlier run whose process is still running', () => {
+  const now = Date.parse('2026-10-14T13:00:00Z');
+  const cut = (pid) => `2026-10-14T12:50:00Z m-1 started: [pid ${pid} engine claude] build\n2026-10-14T12:59:00Z m-2 started: next\n`;
+  const twice = memberRow('builder', cut(process.pid), now);
+  assert.deepEqual(twice.earlier_alive, [process.pid], 'two runs at once');
+  assert.deepEqual(memberRow('builder', cut(2147483646), now).earlier_alive, [], 'its process is gone');
+  const nopid = memberRow('scout', '2026-10-14T12:50:00Z m-1 started: build\n2026-10-14T12:59:00Z m-2 started: next\n', now);
+  assert.deepEqual(nopid.earlier_alive, [], 'no process id to check');
+  const stopped = memberRow('builder', `2026-10-14T12:50:00Z m-1 started: [pid ${process.pid} engine claude] build\n2026-10-14T12:55:00Z m-1 finished: ok\n2026-10-14T12:59:00Z m-2 started: next\n`, now);
+  assert.deepEqual(stopped.earlier_alive, [], 'it said how it ended');
+  assert.match(renderBoard([twice, nopid], '/x'), new RegExp(`^still running from an earlier run: builder \\(pid ${process.pid}\\)$`, 'm'));
+  assert.doesNotMatch(renderBoard([nopid], '/x'), /^still running/m);
+});
+
 test('board explains replaced only when a replaced run is shown', () => {
   const now = Date.parse('2026-10-14T13:00:00Z');
   const cut = memberRow('scout', '2026-10-14T12:50:00Z m-1 started: build\n2026-10-14T12:59:00Z m-2 started: next\n', now);
