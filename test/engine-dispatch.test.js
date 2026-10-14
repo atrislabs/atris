@@ -1290,3 +1290,52 @@ test('runDispatchFlight ship args explicitly target HEAD when no remote mainline
     fs.rmSync(tmpRoot, { recursive: true, force: true });
   }
 });
+
+test('every engine run writes a start and end machine line, and a SIGKILL names its likely cause', () => {
+  const root = makeTempRoot();
+  require('node:child_process').spawnSync('git', ['init', '-q', root], { encoding: 'utf8' });
+  const worktree = fs.mkdtempSync(path.join(os.tmpdir(), 'engine-dispatch-wt-'));
+  const log =path.join(root, '.atris', 'state', 'engine-resource.jsonl');
+  const readLines = () => fs.readFileSync(log, 'utf8').trim().split('\n').map((line) => JSON.parse(line));
+  try {
+    let linesWhileRunning = [];
+    const killed = fleet.dispatchToEngine({
+      task: TASK,
+      engine: 'claude',
+      worktreePath: worktree,
+      root,
+      skipBriefCapture: true,
+      runner: () => {
+        linesWhileRunning = readLines();
+        return { status: 137, stdout: '', stderr: '' };
+      },
+    });
+    assert.deepEqual(linesWhileRunning.map((line) => line.phase), ['start']);
+    const [start, end] = readLines();
+    assert.equal(start.engine, 'claude');
+    assert.equal(start.task, 'CLI-900');
+    assert.ok(Array.isArray(start.load));
+    assert.equal(end.phase, 'end');
+    assert.equal(end.signal, 'SIGKILL');
+    assert.match(end.cause, /^killed \((machine memory low|cause unknown)\)$/);
+    assert.equal(killed.kill_cause, end.cause);
+
+    const clean = fleet.dispatchToEngine({
+      task: TASK,
+      engine: 'claude',
+      worktreePath: worktree,
+      root,
+      skipBriefCapture: true,
+      runner: () => ({ status: 0, stdout: 'done', stderr: '' }),
+    });
+    const lines = readLines();
+    assert.equal(lines.length, 4);
+    assert.equal(lines[3].phase, 'end');
+    assert.equal(lines[3].signal, undefined);
+    assert.equal(lines[3].cause, undefined);
+    assert.equal(clean.kill_cause, undefined);
+  } finally {
+    fs.rmSync(root, { recursive: true, force: true });
+    fs.rmSync(worktree, { recursive: true, force: true });
+  }
+});
