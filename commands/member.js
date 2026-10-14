@@ -11273,6 +11273,7 @@ async function memberCommand(subcommand, ...args) {
     case 'run':
       return require('../lib/member-verbs').memberRunVerb(args, {
         root: process.cwd(),
+        aliasOf: memberRuntimeKind,
         run: memberRun,
         dispatch: memberDispatch,
       });
