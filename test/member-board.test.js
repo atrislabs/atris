@@ -1110,6 +1110,43 @@ test('a footer drops an earlier failure reason before the reason a run is done f
   }
 });
 
+test('every footer reason sits right after the count it explains', () => {
+  const base = { alive: null, engine: '', running_for: '', job: 'b', step: 's', ago: '1m ago' };
+  const failed = (m, why) => ({ ...base, member: m, state: 'done failed', last_result: 'failed', last_result_reason: why, last_result_ago: '1m ago' });
+  const busy = (m, why) => ({ ...base, member: m, state: 'working', last_result: why ? 'failed' : '', last_result_reason: why, last_result_ago: why ? '9m ago' : '' });
+  const stopped = { ...base, member: 'h1', state: 'stopped', last_result: 'stopped', last_result_reason: '', last_result_ago: '7m ago' };
+  const lost = { ...base, member: 'g1', state: 'stopped', no_result: true, last_result: '', last_result_reason: '', last_result_ago: '' };
+  const boards = [
+    [failed('f1', 'timed out'), failed('f2', 'engine error'), failed('f3', 'bad exit 2'), stopped, lost],
+    [failed('f1', 'signed out'), failed('f2', 'signed out'), failed('f3', 'timed out'), failed('f4', 'timed out'), stopped],
+    [stopped, busy('e1', 'timed out'), busy('e2', 'engine error'), busy('e3', 'bad exit 2'), busy('w1', '')],
+    [failed('f1', 'timed out'), busy('e1', 'engine error'), busy('e2', 'engine error'), lost, busy('w1', '')],
+  ];
+  let reasons = 0;
+  for (const rows of boards) {
+    for (const older of [0, 2]) {
+      for (let height = 2; height <= 4; height++) {
+        for (let width = 30; width <= 120; width++) {
+          const footer = renderBoard(rows, '/progress', older, width, height).split('\n').pop();
+          const inside = footer.match(/^\d+ (?:more not shown|hidden) \((.*)\)/);
+          if (!inside) continue;
+          // A chunk with no count is a reason; it must follow its failure count or the reason before it.
+          let prev = '';
+          for (const chunk of inside[1].split(', ')) {
+            const counted = /^\d/.test(chunk) || chunk === '...' || /^\S+ (?:working|quiet|finishing)$/.test(chunk);
+            if (!counted) {
+              reasons++;
+              assert.ok(/(?:failed|failure)$/.test(prev) || prev === 'reason', `${width}x${height}: "${chunk}" reads as its own count: ${footer}`);
+            }
+            prev = counted ? chunk : 'reason';
+          }
+        }
+      }
+    }
+  }
+  assert.ok(reasons > 0, 'the boards above put reasons in the footer');
+});
+
 test('narrow footers drop whole mixed counts from the end instead of cutting one', () => {
   const dir = fakeDir({
     a: [`${at(20)} m-1 started: [pid ${process.pid} engine claude] check the board`],
