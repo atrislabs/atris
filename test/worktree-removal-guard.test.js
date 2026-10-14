@@ -317,11 +317,13 @@ function sourceFiles(dir) {
     return relative.endsWith('.js') ? [relative] : [];
   });
 }
+// An exemption names a function and how many deletes it holds today, so a new
+// delete added to an exempt function fails until someone reviews it.
 const UNGUARDED_REMOVALS = {
-  'commands/worktree.js:createAgentWorktree': 'drops a folder it just made before any engine entered; plain remove refuses dirt',
-  'lib/fleet.js:prepareReviewSandbox': 'wipes its own temp sandbox when setup fails; only that call touched it, so any lock is stale',
-  'commands/drill.js:landingShippedLocal': 'removes a worktree inside the drill\'s own throwaway practice repo',
-  'lib/land-green.js:scratchCheckout': 'drops its fresh temp folder only after git failed to make it a worktree',
+  'commands/worktree.js:createAgentWorktree': { sites: 1, why: 'drops a folder it just made before any engine entered; plain remove refuses dirt' },
+  'lib/fleet.js:prepareReviewSandbox': { sites: 6, why: 'wipes its own temp sandbox when setup fails, and its seed folder after; only that call touched them, so any lock is stale' },
+  'commands/drill.js:landingShippedLocal': { sites: 1, why: 'removes a worktree inside the drill\'s own throwaway practice repo' },
+  'lib/land-green.js:scratchCheckout': { sites: 1, why: 'drops its fresh temp folder only after git failed to make it a worktree' },
 };
 // Real work folder removals still waiting for the guard. Each one is a gap;
 // guard it and delete its line here.
@@ -383,6 +385,11 @@ test('every work folder removal goes through the git check and the removal log',
   const stale = [...Object.keys(UNGUARDED_REMOVALS), ...Object.keys(NOT_YET_GUARDED)]
     .filter((key) => !sites.some((site) => site.key === key));
   assert.deepEqual(stale, [], 'exception names a function that no longer removes a folder');
+  const recounted = Object.entries(UNGUARDED_REMOVALS)
+    .map(([key, { sites: expected }]) => [key, expected, sites.filter((site) => site.key === key).length])
+    .filter(([, expected, found]) => found !== expected)
+    .map(([key, expected, found]) => `${key} (expected ${expected}, found ${found})`);
+  assert.deepEqual(recounted, [], 'an exempt function gained or lost a delete; review it, then update its count');
   const nowGuarded = Object.keys(NOT_YET_GUARDED).filter((key) => sites
     .filter((site) => site.key === key)
     .every((site) => site.body.includes('worktreeGitActivity') && site.body.includes('recordWorktreeRemoval')));
