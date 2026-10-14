@@ -14042,9 +14042,21 @@ test('task status separates review continue-work from human accept waiting', () 
   try {
     fs.mkdirSync(path.join(dir, 'atris'), { recursive: true });
 
-    const continuationCreated = runCli(['task', 'new', 'Certified row with concrete continuation', '--tag', 'task', '--json'], { cwd: dir, env });
-    assert.equal(continuationCreated.status, 0, continuationCreated.stderr);
-    const continuationTask = JSON.parse(continuationCreated.stdout).task;
+    // Only fixture creation stays in process; ready, review, and status
+    // still exercise the CLI and its persisted state.
+    const workspaceRoot = taskStore.workspaceRoot(dir);
+    const seedTask = (title) => {
+      const db = taskStore.open(dbPath);
+      try {
+        const created = taskStore.addTask(db, { title, tag: 'task', workspaceRoot });
+        return taskStore.withTaskDisplayRefs(taskStore.listTasks(db, { workspaceRoot }))
+          .find((row) => row.id === created.id);
+      } finally {
+        taskStore.close();
+      }
+    };
+
+    const continuationTask = seedTask('Certified row with concrete continuation');
     assert.equal(runCli([
       'task', 'ready', continuationTask.display_id,
       '--as', 'codex',
@@ -14058,9 +14070,7 @@ test('task status separates review continue-work from human accept waiting', () 
       '--next', 'Build the next concrete continuation slice',
     ], { cwd: dir, env }).status, 0);
 
-    const waitingCreated = runCli(['task', 'new', 'Certified row waiting on human accept', '--tag', 'task', '--json'], { cwd: dir, env });
-    assert.equal(waitingCreated.status, 0, waitingCreated.stderr);
-    const waitingTask = JSON.parse(waitingCreated.stdout).task;
+    const waitingTask = seedTask('Certified row waiting on human accept');
     assert.equal(runCli([
       'task', 'ready', waitingTask.display_id,
       '--as', 'codex',
@@ -14073,9 +14083,7 @@ test('task status separates review continue-work from human accept waiting', () 
       '--proof', 'node --test test/commands.test.js passed during human accept split',
     ], { cwd: dir, env }).status, 0);
 
-    const blockingCreated = runCli(['task', 'new', 'Review row still needs second agent check', '--tag', 'task', '--json'], { cwd: dir, env });
-    assert.equal(blockingCreated.status, 0, blockingCreated.stderr);
-    const blockingTask = JSON.parse(blockingCreated.stdout).task;
+    const blockingTask = seedTask('Review row still needs second agent check');
     assert.equal(runCli([
       'task', 'ready', blockingTask.display_id,
       '--as', 'codex',

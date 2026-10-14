@@ -2284,3 +2284,7 @@ npm publish
 
 - `lib/member-autoland.js:353` reads current approval from each linked task before any remote operation. Revise, revised, and rejected states hold at approval; resubmitted pending proof continues through the existing review gates.
 - `test/member-refused-no-pr.test.js:1` uses the real task database and Git, including a separate command process with network and GitHub call traps. Verify: `node --test test/member-refused-no-pr.test.js`.
+
+## Continuation status test setup
+
+- `test/commands.test.js:14036` checks review continuation, human approval waiting, and blocked review separately. Its local real-store seed helper removes three setup command launches; ready, review, status, and all result assertions stay on the CLI.

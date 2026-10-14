@@ -101,7 +101,7 @@ checks the refs in both files; `atris doc-health --fix-refs` moves drifted ones.
 | design system commands | `commands/design.js` `lib/design-api.js` | atris design extract and check; shared with atris mcp |
 | improvement attempt ledger | `commands/rsi.js` `lib/rsi-record.js` | read and record Dream-RSI attempts |
 | workspace tree hash | `commands/tree.js` `lib/tree-hash.js` | atris tree hash over the doctrine files |
-| tests | `test/commands.test.js` | node --test test/ |
+| tests | `test/commands.test.js` | node --test test/; continuation-status fixtures seed real task rows in process, while ready, review, and status exercise the CLI |
 | run one test | `package.json` | npm test, node --test |
 | release publish script | `scripts/publish-atris-release.js` | tag-driven publish |
 | ci workflows | `.github/workflows` | test and publish gates |
