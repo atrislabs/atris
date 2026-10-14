@@ -2341,3 +2341,5 @@ npm publish
 - `lib/member-tidy.js:174`: detached copies retain their explanation and append exact private and shared lock paths and ages; `test/member-tidy.test.js` checks real preview and cleanup preserve files, the saved branch, locks, and Git registration without removal records.
 
 - `lib/member-tidy.js:164`: outside-linked copies retain the outside-folder explanation and append exact private and shared lock paths and ages. `test/member-tidy.test.js:592` runs preview and cleanup through real Git and the CLI, preserving the link, outside files, branch, registration, and locks without removal records. Proof: `atris/receipts/2026-10-14-tidy-outside-lock-check.md`.
+
+- `commands/land.js:729`: after Git refuses removal, cleanup checks retained locks again and reports their full paths and ages before falling back to the Git error. The seventh case in `atris/receipts/2026-10-14-land-vanishing-folder-check.js:25` adds a real keep marker plus private and shared locks at the removal attempt, then checks that files, branch, Git record, and locks survive without a removal log entry.
