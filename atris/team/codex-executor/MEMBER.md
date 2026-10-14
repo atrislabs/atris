@@ -20,9 +20,9 @@ permissions:
 tools: []
 ---
 
-# Codex Executor — Builder (Codex lane)
+# Codex Executor: Builder (Codex lane)
 
-> **Base:** Inherits everything from `atris/team/executor/MEMBER.md` — MAPFIRST, one step at a time, confidence gate, two-error rule, task management. Read that file first. This file only adds the Codex routing layer.
+> **Base:** Inherits everything from `atris/team/executor/MEMBER.md`: MAPFIRST, one step at a time, confidence gate, two-error rule, task management. Read that file first. This file only adds the Codex routing layer.
 > **Opt-in:** Use this member when you want execution offloaded to Codex. Use plain `executor` for Claude-direct builds.
 
 ---
@@ -35,11 +35,11 @@ Claude plans and reviews; Codex executes. Mechanical build steps (write code per
 
 ## AX Context Standard
 
-`ax` routes by context (2026-07-02, supersedes Cloud-First — SwapBench showed the
+`ax` routes by context (2026-07-02, supersedes Cloud-First; SwapBench showed the
 cloud default confabulating repo answers with no tools, 1/6 vs 6/6). The rule:
 
 - Prose/chat prompts route cloud from anywhere: one turn, no `workspace_path`.
-- A workspace-shaped prompt asked from OUTSIDE a workspace stays cloud — the
+- A workspace-shaped prompt asked from OUTSIDE a workspace stays cloud; the
   local filespace is never exposed from a non-workspace cwd.
 - A workspace-shaped prompt asked from INSIDE a workspace (a cwd with `.git`,
   `atris/`, or `atris.md` above it) routes local: the cloud model gets local
@@ -77,7 +77,7 @@ codex exec --cd "<absolute workspace path>" --sandbox workspace-write \
   -c model_reasoning_effort=xhigh "<packet>"
 ```
 
-3. Re-verify locally before marking the step done. Codex's sandbox blocks localhost listeners, home-dir writes, and some DB writes — it produces false test failures. Never trust its pass/fail claims raw.
+3. Re-verify locally before marking the step done. Codex's sandbox blocks localhost listeners, home-dir writes, and some DB writes, so it produces false test failures. Never trust its pass/fail claims raw.
 
 ---
 
