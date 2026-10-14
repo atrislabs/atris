@@ -295,6 +295,54 @@ test('a hidden last step comes back with the cheapest change that makes room', (
   }
 });
 
+// Every width where a row shows less of its job or last step than one column
+// narrower: "74 scout job 19->8 step 0->9". Pinned below, so a layout change
+// shows which widths it fixes or breaks before any other check is edited.
+function cliffs(rows, dir, from, to) {
+  const seen = (v) => (!v || v === '-' ? 0 : v.replace(/\.\.\.$/, '').length);
+  const read = (w) => {
+    const [head, ...lines] = renderBoard(rows, dir, 0, w).split('\n');
+    const [job, step] = [head.indexOf('job'), head.indexOf('last step')];
+    return Object.fromEntries(lines.map((l) => [l.split(' ')[0], [
+      job < 0 ? 0 : seen(l.slice(job, step < 0 ? undefined : step).trimEnd()),
+      step < 0 ? 0 : seen(l.slice(step)),
+    ]]));
+  };
+  const out = [];
+  let was = read(from);
+  for (let w = from + 1; w <= to; w++) {
+    const now = read(w);
+    for (const [m, [j, s]] of Object.entries(now)) {
+      const [pj, ps] = was[m];
+      if (j < pj || s < ps) out.push(`${w} ${m} job ${pj}->${j} step ${ps}->${s}`);
+    }
+    was = now;
+  }
+  return out;
+}
+
+test('the widths where a wider board shows less are known', () => {
+  const dir = fakeDir({
+    builder: [`${at(180)} m-1 started: fix the login flow`, `${at(60)} m-1 editing lib/auth/session.js to refresh tokens`],
+    scout: [`${at(1800)} m-2 started: write release notes`, `${at(1500)} m-2 reading CHANGELOG.md and the merged pull requests`, `${at(1200)} m-2 finished: ok`],
+    editor: [`${at(2400)} m-3 started: tidy the docs folder`, `${at(2100)} m-3 running: node --test test/docs.test.js`, `${at(1980)} m-3 finished: failed (bad exit 2)`],
+  });
+  try {
+    const rows = readBoard({ dir, now: NOW }).map((r) => (r.member === 'builder' ? { ...r, alive: true, engine: 'codex', running_for: '3m' } : r));
+    assert.deepEqual(cliffs(rows, dir, 60, 130), [
+      // Open: whole jobs are cut so the last step can return at its smallest.
+      '74 builder job 18->8 step 0->9',
+      '74 scout job 19->8 step 0->9',
+      '74 editor job 16->8 step 0->9',
+      // A trade: the live run's engine word comes back, and a finished row's
+      // old step gives up the room.
+      '121 scout job 19->19 step 49->42',
+    ]);
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
 test('a tiny terminal keeps member states and common failure reasons within its width', () => {
   const dir = fakeDir({
     builder: [`${at(100)} m-1 started: build`, `${at(80)} m-1 finished: failed (timed out)`],
