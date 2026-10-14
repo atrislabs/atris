@@ -23,6 +23,8 @@ Details for any task: atris task show <ID>
 
 ## Review
 
+- **[AIC-35]** Speed up task rendering fixture setup · auto-improver
+  **Done looks like:** Developers finish task rendering checks sooner because setup starts one fewer command.
 - **[AIC-34]** Make task lineage checks faster for developers · auto-improver
   **Done looks like:** Developers finish lineage checks sooner because setup starts three fewer commands.
 - **[AIC-33]** Finish ordered in-process task fixtures · auto-improver

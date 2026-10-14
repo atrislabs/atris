@@ -2331,3 +2331,7 @@ npm publish
 ## Task lineage fixture setup
 
 - `test/commands.test.js:16950` checks goal inference, completed proof, parent-child lineage and stream counts. Three ordered real-store seeds replace three setup launches; finish and export still exercise the CLI, with every assertion preserved.
+
+## Task rendering fixture setup
+
+- `test/commands.test.js:7822` checks Endgame metadata, removal of stale generated rows, stable display references and repeat rendering. An ordered real-store seed saves one setup launch; the generated-file marker formerly written by task creation is explicit in the fixture. Both renders and lookup still exercise the CLI with every assertion preserved.

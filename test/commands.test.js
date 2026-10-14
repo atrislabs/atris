@@ -7830,6 +7830,9 @@ test('task render preserves Endgame metadata and drops markdown-only rows', () =
     fs.writeFileSync(todoPath, [
       '# TODO.md',
       '',
+      // task new previously added this marker while refreshing the fixture.
+      '> Regenerated from durable Atris task state. Do not treat this file as truth.',
+      '',
       '## Endgame',
       '',
       '**Slug:** renderer-horizon',
@@ -7852,9 +7855,16 @@ test('task render preserves Endgame metadata and drops markdown-only rows', () =
       '## Completed',
       '',
     ].join('\n'), 'utf8');
-    const created = runCli(['task', 'new', 'DB state task', '--tag', 'agent', '--json'], { cwd: dir, env });
-    assert.equal(created.status, 0, created.stderr);
-    const createdTask = JSON.parse(created.stdout).task;
+    // Seed only setup; rendering and lookup still exercise the real CLI.
+    const workspaceRoot = taskStore.workspaceRoot(dir);
+    const db = taskStore.open(dbPath);
+    let createdTask;
+    try {
+      const { id } = addSeedTask(db, { title: 'DB state task', tag: 'agent', workspaceRoot });
+      createdTask = { id, display_id: taskStore.taskDisplayRefMap(taskStore.listTasks(db, { workspaceRoot })).get(id) };
+    } finally {
+      taskStore.close();
+    }
 
     const render = runCli(['task', 'render', '--out', 'atris/TODO.md'], { cwd: dir, env });
     assert.equal(render.status, 0, render.stderr);
