@@ -9192,10 +9192,10 @@ function startTickResource(cwd, engine, mission) {
   recordEngineResource(cwd, { phase: 'start', ...resource });
   const startedAt = process.hrtime.bigint();
   let ended = false;
-  return ({ signal = null, timedOut = false } = {}) => {
+  return ({ signal = null, timedOut = false, error = '' } = {}) => {
     if (ended) return;
     ended = true;
-    recordEngineResource(cwd, { phase: 'end', ...resource, signal, timed_out: timedOut, duration_ms: Math.round(Number(process.hrtime.bigint() - startedAt) / 1e6) });
+    recordEngineResource(cwd, { phase: 'end', ...resource, signal, timed_out: timedOut, error, duration_ms: Math.round(Number(process.hrtime.bigint() - startedAt) / 1e6) });
   };
 }
 
@@ -9323,7 +9323,7 @@ function spawnGenericRunnerTick(mission, opts) {
     proc.on('close', (code, closeSignal) => {
       clearTimeout(timer);
       // The shell returns 128 + 9 when its engine child was force-killed.
-      endResource({ signal: closeSignal || (code === 137 ? 'SIGKILL' : null), timedOut });
+      endResource({ signal: closeSignal || (code === 137 ? 'SIGKILL' : null), timedOut, error: code === 0 ? '' : stderr.slice(-2000) });
       if (lastMessageFile && eventBuf.trim()) readCodexEvent(eventBuf.trim());
       let finalText = String(stdout || '').trim();
       if (lastMessageFile) {
@@ -9361,7 +9361,7 @@ function spawnGenericRunnerTick(mission, opts) {
 
     proc.on('error', (e) => {
       clearTimeout(timer);
-      endResource({ timedOut });
+      endResource({ timedOut, error: e.message });
       cleanupPrompt();
       gitGuard.cleanup();
       if (signal) signal.removeEventListener?.('abort', onAbort);
@@ -9527,7 +9527,7 @@ function spawnClaudeTick(mission, opts) {
 
     proc.on('close', (code, closeSignal) => {
       clearTimeout(timer);
-      endResource({ signal: closeSignal, timedOut });
+      endResource({ signal: closeSignal, timedOut, error: code === 0 ? '' : stderr.slice(-2000) });
       gitGuard.cleanup();
       if (signal) signal.removeEventListener?.('abort', onAbort);
       updateMissionLockOwner(missionLock, missionLock?.driverPid);
@@ -9560,7 +9560,7 @@ function spawnClaudeTick(mission, opts) {
 
     proc.on('error', (e) => {
       clearTimeout(timer);
-      endResource({ timedOut });
+      endResource({ timedOut, error: e.message });
       gitGuard.cleanup();
       updateMissionLockOwner(missionLock, missionLock?.driverPid);
       resolve({ ok: false, error: e.message, sessionIds: [], aborted, timedOut, authExpired: false });
@@ -10314,6 +10314,7 @@ async function executeMissionRunTicksPhase(context) {
         tickWorkerRun = { endedMs: Date.now(), usage: (claudeResult && claudeResult.run_usage) || {}, prep: tickPrep, startedAt: workerStartedAt };
         result.claude = {
           ok: claudeResult.ok,
+          error: claudeResult.error,
           reason: claudeResult.reason,
           protected_lane_guard: claudeResult.protected_lane_guard || null,
           brief_id: claudeResult.brief_id || null,

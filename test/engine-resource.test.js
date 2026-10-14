@@ -1036,6 +1036,9 @@ test('mission runners record paired readings on success, SIGKILL and startup fai
       assert.strictEqual(failed[1].signal, undefined);
       assert.strictEqual(failed[1].cause, undefined);
       assert.strictEqual(failed[1].timed_out, undefined);
+      const startupError = result.ticks[0].claude.error || result.ticks[0].claude.stderr;
+      assert.ok(startupError, `${runner}: the runner result must retain its startup error`);
+      assert.strictEqual(failed[1].error, startupError, `${runner}: the end reading must retain the original startup error`);
       console.log(`${runner} startup failure CLI exit ${ran.status}: ${JSON.stringify(failed[1])}`);
     }
   } finally {

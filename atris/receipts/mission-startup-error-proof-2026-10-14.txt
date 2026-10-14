@@ -1,0 +1,24 @@
+Startup errors now survive in saved mission results and final resource readings, verified by 93 passing tests, exit 0.
+
+Files changed: commands/mission.js, lib/engine-resource.js, test/engine-resource.test.js, atris/MAP.md, atris/refs/MAP-NOTES.md, atris/team/executor/logs/2026-10-14.md.
+Failing-first command: node --test --test-name-pattern='mission runners record paired' test/engine-resource.test.js
+Before fix: exit 1, codex end reading error was undefined instead of bad-interpreter stderr.
+Verify command: node --test test/engine-resource.test.js test/engine-dispatch.test.js
+Exact final output excerpt:
+claude startup failure CLI exit 0: final reading error = "spawn claude ENOENT"
+✔ mission runners record paired readings on success, SIGKILL and startup failure
+ℹ tests 93
+ℹ suites 0
+ℹ pass 93
+ℹ fail 0
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+Exit: 0
+The test invokes the real mission start/run CLI in temporary projects with real executable fixtures. The generic runner retains bad-interpreter stderr, while direct Claude startup retains the original spawn error. Both retain exactly one end with the same run_id as their start.
+Metric: two real startup-failure paths preserve original errors, all 93 checks pass.
+Independent review: gpt-6-astra passed, no blocking findings. Resource stderr retains up to 2,000 characters; saved result stderr retains up to 1,000. Direct startup errors retain their original message.
+Lesson: the runner returned the direct startup error, but the saved-result field selection dropped it. Verify persisted output rather than only the child result.
+Scope: one startup-error preservation slice. Existing TODO and member log changes were preserved. Mission attach-task was locked by the active driver, so a dedicated task was claimed. The default task review check ran under unsupported Node v20.18.0 and failed four existing runtime-sensitive tests; the bare frozen command passed under installed Node v25.6.1. Task proof uses /opt/homebrew/bin/node explicitly; mission policy and frozen verifier remain unchanged. Brain activation and compile reported plan-only, exit 2; generated adapters were left untouched.
+next_push: preserve thrown and rejected fleet startup errors in their final resource readings.
+layer: capabilities
