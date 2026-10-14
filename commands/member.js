@@ -10653,6 +10653,124 @@ async function memberGo(...rawArgs) {
   return memberSteerOrDispatchWith({ pullTask: true }, [chosen, ...rawArgs]);
 }
 
+// Where a running `atris member up` leaves its pid, so a whole-team sleep
+// can end it.
+function memberUpPidFile(root) {
+  return path.join(root, '.atris', 'state', 'member-up.json');
+}
+
+// A member slept by name stays asleep for member up until someone wakes it;
+// a whole-team sleep only rests the team for now.
+function memberSleepingByChoice(latest) {
+  return Boolean(latest && latest.status === 'paused' && latest.stop_reason === 'member-sleep'
+    && latest.sleep_target === 'member');
+}
+
+function memberUpTeam(root) {
+  const { isMemberParked } = require('../lib/member-park');
+  const missionMap = memberRunMissionMap(root);
+  return findAllMembers(path.join(root, 'atris', 'team')).filter(isFleetMember).map((record) => {
+    const name = memberSlugFromRecord(record);
+    const summary = memberMissionSummary(name, missionMap, root);
+    return {
+      name,
+      parked: isMemberParked(root, name),
+      human: Boolean(memberRefusalFor(name, path.join(root, 'atris', 'team', name, 'MEMBER.md'))),
+      sleeping: memberSleepingByChoice(summary.latest),
+      live: Boolean(summary.live_mission),
+    };
+  });
+}
+
+// The task `member go <name>` would claim, skipping ones already handed out.
+// Looks only; the child claims it.
+function memberUpPick(root, name, taken) {
+  try {
+    const taskDb = require('../lib/task-db');
+    const { fittingTasks } = require('../lib/member-task-pick');
+    const db = taskDb.open();
+    const job = memberGoJob(name, root);
+    return fittingTasks(taskDb, db, { workspaceRoot: taskDb.workspaceRoot(root), job })
+      .find((task) => !taken.has(task.id)) || null;
+  } catch {
+    return null;
+  }
+}
+
+function memberUpSpawn(root, name, onExit) {
+  const { spawn } = require('child_process');
+  const logDir = path.join(root, '.atris', 'state', 'member-up');
+  fs.mkdirSync(logDir, { recursive: true });
+  const out = fs.openSync(path.join(logDir, `${name}.log`), 'a');
+  const child = spawn(process.execPath, [path.join(__dirname, '..', 'bin', 'atris.js'), 'member', 'go', name], {
+    cwd: root,
+    detached: true,
+    stdio: ['ignore', out, out],
+    env: process.env,
+  });
+  fs.closeSync(out);
+  child.on('error', () => onExit(null));
+  child.on('exit', (code) => onExit(code));
+  return child;
+}
+
+async function memberUp(...args) {
+  if (hasFlag(args, '--help') || hasFlag(args, '-h')) {
+    console.log('Usage: atris member up [--max N] [--dry-run]');
+    console.log('Keeps the team working: every minute, starts each free member that has a fitting task.');
+    console.log('Ctrl-C or atris member sleep --all ends it. Runs it started keep going.');
+    return;
+  }
+  const root = process.cwd();
+  const maxAt = args.indexOf('--max');
+  const max = maxAt >= 0 ? Number(args[maxAt + 1]) : undefined;
+  if (maxAt >= 0 && !(Number.isInteger(max) && max > 0)) {
+    console.error('--max needs a whole number above zero.');
+    process.exitCode = 1;
+    return;
+  }
+  const { createMemberUp, runMemberUp } = require('../lib/member-up');
+  const deps = {
+    listMembers: () => memberUpTeam(root),
+    pickTask: (name, taken) => memberUpPick(root, name, taken),
+    spawn: (name, onExit) => memberUpSpawn(root, name, onExit),
+    now: () => Date.now(),
+  };
+  if (hasFlag(args, '--dry-run')) {
+    const started = createMemberUp(deps, { max, dryRun: true }).check();
+    if (!started.length) console.log('nothing to start: no free member has a fitting task');
+    return started;
+  }
+  const pidFile = memberUpPidFile(root);
+  fs.mkdirSync(path.dirname(pidFile), { recursive: true });
+  fs.writeFileSync(pidFile, JSON.stringify({ pid: process.pid, started_at: new Date().toISOString() }));
+  const loop = runMemberUp(deps, { max });
+  const end = () => loop.stop();
+  process.once('SIGINT', end);
+  process.once('SIGTERM', end);
+  console.log(`team is up (at most ${max || require('../lib/member-up').DEFAULT_MAX} at once). Ctrl-C to stop.`);
+  await loop.done;
+  process.removeListener('SIGINT', end);
+  process.removeListener('SIGTERM', end);
+  try {
+    if (JSON.parse(fs.readFileSync(pidFile, 'utf8')).pid === process.pid) fs.unlinkSync(pidFile);
+  } catch {}
+  const working = loop.up.running();
+  console.log(working.length ? `team is down; still finishing: ${working.join(', ')}` : 'team is down');
+}
+
+// Ends a running `atris member up`. Returns true when one was told to stop.
+function stopMemberUp(root) {
+  try {
+    const { pid } = JSON.parse(fs.readFileSync(memberUpPidFile(root), 'utf8'));
+    if (!Number.isInteger(pid) || pid === process.pid) return false;
+    process.kill(pid, 'SIGTERM');
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 function memberSleep(target, ...args) {
   if (hasFlag(args, '--help') || hasFlag(args, '-h') || target === '--help' || target === '-h') {
     console.log('Usage: atris member sleep [member|--all] [--json]');
@@ -10676,6 +10794,7 @@ function memberSleep(target, ...args) {
       status: 'paused',
       paused_at: new Date().toISOString(),
       stop_reason: 'member-sleep',
+      sleep_target: filterMember ? 'member' : 'all',
       next_action: `sleeping; wake with: atris member go ${owner || ''}`.trim(),
       updated_at: new Date().toISOString(),
     };
@@ -10685,9 +10804,11 @@ function memberSleep(target, ...args) {
     slept.push({ mission_id: m.id, member: owner || 'mission-lead', objective: m.objective });
   }
 
+  const supervisorStopped = !filterMember && stopMemberUp(root);
   const payload = {
     ok: true,
     action: 'member_sleep',
+    supervisor_stopped: supervisorStopped,
     target: filterMember || 'all',
     slept_count: slept.length,
     slept,
@@ -10703,6 +10824,7 @@ function memberSleep(target, ...args) {
         `All members are already resting.`,
         `Wake anytime: ${payload.wake_command}`,
       ];
+  if (supervisorStopped) lines.unshift('Stopped member up; it starts nobody new.');
   printJsonOrText(payload, lines, asJson);
   return payload;
 }
@@ -11041,7 +11163,7 @@ async function memberCommand(subcommand, ...args) {
   // help themselves (with subcommand-specific usage), leave those alone.
   const HELP_AWARE_SUBCOMMANDS = new Set([
     'create', 'new', 'run', 'install', 'result', 'dispatch', 'route', 'feed', 'stream',
-    'card', 'cards', 'go', 'work', 'steer', 'sleep', 'rest', '1on1', 'interview',
+    'card', 'cards', 'go', 'work', 'up', 'steer', 'sleep', 'rest', '1on1', 'interview',
     'room', 'ui', 'day', 'standup', 'handoff', 'handoffs',
   ]);
   const explicitHelp = subcommand === 'help' || subcommand === '--help' || subcommand === '-h'
@@ -11090,6 +11212,8 @@ async function memberCommand(subcommand, ...args) {
     case 'go':
     case 'work':
       return memberGo(...args);
+    case 'up':
+      return memberUp(...args);
     case 'steer':
       return memberSteerOrDispatch(...args);
     case 'sleep':
@@ -11192,6 +11316,7 @@ async function memberCommand(subcommand, ...args) {
       console.log('  run <name> ["..."]  Start a budgeted member mission, or run its active Mission Runtime');
       console.log('  result <name>       Newest run result: run record, receipt, artifacts, number [--since <iso>] [--json]');
       console.log('  dispatch "<idea>"   Route an idea to the best specialist member and start work');
+      console.log('  up [--max N]        Keep the team working: start free members on fitting tasks every minute');
       console.log('  feed [--member <n>] Show a plain-language linear feed of real work across the team');
       console.log('  card [name|--all]   Show a member\'s roadmap, unlocked skills, live work, and recent wins');
       console.log('  loop <name|--all>   Repeat wake on a bounded cadence with a no-overlap lease');
