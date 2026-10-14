@@ -1147,6 +1147,16 @@ test('every footer reason sits right after the count it explains', () => {
   assert.ok(reasons > 0, 'the boards above put reasons in the footer');
 });
 
+test('a footer list of different reasons names signed out first', () => {
+  const base = { alive: null, engine: '', running_for: '', job: 'b', step: 's', ago: '1m ago' };
+  const failed = (m, why) => ({ ...base, member: m, state: 'done failed', last_result: 'failed', last_result_reason: why, last_result_ago: '1m ago' });
+  const footer = (reasons, width) => renderBoard(reasons.map((why, i) => failed(`f${i}`, why)), '/progress', 0, width, 2).split('\n').pop();
+  // It used to read "bad exit 2, engine error and signed out".
+  assert.equal(footer(['bad exit 2', 'engine error', 'signed out'], 60), '3 hidden (3 failed, signed out, bad exit 2 and engine error)');
+  assert.equal(footer(['timed out', 'signed out'], 60), '2 more not shown (2 failed, signed out and timed out)');
+  assert.equal(footer(['timed out', 'signed out', 'timed out', 'signed out'], 60), '4 more not shown (4 failed, 2 signed out and 2 timed out)');
+});
+
 test('narrow footers drop whole mixed counts from the end instead of cutting one', () => {
   const dir = fakeDir({
     a: [`${at(20)} m-1 started: [pid ${process.pid} engine claude] check the board`],
