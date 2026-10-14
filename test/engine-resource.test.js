@@ -586,6 +586,41 @@ test('the hourly cleanup summary names younger replacements alongside stops and 
   }
 });
 
+test('the hourly cleanup summary reports failed stops alongside other outcomes', () => {
+  const { runSshAgentSweep, sshAgentSweepNote } = require('../commands/autoland');
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'autoland-ssh-failed-'));
+  try {
+    // An exited child reproduces an agent disappearing after the final scan.
+    // Probe with signal 0 so a reused pid cannot stop an unrelated process.
+    const exited = require('node:child_process').spawnSync(process.execPath, ['-e', ''], { timeout: 10000 });
+    assert.equal(exited.status, 0);
+    assert.ok(exited.pid);
+    const uid = typeof process.getuid === 'function' ? process.getuid() : 501;
+    const receipt = {};
+    runSshAgentSweep(root, receipt, {
+      uid,
+      read: () => ({ agents: [{ pid: exited.pid, ppid: 1, uid, age_sec: 3600, args: 'ssh-agent -s' }], referenced: new Set() }),
+      kill: (pid, signal) => {
+        assert.equal(signal, 'SIGTERM');
+        process.kill(pid, 0);
+      },
+    });
+    assert.deepStrictEqual(receipt.ssh_agent_sweep.failed, [{ pid: exited.pid, code: 'ESRCH' }]);
+    assert.deepStrictEqual(receipt.ssh_agent_sweep.stopped, []);
+    assert.strictEqual(sshAgentSweepNote(receipt), ', could not stop 1 leaked ssh-agent');
+    const saved = JSON.parse(fs.readFileSync(path.join(root, RESOURCE_LOG), 'utf8'));
+    assert.deepStrictEqual(saved.failed, [exited.pid]);
+    assert.strictEqual(saved.leaked_ssh_agents, 1);
+    assert.strictEqual(sshAgentSweepNote({ ssh_agent_sweep: {
+      stopped: [200], failed: [{ pid: 201, code: 'EPERM' }, { pid: 202, code: 'ESRCH' }],
+      replaced: [203], unread: ['agent sockets'],
+    } }), ', stopped 1 leaked ssh-agent, could not stop 2 leaked ssh-agents, left 1 younger replacement ssh-agent alone, could not read the agent sockets, so some ssh-agents went unchecked');
+    console.log('real stop failure: ' + sshAgentSweepNote(receipt).slice(2));
+  } finally {
+    fs.rmSync(root, { recursive: true, force: true });
+  }
+});
+
 test('a failing read never breaks the hourly landing pass', () => {
   const { runSshAgentSweep } = require('../commands/autoland');
   const receipt = {};
