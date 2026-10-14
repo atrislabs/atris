@@ -45,6 +45,13 @@ function removalLines(repo) {
   return fs.readFileSync(file, 'utf8').trim().split('\n').map((line) => JSON.parse(line));
 }
 
+test('reap reports folders disappearing during its final git check, with and without a lock', () => {
+  const proof = path.resolve(__dirname, '../atris/receipts/2026-10-14-land-vanishing-folder-check.js');
+  const result = spawnSync(process.execPath, [proof], { encoding: 'utf8', timeout: 120000 });
+  assert.equal(result.status, 0, result.stderr || result.stdout);
+  assert.match(result.stdout, /both vanished folders reported; moved files and branches retained; no removal recorded/);
+});
+
 function regressionEntry(repo, verifyCmd) {
   const hash = git(repo, ['rev-parse', 'HEAD']);
   fs.mkdirSync(path.join(repo, 'atris'), { recursive: true });

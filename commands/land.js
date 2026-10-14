@@ -703,7 +703,10 @@ function reap(root, { ttlDays = DEFAULT_TTL_DAYS, staleHours = DEFAULT_STALE_HOU
     }
     const activity = inspectGitActivity(w.path);
     if (!activity.safe) {
-      receipt.keptWorktrees.push(`${w.path} (${activity.reason})`);
+      // The folder can disappear after planning, or during the git check.
+      const lock = !fs.existsSync(w.path) ? missingFolderLock(root, w.path) : null;
+      const reason = lock ? (lock.locks.length ? lock.reason : 'folder is missing') : activity.reason;
+      receipt.keptWorktrees.push(`${w.path} (${reason})`);
       if (w.branch) targetNames.delete(w.branch);
       continue;
     }
