@@ -13759,14 +13759,29 @@ test('claiming an already-done task suggests the next open task from the same ta
   try {
     fs.mkdirSync(path.join(dir, 'atris'), { recursive: true });
 
-    const doneTask = runCli(['task', 'add', 'Ship the widget', '--tag', 'speedy', '--json'], { cwd: dir, env });
-    assert.equal(doneTask.status, 0, doneTask.stderr);
-    const doneRef = JSON.parse(doneTask.stdout).task.display_id;
-    const sameTagOpen = runCli(['task', 'add', 'Ship the other widget', '--tag', 'speedy', '--json'], { cwd: dir, env });
-    assert.equal(sameTagOpen.status, 0, sameTagOpen.stderr);
-    const sameTagRef = JSON.parse(sameTagOpen.stdout).task.display_id;
-    const otherTagOpen = runCli(['task', 'add', 'Unrelated open task', '--tag', 'other', '--json'], { cwd: dir, env });
-    assert.equal(otherTagOpen.status, 0, otherTagOpen.stderr);
+    // Seed only the three tasks; claim, finish, and every suggestion check still use the CLI.
+    // Display refs are numbered across the workspace, so compute them after all inserts.
+    let refs;
+    const db = taskStore.open(dbPath);
+    try {
+      const workspaceRoot = taskStore.workspaceRoot(dir);
+      const ids = [
+        ['Ship the widget', 'speedy'],
+        ['Ship the other widget', 'speedy'],
+        ['Unrelated open task', 'other'],
+      ].map(([title, tag]) => {
+        const created = taskStore.addTask(db, { title, tag, workspaceRoot });
+        assert.equal(created.inserted, true);
+        return created.id;
+      });
+      const byId = new Map(taskStore.withTaskDisplayRefs(taskStore.listTasks(db, { workspaceRoot }))
+        .map((row) => [row.id, row.display_id]));
+      refs = ids.map((id) => byId.get(id));
+      assert.equal(new Set(refs).size, 3);
+    } finally {
+      taskStore.close();
+    }
+    const [doneRef, sameTagRef, otherTagRef] = refs;
 
     assert.equal(runCli(['task', 'claim', doneRef, '--as', 'codex'], { cwd: dir, env }).status, 0);
     const finish = runCli(['task', 'finish', doneRef, '--proof', 'node --test', '--as', 'codex', '--json'], { cwd: dir, env });
@@ -13794,10 +13809,10 @@ test('claiming an already-done task suggests the next open task from the same ta
     assert.equal(finish2.status, 0, finish2.stderr);
     const claimFallback = runCli(['task', 'claim', doneRef, '--as', 'sonnet', '--json'], { cwd: dir, env });
     const fallbackPayload = JSON.parse(claimFallback.stdout);
-    assert.equal(fallbackPayload.next_claimable.ref, JSON.parse(otherTagOpen.stdout).task.display_id);
+    assert.equal(fallbackPayload.next_claimable.ref, otherTagRef);
 
     // Once every task is claimed/done, there is nothing left to suggest.
-    assert.equal(runCli(['task', 'claim', JSON.parse(otherTagOpen.stdout).task.display_id, '--as', 'codex'], { cwd: dir, env }).status, 0);
+    assert.equal(runCli(['task', 'claim', otherTagRef, '--as', 'codex'], { cwd: dir, env }).status, 0);
     const claimNoneLeft = runCli(['task', 'claim', doneRef, '--as', 'sonnet', '--json'], { cwd: dir, env });
     assert.equal(JSON.parse(claimNoneLeft.stdout).next_claimable, null);
   } finally {
