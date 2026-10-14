@@ -230,6 +230,15 @@ test('watch names state changes from the last minute, then drops them', () => {
   assert.doesNotMatch(renderBoard(rows, '/x'), /changed in the last minute/, 'no changes, no line');
 });
 
+test('watch names a member whose first run appears between redraws', () => {
+  const row = (member, state) => ({ member, state, before: [], alive: null, engine: '', running_for: '', lasted: '', ago: '1s ago', job: 'j', step: 's' });
+  const changed = changeTracker(60_000);
+  assert.deepEqual(changed([row('builder', 'working')], 0), [], 'members on the first redraw are not new');
+  assert.deepEqual(changed([row('builder', 'working'), row('scout', 'working')], 3_000), ['scout new -> working']);
+  assert.deepEqual(changed([row('builder', 'working'), row('scout', 'done ok')], 6_000), ['scout new -> working -> done ok'], 'a later change extends it');
+  assert.deepEqual(changed([row('builder', 'working'), row('scout', 'done ok')], 67_000), [], 'and it drops off a minute after its last change');
+});
+
 test('watch keeps a crash in view when the same member restarts within the minute', () => {
   const row = (member, state) => ({ member, state, before: [], alive: null, engine: '', running_for: '', lasted: '', ago: '1s ago', job: 'j', step: 's' });
   const changed = changeTracker(60_000);
