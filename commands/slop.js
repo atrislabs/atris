@@ -331,6 +331,8 @@ const QUESTION_AFTER_DASH = new RegExp(`(?<=[\\w)\\]"'*_\`%\\u201d\\u2019\\uE001
 
 // An order after a full clause is a sentence of its own, so a comma there is
 // a splice: "pruning the worktree deletes proof; copy receipts out first".
+// An order can lead a second one after a comma: "done; halt, don't proceed".
+// A word after "don't" is always a plain verb, even one that ends in "ed".
 // The verb needs a plain word after it, so a noun in a label field ("verify:
 // tests pass"), before a past verb ("copy drafted for 1.6"), or before "of"
 // ("calendar-probe, fork of relay-probe") keeps its comma.
@@ -339,7 +341,7 @@ const QUESTION_AFTER_DASH = new RegExp(`(?<=[\\w)\\]"'*_\`%\\u201d\\u2019\\uE001
 // Two orders side by side are one sentence, so the comma stays: "Kill the
 // group at timeout, spawn the phase detached", "don't impose, match it".
 const ORDER_VERB = `(?:don['\\u2019]t|do not|let['\\u2019]s|let us|pick|copy|reframe|judge|plug|retry|rename|propose|inspect|keep|leave|use|run|read|ask|add|check|make|move|stop|try|wait|skip|take|look|call|write|delete|remove|fix|put|say|tell|give|treat|verify|ship|commit|push|kill|mark|start|avoid|prefer|trust|drop|cut|split|merge|revert|rerun|re-run|consolidate|pin|automate|clamp|fork|spawn|adapt|halt)`;
-const ORDER_CLAUSE_AFTER_DASH = new RegExp(`(?<=[\\w)\\]"'*_\`\\u201d\\u2019\\uE001])\\s*\\u2014\\s*(?=${ORDER_VERB}\\s+(?![a-z]+ed\\b|of\\b)[\\w\`"'(\\uE000])`, 'g');
+const ORDER_CLAUSE_AFTER_DASH = new RegExp(`(?<=[\\w)\\]"'*_\`\\u201d\\u2019\\uE001])\\s*\\u2014\\s*(?=(?:${ORDER_VERB},\\s+)?(?:don['\\u2019]t|do not)\\s+[\\w\`"'(\\uE000]|${ORDER_VERB}(?:,\\s+${ORDER_VERB})?\\s+(?![a-z]+ed\\b|of\\b)[\\w\`"'(\\uE000])`, 'g');
 
 // Two short subjects joined by "and", then a helper that takes them both,
 // start one too: "had no guard; render.py and render_reel.py are coupled",

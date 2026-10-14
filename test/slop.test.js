@@ -1740,6 +1740,22 @@ test('fix starts an order after a clause that follows a semicolon', () => {
   ]);
 });
 
+test('fix starts an order and a second order after a comma as their own clause', () => {
+  // from the verify-falsifiability idea, where "proceed" read as a past verb
+  const file = tmpFile('two-orders.md', [
+    "If it passes already, the task is already done \u2014 halt, don't proceed.",
+    'The build failed \u2014 do not proceed.',
+    // a past verb after a plain order still names a thing
+    'Plan B \u2014 copy drafted for 1.6.',
+  ].join('\n'));
+  const { changes } = applyFixes([file], RULES);
+  assert.deepEqual(changes.map((c) => c.after), [
+    "If it passes already, the task is already done; halt, don't proceed.",
+    'The build failed; do not proceed.',
+    'Plan B: copy drafted for 1.6.',
+  ]);
+});
+
 test('fix reads no word that only says when as the subject of a clause', () => {
   // "now ships" after a dash read as a bare subject and a verb
   const file = tmpFile('when-word.md', [
