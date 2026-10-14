@@ -2338,4 +2338,4 @@ npm publish
 
 ## Stale generated markdown fixture setup
 
-- `test/commands.test.js:7896` checks legacy row migration followed by generated row cleanup. An ordered real-store task seed saves one setup launch and closes in finally; claim, ready and both renders still exercise the CLI with every assertion preserved.
+- `test/commands.test.js:7896` checks legacy row migration followed by generated row cleanup. An ordered real-store task seed and real-store claim save two setup launches and close in finally; ready and both renders still exercise the CLI with every assertion preserved.
