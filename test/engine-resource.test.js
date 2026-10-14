@@ -356,6 +356,31 @@ test('atris engine sweep says when a reader could not run, in text and json', ()
   assert.doesNotMatch(clean, /could not read/);
 });
 
+test('atris engine sweep json comes through a pipe whole when it is larger than the pipe buffer', () => {
+  const { spawnSync } = require('node:child_process');
+  const root = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'engine-sweep-pipe-')));
+  try {
+    // One engine error long enough to push the json past 64 KB.
+    const file = path.join(root, RESOURCE_LOG);
+    fs.mkdirSync(path.dirname(file), { recursive: true });
+    const error = `pipe proof ${'x'.repeat(96 * 1024)}`;
+    fs.writeFileSync(file, `${JSON.stringify({ at: new Date().toISOString(), phase: 'end', engine: 'codex', task: 'pipe', run_id: 'pipe-1', error })}\n`);
+    const ran = spawnSync(process.execPath, [path.join(__dirname, '..', 'bin', 'atris.js'), 'engine', 'sweep', '--json'], {
+      cwd: root,
+      encoding: 'utf8',
+      timeout: 60000,
+      maxBuffer: 16 * 1024 * 1024,
+      env: { ...process.env, ATRIS_AUTO_UPDATE: 'off' },
+    });
+    assert.equal(ran.status, 0, ran.stderr);
+    assert.ok(ran.stdout.length > 64 * 1024, `json must exceed a pipe buffer, got ${ran.stdout.length} bytes`);
+    const out = JSON.parse(ran.stdout);
+    assert.equal(out.history.last_error.error, error);
+  } finally {
+    fs.rmSync(root, { recursive: true, force: true });
+  }
+});
+
 test('the hourly landing pass stops agents still leaked on the recheck and names the count', () => {
   const { runSshAgentSweep, sshAgentSweepNote } = require('../commands/autoland');
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'autoland-ssh-sweep-'));
