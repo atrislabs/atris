@@ -2553,3 +2553,7 @@ npm publish
 - `test/commands.test.js:9964` seeds the pre-plan side owner with the real claimTask operation at `test/commands.test.js:9988`, removing one setup launch (17 to 16). Both CLI plan refusals still check claimed_by_other, and the post-plan external CLI claim and rejected do remain unchanged.
 
 Landing capability test setup: `test/commands.test.js:12964` seeds creation and ownership through the real task store; readiness, finish, advisory output and saved landing projection remain on the CLI.
+
+## Non-positive reward rejection claimed fixture setup
+
+- `test/commands.test.js:13161` seeds creation and ownership through the real task store, asserting claim success and closing before CLI calls. Four launches become three; readiness, zero-reward rejection and the final review-status and pending-approval checks remain unchanged on the CLI.
