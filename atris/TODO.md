@@ -23,6 +23,8 @@ Details for any task: atris task show <ID>
 
 ## Review
 
+- **[AIC-31]** Seed goal chat parent fixture in process · auto-improver
+  **Done looks like:** Developers finish the goal chat check sooner because setup starts one fewer command.
 - **[AIC-30]** Seed headless stage parent fixtures in process · auto-improver
   **Done looks like:** Developers finish the headless plan and do check sooner because setup starts four fewer commands.
 - **[AIC-29]** Seed proof-event parent fixture in process · auto-improver

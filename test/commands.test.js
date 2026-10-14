@@ -10270,9 +10270,21 @@ test('task chat refines a durable goal before plan', () => {
   try {
     fs.mkdirSync(path.join(dir, 'atris'), { recursive: true });
 
-    const add = runCli(['task', 'add', 'Make a vague task useful', '--tag', 'capture', '--json'], { cwd: dir, env });
-    assert.equal(add.status, 0, add.stderr);
-    const ref = JSON.parse(add.stdout).task.display_id;
+    // Seed only the parent; chat, clear-plan, show, and plan still use the CLI.
+    let ref;
+    const db = taskStore.open(dbPath);
+    try {
+      const created = taskStore.addTask(db, {
+        title: 'Make a vague task useful',
+        tag: 'capture',
+        workspaceRoot: taskStore.workspaceRoot(dir),
+      });
+      assert.equal(created.inserted, true);
+      ref = taskStore.withTaskDisplayRefs([taskStore.getTask(db, created.id)])[0].display_id;
+      assert.ok(ref);
+    } finally {
+      taskStore.close();
+    }
 
     const emptyChat = runCli(['task', 'chat', ref, '--json'], { cwd: dir, env });
     assert.equal(emptyChat.status, 2);
