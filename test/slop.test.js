@@ -2911,6 +2911,19 @@ test('fix reads a dash inside parentheses in a heading as no subtitle', () => {
   ]);
 });
 
+test('fix names two words inside an open parenthesis before an order', () => {
+  // the words before the parenthesis counted too: "(the idea; start simple)"
+  const file = tmpFile('paren-order.md', [
+    'Progressive disclosure (the idea \u2014 start simple)',
+    'Progressive disclosure \u2014 start simple, reveal complexity',
+  ].join('\n\n'));
+  const { changes } = applyFixes([file], RULES, { write: false });
+  assert.deepEqual(changes.map((c) => c.after), [
+    'Progressive disclosure (the idea: start simple)',
+    'Progressive disclosure: start simple, reveal complexity',
+  ]);
+});
+
 test('fix keeps a journal heading that ends in a time readable for its hour', () => {
   // analytics reads the hour after a dash or a spaced hyphen at the end of a
   // heading; the fix wrote "### Watch: 19:05", which hides it, and glued

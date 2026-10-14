@@ -885,8 +885,10 @@ function fixEmDash(s, { endsBlock = false, startsBlock = false, spans = [] } = {
       // a code comment's own "//" is no word, so "// Hard deadline" names a
       // thing too: "// Hard deadline: kill the request". A comment that opens
       // in lowercase may carry on the line above, so it keeps its semicolon.
+      // Two words just inside an open parenthesis name a thing the same way:
+      // "Progressive disclosure (the idea: start simple)", never "(the idea;".
       const body = left.replace(/^(?:\*\*[^*]+:\*\*\s*)/, '').replace(/^\/\/+\s*(?=[A-Z])/, '');
-      const named = body.split(/\s+/).length === 2;
+      const named = (insideParens(left) ? words : body.split(/\s+/)).length === 2;
       // a bold phrase that closes the clause names the idea, and the order
       // spells it out: "AI is best used to **raise the floor**: automate the
       // mechanical 80%", never a semicolon that cuts the two apart
