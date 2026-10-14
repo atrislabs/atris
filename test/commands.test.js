@@ -19909,14 +19909,16 @@ test('computer card prints local workspace card without auth', () => {
       JSON.stringify({ name: 'demo-workspace', bin: { demo: 'bin/demo.js' }, scripts: { test: 'node --test' } }, null, 2),
       'utf8'
     );
-    initWorkspace(dir);
+    // The card lists memory files that exist, so the test writes the one it checks instead of running init.
+    fs.mkdirSync(path.join(dir, 'atris'), { recursive: true });
+    fs.writeFileSync(path.join(dir, 'atris', 'MAP.md'), '# MAP.md\n', 'utf8');
 
     const res = runCli(['computer', 'card'], { cwd: dir });
     assert.equal(res.status, 0, res.stderr);
     assert.match(res.stdout, /Atris Computer Card/);
     assert.match(res.stdout, /Owner:\s+demo-workspace \(project\)/);
     assert.match(res.stdout, /Type:\s+codeops/);
-    assert.match(res.stdout, /Memory:\s+atris\/MAP\.md/);
+    assert.match(res.stdout, /Memory:\s+atris\/MAP\.md$/m);
     assert.match(res.stdout, /Validate:\s+npm test/);
     assert.doesNotMatch(res.stderr, /Not logged in/);
   } finally {
@@ -19927,7 +19929,8 @@ test('computer card prints local workspace card without auth', () => {
 test('computer card --write saves an inspectable markdown artifact', () => {
   const dir = makeTempDir();
   try {
-    initWorkspace(dir);
+    // With an atris folder the card is written under atris/reports; nothing else from init is read.
+    fs.mkdirSync(path.join(dir, 'atris'), { recursive: true });
 
     const res = runCli(['computer', 'card', '--write'], { cwd: dir });
     assert.equal(res.status, 0, res.stderr);

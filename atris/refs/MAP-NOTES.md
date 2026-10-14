@@ -266,7 +266,7 @@ MCP stdio request flow: `mcp/atris-mcp/index.mjs:142` reads requests while desig
 
 - **Entry point:** `lib/known-commands.js:3` (knownCommands list), `bin/atris.js:987` (dispatch check)
 - **Cold-start handler:** `bin/atris.js:1399` (`interactiveEntry`; active missions/work outrank completed history)
-- **Regression:** `test/commands.test.js:20312-20329` covers parseable JSON errors for unknown top-level commands
+- **Regression:** `test/commands.test.js:20315-20332` covers parseable JSON errors for unknown top-level commands
 - **How it works:**
 - No args → Cold start (shows context, waits for input)
 - With args → Hot start (treats input as task description)
@@ -967,7 +967,7 @@ MCP stdio request flow: `mcp/atris-mcp/index.mjs:142` reads requests while desig
 - **Entry points:** `bin/atris.js` (help text, known commands, wiki + alias routing)
 - **Handlers:** `commands/wiki.js` (ingest/query/lint/search/log), `lib/wiki.js` (scaffold + prompt builders), `commands/init.js` (wiki bootstrap), `commands/activate.js` (wiki status load)
 - **Help:** `commands/wiki.js:172-174` (`hasHelpFlag`/`printWikiHelp`) and `commands/wiki.js:408-412` short-circuit wiki help before ingest/query/lint workers can scaffold state
-- **Regression:** `test/commands.test.js:20335-20358` covers `ingest|query|lint --help`, `wiki --help`, and `wiki ingest --help` without `atris/` or `$HOME/.atris` creation
+- **Regression:** `test/commands.test.js:20338-20361` covers `ingest|query|lint --help`, `wiki --help`, and `wiki ingest --help` without `atris/` or `$HOME/.atris` creation
 - **How it works:**
 - `atris ingest <path>` scaffolds `atris/wiki/`, stages local evidence into `atris/context/_ingest/`, writes a manifest receipt, refreshes wiki STATUS/log, and prints the local ingest prompt against the staged source
 - `atris query "question"` prints a local wiki query prompt
@@ -2434,11 +2434,11 @@ npm publish
 
 ## Rendered task list accept refresh fixture setup
 
-- `test/commands.test.js:20077` checks that accepting a task refreshes an existing rendered task list file. Real-store creation at `test/commands.test.js:20101` saves one setup launch and never touches the file, so the completed entry can only come from the CLI ready and accept that remain.
+- `test/commands.test.js:20080` checks that accepting a task refreshes an existing rendered task list file. Real-store creation at `test/commands.test.js:20104` saves one setup launch and never touches the file, so the completed entry can only come from the CLI ready and accept that remain.
 
 ## Task lineage fixture setup
 
-- `test/commands.test.js:21132` checks that task lineage prints the parent before the child in text and JSON and survives a home with no git. Real-store creation at `test/commands.test.js:21140` saves two setup launches and seeds the child with the same goal link that task add stores; removing that link makes the test fail, so the seeded link is what the lineage reads check.
+- `test/commands.test.js:21135` checks that task lineage prints the parent before the child in text and JSON and survives a home with no git. Real-store creation at `test/commands.test.js:21143` saves two setup launches and seeds the child with the same goal link that task add stores; removing that link makes the test fail, so the seeded link is what the lineage reads check.
 
 ## Reviewed failure status fixture setup
 
@@ -2524,7 +2524,7 @@ npm publish
 
 ## Review default certified accept fixture setup
 
-- `test/commands.test.js:20186` checks that the default review screen leads with the certified accept line. Real-store creation at `test/commands.test.js:20199` preserves the title, review tag and workspace root, asserts insertion and a display reference, and closes before CLI claim. Init writes its task projection from a different store, and that task shares the seeded display reference, so the test drops the stale projection before claim; claim then resolves from the store and rewrites the projection, as task new did. Creation-only launch removed (five to four); claim, ready, review and every review screen assertion remain unchanged.
+- `test/commands.test.js:20189` checks that the default review screen leads with the certified accept line. Real-store creation at `test/commands.test.js:20202` preserves the title, review tag and workspace root, asserts insertion and a display reference, and closes before CLI claim. Init writes its task projection from a different store, and that task shares the seeded display reference, so the test drops the stale projection before claim; claim then resolves from the store and rewrites the projection, as task new did. Creation-only launch removed (five to four); claim, ready, review and every review screen assertion remain unchanged.
 
 ## Task sync dry-run fixture setup
 
