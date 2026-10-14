@@ -17,7 +17,9 @@
 - `commands/youtube.js`: the `atris youtube` command. It routes `notes` to the bash script and tries up to 4 caption tracks in order (`captionTrackCandidates`, `loadCaptionRaw`).
 - `scripts/det/ytnotes`: the bash script that does the work. Captions, local transcription, writer choice, and the final quote check all live here.
 - `scripts/det/ytquote-repair.js`: checks every quote in the notes against the transcript and prints `quotes: N kept, N repaired, N dropped`.
-- `scripts/det/ytrail-eval.js`: older scored self-test. It appends to the workspace's `atris/benchmarks/ytrail.jsonl`.
+- `scripts/det/ytrail-eval.js`: scores one notes run and appends it to the workspace's `atris/benchmarks/ytrail.jsonl`. The bench and the engine race both use it.
+- `scripts/det/ytrail-bench.js`: the speed bench (`atris youtube bench`). `--quick --score` is the number the youtube-lead speed check compares.
+- `scripts/det/ytrail-race.js`: runs the same notes pass once per writer and ranks the ones that pass by seconds.
 
 **Paid rail:**
 
