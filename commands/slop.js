@@ -73,6 +73,10 @@ const HEADING_DASH = /^(\s{0,3}#{1,6}\s+[^\u2014:]*[^\s\u2014,;:.!?])\s*\u2014\s
 // is the last one and comes before a joining word, so it goes on with the
 // sentence: "v2: shipped, then rolled back".
 const TERM_DASH = /^(\s*(?:>\s*)*(?=[\w./-]*?(?:[\d/_]|\.\w|[A-Z][\w./-]*[A-Z]))[A-Za-z0-9][\w./-]*[^\s.\u2014,;:])\s*\u2014\s*(?=\S)(?!(?:and|but|or|nor|so|yet)\b)(?![^\u2014]*\u2014(?!\s*(?:and|but|or|nor|so|yet|then)\b[^\u2014]*$))/;
+// A quote that opens with a name, or a few names, then a dash speaks to
+// them, so the names take a comma like a greeting: '"George, Nick, covering
+// all of Milwaukee County is a serious operation"', never "George, Nick:".
+const NAME_ADDRESS_DASH = /((?:^|[\s(])["\u201c])((?:Dr\.\s+)?[A-Z][a-z]+(?:-[A-Z][a-z]+)?(?:,\s+(?:Dr\.\s+)?[A-Z][a-z]+(?:-[A-Z][a-z]+)?){0,3})\s*\u2014\s*(?=[A-Za-z0-9])/g;
 // A greeting that opens a line, then a dash, is a salutation, and a
 // salutation takes a comma: "Hey Mark," on its own line, never "Hey Mark.",
 // and "Hey [Name], I run an AI company", never a semicolon.
@@ -263,6 +267,7 @@ function fixEmDash(s, { endsBlock = false, startsBlock = false } = {}) {
   // a dash between two numbers is a range, "10-20", unless the first has a
   // sign, which makes it a score: "reward: +4, 404 on missing routes"
   s = s.replace(/\u2014(?:\s*\u2014)+/g, '\u2014').replace(/(?<![+-]\d*)(\d+)\s*\u2014\s*(?=(\d+)(?![\d-]))/g, (m, a, b) => (isRange(a, b) ? `${a}-` : m)).replace(/^(\s*(?:>\s*)*)\u2014\s*/, '$1');
+  s = s.replace(NAME_ADDRESS_DASH, '$1$2, ');
   const greeting = GREETING_DASH.exec(s);
   if (greeting) {
     const rest = s.slice(greeting[0].length);

@@ -1698,3 +1698,21 @@ test('fix joins "let\'s" after a full clause with a semicolon, like an order', (
     'Next steps: let\'s pick a day.',
   ]);
 });
+
+test('fix gives a name that opens a quote a comma, like a greeting', () => {
+  // from dream-gtm's personalization lines, which came out "Brian: covering
+  // the Triad" after a bold label and "George, Nick; covering all of Milwaukee"
+  const file = tmpFile('name-address.md', [
+    '- **Personalization:** "Brian \u2014 covering the entire Triad is a 9-city operation."',
+    '- **Personalization:** "George, Nick \u2014 covering all of Milwaukee County is a serious operation."',
+    '- **Personalization:** "Dr. Tully-Coe \u2014 a PhD running an agency tells me you measure."',
+    '- **Personalization:** "18 hours \u2014 how much of that is Sunday nights?"',
+  ].join('\n'));
+  const { changes } = applyFixes([file], RULES);
+  assert.deepEqual(changes.map((c) => c.after), [
+    '- **Personalization:** "Brian, covering the entire Triad is a 9-city operation."',
+    '- **Personalization:** "George, Nick, covering all of Milwaukee County is a serious operation."',
+    '- **Personalization:** "Dr. Tully-Coe, a PhD running an agency tells me you measure."',
+    '- **Personalization:** "18 hours: how much of that is Sunday nights?"',
+  ]);
+});
