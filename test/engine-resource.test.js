@@ -338,7 +338,7 @@ test('history reads back the latest sweep and the latest SIGKILL, skipping bad l
     assert.strictEqual(history.last_kill.task, 'CLI-2');
     assert.strictEqual(history.kills, 2);
     assert.strictEqual(history.low_memory_kills, 1);
-    assert.deepStrictEqual(readResourceHistory(path.join(root, 'missing')), { last_sweep: null, last_kill: null, kills: 0, low_memory_kills: 0, time_limit_kills: 0, last_other_kill: null, kills_day: 0, low_memory_kills_day: 0, time_limit_kills_day: 0, last_day_other_kill: null, open_runs: 0, parent_gone: 0, still_running: 0, last_open: null, lost_closed: 0, lost_closed_day: 0, last_lost_closed: null, first_day_leak_reading: null });
+    assert.deepStrictEqual(readResourceHistory(path.join(root, 'missing')), { last_sweep: null, last_kill: null, kills: 0, low_memory_kills: 0, time_limit_kills: 0, last_other_kill: null, kills_day: 0, low_memory_kills_day: 0, time_limit_kills_day: 0, last_day_other_kill: null, open_runs: 0, parent_gone: 0, still_running: 0, last_open: null, lost_closed: 0, lost_closed_day: 0, last_lost_closed: null, first_day_leak_reading: null, last_error: null });
   } finally {
     fs.rmSync(root, { recursive: true, force: true });
   }
@@ -736,6 +736,50 @@ test('the landing status counts time limit kills apart and names the newest kill
     assert.strictEqual(history.last_day_other_kill.task, 'HEAVY');
   } finally {
     fs.rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test('atris engine sweep names the newest engine error from a real failed start, apart from kills', () => {
+  const { execFileSync, spawnSync } = require('node:child_process');
+  const { engineCommand } = require('../commands/engine');
+  const fleet = require('../lib/fleet');
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'engine-sweep-error-'));
+  const worktree = fs.mkdtempSync(path.join(os.tmpdir(), 'engine-sweep-error-wt-'));
+  const missing = path.join(os.tmpdir(), `atris-missing-engine-${process.pid}`);
+  const sweep = () => {
+    const out = [];
+    const original = console.log;
+    console.log = (line) => out.push(String(line));
+    try {
+      engineCommand(['sweep'], { root, engineSweep: { read: () => ({ agents: [], referenced: new Set() }), uid: 501 } });
+    } finally {
+      console.log = original;
+    }
+    return out.join('\n');
+  };
+  try {
+    execFileSync('git', ['init', '-q', root]);
+    assert.doesNotMatch(sweep(), /last engine error/);
+    let failure;
+    fleet.dispatchToEngine({
+      task: { id: 'CLI-77', display_id: 'CLI-77', title: 'start a missing engine' },
+      engine: 'cursor', worktreePath: worktree, root, skipBriefCapture: true,
+      runner: () => {
+        const run = spawnSync(missing, [], { encoding: 'utf8' });
+        failure = run.error;
+        return run;
+      },
+    });
+    assert.equal(failure && failure.code, 'ENOENT');
+    // A later kill also carries an error, but it is already named as a kill.
+    fs.appendFileSync(path.join(root, RESOURCE_LOG), `${JSON.stringify({ at: new Date().toISOString(), phase: 'end', engine: 'claude', task: 'CLI-78', signal: 'SIGKILL', cause: 'killed (cause unknown)', error: 'Command failed' })}\n`);
+    const text = sweep();
+    assert.match(text, new RegExp(`last engine error: cursor on CLI-77 at \\d{4}-\\d\\d-\\d\\d \\d\\d:\\d\\d UTC: ${failure.message.replace(/[.*+?^${}()|[\]\\/]/g, '\\$&')}`));
+    assert.doesNotMatch(text, /Command failed/);
+    console.log(`real sweep after a failed start:\n${text}`);
+  } finally {
+    fs.rmSync(root, { recursive: true, force: true });
+    fs.rmSync(worktree, { recursive: true, force: true });
   }
 });
 

@@ -2370,8 +2370,8 @@ function utcMinute(at) {
 }
 
 // What the resource log says about past runs: the newest sweep, runs with no
-// end, the newest SIGKILL and its likely cause, and how many SIGKILLs came
-// with low memory.
+// end, the newest run that failed without being killed and why, the newest
+// SIGKILL and its likely cause, and how many SIGKILLs came with low memory.
 function resourceHistoryLines(history) {
   const lines = [];
   const sweep = history.last_sweep;
@@ -2388,6 +2388,11 @@ function resourceHistoryLines(history) {
     ].filter(Boolean);
     lines.push(`${history.open_runs} run${history.open_runs === 1 ? '' : 's'} started with no end recorded: ${parts.join(', ')};`
       + ` newest: ${started.engine || 'engine'} on ${started.task || 'an unnamed task'} at ${utcMinute(started.at)}`);
+  }
+  const failed = history.last_error;
+  if (failed) {
+    const reason = failed.error.split('\n').map((line) => line.trim()).find(Boolean);
+    lines.push(`last engine error: ${failed.engine || 'engine'} on ${failed.task || 'an unnamed task'} at ${utcMinute(failed.at)}: ${reason.slice(0, 200)}`);
   }
   const kill = history.last_kill;
   if (!kill) {
