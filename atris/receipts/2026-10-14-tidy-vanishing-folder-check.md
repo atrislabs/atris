@@ -149,3 +149,27 @@ Progress: both cleanup paths, old-folder cleanup and member tidy, now prove the 
 next_push: Prove a late keep marker during the regression cleanup's final check keeps a still-present folder and names the marker age.
 
 layer: behaviors
+
+## Folder moved after a passing final check
+
+Member tidy now looks on disk right before removal. Git's removal exits 0 for a folder that is already gone. So the real tidy command reported a moved folder as removed and deleted its branch.
+
+Before the fix, the new sixth case failed on the real command:
+
+```text
+removed  landed-copy  work landed, branch deleted
+tidy: removed 1, kept 0, of 1 copy in .../after/copies
+AssertionError [ERR_ASSERTION]
+```
+
+After the fix, `node atris/receipts/2026-10-14-tidy-vanishing-folder-check.js`, exit 0:
+
+```text
+kept  landed-copy  folder is missing
+tidy: removed 0, kept 1, of 1 copy in .../after/copies
+all six timing cases passed, including a folder moved after a passing final check; files, locks, branches, and Git records retained; no removal attempted or recorded
+```
+
+next_push: Prove the shared worktree cleanup command keeps a folder moved after its final check passes, since it hands passing folders to the same Git removal.
+
+layer: behaviors
