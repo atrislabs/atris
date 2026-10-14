@@ -8719,15 +8719,21 @@ test('task review-lane-act executes only safe drain actions and supports dry-run
       }
     };
 
-    const needsCreated = runCli([
-      'task', 'new', 'Review lane act should start verification chat',
-      '--tag', 'task',
-      '--goal-id', 'OBL-940',
-      '--json',
-    ], { cwd: dir, env });
-    assert.equal(needsCreated.status, 0, needsCreated.stderr);
-    const needsTask = JSON.parse(needsCreated.stdout).task;
-    const needsRef = needsTask.display_id;
+    // Seed creation only; dry-run and live safety checks stay on the CLI.
+    const workspaceRoot = taskStore.workspaceRoot(dir);
+    const db = taskStore.open(dbPath);
+    let needsTask;
+    let needsRef;
+    try {
+      needsTask = addSeedTask(db, {
+        title: 'Review lane act should start verification chat',
+        tag: 'task', workspaceRoot, metadata: { goal_id: 'OBL-940' },
+      });
+      assert.equal(needsTask.inserted, true);
+      needsRef = taskStore.taskDisplayRefMap(taskStore.listTasks(db, { workspaceRoot })).get(needsTask.id);
+    } finally {
+      taskStore.close();
+    }
     assert.equal(runCli([
       'task', 'ready', needsRef,
       '--as', 'codex',
