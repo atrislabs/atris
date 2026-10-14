@@ -73,6 +73,7 @@ function mcpSession(requests, {
         ATRIS_TOKEN: '',
         ATRIS_PROFILE: '',
         ATRIS_API_KEY: 'test-design-key',
+        ATRIS_DESIGN_POLL_MS: '25',
         ...extraEnv,
       },
     });
@@ -390,11 +391,13 @@ test('atris mcp tools/call rides out transient poll failures', async () => {
 });
 
 test('atris mcp tools/call error names the job id and poll path', async () => {
+  let polls = 0;
   const mock = await startHttpMock((request) => {
     if (request.url === '/api/design/extractions' && request.method === 'POST') {
       return { status: 202, body: { id: 'job-8', status: 'accepted' } };
     }
     if (request.url === '/api/design/extractions/job-8') {
+      polls += 1;
       return { status: 500, body: { error: 'backend down' } };
     }
     return { status: 404, body: { error: `unexpected ${request.url}` } };
@@ -413,6 +416,7 @@ test('atris mcp tools/call error names the job id and poll path', async () => {
     const call = messages.find((m) => m.id === 5);
     assert.ok(call && call.result, `no tools/call response. stderr: ${stderr}`);
     assert.equal(call.result.isError, true);
+    assert.equal(polls, 3, 'permanent failures must exhaust all three attempts');
     const text = call.result.content[0].text;
     assert.match(text, /job-8/);
     assert.match(text, /\/design\/extractions\/job-8/);

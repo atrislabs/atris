@@ -90,6 +90,7 @@ async function runJob(first, pollPath, key) {
   }
   if (!terminal(job) && job.id) {
     let failures = 0;
+    const pollMs = Number(process.env.ATRIS_DESIGN_POLL_MS);
     const polled = await pollDesignJob(async () => {
       try {
         const out = await callApi(pollPath, {}, key);
@@ -100,7 +101,7 @@ async function runJob(first, pollPath, key) {
         if (failures >= 3) return { status: 'failed', id: job.id, error: (error && error.message) || String(error) };
         return { status: 'polling' };
       }
-    });
+    }, { intervalMs: Number.isFinite(pollMs) && pollMs > 0 ? pollMs : undefined });
     if (polled.timedOut) {
       throw new Error(`still running after 3 minutes. job id: ${job.id}, poll: ${pollPath}`);
     }
