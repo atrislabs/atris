@@ -1660,3 +1660,25 @@ test('fix joins a second sentence led by "our" with a semicolon', () => {
     'We shipped the tool, our best work so far.',
   ]);
 });
+
+test('fix joins a direct question after a full clause with a semicolon', () => {
+  // from dream-gtm's outreach openers, which came out "congrats on the Forbes
+  // top 5 ranking, how do you handle growing demand?"
+  const file = tmpFile('question.md', [
+    'Congrats on the Forbes top 5 ranking \u2014 how do you handle growing demand?',
+    'As an alum in your community, congrats on the ranking \u2014 what is next?',
+    'I have never seen that scale. I have to ask \u2014 how do you manage all five?',
+    'If you had those 20 hours back every week \u2014 where would they go?',
+    'With island clients on Hilton Head, Folly Beach \u2014 does drive time matter?',
+    'We keep two lists \u2014 what ships and what waits.',
+  ].join('\n'));
+  const { changes } = applyFixes([file], RULES);
+  assert.deepEqual(changes.map((c) => c.after), [
+    'Congrats on the Forbes top 5 ranking; how do you handle growing demand?',
+    'As an alum in your community, congrats on the ranking; what is next?',
+    'I have never seen that scale. I have to ask: how do you manage all five?',
+    'If you had those 20 hours back every week, where would they go?',
+    'With island clients on Hilton Head, Folly Beach, does drive time matter?',
+    'We keep two lists, what ships and what waits.',
+  ]);
+});

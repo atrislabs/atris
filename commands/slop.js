@@ -209,6 +209,17 @@ const BARE_CLAUSE_AFTER_DASH = new RegExp(`(?<=[\\w)\\]"'*_\`\\u201d\\u2019\\uE0
 // so "the tool, our best work so far" keeps its comma.
 const POSSESSIVE_CLAUSE_AFTER_DASH = new RegExp(`(?<=[\\w)\\]"'*_\`\\u201d\\u2019\\uE001])\\s*\\u2014\\s*(?=(?:our|your|their|my)\\s+(?:${NOUN_WORD}\\s+){1,3}(?:${PLAIN_VERB}[^\\s\\u2014]|${HELPING_VERB}\\s+[^\\s\\u2014]))`, 'g');
 
+// A direct question after a full clause is a sentence of its own, so it takes
+// a semicolon: "Congrats on the Forbes ranking; how do you handle growing
+// demand?" It must end in a question mark. A clause led by "if" or a phrase
+// led by "with" that runs up to the dash keeps its comma: "If you had 20
+// hours back, where would they go?" Commas inside it may only list names
+// ("With clients on Hilton Head, Folly Beach"); a lowercase part after one
+// is a second sentence ("As an alum, congrats on the ranking; how...?").
+// After "ask" or "wonder" the question is what is asked, so it takes a
+// colon: "I have to ask: how do you manage it?"
+const QUESTION_AFTER_DASH = new RegExp(`(?<=[\\w)\\]"'*_\`%\\u201d\\u2019\\uE001])\\s*\\u2014\\s*(?=(?:(?:how|what|where|why|which|who)(?:['\\u2019]s)?|do|does|did|is|are|was|were|has|have|can|could|would|will|should|any)\\s+[^.!?\\u2014]*\\?)`, 'g');
+
 // An order after a full clause is a sentence of its own, so a comma there is
 // a splice: "pruning the worktree deletes proof; copy receipts out first".
 // The verb needs a plain word after it, so a noun in a label field ("verify:
@@ -391,6 +402,14 @@ function fixEmDash(s, { endsBlock = false, startsBlock = false } = {}) {
     .replace(POSSESSIVE_CLAUSE_AFTER_DASH, (m, at, whole) => {
       const left = clauseLeft(at, whole);
       return left ? clauseJoin(left) : m;
+    })
+    .replace(QUESTION_AFTER_DASH, (m, at, whole) => {
+      const left = clauseLeft(at, whole);
+      if (!left) return m;
+      const opener = left.replace(/^.*?\*\*[^*]*:\*\*\s*/, '').replace(/^[^A-Za-z]+/, '');
+      if (/^(?:if|when|whenever|once|unless|until|after|before|while|because|since|as|although|though|with|given|for)\b/i.test(opener)
+        && opener.split(/,\s+/).slice(1).every((part) => /^[A-Z](?![\s'\u2019])/.test(part))) return m;
+      return /\b(?:ask|asking|wonder|wondering|curious)$/i.test(left) ? ': ' : clauseJoin(left);
     })
     .replace(LEADING_CLAUSE_AFTER_DASH, (m, at, whole) => {
       const left = clauseLeft(at, whole);
