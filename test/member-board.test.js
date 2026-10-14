@@ -375,6 +375,21 @@ test('a stopped run and one that ended with no result never make a wider board s
   }
 });
 
+test('beside a live run, a signed out fix never loses its engine one column wider', () => {
+  const rows = [
+    { member: 'scout', state: 'working', alive: true, pid: 9, engine: 'claude', running_for: '3m', last_result: '', last_result_reason: '', last_result_ago: '', ago: '5s ago', job: 'fix it', step: 'npm test' },
+    { member: 'builder', state: 'done failed', alive: false, pid: 5, engine: 'claude', running_for: '', last_result: 'failed', last_result_reason: 'signed out', last_result_ago: '1m ago', ago: '1m ago', job: 'rewrite the onboarding emails for the new plan', step: 'editing lib/onboarding/emails.js' },
+  ];
+  for (let width = 60; width <= 120; width++) {
+    const line = renderBoard(rows, '/progress', 0, width).split('\n')[2];
+    assert.ok(line.length <= width, `${width}: ${line}`);
+    // The cheap changes, the engine word on the live row among them, come
+    // before a fix gives up naming the engine; it used to read "sign in" at
+    // 63, 78, and 111.
+    assert.match(line, /sign in to claude(?:, then run it again)?$/, `${width}: ${line}`);
+  }
+});
+
 test('a signed out row costs a wider board only the widths it is known to', () => {
   const dir = fakeDir({
     builder: [`${at(180)} m-1 started: fix the login flow`, `${at(60)} m-1 editing lib/auth/session.js to refresh tokens`],
