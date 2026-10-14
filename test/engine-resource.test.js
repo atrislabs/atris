@@ -1969,6 +1969,46 @@ test('youtube notes record paired readings around their writer and name the caus
   }
 });
 
+test('youtube notes in auto mode show a killed writer\'s cause on screen before the fallback line', () => {
+  const { spawnSync } = require('node:child_process');
+  const root = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'ytnotes-auto-')));
+  const bin = path.join(root, 'bin');
+  const work = path.join(root, 'work');
+  const exec = (file, lines) => fs.writeFileSync(path.join(bin, file), `${lines.join('\n')}\n`, { mode: 0o755 });
+  const d = new Date();
+  const today = `${d.getFullYear()}.${String(d.getMonth() + 1).padStart(2, '0')}.${String(d.getDate()).padStart(2, '0')}`;
+  try {
+    for (const dir of [bin, work, path.join(root, 'atris')]) fs.mkdirSync(dir);
+    exec('yt-dlp', [
+      '#!/bin/sh',
+      `if [ "$1" = "--version" ]; then echo "${today}"; exit 0; fi`,
+      'printf "%s\\n" "WEBVTT" "" "00:00:00.000 --> 00:00:02.000" "The dog sets the pace." > yt_sled123.en.vtt',
+      'printf "%s\\n" "sled123|Sled Dogs|Trail|0:02"',
+    ]);
+    exec('claude', ['#!/bin/sh', 'kill -KILL $$']);
+    exec('codex', ['#!/bin/sh', 'printf "%s\\n" "# Sled Dogs" "" "The dog sets the pace."']);
+    // Only the stand-in writers are on the path, so no real writer is launched.
+    const ran = spawnSync(path.join(__dirname, '..', 'scripts', 'det', 'ytnotes'), ['https://www.youtube.com/watch?v=sled123'], {
+      cwd: root,
+      encoding: 'utf8',
+      timeout: 30000,
+      env: { ...process.env, ATRIS_YTNOTES_ENGINE: 'auto', ATRIS_YTNOTES_ROSTER: '0', TMPDIR: work, PATH: `${bin}:${path.dirname(process.execPath)}:/usr/bin:/bin` },
+    });
+    assert.equal(ran.status, 0, ran.stderr);
+    const lines = fs.readFileSync(path.join(root, RESOURCE_LOG), 'utf8').trim().split('\n').map(JSON.parse);
+    const killed = lines.find((line) => line.phase === 'end' && line.engine === 'claude');
+    assert.equal(killed.signal, 'SIGKILL');
+    const screen = ran.stderr.split('\n');
+    const fallback = screen.indexOf('Haiku did not answer; writing the notes with Codex instead.');
+    assert.ok(fallback > 0, ran.stderr);
+    assert.equal(screen[fallback - 1], `claude stopped by SIGKILL; ${killed.cause}`);
+    assert.ok(screen.includes('notes by Codex'), ran.stderr);
+    console.log(`ytnotes auto screen: ${screen.slice(fallback - 1, fallback + 1).join(' | ')}`);
+  } finally {
+    fs.rmSync(root, { recursive: true, force: true });
+  }
+});
+
 test('youtube notes run outside an Atris workspace write no readings', () => {
   const { spawnSync } = require('node:child_process');
   const root = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'ytnotes-plain-')));
