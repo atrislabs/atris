@@ -1225,9 +1225,18 @@ test('every engine started through a runner or profile variable records its run 
       const before = code.slice(0, match.index);
       const fnStart = Math.max(0, ...[...before.matchAll(FUNCTION_START)].map((start) => start.index));
       const fnName = (/^(?:async\s+)?(?:function|const|let)\s+([\w$]+)/.exec(code.slice(fnStart)) || [])[1] || '';
-      const root = program.split('.')[0];
-      const decl = called ? null : [...code.slice(fnStart, match.index).matchAll(new RegExp(`\\b(?:const|let|var)\\s+${root.replace(/\$/g, '\\$')}\\s*=\\s*([^;\\n]*)`, 'g'))].pop();
-      const source = called ? program + called : decl && decl[1];
+      let source = program + (called || '');
+      let declarationEnd = match.index;
+      while (!ENGINE_SOURCE.test(source)) {
+        const alias = /^([A-Za-z_$][\w$]*)(?:\.[\w$]+)*$/.exec(source.trim());
+        if (!alias) break;
+        const declaration = [...code.slice(fnStart, declarationEnd).matchAll(new RegExp(`\\b(?:const|let|var)\\s+${alias[1].replace(/\$/g, '\\$')}\\s*=\\s*([^;\\n]*)`, 'g'))].pop();
+        if (!declaration) break;
+        source = declaration[1];
+        // Only earlier declarations can supply this alias, which also makes
+        // a circular alias chain terminate without a separate depth limit.
+        declarationEnd = fnStart + declaration.index;
+      }
       if (!source || !ENGINE_SOURCE.test(source) || isProbe(args)) continue;
       seen += 1;
       const line = before.split('\n').length;
@@ -1241,6 +1250,11 @@ test('every engine started through a runner or profile variable records its run 
   assert.deepStrictEqual(planted("function a() {\n  const inv = engineInvocation(engine, prompt);\n  spawn(inv.command, inv.args);\n}\n"), ['commands/planted.js:3 inv.command']);
   assert.deepStrictEqual(planted("function a() {\n  spawn(resolveClaudeRunnerBin(), args);\n}\n"), ['commands/planted.js:2 resolveClaudeRunnerBin()']);
   assert.deepStrictEqual(planted("function a() {\n  const bin = resolveClaudeRunnerBin();\n  spawnSync(bin, ['--help']);\n}\n"), [], 'a help probe starts no run');
+  assert.deepStrictEqual(planted("function a() {\n  const profile = resolveEngineProfile(engine);\n  const runner = profile.bin;\n  const program = runner;\n  spawnSync(program, args);\n}\n"), ['commands/planted.js:5 program']);
+  assert.deepStrictEqual(planted("function a() {\n  const runner = resolveClaudeRunnerBin();\n  const program = runner;\n  const end = startEngineRun(root);\n  spawnSync(program, args);\n}\n"), []);
+  assert.deepStrictEqual(planted("function a() {\n  const runner = resolveClaudeRunnerBin();\n  const program = runner;\n  spawnSync(program, ['--help']);\n}\n"), []);
+  assert.deepStrictEqual(planted("function a() {\n  const runner = findExecutable('git');\n  const program = runner;\n  spawnSync(program, args);\n}\n"), []);
+  assert.deepStrictEqual(planted("function a() {\n  const program = runner;\n  const runner = resolveClaudeRunnerBin();\n  spawnSync(program, args);\n}\n"), [], 'a later declaration is not the source of an earlier alias');
   // A variable declared in another function is not this launch's program.
   assert.deepStrictEqual(planted("function a() {\n  const command = buildEngineCommand(engine);\n}\nfunction b(command) {\n  spawnSync(command, { shell: true });\n}\n"), []);
   // A local wrapper that records the run covers the launch below it; a
