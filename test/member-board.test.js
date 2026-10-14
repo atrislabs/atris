@@ -365,6 +365,7 @@ test('atris member board --json --follow streams one JSON object per line', asyn
     assert.equal(snapshot.kind, 'snapshot');
     assert.equal(snapshot.dir, dir);
     assert.deepEqual(snapshot.members.map((m) => [m.member, m.state]), [['navigator', 'working']]);
+    assert.equal(snapshot.members[0].last_active, recent, 'a readable time for its last line');
     assert.equal(snapshot.hidden, 0);
     assert.equal(snapshot.unchecked, 1, 'navigator started without a pid');
     assert.equal(snapshot.counts.working, 1, 'the snapshot counts states like --json');
