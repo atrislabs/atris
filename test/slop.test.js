@@ -282,3 +282,11 @@ test('detect scans every path, not just the first', () => {
   assert.ok(result.slop >= 1, 'at least one slop tell found');
   assert.ok(result.findings.some((f) => f.file.endsWith('bad.tsx')), 'finding is from the second file');
 });
+
+test('a self-scan skips the rule tables but still checks the rest of the scanner', () => {
+  const self = path.join(__dirname, '..', 'commands', 'slop.js');
+  assert.deepEqual(scanFile(self), [], 'the rule tables do not flag themselves');
+  // a copy elsewhere is a different file, so its tables are scanned like any code
+  const copy = tmpFile('slop.js', fs.readFileSync(self, 'utf8'));
+  assert.ok(scanFile(copy).length > 0, 'the skip is tied to the scanner file, not its name');
+});

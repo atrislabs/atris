@@ -177,8 +177,10 @@ function applyFixes(files, rules) {
   for (const file of files) {
     let text; try { text = fs.readFileSync(file, 'utf8'); } catch { continue; }
     const lines = text.split('\n');
+    const skip = ownTableLines(file, lines);
     let touched = false;
     for (let i = 0; i < lines.length; i++) {
+      if (skip.has(i)) continue;
       let line = lines[i];
       for (const r of fixable) { if (r.re.test(line)) { const nl = r.fix(line); if (nl !== line) { line = nl; fixedCount++; } } }
       if (line !== lines[i]) { lines[i] = line; touched = true; }
@@ -205,12 +207,29 @@ function walk(target, out) {
   return out;
 }
 
+// This file defines the slop patterns, so its own RULES and PAIR_RULES tables
+// would match themselves. Return the line indexes inside those two tables when
+// scanning this file, so a self-scan reports only real slop in the code.
+function ownTableLines(file, lines) {
+  const skip = new Set();
+  if (path.resolve(file) !== __filename) return skip;
+  let inside = false;
+  for (let i = 0; i < lines.length; i++) {
+    if (!inside && /^const (?:RULES|PAIR_RULES) = \[/.test(lines[i])) inside = true;
+    if (inside) skip.add(i);
+    if (inside && /^\];/.test(lines[i])) inside = false;
+  }
+  return skip;
+}
+
 function scanFile(file, rules = RULES, pairRules = PAIR_RULES) {
   const findings = [];
   let text;
   try { text = fs.readFileSync(file, 'utf8'); } catch { return findings; }
   const lines = text.split('\n');
+  const skip = ownTableLines(file, lines);
   for (let i = 0; i < lines.length; i++) {
+    if (skip.has(i)) continue;
     const line = lines[i];
     for (const rule of rules) {
       if (rule.notFiles && rule.notFiles.test(file)) continue;
@@ -225,10 +244,10 @@ function scanFile(file, rules = RULES, pairRules = PAIR_RULES) {
   }
   for (const pr of pairRules) {
     for (let i = 0; i < lines.length; i++) {
-      if (!pr.a.test(lines[i])) continue;
+      if (skip.has(i) || !pr.a.test(lines[i])) continue;
       const lo = Math.max(0, i - pr.span), hi = Math.min(lines.length - 1, i + pr.span);
       for (let j = lo; j <= hi; j++) {
-        if (pr.b.test(lines[j])) {
+        if (!skip.has(j) && pr.b.test(lines[j])) {
           findings.push({
             file, line: i + 1, rule: pr.id, sev: pr.sev, why: pr.why,
             snippet: lines[i].trim().slice(0, 48),
