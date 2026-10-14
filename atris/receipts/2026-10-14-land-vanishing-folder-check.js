@@ -22,7 +22,8 @@ function git(cwd, ...args) {
   return result.stdout.trim();
 }
 
-for (const mode of ['unlocked', 'locked', 'ordinary', 'ordinary-present', 'locked-present']) {
+for (const mode of ['unlocked', 'locked', 'ordinary', 'ordinary-present', 'locked-present', 'after']) {
+  const after = mode === 'after';
   const withLock = mode.startsWith('locked');
   const staysPresent = mode.endsWith('-present');
   const ordinary = mode.startsWith('ordinary');
@@ -71,10 +72,13 @@ if (args.includes('--git-dir') && args.includes('--git-common-dir') && process.c
       const aged = new Date(Date.now() - (7200000 + index * 3600000));
       fs.utimesSync(lock, aged, aged);
     }
-    if (!${staysPresent}) fs.renameSync(${JSON.stringify(copy)}, ${JSON.stringify(moved)});
+    if (!${staysPresent || after}) fs.renameSync(${JSON.stringify(copy)}, ${JSON.stringify(moved)});
   }
 }
 const result = spawnSync(${JSON.stringify(realGit)}, args, { cwd, encoding: 'utf8' });
+if (${after} && args.includes('--git-common-dir') && cwd === ${JSON.stringify(copy)} && fs.readFileSync(${JSON.stringify(countFile)}, 'utf8') === '2') {
+  fs.renameSync(${JSON.stringify(copy)}, ${JSON.stringify(moved)});
+}
 process.stdout.write(result.stdout || '');
 process.stderr.write(result.stderr || '');
 process.exit(result.status === null ? 1 : result.status);
@@ -102,5 +106,6 @@ process.exit(result.status === null ? 1 : result.status);
   assert.equal(fs.existsSync(removeAttempt), false);
   git(repo, 'rev-parse', '--verify', 'refs/heads/landed-copy');
   assert.equal(fs.existsSync(path.join(repo, '.atris/state/worktree_removals.jsonl')), false);
+  if (after) assert.ok(git(repo, 'worktree', 'list', '--porcelain').includes(`worktree ${copy}\n`));
 }
-console.log('all five timing cases passed; files, locks, and branches retained; no removal attempted or recorded');
+console.log('all six timing cases passed, including a folder moved after a passing final check; files, locks, branches, and Git records retained; no removal attempted or recorded');

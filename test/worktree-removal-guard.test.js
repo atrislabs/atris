@@ -52,11 +52,11 @@ test('real cleanup names missing-folder ordinary locks without naming neighborin
   assert.match(result.stdout, /preview and cleanup named two missing-copy lock paths and ages/);
 });
 
-test('reap keeps late ordinary locks and keep markers in present and disappearing folders', () => {
+test('reap keeps late ordinary locks and keep markers in present and disappearing folders, and folders moved after a passing check', () => {
   const proof = path.resolve(__dirname, '../atris/receipts/2026-10-14-land-vanishing-folder-check.js');
   const result = spawnSync(process.execPath, [proof], { encoding: 'utf8', timeout: 120000 });
   assert.equal(result.status, 0, result.stderr || result.stdout);
-  assert.match(result.stdout, /all five timing cases passed; files, locks, and branches retained; no removal attempted or recorded/);
+  assert.match(result.stdout, /all six timing cases passed, including a folder moved after a passing final check; files, locks, branches, and Git records retained; no removal attempted or recorded/);
 });
 
 test('regression cleanup keeps folders that gain locks or disappear during or after its safety check', () => {

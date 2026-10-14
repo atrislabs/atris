@@ -144,3 +144,27 @@ Progress: five old-folder timing cases now proved, zero removal attempts, zero r
 next_push: Prove a late keep marker also protects a still-present folder during member tidy's final check.
 
 layer: behaviors
+
+## Folder moved after a passing final check
+
+Old-folder cleanup now looks on disk right before removal. Git's removal exits 0 for a folder that is already gone, so the real cleanup command used to report a moved folder as removed and clear its branch.
+
+Before the fix, the new sixth case failed on the real command:
+
+```text
+command: node bin/atris.js land --reap --force --no-remote
+landing cleanup done: 1 pieces cleared, 1 side copies removed
+AssertionError [ERR_ASSERTION]
+```
+
+After the fix, `node atris/receipts/2026-10-14-land-vanishing-folder-check.js`, exit 0:
+
+```text
+landing cleanup done: 0 pieces cleared, 0 side copies removed
+  kept, needs a human: .../after/landed-copy (folder is missing)
+all six timing cases passed, including a folder moved after a passing final check; files, locks, branches, and Git records retained; no removal attempted or recorded
+```
+
+next_push: Prove member tidy keeps a folder moved after its final check passes, and close the gap there if Git's removal still reports it removed.
+
+layer: behaviors
