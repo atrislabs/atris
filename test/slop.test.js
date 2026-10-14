@@ -2419,6 +2419,21 @@ test('fix turns a dash that touches an arrowhead into the arrow\'s shaft', () =>
   ]);
 });
 
+test('fix keeps dashes pressed together between two boxes as the joining line', () => {
+  // the line between two boxes collapsed into a comma: "[a], [b]"
+  const file = tmpFile('box-line.md', [
+    '    [a] \u2014\u2014\u2014 [b]',
+    '    (start)\u2014\u2014(end)',
+    'He said \u2014\u2014 nothing at all.',
+  ].join('\n\n'));
+  const { changes } = applyFixes([file], RULES, { write: false });
+  assert.deepEqual(changes.map((c) => c.after), [
+    '    [a] --- [b]',
+    '    (start)--(end)',
+    'He said, nothing at all.',
+  ]);
+});
+
 test('fix keeps a journal heading that ends in a time readable for its hour', () => {
   // analytics reads the hour after a dash or a spaced hyphen at the end of a
   // heading; the fix wrote "### Watch: 19:05", which hides it, and glued

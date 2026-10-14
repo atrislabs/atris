@@ -483,6 +483,10 @@ function fixEmDash(s, { endsBlock = false, startsBlock = false, spans = [] } = {
   // a dash touching an arrowhead is the arrow's shaft, so it turns into a
   // hyphen of the same width: "RN -> HUC", "29->29", "a <-> b", never "RN: > HUC"
   s = s.replace(/\u2014+(?=>)|(?<=<)\u2014+/g, (m) => '-'.repeat(m.length));
+  // dashes pressed together between two boxes draw the line that joins them,
+  // so they turn into hyphens of the same width: "[a] --- [b]", never "[a],
+  // [b]". Two pressed dashes in a sentence are still one break: "He said,".
+  s = s.replace(/(?<=[\])|+][ \t]*)\u2014{2,}(?=[ \t]*[[(|+])/g, (m) => '-'.repeat(m.length));
   // a table cell that holds only a dash means "nothing here"; a hyphen keeps
   // the cell instead of turning it into a stray comma
   if (/^\s*\|/.test(s)) s = s.replace(/(\|\s*)\u2014(\s*)(?=\||$)/g, '$1-$2');
