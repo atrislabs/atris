@@ -137,6 +137,10 @@ function wrappedInParens(s) {
 // "steal from places you like: linear.app, vercel.com, arc browser".
 const LIST_ITEM = "[A-Za-z0-9][\\w'/-]*(?:\\.\\w[\\w'/-]*)*(?: [A-Za-z0-9][\\w'/-]*(?:\\.\\w[\\w'/-]*)*){0,3}";
 const LIST_AFTER_DASH = new RegExp(`(?<=[\\w)\\]*_\`%])\\s*\u2014\\s*(?!(?:and|but|or|nor|so|yet|then|once|when|whenever|if|unless|until|after|before|while) )(?=${LIST_ITEM}(?:, ${LIST_ITEM}){1,}, (?:and |or )?${LIST_ITEM}(?:[.!?](?:\\s|$)|$|(\\))))`, 'g');
+// A sentence so far that is only a list of three or more short or quoted
+// items, with "and" or "or" before the last one or not.
+const BARE_ITEM = `(?:${LIST_ITEM}|"[^"]+"|\u201c[^\u201d]+\u201d)`;
+const BARE_LIST = new RegExp(`^${BARE_ITEM}(?:(?:, ${BARE_ITEM}){2,}|(?:, ${BARE_ITEM})+,? (?:and|or) ${BARE_ITEM})$`);
 // Three or more phrases that each open with an "ing" word list what the
 // sentence before does, however long each one runs, so they take a colon too:
 // "Sessions build on each other: extracting what was learned, understanding
@@ -683,9 +687,15 @@ function fixEmDash(s, { endsBlock = false, startsBlock = false, spans = [] } = {
     // ("this isn't optional, it's part of design"), so it takes a semicolon.
     // The left side needs two words of its own sentence to be a clause, so
     // an opener like "Then" keeps its comma.
+    // a list that is the whole sentence so far, then "these" or "those",
+    // is summed up by the words after it, so the dash points back with a
+    // colon: 'purple gradients, instrument serif, "claude beige": these are
+    // gravity wells', never a semicolon after words that are no clause
     .replace(CLAUSE_AFTER_DASH, (m, at, whole) => {
       const left = clauseLeft(at, whole);
-      return left ? clauseJoin(left) : m;
+      if (!left) return m;
+      if (/^(?:these|those)\b/i.test(whole.slice(at + m.length)) && BARE_LIST.test(left.replace(/^(?:[-*+>]|\d+[.)])\s+/, ''))) return ': ';
+      return clauseJoin(left);
     })
     .replace(QUANTITY_CLAUSE_AFTER_DASH, (m, at, whole) => {
       const left = clauseLeft(at, whole);

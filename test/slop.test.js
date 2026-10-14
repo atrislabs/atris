@@ -1789,6 +1789,22 @@ test('fix gives a dash before a list of site or file names a colon', () => {
   ]);
 });
 
+test('fix points back at a bare list with a colon before "these" or "those"', () => {
+  // from the design policy, where the list took a semicolon like a clause
+  const file = tmpFile('list-then-these.md', [
+    'purple gradients, instrument serif, "claude beige" \u2014 these are gravity wells.',
+    'The reds, greens and blues \u2014 those are the colors.',
+    // a real clause before "these" still starts a new one
+    'We shipped the fix \u2014 these are the notes.',
+  ].join('\n'));
+  const { changes } = applyFixes([file], RULES);
+  assert.deepEqual(changes.map((c) => c.after), [
+    'purple gradients, instrument serif, "claude beige": these are gravity wells.',
+    'The reds, greens and blues: those are the colors.',
+    'We shipped the fix; these are the notes.',
+  ]);
+});
+
 test('fix reads no word that only says when as the subject of a clause', () => {
   // "now ships" after a dash read as a bare subject and a verb
   const file = tmpFile('when-word.md', [
