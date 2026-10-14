@@ -949,6 +949,30 @@ test('fix joins a noun clause after the dash with a semicolon', () => {
   ]);
 });
 
+test('fix in a script changes comments only, never strings or patterns', () => {
+  // the lesson fixtures in this repo's tests are parsed by the code they test;
+  // 214 repo fixes sat in strings like these, and every one is left alone now
+  const file = tmpFile('fixture.test.js', [
+    "// the lock is stale \u2014 it gets cleared",
+    "const lesson = '- **[2026-01-01] loop** \u2014 fail \u2014 no mechanism.';",
+    "assert.match(out, /Launcher \u2014 The Closer/); // labels \u2014 kept as written",
+    "const url = 'https://x.dev'; // the docs \u2014 this time with tests",
+    "const md = `# Plan",
+    "## Step \u2014 one // not a comment",
+    "`;",
+    '/*',
+    " * Retries \u2014 up to 3 \u2014 happen automatically.",
+    ' */',
+  ].join('\n'));
+  const { changes } = applyFixes([file], RULES, { write: false });
+  assert.deepEqual(changes.map((c) => c.after), [
+    '// the lock is stale; it gets cleared',
+    "assert.match(out, /Launcher \u2014 The Closer/); // labels, kept as written",
+    "const url = 'https://x.dev'; // the docs, this time with tests",
+    ' * Retries (up to 3) happen automatically.',
+  ]);
+});
+
 test('fix attributes a quote with no stop of its own with a comma', () => {
   // a README testimonial; of 22 repo lines with a dash after a closing quote,
   // none read better with another mark, so the comma is the settled choice

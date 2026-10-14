@@ -192,6 +192,39 @@ function fixEmDash(s, { endsBlock = false } = {}) {
 // lines and see inline code masked out, and the fixer puts the code back.
 const MARKDOWN = /\.mdx?$/i;
 
+// In a script only comments are prose. A dash in a string or pattern is
+// program text, so changing it changes what the code or its test checks:
+// "includes an em dash" would quietly become "includes a comma". Returns
+// where this line's comment starts (0 when the whole line is comment), or -1
+// when there is none. State carries open block comments and template strings.
+const SCRIPT = /\.(?:[cm]?[jt]sx?)$/i;
+
+function commentStart(line, state) {
+  let i = 0;
+  if (state.block) {
+    const end = line.indexOf('*/');
+    if (end === -1) return 0;
+    state.block = false;
+    if (!line.slice(end + 2).trim()) return 0;
+    i = end + 2;
+  }
+  let quote = state.template ? '`' : null;
+  state.template = false;
+  for (; i < line.length; i++) {
+    const c = line[i];
+    if (quote) { if (c === '\\') i++; else if (c === quote) quote = null; continue; }
+    if (c === '"' || c === "'" || c === '`') quote = c;
+    else if (c === '/' && line[i + 1] === '/') return i;
+    else if (c === '/' && line[i + 1] === '*') {
+      const end = line.indexOf('*/', i + 2);
+      if (end === -1) { state.block = true; return i; }
+      i = end + 1;
+    }
+  }
+  if (quote === '`') state.template = true;
+  return -1;
+}
+
 function fencedLines(lines) {
   const fenced = new Set();
   let fence = null;
@@ -379,16 +412,21 @@ function applyFixes(files, rules, { write = true } = {}) {
     const skip = ownTableLines(file, lines);
     const markdown = MARKDOWN.test(file);
     const fenced = markdown ? fencedLines(lines) : new Set();
+    const script = SCRIPT.test(file);
+    const comments = { block: false, template: false };
     let touched = false;
     for (let i = 0; i < lines.length; i++) {
+      const from = script ? commentStart(lines[i], comments) : 0;
       if (skip.has(i)) continue;
       let line = lines[i];
       for (const r of fixable) {
         const prose = markdown && r.proseOnly;
         if (prose && fenced.has(i)) continue;
-        const { masked, restore } = prose ? maskInlineCode(line) : { masked: line, restore: (x) => x };
+        if (r.proseOnly && from === -1) continue;
+        const at = r.proseOnly ? from : 0;
+        const { masked, restore } = prose ? maskInlineCode(line) : { masked: line.slice(at), restore: (x) => x };
         if (!r.re.test(masked)) continue;
-        const nl = restore(r.fix(masked, { endsBlock: i === lines.length - 1 || !lines[i + 1].trim() }));
+        const nl = line.slice(0, prose ? 0 : at) + restore(r.fix(masked, { endsBlock: i === lines.length - 1 || !lines[i + 1].trim() }));
         if (nl !== line) { line = nl; fixedCount++; }
       }
       if (line !== lines[i]) { changes.push({ file, line: i + 1, before: lines[i], after: line, kind: fixKind(lines[i], line) }); lines[i] = line; touched = true; }
