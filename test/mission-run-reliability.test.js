@@ -11,6 +11,7 @@ const { missionHeartbeatLines } = require('../commands/mission');
 const repoRoot = path.resolve(__dirname, '..');
 const cliPath = path.join(repoRoot, 'bin', 'atris.js');
 const { withMissionFullJson, jsonErrorDetail } = require('./helpers/mission-json');
+const { scrubAgentEnv } = require('./helpers/agent-env');
 
 function makeTempDir() {
   return fs.mkdtempSync(path.join(os.tmpdir(), 'atris-mission-run-reliability-'));
@@ -22,7 +23,7 @@ function runCli(args, cwd, env = {}) {
     encoding: 'utf8',
     timeout: 20000,
     env: {
-      ...process.env,
+      ...scrubAgentEnv(),
       ATRIS_SKIP_UPDATE_CHECK: '1',
       ...env,
     },
@@ -34,7 +35,7 @@ function runCliAsync(args, cwd, env = {}) {
     const child = spawn(process.execPath, [cliPath, ...withMissionFullJson(args)], {
       cwd,
       env: {
-        ...process.env,
+        ...scrubAgentEnv(),
         ATRIS_SKIP_UPDATE_CHECK: '1',
         ...env,
       },
