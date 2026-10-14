@@ -97,7 +97,28 @@ function tierColor(mode) {
   return TIER_COLORS[mode] || ANSI.accent;
 }
 
+// Any model by name: `/model <name>` or `--model <name>` rides as mode `model:<spec>`.
+const MODEL_ALIASES = Object.freeze({
+  mercury: 'mercury',
+  'mercury-3': 'mercury',
+  'inception:mercury-3-preview-1002': 'mercury',
+  fast: 'fast',
+  pro: 'pro',
+  max: 'max',
+  rapid: 'rapid',
+  alpha: 'alpha',
+});
+
+function modeForModelName(name) {
+  const raw = String(name || '').trim();
+  if (!raw) return null;
+  const alias = MODEL_ALIASES[raw.toLowerCase()];
+  if (alias) return alias;
+  return `model:${raw}`;
+}
+
 function modelForMode(mode) {
+  if (String(mode || '').startsWith('model:')) return mode.slice('model:'.length);
   if (mode === 'code-fast') return CODE_FAST.model;
   if (mode === 'mercury') return 'inception:mercury-3-preview-1002';
   if (mode === 'max') return 'atris:max';
@@ -148,6 +169,7 @@ function formatSeconds(totalSeconds) {
 }
 
 function tierLabel(mode) {
+  if (String(mode || '').startsWith('model:')) return mode.slice('model:'.length);
   if (mode === 'code-fast') return 'Atris Code Fast';
   if (mode === 'mercury') return 'mercury 3 (test model)';
   if (mode === 'max') return 'Atris 2 Max';
@@ -194,6 +216,7 @@ function formatUsage() {
     '  --fast  hosted Atris 2, faster low-latency turns',
     '  --rapid  hosted Atris Rapid, cheapest chat and first-hop tools',
     '  --mercury  mercury 3 test model, with turn timing',
+    '  --model <name>  any model by name (mercury, or provider:model); in chat use /model <name>',
     '  --diffuse  watch mercury text refine live in a terminal',
     '  --alpha  hosted experimental lane (free preview model, swap via ATRIS2_ALPHA_MODEL)',
     '  --effort <level>  reasoning effort: none, low, medium, high, xhigh, or default',
@@ -990,6 +1013,7 @@ function resolveRoute(message, options = {}) {
 }
 
 function normalizeMode(mode) {
+  if (String(mode || '').startsWith('model:')) return mode;
   if (mode === 'code-fast' || mode === 'code') return 'code-fast';
   if (mode === 'mercury') return 'mercury';
   if (mode === 'max') return 'max';
@@ -1172,7 +1196,7 @@ function formatReasoningEffortLabel(value) {
 
 const CHAT_COMMANDS = Object.freeze([
   { name: '/help', description: 'list all commands', type: 'help' },
-  { name: '/model', description: 'show the current lane and how to switch', type: 'model' },
+  { name: '/model', description: 'show the model, or switch: /model mercury | /model <provider:model>', type: 'model' },
   { name: '/status', description: 'show runtime health', type: 'status' },
   { name: '/fast', description: 'switch to quick answers with low latency', type: 'tier', mode: 'fast' },
   { name: '/pro', description: 'switch to a deeper tool loop', type: 'tier', mode: 'pro' },
@@ -1304,9 +1328,13 @@ function runChatSlash(line, options = {}) {
     };
   }
   if (command.type === 'model') {
+    if (parsed.arg) {
+      const next = modeForModelName(parsed.arg);
+      return { type: 'tier', mode: next, output: `· ${tierLabel(next)}` };
+    }
     return {
       type: 'model',
-      output: `· current lane: ${tierLabel(mode)} · effort: ${formatReasoningEffortLabel(options.reasoningEffort)} · switch with /fast /pro /max /rapid /alpha · effort with /effort`,
+      output: `· current lane: ${tierLabel(mode)} · effort: ${formatReasoningEffortLabel(options.reasoningEffort)} · switch with /fast /pro /max /rapid /alpha or /model <name> · effort with /effort`,
     };
   }
   if (command.type === 'effort') {
@@ -3385,12 +3413,13 @@ async function postTurn(message, options = {}) {
       state.progress = null;
       clearTextSnapshot(state, output);
       state.durationMs = Date.now() - startedAt;
-      if (normalizeMode(options.mode) === 'mercury') {
+      const timedMode = normalizeMode(options.mode);
+      if (timedMode === 'mercury' || timedMode.startsWith('model:')) {
         const first = state.firstTextMs == null ? 'none' : `${(state.firstTextMs / 1000).toFixed(2)}s`;
         const steps = state.diffuse ? `, ${state.snapshotCount} refining steps` : '';
         const stderr = options.stderr || process.stderr;
         if (output && output.isTTY && state.lastChar !== '\n') output.write('\n');
-        stderr.write(`${paint(`mercury 3: first text ${first}, done ${(state.durationMs / 1000).toFixed(2)}s${steps}`, [ANSI.dim], stderr)}\n`);
+        stderr.write(`${paint(`${timedMode === 'mercury' ? 'mercury 3' : tierLabel(timedMode)}: first text ${first}, done ${(state.durationMs / 1000).toFixed(2)}s${steps}`, [ANSI.dim], stderr)}\n`);
       }
       if (error) reject(error);
       else resolve(value);
@@ -4811,7 +4840,19 @@ async function main() {
     args.splice(verifyIdx, 2);
   }
 
-  const explicitLane = args.includes('--code-fast') || args.includes('--code')
+  // --model <name>: any backend model by name, or a lane alias like mercury.
+  let modelLane = null;
+  const modelIdx = args.indexOf('--model');
+  if (modelIdx !== -1) {
+    modelLane = modeForModelName(args[modelIdx + 1]);
+    if (!modelLane) {
+      console.error('Usage: ax --model <name> [prompt]   e.g. --model mercury or --model fireworks:glm-5.2');
+      process.exit(1);
+    }
+    args.splice(modelIdx, 2);
+  }
+
+  const explicitLane = modelLane || (args.includes('--code-fast') || args.includes('--code')
     ? 'code-fast'
     : args.includes('--mercury')
       ? 'mercury'
@@ -4825,7 +4866,7 @@ async function main() {
           ? 'fast'
           : args.includes('--pro')
             ? 'pro'
-            : null;
+            : null);
   const diffuse = args.includes('--diffuse');
   const autoEnabled = args.includes('--auto') && !explicitLane;
   let mode = explicitLane || 'pro';
@@ -5240,6 +5281,7 @@ module.exports = {
   messageApprovesPendingApproval,
   messageCancelsPendingApproval,
   modelForMode,
+  normalizeMode,
   normalizeReasoningEffort,
   parseSseBlock,
   persistPendingApproval,

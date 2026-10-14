@@ -580,7 +580,12 @@ test('ax chat slash commands log and inspect without a model turn', () => {
   try {
     assert.equal(ax.parseChatSlash('hello'), null);
     assert.equal(ax.runChatSlash('/who', { mode: 'rapid', color: false }).output, '· Atris Rapid · effort lane default · cheap chat and first-hop tools');
-    assert.equal(ax.runChatSlash('/model', { mode: 'pro', color: false }).output, '· current lane: Atris 2 Pro · effort: lane default · switch with /fast /pro /max /rapid /alpha · effort with /effort');
+    assert.equal(ax.runChatSlash('/model', { mode: 'pro', color: false }).output, '· current lane: Atris 2 Pro · effort: lane default · switch with /fast /pro /max /rapid /alpha or /model <name> · effort with /effort');
+    assert.deepEqual(ax.runChatSlash('/model mercury', { mode: 'pro', color: false }), { type: 'tier', mode: 'mercury', output: '· mercury 3 (test model)' });
+    const picked = ax.runChatSlash('/model openrouter:z-ai/glm-5.3-flash', { mode: 'pro', color: false });
+    assert.equal(picked.mode, 'model:openrouter:z-ai/glm-5.3-flash');
+    assert.equal(ax.modelForMode(picked.mode), 'openrouter:z-ai/glm-5.3-flash');
+    assert.equal(ax.normalizeMode(picked.mode), picked.mode);
     assert.equal(ax.runChatSlash('/status', { color: false }).type, 'status');
     assert.equal(ax.runChatSlash('/new', { color: false }).type, 'clear');
     assert.equal(ax.runChatSlash('/exit', { color: false }).type, 'exit');
