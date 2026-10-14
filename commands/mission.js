@@ -8811,7 +8811,10 @@ function consumeMissionPings(mission, cwd) {
 function readBoundedContextFile(filePath, maxChars = 1600) {
   try {
     if (!fs.existsSync(filePath)) return '';
+    // Frontmatter is machine config (skills, permissions); the prompt only
+    // needs the body.
     const raw = fs.readFileSync(filePath, 'utf8')
+      .replace(/^---\r?\n[\s\S]*?\r?\n---[ \t]*(?:\r?\n|$)/, '')
       .replace(/<!--[\s\S]*?-->/g, '')
       .trim();
     if (!raw) return '';
