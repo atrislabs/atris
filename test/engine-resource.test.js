@@ -2452,3 +2452,58 @@ test('real cleanup reports denied process scans and saves an unknown remaining c
     fs.rmSync(root, { recursive: true, force: true });
   }
 });
+
+test('real cleanup skips a younger replacement pid while stopping an unchanged agent', { skip: process.platform !== 'darwin' }, () => {
+  const { spawnSync } = require('node:child_process');
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'engine-reused-pid-'));
+  const pids = [];
+  try {
+    for (const name of ['replacement', 'unchanged']) {
+      const started = spawnSync('/usr/bin/ssh-agent', ['-s', '-a', path.join(root, name)], { encoding: 'utf8', timeout: 10000 });
+      const pid = Number((/SSH_AGENT_PID=(\d+)/.exec(started.stdout) || [])[1]);
+      if (pid) pids.push(pid);
+      assert.equal(started.status, 0, started.stderr);
+      assert.ok(pid);
+    }
+    // Keep real sockets and real signals, but stage the two process ages to
+    // reproduce reuse without waiting for the OS to recycle a process number.
+    // Restrict the process list to agents this test owns.
+    const preload = path.join(root, 'reuse.cjs');
+    fs.writeFileSync(preload, `
+      const cp = require('node:child_process');
+      const real = cp.spawnSync;
+      let scan = 0;
+      cp.spawnSync = (cmd, args, opts) => {
+        const reading = real(cmd, args, opts);
+        if (require('node:path').basename(cmd) === 'ps' && args.includes('pid=,ppid=,uid=,etime=,args=')) {
+          scan++;
+          reading.stdout = String(reading.stdout || '').split('\\n').flatMap(line => {
+            const match = /^\\s*(\\d+)\\s+(\\d+)\\s+(\\d+)\\s+\\S+\\s+(.+)$/.exec(line);
+            if (!match || !${JSON.stringify(pids)}.includes(Number(match[1]))) return [];
+            const age = scan === 1 ? '01:00:00' : Number(match[1]) === ${pids[0]} ? '15:00' : '01:00:01';
+            return [match[1] + ' 1 ' + match[3] + ' ' + age + ' ssh-agent -s'];
+          }).join('\\n');
+        }
+        return reading;
+      };
+    `);
+    const cli = path.join(__dirname, '..', 'bin', 'atris.js');
+    const ran = spawnSync(process.execPath, ['--require', preload, cli, 'engine', 'sweep', '--apply', '--json'], {
+      cwd: root, encoding: 'utf8', timeout: 30000, env: { ...process.env, ATRIS_AUTO_UPDATE: 'off' },
+    });
+    assert.equal(ran.status, 0, ran.stderr);
+    const report = JSON.parse(ran.stdout);
+    assert.deepStrictEqual(report.stopped, [pids[1]]);
+    assert.deepStrictEqual(report.skipped, [pids[0]]);
+    const reachable = spawnSync('/usr/bin/ssh-add', ['-l'], {
+      encoding: 'utf8', timeout: 10000, env: { ...process.env, SSH_AUTH_SOCK: path.join(root, 'replacement') },
+    });
+    assert.equal(reachable.status, 1, reachable.stderr);
+    assert.match(reachable.stdout, /no identities/i);
+    assert.deepStrictEqual(report.history.last_sweep.skipped, [pids[0]]);
+    console.log('replacement cleanup exit ' + ran.status + ': stopped one unchanged agent, skipped one younger replacement; replacement socket still answers');
+  } finally {
+    for (const pid of pids) { try { process.kill(pid, 'SIGTERM'); } catch {} }
+    fs.rmSync(root, { recursive: true, force: true });
+  }
+});
