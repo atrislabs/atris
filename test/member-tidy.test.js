@@ -121,3 +121,27 @@ test('the CLI prints one line per copy and a total', () => {
   assert.equal(lines.length, 4, res.stdout);
   assert.match(lines[3], /^total: 3 member copies/);
 });
+
+test('tidy follows the remote default branch, not a stale remembered one', () => {
+  const fx = fixture();
+  // Remember origin's default as master, then switch the remote to a new main
+  // that does not contain the merged copy's work.
+  runGit(['remote', 'set-head', 'origin', 'master'], fx.repo);
+  const firstCommit = runGit(['rev-list', '--max-parents=0', 'master'], fx.remote);
+  runGit(['branch', 'main', firstCommit], fx.remote);
+  runGit(['symbolic-ref', 'HEAD', 'refs/heads/main'], fx.remote);
+
+  const result = tidyMemberCopies(fx.repo, { dryRun: false });
+  assert.equal(result.base, 'origin/main', formatTidy(result));
+  assert.equal(byName(result, fx.merged).action, 'kept', formatTidy(result));
+  assert.ok(fs.existsSync(fx.merged), 'work not in the new default must survive');
+});
+
+test('tidy removes nothing when it cannot ask the remote for its default branch', () => {
+  const fx = fixture();
+  runGit(['remote', 'set-url', 'origin', path.join(fx.base, 'gone.git')], fx.repo);
+
+  const result = tidyMemberCopies(fx.repo, { dryRun: false });
+  assert.match(String(result.error), /could not ask origin/i);
+  for (const wt of [fx.merged, fx.old, fx.dirty]) assert.ok(fs.existsSync(wt), `${wt} should still exist`);
+});
