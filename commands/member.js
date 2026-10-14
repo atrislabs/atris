@@ -915,6 +915,17 @@ function memberRunBudgetSeconds(args = []) {
   return null;
 }
 
+// A job with no time given gets 15 minutes, or the roster's limit for this
+// member's engine plus ten minutes for the review, whichever is longer.
+function memberRunDefaultWallSeconds(name, cwd = process.cwd()) {
+  let cap = 0;
+  try {
+    const picked = require('../lib/member-engine').memberRosterEngine(name, cwd);
+    cap = Number(picked && picked.engine && picked.engine.roster_max_seconds) || 0;
+  } catch {}
+  return Math.max(900, cap ? cap + 600 : 0);
+}
+
 function pushFlagValue(out, args, name) {
   const value = readFlag(args, name, '');
   if (value) out.push(name, String(value));
@@ -1338,7 +1349,7 @@ function memberRunWith(name, args, { quiet = false } = {}) {
   if (!readFlag(runArgs, '--max-ticks', '')) {
     runArgs.push('--max-ticks', budgetSeconds ? String(Math.max(4, Math.ceil(budgetSeconds / 300))) : '1');
   }
-  if (!readFlag(runArgs, '--max-wall', '')) runArgs.push('--max-wall', String(budgetSeconds || 900));
+  if (!readFlag(runArgs, '--max-wall', '')) runArgs.push('--max-wall', String(budgetSeconds || memberRunDefaultWallSeconds(name, cwd)));
   const caller = callerRuntime(args);
   const runnerSwap = memberRunRunnerSwap(mission, args, caller);
   if (runnerSwap) runArgs.push('--engine', runnerSwap.to);
@@ -11484,6 +11495,7 @@ async function memberCommand(subcommand, ...args) {
 }
 
 module.exports = {
+  memberRunDefaultWallSeconds,
   memberRunWantsReferee,
   proposalPromptForGoal,
   memberGoFinishTask,

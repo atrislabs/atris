@@ -345,3 +345,19 @@ test('a mission blocker build that lands keeps its engine ready and records land
     assert.deepEqual([rows[0].outcome, rows[0].tokens], ['landed', 300]);
   });
 });
+
+test('a member job with no time given gets the roster limit plus review time, never less than 15 minutes', async () => {
+  const { memberRunDefaultWallSeconds } = require('../commands/member');
+  const addBuilder = (root) => {
+    fs.mkdirSync(path.join(root, 'atris', 'team', 'builder'), { recursive: true });
+    fs.writeFileSync(path.join(root, 'atris', 'team', 'builder', 'MEMBER.md'), '---\nname: builder\nrole: builds\n---\n\n# builder\n');
+  };
+  await withRoom(async ({ root }) => {
+    addBuilder(root);
+    assert.equal(memberRunDefaultWallSeconds('builder', root), 45 * 60 + 600);
+  }, { roster: '# roster\n\n## build\n- claude, max: 45 min\n' });
+  await withRoom(async ({ root }) => {
+    addBuilder(root);
+    assert.equal(memberRunDefaultWallSeconds('builder', root), 900);
+  }, { roster: '# roster\n\n## build\n- claude, max: 2 min\n' });
+});
