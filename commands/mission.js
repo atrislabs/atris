@@ -9611,11 +9611,31 @@ function spawnClaudeTick(mission, opts) {
 const ENGINE_VERIFY_TIMEOUT_MS = 5 * 60 * 1000;
 const ENGINE_VERIFY_OUTPUT_LIMIT = 4000;
 
-function buildEngineVerifyPrompt(mission, tickIndex) {
+// The job's own done-looks-like line, so the reviewer judges the work against
+// what the job promised instead of the mission headline alone. Only a line the
+// job wrote down counts: a derived fallback ("it clears review") hands the
+// reviewer a target that says nothing. Any lookup failure means no line.
+function missionDoneLooksLike(mission, root = process.cwd()) {
+  try {
+    const task = findOpenTaskMatchingMissionObjective(mission, root, true);
+    if (!task) return '';
+    const explanation = require('../lib/task-explanation').taskExplanation(task);
+    return explanation.sources.done_looks_like === 'explicit' ? explanation.done_looks_like : '';
+  } catch {
+    return '';
+  }
+}
+
+function buildEngineVerifyPrompt(mission, tickIndex, doneLooksLike = '') {
+  const doneLine = String(doneLooksLike || '').replace(/\s+/g, ' ').trim();
   return [
     `# Verify Mission Tick ${tickIndex}`,
     ``,
     `This is a bounded verify-only pass for mission: ${mission.objective}`,
+    ...(doneLine ? [
+      `The job says done looks like: ${doneLine}`,
+      `Compare the work against that line. If the work does not show it, the verdict is FAIL even when the checks pass.`,
+    ] : []),
     `Read the diff this tick produced. Do not edit files and do not start another work slice.`,
     `ACTUALLY RUN the changed surface on this computer using real commands and real exit codes.`,
     `Paste the commands and their real output. Do not accept a receipt claim or static inspection as execution proof.`,
@@ -9680,7 +9700,7 @@ async function runEngineVerifier(mission, options = {}) {
       cwd,
       signal: options.signal,
       timeoutMs: ENGINE_VERIFY_TIMEOUT_MS,
-      prompt: buildEngineVerifyPrompt(mission, options.tickIndex || 1),
+      prompt: buildEngineVerifyPrompt(mission, options.tickIndex || 1, missionDoneLooksLike(mission, cwd)),
       model: resolveMissionTickRunnerModel(verifyMission),
     });
   } catch (error) {
@@ -12545,6 +12565,7 @@ module.exports = {
   missionVerifierCheckedText,
   missionVerifierHighLevelTestText,
   buildEngineVerifyPrompt,
+  missionDoneLooksLike,
   engineVerifierResultFromRun,
   pickCrossEngineVerifier,
   runVerifier,
