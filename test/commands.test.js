@@ -12673,18 +12673,24 @@ test('task next does not repeat an Endgame seed that already exists', () => {
       '',
     ].join('\n'), 'utf8');
 
-    const existing = runCli([
-      'task', 'new', 'Audit and close next runner-agnostic heartbeat gap',
-      '--tag', 'runner',
-      '--json',
-    ], { cwd: dir, env });
-    assert.equal(existing.status, 0, existing.stderr);
-    const existingTask = JSON.parse(existing.stdout).task;
-    assert.equal(runCli(['task', 'claim', existingTask.display_id, '--as', 'auto-improver'], { cwd: dir, env }).status, 0);
+    // Seed only creation; claims, certification and next stay on the CLI.
+    const workspaceRoot = taskStore.workspaceRoot(dir);
+    const seed = (title) => {
+      const db = taskStore.open(dbPath);
+      try {
+        const created = addSeedTask(db, { title, tag: 'runner', workspaceRoot });
+        assert.equal(created.inserted, true);
+        const ref = taskStore.taskDisplayRefMap(taskStore.listTasks(db, { workspaceRoot })).get(created.id);
+        assert.ok(ref);
+        return ref;
+      } finally {
+        taskStore.close();
+      }
+    };
+    const existingRef = seed('Audit and close next runner-agnostic heartbeat gap');
+    assert.equal(runCli(['task', 'claim', existingRef, '--as', 'auto-improver'], { cwd: dir, env }).status, 0);
 
-    const created = runCli(['task', 'new', 'Certified checkpoint', '--tag', 'runner', '--json'], { cwd: dir, env });
-    assert.equal(created.status, 0, created.stderr);
-    const ref = JSON.parse(created.stdout).task.display_id;
+    const ref = seed('Certified checkpoint');
     assert.equal(runCli(['task', 'claim', ref, '--as', 'codex-executor'], { cwd: dir, env }).status, 0);
     assert.equal(runCli(['task', 'ready', ref, '--proof', 'node --check test/commands.test.js passed', '--as', 'codex-executor'], { cwd: dir, env }).status, 0);
     assert.equal(runCli([

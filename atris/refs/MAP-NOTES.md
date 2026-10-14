@@ -2353,3 +2353,7 @@ npm publish
 ## Certified checkpoint selection fixture setup
 
 - `test/commands.test.js:12583` checks scoped next selection without unrelated Endgame fallback. Real-store creation at `test/commands.test.js:12602` saves one setup launch and closes in finally; claim, ready, review and all three next calls remain on the CLI with every behavior assertion preserved.
+
+## Existing Endgame seed selection fixture setup
+
+- `test/commands.test.js:12655` checks that next selection does not repeat a seed already present. Ordered real-store creation at `test/commands.test.js:12679` saves two setup launches and closes each seed in finally; both claims, ready, review and all three next calls remain on the CLI with every behavior assertion preserved.

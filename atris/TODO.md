@@ -23,6 +23,8 @@ Details for any task: atris task show <ID>
 
 ## Review
 
+- **[AIC-42]** Remove existing seed selection setup launches · auto-improver
+  **Done looks like:** Developers finish the same selection checks sooner because setup starts two fewer commands.
 - **[AIC-41]** Remove certified checkpoint setup launch · auto-improver
   **Done looks like:** Developers finish the same selection checks sooner because setup starts one fewer command.
 - **[AIC-40]** Remove step selection setup launches · auto-improver
