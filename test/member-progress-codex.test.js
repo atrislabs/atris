@@ -32,6 +32,13 @@ test('formatCodexEvent turns codex steps into the same plain lines', () => {
   assert.equal(formatCodexEvent(cmd(`/bin/zsh -lc "rg -n 'pending tasks' lib"`), cwd), 'searching for pending tasks', 'a quoted pattern with a space is one argument');
   assert.equal(formatCodexEvent(cmd(`/bin/zsh -lc 'rg -n "say \\"hi\\" now" lib'`), cwd), 'searching for say "hi" now');
   assert.equal(formatCodexEvent(cmd(`/bin/zsh -lc "rg -n 'tag scope be"`), cwd), 'searching for tag scope be', 'a pattern cut before its closing quote keeps what is there');
+  assert.equal(formatCodexEvent(cmd(`/bin/zsh -lc "rg -g '*.js' -n needle lib"`), cwd), 'searching for needle', 'a file glob is the flag value, not the search');
+  assert.equal(formatCodexEvent(cmd("/bin/zsh -lc 'grep -rn -C 3 needle .'"), cwd), 'searching for needle');
+  assert.equal(formatCodexEvent(cmd("/bin/zsh -lc 'rg -nC 2 needle lib'"), cwd), 'searching for needle', 'a bundle ending in a value flag takes the next word');
+  assert.equal(formatCodexEvent(cmd("/bin/zsh -lc 'rg -n --type js needle'"), cwd), 'searching for needle');
+  assert.equal(formatCodexEvent(cmd("/bin/zsh -lc 'rg -n -e needle lib'"), cwd), 'searching for needle');
+  assert.equal(formatCodexEvent(cmd("/bin/zsh -lc 'rg -ie needle lib'"), cwd), 'searching for needle', '-e at the end of a bundle names the pattern');
+  assert.equal(formatCodexEvent(cmd("/bin/zsh -lc 'rg -n -- -dash lib'"), cwd), 'searching for -dash', 'after -- a word that starts with - is the pattern');
   assert.equal(formatCodexEvent(completed('item_2', {
     type: 'file_change',
     changes: [{ path: '/work/repo/lib/a.js', kind: 'update' }, { path: '/work/repo/b.md', kind: 'add' }],
