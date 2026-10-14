@@ -75,9 +75,9 @@ test('board shows working, quiet, done ok, and done failed from fake logs', () =
 
     const screen = renderBoard(rows, dir);
     assert.equal(screen.split('\n').length, 5, 'one header plus one row per member');
-    assert.match(screen, /^member\s+state\s+alive\s+engine\s+running for\s+ago\s+job\s+last step$/m);
-    assert.match(screen, /^scout\s+quiet\s+-\s+-\s+-\s+5m ago\s+find stale docs\s+running: rg stale$/m);
-    assert.match(screen, /^breaker\s+done failed\s+-\s+-\s+-\s+1m ago\s+try the risky thing\s+running: node boom\.js$/m);
+    assert.match(screen, /^member\s+state\s+last result\s+alive\s+engine\s+running for\s+ago\s+job\s+last step$/m);
+    assert.match(screen, /^scout\s+quiet\s+-\s+-\s+-\s+-\s+5m ago\s+find stale docs\s+running: rg stale$/m);
+    assert.match(screen, /^breaker\s+done failed\s+failed 1m ago\s+-\s+-\s+-\s+1m ago\s+try the risky thing\s+running: node boom\.js$/m);
   } finally {
     fs.rmSync(dir, { recursive: true, force: true });
   }
@@ -153,7 +153,7 @@ test('atris member board reads ATRIS_PROGRESS_DIR for real', () => {
     const env = { ...process.env, ATRIS_PROGRESS_DIR: dir };
     const once = spawnSync(process.execPath, [cliPath, 'member', 'board'], { cwd: dir, env, encoding: 'utf8' });
     assert.equal(once.status, 0, once.stderr);
-    assert.match(once.stdout, /^navigator\s+working\s+-\s+-\s+-\s+\d+s ago\s+map the repo\s+reading atris\/MAP\.md$/m);
+    assert.match(once.stdout, /^navigator\s+working\s+-\s+-\s+-\s+-\s+\d+s ago\s+map the repo\s+reading atris\/MAP\.md$/m);
 
     const watch = spawnSync(process.execPath, [cliPath, 'member', 'board', '--watch'], { cwd: dir, env, encoding: 'utf8', timeout: 3700 });
     assert.equal(watch.signal, 'SIGTERM', 'watch stays open until stopped');
@@ -335,7 +335,7 @@ test('board shows a live run as alive with its engine, and a dead one as stopped
     assert.equal(by.builder.job, 'ship the board', 'the run tag stays out of the job column');
     assert.equal(by.legacy.alive, null, 'no pid means the board cannot tell');
     assert.equal(by.legacy.state, 'working');
-    assert.match(renderBoard(readBoard({ dir }), dir), /^builder\s+working\s+yes\s+claude\s+1m\s+\d+s ago\s+ship the board/m);
+    assert.match(renderBoard(readBoard({ dir }), dir), /^builder\s+working\s+-\s+yes\s+claude\s+1m\s+\d+s ago\s+ship the board/m);
 
     child.kill('SIGKILL');
     assert.ok(await waitFor(() => !isAlive(child.pid)), 'sleeper should be gone');
@@ -343,7 +343,7 @@ test('board shows a live run as alive with its engine, and a dead one as stopped
     assert.equal(by.builder.state, 'stopped', 'marked working but the process is gone');
     assert.equal(by.builder.alive, false);
     assert.equal(by.builder.running_for, '');
-    assert.match(renderBoard(readBoard({ dir }), dir), /^builder\s+stopped\s+no\s+claude\s+-\s+/m);
+    assert.match(renderBoard(readBoard({ dir }), dir), /^builder\s+stopped\s+-\s+no\s+claude\s+-\s+/m);
   } finally {
     killAll(child.pid);
     fs.rmSync(dir, { recursive: true, force: true });

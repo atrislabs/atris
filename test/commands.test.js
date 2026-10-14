@@ -11517,7 +11517,7 @@ test('task ready uses autoland-aware handoff copy when policy is on', () => {
     const readyPayload = JSON.parse(ready.stdout);
     assert.equal(
       readyPayload.handoff.rule,
-      'proof is ready; autoland runs the second check and lands it on the next tick.',
+      'proof is ready; autoland runs the second check and accepts it on the next tick; it lands once committed and merged.',
     );
     assert.notEqual(
       readyPayload.handoff.rule,
@@ -11534,7 +11534,7 @@ test('task ready uses autoland-aware handoff copy when policy is on', () => {
       '--as', 'codex',
     ], { cwd: dir, env });
     assert.equal(readyText.status, 0, readyText.stderr);
-    assert.match(readyText.stdout, /proof is ready; autoland runs the second check and lands it on the next tick\./);
+    assert.match(readyText.stdout, /proof is ready; autoland runs the second check and accepts it on the next tick; it lands once committed and merged\./);
     assert.doesNotMatch(readyText.stdout, /one more agent check before human approval/);
 
     const externalAdd = runCli(['task', 'add', 'Autoland external verifier copy', '--tag', 'agent', '--json'], { cwd: dir, env });
@@ -11550,7 +11550,7 @@ test('task ready uses autoland-aware handoff copy when policy is on', () => {
     assert.equal(externalReady.status, 0, externalReady.stderr);
     assert.match(externalReady.stdout, /proof is ready; this verifier needs a second agent review because autoland cannot rerun it\./);
     assert.match(externalReady.stdout, /outside the auto-certify allowlist/);
-    assert.doesNotMatch(externalReady.stdout, /autoland runs the second check and lands it on the next tick\./);
+    assert.doesNotMatch(externalReady.stdout, /autoland runs the second check and accepts it on the next tick; it lands once committed and merged\./);
   } finally {
     cleanupTempDir(dir);
   }
@@ -11589,7 +11589,7 @@ test('task ready uses honest landing copy when autoland heartbeat is stale', () 
     const readyPayload = JSON.parse(ready.stdout);
     assert.equal(
       readyPayload.handoff.rule,
-      'proof is ready; autoland runs the second check and lands it once the hourly heartbeat runs (start one with atris autoland tick).',
+      'proof is ready; autoland runs the second check and accepts it once the hourly heartbeat runs (start one with atris autoland tick); it lands once committed and merged.',
     );
     assert.doesNotMatch(ready.stdout, /on the next tick/);
 
@@ -11605,7 +11605,7 @@ test('task ready uses honest landing copy when autoland heartbeat is stale', () 
     assert.equal(readyText.status, 0, readyText.stderr);
     assert.match(
       readyText.stdout,
-      /proof is ready; autoland runs the second check and lands it once the hourly heartbeat runs \(start one with atris autoland tick\)\./,
+      /proof is ready; autoland runs the second check and accepts it once the hourly heartbeat runs \(start one with atris autoland tick\); it lands once committed and merged\./,
     );
     assert.doesNotMatch(readyText.stdout, /on the next tick/);
   } finally {

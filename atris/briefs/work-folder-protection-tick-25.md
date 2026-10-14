@@ -68,4 +68,3 @@ Progress: one fresh local proof recorded; 23 passing checks, zero failures.
 Stop: the single verification step passed; no second slice was started.
 next_push: reproduce the unavailable engine verification pass with a read-only diagnostic and record its concrete failure before changing any runner behavior.
 layer: beliefs
-

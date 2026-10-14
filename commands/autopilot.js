@@ -1235,7 +1235,7 @@ function regressionCheck(cwd, { activeCwds } = {}) {
       const guard = require('./worktree');
       // Failed creation does not give us ownership of an existing folder.
       if (created && fs.existsSync(worktreePath)) {
-        kept = guard.worktreeHasActiveProcess(worktreePath, activeCwds || guard.listActiveProcessCwds())
+        kept = guard.worktreeHasActiveProcess(worktreePath, activeCwds || guard.listActiveProcessPaths())
           ? 'active_process'
           : guard.worktreeGitActivity(worktreePath);
       }

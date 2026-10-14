@@ -2,7 +2,7 @@ const fs = require('fs');
 const path = require('path');
 const gitSpawn = require('../lib/git-spawn');
 const { compactErrorPayload, printCliJson } = require('../lib/cli-json');
-const { listWorktrees, statusCounts, defaultMainlineBase, listActiveProcessCwds, worktreeHasActiveProcess, worktreeGitActivity, describeGitActivity, recordWorktreeRemoval, readWorktreeRemovals } = require('./worktree');
+const { listWorktrees, statusCounts, defaultMainlineBase, listActiveProcessPaths, worktreeHasActiveProcess, worktreeGitActivity, describeGitActivity, recordWorktreeRemoval, readWorktreeRemovals } = require('./worktree');
 
 const DEFAULT_TTL_DAYS = 7;
 const DEFAULT_STALE_HOURS = 48;
@@ -545,8 +545,8 @@ function reapReason(w, board, ttlDays, force) {
 // bundle cannot cover their commits, unattended reaps (autoland) pass false
 // and leave them for a human reap.
 function reap(root, { ttlDays = DEFAULT_TTL_DAYS, staleHours = DEFAULT_STALE_HOURS, base: baseOverride = '', dryRun = false, remote = true, includeDetached = true, protectCurrent = true, force = false, now = Date.now(), activeCwds: activeCwdsOverride, by = 'atris land --reap' } = {}) {
-  const readActiveCwds = () => (Array.isArray(activeCwdsOverride) ? activeCwdsOverride : listActiveProcessCwds());
-  let activeCwds = null;
+  const readActiveCwds = () => (Array.isArray(activeCwdsOverride) ? activeCwdsOverride : listActiveProcessPaths());
+  let activeCwds;
   const board = collectBoard(root, { ttlDays, staleHours, base: baseOverride, now });
   const targets = board.branches.filter((b) => b.state === 'landed' || b.state === 'due');
   const targetNames = new Set(targets.map((b) => b.name));
@@ -568,9 +568,9 @@ function reap(root, { ttlDays = DEFAULT_TTL_DAYS, staleHours = DEFAULT_STALE_HOU
     }
     // A run working inside the folder outranks --force: removing it pulls
     // the floor out from under a live engine.
-    if (!activeCwds) activeCwds = readActiveCwds();
+    if (activeCwds === undefined) activeCwds = readActiveCwds();
     if (worktreeHasActiveProcess(w.path, activeCwds)) {
-      protectedWorktrees.push({ ...w, reason: 'active_process' });
+      protectedWorktrees.push({ ...w, reason: activeCwds ? 'active_process' : 'process_scan_failed' });
       continue;
     }
     // Git mid-operation in the folder (lock held, rebase or merge paused)
@@ -672,7 +672,7 @@ function reap(root, { ttlDays = DEFAULT_TTL_DAYS, staleHours = DEFAULT_STALE_HOU
   for (const w of survivingWorktreeTargets) {
     // A run can start in the folder while the bundle is built; look again.
     if (worktreeHasActiveProcess(w.path, activeAtRemoval)) {
-      receipt.keptWorktrees.push(`${w.path} (active_process)`);
+      receipt.keptWorktrees.push(`${w.path} (${activeAtRemoval ? 'active_process' : 'process_scan_failed'})`);
       if (w.branch) targetNames.delete(w.branch);
       continue;
     }

@@ -67,4 +67,3 @@ Artifact: this receipt is the reviewer note; the member log records the handoff.
 next_push: make the deletion scan recognize multiline recursive calls with plain path names, using a regression that first fails on the current scan.
 
 layer: beliefs
-
