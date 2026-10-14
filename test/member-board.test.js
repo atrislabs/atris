@@ -232,6 +232,15 @@ test('a short window keeps the header and the newest rows, and says how many did
     const both = renderBoard(rows, dir, 2, 0, 6).split('\n');
     assert.equal(both.length, 6);
     assert.equal(both[5], '5 more not shown, the window is too short. 2 finished over an hour ago, hidden. --all shows them');
+
+    const at80 = renderBoard(rows, dir, 2, 80, 6).split('\n');
+    assert.equal(at80.length, 6, 'a narrow footer still takes one line');
+    assert.equal(at80[5], '5 more not shown. 2 finished over an hour ago, hidden. --all shows them', 'first the why goes');
+    const at60 = renderBoard(rows, dir, 2, 60, 6).split('\n');
+    assert.equal(at60[5], '5 more not shown. 2 older runs hidden, --all shows them', 'then the hidden count shortens');
+    const at30 = renderBoard(rows, dir, 2, 30, 6).split('\n');
+    assert.equal(at30[5].length, 30, 'then it is cut to the window');
+    assert.equal(renderBoard(rows, dir, 0, 80, 6).split('\n')[5], '5 more not shown, the window is too short', 'room for the why: it stays');
   } finally {
     fs.rmSync(dir, { recursive: true, force: true });
   }
