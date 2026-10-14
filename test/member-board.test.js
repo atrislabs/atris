@@ -269,6 +269,22 @@ test('watch says more runs ended between redraws than the board keeps', () => {
     'when the run seen last time is still kept, nothing is missing');
 });
 
+test('board gives each change its own line when the shared line is wider than the screen', () => {
+  const now = Date.parse('2026-10-14T13:00:00Z');
+  const row = memberRow('builder', '2026-10-14T12:59:00Z m-1 started: build\n', now);
+  const changes = ['scout new -> 1 more run -> done ok -> done failed -> working', 'builder done ok -> done failed -> working'];
+  const wide = renderBoard([row], '/x', 0, 80, changes).split('\n');
+  assert.deepEqual(wide.slice(1, 4), ['changed in the last minute:', '  scout new -> 1 more run -> done ok -> done failed -> working', '  builder done ok -> done failed -> working']);
+  assert.ok(wide.slice(1, 4).every((l) => l.length <= 80), 'the change lines do not wrap at 80 columns');
+  assert.match(renderBoard([row], '/x', 0, 200, changes), /^changed in the last minute: scout new .*, builder done ok -> done failed -> working$/m, 'one line when it fits');
+  assert.match(renderBoard([row], '/x', 0, null, changes), /^changed in the last minute: scout new .*, builder done ok/m, 'piped output has no width, so it keeps one line');
+  assert.match(renderBoard([], '/x', 2, 40, changes), /^changed in the last minute:\n {2}scout new/, 'the empty board splits it too');
+  const long = 'builder done ok -> 1 more run -> done ok -> done failed -> done failed -> working';
+  assert.deepEqual(renderBoard([row], '/x', 0, 80, [long]).split('\n').slice(1, 4),
+    ['changed in the last minute:', '  builder done ok -> 1 more run -> done ok -> done failed -> done failed ->', '    working'],
+    'one member too long for the screen breaks after an arrow');
+});
+
 test('board leaves the earlier run count empty when the log is too long to read whole', () => {
   const now = Date.parse('2026-10-14T13:00:00Z');
   const run = (n) => `2026-10-14T12:${String(n % 60).padStart(2, '0')}:00Z m-${n} started: try ${n}\n2026-10-14T12:${String(n % 60).padStart(2, '0')}:00Z m-${n} finished: ok`;
