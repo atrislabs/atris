@@ -15,7 +15,14 @@ function git(cwd, args) {
 
 function main() {
 let gaps = 0;
-for (const locked of [false, true]) {
+const cases = [{ store: 'quarantine', marker: null }];
+for (const store of ['objects', 'quarantine']) {
+  for (const marker of ['HEAD.lock', 'index.lock', 'packed-refs.lock', 'refs/heads/review.lock']) {
+    cases.push({ store, marker });
+  }
+}
+for (const { store, marker } of cases) {
+  const locked = marker !== null;
   const base = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'atris-quarantine-review-')));
   try {
     const trustedRoot = path.join(base, 'trusted');
@@ -31,19 +38,23 @@ for (const locked of [false, true]) {
     git(base, ['clone', '-q', '--bare', trustedRoot, gitDir]);
     git(base, ['init', '-q', '--bare', quarantine]);
     git(base, ['--git-dir', gitDir, 'worktree', 'add', '-q', '--detach', worktreePath, 'HEAD']);
-    const lock = path.join(quarantine, 'HEAD.lock');
-    if (locked) fs.writeFileSync(lock, 'review fixture, not a live writer\n');
+    const lock = marker && path.join(store === 'objects' ? gitDir : quarantine, marker);
+    if (locked) {
+      fs.mkdirSync(path.dirname(lock), { recursive: true });
+      fs.writeFileSync(lock, 'review fixture, not a live writer\n');
+    }
     const result = disposeReviewSandbox({ trustedRoot, sandboxRoot, gitDir, quarantine, worktreePath });
-    const kept = fs.existsSync(quarantine);
+    const kept = [sandboxRoot, worktreePath, gitDir, quarantine]
+      .every((folder) => fs.existsSync(folder));
     const logged = fs.existsSync(path.join(trustedRoot, '.atris/state/worktree_removals.jsonl'));
     if (locked) {
-      if (result.removed || !kept || logged) gaps++;
+      if (result.removed || result.reason !== 'git_lock' || !kept || logged) gaps++;
     } else {
       assert.equal(result.removed, true);
-      assert.equal(kept, false);
+      assert.ok([sandboxRoot, worktreePath, gitDir, quarantine].every((folder) => !fs.existsSync(folder)));
       assert.equal(logged, true);
     }
-    console.log(`${locked ? 'locked' : 'unlocked'} quarantine: removed ${result.removed}, store kept ${kept}, removal logged ${logged}`);
+    console.log(`${store} ${marker || 'unlocked'}: removed ${result.removed}, all folders kept ${kept}, removal logged ${logged}`);
   } finally {
     fs.rmSync(base, { recursive: true, force: true });
   }

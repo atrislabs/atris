@@ -2293,3 +2293,5 @@ npm publish
 - `atris/receipts/work-folder-completion-shell-probe.js:16` runs six controls through the actual receipt writer: unusual executable path, quoted arguments, glob expansion, shell suffix, ordinary shell command, and failed child with saved evidence. Review: `atris/receipts/work-folder-completion-shell-review-2026-10-14.md`.
 
 - `atris/receipts/work-folder-completion-function-probe.js:19` exercises seven original/candidate controls through the actual receipt writer, including continued definitions; assertions at line 30 preserve false exit-0 evidence and detect lost output. `atris/receipts/work-folder-completion-function-review-2026-10-14.md:3` excludes shell functions; `atris/receipts/work-folder-completion-continuation-review-2026-10-14.md:3` requires classification of line continuations while retaining original text.
+
+- `atris/receipts/work-folder-quarantine-probe.js:19` enumerates nine real disposal controls across both separate stores, including packed and nested reference locks; `atris/receipts/work-folder-store-lock-review-2026-10-14.md:3` gives the pre-build verdict and full-retention safeguard.
