@@ -238,7 +238,9 @@ function setupRuntime(mode, mainBranch = 'master') {
     HOME: home,
     XDG_CONFIG_HOME: path.join(home, '.config'),
     XDG_CACHE_HOME: path.join(home, '.cache'),
-    PATH: `${fakeBin}${path.delimiter}${process.env.PATH || ''}`,
+    // Engine scripts invoke node by name; use the test runner's installation
+    // even when a login shell puts an older node first on PATH.
+    PATH: [fakeBin, path.dirname(process.execPath), process.env.PATH || ''].join(path.delimiter),
     ATRIS_TASKS_DB: db,
     ATRIS_NO_INTERACTIVE: '1',
     ATRIS_SKIP_UPDATE_CHECK: '1',
