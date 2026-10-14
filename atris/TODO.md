@@ -23,6 +23,8 @@ Details for any task: atris task show <ID>
 
 ## Review
 
+- **[AIC-20]** Seed review-chat fixtures in process · auto-improver
+  **Done looks like:** Developers can run review packet checks sooner because setup starts two fewer commands.
 - **[AIC-19]** Seed agent-ready review fixtures in process · auto-improver
   **Done looks like:** Developers can run approval queue checks sooner because setup starts six fewer commands.
 - **[AIC-18]** Isolate saved-proof environment in lap runtime tests · auto-improver

@@ -11709,20 +11709,37 @@ test('task review-chat emits proof-specific verifier packet', () => {
   try {
     fs.mkdirSync(path.join(dir, 'atris'), { recursive: true });
 
-    const add = runCli([
-      'task', 'add', 'Verify review chat specificity',
-      '--tag', 'agent',
-      '--goal-objective', 'Make Review chat tell Codex exactly what to verify',
-      '--json',
-    ], { cwd: dir, env });
-    assert.equal(add.status, 0, add.stderr);
-    const ref = JSON.parse(add.stdout).task.display_id;
+    // Creation and claiming only prepare the fixture. Keep the open-task
+    // rejection and every proof/review command on the CLI.
+    const workspaceRoot = taskStore.workspaceRoot(dir);
+    const db = taskStore.open(dbPath);
+    let id;
+    let ref;
+    try {
+      ({ id } = taskStore.addTask(db, {
+        title: 'Verify review chat specificity',
+        tag: 'agent',
+        workspaceRoot,
+        metadata: {
+          task_goal: 'Make Review chat tell Codex exactly what to verify',
+          goal_objective: 'Make Review chat tell Codex exactly what to verify',
+        },
+      }));
+      ref = taskStore.taskDisplayRefMap(taskStore.listTasks(db, { workspaceRoot })).get(id);
+    } finally {
+      taskStore.close();
+    }
 
     const tooEarly = runCli(['task', 'review-chat', ref, '--json'], { cwd: dir, env });
     assert.equal(tooEarly.status, 1);
     assert.equal(JSON.parse(tooEarly.stdout).reason, 'not_reviewable_open');
 
-    assert.equal(runCli(['task', 'claim', ref, '--as', 'codex'], { cwd: dir, env }).status, 0);
+    const claimDb = taskStore.open(dbPath);
+    try {
+      assert.equal(taskStore.claimTask(claimDb, { id, claimedBy: 'codex' }).claimed, true);
+    } finally {
+      taskStore.close();
+    }
     const proofContext = `${'context '.repeat(180)}Long proofs can carry setup notes before the verification commands.`;
     const proof = [
       proofContext,
