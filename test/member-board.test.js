@@ -451,6 +451,25 @@ test('board says a heredoc step is a script or a file write, but not in the row 
   assert.equal(rows[0].step, "running: python3 - <<'PY'", 'apps reading the rows get the step as written');
 });
 
+test('board shows a continuous run by its latest goal, and keeps the job in the row data', () => {
+  const now = Date.parse('2026-10-14T13:00:00Z');
+  const job = (name, lines) => memberRow(name, [`2026-10-14T12:50:00Z m-1 started: ${name} continuous run`, ...lines.map((l, i) => `2026-10-14T12:5${i + 1}:00Z m-1 ${l}`), ''].join('\n'), now);
+  const rows = [
+    job('scout', ['Working on: map the repo', 'Asked Codex for help with this step.', 'Working on: review the release note', 'Asked Codex for help with this step.']),
+    job('lead', ['Choosing the next useful task.']),
+    memberRow('qa', '2026-10-14T12:50:00Z m-2 started: check the build\n2026-10-14T12:51:00Z m-2 Working on: a goal\n', now),
+    memberRow('ops', '2026-10-14T12:40:00Z m-3 started: ops continuous run\n2026-10-14T12:41:00Z m-3 Working on: an old goal\n2026-10-14T12:42:00Z m-3 finished: ok\n2026-10-14T12:50:00Z m-4 started: ops continuous run\n2026-10-14T12:51:00Z m-4 ls\n', now),
+  ];
+  const shown = (name) => renderBoard(rows, '/x').split('\n').find((l) => l.startsWith(`${name} `));
+  assert.match(shown('scout'), /\s{2}review the release note\s{2}/, 'the newest goal, not the first');
+  assert.match(shown('lead'), /\s{2}continuous run\s{2}/, 'no goal logged, the job stays');
+  assert.match(shown('qa'), /\s{2}check the build\s{2}/, 'a job that says what it is stays');
+  assert.match(shown('ops'), /\s{2}continuous run\s{2}/, 'a goal from an earlier run does not carry over');
+  assert.equal(rows[0].job, 'scout continuous run', 'apps reading the rows get the job as written');
+  assert.equal(rows[0].working_on, 'review the release note', 'and the goal next to it');
+  assert.equal(rows[1].working_on, '');
+});
+
 test('board leaves the member name off a job that repeats it, but not off the row data', () => {
   const now = Date.parse('2026-10-14T13:00:00Z');
   const job = (name, text) => memberRow(name, `2026-10-14T12:58:00Z m-1 started: ${text}\n2026-10-14T12:59:30Z m-1 running: ls\n`, now);
