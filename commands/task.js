@@ -13695,6 +13695,7 @@ module.exports = {
   taskPageContract,
   taskDescriptionForCloud,
   taskReviewCleanEvidenceCommand,
+  taskReviewVerificationFocus,
   certifyVerifyCandidate,
   landingProofVerify,
   stampAutoAcceptMetadata,

@@ -11822,9 +11822,11 @@ test('task review-chat extracts only proof-derived verifier commands', () => {
   try {
     fs.mkdirSync(path.join(dir, 'atris'), { recursive: true });
     // Setup goes straight to the task store so only ready and review-chat
-    // launch the CLI. Ready's own output carries the same command list
-    // review-chat shows (the first and last plain cases prove they match),
-    // so most cases read it there and launch the CLI once.
+    // launch the CLI. Ready and review-chat build the command list from the
+    // saved proof alone, so plain cases call that builder in-process; the
+    // first and last plain cases run both commands and prove all three match.
+    const { taskReviewVerificationFocus } = require('../commands/task');
+    const proofCommands = (proof) => taskReviewVerificationFocus({ review: { proof } }).commands_to_verify;
     const workspaceRoot = taskStore.workspaceRoot(dir);
     const seedClaimedTask = (title) => {
       const db = taskStore.open(dbPath);
@@ -11852,77 +11854,42 @@ test('task review-chat extracts only proof-derived verifier commands', () => {
       JSON.parse(semicolonReady.stdout).handoff.verification_focus.commands_to_verify,
       'review-chat shows the same commands ready already printed',
     );
+    assert.deepEqual(
+      proofCommands('`node --check commands/task.js` passed; `node --check test/commands.test.js` passed'),
+      JSON.parse(semicolonReady.stdout).handoff.verification_focus.commands_to_verify,
+      'the in-process builder matches what ready printed',
+    );
     assert.deepEqual(JSON.parse(semicolonChat.stdout).contract.verification_focus.commands_to_verify, [
       'node --check commands/task.js',
       'node --check test/commands.test.js',
     ]);
 
-    const commaRef = seedClaimedTask('Comma proof commands');
-    const commaReady = runCli([
-      'task', 'ready', commaRef,
-      '--as', 'codex',
-      '--proof', 'Installed Atris review-chat command extraction changed. Verification passed: node --check commands/task.js, verified node --check test/commands.test.js 295/295, scoped git status --porcelain -- commands/task.js test/commands.test.js clean, live ATRIS_SKIP_UPDATE_CHECK=1 atris task status --json returned ok',
-      '--json',
-    ], { cwd: dir, env });
-    assert.equal(commaReady.status, 0, commaReady.stderr);
-    assert.deepEqual(JSON.parse(commaReady.stdout).handoff.verification_focus.commands_to_verify, [
+    assert.deepEqual(proofCommands('Installed Atris review-chat command extraction changed. Verification passed: node --check commands/task.js, verified node --check test/commands.test.js 295/295, scoped git status --porcelain -- commands/task.js test/commands.test.js clean, live ATRIS_SKIP_UPDATE_CHECK=1 atris task status --json returned ok'), [
       'node --check commands/task.js',
       'node --check test/commands.test.js',
       'git status --porcelain -- commands/task.js test/commands.test.js',
       'ATRIS_SKIP_UPDATE_CHECK=1 atris task status --json',
     ]);
 
-    const narratedRef = seedClaimedTask('Narrated CLI proof commands');
-    const narratedReady = runCli([
-      'task', 'ready', narratedRef,
-      '--as', 'codex',
-      '--proof', 'Validation passed: node /Users/owner/arena/atris-cli/bin/atris.js business check printed Ready: yes; node /Users/owner/arena/atris-cli/bin/atris.js business share --write wrote atris/reports/share.md; node /Users/owner/arena/atris-cli/bin/atris.js app list reported agentgrads-match-room runtime=local',
-      '--json',
-    ], { cwd: dir, env });
-    assert.equal(narratedReady.status, 0, narratedReady.stderr);
-    assert.deepEqual(JSON.parse(narratedReady.stdout).handoff.verification_focus.commands_to_verify, [
+    assert.deepEqual(proofCommands('Validation passed: node /Users/owner/arena/atris-cli/bin/atris.js business check printed Ready: yes; node /Users/owner/arena/atris-cli/bin/atris.js business share --write wrote atris/reports/share.md; node /Users/owner/arena/atris-cli/bin/atris.js app list reported agentgrads-match-room runtime=local'), [
       'node /Users/owner/arena/atris-cli/bin/atris.js business check',
       'node /Users/owner/arena/atris-cli/bin/atris.js business share --write',
       'node /Users/owner/arena/atris-cli/bin/atris.js app list',
     ]);
 
-    const pathPassedRef = seedClaimedTask('Path then passed proof commands');
-    const pathPassedReady = runCli([
-      'task', 'ready', pathPassedRef,
-      '--as', 'codex',
-      '--proof', 'Inspected commands/workflow.js, bin/atris.js, and atris/MAP.md. Passed: node --check commands/workflow.js; node --check test/apps.test.js (11/11); git status --porcelain -- commands/workflow.js bin/atris.js atris/MAP.md clean',
-      '--json',
-    ], { cwd: dir, env });
-    assert.equal(pathPassedReady.status, 0, pathPassedReady.stderr);
-    assert.deepEqual(JSON.parse(pathPassedReady.stdout).handoff.verification_focus.commands_to_verify, [
+    assert.deepEqual(proofCommands('Inspected commands/workflow.js, bin/atris.js, and atris/MAP.md. Passed: node --check commands/workflow.js; node --check test/apps.test.js (11/11); git status --porcelain -- commands/workflow.js bin/atris.js atris/MAP.md clean'), [
       'node --check commands/workflow.js',
       'node --check test/apps.test.js',
       'git status --porcelain -- commands/workflow.js bin/atris.js atris/MAP.md',
     ]);
 
-    const chainedRef = seedClaimedTask('Chained proof commands');
-    const chainedReady = runCli([
-      'task', 'ready', chainedRef,
-      '--as', 'codex',
-      '--proof', 'Verified node --check commands/task.js && node --check lib/task-db.js; node --check test/auto-accept-certified.test.js 6/6; typecheck passed; installed Atris review-chat command extraction changed; installed atris temp review-chat smoke confirmed specificity; installed atris smoke confirmed review-chat specificity',
-      '--json',
-    ], { cwd: dir, env });
-    assert.equal(chainedReady.status, 0, chainedReady.stderr);
-    assert.deepEqual(JSON.parse(chainedReady.stdout).handoff.verification_focus.commands_to_verify, [
+    assert.deepEqual(proofCommands('Verified node --check commands/task.js && node --check lib/task-db.js; node --check test/auto-accept-certified.test.js 6/6; typecheck passed; installed Atris review-chat command extraction changed; installed atris temp review-chat smoke confirmed specificity; installed atris smoke confirmed review-chat specificity'), [
       'node --check commands/task.js',
       'node --check lib/task-db.js',
       'node --check test/auto-accept-certified.test.js',
     ]);
 
-    const fencedRef = seedClaimedTask('Fenced proof commands');
-    const fencedReady = runCli([
-      'task', 'ready', fencedRef,
-      '--as', 'codex',
-      '--proof', '```bash\nnode --check commands/task.js\nnode --check test/json-output.test.js passed\n```',
-      '--json',
-    ], { cwd: dir, env });
-    assert.equal(fencedReady.status, 0, fencedReady.stderr);
-    assert.deepEqual(JSON.parse(fencedReady.stdout).handoff.verification_focus.commands_to_verify, [
+    assert.deepEqual(proofCommands('```bash\nnode --check commands/task.js\nnode --check test/json-output.test.js passed\n```'), [
       'node --check commands/task.js',
       'node --check test/json-output.test.js',
     ]);
@@ -11955,27 +11922,11 @@ test('task review-chat extracts only proof-derived verifier commands', () => {
     assert.deepEqual(pathOnlyPayload.contract.verification_focus.commands_to_verify, []);
     assert.ok(pathOnlyPayload.contract.verification_focus.files_to_inspect.includes('commands/git-diff.js'));
 
-    const detailRef = seedClaimedTask('Trim status details');
-    const detailReady = runCli([
-      'task', 'ready', detailRef,
-      '--as', 'codex',
-      '--proof', 'Full `node --check test/commands.test.js` passed: 299 tests, 0 failures.',
-      '--json',
-    ], { cwd: dir, env });
-    assert.equal(detailReady.status, 0, detailReady.stderr);
-    assert.deepEqual(JSON.parse(detailReady.stdout).handoff.verification_focus.commands_to_verify, [
+    assert.deepEqual(proofCommands('Full `node --check test/commands.test.js` passed: 299 tests, 0 failures.'), [
       'node --check test/commands.test.js',
     ]);
 
-    const punctuationRef = seedClaimedTask('Trim status punctuation');
-    const punctuationReady = runCli([
-      'task', 'ready', punctuationRef,
-      '--as', 'codex',
-      '--proof', 'node --check test/commands.test.js passed.',
-      '--json',
-    ], { cwd: dir, env });
-    assert.equal(punctuationReady.status, 0, punctuationReady.stderr);
-    assert.deepEqual(JSON.parse(punctuationReady.stdout).handoff.verification_focus.commands_to_verify, [
+    assert.deepEqual(proofCommands('node --check test/commands.test.js passed.'), [
       'node --check test/commands.test.js',
     ]);
 
@@ -11996,35 +11947,11 @@ test('task review-chat extracts only proof-derived verifier commands', () => {
       'git diff --check',
     ]);
 
-    const pseudoRef = seedClaimedTask('Reject prose pseudo command');
-    const pseudoReady = runCli([
-      'task', 'ready', pseudoRef,
-      '--as', 'codex',
-      '--proof', 'validation passed: node command tests passed; run_id=123456789',
-      '--json',
-    ], { cwd: dir, env });
-    assert.equal(pseudoReady.status, 0, pseudoReady.stderr);
-    assert.deepEqual(JSON.parse(pseudoReady.stdout).handoff.verification_focus.commands_to_verify, []);
+    assert.deepEqual(proofCommands('validation passed: node command tests passed; run_id=123456789'), []);
 
-    const npmPseudoRef = seedClaimedTask('Reject npm prose pseudo command');
-    const npmPseudoReady = runCli([
-      'task', 'ready', npmPseudoRef,
-      '--as', 'codex',
-      '--proof', 'validation passed: npm command tests passed; run_id=123456789',
-      '--json',
-    ], { cwd: dir, env });
-    assert.equal(npmPseudoReady.status, 0, npmPseudoReady.stderr);
-    assert.deepEqual(JSON.parse(npmPseudoReady.stdout).handoff.verification_focus.commands_to_verify, []);
+    assert.deepEqual(proofCommands('validation passed: npm command tests passed; run_id=123456789'), []);
 
-    const pluralPseudoRef = seedClaimedTask('Reject plural prose pseudo commands');
-    const pluralPseudoReady = runCli([
-      'task', 'ready', pluralPseudoRef,
-      '--as', 'codex',
-      '--proof', 'validation passed: typechecks passed, git checks passed; run_id=123456789',
-      '--json',
-    ], { cwd: dir, env });
-    assert.equal(pluralPseudoReady.status, 0, pluralPseudoReady.stderr);
-    assert.deepEqual(JSON.parse(pluralPseudoReady.stdout).handoff.verification_focus.commands_to_verify, []);
+    assert.deepEqual(proofCommands('validation passed: typechecks passed, git checks passed; run_id=123456789'), []);
 
     const atrisSlugRef = seedClaimedTask('Reject Atris slug prose pseudo command');
     const atrisSlugReady = runCli([
@@ -12054,189 +11981,69 @@ test('task review-chat extracts only proof-derived verifier commands', () => {
       'node --check test/commands.test.js',
     ]);
 
-    const proseSegmentRef = seedClaimedTask('Semicolon prose segment');
-    const proseSegmentReady = runCli([
-      'task', 'ready', proseSegmentRef,
-      '--as', 'codex',
-      '--proof', 'Receipt saved at atris/runs/proof.json. node --check commands/task.js; focused three-test command; git status --porcelain -- commands/task.js test/commands.test.js',
-      '--json',
-    ], { cwd: dir, env });
-    assert.equal(proseSegmentReady.status, 0, proseSegmentReady.stderr);
-    assert.deepEqual(JSON.parse(proseSegmentReady.stdout).handoff.verification_focus.commands_to_verify, [
+    assert.deepEqual(proofCommands('Receipt saved at atris/runs/proof.json. node --check commands/task.js; focused three-test command; git status --porcelain -- commands/task.js test/commands.test.js'), [
       'node --check commands/task.js',
       'git status --porcelain -- commands/task.js test/commands.test.js',
     ]);
 
-    const thenJoinedRef = seedClaimedTask('Then joined commands');
-    const thenJoinedReady = runCli([
-      'task', 'ready', thenJoinedRef,
-      '--as', 'codex',
-      '--proof', 'node --check commands/task.js then node --check test/commands.test.js passed',
-      '--json',
-    ], { cwd: dir, env });
-    assert.equal(thenJoinedReady.status, 0, thenJoinedReady.stderr);
-    assert.deepEqual(JSON.parse(thenJoinedReady.stdout).handoff.verification_focus.commands_to_verify, [
+    assert.deepEqual(proofCommands('node --check commands/task.js then node --check test/commands.test.js passed'), [
       'node --check commands/task.js',
       'node --check test/commands.test.js',
     ]);
 
-    const pipelineRef = seedClaimedTask('Preserve pipeline command');
-    const pipelineReady = runCli([
-      'task', 'ready', pipelineRef,
-      '--as', 'codex',
-      '--proof', 'curl -fsS http://127.0.0.1:8000/api/health | rg ok passed',
-      '--json',
-    ], { cwd: dir, env });
-    assert.equal(pipelineReady.status, 0, pipelineReady.stderr);
-    assert.deepEqual(JSON.parse(pipelineReady.stdout).handoff.verification_focus.commands_to_verify, [
+    assert.deepEqual(proofCommands('curl -fsS http://127.0.0.1:8000/api/health | rg ok passed'), [
       'curl -fsS http://127.0.0.1:8000/api/health | rg ok',
     ]);
 
-    const parenStatusRef = seedClaimedTask('Trim parenthesized status');
-    const parenStatusReady = runCli([
-      'task', 'ready', parenStatusRef,
-      '--as', 'codex',
-      '--proof', 'node --check test/commands.test.js (passed)',
-      '--json',
-    ], { cwd: dir, env });
-    assert.equal(parenStatusReady.status, 0, parenStatusReady.stderr);
-    assert.deepEqual(JSON.parse(parenStatusReady.stdout).handoff.verification_focus.commands_to_verify, [
+    assert.deepEqual(proofCommands('node --check test/commands.test.js (passed)'), [
       'node --check test/commands.test.js',
     ]);
 
-    const exitStatusRef = seedClaimedTask('Trim exit status annotation');
-    const exitStatusReady = runCli([
-      'task', 'ready', exitStatusRef,
-      '--as', 'codex',
-      '--proof', 'node --check test/commands.test.js passed (exit 0)',
-      '--json',
-    ], { cwd: dir, env });
-    assert.equal(exitStatusReady.status, 0, exitStatusReady.stderr);
-    assert.deepEqual(JSON.parse(exitStatusReady.stdout).handoff.verification_focus.commands_to_verify, [
+    assert.deepEqual(proofCommands('node --check test/commands.test.js passed (exit 0)'), [
       'node --check test/commands.test.js',
     ]);
 
-    const statusSentenceRef = seedClaimedTask('Trim status sentence');
-    const statusSentenceReady = runCli([
-      'task', 'ready', statusSentenceRef,
-      '--as', 'codex',
-      '--proof', 'validation passed: node --check commands/task.js passed. Output clean.',
-      '--json',
-    ], { cwd: dir, env });
-    assert.equal(statusSentenceReady.status, 0, statusSentenceReady.stderr);
-    assert.deepEqual(JSON.parse(statusSentenceReady.stdout).handoff.verification_focus.commands_to_verify, [
+    assert.deepEqual(proofCommands('validation passed: node --check commands/task.js passed. Output clean.'), [
       'node --check commands/task.js',
     ]);
 
-    const passCountRef = seedClaimedTask('Trim pass count suffix');
-    const passCountReady = runCli([
-      'task', 'ready', passCountRef,
-      '--as', 'codex',
-      '--proof', 'full node --check test/commands.test.js passed 299/299',
-      '--json',
-    ], { cwd: dir, env });
-    assert.equal(passCountReady.status, 0, passCountReady.stderr);
-    assert.deepEqual(JSON.parse(passCountReady.stdout).handoff.verification_focus.commands_to_verify, [
+    assert.deepEqual(proofCommands('full node --check test/commands.test.js passed 299/299'), [
       'node --check test/commands.test.js',
     ]);
 
-    const passExplanationRef = seedClaimedTask('Trim pass count explanation');
-    const passExplanationReady = runCli([
-      'task', 'ready', passExplanationRef,
-      '--as', 'codex',
-      '--proof', "node --check test/mission-status.test.js passed 51/51, including the new regression 'mission tick keeps task-backed always-on caller-session missions runnable without verifier'. Live proof: atris mission tick mission-abc.",
-      '--json',
-    ], { cwd: dir, env });
-    assert.equal(passExplanationReady.status, 0, passExplanationReady.stderr);
-    assert.deepEqual(JSON.parse(passExplanationReady.stdout).handoff.verification_focus.commands_to_verify, [
+    assert.deepEqual(proofCommands("node --check test/mission-status.test.js passed 51/51, including the new regression 'mission tick keeps task-backed always-on caller-session missions runnable without verifier'. Live proof: atris mission tick mission-abc."), [
       'node --check test/mission-status.test.js',
     ]);
 
-    const changedFilesTailRef = seedClaimedTask('Trim changed files tail');
-    const changedFilesTailReady = runCli([
-      'task', 'ready', changedFilesTailRef,
-      '--as', 'codex',
-      '--proof', 'node --check test/mission-status.test.js passed 46/46. Changed files: lib/mission-room.js adds business-move naming.',
-      '--json',
-    ], { cwd: dir, env });
-    assert.equal(changedFilesTailReady.status, 0, changedFilesTailReady.stderr);
-    assert.deepEqual(JSON.parse(changedFilesTailReady.stdout).handoff.verification_focus.commands_to_verify, [
+    assert.deepEqual(proofCommands('node --check test/mission-status.test.js passed 46/46. Changed files: lib/mission-room.js adds business-move naming.'), [
       'node --check test/mission-status.test.js',
     ]);
 
-    const passedWithTailRef = seedClaimedTask('Trim passed with tail');
-    const passedWithTailReady = runCli([
-      'task', 'ready', passedWithTailRef,
-      '--as', 'codex',
-      '--proof', 'node scripts/verify-mission-room.js passed with member=mission-lead. node --check test/mission-status.test.js passed.',
-      '--json',
-    ], { cwd: dir, env });
-    assert.equal(passedWithTailReady.status, 0, passedWithTailReady.stderr);
-    assert.deepEqual(JSON.parse(passedWithTailReady.stdout).handoff.verification_focus.commands_to_verify, [
+    assert.deepEqual(proofCommands('node scripts/verify-mission-room.js passed with member=mission-lead. node --check test/mission-status.test.js passed.'), [
       'node scripts/verify-mission-room.js',
       'node --check test/mission-status.test.js',
     ]);
 
-    const exampleCommandRef = seedClaimedTask('Ignore example command subject');
-    const exampleCommandReady = runCli([
-      'task', 'ready', exampleCommandRef,
-      '--as', 'codex',
-      '--proof', 'Product proof: review packets no longer ask humans to rerun result text like node scripts/verify-mission-room.js passed with member=mission-lead. Checks: node -c commands/task.js; git status --porcelain.',
-      '--json',
-    ], { cwd: dir, env });
-    assert.equal(exampleCommandReady.status, 0, exampleCommandReady.stderr);
-    assert.deepEqual(JSON.parse(exampleCommandReady.stdout).handoff.verification_focus.commands_to_verify, [
+    assert.deepEqual(proofCommands('Product proof: review packets no longer ask humans to rerun result text like node scripts/verify-mission-room.js passed with member=mission-lead. Checks: node -c commands/task.js; git status --porcelain.'), [
       'node -c commands/task.js',
       'git status --porcelain',
     ]);
 
-    const commaResultRef = seedClaimedTask('Trim comma result prose');
-    const commaResultReady = runCli([
-      'task', 'ready', commaResultRef,
-      '--as', 'codex',
-      '--proof', 'Receipt saved at atris/runs/proof.json. node --check commands/mission.js passed, live run proved stderr_empty=true. Checks: git status --porcelain.',
-      '--json',
-    ], { cwd: dir, env });
-    assert.equal(commaResultReady.status, 0, commaResultReady.stderr);
-    assert.deepEqual(JSON.parse(commaResultReady.stdout).handoff.verification_focus.commands_to_verify, [
+    assert.deepEqual(proofCommands('Receipt saved at atris/runs/proof.json. node --check commands/mission.js passed, live run proved stderr_empty=true. Checks: git status --porcelain.'), [
       'node --check commands/mission.js',
       'git status --porcelain',
     ]);
 
-    const focusedSuiteRef = seedClaimedTask('Split focused suite verifier');
-    const focusedSuiteReady = runCli([
-      'task', 'ready', focusedSuiteRef,
-      '--as', 'codex',
-      '--proof', 'node scripts/verify-mission-room.js. Focused suite also passed separately: node --check test/mission-status.test.js.',
-      '--json',
-    ], { cwd: dir, env });
-    assert.equal(focusedSuiteReady.status, 0, focusedSuiteReady.stderr);
-    assert.deepEqual(JSON.parse(focusedSuiteReady.stdout).handoff.verification_focus.commands_to_verify, [
+    assert.deepEqual(proofCommands('node scripts/verify-mission-room.js. Focused suite also passed separately: node --check test/mission-status.test.js.'), [
       'node scripts/verify-mission-room.js',
       'node --check test/mission-status.test.js',
     ]);
 
-    const commaProseRef = seedClaimedTask('Trim comma prose command list');
-    const commaProseReady = runCli([
-      'task', 'ready', commaProseRef,
-      '--as', 'codex',
-      '--proof', 'Verified commands/task.js with node -c commands/task.js passed, command suite, clean dry-run, brain compile.',
-      '--json',
-    ], { cwd: dir, env });
-    assert.equal(commaProseReady.status, 0, commaProseReady.stderr);
-    assert.deepEqual(JSON.parse(commaProseReady.stdout).handoff.verification_focus.commands_to_verify, [
+    assert.deepEqual(proofCommands('Verified commands/task.js with node -c commands/task.js passed, command suite, clean dry-run, brain compile.'), [
       'node -c commands/task.js',
     ]);
 
-    const describedCommandRef = seedClaimedTask('Ignore described command subject');
-    const describedCommandReady = runCli([
-      'task', 'ready', describedCommandRef,
-      '--as', 'codex',
-      '--proof', 'Receipt saved at atris/runs/proof.json. Product proof: parser extracts only node --check test/mission-status.test.js. Checks: node -c commands/task.js; git status --porcelain.',
-      '--json',
-    ], { cwd: dir, env });
-    assert.equal(describedCommandReady.status, 0, describedCommandReady.stderr);
-    assert.deepEqual(JSON.parse(describedCommandReady.stdout).handoff.verification_focus.commands_to_verify, [
+    assert.deepEqual(proofCommands('Receipt saved at atris/runs/proof.json. Product proof: parser extracts only node --check test/mission-status.test.js. Checks: node -c commands/task.js; git status --porcelain.'), [
       'node -c commands/task.js',
       'git status --porcelain',
     ]);
@@ -12304,15 +12111,7 @@ test('task review-chat extracts only proof-derived verifier commands', () => {
     ]);
     assert.equal(quotedListPayload.task.review.landing.tested, 'I ran the listed checks for this result.');
 
-    const quotedProductRef = seedClaimedTask('Quoted product command example');
-    const quotedProductReady = runCli([
-      'task', 'ready', quotedProductRef,
-      '--as', 'codex',
-      '--proof', "Product proof: live Mission Report plain text now ends with 'Next: atris mission run mission-2026-06-30-work-overnight-and-see-where-1858e505' instead of 'Next: next move: run ...'. JSON still keeps operator_next raw for machines. Checks: node -c commands/mission.js; node --check test/mission-status.test.js --test-name-pattern 'mission report' (60 pass); git status --porcelain.",
-      '--json',
-    ], { cwd: dir, env });
-    assert.equal(quotedProductReady.status, 0, quotedProductReady.stderr);
-    assert.deepEqual(JSON.parse(quotedProductReady.stdout).handoff.verification_focus.commands_to_verify, [
+    assert.deepEqual(proofCommands("Product proof: live Mission Report plain text now ends with 'Next: atris mission run mission-2026-06-30-work-overnight-and-see-where-1858e505' instead of 'Next: next move: run ...'. JSON still keeps operator_next raw for machines. Checks: node -c commands/mission.js; node --check test/mission-status.test.js --test-name-pattern 'mission report' (60 pass); git status --porcelain."), [
       'node -c commands/mission.js',
       "node --check test/mission-status.test.js --test-name-pattern 'mission report'",
       'git status --porcelain',
@@ -12335,15 +12134,7 @@ test('task review-chat extracts only proof-derived verifier commands', () => {
       'atris brain compile --root . --verify',
     ]);
 
-    const noteTailRef = seedClaimedTask('Trim note tail from verifier command');
-    const noteTailReady = runCli([
-      'task', 'ready', noteTailRef,
-      '--as', 'codex',
-      '--proof', 'Receipt saved at atris/runs/proof.json. Checks: atris brain compile --root . --verify. Note: full typecheck still has unrelated failures queued for later work.',
-      '--json',
-    ], { cwd: dir, env });
-    assert.equal(noteTailReady.status, 0, noteTailReady.stderr);
-    assert.deepEqual(JSON.parse(noteTailReady.stdout).handoff.verification_focus.commands_to_verify, [
+    assert.deepEqual(proofCommands('Receipt saved at atris/runs/proof.json. Checks: atris brain compile --root . --verify. Note: full typecheck still has unrelated failures queued for later work.'), [
       'atris brain compile --root . --verify',
     ]);
 
@@ -12404,42 +12195,18 @@ test('task review-chat extracts only proof-derived verifier commands', () => {
     assert.equal(proseCheckedReady.status, 0, proseCheckedReady.stderr);
     assert.equal(JSON.parse(proseCheckedReady.stdout).task.review.landing.tested, 'I checked: help output, clean dry-run, passing tests, and 1 more check.');
 
-    const rewardTailRef = seedClaimedTask('Trim human gate tail');
-    const rewardTailReady = runCli([
-      'task', 'ready', rewardTailRef,
-      '--as', 'codex',
-      '--proof', 'Receipt saved at atris/runs/proof.json. node --check test/commands.test.js. Reward remains 0; no human accept or XP.',
-      '--json',
-    ], { cwd: dir, env });
-    assert.equal(rewardTailReady.status, 0, rewardTailReady.stderr);
-    assert.deepEqual(JSON.parse(rewardTailReady.stdout).handoff.verification_focus.commands_to_verify, [
+    assert.deepEqual(proofCommands('Receipt saved at atris/runs/proof.json. node --check test/commands.test.js. Reward remains 0; no human accept or XP.'), [
       'node --check test/commands.test.js',
     ]);
 
-    const humanAcceptRef = seedClaimedTask('Reject human accept proof prose');
-    const humanAcceptReady = runCli([
-      'task', 'ready', humanAcceptRef,
-      '--as', 'codex',
-      '--proof', 'node --check commands/task.js passed. Do not run atris task accept OBL-1; no human accept or XP.',
-      '--json',
-    ], { cwd: dir, env });
-    assert.equal(humanAcceptReady.status, 0, humanAcceptReady.stderr);
-    assert.deepEqual(JSON.parse(humanAcceptReady.stdout).handoff.verification_focus.commands_to_verify, [
+    assert.deepEqual(proofCommands('node --check commands/task.js passed. Do not run atris task accept OBL-1; no human accept or XP.'), [
       'node --check commands/task.js',
     ]);
 
     const longFiles = Array.from({ length: 10 }, (_, index) => `test/long-${index}.test.js`).join(' ');
     const longCommand = `node --check ${longFiles}`;
     assert.ok(longCommand.length > 180);
-    const longCommandRef = seedClaimedTask('Preserve long verifier command');
-    const longCommandReady = runCli([
-      'task', 'ready', longCommandRef,
-      '--as', 'codex',
-      '--proof', `${longCommand} passed`,
-      '--json',
-    ], { cwd: dir, env });
-    assert.equal(longCommandReady.status, 0, longCommandReady.stderr);
-    assert.deepEqual(JSON.parse(longCommandReady.stdout).handoff.verification_focus.commands_to_verify, [
+    assert.deepEqual(proofCommands(`${longCommand} passed`), [
       longCommand,
     ]);
 
@@ -12457,6 +12224,11 @@ test('task review-chat extracts only proof-derived verifier commands', () => {
       JSON.parse(jsonFileChat.stdout).contract.verification_focus.commands_to_verify,
       JSON.parse(jsonFileReady.stdout).handoff.verification_focus.commands_to_verify,
       'review-chat shows the same commands ready already printed',
+    );
+    assert.deepEqual(
+      proofCommands('`node --check test/json-output.test.js` passed'),
+      JSON.parse(jsonFileReady.stdout).handoff.verification_focus.commands_to_verify,
+      'the in-process builder matches what ready printed',
     );
     assert.deepEqual(JSON.parse(jsonFileChat.stdout).contract.verification_focus.commands_to_verify, [
       'node --check test/json-output.test.js',
