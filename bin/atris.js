@@ -3265,8 +3265,8 @@ if (command === 'guide') {
 } else if (command === 'slop') {
   // Slop: deterministic frontend-slop detector (no LLM). Exit 1 = slop found, for CI + the autopilot gate.
   Promise.resolve(require('../commands/slop').slopCommand(process.argv.slice(3)))
-    .then((code) => process.exit(typeof code === 'number' ? code : 0))
-    .catch((err) => { console.error(`\n✗ Error: ${err.message || err}`); process.exit(1); });
+    .then((code) => exitWhenFlushed(typeof code === 'number' ? code : 0))
+    .catch((err) => { console.error(`\n✗ Error: ${err.message || err}`); exitWhenFlushed(1); });
 } else if (command === 'voice') {
   Promise.resolve(require('../commands/voice').voiceCommand(process.argv.slice(3)))
     .then((code) => process.exit(typeof code === 'number' ? code : 0))

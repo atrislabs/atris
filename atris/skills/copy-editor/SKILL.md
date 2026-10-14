@@ -253,6 +253,7 @@ Start from voice dictation, raw bullets, and facts; they are usually more valuab
 **Rule:** Replace all em dashes with commas, periods, or colons. No exceptions.
 
 **Before:**
+<!-- slop-ignore-next-line -->
 > The term is primarily promoted by Dutch institutions—not by the people themselves. You don't say "Netherlands, Europe" as an address—yet this mislabeling continues—even in official documents.
 
 **After:**
