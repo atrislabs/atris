@@ -12969,13 +12969,14 @@ test('task ready and finish accept landing capability sentences', () => {
   try {
     fs.mkdirSync(path.join(dir, 'atris'), { recursive: true });
 
-    // Seed creation only; claim, ready, finish and projection stay on the CLI.
+    // Seed claimed setup through the real store; ready, finish and projection stay on the CLI.
     const workspaceRoot = taskStore.workspaceRoot(dir);
     function seedLandingTask(title) {
       const db = taskStore.open(dbPath);
       try {
         const created = addSeedTask(db, { title, tag: 'cli', workspaceRoot });
         assert.equal(created.inserted, true);
+        assert.equal(taskStore.claimTask(db, { id: created.id, claimedBy: 'codex' }).claimed, true);
         const ref = taskStore.taskDisplayRefMap(taskStore.listTasks(db, { workspaceRoot })).get(created.id);
         assert.ok(ref);
         return ref;
@@ -12984,7 +12985,6 @@ test('task ready and finish accept landing capability sentences', () => {
       }
     }
     const readyRef = seedLandingTask('Add digest landing sentence');
-    assert.equal(runCli(['task', 'claim', readyRef, '--as', 'codex'], { cwd: dir, env }).status, 0);
 
     const readySentence = 'Users can now trust the review queue to explain the result without opening the task.';
     const ready = runCli([
@@ -13001,7 +13001,6 @@ test('task ready and finish accept landing capability sentences', () => {
     assert.equal(readyPayload.task.review.landing.happened, readySentence);
 
     const missingRef = seedLandingTask('Warn when landing is missing');
-    assert.equal(runCli(['task', 'claim', missingRef, '--as', 'codex'], { cwd: dir, env }).status, 0);
     const missingReady = runCli([
       'task', 'ready', missingRef,
       '--proof', 'node --check test/autoland.test.js passed',
@@ -13013,7 +13012,6 @@ test('task ready and finish accept landing capability sentences', () => {
     assert.match(JSON.parse(missingReady.stdout).landing_advisory, /new teammate would get/);
 
     const finishRef = seedLandingTask('Finish digest landing sentence');
-    assert.equal(runCli(['task', 'claim', finishRef, '--as', 'codex'], { cwd: dir, env }).status, 0);
 
     const finishSentence = 'Users can now trust the landed digest to explain the capability without opening the task.';
     const finish = runCli([
