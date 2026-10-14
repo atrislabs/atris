@@ -2280,3 +2280,7 @@ npm publish
 ## Folder-removal scanner review
 
 - `atris/receipts/work-folder-scan-probe.js:10` reads the actual scanner and bypass predicate; synthetic cases at line 21; acceptance mode at line 47. `atris/receipts/work-folder-scan-handoff-2026-10-14.md:1` records observations and the bounded repair safeguard.
+
+## Locked quarantine cleanup review
+
+- `atris/receipts/work-folder-quarantine-probe.js:16` creates disposable real Git stores and calls sandbox disposal with and without a quarantine lock; `atris/receipts/work-folder-quarantine-review-2026-10-14.md:1` records the pre-build safeguard and actual output.

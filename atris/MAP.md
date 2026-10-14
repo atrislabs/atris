@@ -58,6 +58,7 @@ checks the refs in both files; `atris doc-health --fix-refs` moves drifted ones.
 | engine dispatch without origin | `lib/fleet.js`, `test/engine-dispatch-no-origin.test.js` | pin local HEAD when origin is absent, verify and stop ready with a local merge command; origin and sealed review paths retain their gates |
 | dispatch run history from a linked checkout | `test/roster-runs-worktree.test.js` | remote-landing test creates a local bare origin so it keeps asserting landed and records history in the main checkout |
 | folder-removal scanner review | `atris/receipts/work-folder-scan-probe.js`, `test/worktree-removal-guard.test.js` | read-only six-case handoff; reporting mode lists gaps, `--require-protection` rejects them |
+| locked quarantine cleanup review | `atris/receipts/work-folder-quarantine-probe.js`, `atris/receipts/work-folder-quarantine-review-2026-10-14.md` | real disposable Git stores exercise sandbox disposal; acceptance mode rejects deleting a locked store |
 | autopilot | `commands/autopilot.js` | one tick plan, do, review; regression cleanup only removes folders created by that invocation |
 | wish intake | `commands/wish.js` | wish to build slices |
 | worktree command | `commands/worktree.js`, `test/worktree-start-retry.test.js` | isolated checkouts, bounded config-lock retries and cleanup of failed starts |
