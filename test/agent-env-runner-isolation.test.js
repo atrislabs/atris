@@ -68,3 +68,24 @@ test('runner command checks ignore an inherited runner profile', () => {
   assert.equal(result.status, 0, result.stderr || result.stdout);
   assert.match(result.stdout, /fail 0/);
 });
+
+test('roster routing checks ignore an inherited codex caller session', () => {
+  const env = { ...process.env };
+  delete env.NODE_TEST_CONTEXT;
+  const result = spawnSync(process.execPath, [
+    '--test', path.join(__dirname, 'roster-markdown.test.js'),
+  ], {
+    encoding: 'utf8',
+    timeout: 60000,
+    env: {
+      ...env,
+      ATRIS_RUNNER_PROFILE: 'codex',
+      ATRIS_CALLER_RUNTIME: 'codex',
+      CODEX_THREAD_ID: 'fixture-thread',
+      CODEX_SESSION_ID: 'fixture-session',
+    },
+  });
+  assert.ifError(result.error);
+  assert.equal(result.status, 0, result.stderr || result.stdout);
+  assert.match(result.stdout, /fail 0/);
+});

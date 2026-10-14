@@ -21,9 +21,9 @@ const {
   setRosterPick,
 } = require('../lib/engine-registry');
 const { autoJobForMember, resolveEngineForMember } = require('../lib/member-engine');
+const { scrubAgentEnv } = require('./helpers/agent-env');
 
 const NOW = new Date('2026-09-24T12:00:00.000Z');
-const RUNNER_ENV = ['ATRIS_RUNNER_PROFILE', 'ATRIS_RUNNER_MODEL', 'ATRIS_RUNNER_BIN', 'ATRIS_RUNNER_COMMAND_TEMPLATE', 'ATRIS_CLAUDE_MODEL', 'ATRIS_CLAUDE_BIN', 'ATRIS_CLAUDE_COMMAND_TEMPLATE'];
 
 const EXAMPLE = `# roster
 
@@ -39,12 +39,16 @@ judge: opus 5.5
 
 // Every room gets a scratch project and a scratch home, so neither the real
 // ~/.atris/roster.json nor ~/.atris/ROSTER.md is ever read or written.
+// The parent mission's runner and codex caller settings are removed too, so
+// routing reads only what each test sets.
 function withRoom(fn) {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'atris-roster-md-'));
   const home = fs.mkdtempSync(path.join(os.tmpdir(), 'atris-roster-md-home-'));
   fs.mkdirSync(path.join(root, 'atris'));
-  const saved = new Map(['ATRIS_MACHINE_ROSTER_PATH', 'ATRIS_MACHINE_ROSTER_MD_PATH', 'ATRIS_ROUTER_EXPLAIN', ...RUNNER_ENV].map((key) => [key, process.env[key]]));
-  for (const key of RUNNER_ENV) delete process.env[key];
+  const clean = scrubAgentEnv();
+  const inherited = Object.keys(process.env).filter((key) => !Object.hasOwn(clean, key));
+  const saved = new Map(['ATRIS_MACHINE_ROSTER_PATH', 'ATRIS_MACHINE_ROSTER_MD_PATH', 'ATRIS_ROUTER_EXPLAIN', ...inherited].map((key) => [key, process.env[key]]));
+  for (const key of inherited) delete process.env[key];
   delete process.env.ATRIS_MACHINE_ROSTER_MD_PATH;
   process.env.ATRIS_MACHINE_ROSTER_PATH = path.join(home, '.atris', 'roster.json');
   process.env.ATRIS_ROUTER_EXPLAIN = '0';
