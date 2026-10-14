@@ -1371,9 +1371,13 @@ test('every engine started through a runner or profile variable records its run 
             const hides = ([open, close]) => !(open <= fnStart && fnStart < close) || (internalOnly && open === fnStart);
             if (definitionSpans(code).some(([open, close]) => open < call.index && call.index < close && hides([open, close]) && (parametersOf(open).includes(call[1]) || alias.test(visible.slice(open, call.index))))) continue;
             // A loop or catch variable with the name hides it inside that block only.
-            const blockHeader = new RegExp(`\\b(?:for\\s*\\(\\s*(?:const|let|var)\\s+${escaped}\\s+(?:of|in)\\b[^{;]*|catch\\s*\\(\\s*${escaped}\\s*)\\)\\s*\\{`, 'g');
-            const stillOpen = (header) => [...code.slice(header.index + header[0].length - 1, call.index).matchAll(/'(?:\\.|[^'\\])*'|"(?:\\.|[^"\\])*"|`(?:\\.|[^`\\])*`|[{}]/g)]
-              .reduce((depth, token) => depth + (token[0] === '{' ? 1 : token[0] === '}' ? -1 : 0), 0) > 0;
+            // A loop without braces hides it until its statement ends at the
+            // first semicolon or line break, so a following call still counts.
+            const blockHeader = new RegExp(`\\b(?:for\\s*\\(\\s*(?:const|let|var)\\s+${escaped}\\s+(?:of|in)\\b[^(){};]*(?:\\([^()]*\\)[^(){};]*)*|catch\\s*\\(\\s*${escaped}\\s*)\\)\\s*(\\{)?`, 'g');
+            const stillOpen = (header) => (header[1]
+              ? [...code.slice(header.index + header[0].length - 1, call.index).matchAll(/'(?:\\.|[^'\\])*'|"(?:\\.|[^"\\])*"|`(?:\\.|[^`\\])*`|[{}]/g)]
+                .reduce((depth, token) => depth + (token[0] === '{' ? 1 : token[0] === '}' ? -1 : 0), 0) > 0
+              : !/[;\n]/.test(code.slice(header.index + header[0].length, call.index)));
             if ([...code.slice(0, call.index).matchAll(blockHeader)].some(stillOpen)) continue;
             const prefix = code.slice(0, call.index);
             if (/\bfunction\s*$|\.\s*$/.test(prefix)) continue;
@@ -1557,6 +1561,13 @@ test('every engine started through a runner or profile variable records its run 
     }
     assert.deepStrictEqual(planted(launcher('', 'for (const launch of list) {\n  launch(resolveClaudeRunnerBin());\n}\n')), [], 'a top-level loop variable hides the launcher name');
     assert.deepStrictEqual(planted(launcher('', 'try {\n  run();\n} catch (launcher) {\n  launch(resolveClaudeRunnerBin());\n}\n')), ['commands/planted.js:3 runner'], 'a longer catch name still calls the launcher');
+    // A loop without braces hides the name for its single statement only.
+    for (const body of ['for (const launch of list) launch(resolveClaudeRunnerBin());', 'for (const launch of Object.values(tools))\n    launch(resolveClaudeRunnerBin());', 'for (const launch in tools) if (launch) launch(resolveClaudeRunnerBin());']) {
+      assert.deepStrictEqual(planted(launcher('', `function other(list) {\n  ${body}\n}\n`)), [], `a loop statement hides the launcher name: ${body}`);
+    }
+    for (const body of ['for (const launch of list) noop(launch);\n  launch(resolveClaudeRunnerBin());', 'for (const launch of list) noop(launch)\n  launch(resolveClaudeRunnerBin())']) {
+      assert.deepStrictEqual(planted(launcher('', `function other(list) {\n  ${body}\n}\n`)), ['commands/planted.js:3 runner'], `a statement after the loop still reaches the launcher: ${body}`);
+    }
   }
   assert.deepStrictEqual(planted('const launch = function launch(runner) {\n  spawnSync(runner, args);\n};\nlaunch(resolveClaudeRunnerBin());\n'), ['commands/planted.js:2 runner'], 'matching expression and variable names keep external arguments visible');
   assert.deepStrictEqual(planted('const launch = function launch(runner) {\n  launch(resolveClaudeRunnerBin());\n  spawnSync(runner, args);\n};\n'), ['commands/planted.js:3 runner'], 'the defining assignment does not hide same-name recursion');
