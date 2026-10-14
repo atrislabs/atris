@@ -1459,19 +1459,46 @@ test('a run with no pid that has been silent for over an hour is named as likely
   assert.match(renderBoard([old, two], '/x'), /^orb\s+quiet\s+-\s+8h ago\s/m, 'nothing past its start: no made-up length');
 });
 
-test('board refuses a flag or name it does not know, instead of printing the wrong view', () => {
+test('board refuses a flag it does not know, instead of printing the wrong view', () => {
   const dir = fakeDir({ scout: [`${isoAgo(600)} m-3 started: look`, `${isoAgo(300)} m-3 running: rg x`] });
   try {
     const env = { ...process.env, ATRIS_PROGRESS_DIR: dir };
     const typo = spawnSync(process.execPath, [cliPath, 'member', 'board', '--jsno'], { cwd: dir, env, encoding: 'utf8' });
     assert.equal(typo.status, 1);
-    assert.equal(typo.stdout.trim(), 'atris member board does not take --jsno; it takes --all, --json, --watch, --follow');
-    const named = spawnSync(process.execPath, [cliPath, 'member', 'board', 'builder', '--json'], { cwd: dir, env, encoding: 'utf8' });
-    assert.equal(named.status, 1);
-    assert.match(named.stdout, /does not take builder;/);
+    assert.equal(typo.stdout.trim(), 'atris member board does not take --jsno; it takes --all, --json, --watch, --follow, or member names');
     const fine = spawnSync(process.execPath, [cliPath, 'member', 'board', '--json', '--all'], { cwd: dir, env, encoding: 'utf8' });
     assert.equal(fine.status, 0, fine.stderr);
     assert.deepEqual(JSON.parse(fine.stdout).members.map((r) => r.member), ['scout']);
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test('board with names shows only those members, even ones that ended long ago', () => {
+  const dir = fakeDir({
+    scout: [`${isoAgo(600)} m-3 started: look`, `${isoAgo(300)} m-3 running: rg x`],
+    shipper: [`${isoAgo(5 * 3600)} m-4 started: ship`, `${isoAgo(4 * 3600)} m-4 finished: failed`],
+    orb: [`${isoAgo(60)} m-5 started: render`, `${isoAgo(10)} m-5 running: npm run build`],
+  });
+  try {
+    const env = { ...process.env, ATRIS_PROGRESS_DIR: dir, COLUMNS: '100' };
+    const one = spawnSync(process.execPath, [cliPath, 'member', 'board', 'scout'], { cwd: dir, env, encoding: 'utf8' });
+    assert.equal(one.status, 0, one.stderr);
+    assert.equal(one.stdout.split('\n')[0], '1 member, quiet');
+    assert.match(one.stdout, /^scout\s+quiet/m);
+    assert.doesNotMatch(one.stdout, /^(orb|shipper)\s|hidden/m, 'the others are left out, not hidden');
+    const old = spawnSync(process.execPath, [cliPath, 'member', 'board', 'shipper', '--json'], { cwd: dir, env, encoding: 'utf8' });
+    assert.equal(old.status, 0, old.stderr);
+    assert.deepEqual(JSON.parse(old.stdout).members.map((r) => [r.member, r.state]), [['shipper', 'done failed']], 'asked for by name, so an hour-old end still shows');
+    assert.equal(JSON.parse(old.stdout).hidden, 0);
+    const two = spawnSync(process.execPath, [cliPath, 'member', 'board', 'orb', 'scout', '--json'], { cwd: dir, env, encoding: 'utf8' });
+    assert.deepEqual(JSON.parse(two.stdout).members.map((r) => r.member), ['orb', 'scout']);
+    const typo = spawnSync(process.execPath, [cliPath, 'member', 'board', 'scuot'], { cwd: dir, env, encoding: 'utf8' });
+    assert.equal(typo.status, 1);
+    assert.equal(typo.stdout.trim(), `no progress log for scuot in ${dir}; atris member board lists who has one`);
+    const follow = spawnSync(process.execPath, [cliPath, 'member', 'board', 'scout', '--json', '--follow'], { cwd: dir, env, encoding: 'utf8', timeout: 5000 });
+    assert.equal(follow.status, 1);
+    assert.equal(follow.stdout.trim(), 'atris member board --follow streams every member, so it does not take a name');
   } finally {
     fs.rmSync(dir, { recursive: true, force: true });
   }
