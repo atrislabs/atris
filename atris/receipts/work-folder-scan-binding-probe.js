@@ -19,16 +19,17 @@ const bypassFilter = source.slice(predicateStart, predicateEnd).trim();
 
 let gaps = 0;
 const removal = 'fs.rmSync(worktreePath, { recursive: true });';
-for (const [label, protectedPath, loggedPath, wantedBypasses, shape] of [
-  ['matching folder control', 'worktreePath', 'worktreePath', 0],
-  ['resolved same folder control', 'realFolder', 'worktreePath', 0],
-  ['unrelated folder guard', 'otherWorktreePath', 'worktreePath', 1],
-  ['unrelated folder log', 'worktreePath', 'otherWorktreePath', 1],
-  ['unrelated folder protection', 'otherWorktreePath', 'otherWorktreePath', 1],
-  ['check only after the delete', 'worktreePath', 'worktreePath', 1, 'after'],
-  ['answer ignored', 'worktreePath', 'worktreePath', 1, 'ignored'],
-  ['answer stored and never read', 'worktreePath', 'worktreePath', 1, 'unread'],
-  ['delete inside the not-busy branch control', 'worktreePath', 'worktreePath', 0, 'wrapped'],
+// Each case names the reason the scan must give; an empty reason means protected.
+for (const [label, protectedPath, loggedPath, wantedReason, shape] of [
+  ['matching folder control', 'worktreePath', 'worktreePath', ''],
+  ['resolved same folder control', 'realFolder', 'worktreePath', ''],
+  ['unrelated folder guard', 'otherWorktreePath', 'worktreePath', 'no git check names worktreePath'],
+  ['unrelated folder log', 'worktreePath', 'otherWorktreePath', 'removal log does not name worktreePath'],
+  ['unrelated folder protection', 'otherWorktreePath', 'otherWorktreePath', 'no git check names worktreePath'],
+  ['check only after the delete', 'worktreePath', 'worktreePath', 'git check on worktreePath only comes after the delete', 'after'],
+  ['answer ignored', 'worktreePath', 'worktreePath', 'git check answer on worktreePath never stops the delete', 'ignored'],
+  ['answer stored and never read', 'worktreePath', 'worktreePath', 'git check answer on worktreePath never stops the delete', 'unread'],
+  ['delete inside the not-busy branch control', 'worktreePath', 'worktreePath', '', 'wrapped'],
 ]) {
   const check = `if (worktreeGitActivity(${protectedPath})) return;`;
   const guarded = {
@@ -48,11 +49,13 @@ for (const [label, protectedPath, loggedPath, wantedBypasses, shape] of [
     __dirname: path.join(root, 'test'),
   });
   vm.runInContext(scanner + '\nthis.sites = worktreeRemovalSites("lib/probe.js");' +
-    `\nthis.bypasses = this.sites${bypassFilter};`, context, { timeout: 1000 });
+    `\nthis.bypasses = this.sites${bypassFilter};\nthis.reason = this.sites.map(removalGap).join('; ');`, context, { timeout: 1000 });
+  const wantedBypasses = wantedReason ? 1 : 0;
   assert.equal(context.sites.length, 1, 'the deletion must be detected before judging its protection');
   if (wantedBypasses === 0) assert.equal(context.bypasses.length, 0, 'matching control must stay protected');
-  if (context.bypasses.length !== wantedBypasses) gaps++;
-  console.log(`${label}: detected ${context.sites.length}, bypasses ${context.bypasses.length}; required 1, ${wantedBypasses}`);
+  if (context.bypasses.length !== wantedBypasses || context.reason !== wantedReason) gaps++;
+  console.log(`${label}: detected ${context.sites.length}, bypasses ${context.bypasses.length}; required 1, ${wantedBypasses}` +
+    (context.reason ? `; reason: ${context.reason}` : ''));
 }
 console.log(`review gaps: ${gaps}; synthetic source only, never executed`);
 // Acceptance mode makes any mismatch a failing check.

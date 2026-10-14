@@ -490,25 +490,33 @@ function loggedPaths(body) {
   return [...body.matchAll(/recordWorktreeRemoval\([^{]*\{[^}]*?\bpath:\s*([\w$.]+)/g)].map((match) => match[1]);
 }
 
-// True when a delete is not covered: the git check or the log names some other
-// folder, the check only runs after the delete, its answer never stops the
-// delete, the scan cannot tell which folder is deleted, or a group lost a check.
+// Why a delete is not covered, in words a builder can act on, or '' when it
+// is: the scan cannot tell which folder is deleted, no git check names it, the
+// check only runs after the delete, its answer never stops the delete, the
+// log names some other folder, or a group lost a check or its log.
 function removalGap(site) {
   const group = GROUPED_REMOVALS[site.key];
   if (group) {
-    const stops = (check) => {
+    for (const check of group.checks) {
       const written = new RegExp(check.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
         .replace(/\\\(/g, '\\(\\s*').replace(/\\\)/g, '\\s*\\)')).exec(site.before);
-      return Boolean(written) && answerStops(site.before, written.index);
-    };
-    return !group.checks.every(stops) || !loggedPaths(site.body).includes(group.logs);
+      if (!written) return `group check ${check} is missing above this delete`;
+      if (!answerStops(site.before, written.index)) return `group check ${check} never stops this delete`;
+    }
+    return loggedPaths(site.body).includes(group.logs) ? '' : `group removal log does not name ${group.logs}`;
   }
   const target = removedTarget(site.call, site.body);
-  if (!target) return true;
+  if (!target) return 'could not tell which folder is deleted';
   const folder = sameFolder(site.body);
-  const names = (paths) => paths.some((named) => folder(named) === folder(target));
-  const stopping = checkedCalls(site.before).filter((check) => answerStops(site.before, check.index));
-  return !names(stopping.map((check) => check.arg)) || !names(loggedPaths(site.body));
+  const naming = (calls) => calls.filter((check) => folder(check.arg) === folder(target));
+  const above = naming(checkedCalls(site.before));
+  if (!above.length) {
+    return naming(checkedCalls(site.body)).length
+      ? `git check on ${target} only comes after the delete`
+      : `no git check names ${target}`;
+  }
+  if (!above.some((check) => answerStops(site.before, check.index))) return `git check answer on ${target} never stops the delete`;
+  return loggedPaths(site.body).some((logged) => folder(logged) === folder(target)) ? '' : `removal log does not name ${target}`;
 }
 
 test('every work folder removal goes through the git check and the removal log', () => {
@@ -517,7 +525,7 @@ test('every work folder removal goes through the git check and the removal log',
   const bypasses = sites
     .filter((site) => !UNGUARDED_REMOVALS[site.key] && !NOT_YET_GUARDED[site.key])
     .filter((site) => removalGap(site))
-    .map((site) => `${site.key} (line ${site.line})`);
+    .map((site) => `${site.key} (line ${site.line}): ${removalGap(site)}`);
   assert.deepEqual(bypasses, [], 'removal without a git check and removal log naming the deleted folder');
   const stale = [...Object.keys(UNGUARDED_REMOVALS), ...Object.keys(GROUPED_REMOVALS), ...Object.keys(NOT_YET_GUARDED)]
     .filter((key) => !sites.some((site) => site.key === key));
