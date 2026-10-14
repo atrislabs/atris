@@ -590,7 +590,7 @@ test('fix keeps an aside that already has parentheses in one pair', () => {
   const { changes } = applyFixes([file], RULES);
   assert.deepEqual(changes.map((c) => c.after), [
     'It works (mostly) fine.',
-    'Pick one ((a) or (b)) then go.',
+    'Pick one, (a) or (b), then go.',
     'The tool (which we built) now ships.',
     'ASI is **scale** (model size, data, compute), which is a bet.',
     'It held (mostly), although slowly.',
@@ -1130,6 +1130,21 @@ test('fix never pairs two dashes across a sentence end', () => {
     'Not rules, beliefs. Not copied, earned.',
     'It said "stop." (then it went) and left.',
     'Doubt (a failing check, a bad lesson) is a map.',
+  ]);
+});
+
+test('fix gives an aside that holds its own parentheses commas, not a second pair', () => {
+  // "(then (maybe) stop)" nests; an aside that is one whole pair keeps it
+  const file = tmpFile('nested-aside.md', [
+    'Read it \u2014 then (maybe) stop \u2014 ok.',
+    'The gate \u2014 the one CI (and hooks) run \u2014 blocks it.',
+    'Scale \u2014 (model size, data) \u2014 is a bet.',
+  ].join('\n'));
+  const { changes } = applyFixes([file], RULES, { write: false });
+  assert.deepEqual(changes.map((c) => c.after), [
+    'Read it, then (maybe) stop, ok.',
+    'The gate, the one CI (and hooks) run, blocks it.',
+    'Scale (model size, data) is a bet.',
   ]);
 });
 

@@ -149,10 +149,12 @@ function fixEmDash(s, { endsBlock = false } = {}) {
     // in its own punctuation, "**What now?**", keeps it and just loses the dash.
     .replace(/([.!?]["'\u201d\u2019)]*\s+)(\*\*[^*\u2014]*[^\s*\u2014]\*\*|__[^_\u2014]*[^\s_\u2014]__)\s*\u2014\s*(?=\S)/g, (m, lead, bold) => `${lead}${bold}${/[.,;:!?][*_]+$/.test(bold) ? '' : ':'} `)
     // an aside never crosses a sentence end; dashes split by one are fixed alone.
-    // An aside already inside parentheses takes commas, so none nest.
+    // An aside already inside parentheses, or holding its own, takes commas,
+    // so none nest: "then (maybe) stop" never becomes "(then (maybe) stop)".
     .replace(/\s*\u2014\s*((?:(?![.!?]["'\u201d\u2019)]*\s)[^\u2014])*[^\s\u2014])\s*\u2014\s*(?=(.?))/g, (m, aside, next, at, whole) => {
       const gap = next && !/[.,;:!?)]/.test(next);
-      if (insideParens(whole.slice(0, at))) return `, ${aside}${gap ? ', ' : ''}`;
+      const holdsParens = /[()]/.test(aside) && !wrappedInParens(aside);
+      if (holdsParens || insideParens(whole.slice(0, at))) return `, ${aside}${gap ? ', ' : ''}`;
       // the closing dash also stood in for the comma before a "which" remark:
       // "scale (model size, data), which is a bet", never "data) which is".
       const remark = /^(?:which|although|whereas)\b/.test(whole.slice(at + m.length));
