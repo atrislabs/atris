@@ -10463,7 +10463,11 @@ function memberGoFinishTask(owner, task, result, thrown = null) {
     const ready = taskDb.readyTask(db, { id: task.id, actor: owner, proof });
     if (ready.ready !== false) return { id: task.id, title: task.title, outcome: 'review', receipt: receipt || null };
   }
+  const ticks = Array.isArray(result && result.ticks) ? result.ticks : [];
+  const lastReason = String((ticks[ticks.length - 1] || {}).reason || (ticks[ticks.length - 1] || {}).error || '');
+  const outOfTime = /timeout|wall-exceeded/.test(lastReason);
   const why = thrown ? thrown.message
+    : outOfTime ? 'ran out of time before the work finished'
     : (result && result.error) || (result && result.started ? 'the check did not pass' : 'the run did not start');
   const reason = String(why || 'the run did not finish').split(/\r?\n/)[0].trim().slice(0, 200);
   try { taskDb.noteTask(db, { id: task.id, actor: owner, content: `Released by ${owner}: ${reason}` }); } catch {}
