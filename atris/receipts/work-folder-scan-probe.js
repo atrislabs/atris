@@ -28,6 +28,10 @@ const cases = [
     '// TODO: call worktreeGitActivity and recordWorktreeRemoval\n  fs.rmSync(worktreePath, { recursive: true });', 1, 1],
   ['multiline generic removal',
     'listWorktrees(root);\n  fs.rmSync(\n    target,\n    { recursive: true }\n  );', 1, 1],
+  ['typed shell removal', 'execSync(`rm -rf ${worktreePath}`);', 1, 1],
+  ['spawned shell removal', "spawnSync('rm', ['-rf', worktreePath]);", 1, 1],
+  ['guarded shell control',
+    "if (worktreeGitActivity(worktreePath)) return;\n  spawnSync('rm', ['-rf', worktreePath]);\n  recordWorktreeRemoval(root, { path: worktreePath });", 1, 0],
 ];
 
 let gaps = 0;
