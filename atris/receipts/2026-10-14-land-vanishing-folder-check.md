@@ -114,3 +114,5 @@ Progress: one added timing case, two late lock paths and distinct ages checked, 
 next_push: Prove late special Git keep markers also protect a still-present old folder during the final cleanup check.
 
 layer: behaviors
+
+Review handoff: the direct frozen command passed all 21 tests, exit 0. The task recorder's default runtime returned 18 passes and 3 failures, exit 1. Recording with `/opt/homebrew/bin/node --test test/worktree-removal-guard.test.js test/member-tidy.test.js` passed, exit 0, and placed the task in review. Receipt: `atris/runs/2026-10-14-task-acw-34-2026-10-14T20-32-30-887Z.json`. This explicit runtime requires a second review before automatic landing. The increment is committed and pushed; existing unrelated edits remain local.
