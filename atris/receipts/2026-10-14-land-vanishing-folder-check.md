@@ -80,3 +80,37 @@ next_push: Prove an ordinary lock appearing during the final old-folder check wi
 layer: behaviors
 
 Review handoff: the bare required command passed directly under Node 25.6.1. The task recorder's shell returned 18 passes and 3 failures, exit 1; its abbreviated receipt does not identify the failures. Repeating through the recorder with `/opt/homebrew/bin/node --test test/worktree-removal-guard.test.js test/member-tidy.test.js` passed, exit 0, and placed the task in review. Receipt: `atris/runs/2026-10-14-task-acw-32-2026-10-14T20-27-02-563Z.json`. The explicit runtime needs a second review before automatic landing. This increment was committed and pushed; unrelated edits remain local.
+
+## Late locks in a present old folder
+
+Added proof that locks arriving just before old-folder removal keep the folder intact. Four real cleanup runs and all 21 required tests passed, exit 0.
+
+Files edited: `atris/receipts/2026-10-14-land-vanishing-folder-check.js`, `test/worktree-removal-guard.test.js`, `atris/MAP.md`, `atris/refs/MAP-NOTES.md`, `atris/receipts/2026-10-14-land-vanishing-folder-check.md`, `atris/team/architect/logs/2026-10-14.md`.
+
+Plan: plan removal -> add private and shared locks -> keep folder present -> name both paths and ages -> retain files and branch.
+
+Real command: `node atris/receipts/2026-10-14-land-vanishing-folder-check.js`, exit 0. It invokes `node bin/atris.js land --reap --force --no-remote` four times with real Git in generated repositories. Exact output excerpt:
+```text
+landing cleanup done: 0 pieces cleared, 0 side copies removed
+  ✋ kept, needs a human: /private/var/folders/t1/2_4kmb5n4c71dxm26zc8dgzr0000gn/T/atris-land-vanishing-fZxayi/ordinary-present/landed-copy (git locks: /private/var/folders/t1/2_4kmb5n4c71dxm26zc8dgzr0000gn/T/atris-land-vanishing-fZxayi/ordinary-present/repo/.git/packed-refs.lock (10799s old), /private/var/folders/t1/2_4kmb5n4c71dxm26zc8dgzr0000gn/T/atris-land-vanishing-fZxayi/ordinary-present/repo/.git/worktrees/landed-copy/index.lock (7199s old))
+cli exit: 0
+all four timing cases passed; files, locks, and branches retained; no removal attempted or recorded
+```
+
+Rerun: `node --test test/worktree-removal-guard.test.js test/member-tidy.test.js`, exit 0. Exact final output:
+```text
+ℹ tests 21
+ℹ suites 0
+ℹ pass 21
+ℹ fail 0
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 11333.165958
+```
+
+Progress: one added timing case, two late lock paths and distinct ages checked, zero removal attempts or records in all four cases. Learned: a present folder takes the ordinary lock explanation, without the missing-folder prefix. No production changes, dependencies, or new filenames. Existing unrelated edits are preserved. Mission attachment reported its existing busy lock, which was left untouched.
+
+next_push: Prove late special Git keep markers also protect a still-present old folder during the final cleanup check.
+
+layer: behaviors
