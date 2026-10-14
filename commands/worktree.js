@@ -1177,13 +1177,19 @@ function listActiveProcessCwds() {
 
 // Absolute paths named on each program's command line, including flag values
 // like --require=/x.js. A program can run a script from a work folder while
-// its current folder is elsewhere; the folder scan alone misses it.
+// its current folder is elsewhere; the folder scan alone misses it. The list
+// prints arguments unquoted, so a path with a space is also kept as the rest
+// of the line from where it starts; the folder match is a prefix check.
 function parseProcessArgPaths(psOutput) {
   const paths = new Set();
-  for (const line of String(psOutput || '').split(/\r?\n/)) {
-    for (const token of line.trim().split(/\s+/)) {
-      const value = token.includes('=') ? token.slice(token.indexOf('=') + 1) : token;
-      if (value.length > 1 && value.startsWith('/')) paths.add(value);
+  const starts = /(?:^|\s)(?:[^\s=]*=)?(?=\/)/g;
+  for (const raw of String(psOutput || '').split(/\r?\n/)) {
+    const line = raw.trim();
+    for (const match of line.matchAll(starts)) {
+      const rest = line.slice(match.index + match[0].length);
+      const token = rest.split(/\s/, 1)[0];
+      if (token.length > 1) paths.add(token);
+      if (rest.length > token.length) paths.add(rest);
     }
   }
   return [...paths];

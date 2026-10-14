@@ -51,9 +51,18 @@ test('the program list reads script paths, including flag values', () => {
   assert.equal(paths.includes('--port'), false);
 });
 
-test('cleanup keeps a merged folder while a program started elsewhere runs a script inside it', async () => {
+test('the program list keeps script paths that contain a space', () => {
+  const paths = parseProcessArgPaths([
+    'node /work/my folder/run.js --port 3000',
+    'node --require=/work/b c/hook.js main.js',
+  ].join('\n'));
+  assert.ok(paths.some((p) => p.startsWith('/work/my folder/run.js')), JSON.stringify(paths));
+  assert.ok(paths.some((p) => p.startsWith('/work/b c/hook.js')), JSON.stringify(paths));
+});
+
+async function keepsScriptFolder(folderSuffix) {
   const root = initRepo();
-  const worktree = `${root}-script-home`;
+  const worktree = `${root}${folderSuffix}`;
   let child;
   try {
     git(root, ['worktree', 'add', '-q', '-b', 'script-home', worktree, 'HEAD']);
@@ -89,4 +98,14 @@ test('cleanup keeps a merged folder while a program started elsewhere runs a scr
     fs.rmSync(worktree, { recursive: true, force: true });
     fs.rmSync(root, { recursive: true, force: true });
   }
+}
+
+test('cleanup keeps a merged folder while a program started elsewhere runs a script inside it', async () => {
+  await keepsScriptFolder('-script-home');
+});
+
+// The program list prints arguments without quotes, so a space in the folder
+// name used to split the script path in two and the folder went unseen.
+test('cleanup keeps a folder with a space in its name while a script inside it runs', async () => {
+  await keepsScriptFolder('-script home');
 });
