@@ -2321,3 +2321,5 @@ npm publish
 - `atris/receipts/2026-10-14-fleet-folder-check.js:81`: a path through a link inside the removal parent is registered by Git at its real outside location. Consume registered paths rather than caller input; the real outside copy survives disposal but loses shared Git files.
 
 - `commands/land.js:705`: when the final activity check fails and the folder has disappeared, cleanup reads retained locks from the main repository and keeps the branch. `atris/receipts/2026-10-14-land-vanishing-folder-check.js:1` runs the real CLI with a forwarding git executable that moves the generated folder during the second check; both locked and unlocked cases retain their branches and produce no removal record.
+
+- `lib/member-tidy.js:195`: final activity failure keeps the branch but omits the missing-folder reason and retained lock details. `atris/receipts/2026-10-14-tidy-vanishing-folder-check.js:1` reproduces locked and unlocked disappearance using the real tidy CLI and forwarding Git; moved files and branches survive, with no removal record.
