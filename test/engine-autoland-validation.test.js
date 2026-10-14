@@ -218,7 +218,7 @@ test('hourly tick records unsure and survives a referee failure', async () => {
     assert.equal(receipt.engine_answer_validation.failures, 0);
     assert.equal(receipt.engine_answer_validation_error, undefined);
     assert.equal(validationRows(root)[0].verdict, 'unsure');
-    assert.equal(validationRows(root)[0].reason, 'referee did not complete successfully.');
+    assert.equal(validationRows(root)[0].reason, 'referee failed (runner error): fake referee unavailable.');
   } finally {
     fs.rmSync(root, { recursive: true, force: true });
   }
