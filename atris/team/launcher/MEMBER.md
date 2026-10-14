@@ -18,7 +18,7 @@ permissions:
 
 tools: []
 
-score: atris doc-health --score
+score: node bin/atris.js doc-health --score
 score_margin: 0.005
 verify: atris member score launcher --gate
 ---
