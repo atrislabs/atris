@@ -17284,9 +17284,17 @@ test('task sync dry-run maps local tasks to canonical cloud task writes', () => 
       slug: 'task-sync-lab',
     }), 'utf8');
 
-    const created = runCli(['task', 'new', 'Sync local task to cloud control plane', '--tag', 'swarlo', '--json'], { cwd: dir, env });
-    assert.equal(created.status, 0, created.stderr);
-    const id = JSON.parse(created.stdout).task_id;
+    // Creation is setup; claim, say, ready and the sync plan still use the CLI.
+    const workspaceRoot = taskStore.workspaceRoot(dir);
+    const db = taskStore.open(dbPath);
+    let id;
+    try {
+      const created = addSeedTask(db, { title: 'Sync local task to cloud control plane', tag: 'swarlo', workspaceRoot });
+      assert.equal(created.inserted, true);
+      id = created.id;
+    } finally {
+      taskStore.close();
+    }
 
     const claimed = runCli(['task', 'claim', id, '--as', 'codex', '--json'], { cwd: dir, env });
     assert.equal(claimed.status, 0, claimed.stderr);
