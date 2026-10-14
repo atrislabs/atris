@@ -11393,6 +11393,7 @@ async function memberCommand(subcommand, ...args) {
       console.log('Subcommands:');
       console.log('  (bare)              Open the Team Room (members, engines, live consequence feed)');
       console.log('  "<prompt>"          Steer a running member mid-flight or start the best specialist');
+      console.log('                      a prompt that starts with board or stop is not sent; use steer for those');
       console.log('  go [name|"..."]     Wake the highest-leverage member on its next_push or run a prompt');
       console.log('  steer [name] "..."  Steer a member mid-run or update its immediate direction');
       console.log('  1on1 <name>         Sit down for a 1-on-1 to review recent wins and set the roadmap');
