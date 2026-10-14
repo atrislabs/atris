@@ -750,6 +750,25 @@ test('fix keeps a paired aside after a plain-word label as parentheses', () => {
   ]);
 });
 
+test('fix gives an italic label that opens a line a colon, like a bold one', () => {
+  // from a sample pull request description, where "_Note_" took a comma
+  const file = tmpFile('italic-label.md', [
+    '_Note_ \u2014 requires Node 18+.',
+    '> *Tip* \u2014 run it twice.',
+    '* item \u2014 a list line, not a label',
+    '_private_value \u2014 kept as is',
+    '- *Retries* \u2014 up to 3 \u2014 happen automatically.',
+  ].join('\n'));
+  const { changes } = applyFixes([file], RULES);
+  assert.deepEqual(changes.map((c) => c.after), [
+    '_Note_: requires Node 18+.',
+    '> *Tip*: run it twice.',
+    '* item: a list line, not a label',
+    '_private_value, kept as is',
+    '- *Retries*: up to 3, happen automatically.',
+  ]);
+});
+
 test('fix turns a table cell that holds only a dash into a hyphen', () => {
   // from the skill zones one-pager, where the cell became a stray comma
   const file = tmpFile('table.md', [

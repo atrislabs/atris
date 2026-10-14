@@ -41,10 +41,12 @@ const SKIP_DIRS = new Set(['node_modules', '.git', 'dist', 'build', '.next', '.a
 // A dash that ends a line stays a comma when the sentence wraps onto the
 // next line, and becomes a period when the paragraph ends there.
 const LIST_LABEL_DASH = /^(\s*(?:[-*+]|\d+[.)])\s+)([^\u2014]{0,59}[^\s\u2014,;:.])\s*\u2014\s*/;
-// A bold label or a code span that opens a line or a quote, not a list item,
-// gets the same colon: "`npm test` then a dash then 9 tests". In markdown the
-// fixer sees inline code masked, so the masked span counts as code too.
-const LINE_LABEL_DASH = /^(\s*(?:>\s*)*)(\*\*[^*\u2014]{0,58}[^\s*\u2014]\*\*|__[^_\u2014]{0,58}[^\s_\u2014]__|`[^`]+`|\uE000\d+\uE001)\s*\u2014\s*/;
+// A bold or italic label or a code span that opens a line or a quote, not a
+// list item, gets the same colon: "`npm test` then a dash then 9 tests",
+// "_Note_: requires Node 18". An italic mark must touch its word, so a "* "
+// list marker never counts. In markdown the fixer sees inline code masked,
+// so the masked span counts as code too.
+const LINE_LABEL_DASH = /^(\s*(?:>\s*)*)(\*\*[^*\u2014]{0,58}[^\s*\u2014]\*\*|__[^_\u2014]{0,58}[^\s_\u2014]__|\*[^*\s\u2014](?:[^*\u2014]{0,57}[^\s*\u2014])?\*|_[^_\s\u2014](?:[^_\u2014]{0,57}[^\s_\u2014])?_|`[^`]+`|\uE000\d+\uE001)\s*\u2014\s*/;
 
 // A numbered name that opens a line, alone or after a bold label that ends in
 // its colon, is a label too: "Class 1: 8-regular graphs", "**Next:** Tick 2: wire it".
@@ -92,8 +94,8 @@ function fixEmDash(s, { endsBlock = false } = {}) {
   let label = LIST_LABEL_DASH.exec(s) || LINE_LABEL_DASH.exec(s) || NUMBERED_LABEL_DASH.exec(s);
   // a plain-word label whose dash opens an aside closed by a second dash in
   // the same sentence is a subject, not a label: "Retries (up to 3) happen
-  // automatically", never "Retries: up to 3, happen". Bold and code labels stay.
-  if (label && !/^(?:\*\*|__|`|\uE000|"|\u201c)/.test(label[2])
+  // automatically", never "Retries: up to 3, happen". Marked and code labels stay.
+  if (label && !/^(?:\*|_|`|\uE000|"|\u201c)/.test(label[2])
     && /^(?:(?![.!?]["'\u201d\u2019)]*\s)[^\u2014])*[^\s\u2014]\s*\u2014/.test(s.slice(label[0].length))) label = null;
   // a label that already ends in its own punctuation, "**what is it?**",
   // keeps it and just loses the dash, so no colon stacks on top. A label that
