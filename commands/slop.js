@@ -24,10 +24,16 @@ const SCAN_EXTS = new Set(['.css', '.scss', '.sass', '.less', '.tsx', '.jsx', '.
   '.md', '.mdx', '.txt']); // prose too: the voice doctrine (em-dash, hype-copy) is enforceable, not just advice
 const SKIP_DIRS = new Set(['node_modules', '.git', 'dist', 'build', '.next', '.astro', 'coverage', '.cache', 'out', 'vendor']);
 
-// Em dash repair. Two dashes around an aside become parentheses, so
-// "the gate, the one CI runs, blocks it" never comes out as a comma run-on.
-// A lone dash left over becomes a comma.
+// Em dash repair. A list item that opens with a short label and a dash
+// ("- **Name** then a dash then what it does") gets a colon after the label.
+// Two dashes around an aside become parentheses, so "the gate, the one CI
+// runs, blocks it" never comes out as a comma run-on. A lone dash left over
+// becomes a comma.
+const LIST_LABEL_DASH = /^(\s*(?:[-*+]|\d+[.)])\s+)([^\u2014]{0,59}[^\s\u2014,;:.])\s*\u2014\s*/;
+
 function fixEmDash(s) {
+  const label = LIST_LABEL_DASH.exec(s);
+  if (label) return `${label[1]}${label[2]}:${s.length > label[0].length ? ' ' : ''}${fixEmDash(s.slice(label[0].length))}`;
   return s
     .replace(/\s*\u2014\s*([^\u2014]*[^\s\u2014])\s*\u2014\s*(?=(.?))/g, (m, aside, next) => ` (${aside})${/[\w(]/.test(next) ? ' ' : ''}`)
     .replace(/\s*\u2014\s*/g, ', ');

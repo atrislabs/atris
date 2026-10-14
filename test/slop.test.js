@@ -308,3 +308,25 @@ test('the em dash fix turns a paired aside into parentheses and a lone dash into
     'ends with an aside (like this).',
   ]);
 });
+
+test('the em dash fix gives a short list label a colon and leaves long list sentences alone', () => {
+  const { applyFixes } = require('../commands/slop');
+  const D = '\u2014';
+  const file = tmpFile('list.md', [
+    `- **Name** ${D} what it does`,
+    `  * plain words over jargon ${D} say the thing`,
+    `1. Boot ${D} read the map`,
+    `- **Name** ${D} does a thing ${D} mostly`,
+    `- a long sentence that keeps going and going well past sixty characters ${D} then a dash`,
+    `Name ${D} not a list line`,
+  ].join('\n'));
+  applyFixes([file], RULES);
+  assert.deepEqual(fs.readFileSync(file, 'utf8').split('\n'), [
+    '- **Name**: what it does',
+    '  * plain words over jargon: say the thing',
+    '1. Boot: read the map',
+    '- **Name**: does a thing, mostly',
+    '- a long sentence that keeps going and going well past sixty characters, then a dash',
+    'Name, not a list line',
+  ]);
+});
