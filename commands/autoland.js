@@ -358,8 +358,8 @@ function refreshLandingRefs(root) {
   }
 }
 
-function sweepLanding(root, { ttlDays, staleHours, now = Date.now() } = {}) {
-  refreshLandingRefs(root);
+function sweepLanding(root, { ttlDays, staleHours, now = Date.now(), refresh = true } = {}) {
+  if (refresh) refreshLandingRefs(root);
   const { collectBoard, reap } = require('./land');
   // light: this board only feeds .branches staleness + .summary; reap builds
   // its own full board for dirty-count salvage decisions.
@@ -747,11 +747,20 @@ function persistTickReceipt(root, receipt) {
 // Heartbeat liveness helpers live in lib/autoland.js so task ready copy and
 // status share one gate (recent tick receipt within two hours).
 
+function acceptedNotLandedNote(receipt) {
+  const rows = Array.isArray(receipt.accepted_not_landed) ? receipt.accepted_not_landed : [];
+  if (!rows.length) return '';
+  return `, ${rows.length} accepted but not proven landed (${rows.map((r) => `${r.ref} ${r.status}`).join(', ')})`;
+}
+
 function stuckBacklogNote(receipt) {
   const parts = [];
   const scanned = Number(receipt.scanned || 0);
   const certified = Number(receipt.certified || 0);
-  if (scanned > 0 && receipt.landed.length === 0) {
+  // Stuck means nothing cleared review. Accepted-but-unproven work is named
+  // separately (accepted_not_landed), not misread as a wedged queue.
+  const accepted = Array.isArray(receipt.accepted) ? receipt.accepted.length : receipt.landed.length;
+  if (scanned > 0 && accepted === 0) {
     parts.push(`${certified}/${scanned} certified in review, none landed`);
   }
   const unrunnable = Array.isArray(receipt.unrunnable_verifiers) ? receipt.unrunnable_verifiers.length : 0;
@@ -806,6 +815,9 @@ async function runTickBody(root, { json, policy, receipt, engineValidationDeps =
   // 78 certified rows waiting. Let `atris task auto-accept-certified` apply
   // its own default (12 without --all, a high safety cap under --all) so a
   // policy with accept_all:true actually drains the full certified set.
+  // Refresh origin once, before anything is accepted: the landing proof reads
+  // origin's target, and a stale ref would call landed work unlanded.
+  refreshLandingRefs(root);
   const cliArgs = ['task', 'auto-accept-certified', '--json', '--certify-first'];
   if (policy.accept_all) cliArgs.push('--all');
   else if (policy.strict_verify === false) cliArgs.push('--no-strict-verify');
@@ -829,7 +841,21 @@ async function runTickBody(root, { json, policy, receipt, engineValidationDeps =
     if (parsed.certification && parsed.certification.ok !== true) {
       receipt.certify_error = 'certify-verified failed';
     }
-    receipt.landed = results.filter((r) => r.action === 'accepted').map((r) => r.ref);
+    // Accepted is a review verdict; landed is a git fact. Only work whose
+    // landing proof passed (lib/landing-proof.js) may be called landed. The
+    // rest is named with the reason, so an accept over an empty or unpushed
+    // commit reads as what it is instead of padding the landed count.
+    const acceptedRows = results.filter((r) => r.action === 'accepted');
+    receipt.accepted = acceptedRows.map((r) => r.ref);
+    receipt.landed = acceptedRows.filter((r) => r.landing && r.landing.status === 'landed').map((r) => r.ref);
+    const notLanded = acceptedRows
+      .filter((r) => !r.landing || r.landing.status !== 'landed')
+      .map((r) => ({
+        ref: r.ref,
+        status: (r.landing && r.landing.status) || 'unverified',
+        reason: (r.landing && r.landing.reason) || 'no_landing_proof',
+      }));
+    if (notLanded.length) receipt.accepted_not_landed = notLanded;
     const citationBlocks = results
       .filter((r) => r.action === 'skipped' && r.proof_state === 'suite_green_citation_required')
       .map((r) => ({ ref: r.ref, reason: r.reason }));
@@ -964,7 +990,7 @@ async function runTickBody(root, { json, policy, receipt, engineValidationDeps =
   // TTL-expired work is salvaged before deletion, and 48h-stale active work
   // is carried into the digest instead of silently aging forever.
   try {
-    const landingSweep = sweepLanding(root);
+    const landingSweep = sweepLanding(root, { refresh: false });
     receipt.reaped = landingSweep.reaped;
     receipt.landing_sweep = {
       before: landingSweep.before,
@@ -1148,7 +1174,7 @@ async function runTickBody(root, { json, policy, receipt, engineValidationDeps =
     // Always print the standing backlog, and name work that cleared every
     // gate and still did not land. That is the shape of a stuck loop.
     const stuckNote = stuckBacklogNote(receipt);
-    const summary = `autoland tick: ${receipt.reviews_certified ?? 0} reviews certified, ${receipt.landed.length} landed${receipt.landed.length ? ` (${receipt.landed.join(', ')})` : ''}, ${receipt.alarms} alarms${stuckNote}, digest ${digestTickStatus(receipt)}${reapNote}${janitorNote}${heldNote}${wishNote}${engineSweepNote}${receiptNote}`;
+    const summary = `autoland tick: ${receipt.reviews_certified ?? 0} reviews certified, ${receipt.landed.length} landed${receipt.landed.length ? ` (${receipt.landed.join(', ')})` : ''}${acceptedNotLandedNote(receipt)}, ${receipt.alarms} alarms${stuckNote}, digest ${digestTickStatus(receipt)}${reapNote}${janitorNote}${heldNote}${wishNote}${engineSweepNote}${receiptNote}`;
     const validationLine = engineAnswerValidationLine(receipt);
     if (validationLine) console.log(validationLine);
     console.log(gateForHuman(summary).text);
