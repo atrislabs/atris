@@ -749,6 +749,7 @@ const MISSION_RUN_VALUE_FLAGS = [
   '--visible-goal-objective',
 ];
 const MISSION_RUN_BOOLEAN_FLAGS = [
+  '--member-checks',
   '--json',
   '--full',
   '--verbose',
@@ -10005,6 +10006,9 @@ async function resolveMissionRunPhase(context) {
 }
 
 async function executeMissionRunTicksPhase(context) {
+    if (hasFlag(context.args, '--member-checks') && context.verifyEach) {
+      context.memberCheckBase = require('../lib/member-extra-checks').captureBase(context.cwd);
+    }
     const {
       asJson,
       cwd,
@@ -10471,6 +10475,13 @@ async function executeMissionRunTicksPhase(context) {
         await verifyMissionRunTickPhase(context);
         result = context.currentTick.result;
         verifierResult = context.currentTick.verifierResult;
+      }
+      if (context.memberCheckBase && verifierResult?.passed) {
+        const extraChecks = require('../lib/member-extra-checks').checkRepo(cwd, context.memberCheckBase);
+        verifierResult = { ...verifierResult, passed: extraChecks.passed,
+          extra_checks: extraChecks,
+          output: [verifierResult.output, extraChecks.stdout, extraChecks.stderr].filter(Boolean).join('\n') };
+        result.verifier_passed = verifierResult.passed;
       }
       pauseReason = context.pauseReason;
       context.currentTick = null;

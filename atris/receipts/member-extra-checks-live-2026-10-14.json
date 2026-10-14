@@ -1,0 +1,85 @@
+{
+  "fixture": "real CLI and Git with a deterministic local worker",
+  "runs": [
+    {
+      "mode": "committed",
+      "command": "node /Users/keshavrao/arena/.agent-worktrees/atris-cli/architect-member-runs-check-repo-tidiness-befo-20261014-134359/bin/atris.js member run demo 'update hello.txt' --runner claude --shared-checkout --ignite --no-referee --max-ticks 1 --verify 'node check.cjs' --json",
+      "cwd": "/var/folders/p2/s2tg3j6n1v9bwsbcqrjxnvnh0000gn/T/atris-extra-checks-DWHVp6/repo",
+      "exit_code": 1,
+      "output_excerpt": {
+        "ok": false,
+        "state": "blocked",
+        "error": "the work ran but the repo formatting check failed",
+        "behavior_stdout": "behavior passed\n",
+        "extra_checks": {
+          "passed": false,
+          "checks": [
+            {
+              "command": "git diff --check 68ae989223e3ea986754558b2508663d1be031e3",
+              "status": 2,
+              "passed": false,
+              "stdout": "hello.txt:1: trailing whitespace.\n+new \n",
+              "stderr": ""
+            },
+            {
+              "command": "git diff --cached --check",
+              "status": 0,
+              "passed": true,
+              "stdout": "",
+              "stderr": ""
+            },
+            {
+              "command": "git diff --check",
+              "status": 0,
+              "passed": true,
+              "stdout": "",
+              "stderr": ""
+            }
+          ],
+          "stdout": "hello.txt:1: trailing whitespace.\n+new \n",
+          "stderr": ""
+        }
+      }
+    },
+    {
+      "mode": "clean",
+      "command": "node /Users/keshavrao/arena/.agent-worktrees/atris-cli/architect-member-runs-check-repo-tidiness-befo-20261014-134359/bin/atris.js member run demo 'update hello.txt' --runner claude --shared-checkout --ignite --no-referee --max-ticks 1 --verify 'node check.cjs' --json",
+      "cwd": "/var/folders/p2/s2tg3j6n1v9bwsbcqrjxnvnh0000gn/T/atris-extra-checks-3SlhKc/repo",
+      "exit_code": 0,
+      "output_excerpt": {
+        "ok": true,
+        "state": "complete",
+        "error": null,
+        "behavior_stdout": "behavior passed\n",
+        "extra_checks": {
+          "passed": true,
+          "checks": [
+            {
+              "command": "git diff --check 9292bc37b92b44e0bd7d9e3da861a59056fc234e",
+              "status": 0,
+              "passed": true,
+              "stdout": "",
+              "stderr": ""
+            },
+            {
+              "command": "git diff --cached --check",
+              "status": 0,
+              "passed": true,
+              "stdout": "",
+              "stderr": ""
+            },
+            {
+              "command": "git diff --check",
+              "status": 0,
+              "passed": true,
+              "stdout": "",
+              "stderr": ""
+            }
+          ],
+          "stdout": "",
+          "stderr": ""
+        }
+      }
+    }
+  ]
+}

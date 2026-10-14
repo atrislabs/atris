@@ -1341,6 +1341,7 @@ function memberRunWith(name, args, { quiet = false } = {}) {
   const caller = callerRuntime(args);
   const runnerSwap = memberRunRunnerSwap(mission, args, caller);
   if (runnerSwap) runArgs.push('--engine', runnerSwap.to);
+  runArgs.push('--member-checks');
   const run = memberRunCli(['mission', 'run', mission.id, ...runArgs], cwd, { live: !asJson && !quiet, missionId: mission.id });
   const payload = run.payload || {};
   const finalMission = payload.mission || require('./mission').resolveMission(mission.id, cwd) || mission;
@@ -1353,7 +1354,8 @@ function memberRunWith(name, args, { quiet = false } = {}) {
   // The work ran but its check failed: the run failed, even though a work
   // step happened. Scripts and the caller read this from the exit code.
   const lastRanTick = [...(Array.isArray(payload.ticks) ? payload.ticks : [])].reverse().find((tick) => tick && tick.ran === true);
-  const checkFailed = started && Boolean(String(finalMission.verifier || '').trim())
+  const checkFailed = started && (Boolean(String(finalMission.verifier || '').trim())
+    || finalMission.verifier_result?.extra_checks?.passed === false)
     && lastRanTick?.verifier_passed === false && finalMission.status !== 'complete';
   const ok = ((run.status === 0 && payload.ok !== false && (started || noWorkStepExpected)) || waitingOnNativeGoal) && !checkFailed;
   const reviewAsk = memberRunReviewAsk(name, payload, finalMission, cwd);
@@ -1391,7 +1393,9 @@ function memberRunWith(name, args, { quiet = false } = {}) {
   }
   if (checkFailed) {
     result.check_failed = true;
-    result.error = `the work ran but its check failed: ${finalMission.verifier || 'completion check'}`;
+    result.error = finalMission.verifier_result?.extra_checks?.passed === false
+      ? 'the work ran but the repo formatting check failed'
+      : `the work ran but its check failed: ${finalMission.verifier || 'completion check'}`;
   } else if (!ok) {
     result.error = result.ask || payload.detail || payload.error || payload.reason || payload.next_action
       || run.stderr || 'mission did not run a work step';

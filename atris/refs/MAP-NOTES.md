@@ -2276,6 +2276,8 @@ npm publish
 
 ## One-run member outcomes
 
+- Repo formatting: `commands/member.js:1344` requests the extra checks; `commands/mission.js:10009` pins the starting commit before work and `commands/mission.js:10479` runs them after the named check and review, including cached steps. `lib/member-extra-checks.js:14` captures the commit or empty tree; `lib/member-extra-checks.js:30` checks the whole run, index, and working changes. Failure blocks completion without changing the named check. Non-git projects skip and explicit no-verify opts out. Real CLI regression: `test/member-extra-checks.test.js:1`.
+
 - `commands/member.js:1037` preserves tick check results when reading the live run receipt; `commands/member.js:1346` makes a failed explicit completion check return failure; `commands/member.js:1374` names the failed check. `commands/member.js:4249` removes only matching outer quotes from saved member settings. `test/member-run-one-run-outcome.test.js:1` runs the real CLI in initialized, committed temporary projects with a fake engine.
 
 ## Member work sent back before GitHub handoff
