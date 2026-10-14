@@ -83,6 +83,37 @@ test('board shows working, quiet, done ok, and done failed from fake logs', () =
   }
 });
 
+test('a failed row says why when the finished line gives a reason', () => {
+  const dir = fakeDir({
+    slow: [`${at(100)} m-5 started: long job`, `${at(80)} m-5 finished: failed (timed out)`],
+    broke: [`${at(100)} m-6 started: engine job`, `${at(70)} m-6 finished: failed (engine error)`],
+    exit: [`${at(100)} m-7 started: exit job`, `${at(60)} m-7 finished: failed (bad exit 2)`],
+    plain: [`${at(100)} m-8 started: old runner`, `${at(50)} m-8 finished: failed`],
+    wordy: [`${at(100)} m-9 started: chatty job`, `${at(40)} m-9 finished: failed the engine wrote a very long story about why`],
+    fine: [`${at(100)} m-10 started: good job`, `${at(30)} m-10 finished: ok (all green)`],
+  });
+  try {
+    const rows = readBoard({ dir, now: NOW });
+    const by = Object.fromEntries(rows.map((r) => [r.member, r]));
+    assert.equal(by.slow.state, 'done failed', 'the state word stays the same for scripts');
+    assert.equal(by.slow.last_result_reason, 'timed out');
+    assert.equal(by.broke.last_result_reason, 'engine error');
+    assert.equal(by.exit.last_result_reason, 'bad exit 2');
+    assert.equal(by.plain.last_result_reason, '');
+    assert.equal(by.wordy.last_result_reason.length, 30);
+    assert.equal(by.fine.last_result_reason, '', 'only a failure carries a reason');
+
+    const screen = renderBoard(rows, dir);
+    assert.match(screen, /^slow\s+done failed\s+failed \(timed out\) 1m ago\s/m);
+    assert.match(screen, /^broke\s+done failed\s+failed \(engine error\) 1m ago\s/m);
+    assert.match(screen, /^exit\s+done failed\s+failed \(bad exit 2\) 1m ago\s/m);
+    assert.match(screen, /^plain\s+done failed\s+failed 50s ago\s/m);
+    assert.match(screen, /^fine\s+done ok\s+ok 30s ago\s/m);
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
 test('last step skips writes to the member own log', () => {
   const dir = fakeDir({
     architect: [
