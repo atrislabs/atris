@@ -1059,6 +1059,10 @@ test('fix joins a noun clause after the dash with a semicolon', () => {
     // clauses that open with "when" or "if" are not a list, and may hold commas
     'Watch the queue \u2014 when it fills, if it stalls, drain it.',
     'The tool runs \u2014 when needed, before lunch, after the build.',
+    // "each time" and "every time" open one like "when" does
+    'The cache warms up \u2014 every time a tick lands, the gate holds.',
+    'Keep the log \u2014 each time it breaks, trace it.',
+    'The cache warms up \u2014 each time it fails, after lunch.',
   ].join('\n'));
   const { changes } = applyFixes([file], RULES);
   assert.deepEqual(changes.map((c) => c.after), [
@@ -1138,6 +1142,9 @@ test('fix joins a noun clause after the dash with a semicolon', () => {
     'Ship it, if you can, then it lands.',
     'Watch the queue; when it fills, if it stalls, drain it.',
     'The tool runs, when needed, before lunch, after the build.',
+    'The cache warms up; every time a tick lands, the gate holds.',
+    'Keep the log; each time it breaks, trace it.',
+    'The cache warms up, each time it fails, after lunch.',
   ]);
 });
 
