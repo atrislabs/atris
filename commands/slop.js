@@ -67,11 +67,13 @@ const NUMBERED_LABEL_DASH = /^(\s*(?:>\s*)*(?:(?:\*\*|__)[^*_\u2014]+:(?:\*\*|__
 // and "### Tick 4 (03:05-03:15 PDT): E1 rollup landed" still take one. A
 // heading that is only a time keeps its comma, since a colon after it reads
 // as seconds: "## 08:25, evidence-pack run", never "## 08:25: evidence".
-// A timed heading whose subtitle holds a colon of its own keeps the comma
-// too: "### 01:00 learn #11, Self-Healing Metrics: How to measure it".
+// A subtitle that holds a colon of its own keeps the comma too, so no
+// heading holds two: "## 2026-02-21, Day 0: Agent Initialized", never
+// "## 2026-02-21: Day 0: Agent Initialized". A colon with no space after it
+// is part of a word or a link ("design:review", "https://").
 // A last dash before a joining word goes on with the subtitle and takes a
 // comma: "## Setup: install it, then run it".
-const HEADING_DASH = /^(\s{0,3}#{1,6}\s+(?![\d\s\u2013-]*\d:\d[\d:\s\u2013-]*(?:(?:PT|PDT|PST|ET|EDT|EST|UTC|Z|am|pm)\s*)?\u2014)(?![^\u2014]*\d:\d[^\u2014]*\u2014[^\u2014]*?(?<!\d):(?!\/\/))(?:[^\u2014:]|(?<=\d):(?=\d))*[^\s\u2014,;:.!?])\s*\u2014\s*(?!(?:and|but|or|nor|so|yet)\b)(?=[^\s\u2014][^\u2014]*(?:\u2014\s*(?:and|but|or|nor|so|yet|then)\b[^\u2014]*)?$)/i;
+const HEADING_DASH = /^(\s{0,3}#{1,6}\s+(?![\d\s\u2013-]*\d:\d[\d:\s\u2013-]*(?:(?:PT|PDT|PST|ET|EDT|EST|UTC|Z|am|pm)\s*)?\u2014)(?:[^\u2014:]|(?<=\d):(?=\d))*[^\s\u2014,;:.!?])\s*\u2014\s*(?!(?:and|but|or|nor|so|yet)\b)(?=[^\s\u2014](?:[^\u2014:]|:(?!\s))*(?:\u2014\s*(?:and|but|or|nor|so|yet|then)\b[^\u2014]*)?$)/i;
 // A bold phrase that is the whole line stands as a heading and gets the same
 // colon: "**Source A: arxiv API**". A dash inside parentheses is left alone.
 // A last dash before a joining word takes a comma, as in a heading.

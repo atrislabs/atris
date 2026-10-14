@@ -1866,6 +1866,22 @@ test('fix gives a heading with a time in it a colon, but not one that is only a 
   ]);
 });
 
+test('fix keeps the comma in a heading whose subtitle has its own colon', () => {
+  // from daily logs, which came out "## 2026-02-21: Day 0: Agent Initialized"
+  const file = tmpFile('twocolons.md', [
+    '## 2026-02-21 \u2014 Day 0: Agent Initialized',
+    '### 8. Nick Verity \u2014 SCORE: 8/10',
+    // a colon with no space after it is part of a word, so this one still takes a colon
+    '### health-loop tick 1 \u2014 design:review',
+  ].join('\n'));
+  const { changes } = applyFixes([file], RULES);
+  assert.deepEqual(changes.map((c) => c.after), [
+    '## 2026-02-21, Day 0: Agent Initialized',
+    '### 8. Nick Verity, SCORE: 8/10',
+    '### health-loop tick 1: design:review',
+  ]);
+});
+
 test('fix starts the next sentence after a stop that sits before a dash', () => {
   // from the terrace repo, which came out "fine with try? the cost"
   const file = tmpFile('stop.md', [
