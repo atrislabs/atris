@@ -209,6 +209,28 @@ test('autopilot regression check keeps its folder while a run is inside it', () 
   }
 });
 
+// The verify step leaves a real child running in the folder, the way a
+// timed-out verify can. No process list is passed in, so the real scan runs.
+test('autopilot regression check sees a real leftover process without being told', () => {
+  const { base, repo, folder } = regressionRepo('');
+  const pidFile = path.join(base, 'leftover.pid');
+  const registry = path.join(repo, 'atris', 'tick-registry.json');
+  const [entry] = JSON.parse(fs.readFileSync(registry, 'utf8'));
+  entry.verifyCmd = `nohup sleep 30 >/dev/null 2>&1 & echo $! > "${pidFile}"`;
+  fs.writeFileSync(registry, JSON.stringify([entry]));
+  try {
+    const [row] = regressionCheck(repo);
+    assert.equal(row.kept, 'active_process', JSON.stringify(row));
+    assert.ok(fs.existsSync(folder));
+    assert.deepEqual(removalLines(repo), []);
+  } finally {
+    if (fs.existsSync(pidFile)) {
+      try { process.kill(Number(fs.readFileSync(pidFile, 'utf8')), 'SIGKILL'); } catch {}
+    }
+    fs.rmSync(base, { recursive: true, force: true });
+  }
+});
+
 test('autopilot regression check names who removed its folder and why', () => {
   const { base, repo, folder } = regressionRepo('true');
   try {
