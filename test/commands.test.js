@@ -10527,9 +10527,21 @@ test('task step advances one safe headless action and never human-accepts', () =
   try {
     fs.mkdirSync(path.join(dir, 'atris'), { recursive: true });
 
-    const add = runCli(['task', 'add', 'Drive task loop from a single headless step', '--tag', 'capture', '--json'], { cwd: dir, env });
-    assert.equal(add.status, 0, add.stderr);
-    const ref = JSON.parse(add.stdout).task.display_id;
+    // Seed only the parent; step, review, and show still use the CLI.
+    let ref;
+    const db = taskStore.open(dbPath);
+    try {
+      const created = taskStore.addTask(db, {
+        title: 'Drive task loop from a single headless step',
+        tag: 'capture',
+        workspaceRoot: taskStore.workspaceRoot(dir),
+      });
+      assert.equal(created.inserted, true);
+      ref = taskStore.withTaskDisplayRefs([taskStore.getTask(db, created.id)])[0].display_id;
+      assert.ok(ref);
+    } finally {
+      taskStore.close();
+    }
 
     const missingGoal = runCli(['task', 'step', ref, '--exit', 'needs a goal first', '--proof-needed', 'node --check missing goal coverage passes', '--json'], { cwd: dir, env });
     assert.equal(missingGoal.status, 2);
