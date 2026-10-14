@@ -23,6 +23,8 @@ Details for any task: atris task show <ID>
 
 ## Review
 
+- **[AIC-26]** Seed compact event parent fixture in process · auto-improver
+  **Done looks like:** Event output checks pass with direct parent setup.
 - **[AIC-25]** Seed existing follow-up drain parent fixtures · auto-improver
   **Done looks like:** Developers finish follow-up drain checks sooner because parent setup starts two fewer commands.
 - **[AIC-24]** Remove duplicate review baseline read launch · auto-improver

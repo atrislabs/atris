@@ -9282,13 +9282,18 @@ test('task events defaults to a recent compact view', () => {
   try {
     fs.mkdirSync(path.join(dir, 'atris'), { recursive: true });
 
-    const created = runCli(['task', 'new', 'Keep the ledger behind the cockpit', '--json'], { cwd: dir, env });
-    assert.equal(created.status, 0, created.stderr);
-    const id = JSON.parse(created.stdout).task_id;
-    // The first 29 notes go straight to the task store; the newest still runs
+    // Seed the parent and first 29 notes directly; the newest still runs
     // through the CLI so the events view reads what the CLI writes.
+    let id;
     const db = taskStore.open(dbPath);
     try {
+      const created = taskStore.addTask(db, {
+        title: 'Keep the ledger behind the cockpit',
+        tag: 'task',
+        workspaceRoot: taskStore.workspaceRoot(dir),
+      });
+      assert.equal(created.inserted, true);
+      id = created.id;
       for (let i = 0; i < 29; i += 1) {
         assert.equal(taskStore.noteTask(db, { id, actor: 'codex', content: `status note ${i}` }).noted, true);
       }

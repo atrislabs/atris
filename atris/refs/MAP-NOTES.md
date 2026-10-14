@@ -2312,3 +2312,7 @@ npm publish
 - `test/commands.test.js:8904` checks bounded review receipts and the human approval stop. Its real-store helper at `test/commands.test.js:8916` seeds two unclaimed rows with the original goal metadata, saving two setup launches. The baseline at `test/commands.test.js:8981` reads the real-store projection without a third launch, checks a review row with a positive version, and closes the store in finally. Ready, review, dry and live run, receipt reads, and final CLI show remain; final show checks both identity and unchanged version.
 
 - `test/commands.test.js:9144` checks drain selection after an existing follow-up child. Its parent helper at `test/commands.test.js:9155` seeds two unclaimed rows with goal metadata through the real task store, saving two setup launches. Ready, review, child creation and reuse, drain, status, and current remain CLI calls with all assertions preserved.
+
+## Compact event test setup
+
+- `test/commands.test.js:9277` checks recent, full and exported event history. Parent creation and the first 29 notes share the real task store at `test/commands.test.js:9288`, saving one setup launch. The final note, plain and JSON recent views, full ledger and export remain CLI calls with every history assertion intact; the store closes in finally.

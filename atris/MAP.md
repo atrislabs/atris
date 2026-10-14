@@ -101,7 +101,7 @@ checks the refs in both files; `atris doc-health --fix-refs` moves drifted ones.
 | design system commands | `commands/design.js` `lib/design-api.js` | atris design extract and check; shared with atris mcp |
 | improvement attempt ledger | `commands/rsi.js` `lib/rsi-record.js` | read and record Dream-RSI attempts |
 | workspace tree hash | `commands/tree.js` `lib/tree-hash.js` | atris tree hash over the doctrine files |
-| tests | `test/commands.test.js` | node --test test/; existing-follow-up drain parents, continuation-status, compact approval-queue, proof-specific review-chat, duplicate review-loop, and bounded review receipt fixtures seed real task rows in process; the bounded receipt and duplicate review-loop checks also read their baselines in process, while ready, review, status, queue output, and open-task review rejection exercise the CLI |
+| tests | `test/commands.test.js` | node --test test/; compact event parents, existing-follow-up drain parents, continuation-status, compact approval-queue, proof-specific review-chat, duplicate review-loop, and bounded review receipt fixtures seed real task rows in process; the bounded receipt and duplicate review-loop checks also read their baselines in process, while ready, review, status, queue output, and open-task review rejection exercise the CLI |
 | run one test | `package.json` | npm test, node --test |
 | release publish script | `scripts/publish-atris-release.js` | tag-driven publish |
 | ci workflows | `.github/workflows` | test and publish gates |
