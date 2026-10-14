@@ -1788,7 +1788,7 @@ test('fix puts a comma after an aside that closes an opening "if" or "when" clau
   ]);
 });
 
-test('a three-backtick block inside a four-backtick example stays code', () => {
+test('a shorter or other-mark fence inside an example block stays code', () => {
   // a shorter fence inside a longer one is part of the example, so it never
   // ends the block and lets the fixer edit the example's code
   const D = String.fromCharCode(0x2014);
@@ -1801,6 +1801,17 @@ test('a three-backtick block inside a four-backtick example stays code', () => {
     `Keep the example ${D} it is literal.`,
     '`' + B,
     `The fixer leaves code alone ${D} it only edits prose.`,
+    // a fence of the other mark is part of the example too, either way round
+    '~~~md',
+    B,
+    `wait ${D} then ship`,
+    B,
+    '~~~',
+    B + 'md',
+    '~~~',
+    `wait ${D} then ship`,
+    '~~~',
+    B,
   ].join('\n'));
   const { changes } = applyFixes([file], RULES);
   assert.deepEqual(changes.map((c) => [c.line, c.after]), [
