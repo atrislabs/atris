@@ -1013,6 +1013,22 @@ test('fix leaves link addresses, HTML tags, and code in plain text alone', () =>
   ]);
 });
 
+test('fix keeps a link address whole when it has a title or nested parentheses', () => {
+  // a titled link used to lose its mask, so "a-b" in the path became "a, b";
+  // the title is masked too, so its dash never pairs with one outside the link
+  const file = tmpFile('link-title.md', [
+    'Open [the guide](https://x.dev/a\u2014b "Guide \u2014 v2") \u2014 it helps.',
+    'See [Up](https://x.org/wiki/Up_(film\u20142009)) for it \u2014 really.',
+    '![pic](img/a_(1\u20142).png) shows \u2014 a lot.',
+  ].join('\n'));
+  const { changes } = applyFixes([file], RULES, { write: false });
+  assert.deepEqual(changes.map((c) => c.after), [
+    'Open [the guide](https://x.dev/a\u2014b "Guide \u2014 v2"); it helps.',
+    'See [Up](https://x.org/wiki/Up_(film\u20142009)) for it, really.',
+    '![pic](img/a_(1\u20142).png) shows, a lot.',
+  ]);
+});
+
 test('fix leaves footnote and reference labels alone and fixes the prose around them', () => {
   // a dash in a label used to pair with a prose dash: "[^note (1] Then more)"
   const file = tmpFile('refs.md', [

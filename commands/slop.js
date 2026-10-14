@@ -276,9 +276,11 @@ function fencedLines(lines) {
 // reference definition; the title and note text after them stay prose. So
 // is the text inside a code-like HTML pair (<kbd>, <code>, <samp>, <var>,
 // <tt>) and inline math; a math span opens on a non-space and closes on a
-// non-space with no digit after, so "$5 and $10" stays prose.
+// non-space with no digit after, so "$5 and $10" stays prose. A link address
+// may hold one level of parentheses, like a wiki page ending in "_(film)",
+// and its quoted title is masked with it, like an HTML title attribute.
 // Each is masked while the fix runs.
-const LITERAL_SPAN = /(`+).+?\1|<(kbd|code|samp|var|tt)\b[^<>]*>.*?<\/\2\s*>|\$\$.+?\$\$|\$(?=\S)[^$]+?(?<=\S)\$(?!\d)|\[\^[^\]\s]+\]|^\s{0,3}\[[^\]]+\]:\s*\S+|(?<=\])\[[^\]]+\]|(?<=\])\([^)\s]*\)|<[A-Za-z/!][^<>]*>/g;
+const LITERAL_SPAN = /(`+).+?\1|<(kbd|code|samp|var|tt)\b[^<>]*>.*?<\/\2\s*>|\$\$.+?\$\$|\$(?=\S)[^$]+?(?<=\S)\$(?!\d)|\[\^[^\]\s]+\]|^\s{0,3}\[[^\]]+\]:\s*\S+|(?<=\])\[[^\]]+\]|(?<=\])\((?:[^()\s]|\([^()\s]*\))*(?:\s+"[^"]*")?\)?|<[A-Za-z/!][^<>]*>/g;
 function maskInlineCode(line) {
   const spans = [];
   const masked = line.replace(LITERAL_SPAN, (m) => `\uE000${spans.push(m) - 1}\uE001`);
