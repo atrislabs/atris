@@ -106,13 +106,16 @@ const CLAUSE_AFTER_DASH = /(?<=[\w)\]"'*_`\u201d\u2019\uE001])\s*\u2014\s*(?=(?:
 // means a phrase with a clause inside it, "the verb the fleet runs", so the
 // dash there keeps its comma. So does a naming word with more words before
 // the verb, which restates what came before: "the same intersection, the
-// next thing /autopilot should ship".
+// next thing /autopilot should ship". One short place phrase may sit between
+// the subject and its verb, with its own "the": "the counting slack at degree
+// 4 is only 2", "the oldest job in the queue is stale".
 const NOUN_WORD = "(?:[A-Za-z0-9_/'-]+(?:\\.[A-Za-z0-9_]+)*|\\uE000\\d+\\uE001)";
 const SUBJECT_WORD = `(?:(?!(?:and|but|or|nor|so|yet|then|not|even|when|if|unless|until|because|since|while|where|which|who|as|after|before|though|although|once|just|only)\\b)${NOUN_WORD}\\s+)`;
 const HELPING_VERB = '(?:is|are|was|were|will|would|can|cannot|could|must|should|may|might|has|have|had|does|did|exists|gets|got|needs|keeps|makes|runs|takes|goes|stays|means)';
 const NAMING_WORD = '(?:thing|one|part|piece|kind|place|point|moment|step|move|reason|question|answer)s?';
 const NAMING_PHRASE = `(?:the|a|an)\\s+(?:(?:next|only|same|first|last|real|one)\\s+)?${NAMING_WORD}\\s+(?!(?:${HELPING_VERB}|${NAMING_WORD})\\b)`;
-const NOUN_CLAUSE_AFTER_DASH = new RegExp(`(?<=[\\w)\\]"'*_\`\\u201d\\u2019\\uE001])\\s*\\u2014\\s*(?!${NAMING_PHRASE})(?=${SUBJECT_WORD}(?:(?!(?:the|a|an|that|whose)\\b)${SUBJECT_WORD}){0,4}${HELPING_VERB}\\s+[^\\s\\u2014])`, 'g');
+const PLACE_PHRASE = `(?:(?:at|in|on|of|for|from|under|per)\\s+(?:(?:the|a|an)\\s+)?(?:(?!(?:the|a|an|that|whose)\\b)${SUBJECT_WORD}){1,2})?`;
+const NOUN_CLAUSE_AFTER_DASH = new RegExp(`(?<=[\\w)\\]"'*_\`\\u201d\\u2019\\uE001])\\s*\\u2014\\s*(?!${NAMING_PHRASE})(?=${SUBJECT_WORD}(?:(?!(?:the|a|an|that|whose)\\b)${SUBJECT_WORD}){0,4}${PLACE_PHRASE}${HELPING_VERB}\\s+[^\\s\\u2014])`, 'g');
 // A plain verb ending in "s" counts only after a determiner and one more word,
 // and never right before a preposition: "a stray file turns them" joins, but
 // "the changes from whoever" and "the old tests from CI" stay noun phrases.
