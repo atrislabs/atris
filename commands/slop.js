@@ -354,9 +354,22 @@ function walk(target, out) {
 
 // This file defines the slop patterns, so its own RULES and PAIR_RULES tables
 // would match themselves. Return the line indexes inside those two tables when
-// scanning this file, so a self-scan reports only real slop in the code.
-function ownTableLines(file, lines) {
+// scanning this file, so a self-scan reports only real slop in the code, plus
+// any line a writer marked to ignore.
+// A writer can keep a line as written, say a bad example quoted on purpose:
+// a line holding slop-ignore is skipped, and slop-ignore-next-line skips the
+// line below it. In markdown the marker can sit in an HTML comment.
+function ignoredLines(lines) {
   const skip = new Set();
+  for (let i = 0; i < lines.length; i++) {
+    if (lines[i].includes('slop-ignore-next-line')) skip.add(i + 1);
+    else if (lines[i].includes('slop-ignore')) skip.add(i);
+  }
+  return skip;
+}
+
+function ownTableLines(file, lines) {
+  const skip = ignoredLines(lines);
   if (path.resolve(file) !== __filename) return skip;
   let inside = false;
   for (let i = 0; i < lines.length; i++) {
@@ -794,6 +807,8 @@ function slopCommand(argv) {
     atris slop hook               install a pre-commit gate (runs --staged)
     atris slop dead [root]        find dead JS (unreachable + unreferenced files)
 
+  Keep a line as written (a bad example quoted on purpose) by putting
+  slop-ignore on it, or slop-ignore-next-line on the line above it.
   Project rules live in .atris/slop.rules.json and compound over time.
   exit 0 = clean, 1 = slop found. Wire into PR checks and the autopilot gate.
 `);

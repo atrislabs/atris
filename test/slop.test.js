@@ -748,6 +748,23 @@ test('fix turns a table cell that holds only a dash into a hyphen', () => {
   assert.deepEqual(scanFile(file).map((f) => f.line), [], 'nothing left to flag');
 });
 
+test('a line marked slop-ignore is neither flagged nor fixed', () => {
+  // the copy-editor skill quotes a dash-heavy sentence as its bad example
+  const D = '\u2014';
+  const body = [
+    '**Before:**',
+    '<!-- slop-ignore-next-line -->',
+    `> promoted by institutions${D}not by the people${D}even in documents.`,
+    `A quoted tell ${D} kept on purpose. <!-- slop-ignore -->`,
+    `This one ${D} is real slop.`,
+  ].join('\n');
+  const file = tmpFile('ignore.md', body);
+  assert.deepEqual(scanFile(file).map((f) => f.line), [5], 'only the unmarked line is flagged');
+  const { changes } = applyFixes([file], RULES);
+  assert.deepEqual(changes.map((c) => c.line), [5], 'only the unmarked line is fixed');
+  assert.deepEqual(fs.readFileSync(file, 'utf8').split('\n').slice(0, 4), body.split('\n').slice(0, 4));
+});
+
 test('fix drops a dash after a quote that already ends its sentence', () => {
   // from this repo's feature notes, policies, and the endgame skill
   const file = tmpFile('quote-end.md', [
