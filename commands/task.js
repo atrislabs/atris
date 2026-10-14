@@ -6471,7 +6471,8 @@ function refreshKeptTaskList(cwd = process.cwd()) {
 
 function keptCount(result) {
   return (result && result.put_away ? result.put_away.length : 0)
-    + (result && result.reaped ? result.reaped.length : 0);
+    + (result && result.reaped ? result.reaped.length : 0)
+    + (result && result.closed_merged ? result.closed_merged.length : 0);
 }
 
 function cmdKeep(args) {
@@ -6485,6 +6486,7 @@ function cmdKeep(args) {
       count,
       put_away: result.put_away,
       reaped: result.reaped,
+      closed_merged: result.closed_merged || [],
     });
     return;
   }
@@ -6492,8 +6494,16 @@ function cmdKeep(args) {
     console.log('task list is current. nothing to put away.');
     return;
   }
-  const noun = count === 1 ? 'item' : 'items';
-  console.log(`put away ${count} ${noun} that were finished or sitting still.`);
+  const closedCount = (result.closed_merged || []).length;
+  const keptOnly = count - closedCount;
+  if (keptOnly) {
+    const noun = keptOnly === 1 ? 'item' : 'items';
+    console.log(`put away ${keptOnly} ${noun} that were finished or sitting still.`);
+  }
+  if (closedCount) {
+    const noun = closedCount === 1 ? 'job' : 'jobs';
+    console.log(`closed ${closedCount} finished ${noun} whose change already merged.`);
+  }
 }
 
 function cmdDay(args) {
