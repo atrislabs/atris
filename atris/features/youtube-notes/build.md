@@ -1,6 +1,6 @@
 # YouTube Notes: Build Plan
 
-> **For Executor Agent.** This describes the feature as it stands on 2026-09-28. Use it to find the code before changing it.
+> **For Executor Agent.** This describes the feature as it stands on 2026-10-13. Use it to find the code before changing it.
 
 ---
 
@@ -102,6 +102,23 @@ These steps name what shipped, in the order it landed on 2026-09-28. Each one is
 
 **Validation:**
 - `node --test test/ytnotes.test.js`
+
+---
+
+### Step 6: The writer starts while the captions download (2026-10-13)
+
+**File:** `scripts/det/ytnotes` (`resolve_roster_writers`, `agy_signed_in`, `start_warm_gemini`, `warm_gemini`, `run_haiku`)
+
+**What it does:**
+- `auto` puts the team's notes writer first, from `atris engine resolve notes --json`. Any failure or a lookup slower than 2s falls back to the built-in order. `ATRIS_YTNOTES_ROSTER=0` skips it.
+- The Gemini sign-in check (`agy models`, about 2s) runs in the background while yt-dlp fetches captions. Only a "Please sign in" answer counts as signed out, and the writer reuses that answer instead of checking twice.
+- When Gemini leads and the check says signed in, Gemini starts with streamed input during the caption download and gets the prompt once the transcript is ready. It never starts before the check answers, so a signed-out Mac cannot get a Google login window.
+- Haiku runs with no tools, no MCP servers, no hooks, closed input, and no nonessential traffic, which cuts Claude Code's startup.
+- Quick bench median after these changes: 10.4s over five runs, all cases passing. The caption download (about 3.4s) and the sign-in check now set the floor.
+
+**Validation:**
+- `node --test test/ytnotes.test.js`
+- `node scripts/det/ytrail-bench.js --quick --score`
 
 ---
 
