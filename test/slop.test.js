@@ -2845,6 +2845,21 @@ test('fix joins a count and a plural noun before a common present verb as a clau
   ]);
 });
 
+test('fix keeps a time phrase with a number word after a dash as an aside', () => {
+  // the plural noun read as a verb: "We shipped it; two weeks ago."
+  const file = tmpFile('time-phrase.md', [
+    'We shipped it \u2014 two weeks ago.',
+    'We shipped it \u2014 three days later.',
+    'The sweep is finished \u2014 both packs validate cleanly.',
+  ].join('\n\n'));
+  const { changes } = applyFixes([file], RULES, { write: false });
+  assert.deepEqual(changes.map((c) => c.after), [
+    'We shipped it, two weeks ago.',
+    'We shipped it, three days later.',
+    'The sweep is finished; both packs validate cleanly.',
+  ]);
+});
+
 test('fix keeps a journal heading that ends in a time readable for its hour', () => {
   // analytics reads the hour after a dash or a spaced hyphen at the end of a
   // heading; the fix wrote "### Watch: 19:05", which hides it, and glued
