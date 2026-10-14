@@ -19882,9 +19882,18 @@ test('task accept refreshes existing rendered todo view', () => {
       '(Empty)',
     ].join('\n'), 'utf8');
 
-    const add = runCli(['task', 'add', 'Refresh todo after accept', '--tag', 'status', '--json'], { cwd: dir, env });
-    assert.equal(add.status, 0, add.stderr);
-    const ref = JSON.parse(add.stdout).task.display_id;
+    // Seed creation only; ready, accept and the rendered file refresh stay on the CLI.
+    const workspaceRoot = taskStore.workspaceRoot(dir);
+    const db = taskStore.open(dbPath);
+    let ref;
+    try {
+      const created = addSeedTask(db, { title: 'Refresh todo after accept', tag: 'status', workspaceRoot });
+      assert.equal(created.inserted, true);
+      ref = taskStore.taskDisplayRefMap(taskStore.listTasks(db, { workspaceRoot })).get(created.id);
+      assert.ok(ref);
+    } finally {
+      taskStore.close();
+    }
     const ready = runCli([
       'task',
       'ready',

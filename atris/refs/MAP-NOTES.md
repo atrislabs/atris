@@ -2421,3 +2421,7 @@ npm publish
 ## Goal display-ref status fixture setup
 
 - `test/commands.test.js:14433` checks that task status reads a parent goal's title as the current task's objective when the child was linked by display reference. Real-store parent creation at `test/commands.test.js:14452` saves one setup launch and reads id, title and display reference from the stored row; the child add that resolves the display reference, the claim and the status read remain on the CLI.
+
+## Rendered task list accept refresh fixture setup
+
+- `test/commands.test.js:19861` checks that accepting a task refreshes an existing rendered task list file. Real-store creation at `test/commands.test.js:19885` saves one setup launch and never touches the file, so the completed entry can only come from the CLI ready and accept that remain.
