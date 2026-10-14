@@ -985,6 +985,10 @@ test('fix joins a noun clause after the dash with a semicolon', () => {
     'Hand off \u2014 the voice acknowledges instantly and the agent answers.',
     'Ship the patch \u2014 the fixer works cleanly.',
     'It is old code \u2014 the tests mostly.',
+    // a word in "s" before ", which is" is a verb; a noun in "us" or "ics" is not
+    'It silently does nothing \u2014 the unbulleted form works, which is why nobody noticed.',
+    'Check the deploy \u2014 the build status, which is green.',
+    'Read the report \u2014 the eval metrics, which is the point.',
     // "once", "when" or "if" with a comma and a subject after it starts a
     // second sentence; with no subject after the comma it only adds a condition
     'This is the archive \u2014 once the endgame closes, future runs can read this.',
@@ -1051,6 +1055,9 @@ test('fix joins a noun clause after the dash with a semicolon', () => {
     'Hand off; the voice acknowledges instantly and the agent answers.',
     'Ship the patch; the fixer works cleanly.',
     'It is old code, the tests mostly.',
+    'It silently does nothing; the unbulleted form works, which is why nobody noticed.',
+    'Check the deploy, the build status, which is green.',
+    'Read the report, the eval metrics, which is the point.',
     'This is the archive; once the endgame closes, future runs can read this.',
     'Run the gate; when it passes, the branch lands.',
     'It fails, when the disk is full.',
