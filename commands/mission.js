@@ -8,7 +8,7 @@ const { spawn, spawnSync } = require('child_process');
 const { hasFlag, readFlag, readIntFlag } = require('../lib/arg-parser');
 const { memberProcessPrompt } = require('../lib/member-context');
 const { memberIdentityLine, missionObjectiveLine } = require('../lib/member-identity');
-const { formatToolStep, formatCodexEvent, appendProgress, reportProgress } = require('../lib/member-progress');
+const { formatToolStep, formatCodexEvent, appendProgress, reportProgress, startedLine, newRunToken, runMarker } = require('../lib/member-progress');
 const {
   compactErrorPayload,
   compactSuccessPayload,
@@ -9401,8 +9401,10 @@ function spawnClaudeTick(mission, opts) {
       });
       return;
     }
+    const runToken = newRunToken();
+    const runOwner = mission.owner || 'mission';
     const args = [
-      '-p', prompt,
+      '-p', `${runMarker(runOwner, runToken)}\n${prompt}`,
       '--output-format', 'stream-json',
       '--verbose',
       '--permission-mode', 'bypassPermissions',
@@ -9426,7 +9428,7 @@ function spawnClaudeTick(mission, opts) {
     updateMissionLockOwner(missionLock, proc.pid, { phase: 'tick' });
     const progressMember = mission.owner || 'mission';
     const seenToolIds = new Set();
-    appendProgress(progressMember, `started: ${mission.objective || ''}`, mission.id);
+    appendProgress(progressMember, startedLine(mission.objective, { pid: proc.pid, engine: 'claude', run: runToken }), mission.id);
 
     let stdoutBuf = '';
     let observedSessionIds = new Set();
