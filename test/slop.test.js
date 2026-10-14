@@ -350,3 +350,24 @@ test('the em dash fix keeps punctuation already beside a dash instead of doublin
     'wraps to the next line,',
   ]);
 });
+
+test('a fix run prints each changed line before and after, and quiet mode stays one line', () => {
+  const D = '\u2014';
+  const run = (argv) => {
+    const lines = [];
+    const orig = console.log;
+    console.log = (...a) => lines.push(a.join(' '));
+    let code;
+    try { code = detect(argv); } finally { console.log = orig; }
+    return { code, out: lines.join('\n') };
+  };
+  const body = ['# Notes', `We checked it, ${D} and it held.`, 'nothing to fix here', ''].join('\n');
+  const file = tmpFile('note.md', body);
+  const { code, out } = run([file, '--fix']);
+  assert.equal(code, 0, 'clean after the fix');
+  assert.match(out, /note\.md:2\n\s+before  We checked it, \u2014 and it held\.\n\s+after   We checked it, and it held\./);
+  assert.doesNotMatch(out, /nothing to fix here/, 'untouched lines are not listed');
+
+  const quiet = run([tmpFile('note.md', body), '--fix', '--quiet']);
+  assert.doesNotMatch(quiet.out, /before|after/, 'quiet mode skips the line list');
+});

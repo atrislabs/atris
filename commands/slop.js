@@ -187,10 +187,12 @@ function installHook(root = process.cwd()) {
   return { hookPath, already: false };
 }
 
-// Apply every fixable rule's safe transform in place. Returns { fixedCount, fixedFiles }.
+// Apply every fixable rule's safe transform in place.
+// Returns { fixedCount, fixedFiles, changes }, where changes lists each edited
+// line as { file, line, before, after } so the writer can review the fix.
 function applyFixes(files, rules) {
   const fixable = rules.filter((r) => typeof r.fix === 'function');
-  let fixedCount = 0; const fixedFiles = [];
+  let fixedCount = 0; const fixedFiles = []; const changes = [];
   for (const file of files) {
     let text; try { text = fs.readFileSync(file, 'utf8'); } catch { continue; }
     const lines = text.split('\n');
@@ -200,11 +202,11 @@ function applyFixes(files, rules) {
       if (skip.has(i)) continue;
       let line = lines[i];
       for (const r of fixable) { if (r.re.test(line)) { const nl = r.fix(line); if (nl !== line) { line = nl; fixedCount++; } } }
-      if (line !== lines[i]) { lines[i] = line; touched = true; }
+      if (line !== lines[i]) { changes.push({ file, line: i + 1, before: lines[i], after: line }); lines[i] = line; touched = true; }
     }
     if (touched) { fs.writeFileSync(file, lines.join('\n')); fixedFiles.push(file); }
   }
-  return { fixedCount, fixedFiles };
+  return { fixedCount, fixedFiles, changes };
 }
 
 function walk(target, out) {
@@ -336,6 +338,11 @@ function detect(argv) {
     fixed = applyFixes(files, rules);
     if (!json && fixed.fixedCount) {
       console.log(`\n  ✎ fixed ${fixed.fixedCount} tell${fixed.fixedCount === 1 ? '' : 's'} in ${fixed.fixedFiles.length} file${fixed.fixedFiles.length === 1 ? '' : 's'}`);
+      if (!quiet) {
+        for (const c of fixed.changes) {
+          console.log(`\n    ${path.relative(process.cwd(), c.file)}:${c.line}\n      before  ${c.before.trim()}\n      after   ${c.after.trim()}`);
+        }
+      }
     }
   }
 
