@@ -130,6 +130,9 @@ test('atris scoreboard counts today on every branch when an old branch is checke
     sb.git('branch', 'feature');
     sb.git('update-ref', 'refs/remotes/origin/master', 'HEAD');
     assert.strictEqual(sb.git('checkout', '-q', '-b', 'old', 'HEAD~3').status, 0);
+    // A stash made today is work in progress, not a commit.
+    fs.writeFileSync(path.join(sb.repo, 'wip.txt'), 'wip');
+    assert.strictEqual(sb.git('stash', 'push', '-q', '-u', '-m', 'wip').status, 0);
     for (const args of [['scoreboard'], ['scoreboard', '--json']]) {
       const r = spawnSync(process.execPath, [CLI, ...args], { cwd: sb.repo, env: sb.env, encoding: 'utf8' });
       assert.strictEqual(r.status, 0, r.stderr);

@@ -48,13 +48,13 @@ function bar(count, target) {
   return `[${'#'.repeat(filled)}${'-'.repeat(BAR_WIDTH - filled)}]`;
 }
 
-// Today's commits on every local and remote branch plus the checkout, so an old
-// branch checked out still sees today's work. Stash is left out. Each commit
-// counts once, keyed by hash.
+// Today's commits on every ref (all local and remote branches, the checkout,
+// tags), so an old branch checked out still sees today's work. Stash is left
+// out. Each commit counts once, keyed by hash.
 function repoCommits(cwd = process.cwd(), now = new Date()) {
   const midnight = new Date(now.getFullYear(), now.getMonth(), now.getDate());
   try {
-    const out = execFileSync('git', ['log', 'HEAD', '--branches', '--remotes', `--since=${midnight.toISOString()}`, '--format=%H%x1f%B%x1e'], {
+    const out = execFileSync('git', ['log', '--exclude=refs/stash', '--all', `--since=${midnight.toISOString()}`, '--format=%H%x1f%B%x1e'], {
       cwd, encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'],
     });
     const byHash = new Map();
