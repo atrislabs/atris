@@ -2937,22 +2937,29 @@ test('cleanup separates younger replacements from in-use or gone skips', () => {
 });
 
 test('every map ref to an engine resource or dispatch test lands on the line that starts the test', () => {
-  // A line range names a block, not one test, so only single line refs count.
+  // A single line ref opens one test; a line range opens a test and ends on
+  // the line that closes a test.
   const offTest = (doc, text, testFiles) => {
     const found = [];
-    for (const match of text.matchAll(/(test\/engine-(?:resource|dispatch)\.test\.js):(\d+)(?![\d-])/g)) {
-      const [, file, line] = match;
-      if (!/^test\(/.test(testFiles[file][Number(line) - 1] || '')) found.push(`${doc} ${file}:${line}`);
+    for (const match of text.matchAll(/(test\/engine-(?:resource|dispatch)\.test\.js):(\d+)(?:-(\d+))?(?!\d)/g)) {
+      const [ref, file, start, end] = match;
+      const lines = testFiles[file];
+      const opens = /^test\(/.test(lines[Number(start) - 1] || '');
+      const closes = !end || (Number(end) > Number(start) && lines[Number(end) - 1] === '});');
+      if (!opens || !closes) found.push(`${doc} ${ref}`);
     }
     return [...new Set(found)];
   };
-  const planted = { 'test/engine-resource.test.js': ['', "test('one', () => {", '  ok();'], 'test/engine-dispatch.test.js': [] };
+  const planted = { 'test/engine-resource.test.js': ['', "test('one', () => {", '  ok();', '});'], 'test/engine-dispatch.test.js': [] };
   assert.deepStrictEqual(offTest('doc', 'see `test/engine-resource.test.js:2` and `test/engine-resource.test.js:3`', planted), ['doc test/engine-resource.test.js:3']);
-  assert.deepStrictEqual(offTest('doc', 'block `test/engine-resource.test.js:3-9`', planted), []);
+  assert.deepStrictEqual(offTest('doc', 'block `test/engine-resource.test.js:2-4`', planted), []);
+  assert.deepStrictEqual(offTest('doc', 'block `test/engine-resource.test.js:1-4` and `test/engine-resource.test.js:2-3`', planted), [
+    'doc test/engine-resource.test.js:1-4', 'doc test/engine-resource.test.js:2-3',
+  ]);
   const repo = path.join(__dirname, '..');
   const testFiles = {};
   for (const file of ['test/engine-resource.test.js', 'test/engine-dispatch.test.js']) testFiles[file] = fs.readFileSync(path.join(repo, file), 'utf8').split('\n');
   const stale = [];
   for (const doc of ['atris/MAP.md', 'atris/refs/MAP-NOTES.md']) stale.push(...offTest(doc, fs.readFileSync(path.join(repo, doc), 'utf8'), testFiles));
-  assert.deepStrictEqual(stale, [], 'a test moved; point each ref at the line where its test now starts');
+  assert.deepStrictEqual(stale, [], 'a test moved; point each ref at the line where its test now starts, and a range at the line where its last test ends');
 });

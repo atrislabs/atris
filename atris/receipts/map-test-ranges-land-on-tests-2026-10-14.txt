@@ -1,0 +1,32 @@
+map test ranges land on their tests, 2026-10-14
+
+problem: three line ranges in atris/refs/MAP-NOTES.md into
+test/engine-dispatch.test.js (99-148, 64-76, 253-291) had drifted, and the ref
+check skipped ranges, so it could not see them.
+
+matched by the words around each range to the tests it names:
+  task shorthand regressions  99-148  -> 100-147 (two tests, both whole)
+  fleet preamble regression   64-76   -> 65-76
+  live log finalize regression 253-291 -> 325-375 (the happy path flight test
+    that asserts live_log); this range did not match its words even at the
+    commit that wrote it, so the title, not history, decided it
+
+ref check now covers ranges: a range must start on a test line and end on the
+line that closes a test. Planted cases: a whole test passes; a range starting
+above a test, and one ending mid-test, are both named.
+  node --test --test-name-pattern="every map ref" test/engine-resource.test.js
+  notes from the previous commit: fail 1, names exactly the three old ranges, exit 1
+  fixed notes: pass 1, fail 0, exit 0
+
+frozen check:
+  node --test test/engine-resource.test.js test/engine-dispatch.test.js
+  tests 148, pass 148, fail 0, exit 0
+git diff --check: exit 0; slop detect on the notes: clean
+
+also checked, no slice: every engine caller of a launch helper that takes its
+program as a parameter already records (ask callers through the shared ask
+recorder, phase commands at each call, fleet around its spawn wrappers), so a
+parameter guard today would add exemptions and catch nothing.
+skipped as out of scope: 35 of 177 map refs into other test files miss a test
+line, mostly the official CLI integration tests.
+next_push: run a second-model review of the voice judge and orb recording plus the two launch guards on this branch, and fix what it finds before asking for human review.
