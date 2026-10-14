@@ -1692,6 +1692,22 @@ test('fix gives an aside that opens with a joining word commas, not parentheses'
   ]);
 });
 
+test('fix reads no word that only says when as the subject of a clause', () => {
+  // "now ships" after a dash read as a bare subject and a verb
+  const file = tmpFile('when-word.md', [
+    'The tool we built \u2014 now ships to everyone.',
+    'The fix we wrote \u2014 already runs in CI.',
+    // a real bare subject still starts its own clause
+    'We ran it \u2014 nothing breaks now.',
+  ].join('\n'));
+  const { changes } = applyFixes([file], RULES);
+  assert.deepEqual(changes.map((c) => c.after), [
+    'The tool we built, now ships to everyone.',
+    'The fix we wrote, already runs in CI.',
+    'We ran it; nothing breaks now.',
+  ]);
+});
+
 test('fix gives a line-end dash a semicolon when the next line opens a new clause', () => {
   // from the Orb member file, where the wrap hid a comma splice
   const file = tmpFile('line-end-clause.md', [

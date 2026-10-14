@@ -173,6 +173,9 @@ const CLAUSE_AFTER_DASH = /(?<=[\w)\]"'*_`\u201d\u2019\uE001])\s*\u2014\s*(?=(?:
 // "suggested fix is ready" and "confirmed bugs are fixed" still join.
 const REPORT_VERB = '(?:proves|shows|means|suggests|confirms|implies|indicates|says|ensures|guarantees|proved|showed|meant)';
 const NOUN_WORD = "(?:[A-Za-z0-9_/'-]+(?:\\.[A-Za-z0-9_]+)*|\\uE000\\d+\\uE001)";
+// a word that only says when or how often is never the first word of a
+// subject: "The tool we built, now ships to everyone".
+const WHEN_WORD = '(?:now|already|never|always|finally|soon|often|usually|really|actually)';
 const SUBJECT_WORD = `(?:(?!(?:and|but|or|nor|so|yet|then|not|even|when|if|unless|until|because|since|while|where|which|who|as|after|before|though|although|once|just|only)\\b)${NOUN_WORD}\\s+)`;
 const HELPING_VERB = '(?:is|are|was|were|will|would|can|cannot|could|must|should|may|might|has|have|had|does|did|exists|gets|got|needs|keeps|makes|runs|takes|goes|stays|means)';
 const NAMING_WORD = '(?:thing|one|part|piece|kind|place|point|moment|step|move|reason|question|answer)s?';
@@ -188,7 +191,7 @@ const TIME_OPENER = '(?:each|every|any|no)\\s+time\\b';
 // "labels are noise, the placeholder IS the label" joins like "is" does.
 const CAPS_HELPER = '(?:IS|ARE|WAS|WERE|WILL|CAN|MUST|HAS|HAVE|DOES|DID)';
 const OPEN_HELPER = '(?:is|are|was|were|will|would|can|cannot|could|must|should|may|might|has|had|does|did)';
-const NOUN_CLAUSE_AFTER_DASH = new RegExp(`(?<=[\\w)\\]"'*_\`\\u201d\\u2019\\uE001])\\s*\\u2014\\s*(?!${NAMING_PHRASE})(?!${TIME_OPENER})(?!${REPORT_VERB}\\s)(?=${SUBJECT_WORD}(?:(?!(?:the|a|an|that|whose)\\b)${SUBJECT_WORD}){0,4}${PLACE_PHRASE}(?:(?:${HELPING_VERB}|${CAPS_HELPER})\\s+[^\\s\\u2014]|${OPEN_HELPER}$))`, 'g');
+const NOUN_CLAUSE_AFTER_DASH = new RegExp(`(?<=[\\w)\\]"'*_\`\\u201d\\u2019\\uE001])\\s*\\u2014\\s*(?!${NAMING_PHRASE})(?!${WHEN_WORD}\\b)(?!${TIME_OPENER})(?!${REPORT_VERB}\\s)(?=${SUBJECT_WORD}(?:(?!(?:the|a|an|that|whose)\\b)${SUBJECT_WORD}){0,4}${PLACE_PHRASE}(?:(?:${HELPING_VERB}|${CAPS_HELPER})\\s+[^\\s\\u2014]|${OPEN_HELPER}$))`, 'g');
 // "Nothing", "everything" and their kin before a plain verb in "ed" or "s"
 // are a subject too: "the gate held, nothing in the queue moved". A word in
 // "ss" is never the verb, so "nothing less than" and "nothing fancy" stay.
@@ -305,7 +308,9 @@ const END_CLAUSE_AFTER_DASH = new RegExp(`(?<=[\\w)\\]"'*_\`\\u201d\\u2019\\uE00
 // the verb, so "each time the loop runs" and "each with its own tests in CI"
 // keep their comma.
 const EACH_CLAUSE_AFTER_DASH = new RegExp(`(?<=[\\w)\\]"'*_\`\\u201d\\u2019\\uE001])\\s*\\u2014\\s*(?!${TIME_OPENER})(?=each\\s+(?:(?!(?:the|a|an|that|whose|of|with|in|on|for|from|at|by|to|per|and|or|but)\\b)${NOUN_WORD}\\s+){0,4}(?:[a-z]+-)?${PLAIN_VERB}[^\\s\\u2014])`, 'g');
-const BARE_CLAUSE_AFTER_DASH = new RegExp(`(?<=[\\w)\\]"'*_\`\\u201d\\u2019\\uE001])\\s*\\u2014\\s*(?!${NAMING_PHRASE})(?=(?!(?:and|but|or|nor|so|yet|then|not|even|when|if|unless|until|because|since|while|where|which|who|as|after|before|though|although|once|just|only|also|still|this|that|it|its|one|the|our|your|their|her|his|any|every|each)\\b)[a-z]{3,}(?<!s|ly|[^e]ed)\\s+${PLAIN_VERB_WORD}\\s+(?:(?:to|into|onto|through)\\s|[a-z]{3,}(?:[.!?;]|$)))`, 'g');
+// A bare word and a plain verb start a clause too, but never a word that
+// only says when (see WHEN_WORD).
+const BARE_CLAUSE_AFTER_DASH = new RegExp(`(?<=[\\w)\\]"'*_\`\\u201d\\u2019\\uE001])\\s*\\u2014\\s*(?!${NAMING_PHRASE})(?!${WHEN_WORD}\\b)(?=(?!(?:and|but|or|nor|so|yet|then|not|even|when|if|unless|until|because|since|while|where|which|who|as|after|before|though|although|once|just|only|also|still|this|that|it|its|one|the|our|your|their|her|his|any|every|each)\\b)[a-z]{3,}(?<!s|ly|[^e]ed)\\s+${PLAIN_VERB_WORD}\\s+(?:(?:to|into|onto|through)\\s|[a-z]{3,}(?:[.!?;]|$)))`, 'g');
 
 // "Our", "your", "their" or "my" and one to three words, then a verb, start
 // a second sentence too: "Saw your post on falls after rehab; our scheduling
