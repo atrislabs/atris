@@ -2381,7 +2381,9 @@ function runEngineSweepCommand(args, root, deps = {}) {
     ...leaked.slice(0, shown).map((agent) => `  pid ${String(agent.pid).padEnd(6)} ${formatAgentAge(agent.age_sec)}`),
   ];
   if (leaked.length > shown) lines.push(`  and ${leaked.length - shown} more`);
-  for (const { file, line } of startLines) lines.push(`likely source: ${file} line ${line} starts a new ssh-agent in every shell that reads it`);
+  for (const { file, line, fix } of startLines) {
+    lines.push(`likely source: ${file} line ${line} starts a new ssh-agent in every shell that reads it${fix ? `; to start one only when none is reachable, change it to: ${fix}` : ''}`);
+  }
   if (scanWarning) lines.push(scanWarning);
   lines.push(leaked.length ? 'nothing was stopped. run atris engine sweep --apply to stop them.' : 'nothing was stopped.');
   lines.push('', ...resourceHistoryLines(history));

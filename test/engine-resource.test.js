@@ -303,7 +303,7 @@ test('atris engine sweep names the shell startup line that starts an agent per s
   try {
     fs.writeFileSync(path.join(home, '.zshrc'), 'eval "$(ssh-agent -s)"  # Start SSH agent\n# eval "$(ssh-agent -s)"\nexport PATH\n');
     fs.writeFileSync(path.join(home, '.bashrc'), 'echo ssh-agent is handy\n');
-    assert.deepStrictEqual(findAgentStartLines({ home }), [{ file: '~/.zshrc', line: 1 }]);
+    assert.deepStrictEqual(findAgentStartLines({ home }), [{ file: '~/.zshrc', line: 1, fix: '[ -S "$SSH_AUTH_SOCK" ] || eval "$(ssh-agent -s)"' }]);
     assert.deepStrictEqual(findAgentStartLines({ home: path.join(home, 'missing') }), []);
 
     const sweep = (agents, json) => {
@@ -319,8 +319,38 @@ test('atris engine sweep names the shell startup line that starts an agent per s
     };
     const leaked = [{ pid: 200, ppid: 1, uid: 501, age_sec: 53414, args: 'ssh-agent -s' }];
     assert.match(sweep(leaked), /likely source: ~\/\.zshrc line 1 starts a new ssh-agent in every shell that reads it/);
-    assert.deepStrictEqual(JSON.parse(sweep(leaked, true)).agent_start_lines, [{ file: '~/.zshrc', line: 1 }]);
+    assert.deepStrictEqual(JSON.parse(sweep(leaked, true)).agent_start_lines.map(({ file, line }) => ({ file, line })), [{ file: '~/.zshrc', line: 1 }]);
     assert.doesNotMatch(sweep([]), /likely source/, 'no leak, no source line');
+  } finally {
+    fs.rmSync(home, { recursive: true, force: true });
+  }
+});
+
+test('the sweep offers a guarded line only for a lone unguarded agent start', () => {
+  const { engineCommand } = require('../commands/engine');
+  const { findAgentStartLines } = require('../lib/engine-resource');
+  const home = fs.mkdtempSync(path.join(os.tmpdir(), 'engine-sweep-fix-'));
+  try {
+    fs.writeFileSync(path.join(home, '.zshrc'), [
+      'eval "$(ssh-agent -s)"  # Start SSH agent',
+      '[ -n "$SSH_AUTH_SOCK" ] || eval "$(ssh-agent -s)"',
+      'if true; then eval `ssh-agent -s`; fi',
+    ].join('\n'));
+    assert.deepStrictEqual(findAgentStartLines({ home }), [
+      { file: '~/.zshrc', line: 1, fix: '[ -S "$SSH_AUTH_SOCK" ] || eval "$(ssh-agent -s)"' },
+      { file: '~/.zshrc', line: 3 },
+    ]);
+    const out = [];
+    const original = console.log;
+    console.log = (line) => out.push(String(line));
+    try {
+      engineCommand(['sweep'], { engineSweep: { read: () => ({ agents: [{ pid: 200, ppid: 1, uid: 501, age_sec: 53414, args: 'ssh-agent -s' }], referenced: new Set() }), uid: 501, home } });
+    } finally {
+      console.log = original;
+    }
+    const text = out.join('\n');
+    assert.match(text, /likely source: ~\/\.zshrc line 1 starts a new ssh-agent in every shell that reads it; to start one only when none is reachable, change it to: \[ -S "\$SSH_AUTH_SOCK" \] \|\| eval "\$\(ssh-agent -s\)"/);
+    assert.match(text, /likely source: ~\/\.zshrc line 3 starts a new ssh-agent in every shell that reads it\n/);
   } finally {
     fs.rmSync(home, { recursive: true, force: true });
   }
