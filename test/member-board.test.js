@@ -521,6 +521,25 @@ test('a board too tall for its screen drops ended runs\' last steps before any m
   assert.equal(tall.filter((l) => l.startsWith('  last step:')).length, 4, 'with room, every step shows');
 });
 
+test('a too-tall board keeps the last step of a run that died or failed', () => {
+  const now = Date.parse('2026-10-14T13:00:00Z');
+  const ended = (name, end) => memberRow(name, `2026-10-14T12:40:00Z m-1 started: ship the ${name} change\n2026-10-14T12:41:00Z m-1 running: npm test\n2026-10-14T12:42:00Z m-1 finished: ${end}\n`, now);
+  const rows = [
+    memberRow('crashed', '2026-10-14T12:30:00Z m-3 started: [pid 2147483646 engine claude] build it\n2026-10-14T12:31:00Z m-3 running: npm run build\n', now),
+    ended('broke', 'failed'),
+    memberRow('builder', `2026-10-14T12:50:00Z m-2 started: [pid ${process.pid}] fit the board\n2026-10-14T12:59:30Z m-2 running: node --test\n`, now),
+    ended('ann', 'ok'),
+    ended('bo', 'stopped'),
+  ];
+  const short = renderBoard(rows, '/x', 0, 60, [], 13).split('\n');
+  assert.ok(['crashed ', 'broke ', 'builder ', 'ann ', 'bo '].every((m) => short.some((l) => l.startsWith(m))), `every member shows:\n${short.join('\n')}`);
+  assert.deepEqual(short.filter((l) => l.startsWith('  last step:')), ['  last step: running: npm run build', '  last step: running: npm test', '  last step: running: node --test'], `died, failed, and live runs keep their step; clean endings give theirs up:\n${short.join('\n')}`);
+  assert.ok(short.length <= 13);
+  const shorter = renderBoard(rows, '/x', 0, 60, [], 11).split('\n');
+  assert.ok(['crashed ', 'broke ', 'builder ', 'ann ', 'bo '].every((m) => shorter.some((l) => l.startsWith(m))), `a member still costs more than those steps:\n${shorter.join('\n')}`);
+  assert.deepEqual(shorter.filter((l) => l.startsWith('  last step:')), ['  last step: running: node --test'], 'only the live run keeps its step');
+});
+
 test('a board gives up the order words before it puts last steps on their own lines', () => {
   const now = Date.parse('2026-10-14T13:00:00Z');
   const hist = (ends) => ends.flatMap((e, i) => [`2026-10-14T12:1${i}:00Z m-${i} started: run ${i}`, `2026-10-14T12:1${i}:30Z m-${i} finished: ${e}`]);
