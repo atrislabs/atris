@@ -19989,7 +19989,9 @@ test('log assigns sequential IDs across sessions', () => {
 test('status default mode renders human summary', () => {
   const dir = makeTempDir();
   try {
-    initWorkspace(dir);
+    // The test writes the TODO and live mission status reads, so init is not needed. A task db
+    // path of its own that does not exist makes status read this TODO, not the shared test db.
+    fs.mkdirSync(path.join(dir, 'atris'), { recursive: true });
     const todoPath = path.join(dir, 'atris', 'TODO.md');
     fs.writeFileSync(todoPath, [
       '# TODO.md',
@@ -20008,10 +20010,11 @@ test('status default mode renders human summary', () => {
     ].join('\n'), 'utf8');
     writeLiveMission(dir);
 
-    const res = runCli(['status'], { cwd: dir });
+    const res = runCli(['status'], { cwd: dir, env: { ATRIS_TASKS_DB: path.join(dir, '.atris', 'tasks.db') } });
     assert.equal(res.status, 0, res.stderr);
     assert.match(res.stdout, /Where we are:/);
     assert.match(res.stdout, /What is queued:/);
+    assert.match(res.stdout, /Next backlog item: Implement feature X/);
     assert.match(res.stdout, /What is blocking:/);
     assert.doesNotMatch(res.stdout, /TASK BOARD|┌|└|│/);
   } finally {
