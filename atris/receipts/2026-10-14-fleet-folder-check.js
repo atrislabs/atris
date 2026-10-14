@@ -34,7 +34,7 @@ function main() {
   git('add', '.');
   git('commit', '-qm', 'fixture');
   console.log(`fixture: ${root}`);
-  for (const kind of ['private', 'shared']) {
+  for (const kind of ['private', 'shared', 'quarantine']) {
     const parent = fs.mkdtempSync(path.join(root, 'review-'));
     const boundary = {
       trustedRoot: root,
@@ -48,12 +48,18 @@ function main() {
     git('--git-dir', boundary.gitDir, 'worktree', 'add', '-q', boundary.worktreePath, 'master');
     const privateDir = git('-C', boundary.worktreePath, 'rev-parse', '--absolute-git-dir');
     const lock = kind === 'private' ? path.join(privateDir, 'index.lock')
-      : path.join(boundary.gitDir, 'refs/heads/master.lock');
+      : kind === 'shared' ? path.join(boundary.gitDir, 'refs/heads/master.lock')
+        : path.join(boundary.quarantine, 'refs/heads/review.lock');
     fs.writeFileSync(lock, 'unfinished git work\n');
     const now = Date.now();
     const aged = new Date(now - 7200000);
     fs.utimesSync(lock, aged, aged);
-    const activity = inspectGitActivity(boundary.worktreePath, now);
+    const workActivity = inspectGitActivity(boundary.worktreePath, now);
+    const activity = kind === 'quarantine' ? inspectGitActivity(boundary.quarantine, now) : workActivity;
+    if (kind === 'quarantine') {
+      assert.equal(workActivity.safe, true);
+      console.log('quarantine case: work-folder-only check reports safe');
+    }
     assert.equal(activity.safe, false);
     assert.ok(activity.locks.some((item) => item.path === lock && item.ageSeconds === 7200));
     console.log(`${kind} before cleanup: ${activity.reason}`);
@@ -64,6 +70,11 @@ function main() {
       kind, folderKept: fs.existsSync(boundary.worktreePath), lockKept: fs.existsSync(lock),
       parentKept: fs.existsSync(parent), removalRecorded: lines.some((line) => line.path === boundary.worktreePath),
     }));
+    if (kind === 'quarantine') {
+      assert.equal(fs.existsSync(parent), false, 'update this audit when group protection is implemented');
+      assert.equal(fs.existsSync(lock), false);
+      assert.equal(lines.length, 0);
+    }
   }
   console.log('audit complete; surviving fixture data retained for inspection');
 }

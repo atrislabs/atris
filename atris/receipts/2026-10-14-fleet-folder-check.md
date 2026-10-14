@@ -49,3 +49,41 @@ Commands run: `git status --short`; `atris mission status mission-2026-10-14-con
 Progress: two real lock cases reproduced, two unlogged removals observed, twelve required checks passed, zero production changes, zero new dependencies. The next implementation must add regression coverage for the whole parent group, not only the work folder.
 next_push: Guard fleet review-folder disposal as one group so a kept locked child cannot be deleted through its parent, and log successful removals.
 layer: beliefs
+
+## Independent review repository follow-up
+
+Extended the audit to prove a separate review repository lock is invisible to a work-folder-only check. Production cleanup still deletes the whole group and writes no removal record.
+
+Verdict: proceed-with-changes. The specific failure mode is inspecting only the work folder, then deleting a separate repository with active Git metadata through the parent. Before any child removal, inspect both repositories with the existing Git activity helper and check running programs across the parent. Keep the entire group on either refusal, report exact lock paths and ages, and record each successful removal in the trusted root. Implementation at this execution boundary remains a decision for the caller; no production code was changed or approved.
+
+Plan: work repository + independent review repository -> inspect both -> keep entire parent on refusal -> otherwise remove and record.
+
+Command: `node atris/receipts/2026-10-14-fleet-folder-check.js`
+Exit: 0. Actual additional output:
+```text
+quarantine case: work-folder-only check reports safe
+quarantine before cleanup: git locks: /private/var/folders/t1/2_4kmb5n4c71dxm26zc8dgzr0000gn/T/atris-fleet-check-Ik0BzZ/review-3T6DHM/quarantine.git/refs/heads/review.lock (7200s old)
+{"kind":"quarantine","folderKept":false,"lockKept":false,"parentKept":false,"removalRecorded":false}
+audit complete; surviving fixture data retained for inspection
+```
+
+The new case asserts that the work-folder check reports safe, the independent lock is detected with its exact age, and current cleanup deletes both lock and parent without a log. These assertions reproduce the current defect, rather than certify safe cleanup. Change them to preservation assertions when repairing the routine. The fixture uses newly created disposable repositories only, with real Git and unchanged imported helpers.
+
+Required check: `node --test test/worktree-removal-guard.test.js test/member-tidy.test.js`
+Exit: 0. Actual final output:
+```text
+ℹ tests 12
+ℹ suites 0
+ℹ pass 12
+ℹ fail 0
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 2989.239708
+```
+
+Files edited: `atris/receipts/2026-10-14-fleet-folder-check.js`, this receipt, `atris/MAP.md`, `atris/refs/MAP-NOTES.md`, and `atris/team/architect/logs/2026-10-14.md`. Existing `bin/atris.js` and rendered `atris/TODO.md` edits are excluded. Commands: mission status, task list/new/claim/note/ready, brain activation, workspace status, mission goal lookup, targeted reads, the two proof commands above, brain compile, whitespace check, explicit staging, commit, and push. Artifacts: retained disposable fixture `/private/var/folders/t1/2_4kmb5n4c71dxm26zc8dgzr0000gn/T/atris-fleet-check-Ik0BzZ`, extended audit, and this decision card.
+
+Progress: one additional real lock case, three reproduced unlogged deletions overall, twelve required checks passed, zero dependencies and zero production changes.
+next_push: Check both review repositories before removing any child, preserve the whole group on activity, and record successful removals.
+layer: beliefs
