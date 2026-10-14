@@ -15534,6 +15534,27 @@ test('task serve exposes a local task factory API', async () => {
     });
     const ready = await waitForOutput(child, /Task board: (http:\/\/127\.0\.0\.1:\d+)/);
     const base = ready.match[1];
+    // Side tasks are added and claimed straight in the task store; the server
+    // rebuilds from the store on every request, and add and claim are one
+    // store call each in the CLI.
+    const workspaceRoot = taskStore.workspaceRoot(dir);
+    const seedTask = (title, tag, goalId) => {
+      const db = taskStore.open(dbPath);
+      try {
+        const { id } = taskStore.addTask(db, { title, tag, workspaceRoot, metadata: { goal_id: goalId } });
+        return { id, display_id: taskStore.taskDisplayRefMap(taskStore.listTasks(db, { workspaceRoot })).get(id) };
+      } finally {
+        taskStore.close();
+      }
+    };
+    const claimSeeded = (id, owner) => {
+      const db = taskStore.open(dbPath);
+      try {
+        assert.equal(taskStore.claimTask(db, { id, claimedBy: owner }).claimed, true);
+      } finally {
+        taskStore.close();
+      }
+    };
 
 	    const html = await fetch(base).then(r => r.text());
 	    assert.match(html, /Atris Task Factory/);
@@ -15744,14 +15765,7 @@ test('task serve exposes a local task factory API', async () => {
 	    assert.equal(apiStepReviewChat.contract.schema, 'atris.task_review_chat.v1');
 	    assert.equal(apiStepReviewChat.page.task.status, 'review');
 
-	    const apiScopedAdd = runCli([
-	      'task', 'add', 'Scoped API current task',
-	      '--tag', 'api-scope',
-	      '--goal-id', 'OBL-928',
-	      '--json',
-	    ], { cwd: dir, env });
-	    assert.equal(apiScopedAdd.status, 0, apiScopedAdd.stderr);
-	    const apiScopedTask = JSON.parse(apiScopedAdd.stdout).task;
+	    const apiScopedTask = seedTask('Scoped API current task', 'api-scope', 'OBL-928');
 
 	    const apiCurrent = await fetch(`${base}/api/tasks/current?owner=codex&reviewer=codex-review`).then(r => r.json());
 	    assert.equal(apiCurrent.ok, true);
@@ -15789,7 +15803,7 @@ test('task serve exposes a local task factory API', async () => {
 	    assert.ok(apiCapabilitiesCheck.checks.some(check => check.name === 'read_only_projection_semantics_declared' && check.ok));
 	    assert.ok(apiCapabilitiesCheck.checks.some(check => check.name === 'capabilities_check_surface_declared' && check.ok));
 
-	    assert.equal(runCli(['task', 'claim', apiScopedTask.display_id, '--as', 'codex'], { cwd: dir, env }).status, 0);
+	    claimSeeded(apiScopedTask.id, 'codex');
 	    const apiScopedCurrent = await fetch(`${base}/api/tasks/current?owner=codex&goal_id=OBL-928`).then(r => r.json());
 	    assert.equal(apiScopedCurrent.ok, true);
 	    assert.equal(apiScopedCurrent.current.scope.goal_id, 'OBL-928');
@@ -15864,15 +15878,8 @@ test('task serve exposes a local task factory API', async () => {
 		    assert.equal(apiNeedsAgentItem.continue_work_command, undefined);
 		    assert.equal(apiNeedsAgentItem.commands.continue_work, undefined);
 
-	    const apiContinueCreated = runCli([
-	      'task', 'add', 'API certified task with continuation action',
-	      '--tag', 'api-review-state',
-	      '--goal-id', 'OBL-934',
-	      '--json',
-	    ], { cwd: dir, env });
-	    assert.equal(apiContinueCreated.status, 0, apiContinueCreated.stderr);
-	    const apiContinueTask = JSON.parse(apiContinueCreated.stdout).task;
-	    assert.equal(runCli(['task', 'claim', apiContinueTask.display_id, '--as', 'codex'], { cwd: dir, env }).status, 0);
+	    const apiContinueTask = seedTask('API certified task with continuation action', 'api-review-state', 'OBL-934');
+	    claimSeeded(apiContinueTask.id, 'codex');
 	    assert.equal(runCli([
 	      'task', 'ready', apiContinueTask.display_id,
 	      '--as', 'codex',
@@ -15886,15 +15893,8 @@ test('task serve exposes a local task factory API', async () => {
 	      '--next', 'Run the API continuation follow-up',
 	    ], { cwd: dir, env }).status, 0);
 
-	    const apiWaitingCreated = runCli([
-	      'task', 'add', 'API certified task waiting for human accept',
-	      '--tag', 'api-review-state',
-	      '--goal-id', 'OBL-934',
-	      '--json',
-	    ], { cwd: dir, env });
-	    assert.equal(apiWaitingCreated.status, 0, apiWaitingCreated.stderr);
-	    const apiWaitingTask = JSON.parse(apiWaitingCreated.stdout).task;
-	    assert.equal(runCli(['task', 'claim', apiWaitingTask.display_id, '--as', 'codex'], { cwd: dir, env }).status, 0);
+	    const apiWaitingTask = seedTask('API certified task waiting for human accept', 'api-review-state', 'OBL-934');
+	    claimSeeded(apiWaitingTask.id, 'codex');
 	    assert.equal(runCli([
 	      'task', 'ready', apiWaitingTask.display_id,
 	      '--as', 'codex',
@@ -16156,15 +16156,8 @@ test('task serve exposes a local task factory API', async () => {
 	    assert.equal(apiCurrentStepReviewChat.page.review.human_accept.enabled, true);
 	    assert.equal(apiCurrentStepReviewChat.safety.human_accept, false);
 
-	    const apiOtherReviewAdd = runCli([
-	      'task', 'add', 'API other owner review stays untouched',
-	      '--tag', 'api-scope',
-	      '--goal-id', 'OBL-930',
-	      '--json',
-	    ], { cwd: dir, env });
-	    assert.equal(apiOtherReviewAdd.status, 0, apiOtherReviewAdd.stderr);
-	    const apiOtherReviewTask = JSON.parse(apiOtherReviewAdd.stdout).task;
-	    assert.equal(runCli(['task', 'claim', apiOtherReviewTask.display_id, '--as', 'alice'], { cwd: dir, env }).status, 0);
+	    const apiOtherReviewTask = seedTask('API other owner review stays untouched', 'api-scope', 'OBL-930');
+	    claimSeeded(apiOtherReviewTask.id, 'alice');
 	    assert.equal(runCli([
 	      'task', 'ready', apiOtherReviewTask.display_id,
 	      '--as', 'alice',
@@ -16190,14 +16183,7 @@ test('task serve exposes a local task factory API', async () => {
 	    assert.equal(apiScopedDetailAfterCurrentStep.task.review.approval_status, 'pending');
 	    assert.ok(apiScopedDetailAfterCurrentStep.task.messages.some(m => m.content.includes('TASK_REVIEW_CHAT')));
 
-	    const apiOwnerQueryAdd = runCli([
-	      'task', 'add', 'API owner query current-step task',
-	      '--tag', 'api-owner',
-	      '--goal-id', 'OBL-929',
-	      '--json',
-	    ], { cwd: dir, env });
-	    assert.equal(apiOwnerQueryAdd.status, 0, apiOwnerQueryAdd.stderr);
-	    const apiOwnerQueryTask = JSON.parse(apiOwnerQueryAdd.stdout).task;
+	    const apiOwnerQueryTask = seedTask('API owner query current-step task', 'api-owner', 'OBL-929');
 	    assert.equal(runCli([
 	      'task', 'plan', apiOwnerQueryTask.display_id,
 	      '--as', 'alice',
@@ -16231,22 +16217,8 @@ test('task serve exposes a local task factory API', async () => {
 	    assert.equal(apiOwnerQueryStep.step.task.id, apiOwnerQueryTask.id);
 	    assert.equal(apiOwnerQueryStep.safety.human_accept, false);
 
-	    const apiOwnerPrecedenceAliceAdd = runCli([
-	      'task', 'add', 'API owner precedence Alice task',
-	      '--tag', 'api-owner',
-	      '--goal-id', 'OBL-931',
-	      '--json',
-	    ], { cwd: dir, env });
-	    assert.equal(apiOwnerPrecedenceAliceAdd.status, 0, apiOwnerPrecedenceAliceAdd.stderr);
-	    const apiOwnerPrecedenceAliceTask = JSON.parse(apiOwnerPrecedenceAliceAdd.stdout).task;
-	    const apiOwnerPrecedenceCodexAdd = runCli([
-	      'task', 'add', 'API owner precedence Codex task',
-	      '--tag', 'api-owner',
-	      '--goal-id', 'OBL-931',
-	      '--json',
-	    ], { cwd: dir, env });
-	    assert.equal(apiOwnerPrecedenceCodexAdd.status, 0, apiOwnerPrecedenceCodexAdd.stderr);
-	    const apiOwnerPrecedenceCodexTask = JSON.parse(apiOwnerPrecedenceCodexAdd.stdout).task;
+	    const apiOwnerPrecedenceAliceTask = seedTask('API owner precedence Alice task', 'api-owner', 'OBL-931');
+	    const apiOwnerPrecedenceCodexTask = seedTask('API owner precedence Codex task', 'api-owner', 'OBL-931');
 	    assert.equal(runCli([
 	      'task', 'plan', apiOwnerPrecedenceAliceTask.display_id,
 	      '--as', 'alice',
@@ -16690,14 +16662,7 @@ test('task serve exposes a local task factory API', async () => {
     assert.equal(clearAccept.task.review.lesson, null);
     assert.equal(clearAccept.task.review.next_task, null);
 
-    const scopedApiCreateNext = runCli([
-      'task', 'add', 'Scoped API create-next parent',
-      '--tag', 'factory',
-      '--goal-id', 'OBL-932',
-      '--json',
-    ], { cwd: dir, env });
-    assert.equal(scopedApiCreateNext.status, 0, scopedApiCreateNext.stderr);
-    const scopedApiParent = JSON.parse(scopedApiCreateNext.stdout).task;
+    const scopedApiParent = seedTask('Scoped API create-next parent', 'factory', 'OBL-932');
     const scopedApiReady = await fetch(`${base}/api/tasks/${scopedApiParent.id}/ready`, {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
