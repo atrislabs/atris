@@ -300,14 +300,14 @@ test('board drops engine, then alive, when the screen is too narrow for them', (
     const lines = renderBoard(rows, '/x', 0, w).split('\n');
     return lines.slice(lines.indexOf('') + 1, lines.indexOf('', lines.indexOf('') + 1));
   };
-  assert.match(table(80)[0], /\salive\s+engine\s/, 'room for both at 80 columns');
+  assert.match(table(90)[0], /\salive\s+engine\s/, 'room for both at 90 columns');
   assert.match(renderBoard(rows, '/x'), /\salive\s+engine\s/, 'piped output keeps both');
-  const sixty = table(60);
+  const sixty = table(70);
   assert.match(sixty[0], /^member\s+state\s+alive\s+run time\s/, 'engine goes first');
   assert.match(sixty[1], /^builder\s+working\s+yes\s+10m\s/);
-  const narrow = table(52);
+  const narrow = table(62);
   assert.match(narrow[0], /^member\s+state\s+run time\s/, 'then alive');
-  assert.ok([...sixty, ...narrow].every((l) => l.length <= 52 || (sixty.includes(l) && l.length <= 60)), `every line fits:\n${sixty.join('\n')}\n${narrow.join('\n')}`);
+  assert.ok([...sixty, ...narrow].every((l) => l.length <= 62 || (sixty.includes(l) && l.length <= 70)), `every line fits:\n${sixty.join('\n')}\n${narrow.join('\n')}`);
 });
 
 test('board leaves alive blank on an ended run, and drops the column when no run is confirmed alive', () => {
@@ -330,11 +330,11 @@ test('board stops repeating ago in its rows when engine and alive are not enough
     const lines = renderBoard(rows, '/x', 0, w).split('\n');
     return lines.slice(lines.indexOf('') + 1, lines.indexOf('', lines.indexOf('') + 1));
   };
-  assert.match(table(52)[1], /\s30s ago\s/, 'at 52 columns the rows still say ago');
-  const pane = table(44);
+  assert.match(table(62)[1], /\s30s ago\s/, 'at 62 columns the rows still say ago');
+  const pane = table(54);
   assert.match(pane[0], /^member\s+state\s+run time\s+ago\s+job$/, 'the header keeps the word');
   assert.match(pane[1], /^builder\s+working\s+10m\s+30s\s+make/, 'the row drops it');
-  assert.ok(pane.every((l) => l.length <= 44), `every line fits a 44 column pane:\n${pane.join('\n')}`);
+  assert.ok(pane.every((l) => l.length <= 54), `every line fits a 54 column pane:\n${pane.join('\n')}`);
   assert.match(renderBoard(rows, '/x'), /\s30s ago\s/, 'piped output keeps ago');
 });
 
@@ -348,11 +348,11 @@ test('board shows done failed as failed when nothing else is left to drop', () =
     const lines = renderBoard(rows, '/x', 0, w).split('\n');
     return lines.slice(lines.indexOf('') + 1, lines.indexOf('', lines.indexOf('') + 1));
   };
-  assert.match(table(52).find((l) => l.startsWith('checker')), /^checker\s+done failed\s/, 'at 52 columns the full word stays');
-  const pane = table(44);
-  assert.match(pane.find((l) => l.startsWith('checker')), /^checker\s+failed\s/, 'at 44 columns it is failed');
-  assert.ok(pane.every((l) => l.length <= 44), `every line fits a 44 column pane:\n${pane.join('\n')}`);
-  assert.match(renderBoard(rows, '/x', 0, 44), /^2 members: 1 done failed, 1 working$/m, 'the count line keeps the full name');
+  assert.match(table(62).find((l) => l.startsWith('checker')), /^checker\s+done failed\s/, 'at 62 columns the full word stays');
+  const pane = table(54);
+  assert.match(pane.find((l) => l.startsWith('checker')), /^checker\s+failed\s/, 'at 54 columns it is failed');
+  assert.ok(pane.every((l) => l.length <= 54), `every line fits a 54 column pane:\n${pane.join('\n')}`);
+  assert.match(renderBoard(rows, '/x', 0, 54), /^2 members: 1 done failed, 1 working$/m, 'the count line keeps the full name');
   assert.match(renderBoard(rows, '/x'), /^checker\s+done failed\s/m, 'piped output keeps the full name');
 });
 
@@ -366,11 +366,11 @@ test('board titles run time as run when nothing else is left to drop', () => {
     const lines = renderBoard(rows, '/x', 0, w).split('\n');
     return lines.slice(lines.indexOf('') + 1, lines.indexOf('', lines.indexOf('') + 1));
   };
-  assert.match(table(44)[0], /\srun time\s/, 'at 44 columns the full header stays');
-  const pane = table(40);
-  assert.match(pane[0], /^member\s+state\s+run\s+ago\s+job$/, 'at 40 columns it is run');
+  assert.match(table(54)[0], /\srun time\s/, 'at 54 columns the full header stays');
+  const pane = table(50);
+  assert.match(pane[0], /^member\s+state\s+run\s+ago\s+job$/, 'at 50 columns it is run');
   assert.match(pane.find((l) => l.startsWith('builder')), /^builder\s+working\s+10m\s+30s\s+fit/);
-  assert.ok(pane.every((l) => l.length <= 40), `every line fits a 40 column pane:\n${pane.join('\n')}`);
+  assert.ok(pane.every((l) => l.length <= 50), `every line fits a 50 column pane:\n${pane.join('\n')}`);
   assert.match(renderBoard(rows, '/x'), /\srun time\s/, 'piped output keeps the full header');
 });
 
@@ -389,13 +389,13 @@ test('board keeps only the newest earlier run, then drops before, when nothing e
     const lines = renderBoard(rows, '/x', 0, w).split('\n');
     return lines.slice(lines.indexOf('') + 1, lines.indexOf('', lines.indexOf('') + 1));
   };
-  assert.match(table(80).find((l) => l.startsWith('builder')), /^builder\s+working\s+stopped failed ok\s/, 'at 80 columns all three stay');
-  const mid = table(52);
-  assert.match(mid.find((l) => l.startsWith('builder')), /^builder\s+working\s+stopped\s+10m\s/, 'at 52 columns only the newest stays');
-  assert.ok(mid.every((l) => l.length <= 52), `every line fits a 52 column pane:\n${mid.join('\n')}`);
-  const pane = table(40);
-  assert.match(pane[0], /^member\s+state\s+run\s+ago\s+job$/, 'at 40 columns before is gone');
-  assert.ok(pane.every((l) => l.length <= 40), `every line fits a 40 column pane:\n${pane.join('\n')}`);
+  assert.match(table(90).find((l) => l.startsWith('builder')), /^builder\s+working\s+stopped failed ok\s/, 'at 90 columns all three stay');
+  const mid = table(62);
+  assert.match(mid.find((l) => l.startsWith('builder')), /^builder\s+working\s+stopped\s+10m\s/, 'at 62 columns only the newest stays');
+  assert.ok(mid.every((l) => l.length <= 62), `every line fits a 62 column pane:\n${mid.join('\n')}`);
+  const pane = table(50);
+  assert.match(pane[0], /^member\s+state\s+run\s+ago\s+job$/, 'at 50 columns before is gone');
+  assert.ok(pane.every((l) => l.length <= 50), `every line fits a 50 column pane:\n${pane.join('\n')}`);
   assert.match(renderBoard(rows, '/x'), /^builder\s+working\s+stopped failed ok\s/m, 'piped output keeps all three');
 });
 
@@ -458,7 +458,8 @@ test('board breaks the count line after a comma on a narrow screen', () => {
 
 test('board lets job shrink to the room left on a narrow screen', () => {
   const now = Date.parse('2026-10-14T13:00:00Z');
-  // A wide before column leaves job 18 characters at 80 columns.
+  // A wide before column leaves job 18 characters at 80 columns, so engine
+  // gives up its room and the job reads whole.
   const rows = [
     memberRow('builder', `2026-10-14T12:45:00Z m-1 started: [pid ${process.pid} engine claude] improve the board\n2026-10-14T12:51:40Z m-2 started: [pid ${process.ppid} engine claude] make the footer fit\n2026-10-14T12:59:30Z m-2 running: node --test\n`, now),
     memberRow('scout', '2026-10-14T12:53:20Z m-3 started: map the repo\n2026-10-14T12:55:00Z m-4 started: map the repo again\n2026-10-14T12:56:40Z m-4 running: rg -n board\n', now),
@@ -466,9 +467,11 @@ test('board lets job shrink to the room left on a narrow screen', () => {
   const lines = renderBoard(rows, '/x', 0, 80).split('\n');
   const table = lines.slice(lines.indexOf('') + 1, lines.indexOf('', lines.indexOf('') + 1));
   assert.ok(table.every((l) => l.length <= 80), `every table line fits 80 columns:\n${table.join('\n')}`);
-  assert.match(table.find((l) => l.startsWith('builder')), /make the footer\.\.\.$/, 'the job is cut to the room left, not held at 20');
+  assert.match(table.find((l) => l.startsWith('builder')), /^builder\s+working\s+replaced\s+yes\s+8m\s+30s ago\s+make the footer fit$/, 'engine goes so the job reads whole');
   const sixty = renderBoard(rows, '/x', 0, 60).split('\n').find((l) => l.startsWith('builder'));
-  assert.ok(sixty.length <= 60 && sixty.endsWith('  make the f...'), `at 60 columns engine and alive go and the row fits: ${sixty}`);
+  assert.ok(sixty.length <= 60 && sixty.endsWith('  make the footer fit'), `at 60 columns alive and the ago word go too and the job still reads whole: ${sixty}`);
+  const pane = renderBoard(rows, '/x', 0, 44).split('\n').find((l) => l.startsWith('builder'));
+  assert.ok(pane.length <= 44 && pane.endsWith('  make the foot...'), `with nothing left to give up, the job is cut to the room left, not held at 20: ${pane}`);
   const narrow = renderBoard(rows, '/x', 0, 30).split('\n').find((l) => l.startsWith('builder'));
   assert.ok(narrow.endsWith('  make th...'), `a much narrower screen still shows 10 characters of job: ${narrow}`);
 });
