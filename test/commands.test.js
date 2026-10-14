@@ -11806,13 +11806,21 @@ test('task ready uses honest landing copy when autoland heartbeat is stale', () 
     const threeHoursAgo = Date.now() - (3 * 60 * 60 * 1000);
     fs.utimesSync(stalePath, threeHoursAgo / 1000, threeHoursAgo / 1000);
 
-    const add = runCli([
-      'task', 'add', 'Stale heartbeat ready wording',
-      '--tag', 'agent',
-      '--json',
-    ], { cwd: dir, env });
-    assert.equal(add.status, 0, add.stderr);
-    const ref = JSON.parse(add.stdout).task.display_id;
+    // Seed both tasks in creation order; every claim and ready stays on the CLI.
+    const workspaceRoot = taskStore.workspaceRoot(dir);
+    const db = taskStore.open(dbPath);
+    let ref;
+    let textRef;
+    try {
+      const created = ['Stale heartbeat ready wording', 'Stale heartbeat text copy']
+        .map((title) => addSeedTask(db, { title, tag: 'agent', workspaceRoot }));
+      created.forEach((row) => assert.equal(row.inserted, true));
+      const refs = taskStore.taskDisplayRefMap(taskStore.listTasks(db, { workspaceRoot }));
+      [ref, textRef] = created.map((row) => refs.get(row.id));
+      assert.ok(ref && textRef);
+    } finally {
+      taskStore.close();
+    }
     assert.equal(runCli(['task', 'claim', ref, '--as', 'codex'], { cwd: dir, env }).status, 0);
 
     const ready = runCli([
@@ -11829,9 +11837,6 @@ test('task ready uses honest landing copy when autoland heartbeat is stale', () 
     );
     assert.doesNotMatch(ready.stdout, /on the next tick/);
 
-    const textAdd = runCli(['task', 'add', 'Stale heartbeat text copy', '--tag', 'agent', '--json'], { cwd: dir, env });
-    assert.equal(textAdd.status, 0, textAdd.stderr);
-    const textRef = JSON.parse(textAdd.stdout).task.display_id;
     assert.equal(runCli(['task', 'claim', textRef, '--as', 'codex'], { cwd: dir, env }).status, 0);
     const readyText = runCli([
       'task', 'ready', textRef,
