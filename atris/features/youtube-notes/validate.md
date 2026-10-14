@@ -16,7 +16,7 @@ Run `atris youtube notes 'https://www.youtube.com/watch?v=Am7IWP8IpEc'` and find
 
 - [ ] **Tests pass**
   - Command: `node --test test/ytnotes.test.js test/ytquote-repair.test.js test/youtube.test.js`
-  - Expect: 0 failures. On 2026-09-28 this was 111 passing.
+  - Expect: 0 failures. On 2026-09-28 this was 111 passing; on 2026-10-13, with test/ytrail-bench.test.js in place of test/ytquote-repair.test.js, 142 passing.
 
 - [ ] **Tools present**
   - Command: `command -v yt-dlp agy claude mlx_whisper`
@@ -29,7 +29,8 @@ Run `atris youtube notes 'https://www.youtube.com/watch?v=Am7IWP8IpEc'` and find
 ### Step 1: Captioned long video (happy path)
 
 - **Action:** `time atris youtube notes 'https://www.youtube.com/watch?v=Am7IWP8IpEc'`
-- **Expect:** Exit code 0, notes on screen, and a saved copy at `$TMPDIR/ytnotes/yt_Am7IWP8IpEc.md`. A line reads `quotes: N kept, N repaired, N dropped` with kept above 0, and the whole run takes under about 20 seconds with Gemini (measured 11 to 19 seconds; Haiku alone took 65).
+- **Expect:** Exit code 0, notes on screen, and a saved copy at `$TMPDIR/ytnotes/yt_Am7IWP8IpEc.md`. A line reads `quotes: N kept, N repaired, N dropped` with kept above 0, and the whole run takes under about 20 seconds with Gemini (measured 11 to 19 seconds on 2026-09-28; 9.95s on 2026-10-13, with one 64s outlier in the same session; Haiku alone took 65, then 26.9 on 2026-10-13).
+- **Check the writer line.** It must read `notes by Gemini`. A lowercase `notes by haiku` means `ATRIS_YTNOTES_ENGINE` is set in the shell and pins a writer. Run with `env -u ATRIS_YTNOTES_ENGINE` to test the default.
 
 ### Step 2: Video with no captions
 
@@ -63,4 +64,4 @@ The fresh `TMPDIR` matters. A transcript left over from an earlier run of the sa
 
 ---
 
-**Status:** Verified on 2026-09-28 for steps 1 to 4 (step 3 rerun live on 2026-09-29, exit 2). Step 5 waits on the bench landing.
+**Status:** Verified on 2026-09-28 for steps 1 to 4 (step 3 rerun live on 2026-09-29, exit 2). Steps 1 and 3 rerun live on 2026-10-13: step 1 exit 0 with Gemini and 4 to 5 quotes kept, step 3 exit 2 with the install message. Step 5 waits on the bench landing.
