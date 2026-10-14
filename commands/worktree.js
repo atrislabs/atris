@@ -1291,7 +1291,9 @@ function cleanupWorktrees({ root = repoRoot(), base: baseOverride = '', apply = 
       continue;
     }
     if (wt.locked) {
-      kept.push({ ...item, reason: 'locked' });
+      // Name the lock file and its age so a person can judge a stale hold.
+      const activity = inspectGitActivity(wt.path);
+      kept.push({ ...item, reason: 'locked', detail: activity.reason, locks: activity.locks });
       continue;
     }
     if (PROTECTED_BRANCHES.has(wt.branch)) {
@@ -1405,7 +1407,7 @@ function cleanup(args) {
   }
   console.log(`kept: ${result.kept.length}`);
   for (const item of result.kept) {
-    if (item.reason === 'git_activity') console.log(`kept: ${item.path} reason=git_activity ${item.detail}`);
+    if (item.detail && ['git_activity', 'locked'].includes(item.reason)) console.log(`kept: ${item.path} reason=${item.reason} ${item.detail}`);
   }
   if (!result.apply && result.candidates.length) console.log('next: atris worktree cleanup --apply');
   return 0;

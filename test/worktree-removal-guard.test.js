@@ -204,6 +204,29 @@ test('worktree cleanup keeps old private and shared git locks in preview and app
   }
 });
 
+test('worktree cleanup names the lock file and age when git itself locked a folder', () => {
+  const { base, repo, wt } = landedWorktree();
+  try {
+    git(repo, ['worktree', 'lock', '--reason', 'operator hold', wt]);
+    const lock = path.join(git(wt, ['rev-parse', '--absolute-git-dir']), 'locked');
+    const aged = new Date(Date.now() - 7200000);
+    fs.utimesSync(lock, aged, aged);
+    for (const apply of [false, true]) {
+      const result = cleanupWorktrees({ root: repo, base: 'HEAD', apply, activeCwds: [] });
+      assert.deepEqual(result.removed, []);
+      const kept = result.kept.find((item) => item.path === wt);
+      assert.equal(kept.reason, 'locked', JSON.stringify(result));
+      assert.ok(kept.detail.includes(`${lock} (`), kept.detail);
+      assert.ok(kept.locks.some((item) => item.path === lock && item.ageSeconds >= 7200), JSON.stringify(kept.locks));
+      assert.ok(fs.existsSync(lock));
+      assert.ok(fs.existsSync(wt));
+      assert.deepEqual(removalLines(repo), []);
+    }
+  } finally {
+    fs.rmSync(base, { recursive: true, force: true });
+  }
+});
+
 test('worktree cleanup names who removed a folder and why', () => {
   const { base, repo, wt } = landedWorktree();
   try {
