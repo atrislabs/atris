@@ -197,3 +197,41 @@ Other commands: Atris boot, brain activate/compile (plan only, exit 2), mission 
 Progress: one orphaned export removed; all 37 repair checks and 13 current checks pass; no production behavior changed.
 next_push: Compare the remaining combined-suite failures with master to separate existing failures from repair regressions.
 layer: capabilities
+
+
+## Map failures compared with unchanged master
+
+Recorded one existing map failure and one repair-introduced stale reference. The two map test files were invoked on unchanged master and the previously recorded combined repair; required folder checks then passed here, exit 0. This increment is attribution evidence only, not a map fix or approval of the protected repair.
+
+Plan: unchanged master -> map checks <- combined repair -> attribute exact failures -> required folder checks.
+
+Baseline input: `a8b9f17b2ed955df4fdff1717cc6057aea7f480a`, the same master input as the combined proof. Exported with `git archive --format=tar --output=<baseline>/tree.tar a8b9f17b2ed955df4fdff1717cc6057aea7f480a`, extracted with `tar -xf <baseline>/tree.tar -C <baseline>`, initialized with `git -C <baseline> init -q --initial-branch=master`; all exit 0. Baseline retained at `/var/folders/t1/2_4kmb5n4c71dxm26zc8dgzr0000gn/T/atris-map-baseline-djmm0y95`. Combined copy remains `/var/folders/t1/2_4kmb5n4c71dxm26zc8dgzr0000gn/T/atris-lock-suite-lp74sw3m`.
+
+Actual command on each copy: `node --test test/map-notes-readers.test.js test/map-refs-accurate.test.js`.
+
+```text
+baseline: tests 12, pass 11, fail 1, exit 1
+combined: tests 12, pass 10, fail 2, exit 1
+both: atris/MAP.md is local-only, so its load-order line must say "if present"
+combined only: map refs point at code that is gone (1)
+  atris/refs/MAP-NOTES.md line 614: commands/worktree.js:1230
+```
+
+The combined notes name `refsLockFile`; actual repair code defines `refsLockFiles` at `commands/worktree.js:1286`. Git diff shows the repair added that notes reference, while unchanged master passes the reference check. This identifies a documentation regression from the repair, separate from the existing load-order failure. Raw unchanged output: `<baseline>/baseline-map-check.txt` and `<baseline>/combined-map-check.txt`. No other full-suite failures were compared.
+
+Rerunnable required verify: `node --test test/worktree-removal-guard.test.js test/member-tidy.test.js`, current checkout, exit 0. Exact final output:
+
+```text
+ℹ tests 13
+ℹ suites 0
+ℹ pass 13
+ℹ fail 0
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 2980.68525
+```
+
+Files edited: this receipt and `atris/team/architect/logs/2026-10-14.md`. Artifacts: retained baseline copy and two raw map-check outputs. Other commands: mission status/goal, task list/new/claim/note/ready, brain activate/compile (plan only), Git status/diff/revision reads, rg helper lookup, explicit staging, whitespace check, commit and push. Existing router and rendered task-view edits excluded. Progress: two map failures attributed, one pre-existing and one introduced; 13 required checks pass; zero production edits, new repository filenames, or dependencies.
+next_push: Replace the stale refsLockFile map reference on the repair copy with the actual refsLockFiles definition and prove the map-reference check.
+layer: beliefs
