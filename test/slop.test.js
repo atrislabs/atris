@@ -1692,6 +1692,22 @@ test('fix gives an aside that opens with a joining word commas, not parentheses'
   ]);
 });
 
+test('fix joins a full clause after a field value with a semicolon, not a second colon', () => {
+  // from a writing member file, where the field took a stacked colon
+  const file = tmpFile('field-clause.md', [
+    '- pass: you call `atris write pass <n>` when a beat holds up \u2014 the AI never calls it',
+    // a list after the value is explained, so it keeps the colon
+    '- innovation lane: true gaps get one paragraph each \u2014 what is missing, why no fix, what next',
+    '- risk: none \u2014 verification only',
+  ].join('\n'));
+  const { changes } = applyFixes([file], RULES);
+  assert.deepEqual(changes.map((c) => c.after), [
+    '- pass: you call `atris write pass <n>` when a beat holds up; the AI never calls it',
+    '- innovation lane: true gaps get one paragraph each: what is missing, why no fix, what next',
+    '- risk: none, verification only',
+  ]);
+});
+
 test('fix reads no word that only says when as the subject of a clause', () => {
   // "now ships" after a dash read as a bare subject and a verb
   const file = tmpFile('when-word.md', [

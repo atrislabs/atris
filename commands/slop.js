@@ -557,6 +557,12 @@ function fixEmDash(s, { endsBlock = false, startsBlock = false, spans = [] } = {
   // a credit, not a label: '> *"Power is the limit."* (Musk)'
   const credit = label && /[.!?]["'\u201d\u2019*_]*["'\u201d\u2019][*_]*$/.test(label[2]) && creditAfterQuote(label[1] + label[2], rest);
   if (credit) return credit;
+  // a list item that already holds its field colon, "pass: you call it when
+  // a beat holds up", is no label. A full clause after its dash joins the
+  // value the way the clause rules join it mid-line: "...holds up; the AI
+  // never calls it". A list or an explanation after it keeps the colon.
+  const field = label && /^[A-Za-z][\w #()-]{0,29}:\s+(\S.*)$/.exec(label[2]);
+  if (field && fixEmDash(`${field[1]} \u2014 ${rest}`).startsWith(`${field[1]}; `)) return `${label[1]}${label[2]}; ${fixEmDash(rest, { endsBlock })}`;
   if (label) return `${label[1]}${label[2]}${!quoted && /[.,;:!?][*_`"'\u201d\u2019]*$/.test(label[2]) ? '' : ':'}${s.length > label[0].length ? ' ' : ''}${fixEmDash(capitalAfterLabel(label[2], rest, s), { endsBlock })}`;
   const term = startsBlock && (TERM_DASH.exec(s) || TITLE_DASH.exec(s));
   if (term) return `${term[1]}: ${fixEmDash(s.slice(term[0].length), { endsBlock })}`;
