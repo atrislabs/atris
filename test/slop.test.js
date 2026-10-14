@@ -395,3 +395,36 @@ test('the machine output of a fix run lists each changed line before and after',
   try { detect([file, '--json']); } finally { console.log = orig; }
   assert.deepEqual(JSON.parse(lines.join('\n')).changes, []);
 });
+
+test('in markdown the dash rule leaves inline code and fenced blocks alone', () => {
+  const { applyFixes } = require('../commands/slop');
+  const D = '\u2014';
+  const body = [
+    `Run \`grep ${D} x\` here ${D} then stop.`,
+    `- \`--fix\` ${D} repairs dashes`,
+    '```',
+    `echo ${D}`,
+    '```',
+    '~~~',
+    `printf "a ${D} b"`,
+    '~~~',
+    `The gate ${D} the one CI runs ${D} **blocks** it.`,
+  ].join('\n');
+  const file = tmpFile('doc.md', body);
+  assert.deepEqual(scanFile(file).map((f) => f.line), [1, 2, 9], 'code lines are not flagged');
+  applyFixes([file], RULES);
+  assert.deepEqual(fs.readFileSync(file, 'utf8').split('\n'), [
+    `Run \`grep ${D} x\` here, then stop.`,
+    '- `--fix`: repairs dashes',
+    '```',
+    `echo ${D}`,
+    '```',
+    '~~~',
+    `printf "a ${D} b"`,
+    '~~~',
+    'The gate (the one CI runs) **blocks** it.',
+  ]);
+  assert.deepEqual(scanFile(file), [], 'clean once the prose is fixed');
+  // backticks mean nothing in plain text, so every dash there still counts
+  assert.equal(scanFile(tmpFile('doc.txt', body)).length, 5);
+});

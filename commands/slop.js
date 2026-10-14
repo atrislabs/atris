@@ -35,10 +35,32 @@ function fixEmDash(s) {
   const label = LIST_LABEL_DASH.exec(s);
   if (label) return `${label[1]}${label[2]}:${s.length > label[0].length ? ' ' : ''}${fixEmDash(s.slice(label[0].length))}`;
   return s
-    .replace(/\s*\u2014\s*([^\u2014]*[^\s\u2014])\s*\u2014\s*(?=(.?))/g, (m, aside, next) => ` (${aside})${/[\w(]/.test(next) ? ' ' : ''}`)
+    .replace(/\s*\u2014\s*([^\u2014]*[^\s\u2014])\s*\u2014\s*(?=(.?))/g, (m, aside, next) => ` (${aside})${next && !/[.,;:!?)]/.test(next) ? ' ' : ''}`)
     // keep punctuation the writer already put beside the dash instead of
     // stacking a comma on it, and never leave a trailing space
     .replace(/([,;:.!?]?)\s*\u2014\s*([,;:.!?]?)\s*(?=(.?))/g, (m, before, after, next) => `${before || after || ','}${next ? ' ' : ''}`);
+}
+
+// Code in markdown is literal: a dash in `inline code` or a fenced block is
+// part of a command or example, not prose. Rules marked proseOnly skip fenced
+// lines and see inline code masked out, and the fixer puts the code back.
+const MARKDOWN = /\.mdx?$/i;
+
+function fencedLines(lines) {
+  const fenced = new Set();
+  let fence = null;
+  for (let i = 0; i < lines.length; i++) {
+    const m = /^\s{0,3}(`{3,}|~{3,})/.exec(lines[i]);
+    if (m && (!fence || m[1][0] === fence)) { fence = fence ? null : m[1][0]; fenced.add(i); continue; }
+    if (fence) fenced.add(i);
+  }
+  return fenced;
+}
+
+function maskInlineCode(line) {
+  const spans = [];
+  const masked = line.replace(/(`+).+?\1/g, (m) => `\uE000${spans.push(m) - 1}\uE001`);
+  return { masked, restore: (s) => s.replace(/\uE000(\d+)\uE001/g, (m, n) => spans[n]) };
 }
 
 // Each rule is deterministic: a regex + a one-line why. severity drives the icon.
@@ -97,6 +119,7 @@ const RULES = [
     why: 'decorative emoji in UI copy' },
   { id: 'em-dash', sev: 'warn',
     re: /\u2014/,
+    proseOnly: true,
     fix: fixEmDash, // safe deterministic repair (prose)
     why: 'em dash: a top AI-writing tell; use a comma, colon, or period' },
   { id: 'hype-copy', sev: 'error',
@@ -197,11 +220,20 @@ function applyFixes(files, rules) {
     let text; try { text = fs.readFileSync(file, 'utf8'); } catch { continue; }
     const lines = text.split('\n');
     const skip = ownTableLines(file, lines);
+    const markdown = MARKDOWN.test(file);
+    const fenced = markdown ? fencedLines(lines) : new Set();
     let touched = false;
     for (let i = 0; i < lines.length; i++) {
       if (skip.has(i)) continue;
       let line = lines[i];
-      for (const r of fixable) { if (r.re.test(line)) { const nl = r.fix(line); if (nl !== line) { line = nl; fixedCount++; } } }
+      for (const r of fixable) {
+        const prose = markdown && r.proseOnly;
+        if (prose && fenced.has(i)) continue;
+        const { masked, restore } = prose ? maskInlineCode(line) : { masked: line, restore: (x) => x };
+        if (!r.re.test(masked)) continue;
+        const nl = restore(r.fix(masked));
+        if (nl !== line) { line = nl; fixedCount++; }
+      }
       if (line !== lines[i]) { changes.push({ file, line: i + 1, before: lines[i], after: line }); lines[i] = line; touched = true; }
     }
     if (touched) { fs.writeFileSync(file, lines.join('\n')); fixedFiles.push(file); }
@@ -247,12 +279,16 @@ function scanFile(file, rules = RULES, pairRules = PAIR_RULES) {
   try { text = fs.readFileSync(file, 'utf8'); } catch { return findings; }
   const lines = text.split('\n');
   const skip = ownTableLines(file, lines);
+  const markdown = MARKDOWN.test(file);
+  const fenced = markdown ? fencedLines(lines) : new Set();
   for (let i = 0; i < lines.length; i++) {
     if (skip.has(i)) continue;
     const line = lines[i];
     for (const rule of rules) {
       if (rule.notFiles && rule.notFiles.test(file)) continue;
-      const m = rule.re.exec(line);
+      const prose = markdown && rule.proseOnly;
+      if (prose && fenced.has(i)) continue;
+      const m = rule.re.exec(prose ? maskInlineCode(line).masked : line);
       if (m) {
         findings.push({
           file, line: i + 1, rule: rule.id, sev: rule.sev, why: rule.why,
