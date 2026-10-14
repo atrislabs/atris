@@ -55,6 +55,18 @@ test('never starts more than --max members at once', () => {
   assert.ok(team.lines.includes('a finished ok'));
 });
 
+test('members already working elsewhere count toward --max', () => {
+  const team = fakeTeam(
+    [{ name: 'busy', live: true }, { name: 'a' }, { name: 'b' }],
+    { a: [{ id: 't1', title: 'one' }], b: [{ id: 't2', title: 'two' }] },
+  );
+  const up = createMemberUp(team.deps, { max: 1 });
+  up.check();
+  assert.deepEqual(team.spawned, [], 'one live member already fills a limit of one');
+  const dry = fakeTeam(team.deps.listMembers(), team.tasks);
+  assert.deepEqual(createMemberUp(dry.deps, { max: 2, dryRun: true }).check().map((s) => s.name), ['a']);
+});
+
 test('a member goes idle after 3 empty checks and is then checked every 5 minutes', () => {
   const team = fakeTeam([{ name: 'scout' }]);
   const up = createMemberUp(team.deps, {});

@@ -10737,8 +10737,13 @@ async function memberUp(...args) {
     now: () => Date.now(),
   };
   if (hasFlag(args, '--dry-run')) {
-    const started = createMemberUp(deps, { max, dryRun: true }).check();
-    if (!started.length) console.log('nothing to start: no free member has a fitting task');
+    const up = createMemberUp(deps, { max, dryRun: true });
+    const started = up.check();
+    if (!started.length && up.working() >= up.max) {
+      console.log(`nothing to start: ${up.working()} already working, the limit is ${up.max}`);
+    } else if (!started.length) {
+      console.log('nothing to start: no free member has a fitting task');
+    }
     return started;
   }
   const pidFile = memberUpPidFile(root);
