@@ -15,6 +15,19 @@ function makeTempWorkspace() {
   return fs.mkdtempSync(path.join(os.tmpdir(), 'atris-member-fleet-'));
 }
 
+// Copy the tracked member files into a throwaway folder so live runtime
+// state (goals.json, logs, missions) in the repo or in a parent checkout
+// cannot change what go, card, or day return.
+const MEMBER_RUNTIME_FILES = new Set(['goals.json', 'goals.md', 'now.md', 'logs']);
+function makeTeamWorkspace() {
+  const root = makeTempWorkspace();
+  fs.cpSync(path.join(repoRoot, 'atris', 'team'), path.join(root, 'atris', 'team'), {
+    recursive: true,
+    filter: (src) => !MEMBER_RUNTIME_FILES.has(path.basename(src)),
+  });
+  return root;
+}
+
 function runCli(args, cwd) {
   const result = spawnSync(process.execPath, [cliPath, ...args], {
     cwd,
@@ -257,19 +270,23 @@ test('member run infers test checks from goal text and runs a second-model refer
   const { inferMemberRunVerifier, buildMemberRunStartArgs } = require('../commands/member');
   const { pickCrossEngineVerifier } = require('../commands/mission');
 
+  // Verifier inference and engine lookup read and seed state under the root
+  // they are given, so point them at scratch instead of the live repo.
+  const base = makeTempWorkspace();
+  fs.mkdirSync(path.join(base, 'test'), { recursive: true });
+  fs.writeFileSync(path.join(base, 'test', 'member-fleet.test.js'), '', 'utf8');
   assert.equal(
-    inferMemberRunVerifier('Fix regression in test/member-fleet.test.js', [], repoRoot),
+    inferMemberRunVerifier('Fix regression in test/member-fleet.test.js', [], base),
     'node --test test/member-fleet.test.js'
   );
-  const startArgs = buildMemberRunStartArgs('navigator', 'Fix regression in test/member-fleet.test.js', [], repoRoot);
+  const startArgs = buildMemberRunStartArgs('navigator', 'Fix regression in test/member-fleet.test.js', [], base);
   assert.ok(startArgs.includes('--verify'));
   assert.ok(startArgs.includes('node --test test/member-fleet.test.js'));
   assert.ok(!startArgs.includes('--no-verify'));
 
-  assert.equal(pickCrossEngineVerifier({ runner: 'claude' }, repoRoot), 'codex');
-  assert.equal(pickCrossEngineVerifier({ runner: 'codex' }, repoRoot), 'claude');
+  assert.equal(pickCrossEngineVerifier({ runner: 'claude' }, base), 'codex');
+  assert.equal(pickCrossEngineVerifier({ runner: 'codex' }, base), 'claude');
 
-  const base = makeTempWorkspace();
   const root = path.join(base, 'repo');
   const binDir = path.join(base, 'bin');
   try {
@@ -404,53 +421,58 @@ test('member run infers test checks from goal text and runs a second-model refer
 
 test('member dispatch, natural prompt, go, card, and room unite members, skills, and engines', () => {
   const { pickMemberForIdea } = require('../commands/member');
-  const fixPick = pickMemberForIdea('Fix repeat broken test error in member check', repoRoot);
-  assert.equal(fixPick.member, 'auto-improver');
+  const root = makeTeamWorkspace();
+  try {
+    const fixPick = pickMemberForIdea('Fix repeat broken test error in member check', root);
+    assert.equal(fixPick.member, 'auto-improver');
 
-  const reviewPick = pickMemberForIdea('Audit and review diff quality for slop', repoRoot);
-  assert.equal(reviewPick.member, 'validator');
+    const reviewPick = pickMemberForIdea('Audit and review diff quality for slop', root);
+    assert.equal(reviewPick.member, 'validator');
 
-  const buildPick = pickMemberForIdea('Build and wire the new timeline export feature', repoRoot);
-  assert.equal(buildPick.member, 'executor');
+    const buildPick = pickMemberForIdea('Build and wire the new timeline export feature', root);
+    assert.equal(buildPick.member, 'executor');
 
-  const dryRun = runCli(['member', 'dispatch', 'Fix repeat broken test error in member check', '--dry-run', '--json'], repoRoot);
-  assert.equal(dryRun.status, 0, dryRun.stderr || dryRun.stdout);
-  const parsed = JSON.parse(dryRun.stdout);
-  assert.equal(parsed.ok, true);
-  assert.equal(parsed.member, 'auto-improver');
-  assert.match(parsed.command, /atris member run auto-improver/);
+    const dryRun = runCli(['member', 'dispatch', 'Fix repeat broken test error in member check', '--dry-run', '--json'], root);
+    assert.equal(dryRun.status, 0, dryRun.stderr || dryRun.stdout);
+    const parsed = JSON.parse(dryRun.stdout);
+    assert.equal(parsed.ok, true);
+    assert.equal(parsed.member, 'auto-improver');
+    assert.match(parsed.command, /atris member run auto-improver/);
 
-  const goDryRun = runCli(['member', 'go', '--dry-run', '--json'], repoRoot);
-  assert.equal(goDryRun.status, 0, goDryRun.stderr || goDryRun.stdout);
-  const goPayload = JSON.parse(goDryRun.stdout);
-  assert.equal(goPayload.ok, true);
-  assert.ok(goPayload.engine);
-  assert.ok(goPayload.prompt);
+    const goDryRun = runCli(['member', 'go', '--dry-run', '--json'], root);
+    assert.equal(goDryRun.status, 0, goDryRun.stderr || goDryRun.stdout);
+    const goPayload = JSON.parse(goDryRun.stdout);
+    assert.equal(goPayload.ok, true);
+    assert.ok(goPayload.engine);
+    assert.ok(goPayload.prompt);
 
-  const cardRes = runCli(['member', 'card', 'auto-improver', '--json'], repoRoot);
-  assert.equal(cardRes.status, 0, cardRes.stderr || cardRes.stdout);
-  const cardPayload = JSON.parse(cardRes.stdout);
-  assert.equal(cardPayload.ok, true);
-  assert.equal(cardPayload.card.member, 'auto-improver');
-  assert.equal(cardPayload.card.version, '2.0.0');
-  assert.ok(cardPayload.card.skills.includes('repeat-error-surgeon'));
-  assert.ok(cardPayload.card.roadmap.active_goal);
-  assert.ok(cardPayload.card.engine_seat && cardPayload.card.engine_seat.engine_id);
-  assert.ok(cardPayload.card.actions && cardPayload.card.actions.go);
-  assert.ok(cardPayload.card.impact_chain && cardPayload.card.impact_chain.arrow.includes('->'));
-  assert.ok(cardPayload.card.next_push);
+    const cardRes = runCli(['member', 'card', 'auto-improver', '--json'], root);
+    assert.equal(cardRes.status, 0, cardRes.stderr || cardRes.stdout);
+    const cardPayload = JSON.parse(cardRes.stdout);
+    assert.equal(cardPayload.ok, true);
+    assert.equal(cardPayload.card.member, 'auto-improver');
+    assert.equal(cardPayload.card.version, '2.0.0');
+    assert.ok(cardPayload.card.skills.includes('repeat-error-surgeon'));
+    assert.ok(cardPayload.card.roadmap.active_goal);
+    assert.ok(cardPayload.card.engine_seat && cardPayload.card.engine_seat.engine_id);
+    assert.ok(cardPayload.card.actions && cardPayload.card.actions.go);
+    assert.ok(cardPayload.card.impact_chain && cardPayload.card.impact_chain.arrow.includes('->'));
+    assert.ok(cardPayload.card.next_push);
 
-  const roomRes = runCli(['member', 'day', '--json'], repoRoot);
-  assert.equal(roomRes.status, 0, roomRes.stderr || roomRes.stdout);
-  const roomPayload = JSON.parse(roomRes.stdout);
-  assert.equal(roomPayload.ok, true);
-  assert.equal(roomPayload.schema, 'atris.member.room.v1');
-  assert.equal(roomPayload.utopia.percent, 100);
-  assert.ok(Array.isArray(roomPayload.members) && roomPayload.members.length >= 7);
-  assert.ok(Array.isArray(roomPayload.standup) && roomPayload.standup.length >= 7);
-  assert.ok(Array.isArray(roomPayload.handoffs));
-  assert.ok(Array.isArray(roomPayload.one_on_ones));
-  assert.ok(Array.isArray(roomPayload.engines));
-  assert.ok(roomPayload.controls && roomPayload.controls.go === 'atris member go');
-  assert.ok(roomPayload.controls && roomPayload.controls.day === 'atris member day');
+    const roomRes = runCli(['member', 'day', '--json'], root);
+    assert.equal(roomRes.status, 0, roomRes.stderr || roomRes.stdout);
+    const roomPayload = JSON.parse(roomRes.stdout);
+    assert.equal(roomPayload.ok, true);
+    assert.equal(roomPayload.schema, 'atris.member.room.v1');
+    assert.equal(roomPayload.utopia.percent, 100);
+    assert.ok(Array.isArray(roomPayload.members) && roomPayload.members.length >= 7);
+    assert.ok(Array.isArray(roomPayload.standup) && roomPayload.standup.length >= 7);
+    assert.ok(Array.isArray(roomPayload.handoffs));
+    assert.ok(Array.isArray(roomPayload.one_on_ones));
+    assert.ok(Array.isArray(roomPayload.engines));
+    assert.ok(roomPayload.controls && roomPayload.controls.go === 'atris member go');
+    assert.ok(roomPayload.controls && roomPayload.controls.day === 'atris member day');
+  } finally {
+    fs.rmSync(root, { recursive: true, force: true });
+  }
 });
