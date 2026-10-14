@@ -91,12 +91,12 @@ function projectionByRef(repo) {
 // Create and claim straight in the task store with the same writes `task new`
 // and `task claim` make; ready and the tick still run through the CLI because
 // certification reads what they write. Returns the display ref (REP-1).
-function seedClaimedTask(repo, title, tag) {
+function seedClaimedTask(repo, title, tag, claimedBy = 'builder') {
   const db = taskStore.open(path.join(repo, '.atris', 'fixture-tasks.db'));
   try {
     const workspaceRoot = taskStore.workspaceRoot(repo);
     const { id } = taskStore.addTask(db, { title, tag, workspaceRoot });
-    assert.equal(taskStore.claimTask(db, { id, claimedBy: 'builder' }).claimed, true);
+    assert.equal(taskStore.claimTask(db, { id, claimedBy }).claimed, true);
     const row = taskStore.withTaskDisplayRefs(taskStore.listTasks(db, { workspaceRoot })).find((r) => r.id === id);
     return row.display_id;
   } finally {
@@ -503,11 +503,7 @@ test('digest reports protected reviews before certification', () => {
 
   const { base, repo } = makeTempRepo();
   try {
-    const created = runCli(['task', 'new', 'Keep the customer-facing sentence clear so operators can approve it', '--tag', 'security', '--json'], repo);
-    assert.equal(created.status, 0, created.stderr || created.stdout);
-    const task = JSON.parse(created.stdout).task || JSON.parse(created.stdout);
-    const ref = task.display_id || task.id;
-    assert.equal(runCli(['task', 'claim', ref, '--as', 'linguist'], repo).status, 0);
+    const ref = seedClaimedTask(repo, 'Keep the customer-facing sentence clear so operators can approve it', 'security', 'linguist');
     const ready = runCli([
       'task', 'ready', ref, '--verify', 'git diff --check', '--as', 'linguist',
     ], repo);
@@ -525,11 +521,7 @@ test('digest reports protected reviews before certification', () => {
 test('autoland status does not call one-pass protected work approval-ready', () => {
   const { base, repo } = makeTempRepo();
   try {
-    const created = runCli(['task', 'new', 'Keep the protected sentence clear so a human can judge it', '--tag', 'security', '--json'], repo);
-    assert.equal(created.status, 0, created.stderr || created.stdout);
-    const task = JSON.parse(created.stdout).task || JSON.parse(created.stdout);
-    const ref = task.display_id || task.id;
-    assert.equal(runCli(['task', 'claim', ref, '--as', 'linguist'], repo).status, 0);
+    const ref = seedClaimedTask(repo, 'Keep the protected sentence clear so a human can judge it', 'security', 'linguist');
     const ready = runCli([
       'task', 'ready', ref, '--verify', 'git diff --check', '--as', 'linguist',
     ], repo);
@@ -555,11 +547,7 @@ test('autoland status speaks in plain sentences and puts your decisions first', 
     });
     const heldBack = certifiedTask(repo, 'Tidy the settings copy so the panel reads clearly');
     replaceLatestProof(repo, heldBack, '');
-    const created = runCli(['task', 'new', 'Keep the protected wording clear so a human can judge it', '--tag', 'security', '--json'], repo);
-    assert.equal(created.status, 0, created.stderr || created.stdout);
-    const task = JSON.parse(created.stdout).task || JSON.parse(created.stdout);
-    const protectedRef = task.display_id || task.id;
-    assert.equal(runCli(['task', 'claim', protectedRef, '--as', 'linguist'], repo).status, 0);
+    const protectedRef = seedClaimedTask(repo, 'Keep the protected wording clear so a human can judge it', 'security', 'linguist');
     const ready = runCli([
       'task', 'ready', protectedRef, '--verify', 'git diff --check', '--as', 'linguist',
     ], repo);
