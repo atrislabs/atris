@@ -403,10 +403,12 @@ test('a mission tick on a roster engine records its outcome, time, and reported 
 });
 
 test('an autopilot phase on a roster worker records landed with tokens, or stalled at its cap', async () => {
-  const roster = `# roster
+  // The landed half gets a roomy cap so a slow process start under suite load
+  // cannot read as a stall; only the stalled half runs at the 1s cap it tests.
+  const roster = (cap) => `# roster
 
 ## review
-- codex, max: 1 s
+- codex, max: ${cap}
 `;
   await withRoom(async ({ root, bin }) => {
     const { executePhaseDetailed } = require('../commands/autopilot');
@@ -420,6 +422,7 @@ test('an autopilot phase on a roster worker records landed with tokens, or stall
       process.chdir(cwd);
     }
     fs.writeFileSync(path.join(bin, 'codex'), '#!/bin/sh\nsleep 30\n');
+    fs.writeFileSync(path.join(root, 'atris', 'ROSTER.md'), roster('1 s'));
     process.chdir(root);
     try {
       assert.throws(() => executePhaseDetailed('review', { task: 'fixture', kind: 'endgame' }, { verbose: false }), /timed out/);
@@ -434,7 +437,7 @@ test('an autopilot phase on a roster worker records landed with tokens, or stall
     assert.equal(rows[0].tokens, 812);
     assert.equal(rows[1].max_seconds, 1);
     assert.equal(rows[0].source, 'autopilot');
-  }, { roster });
+  }, { roster: roster('30 s') });
 });
 
 test('a one-lap review records each validator attempt, handed over past a credit wall', async () => {
