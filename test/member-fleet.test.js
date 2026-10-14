@@ -476,3 +476,25 @@ test('member dispatch, natural prompt, go, card, and room unite members, skills,
     fs.rmSync(root, { recursive: true, force: true });
   }
 });
+
+test('member room text names only the engines this team uses and drops the loop jargon line', () => {
+  const root = makeTeamWorkspace();
+  try {
+    const json = JSON.parse(runCli(['member', 'room', '--json'], root).stdout);
+    const used = [...new Set(json.standup.map((s) => s.engine).filter((e) => e && e !== 'auto'))];
+
+    const res = runCli(['member', 'room'], root);
+    assert.equal(res.status, 0, res.stderr || res.stdout);
+    assert.doesNotMatch(res.stdout, /Loop: ACTION:/);
+    assert.doesNotMatch(res.stdout, /Engines ready:/);
+    const engineLine = res.stdout.split('\n')[1];
+    assert.match(engineLine, /^Your team (runs on .+\.|picks an engine for each job\.)$/);
+    for (const engine of used) assert.match(engineLine, new RegExp(`\\b${engine}\\b`));
+    for (const unused of ['devin', 'grok', 'opencode', 'commandcode'].filter((e) => !used.includes(e))) {
+      assert.doesNotMatch(engineLine, new RegExp(`\\b${unused}\\b`));
+    }
+    assert.match(res.stdout, /Member-by-Member Standup/);
+  } finally {
+    fs.rmSync(root, { recursive: true, force: true });
+  }
+});

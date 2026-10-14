@@ -10831,9 +10831,10 @@ async function memberRoom(...args) {
   if (hasFlag(args, '--walk') || Boolean(readFlag(args, '--decisions', ''))) {
     return memberStandupWalk(room, args);
   }
-  const engineSummary = room.engines.length
-    ? room.engines.map((e) => `${e.id}(${e.tier})`).join(', ')
-    : 'claude, codex';
+  const teamEngines = [...new Set(room.standup.map((s) => s.engine).filter((e) => e && e !== 'auto'))];
+  const engineLine = teamEngines.length
+    ? `Your team runs on ${teamEngines.length > 1 ? `${teamEngines.slice(0, -1).join(', ')} and ${teamEngines[teamEngines.length - 1]}` : teamEngines[0]}.`
+    : 'Your team picks an engine for each job.';
 
   const standupRows = room.standup.flatMap((s, idx) => [
     `+-----------------------------------------------------------------------+`,
@@ -10857,8 +10858,7 @@ async function memberRoom(...args) {
 
   const lines = [
     'Your team · workday briefing',
-    `Engines ready: ${engineSummary}`,
-    `Loop: ${room.utopia.loop}`,
+    engineLine,
     '',
     '1. Member-by-Member Standup (detail: `atris member card <name>` | rapid walk: `atris member standup --walk`):',
     ...standupRows,
