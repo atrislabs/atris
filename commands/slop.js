@@ -166,7 +166,7 @@ const ING_LIST_AFTER_DASH =new RegExp(`(?<=[\\w)\\]*_\`%])\\s*\u2014\\s*(?=${ING
 // "it survives", "they'd pass", "that's the goal". "This" and its kin count
 // only before a verb, so "the gap, this time with tests" stays a comma.
 // A masked code span before the dash counts as the word: "Do not use `PUT`".
-const CLAUSE_AFTER_DASH = /(?<=[\w)\]"'*_`\u201d\u2019\uE001])\s*\u2014\s*(?=(?:(?:it|we|they|you|I|he|she)(?:['\u2019](?:s|re|ll|ve|d|m))?|(?:this|that|these|those|there)(?:['\u2019]s|\s+(?:is|are|was|were|used|will|would|can|cannot|must|should|has|have))\b)\s+[^\s\u2014])/g;
+const CLAUSE_AFTER_DASH = /(?<=[\w)\]"'*_`%\u201d\u2019\uE001])\s*\u2014\s*(?=(?:(?:it|we|they|you|I|he|she)(?:['\u2019](?:s|re|ll|ve|d|m))?|(?:this|that|these|those|there)(?:['\u2019]s|\s+(?:is|are|was|were|used|will|would|can|cannot|must|should|has|have))\b)\s+[^\s\u2014])/g;
 // A noun subject and its helping verb start a second sentence too: "is not a
 // twin, restart is allowed". "Did", "could", "had" and their kin count as
 // helping verbs too: "still open, receipt did not move it". So do common
@@ -210,7 +210,7 @@ const OPEN_HELPER = '(?:is|are|was|were|will|would|can|cannot|could|must|should|
 // "helpful"'. A quote with no verb after it stays a phrase.
 const QUOTED_PART = '(?:"[^"\\u2014]{1,80}"|\\u201c[^\\u201c\\u201d\\u2014]{1,80}\\u201d)\\s+';
 const QUOTED_SUBJECT = `${QUOTED_PART}(?:and\\s+${QUOTED_PART})?`;
-const NOUN_CLAUSE_AFTER_DASH = new RegExp(`(?<=[\\w)\\]"'*_\`\\u201d\\u2019\\uE001])\\s*\\u2014\\s*(?!${NAMING_PHRASE})(?!${WHEN_WORD}\\b)(?!${TIME_OPENER})(?!${REPORT_VERB}\\s)(?=(?:${QUOTED_SUBJECT}|${SUBJECT_WORD}(?:(?!(?:the|a|an|that|whose)\\b)${SUBJECT_WORD}){0,4}${PLACE_PHRASE})(?:(?:${HELPING_VERB}|${CAPS_HELPER})\\s+[^\\s\\u2014]|${OPEN_HELPER}$))`, 'g');
+const NOUN_CLAUSE_AFTER_DASH = new RegExp(`(?<=[\\w)\\]"'*_\`%\\u201d\\u2019\\uE001])\\s*\\u2014\\s*(?!${NAMING_PHRASE})(?!${WHEN_WORD}\\b)(?!${TIME_OPENER})(?!${REPORT_VERB}\\s)(?=(?:${QUOTED_SUBJECT}|${SUBJECT_WORD}(?:(?!(?:the|a|an|that|whose)\\b)${SUBJECT_WORD}){0,4}${PLACE_PHRASE})(?:(?:${HELPING_VERB}|${CAPS_HELPER})\\s+[^\\s\\u2014]|${OPEN_HELPER}$))`, 'g');
 // "Nothing", "everything" and their kin before a plain verb in "ed" or "s"
 // are a subject too: "the gate held, nothing in the queue moved". A word in
 // "ss" is never the verb, so "nothing less than" and "nothing fancy" stay.
@@ -224,7 +224,7 @@ const NOUN_CLAUSE_AFTER_DASH = new RegExp(`(?<=[\\w)\\]"'*_\`\\u201d\\u2019\\uE0
 const PRESENT_PLURAL_VERB = '(?:pass|fail|run|work|break|hold|match|agree|validate|load|build|ship|land|compile|apply|need|stay|remain|exist|show|point|wait|block|return)';
 const COUNT_WORD = '(?:one|two|three|four|five|six|seven|eight|nine|ten|eleven|twelve|all|most|some|none|half|both|many|few|\\d+)';
 const OF_QUANTITY = `${COUNT_WORD}\\s+of\\s+(?:(?:the|our|its|their|${COUNT_WORD})\\s+)?(?:[^\\s\\u2014]+\\s+){0,2}[^\\s\\u2014]*s["'\\u201d\\uE001]?\\s+(?!(?:from|of|in|on|for|with|at|by|to|and|or|but|that|which|who|like|than|as|into|per|across|today|now|here|there|too|also|only|so)\\b)(?![a-z]+ly\\b)(?:${HELPING_VERB}|[a-z]{2,})\\b`;
-const QUANTITY_CLAUSE_AFTER_DASH = new RegExp(`(?<=[\\w)\\]"'*_\`\\u201d\\u2019\\uE001])\\s*\\u2014\\s*(?=(?:(?:nothing|everything|nobody|everyone)\\s+(?:else\\s+)?${PLACE_PHRASE}[a-z]{2,}(?:ed|[a-rt-z]s)|(?:two|three|four|five|six|seven|eight|nine|ten|both|several|many|few|\\d+)\\s+(?:[a-z]+\\s+)?[a-z]+s\\s+${PLACE_PHRASE}[a-z]{2,}ed(?!\\s+(?:by|as|for|from|to|into|with|under)\\b)|(?:all|two|three|four|five|six|seven|eight|nine|ten|both|several|many|few|\\d+)\\s+(?:[a-z]+\\s+)?[a-z]+s\\s+${PRESENT_PLURAL_VERB}\\b(?![-'])|${OF_QUANTITY})(?:\\s+[^\\s\\u2014]|[.!?;,]|$))`, 'g');
+const QUANTITY_CLAUSE_AFTER_DASH = new RegExp(`(?<=[\\w)\\]"'*_\`%\\u201d\\u2019\\uE001])\\s*\\u2014\\s*(?=(?:(?:nothing|everything|nobody|everyone)\\s+(?:else\\s+)?${PLACE_PHRASE}[a-z]{2,}(?:ed|[a-rt-z]s)|(?:two|three|four|five|six|seven|eight|nine|ten|both|several|many|few|\\d+)\\s+(?:[a-z]+\\s+)?[a-z]+s\\s+${PLACE_PHRASE}[a-z]{2,}ed(?!\\s+(?:by|as|for|from|to|into|with|under)\\b)|(?:all|two|three|four|five|six|seven|eight|nine|ten|both|several|many|few|\\d+)\\s+(?:[a-z]+\\s+)?[a-z]+s\\s+${PRESENT_PLURAL_VERB}\\b(?![-'])|${OF_QUANTITY})(?:\\s+[^\\s\\u2014]|[.!?;,]|$))`, 'g');
 // "The" and up to three words before a verb in "ed" start one only when a
 // stop, a word like "out" or "working", or an object like "every" follows, so
 // "the slow tests timed out" joins but "the new signed build" and "the files
@@ -234,7 +234,7 @@ const QUANTITY_CLAUSE_AFTER_DASH = new RegExp(`(?<=[\\w)\\]"'*_\`\\u201d\\u2019\
 // the verb opens a clause inside a noun phrase, so "the version they made"
 // and "the version they shipped" keep their comma.
 const PAST_VERB = '(?:[a-z]{2,}ed|built|ran|broke|took|made|gave|got|went|came|sent|kept|held|found|lost|wrote|let|caught|brought|threw|grew|knew|began|stood|told|sold|became|fell|stuck)';
-const PAST_CLAUSE_AFTER_DASH = new RegExp(`(?<=[\\w)\\]"'*_\`\\u201d\\u2019\\uE001])\\s*\\u2014\\s*(?!${NAMING_PHRASE})(?=(?:the|a|an)\\s+(?:(?!(?:the|a|an|that|whose|they|we|you|he|she|I)\\b)${SUBJECT_WORD}){1,3}${PAST_VERB}(?:[.!?;,]|$|\\s+(?:out|up|down|off|back|over|away|again|fine|green|it|them|its|their|every|all|each|the|a|an|this|no|[a-z]{2,}ing)\\b))`, 'g');
+const PAST_CLAUSE_AFTER_DASH = new RegExp(`(?<=[\\w)\\]"'*_\`%\\u201d\\u2019\\uE001])\\s*\\u2014\\s*(?!${NAMING_PHRASE})(?=(?:the|a|an)\\s+(?:(?!(?:the|a|an|that|whose|they|we|you|he|she|I)\\b)${SUBJECT_WORD}){1,3}${PAST_VERB}(?:[.!?;,]|$|\\s+(?:out|up|down|off|back|over|away|again|fine|green|it|them|its|their|every|all|each|the|a|an|this|no|[a-z]{2,}ing)\\b))`, 'g');
 // A plain verb ending in "s" counts only after a determiner and one more word,
 // and never right before a preposition: "a stray file turns them" joins, but
 // "the changes from whoever" and "the old tests from CI" stay noun phrases.
@@ -250,7 +250,7 @@ const PLAIN_VERB = PLAIN_VERB_WORD + '\\s+(?!(?:from|of|in|on|for|with|at|by|to|
 // Nouns in "us", "is" or "ics" and their kin are one thing, so "the build
 // status, which is green" and "the metrics, which is" keep their comma.
 const VERB_BEFORE_WHICH = PLAIN_VERB_WORD + '(?<![ua]s|is|ics|news|series|species|lens|means),\\s+which\\s+(?:is|was)\\b';
-const PLAIN_CLAUSE_AFTER_DASH = new RegExp(`(?<=[\\w)\\]"'*_\`\\u201d\\u2019\\uE001])\\s*\\u2014\\s*(?!${TIME_OPENER})(?=(?:a|an|the|every|each|no)\\s+${NOUN_WORD}\\s+(?:(?!(?:that|which|who|whose)\\b)${NOUN_WORD}\\s+){0,2}(?:${PLAIN_VERB}[^\\s\\u2014]|${VERB_BEFORE_WHICH}))`, 'g');
+const PLAIN_CLAUSE_AFTER_DASH = new RegExp(`(?<=[\\w)\\]"'*_\`%\\u201d\\u2019\\uE001])\\s*\\u2014\\s*(?!${TIME_OPENER})(?=(?:a|an|the|every|each|no)\\s+${NOUN_WORD}\\s+(?:(?!(?:that|which|who|whose)\\b)${NOUN_WORD}\\s+){0,2}(?:${PLAIN_VERB}[^\\s\\u2014]|${VERB_BEFORE_WHICH}))`, 'g');
 // Outside a "not" sentence the verb needs "it" or "them" after it with no
 // verb of their own, so "the navigator reads it" joins but "the decision
 // helpers it uses" and "the decision helpers the CLI uses" stay noun phrases.
@@ -282,7 +282,7 @@ const NAME_BEFORE_PLAIN_VERB = new RegExp(`^\\s*\\u2014\\s*(?:a|an|the|every|eac
 // trace it". A joining word there is not a command, so "then it lands" stays.
 // With no subject after the comma, or no comma at all, the clause only adds
 // a condition, so "Ship it, if you can" and "It fails, when it is full" stay.
-const LEADING_CLAUSE_AFTER_DASH = new RegExp(`(?<=[\\w)\\]"'*_\`\\u201d\\u2019\\uE001])\\s*\\u2014\\s*(?=(?:once|when|whenever|if|unless|until|after|before|while|(?:each|every|any)\\s+time)\\s+[^.;:!?\\u2014]{1,80}?,\\s+(?:(?!(?:and|but|or|nor|so|yet|then|once|when|whenever|if|unless|until|after|before|while|as|since|because|though|although)\\b)[a-z]{2,}(?<!s|ed|ing)\\s+(?:it|them)\\b|(?:it|we|they|you|I|he|she)(?:['\\u2019](?:s|re|ll|ve|d|m))?\\s+[a-z]|(?:this|that|there)\\s+(?:is|are|was|were|will|would|can|must|should|has|have)\\b|${SUBJECT_WORD}(?:(?!(?:the|a|an|that|whose)\\b)${SUBJECT_WORD}){0,3}${HELPING_VERB}\\s|(?:a|an|the|every|each|no)\\s+${NOUN_WORD}\\s+(?:${NOUN_WORD}\\s+){0,2}(?:${PLAIN_VERB}|${PLAIN_VERB_WORD}(?=[.!?;]|$))))`, 'g');
+const LEADING_CLAUSE_AFTER_DASH = new RegExp(`(?<=[\\w)\\]"'*_\`%\\u201d\\u2019\\uE001])\\s*\\u2014\\s*(?=(?:once|when|whenever|if|unless|until|after|before|while|(?:each|every|any)\\s+time)\\s+[^.;:!?\\u2014]{1,80}?,\\s+(?:(?!(?:and|but|or|nor|so|yet|then|once|when|whenever|if|unless|until|after|before|while|as|since|because|though|although)\\b)[a-z]{2,}(?<!s|ed|ing)\\s+(?:it|them)\\b|(?:it|we|they|you|I|he|she)(?:['\\u2019](?:s|re|ll|ve|d|m))?\\s+[a-z]|(?:this|that|there)\\s+(?:is|are|was|were|will|would|can|must|should|has|have)\\b|${SUBJECT_WORD}(?:(?!(?:the|a|an|that|whose)\\b)${SUBJECT_WORD}){0,3}${HELPING_VERB}\\s|(?:a|an|the|every|each|no)\\s+${NOUN_WORD}\\s+(?:${NOUN_WORD}\\s+){0,2}(?:${PLAIN_VERB}|${PLAIN_VERB_WORD}(?=[.!?;]|$))))`, 'g');
 // A "not" contraction or a word like "still" or "never" right after a
 // noun subject marks a verb, which no plain noun phrase has: "the picker
 // can't see it", "the member still owns the receipt", "a session never wakes".
@@ -294,7 +294,7 @@ const LEADING_CLAUSE_AFTER_DASH = new RegExp(`(?<=[\\w)\\]"'*_\`\\u201d\\u2019\\
 // "not just likes" keep their comma. After a plural, a verb with no "s"
 // counts when more words follow it: "diminishing returns now suggest
 // moving", "dead sheets still cause conflicts".
-const ADVERB_CLAUSE_AFTER_DASH = new RegExp(`(?<=[\\w)\\]"'*_\`\\u201d\\u2019\\uE001])\\s*\\u2014\\s*(?!${NAMING_PHRASE})(?!${TIME_OPENER})(?=(?:(?:the|a|an|every|each|no)\\s+)?(?!(?:and|but|or|nor|so|yet|then|not|even|when|if|unless|until|because|since|while|where|which|who|as|after|before|though|although|once|just|only)\\b)(?:(?!(?:the|a|an|that|whose)\\b)${SUBJECT_WORD}){0,2}(?!(?:that|whose)\\b)${NOUN_WORD}\\s+(?:(?:just|still|never|already|always|now|really|actually|often|usually|rarely|finally)\\s+(?:[a-z]{2,}(?:s|ed)\\b(?<!ss|ous)|(?<=s\\s+(?:now|still|never|already|always|often|usually|rarely|finally|just)\\s+)[a-z]{3,}\\b(?=\\s+[a-z])|(?:is|are|was|were|will|would|can|could|must|should|has|have|had|does|did)\\b|[a-z]+n['\\u2019]t\\b)|[a-z]+n['\\u2019]t\\b))`, 'g');
+const ADVERB_CLAUSE_AFTER_DASH = new RegExp(`(?<=[\\w)\\]"'*_\`%\\u201d\\u2019\\uE001])\\s*\\u2014\\s*(?!${NAMING_PHRASE})(?!${TIME_OPENER})(?=(?:(?:the|a|an|every|each|no)\\s+)?(?!(?:and|but|or|nor|so|yet|then|not|even|when|if|unless|until|because|since|while|where|which|who|as|after|before|though|although|once|just|only)\\b)(?:(?!(?:the|a|an|that|whose)\\b)${SUBJECT_WORD}){0,2}(?!(?:that|whose)\\b)${NOUN_WORD}\\s+(?:(?:just|still|never|already|always|now|really|actually|often|usually|rarely|finally)\\s+(?:[a-z]{2,}(?:s|ed)\\b(?<!ss|ous)|(?<=s\\s+(?:now|still|never|already|always|often|usually|rarely|finally|just)\\s+)[a-z]{3,}\\b(?=\\s+[a-z])|(?:is|are|was|were|will|would|can|could|must|should|has|have|had|does|did)\\b|[a-z]+n['\\u2019]t\\b)|[a-z]+n['\\u2019]t\\b))`, 'g');
 // One bare word with no "s" and a verb in "s" that moves toward a place
 // start one too: "Blocks use overflow, content clips to the bounding box",
 // "data flows into the sheet". A plural or a word in "ly" before the verb,
@@ -309,20 +309,20 @@ const ADVERB_CLAUSE_AFTER_DASH = new RegExp(`(?<=[\\w)\\]"'*_\`\\u201d\\u2019\\u
 // merges do not reach prod". A plural before a noun, "skills folder", is no
 // verb, and "the" is left out so "the changes users need" stays a phrase.
 const COMMON_PLAIN_VERB = '(?:need|appear|carry|say|do|seem|remain|require|reach|stay|tend|hold|lose|know|want|become|belong|depend|happen|exist|agree|refuse|include|contain)';
-const PLURAL_CLAUSE_AFTER_DASH = new RegExp(`(?<=[\\w)\\]"'*_\`\\u201d\\u2019\\uE001])\\s*\\u2014\\s*(?!${NAMING_PHRASE})(?!${TIME_OPENER})(?=(?:(?!(?:the|a|an|that|whose|this|it|its)\\b)${SUBJECT_WORD}){0,2}(?!(?:the|a|an|that|whose|this|its)\\b)[A-Za-z0-9_'-]*[a-z](?<!ss|us|is)s\\s+${COMMON_PLAIN_VERB}\\s+[^\\s\\u2014])`, 'g');
+const PLURAL_CLAUSE_AFTER_DASH = new RegExp(`(?<=[\\w)\\]"'*_\`%\\u201d\\u2019\\uE001])\\s*\\u2014\\s*(?!${NAMING_PHRASE})(?!${TIME_OPENER})(?=(?:(?!(?:the|a|an|that|whose|this|it|its)\\b)${SUBJECT_WORD}){0,2}(?!(?:the|a|an|that|whose|this|its)\\b)[A-Za-z0-9_'-]*[a-z](?<!ss|us|is)s\\s+${COMMON_PLAIN_VERB}\\s+[^\\s\\u2014])`, 'g');
 // A "the" subject of one or two words, then a verb in "s" that is rarely a
 // noun and more words, starts one too: "keep it short; the config lives in
 // one file". A pronoun or "that" before the verb opens a clause inside a
 // noun phrase, so "the file it belongs to" stays, and "of" after it marks a
 // noun, so "the private lives of founders" stays.
 const RARE_NOUN_VERB = '(?:lives|appears|belongs|depends|seems|happens|exists|sits|resides|occurs|arrives|applies)';
-const THE_CLAUSE_AFTER_DASH = new RegExp(`(?<=[\\w)\\]"'*_\`\\u201d\\u2019\\uE001])\\s*\\u2014\\s*(?!${TIME_OPENER})(?=(?:the|a|an|every|each|no)\\s+(?:(?!(?:the|a|an|that|whose|which|who|it|they|we|you|he|she|I|this|these|those)\\b)${NOUN_WORD}\\s+){1,2}${RARE_NOUN_VERB}\\s+(?!(?:of|and|or|that|which|who|like|than|as)\\b)[^\\s\\u2014])`, 'g');
+const THE_CLAUSE_AFTER_DASH = new RegExp(`(?<=[\\w)\\]"'*_\`%\\u201d\\u2019\\uE001])\\s*\\u2014\\s*(?!${TIME_OPENER})(?=(?:the|a|an|every|each|no)\\s+(?:(?!(?:the|a|an|that|whose|which|who|it|they|we|you|he|she|I|this|these|those)\\b)${NOUN_WORD}\\s+){1,2}${RARE_NOUN_VERB}\\s+(?!(?:of|and|or|that|which|who|like|than|as)\\b)[^\\s\\u2014])`, 'g');
 // A subject that holds its own "that" clause, a verb in "s" or "ed" right
 // after the "that", then a singular "is", "was" or "has", starts one too:
 // "say why in the receipt; a stuck loop that reports stuck is healthy". A
 // plural like "teams" after the "that" takes "are", so "a plan that teams
 // are using" stays a phrase.
-const THAT_CLAUSE_AFTER_DASH = new RegExp(`(?<=[\\w)\\]"'*_\`\\u201d\\u2019\\uE001])\\s*\\u2014\\s*(?=(?:the|a|an)\\s+(?:(?!(?:the|a|an|that|which|who)\\b)[a-z][\\w-]*\\s+){1,3}that\\s+[a-z]{3,}(?:s|ed)\\s+(?:(?!(?:is|was|has)\\b)[a-z][\\w-]*\\s+){0,2}(?:is|was|has)\\s+[a-z])`, 'g');
+const THAT_CLAUSE_AFTER_DASH = new RegExp(`(?<=[\\w)\\]"'*_\`%\\u201d\\u2019\\uE001])\\s*\\u2014\\s*(?=(?:the|a|an)\\s+(?:(?!(?:the|a|an|that|which|who)\\b)[a-z][\\w-]*\\s+){1,3}that\\s+[a-z]{3,}(?:s|ed)\\s+(?:(?!(?:is|was|has)\\b)[a-z][\\w-]*\\s+){0,2}(?:is|was|has)\\s+[a-z])`, 'g');
 // A short subject and a verb that ends its clause start one too, with
 // nothing after the verb: "swap the model; the brain stays", "the session
 // vanishes; no reusable artifact remains". Only verbs a noun rarely ends in
@@ -330,18 +330,18 @@ const THAT_CLAUSE_AFTER_DASH = new RegExp(`(?<=[\\w)\\]"'*_\`\\u201d\\u2019\\uE0
 // and no word in "s" may sit before the verb, since it can be the real verb:
 // "the backend captures runs".
 const END_VERB = '(?:remains|stays|works|survives|holds|runs|fails|breaks|helps|vanishes|persists|exists)';
-const END_CLAUSE_AFTER_DASH = new RegExp(`(?<=[\\w)\\]"'*_\`\\u201d\\u2019\\uE001])\\s*\\u2014\\s*(?=(?:the|a|an|every|each|no)\\s+(?:(?!(?:the|a|an|that|whose|which|who|it|they|we|you|he|she|I|this|these|those|one|ones)\\b)(?![A-Za-z_-]*[a-rt-z]s\\b)${NOUN_WORD}\\s+){1,2}${END_VERB}(?=[.;!?,]|$))`, 'g');
+const END_CLAUSE_AFTER_DASH = new RegExp(`(?<=[\\w)\\]"'*_\`%\\u201d\\u2019\\uE001])\\s*\\u2014\\s*(?=(?:the|a|an|every|each|no)\\s+(?:(?!(?:the|a|an|that|whose|which|who|it|they|we|you|he|she|I|this|these|those|one|ones)\\b)(?![A-Za-z_-]*[a-rt-z]s\\b)${NOUN_WORD}\\s+){1,2}${END_VERB}(?=[.;!?,]|$))`, 'g');
 // "Each" takes a verb in "s", so "each", up to four words and a verb in "s"
 // with more words after it start one too: "started the loop; each tick
 // re-reads the latest logs". No "the", "that" or place word may sit before
 // the verb, so "each time the loop runs" and "each with its own tests in CI"
 // keep their comma.
-const EACH_CLAUSE_AFTER_DASH = new RegExp(`(?<=[\\w)\\]"'*_\`\\u201d\\u2019\\uE001])\\s*\\u2014\\s*(?!${TIME_OPENER})(?=each\\s+(?:(?!(?:the|a|an|that|whose|of|with|in|on|for|from|at|by|to|per|and|or|but)\\b)${NOUN_WORD}\\s+){0,4}(?:[a-z]+-)?${PLAIN_VERB}[^\\s\\u2014])`, 'g');
+const EACH_CLAUSE_AFTER_DASH = new RegExp(`(?<=[\\w)\\]"'*_\`%\\u201d\\u2019\\uE001])\\s*\\u2014\\s*(?!${TIME_OPENER})(?=each\\s+(?:(?!(?:the|a|an|that|whose|of|with|in|on|for|from|at|by|to|per|and|or|but)\\b)${NOUN_WORD}\\s+){0,4}(?:[a-z]+-)?${PLAIN_VERB}[^\\s\\u2014])`, 'g');
 // A bare word and a plain verb start a clause too, but never a word that
 // only says when (see WHEN_WORD). A number word before a word in "s" counts
 // a plural noun, never a subject and its verb, so "shipped it, two weeks
 // ago" and "three days later" keep their comma.
-const BARE_CLAUSE_AFTER_DASH = new RegExp(`(?<=[\\w)\\]"'*_\`\\u201d\\u2019\\uE001])\\s*\\u2014\\s*(?!${NAMING_PHRASE})(?!${WHEN_WORD}\\b)(?=(?!(?:and|but|or|nor|so|yet|then|not|even|when|if|unless|until|because|since|while|where|which|who|as|after|before|though|although|once|just|only|also|still|this|that|it|its|one|two|three|four|five|six|seven|eight|nine|ten|eleven|twelve|several|many|few|both|the|our|your|their|her|his|any|every|each)\\b)[a-z]{3,}(?<!s|ly|[^e]ed)\\s+${PLAIN_VERB_WORD}\\s+(?:(?:to|into|onto|through)\\s|[a-z]{3,}(?:[.!?;]|$)))`, 'g');
+const BARE_CLAUSE_AFTER_DASH = new RegExp(`(?<=[\\w)\\]"'*_\`%\\u201d\\u2019\\uE001])\\s*\\u2014\\s*(?!${NAMING_PHRASE})(?!${WHEN_WORD}\\b)(?=(?!(?:and|but|or|nor|so|yet|then|not|even|when|if|unless|until|because|since|while|where|which|who|as|after|before|though|although|once|just|only|also|still|this|that|it|its|one|two|three|four|five|six|seven|eight|nine|ten|eleven|twelve|several|many|few|both|the|our|your|their|her|his|any|every|each)\\b)[a-z]{3,}(?<!s|ly|[^e]ed)\\s+${PLAIN_VERB_WORD}\\s+(?:(?:to|into|onto|through)\\s|[a-z]{3,}(?:[.!?;]|$)))`, 'g');
 // The same bare word in the past tense starts one too, with "alone" or
 // "also" before its verb or not, when an object like "it" or "the" or two
 // more words follow, none a preposition: "carry no signal; calibration
@@ -349,13 +349,13 @@ const BARE_CLAUSE_AFTER_DASH = new RegExp(`(?<=[\\w)\\]"'*_\`\\u201d\\u2019\\uE0
 // in "s" counts when an object like "the" follows it: "the change is
 // additive; reverting only removes the section". So "data stored in
 // atris", "manual signed builds" and "universal tools that work" stay phrases.
-const BARE_VERB_CLAUSE_AFTER_DASH = new RegExp(`(?<=[\\w)\\]"'*_\`\\u201d\\u2019\\uE001])\\s*\\u2014\\s*(?!${NAMING_PHRASE})(?!${WHEN_WORD}\\b)(?=(?!(?:and|but|or|nor|so|yet|then|not|even|when|if|unless|until|because|since|while|where|which|who|as|after|before|though|although|once|just|only|also|still|this|that|it|its|one|two|three|four|five|six|seven|eight|nine|ten|eleven|twelve|several|many|few|both|the|our|your|their|her|his|any|every|each)\\b)[a-z]{3,}(?<!s|ly|[^e]ed)\\s+(?:(?:alone|also|only|then|just|still|never|always|already|finally)\\s+)?(?:${PAST_VERB}\\s+(?!(?:by|as|for|in|on|at|to|from|with|of|into|onto|over|under|and|or|than|like|via|per)\\b)(?:(?:it|them|him|her|us|everything|nothing|something|anything|all|the|a|an|every|each|this|that|these|those|its|their|our|my|your|his)\\b|[a-z]{2,}\\s+[a-z]{2,})|[a-z]{3,}(?<!ss)s\\s+(?:it|them|him|her|us|everything|nothing|something|anything|all|the|a|an|every|each|its|their|our|my|your|his)\\b))`, 'g');
+const BARE_VERB_CLAUSE_AFTER_DASH = new RegExp(`(?<=[\\w)\\]"'*_\`%\\u201d\\u2019\\uE001])\\s*\\u2014\\s*(?!${NAMING_PHRASE})(?!${WHEN_WORD}\\b)(?=(?!(?:and|but|or|nor|so|yet|then|not|even|when|if|unless|until|because|since|while|where|which|who|as|after|before|though|although|once|just|only|also|still|this|that|it|its|one|two|three|four|five|six|seven|eight|nine|ten|eleven|twelve|several|many|few|both|the|our|your|their|her|his|any|every|each)\\b)[a-z]{3,}(?<!s|ly|[^e]ed)\\s+(?:(?:alone|also|only|then|just|still|never|always|already|finally)\\s+)?(?:${PAST_VERB}\\s+(?!(?:by|as|for|in|on|at|to|from|with|of|into|onto|over|under|and|or|than|like|via|per)\\b)(?:(?:it|them|him|her|us|everything|nothing|something|anything|all|the|a|an|every|each|this|that|these|those|its|their|our|my|your|his)\\b|[a-z]{2,}\\s+[a-z]{2,})|[a-z]{3,}(?<!ss)s\\s+(?:it|them|him|her|us|everything|nothing|something|anything|all|the|a|an|every|each|its|their|our|my|your|his)\\b))`, 'g');
 
 // "Our", "your", "their" or "my" and one to three words, then a verb, start
 // a second sentence too: "Saw your post on falls after rehab; our scheduling
 // AI ensures reliable care". With no verb it only renames what came before,
 // so "the tool, our best work so far" keeps its comma.
-const POSSESSIVE_CLAUSE_AFTER_DASH = new RegExp(`(?<=[\\w)\\]"'*_\`\\u201d\\u2019\\uE001])\\s*\\u2014\\s*(?=(?:our|your|their|my)\\s+(?:${NOUN_WORD}\\s+){1,3}(?:${PLAIN_VERB}[^\\s\\u2014]|${HELPING_VERB}\\s+[^\\s\\u2014]))`, 'g');
+const POSSESSIVE_CLAUSE_AFTER_DASH = new RegExp(`(?<=[\\w)\\]"'*_\`%\\u201d\\u2019\\uE001])\\s*\\u2014\\s*(?=(?:our|your|their|my)\\s+(?:${NOUN_WORD}\\s+){1,3}(?:${PLAIN_VERB}[^\\s\\u2014]|${HELPING_VERB}\\s+[^\\s\\u2014]))`, 'g');
 
 // A direct question after a full clause is a sentence of its own, so it takes
 // a semicolon: "Congrats on the Forbes ranking; how do you handle growing
@@ -380,7 +380,7 @@ const QUESTION_AFTER_DASH = new RegExp(`(?<=[\\w)\\]"'*_\`%\\u201d\\u2019\\uE001
 // Two orders side by side are one sentence, so the comma stays: "Kill the
 // group at timeout, spawn the phase detached", "don't impose, match it".
 const ORDER_VERB = `(?:don['\\u2019]t|do not|let['\\u2019]s|let us|pick|copy|reframe|judge|plug|retry|rename|propose|inspect|keep|leave|use|run|read|ask|add|check|make|move|stop|try|wait|skip|take|look|call|write|delete|remove|fix|put|say|tell|give|treat|verify|ship|commit|push|kill|mark|start|avoid|prefer|trust|drop|cut|split|merge|revert|rerun|re-run|consolidate|pin|automate|clamp|fork|spawn|adapt|halt|search)`;
-const ORDER_CLAUSE_AFTER_DASH = new RegExp(`(?<=[\\w)\\]"'*_\`\\u201d\\u2019\\uE001])\\s*\\u2014\\s*(?=(?:${ORDER_VERB},\\s+)?(?:don['\\u2019]t|do not)\\s+[\\w\`"'(\\uE000]|${ORDER_VERB}(?:,\\s+${ORDER_VERB})?\\s+(?![a-z]+ed\\b|of\\b)[\\w\`"'(\\uE000])`, 'g');
+const ORDER_CLAUSE_AFTER_DASH = new RegExp(`(?<=[\\w)\\]"'*_\`%\\u201d\\u2019\\uE001])\\s*\\u2014\\s*(?=(?:${ORDER_VERB},\\s+)?(?:don['\\u2019]t|do not)\\s+[\\w\`"'(\\uE000]|${ORDER_VERB}(?:,\\s+${ORDER_VERB})?\\s+(?![a-z]+ed\\b|of\\b)[\\w\`"'(\\uE000])`, 'g');
 
 // Two short subjects joined by "and", then a helper that takes them both,
 // start one too: "had no guard; render.py and render_reel.py are coupled",
@@ -389,7 +389,7 @@ const ORDER_CLAUSE_AFTER_DASH = new RegExp(`(?<=[\\w)\\]"'*_\`\\u201d\\u2019\\uE
 // "how" opens a phrase that explains the noun: "a philosophy of work, how
 // companies and agents should run together".
 const AND_PART = `(?:(?:the|a|an|our|your|their|its|my)\\s+)?(?:(?!(?:the|a|an|that|whose|this|it|they|we|you|he|she|I|how|what|why|whether|${HELPING_VERB})\\b)${SUBJECT_WORD}){1,3}`;
-const AND_CLAUSE_AFTER_DASH = new RegExp(`(?<=[\\w)\\]"'*_\`\\u201d\\u2019\\uE001])\\s*\\u2014\\s*(?!${NAMING_PHRASE})(?!${TIME_OPENER})(?!${ORDER_VERB}\\s)(?=${AND_PART}and\\s+${AND_PART}(?:are|were|have|had|will|would|can|cannot|could|must|should|may|might|do|did)\\s+[^\\s\\u2014])`, 'g');
+const AND_CLAUSE_AFTER_DASH = new RegExp(`(?<=[\\w)\\]"'*_\`%\\u201d\\u2019\\uE001])\\s*\\u2014\\s*(?!${NAMING_PHRASE})(?!${TIME_OPENER})(?!${ORDER_VERB}\\s)(?=${AND_PART}and\\s+${AND_PART}(?:are|were|have|had|will|would|can|cannot|could|must|should|may|might|do|did)\\s+[^\\s\\u2014])`, 'g');
 // A short subject with no "the", then a verb that reports how a run went
 // and ends the clause, starts one too: "health tick green; gate
 // inbox-contract passed (receipt saved)", "woke up clean; morning protocol
@@ -399,12 +399,12 @@ const AND_CLAUSE_AFTER_DASH = new RegExp(`(?<=[\\w)\\]"'*_\`\\u201d\\u2019\\uE00
 // merged" and "done, verifying nothing broke" stay, and so does a list of
 // states: "show landed, failed, or waiting".
 const STATUS_PAST = '(?:passed|failed|shipped|landed|merged|broke|crashed|stalled|regressed|succeeded|held|worked|reverted|deployed|timed\\s+out)';
-const STATUS_CLAUSE_AFTER_DASH = new RegExp(`(?<=[\\w)\\]"'*_\`\\u201d\\u2019\\uE001])\\s*\\u2014\\s*(?!${NAMING_PHRASE})(?!${ORDER_VERB}\\s)(?![\\d$])(?=(?!(?:the|a|an|no|${COUNT_WORD}|several|each|every|any|only)\\b)(?![a-z]+ing\\s+(?:nothing|everything|something|anything|the|a|an|it|that|this|all|no|its|their)\\b)(?:(?!(?:the|a|an|that|whose|this|it|they|we|you|he|she|I|how|what|why|whether|to|from|in|of|for|with|by|at|on|into|never|already|always|also|still|now|again|NOT|Not|${HELPING_VERB})\\b)${SUBJECT_WORD}){1,3}${STATUS_PAST}(?!,?\\s+(?:or\\b|[a-z]+ed\\b,))(?:\\s+\\(|[.!?;,]|$|\\s+and\\b))`, 'g');
+const STATUS_CLAUSE_AFTER_DASH = new RegExp(`(?<=[\\w)\\]"'*_\`%\\u201d\\u2019\\uE001])\\s*\\u2014\\s*(?!${NAMING_PHRASE})(?!${ORDER_VERB}\\s)(?![\\d$])(?=(?!(?:the|a|an|no|${COUNT_WORD}|several|each|every|any|only)\\b)(?![a-z]+ing\\s+(?:nothing|everything|something|anything|the|a|an|it|that|this|all|no|its|their)\\b)(?:(?!(?:the|a|an|that|whose|this|it|they|we|you|he|she|I|how|what|why|whether|to|from|in|of|for|with|by|at|on|into|never|already|always|also|still|now|again|NOT|Not|${HELPING_VERB})\\b)${SUBJECT_WORD}){1,3}${STATUS_PAST}(?!,?\\s+(?:or\\b|[a-z]+ed\\b,))(?:\\s+\\(|[.!?;,]|$|\\s+and\\b))`, 'g');
 // "Only" before a subject and its verb starts one too: "tested 6 contact
 // pages; only Austin exposed an email", "only the build packet exists".
 // With no verb it only narrows what came before, so "only if outbound
 // live" and "only the wallet index and public address" keep their comma.
-const ONLY_CLAUSE_AFTER_DASH = new RegExp(`(?<=[\\w)\\]"'*_\`\\u201d\\u2019\\uE001])\\s*\\u2014\\s*(?=only\\s+(?!${ORDER_VERB}\\s)${AND_PART}(?:and\\s+${AND_PART})?(?:${HELPING_VERB}\\s+[^\\s\\u2014]|exists?\\b|${OPEN_HELPER}$|[a-z]{3,}ed\\s+(?!(?:by|as|for|in|on|at|to|from|with|of|into|and|or)\\b)[\\w\\uE000]))`, 'g');
+const ONLY_CLAUSE_AFTER_DASH = new RegExp(`(?<=[\\w)\\]"'*_\`%\\u201d\\u2019\\uE001])\\s*\\u2014\\s*(?=only\\s+(?!${ORDER_VERB}\\s)${AND_PART}(?:and\\s+${AND_PART})?(?:${HELPING_VERB}\\s+[^\\s\\u2014]|exists?\\b|${OPEN_HELPER}$|[a-z]{3,}ed\\s+(?!(?:by|as|for|in|on|at|to|from|with|of|into|and|or)\\b)[\\w\\uE000]))`, 'g');
 
 // The mark that joins a full clause to the sentence before the dash. A short
 // opener led by "not" has no verb of its own, so the clause explains it and

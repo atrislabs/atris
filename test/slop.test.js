@@ -3613,3 +3613,26 @@ test('fix gives a search order after a full clause a semicolon', () => {
     'Each agent gets one tool, search, nothing else.',
   ]);
 });
+
+test('fix treats a percent before a dash like the number it ends', () => {
+  // from cure's learnings: "55% we find" is as much a clause as "55 we
+  // find", so a comma there is a splice; a phrase after a percent keeps its
+  // comma like it would after any word
+  const D = String.fromCharCode(0x2014);
+  const file = tmpFile('percent-clause.md', [
+    `This seems low but recall@20 = 55% ${D} we find most of the needles.`,
+    '',
+    `Retrieval got better by 23% ${D} the cache is warm now.`,
+    '',
+    `Coverage rose to 80% ${D} run the suite again before merging.`,
+    '',
+    `Coverage rose to 80% ${D} up from 60% last week.`,
+  ].join('\n'));
+  const { changes } = applyFixes([file], RULES);
+  assert.deepEqual(changes.map((c) => c.after), [
+    'This seems low but recall@20 = 55%; we find most of the needles.',
+    'Retrieval got better by 23%; the cache is warm now.',
+    'Coverage rose to 80%; run the suite again before merging.',
+    'Coverage rose to 80%, up from 60% last week.',
+  ]);
+});
