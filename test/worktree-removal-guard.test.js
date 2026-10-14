@@ -222,6 +222,19 @@ test('fleet review cleanup keeps a sandbox while git holds its lock', () => {
   }
 });
 
+test('fleet review cleanup says which git work is paused in a copy it keeps', () => {
+  const { base, repo, wt, boundary } = reviewSandbox();
+  try {
+    fs.writeFileSync(path.join(worktreeGitDir(wt), 'MERGE_HEAD'), `${git(repo, ['rev-parse', 'HEAD'])}\n`);
+    const result = disposeReviewSandbox(boundary);
+    assert.deepEqual(result, { removed: false, reason: 'git_merge_in_progress', paused: 'a merge is paused' });
+    assert.ok(fs.existsSync(wt));
+    assert.deepEqual(removalLines(repo), []);
+  } finally {
+    fs.rmSync(base, { recursive: true, force: true });
+  }
+});
+
 test('fleet review cleanup keeps a sandbox while git holds its quarantine store', () => {
   const { base, repo, wt, boundary } = reviewSandbox();
   try {
