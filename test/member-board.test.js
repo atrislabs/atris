@@ -230,6 +230,20 @@ test('watch names state changes from the last minute, then drops them', () => {
   assert.doesNotMatch(renderBoard(rows, '/x'), /changed in the last minute/, 'no changes, no line');
 });
 
+test('watch names a put-away run with when it last did anything, even once it is hidden', () => {
+  const now = Date.parse('2026-10-14T13:00:00Z');
+  const quiet = memberRow('launcher', '2026-10-14T05:00:00Z m-4 started: score\n2026-10-14T06:00:00Z m-4 running: npm test\n', now);
+  const away = memberRow('launcher', '2026-10-14T05:00:00Z m-4 started: score\n2026-10-14T06:00:00Z m-4 running: npm test\n2026-10-14T13:00:00Z m-4 finished: stopped\n', now);
+  assert.equal(away.idle, true, 'it leaves the default board at once');
+  const changed = changeTracker(60_000);
+  changed([quiet], now);
+  assert.deepEqual(changed([away], now + 3_000), ['launcher quiet -> stopped, last active 7h ago']);
+  const live = memberRow('builder', '2026-10-14T12:50:00Z m-1 started: [pid 4242 engine claude] x\n2026-10-14T12:59:00Z m-1 finished: stopped\n', now);
+  const tracker = changeTracker(60_000);
+  tracker([{ ...live, state: 'working' }], now);
+  assert.deepEqual(tracker([live], now + 3_000), ['builder working -> stopped'], 'a live stop reads as before');
+});
+
 test('board says nobody is working when every member is hidden', () => {
   assert.equal(renderBoard([], '/x', 3), 'nobody is working right now. 3 ended over an hour ago, hidden. --all shows them');
 });
