@@ -187,6 +187,27 @@ test('tidy keeps every copy when origin cannot be fetched', () => {
   }
 });
 
+test('tidy names the git lock file and its age when it keeps a landed copy', () => {
+  const fx = makeFixture();
+  try {
+    const locked = addCopy(fx, 'landed-locked');
+    const gitDir = runGit(['rev-parse', '--path-format=absolute', '--git-dir'], locked);
+    const lockFile = path.join(gitDir, 'index.lock');
+    fs.writeFileSync(lockFile, '');
+    const now = Date.now();
+    const aged = new Date(now - 3 * 60 * 60 * 1000);
+    fs.utimesSync(lockFile, aged, aged);
+
+    const result = tidyMemberCopies({ repoRoot: fx.repo, now });
+    const kept = byName(result, 'landed-locked');
+    assert.equal(kept.action, 'kept');
+    assert.equal(kept.reason, `landed, but git holds ${lockFile}, 3h old`);
+    assert.ok(fs.existsSync(locked));
+  } finally {
+    fs.rmSync(fx.base, { recursive: true, force: true });
+  }
+});
+
 function removalLines(repo) {
   const file = path.join(repo, '.atris', 'state', 'worktree_removals.jsonl');
   if (!fs.existsSync(file)) return [];
