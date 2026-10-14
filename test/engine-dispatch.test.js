@@ -1457,6 +1457,43 @@ test('thrown and rejected engine runners save end resources and preserve the ori
   }
 });
 
+test('a thrown child timeout records the known time limit cause before rethrowing', () => {
+  const { execFileSync } = require('node:child_process');
+  const root = makeTempRoot();
+  execFileSync('git', ['init', '-q', root]);
+  const worktree = fs.mkdtempSync(path.join(os.tmpdir(), 'engine-dispatch-timeout-'));
+  let originalError;
+  try {
+    assert.throws(() => fleet.dispatchToEngine({
+      task: TASK, engine: 'claude', worktreePath: worktree, root, skipBriefCapture: true,
+      runner: () => {
+        try {
+          return execFileSync(process.execPath, ['-e', 'setInterval(() => {}, 1000)'], {
+            timeout: 100, killSignal: 'SIGKILL', stdio: 'pipe',
+          });
+        } catch (error) {
+          originalError = error;
+          throw error;
+        }
+      },
+    }), (error) => error === originalError && error.code === 'ETIMEDOUT');
+    const lines = fs.readFileSync(path.join(root, '.atris/state/engine-resource.jsonl'), 'utf8')
+      .trim().split('\n').map(JSON.parse);
+    assert.deepEqual(lines.map((line) => line.phase), ['start', 'end']);
+    const [start, end] = lines;
+    assert.equal(end.run_id, start.run_id);
+    assert.equal(end.signal, 'SIGKILL');
+    assert.equal(end.timed_out, true);
+    assert.equal(end.cause, 'killed (time limit reached)');
+    assert.ok(Array.isArray(end.load));
+    assert.ok(end.duration_ms >= 100);
+    console.log(`real child timeout: ${JSON.stringify(end)}`);
+  } finally {
+    fs.rmSync(root, { recursive: true, force: true });
+    fs.rmSync(worktree, { recursive: true, force: true });
+  }
+});
+
 test('final resources measure a real child run in milliseconds', async () => {
   const { execFile, execFileSync } = require('node:child_process');
   const root = makeTempRoot();
