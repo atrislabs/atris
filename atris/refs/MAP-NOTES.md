@@ -2413,3 +2413,7 @@ npm publish
 ## Already-claimed claim fixture setup
 
 - `test/commands.test.js:13991` checks that a claim refused because another agent holds the task never suggests a next task. Real-store creation at `test/commands.test.js:14003` saves one setup launch, resolves the display reference and closes in finally; both claims and the conflict reason and empty suggestion assertions remain on the CLI.
+
+## Handover prep call-order race
+
+- `test/roster-prep-brief.test.js:455` checks that a handover backup preps only when its own line asks. The one-second cap is wall time, so a loaded machine can kill the stalled lead fake before it logs its launch; the call-order check at `test/roster-prep-brief.test.js:481` requires prep then backup in order and the lead first only when it logged, while the run record rows prove the lead was launched and stalled.
