@@ -3,6 +3,7 @@ const path = require('path');
 const os = require('os');
 const { ensureWikiScaffold } = require('../lib/wiki');
 const { upsertAtrisClaudeBootBlock } = require('../lib/claude-boot-block');
+const { ensureRunIgnore } = require('../lib/gitignore');
 const {
   upsertAgentVoiceCard,
   upsertClaudeVoiceHook,
@@ -492,6 +493,10 @@ function syncAtris(options = {}) {
         dryRun,
         force,
       });
+      const bizRunIgnore = ensureRunIgnore(process.cwd(), { dryRun });
+      if (bizRunIgnore.changed) {
+        console.log(`${dryRun ? 'Would update' : '✓ Updated'} .gitignore (atris run output ignored)`);
+      }
       exportTeamAfterUpdate(process.cwd(), { dryRun });
       if (!yes) {
         console.log('\nPlan only. Re-run with --yes to write these files.');
@@ -728,6 +733,14 @@ Key behaviors:
     // Create new CLAUDE.md with just Atris block
     const content = upsertAtrisClaudeBootBlock().content;
     applyClaudeUpdate(content, 'create CLAUDE.md with atris block', 'created CLAUDE.md with atris block');
+  }
+
+  // Member run output must stay out of git or member self-merge never fires
+  // on a dirty tree. Append-only; plan-only mode prints instead of writing.
+  const runIgnore = ensureRunIgnore(process.cwd(), { dryRun });
+  if (runIgnore.changed) {
+    console.log(`${dryRun ? 'Would update' : '✓ Updated'} .gitignore (atris run output ignored)`);
+    updated++;
   }
 
   if (dryRun) {

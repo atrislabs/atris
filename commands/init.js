@@ -4,6 +4,7 @@ const { ensureMemberBundle } = require('../lib/member-scaffold');
 const { ensureExperimentsFramework } = require('./experiments');
 const { ensureWorkspaceBrain } = require('../lib/workspace-scaffold');
 const { upsertAtrisClaudeBootBlock } = require('../lib/claude-boot-block');
+const { ensureRunIgnore } = require('../lib/gitignore');
 const { INTENTS } = require('../lib/intents');
 const {
   upsertAgentVoiceCard,
@@ -1107,6 +1108,14 @@ Read atris/MAP.md. Begin iteration 1.`;
     fs.writeFileSync(rootClaudeMd, upsertAtrisClaudeBootBlock().content);
     markReady('adapters', 'CLAUDE.md', '✓ created CLAUDE.md with atris block');
   }
+  }
+
+  // Member runs drop receipts and status into atris/runs/ and atris/status/.
+  // A git repo that never ignores them stays dirty forever and member
+  // self-merge never fires.
+  const runIgnore = ensureRunIgnore(cwd);
+  if (runIgnore.changed) {
+    markReady('workspace', '.gitignore', `✓ ${runIgnore.created ? 'Created' : 'Updated'} .gitignore (atris run output ignored)`);
   }
 
   if (fs.existsSync(sourceFile)) {
