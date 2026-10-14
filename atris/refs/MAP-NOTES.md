@@ -2276,3 +2276,7 @@ npm publish
 ## One-run member outcomes
 
 - `commands/member.js:1037` preserves tick check results when reading the live run receipt; `commands/member.js:1346` makes a failed explicit completion check return failure; `commands/member.js:1374` names the failed check. `commands/member.js:4249` removes only matching outer quotes from saved member settings. `test/member-run-one-run-outcome.test.js:1` runs the real CLI in initialized, committed temporary projects with a fake engine.
+
+## Test runner environment isolation
+
+- `test/helpers/agent-env.js:32` removes inherited runner profiles, models, binaries, and command templates from the copied environment. Explicit fixture overrides are applied afterward. `test/agent-env-runner-isolation.test.js:6` runs the real command fixture with failing inherited command templates.

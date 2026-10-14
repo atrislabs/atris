@@ -27,6 +27,13 @@ const MISSION_DRIVER_VARS = [
 // run reads it as "a codex caller is here". Tests that exercise that set it.
 const CALLER_SESSION_VARS = ['CODEX_THREAD_ID', 'CODEX_SESSION_ID', 'ATRIS_CALLER_RUNTIME'];
 
+// A parent mission's runner settings must not replace a test's fake engine.
+// Tests that exercise runner overrides add them after scrubbing, like markers.
+const RUNNER_VARS = [
+  'ATRIS_RUNNER_PROFILE', 'ATRIS_RUNNER_MODEL', 'ATRIS_RUNNER_BIN', 'ATRIS_RUNNER_COMMAND_TEMPLATE',
+  'ATRIS_CLAUDE_MODEL', 'ATRIS_CLAUDE_BIN', 'ATRIS_CLAUDE_COMMAND_TEMPLATE',
+];
+
 function scrubAgentEnv(base = process.env) {
   const env = { ...base };
   for (const marker of AGENT_ENV_MARKERS) delete env[marker];
@@ -34,6 +41,7 @@ function scrubAgentEnv(base = process.env) {
   delete env.ATRIS_AGENT_PROOF_ONLY;
   for (const key of PLAYER_IDENTITY_VARS) delete env[key];
   for (const key of MISSION_DRIVER_VARS) delete env[key];
+  for (const key of RUNNER_VARS) delete env[key];
   return env;
 }
 
