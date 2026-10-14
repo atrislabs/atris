@@ -1407,6 +1407,9 @@ test('an ended run that logged no step says none logged, in the column and on it
   assert.match(renderBoard([failed], '/x'), /^arch\s+done failed\s+2s\s+9m ago\s+protect work folders\s+none logged$/m);
   assert.match(renderBoard([failed], '/x', 0, 40), /^  last step: none logged$/m, 'the step line no longer drops out');
   assert.match(renderBoard([fresh], '/x'), /work\s+-$/m, 'a live run with no step yet keeps the dash');
+  assert.match(renderBoard([fresh], '/x', 0, 40), /^  last step: none yet$/m, 'a narrow board gives a just-started run its step line');
+  const silent = { ...memberRow('cole', '2026-10-14T10:00:00Z m-3 started: build\n', now), state: 'quiet', likely_ended: true };
+  assert.match(renderBoard([silent], '/x', 0, 40), /^  last step: none logged$/m, 'a run that most likely ended will not log more');
 });
 
 test('a too-tall board shortens its long notes to one line before leaving a member off', () => {
