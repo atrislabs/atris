@@ -14,6 +14,7 @@ checks the refs in both files; `atris doc-health --fix-refs` moves drifted ones.
 
 | Task | Primary path | Notes |
 |------|--------------|-------|
+| MCP pending ping test timing | `test/mcp.test.js` | releases the pending HTTP response when the real child replies to ping; incremental stdout parsing handles split messages; proof in `atris/runs/2026-10-13-mcp-ping-completion.md` |
 | fast CLI smoke engine isolation | `test/smoke.fast.test.js` | supplies disposable ax and explicit engine selection, checks workspace scope, default, and installed state; proof in `atris/runs/2026-10-13-smoke-engine-isolation.md` |
 | cli entrypoint and command router | `bin/atris.js` | dispatch chain, knownCommands, help |
 | known commands list | `lib/known-commands.js` | command names and typo suggestions; the plain and JSON unknown-command errors both use suggestCommands |
