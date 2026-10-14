@@ -2513,3 +2513,7 @@ npm publish
 ## Human-only certified review fallback fixture setup
 
 - `test/commands.test.js:12646` checks selection of reviewed work awaiting human approval and explicit Endgame follow-up creation. Ordered real-store creation at `test/commands.test.js:12673` preserves the checkpoint title, runner tag and original creation point, asserts insertion and a display reference, and closes before CLI claim. One creation-only launch is removed (nine to eight); claim, ready, review, JSON and text next, explicit follow-up creation, repeated approval selection and final CLI show remain unchanged.
+
+## Long-title status fixture setup
+
+- `test/commands.test.js:14235` checks that long current task titles stop at a clause. Real-store creation at `test/commands.test.js:14248` preserves the title, voice tag and creation point, asserts insertion and a display reference, and closes before CLI claim. Creation-only launch removed (four to three); claim and both JSON/text status assertions remain unchanged. Natural flow and headless JSON tests retain explicit CLI creation coverage.
