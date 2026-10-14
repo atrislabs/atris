@@ -491,6 +491,9 @@ function fixEmDash(s, { endsBlock = false, startsBlock = false, spans = [] } = {
   // of pressed dashes there is a drawn line, between plain-word steps or
   // opening a branch: "plan --- do --- review", "  -- [b]", never "plan (do)".
   if (/^(?: {4}|\t)/.test(s)) s = s.replace(/\u2014{2,}/g, (m) => '-'.repeat(m.length));
+  // a single dash with a box edge on both sides is a short link between two
+  // boxes, so it takes a hyphen: "[a] - [b] - [c]", never "[a] ([b]) [c]"
+  if (!/^\s*\|/.test(s)) s = s.replace(/(?<=[\])|+][ \t]*)\u2014(?=[ \t]*[[(|+])/g, '-');
   // a table cell that holds only a dash means "nothing here"; a hyphen keeps
   // the cell instead of turning it into a stray comma
   if (/^\s*\|/.test(s)) s = s.replace(/(\|\s*)\u2014(\s*)(?=\||$)/g, '$1-$2');
