@@ -1148,6 +1148,23 @@ test('fix gives a list item inside a quote the same label colon', () => {
   ]);
 });
 
+test('fix gives an odd run of three dashes in one sentence commas, not one pair', () => {
+  // "A (b) c, d" paired the first two and left the third a comma
+  const file = tmpFile('dash-run.md', [
+    'A \u2014 b \u2014 c \u2014 d.',
+    'Two asides \u2014 one \u2014 and \u2014 two \u2014 here.',
+    'It ran \u2014 fast. Red \u2014 blue \u2014 gold \u2014 all of it.',
+    'It works \u2014 and the gate \u2014 the strict one \u2014 still holds.',
+  ].join('\n'));
+  const { changes } = applyFixes([file], RULES, { write: false });
+  assert.deepEqual(changes.map((c) => c.after), [
+    'A, b, c, d.',
+    'Two asides (one) and (two) here.',
+    'It ran, fast. Red, blue, gold, all of it.',
+    'It works, and the gate (the strict one) still holds.',
+  ]);
+});
+
 test('fix never pairs two dashes across the edge of a quote', () => {
   // the aside opened inside the quote and closed outside it: '"go (now") and'
   const file = tmpFile('quote-edge.md', [

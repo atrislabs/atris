@@ -152,6 +152,13 @@ function fixEmDash(s, { endsBlock = false, startsBlock = false } = {}) {
   if (label) return `${label[1]}${label[2]}${!quoted && /[.,;:!?][*_`"'\u201d\u2019]*$/.test(label[2]) ? '' : ':'}${s.length > label[0].length ? ' ' : ''}${fixEmDash(s.slice(label[0].length), { endsBlock })}`;
   const term = startsBlock && TERM_DASH.exec(s);
   if (term) return `${term[1]}: ${fixEmDash(s.slice(term[0].length), { endsBlock })}`;
+  // in a sentence with an odd run of three or more dashes, one before a
+  // joining word only continues the sentence, so it takes its comma first and
+  // the rest pair: "It works, and the gate (the strict one) still holds".
+  s = s.split(/([.!?]["'\u201d\u2019)]*\s)/).map((part, i) => {
+    const run = (part.match(/\u2014/g) || []).length;
+    return i % 2 || run < 3 || run % 2 === 0 ? part : part.replace(/\s*\u2014\s*(?=(?:and|but|or|nor|so|yet)\b)/g, ', ');
+  }).join('');
   return s
     // a bold phrase that opens a sentence partway through the line is a label
     // too: "etc. **Include eliminate steps**: what gets deleted". One that ends
@@ -162,6 +169,14 @@ function fixEmDash(s, { endsBlock = false, startsBlock = false } = {}) {
     // so none nest: "then (maybe) stop" never becomes "(then (maybe) stop)".
     .replace(/\s*\u2014\s*((?:(?![.!?]["'\u201d\u2019)]*\s)[^\u2014])*[^\s\u2014])\s*\u2014\s*(?=(.?))/g, (m, aside, next, at, whole) => {
       const gap = next && !/[.,;:!?)]/.test(next);
+      // an odd run of three or more dashes in one sentence has no clear pairs,
+      // so each is fixed alone: "A, b, c, d", never "A (b) c, d".
+      const stop = /[.!?]["'\u201d\u2019)]*\s/g;
+      const from = Math.max(0, ...[...whole.slice(0, at).matchAll(stop)].map((e) => e.index + e[0].length));
+      const to = whole.slice(at).search(stop);
+      const sentence = whole.slice(from, to < 0 ? whole.length : at + to);
+      const run = (sentence.match(/\u2014/g) || []).length;
+      if (run >= 3 && run % 2) return m;
       // an aside that holds one side of a quote crosses the quote's edge, so
       // each dash is fixed alone: 'said "go, now", and left', never '"go (now")'.
       const count = (re) => (aside.match(re) || []).length;
