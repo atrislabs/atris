@@ -635,7 +635,7 @@ test('fix gives a code span that opens a line a colon, in markdown and plain tex
   const { changes } = applyFixes([md, txt], RULES);
   assert.deepEqual(changes.map((c) => c.after), [
     '`node --test test/x.test.js`: 9 tests, all green.',
-    'Run `atris slop detect`, it reports the tells.',
+    'Run `atris slop detect`; it reports the tells.',
     '`npm test`: clean.',
   ]);
 });
@@ -864,6 +864,7 @@ test('fix joins two full clauses with a semicolon, not a comma splice', () => {
     'We fixed the gap \u2014 this time with tests.',
     'Then \u2014 it stops.',
     'Use `PUT` \u2014 that is for updates.',
+    'Run `npm test` \u2014 then ship.',
   ].join('\n'));
   const { changes } = applyFixes([file], RULES);
   assert.deepEqual(changes.map((c) => c.after), [
@@ -874,7 +875,8 @@ test('fix joins two full clauses with a semicolon, not a comma splice', () => {
     "Skip the dark default; that's how it starts looking the same.",
     'We fixed the gap, this time with tests.',
     'Then, it stops.',
-    'Use `PUT`, that is for updates.',
+    'Use `PUT`; that is for updates.',
+    'Run `npm test`, then ship.',
   ]);
 });
 

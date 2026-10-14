@@ -88,7 +88,8 @@ const LIST_AFTER_DASH = new RegExp(`(?<=[\\w)\\]*_\`])\\s*\u2014\\s*(?!(?:and|bu
 // A lone dash with a word before it, then a subject pronoun and its verb:
 // "it survives", "they'd pass", "that's the goal". "This" and its kin count
 // only before a verb, so "the gap, this time with tests" stays a comma.
-const CLAUSE_AFTER_DASH = /(?<=[\w)\]"'*_`\u201d\u2019])\s*\u2014\s*(?=(?:(?:it|we|they|you|I|he|she)(?:['\u2019](?:s|re|ll|ve|d|m))?|(?:this|that|these|those|there)(?:['\u2019]s|\s+(?:is|are|was|were|used|will|would|can|cannot|must|should|has|have))\b)\s+[^\s\u2014])/g;
+// A masked code span before the dash counts as the word: "Do not use `PUT`".
+const CLAUSE_AFTER_DASH = /(?<=[\w)\]"'*_`\u201d\u2019\uE001])\s*\u2014\s*(?=(?:(?:it|we|they|you|I|he|she)(?:['\u2019](?:s|re|ll|ve|d|m))?|(?:this|that|these|those|there)(?:['\u2019]s|\s+(?:is|are|was|were|used|will|would|can|cannot|must|should|has|have))\b)\s+[^\s\u2014])/g;
 
 function fixEmDash(s, { endsBlock = false } = {}) {
   // a table cell that holds only a dash means "nothing here"; a hyphen keeps
