@@ -138,6 +138,24 @@ atris member wake 5
 atris member wake navigator executor
 ```
 
+Wake only picks jobs that have a test to pass, so members know when they are done. Add one like this:
+
+```bash
+atris task new "fix the flaky login test" --verify "node --test test/login.test.js"
+```
+
+Each job gets the time limit set for building in your roster, plus a few minutes for review. To see or change it:
+
+```bash
+atris engine roster
+```
+
+Naming just one member runs one step of work. Add `--keep` to keep that one member working.
+
+```bash
+atris member wake executor --keep
+```
+
 Sleep stops the members that are awake.
 
 ```bash
