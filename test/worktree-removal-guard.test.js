@@ -199,6 +199,25 @@ test('fleet review cleanup keeps a sandbox while git holds its quarantine store'
   }
 });
 
+test('fleet review cleanup keeps a sandbox while git updates a branch in either store', () => {
+  for (const store of ['gitDir', 'quarantine']) {
+    for (const marker of ['packed-refs.lock', 'refs/heads/review.lock']) {
+      const { base, repo, wt, boundary } = reviewSandbox();
+      try {
+        git(base, ['init', '-q', '--bare', boundary.gitDir]);
+        git(base, ['init', '-q', '--bare', boundary.quarantine]);
+        fs.writeFileSync(path.join(boundary[store], marker), '');
+        const result = disposeReviewSandbox(boundary);
+        assert.deepEqual(result, { removed: false, reason: 'git_lock' }, `${store} ${marker}`);
+        assert.ok([wt, boundary.gitDir, boundary.quarantine].every((folder) => fs.existsSync(folder)), `${store} ${marker}`);
+        assert.deepEqual(removalLines(repo), []);
+      } finally {
+        fs.rmSync(base, { recursive: true, force: true });
+      }
+    }
+  }
+});
+
 test('fleet review cleanup names who removed a sandbox and why', () => {
   const { base, repo, wt, boundary } = reviewSandbox();
   try {

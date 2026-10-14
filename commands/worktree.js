@@ -1190,6 +1190,7 @@ function worktreeHasActiveProcess(worktreePath, activeCwds) {
 const GIT_ACTIVITY_MARKERS = [
   ['index.lock', 'git_lock'],
   ['HEAD.lock', 'git_lock'],
+  ['packed-refs.lock', 'git_lock'],
   ['rebase-merge', 'git_rebase_in_progress'],
   ['rebase-apply', 'git_rebase_in_progress'],
   ['MERGE_HEAD', 'git_merge_in_progress'],
@@ -1225,7 +1226,16 @@ function gitStoreActivity(gitDir) {
   for (const [marker, reason] of GIT_ACTIVITY_MARKERS) {
     if (fs.existsSync(path.join(gitDir, marker))) return reason;
   }
-  return null;
+  return refsHoldLock(path.join(gitDir, 'refs')) ? 'git_lock' : null;
+}
+
+// A branch or tag update writes refs/<name>.lock until it commits, at any depth.
+function refsHoldLock(dir) {
+  let entries;
+  try { entries = fs.readdirSync(dir, { withFileTypes: true }); } catch { return false; }
+  return entries.some((entry) => (entry.isDirectory()
+    ? refsHoldLock(path.join(dir, entry.name))
+    : entry.name.endsWith('.lock')));
 }
 
 // Every work-folder removal leaves one line naming who removed it and why, in
