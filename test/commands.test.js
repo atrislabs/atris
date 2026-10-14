@@ -8909,14 +8909,22 @@ test('task review-lane-run writes bounded receipts and stops before human accept
   try {
     fs.mkdirSync(path.join(dir, 'atris'), { recursive: true });
 
-    const continueCreated = runCli([
-      'task', 'new', 'Run should continue one certified task and write a receipt',
-      '--tag', 'task',
-      '--goal-id', 'OBL-953',
-      '--json',
-    ], { cwd: dir, env });
-    assert.equal(continueCreated.status, 0, continueCreated.stderr);
-    const continueRef = JSON.parse(continueCreated.stdout).task.display_id;
+    // Only fixture creation stays in process; ready, review, run, and show
+    // still exercise the CLI and its persisted state.
+    const workspaceRoot = taskStore.workspaceRoot(dir);
+    const seedTask = (title) => {
+      const db = taskStore.open(dbPath);
+      try {
+        const { id } = taskStore.addTask(db, {
+          title, tag: 'task', workspaceRoot, metadata: { goal_id: 'OBL-953' },
+        });
+        return taskStore.taskDisplayRefMap(taskStore.listTasks(db, { workspaceRoot })).get(id);
+      } finally {
+        taskStore.close();
+      }
+    };
+
+    const continueRef = seedTask('Run should continue one certified task and write a receipt');
     assert.equal(runCli([
       'task', 'ready', continueRef,
       '--as', 'codex',
@@ -8930,14 +8938,7 @@ test('task review-lane-run writes bounded receipts and stops before human accept
       '--next', 'Add a follow-up created by review lane run',
     ], { cwd: dir, env }).status, 0);
 
-    const waitingCreated = runCli([
-      'task', 'new', 'Run should leave human accept waiting alone',
-      '--tag', 'task',
-      '--goal-id', 'OBL-953',
-      '--json',
-    ], { cwd: dir, env });
-    assert.equal(waitingCreated.status, 0, waitingCreated.stderr);
-    const waitingRef = JSON.parse(waitingCreated.stdout).task.display_id;
+    const waitingRef = seedTask('Run should leave human accept waiting alone');
     assert.equal(runCli([
       'task', 'ready', waitingRef,
       '--as', 'codex',
