@@ -6243,6 +6243,27 @@ function cmdAdd(args) {
   const taskDb = getTaskDb();
   const db = taskDb.open();
   const ws = taskDb.workspaceRoot();
+  // Filing a job that is already open, claimed, or in review hands back that
+  // job instead of making a copy.
+  const existing = taskDb.findUnfinishedTaskByTitle(db, { workspaceRoot: ws, title });
+  if (existing) {
+    const { projection, outPath } = writeDefaultProjection(taskDb, db);
+    const task = compactTaskFromProjection(projection, existing.id);
+    if (wantsJson(args)) {
+      printJson({
+        ok: true,
+        action: 'reused',
+        task_id: existing.id,
+        inserted: false,
+        operator_title_warning: null,
+        projection_path: outPath,
+        task,
+      });
+      return;
+    }
+    console.log(`${taskRef(task)}\t${existing.title}\t(already on the list, reused)`);
+    return;
+  }
   const operatorTitleWarning = warnIfTaskTitleNeedsOperatorWhy(title);
   // Generation throttle, the named root cause is generation > human-review rate. An AGENT cannot keep
   // minting tasks while a wall of certified-but-unaccepted work waits; that treadmill is what accept-group
