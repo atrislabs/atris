@@ -18264,9 +18264,7 @@ test('analytics counts inbox items when Inbox is last section', () => {
 test('getRecentSignals returns empty commit/wiki/lesson signals when sources are missing', () => {
   const dir = makeTempDir();
   try {
-    initWorkspace(dir);
-    fs.rmSync(path.join(dir, 'atris', 'wiki', 'STATUS.md'), { force: true });
-    fs.rmSync(path.join(dir, 'atris', 'lessons.md'), { force: true });
+    fs.mkdirSync(path.join(dir, 'atris', 'wiki'), { recursive: true });
 
     const signals = getRecentSignals(dir);
     assert.deepEqual(signals.recentCommits, []);
@@ -18280,7 +18278,13 @@ test('getRecentSignals returns empty commit/wiki/lesson signals when sources are
 test('getRecentSignals reads recent git commits, wiki health, and last 10 lesson lines', () => {
   const dir = makeTempDir();
   try {
-    initWorkspace(dir);
+    fs.mkdirSync(path.join(dir, 'atris', 'wiki'), { recursive: true });
+    const statusPath = path.join(dir, 'atris', 'wiki', 'STATUS.md');
+    fs.writeFileSync(statusPath, '# STATUS\n\nHealth: 3/5\nNext move: tighten loop\n', 'utf8');
+
+    const lessonsPath = path.join(dir, 'atris', 'lessons.md');
+    const lessonLines = Array.from({ length: 12 }, (_, i) => `- lesson ${i + 1}`);
+    fs.writeFileSync(lessonsPath, `${lessonLines.join('\n')}\n`, 'utf8');
 
     const initResult = runGit(['init'], dir);
     assert.equal(initResult.status, 0, initResult.stderr);
@@ -18289,13 +18293,6 @@ test('getRecentSignals reads recent git commits, wiki health, and last 10 lesson
     assert.equal(runGit(['add', '.'], dir).status, 0);
     const commitResult = runGit(['commit', '-m', 'seed workspace'], dir);
     assert.equal(commitResult.status, 0, commitResult.stderr);
-
-    const statusPath = path.join(dir, 'atris', 'wiki', 'STATUS.md');
-    fs.writeFileSync(statusPath, '# STATUS\n\nHealth: 3/5\nNext move: tighten loop\n', 'utf8');
-
-    const lessonsPath = path.join(dir, 'atris', 'lessons.md');
-    const lessonLines = Array.from({ length: 12 }, (_, i) => `- lesson ${i + 1}`);
-    fs.writeFileSync(lessonsPath, `${lessonLines.join('\n')}\n`, 'utf8');
 
     const signals = getRecentSignals(dir);
     assert.equal(signals.recentCommits.length, 1);
