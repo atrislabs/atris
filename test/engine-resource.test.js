@@ -934,7 +934,7 @@ test('a read-only ask run writes a start and an end reading, and a run past its 
   }
 });
 
-test('mission runners record paired readings on success and SIGKILL, including shell exit 137', () => {
+test('mission runners record paired readings on success, SIGKILL and startup failure', () => {
   const { spawnSync } = require('node:child_process');
   const { withMissionFullJson } = require('./helpers/mission-json');
   const { scrubAgentEnv } = require('./helpers/agent-env');
@@ -1006,6 +1006,37 @@ test('mission runners record paired readings on success and SIGKILL, including s
       assert.strictEqual(killed[1].timed_out, undefined);
       assert.ok(Number.isFinite(killed[1].duration_ms) && killed[1].duration_ms >= 0);
       console.log(`${runner} force-kill CLI exit ${ran.status}: ${JSON.stringify(killed[1])}`);
+    }
+    for (const runner of ['codex', 'claude']) {
+      // Claude must pass its help probe, then disappear before the actual spawn.
+      // The generic runner starts through a shell, which reports the missing interpreter.
+      fs.writeFileSync(path.join(bin, runner), runner === 'claude'
+        ? '#!/bin/sh\nif [ "$1" = --help ]; then echo "--output-format --permission-mode --resume --session-id --include-partial-messages"; rm -- "$0"; exit 0; fi\nexit 99\n'
+        : `#!${path.join(dir, 'missing-interpreter')}\n`);
+      const started = run(['mission', 'start', `${runner} startup failure reading`, '--owner', 'mission-lead', '--runner', runner, '--no-verify', '--json']);
+      assert.strictEqual(started.status, 0, started.stderr || started.stdout);
+      const mission = JSON.parse(started.stdout).mission;
+      const ran = run(['mission', 'run', mission.id, '--max-ticks', '1', '--max-wall', '60', '--no-verify', '--json']);
+      assert.strictEqual(ran.error, undefined, ran.stderr || ran.stdout);
+      assert.ok(ran.stdout.trim(), `${runner}: exit ${ran.status}, stderr ${ran.stderr}`);
+      const result = JSON.parse(ran.stdout);
+      if (runner === 'claude') {
+        assert.strictEqual(result.ticks[0].status, 'errored');
+        assert.strictEqual(result.ticks[0].claude.ok, false);
+      } else {
+        assert.match(JSON.stringify(result), /not found|No such file/i, `${runner}: startup must fail`);
+      }
+      assert.strictEqual(fs.existsSync(path.join(bin, 'claude')), runner !== 'claude');
+      const failed = fs.readFileSync(path.join(dir, RESOURCE_LOG), 'utf8').trim().split('\n')
+        .map((line) => JSON.parse(line)).filter((entry) => entry.task === mission.id);
+      assert.deepStrictEqual(failed.map((entry) => entry.phase), ['start', 'end']);
+      assert.strictEqual(failed[0].run_id, failed[1].run_id);
+      assert.ok(Array.isArray(failed[0].load) && Array.isArray(failed[1].load));
+      assert.ok(Number.isInteger(failed[1].duration_ms) && failed[1].duration_ms >= 0);
+      assert.strictEqual(failed[1].signal, undefined);
+      assert.strictEqual(failed[1].cause, undefined);
+      assert.strictEqual(failed[1].timed_out, undefined);
+      console.log(`${runner} startup failure CLI exit ${ran.status}: ${JSON.stringify(failed[1])}`);
     }
   } finally {
     fs.rmSync(dir, { recursive: true, force: true });
