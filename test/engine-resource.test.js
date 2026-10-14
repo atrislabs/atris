@@ -628,6 +628,34 @@ test('a failing read never breaks the hourly landing pass', () => {
   assert.match(receipt.ssh_agent_sweep_error, /ps missing/);
 });
 
+test('the hourly cleanup summary reports thrown scans and rechecks', () => {
+  const { runSshAgentSweep, sshAgentSweepNote } = require('../commands/autoland');
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'autoland-ssh-scan-error-'));
+  try {
+    // A real missing executable exercises the same child-process failure as ps.
+    const readFailure = () => require('node:child_process').execFileSync(path.join(root, 'missing-ps'));
+    for (const failOnRecheck of [false, true]) {
+      let reads = 0;
+      const receipt = {};
+      runSshAgentSweep(root, receipt, {
+        uid: 501,
+        read: () => {
+          if (!failOnRecheck || reads++) return readFailure();
+          return { agents: [{ pid: 200, ppid: 1, uid: 501, age_sec: 3600, args: 'ssh-agent -s' }], referenced: new Set() };
+        },
+        kill: () => assert.fail('a failed scan must stop nothing'),
+      });
+      assert.match(receipt.ssh_agent_sweep_error, /ENOENT/);
+      assert.equal(sshAgentSweepNote(receipt), ', could not scan ssh-agents, so leaked agents may remain');
+      assert.equal(fs.existsSync(path.join(root, RESOURCE_LOG)), false);
+      console.log('real scan failure: ' + sshAgentSweepNote(receipt).slice(2));
+    }
+    assert.equal(sshAgentSweepNote({}), '');
+  } finally {
+    fs.rmSync(root, { recursive: true, force: true });
+  }
+});
+
 const { readResourceHistory } = require('../lib/engine-resource');
 
 test('history reads back the latest sweep and the latest SIGKILL, skipping bad lines', () => {

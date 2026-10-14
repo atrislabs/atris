@@ -875,7 +875,8 @@ function sshAgentSweepNote(receipt) {
   const failedNote = failed ? `, could not stop ${failed} leaked ssh-agent${failed === 1 ? '' : 's'}` : '';
   const replacedNote = replaced ? `, left ${replaced} younger replacement ssh-agent${replaced === 1 ? '' : 's'} alone` : '';
   const unreadNote = unread.length ? `, could not read the ${unread.join(' or the ')}, so some ssh-agents went unchecked` : '';
-  return stoppedNote + failedNote + replacedNote + unreadNote;
+  const scanErrorNote = receipt.ssh_agent_sweep_error ? ', could not scan ssh-agents, so leaked agents may remain' : '';
+  return stoppedNote + failedNote + replacedNote + unreadNote + scanErrorNote;
 }
 
 // An engine run whose dispatching process died never writes its own end.
