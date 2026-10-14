@@ -1069,6 +1069,28 @@ test('narrow footers keep hidden missing-result counts whole', () => {
   }
 });
 
+test('the narrowest footers say just the hidden count before cutting a word', () => {
+  const base = { alive: null, engine: '', running_for: '', job: 'b', step: 's', ago: '1m ago' };
+  const rows = [
+    { ...base, member: 'f1', state: 'done failed', last_result: 'failed', last_result_reason: 'timed out', last_result_ago: '1m ago' },
+    { ...base, member: 'h1', state: 'stopped', last_result: 'stopped', last_result_reason: '', last_result_ago: '7m ago' },
+    { ...base, member: 'g1', state: 'stopped', no_result: true, last_result: '', last_result_reason: '', last_result_ago: '' },
+    { ...base, member: 'w1', state: 'working', last_result: 'failed', last_result_reason: 'engine error', last_result_ago: '14m ago' },
+    { ...base, member: 'w2', state: 'working', last_result: '', last_result_reason: '', last_result_ago: '' },
+  ];
+  for (let width = 18; width <= 29; width++) {
+    for (let height = 2; height <= 5; height++) {
+      const footer = renderBoard(rows, '/progress', 0, width, height).split('\n').pop();
+      assert.ok(footer.length <= width, `${width}x${height}: ${footer}`);
+      // Whole counts end in ", ...)"; anything else cut would end in "..." alone.
+      assert.ok(!/\.\.\.$/.test(footer), `${width}x${height}: cut mid-word: ${footer}`);
+    }
+  }
+  // It used to read "5 hidden (1 fai..." here.
+  assert.equal(renderBoard(rows, '/progress', 0, 18, 2).split('\n').pop(), '5 hidden');
+  assert.equal(renderBoard(rows, '/progress', 0, 24, 2).split('\n').pop(), '5 hidden (1 failed, ...)');
+});
+
 test('narrow footers drop whole mixed counts from the end instead of cutting one', () => {
   const dir = fakeDir({
     a: [`${at(20)} m-1 started: [pid ${process.pid} engine claude] check the board`],
