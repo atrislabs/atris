@@ -274,15 +274,15 @@ test('tidy keeps every copy when origin cannot be fetched', () => {
   }
 });
 
-// Move generated folders at the final check, forwarding every call to real git.
-test('tidy reports missing folders and retained locks when they disappear at the final check', () => {
+// Move generated folders or add locks at the final check; calls use real git.
+test('tidy keeps late locks whether the folder disappears or stays present', () => {
   const audit = spawnSync(process.execPath, [path.resolve(__dirname, '../atris/receipts/2026-10-14-tidy-vanishing-folder-check.js')], {
     encoding: 'utf8', timeout: 120000,
   });
   const fixture = audit.stdout?.match(/^fixture: (.+)$/m)?.[1];
   try {
     assert.equal(audit.status, 0, audit.stderr || audit.stdout);
-    assert.match(audit.stdout, /all three timing cases passed/);
+    assert.match(audit.stdout, /all four timing cases passed/);
   } finally {
     if (fixture && path.basename(fixture).startsWith('atris-tidy-vanishing-')
       && path.dirname(fixture) === fs.realpathSync(os.tmpdir())) {

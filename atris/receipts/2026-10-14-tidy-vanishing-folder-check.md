@@ -82,3 +82,41 @@ Progress: one added real timing case, two additional lock paths checked with dif
 next_push: Extend the old-folder final-check disappearance audit to ordinary private and shared locks.
 
 layer: behaviors
+
+
+## Late locks with the folder still present
+
+Extended the existing real cleanup audit with one case that creates an ordinary private index lock and a shared packed-refs lock during the final activity check without moving the folder. Cleanup names both exact paths with distinct ages, preserves folder contents, lock contents and branch, and never attempts or logs a removal. Production code is unchanged.
+
+Plan: resolve folder -> final activity check creates locks -> report paths and ages -> retain folder and branch.
+
+Command: `node atris/receipts/2026-10-14-tidy-vanishing-folder-check.js`, exit 0. Four actual cleanup invocations passed using real Git. Fixture left for inspection: `/private/var/folders/t1/2_4kmb5n4c71dxm26zc8dgzr0000gn/T/atris-tidy-vanishing-AO5Xq0`.
+
+```text
+kept  landed-copy  git locks: /private/var/folders/t1/2_4kmb5n4c71dxm26zc8dgzr0000gn/T/atris-tidy-vanishing-AO5Xq0/ordinary-present/repo/.git/packed-refs.lock (10799s old), /private/var/folders/t1/2_4kmb5n4c71dxm26zc8dgzr0000gn/T/atris-tidy-vanishing-AO5Xq0/ordinary-present/repo/.git/worktrees/landed-copy/index.lock (7199s old)
+cli exit: 0
+all four timing cases passed; files, locks, and branches retained; no removal attempted or recorded
+```
+
+Rerun: `node --test test/worktree-removal-guard.test.js test/member-tidy.test.js`, exit 0, Node v25.6.1.
+
+```text
+ℹ tests 21
+ℹ suites 0
+ℹ pass 21
+ℹ fail 0
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 12556.077625
+```
+
+Files edited: `atris/receipts/2026-10-14-tidy-vanishing-folder-check.js`, `test/member-tidy.test.js`, this receipt, `atris/MAP.md`, `atris/refs/MAP-NOTES.md`, and an appended entry in `atris/team/architect/logs/2026-10-14.md`. Artifacts: extended executable audit and this receipt. Commands inspected mission status/goal, tasks, member identity, notebook, Git state and source; created, claimed and noted a bounded task; ran the audit and required tests. Mission task attachment was refused by an existing process lock, which was left intact. Brain activation returned a plan only, exit 2, without changing generated policy.
+
+Review recording: the task recorder required its own invocation, so `/opt/homebrew/bin/node --test test/worktree-removal-guard.test.js test/member-tidy.test.js` was run through `atris task ready`, exit 0. Output: `verified: ... exited 0`, `ready for approval`. Review remains pending because the explicit runtime path is outside automatic certification. Brain compilation returned a plan only, exit 0. `git diff --check` passed, exit 0, no output.
+
+Progress: one added timing case, two exact lock paths with distinct ages, four real cleanup invocations, all 21 required tests passing. No new dependencies or filenames.
+
+next_push: Prove ordinary locks arriving during the final old-folder cleanup check prevent removal while the folder stays present.
+
+layer: behaviors
