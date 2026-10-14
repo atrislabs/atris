@@ -244,6 +244,25 @@ test('a job that can read whole gets its room before the last step', () => {
   }
 });
 
+test('a hidden last step comes back when the engine word is the only thing in the way', () => {
+  const dir = fakeDir({
+    builder: [`${at(180)} m-1 started: fix login`, `${at(60)} m-1 editing lib/auth/session.js to refresh tokens`],
+    editor: [`${at(2400)} m-3 started: tidy docs`, `${at(2100)} m-3 running: node --test`, `${at(1980)} m-3 finished: failed (bad exit 2)`],
+  });
+  try {
+    const rows = readBoard({ dir, now: NOW }).map((r) => (r.member === 'builder' ? { ...r, alive: true, engine: 'codex', running_for: '3m' } : r));
+    const board = renderBoard(rows, dir, 0, 72);
+    assert.ok(board.split('\n').every((line) => line.length <= 72), board);
+    assert.match(board, /^member\s+state\s+last result\s+run\s+ago\s+job\s+last step$/m, board);
+    assert.match(board, /^builder\s+working\s+-\s+3m\s+1m ago\s+fix login\s+editing l\.\.\.$/m, board);
+    const long = rows.map((r) => (r.member === 'builder' ? { ...r, job: 'fix the login flow' } : r));
+    assert.match(renderBoard(long, dir, 0, 72), /^builder\s+working\s+-\s+codex 3m\s+1m ago\s+fix the login flow$/m,
+      'a job that would be cut keeps the engine word and no last step');
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
 test('a tiny terminal keeps member states and common failure reasons within its width', () => {
   const dir = fakeDir({
     builder: [`${at(100)} m-1 started: build`, `${at(80)} m-1 finished: failed (timed out)`],
