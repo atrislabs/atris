@@ -20156,10 +20156,22 @@ test('review default mode leads with certified accept like first-minute', () => 
   const env = { ATRIS_TASKS_DB: dbPath, NODE_NO_WARNINGS: '1' };
   try {
     initWorkspace(dir);
-    const created = runCli(['task', 'new', 'Ship reviewed operator checkpoint', '--tag', 'review', '--json'], { cwd: dir, env });
-    assert.equal(created.status, 0, created.stderr);
-    const task = JSON.parse(created.stdout).task;
-    const ref = task.display_id;
+
+    // Creation is setup; claim, ready, review and the review screen still use the CLI.
+    const workspaceRoot = taskStore.workspaceRoot(dir);
+    const db = taskStore.open(dbPath);
+    let ref;
+    try {
+      const created = addSeedTask(db, { title: 'Ship reviewed operator checkpoint', tag: 'review', workspaceRoot });
+      assert.equal(created.inserted, true);
+      ref = taskStore.taskDisplayRefMap(taskStore.listTasks(db, { workspaceRoot })).get(created.id);
+    } finally {
+      taskStore.close();
+    }
+    assert.ok(ref);
+    // Init wrote a projection from another store, and its task shares this ref;
+    // drop it so claim resolves from the DB and rewrites it, as task new did.
+    fs.rmSync(path.join(dir, '.atris', 'state', 'tasks.projection.json'), { force: true });
     assert.equal(runCli(['task', 'claim', ref, '--as', 'codex'], { cwd: dir, env }).status, 0);
     const proof = `${'context '.repeat(35)}Verifiers: node --check test/commands.test.js passed, live atris review showed certified queue`;
     assert.equal(runCli(['task', 'ready', ref, '--proof', proof, '--as', 'codex'], { cwd: dir, env }).status, 0);

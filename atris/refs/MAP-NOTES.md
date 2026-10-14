@@ -2438,7 +2438,7 @@ npm publish
 
 ## Task lineage fixture setup
 
-- `test/commands.test.js:20968` checks that task lineage prints the parent before the child in text and JSON and survives a home with no git. Real-store creation at `test/commands.test.js:20976` saves two setup launches and seeds the child with the same goal link that task add stores; removing that link makes the test fail, so the seeded link is what the lineage reads check.
+- `test/commands.test.js:21098` checks that task lineage prints the parent before the child in text and JSON and survives a home with no git. Real-store creation at `test/commands.test.js:21106` saves two setup launches and seeds the child with the same goal link that task add stores; removing that link makes the test fail, so the seeded link is what the lineage reads check.
 
 ## Reviewed failure status fixture setup
 
@@ -2521,3 +2521,7 @@ npm publish
 ## Live status contract fixture setup
 
 - `test/commands.test.js:14166` checks the compact live status contract for web and Swarlo. Ordered real-store creation at `test/commands.test.js:14180` preserves the three titles, the swarlo and agent tags, the untagged backlog record and creation order, asserts each insertion, and closes before CLI claim. Three creation-only launches removed (seven to four); claim, JSON status counts, current and next selection, text status and history feed assertions remain unchanged.
+
+## Review default certified accept fixture setup
+
+- `test/commands.test.js:20152` checks that the default review screen leads with the certified accept line. Real-store creation at `test/commands.test.js:20165` preserves the title, review tag and workspace root, asserts insertion and a display reference, and closes before CLI claim. Init writes its task projection from a different store, and that task shares the seeded display reference, so the test drops the stale projection before claim; claim then resolves from the store and rewrites the projection, as task new did. Creation-only launch removed (five to four); claim, ready, review and every review screen assertion remain unchanged.
