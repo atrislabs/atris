@@ -193,7 +193,7 @@ test('members that ended over an hour ago, finished or died, or most likely ende
     const res = spawnSync(process.execPath, [cliPath, 'member', 'board'], { cwd: dir, env, encoding: 'utf8' });
     assert.equal(res.status, 0, res.stderr);
     assert.doesNotMatch(res.stdout, /^(old|fresh|crashed|broke|stuck)\s/m);
-    assert.match(res.stdout, /^nobody is working right now\. 5 ended over an hour ago, hidden: 2 died, 1 failed, 1 silent over a day\. --all shows them$/m, 'the note says which hidden runs ended badly or only most likely ended');
+    assert.match(res.stdout, /^nobody is working right now\. 4 ended over an hour ago and 1 silent over a day, hidden: 2 died, 1 failed\. --all shows them$/m, 'the note says which hidden runs ended badly, and counts the silent one apart');
 
     const all = spawnSync(process.execPath, [cliPath, 'member', 'board', '--all'], { cwd: dir, env, encoding: 'utf8' });
     assert.equal(all.status, 0, all.stderr);
@@ -1471,7 +1471,7 @@ test('a run that most likely ended stays on the board for a day, then hides with
     assert.equal(res.status, 0, res.stderr);
     assert.match(res.stdout, /^launcher\s+quiet\s/m, '7h silent is still worth a look');
     assert.doesNotMatch(res.stdout, /^orb\s/m, 'silent for over a day');
-    assert.match(res.stdout, /^1 ended over an hour ago, hidden: 1 silent over a day\. --all shows them$/m);
+    assert.match(res.stdout, /^1 silent over a day, hidden\. --all shows them$/m, 'not counted as ended, since that is a guess');
     const json = JSON.parse(spawnSync(process.execPath, [cliPath, 'member', 'board', '--json'], { cwd: dir, env, encoding: 'utf8' }).stdout);
     assert.deepEqual(json.members.map((r) => r.member), ['scout', 'launcher']);
     assert.equal(json.hidden_counts.quiet, 1, 'the hidden run still counts under its state');
