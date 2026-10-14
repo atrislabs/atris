@@ -366,7 +366,7 @@ test('atris member board --json --follow streams one JSON object per line', asyn
 
 test('watchCrashes reports each newly died run once, not ones dead at start', () => {
   const { watchCrashes } = require('../lib/member-board');
-  const row = (member, state, pid) => ({ member, mission: `m-${member}`, state, pid, job: `${member} job` });
+  const row = (member, state, pid) => ({ member, mission: `m-${member}`, state, pid, job: `${member} job`, step: 'npm test', lasted: '4m' });
   let rows = [row('old', 'died', 11), row('live', 'working', 22), row('legacy', 'quiet', null)];
   const events = [];
   const check = watchCrashes(rows, (e) => events.push(e), () => rows);
@@ -375,14 +375,16 @@ test('watchCrashes reports each newly died run once, not ones dead at start', ()
   rows = [row('old', 'died', 11), row('live', 'died', 22), row('legacy', 'quiet', null)];
   check();
   check();
-  assert.deepEqual(events.map((e) => [e.kind, e.member, e.mission, e.pid, e.job]), [['died', 'live', 'm-live', 22, 'live job']]);
+  assert.deepEqual(events.map((e) => [e.kind, e.member, e.mission, e.pid, e.job, e.step, e.lasted]), [['died', 'live', 'm-live', 22, 'live job', 'npm test', '4m']]);
 });
 
 test('atris member board --json --follow says when a running process dies', async () => {
   const { spawn } = require('node:child_process');
   const victim = spawn(process.execPath, ['-e', 'setTimeout(() => {}, 60000)']);
-  const recent = new Date(Date.now() - 5_000).toISOString();
-  const dir = fakeDir({ builder: [`${recent} m-4 started: [pid ${victim.pid} engine claude] long build`] });
+  const base = Date.now();
+  const recent = new Date(base - 5_000).toISOString();
+  const later = new Date(base - 2_000).toISOString();
+  const dir = fakeDir({ builder: [`${recent} m-4 started: [pid ${victim.pid} engine claude] long build`, `${later} m-4 running: npm test`] });
   const child = spawn(process.execPath, [cliPath, 'member', 'board', '--json', '--follow'], {
     cwd: dir, env: { ...process.env, ATRIS_PROGRESS_DIR: dir },
   });
@@ -403,6 +405,8 @@ test('atris member board --json --follow says when a running process dies', asyn
     const died = got.find((e) => e.kind === 'died');
     assert.ok(died, out);
     assert.deepEqual([died.member, died.mission, died.pid, died.job], ['builder', 'm-4', victim.pid, 'long build']);
+    assert.equal(died.step, 'running: npm test', 'the crash line says what the run was doing');
+    assert.equal(died.lasted, '3s', 'start to its last line');
     assert.equal(got.filter((e) => e.kind === 'died').length, 1);
   } finally {
     victim.kill('SIGKILL');
