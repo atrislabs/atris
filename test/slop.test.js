@@ -750,6 +750,21 @@ test('fix keeps a paired aside after a plain-word label as parentheses', () => {
   ]);
 });
 
+test('fix keeps a comma when a list item dash comes before a joining word', () => {
+  // from a sample README ("Redis, SQS: and more") and a math night proof note
+  const file = tmpFile('list-joining.md', [
+    '- **Pluggable**: adapters for Redis, SQS \u2014 and more',
+    '* vertex 0 has outdeg <= d0 (totalizer) \u2014  so exactly d0,',
+    '- Zero config \u2014 just install it',
+  ].join('\n'));
+  const { changes } = applyFixes([file], RULES);
+  assert.deepEqual(changes.map((c) => c.after), [
+    '- **Pluggable**: adapters for Redis, SQS, and more',
+    '* vertex 0 has outdeg <= d0 (totalizer), so exactly d0,',
+    '- Zero config: just install it',
+  ]);
+});
+
 test('fix keeps the colon after a label that already holds one', () => {
   // a comma here was tried and read worse in 30-odd repo lines: the second
   // colon explains the first, and a comma turns it into a run-on
