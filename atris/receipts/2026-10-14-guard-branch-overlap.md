@@ -76,3 +76,37 @@ Take into 1184: commits `f1b29117` and `59952d00` on `architect-1184-shared-lock
 ## Owner-name test failure is not from 1184
 
 The sealed flights owner-name test fails the same on master (`a8b9f17b`), on 1184 (`a34aa48d`), and on the fix branch (`59952d00`): 1 of 2, exit 1 each. Cause: the owner lookup reads `git config user.name` from the folder the test runs in, and this checkout sets a local name (`T`) that hides the temporary home name. Run from a folder outside any repo, the test passes 2 of 2, exit 0. It does not block 1184 taking the two fix commits. Decision card: `atris/status/for-you.md`.
+
+## Combined-copy proof
+
+The existing lock repair combines cleanly with fetched master. The real shared-lock probe kept the folder in both cleanup paths, and the required checks passed 34 of 34 in the combined copy, exit 0. This is targeted compatibility evidence, not a full-suite result or approval to land the protected implementation.
+
+Inputs: master `a8b9f17b2ed955df4fdff1717cc6057aea7f480a`, repair `59952d00797f33c0feaca8f9b0a688e8ddb62bda`. Command: `git merge-tree --write-tree origin/master architect-1184-shared-lock-check`. Output: `554b49cbbd0b172b00470b4ab382987d26a83531`, exit 0, no conflicts. Exported that tree using `git archive --format=tar --output=/tmp/atris-lock-combined-VdTOH4/tree.tar 554b49cbbd0b172b00470b4ab382987d26a83531` and `tar -xf /tmp/atris-lock-combined-VdTOH4/tree.tar -C /tmp/atris-lock-combined-VdTOH4`, both exit 0. The disposable copy is retained; no checkout or branch was merged.
+
+Runtime command: `node atris/receipts/2026-10-14-shared-lock-probe.js /tmp/atris-lock-combined-VdTOH4`, exit 0. Actual output:
+
+```text
+{
+ "cleanup": "kept: git_lock",
+ "reap": "kept: /private/var/folders/t1/2_4kmb5n4c71dxm26zc8dgzr0000gn/T/acw-shared-only-1pIEjC/engine-wt (git_lock: /private/var/folders/t1/2_4kmb5n4c71dxm26zc8dgzr0000gn/T/acw-shared-only-1pIEjC/repo/.git/refs/heads/master.lock, 2 h old)"
+}
+```
+
+Rerunnable verify: `node --test test/worktree-removal-guard.test.js test/member-tidy.test.js` from `/tmp/atris-lock-combined-VdTOH4`, exit 0. Actual final output:
+
+```text
+ℹ tests 34
+ℹ suites 0
+ℹ pass 34
+ℹ fail 0
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 4059.221625
+```
+
+The same command in the current checkout passed 13 of 13, exit 0, duration 3068.39125 ms. No full suite ran in this increment. The combined archive has no Git registration, so later tests needing a checkout must use a disposable Git repository rather than assume this archive is one.
+
+Files edited: this receipt and `atris/team/architect/logs/2026-10-14.md`. Task commands regenerated the rendered task view, which is excluded alongside the existing router edit. Commands also run: mission status/goal, task list/new/claim/note/ready, Git status/fetch/revision reads, brain activate/compile (plan only), whitespace check, explicit staging, commit, and push. Artifacts: combined disposable copy and this proof. Progress: one clean trial combination, two cleanup paths kept the locked folder, 34 combined checks and 13 current checks passed, zero production edits, zero new filenames or dependencies.
+next_push: Run the full repair suite in a disposable Git checkout of the combined tree, with the local owner-name contamination removed.
+layer: beliefs
