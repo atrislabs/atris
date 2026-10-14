@@ -347,6 +347,15 @@ test('atris member board --json --follow streams one JSON object per line', asyn
     const byMember = Object.fromEntries(got.slice(1).map((e) => [e.member, e]));
     assert.deepEqual(byMember.navigator, { member: 'navigator', mission: 'm-9', at: now, kind: 'step', text: 'reading atris/MAP.md' });
     assert.deepEqual(byMember.scout, { member: 'scout', mission: 'm-10', at: now, kind: 'finished', text: 'failed', ok: false });
+
+    // navigator was the one run with no pid; once it finishes, the count drops.
+    const later = new Date().toISOString();
+    fs.appendFileSync(path.join(dir, 'navigator.log'), `${later} m-9 finished: ok\n`);
+    const after = await waitFor(5);
+    assert.equal(after.length, 5, out);
+    assert.deepEqual(after[3], { member: 'navigator', mission: 'm-9', at: later, kind: 'finished', text: 'ok', ok: true });
+    assert.equal(after[4].kind, 'unchecked');
+    assert.equal(after[4].unchecked, 0, 'the stream says the warning is gone');
     assert.equal(child.exitCode, null, 'still following');
   } finally {
     child.kill('SIGINT');
