@@ -2347,3 +2347,5 @@ npm publish
 - `lib/member-tidy.js:220`: Git refusal triggers a fresh activity check and appends retained lock paths and ages to the original error. The seventh timing case in `atris/receipts/2026-10-14-tidy-vanishing-folder-check.js:25` adds three real locks at removal, checks distinct ages, and proves files, branch, and registration survive without a removal record.
 
 - Automatic cleanup refusal: `commands/autopilot.js:1255` rescans retained Git locks after removal fails; `atris/receipts/2026-10-14-autopilot-folder-check.js:1` reproduces real Git refusal after three late locks with distinct ages; `test/worktree-removal-guard.test.js:62` reruns the timing proof.
+
+- Cleanup review runtime: `lib/task-proof.js:157` starts the proof in a login shell; `bin/atris.js:12` checks the minimum Node version. Reproduced shell selection and real cleanup output: `atris/receipts/2026-10-14-cleanup-review-runtime.md`.
