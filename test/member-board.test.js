@@ -463,6 +463,10 @@ test('board shows an all-ok history as one ok, and a mixed one in full', () => {
   assert.match(shown('shaky'), /^shaky\s+working\s+ok ok failed\s/, shown('shaky'));
   assert.match(shown('new'), /^new\s+working\s+-\s/, 'no earlier runs still reads -');
   assert.deepEqual(rows[0].before, ['ok', 'ok', 'ok'], 'apps reading the rows get every outcome');
+  const head = (rs, w) => renderBoard(rs, '/x', 0, w).split('\n').find((l) => l.startsWith('member '));
+  assert.match(head(rows), /^member\s+state\s+before, newest first\s+run time\s/, 'a cell with several endings gets the order in its header');
+  assert.match(head([rows[0], rows[2]]), /^member\s+state\s+before\s+run time\s/, 'single endings need no order words');
+  assert.match(head(rows, 60), /^member\s+state\s+before\s/, 'a narrow pane drops the order words first');
 });
 
 test('board shortens the run\'s own fixed status lines, but not in the row data', () => {
