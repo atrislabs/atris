@@ -1761,6 +1761,7 @@ test('fix puts a comma after an aside that closes an opening "if" or "when" clau
     'When customers feel part of something \u2014 a movement, a tribe \u2014 they stop comparing on price.',
     'Swarlo is the shared board \u2014 claims and locks \u2014 that lets agents share a repo.',
     'If it fails, the gate \u2014 the strict one \u2014 still holds.',
+    'If the ideas turn out right \u2014 the ones we discussed \u2014 then we have something.',
   ].join('\n'));
   const { changes } = applyFixes([file], RULES);
   assert.deepEqual(changes.map((c) => c.after), [
@@ -1768,5 +1769,6 @@ test('fix puts a comma after an aside that closes an opening "if" or "when" clau
     'When customers feel part of something (a movement, a tribe), they stop comparing on price.',
     'Swarlo is the shared board (claims and locks) that lets agents share a repo.',
     'If it fails, the gate (the strict one) still holds.',
+    'If the ideas turn out right (the ones we discussed), then we have something.',
   ]);
 });

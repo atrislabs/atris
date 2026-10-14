@@ -367,9 +367,11 @@ function fixEmDash(s, { endsBlock = false, startsBlock = false } = {}) {
       const after = whole.slice(at + m.length);
       // So did it for the comma that ends an opening "if" or "when" clause
       // when the main clause starts right after: "if the cluster is big
-      // enough (like continent-sized), that thing could be powerful".
+      // enough (like continent-sized), that thing could be powerful". A
+      // "then" there opens the main clause too: "if the ideas turn out right
+      // (the ones we discussed), then we have something".
       const opening = /\b(?:if|when|whenever|unless|until|because|although|though|any time|every time)\b[^,;:()]*$/i.test(whole.slice(from, at))
-        && /^(?:it|we|they|you|I|he|she|there|that thing|this thing)(?:['’](?:s|re|ll|ve|d|m))?\s/.test(after);
+        && /^(?:it|we|they|you|I|he|she|there|that thing|this thing|then)(?:['\u2019](?:s|re|ll|ve|d|m))?\s/.test(after);
       const remark = /^(?:which|although|whereas)\b/.test(after);
       return ` ${wrappedInParens(aside) ? aside : `(${aside})`}${remark || (gap && opening) ? ', ' : gap ? ' ' : ''}`;
     })
