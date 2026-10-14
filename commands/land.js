@@ -2,7 +2,7 @@ const fs = require('fs');
 const path = require('path');
 const gitSpawn = require('../lib/git-spawn');
 const { compactErrorPayload, printCliJson } = require('../lib/cli-json');
-const { listWorktrees, statusCounts, defaultMainlineBase, listActiveProcessCwds, worktreeHasActiveProcess, recordWorktreeRemoval } = require('./worktree');
+const { listWorktrees, statusCounts, defaultMainlineBase, listActiveProcessCwds, worktreeHasActiveProcess, worktreeGitActivity, recordWorktreeRemoval } = require('./worktree');
 
 const DEFAULT_TTL_DAYS = 7;
 const DEFAULT_STALE_HOURS = 48;
@@ -573,6 +573,13 @@ function reap(root, { ttlDays = DEFAULT_TTL_DAYS, staleHours = DEFAULT_STALE_HOU
       protectedWorktrees.push({ ...w, reason: 'active_process' });
       continue;
     }
+    // Git mid-operation in the folder (lock held, rebase or merge paused)
+    // also outranks --force: removal would strand the operation half done.
+    const gitActivity = worktreeGitActivity(w.path);
+    if (gitActivity) {
+      protectedWorktrees.push({ ...w, reason: gitActivity });
+      continue;
+    }
     if (worktreeWithinReapGrace(w.path, now)) {
       protectedWorktrees.push({ ...w, reason: 'fresh_worktree_grace' });
       continue;
@@ -666,6 +673,12 @@ function reap(root, { ttlDays = DEFAULT_TTL_DAYS, staleHours = DEFAULT_STALE_HOU
     // A run can start in the folder while the bundle is built; look again.
     if (worktreeHasActiveProcess(w.path, activeAtRemoval)) {
       receipt.keptWorktrees.push(`${w.path} (active_process)`);
+      if (w.branch) targetNames.delete(w.branch);
+      continue;
+    }
+    const gitActivityAtRemoval = worktreeGitActivity(w.path);
+    if (gitActivityAtRemoval) {
+      receipt.keptWorktrees.push(`${w.path} (${gitActivityAtRemoval})`);
       if (w.branch) targetNames.delete(w.branch);
       continue;
     }
