@@ -165,7 +165,15 @@ test('the runner writes why a run failed and the board reads it back', () => {
       assert.match(at, /\s{2}(sign in to claude, then run it again|sign in to claude|sign in)$/, `the fix shrinks, never cut, at ${w} columns: ${at}`);
     }
     const mid = renderBoard([{ ...by.locked, engine: 'claude', alive: false }, by.broke], dir, 0, 95).split('\n');
-    assert.match(mid[1], /^locked\s+done failed\s+signed out\s.*\s{2}sign in to claude$/, 'the last result gives up its room before the fix does');
+    assert.match(mid[1], /^locked\s+failed\s+signed out\s.*\s{2}sign in to claude, then run it again$/, '"done" gives up its room before the fix does');
+    const said = [];
+    for (let w = 50; w <= 140; w++) {
+      const line = renderBoard([{ ...by.locked, engine: 'claude', alive: false }, by.broke], dir, 0, w).split('\n')[1];
+      said.push([w, ['sign in to claude, then run it again', 'sign in to claude', 'sign in'].findIndex((fix) => line.endsWith(`  ${fix}`))]);
+    }
+    for (let i = 1; i < said.length; i++) {
+      assert.ok(said[i][1] >= 0 && said[i][1] <= said[i - 1][1], `a wider board never says less: ${said[i - 1][0]} -> ${said[i][0]} columns`);
+    }
     for (const name of Object.keys(ends).filter((n) => n !== 'good')) assert.equal(by[name].state, 'done failed', name);
   } finally {
     fs.rmSync(dir, { recursive: true, force: true });
