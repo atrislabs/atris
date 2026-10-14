@@ -224,14 +224,27 @@ test('autopilot regression check names who removed its folder and why', () => {
   }
 });
 
-// Tripwire: a work folder removal in these files, by git or by a raw delete of
-// a worktree path, must sit in a function that also asks the git-activity
-// check and writes the removal log. An exception needs a reason here, and a
-// stale exception fails too.
-const GUARDED_FILES = ['lib/fleet.js', 'commands/land.js', 'commands/autopilot.js', 'commands/worktree.js'];
+// Tripwire: a work folder removal anywhere in lib/ or commands/, by git or by a
+// raw delete of a worktree path, must sit in a function that also asks the
+// git-activity check and writes the removal log. A new file that removes
+// folders is caught too. Exceptions need a reason; stale entries fail.
+function sourceFiles(dir) {
+  return fs.readdirSync(path.join(__dirname, '..', dir), { withFileTypes: true }).flatMap((entry) => {
+    const relative = path.join(dir, entry.name);
+    if (entry.isDirectory()) return entry.name === 'node_modules' ? [] : sourceFiles(relative);
+    return relative.endsWith('.js') ? [relative] : [];
+  });
+}
 const UNGUARDED_REMOVALS = {
   'commands/worktree.js:createAgentWorktree': 'drops a folder it just made before any engine entered; plain remove refuses dirt',
   'lib/fleet.js:prepareReviewSandbox': 'wipes its own temp sandbox when setup fails; only that call touched it, so any lock is stale',
+  'commands/drill.js:landingShippedLocal': 'removes a worktree inside the drill\'s own throwaway practice repo',
+};
+// Real work folder removals still waiting for the guard. Each one is a gap;
+// guard it and delete its line here.
+const NOT_YET_GUARDED = {
+  'lib/land-green.js:dropScratch': 'scratch folder a timed-out verify may still be running in',
+  'lib/member-tidy.js:tidyMemberCopies': 'checks for a live run but not for git mid-operation, and logs nowhere',
 };
 const WORKTREE_REMOVAL = /worktree['"]?\s*,\s*['"]remove['"]|git worktree remove|rmSync\(\s*[^,)]*(?:worktree|wtPath|\bwt\b|\bw\.path)/i;
 
@@ -243,7 +256,7 @@ function worktreeRemovalSites(file) {
   });
   const sites = [];
   lines.forEach((line, index) => {
-    if (!WORKTREE_REMOVAL.test(line)) return;
+    if (/^\s*(\/\/|\*)/.test(line) || !WORKTREE_REMOVAL.test(line)) return;
     const owner = starts.filter((start) => start.index <= index).pop();
     const next = starts.find((start) => start.index > index);
     const body = lines.slice(owner ? owner.index : 0, next ? next.index : lines.length).join('\n');
@@ -253,13 +266,18 @@ function worktreeRemovalSites(file) {
 }
 
 test('every work folder removal goes through the git check and the removal log', () => {
-  const sites = GUARDED_FILES.flatMap(worktreeRemovalSites);
-  assert.ok(sites.length >= 5, `expected the known removal sites, found ${sites.length}`);
+  const sites = [...sourceFiles('lib'), ...sourceFiles('commands')].flatMap(worktreeRemovalSites);
+  assert.ok(sites.length >= 8, `expected the known removal sites, found ${sites.length}`);
   const bypasses = sites
-    .filter((site) => !UNGUARDED_REMOVALS[site.key])
+    .filter((site) => !UNGUARDED_REMOVALS[site.key] && !NOT_YET_GUARDED[site.key])
     .filter((site) => !site.body.includes('worktreeGitActivity') || !site.body.includes('recordWorktreeRemoval'))
     .map((site) => `${site.key} (line ${site.line})`);
   assert.deepEqual(bypasses, [], 'removal without the git check or the removal log');
-  const stale = Object.keys(UNGUARDED_REMOVALS).filter((key) => !sites.some((site) => site.key === key));
+  const stale = [...Object.keys(UNGUARDED_REMOVALS), ...Object.keys(NOT_YET_GUARDED)]
+    .filter((key) => !sites.some((site) => site.key === key));
   assert.deepEqual(stale, [], 'exception names a function that no longer removes a folder');
+  const nowGuarded = Object.keys(NOT_YET_GUARDED).filter((key) => sites
+    .filter((site) => site.key === key)
+    .every((site) => site.body.includes('worktreeGitActivity') && site.body.includes('recordWorktreeRemoval')));
+  assert.deepEqual(nowGuarded, [], 'guarded now: delete its line from NOT_YET_GUARDED');
 });
