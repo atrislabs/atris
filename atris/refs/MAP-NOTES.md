@@ -2441,3 +2441,7 @@ npm publish
 ## Status history fixture setup
 
 - `test/commands.test.js:14559` checks that the default task status card leaves out history while the history view shows all ten events. Setup at `test/commands.test.js:14566` writes the creation, claim and eight notes in process through the same store calls task new, claim and say make, saving ten launches; a throwaway copy seeding seven notes failed the history count, so the count still tracks the seeded events.
+
+## Review create-next goal scope fixture setup
+
+- `test/commands.test.js:14711` checks that finishing a task with create-next carries its tag and goal link to the new task, and that the goal-scoped current pick selects it. Real-store creation at `test/commands.test.js:14719` saves one setup launch and writes the same goal link task new stores; a throwaway copy without that link failed, so the goal checks still read the seeded link.

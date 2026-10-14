@@ -14716,9 +14716,18 @@ test('task review create-next preserves goal scope', () => {
   try {
     fs.mkdirSync(path.join(dir, 'atris'), { recursive: true });
 
-    const created = runCli(['task', 'new', 'Improve task loop', '--tag', 'rsi', '--goal-id', 'OBL-928', '--json'], { cwd: dir, env });
-    assert.equal(created.status, 0, created.stderr);
-    const id = JSON.parse(created.stdout).task_id;
+    // Seed creation with the goal link task new stores; the finish and scoped current read stay on the CLI.
+    const db = taskStore.open(dbPath);
+    let id;
+    try {
+      const created = addSeedTask(db, {
+        title: 'Improve task loop', tag: 'rsi', workspaceRoot: taskStore.workspaceRoot(dir), metadata: { goal_id: 'OBL-928' },
+      });
+      assert.equal(created.inserted, true);
+      id = created.id;
+    } finally {
+      taskStore.close();
+    }
 
     const finished = runCli([
       'task', 'finish', id,
