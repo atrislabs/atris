@@ -2292,3 +2292,7 @@ npm publish
 - `commands/member.js:10648` sends `member_task_claimed` only after a real supervised claim; `commands/member.js:10850` carries it over the child IPC channel and `commands/member.js:10913` wires the callback.
 - `test/member-wake-announce-after-claim.test.js:1` exercises real CLI processes and the production spawner against an isolated real task database: a lost preview stays idle, and a replacement job is announced only after its row is claimed. Verify: `node --test test/member-wake-announce-after-claim.test.js`.
 - Bounded member progress: `lib/member-progress.js:15` scans oversized logs backwards in bounded buffers and replaces them with recent whole lines plus the latest start marker; `lib/member-progress.js:185` appends and trims. Regression: `test/member-progress-trim.test.js:1`.
+
+## Old Git-lock cleanup audit
+- `atris/receipts/2026-10-14-folder-lock-preview.js:1`: real CLI preview using an old lock, without removing a folder; output and required check in the matching receipt.
+- `lib/member-tidy.js:197`: current direct removal boundary; `commands/member.js:11356`: actual tidy CLI handler.
