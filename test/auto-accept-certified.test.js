@@ -776,3 +776,17 @@ test('spawn cap: verifies beyond the cap refuse loudly instead of looping', () =
   }
 });
 
+
+test('verifyCommandEnv keeps caller PATH order and only appends missing dirs', () => {
+  const { verifyCommandEnv } = require('../lib/auto-accept-certified');
+  const binDir = path.dirname(process.execPath);
+  const callerParts = ['/tmp/fake-git-bin', '/usr/bin', '/tmp/fake-git-bin', '/bin'];
+  const parts = verifyCommandEnv({ PATH: callerParts.join(path.delimiter) }).PATH.split(path.delimiter);
+  assert.deepEqual(parts.slice(0, 3), ['/tmp/fake-git-bin', '/usr/bin', '/bin']);
+  assert.ok(parts.indexOf(binDir) >= 3, 'node bin dir is appended after caller entries');
+  assert.ok(parts.indexOf('/opt/homebrew/bin') >= 3, 'homebrew is appended after caller entries');
+  assert.equal(new Set(parts).size, parts.length, 'no duplicate PATH entries');
+  const withBin = verifyCommandEnv({ PATH: [binDir, '/usr/bin'].join(path.delimiter) }).PATH.split(path.delimiter);
+  assert.equal(withBin[0], binDir);
+  assert.equal(withBin.filter((p) => p === binDir).length, 1);
+});
