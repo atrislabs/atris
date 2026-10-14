@@ -222,6 +222,9 @@ test('member run --ignite executes in isolated worktree and member status --all 
         '--engine',
         'codex',
         '--ignite',
+        // This proves the worktree and status view, not the review; skip the
+        // default second-engine review so no real engine starts.
+        '--no-referee',
         '--verify',
         'test -s ignited-prompt.txt',
         '--json',
