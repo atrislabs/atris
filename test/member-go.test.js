@@ -175,7 +175,7 @@ test('a pulled task moves to review on a passing check and back to the list on a
       taskDb.claimTask(db, { id: fail, claimedBy: 'executor' });
 
       const passed = memberGoFinishTask('executor', taskDb.getTask(db, pass), {
-        started: true, mission_id: 'm-1', mission: { status: 'complete' },
+        started: true, mission_id: 'm-1', mission: { status: 'complete', verifier_result: { passed: true } },
         work_step: { receipt_path: 'atris/runs/mission-m-1.json' },
       });
       assert.equal(passed.outcome, 'review');
@@ -186,9 +186,16 @@ test('a pulled task moves to review on a passing check and back to the list on a
       const waiting = add('Tidy the board copy');
       taskDb.claimTask(db, { id: waiting, claimedBy: 'executor' });
       const ready = memberGoFinishTask('executor', taskDb.getTask(db, waiting), {
-        started: true, mission_id: 'm-3', mission: { status: 'ready' },
+        started: true, mission_id: 'm-3', mission: { status: 'ready', verifier_result: { passed: true } },
       });
       assert.equal(ready.outcome, 'review');
+
+      const unproven = add('Status alone is not proof');
+      taskDb.claimTask(db, { id: unproven, claimedBy: 'executor' });
+      const noProof = memberGoFinishTask('executor', taskDb.getTask(db, unproven), {
+        started: true, mission_id: 'm-4', mission: { status: 'complete' },
+      });
+      assert.equal(noProof.outcome, 'released');
 
       const failed = memberGoFinishTask('executor', taskDb.getTask(db, fail), {
         started: true, mission_id: 'm-2', mission: { status: 'running' }, error: 'check failed: 2 tests red\nstack',

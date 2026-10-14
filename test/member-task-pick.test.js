@@ -85,3 +85,28 @@ test('objective with a body stays on one line so mission start accepts it', () =
   assert.equal(objective, 'Read README.md and report the documented upload retry policy. Confirm uploads retry three times before reporting failure.');
   assert.doesNotMatch(objective, /[\n\r]/);
 });
+
+test('skips tasks protected by a declared phrase in the body or a denied tag in metadata', () => {
+  withProject(({ db, ws, add }) => {
+    add('Tune the landing gate', { metadata: { objective: 'Protected lane: a human accepts this one.' } });
+    add('Rotate the shared token', { metadata: { tags: ['security'] } });
+    add('Wire the stripe webhook');
+    const ok = add('Add a retry to the uploader');
+    const got = claimTaskForMember(taskDb, db, { workspaceRoot: ws, member: 'executor', job: 'build' });
+    assert.equal(got.task.id, ok);
+  });
+});
+
+test('a claim that throws is released, not stranded', () => {
+  withProject(({ db, ws, add }) => {
+    const id = add('Add a retry to the uploader');
+    const failing = {
+      ...taskDb,
+      claimTask: (d, args) => { taskDb.claimTask(d, args); throw new Error('event write failed'); },
+    };
+    assert.throws(() => claimTaskForMember(failing, db, { workspaceRoot: ws, member: 'executor', job: 'build' }), /event write failed/);
+    const row = taskDb.getTask(db, id);
+    assert.equal(row.claimed_by, null);
+    assert.equal(row.status, 'open');
+  });
+});

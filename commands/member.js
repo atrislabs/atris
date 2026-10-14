@@ -10398,7 +10398,8 @@ function memberGoTask(owner, root, { claim }) {
     }
     const task = picker.pickTaskForMember(taskDb, db, { workspaceRoot, job });
     return task ? { task, objective: picker.taskObjective(task), job } : null;
-  } catch {
+  } catch (error) {
+    console.error(`could not take a task from the list: ${String(error && error.message || error).split('\n')[0]}`);
     return null;
   }
 }
@@ -10411,7 +10412,8 @@ function memberGoFinishTask(owner, task, result, thrown = null) {
   const db = taskDb.open();
   const mission = (result && result.mission) || {};
   const receipt = (result && result.work_step && result.work_step.receipt_path) || mission.receipt_path || '';
-  if (!thrown && result && result.started && ['complete', 'ready'].includes(mission.status)) {
+  if (!thrown && result && result.started && ['complete', 'ready'].includes(mission.status)
+    && mission.verifier_result && mission.verifier_result.passed === true) {
     const proof = [`[verified] ${owner} ran mission ${result.mission_id} and its check passed.`,
       receipt ? `Receipt: ${receipt}` : ''].filter(Boolean).join('\n');
     const ready = taskDb.readyTask(db, { id: task.id, actor: owner, proof });
