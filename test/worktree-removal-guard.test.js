@@ -331,14 +331,14 @@ const NOT_YET_GUARDED = {
 };
 const WORKTREE_REMOVAL = /worktree['"]?\s*,\s*['"]remove['"]|git worktree remove|\brm(?:dir)?(?:Sync)?\(\s*[^,)]*(?:worktree|wtPath|\bwt\b|\bw\.path)|\brm\s+-[a-z]*r[^;&|\n]*(?:worktree|wtPath|\bwt\b)|['"]rm['"]\s*,\s*\[[^\]]*(?:worktree|wtPath|\bwt\b)/i;
 // A recursive delete with a plain name (dir, target) still counts when its
-// function lists, adds, or walks worktrees, so renaming a variable can't hide one.
+// function lists, adds, removes, or walks worktrees, so renaming a variable can't hide one.
 // Asking git for the worktree list directly counts as listing them.
 // Callback and promise deletes (fs.rm, fs.promises.rm) count the same as rmSync,
 // and so does a shell rm -r, typed out or passed to spawn as arguments.
 // A path built by a call, like rmSync(path.join(root, x), { recursive }), is read through.
 // The older rmdir with the recursive option counts as a delete too.
 const RECURSIVE_DELETE = /\brm(?:dir)?(?:Sync)?\((?:[^()]|\([^()]*\))*recursive|\brm\s+-[a-zA-Z]*[rR]|['"]rm['"]\s*,\s*\[\s*['"]-[a-zA-Z]*[rR]/;
-const HANDLES_WORKTREES = /listWorktrees\(|parseWorktrees\(|agent-worktrees|['"]worktree['"]\s*,\s*['"](?:add|list)['"]|git worktree (?:add|list)/;
+const HANDLES_WORKTREES = /listWorktrees\(|parseWorktrees\(|agent-worktrees|['"]worktree['"]\s*,\s*['"](?:add|list|remove)['"]|git worktree (?:add|list|remove)/;
 const COMMENT_LINE = /^\s*(\/\/|\*|\/\*)/;
 
 // A delete split across lines is read from its opening line to the line that
@@ -407,6 +407,16 @@ test('saved scanner examples reject missed removals in the required checks', () 
   assert.ifError(result.error);
   assert.equal(result.status, 0, result.stderr || result.stdout);
   assert.match(result.stdout, /review gaps: 0; synthetic source only, no folders removed/);
+});
+
+test('grouped sandbox cleanup exposes every recursive target to the scan', () => {
+  const result = spawnSync(process.execPath, [
+    path.join(__dirname, '../atris/receipts/work-folder-scan-group-probe.js'),
+    '--require-protection',
+  ], { encoding: 'utf8', timeout: 10000 });
+  assert.ifError(result.error);
+  assert.equal(result.status, 0, result.stderr || result.stdout);
+  assert.match(result.stdout, /group: 4 recursive targets; 0 missing from scan; source only, no folders removed/);
 });
 
 test('green landing keeps its scratch folder while a test is still running in it', () => {
