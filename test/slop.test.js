@@ -2464,6 +2464,23 @@ test('fix turns a single dash between two boxes into a hyphen', () => {
   ]);
 });
 
+test('fix turns a single dash on an indented diagram line into a hyphen', () => {
+  // a plain-word step after a box was read as prose: "[a], done -> [c]"
+  const file = tmpFile('diagram-dash.md', [
+    '    [a] \u2014 done \u2014> [c]',
+    '    [a] --- b \u2014 [c]',
+    '    [a] \u2014 done',
+    '    run atris slop --fix \u2014 then commit',
+  ].join('\n\n'));
+  const { changes } = applyFixes([file], RULES, { write: false });
+  assert.deepEqual(changes.map((c) => c.after), [
+    '    [a] - done -> [c]',
+    '    [a] --- b - [c]',
+    '    [a], done',
+    '    run atris slop --fix, then commit',
+  ]);
+});
+
 test('fix keeps a journal heading that ends in a time readable for its hour', () => {
   // analytics reads the hour after a dash or a spaced hyphen at the end of a
   // heading; the fix wrote "### Watch: 19:05", which hides it, and glued

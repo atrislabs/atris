@@ -491,6 +491,10 @@ function fixEmDash(s, { endsBlock = false, startsBlock = false, spans = [] } = {
   // of pressed dashes there is a drawn line, between plain-word steps or
   // opening a branch: "plan --- do --- review", "  -- [b]", never "plan (do)".
   if (/^(?: {4}|\t)/.test(s)) s = s.replace(/\u2014{2,}/g, (m) => '-'.repeat(m.length));
+  // once such a line holds a drawn line or an arrow it is a diagram, so a
+  // single dash on it is one more short link: "[a] - done -> [c]", never
+  // "[a], done". A flag like "--fix" is not a drawn line.
+  if (/^(?: {4}|\t)/.test(s) && /(?:^|[\s\])|+])-{2,}(?=[\s[(|+]|$)|->|<-/.test(s)) s = s.replace(/\u2014/g, '-');
   // a single dash with a box edge on both sides is a short link between two
   // boxes, so it takes a hyphen: "[a] - [b] - [c]", never "[a] ([b]) [c]"
   if (!/^\s*\|/.test(s)) s = s.replace(/(?<=[\])|+][ \t]*)\u2014(?=[ \t]*[[(|+])/g, '-');
