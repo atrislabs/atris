@@ -1169,6 +1169,12 @@ test('hidden failures all signed out of one engine say which to sign in to', () 
   assert.equal(footer([out('f1'), out('f2', 'codex')], 60), '2 more not shown (2 failed, all signed out)', 'two engines: no single fix to name');
   const unnamed = [out('f1', ''), out('f2', '')];
   assert.equal(footer(unnamed, 60), '2 more not shown (2 failed, all signed out)', 'no engine on record: say signed out');
+  const failed = (m, why) => ({ ...out(m), last_result_reason: why });
+  // In a mix, the signed out count names its engine; it used to read "2 signed out".
+  assert.equal(footer([out('f1'), out('f2'), failed('f3', 'timed out'), halt], 70), '4 more not shown (3 failed, 2 signed out of claude, 1 stopped)');
+  assert.equal(footer([failed('f1', 'bad exit 2'), out('f2'), failed('f3', 'engine error')], 80),
+    '3 more not shown (3 failed, signed out of claude, bad exit 2 and engine error)');
+  assert.equal(footer([out('f1'), out('f2'), failed('f3', 'timed out'), halt], 45), '4 hidden (3 failed, 2 signed out, 1 stopped)', 'no room: the same footer as before');
 });
 
 test('narrow footers drop whole mixed counts from the end instead of cutting one', () => {
