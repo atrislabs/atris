@@ -330,11 +330,11 @@ test('board stops repeating ago in its rows when engine and alive are not enough
     const lines = renderBoard(rows, '/x', 0, w).split('\n');
     return lines.slice(lines.indexOf('') + 1, lines.indexOf('', lines.indexOf('') + 1));
   };
-  assert.match(table(62)[1], /\s30s ago\s/, 'at 62 columns the rows still say ago');
-  const pane = table(54);
+  assert.match(table(66)[1], /\s30s ago\s/, 'at 66 columns the rows still say ago');
+  const pane = table(58);
   assert.match(pane[0], /^member\s+state\s+run time\s+ago\s+job$/, 'the header keeps the word');
   assert.match(pane[1], /^builder\s+working\s+10m\s+30s\s+make/, 'the row drops it');
-  assert.ok(pane.every((l) => l.length <= 54), `every line fits a 54 column pane:\n${pane.join('\n')}`);
+  assert.ok(pane.every((l) => l.length <= 58), `every line fits a 58 column pane:\n${pane.join('\n')}`);
   assert.match(renderBoard(rows, '/x'), /\s30s ago\s/, 'piped output keeps ago');
 });
 
@@ -366,11 +366,11 @@ test('board titles run time as run when nothing else is left to drop', () => {
     const lines = renderBoard(rows, '/x', 0, w).split('\n');
     return lines.slice(lines.indexOf('') + 1, lines.indexOf('', lines.indexOf('') + 1));
   };
-  assert.match(table(54)[0], /\srun time\s/, 'at 54 columns the full header stays');
-  const pane = table(50);
-  assert.match(pane[0], /^member\s+state\s+run\s+ago\s+job$/, 'at 50 columns it is run');
+  assert.match(table(58)[0], /\srun time\s/, 'at 58 columns the full header stays');
+  const pane = table(54);
+  assert.match(pane[0], /^member\s+state\s+run\s+ago\s+job$/, 'at 54 columns it is run');
   assert.match(pane.find((l) => l.startsWith('builder')), /^builder\s+working\s+10m\s+30s\s+fit/);
-  assert.ok(pane.every((l) => l.length <= 50), `every line fits a 50 column pane:\n${pane.join('\n')}`);
+  assert.ok(pane.every((l) => l.length <= 54), `every line fits a 54 column pane:\n${pane.join('\n')}`);
   assert.match(renderBoard(rows, '/x'), /\srun time\s/, 'piped output keeps the full header');
 });
 
@@ -477,13 +477,13 @@ test('board keeps the order words while a history is as wide as they are', () =>
   ].join('\n'), now);
   const rows = [row('builder', ['failed', 'stopped', 'stopped']), row('scout', ['ok'])];
   const lines = (w) => renderBoard(rows, '/x', 0, w).split('\n');
-  const at80 = lines(80);
-  assert.match(at80.find((l) => l.startsWith('member ')), /^member\s+state\s+before, newest first\s+run time\s/, 'dropping the words would free nothing, so they stay while engine and alive go');
-  assert.match(at80.find((l) => l.startsWith('builder ')), /^builder\s+working\s+stopped stopped failed\s/);
-  const at70 = lines(70);
-  assert.match(at70.find((l) => l.startsWith('member ')), /^member\s+state\s+before\s+run\s/, 'one word per cell has no order to explain');
-  assert.match(at70.find((l) => l.startsWith('builder ')), /^builder\s+working\s+stopped\s+10m\s/);
-  assert.ok(at70.every((l) => l.length <= 70), at70.join('\n'));
+  const at84 = lines(84);
+  assert.match(at84.find((l) => l.startsWith('member ')), /^member\s+state\s+before, newest first\s+run time\s/, 'dropping the words would free nothing, so they stay while engine and alive go');
+  assert.match(at84.find((l) => l.startsWith('builder ')), /^builder\s+working\s+stopped stopped failed\s/);
+  const at74 = lines(74);
+  assert.match(at74.find((l) => l.startsWith('member ')), /^member\s+state\s+before\s+run\s/, 'one word per cell has no order to explain');
+  assert.match(at74.find((l) => l.startsWith('builder ')), /^builder\s+working\s+stopped\s+10m\s/);
+  assert.ok(at74.every((l) => l.length <= 74), at74.join('\n'));
 });
 
 test('a narrow board gives up a before column that says ok on every row first', () => {
@@ -499,6 +499,23 @@ test('a narrow board gives up a before column that says ok on every row first', 
   assert.match(head(rows, 60), /^member\s+state\s+run time\s+ago\s+job$/, 'the headers keep their words instead');
   const mixed = [rows[0], row('scout', 'codex', ['failed'])];
   assert.match(head(mixed, 60), /^member\s+state\s+before\s/, 'a failed run among them keeps the column');
+});
+
+test('an 80 column board gives the job 24 columns before it keeps ago on every row', () => {
+  const now = Date.parse('2026-10-14T13:00:00Z');
+  const rows = [
+    memberRow('release-sentinel', [
+      '2026-10-14T12:10:00Z m-0 started: one', '2026-10-14T12:10:30Z m-0 finished: ok',
+      '2026-10-14T12:20:00Z m-1 started: two', '2026-10-14T12:20:30Z m-1 finished: ok',
+      '2026-10-14T12:30:00Z m-2 started: three', '2026-10-14T12:30:30Z m-2 finished: failed',
+      `2026-10-14T12:59:00Z m-3 started: [pid ${process.pid}] Finish work-folder protection across the fleet`, '2026-10-14T12:59:57Z m-3 running: git status', '',
+    ].join('\n'), now),
+  ];
+  const lines = renderBoard(rows, '/x', 0, 80).split('\n');
+  const row = lines.find((l) => l.startsWith('release-sentinel '));
+  assert.match(row, /\s3s\s+Finish work-folder pr\.\.\.$/, 'ago loses its word so the job keeps 24 columns');
+  assert.match(lines.find((l) => l.startsWith('member ')), /\sago\s+job$/, 'the header still says ago');
+  assert.ok(lines.every((l) => l.length <= 80), lines.join('\n'));
 });
 
 test('board writes "at least 1h" as "1h+" on a narrow screen, but not in the row data', () => {
