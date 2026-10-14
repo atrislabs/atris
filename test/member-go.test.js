@@ -190,6 +190,14 @@ test('a pulled task moves to review on a passing check and back to the list on a
       });
       assert.equal(ready.outcome, 'review');
 
+      const needsOwnCheck = add('Has its own check', { metadata: { verify: 'node --test test/a.test.js' } });
+      taskDb.claimTask(db, { id: needsOwnCheck, claimedBy: 'executor' });
+      const wrongCheck = memberGoFinishTask('executor', taskDb.getTask(db, needsOwnCheck), {
+        started: true, mission_id: 'm-5',
+        mission: { status: 'complete', verifier_result: { passed: true, command: 'node --version' } },
+      });
+      assert.equal(wrongCheck.outcome, 'released');
+
       const unproven = add('Status alone is not proof');
       taskDb.claimTask(db, { id: unproven, claimedBy: 'executor' });
       const noProof = memberGoFinishTask('executor', taskDb.getTask(db, unproven), {

@@ -130,3 +130,12 @@ test('skips needs-human and decision tags written in metadata', () => {
     assert.equal(got.task.id, ok);
   });
 });
+
+test('skips a task whose required check is prose that cannot be run', () => {
+  withProject(({ db, ws, add }) => {
+    add('Polish the docs', { metadata: { verify: 'looks good to a reader' } });
+    const ok = add('Add a retry to the uploader', { metadata: { verify: 'node --test test/upload.test.js' } });
+    const got = claimTaskForMember(taskDb, db, { workspaceRoot: ws, member: 'executor', job: 'build' });
+    assert.equal(got.task.id, ok);
+  });
+});
