@@ -219,10 +219,36 @@ function commentStart(line, state) {
       const end = line.indexOf('*/', i + 2);
       if (end === -1) { state.block = true; return i; }
       i = end + 1;
-    }
+    } else if (c === '/' && opensPattern(line, i)) i = patternEnd(line, i);
   }
   if (quote === '`') state.template = true;
   return -1;
+}
+
+// A slash opens a pattern, not a division, when what comes before it cannot
+// end a value: line start, an operator or opening bracket, or a word like
+// return. Inside the pattern a slash such as the two in https?:\/\/ is not a
+// comment, so the scan has to step over the whole pattern.
+function opensPattern(line, at) {
+  const before = line.slice(0, at).trimEnd();
+  if (!before) return true;
+  if (/[(,=:[!&|?{};+\-*%~^<>]$/.test(before)) return true;
+  return /(?:^|[^\w$.])(?:return|typeof|case|in|of|delete|void|throw|new|else|yield|await)$/.test(before);
+}
+
+// Index of the slash that closes the pattern opened at `at`. A slash inside a
+// character class or after a backslash does not close it. With no closing
+// slash on the line it was not a pattern, so the scan resumes after it.
+function patternEnd(line, at) {
+  let cls = false;
+  for (let j = at + 1; j < line.length; j++) {
+    const c = line[j];
+    if (c === '\\') j++;
+    else if (c === '[') cls = true;
+    else if (c === ']') cls = false;
+    else if (c === '/' && !cls) return j;
+  }
+  return at;
 }
 
 function fencedLines(lines) {
