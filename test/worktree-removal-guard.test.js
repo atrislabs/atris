@@ -223,3 +223,40 @@ test('autopilot regression check names who removed its folder and why', () => {
     fs.rmSync(base, { recursive: true, force: true });
   }
 });
+
+// Tripwire: a git worktree removal in these files must sit in a function that
+// also asks the git-activity check and writes the removal log. An exception
+// needs a reason here, and a stale exception fails too.
+const GUARDED_FILES = ['lib/fleet.js', 'commands/land.js', 'commands/autopilot.js', 'commands/worktree.js'];
+const UNGUARDED_REMOVALS = {
+  'commands/worktree.js:createAgentWorktree': 'drops a folder it just made before any engine entered; plain remove refuses dirt',
+};
+
+function worktreeRemovalSites(file) {
+  const lines = fs.readFileSync(path.join(__dirname, '..', file), 'utf8').split('\n');
+  const starts = lines.flatMap((line, index) => {
+    const match = line.match(/^(?:async\s+)?function\s+(\w+)/);
+    return match ? [{ name: match[1], index }] : [];
+  });
+  const sites = [];
+  lines.forEach((line, index) => {
+    if (!/worktree['"]?\s*,\s*['"]remove['"]|git worktree remove/.test(line)) return;
+    const owner = starts.filter((start) => start.index <= index).pop();
+    const next = starts.find((start) => start.index > index);
+    const body = lines.slice(owner ? owner.index : 0, next ? next.index : lines.length).join('\n');
+    sites.push({ key: `${file}:${owner ? owner.name : '(top level)'}`, line: index + 1, body });
+  });
+  return sites;
+}
+
+test('every work folder removal goes through the git check and the removal log', () => {
+  const sites = GUARDED_FILES.flatMap(worktreeRemovalSites);
+  assert.ok(sites.length >= 5, `expected the known removal sites, found ${sites.length}`);
+  const bypasses = sites
+    .filter((site) => !UNGUARDED_REMOVALS[site.key])
+    .filter((site) => !site.body.includes('worktreeGitActivity') || !site.body.includes('recordWorktreeRemoval'))
+    .map((site) => `${site.key} (line ${site.line})`);
+  assert.deepEqual(bypasses, [], 'removal without the git check or the removal log');
+  const stale = Object.keys(UNGUARDED_REMOVALS).filter((key) => !sites.some((site) => site.key === key));
+  assert.deepEqual(stale, [], 'exception names a function that no longer removes a folder');
+});
