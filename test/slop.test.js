@@ -935,6 +935,9 @@ test('fix joins a noun clause after the dash with a semicolon', () => {
     // one short place phrase may sit between the subject and its verb
     'The bound holds for small graphs \u2014 the counting slack at degree 4 is only 2.',
     'The queue looks fine \u2014 the oldest job in the queue is stale.',
+    // a second place phrase still joins; a joining word keeps its comma
+    'Read the logs \u2014 the work for agents in the fleet is done.',
+    'It is not green \u2014 even when the build in CI is red.',
   ].join('\n'));
   const { changes } = applyFixes([file], RULES);
   assert.deepEqual(changes.map((c) => c.after), [
@@ -965,6 +968,8 @@ test('fix joins a noun clause after the dash with a semicolon', () => {
     'Read the logs; the one thing is clear.',
     'The bound holds for small graphs; the counting slack at degree 4 is only 2.',
     'The queue looks fine; the oldest job in the queue is stale.',
+    'Read the logs; the work for agents in the fleet is done.',
+    'It is not green, even when the build in CI is red.',
   ]);
 });
 
