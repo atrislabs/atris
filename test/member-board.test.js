@@ -375,6 +375,25 @@ test('a stopped run and one that ended with no result never make a wider board s
   }
 });
 
+test('the full missing-result wording never cuts a step a narrower board read more of', () => {
+  const rows = [
+    { member: 'scout', state: 'working', alive: true, pid: 9, engine: 'claude', running_for: '3m', last_result: '', last_result_reason: '', last_result_ago: '', ago: '5s ago', job: 'fix it', step: 'npm test' },
+    { member: 'halt', state: 'stopped', alive: false, pid: 5, engine: 'claude', running_for: '', last_result: 'stopped', last_result_reason: '', last_result_ago: '7m ago', ago: '7m ago', job: 'fix it', step: 'npm test', no_result: false },
+    { member: 'gone', state: 'stopped', alive: false, pid: 6, engine: 'codex', running_for: '', last_result: '', last_result_reason: '', last_result_ago: '', ago: '17m ago', job: 'try again on the chat page', step: 'running: npm test -- member-board', no_result: true },
+  ];
+  let before = 0;
+  for (let width = 88; width <= 120; width++) {
+    const line = renderBoard(rows, '/progress', 0, width).split('\n')[3];
+    assert.ok(line.length <= width, `${width}: ${line}`);
+    assert.match(line, /\stry again on the chat page\s/, `${width}: every job reads whole here`);
+    const step = line.slice(line.indexOf('running')).replace(/\.\.\.$/, '').length;
+    assert.ok(step >= before, `${width}: the step reads less than one column narrower: ${line}`);
+    before = step;
+  }
+  // It used to say "ended, no result" at 92 and cut the step to "runnin...".
+  assert.match(renderBoard(rows, '/progress', 0, 92), /^gone\s+stopped\s+no result\s.*running: np\.\.\.$/m);
+});
+
 test('beside a live run, a signed out fix never loses its engine one column wider', () => {
   const rows = [
     { member: 'scout', state: 'working', alive: true, pid: 9, engine: 'claude', running_for: '3m', last_result: '', last_result_reason: '', last_result_ago: '', ago: '5s ago', job: 'fix it', step: 'npm test' },
