@@ -62,6 +62,12 @@ const NUMBERED_LABEL_DASH = /^(\s*(?:>\s*)*(?:(?:\*\*|__)[^*_\u2014]+:(?:\*\*|__
 const HEADING_DASH = /^(\s{0,3}#{1,6}\s+[^\u2014:]*[^\s\u2014,;:.!?])\s*\u2014\s*(?!(?:and|but|or|nor|so|yet)\b)(?=[^\s\u2014][^\u2014]*$)/i;
 // A bold phrase that is the whole line stands as a heading and gets the same
 // colon: "**Source A: arxiv API**". A dash inside parentheses is left alone.
+// A name that opens a paragraph, then a dash, is a term being defined, so the
+// dash becomes a colon: "MEMBER.md: an open-source standard", "v2: shipped".
+// Only a name shape counts (a digit, dot, slash, underscore, or two capitals),
+// so a plain opener like "Yes" or "Then" keeps its comma. A second dash on the
+// line means an aside, so the line is left to the pair fix.
+const TERM_DASH = /^(\s*(?:>\s*)*(?=[\w./-]*?(?:[\d/_]|\.\w|[A-Z][\w./-]*[A-Z]))[A-Za-z0-9][\w./-]*[^\s.\u2014,;:])\s*\u2014\s*(?=\S)(?!(?:and|but|or|nor|so|yet)\b)(?![^\u2014]*\u2014)/;
 const BOLD_HEADING_DASH = /^(\s*(?:>\s*)*(?:\*\*|__)[^\u2014:*_(]*[^\s\u2014,;:.!?*_(])\s*\u2014\s*(?!(?:and|but|or|nor|so|yet)\b)(?=[^\s\u2014][^\u2014*_]*(?:\*\*|__)\s*$)/i;
 
 // True when one pair of parentheses wraps the whole aside, "(mostly)" but
@@ -124,7 +130,7 @@ function clauseJoin(left) {
   return /^not\b/i.test(opener) && opener.split(/\s+/).length <= 3 ? ': ' : '; ';
 }
 
-function fixEmDash(s, { endsBlock = false } = {}) {
+function fixEmDash(s, { endsBlock = false, startsBlock = false } = {}) {
   // a table cell that holds only a dash means "nothing here"; a hyphen keeps
   // the cell instead of turning it into a stray comma
   if (/^\s*\|/.test(s)) s = s.replace(/(\|\s*)\u2014(\s*)(?=\||$)/g, '$1-$2');
@@ -144,6 +150,8 @@ function fixEmDash(s, { endsBlock = false } = {}) {
   // the closing quote: '- "What did we miss?": summarizes calls'.
   const quoted = label && /^(?:"[^"]*"|\u201c[^\u201c\u201d]*\u201d)$/.test(label[2]);
   if (label) return `${label[1]}${label[2]}${!quoted && /[.,;:!?][*_`"'\u201d\u2019]*$/.test(label[2]) ? '' : ':'}${s.length > label[0].length ? ' ' : ''}${fixEmDash(s.slice(label[0].length), { endsBlock })}`;
+  const term = startsBlock && TERM_DASH.exec(s);
+  if (term) return `${term[1]}: ${fixEmDash(s.slice(term[0].length), { endsBlock })}`;
   return s
     // a bold phrase that opens a sentence partway through the line is a label
     // too: "etc. **Include eliminate steps**: what gets deleted". One that ends
@@ -478,7 +486,8 @@ function applyFixes(files, rules, { write = true } = {}) {
         // would name a different one
         const { masked, restore } = r.proseOnly ? maskInlineCode(line.slice(at)) : { masked: line.slice(at), restore: (x) => x };
         if (!r.re.test(masked)) continue;
-        const nl = line.slice(0, at) + restore(r.fix(masked, { endsBlock: i === lines.length - 1 || !lines[i + 1].trim() }));
+        const startsBlock = at === 0 && (i === 0 || !lines[i - 1].trim() || /^\s{0,3}#/.test(lines[i - 1]));
+        const nl = line.slice(0, at) + restore(r.fix(masked, { endsBlock: i === lines.length - 1 || !lines[i + 1].trim(), startsBlock }));
         if (nl !== line) { line = nl; fixedCount++; }
       }
       if (line !== lines[i]) { changes.push({ file, line: i + 1, before: lines[i], after: line, kind: fixKind(lines[i], line) }); lines[i] = line; touched = true; }

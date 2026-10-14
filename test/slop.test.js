@@ -1148,6 +1148,31 @@ test('fix gives a list item inside a quote the same label colon', () => {
   ]);
 });
 
+test('fix gives a name that opens a paragraph a colon, like a definition', () => {
+  // from this repo's feature docs: "v2 then a dash then harness re-verified"
+  // under a heading, and "MEMBER.md then a dash then an open-source standard"
+  const file = tmpFile('term.md', [
+    '## Status',
+    '',
+    'v2 \u2014 harness re-verified',
+    'a wrapped line \u2014 keeps its comma',
+    '',
+    'MEMBER.md \u2014 an open standard.',
+    '',
+    'Yes \u2014 we did it.',
+    '',
+    'CLI \u2014 the tool \u2014 ships.',
+  ].join('\n'));
+  const { changes } = applyFixes([file], RULES, { write: false });
+  assert.deepEqual(changes.map((c) => c.after), [
+    'v2: harness re-verified',
+    'a wrapped line, keeps its comma',
+    'MEMBER.md: an open standard.',
+    'Yes, we did it.',
+    'CLI (the tool) ships.',
+  ]);
+});
+
 test('fix gives an aside that holds its own parentheses commas, not a second pair', () => {
   // "(then (maybe) stop)" nests; an aside that is one whole pair keeps it
   const file = tmpFile('nested-aside.md', [
