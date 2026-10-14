@@ -2334,14 +2334,18 @@ npm publish
 
 ## Task rendering fixture setup
 
-- `test/commands.test.js:7822` checks Endgame metadata, removal of stale generated rows, stable display references and repeat rendering. An ordered real-store seed saves one setup launch; the generated-file marker formerly written by task creation is explicit in the fixture. Both renders and lookup still exercise the CLI with every assertion preserved.
+- `test/commands.test.js:7816` checks Endgame metadata, removal of stale generated rows, stable display references and repeat rendering. An ordered real-store seed saves one setup launch; the generated-file marker formerly written by task creation is explicit in the fixture. Both renders and lookup still exercise the CLI with every assertion preserved.
 
 ## Stale generated markdown fixture setup
 
-- `test/commands.test.js:7896` checks legacy row migration followed by generated row cleanup. An ordered real-store task seed and real-store claim save two setup launches and close in finally; ready and both renders still exercise the CLI with every assertion preserved.
+- `test/commands.test.js:7890` checks legacy row migration followed by generated row cleanup. An ordered real-store task seed and real-store claim save two setup launches and close in finally; ready and both renders still exercise the CLI with every assertion preserved.
 
 ## Filtered task reference fixture setup
 
-- `test/commands.test.js:8008` checks stable display references across open and done list filters. Two ordered real-store seeds replace two creation launches, and the database closes in finally. Completion and all three list calls still exercise the CLI with every assertion preserved.
+- `test/commands.test.js:8002` checks stable display references across open and done list filters. Two ordered real-store seeds replace two creation launches, and the database closes in finally. Completion and all three list calls still exercise the CLI with every assertion preserved.
 
 - `test/commands.test.js:7665` checks tag-scoped next selection without mutation and list filtering. Ordered real-store creation replaces two setup launches; claim, next, show and list remain CLI calls with all behavior assertions preserved, and each seed closes the store in finally.
+
+## Earlier step selection fixture setup
+
+- `test/commands.test.js:7723` checks that the earlier pass stays selected after the later pass is planned more recently. Ordered real-store creation at `test/commands.test.js:7733` saves two setup launches and closes the store in finally; both plan calls and current selection still exercise the CLI with every behavior assertion preserved.

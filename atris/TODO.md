@@ -23,6 +23,8 @@ Details for any task: atris task show <ID>
 
 ## Review
 
+- **[AIC-40]** Remove step selection setup launches · auto-improver
+  **Done looks like:** Developers finish step selection checks sooner because setup starts two fewer commands.
 - **[AIC-39]** Remove tag filtering setup launches · auto-improver
   **Done looks like:** Developers finish the same checks sooner because setup starts two fewer commands.
 - **[AIC-38]** Remove filtered task reference setup launches · auto-improver

@@ -7728,30 +7728,24 @@ test('task current picks earlier golden-path pass step over a later one touched 
   try {
     fs.mkdirSync(path.join(dir, 'atris'), { recursive: true });
 
-    const pass1aCreated = runCli([
-      'task',
-      'new',
-      'Golden path pass 1a: fresh install prints one next command',
-      '--tag',
-      'golden-path',
-      '--json',
-    ], { cwd: dir, env });
-    assert.equal(pass1aCreated.status, 0, pass1aCreated.stderr);
-    const pass1aTask = JSON.parse(pass1aCreated.stdout).task;
+    // Only creation is setup; both plans and current selection use the CLI.
+    const workspaceRoot = taskStore.workspaceRoot(dir);
+    const seedTask = (title) => {
+      const db = taskStore.open(dbPath);
+      try {
+        const created = addSeedTask(db, { title, tag: 'golden-path', workspaceRoot });
+        return taskStore.withTaskDisplayRefs(taskStore.listTasks(db, { workspaceRoot }))
+          .find((row) => row.id === created.id);
+      } finally {
+        taskStore.close();
+      }
+    };
+    const pass1aTask = seedTask('Golden path pass 1a: fresh install prints one next command');
 
     const pass1aPlanned = runCli(['task', 'plan', pass1aTask.display_id, '--goal', 'ship pass 1a', '--exit', 'pass 1a lands', '--proof-needed', 'node --test', '--as', 'onboarding', '--json'], { cwd: dir, env });
     assert.equal(pass1aPlanned.status, 0, pass1aPlanned.stderr);
 
-    const pass2Created = runCli([
-      'task',
-      'new',
-      'Golden path pass 2: mission tick recovery is actionable',
-      '--tag',
-      'golden-path',
-      '--json',
-    ], { cwd: dir, env });
-    assert.equal(pass2Created.status, 0, pass2Created.stderr);
-    const pass2Task = JSON.parse(pass2Created.stdout).task;
+    const pass2Task = seedTask('Golden path pass 2: mission tick recovery is actionable');
 
     // Plan the later pass step *after* pass 1a, so it has a newer updated_at.
     // This mirrors the real report: a later pass step gets planned/re-touched
