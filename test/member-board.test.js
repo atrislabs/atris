@@ -257,11 +257,20 @@ test('below 30 columns the board keeps whole states and trims only member names'
     assert.match(lines[0], /^member\s+state$/);
     assert.ok(lines.every((line) => line.length <= width), `${width}: ${lines.join('\n')}`);
     states.forEach((state, i) => {
-      const expected = state.replace(/^done /, '').replace('asleep after this run', 'finishing');
+      const expected = state === 'done failed' && width >= 20 ? 'engine error'
+        : state.replace(/^done /, '').replace('asleep after this run', 'finishing');
       assert.equal(lines[i + 1].split(/\s{2,}/)[1], expected, `${width}: ${state}`);
     });
     assert.equal(lines[rows.length].split(/\s{2,}/)[1], 'no result', `${width}: a run that died reads apart from one stopped by hand`);
   }
+  const failed = rows[0];
+  const stateAt = (reason, width) => renderBoard([{ ...failed, last_result_reason: reason }], '/progress', 0, width).split('\n')[1].split(/\s{2,}/)[1];
+  assert.equal(stateAt('timed out', 18), 'timed out', 'a short reason says why on the smallest board');
+  assert.equal(stateAt('bad exit 2', 18), 'bad exit 2');
+  assert.equal(stateAt('killed by SIGTERM', 24), 'failed', 'too long to sit beside a whole heading: failed');
+  assert.equal(stateAt('killed by SIGTERM', 25), 'killed by SIGTERM');
+  assert.equal(stateAt('stopped', 29), 'failed', 'a stop reason never reads like a hand stop');
+  assert.equal(stateAt('verifier said no', 29), 'failed', 'a reason that does not say failed keeps the word');
   assert.match(renderBoard(rows, '/progress', 0, 30), /^name\s+state\s+last result$/m, 'the result column returns at 30 columns');
 });
 
