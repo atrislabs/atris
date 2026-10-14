@@ -10926,10 +10926,33 @@ test('task current returns read-only selected page and queue lanes', () => {
   try {
     fs.mkdirSync(path.join(dir, 'atris'), { recursive: true });
 
-    const reviewAdd = runCli(['task', 'add', 'Verify this task before more work', '--tag', 'agent', '--json'], { cwd: dir, env });
-    assert.equal(reviewAdd.status, 0, reviewAdd.stderr);
-    const reviewTask = JSON.parse(reviewAdd.stdout).task;
-    assert.equal(runCli(['task', 'claim', reviewTask.display_id, '--as', 'codex'], { cwd: dir, env }).status, 0);
+    // Seed tasks straight in the task store at their original points; ready,
+    // current, queue, and every selection check still run through the CLI.
+    // Display refs are numbered across the workspace, so read them after inserts.
+    // Queue order breaks ties on creation time, so each insert waits for the
+    // clock to pass the previous one, as separate CLI launches always did.
+    const workspaceRoot = taskStore.workspaceRoot(dir);
+    let lastInsertMs = 0;
+    const seedTasks = (specs) => {
+      const db = taskStore.open(dbPath);
+      try {
+        const ids = specs.map(({ title, tag, goalId, claimedBy }) => {
+          while (Date.now() <= lastInsertMs) { /* poll until the next millisecond */ }
+          const metadata = goalId ? { goal_id: goalId } : null;
+          const created = taskStore.addTask(db, { title, tag, workspaceRoot, metadata });
+          assert.equal(created.inserted, true);
+          lastInsertMs = Date.now();
+          if (claimedBy) assert.equal(taskStore.claimTask(db, { id: created.id, claimedBy }).claimed, true);
+          return created.id;
+        });
+        const refs = taskStore.taskDisplayRefMap(taskStore.listTasks(db, { workspaceRoot }));
+        return ids.map((id) => ({ id, display_id: refs.get(id) }));
+      } finally {
+        taskStore.close();
+      }
+    };
+
+    const [reviewTask] = seedTasks([{ title: 'Verify this task before more work', tag: 'agent', claimedBy: 'codex' }]);
 	    assert.equal(runCli([
 	      'task', 'ready', reviewTask.display_id,
 	      '--as', 'codex',
@@ -10937,30 +10960,13 @@ test('task current returns read-only selected page and queue lanes', () => {
 	      '--next', 'Create a continuation only after agent certification',
 	    ], { cwd: dir, env }).status, 0);
 
-    const planAdd = runCli(['task', 'add', 'Plan ready fallback task', '--tag', 'agent', '--json'], { cwd: dir, env });
-    assert.equal(planAdd.status, 0, planAdd.stderr);
-    const planTask = JSON.parse(planAdd.stdout).task;
-
-    const scopedPlanAdd = runCli([
-      'task', 'add', 'Scoped OBL-928 fallback task',
-      '--tag', 'agent',
-      '--goal-id', 'OBL-928',
-      '--json',
-    ], { cwd: dir, env });
-    assert.equal(scopedPlanAdd.status, 0, scopedPlanAdd.stderr);
-    const scopedPlanTask = JSON.parse(scopedPlanAdd.stdout).task;
-    const scopedParallelAdd = runCli([
-      'task', 'add', 'Scoped OBL-928 validator task should wait',
-      '--tag', 'agent',
-      '--goal-id', 'OBL-928',
-      '--json',
-    ], { cwd: dir, env });
-    assert.equal(scopedParallelAdd.status, 0, scopedParallelAdd.stderr);
-    const scopedParallelTask = JSON.parse(scopedParallelAdd.stdout).task;
-
-    const backlogAdd = runCli(['task', 'add', 'Raw inbox idea', '--tag', 'capture', '--json'], { cwd: dir, env });
-    assert.equal(backlogAdd.status, 0, backlogAdd.stderr);
-    const backlogTask = JSON.parse(backlogAdd.stdout).task;
+    const [planTask, scopedPlanTask, scopedParallelTask, backlogTask] = seedTasks([
+      { title: 'Plan ready fallback task', tag: 'agent' },
+      { title: 'Scoped OBL-928 fallback task', tag: 'agent', goalId: 'OBL-928' },
+      { title: 'Scoped OBL-928 validator task should wait', tag: 'agent', goalId: 'OBL-928' },
+      { title: 'Raw inbox idea', tag: 'capture' },
+    ]);
+    assert.equal(new Set([reviewTask, planTask, scopedPlanTask, scopedParallelTask, backlogTask].map((task) => task.display_id)).size, 5);
 
     const current = runCli(['task', 'current', '--as', 'codex', '--json'], { cwd: dir, env });
     assert.equal(current.status, 0, current.stderr);
