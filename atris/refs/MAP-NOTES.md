@@ -2281,3 +2281,5 @@ npm publish
 
 - `test/helpers/agent-env.js:38` removes inherited runner profiles, models, binaries, and command templates from the copied environment. Explicit fixture overrides are applied afterward. `test/agent-env-runner-isolation.test.js:6` runs the real command fixture with failing inherited command templates.
 - `test/runner-model-leak.test.js:17` scrubs parent engine and caller settings before each test and restores them after async dispatches finish. `test/agent-env-runner-isolation.test.js:28` runs all seven real runner checks under contaminated mission and caller settings.
+
+- `test/stall-signal-health.test.js:148` dispatches the immediately failing fixture with a 30-second deadlock backstop, so batch startup load cannot masquerade as a one-second engine stall. Failure classification and no-handover assertions stay intact.

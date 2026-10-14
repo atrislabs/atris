@@ -145,7 +145,10 @@ function dispatchFlight(root, worktree, cli, lead) {
     rebase: () => ({ ok: true, stage: 'rebased' }),
     verifier: () => ({ status: 0, stdout: '# pass 1\n# fail 0\n', stderr: '' }),
     model: lead.roster_model || '',
-    maxSeconds: 1,
+    // This fixture exits immediately. Its cap is only a deadlock backstop,
+    // not the behavior under test: a busy batch must not turn startup into
+    // a timeout and hand the task to another engine.
+    maxSeconds: 30,
   });
 }
 
