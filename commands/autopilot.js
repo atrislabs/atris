@@ -594,6 +594,27 @@ function autopilotPhaseTaskTitle(context, phase) {
   return String(task || `autopilot ${phase}`);
 }
 
+// Machine memory and load at both ends of a phase launch, like a dispatch,
+// so a phase killed with SIGKILL says whether the machine was short on
+// memory. The returned end writes once and returns its line.
+function startPhaseResource(phase, rosterRunner) {
+  const { recordEngineResource } = require('../lib/engine-resource');
+  const root = process.cwd();
+  const resource = { engine: (rosterRunner && rosterRunner.engineId) || 'runner', task: `autopilot ${phase}`, run_id: require('crypto').randomUUID() };
+  recordEngineResource(root, { phase: 'start', ...resource });
+  const startedAt = process.hrtime.bigint();
+  let ended = null;
+  return (err = null) => {
+    if (ended) return ended;
+    const timedOut = isPhaseTimeoutError(err);
+    const signal = err && err.signal ? err.signal : null;
+    const stderr = err ? String(err.stderr || '') : '';
+    const error = err && !signal && !timedOut ? (stderr.trim() ? stderr.slice(-2000) : String(err.message || '')) : '';
+    ended = recordEngineResource(root, { phase: 'end', ...resource, signal, timed_out: timedOut, error, duration_ms: Math.round(Number(process.hrtime.bigint() - startedAt) / 1e6) });
+    return ended;
+  };
+}
+
 /**
  * Run a phase via the configured runner subprocess.
  */
@@ -607,6 +628,8 @@ function executePhaseDetailed(phase, context, options = {}) {
 
   let rosterRunner = null;
   let startedMs = Date.now();
+  // Prep runs before the phase launch and writes no readings of its own.
+  let endResource = () => null;
   try {
     let cmd = options.cmdOverride;
     if (!cmd) {
@@ -638,6 +661,7 @@ function executePhaseDetailed(phase, context, options = {}) {
     const env = { ...process.env };
     delete env.CLAUDECODE;
     startedMs = Date.now();
+    endResource = startPhaseResource(phase, rosterRunner);
     const output = execPhaseCommandSync(cmd, {
       cwd: process.cwd(),
       encoding: 'utf8',
@@ -648,10 +672,12 @@ function executePhaseDetailed(phase, context, options = {}) {
     });
 
     try { fs.unlinkSync(tmpFile); } catch {}
+    endResource();
     recordPhaseRosterRun(process.cwd(), phase, rosterRunner, startedMs, { outcome: 'landed', stdout: output || '' });
     return { prompt, output: output || '' };
   } catch (err) {
     try { fs.unlinkSync(tmpFile); } catch {}
+    const resourceEnd = endResource(err);
     recordPhaseRosterRun(process.cwd(), phase, rosterRunner, startedMs, phaseFailureOutcome(err, rosterRunner), err);
     if (isPhaseTimeoutError(err)) {
       // A roster worker that stalls sits out the cooldown, so the next
@@ -664,7 +690,8 @@ function executePhaseDetailed(phase, context, options = {}) {
       throw new Error(`${phase} phase timed out after ${timeout / 1000}s (configured runner hit the wall; any work it committed survives, reconcile from pre-tick HEADs)`);
     }
     if (isPhaseKillError(err)) {
-      throw new Error(`${phase} phase killed by ${err.signal || 'a signal'} before the ${timeout / 1000}s wall, not a timeout; check memory pressure or an external supervisor`);
+      const cause = resourceEnd && resourceEnd.cause ? `${resourceEnd.cause}; ` : '';
+      throw new Error(`${phase} phase killed by ${err.signal || 'a signal'} before the ${timeout / 1000}s wall, not a timeout; ${cause}check memory pressure or an external supervisor`);
     }
     if (err.stdout) {
       return { prompt, output: err.stdout };
