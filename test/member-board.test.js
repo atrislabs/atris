@@ -537,11 +537,13 @@ test('compact rows keep missing results clear beside a finishing member', async 
   });
   try {
     const rows = readBoard({ dir, now: NOW, asleep: ['scout'] });
-    for (const width of [30, 31, 32, 33, 36, 37, 38, 48, 49]) {
+    // Three columns come back at 44, once the short "no result" lets every
+    // name read whole; the full wording waits until it costs no name a letter.
+    for (const width of [30, 31, 32, 33, 36, 37, 38, 43, 44, 48, 49]) {
       const board = renderBoard(rows, dir, 0, width);
       assert.ok(board.split('\n').every((line) => line.length <= width), `${width}: ${board}`);
-      assert.match(board, width >= 49 ? /stopped\s+ended, no result$/m : /^chat-\S+\s+no result$/m);
-      assert.match(board, width >= 49 ? /finishing\s+-$/m : /finishing$/m);
+      assert.match(board, width >= 44 ? /^chat-experience-lead\s+stopped\s+(?:ended, )?no result$/m : /^chat-\S+\s+no result$/m, `${width}: ${board}`);
+      assert.match(board, width >= 44 ? /finishing\s+-$/m : /finishing$/m);
       assert.equal(board.includes('ended, no result'), width >= 49, `${width}: full wording once no name is cut`);
     }
     assert.match(renderBoard(rows, dir), /stopped\s+ended, no result\s/m, 'piped output keeps the full wording');
@@ -549,6 +551,25 @@ test('compact rows keep missing results clear beside a finishing member', async 
     killAll(child.pid);
     fs.rmSync(dir, { recursive: true, force: true });
   }
+});
+
+test('the full missing-result wording never costs a name a letter', () => {
+  const rows = [
+    { member: 'odd', state: 'done failed', alive: null, last_result: 'failed', last_result_reason: 'timed out', last_result_ago: '1m ago', ago: '1m ago' },
+    { member: 'halted-run-name', state: 'stopped', alive: false, no_result: true, last_result: '', last_result_reason: '', last_result_ago: '', ago: '2m ago' },
+    { member: 'builder', state: 'working', alive: null, last_result: 'failed', last_result_reason: 'bad exit 2', last_result_ago: '14m ago', ago: '1m ago' },
+  ];
+  let before = 0;
+  for (let width = 33; width <= 50; width++) {
+    const lines = renderBoard(rows, '/progress', 0, width).split('\n');
+    assert.match(lines[0], /^member\s+state\s+last result$/, `${width}: ${lines.join('\n')}`);
+    const name = lines[2].split(/\s{2,}/)[0];
+    const read = name.replace(/\.\.\.$/, '').length;
+    assert.ok(read >= before, `${width}: ${name} reads less of the name than one column narrower`);
+    assert.equal(lines[2].endsWith('ended, no result'), name === 'halted-run-name' && width >= 42, `${width}: ${lines[2]}`);
+    before = read;
+  }
+  assert.match(renderBoard(rows, '/progress', 0, 35), /^halted-run\.\.\.\s+stopped\s+no result$/m, 'not "halte..." beside the full wording');
 });
 
 test('a stopped row shrinks like a done row: how it ended, with the age left to ago', () => {
