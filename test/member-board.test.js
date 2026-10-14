@@ -310,6 +310,16 @@ test('board drops engine, then alive, when the screen is too narrow for them', (
   assert.ok([...sixty, ...narrow].every((l) => l.length <= 52 || (sixty.includes(l) && l.length <= 60)), `every line fits:\n${sixty.join('\n')}\n${narrow.join('\n')}`);
 });
 
+test('board leaves alive blank on an ended run, and drops the column when no run is confirmed alive', () => {
+  const now = Date.parse('2026-10-14T13:00:00Z');
+  const done = memberRow('scout', '2026-10-14T12:50:00Z m-1 started: [pid 2147483646 engine claude] map it\n2026-10-14T12:52:00Z m-1 finished: ok\n', now);
+  const live = memberRow('builder', `2026-10-14T12:50:00Z m-2 started: [pid ${process.pid} engine claude] fit it\n2026-10-14T12:59:30Z m-2 running: ls\n`, now);
+  assert.equal(done.alive, false, 'apps reading the rows still get false');
+  assert.match(renderBoard([live, done], '/x'), /^scout\s+done ok\s+-\s+claude\s/m, 'beside a live run, an ended one reads -, not no');
+  assert.match(renderBoard([live, done], '/x'), /^builder\s+working\s+yes\s+claude\s/m);
+  assert.doesNotMatch(renderBoard([done], '/x'), /\salive\s/, 'no live run, no alive column');
+});
+
 test('board stops repeating ago in its rows when engine and alive are not enough', () => {
   const now = Date.parse('2026-10-14T13:00:00Z');
   const rows = [
@@ -709,7 +719,7 @@ test('piped atris member board takes its width from COLUMNS', () => {
     assert.ok(table.every((l) => l.length <= 44), `every row fits 44 columns:\n${table.join('\n')}`);
     assert.match(narrow.stdout, /^checker\s+failed\s/m, 'the narrow layout, not the fixed cut');
     for (const junk of ['', 'wide', '0', '-5', '44.5']) {
-      assert.match(board(junk).stdout, /^checker\s+done failed\s+no\s+claude\s/m, `COLUMNS=${JSON.stringify(junk)} keeps the fixed cut`);
+      assert.match(board(junk).stdout, /^checker\s+done failed\s+claude\s/m, `COLUMNS=${JSON.stringify(junk)} keeps the fixed cut`);
     }
   } finally {
     fs.rmSync(dir, { recursive: true, force: true });
@@ -978,7 +988,7 @@ test('a run that died before logging past its start has no run time, not 0s', ()
   assert.equal(quick.state, 'died');
   assert.equal(quick.lasted, '', 'the board never saw it run');
   assert.doesNotMatch(renderBoard([quick], '/x'), /0s/, 'no made-up run time on screen');
-  assert.match(renderBoard([quick], '/x'), /^quick\s+died\s+no\s+claude\s+10m ago\s+build/m);
+  assert.match(renderBoard([quick], '/x'), /^quick\s+died\s+claude\s+10m ago\s+build/m);
   const stopped = memberRow('fast', '2026-10-14T11:50:00Z m-2 started: build\n2026-10-14T11:50:00Z m-2 finished: failed\n', now);
   assert.equal(stopped.lasted, '0s', 'a run that finished right away really took 0s');
   assert.equal(stopped.lasted_at_least, false, 'a finished run says its plain time');
@@ -1242,7 +1252,7 @@ test('board shows a live run as alive with its engine, and a dead one as died, n
     assert.equal(by.builder.alive, false);
     assert.equal(by.builder.running_for, '');
     assert.equal(by.builder.lasted, '1m', 'a died run lasts from start to its last line');
-    assert.match(renderBoard(readBoard({ dir }), dir), /^builder\s+died\s+no\s+claude\s+at least 1m\s+/m, 'the crash came some time after the last line');
+    assert.match(renderBoard(readBoard({ dir }), dir), /^builder\s+died\s+claude\s+at least 1m\s+/m, 'the crash came some time after the last line, and state says it died, so alive leaves');
     assert.equal(by.builder.lasted, '1m', 'json keeps the bare length');
   } finally {
     killAll(child.pid);
