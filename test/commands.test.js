@@ -12730,13 +12730,20 @@ test('task review summary does not treat incidental XP wording as AgentXP work',
   try {
     fs.mkdirSync(path.join(dir, 'atris'), { recursive: true });
 
-    const add = runCli([
-      'task', 'add', 'Clean stale claimed task queue after XP review',
-      '--tag', 'hygiene',
-      '--json',
-    ], { cwd: dir, env });
-    assert.equal(add.status, 0, add.stderr);
-    const ref = JSON.parse(add.stdout).task.display_id;
+    // Seed creation only; claim, ready and show still exercise the CLI.
+    const workspaceRoot = taskStore.workspaceRoot(dir);
+    const db = taskStore.open(dbPath);
+    let ref;
+    try {
+      const created = addSeedTask(db, {
+        title: 'Clean stale claimed task queue after XP review', tag: 'hygiene', workspaceRoot,
+      });
+      assert.equal(created.inserted, true);
+      ref = taskStore.taskDisplayRefMap(taskStore.listTasks(db, { workspaceRoot })).get(created.id);
+      assert.ok(ref);
+    } finally {
+      taskStore.close();
+    }
     assert.equal(runCli(['task', 'claim', ref, '--as', 'codex'], { cwd: dir, env }).status, 0);
 
     const ready = runCli([
