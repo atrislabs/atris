@@ -114,6 +114,33 @@ test('a failed row says why when the finished line gives a reason', () => {
   }
 });
 
+test('a narrow terminal trims job and last step so every line fits', () => {
+  const dir = fakeDir({
+    builder: [
+      `${at(60)} m-1 started: Ship the member board so the operator sees every member at a glance today`,
+      `${at(12)} m-1 running: node --test test/member-board.test.js test/member-result.test.js`,
+    ],
+    breaker: [`${at(100)} m-4 started: risky fix`, `${at(80)} m-4 finished: failed (timed out)`],
+  });
+  try {
+    const rows = readBoard({ dir, now: NOW });
+    const wide = renderBoard(rows, dir);
+    assert.ok(wide.split('\n').some((l) => l.length > 120), 'the untrimmed board is wider than the terminal');
+    assert.match(wide, /operator sees ever\.\.\.\s+running: node --test test\/member-board\.test\.js \.\.\.$/m, 'width 0 keeps the usual 50 characters');
+
+    const narrow = renderBoard(rows, dir, 0, 120);
+    for (const l of narrow.split('\n')) assert.ok(l.length <= 120, `fits in 120: ${l.length}`);
+    assert.match(narrow, /^member\s+state\s+last result\s+alive\s+engine\s+running for\s+ago\s+job\s+last step$/m);
+    assert.match(narrow, /^builder\s+working\s.*\s+Ship the \S+\.\.\.\s+running: \S+\.\.\.$/m);
+    assert.match(narrow, /^breaker\s+done failed\s+failed \(timed out\) 1m ago\s.*risky fix\s+-$/m, 'short text stays whole');
+
+    const roomy = renderBoard(rows, dir, 0, 400);
+    assert.equal(roomy, wide, 'a wide terminal changes nothing');
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
 test('last step skips writes to the member own log', () => {
   const dir = fakeDir({
     architect: [
