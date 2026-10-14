@@ -18472,10 +18472,12 @@ test('clean --help prints usage without touching workspace', () => {
 test('clean --dry-run --json reports machine-readable health', () => {
   const dir = makeTempDir();
   try {
-    initWorkspace(dir);
+    fs.mkdirSync(path.join(dir, 'atris'), { recursive: true });
     const res = runCli(['clean', '--dry-run', '--json'], { cwd: dir });
     assert.equal(res.status, 0, res.stderr);
     assert.doesNotMatch(res.stdout, /Atris Clean/);
+    // A dry run writes nothing.
+    assert.deepEqual(fs.readdirSync(dir, { recursive: true }), ['atris']);
     const payload = JSON.parse(res.stdout);
     assert.equal(payload.action, 'clean');
     assert.equal(payload.dry_run, true);
