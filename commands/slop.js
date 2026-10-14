@@ -184,9 +184,11 @@ const TIME_OPENER = '(?:each|every|any|no)\\s+time\\b';
 // A line may wrap right after a helper that leaves the sentence open, so
 // "Nothing is broken, one request flag is" ends a clause that goes on below.
 // Verbs like "runs" or "have" can end a phrase ("nice to have"), so only
-// these count there.
+// these count there. A helper in capitals is stress, not a new word, so
+// "labels are noise, the placeholder IS the label" joins like "is" does.
+const CAPS_HELPER = '(?:IS|ARE|WAS|WERE|WILL|CAN|MUST|HAS|HAVE|DOES|DID)';
 const OPEN_HELPER = '(?:is|are|was|were|will|would|can|cannot|could|must|should|may|might|has|had|does|did)';
-const NOUN_CLAUSE_AFTER_DASH = new RegExp(`(?<=[\\w)\\]"'*_\`\\u201d\\u2019\\uE001])\\s*\\u2014\\s*(?!${NAMING_PHRASE})(?!${TIME_OPENER})(?!${REPORT_VERB}\\s)(?=${SUBJECT_WORD}(?:(?!(?:the|a|an|that|whose)\\b)${SUBJECT_WORD}){0,4}${PLACE_PHRASE}(?:${HELPING_VERB}\\s+[^\\s\\u2014]|${OPEN_HELPER}$))`, 'g');
+const NOUN_CLAUSE_AFTER_DASH = new RegExp(`(?<=[\\w)\\]"'*_\`\\u201d\\u2019\\uE001])\\s*\\u2014\\s*(?!${NAMING_PHRASE})(?!${TIME_OPENER})(?!${REPORT_VERB}\\s)(?=${SUBJECT_WORD}(?:(?!(?:the|a|an|that|whose)\\b)${SUBJECT_WORD}){0,4}${PLACE_PHRASE}(?:(?:${HELPING_VERB}|${CAPS_HELPER})\\s+[^\\s\\u2014]|${OPEN_HELPER}$))`, 'g');
 // "Nothing", "everything" and their kin before a plain verb in "ed" or "s"
 // are a subject too: "the gate held, nothing in the queue moved". A word in
 // "ss" is never the verb, so "nothing less than" and "nothing fancy" stay.

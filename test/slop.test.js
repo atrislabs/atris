@@ -1867,6 +1867,22 @@ test('fix joins a short subject and a verb that ends its clause with a semicolon
   ]);
 });
 
+test('fix joins a clause whose helper is in capitals like one in lowercase', () => {
+  // "IS" in capitals is stress on the same verb; the fix used to read it as
+  // a strange word and splice the clause on with a comma
+  const file = tmpFile('caps-helper.md', [
+    'Form labels are unnecessary \u2014 the placeholder IS the label.',
+    'Hypothesis verified \u2014 circuit breaker DOES write its summary.',
+    'Not a widget \u2014 the weather IS the screen.',
+  ].join('\n\n'));
+  const { changes } = applyFixes([file], RULES, { write: false });
+  assert.deepEqual(changes.map((c) => c.after), [
+    'Form labels are unnecessary; the placeholder IS the label.',
+    'Hypothesis verified; circuit breaker DOES write its summary.',
+    'Not a widget: the weather IS the screen.',
+  ]);
+});
+
 test('fix keeps a journal heading that ends in a time readable for its hour', () => {
   // analytics reads the hour after a dash or a spaced hyphen at the end of a
   // heading; the fix wrote "### Watch: 19:05", which hides it, and glued
