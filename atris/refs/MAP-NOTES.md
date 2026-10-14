@@ -2297,7 +2297,7 @@ npm publish
 
 ## Old Git-lock cleanup audit
 - `atris/receipts/2026-10-14-folder-lock-preview.js:1`: real CLI preview using an old lock, without removing a folder; output and required check in the matching receipt.
-- `lib/member-tidy.js:160`: a locked copy gone from disk names its lock file and age; `lib/member-tidy.js:195`: shared activity check before preview or removal; `lib/member-tidy.js:210`: successful removal record; `lib/git-activity.js:9`: private and shared lock paths and ages; `commands/member.js:11356`: actual tidy CLI handler.
+- `lib/member-tidy.js:160`: a locked copy gone from disk names its lock file and age; `lib/member-tidy.js:195`: shared activity check before preview or removal; `lib/member-tidy.js:210`: successful removal record; `lib/git-activity.js:24`: private and shared lock paths and ages; `commands/member.js:11356`: actual tidy CLI handler.
 
 ## Fleet review-folder cleanup audit
 
@@ -2324,4 +2324,4 @@ npm publish
 
 - `lib/member-tidy.js:195`: final activity failure keeps the branch but omits the missing-folder reason and retained lock details. `atris/receipts/2026-10-14-tidy-vanishing-folder-check.js:1` reproduces locked and unlocked disappearance using the real tidy CLI and forwarding Git; moved files and branches survive, with no removal record.
 
-- `lib/git-activity.js:47`: missing-folder lookup reads only the matching special `locked` file, omitting ordinary private and shared locks. `atris/receipts/2026-10-14-missing-ordinary-lock-check.js:1` proves both omissions through real cleanup preview and execution, retaining moved files and the branch; an aged neighboring copy proves each explanation excludes the other copy's private lock.
+- `lib/git-activity.js:46`: missing-folder lookup matches registered private metadata, then uses the shared scanner at line 6 to name ordinary private and shared locks with ages, excluding neighboring private metadata and object storage. `atris/receipts/2026-10-14-missing-ordinary-lock-check.js:1` proves exact reporting through real preview and cleanup, preserving moved files, locks, and branches; `test/worktree-removal-guard.test.js:48` reruns that CLI proof.

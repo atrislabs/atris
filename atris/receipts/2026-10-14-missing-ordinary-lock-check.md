@@ -103,3 +103,34 @@ Progress: two real CLI runs; one neighboring private lock correctly attributed w
 next_push: Share ordinary lock scanning for missing folders and require each copy's explanation to exclude neighboring private locks.
 
 layer: behaviors
+
+## Ordinary lock reporting repair
+
+Missing-folder explanations now name ordinary private and shared locks with their ages. The existing activity scanner is reused, so object storage and neighboring private metadata stay excluded. No folder-removal behavior changed.
+
+Plan: matching registered metadata -> shared lock scanner -> exact paths and ages -> keep files and branches.
+
+Real command: `node atris/receipts/2026-10-14-missing-ordinary-lock-check.js`, exit 0. It invokes `node bin/atris.js land --reap --force --no-remote --dry-run` and `node bin/atris.js land --reap --force --no-remote` in a disposable real repository. Fixture: `/private/var/folders/t1/2_4kmb5n4c71dxm26zc8dgzr0000gn/T/atris-missing-ordinary-yKzGDF`.
+
+Exact output excerpt:
+
+```text
+cli exit: 0
+lock reported for missing copy: true
+lock reported for missing copy: true
+preview and cleanup named two missing-copy lock paths and ages; neighbor private lock named only for its owner; both copies and branches retained; no removal recorded
+```
+
+Both CLI explanations named the private `index.lock (7200s old)` and shared `packed-refs.lock (7200s old)`. The neighboring private lock appeared only in its owner's explanation. All three locks, both READMEs, and both branches survived. No removal record was created.
+
+Verify: `node --test test/worktree-removal-guard.test.js test/member-tidy.test.js`, exit 0. Exact output summary: tests 20, suites 0, pass 20, fail 0, cancelled 0, skipped 0, todo 0, duration_ms 7219.844166.
+
+Files edited: `lib/git-activity.js`, `test/worktree-removal-guard.test.js`, `atris/receipts/2026-10-14-missing-ordinary-lock-check.js`, this receipt, `atris/MAP.md`, `atris/refs/MAP-NOTES.md`, `atris/team/architect/logs/2026-10-14.md`. No new filenames or dependencies. Existing unrelated edits were preserved.
+
+Administrative commands: brain activate (plan only, exit 2), atris, git status, mission status, mission goal, task list/new/claim/note/ready, brain compile, git diff --check, git commit, git push. Task proof is submitted for review; no task acceptance or merge is performed.
+
+Progress: two omitted lock details repaired, two real CLI runs, one real-runtime regression added, zero lost folders, branches, or locks, zero removal records.
+
+next_push: Report missing folders and retained locks when member cleanup's final activity check sees the folder disappear.
+
+layer: behaviors

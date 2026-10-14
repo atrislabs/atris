@@ -65,7 +65,9 @@ function main() {
       assert.ok(fs.existsSync(lock));
       console.log(`retained lock: ${lock} (${Math.floor((Date.now() - fs.statSync(lock).mtimeMs) / 1000)}s old)`);
       console.log(`lock reported for missing copy: ${missingLine.includes(lock)}`);
-      assert.equal(missingLine.includes(lock), false);
+      assert.ok(missingLine.includes(lock), 'missing copy explanation names its retained lock');
+      assert.match(missingLine, /index\.lock \(\d+s old\)/);
+      assert.match(missingLine, /packed-refs\.lock \(\d+s old\)/);
     }
     assert.equal(fs.readFileSync(path.join(moved, 'README.md'), 'utf8'), '# fixture\n');
     assert.equal(fs.existsSync(copy), false);
@@ -75,7 +77,7 @@ function main() {
     git(repo, 'rev-parse', '--verify', 'refs/heads/neighbor-copy');
     assert.equal(fs.existsSync(path.join(repo, '.atris/state/worktree_removals.jsonl')), false);
   }
-  console.log('preview and cleanup omitted two missing-copy lock paths; neighbor private lock named only for its owner; both copies and branches retained; no removal recorded');
+  console.log('preview and cleanup named two missing-copy lock paths and ages; neighbor private lock named only for its owner; both copies and branches retained; no removal recorded');
 }
 
 if (require.main === module) main();
