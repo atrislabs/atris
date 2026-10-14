@@ -201,3 +201,6 @@ Frozen check and real CLI output:
 ℹ todo 0
 ℹ duration_ms 4659.554583
 
+
+Landing and handoff: git commit succeeded with 5fcb73e4; git push -u origin HEAD exited 0. The task ready command from the primary project exited 0 and printed "ready for approval CLI-1389 v5". It independently reran the same test file on this checkout using the supported Node search path. Task is in Review, not accepted.
+Readiness limitation: the local path-prefixed command is outside the automatic review allowlist, so independent review must rerun the frozen command from this pushed checkout. No approval or acceptance was claimed. The frozen mission verifier stayed unchanged.
