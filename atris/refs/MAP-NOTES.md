@@ -2318,3 +2318,5 @@ npm publish
 - **Hidden missing results:** `renderBoard()` (`lib/member-board.js:286`) shortens the missing-result tally to no result before cutting the footer, preserving counts from 22 columns. Regression: `test/member-board.test.js:644`; terminal proof: `python3 atris/runs/member-board-hidden-no-result-proof.py`.
 
 - **Whole mixed footer counts:** `renderBoard()` (`lib/member-board.js:283`) drops whole hidden counts from the end behind an ellipsis before cutting, so the most urgent count stays whole from 24 columns: `4 hidden (2 failed, ...)`. Regression: `test/member-board.test.js:670`; terminal proof: `python3 atris/runs/member-board-mixed-footer-proof.py`.
+
+- **Older-runs note gives way:** `renderBoard()` (`lib/member-board.js:418`) shortens the older-runs note (`2 older, --all shows them`, `2 older hidden`, `2 older`), then drops it, before dropping any hidden count from this screen; counts stay whole beside it from 30 columns. Regression: `test/member-board.test.js:696`; terminal proof: `python3 atris/runs/member-board-older-note-proof.py`.

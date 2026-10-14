@@ -478,7 +478,7 @@ test('a short window keeps the header and the newest rows, and says how many did
     const at60 = renderBoard(rows, dir, 2, 60, 6).split('\n');
     assert.equal(at60[5], '5 more not shown. 2 older runs hidden, --all shows them', 'then the hidden count shortens');
     const at30 = renderBoard(rows, dir, 2, 30, 6).split('\n');
-    assert.equal(at30[5].length, 30, 'then it is cut to the window');
+    assert.equal(at30[5], '5 hidden. 2 older hidden', 'then the older note shortens instead of being cut');
     assert.equal(renderBoard(rows, dir, 0, 80, 6).split('\n')[5], '5 more not shown, the window is too short', 'room for the why: it stays');
   } finally {
     fs.rmSync(dir, { recursive: true, force: true });
@@ -687,6 +687,36 @@ test('narrow footers drop whole mixed counts from the end instead of cutting one
       assert.equal(lines[3], footer, `${width}: every count shown is whole`);
       assert.equal(lines.length, 4);
       assert.ok(lines.every((line) => line.length <= width));
+    }
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test('narrow footers shorten the older-runs note before dropping hidden counts', () => {
+  const dir = fakeDir({
+    a: [`${at(20)} m-1 started: [pid ${process.pid} engine claude] check the board`],
+    f1: [`${at(80)} m-1 finished: failed (timed out)`],
+    f2: [`${at(90)} m-2 finished: failed (bad exit 2)`],
+    halt: [`${at(110)} m-4 finished: stopped`],
+  });
+  try {
+    const rows = readBoard({ dir, now: NOW });
+    for (const [width, footer] of [
+      [77, '3 more not shown (1 failed, 1 stopped). 2 older runs hidden, --all shows them'],
+      [57, '3 hidden (1 failed, 1 stopped). 2 older, --all shows them'],
+      [46, '3 hidden (1 failed, 1 stopped). 2 older hidden'],
+      [39, '3 hidden (1 failed, 1 stopped). 2 older'],
+      [30, '3 hidden (1 failed, 1 stopped)'],
+      [24, '3 hidden (1 failed, ...)'],
+    ]) {
+      const lines = renderBoard(rows, dir, 2, width, 4).split('\n');
+      assert.equal(lines[lines.length - 1], footer, `${width}: counts before the older note`);
+      assert.equal(lines.length, 4);
+      assert.ok(lines.every((line) => line.length <= width));
+    }
+    for (const [width, footer] of [[25, '2 older, --all shows them'], [14, '2 older hidden'], [7, '2 older']]) {
+      assert.equal(renderBoard(rows, dir, 2, width).split('\n').pop(), footer, `${width}: the older note alone stays whole`);
     }
   } finally {
     fs.rmSync(dir, { recursive: true, force: true });
