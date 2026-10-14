@@ -2516,4 +2516,8 @@ npm publish
 
 ## Long-title status fixture setup
 
-- `test/commands.test.js:14235` checks that long current task titles stop at a clause. Real-store creation at `test/commands.test.js:14248` preserves the title, voice tag and creation point, asserts insertion and a display reference, and closes before CLI claim. Creation-only launch removed (four to three); claim and both JSON/text status assertions remain unchanged. Natural flow and headless JSON tests retain explicit CLI creation coverage.
+- `test/commands.test.js:14243` checks that long current task titles stop at a clause. Real-store creation at `test/commands.test.js:14250` preserves the title, voice tag and creation point, asserts insertion and a display reference, and closes before CLI claim. Creation-only launch removed (four to three); claim and both JSON/text status assertions remain unchanged. Natural flow and headless JSON tests retain explicit CLI creation coverage.
+
+## Live status contract fixture setup
+
+- `test/commands.test.js:14166` checks the compact live status contract for web and Swarlo. Ordered real-store creation at `test/commands.test.js:14180` preserves the three titles, the swarlo and agent tags, the untagged backlog record and creation order, asserts each insertion, and closes before CLI claim. Three creation-only launches removed (seven to four); claim, JSON status counts, current and next selection, text status and history feed assertions remain unchanged.

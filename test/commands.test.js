@@ -14177,16 +14177,23 @@ test('task status gives web and Swarlo a compact live contract', () => {
       '',
     ].join('\n'), 'utf8');
 
-    const created = runCli(['task', 'new', 'Show live task status in Atris Web', '--tag', 'swarlo', '--json'], { cwd: dir, env });
-    assert.equal(created.status, 0, created.stderr);
-    const id = JSON.parse(created.stdout).task_id;
-
-    const parked = runCli(['task', 'new', 'Old imported TODO record', '--json'], { cwd: dir, env });
-    assert.equal(parked.status, 0, parked.stderr);
-
-    const explicitNext = runCli(['task', 'new', 'Shape explicit agent goal', '--tag', 'agent', '--json'], { cwd: dir, env });
-    assert.equal(explicitNext.status, 0, explicitNext.stderr);
-    const explicitNextId = JSON.parse(explicitNext.stdout).task_id;
+    // Creation is setup; claim and all three status reads still exercise the CLI.
+    const workspaceRoot = taskStore.workspaceRoot(dir);
+    const db = taskStore.open(env.ATRIS_TASKS_DB);
+    let id;
+    let explicitNextId;
+    try {
+      const created = addSeedTask(db, { title: 'Show live task status in Atris Web', tag: 'swarlo', workspaceRoot });
+      assert.equal(created.inserted, true);
+      id = created.id;
+      const parked = addSeedTask(db, { title: 'Old imported TODO record', workspaceRoot });
+      assert.equal(parked.inserted, true);
+      const explicitNext = addSeedTask(db, { title: 'Shape explicit agent goal', tag: 'agent', workspaceRoot });
+      assert.equal(explicitNext.inserted, true);
+      explicitNextId = explicitNext.id;
+    } finally {
+      taskStore.close();
+    }
 
     const claimed = runCli(['task', 'claim', id, '--as', 'codex', '--json'], { cwd: dir, env });
     assert.equal(claimed.status, 0, claimed.stderr);
