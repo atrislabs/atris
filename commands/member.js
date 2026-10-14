@@ -8986,6 +8986,26 @@ async function memberLoopWakeTick(name, run, index, tickStartedAt) {
 const MEMBER_LOOP_IDLE_BREAK_THRESHOLD = 2;
 const MEMBER_LOOP_IDENTICAL_ASK_BREAK_THRESHOLD = 2;
 
+// A loop kept running for days would keep old code after an atris upgrade. Read the
+// installed version from disk, not the cached require, so a new install is seen.
+function memberLoopInstalledVersion() {
+  try {
+    return JSON.parse(fs.readFileSync(path.join(__dirname, '..', 'package.json'), 'utf8')).version || null;
+  } catch {
+    return null;
+  }
+}
+
+// Start the same loop again on the new code. The lease is already released, so the
+// fresh process takes it over; this one exits with the fresh run's status.
+function memberLoopRestartOnNewVersion(upgrade) {
+  const child = spawnSync(process.execPath, process.argv.slice(1), {
+    stdio: 'inherit',
+    env: { ...process.env, ATRIS_MEMBER_LOOP_RESTARTED_FROM: upgrade.from },
+  });
+  process.exit(child.status == null ? 1 : child.status);
+}
+
 // Loop phase: control. Hold the lease, honor the stop file, pace ticks by interval, and
 // break early when the member is idling instead of faking activity.
 async function memberLoopRunTicks(name, paths, lease, run) {
@@ -8995,6 +9015,13 @@ async function memberLoopRunTicks(name, paths, lease, run) {
       if (fs.existsSync(paths.stopPath)) {
         state.stopped = true;
         break;
+      }
+      if (index > 0 && plan.forever && state.startVersion) {
+        const installed = memberLoopInstalledVersion();
+        if (installed && installed !== state.startVersion) {
+          state.upgrade = { from: state.startVersion, to: installed };
+          break;
+        }
       }
       refreshMemberLoopLease(paths, lease.lease, plan.ttlMs);
       const tickStartedAt = stampIso();
@@ -9049,7 +9076,7 @@ function memberLoopRecordResult(name, paths, lease, run) {
   const { options, plan, state } = run;
   const { execute, aliveMode, asJson } = options;
   const { hourly, forever, runId, ticks, intervalMs, durationMs, startedAt } = plan;
-  const { tickResults, decisions, stopped, failed, earlyExit, tickLogPath } = state;
+  const { tickResults, decisions, stopped, failed, earlyExit, tickLogPath, upgrade } = state;
   const finishedAt = stampIso();
   const plannedOnly = aliveMode && tickResults.length > 0 && tickResults.every((tick) => tick.decision === 'planned');
   const summary = {
@@ -9058,7 +9085,7 @@ function memberLoopRecordResult(name, paths, lease, run) {
     schema: aliveMode ? 'atris.member_alive.v1' : 'atris.member_loop.v1',
     member: name,
     alive: aliveMode,
-    status: failed ? 'failed' : stopped ? 'stopped' : plannedOnly ? 'planned' : earlyExit ? (earlyExit.blocked_on_human ? 'blocked_on_human' : 'idle') : 'completed',
+    status: failed ? 'failed' : stopped ? 'stopped' : upgrade ? 'restarting_on_new_version' : plannedOnly ? 'planned' : earlyExit ? (earlyExit.blocked_on_human ? 'blocked_on_human' : 'idle') : 'completed',
     mode: execute ? 'execute' : 'dry_run',
     cadence: hourly ? 'hourly' : 'custom',
     forever,
@@ -9074,6 +9101,8 @@ function memberLoopRecordResult(name, paths, lease, run) {
     duration_ms_actual: Date.parse(finishedAt) - Date.parse(startedAt),
     decisions,
     early_exit: earlyExit,
+    upgrade: upgrade || null,
+    restarted_from_version: process.env.ATRIS_MEMBER_LOOP_RESTARTED_FROM || null,
     stop: earlyExit?.stop || null,
     blocked_on_human: earlyExit?.blocked_on_human === true,
     needs_user: earlyExit?.needs_user === true,
@@ -9098,6 +9127,7 @@ function memberLoopRecordResult(name, paths, lease, run) {
     `Status: ${payload.status}`,
     `Cadence: ${payload.cadence}${payload.forever ? ' forever' : ''}`,
     `Ticks: ${payload.ticks}/${payload.ticks_requested}`,
+    ...(upgrade ? [`Upgrade: atris ${upgrade.from} -> ${upgrade.to}, restarting on the new version`] : []),
     `Decisions: ${Object.entries(decisions).map(([key, count]) => `${key} x${count}`).join(', ') || 'none'}`,
     `Stop: ${payload.stop_command}`,
     `Receipt: ${path.relative(process.cwd(), receiptPath)}`,
@@ -9163,11 +9193,14 @@ async function memberLoop(name, ...args) {
     lastAskKey: null,
     consecutiveIdenticalAsk: 0,
     tickLogPath,
+    startVersion: memberLoopInstalledVersion(),
+    upgrade: null,
   };
 
   const run = { options, plan, state };
   await memberLoopRunTicks(name, paths, lease, run);
   memberLoopRecordResult(name, paths, lease, run);
+  if (state.upgrade) memberLoopRestartOnNewVersion(state.upgrade);
 }
 
 async function memberTick(name, ...args) {
