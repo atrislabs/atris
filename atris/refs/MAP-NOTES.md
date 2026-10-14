@@ -2297,7 +2297,7 @@ npm publish
 
 ## Continuation status test setup
 
-- `test/commands.test.js:14053` checks review continuation, human approval waiting, and blocked review separately. Its local real-store seed helper removes three setup command launches; ready, review, status, and all result assertions stay on the CLI.
+- `test/commands.test.js:13962` checks review continuation, human approval waiting, and blocked review separately. Its local real-store seed helper removes three setup command launches; ready, review, status, and all result assertions stay on the CLI.
 
 ## Board stream readiness
 
@@ -2309,8 +2309,8 @@ npm publish
 
 ## Compact approval queue test setup
 
-- `test/commands.test.js:13916` checks certified, second-review-blocked, and unsafe-check queue entries. Its local real-store helper at `test/commands.test.js:13927` creates and claims three fixtures without six setup command launches; ready, review, JSON, plain, verbose, and grouped output stay on the CLI with every queue assertion intact.
-- `test/commands.test.js:11712` checks proof-specific review-chat packets. Creation and claiming use the real task store, saving two setup launches; open-task rejection, ready, review-chat, review, status, show, and all assertions still exercise the CLI. The fixture preserves both task_goal and goal_objective metadata from command creation.
+- `test/commands.test.js:14044` checks certified, second-review-blocked, and unsafe-check queue entries. Its local real-store helper at `test/commands.test.js:14055` creates and claims three fixtures without six setup command launches; ready, review, JSON, plain, verbose, and grouped output stay on the CLI with every queue assertion intact.
+- `test/commands.test.js:11840` checks proof-specific review-chat packets. Creation and claiming use the real task store, saving two setup launches; open-task rejection, ready, review-chat, review, status, show, and all assertions still exercise the CLI. The fixture preserves both task_goal and goal_objective metadata from command creation.
 
 - `test/commands.test.js:9035` checks duplicate review-chat suppression across inner loops. Creation at `test/commands.test.js:9049` uses the real task store without a setup launch; the baseline at `test/commands.test.js:9065` reads full message history and version in process, saving another launch, and closes the store in finally. Ready still handles the unclaimed row through the CLI; both loop calls, drain, final show calls, and every version/message assertion remain, with an added identity check.
 
