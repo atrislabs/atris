@@ -469,6 +469,23 @@ test('board shows an all-ok history as one ok, and a mixed one in full', () => {
   assert.match(head(rows, 60), /^member\s+state\s+before\s/, 'a narrow pane drops the order words first');
 });
 
+test('board keeps the order words while a history is as wide as they are', () => {
+  const now = Date.parse('2026-10-14T13:00:00Z');
+  const row = (name, ends) => memberRow(name, [
+    ...ends.flatMap((e, i) => [`2026-10-14T12:1${i}:00Z m-${i} started: [pid 1 engine claude] run ${i}`, `2026-10-14T12:1${i}:30Z m-${i} finished: ${e}`]),
+    `2026-10-14T12:50:00Z m-9 started: [pid ${process.pid} engine claude] fit the board`, '2026-10-14T12:59:30Z m-9 running: node --test', '',
+  ].join('\n'), now);
+  const rows = [row('builder', ['failed', 'stopped', 'stopped']), row('scout', ['ok'])];
+  const lines = (w) => renderBoard(rows, '/x', 0, w).split('\n');
+  const at80 = lines(80);
+  assert.match(at80.find((l) => l.startsWith('member ')), /^member\s+state\s+before, newest first\s+run time\s/, 'dropping the words would free nothing, so they stay while engine and alive go');
+  assert.match(at80.find((l) => l.startsWith('builder ')), /^builder\s+working\s+stopped stopped failed\s/);
+  const at70 = lines(70);
+  assert.match(at70.find((l) => l.startsWith('member ')), /^member\s+state\s+before\s+run\s/, 'one word per cell has no order to explain');
+  assert.match(at70.find((l) => l.startsWith('builder ')), /^builder\s+working\s+stopped\s+10m\s/);
+  assert.ok(at70.every((l) => l.length <= 70), at70.join('\n'));
+});
+
 test('board shortens the run\'s own fixed status lines, but not in the row data', () => {
   const now = Date.parse('2026-10-14T13:00:00Z');
   const step = (name, text) => memberRow(name, `2026-10-14T12:58:00Z m-1 started: map it\n2026-10-14T12:59:30Z m-1 ${text}\n`, now);
