@@ -541,9 +541,12 @@ function fixEmDash(s, { endsBlock = false, startsBlock = false, spans = [] } = {
     // too: "etc. **Include eliminate steps**: what gets deleted". One that ends
     // in its own punctuation, "**What now?**", keeps it and just loses the dash.
     // A bold quote that ends its sentence and then a name is a credit, left
-    // for the credit rule below: '1. **"just a fun thing."** (Prydz)'.
+    // for the credit rule below: '1. **"just a fun thing."** (Prydz)'. One
+    // before a joining word goes on with its sentence, like a short list
+    // label: "5. **Open source is catching up**, and that's great".
     .replace(/([.!?]["'\u201d\u2019)]*\s+)(\*\*[^*\u2014]*[^\s*\u2014]\*\*|__[^_\u2014]*[^\s_\u2014]__)\s*\u2014\s*(?=\S)/g, (m, lead, bold, at, whole) => {
       const rest = whole.slice(at + m.length);
+      if (/^(?:and|but|or|nor|so|yet)\b/.test(rest)) return m;
       if (/[.!?]["'\u201d\u2019]+[*_]+$/.test(bold) && !/\u2014/.test(rest) && creditAfterQuote(bold, rest)) return m;
       return `${lead}${bold}${/[.,;:!?][*_]+$/.test(bold) ? '' : ':'} `;
     })

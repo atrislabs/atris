@@ -1332,6 +1332,25 @@ test('fix credits a quote in bold or italics the same way as a plain one', () =>
   ]);
 });
 
+test('fix gives a long bold list label a colon, but a comma before a joining word', () => {
+  // the "1." of a numbered list ends no sentence, but a long bold phrase after
+  // it still labels what follows; before "and", "but", "or" or "so" it goes on
+  // with its sentence, which the fix wrote as "catching up**: and that's great"
+  const file = tmpFile('bold-list.md', [
+    '24. **Decide the deployer-vs-provider classification under the EU AI Act** \u2014 the scope settles it.',
+    '5. **Open source is catching up** \u2014 and that\'s great.',
+    '1. **Assign Elastic IP** \u2014 so the endpoint URL is stable across restarts.',
+    'One is commodity. **Audit + loop is what customers pay for** \u2014 and is hard to copy.',
+  ].join('\n'));
+  const { changes } = applyFixes([file], RULES, { write: false });
+  assert.deepEqual(changes.map((c) => c.after), [
+    '24. **Decide the deployer-vs-provider classification under the EU AI Act**: the scope settles it.',
+    '5. **Open source is catching up**, and that\'s great.',
+    '1. **Assign Elastic IP**, so the endpoint URL is stable across restarts.',
+    'One is commodity. **Audit + loop is what customers pay for**, and is hard to copy.',
+  ]);
+});
+
 test('fix credits a speaker with a short note after the name', () => {
   // a note after the name left the whole credit bare: '"Make it good." Steve
   // Jobs, WWDC 1997'; a sentence after a quote is no credit and keeps its fix
