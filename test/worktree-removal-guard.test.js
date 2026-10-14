@@ -77,6 +77,13 @@ test('worktree cleanup keeps a copy moved after its final checks pass', () => {
   assert.match(result.stdout, /a copy moved after its final checks passed was kept as missing; files, branch, and Git record retained; no removal attempted or recorded/);
 });
 
+test('land keeps a dirty copy moved while its backup is built and names the leftover lock', () => {
+  const proof = path.resolve(__dirname, '../atris/receipts/2026-10-14-land-moved-dirty-folder-check.js');
+  const result = spawnSync(process.execPath, [proof], { encoding: 'utf8', timeout: 120000 });
+  assert.equal(result.status, 0, result.stderr || result.stdout);
+  assert.match(result.stdout, /a dirty copy moved while its backup was built was kept as missing with the leftover shared lock and its age named/);
+});
+
 test('worktree cleanup names the leftover shared lock and its age for a moved copy', () => {
   const proof = path.resolve(__dirname, '../atris/receipts/2026-10-14-worktree-cleanup-moved-lock-check.js');
   const result = spawnSync(process.execPath, [proof], { encoding: 'utf8', timeout: 120000 });

@@ -675,6 +675,15 @@ function reap(root, { ttlDays = DEFAULT_TTL_DAYS, staleHours = DEFAULT_STALE_HOU
     (w) => targetNames.has(w.branch) || (includeDetached && w.state === 'detached')
   );
   const activeAtRemoval = survivingWorktreeTargets.length ? readActiveCwds() : [];
+  // Git still exits 0 removing a missing folder, so a folder gone from disk
+  // is kept and named with whatever lock it left in the main repo.
+  const keptAsMissing = (w) => {
+    if (fs.existsSync(w.path)) return false;
+    const lock = missingFolderLock(root, w.path);
+    receipt.keptWorktrees.push(`${w.path} (${lock.locks.length ? lock.reason : 'folder is missing'})`);
+    if (w.branch) targetNames.delete(w.branch);
+    return true;
+  };
   for (const w of survivingWorktreeTargets) {
     // A run can start in the folder while the bundle is built; look again.
     if (worktreeHasActiveProcess(w.path, activeAtRemoval)) {
@@ -691,6 +700,9 @@ function reap(root, { ttlDays = DEFAULT_TTL_DAYS, staleHours = DEFAULT_STALE_HOU
       if (w.branch) targetNames.delete(w.branch);
       continue;
     }
+    // The folder can move while the bundle is built; salvage would then fail
+    // and hide why it was kept.
+    if (keptAsMissing(w)) continue;
     // Salvage-then-remove, never keep-because-dirty: patches + untracked
     // copies bank everything force-remove would destroy.
     if (w.dirty > 0 && !salvageWorktree(w, dir, receipt)) {
@@ -702,13 +714,10 @@ function reap(root, { ttlDays = DEFAULT_TTL_DAYS, staleHours = DEFAULT_STALE_HOU
       continue;
     }
     const activity = inspectGitActivity(w.path);
-    // The folder can disappear after planning, during the git check, or after
-    // it passes. Git still exits 0 removing a missing folder, so look on disk.
-    const missing = !fs.existsSync(w.path);
-    if (!activity.safe || missing) {
-      const lock = missing ? missingFolderLock(root, w.path) : null;
-      const reason = lock ? (lock.locks.length ? lock.reason : 'folder is missing') : activity.reason;
-      receipt.keptWorktrees.push(`${w.path} (${reason})`);
+    // The folder can also disappear during the git check or after it passes.
+    if (keptAsMissing(w)) continue;
+    if (!activity.safe) {
+      receipt.keptWorktrees.push(`${w.path} (${activity.reason})`);
       if (w.branch) targetNames.delete(w.branch);
       continue;
     }
