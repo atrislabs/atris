@@ -23,6 +23,8 @@ Details for any task: atris task show <ID>
 
 ## Review
 
+- **[AIC-52]** Seed proof-derived review chat setup through the task store · auto-improver
+  **Done looks like:** Developers can run the proof extraction test about a third of a second faster, which saves time on every run.
 - **[AIC-51]** Seed backlog and clear-plan setup through the task store · auto-improver
   **Done looks like:** Developers can run the cleanup test about a quarter second faster, which saves time on every run.
 - **[AIC-50]** Seed the continue work server parent through the task store · auto-improver

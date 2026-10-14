@@ -2545,3 +2545,5 @@ npm publish
 ## Visualize inbox fixtures without init
 
 - `test/commands.test.js:18280` checks that visualize exits when no journal exists; it and the two inbox tests after it create only the workspace folder instead of running a full init. Visualize without a prompt reads only today's journal through a plain path lookup. The no-journal test used to run init and then delete the journal init wrote, which left an empty logs folder, so it now creates that folder directly. The dry-run tests from `test/commands.test.js:18319` keep init, because a dry run reads workspace context from the files init writes.
+
+- `test/commands.test.js:12136` checks proof-derived verifier extraction. Title-only and path-only readiness at `test/commands.test.js:12220` and `test/commands.test.js:12235` use readyTask, removing two setup launches (18 to 16); both review-chat calls and all command/path assertions remain on the CLI.

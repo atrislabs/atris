@@ -12217,13 +12217,14 @@ test('task review-chat extracts only proof-derived verifier commands', () => {
     ]);
 
     const titleOnlyRef = seedClaimedTask('Fix git diff display');
-    const titleOnlyReady = runCli([
-      'task', 'ready', titleOnlyRef,
-      '--as', 'codex',
-      '--proof', 'manual browser validation passed',
-      '--json',
-    ], { cwd: dir, env });
-    assert.equal(titleOnlyReady.status, 0, titleOnlyReady.stderr);
+    // Readiness only seeds the proof here; review-chat reads it on the CLI.
+    const titleOnlyDb = taskStore.open(dbPath);
+    try {
+      const seeded = taskStore.readyTask(titleOnlyDb, { id: titleOnlyRef, actor: 'codex', proof: 'manual browser validation passed' });
+      assert.equal(seeded.ready, true, seeded.reason);
+    } finally {
+      taskStore.close();
+    }
     const titleOnlyChat = runCli(['task', 'review-chat', titleOnlyRef, '--json'], { cwd: dir, env });
     assert.equal(titleOnlyChat.status, 0, titleOnlyChat.stderr);
     const titleOnlyPayload = JSON.parse(titleOnlyChat.stdout);
@@ -12231,13 +12232,14 @@ test('task review-chat extracts only proof-derived verifier commands', () => {
     assert.match(titleOnlyPayload.contract.required_checks.join('\n'), /Find the concrete verifier command/);
 
     const pathOnlyRef = seedClaimedTask('Inspect artifact path');
-    const pathOnlyReady = runCli([
-      'task', 'ready', pathOnlyRef,
-      '--as', 'codex',
-      '--proof', 'inspected commands/git-diff.js passed',
-      '--json',
-    ], { cwd: dir, env });
-    assert.equal(pathOnlyReady.status, 0, pathOnlyReady.stderr);
+    // Readiness only seeds the proof here; review-chat reads it on the CLI.
+    const pathOnlyDb = taskStore.open(dbPath);
+    try {
+      const seeded = taskStore.readyTask(pathOnlyDb, { id: pathOnlyRef, actor: 'codex', proof: 'inspected commands/git-diff.js passed' });
+      assert.equal(seeded.ready, true, seeded.reason);
+    } finally {
+      taskStore.close();
+    }
     const pathOnlyChat = runCli(['task', 'review-chat', pathOnlyRef, '--json'], { cwd: dir, env });
     assert.equal(pathOnlyChat.status, 0, pathOnlyChat.stderr);
     const pathOnlyPayload = JSON.parse(pathOnlyChat.stdout);
