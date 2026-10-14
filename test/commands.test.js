@@ -7901,9 +7901,16 @@ test('task render drops stale generated markdown rows for DB-backed tasks', () =
   try {
     fs.mkdirSync(path.join(dir, 'atris'), { recursive: true });
     const todoPath = path.join(dir, 'atris', 'TODO.md');
-    const created = runCli(['task', 'new', 'Move review work forward', '--tag', 'task-plane', '--json'], { cwd: dir, env });
-    assert.equal(created.status, 0, created.stderr);
-    const ref = JSON.parse(created.stdout).task.display_id;
+    // Seed only setup; claim, ready, and both renders stay on the real CLI.
+    const workspaceRoot = taskStore.workspaceRoot(dir);
+    const db = taskStore.open(dbPath);
+    let ref;
+    try {
+      const { id } = addSeedTask(db, { title: 'Move review work forward', tag: 'task-plane', workspaceRoot });
+      ref = taskStore.taskDisplayRefMap(taskStore.listTasks(db, { workspaceRoot })).get(id);
+    } finally {
+      taskStore.close();
+    }
     assert.equal(runCli(['task', 'claim', ref, '--as', 'codex'], { cwd: dir, env }).status, 0);
     assert.equal(runCli(['task', 'ready', ref, '--proof', 'render smoke passed', '--as', 'codex'], { cwd: dir, env }).status, 0);
 

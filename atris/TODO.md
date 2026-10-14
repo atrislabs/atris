@@ -23,6 +23,8 @@ Details for any task: atris task show <ID>
 
 ## Review
 
+- **[AIC-36]** Speed up stale markdown check setup · auto-improver
+  **Done looks like:** Developers finish stale markdown checks sooner because setup starts one fewer command.
 - **[AIC-35]** Speed up task rendering fixture setup · auto-improver
   **Done looks like:** Developers finish task rendering checks sooner because setup starts one fewer command.
 - **[AIC-34]** Make task lineage checks faster for developers · auto-improver

@@ -2335,3 +2335,7 @@ npm publish
 ## Task rendering fixture setup
 
 - `test/commands.test.js:7822` checks Endgame metadata, removal of stale generated rows, stable display references and repeat rendering. An ordered real-store seed saves one setup launch; the generated-file marker formerly written by task creation is explicit in the fixture. Both renders and lookup still exercise the CLI with every assertion preserved.
+
+## Stale generated markdown fixture setup
+
+- `test/commands.test.js:7896` checks legacy row migration followed by generated row cleanup. An ordered real-store task seed saves one setup launch and closes in finally; claim, ready and both renders still exercise the CLI with every assertion preserved.
