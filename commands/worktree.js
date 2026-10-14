@@ -529,8 +529,18 @@ function createAgentWorktree({ root = repoRoot(), member = '', agent = '', task,
     reapedBeforeStart = cleaned.removed;
     cachePrunedBeforeStart = cleaned.cachePruned;
   } catch {}
-  const branch = branchOverride || branchName(owner, task, now);
-  const target = path.resolve(pathOverride || defaultWorktreePath(root, owner, task, now));
+  let branch = branchOverride || branchName(owner, task, now);
+  let target = path.resolve(pathOverride || defaultWorktreePath(root, owner, task, now));
+  // Two runs of the same job in the same second get the same name; number
+  // the later one instead of failing it.
+  if (!pathOverride && !branchOverride) {
+    const baseBranch = branch;
+    const baseTarget = target;
+    for (let n = 2; fs.existsSync(target) && n < 100; n += 1) {
+      branch = `${baseBranch}-${n}`;
+      target = `${baseTarget}-${n}`;
+    }
+  }
   // Agent/member worktrees always cut from the mainline: honoring the
   // launcher checkout's upstream let a dispatch inherit another session's
   // in-progress feature branch (2026-07-09: an auth fix arrived carrying 13
