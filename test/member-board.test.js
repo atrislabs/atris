@@ -84,7 +84,8 @@ test('board shows working, quiet, done ok, and done failed from fake logs', () =
     const narrow = renderBoard(rows, dir, 0, 140);
     assert.ok(narrow.split('\n').every((l) => l.length <= 140), 'every line fits a 140 column terminal');
     assert.match(narrow, /^builder\s.*editing lib\/b\.js$/m, 'the short step keeps its length');
-    assert.equal(screen.split('\n').length, 5, 'one header plus one row per member');
+    assert.equal(screen.split('\n').length, 7, 'a summary, a blank line, one header, one row per member');
+    assert.equal(screen.split('\n')[0], '4 members: 1 done failed, 1 working, 1 quiet, 1 done ok', 'the summary counts states, trouble first');
     assert.match(screen, /^member\s+state\s+before\s+alive\s+engine\s+run time\s+ago\s+job\s+last step$/m);
     assert.match(screen, /^scout\s+quiet\s+-\s+-\s+-\s+-\s+5m ago\s+find stale docs\s+running: rg stale$/m);
     assert.match(screen, /^breaker\s+done failed\s+-\s+-\s+-\s+20s\s+1m ago\s+try the risky thing\s+running: node boom\.js$/m);
@@ -197,6 +198,11 @@ test('members that ended over an hour ago, finished or died, hide unless --all',
   } finally {
     fs.rmSync(dir, { recursive: true, force: true });
   }
+});
+
+test('board summary says one member, not one members', () => {
+  const row = { member: 'builder', state: 'stopped', before: [], alive: false, engine: 'claude', running_for: '', lasted: '1m', ago: '5s ago', job: 'ship', step: 'edit' };
+  assert.equal(renderBoard([row], '/x').split('\n')[0], '1 member: 1 stopped');
 });
 
 test('board says nobody is working when every member is hidden', () => {
