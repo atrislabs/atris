@@ -59,6 +59,7 @@ checks the refs in both files; `atris doc-health --fix-refs` moves drifted ones.
 | dispatch run history from a linked checkout | `test/roster-runs-worktree.test.js` | remote-landing test creates a local bare origin so it keeps asserting landed and records history in the main checkout |
 | folder-removal scanner review | `atris/receipts/work-folder-scan-probe.js`, `test/worktree-removal-guard.test.js` | read-only sixteen-case probe, including recursive rmdir, nested paths, direct Git listing, and parser listing; required removal tests run its acceptance mode so scanner gaps fail the normal check |
 | folder protection path-binding review | `atris/receipts/work-folder-scan-binding-probe.js` | four-case advisory comparison isolates wrong guard and wrong log paths; repair contract in `atris/receipts/work-folder-scan-binding-plan-2026-10-14.md`, preserving grouped sandbox cleanup |
+| grouped cleanup scan census | `atris/receipts/work-folder-scan-group-probe.js` | reads actual sandbox cleanup without running it; compares four recursive targets with detected sites; acceptance mode requires full coverage |
 | locked quarantine cleanup review | `atris/receipts/work-folder-quarantine-probe.js`, `atris/receipts/work-folder-quarantine-review-2026-10-14.md` | real disposable Git stores exercise sandbox disposal; acceptance mode rejects deleting a locked store |
 | autopilot | `commands/autopilot.js` | one tick plan, do, review; regression cleanup only removes folders created by that invocation |
 | wish intake | `commands/wish.js` | wish to build slices |

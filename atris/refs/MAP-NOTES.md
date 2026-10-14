@@ -2286,3 +2286,4 @@ npm publish
 - `atris/receipts/work-folder-quarantine-probe.js:16` creates disposable real Git stores and calls sandbox disposal with and without a quarantine lock; `atris/receipts/work-folder-quarantine-review-2026-10-14.md:1` records the pre-build safeguard and actual output.
 
 - `atris/receipts/work-folder-scan-binding-probe.js:21` compares four guard/log path combinations against the actual scanner and bypass predicate; wrong guard and wrong log cases are isolated without executing deletes. Repair contract: `atris/receipts/work-folder-scan-binding-plan-2026-10-14.md`.
+- `atris/receipts/work-folder-scan-group-probe.js:25` measures all four recursive targets in actual `disposeReviewSandbox` source against scanner results; `--require-protection` exits 1 while any target is missed. Recommendation and proof: `atris/receipts/work-folder-scan-group-2026-10-14.md`.
