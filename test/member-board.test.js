@@ -418,7 +418,7 @@ test('board shows the command inside a shell wrapper or after a cd, but not in t
     step('both', "running: bash -c 'cd \"/my repo\"; npm test'"),
     step('cut', 'Run: /bin/zsh -lc "sed -n 1,5p a.js; rg -n foo'),
     step('cdonly', 'running: cd /repo/app'),
-    step('plain', 'Landing verified changes onto the workspace.'),
+    step('plain', 'Reading the release notes.'),
   ];
   const shown = (name) => renderBoard(rows, '/x').split('\n').find((l) => l.startsWith(`${name} `));
   assert.ok(shown('cdand').endsWith('Run: git rev-parse HEAD'), shown('cdand'));
@@ -426,7 +426,7 @@ test('board shows the command inside a shell wrapper or after a cd, but not in t
   assert.ok(shown('both').endsWith('running: npm test'), shown('both'));
   assert.ok(shown('cut').endsWith('Run: sed -n 1,5p a.js; rg -n foo'), `a step cut before its closing quote still unwraps: ${shown('cut')}`);
   assert.ok(shown('cdonly').endsWith('running: cd /repo/app'), 'a cd with nothing after it stays');
-  assert.ok(shown('plain').endsWith('Landing verified changes onto the workspace.'), shown('plain'));
+  assert.ok(shown('plain').endsWith('Reading the release notes.'), shown('plain'));
   assert.equal(rows[0].step, 'Run: cd /repo/app && git rev-parse HEAD', 'apps reading the rows get the step as written');
 });
 
@@ -449,6 +449,25 @@ test('board says a heredoc step is a script or a file write, but not in the row 
   assert.ok(shown('msg').endsWith("running: git commit -q -F - <<'EOF'"), 'any other heredoc stays as written');
   assert.ok(shown('mid').endsWith("running: python3 - <<'PY' && ls"), 'a heredoc that is not the end of the step stays');
   assert.equal(rows[0].step, "running: python3 - <<'PY'", 'apps reading the rows get the step as written');
+});
+
+test('board shortens the run\'s own fixed status lines, but not in the row data', () => {
+  const now = Date.parse('2026-10-14T13:00:00Z');
+  const step = (name, text) => memberRow(name, `2026-10-14T12:58:00Z m-1 started: map it\n2026-10-14T12:59:30Z m-1 ${text}\n`, now);
+  const rows = [
+    step('land', 'Landing verified changes onto the workspace.'),
+    step('pick', 'Choosing the next useful task.'),
+    step('setup', 'Set up an isolated checkout for this run.'),
+    step('resume', 'Resuming the saved isolated checkout.'),
+    step('other', 'Landing verified changes onto the main branch.'),
+  ];
+  const shown = (name) => renderBoard(rows, '/x').split('\n').find((l) => l.startsWith(`${name} `));
+  assert.ok(shown('land').endsWith('  Landing verified changes'), shown('land'));
+  assert.ok(shown('pick').endsWith('  Choosing the next task'), shown('pick'));
+  assert.ok(shown('setup').endsWith('  Set up an isolated checkout'), shown('setup'));
+  assert.ok(shown('resume').endsWith('  Resuming its saved checkout'), shown('resume'));
+  assert.ok(shown('other').endsWith('  Landing verified changes onto the main branch.'), 'a line worded any other way stays as written');
+  assert.equal(rows[0].step, 'Landing verified changes onto the workspace.', 'apps reading the rows get the line as written');
 });
 
 test('board shortens a hand-off step to who was asked and the model, but not in the row data', () => {
