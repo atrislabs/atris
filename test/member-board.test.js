@@ -515,6 +515,38 @@ test('atris member board --json --follow says when a running process dies', asyn
   }
 });
 
+test('atris member board --json --follow sends a crash before the restart that replaced it', async () => {
+  const { spawn } = require('node:child_process');
+  const victim = spawn(process.execPath, ['-e', 'setTimeout(() => {}, 60000)']);
+  const recent = new Date(Date.now() - 5_000).toISOString();
+  const dir = fakeDir({ builder: [`${recent} m-4 started: [pid ${victim.pid} engine claude] long build`] });
+  const child = spawn(process.execPath, [cliPath, 'member', 'board', '--json', '--follow'], {
+    cwd: dir, env: { ...process.env, ATRIS_PROGRESS_DIR: dir },
+  });
+  let out = '';
+  child.stdout.on('data', (d) => { out += d; });
+  const lines = () => out.split('\n').filter(Boolean).map((l) => JSON.parse(l));
+  const waitFor = async (pred) => {
+    const until = Date.now() + 8000;
+    while (!pred(lines()) && Date.now() < until) await new Promise((r) => setTimeout(r, 50));
+    return lines();
+  };
+  try {
+    await waitFor((l) => l.length >= 1);
+    victim.kill('SIGKILL');
+    await new Promise((r) => victim.once('exit', r));
+    fs.appendFileSync(path.join(dir, 'builder.log'), `${new Date().toISOString()} m-5 started: [pid ${process.pid} engine claude] retry\n`);
+    const got = await waitFor((l) => l.some((e) => e.kind === 'died') && l.some((e) => e.kind === 'started'));
+    const order = got.filter((e) => e.kind === 'died' || e.kind === 'started').map((e) => `${e.kind} ${e.mission}`);
+    assert.deepEqual(order, ['died m-4', 'started m-5'], 'an app reading in order never sees the new run before the crash');
+  } finally {
+    victim.kill('SIGKILL');
+    child.kill('SIGINT');
+    await new Promise((r) => child.once('exit', r));
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
 test('follow finishes a line that was half written before it started', () => {
   const { followBoard } = require('../lib/member-board');
   const dir = fakeDir({ builder: [`${at(60)} m-1 started: verify stream`] });
