@@ -221,6 +221,8 @@ Full updated output:
 
 Frozen check: `node --test test/stall-signal-health.test.js test/roster-prep-brief.test.js test/roster-run-record.test.js`, exit 0. Exact summary: tests 35, pass 35, fail 0, cancelled 0, skipped 0, todo 0, duration_ms 10981.353959.
 
+Review handoff: proof-only submission required an executed check. Its first `node --test` run selected an older Node without `node:sqlite` (35 passed, 1 failed, exit 1). Re-submitted with `/opt/homebrew/Cellar/node/25.6.1/bin/node --test test/autoland.test.js test/stall-signal-health.test.js test/roster-prep-brief.test.js test/roster-run-record.test.js`, the runtime used by the successful direct checks. This exited 0 and moved the task to Review; executed proof is saved at atris/runs/2026-10-14-task-aic-1-2026-10-14T15-28-55-127Z.json. No self-acceptance was performed.
+
 Setup tools: atris brain activate --root . --verify and atris brain compile --root . both exited 2 in plan-only mode; no generated policy adapters were written. Mission status and task list were inspected before choosing work.
 
 next_push: Replace the remaining repeated task-creation setup launches in the landing tests while keeping ready and landing checks on the CLI.
