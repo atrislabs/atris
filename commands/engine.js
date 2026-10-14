@@ -2365,14 +2365,20 @@ function utcMinute(at) {
   return `${String(at || '').slice(0, 16).replace('T', ' ')} UTC`;
 }
 
-// What the resource log says about past runs: the newest sweep, the newest
-// SIGKILL and its likely cause, and how many SIGKILLs came with low memory.
+// What the resource log says about past runs: the newest sweep, runs with no
+// end, the newest SIGKILL and its likely cause, and how many SIGKILLs came
+// with low memory.
 function resourceHistoryLines(history) {
   const lines = [];
   const sweep = history.last_sweep;
   lines.push(sweep
     ? `last sweep: ${utcMinute(sweep.at)}, stopped ${(sweep.stopped || []).length}`
     : 'no sweep recorded yet');
+  const started = history.last_open;
+  if (started) {
+    lines.push(`${history.open_runs} run${history.open_runs === 1 ? '' : 's'} started with no end recorded (still running, or stopped with their parent);`
+      + ` newest: ${started.engine || 'engine'} on ${started.task || 'an unnamed task'} at ${utcMinute(started.at)}`);
+  }
   const kill = history.last_kill;
   if (!kill) {
     lines.push('no engine run has ended in SIGKILL');

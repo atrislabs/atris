@@ -338,7 +338,7 @@ test('history reads back the latest sweep and the latest SIGKILL, skipping bad l
     assert.strictEqual(history.last_kill.task, 'CLI-2');
     assert.strictEqual(history.kills, 2);
     assert.strictEqual(history.low_memory_kills, 1);
-    assert.deepStrictEqual(readResourceHistory(path.join(root, 'missing')), { last_sweep: null, last_kill: null, kills: 0, low_memory_kills: 0 });
+    assert.deepStrictEqual(readResourceHistory(path.join(root, 'missing')), { last_sweep: null, last_kill: null, kills: 0, low_memory_kills: 0, open_runs: 0, last_open: null });
   } finally {
     fs.rmSync(root, { recursive: true, force: true });
   }
@@ -446,4 +446,32 @@ test('a full resource log is cut back to its newest lines but keeps starts still
   } finally {
     fs.rmSync(root, { recursive: true, force: true });
   }
+});
+
+test('atris engine sweep names runs that started and never wrote an end', () => {
+  const { engineCommand } = require('../commands/engine');
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'engine-sweep-open-'));
+  const file = path.join(root, RESOURCE_LOG);
+  fs.mkdirSync(path.dirname(file), { recursive: true });
+  fs.writeFileSync(file, [
+    JSON.stringify({ at: '2026-10-14T09:00:00.000Z', phase: 'start', engine: 'codex', task: 'OLD' }),
+    JSON.stringify({ at: '2026-10-14T10:00:00.000Z', phase: 'start', engine: 'codex', task: 'CLI-7', run_id: 'a' }),
+    JSON.stringify({ at: '2026-10-14T10:05:00.000Z', phase: 'start', engine: 'claude', task: 'CLI-8', run_id: 'b' }),
+    JSON.stringify({ at: '2026-10-14T10:30:00.000Z', phase: 'end', engine: 'claude', task: 'CLI-8', run_id: 'b' }),
+    JSON.stringify({ at: '2026-10-14T11:00:00.000Z', phase: 'start', engine: 'cursor', task: 'CLI-9', run_id: 'c' }),
+    '',
+  ].join('\n'));
+  const out = [];
+  const original = console.log;
+  console.log = (line) => out.push(String(line));
+  try {
+    const history = readResourceHistory(root);
+    assert.strictEqual(history.open_runs, 2);
+    assert.strictEqual(history.last_open.run_id, 'c');
+    engineCommand(['sweep'], { root, engineSweep: { read: () => ({ agents: [], referenced: new Set() }), uid: 501 } });
+  } finally {
+    console.log = original;
+    fs.rmSync(root, { recursive: true, force: true });
+  }
+  assert.match(out.join('\n'), /2 runs started with no end recorded \(still running, or stopped with their parent\); newest: cursor on CLI-9 at 2026-10-14 11:00 UTC/);
 });
