@@ -6,10 +6,26 @@ const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
 const { spawn } = require('node:child_process');
+const { scrubAgentEnv } = require('./helpers/agent-env');
 
 const { buildRunnerCommand } = require('../lib/runner-command');
 const { resolveMissionTickRunnerModel } = require('../commands/mission');
 const fleet = require('../lib/fleet');
+
+// Dispatch builds its command from process.env before applying child overrides.
+// Keep the fixture engines independent of the parent mission, including async
+// dispatches, then restore the caller's settings after each test finishes.
+let inheritedEnv;
+test.beforeEach(() => {
+  const clean = scrubAgentEnv();
+  inheritedEnv = new Map(Object.keys(process.env)
+    .filter((key) => !Object.hasOwn(clean, key))
+    .map((key) => [key, process.env[key]]));
+  for (const key of inheritedEnv.keys()) delete process.env[key];
+});
+test.afterEach(() => {
+  for (const [key, value] of inheritedEnv) process.env[key] = value;
+});
 
 const RUNNER_ENV_KEYS = [
   'ATRIS_RUNNER_PROFILE',

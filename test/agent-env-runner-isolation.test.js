@@ -24,3 +24,27 @@ test('command fixtures ignore inherited runner commands', () => {
   assert.equal(result.status, 0, result.stderr || result.stdout);
   assert.match(result.stdout, /pass 1/);
 });
+
+test('runner fixtures ignore inherited mission and caller settings', () => {
+  const env = { ...process.env };
+  delete env.NODE_TEST_CONTEXT;
+  const result = spawnSync(process.execPath, [
+    '--test', path.join(__dirname, 'runner-model-leak.test.js'),
+  ], {
+    encoding: 'utf8',
+    timeout: 30000,
+    env: {
+      ...env,
+      ATRIS_RUNNER_PROFILE: 'codex',
+      ATRIS_RUNNER_BIN: 'codex',
+      ATRIS_RUNNER_COMMAND_TEMPLATE: 'node -e "process.exit(1)"',
+      ATRIS_CLAUDE_COMMAND_TEMPLATE: 'node -e "process.exit(1)"',
+      ATRIS_CALLER_RUNTIME: 'codex',
+      CODEX_THREAD_ID: 'fixture-thread',
+      CODEX_SESSION_ID: 'fixture-session',
+    },
+  });
+  assert.ifError(result.error);
+  assert.equal(result.status, 0, result.stderr || result.stdout);
+  assert.match(result.stdout, /pass 7/);
+});
