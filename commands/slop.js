@@ -273,9 +273,12 @@ function fencedLines(lines) {
 // dash there is part of a path or attribute, and pairing it with a prose dash
 // would drop a parenthesis into the address. So are a footnote label, a
 // reference label after link text, and the label and address that open a
-// reference definition; the title and note text after them stay prose.
+// reference definition; the title and note text after them stay prose. So
+// is the text inside a code-like HTML pair (<kbd>, <code>, <samp>, <var>,
+// <tt>) and inline math; a math span opens on a non-space and closes on a
+// non-space with no digit after, so "$5 and $10" stays prose.
 // Each is masked while the fix runs.
-const LITERAL_SPAN = /(`+).+?\1|\[\^[^\]\s]+\]|^\s{0,3}\[[^\]]+\]:\s*\S+|(?<=\])\[[^\]]+\]|(?<=\])\([^)\s]*\)|<[A-Za-z/!][^<>]*>/g;
+const LITERAL_SPAN = /(`+).+?\1|<(kbd|code|samp|var|tt)\b[^<>]*>.*?<\/\2\s*>|\$\$.+?\$\$|\$(?=\S)[^$]+?(?<=\S)\$(?!\d)|\[\^[^\]\s]+\]|^\s{0,3}\[[^\]]+\]:\s*\S+|(?<=\])\[[^\]]+\]|(?<=\])\([^)\s]*\)|<[A-Za-z/!][^<>]*>/g;
 function maskInlineCode(line) {
   const spans = [];
   const masked = line.replace(LITERAL_SPAN, (m) => `\uE000${spans.push(m) - 1}\uE001`);

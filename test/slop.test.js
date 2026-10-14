@@ -1030,6 +1030,25 @@ test('fix leaves footnote and reference labels alone and fixes the prose around 
   ]);
 });
 
+test('fix leaves keyboard tags, HTML code, and inline math alone', () => {
+  // a dash inside the pair used to become a comma: "<kbd>Ctrl, C</kbd>"
+  const file = tmpFile('inline-literal.md', [
+    'Press <kbd>Ctrl\u2014C</kbd> to stop \u2014 then wait.',
+    'Use <code>a \u2014 b</code> here \u2014 carefully.',
+    'The math $a\u2014b$ holds \u2014 always.',
+    'Display $$x\u2014y$$ is fine \u2014 mostly.',
+    'It costs $5 \u2014 and $10 for two.',
+  ].join('\n'));
+  const { changes } = applyFixes([file], RULES, { write: false });
+  assert.deepEqual(changes.map((c) => c.after), [
+    'Press <kbd>Ctrl\u2014C</kbd> to stop, then wait.',
+    'Use <code>a \u2014 b</code> here, carefully.',
+    'The math $a\u2014b$ holds, always.',
+    'Display $$x\u2014y$$ is fine, mostly.',
+    'It costs $5, and $10 for two.',
+  ]);
+});
+
 test('fix attributes a quote with no stop of its own with a comma', () => {
   // a README testimonial; of 22 repo lines with a dash after a closing quote,
   // none read better with another mark, so the comma is the settled choice
