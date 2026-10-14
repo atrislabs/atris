@@ -1417,6 +1417,8 @@ test('thrown and rejected engine runners save end resources and preserve the ori
         assert.match(lines[0].run_id, /^[0-9a-f-]{36}$/);
         assert.equal(lines[1].run_id, lines[0].run_id);
         const end = lines[1];
+        assert.strictEqual(lines[0].duration_ms, undefined);
+        assert.ok(Number.isInteger(end.duration_ms) && end.duration_ms >= 0);
         assert.equal(end.engine, 'claude');
         assert.equal(end.task, TASK.display_id);
         assert.ok(Array.isArray(end.load));
@@ -1427,5 +1429,30 @@ test('thrown and rejected engine runners save end resources and preserve the ori
         fs.rmSync(worktree, { recursive: true, force: true });
       }
     });
+  }
+});
+
+test('final resources measure a real child run in milliseconds', async () => {
+  const { execFile, execFileSync } = require('node:child_process');
+  const root = makeTempRoot();
+  execFileSync('git', ['init', '-q', root]);
+  const worktree = fs.mkdtempSync(path.join(os.tmpdir(), 'engine-dispatch-duration-'));
+  try {
+    await fleet.dispatchToEngine({
+      task: TASK, engine: 'claude', worktreePath: worktree, root, skipBriefCapture: true,
+      runner: () => new Promise((resolve, reject) => {
+        execFile(process.execPath, ['-e', 'setTimeout(() => console.log("done"), 50)'], (error, stdout, stderr) => {
+          if (error) reject(error);
+          else resolve({ status: 0, stdout, stderr });
+        });
+      }),
+    });
+    const [start, end] = fs.readFileSync(path.join(root, '.atris/state/engine-resource.jsonl'), 'utf8').trim().split('\n').map(JSON.parse);
+    assert.strictEqual(start.duration_ms, undefined);
+    assert.ok(Number.isInteger(end.duration_ms) && end.duration_ms >= 50);
+    assert.strictEqual(end.run_id, start.run_id);
+  } finally {
+    fs.rmSync(root, { recursive: true, force: true });
+    fs.rmSync(worktree, { recursive: true, force: true });
   }
 });

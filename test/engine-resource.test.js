@@ -80,6 +80,23 @@ test('start and end lines append to the durable resource log', () => {
 
 const { parseElapsed, findLeakedSshAgents, readSshAgents } = require('../lib/engine-resource');
 
+test('elapsed milliseconds belong only to end resources and must be finite and nonnegative', () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'engine-resource-duration-'));
+  const deps = { platform: 'linux', loadavg: () => [0, 0, 0], readSshAgents: () => ({ agents: [], referenced: new Set() }) };
+  try {
+    for (const duration_ms of [0, 125]) {
+      const end = recordEngineResource(root, { phase: 'end', duration_ms }, deps);
+      assert.strictEqual(end.duration_ms, duration_ms);
+    }
+    for (const duration_ms of [undefined, -1, NaN, Infinity, '125']) {
+      assert.strictEqual(recordEngineResource(root, { phase: 'end', duration_ms }, deps).duration_ms, undefined);
+    }
+    assert.strictEqual(recordEngineResource(root, { phase: 'start', duration_ms: 125 }, deps).duration_ms, undefined);
+  } finally {
+    fs.rmSync(root, { recursive: true, force: true });
+  }
+});
+
 test('start records the sweep leak count without stopping agents or reading again at end', () => {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'engine-resource-agents-'));
   let reads = 0;
