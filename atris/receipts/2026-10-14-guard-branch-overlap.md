@@ -399,3 +399,38 @@ Progress: one remaining broad-suite failure attributed to unchanged main with se
 Learned: the previously concurrent comparison was not isolation evidence; separate test-state folders still reproduce this failure.
 next_push: Review the combined repair's folder-removal call sites against the saved eight-case fleet audit and record any unguarded path before protected landing.
 layer: beliefs
+
+
+## Combined repair still breaks an idle linked copy
+
+Verdict: proceed-with-changes. Before deleting shared Git storage, enumerate its registered linked copies and retain the store while any surviving copy depends on it. Checking locks alone cannot establish that storage is disposable.
+
+Reviewed the actual combined implementation at `/var/folders/t1/2_4kmb5n4c71dxm26zc8dgzr0000gn/T/atris-lock-suite-lp74sw3m/lib/fleet.js:2469`. It checks the review folder and two Git stores, then removes the stores without consulting their registered copies. The eight-case audit already identifies this ownership risk; this increment reproduces it on the combined repair itself rather than assuming the old audit still applies.
+
+Real invocation: `node` with an inline fixture script. The script loads the combined fleet module with Node's Module API and exposes only its private disposal function in memory. It replaces no implementation or helper. It initializes a disposable repository, clones a bare review store, adds a review copy and a detached outside copy through real `git worktree add`, confirms outside `git status --porcelain` is clean, invokes `disposeReviewSandbox`, and invokes outside `git status --porcelain` again. Fixture setup, assertions, and script exit: 0. Only disposable fixture data was removed by the real disposal function; remaining data is retained.
+
+Actual output excerpt:
+```text
+fixture: /private/var/folders/t1/2_4kmb5n4c71dxm26zc8dgzr0000gn/T/atris-store-retention-gunjl9
+{"cleanup":{"removed":true},"outsideFolderKept":true,"sharedStoreKept":false,"outsideGitStatusExit":128,"removalRecords":1}
+fatal: not a git repository: /private/var/folders/t1/2_4kmb5n4c71dxm26zc8dgzr0000gn/T/atris-store-retention-gunjl9/review/objects.git/worktrees/outside
+fixture retained
+```
+
+The pre-removal real `git worktree list --porcelain` named both `outside` and `review/work`. One successful removal record exists, but that log does not make removal safe for a surviving copy. No full eight-case rerun or full-suite claim is made here.
+
+Rerunnable required verification: `node --test test/worktree-removal-guard.test.js test/member-tidy.test.js`, exit 0. Exact final output:
+```text
+ℹ tests 13
+ℹ suites 0
+ℹ pass 13
+ℹ fail 0
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 3048.818166
+```
+
+Files edited: this receipt, `atris/team/architect/logs/2026-10-14.md`, and `atris/status/for-you.md`. Commands also run: mission status/goal, task list/new/claim/note/ready, git status/log/remote reads, source reads, brain activate/compile previews, whitespace check, explicit staging, commit, and push. Existing router and task-view changes are excluded. Progress: one combined-repair counterexample, one surviving copy broken, thirteen required checks passed; zero production edits, new filenames, or dependencies.
+next_push: Build retention of shared Git storage whenever another registered linked copy survives, with the idle outside-copy case as its regression proof.
+layer: beliefs
