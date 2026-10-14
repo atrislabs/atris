@@ -774,6 +774,9 @@ test('board shows a continuous run by its latest goal, and keeps the job in the 
   assert.equal(rows[0].job, 'scout continuous run', 'apps reading the rows get the job as written');
   assert.equal(rows[0].working_on, 'review the release note', 'and the goal next to it');
   assert.equal(rows[1].working_on, '');
+  const idle = job('cmd', ['Choosing the next useful task.', 'finished: ok']);
+  assert.match(renderBoard([idle], '/x'), /\s{2}no task picked\s{2}/, 'an ended run with no goal never picked a task, so it says so');
+  assert.equal(idle.job, 'cmd continuous run', 'the row data keeps the job as written');
 });
 
 test('board leaves the member name off a job that repeats it, but not off the row data', () => {
