@@ -1,0 +1,24 @@
+Landing status engine errors proof, 2026-10-14
+
+Before the change: the new regression failed; after a real failed start the landing status printed only the kill line.
+
+After the change, from the regression, a real fleet start on a missing program then atris autoland status:
+    engine runs force-killed in the last day: 1, 0 with machine memory low; newest claude on CLI-78 at 2026-10-14 15:33 UTC, killed (cause unknown)
+    engine runs that ended in an error in the last day: 1, newest cursor on CLI-77 at 2026-10-14 15:33 UTC: spawnSync /var/folders/t1/2_4kmb5n4c71dxm26zc8dgzr0000gn/T/atris-missing-engine-16910 ENOENT
+
+$ /opt/homebrew/bin/node --test test/engine-resource.test.js test/engine-dispatch.test.js
+  ℹ tests 99
+  ℹ pass 99
+  ℹ fail 0
+  exit 0
+
+$ node bin/atris.js autoland status   (this machine)
+  leaked ssh-agents on this machine: 540; stop them now: atris engine sweep --apply
+  exit 0 (no failed run in the real log, so the new line stays quiet)
+$ node bin/atris.js engine sweep   (this machine, read-only, checks the shared helper move)
+  no sweep recorded yet
+  no engine run has ended in SIGKILL
+  exit 0
+
+$ git diff --check
+  exit 0

@@ -338,7 +338,7 @@ test('history reads back the latest sweep and the latest SIGKILL, skipping bad l
     assert.strictEqual(history.last_kill.task, 'CLI-2');
     assert.strictEqual(history.kills, 2);
     assert.strictEqual(history.low_memory_kills, 1);
-    assert.deepStrictEqual(readResourceHistory(path.join(root, 'missing')), { last_sweep: null, last_kill: null, kills: 0, low_memory_kills: 0, time_limit_kills: 0, last_other_kill: null, kills_day: 0, low_memory_kills_day: 0, time_limit_kills_day: 0, last_day_other_kill: null, open_runs: 0, parent_gone: 0, still_running: 0, last_open: null, lost_closed: 0, lost_closed_day: 0, last_lost_closed: null, first_day_leak_reading: null, last_error: null });
+    assert.deepStrictEqual(readResourceHistory(path.join(root, 'missing')), { last_sweep: null, last_kill: null, kills: 0, low_memory_kills: 0, time_limit_kills: 0, last_other_kill: null, kills_day: 0, low_memory_kills_day: 0, time_limit_kills_day: 0, last_day_other_kill: null, open_runs: 0, parent_gone: 0, still_running: 0, last_open: null, lost_closed: 0, lost_closed_day: 0, last_lost_closed: null, first_day_leak_reading: null, last_error: null, errors_day: 0, last_day_error: null });
   } finally {
     fs.rmSync(root, { recursive: true, force: true });
   }
@@ -682,6 +682,55 @@ test('the landing status names the last day of killed runs with the low memory c
     assert.deepStrictEqual([history.kills, history.kills_day, history.low_memory_kills, history.low_memory_kills_day], [3, 2, 2, 1]);
   } finally {
     fs.rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test('the landing status names the last day of engine errors with the newest reason, apart from kills', () => {
+  const { spawnSync } = require('node:child_process');
+  const fleet = require('../lib/fleet');
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'autoland-status-errors-'));
+  const worktree = fs.mkdtempSync(path.join(os.tmpdir(), 'autoland-status-errors-wt-'));
+  const missing = path.join(os.tmpdir(), `atris-missing-engine-${process.pid}`);
+  const cli = path.join(__dirname, '..', 'bin', 'atris.js');
+  const status = () => spawnSync(process.execPath, [cli, 'autoland', 'status'], {
+    cwd: root,
+    encoding: 'utf8',
+    env: { ...process.env, ATRIS_SKIP_UPDATE_CHECK: '1', NODE_NO_WARNINGS: '1' },
+  });
+  const file = path.join(root, RESOURCE_LOG);
+  const old = new Date(Date.now() - 30 * 3600 * 1000).toISOString();
+  try {
+    spawnSync('git', ['init', '-q'], { cwd: root });
+    fs.mkdirSync(path.dirname(file), { recursive: true });
+    fs.writeFileSync(file, `${JSON.stringify({ at: old, phase: 'end', engine: 'codex', task: 'OLD', run_id: 'old', error: 'spawn codex ENOENT' })}\n`);
+    const quiet = status();
+    assert.strictEqual(quiet.status, 0, quiet.stderr);
+    assert.doesNotMatch(quiet.stdout, /ended in an error/, 'an error older than a day does not read as current');
+
+    let failure;
+    fleet.dispatchToEngine({
+      task: { id: 'CLI-77', display_id: 'CLI-77', title: 'start a missing engine' },
+      engine: 'cursor', worktreePath: worktree, root, skipBriefCapture: true,
+      runner: () => {
+        const run = spawnSync(missing, [], { encoding: 'utf8' });
+        failure = run.error;
+        return run;
+      },
+    });
+    assert.equal(failure && failure.code, 'ENOENT');
+    // A kill with an error is reported as a kill, not counted again here.
+    fs.appendFileSync(file, `${JSON.stringify({ at: new Date().toISOString(), phase: 'end', engine: 'claude', task: 'CLI-78', run_id: 'k', signal: 'SIGKILL', cause: 'killed (cause unknown)', error: 'Command failed' })}\n`);
+    const loud = status();
+    assert.strictEqual(loud.status, 0, loud.stderr);
+    const failedEnd = fs.readFileSync(file, 'utf8').trim().split('\n').map(JSON.parse).find((entry) => entry.task === 'CLI-77' && entry.phase === 'end');
+    const when = `${failedEnd.at.slice(0, 16).replace('T', ' ')} UTC`;
+    assert.ok(loud.stdout.includes(`engine runs that ended in an error in the last day: 1, newest cursor on CLI-77 at ${when}: ${failure.message}`), loud.stdout);
+    assert.doesNotMatch(loud.stdout, /Command failed/);
+    assert.ok(loud.stdout.includes('engine runs force-killed in the last day: 1'), loud.stdout);
+    console.log(`real landing status after a failed start:\n${loud.stdout.split('\n').filter((line) => /engine runs/.test(line)).join('\n')}`);
+  } finally {
+    fs.rmSync(root, { recursive: true, force: true });
+    fs.rmSync(worktree, { recursive: true, force: true });
   }
 });
 

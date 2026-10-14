@@ -2373,6 +2373,7 @@ function utcMinute(at) {
 // end, the newest run that failed without being killed and why, the newest
 // SIGKILL and its likely cause, and how many SIGKILLs came with low memory.
 function resourceHistoryLines(history) {
+  const { errorReason } = require('../lib/engine-resource');
   const lines = [];
   const sweep = history.last_sweep;
   lines.push(sweep
@@ -2391,8 +2392,7 @@ function resourceHistoryLines(history) {
   }
   const failed = history.last_error;
   if (failed) {
-    const reason = failed.error.split('\n').map((line) => line.trim()).find(Boolean);
-    lines.push(`last engine error: ${failed.engine || 'engine'} on ${failed.task || 'an unnamed task'} at ${utcMinute(failed.at)}: ${reason.slice(0, 200)}`);
+    lines.push(`last engine error: ${failed.engine || 'engine'} on ${failed.task || 'an unnamed task'} at ${utcMinute(failed.at)}: ${errorReason(failed)}`);
   }
   const kill = history.last_kill;
   if (!kill) {

@@ -9,7 +9,7 @@ const autoland = require('../lib/autoland');
 const { gateForHuman, plainLandingReason } = require('../lib/voice-gate');
 const { evaluateAutoAccept } = require('../lib/auto-accept-certified');
 const { sweepEngineAskReceipts } = require('../lib/engine-receipt-sweep');
-const { readSshAgents, findLeakedSshAgents, stopLeakedSshAgents, closeLostRuns, readResourceHistory, leakGrowthNote } = require('../lib/engine-resource');
+const { readSshAgents, findLeakedSshAgents, stopLeakedSshAgents, closeLostRuns, readResourceHistory, errorReason, leakGrowthNote } = require('../lib/engine-resource');
 const { validateRecentAskReceipts } = require('../lib/engine-validate');
 const { operatorReady, hasAgentJargon, explainResult } = autoland;
 const MISSION_AUTO_VERIFY_STATUSES = new Set(['planning', 'paused', 'ready']);
@@ -547,6 +547,13 @@ function showStatus(root, args, deps = {}) {
     const when = `${String(kill.at || '').slice(0, 16).replace('T', ' ')} UTC`;
     const free = Number.isFinite(kill.free_pct) ? `, ${kill.free_pct}% memory free` : '';
     console.log(`  engine runs force-killed in the last day: ${lost.kills_day}, ${counts}; ${label} ${kill.engine || 'unknown engine'} on ${kill.task || 'no task'} at ${when}, ${kill.cause || 'cause unknown'}${free}`);
+  }
+  if (lost.errors_day) {
+    // Runs that failed with a message and were not killed, such as an engine
+    // that could not start; kills are counted on the line above.
+    const failed = lost.last_day_error;
+    const when = `${String(failed.at || '').slice(0, 16).replace('T', ' ')} UTC`;
+    console.log(`  engine runs that ended in an error in the last day: ${lost.errors_day}, newest ${failed.engine || 'unknown engine'} on ${failed.task || 'no task'} at ${when}: ${errorReason(failed)}`);
   }
   const leakedAgents = countLeakedSshAgents(deps);
   if (leakedAgents) {
