@@ -2282,3 +2282,5 @@ npm publish
 
 - `lib/member-autoland.js:353` reads current approval from each linked task before any remote operation. Revise, revised, and rejected states hold at approval; resubmitted pending proof continues through the existing review gates.
 - `test/member-refused-no-pr.test.js:1` uses the real task database and Git, including a separate command process with network and GitHub call traps. Verify: `node --test test/member-refused-no-pr.test.js`.
+
+- Bounded member progress: `lib/member-progress.js:15` scans oversized logs backwards in bounded buffers and replaces them with recent whole lines plus the latest start marker; `lib/member-progress.js:185` appends and trims. Regression: `test/member-progress-trim.test.js:1`.
