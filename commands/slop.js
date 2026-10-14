@@ -355,6 +355,7 @@ function detect(argv) {
       ok: findings.length === 0, scanned: files.length,
       mode: diffMode ? (staged ? 'staged' : 'diff') : 'path',
       fixed: fixed ? fixed.fixedCount : 0,
+      changes: fixed ? fixed.changes.map((c) => ({ ...c, file: path.relative(process.cwd(), c.file) })) : [],
       slop: findings.length, errors,
       findings: findings.map((f) => ({ ...f, file: path.relative(process.cwd(), f.file) })),
     }, null, 2));

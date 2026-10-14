@@ -371,3 +371,27 @@ test('a fix run prints each changed line before and after, and quiet mode stays 
   const quiet = run([tmpFile('note.md', body), '--fix', '--quiet']);
   assert.doesNotMatch(quiet.out, /before|after/, 'quiet mode skips the line list');
 });
+
+test('the machine output of a fix run lists each changed line before and after', () => {
+  const D = '\u2014';
+  const file = tmpFile('note.md', ['# Notes', `We checked it, ${D} and it held.`, 'nothing to fix here', ''].join('\n'));
+  const lines = [];
+  const orig = console.log;
+  console.log = (...a) => lines.push(a.join(' '));
+  let code;
+  try { code = detect([file, '--fix', '--json']); } finally { console.log = orig; }
+  const result = JSON.parse(lines.join('\n'));
+  assert.equal(code, 0);
+  assert.equal(result.fixed, 1);
+  assert.equal(result.changes.length, 1, 'only the edited line is listed');
+  const [c] = result.changes;
+  assert.ok(c.file.endsWith('note.md') && !path.isAbsolute(c.file), 'file is relative like findings');
+  assert.equal(c.line, 2);
+  assert.equal(c.before, `We checked it, ${D} and it held.`);
+  assert.equal(c.after, 'We checked it, and it held.');
+  // a scan without the fix flag still carries the field, empty
+  lines.length = 0;
+  console.log = (...a) => lines.push(a.join(' '));
+  try { detect([file, '--json']); } finally { console.log = orig; }
+  assert.deepEqual(JSON.parse(lines.join('\n')).changes, []);
+});
