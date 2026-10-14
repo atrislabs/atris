@@ -982,6 +982,9 @@ test('fix joins a noun clause after the dash with a semicolon', () => {
     'Run the gate \u2014 when it passes, the branch lands.',
     'It fails \u2014 when the disk is full.',
     'Ship it \u2014 if you can, after lunch.',
+    // a command with "it" after the comma is a sentence; "then it" is not
+    'Keep the log \u2014 if it breaks, trace it.',
+    'Ship it \u2014 if you can, then it lands.',
   ].join('\n'));
   const { changes } = applyFixes([file], RULES);
   assert.deepEqual(changes.map((c) => c.after), [
@@ -1034,6 +1037,8 @@ test('fix joins a noun clause after the dash with a semicolon', () => {
     'Run the gate; when it passes, the branch lands.',
     'It fails, when the disk is full.',
     'Ship it, if you can, after lunch.',
+    'Keep the log; if it breaks, trace it.',
+    'Ship it, if you can, then it lands.',
   ]);
 });
 
