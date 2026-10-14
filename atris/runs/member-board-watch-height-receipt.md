@@ -32,3 +32,5 @@ Exit: 0 at each height. Frame heights: exactly 1, 2, 3 rows. No trailing newline
 Limitation: a one-row terminal shows only the header. No change to mission policy or dependencies.
 next_push: Keep the watch hint on one line in narrow terminals by shortening it to fit the available width.
 layer: behaviors
+
+Review check note: the task command login shell selected unsupported Node 20.18.0, so its first rerun failed before real CLI tests could run (25 passed, 3 failed, 13 cancelled). The frozen command passed again in the current shell. Repeating the same tests with /opt/homebrew/Cellar/node/25.6.1/bin/node passed all 41, exit 0; saved formal proof: atris/runs/2026-10-14-task-bci-7-2026-10-14T20-29-36-922Z.json. No mission settings or tool policy changed.
