@@ -144,6 +144,14 @@ test('the runner writes why a run failed and the board reads it back', () => {
     assert.equal(by.exit.last_result_reason, 'bad exit 2');
     assert.equal(by.killed.last_result_reason, 'killed by SIGKILL');
     assert.equal(by.plain.last_result_reason, '');
+    assert.equal(by.locked.step, '', 'the json keeps the real last step');
+    const screen = renderBoard(Object.values(by), dir);
+    assert.match(screen, /^locked\s+done failed\s+failed \(signed out\) 1m ago\s.*\s{2}sign in to the engine, then run it again$/m,
+      'a signed out row says how to fix it');
+    assert.match(screen, /^broke\s+done failed\s+failed \(engine error\) 1m ago\s.*\s{2}-$/m, 'other failures keep their last step');
+    const busy = renderBoard([{ ...by.locked, state: 'working', engine: 'claude' }], dir);
+    assert.doesNotMatch(busy, /sign in/, 'a busy row is past it');
+    assert.match(renderBoard([{ ...by.locked, engine: 'codex' }], dir), /sign in to codex, then run it again$/m);
     for (const name of Object.keys(ends).filter((n) => n !== 'good')) assert.equal(by[name].state, 'done failed', name);
   } finally {
     fs.rmSync(dir, { recursive: true, force: true });
