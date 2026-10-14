@@ -486,6 +486,21 @@ test('board keeps the order words while a history is as wide as they are', () =>
   assert.ok(at70.every((l) => l.length <= 70), at70.join('\n'));
 });
 
+test('a narrow board gives up a before column that says ok on every row first', () => {
+  const now = Date.parse('2026-10-14T13:00:00Z');
+  const row = (name, engine, ends) => memberRow(name, [
+    ...ends.flatMap((e, i) => [`2026-10-14T12:1${i}:00Z m-${i} started: run ${i}`, `2026-10-14T12:1${i}:30Z m-${i} finished: ${e}`]),
+    `2026-10-14T12:50:00Z m-9 started: [pid ${process.pid} engine ${engine}] keep the board readable on a small screen`, '2026-10-14T12:59:30Z m-9 running: node --test', '',
+  ].join('\n'), now);
+  const rows = [row('builder', 'claude', ['ok', 'ok']), row('scout', 'codex', ['ok'])];
+  const head = (rs, w) => renderBoard(rs, '/x', 0, w).split('\n').find((l) => l.startsWith('member '));
+  assert.match(head(rows, 120), /^member\s+state\s+before\s+alive\s+engine\s/, 'a wide screen keeps it');
+  assert.match(head(rows, 70), /^member\s+state\s+alive\s+run time\s+ago\s+job$/, 'it goes before alive does');
+  assert.match(head(rows, 60), /^member\s+state\s+run time\s+ago\s+job$/, 'the headers keep their words instead');
+  const mixed = [rows[0], row('scout', 'codex', ['failed'])];
+  assert.match(head(mixed, 60), /^member\s+state\s+before\s/, 'a failed run among them keeps the column');
+});
+
 test('board writes "at least 1h" as "1h+" on a narrow screen, but not in the row data', () => {
   const now = Date.parse('2026-10-14T13:00:00Z');
   const rows = [
