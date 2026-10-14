@@ -2615,6 +2615,25 @@ test('fix keeps a run of pressed dashes that touches a drawn corner or pipe', ()
   ]);
 });
 
+test('fix turns a single dash pressed against a drawn corner or pipe into a hyphen', () => {
+  // the dash read as a clause break: "plan, +", "+, next"
+  const file = tmpFile('corner-dash.md', [
+    'plan \u2014+',
+    '+\u2014 next',
+    'step |\u2014 next',
+    'C++\u2014 the language',
+    'C++\u2014\u2014 the language',
+  ].join('\n\n'));
+  const { changes } = applyFixes([file], RULES, { write: false });
+  assert.deepEqual(changes.map((c) => c.after), [
+    'plan -+',
+    '+- next',
+    'step |- next',
+    'C++, the language',
+    'C++, the language',
+  ]);
+});
+
 test('fix keeps a journal heading that ends in a time readable for its hour', () => {
   // analytics reads the hour after a dash or a spaced hyphen at the end of a
   // heading; the fix wrote "### Watch: 19:05", which hides it, and glued
