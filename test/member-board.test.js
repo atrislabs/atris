@@ -130,12 +130,21 @@ test('a narrow terminal trims job and last step so every line fits', () => {
 
     const narrow = renderBoard(rows, dir, 0, 120);
     for (const l of narrow.split('\n')) assert.ok(l.length <= 120, `fits in 120: ${l.length}`);
-    assert.match(narrow, /^member\s+state\s+last result\s+alive\s+engine\s+running for\s+ago\s+job\s+last step$/m);
-    assert.match(narrow, /^builder\s+working\s.*\s+Ship the \S+\.\.\.\s+running: \S+\.\.\.$/m);
+    assert.match(narrow, /^member\s+state\s+last result\s+ago\s+job\s+last step$/m, 'columns that are all dashes leave');
+    assert.match(narrow, /^builder\s+working\s.*\s+Ship the member [^.]+\.\.\.\s+running: node [^.]+\.\.\.$/m);
     assert.match(narrow, /^breaker\s+done failed\s+failed \(timed out\) 1m ago\s.*risky fix\s+-$/m, 'short text stays whole');
 
+    const tiny = renderBoard(rows, dir, 0, 80);
+    for (const l of tiny.split('\n')) assert.ok(l.length <= 80, `fits in 80: ${l.length}`);
+    assert.match(tiny, /^breaker\s+done failed\s+failed \(timed out\) 1m ago\s+1m ago\s/m, 'the reason survives at 80');
+
+    const live = [{ ...rows[0], alive: true, engine: 'claude', running_for: '1m' }, rows[1]];
+    assert.match(renderBoard(live, dir, 0, 120), /^member\s+state\s+last result\s+alive\s+engine\s+running for\s+ago\s+job\s+last step$/m,
+      'one live run keeps them');
+
     const roomy = renderBoard(rows, dir, 0, 400);
-    assert.equal(roomy, wide, 'a wide terminal changes nothing');
+    assert.match(roomy, /^member\s+state\s+last result\s+ago\s+job\s+last step$/m);
+    assert.match(roomy, /operator sees ever\.\.\./, 'a wide terminal trims no text');
   } finally {
     fs.rmSync(dir, { recursive: true, force: true });
   }
