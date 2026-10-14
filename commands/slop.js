@@ -25,7 +25,8 @@ const SCAN_EXTS = new Set(['.css', '.scss', '.sass', '.less', '.tsx', '.jsx', '.
 const SKIP_DIRS = new Set(['node_modules', '.git', 'dist', 'build', '.next', '.astro', 'coverage', '.cache', 'out', 'vendor']);
 
 // Em dash repair. A list item that opens with a short label and a dash
-// ("- **Name** then a dash then what it does") gets a colon after the label.
+// ("- **Name** then a dash then what it does") gets a colon after the label,
+// and so does a bold label that opens a plain line or a quote.
 // Two dashes around an aside become parentheses, so "the gate, the one CI
 // runs, blocks it" never comes out as a comma run-on. A lone dash left over
 // becomes a comma, unless punctuation already sits beside it. A dash between
@@ -38,6 +39,8 @@ const SKIP_DIRS = new Set(['node_modules', '.git', 'dist', 'build', '.next', '.a
 // A dash that ends a line stays a comma when the sentence wraps onto the
 // next line, and becomes a period when the paragraph ends there.
 const LIST_LABEL_DASH = /^(\s*(?:[-*+]|\d+[.)])\s+)([^\u2014]{0,59}[^\s\u2014,;:.])\s*\u2014\s*/;
+// A bold label that opens a line or a quote, not a list item, gets the same colon.
+const BOLD_LABEL_DASH = /^(\s*(?:>\s*)*)(\*\*[^*\u2014]{0,58}[^\s*\u2014,;:.]\*\*|__[^_\u2014]{0,58}[^\s_\u2014,;:.]__)\s*\u2014\s*/;
 
 // True when one pair of parentheses wraps the whole aside, "(mostly)" but
 // not "(a) or (b)", so the fixer keeps them instead of adding a second pair.
@@ -54,7 +57,7 @@ function wrappedInParens(s) {
 function fixEmDash(s, { endsBlock = false } = {}) {
   s = s.replace(/\u2014(?:\s*\u2014)+/g, '\u2014').replace(/(\d)\s*\u2014\s*(?=\d)/g, '$1-').replace(/^(\s*(?:>\s*)*)\u2014\s*/, '$1');
   if (endsBlock) s = s.replace(/([.,;:!?]?)\s*\u2014\s*$/, (m, p) => p || '.');
-  const label = LIST_LABEL_DASH.exec(s);
+  const label = LIST_LABEL_DASH.exec(s) || BOLD_LABEL_DASH.exec(s);
   if (label) return `${label[1]}${label[2]}:${s.length > label[0].length ? ' ' : ''}${fixEmDash(s.slice(label[0].length), { endsBlock })}`;
   return s
     // an aside never crosses a sentence end; dashes split by one are fixed alone

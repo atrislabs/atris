@@ -545,6 +545,23 @@ test('fix keeps an aside that already has parentheses in one pair', () => {
   ]);
 });
 
+test('fix gives a bold label that opens a line a colon, like a list label', () => {
+  // shapes from this repo's skill and feature docs
+  const file = tmpFile('bold.md', [
+    '**Beliefs** \u2014 3-5 convictions. Not rules \u2014 things held true.',
+    '> **For Executor Agent** \u2014 Follow these steps exactly.',
+    '__Values__ \u2014 ordered by priority.',
+    'The **gate** \u2014 the one CI runs \u2014 blocks it.',
+  ].join('\n'));
+  const { changes } = applyFixes([file], RULES);
+  assert.deepEqual(changes.map((c) => c.after), [
+    '**Beliefs**: 3-5 convictions. Not rules, things held true.',
+    '> **For Executor Agent**: Follow these steps exactly.',
+    '__Values__: ordered by priority.',
+    'The **gate** (the one CI runs) blocks it.',
+  ]);
+});
+
 test('fix never pairs two dashes across a sentence end', () => {
   // shapes taken from this repo's own docs, where the old fixer opened a
   // parenthesis in one sentence and closed it in the next
