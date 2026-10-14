@@ -1414,6 +1414,17 @@ test('a too-tall board shortens its long notes to one line before leaving a memb
   ], 'each note keeps its point on one line');
 });
 
+test('a too-tall board shortens the hidden note to one line before leaving a member off', () => {
+  const now = Date.parse('2026-10-14T12:00:00Z');
+  const rows = ['ada', 'bo'].map((name) => memberRow(name, `2026-10-14T11:50:00Z m-2 started: [pid ${process.pid} engine claude] work\n2026-10-14T11:59:00Z m-2 running: rg x\n`, now));
+  const hidden = [{ member: 'old', state: 'done failed' }, { member: 'gone', state: 'died' }, ...Array(10).fill({ member: 'x', state: 'done ok' })];
+  const full = renderBoard(rows, '/x', hidden, 64).split('\n');
+  assert.deepEqual(full.slice(-2), ['12 ended over an hour ago, hidden: 1 died, 1 failed. --all shows', '  them'], `the full note wraps at 64 columns:\n${full.join('\n')}`);
+  const short = renderBoard(rows, '/x', hidden, 64, [], full.length - 1).split('\n');
+  assert.ok(['ada', 'bo'].every((m) => short.some((l) => l.startsWith(`${m} `))), `every member still shows:\n${short.join('\n')}`);
+  assert.equal(short[short.length - 1], '12 ended over an hour ago: 1 died, 1 failed. --all shows them', 'the trouble counts stay, on one line');
+});
+
 test('a run with no pid that has been silent for over an hour is named as likely ended', () => {
   const now = Date.parse('2026-10-14T12:00:00Z');
   const old = memberRow('launcher', '2026-10-14T04:00:00Z m-1 started: score launcher\n2026-10-14T05:00:00Z m-1 running: npm test\n', now);
