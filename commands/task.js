@@ -278,8 +278,8 @@ atris task - durable local task state (SQLite, gitignored)
   atris task events --everywhere           print the full ledger across workspaces
   atris task export [--all] [--everywhere] [--out <file>]
                                            write web/desktop JSON projection
-  atris task render [--all] [--everywhere] [--out <file>]
-                                           regenerate compact TODO.md view from state
+  atris task render [--all] [--everywhere] [--out <file>] [--allow-empty]
+                                           regenerate compact TODO.md view from state; refuses to empty a board of live tasks from a database that has none
   atris task where                          Print db path + workspace scope
   atris task help                           This help
 
@@ -12034,6 +12034,25 @@ function cmdRender(args) {
   });
   const outPath = path.resolve(String(out));
   const existingTodo = fs.existsSync(outPath) ? fs.readFileSync(outPath, 'utf8') : '';
+  // An agent copy of a repo can open a database that has never seen this
+  // folder. Rendering there would wipe a board of real tasks, so refuse when
+  // the database knows nothing here and the rendered board still lists work.
+  if (!refRows.length && !hasFlag(args, '--allow-empty')
+    && existingTodo.includes('Regenerated from durable Atris task state')) {
+    const { parseTodoFile } = require('../lib/todo-fallback');
+    const parsed = parseTodoFile(outPath);
+    const live = ['backlog', 'inProgress', 'review'].reduce((sum, key) => sum + (parsed[key] || []).length, 0);
+    if (live > 0) {
+      const reason = `the task database has no tasks for this folder, but ${out} lists ${live} live task${live === 1 ? '' : 's'}`;
+      if (wantsJson(args)) {
+        printJson({ ok: false, action: 'refused', reason, live_tasks_in_file: live, path: outPath });
+      } else {
+        console.error(`atris task render: refused, ${reason}. Writing would empty the board.`);
+        console.error('If this is an agent copy of the repo, render from the main checkout. To empty it on purpose, add --allow-empty.');
+      }
+      process.exit(2);
+    }
+  }
   const preservedSections = [];
   const endgameSection = extractTodoSectionMarkdown(existingTodo, 'Endgame');
   if (endgameSection) preservedSections.push(endgameSection);
