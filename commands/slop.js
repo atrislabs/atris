@@ -44,6 +44,11 @@ const LIST_LABEL_DASH = /^(\s*(?:[-*+]|\d+[.)])\s+)([^\u2014]{0,59}[^\s\u2014,;:
 // fixer sees inline code masked, so the masked span counts as code too.
 const LINE_LABEL_DASH = /^(\s*(?:>\s*)*)(\*\*[^*\u2014]{0,58}[^\s*\u2014]\*\*|__[^_\u2014]{0,58}[^\s_\u2014]__|`[^`]+`|\uE000\d+\uE001)\s*\u2014\s*/;
 
+// A heading with one dash is a title and a subtitle, so the dash becomes a
+// colon: "Audit Gaps: Build Plan". It stays a comma when a colon already
+// sits before it, or when the subtitle opens with a joining word ("and").
+const HEADING_DASH = /^(\s{0,3}#{1,6}\s+[^\u2014:]*[^\s\u2014,;:.!?])\s*\u2014\s*(?!(?:and|but|or|nor|so|yet)\b)(?=[^\s\u2014][^\u2014]*$)/i;
+
 // True when one pair of parentheses wraps the whole aside, "(mostly)" but
 // not "(a) or (b)", so the fixer keeps them instead of adding a second pair.
 function wrappedInParens(s) {
@@ -59,6 +64,7 @@ function wrappedInParens(s) {
 function fixEmDash(s, { endsBlock = false } = {}) {
   s = s.replace(/\u2014(?:\s*\u2014)+/g, '\u2014').replace(/(\d)\s*\u2014\s*(?=\d)/g, '$1-').replace(/^(\s*(?:>\s*)*)\u2014\s*/, '$1');
   if (endsBlock) s = s.replace(/([.,;:!?]?)\s*\u2014\s*$/, (m, p) => p || '.');
+  if (HEADING_DASH.test(s)) return s.replace(HEADING_DASH, '$1: ');
   const label = LIST_LABEL_DASH.exec(s) || LINE_LABEL_DASH.exec(s);
   // a label that already ends in its own punctuation, "**what is it?**",
   // keeps it and just loses the dash, so no colon stacks on top

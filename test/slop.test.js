@@ -594,6 +594,25 @@ test('fix gives a code span that opens a line a colon, in markdown and plain tex
   ]);
 });
 
+test('fix gives a heading title and subtitle a colon, but not before a joining word', () => {
+  // shapes from this repo's feature, policy, and member docs
+  const file = tmpFile('headings.md', [
+    '# Audit Gaps \u2014 Build Plan',
+    '### Track A \u2014 `atris-cli`',
+    '## What this is \u2014 and is not',
+    '## Status: COMPLETE \u2014 both classes exhausted',
+    'A plain line \u2014 not a heading',
+  ].join('\n'));
+  const { changes } = applyFixes([file], RULES);
+  assert.deepEqual(changes.map((c) => c.after), [
+    '# Audit Gaps: Build Plan',
+    '### Track A: `atris-cli`',
+    '## What this is, and is not',
+    '## Status: COMPLETE, both classes exhausted',
+    'A plain line, not a heading',
+  ]);
+});
+
 test('fix never pairs two dashes across a sentence end', () => {
   // shapes taken from this repo's own docs, where the old fixer opened a
   // parenthesis in one sentence and closed it in the next
