@@ -170,6 +170,24 @@ function runCli(args, { cwd, input, env, timeout = 15000 } = {}) {
   return result;
 }
 
+// runCli without blocking, so independent launches can overlap.
+function runCliAsync(args, { cwd, env, timeout = 15000 } = {}) {
+  return new Promise((resolve, reject) => {
+    const child = spawn(process.execPath, [cliPath, ...withFixtureReadyResult(args)], {
+      cwd,
+      env: { ...scrubAgentEnv(), ATRIS_SKIP_UPDATE_CHECK: '1', ...(env || {}) },
+      stdio: ['ignore', 'pipe', 'pipe'],
+    });
+    let stdout = '';
+    let stderr = '';
+    child.stdout.setEncoding('utf8').on('data', (chunk) => { stdout += chunk; });
+    child.stderr.setEncoding('utf8').on('data', (chunk) => { stderr += chunk; });
+    const timer = setTimeout(() => child.kill('SIGTERM'), timeout);
+    child.once('error', (error) => { clearTimeout(timer); reject(error); });
+    child.once('close', (status, signal) => { clearTimeout(timer); resolve({ status, signal, stdout, stderr }); });
+  });
+}
+
 function fakeMemberRunClaude(dir) {
   const bin = path.join(dir, 'fake-bin');
   fs.mkdirSync(bin, { recursive: true });
@@ -17306,7 +17324,7 @@ test('fresh workspace prompt gives one primary first command plus local fallback
   }
 });
 
-test('workspace-free help smoke sweep covers common entrypoints', () => {
+test('workspace-free help smoke sweep covers common entrypoints', async () => {
   const cases = [
     ['--help'],
     ['status', '--help'],
@@ -17368,11 +17386,12 @@ test('workspace-free help smoke sweep covers common entrypoints', () => {
     ['cr', '--help'],
   ];
 
-  for (const args of cases) {
+  // Every case gets its own folder and home, so six run at once.
+  const checkCase = async (args) => {
     const dir = makeTempDir();
     try {
       const home = path.join(dir, 'home');
-      const res = runCli(args, { cwd: dir, env: { HOME: home } });
+      const res = await runCliAsync(args, { cwd: dir, env: { HOME: home } });
       const label = args.join(' ');
       assert.equal(res.status, 0, `${label}: ${res.stderr || res.stdout}`);
       assert.ok((res.stdout + res.stderr).trim().length > 0, `${label} printed no help`);
@@ -17382,7 +17401,11 @@ test('workspace-free help smoke sweep covers common entrypoints', () => {
     } finally {
       cleanupTempDir(dir);
     }
-  }
+  };
+  const queue = [...cases];
+  await Promise.all(Array.from({ length: 6 }, async () => {
+    while (queue.length) await checkCase(queue.shift());
+  }));
 });
 
 test('launchpad --json picks the current actor claimed task first', () => {
