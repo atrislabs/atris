@@ -162,6 +162,31 @@ test('a narrow terminal trims job and last step so every line fits', () => {
   }
 });
 
+test('a busy row with an earlier failure shrinks its last result before it overflows', () => {
+  const dir = fakeDir({
+    'chat-experience-lead': [
+      `${at(900)} m-1 started: fix it`,
+      `${at(840)} m-1 finished: failed (bad exit 2)`,
+      `${at(60)} m-2 started: try again on the chat page`,
+      `${at(5)} m-2 running: npm test`,
+    ],
+    builder: [`${at(100)} m-3 started: build`, `${at(80)} m-3 finished: failed (engine error)`],
+  });
+  try {
+    const rows = readBoard({ dir, now: NOW });
+    assert.match(renderBoard(rows, dir, 0, 120), /^chat-experience-lead\s+working\s+failed \(bad exit 2\) 14m ago\s/m, 'room to spare: all of it');
+    const mid = renderBoard(rows, dir, 0, 90);
+    for (const l of mid.split('\n')) assert.ok(l.length <= 90, `fits in 90: ${l.length}`);
+    assert.match(mid, /^chat-experience-lead\s+working\s+failed \(bad exit 2\) 14m\s/m, 'first "ago" goes');
+    const tiny = renderBoard(rows, dir, 0, 80);
+    for (const l of tiny.split('\n')) assert.ok(l.length <= 80, `fits in 80: ${l.length}`);
+    assert.match(tiny, /^chat-experience-lead\s+working\s+failed 14m\s/m, 'then the reason goes');
+    assert.match(tiny, /^builder\s+done failed\s+engine error\s/m, 'a done row keeps its reason');
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
 test('a short window keeps the header and the newest rows, and says how many did not fit', () => {
   const logs = {};
   for (let i = 1; i <= 8; i++) logs[`m${i}`] = [`${at(i * 10)} m-${i} started: job ${i}`, `${at(i * 10 - 5)} m-${i} running: step ${i}`];
