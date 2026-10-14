@@ -23,6 +23,8 @@ Details for any task: atris task show <ID>
 
 ## Review
 
+- **[AIC-39]** Remove tag filtering setup launches · auto-improver
+  **Done looks like:** Developers finish the same checks sooner because setup starts two fewer commands.
 - **[AIC-38]** Remove filtered task reference setup launches · auto-improver
   **Done looks like:** Developers finish filtered task reference checks sooner because setup starts two fewer commands.
 - **[AIC-37]** Remove stale markdown claim setup launch · auto-improver

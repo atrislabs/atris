@@ -7670,16 +7670,19 @@ test('task next and list honor tag scope before mutating tasks', () => {
   try {
     fs.mkdirSync(path.join(dir, 'atris'), { recursive: true });
 
-    const loopCreated = runCli([
-      'task',
-      'new',
-      'Loop janitor keeps unrelated work visible to operators',
-      '--tag',
-      'loop',
-      '--json',
-    ], { cwd: dir, env });
-    assert.equal(loopCreated.status, 0, loopCreated.stderr);
-    const loopTask = JSON.parse(loopCreated.stdout).task;
+    // Only creation is setup; claim, next, show, and list still use the CLI.
+    const workspaceRoot = taskStore.workspaceRoot(dir);
+    const seedTask = (title, tag) => {
+      const db = taskStore.open(dbPath);
+      try {
+        const created = addSeedTask(db, { title, tag, workspaceRoot });
+        return taskStore.withTaskDisplayRefs(taskStore.listTasks(db, { workspaceRoot }))
+          .find((row) => row.id === created.id);
+      } finally {
+        taskStore.close();
+      }
+    };
+    const loopTask = seedTask('Loop janitor keeps unrelated work visible to operators', 'loop');
     const loopClaim = runCli(['task', 'claim', loopTask.display_id, '--as', 'onboarding'], { cwd: dir, env });
     assert.equal(loopClaim.status, 0, loopClaim.stderr);
 
@@ -7696,16 +7699,7 @@ test('task next and list honor tag scope before mutating tasks', () => {
     assert.equal(loopAfterNoMatch.claimed_by, 'onboarding');
     assert.equal(loopAfterNoMatch.tag, 'loop');
 
-    const goldenCreated = runCli([
-      'task',
-      'new',
-      'Golden path work keeps first-run onboarding focused',
-      '--tag',
-      'golden-path',
-      '--json',
-    ], { cwd: dir, env });
-    assert.equal(goldenCreated.status, 0, goldenCreated.stderr);
-    const goldenTask = JSON.parse(goldenCreated.stdout).task;
+    const goldenTask = seedTask('Golden path work keeps first-run onboarding focused', 'golden-path');
 
     const scopedNext = runCli(['task', 'next', '--tag', 'golden-path', '--as', 'onboarding', '--json'], { cwd: dir, env });
     assert.equal(scopedNext.status, 0, scopedNext.stderr);

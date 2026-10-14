@@ -2343,3 +2343,5 @@ npm publish
 ## Filtered task reference fixture setup
 
 - `test/commands.test.js:8008` checks stable display references across open and done list filters. Two ordered real-store seeds replace two creation launches, and the database closes in finally. Completion and all three list calls still exercise the CLI with every assertion preserved.
+
+- `test/commands.test.js:7665` checks tag-scoped next selection without mutation and list filtering. Ordered real-store creation replaces two setup launches; claim, next, show and list remain CLI calls with all behavior assertions preserved, and each seed closes the store in finally.
