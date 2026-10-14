@@ -57,7 +57,7 @@ test('board shows working, quiet, done ok, and done failed from fake logs', () =
   try {
     const rows = readBoard({ dir, now: NOW });
     const by = Object.fromEntries(rows.map((r) => [r.member, r]));
-    assert.deepEqual(rows.map((r) => r.member), ['builder', 'breaker', 'shipper', 'scout']);
+    assert.deepEqual(rows.map((r) => r.member), ['breaker', 'builder', 'shipper', 'scout'], 'a failed run goes first');
 
     assert.equal(by.builder.state, 'working');
     assert.deepEqual(by.builder.before, ['ok'], 'the older run that finished ok');
@@ -130,6 +130,26 @@ test('before shows how the last three runs ended, newest first', () => {
     const [row] = readBoard({ dir, now: NOW });
     assert.deepEqual(row.before, ['died', 'stopped', 'failed'], 'a stop wins over failed; the oldest run drops off');
     assert.match(renderBoard([row], dir), /^builder\s+working\s+died stopped failed\s+-\s+/m);
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test('died and failed members sort to the top, newest first inside each group', () => {
+  const gone = 2147483646;
+  const dir = fakeDir({
+    busy: [`${at(20)} m-1 started: x`, `${at(5)} m-1 reading a`],
+    halted: [`${at(40)} m-2 started: x`, `${at(10)} m-2 finished: stopped`],
+    broke: [`${at(900)} m-3 started: x`, `${at(800)} m-3 finished: failed`],
+    crashed: [`${at(600)} m-4 started: [pid ${gone} engine claude] x`, `${at(500)} m-4 reading b`],
+    fine: [`${at(300)} m-5 started: x`, `${at(200)} m-5 finished: ok`],
+  });
+  try {
+    const rows = readBoard({ dir, now: NOW });
+    assert.deepEqual(rows.map((r) => [r.member, r.state]), [
+      ['crashed', 'died'], ['broke', 'done failed'],
+      ['busy', 'working'], ['halted', 'stopped'], ['fine', 'done ok'],
+    ], 'a clean stop is not trouble');
   } finally {
     fs.rmSync(dir, { recursive: true, force: true });
   }
