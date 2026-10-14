@@ -767,9 +767,9 @@ test('narrow footers shorten the older-runs note before dropping hidden counts',
   try {
     const rows = readBoard({ dir, now: NOW });
     for (const [width, footer] of [
-      [77, '3 more not shown (1 failed, 1 stopped, a working). 2 older, --all shows them'],
-      [57, '3 hidden (1 failed, 1 stopped, a working). 2 older hidden'],
-      [46, '3 hidden (1 failed, 1 stopped, a working)'],
+      [77, '3 hidden (1 failed, bad exit 2, 1 stopped, a working). 2 older hidden'],
+      [57, '3 hidden (1 failed, bad exit 2, 1 stopped, a working)'],
+      [46, '3 hidden (1 failed, bad exit 2, 1 stopped)'],
       [39, '3 hidden (1 failed, 1 stopped). 2 older'],
       [30, '3 hidden (1 failed, 1 stopped)'],
       [24, '3 hidden (1 failed, ...)'],
@@ -778,6 +778,14 @@ test('narrow footers shorten the older-runs note before dropping hidden counts',
       assert.equal(lines[lines.length - 1], footer, `${width}: counts before the older note`);
       assert.equal(lines.length, 4);
       assert.ok(lines.every((line) => line.length <= width));
+    }
+    const done = rows.filter((r) => r.member !== 'a');
+    for (const [width, footer] of [
+      [92, '2 more not shown (1 failed, bad exit 2, 1 stopped). 2 older runs hidden, --all shows them'],
+      [80, '2 hidden (1 failed, bad exit 2, 1 stopped). 2 older, --all shows them'],
+      [44, '2 hidden (1 failed, bad exit 2, 1 stopped)'],
+    ]) {
+      assert.equal(renderBoard(done, dir, 2, width, 3).split('\n').pop(), footer, `${width}: the failure reason outlasts the older note`);
     }
     for (const [width, footer] of [[25, '2 older, --all shows them'], [14, '2 older hidden'], [7, '2 older']]) {
       assert.equal(renderBoard(rows, dir, 2, width).split('\n').pop(), footer, `${width}: the older note alone stays whole`);
