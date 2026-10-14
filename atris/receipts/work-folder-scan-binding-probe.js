@@ -18,14 +18,16 @@ const scanner = source.slice(start, end);
 const bypassFilter = source.slice(predicateStart, predicateEnd).trim();
 
 let gaps = 0;
-for (const [label, protectedPath, wantedBypasses] of [
-  ['matching folder control', 'worktreePath', 0],
-  ['unrelated folder protection', 'otherWorktreePath', 1],
+for (const [label, protectedPath, loggedPath, wantedBypasses] of [
+  ['matching folder control', 'worktreePath', 'worktreePath', 0],
+  ['unrelated folder guard', 'otherWorktreePath', 'worktreePath', 1],
+  ['unrelated folder log', 'worktreePath', 'otherWorktreePath', 1],
+  ['unrelated folder protection', 'otherWorktreePath', 'otherWorktreePath', 1],
 ]) {
   const body = `function cleanup() {
   if (worktreeGitActivity(${protectedPath})) return;
   fs.rmSync(worktreePath, { recursive: true });
-  recordWorktreeRemoval(root, { path: ${protectedPath} });
+  recordWorktreeRemoval(root, { path: ${loggedPath} });
 }`;
   const context = vm.createContext({
     fs: { readFileSync: () => body },
