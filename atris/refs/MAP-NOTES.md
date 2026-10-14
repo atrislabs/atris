@@ -2433,3 +2433,7 @@ npm publish
 ## Reviewed failure status fixture setup
 
 - `test/commands.test.js:14484` checks that task status counts a reviewed failed task as closed, with nothing active or waiting for review. Real-store creation at `test/commands.test.js:14491` saves one setup launch; task add only stores the row and redraws the task view, which the claim and failed finish redraw again, so the claim, failed finish and status read remain on the CLI.
+
+## Failed blocker status fixture setup
+
+- `test/commands.test.js:14522` checks that a failed task without a proof counts as blocked and stays out of the review handoff in both JSON and text status. Real-store creation at `test/commands.test.js:14529` saves one setup launch; the claim, failed finish and both status reads remain on the CLI.
