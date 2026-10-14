@@ -2310,3 +2310,5 @@ npm publish
 - **Compact board columns:** `renderBoard()` (`lib/member-board.js:367`) falls back to member, state and last result when the normal columns still overflow a terminal at least 30 columns wide. Done states use ok/failed, long names trim, and common failure reasons stay whole. Regression: `test/member-board.test.js:225`; real terminal proof: `python3 atris/runs/member-board-compact-columns-proof.py`.
 
 - **Smallest board columns:** `renderBoard()` (`lib/member-board.js:367`) keeps member and whole state from 18 to 29 columns, shortening long names. The result column returns at 30 columns. Regression: `test/member-board.test.js:246`; real terminal proof: `python3 atris/runs/member-board-smallest-columns-proof.py`.
+
+- **Failure reasons beside finishing:** `renderBoard()` (`lib/member-board.js:380`) shortens the compact member heading to name before clipping the result, preserving engine error alongside finishing at 30 columns. Regression: `test/member-board.test.js:267`; real terminal proof: `python3 atris/runs/member-board-finishing-reason-proof.py`.

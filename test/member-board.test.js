@@ -260,7 +260,29 @@ test('below 30 columns the board keeps whole states and trims only member names'
       assert.equal(lines[i + 1].split(/\s{2,}/)[1], expected, `${width}: ${state}`);
     });
   }
-  assert.match(renderBoard(rows, '/progress', 0, 30), /^member\s+state\s+last result$/m, 'the result column returns at 30 columns');
+  assert.match(renderBoard(rows, '/progress', 0, 30), /^name\s+state\s+last result$/m, 'the result column returns at 30 columns');
+});
+
+test('finishing members leave common failure reasons whole at 30 columns', () => {
+  const dir = fakeDir({
+    builder: [`${at(100)} m-1 started: build`, `${at(80)} m-1 finished: failed (timed out)`],
+    'chat-experience-lead': [`${at(100)} m-2 started: fix`, `${at(70)} m-2 finished: failed (engine error)`],
+    breaker: [`${at(100)} m-3 started: check`, `${at(60)} m-3 finished: failed (bad exit 2)`],
+    scout: [`${at(50)} m-4 started: search`],
+  });
+  try {
+    const rows = readBoard({ dir, now: NOW, asleep: ['scout'] });
+    for (const width of [30, 31, 32, 38]) {
+      const lines = renderBoard(rows, dir, 0, width).split('\n');
+      assert.ok(lines.every((line) => line.length <= width), `${width}: ${lines.join('\n')}`);
+      assert.match(lines.join('\n'), /failed\s+timed out$/m);
+      assert.match(lines.join('\n'), /failed\s+engine error$/m);
+      assert.match(lines.join('\n'), /failed\s+bad exit 2$/m);
+      assert.match(lines.join('\n'), /finishing\s+-$/m);
+    }
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
 });
 
 test('a busy row with an earlier failure shrinks its last result before it overflows', () => {
