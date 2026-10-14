@@ -956,7 +956,8 @@ function installHook(root = process.cwd()) {
 // Name the shape of a fix by the punctuation it added: an aside put in
 // parentheses, a colon, a semicolon joining two sentences, a comma, a period,
 // or a range hyphen. A line that gained none of these just had its dash
-// dropped. Two shapes join with " + ".
+// dropped. Two shapes join with " + ". A mark carried onto the line above
+// names both lines "<shape> moved up" (see applyFixes).
 const FIX_KINDS = [['(', 'parentheses'], [':', 'colon'], [';', 'semicolon'], [',', 'comma'], ['.', 'period'], ['-', 'hyphen']];
 function fixKind(before, after) {
   const count = (s, ch) => s.split(ch).length - 1;
@@ -1005,12 +1006,16 @@ function applyFixes(files, rules, { write = true } = {}) {
       const from = script ? commentStart(lines[i], comments) : 0;
       if (skip.has(i)) continue;
       let line = lines[i];
+      // the line above and this one share one kind, "semicolon moved up", so
+      // the report shows them side by side instead of filing this one as dropped
+      let carried = null;
       const mark = !script && i > 0 && !skip.has(i - 1) && !fenced.has(i) && !fenced.has(i - 1) && fixable.some((r) => r.fix === fixEmDash) ? carriedMark(lines[i - 1], line) : null;
       if (mark) {
         const above = lines[i - 1].replace(/\s+$/, '') + mark;
         const last = changes[changes.length - 1];
-        if (last && last.file === file && last.line === i) { last.after = above; last.kind = fixKind(last.before, above); }
-        else changes.push({ file, line: i, before: lines[i - 1], after: above, kind: fixKind(lines[i - 1], above) });
+        carried = `${fixKind(lines[i - 1], above)} moved up`;
+        if (last && last.file === file && last.line === i) { last.after = above; last.kind = carried; }
+        else changes.push({ file, line: i, before: lines[i - 1], after: above, kind: carried });
         lines[i - 1] = above; touched = true;
       }
       for (const r of fixable) {
@@ -1027,7 +1032,7 @@ function applyFixes(files, rules, { write = true } = {}) {
         const nl = line.slice(0, at) + restore(r.fix(masked, { endsBlock: i === lines.length - 1 || !lines[i + 1].trim(), startsBlock, spans }));
         if (nl !== line) { line = nl; fixedCount++; }
       }
-      if (line !== lines[i]) { changes.push({ file, line: i + 1, before: lines[i], after: line, kind: fixKind(lines[i], line) }); lines[i] = line; touched = true; }
+      if (line !== lines[i]) { changes.push({ file, line: i + 1, before: lines[i], after: line, kind: carried || fixKind(lines[i], line) }); lines[i] = line; touched = true; }
     }
     if (touched) { if (write) fs.writeFileSync(file, lines.join('\n')); fixedFiles.push(file); }
   }

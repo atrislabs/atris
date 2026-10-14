@@ -588,6 +588,8 @@ test('fix moves the mark of a dash that opens a wrapped line to the line above',
     [8, 'Garry Tan, president of Y Combinator'],
     [11, 'Sanketh'],
   ]);
+  // both lines of a moved mark share one kind, so the report keeps them together
+  assert.deepEqual(changes.map((c) => c.kind), ['comma moved up', 'comma moved up', 'semicolon moved up', 'semicolon moved up', 'dropped', 'dropped']);
 });
 
 test('fix treats dashes in a row as one dash, never a comma run', () => {
