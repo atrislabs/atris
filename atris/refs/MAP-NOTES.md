@@ -234,6 +234,7 @@ rg "outbound artifact gate|raw-html-in-plain-body|render-proof-missing|coach-sur
 
 ## By-Feature Map
 
+Fast CLI smoke isolation: `test/smoke.fast.test.js:59` supplies a disposable ax executable; `test/smoke.fast.test.js:72` pins engine selection for the workspace-list command, preserving engine presence and checking scope/default/installed state.
 Design/MCP test isolation: `test/mcp.test.js:65` starts the CLI from its disposable directory. `commands/design.js:360` and `lib/design-api.js:124` export only consumed entry points; `test/repo-hygiene.test.js` guards both boundaries.
 MCP stdio request flow: `mcp/atris-mcp/index.mjs:142` reads requests while design calls run, tracks cancellations, and waits for pending replies on stdin close. `test/mcp.test.js` checks ping order, blank lines, cancellations, and stdin close.
 

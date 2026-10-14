@@ -54,6 +54,9 @@ test('real atris binary fast smoke covers core read-only commands', () => {
   try {
     const home = path.join(dir, 'home');
     fs.mkdirSync(home, { recursive: true });
+    // Workspace lists include installed engines or the chosen default. Supply
+    // our own ax so this assertion does not depend on the operator's engines.
+    const fakeBin = writeFakeEngine(dir, 'ax');
 
     const version = runCli(['--version'], { cwd: dir, env: { HOME: home, PATH: systemPath } });
     assert.equal(version.status, 0, version.stderr || version.stdout);
@@ -64,12 +67,18 @@ test('real atris binary fast smoke covers core read-only commands', () => {
     assert.match(help.stdout, /you say what you want\. already won\. one next step\./);
 
     fs.mkdirSync(path.join(dir, 'atris'), { recursive: true });
-    const engines = runCli(['engine', 'list', '--json'], { cwd: dir, env: { HOME: home, PATH: systemPath } });
+    const engines = runCli(['engine', 'list', '--json'], {
+      cwd: dir,
+      env: { HOME: home, PATH: `${fakeBin}:${systemPath}`, ATRIS_RUNNER_PROFILE: 'atris-fast' },
+    });
     assert.equal(engines.status, 0, engines.stderr || engines.stdout);
     const payload = JSON.parse(engines.stdout);
     assert.equal(typeof payload.default, 'string');
     assert.ok(Array.isArray(payload.engines));
     assert.ok(payload.engines.some((engine) => engine.id === 'atris-fast'));
+    assert.equal(payload.scope, 'workspace');
+    assert.equal(payload.default, 'atris-fast');
+    assert.equal(payload.engines.find((engine) => engine.id === 'atris-fast').installed, true);
   } finally {
     cleanupTempDir(dir);
   }
