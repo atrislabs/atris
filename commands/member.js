@@ -1600,6 +1600,8 @@ function taskHasReviewProof(task) {
 function taskIsTaggedNeedsHuman(task) {
   if (!task || typeof task !== 'object') return false;
   if (task?.metadata?.needs_human === true || task?.metadata?.human_only === true) return true;
+  const { isDecisionTask, isDecisionHoldTag } = require('../lib/task-decision');
+  if (isDecisionTask(task)) return true;
   const tags = [
     task.tag,
     ...(Array.isArray(task.tags) ? task.tags : []),
@@ -1608,8 +1610,8 @@ function taskIsTaggedNeedsHuman(task) {
   ]
     .filter(Boolean)
     .flatMap((t) => String(t).split(/[,;\s]+/))
-    .map(lowerCompact);
-  return tags.some((t) => t === 'needs-human' || t === 'needs_human' || t === 'human-only' || t === 'human_only');
+    .map((t) => lowerCompact(t).replace(/^#/, ''));
+  return tags.some((t) => isDecisionHoldTag(t) || t === 'human-only' || t === 'human_only');
 }
 
 function taskCandidateFromSource(task, source, sourcePath = '') {

@@ -2275,4 +2275,6 @@ npm publish
 
 ## One-run member outcomes
 
+- Human-held wake jobs: `commands/member.js:1600` shares decision-tag detection with `lib/task-decision.js:36`, while preserving boolean and legacy human-only holds; `lib/member-task-pick.js:72` filters checked jobs before automatic wake. `test/member-wake-skips-human-jobs.test.js:58` runs real wake commands with isolated SQLite records and projected task evidence, covering held-only and mixed queues.
+
 - `commands/member.js:1037` preserves tick check results when reading the live run receipt; `commands/member.js:1346` makes a failed explicit completion check return failure; `commands/member.js:1374` names the failed check. `commands/member.js:4249` removes only matching outer quotes from saved member settings. `test/member-run-one-run-outcome.test.js:1` runs the real CLI in initialized, committed temporary projects with a fake engine.
