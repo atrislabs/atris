@@ -163,6 +163,10 @@ function runCli(args, { cwd, input, env, timeout = 15000 } = {}) {
     env: {
       ...scrubAgentEnv(),
       ATRIS_SKIP_UPDATE_CHECK: '1',
+      // A fake member run writes progress lines; run outside node --test, it
+      // put a made-up "growth" member on the real board. A test that reads
+      // progress passes its own folder.
+      ATRIS_PROGRESS_DIR: path.join(os.tmpdir(), `atris-test-progress-${process.pid}`),
       ...(env || {}),
     },
   });
