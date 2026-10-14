@@ -1,5 +1,6 @@
 {
-  "lib/engine-registry.js": 47,
+  "lib/engine-registry.js": 27,
+  "lib/model-names.js": 24,
   "lib/member-engine.js": 1,
   "lib/roster-markdown.js": 2,
   "lib/roster-models.js": 7,
