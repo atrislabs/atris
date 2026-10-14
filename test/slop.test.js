@@ -1797,6 +1797,24 @@ test('fix keeps a scorecard line readable field by field', () => {
   assert.deepEqual(readScorecards(atrisDir).map((s) => [s.slug, s.tasksShipped, s.wallClockHours, s.totalReward, s.lessonsGenerated]), [['check-before-acting', 2, 5.3, 12, 2]]);
 });
 
+test('fix leaves a bold task title readable to the task list', () => {
+  // the fix writes "**Title**: text"; the task-list reader took only a dash
+  // there and read the title back as "Title - : text"
+  const { parseSection } = require('../lib/todo-fallback');
+  const file = tmpFile('TODO.md', [
+    '## Backlog',
+    '- **T1:** **Fix the picker** \u2014 stop it reselecting done work',
+    '- **T2:** [endgame] **Ship docs** \u2014 one \u2014 two',
+    '- **T3:** **Polling**, not SSE \u2014 it reads status on a timer',
+  ].join('\n'));
+  applyFixes([file], RULES);
+  assert.deepEqual(parseSection(fs.readFileSync(file, 'utf8'), 'Backlog').map((t) => t.title), [
+    'Fix the picker - stop it reselecting done work',
+    'Ship docs - one, two',
+    'Polling, not SSE: it reads status on a timer',
+  ]);
+});
+
 test('fix keeps a journal heading that ends in a time readable for its hour', () => {
   // analytics reads the hour after a dash or a spaced hyphen at the end of a
   // heading; the fix wrote "### Watch: 19:05", which hides it, and glued
