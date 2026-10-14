@@ -195,9 +195,13 @@ function reviewSandbox() {
 test('fleet review cleanup keeps a sandbox while git holds its lock', () => {
   const { base, repo, wt, boundary } = reviewSandbox();
   try {
-    fs.writeFileSync(path.join(worktreeGitDir(wt), 'index.lock'), '');
-    const result = disposeReviewSandbox(boundary);
-    assert.deepEqual(result, { removed: false, reason: 'git_lock' });
+    const lock = path.join(worktreeGitDir(wt), 'index.lock');
+    fs.writeFileSync(lock, '');
+    const stale = new Date(Date.now() - 3 * 60 * 60 * 1000);
+    fs.utimesSync(lock, stale, stale);
+    const { lock_age_ms: age, ...result } = disposeReviewSandbox(boundary);
+    assert.deepEqual(result, { removed: false, reason: 'git_lock', lock });
+    assert.ok(age >= 3 * 60 * 60 * 1000 - 1000, String(age));
     assert.ok(fs.existsSync(wt));
     assert.ok(fs.existsSync(boundary.quarantine));
     assert.deepEqual(removalLines(repo), []);
@@ -210,9 +214,11 @@ test('fleet review cleanup keeps a sandbox while git holds its quarantine store'
   const { base, repo, wt, boundary } = reviewSandbox();
   try {
     git(base, ['init', '-q', '--bare', boundary.quarantine]);
-    fs.writeFileSync(path.join(boundary.quarantine, 'HEAD.lock'), '');
-    const result = disposeReviewSandbox(boundary);
-    assert.deepEqual(result, { removed: false, reason: 'git_lock' });
+    const lock = path.join(boundary.quarantine, 'HEAD.lock');
+    fs.writeFileSync(lock, '');
+    const { lock_age_ms: age, ...result } = disposeReviewSandbox(boundary);
+    assert.deepEqual(result, { removed: false, reason: 'git_lock', lock });
+    assert.equal(typeof age, 'number');
     assert.ok(fs.existsSync(wt));
     assert.ok(fs.existsSync(path.join(boundary.quarantine, 'HEAD')));
     assert.deepEqual(removalLines(repo), []);
@@ -228,9 +234,11 @@ test('fleet review cleanup keeps a sandbox while git updates a branch in either 
       try {
         git(base, ['init', '-q', '--bare', boundary.gitDir]);
         git(base, ['init', '-q', '--bare', boundary.quarantine]);
-        fs.writeFileSync(path.join(boundary[store], marker), '');
-        const result = disposeReviewSandbox(boundary);
-        assert.deepEqual(result, { removed: false, reason: 'git_lock' }, `${store} ${marker}`);
+        const lock = path.join(boundary[store], marker);
+        fs.writeFileSync(lock, '');
+        const { lock_age_ms: age, ...result } = disposeReviewSandbox(boundary);
+        assert.deepEqual(result, { removed: false, reason: 'git_lock', lock }, `${store} ${marker}`);
+        assert.equal(typeof age, 'number', `${store} ${marker}`);
         assert.ok([wt, boundary.gitDir, boundary.quarantine].every((folder) => fs.existsSync(folder)), `${store} ${marker}`);
         assert.deepEqual(removalLines(repo), []);
       } finally {

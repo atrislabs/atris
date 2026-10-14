@@ -1241,7 +1241,11 @@ function refsLockFile(dir) {
 // The lock file keeping a folder and how long it has sat there, so a lock left
 // by a crashed git shows up instead of silently holding the folder.
 function worktreeGitLock(worktreePath, now = Date.now()) {
-  const gitDir = worktreeGitDir(worktreePath);
+  return gitStoreLock(worktreeGitDir(worktreePath), now);
+}
+
+// Same lookup against a git store itself, for callers that hold the store path.
+function gitStoreLock(gitDir, now = Date.now()) {
   if (!gitDir) return null;
   const file = GIT_ACTIVITY_MARKERS
     .filter(([, reason]) => reason === 'git_lock')
@@ -1561,6 +1565,8 @@ module.exports = {
   gitNetworkEnvironment,
   gitStoreActivity,
   worktreeGitLock,
+  gitStoreLock,
+  describeLockAge,
   describeGitActivity,
   describeFlightAge,
   flightStampMs,
