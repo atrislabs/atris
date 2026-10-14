@@ -216,8 +216,11 @@ const ADVERB_CLAUSE_AFTER_DASH = new RegExp(`(?<=[\\w)\\]"'*_\`\\u201d\\u2019\\u
 // One bare word with no "s" and a verb in "s" that moves toward a place
 // start one too: "Blocks use overflow, content clips to the bounding box",
 // "data flows into the sheet". A plural or a word in "ly" before the verb,
-// "tests runs" or "quickly moves", is not a subject.
-const BARE_CLAUSE_AFTER_DASH = new RegExp(`(?<=[\\w)\\]"'*_\`\\u201d\\u2019\\uE001])\\s*\\u2014\\s*(?!${NAMING_PHRASE})(?=(?!(?:and|but|or|nor|so|yet|then|not|even|when|if|unless|until|because|since|while|where|which|who|as|after|before|though|although|once|just|only|also|still|this|that|it|its|one)\\b)[a-z]{3,}(?<!s|ly)\\s+${PLAIN_VERB_WORD}\\s+(?:to|into|onto|through)\\s)`, 'g');
+// "tests runs" or "quickly moves", is not a subject. So does one plain word
+// after the verb that ends the sentence: '"one font weight"; scarcity forces
+// creativity', "not build errors; xcodebuild compiles fine". A "the" or
+// "our" is no bare word, so "old code, the tests mostly" keeps its comma.
+const BARE_CLAUSE_AFTER_DASH = new RegExp(`(?<=[\\w)\\]"'*_\`\\u201d\\u2019\\uE001])\\s*\\u2014\\s*(?!${NAMING_PHRASE})(?=(?!(?:and|but|or|nor|so|yet|then|not|even|when|if|unless|until|because|since|while|where|which|who|as|after|before|though|although|once|just|only|also|still|this|that|it|its|one|the|our|your|their|her|his|any|every|each)\\b)[a-z]{3,}(?<!s|ly)\\s+${PLAIN_VERB_WORD}\\s+(?:(?:to|into|onto|through)\\s|[a-z]{3,}(?:[.!?;]|$)))`, 'g');
 
 // "Our", "your", "their" or "my" and one to three words, then a verb, start
 // a second sentence too: "Saw your post on falls after rehab; our scheduling

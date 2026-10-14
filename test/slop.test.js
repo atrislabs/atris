@@ -1526,6 +1526,9 @@ test('fix joins a bare subject and a verb that moves toward a place with a semic
     'The sheet is live \u2014 data flows into it every hour.',
     'We ship the page \u2014 content blocks on the side.',
     'See the setup \u2014 quickly moves to the end.',
+    // one plain word after the verb that ends the sentence counts too
+    'These are not build errors \u2014 xcodebuild compiles fine.',
+    '- **inject a constraint** \u2014 "monochrome only," "one font weight" \u2014 scarcity forces creativity',
   ].join('\n'));
   const { changes } = applyFixes([file], RULES);
   assert.deepEqual(changes.map((c) => c.after), [
@@ -1533,6 +1536,8 @@ test('fix joins a bare subject and a verb that moves toward a place with a semic
     'The sheet is live; data flows into it every hour.',
     'We ship the page, content blocks on the side.',
     'See the setup, quickly moves to the end.',
+    'These are not build errors; xcodebuild compiles fine.',
+    '- **inject a constraint**: "monochrome only," "one font weight"; scarcity forces creativity',
   ]);
 });
 
