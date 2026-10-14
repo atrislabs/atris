@@ -308,7 +308,7 @@ test('buildRefereePrompt truncates oversized prompts and answers and forbids too
   assert.ok(built.length < MAX_REFEREE_PROMPT_CHARS + MAX_REFEREE_ANSWER_CHARS + 800);
 });
 
-test('buildRefereeInvocation disables tools, permissions, project hooks, and resolves ~/.local/bin in cron PATH', () => {
+test('buildRefereeInvocation disables tools, permissions, all hooks, and resolves ~/.local/bin in cron PATH', () => {
   const fakeHome = tempRoot();
   try {
     const localBin = path.join(fakeHome, '.local', 'bin');
@@ -327,6 +327,9 @@ test('buildRefereeInvocation disables tools, permissions, project hooks, and res
     });
 
     assert.equal(invocation.bin, fakeClaude);
+    const settingsIndex = invocation.args.indexOf('--settings');
+    assert.ok(settingsIndex !== -1);
+    assert.deepEqual(JSON.parse(invocation.args[settingsIndex + 1]), { disableAllHooks: true });
     assert.ok(invocation.env.PATH.split(path.delimiter).includes(localBin));
     const toolsIdx = invocation.args.indexOf('--tools');
     assert.notEqual(toolsIdx, -1);
