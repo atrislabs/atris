@@ -194,6 +194,31 @@ test('tidy keeps a copy git itself locked and reports the lock file and age', ()
   }
 });
 
+test('tidy says a locked copy is missing and still names the lock file and age', () => {
+  const fx = makeFixture();
+  try {
+    const copy = addCopy(fx, 'landed-locked-gone');
+    runGit(['worktree', 'lock', '--reason', 'on an unplugged drive', copy], fx.repo);
+    const lock = path.join(runGit(['rev-parse', '--absolute-git-dir'], copy), 'locked');
+    const now = Date.now();
+    const aged = new Date(now - 7200000);
+    fs.utimesSync(lock, aged, aged);
+    fs.rmSync(copy, { recursive: true, force: true });
+    for (const dryRun of [true, false]) {
+      const result = tidyMemberCopies({ repoRoot: fx.repo, dryRun, now });
+      assert.equal(result.removed, 0);
+      const kept = byName(result, 'landed-locked-gone');
+      assert.equal(kept.action, 'kept');
+      assert.equal(kept.reason, `folder is missing; git lock: ${lock} (7200s old)`);
+      assert.ok(fs.existsSync(lock));
+      assert.ok(branchExists(fx.repo, 'landed-locked-gone'));
+      assert.equal(fs.existsSync(path.join(fx.repo, '.atris/state/worktree_removals.jsonl')), false);
+    }
+  } finally {
+    fs.rmSync(fx.base, { recursive: true, force: true });
+  }
+});
+
 // Origin switched its default branch, but the local origin/HEAD note still
 // points at the old one. Work that only lives on the old branch is not landed.
 test('tidy asks origin for its current default branch instead of the stale local note', () => {

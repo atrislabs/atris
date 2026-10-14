@@ -8,7 +8,7 @@ const { stampLatestOpenBriefForWorktree } = require('../lib/brief-ledger');
 const { isConductorArtifact } = require('../lib/conductor-artifacts');
 const { fixMapDocs } = require('../lib/map-refs');
 const { sleepSync } = require('../lib/sleep-sync');
-const { inspectGitActivity } = require('../lib/git-activity');
+const { inspectGitActivity, missingFolderLock } = require('../lib/git-activity');
 const close = require('./close');
 
 const REGEN_ADAPTER_FILES = ['AGENTS.md', 'CLAUDE.md', 'GEMINI.md'];
@@ -1258,24 +1258,6 @@ function pruneGeneratedWorktreeCaches(worktreePath, { apply = false } = {}) {
     }
   }
   return { candidates, pruned };
-}
-
-// A locked folder can be gone from disk (an unplugged drive), so read git's
-// own lock file from the main repo instead of from inside the folder.
-function missingFolderLock(root, wtPath, now = Date.now()) {
-  const locks = [];
-  try {
-    const common = runGit(['rev-parse', '--path-format=absolute', '--git-common-dir'], { cwd: root, check: false });
-    const admin = path.join(common.stdout.trim(), 'worktrees');
-    for (const name of common.status === 0 ? fs.readdirSync(admin) : []) {
-      const gitdir = path.join(admin, name, 'gitdir');
-      if (!fs.existsSync(gitdir) || path.dirname(path.resolve(fs.readFileSync(gitdir, 'utf8').trim())) !== wtPath) continue;
-      const lock = path.join(admin, name, 'locked');
-      if (fs.existsSync(lock)) locks.push({ path: lock, ageSeconds: Math.max(0, Math.floor((now - fs.lstatSync(lock).mtimeMs) / 1000)) });
-    }
-  } catch {}
-  const named = locks.map((lock) => `${lock.path} (${lock.ageSeconds}s old)`).join(', ');
-  return { locks, reason: `folder is missing; git lock: ${named || 'lock file not found'}` };
 }
 
 function cleanupWorktrees({ root = repoRoot(), base: baseOverride = '', apply = false, activeCwds: activeCwdsOverride, by = 'atris worktree cleanup' } = {}) {
