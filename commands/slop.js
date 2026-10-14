@@ -524,6 +524,9 @@ function fixEmDash(s, { endsBlock = false, startsBlock = false, spans = [] } = {
   // the mark, so the rules below read it as any other dash: "Ship it, *now*",
   // never "Ship it *, now*".
   s = s.replace(/(?<=\S)[ \t]+(\*{1,2}|_{1,2})\u2014[ \t]*(?=\w)/g, ' \u2014 $1');
+  // the same goes for one just inside a closing mark: "Ship it *now*, then
+  // rest", never "*now, * then rest".
+  s = s.replace(/(?<=\w)[ \t]+\u2014(\*{1,2}|_{1,2})(?=[ \t.,;:!?)]|$)/g, '$1 \u2014');
   // a dash between two numbers is a range, "10-20", unless the first has a
   // sign, which makes it a score: "reward: +4, 404 on missing routes"
   // A dash that opens a line, a quote or a list item names nothing and goes,

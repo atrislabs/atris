@@ -1854,6 +1854,23 @@ test('fix moves a dash just inside an opening mark mid-line out of the mark', ()
   ]);
 });
 
+test('fix moves a dash just inside a closing mark out of the mark', () => {
+  // the comma and a stray space used to land inside: "*now, * then rest"
+  const file = tmpFile('mark-dash-close.md', [
+    'Ship it *now \u2014* then rest.',
+    '',
+    'We ship _fast \u2014_ always.',
+    '',
+    'Ship it \u2014*now* please.',
+  ].join('\n'));
+  const { changes } = applyFixes([file], RULES);
+  assert.deepEqual(changes.map((c) => c.after), [
+    'Ship it *now*, then rest.',
+    'We ship _fast_, always.',
+    'Ship it, *now* please.',
+  ]);
+});
+
 test('fix reads no word that only says when as the subject of a clause', () => {
   // "now ships" after a dash read as a bare subject and a verb
   const file = tmpFile('when-word.md', [
