@@ -638,6 +638,33 @@ test('member stop puts away a run with no pid that went silent for over an hour,
   }
 });
 
+test('the live stream marks a put-away run as put away, with when it last did anything', async () => {
+  const { spawn } = require('node:child_process');
+  const lastLine = isoAgo(7 * 3600);
+  const dir = fakeDir({ launcher: [`${isoAgo(8 * 3600)} m-4 started: score launcher`, `${lastLine} m-4 running: npm test`] });
+  const child = spawn(process.execPath, [cliPath, 'member', 'board', '--json', '--follow'], {
+    cwd: dir, env: { ...process.env, ATRIS_PROGRESS_DIR: dir },
+  });
+  let out = '';
+  child.stdout.on('data', (d) => { out += d; });
+  const lines = () => out.split('\n').filter(Boolean).map((l) => JSON.parse(l));
+  try {
+    assert.ok(await waitFor(() => lines().length >= 1, 8000), out);
+    assert.equal((await stopMember('launcher', { dir })).ok, true);
+    assert.ok(await waitFor(() => lines().length >= 3, 8000), out);
+    const [, finished, unchecked] = lines();
+    assert.equal(finished.kind, 'finished');
+    assert.equal(finished.stopped, true);
+    assert.equal(finished.put_away, true);
+    assert.equal(finished.last_active, lastLine, 'its last line, not the stop');
+    assert.deepEqual([unchecked.kind, unchecked.unchecked], ['unchecked', 0]);
+  } finally {
+    child.kill('SIGINT');
+    await new Promise((r) => child.once('exit', r));
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
 test('member stop leaves a reused pid alone when its command is no longer the engine', async () => {
   const { child, ready } = spawnSleeper("console.log('up'); setInterval(() => {}, 1000)");
   await ready;
