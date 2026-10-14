@@ -475,6 +475,11 @@ function capitalAfterLabel(label, rest, line) {
   return sentenceStart(rest, line);
 }
 
+// An arrow drawn in a line: "->", "<-", an arrow sign, or a box-drawing line
+// that ends in an arrowhead, "\u2500\u2500>" or "\u2500\u2500\u25b6". A lone play sign is no arrow.
+const ARROW = /->|<-|[\u2190\u2192\u2194\u21d0\u21d2]|[\u2500-\u257f][>\u25b6\u25b8\u25ba]|[<\u25c0\u25c2\u25c4][\u2500-\u257f]/;
+const ARROW_CHAIN_DASH = new RegExp(`(?<=(?:${ARROW.source}).*)\\u2014(?=.*(?:${ARROW.source}))`, 'g');
+
 function fixEmDash(s, { endsBlock = false, startsBlock = false, spans = [] } = {}) {
   // a dash between a file reference and the code it points at reads "is",
   // so it takes a colon even past a label colon: "`lib/a.js:12`: `runTick`",
@@ -517,14 +522,14 @@ function fixEmDash(s, { endsBlock = false, startsBlock = false, spans = [] } = {
   // a line that draws an arrow is a diagram too, so a run of pressed dashes
   // on it is a drawn line of the same width: "plan --- build -> review",
   // never "plan, build". The close of an HTML comment is not an arrow.
-  if (!/^\s*\|/.test(s) && /->|<-|[\u2190\u2192\u2194\u21d0\u21d2]/.test(s.replace(/<!--|-->/g, ''))) s = s.replace(/\u2014{2,}/g, (m) => '-'.repeat(m.length));
+  if (!/^\s*\|/.test(s) && ARROW.test(s.replace(/<!--|-->/g, ''))) s = s.replace(/\u2014{2,}/g, (m) => '-'.repeat(m.length));
   // a single dash with a box edge on both sides is a short link between two
   // boxes, so it takes a hyphen: "[a] - [b] - [c]", never "[a] ([b]) [c]"
   if (!/^\s*\|/.test(s)) s = s.replace(/(?<=[\])|+][ \t]*)\u2014(?=[ \t]*[[(|+])/g, '-');
   // a single dash with an arrow before it and an arrow after it sits inside
   // a chain of steps, so it takes a hyphen: "plan -> build - review -> ship",
   // never "build, review". A table row is fixed cell by cell below.
-  if (!/^\s*\|/.test(s)) s = s.replace(/(?<=(?:->|<-|[\u2190\u2192\u2194\u21d0\u21d2]).*)\u2014(?=.*(?:->|<-|[\u2190\u2192\u2194\u21d0\u21d2]))/g, '-');
+  if (!/^\s*\|/.test(s)) s = s.replace(ARROW_CHAIN_DASH, '-');
   // a table cell that holds only a dash means "nothing here"; a hyphen keeps
   // the cell instead of turning it into a stray comma
   if (/^\s*\|/.test(s)) s = s.replace(/(\|\s*)\u2014(\s*)(?=\||$)/g, '$1-$2');

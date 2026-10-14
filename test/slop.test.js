@@ -2687,6 +2687,25 @@ test('fix reads a branch nested under an upright bar as a diagram line', () => {
   ]);
 });
 
+test('fix reads a box-drawing line that ends in an arrowhead as an arrow', () => {
+  // the drawn arrow was not seen: "build, review", "plan, build"
+  const file = tmpFile('box-arrow.md', [
+    'plan \u2500\u2500> build \u2014 review \u2500\u2500> ship',
+    'plan \u2500\u2500\u25b6 build \u2014 review \u2500\u2500\u25b6 ship',
+    'plan \u2014\u2014 build \u2500\u2500\u25ba review',
+    'Ship it \u2014 then a \u2500\u2500> b',
+    'Play \u25b6 now \u2014 or later.',
+  ].join('\n\n'));
+  const { changes } = applyFixes([file], RULES, { write: false });
+  assert.deepEqual(changes.map((c) => c.after), [
+    'plan \u2500\u2500> build - review \u2500\u2500> ship',
+    'plan \u2500\u2500\u25b6 build - review \u2500\u2500\u25b6 ship',
+    'plan -- build \u2500\u2500\u25ba review',
+    'Ship it, then a \u2500\u2500> b',
+    'Play \u25b6 now, or later.',
+  ]);
+});
+
 test('fix keeps a journal heading that ends in a time readable for its hour', () => {
   // analytics reads the hour after a dash or a spaced hyphen at the end of a
   // heading; the fix wrote "### Watch: 19:05", which hides it, and glued
