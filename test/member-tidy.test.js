@@ -132,6 +132,28 @@ test('tidy removes landed clean copies and leaves everything else to git and the
   }
 });
 
+// Origin switched its default branch, but the local origin/HEAD note still
+// points at the old one. Work that only lives on the old branch is not landed.
+test('tidy asks origin for its current default branch instead of the stale local note', () => {
+  const fx = makeFixture();
+  try {
+    const remote = path.join(fx.base, 'remote.git');
+    runGit(['push', '-q', remote, 'master:main'], path.join(fx.base, 'seed'));
+    const oldOnly = addCopy(fx, 'old-default-only', { commit: true, pushToOrigin: true });
+    runGit(['symbolic-ref', 'HEAD', 'refs/heads/main'], remote);
+    assert.equal(runGit(['symbolic-ref', 'refs/remotes/origin/HEAD'], fx.repo), 'refs/remotes/origin/master');
+
+    const result = tidyMemberCopies({ repoRoot: fx.repo });
+    assert.equal(result.aborted, null);
+    assert.equal(byName(result, 'old-default-only').action, 'kept');
+    assert.match(byName(result, 'old-default-only').reason, /work not landed yet/);
+    assert.ok(fs.existsSync(path.join(oldOnly, 'old-default-only.txt')));
+    assert.ok(branchExists(fx.repo, 'old-default-only'));
+  } finally {
+    fs.rmSync(fx.base, { recursive: true, force: true });
+  }
+});
+
 test('tidy keeps every copy when the running-program scan fails', () => {
   const fx = makeFixture();
   try {
@@ -157,7 +179,7 @@ test('tidy keeps every copy when origin cannot be fetched', () => {
     const clean = addCopy(fx, 'landed-clean');
     runGit(['remote', 'set-url', 'origin', path.join(fx.base, 'gone.git')], fx.repo);
     const result = tidyMemberCopies({ repoRoot: fx.repo });
-    assert.match(result.aborted, /could not fetch origin/);
+    assert.match(result.aborted, /could not ask origin for its main branch/);
     assert.equal(byName(result, 'landed-clean').action, 'kept');
     assert.ok(fs.existsSync(clean));
   } finally {
