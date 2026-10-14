@@ -444,25 +444,19 @@ test('board shows the command inside a shell wrapper or after a cd, but not in t
   assert.equal(rows[0].step, 'Run: cd /repo/app && git rev-parse HEAD', 'apps reading the rows get the step as written');
 });
 
-test('board ends a command an older writer cut at its fixed length in ..., but not in the row data', () => {
+test('board shows a complete command as written, even at the length an older writer cut at', () => {
+  // An older writer cut commands at 70 ("running: ") and 95 ("Run: ")
+  // without saying so, but a complete command can be that long too, and the
+  // line looks the same either way, so the board does not guess a cut.
   const now = Date.parse('2026-10-14T13:00:00Z');
   const step = (name, text) => memberRow(name, `2026-10-14T12:58:00Z m-1 started: map it\n2026-10-14T12:59:30Z m-1 ${text}\n`, now);
   const seventy = `git log --oneline ${'a'.repeat(70 - 'git log --oneline '.length)}`;
-  const ninetyFive = `cd /repo && ls ${'b'.repeat(95 - 'cd /repo && ls '.length)}`;
-  const rows = [
-    step('old', `running: ${seventy}`),
-    step('desk', `Run: ${ninetyFive}`),
-    step('short', `running: ${seventy.slice(0, 69)}`),
-    step('newer', `running: ${seventy}...`),
-    step('desk70', `Run: ${seventy}`),
-  ];
+  const ninetyFive = `git log --oneline ${'b'.repeat(95 - 'git log --oneline '.length)}`;
+  const rows = [step('now', `running: ${seventy}`), step('desk', `Run: ${ninetyFive}`), step('cut', `running: ${seventy}...`)];
   const shown = (name) => renderBoard(rows, '/x', [], 400).split('\n').find((l) => l.startsWith(`${name} `));
-  assert.ok(shown('old').endsWith(`running: ${seventy}...`), `a running: step exactly 70 long was cut: ${shown('old')}`);
-  assert.ok(shown('desk').endsWith(`running: ${ninetyFive.slice('cd /repo && '.length)}...`), `a Run: step exactly 95 long was cut, after its cd: ${shown('desk')}`);
-  assert.ok(shown('short').endsWith(`running: ${seventy.slice(0, 69)}`), `a shorter command ended there: ${shown('short')}`);
-  assert.ok(shown('newer').endsWith(`running: ${seventy}...`) && !shown('newer').endsWith('......'), `a writer that marks its cut is not marked twice: ${shown('newer')}`);
-  assert.ok(shown('desk70').endsWith(`running: ${seventy}`), `Run: cuts at 95, so 70 long ended there: ${shown('desk70')}`);
-  assert.equal(rows[0].step, `running: ${seventy}`, 'apps reading the rows get the step as written');
+  assert.ok(shown('now').endsWith(`running: ${seventy}`), `a 70 long command is shown whole: ${shown('now')}`);
+  assert.ok(shown('desk').endsWith(`running: ${ninetyFive}`), `a 95 long command is shown whole: ${shown('desk')}`);
+  assert.ok(shown('cut').endsWith(`running: ${seventy}...`) && !shown('cut').endsWith('......'), `a cut the writer marked shows once: ${shown('cut')}`);
 });
 
 test('board says a heredoc step is a script or a file write, but not in the row data', () => {
