@@ -50,6 +50,9 @@ const LINE_LABEL_DASH = /^(\s*(?:>\s*)*)(\*\*[^*\u2014]{0,58}[^\s*\u2014]\*\*|__
 // colon: "Audit Gaps: Build Plan". It stays a comma when a colon already
 // sits before it, or when the subtitle opens with a joining word ("and").
 const HEADING_DASH = /^(\s{0,3}#{1,6}\s+[^\u2014:]*[^\s\u2014,;:.!?])\s*\u2014\s*(?!(?:and|but|or|nor|so|yet)\b)(?=[^\s\u2014][^\u2014]*$)/i;
+// A bold phrase that is the whole line stands as a heading and gets the same
+// colon: "**Source A: arxiv API**". A dash inside parentheses is left alone.
+const BOLD_HEADING_DASH = /^(\s*(?:>\s*)*(?:\*\*|__)[^\u2014:*_(]*[^\s\u2014,;:.!?*_(])\s*\u2014\s*(?!(?:and|but|or|nor|so|yet)\b)(?=[^\s\u2014][^\u2014*_]*(?:\*\*|__)\s*$)/i;
 
 // True when one pair of parentheses wraps the whole aside, "(mostly)" but
 // not "(a) or (b)", so the fixer keeps them instead of adding a second pair.
@@ -66,7 +69,8 @@ function wrappedInParens(s) {
 function fixEmDash(s, { endsBlock = false } = {}) {
   s = s.replace(/\u2014(?:\s*\u2014)+/g, '\u2014').replace(/(\d)\s*\u2014\s*(?=\d+(?![\d-]))/g, '$1-').replace(/^(\s*(?:>\s*)*)\u2014\s*/, '$1');
   if (endsBlock) s = s.replace(/([.,;:!?]?)\s*\u2014\s*$/, (m, p) => p || '.');
-  if (HEADING_DASH.test(s)) return s.replace(HEADING_DASH, '$1: ');
+  const heading = [HEADING_DASH, BOLD_HEADING_DASH].find((re) => re.test(s));
+  if (heading) return s.replace(heading, '$1: ');
   const label = LIST_LABEL_DASH.exec(s) || LINE_LABEL_DASH.exec(s);
   // a label that already ends in its own punctuation, "**what is it?**",
   // keeps it and just loses the dash, so no colon stacks on top

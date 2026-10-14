@@ -647,6 +647,25 @@ test('fix drops a dash after a quote that already ends its sentence', () => {
   ]);
 });
 
+test('fix gives a whole-line bold phrase a colon, like a heading', () => {
+  // from the research and email skills
+  const file = tmpFile('bold-heading.md', [
+    '**Source A \u2014 arxiv API**',
+    '> **Source B \u2014 Semantic Scholar API**',
+    '**Ship it \u2014 and say so**',
+    '**Reply in thread (IMPORTANT \u2014 use this for all replies):**',
+    'This is **a bold \u2014 phrase** in a line.',
+  ].join('\n'));
+  const { changes } = applyFixes([file], RULES);
+  assert.deepEqual(changes.map((c) => c.after), [
+    '**Source A: arxiv API**',
+    '> **Source B: Semantic Scholar API**',
+    '**Ship it, and say so**',
+    '**Reply in thread (IMPORTANT, use this for all replies):**',
+    'This is **a bold, phrase** in a line.',
+  ]);
+});
+
 test('fix never pairs two dashes across a sentence end', () => {
   // shapes taken from this repo's own docs, where the old fixer opened a
   // parenthesis in one sentence and closed it in the next
