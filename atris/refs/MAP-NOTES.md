@@ -2313,3 +2313,5 @@ npm publish
 - `atris/receipts/2026-10-14-fleet-folder-check.js:82`: outside running-copy audit confirms parent-only scans report clear while a registered outside copy has a live program; shared metadata removal breaks its Git status. Scan every registered copy before group disposal.
 
 - `atris/receipts/2026-10-14-fleet-folder-check.js:51`: idle registered outside copy has no locks or running programs, yet disposal breaks its Git status. Outside dependency alone must preserve shared storage.
+
+- `atris/receipts/2026-10-14-fleet-folder-check.js:51`: a registered outside path containing a line break is missed by line splitting; `git worktree list --porcelain -z` preserves the exact path. Use zero-byte-separated records before deciding whether shared storage has surviving dependents.

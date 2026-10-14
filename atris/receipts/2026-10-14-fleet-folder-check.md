@@ -281,3 +281,41 @@ Commands run: mission status and goal lookup, Git status/log/remote lookup, task
 Progress: one new dependency-loss case, eight audit cases overall, twelve required checks passed, zero production changes, zero dependencies, zero new filenames.
 next_push: Preserve shared Git storage whenever a registered outside copy still depends on it, even with no current activity.
 layer: beliefs
+
+## Registered path with a line break
+
+Added a real Git fixture whose outside linked folder has a line break in its name. The real audit exited 0 and proved the usual line-split listing misses its exact path while zero-byte-separated output preserves it. Existing cleanup leaves the outside folder but deletes its Git storage, so Git status exits 128. This reproduces unsafe behavior; no production repair or approval is claimed.
+
+Verdict: proceed-with-changes. The single risk is missing a registered dependency by splitting a path at a line break. Require `git worktree list --porcelain -z`, preserve exact path fields, and retain shared storage while any registered surviving copy depends on it. Git failure or unreadable registration must keep the group.
+
+Plan: zero-byte-separated registrations -> exact paths -> retain stores with surviving dependents.
+
+Runtime command: `node atris/receipts/2026-10-14-fleet-folder-check.js`, exit 0. Actual new output:
+```text
+outside-linebreak listing: line splitting misses the path; zero-byte splitting preserves it
+outside-linebreak before cleanup: all git activity and process checks report clear
+{"kind":"outside-linebreak","outsideFolderKept":true,"outsideGitStatusExit":128,"removalRecorded":false}
+audit complete; surviving fixture data retained for inspection
+```
+
+Retained fixture: `/private/var/folders/t1/2_4kmb5n4c71dxm26zc8dgzr0000gn/T/atris-fleet-check-g3lgi9`. The unchanged private fleet cleanup routine is exposed in memory; real Git, filesystem operations, and imported helpers run unchanged. Only newly created disposable data is removed.
+
+Files edited: this receipt, `atris/receipts/2026-10-14-fleet-folder-check.js`, `atris/MAP.md`, `atris/refs/MAP-NOTES.md`, and `atris/team/architect/logs/2026-10-14.md`. Existing router and rendered task-view edits are excluded. Commands: mission status/goal, task list/new/claim/note/ready, brain activation preview, Git status/log/show/remote, targeted reads/search, runtime audit, required check, brain compile preview, whitespace check, explicit staging, commit, push. Artifacts: audit evidence and retained fixture. No production changes, dependencies, or new repository filenames.
+
+Required rerunnable check: `node --test test/worktree-removal-guard.test.js test/member-tidy.test.js`, exit 0. Exact final output:
+```text
+ℹ tests 13
+ℹ suites 0
+ℹ pass 13
+ℹ fail 0
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 3045.845625
+```
+
+Progress: one new exact-path counterexample, nine real audit cases overall, thirteen required checks passed.
+next_push: Enumerate registered copies with zero-byte-separated Git output and preserve shared storage needed by every surviving copy.
+layer: beliefs
+
+Proof submission initially refused externally run test claims, exit 2. Submitted with the required check through the task command, exit 0; saved proof: `atris/runs/2026-10-14-task-acw-20-2026-10-14T19-37-25-894Z.json`. The same bounded slice is ready for review; no human acceptance performed.
