@@ -9241,7 +9241,16 @@ function spawnGenericRunnerTick(mission, opts) {
     }
 
     const startedAt = Date.now();
-    const guardedCommand = `PATH=${shellQuote(gitGuard.pathPrefix)}:$PATH; export PATH; ${cmd}`;
+    const progressMember = mission.owner || 'mission';
+    // A codex run opens its shell script with the run marker as a no-op, so
+    // member stop can prove the shell leading this group is this run. Only
+    // names member stop accepts go into the shell line.
+    const runToken = lastMessageFile && /^[A-Za-z0-9._-]+$/.test(progressMember) ? newRunToken() : '';
+    const markerPrefix = runToken ? `: ${runMarker(progressMember, runToken)}; ` : '';
+    // The trailing exit keeps a shell like dash from replacing itself with
+    // codex, which would take the marker out of the process list.
+    const markerSuffix = runToken ? '; exit $?' : '';
+    const guardedCommand = `${markerPrefix}PATH=${shellQuote(gitGuard.pathPrefix)}:$PATH; export PATH; ${cmd}${markerSuffix}`;
     const proc = spawn('sh', ['-lc', guardedCommand], {
       cwd,
       stdio: ['ignore', 'pipe', 'pipe'],
@@ -9249,9 +9258,11 @@ function spawnGenericRunnerTick(mission, opts) {
       env: { ...gitGuard.env, ATRIS_DISPATCH_DEPTH: String(dispatchDepth.depth + 1) },
     });
     updateMissionLockOwner(missionLock, proc.pid, { phase: 'tick' });
-    const progressMember = mission.owner || 'mission';
     const seenItemIds = new Set();
-    if (lastMessageFile) appendProgress(progressMember, `started: ${mission.objective || ''}`, mission.id);
+    if (lastMessageFile) {
+      const tag = runToken ? { pid: proc.pid, engine: 'codex', run: runToken } : {};
+      appendProgress(progressMember, startedLine(mission.objective, tag), mission.id);
+    }
     let stdout = '';
     let eventBuf = '';
     let lastAgentMessage = '';
@@ -9669,6 +9680,20 @@ function cappedClaudeReceiptText(text, limit = 4000) {
   if (!clean) return '';
   if (clean.length <= limit) return clean;
   return clean.slice(0, limit - 16).trimEnd() + '\n...[truncated]';
+}
+
+// The receipt keeps a capped copy of the runner's report. When the report is
+// longer than that, the whole text goes to its own file beside the receipts
+// so nothing the member wrote is lost.
+function saveFullRunnerReport(mission, text, root = process.cwd()) {
+  const clean = String(text || '').trim();
+  if (!clean || cappedClaudeReceiptText(clean) === clean) return null;
+  const runsDir = statePaths(root).runsDir;
+  fs.mkdirSync(runsDir, { recursive: true });
+  const safeTime = stampIso().replace(/[:.]/g, '-');
+  const reportPath = path.join(runsDir, `mission-${mission.id}-${safeTime}-report.md`);
+  fs.writeFileSync(reportPath, clean + '\n', 'utf8');
+  return path.relative(root, reportPath);
 }
 
 async function parseAndValidateMissionRunPhase(args) {
@@ -10296,6 +10321,7 @@ async function executeMissionRunTicksPhase(context) {
           brief_id: claudeResult.brief_id || null,
           summary: claudeResult.summary,
           receipt_text: claudeResult.receipt_text,
+          report_path: saveFullRunnerReport(mission, claudeResult.result, cwd),
           stop_reason: claudeResult.stop_reason,
           api_equivalent_estimate: claudeResult.api_equivalent_estimate,
           duration_total_ms: claudeResult.duration_total_ms,
