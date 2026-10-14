@@ -74,3 +74,84 @@ test('start and end lines append to the durable resource log', () => {
     fs.rmSync(root, { recursive: true, force: true });
   }
 });
+
+const { parseElapsed, findLeakedSshAgents, readSshAgents } = require('../lib/engine-resource');
+
+test('elapsed time reads minutes, hours, and days', () => {
+  assert.strictEqual(parseElapsed('11:09'), 669);
+  assert.strictEqual(parseElapsed('14:50:14'), 53414);
+  assert.strictEqual(parseElapsed('2-01:00:00'), 176400);
+  assert.strictEqual(parseElapsed('junk'), null);
+});
+
+test('only orphaned, old, unreferenced shell agents count as leaked', () => {
+  const agent = (pid, over = {}) => ({ pid, ppid: 1, uid: 501, age_sec: 3600, args: 'ssh-agent -s', ...over });
+  const agents = [
+    agent(100),
+    agent(101),
+    agent(102, { age_sec: 120 }),
+    agent(103, { args: '/usr/bin/ssh-agent -l' }),
+    agent(104, { uid: 0 }),
+    agent(105, { ppid: 4242 }),
+    agent(106, { args: '/usr/bin/ssh-agent -c' }),
+    agent(107, { args: 'ssh-agent -a /Users/me/.ssh/agent.sock' }),
+  ];
+  const leaked = findLeakedSshAgents(agents, { referenced: new Set([101]), uid: 501 });
+  assert.deepStrictEqual(leaked.map((a) => a.pid), [100, 106]);
+});
+
+test('reading agents matches the program name and collects live references', () => {
+  const run = (cmd, args) => {
+    if (args.includes('-E')) {
+      return { status: 0, stdout: [
+        '  300 -zsh HOME=/Users/me SSH_AGENT_PID=201 TERM=xterm',
+        '  301 claude -p fix ssh-agent leaks PATH=/bin',
+      ].join('\n') };
+    }
+    return { status: 0, stdout: [
+      '  200     1   501    14:50:14 ssh-agent -s',
+      '  201     1   501       11:09 /usr/bin/ssh-agent -s',
+      '  301   300   501       00:05 claude -p fix ssh-agent leaks',
+    ].join('\n') };
+  };
+  const { agents, referenced } = readSshAgents({ run });
+  assert.deepStrictEqual(agents, [
+    { pid: 200, ppid: 1, uid: 501, age_sec: 53414, args: 'ssh-agent -s' },
+    { pid: 201, ppid: 1, uid: 501, age_sec: 669, args: '/usr/bin/ssh-agent -s' },
+  ]);
+  assert.ok(referenced.has(201));
+  assert.ok(!referenced.has(200));
+});
+
+test('atris engine sweep lists leaked agents and stops nothing', () => {
+  const { engineCommand } = require('../commands/engine');
+  const signals = [];
+  const deps = {
+    engineSweep: {
+      read: () => ({
+        agents: [
+          { pid: 200, ppid: 1, uid: 501, age_sec: 53414, args: 'ssh-agent -s' },
+          { pid: 201, ppid: 1, uid: 501, age_sec: 669, args: 'ssh-agent -s' },
+        ],
+        referenced: new Set([201]),
+      }),
+      uid: 501,
+      kill: (pid, signal) => signals.push([pid, signal]),
+    },
+  };
+  const out = [];
+  const original = console.log;
+  console.log = (line) => out.push(String(line));
+  let code;
+  try {
+    code = engineCommand(['sweep'], deps);
+  } finally {
+    console.log = original;
+  }
+  assert.strictEqual(code, 0);
+  const text = out.join('\n');
+  assert.match(text, /2 ssh-agents running, 1 looks leaked/);
+  assert.match(text, /pid 200 +14h 50m/);
+  assert.match(text, /nothing was stopped/);
+  assert.deepStrictEqual(signals, []);
+});
