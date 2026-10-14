@@ -532,8 +532,9 @@ function fixEmDash(s, { endsBlock = false, startsBlock = false, spans = [] } = {
   if (/^\s*(?:>\s*)*(?:[\u2502\u2503\u2506\u2507\u250a\u250b\u2551\u2575\u2577\u2579\u257b\u257d\u257f][ \t]+)*(?![\u2502\u2503\u2506\u2507\u250a\u250b\u2551\u2575\u2577\u2579\u257b\u257d\u257f])[\u2500-\u257f]+[ \t]*\u2014/.test(s)) s = s.replace(/\u2014/g, '-');
   // a line that draws an arrow is a diagram too, so a run of pressed dashes
   // on it is a drawn line of the same width: "plan --- build -> review",
-  // never "plan, build". The close of an HTML comment is not an arrow.
-  if (!/^\s*\|/.test(s) && ARROW.test(s.replace(/<!--|-->/g, ''))) s = s.replace(/\u2014{2,}/g, (m) => '-'.repeat(m.length));
+  // never "plan, build". An HTML comment, or its close at the end of a line,
+  // is not an arrow, but a long arrow mid-line is: "plan --> build --- review".
+  if (!/^\s*\|/.test(s) && ARROW.test(s.replace(/<!--(?:(?!-->).)*(?:-->|$)|-->\s*$/g, ''))) s = s.replace(/\u2014{2,}/g, (m) => '-'.repeat(m.length));
   // a single dash with a box edge on both sides is a short link between two
   // boxes, so it takes a hyphen: "[a] - [b] - [c]", never "[a] ([b]) [c]"
   if (!/^\s*\|/.test(s)) s = s.replace(/(?<=[\])|+][ \t]*)\u2014(?=[ \t]*[[(|+])/g, '-');

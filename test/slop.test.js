@@ -2808,6 +2808,25 @@ test('fix keeps a dash before a comparison as a break, not an arrow shaft', () =
   ]);
 });
 
+test('fix reads a long hyphen arrow mid-line as an arrow, in prose, tables and boxes', () => {
+  // "-->" was skipped as the close of an HTML comment: "plan --> build, review"
+  const file = tmpFile('long-arrow.md', [
+    'plan \u2014\u2014> build \u2014\u2014\u2014 review',
+    '| flow | plan \u2014\u2014> build \u2014\u2014\u2014 review |',
+    '| note | done \u2014 shipped | plan -> build |',
+    '\u2502 plan -> build \u2014 review -> ship \u2502',
+    'a hidden note \u2014 ends here -->',
+  ].join('\n\n'));
+  const { changes } = applyFixes([file], RULES, { write: false });
+  assert.deepEqual(changes.map((c) => c.after), [
+    'plan --> build --- review',
+    '| flow | plan --> build --- review |',
+    '| note | done, shipped | plan -> build |',
+    '\u2502 plan -> build - review -> ship \u2502',
+    'a hidden note, ends here -->',
+  ]);
+});
+
 test('fix keeps a journal heading that ends in a time readable for its hour', () => {
   // analytics reads the hour after a dash or a spaced hyphen at the end of a
   // heading; the fix wrote "### Watch: 19:05", which hides it, and glued
