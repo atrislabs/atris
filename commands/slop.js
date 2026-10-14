@@ -116,6 +116,10 @@ const NAMING_WORD = '(?:thing|one|part|piece|kind|place|point|moment|step|move|r
 const NAMING_PHRASE = `(?:the|a|an)\\s+(?:(?:next|only|same|first|last|real|one)\\s+)?${NAMING_WORD}\\s+(?!(?:${HELPING_VERB}|${NAMING_WORD})\\b)`;
 const PLACE_PHRASE = `(?:(?:at|in|on|of|for|from|under|per)\\s+(?:(?:the|a|an)\\s+)?(?:(?!(?:the|a|an|that|whose)\\b)${SUBJECT_WORD}){1,2})?`;
 const NOUN_CLAUSE_AFTER_DASH = new RegExp(`(?<=[\\w)\\]"'*_\`\\u201d\\u2019\\uE001])\\s*\\u2014\\s*(?!${NAMING_PHRASE})(?=${SUBJECT_WORD}(?:(?!(?:the|a|an|that|whose)\\b)${SUBJECT_WORD}){0,4}${PLACE_PHRASE}${HELPING_VERB}\\s+[^\\s\\u2014])`, 'g');
+// "Nothing", "everything" and their kin before a plain verb in "ed" or "s"
+// are a subject too: "the gate held, nothing in the queue moved". A word in
+// "ss" is never the verb, so "nothing less than" and "nothing fancy" stay.
+const QUANTITY_CLAUSE_AFTER_DASH = new RegExp(`(?<=[\\w)\\]"'*_\`\\u201d\\u2019\\uE001])\\s*\\u2014\\s*(?=(?:nothing|everything|nobody|everyone)\\s+(?:else\\s+)?${PLACE_PHRASE}[a-z]{2,}(?:ed|[a-rt-z]s)(?:\\s+[^\\s\\u2014]|[.!?;,]|$))`, 'g');
 // A plain verb ending in "s" counts only after a determiner and one more word,
 // and never right before a preposition: "a stray file turns them" joins, but
 // "the changes from whoever" and "the old tests from CI" stay noun phrases.
@@ -207,6 +211,10 @@ function fixEmDash(s, { endsBlock = false, startsBlock = false } = {}) {
     // The left side needs two words of its own sentence to be a clause, so
     // an opener like "Then" keeps its comma.
     .replace(CLAUSE_AFTER_DASH, (m, at, whole) => {
+      const left = whole.slice(0, at).split(/[.!?:]\s/).pop().trim();
+      return left.split(/\s+/).length >= 2 ? clauseJoin(left) : m;
+    })
+    .replace(QUANTITY_CLAUSE_AFTER_DASH, (m, at, whole) => {
       const left = whole.slice(0, at).split(/[.!?:]\s/).pop().trim();
       return left.split(/\s+/).length >= 2 ? clauseJoin(left) : m;
     })

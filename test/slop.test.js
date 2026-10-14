@@ -938,6 +938,11 @@ test('fix joins a noun clause after the dash with a semicolon', () => {
     // a second place phrase still joins; a joining word keeps its comma
     'Read the logs \u2014 the work for agents in the fleet is done.',
     'It is not green \u2014 even when the build in CI is red.',
+    // "nothing" and its kin before a verb in "ed" or "s" start a clause
+    'The gate held \u2014 nothing in the queue moved.',
+    'Check the board \u2014 nobody claimed it.',
+    'Ship it \u2014 nothing fancy.',
+    'Keep it plain \u2014 nothing less than that.',
   ].join('\n'));
   const { changes } = applyFixes([file], RULES);
   assert.deepEqual(changes.map((c) => c.after), [
@@ -970,6 +975,10 @@ test('fix joins a noun clause after the dash with a semicolon', () => {
     'The queue looks fine; the oldest job in the queue is stale.',
     'Read the logs; the work for agents in the fleet is done.',
     'It is not green, even when the build in CI is red.',
+    'The gate held; nothing in the queue moved.',
+    'Check the board; nobody claimed it.',
+    'Ship it, nothing fancy.',
+    'Keep it plain, nothing less than that.',
   ]);
 });
 
