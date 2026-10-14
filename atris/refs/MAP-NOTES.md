@@ -2279,7 +2279,7 @@ npm publish
 
 ## Folder-removal scanner review
 
-- `atris/receipts/work-folder-scan-probe.js:10` reads the actual scanner and bypass predicate; synthetic cases at line 21; acceptance mode at line 47. `atris/receipts/work-folder-scan-handoff-2026-10-14.md:1` records observations and the bounded repair safeguard.
+- `atris/receipts/work-folder-scan-probe.js:10` reads the actual scanner and bypass predicate; thirteen synthetic cases at line 21 include sync, callback, promise and multiline recursive rmdir; acceptance mode at line 56. `atris/receipts/work-folder-scan-rmdir-2026-10-14.md:1` records the old/new comparison and required checks.
 
 ## Locked quarantine cleanup review
 

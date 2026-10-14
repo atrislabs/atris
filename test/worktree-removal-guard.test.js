@@ -329,14 +329,15 @@ const UNGUARDED_REMOVALS = {
 // guard it and delete its line here.
 const NOT_YET_GUARDED = {
 };
-const WORKTREE_REMOVAL = /worktree['"]?\s*,\s*['"]remove['"]|git worktree remove|\brm(?:Sync)?\(\s*[^,)]*(?:worktree|wtPath|\bwt\b|\bw\.path)|\brm\s+-[a-z]*r[^;&|\n]*(?:worktree|wtPath|\bwt\b)|['"]rm['"]\s*,\s*\[[^\]]*(?:worktree|wtPath|\bwt\b)/i;
+const WORKTREE_REMOVAL = /worktree['"]?\s*,\s*['"]remove['"]|git worktree remove|\brm(?:dir)?(?:Sync)?\(\s*[^,)]*(?:worktree|wtPath|\bwt\b|\bw\.path)|\brm\s+-[a-z]*r[^;&|\n]*(?:worktree|wtPath|\bwt\b)|['"]rm['"]\s*,\s*\[[^\]]*(?:worktree|wtPath|\bwt\b)/i;
 // A recursive delete with a plain name (dir, target) still counts when its
 // function lists, adds, or walks worktrees, so renaming a variable can't hide one.
 // Asking git for the worktree list directly counts as listing them.
 // Callback and promise deletes (fs.rm, fs.promises.rm) count the same as rmSync,
 // and so does a shell rm -r, typed out or passed to spawn as arguments.
 // A path built by a call, like rmSync(path.join(root, x), { recursive }), is read through.
-const RECURSIVE_DELETE = /\brm(?:Sync)?\((?:[^()]|\([^()]*\))*recursive|\brm\s+-[a-zA-Z]*[rR]|['"]rm['"]\s*,\s*\[\s*['"]-[a-zA-Z]*[rR]/;
+// The older rmdir with the recursive option counts as a delete too.
+const RECURSIVE_DELETE = /\brm(?:dir)?(?:Sync)?\((?:[^()]|\([^()]*\))*recursive|\brm\s+-[a-zA-Z]*[rR]|['"]rm['"]\s*,\s*\[\s*['"]-[a-zA-Z]*[rR]/;
 const HANDLES_WORKTREES = /listWorktrees\(|parseWorktrees\(|agent-worktrees|['"]worktree['"]\s*,\s*['"](?:add|list)['"]|git worktree (?:add|list)/;
 const COMMENT_LINE = /^\s*(\/\/|\*|\/\*)/;
 
@@ -360,7 +361,7 @@ function worktreeRemovalSites(file) {
   const sites = [];
   lines.forEach((line, index) => {
     if (COMMENT_LINE.test(line)) return;
-    const call = /\brm(?:Sync)?\(|['"]rm['"]\s*,/.test(line) ? callText(lines, index) : line;
+    const call = /\brm(?:dir)?(?:Sync)?\(|['"]rm['"]\s*,/.test(line) ? callText(lines, index) : line;
     const named = WORKTREE_REMOVAL.test(call);
     if (!named && !RECURSIVE_DELETE.test(call)) return;
     const owner = starts.filter((start) => start.index <= index).pop();
