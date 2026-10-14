@@ -433,6 +433,19 @@ function creditAfterQuote(quote, rest) {
 // with the sentence instead of starting the next.
 const SHORT_FORM_END = /\b(?:etc|e\.g|i\.e|vs|cf|approx|incl|et al|Inc|Ltd|Corp|Co|Jr|Sr)$/i;
 
+// a label that ends its own sentence, "**Why now?**", leaves the words after
+// its dropped dash to start the next one, so a lowercase first word takes its
+// capital: "**Why now?** The market moved". A short form such as "Inc." ends
+// no sentence, and a line that opens in lowercase keeps its writer's lowercase.
+// A quoted question goes on with its sentence ('Ask "what did we miss?" then
+// read the calls'), so only a bare stop or one inside bold or italics counts.
+function capitalAfterLabel(label, rest, line) {
+  const stop = /([.!?])[*_]*$/.exec(label);
+  if (!stop || /^[^A-Za-z]*[a-z]/.test(line)) return rest;
+  if (stop[1] === '.' && SHORT_FORM_END.test(label.slice(0, stop.index).replace(/^[*_]+/, ''))) return rest;
+  return rest.replace(/^[a-z](?=[a-z']*(?![\w\uE000]))/, (ch) => ch.toUpperCase());
+}
+
 function fixEmDash(s, { endsBlock = false, startsBlock = false, spans = [] } = {}) {
   // a dash between a file reference and the code it points at reads "is",
   // so it takes a colon even past a label colon: "`lib/a.js:12`: `runTick`",
@@ -524,7 +537,7 @@ function fixEmDash(s, { endsBlock = false, startsBlock = false, spans = [] } = {
   // a credit, not a label: '> *"Power is the limit."* (Musk)'
   const credit = label && /[.!?]["'\u201d\u2019*_]*["'\u201d\u2019][*_]*$/.test(label[2]) && creditAfterQuote(label[1] + label[2], rest);
   if (credit) return credit;
-  if (label) return `${label[1]}${label[2]}${!quoted && /[.,;:!?][*_`"'\u201d\u2019]*$/.test(label[2]) ? '' : ':'}${s.length > label[0].length ? ' ' : ''}${fixEmDash(rest, { endsBlock })}`;
+  if (label) return `${label[1]}${label[2]}${!quoted && /[.,;:!?][*_`"'\u201d\u2019]*$/.test(label[2]) ? '' : ':'}${s.length > label[0].length ? ' ' : ''}${fixEmDash(capitalAfterLabel(label[2], rest, s), { endsBlock })}`;
   const term = startsBlock && (TERM_DASH.exec(s) || TITLE_DASH.exec(s));
   if (term) return `${term[1]}: ${fixEmDash(s.slice(term[0].length), { endsBlock })}`;
   // in a sentence with an odd run of three or more dashes, one before a
@@ -549,11 +562,11 @@ function fixEmDash(s, { endsBlock = false, startsBlock = false, spans = [] } = {
     // for the credit rule below: '1. **"just a fun thing."** (Prydz)'. One
     // before a joining word goes on with its sentence, like a short list
     // label: "5. **Open source is catching up**, and that's great".
-    .replace(/([.!?]["'\u201d\u2019)]*\s+)(\*\*[^*\u2014]*[^\s*\u2014]\*\*|__[^_\u2014]*[^\s_\u2014]__)\s*\u2014\s*(?=\S)/g, (m, lead, bold, at, whole) => {
-      const rest = whole.slice(at + m.length);
+    .replace(/([.!?]["'\u201d\u2019)]*\s+)(\*\*[^*\u2014]*[^\s*\u2014]\*\*|__[^_\u2014]*[^\s_\u2014]__)\s*\u2014\s*(?=\S)([a-z])?/g, (m, lead, bold, ch = '', at, whole) => {
+      const rest = ch + whole.slice(at + m.length);
       if (/^(?:and|but|or|nor|so|yet)\b/.test(rest)) return m;
       if (/[.!?]["'\u201d\u2019]+[*_]+$/.test(bold) && !/\u2014/.test(rest) && creditAfterQuote(bold, rest)) return m;
-      return `${lead}${bold}${/[.,;:!?][*_]+$/.test(bold) ? '' : ':'} `;
+      return `${lead}${bold}${/[.,;:!?][*_]+$/.test(bold) ? '' : ':'} ${ch && capitalAfterLabel(bold, rest, whole).charAt(0)}`;
     })
     // an aside never crosses a sentence end; dashes split by one are fixed alone.
     // An aside already inside parentheses, or holding its own, takes commas,
@@ -731,10 +744,12 @@ function fixEmDash(s, { endsBlock = false, startsBlock = false, spans = [] } = {
     // "why bother? nobody". A short form like "etc." ends no sentence, so it
     // goes on with a comma: "etc., the gate holds". An ellipsis trails off
     // on purpose and keeps its lowercase, and so does a line that opens in
-    // lowercase, since its writer starts sentences that way.
-    .replace(/(^|[^.])([.!?])\s*\u2014\s*([a-z])(?=[a-z']*(?![\w\uE000]))/g, (m, lead, stop, ch, at, whole) => {
-      if (stop === '.' && SHORT_FORM_END.test(whole.slice(0, at) + lead)) return `${lead}., ${ch}`;
-      return `${lead}${stop} ${/^[^A-Za-z]*[a-z]/.test(whole) ? ch : ch.toUpperCase()}`;
+    // lowercase, since its writer starts sentences that way. A stop inside
+    // closing bold or italics ends the sentence the same way: "**Why now?**
+    // The market moved".
+    .replace(/(^|[^.])([.!?])(\*{1,2}|_{1,2})?\s*\u2014\s*([a-z])(?=[a-z']*(?![\w\uE000]))/g, (m, lead, stop, mark = '', ch, at, whole) => {
+      if (stop === '.' && SHORT_FORM_END.test(whole.slice(0, at) + lead)) return `${lead}.${mark}, ${ch}`;
+      return `${lead}${stop}${mark} ${/^[^A-Za-z]*[a-z]/.test(whole) ? ch : ch.toUpperCase()}`;
     })
     // keep punctuation the writer already put beside the dash instead of
     // stacking a comma on it, and never leave a trailing space. A dash pressed

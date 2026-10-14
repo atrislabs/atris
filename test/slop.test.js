@@ -686,8 +686,30 @@ test('fix keeps a label that ends in its own punctuation and adds no colon', () 
   assert.deepEqual(changes.map((c) => c.after), [
     '1. **what is it?** clear product description',
     '**Note:** read this first.',
-    '- **Done.** shipped',
+    '- **Done.** Shipped',
     '- **Name**: what it does',
+  ]);
+});
+
+test('fix starts the next sentence with a capital after a bold or italic stop', () => {
+  // a pitch FAQ wrote each question in bold, a dash, then a lowercase answer
+  const file = tmpFile('bold-stop.md', [
+    '- **Why now?** \u2014 the market moved',
+    '**Is it safe?** \u2014 yes, mostly.',
+    '*Really?* \u2014 nobody reads it.',
+    'Done. **What now?** \u2014 the next step waits.',
+    // a short form ends no sentence, and a lowercase line stays lowercase
+    '- **Acme Inc.** \u2014 makes boxes',
+    '1. **why now?** \u2014 the market moved',
+  ].join('\n'));
+  const { changes } = applyFixes([file], RULES);
+  assert.deepEqual(changes.map((c) => c.after), [
+    '- **Why now?** The market moved',
+    '**Is it safe?** Yes, mostly.',
+    '*Really?* Nobody reads it.',
+    'Done. **What now?** The next step waits.',
+    '- **Acme Inc.** makes boxes',
+    '1. **why now?** the market moved',
   ]);
 });
 
@@ -745,7 +767,7 @@ test('fix gives a bold phrase that opens a sentence partway through a line a col
     '2. **Path**: Chain backward, etc. **Include eliminate steps**: what gets deleted.',
     'Review it. **Always re-run the checks**: the sandbox gives false failures.',
     'We ran it **twice**, and it held.',
-    'It held. **What now?** we ship.',
+    'It held. **What now?** We ship.',
   ]);
 });
 
