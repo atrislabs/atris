@@ -1278,13 +1278,8 @@ function refsLockFile(dir) {
   return null;
 }
 
-// The lock file keeping a folder and how long it has sat there, so a lock left
-// by a crashed git shows up instead of silently holding the folder.
-function worktreeGitLock(worktreePath, now = Date.now()) {
-  return gitStoreLock(worktreeGitDir(worktreePath), now);
-}
-
-// Same lookup against a git store itself, for callers that hold the store path.
+// The lock file holding a git store and how long it has sat there, so a lock
+// left by a crashed git shows up instead of silently holding the folder.
 function gitStoreLock(gitDir, now = Date.now()) {
   if (!gitDir) return null;
   const file = GIT_ACTIVITY_MARKERS
@@ -1319,15 +1314,30 @@ function describePausedGitWork(reason) {
   return PAUSED_GIT_WORK[reason] ? `${PAUSED_GIT_WORK[reason]} is paused` : null;
 }
 
-// The kept reason as reap prints it: a git lock also names its file and age,
-// and paused work says what to finish, so the line an operator reads says
-// what to check before clearing it. The reason code stays first.
-function describeGitActivity(worktreePath, reason, now = Date.now()) {
+// The one check every cleanup runs before it removes a folder git may be busy
+// in: tidy, reap, worktree cleanup, fleet review and the autopilot regression
+// check. Looks at the folder's own store, then any extra stores the caller
+// will also delete, and returns null when git is idle in all of them. A held
+// lock names its file and age; paused work names what to finish.
+function gitHold({ worktree = null, stores = [], now = Date.now() } = {}) {
+  const dirs = [worktree ? worktreeGitDir(worktree) : null, ...stores].filter(Boolean);
+  const reason = dirs.map(gitStoreActivity).find(Boolean);
+  if (!reason) return null;
+  const lock = reason === 'git_lock' ? dirs.map((dir) => gitStoreLock(dir, now)).find(Boolean) : null;
   const paused = describePausedGitWork(reason);
-  if (paused) return `${reason}: ${paused}`;
-  if (reason !== 'git_lock') return reason;
-  const lock = worktreeGitLock(worktreePath, now);
-  return lock ? `git_lock: ${lock.file}, ${describeLockAge(lock.ageMs)} old` : reason;
+  return {
+    reason,
+    ...(lock ? { lock: lock.file, lock_age_ms: lock.ageMs } : {}),
+    ...(paused ? { paused } : {}),
+  };
+}
+
+// The same words for a git hold in every command that keeps a folder for one.
+// Anything that is not a git hold gets null, so callers can pass any kept row.
+function describeGitHold(hold) {
+  if (!hold || !String(hold.reason || '').startsWith('git_')) return null;
+  if (hold.lock) return `git holds ${hold.lock}, ${describeLockAge(hold.lock_age_ms)} old`;
+  return hold.paused || describePausedGitWork(hold.reason) || 'git is in the middle of something';
 }
 
 // Every work-folder removal leaves one line naming who removed it and why, in
@@ -1425,10 +1435,9 @@ function cleanupWorktrees({ root = repoRoot(), base: baseOverride = '', apply = 
       kept.push({ ...item, reason: activeCwds ? 'active_process' : 'process_scan_failed' });
       continue;
     }
-    const gitActivity = worktreeGitActivity(wtPath);
-    if (gitActivity) {
-      const lock = gitActivity === 'git_lock' ? worktreeGitLock(wtPath) : null;
-      kept.push({ ...item, reason: gitActivity, ...(lock ? { lock: lock.file, lock_age_ms: lock.ageMs } : {}) });
+    const hold = gitHold({ worktree: wtPath });
+    if (hold) {
+      kept.push({ ...item, ...hold });
       continue;
     }
     const rawCounts = statusCounts(wt.path);
@@ -1528,12 +1537,9 @@ function cleanup(args) {
     console.log(`${cacheAction}: ${item.path}`);
   }
   console.log(`kept: ${result.kept.length}`);
-  for (const item of result.kept.filter((kept) => kept.lock)) {
-    console.log(`held by git lock: ${item.path} lock=${item.lock} age=${describeLockAge(item.lock_age_ms)}`);
-  }
   for (const item of result.kept) {
-    const paused = describePausedGitWork(item.reason);
-    if (paused) console.log(`held by paused git work: ${item.path} ${paused}`);
+    const held = describeGitHold(item);
+    if (held) console.log(`held: ${item.path} ${held}`);
   }
   if (!result.apply && result.candidates.length) console.log('next: atris worktree cleanup --apply');
   return 0;
@@ -1624,11 +1630,8 @@ module.exports = {
   gitFailureDetail,
   gitNetworkEnvironment,
   gitStoreActivity,
-  worktreeGitLock,
-  gitStoreLock,
-  describeLockAge,
-  describeGitActivity,
-  describePausedGitWork,
+  gitHold,
+  describeGitHold,
   describeFlightAge,
   flightStampMs,
   listActiveProcessPaths,

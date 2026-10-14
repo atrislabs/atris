@@ -11,7 +11,7 @@ const os = require('node:os');
 const path = require('node:path');
 const { spawn, spawnSync } = require('node:child_process');
 const { reap, removalsTodayLine } = require('../commands/land');
-const { cleanupWorktrees } = require('../commands/worktree');
+const { cleanupWorktrees, describeGitHold } = require('../commands/worktree');
 const { disposeReviewSandbox } = require('../lib/fleet');
 const { regressionCheck } = require('../commands/autopilot');
 const { dropScratch } = require('../lib/land-green');
@@ -143,7 +143,7 @@ test('reap keeps a folder while git holds its lock, even with --force', () => {
     fs.utimesSync(lock, stale, stale);
     const receipt = reap(repo, { remote: false, force: true, activeCwds: [] });
     assert.ok(fs.existsSync(wt), JSON.stringify(receipt));
-    assert.ok(receipt.keptWorktrees.includes(`${wt} (git_lock: ${lock}, 3 h old)`), JSON.stringify(receipt));
+    assert.ok(receipt.keptWorktrees.includes(`${wt} (git_lock: git holds ${lock}, 3 h old)`), JSON.stringify(receipt));
     assert.ok(!receipt.deletedBranches.includes('engine-run'));
     assert.deepEqual(removalLines(repo), []);
   } finally {
@@ -190,6 +190,33 @@ test('worktree cleanup keeps a clean folder paused mid-rebase', () => {
     assert.deepEqual(result.removed, []);
     assert.ok(fs.existsSync(wt));
     assert.ok(result.kept.some((item) => item.path === wt && item.reason === 'git_rebase_in_progress'), JSON.stringify(result.kept));
+  } finally {
+    fs.rmSync(base, { recursive: true, force: true });
+  }
+});
+
+// One stale lock reads the same in every cleanup that keeps a folder for it,
+// so an operator can search one phrase across reap, cleanup and fleet logs.
+test('reap, worktree cleanup and fleet review name a held lock in the same words', () => {
+  const { base, repo, wt } = landedWorktree();
+  try {
+    const lock = path.join(worktreeGitDir(wt), 'index.lock');
+    fs.writeFileSync(lock, '');
+    const stale = new Date(Date.now() - 3 * 60 * 60 * 1000);
+    fs.utimesSync(lock, stale, stale);
+    const words = `git holds ${lock}, 3 h old`;
+    const receipt = reap(repo, { remote: false, force: true, activeCwds: [] });
+    assert.ok(receipt.keptWorktrees.includes(`${wt} (git_lock: ${words})`), JSON.stringify(receipt.keptWorktrees));
+    const cleaned = cleanupWorktrees({ root: repo, base: 'HEAD', apply: true, activeCwds: [] });
+    assert.equal(describeGitHold(cleaned.kept.find((item) => item.path === wt)), words);
+    const quarantine = path.join(base, 'quarantine.git');
+    fs.mkdirSync(quarantine);
+    const disposed = disposeReviewSandbox({ trustedRoot: repo, sandboxRoot: path.join(base, 'sandbox'), worktreePath: wt, gitDir: path.join(base, 'sandbox.git'), quarantine });
+    assert.equal(describeGitHold(disposed), words);
+    assert.equal(describeGitHold({ reason: 'git_rebase_in_progress' }), 'a rebase is paused');
+    assert.equal(describeGitHold({ reason: 'dirty' }), null);
+    assert.ok(fs.existsSync(wt));
+    assert.deepEqual(removalLines(repo), []);
   } finally {
     fs.rmSync(base, { recursive: true, force: true });
   }
@@ -302,6 +329,8 @@ test('autopilot regression check keeps its folder while git holds its lock', () 
   try {
     const [row] = regressionCheck(repo, { activeCwds: [] });
     assert.equal(row.kept, 'git_lock', JSON.stringify(row));
+    assert.equal(row.held, `git holds ${path.join(worktreeGitDir(folder), 'index.lock')}, under a minute old`);
+    assert.equal(row.path, folder);
     assert.ok(fs.existsSync(folder));
     assert.deepEqual(removalLines(repo), []);
   } finally {
@@ -463,7 +492,7 @@ function worktreeRemovalSites(file) {
 const GROUPED_REMOVALS = {
   'lib/fleet.js:disposeReviewSandbox': {
     deletes: ['boundary.worktreePath', 'boundary.worktreePath', 'boundary.gitDir', 'boundary.quarantine', 'boundary.sandboxRoot'],
-    checks: ['worktreeGitActivity(boundary.worktreePath)', 'gitStoreActivity(boundary.gitDir)', 'gitStoreActivity(boundary.quarantine)'],
+    checks: ['gitHold({ worktree: boundary.worktreePath, stores: [boundary.gitDir, boundary.quarantine] })'],
     logs: 'boundary.worktreePath',
     why: 'review sandbox: work folder, its git store, the quarantine store, and their parent go together',
   },
@@ -515,9 +544,11 @@ function sameFolder(body) {
   };
 }
 
+// The folder a git check reads: the shared gitHold({ worktree: <folder> }) or
+// the plain worktreeGitActivity(<folder>) check.
 function checkedCalls(body) {
-  return [...body.matchAll(/worktreeGitActivity\(\s*([^()]*?)\s*\)/g)]
-    .map((match) => ({ arg: match[1].replace(/\s+/g, ''), index: match.index }));
+  return [...body.matchAll(/gitHold\(\s*\{\s*worktree:\s*([^,{}()]+?)\s*[,}]|worktreeGitActivity\(\s*([^()]*?)\s*\)/g)]
+    .map((match) => ({ arg: (match[1] || match[2]).replace(/\s+/g, ''), index: match.index }));
 }
 
 // Just past the bracket that closes the one at start, or -1 when the text ends

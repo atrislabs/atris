@@ -201,7 +201,7 @@ test('tidy names the git lock file and its age when it keeps a landed copy', () 
     const result = tidyMemberCopies({ repoRoot: fx.repo, now });
     const kept = byName(result, 'landed-locked');
     assert.equal(kept.action, 'kept');
-    assert.equal(kept.reason, `landed, but git holds ${lockFile}, 3h old`);
+    assert.equal(kept.reason, `landed, but git holds ${lockFile}, 3 h old`);
     assert.ok(fs.existsSync(locked));
   } finally {
     fs.rmSync(fx.base, { recursive: true, force: true });
@@ -224,7 +224,7 @@ test('tidy keeps a landed copy while git is paused mid-rebase in it, and logs wh
 
     const result = tidyMemberCopies({ repoRoot: fx.repo });
     assert.equal(byName(result, 'landed-paused').action, 'kept');
-    assert.equal(byName(result, 'landed-paused').reason, 'landed, but a rebase is paused in it');
+    assert.equal(byName(result, 'landed-paused').reason, 'landed, but a rebase is paused');
     assert.ok(fs.existsSync(paused));
     assert.equal(byName(result, 'landed-clean').action, 'removed');
 
