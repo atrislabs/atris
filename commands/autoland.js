@@ -530,10 +530,10 @@ function showStatus(root, args) {
   const reapTrouble = autoland.readState(root).last_reap_error;
   if (reapTrouble) console.log(`  cleanup trouble: landing sweep failed on ${reapTrouble.date} (${reapTrouble.error}) - run: atris land --reap`);
   const lost = readResourceHistory(root);
-  if (lost.lost_closed) {
+  if (lost.lost_closed_day) {
     const newest = lost.last_lost_closed;
     const when = `${String(newest.at || '').slice(0, 16).replace('T', ' ')} UTC`;
-    console.log(`  engine runs closed after their parent died: ${lost.lost_closed}, newest ${newest.engine || 'unknown engine'} on ${newest.task || 'no task'} at ${when}`);
+    console.log(`  engine runs closed after their parent died in the last day: ${lost.lost_closed_day}, newest ${newest.engine || 'unknown engine'} on ${newest.task || 'no task'} at ${when}`);
   }
   console.log('');
   const humanOnly = blocked.filter((r) => String(r.reason || '').startsWith('denied_tag_'));
