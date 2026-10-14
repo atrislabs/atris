@@ -3680,3 +3680,36 @@ test('fix gives a verb right after a dash a comma, since the dash closed an asid
     "session, is protected-lane and won't self-land.",
   ]);
 });
+
+test('fix puts an aside split across two lines in parentheses', () => {
+  // from a member's skill notes: each line alone saw one dash and cut the
+  // sentence with a semicolon; read together the aside goes in parentheses.
+  // Records one per line, a name or a count on each, stay apart.
+  const D = String.fromCharCode(0x2014);
+  const file = tmpFile('split-aside.md', [
+    `A check must be able to fail. Counting real items ${D} merge commits, receipt files,`,
+    `defects ${D} beats grepping a heading.`,
+    '',
+    `stash@{40} older-window ${D} needs-own-triage if ever recovered`,
+    `stash@{41} older-window ${D} needs-own-triage if ever recovered`,
+    '',
+    `199/226 ${D} production changes shipped by the AI team, last 30 days`,
+    `93 ${D} merged while the founder slept`,
+    '',
+    `Wiring for TeamTab integration ${D} click member opens the view, a human click`,
+    `opens none; PulseControl ${D} refetch called after toggle resolves.`,
+  ].join('\n'));
+  const { changes } = applyFixes([file], RULES);
+  assert.deepEqual(changes.map((c) => c.after), [
+    'A check must be able to fail. Counting real items (merge commits, receipt files,',
+    'defects) beats grepping a heading.',
+    'stash@{40} older-window, needs-own-triage if ever recovered',
+    'stash@{41} older-window, needs-own-triage if ever recovered',
+    '199/226: production changes shipped by the AI team, last 30 days',
+    '93, merged while the founder slept',
+    // a semicolon between the dashes means two items, so each line keeps
+    // what it gets alone
+    'Wiring for TeamTab integration, click member opens the view, a human click',
+    'opens none; PulseControl; refetch called after toggle resolves.',
+  ]);
+});

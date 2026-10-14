@@ -1282,6 +1282,48 @@ function carriedMark(above, line) {
 // a plain subject ("this", "it", "we"), since a wrapped line that opens on
 // any other word often finishes the subject above ("The tool we built" then
 // "now ships to everyone") and keeps its comma.
+// A pair of dashes around an aside can open on one line and close on the
+// next. Read alone, each line sees one dash and gives it a comma or a
+// semicolon: "Counting real items; merge commits, receipt files, / defects,
+// beats grepping". Read together, the aside goes in parentheses the way it
+// would on one line: "Counting real items (merge commits, receipt files, /
+// defects) beats grepping". Only that outcome is kept, so diagram arrows
+// and records that sit on their own lines stay as they are.
+function splitAside(line, below) {
+  if (!line.trim() || !below.trim() || /`/.test(line + below)) return null;
+  if (line.split('\u2014').length !== 2 || below.split('\u2014').length !== 2) return null;
+  if (!wrappedFrom(line, below)) return null;
+  // a mark already beside a dash ("done; \u2014 next") or one word before the
+  // first dash ("v2 \u2014 harness re-verified", a name) is no aside opening
+  if (/[,;:.!?]\s*\u2014|\u2014\s*[,;:.!?]/.test(line + below)) return null;
+  if (line.split('\u2014')[0].trim().replace(/^(?:[-*+]|\d+[.)])\s+/, '').split(/\s+/).length < 2) return null;
+  // lines that open with the same word, numbers and marks aside, are records
+  // of their own: "stash@{40} older-window" then "stash@{41} older-window",
+  // or a count on each line: "199/226" then "93"
+  const opener = (s) => s.trim().split(/\s+/)[0].replace(/[^A-Za-z]+/g, '');
+  if (opener(line) === opener(below)) return null;
+  // a line that goes on with a sentence opens mid-sentence: in lowercase or
+  // a word in capitals ("the / CRITICAL fix"), and under a list item it is
+  // indented. "How execution flows" then "Works with Docs" are two lines.
+  const first = below.trim().replace(/^[^A-Za-z0-9]+/, '').split(/[\s,.;:)]/)[0];
+  if (!/^[a-z]/.test(first) && !/^[A-Z]{2,}$/.test(first)) return null;
+  if (/^\s*(?:[-*+]|\d+[.)])\s/.test(line) && !/^\s+\S/.test(below)) return null;
+  const head = /^(\s*)(.*?)(\s*)$/.exec(line); const foot = /^(\s*)(.*?)(\s*)$/.exec(below);
+  const tailWords = head[2].split('\u2014')[1].trim().split(/\s+/); const headWords = foot[2].split('\u2014')[0].trim().split(/\s+/);
+  if (!tailWords[0] || !headWords[0]) return null;
+  const seam = `${tailWords[tailWords.length - 1]} ${headWords[0]}`;
+  const joined = fixEmDash(`${head[2]} ${foot[2]}`);
+  const at = joined.indexOf(seam);
+  if (at < 0 || joined.indexOf(seam, at + 1) >= 0) return null;
+  const cut = at + tailWords[tailWords.length - 1].length;
+  const up = joined.slice(0, cut); const down = joined.slice(cut + 1);
+  if (/\u2014/.test(joined) || !/\([^)]*$/.test(up) || !/^[^(]*\)/.test(down)) return null;
+  // a semicolon between the two dashes means each dash belongs to its own
+  // item: "TeamTab \u2014 click member; PulseControl \u2014 refetch"
+  if (/;/.test(up.slice(up.lastIndexOf('(')) + down.slice(0, down.indexOf(')')))) return null;
+  return [head[1] + up + head[3], foot[1] + down + foot[3]];
+}
+
 function trailingMark(line, below) {
   const end = /^(.*?\S)\s*\u2014\s*$/.exec(line);
   if (!end || !below.trim() || /\u2014|`/.test(end[1]) || /\u2014|`/.test(below)) return null;
@@ -1334,6 +1376,11 @@ function applyFixes(files, rules, { write = true } = {}) {
         else changes.push({ file, line: i, before: lines[i - 1], after: above, kind: carried });
         lines[i - 1] = above; touched = true;
       }
+      // a split aside fixes both lines at once; the line below is filed
+      // right after this one so the report keeps their order
+      let pairedBelow = null;
+      const pair = !script && from === 0 && i + 1 < lines.length && !skip.has(i) && !skip.has(i + 1) && !fenced.has(i) && !fenced.has(i + 1) && fixable.some((r) => r.fix === fixEmDash) ? splitAside(line, lines[i + 1]) : null;
+      if (pair) { line = pair[0]; fixedCount += 2; pairedBelow = { file, line: i + 2, before: lines[i + 1], after: pair[1], kind: fixKind(lines[i + 1], pair[1]) }; lines[i + 1] = pair[1]; }
       const tail = !script && i + 1 < lines.length && !skip.has(i) && !skip.has(i + 1) && !fenced.has(i) && !fenced.has(i + 1) && fixable.some((r) => r.fix === fixEmDash) ? trailingMark(line, lines[i + 1]) : null;
       if (tail) { line = line.replace(/\s*\u2014\s*$/, tail); fixedCount++; }
       for (const r of fixable) {
@@ -1352,6 +1399,7 @@ function applyFixes(files, rules, { write = true } = {}) {
         if (nl !== line) { line = nl; fixedCount++; }
       }
       if (line !== lines[i]) { changes.push({ file, line: i + 1, before: lines[i], after: line, kind: carried || fixKind(lines[i], line) }); lines[i] = line; touched = true; }
+      if (pairedBelow) { changes.push(pairedBelow); touched = true; }
     }
     if (touched) { if (write) fs.writeFileSync(file, lines.join('\n')); fixedFiles.push(file); }
   }
