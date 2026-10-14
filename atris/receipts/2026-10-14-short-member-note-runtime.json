@@ -1,0 +1,213 @@
+{
+  "cwd": "/var/folders/p2/s2tg3j6n1v9bwsbcqrjxnvnh0000gn/T/atris-short-note-nxfRLv",
+  "command": "node bin/atris.js mission run mission-2026-10-14-read-notes-on-a-short-job-1aef0e67 --max-ticks 1 --max-wall 30 --json",
+  "cli_path": "/Users/keshavrao/arena/.agent-worktrees/atris-cli/architect-a-note-sent-to-a-running-member-is-a-20261014-115909/bin/atris.js",
+  "exit_code": 0,
+  "steer_output": {
+    "ok": true,
+    "action": "member_steered",
+    "mode": "steered_live",
+    "dry_run": false,
+    "member": "architect",
+    "mission_id": "mission-2026-10-14-read-notes-on-a-short-job-1aef0e67",
+    "engine": "manual",
+    "prompt": "read the late note",
+    "why": "Explicitly targeted architect.",
+    "subagent_shell": {
+      "role": "architect (Architect)",
+      "member": "architect",
+      "engine": "claude",
+      "objective": "read the late note",
+      "verify": "",
+      "prompt": "You are architect (Architect). Read atris/team/architect/MEMBER.md, MISSION.md, goals.json, and skills/. Execute one bounded slice for: \"read the late note\". Run verify: . Report 3 lines: Found, Fixed, Next push.",
+      "shell_command": "atris member run architect \"read the late note\" --engine claude --ignite"
+    }
+  },
+  "mission": {
+    "schema": "atris.mission.v1",
+    "id": "mission-2026-10-14-read-notes-on-a-short-job-1aef0e67",
+    "slug": "read-notes-on-a-short-job",
+    "objective": "read notes on a short job",
+    "owner": "architect",
+    "owner_resolution": "explicit_member_owner",
+    "status": "ready",
+    "cadence": "manual",
+    "runner": "manual",
+    "runner_kind": "runner",
+    "lane": "workspace",
+    "verifier": "node /var/folders/p2/s2tg3j6n1v9bwsbcqrjxnvnh0000gn/T/atris-short-note-nxfRLv/check.cjs",
+    "always_on": false,
+    "xp_task_enabled": false,
+    "stop_condition": "verifier passes and no human asks remain",
+    "task_ids": [],
+    "human_asks": [],
+    "next_action": "review proof then run: atris mission complete mission-2026-10-14-read-notes-on-a-short-job-1aef0e67 --proof \"atris/runs/mission-mission-2026-10-14-read-notes-on-a-short-job-1aef0e67-2026-10-14T12-03-25-264Z.json\"",
+    "receipt_path": "atris/runs/mission-mission-2026-10-14-read-notes-on-a-short-job-1aef0e67-2026-10-14T12-03-25-264Z.json",
+    "created_at": "2026-10-14T12:03:23.472Z",
+    "updated_at": "2026-10-14T12:03:25.342Z",
+    "n": 1,
+    "max_wall_seconds": 30,
+    "budget_contract": {
+      "schema": "atris.mission_budget_contract.v1",
+      "requested_seconds": 30,
+      "budget_label": "30 seconds",
+      "policy": "stop_when_done",
+      "plain_language": "Finish early if solved.",
+      "stop_rule": "Use up to 30 seconds; stop early when the mission is done, proven, or blocked."
+    },
+    "pending_session_id": null,
+    "pings": [
+      {
+        "at": "2026-10-14T12:03:24.928Z",
+        "from": "operator",
+        "text": "read the late note",
+        "consumed_at": "2026-10-14T12:03:25.140Z"
+      }
+    ],
+    "last_next_push": "read the late note",
+    "claude_session_id": "029aebaf-17a5-4dab-921a-f3fc9a7c6aff",
+    "paused_at": null,
+    "stop_reason": null,
+    "last_tick_at": "2026-10-14T12:03:25.264Z",
+    "last_tick_status": "ran",
+    "last_tick_reason": "tick-ok",
+    "last_tick_index": 1,
+    "last_tick_layer": "capabilities",
+    "last_tick_layer_source": "explicit",
+    "error_streak_count": 0,
+    "verifier_result": {
+      "command": "node /var/folders/p2/s2tg3j6n1v9bwsbcqrjxnvnh0000gn/T/atris-short-note-nxfRLv/check.cjs",
+      "resolved_command": null,
+      "status": 0,
+      "signal": null,
+      "passed": true,
+      "timed_out": false,
+      "elapsed_ms": 70,
+      "timeout_ms": 120000,
+      "stdout": "late note read before the check\n",
+      "stderr": ""
+    },
+    "last_check_feedback": "",
+    "claude_session_ticks": 1
+  },
+  "receipt": {
+    "schema": "atris.mission_receipt.v1",
+    "tree_hash": "2e0b044399797bf3284bbaf3d1a94845dd11d1ede68cfb9a48d6bae96004b2e1",
+    "clean": false,
+    "git_tree": null,
+    "mission_id": "mission-2026-10-14-read-notes-on-a-short-job-1aef0e67",
+    "objective": "read notes on a short job",
+    "owner": "architect",
+    "at": "2026-10-14T12:03:25.339Z",
+    "verifier": "node /var/folders/p2/s2tg3j6n1v9bwsbcqrjxnvnh0000gn/T/atris-short-note-nxfRLv/check.cjs",
+    "result": {
+      "kind": "mission_run_tick",
+      "tick": {
+        "status": "ran",
+        "reason": "tick-ok",
+        "tick_index": 1,
+        "ran": true,
+        "started_at": "2026-10-14T12:03:23.863Z",
+        "claude": {
+          "ok": true,
+          "protected_lane_guard": null,
+          "brief_id": null,
+          "summary": "worker read prompt 2",
+          "receipt_text": "worker read prompt 2\nlayer: capabilities",
+          "stop_reason": null,
+          "duration_total_ms": 148,
+          "num_turns": null,
+          "observed_session_ids": [
+            "029aebaf-17a5-4dab-921a-f3fc9a7c6aff"
+          ],
+          "parse_errors": 0,
+          "stderr": "",
+          "timed_out": false,
+          "aborted": false,
+          "operator_notes_read": 1
+        },
+        "protected_lane_guard": {
+          "ok": true,
+          "allowed": true,
+          "status": "clear",
+          "reason": "no git worktree exists, so this tick cannot commit or land",
+          "unreadable": false,
+          "surfaces": [],
+          "matches": []
+        },
+        "verifier_passed": true,
+        "layer": "capabilities",
+        "layer_source": "explicit",
+        "next_push": null,
+        "finished_at": "2026-10-14T12:03:25.264Z",
+        "worktree": {
+          "available": false,
+          "before_reason": "not-git-worktree",
+          "after_reason": "not-git-worktree"
+        }
+      },
+      "frozen": {
+        "verifier": "node /var/folders/p2/s2tg3j6n1v9bwsbcqrjxnvnh0000gn/T/atris-short-note-nxfRLv/check.cjs",
+        "lane": "workspace",
+        "runner": "manual",
+        "model": null,
+        "started_at": "2026-10-14T12:03:23.829Z"
+      },
+      "verifier_result": {
+        "command": "node /var/folders/p2/s2tg3j6n1v9bwsbcqrjxnvnh0000gn/T/atris-short-note-nxfRLv/check.cjs",
+        "resolved_command": null,
+        "status": 0,
+        "signal": null,
+        "passed": true,
+        "timed_out": false,
+        "elapsed_ms": 70,
+        "timeout_ms": 120000,
+        "stdout": "late note read before the check\n",
+        "stderr": ""
+      },
+      "protected_lane_guard": {
+        "ok": true,
+        "allowed": true,
+        "status": "clear",
+        "reason": "no git worktree exists, so this tick cannot commit or land",
+        "unreadable": false,
+        "surfaces": [],
+        "matches": []
+      },
+      "rate_limit_info": null,
+      "worktree": {
+        "available": false,
+        "before_reason": "not-git-worktree",
+        "after_reason": "not-git-worktree"
+      },
+      "landing": {
+        "schema": "atris.result_landing.v1",
+        "status": "proof_ready",
+        "changed": "worker read prompt 2 layer: capabilities.",
+        "reason": "",
+        "checked": "Verifier passed: node /var/folders/p2/s2tg3j6n1v9bwsbcqrjxnvnh0000gn/T/atris-short-note-nxfRLv/check.cjs.",
+        "tested": "Verifier command passed: node /var/folders/p2/s2tg3j6n1v9bwsbcqrjxnvnh0000gn/T/atris-short-note-nxfRLv/check.cjs.",
+        "proof": "Receipt saved at atris/runs/mission-mission-2026-10-14-read-notes-on-a-short-job-1aef0e67-2026-10-14T12-03-25-264Z.json.",
+        "next": "Review proof, then run: atris mission complete mission-2026-10-14-read-notes-on-a-short-job-1aef0e67 --proof \"atris/runs/mission-mission-2026-10-14-read-notes-on-a-short-job-1aef0e67-2026-10-14T12-03-25-264Z.json\".",
+        "timeline_visible": true
+      },
+      "passed": true
+    },
+    "render": {
+      "version": 1,
+      "card": {
+        "kind": "statement",
+        "headline": "Worker read prompt 2 layer: capabilities.",
+        "text": "Worker read prompt 2 layer: capabilities.",
+        "kicker": "mission receipt",
+        "sub": "Check it: verifier passed: node /var/folders/p2/s2tg3j6n1v9bwsbcqrjxnvnh0000gn/t/atris-short-no...",
+        "brand": "atris",
+        "size": "og",
+        "theme": "atris"
+      },
+      "page_section": "## mission receipt\n\nWorker read prompt 2 layer: capabilities.\nCheck it: verifier passed: node /var/folders/p2/s2tg3j6n1v9bwsbcqrjxnvnh0000gn/t/atris-short-note-nxfrlv/check.cjs.\nNext: Review proof, then run: atris mission complete mission-2026-10-14-read-notes-on-a-short-job-1aef0e67 --proof \"atris/runs/mission-mission-2026-10-14-read-note.\n\ndetails: 1 tick; status proof_ready; mission mission-2026-10-14-read-notes-on-a-short-job-1aef0e67",
+      "email_line": "Worker read prompt 2 layer: capabilities. Check it: verifier passed: node /var/folders/p2/s2tg3j6n1v9bwsbcqrjxnvnh0000gn/t/atris-short-note-nxfrlv/check.cjs.",
+      "morning_card_row": "- Worker read prompt 2 layer: capabilities. Check it: verifier passed: node /var/folders/p2/s2tg3j6n1v9bwsbcqrjxnvnh0000gn/t/atris-short-note-nxfrlv/check.cjs"
+    }
+  }
+}
