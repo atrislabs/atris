@@ -1736,6 +1736,26 @@ test('fix keeps the comma when "that" opens a clause inside the noun after a das
   ]);
 });
 
+test('fix reads a word in "ed" as part of a noun and a helper at a line wrap as a verb', () => {
+  // from planning notes, where "closed entries" read as a subject and a verb
+  const file = tmpFile('wrap.md', [
+    '| Other backlog \u2014 closed entries within | 35/186 closed |',
+    'security company is the bigger market \u2014 deferred blocks to resume after',
+    // a helper that ends a wrapped line leaves the clause open below
+    'Nothing is broken \u2014 one request flag is',
+    'set wrong in the config.',
+    // a phrase that ends in "have" or "runs" is no open clause
+    '| P3 | Minor cleanup, dead code, logging \u2014 nice to have |',
+  ].join('\n'));
+  const { changes } = applyFixes([file], RULES);
+  assert.deepEqual(changes.map((c) => c.after), [
+    '| Other backlog, closed entries within | 35/186 closed |',
+    'security company is the bigger market, deferred blocks to resume after',
+    'Nothing is broken; one request flag is',
+    '| P3 | Minor cleanup, dead code, logging, nice to have |',
+  ]);
+});
+
 test('fix starts the next sentence after a stop that sits before a dash', () => {
   // from the terrace repo, which came out "fine with try? the cost"
   const file = tmpFile('stop.md', [

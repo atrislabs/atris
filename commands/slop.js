@@ -150,7 +150,12 @@ const PLACE_PHRASE = `(?:(?:at|in|on|of|for|from|under|per)\\s+(?:(?:the|a|an)\\
 // "Each time" or "every time" opens a "when" clause, not a subject, so
 // "the cache warms up, each time CI runs the suite" keeps its comma.
 const TIME_OPENER = '(?:each|every|any|no)\\s+time\\b';
-const NOUN_CLAUSE_AFTER_DASH = new RegExp(`(?<=[\\w)\\]"'*_\`\\u201d\\u2019\\uE001])\\s*\\u2014\\s*(?!${NAMING_PHRASE})(?!${TIME_OPENER})(?!${REPORT_VERB}\\s)(?=${SUBJECT_WORD}(?:(?!(?:the|a|an|that|whose)\\b)${SUBJECT_WORD}){0,4}${PLACE_PHRASE}${HELPING_VERB}\\s+[^\\s\\u2014])`, 'g');
+// A line may wrap right after a helper that leaves the sentence open, so
+// "Nothing is broken, one request flag is" ends a clause that goes on below.
+// Verbs like "runs" or "have" can end a phrase ("nice to have"), so only
+// these count there.
+const OPEN_HELPER = '(?:is|are|was|were|will|would|can|cannot|could|must|should|may|might|has|had|does|did)';
+const NOUN_CLAUSE_AFTER_DASH = new RegExp(`(?<=[\\w)\\]"'*_\`\\u201d\\u2019\\uE001])\\s*\\u2014\\s*(?!${NAMING_PHRASE})(?!${TIME_OPENER})(?!${REPORT_VERB}\\s)(?=${SUBJECT_WORD}(?:(?!(?:the|a|an|that|whose)\\b)${SUBJECT_WORD}){0,4}${PLACE_PHRASE}(?:${HELPING_VERB}\\s+[^\\s\\u2014]|${OPEN_HELPER}$))`, 'g');
 // "Nothing", "everything" and their kin before a plain verb in "ed" or "s"
 // are a subject too: "the gate held, nothing in the queue moved". A word in
 // "ss" is never the verb, so "nothing less than" and "nothing fancy" stay.
@@ -238,6 +243,8 @@ const ADVERB_CLAUSE_AFTER_DASH = new RegExp(`(?<=[\\w)\\]"'*_\`\\u201d\\u2019\\u
 // after the verb that ends the sentence: '"one font weight"; scarcity forces
 // creativity', "not build errors; xcodebuild compiles fine". A "the" or
 // "our" is no bare word, so "old code, the tests mostly" keeps its comma.
+// A word in "ed" describes the plural after it, so "closed entries
+// within" keeps its comma; "speed" and "seed" are still nouns.
 // A plural with no "the", then a common verb that is rarely a noun and more
 // words after it, starts one too: "small phones overflow silently", "master
 // merges do not reach prod". A plural before a noun, "skills folder", is no
@@ -257,7 +264,7 @@ const THE_CLAUSE_AFTER_DASH = new RegExp(`(?<=[\\w)\\]"'*_\`\\u201d\\u2019\\uE00
 // the verb, so "each time the loop runs" and "each with its own tests in CI"
 // keep their comma.
 const EACH_CLAUSE_AFTER_DASH = new RegExp(`(?<=[\\w)\\]"'*_\`\\u201d\\u2019\\uE001])\\s*\\u2014\\s*(?!${TIME_OPENER})(?=each\\s+(?:(?!(?:the|a|an|that|whose|of|with|in|on|for|from|at|by|to|per|and|or|but)\\b)${NOUN_WORD}\\s+){0,4}(?:[a-z]+-)?${PLAIN_VERB}[^\\s\\u2014])`, 'g');
-const BARE_CLAUSE_AFTER_DASH = new RegExp(`(?<=[\\w)\\]"'*_\`\\u201d\\u2019\\uE001])\\s*\\u2014\\s*(?!${NAMING_PHRASE})(?=(?!(?:and|but|or|nor|so|yet|then|not|even|when|if|unless|until|because|since|while|where|which|who|as|after|before|though|although|once|just|only|also|still|this|that|it|its|one|the|our|your|their|her|his|any|every|each)\\b)[a-z]{3,}(?<!s|ly)\\s+${PLAIN_VERB_WORD}\\s+(?:(?:to|into|onto|through)\\s|[a-z]{3,}(?:[.!?;]|$)))`, 'g');
+const BARE_CLAUSE_AFTER_DASH = new RegExp(`(?<=[\\w)\\]"'*_\`\\u201d\\u2019\\uE001])\\s*\\u2014\\s*(?!${NAMING_PHRASE})(?=(?!(?:and|but|or|nor|so|yet|then|not|even|when|if|unless|until|because|since|while|where|which|who|as|after|before|though|although|once|just|only|also|still|this|that|it|its|one|the|our|your|their|her|his|any|every|each)\\b)[a-z]{3,}(?<!s|ly|[^e]ed)\\s+${PLAIN_VERB_WORD}\\s+(?:(?:to|into|onto|through)\\s|[a-z]{3,}(?:[.!?;]|$)))`, 'g');
 
 // "Our", "your", "their" or "my" and one to three words, then a verb, start
 // a second sentence too: "Saw your post on falls after rehab; our scheduling
