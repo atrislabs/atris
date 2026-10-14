@@ -1,0 +1,38 @@
+map test refs land on their tests, 2026-10-14
+
+problem: refs in atris/MAP.md and atris/refs/MAP-NOTES.md to
+test/engine-resource.test.js and test/engine-dispatch.test.js pointed at lines
+earlier ticks had moved, so a reader landed mid-test or in the wrong test.
+
+before (scan of every single line ref):
+  engine-resource refs 101, not on a test line 71
+  engine-dispatch single line refs 10, not on a test line 8 (plus 3 line ranges)
+
+method: git history could not be trusted (the same old number mapped to
+different tests depending on which doc's history it followed), so each ref was
+matched by the words around it to one test title, and the new line was read
+from the current file by that title. One pass, so no ref was moved twice.
+  atris/MAP.md: 30 refs moved
+  atris/refs/MAP-NOTES.md: 51 refs moved
+
+after:
+  engine-resource refs 101, not on a test line 0
+  engine-dispatch single line refs 10, not on a test line 0
+  sample: the "(staleness check)" ref now reads test/engine-resource.test.js:1606
+    line 1606: test('staleness checks record paired readings on success, SIGKILL and ...
+
+new check, last test in test/engine-resource.test.js:
+  docs as of the previous commit: exit 1, names every stale ref
+    e.g. 'atris/MAP.md test/engine-dispatch.test.js:1409'
+  fixed docs: pass 1, fail 0, exit 0
+  placing it mid-file shifted every test below it and broke the refs again;
+  moved to the end, nothing shifts.
+
+frozen check:
+  node --test test/engine-resource.test.js test/engine-dispatch.test.js
+  tests 148, pass 148, fail 0, exit 0
+git diff --check: exit 0; slop detect on both docs: clean; doc health 81.95 (unchanged)
+
+left alone: three line range refs to test/engine-dispatch.test.js in other
+modules' notes (99-148, 64-76, 253-291) are stale too, outside this slice.
+next_push: point those three line range refs at their current blocks, then teach atris doc-health to flag a test file ref that does not land on a test line, for every test file, not just these two.

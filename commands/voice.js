@@ -4,6 +4,7 @@ const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
 const { spawnSync } = require('node:child_process');
+const { startEngineRun } = require('../lib/engine-resource');
 
 const deterministicVoice = require('../scripts/det/voice');
 const {
@@ -120,6 +121,9 @@ function runJudge(reply, options = {}) {
     const rubricPath = path.join(tempDir, 'rubric.md');
     fs.writeFileSync(rubricPath, rubric, 'utf8');
     const childEnv = { ...env, ATRIS_VOICE_RUBRIC: rubricPath };
+    // Machine memory and load at both ends of the judge run, so one killed
+    // with SIGKILL says whether the machine was short on memory.
+    const endResource = startEngineRun(repoRoot, { engine: customCommand ? 'runner' : 'claude', task: 'voice judge' });
     const result = customCommand
       ? spawnSync('/bin/sh', ['-c', customCommand], {
         input: reply,
@@ -135,6 +139,14 @@ function runJudge(reply, options = {}) {
         timeout: JUDGE_TIMEOUT_MS,
         maxBuffer: 1024 * 1024,
       });
+    // spawnSync does not throw, so a failure is passed in the thrown shape.
+    const failed = result.error || result.signal || result.status !== 0;
+    endResource(failed ? {
+      code: result.error && result.error.code,
+      signal: result.signal,
+      stderr: result.stderr,
+      message: result.error ? result.error.message : `judge exited ${result.status}`,
+    } : null);
 
     if (result.error) return unavailable(stderr, result.error.code === 'ETIMEDOUT' ? 'the judge timed out' : 'the judge command failed');
     if (result.status !== 0) return unavailable(stderr, 'the judge command failed');

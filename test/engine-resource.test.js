@@ -1086,31 +1086,109 @@ test('atris scout records each engine run with a time limit kill and a crash tol
   }
 });
 
+test('the voice judge records its claude run, and a killed judge names the likely cause', () => {
+  const { spawnSync } = require('node:child_process');
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'voice-judge-resource-'));
+  const bin = path.join(root, 'fake-bin');
+  const cli = path.join(__dirname, '..', 'bin', 'atris.js');
+  const fake = (body) => {
+    fs.writeFileSync(path.join(bin, 'claude'), `#!/bin/sh\n${body}\n`, { mode: 0o755 });
+  };
+  const judge = () => spawnSync(process.execPath, [cli, 'voice', 'judge'], {
+    cwd: root,
+    input: 'The reply is ready.',
+    encoding: 'utf8',
+    env: { ...process.env, PATH: `${bin}${path.delimiter}/usr/bin:/bin`, ATRIS_VOICE_JUDGE_CMD: '', ATRIS_SKIP_UPDATE_CHECK: '1', NODE_NO_WARNINGS: '1' },
+  });
+  try {
+    spawnSync('git', ['init', '-q'], { cwd: root });
+    fs.writeFileSync(path.join(root, 'atris.md'), '## voice\n\nUse plain words.\n');
+    fs.mkdirSync(bin);
+    fake('/bin/cat >/dev/null\nprintf \'%s\\n\' \'{"pass":true,"reasons":[]}\'');
+    const passed = judge();
+    assert.strictEqual(passed.status, 0, passed.stderr);
+    fake('kill -9 $$');
+    const killed = judge();
+    assert.match(killed.stderr, /^voice judge unavailable: the judge command failed/);
+    const log = fs.readFileSync(path.join(root, RESOURCE_LOG), 'utf8').trim().split('\n').map((line) => JSON.parse(line));
+    assert.deepStrictEqual(log.map((entry) => `${entry.phase} ${entry.engine} ${entry.task}`), [
+      'start claude voice judge', 'end claude voice judge', 'start claude voice judge', 'end claude voice judge',
+    ]);
+    const [, ok, , dead] = log;
+    assert.deepStrictEqual([ok.signal || null, ok.error || ''], [null, '']);
+    assert.strictEqual(dead.signal, 'SIGKILL');
+    assert.match(dead.cause, /^killed \((machine memory low|cause unknown)/);
+    for (const entry of [ok, dead]) assert.ok(Number.isFinite(entry.duration_ms), JSON.stringify(entry));
+    console.log('real voice judge records: ' + [ok, dead].map((entry) => `${entry.signal || 'exit'} ${entry.cause || 'no cause'}`).join(' / '));
+  } finally {
+    fs.rmSync(root, { recursive: true, force: true });
+  }
+});
+
+// Shared by both engine launch guards below.
+const ENGINE_NAMES = 'claude|codex|cursor-agent|devin|agy|grok|opencode';
+// Interactive sessions hand the terminal to the person, so no reading is kept.
+const LAUNCH_EXEMPT_FILES = new Map([
+  ['commands/console.js', 'interactive codex session'],
+  ['commands/interview.js', 'interactive claude session'],
+]);
+// Comments are blanked with their line breaks kept, so a mention there
+// never counts and line numbers still match the file.
+const stripComments = (text) => text
+  .replace(/\/\*[\s\S]*?\*\//g, (block) => block.replace(/[^\n]/g, ' '))
+  .replace(/(^|[^:\\'"`])\/\/.*$/gm, '$1');
+// A function in the same file that records the run counts as a recording
+// call, the way the mission tick records through its own small wrapper.
+const recordingCall = (code) => {
+  const names = ['startEngineRun', 'recordEngineResource'];
+  for (const match of code.matchAll(/^(?:async\s+)?function\s+([\w$]+)\s*\(/gm)) {
+    const end = code.slice(match.index).search(/^\}/m);
+    const body = code.slice(match.index, end < 0 ? undefined : match.index + end);
+    if (/\b(?:startEngineRun|recordEngineResource)\(/.test(body)) names.push(match[1]);
+  }
+  return new RegExp(`\\b(?:${[...new Set(names)].join('|')})\\(`);
+};
+// Each launch needs a recording call on its line or in the dozen lines
+// above it, without crossing a top-level function boundary.
+const RECORD_WINDOW = 12;
+const FUNCTION_START = /^(?:async\s+)?function\b|^(?:const|let)\s+[\w$]+\s*=\s*(?:async\s*)?(?:function\b|\([^)]*\)\s*=>)/gm;
+const recordedAbove = (lines, line, recorder) => {
+  let start = Math.max(0, line - 1 - RECORD_WINDOW);
+  for (let index = line - 1; index >= start; index -= 1) {
+    // A closed function's readings cannot cover a later top-level launch.
+    if (/^\}/.test(lines[index])) {
+      start = index + 1;
+      break;
+    }
+    if (lines[index].match(FUNCTION_START)) {
+      // A concise arrow ends at its statement, without a closing brace.
+      const concise = /=>\s*(?:[^\s{]|$)/.test(lines[index]);
+      const statementEnd = concise ? lines.slice(index, line).findIndex((candidate) => /;\s*$/.test(candidate)) : -1;
+      const end = statementEnd >= 0 ? index + statementEnd : index;
+      const complete = /\}\s*;?\s*$/.test(lines[index]) || (concise && statementEnd >= 0);
+      start = complete && end < line - 1 ? end + 1 : index;
+      break;
+    }
+  }
+  // Defining a recording wrapper is not a call to that wrapper.
+  const nearby = lines.slice(start, line).join('\n').replace(/\bfunction\s+[\w$]+\s*\([^)]*\)/g, '');
+  return recorder.test(nearby);
+};
+// A version or help probe starts no engine run.
+const isProbe = (args) => /^\[\s*(?:['"`][\w-]+['"`]\s*,\s*)?['"`]--(?:version|help)['"`]\s*\]$/.test(args || '');
+
 test('every launch of an engine program by name records its run or is named as exempt', () => {
-  const ENGINE_LAUNCH = /\b(?:spawn|spawnSync|execFile|execFileSync)\(\s*['"`](claude|codex|cursor-agent|devin|agy|grok|opencode)['"`]\s*,\s*(\[[^\]]*\])?/g;
-  // Interactive sessions hand the terminal to the person, so no reading is kept.
-  const EXEMPT = new Map([
-    ['commands/console.js', 'interactive codex session'],
-    ['commands/interview.js', 'interactive claude session'],
-  ]);
-  // Comments are blanked with their line breaks kept, so a mention there
-  // never counts and line numbers still match the file.
-  const stripComments = (text) => text
-    .replace(/\/\*[\s\S]*?\*\//g, (block) => block.replace(/[^\n]/g, ' '))
-    .replace(/(^|[^:\\'"`])\/\/.*$/gm, '$1');
-  // Each launch needs its own recording call in the dozen lines up to it.
-  const RECORD_WINDOW = 12;
+  const ENGINE_LAUNCH = new RegExp(`\\b(?:spawn|spawnSync|execFile|execFileSync)\\(\\s*['"\`](${ENGINE_NAMES})['"\`]\\s*,\\s*(\\[[^\\]]*\\])?`, 'g');
   const unrecorded = (rel, text) => {
-    if (EXEMPT.has(rel)) return [];
+    if (LAUNCH_EXEMPT_FILES.has(rel)) return [];
     const code = stripComments(text);
     const lines = code.split('\n');
+    const recorder = recordingCall(code);
     const found = [];
     for (const match of code.matchAll(ENGINE_LAUNCH)) {
-      // A version probe starts no engine run.
-      if (/^\[\s*['"`]--version['"`]\s*\]$/.test(match[2] || '')) continue;
+      if (isProbe(match[2])) continue;
       const line = code.slice(0, match.index).split('\n').length;
-      const window = lines.slice(Math.max(0, line - RECORD_WINDOW), line).join('\n');
-      if (/\b(?:startEngineRun|recordEngineResource)\(/.test(window)) continue;
+      if (recordedAbove(lines, line, recorder)) continue;
       found.push(`${rel}:${line} ${match[1]}`);
     }
     return found;
@@ -1121,6 +1199,15 @@ test('every launch of an engine program by name records its run or is named as e
   // not cover this launch.
   assert.deepStrictEqual(unrecorded('commands/planted.js', "// startEngineRun is called elsewhere\nconst r = spawnSync('claude', ['-p', prompt]);\n"), ['commands/planted.js:2 claude']);
   assert.deepStrictEqual(unrecorded('commands/planted.js', "/* recordEngineResource( */ spawnSync('codex', ['exec']);\n"), ['commands/planted.js:1 codex']);
+  const previousFunction = "function recorded() {\n  const end = startEngineRun(root);\n  spawnSync('claude', args);\n}\n";
+  assert.deepStrictEqual(unrecorded('commands/planted.js', `${previousFunction}function bare() {\n  spawnSync('claude', args);\n}\n`), ['commands/planted.js:6 claude']);
+  assert.deepStrictEqual(unrecorded('commands/planted.js', `${previousFunction}spawnSync('claude', args);\n`), ['commands/planted.js:5 claude']);
+  assert.deepStrictEqual(unrecorded('commands/planted.js', `${previousFunction}const bare = () => {\n  spawnSync('claude', args);\n};\n`), ['commands/planted.js:6 claude']);
+  assert.deepStrictEqual(unrecorded('commands/planted.js', `${previousFunction}function covered() {\n  const end = startEngineRun(root);\n  spawnSync('claude', args);\n}\n`), []);
+  assert.deepStrictEqual(unrecorded('commands/planted.js', "const record = () => startEngineRun(root);\nspawnSync('claude', args);\n"), ['commands/planted.js:2 claude']);
+  assert.deepStrictEqual(unrecorded('commands/planted.js', "const record = () =>\n  startEngineRun(root);\nspawnSync('claude', args);\n"), ['commands/planted.js:3 claude']);
+  assert.deepStrictEqual(unrecorded('commands/planted.js', "function record() { startEngineRun(root); }\nspawnSync('claude', args);\n"), ['commands/planted.js:2 claude']);
+  assert.deepStrictEqual(unrecorded('commands/planted.js', "function covered() { const end = startEngineRun(root);\n  spawnSync('claude', args);\n}\n"), []);
   const recordedThenBare = [
     "const end = startEngineRun(root, { engine: 'claude' });",
     "spawnSync('claude', ['-p', a]);",
@@ -1142,6 +1229,147 @@ test('every launch of an engine program by name records its run or is named as e
   assert.ok(launches >= 5, `the scan should see the known launches, saw ${launches}`);
   assert.deepStrictEqual(missing, [], 'record the run with startEngineRun, or add the file to the exempt list with its reason');
   console.log(`real engine launch scan: ${launches} launches by name, ${missing.length} unrecorded`);
+});
+
+test('every engine started through a runner or profile variable records its run or is named as exempt', () => {
+  // The program is a variable or a call, like a runner binary, a profile's
+  // bin, or an engine invocation's command.
+  const VAR_LAUNCH = /\b(?:spawn|spawnSync|execFile|execFileSync|spawnWithOutputChunks|runInReapedProcessGroup)\(\s*([A-Za-z_$][\w$]*(?:\.[\w$]+)*)(\(\))?\s*,\s*(\[[^\]]*\])?/g;
+  // It is an engine when the call, or the variable's declaration in the same
+  // function, names an engine program or an engine or runner resolver.
+  const ENGINE_SOURCE = new RegExp(`['"\`](?:${ENGINE_NAMES})['"\`]|\\b[\\w$]*(?:Engine|engine|Runner|runner)[\\w$]*\\(`);
+  // Launches whose run is recorded somewhere this scan cannot see, by
+  // file and the function holding the launch.
+  const EXEMPT_LAUNCHES = new Map([
+    ['lib/roster-prep.js#defaultPrepAskSync', 'recorded around the ask by startPrepReadings'],
+    ['commands/run.js#execPhaseCommandSync', 'recorded around the phase by executePhase'],
+  ]);
+  const engineLaunches = (rel, text) => {
+    if (LAUNCH_EXEMPT_FILES.has(rel)) return { seen: 0, missing: [] };
+    const code = stripComments(text);
+    const lines = code.split('\n');
+    const recorder = recordingCall(code);
+    const sourceAt = (source, position) => {
+      const scopeStart = Math.max(0, ...[...code.slice(0, position).matchAll(FUNCTION_START)].map((start) => start.index));
+      let declarationEnd = position;
+      while (!ENGINE_SOURCE.test(source)) {
+        const alias = /^([A-Za-z_$][\w$]*)(?:\.[\w$]+)*$/.exec(source.trim());
+        if (!alias) break;
+        const declaration = [...code.slice(scopeStart, declarationEnd).matchAll(new RegExp(`\\b(?:const|let|var)\\s+${alias[1].replace(/\$/g, '\\$')}\\s*=\\s*([^;\\n]*)`, 'g'))].pop();
+        if (!declaration) break;
+        source = declaration[1];
+        // Only earlier declarations can supply this alias, which also makes
+        // a circular alias chain terminate without a separate depth limit.
+        declarationEnd = scopeStart + declaration.index;
+      }
+      return source.trim();
+    };
+    const engineSourceAt = (source, position) => ENGINE_SOURCE.test(sourceAt(source, position));
+    let seen = 0;
+    const missing = [];
+    for (const match of code.matchAll(VAR_LAUNCH)) {
+      const [, program, called, args] = match;
+      const before = code.slice(0, match.index);
+      const fnStart = Math.max(0, ...[...before.matchAll(FUNCTION_START)].map((start) => start.index));
+      const fnName = (/^(?:async\s+)?(?:function|const|let)\s+([\w$]+)/.exec(code.slice(fnStart)) || [])[1] || '';
+      let isEngine = engineSourceAt(program + (called || ''), match.index);
+      if (!isEngine && !called) {
+        // Follow simple parameters only when a call in this file supplies a
+        // known runner. An unrelated parameter name alone is not evidence.
+        const header = /^(?:async\s+)?function\s+([\w$]+)\s*\(([^)]*)\)/.exec(code.slice(fnStart));
+        const source = sourceAt(program, match.index);
+        const parameter = /^([A-Za-z_$][\w$]*)(?:\.[\w$]+)*$/.exec(source)?.[1];
+        const slot = header ? header[2].split(',').map((name) => name.trim()).indexOf(parameter) : -1;
+        if (slot >= 0) {
+          const calls = new RegExp(`\\b${header[1].replace(/\$/g, '\\$')}\\(`, 'g');
+          for (const call of code.matchAll(calls)) {
+            const prefix = code.slice(0, call.index);
+            if (/\bfunction\s*$|\.\s*$/.test(prefix)) continue;
+            // Keep nested calls and quoted commas in their own argument.
+            const argumentsList = [''];
+            let depth = 0;
+            const tokens = /'(?:\\.|[^'\\])*'|"(?:\\.|[^"\\])*"|`(?:\\.|[^`\\])*`|[()[\]{},]|[^'"`()\[\]{},]+/g;
+            for (const token of code.slice(call.index + call[0].length).matchAll(tokens)) {
+              if (token[0] === ')' && depth === 0) break;
+              if (token[0] === ',' && depth === 0) {
+                argumentsList.push('');
+                continue;
+              }
+              if (/^[([{]$/.test(token[0])) depth += 1;
+              if (/^[)\]}]$/.test(token[0])) depth -= 1;
+              argumentsList[argumentsList.length - 1] += token[0];
+            }
+            if (engineSourceAt((argumentsList[slot] || '').trim(), call.index)) {
+              isEngine = true;
+              break;
+            }
+          }
+        }
+      }
+      if (!isEngine || isProbe(args)) continue;
+      seen += 1;
+      const line = before.split('\n').length;
+      if (recordedAbove(lines, line, recorder) || EXEMPT_LAUNCHES.has(`${rel}#${fnName}`)) continue;
+      missing.push(`${rel}:${line} ${program}${called || ''}`);
+    }
+    return { seen, missing };
+  };
+  const planted = (text) => engineLaunches('commands/planted.js', text).missing;
+  assert.deepStrictEqual(planted("function a() {\n  const bin = findExecutable('claude', env);\n  return spawnSync(bin, ['-p', prompt]);\n}\n"), ['commands/planted.js:3 bin']);
+  assert.deepStrictEqual(planted("function a() {\n  const inv = engineInvocation(engine, prompt);\n  spawn(inv.command, inv.args);\n}\n"), ['commands/planted.js:3 inv.command']);
+  assert.deepStrictEqual(planted("function a() {\n  spawn(resolveClaudeRunnerBin(), args);\n}\n"), ['commands/planted.js:2 resolveClaudeRunnerBin()']);
+  assert.deepStrictEqual(planted("function a() {\n  const bin = resolveClaudeRunnerBin();\n  spawnSync(bin, ['--help']);\n}\n"), [], 'a help probe starts no run');
+  assert.deepStrictEqual(planted("function a() {\n  const profile = resolveEngineProfile(engine);\n  const runner = profile.bin;\n  const program = runner;\n  spawnSync(program, args);\n}\n"), ['commands/planted.js:5 program']);
+  assert.deepStrictEqual(planted("function a() {\n  const runner = resolveClaudeRunnerBin();\n  const program = runner;\n  const end = startEngineRun(root);\n  spawnSync(program, args);\n}\n"), []);
+  assert.deepStrictEqual(planted("function a() {\n  const runner = resolveClaudeRunnerBin();\n  const program = runner;\n  spawnSync(program, ['--help']);\n}\n"), []);
+  assert.deepStrictEqual(planted("function a() {\n  const runner = findExecutable('git');\n  const program = runner;\n  spawnSync(program, args);\n}\n"), []);
+  assert.deepStrictEqual(planted("function a() {\n  const program = runner;\n  const runner = resolveClaudeRunnerBin();\n  spawnSync(program, args);\n}\n"), [], 'a later declaration is not the source of an earlier alias');
+  assert.deepStrictEqual(planted("function launch(program) {\n  spawnSync(program, args);\n}\nlaunch(resolveClaudeRunnerBin());\n"), ['commands/planted.js:2 program']);
+  assert.deepStrictEqual(planted("function launch(prompt, profile) {\n  spawnSync(profile.bin, args);\n}\nfunction caller() {\n  const runner = resolveEngineProfile(engine);\n  launch(prompt, runner);\n}\n"), ['commands/planted.js:2 profile.bin']);
+  assert.deepStrictEqual(planted("function launch(program) {\n  const end = startEngineRun(root);\n  spawnSync(program, args);\n}\nlaunch(resolveClaudeRunnerBin());\n"), []);
+  assert.deepStrictEqual(planted("function launch(program) {\n  spawnSync(program, ['--help']);\n}\nlaunch(resolveClaudeRunnerBin());\n"), []);
+  assert.deepStrictEqual(planted("function launch(program) {\n  spawnSync(program, args);\n}\nlaunch(findExecutable('git'));\n"), []);
+  assert.deepStrictEqual(planted("function launch(prompt, program) {\n  spawnSync(program, args);\n}\nlaunch(resolveClaudeRunnerBin(), git);\n"), [], 'an engine in another argument does not identify the program');
+  assert.deepStrictEqual(planted("function launch(program) {\n  spawnSync(program, args);\n}\n// launch(resolveClaudeRunnerBin());\n"), []);
+  assert.deepStrictEqual(planted("function launch(program) {\n  spawnSync(program, args);\n}\nlaunch(git);\nother.launch(resolveClaudeRunnerBin());\n"), [], 'a member call does not supply a local function parameter');
+  assert.deepStrictEqual(planted("function launch(prompt, program) {\n  spawnSync(program, args);\n}\nlaunch('hi, there', resolveClaudeRunnerBin());\n"), ['commands/planted.js:2 program']);
+  assert.deepStrictEqual(planted("function launch(program, options) {\n  spawnSync(program, args);\n}\nfunction caller() {\n  const runner = findExecutable('claude', env);\n  launch(\n    runner,\n    { prompt: buildPrompt(topic) }\n  );\n}\n"), ['commands/planted.js:2 program']);
+  assert.deepStrictEqual(planted("function launch(options, program) {\n  spawnSync(program, args);\n}\nlaunch({ a: 1, b: 2 }, resolveClaudeRunnerBin());\n"), ['commands/planted.js:2 program']);
+  assert.deepStrictEqual(planted("function launch(options, program) {\n  spawnSync(program, args);\n}\nlaunch([1, resolveClaudeRunnerBin()], git);\n"), [], 'an engine in an earlier array is not the program argument');
+  assert.deepStrictEqual(planted("function launch(runner) {\n  const program = runner;\n  spawnSync(program, args);\n}\nlaunch(resolveClaudeRunnerBin());\n"), ['commands/planted.js:3 program']);
+  assert.deepStrictEqual(planted("function launch(profile) {\n  const runner = profile.bin;\n  const program = runner;\n  spawnSync(program, args);\n}\nlaunch(resolveEngineProfile(engine));\n"), ['commands/planted.js:4 program']);
+  assert.deepStrictEqual(planted("function launch(runner) {\n  const program = runner;\n  startEngineRun(root);\n  spawnSync(program, args);\n}\nlaunch(resolveClaudeRunnerBin());\n"), []);
+  assert.deepStrictEqual(planted("function launch(runner) {\n  const program = runner;\n  spawnSync(program, ['--help']);\n}\nlaunch(resolveClaudeRunnerBin());\n"), []);
+  assert.deepStrictEqual(planted("function launch(runner) {\n  const program = runner;\n  spawnSync(program, args);\n}\nlaunch(findExecutable('git'));\n"), []);
+  assert.deepStrictEqual(planted("function launch(runner) {\n  const program = buildCommand(runner);\n  spawnSync(program, args);\n}\nlaunch(resolveClaudeRunnerBin());\n"), []);
+  // A variable declared in another function is not this launch's program.
+  assert.deepStrictEqual(planted("function a() {\n  const command = buildEngineCommand(engine);\n}\nfunction b(command) {\n  spawnSync(command, { shell: true });\n}\n"), []);
+  // A local wrapper that records the run covers the launch below it; a
+  // comment naming the recorder does not.
+  const wrapper = "function startTick(cwd) {\n  return startEngineRun(cwd, { engine: 'claude' });\n}\n";
+  assert.deepStrictEqual(planted(`${wrapper}function a() {\n  const end = startTick(cwd);\n  spawn(resolveClaudeRunnerBin(), args);\n}\n`), []);
+  assert.deepStrictEqual(planted(`${wrapper}function bare() {\n  spawn(resolveClaudeRunnerBin(), args);\n}\n`), ['commands/planted.js:5 resolveClaudeRunnerBin()']);
+  assert.deepStrictEqual(planted(`${wrapper}spawn(resolveClaudeRunnerBin(), args);\n`), ['commands/planted.js:4 resolveClaudeRunnerBin()']);
+  assert.deepStrictEqual(planted("const record = () => startEngineRun(root);\nspawn(resolveClaudeRunnerBin(), args);\n"), ['commands/planted.js:2 resolveClaudeRunnerBin()']);
+  assert.deepStrictEqual(planted("const record = () =>\n  startEngineRun(root);\nspawn(resolveClaudeRunnerBin(), args);\n"), ['commands/planted.js:3 resolveClaudeRunnerBin()']);
+  assert.deepStrictEqual(planted("function record() { startEngineRun(root); }\nspawn(resolveClaudeRunnerBin(), args);\n"), ['commands/planted.js:2 resolveClaudeRunnerBin()']);
+  assert.deepStrictEqual(planted(`${wrapper}const bare = () => {\n  spawn(resolveClaudeRunnerBin(), args);\n};\n`), ['commands/planted.js:5 resolveClaudeRunnerBin()']);
+  assert.deepStrictEqual(planted("function recordAndLaunch() {\n  startEngineRun(root);\n}\nfunction bare() {\n  const profile = resolveEngineProfile(engine);\n  const runner = profile.bin;\n  spawnSync(runner, args);\n}\n"), ['commands/planted.js:7 runner']);
+  assert.deepStrictEqual(planted("function a() {\n  // startEngineRun(root)\n  spawn(resolveClaudeRunnerBin(), args);\n}\n"), ['commands/planted.js:3 resolveClaudeRunnerBin()']);
+  const repo = path.join(__dirname, '..');
+  const missing = [];
+  let seen = 0;
+  for (const dir of ['commands', 'lib']) {
+    for (const name of fs.readdirSync(path.join(repo, dir)).filter((file) => file.endsWith('.js'))) {
+      const rel = `${dir}/${name}`;
+      const result = engineLaunches(rel, fs.readFileSync(path.join(repo, rel), 'utf8'));
+      seen += result.seen;
+      missing.push(...result.missing);
+    }
+  }
+  assert.ok(seen >= 6, `the scan should see the known runner and profile launches, saw ${seen}`);
+  assert.deepStrictEqual(missing, [], 'record the run with startEngineRun, or add the launch to the exempt list with its reason');
+  console.log(`real runner and profile launch scan: ${seen} engine launches through a variable, ${missing.length} unrecorded`);
 });
 
 test('the landing status names runs closed after their parent died in the last day, and stays quiet with none', () => {
@@ -2814,4 +3042,32 @@ test('cleanup separates younger replacements from in-use or gone skips', () => {
   assert.match(report.text, /2 skipped because they were in use or gone on the recheck/);
   assert.deepStrictEqual(report.log[0].replaced, [200]);
   assert.deepStrictEqual(report.log[0].skipped, [200, 201, 202]);
+});
+
+test('every map ref to an engine resource or dispatch test lands on the line that starts the test', () => {
+  // A single line ref opens one test; a line range opens a test and ends on
+  // the line that closes a test.
+  const offTest = (doc, text, testFiles) => {
+    const found = [];
+    for (const match of text.matchAll(/(test\/engine-(?:resource|dispatch)\.test\.js):(\d+)(?:-(\d+))?(?!\d)/g)) {
+      const [ref, file, start, end] = match;
+      const lines = testFiles[file];
+      const opens = /^test\(/.test(lines[Number(start) - 1] || '');
+      const closes = !end || (Number(end) > Number(start) && lines[Number(end) - 1] === '});');
+      if (!opens || !closes) found.push(`${doc} ${ref}`);
+    }
+    return [...new Set(found)];
+  };
+  const planted = { 'test/engine-resource.test.js': ['', "test('one', () => {", '  ok();', '});'], 'test/engine-dispatch.test.js': [] };
+  assert.deepStrictEqual(offTest('doc', 'see `test/engine-resource.test.js:2` and `test/engine-resource.test.js:3`', planted), ['doc test/engine-resource.test.js:3']);
+  assert.deepStrictEqual(offTest('doc', 'block `test/engine-resource.test.js:2-4`', planted), []);
+  assert.deepStrictEqual(offTest('doc', 'block `test/engine-resource.test.js:1-4` and `test/engine-resource.test.js:2-3`', planted), [
+    'doc test/engine-resource.test.js:1-4', 'doc test/engine-resource.test.js:2-3',
+  ]);
+  const repo = path.join(__dirname, '..');
+  const testFiles = {};
+  for (const file of ['test/engine-resource.test.js', 'test/engine-dispatch.test.js']) testFiles[file] = fs.readFileSync(path.join(repo, file), 'utf8').split('\n');
+  const stale = [];
+  for (const doc of ['atris/MAP.md', 'atris/refs/MAP-NOTES.md']) stale.push(...offTest(doc, fs.readFileSync(path.join(repo, doc), 'utf8'), testFiles));
+  assert.deepStrictEqual(stale, [], 'a test moved; point each ref at the line where its test now starts, and a range at the line where its last test ends');
 });

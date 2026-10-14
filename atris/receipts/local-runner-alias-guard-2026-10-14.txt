@@ -1,0 +1,30 @@
+Local runner aliases can no longer hide unrecorded launches, verified by the required behavior tests with exit 0.
+
+Files edited: test/engine-resource.test.js; atris/MAP.md; atris/refs/MAP-NOTES.md; atris/team/executor/logs/2026-10-14.md; atris/receipts/local-runner-alias-guard-2026-10-14.txt.
+Plan: local alias -> earlier declaration -> engine source -> nearby recording.
+Change: the guard follows plain local aliases and profile members backward through earlier declarations. It stops at unrelated expressions and cannot loop because each declaration lookup moves backward. Map refs moved with their tests.
+Verify command: node --test test/engine-resource.test.js test/engine-dispatch.test.js
+Exit: 0.
+Output excerpt:
+real runner and profile launch scan: 7 engine launches through a variable, 0 unrecorded
+ℹ tests 148
+ℹ suites 0
+ℹ pass 148
+ℹ fail 0
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 65319.677458
+
+Failing-first command: node --test --test-name-pattern='through a runner or profile variable' test/engine-resource.test.js
+Before: exit 1, actual [] instead of commands/planted.js:5 program.
+After: exit 0, 7 launches through a variable, 0 unrecorded.
+Real source mutation: temporarily removed voice judge recording and passed its resolved runner through judgeProgram. The same guard command exited 1 and named commands/voice.js:136 judgeProgram. Source restored exactly before the required check.
+Independent review: no blocking findings. Review used another agent with the same model, so this is not cross-model proof. Function parameters, reassignment, destructuring, and nested scope remain limitations of the existing text scan.
+Progress: 148 passed, 0 failed; 5 alias fixtures added; 1 real missing-recording mutation detected.
+Whitespace check: git diff --check, exit 0, no output.
+Readiness: local task is in Review. The first proof note was rejected because it lacked a recognized receipt label; the corrected note naming this receipt succeeded with exit 0.
+Mission attachment: existing mission lock was held by the active launcher; no mission state or frozen verifier was changed. A dedicated local task records this increment instead.
+Brain activation and compile: both returned plan-only exit 2; no generated policy adapters were changed.
+next_push: extend the guard to a runner passed as a function parameter from a known engine resolver call.
+layer: capabilities
