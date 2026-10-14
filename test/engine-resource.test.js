@@ -475,3 +475,20 @@ test('atris engine sweep names runs that started and never wrote an end', () => 
   }
   assert.match(out.join('\n'), /2 runs started with no end recorded \(still running, or stopped with their parent\); newest: cursor on CLI-9 at 2026-10-14 11:00 UTC/);
 });
+
+test('an unfinished run whose start sits more than a megabyte back is still counted', () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'engine-resource-deep-open-'));
+  try {
+    const file = path.join(root, RESOURCE_LOG);
+    fs.mkdirSync(path.dirname(file), { recursive: true });
+    const line = (run_id, phase) => JSON.stringify({ at: '2026-10-14T09:00:00.000Z', phase, engine: 'cursor', task: run_id, run_id, pad: 'x'.repeat(200) });
+    const lines = [line('deep-open', 'start')];
+    while (lines.join('\n').length < 1.2 * 1024 * 1024) lines.push(line(`done-${lines.length}`, 'start'), line(`done-${lines.length}`, 'end'));
+    fs.writeFileSync(file, `${lines.join('\n')}\n`);
+    const history = readResourceHistory(root);
+    assert.strictEqual(history.open_runs, 1);
+    assert.strictEqual(history.last_open.run_id, 'deep-open');
+  } finally {
+    fs.rmSync(root, { recursive: true, force: true });
+  }
+});
