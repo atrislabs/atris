@@ -968,6 +968,11 @@ test('fix joins a noun clause after the dash with a semicolon', () => {
     'We shipped it \u2014 the old flag stopped working.',
     'Ship it \u2014 the new signed build.',
     'Keep notes \u2014 the files stored in atris.',
+    // common past verbs without "ed" count too; a "they" before the verb does not
+    'The reason was not a timeout \u2014 the gate let the tick through.',
+    'Clearly not real \u2014 the file built fine.',
+    'Read the notes \u2014 the version they made.',
+    'Read the notes \u2014 the version they shipped.',
     // a title where every word is capitalized names a thing, so it never
     // joins; words in all capitals are shouting and still do
     'Inbox Triage \u2014 23 emails processed',
@@ -1044,6 +1049,10 @@ test('fix joins a noun clause after the dash with a semicolon', () => {
     'We shipped it; the old flag stopped working.',
     'Ship it, the new signed build.',
     'Keep notes, the files stored in atris.',
+    'The reason was not a timeout; the gate let the tick through.',
+    'Clearly not real; the file built fine.',
+    'Read the notes, the version they made.',
+    'Read the notes, the version they shipped.',
     'Inbox Triage, 23 emails processed',
     'Release Notes, it ships Friday.',
     'Your journal tracks how ideas evolve; the navigator reads it to understand context.',

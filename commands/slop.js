@@ -137,8 +137,13 @@ const QUANTITY_CLAUSE_AFTER_DASH = new RegExp(`(?<=[\\w)\\]"'*_\`\\u201d\\u2019\
 // "The" and up to three words before a verb in "ed" start one only when a
 // stop, a word like "out" or "working", or an object like "every" follows, so
 // "the slow tests timed out" joins but "the new signed build" and "the files
-// stored in atris" are noun phrases and keep their comma.
-const PAST_CLAUSE_AFTER_DASH = new RegExp(`(?<=[\\w)\\]"'*_\`\\u201d\\u2019\\uE001])\\s*\\u2014\\s*(?!${NAMING_PHRASE})(?=(?:the|a|an)\\s+(?:(?!(?:the|a|an|that|whose)\\b)${SUBJECT_WORD}){1,3}[a-z]{2,}ed(?:[.!?;,]|$|\\s+(?:out|up|down|off|back|over|away|again|it|them|its|their|every|all|each|the|a|an|this|no|[a-z]{2,}ing)\\b))`, 'g');
+// stored in atris" are noun phrases and keep their comma. Common past verbs
+// without "ed" count too, and so does "fine" or "green" after the verb: "the
+// gate let the tick through", "the file built fine". A "they" or "we" before
+// the verb opens a clause inside a noun phrase, so "the version they made"
+// and "the version they shipped" keep their comma.
+const PAST_VERB = '(?:[a-z]{2,}ed|built|ran|broke|took|made|gave|got|went|came|sent|kept|held|found|lost|wrote|let|caught|brought|threw|grew|knew|began|stood|told|sold|became|fell|stuck)';
+const PAST_CLAUSE_AFTER_DASH = new RegExp(`(?<=[\\w)\\]"'*_\`\\u201d\\u2019\\uE001])\\s*\\u2014\\s*(?!${NAMING_PHRASE})(?=(?:the|a|an)\\s+(?:(?!(?:the|a|an|that|whose|they|we|you|he|she|I)\\b)${SUBJECT_WORD}){1,3}${PAST_VERB}(?:[.!?;,]|$|\\s+(?:out|up|down|off|back|over|away|again|fine|green|it|them|its|their|every|all|each|the|a|an|this|no|[a-z]{2,}ing)\\b))`, 'g');
 // A plain verb ending in "s" counts only after a determiner and one more word,
 // and never right before a preposition: "a stray file turns them" joins, but
 // "the changes from whoever" and "the old tests from CI" stay noun phrases.
