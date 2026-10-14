@@ -1403,3 +1403,20 @@ test('fix drops a pair of dashes pressed inside a bracket', () => {
     'Ship it (soon, maybe) now.',
   ]);
 });
+
+test('fix joins a bare subject and a verb that moves toward a place with a semicolon', () => {
+  // from the craftpad repo, where the comma made a splice
+  const file = tmpFile('bare.md', [
+    'Blocks use `overflow: hidden` \u2014 content clips to the bounding box.',
+    'The sheet is live \u2014 data flows into it every hour.',
+    'We ship the page \u2014 content blocks on the side.',
+    'See the setup \u2014 quickly moves to the end.',
+  ].join('\n'));
+  const { changes } = applyFixes([file], RULES);
+  assert.deepEqual(changes.map((c) => c.after), [
+    'Blocks use `overflow: hidden`; content clips to the bounding box.',
+    'The sheet is live; data flows into it every hour.',
+    'We ship the page, content blocks on the side.',
+    'See the setup, quickly moves to the end.',
+  ]);
+});

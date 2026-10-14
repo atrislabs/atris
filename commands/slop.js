@@ -162,6 +162,11 @@ const PLAIN_OBJECT_CLAUSE = new RegExp(`^\\s*\\u2014\\s*(?:a|an|the|every|each|n
 // With no subject after the comma, or no comma at all, the clause only adds
 // a condition, so "Ship it, if you can" and "It fails, when it is full" stay.
 const LEADING_CLAUSE_AFTER_DASH = new RegExp(`(?<=[\\w)\\]"'*_\`\\u201d\\u2019\\uE001])\\s*\\u2014\\s*(?=(?:once|when|whenever|if|unless|until|after|before|while)\\s+[^.;:!?\\u2014]{1,80}?,\\s+(?:(?!(?:and|but|or|nor|so|yet|then|once|when|whenever|if|unless|until|after|before|while|as|since|because|though|although)\\b)[a-z]{2,}(?<!s|ed|ing)\\s+(?:it|them)\\b|(?:it|we|they|you|I|he|she)(?:['\\u2019](?:s|re|ll|ve|d|m))?\\s+[a-z]|(?:this|that|there)\\s+(?:is|are|was|were|will|would|can|must|should|has|have)\\b|${SUBJECT_WORD}(?:(?!(?:the|a|an|that|whose)\\b)${SUBJECT_WORD}){0,3}${HELPING_VERB}\\s|(?:a|an|the|every|each|no)\\s+${NOUN_WORD}\\s+(?:${NOUN_WORD}\\s+){0,2}(?:${PLAIN_VERB}|${PLAIN_VERB_WORD}(?=[.!?;]|$))))`, 'g');
+// One bare word with no "s" and a verb in "s" that moves toward a place
+// start one too: "Blocks use overflow, content clips to the bounding box",
+// "data flows into the sheet". A plural or a word in "ly" before the verb,
+// "tests runs" or "quickly moves", is not a subject.
+const BARE_CLAUSE_AFTER_DASH = new RegExp(`(?<=[\\w)\\]"'*_\`\\u201d\\u2019\\uE001])\\s*\\u2014\\s*(?!${NAMING_PHRASE})(?=(?!(?:and|but|or|nor|so|yet|then|not|even|when|if|unless|until|because|since|while|where|which|who|as|after|before|though|although|once|just|only|also|still|this|that|it|its|one)\\b)[a-z]{3,}(?<!s|ly)\\s+${PLAIN_VERB_WORD}\\s+(?:to|into|onto|through)\\s)`, 'g');
 
 // The mark that joins a full clause to the sentence before the dash. A short
 // opener led by "not" has no verb of its own, so the clause explains it and
@@ -294,6 +299,10 @@ function fixEmDash(s, { endsBlock = false, startsBlock = false } = {}) {
     .replace(PLAIN_CLAUSE_AFTER_DASH, (m, at, whole) => {
       const left = clauseLeft(at, whole);
       return left && (/\b(?:not|cannot)\b/i.test(left) || PLAIN_OBJECT_CLAUSE.test(whole.slice(at))) ? clauseJoin(left) : m;
+    })
+    .replace(BARE_CLAUSE_AFTER_DASH, (m, at, whole) => {
+      const left = clauseLeft(at, whole);
+      return left ? clauseJoin(left) : m;
     })
     .replace(LEADING_CLAUSE_AFTER_DASH, (m, at, whole) => {
       const left = clauseLeft(at, whole);
