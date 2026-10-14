@@ -670,6 +670,20 @@ test('a busy row keeps its earlier failure reason at every width once one shows 
   assert.match(renderBoard(rows, '/progress', 0, 65), /^y\s+working\s+bad exit 2\s+1m ago\s+search$/m, 'not "failed 14m" one column past the compact board');
 });
 
+test('a busy row back on the engine it signed out of never shrinks to just signed out', () => {
+  const row = (member, engine) => ({
+    member, state: 'working', alive: true, engine, running_for: '1m', ago: '5s ago', job: 'try again on the chat page', step: 'npm test',
+    last_result: 'failed', last_result_reason: 'signed out', last_result_engine: 'claude', last_result_ago: '14m ago',
+  });
+  const rows = [row('back', 'claude'), row('moved', 'codex')];
+  assert.match(renderBoard(rows, '/progress', 0, 120), /^back\s+working\s+failed \(signed out\) 14m ago\s/m, 'room to spare: all of it');
+  for (const [width, back] of [[80, 'failed 14m'], [60, 'failed 14m'], [45, 'failed']]) {
+    const board = renderBoard(rows, '/progress', 0, width);
+    assert.match(board, new RegExp(`^back\\s+working\\s+${back}(\\s|$)`, 'm'), `${width}: ${board}`);
+    assert.match(board, /^moved\s+working\s+signed out(\s|$)/m, `${width}: another engine may still be signed out`);
+  }
+});
+
 test('a live run with a long name drops last step before it overflows 80', () => {
   const dir = fakeDir({
     'objective-generator': [
