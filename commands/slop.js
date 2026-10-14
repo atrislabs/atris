@@ -146,6 +146,16 @@ function clauseJoin(left) {
   return /^not\b/i.test(opener) && opener.split(/\s+/).length <= 3 ? ': ' : '; ';
 }
 
+// The words before the dash in the same sentence, when they can be a clause:
+// two words or more, and not a title where every word is capitalized, since
+// "Inbox Triage, 23 emails processed" names a thing and has no verb to join.
+// Words in all capitals are shouting, not a title: "Lines DO NOT SURVIVE".
+function clauseLeft(at, whole) {
+  const left = whole.slice(0, at).split(/[.!?:]\s/).pop().trim();
+  const words = left.replace(/^(?:(?:[-*+>#]|\d+[.)]|\*\*|__)\s*)+/, '').split(/\s+/);
+  return words.length >= 2 && !words.every((w) => /^[A-Z][a-z0-9'\u2019-]+$/.test(w)) ? left : null;
+}
+
 function fixEmDash(s, { endsBlock = false, startsBlock = false } = {}) {
   // a table cell that holds only a dash means "nothing here"; a hyphen keeps
   // the cell instead of turning it into a stray comma
@@ -220,24 +230,24 @@ function fixEmDash(s, { endsBlock = false, startsBlock = false } = {}) {
     // The left side needs two words of its own sentence to be a clause, so
     // an opener like "Then" keeps its comma.
     .replace(CLAUSE_AFTER_DASH, (m, at, whole) => {
-      const left = whole.slice(0, at).split(/[.!?:]\s/).pop().trim();
-      return left.split(/\s+/).length >= 2 ? clauseJoin(left) : m;
+      const left = clauseLeft(at, whole);
+      return left ? clauseJoin(left) : m;
     })
     .replace(QUANTITY_CLAUSE_AFTER_DASH, (m, at, whole) => {
-      const left = whole.slice(0, at).split(/[.!?:]\s/).pop().trim();
-      return left.split(/\s+/).length >= 2 ? clauseJoin(left) : m;
+      const left = clauseLeft(at, whole);
+      return left ? clauseJoin(left) : m;
     })
     .replace(PAST_CLAUSE_AFTER_DASH, (m, at, whole) => {
-      const left = whole.slice(0, at).split(/[.!?:]\s/).pop().trim();
-      return left.split(/\s+/).length >= 2 ? clauseJoin(left) : m;
+      const left = clauseLeft(at, whole);
+      return left ? clauseJoin(left) : m;
     })
     .replace(NOUN_CLAUSE_AFTER_DASH, (m, at, whole) => {
-      const left = whole.slice(0, at).split(/[.!?:]\s/).pop().trim();
-      return left.split(/\s+/).length >= 2 ? clauseJoin(left) : m;
+      const left = clauseLeft(at, whole);
+      return left ? clauseJoin(left) : m;
     })
     .replace(PLAIN_CLAUSE_AFTER_DASH, (m, at, whole) => {
-      const left = whole.slice(0, at).split(/[.!?:]\s/).pop().trim();
-      return /\b(?:not|cannot)\b/i.test(left) && left.split(/\s+/).length >= 2 ? clauseJoin(left) : m;
+      const left = clauseLeft(at, whole);
+      return left && /\b(?:not|cannot)\b/i.test(left) ? clauseJoin(left) : m;
     })
     // keep punctuation the writer already put beside the dash instead of
     // stacking a comma on it, and never leave a trailing space. A dash pressed

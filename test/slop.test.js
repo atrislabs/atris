@@ -953,6 +953,10 @@ test('fix joins a noun clause after the dash with a semicolon', () => {
     'We shipped it \u2014 the old flag stopped working.',
     'Ship it \u2014 the new signed build.',
     'Keep notes \u2014 the files stored in atris.',
+    // a title where every word is capitalized names a thing, so it never
+    // joins; words in all capitals are shouting and still do
+    'Inbox Triage \u2014 23 emails processed',
+    'Release Notes \u2014 it ships Friday.',
   ].join('\n'));
   const { changes } = applyFixes([file], RULES);
   assert.deepEqual(changes.map((c) => c.after), [
@@ -996,6 +1000,8 @@ test('fix joins a noun clause after the dash with a semicolon', () => {
     'We shipped it; the old flag stopped working.',
     'Ship it, the new signed build.',
     'Keep notes, the files stored in atris.',
+    'Inbox Triage, 23 emails processed',
+    'Release Notes, it ships Friday.',
   ]);
 });
 
