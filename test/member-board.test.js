@@ -380,6 +380,11 @@ test('a run that died before logging past its start has no run time, not 0s', ()
   assert.match(renderBoard([quick], '/x'), /^quick\s+died\s+no\s+claude\s+10m ago\s+build/m);
   const stopped = memberRow('fast', '2026-10-14T11:50:00Z m-2 started: build\n2026-10-14T11:50:00Z m-2 finished: failed\n', now);
   assert.equal(stopped.lasted, '0s', 'a run that finished right away really took 0s');
+  assert.equal(stopped.lasted_at_least, false, 'a finished run says its plain time');
+  const soon = memberRow('soon', '2026-10-14T11:00:00Z m-3 started: build\n2026-10-14T11:20:00Z m-3 running: x\n2026-10-14T11:30:00Z m-3 finished: stopped\n', now);
+  assert.deepEqual([soon.lasted, soon.lasted_at_least], ['30m', false], 'a stop under an hour after its last line is when it ended');
+  const bare = memberRow('bare', '2026-10-14T06:00:00Z m-4 started: build\n2026-10-14T11:00:00Z m-4 finished: stopped\n', now);
+  assert.equal(bare.lasted, '', 'put away with nothing logged past its start: no made-up time');
 });
 
 test('a run with no pid that has been silent for over an hour is named as likely ended', () => {
@@ -621,6 +626,9 @@ test('member stop puts away a run with no pid that went silent for over an hour,
     const by = Object.fromEntries(readBoard({ dir, all: true }).map((r) => [r.member, r]));
     assert.equal(by.launcher.state, 'stopped');
     assert.equal(by.launcher.likely_ended, false);
+    assert.equal(by.launcher.lasted, '1h', 'start to its last real line, not to the stop 7h later');
+    assert.equal(by.launcher.lasted_at_least, true);
+    assert.match(renderBoard(readBoard({ dir, all: true }), dir), /^launcher\s+stopped\s+at least 1h\s+/m);
     assert.equal((await stopMember('launcher', { dir })).message, 'nothing running', 'second stop finds nothing');
     assert.equal((await stopMember('recent', { dir })).message, 'nothing running', '10m quiet may still be going');
     assert.equal(fs.readFileSync(path.join(dir, 'recent.log'), 'utf8').includes('finished'), false);
