@@ -76,7 +76,8 @@ const NUMBERED_LABEL_DASH = /^(\s*(?:>\s*)*(?:(?:\*\*|__)[^*_\u2014]+:(?:\*\*|__
 const HEADING_DASH = /^(\s{0,3}#{1,6}\s+(?![\d\s\u2013-]*\d:\d[\d:\s\u2013-]*(?:(?:PT|PDT|PST|ET|EDT|EST|UTC|Z|am|pm)\s*)?\u2014)(?:[^\u2014:]|(?<=\d):(?=\d))*[^\s\u2014,;:.!?])\s*\u2014\s*(?!(?:and|but|or|nor|so|yet)\b)(?=[^\s\u2014](?:[^\u2014:]|:(?!\s))*(?:\u2014\s*(?:and|but|or|nor|so|yet|then)\b[^\u2014]*)?$)/i;
 // A bold phrase that is the whole line stands as a heading and gets the same
 // colon: "**Source A: arxiv API**". A dash inside parentheses is left alone.
-// A last dash before a joining word takes a comma, as in a heading.
+// A last dash before a joining word takes a comma, as in a heading, and so
+// does one whose subtitle holds a colon: "**Server, Tier 1: WebRTC remote**".
 // A name that opens a paragraph, then a dash, is a term being defined, so the
 // dash becomes a colon: "MEMBER.md: an open-source standard", "v2: shipped".
 // Only a name shape counts (a digit, dot, slash, underscore, or two capitals),
@@ -96,7 +97,7 @@ const GREETING_DASH = /^(\s*(?:>\s*)*["\u201c]?(?:Hey|Hi|Hello|Dear)\s+[^\s\u201
 // Two to four capitalized words that open a paragraph are a title, and the
 // words after the dash describe it: "Inbox Triage: 23 emails processed".
 const TITLE_DASH = /^(\s*(?:>\s*)*[A-Z][a-z0-9'\u2019-]+(?:\s+[A-Z][a-z0-9'\u2019-]+){1,3})\s*\u2014\s*(?=\S)(?!(?:and|but|or|nor|so|yet)\b)(?![^\u2014]*\u2014(?!\s*(?:and|but|or|nor|so|yet|then)\b[^\u2014]*$))/;
-const BOLD_HEADING_DASH = /^(\s*(?:>\s*)*(?:\*\*|__)[^\u2014:*_(]*[^\s\u2014,;:.!?*_(])\s*\u2014\s*(?!(?:and|but|or|nor|so|yet)\b)(?=[^\s\u2014][^\u2014*_]*(?:\u2014\s*(?:and|but|or|nor|so|yet|then)\b[^\u2014*_]*)?(?:\*\*|__)\s*$)/i;
+const BOLD_HEADING_DASH = /^(\s*(?:>\s*)*(?:\*\*|__)[^\u2014:*_(]*[^\s\u2014,;:.!?*_(])\s*\u2014\s*(?!(?:and|but|or|nor|so|yet)\b)(?=[^\s\u2014:](?:[^\u2014*_:]|:(?!\s))*(?:\u2014\s*(?:and|but|or|nor|so|yet|then)\b[^\u2014*_]*)?(?:\*\*|__)\s*$)/i;
 
 // True when one pair of parentheses wraps the whole aside, "(mostly)" but
 // not "(a) or (b)", so the fixer keeps them instead of adding a second pair.

@@ -1882,6 +1882,21 @@ test('fix keeps the comma in a heading whose subtitle has its own colon', () => 
   ]);
 });
 
+test('fix keeps the comma in a bold heading whose subtitle has its own colon', () => {
+  // from design notes, which came out "**Server: Tier 1: WebRTC remote**"
+  const file = tmpFile('boldtwo.md', [
+    '**Server \u2014 Tier 1: WebRTC remote**',
+    '**RC1 \u2014 Output budget: 1600 tokens per model round.**',
+    '**Audit Gaps \u2014 Build Plan**',
+  ].join('\n\n'));
+  const { changes } = applyFixes([file], RULES);
+  assert.deepEqual(changes.map((c) => c.after), [
+    '**Server, Tier 1: WebRTC remote**',
+    '**RC1, Output budget: 1600 tokens per model round.**',
+    '**Audit Gaps: Build Plan**',
+  ]);
+});
+
 test('fix starts the next sentence after a stop that sits before a dash', () => {
   // from the terrace repo, which came out "fine with try? the cost"
   const file = tmpFile('stop.md', [
