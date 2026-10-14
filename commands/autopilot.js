@@ -27,6 +27,7 @@ const {
 } = require('../lib/scorecard');
 const { REWARD_CONFIG, REWARD_CHECKSUM } = require('../lib/reward-config');
 const { ownerIdentity } = require('../utils/owner-identity');
+const { inspectGitActivity } = require('../lib/git-activity');
 
 const pkg = require('../package.json');
 
@@ -1195,6 +1196,7 @@ function recordTickCommit(cwd, hash, verifyCmd, slug) {
  * retroactive context.
  */
 function regressionCheck(cwd) {
+  const { listActiveProcessPaths, worktreeHasActiveProcess, recordWorktreeRemoval } = require('./worktree');
   const registryPath = path.join(cwd, 'atris', 'tick-registry.json');
   if (!fs.existsSync(registryPath)) return [];
 
@@ -1213,9 +1215,12 @@ function regressionCheck(cwd) {
 
     const worktreePath = path.join(cwd, '.regression-worktree-' + entry.hash.slice(0, 8));
     let pass = false;
+    let created = false;
+    let cleanup;
     try {
       // Create a worktree at the commit
-      execSync(`git worktree add "${worktreePath}" ${entry.hash} --detach 2>/dev/null`, { cwd, stdio: 'pipe' });
+      execFileSync('git', ['worktree', 'add', worktreePath, entry.hash, '--detach'], { cwd, stdio: 'pipe' });
+      created = true;
       try {
         execSync(entry.verifyCmd, { cwd: worktreePath, stdio: 'pipe', timeout: 60000 });
         pass = true;
@@ -1227,8 +1232,27 @@ function regressionCheck(cwd) {
       results.push({ hash: entry.hash, slug: entry.slug, pass: true, skipped: true });
       continue;
     } finally {
-      // Clean up worktree
-      try { execSync(`git worktree remove "${worktreePath}" --force 2>/dev/null`, { cwd, stdio: 'pipe' }); } catch {}
+      // Only clean up a folder this check created, after checking live activity.
+      if (created) {
+        const activePaths = listActiveProcessPaths();
+        const activity = inspectGitActivity(worktreePath);
+        const reason = !activity.safe ? activity.reason
+          : worktreeHasActiveProcess(worktreePath, activePaths)
+            ? (activePaths ? 'a running program is using this folder' : 'could not check running programs')
+            : null;
+        if (reason) {
+          cleanup = { path: worktreePath, removed: false, reason };
+        } else {
+          const removed = spawnSync('git', ['worktree', 'remove', worktreePath, '--force'], { cwd, encoding: 'utf8' });
+          if (!removed.error && removed.status === 0) {
+            recordWorktreeRemoval(cwd, { path: worktreePath, by: 'atris autopilot', reason: 'regression_check_finished' });
+            cleanup = { path: worktreePath, removed: true };
+          } else {
+            cleanup = { path: worktreePath, removed: false, reason: String(removed.error?.message || removed.stderr || removed.stdout || 'could not remove folder').trim() };
+          }
+        }
+        if (!cleanup.removed) console.log(`  kept ${worktreePath}: ${cleanup.reason}`);
+      }
     }
 
     if (!pass) {
@@ -1236,7 +1260,7 @@ function regressionCheck(cwd) {
         `Retroactive regression: verify command for tick ${entry.hash.slice(0, 7)} (${entry.slug}) now fails. -5 retroactive penalty applied.`);
     }
 
-    results.push({ hash: entry.hash, slug: entry.slug, pass });
+    results.push({ hash: entry.hash, slug: entry.slug, pass, cleanup });
   }
 
   return results;
@@ -3992,6 +4016,7 @@ async function autopilotFromTodo(options = {}) {
 }
 
 module.exports = {
+  regressionCheck,
   snapshotRepoHeads,
   diffAdvancedRepoHeads,
   reconcileTimedOutTick,

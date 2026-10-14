@@ -11,6 +11,7 @@ const path = require('node:path');
 const { spawn, spawnSync } = require('node:child_process');
 const { reap } = require('../commands/land');
 const { cleanupWorktrees } = require('../commands/worktree');
+const { regressionCheck } = require('../commands/autopilot');
 
 function git(cwd, args) {
   const result = spawnSync('git', args, { cwd, encoding: 'utf8' });
@@ -43,6 +44,62 @@ function removalLines(repo) {
   if (!fs.existsSync(file)) return [];
   return fs.readFileSync(file, 'utf8').trim().split('\n').map((line) => JSON.parse(line));
 }
+
+function regressionEntry(repo, verifyCmd) {
+  const hash = git(repo, ['rev-parse', 'HEAD']);
+  fs.mkdirSync(path.join(repo, 'atris'), { recursive: true });
+  fs.writeFileSync(path.join(repo, 'atris', 'tick-registry.json'), JSON.stringify([{ hash, verifyCmd, slug: 'folder-cleanup' }]));
+  return path.join(repo, '.regression-worktree-' + hash.slice(0, 8));
+}
+
+test('regression cleanup keeps old private and shared git locks created by the real check', () => {
+  const { base, repo } = landedWorktree();
+  try {
+    const source = String.raw`const fs = require('fs'); const path = require('path');
+      const { execFileSync } = require('child_process');
+      const roots = execFileSync('git', ['rev-parse', '--path-format=absolute', '--git-dir', '--git-common-dir'], { encoding: 'utf8' }).trim().split('\n');
+      for (const file of [path.join(roots[0], 'index.lock'), path.join(roots[1], 'refs/heads/master.lock')]) {
+        fs.writeFileSync(file, 'unfinished git work');
+        const aged = new Date(Date.now() - 7200000); fs.utimesSync(file, aged, aged);
+      }`;
+    const folder = regressionEntry(repo, `node -e '${source.replace(/'/g, "'\\''")}'`);
+    const [result] = regressionCheck(repo);
+    assert.equal(result.pass, true);
+    assert.equal(result.cleanup.removed, false);
+    const privateDir = git(folder, ['rev-parse', '--absolute-git-dir']);
+    for (const file of [path.join(privateDir, 'index.lock'), path.join(repo, '.git', 'refs/heads/master.lock')]) {
+      assert.ok(fs.existsSync(file));
+      assert.ok(result.cleanup.reason.includes(`${file} (`), result.cleanup.reason);
+    }
+    assert.match(result.cleanup.reason, /\(720\d+s old\)/);
+    assert.deepEqual(removalLines(repo), []);
+  } finally {
+    fs.rmSync(base, { recursive: true, force: true });
+  }
+});
+
+test('regression cleanup logs successful removal and leaves a pre-existing folder alone', () => {
+  const { base, repo } = landedWorktree();
+  try {
+    const folder = regressionEntry(repo, 'node -e "process.exit(0)"');
+    const [result] = regressionCheck(repo);
+    assert.equal(result.pass, true);
+    assert.equal(result.cleanup.removed, true);
+    assert.equal(fs.existsSync(folder), false);
+    const [line] = removalLines(repo);
+    assert.equal(line.path, folder);
+    assert.equal(line.by, 'atris autopilot');
+    assert.equal(line.reason, 'regression_check_finished');
+    git(repo, ['worktree', 'add', '-q', '--detach', folder, 'HEAD']);
+    fs.writeFileSync(path.join(folder, 'keep.txt'), 'unfinished work');
+    const [skipped] = regressionCheck(repo);
+    assert.equal(skipped.skipped, true);
+    assert.equal(fs.readFileSync(path.join(folder, 'keep.txt'), 'utf8'), 'unfinished work');
+    assert.equal(removalLines(repo).length, 1);
+  } finally {
+    fs.rmSync(base, { recursive: true, force: true });
+  }
+});
 
 test('reap keeps a folder a run is working in, even with --force', () => {
   const { base, repo, wt } = landedWorktree();
