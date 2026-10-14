@@ -342,6 +342,24 @@ test('board shows done failed as failed when nothing else is left to drop', () =
   assert.match(renderBoard(rows, '/x'), /^checker\s+done failed\s/m, 'piped output keeps the full name');
 });
 
+test('board titles run time as run when nothing else is left to drop', () => {
+  const now = Date.parse('2026-10-14T13:00:00Z');
+  const rows = [
+    memberRow('checker', '2026-10-14T12:58:00Z m-4 started: [pid 1 engine claude] check the release\n2026-10-14T12:59:30Z m-4 finished: failed\n', now),
+    memberRow('builder', `2026-10-14T12:50:00Z m-1 started: [pid ${process.pid} engine claude] fit the board\n2026-10-14T12:59:30Z m-1 running: node --test\n`, now),
+  ];
+  const table = (w) => {
+    const lines = renderBoard(rows, '/x', 0, w).split('\n');
+    return lines.slice(lines.indexOf('') + 1, lines.indexOf('', lines.indexOf('') + 1));
+  };
+  assert.match(table(44)[0], /\srun time\s/, 'at 44 columns the full header stays');
+  const pane = table(40);
+  assert.match(pane[0], /^member\s+state\s+run\s+ago\s+job$/, 'at 40 columns it is run');
+  assert.match(pane.find((l) => l.startsWith('builder')), /^builder\s+working\s+10m\s+30s\s+fit/);
+  assert.ok(pane.every((l) => l.length <= 40), `every line fits a 40 column pane:\n${pane.join('\n')}`);
+  assert.match(renderBoard(rows, '/x'), /\srun time\s/, 'piped output keeps the full header');
+});
+
 test('board breaks the count line after a comma on a narrow screen', () => {
   const now = Date.parse('2026-10-14T13:00:00Z');
   const base = memberRow('scout', '2026-10-14T12:55:00Z m-3 started: map the repo\n', now);
