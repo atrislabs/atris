@@ -1343,11 +1343,13 @@ test('member goal-from-mission does not append a duplicate history entry on ever
 
     // The cadence loop reuses the same goal every tick. Before the fix each tick appended an identical
     // no-op `goal_from_mission_reused` entry, growing goals.json without bound (2,200+ entries live).
-    for (let i = 0; i < 30; i += 1) {
+    // Three reuses are enough: the old bug added one entry per reuse, past the one-entry allowance.
+    const REUSES = 3;
+    for (let i = 0; i < REUSES; i += 1) {
       assert.equal(runCli(['member', 'goal-from-mission', 'mission-lead', '--json'], { cwd: dir }).status, 0);
     }
     const afterReuse = historyLen();
-    assert.ok(afterReuse <= afterCreate + 1, `reuse ticks must not append duplicate history (was ${afterCreate}, now ${afterReuse} after 30 identical reuses)`);
+    assert.ok(afterReuse <= afterCreate + 1, `reuse ticks must not append duplicate history (was ${afterCreate}, now ${afterReuse} after ${REUSES} identical reuses)`);
     assert.ok(afterReuse <= 50, `history must stay capped, got ${afterReuse}`);
   } finally {
     cleanupTempDir(dir);
