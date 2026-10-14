@@ -1,0 +1,21 @@
+atris task ready: verifier failed (exit 1): node --test test/*worktree*.test.js test/*tidy*.test.js
+TAP version 13
+# Subtest: collectBoard surfaces a worktree holding commits ahead of base with subjects
+ok 1 - collectBoard surfaces a worktree holding commits ahead of base with subjects
+  ---
+  durat
+...
+ok 95 - an existing branch survives a failed creation
+  ---
+  duration_ms: 304.293542
+  ...
+1..95
+# tests 95
+# suites 0
+# pass 70
+# fail 25
+# cancelled 0
+# skipped 0
+# todo 0
+# duration_ms 4535.307459
+receipt: atris/runs/2026-10-14-task-afw-20-2026-10-14T16-21-45-877Z.json

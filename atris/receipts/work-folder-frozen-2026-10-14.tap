@@ -1,0 +1,35 @@
+✔ tidy removes landed clean copies and leaves everything else to git and the rules (1024.960416ms)
+✔ tidy asks origin for its current default branch instead of the stale local note (526.891417ms)
+✔ tidy keeps every copy when the running-program scan fails (379.639375ms)
+✔ tidy keeps every copy when origin cannot be fetched (344.350583ms)
+✔ tidy keeps a landed copy while git is paused mid-rebase in it, and logs what it removes (454.896875ms)
+✔ reap keeps a folder a run is working in, even with --force (153.22775ms)
+✔ reap sees a real live process in the folder without being told (260.136ms)
+✔ reap names who removed a folder and why (161.001042ms)
+✔ reap summary counts folders removed today and by whom (91.483416ms)
+✔ worktree cleanup names who removed a folder and why (131.542209ms)
+✔ reap keeps a folder while git holds its lock, even with --force (138.317708ms)
+✔ worktree cleanup keeps a clean folder paused mid-rebase (102.462792ms)
+✔ fleet review cleanup keeps a sandbox while git holds its lock (80.86075ms)
+✔ fleet review cleanup keeps a sandbox while git holds its quarantine store (88.399833ms)
+✔ fleet review cleanup names who removed a sandbox and why (86.531959ms)
+✔ autopilot regression check keeps its folder while git holds its lock (121.850459ms)
+✔ autopilot regression check keeps its folder while a run is inside it (118.03125ms)
+✔ autopilot regression check sees a real leftover process without being told (244.864125ms)
+✔ autopilot regression check names who removed its folder and why (124.048125ms)
+✔ autopilot regression check keeps an existing clean folder when creation fails (127.689083ms)
+✔ autopilot regression check keeps an existing dirty folder when creation fails (126.450708ms)
+✔ every work folder removal goes through the git check and the removal log (62.647958ms)
+✔ saved scanner examples reject missed removals in the required checks (64.469542ms)
+✔ a git check that comes late, names another folder, or is ignored does not count as protection (61.041042ms)
+✔ grouped sandbox cleanup exposes every recursive target to the scan (56.758166ms)
+✔ green landing keeps its scratch folder while a test is still running in it (83.146834ms)
+✔ green landing names who removed its scratch folder and why (97.786334ms)
+ℹ tests 27
+ℹ suites 0
+ℹ pass 27
+ℹ fail 0
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 2826.516042
