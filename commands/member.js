@@ -11322,7 +11322,7 @@ async function memberCommand(subcommand, ...args) {
     case 'board':
       return require('../lib/member-board').memberBoardCommand(...args);
     case 'stop':
-      return require('../lib/member-board').memberStopCommand(args[0]);
+      return require('../lib/member-board').memberStopCommand(args[0], ...args.slice(1));
     case 'card':
     case 'cards':
       return memberCard(args[0], ...args.slice(1));

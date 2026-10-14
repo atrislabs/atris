@@ -300,7 +300,7 @@ test('board names an earlier run whose process is still running', () => {
   assert.deepEqual(nopid.earlier_alive, [], 'no process id to check');
   const stopped = memberRow('builder', `2026-10-14T12:50:00Z m-1 started: [pid ${process.pid} engine claude] build\n2026-10-14T12:55:00Z m-1 finished: ok\n2026-10-14T12:59:00Z m-2 started: next\n`, now);
   assert.deepEqual(stopped.earlier_alive, [], 'it said how it ended');
-  assert.match(renderBoard([twice, nopid], '/x'), new RegExp(`^still running from an earlier run: builder \\(pid ${process.pid}\\); atris member stop ends only the newest run$`, 'm'));
+  assert.match(renderBoard([twice, nopid], '/x'), new RegExp(`^still running from an earlier run: builder \\(pid ${process.pid}\\); atris member stop <name> ends only the newest run, add --pid <pid> for an older one$`, 'm'));
   assert.doesNotMatch(renderBoard([nopid], '/x'), /^still running/m);
 });
 
@@ -1045,7 +1045,47 @@ test('member stop ends only the newest run, and the board still names the older 
     const [row] = readBoard({ dir });
     assert.equal(row.state, 'stopped');
     assert.deepEqual(row.earlier_alive, [older.child.pid]);
-    assert.match(renderBoard([row], dir), /^still running from an earlier run: builder \(pid \d+\); atris member stop ends only the newest run$/m);
+    assert.match(renderBoard([row], dir), /^still running from an earlier run: builder \(pid \d+\); atris member stop <name> ends only the newest run, add --pid <pid> for an older one$/m);
+  } finally {
+    killAll(older.child.pid);
+    killAll(newer.child.pid);
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test('member stop --pid ends an older run that is still going, and the board reads it stopped', async () => {
+  const { progressEvent } = require('../lib/member-board');
+  const older = spawnSleeper("console.log('up'); setInterval(() => {}, 1000)");
+  const newer = spawnSleeper("console.log('up'); setInterval(() => {}, 1000)");
+  await Promise.all([older.ready, newer.ready]);
+  const dir = fakeDir({ builder: [
+    `${isoAgo(120)} m-1 started: [pid ${older.child.pid} engine claude run ${TOKEN}] first try`,
+    `${isoAgo(60)} m-2 started: [pid ${newer.child.pid} engine claude run ${TOKEN}] second try`,
+    `${isoAgo(5)} m-2 running: npm test`,
+  ] });
+  try {
+    assert.equal((await stopMember('builder', { dir, pid: 999999, deps: engineAs('claude', 120) })).message, 'nothing running', 'a pid from no run in the log');
+    const result = await stopMember('builder', { dir, pid: older.child.pid, deps: engineAs('claude', 120) });
+    assert.equal(result.ok, true);
+    assert.equal(result.pid, older.child.pid);
+    assert.equal(result.message, `stopped builder's earlier run (pid ${older.child.pid}) after 2m of work`);
+    assert.ok(await waitFor(() => !isAlive(older.child.pid)), 'the older run is gone');
+    assert.equal(isAlive(newer.child.pid), true, 'the newest run is left alone');
+    const log = fs.readFileSync(path.join(dir, 'builder.log'), 'utf8').trim().split('\n');
+    assert.match(log[log.length - 1], new RegExp(`^\\S+ m-1 finished: stopped \\[pid ${older.child.pid}\\]$`));
+    const [row] = readBoard({ dir });
+    assert.equal(row.state, 'working', 'the newest run is still working, not stopped');
+    assert.equal(row.step, 'running: npm test', 'the stop line is not the newest run\'s step');
+    assert.deepEqual(row.before, ['stopped'], 'the older run reads stopped, not died');
+    assert.deepEqual(row.earlier_alive, []);
+    assert.doesNotMatch(renderBoard([row], dir), /still running from an earlier run/);
+    assert.equal((await stopMember('builder', { dir, pid: older.child.pid, deps: engineAs('claude', 120) })).message, 'nothing running', 'second stop finds nothing');
+    const event = progressEvent('builder', log[log.length - 1]);
+    assert.equal(event.kind, 'finished');
+    assert.equal(event.text, 'stopped');
+    assert.equal(event.stopped, true);
+    assert.equal(event.pid, older.child.pid, 'the stream names which run stopped');
+    assert.equal(event.earlier, true);
   } finally {
     killAll(older.child.pid);
     killAll(newer.child.pid);
