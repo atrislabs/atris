@@ -6325,9 +6325,18 @@ test('brain scorecard derives deduped scorecards from task review episodes', () 
     seedBrainWorkspace(dir);
     fs.rmSync(path.join(dir, '.atris', 'state', 'agent_mail.jsonl'), { force: true });
 
-    const add = runCli(['task', 'add', 'Score reviewed task episodes', '--tag', 'rsi', '--json'], { cwd: dir, env });
-    assert.equal(add.status, 0, add.stderr);
-    const ref = JSON.parse(add.stdout).task.display_id;
+    // Seed the tagged task; the done, review, both scorecards and compile stay on the CLI.
+    const workspaceRoot = taskStore.workspaceRoot(dir);
+    const db = taskStore.open(dbPath);
+    let ref;
+    try {
+      const created = addSeedTask(db, { title: 'Score reviewed task episodes', tag: 'rsi', workspaceRoot });
+      assert.equal(created.inserted, true);
+      ref = taskStore.taskDisplayRefMap(taskStore.listTasks(db, { workspaceRoot })).get(created.id);
+      assert.ok(ref);
+    } finally {
+      taskStore.close();
+    }
     assert.equal(runCli(['task', 'done', ref, '--proof', 'node --test test/commands.test.js passed'], { cwd: dir, env }).status, 0);
 
     const review = runCli([

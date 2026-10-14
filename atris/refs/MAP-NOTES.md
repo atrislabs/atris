@@ -2452,16 +2452,20 @@ npm publish
 
 ## Uncertified review next fixture setup
 
-- `test/commands.test.js:12465` checks that task next tells an agent to accept the task waiting in review and leaves the other open task unclaimed. Real-store creation at `test/commands.test.js:12473` saves two setup launches, seeds the review task before the open task so their references keep the original order, and reads both references from the stored rows; the claim, ready, next and both shows remain on the CLI.
+- `test/commands.test.js:12474` checks that task next tells an agent to accept the task waiting in review and leaves the other open task unclaimed. Real-store creation at `test/commands.test.js:12482` saves two setup launches, seeds the review task before the open task so their references keep the original order, and reads both references from the stored rows; the claim, ready, next and both shows remain on the CLI.
 
 ## Review debt next fixture setup
 
-- `test/commands.test.js:12515` checks that task next tells an agent to accept the task waiting in review when no open work exists. Real-store creation at `test/commands.test.js:12523` saves one setup launch and reads the id and display reference from the stored rows; the claim, ready and next remain on the CLI, and a throwaway copy without the ready step failed with ready instead of accept.
+- `test/commands.test.js:12524` checks that task next tells an agent to accept the task waiting in review when no open work exists. Real-store creation at `test/commands.test.js:12532` saves one setup launch and reads the id and display reference from the stored rows; the claim, ready and next remain on the CLI, and a throwaway copy without the ready step failed with ready instead of accept.
 
 ## Premature review XP fixture setup
 
-- `test/commands.test.js:11368` checks that reviewing a task that is still open pays no XP and that accept is refused without fresh proof. Real-store creation at `test/commands.test.js:11376` saves one setup launch and reads the display reference from the stored rows; the review, XP status and refused accept remain on the CLI, and a throwaway copy that seeded the task as done failed with done instead of open.
+- `test/commands.test.js:11377` checks that reviewing a task that is still open pays no XP and that accept is refused without fresh proof. Real-store creation at `test/commands.test.js:11385` saves one setup launch and reads the display reference from the stored rows; the review, XP status and refused accept remain on the CLI, and a throwaway copy that seeded the task as done failed with done instead of open.
 
 ## Brain compile review episode fixture setup
 
 - `test/commands.test.js:6269` checks that brain compile counts the done and review episode rows as learning state. Real-store creation at `test/commands.test.js:6278` saves one setup launch, seeds the task untagged like a plain add, and reads the display reference from the stored rows; the done, review and compile remain on the CLI, and a throwaway copy without the done step failed with one episode row instead of two.
+
+## Brain scorecard review episode fixture setup
+
+- `test/commands.test.js:6319` checks that brain scorecard writes one scorecard from the done and review episodes, writes none on a repeat run, and clears the compile hint. Real-store creation at `test/commands.test.js:6328` saves one setup launch, seeds the task with its tag, and reads the display reference from the stored rows; the done, review, both scorecards and compile remain on the CLI, and a throwaway copy with a different seeded title failed on the scorecard title check.
