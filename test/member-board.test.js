@@ -5,7 +5,7 @@ const os = require('node:os');
 const path = require('node:path');
 const { spawn, spawnSync } = require('node:child_process');
 
-const { readBoard, renderBoard, changeTracker, ago, isAlive, stopMember } = require('../lib/member-board');
+const { readBoard, renderBoard, changeTracker, ago, memberRow, isAlive, stopMember } = require('../lib/member-board');
 
 const repoRoot = path.resolve(__dirname, '..');
 const cliPath = path.join(repoRoot, 'bin', 'atris.js');
@@ -362,6 +362,18 @@ test('atris member board --json --follow streams one JSON object per line', asyn
     await new Promise((r) => child.once('exit', r));
     fs.rmSync(dir, { recursive: true, force: true });
   }
+});
+
+test('a run that died before logging past its start has no run time, not 0s', () => {
+  const gone = 2147483646;
+  const now = Date.parse('2026-10-14T12:00:00Z');
+  const quick = memberRow('quick', '2026-10-14T11:50:00Z m-1 started: [pid ' + gone + ' engine claude] build\n', now);
+  assert.equal(quick.state, 'died');
+  assert.equal(quick.lasted, '', 'the board never saw it run');
+  assert.doesNotMatch(renderBoard([quick], '/x'), /0s/, 'no made-up run time on screen');
+  assert.match(renderBoard([quick], '/x'), /^quick\s+died\s+no\s+claude\s+10m ago\s+build/m);
+  const stopped = memberRow('fast', '2026-10-14T11:50:00Z m-2 started: build\n2026-10-14T11:50:00Z m-2 finished: failed\n', now);
+  assert.equal(stopped.lasted, '0s', 'a run that finished right away really took 0s');
 });
 
 test('watchCrashes reports each newly died run once, not ones dead at start', () => {
