@@ -14250,14 +14250,21 @@ test('task review groups are capped by default for human scan', () => {
   try {
     fs.mkdirSync(path.join(dir, 'atris'), { recursive: true });
 
+    // Create and claim straight in the task store; ready and review still
+    // run through the CLI because the review queue reads what they write.
+    const workspaceRoot = taskStore.workspaceRoot(dir);
     for (let index = 1; index <= 12; index += 1) {
       const tag = `tag-${String(index).padStart(2, '0')}`;
-      const created = runCli(['task', 'new', `Grouped approval ${index}`, '--tag', tag, '--json'], { cwd: dir, env });
-      assert.equal(created.status, 0, created.stderr);
-      const task = JSON.parse(created.stdout).task;
-      assert.equal(runCli(['task', 'claim', task.display_id, '--as', 'codex'], { cwd: dir, env }).status, 0);
-      assert.equal(runCli(['task', 'ready', task.display_id, '--proof', 'node --check test/commands.test.js passed', '--as', 'codex'], { cwd: dir, env }).status, 0);
-      assert.equal(runCli(['task', 'review', task.display_id, '--reward', '0', '--as', 'validator'], { cwd: dir, env }).status, 0);
+      const db = taskStore.open(dbPath);
+      let taskId;
+      try {
+        taskId = taskStore.addTask(db, { title: `Grouped approval ${index}`, tag, workspaceRoot }).id;
+        assert.equal(taskStore.claimTask(db, { id: taskId, claimedBy: 'codex' }).claimed, true);
+      } finally {
+        taskStore.close();
+      }
+      assert.equal(runCli(['task', 'ready', taskId, '--proof', 'node --check test/commands.test.js passed', '--as', 'codex'], { cwd: dir, env }).status, 0);
+      assert.equal(runCli(['task', 'review', taskId, '--reward', '0', '--as', 'validator'], { cwd: dir, env }).status, 0);
     }
 
     const grouped = runCli(['task', 'reviews', '--group-by', 'tag'], { cwd: dir, env });
