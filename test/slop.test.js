@@ -2706,6 +2706,20 @@ test('fix reads a box-drawing line that ends in an arrowhead as an arrow', () =>
   ]);
 });
 
+test('fix reads backward, double-line, hollow and sign arrows as arrows', () => {
+  // the hollow head and the arrow signs were not seen: "build, review"
+  const arrows = ['\u25c0\u2500\u2500', '\u2550\u2550>', '\u2500\u2500\u25b7', '\u25c1\u2500\u2500', '\u2794', '\u279c', '\u27f6', '\u21d4'];
+  const file = tmpFile('arrow-shapes.md', [
+    ...arrows.map((a) => `plan ${a} build \u2014 review ${a} ship`),
+    'Revenue \u2191 \u2014 costs \u2193',
+  ].join('\n\n'));
+  const { changes } = applyFixes([file], RULES, { write: false });
+  assert.deepEqual(changes.map((c) => c.after), [
+    ...arrows.map((a) => `plan ${a} build - review ${a} ship`),
+    'Revenue \u2191, costs \u2193',
+  ]);
+});
+
 test('fix keeps a journal heading that ends in a time readable for its hour', () => {
   // analytics reads the hour after a dash or a spaced hyphen at the end of a
   // heading; the fix wrote "### Watch: 19:05", which hides it, and glued
