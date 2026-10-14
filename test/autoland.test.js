@@ -124,6 +124,31 @@ function certifiedVerifiedTask(repo, title, { verify, proof = '', tag = 'code' }
   return String(id);
 }
 
+// Real work: claimed, then a committed change on master whose own test can
+// fail, then two reviews. The commit is dated after the claim so the landing
+// proof measures it as this task's change.
+function landedWorkTask(repo, title) {
+  const created = runCli(['task', 'new', title, '--tag', 'code', '--json'], repo);
+  assert.equal(created.status, 0, created.stderr || created.stdout);
+  const id = String(JSON.parse(created.stdout).task?.display_id || JSON.parse(created.stdout).task?.id);
+  assert.equal(runCli(['task', 'claim', id, '--as', 'builder'], repo).status, 0);
+  fs.mkdirSync(path.join(repo, 'test'), { recursive: true });
+  fs.writeFileSync(path.join(repo, 'test', 'feature.test.js'), "require('node:test')('feature', () => {});\n");
+  runGit(['add', 'test/feature.test.js'], repo);
+  const later = new Date(Date.now() + 60 * 1000).toISOString();
+  const committed = spawnSync('git', ['commit', '-q', '-m', 'Add the feature test'], {
+    cwd: repo,
+    encoding: 'utf8',
+    env: { ...process.env, GIT_AUTHOR_DATE: later, GIT_COMMITTER_DATE: later },
+  });
+  assert.equal(committed.status, 0, committed.stderr);
+  for (const actor of ['builder', 'codex-review']) {
+    const ready = runCli(['task', 'ready', id, '--verify', 'node --test test/feature.test.js', '--as', actor], repo);
+    assert.equal(ready.status, 0, ready.stderr || ready.stdout);
+  }
+  return id;
+}
+
 function replaceLatestProof(repo, ref, proof) {
   const task = projectionByRef(repo)[ref];
   assert.ok(task, 'task must exist before replacing its proof');
@@ -654,9 +679,7 @@ test('live update receipt keeps the exact sent text when the daily digest is sen
   try {
     for (const key of agentEnvKeys) delete process.env[key];
     process.env.ATRIS_TASKS_DB = path.join(repo, '.atris', 'fixture-tasks.db');
-    const taskRef = certifiedVerifiedTask(repo, 'Make live landing messages auditable for operators', {
-      verify: 'git diff --check',
-    });
+    const taskRef = landedWorkTask(repo, 'Make live landing messages auditable for operators');
     const policy = {
       enabled: true,
       enabled_by: 'keshav',
@@ -880,7 +903,13 @@ test('live auto-accept refuses without policy, lands with it, blocks denied lane
     const tick = runCli(['autoland', 'tick', '--json'], repo);
     assert.equal(tick.status, 0, tick.stderr || tick.stdout);
     const receipt = JSON.parse(tick.stdout.trim().split('\n').pop());
-    assert.deepEqual(receipt.landed, [codeTask]);
+    assert.deepEqual(receipt.accepted, [codeTask]);
+    // Accepted is not landed: this task never committed anything, and its
+    // only check is `git diff --check`, so the receipt must not say landed.
+    assert.deepEqual(receipt.landed, []);
+    assert.equal(receipt.accepted_not_landed.length, 1);
+    assert.equal(receipt.accepted_not_landed[0].ref, codeTask);
+    assert.notEqual(receipt.accepted_not_landed[0].status, 'landed');
 
     const status = runCli(['task', 'status', '--json'], repo);
     const projection = JSON.parse(fs.readFileSync(path.join(repo, '.atris', 'state', 'tasks.projection.json'), 'utf8'));
@@ -928,7 +957,7 @@ test('tick lands the same suite-green proof when it cites a fetched CI run URL',
     const tick = runCli(['autoland', 'tick', '--json'], repo);
     assert.equal(tick.status, 0, tick.stderr || tick.stdout);
     const receipt = JSON.parse(tick.stdout.trim().split('\n').pop());
-    assert.deepEqual(receipt.landed, [ref]);
+    assert.deepEqual(receipt.accepted, [ref]);
     assert.equal(receipt.citation_blocks, undefined);
     assert.equal(projectionByRef(repo)[ref].status, 'done');
   } finally {
@@ -948,7 +977,7 @@ test('tick still lands an ordinary command proof with exit 0', () => {
     const tick = runCli(['autoland', 'tick', '--json'], repo);
     assert.equal(tick.status, 0, tick.stderr || tick.stdout);
     const receipt = JSON.parse(tick.stdout.trim().split('\n').pop());
-    assert.deepEqual(receipt.landed, [ref]);
+    assert.deepEqual(receipt.accepted, [ref]);
     assert.equal(projectionByRef(repo)[ref].status, 'done');
   } finally {
     cleanupTempDir(base);
@@ -984,7 +1013,7 @@ test('tick certifies proof-backed reviews by re-running their check, then lands 
     const receipt = JSON.parse(tick.stdout.trim().split('\n').pop());
     // one heartbeat: the code task is certified by the re-run check AND landed
     assert.equal(receipt.reviews_certified, 1);
-    assert.deepEqual(receipt.landed, [codeTask]);
+    assert.deepEqual(receipt.accepted, [codeTask]);
 
     const projection = JSON.parse(fs.readFileSync(path.join(repo, '.atris', 'state', 'tasks.projection.json'), 'utf8'));
     const byRef = Object.fromEntries(projection.tasks.map((t) => [t.display_id, t]));
@@ -1029,7 +1058,7 @@ test('tick reuses the certification verifier result at landing', () => {
     assert.equal(tick.status, 0, tick.stderr || tick.stdout);
     const receipt = JSON.parse(tick.stdout.trim().split('\n').pop());
     assert.equal(receipt.reviews_certified, 1, JSON.stringify(receipt));
-    assert.deepEqual(receipt.landed, [codeTask]);
+    assert.deepEqual(receipt.accepted, [codeTask]);
     assert.equal(fs.readFileSync(marker, 'utf8').trim().split('\n').filter(Boolean).length, 1);
     assert.equal(projectionByRef(repo)[codeTask].status, 'done');
   } finally {
@@ -1113,7 +1142,7 @@ test('tick lands certified allowlisted verify when the landing re-run passes', (
     const tick = runCli(['autoland', 'tick', '--json'], repo);
     assert.equal(tick.status, 0, tick.stderr || tick.stdout);
     const receipt = JSON.parse(tick.stdout.trim().split('\n').pop());
-    assert.deepEqual(receipt.landed, [codeTask]);
+    assert.deepEqual(receipt.accepted, [codeTask]);
     assert.equal(receipt.revised, 0);
 
     const byRef = projectionByRef(repo);
@@ -1296,7 +1325,7 @@ test('tick from an agent session lands under the standing policy with a real-num
     assert.equal(tick.status, 0, tick.stderr || tick.stdout);
     const receipt = JSON.parse(tick.stdout.trim().split('\n').pop());
     assert.equal(receipt.accept_error, undefined, JSON.stringify(receipt));
-    assert.deepEqual(receipt.landed, [codeTask]);
+    assert.deepEqual(receipt.accepted, [codeTask]);
     // the receipt carries the sweep's real numbers, never nulls when rows exist
     assert.equal(typeof receipt.certified, 'number');
     assert.equal(typeof receipt.scanned, 'number');
@@ -1326,7 +1355,7 @@ test('tick still certifies when policy contains drain_reviews false', () => {
     assert.equal(tick.status, 0, tick.stderr || tick.stdout);
     const receipt = JSON.parse(tick.stdout.trim().split('\n').pop());
     assert.equal(receipt.reviews_certified, 1);
-    assert.deepEqual(receipt.landed, [id]);
+    assert.deepEqual(receipt.accepted, [id]);
   } finally {
     cleanupTempDir(base);
   }
@@ -1345,7 +1374,7 @@ test('two passes from one actor cannot land until the tick independently re-runs
     assert.equal(tick.status, 0, tick.stderr || tick.stdout);
     const receipt = JSON.parse(tick.stdout.trim().split('\n').pop());
     assert.equal(receipt.reviews_certified, 1);
-    assert.deepEqual(receipt.landed, [id]);
+    assert.deepEqual(receipt.accepted, [id]);
   } finally {
     cleanupTempDir(base);
   }

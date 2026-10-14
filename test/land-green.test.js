@@ -240,3 +240,46 @@ test('failing test names are lifted from node --test output and land in the flag
   const what = flagWhat({ branch: 'member/x', verify: { failing: failingLines(out) } });
   assert.match(what, /^branch member\/x fails its checks and cannot land: task status treats/);
 });
+
+test('a branch of empty commits is a no-op, never a landing, and master does not move', () => {
+  const root = makeRepo();
+  try {
+    git(root, ['checkout', '-q', '-b', 'member/empty']);
+    git(root, ['-c', 'user.name=Bench Author', '-c', 'user.email=bench@example.com', 'commit', '-q', '--allow-empty', '-m', 'Start flight: empty'], {
+      GIT_AUTHOR_DATE: THREE_DAYS_AGO,
+      GIT_COMMITTER_DATE: THREE_DAYS_AGO,
+    });
+    git(root, ['checkout', '-q', 'master']);
+    const before = git(root, ['rev-parse', 'master']);
+    const result = landStaleGreenBranches(root, { push: false, openFlags: false });
+
+    assert.deepEqual(result.candidates, ['member/empty']);
+    assert.deepEqual(result.landed, []);
+    const verdict = result.verdicts.find((v) => v.branch === 'member/empty');
+    assert.equal(verdict.action, 'no_op');
+    assert.equal(verdict.reason, 'empty_diff');
+    assert.equal(git(root, ['rev-parse', 'master']), before);
+  } finally {
+    fs.rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test('a merge that reaches no branch is not called landed', () => {
+  const root = makeRepo();
+  try {
+    branchWith(root, 'member/green', (dir) => fs.writeFileSync(path.join(dir, 'feature.txt'), 'shipped\n'));
+    // A tracked edit on the master checkout blocks the fast-forward, and with
+    // no remote nothing else carries the merge onto master.
+    fs.writeFileSync(path.join(root, 'ok.txt'), 'ok\nlocal edit\n');
+    const before = git(root, ['rev-parse', 'master']);
+    const result = landStaleGreenBranches(root, { push: false, openFlags: false });
+
+    assert.deepEqual(result.landed, []);
+    const verdict = result.verdicts.find((v) => v.branch === 'member/green');
+    assert.equal(verdict.action, 'not_landed');
+    assert.equal(verdict.reason, 'commit_not_on_target');
+    assert.equal(git(root, ['rev-parse', 'master']), before);
+  } finally {
+    fs.rmSync(root, { recursive: true, force: true });
+  }
+});

@@ -22,6 +22,7 @@ const {
 } = require('../lib/task-proof');
 const {
   candidatePolicyGate,
+  declaredCandidatePathValues,
   evaluateAutoAccept,
   isAgentCertified,
   isAutoCertifyVerifyCommandAllowed,
@@ -32,6 +33,7 @@ const {
   DENIED_TAGS,
 } = require('../lib/auto-accept-certified');
 const { evaluateAcceptVerify } = require('../lib/accept-verify-gate');
+const { proveTaskLanding } = require('../lib/landing-proof');
 const {
   taskExplanation,
   explanationFieldsFromInput,
@@ -5454,11 +5456,12 @@ function autoAcceptCertifiedSmallReviews(taskDb, db, projection) {
       results.push({ ...evaluation, action: 'accept_failed', task_id: task.id, reason: accepted.reason });
       continue;
     }
-    stampAutoAcceptMetadata(taskDb, db, task.id, REVIEW_AUTO_ACCEPT_ACTOR, REVIEW_AUTO_ACCEPT_POLICY);
+    const landing = stampAutoAcceptMetadata(taskDb, db, task, REVIEW_AUTO_ACCEPT_ACTOR, REVIEW_AUTO_ACCEPT_POLICY);
     refreshCareerXpAfterReview(accepted.reviewed);
     results.push({
       ...evaluation,
       action: 'accepted',
+      landing,
       task_id: task.id,
       reward: accepted.reviewed.episode.reward.value,
     });
@@ -10403,19 +10406,31 @@ async function cmdAccept(args) {
   if (publicSync && !publicSync.ok) process.exitCode = 1;
 }
 
-function stampAutoAcceptMetadata(taskDb, db, taskId, actor, policy) {
+// Every auto-accept passes through here, so this is where the record says
+// whether the work actually landed. Accepted is a review verdict; landed is a
+// fact about git, proven by lib/landing-proof.js or not claimed at all.
+function stampAutoAcceptMetadata(taskDb, db, task, actor, policy) {
+  const taskId = task.id;
   const row = taskDb.getTask(db, taskId);
-  if (!row) return;
+  if (!row) return null;
+  let landing;
+  try {
+    landing = proveTaskLanding(task, { files: declaredCandidatePathValues(task) });
+  } catch (err) {
+    landing = { status: 'unverified', reason: 'landing_proof_failed', detail: String((err && err.message) || err).slice(0, 200) };
+  }
   const metadata = row.metadata && typeof row.metadata === 'object' ? { ...row.metadata } : {};
   metadata.auto_accepted_at = new Date().toISOString();
   metadata.auto_accepted_by = actor;
   metadata.auto_accept_policy = policy;
+  metadata.landing = { ...landing, checked_at: metadata.auto_accepted_at };
   db.prepare(`
     UPDATE tasks
        SET metadata = ?,
            updated_at = ?
      WHERE id = ?
   `).run(JSON.stringify(metadata), Date.now(), taskId);
+  return landing;
 }
 
 function acceptReviewTask(taskDb, db, taskId, { actor, proof, reward, lesson = '', nextTask = '', autoAccepted = false }) {
@@ -10924,11 +10939,12 @@ function cmdAutoAcceptCertified(args) {
       results.push({ ...evaluation, action: 'accept_failed', reason: accepted.reason });
       continue;
     }
-    stampAutoAcceptMetadata(taskDb, db, task.id, actor, evaluation.policy);
+    const landing = stampAutoAcceptMetadata(taskDb, db, task, actor, evaluation.policy);
     refreshCareerXpAfterReview(accepted.reviewed);
     results.push({
       ...evaluation,
       action: 'accepted',
+      landing,
       reward: accepted.reviewed.episode.reward.value,
       task_id: task.id,
     });
@@ -11185,11 +11201,12 @@ function cmdSweep(args) {
       results.push({ ...evaluation, action: 'accept_failed', task_id: task.id, reason: accepted.reason });
       continue;
     }
-    stampAutoAcceptMetadata(taskDb, db, task.id, actor, evaluation.policy);
+    const landing = stampAutoAcceptMetadata(taskDb, db, task, actor, evaluation.policy);
     refreshCareerXpAfterReview(accepted.reviewed);
     results.push({
       ...evaluation,
       action: 'accepted',
+      landing,
       task_id: task.id,
       reward: accepted.reviewed.episode.reward.value,
     });

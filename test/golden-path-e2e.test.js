@@ -371,7 +371,10 @@ test('packed golden path follows printed talk do ready and autoland handoffs', (
 
     const landed = runInstalled(['autoland', 'tick']);
     assertGoldenPathStep(landed, 'autoland tick');
-    assert.match(landed.stdout, new RegExp(`1 landed \\(${taskRef}\\)`));
+    // The starter edit is never committed and its check is `git diff --check`,
+    // so the tick accepts it but must not call it landed.
+    assert.match(landed.stdout, /\b0 landed\b/);
+    assert.match(landed.stdout, new RegExp(`1 accepted but not proven landed \\(${taskRef} no.op\\)`));
 
     const taskResult = runInstalled(['task', 'show', taskRef, '--json']);
     assertGoldenPathStep(taskResult, 'landed task');
