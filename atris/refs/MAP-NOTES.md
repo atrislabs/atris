@@ -2269,3 +2269,7 @@ npm publish
 - `lib/fleet.js:2957` applies the same prompt settings and a bounded fetch when checking a build that landed itself. The real-Git regression traces that alternate landing path as well.
 - `commands/land.js:39` uses the same default branch for the landing board; `lib/codex-flight.js:79` uses it for the companion build path and preview; `lib/one-lap-validator.js:11` receives the frozen base for its diff instructions.
 - Regression: `test/engine-dispatch-mainline.test.js:1` uses real engines and Git for main/trunk dispatch and fleet landings, successful login-related output with backups available, engine-only refusals, backup refusal receipts, a server-only rename without a local tracking ref, failed fetch refusal, one lookup per flight, traced network prompt settings, failed Codex tool transcripts, absent-origin landing, and branch fallback priority. `test/one-lap-runtime.test.js:913` covers sealed review and import on main; `test/engine-dispatch-no-origin.test.js:1` covers absent and unavailable origin.
+
+## One-run member outcomes
+
+- `commands/member.js:1037` preserves tick check results when reading the live run receipt; `commands/member.js:1346` makes a failed explicit completion check return failure; `commands/member.js:1374` names the failed check. `commands/member.js:4249` removes only matching outer quotes from saved member settings. `test/member-run-one-run-outcome.test.js:1` runs the real CLI in initialized, committed temporary projects with a fake engine.
