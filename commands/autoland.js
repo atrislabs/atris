@@ -868,10 +868,12 @@ function runSshAgentSweep(root, receipt, deps = {}) {
 
 function sshAgentSweepNote(receipt) {
   const stopped = (receipt.ssh_agent_sweep?.stopped || []).length;
+  const replaced = (receipt.ssh_agent_sweep?.replaced || []).length;
   const unread = receipt.ssh_agent_sweep?.unread || [];
   const stoppedNote = stopped ? `, stopped ${stopped} leaked ssh-agent${stopped === 1 ? '' : 's'}` : '';
+  const replacedNote = replaced ? `, left ${replaced} younger replacement ssh-agent${replaced === 1 ? '' : 's'} alone` : '';
   const unreadNote = unread.length ? `, could not read the ${unread.join(' or the ')}, so some ssh-agents went unchecked` : '';
-  return stoppedNote + unreadNote;
+  return stoppedNote + replacedNote + unreadNote;
 }
 
 // An engine run whose dispatching process died never writes its own end.

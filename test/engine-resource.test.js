@@ -564,6 +564,28 @@ test('the hourly landing pass names unreadable agent scans instead of staying qu
   }
 });
 
+test('the hourly cleanup summary names younger replacements alongside stops and unread scans', () => {
+  const { runSshAgentSweep, sshAgentSweepNote } = require('../commands/autoland');
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'autoland-ssh-replaced-'));
+  try {
+    const agent = (pid, age_sec = 3600) => ({ pid, ppid: 1, uid: 501, age_sec, args: 'ssh-agent -s' });
+    const reads = [
+      { agents: [agent(200), agent(201)], referenced: new Set() },
+      { agents: [agent(200, 900), agent(201, 3601)], referenced: new Set(), unread: ['agent sockets'] },
+    ];
+    const signals = [];
+    const receipt = {};
+    runSshAgentSweep(root, receipt, { read: () => reads.shift(), uid: 501, kill: (pid, signal) => signals.push([pid, signal]) });
+    assert.deepStrictEqual(signals, [[201, 'SIGTERM']]);
+    assert.deepStrictEqual(receipt.ssh_agent_sweep.replaced, [200]);
+    assert.strictEqual(sshAgentSweepNote(receipt), ', stopped 1 leaked ssh-agent, left 1 younger replacement ssh-agent alone, could not read the agent sockets, so some ssh-agents went unchecked');
+    assert.strictEqual(sshAgentSweepNote({ ssh_agent_sweep: { replaced: [200, 201] } }), ', left 2 younger replacement ssh-agents alone');
+    assert.strictEqual(sshAgentSweepNote({ ssh_agent_sweep: { skipped: [200] } }), '');
+  } finally {
+    fs.rmSync(root, { recursive: true, force: true });
+  }
+});
+
 test('a failing read never breaks the hourly landing pass', () => {
   const { runSshAgentSweep } = require('../commands/autoland');
   const receipt = {};
