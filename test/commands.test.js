@@ -8606,15 +8606,19 @@ test('task review-lane-act executes safe drain actions and refuses human accept 
     assert.equal(afterReviewChat.current_version, beforeReviewChat.current_version + 1);
     assert.ok(afterReviewChat.messages.some(message => message.content.includes('TASK_REVIEW_CHAT')));
 
-    const continueCreated = runCli([
-      'task', 'new', 'Review lane act continues certified work',
-      '--tag', 'task',
-      '--goal-id', 'OBL-932',
-      '--json',
-    ], { cwd: dir, env });
-    assert.equal(continueCreated.status, 0, continueCreated.stderr);
-    const continueTask = JSON.parse(continueCreated.stdout).task;
-    const continueRef = continueTask.display_id;
+    const continueDb = taskStore.open(dbPath);
+    let continueTask;
+    let continueRef;
+    try {
+      continueTask = addSeedTask(continueDb, {
+        title: 'Review lane act continues certified work',
+        tag: 'task', workspaceRoot, metadata: { goal_id: 'OBL-932' },
+      });
+      assert.equal(continueTask.inserted, true);
+      continueRef = taskStore.taskDisplayRefMap(taskStore.listTasks(continueDb, { workspaceRoot })).get(continueTask.id);
+    } finally {
+      taskStore.close();
+    }
     assert.equal(runCli([
       'task', 'ready', continueRef,
       '--as', 'codex',
