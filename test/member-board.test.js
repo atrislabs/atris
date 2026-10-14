@@ -989,6 +989,34 @@ test('short boards distinguish a hidden busy member earlier failure from a curre
   }
 });
 
+test('a hidden earlier sign-in failure drops its reason once the member runs on that engine again', () => {
+  const board = (before, now) => fakeDir({
+    busy: [
+      `${at(900)} m-1 started: ${before}first job`,
+      `${at(800)} m-1 finished: failed (signed out)`,
+      `${at(60)} m-2 started: [pid ${process.pid} engine ${now}] try again`,
+      `${at(5)} m-2 running: check the fix`,
+    ],
+    ok1: [`${at(70)} m-4 finished: ok`],
+    ok2: [`${at(75)} m-5 finished: ok`],
+    broke: [`${at(90)} m-3 started: other job`, `${at(80)} m-3 finished: failed (engine error)`],
+  });
+  for (const [before, now, footer] of [
+    ['[pid 1 engine claude] ', 'claude', '3 more not shown (1 with earlier failure)'],
+    ['[pid 1 engine claude] ', 'codex', '3 more not shown (1 with earlier failure, signed out)'],
+    ['', 'claude', '3 more not shown (1 with earlier failure, signed out)'],
+  ]) {
+    const dir = board(before, now);
+    try {
+      const rows = readBoard({ dir, now: NOW });
+      assert.equal(rows.find((r) => r.member === 'busy').last_result_engine, before ? 'claude' : '');
+      assert.equal(renderBoard(rows, dir, 0, 60, 4).split('\n')[3], footer, `${before || 'untagged'} then ${now}`);
+    } finally {
+      fs.rmSync(dir, { recursive: true, force: true });
+    }
+  }
+});
+
 test('compact footers drop all before dropping a shared failure reason', () => {
   for (const reason of ['timed out', 'engine error', 'bad exit 2']) {
     const logs = {};
