@@ -138,8 +138,9 @@ const CLAUSE_AFTER_DASH = /(?<=[\w)\]"'*_`\u201d\u2019\uE001])\s*\u2014\s*(?=(?:
 // 4 is only 2", "the oldest job in the queue is stale". A verb that reports
 // a fact, with its "that" left off, is no subject word: "endpoint null,
 // proves instance was stale" keeps its comma, but "settings file is stale"
-// still joins.
-const REPORT_VERB = '(?:proves|shows|means|suggests|confirms|implies|indicates|says|ensures|guarantees)';
+// still joins. Only past forms that never describe a noun count, so
+// "suggested fix is ready" and "confirmed bugs are fixed" still join.
+const REPORT_VERB = '(?:proves|shows|means|suggests|confirms|implies|indicates|says|ensures|guarantees|proved|showed|meant)';
 const NOUN_WORD = "(?:[A-Za-z0-9_/'-]+(?:\\.[A-Za-z0-9_]+)*|\\uE000\\d+\\uE001)";
 const SUBJECT_WORD = `(?:(?!(?:and|but|or|nor|so|yet|then|not|even|when|if|unless|until|because|since|while|where|which|who|as|after|before|though|although|once|just|only)\\b)${NOUN_WORD}\\s+)`;
 const HELPING_VERB = '(?:is|are|was|were|will|would|can|cannot|could|must|should|may|might|has|have|had|does|did|exists|gets|got|needs|keeps|makes|runs|takes|goes|stays|means)';

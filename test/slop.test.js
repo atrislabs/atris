@@ -977,6 +977,9 @@ test('fix joins a noun clause after the dash with a semicolon', () => {
     // a verb that reports a fact starts no subject; a plural word before a noun does
     'Endpoint was null \u2014 proves instance was stale.',
     'The cache missed \u2014 settings file is stale.',
+    // a past form counts only when it never describes a noun
+    'The run stopped \u2014 showed queue was full.',
+    'The review is done \u2014 suggested fix is ready.',
     // "nothing" and its kin before a verb in "ed" or "s" start a clause
     'The gate held \u2014 nothing in the queue moved.',
     'Check the board \u2014 nobody claimed it.',
@@ -1066,6 +1069,8 @@ test('fix joins a noun clause after the dash with a semicolon', () => {
     'It is not green, even when the build in CI is red.',
     'Endpoint was null, proves instance was stale.',
     'The cache missed; settings file is stale.',
+    'The run stopped, showed queue was full.',
+    'The review is done; suggested fix is ready.',
     'The gate held; nothing in the queue moved.',
     'Check the board; nobody claimed it.',
     'Ship it, nothing fancy.',
