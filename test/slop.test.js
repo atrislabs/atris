@@ -852,6 +852,20 @@ test('fix drops a dash after a quote that already ends its sentence', () => {
   ]);
 });
 
+test('fix attributes a quote with no stop of its own with a comma', () => {
+  // a README testimonial; of 22 repo lines with a dash after a closing quote,
+  // none read better with another mark, so the comma is the settled choice
+  const file = tmpFile('quote-attribution.md', [
+    '> "It just works" \u2014 a happy user',
+    '> \u201cFast and boring\u201d \u2014 Jane Doe, maintainer',
+  ].join('\n'));
+  const { changes } = applyFixes([file], RULES);
+  assert.deepEqual(changes.map((c) => c.after), [
+    '> "It just works", a happy user',
+    '> \u201cFast and boring\u201d, Jane Doe, maintainer',
+  ]);
+});
+
 test('fix gives a list label that is one whole quote a colon after the quote', () => {
   // the skill zones one-pager lists sample questions, each with what it does
   const file = tmpFile('quote-label.md', [
