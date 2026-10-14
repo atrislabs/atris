@@ -981,6 +981,10 @@ test('fix joins a noun clause after the dash with a semicolon', () => {
     'IDs can be short \u2014 the CLI resolves the prefix',
     'Pills are tappable \u2014 a tap focuses the next turn on that computer.',
     'Author block docs \u2014 the live docs the Atris editor renders, with charts.',
+    // a word in "ly" that says how joins the same way; "mostly" does not
+    'Hand off \u2014 the voice acknowledges instantly and the agent answers.',
+    'Ship the patch \u2014 the fixer works cleanly.',
+    'It is old code \u2014 the tests mostly.',
     // "once", "when" or "if" with a comma and a subject after it starts a
     // second sentence; with no subject after the comma it only adds a condition
     'This is the archive \u2014 once the endgame closes, future runs can read this.',
@@ -1044,6 +1048,9 @@ test('fix joins a noun clause after the dash with a semicolon', () => {
     'IDs can be short; the CLI resolves the prefix',
     'Pills are tappable; a tap focuses the next turn on that computer.',
     'Author block docs, the live docs the Atris editor renders, with charts.',
+    'Hand off; the voice acknowledges instantly and the agent answers.',
+    'Ship the patch; the fixer works cleanly.',
+    'It is old code, the tests mostly.',
     'This is the archive; once the endgame closes, future runs can read this.',
     'Run the gate; when it passes, the branch lands.',
     'It fails, when the disk is full.',

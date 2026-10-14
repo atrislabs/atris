@@ -152,13 +152,16 @@ const PLAIN_CLAUSE_AFTER_DASH = new RegExp(`(?<=[\\w)\\]"'*_\`\\u201d\\u2019\\uE
 // verb of their own, so "the navigator reads it" joins but "the decision
 // helpers it uses" and "the decision helpers the CLI uses" stay noun phrases.
 // An object with its own "the" counts too when none of its one or two words
-// ends in "s" or "ed" and a stop or a word like "on" or "and" ends it: "the
+// ends in "s" or "ed" and a stop or a word like "on" or "when" ends it: "the
 // CLI resolves the prefix", "a tap focuses the next turn on that computer".
 // Anything else after it means a clause inside a noun phrase, so "the
 // decision helpers the CLI uses" and "the docs the Atris editor renders"
-// keep their comma.
+// keep their comma. A word in "ly" that says how counts the same way: "the
+// voice acknowledges instantly and the agent answers". Words like "mostly"
+// and "only" can point at the noun instead, "the tests mostly", so they don't.
 const OBJECT_WORD = "(?![a-z]+(?:s|ed)\\b)[A-Za-z0-9_/'-]+";
-const PLAIN_OBJECT_CLAUSE = new RegExp(`^\\s*\\u2014\\s*(?:a|an|the|every|each|no)\\s+${NOUN_WORD}\\s+(?:${NOUN_WORD}\\s+){0,2}${PLAIN_VERB}(?:(?:it|them)(?:[.!?;,]|$|\\s+(?![a-z]+(?:s|ed)\\b))|(?:the|a|an|its|their)\\s+(?:${OBJECT_WORD}\\s+)?${OBJECT_WORD}(?:[.!?;,]|$|\\s+(?:on|in|at|to|into|for|from|with|by|via|when|if|before|after|until|once|while|because|instead|rather|without)\\b))`);
+const MANNER_WORD = '(?!(?:only|mostly|mainly|largely|partly|nearly|merely|simply|exactly|especially|particularly|probably|likely|really|actually|usually|generally|typically|certainly|clearly|apparently|basically|entirely|fully|early|daily|weekly|monthly|yearly|hourly|reply|apply|supply|family|rally)\\b)[a-z]{3,}ly';
+const PLAIN_OBJECT_CLAUSE = new RegExp(`^\\s*\\u2014\\s*(?:a|an|the|every|each|no)\\s+${NOUN_WORD}\\s+(?:${NOUN_WORD}\\s+){0,2}${PLAIN_VERB}(?:(?:it|them)(?:[.!?;,]|$|\\s+(?![a-z]+(?:s|ed)\\b))|(?:the|a|an|its|their)\\s+(?:${OBJECT_WORD}\\s+)?${OBJECT_WORD}(?:[.!?;,]|$|\\s+(?:on|in|at|to|into|for|from|with|by|via|when|if|before|after|until|once|while|because|instead|rather|without)\\b)|${MANNER_WORD}(?:[.!?;,]|$|\\s+(?:and|but|on|in|at|to|into|for|from|with|by|via|when|if|before|after|until|once|while|because|instead|rather|without)\\b))`);
 // A dash before "once", "when", "if" and their kin starts a second sentence
 // when that short clause ends in a comma and a subject and verb follow it:
 // "This is the archive; once the endgame closes, future runs can read this".
