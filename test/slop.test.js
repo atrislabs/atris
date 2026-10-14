@@ -676,6 +676,21 @@ test('fix gives a bold phrase that opens a sentence partway through a line a col
   ]);
 });
 
+test('fix gives an aside already inside parentheses commas, so none nest', () => {
+  // from this repo's feature notes, where the fixer used to nest a second pair
+  const file = tmpFile('nested.md', [
+    '(It may halt for other reasons \u2014 the CLI spawn \u2014 but not for this.)',
+    'Run it (and the gate \u2014 the strict one \u2014).',
+    'Run it (twice), then the gate \u2014 the strict one \u2014 holds.',
+  ].join('\n'));
+  const { changes } = applyFixes([file], RULES);
+  assert.deepEqual(changes.map((c) => c.after), [
+    '(It may halt for other reasons, the CLI spawn, but not for this.)',
+    'Run it (and the gate, the strict one).',
+    'Run it (twice), then the gate (the strict one) holds.',
+  ]);
+});
+
 test('fix drops a dash after a quote that already ends its sentence', () => {
   // from this repo's feature notes, policies, and the endgame skill
   const file = tmpFile('quote-end.md', [

@@ -56,6 +56,11 @@ const BOLD_HEADING_DASH = /^(\s*(?:>\s*)*(?:\*\*|__)[^\u2014:*_(]*[^\s\u2014,;:.
 
 // True when one pair of parentheses wraps the whole aside, "(mostly)" but
 // not "(a) or (b)", so the fixer keeps them instead of adding a second pair.
+// True when text leaves a parenthesis open, so what follows sits inside it.
+function insideParens(s) {
+  return (s.match(/\(/g) || []).length > (s.match(/\)/g) || []).length;
+}
+
 function wrappedInParens(s) {
   if (s[0] !== '(' || s[s.length - 1] !== ')') return false;
   let depth = 0;
@@ -83,8 +88,13 @@ function fixEmDash(s, { endsBlock = false } = {}) {
     // too: "etc. **Include eliminate steps**: what gets deleted". One that ends
     // in its own punctuation, "**What now?**", keeps it and just loses the dash.
     .replace(/([.!?]["'\u201d\u2019)]*\s+)(\*\*[^*\u2014]*[^\s*\u2014]\*\*|__[^_\u2014]*[^\s_\u2014]__)\s*\u2014\s*(?=\S)/g, (m, lead, bold) => `${lead}${bold}${/[.,;:!?][*_]+$/.test(bold) ? '' : ':'} `)
-    // an aside never crosses a sentence end; dashes split by one are fixed alone
-    .replace(/\s*\u2014\s*((?:(?![.!?]["'\u201d\u2019)]*\s)[^\u2014])*[^\s\u2014])\s*\u2014\s*(?=(.?))/g, (m, aside, next) => ` ${wrappedInParens(aside) ? aside : `(${aside})`}${next && !/[.,;:!?)]/.test(next) ? ' ' : ''}`)
+    // an aside never crosses a sentence end; dashes split by one are fixed alone.
+    // An aside already inside parentheses takes commas, so none nest.
+    .replace(/\s*\u2014\s*((?:(?![.!?]["'\u201d\u2019)]*\s)[^\u2014])*[^\s\u2014])\s*\u2014\s*(?=(.?))/g, (m, aside, next, at, whole) => {
+      const gap = next && !/[.,;:!?)]/.test(next);
+      if (insideParens(whole.slice(0, at))) return `, ${aside}${gap ? ', ' : ''}`;
+      return ` ${wrappedInParens(aside) ? aside : `(${aside})`}${gap ? ' ' : ''}`;
+    })
     // a leftover dash after a quote that already ends its sentence goes, and
     // the quote keeps its own stop: 'backward." Steve Jobs', not '.",'.
     // A quoted question before a lowercase word keeps the comma below.
