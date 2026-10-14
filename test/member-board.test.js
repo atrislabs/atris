@@ -158,6 +158,30 @@ test('a narrow terminal trims job and last step so every line fits', () => {
   }
 });
 
+test('a short window keeps the header and the newest rows, and says how many did not fit', () => {
+  const logs = {};
+  for (let i = 1; i <= 8; i++) logs[`m${i}`] = [`${at(i * 10)} m-${i} started: job ${i}`, `${at(i * 10 - 5)} m-${i} running: step ${i}`];
+  const dir = fakeDir(logs);
+  try {
+    const rows = readBoard({ dir, now: NOW });
+    assert.equal(renderBoard(rows, dir).split('\n').length, 9, 'height 0 shows every row');
+    assert.equal(renderBoard(rows, dir, 0, 0, 9), renderBoard(rows, dir), 'a tall enough window changes nothing');
+
+    const lines = renderBoard(rows, dir, 0, 0, 6).split('\n');
+    assert.equal(lines.length, 6);
+    assert.match(lines[0], /^member\s+state/, 'the header stays');
+    assert.deepEqual(lines.slice(1, 4).map((l) => l.split(/\s+/)[0]), ['m1', 'm2', 'm3'], 'the newest rows stay');
+    assert.equal(lines[4], '');
+    assert.equal(lines[5], '5 more not shown, the window is too short');
+
+    const both = renderBoard(rows, dir, 2, 0, 6).split('\n');
+    assert.equal(both.length, 6);
+    assert.equal(both[5], '5 more not shown, the window is too short. 2 finished over an hour ago, hidden. --all shows them');
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
 test('last step skips writes to the member own log', () => {
   const dir = fakeDir({
     architect: [
