@@ -1611,3 +1611,19 @@ test('fix gives an order a colon after two words that name a thing', () => {
     '  app-out write; run it to completion.',
   ]);
 });
+
+test('fix gives a clause a colon after a quoted term it explains', () => {
+  // from atris-library, which came out '"Democratic dictatorship"; everyone
+  // has a voice'. A quote inside a longer sentence keeps its semicolon.
+  const file = tmpFile('quoted-term.md', [
+    'Startups. "Democratic dictatorship" \u2014 everyone has a voice, the founder decides.',
+    '\u201cFounder mode\u201d \u2014 it means you stay in the details.',
+    'We named it "the gate" \u2014 it runs before every commit.',
+  ].join('\n'));
+  const { changes } = applyFixes([file], RULES);
+  assert.deepEqual(changes.map((c) => c.after), [
+    'Startups. "Democratic dictatorship": everyone has a voice, the founder decides.',
+    '\u201cFounder mode\u201d: it means you stay in the details.',
+    'We named it "the gate"; it runs before every commit.',
+  ]);
+});

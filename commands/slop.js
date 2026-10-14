@@ -208,10 +208,13 @@ const ORDER_CLAUSE_AFTER_DASH = new RegExp(`(?<=[\\w)\\]"'*_\`\\u201d\\u2019\\uE
 
 // The mark that joins a full clause to the sentence before the dash. A short
 // opener led by "not" has no verb of its own, so the clause explains it and
-// takes a colon: "Not exhaustive: the frontier was not extended".
+// takes a colon: "Not exhaustive: the frontier was not extended". A quoted
+// term alone is being defined, so the clause after it explains the term and
+// takes a colon too: '"Democratic dictatorship": everyone has a voice'.
 function clauseJoin(left) {
   const opener = left.replace(/^(?:(?:[-*+>]|\d+[.)]|\*\*|__)\s*)+/, '');
-  return /^not\b/i.test(opener) && opener.split(/\s+/).length <= 3 ? ': ' : '; ';
+  if (/^not\b/i.test(opener) && opener.split(/\s+/).length <= 3) return ': ';
+  return /^(?:"[^"]+"|\u201c[^\u201c\u201d]+\u201d)$/.test(opener) ? ': ' : '; ';
 }
 
 // The words before the dash in the same sentence, when they can be a clause:
