@@ -6,6 +6,9 @@ const path = require('node:path');
 const { spawn, spawnSync } = require('node:child_process');
 
 const { readBoard, renderBoard, changeTracker, ago, memberRow, isAlive, stopMember } = require('../lib/member-board');
+// Piped board output reads COLUMNS as its width; the CLI runs below expect
+// the fixed cut unless a test sets it.
+delete process.env.COLUMNS;
 
 const repoRoot = path.resolve(__dirname, '..');
 const cliPath = path.join(repoRoot, 'bin', 'atris.js');
@@ -618,6 +621,30 @@ test('empty board message wraps between words on a narrow screen', () => {
   assert.equal(lines.map((l) => l.trim()).join(' '), absent, 'no word is lost or split');
   const hidden = renderBoard([], missing, 3, 40).split('\n');
   assert.ok(hidden.length > 1 && hidden.every((l) => l.length <= 40), `the hidden note fits 40 columns:\n${hidden.join('\n')}`);
+});
+
+test('piped atris member board takes its width from COLUMNS', () => {
+  const recent = new Date(Date.now() - 20_000).toISOString();
+  const dir = fakeDir({
+    checker: [`${recent} m-4 started: [pid 1 engine claude] check the release`, `${recent} m-4 finished: failed`],
+    scout: [`${recent} m-2 started: [pid 1 engine codex] map the repo`, `${recent} m-2 finished: stopped`],
+  });
+  try {
+    const board = (columns) => spawnSync(process.execPath, [cliPath, 'member', 'board'], {
+      cwd: dir, env: { ...process.env, ATRIS_PROGRESS_DIR: dir, COLUMNS: columns }, encoding: 'utf8',
+    });
+    const narrow = board('44');
+    assert.equal(narrow.status, 0, narrow.stderr);
+    const table = narrow.stdout.split('\n').filter((l) => /^(member|checker|scout)\s/.test(l));
+    assert.equal(table.length, 3, narrow.stdout);
+    assert.ok(table.every((l) => l.length <= 44), `every row fits 44 columns:\n${table.join('\n')}`);
+    assert.match(narrow.stdout, /^checker\s+failed\s/m, 'the narrow layout, not the fixed cut');
+    for (const junk of ['', 'wide', '0', '-5', '44.5']) {
+      assert.match(board(junk).stdout, /^checker\s+done failed\s+no\s+claude\s/m, `COLUMNS=${JSON.stringify(junk)} keeps the fixed cut`);
+    }
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
 });
 
 test('atris member board reads ATRIS_PROGRESS_DIR for real', () => {
