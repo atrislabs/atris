@@ -1044,6 +1044,48 @@ test('the sweep listing and the landing status name an unreadable run log instea
   }
 });
 
+test('atris scout records each engine run with a time limit kill and a crash told apart', () => {
+  const { spawnSync } = require('node:child_process');
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'scout-resource-'));
+  const bin = path.join(root, 'fake-bin');
+  const cli = path.join(__dirname, '..', 'bin', 'atris.js');
+  const fake = (body) => {
+    fs.writeFileSync(path.join(bin, 'cursor-agent'), `#!/bin/sh\n${body}\n`, { mode: 0o755 });
+  };
+  const scout = (timeoutSec) => spawnSync(process.execPath, [cli, 'scout', '--yes', '--engine', 'cursor', '--timeout', String(timeoutSec), 'where is it?'], {
+    cwd: root,
+    encoding: 'utf8',
+    env: { ...process.env, PATH: `${bin}${path.delimiter}${process.env.PATH}`, ATRIS_SKIP_UPDATE_CHECK: '1', NODE_NO_WARNINGS: '1' },
+  });
+  const ends = () => fs.readFileSync(path.join(root, RESOURCE_LOG), 'utf8').trim().split('\n').map((line) => JSON.parse(line)).filter((entry) => entry.phase === 'end');
+  try {
+    spawnSync('git', ['init', '-q'], { cwd: root });
+    fs.mkdirSync(bin);
+    fake('echo "it is in lib/fleet.js:1"');
+    const answered = scout(30);
+    assert.strictEqual(answered.status, 0, answered.stderr);
+    fake('sleep 30');
+    const slow = scout(1);
+    assert.strictEqual(slow.status, 1);
+    fake('kill -9 $$');
+    const crashed = scout(30);
+    assert.strictEqual(crashed.status, 1);
+    assert.match(crashed.stdout, /stopped by SIGKILL; killed \((machine memory low|cause unknown)/, 'the operator sees the cause, not a bare exit');
+    const log = fs.readFileSync(path.join(root, RESOURCE_LOG), 'utf8').trim().split('\n').map((line) => JSON.parse(line));
+    assert.deepStrictEqual(log.map((entry) => entry.phase), ['start', 'end', 'start', 'end', 'start', 'end']);
+    const [ok, timedOut, killed] = ends();
+    assert.deepStrictEqual([ok.engine, ok.task, ok.signal || null, ok.error || ''], ['cursor', 'scout', null, '']);
+    assert.deepStrictEqual([timedOut.signal, timedOut.timed_out, timedOut.cause], ['SIGKILL', true, 'killed (time limit reached)']);
+    assert.strictEqual(killed.signal, 'SIGKILL');
+    assert.notStrictEqual(killed.timed_out, true);
+    assert.match(killed.cause, /^killed \((machine memory low|cause unknown)/);
+    for (const entry of [ok, timedOut, killed]) assert.ok(Number.isFinite(entry.duration_ms), JSON.stringify(entry));
+    console.log('real scout run records: ' + [ok, timedOut, killed].map((entry) => `${entry.signal || 'exit'} ${entry.cause || 'no cause'}`).join(' / '));
+  } finally {
+    fs.rmSync(root, { recursive: true, force: true });
+  }
+});
+
 test('the landing status names runs closed after their parent died in the last day, and stays quiet with none', () => {
   const { spawnSync } = require('node:child_process');
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'autoland-status-lost-'));
