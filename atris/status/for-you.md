@@ -11,3 +11,8 @@
 - shipped: controlled time completes every expected outcome and cuts the focused run from 20.7s to 6.7s.
 - proof: node --test test/spaceship-supervisor.test.js, exit 0; frozen mission checks, exit 0.
 - reply: keep / revert
+
+## Quick command checks pass inside a mission
+- shipped: The quick command checks now ignore the enclosing mission engine setting while keeping their original assertions.
+- proof: `node --test test/smoke.fast.test.js test/stall-signal-health.test.js test/roster-prep-brief.test.js test/roster-run-record.test.js`, exit 0, 37 passed, zero failed.
+- reply: keep / revert

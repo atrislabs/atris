@@ -34,12 +34,15 @@ function writeFakeEngine(dir, name) {
 }
 
 function runCli(args, { cwd, env = {}, timeout = 6000 } = {}) {
+  // The enclosing mission's engine choice must not select the fixture's default.
+  const inheritedEnv = { ...process.env };
+  delete inheritedEnv.ATRIS_RUNNER_PROFILE;
   const result = spawnSync(process.execPath, [cliPath, ...args], {
     cwd,
     encoding: 'utf8',
     timeout,
     env: {
-      ...process.env,
+      ...inheritedEnv,
       ATRIS_SKIP_UPDATE_CHECK: '1',
       NODE_NO_WARNINGS: '1',
       ...env,
@@ -51,6 +54,8 @@ function runCli(args, { cwd, env = {}, timeout = 6000 } = {}) {
 
 test('real atris binary fast smoke covers core read-only commands', () => {
   const dir = makeTempDir();
+  const inheritedProfile = process.env.ATRIS_RUNNER_PROFILE;
+  process.env.ATRIS_RUNNER_PROFILE = 'codex';
   try {
     const home = path.join(dir, 'home');
     fs.mkdirSync(home, { recursive: true });
@@ -71,6 +76,8 @@ test('real atris binary fast smoke covers core read-only commands', () => {
     assert.ok(Array.isArray(payload.engines));
     assert.ok(payload.engines.some((engine) => engine.id === 'atris-fast'));
   } finally {
+    if (inheritedProfile === undefined) delete process.env.ATRIS_RUNNER_PROFILE;
+    else process.env.ATRIS_RUNNER_PROFILE = inheritedProfile;
     cleanupTempDir(dir);
   }
 });

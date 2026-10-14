@@ -2273,3 +2273,5 @@ npm publish
 - Regression: `test/engine-dispatch-mainline.test.js:1` uses real engines and Git for main/trunk dispatch and fleet landings, successful login-related output with backups available, engine-only refusals, backup refusal receipts, a server-only rename without a local tracking ref, failed fetch refusal, one lookup per flight, traced network prompt settings, failed Codex tool transcripts, absent-origin landing, and branch fallback priority. `test/one-lap-runtime.test.js:913` covers sealed review and import on main; `test/engine-dispatch-no-origin.test.js:1` covers absent and unavailable origin.
 
 - Shell supervisor alert sequence: `test/spaceship-supervisor.test.js:14` supplies date/sleep shims scoped to each temp repo. `scripts/spaceship.sh:164` checks its budget; real shell execution and git commit detection remain covered.
+
+- Quick command check isolation: `test/smoke.fast.test.js:36` removes the enclosing mission engine selection before explicit fixture overrides; `test/smoke.fast.test.js:55` reproduces inherited codex selection and restores it after checking the actual CLI.

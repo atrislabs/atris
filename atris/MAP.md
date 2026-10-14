@@ -100,6 +100,7 @@ checks the refs in both files; `atris doc-health --fix-refs` moves drifted ones.
 | improvement attempt ledger | `commands/rsi.js` `lib/rsi-record.js` | read and record Dream-RSI attempts |
 | workspace tree hash | `commands/tree.js` `lib/tree-hash.js` | atris tree hash over the doctrine files |
 | shell supervisor alert tests | `scripts/spaceship.sh`, `test/spaceship-supervisor.test.js:14` | real shell and git outcome checks; test clock advances only on supervisor sleep, so ten prescribed steps complete independently of host speed |
+| quick command checks under a running mission | `test/smoke.fast.test.js` | inherited engine selection is removed before fixture overrides; the core check deliberately inherits codex |
 | tests | `test/commands.test.js` | node --test test/ |
 | run one test | `package.json` | npm test, node --test |
 | release publish script | `scripts/publish-atris-release.js` | tag-driven publish |
