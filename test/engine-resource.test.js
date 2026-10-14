@@ -68,7 +68,7 @@ test('start and end lines append to the durable resource log', () => {
       at: '2026-10-14T08:00:00.000Z', phase: 'start', engine: 'codex', task: 'CLI-1',
       run_id: 'run-one',
       free_pct: 9, swap_used_mb: 512.25, swap_total_mb: 2048, load: [4, 3, 2],
-      leaked_ssh_agents: 0,
+      pid: process.pid, leaked_ssh_agents: 0,
     });
     assert.strictEqual(lines[1].phase, 'end');
     assert.strictEqual(lines[1].signal, 'SIGKILL');
@@ -338,7 +338,7 @@ test('history reads back the latest sweep and the latest SIGKILL, skipping bad l
     assert.strictEqual(history.last_kill.task, 'CLI-2');
     assert.strictEqual(history.kills, 2);
     assert.strictEqual(history.low_memory_kills, 1);
-    assert.deepStrictEqual(readResourceHistory(path.join(root, 'missing')), { last_sweep: null, last_kill: null, kills: 0, low_memory_kills: 0, open_runs: 0, last_open: null });
+    assert.deepStrictEqual(readResourceHistory(path.join(root, 'missing')), { last_sweep: null, last_kill: null, kills: 0, low_memory_kills: 0, open_runs: 0, parent_gone: 0, still_running: 0, last_open: null });
   } finally {
     fs.rmSync(root, { recursive: true, force: true });
   }
@@ -473,7 +473,7 @@ test('atris engine sweep names runs that started and never wrote an end', () => 
     console.log = original;
     fs.rmSync(root, { recursive: true, force: true });
   }
-  assert.match(out.join('\n'), /2 runs started with no end recorded \(still running, or stopped with their parent\); newest: cursor on CLI-9 at 2026-10-14 11:00 UTC/);
+  assert.match(out.join('\n'), /2 runs started with no end recorded: 2 from before parents were recorded; newest: cursor on CLI-9 at 2026-10-14 11:00 UTC/);
 });
 
 test('an unfinished run whose start sits more than a megabyte back is still counted', () => {
@@ -491,4 +491,35 @@ test('an unfinished run whose start sits more than a megabyte back is still coun
   } finally {
     fs.rmSync(root, { recursive: true, force: true });
   }
+});
+
+test('start lines name the process that will write the end, and sweep splits unfinished runs by whether it is alive', () => {
+  const { spawnSync } = require('node:child_process');
+  const { engineCommand } = require('../commands/engine');
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'engine-resource-parent-'));
+  const deps = { platform: 'linux', loadavg: () => [0, 0, 0], readSshAgents: () => ({ agents: [], referenced: new Set() }) };
+  const goneParent = spawnSync(process.execPath, ['-e', '']).pid;
+  const out = [];
+  const original = console.log;
+  try {
+    const start = recordEngineResource(root, { phase: 'start', engine: 'codex', task: 'LIVE', run_id: 'live' }, deps);
+    assert.strictEqual(start.pid, process.pid);
+    assert.strictEqual(recordEngineResource(root, { phase: 'end', run_id: 'live-done' }, deps).pid, undefined);
+    const file = path.join(root, RESOURCE_LOG);
+    fs.appendFileSync(file, [
+      JSON.stringify({ at: '2026-10-14T09:00:00.000Z', phase: 'start', engine: 'claude', task: 'OLD', run_id: 'no-pid' }),
+      JSON.stringify({ at: '2026-10-14T10:00:00.000Z', phase: 'start', engine: 'cursor', task: 'LOST', run_id: 'gone', pid: goneParent }),
+      '',
+    ].join('\n'));
+    const history = readResourceHistory(root);
+    assert.strictEqual(history.open_runs, 3);
+    assert.strictEqual(history.parent_gone, 1);
+    assert.strictEqual(history.still_running, 1);
+    console.log = (line) => out.push(String(line));
+    engineCommand(['sweep'], { root, engineSweep: { read: () => ({ agents: [], referenced: new Set() }), uid: 501 } });
+  } finally {
+    console.log = original;
+    fs.rmSync(root, { recursive: true, force: true });
+  }
+  assert.match(out.join('\n'), /3 runs started with no end recorded: 1 whose parent is gone, 1 still running, 1 from before parents were recorded; newest: cursor on LOST at 2026-10-14 10:00 UTC/);
 });

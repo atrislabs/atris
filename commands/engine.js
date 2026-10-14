@@ -2376,7 +2376,13 @@ function resourceHistoryLines(history) {
     : 'no sweep recorded yet');
   const started = history.last_open;
   if (started) {
-    lines.push(`${history.open_runs} run${history.open_runs === 1 ? '' : 's'} started with no end recorded (still running, or stopped with their parent);`
+    const unrecorded = history.open_runs - history.parent_gone - history.still_running;
+    const parts = [
+      history.parent_gone && `${history.parent_gone} whose parent is gone`,
+      history.still_running && `${history.still_running} still running`,
+      unrecorded && `${unrecorded} from before parents were recorded`,
+    ].filter(Boolean);
+    lines.push(`${history.open_runs} run${history.open_runs === 1 ? '' : 's'} started with no end recorded: ${parts.join(', ')};`
       + ` newest: ${started.engine || 'engine'} on ${started.task || 'an unnamed task'} at ${utcMinute(started.at)}`);
   }
   const kill = history.last_kill;
