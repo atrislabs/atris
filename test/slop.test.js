@@ -746,6 +746,8 @@ test('fix keeps a paired aside after a plain-word label as parentheses', () => {
     'Version 1.2 \u2014 released March 2026 \u2014 adds rollback.',
     '- **Build** \u2014 run it \u2014 then ship.',
     '- Retries \u2014 up to 3. Then \u2014 it stops.',
+    // two more dashes after the label pair among themselves; the label stays
+    '- Inbox Triage \u2014 23 emails \u2014 all read \u2014 processed today.',
   ].join('\n'));
   const { changes } = applyFixes([file], RULES);
   assert.deepEqual(changes.map((c) => c.after), [
@@ -753,6 +755,7 @@ test('fix keeps a paired aside after a plain-word label as parentheses', () => {
     'Version 1.2 (released March 2026) adds rollback.',
     '- **Build**: run it, then ship.',
     '- Retries: up to 3. Then, it stops.',
+    '- Inbox Triage: 23 emails (all read) processed today.',
   ]);
 });
 
