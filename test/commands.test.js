@@ -8599,6 +8599,18 @@ test('task review-lane-act executes only safe drain actions and supports dry-run
   const env = { ATRIS_TASKS_DB: dbPath, NODE_NO_WARNINGS: '1', ATRIS_AGENT_ID: 'codex', ATRIS_SKIP_UPDATE_CHECK: '1' };
   try {
     fs.mkdirSync(path.join(dir, 'atris'), { recursive: true });
+    // Show is the store projection plus enrichment, so version checks read it
+    // in-process; the show after the live review chat still runs the CLI and
+    // proves the two reads agree.
+    const { enrichTaskProjection } = require('../commands/task');
+    const showTask = (id) => {
+      const db = taskStore.open(dbPath);
+      try {
+        return enrichTaskProjection(taskStore.taskProjection(db, { taskId: id })).tasks[0];
+      } finally {
+        taskStore.close();
+      }
+    };
 
     const needsCreated = runCli([
       'task', 'new', 'Review lane act should start verification chat',
@@ -8614,7 +8626,7 @@ test('task review-lane-act executes only safe drain actions and supports dry-run
       '--as', 'codex',
       '--proof', 'node --check test/commands.test.js passed before review-lane-act chat',
     ], { cwd: dir, env }).status, 0);
-    const beforeNeeds = JSON.parse(runCli(['task', 'show', needsRef, '--json'], { cwd: dir, env }).stdout);
+    const beforeNeeds = showTask(needsTask.id);
 
     const dryReviewChat = runCli(['task', 'review-lane-act', '--goal-id', 'OBL-940', '--dry-run', '--json'], { cwd: dir, env });
     assert.equal(dryReviewChat.status, 0, dryReviewChat.stderr);
@@ -8625,7 +8637,7 @@ test('task review-lane-act executes only safe drain actions and supports dry-run
     assert.equal(dryReviewChatPayload.decision.step_action, 'review_chat');
     assert.equal(dryReviewChatPayload.safety.read_only, true);
     assert.equal(dryReviewChatPayload.safety.human_accept, false);
-    const afterDryNeeds = JSON.parse(runCli(['task', 'show', needsRef, '--json'], { cwd: dir, env }).stdout);
+    const afterDryNeeds = showTask(needsTask.id);
     assert.equal(afterDryNeeds.current_version, beforeNeeds.current_version);
 
     const liveReviewChat = runCli(['task', 'review-lane-act', '--goal-id', 'OBL-940', '--json'], { cwd: dir, env });
@@ -8640,6 +8652,9 @@ test('task review-lane-act executes only safe drain actions and supports dry-run
     const afterLiveNeeds = JSON.parse(runCli(['task', 'show', needsRef, '--json'], { cwd: dir, env }).stdout);
     assert.equal(afterLiveNeeds.current_version, beforeNeeds.current_version + 1);
     assert.equal(afterLiveNeeds.latest_event_type, 'message');
+    const afterLiveNeedsInProcess = showTask(needsTask.id);
+    assert.equal(afterLiveNeedsInProcess.current_version, afterLiveNeeds.current_version);
+    assert.equal(afterLiveNeedsInProcess.latest_event_type, afterLiveNeeds.latest_event_type);
 
     const continueCreated = runCli([
       'task', 'new', 'Review lane act should continue certified task',
@@ -8670,7 +8685,8 @@ test('task review-lane-act executes only safe drain actions and supports dry-run
       '--json',
     ], { cwd: dir, env });
     assert.equal(waitingCreated.status, 0, waitingCreated.stderr);
-    const waitingRef = JSON.parse(waitingCreated.stdout).task.display_id;
+    const waitingTask = JSON.parse(waitingCreated.stdout).task;
+    const waitingRef = waitingTask.display_id;
     assert.equal(runCli([
       'task', 'ready', waitingRef,
       '--as', 'codex',
@@ -8682,8 +8698,8 @@ test('task review-lane-act executes only safe drain actions and supports dry-run
       '--as', 'codex-review',
       '--proof', 'node --test test/commands.test.js passed during review-lane-act human gate',
     ], { cwd: dir, env }).status, 0);
-    const beforeWaiting = JSON.parse(runCli(['task', 'show', waitingRef, '--json'], { cwd: dir, env }).stdout);
-    const beforeContinue = JSON.parse(runCli(['task', 'show', continueRef, '--json'], { cwd: dir, env }).stdout);
+    const beforeWaiting = showTask(waitingTask.id);
+    const beforeContinue = showTask(continueTask.id);
 
     const dryContinue = runCli(['task', 'review-lane-act', '--goal-id', 'OBL-941', '--dry-run', '--json'], { cwd: dir, env });
     assert.equal(dryContinue.status, 0, dryContinue.stderr);
@@ -8692,7 +8708,7 @@ test('task review-lane-act executes only safe drain actions and supports dry-run
     assert.equal(dryContinuePayload.acted, false);
     assert.equal(dryContinuePayload.decision.step_action, 'continue_work');
     assert.equal(dryContinuePayload.safety.read_only, true);
-    const afterDryContinue = JSON.parse(runCli(['task', 'show', continueRef, '--json'], { cwd: dir, env }).stdout);
+    const afterDryContinue = showTask(continueTask.id);
     assert.equal(afterDryContinue.current_version, beforeContinue.current_version);
 
     const liveContinue = runCli(['task', 'review-lane-act', '--goal-id', 'OBL-941', '--json'], { cwd: dir, env });
@@ -8705,7 +8721,7 @@ test('task review-lane-act executes only safe drain actions and supports dry-run
     assert.equal(liveContinuePayload.result.parent_task_id, continueTask.id);
     assert.equal(liveContinuePayload.result.next_task.title, 'Add a follow-up created by review lane act');
     assert.equal(liveContinuePayload.safety.human_accept, false);
-    const afterWaiting = JSON.parse(runCli(['task', 'show', waitingRef, '--json'], { cwd: dir, env }).stdout);
+    const afterWaiting = showTask(waitingTask.id);
     assert.equal(afterWaiting.current_version, beforeWaiting.current_version);
     assert.equal(afterWaiting.latest_event_type, beforeWaiting.latest_event_type);
 
@@ -8716,7 +8732,8 @@ test('task review-lane-act executes only safe drain actions and supports dry-run
       '--json',
     ], { cwd: dir, env });
     assert.equal(humanOnlyCreated.status, 0, humanOnlyCreated.stderr);
-    const humanOnlyRef = JSON.parse(humanOnlyCreated.stdout).task.display_id;
+    const humanOnlyTask = JSON.parse(humanOnlyCreated.stdout).task;
+    const humanOnlyRef = humanOnlyTask.display_id;
     assert.equal(runCli([
       'task', 'ready', humanOnlyRef,
       '--as', 'codex',
@@ -8728,7 +8745,7 @@ test('task review-lane-act executes only safe drain actions and supports dry-run
       '--as', 'codex-review',
       '--proof', 'node --test test/commands.test.js passed during review-lane-act human only',
     ], { cwd: dir, env }).status, 0);
-    const beforeHumanOnly = JSON.parse(runCli(['task', 'show', humanOnlyRef, '--json'], { cwd: dir, env }).stdout);
+    const beforeHumanOnly = showTask(humanOnlyTask.id);
     const blockedHumanOnly = runCli(['task', 'review-lane-act', '--goal-id', 'OBL-942', '--json'], { cwd: dir, env });
     assert.equal(blockedHumanOnly.status, 1);
     const blockedPayload = JSON.parse(blockedHumanOnly.stdout);
@@ -8738,7 +8755,7 @@ test('task review-lane-act executes only safe drain actions and supports dry-run
     assert.equal(blockedPayload.safety.human_accept, false);
     assert.equal(blockedPayload.drain.command, null);
     assert.equal(blockedPayload.drain.api, null);
-    const afterHumanOnly = JSON.parse(runCli(['task', 'show', humanOnlyRef, '--json'], { cwd: dir, env }).stdout);
+    const afterHumanOnly = showTask(humanOnlyTask.id);
     assert.equal(afterHumanOnly.current_version, beforeHumanOnly.current_version);
   } finally {
     cleanupTempDir(dir);
