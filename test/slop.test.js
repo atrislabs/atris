@@ -3636,3 +3636,47 @@ test('fix treats a percent before a dash like the number it ends', () => {
     'Coverage rose to 80%, up from 60% last week.',
   ]);
 });
+
+test('fix counts the line above when a wrapped line holds one word before its dash', () => {
+  // from rl-exp2 and the orb onboarding notes: the clause starts on the line
+  // above, so "defense" alone before the dash still ends one; a line above
+  // that ends in a stop, or a list item, starts fresh
+  const D = String.fromCharCode(0x2014);
+  const file = tmpFile('wrapped-clause.md', [
+    'Run `chmod 644 <file>` first. The chmod is ONE-WAY',
+    `defense ${D} it doesn't auto-revert.`,
+    '',
+    'The orb pitches its paid tier mid-conversation, not on a separate paywall',
+    `screen ${D} it just did real work, so the ask lands.`,
+    '',
+    'This line ends a sentence.',
+    `Done ${D} it shipped.`,
+    '',
+    'If the answer is',
+    `no ${D} it doesn't ship.`,
+  ].join('\n'));
+  const { changes } = applyFixes([file], RULES);
+  assert.deepEqual(changes.map((c) => c.after), [
+    "defense; it doesn't auto-revert.",
+    'screen; it just did real work, so the ask lands.',
+    'Done, it shipped.',
+    "no, it doesn't ship.",
+  ]);
+});
+
+test('fix gives a verb right after a dash a comma, since the dash closed an aside', () => {
+  // from a member log: "the slice, a smoke session, is protected" had read
+  // "is protected-lane and" as a subject and cut the sentence with a semicolon
+  const D = String.fromCharCode(0x2014);
+  const file = tmpFile('aside-verb.md', [
+    `Paused because the remaining slice, backend-minted smoke session ${D} is protected-lane and won't self-land.`,
+    '',
+    'Paused because the remaining slice, backend-minted smoke',
+    `session ${D} is protected-lane and won't self-land.`,
+  ].join('\n'));
+  const { changes } = applyFixes([file], RULES);
+  assert.deepEqual(changes.map((c) => c.after), [
+    "Paused because the remaining slice, backend-minted smoke session, is protected-lane and won't self-land.",
+    "session, is protected-lane and won't self-land.",
+  ]);
+});

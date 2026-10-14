@@ -293,8 +293,10 @@ const LEADING_CLAUSE_AFTER_DASH = new RegExp(`(?<=[\\w)\\]"'*_\`%\\u201d\\u2019\
 // still reached for it". A joining word is no subject, so "but don't" and
 // "not just likes" keep their comma. After a plural, a verb with no "s"
 // counts when more words follow it: "diminishing returns now suggest
-// moving", "dead sheets still cause conflicts".
-const ADVERB_CLAUSE_AFTER_DASH = new RegExp(`(?<=[\\w)\\]"'*_\`%\\u201d\\u2019\\uE001])\\s*\\u2014\\s*(?!${NAMING_PHRASE})(?!${TIME_OPENER})(?=(?:(?:the|a|an|every|each|no)\\s+)?(?!(?:and|but|or|nor|so|yet|then|not|even|when|if|unless|until|because|since|while|where|which|who|as|after|before|though|although|once|just|only)\\b)(?:(?!(?:the|a|an|that|whose)\\b)${SUBJECT_WORD}){0,2}(?!(?:that|whose)\\b)${NOUN_WORD}\\s+(?:(?:just|still|never|already|always|now|really|actually|often|usually|rarely|finally)\\s+(?:[a-z]{2,}(?:s|ed)\\b(?<!ss|ous)|(?<=s\\s+(?:now|still|never|already|always|often|usually|rarely|finally|just)\\s+)[a-z]{3,}\\b(?=\\s+[a-z])|(?:is|are|was|were|will|would|can|could|must|should|has|have|had|does|did)\\b|[a-z]+n['\\u2019]t\\b)|[a-z]+n['\\u2019]t\\b))`, 'g');
+// moving", "dead sheets still cause conflicts". A verb like "is" right
+// after the dash has its subject before it, so the dash closed an aside:
+// "the slice, a smoke session, is protected and won't self-land".
+const ADVERB_CLAUSE_AFTER_DASH = new RegExp(`(?<=[\\w)\\]"'*_\`%\\u201d\\u2019\\uE001])\\s*\\u2014\\s*(?!${NAMING_PHRASE})(?!${TIME_OPENER})(?!${OPEN_HELPER}\\b)(?=(?:(?:the|a|an|every|each|no)\\s+)?(?!(?:and|but|or|nor|so|yet|then|not|even|when|if|unless|until|because|since|while|where|which|who|as|after|before|though|although|once|just|only)\\b)(?:(?!(?:the|a|an|that|whose)\\b)${SUBJECT_WORD}){0,2}(?!(?:that|whose)\\b)${NOUN_WORD}\\s+(?:(?:just|still|never|already|always|now|really|actually|often|usually|rarely|finally)\\s+(?:[a-z]{2,}(?:s|ed)\\b(?<!ss|ous)|(?<=s\\s+(?:now|still|never|already|always|often|usually|rarely|finally|just)\\s+)[a-z]{3,}\\b(?=\\s+[a-z])|(?:is|are|was|were|will|would|can|could|must|should|has|have|had|does|did)\\b|[a-z]+n['\\u2019]t\\b)|[a-z]+n['\\u2019]t\\b))`, 'g');
 // One bare word with no "s" and a verb in "s" that moves toward a place
 // start one too: "Blocks use overflow, content clips to the bounding box",
 // "data flows into the sheet". A plural or a word in "ly" before the verb,
@@ -435,7 +437,12 @@ function clauseJoin(left) {
 function clauseLeft(at, whole) {
   const verdict = /\S:\s+(\*\*[^*]+\*\*|__[^_]+__)\s*$/.exec(whole.slice(0, at));
   if (verdict) return verdict[1];
-  const left = whole.slice(0, at).split(/[.!?:]\s/).pop().trim();
+  const before = whole.slice(0, at).trim();
+  let left = before.split(/[.!?:]\s/).pop().trim();
+  // a wrapped line goes on with the sentence from the line above, so a word
+  // or two before its dash count with the words up there: "The chmod is
+  // ONE-WAY / defense; it doesn't auto-revert", never "defense, it doesn't"
+  if (lineAbove && left && left === before && left.split(/\s+/).length < 2) left = `${lineAbove.split(/[.!?:]\s/).pop().trim()} ${left}`;
   if (/[.!?][*_]+$/.test(left)) return null;
   const words = left.replace(/^(?:(?:[-*+>#]|\d+[.)]|\*\*|__)\s*)+/, '').split(/\s+/);
   return words.length >= 2 && !words.every((w) => /^[A-Z][a-z0-9'\u2019-]+$/.test(w)) ? left : null;
@@ -515,7 +522,12 @@ function capitalAfterLabel(label, rest, line) {
 const ARROW = /->|<-|=>|[\u2190\u2192\u2194\u21a6\u21d0\u21d2\u21d4\u27f5-\u27ff\u2794-\u27be]|[-\u2500-\u257f][>\u25b6\u25b7\u25b8\u25b9\u25ba]|[<\u25c0\u25c1\u25c2\u25c3\u25c4][-\u2500-\u257f]/;
 const ARROW_CHAIN_DASH = new RegExp(`(?<=(?:${ARROW.source}).*)\\u2014(?=.*(?:${ARROW.source}))`, 'g');
 
-function fixEmDash(s, { endsBlock = false, startsBlock = false, spans = [] } = {}) {
+// The line above, when this line carries on its sentence, set for each
+// fixEmDash call so clauseLeft can count the words it holds.
+let lineAbove = '';
+
+function fixEmDash(s, { endsBlock = false, startsBlock = false, spans = [], above = '' } = {}) {
+  lineAbove = above;
   // a dash between a file reference and the code it points at reads "is",
   // so it takes a colon even past a label colon: "`lib/a.js:12`: `runTick`",
   // which is also what the map healer reads the name from
@@ -1285,6 +1297,15 @@ function trailingMark(line, below) {
 // Returns { fixedCount, fixedFiles, changes }, where changes lists each edited
 // line as { file, line, before, after, kind } so the writer can review the fix.
 // With write: false it only reports what it would change (a dry run).
+// The line above when this line carries on its sentence: neither is a list
+// item, heading, table row or quote, and the line above ends without a stop.
+function wrappedFrom(above, line) {
+  const block = /^\s*(?:[-*+>|#]|\d+[.)]\s)/;
+  if (!above || !above.trim() || block.test(line) || /^\s*[|#]/.test(above)) return '';
+  if (/[.!?:;]["'*_)\u201d\u2019]*\s*$/.test(above)) return '';
+  return above.replace(/^\s*(?:(?:[-*+>]|\d+[.)])\s+)?/, '');
+}
+
 function applyFixes(files, rules, { write = true } = {}) {
   const fixable = rules.filter((r) => typeof r.fix === 'function');
   let fixedCount = 0; const fixedFiles = []; const changes = [];
@@ -1326,7 +1347,8 @@ function applyFixes(files, rules, { write = true } = {}) {
         const { masked, spans, restore } = r.proseOnly ? maskInlineCode(line.slice(at)) : { masked: line.slice(at), spans: [], restore: (x) => x };
         if (!r.re.test(masked)) continue;
         const startsBlock = at === 0 && (i === 0 || !lines[i - 1].trim() || /^\s{0,3}#/.test(lines[i - 1]));
-        const nl = line.slice(0, at) + restore(r.fix(masked, { endsBlock: i === lines.length - 1 || !lines[i + 1].trim(), startsBlock, spans }));
+        const above = at === 0 && !script && !startsBlock && !fenced.has(i - 1) && !skip.has(i - 1) ? wrappedFrom(lines[i - 1], line) : '';
+        const nl = line.slice(0, at) + restore(r.fix(masked, { endsBlock: i === lines.length - 1 || !lines[i + 1].trim(), startsBlock, spans, above }));
         if (nl !== line) { line = nl; fixedCount++; }
       }
       if (line !== lines[i]) { changes.push({ file, line: i + 1, before: lines[i], after: line, kind: carried || fixKind(lines[i], line) }); lines[i] = line; touched = true; }
