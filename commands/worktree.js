@@ -1215,6 +1215,13 @@ function worktreeGitActivity(worktreePath) {
   } catch {
     return null;
   }
+  return gitStoreActivity(gitDir);
+}
+
+// Same check against a git store itself (bare repo or .git dir), for callers
+// that delete stores no worktree points at.
+function gitStoreActivity(gitDir) {
+  if (!gitDir) return null;
   for (const [marker, reason] of GIT_ACTIVITY_MARKERS) {
     if (fs.existsSync(path.join(gitDir, marker))) return reason;
   }
@@ -1506,6 +1513,7 @@ module.exports = {
   defaultStartBase,
   gitFailureDetail,
   gitNetworkEnvironment,
+  gitStoreActivity,
   describeFlightAge,
   flightStampMs,
   listActiveProcessCwds,

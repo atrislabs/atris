@@ -184,6 +184,21 @@ test('fleet review cleanup keeps a sandbox while git holds its lock', () => {
   }
 });
 
+test('fleet review cleanup keeps a sandbox while git holds its quarantine store', () => {
+  const { base, repo, wt, boundary } = reviewSandbox();
+  try {
+    git(base, ['init', '-q', '--bare', boundary.quarantine]);
+    fs.writeFileSync(path.join(boundary.quarantine, 'HEAD.lock'), '');
+    const result = disposeReviewSandbox(boundary);
+    assert.deepEqual(result, { removed: false, reason: 'git_lock' });
+    assert.ok(fs.existsSync(wt));
+    assert.ok(fs.existsSync(path.join(boundary.quarantine, 'HEAD')));
+    assert.deepEqual(removalLines(repo), []);
+  } finally {
+    fs.rmSync(base, { recursive: true, force: true });
+  }
+});
+
 test('fleet review cleanup names who removed a sandbox and why', () => {
   const { base, repo, wt, boundary } = reviewSandbox();
   try {
