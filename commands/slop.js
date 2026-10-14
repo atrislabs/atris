@@ -205,7 +205,12 @@ const TIME_OPENER = '(?:each|every|any|no)\\s+time\\b';
 // "labels are noise, the placeholder IS the label" joins like "is" does.
 const CAPS_HELPER = '(?:IS|ARE|WAS|WERE|WILL|CAN|MUST|HAS|HAVE|DOES|DID)';
 const OPEN_HELPER = '(?:is|are|was|were|will|would|can|cannot|could|must|should|may|might|has|had|does|did)';
-const NOUN_CLAUSE_AFTER_DASH = new RegExp(`(?<=[\\w)\\]"'*_\`\\u201d\\u2019\\uE001])\\s*\\u2014\\s*(?!${NAMING_PHRASE})(?!${WHEN_WORD}\\b)(?!${TIME_OPENER})(?!${REPORT_VERB}\\s)(?=${SUBJECT_WORD}(?:(?!(?:the|a|an|that|whose)\\b)${SUBJECT_WORD}){0,4}${PLACE_PHRASE}(?:(?:${HELPING_VERB}|${CAPS_HELPER})\\s+[^\\s\\u2014]|${OPEN_HELPER}$))`, 'g');
+// A quoted phrase is a subject too, alone or two joined by "and", when a
+// verb like "is" follows it: 'be specific; "direct" is better than
+// "helpful"'. A quote with no verb after it stays a phrase.
+const QUOTED_PART = '(?:"[^"\\u2014]{1,80}"|\\u201c[^\\u201c\\u201d\\u2014]{1,80}\\u201d)\\s+';
+const QUOTED_SUBJECT = `${QUOTED_PART}(?:and\\s+${QUOTED_PART})?`;
+const NOUN_CLAUSE_AFTER_DASH = new RegExp(`(?<=[\\w)\\]"'*_\`\\u201d\\u2019\\uE001])\\s*\\u2014\\s*(?!${NAMING_PHRASE})(?!${WHEN_WORD}\\b)(?!${TIME_OPENER})(?!${REPORT_VERB}\\s)(?=(?:${QUOTED_SUBJECT}|${SUBJECT_WORD}(?:(?!(?:the|a|an|that|whose)\\b)${SUBJECT_WORD}){0,4}${PLACE_PHRASE})(?:(?:${HELPING_VERB}|${CAPS_HELPER})\\s+[^\\s\\u2014]|${OPEN_HELPER}$))`, 'g');
 // "Nothing", "everything" and their kin before a plain verb in "ed" or "s"
 // are a subject too: "the gate held, nothing in the queue moved". A word in
 // "ss" is never the verb, so "nothing less than" and "nothing fancy" stay.

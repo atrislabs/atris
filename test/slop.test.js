@@ -3568,3 +3568,29 @@ test('the fix diff script feeds whole paragraphs with --paragraphs', () => {
   assert.equal(r.status, 0, r.stderr);
   assert.match(r.stdout, /^1 dashed paragraph in 1 file; \d+ moved against HEAD$/m);
 });
+
+test('fix gives a quoted phrase and its verb after a dash a semicolon', () => {
+  // from create-member: a quoted phrase with "is" or "means" after it is a
+  // sentence, so a comma there is a splice; a quote with no verb after it
+  // stays a phrase, and a label before it still takes its colon
+  const D = String.fromCharCode(0x2014);
+  const file = tmpFile('quoted-subject.md', [
+    `Be specific ${D} "direct and research-driven" is better than "professional and helpful."`,
+    '',
+    `Name the state ${D} “done” means the check passed.`,
+    '',
+    `The labels drifted ${D} "Save" and "Submit" are the same button.`,
+    '',
+    `Use a short label ${D} "ship it" for the main button.`,
+    '',
+    `- **Rule** ${D} "done" is a claim until checked.`,
+  ].join('\n'));
+  const { changes } = applyFixes([file], RULES);
+  assert.deepEqual(changes.map((c) => c.after), [
+    'Be specific; "direct and research-driven" is better than "professional and helpful."',
+    'Name the state; “done” means the check passed.',
+    'The labels drifted; "Save" and "Submit" are the same button.',
+    'Use a short label, "ship it" for the main button.',
+    '- **Rule**: "done" is a claim until checked.',
+  ]);
+});
