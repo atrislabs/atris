@@ -88,7 +88,7 @@ test('board shows working, quiet, done ok, and done failed from fake logs', () =
     assert.equal(by.shipper.running_for, '', 'an ended run uses lasted instead');
 
     const screen = renderBoard(rows, dir);
-    assert.ok(screen.includes(`${longJob.slice(0, 47)}...`), 'with no terminal width the job cuts at 50');
+    assert.ok(screen.includes('Ship the member board so the operator sees...'), 'with no terminal width the job cuts at 50, at the last whole word');
     const wide = renderBoard(rows, dir, 0, 220);
     assert.ok(wide.includes(longJob), 'a wide terminal shows the whole job');
     const narrow = renderBoard(rows, dir, 0, 140);
@@ -565,9 +565,24 @@ test('a wider board never gives the job less than its 24 columns beside the step
   const side = lines(100).find((l) => l.startsWith('builder '));
   assert.match(side, /\s30s ago\s+keep the job readable\.\.\.\s+node --test test\/me\.\.\.$/, 'the job keeps 24 columns and the step gets the rest, without the words in front of a cut command');
   const narrow = lines(96);
-  assert.match(narrow.find((l) => l.startsWith('builder ')), /keep the job readable when the screen is \.\.\.$/, 'too little room for 24 beside 20: the step gets its own line');
+  assert.match(narrow.find((l) => l.startsWith('builder ')), /keep the job readable when the screen is\.\.\.$/, 'too little room for 24 beside 20: the step gets its own line');
   assert.ok(narrow.some((l) => l.startsWith('  last step: running: node --test')), narrow.join('\n'));
   assert.ok([...lines(100), ...narrow].every((l) => l.length <= 100));
+});
+
+test('a cut job ends at its last whole word on screen, a single long word still cuts', () => {
+  const now = Date.parse('2026-10-14T13:00:00Z');
+  const run = (name, job) => memberRow(name, `2026-10-14T12:50:00Z m-1 started: [pid ${process.pid}] ${job}\n2026-10-14T12:59:30Z m-1 running: git status\n`, now);
+  const rows = [
+    run('builder', 'keep the board readable on a narrow screen'),
+    run('scout', 'supercalifragilisticexpialidocious-and-more-of-it'),
+  ];
+  const at = (w) => Object.fromEntries(renderBoard(rows, '/x', 0, w).split('\n').filter((l) => /^(builder|scout) /.test(l)).map((l) => [l.split(' ')[0], l]));
+  const narrow = at(90);
+  assert.match(narrow.builder, /\s{2}keep the board\.\.\.\s+running: git status$/, Object.values(narrow).join('\n'));
+  assert.match(narrow.scout, /\s{2}supercalifragilisticex\.\.\.\s+running: git status$/, 'no space to end at: it still cuts at the room it has');
+  assert.ok(Object.values(narrow).every((l) => l.length <= 90));
+  assert.equal(rows[0].job, 'keep the board readable on a narrow screen', 'apps reading the rows get the job as written');
 });
 
 test('an 80 column board gives the job 24 columns before it keeps ago on every row', () => {
@@ -582,7 +597,7 @@ test('an 80 column board gives the job 24 columns before it keeps ago on every r
   ];
   const lines = renderBoard(rows, '/x', 0, 80).split('\n');
   const row = lines.find((l) => l.startsWith('release-sentinel '));
-  assert.match(row, /\s3s\s+Finish work-folder pr\.\.\.$/, 'ago loses its word so the job keeps 24 columns');
+  assert.match(row, /\s3s\s+Finish work-folder\.\.\.$/, 'ago loses its word so the job keeps 24 columns');
   assert.match(lines.find((l) => l.startsWith('member ')), /\sago\s+job$/, 'the header still says ago');
   assert.ok(lines.every((l) => l.length <= 80), lines.join('\n'));
 });
@@ -739,9 +754,9 @@ test('board lets job shrink to the room left on a narrow screen', () => {
   const sixty = renderBoard(rows, '/x', 0, 60).split('\n').find((l) => l.startsWith('builder'));
   assert.ok(sixty.length <= 60 && sixty.endsWith('  make the footer fit'), `at 60 columns alive and the ago word go too and the job still reads whole: ${sixty}`);
   const pane = renderBoard(rows, '/x', 0, 44).split('\n').find((l) => l.startsWith('builder'));
-  assert.ok(pane.length <= 44 && pane.endsWith('  make the foot...'), `with nothing left to give up, the job is cut to the room left, not held at 20: ${pane}`);
+  assert.ok(pane.length <= 44 && pane.endsWith('  make the...'), `with nothing left to give up, the job is cut to the room left, not held at 20: ${pane}`);
   const narrow = renderBoard(rows, '/x', 0, 30).split('\n').find((l) => l.startsWith('builder'));
-  assert.ok(narrow.endsWith('  make th...'), `a much narrower screen still shows 10 characters of job: ${narrow}`);
+  assert.ok(narrow.endsWith('  make...'), `a much narrower screen still shows the job's first word: ${narrow}`);
 });
 
 test('board wraps a footer note at word boundaries to the screen width', () => {
