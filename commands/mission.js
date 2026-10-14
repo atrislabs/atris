@@ -9585,10 +9585,13 @@ function engineVerifierResultFromRun(engineResult, engine = 'codex') {
 }
 
 function pickCrossEngineVerifier(mission, cwd = process.cwd(), preferredEngine = '') {
-  const explicit = canonicalEngineName(preferredEngine || mission?.referee_engine || '');
-  if (explicit) return explicit;
+  // The reviewer must not be the builder: a builder grading itself is no review.
+  // A named reviewer is used unless it is the builder's own engine.
   const workerEngine = canonicalEngineName(mission?.runner) || 'claude';
-  const candidates = workerEngine === 'codex' ? ['claude', 'fable', 'codex'] : ['codex', 'claude'];
+  const explicit = canonicalEngineName(preferredEngine || mission?.referee_engine || '');
+  if (explicit && explicit !== workerEngine) return explicit;
+  const candidates = (workerEngine === 'codex' ? ['claude', 'fable'] : ['codex', 'claude'])
+    .filter((candidate) => candidate !== workerEngine);
   try {
     const engines = engineRegistryView(cwd);
     for (const candidate of candidates) {
