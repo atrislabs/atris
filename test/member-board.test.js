@@ -250,6 +250,16 @@ test('watch names a run that ended and was replaced between two redraws', () => 
   assert.deepEqual(clean([run('m-2', 22, ['ok', 'died'])], 6_000), ['builder working -> done ok -> working'], 'the same run again is not a new change');
 });
 
+test('watch tells apart two runs with no process id on the same mission by their start', () => {
+  const now = Date.parse('2026-10-14T13:00:00Z');
+  const first = '2026-10-14T12:59:00Z m-1 started: build\n2026-10-14T12:59:30Z m-1 running: npm test\n';
+  const again = `${first}2026-10-14T12:59:58Z m-1 started: build\n`;
+  assert.equal(memberRow('builder', first, now).started_at, '2026-10-14T12:59:00.000Z', 'a readable start time');
+  const changed = changeTracker(60_000);
+  changed([memberRow('builder', first, now)], now);
+  assert.deepEqual(changed([memberRow('builder', again, now)], now + 3_000), ['builder working -> died -> working']);
+});
+
 test('watch names a put-away run with when it last did anything, even once it is hidden', () => {
   const now = Date.parse('2026-10-14T13:00:00Z');
   const quiet = memberRow('launcher', '2026-10-14T05:00:00Z m-4 started: score\n2026-10-14T06:00:00Z m-4 running: npm test\n', now);
