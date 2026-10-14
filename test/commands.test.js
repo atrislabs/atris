@@ -11796,7 +11796,9 @@ test('task review-chat extracts only proof-derived verifier commands', () => {
   try {
     fs.mkdirSync(path.join(dir, 'atris'), { recursive: true });
     // Setup goes straight to the task store so only ready and review-chat
-    // launch the CLI. Two launches per case instead of four.
+    // launch the CLI. Ready's own output carries the same command list
+    // review-chat shows (the first and last plain cases prove they match),
+    // so most cases read it there and launch the CLI once.
     const workspaceRoot = taskStore.workspaceRoot(dir);
     const seedClaimedTask = (title) => {
       const db = taskStore.open(dbPath);
@@ -11819,6 +11821,11 @@ test('task review-chat extracts only proof-derived verifier commands', () => {
     assert.equal(semicolonReady.status, 0, semicolonReady.stderr);
     const semicolonChat = runCli(['task', 'review-chat', semicolonRef, '--json'], { cwd: dir, env });
     assert.equal(semicolonChat.status, 0, semicolonChat.stderr);
+    assert.deepEqual(
+      JSON.parse(semicolonChat.stdout).contract.verification_focus.commands_to_verify,
+      JSON.parse(semicolonReady.stdout).handoff.verification_focus.commands_to_verify,
+      'review-chat shows the same commands ready already printed',
+    );
     assert.deepEqual(JSON.parse(semicolonChat.stdout).contract.verification_focus.commands_to_verify, [
       'node --check commands/task.js',
       'node --check test/commands.test.js',
@@ -11832,9 +11839,7 @@ test('task review-chat extracts only proof-derived verifier commands', () => {
       '--json',
     ], { cwd: dir, env });
     assert.equal(commaReady.status, 0, commaReady.stderr);
-    const commaChat = runCli(['task', 'review-chat', commaRef, '--json'], { cwd: dir, env });
-    assert.equal(commaChat.status, 0, commaChat.stderr);
-    assert.deepEqual(JSON.parse(commaChat.stdout).contract.verification_focus.commands_to_verify, [
+    assert.deepEqual(JSON.parse(commaReady.stdout).handoff.verification_focus.commands_to_verify, [
       'node --check commands/task.js',
       'node --check test/commands.test.js',
       'git status --porcelain -- commands/task.js test/commands.test.js',
@@ -11849,9 +11854,7 @@ test('task review-chat extracts only proof-derived verifier commands', () => {
       '--json',
     ], { cwd: dir, env });
     assert.equal(narratedReady.status, 0, narratedReady.stderr);
-    const narratedChat = runCli(['task', 'review-chat', narratedRef, '--json'], { cwd: dir, env });
-    assert.equal(narratedChat.status, 0, narratedChat.stderr);
-    assert.deepEqual(JSON.parse(narratedChat.stdout).contract.verification_focus.commands_to_verify, [
+    assert.deepEqual(JSON.parse(narratedReady.stdout).handoff.verification_focus.commands_to_verify, [
       'node /Users/owner/arena/atris-cli/bin/atris.js business check',
       'node /Users/owner/arena/atris-cli/bin/atris.js business share --write',
       'node /Users/owner/arena/atris-cli/bin/atris.js app list',
@@ -11865,9 +11868,7 @@ test('task review-chat extracts only proof-derived verifier commands', () => {
       '--json',
     ], { cwd: dir, env });
     assert.equal(pathPassedReady.status, 0, pathPassedReady.stderr);
-    const pathPassedChat = runCli(['task', 'review-chat', pathPassedRef, '--json'], { cwd: dir, env });
-    assert.equal(pathPassedChat.status, 0, pathPassedChat.stderr);
-    assert.deepEqual(JSON.parse(pathPassedChat.stdout).contract.verification_focus.commands_to_verify, [
+    assert.deepEqual(JSON.parse(pathPassedReady.stdout).handoff.verification_focus.commands_to_verify, [
       'node --check commands/workflow.js',
       'node --check test/apps.test.js',
       'git status --porcelain -- commands/workflow.js bin/atris.js atris/MAP.md',
@@ -11881,9 +11882,7 @@ test('task review-chat extracts only proof-derived verifier commands', () => {
       '--json',
     ], { cwd: dir, env });
     assert.equal(chainedReady.status, 0, chainedReady.stderr);
-    const chainedChat = runCli(['task', 'review-chat', chainedRef, '--json'], { cwd: dir, env });
-    assert.equal(chainedChat.status, 0, chainedChat.stderr);
-    assert.deepEqual(JSON.parse(chainedChat.stdout).contract.verification_focus.commands_to_verify, [
+    assert.deepEqual(JSON.parse(chainedReady.stdout).handoff.verification_focus.commands_to_verify, [
       'node --check commands/task.js',
       'node --check lib/task-db.js',
       'node --check test/auto-accept-certified.test.js',
@@ -11897,9 +11896,7 @@ test('task review-chat extracts only proof-derived verifier commands', () => {
       '--json',
     ], { cwd: dir, env });
     assert.equal(fencedReady.status, 0, fencedReady.stderr);
-    const fencedChat = runCli(['task', 'review-chat', fencedRef, '--json'], { cwd: dir, env });
-    assert.equal(fencedChat.status, 0, fencedChat.stderr);
-    assert.deepEqual(JSON.parse(fencedChat.stdout).contract.verification_focus.commands_to_verify, [
+    assert.deepEqual(JSON.parse(fencedReady.stdout).handoff.verification_focus.commands_to_verify, [
       'node --check commands/task.js',
       'node --check test/json-output.test.js',
     ]);
@@ -11940,9 +11937,7 @@ test('task review-chat extracts only proof-derived verifier commands', () => {
       '--json',
     ], { cwd: dir, env });
     assert.equal(detailReady.status, 0, detailReady.stderr);
-    const detailChat = runCli(['task', 'review-chat', detailRef, '--json'], { cwd: dir, env });
-    assert.equal(detailChat.status, 0, detailChat.stderr);
-    assert.deepEqual(JSON.parse(detailChat.stdout).contract.verification_focus.commands_to_verify, [
+    assert.deepEqual(JSON.parse(detailReady.stdout).handoff.verification_focus.commands_to_verify, [
       'node --check test/commands.test.js',
     ]);
 
@@ -11954,9 +11949,7 @@ test('task review-chat extracts only proof-derived verifier commands', () => {
       '--json',
     ], { cwd: dir, env });
     assert.equal(punctuationReady.status, 0, punctuationReady.stderr);
-    const punctuationChat = runCli(['task', 'review-chat', punctuationRef, '--json'], { cwd: dir, env });
-    assert.equal(punctuationChat.status, 0, punctuationChat.stderr);
-    assert.deepEqual(JSON.parse(punctuationChat.stdout).contract.verification_focus.commands_to_verify, [
+    assert.deepEqual(JSON.parse(punctuationReady.stdout).handoff.verification_focus.commands_to_verify, [
       'node --check test/commands.test.js',
     ]);
 
@@ -11985,9 +11978,7 @@ test('task review-chat extracts only proof-derived verifier commands', () => {
       '--json',
     ], { cwd: dir, env });
     assert.equal(pseudoReady.status, 0, pseudoReady.stderr);
-    const pseudoChat = runCli(['task', 'review-chat', pseudoRef, '--json'], { cwd: dir, env });
-    assert.equal(pseudoChat.status, 0, pseudoChat.stderr);
-    assert.deepEqual(JSON.parse(pseudoChat.stdout).contract.verification_focus.commands_to_verify, []);
+    assert.deepEqual(JSON.parse(pseudoReady.stdout).handoff.verification_focus.commands_to_verify, []);
 
     const npmPseudoRef = seedClaimedTask('Reject npm prose pseudo command');
     const npmPseudoReady = runCli([
@@ -11997,9 +11988,7 @@ test('task review-chat extracts only proof-derived verifier commands', () => {
       '--json',
     ], { cwd: dir, env });
     assert.equal(npmPseudoReady.status, 0, npmPseudoReady.stderr);
-    const npmPseudoChat = runCli(['task', 'review-chat', npmPseudoRef, '--json'], { cwd: dir, env });
-    assert.equal(npmPseudoChat.status, 0, npmPseudoChat.stderr);
-    assert.deepEqual(JSON.parse(npmPseudoChat.stdout).contract.verification_focus.commands_to_verify, []);
+    assert.deepEqual(JSON.parse(npmPseudoReady.stdout).handoff.verification_focus.commands_to_verify, []);
 
     const pluralPseudoRef = seedClaimedTask('Reject plural prose pseudo commands');
     const pluralPseudoReady = runCli([
@@ -12009,9 +11998,7 @@ test('task review-chat extracts only proof-derived verifier commands', () => {
       '--json',
     ], { cwd: dir, env });
     assert.equal(pluralPseudoReady.status, 0, pluralPseudoReady.stderr);
-    const pluralPseudoChat = runCli(['task', 'review-chat', pluralPseudoRef, '--json'], { cwd: dir, env });
-    assert.equal(pluralPseudoChat.status, 0, pluralPseudoChat.stderr);
-    assert.deepEqual(JSON.parse(pluralPseudoChat.stdout).contract.verification_focus.commands_to_verify, []);
+    assert.deepEqual(JSON.parse(pluralPseudoReady.stdout).handoff.verification_focus.commands_to_verify, []);
 
     const atrisSlugRef = seedClaimedTask('Reject Atris slug prose pseudo command');
     const atrisSlugReady = runCli([
@@ -12023,9 +12010,7 @@ test('task review-chat extracts only proof-derived verifier commands', () => {
     assert.equal(atrisSlugReady.status, 0, atrisSlugReady.stderr);
     const atrisSlugReadyPayload = JSON.parse(atrisSlugReady.stdout);
     assert.equal(atrisSlugReadyPayload.task.review.landing.tested, 'I attached the proof below.');
-    const atrisSlugChat = runCli(['task', 'review-chat', atrisSlugRef, '--json'], { cwd: dir, env });
-    assert.equal(atrisSlugChat.status, 0, atrisSlugChat.stderr);
-    assert.deepEqual(JSON.parse(atrisSlugChat.stdout).contract.verification_focus.commands_to_verify, []);
+    assert.deepEqual(JSON.parse(atrisSlugReady.stdout).handoff.verification_focus.commands_to_verify, []);
 
     const atrisWildcardRef = seedClaimedTask('Reject Atris wildcard prose pseudo command');
     const atrisWildcardReady = runCli([
@@ -12039,9 +12024,7 @@ test('task review-chat extracts only proof-derived verifier commands', () => {
     assert.equal(atrisWildcardReadyPayload.task.review.landing.tested, 'I ran the listed check for this result.');
     assert.doesNotMatch(atrisWildcardReadyPayload.task.review.landing.tested, /atris-\*/);
     assert.doesNotMatch(atrisWildcardReadyPayload.task.review.landing.tested, /npm test only/);
-    const atrisWildcardChat = runCli(['task', 'review-chat', atrisWildcardRef, '--json'], { cwd: dir, env });
-    assert.equal(atrisWildcardChat.status, 0, atrisWildcardChat.stderr);
-    assert.deepEqual(JSON.parse(atrisWildcardChat.stdout).contract.verification_focus.commands_to_verify, [
+    assert.deepEqual(JSON.parse(atrisWildcardReady.stdout).handoff.verification_focus.commands_to_verify, [
       'node --check test/commands.test.js',
     ]);
 
@@ -12053,9 +12036,7 @@ test('task review-chat extracts only proof-derived verifier commands', () => {
       '--json',
     ], { cwd: dir, env });
     assert.equal(proseSegmentReady.status, 0, proseSegmentReady.stderr);
-    const proseSegmentChat = runCli(['task', 'review-chat', proseSegmentRef, '--json'], { cwd: dir, env });
-    assert.equal(proseSegmentChat.status, 0, proseSegmentChat.stderr);
-    assert.deepEqual(JSON.parse(proseSegmentChat.stdout).contract.verification_focus.commands_to_verify, [
+    assert.deepEqual(JSON.parse(proseSegmentReady.stdout).handoff.verification_focus.commands_to_verify, [
       'node --check commands/task.js',
       'git status --porcelain -- commands/task.js test/commands.test.js',
     ]);
@@ -12068,9 +12049,7 @@ test('task review-chat extracts only proof-derived verifier commands', () => {
       '--json',
     ], { cwd: dir, env });
     assert.equal(thenJoinedReady.status, 0, thenJoinedReady.stderr);
-    const thenJoinedChat = runCli(['task', 'review-chat', thenJoinedRef, '--json'], { cwd: dir, env });
-    assert.equal(thenJoinedChat.status, 0, thenJoinedChat.stderr);
-    assert.deepEqual(JSON.parse(thenJoinedChat.stdout).contract.verification_focus.commands_to_verify, [
+    assert.deepEqual(JSON.parse(thenJoinedReady.stdout).handoff.verification_focus.commands_to_verify, [
       'node --check commands/task.js',
       'node --check test/commands.test.js',
     ]);
@@ -12083,9 +12062,7 @@ test('task review-chat extracts only proof-derived verifier commands', () => {
       '--json',
     ], { cwd: dir, env });
     assert.equal(pipelineReady.status, 0, pipelineReady.stderr);
-    const pipelineChat = runCli(['task', 'review-chat', pipelineRef, '--json'], { cwd: dir, env });
-    assert.equal(pipelineChat.status, 0, pipelineChat.stderr);
-    assert.deepEqual(JSON.parse(pipelineChat.stdout).contract.verification_focus.commands_to_verify, [
+    assert.deepEqual(JSON.parse(pipelineReady.stdout).handoff.verification_focus.commands_to_verify, [
       'curl -fsS http://127.0.0.1:8000/api/health | rg ok',
     ]);
 
@@ -12097,9 +12074,7 @@ test('task review-chat extracts only proof-derived verifier commands', () => {
       '--json',
     ], { cwd: dir, env });
     assert.equal(parenStatusReady.status, 0, parenStatusReady.stderr);
-    const parenStatusChat = runCli(['task', 'review-chat', parenStatusRef, '--json'], { cwd: dir, env });
-    assert.equal(parenStatusChat.status, 0, parenStatusChat.stderr);
-    assert.deepEqual(JSON.parse(parenStatusChat.stdout).contract.verification_focus.commands_to_verify, [
+    assert.deepEqual(JSON.parse(parenStatusReady.stdout).handoff.verification_focus.commands_to_verify, [
       'node --check test/commands.test.js',
     ]);
 
@@ -12111,9 +12086,7 @@ test('task review-chat extracts only proof-derived verifier commands', () => {
       '--json',
     ], { cwd: dir, env });
     assert.equal(exitStatusReady.status, 0, exitStatusReady.stderr);
-    const exitStatusChat = runCli(['task', 'review-chat', exitStatusRef, '--json'], { cwd: dir, env });
-    assert.equal(exitStatusChat.status, 0, exitStatusChat.stderr);
-    assert.deepEqual(JSON.parse(exitStatusChat.stdout).contract.verification_focus.commands_to_verify, [
+    assert.deepEqual(JSON.parse(exitStatusReady.stdout).handoff.verification_focus.commands_to_verify, [
       'node --check test/commands.test.js',
     ]);
 
@@ -12125,9 +12098,7 @@ test('task review-chat extracts only proof-derived verifier commands', () => {
       '--json',
     ], { cwd: dir, env });
     assert.equal(statusSentenceReady.status, 0, statusSentenceReady.stderr);
-    const statusSentenceChat = runCli(['task', 'review-chat', statusSentenceRef, '--json'], { cwd: dir, env });
-    assert.equal(statusSentenceChat.status, 0, statusSentenceChat.stderr);
-    assert.deepEqual(JSON.parse(statusSentenceChat.stdout).contract.verification_focus.commands_to_verify, [
+    assert.deepEqual(JSON.parse(statusSentenceReady.stdout).handoff.verification_focus.commands_to_verify, [
       'node --check commands/task.js',
     ]);
 
@@ -12139,9 +12110,7 @@ test('task review-chat extracts only proof-derived verifier commands', () => {
       '--json',
     ], { cwd: dir, env });
     assert.equal(passCountReady.status, 0, passCountReady.stderr);
-    const passCountChat = runCli(['task', 'review-chat', passCountRef, '--json'], { cwd: dir, env });
-    assert.equal(passCountChat.status, 0, passCountChat.stderr);
-    assert.deepEqual(JSON.parse(passCountChat.stdout).contract.verification_focus.commands_to_verify, [
+    assert.deepEqual(JSON.parse(passCountReady.stdout).handoff.verification_focus.commands_to_verify, [
       'node --check test/commands.test.js',
     ]);
 
@@ -12153,9 +12122,7 @@ test('task review-chat extracts only proof-derived verifier commands', () => {
       '--json',
     ], { cwd: dir, env });
     assert.equal(passExplanationReady.status, 0, passExplanationReady.stderr);
-    const passExplanationChat = runCli(['task', 'review-chat', passExplanationRef, '--json'], { cwd: dir, env });
-    assert.equal(passExplanationChat.status, 0, passExplanationChat.stderr);
-    assert.deepEqual(JSON.parse(passExplanationChat.stdout).contract.verification_focus.commands_to_verify, [
+    assert.deepEqual(JSON.parse(passExplanationReady.stdout).handoff.verification_focus.commands_to_verify, [
       'node --check test/mission-status.test.js',
     ]);
 
@@ -12167,9 +12134,7 @@ test('task review-chat extracts only proof-derived verifier commands', () => {
       '--json',
     ], { cwd: dir, env });
     assert.equal(changedFilesTailReady.status, 0, changedFilesTailReady.stderr);
-    const changedFilesTailChat = runCli(['task', 'review-chat', changedFilesTailRef, '--json'], { cwd: dir, env });
-    assert.equal(changedFilesTailChat.status, 0, changedFilesTailChat.stderr);
-    assert.deepEqual(JSON.parse(changedFilesTailChat.stdout).contract.verification_focus.commands_to_verify, [
+    assert.deepEqual(JSON.parse(changedFilesTailReady.stdout).handoff.verification_focus.commands_to_verify, [
       'node --check test/mission-status.test.js',
     ]);
 
@@ -12181,9 +12146,7 @@ test('task review-chat extracts only proof-derived verifier commands', () => {
       '--json',
     ], { cwd: dir, env });
     assert.equal(passedWithTailReady.status, 0, passedWithTailReady.stderr);
-    const passedWithTailChat = runCli(['task', 'review-chat', passedWithTailRef, '--json'], { cwd: dir, env });
-    assert.equal(passedWithTailChat.status, 0, passedWithTailChat.stderr);
-    assert.deepEqual(JSON.parse(passedWithTailChat.stdout).contract.verification_focus.commands_to_verify, [
+    assert.deepEqual(JSON.parse(passedWithTailReady.stdout).handoff.verification_focus.commands_to_verify, [
       'node scripts/verify-mission-room.js',
       'node --check test/mission-status.test.js',
     ]);
@@ -12196,9 +12159,7 @@ test('task review-chat extracts only proof-derived verifier commands', () => {
       '--json',
     ], { cwd: dir, env });
     assert.equal(exampleCommandReady.status, 0, exampleCommandReady.stderr);
-    const exampleCommandChat = runCli(['task', 'review-chat', exampleCommandRef, '--json'], { cwd: dir, env });
-    assert.equal(exampleCommandChat.status, 0, exampleCommandChat.stderr);
-    assert.deepEqual(JSON.parse(exampleCommandChat.stdout).contract.verification_focus.commands_to_verify, [
+    assert.deepEqual(JSON.parse(exampleCommandReady.stdout).handoff.verification_focus.commands_to_verify, [
       'node -c commands/task.js',
       'git status --porcelain',
     ]);
@@ -12211,9 +12172,7 @@ test('task review-chat extracts only proof-derived verifier commands', () => {
       '--json',
     ], { cwd: dir, env });
     assert.equal(commaResultReady.status, 0, commaResultReady.stderr);
-    const commaResultChat = runCli(['task', 'review-chat', commaResultRef, '--json'], { cwd: dir, env });
-    assert.equal(commaResultChat.status, 0, commaResultChat.stderr);
-    assert.deepEqual(JSON.parse(commaResultChat.stdout).contract.verification_focus.commands_to_verify, [
+    assert.deepEqual(JSON.parse(commaResultReady.stdout).handoff.verification_focus.commands_to_verify, [
       'node --check commands/mission.js',
       'git status --porcelain',
     ]);
@@ -12226,9 +12185,7 @@ test('task review-chat extracts only proof-derived verifier commands', () => {
       '--json',
     ], { cwd: dir, env });
     assert.equal(focusedSuiteReady.status, 0, focusedSuiteReady.stderr);
-    const focusedSuiteChat = runCli(['task', 'review-chat', focusedSuiteRef, '--json'], { cwd: dir, env });
-    assert.equal(focusedSuiteChat.status, 0, focusedSuiteChat.stderr);
-    assert.deepEqual(JSON.parse(focusedSuiteChat.stdout).contract.verification_focus.commands_to_verify, [
+    assert.deepEqual(JSON.parse(focusedSuiteReady.stdout).handoff.verification_focus.commands_to_verify, [
       'node scripts/verify-mission-room.js',
       'node --check test/mission-status.test.js',
     ]);
@@ -12241,9 +12198,7 @@ test('task review-chat extracts only proof-derived verifier commands', () => {
       '--json',
     ], { cwd: dir, env });
     assert.equal(commaProseReady.status, 0, commaProseReady.stderr);
-    const commaProseChat = runCli(['task', 'review-chat', commaProseRef, '--json'], { cwd: dir, env });
-    assert.equal(commaProseChat.status, 0, commaProseChat.stderr);
-    assert.deepEqual(JSON.parse(commaProseChat.stdout).contract.verification_focus.commands_to_verify, [
+    assert.deepEqual(JSON.parse(commaProseReady.stdout).handoff.verification_focus.commands_to_verify, [
       'node -c commands/task.js',
     ]);
 
@@ -12255,9 +12210,7 @@ test('task review-chat extracts only proof-derived verifier commands', () => {
       '--json',
     ], { cwd: dir, env });
     assert.equal(describedCommandReady.status, 0, describedCommandReady.stderr);
-    const describedCommandChat = runCli(['task', 'review-chat', describedCommandRef, '--json'], { cwd: dir, env });
-    assert.equal(describedCommandChat.status, 0, describedCommandChat.stderr);
-    assert.deepEqual(JSON.parse(describedCommandChat.stdout).contract.verification_focus.commands_to_verify, [
+    assert.deepEqual(JSON.parse(describedCommandReady.stdout).handoff.verification_focus.commands_to_verify, [
       'node -c commands/task.js',
       'git status --porcelain',
     ]);
@@ -12333,9 +12286,7 @@ test('task review-chat extracts only proof-derived verifier commands', () => {
       '--json',
     ], { cwd: dir, env });
     assert.equal(quotedProductReady.status, 0, quotedProductReady.stderr);
-    const quotedProductChat = runCli(['task', 'review-chat', quotedProductRef, '--json'], { cwd: dir, env });
-    assert.equal(quotedProductChat.status, 0, quotedProductChat.stderr);
-    assert.deepEqual(JSON.parse(quotedProductChat.stdout).contract.verification_focus.commands_to_verify, [
+    assert.deepEqual(JSON.parse(quotedProductReady.stdout).handoff.verification_focus.commands_to_verify, [
       'node -c commands/mission.js',
       "node --check test/mission-status.test.js --test-name-pattern 'mission report'",
       'git status --porcelain',
@@ -12381,9 +12332,7 @@ test('task review-chat extracts only proof-derived verifier commands', () => {
     const withPassingPayload = JSON.parse(withPassingReady.stdout);
     assert.doesNotMatch(withPassingPayload.task.review.landing.tested, /with 380 passing tests/);
     assert.equal(withPassingPayload.task.review.landing.checked, 'I ran the verifier named in the proof.');
-    const withPassingChat = runCli(['task', 'review-chat', withPassingRef, '--json'], { cwd: dir, env });
-    assert.equal(withPassingChat.status, 0, withPassingChat.stderr);
-    assert.deepEqual(JSON.parse(withPassingChat.stdout).contract.verification_focus.commands_to_verify, [
+    assert.deepEqual(JSON.parse(withPassingReady.stdout).handoff.verification_focus.commands_to_verify, [
       "node --check test/commands.test.js --test-name-pattern 'task review-chat extracts only proof-derived verifier commands'",
       'git status --porcelain',
     ]);
@@ -12437,9 +12386,7 @@ test('task review-chat extracts only proof-derived verifier commands', () => {
       '--json',
     ], { cwd: dir, env });
     assert.equal(rewardTailReady.status, 0, rewardTailReady.stderr);
-    const rewardTailChat = runCli(['task', 'review-chat', rewardTailRef, '--json'], { cwd: dir, env });
-    assert.equal(rewardTailChat.status, 0, rewardTailChat.stderr);
-    assert.deepEqual(JSON.parse(rewardTailChat.stdout).contract.verification_focus.commands_to_verify, [
+    assert.deepEqual(JSON.parse(rewardTailReady.stdout).handoff.verification_focus.commands_to_verify, [
       'node --check test/commands.test.js',
     ]);
 
@@ -12451,9 +12398,7 @@ test('task review-chat extracts only proof-derived verifier commands', () => {
       '--json',
     ], { cwd: dir, env });
     assert.equal(humanAcceptReady.status, 0, humanAcceptReady.stderr);
-    const humanAcceptChat = runCli(['task', 'review-chat', humanAcceptRef, '--json'], { cwd: dir, env });
-    assert.equal(humanAcceptChat.status, 0, humanAcceptChat.stderr);
-    assert.deepEqual(JSON.parse(humanAcceptChat.stdout).contract.verification_focus.commands_to_verify, [
+    assert.deepEqual(JSON.parse(humanAcceptReady.stdout).handoff.verification_focus.commands_to_verify, [
       'node --check commands/task.js',
     ]);
 
@@ -12468,9 +12413,7 @@ test('task review-chat extracts only proof-derived verifier commands', () => {
       '--json',
     ], { cwd: dir, env });
     assert.equal(longCommandReady.status, 0, longCommandReady.stderr);
-    const longCommandChat = runCli(['task', 'review-chat', longCommandRef, '--json'], { cwd: dir, env });
-    assert.equal(longCommandChat.status, 0, longCommandChat.stderr);
-    assert.deepEqual(JSON.parse(longCommandChat.stdout).contract.verification_focus.commands_to_verify, [
+    assert.deepEqual(JSON.parse(longCommandReady.stdout).handoff.verification_focus.commands_to_verify, [
       longCommand,
     ]);
 
@@ -12484,6 +12427,11 @@ test('task review-chat extracts only proof-derived verifier commands', () => {
     assert.equal(jsonFileReady.status, 0, jsonFileReady.stderr);
     const jsonFileChat = runCli(['task', 'review-chat', jsonFileRef, '--json'], { cwd: dir, env });
     assert.equal(jsonFileChat.status, 0, jsonFileChat.stderr);
+    assert.deepEqual(
+      JSON.parse(jsonFileChat.stdout).contract.verification_focus.commands_to_verify,
+      JSON.parse(jsonFileReady.stdout).handoff.verification_focus.commands_to_verify,
+      'review-chat shows the same commands ready already printed',
+    );
     assert.deepEqual(JSON.parse(jsonFileChat.stdout).contract.verification_focus.commands_to_verify, [
       'node --check test/json-output.test.js',
     ]);
