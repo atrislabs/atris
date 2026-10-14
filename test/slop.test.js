@@ -526,7 +526,7 @@ test('fix does not join a number to a date or a hyphenated word as a range', () 
   const { changes } = applyFixes([file], RULES);
   assert.deepEqual(changes.map((c) => c.after), [
     '### Tick 1: 2026-04-15',
-    'Class 1, 8-regular graphs on n=14',
+    'Class 1: 8-regular graphs on n=14',
     'pages 10-20 and 30-40.',
   ]);
 });
@@ -710,6 +710,25 @@ test('fix gives a dash that opens a short list a colon', () => {
     'Works with Docs, Sheets, Slides, creates a full copy.',
     'It held, and we ran, tested, shipped.',
     'We tried, one, two, three times it failed here today and then.',
+  ]);
+});
+
+test('fix gives a numbered name that opens a line a colon, like a label', () => {
+  // from the math night status files and a validator log in this repo
+  const file = tmpFile('numbered.md', [
+    'Class 1 \u2014 8-regular graphs on n=14:',
+    '**Next:** Tick 2 \u2014 wire the smoke check into CI.',
+    '> Phase B \u2014 the cleanup pass',
+    'We ran Class 1 \u2014 and it held.',
+    'Plan 2 \u2014 and the gate \u2014 held up.',
+  ].join('\n'));
+  const { changes } = applyFixes([file], RULES);
+  assert.deepEqual(changes.map((c) => c.after), [
+    'Class 1: 8-regular graphs on n=14:',
+    '**Next:** Tick 2: wire the smoke check into CI.',
+    '> Phase B: the cleanup pass',
+    'We ran Class 1, and it held.',
+    'Plan 2: and the gate, held up.',
   ]);
 });
 

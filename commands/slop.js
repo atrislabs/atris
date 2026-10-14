@@ -46,6 +46,11 @@ const LIST_LABEL_DASH = /^(\s*(?:[-*+]|\d+[.)])\s+)([^\u2014]{0,59}[^\s\u2014,;:
 // fixer sees inline code masked, so the masked span counts as code too.
 const LINE_LABEL_DASH = /^(\s*(?:>\s*)*)(\*\*[^*\u2014]{0,58}[^\s*\u2014]\*\*|__[^_\u2014]{0,58}[^\s_\u2014]__|`[^`]+`|\uE000\d+\uE001)\s*\u2014\s*/;
 
+// A numbered name that opens a line, alone or after a bold label that ends in
+// its colon, is a label too: "Class 1: 8-regular graphs", "**Next:** Tick 2: wire it".
+// Only known label words count, so "Shipped 3, the rest wait" keeps its comma.
+const NUMBERED_LABEL_DASH = /^(\s*(?:>\s*)*(?:(?:\*\*|__)[^*_\u2014]+:(?:\*\*|__)\s+)?)((?:Class|Step|Phase|Stage|Tick|Round|Part|Level|Tier|Day|Week|Wave|Batch|Sprint|Track|Option|Plan|Version|Section|Chapter|Case|Task|Item|Slice|Pass|Milestone) (?:\d+[a-z]?|[A-Z])(?:\.\d+)?)\s*\u2014\s*/;
+
 // A heading with one dash is a title and a subtitle, so the dash becomes a
 // colon: "Audit Gaps: Build Plan". It stays a comma when a colon already
 // sits before it, or when the subtitle opens with a joining word ("and").
@@ -81,7 +86,7 @@ function fixEmDash(s, { endsBlock = false } = {}) {
   if (endsBlock) s = s.replace(/([.,;:!?]?)\s*\u2014\s*$/, (m, p) => p || '.');
   const heading = [HEADING_DASH, BOLD_HEADING_DASH].find((re) => re.test(s));
   if (heading) return s.replace(heading, '$1: ');
-  const label = LIST_LABEL_DASH.exec(s) || LINE_LABEL_DASH.exec(s);
+  const label = LIST_LABEL_DASH.exec(s) || LINE_LABEL_DASH.exec(s) || NUMBERED_LABEL_DASH.exec(s);
   // a label that already ends in its own punctuation, "**what is it?**",
   // keeps it and just loses the dash, so no colon stacks on top. A label that
   // is one whole quote is a phrase being explained, so its colon goes after
