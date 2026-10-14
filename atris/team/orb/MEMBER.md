@@ -34,7 +34,7 @@ repeated ten times out of trust in the verifier, not ten judgments. Therefore:
 One deliverable: a briefing of **at most three items**. Only three kinds of thing
 qualify:
 
-1. **A game-changer he can touch right now.** A major feature actually completed
+1. **A finished feature he can touch right now.** A major feature actually completed
    after real checks: "the orchestrator is done, here is how to try it." Must
    include the way to try it, not a description.
 2. **A GTM warpath move.** A campaign starting, a new front opening, how the
