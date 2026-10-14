@@ -232,6 +232,12 @@ const ADVERB_CLAUSE_AFTER_DASH = new RegExp(`(?<=[\\w)\\]"'*_\`\\u201d\\u2019\\u
 // after the verb that ends the sentence: '"one font weight"; scarcity forces
 // creativity', "not build errors; xcodebuild compiles fine". A "the" or
 // "our" is no bare word, so "old code, the tests mostly" keeps its comma.
+// A plural with no "the", then a common verb that is rarely a noun and more
+// words after it, starts one too: "small phones overflow silently", "master
+// merges do not reach prod". A plural before a noun, "skills folder", is no
+// verb, and "the" is left out so "the changes users need" stays a phrase.
+const COMMON_PLAIN_VERB = '(?:need|appear|carry|say|do|seem|remain|require|reach|stay|tend|hold|lose|know|want|become|belong|depend|happen|exist|agree|refuse|include|contain)';
+const PLURAL_CLAUSE_AFTER_DASH = new RegExp(`(?<=[\\w)\\]"'*_\`\\u201d\\u2019\\uE001])\\s*\\u2014\\s*(?!${NAMING_PHRASE})(?!${TIME_OPENER})(?=(?:(?!(?:the|a|an|that|whose|this|it|its)\\b)${SUBJECT_WORD}){0,2}(?!(?:the|a|an|that|whose|this|its)\\b)[A-Za-z0-9_'-]*[a-z](?<!ss|us|is)s\\s+${COMMON_PLAIN_VERB}\\s+[^\\s\\u2014])`, 'g');
 // "Each" takes a verb in "s", so "each", up to four words and a verb in "s"
 // with more words after it start one too: "started the loop; each tick
 // re-reads the latest logs". No "the", "that" or place word may sit before
@@ -460,6 +466,12 @@ function fixEmDash(s, { endsBlock = false, startsBlock = false } = {}) {
     .replace(ADVERB_CLAUSE_AFTER_DASH, (m, at, whole) => {
       const left = clauseLeft(at, whole);
       return left ? clauseJoin(left) : m;
+    })
+    // three words or fewer after a semicolon name a thing with no verb of
+    // their own, so "6 defects; the big one, audit rows carry" stays
+    .replace(PLURAL_CLAUSE_AFTER_DASH, (m, at, whole) => {
+      const left = clauseLeft(at, whole);
+      return left && !(/;\s/.test(left) && left.split(/;\s/).pop().split(/\s+/).length <= 3) ? clauseJoin(left) : m;
     })
     .replace(EACH_CLAUSE_AFTER_DASH, (m, at, whole) => {
       const left = clauseLeft(at, whole);

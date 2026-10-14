@@ -1632,6 +1632,28 @@ test('fix joins "each", its noun and a verb in "s" after a dash with a semicolon
   ]);
 });
 
+test('fix joins a plural and a common verb with more words after a dash with a semicolon', () => {
+  // from the atris-cli, terrace and sfhq repos, where the comma made a splice
+  const file = tmpFile('plural.md', [
+    'Backgrounds set mood \u2014 flat backgrounds say "I didn\'t think about this."',
+    'The deploy gate is disabled \u2014 master merges do NOT reach prod by themselves.',
+    'The group needs no build assignment \u2014 new VALID builds appear automatically.',
+    // a "the", a plural before a noun, or a short name after a semicolon stays
+    'Read the board \u2014 the changes users need first.',
+    'Keep the list \u2014 build logs, test runs and receipts.',
+    'Six defects; the big one \u2014 audit rows carry no identity.',
+  ].join('\n'));
+  const { changes } = applyFixes([file], RULES);
+  assert.deepEqual(changes.map((c) => c.after), [
+    'Backgrounds set mood; flat backgrounds say "I didn\'t think about this."',
+    'The deploy gate is disabled; master merges do NOT reach prod by themselves.',
+    'The group needs no build assignment; new VALID builds appear automatically.',
+    'Read the board, the changes users need first.',
+    'Keep the list, build logs, test runs and receipts.',
+    'Six defects; the big one, audit rows carry no identity.',
+  ]);
+});
+
 test('fix starts the next sentence after a stop that sits before a dash', () => {
   // from the terrace repo, which came out "fine with try? the cost"
   const file = tmpFile('stop.md', [
