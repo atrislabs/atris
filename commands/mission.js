@@ -434,7 +434,13 @@ function missionTickTimeoutMs(mission, remainingMs) {
 
 function resolveMissionTickRunner(mission, root = process.cwd(), options = {}) {
   if (String(mission && mission.runner || '').trim().toLowerCase() !== MISSION_AUTO_RUNNER) {
-    return { mission, engine_id: null, requested_engine: null, engine_fallback_reason: null };
+    // A named engine still gets the roster's time limit for that engine.
+    const runner = String(mission && mission.runner || '').trim().toLowerCase();
+    const pin = runner && !(Number(mission && mission.roster_max_seconds) > 0)
+      ? require('../lib/engine-registry').rosterPinFor('executor', runner, root, options)
+      : {};
+    const limited = pin.roster_max_seconds ? { ...mission, roster_max_seconds: pin.roster_max_seconds } : mission;
+    return { mission: limited, engine_id: null, requested_engine: null, engine_fallback_reason: null };
   }
   // A mission owned by a team member runs on that member's roster pick. An
   // explicit preferred engine (or a run's --engine) still wins, and with no
@@ -1723,7 +1729,18 @@ function appendMemberLog(owner, title, fields = {}, root = process.cwd()) {
       .map(([key, value]) => `- ${key}: ${String(value).replace(/\n/g, ' ')}`),
     '',
   ];
-  fs.appendFileSync(logPath, rows.join('\n'), 'utf8');
+  let lead = '';
+  try {
+    const size = fs.statSync(logPath).size;
+    if (size > 0) {
+      const fd = fs.openSync(logPath, 'r');
+      const last = Buffer.alloc(1);
+      fs.readSync(fd, last, 0, 1, size - 1);
+      fs.closeSync(fd);
+      if (last[0] !== 0x0a) lead = '\n';
+    }
+  } catch {}
+  fs.appendFileSync(logPath, lead + rows.join('\n'), 'utf8');
   return logPath;
 }
 
@@ -3908,6 +3925,30 @@ function readTasteReviewHistory(root, limit = 4) {
     }
   }
   return { accepted, revised };
+}
+
+// Why the mission's own task was last sent back, or '' when it was not. Ticks
+// run in a worktree, so fall back to the main checkout's task projection.
+function readBoundTaskTurnDown(mission, root) {
+  const bound = mission?.xp_task || mission?.selected_target_task || null;
+  if (!bound) return '';
+  const keys = new Set([bound.task_id, bound.id, bound.ref, bound.task_ref].filter(Boolean).map(String));
+  if (!keys.size) return '';
+  const roots = [root];
+  const common = spawnSync('git', ['rev-parse', '--path-format=absolute', '--git-common-dir'], { cwd: root, encoding: 'utf8' });
+  if (common.status === 0 && String(common.stdout || '').trim()) roots.push(path.dirname(String(common.stdout).trim()));
+  for (const dir of roots) {
+    const projection = readJson(path.join(dir, '.atris', 'state', 'tasks.projection.json'));
+    const tasks = Array.isArray(projection?.tasks) ? projection.tasks : [];
+    const task = tasks.find((row) => row && [row.id, row.display_id, row.legacy_ref].some((key) => key && keys.has(String(key))));
+    if (!task) continue;
+    const metadata = task.metadata && typeof task.metadata === 'object' ? task.metadata : {};
+    if (metadata.approval_status && metadata.approval_status !== 'revise') return '';
+    const events = (Array.isArray(task.events) ? task.events : []).filter((event) => event?.event_type === 'revision_requested');
+    const note = metadata.human_revision_note || events[events.length - 1]?.payload?.note || '';
+    return missionTasteSnippet(String(note), 600);
+  }
+  return '';
 }
 
 function missionTasteMemorySignals(text) {
@@ -8938,6 +8979,16 @@ function buildTickPrompt(mission, tickIndex, maxTicks, frozen, pings = [], cwd =
       checkFeedback,
     ]
     : [];
+  let turnDown = '';
+  try { turnDown = readBoundTaskTurnDown(mission, mission.worktree_root || mission.worktree?.path || cwd); } catch {}
+  const turnDownLines = turnDown
+    ? [
+      ``,
+      `## why the last try was turned down`,
+      `the reviewer sent this task back. fix this before anything else.`,
+      turnDown,
+    ]
+    : [];
   const preloadedContextLines = buildPreloadedMemberContextLines(mission, cwd);
   const lines = [
     `# Mission Tick ${tickIndex}/${maxTicks}`,
@@ -8953,6 +9004,7 @@ function buildTickPrompt(mission, tickIndex, maxTicks, frozen, pings = [], cwd =
     `**Last tick:** ${mission.last_tick_at || 'never'}`,
     ...missionBudgetPromptLines(mission),
     ...checkFeedbackLines,
+    ...turnDownLines,
     ...(sharedProcess ? ['', sharedProcess] : []),
     ...preloadedContextLines,
     ``,
@@ -9241,7 +9293,16 @@ function spawnGenericRunnerTick(mission, opts) {
     }
 
     const startedAt = Date.now();
-    const guardedCommand = `PATH=${shellQuote(gitGuard.pathPrefix)}:$PATH; export PATH; ${cmd}`;
+    const progressMember = mission.owner || 'mission';
+    // A codex run opens its shell script with the run marker as a no-op, so
+    // member stop can prove the shell leading this group is this run. Only
+    // names member stop accepts go into the shell line.
+    const runToken = lastMessageFile && /^[A-Za-z0-9._-]+$/.test(progressMember) ? newRunToken() : '';
+    const markerPrefix = runToken ? `: ${runMarker(progressMember, runToken)}; ` : '';
+    // The trailing exit keeps a shell like dash from replacing itself with
+    // codex, which would take the marker out of the process list.
+    const markerSuffix = runToken ? '; exit $?' : '';
+    const guardedCommand = `${markerPrefix}PATH=${shellQuote(gitGuard.pathPrefix)}:$PATH; export PATH; ${cmd}${markerSuffix}`;
     const proc = spawn('sh', ['-lc', guardedCommand], {
       cwd,
       stdio: ['ignore', 'pipe', 'pipe'],
@@ -9249,9 +9310,11 @@ function spawnGenericRunnerTick(mission, opts) {
       env: { ...gitGuard.env, ATRIS_DISPATCH_DEPTH: String(dispatchDepth.depth + 1) },
     });
     updateMissionLockOwner(missionLock, proc.pid, { phase: 'tick' });
-    const progressMember = mission.owner || 'mission';
     const seenItemIds = new Set();
-    if (lastMessageFile) appendProgress(progressMember, `started: ${mission.objective || ''}`, mission.id);
+    if (lastMessageFile) {
+      const tag = runToken ? { pid: proc.pid, engine: 'codex', run: runToken } : {};
+      appendProgress(progressMember, startedLine(mission.objective, tag), mission.id);
+    }
     let stdout = '';
     let eventBuf = '';
     let lastAgentMessage = '';
@@ -9669,6 +9732,20 @@ function cappedClaudeReceiptText(text, limit = 4000) {
   if (!clean) return '';
   if (clean.length <= limit) return clean;
   return clean.slice(0, limit - 16).trimEnd() + '\n...[truncated]';
+}
+
+// The receipt keeps a capped copy of the runner's report. When the report is
+// longer than that, the whole text goes to its own file beside the receipts
+// so nothing the member wrote is lost.
+function saveFullRunnerReport(mission, text, root = process.cwd()) {
+  const clean = String(text || '').trim();
+  if (!clean || cappedClaudeReceiptText(clean) === clean) return null;
+  const runsDir = statePaths(root).runsDir;
+  fs.mkdirSync(runsDir, { recursive: true });
+  const safeTime = stampIso().replace(/[:.]/g, '-');
+  const reportPath = path.join(runsDir, `mission-${mission.id}-${safeTime}-report.md`);
+  fs.writeFileSync(reportPath, clean + '\n', 'utf8');
+  return path.relative(root, reportPath);
 }
 
 async function parseAndValidateMissionRunPhase(args) {
@@ -10296,6 +10373,7 @@ async function executeMissionRunTicksPhase(context) {
           brief_id: claudeResult.brief_id || null,
           summary: claudeResult.summary,
           receipt_text: claudeResult.receipt_text,
+          report_path: saveFullRunnerReport(mission, claudeResult.result, cwd),
           stop_reason: claudeResult.stop_reason,
           api_equivalent_estimate: claudeResult.api_equivalent_estimate,
           duration_total_ms: claudeResult.duration_total_ms,

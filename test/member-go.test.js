@@ -205,6 +205,15 @@ test('a pulled task moves to review on a passing check and back to the list on a
       });
       assert.equal(noProof.outcome, 'released');
 
+      const slow = add('Long job');
+      taskDb.claimTask(db, { id: slow, claimedBy: 'executor' });
+      const timedOut = memberGoFinishTask('executor', taskDb.getTask(db, slow), {
+        started: true, mission_id: 'm-6', mission: { status: 'running' },
+        ticks: [{ status: 'errored', reason: 'claude-timeout', ran: false }],
+      });
+      assert.equal(timedOut.outcome, 'released');
+      assert.equal(timedOut.reason, 'ran out of time before the work finished');
+
       const failed = memberGoFinishTask('executor', taskDb.getTask(db, fail), {
         started: true, mission_id: 'm-2', mission: { status: 'running' }, error: 'check failed: 2 tests red\nstack',
       });

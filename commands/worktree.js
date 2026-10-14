@@ -159,6 +159,26 @@ function branchName(member, task, now = new Date()) {
   return `codex/${slugify(member, 'member', 24)}-${slugify(task, 'task', 36)}-${stamp(now)}`;
 }
 
+// The newest earlier run of this same member+job, if its commits never reached
+// the base, so a retry continues that work instead of redoing it. Only the
+// newest run counts: once it landed or did nothing, anything older is stale.
+function lastRunBranch(root, owner, task, base, skip) {
+  const prefix = `codex/${slugify(owner, 'member', 24)}-${slugify(task, 'task', 36)}-`;
+  const listed = runGit(['for-each-ref', '--format=%(refname:short)', `refs/heads/${prefix}*`], { cwd: root, check: false });
+  if (listed.status !== 0) return null;
+  // Only exact runs of this job (stamp plus optional same-second number), so
+  // "fix-login" never matches "fix-login-page".
+  const runs = listed.stdout.split('\n').map((name) => name.trim())
+    .map((name) => ({ name, run: name.slice(prefix.length).match(/^(\d{8}-\d{6})(?:-(\d+))?$/) }))
+    .filter(({ name, run }) => run && name !== skip)
+    .sort((a, b) => b.run[1].localeCompare(a.run[1]) || Number(b.run[2] || 1) - Number(a.run[2] || 1));
+  if (!runs.length) return null;
+  const newest = runs[0].name;
+  const cherry = runGit(['cherry', base, newest], { cwd: root, check: false });
+  if (cherry.status !== 0) return null;
+  return cherry.stdout.split('\n').some((line) => line.startsWith('+')) ? newest : null;
+}
+
 function defaultWorktreePath(root, member, task, now = new Date()) {
   const name = `${slugify(member, 'member', 24)}-${slugify(task, 'task', 36)}-${stamp(now)}`;
   return path.join(path.dirname(root), '.agent-worktrees', path.basename(root), name);
@@ -529,8 +549,18 @@ function createAgentWorktree({ root = repoRoot(), member = '', agent = '', task,
     reapedBeforeStart = cleaned.removed;
     cachePrunedBeforeStart = cleaned.cachePruned;
   } catch {}
-  const branch = branchOverride || branchName(owner, task, now);
-  const target = path.resolve(pathOverride || defaultWorktreePath(root, owner, task, now));
+  let branch = branchOverride || branchName(owner, task, now);
+  let target = path.resolve(pathOverride || defaultWorktreePath(root, owner, task, now));
+  // Two runs of the same job in the same second get the same name; number
+  // the later one instead of failing it.
+  if (!pathOverride && !branchOverride) {
+    const baseBranch = branch;
+    const baseTarget = target;
+    for (let n = 2; fs.existsSync(target) && n < 100; n += 1) {
+      branch = `${baseBranch}-${n}`;
+      target = `${baseTarget}-${n}`;
+    }
+  }
   // Agent/member worktrees always cut from the mainline: honoring the
   // launcher checkout's upstream let a dispatch inherit another session's
   // in-progress feature branch (2026-07-09: an auth fix arrived carrying 13
@@ -540,9 +570,15 @@ function createAgentWorktree({ root = repoRoot(), member = '', agent = '', task,
   if (fs.existsSync(target)) throw new Error(`worktree path already exists: ${target}`);
   fs.mkdirSync(path.dirname(target), { recursive: true });
   const staleBase = refreshRemoteRef(root, checkoutBase);
+  // A retry of the same job starts from the last run's unlanded commits; it
+  // still ships to the mainline.
+  const resumedFrom = (!pathOverride && !branchOverride)
+    ? lastRunBranch(root, owner, task, checkoutBase, branch)
+    : null;
+  const startPoint = resumedFrom || checkoutBase;
   const ref = `refs/heads/${branch}`;
   const existed = runGit(['show-ref', '--verify', '--quiet', ref], { cwd: root, check: false }).status !== 1;
-  const baseCommit = runGit(['rev-parse', '--verify', `${checkoutBase}^{commit}`], { cwd: root, check: false });
+  const baseCommit = runGit(['rev-parse', '--verify', `${startPoint}^{commit}`], { cwd: root, check: false });
   const startCommit = baseCommit.status === 0 ? baseCommit.stdout.trim() : '';
   // With no local copy the start fails on its own; only a real cut gets the warning.
   if (staleBase && startCommit) {
@@ -562,7 +598,7 @@ function createAgentWorktree({ root = repoRoot(), member = '', agent = '', task,
     if (!fs.existsSync(target)) runGit(['update-ref', '-d', ref, startCommit], { cwd: root });
   };
   for (let attempt = 0; attempt < 3; attempt += 1) {
-    const added = runGit(['worktree', 'add', '-b', branch, target, checkoutBase], { cwd: root, check: false });
+    const added = runGit(['worktree', 'add', '-b', branch, target, startPoint], { cwd: root, check: false });
     if (added.status === 0) break;
     // Git can create the branch before failing to write its tracking config.
     // Drop only that untouched ref, never an existing branch or a checkout.
@@ -587,6 +623,7 @@ function createAgentWorktree({ root = repoRoot(), member = '', agent = '', task,
         branch,
         base: shipBase,
         checkout_base: checkoutBase,
+        resumed_from: resumedFrom,
         workspace_root: root,
         created_at: now.toISOString(),
       }, null, 2) + '\n',
@@ -596,7 +633,7 @@ function createAgentWorktree({ root = repoRoot(), member = '', agent = '', task,
     discardFailedStart();
     throw error;
   }
-  return { path: target, branch, base: shipBase, checkoutBase, owner, reapedBeforeStart, cachePrunedBeforeStart };
+  return { path: target, branch, base: shipBase, checkoutBase, resumedFrom, owner, reapedBeforeStart, cachePrunedBeforeStart };
 }
 
 function startWorktree(args) {
