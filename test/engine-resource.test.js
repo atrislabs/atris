@@ -422,3 +422,28 @@ test('resource history survives removal of a real linked checkout', () => {
     fs.rmSync(room, { recursive: true, force: true });
   }
 });
+
+test('a full resource log is cut back to its newest lines but keeps starts still waiting for an end', () => {
+  const { MAX_LOG_BYTES } = require('../lib/engine-resource');
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'engine-resource-cap-'));
+  try {
+    const file = path.join(root, RESOURCE_LOG);
+    fs.mkdirSync(path.dirname(file), { recursive: true });
+    const old = (run_id, phase) => JSON.stringify({ at: '2026-10-01T00:00:00.000Z', phase, engine: 'cursor', task: 'OLD', run_id, pad: 'x'.repeat(200) });
+    const lines = [old('long-run', 'start'), old('done-run', 'start'), old('done-run', 'end')];
+    while (lines.join('\n').length < MAX_LOG_BYTES) lines.push(old(`filler-${lines.length}`, 'start'), old(`filler-${lines.length}`, 'end'));
+    fs.writeFileSync(file, `${lines.join('\n')}\n`);
+    const deps = { platform: 'linux', loadavg: () => [0, 0, 0], now: () => '2026-10-14T12:00:00.000Z' };
+    recordEngineResource(root, { phase: 'end', engine: 'cursor', task: 'LONG', run_id: 'long-run', signal: 'SIGKILL' }, deps);
+    assert.ok(fs.statSync(file).size < MAX_LOG_BYTES, 'log was not cut back');
+    const kept = fs.readFileSync(file, 'utf8').trim().split('\n').map(JSON.parse);
+    const ids = (phase) => kept.filter((line) => line.phase === phase).map((line) => line.run_id);
+    assert.ok(ids('start').includes('long-run'), 'the start of a run with no end was dropped');
+    assert.ok(!ids('start').includes('done-run'), 'an old finished run was kept');
+    assert.strictEqual(kept.at(-1).run_id, 'long-run');
+    assert.strictEqual(kept.at(-1).phase, 'end');
+    assert.strictEqual(readResourceHistory(root).last_kill.run_id, 'long-run');
+  } finally {
+    fs.rmSync(root, { recursive: true, force: true });
+  }
+});
