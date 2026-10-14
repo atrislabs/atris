@@ -383,10 +383,14 @@ function clauseJoin(left) {
 // A bold verdict that is a field's whole value says the field is that, so
 // "Result: **FAIL**" is a clause: "Result: **FAIL**; the repository has
 // no runner", never a comma splice. A fragment after it keeps its comma.
+// A stop inside closing bold or italics already ended the sentence, so no
+// semicolon stacks on it: '*Who is nobody building?* Every answer', never
+// '*Who is nobody building?*; every answer'.
 function clauseLeft(at, whole) {
   const verdict = /\S:\s+(\*\*[^*]+\*\*|__[^_]+__)\s*$/.exec(whole.slice(0, at));
   if (verdict) return verdict[1];
   const left = whole.slice(0, at).split(/[.!?:]\s/).pop().trim();
+  if (/[.!?][*_]+$/.test(left)) return null;
   const words = left.replace(/^(?:(?:[-*+>#]|\d+[.)]|\*\*|__)\s*)+/, '').split(/\s+/);
   return words.length >= 2 && !words.every((w) => /^[A-Z][a-z0-9'\u2019-]+$/.test(w)) ? left : null;
 }

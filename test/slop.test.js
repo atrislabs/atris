@@ -691,6 +691,21 @@ test('fix keeps a label that ends in its own punctuation and adds no colon', () 
   ]);
 });
 
+test('fix stacks no semicolon on a question that ends inside italics or bold', () => {
+  // from podcast notes, where a full clause after the question took "?*;"
+  const file = tmpFile('emphasis-stop-clause.md', [
+    '- Prompt to find a secret: *What valuable company is nobody building?* \u2014 every correct answer is necessarily a secret',
+    'It held. **Did it?** \u2014 the gate says yes.',
+    'See Yang **et al.** \u2014 they found it',
+  ].join('\n'));
+  const { changes } = applyFixes([file], RULES);
+  assert.deepEqual(changes.map((c) => c.after), [
+    '- Prompt to find a secret: *What valuable company is nobody building?* Every correct answer is necessarily a secret',
+    'It held. **Did it?** The gate says yes.',
+    'See Yang **et al.**, they found it',
+  ]);
+});
+
 test('fix starts the next sentence with a capital after a bold or italic stop', () => {
   // a pitch FAQ wrote each question in bold, a dash, then a lowercase answer
   const file = tmpFile('bold-stop.md', [
