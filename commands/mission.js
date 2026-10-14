@@ -8,7 +8,7 @@ const { spawn, spawnSync } = require('child_process');
 const { hasFlag, readFlag, readIntFlag } = require('../lib/arg-parser');
 const { memberProcessPrompt } = require('../lib/member-context');
 const { memberIdentityLine, missionObjectiveLine } = require('../lib/member-identity');
-const { formatToolStep, appendProgress, reportProgress } = require('../lib/member-progress');
+const { formatToolStep, formatCodexEvent, appendProgress, reportProgress } = require('../lib/member-progress');
 const {
   compactErrorPayload,
   compactSuccessPayload,
@@ -28,6 +28,7 @@ const {
   resolveClaudeRunnerBin,
   resolveClaudeRunnerCommandTemplate,
   buildRunnerCommand,
+  codexJsonEventsCommand,
   RUNNER_PROFILE_DEFS,
   RUNNER_PROFILE_ALIASES,
   RUNNER_PROFILE_NAMES,
@@ -9181,11 +9182,20 @@ function spawnGenericRunnerTick(mission, opts) {
   if (dispatchDepth.tooDeep) return Promise.resolve(tooDeepRunnerResult(dispatchDepth));
   return new Promise((resolve) => {
     let promptFile = null;
+    let lastMessageFile = null;
     let cmd = '';
     let briefId = null;
     try {
       promptFile = writeRunnerPromptFile(cwd, mission.id, prompt);
       cmd = buildRunnerCommand({ promptFile, model, ...(mission.roster_effort ? { effort: mission.roster_effort } : {}) });
+      // A codex that prints JSONL events gets live step lines; its final
+      // answer comes from the last-message file, the same text stdout held.
+      const lastFile = promptFile.replace(/\.md$/, '.last.txt');
+      const eventsCmd = codexJsonEventsCommand(cmd, lastFile);
+      if (eventsCmd) {
+        cmd = eventsCmd;
+        lastMessageFile = lastFile;
+      }
       const engine = canonicalEngineName(mission.runner);
       if (engine) {
         const record = appendBriefRecord(cwd, {
@@ -9232,13 +9242,31 @@ function spawnGenericRunnerTick(mission, opts) {
       env: { ...gitGuard.env, ATRIS_DISPATCH_DEPTH: String(dispatchDepth.depth + 1) },
     });
     updateMissionLockOwner(missionLock, proc.pid, { phase: 'tick' });
+    const progressMember = mission.owner || 'mission';
+    const seenItemIds = new Set();
+    if (lastMessageFile) appendProgress(progressMember, `started: ${mission.objective || ''}`, mission.id);
     let stdout = '';
+    let eventBuf = '';
+    let lastAgentMessage = '';
     let stderr = '';
     let timedOut = false;
     let aborted = false;
 
     const cleanupPrompt = () => {
       try { if (promptFile) fs.unlinkSync(promptFile); } catch {}
+      try { if (lastMessageFile) fs.unlinkSync(lastMessageFile); } catch {}
+    };
+    const readCodexEvent = (line) => {
+      let ev;
+      try { ev = JSON.parse(line); } catch { return; }
+      const item = ev && ev.item;
+      if (ev.type === 'item.completed' && item && item.type === 'agent_message' && typeof item.text === 'string') {
+        lastAgentMessage = item.text;
+      }
+      const step = formatCodexEvent(ev, cwd);
+      if (!step || (item && item.id && seenItemIds.has(item.id))) return;
+      if (item && item.id) seenItemIds.add(item.id);
+      reportProgress(progressMember, step, mission.id);
     };
     const kill = () => {
       const killGroup = (sig) => {
@@ -9254,18 +9282,36 @@ function spawnGenericRunnerTick(mission, opts) {
       else signal.addEventListener('abort', onAbort, { once: true });
     }
 
-    proc.stdout.on('data', (chunk) => { stdout += chunk.toString(); });
+    proc.stdout.on('data', (chunk) => {
+      const text = chunk.toString();
+      stdout += text;
+      if (!lastMessageFile) return;
+      eventBuf += text;
+      let nl;
+      while ((nl = eventBuf.indexOf('\n')) !== -1) {
+        const line = eventBuf.slice(0, nl).trim();
+        eventBuf = eventBuf.slice(nl + 1);
+        if (line) readCodexEvent(line);
+      }
+    });
     proc.stderr.on('data', (chunk) => { stderr += chunk.toString(); });
 
     proc.on('close', (code) => {
       clearTimeout(timer);
+      if (lastMessageFile && eventBuf.trim()) readCodexEvent(eventBuf.trim());
+      let finalText = String(stdout || '').trim();
+      if (lastMessageFile) {
+        let lastMessage = '';
+        try { lastMessage = fs.readFileSync(lastMessageFile, 'utf8'); } catch {}
+        finalText = String(lastMessage || lastAgentMessage || '').trim();
+      }
       cleanupPrompt();
       gitGuard.cleanup();
       if (signal) signal.removeEventListener?.('abort', onAbort);
       updateMissionLockOwner(missionLock, missionLock?.driverPid);
-      const finalText = String(stdout || '').trim();
       const errStr = String(stderr || '').slice(-2000);
       const ok = code === 0 && !timedOut && !aborted;
+      if (lastMessageFile) appendProgress(progressMember, `finished: ${ok ? 'ok' : 'failed'}`, mission.id);
       const authExpired = !ok && missionRunnerAuthExpired(errStr, finalText);
       resolve({
         ok,
