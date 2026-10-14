@@ -23,6 +23,8 @@ Details for any task: atris task show <ID>
 
 ## Review
 
+- **[AIC-47]** Remove reward rejection setup launch · auto-improver
+  **Done looks like:** Developers finish reward rejection checks sooner because setup launches one fewer command.
 - **[AIC-46]** Remove weak landing rejection setup launch · auto-improver
   **Done looks like:** Developers finish weak landing rejection checks sooner because setup launches one fewer command.
 - **[AIC-45]** Remove landing sentence setup launches · auto-improver
