@@ -1008,6 +1008,11 @@ test('fix joins a noun clause after the dash with a semicolon', () => {
     'The fix is small \u2014 two lines in the fixer changed.',
     'It is done \u2014 both checks passed.',
     'Keep the board \u2014 two tests marked as flaky.',
+    // "nine of fourteen" and its kin before a plural and a verb start one too
+    'Ask who reads the key \u2014 nine of fourteen toggles read nowhere.',
+    'It was noise \u2014 2 of 2 reported "violations" were the same false positive.',
+    'Pick a plan \u2014 one of `free`, `pro` or `max`.',
+    'Check the board \u2014 two of the tests in CI.',
     // "the" and a verb in "ed" start a clause only before a stop, a word
     // like "out", or an object; a noun phrase keeps its comma
     'Ran the suite \u2014 the slow tests timed out.',
@@ -1097,6 +1102,10 @@ test('fix joins a noun clause after the dash with a semicolon', () => {
     'The fix is small; two lines in the fixer changed.',
     'It is done; both checks passed.',
     'Keep the board, two tests marked as flaky.',
+    'Ask who reads the key; nine of fourteen toggles read nowhere.',
+    'It was noise; 2 of 2 reported "violations" were the same false positive.',
+    'Pick a plan, one of `free`, `pro` or `max`.',
+    'Check the board, two of the tests in CI.',
     'Ran the suite; the slow tests timed out.',
     'We shipped it; the old flag stopped working.',
     'Ship it, the new signed build.',
