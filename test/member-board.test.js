@@ -299,25 +299,30 @@ test('a hidden last step comes back with the cheapest change that makes room', (
 });
 
 // Every width where a row shows less of its job or last step than one column
-// narrower: "74 scout job 19->8 step 0->9". Pinned below, so a layout change
-// shows which widths it fixes or breaks before any other check is edited.
+// narrower: "74 scout job 19->8 step 0->9". A signed out row's fix counts as
+// its fix wherever it sits, since with no last step it takes the job cell:
+// "83 locked job 0->21 fix 36->17". Pinned below, so a layout change shows
+// which widths it fixes or breaks before any other check is edited.
 function cliffs(rows, dir, from, to) {
   const seen = (v) => (!v || v === '-' ? 0 : v.replace(/\.\.\.$/, '').length);
   const read = (w) => {
     const [head, ...lines] = renderBoard(rows, dir, 0, w).split('\n');
     const [job, step] = [head.indexOf('job'), head.indexOf('last step')];
-    return Object.fromEntries(lines.map((l) => [l.split(' ')[0], [
-      job < 0 ? 0 : seen(l.slice(job, step < 0 ? undefined : step).trimEnd()),
-      step < 0 ? 0 : seen(l.slice(step)),
-    ]]));
+    return Object.fromEntries(lines.map((l) => {
+      const jobText = job < 0 ? '' : l.slice(job, step < 0 ? undefined : step).trimEnd();
+      const stepText = step < 0 ? '' : l.slice(step);
+      const fixInJob = step < 0 && jobText.startsWith('sign in');
+      return [l.split(' ')[0], [fixInJob ? 0 : seen(jobText), seen(fixInJob ? jobText : stepText)]];
+    }));
   };
+  const fixRow = new Set(rows.filter((r) => r.state === 'done failed' && r.last_result_reason === 'signed out').map((r) => r.member));
   const out = [];
   let was = read(from);
   for (let w = from + 1; w <= to; w++) {
     const now = read(w);
     for (const [m, [j, s]] of Object.entries(now)) {
       const [pj, ps] = was[m];
-      if (j < pj || s < ps) out.push(`${w} ${m} job ${pj}->${j} step ${ps}->${s}`);
+      if (j < pj || s < ps) out.push(`${w} ${m} job ${pj}->${j} ${fixRow.has(m) ? 'fix' : 'step'} ${ps}->${s}`);
     }
     was = now;
   }
@@ -367,12 +372,13 @@ test('a signed out row costs a wider board only the widths it is known to', () =
       // A trade: the step comes back once the fix there still names the
       // engine, so the job and every finished step read, and the fix gives
       // up only "then run it again". It used to come back at 75 as "sign in".
-      '83 locked job 36->21 step 0->17',
+      '83 locked job 0->21 fix 36->17',
     ]);
     // Open: the same live-run cliff as above, whole jobs or the live step.
+    // Here the fix also drops below naming the engine, to "sign in".
     assert.deepEqual(cliffs(rows, dir, 50, 140), [
       '74 builder job 18->10 step 0->11',
-      '74 locked job 17->10 step 0->7',
+      '74 locked job 0->10 fix 17->7',
       '74 scout job 19->10 step 0->11',
       '74 editor job 20->10 step 0->11',
     ]);
