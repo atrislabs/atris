@@ -74,9 +74,19 @@ The frozen three-file check passed 35 checks, failed 0, cancelled 0, exit 0, in 
 node --test test/stall-signal-health.test.js test/roster-prep-brief.test.js test/roster-run-record.test.js
 ```
 
+## Whole command file, step 18
+
+The whole command file ran alone and passed 437 checks, failed 0, cancelled 0, exit 0, in 344733.685 milliseconds (5 minutes 45 seconds wall clock). A process snapshot at three minutes showed the runner alive and starting short-lived task commands, with no stuck child. The earlier slow-scan result was a deadline shorter than the file's normal runtime, not a hang or leaked state. No test code changed. Output: `/tmp/auto-improver-command18.log`.
+
+```sh
+node --test --test-timeout=120000 test/commands.test.js
+```
+
+Slowest checks: task review-chat proof-derived verifier commands 28.5 seconds, task auto-accept-certified sweep past the old row cap 10.2 seconds, task review group cap 8.0 seconds, worktree ship merged no-op refusal 6.4 seconds, worktree ship isolated branch 6.0 seconds. Nine checks take over 5 seconds and 42 take over 2 seconds.
+
 ## Next move
 
-Task claiming does not reproduce the slow scan independently. Stop subdividing passing command groups: run the whole command file alone with a longer bounded deadline and save child-process snapshots if it exceeds the earlier 180-second limit. This can distinguish cumulative runtime from state leaked by earlier tests. The full command file remains unverified.
+The whole command file is green when given about six minutes. Give command-file scans a deadline of at least 420 seconds. Next, cut the 28.5-second review-chat check by finding which repeated command launches dominate it, without weakening what it asserts.
 
-next_push: Run the whole command file alone with a ten-minute deadline and capture child-process state after three minutes.
+next_push: Profile the 28.5-second review-chat check and cut its repeated command launches without changing its assertions.
 layer: capabilities
