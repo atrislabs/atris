@@ -18239,8 +18239,9 @@ test('analytics counts completions in journal', () => {
     writeTodayLog(dir, '# Log\n\n## Completed ✅\n\n- **C1: Shipped auth**\n- **C2: Fixed bug**\n\n## Inbox\n\n');
     const res = runCli(['analytics'], { cwd: dir });
     assert.equal(res.status, 0, res.stderr);
-    // Today should show 2 completions
-    assert.match(res.stdout, /2/);
+    // Match the count lines; a bare 2 also matches today's date.
+    assert.match(res.stdout, /^ +Completions: 2$/m);
+    assert.match(res.stdout, /^ +Total completions: 2$/m);
   } finally {
     cleanupTempDir(dir);
   }
