@@ -16,3 +16,8 @@
 - shipped: The quick command checks now ignore the enclosing mission engine setting while keeping their original assertions.
 - proof: `node --test test/smoke.fast.test.js test/stall-signal-health.test.js test/roster-prep-brief.test.js test/roster-run-record.test.js`, exit 0, 37 passed, zero failed.
 - reply: keep / revert
+
+## Isolated command tests keep their own Git setup
+- shipped: Command fixtures now avoid enclosing mission Git wrappers, preventing a confirmed false build failure.
+- proof: /opt/homebrew/bin/node --test --test-name-pattern='a real isolated review on main' test/one-lap-runtime.test.js, exit 0; frozen checks, exit 0, 35 passed.
+- reply: keep / revert

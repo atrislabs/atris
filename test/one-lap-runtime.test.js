@@ -17,6 +17,11 @@ const ASK = 'fix the auth bug';
 // most of a minute, so the bound only needs to catch a real hang.
 const LAP_STEP_TIMEOUT_MS = 180000;
 const LAP_TEST_TIMEOUT_MS = LAP_STEP_TIMEOUT_MS * 4;
+// The enclosing mission's git wrapper reads files outside the fixture, which
+// its sandbox cannot access. Keep fixture Git independent of that wrapper and
+// make shell-launched Node commands use the runtime that started this test.
+const fixturePath = [path.dirname(process.execPath), ...(process.env.PATH || '').split(path.delimiter)
+  .filter((dir) => !path.basename(dir).startsWith('atris-mission-git-'))].join(path.delimiter);
 
 function run(command, args, options = {}) {
   const result = spawnSync(command, args, {
@@ -238,7 +243,7 @@ function setupRuntime(mode, mainBranch = 'master') {
     HOME: home,
     XDG_CONFIG_HOME: path.join(home, '.config'),
     XDG_CACHE_HOME: path.join(home, '.cache'),
-    PATH: `${fakeBin}${path.delimiter}${process.env.PATH || ''}`,
+    PATH: `${fakeBin}${path.delimiter}${fixturePath}`,
     ATRIS_TASKS_DB: db,
     ATRIS_NO_INTERACTIVE: '1',
     ATRIS_SKIP_UPDATE_CHECK: '1',
@@ -259,7 +264,9 @@ function setupRuntime(mode, mainBranch = 'master') {
     ATRIS_PUSH_URL: path.join(base, 'push-url.txt'),
     ATRIS_PUSH_CONFIG: path.join(base, 'push-config.txt'),
     ATRIS_BOUNDARY_DUMP: path.join(base, 'boundary-dump.txt'),
-    ATRIS_REAL_GIT: spawnSync('/bin/sh', ['-c', 'command -v git'], { encoding: 'utf8' }).stdout.trim(),
+    ATRIS_REAL_GIT: spawnSync('/bin/sh', ['-c', 'command -v git'], {
+      encoding: 'utf8', env: { ...process.env, PATH: fixturePath },
+    }).stdout.trim(),
     NODE_NO_WARNINGS: '1',
     USER: 'lap-test',
   };
