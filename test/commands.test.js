@@ -8570,15 +8570,20 @@ test('task review-lane-act executes safe drain actions and refuses human accept 
   try {
     fs.mkdirSync(path.join(dir, 'atris'), { recursive: true });
 
-    const reviewCreated = runCli([
-      'task', 'new', 'Review lane act starts verification chat',
-      '--tag', 'task',
-      '--goal-id', 'OBL-931',
-      '--json',
-    ], { cwd: dir, env });
-    assert.equal(reviewCreated.status, 0, reviewCreated.stderr);
-    const reviewTask = JSON.parse(reviewCreated.stdout).task;
-    const reviewRef = reviewTask.display_id;
+    // Seed creation only; exercise review actions and human refusal on the CLI.
+    const workspaceRoot = taskStore.workspaceRoot(dir);
+    const db = taskStore.open(dbPath);
+    let reviewRef;
+    try {
+      const reviewTask = addSeedTask(db, {
+        title: 'Review lane act starts verification chat',
+        tag: 'task', workspaceRoot, metadata: { goal_id: 'OBL-931' },
+      });
+      assert.equal(reviewTask.inserted, true);
+      reviewRef = taskStore.taskDisplayRefMap(taskStore.listTasks(db, { workspaceRoot })).get(reviewTask.id);
+    } finally {
+      taskStore.close();
+    }
     assert.equal(runCli([
       'task', 'ready', reviewRef,
       '--as', 'codex',
