@@ -1235,6 +1235,15 @@ function memberRun(name, ...args) {
   return memberRunWith(name, args);
 }
 
+// One plain line for why the reviewing engine refused the work.
+function reviewRefusalLine(refusal) {
+  if (refusal.timed_out) return 'the reviewer ran out of time';
+  const text = String(refusal.output || refusal.reason || '');
+  const verdict = text.match(/VERDICT:\s*FAIL\s*[;:]\s*(.+)/i);
+  const line = verdict ? verdict[1] : (text.split(/\r?\n/).find((l) => l.trim()) || refusal.reason || 'no reason given');
+  return line.trim().slice(0, 200);
+}
+
 function memberRunWith(name, args, { quiet = false } = {}) {
   if (!name || name === '--help' || name === '-h' || hasFlag(args, '--help') || hasFlag(args, '-h')) {
     console.log('usage: atris member run <name> ["mission text"] [--verify "<cmd>"] [--minutes N|--hours N] [--json]');
@@ -1392,7 +1401,10 @@ function memberRunWith(name, args, { quiet = false } = {}) {
   }
   if (checkFailed) {
     result.check_failed = true;
-    result.error = `the work ran but its check failed: ${finalMission.verifier || 'completion check'}`;
+    const refusal = lastRanTick?.referee_result?.passed === false ? lastRanTick.referee_result : null;
+    result.error = refusal
+      ? `turned down in review: ${reviewRefusalLine(refusal)}`
+      : `the work ran but its check failed: ${finalMission.verifier || 'completion check'}`;
   } else if (!ok) {
     result.error = result.ask || payload.detail || payload.error || payload.reason || payload.next_action
       || run.stderr || 'mission did not run a work step';
