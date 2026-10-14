@@ -20134,11 +20134,15 @@ test('task accept refreshes existing rendered todo view', () => {
 test('status verbose mode keeps the legacy task board', () => {
   const dir = makeTempDir();
   try {
-    initWorkspace(dir);
-    const res = runCli(['status', '--verbose'], { cwd: dir });
+    // The board reads only the TODO the test writes, so init is not needed. A task db
+    // path of its own that does not exist makes status read this TODO, not the shared test db.
+    fs.mkdirSync(path.join(dir, 'atris'), { recursive: true });
+    fs.writeFileSync(path.join(dir, 'atris', 'TODO.md'), '# TODO.md\n\n## Backlog\n\n- **T1:** Implement feature X\n', 'utf8');
+    const res = runCli(['status', '--verbose'], { cwd: dir, env: { ATRIS_TASKS_DB: path.join(dir, '.atris', 'tasks.db') } });
     assert.equal(res.status, 0, res.stderr);
     assert.match(res.stdout, /TASK BOARD|Backlog/i);
     assert.match(res.stdout, /┌|└|│/);
+    assert.match(res.stdout, /Implement feature X/);
   } finally {
     cleanupTempDir(dir);
   }
