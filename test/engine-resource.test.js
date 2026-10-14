@@ -66,6 +66,7 @@ test('start and end lines append to the durable resource log', () => {
     assert.deepStrictEqual(lines[0], {
       at: '2026-10-14T08:00:00.000Z', phase: 'start', engine: 'codex', task: 'CLI-1',
       free_pct: 9, swap_used_mb: 512.25, swap_total_mb: 2048, load: [4, 3, 2],
+      leaked_ssh_agents: 0,
     });
     assert.strictEqual(lines[1].phase, 'end');
     assert.strictEqual(lines[1].signal, 'SIGKILL');
@@ -76,6 +77,33 @@ test('start and end lines append to the durable resource log', () => {
 });
 
 const { parseElapsed, findLeakedSshAgents, readSshAgents } = require('../lib/engine-resource');
+
+test('start records the sweep leak count without stopping agents or reading again at end', () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'engine-resource-agents-'));
+  let reads = 0;
+  const agent = (pid, over = {}) => ({ pid, ppid: 1, uid: 501, age_sec: 3600, args: 'ssh-agent -s', ...over });
+  const deps = {
+    platform: 'linux', loadavg: () => [0, 0, 0], uid: 501,
+    readSshAgents: () => {
+      reads += 1;
+      return { agents: [agent(200), agent(201), agent(202, { age_sec: 120 }), agent(203, { uid: 0 })], referenced: new Set([201]) };
+    },
+  };
+  try {
+    recordEngineResource(root, { phase: 'start', engine: 'codex' }, deps);
+    recordEngineResource(root, { phase: 'end', engine: 'codex' }, deps);
+    const [start, end] = fs.readFileSync(path.join(root, RESOURCE_LOG), 'utf8').trim().split('\n').map(JSON.parse);
+    assert.strictEqual(start.leaked_ssh_agents, 1);
+    assert.strictEqual(end.leaked_ssh_agents, undefined);
+    assert.strictEqual(reads, 1);
+    const unknown = recordEngineResource(root, { engine: 'codex' }, {
+      ...deps, readSshAgents: () => { throw new Error('process read failed'); },
+    });
+    assert.strictEqual(unknown.leaked_ssh_agents, null);
+  } finally {
+    fs.rmSync(root, { recursive: true, force: true });
+  }
+});
 
 test('elapsed time reads minutes, hours, and days', () => {
   assert.strictEqual(parseElapsed('11:09'), 669);

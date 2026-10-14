@@ -1315,6 +1315,7 @@ test('every engine run writes a start and end machine line, and a SIGKILL names 
     assert.equal(start.engine, 'claude');
     assert.equal(start.task, 'CLI-900');
     assert.ok(Array.isArray(start.load));
+    assert.ok(Number.isInteger(start.leaked_ssh_agents) && start.leaked_ssh_agents >= 0);
     assert.equal(end.phase, 'end');
     assert.equal(end.signal, 'SIGKILL');
     assert.match(end.cause, /^killed \((machine memory low|cause unknown)\)$/);
