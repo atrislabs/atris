@@ -833,11 +833,15 @@ function runSshAgentSweep(root, receipt, deps = {}) {
       receipt.ssh_agent_sweep = empty;
       return receipt.ssh_agent_sweep;
     }
-    const { agents, referenced } = read();
+    const { agents, referenced, unread = [] } = read();
     const leaked = findLeakedSshAgents(agents, { referenced, uid });
-    receipt.ssh_agent_sweep = leaked.length
+    const result = leaked.length
       ? stopLeakedSshAgents(root, leaked, { read, uid, ...(deps.kill ? { kill: deps.kill } : {}) })
       : empty;
+    // A reading that failed on either scan is kept, so the summary can say
+    // some agents went unchecked instead of reading as a clean machine.
+    const missed = [...new Set([...unread, ...(result.unread || [])])];
+    receipt.ssh_agent_sweep = missed.length ? { ...result, unread: missed } : result;
   } catch (err) {
     receipt.ssh_agent_sweep_error = String((err && err.message) || err).slice(0, 200);
   }
@@ -846,8 +850,10 @@ function runSshAgentSweep(root, receipt, deps = {}) {
 
 function sshAgentSweepNote(receipt) {
   const stopped = (receipt.ssh_agent_sweep?.stopped || []).length;
-  if (!stopped) return '';
-  return `, stopped ${stopped} leaked ssh-agent${stopped === 1 ? '' : 's'}`;
+  const unread = receipt.ssh_agent_sweep?.unread || [];
+  const stoppedNote = stopped ? `, stopped ${stopped} leaked ssh-agent${stopped === 1 ? '' : 's'}` : '';
+  const unreadNote = unread.length ? `, could not read the ${unread.join(' or the ')}, so some ssh-agents went unchecked` : '';
+  return stoppedNote + unreadNote;
 }
 
 // An engine run whose dispatching process died never writes its own end.

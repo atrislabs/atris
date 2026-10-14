@@ -476,6 +476,34 @@ test('the hourly landing pass stops agents still leaked on the recheck and names
   }
 });
 
+test('the hourly landing pass names unreadable agent scans instead of staying quiet', () => {
+  const { runSshAgentSweep, sshAgentSweepNote } = require('../commands/autoland');
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'autoland-ssh-unread-'));
+  try {
+    const agent = (pid) => ({ pid, ppid: 1, uid: 501, age_sec: 3600, args: 'ssh-agent -s' });
+    const blind = {};
+    runSshAgentSweep(root, blind, {
+      read: () => ({ agents: [], referenced: new Set(), unread: ['process list'] }),
+      uid: 501,
+      kill: () => assert.fail('an unread machine stops nothing'),
+    });
+    assert.deepStrictEqual(blind.ssh_agent_sweep, { stopped: [], failed: [], skipped: [], unread: ['process list'] });
+    assert.strictEqual(sshAgentSweepNote(blind), ', could not read the process list, so some ssh-agents went unchecked');
+
+    const reads = [
+      { agents: [agent(200), agent(201)], referenced: new Set([201]), unread: ['agent sockets'] },
+      { agents: [agent(200)], referenced: new Set([200]), unread: ['process environments'] },
+    ];
+    const partial = {};
+    runSshAgentSweep(root, partial, { read: () => reads.shift(), uid: 501, kill: () => assert.fail('an unread recheck stops nothing') });
+    assert.deepStrictEqual(partial.ssh_agent_sweep, { stopped: [], failed: [], skipped: [200], unread: ['agent sockets', 'process environments'] });
+    assert.strictEqual(sshAgentSweepNote(partial),
+      ', could not read the agent sockets or the process environments, so some ssh-agents went unchecked');
+  } finally {
+    fs.rmSync(root, { recursive: true, force: true });
+  }
+});
+
 test('a failing read never breaks the hourly landing pass', () => {
   const { runSshAgentSweep } = require('../commands/autoland');
   const receipt = {};
