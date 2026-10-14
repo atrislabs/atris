@@ -1124,6 +1124,58 @@ test('plan reviews record paired readings on success, SIGKILL and startup failur
   }
 });
 
+test('codex plan review signers record paired readings on success, SIGKILL and startup failure', () => {
+  const { execFileSync } = require('node:child_process');
+  const { runPlanReview } = require('../commands/autopilot');
+  const root = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'codex-review-resource-')));
+  const saved = { template: process.env.ATRIS_RUNNER_COMMAND_TEMPLATE, codex: process.env.ATRIS_CODEX_CMD };
+  const script = (name, body) => {
+    const file = path.join(root, name);
+    fs.writeFileSync(file, `#!/bin/sh\n${body}\n`, { mode: 0o755 });
+    return file;
+  };
+  const review = (codex) => {
+    process.env.ATRIS_CODEX_CMD = codex;
+    return runPlanReview({ cwd: root, context: { task: 'fixture', tags: ['codex'] }, planOutput: 'fixture plan', options: { hasCodex: true } });
+  };
+  try {
+    execFileSync('git', ['init', '-q', root]);
+    process.env.ATRIS_RUNNER_COMMAND_TEMPLATE = 'echo VERDICT: SIGNOFF';
+    const ok = review(script('codex-ok', 'echo VERDICT: SIGNOFF'));
+    const killed = review(script('codex-killed', 'kill -KILL $$'));
+    const failed = review(path.join(root, 'codex-missing'));
+    assert.deepEqual(ok.signers, ['validator', 'codex']);
+    const lines = fs.readFileSync(path.join(root, RESOURCE_LOG), 'utf8').trim().split('\n').map(JSON.parse)
+      .filter((line) => line.task === 'autopilot codex review');
+    assert.deepEqual(lines.map((line) => line.phase), ['start', 'end', 'start', 'end', 'start', 'end']);
+    for (let i = 0; i < lines.length; i += 2) {
+      assert.match(lines[i].run_id, /^[0-9a-f-]{36}$/);
+      assert.equal(lines[i + 1].run_id, lines[i].run_id);
+      assert.equal(lines[i].engine, 'codex');
+      assert.ok(Array.isArray(lines[i + 1].load));
+      assert.ok(Number.isInteger(lines[i + 1].duration_ms));
+    }
+    assert.notEqual(lines[0].run_id, lines[2].run_id);
+    assert.equal(lines[1].signal, undefined);
+    assert.equal(lines[1].error, undefined);
+    assert.equal(lines[3].signal, 'SIGKILL');
+    assert.match(lines[3].cause, /^killed \((machine memory low|cause unknown)\)$/);
+    // The fallback note the review carries names the cause.
+    assert.ok(killed.notes.includes(lines[3].cause), killed.notes);
+    assert.equal(lines[5].signal, undefined);
+    assert.match(lines[5].error, /ENOENT/);
+    assert.doesNotMatch(failed.notes, /killed \(/);
+    console.log(`codex review readings: ${JSON.stringify([lines[3], lines[5]])}`);
+    console.log(`codex review kill note: ${killed.notes}`);
+  } finally {
+    for (const [key, name] of [['template', 'ATRIS_RUNNER_COMMAND_TEMPLATE'], ['codex', 'ATRIS_CODEX_CMD']]) {
+      if (saved[key] === undefined) delete process.env[name];
+      else process.env[name] = saved[key];
+    }
+    fs.rmSync(root, { recursive: true, force: true });
+  }
+});
+
 test('a kill sent by the run time limit names the time limit even with memory low', () => {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'engine-resource-timeout-'));
   try {

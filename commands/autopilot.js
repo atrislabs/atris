@@ -1581,6 +1581,9 @@ function defaultPlanReviewExecutor(prompt, { cwd, timeout = 180000 } = {}) {
  */
 function defaultCodexExecutor(prompt, { cwd, timeout = 180000 } = {}) {
   const cmd = process.env.ATRIS_CODEX_CMD || 'codex';
+  // Machine memory and load at both ends of the signer, so one killed with
+  // SIGKILL says whether the machine was short on memory.
+  const endResource = require('../lib/engine-resource').startEngineRun(cwd, { engine: 'codex', task: 'autopilot codex review' });
   const proc = spawnSync(cmd, ['-p', prompt], {
     cwd,
     encoding: 'utf8',
@@ -1599,8 +1602,18 @@ function defaultCodexExecutor(prompt, { cwd, timeout = 180000 } = {}) {
       if (sweepErr.code !== 'ESRCH') throw sweepErr;
     }
   }
+  // spawnSync does not throw, so a failure is passed in the thrown shape.
+  const failed = proc.error || proc.signal || proc.status !== 0;
+  const end = endResource(failed ? {
+    code: proc.error && proc.error.code,
+    signal: proc.signal,
+    stderr: proc.stderr,
+    message: proc.error ? proc.error.message : `codex exited with status ${proc.status}`,
+  } : null);
+  const cause = end && end.cause ? `; ${end.cause}` : '';
   if (proc.status !== 0 && !proc.stdout) {
-    throw new Error(`codex exited with status ${proc.status}: ${proc.stderr || 'no output'}`);
+    const how = proc.signal ? `was stopped by ${proc.signal}` : `exited with status ${proc.status}`;
+    throw new Error(`codex ${how}: ${proc.stderr || 'no output'}${cause}`);
   }
   return proc.stdout || '';
 }
