@@ -235,3 +235,36 @@ Rerunnable required verify: `node --test test/worktree-removal-guard.test.js tes
 Files edited: this receipt and `atris/team/architect/logs/2026-10-14.md`. Artifacts: retained baseline copy and two raw map-check outputs. Other commands: mission status/goal, task list/new/claim/note/ready, brain activate/compile (plan only), Git status/diff/revision reads, rg helper lookup, explicit staging, whitespace check, commit and push. Existing router and rendered task-view edits excluded. Progress: two map failures attributed, one pre-existing and one introduced; 13 required checks pass; zero production edits, new repository filenames, or dependencies.
 next_push: Replace the stale refsLockFile map reference on the repair copy with the actual refsLockFiles definition and prove the map-reference check.
 layer: beliefs
+
+
+## Renamed lock helper map pointer corrected
+
+Corrected the folder repair's map pointer so readers reach the actual lock helper. Real document-health CLI exited 0, both map-reference checks passed, and required folder checks stayed green. Documentation only; no production behavior, new filenames, dependencies, or protected repair landing.
+
+Plan: stale helper pointer -> actual definition -> map and folder checks -> documentation proof.
+
+Edited `atris/refs/MAP-NOTES.md` in `/Users/keshavrao/arena/empire/.agent-worktrees/atris-cli/architect-1184-shared-lock-check`: replaced only `commands/worktree.js:1230` / `refsLockFile` with `commands/worktree.js:1286` / `refsLockFiles`. Also edited this receipt and `atris/team/architect/logs/2026-10-14.md` here. The repair documentation was committed and pushed; no protected behavior was merged.
+
+Real command in the repair copy: `node bin/atris.js doc-health --json`, exit 0. Output excerpt: `"ok": true, "action": "doc-health"`.
+
+Rerunnable repair check: `node --test test/map-refs-accurate.test.js test/worktree-removal-guard.test.js test/member-tidy.test.js`, exit 0. Exact output excerpt:
+
+```text
+✔ atris/MAP.md has no broken file:line references
+✔ map line refs in the boot map and the notes file still find their code
+ℹ tests 36
+ℹ suites 0
+ℹ pass 36
+ℹ fail 0
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 3732.043583
+```
+
+Required command here: `node --test test/worktree-removal-guard.test.js test/member-tidy.test.js`, exit 0. Exact summary: tests 13, suites 0, pass 13, fail 0, cancelled 0, skipped 0, todo 0, duration_ms 3069.004375. No full-suite claim; the previously attributed local-file load-order failure remains outside this slice.
+
+Other commands: brain activate/compile (plan only, exit 2), Atris boot, mission status/goal, task list/new/claim/note/ready, git status/diff, helper search, exact single-string replacement, explicit staging, whitespace check, commit and push. Existing router and rendered task-view edits excluded. Artifact: this receipt. Progress: one stale helper reference fixed; two map checks, 34 repair folder checks and 13 current folder checks pass; zero new files.
+Learned: renaming a helper requires updating both its symbol and line pointer; passing the folder checks alone does not prove navigation remains accurate.
+next_push: Compare the combined repair's member-start failure with unchanged master to determine whether it is a repair regression.
+layer: capabilities
