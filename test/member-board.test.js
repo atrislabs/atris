@@ -1156,7 +1156,10 @@ test('board shows a live run as alive with its engine, and a dead one as stopped
     assert.equal(by.builder.no_result, true, 'it ended without a finished line');
     assert.equal(by.legacy.no_result, false, 'no pid: the board cannot tell');
     assert.match(renderBoard(readBoard({ dir }), dir), /^builder\s+stopped\s+ended, no result\s+no\s+claude\s+-\s+/m);
-    assert.match(renderBoard(readBoard({ dir }), dir, 0, 60), /^builder\s+stopped\s+ended, no result\s/m, 'a narrow board keeps it whole');
+    assert.match(renderBoard(readBoard({ dir }), dir, 0, 58), /^builder\s+stopped\s+ended, no result\s/m, 'a job cut either way: the wording stays whole');
+    const sixty = renderBoard(readBoard({ dir }), dir, 0, 60);
+    assert.match(sixty, /^builder\s+stopped\s+no result\s+\S+ ago\s+ship the board$/m, 'shorter wording lets every job read whole');
+    assert.match(sixty, /old line with no pid$/m);
   } finally {
     killAll(child.pid);
     fs.rmSync(dir, { recursive: true, force: true });
