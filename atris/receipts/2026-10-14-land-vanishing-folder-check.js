@@ -22,10 +22,10 @@ function git(cwd, ...args) {
   return result.stdout.trim();
 }
 
-for (const mode of ['unlocked', 'locked', 'ordinary', 'ordinary-present']) {
-  const withLock = mode === 'locked';
-  const staysPresent = mode === 'ordinary-present';
-  const ordinary = mode === 'ordinary' || staysPresent;
+for (const mode of ['unlocked', 'locked', 'ordinary', 'ordinary-present', 'locked-present']) {
+  const withLock = mode.startsWith('locked');
+  const staysPresent = mode.endsWith('-present');
+  const ordinary = mode.startsWith('ordinary');
   const root = path.join(base, mode);
   const repo = path.join(root, 'repo');
   const toolsDir = path.join(root, 'tools');
@@ -103,4 +103,4 @@ process.exit(result.status === null ? 1 : result.status);
   git(repo, 'rev-parse', '--verify', 'refs/heads/landed-copy');
   assert.equal(fs.existsSync(path.join(repo, '.atris/state/worktree_removals.jsonl')), false);
 }
-console.log('all four timing cases passed; files, locks, and branches retained; no removal attempted or recorded');
+console.log('all five timing cases passed; files, locks, and branches retained; no removal attempted or recorded');

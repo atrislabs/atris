@@ -116,3 +116,31 @@ next_push: Prove late special Git keep markers also protect a still-present old 
 layer: behaviors
 
 Review handoff: the direct frozen command passed all 21 tests, exit 0. The task recorder's default runtime returned 18 passes and 3 failures, exit 1. Recording with `/opt/homebrew/bin/node --test test/worktree-removal-guard.test.js test/member-tidy.test.js` passed, exit 0, and placed the task in review. Receipt: `atris/runs/2026-10-14-task-acw-34-2026-10-14T20-32-30-887Z.json`. This explicit runtime requires a second review before automatic landing. The increment is committed and pushed; existing unrelated edits remain local.
+
+## Late keep marker in a still-present old folder
+
+Added a fifth case: a special Git keep marker arrives during the final old-folder check while the folder stays in place. Cleanup kept the folder, its files, the marker and the branch, named the marker path and age, and never asked Git to remove anything.
+
+Files edited: `atris/receipts/2026-10-14-land-vanishing-folder-check.js`, `test/worktree-removal-guard.test.js`, `atris/MAP.md`, `atris/refs/MAP-NOTES.md`, this receipt, `atris/team/architect/logs/2026-10-14.md`. No new files.
+
+Real command: `node atris/receipts/2026-10-14-land-vanishing-folder-check.js`, exit 0. It runs `node bin/atris.js land --reap --force --no-remote` five times against generated repositories with real Git. New case output:
+```text
+fixture: /private/var/folders/t1/2_4kmb5n4c71dxm26zc8dgzr0000gn/T/atris-land-vanishing-GXhYsF
+  ✋ kept, needs a human: /private/var/folders/t1/2_4kmb5n4c71dxm26zc8dgzr0000gn/T/atris-land-vanishing-GXhYsF/locked-present/landed-copy (git locks: /private/var/folders/t1/2_4kmb5n4c71dxm26zc8dgzr0000gn/T/atris-land-vanishing-GXhYsF/locked-present/repo/.git/worktrees/landed-copy/locked (7199s old))
+cli exit: 0
+all five timing cases passed; files, locks, and branches retained; no removal attempted or recorded
+```
+
+Rerun: `node --test test/worktree-removal-guard.test.js test/member-tidy.test.js`, Node 25.6.1, exit 0:
+```text
+ℹ tests 21
+ℹ pass 21
+ℹ fail 0
+ℹ duration_ms 44478.002125
+```
+
+Progress: five old-folder timing cases now proved, zero removal attempts, zero removal records. Unrelated local edits stay out of the commit.
+
+next_push: Prove a late keep marker also protects a still-present folder during member tidy's final check.
+
+layer: behaviors
