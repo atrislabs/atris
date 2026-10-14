@@ -23,6 +23,8 @@ Details for any task: atris task show <ID>
 
 ## Review
 
+- **[AIC-7]** Poll board output instead of waiting 700ms · auto-improver
+  **Done looks like:** Developers can check board updates sooner, saving time and avoiding missed updates on busy computers.
 - **[AIC-6]** Replace stalled crontab timing assertion with call marker · auto-improver
   **Done looks like:** Developers can check status without a speed threshold, saving time by avoiding false failures on busy computers.
 - **[AIC-5]** Edit tampered-proof test fixtures in process · auto-improver

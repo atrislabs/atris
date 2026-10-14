@@ -73,12 +73,18 @@ test('follow stream in a project skips other projects\' new lines', async () => 
   const child = spawn(process.execPath, [cliPath, 'member', 'board', '--json', '--follow'], { cwd: ctx.project, env: ctx.env });
   let out = '';
   child.stdout.on('data', (d) => { out += d; });
+  const waitForOutput = async (check) => {
+    const deadline = Date.now() + 5000;
+    while (!check() && Date.now() < deadline) {
+      await new Promise((r) => setTimeout(r, 25));
+    }
+    assert.ok(check(), `expected board output before timeout: ${out}`);
+  };
   try {
-    await new Promise((r) => setTimeout(r, 700));
+    await waitForOutput(() => out.includes('\n'));
     fs.appendFileSync(path.join(ctx.progress, 'payments-infra.log'), `${recent(0)} m-9 editing other.js\n`);
     fs.appendFileSync(path.join(ctx.progress, 'builder.log'), `${recent(0)} m-1 editing mine.js\n`);
-    const deadline = Date.now() + 5000;
-    while (!out.includes('mine.js') && Date.now() < deadline) await new Promise((r) => setTimeout(r, 100));
+    await waitForOutput(() => out.split('\n').slice(0, -1).some((line) => line.includes('mine.js')));
   } finally {
     child.kill('SIGINT');
   }

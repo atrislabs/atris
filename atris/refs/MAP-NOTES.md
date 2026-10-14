@@ -2291,3 +2291,7 @@ npm publish
 ## Continuation status test setup
 
 - `test/commands.test.js:14036` checks review continuation, human approval waiting, and blocked review separately. Its local real-store seed helper removes three setup command launches; ready, review, status, and all result assertions stay on the CLI.
+
+## Board stream readiness
+
+- `test/member-board-this-project.test.js:71` exercises the real board follow CLI with shared progress logs; `test/member-board-this-project.test.js:76` polls complete output before appending updates and before parsing events, with a five-second bound instead of a fixed 700ms startup wait.
