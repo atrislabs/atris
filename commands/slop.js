@@ -1076,6 +1076,27 @@ function carriedMark(above, line) {
   return /^[,;:.]$/.test(mark) ? mark : ',';
 }
 
+// A dash that ends a line whose sentence wraps onto the next one is the same
+// break as a dash in mid-line, so the clause rules read the two lines as one
+// to pick its mark: "Re-interview to amend;" then "this is a living file",
+// never a comma splice across the wrap. Returns a semicolon or colon, or null
+// to leave the dash to the plain line-end comma: when either line holds code
+// or another dash, the line is a heading, table row or fence, or the next
+// line opens a new block, a list item or a quote. The next line must open on
+// a plain subject ("this", "it", "we"), since a wrapped line that opens on
+// any other word often finishes the subject above ("The tool we built" then
+// "now ships to everyone") and keeps its comma.
+function trailingMark(line, below) {
+  const end = /^(.*?\S)\s*\u2014\s*$/.exec(line);
+  if (!end || !below.trim() || /\u2014|`/.test(end[1]) || /\u2014|`/.test(below)) return null;
+  if (!/^\s*(?:it|this|that|we|they|you|he|she|I|there)(?:['\u2019](?:s|re|ll|ve|d|m))?\s/.test(below)) return null;
+  if (/^\s{0,3}(?:#|\||```|~~~)/.test(line) || /^\s*(?:#|>|\||```|~~~|[-*+]\s|\d+[.)]\s)/.test(below)) return null;
+  const head = end[1].trim(); const next = below.trim();
+  const joined = fixEmDash(`${head} \u2014 ${next}`);
+  const mark = joined.startsWith(head) && joined.endsWith(` ${next}`) ? joined.slice(head.length, joined.length - next.length - 1) : '';
+  return /^[;:]$/.test(mark) ? mark : null;
+}
+
 // Apply every fixable rule's safe transform in place.
 // Returns { fixedCount, fixedFiles, changes }, where changes lists each edited
 // line as { file, line, before, after, kind } so the writer can review the fix.
@@ -1108,6 +1129,8 @@ function applyFixes(files, rules, { write = true } = {}) {
         else changes.push({ file, line: i, before: lines[i - 1], after: above, kind: carried });
         lines[i - 1] = above; touched = true;
       }
+      const tail = !script && i + 1 < lines.length && !skip.has(i) && !skip.has(i + 1) && !fenced.has(i) && !fenced.has(i + 1) && fixable.some((r) => r.fix === fixEmDash) ? trailingMark(line, lines[i + 1]) : null;
+      if (tail) { line = line.replace(/\s*\u2014\s*$/, tail); fixedCount++; }
       for (const r of fixable) {
         const prose = markdown && r.proseOnly;
         if (prose && fenced.has(i)) continue;

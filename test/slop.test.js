@@ -1692,6 +1692,27 @@ test('fix gives an aside that opens with a joining word commas, not parentheses'
   ]);
 });
 
+test('fix gives a line-end dash a semicolon when the next line opens a new clause', () => {
+  // from the Orb member file, where the wrap hid a comma splice
+  const file = tmpFile('line-end-clause.md', [
+    'Created from a live interview with Keshav, 2026-07-04. Re-interview to amend \u2014',
+    'this is a living file.',
+    '',
+    // any other opening word may finish the subject above, so the comma stays
+    'The tool we built \u2014',
+    'now ships to everyone.',
+    '',
+    'The question: "how are we converting them \u2014',
+    'where are they this week?"',
+  ].join('\n'));
+  const { changes } = applyFixes([file], RULES);
+  assert.deepEqual(changes.map((c) => c.after), [
+    'Created from a live interview with Keshav, 2026-07-04. Re-interview to amend;',
+    'The tool we built,',
+    'The question: "how are we converting them,',
+  ]);
+});
+
 test('fix ends a paragraph-ending dash with a period, keeps a wrapping one a comma', () => {
   const file = tmpFile('line-end.md', [
     'The tool we built \u2014',
