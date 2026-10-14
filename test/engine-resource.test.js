@@ -1139,7 +1139,7 @@ const stripComments = (text) => text
   .replace(/(^|[^:\\'"`])\/\/.*$/gm, '$1');
 // Each function definition, named or bound to a variable, as start and end offsets.
 const definitionSpans = (code) => {
-  const definitions = /^[ \t]*(?:async\s+)?function\s+[\w$]+\s*\([^)]*\)\s*\{|^[ \t]*(?:const|let|var)\s+[\w$]+\s*=\s*(?:async\s*)?(?:function\s*\([^)]*\)\s*\{|\([^)]*\)\s*=>)/gm;
+  const definitions = /^[ \t]*(?:async\s+)?function\s+[\w$]+\s*\([^)]*\)\s*\{|^[ \t]*(?:const|let|var)\s+[\w$]+\s*=\s*(?:async\s*)?(?:function\s*\([^)]*\)\s*\{|(?:\([^)]*\)|[\w$]+)\s*=>)/gm;
   const spans = [];
   for (const header of code.matchAll(definitions)) {
     let body = header.index + header[0].length;
@@ -1185,7 +1185,7 @@ const recordingCall = (code) => {
 // Each launch needs a recording call on its line or in the dozen lines
 // above it, without crossing a top-level function boundary.
 const RECORD_WINDOW = 12;
-const FUNCTION_START = /^(?:async\s+)?function\b|^(?:const|let)\s+[\w$]+\s*=\s*(?:async\s*)?(?:function\b|\([^)]*\)\s*=>)/gm;
+const FUNCTION_START = /^(?:async\s+)?function\b|^(?:const|let)\s+[\w$]+\s*=\s*(?:async\s*)?(?:function\b|(?:\([^)]*\)|[\w$]+)\s*=>)/gm;
 const recordedAbove = (lines, line, recorder) => {
   const code = lines.join('\n');
   const launch = lines.slice(0, line - 1).join('\n').length + (line > 1 ? 1 : 0) + lines[line - 1].search(/\S/);
@@ -1318,8 +1318,8 @@ test('every engine started through a runner or profile variable records its run 
         if (!alias) break;
         // Captured variables remain visible until a matching parameter hides them.
         const shadowStart = Math.max(scopeStart, ...definitionSpans(code).filter(([open, close]) => open <= declarationEnd && declarationEnd < close).filter(([open]) => {
-          const header = /^(?:async\s+)?function\s+[\w$]+\s*\(([^)]*)\)|^(?:const|let|var)\s+[\w$]+\s*=\s*(?:async\s*)?(?:function\s*)?\(([^)]*)\)/.exec(code.slice(open).trimStart());
-          return header && (header[1] ?? header[2]).split(',').some((name) => name.trim() === alias[1]);
+          const header = /^(?:async\s+)?function\s+[\w$]+\s*\(([^)]*)\)|^(?:const|let|var)\s+[\w$]+\s*=\s*(?:async\s*)?(?:function\s*)?(?:\(([^)]*)\)|([\w$]+)\s*=>)/.exec(code.slice(open).trimStart());
+          return header && (header[1] ?? header[2] ?? header[3]).split(',').some((name) => name.trim() === alias[1]);
         }).map(([open]) => open));
         const declaration = [...code.slice(shadowStart, declarationEnd).matchAll(new RegExp(`\\b(?:const|let|var)\\s+${alias[1].replace(/\$/g, '\\$')}\\s*=\\s*([^;\\n]*)`, 'g'))].pop();
         if (!declaration) break;
@@ -1343,10 +1343,10 @@ test('every engine started through a runner or profile variable records its run 
         // Follow simple parameters only when a call in this file supplies a
         // known runner. An unrelated parameter name alone is not evidence.
         const header = /^(?:async\s+)?function\s+([\w$]+)\s*\(([^)]*)\)/.exec(code.slice(fnStart).trimStart())
-          || /^(?:const|let)\s+([\w$]+)\s*=\s*(?:async\s*)?\(([^)]*)\)\s*=>/.exec(code.slice(fnStart).trimStart());
+          || /^(?:const|let)\s+([\w$]+)\s*=\s*(?:async\s*)?(?:\(([^)]*)\)|([\w$]+))\s*=>/.exec(code.slice(fnStart).trimStart());
         const source = sourceAt(program, match.index);
         const parameter = /^([A-Za-z_$][\w$]*)(?:\.[\w$]+)*$/.exec(source)?.[1];
-        const slot = header ? header[2].split(',').map((name) => name.trim()).indexOf(parameter) : -1;
+        const slot = header ? (header[2] ?? header[3]).split(',').map((name) => name.trim()).indexOf(parameter) : -1;
         if (slot >= 0) {
           const calls = new RegExp(`\\b${header[1].replace(/\$/g, '\\$')}\\(`, 'g');
           for (const call of code.matchAll(calls)) {
@@ -1437,9 +1437,20 @@ test('every engine started through a runner or profile variable records its run 
   assert.deepStrictEqual(planted("function outer() {\n  function helper() {\n    startEngineRun(root);\n    spawn(resolveClaudeRunnerBin(), args);\n  }\n}\n"), [], 'a recorded launch inside a helper stays covered');
   assert.deepStrictEqual(planted("function outer() {\n  startEngineRun(root);\n  function helper() {\n    spawn(resolveClaudeRunnerBin(), args);\n  }\n}\n"), ['commands/planted.js:4 resolveClaudeRunnerBin()'], 'a parent recording does not cover a launch inside its helper');
   assert.deepStrictEqual(planted("function outer() {\n  startEngineRun(root);\n  const helper = () => {\n    const runner = resolveClaudeRunnerBin();\n    spawn(runner, args);\n  };\n}\n"), ['commands/planted.js:5 runner']);
+  assert.deepStrictEqual(planted("function outer() {\n  startEngineRun(root);\n  const launch = runner => {\n    spawnSync(runner, args);\n  };\n  launch(resolveClaudeRunnerBin());\n}\n"), ['commands/planted.js:4 runner'], 'a parent recording cannot cover a single-input helper');
+  assert.deepStrictEqual(planted("const record = input => startEngineRun(root);\nspawn(resolveClaudeRunnerBin(), args);\n"), ['commands/planted.js:2 resolveClaudeRunnerBin()'], 'a single-input recording definition is not a recording call');
+  // A single input may omit parentheses in both block and concise arrows.
+  for (const prefix of ['const launch = runner =>', 'let launch = async runner =>']) {
+    assert.deepStrictEqual(planted(`${prefix} {\n  spawnSync(runner, args);\n};\nlaunch(resolveClaudeRunnerBin());\n`), ['commands/planted.js:2 runner']);
+    assert.deepStrictEqual(planted(`${prefix} spawnSync(runner, args);\nlaunch(resolveClaudeRunnerBin());\n`), ['commands/planted.js:1 runner']);
+    assert.deepStrictEqual(planted(`${prefix} {\n  const program = runner.bin;\n  spawnSync(program, args);\n};\nlaunch(resolveEngineProfile(engine));\n`), ['commands/planted.js:3 program']);
+    assert.deepStrictEqual(planted(`${prefix} {\n  startEngineRun(root);\n  spawnSync(runner, args);\n};\nlaunch(resolveClaudeRunnerBin());\n`), []);
+    assert.deepStrictEqual(planted(`${prefix} spawnSync(runner, ['--help']);\nlaunch(resolveClaudeRunnerBin());\n`), []);
+    assert.deepStrictEqual(planted(`${prefix} spawnSync(runner, args);\nlaunch(findExecutable('git'));\n`), []);
+  }
   // A helper parameter hides an outer declaration with the same name.
-  for (const arrow of [false, true]) {
-    const helper = arrow ? 'const launch = (runner) =>' : 'function launch(runner)';
+  for (const arrow of [false, true, 'single']) {
+    const helper = arrow === 'single' ? 'const launch = runner =>' : arrow ? 'const launch = (runner) =>' : 'function launch(runner)';
     const outer = (runner, body, argument) => `function outer() {\n  const runner = ${runner};\n  ${helper} {\n${body}\n  }${arrow ? ';' : ''}\n  launch(${argument});\n}\n`;
     assert.deepStrictEqual(planted(`function outer() {\n  const runner = resolveClaudeRunnerBin();\n  const program = runner;\n  ${helper} {\n    spawnSync(program, args);\n  }${arrow ? ';' : ''}\n  launch(findExecutable('git'));\n}\n`), ['commands/planted.js:5 program'], 'a captured alias resolves where it was declared');
     const captured = arrow ? 'const launch = () =>' : 'function launch()';
