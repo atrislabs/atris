@@ -1776,6 +1776,22 @@ test('fix gives a field with a short value a comma instead of a second colon', (
   ]);
 });
 
+test('fix reads a bold verdict as a clause, so a clause after it takes a semicolon', () => {
+  // from build receipts, which came out "Result: **FAIL**, the repository has"
+  const file = tmpFile('verdicts.md', [
+    '- Result: **FAIL** \u2014 the repository has a generic context-packet surface',
+    'Surface verdict: **PASS** \u2014 default status now fits the budget',
+    // a fragment after the verdict only explains it, so it keeps its comma
+    '- iPhone: **offline** \u2014 on-device validation deferred',
+  ].join('\n'));
+  const { changes } = applyFixes([file], RULES);
+  assert.deepEqual(changes.map((c) => c.after), [
+    '- Result: **FAIL**; the repository has a generic context-packet surface',
+    'Surface verdict: **PASS**; default status now fits the budget',
+    '- iPhone: **offline**, on-device validation deferred',
+  ]);
+});
+
 test('fix starts the next sentence after a stop that sits before a dash', () => {
   // from the terrace repo, which came out "fine with try? the cost"
   const file = tmpFile('stop.md', [

@@ -314,7 +314,12 @@ function clauseJoin(left) {
 // two words or more, and not a title where every word is capitalized, since
 // "Inbox Triage, 23 emails processed" names a thing and has no verb to join.
 // Words in all capitals are shouting, not a title: "Lines DO NOT SURVIVE".
+// A bold verdict that is a field's whole value says the field is that, so
+// "Result: **FAIL**" is a clause: "Result: **FAIL**; the repository has
+// no runner", never a comma splice. A fragment after it keeps its comma.
 function clauseLeft(at, whole) {
+  const verdict = /\S:\s+(\*\*[^*]+\*\*|__[^_]+__)\s*$/.exec(whole.slice(0, at));
+  if (verdict) return verdict[1];
   const left = whole.slice(0, at).split(/[.!?:]\s/).pop().trim();
   const words = left.replace(/^(?:(?:[-*+>#]|\d+[.)]|\*\*|__)\s*)+/, '').split(/\s+/);
   return words.length >= 2 && !words.every((w) => /^[A-Z][a-z0-9'\u2019-]+$/.test(w)) ? left : null;
