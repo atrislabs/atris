@@ -277,6 +277,17 @@ test('board explains replaced only when a replaced run is shown', () => {
   assert.doesNotMatch(renderBoard([plain], '/x'), /^replaced/m);
 });
 
+test('board explains replaced when only the change note says it', () => {
+  const now = Date.parse('2026-10-14T13:00:00Z');
+  // builder's old run was alive when the next one started, then exited: the
+  // column now says died, but the note from that redraw still says replaced.
+  const builder = memberRow('builder', '2026-10-14T12:59:00Z m-3 started: build\n', now);
+  const cut = memberRow('scout', '2026-10-14T12:50:00Z m-1 started: build\n2026-10-14T12:59:00Z m-2 started: next\n', now);
+  const screen = renderBoard([builder, cut], '/x', 0, null, ['builder working -> replaced -> working', 'scout working -> replaced -> working']);
+  assert.match(screen, /^replaced \(scout, builder\): the next run started before that run said how it ended$/m);
+  assert.doesNotMatch(renderBoard([builder], '/x', 0, null, ['builder working -> done ok -> working']), /^replaced/m);
+});
+
 test('watch names a put-away run with when it last did anything, even once it is hidden', () => {
   const now = Date.parse('2026-10-14T13:00:00Z');
   const quiet = memberRow('launcher', '2026-10-14T05:00:00Z m-4 started: score\n2026-10-14T06:00:00Z m-4 running: npm test\n', now);
