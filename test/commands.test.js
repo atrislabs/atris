@@ -11113,29 +11113,27 @@ test('task backlog and clear-plan demote only planned open tasks', () => {
     assert.equal(delegatedTask.metadata.delegate_via, 'local');
     assert.equal(delegatedTask.metadata.stage_owner, undefined);
 
-    const bulkA = runCli(['task', 'add', 'Bulk planned A', '--tag', 'feature', '--json'], { cwd: dir, env });
-    const bulkB = runCli(['task', 'add', 'Bulk planned B', '--tag', 'capture', '--json'], { cwd: dir, env });
-    const claimed = runCli(['task', 'add', 'Claimed Do row stays active', '--tag', 'plan', '--json'], { cwd: dir, env });
-    assert.equal(bulkA.status, 0, bulkA.stderr);
-    assert.equal(bulkB.status, 0, bulkB.stderr);
-    assert.equal(claimed.status, 0, claimed.stderr);
-    const bulkARef = JSON.parse(bulkA.stdout).task.display_id;
-    const bulkBRef = JSON.parse(bulkB.stdout).task.display_id;
-    const claimedRef = JSON.parse(claimed.stdout).task.display_id;
-    for (const ref of [bulkARef, bulkBRef, claimedRef]) {
-      const planned = runCli([
-        'task', 'plan', ref,
-        '--as', 'codex',
-        '--owner', 'codex',
-        '--goal', `Goal ${ref}`,
-        '--exit', `Exit ${ref}`,
-        '--proof-needed', `Proof ${ref}`,
-        '--json',
-      ], { cwd: dir, env });
-      assert.equal(planned.status, 0, planned.stderr);
-    }
-    const claimedDo = runCli(['task', 'do', claimedRef, '--as', 'codex', '--first-move', 'keep doing this row', '--json'], { cwd: dir, env });
-    assert.equal(claimedDo.status, 0, claimedDo.stderr);
+    // The plan and do commands are one stageTask call each; seed the bulk rows through the store.
+    const seedPlanned = (title, tag) => {
+      const { id } = taskDb.addTask(db, { title, tag, workspaceRoot });
+      const planned = taskDb.stageTask(db, {
+        id,
+        actor: 'codex',
+        stage: 'plan',
+        owner: 'codex',
+        ownerExplicit: true,
+        goal: `Goal ${title}`,
+        exit: `Exit ${title}`,
+        proofNeeded: `Proof ${title}`,
+      });
+      assert.equal(planned.staged, true, planned.reason);
+      return id;
+    };
+    const bulkAId = seedPlanned('Bulk planned A', 'feature');
+    const bulkBId = seedPlanned('Bulk planned B', 'capture');
+    const claimedId = seedPlanned('Claimed Do row stays active', 'plan');
+    const claimedDo = taskDb.stageTask(db, { id: claimedId, actor: 'codex', stage: 'do', owner: 'codex', firstMove: 'keep doing this row' });
+    assert.equal(claimedDo.staged, true, claimedDo.reason);
 
     const missingConfirm = runCli(['task', 'clear-plan', '--json'], { cwd: dir, env });
     assert.equal(missingConfirm.status, 2);
@@ -11146,7 +11144,7 @@ test('task backlog and clear-plan demote only planned open tasks', () => {
     const clearedPayload = JSON.parse(cleared.stdout);
     assert.equal(clearedPayload.action, 'clear_plan');
     assert.equal(clearedPayload.cleared_count, 2);
-    assert.deepEqual(clearedPayload.tasks.map(task => task.display_id).sort(), [bulkARef, bulkBRef].sort());
+    assert.deepEqual(clearedPayload.tasks.map(task => task.id).sort(), [bulkAId, bulkBId].sort());
     assert.ok(clearedPayload.tasks.every(task => task.tag === 'capture'));
 
     const status = runCli(['task', 'status', '--json'], { cwd: dir, env });
@@ -11156,7 +11154,7 @@ test('task backlog and clear-plan demote only planned open tasks', () => {
     assert.equal(counts.do, 1);
     assert.equal(counts.backlog, 7);
 
-    const claimedShow = runCli(['task', 'show', claimedRef, '--json'], { cwd: dir, env });
+    const claimedShow = runCli(['task', 'show', claimedId, '--json'], { cwd: dir, env });
     assert.equal(claimedShow.status, 0, claimedShow.stderr);
     assert.equal(JSON.parse(claimedShow.stdout).status, 'claimed');
 
