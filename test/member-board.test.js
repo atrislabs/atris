@@ -220,7 +220,14 @@ test('members that ended over an hour ago, finished or died, hide unless --all',
 
 test('board summary says one member, not one members', () => {
   const row = { member: 'builder', state: 'stopped', before: [], alive: false, engine: 'claude', running_for: '', lasted: '1m', ago: '5s ago', job: 'ship', step: 'edit' };
-  assert.equal(renderBoard([row], '/x').split('\n')[0], '1 member: 1 stopped');
+  assert.equal(renderBoard([row], '/x').split('\n')[0], '1 member, stopped');
+});
+
+test('a count line with every member in one state says all, not the same number twice', () => {
+  const row = (member, state) => ({ member, state, before: [], alive: false, engine: '', running_for: '', lasted: '1m', ago: '5s ago', job: 'ship', step: 'edit' });
+  assert.equal(renderBoard(['a', 'b', 'c', 'd'].map((m) => row(m, 'working')), '/x').split('\n')[0], '4 members, all working');
+  assert.equal(renderBoard([row('a', 'done ok')], '/x').split('\n')[0], '1 member, done ok');
+  assert.equal(renderBoard([row('a', 'working'), row('b', 'died')], '/x').split('\n')[0], '2 members: 1 died, 1 working', 'two states still count each');
 });
 
 test('watch names state changes from the last minute, then drops them', () => {
@@ -1166,7 +1173,7 @@ test('watch fits a screen LINES tall, footer included', () => {
     // One draw, ending in a newline: lines before it are the rows it uses.
     const screen = watch.stdout.replace(/\x1b\[\d*[A-Z]/g, '').split('\n').slice(0, -1);
     assert.ok(screen.length < 10, `leaves the cursor on the last row, not past it:\n${screen.join('\n')}`);
-    assert.equal(screen[0], '6 members: 6 working');
+    assert.equal(screen[0], '6 members, all working');
     assert.match(screen.join('\n'), /^\d more members did not fit: (\w+, )*\w+$/m);
     assert.match(screen.at(-1), /^redrawn at /);
   } finally {
