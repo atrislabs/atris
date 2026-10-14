@@ -585,6 +585,21 @@ test('a cut job ends at its last whole word on screen, a single long word still 
   assert.equal(rows[0].job, 'keep the board readable on a narrow screen', 'apps reading the rows get the job as written');
 });
 
+test('a cut job can end between the parts of a hyphened or slashed word', () => {
+  const now = Date.parse('2026-10-14T13:00:00Z');
+  const run = (name, job) => memberRow(name, `2026-10-14T12:50:00Z m-1 started: [pid ${process.pid}] ${job}\n2026-10-14T12:59:30Z m-1 running: git status\n`, now);
+  const rows = [
+    run('fleet', 'keep work-folder-protection-guard running'),
+    run('builder', 'improve lib/member-board.js output'),
+  ];
+  const at = (w) => Object.fromEntries(renderBoard(rows, '/x', 0, w).split('\n').filter((l) => /^(fleet|builder) /.test(l)).map((l) => [l.split(' ')[0], l]));
+  const narrow = at(90);
+  assert.match(narrow.fleet, /\s{2}keep work-folder\.\.\.\s+running: git status$/, Object.values(narrow).join('\n'));
+  assert.match(narrow.builder, /\s{2}improve lib\/member\.\.\.\s+running: git status$/, Object.values(narrow).join('\n'));
+  assert.ok(Object.values(narrow).every((l) => l.length <= 90));
+  assert.equal(rows[1].job, 'improve lib/member-board.js output', 'apps reading the rows get the job as written');
+});
+
 test('an 80 column board gives the job 24 columns before it keeps ago on every row', () => {
   const now = Date.parse('2026-10-14T13:00:00Z');
   const rows = [
