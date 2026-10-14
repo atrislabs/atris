@@ -10481,7 +10481,9 @@ async function memberSteerOrDispatchWith({ pullTask = false } = {}, rawArgs = []
   const goalPlane = memberGoalPlaneStatus(owner, paths);
   const missionMap = memberRunMissionMap(root);
   const missionSummary = memberMissionSummary(owner, missionMap, root);
-  const pulled = pullTask && !prompt && !missionSummary.live
+  // A human or odd-typed member never takes a task: it would be claimed and
+  // then stranded when the run refuses the member.
+  const pulled = pullTask && !prompt && !missionSummary.live && !memberRefusalFor(targetMember, paths.memberFile)
     ? memberGoTask(owner, root, { claim: !dryRun })
     : null;
   const effectivePrompt = prompt

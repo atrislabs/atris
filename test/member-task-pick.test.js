@@ -120,3 +120,13 @@ test('skips a protected note in any text field and a denied tag written in the t
     assert.equal(got.task.id, ok);
   });
 });
+
+test('skips needs-human and decision tags written in metadata', () => {
+  withProject(({ db, ws, add }) => {
+    add('Pick the pricing copy', { metadata: { tag: 'needs-human' } });
+    add('Choose the launch date', { metadata: { tags: ['decision'] } });
+    const ok = add('Add a retry to the uploader');
+    const got = claimTaskForMember(taskDb, db, { workspaceRoot: ws, member: 'executor', job: 'build' });
+    assert.equal(got.task.id, ok);
+  });
+});

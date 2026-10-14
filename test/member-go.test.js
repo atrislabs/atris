@@ -210,3 +210,17 @@ test('a pulled task moves to review on a passing check and back to the list on a
     }
   });
 });
+
+test('member go never claims a task for a human member', () => {
+  withTaskProject(({ root, taskDb, db, add, env }) => {
+    const dir = path.join(root, 'atris', 'team', 'owner');
+    fs.mkdirSync(dir, { recursive: true });
+    fs.writeFileSync(path.join(dir, 'MEMBER.md'), '---\nname: owner\ntype: human\nrole: Owner\n---\n# owner\n');
+    const id = add('Fix the flaky clock test');
+    const result = runCli(['member', 'go', 'owner', '--json'], root, env);
+    assert.notEqual(result.status, 0);
+    const row = taskDb.getTask(db, id);
+    assert.equal(row.status, 'open');
+    assert.equal(row.claimed_by, null);
+  });
+});
