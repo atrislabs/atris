@@ -1815,6 +1815,22 @@ test('fix leaves a bold task title readable to the task list', () => {
   ]);
 });
 
+test('fix leaves a file reference note readable to the ref healer', () => {
+  // the fix writes "`path:N`: `name` does X"; the healer took the name only
+  // after a dash or a bracket, so a moved ref it used to heal came up nameless
+  const { healBrokenMapRefs } = require('../commands/clean');
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'slop-heal-'));
+  fs.mkdirSync(path.join(dir, 'atris'));
+  fs.mkdirSync(path.join(dir, 'lib'));
+  fs.writeFileSync(path.join(dir, 'lib', 'plug.js'), '// header\n'.repeat(7) + 'function buildPlugin() {}\n');
+  const map = path.join(dir, 'atris', 'MAP.md');
+  fs.writeFileSync(map, '- `lib/plug.js:1` \u2014 `buildPlugin` packages the skills\n');
+  applyFixes([map], RULES);
+  assert.equal(fs.readFileSync(map, 'utf8'), '- `lib/plug.js:1`: `buildPlugin` packages the skills\n');
+  assert.equal(healBrokenMapRefs(dir, path.join(dir, 'atris')).healed, 1);
+  assert.equal(fs.readFileSync(map, 'utf8'), '- `lib/plug.js:8`: `buildPlugin` packages the skills\n');
+});
+
 test('fix keeps a journal heading that ends in a time readable for its hour', () => {
   // analytics reads the hour after a dash or a spaced hyphen at the end of a
   // heading; the fix wrote "### Watch: 19:05", which hides it, and glued

@@ -925,13 +925,13 @@ MCP stdio request flow: `mcp/atris-mcp/index.mjs:142` reads requests while desig
 
 - **Dispatch:** `bin/atris.js:1924` handles `--help`, `--dry-run`, and `--json` before routing to `cleanAtris`
 - **Help:** `bin/atris.js:1113` (`showCleanHelp`) prints usage without touching workspace state
-- **Entry point:** `commands/clean.js:14` (cleanAtris function)
+- **Entry point:** `commands/clean.js:16` (cleanAtris function)
 - **JSON payload:** `commands/clean.js:260` (`cleanResultPayload`) returns machine-readable stale tasks, MAP refs, journals, sections, stale pages, dead code, and manual actions without text chrome
 - **Helpers:**
 - `findStaleTasks()`: Find tasks claimed >3 days ago
 - `healBrokenMapRefs()`: Validate + auto-fix MAP.md file:line refs (range + drift detection)
-- `findStalePages()` (`commands/clean.js:604`): Scan atris/ for markdown with `last_compiled` frontmatter, compare source mtime
-- `checkPageStaleness()` (`commands/clean.js:624`): Parse frontmatter, check each source file's mtime vs compiled date
+- `findStalePages()` (`commands/clean.js:605`): Scan atris/ for markdown with `last_compiled` frontmatter, compare source mtime
+- `checkPageStaleness()` (`commands/clean.js:642`): Parse frontmatter, check each source file's mtime vs compiled date
 - dead-code report: step 6 in `cleanAtris` calls slop's `findDeadCode` (report-only, feeds manual actions)
 - `archiveOldJournals()`: Move journals >30 days to archive/
 - `cleanEmptySections()`: Remove placeholder sections
@@ -1972,7 +1972,7 @@ rg "printRoster|registryPayload|canPersistEngineRegistry|speakFirstMinute|--glob
 - `isStillTrue()` → `commands/autopilot.js:3709-3767`
 - `askModel()` → `commands/autopilot.js:3778-3818`
 - `activateAtris()` → `commands/activate.js:158-306`
-- `cleanAtris()` → `commands/clean.js:15-186`
+- `cleanAtris()` → `commands/clean.js:16-194`
 - `verifyAtris()` → `commands/verify.js:13-35`
 - `releaseAtris()` → `commands/release.js:16-123`
 - `releasePreflight()` → `commands/release.js:213-282`

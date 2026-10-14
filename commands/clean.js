@@ -385,8 +385,9 @@ function healMapFileRefs(cwd, mapFile, dryRun, homeDir) {
 
   // Match both `file.js:123` and `file.js:123-456` with surrounding context
   // [^\S\n] = horizontal whitespace only (no newlines)
-  // Required delimiter set, including the u2014 escape, prevents bleeding into adjacent refs on same line
-  const refPattern = /(`?)([a-zA-Z0-9_~\-./\\]+\.(js|ts|py|go|rs|rb|java|c|cpp|h|hpp|md|json|yaml|yml)):(\d+)(?:-(\d+))?(`?)([^\S\n]*[\(\[\u2014\-][^\S\n]*([^)\]\n]+))?/g;
+  // Required delimiter set, including the u2014 escape, prevents bleeding into adjacent refs on same line.
+  // A colon counts too: `atris slop --fix` writes one where the dash was.
+  const refPattern = /(`?)([a-zA-Z0-9_~\-./\\]+\.(js|ts|py|go|rs|rb|java|c|cpp|h|hpp|md|json|yaml|yml)):(\d+)(?:-(\d+))?(`?)([^\S\n]*[\(\[\u2014\-:][^\S\n]*([^)\]\n]+))?/g;
 
   // Function Inventory form: `symbolName()` → `file:line[-line]`
   // Pre-scan to build a (file:line) → symbol map so refs with the symbol BEFORE them still verify.
