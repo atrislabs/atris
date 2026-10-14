@@ -295,12 +295,16 @@ test('member run infers test checks from goal text and runs a second-model refer
   try {
     fs.mkdirSync(root, { recursive: true });
     fs.mkdirSync(binDir, { recursive: true });
-    const fakeCodex = path.join(binDir, 'codex');
+    // The builder is claude; a different engine, codex, reviews the work.
+    const fakeClaude = path.join(binDir, 'claude');
     fs.writeFileSync(
-      fakeCodex,
-      '#!/bin/sh\necho "worker touched artifact" > work.txt\necho "Wrote work.txt with the worker artifact."\necho "next_push: Add automated speed check for work.txt"\necho "VERDICT: PASS"\n',
+      fakeClaude,
+      '#!/bin/sh\nif [ "$1" = "--help" ]; then echo "--output-format --permission-mode --resume --session-id --include-partial-messages"; exit 0; fi\necho "worker touched artifact" > work.txt\nprintf \'%s\\n\' \'{"type":"result","is_error":false,"result":"Wrote work.txt with the worker artifact.\\nnext_push: Add automated speed check for work.txt"}\'\n',
       'utf8'
     );
+    fs.chmodSync(fakeClaude, 0o755);
+    const fakeCodex = path.join(binDir, 'codex');
+    fs.writeFileSync(fakeCodex, '#!/bin/sh\necho "VERDICT: PASS"\n', 'utf8');
     fs.chmodSync(fakeCodex, 0o755);
 
     const git = (args, cwd = root) => {
@@ -324,7 +328,7 @@ test('member run infers test checks from goal text and runs a second-model refer
         'navigator',
         'Build work.txt and verify with referee',
         '--engine',
-        'codex',
+        'claude',
         '--referee',
         '--referee-engine',
         'codex',
@@ -371,7 +375,7 @@ test('member run infers test checks from goal text and runs a second-model refer
     const { loadRouterHistory } = require('../lib/router-brain');
     const routerObs = loadRouterHistory(root);
     assert.ok(
-      routerObs.some((obs) => obs.engine === 'codex' && obs.verified_passed === true),
+      routerObs.some((obs) => obs.engine === 'claude' && obs.verified_passed === true),
       'Moneyball router should receive verified_passed observation from worktree mission tick'
     );
 

@@ -79,6 +79,20 @@ test('only an ignited run defaults the review on, and an explicit choice wins', 
   assert.equal(memberRunWantsReferee([], false), false);
 });
 
+test('naming the builder as its own reviewer still gets a different engine', () => {
+  const mission = require('../commands/mission');
+  const base = fs.mkdtempSync(path.join(os.tmpdir(), 'atris-referee-pick-'));
+  try {
+    for (const runner of ['claude', 'codex']) {
+      assert.notEqual(mission.pickCrossEngineVerifier({ runner }, base, runner), runner);
+      assert.notEqual(mission.pickCrossEngineVerifier({ runner, referee_engine: runner }, base), runner);
+    }
+    assert.equal(mission.pickCrossEngineVerifier({ runner: 'claude' }, base, 'codex'), 'codex', 'a different named reviewer is kept');
+  } finally {
+    fs.rmSync(base, { recursive: true, force: true });
+  }
+});
+
 test('the default reviewer is never the builder engine, even when the usual pick is down', () => {
   const mission = require('../commands/mission');
   const base = fs.mkdtempSync(path.join(os.tmpdir(), 'atris-referee-pick-'));
