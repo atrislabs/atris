@@ -579,6 +579,21 @@ test('fix keeps a label that ends in its own punctuation and adds no colon', () 
   ]);
 });
 
+test('fix gives a code span that opens a line a colon, in markdown and plain text', () => {
+  // build notes write a command, a dash, then what it showed
+  const md = tmpFile('notes.md', [
+    '`node --test test/x.test.js` \u2014 9 tests, all green.',
+    'Run `atris slop detect` \u2014 it reports the tells.',
+  ].join('\n'));
+  const txt = tmpFile('notes.txt', '`npm test` \u2014 clean.');
+  const { changes } = applyFixes([md, txt], RULES);
+  assert.deepEqual(changes.map((c) => c.after), [
+    '`node --test test/x.test.js`: 9 tests, all green.',
+    'Run `atris slop detect`, it reports the tells.',
+    '`npm test`: clean.',
+  ]);
+});
+
 test('fix never pairs two dashes across a sentence end', () => {
   // shapes taken from this repo's own docs, where the old fixer opened a
   // parenthesis in one sentence and closed it in the next
