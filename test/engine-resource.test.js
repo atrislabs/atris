@@ -221,3 +221,51 @@ test('atris engine sweep lists leaked agents and stops nothing', () => {
   assert.match(text, /nothing was stopped/);
   assert.deepStrictEqual(signals, []);
 });
+
+test('when process environments cannot be read, every agent counts as in use', () => {
+  const run = (cmd, args) => {
+    if (cmd === 'lsof') return { status: 0, stdout: 'p200\nf3\nn/tmp/ssh-a/agent.199' };
+    if (args.includes('-E')) return { status: 1, stdout: '' };
+    return { status: 0, stdout: '  200     1   501    14:50:14 ssh-agent -s' };
+  };
+  const { referenced } = readSshAgents({ run });
+  assert.ok(referenced.has(200));
+});
+
+test('the hourly landing pass stops agents still leaked on the recheck and names the count', () => {
+  const { runSshAgentSweep, sshAgentSweepNote } = require('../commands/autoland');
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'autoland-ssh-sweep-'));
+  try {
+    const agent = (pid) => ({ pid, ppid: 1, uid: 501, age_sec: 3600, args: 'ssh-agent -s' });
+    const reads = [
+      { agents: [agent(200), agent(201)], referenced: new Set() },
+      { agents: [agent(200), agent(201)], referenced: new Set([201]) },
+    ];
+    const signals = [];
+    const receipt = {};
+    runSshAgentSweep(root, receipt, { read: () => reads.shift(), uid: 501, kill: (pid, signal) => signals.push([pid, signal]) });
+    assert.deepStrictEqual(signals, [[200, 'SIGTERM']]);
+    assert.deepStrictEqual(receipt.ssh_agent_sweep, { stopped: [200], failed: [], skipped: [201] });
+    assert.strictEqual(sshAgentSweepNote(receipt), ', stopped 1 leaked ssh-agent');
+
+    const quiet = {};
+    runSshAgentSweep(root, quiet, {
+      read: () => ({ agents: [agent(300)], referenced: new Set([300]) }),
+      uid: 501,
+      kill: () => assert.fail('nothing leaked, nothing stopped'),
+    });
+    assert.deepStrictEqual(quiet.ssh_agent_sweep, { stopped: [], failed: [], skipped: [] });
+    assert.strictEqual(sshAgentSweepNote(quiet), '');
+    const log = fs.readFileSync(path.join(root, RESOURCE_LOG), 'utf8').trim().split('\n');
+    assert.strictEqual(log.length, 1, 'a pass with nothing leaked writes no sweep line');
+  } finally {
+    fs.rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test('a failing read never breaks the hourly landing pass', () => {
+  const { runSshAgentSweep } = require('../commands/autoland');
+  const receipt = {};
+  runSshAgentSweep(os.tmpdir(), receipt, { read: () => { throw new Error('ps missing'); }, uid: 501 });
+  assert.match(receipt.ssh_agent_sweep_error, /ps missing/);
+});

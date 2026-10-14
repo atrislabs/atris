@@ -9,6 +9,7 @@ const autoland = require('../lib/autoland');
 const { gateForHuman, plainLandingReason } = require('../lib/voice-gate');
 const { evaluateAutoAccept } = require('../lib/auto-accept-certified');
 const { sweepEngineAskReceipts } = require('../lib/engine-receipt-sweep');
+const { readSshAgents, findLeakedSshAgents, stopLeakedSshAgents } = require('../lib/engine-resource');
 const { validateRecentAskReceipts } = require('../lib/engine-validate');
 const { operatorReady, hasAgentJargon, explainResult } = autoland;
 const MISSION_AUTO_VERIFY_STATUSES = new Set(['planning', 'paused', 'ready']);
@@ -773,6 +774,36 @@ function engineReceiptSweepNote(receipt) {
   return `, finalized ${finalized} stale engine receipt${finalized === 1 ? '' : 's'} as presumed dead`;
 }
 
+// Shell startup files that start an ssh-agent per shell leave one behind
+// for every engine shell. Each pass stops the ones a fresh recheck still
+// calls leaked, and never lets a failed read break the pass.
+function runSshAgentSweep(root, receipt, deps = {}) {
+  try {
+    const read = deps.read || readSshAgents;
+    const uid = deps.uid !== undefined ? deps.uid : (typeof process.getuid === 'function' ? process.getuid() : null);
+    const empty = { stopped: [], failed: [], skipped: [] };
+    // A test run must never stop real agents on the machine running it.
+    if (uid === null || (!deps.read && process.env.NODE_TEST_CONTEXT)) {
+      receipt.ssh_agent_sweep = empty;
+      return receipt.ssh_agent_sweep;
+    }
+    const { agents, referenced } = read();
+    const leaked = findLeakedSshAgents(agents, { referenced, uid });
+    receipt.ssh_agent_sweep = leaked.length
+      ? stopLeakedSshAgents(root, leaked, { read, uid, ...(deps.kill ? { kill: deps.kill } : {}) })
+      : empty;
+  } catch (err) {
+    receipt.ssh_agent_sweep_error = String((err && err.message) || err).slice(0, 200);
+  }
+  return receipt.ssh_agent_sweep || null;
+}
+
+function sshAgentSweepNote(receipt) {
+  const stopped = (receipt.ssh_agent_sweep?.stopped || []).length;
+  if (!stopped) return '';
+  return `, stopped ${stopped} leaked ssh-agent${stopped === 1 ? '' : 's'}`;
+}
+
 async function runEngineAnswerValidation(root, receipt, deps = {}) {
   try {
     receipt.engine_answer_validation = await validateRecentAskReceipts(root, deps);
@@ -795,6 +826,8 @@ async function runTickBody(root, { json, policy, receipt, engineValidationDeps =
   } catch (err) {
     receipt.engine_receipt_sweep_error = String((err && err.message) || err).slice(0, 200);
   }
+
+  runSshAgentSweep(root, receipt);
 
   await runEngineAnswerValidation(root, receipt, engineValidationDeps);
 
@@ -1148,7 +1181,7 @@ async function runTickBody(root, { json, policy, receipt, engineValidationDeps =
     // Always print the standing backlog, and name work that cleared every
     // gate and still did not land. That is the shape of a stuck loop.
     const stuckNote = stuckBacklogNote(receipt);
-    const summary = `autoland tick: ${receipt.reviews_certified ?? 0} reviews certified, ${receipt.landed.length} landed${receipt.landed.length ? ` (${receipt.landed.join(', ')})` : ''}, ${receipt.alarms} alarms${stuckNote}, digest ${digestTickStatus(receipt)}${reapNote}${janitorNote}${heldNote}${wishNote}${engineSweepNote}${receiptNote}`;
+    const summary = `autoland tick: ${receipt.reviews_certified ?? 0} reviews certified, ${receipt.landed.length} landed${receipt.landed.length ? ` (${receipt.landed.join(', ')})` : ''}, ${receipt.alarms} alarms${stuckNote}, digest ${digestTickStatus(receipt)}${reapNote}${janitorNote}${heldNote}${wishNote}${engineSweepNote}${sshAgentSweepNote(receipt)}${receiptNote}`;
     const validationLine = engineAnswerValidationLine(receipt);
     if (validationLine) console.log(validationLine);
     console.log(gateForHuman(summary).text);
@@ -1221,6 +1254,8 @@ module.exports = {
   hasAgentJargon,
   runEngineAnswerValidation,
   runTickBody,
+  runSshAgentSweep,
+  sshAgentSweepNote,
   sweepLanding,
   verifyClosedTaskMissions,
 };
