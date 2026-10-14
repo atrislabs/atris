@@ -20,14 +20,19 @@ test('member run names the failing referee, not the passing diff check', () => {
     fs.mkdirSync(path.join(root, 'atris', 'team', 'executor'), { recursive: true });
     fs.mkdirSync(binDir, { recursive: true });
     fs.writeFileSync(path.join(root, 'atris', 'team', 'executor', 'MEMBER.md'), '---\nname: executor\nrole: Test Member\n---\n\n# executor\n', 'utf8');
-    const fakeCodex = path.join(binDir, 'codex');
-    fs.writeFileSync(fakeCodex, [
+    // The builder makes a clean commit; a different engine reviews and fails it.
+    const fakeClaude = path.join(binDir, 'claude');
+    fs.writeFileSync(fakeClaude, [
       '#!/bin/sh',
+      'if [ "$1" = "--help" ]; then echo "--output-format --permission-mode --resume --session-id --include-partial-messages"; exit 0; fi',
       'echo "clean line" >> work.txt',
       'git add work.txt >/dev/null 2>&1 && git commit -qm "clean one-line change" >/dev/null 2>&1',
-      'echo "VERDICT: FAIL"',
+      'echo \'{"type":"result","is_error":false,"result":"appended a clean line"}\'',
       '',
     ].join('\n'), 'utf8');
+    fs.chmodSync(fakeClaude, 0o755);
+    const fakeCodex = path.join(binDir, 'codex');
+    fs.writeFileSync(fakeCodex, '#!/bin/sh\necho "VERDICT: FAIL"\n', 'utf8');
     fs.chmodSync(fakeCodex, 0o755);
 
     const git = (args) => {
@@ -42,7 +47,7 @@ test('member run names the failing referee, not the passing diff check', () => {
 
     const res = spawnSync(process.execPath, [
       cliPath, 'member', 'run', 'executor', 'Append a clean line to work.txt',
-      '--engine', 'codex', '--referee', '--referee-engine', 'codex',
+      '--engine', 'claude', '--referee', '--referee-engine', 'codex',
       '--ignite', '--verify', 'git diff --check',
     ], {
       cwd: root,
