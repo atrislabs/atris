@@ -49,5 +49,7 @@ Progress: all three renamed jobs route correctly; 27 focused tests pass; the ove
 
 Boot/status commands: `atris brain activate --root . --verify`, `atris`, `git status --short`, `atris mission status mission-2026-10-13-fix-atris-member-dispatch-pi-76db2680`, `atris mission goal --json`, `atris task list`, `atris worktree status`, `atris brain compile --root .`. Brain commands returned plan-only (exit 2); generated policy files were not rewritten for this bounded fix.
 
+Delivery: committed and pushed to origin. Task proof is ready for approval; no human acceptance was claimed. The ready command reran `node --test test/member-fleet.test.js` and returned exit 0.
+
 next_push: honor explicit team job overrides when routing ideas, matching engine roster overrides.
 layer: behaviors
