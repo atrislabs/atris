@@ -206,3 +206,41 @@ Commands run: brain activation, mission status and goal lookup, workspace status
 Progress: one additional reproduced failure, six audit cases overall, twelve required checks passed, zero new filenames, zero dependencies, zero production changes.
 next_push: Enumerate all registered linked copies, including outside paths, before allowing shared Git storage removal.
 layer: beliefs
+
+## Outside running program follow-up
+
+Added one outside-running-copy case, verified by the real cleanup audit and twelve required passing tests, both exit 0. The real process scan reports the parent clear while detecting the child program in a registered outside copy. Cleanup deletes shared Git files while that program stays alive. This reproduces a defect; it is not a production repair.
+
+Verdict: proceed-with-changes. The single risk is scanning only the parent for running programs before deleting shared metadata needed by outside copies. Enumerate registered copies and scan their real paths as well as the parent before removing any child. Keep the entire group on activity or uncertainty. No execution boundary was changed or approved.
+
+Plan: registered copies -> process scan for each copy and parent -> keep group on activity -> otherwise guarded removal and log.
+
+Runtime command: `node atris/receipts/2026-10-14-fleet-folder-check.js`
+Exit: 0. Actual additional output:
+```text
+outside-running before cleanup: live program in /private/var/folders/t1/2_4kmb5n4c71dxm26zc8dgzr0000gn/T/atris-fleet-check-sB7mUK/outside-review-xyFxi8; parent scan reports clear
+{"kind":"outside-running","outsideFolderKept":true,"outsideGitStatusExit":128}
+{"kind":"outside-running","parentKept":false,"programAlive":true,"removalRecorded":false}
+audit complete; surviving fixture data retained for inspection
+```
+
+The case uses real Git registration, verifies Git status succeeds before removal, and detects the live child with the existing process scan. No helper or filesystem operation is replaced. Both repositories and the outside copy report no Git locks. The program is stopped and awaited after proof. The disposable fixture is retained at the path above. Replace deletion assertions with preservation assertions when implementing protection.
+
+Required rerun: `node --test test/worktree-removal-guard.test.js test/member-tidy.test.js`
+Exit: 0. Actual output:
+```text
+ℹ tests 12
+ℹ suites 0
+ℹ pass 12
+ℹ fail 0
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 3314.443375
+```
+
+Files edited: `atris/receipts/2026-10-14-fleet-folder-check.js`, this receipt, `atris/MAP.md`, `atris/refs/MAP-NOTES.md`, and the new evidence entry in `atris/team/architect/logs/2026-10-14.md`. Existing router, rendered task view, and earlier log edits are excluded from staging.
+Commands run: mission status, Git status/remote lookup, task list/new/claim/note/ready, brain activation, workspace status, mission goal lookup, targeted reads, runtime audit, required rerun, brain compile, whitespace check, explicit staging, commit, and push. Brain activation and compilation only propose writes; missing compiled files were not created. Artifacts: extended audit, decision card, retained disposable fixture, navigation updates, and member evidence.
+Progress: one new real failure case, seven cases overall, twelve required tests passed, zero production changes, zero dependencies, zero new filenames.
+next_push: Scan running programs in every registered linked copy before removing shared Git storage.
+layer: beliefs

@@ -35,7 +35,7 @@ async function main() {
   git('add', '.');
   git('commit', '-qm', 'fixture');
   console.log(`fixture: ${root}`);
-  for (const kind of ['private', 'shared', 'quarantine', 'running', 'sibling', 'outside']) {
+  for (const kind of ['private', 'shared', 'quarantine', 'running', 'sibling', 'outside', 'outside-running']) {
     const parent = fs.mkdtempSync(path.join(root, 'review-'));
     const boundary = {
       trustedRoot: root,
@@ -47,8 +47,16 @@ async function main() {
     git('clone', '-q', '--bare', root, boundary.gitDir);
     git('init', '-q', '--bare', boundary.quarantine);
     git('--git-dir', boundary.gitDir, 'worktree', 'add', '-q', boundary.worktreePath, 'master');
-    if (kind === 'running') {
-      const child = spawn('sleep', ['30'], { cwd: boundary.quarantine, stdio: 'ignore' });
+    if (kind === 'running' || kind === 'outside-running') {
+      const outside = kind === 'outside-running';
+      const programFolder = outside ? path.join(root, `outside-${path.basename(parent)}`) : boundary.quarantine;
+      if (outside) {
+        git('--git-dir', boundary.gitDir, 'worktree', 'add', '-q', '--detach', programFolder, 'master');
+        git('-C', programFolder, 'status', '--porcelain');
+        const registered = git('--git-dir', boundary.gitDir, 'worktree', 'list', '--porcelain');
+        assert.ok(registered.split('\n').includes(`worktree ${programFolder}`));
+      }
+      const child = spawn('sleep', ['30'], { cwd: programFolder, stdio: 'ignore' });
       try {
         await new Promise((resolve, reject) => {
           child.once('spawn', resolve);
@@ -58,15 +66,24 @@ async function main() {
         const activePaths = listActiveProcessPaths();
         assert.ok(Array.isArray(activePaths), 'the real process scan must succeed');
         assert.equal(worktreeHasActiveProcess(boundary.worktreePath, activePaths), false);
-        assert.equal(worktreeHasActiveProcess(parent, activePaths), true);
+        assert.equal(worktreeHasActiveProcess(parent, activePaths), !outside);
+        assert.equal(worktreeHasActiveProcess(programFolder, activePaths), true);
         assert.equal(inspectGitActivity(boundary.worktreePath).safe, true);
         assert.equal(inspectGitActivity(boundary.quarantine).safe, true);
-        console.log(`running before cleanup: live program in ${boundary.quarantine}; work-folder-only scan reports clear`);
+        assert.equal(inspectGitActivity(programFolder).safe, true);
+        console.log(`${kind} before cleanup: live program in ${programFolder}; parent scan reports ${outside ? 'clear' : 'active'}`);
         fleet.exports.auditDispose(boundary);
         process.kill(child.pid, 0);
         const removalFile = path.join(root, '.atris/state/worktree_removals.jsonl');
         assert.equal(fs.existsSync(parent), false, 'update this audit when group protection is implemented');
         assert.equal(fs.existsSync(removalFile), false);
+        if (outside) {
+          assert.equal(fs.existsSync(programFolder), true);
+          const status = spawnSync('git', ['-C', programFolder, 'status', '--porcelain'], { encoding: 'utf8' });
+          assert.notEqual(status.status, 0);
+          assert.match(status.stderr, /not a git repository/);
+          console.log(JSON.stringify({ kind, outsideFolderKept: true, outsideGitStatusExit: status.status }));
+        }
         console.log(JSON.stringify({ kind, parentKept: false, programAlive: true, removalRecorded: false }));
       } finally {
         const exited = new Promise((resolve) => child.once('exit', resolve));
