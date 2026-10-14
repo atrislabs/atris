@@ -2315,4 +2315,5 @@ npm publish
 
 - `commands/worktree.js:1322` (`gitHold`) checks the copy and any additional Git stores before cleanup; `commands/worktree.js:1337` (`describeGitHold`) gives every caller the same lock file and age or paused operation.
 - Callers: `lib/member-tidy.js:198`, `commands/land.js:578`, `commands/land.js:679`, `commands/worktree.js:1438`, `lib/fleet.js:2470`, `commands/autopilot.js:1244`.
-- Real CLI proof: `node atris/receipts/work-folder-report-probe.js` runs a cleanup preview on a temporary repository with a stale lock and checks that the folder survives.
+- Real CLI proof: `node atris/receipts/work-folder-report-probe.js:8` runs a cleanup preview on a temporary repository with a stale lock, then applies cleanup against both rebase markers and paused merge, cherry-pick, revert and bisect markers; checks the copy remains registered and no removal is logged.
+- Cross-path proof: `test/member-tidy.test.js:221` checks the six paused markers through actual tidy, reap, cleanup, fleet disposal and autopilot regression execution; every path uses the same words and retains the folder. Rerun: `node --test test/worktree-removal-guard.test.js test/member-tidy.test.js`.

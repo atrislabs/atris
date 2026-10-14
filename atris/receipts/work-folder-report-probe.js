@@ -34,6 +34,29 @@ function main() {
     assert.ok(result.stdout.includes(`held: ${copy} git holds ${lock}, 3 h old`));
     assert.ok(fs.existsSync(copy));
     console.log('locked folder remains: yes');
+    fs.unlinkSync(lock);
+    for (const [marker, operation] of [
+      ['rebase-merge', 'rebase'], ['rebase-apply', 'rebase'],
+      ['MERGE_HEAD', 'merge'], ['CHERRY_PICK_HEAD', 'cherry-pick'],
+      ['REVERT_HEAD', 'revert'], ['BISECT_LOG', 'bisect'],
+    ]) {
+      const file = path.join(dir, marker);
+      const directory = marker.startsWith('rebase-');
+      if (directory) fs.mkdirSync(file);
+      else fs.writeFileSync(file, `${git(['-C', repo, 'rev-parse', 'HEAD'])}\n`);
+      const paused = spawnSync(process.execPath, [...args, '--apply'], { cwd: repo, encoding: 'utf8' });
+      console.log(`command: node bin/atris.js worktree cleanup --base HEAD --apply (${marker} fixture)`);
+      process.stdout.write(paused.stdout);
+      process.stderr.write(paused.stderr);
+      console.log(`exit: ${paused.status}`);
+      assert.equal(paused.status, 0);
+      assert.ok(paused.stdout.includes(`held: ${copy} a ${operation} is paused`));
+      assert.ok(fs.existsSync(copy));
+      assert.ok(git(['-C', repo, 'worktree', 'list', '--porcelain']).includes(copy));
+      assert.equal(fs.existsSync(path.join(repo, '.atris/state/worktree_removals.jsonl')), false);
+      fs.rmSync(file, { recursive: directory });
+    }
+    console.log('paused cases: 6; folders retained: 6; removals logged: 0');
   } finally {
     fs.rmSync(base, { recursive: true, force: true });
   }

@@ -11,6 +11,10 @@ const path = require('node:path');
 const { spawn, spawnSync } = require('node:child_process');
 
 const { tidyMemberCopies, formatTidy } = require('../lib/member-tidy');
+const { reap } = require('../commands/land');
+const { cleanupWorktrees, describeGitHold } = require('../commands/worktree');
+const { disposeReviewSandbox } = require('../lib/fleet');
+const { regressionCheck } = require('../commands/autopilot');
 
 function runGit(args, cwd) {
   const result = spawnSync('git', args, { cwd, encoding: 'utf8', timeout: 15000 });
@@ -213,6 +217,70 @@ function removalLines(repo) {
   if (!fs.existsSync(file)) return [];
   return fs.readFileSync(file, 'utf8').trim().split('\n').map((line) => JSON.parse(line));
 }
+
+test('all five cleanup paths report paused git work in the same words and keep it', () => {
+  const fx = makeFixture();
+  try {
+    const copy = addCopy(fx, 'landed-paused');
+    const gitDir = runGit(['rev-parse', '--absolute-git-dir'], copy);
+    const hash = runGit(['rev-parse', 'HEAD'], fx.repo);
+    const folder = path.join(fx.repo, `.regression-worktree-${hash.slice(0, 8)}`);
+    const boundary = {
+      trustedRoot: fx.repo, worktreePath: copy,
+      sandboxRoot: path.join(fx.base, 'review'),
+      gitDir: path.join(fx.base, 'review.git'),
+      quarantine: path.join(fx.base, 'quarantine.git'),
+    };
+    fs.mkdirSync(boundary.quarantine);
+    fs.mkdirSync(path.join(fx.repo, 'atris'));
+    for (const [marker, operation] of [
+      ['rebase-merge', 'rebase'], ['rebase-apply', 'rebase'],
+      ['MERGE_HEAD', 'merge'], ['CHERRY_PICK_HEAD', 'cherry-pick'],
+      ['REVERT_HEAD', 'revert'], ['BISECT_LOG', 'bisect'],
+    ]) {
+      const words = `a ${operation} is paused`;
+      const markerPath = path.join(gitDir, marker);
+      const directory = marker.startsWith('rebase-');
+      if (directory) fs.mkdirSync(markerPath);
+      else fs.writeFileSync(markerPath, `${hash}\n`);
+
+      const tidy = tidyMemberCopies({ repoRoot: fx.repo });
+      assert.equal(tidy.aborted, null);
+      assert.equal(byName(tidy, 'landed-paused').action, 'kept');
+      assert.equal(byName(tidy, 'landed-paused').reason, `landed, but ${words}`);
+      const landed = reap(fx.repo, { remote: false, force: true, activeCwds: [] });
+      assert.ok(landed.keptWorktrees.some((line) => line.startsWith(`${copy} (`) && line.endsWith(`: ${words})`)), marker);
+      assert.ok(branchExists(fx.repo, 'landed-paused'));
+      const cleaned = cleanupWorktrees({ root: fx.repo, base: 'HEAD', apply: true, activeCwds: [] });
+      assert.deepEqual(cleaned.removed, []);
+      assert.equal(describeGitHold(cleaned.kept.find((item) => item.path === copy)), words);
+      const disposed = disposeReviewSandbox(boundary);
+      assert.equal(disposed.removed, false);
+      assert.equal(describeGitHold(disposed), words);
+      assert.ok([copy, boundary.quarantine].every((item) => fs.existsSync(item)));
+
+      // The real regression command leaves the same marker in its own copy.
+      const verifyCmd = directory
+        ? `mkdir "$(git rev-parse --git-dir)/${marker}"`
+        : `git rev-parse HEAD > "$(git rev-parse --git-dir)/${marker}"`;
+      fs.writeFileSync(path.join(fx.repo, 'atris', 'tick-registry.json'), JSON.stringify([{ hash, verifyCmd, slug: 'paused-proof' }]));
+      const [row] = regressionCheck(fx.repo, { activeCwds: [] });
+      assert.equal(row.pass, true);
+      assert.equal(row.held, words);
+      assert.equal(row.kept, disposed.reason);
+      assert.equal(row.path, folder);
+      assert.ok(fs.existsSync(folder));
+      assert.deepEqual(removalLines(fx.repo), []);
+
+      // Remove only this fixture's marker so the next case starts idle.
+      fs.rmSync(path.join(runGit(['rev-parse', '--absolute-git-dir'], folder), marker), { recursive: directory });
+      runGit(['worktree', 'remove', folder], fx.repo);
+      fs.rmSync(markerPath, { recursive: directory });
+    }
+  } finally {
+    fs.rmSync(fx.base, { recursive: true, force: true });
+  }
+});
 
 test('tidy keeps a landed copy while git is paused mid-rebase in it, and logs what it removes', () => {
   const fx = makeFixture();
