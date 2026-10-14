@@ -28,12 +28,18 @@ function main() {
   const copy = path.join(base, 'landed-with-lock');
   git(repo, 'worktree', 'add', '-q', '-b', 'landed-with-lock', copy);
   const privateDir = git(copy, 'rev-parse', '--absolute-git-dir');
+  const neighbor = path.join(base, 'neighbor-copy');
+  git(repo, 'worktree', 'add', '-q', '-b', 'neighbor-copy', neighbor);
+  const neighborLock = path.join(git(neighbor, 'rev-parse', '--absolute-git-dir'), 'index.lock');
   const locks = [path.join(privateDir, 'index.lock'), path.join(repo, '.git', 'packed-refs.lock')];
   const aged = new Date(Date.now() - 7200000);
-  for (const lock of locks) {
+  for (const lock of [...locks, neighborLock]) {
     fs.writeFileSync(lock, 'fixture lock\n');
     fs.utimesSync(lock, aged, aged);
   }
+  // Put the neighboring copy beyond the one-hour new-folder grace.
+  fs.utimesSync(neighbor, aged, aged);
+  fs.utimesSync(path.join(neighbor, '.git'), aged, aged);
   const moved = path.join(base, 'moved-copy');
   fs.renameSync(copy, moved);
   console.log(`fixture: ${base}`);
@@ -46,18 +52,30 @@ function main() {
     console.log(`cli exit: ${result.status}`);
     assert.equal(result.status, 0);
     assert.ok(result.stdout.includes('folder is missing'));
+    const missingLine = result.stdout.split('\n').find((line) => line.includes(`${copy} (folder is missing`));
+    assert.ok(missingLine, 'missing copy has its own explanation');
+    assert.equal(missingLine.includes(neighborLock), false, 'neighbor lock must not be attributed to missing copy');
+    const neighborLine = result.stdout.split('\n').find((line) => line.includes(`${neighbor} (git locks:`));
+    assert.ok(neighborLine, 'neighbor has its own lock explanation');
+    assert.ok(neighborLine.includes(neighborLock), 'neighbor explanation names its private lock');
+    assert.equal(neighborLine.includes(locks[0]), false, 'missing copy private lock must not be attributed to neighbor');
+    assert.match(neighborLine, /index\.lock \(\d+s old\)/);
+    console.log(`neighbor private lock reported only for its owner: ${neighborLock}`);
     for (const lock of locks) {
       assert.ok(fs.existsSync(lock));
       console.log(`retained lock: ${lock} (${Math.floor((Date.now() - fs.statSync(lock).mtimeMs) / 1000)}s old)`);
-      console.log(`lock reported: ${result.stdout.includes(lock)}`);
-      assert.equal(result.stdout.includes(lock), false);
+      console.log(`lock reported for missing copy: ${missingLine.includes(lock)}`);
+      assert.equal(missingLine.includes(lock), false);
     }
     assert.equal(fs.readFileSync(path.join(moved, 'README.md'), 'utf8'), '# fixture\n');
     assert.equal(fs.existsSync(copy), false);
     git(repo, 'rev-parse', '--verify', 'refs/heads/landed-with-lock');
+    assert.equal(fs.readFileSync(path.join(neighbor, 'README.md'), 'utf8'), '# fixture\n');
+    assert.ok(fs.existsSync(neighborLock));
+    git(repo, 'rev-parse', '--verify', 'refs/heads/neighbor-copy');
     assert.equal(fs.existsSync(path.join(repo, '.atris/state/worktree_removals.jsonl')), false);
   }
-  console.log('preview and cleanup reported a missing folder; both omitted two ordinary lock paths; moved files and branch retained; no removal recorded');
+  console.log('preview and cleanup omitted two missing-copy lock paths; neighbor private lock named only for its owner; both copies and branches retained; no removal recorded');
 }
 
 if (require.main === module) main();

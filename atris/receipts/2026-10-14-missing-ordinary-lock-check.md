@@ -71,3 +71,35 @@ Progress: two real CLI runs, two omitted paths per run, zero lost files or branc
 next_push: Share ordinary lock scanning for missing folders, with a sibling-copy case proving private lock ownership.
 
 layer: behaviors
+
+## Neighboring private lock ownership
+
+Extended the audit with an aged neighboring copy and its private index.lock. Both real preview and cleanup reported that lock and its age only on its owner's line, while the missing copy still omitted its own private and shared lock details. Both copies, both branches, and all three locks survived; no removal record appeared.
+
+Verdict: proceed with changes. The repair must inspect the matching private metadata and common metadata, excluding other copies' private metadata. The concrete safeguard is now executable: each copy's explanation must exclude the other copy's private lock. A shared lock can appear in the neighbor's explanation without satisfying the missing copy's reporting requirement.
+
+Plan: aged neighboring copy -> real preview and cleanup -> compare each explanation -> preserve both copies.
+
+Real proof command: `node atris/receipts/2026-10-14-missing-ordinary-lock-check.js`, exit 0. It invokes `node bin/atris.js land --reap --force --no-remote --dry-run` and `node bin/atris.js land --reap --force --no-remote` against generated local data. Fixture: `/private/var/folders/t1/2_4kmb5n4c71dxm26zc8dgzr0000gn/T/atris-missing-ordinary-qhyLId`.
+
+Output excerpt:
+
+```text
+cli exit: 0
+neighbor private lock reported only for its owner: /private/var/folders/t1/2_4kmb5n4c71dxm26zc8dgzr0000gn/T/atris-missing-ordinary-qhyLId/repo/.git/worktrees/neighbor-copy/index.lock
+lock reported for missing copy: false
+lock reported for missing copy: false
+preview and cleanup omitted two missing-copy lock paths; neighbor private lock named only for its owner; both copies and branches retained; no removal recorded
+```
+
+The neighbor's CLI explanation named `index.lock (7200s old)` in both runs. Initial audit attempts exposed the new-folder grace and a shared lock being reported on the neighbor's line. The fixture now ages the neighbor beyond that grace and checks omissions per copy rather than across the entire output.
+
+Required verification: `node --test test/worktree-removal-guard.test.js test/member-tidy.test.js`, exit 0. Exact summary: tests 19, suites 0, pass 19, fail 0, cancelled 0, skipped 0, todo 0, duration_ms 6423.019416.
+
+Files edited: `atris/receipts/2026-10-14-missing-ordinary-lock-check.js`, this receipt, `atris/MAP.md`, `atris/refs/MAP-NOTES.md`, `atris/team/architect/logs/2026-10-14.md`. No new filenames. Existing unrelated edits remain intact. Administrative commands: mission status, git status, brain activate (plan only, exit 2), atris, task list/new/claim/note/ready, git diff --check, commit, and push.
+
+Progress: two real CLI runs; one neighboring private lock correctly attributed with age; two missing-copy lock details still omitted; zero lost copies, branches, or locks; zero removal records. This is an advisory proof increment, not a production repair.
+
+next_push: Share ordinary lock scanning for missing folders and require each copy's explanation to exclude neighboring private locks.
+
+layer: behaviors
