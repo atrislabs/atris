@@ -8865,6 +8865,45 @@ function consumeMissionPings(mission, cwd) {
   return { mission: saved, pings: pending };
 }
 
+// A one-tick job has no next prompt. Deliver notes that arrived while the
+// worker ran before checking its work, within the same wall budget. Only a
+// successful worker response acknowledges a batch; failed delivery can retry.
+async function deliverLateMissionPings(mission, cwd, firstResult, { run, remainingMs, prompt }) {
+  let result = firstResult;
+  let delivered = 0;
+  while (result.ok) {
+    const latest = resolveMission(mission.id, cwd) || mission;
+    const pending = pendingMissionPings(latest);
+    if (!pending.length || TERMINAL_STATUSES.has(latest.status)) break;
+    if (remainingMs() <= 0) {
+      return { ...result, ok: false, timedOut: true, error: 'unread notes at the wall limit' };
+    }
+    const next = await run([
+      prompt,
+      '',
+      '## Notes received before this job finished',
+      'This is the same work step. Read and apply these notes before returning the final receipt. Do not start a second slice.',
+      ...pending.map((p) => `- [${p.at}] ${p.from || 'operator'}: ${p.text}`),
+      '',
+      'Previous work receipt:',
+      result.receipt_text || result.result || '',
+    ].join('\n'));
+    if (!next.ok) return next;
+    // Re-read so notes sent during delivery survive the acknowledgement.
+    const fresh = resolveMission(mission.id, cwd) || latest;
+    const keys = new Set(pending.map((p) => JSON.stringify([p.at, p.from, p.text])));
+    const consumedAt = stampIso();
+    saveMission({
+      ...fresh,
+      pings: (fresh.pings || []).map((p) => p && !p.consumed_at && keys.has(JSON.stringify([p.at, p.from, p.text]))
+        ? { ...p, consumed_at: consumedAt } : p),
+    }, cwd, 'mission_pings_consumed', { count: pending.length });
+    delivered += pending.length;
+    result = { ...next, operator_notes_read: delivered };
+  }
+  return result;
+}
+
 function readBoundedContextFile(filePath, maxChars = 1600) {
   try {
     if (!fs.existsSync(filePath)) return '';
@@ -10298,8 +10337,8 @@ async function executeMissionRunTicksPhase(context) {
           }, Math.max(1, Math.floor(remainingWall * 1000)));
           let turn;
           try {
-            turn = await runAtris2Turn({
-              prompt,
+            const runTurn = (direction) => runAtris2Turn({
+              prompt: direction,
               model: tickRuntimeMission.model || 'atris:fast',
               business: businessId,
               maxTurns: 16,
@@ -10310,6 +10349,16 @@ async function executeMissionRunTicksPhase(context) {
               localEnv: atris2GitGuard.env,
               localPathPrefix: atris2GitGuard.pathPrefix,
             });
+            turn = await runTurn(prompt);
+            turn = await deliverLateMissionPings(mission, cwd, { ...turn, receipt_text: turn.text }, {
+              prompt,
+              remainingMs: () => (maxWallSeconds * 1000) - (Date.now() - startedAt),
+              run: async (direction) => {
+                const next = await runTurn(direction);
+                return { ...next, receipt_text: next.text };
+              },
+            });
+            mission = resolveMission(mission.id, cwd) || mission;
           } finally {
             atris2GitGuard.cleanup();
             clearTimeout(tickTimer);
@@ -10325,6 +10374,7 @@ async function executeMissionRunTicksPhase(context) {
             error: turn.error,
             backend_unavailable: isTransientAtris2BackendError(turn.error) || undefined,
             receipt_text: String(turn.text || '').slice(0, 4000),
+            operator_notes_read: turn.operator_notes_read,
           };
           tickWorkerRun = { endedMs: Date.now(), usage: {} };
           if (controller.signal.aborted) { pauseReason = 'aborted-during-atris2'; break; }
@@ -10358,14 +10408,14 @@ async function executeMissionRunTicksPhase(context) {
         const restoreTickRunnerProfile = tickEngineId ? applyMissionRunnerProfile(tickEngineId) : () => {};
         let claudeResult;
         let sessionBusyRetried = false;
-        const runClaudeSession = () => spawnClaudeTick(tickRuntimeMission, {
+        const runClaudeSession = (direction = workerPrompt) => spawnClaudeTick(tickRuntimeMission, {
           sessionMode, sessionId: useId, cwd, signal: controller.signal,
           missionLock: lock,
           timeoutMs: missionTickTimeoutMs(
             tickRuntimeMission,
             (maxWallSeconds - ((Date.now() - startedAt) / 1000)) * 1000,
           ),
-          prompt: workerPrompt,
+          prompt: direction,
           model: resolveMissionTickRunnerModel(tickRuntimeMission),
         });
         try {
@@ -10382,6 +10432,17 @@ async function executeMissionRunTicksPhase(context) {
             useId = pendingSessionId;
             claudeResult = await runClaudeSession();
           }
+          claudeResult = await deliverLateMissionPings(mission, cwd, claudeResult, {
+            prompt: workerPrompt,
+            remainingMs: () => (maxWallSeconds * 1000) - (Date.now() - startedAt),
+            run: (direction) => {
+              // Claude needs to resume the session it just confirmed. Generic
+              // runners receive the earlier receipt in the delivery prompt.
+              if (claudeResult.sessionIds?.includes(useId)) sessionMode = 'resume';
+              return runClaudeSession(direction);
+            },
+          });
+          mission = resolveMission(mission.id, cwd) || mission;
         } finally {
           restoreTickRunnerProfile();
         }
@@ -10404,6 +10465,7 @@ async function executeMissionRunTicksPhase(context) {
           timed_out: claudeResult.timedOut,
           aborted: claudeResult.aborted,
           session_busy_retry: sessionBusyRetried || undefined,
+          operator_notes_read: claudeResult.operator_notes_read,
         };
         if (claudeResult.rate_limit_info) {
           // Claude reports the five-hour window's resetsAt on every turn, even
