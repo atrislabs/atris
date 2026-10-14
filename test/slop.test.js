@@ -1605,6 +1605,11 @@ test('fix joins "each", its noun and a verb in "s" after a dash with a semicolon
     // no "the" or place word may sit before the verb
     'The cache warms up \u2014 each time the loop runs.',
     'The repos are split \u2014 each with its own tests folder.',
+    // "each time" or "every time" opens a "when" clause, not a subject
+    'The cache warms up \u2014 each time the loop runs it.',
+    'The cache warms up \u2014 every time the loop runs it.',
+    'The cache warms up \u2014 each time CI runs the suite.',
+    'The cache warms up \u2014 every time CI still runs the suite.',
   ].join('\n'));
   const { changes } = applyFixes([file], RULES);
   assert.deepEqual(changes.map((c) => c.after), [
@@ -1613,6 +1618,10 @@ test('fix joins "each", its noun and a verb in "s" after a dash with a semicolon
     'Two reviewers looked; each signs off on the merge.',
     'The cache warms up, each time the loop runs.',
     'The repos are split, each with its own tests folder.',
+    'The cache warms up, each time the loop runs it.',
+    'The cache warms up, every time the loop runs it.',
+    'The cache warms up, each time CI runs the suite.',
+    'The cache warms up, every time CI still runs the suite.',
   ]);
 });
 
