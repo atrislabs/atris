@@ -86,8 +86,8 @@ test('buildWeekReportData counts only fresh done projection landings', () => {
   const dir = makeTempDir();
   try {
     seedProjection(dir, [
-      { id: 'fresh-id', display_id: 'CLI-1', title: 'Ship weekly report', status: 'done', done_at: NOW - DAY_MS },
-      { id: 'old-id', display_id: 'CLI-2', title: 'Old landing', status: 'done', done_at: NOW - 10 * DAY_MS },
+      { id: 'fresh-id', display_id: 'CLI-1', title: 'Ship weekly report', status: 'done', done_at: NOW - DAY_MS, metadata: { landing: { status: 'landed', reason: 'proven' } } },
+      { id: 'old-id', display_id: 'CLI-2', title: 'Old landing', status: 'done', done_at: NOW - 10 * DAY_MS, metadata: { landing: { status: 'landed', reason: 'proven' } } },
       { id: 'review-id', display_id: 'CLI-3', title: 'Review item', status: 'review', done_at: NOW - DAY_MS },
     ]);
     const data = buildWeekReportData(dir, { days: 7, now: NOW });
@@ -162,6 +162,27 @@ test('buildWeekReportData sums only fresh Career XP receipts', () => {
   }
 });
 
+test('a done task without a passing landing check is not counted as landed', () => {
+  const dir = makeTempDir();
+  try {
+    seedProjection(dir, [
+      { id: 'a', display_id: 'CLI-1', title: 'Proven work', status: 'done', done_at: NOW - DAY_MS, metadata: { landing: { status: 'landed', reason: 'proven' } } },
+      { id: 'b', display_id: 'CLI-2', title: 'Accepted but never merged', status: 'done', done_at: NOW - DAY_MS, metadata: { landing: { status: 'not_landed', reason: 'content_not_on_target' } } },
+      { id: 'c', display_id: 'CLI-3', title: 'Old done row', status: 'done', done_at: NOW - DAY_MS },
+    ]);
+    const data = buildWeekReportData(dir, { days: 7, now: NOW });
+    assert.deepEqual(data.landings.map(t => t.id), ['CLI-1']);
+    assert.deepEqual(data.unproven.map(t => t.id).sort(), ['CLI-2', 'CLI-3']);
+    const out = renderWeekReport(data);
+    assert.match(out, /^week in review: 1 landed, 2 done but not proven landed,/);
+    assert.match(out, /- done: Accepted but never merged \| landing: not landed, content not on target/);
+    assert.match(out, /- done: Old done row \| landing: unchecked, no landing proof recorded/);
+    assert.doesNotMatch(out, /- landed: Accepted but never merged/);
+  } finally {
+    cleanup(dir);
+  }
+});
+
 test('renderWeekReport includes title line and no em dash', () => {
   const data = {
     empty: false,
@@ -172,7 +193,7 @@ test('renderWeekReport includes title line and no em dash', () => {
   };
   const out = renderWeekReport(data);
   assert.match(out, /^week in review: 1 landed, 1 completions, 3 xp/);
-  assert.match(out, /landings: 1 tasks, known from task projection/);
+  assert.match(out, /landings: 1 tasks, proven by a git landing check/);
   assert.equal(out.includes('—'), false);
 });
 
