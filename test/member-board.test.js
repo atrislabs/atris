@@ -348,6 +348,25 @@ test('compact rows keep missing results clear beside a finishing member', async 
   }
 });
 
+test('a stopped row shrinks like a done row: how it ended, with the age left to ago', () => {
+  const dir = fakeDir({
+    builder: [`${at(900)} m-1 started: fix the login flow`, `${at(300)} m-1 finished: failed (timed out)`],
+    scout: [`${at(600)} m-3 started: sweep papers`, `${at(500)} m-3 searching arxiv`, `${at(450)} m-3 finished: stopped`],
+  });
+  try {
+    const rows = readBoard({ dir, now: NOW });
+    assert.match(renderBoard(rows, dir), /^scout\s+stopped\s+stopped 7m ago\s/m, 'piped output keeps the full wording');
+    for (const width of [60, 80]) {
+      const board = renderBoard(rows, dir, 0, width);
+      assert.ok(board.split('\n').every((line) => line.length <= width), `${width}: ${board}`);
+      assert.match(board, /^scout\s+stopped\s+on purpose\s+7m ago/m, `${width}: ${board}`);
+      assert.match(board, /^builder\s+done failed\s+timed out\s+5m ago/m, `${width}: ${board}`);
+    }
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
 test('a busy row with an earlier failure shrinks its last result before it overflows', () => {
   const dir = fakeDir({
     'chat-experience-lead': [
