@@ -10782,7 +10782,7 @@ test('task current-step advances the scoped current task one safe action', () =>
   try {
     fs.mkdirSync(path.join(dir, 'atris'), { recursive: true });
     // Side tasks are created and claimed straight in the task store; every
-    // current-step, ready, review, and show call still runs through the CLI.
+    // current-step call still runs through the CLI.
     const workspaceRoot = taskStore.workspaceRoot(dir);
     const seedClaimedTask = ({ title, tag, goalId, owner }) => {
       const db = taskStore.open(dbPath);
@@ -10791,6 +10791,25 @@ test('task current-step advances the scoped current task one safe action', () =>
         const { id } = addSeedTask(db, { title, tag, workspaceRoot, metadata });
         assert.equal(taskStore.claimTask(db, { id, claimedBy: owner }).claimed, true);
         return { id, display_id: taskStore.taskDisplayRefMap(taskStore.listTasks(db, { workspaceRoot })).get(id) };
+      } finally {
+        taskStore.close();
+      }
+    };
+    // Side tasks only need a review state for current-step to pick from, so
+    // ready and review go straight to the store; the scoped task still moves
+    // through ready and review-chat via the CLI.
+    const storeReady = (id, actor, proof) => {
+      const db = taskStore.open(dbPath);
+      try {
+        assert.equal(taskStore.readyTask(db, { id, actor, proof }).ready, true);
+      } finally {
+        taskStore.close();
+      }
+    };
+    const storeReview = (id, proof, nextTask) => {
+      const db = taskStore.open(dbPath);
+      try {
+        assert.equal(taskStore.reviewTask(db, { id, actor: 'codex-review', reward: 0, proof, nextTask }).reviewed, true);
       } finally {
         taskStore.close();
       }
@@ -10809,11 +10828,7 @@ test('task current-step advances the scoped current task one safe action', () =>
     };
 
     const reviewTask = seedClaimedTask({ title: 'Unrelated review debt stays global', tag: 'agent', owner: 'codex' });
-    assert.equal(runCli([
-      'task', 'ready', reviewTask.display_id,
-      '--as', 'codex',
-      '--proof', 'node --check test/commands.test.js passed for unrelated review debt',
-    ], { cwd: dir, env }).status, 0);
+    storeReady(reviewTask.id, 'codex', 'node --check test/commands.test.js passed for unrelated review debt');
 
     const scopedAdd = runCli([
       'task', 'add', 'Scoped current step task',
@@ -10918,31 +10933,12 @@ test('task current-step advances the scoped current task one safe action', () =>
     assert.deepEqual(scopedInProcess.messages, scopedDetail.messages);
 
     const continueTask = seedClaimedTask({ title: 'Current-step certified continuation parent', tag: 'task', goalId: 'OBL-931', owner: 'codex' });
-    assert.equal(runCli([
-      'task', 'ready', continueTask.display_id,
-      '--as', 'codex',
-      '--proof', 'node --check test/commands.test.js passed before current-step continue-work',
-    ], { cwd: dir, env }).status, 0);
-    assert.equal(runCli([
-      'task', 'review', continueTask.display_id,
-      '--reward', '0',
-      '--as', 'codex-review',
-      '--proof', 'node --test test/commands.test.js passed during current-step continue-work review',
-      '--next', 'Current-step continuation child',
-    ], { cwd: dir, env }).status, 0);
+    storeReady(continueTask.id, 'codex', 'node --check test/commands.test.js passed before current-step continue-work');
+    storeReview(continueTask.id, 'node --test test/commands.test.js passed during current-step continue-work review', 'Current-step continuation child');
 
     const waitingTask = seedClaimedTask({ title: 'Current-step waits for human accept only', tag: 'task', goalId: 'OBL-931', owner: 'codex' });
-    assert.equal(runCli([
-      'task', 'ready', waitingTask.display_id,
-      '--as', 'codex',
-      '--proof', 'node --check test/commands.test.js passed before current-step human wait',
-    ], { cwd: dir, env }).status, 0);
-    assert.equal(runCli([
-      'task', 'review', waitingTask.display_id,
-      '--reward', '0',
-      '--as', 'codex-review',
-      '--proof', 'node --test test/commands.test.js passed during current-step human wait review',
-    ], { cwd: dir, env }).status, 0);
+    storeReady(waitingTask.id, 'codex', 'node --check test/commands.test.js passed before current-step human wait');
+    storeReview(waitingTask.id, 'node --test test/commands.test.js passed during current-step human wait review');
 
     const continueStep = runCli([
       'task', 'current-step',
@@ -11016,11 +11012,7 @@ test('task current-step advances the scoped current task one safe action', () =>
     assert.equal(otherDetail.claimed_by, 'other-agent');
 
     const otherReviewTask = seedClaimedTask({ title: 'Other owner review task stays untouched', tag: 'task', goalId: 'OBL-930', owner: 'other-agent' });
-    assert.equal(runCli([
-      'task', 'ready', otherReviewTask.display_id,
-      '--as', 'other-agent',
-      '--proof', 'node --check test/commands.test.js passed before other owner review',
-    ], { cwd: dir, env }).status, 0);
+    storeReady(otherReviewTask.id, 'other-agent', 'node --check test/commands.test.js passed before other owner review');
     const otherReviewStep = runCli([
       'task', 'current-step',
       '--goal-id', 'OBL-930',
