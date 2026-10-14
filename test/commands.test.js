@@ -13276,11 +13276,18 @@ test('task auto-accept-certified --all sweeps past the old 12-row cap', () => {
     fs.writeFileSync(path.join(trustState, 'career_xp_receipts.jsonl'), `${trustedCodex.join('\n')}\n`);
     fs.writeFileSync(path.join(trustState, 'scorecards.jsonl'), '');
     writePolicy(dir, { enabled: false, enabled_by: 'test' });
+    // Create and claim straight in the task store; ready still runs through
+    // the CLI because the certified scan reads what it writes.
+    const workspaceRoot = taskStore.workspaceRoot(dir);
     for (let i = 0; i < ROW_COUNT; i += 1) {
-      const add = runCli(['task', 'add', `Row ${i} lands under --all`, '--tag', 'code', '--json'], { cwd: dir, env });
-      assert.equal(add.status, 0, add.stderr);
-      const ref = JSON.parse(add.stdout).task.display_id;
-      assert.equal(runCli(['task', 'claim', ref, '--as', 'codex'], { cwd: dir, env }).status, 0);
+      const db = taskStore.open(dbPath);
+      let ref;
+      try {
+        ref = taskStore.addTask(db, { title: `Row ${i} lands under --all`, tag: 'code', workspaceRoot }).id;
+        assert.equal(taskStore.claimTask(db, { id: ref, claimedBy: 'codex' }).claimed, true);
+      } finally {
+        taskStore.close();
+      }
       assert.equal(runCli([
         'task', 'ready', ref,
         '--proof', `Row ${i}: node --check test/commands.test.js passed and diff inspected end to end`,
