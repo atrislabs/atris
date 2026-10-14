@@ -271,10 +271,14 @@ function fencedLines(lines) {
 
 // Inline code, a link or image address, and an HTML tag are all literal: a
 // dash there is part of a path or attribute, and pairing it with a prose dash
-// would drop a parenthesis into the address. Each is masked while the fix runs.
+// would drop a parenthesis into the address. So are a footnote label, a
+// reference label after link text, and the label and address that open a
+// reference definition; the title and note text after them stay prose.
+// Each is masked while the fix runs.
+const LITERAL_SPAN = /(`+).+?\1|\[\^[^\]\s]+\]|^\s{0,3}\[[^\]]+\]:\s*\S+|(?<=\])\[[^\]]+\]|(?<=\])\([^)\s]*\)|<[A-Za-z/!][^<>]*>/g;
 function maskInlineCode(line) {
   const spans = [];
-  const masked = line.replace(/(`+).+?\1|(?<=\])\([^)\s]*\)|<[A-Za-z/!][^<>]*>/g, (m) => `\uE000${spans.push(m) - 1}\uE001`);
+  const masked = line.replace(LITERAL_SPAN, (m) => `\uE000${spans.push(m) - 1}\uE001`);
   return { masked, restore: (s) => s.replace(/\uE000(\d+)\uE001/g, (m, n) => spans[n]) };
 }
 

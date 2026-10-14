@@ -1013,6 +1013,23 @@ test('fix leaves link addresses, HTML tags, and code in plain text alone', () =>
   ]);
 });
 
+test('fix leaves footnote and reference labels alone and fixes the prose around them', () => {
+  // a dash in a label used to pair with a prose dash: "[^note (1] Then more)"
+  const file = tmpFile('refs.md', [
+    'A claim.[^note\u20141] Then more \u2014 after.',
+    '[^note\u20141]: The source \u2014 page 4.',
+    'See [the guide][ref\u20141] \u2014 it helps.',
+    '[ref\u20141]: https://x.dev/a\u2014b "Guide \u2014 v2"',
+  ].join('\n'));
+  const { changes } = applyFixes([file], RULES, { write: false });
+  assert.deepEqual(changes.map((c) => c.after), [
+    'A claim.[^note\u20141] Then more, after.',
+    '[^note\u20141]: The source, page 4.',
+    'See [the guide][ref\u20141]; it helps.',
+    '[ref\u20141]: https://x.dev/a\u2014b "Guide, v2"',
+  ]);
+});
+
 test('fix attributes a quote with no stop of its own with a comma', () => {
   // a README testimonial; of 22 repo lines with a dash after a closing quote,
   // none read better with another mark, so the comma is the settled choice
