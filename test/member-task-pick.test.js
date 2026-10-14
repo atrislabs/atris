@@ -110,3 +110,13 @@ test('a claim that throws is released, not stranded', () => {
     assert.equal(row.status, 'open');
   });
 });
+
+test('skips a protected note in any text field and a denied tag written in the title', () => {
+  withProject(({ db, ws, add }) => {
+    add('Tidy the upload copy', { metadata: { objective: 'Shorter wording.', details: 'Protected lane: a human accepts this one.' } });
+    add('Rotate keys #security');
+    const ok = add('Add a retry to the uploader');
+    const got = claimTaskForMember(taskDb, db, { workspaceRoot: ws, member: 'executor', job: 'build' });
+    assert.equal(got.task.id, ok);
+  });
+});
