@@ -118,6 +118,10 @@ checks the refs in both files; `atris doc-health --fix-refs` moves drifted ones.
 | ax chat app screens | `atris/refs/FEATURE-MAP-ax.md` | drive the running ax app, not the code |
 | deep map with line refs | `atris/refs/MAP-NOTES.md` | rg shortcuts and file:line notes |
 
+## Missing-folder ordinary lock audit
+
+`atris/receipts/2026-10-14-missing-ordinary-lock-check.js` runs real cleanup preview against a moved generated copy with private and shared ordinary locks. Both survive, but their paths and ages are omitted. Recommendation and output: matching `.md` receipt.
+
 ## Load order
 
 1. `atris/now.md` then `atris/brain/STATUS.md`, if present (local files made by `atris brain activate`; a fresh checkout has neither)
