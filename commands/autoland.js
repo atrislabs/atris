@@ -555,10 +555,13 @@ function showStatus(root, args, deps = {}) {
     const when = `${String(failed.at || '').slice(0, 16).replace('T', ' ')} UTC`;
     console.log(`  engine runs that ended in an error in the last day: ${lost.errors_day}, newest ${failed.engine || 'unknown engine'} on ${failed.task || 'no task'} at ${when}: ${errorReason(failed)}`);
   }
-  const leakedAgents = countLeakedSshAgents(deps);
+  const { leaked: leakedAgents, unread: unreadAgents } = countLeakedSshAgents(deps);
+  const unchecked = unreadAgents.length ? `could not read the ${unreadAgents.join(' or the ')}, so some ssh-agents went unchecked` : '';
   if (leakedAgents) {
     const stop = heartbeatLive ? 'the next hourly pass stops them' : 'stop them now: atris engine sweep --apply';
-    console.log(`  leaked ssh-agents on this machine: ${leakedAgents}${leakGrowthNote(lost.first_day_leak_reading, leakedAgents)}; ${stop}`);
+    console.log(`  leaked ssh-agents on this machine: ${unchecked ? 'at least ' : ''}${leakedAgents}${leakGrowthNote(lost.first_day_leak_reading, leakedAgents)}; ${stop}${unchecked ? `; ${unchecked}` : ''}`);
+  } else if (unchecked) {
+    console.log(`  leaked ssh-agents on this machine: unknown, ${unchecked}`);
   }
   console.log('');
   const humanOnly = blocked.filter((r) => String(r.reason || '').startsWith('denied_tag_'));
@@ -805,18 +808,20 @@ function engineReceiptSweepNote(receipt) {
   return `, finalized ${finalized} stale engine receipt${finalized === 1 ? '' : 's'} as presumed dead`;
 }
 
-// Read only: how many ssh-agents look leaked right now. A test run never
-// reads the real machine, and a failed read counts as none.
+// Read only: how many ssh-agents look leaked right now, and which readers
+// failed, since then the count is only a floor. A test run never reads the
+// real machine, and a thrown read counts as none.
 function countLeakedSshAgents(deps = {}) {
+  const none = { leaked: 0, unread: [] };
   try {
     const read = deps.readSshAgents;
-    if (!read && process.env.NODE_TEST_CONTEXT) return 0;
+    if (!read && process.env.NODE_TEST_CONTEXT) return none;
     const uid = deps.uid !== undefined ? deps.uid : (typeof process.getuid === 'function' ? process.getuid() : null);
-    if (uid === null) return 0;
-    const { agents, referenced } = (read || readSshAgents)();
-    return findLeakedSshAgents(agents, { referenced, uid }).length;
+    if (uid === null) return none;
+    const { agents, referenced, unread = [] } = (read || readSshAgents)();
+    return { leaked: findLeakedSshAgents(agents, { referenced, uid }).length, unread };
   } catch {
-    return 0;
+    return none;
   }
 }
 

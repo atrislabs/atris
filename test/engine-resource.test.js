@@ -1577,6 +1577,32 @@ test('the landing status counts leaked ssh-agents, says how they get stopped, an
   }
 });
 
+test('the landing status names an unreadable agent scan instead of showing no leaks', () => {
+  const { showStatus } = require('../commands/autoland');
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'autoland-status-agents-unread-'));
+  const agent = (pid) => ({ pid, ppid: 1, uid: 501, age_sec: 3600, args: 'ssh-agent -s' });
+  const status = (deps) => {
+    const out = [];
+    const original = console.log;
+    console.log = (line = '') => out.push(String(line));
+    try {
+      showStatus(root, [], deps);
+    } finally {
+      console.log = original;
+    }
+    return out.join('\n');
+  };
+  try {
+    require('node:child_process').spawnSync('git', ['init', '-q'], { cwd: root });
+    const blind = status({ readSshAgents: () => ({ agents: [], referenced: new Set(), unread: ['process list'] }), uid: 501 });
+    assert.match(blind, /leaked ssh-agents on this machine: unknown, could not read the process list, so some ssh-agents went unchecked/);
+    const partial = status({ readSshAgents: () => ({ agents: [agent(200), agent(201)], referenced: new Set([201]), unread: ['agent sockets'] }), uid: 501 });
+    assert.match(partial, /leaked ssh-agents on this machine: at least 1; stop them now: atris engine sweep --apply; could not read the agent sockets, so some ssh-agents went unchecked/);
+  } finally {
+    fs.rmSync(root, { recursive: true, force: true });
+  }
+});
+
 test('the landing status says how fast leaked ssh-agents grew since the oldest reading in the last day', () => {
   const { showStatus } = require('../commands/autoland');
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'autoland-status-agent-growth-'));
