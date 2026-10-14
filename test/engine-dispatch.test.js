@@ -1312,6 +1312,8 @@ test('every engine run writes a start and end machine line, and a SIGKILL names 
     });
     assert.deepEqual(linesWhileRunning.map((line) => line.phase), ['start']);
     const [start, end] = readLines();
+    assert.match(start.run_id, /^[0-9a-f-]{36}$/);
+    assert.equal(end.run_id, start.run_id);
     assert.equal(start.engine, 'claude');
     assert.equal(start.task, 'CLI-900');
     assert.ok(Array.isArray(start.load));
@@ -1332,10 +1334,48 @@ test('every engine run writes a start and end machine line, and a SIGKILL names 
     const lines = readLines();
     assert.equal(lines.length, 4);
     assert.equal(lines[3].phase, 'end');
+    assert.notEqual(lines[2].run_id, start.run_id);
+    assert.equal(lines[3].run_id, lines[2].run_id);
     assert.equal(lines[3].signal, undefined);
     assert.equal(lines[3].cause, undefined);
     assert.equal(clean.kill_cause, undefined);
   } finally {
+    fs.rmSync(root, { recursive: true, force: true });
+    fs.rmSync(worktree, { recursive: true, force: true });
+  }
+});
+
+test('overlapping runs of the same engine and task keep distinct resource pairs', async () => {
+  const { execFile, execFileSync } = require('node:child_process');
+  const root = makeTempRoot();
+  execFileSync('git', ['init', '-q', root]);
+  const worktree = fs.mkdtempSync(path.join(os.tmpdir(), 'engine-dispatch-wt-'));
+  let firstChild;
+  let firstRun;
+  try {
+    const options = { task: TASK, engine: 'claude', root, worktreePath: worktree, skipBriefCapture: true };
+    firstRun = fleet.dispatchToEngine({ ...options, runner: () => new Promise((resolve, reject) => {
+      firstChild = execFile(process.execPath, ['-e', 'process.stdin.resume(); process.stdin.on("end", () => process.exit(0))'], (error, stdout, stderr) => {
+        if (error) reject(error);
+        else resolve({ status: 0, stdout, stderr });
+      });
+    }) });
+    fleet.dispatchToEngine({ ...options, runner: () => ({
+      status: 0, stdout: execFileSync(process.execPath, ['-e', 'console.log("done")'], { encoding: 'utf8' }), stderr: '',
+    }) });
+    firstChild.stdin.end();
+    await firstRun;
+    const lines = fs.readFileSync(path.join(root, '.atris/state/engine-resource.jsonl'), 'utf8')
+      .trim().split('\n').map(JSON.parse);
+    assert.deepEqual(lines.map((line) => line.phase), ['start', 'start', 'end', 'end']);
+    assert.match(lines[0].run_id, /^[0-9a-f-]{36}$/);
+    assert.match(lines[1].run_id, /^[0-9a-f-]{36}$/);
+    assert.notEqual(lines[0].run_id, lines[1].run_id);
+    assert.equal(lines[2].run_id, lines[1].run_id);
+    assert.equal(lines[3].run_id, lines[0].run_id);
+  } finally {
+    if (firstChild) firstChild.stdin.end();
+    if (firstRun) await firstRun;
     fs.rmSync(root, { recursive: true, force: true });
     fs.rmSync(worktree, { recursive: true, force: true });
   }
@@ -1374,6 +1414,8 @@ test('thrown and rejected engine runners save end resources and preserve the ori
         const lines = fs.readFileSync(path.join(root, '.atris/state/engine-resource.jsonl'), 'utf8')
           .trim().split('\n').map(JSON.parse);
         assert.deepEqual(lines.map((line) => line.phase), ['start', 'end']);
+        assert.match(lines[0].run_id, /^[0-9a-f-]{36}$/);
+        assert.equal(lines[1].run_id, lines[0].run_id);
         const end = lines[1];
         assert.equal(end.engine, 'claude');
         assert.equal(end.task, TASK.display_id);

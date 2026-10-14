@@ -58,13 +58,15 @@ test('start and end lines append to the durable resource log', () => {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'engine-resource-'));
   try {
     const deps = { platform: 'darwin', run: fakeRun(PRESSURE_LOW, SWAP_OK), loadavg: () => [4, 3, 2], now: () => '2026-10-14T08:00:00.000Z' };
-    recordEngineResource(root, { phase: 'start', engine: 'codex', task: 'CLI-1' }, deps);
-    const end = recordEngineResource(root, { phase: 'end', engine: 'codex', task: 'CLI-1', signal: 'SIGKILL' }, deps);
+    recordEngineResource(root, { phase: 'start', engine: 'codex', task: 'CLI-1', run_id: 'run-one' }, deps);
+    const end = recordEngineResource(root, { phase: 'end', engine: 'codex', task: 'CLI-1', run_id: 'run-one', signal: 'SIGKILL' }, deps);
     assert.strictEqual(end.cause, 'killed (machine memory low)');
     const lines = fs.readFileSync(path.join(root, RESOURCE_LOG), 'utf8').trim().split('\n').map((l) => JSON.parse(l));
+    assert.deepStrictEqual(lines.map((line) => line.run_id), ['run-one', 'run-one']);
     assert.strictEqual(lines.length, 2);
     assert.deepStrictEqual(lines[0], {
       at: '2026-10-14T08:00:00.000Z', phase: 'start', engine: 'codex', task: 'CLI-1',
+      run_id: 'run-one',
       free_pct: 9, swap_used_mb: 512.25, swap_total_mb: 2048, load: [4, 3, 2],
       leaked_ssh_agents: 0,
     });
