@@ -1763,13 +1763,15 @@ test('fix keeps the right border of a drawn box in line', () => {
 test('fix turns a padded dash into spaces so a column of descriptions stays in line', () => {
   // a folder tree came out "people/, one page" beside "schema.md: page
   // conventions", the column gone and the marks mixed; two spaces after a
-  // long phrase is a typo in a sentence and keeps the usual fix
+  // long phrase is a typo in a sentence and keeps the usual fix, and a
+  // list marker alone before the padding names nothing, so its dash just goes
   const file = tmpFile('columns.md', [
     '\u251c\u2500\u2500 people/            \u2014 one page per human being',
     '\u251c\u2500\u2500 schema.md          \u2014 page conventions, templates, workflows',
     '/atris-do           \u2014 Executor: build step-by-step',
     '\u251c\u2500\u2500 permissions: text[]  \u2014 execute, read_secrets, emit_output',
     '4. Latest team member log for the horizon  \u2014 prior handoff',
+    '-  \u2014 jidapa@pallet.com',
   ].join('\n'));
   const { changes } = applyFixes([file], RULES, { write: false });
   assert.deepEqual(changes.map((c) => c.after), [
@@ -1778,6 +1780,7 @@ test('fix turns a padded dash into spaces so a column of descriptions stays in l
     '/atris-do             Executor: build step-by-step',
     '\u251c\u2500\u2500 permissions: text[]    execute, read_secrets, emit_output',
     '4. Latest team member log for the horizon: prior handoff',
+    '- jidapa@pallet.com',
   ]);
   for (const c of changes.slice(0, 4)) assert.equal(c.after.length, c.before.length);
 });

@@ -396,14 +396,17 @@ function fixEmDash(s, { endsBlock = false, startsBlock = false } = {}) {
   // padding before a dash lines descriptions up in a column, as in a folder
   // tree or a command list: "people/            \u2014 one page". The spaces already
   // part name from description, so the dash turns into spaces and the column
-  // stays put. Two spaces after a long phrase is a typo in a sentence, not a column.
+  // stays put. Two spaces after a long phrase is a typo in a sentence, not a
+  // column, and a list or quote marker alone before the padding names nothing.
   s = s.replace(/(?<=\S)( {2,})\u2014 (?=\S)/g, (m, pad, at) => {
+    if (/^\s*(?:[-*+>]|\d+[.)])$/.test(s.slice(0, at))) return m;
     const left = s.slice(0, at).split(/ {2,}|^\s*(?:[-*+]|\d+[.)])\s+/).pop();
     return pad.length >= 3 || left.trim().split(/\s+/).length <= 3 ? `${pad}  ` : m;
   });
   // a dash between two numbers is a range, "10-20", unless the first has a
   // sign, which makes it a score: "reward: +4, 404 on missing routes"
-  s = s.replace(/\u2014(?:\s*\u2014)+/g, '\u2014').replace(/(?<![+-]\d*)(\d+)\s*\u2014\s*(?=(\d+)(?![\d-]))/g, (m, a, b) => (isRange(a, b) ? `${a}-` : m)).replace(/^(\s*(?:>\s*)*)\u2014\s*/, '$1');
+  // A dash that opens a line, a quote or a list item names nothing and goes.
+  s = s.replace(/\u2014(?:\s*\u2014)+/g, '\u2014').replace(/(?<![+-]\d*)(\d+)\s*\u2014\s*(?=(\d+)(?![\d-]))/g, (m, a, b) => (isRange(a, b) ? `${a}-` : m)).replace(/^(\s*(?:>\s*)*)(?:([-*+]|\d+\.)\s+)?\u2014\s*/, (m, lead, marker) => (marker ? lead + marker + ' ' : lead));
   s = s.replace(NAME_ADDRESS_DASH, '$1$2, ');
   const greeting = GREETING_DASH.exec(s);
   if (greeting) {
