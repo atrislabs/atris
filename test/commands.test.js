@@ -20149,9 +20149,18 @@ test('status verbose mode keeps the legacy task board', () => {
 });
 
 test('status stays local even when .atris/business.json exists', () => {
+  if (!hasNodeSqlite()) return;
   const dir = makeTempDir();
+  const dbPath = path.join(dir, '.atris', 'tasks.db');
   try {
-    initWorkspace(dir);
+    // The claim line needs one open task; seed it in process instead of running init.
+    fs.mkdirSync(path.join(dir, 'atris'), { recursive: true });
+    const db = taskStore.open(dbPath);
+    try {
+      addSeedTask(db, { title: 'Ship the local status check', workspaceRoot: taskStore.workspaceRoot(dir) });
+    } finally {
+      taskStore.close();
+    }
     const metaDir = path.join(dir, '.atris');
     fs.mkdirSync(metaDir, { recursive: true });
     fs.writeFileSync(
@@ -20160,9 +20169,10 @@ test('status stays local even when .atris/business.json exists', () => {
       'utf8'
     );
 
-    const res = runCli(['status'], { cwd: dir });
+    const res = runCli(['status'], { cwd: dir, env: { ATRIS_TASKS_DB: dbPath } });
     assert.equal(res.status, 0, res.stderr);
     assert.match(res.stdout, /ready to claim/);
+    assert.match(res.stdout, /"ship the local status check" is ready to claim/i);
     assert.match(res.stdout, /^next: atris task claim /m);
     assert.doesNotMatch(res.stdout, /last synced/i);
     assert.doesNotMatch(res.stdout, /Where we are|Decision: let it run/);
