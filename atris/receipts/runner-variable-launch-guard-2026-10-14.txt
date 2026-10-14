@@ -1,0 +1,42 @@
+engine launch guard: engines started through a runner or profile variable, 2026-10-14
+
+new guard: a launch whose program is a call, or a variable declared in the same
+function, that names an engine program or an engine or runner resolver must have
+a recording call on its line or in the 12 lines above it.
+
+failing first, before any fix:
+  node --test --test-name-pattern="engine program by name|runner or profile variable" test/engine-resource.test.js
+  actual: [ 'commands/dream.js:251 bin', 'commands/orb.js:310 invocation.command', 'commands/voice.js:131 claudePath' ]
+  exit 1
+dream was a window off by one: its recording sits 12 lines above the launch and
+the old window reached 11. Window now covers the 12 lines above the launch line.
+  same command: actual: [ 'commands/orb.js:310 invocation.command', 'commands/voice.js:131 claudePath' ], exit 1
+
+after recording the voice judge and the orb dispatcher:
+  same command, exit 0
+  real engine launch scan: 5 launches by name, 0 unrecorded
+  real runner and profile launch scan: 7 engine launches through a variable, 0 unrecorded
+
+voice judge real run, old code then new code:
+  node --test --test-name-pattern="voice judge records" test/engine-resource.test.js
+  old: ENOENT on .atris/state/engine-resource.jsonl, exit 1
+  new: real voice judge records: exit no cause / SIGKILL killed (cause unknown), exit 0
+
+orb real run in a pseudo-terminal, fake claude on PATH (python3 -I orb-pty.py):
+  orb exit 0 | working: check the readme / ready: check the readme (o to open)
+  orb exit 0 | working: check the map / failed: check the map (o to open)
+  start claude 'orb freeform'
+  end claude 'orb freeform' signal=- duration_ms=333
+  start claude 'orb freeform'
+  end claude 'orb freeform' signal=SIGKILL cause=killed (cause unknown) duration_ms=31
+
+frozen check:
+  node --test test/engine-resource.test.js test/engine-dispatch.test.js
+  tests 147, pass 147, fail 0, exit 0
+side suites:
+  node --test test/orb.test.js test/voice-command.test.js test/voice-gate.test.js
+  tests 33, pass 33, fail 0, exit 0
+git diff --check: exit 0
+
+limit: a program passed in as a function parameter is out of the scan's reach.
+next_push: shift the stale test line refs in the map notes and the MAP row (they point at lines prior ticks moved), then add a doc-health check that a test ref lands on a test( line.

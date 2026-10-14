@@ -4,6 +4,7 @@ const fs = require('node:fs');
 const path = require('node:path');
 const readline = require('node:readline');
 const { spawn } = require('node:child_process');
+const { startEngineRun } = require('../lib/engine-resource');
 const { workspaceRoot } = require('../lib/task-db');
 const { collectOrbContext, appendOrbChoice } = require('../lib/orb-context');
 const {
@@ -305,6 +306,9 @@ async function runOrb(args = []) {
     const logPath = path.join(runsDir, `${stamp}-${slugify(label)}.log`);
     const logFd = fs.openSync(logPath, 'a');
     const invocation = engineInvocation(engine, choice.prompt);
+    // Machine memory and load at both ends of the run, so one killed with
+    // SIGKILL says whether the machine was short on memory.
+    const endResource = startEngineRun(root, { engine, task: `orb ${choice.kind || 'freeform'}` });
     let child;
     try {
       child = spawn(invocation.command, invocation.args, {
@@ -312,6 +316,9 @@ async function runOrb(args = []) {
         detached: true,
         stdio: ['ignore', logFd, logFd],
       });
+    } catch (error) {
+      endResource(error);
+      throw error;
     } finally {
       fs.closeSync(logFd);
     }
@@ -342,8 +349,14 @@ async function runOrb(args = []) {
       unread: false,
     };
     jobs.push(job);
-    child.once('error', (error) => finishJob(job, 1, error));
-    child.once('exit', (code) => finishJob(job, code));
+    child.once('error', (error) => {
+      endResource(error);
+      finishJob(job, 1, error);
+    });
+    child.once('exit', (code, signal) => {
+      endResource(signal || code !== 0 ? { signal, message: `engine exited ${code}` } : null);
+      finishJob(job, code);
+    });
     child.unref();
     console.log(`working: ${label}`);
   }

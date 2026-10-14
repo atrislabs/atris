@@ -1086,31 +1086,87 @@ test('atris scout records each engine run with a time limit kill and a crash tol
   }
 });
 
+test('the voice judge records its claude run, and a killed judge names the likely cause', () => {
+  const { spawnSync } = require('node:child_process');
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'voice-judge-resource-'));
+  const bin = path.join(root, 'fake-bin');
+  const cli = path.join(__dirname, '..', 'bin', 'atris.js');
+  const fake = (body) => {
+    fs.writeFileSync(path.join(bin, 'claude'), `#!/bin/sh\n${body}\n`, { mode: 0o755 });
+  };
+  const judge = () => spawnSync(process.execPath, [cli, 'voice', 'judge'], {
+    cwd: root,
+    input: 'The reply is ready.',
+    encoding: 'utf8',
+    env: { ...process.env, PATH: `${bin}${path.delimiter}/usr/bin:/bin`, ATRIS_VOICE_JUDGE_CMD: '', ATRIS_SKIP_UPDATE_CHECK: '1', NODE_NO_WARNINGS: '1' },
+  });
+  try {
+    spawnSync('git', ['init', '-q'], { cwd: root });
+    fs.writeFileSync(path.join(root, 'atris.md'), '## voice\n\nUse plain words.\n');
+    fs.mkdirSync(bin);
+    fake('/bin/cat >/dev/null\nprintf \'%s\\n\' \'{"pass":true,"reasons":[]}\'');
+    const passed = judge();
+    assert.strictEqual(passed.status, 0, passed.stderr);
+    fake('kill -9 $$');
+    const killed = judge();
+    assert.match(killed.stderr, /^voice judge unavailable: the judge command failed/);
+    const log = fs.readFileSync(path.join(root, RESOURCE_LOG), 'utf8').trim().split('\n').map((line) => JSON.parse(line));
+    assert.deepStrictEqual(log.map((entry) => `${entry.phase} ${entry.engine} ${entry.task}`), [
+      'start claude voice judge', 'end claude voice judge', 'start claude voice judge', 'end claude voice judge',
+    ]);
+    const [, ok, , dead] = log;
+    assert.deepStrictEqual([ok.signal || null, ok.error || ''], [null, '']);
+    assert.strictEqual(dead.signal, 'SIGKILL');
+    assert.match(dead.cause, /^killed \((machine memory low|cause unknown)/);
+    for (const entry of [ok, dead]) assert.ok(Number.isFinite(entry.duration_ms), JSON.stringify(entry));
+    console.log('real voice judge records: ' + [ok, dead].map((entry) => `${entry.signal || 'exit'} ${entry.cause || 'no cause'}`).join(' / '));
+  } finally {
+    fs.rmSync(root, { recursive: true, force: true });
+  }
+});
+
+// Shared by both engine launch guards below.
+const ENGINE_NAMES = 'claude|codex|cursor-agent|devin|agy|grok|opencode';
+// Interactive sessions hand the terminal to the person, so no reading is kept.
+const LAUNCH_EXEMPT_FILES = new Map([
+  ['commands/console.js', 'interactive codex session'],
+  ['commands/interview.js', 'interactive claude session'],
+]);
+// Comments are blanked with their line breaks kept, so a mention there
+// never counts and line numbers still match the file.
+const stripComments = (text) => text
+  .replace(/\/\*[\s\S]*?\*\//g, (block) => block.replace(/[^\n]/g, ' '))
+  .replace(/(^|[^:\\'"`])\/\/.*$/gm, '$1');
+// A function in the same file that records the run counts as a recording
+// call, the way the mission tick records through its own small wrapper.
+const recordingCall = (code) => {
+  const names = ['startEngineRun', 'recordEngineResource'];
+  for (const match of code.matchAll(/^(?:async\s+)?function\s+([\w$]+)\s*\(/gm)) {
+    const end = code.slice(match.index).search(/^\}/m);
+    const body = code.slice(match.index, end < 0 ? undefined : match.index + end);
+    if (/\b(?:startEngineRun|recordEngineResource)\(/.test(body)) names.push(match[1]);
+  }
+  return new RegExp(`\\b(?:${[...new Set(names)].join('|')})\\(`);
+};
+// Each launch needs its own recording call on its line or in the dozen
+// lines above it.
+const RECORD_WINDOW = 12;
+const recordedAbove = (lines, line, recorder) => recorder.test(lines.slice(Math.max(0, line - 1 - RECORD_WINDOW), line).join('\n'));
+// A version or help probe starts no engine run.
+const isProbe = (args) => /^\[\s*(?:['"`][\w-]+['"`]\s*,\s*)?['"`]--(?:version|help)['"`]\s*\]$/.test(args || '');
+
 test('every launch of an engine program by name records its run or is named as exempt', () => {
-  const ENGINE_LAUNCH = /\b(?:spawn|spawnSync|execFile|execFileSync)\(\s*['"`](claude|codex|cursor-agent|devin|agy|grok|opencode)['"`]\s*,\s*(\[[^\]]*\])?/g;
-  // Interactive sessions hand the terminal to the person, so no reading is kept.
-  const EXEMPT = new Map([
-    ['commands/console.js', 'interactive codex session'],
-    ['commands/interview.js', 'interactive claude session'],
-  ]);
-  // Comments are blanked with their line breaks kept, so a mention there
-  // never counts and line numbers still match the file.
-  const stripComments = (text) => text
-    .replace(/\/\*[\s\S]*?\*\//g, (block) => block.replace(/[^\n]/g, ' '))
-    .replace(/(^|[^:\\'"`])\/\/.*$/gm, '$1');
-  // Each launch needs its own recording call in the dozen lines up to it.
-  const RECORD_WINDOW = 12;
+  const ENGINE_LAUNCH = new RegExp(`\\b(?:spawn|spawnSync|execFile|execFileSync)\\(\\s*['"\`](${ENGINE_NAMES})['"\`]\\s*,\\s*(\\[[^\\]]*\\])?`, 'g');
   const unrecorded = (rel, text) => {
-    if (EXEMPT.has(rel)) return [];
+    if (LAUNCH_EXEMPT_FILES.has(rel)) return [];
     const code = stripComments(text);
     const lines = code.split('\n');
+    const recorder = recordingCall(code);
     const found = [];
     for (const match of code.matchAll(ENGINE_LAUNCH)) {
-      // A version probe starts no engine run.
-      if (/^\[\s*['"`]--version['"`]\s*\]$/.test(match[2] || '')) continue;
+      if (isProbe(match[2])) continue;
       const line = code.slice(0, match.index).split('\n').length;
-      const window = lines.slice(Math.max(0, line - RECORD_WINDOW), line).join('\n');
-      if (/\b(?:startEngineRun|recordEngineResource)\(/.test(window)) continue;
+      if (recordedAbove(lines, line, recorder)) continue;
       found.push(`${rel}:${line} ${match[1]}`);
     }
     return found;
@@ -1142,6 +1198,70 @@ test('every launch of an engine program by name records its run or is named as e
   assert.ok(launches >= 5, `the scan should see the known launches, saw ${launches}`);
   assert.deepStrictEqual(missing, [], 'record the run with startEngineRun, or add the file to the exempt list with its reason');
   console.log(`real engine launch scan: ${launches} launches by name, ${missing.length} unrecorded`);
+});
+
+test('every engine started through a runner or profile variable records its run or is named as exempt', () => {
+  // The program is a variable or a call, like a runner binary, a profile's
+  // bin, or an engine invocation's command.
+  const VAR_LAUNCH = /\b(?:spawn|spawnSync|execFile|execFileSync|spawnWithOutputChunks|runInReapedProcessGroup)\(\s*([A-Za-z_$][\w$]*(?:\.[\w$]+)*)(\(\))?\s*,\s*(\[[^\]]*\])?/g;
+  // It is an engine when the call, or the variable's declaration in the same
+  // function, names an engine program or an engine or runner resolver.
+  const ENGINE_SOURCE = new RegExp(`['"\`](?:${ENGINE_NAMES})['"\`]|\\b[\\w$]*(?:Engine|engine|Runner|runner)[\\w$]*\\(`);
+  const FUNCTION_START = /^(?:async\s+)?function\b|^(?:const|let)\s+[\w$]+\s*=\s*(?:async\s*)?(?:function\b|\([^)]*\)\s*=>)/gm;
+  // Launches whose run is recorded somewhere this scan cannot see, by
+  // file and the function holding the launch.
+  const EXEMPT_LAUNCHES = new Map([
+    ['lib/roster-prep.js#defaultPrepAskSync', 'recorded around the ask by startPrepReadings'],
+  ]);
+  const engineLaunches = (rel, text) => {
+    if (LAUNCH_EXEMPT_FILES.has(rel)) return { seen: 0, missing: [] };
+    const code = stripComments(text);
+    const lines = code.split('\n');
+    const recorder = recordingCall(code);
+    let seen = 0;
+    const missing = [];
+    for (const match of code.matchAll(VAR_LAUNCH)) {
+      const [, program, called, args] = match;
+      const before = code.slice(0, match.index);
+      const fnStart = Math.max(0, ...[...before.matchAll(FUNCTION_START)].map((start) => start.index));
+      const fnName = (/^(?:async\s+)?(?:function|const|let)\s+([\w$]+)/.exec(code.slice(fnStart)) || [])[1] || '';
+      const root = program.split('.')[0];
+      const decl = called ? null : [...code.slice(fnStart, match.index).matchAll(new RegExp(`\\b(?:const|let|var)\\s+${root.replace(/\$/g, '\\$')}\\s*=\\s*([^;\\n]*)`, 'g'))].pop();
+      const source = called ? program + called : decl && decl[1];
+      if (!source || !ENGINE_SOURCE.test(source) || isProbe(args)) continue;
+      seen += 1;
+      const line = before.split('\n').length;
+      if (recordedAbove(lines, line, recorder) || EXEMPT_LAUNCHES.has(`${rel}#${fnName}`)) continue;
+      missing.push(`${rel}:${line} ${program}${called || ''}`);
+    }
+    return { seen, missing };
+  };
+  const planted = (text) => engineLaunches('commands/planted.js', text).missing;
+  assert.deepStrictEqual(planted("function a() {\n  const bin = findExecutable('claude', env);\n  return spawnSync(bin, ['-p', prompt]);\n}\n"), ['commands/planted.js:3 bin']);
+  assert.deepStrictEqual(planted("function a() {\n  const inv = engineInvocation(engine, prompt);\n  spawn(inv.command, inv.args);\n}\n"), ['commands/planted.js:3 inv.command']);
+  assert.deepStrictEqual(planted("function a() {\n  spawn(resolveClaudeRunnerBin(), args);\n}\n"), ['commands/planted.js:2 resolveClaudeRunnerBin()']);
+  assert.deepStrictEqual(planted("function a() {\n  const bin = resolveClaudeRunnerBin();\n  spawnSync(bin, ['--help']);\n}\n"), [], 'a help probe starts no run');
+  // A variable declared in another function is not this launch's program.
+  assert.deepStrictEqual(planted("function a() {\n  const command = buildEngineCommand(engine);\n}\nfunction b(command) {\n  spawnSync(command, { shell: true });\n}\n"), []);
+  // A local wrapper that records the run covers the launch below it; a
+  // comment naming the recorder does not.
+  const wrapper = "function startTick(cwd) {\n  return startEngineRun(cwd, { engine: 'claude' });\n}\n";
+  assert.deepStrictEqual(planted(`${wrapper}function a() {\n  const end = startTick(cwd);\n  spawn(resolveClaudeRunnerBin(), args);\n}\n`), []);
+  assert.deepStrictEqual(planted("function a() {\n  // startEngineRun(root)\n  spawn(resolveClaudeRunnerBin(), args);\n}\n"), ['commands/planted.js:3 resolveClaudeRunnerBin()']);
+  const repo = path.join(__dirname, '..');
+  const missing = [];
+  let seen = 0;
+  for (const dir of ['commands', 'lib']) {
+    for (const name of fs.readdirSync(path.join(repo, dir)).filter((file) => file.endsWith('.js'))) {
+      const rel = `${dir}/${name}`;
+      const result = engineLaunches(rel, fs.readFileSync(path.join(repo, rel), 'utf8'));
+      seen += result.seen;
+      missing.push(...result.missing);
+    }
+  }
+  assert.ok(seen >= 6, `the scan should see the known runner and profile launches, saw ${seen}`);
+  assert.deepStrictEqual(missing, [], 'record the run with startEngineRun, or add the launch to the exempt list with its reason');
+  console.log(`real runner and profile launch scan: ${seen} engine launches through a variable, ${missing.length} unrecorded`);
 });
 
 test('the landing status names runs closed after their parent died in the last day, and stays quiet with none', () => {
