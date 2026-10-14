@@ -93,7 +93,7 @@ function headRefName(headFile) {
 }
 
 // Branch checkouts straight from .git/worktrees/<id>/HEAD plus the main
-// checkout's HEAD — the live truth, not the board snapshot. A `worktree add`
+// checkout's HEAD, the live truth, not the board snapshot. A `worktree add`
 // still in flight (or a half-registered entry) can leave a branch checked out
 // in a directory the snapshot never saw, and git's own `branch -D` refusal
 // only consults registrations whose gitdir link is already written.
@@ -135,7 +135,7 @@ function liveCheckouts(root, now = Date.now()) {
       wtPath = path.dirname(fs.readFileSync(path.join(adminDir, 'gitdir'), 'utf8').trim());
     } catch {
       // gitdir unwritten or lost: cannot prove which directory is the
-      // checkout, so the branch stays claimed — fail safe, prune's job.
+      // checkout, so the branch stays claimed. Fail safe, prune's job.
     }
     if (wtPath && !fs.existsSync(wtPath)) continue;
     bound.set(name, { path: wtPath, adminDir });
@@ -145,7 +145,7 @@ function liveCheckouts(root, now = Date.now()) {
 
 // The branch's own reflog records when `worktree add -b` (or `git branch`)
 // created it. While an add is in flight a just-created target branch is very
-// likely the checkout being wired up right now — keep it for this pass.
+// likely the checkout being wired up right now, so keep it for this pass.
 function branchCreatedWithinGrace(root, name, now = Date.now()) {
   const res = runGit(['reflog', 'show', '--date=unix', name], { cwd: root, check: false });
   if (res.status !== 0) return false;
@@ -683,7 +683,7 @@ function reap(root, { ttlDays = DEFAULT_TTL_DAYS, staleHours = DEFAULT_STALE_HOU
       continue;
     }
     // The grace check ran at scan time, and a bundle build can sit between it
-    // and removal — an engine that booted mid-sweep refreshes the directory
+    // and removal, and an engine that booted mid-sweep refreshes the directory
     // mtime in that gap. Stat once more at removal time, the cheapest place
     // to never be wrong about freshness.
     if (worktreeWithinReapGrace(w.path)) {
@@ -716,7 +716,7 @@ function reap(root, { ttlDays = DEFAULT_TTL_DAYS, staleHours = DEFAULT_STALE_HOU
   }
 
   // Re-scan after removals: worktrees just removed freed their branches, and
-  // anything still bound is checked out in a directory that exists — the
+  // anything still bound is checked out in a directory that exists. The
   // board snapshot may have missed it entirely (a `worktree add` mid-flight),
   // and git's own -D refusal only reads fully wired registrations.
   const live = liveCheckouts(root, now);
