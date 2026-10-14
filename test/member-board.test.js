@@ -239,6 +239,12 @@ test('a busy row with an earlier failure shrinks its last result before it overf
     for (const l of tiny.split('\n')) assert.ok(l.length <= 80, `fits in 80: ${l.length}`);
     assert.match(tiny, /^chat-experience-lead\s+working\s+failed 14m\s/m, 'then the reason goes');
     assert.match(tiny, /^builder\s+done failed\s+engine error\s/m, 'a done row keeps its reason');
+
+    const long = [{ ...rows.find((r) => r.member === 'chat-experience-lead'), job: 'try again on the chat page so the operator sees every reply land' }];
+    const wide = renderBoard(long, dir, 0, 120);
+    for (const l of wide.split('\n')) assert.ok(l.length <= 120, `fits in 120: ${l.length}`);
+    assert.match(wide, /^chat-experience-lead\s+working\s+failed \(bad exit 2\) 14m\s{2}/m, 'wide but a long job overflows: "ago" goes, the reason stays');
+    assert.match(wide, /try again on the chat page so the \.\.\./, 'the job gets those characters');
   } finally {
     fs.rmSync(dir, { recursive: true, force: true });
   }
