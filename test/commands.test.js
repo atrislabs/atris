@@ -11731,13 +11731,22 @@ test('task ready uses autoland-aware handoff copy when policy is on', () => {
     fs.writeFileSync(path.join(dir, 'atris', 'runs', 'autoland-tick-live.json'), '{}\n');
     writePolicy(dir, { enabled: true, enabled_by: 'keshavrao' });
 
-    const add = runCli([
-      'task', 'add', 'Autoland ready messaging',
-      '--tag', 'agent',
-      '--json',
-    ], { cwd: dir, env });
-    assert.equal(add.status, 0, add.stderr);
-    const ref = JSON.parse(add.stdout).task.display_id;
+    // Seed all three tasks in creation order; every claim and ready stays on the CLI.
+    const workspaceRoot = taskStore.workspaceRoot(dir);
+    const db = taskStore.open(dbPath);
+    let ref;
+    let textRef;
+    let externalRef;
+    try {
+      const created = ['Autoland ready messaging', 'Autoland ready text copy', 'Autoland external verifier copy']
+        .map((title) => addSeedTask(db, { title, tag: 'agent', workspaceRoot }));
+      created.forEach((row) => assert.equal(row.inserted, true));
+      const refs = taskStore.taskDisplayRefMap(taskStore.listTasks(db, { workspaceRoot }));
+      [ref, textRef, externalRef] = created.map((row) => refs.get(row.id));
+      assert.ok(ref && textRef && externalRef);
+    } finally {
+      taskStore.close();
+    }
     assert.equal(runCli(['task', 'claim', ref, '--as', 'codex'], { cwd: dir, env }).status, 0);
 
     const ready = runCli([
@@ -11757,9 +11766,6 @@ test('task ready uses autoland-aware handoff copy when policy is on', () => {
       'proof is ready; one more agent check before human approval. XP waits for the human.',
     );
 
-    const textAdd = runCli(['task', 'add', 'Autoland ready text copy', '--tag', 'agent', '--json'], { cwd: dir, env });
-    assert.equal(textAdd.status, 0, textAdd.stderr);
-    const textRef = JSON.parse(textAdd.stdout).task.display_id;
     assert.equal(runCli(['task', 'claim', textRef, '--as', 'codex'], { cwd: dir, env }).status, 0);
     const readyText = runCli([
       'task', 'ready', textRef,
@@ -11770,9 +11776,6 @@ test('task ready uses autoland-aware handoff copy when policy is on', () => {
     assert.match(readyText.stdout, /proof is ready; autoland runs the second check and accepts it on the next tick; it lands once committed and merged\./);
     assert.doesNotMatch(readyText.stdout, /one more agent check before human approval/);
 
-    const externalAdd = runCli(['task', 'add', 'Autoland external verifier copy', '--tag', 'agent', '--json'], { cwd: dir, env });
-    assert.equal(externalAdd.status, 0, externalAdd.stderr);
-    const externalRef = JSON.parse(externalAdd.stdout).task.display_id;
     assert.equal(runCli(['task', 'claim', externalRef, '--as', 'codex'], { cwd: dir, env }).status, 0);
     const externalReady = runCli([
       'task', 'ready', externalRef,

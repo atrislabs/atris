@@ -2452,11 +2452,11 @@ npm publish
 
 ## Uncertified review next fixture setup
 
-- `test/commands.test.js:12474` checks that task next tells an agent to accept the task waiting in review and leaves the other open task unclaimed. Real-store creation at `test/commands.test.js:12482` saves two setup launches, seeds the review task before the open task so their references keep the original order, and reads both references from the stored rows; the claim, ready, next and both shows remain on the CLI.
+- `test/commands.test.js:12477` checks that task next tells an agent to accept the task waiting in review and leaves the other open task unclaimed. Real-store creation at `test/commands.test.js:12485` saves two setup launches, seeds the review task before the open task so their references keep the original order, and reads both references from the stored rows; the claim, ready, next and both shows remain on the CLI.
 
 ## Review debt next fixture setup
 
-- `test/commands.test.js:12524` checks that task next tells an agent to accept the task waiting in review when no open work exists. Real-store creation at `test/commands.test.js:12532` saves one setup launch and reads the id and display reference from the stored rows; the claim, ready and next remain on the CLI, and a throwaway copy without the ready step failed with ready instead of accept.
+- `test/commands.test.js:12527` checks that task next tells an agent to accept the task waiting in review when no open work exists. Real-store creation at `test/commands.test.js:12535` saves one setup launch and reads the id and display reference from the stored rows; the claim, ready and next remain on the CLI, and a throwaway copy without the ready step failed with ready instead of accept.
 
 ## Premature review XP fixture setup
 
@@ -2469,3 +2469,7 @@ npm publish
 ## Brain scorecard review episode fixture setup
 
 - `test/commands.test.js:6319` checks that brain scorecard writes one scorecard from the done and review episodes, writes none on a repeat run, and clears the compile hint. Real-store creation at `test/commands.test.js:6328` saves one setup launch, seeds the task with its tag, and reads the display reference from the stored rows; the done, review, both scorecards and compile remain on the CLI, and a throwaway copy with a different seeded title failed on the scorecard title check.
+
+## Autoland ready handoff fixture setup
+
+- `test/commands.test.js:11723` checks that task ready promises the next autoland pass for allowlisted proof in JSON and text, and asks for a second agent review when autoland cannot rerun the verifier. Real-store creation at `test/commands.test.js:11734` saves three setup launches, seeds all three tasks in their original order before the first claim, and reads the references from the stored rows; every claim and ready remains on the CLI, and a throwaway copy that seeded the first task as done failed at its claim.
