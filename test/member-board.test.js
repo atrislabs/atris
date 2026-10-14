@@ -609,7 +609,9 @@ test('a busy row with an earlier failure shrinks its last result before it overf
     assert.match(mid, /^chat-experience-lead\s+working\s+failed \(bad exit 2\) 14m\s/m, 'first "ago" goes');
     const tiny = renderBoard(rows, dir, 0, 80);
     for (const l of tiny.split('\n')) assert.ok(l.length <= 80, `fits in 80: ${l.length}`);
-    assert.match(tiny, /^chat-experience-lead\s+working\s+failed 14m\s/m, 'then the reason goes');
+    assert.match(tiny, /^chat-experience-lead\s+working\s+bad exit 2\s/m, 'then a reason that says failed on its own stands alone');
+    const odd = rows.map((r) => (r.member === 'chat-experience-lead' ? { ...r, last_result_reason: 'verifier said no' } : r));
+    assert.match(renderBoard(odd, dir, 0, 80), /^chat-experience-lead\s+working\s+failed 14m\s/m, 'any other reason goes');
     assert.match(tiny, /^builder\s+done failed\s+engine error\s/m, 'a done row keeps its reason');
 
     const long = [{ ...rows.find((r) => r.member === 'chat-experience-lead'), job: 'try again on the chat page so the operator sees every reply land' }];
@@ -620,6 +622,18 @@ test('a busy row with an earlier failure shrinks its last result before it overf
   } finally {
     fs.rmSync(dir, { recursive: true, force: true });
   }
+});
+
+test('a busy row keeps its earlier failure reason at every width once one shows it', () => {
+  const rows = [
+    { member: 'chat-experience-lead', state: 'done failed', alive: null, engine: '', last_result: 'failed', last_result_reason: 'timed out', last_result_ago: '1m ago', ago: '1m ago', job: 'build the thing', step: 'ran tests' },
+    { member: 'y', state: 'working', alive: null, engine: '', last_result: 'failed', last_result_reason: 'bad exit 2', last_result_ago: '14m ago', ago: '1m ago', job: 'search', step: 'reading' },
+  ];
+  for (let width = 30; width <= 120; width++) {
+    const line = renderBoard(rows, '/progress', 0, width).split('\n')[2];
+    assert.match(line, /bad exit 2/, `${width}: ${line}`);
+  }
+  assert.match(renderBoard(rows, '/progress', 0, 65), /^y\s+working\s+bad exit 2\s+1m ago\s+search$/m, 'not "failed 14m" one column past the compact board');
 });
 
 test('a live run with a long name drops last step before it overflows 80', () => {
@@ -641,7 +655,7 @@ test('a live run with a long name drops last step before it overflows 80', () =>
     const tiny = renderBoard(rows, dir, 0, 80);
     for (const l of tiny.split('\n')) assert.ok(l.length <= 80, `fits in 80: ${l.length}`);
     assert.match(tiny, /^member\s+state\s+last result\s+run\s+ago\s+job$/m, 'last step leaves');
-    assert.match(tiny, /^objective-generator\s+working\s+failed 14m\s+claude 1m\s+5s ago\s+try again \.\.\.$/m, 'the job gets the room');
+    assert.match(tiny, /^objective-generator\s+working\s+bad exit 2\s+claude 1m\s+5s ago\s+try again \.\.\.$/m, 'the job gets the room');
     assert.match(tiny, /^builder\s+done failed\s+engine error\s+-\s+1m ago\s+build$/m);
   } finally {
     fs.rmSync(dir, { recursive: true, force: true });
