@@ -672,6 +672,23 @@ test('piped atris member board takes its width from COLUMNS', () => {
   }
 });
 
+test('watch breaks its footer between words to the screen width', () => {
+  const recent = new Date(Date.now() - 20_000).toISOString();
+  const dir = fakeDir({ checker: [`${recent} m-4 started: [pid 1 engine claude] check the release`, `${recent} m-4 finished: failed`] });
+  try {
+    const watch = spawnSync(process.execPath, [cliPath, 'member', 'board', '--watch'], {
+      cwd: dir, env: { ...process.env, ATRIS_PROGRESS_DIR: dir, COLUMNS: '40' }, encoding: 'utf8', timeout: 1500,
+    });
+    const screen = watch.stdout.replace(/\x1b\[2J\x1b\[H/g, '').split('\n');
+    const at = screen.findIndex((l) => l.startsWith('redrawn at'));
+    assert.match(screen[at], /^redrawn at \d\d:\d\d:\d\d, redraws every 3s,$/, watch.stdout);
+    assert.equal(screen[at + 1], '  ctrl-c to stop', 'the rest goes on its own indented line');
+    assert.ok(screen.every((l) => l.length <= 40), `every line fits 40 columns:\n${screen.join('\n')}`);
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
 test('atris member board reads ATRIS_PROGRESS_DIR for real', () => {
   const recent = new Date(Date.now() - 5_000).toISOString();
   const dir = fakeDir({ navigator: [`${recent} m-9 started: map the repo`, `${recent} m-9 reading atris/MAP.md`] });
