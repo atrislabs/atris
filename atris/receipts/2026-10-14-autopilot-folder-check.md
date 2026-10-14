@@ -32,6 +32,8 @@ Progress: one remaining removal path guarded; two added real-runtime tests cover
 
 Other commands: mission status, task list/new/claim/note/ready, Git status/diff, and the brain activation/compile commands. Brain commands exited 2 with a preview of unrelated generated files; those files were not changed. Existing edits to `bin/atris.js` and `atris/TODO.md` remain outside this change.
 
+Save-check lesson: the proof now runs only when called directly and clears inherited Git environment settings before creating its fixture. Its initial load altered the checkout index; the index was restored from unchanged HEAD and only the declared files were staged. The save check passed without overrides. The change was committed and pushed, with task proof ready for review.
+
 next_push: Protect fleet cleanup with the shared Git-activity check and removal log.
 
 layer: behaviors
