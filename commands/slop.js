@@ -33,6 +33,8 @@ const SKIP_DIRS = new Set(['node_modules', '.git', 'dist', 'build', '.next', '.a
 // there would turn one range into two separate numbers. A dash that opens
 // the line (a quote attribution) is dropped; a comma cannot start a line.
 // A run of dashes in a row is one break, so it is fixed as a single dash.
+// A dash that ends a line stays a comma when the sentence wraps onto the
+// next line, and becomes a period when the paragraph ends there.
 const LIST_LABEL_DASH = /^(\s*(?:[-*+]|\d+[.)])\s+)([^\u2014]{0,59}[^\s\u2014,;:.])\s*\u2014\s*/;
 
 // True when one pair of parentheses wraps the whole aside, "(mostly)" but
@@ -47,10 +49,11 @@ function wrappedInParens(s) {
   return depth === 0;
 }
 
-function fixEmDash(s) {
+function fixEmDash(s, { endsBlock = false } = {}) {
   s = s.replace(/\u2014(?:\s*\u2014)+/g, '\u2014').replace(/(\d)\s*\u2014\s*(?=\d)/g, '$1-').replace(/^(\s*(?:>\s*)*)\u2014\s*/, '$1');
+  if (endsBlock) s = s.replace(/([.,;:!?]?)\s*\u2014\s*$/, (m, p) => p || '.');
   const label = LIST_LABEL_DASH.exec(s);
-  if (label) return `${label[1]}${label[2]}:${s.length > label[0].length ? ' ' : ''}${fixEmDash(s.slice(label[0].length))}`;
+  if (label) return `${label[1]}${label[2]}:${s.length > label[0].length ? ' ' : ''}${fixEmDash(s.slice(label[0].length), { endsBlock })}`;
   return s
     .replace(/\s*\u2014\s*([^\u2014]*[^\s\u2014])\s*\u2014\s*(?=(.?))/g, (m, aside, next) => ` ${wrappedInParens(aside) ? aside : `(${aside})`}${next && !/[.,;:!?)]/.test(next) ? ' ' : ''}`)
     // keep punctuation the writer already put beside the dash instead of
@@ -253,7 +256,7 @@ function applyFixes(files, rules, { write = true } = {}) {
         if (prose && fenced.has(i)) continue;
         const { masked, restore } = prose ? maskInlineCode(line) : { masked: line, restore: (x) => x };
         if (!r.re.test(masked)) continue;
-        const nl = restore(r.fix(masked));
+        const nl = restore(r.fix(masked, { endsBlock: i === lines.length - 1 || !lines[i + 1].trim() }));
         if (nl !== line) { line = nl; fixedCount++; }
       }
       if (line !== lines[i]) { changes.push({ file, line: i + 1, before: lines[i], after: line }); lines[i] = line; touched = true; }

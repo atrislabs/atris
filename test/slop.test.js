@@ -342,6 +342,7 @@ test('the em dash fix keeps punctuation already beside a dash instead of doublin
     `word ${D}, more`,
     `ends ${D}.`,
     `wraps to the next line ${D}`,
+    'and keeps going.',
   ].join('\n'));
   applyFixes([file], RULES);
   assert.deepEqual(fs.readFileSync(file, 'utf8').split('\n'), [
@@ -350,6 +351,7 @@ test('the em dash fix keeps punctuation already beside a dash instead of doublin
     'word, more',
     'ends.',
     'wraps to the next line,',
+    'and keeps going.',
   ]);
 });
 
@@ -540,5 +542,24 @@ test('fix keeps an aside that already has parentheses in one pair', () => {
     'It works (mostly) fine.',
     'Pick one ((a) or (b)) then go.',
     'The tool (which we built) now ships.',
+  ]);
+});
+
+test('fix ends a paragraph-ending dash with a period, keeps a wrapping one a comma', () => {
+  const file = tmpFile('line-end.md', [
+    'The tool we built \u2014',
+    'now ships to everyone.',
+    '',
+    'We tried it and it held \u2014',
+    '',
+    'Is it done? \u2014',
+    'The last line ends here \u2014',
+  ].join('\n'));
+  const { changes } = applyFixes([file], RULES);
+  assert.deepEqual(changes.map((c) => c.after), [
+    'The tool we built,',
+    'We tried it and it held.',
+    'Is it done?',
+    'The last line ends here.',
   ]);
 });
