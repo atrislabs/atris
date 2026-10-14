@@ -4693,13 +4693,9 @@ async function startMissionFromRunObjective(objective, args) {
     '--owner',
     runOwner,
     '--runner',
-    // `mission run` is the codex-native shaping surface: it always builds
-    // codex_goal_state and asks a live codex session to start the native goal
-    // (requires_native_goal_start). So it defaults to codex_goal. The headless
-    // footgun (codex_goal stalls with no live session) is handled on the
-    // `member run` path (commands/member.js), where cron/fleet loops default to
-    // the self-driving claude runner instead. An explicit --runner always wins.
-    readFlag(args, '--runner', 'codex_goal'),
+    // A terminal needs a worker; a live Codex session owns its native goal.
+    // Share the member-run selection so these two entry points agree.
+    readFlag(args, '--runner', require('../lib/default-runner').defaultObjectiveRunner(args)),
     '--lane',
     readFlag(args, '--lane', 'workspace'),
     '--cadence',
@@ -4832,6 +4828,23 @@ async function startMissionFromRunObjective(objective, args) {
   });
   const worktreeBaseline = captureMissionWorktreeBaseline(saved, process.cwd());
   const completedContinuationGoal = completeActiveContinuationForStartedMission(saved, process.cwd());
+  // Creating the record is only setup. Drive self-running workers through
+  // the existing bounded loop and emit its single result, rather than a
+  // successful "started" response with no work behind it.
+  if (!runnerUsesCallerSession(saved.runner) && saved.runner !== 'manual') {
+    const options = [];
+    for (let i = 0; i < args.length; i += 1) {
+      const token = String(args[i]);
+      const key = token.split('=')[0];
+      if (MISSION_RUN_VALUE_FLAGS.includes(key)) {
+        options.push(token);
+        if (!token.includes('=') && args[i + 1] && !String(args[i + 1]).startsWith('--')) options.push(args[++i]);
+      } else if (MISSION_RUN_BOOLEAN_FLAGS.includes(key)) {
+        options.push(token);
+      }
+    }
+    return runMission([saved.id, ...options]);
+  }
   const nativeGoalOptions = codexNativeGoalOptionsFromArgs(args);
   const goalSlotHandoff = hasFlag(args, '--take-goal-slot') && isCodexGoalMission(saved)
     ? takeCodexGoalSlotForMission(saved, process.cwd(), nativeGoalOptions)

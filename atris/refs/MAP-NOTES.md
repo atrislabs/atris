@@ -2276,3 +2276,9 @@ npm publish
 ## One-run member outcomes
 
 - `commands/member.js:1037` preserves tick check results when reading the live run receipt; `commands/member.js:1346` makes a failed explicit completion check return failure; `commands/member.js:1374` names the failed check. `commands/member.js:4249` removes only matching outer quotes from saved member settings. `test/member-run-one-run-outcome.test.js:1` runs the real CLI in initialized, committed temporary projects with a fake engine.
+
+## Plain mission goals execute
+
+- `commands/mission.js:4698` shares `lib/default-runner.js:76` with member runs: a plain terminal selects Claude, a live Codex session selects its native goal, and an explicit runner wins.
+- `commands/mission.js:4834` sends self-running objective missions into the existing bounded `runMission` loop, forwarding known options without carrying the objective as a second mission reference. Manual and caller-session runners keep the start response.
+- `test/mission-run-plain-goal.test.js:1` launches the actual CLI and a deterministic worker executable that writes a file; the stored shell check must pass before completion. It also checks explicit and live native goals and manual handoff.
