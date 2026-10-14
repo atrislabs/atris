@@ -577,6 +577,7 @@ test('atris member board --json --follow sends a crash before the restart that r
     const got = await waitFor((l) => l.some((e) => e.kind === 'died') && l.some((e) => e.kind === 'started'));
     const order = got.filter((e) => e.kind === 'died' || e.kind === 'started').map((e) => `${e.kind} ${e.mission}`);
     assert.deepEqual(order, ['died m-4', 'started m-5'], 'an app reading in order never sees the new run before the crash');
+    assert.equal(got.find((e) => e.kind === 'started').before, 'died', 'the new run says how the last one ended');
   } finally {
     victim.kill('SIGKILL');
     child.kill('SIGINT');
@@ -929,4 +930,35 @@ test('the stream notes list every way the before column can say a run ended', ()
   const line = notes.split('\n').find((l) => l.includes('"before"'));
   assert.ok(line, 'stream notes have a line about "before"');
   for (const value of Object.keys(ENDED_AS)) assert.ok(line.includes(`"${value}"`), value);
+});
+
+test('atris member board --json --follow says how the last run ended when a new one starts', async () => {
+  const recent = new Date(Date.now() - 5_000).toISOString();
+  const dir = fakeDir({ navigator: [`${recent} m-9 started: map the repo`] });
+  const child = spawn(process.execPath, [cliPath, 'member', 'board', '--json', '--follow'], {
+    cwd: dir, env: { ...process.env, ATRIS_PROGRESS_DIR: dir },
+  });
+  let out = '';
+  child.stdout.on('data', (d) => { out += d; });
+  const lines = () => out.split('\n').filter(Boolean).map((l) => JSON.parse(l));
+  const waitFor = async (pred) => {
+    const until = Date.now() + 8000;
+    while (!pred(lines()) && Date.now() < until) await new Promise((r) => setTimeout(r, 50));
+    return lines();
+  };
+  const started = (l) => l.filter((e) => e.kind === 'started');
+  try {
+    await waitFor((l) => l.length >= 1);
+    // navigator never said how m-9 ended and has no pid to check.
+    fs.appendFileSync(path.join(dir, 'navigator.log'), `${new Date().toISOString()} m-10 started: map again\n`);
+    fs.writeFileSync(path.join(dir, 'scout.log'), `${new Date().toISOString()} m-11 started: first look\n`);
+    const got = started(await waitFor((l) => started(l).length >= 2));
+    const byMember = Object.fromEntries(got.map((e) => [e.member, e]));
+    assert.equal(byMember.navigator.before, 'replaced', out);
+    assert.equal('before' in byMember.scout, false, 'a first run has no earlier one');
+  } finally {
+    child.kill('SIGINT');
+    await new Promise((r) => child.once('exit', r));
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
 });
