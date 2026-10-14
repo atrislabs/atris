@@ -12,6 +12,7 @@ const path = require('node:path');
 const { spawn, spawnSync } = require('node:child_process');
 const { reap } = require('../commands/land');
 const { cleanupWorktrees } = require('../commands/worktree');
+const { disposeReviewSandbox } = require('../lib/fleet');
 
 function git(cwd, args) {
   const result = spawnSync('git', args, { cwd, encoding: 'utf8' });
@@ -130,6 +131,44 @@ test('worktree cleanup keeps a clean folder paused mid-rebase', () => {
     assert.deepEqual(result.removed, []);
     assert.ok(fs.existsSync(wt));
     assert.ok(result.kept.some((item) => item.path === wt && item.reason === 'git_rebase_in_progress'), JSON.stringify(result.kept));
+  } finally {
+    fs.rmSync(base, { recursive: true, force: true });
+  }
+});
+
+// Shaped like the fleet review sandbox. Its own git dir points at a throwaway
+// path so disposal never deletes the fixture repo's .git.
+function reviewSandbox() {
+  const { base, repo, wt } = landedWorktree();
+  const quarantine = path.join(base, 'quarantine.git');
+  fs.mkdirSync(quarantine);
+  return { base, repo, wt, boundary: { trustedRoot: repo, sandboxRoot: path.join(base, 'sandbox'), worktreePath: wt, gitDir: path.join(base, 'sandbox.git'), quarantine } };
+}
+
+test('fleet review cleanup keeps a sandbox while git holds its lock', () => {
+  const { base, repo, wt, boundary } = reviewSandbox();
+  try {
+    fs.writeFileSync(path.join(worktreeGitDir(wt), 'index.lock'), '');
+    const result = disposeReviewSandbox(boundary);
+    assert.deepEqual(result, { removed: false, reason: 'git_lock' });
+    assert.ok(fs.existsSync(wt));
+    assert.ok(fs.existsSync(boundary.quarantine));
+    assert.deepEqual(removalLines(repo), []);
+  } finally {
+    fs.rmSync(base, { recursive: true, force: true });
+  }
+});
+
+test('fleet review cleanup names who removed a sandbox and why', () => {
+  const { base, repo, wt, boundary } = reviewSandbox();
+  try {
+    const result = disposeReviewSandbox(boundary);
+    assert.deepEqual(result, { removed: true });
+    assert.equal(fs.existsSync(wt), false);
+    const [line] = removalLines(repo);
+    assert.equal(line.path, wt);
+    assert.equal(line.by, 'atris fleet review');
+    assert.equal(line.reason, 'review_sandbox_imported');
   } finally {
     fs.rmSync(base, { recursive: true, force: true });
   }
