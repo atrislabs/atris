@@ -895,8 +895,9 @@ function runLostRunSweep(root, receipt, deps = {}) {
 
 function lostRunSweepNote(receipt) {
   const closed = (receipt.lost_run_sweep?.closed || []).length;
-  if (!closed) return '';
-  return `, closed ${closed} lost engine run${closed === 1 ? '' : 's'}`;
+  const closedNote = closed ? `, closed ${closed} lost engine run${closed === 1 ? '' : 's'}` : '';
+  const errorNote = receipt.lost_run_sweep_error ? ', could not close lost engine runs, so unfinished records may remain' : '';
+  return closedNote + errorNote;
 }
 
 async function runEngineAnswerValidation(root, receipt, deps = {}) {

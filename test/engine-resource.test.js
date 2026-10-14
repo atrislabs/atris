@@ -942,6 +942,36 @@ test('a lost run close that throws never breaks the hourly landing pass', () => 
   assert.strictEqual(receipt.lost_run_sweep, undefined);
 });
 
+test('the hourly cleanup summary reports lost run close failures', () => {
+  const { spawnSync } = require('node:child_process');
+  const { runLostRunSweep, lostRunSweepNote } = require('../commands/autoland');
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'autoland-lost-error-'));
+  try {
+    const exited = spawnSync(process.execPath, ['-e', ''], { timeout: 10000 });
+    assert.equal(exited.status, 0);
+    assert.ok(exited.pid);
+    const file = path.join(root, RESOURCE_LOG);
+    fs.mkdirSync(path.dirname(file), { recursive: true });
+    const start = JSON.stringify({ phase: 'start', run_id: 'lost', pid: exited.pid });
+    fs.writeFileSync(file, `${start}\n`);
+    const receipt = {};
+    runLostRunSweep(root, receipt, {
+      now: () => fs.readFileSync(path.join(root, 'missing-clock'), 'utf8'),
+    });
+    assert.match(receipt.lost_run_sweep_error, /ENOENT/);
+    assert.equal(receipt.lost_run_sweep, undefined);
+    assert.equal(fs.readFileSync(file, 'utf8'), `${start}\n`);
+    assert.equal(lostRunSweepNote(receipt), ', could not close lost engine runs, so unfinished records may remain');
+    assert.equal(lostRunSweepNote({}), '');
+    assert.equal(lostRunSweepNote({ lost_run_sweep: { closed: ['one', 'two'] } }), ', closed 2 lost engine runs');
+    assert.equal(lostRunSweepNote({ lost_run_sweep: { closed: ['one'] }, lost_run_sweep_error: 'failed' }),
+      ', closed 1 lost engine run, could not close lost engine runs, so unfinished records may remain');
+    console.log('real lost-run close failure: ' + lostRunSweepNote(receipt).slice(2));
+  } finally {
+    fs.rmSync(root, { recursive: true, force: true });
+  }
+});
+
 test('the landing status names runs closed after their parent died in the last day, and stays quiet with none', () => {
   const { spawnSync } = require('node:child_process');
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'autoland-status-lost-'));
