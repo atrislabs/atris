@@ -63,8 +63,13 @@ function mission(overrides = {}) {
     lane: 'workspace',
     metadata: {},
     task_ids: [],
-    verifier_result: { passed: true, command: 'git diff --check' },
-    review_verdict: { passed: true, reviewer: 'codex' },
+    // The shape a real ignited run saves: the cross-engine referee rides on
+    // the check result.
+    verifier_result: {
+      passed: true,
+      command: 'git diff --check',
+      referee: { passed: true, mode: 'engine', engine: 'codex', output: 'VERDICT: PASS' },
+    },
     worktree: { branch: 'codex/member-work' },
     ...overrides,
   };
@@ -139,12 +144,32 @@ test('linked billing task: branch stays, gh is never called', () => {
 
 test('no review verdict: branch stays, gh is never called', () => {
   const fx = fixture({ policy: JSON.stringify({ enabled: true }) });
+  const check = (referee) => ({ passed: true, command: 'git diff --check', ...(referee ? { referee } : {}) });
   withFakeGh(fx, () => {
-    for (const verdict of [undefined, { passed: true, reviewer: 'executor' }, { passed: false, reviewer: 'codex' }]) {
-      const out = autolandMemberRun({ mission: mission({ review_verdict: verdict }), cwd: fx.worktree, loadTask: () => null });
-      assert.equal(out.gate, 'review');
+    const cases = [
+      { verifier_result: check(null) },
+      { verifier_result: check({ passed: false, mode: 'engine', engine: 'codex' }) },
+      // The worker graded itself: same engine on both sides.
+      { verifier_result: check({ passed: true, mode: 'engine', engine: 'claude' }) },
+      // Worker engine unknown, so independence cannot be shown.
+      { runner: 'auto', verifier_result: check({ passed: true, mode: 'engine', engine: 'codex' }) },
+      { review_verdict: { passed: true, reviewer: 'executor' } },
+    ];
+    for (const overrides of cases) {
+      const out = autolandMemberRun({ mission: mission(overrides), cwd: fx.worktree, loadTask: () => null });
+      assert.equal(out.gate, 'review', JSON.stringify(overrides));
     }
     assert.deepEqual(ghCalls(fx), []);
+  });
+});
+
+test('a referee from another engine opens the review gate when the run names its worker engine', () => {
+  const fx = fixture({ policy: JSON.stringify({ enabled: true }) });
+  withFakeGh(fx, () => {
+    const m = mission({ runner: 'auto', verifier_result: { passed: true, mode: 'engine', engine: 'claude', output: 'VERDICT: PASS' } });
+    const out = autolandMemberRun({ mission: m, cwd: fx.worktree, workerEngine: 'codex', loadTask: () => null });
+    assert.equal(out.auto_merge, true, out.line);
+    assert.deepEqual(ghCalls(fx).map((c) => c.slice(0, 2)), [['pr', 'create'], ['pr', 'merge']]);
   });
 });
 
@@ -156,5 +181,69 @@ test('malformed or switched-off policy holds the branch too', () => {
       assert.equal(out.gate, 'policy');
       assert.deepEqual(ghCalls(fx), []);
     });
+  }
+});
+
+// Live repro: a real ignited run passed its check and a claude referee, but
+// auto-merge held at review because the referee rides on the saved check
+// result, not a separate field. This drives the real CLI end to end.
+test('a real ignited run with a passing cross-engine referee turns on auto-merge', () => {
+  const { scrubAgentEnv } = require('./helpers/agent-env');
+  const cliPath = path.resolve(__dirname, '..', 'bin', 'atris.js');
+  const base = fs.mkdtempSync(path.join(os.tmpdir(), 'atris-member-autoland-cli-'));
+  const root = path.join(base, 'repo');
+  const origin = path.join(base, 'origin.git');
+  const bin = path.join(base, 'bin');
+  const log = path.join(base, 'gh-calls.jsonl');
+  try {
+    fs.mkdirSync(path.join(root, 'atris', 'team', 'executor'), { recursive: true });
+    fs.mkdirSync(path.join(root, '.atris', 'policy'), { recursive: true });
+    fs.mkdirSync(bin);
+    fs.writeFileSync(path.join(root, 'atris', 'team', 'executor', 'MEMBER.md'), '---\nname: executor\nrole: Test Member\n---\n\n# executor\n');
+    fs.writeFileSync(path.join(root, '.atris', 'policy', 'autoland.json'), JSON.stringify({ enabled: true, owner: 'keshav' }));
+    fs.writeFileSync(path.join(root, '.gitignore'), '.atris/\n');
+    git(['init', '-q', '--bare', '-b', 'master', origin], base);
+    git(['init', '-q', '-b', 'master'], root);
+    git(['config', 'user.email', 'test@example.com'], root);
+    git(['config', 'user.name', 'Test'], root);
+    git(['add', '.'], root);
+    git(['commit', '-qm', 'baseline'], root);
+    git(['remote', 'add', 'origin', origin], root);
+    git(['push', '-q', 'origin', 'master'], root);
+    const script = (file, lines) => fs.writeFileSync(path.join(bin, file), ['#!/bin/sh', ...lines, ''].join('\n'), { mode: 0o755 });
+    script('codex', [
+      'echo done > work.txt',
+      'git add work.txt >/dev/null 2>&1 && git commit -qm "write work.txt" >/dev/null 2>&1',
+      'echo "wrote work.txt"',
+    ]);
+    script('claude', [
+      'if [ "$1" = "--help" ]; then echo "--output-format --permission-mode --resume --session-id --include-partial-messages"; exit 0; fi',
+      `echo '${JSON.stringify({ type: 'result', subtype: 'success', is_error: false, result: 'VERDICT: PASS' })}'`,
+    ]);
+    fs.writeFileSync(path.join(bin, 'gh'), [
+      '#!/usr/bin/env node',
+      `require('fs').appendFileSync(${JSON.stringify(log)}, JSON.stringify(process.argv.slice(2)) + '\\n');`,
+      "if (process.argv[2] === 'pr' && process.argv[3] === 'create') console.log('https://github.com/acme/repo/pull/7');",
+    ].join('\n'), { mode: 0o755 });
+
+    const res = spawnSync(process.execPath, [
+      cliPath, 'member', 'run', 'executor', 'Write work.txt',
+      '--engine', 'codex', '--referee', '--referee-engine', 'claude',
+      '--ignite', '--verify', 'test -s work.txt',
+    ], {
+      cwd: root,
+      encoding: 'utf8',
+      timeout: 120000,
+      env: { ...scrubAgentEnv(), ATRIS_SKIP_UPDATE_CHECK: '1', PATH: `${bin}${path.delimiter}${process.env.PATH || ''}` },
+    });
+    const out = `${res.stdout}\n${res.stderr}`;
+    assert.equal(res.status, 0, out);
+    assert.match(out, /merges on its own once checks pass: https:\/\/github\.com\/acme\/repo\/pull\/7/, out);
+    const calls = fs.readFileSync(log, 'utf8').trim().split('\n').map((line) => JSON.parse(line));
+    assert.deepEqual(calls.map((c) => c.slice(0, 2)), [['pr', 'create'], ['pr', 'merge']], out);
+    assert.deepEqual(calls[1].slice(3), ['--auto', '--merge']);
+    assert.ok(git(['ls-remote', origin, `refs/heads/${calls[1][2]}`], base), 'branch pushed');
+  } finally {
+    fs.rmSync(base, { recursive: true, force: true });
   }
 });

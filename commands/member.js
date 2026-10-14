@@ -1369,8 +1369,10 @@ function memberRunWith(name, args, { quiet = false } = {}) {
   // auto-merge, only past the local gates; any held gate leaves the branch.
   if (ignite && ok && started && !reviewAsk && finalMission.verifier_result?.passed === true) {
     const ticks = Array.isArray(payload.ticks) ? payload.ticks : [];
-    const summary = ticks.map((tick) => tick?.summary).filter(Boolean).pop() || '';
-    result.autoland = require('../lib/member-autoland').autolandMemberRun({ mission: finalMission, cwd, summary });
+    const summary = ticks.map((tick) => tick?.summary || tick?.claude?.summary).filter(Boolean).pop() || '';
+    const workerEngine = ticks.map((tick) => tick?.engine_id).filter(Boolean).pop()
+      || runnerSwap?.to || readFlag(args, '--runner', '') || '';
+    result.autoland = require('../lib/member-autoland').autolandMemberRun({ mission: finalMission, cwd, summary, workerEngine });
     if (!asJson && !quiet) console.log(result.autoland.line);
   }
   if (!ok) {
