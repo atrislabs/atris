@@ -2333,3 +2333,5 @@ npm publish
 - `lib/member-tidy.js:194`: busy landed copies retain the running-program explanation and append exact lock paths and ages; `test/member-tidy.test.js` checks preview and cleanup with real Git and the CLI running inside the retained copy.
 
 - `lib/member-tidy.js:170`: an aborted cleanup retains its original failure explanation and appends exact Git lock paths and ages; `test/member-tidy.test.js` runs the real preview and cleanup CLI with a failing lsof executable, checks distinct private and shared lock ages, and proves folders and branches survive without a removal log.
+
+- `lib/member-tidy.js:170`: failed origin lookup also keeps exact private and shared lock paths and ages visible; `test/member-tidy.test.js` runs preview and cleanup against a missing local remote and checks that both folders and branches survive with no removal record.
