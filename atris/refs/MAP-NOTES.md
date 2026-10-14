@@ -2457,3 +2457,7 @@ npm publish
 ## Review debt next fixture setup
 
 - `test/commands.test.js:12497` checks that task next tells an agent to accept the task waiting in review when no open work exists. Real-store creation at `test/commands.test.js:12505` saves one setup launch and reads the id and display reference from the stored rows; the claim, ready and next remain on the CLI, and a throwaway copy without the ready step failed with ready instead of accept.
+
+## Premature review XP fixture setup
+
+- `test/commands.test.js:11359` checks that reviewing a task that is still open pays no XP and that accept is refused without fresh proof. Real-store creation at `test/commands.test.js:11367` saves one setup launch and reads the display reference from the stored rows; the review, XP status and refused accept remain on the CLI, and a throwaway copy that seeded the task as done failed with done instead of open.
