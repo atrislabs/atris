@@ -5,7 +5,7 @@ const os = require('node:os');
 const path = require('node:path');
 const { spawn, spawnSync } = require('node:child_process');
 
-const { readBoard, renderBoard, ago, isAlive, stopMember } = require('../lib/member-board');
+const { readBoard, renderBoard, ago, isAlive, stopMember, memberBoardCommand } = require('../lib/member-board');
 
 const repoRoot = path.resolve(__dirname, '..');
 const cliPath = path.join(repoRoot, 'bin', 'atris.js');
@@ -208,6 +208,43 @@ test('a live run with a long name drops last step before it overflows 80', () =>
     assert.match(tiny, /^member\s+state\s+last result\s+run\s+ago\s+job$/m, 'last step leaves');
     assert.match(tiny, /^objective-generator\s+working\s+failed 14m\s+claude 1m\s+5s ago\s+try again \.\.\.$/m, 'the job gets the room');
     assert.match(tiny, /^builder\s+done failed\s+engine error\s+-\s+1m ago\s+build$/m);
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test('watch mode redraws at once when the window is resized', async () => {
+  const dir = fakeDir({
+    builder: [`${at(60)} m-1 started: Ship the member board so the operator sees every member at a glance`, `${at(5)} m-1 running: npm test`],
+  });
+  const out = process.stdout;
+  const saved = ['isTTY', 'columns', 'rows'].map((k) => [k, Object.getOwnPropertyDescriptor(out, k)]);
+  const write = out.write;
+  const env = process.env.ATRIS_PROGRESS_DIR;
+  const frames = [];
+  let done;
+  try {
+    process.env.ATRIS_PROGRESS_DIR = dir;
+    Object.defineProperty(out, 'isTTY', { value: true, configurable: true, writable: true });
+    Object.defineProperty(out, 'columns', { value: 120, configurable: true, writable: true });
+    Object.defineProperty(out, 'rows', { value: 20, configurable: true, writable: true });
+    out.write = (chunk) => { frames.push(String(chunk)); return true; };
+    done = memberBoardCommand('--watch');
+    out.columns = 50;
+    out.emit('resize');
+    process.emit('SIGINT');
+  } finally {
+    out.write = write;
+    for (const [k, d] of saved) { if (d) Object.defineProperty(out, k, d); else delete out[k]; }
+    if (env === undefined) delete process.env.ATRIS_PROGRESS_DIR; else process.env.ATRIS_PROGRESS_DIR = env;
+  }
+  try {
+    await done;
+    assert.equal(frames.length, 2, 'one frame at start, one on resize, none after ctrl-c');
+    const widest = (f) => Math.max(...f.replace(/\x1b\[[0-9;]*[A-Za-z]/g, '').split('\n').map((l) => l.length));
+    assert.ok(widest(frames[0]) > 50, 'the first frame used the old width');
+    assert.ok(widest(frames[1]) <= 50, `the redraw fits the new width: ${widest(frames[1])}`);
+    assert.equal(out.listenerCount('resize'), 0, 'ctrl-c stops listening for resizes');
   } finally {
     fs.rmSync(dir, { recursive: true, force: true });
   }
