@@ -437,6 +437,18 @@ function syncBusinessCanonical(targetRoot, bizMeta, options = {}) {
   });
 }
 
+// Team members follow every written update, business or legacy, into Claude
+// Code, Cursor, and Codex as subagents. An export failure never fails the update.
+function exportTeamAfterUpdate(root, { dryRun = false } = {}) {
+  if (dryRun || !fs.existsSync(path.join(root, 'atris', 'team'))) return;
+  try {
+    const { exportMembers, summaryLine } = require('../lib/member-export');
+    console.log(`✓ Team: ${summaryLine(exportMembers(root))}`);
+  } catch (err) {
+    console.log(`Team export skipped: ${err.message || err}`);
+  }
+}
+
 function syncAtris(options = {}) {
   const explicitDryRun = options.dryRun != null ? options.dryRun : process.argv.includes('--dry-run');
   const yes = options.yes != null
@@ -455,6 +467,7 @@ function syncAtris(options = {}) {
         dryRun,
         force,
       });
+      exportTeamAfterUpdate(process.cwd(), { dryRun });
       if (!yes) {
         console.log('\nPlan only. Re-run with --yes to write these files.');
         if (!explicitDryRun && isNonInteractive()) process.exit(2);
@@ -696,15 +709,7 @@ Key behaviors:
     console.log('\nRun your AI agent again to use the latest specs and agent templates.');
   }
 
-  // Team members follow the update into Claude Code, Cursor, and Codex as subagents.
-  if (!dryRun && fs.existsSync(path.join(process.cwd(), 'atris', 'team'))) {
-    try {
-      const { exportMembers, summaryLine } = require('../lib/member-export');
-      console.log(`✓ Team: ${summaryLine(exportMembers(process.cwd()))}`);
-    } catch (err) {
-      console.log(`Team export skipped: ${err.message || err}`);
-    }
-  }
+  exportTeamAfterUpdate(process.cwd(), { dryRun });
 }
 
 /**

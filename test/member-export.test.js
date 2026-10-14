@@ -96,3 +96,24 @@ test('atris member export runs for real, and --dry-run writes nothing', () => {
   assert.match(run.stdout, /1 member exported to claude code, cursor, and codex, 3 files written/);
   assert.equal(fs.existsSync(path.join(root, '.claude', 'agents', 'validator.md')), true);
 });
+
+test('atris update --yes exports the team in a business project and in a plain project', () => {
+  const env = { ...process.env, ATRIS_SKIP_UPDATE_CHECK: '1' };
+  const business = project([['checker', VALIDATOR.replace('name: validator', 'name: checker')]]);
+  fs.mkdirSync(path.join(business, '.atris'), { recursive: true });
+  fs.writeFileSync(path.join(business, '.atris', 'business.json'), JSON.stringify({ name: 'Acme' }));
+  const plain = project([['checker', VALIDATOR.replace('name: validator', 'name: checker')]]);
+
+  for (const root of [business, plain]) {
+    const run = spawnSync(process.execPath, [cli, 'update', '--yes'], { cwd: root, env, encoding: 'utf8' });
+    assert.equal(run.status, 0, run.stderr);
+    assert.match(run.stdout, /✓ Team: \d+ members? exported to claude code, cursor, and codex/);
+    assert.equal(fs.existsSync(path.join(root, '.claude', 'agents', 'checker.md')), true, root);
+    assert.equal(fs.existsSync(path.join(root, '.codex', 'agents', 'checker.toml')), true, root);
+  }
+
+  const dry = project([['checker', VALIDATOR]]);
+  const plan = spawnSync(process.execPath, [cli, 'update', '--dry-run'], { cwd: dry, env, encoding: 'utf8' });
+  assert.doesNotMatch(plan.stdout, /✓ Team:/);
+  assert.equal(fs.existsSync(path.join(dry, '.claude', 'agents')), false);
+});
