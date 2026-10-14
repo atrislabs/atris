@@ -677,7 +677,7 @@ test('history reads back the latest sweep and the latest SIGKILL, skipping bad l
     assert.strictEqual(history.last_kill.task, 'CLI-2');
     assert.strictEqual(history.kills, 2);
     assert.strictEqual(history.low_memory_kills, 1);
-    assert.deepStrictEqual(readResourceHistory(path.join(root, 'missing')), { last_sweep: null, last_kill: null, kills: 0, low_memory_kills: 0, time_limit_kills: 0, last_other_kill: null, kills_day: 0, low_memory_kills_day: 0, time_limit_kills_day: 0, last_day_other_kill: null, open_runs: 0, parent_gone: 0, still_running: 0, last_open: null, lost_closed: 0, lost_closed_day: 0, last_lost_closed: null, first_day_leak_reading: null, last_error: null, errors_day: 0, last_day_error: null });
+    assert.deepStrictEqual(readResourceHistory(path.join(root, 'missing')), { last_sweep: null, last_kill: null, kills: 0, low_memory_kills: 0, time_limit_kills: 0, last_other_kill: null, kills_day: 0, low_memory_kills_day: 0, time_limit_kills_day: 0, last_day_other_kill: null, open_runs: 0, parent_gone: 0, still_running: 0, last_open: null, lost_closed: 0, lost_closed_day: 0, last_lost_closed: null, first_day_leak_reading: null, last_error: null, errors_day: 0, last_day_error: null, read_error: null });
   } finally {
     fs.rmSync(root, { recursive: true, force: true });
   }
@@ -1001,6 +1001,44 @@ test('the hourly cleanup summary reports an unreadable run log instead of findin
     assert.equal(code, 1);
     assert.match(out.join('\n'), /^stopped 0 leaked ssh-agents\ncould not close lost runs, so unfinished records may remain: could not read the engine run log: EISDIR$/);
     console.log('real sweep with unreadable run log: ' + out.join(' / '));
+  } finally {
+    fs.rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test('the sweep listing and the landing status name an unreadable run log instead of showing no history', () => {
+  const { spawnSync } = require('node:child_process');
+  const { engineCommand } = require('../commands/engine');
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'engine-history-unread-'));
+  try {
+    spawnSync('git', ['init', '-q'], { cwd: root });
+    assert.strictEqual(readResourceHistory(root).read_error, null, 'no log yet is no history, not a failure');
+    fs.mkdirSync(path.join(root, RESOURCE_LOG), { recursive: true });
+    assert.equal(readResourceHistory(root).read_error, 'EISDIR');
+    const out = [];
+    const original = console.log;
+    console.log = (line) => out.push(String(line));
+    let code;
+    try {
+      code = engineCommand(['sweep'], { root, engineSweep: { read: () => ({ agents: [], referenced: new Set() }), uid: 501 } });
+    } finally {
+      console.log = original;
+    }
+    const listing = out.join('\n');
+    assert.equal(code, 0);
+    assert.match(listing, /\ncould not read the engine run log: EISDIR, so past sweeps, kills, and errors are unknown$/);
+    assert.doesNotMatch(listing, /no sweep recorded yet|no engine run has ended in SIGKILL/);
+    console.log('real sweep listing with unreadable run log: ' + out.join(' / '));
+    const cli = path.join(__dirname, '..', 'bin', 'atris.js');
+    const status = spawnSync(process.execPath, [cli, 'autoland', 'status'], {
+      cwd: root,
+      encoding: 'utf8',
+      env: { ...process.env, ATRIS_SKIP_UPDATE_CHECK: '1', NODE_NO_WARNINGS: '1' },
+    });
+    assert.strictEqual(status.status, 0, status.stderr);
+    const line = status.stdout.split('\n').find((text) => /engine run log/.test(text));
+    assert.equal(line, '  engine run log: could not read it (EISDIR), so lost, killed, and failed runs in the last day are unknown');
+    console.log('real landing status with unreadable run log: ' + line.trim());
   } finally {
     fs.rmSync(root, { recursive: true, force: true });
   }

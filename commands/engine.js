@@ -2412,6 +2412,10 @@ function utcMinute(at) {
 function resourceHistoryLines(history) {
   const { errorReason } = require('../lib/engine-resource');
   const lines = [];
+  if (history.read_error) {
+    lines.push(`could not read the engine run log: ${history.read_error}, so past sweeps, kills, and errors are unknown`);
+    return lines;
+  }
   const sweep = history.last_sweep;
   lines.push(sweep
     ? `last sweep: ${utcMinute(sweep.at)}, stopped ${(sweep.stopped || []).length}`

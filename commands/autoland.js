@@ -530,6 +530,7 @@ function showStatus(root, args, deps = {}) {
   const reapTrouble = autoland.readState(root).last_reap_error;
   if (reapTrouble) console.log(`  cleanup trouble: landing sweep failed on ${reapTrouble.date} (${reapTrouble.error}) - run: atris land --reap`);
   const lost = readResourceHistory(root);
+  if (lost.read_error) console.log(`  engine run log: could not read it (${lost.read_error}), so lost, killed, and failed runs in the last day are unknown`);
   if (lost.lost_closed_day) {
     const newest = lost.last_lost_closed;
     const when = `${String(newest.at || '').slice(0, 16).replace('T', ' ')} UTC`;
