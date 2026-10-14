@@ -1420,3 +1420,16 @@ test('fix joins a bare subject and a verb that moves toward a place with a semic
     'See the setup, quickly moves to the end.',
   ]);
 });
+
+test('fix keeps a colon before a dash pair and stacks no comma on it', () => {
+  // from the terrace repo, which came out "T35b:, DONE"
+  const file = tmpFile('stack.md', [
+    'I reviewed "T35b: \u2014 DONE 2026-06-11 (navigator) \u2014 Name the resetter".',
+    'The gate \u2014 strict (very) \u2014 held.',
+  ].join('\n'));
+  const { changes } = applyFixes([file], RULES);
+  assert.deepEqual(changes.map((c) => c.after), [
+    'I reviewed "T35b: DONE 2026-06-11 (navigator), Name the resetter".',
+    'The gate, strict (very), held.',
+  ]);
+});

@@ -259,7 +259,9 @@ function fixEmDash(s, { endsBlock = false, startsBlock = false } = {}) {
       // Dashes pressed inside a bracket only doubled it, so both just go:
       // "Ship it (maybe) now", never "(, maybe)".
       if (/[([]$/.test(whole.slice(0, at))) return `${aside}${gap ? ', ' : ''}`;
-      if (holdsParens || insideParens(whole.slice(0, at))) return `, ${aside}${gap ? ', ' : ''}`;
+      // A colon or comma the writer already put before the dash stays, so no
+      // comma stacks on it: '"T35b: DONE (navigator), Name it"', never "T35b:,".
+      if (holdsParens || insideParens(whole.slice(0, at))) return `${/[,;:]$/.test(whole.slice(0, at)) ? ' ' : ', '}${aside}${gap ? ', ' : ''}`;
       // the closing dash also stood in for the comma before a "which" remark:
       // "scale (model size, data), which is a bet", never "data) which is".
       const remark = /^(?:which|although|whereas)\b/.test(whole.slice(at + m.length));
