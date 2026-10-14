@@ -750,6 +750,22 @@ test('fix keeps a paired aside after a plain-word label as parentheses', () => {
   ]);
 });
 
+test('fix keeps the colon after a label that already holds one', () => {
+  // a comma here was tried and read worse in 30-odd repo lines: the second
+  // colon explains the first, and a comma turns it into a run-on
+  const file = tmpFile('second-colon.md', [
+    '- **Weak:** Can be too rigid \u2014 sometimes a score is not the point.',
+    '  - **Result:** PASS \u2014 Moved to Completed Features section',
+    '- **cli:** `init` no longer overwrites files \u2014 closes #1290.',
+  ].join('\n'));
+  const { changes } = applyFixes([file], RULES);
+  assert.deepEqual(changes.map((c) => c.after), [
+    '- **Weak:** Can be too rigid: sometimes a score is not the point.',
+    '  - **Result:** PASS: Moved to Completed Features section',
+    '- **cli:** `init` no longer overwrites files: closes #1290.',
+  ]);
+});
+
 test('fix gives an italic label that opens a line a colon, like a bold one', () => {
   // from a sample pull request description, where "_Note_" took a comma
   const file = tmpFile('italic-label.md', [
