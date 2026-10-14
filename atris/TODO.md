@@ -23,6 +23,8 @@ Details for any task: atris task show <ID>
 
 ## Review
 
+- **[AIC-25]** Seed existing follow-up drain parent fixtures · auto-improver
+  **Done looks like:** Developers finish follow-up drain checks sooner because parent setup starts two fewer commands.
 - **[AIC-24]** Remove duplicate review baseline read launch · auto-improver
   **Done looks like:** Developers can finish duplicate review checks sooner because the baseline read starts one fewer command.
 - **[AIC-23]** Remove baseline receipt test read launch · auto-improver

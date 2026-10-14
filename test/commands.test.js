@@ -9149,14 +9149,27 @@ test('task review-lane-drain skips continue-work rows with existing follow-up ch
   try {
     fs.mkdirSync(path.join(dir, 'atris'), { recursive: true });
 
-    const freshCreated = runCli([
-      'task', 'new', 'Drain should eventually choose this fresh continuation',
-      '--tag', 'task',
-      '--goal-id', 'OBL-953',
-      '--json',
-    ], { cwd: dir, env });
-    assert.equal(freshCreated.status, 0, freshCreated.stderr);
-    const freshRef = JSON.parse(freshCreated.stdout).task.display_id;
+    // Seed only the parents; keep ready, review, continuation and drain
+    // on the CLI so the existing-child behavior still uses the real commands.
+    const seedParent = (title) => {
+      const workspaceRoot = taskStore.workspaceRoot(dir);
+      const db = taskStore.open(dbPath);
+      try {
+        const added = taskStore.addTask(db, {
+          title,
+          tag: 'task',
+          workspaceRoot,
+          metadata: { goal_id: 'OBL-953' },
+        });
+        assert.equal(added.inserted, true);
+        const ref = taskStore.taskDisplayRefMap(taskStore.listTasks(db, { workspaceRoot })).get(added.id);
+        assert.ok(ref);
+        return ref;
+      } finally {
+        taskStore.close();
+      }
+    };
+    const freshRef = seedParent('Drain should eventually choose this fresh continuation');
     assert.equal(runCli([
       'task', 'ready', freshRef,
       '--as', 'codex',
@@ -9170,14 +9183,7 @@ test('task review-lane-drain skips continue-work rows with existing follow-up ch
       '--next', 'Add the fresh child selected by review lane drain',
     ], { cwd: dir, env }).status, 0);
 
-    const followedCreated = runCli([
-      'task', 'new', 'Drain should skip this already-followed continuation',
-      '--tag', 'task',
-      '--goal-id', 'OBL-953',
-      '--json',
-    ], { cwd: dir, env });
-    assert.equal(followedCreated.status, 0, followedCreated.stderr);
-    const followedRef = JSON.parse(followedCreated.stdout).task.display_id;
+    const followedRef = seedParent('Drain should skip this already-followed continuation');
     assert.equal(runCli([
       'task', 'ready', followedRef,
       '--as', 'codex',
