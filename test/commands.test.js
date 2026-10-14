@@ -20912,7 +20912,7 @@ test('scoreEndgameCandidates returns best by confidence when no atris folder', (
 test('scoreEndgameCandidates returns best by confidence when no scorecards', () => {
   const dir = makeTempDir();
   try {
-    initWorkspace(dir);
+    fs.mkdirSync(path.join(dir, 'atris'), { recursive: true });
     const candidates = [
       { title: 'wiki-search', confidence: 0.6, rationale: 'Medium confidence' },
       { title: 'verify-tests', confidence: 0.8, rationale: 'High confidence' },
@@ -20922,6 +20922,7 @@ test('scoreEndgameCandidates returns best by confidence when no scorecards', () 
     assert.equal(result.title, 'verify-tests', 'should pick highest confidence');
     assert.equal(result.confidence, 0.8);
     assert.equal(result.scored, false);
+    assert.equal(result.reason, 'no scorecards');
   } finally {
     cleanupTempDir(dir);
   }
@@ -20930,7 +20931,7 @@ test('scoreEndgameCandidates returns best by confidence when no scorecards', () 
 test('scoreEndgameCandidates scores candidates by historical reward with adaptive explore rate', () => {
   const dir = makeTempDir();
   try {
-    initWorkspace(dir);
+    fs.mkdirSync(path.join(dir, 'atris'), { recursive: true });
 
     // Create scorecards with diverse types (wiki, verify, refactor, harden)
     const scorecardsPath = getScorecardsPath(path.join(dir, 'atris'));
@@ -20978,7 +20979,7 @@ test('scoreEndgameCandidates scores candidates by historical reward with adaptiv
 test('scoreEndgameCandidates boosts explore to 50% when last 5 are same type', () => {
   const dir = makeTempDir();
   try {
-    initWorkspace(dir);
+    fs.mkdirSync(path.join(dir, 'atris'), { recursive: true });
 
     // All 5 scorecards are wiki-* type
     const scorecardsPath = getScorecardsPath(path.join(dir, 'atris'));
@@ -21022,7 +21023,7 @@ test('scoreEndgameCandidates boosts explore to 50% when last 5 are same type', (
 test('scoreEndgameCandidates filters easy-win candidates when harder ones exist', () => {
   const dir = makeTempDir();
   try {
-    initWorkspace(dir);
+    fs.mkdirSync(path.join(dir, 'atris'), { recursive: true });
 
     // wiki type: high success rate (9/10 = 90%) and high mean reward (50)
     // verify type: low success rate (3/6 = 50%) and low mean reward (10)
@@ -21068,7 +21069,7 @@ test('scoreEndgameCandidates filters easy-win candidates when harder ones exist'
 test('scoreEndgameCandidates returns fallback when scoring fails', () => {
   const dir = makeTempDir();
   try {
-    initWorkspace(dir);
+    fs.mkdirSync(path.join(dir, 'atris'), { recursive: true });
 
     // Write malformed scorecards to trigger parsing error
     const scorecardsPath = getScorecardsPath(path.join(dir, 'atris'));
@@ -21083,7 +21084,9 @@ test('scoreEndgameCandidates returns fallback when scoring fails', () => {
     // Should fall back to best by confidence
     assert.equal(result.title, 'wiki-work');
     assert.equal(result.confidence, 0.9);
-    // scored flag tells us it fell back (if there was an error)
+    // The malformed line is skipped, so scoring falls back to confidence order.
+    assert.equal(result.scored, false);
+    assert.equal(result.reason, 'no scorecards');
   } finally {
     cleanupTempDir(dir);
   }
