@@ -964,6 +964,27 @@ function fixKind(before, after) {
   return kinds.length ? kinds.join(' + ') : 'dropped';
 }
 
+// A dash that opens a wrapped line inside a paragraph joins it to the line
+// above. Dropping it fuses two sentences ("checks below these are the
+// reward"), so the mark it stands for, picked by the same clause rules as a
+// dash in mid-line, goes on the end of the line above: "checks below;" then
+// "these are the reward". Returns that mark, or null when the line above
+// already ends in a mark, even inside a closing quote, is a heading, a table
+// row or a fence, or either line holds another dash, and the dash is simply
+// dropped as before. A line that is only a name or a credit signs off what
+// came before ("Sanketh", "Brian Chesky, CEO of Airbnb"), so it is dropped too.
+const CREDIT_LINE = /^(?:@\w+|\[[^\]]+\]|[A-Z][\w'\u2019.-]*(?: [A-Z][\w'\u2019.-]*){0,3})(?:,[^.!?;:]*| \([^)]*\))?$/;
+function carriedMark(above, line) {
+  const open = /^\s*\u2014[ \t]*(\S.*)$/.exec(line);
+  if (!open || !above.trim() || /\u2014|`/.test(above) || /\u2014/.test(open[1]) || CREDIT_LINE.test(open[1].trim())) return null;
+  if (/^\s{0,3}(?:#|>|\||```|~~~)/.test(above) || /^\s*(?:[-*+]|\d+[.)])\s*$/.test(above)) return null;
+  if (!/[\w)\]"'*_%\u201d\u2019]$/.test(above) || /[.!?,;:]["'*_)\u201d\u2019]+$/.test(above)) return null;
+  const head = above.trim();
+  const joined = fixEmDash(`${head} \u2014 ${open[1]}`);
+  const mark = joined.startsWith(head) && joined.endsWith(` ${open[1]}`) ? joined.slice(head.length, joined.length - open[1].length - 1) : '';
+  return /^[,;:.]$/.test(mark) ? mark : ',';
+}
+
 // Apply every fixable rule's safe transform in place.
 // Returns { fixedCount, fixedFiles, changes }, where changes lists each edited
 // line as { file, line, before, after, kind } so the writer can review the fix.
@@ -984,6 +1005,14 @@ function applyFixes(files, rules, { write = true } = {}) {
       const from = script ? commentStart(lines[i], comments) : 0;
       if (skip.has(i)) continue;
       let line = lines[i];
+      const mark = !script && i > 0 && !skip.has(i - 1) && !fenced.has(i) && !fenced.has(i - 1) && fixable.some((r) => r.fix === fixEmDash) ? carriedMark(lines[i - 1], line) : null;
+      if (mark) {
+        const above = lines[i - 1].replace(/\s+$/, '') + mark;
+        const last = changes[changes.length - 1];
+        if (last && last.file === file && last.line === i) { last.after = above; last.kind = fixKind(last.before, above); }
+        else changes.push({ file, line: i, before: lines[i - 1], after: above, kind: fixKind(lines[i - 1], above) });
+        lines[i - 1] = above; touched = true;
+      }
       for (const r of fixable) {
         const prose = markdown && r.proseOnly;
         if (prose && fenced.has(i)) continue;

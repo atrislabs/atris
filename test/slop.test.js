@@ -563,6 +563,33 @@ test('fix drops a dash that opens a line instead of leaving a leading comma', ()
   ]);
 });
 
+test('fix moves the mark of a dash that opens a wrapped line to the line above', () => {
+  // dropping the dash fused two sentences: "checks below" then "these are
+  // the reward"; a credit or a line above that already ends keeps the drop
+  const file = tmpFile('wrapped.md', [
+    'The judge only ranks pairs of emails',
+    '\u2014 so the ranking clears the noise floor.',
+    '',
+    'Run the specific checks below',
+    '   \u2014 these are the actual reward function.',
+    '',
+    '"Read this book and change your odds."',
+    '\u2014 Garry Tan, president of Y Combinator',
+    '',
+    'Thanks for the intro',
+    '\u2014 Sanketh',
+  ].join('\n'));
+  const { changes } = applyFixes([file], RULES, { write: false });
+  assert.deepEqual(changes.map((c) => [c.line, c.after]), [
+    [1, 'The judge only ranks pairs of emails,'],
+    [2, 'so the ranking clears the noise floor.'],
+    [4, 'Run the specific checks below;'],
+    [5, '   these are the actual reward function.'],
+    [8, 'Garry Tan, president of Y Combinator'],
+    [11, 'Sanketh'],
+  ]);
+});
+
 test('fix treats dashes in a row as one dash, never a comma run', () => {
   const file = tmpFile('doubled.md', [
     'He said \u2014\u2014 nothing at all.',
