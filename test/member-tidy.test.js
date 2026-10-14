@@ -224,7 +224,7 @@ test('tidy keeps a landed copy while git is paused mid-rebase in it, and logs wh
 
     const result = tidyMemberCopies({ repoRoot: fx.repo });
     assert.equal(byName(result, 'landed-paused').action, 'kept');
-    assert.match(byName(result, 'landed-paused').reason, /git is in the middle of something/);
+    assert.equal(byName(result, 'landed-paused').reason, 'landed, but a rebase is paused in it');
     assert.ok(fs.existsSync(paused));
     assert.equal(byName(result, 'landed-clean').action, 'removed');
 
