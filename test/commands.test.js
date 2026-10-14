@@ -13161,9 +13161,20 @@ test('task auto-accept-certified requires explicit human confirmation', () => {
   try {
     fs.mkdirSync(path.join(dir, 'atris'), { recursive: true });
     writePolicy(dir, { enabled: false, enabled_by: 'test' });
-    const add = runCli(['task', 'add', 'Auto accept still needs a human', '--tag', 'agent-xp', '--json'], { cwd: dir, env });
-    assert.equal(add.status, 0, add.stderr);
-    const ref = JSON.parse(add.stdout).task.display_id;
+    // Seed creation only; claim, certification and every auto-accept check stay on the CLI.
+    const workspaceRoot = taskStore.workspaceRoot(dir);
+    const db = taskStore.open(dbPath);
+    let ref;
+    try {
+      const created = addSeedTask(db, {
+        title: 'Auto accept still needs a human', tag: 'agent-xp', workspaceRoot,
+      });
+      assert.equal(created.inserted, true);
+      ref = taskStore.taskDisplayRefMap(taskStore.listTasks(db, { workspaceRoot })).get(created.id);
+      assert.ok(ref);
+    } finally {
+      taskStore.close();
+    }
     assert.equal(runCli(['task', 'claim', ref, '--as', 'codex'], { cwd: dir, env }).status, 0);
     assert.equal(runCli([
       'task', 'ready', ref,

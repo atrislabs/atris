@@ -2377,3 +2377,7 @@ npm publish
 ## Proof-only acceptance guard fixture setup
 
 - `test/commands.test.js:13069` checks that agent proof-only mode blocks done, finish, positive review, accept and certified auto-accept. Real-store creation at `test/commands.test.js:13088` saves one setup launch, resolves the display reference and closes in finally; claim, every blocked verb, ready, zero-reward review and final show remain on the CLI with every behavior assertion preserved.
+
+## Auto-accept confirmation fixture setup
+
+- `test/commands.test.js:13156` checks that certified auto-accept needs an explicit human confirmation and a real human actor. Real-store creation at `test/commands.test.js:13170` saves one setup launch, resolves the display reference and closes in finally; claim, ready, review, the refusals, both previews and the confirmed accept remain on the CLI with every behavior assertion preserved.
