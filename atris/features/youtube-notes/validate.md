@@ -60,7 +60,7 @@ The fresh `TMPDIR` matters. A transcript left over from an earlier run of the sa
 
 - [ ] `atris youtube process <url>` still charges 5 credits and refunds on failure. Only run this with a human's go, because it spends credits.
 - [ ] `ATRIS_YTNOTES_ENGINE=haiku atris youtube notes <url>` still pins Haiku.
-- [ ] `ATRIS_YTNOTES_LOCAL_TRANSCRIBE=0` on a no-caption video prints the paid command instead of transcribing.
+- [x] `ATRIS_YTNOTES_LOCAL_TRANSCRIBE=0` on a no-caption video prints the paid command instead of transcribing. Rerun live on 2026-10-14 with `6DRlX5vIOE0`: exit 2 in 3 seconds, "No English captions found" plus the 5-credit paid command, no notes or transcript left behind.
 
 ---
 
