@@ -1,0 +1,971 @@
+TAP version 13
+# Subtest: collectBoard surfaces a worktree holding commits ahead of base with subjects
+ok 1 - collectBoard surfaces a worktree holding commits ahead of base with subjects
+  ---
+  duration_ms: 493.019334
+  ...
+# Subtest: reap refuses to delete a worktree with unlanded commits and names it
+ok 2 - reap refuses to delete a worktree with unlanded commits and names it
+  ---
+  duration_ms: 526.858667
+  ...
+# Subtest: reap --force clears a stranded worktree but backs it up first
+ok 3 - reap --force clears a stranded worktree but backs it up first
+  ---
+  duration_ms: 766.861417
+  ...
+# Subtest: a merged (residue) worktree is still reaped without --force
+ok 4 - a merged (residue) worktree is still reaped without --force
+  ---
+  duration_ms: 811.017959
+  ...
+# Subtest: tidy removes landed clean copies and leaves everything else to git and the rules
+ok 5 - tidy removes landed clean copies and leaves everything else to git and the rules
+  ---
+  duration_ms: 1583.512917
+  ...
+# Subtest: tidy asks origin for its current default branch instead of the stale local note
+ok 6 - tidy asks origin for its current default branch instead of the stale local note
+  ---
+  duration_ms: 726.99225
+  ...
+# Subtest: tidy keeps every copy when the running-program scan fails
+ok 7 - tidy keeps every copy when the running-program scan fails
+  ---
+  duration_ms: 722.51875
+  ...
+# Subtest: tidy keeps every copy when origin cannot be fetched
+ok 8 - tidy keeps every copy when origin cannot be fetched
+  ---
+  duration_ms: 429.652125
+  ...
+# Subtest: tidy keeps a landed copy while git is paused mid-rebase in it, and logs what it removes
+ok 9 - tidy keeps a landed copy while git is paused mid-rebase in it, and logs what it removes
+  ---
+  duration_ms: 563.36325
+  ...
+# Subtest: mission tick does not flag pre-existing workspace dirt as unverified
+not ok 10 - mission tick does not flag pre-existing workspace dirt as unverified
+  ---
+  duration_ms: 180.763833
+  location: '/Users/keshavrao/arena/empire/.agent-worktrees/atris-cli/architect-finish-work-folder-protection-across-20261014-113334/test/mission-worktree-baseline.test.js:67:1'
+  failureType: 'testCodeFailure'
+  error: |-
+    atris needs Node 22.13 or newer. this is Node 20.18.0.
+    upgrade from https://nodejs.org, then run atris again.
+    
+  code: 'ERR_ASSERTION'
+  name: 'AssertionError'
+  expected: 0
+  actual: 1
+  operator: 'strictEqual'
+  stack: |-
+    startMission (/Users/keshavrao/arena/empire/.agent-worktrees/atris-cli/architect-finish-work-folder-protection-across-20261014-113334/test/mission-worktree-baseline.test.js:53:10)
+    TestContext.<anonymous> (/Users/keshavrao/arena/empire/.agent-worktrees/atris-cli/architect-finish-work-folder-protection-across-20261014-113334/test/mission-worktree-baseline.test.js:79:21)
+    Test.runInAsyncScope (node:async_hooks:206:9)
+    Test.run (node:internal/test_runner/test:796:25)
+    Test.processPendingSubtests (node:internal/test_runner/test:527:18)
+    node:internal/test_runner/harness:255:12
+    node:internal/process/task_queues:140:7
+    AsyncResource.runInAsyncScope (node:async_hooks:206:9)
+    AsyncResource.runMicrotask (node:internal/process/task_queues:137:8)
+  ...
+# Subtest: mission tick still flags dirt created after mission start
+not ok 11 - mission tick still flags dirt created after mission start
+  ---
+  duration_ms: 170.55675
+  location: '/Users/keshavrao/arena/empire/.agent-worktrees/atris-cli/architect-finish-work-folder-protection-across-20261014-113334/test/mission-worktree-baseline.test.js:102:1'
+  failureType: 'testCodeFailure'
+  error: |-
+    atris needs Node 22.13 or newer. this is Node 20.18.0.
+    upgrade from https://nodejs.org, then run atris again.
+    
+  code: 'ERR_ASSERTION'
+  name: 'AssertionError'
+  expected: 0
+  actual: 1
+  operator: 'strictEqual'
+  stack: |-
+    startMission (/Users/keshavrao/arena/empire/.agent-worktrees/atris-cli/architect-finish-work-folder-protection-across-20261014-113334/test/mission-worktree-baseline.test.js:53:10)
+    TestContext.<anonymous> (/Users/keshavrao/arena/empire/.agent-worktrees/atris-cli/architect-finish-work-folder-protection-across-20261014-113334/test/mission-worktree-baseline.test.js:111:21)
+    Test.runInAsyncScope (node:async_hooks:206:9)
+    Test.run (node:internal/test_runner/test:796:25)
+    Test.processPendingSubtests (node:internal/test_runner/test:527:18)
+    Test.postRun (node:internal/test_runner/test:889:19)
+    Test.run (node:internal/test_runner/test:835:12)
+    async Test.processPendingSubtests (node:internal/test_runner/test:527:7)
+  ...
+# Subtest: missions without a baseline sidecar fall back to tick-start baseline
+not ok 12 - missions without a baseline sidecar fall back to tick-start baseline
+  ---
+  duration_ms: 148.973834
+  location: '/Users/keshavrao/arena/empire/.agent-worktrees/atris-cli/architect-finish-work-folder-protection-across-20261014-113334/test/mission-worktree-baseline.test.js:129:1'
+  failureType: 'testCodeFailure'
+  error: |-
+    atris needs Node 22.13 or newer. this is Node 20.18.0.
+    upgrade from https://nodejs.org, then run atris again.
+    
+  code: 'ERR_ASSERTION'
+  name: 'AssertionError'
+  expected: 0
+  actual: 1
+  operator: 'strictEqual'
+  stack: |-
+    startMission (/Users/keshavrao/arena/empire/.agent-worktrees/atris-cli/architect-finish-work-folder-protection-across-20261014-113334/test/mission-worktree-baseline.test.js:53:10)
+    TestContext.<anonymous> (/Users/keshavrao/arena/empire/.agent-worktrees/atris-cli/architect-finish-work-folder-protection-across-20261014-113334/test/mission-worktree-baseline.test.js:137:21)
+    Test.runInAsyncScope (node:async_hooks:206:9)
+    Test.run (node:internal/test_runner/test:796:25)
+    Test.processPendingSubtests (node:internal/test_runner/test:527:18)
+    Test.postRun (node:internal/test_runner/test:889:19)
+    Test.run (node:internal/test_runner/test:835:12)
+    async Test.processPendingSubtests (node:internal/test_runner/test:527:7)
+  ...
+# Subtest: mission tick receipt surfaces dirty worktree when no verifier exists
+not ok 13 - mission tick receipt surfaces dirty worktree when no verifier exists
+  ---
+  duration_ms: 120.844958
+  location: '/Users/keshavrao/arena/empire/.agent-worktrees/atris-cli/architect-finish-work-folder-protection-across-20261014-113334/test/mission-worktree-receipt.test.js:61:1'
+  failureType: 'testCodeFailure'
+  error: |-
+    atris needs Node 22.13 or newer. this is Node 20.18.0.
+    upgrade from https://nodejs.org, then run atris again.
+    
+  code: 'ERR_ASSERTION'
+  name: 'AssertionError'
+  expected: 0
+  actual: 1
+  operator: 'strictEqual'
+  stack: |-
+    startMission (/Users/keshavrao/arena/empire/.agent-worktrees/atris-cli/architect-finish-work-folder-protection-across-20261014-113334/test/mission-worktree-receipt.test.js:53:10)
+    TestContext.<anonymous> (/Users/keshavrao/arena/empire/.agent-worktrees/atris-cli/architect-finish-work-folder-protection-across-20261014-113334/test/mission-worktree-receipt.test.js:66:21)
+    Test.runInAsyncScope (node:async_hooks:206:9)
+    Test.run (node:internal/test_runner/test:796:25)
+    Test.processPendingSubtests (node:internal/test_runner/test:527:18)
+    node:internal/test_runner/harness:255:12
+    node:internal/process/task_queues:140:7
+    AsyncResource.runInAsyncScope (node:async_hooks:206:9)
+    AsyncResource.runMicrotask (node:internal/process/task_queues:137:8)
+  ...
+# Subtest: mission run receipt records verifier worktree deltas
+not ok 14 - mission run receipt records verifier worktree deltas
+  ---
+  duration_ms: 109.149709
+  location: '/Users/keshavrao/arena/empire/.agent-worktrees/atris-cli/architect-finish-work-folder-protection-across-20261014-113334/test/mission-worktree-receipt.test.js:85:1'
+  failureType: 'testCodeFailure'
+  error: |-
+    atris needs Node 22.13 or newer. this is Node 20.18.0.
+    upgrade from https://nodejs.org, then run atris again.
+    
+  code: 'ERR_ASSERTION'
+  name: 'AssertionError'
+  expected: 0
+  actual: 1
+  operator: 'strictEqual'
+  stack: |-
+    startMission (/Users/keshavrao/arena/empire/.agent-worktrees/atris-cli/architect-finish-work-folder-protection-across-20261014-113334/test/mission-worktree-receipt.test.js:53:10)
+    TestContext.<anonymous> (/Users/keshavrao/arena/empire/.agent-worktrees/atris-cli/architect-finish-work-folder-protection-across-20261014-113334/test/mission-worktree-receipt.test.js:91:21)
+    Test.runInAsyncScope (node:async_hooks:206:9)
+    Test.run (node:internal/test_runner/test:796:25)
+    Test.processPendingSubtests (node:internal/test_runner/test:527:18)
+    Test.postRun (node:internal/test_runner/test:889:19)
+    Test.run (node:internal/test_runner/test:835:12)
+    async Test.processPendingSubtests (node:internal/test_runner/test:527:7)
+  ...
+# Subtest: mission start --worktree creates an isolated checkout holding the mission state
+not ok 15 - mission start --worktree creates an isolated checkout holding the mission state
+  ---
+  duration_ms: 178.761083
+  location: '/Users/keshavrao/arena/empire/.agent-worktrees/atris-cli/architect-finish-work-folder-protection-across-20261014-113334/test/mission-worktree-start.test.js:57:1'
+  failureType: 'testCodeFailure'
+  error: |-
+    atris needs Node 22.13 or newer. this is Node 20.18.0.
+    upgrade from https://nodejs.org, then run atris again.
+    
+  code: 'ERR_ASSERTION'
+  name: 'AssertionError'
+  expected: 0
+  actual: 1
+  operator: 'strictEqual'
+  stack: |-
+    TestContext.<anonymous> (/Users/keshavrao/arena/empire/.agent-worktrees/atris-cli/architect-finish-work-folder-protection-across-20261014-113334/test/mission-worktree-start.test.js:65:12)
+    Test.runInAsyncScope (node:async_hooks:206:9)
+    Test.run (node:internal/test_runner/test:796:25)
+    Test.processPendingSubtests (node:internal/test_runner/test:527:18)
+    node:internal/test_runner/harness:255:12
+    node:internal/process/task_queues:140:7
+    AsyncResource.runInAsyncScope (node:async_hooks:206:9)
+    AsyncResource.runMicrotask (node:internal/process/task_queues:137:8)
+  ...
+# Subtest: mission worktree links existing dependencies from the source checkout
+not ok 16 - mission worktree links existing dependencies from the source checkout
+  ---
+  duration_ms: 218.280583
+  location: '/Users/keshavrao/arena/empire/.agent-worktrees/atris-cli/architect-finish-work-folder-protection-across-20261014-113334/test/mission-worktree-start.test.js:91:1'
+  failureType: 'testCodeFailure'
+  error: |-
+    atris needs Node 22.13 or newer. this is Node 20.18.0.
+    upgrade from https://nodejs.org, then run atris again.
+    
+  code: 'ERR_ASSERTION'
+  name: 'AssertionError'
+  expected: 0
+  actual: 1
+  operator: 'strictEqual'
+  stack: |-
+    TestContext.<anonymous> (/Users/keshavrao/arena/empire/.agent-worktrees/atris-cli/architect-finish-work-folder-protection-across-20261014-113334/test/mission-worktree-start.test.js:102:12)
+    Test.runInAsyncScope (node:async_hooks:206:9)
+    Test.run (node:internal/test_runner/test:796:25)
+    Test.processPendingSubtests (node:internal/test_runner/test:527:18)
+    Test.postRun (node:internal/test_runner/test:889:19)
+    Test.run (node:internal/test_runner/test:835:12)
+    async Test.processPendingSubtests (node:internal/test_runner/test:527:7)
+  ...
+# Subtest: mission start continues when creating the dependency link fails
+not ok 17 - mission start continues when creating the dependency link fails
+  ---
+  duration_ms: 188.411583
+  location: '/Users/keshavrao/arena/empire/.agent-worktrees/atris-cli/architect-finish-work-folder-protection-across-20261014-113334/test/mission-worktree-start.test.js:124:1'
+  failureType: 'testCodeFailure'
+  error: |-
+    atris needs Node 22.13 or newer. this is Node 20.18.0.
+    upgrade from https://nodejs.org, then run atris again.
+    
+  code: 'ERR_ASSERTION'
+  name: 'AssertionError'
+  expected: 0
+  actual: 1
+  operator: 'strictEqual'
+  stack: |-
+    TestContext.<anonymous> (/Users/keshavrao/arena/empire/.agent-worktrees/atris-cli/architect-finish-work-folder-protection-across-20261014-113334/test/mission-worktree-start.test.js:143:12)
+    Test.runInAsyncScope (node:async_hooks:206:9)
+    Test.run (node:internal/test_runner/test:796:25)
+    Test.processPendingSubtests (node:internal/test_runner/test:527:18)
+    Test.postRun (node:internal/test_runner/test:889:19)
+    Test.run (node:internal/test_runner/test:835:12)
+    async Test.processPendingSubtests (node:internal/test_runner/test:527:7)
+  ...
+# Subtest: mission start keeps its worktree when the source package manifest is invalid
+not ok 18 - mission start keeps its worktree when the source package manifest is invalid
+  ---
+  duration_ms: 173.874625
+  location: '/Users/keshavrao/arena/empire/.agent-worktrees/atris-cli/architect-finish-work-folder-protection-across-20261014-113334/test/mission-worktree-start.test.js:154:1'
+  failureType: 'testCodeFailure'
+  error: |-
+    atris needs Node 22.13 or newer. this is Node 20.18.0.
+    upgrade from https://nodejs.org, then run atris again.
+    
+  code: 'ERR_ASSERTION'
+  name: 'AssertionError'
+  expected: 0
+  actual: 1
+  operator: 'strictEqual'
+  stack: |-
+    TestContext.<anonymous> (/Users/keshavrao/arena/empire/.agent-worktrees/atris-cli/architect-finish-work-folder-protection-across-20261014-113334/test/mission-worktree-start.test.js:165:12)
+    Test.runInAsyncScope (node:async_hooks:206:9)
+    Test.run (node:internal/test_runner/test:796:25)
+    Test.processPendingSubtests (node:internal/test_runner/test:527:18)
+    Test.postRun (node:internal/test_runner/test:889:19)
+    Test.run (node:internal/test_runner/test:835:12)
+    async Test.processPendingSubtests (node:internal/test_runner/test:527:7)
+  ...
+# Subtest: mission start leaves an existing dead node_modules link alone
+not ok 19 - mission start leaves an existing dead node_modules link alone
+  ---
+  duration_ms: 185.106417
+  location: '/Users/keshavrao/arena/empire/.agent-worktrees/atris-cli/architect-finish-work-folder-protection-across-20261014-113334/test/mission-worktree-start.test.js:175:1'
+  failureType: 'testCodeFailure'
+  error: |-
+    atris needs Node 22.13 or newer. this is Node 20.18.0.
+    upgrade from https://nodejs.org, then run atris again.
+    
+  code: 'ERR_ASSERTION'
+  name: 'AssertionError'
+  expected: 0
+  actual: 1
+  operator: 'strictEqual'
+  stack: |-
+    TestContext.<anonymous> (/Users/keshavrao/arena/empire/.agent-worktrees/atris-cli/architect-finish-work-folder-protection-across-20261014-113334/test/mission-worktree-start.test.js:189:12)
+    Test.runInAsyncScope (node:async_hooks:206:9)
+    Test.run (node:internal/test_runner/test:796:25)
+    Test.processPendingSubtests (node:internal/test_runner/test:527:18)
+    Test.postRun (node:internal/test_runner/test:889:19)
+    Test.run (node:internal/test_runner/test:835:12)
+    async Test.processPendingSubtests (node:internal/test_runner/test:527:7)
+  ...
+# Subtest: ticks inside the mission worktree run against a clean mission_start baseline
+not ok 20 - ticks inside the mission worktree run against a clean mission_start baseline
+  ---
+  duration_ms: 125.153917
+  location: '/Users/keshavrao/arena/empire/.agent-worktrees/atris-cli/architect-finish-work-folder-protection-across-20261014-113334/test/mission-worktree-start.test.js:198:1'
+  failureType: 'testCodeFailure'
+  error: |-
+    atris needs Node 22.13 or newer. this is Node 20.18.0.
+    upgrade from https://nodejs.org, then run atris again.
+    
+  code: 'ERR_ASSERTION'
+  name: 'AssertionError'
+  expected: 0
+  actual: 1
+  operator: 'strictEqual'
+  stack: |-
+    TestContext.<anonymous> (/Users/keshavrao/arena/empire/.agent-worktrees/atris-cli/architect-finish-work-folder-protection-across-20261014-113334/test/mission-worktree-start.test.js:203:12)
+    Test.runInAsyncScope (node:async_hooks:206:9)
+    Test.run (node:internal/test_runner/test:796:25)
+    Test.processPendingSubtests (node:internal/test_runner/test:527:18)
+    Test.postRun (node:internal/test_runner/test:889:19)
+    Test.run (node:internal/test_runner/test:835:12)
+    async Test.processPendingSubtests (node:internal/test_runner/test:527:7)
+  ...
+# Subtest: mission start --worktree outside a git repo fails with a clear error
+not ok 21 - mission start --worktree outside a git repo fails with a clear error
+  ---
+  duration_ms: 32.308917
+  location: '/Users/keshavrao/arena/empire/.agent-worktrees/atris-cli/architect-finish-work-folder-protection-across-20261014-113334/test/mission-worktree-start.test.js:226:1'
+  failureType: 'testCodeFailure'
+  error: 'Unexpected end of JSON input'
+  code: 'ERR_TEST_FAILURE'
+  name: 'SyntaxError'
+  stack: |-
+    JSON.parse (<anonymous>)
+    TestContext.<anonymous> (/Users/keshavrao/arena/empire/.agent-worktrees/atris-cli/architect-finish-work-folder-protection-across-20261014-113334/test/mission-worktree-start.test.js:233:26)
+    Test.runInAsyncScope (node:async_hooks:206:9)
+    Test.run (node:internal/test_runner/test:796:25)
+    Test.processPendingSubtests (node:internal/test_runner/test:527:18)
+    Test.postRun (node:internal/test_runner/test:889:19)
+    Test.run (node:internal/test_runner/test:835:12)
+    async Test.processPendingSubtests (node:internal/test_runner/test:527:7)
+  ...
+# Subtest: mission start without --worktree keeps the current-directory behavior
+not ok 22 - mission start without --worktree keeps the current-directory behavior
+  ---
+  duration_ms: 135.35175
+  location: '/Users/keshavrao/arena/empire/.agent-worktrees/atris-cli/architect-finish-work-folder-protection-across-20261014-113334/test/mission-worktree-start.test.js:241:1'
+  failureType: 'testCodeFailure'
+  error: |-
+    atris needs Node 22.13 or newer. this is Node 20.18.0.
+    upgrade from https://nodejs.org, then run atris again.
+    
+  code: 'ERR_ASSERTION'
+  name: 'AssertionError'
+  expected: 0
+  actual: 1
+  operator: 'strictEqual'
+  stack: |-
+    TestContext.<anonymous> (/Users/keshavrao/arena/empire/.agent-worktrees/atris-cli/architect-finish-work-folder-protection-across-20261014-113334/test/mission-worktree-start.test.js:246:12)
+    Test.runInAsyncScope (node:async_hooks:206:9)
+    Test.run (node:internal/test_runner/test:796:25)
+    Test.processPendingSubtests (node:internal/test_runner/test:527:18)
+    Test.postRun (node:internal/test_runner/test:889:19)
+    Test.run (node:internal/test_runner/test:835:12)
+    async Test.processPendingSubtests (node:internal/test_runner/test:527:7)
+  ...
+# Subtest: a run recorded from a worktree lands in the main checkout; a worktree whose main is gone keeps its own
+ok 23 - a run recorded from a worktree lands in the main checkout; a worktree whose main is gone keeps its own
+  ---
+  duration_ms: 387.435458
+  ...
+# Subtest: fleet dispatch from a worktree records the build in the main checkout
+ok 24 - fleet dispatch from a worktree records the build in the main checkout
+  ---
+  duration_ms: 787.626917
+  ...
+# Subtest: a one-lap review from a worktree records every validator attempt in the main checkout
+ok 25 - a one-lap review from a worktree records every validator attempt in the main checkout
+  ---
+  duration_ms: 336.028667
+  ...
+# Subtest: a mission blocker dispatch recorded from a worktree lands in the main checkout
+ok 26 - a mission blocker dispatch recorded from a worktree lands in the main checkout
+  ---
+  duration_ms: 203.276834
+  ...
+# Subtest: a mission tick run in its worktree records in the main checkout
+ok 27 - a mission tick run in its worktree records in the main checkout
+  ---
+  duration_ms: 240.250334
+  ...
+# claude (claude)
+# the answer is 42
+# summary:
+#   claude (claude): answered
+# receipt: atris/runs/engine-ask-20261014162547731-94368-8cc5d1a7.json
+# Subtest: an engine ask from a worktree records in the main checkout
+ok 28 - an engine ask from a worktree records in the main checkout
+  ---
+  duration_ms: 825.388833
+  ...
+# Subtest: a prep pass from a worktree records in the main checkout
+ok 29 - a prep pass from a worktree records in the main checkout
+  ---
+  duration_ms: 193.993209
+  ...
+# Subtest: an autopilot phase run from a worktree records in the main checkout
+ok 30 - an autopilot phase run from a worktree records in the main checkout
+  ---
+  duration_ms: 570.977208
+  ...
+# Subtest: task added and claimed from a worktree shows in the main checkout list
+not ok 31 - task added and claimed from a worktree shows in the main checkout list
+  ---
+  duration_ms: 268.952959
+  location: '/Users/keshavrao/arena/empire/.agent-worktrees/atris-cli/architect-finish-work-folder-protection-across-20261014-113334/test/task-worktree-state.test.js:17:1'
+  failureType: 'testCodeFailure'
+  error: |-
+    atris needs Node 22.13 or newer. this is Node 20.18.0.
+    upgrade from https://nodejs.org, then run atris again.
+    
+  code: 'ERR_ASSERTION'
+  name: 'AssertionError'
+  expected: 0
+  actual: 1
+  operator: 'strictEqual'
+  stack: |-
+    TestContext.<anonymous> (/Users/keshavrao/arena/empire/.agent-worktrees/atris-cli/architect-finish-work-folder-protection-across-20261014-113334/test/task-worktree-state.test.js:60:12)
+    Test.runInAsyncScope (node:async_hooks:206:9)
+    Test.run (node:internal/test_runner/test:796:25)
+    Test.processPendingSubtests (node:internal/test_runner/test:527:18)
+    node:internal/test_runner/harness:255:12
+    node:internal/process/task_queues:140:7
+    AsyncResource.runInAsyncScope (node:async_hooks:206:9)
+    AsyncResource.runMicrotask (node:internal/process/task_queues:137:8)
+  ...
+# Subtest: worktree checks are rewritten to run from the main checkout
+ok 32 - worktree checks are rewritten to run from the main checkout
+  ---
+  duration_ms: 2.983917
+  ...
+# Subtest: checks that never named a copy, or name another project, are left alone
+ok 33 - checks that never named a copy, or name another project, are left alone
+  ---
+  duration_ms: 1.049958
+  ...
+# Subtest: the landing pass reruns a worktree check from main instead of refusing it
+ok 34 - the landing pass reruns a worktree check from main instead of refusing it
+  ---
+  duration_ms: 57.147584
+  ...
+# Subtest: a worktree check that fails from main says the work is likely still on the agent branch
+ok 35 - a worktree check that fails from main says the work is likely still on the agent branch
+  ---
+  duration_ms: 37.799916
+  ...
+# Subtest: a check whose file only exists on the agent branch is refused in plain words, not silently
+ok 36 - a check whose file only exists on the agent branch is refused in plain words, not silently
+  ---
+  duration_ms: 2.707583
+  ...
+# Subtest: cleanup removes merged worktrees dirtied only by the agent output file
+ok 37 - cleanup removes merged worktrees dirtied only by the agent output file
+  ---
+  duration_ms: 779.463583
+  ...
+# Subtest: cleanup expires a completed clean unmerged checkout but preserves its branch
+ok 38 - cleanup expires a completed clean unmerged checkout but preserves its branch
+  ---
+  duration_ms: 469.458667
+  ...
+# Subtest: cleanup never removes an old merged worktree with a live process cwd
+ok 39 - cleanup never removes an old merged worktree with a live process cwd
+  ---
+  duration_ms: 175.890042
+  ...
+# Subtest: starting a worktree reaps completed checkout debt before creating another copy
+ok 40 - starting a worktree reaps completed checkout debt before creating another copy
+  ---
+  duration_ms: 586.53975
+  ...
+# Subtest: cleanup prunes ignored build caches from old dirty worktrees without touching source changes
+ok 41 - cleanup prunes ignored build caches from old dirty worktrees without touching source changes
+  ---
+  duration_ms: 199.998958
+  ...
+# Subtest: conductor plumbing does not count as dirt
+ok 42 - conductor plumbing does not count as dirt
+  ---
+  duration_ms: 0.705292
+  ...
+# Subtest: real work still counts as dirt
+ok 43 - real work still counts as dirt
+  ---
+  duration_ms: 0.104125
+  ...
+# Subtest: porcelain status lines are classified by untracked marker
+ok 44 - porcelain status lines are classified by untracked marker
+  ---
+  duration_ms: 0.061958
+  ...
+# Subtest: a prompt-only worktree reads as no change, so the flight cannot land it
+ok 45 - a prompt-only worktree reads as no change, so the flight cannot land it
+  ---
+  duration_ms: 0.119916
+  ...
+# Subtest: the guard and the sealed-review import read one shared list
+ok 46 - the guard and the sealed-review import read one shared list
+  ---
+  duration_ms: 0.806459
+  ...
+# Subtest: reap keeps a folder a run is working in, even with --force
+ok 47 - reap keeps a folder a run is working in, even with --force
+  ---
+  duration_ms: 388.565166
+  ...
+# Subtest: reap sees a real live process in the folder without being told
+ok 48 - reap sees a real live process in the folder without being told
+  ---
+  duration_ms: 452.13225
+  ...
+# Subtest: reap names who removed a folder and why
+ok 49 - reap names who removed a folder and why
+  ---
+  duration_ms: 353.137709
+  ...
+# Subtest: reap summary counts folders removed today and by whom
+ok 50 - reap summary counts folders removed today and by whom
+  ---
+  duration_ms: 161.49775
+  ...
+# Subtest: worktree cleanup names who removed a folder and why
+ok 51 - worktree cleanup names who removed a folder and why
+  ---
+  duration_ms: 238.438042
+  ...
+# Subtest: reap keeps a folder while git holds its lock, even with --force
+ok 52 - reap keeps a folder while git holds its lock, even with --force
+  ---
+  duration_ms: 264.078791
+  ...
+# Subtest: worktree cleanup keeps a clean folder paused mid-rebase
+ok 53 - worktree cleanup keeps a clean folder paused mid-rebase
+  ---
+  duration_ms: 205.897708
+  ...
+# Subtest: fleet review cleanup keeps a sandbox while git holds its lock
+ok 54 - fleet review cleanup keeps a sandbox while git holds its lock
+  ---
+  duration_ms: 133.944417
+  ...
+# Subtest: fleet review cleanup keeps a sandbox while git holds its quarantine store
+ok 55 - fleet review cleanup keeps a sandbox while git holds its quarantine store
+  ---
+  duration_ms: 143.29175
+  ...
+# Subtest: fleet review cleanup names who removed a sandbox and why
+ok 56 - fleet review cleanup names who removed a sandbox and why
+  ---
+  duration_ms: 146.528542
+  ...
+# Subtest: autopilot regression check keeps its folder while git holds its lock
+ok 57 - autopilot regression check keeps its folder while git holds its lock
+  ---
+  duration_ms: 173.381833
+  ...
+# Subtest: autopilot regression check keeps its folder while a run is inside it
+ok 58 - autopilot regression check keeps its folder while a run is inside it
+  ---
+  duration_ms: 158.881375
+  ...
+# Subtest: autopilot regression check sees a real leftover process without being told
+ok 59 - autopilot regression check sees a real leftover process without being told
+  ---
+  duration_ms: 291.380917
+  ...
+# Subtest: autopilot regression check names who removed its folder and why
+ok 60 - autopilot regression check names who removed its folder and why
+  ---
+  duration_ms: 184.404083
+  ...
+# Subtest: autopilot regression check keeps an existing clean folder when creation fails
+ok 61 - autopilot regression check keeps an existing clean folder when creation fails
+  ---
+  duration_ms: 202.495542
+  ...
+# Subtest: autopilot regression check keeps an existing dirty folder when creation fails
+ok 62 - autopilot regression check keeps an existing dirty folder when creation fails
+  ---
+  duration_ms: 194.235
+  ...
+# Subtest: every work folder removal goes through the git check and the removal log
+ok 63 - every work folder removal goes through the git check and the removal log
+  ---
+  duration_ms: 69.434833
+  ...
+# Subtest: saved scanner examples reject missed removals in the required checks
+ok 64 - saved scanner examples reject missed removals in the required checks
+  ---
+  duration_ms: 38.879084
+  ...
+# Subtest: a git check that comes late, names another folder, or is ignored does not count as protection
+ok 65 - a git check that comes late, names another folder, or is ignored does not count as protection
+  ---
+  duration_ms: 35.421958
+  ...
+# Subtest: grouped sandbox cleanup exposes every recursive target to the scan
+ok 66 - grouped sandbox cleanup exposes every recursive target to the scan
+  ---
+  duration_ms: 31.759458
+  ...
+# Subtest: green landing keeps its scratch folder while a test is still running in it
+ok 67 - green landing keeps its scratch folder while a test is still running in it
+  ---
+  duration_ms: 128.429125
+  ...
+# Subtest: green landing names who removed its scratch folder and why
+ok 68 - green landing names who removed its scratch folder and why
+  ---
+  duration_ms: 159.206417
+  ...
+# Subtest: a branch carrying a denied-lane task is blocked at ship
+ok 69 - a branch carrying a denied-lane task is blocked at ship
+  ---
+  duration_ms: 102.538542
+  ...
+# Subtest: a safe-lane branch ships without a block
+ok 70 - a safe-lane branch ships without a block
+  ---
+  duration_ms: 98.097667
+  ...
+# Subtest: no task reference means no block
+ok 71 - no task reference means no block
+  ---
+  duration_ms: 56.949166
+  ...
+# Subtest: worktree ship creates and pushes a branch from detached head
+not ok 72 - worktree ship creates and pushes a branch from detached head
+  ---
+  duration_ms: 386.113791
+  location: '/Users/keshavrao/arena/empire/.agent-worktrees/atris-cli/architect-finish-work-folder-protection-across-20261014-113334/test/worktree-ship-detached.test.js:61:1'
+  failureType: 'testCodeFailure'
+  error: |-
+    atris needs Node 22.13 or newer. this is Node 20.18.0.
+    upgrade from https://nodejs.org, then run atris again.
+    
+  code: 'ERR_ASSERTION'
+  name: 'AssertionError'
+  expected: 0
+  actual: 1
+  operator: 'strictEqual'
+  stack: |-
+    TestContext.<anonymous> (/Users/keshavrao/arena/empire/.agent-worktrees/atris-cli/architect-finish-work-folder-protection-across-20261014-113334/test/worktree-ship-detached.test.js:77:12)
+    Test.runInAsyncScope (node:async_hooks:206:9)
+    Test.run (node:internal/test_runner/test:796:25)
+    Test.processPendingSubtests (node:internal/test_runner/test:527:18)
+    node:internal/test_runner/harness:255:12
+    node:internal/process/task_queues:140:7
+    AsyncResource.runInAsyncScope (node:async_hooks:206:9)
+    AsyncResource.runMicrotask (node:internal/process/task_queues:137:8)
+  ...
+# Subtest: worktree ship skips unstaged adapter churn while committing real work
+not ok 73 - worktree ship skips unstaged adapter churn while committing real work
+  ---
+  duration_ms: 278.266167
+  location: '/Users/keshavrao/arena/empire/.agent-worktrees/atris-cli/architect-finish-work-folder-protection-across-20261014-113334/test/worktree-ship-detached.test.js:110:1'
+  failureType: 'testCodeFailure'
+  error: |-
+    atris needs Node 22.13 or newer. this is Node 20.18.0.
+    upgrade from https://nodejs.org, then run atris again.
+    
+  code: 'ERR_ASSERTION'
+  name: 'AssertionError'
+  expected: 0
+  actual: 1
+  operator: 'strictEqual'
+  stack: |-
+    TestContext.<anonymous> (/Users/keshavrao/arena/empire/.agent-worktrees/atris-cli/architect-finish-work-folder-protection-across-20261014-113334/test/worktree-ship-detached.test.js:126:12)
+    Test.runInAsyncScope (node:async_hooks:206:9)
+    Test.run (node:internal/test_runner/test:796:25)
+    Test.processPendingSubtests (node:internal/test_runner/test:527:18)
+    Test.postRun (node:internal/test_runner/test:889:19)
+    Test.run (node:internal/test_runner/test:835:12)
+    async Test.processPendingSubtests (node:internal/test_runner/test:527:7)
+  ...
+# Subtest: worktree ship respects explicitly staged adapter files
+not ok 74 - worktree ship respects explicitly staged adapter files
+  ---
+  duration_ms: 282.6675
+  location: '/Users/keshavrao/arena/empire/.agent-worktrees/atris-cli/architect-finish-work-folder-protection-across-20261014-113334/test/worktree-ship-detached.test.js:152:1'
+  failureType: 'testCodeFailure'
+  error: |-
+    atris needs Node 22.13 or newer. this is Node 20.18.0.
+    upgrade from https://nodejs.org, then run atris again.
+    
+  code: 'ERR_ASSERTION'
+  name: 'AssertionError'
+  expected: 0
+  actual: 1
+  operator: 'strictEqual'
+  stack: |-
+    TestContext.<anonymous> (/Users/keshavrao/arena/empire/.agent-worktrees/atris-cli/architect-finish-work-folder-protection-across-20261014-113334/test/worktree-ship-detached.test.js:168:12)
+    Test.runInAsyncScope (node:async_hooks:206:9)
+    Test.run (node:internal/test_runner/test:796:25)
+    Test.processPendingSubtests (node:internal/test_runner/test:527:18)
+    Test.postRun (node:internal/test_runner/test:889:19)
+    Test.run (node:internal/test_runner/test:835:12)
+    async Test.processPendingSubtests (node:internal/test_runner/test:527:7)
+  ...
+# Subtest: worktree ship treats adapter-only churn as clean after restore
+not ok 75 - worktree ship treats adapter-only churn as clean after restore
+  ---
+  duration_ms: 268.317
+  location: '/Users/keshavrao/arena/empire/.agent-worktrees/atris-cli/architect-finish-work-folder-protection-across-20261014-113334/test/worktree-ship-detached.test.js:194:1'
+  failureType: 'testCodeFailure'
+  error: |-
+    atris needs Node 22.13 or newer. this is Node 20.18.0.
+    upgrade from https://nodejs.org, then run atris again.
+    
+  code: 'ERR_ASSERTION'
+  name: 'AssertionError'
+  expected: 0
+  actual: 1
+  operator: 'strictEqual'
+  stack: |-
+    TestContext.<anonymous> (/Users/keshavrao/arena/empire/.agent-worktrees/atris-cli/architect-finish-work-folder-protection-across-20261014-113334/test/worktree-ship-detached.test.js:210:12)
+    Test.runInAsyncScope (node:async_hooks:206:9)
+    Test.run (node:internal/test_runner/test:796:25)
+    Test.processPendingSubtests (node:internal/test_runner/test:527:18)
+    Test.postRun (node:internal/test_runner/test:889:19)
+    Test.run (node:internal/test_runner/test:835:12)
+    async Test.processPendingSubtests (node:internal/test_runner/test:527:7)
+  ...
+# Subtest: worktree ship names dirt created during verification and stops before push
+not ok 76 - worktree ship names dirt created during verification and stops before push
+  ---
+  duration_ms: 254.863458
+  location: '/Users/keshavrao/arena/empire/.agent-worktrees/atris-cli/architect-finish-work-folder-protection-across-20261014-113334/test/worktree-ship-detached.test.js:234:1'
+  failureType: 'testCodeFailure'
+  error: |-
+    atris needs Node 22.13 or newer. this is Node 20.18.0.
+    upgrade from https://nodejs.org, then run atris again.
+    
+  code: 'ERR_ASSERTION'
+  name: 'AssertionError'
+  expected: 0
+  actual: 1
+  operator: 'strictEqual'
+  stack: |-
+    TestContext.<anonymous> (/Users/keshavrao/arena/empire/.agent-worktrees/atris-cli/architect-finish-work-folder-protection-across-20261014-113334/test/worktree-ship-detached.test.js:250:12)
+    Test.runInAsyncScope (node:async_hooks:206:9)
+    Test.run (node:internal/test_runner/test:796:25)
+    Test.processPendingSubtests (node:internal/test_runner/test:527:18)
+    Test.postRun (node:internal/test_runner/test:889:19)
+    Test.run (node:internal/test_runner/test:835:12)
+    async Test.processPendingSubtests (node:internal/test_runner/test:527:7)
+  ...
+# Subtest: worktree ship still blocks from master
+not ok 77 - worktree ship still blocks from master
+  ---
+  duration_ms: 239.177709
+  location: '/Users/keshavrao/arena/empire/.agent-worktrees/atris-cli/architect-finish-work-folder-protection-across-20261014-113334/test/worktree-ship-detached.test.js:276:1'
+  failureType: 'testCodeFailure'
+  error: |-
+    atris needs Node 22.13 or newer. this is Node 20.18.0.
+    upgrade from https://nodejs.org, then run atris again.
+    
+  code: 'ERR_ASSERTION'
+  name: 'AssertionError'
+  expected: 2
+  actual: 1
+  operator: 'strictEqual'
+  stack: |-
+    TestContext.<anonymous> (/Users/keshavrao/arena/empire/.agent-worktrees/atris-cli/architect-finish-work-folder-protection-across-20261014-113334/test/worktree-ship-detached.test.js:287:12)
+    Test.runInAsyncScope (node:async_hooks:206:9)
+    Test.run (node:internal/test_runner/test:796:25)
+    Test.processPendingSubtests (node:internal/test_runner/test:527:18)
+    Test.postRun (node:internal/test_runner/test:889:19)
+    Test.run (node:internal/test_runner/test:835:12)
+    async Test.processPendingSubtests (node:internal/test_runner/test:527:7)
+  ...
+# Subtest: worktree ship blocks detached head on primary checkout
+not ok 78 - worktree ship blocks detached head on primary checkout
+  ---
+  duration_ms: 277.982542
+  location: '/Users/keshavrao/arena/empire/.agent-worktrees/atris-cli/architect-finish-work-folder-protection-across-20261014-113334/test/worktree-ship-detached.test.js:294:1'
+  failureType: 'testCodeFailure'
+  error: |-
+    atris needs Node 22.13 or newer. this is Node 20.18.0.
+    upgrade from https://nodejs.org, then run atris again.
+    
+  code: 'ERR_ASSERTION'
+  name: 'AssertionError'
+  expected: 2
+  actual: 1
+  operator: 'strictEqual'
+  stack: |-
+    TestContext.<anonymous> (/Users/keshavrao/arena/empire/.agent-worktrees/atris-cli/architect-finish-work-folder-protection-across-20261014-113334/test/worktree-ship-detached.test.js:306:12)
+    Test.runInAsyncScope (node:async_hooks:206:9)
+    Test.run (node:internal/test_runner/test:796:25)
+    Test.processPendingSubtests (node:internal/test_runner/test:527:18)
+    Test.postRun (node:internal/test_runner/test:889:19)
+    Test.run (node:internal/test_runner/test:835:12)
+    async Test.processPendingSubtests (node:internal/test_runner/test:527:7)
+  ...
+# Subtest: stale experiment state warns and refreshes one probed close loop
+ok 79 - stale experiment state warns and refreshes one probed close loop
+  ---
+  duration_ms: 77.603208
+  ...
+# Subtest: fresh experiment state stays quiet and files nothing
+ok 80 - fresh experiment state stays quiet and files nothing
+  ---
+  duration_ms: 1.053792
+  ...
+# Subtest: a full ten-slot queue still warns without filing a loop
+ok 81 - a full ten-slot queue still warns without filing a loop
+  ---
+  duration_ms: 6.891667
+  ...
+# Subtest: corrupted experiment state reports one note without breaking a merged ship
+not ok 82 - corrupted experiment state reports one note without breaking a merged ship
+  ---
+  duration_ms: 233.144916
+  location: '/Users/keshavrao/arena/empire/.agent-worktrees/atris-cli/architect-finish-work-folder-protection-across-20261014-113334/test/worktree-ship-health.test.js:119:1'
+  failureType: 'testCodeFailure'
+  error: |-
+    atris needs Node 22.13 or newer. this is Node 20.18.0.
+    upgrade from https://nodejs.org, then run atris again.
+    
+  code: 'ERR_ASSERTION'
+  name: 'AssertionError'
+  expected: 0
+  actual: 1
+  operator: 'strictEqual'
+  stack: |-
+    TestContext.<anonymous> (/Users/keshavrao/arena/empire/.agent-worktrees/atris-cli/architect-finish-work-folder-protection-across-20261014-113334/test/worktree-ship-health.test.js:155:12)
+    Test.runInAsyncScope (node:async_hooks:206:9)
+    Test.run (node:internal/test_runner/test:796:25)
+    Test.processPendingSubtests (node:internal/test_runner/test:527:18)
+    Test.postRun (node:internal/test_runner/test:889:19)
+    Test.run (node:internal/test_runner/test:835:12)
+    async Test.processPendingSubtests (node:internal/test_runner/test:527:7)
+  ...
+# Subtest: worktree ship --help documents --target without touching the repo
+not ok 83 - worktree ship --help documents --target without touching the repo
+  ---
+  duration_ms: 36.689875
+  location: '/Users/keshavrao/arena/empire/.agent-worktrees/atris-cli/architect-finish-work-folder-protection-across-20261014-113334/test/worktree-ship-help.test.js:30:1'
+  failureType: 'testCodeFailure'
+  error: |-
+    atris needs Node 22.13 or newer. this is Node 20.18.0.
+    upgrade from https://nodejs.org, then run atris again.
+    
+  code: 'ERR_ASSERTION'
+  name: 'AssertionError'
+  expected: 0
+  actual: 1
+  operator: 'strictEqual'
+  stack: |-
+    TestContext.<anonymous> (/Users/keshavrao/arena/empire/.agent-worktrees/atris-cli/architect-finish-work-folder-protection-across-20261014-113334/test/worktree-ship-help.test.js:34:12)
+    Test.runInAsyncScope (node:async_hooks:206:9)
+    Test.run (node:internal/test_runner/test:796:25)
+    Test.processPendingSubtests (node:internal/test_runner/test:527:18)
+    node:internal/test_runner/harness:255:12
+    node:internal/process/task_queues:140:7
+    AsyncResource.runInAsyncScope (node:async_hooks:206:9)
+    AsyncResource.runMicrotask (node:internal/process/task_queues:137:8)
+  ...
+# Subtest: worktree help documents ship --target
+not ok 84 - worktree help documents ship --target
+  ---
+  duration_ms: 38.04275
+  location: '/Users/keshavrao/arena/empire/.agent-worktrees/atris-cli/architect-finish-work-folder-protection-across-20261014-113334/test/worktree-ship-help.test.js:44:1'
+  failureType: 'testCodeFailure'
+  error: |-
+    atris needs Node 22.13 or newer. this is Node 20.18.0.
+    upgrade from https://nodejs.org, then run atris again.
+    
+  code: 'ERR_ASSERTION'
+  name: 'AssertionError'
+  expected: 0
+  actual: 1
+  operator: 'strictEqual'
+  stack: |-
+    TestContext.<anonymous> (/Users/keshavrao/arena/empire/.agent-worktrees/atris-cli/architect-finish-work-folder-protection-across-20261014-113334/test/worktree-ship-help.test.js:48:12)
+    Test.runInAsyncScope (node:async_hooks:206:9)
+    Test.run (node:internal/test_runner/test:796:25)
+    Test.processPendingSubtests (node:internal/test_runner/test:527:18)
+    Test.postRun (node:internal/test_runner/test:889:19)
+    Test.run (node:internal/test_runner/test:835:12)
+    async Test.processPendingSubtests (node:internal/test_runner/test:527:7)
+  ...
+# Subtest: defaultStartBase prefers the mainline over a stale launcher upstream, keeps an upstream that is ahead
+ok 85 - defaultStartBase prefers the mainline over a stale launcher upstream, keeps an upstream that is ahead
+  ---
+  duration_ms: 1026.055417
+  ...
+# Subtest: flight names split into owner, task slug, and stamp
+ok 86 - flight names split into owner, task slug, and stamp
+  ---
+  duration_ms: 0.994167
+  ...
+# Subtest: non-agent and malformed names are not flights
+ok 87 - non-agent and malformed names are not flights
+  ---
+  duration_ms: 0.131708
+  ...
+# Subtest: stamps parse as UTC and reject junk
+ok 88 - stamps parse as UTC and reject junk
+  ---
+  duration_ms: 0.060875
+  ...
+# Subtest: stopwords drop out of task tokens
+ok 89 - stopwords drop out of task tokens
+  ---
+  duration_ms: 0.066875
+  ...
+# Subtest: only the same task slug is a collision
+ok 90 - only the same task slug is a collision
+  ---
+  duration_ms: 0.113417
+  ...
+# Subtest: age reads from the embedded stamp
+ok 91 - age reads from the embedded stamp
+  ---
+  duration_ms: 0.067833
+  ...
+# Subtest: a real config lock during add retries and completes with metadata
+ok 92 - a real config lock during add retries and completes with metadata
+  ---
+  duration_ms: 1605.779125
+  ...
+# Subtest: a real config lock during metadata retries and completes with metadata
+ok 93 - a real config lock during metadata retries and completes with metadata
+  ---
+  duration_ms: 1346.732292
+  ...
+# Subtest: an exhausted start removes its new branch so the next start is not an overlap
+not ok 94 - an exhausted start removes its new branch so the next start is not an overlap
+  ---
+  duration_ms: 763.074541
+  location: '/Users/keshavrao/arena/empire/.agent-worktrees/atris-cli/architect-finish-work-folder-protection-across-20261014-113334/test/worktree-start-retry.test.js:65:1'
+  failureType: 'testCodeFailure'
+  error: |-
+    atris needs Node 22.13 or newer. this is Node 20.18.0.
+    upgrade from https://nodejs.org, then run atris again.
+    
+  code: 'ERR_ASSERTION'
+  name: 'AssertionError'
+  expected: 0
+  actual: 1
+  operator: 'strictEqual'
+  stack: |-
+    TestContext.<anonymous> (/Users/keshavrao/arena/empire/.agent-worktrees/atris-cli/architect-finish-work-folder-protection-across-20261014-113334/test/worktree-start-retry.test.js:75:10)
+    Test.runInAsyncScope (node:async_hooks:206:9)
+    Test.run (node:internal/test_runner/test:796:25)
+    Test.processPendingSubtests (node:internal/test_runner/test:527:18)
+    Test.postRun (node:internal/test_runner/test:889:19)
+    Test.run (node:internal/test_runner/test:835:12)
+    async Test.processPendingSubtests (node:internal/test_runner/test:527:7)
+  ...
+# Subtest: an existing branch survives a failed creation
+ok 95 - an existing branch survives a failed creation
+  ---
+  duration_ms: 332.311334
+  ...
+1..95
+# tests 95
+# suites 0
+# pass 70
+# fail 25
+# cancelled 0
+# skipped 0
+# todo 0
+# duration_ms 4453.509083
