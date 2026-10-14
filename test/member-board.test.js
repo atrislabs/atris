@@ -160,6 +160,10 @@ test('the runner writes why a run failed and the board reads it back', () => {
     const tight = renderBoard([{ ...by.locked, engine: 'claude' }, by.broke], dir, 0, 50).split('\n');
     assert.match(tight[1], /^locked\s+done failed\s+signed out\s+1m ago\s+sign in$/, 'too tight for the engine name: just "sign in", not cut');
     assert.ok(tight.every((l) => l.length <= 50));
+    for (const w of [50, 60, 80, 90, 100, 110, 120, 140]) {
+      const at = renderBoard([{ ...by.locked, engine: 'claude', alive: false }, by.broke], dir, 0, w).split('\n')[1];
+      assert.match(at, /\s{2}(sign in to claude, then run it again|sign in to claude|sign in)$/, `the fix shrinks, never cut, at ${w} columns: ${at}`);
+    }
     for (const name of Object.keys(ends).filter((n) => n !== 'good')) assert.equal(by[name].state, 'done failed', name);
   } finally {
     fs.rmSync(dir, { recursive: true, force: true });
