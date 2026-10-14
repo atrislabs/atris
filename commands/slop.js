@@ -177,6 +177,8 @@ const PAST_CLAUSE_AFTER_DASH = new RegExp(`(?<=[\\w)\\]"'*_\`\\u201d\\u2019\\uE0
 // Small words that end in "s" are never the verb: "the bug this fix closes".
 // A plural noun looks the same ("the decision helpers"), so this path only
 // runs after a "not" sentence, where 3 of 3 repo lines read as clauses.
+// A "that" or "which" before the verb opens a clause inside the noun
+// phrase, so "the parallel that connects the men" keeps its comma.
 const PLAIN_VERB_WORD = '(?!(?:this|his|its|was|has|does|thus|plus|always|perhaps|unless|whereas|across)\\b)[a-z]{2,}[a-rt-z]s';
 const PLAIN_VERB = PLAIN_VERB_WORD + '\\s+(?!(?:from|of|in|on|for|with|at|by|to|and|or|that|which|who|like|than|as)\\b)';
 // A word in "s" before ", which is" is a verb, since a plural noun takes
@@ -184,7 +186,7 @@ const PLAIN_VERB = PLAIN_VERB_WORD + '\\s+(?!(?:from|of|in|on|for|with|at|by|to|
 // Nouns in "us", "is" or "ics" and their kin are one thing, so "the build
 // status, which is green" and "the metrics, which is" keep their comma.
 const VERB_BEFORE_WHICH = PLAIN_VERB_WORD + '(?<![ua]s|is|ics|news|series|species|lens|means),\\s+which\\s+(?:is|was)\\b';
-const PLAIN_CLAUSE_AFTER_DASH = new RegExp(`(?<=[\\w)\\]"'*_\`\\u201d\\u2019\\uE001])\\s*\\u2014\\s*(?!${TIME_OPENER})(?=(?:a|an|the|every|each|no)\\s+${NOUN_WORD}\\s+(?:${NOUN_WORD}\\s+){0,2}(?:${PLAIN_VERB}[^\\s\\u2014]|${VERB_BEFORE_WHICH}))`, 'g');
+const PLAIN_CLAUSE_AFTER_DASH = new RegExp(`(?<=[\\w)\\]"'*_\`\\u201d\\u2019\\uE001])\\s*\\u2014\\s*(?!${TIME_OPENER})(?=(?:a|an|the|every|each|no)\\s+${NOUN_WORD}\\s+(?:(?!(?:that|which|who|whose)\\b)${NOUN_WORD}\\s+){0,2}(?:${PLAIN_VERB}[^\\s\\u2014]|${VERB_BEFORE_WHICH}))`, 'g');
 // Outside a "not" sentence the verb needs "it" or "them" after it with no
 // verb of their own, so "the navigator reads it" joins but "the decision
 // helpers it uses" and "the decision helpers the CLI uses" stay noun phrases.
@@ -318,6 +320,13 @@ function fixEmDash(s, { endsBlock = false, startsBlock = false } = {}) {
   // a table cell that holds only a dash means "nothing here"; a hyphen keeps
   // the cell instead of turning it into a stray comma
   if (/^\s*\|/.test(s)) s = s.replace(/(\|\s*)\u2014(\s*)(?=\||$)/g, '$1-$2');
+  // each cell of a table row is fixed on its own, like the start of a block,
+  // so no rule reads across a border: "| R3: pick customer |", and two
+  // dashes in two cells never pair into "HIGH (improves all output | HIGH)"
+  if (/^\s*\|.*\|/.test(s) && /\u2014/.test(s)) {
+    return s.split(/((?<!\\)\|)/).map((cell, i) => (i % 2 || !/\u2014/.test(cell) ? cell
+      : cell.replace(/^(\s*)([\s\S]*?)(\s*)$/, (m, lead, body, tail) => `${lead}${fixEmDash(body, { startsBlock: true })}${tail}`))).join('');
+  }
   // a dash between two numbers is a range, "10-20", unless the first has a
   // sign, which makes it a score: "reward: +4, 404 on missing routes"
   s = s.replace(/\u2014(?:\s*\u2014)+/g, '\u2014').replace(/(?<![+-]\d*)(\d+)\s*\u2014\s*(?=(\d+)(?![\d-]))/g, (m, a, b) => (isRange(a, b) ? `${a}-` : m)).replace(/^(\s*(?:>\s*)*)\u2014\s*/, '$1');
@@ -403,10 +412,6 @@ function fixEmDash(s, { endsBlock = false, startsBlock = false } = {}) {
       // So does one that holds one side of a bold or code mark: "**SFH-16:
       // insider guide library.** The old one was fake", never "(insider ...**".
       if (count(/\*\*/g) % 2 || count(/__/g) % 2 || count(/`/g) % 2) return m;
-      // So does one that crosses a table cell border, since each cell is its
-      // own thing: "HIGH, improves all output | HIGH, unique", never "HIGH
-      // (improves all output | HIGH) unique".
-      if (/^\s*\|/.test(whole) && /(?<!\\)\|/.test(aside)) return m;
       // An aside that opens with a joining word goes on with the sentence, so
       // it takes commas too: "install it, then run it, and ship". Punctuation
       // already before it keeps its place: 'said "stop." then it went, and left'.

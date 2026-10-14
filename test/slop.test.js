@@ -1703,9 +1703,36 @@ test('fix never pairs two dashes across a table cell border', () => {
   ].join('\n'));
   const { changes } = applyFixes([file], RULES);
   assert.deepEqual(changes.map((c) => c.after), [
-    '| 1 | /copy-edit skill | 2-3h | HIGH, improves all output | HIGH, unique, no equivalent |',
-    '| What it is | Hosted RL, bring your own envs | Self-hosted RL; the backend captures runs |',
+    '| 1 | /copy-edit skill | 2-3h | HIGH: improves all output | HIGH: unique, no equivalent |',
+    '| What it is | Hosted RL, bring your own envs | Self-hosted RL, the backend captures runs |',
     '| Gate | the strict one (the one CI runs) holds | done |',
+  ]);
+});
+
+test('fix reads each table cell on its own, like the start of a block', () => {
+  // from planning tables, where rules read across cell borders
+  const file = tmpFile('cells.md', [
+    '| R3 \u2014 pick customer + workflow | Yes \u2014 this is the cleanest signal | \u2014 (none) |',
+    '| `toastCopy.test.ts` \u2014 13 tests for toast copy | HIGH \u2014 confirmed hiring March 2026 |',
+    '| 9 | Kael\'s father Dol \u2014 the parallel that connects the men | KEEP |',
+  ].join('\n'));
+  const { changes } = applyFixes([file], RULES);
+  assert.deepEqual(changes.map((c) => c.after), [
+    '| R3: pick customer + workflow | Yes, this is the cleanest signal | (none) |',
+    '| `toastCopy.test.ts`: 13 tests for toast copy | HIGH: confirmed hiring March 2026 |',
+    '| 9 | Kael\'s father Dol, the parallel that connects the men | KEEP |',
+  ]);
+});
+
+test('fix keeps the comma when "that" opens a clause inside the noun after a dash', () => {
+  const file = tmpFile('that.md', [
+    'Not a tool that stores your work \u2014 a computer that finishes it.',
+    'Not a scanner that runs after the fact \u2014 a guard that blocks attacks.',
+  ].join('\n'));
+  const { changes } = applyFixes([file], RULES);
+  assert.deepEqual(changes.map((c) => c.after), [
+    'Not a tool that stores your work, a computer that finishes it.',
+    'Not a scanner that runs after the fact, a guard that blocks attacks.',
   ]);
 });
 
