@@ -68,6 +68,8 @@ test('shortenLine caps a started objective at 80 chars and other lines at 100', 
   assert.equal(shortenLine(`reading ${'x'.repeat(200)}`), `reading ${'x'.repeat(92)}...`);
   assert.equal(shortenLine('y'.repeat(100)), 'y'.repeat(100));
   assert.equal(shortenLine('y'.repeat(101)), `${'y'.repeat(100)}...`);
+  // The run tag rides in front and does not eat the objective's 80 chars.
+  assert.equal(shortenLine(`started: [pid 42 engine claude] ${'x'.repeat(200)}`), `started: [pid 42 engine claude] ${'x'.repeat(80)}...`);
 });
 
 test('appendProgress and reportProgress store the short form of long lines', () => {
@@ -138,7 +140,8 @@ test('a claude tick writes live steps to the member progress log', () => {
     const res = run(['member', 'run', 'growth', 'improve onboarding proof', '--minutes', '10', '--max-ticks', '1', '--no-verify']);
     assert.equal(res.status, 0, res.stderr || res.stdout);
     const log = fs.readFileSync(path.join(progressDir, 'growth.log'), 'utf8');
-    assert.match(log, /started: improve onboarding proof/);
+    // The started line names the engine process so the board can tell if it lives.
+    assert.match(log, /started: \[pid \d+ engine claude\] improve onboarding proof/);
     assert.equal((log.match(/reading README\.md/g) || []).length, 1, log);
     assert.match(log, /finished: ok/);
     assert.match(res.stderr, /  growth \d\d:\d\d  reading README\.md/);
