@@ -1360,11 +1360,12 @@ test('every engine started through a runner or profile variable records its run 
             // An expression's internal name exists only inside its body.
             if (internalOnly && (call.index < fnStart || call.index >= fnEnd)) continue;
             // A parameter or earlier local alias of another function holding the
-            // call hides either name. An alias inside a sibling helper does not count.
+            // call hides either name, and the launcher's own alias hides its
+            // internal name. An alias inside a sibling helper does not count.
             const visible = withoutHelperDefinitions(code, call.index);
             const alias = new RegExp(`\\b(?:const|let|var)\\s+${call[1].replace(/\$/g, '\\$')}\\s*=`);
-            if (definitionSpans(code).some(([open, close]) => open < call.index && call.index < close && !(open <= fnStart && fnStart < close) && (parametersOf(open).includes(call[1]) || alias.test(visible.slice(open, call.index))))) continue;
-            if (internalOnly && new RegExp(`\\b(?:const|let|var)\\s+${internalName.replace(/\$/g, '\\$')}\\s*=`).test(code.slice(fnStart, call.index))) continue;
+            const hides = ([open, close]) => !(open <= fnStart && fnStart < close) || (internalOnly && open === fnStart);
+            if (definitionSpans(code).some(([open, close]) => open < call.index && call.index < close && hides([open, close]) && (parametersOf(open).includes(call[1]) || alias.test(visible.slice(open, call.index))))) continue;
             const prefix = code.slice(0, call.index);
             if (/\bfunction\s*$|\.\s*$/.test(prefix)) continue;
             // Keep nested calls and quoted commas in their own argument.
@@ -1505,6 +1506,7 @@ test('every engine started through a runner or profile variable records its run 
     assert.deepStrictEqual(planted(expression('  spawnSync(runner, args);', 'launch(resolveClaudeRunnerBin());\n')), ['commands/planted.js:2 runner'], 'the assigned variable still supplies parameters');
     assert.deepStrictEqual(planted(`${prefix}(${name}) {\n  ${name}(resolveClaudeRunnerBin());\n  spawnSync(${name}, args);\n};\nlaunch(git);\n`), [], 'a parameter hides the internal function name');
     assert.deepStrictEqual(planted(expression(`  const ${name} = other;\n  ${name}(resolveClaudeRunnerBin());\n  spawnSync(runner, args);`)), [], 'a local alias hides the internal function name');
+    assert.deepStrictEqual(planted(expression(`  function inner() {\n    const ${name} = other;\n  }\n  ${name}(resolveClaudeRunnerBin());\n  spawnSync(runner, args);`)), ['commands/planted.js:6 runner'], 'an alias in a sibling helper does not hide the internal function name');
     assert.deepStrictEqual(planted(`function outer() {\n  const ${name} = other;\n  ${prefix}(runner) {\n    ${name}(resolveClaudeRunnerBin());\n    spawnSync(runner, args);\n  };\n}\n`), ['commands/planted.js:5 runner'], 'the internal function name hides an outer alias');
   }
   // A nested parameter hides the launcher's own name, even when the assigned
