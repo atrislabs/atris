@@ -475,12 +475,12 @@ function capitalAfterLabel(label, rest, line) {
   return sentenceStart(rest, line);
 }
 
-// An arrow drawn in a line: "->", "<-", a sideways arrow sign like "\u2192", "\u21d4",
+// An arrow drawn in a line: "->", "<-", "=>", a sideways arrow sign like "\u2192", "\u21d4",
 // "\u27f6" or "\u2794", or a box-drawing line or hyphen that ends in a solid or
 // hollow arrowhead, "\u2500\u2500>", "\u2500\u2500\u25b6", "\u25c1\u2500\u2500", "--\u25b6", "\u25c0--". A lone play sign
 // is no arrow, and neither is an up or down arrow, which marks a change:
-// "costs \u2193, revenue \u2191".
-const ARROW = /->|<-|[\u2190\u2192\u2194\u21a6\u21d0\u21d2\u21d4\u27f5-\u27ff\u2794-\u27be]|[-\u2500-\u257f][>\u25b6\u25b7\u25b8\u25b9\u25ba]|[<\u25c0\u25c1\u25c2\u25c3\u25c4][-\u2500-\u257f]/;
+// "costs \u2193, revenue \u2191". "<=" and ">=" compare, so they are no arrows.
+const ARROW = /->|<-|=>|[\u2190\u2192\u2194\u21a6\u21d0\u21d2\u21d4\u27f5-\u27ff\u2794-\u27be]|[-\u2500-\u257f][>\u25b6\u25b7\u25b8\u25b9\u25ba]|[<\u25c0\u25c1\u25c2\u25c3\u25c4][-\u2500-\u257f]/;
 const ARROW_CHAIN_DASH = new RegExp(`(?<=(?:${ARROW.source}).*)\\u2014(?=.*(?:${ARROW.source}))`, 'g');
 
 function fixEmDash(s, { endsBlock = false, startsBlock = false, spans = [] } = {}) {

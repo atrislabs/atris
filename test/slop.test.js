@@ -2762,6 +2762,23 @@ test('fix reads a hyphen shaft with a triangle arrowhead as an arrow on its line
   ]);
 });
 
+test('fix reads the ASCII fat arrow as an arrow, but not a comparison', () => {
+  // the chain lost its link: "plan => build, review", "plan ==> build, review"
+  const file = tmpFile('fat-arrow.md', [
+    'plan => build \u2014 review => ship',
+    'plan ==> build \u2014\u2014\u2014 review',
+    'If x >= 3 \u2014 and y <= 5 \u2014 we stop.',
+    'Use `(a) => b` \u2014 then `(b) => c` to chain.',
+  ].join('\n\n'));
+  const { changes } = applyFixes([file], RULES, { write: false });
+  assert.deepEqual(changes.map((c) => c.after), [
+    'plan => build - review => ship',
+    'plan ==> build --- review',
+    'If x >= 3, and y <= 5, we stop.',
+    'Use `(a) => b`, then `(b) => c` to chain.',
+  ]);
+});
+
 test('fix keeps a journal heading that ends in a time readable for its hour', () => {
   // analytics reads the hour after a dash or a spaced hyphen at the end of a
   // heading; the fix wrote "### Watch: 19:05", which hides it, and glued
