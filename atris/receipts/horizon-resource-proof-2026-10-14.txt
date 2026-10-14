@@ -1,7 +1,7 @@
 # scratch workspace: empty TODO, one commit, so autopilot asks the engine for new horizons
 $ ATRIS_RUNNER_BIN=sh ATRIS_RUNNER_COMMAND_TEMPLATE='sh -c "kill -KILL $$"' atris autopilot --legacy --auto --dry-run --iterations=1
   The workspace looks clean.
-  
+
   Next I will stop until a new signal appears.
 
   Autopilot finished.

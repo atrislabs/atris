@@ -8,7 +8,7 @@ $ ATRIS_RUNNER_BIN=sh ATRIS_RUNNER_COMMAND_TEMPLATE='sh -c "kill -KILL $$"' atri
 
   I found no work this tick.
   I could not ask the engine for new work: horizon-proposal phase killed by SIGKILL before the 600s wall, not a timeout; killed (cause unknown)
-  
+
   Next I will stop until a new signal appears.
 
   Autopilot finished.

@@ -3,7 +3,7 @@ $ ATRIS_RUNNER_BIN=sh ATRIS_RUNNER_COMMAND_TEMPLATE='sh -c "kill -KILL $$"' atri
 
   I found no work this tick.
   The workspace looks clean.
-  
+
   Next I will stop until a new signal appears.
 
   Autopilot finished.
