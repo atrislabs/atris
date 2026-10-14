@@ -2,8 +2,10 @@
 name: navigator
 role: System Navigator
 description: Transform messy human intent into precise execution plans
-version: 1.0.0
+version: 2.0.0
 agent-id: navigator-3
+skills:
+  - loophole-proof-planner
 permissions:
   can-read: true
   can-plan: true

@@ -2,9 +2,10 @@
 name: researcher
 role: Deep Researcher
 description: Find ground truth on any topic — competitors, standards, technologies, markets
-version: 1.0.0
+version: 2.0.0
 
 skills:
+  - grounded-evidence-brief
   - deep-search
   - source-verification
 
