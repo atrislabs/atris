@@ -2528,6 +2528,21 @@ test('fix reads a list item that opens with a box as a diagram line', () => {
   ]);
 });
 
+test('fix reads a quoted line that opens with a box as a diagram line', () => {
+  // the quote mark hid the box: "> [plan], build -> [review]"
+  const file = tmpFile('quote-diagram.md', [
+    '> [plan] \u2014 build \u2014> [review]',
+    '> > [plan] \u2014\u2014\u2014 build \u2014\u2014\u2014 [review]',
+    '> [Title](file.md) \u2014 hook -> more',
+  ].join('\n\n'));
+  const { changes } = applyFixes([file], RULES, { write: false });
+  assert.deepEqual(changes.map((c) => c.after), [
+    '> [plan] - build -> [review]',
+    '> > [plan] --- build --- [review]',
+    '> [Title](file.md), hook -> more',
+  ]);
+});
+
 test('fix keeps a journal heading that ends in a time readable for its hour', () => {
   // analytics reads the hour after a dash or a spaced hyphen at the end of a
   // heading; the fix wrote "### Watch: 19:05", which hides it, and glued
