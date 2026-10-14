@@ -1369,11 +1369,10 @@ function memberRunWith(name, args, { quiet = false } = {}) {
     result.error = result.ask || payload.detail || payload.error || payload.reason || payload.next_action
       || run.stderr || 'mission did not run a work step';
   }
-  // Finished ignited work lands itself when the autoland switch is on. With
-  // the switch off this does nothing and the branch waits for a human.
+  // Finished ignited work lands itself only when the main checkout's autoland
+  // policy is explicitly on. Otherwise the branch waits for a human.
   if (ignite && ok && !noWorkStepExpected) {
     const landing = require('../lib/member-autoland').landFinishedMemberRun({
-      root: process.cwd(),
       mission: { ...finalMission, worktree: finalMission.worktree || mission.worktree },
     });
     if (landing.attempted) {

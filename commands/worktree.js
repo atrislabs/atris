@@ -732,6 +732,8 @@ function shipHelp() {
   console.log('  --target <ref>  override the default landing target (default: branch atris-base, else origin default branch)');
   console.log('  --local         merge into the local primary checkout instead of pushing and opening a PR');
   console.log('  --no-map-refresh  skip the automatic refresh of moved map line references');
+  console.log('  --match-head-commit <sha>  merge only if the branch head is still this commit');
+  console.log('  --expect-base <sha>  refuse to merge if the target moved off this commit');
   console.log('  unstaged regenerated adapter files are skipped unless staged first or named in --message');
   console.log('  recommended flight verify: npm run test:fast && node --test <focused files>');
 }
@@ -979,6 +981,30 @@ function shipWorktree(args) {
   }
   console.log(`merge_check: ${targetRef} clean`);
 
+  // Opt-in guards for a caller that ran its own check: the branch head must be
+  // the commit it checked, and the base must not have moved since.
+  const matchHead = readFlag(args, '--match-head-commit');
+  const expectBase = readFlag(args, '--expect-base');
+  if (!dryRun && matchHead) {
+    const head = runGit(['rev-parse', 'HEAD'], { cwd: root, check: false });
+    if (head.status !== 0 || String(head.stdout || '').trim() !== matchHead) {
+      console.error('blocked: the branch changed after its check ran');
+      return 3;
+    }
+  }
+  if (!dryRun && expectBase) {
+    const fetchError = refreshRemoteRef(root, targetRef);
+    const base = runGit(['rev-parse', targetRef], { cwd: root, check: false });
+    if (fetchError || base.status !== 0) {
+      console.error(`blocked: could not read the latest ${targetRef}`);
+      return 3;
+    }
+    if (String(base.stdout || '').trim() !== expectBase) {
+      console.error(`blocked: base moved: ${targetRef} moved since the check ran`);
+      return 4;
+    }
+  }
+
   if (localMode) {
     console.log('push: skipped (local mode)');
     if (merge) {
@@ -1023,6 +1049,7 @@ function shipWorktree(args) {
         const mergeArgs = ['pr', 'merge'];
         if (mergeRef) mergeArgs.push(mergeRef);
         mergeArgs.push('--merge');
+        if (matchHead) mergeArgs.push('--match-head-commit', matchHead);
         const merged = spawnSync('gh', mergeArgs, { cwd: root, encoding: 'utf8' });
         if (merged.status !== 0) throw new Error((merged.stderr || merged.stdout || 'gh pr merge failed').trim());
         // `gh pr merge` on an already-merged PR exits 0 with a warning
