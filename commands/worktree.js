@@ -1479,7 +1479,6 @@ module.exports = {
   gitNetworkEnvironment,
   describeFlightAge,
   flightStampMs,
-  listActiveProcessCwds,
   listActiveProcessPaths,
   listWorktrees,
   parseAgentFlightName,
