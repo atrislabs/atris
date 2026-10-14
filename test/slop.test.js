@@ -1627,3 +1627,20 @@ test('fix gives a clause a colon after a quoted term it explains', () => {
     'We named it "the gate"; it runs before every commit.',
   ]);
 });
+
+test('fix gives a greeting a comma, on its own line or before the message', () => {
+  // from dream-gtm's ready-to-send emails, which came out "Hey Mark." and
+  // "Hey [Name]; I run an AI company"
+  const file = tmpFile('greeting.md', [
+    'Hey Mark \u2014',
+    '',
+    'Hey [Name] \u2014 I run an AI company that builds scheduling agents.',
+    'Hi Tim, Amy \u2014 quick question.',
+  ].join('\n'));
+  const { changes } = applyFixes([file], RULES);
+  assert.deepEqual(changes.map((c) => c.after), [
+    'Hey Mark,',
+    'Hey [Name], I run an AI company that builds scheduling agents.',
+    'Hi Tim, Amy, quick question.',
+  ]);
+});

@@ -73,6 +73,10 @@ const HEADING_DASH = /^(\s{0,3}#{1,6}\s+[^\u2014:]*[^\s\u2014,;:.!?])\s*\u2014\s
 // is the last one and comes before a joining word, so it goes on with the
 // sentence: "v2: shipped, then rolled back".
 const TERM_DASH = /^(\s*(?:>\s*)*(?=[\w./-]*?(?:[\d/_]|\.\w|[A-Z][\w./-]*[A-Z]))[A-Za-z0-9][\w./-]*[^\s.\u2014,;:])\s*\u2014\s*(?=\S)(?!(?:and|but|or|nor|so|yet)\b)(?![^\u2014]*\u2014(?!\s*(?:and|but|or|nor|so|yet|then)\b[^\u2014]*$))/;
+// A greeting that opens a line, then a dash, is a salutation, and a
+// salutation takes a comma: "Hey Mark," on its own line, never "Hey Mark.",
+// and "Hey [Name], I run an AI company", never a semicolon.
+const GREETING_DASH = /^(\s*(?:>\s*)*["\u201c]?(?:Hey|Hi|Hello|Dear)\s+[^\s\u2014.!?:;][^\u2014.!?:;]{0,40}?)\s*\u2014[ \t]*/;
 // Two to four capitalized words that open a paragraph are a title, and the
 // words after the dash describe it: "Inbox Triage: 23 emails processed".
 const TITLE_DASH = /^(\s*(?:>\s*)*[A-Z][a-z0-9'\u2019-]+(?:\s+[A-Z][a-z0-9'\u2019-]+){1,3})\s*\u2014\s*(?=\S)(?!(?:and|but|or|nor|so|yet)\b)(?![^\u2014]*\u2014(?!\s*(?:and|but|or|nor|so|yet|then)\b[^\u2014]*$))/;
@@ -241,6 +245,11 @@ function fixEmDash(s, { endsBlock = false, startsBlock = false } = {}) {
   // a dash between two numbers is a range, "10-20", unless the first has a
   // sign, which makes it a score: "reward: +4, 404 on missing routes"
   s = s.replace(/\u2014(?:\s*\u2014)+/g, '\u2014').replace(/(?<![+-]\d*)(\d+)\s*\u2014\s*(?=(\d+)(?![\d-]))/g, (m, a, b) => (isRange(a, b) ? `${a}-` : m)).replace(/^(\s*(?:>\s*)*)\u2014\s*/, '$1');
+  const greeting = GREETING_DASH.exec(s);
+  if (greeting) {
+    const rest = s.slice(greeting[0].length);
+    return `${greeting[1].replace(/,$/, '')},${rest ? ` ${fixEmDash(rest, { endsBlock })}` : ''}`;
+  }
   if (endsBlock) s = s.replace(/([.,;:!?]?)\s*\u2014\s*$/, (m, p) => p || '.');
   const heading = [HEADING_DASH, BOLD_HEADING_DASH].find((re) => re.test(s));
   if (heading) {
