@@ -444,6 +444,31 @@ test('progress lines turn into stream events', () => {
   assert.equal(progressEvent('builder', 'yesterday m-1 started: x'), null);
 });
 
+test('follow sends a line written while the snapshot is being taken', () => {
+  const { followBoard } = require('../lib/member-board');
+  const dir = fakeDir({ launcher: [`${at(60)} m-4 started: score launcher`] });
+  const events = [];
+  const order = [];
+  // ready() is where the stream reads and prints its snapshot. A stop that
+  // lands right then must still come through, not fall before the mark.
+  const follower = followBoard({
+    dir, pollMs: 60_000,
+    emit: (e) => { events.push(e); order.push('event'); },
+    ready: () => {
+      order.push('snapshot');
+      fs.appendFileSync(path.join(dir, 'launcher.log'), `${at(0)} m-4 finished: stopped\n`);
+    },
+  });
+  try {
+    follower.scan();
+    assert.deepEqual(events.map((e) => [e.kind, e.text]), [['finished', 'stopped']], 'the stop is sent');
+    assert.deepEqual(order, ['snapshot', 'event'], 'the snapshot still comes first');
+  } finally {
+    follower.stop();
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
 test('follow emits only new full lines, picks up new members, survives truncation', () => {
   const { followBoard } = require('../lib/member-board');
   const dir = fakeDir({ builder: [`${at(60)} m-1 started: old job`] });
