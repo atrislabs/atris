@@ -27,7 +27,7 @@ const {
 } = require('../lib/scorecard');
 const { REWARD_CONFIG, REWARD_CHECKSUM } = require('../lib/reward-config');
 const { ownerIdentity } = require('../utils/owner-identity');
-const { inspectGitActivity } = require('../lib/git-activity');
+const { inspectGitActivity, missingFolderLock } = require('../lib/git-activity');
 
 const pkg = require('../package.json');
 
@@ -1236,7 +1236,10 @@ function regressionCheck(cwd) {
       if (created) {
         const activePaths = listActiveProcessPaths();
         const activity = inspectGitActivity(worktreePath);
-        const reason = !activity.safe ? activity.reason
+        // The folder can disappear during the git check; name what it left locked.
+        const lock = !activity.safe && !fs.existsSync(worktreePath) ? missingFolderLock(cwd, worktreePath) : null;
+        const reason = lock ? (lock.locks.length ? lock.reason : 'folder is missing')
+          : !activity.safe ? activity.reason
           : worktreeHasActiveProcess(worktreePath, activePaths)
             ? (activePaths ? 'a running program is using this folder' : 'could not check running programs')
             : null;

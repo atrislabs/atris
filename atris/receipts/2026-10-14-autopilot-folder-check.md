@@ -75,3 +75,20 @@ late private and shared locks during the safety check kept the folder, named bot
 next_push: Prove a folder that disappears during the regression cleanup's safety check is reported as missing, names any retained lock and its age, and attempts no removal.
 
 layer: behaviors
+
+## Folder disappearing during the safety check
+
+Regression cleanup now says a folder is missing when it disappears during the safety check, and names the locks it left behind with their ages. Before, it named the locks as if the folder were still there.
+
+The proof moves the folder away the moment cleanup asks Git about it, after adding a private lock aged three hours and a shared lock aged four hours. Cleanup keeps everything, reports the folder as missing with both lock paths and ages, and never tries to remove it. The same proof fails against the previous code.
+
+Real surface: `node atris/receipts/2026-10-14-autopilot-folder-check.js`, exit 0.
+
+```text
+  kept .../.regression-worktree-457a14c1: folder is missing; git lock: .../.git/packed-refs.lock (14400s old), .../.git/worktrees/-regression-worktree-457a14c1/index.lock (10800s old)
+a folder that disappeared during the safety check was reported missing with both retained lock paths and ages, and no removal was attempted
+```
+
+next_push: Prove regression cleanup says only that the folder is missing, naming no lock, when a folder disappears mid-check and no lock remains.
+
+layer: behaviors

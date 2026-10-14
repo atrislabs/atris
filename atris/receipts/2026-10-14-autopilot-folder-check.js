@@ -62,13 +62,14 @@ function main() {
   const toolsDir = path.join(repo, '.atris', 'tools');
   const removeAttempt = path.join(repo, '.atris', 'remove-attempt');
   fs.mkdirSync(toolsDir, { recursive: true });
-  for (const kind of ['marker', 'ordinary']) {
+  for (const kind of ['marker', 'ordinary', 'vanished']) {
     fs.writeFileSync(path.join(repo, `late-${kind}.txt`), `late ${kind} case\n`);
     git('add', '.');
     git('commit', '-qm', `late ${kind} case`);
     const lateHash = git('rev-parse', 'HEAD');
     const lateFolder = path.join(repo, '.regression-worktree-' + lateHash.slice(0, 8));
     const privateDir = path.join(repo, '.git', 'worktrees', path.basename(lateFolder).replace(/^\./, '-'));
+    const moved = path.join(repo, '.atris', `moved-${kind}`);
     const expected = kind === 'marker'
       ? [[path.join(privateDir, 'locked'), 10800]]
       : [[path.join(privateDir, 'index.lock'), 10800], [path.join(repo, '.git', 'packed-refs.lock'), 14400]];
@@ -87,6 +88,7 @@ if (args.includes('--git-dir') && args.includes('--git-common-dir') && process.c
     const aged = new Date(Date.now() - seconds * 1000);
     fs.utimesSync(file, aged, aged);
   }
+  if (${kind === 'vanished'}) fs.renameSync(${JSON.stringify(lateFolder)}, ${JSON.stringify(moved)});
 }
 const result = spawnSync(${JSON.stringify(realGit)}, args, { stdio: 'inherit' });
 process.exit(result.status === null ? 1 : result.status);
@@ -101,9 +103,12 @@ process.exit(result.status === null ? 1 : result.status);
       process.env.PATH = savedPath;
     }
     console.log(JSON.stringify(late));
-    assert.equal(git('-C', lateFolder, 'rev-parse', '--absolute-git-dir'), privateDir);
+    const present = kind === 'vanished' ? moved : lateFolder;
+    assert.equal(fs.existsSync(lateFolder), kind !== 'vanished');
+    assert.equal(git('-C', present, 'rev-parse', '--absolute-git-dir'), privateDir);
     assert.equal(late.pass, true);
     assert.equal(late.cleanup.removed, false);
+    if (kind === 'vanished') assert.ok(late.cleanup.reason.startsWith('folder is missing; git lock: '), late.cleanup.reason);
     for (const [file, seconds] of expected) {
       const escaped = file.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
       const reported = late.cleanup.reason.match(new RegExp(`${escaped} \\((\\d+)s old\\)`));
@@ -111,12 +116,13 @@ process.exit(result.status === null ? 1 : result.status);
       assert.ok(Math.abs(Number(reported[1]) - seconds) <= 10, late.cleanup.reason);
       assert.ok(fs.existsSync(file));
     }
-    assert.ok(fs.existsSync(path.join(lateFolder, `late-${kind}.txt`)));
+    assert.ok(fs.existsSync(path.join(present, `late-${kind}.txt`)));
     assert.equal(fs.existsSync(removeAttempt), false);
     assert.equal(fs.readFileSync(removalFile, 'utf8').trim().split('\n').length, 1);
   }
   console.log('late keep marker during the safety check kept the folder, named the marker and its age, and no removal was attempted');
   console.log('late private and shared locks during the safety check kept the folder, named both paths with distinct ages, and no removal was attempted');
+  console.log('a folder that disappeared during the safety check was reported missing with both retained lock paths and ages, and no removal was attempted');
 }
 
 if (require.main === module) main();
