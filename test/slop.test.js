@@ -908,6 +908,12 @@ test('fix joins a noun clause after a "not" sentence with a semicolon', () => {
     'Not yet \u2014 it ships Friday.',
     '- **Not yet** \u2014 it ships Friday.',
     'Not only does it fail \u2014 it crashes.',
+    // a plain verb in "s" joins after a determiner and one more word
+    'This dir is not safe \u2014 a stray /tmp/atris turns them into fixtures.',
+    'Lines DO NOT SURVIVE \u2014 the next `atris task render` regenerates the file.',
+    'Name the owner, not a fix \u2014 the changes from whoever saw it.',
+    'It is not the cause \u2014 the old tests from CI.',
+    'Every pending row, not just the first 12 \u2014 the bug this fix closes.',
   ].join('\n'));
   const { changes } = applyFixes([file], RULES);
   assert.deepEqual(changes.map((c) => c.after), [
@@ -921,6 +927,11 @@ test('fix joins a noun clause after a "not" sentence with a semicolon', () => {
     'Not yet: it ships Friday.',
     '- **Not yet**: it ships Friday.',
     'Not only does it fail; it crashes.',
+    'This dir is not safe; a stray /tmp/atris turns them into fixtures.',
+    'Lines DO NOT SURVIVE; the next `atris task render` regenerates the file.',
+    'Name the owner, not a fix, the changes from whoever saw it.',
+    'It is not the cause, the old tests from CI.',
+    'Every pending row, not just the first 12, the bug this fix closes.',
   ]);
 });
 

@@ -94,7 +94,14 @@ const CLAUSE_AFTER_DASH = /(?<=[\w)\]"'*_`\u201d\u2019\uE001])\s*\u2014\s*(?=(?:
 // sentence too: "is not a twin, restart is allowed". Up to five plain words
 // reach the verb, none of them a joining word, so "not X, even when the
 // build is red" keeps its comma.
-const NOUN_CLAUSE_AFTER_DASH = /(?<=[\w)\]"'*_`\u201d\u2019\uE001])\s*\u2014\s*(?=(?:(?!(?:and|but|or|nor|so|yet|then|not|even|when|if|unless|until|because|since|while|where|which|who|as|after|before|though|although|once|just|only)\b)(?:[A-Za-z0-9_/'-]+(?:\.[A-Za-z0-9_]+)*|\ue000\d+\uE001)\s+){1,5}(?:is|are|was|were|will|would|can|cannot|must|should|has|have|exists)\s+[^\s\u2014])/g;
+const NOUN_WORD = "(?:[A-Za-z0-9_/'-]+(?:\\.[A-Za-z0-9_]+)*|\\uE000\\d+\\uE001)";
+const SUBJECT_WORD = `(?:(?!(?:and|but|or|nor|so|yet|then|not|even|when|if|unless|until|because|since|while|where|which|who|as|after|before|though|although|once|just|only)\\b)${NOUN_WORD}\\s+)`;
+// A plain verb ending in "s" counts only after a determiner and one more word,
+// and never right before a preposition: "a stray file turns them" joins, but
+// "the changes from whoever" and "the old tests from CI" stay noun phrases.
+// Small words that end in "s" are never the verb: "the bug this fix closes".
+const PLAIN_VERB = '(?!(?:this|his|its|was|has|does|thus|plus|always|perhaps|unless|whereas|across)\\b)[a-z]{2,}[a-rt-z]s\\s+(?!(?:from|of|in|on|for|with|at|by|to|and|or|that|which|who|like|than|as)\\b)';
+const NOUN_CLAUSE_AFTER_DASH = new RegExp(`(?<=[\\w)\\]"'*_\`\\u201d\\u2019\\uE001])\\s*\\u2014\\s*(?=(?:${SUBJECT_WORD}{1,5}(?:is|are|was|were|will|would|can|cannot|must|should|has|have|exists)\\s+|(?:a|an|the|every|each|no)\\s+${NOUN_WORD}\\s+(?:${NOUN_WORD}\\s+){0,2}${PLAIN_VERB})[^\\s\\u2014])`, 'g');
 
 // The mark that joins a full clause to the sentence before the dash. A short
 // opener led by "not" has no verb of its own, so the clause explains it and
