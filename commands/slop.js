@@ -64,6 +64,7 @@ const NUMBERED_LABEL_DASH = /^(\s*(?:>\s*)*(?:(?:\*\*|__)[^*_\u2014]+:(?:\*\*|__
 const HEADING_DASH = /^(\s{0,3}#{1,6}\s+[^\u2014:]*[^\s\u2014,;:.!?])\s*\u2014\s*(?!(?:and|but|or|nor|so|yet)\b)(?=[^\s\u2014][^\u2014]*(?:\u2014\s*(?:and|but|or|nor|so|yet|then)\b[^\u2014]*)?$)/i;
 // A bold phrase that is the whole line stands as a heading and gets the same
 // colon: "**Source A: arxiv API**". A dash inside parentheses is left alone.
+// A last dash before a joining word takes a comma, as in a heading.
 // A name that opens a paragraph, then a dash, is a term being defined, so the
 // dash becomes a colon: "MEMBER.md: an open-source standard", "v2: shipped".
 // Only a name shape counts (a digit, dot, slash, underscore, or two capitals),
@@ -75,7 +76,7 @@ const TERM_DASH = /^(\s*(?:>\s*)*(?=[\w./-]*?(?:[\d/_]|\.\w|[A-Z][\w./-]*[A-Z]))
 // Two to four capitalized words that open a paragraph are a title, and the
 // words after the dash describe it: "Inbox Triage: 23 emails processed".
 const TITLE_DASH = /^(\s*(?:>\s*)*[A-Z][a-z0-9'\u2019-]+(?:\s+[A-Z][a-z0-9'\u2019-]+){1,3})\s*\u2014\s*(?=\S)(?!(?:and|but|or|nor|so|yet)\b)(?![^\u2014]*\u2014(?!\s*(?:and|but|or|nor|so|yet|then)\b[^\u2014]*$))/;
-const BOLD_HEADING_DASH = /^(\s*(?:>\s*)*(?:\*\*|__)[^\u2014:*_(]*[^\s\u2014,;:.!?*_(])\s*\u2014\s*(?!(?:and|but|or|nor|so|yet)\b)(?=[^\s\u2014][^\u2014*_]*(?:\*\*|__)\s*$)/i;
+const BOLD_HEADING_DASH = /^(\s*(?:>\s*)*(?:\*\*|__)[^\u2014:*_(]*[^\s\u2014,;:.!?*_(])\s*\u2014\s*(?!(?:and|but|or|nor|so|yet)\b)(?=[^\s\u2014][^\u2014*_]*(?:\u2014\s*(?:and|but|or|nor|so|yet|then)\b[^\u2014*_]*)?(?:\*\*|__)\s*$)/i;
 
 // True when one pair of parentheses wraps the whole aside, "(mostly)" but
 // not "(a) or (b)", so the fixer keeps them instead of adding a second pair.

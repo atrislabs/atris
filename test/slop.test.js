@@ -1161,6 +1161,10 @@ test('fix gives a whole-line bold phrase a colon, like a heading', () => {
     '**Ship it \u2014 and say so**',
     '**Reply in thread (IMPORTANT \u2014 use this for all replies):**',
     'This is **a bold \u2014 phrase** in a line.',
+    // a last dash before a joining word goes on with the phrase
+    '**Setup \u2014 install it \u2014 then run it**',
+    '> **Ship \u2014 the build \u2014 and the notes**',
+    '**Plan \u2014 a \u2014 b \u2014 then c**',
   ].join('\n'));
   const { changes } = applyFixes([file], RULES);
   assert.deepEqual(changes.map((c) => c.after), [
@@ -1169,6 +1173,9 @@ test('fix gives a whole-line bold phrase a colon, like a heading', () => {
     '**Ship it, and say so**',
     '**Reply in thread (IMPORTANT, use this for all replies):**',
     'This is **a bold, phrase** in a line.',
+    '**Setup: install it, then run it**',
+    '> **Ship: the build, and the notes**',
+    '**Plan, a, b, then c**',
   ]);
 });
 
