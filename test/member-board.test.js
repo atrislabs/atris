@@ -1449,6 +1449,10 @@ test('a run with no pid that has been silent for over an hour is named as likely
   const two = memberRow('orb', '2026-10-14T04:00:00Z m-4 started: x\n', now);
   assert.match(renderBoard([old, two], '/x'), /^launcher, orb have logged nothing for over an hour with no process id to check, so they most likely ended without saying so$/m);
   assert.doesNotMatch(renderBoard([fresh, done], '/x'), /most likely ended/);
+  assert.equal(old.running_for, '8h', 'json still counts from the start');
+  assert.match(screen, /^launcher\s+quiet\s+at least 1h\s+7h ago\s/m, 'the screen counts only to its last line, not 8h of silence');
+  assert.match(screen, /^scout\s+quiet\s+1h\s+10m ago\s/m, 'a pause still counts from the start');
+  assert.match(renderBoard([old, two], '/x'), /^orb\s+quiet\s+-\s+8h ago\s/m, 'nothing past its start: no made-up length');
 });
 
 test('watchCrashes reports each newly died run once, not ones dead at start', () => {
