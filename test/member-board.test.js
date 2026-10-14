@@ -242,6 +242,12 @@ test('watch names a put-away run with when it last did anything, even once it is
   const tracker = changeTracker(60_000);
   tracker([{ ...live, state: 'working' }], now);
   assert.deepEqual(tracker([live], now + 3_000), ['builder working -> stopped'], 'a live stop reads as before');
+  const gone = 2147483646;
+  const dug = memberRow('digger', `2026-10-14T10:00:00Z m-7 started: [pid ${gone} engine claude] dig\n2026-10-14T11:00:00Z m-7 running: npm test\n`, now);
+  assert.deepEqual([dug.state, dug.idle], ['died', true], 'a crash on a run silent for 2h hides at once');
+  const crashes = changeTracker(60_000);
+  crashes([{ ...dug, state: 'quiet', idle: false }], now);
+  assert.deepEqual(crashes([dug], now + 3_000), ['digger quiet -> died, last active 2h ago'], 'hidden, so the note says when it last did anything');
 });
 
 test('board says nobody is working when every member is hidden', () => {
