@@ -2405,3 +2405,7 @@ npm publish
 ## Unclaimed ready revise fixture setup
 
 - `test/commands.test.js:13572` checks that revising ready work nobody claimed returns it to open for agents to claim. Real-store creation at `test/commands.test.js:13585` saves one setup launch, resolves the display reference and closes in finally; the unclaimed ready, revise and claim remain on the CLI with every behavior assertion preserved.
+
+## Accepted-task revise refusal fixture setup
+
+- `test/commands.test.js:13608` checks that revise is refused on accepted work so the reward total stays current. Real-store creation at `test/commands.test.js:13621` saves one setup launch, resolves the display reference and closes in finally; claim, ready, accept, the refused revise and the XP status read remain on the CLI with every behavior assertion preserved.
