@@ -23,6 +23,8 @@ Details for any task: atris task show <ID>
 
 ## Review
 
+- **[AIC-19]** Seed agent-ready review fixtures in process · auto-improver
+  **Done looks like:** Developers can run approval queue checks sooner because setup starts six fewer commands.
 - **[AIC-18]** Isolate saved-proof environment in lap runtime tests · auto-improver
   **Done looks like:** Developers can run child cleanup checks reliably, saving time because the checks use a supported interpreter.
 - **[AIC-17]** Wait for escaped test children instead of sleeping · auto-improver

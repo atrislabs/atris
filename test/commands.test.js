@@ -13896,10 +13896,20 @@ test('task reviews gives a compact certified accept queue', () => {
   try {
     fs.mkdirSync(path.join(dir, 'atris'), { recursive: true });
 
-    const certifiedCreated = runCli(['task', 'new', 'Ship certified proof packet', '--tag', 'review', '--json'], { cwd: dir, env });
-    assert.equal(certifiedCreated.status, 0, certifiedCreated.stderr);
-    const certifiedTask = JSON.parse(certifiedCreated.stdout).task;
-    assert.equal(runCli(['task', 'claim', certifiedTask.display_id, '--as', 'codex'], { cwd: dir, env }).status, 0);
+    // Only creation and claiming are fixture setup. Keep ready, review, and
+    // queue rendering on the CLI so the queue reads real command output.
+    const workspaceRoot = taskStore.workspaceRoot(dir);
+    function seedClaimedTask(title) {
+      const db = taskStore.open(dbPath);
+      try {
+        const { id } = taskStore.addTask(db, { title, tag: 'review', workspaceRoot });
+        assert.equal(taskStore.claimTask(db, { id, claimedBy: 'codex' }).claimed, true);
+        return { id, display_id: taskStore.taskDisplayRefMap(taskStore.listTasks(db, { workspaceRoot })).get(id) };
+      } finally {
+        taskStore.close();
+      }
+    }
+    const certifiedTask = seedClaimedTask('Ship certified proof packet');
     const certifiedProof = `Product proof: Human approval queue shows a compact certified packet without stale objective text. ${'context '.repeat(35)}Verifiers: node --check test/commands.test.js passed, focused review queue behavior checked, live atris task reviews json showing rows, git status --porcelain -- commands/task.js test/commands.test.js clean`;
     assert.equal(runCli([
       'task', 'ready', certifiedTask.display_id,
@@ -13924,16 +13934,10 @@ test('task reviews gives a compact certified accept queue', () => {
     }
     assert.equal(runCli(['task', 'review', certifiedTask.display_id, '--reward', '0', '--as', 'validator'], { cwd: dir, env }).status, 0);
 
-    const blockingCreated = runCli(['task', 'new', 'Needs another agent review', '--tag', 'review', '--json'], { cwd: dir, env });
-    assert.equal(blockingCreated.status, 0, blockingCreated.stderr);
-    const blockingTask = JSON.parse(blockingCreated.stdout).task;
-    assert.equal(runCli(['task', 'claim', blockingTask.display_id, '--as', 'codex'], { cwd: dir, env }).status, 0);
+    const blockingTask = seedClaimedTask('Needs another agent review');
     assert.equal(runCli(['task', 'ready', blockingTask.display_id, '--proof', 'one review validation passed', '--as', 'codex'], { cwd: dir, env }).status, 0);
 
-    const unsafeCreated = runCli(['task', 'new', 'Used a check outside the allowlist', '--tag', 'review', '--json'], { cwd: dir, env });
-    assert.equal(unsafeCreated.status, 0, unsafeCreated.stderr);
-    const unsafeTask = JSON.parse(unsafeCreated.stdout).task;
-    assert.equal(runCli(['task', 'claim', unsafeTask.display_id, '--as', 'codex'], { cwd: dir, env }).status, 0);
+    const unsafeTask = seedClaimedTask('Used a check outside the allowlist');
     const unsafeReady = runCli([
       'task', 'ready', unsafeTask.display_id,
       '--verify', 'ls atris',

@@ -2301,3 +2301,7 @@ npm publish
 - `test/member-board.test.js:147` checks the real board CLI; its watch check at line 158 polls every 25ms for a second complete redraw, with an eight-second readiness bound and ten-second child timeout, then stops and awaits the child.
 
 - `test/member-board.test.js:256` parses only newline-terminated JSON output before polling the real board follow stream, so partial stdout chunks wait instead of throwing. At line 250 it captures child closure immediately; cleanup awaits that promise even after an early exit, and the child has a 20-second lifetime bound.
+
+## Compact approval queue test setup
+
+- `test/commands.test.js:13891` checks certified, second-review-blocked, and unsafe-check queue entries. Its local real-store helper at `test/commands.test.js:13902` creates and claims three fixtures without six setup command launches; ready, review, JSON, plain, verbose, and grouped output stay on the CLI with every queue assertion intact.
