@@ -2269,3 +2269,17 @@ npm publish
 - `lib/fleet.js:2957` applies the same prompt settings and a bounded fetch when checking a build that landed itself. The real-Git regression traces that alternate landing path as well.
 - `commands/land.js:39` uses the same default branch for the landing board; `lib/codex-flight.js:79` uses it for the companion build path and preview; `lib/one-lap-validator.js:11` receives the frozen base for its diff instructions.
 - Regression: `test/engine-dispatch-mainline.test.js:1` uses real engines and Git for main/trunk dispatch and fleet landings, successful login-related output with backups available, engine-only refusals, backup refusal receipts, a server-only rename without a local tracking ref, failed fetch refusal, one lookup per flight, traced network prompt settings, failed Codex tool transcripts, absent-origin landing, and branch fallback priority. `test/one-lap-runtime.test.js:913` covers sealed review and import on main; `test/engine-dispatch-no-origin.test.js:1` covers absent and unavailable origin.
+
+## Mercury 3 test model
+
+`ax --mercury [--diffuse] "<prompt>"` follows `flags -> request -> snapshots replace -> final text -> stderr timing`.
+`ax:100` maps the pinned model, `ax:992` normalizes the lane, `ax:3021` builds the request,
+`ax:3103` clears drafts, `ax:3109` draws a dim draft within the terminal viewport,
+`ax:3131` handles snapshot and final events, `ax:3285` records first text and total time,
+and `ax:4800` parses the lane flag. Snapshots never enter the final output buffer.
+Drafts are clipped to visible terminal rows and columns to avoid wrapping or scrollback debris;
+the final answer is complete. Piped output ignores drafts. Refining steps count received snapshots.
+`lib/runner-command.js:46` pins the mercury profile and `lib/engine-registry.js:163` labels it a test model.
+`lib/engine-ask.js:281` launches read-only Mercury asks with the same flag.
+Regression checks live in `test/ax.test.js`, `test/runner-command.test.js`, and `test/engine-ask.test.js`.
+Verify: `npm run test:fast && node --test test/ax.test.js test/runner-command.test.js`.

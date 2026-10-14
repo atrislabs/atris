@@ -1877,3 +1877,112 @@ test('ax compacts evicted history into a digest instead of forgetting it', () =>
     else process.env.AX_NO_COMPACT = previousEnv;
   }
 });
+
+test('mercury model and diffuse payload are opt-in', () => {
+  assert.equal(ax.modelForMode('mercury'), 'inception:mercury-3-preview-1002');
+  assert.equal(ax.buildPayload('hello', { mode: 'mercury', diffuse: true }).diffuse, true);
+  assert.equal(ax.buildPayload('hello', { mode: 'mercury' }).diffuse, undefined);
+  assert.equal(ax.buildPayload('hello', { mode: 'fast', diffuse: true }).diffuse, undefined);
+  assert.match(ax.tierLabel('mercury'), /test model/);
+  assert.match(ax.formatUsage(), /--diffuse/);
+});
+
+test('mercury TTY snapshots replace longer drafts and leave final output only', async () => {
+  const writes = [];
+  const timing = [];
+  const previousNoColor = process.env.NO_COLOR;
+  delete process.env.NO_COLOR;
+  const output = { isTTY: true, columns: 12, rows: 6, write: chunk => writes.push(String(chunk)) };
+  const server = http.createServer((req, res) => {
+    req.resume();
+    req.on('end', () => {
+      res.writeHead(200, { 'Content-Type': 'text/event-stream' });
+      for (const event of [
+        { type: 'text_snapshot', content: 'scrambled\nsecond row', index: 0, progress: null },
+        { type: 'text_snapshot', content: 'forming', index: 0, progress: 0.8 },
+        { type: 'text_delta', content: 'Final.' },
+        { type: 'result', result: 'Final.' },
+      ]) res.write(`data: ${JSON.stringify(event)}\n\n`);
+      res.end();
+    });
+  });
+  const port = await listenLocal(server);
+  const previous = process.env.AX_BACKEND_URL;
+  process.env.AX_BACKEND_URL = `http://127.0.0.1:${port}/api/atris2/turn`;
+  try {
+    const state = await ax.postTurn('hello', {
+      mode: 'mercury', diffuse: true, route: 'cloud', connectionContext: {},
+      showProgress: false, output, stderr: { isTTY: true, write: chunk => timing.push(chunk) },
+    });
+    assert.equal(state.output, 'Final.');
+    assert.equal(state.snapshotRows, 0);
+    assert.equal(state.snapshotCount, 2);
+    const rendered = writes.join('');
+    assert.match(rendered, /\x1b\[2mscrambled\nsecond row\x1b\[0m\n\r\x1b\[2A\x1b\[J\x1b\[2mforming/);
+    assert.match(rendered, /forming\x1b\[0m\n\r\x1b\[1A\x1b\[J/);
+    assert.equal(rendered.split('Final.').length - 1, 1);
+    assert.match(timing.join(''), /^\x1b\[2mmercury 3: first text \d+\.\d{2}s, done \d+\.\d{2}s, 2 refining steps\x1b\[0m\n$/);
+    assert.ok(Number.isFinite(state.firstTextMs));
+  } finally {
+    if (previousNoColor === undefined) delete process.env.NO_COLOR;
+    else process.env.NO_COLOR = previousNoColor;
+    if (previous === undefined) delete process.env.AX_BACKEND_URL;
+    else process.env.AX_BACKEND_URL = previous;
+    await closeServer(server);
+  }
+});
+
+test('mercury CLI flags send the model and diffuse, piped text prints once', async () => {
+  const bodies = [];
+  const server = http.createServer((req, res) => {
+    if (req.method !== 'POST') {
+      res.writeHead(200, { 'Content-Type': 'application/json' });
+      res.end('{}');
+      return;
+    }
+    let body = '';
+    req.on('data', chunk => { body += chunk; });
+    req.on('end', () => {
+      bodies.push(JSON.parse(body));
+      assert.equal(req.url, '/api/atris2/turn');
+      res.writeHead(200, { 'Content-Type': 'text/event-stream' });
+      if (bodies.at(-1).diffuse) {
+        for (const content of ['scrambled', 'forming']) {
+          res.write(`data: ${JSON.stringify({ type: 'text_snapshot', content, index: 0, progress: null })}\n\n`);
+        }
+      }
+      res.end(`data: ${JSON.stringify({ type: 'text_delta', content: 'Final answer.' })}\n\n`);
+    });
+  });
+  const port = await listenLocal(server);
+  const { spawn } = require('node:child_process');
+  try {
+    for (const diffuse of [false, true]) {
+      const result = await new Promise((resolve, reject) => {
+        const child = spawn(process.execPath, [path.join(__dirname, '..', 'ax'), '--mercury',
+          ...(diffuse ? ['--diffuse'] : []), '--cloud', 'hello mercury'], {
+          cwd: os.tmpdir(),
+          env: { ...process.env, AX_BACKEND_URL: `http://127.0.0.1:${port}/api/atris2/turn`, ATRIS_SKIP_UPDATE_CHECK: '1' },
+          stdio: ['ignore', 'pipe', 'pipe'],
+        });
+        let stdout = '';
+        let stderr = '';
+        child.stdout.on('data', chunk => { stdout += chunk; });
+        child.stderr.on('data', chunk => { stderr += chunk; });
+        child.on('error', reject);
+        child.on('close', code => resolve({ code, stdout, stderr }));
+      });
+      assert.equal(result.code, 0, result.stderr);
+      assert.equal(bodies.at(-1).message, 'hello mercury');
+      assert.equal(bodies.at(-1).model, 'inception:mercury-3-preview-1002');
+      assert.equal(bodies.at(-1).diffuse, diffuse ? true : undefined);
+      assert.doesNotMatch(result.stdout, /scrambled|forming|\x1b\[/);
+      assert.equal(result.stdout.split('Final answer.').length - 1, 1);
+      assert.match(result.stderr, /mercury 3: first text \d+\.\d{2}s, done \d+\.\d{2}s/);
+      assert.equal(result.stderr.includes('2 refining steps'), diffuse);
+      assert.equal(result.stderr.split('mercury 3:').length - 1, 1);
+    }
+  } finally {
+    await closeServer(server);
+  }
+});

@@ -99,6 +99,7 @@ function tierColor(mode) {
 
 function modelForMode(mode) {
   if (mode === 'code-fast') return CODE_FAST.model;
+  if (mode === 'mercury') return 'inception:mercury-3-preview-1002';
   if (mode === 'max') return 'atris:max';
   if (mode === 'alpha') return 'atris:alpha';
   if (mode === 'rapid') return 'atris:rapid';
@@ -148,6 +149,7 @@ function formatSeconds(totalSeconds) {
 
 function tierLabel(mode) {
   if (mode === 'code-fast') return 'Atris Code Fast';
+  if (mode === 'mercury') return 'mercury 3 (test model)';
   if (mode === 'max') return 'Atris 2 Max';
   if (mode === 'alpha') return 'Atris Alpha';
   if (mode === 'rapid') return 'Atris Rapid';
@@ -169,11 +171,11 @@ function formatUsage() {
     'ax - Atris local/code agent',
     '',
     'Usage:',
-    '  ax [--auto|--max|--pro|--fast|--rapid|--alpha|--code-fast] [--local|--cloud] <message>',
-    '  ax [--auto|--max|--pro|--fast|--rapid|--alpha|--code-fast] [--local|--cloud] --print <message>',
-    '  ax [--auto|--max|--pro|--fast|--rapid|--alpha|--code-fast] [--local|--cloud] --chat',
+    '  ax [--auto|--max|--pro|--fast|--rapid|--alpha|--mercury|--code-fast] [--local|--cloud] <message>',
+    '  ax [--auto|--max|--pro|--fast|--rapid|--alpha|--mercury|--code-fast] [--local|--cloud] --print <message>',
+    '  ax [--auto|--max|--pro|--fast|--rapid|--alpha|--mercury|--code-fast] [--local|--cloud] --chat',
     '  ax [--max|--pro|--fast|--rapid|--alpha] --business <slug> [<message>|--chat]',
-    '  ax [--max|--pro|--fast|--rapid|--alpha|--code-fast] --doctor',
+    '  ax [--max|--pro|--fast|--rapid|--alpha|--mercury|--code-fast] --doctor',
     '  ax --approvals',
     '  ax --approve <approval-id>',
     '  ax --deny <approval-id>',
@@ -191,6 +193,8 @@ function formatUsage() {
     '  --pro   hosted Atris 2, deeper tool loop',
     '  --fast  hosted Atris 2, faster low-latency turns',
     '  --rapid  hosted Atris Rapid, cheapest chat and first-hop tools',
+    '  --mercury  mercury 3 test model, with turn timing',
+    '  --diffuse  watch mercury text refine live in a terminal',
     '  --alpha  hosted experimental lane (free preview model, swap via ATRIS2_ALPHA_MODEL)',
     '  --effort <level>  reasoning effort: none, low, medium, high, xhigh, or default',
     '  --code-fast  Atris Code Fast public lane',
@@ -987,6 +991,7 @@ function resolveRoute(message, options = {}) {
 
 function normalizeMode(mode) {
   if (mode === 'code-fast' || mode === 'code') return 'code-fast';
+  if (mode === 'mercury') return 'mercury';
   if (mode === 'max') return 'max';
   if (mode === 'alpha') return 'alpha';
   if (mode === 'rapid') return 'rapid';
@@ -3027,6 +3032,7 @@ function buildPayload(message, options = {}) {
     verify_command: verifyCommand || 'true',
     local_tools: [backendApiToolDescriptor()]
   };
+  if (mode === 'mercury' && options.diffuse) payload.diffuse = true;
   if (previousMessages.length) {
     payload.previous_messages = previousMessages;
   }
@@ -3092,6 +3098,36 @@ function codeFastWorkspaceNotice(result) {
   return null;
 }
 
+// Drafts own a temporary area ending at the start of an empty row.
+// Clip to the visible terminal so wrapping and scrolling cannot leave debris.
+function clearTextSnapshot(state, output) {
+  if (!state.snapshotRows || !output || !output.isTTY) return;
+  output.write(`\r\x1b[${state.snapshotRows}A\x1b[J`);
+  state.snapshotRows = 0;
+}
+
+function renderTextSnapshot(state, output, content) {
+  stopProgress(state);
+  clearTextSnapshot(state, output);
+  const width = Math.max(1, (output.columns || 80) - 1);
+  const height = Math.max(1, (output.rows || 24) - 1);
+  const lines = String(content).replace(/[\x00-\x09\x0b-\x1f\x7f]/g, '').split('\n').slice(0, height);
+  const clipped = lines.map((line) => {
+    let used = 0;
+    let text = '';
+    for (const char of line) {
+      // Non-ASCII cells are conservatively two columns, including emoji.
+      const cells = /\p{Mark}/u.test(char) ? 0 : char.codePointAt(0) > 0xff ? 2 : 1;
+      if (used + cells > width) break;
+      text += char;
+      used += cells;
+    }
+    return text;
+  });
+  output.write(`${paint(clipped.join('\n'), [ANSI.dim], output)}\n`);
+  state.snapshotRows = clipped.length;
+}
+
 function handleEvent(event, state, output) {
   if (!event || typeof event !== 'object') return;
   state.events.push(event);
@@ -3114,6 +3150,19 @@ function handleEvent(event, state, output) {
     return;
   }
 
+  if ((event.type === 'text_snapshot' || event.type === 'text_delta' || event.type === 'text')
+    && event.content && state.firstTextMs == null) {
+    state.firstTextMs = Date.now() - state.startedAt;
+  }
+  if (event.type === 'text_snapshot') {
+    if (state.diffuse) {
+      state.snapshotCount += 1;
+      if (output && output.isTTY) renderTextSnapshot(state, output, event.content || '');
+    }
+    return;
+  }
+
+  clearTextSnapshot(state, output);
   if ((event.type === 'text_delta' || event.type === 'text') && event.content) {
     state.output += event.content;
     if (output && output.isTTY) writeStreamingText(state, output, event.content);
@@ -3234,6 +3283,7 @@ function isTurnInterruptedError(error) {
 }
 
 async function postTurn(message, options = {}) {
+  const startedAt = Date.now();
   let route = options.business ? 'local' : resolveRoute(message, options);
   if (route === 'local' && !options.business && !pinLocalCheckout(options)
     && !(await localBackendReachable())) {
@@ -3265,6 +3315,11 @@ async function postTurn(message, options = {}) {
     wroteText: false,
     wroteActivity: false,
     durationMs: 0,
+    startedAt,
+    firstTextMs: null,
+    diffuse: Boolean(payload.diffuse),
+    snapshotCount: 0,
+    snapshotRows: 0,
     lastChar: '\n',
     progress: null,
     inAuxBlock: false,
@@ -3306,7 +3361,6 @@ async function postTurn(message, options = {}) {
   return new Promise((resolve, reject) => {
     let settled = false;
     let abortListener = null;
-    const startedAt = Date.now();
     state.progress = createProgressReporter(output, options);
     state.progress.start();
 
@@ -3316,7 +3370,14 @@ async function postTurn(message, options = {}) {
       if (abortListener && options.signal) options.signal.removeEventListener('abort', abortListener);
       if (state.progress) state.progress.stop();
       state.progress = null;
+      clearTextSnapshot(state, output);
       state.durationMs = Date.now() - startedAt;
+      if (normalizeMode(options.mode) === 'mercury') {
+        const first = state.firstTextMs == null ? 'none' : `${(state.firstTextMs / 1000).toFixed(2)}s`;
+        const steps = state.diffuse ? `, ${state.snapshotCount} refining steps` : '';
+        const stderr = options.stderr || process.stderr;
+        stderr.write(`${paint(`mercury 3: first text ${first}, done ${(state.durationMs / 1000).toFixed(2)}s${steps}`, [ANSI.dim], stderr)}\n`);
+      }
       if (error) reject(error);
       else resolve(value);
     };
@@ -3564,6 +3625,8 @@ async function runHeadlessTurn(message, options = {}) {
       business: options.business,
       verify: options.verify,
       reasoningEffort: options.reasoningEffort,
+      diffuse: options.diffuse,
+      stderr: options.stderr,
       output: sink,
       showProgress: false,
     });
@@ -3814,6 +3877,7 @@ async function chat(options = {}) {
         business: options.business,
         verify: options.verify,
         reasoningEffort: session.reasoningEffort,
+        diffuse: options.diffuse,
         conversationId,
         turnId,
         approveBackendApi: options.approveBackendApi,
@@ -4735,6 +4799,8 @@ async function main() {
 
   const explicitLane = args.includes('--code-fast') || args.includes('--code')
     ? 'code-fast'
+    : args.includes('--mercury')
+      ? 'mercury'
     : args.includes('--max')
       ? 'max'
       : args.includes('--rapid')
@@ -4746,6 +4812,7 @@ async function main() {
           : args.includes('--pro')
             ? 'pro'
             : null;
+  const diffuse = args.includes('--diffuse');
   const autoEnabled = args.includes('--auto') && !explicitLane;
   let mode = explicitLane || 'pro';
   const doctor = args.includes('--doctor');
@@ -4828,7 +4895,7 @@ async function main() {
 
   const route = forceCloud ? 'cloud' : forceLocal ? 'local' : 'auto';
   const prompt = args
-    .filter(arg => !['--auto', '--auto-approve', '--max', '--fast', '--rapid', '--alpha', '--pro', '--code-fast', '--code', '--chat', '--doctor', '--approvals', '--self-test', '--benchmark', '--print', '--headless', '--local', '--cloud', '--help', '-h', '--effort'].includes(arg))
+    .filter(arg => !['--auto', '--auto-approve', '--max', '--fast', '--rapid', '--alpha', '--mercury', '--diffuse', '--pro', '--code-fast', '--code', '--chat', '--doctor', '--approvals', '--self-test', '--benchmark', '--print', '--headless', '--local', '--cloud', '--help', '-h', '--effort'].includes(arg))
     .join(' ')
     .trim();
 
@@ -4990,6 +5057,7 @@ async function main() {
           verify,
           autoPick,
           reasoningEffort,
+          diffuse,
         })
         : { ok: false, model: modelForMode(mode), output: '', durationMs: 0, error: 'missing prompt' };
       // Drain stdout before exiting: process.exit right after a large write
@@ -5013,6 +5081,7 @@ async function main() {
         auto: autoEnabled,
         autoApprove,
         reasoningEffort,
+        diffuse,
       });
       return;
     }
@@ -5032,6 +5101,7 @@ async function main() {
         business,
         verify,
         reasoningEffort,
+        diffuse,
       });
       appendAutoOutcome(autoPick, {
         ok: true,
