@@ -738,3 +738,28 @@ test('a referee that changes the code during review fails the step and nothing m
     assert.equal(tick.referee_result.reason, 'code changed during review');
   });
 });
+
+test('a git replacement ref cannot make the code check read different code', () => {
+  const { gitCodeState } = require('../lib/member-autoland');
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'atris-replace-'));
+  const plainEnv = { ...process.env };
+  delete plainEnv.GIT_NO_REPLACE_OBJECTS;
+  const git = (...args) => require('child_process').execFileSync('git', args, { cwd: dir, encoding: 'utf8', env: plainEnv }).trim();
+  try {
+    git('init', '-q');
+    git('config', 'user.email', 't@t'); git('config', 'user.name', 't');
+    fs.writeFileSync(path.join(dir, 'work.txt'), 'done\n');
+    git('add', 'work.txt'); git('commit', '-qm', 'done');
+    const reviewed = git('rev-parse', 'HEAD');
+    fs.writeFileSync(path.join(dir, 'work.txt'), 'broken\n');
+    git('commit', '-qam', 'broken');
+    const pushed = git('rev-parse', 'HEAD');
+    const realTree = git('--no-replace-objects', 'rev-parse', 'HEAD^{tree}');
+    // Make HEAD look like the reviewed commit to anything honoring replace refs.
+    git('replace', pushed, reviewed);
+    assert.notEqual(git('rev-parse', 'HEAD^{tree}'), realTree, 'the trick works on plain git');
+    assert.equal(gitCodeState(dir).tree, realTree, 'the check reads the real code');
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
