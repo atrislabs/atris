@@ -1,0 +1,14 @@
+# scratch workspace; engine.sh answers every step, and the codex command kills itself
+$ ATRIS_USE_CODEX=1 ATRIS_CODEX_CMD=./codex ATRIS_RUNNER_BIN=sh ATRIS_RUNNER_COMMAND_TEMPLATE="sh engine.sh {promptFile}" atris autopilot --legacy --auto --verbose --iterations=1 "add a comment to widget.js"
+PLAN: add a comment to widget.js. VERDICT: SIGNOFF
+
+  autopilot finished. 0 tasks in 1s.
+
+exit 0
+
+$ grep codex .atris/state/engine-resource.jsonl
+{"at":"2026-10-14T16:20:41.062Z","phase":"start","engine":"codex","task":"autopilot codex review","free_pct":80,"swap_used_mb":1172.75,"swap_total_mb":2048,"load":[5.87,6.23,5.34],"run_id":"cdf84de1-d443-4305-ba81-66ec5ed34dcf","pid":94204,"leaked_ssh_agents":676}
+{"at":"2026-10-14T16:20:41.358Z","phase":"end","engine":"codex","task":"autopilot codex review","free_pct":80,"swap_used_mb":1172.75,"swap_total_mb":2048,"load":[5.87,6.23,5.34],"run_id":"cdf84de1-d443-4305-ba81-66ec5ed34dcf","duration_ms":143,"signal":"SIGKILL","cause":"killed (cause unknown)"}
+
+$ grep "codex invocation" atris/logs/2026/2026-10-14.md
+**Notes:** codex invocation failed: codex was stopped by SIGKILL: no output; killed (cause unknown); falling back to single signer

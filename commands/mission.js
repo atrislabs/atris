@@ -8,7 +8,7 @@ const { spawn, spawnSync } = require('child_process');
 const { hasFlag, readFlag, readIntFlag } = require('../lib/arg-parser');
 const { memberProcessPrompt } = require('../lib/member-context');
 const { memberIdentityLine, missionObjectiveLine } = require('../lib/member-identity');
-const { formatToolStep, formatCodexEvent, appendProgress, reportProgress } = require('../lib/member-progress');
+const { formatToolStep, formatCodexEvent, appendProgress, reportProgress, startedLine, newRunToken, runMarker } = require('../lib/member-progress');
 const {
   compactErrorPayload,
   compactSuccessPayload,
@@ -434,7 +434,13 @@ function missionTickTimeoutMs(mission, remainingMs) {
 
 function resolveMissionTickRunner(mission, root = process.cwd(), options = {}) {
   if (String(mission && mission.runner || '').trim().toLowerCase() !== MISSION_AUTO_RUNNER) {
-    return { mission, engine_id: null, requested_engine: null, engine_fallback_reason: null };
+    // A named engine still gets the roster's time limit for that engine.
+    const runner = String(mission && mission.runner || '').trim().toLowerCase();
+    const pin = runner && !(Number(mission && mission.roster_max_seconds) > 0)
+      ? require('../lib/engine-registry').rosterPinFor('executor', runner, root, options)
+      : {};
+    const limited = pin.roster_max_seconds ? { ...mission, roster_max_seconds: pin.roster_max_seconds } : mission;
+    return { mission: limited, engine_id: null, requested_engine: null, engine_fallback_reason: null };
   }
   // A mission owned by a team member runs on that member's roster pick. An
   // explicit preferred engine (or a run's --engine) still wins, and with no
@@ -1723,7 +1729,18 @@ function appendMemberLog(owner, title, fields = {}, root = process.cwd()) {
       .map(([key, value]) => `- ${key}: ${String(value).replace(/\n/g, ' ')}`),
     '',
   ];
-  fs.appendFileSync(logPath, rows.join('\n'), 'utf8');
+  let lead = '';
+  try {
+    const size = fs.statSync(logPath).size;
+    if (size > 0) {
+      const fd = fs.openSync(logPath, 'r');
+      const last = Buffer.alloc(1);
+      fs.readSync(fd, last, 0, 1, size - 1);
+      fs.closeSync(fd);
+      if (last[0] !== 0x0a) lead = '\n';
+    }
+  } catch {}
+  fs.appendFileSync(logPath, lead + rows.join('\n'), 'utf8');
   return logPath;
 }
 
@@ -3908,6 +3925,30 @@ function readTasteReviewHistory(root, limit = 4) {
     }
   }
   return { accepted, revised };
+}
+
+// Why the mission's own task was last sent back, or '' when it was not. Ticks
+// run in a worktree, so fall back to the main checkout's task projection.
+function readBoundTaskTurnDown(mission, root) {
+  const bound = mission?.xp_task || mission?.selected_target_task || null;
+  if (!bound) return '';
+  const keys = new Set([bound.task_id, bound.id, bound.ref, bound.task_ref].filter(Boolean).map(String));
+  if (!keys.size) return '';
+  const roots = [root];
+  const common = spawnSync('git', ['rev-parse', '--path-format=absolute', '--git-common-dir'], { cwd: root, encoding: 'utf8' });
+  if (common.status === 0 && String(common.stdout || '').trim()) roots.push(path.dirname(String(common.stdout).trim()));
+  for (const dir of roots) {
+    const projection = readJson(path.join(dir, '.atris', 'state', 'tasks.projection.json'));
+    const tasks = Array.isArray(projection?.tasks) ? projection.tasks : [];
+    const task = tasks.find((row) => row && [row.id, row.display_id, row.legacy_ref].some((key) => key && keys.has(String(key))));
+    if (!task) continue;
+    const metadata = task.metadata && typeof task.metadata === 'object' ? task.metadata : {};
+    if (metadata.approval_status && metadata.approval_status !== 'revise') return '';
+    const events = (Array.isArray(task.events) ? task.events : []).filter((event) => event?.event_type === 'revision_requested');
+    const note = metadata.human_revision_note || events[events.length - 1]?.payload?.note || '';
+    return missionTasteSnippet(String(note), 600);
+  }
+  return '';
 }
 
 function missionTasteMemorySignals(text) {
@@ -6510,9 +6551,16 @@ function writeReceipt(mission, result, root = process.cwd()) {
   const receiptPath = path.join(paths.runsDir, `mission-${mission.id}-${safeTime}.json`);
   const relativeReceiptPath = path.relative(root, receiptPath);
   const finalResult = normalizeMissionReceiptResult(mission, result, relativeReceiptPath);
+  // tree_hash covers only doctrine files; git_tree pins the code the run's
+  // checks saw, so a later reader can tell whether the code has moved since.
+  // With unsaved changes the checks saw more than any commit holds, so no
+  // code tree is recorded and clean is false.
+  const codeState = require('../lib/member-autoland').gitCodeState(root);
   const receipt = {
     schema: 'atris.mission_receipt.v1',
     tree_hash: treeHashFor(root),
+    clean: codeState.clean,
+    git_tree: codeState.clean ? codeState.tree : null,
     mission_id: mission.id,
     objective: mission.objective,
     owner: mission.owner,
@@ -8817,6 +8865,45 @@ function consumeMissionPings(mission, cwd) {
   return { mission: saved, pings: pending };
 }
 
+// A one-tick job has no next prompt. Deliver notes that arrived while the
+// worker ran before checking its work, within the same wall budget. Only a
+// successful worker response acknowledges a batch; failed delivery can retry.
+async function deliverLateMissionPings(mission, cwd, firstResult, { run, remainingMs, prompt }) {
+  let result = firstResult;
+  let delivered = 0;
+  while (result.ok) {
+    const latest = resolveMission(mission.id, cwd) || mission;
+    const pending = pendingMissionPings(latest);
+    if (!pending.length || TERMINAL_STATUSES.has(latest.status)) break;
+    if (remainingMs() <= 0) {
+      return { ...result, ok: false, timedOut: true, error: 'unread notes at the wall limit' };
+    }
+    const next = await run([
+      prompt,
+      '',
+      '## Notes received before this job finished',
+      'This is the same work step. Read and apply these notes before returning the final receipt. Do not start a second slice.',
+      ...pending.map((p) => `- [${p.at}] ${p.from || 'operator'}: ${p.text}`),
+      '',
+      'Previous work receipt:',
+      result.receipt_text || result.result || '',
+    ].join('\n'));
+    if (!next.ok) return next;
+    // Re-read so notes sent during delivery survive the acknowledgement.
+    const fresh = resolveMission(mission.id, cwd) || latest;
+    const keys = new Set(pending.map((p) => JSON.stringify([p.at, p.from, p.text])));
+    const consumedAt = stampIso();
+    saveMission({
+      ...fresh,
+      pings: (fresh.pings || []).map((p) => p && !p.consumed_at && keys.has(JSON.stringify([p.at, p.from, p.text]))
+        ? { ...p, consumed_at: consumedAt } : p),
+    }, cwd, 'mission_pings_consumed', { count: pending.length });
+    delivered += pending.length;
+    result = { ...next, operator_notes_read: delivered };
+  }
+  return result;
+}
+
 function readBoundedContextFile(filePath, maxChars = 1600) {
   try {
     if (!fs.existsSync(filePath)) return '';
@@ -8931,6 +9018,16 @@ function buildTickPrompt(mission, tickIndex, maxTicks, frozen, pings = [], cwd =
       checkFeedback,
     ]
     : [];
+  let turnDown = '';
+  try { turnDown = readBoundTaskTurnDown(mission, mission.worktree_root || mission.worktree?.path || cwd); } catch {}
+  const turnDownLines = turnDown
+    ? [
+      ``,
+      `## why the last try was turned down`,
+      `the reviewer sent this task back. fix this before anything else.`,
+      turnDown,
+    ]
+    : [];
   const preloadedContextLines = buildPreloadedMemberContextLines(mission, cwd);
   const lines = [
     `# Mission Tick ${tickIndex}/${maxTicks}`,
@@ -8946,6 +9043,7 @@ function buildTickPrompt(mission, tickIndex, maxTicks, frozen, pings = [], cwd =
     `**Last tick:** ${mission.last_tick_at || 'never'}`,
     ...missionBudgetPromptLines(mission),
     ...checkFeedbackLines,
+    ...turnDownLines,
     ...(sharedProcess ? ['', sharedProcess] : []),
     ...preloadedContextLines,
     ``,
@@ -9176,6 +9274,22 @@ function tooDeepRunnerResult(depth) {
   };
 }
 
+// Machine memory and load at both ends of a tick, like a dispatch, so a
+// killed tick still says whether the machine was short on memory. The
+// returned end writes once, whichever of close or error comes first.
+function startTickResource(cwd, engine, mission) {
+  const { recordEngineResource } = require('../lib/engine-resource');
+  const resource = { engine: engine || 'runner', task: mission.task_id || mission.id || '', run_id: crypto.randomUUID() };
+  recordEngineResource(cwd, { phase: 'start', ...resource });
+  const startedAt = process.hrtime.bigint();
+  let ended = false;
+  return ({ signal = null, timedOut = false, error = '' } = {}) => {
+    if (ended) return;
+    ended = true;
+    recordEngineResource(cwd, { phase: 'end', ...resource, signal, timed_out: timedOut, error, duration_ms: Math.round(Number(process.hrtime.bigint() - startedAt) / 1e6) });
+  };
+}
+
 function spawnGenericRunnerTick(mission, opts) {
   const { sessionId, cwd, signal, timeoutMs, prompt, model, missionLock } = opts;
   const dispatchDepth = missionDispatchDepth();
@@ -9234,7 +9348,17 @@ function spawnGenericRunnerTick(mission, opts) {
     }
 
     const startedAt = Date.now();
-    const guardedCommand = `PATH=${shellQuote(gitGuard.pathPrefix)}:$PATH; export PATH; ${cmd}`;
+    const endResource = startTickResource(cwd, canonicalEngineName(mission.runner), mission);
+    const progressMember = mission.owner || 'mission';
+    // A codex run opens its shell script with the run marker as a no-op, so
+    // member stop can prove the shell leading this group is this run. Only
+    // names member stop accepts go into the shell line.
+    const runToken = lastMessageFile && /^[A-Za-z0-9._-]+$/.test(progressMember) ? newRunToken() : '';
+    const markerPrefix = runToken ? `: ${runMarker(progressMember, runToken)}; ` : '';
+    // The trailing exit keeps a shell like dash from replacing itself with
+    // codex, which would take the marker out of the process list.
+    const markerSuffix = runToken ? '; exit $?' : '';
+    const guardedCommand = `${markerPrefix}PATH=${shellQuote(gitGuard.pathPrefix)}:$PATH; export PATH; ${cmd}${markerSuffix}`;
     const proc = spawn('sh', ['-lc', guardedCommand], {
       cwd,
       stdio: ['ignore', 'pipe', 'pipe'],
@@ -9242,9 +9366,11 @@ function spawnGenericRunnerTick(mission, opts) {
       env: { ...gitGuard.env, ATRIS_DISPATCH_DEPTH: String(dispatchDepth.depth + 1) },
     });
     updateMissionLockOwner(missionLock, proc.pid, { phase: 'tick' });
-    const progressMember = mission.owner || 'mission';
     const seenItemIds = new Set();
-    if (lastMessageFile) appendProgress(progressMember, `started: ${mission.objective || ''}`, mission.id);
+    if (lastMessageFile) {
+      const tag = runToken ? { pid: proc.pid, engine: 'codex', run: runToken } : {};
+      appendProgress(progressMember, startedLine(mission.objective, tag), mission.id);
+    }
     let stdout = '';
     let eventBuf = '';
     let lastAgentMessage = '';
@@ -9296,8 +9422,10 @@ function spawnGenericRunnerTick(mission, opts) {
     });
     proc.stderr.on('data', (chunk) => { stderr += chunk.toString(); });
 
-    proc.on('close', (code) => {
+    proc.on('close', (code, closeSignal) => {
       clearTimeout(timer);
+      // The shell returns 128 + 9 when its engine child was force-killed.
+      endResource({ signal: closeSignal || (code === 137 ? 'SIGKILL' : null), timedOut, error: code === 0 ? '' : stderr.slice(-2000) });
       if (lastMessageFile && eventBuf.trim()) readCodexEvent(eventBuf.trim());
       let finalText = String(stdout || '').trim();
       if (lastMessageFile) {
@@ -9335,6 +9463,7 @@ function spawnGenericRunnerTick(mission, opts) {
 
     proc.on('error', (e) => {
       clearTimeout(timer);
+      endResource({ timedOut, error: e.message });
       cleanupPrompt();
       gitGuard.cleanup();
       if (signal) signal.removeEventListener?.('abort', onAbort);
@@ -9401,8 +9530,10 @@ function spawnClaudeTick(mission, opts) {
       });
       return;
     }
+    const runToken = newRunToken();
+    const runOwner = mission.owner || 'mission';
     const args = [
-      '-p', prompt,
+      '-p', `${runMarker(runOwner, runToken)}\n${prompt}`,
       '--output-format', 'stream-json',
       '--verbose',
       '--permission-mode', 'bypassPermissions',
@@ -9417,6 +9548,7 @@ function spawnClaudeTick(mission, opts) {
     // detached: the runner spawns its own children; killing only the direct
     // child on timeout leaves them holding the session lock, and the next
     // tick's resume fails with "Session ID ... is already in use".
+    const endResource = startTickResource(cwd, 'claude', mission);
     const proc = spawn(resolveClaudeRunnerBin(), args, {
       cwd,
       stdio: ['ignore', 'pipe', 'pipe'],
@@ -9426,7 +9558,7 @@ function spawnClaudeTick(mission, opts) {
     updateMissionLockOwner(missionLock, proc.pid, { phase: 'tick' });
     const progressMember = mission.owner || 'mission';
     const seenToolIds = new Set();
-    appendProgress(progressMember, `started: ${mission.objective || ''}`, mission.id);
+    appendProgress(progressMember, startedLine(mission.objective, { pid: proc.pid, engine: 'claude', run: runToken }), mission.id);
 
     let stdoutBuf = '';
     let observedSessionIds = new Set();
@@ -9495,8 +9627,9 @@ function spawnClaudeTick(mission, opts) {
 
     proc.stderr.on('data', (c) => { stderr += c.toString(); });
 
-    proc.on('close', (code) => {
+    proc.on('close', (code, closeSignal) => {
       clearTimeout(timer);
+      endResource({ signal: closeSignal, timedOut, error: code === 0 ? '' : stderr.slice(-2000) });
       gitGuard.cleanup();
       if (signal) signal.removeEventListener?.('abort', onAbort);
       updateMissionLockOwner(missionLock, missionLock?.driverPid);
@@ -9529,6 +9662,7 @@ function spawnClaudeTick(mission, opts) {
 
     proc.on('error', (e) => {
       clearTimeout(timer);
+      endResource({ timedOut, error: e.message });
       gitGuard.cleanup();
       updateMissionLockOwner(missionLock, missionLock?.driverPid);
       resolve({ ok: false, error: e.message, sessionIds: [], aborted, timedOut, authExpired: false });
@@ -9539,11 +9673,31 @@ function spawnClaudeTick(mission, opts) {
 const ENGINE_VERIFY_TIMEOUT_MS = 5 * 60 * 1000;
 const ENGINE_VERIFY_OUTPUT_LIMIT = 4000;
 
-function buildEngineVerifyPrompt(mission, tickIndex) {
+// The job's own done-looks-like line, so the reviewer judges the work against
+// what the job promised instead of the mission headline alone. Only a line the
+// job wrote down counts: a derived fallback ("it clears review") hands the
+// reviewer a target that says nothing. Any lookup failure means no line.
+function missionDoneLooksLike(mission, root = process.cwd()) {
+  try {
+    const task = findOpenTaskMatchingMissionObjective(mission, root, true);
+    if (!task) return '';
+    const explanation = require('../lib/task-explanation').taskExplanation(task);
+    return explanation.sources.done_looks_like === 'explicit' ? explanation.done_looks_like : '';
+  } catch {
+    return '';
+  }
+}
+
+function buildEngineVerifyPrompt(mission, tickIndex, doneLooksLike = '') {
+  const doneLine = String(doneLooksLike || '').replace(/\s+/g, ' ').trim();
   return [
     `# Verify Mission Tick ${tickIndex}`,
     ``,
     `This is a bounded verify-only pass for mission: ${mission.objective}`,
+    ...(doneLine ? [
+      `The job says done looks like: ${doneLine}`,
+      `Compare the work against that line. If the work does not show it, the verdict is FAIL even when the checks pass.`,
+    ] : []),
     `Read the diff this tick produced. Do not edit files and do not start another work slice.`,
     `ACTUALLY RUN the changed surface on this computer using real commands and real exit codes.`,
     `Paste the commands and their real output. Do not accept a receipt claim or static inspection as execution proof.`,
@@ -9608,7 +9762,7 @@ async function runEngineVerifier(mission, options = {}) {
       cwd,
       signal: options.signal,
       timeoutMs: ENGINE_VERIFY_TIMEOUT_MS,
-      prompt: buildEngineVerifyPrompt(mission, options.tickIndex || 1),
+      prompt: buildEngineVerifyPrompt(mission, options.tickIndex || 1, missionDoneLooksLike(mission, cwd)),
       model: resolveMissionTickRunnerModel(verifyMission),
     });
   } catch (error) {
@@ -9660,6 +9814,20 @@ function cappedClaudeReceiptText(text, limit = 4000) {
   if (!clean) return '';
   if (clean.length <= limit) return clean;
   return clean.slice(0, limit - 16).trimEnd() + '\n...[truncated]';
+}
+
+// The receipt keeps a capped copy of the runner's report. When the report is
+// longer than that, the whole text goes to its own file beside the receipts
+// so nothing the member wrote is lost.
+function saveFullRunnerReport(mission, text, root = process.cwd()) {
+  const clean = String(text || '').trim();
+  if (!clean || cappedClaudeReceiptText(clean) === clean) return null;
+  const runsDir = statePaths(root).runsDir;
+  fs.mkdirSync(runsDir, { recursive: true });
+  const safeTime = stampIso().replace(/[:.]/g, '-');
+  const reportPath = path.join(runsDir, `mission-${mission.id}-${safeTime}-report.md`);
+  fs.writeFileSync(reportPath, clean + '\n', 'utf8');
+  return path.relative(root, reportPath);
 }
 
 async function parseAndValidateMissionRunPhase(args) {
@@ -10192,8 +10360,8 @@ async function executeMissionRunTicksPhase(context) {
           }, Math.max(1, Math.floor(remainingWall * 1000)));
           let turn;
           try {
-            turn = await runAtris2Turn({
-              prompt,
+            const runTurn = (direction) => runAtris2Turn({
+              prompt: direction,
               model: tickRuntimeMission.model || 'atris:fast',
               business: businessId,
               maxTurns: 16,
@@ -10204,6 +10372,16 @@ async function executeMissionRunTicksPhase(context) {
               localEnv: atris2GitGuard.env,
               localPathPrefix: atris2GitGuard.pathPrefix,
             });
+            turn = await runTurn(prompt);
+            turn = await deliverLateMissionPings(mission, cwd, { ...turn, receipt_text: turn.text }, {
+              prompt,
+              remainingMs: () => (maxWallSeconds * 1000) - (Date.now() - startedAt),
+              run: async (direction) => {
+                const next = await runTurn(direction);
+                return { ...next, receipt_text: next.text };
+              },
+            });
+            mission = resolveMission(mission.id, cwd) || mission;
           } finally {
             atris2GitGuard.cleanup();
             clearTimeout(tickTimer);
@@ -10219,6 +10397,7 @@ async function executeMissionRunTicksPhase(context) {
             error: turn.error,
             backend_unavailable: isTransientAtris2BackendError(turn.error) || undefined,
             receipt_text: String(turn.text || '').slice(0, 4000),
+            operator_notes_read: turn.operator_notes_read,
           };
           tickWorkerRun = { endedMs: Date.now(), usage: {} };
           if (controller.signal.aborted) { pauseReason = 'aborted-during-atris2'; break; }
@@ -10252,14 +10431,14 @@ async function executeMissionRunTicksPhase(context) {
         const restoreTickRunnerProfile = tickEngineId ? applyMissionRunnerProfile(tickEngineId) : () => {};
         let claudeResult;
         let sessionBusyRetried = false;
-        const runClaudeSession = () => spawnClaudeTick(tickRuntimeMission, {
+        const runClaudeSession = (direction = workerPrompt) => spawnClaudeTick(tickRuntimeMission, {
           sessionMode, sessionId: useId, cwd, signal: controller.signal,
           missionLock: lock,
           timeoutMs: missionTickTimeoutMs(
             tickRuntimeMission,
             (maxWallSeconds - ((Date.now() - startedAt) / 1000)) * 1000,
           ),
-          prompt: workerPrompt,
+          prompt: direction,
           model: resolveMissionTickRunnerModel(tickRuntimeMission),
         });
         try {
@@ -10276,17 +10455,30 @@ async function executeMissionRunTicksPhase(context) {
             useId = pendingSessionId;
             claudeResult = await runClaudeSession();
           }
+          claudeResult = await deliverLateMissionPings(mission, cwd, claudeResult, {
+            prompt: workerPrompt,
+            remainingMs: () => (maxWallSeconds * 1000) - (Date.now() - startedAt),
+            run: (direction) => {
+              // Claude needs to resume the session it just confirmed. Generic
+              // runners receive the earlier receipt in the delivery prompt.
+              if (claudeResult.sessionIds?.includes(useId)) sessionMode = 'resume';
+              return runClaudeSession(direction);
+            },
+          });
+          mission = resolveMission(mission.id, cwd) || mission;
         } finally {
           restoreTickRunnerProfile();
         }
         tickWorkerRun = { endedMs: Date.now(), usage: (claudeResult && claudeResult.run_usage) || {}, prep: tickPrep, startedAt: workerStartedAt };
         result.claude = {
           ok: claudeResult.ok,
+          error: claudeResult.error,
           reason: claudeResult.reason,
           protected_lane_guard: claudeResult.protected_lane_guard || null,
           brief_id: claudeResult.brief_id || null,
           summary: claudeResult.summary,
           receipt_text: claudeResult.receipt_text,
+          report_path: saveFullRunnerReport(mission, claudeResult.result, cwd),
           stop_reason: claudeResult.stop_reason,
           api_equivalent_estimate: claudeResult.api_equivalent_estimate,
           duration_total_ms: claudeResult.duration_total_ms,
@@ -10297,6 +10489,7 @@ async function executeMissionRunTicksPhase(context) {
           timed_out: claudeResult.timedOut,
           aborted: claudeResult.aborted,
           session_busy_retry: sessionBusyRetried || undefined,
+          operator_notes_read: claudeResult.operator_notes_read,
         };
         if (claudeResult.rate_limit_info) {
           // Claude reports the five-hour window's resetsAt on every turn, even
@@ -10753,12 +10946,22 @@ async function verifyMissionRunTickPhase(context) {
         || (!currentTick.storedVerifier && !process.env.NODE_TEST_CONTEXT)
       );
     if (shouldRunReferee) {
-      const refereeResult = await runEngineVerifier(currentTick.tickRuntimeMission, {
+      // Pin the code before the referee looks; a referee that changes the
+      // code or its unsaved state has not reviewed what would merge.
+      const { gitCodeState, codeStatus } = require('../lib/member-autoland');
+      const beforeReview = gitCodeState(cwd);
+      const reviewed = await runEngineVerifier(currentTick.tickRuntimeMission, {
         cwd,
         signal: controller.signal,
         tickIndex: currentTick.tickIdx,
         refereeEngine: context.refereeEngine,
       });
+      const afterReview = gitCodeState(cwd);
+      const codeMoved = beforeReview.tree !== afterReview.tree
+        || codeStatus(beforeReview) !== codeStatus(afterReview)
+        || beforeReview.hidden !== afterReview.hidden;
+      const refereeResult = codeMoved ? { ...reviewed, passed: false, reason: 'code changed during review' } : reviewed;
+      result.reviewed_git_tree = beforeReview.clean ? beforeReview.tree : null;
       result.referee_result = refereeResult;
       if (!verifierResult || !refereeResult.passed) {
         verifierResult = verifierResult
@@ -12448,6 +12651,7 @@ module.exports = {
   missionVerifierCheckedText,
   missionVerifierHighLevelTestText,
   buildEngineVerifyPrompt,
+  missionDoneLooksLike,
   engineVerifierResultFromRun,
   pickCrossEngineVerifier,
   runVerifier,

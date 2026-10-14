@@ -246,6 +246,7 @@ function normalizeLinkAnswer(parsed, members) {
 function compactFailure(answer) {
   if (!answer) return 'no answer';
   if (answer.reason === 'timeout') return `timed out after ${Math.round((answer.duration_ms || 0) / 1000)}s`;
+  if (answer.kill_cause) return `stopped by ${answer.signal || 'SIGKILL'}; ${answer.kill_cause}`;
   const detail = String(answer.stderr || '').trim().split(/\r?\n/).find(Boolean);
   return detail || String(answer.reason || 'failed').replace(/_/g, ' ');
 }

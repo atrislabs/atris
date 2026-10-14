@@ -159,6 +159,26 @@ function branchName(member, task, now = new Date()) {
   return `codex/${slugify(member, 'member', 24)}-${slugify(task, 'task', 36)}-${stamp(now)}`;
 }
 
+// The newest earlier run of this same member+job, if its commits never reached
+// the base, so a retry continues that work instead of redoing it. Only the
+// newest run counts: once it landed or did nothing, anything older is stale.
+function lastRunBranch(root, owner, task, base, skip) {
+  const prefix = `codex/${slugify(owner, 'member', 24)}-${slugify(task, 'task', 36)}-`;
+  const listed = runGit(['for-each-ref', '--format=%(refname:short)', `refs/heads/${prefix}*`], { cwd: root, check: false });
+  if (listed.status !== 0) return null;
+  // Only exact runs of this job (stamp plus optional same-second number), so
+  // "fix-login" never matches "fix-login-page".
+  const runs = listed.stdout.split('\n').map((name) => name.trim())
+    .map((name) => ({ name, run: name.slice(prefix.length).match(/^(\d{8}-\d{6})(?:-(\d+))?$/) }))
+    .filter(({ name, run }) => run && name !== skip)
+    .sort((a, b) => b.run[1].localeCompare(a.run[1]) || Number(b.run[2] || 1) - Number(a.run[2] || 1));
+  if (!runs.length) return null;
+  const newest = runs[0].name;
+  const cherry = runGit(['cherry', base, newest], { cwd: root, check: false });
+  if (cherry.status !== 0) return null;
+  return cherry.stdout.split('\n').some((line) => line.startsWith('+')) ? newest : null;
+}
+
 function defaultWorktreePath(root, member, task, now = new Date()) {
   const name = `${slugify(member, 'member', 24)}-${slugify(task, 'task', 36)}-${stamp(now)}`;
   return path.join(path.dirname(root), '.agent-worktrees', path.basename(root), name);
@@ -529,8 +549,18 @@ function createAgentWorktree({ root = repoRoot(), member = '', agent = '', task,
     reapedBeforeStart = cleaned.removed;
     cachePrunedBeforeStart = cleaned.cachePruned;
   } catch {}
-  const branch = branchOverride || branchName(owner, task, now);
-  const target = path.resolve(pathOverride || defaultWorktreePath(root, owner, task, now));
+  let branch = branchOverride || branchName(owner, task, now);
+  let target = path.resolve(pathOverride || defaultWorktreePath(root, owner, task, now));
+  // Two runs of the same job in the same second get the same name; number
+  // the later one instead of failing it.
+  if (!pathOverride && !branchOverride) {
+    const baseBranch = branch;
+    const baseTarget = target;
+    for (let n = 2; fs.existsSync(target) && n < 100; n += 1) {
+      branch = `${baseBranch}-${n}`;
+      target = `${baseTarget}-${n}`;
+    }
+  }
   // Agent/member worktrees always cut from the mainline: honoring the
   // launcher checkout's upstream let a dispatch inherit another session's
   // in-progress feature branch (2026-07-09: an auth fix arrived carrying 13
@@ -540,9 +570,15 @@ function createAgentWorktree({ root = repoRoot(), member = '', agent = '', task,
   if (fs.existsSync(target)) throw new Error(`worktree path already exists: ${target}`);
   fs.mkdirSync(path.dirname(target), { recursive: true });
   const staleBase = refreshRemoteRef(root, checkoutBase);
+  // A retry of the same job starts from the last run's unlanded commits; it
+  // still ships to the mainline.
+  const resumedFrom = (!pathOverride && !branchOverride)
+    ? lastRunBranch(root, owner, task, checkoutBase, branch)
+    : null;
+  const startPoint = resumedFrom || checkoutBase;
   const ref = `refs/heads/${branch}`;
   const existed = runGit(['show-ref', '--verify', '--quiet', ref], { cwd: root, check: false }).status !== 1;
-  const baseCommit = runGit(['rev-parse', '--verify', `${checkoutBase}^{commit}`], { cwd: root, check: false });
+  const baseCommit = runGit(['rev-parse', '--verify', `${startPoint}^{commit}`], { cwd: root, check: false });
   const startCommit = baseCommit.status === 0 ? baseCommit.stdout.trim() : '';
   // With no local copy the start fails on its own; only a real cut gets the warning.
   if (staleBase && startCommit) {
@@ -562,7 +598,7 @@ function createAgentWorktree({ root = repoRoot(), member = '', agent = '', task,
     if (!fs.existsSync(target)) runGit(['update-ref', '-d', ref, startCommit], { cwd: root });
   };
   for (let attempt = 0; attempt < 3; attempt += 1) {
-    const added = runGit(['worktree', 'add', '-b', branch, target, checkoutBase], { cwd: root, check: false });
+    const added = runGit(['worktree', 'add', '-b', branch, target, startPoint], { cwd: root, check: false });
     if (added.status === 0) break;
     // Git can create the branch before failing to write its tracking config.
     // Drop only that untouched ref, never an existing branch or a checkout.
@@ -587,6 +623,7 @@ function createAgentWorktree({ root = repoRoot(), member = '', agent = '', task,
         branch,
         base: shipBase,
         checkout_base: checkoutBase,
+        resumed_from: resumedFrom,
         workspace_root: root,
         created_at: now.toISOString(),
       }, null, 2) + '\n',
@@ -596,7 +633,7 @@ function createAgentWorktree({ root = repoRoot(), member = '', agent = '', task,
     discardFailedStart();
     throw error;
   }
-  return { path: target, branch, base: shipBase, checkoutBase, owner, reapedBeforeStart, cachePrunedBeforeStart };
+  return { path: target, branch, base: shipBase, checkoutBase, resumedFrom, owner, reapedBeforeStart, cachePrunedBeforeStart };
 }
 
 function startWorktree(args) {
@@ -1125,12 +1162,14 @@ function canonicalPath(value) {
   }
 }
 
+// null means the scan failed: we cannot tell who is inside, so callers keep
+// every folder. An empty list would read as "nobody is here" and delete.
 function listActiveProcessCwds() {
   const result = spawnSync('lsof', ['-n', '-a', '-d', 'cwd', '-F', 'n'], {
     encoding: 'utf8',
     maxBuffer: COMMAND_MAX_BUFFER_BYTES,
   });
-  if (result.status !== 0) return [];
+  if (result.error || result.status !== 0) return null;
   return String(result.stdout || '')
     .split(/\r?\n/)
     .filter((line) => line.startsWith('n'))
@@ -1138,7 +1177,45 @@ function listActiveProcessCwds() {
     .filter(Boolean);
 }
 
+// Absolute paths named on each program's command line, including flag values
+// like --require=/x.js. A program can run a script from a work folder while
+// its current folder is elsewhere; the folder scan alone misses it. The list
+// prints arguments unquoted, so a path with a space is also kept as the rest
+// of the line from where it starts; the folder match is a prefix check.
+function parseProcessArgPaths(psOutput) {
+  const paths = new Set();
+  const starts = /(?:^|\s)(?:[^\s=]*=)?(?=\/)/g;
+  for (const raw of String(psOutput || '').split(/\r?\n/)) {
+    const line = raw.trim();
+    for (const match of line.matchAll(starts)) {
+      const rest = line.slice(match.index + match[0].length);
+      const token = rest.split(/\s/, 1)[0];
+      if (token.length > 1) paths.add(token);
+      if (rest.length > token.length) paths.add(rest);
+    }
+  }
+  return [...paths];
+}
+
+function listActiveProcessArgPaths() {
+  const result = spawnSync('ps', ['-axww', '-o', 'args='], {
+    encoding: 'utf8',
+    maxBuffer: COMMAND_MAX_BUFFER_BYTES,
+  });
+  if (result.error || result.status !== 0) return [];
+  return parseProcessArgPaths(result.stdout);
+}
+
+// Everything a running program is anchored to: its current folder plus any
+// script path on its command line.
+function listActiveProcessPaths() {
+  const cwds = listActiveProcessCwds();
+  if (!Array.isArray(cwds)) return cwds;
+  return cwds.concat(listActiveProcessArgPaths());
+}
+
 function worktreeHasActiveProcess(worktreePath, activeCwds) {
+  if (!Array.isArray(activeCwds)) return true;
   const resolved = canonicalPath(worktreePath);
   const prefix = `${resolved}${path.sep}`;
   return activeCwds.some((cwd) => {
@@ -1186,7 +1263,7 @@ function cleanupWorktrees({ root = repoRoot(), base: baseOverride = '', apply = 
   const worktrees = listWorktrees(root);
   const primary = worktrees[0]?.path ? path.resolve(worktrees[0].path) : '';
   const current = path.resolve(root);
-  const activeCwds = Array.isArray(activeCwdsOverride) ? activeCwdsOverride.map(canonicalPath) : listActiveProcessCwds();
+  const activeCwds = Array.isArray(activeCwdsOverride) ? activeCwdsOverride.map(canonicalPath) : listActiveProcessPaths();
   const base = normalizeTargetRef(root, baseOverride || defaultShipTarget(root));
   refreshRemoteRef(root, base);
   const candidates = [];
@@ -1221,7 +1298,7 @@ function cleanupWorktrees({ root = repoRoot(), base: baseOverride = '', apply = 
       continue;
     }
     if (worktreeHasActiveProcess(wtPath, activeCwds)) {
-      kept.push({ ...item, reason: 'active_process' });
+      kept.push({ ...item, reason: activeCwds ? 'active_process' : 'process_scan_failed' });
       continue;
     }
     const rawCounts = statusCounts(wt.path);
@@ -1411,9 +1488,10 @@ module.exports = {
   gitNetworkEnvironment,
   describeFlightAge,
   flightStampMs,
-  listActiveProcessCwds,
+  listActiveProcessPaths,
   listWorktrees,
   parseAgentFlightName,
+  parseProcessArgPaths,
   parseWorktrees,
   normalizeTargetRef,
   recordWorktreeRemoval,

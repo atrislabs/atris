@@ -9,6 +9,7 @@ const autoland = require('../lib/autoland');
 const { gateForHuman, plainLandingReason } = require('../lib/voice-gate');
 const { evaluateAutoAccept } = require('../lib/auto-accept-certified');
 const { sweepEngineAskReceipts } = require('../lib/engine-receipt-sweep');
+const { readSshAgents, findLeakedSshAgents, findAgentStartLines, agentStartLineText, stopLeakedSshAgents, closeLostRuns, readResourceHistory, errorReason, leakGrowthNote } = require('../lib/engine-resource');
 const { validateRecentAskReceipts } = require('../lib/engine-validate');
 const { operatorReady, hasAgentJargon, explainResult } = autoland;
 const MISSION_AUTO_VERIFY_STATUSES = new Set(['planning', 'paused', 'ready']);
@@ -358,8 +359,8 @@ function refreshLandingRefs(root) {
   }
 }
 
-function sweepLanding(root, { ttlDays, staleHours, now = Date.now() } = {}) {
-  refreshLandingRefs(root);
+function sweepLanding(root, { ttlDays, staleHours, now = Date.now(), refresh = true } = {}) {
+  if (refresh) refreshLandingRefs(root);
   const { collectBoard, reap } = require('./land');
   // light: this board only feeds .branches staleness + .summary; reap builds
   // its own full board for dirty-count salvage decisions.
@@ -479,7 +480,7 @@ function protectedReviewWaiting(root, policy = {}, waiting = []) {
 // lib/voice-gate.js (plainLandingReason); this alias keeps call sites short.
 const plainReason = plainLandingReason;
 
-function showStatus(root, args) {
+function showStatus(root, args, deps = {}) {
   const json = args.includes('--json');
   const policy = autoland.readPolicy(root);
   const enabled = Boolean(policy && policy.enabled);
@@ -528,6 +529,45 @@ function showStatus(root, args) {
   if (policy && policy.imessage_to) console.log(`  daily message: ${policy.imessage_to} at ${policy.digest_hour ?? autoland.DEFAULT_DIGEST_HOUR}:00`);
   const reapTrouble = autoland.readState(root).last_reap_error;
   if (reapTrouble) console.log(`  cleanup trouble: landing sweep failed on ${reapTrouble.date} (${reapTrouble.error}) - run: atris land --reap`);
+  const lost = readResourceHistory(root);
+  if (lost.read_error) console.log(`  engine run log: could not read it (${lost.read_error}), so lost, killed, and failed runs in the last day are unknown`);
+  if (lost.lost_closed_day) {
+    const newest = lost.last_lost_closed;
+    const when = `${String(newest.at || '').slice(0, 16).replace('T', ' ')} UTC`;
+    console.log(`  engine runs closed after their parent died in the last day: ${lost.lost_closed_day}, newest ${newest.engine || 'unknown engine'} on ${newest.task || 'no task'} at ${when}`);
+  }
+  if (lost.kills_day) {
+    // Timeouts are counted apart, and the newest kill named is the newest one
+    // that was not a timeout, so a night of timeouts cannot hide a crash.
+    const timeLimit = lost.time_limit_kills_day;
+    const counts = timeLimit === lost.kills_day
+      ? 'all at their time limit'
+      : `${timeLimit ? `${timeLimit} at their time limit, ` : ''}${lost.low_memory_kills_day} with machine memory low`;
+    const kill = lost.last_day_other_kill || lost.last_kill;
+    const label = timeLimit && lost.last_day_other_kill ? 'newest not at a time limit:' : 'newest';
+    const when = `${String(kill.at || '').slice(0, 16).replace('T', ' ')} UTC`;
+    const free = Number.isFinite(kill.free_pct) ? `, ${kill.free_pct}% memory free` : '';
+    console.log(`  engine runs force-killed in the last day: ${lost.kills_day}, ${counts}; ${label} ${kill.engine || 'unknown engine'} on ${kill.task || 'no task'} at ${when}, ${kill.cause || 'cause unknown'}${free}`);
+  }
+  if (lost.errors_day) {
+    // Runs that failed with a message and were not killed, such as an engine
+    // that could not start; kills are counted on the line above.
+    const failed = lost.last_day_error;
+    const when = `${String(failed.at || '').slice(0, 16).replace('T', ' ')} UTC`;
+    console.log(`  engine runs that ended in an error in the last day: ${lost.errors_day}, newest ${failed.engine || 'unknown engine'} on ${failed.task || 'no task'} at ${when}: ${errorReason(failed)}`);
+  }
+  const { leaked: leakedAgents, unread: unreadAgents } = countLeakedSshAgents(deps);
+  const unchecked = unreadAgents.length ? `could not read the ${unreadAgents.join(' or the ')}, so some ssh-agents went unchecked` : '';
+  if (leakedAgents) {
+    const stop = heartbeatLive ? 'the next hourly pass stops them' : 'stop them now: atris engine sweep --apply';
+    console.log(`  leaked ssh-agents on this machine: ${unchecked ? 'at least ' : ''}${leakedAgents}${leakGrowthNote(lost.first_day_leak_reading, leakedAgents)}; ${stop}${unchecked ? `; ${unchecked}` : ''}`);
+    // A test run reads only the home it was handed, never the real one.
+    if (deps.home || !process.env.NODE_TEST_CONTEXT) {
+      for (const found of findAgentStartLines(deps.home ? { home: deps.home } : {})) console.log(`    ${agentStartLineText(found)}`);
+    }
+  } else if (unchecked) {
+    console.log(`  leaked ssh-agents on this machine: unknown, ${unchecked}`);
+  }
   console.log('');
   const humanOnly = blocked.filter((r) => String(r.reason || '').startsWith('denied_tag_'));
   const needsWork = blocked.filter((r) => !String(r.reason || '').startsWith('denied_tag_'));
@@ -747,11 +787,20 @@ function persistTickReceipt(root, receipt) {
 // Heartbeat liveness helpers live in lib/autoland.js so task ready copy and
 // status share one gate (recent tick receipt within two hours).
 
+function acceptedNotLandedNote(receipt) {
+  const rows = Array.isArray(receipt.accepted_not_landed) ? receipt.accepted_not_landed : [];
+  if (!rows.length) return '';
+  return `, ${rows.length} accepted but not proven landed (${rows.map((r) => `${r.ref} ${r.status}`).join(', ')})`;
+}
+
 function stuckBacklogNote(receipt) {
   const parts = [];
   const scanned = Number(receipt.scanned || 0);
   const certified = Number(receipt.certified || 0);
-  if (scanned > 0 && receipt.landed.length === 0) {
+  // Stuck means nothing cleared review. Accepted-but-unproven work is named
+  // separately (accepted_not_landed), not misread as a wedged queue.
+  const accepted = Array.isArray(receipt.accepted) ? receipt.accepted.length : receipt.landed.length;
+  if (scanned > 0 && accepted === 0) {
     parts.push(`${certified}/${scanned} certified in review, none landed`);
   }
   const unrunnable = Array.isArray(receipt.unrunnable_verifiers) ? receipt.unrunnable_verifiers.length : 0;
@@ -771,6 +820,85 @@ function engineReceiptSweepNote(receipt) {
   const finalized = Number(receipt.engine_receipt_sweep?.finalized) || 0;
   if (!finalized) return '';
   return `, finalized ${finalized} stale engine receipt${finalized === 1 ? '' : 's'} as presumed dead`;
+}
+
+// Read only: how many ssh-agents look leaked right now, and which readers
+// failed, since then the count is only a floor. A test run never reads the
+// real machine, and a thrown read counts as none.
+function countLeakedSshAgents(deps = {}) {
+  const none = { leaked: 0, unread: [] };
+  try {
+    const read = deps.readSshAgents;
+    if (!read && process.env.NODE_TEST_CONTEXT) return none;
+    const uid = deps.uid !== undefined ? deps.uid : (typeof process.getuid === 'function' ? process.getuid() : null);
+    if (uid === null) return none;
+    const { agents, referenced, unread = [] } = (read || readSshAgents)();
+    return { leaked: findLeakedSshAgents(agents, { referenced, uid }).length, unread };
+  } catch {
+    return none;
+  }
+}
+
+// Shell startup files that start an ssh-agent per shell leave one behind
+// for every engine shell. Each pass stops the ones a fresh recheck still
+// calls leaked, and never lets a failed read break the pass.
+function runSshAgentSweep(root, receipt, deps = {}) {
+  try {
+    const read = deps.read || readSshAgents;
+    const uid = deps.uid !== undefined ? deps.uid : (typeof process.getuid === 'function' ? process.getuid() : null);
+    const empty = { stopped: [], failed: [], skipped: [] };
+    // A test run must never stop real agents on the machine running it.
+    if (uid === null || (!deps.read && process.env.NODE_TEST_CONTEXT)) {
+      receipt.ssh_agent_sweep = empty;
+      return receipt.ssh_agent_sweep;
+    }
+    const { agents, referenced, unread = [] } = read();
+    const leaked = findLeakedSshAgents(agents, { referenced, uid });
+    const result = leaked.length
+      ? stopLeakedSshAgents(root, leaked, { read, uid, ...(deps.kill ? { kill: deps.kill } : {}) })
+      : empty;
+    // A reading that failed on either scan is kept, so the summary can say
+    // some agents went unchecked instead of reading as a clean machine.
+    const missed = [...new Set([...unread, ...(result.unread || [])])];
+    receipt.ssh_agent_sweep = missed.length ? { ...result, unread: missed } : result;
+  } catch (err) {
+    receipt.ssh_agent_sweep_error = String((err && err.message) || err).slice(0, 200);
+  }
+  return receipt.ssh_agent_sweep || null;
+}
+
+function sshAgentSweepNote(receipt) {
+  const stopped = (receipt.ssh_agent_sweep?.stopped || []).length;
+  const failed = (receipt.ssh_agent_sweep?.failed || []).length;
+  const replaced = (receipt.ssh_agent_sweep?.replaced || []).length;
+  const unread = receipt.ssh_agent_sweep?.unread || [];
+  const stoppedNote = stopped ? `, stopped ${stopped} leaked ssh-agent${stopped === 1 ? '' : 's'}` : '';
+  const failedNote = failed ? `, could not stop ${failed} leaked ssh-agent${failed === 1 ? '' : 's'}` : '';
+  const replacedNote = replaced ? `, left ${replaced} younger replacement ssh-agent${replaced === 1 ? '' : 's'} alone` : '';
+  const unreadNote = unread.length ? `, could not read the ${unread.join(' or the ')}, so some ssh-agents went unchecked` : '';
+  const scanErrorNote = receipt.ssh_agent_sweep_error ? ', could not scan ssh-agents, so leaked agents may remain' : '';
+  return stoppedNote + failedNote + replacedNote + unreadNote + scanErrorNote;
+}
+
+// An engine run whose dispatching process died never writes its own end.
+// Each pass writes a "parent gone" end for those, so the log stops carrying
+// them as open, and never lets a failed read break the pass.
+function runLostRunSweep(root, receipt, deps = {}) {
+  try {
+    const close = deps.close || closeLostRuns;
+    const closed = close(root, deps.now ? { now: deps.now } : {});
+    receipt.lost_run_sweep = { closed: closed.map((end) => end.run_id) };
+  } catch (err) {
+    receipt.lost_run_sweep_error = String((err && err.message) || err).slice(0, 200);
+  }
+  return receipt.lost_run_sweep || null;
+}
+
+function lostRunSweepNote(receipt) {
+  const closed = (receipt.lost_run_sweep?.closed || []).length;
+  const closedNote = closed ? `, closed ${closed} lost engine run${closed === 1 ? '' : 's'}` : '';
+  const errorNote = receipt.lost_run_sweep_error ? ', could not close lost engine runs, so unfinished records may remain' : '';
+  return closedNote + errorNote;
 }
 
 async function runEngineAnswerValidation(root, receipt, deps = {}) {
@@ -796,6 +924,9 @@ async function runTickBody(root, { json, policy, receipt, engineValidationDeps =
     receipt.engine_receipt_sweep_error = String((err && err.message) || err).slice(0, 200);
   }
 
+  runSshAgentSweep(root, receipt);
+  runLostRunSweep(root, receipt);
+
   await runEngineAnswerValidation(root, receipt, engineValidationDeps);
 
   // 1. certify and land in one task process. Keeping both phases together lets
@@ -806,6 +937,9 @@ async function runTickBody(root, { json, policy, receipt, engineValidationDeps =
   // 78 certified rows waiting. Let `atris task auto-accept-certified` apply
   // its own default (12 without --all, a high safety cap under --all) so a
   // policy with accept_all:true actually drains the full certified set.
+  // Refresh origin once, before anything is accepted: the landing proof reads
+  // origin's target, and a stale ref would call landed work unlanded.
+  refreshLandingRefs(root);
   const cliArgs = ['task', 'auto-accept-certified', '--json', '--certify-first'];
   if (policy.accept_all) cliArgs.push('--all');
   else if (policy.strict_verify === false) cliArgs.push('--no-strict-verify');
@@ -829,7 +963,21 @@ async function runTickBody(root, { json, policy, receipt, engineValidationDeps =
     if (parsed.certification && parsed.certification.ok !== true) {
       receipt.certify_error = 'certify-verified failed';
     }
-    receipt.landed = results.filter((r) => r.action === 'accepted').map((r) => r.ref);
+    // Accepted is a review verdict; landed is a git fact. Only work whose
+    // landing proof passed (lib/landing-proof.js) may be called landed. The
+    // rest is named with the reason, so an accept over an empty or unpushed
+    // commit reads as what it is instead of padding the landed count.
+    const acceptedRows = results.filter((r) => r.action === 'accepted');
+    receipt.accepted = acceptedRows.map((r) => r.ref);
+    receipt.landed = acceptedRows.filter((r) => r.landing && r.landing.status === 'landed').map((r) => r.ref);
+    const notLanded = acceptedRows
+      .filter((r) => !r.landing || r.landing.status !== 'landed')
+      .map((r) => ({
+        ref: r.ref,
+        status: (r.landing && r.landing.status) || 'unverified',
+        reason: (r.landing && r.landing.reason) || 'no_landing_proof',
+      }));
+    if (notLanded.length) receipt.accepted_not_landed = notLanded;
     const citationBlocks = results
       .filter((r) => r.action === 'skipped' && r.proof_state === 'suite_green_citation_required')
       .map((r) => ({ ref: r.ref, reason: r.reason }));
@@ -964,7 +1112,7 @@ async function runTickBody(root, { json, policy, receipt, engineValidationDeps =
   // TTL-expired work is salvaged before deletion, and 48h-stale active work
   // is carried into the digest instead of silently aging forever.
   try {
-    const landingSweep = sweepLanding(root);
+    const landingSweep = sweepLanding(root, { refresh: false });
     receipt.reaped = landingSweep.reaped;
     receipt.landing_sweep = {
       before: landingSweep.before,
@@ -1148,7 +1296,7 @@ async function runTickBody(root, { json, policy, receipt, engineValidationDeps =
     // Always print the standing backlog, and name work that cleared every
     // gate and still did not land. That is the shape of a stuck loop.
     const stuckNote = stuckBacklogNote(receipt);
-    const summary = `autoland tick: ${receipt.reviews_certified ?? 0} reviews certified, ${receipt.landed.length} landed${receipt.landed.length ? ` (${receipt.landed.join(', ')})` : ''}, ${receipt.alarms} alarms${stuckNote}, digest ${digestTickStatus(receipt)}${reapNote}${janitorNote}${heldNote}${wishNote}${engineSweepNote}${receiptNote}`;
+    const summary = `autoland tick: ${receipt.reviews_certified ?? 0} reviews certified, ${receipt.landed.length} landed${receipt.landed.length ? ` (${receipt.landed.join(', ')})` : ''}${acceptedNotLandedNote(receipt)}, ${receipt.alarms} alarms${stuckNote}, digest ${digestTickStatus(receipt)}${reapNote}${janitorNote}${heldNote}${wishNote}${engineSweepNote}${sshAgentSweepNote(receipt)}${lostRunSweepNote(receipt)}${receiptNote}`;
     const validationLine = engineAnswerValidationLine(receipt);
     if (validationLine) console.log(validationLine);
     console.log(gateForHuman(summary).text);
@@ -1221,6 +1369,11 @@ module.exports = {
   hasAgentJargon,
   runEngineAnswerValidation,
   runTickBody,
+  runSshAgentSweep,
+  sshAgentSweepNote,
+  showStatus,
+  runLostRunSweep,
+  lostRunSweepNote,
   sweepLanding,
   verifyClosedTaskMissions,
 };

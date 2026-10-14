@@ -1,0 +1,26 @@
+The hourly landing summary now says when it could not check every ssh-agent, verified by 131 passing checks and the real cleanup step with the process lister blocked, exit 0.
+
+Files edited: commands/autoland.js, test/engine-resource.test.js, atris/MAP.md, atris/refs/MAP-NOTES.md, atris/team/executor/logs/2026-10-14.md, this receipt. Existing atris/TODO.md changes are not staged.
+Plan: keep a failed reading from the first scan or the recheck in the hourly result -> add one plain note to the summary line.
+
+Failing-first command: node --test --test-name-pattern='unreadable agent scans' test/engine-resource.test.js
+Exit: 1. The hourly result dropped the unread process list and the summary note was empty.
+
+Rerunnable verification: node --test test/engine-resource.test.js test/engine-dispatch.test.js
+Exit: 0. tests 131; pass 131; fail 0; skipped 0.
+
+Real step, new code: /usr/bin/sandbox-exec -p '(version 1)(allow default)(deny process-exec (literal "/bin/ps"))' node -e 'runSshAgentSweep + sshAgentSweepNote from commands/autoland.js on a temp root'
+Exit: 0.
+Output:
+{"stopped":[],"failed":[],"skipped":[],"unread":["process list"]}
+summary note:, could not read the process list, so some ssh-agents went unchecked
+
+Same step, code from HEAD before this change, same sandbox:
+old: {"stopped":[],"failed":[],"skipped":[]} note:[]
+Exit: 0. The old pass looked like a clean machine.
+
+Nothing was stopped in either run. git diff --check passed, exit 0.
+Map refs: line shifts in commands/autoland.js and test/engine-resource.test.js applied from the diff offsets; the automatic fixer picked a wrong target for one unrelated ref, so its edit was discarded.
+Metric: one failing-first regression added, 131 checks passed, hourly summary no longer silent on a blind scan.
+next_push: show the same unread warning in atris autoland status, whose live leaked count still reads zero when the process list cannot be read.
+layer: capabilities

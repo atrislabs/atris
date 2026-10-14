@@ -261,6 +261,9 @@ function runRunnerPrompt(root, prompt) {
     const cmd = buildRunnerCommand({ promptFile });
     const env = { ...process.env };
     delete env.CLAUDECODE;
+    // Machine memory and load at both ends of the launch, so one killed with
+    // SIGKILL says whether the machine was short on memory.
+    const endResource = require('../lib/engine-resource').startEngineRun(root, { engine: 'runner', task: 'unknowns' });
     const result = spawnSync(cmd, [], {
       cwd: root,
       encoding: 'utf8',
@@ -270,7 +273,17 @@ function runRunnerPrompt(root, prompt) {
       maxBuffer: 10 * 1024 * 1024,
       env,
     });
-    if (result.error) return { ok: false, reason: result.error.message || 'runner failed' };
+    // spawnSync does not throw, so a failure is passed in the thrown shape.
+    const failed = result.error || result.signal || result.status !== 0;
+    const end = endResource(failed ? {
+      code: result.error && result.error.code,
+      signal: result.signal,
+      stderr: result.stderr,
+      message: result.error ? result.error.message : `runner exited ${result.status}`,
+    } : null);
+    const cause = end && end.cause ? `; ${end.cause}` : '';
+    if (result.error) return { ok: false, reason: `${result.error.message || 'runner failed'}${cause}` };
+    if (result.signal) return { ok: false, reason: `runner stopped by ${result.signal}${cause}` };
     if (result.status !== 0) {
       return { ok: false, reason: clipLine(result.stderr || result.stdout || `runner exited ${result.status}`, 300) };
     }
@@ -618,5 +631,6 @@ module.exports = {
   unknownsCommand,
   showHelp,
   fallbackPayload,
+  runRunnerPrompt,
   gatherTerritoryContext,
 };

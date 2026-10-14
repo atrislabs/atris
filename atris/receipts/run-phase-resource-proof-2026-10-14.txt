@@ -1,0 +1,24 @@
+Run command phase machine readings proof, 2026-10-14
+
+Before the change: the new regression failed because a run command phase wrote no resource log at all.
+
+After the change, a plain node process outside the test runner, in a temporary project, runner set to a child that kills itself:
+  thrown: plan killed by SIGKILL before the 5s wall, killed (cause unknown)
+  start: engine runner, task run plan, free_pct 80, load [2.79,3.3,3.81]
+  end: same run_id, duration_ms 6, signal SIGKILL
+  exit 0
+
+$ /opt/homebrew/bin/node --test test/engine-resource.test.js test/engine-dispatch.test.js
+  ℹ tests 101
+  ℹ pass 101
+  ℹ fail 0
+  exit 0
+$ /opt/homebrew/bin/node --test test/autopilot*.test.js test/map-notes-readers.test.js test/loop-front.test.js
+  ℹ tests 153
+  ℹ pass 153
+  ℹ fail 0
+  exit 0
+The real project resource log gained no test lines.
+
+$ git diff --check
+  exit 0

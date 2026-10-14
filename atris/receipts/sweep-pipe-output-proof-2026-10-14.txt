@@ -1,0 +1,60 @@
+Sweep reports now reach scripts whole.
+
+Files: bin/atris.js, test/engine-resource.test.js, atris/MAP.md, atris/refs/MAP-NOTES.md, atris/team/executor/logs/2026-10-14.md, atris/receipts/sweep-pipe-output-proof-2026-10-14.txt
+
+Plan: old exit -> failing real CLI test -> drain stdout -> full checks -> real pipe -> push
+
+Failing first command: node --test --test-name-pattern="atris engine sweep json comes through a pipe whole" test/engine-resource.test.js
+✖ atris engine sweep json comes through a pipe whole when it is larger than the pipe buffer (265.680834ms)
+ℹ tests 1
+ℹ suites 0
+ℹ pass 0
+ℹ fail 1
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 341.973708
+
+✖ failing tests:
+
+test at test/engine-resource.test.js:359:1
+✖ atris engine sweep json comes through a pipe whole when it is larger than the pipe buffer (265.680834ms)
+  AssertionError [ERR_ASSERTION]: json must exceed a pipe buffer, got 65536 bytes
+      at TestContext.<anonymous> (/Users/keshavrao/arena/empire/.agent-worktrees/atris-cli/executor-finish-machine-memory-and-load-recor-20261014-113344/test/engine-resource.test.js:376:12)
+      at Test.runInAsyncScope (node:async_hooks:226:14)
+      at Test.run (node:internal/test_runner/test:1118:25)
+      at Test.start (node:internal/test_runner/test:1015:17)
+      at startSubtestAfterBootstrap (node:internal/test_runner/harness:358:17) {
+    generatedMessage: false,
+    code: 'ERR_ASSERTION',
+    actual: false,
+    expected: true,
+    operator: '==',
+    diff: 'simple'
+  }
+
+exit: 1
+
+Verify command: node --test test/engine-resource.test.js test/engine-dispatch.test.js
+✔ youtube notes run outside an Atris workspace write no readings (538.6085ms)
+ℹ tests 122
+ℹ suites 0
+ℹ pass 122
+ℹ fail 0
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 25674.504542
+exit: 0
+
+command: node bin/atris.js engine sweep --json (stdout captured through a pipe)
+{"bytes": 107372, "running": 919, "leaked": 886, "unread": [], "stopped": 0}
+exit: 0
+
+Independent review: passed; no blocking issue.
+Task attachment could not run: mission lock held by a live owner; created and claimed a bounded task instead.
+Metric: formerly truncated at 65536 bytes; now 107372 bytes parsed whole; 122 checks passed.
+Readiness recording: atris task ready ran the same command through its login-shell runner and reported 108 passes, 14 failures, exit 1. Its receipt saved only head/tail output, so the failure cause is unresolved. A second direct invocation passed all 122 tests, exit 0. The code and proof are pushed; task readiness remains pending.
+
+next_push: capture the full readiness-run output and resolve why its login-shell check differs from the passing direct check.
+layer: capabilities

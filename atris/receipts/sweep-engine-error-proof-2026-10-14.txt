@@ -1,0 +1,29 @@
+Sweep engine error proof, 2026-10-14
+
+Before the change: the new regression failed; the sweep printed no engine error line after a real failed start.
+
+After the change, from the regression, a real fleet start on a missing program then a sweep:
+  real sweep after a failed start:
+  0 ssh-agents running, 0 look leaked (no parent, older than 10 min, not in use by any live shell)
+  nothing was stopped.
+  
+  no sweep recorded yet
+  last engine error: cursor on CLI-77 at 2026-10-14 15:29 UTC: spawnSync /var/folders/t1/2_4kmb5n4c71dxm26zc8dgzr0000gn/T/atris-missing-engine-33031 ENOENT
+  last SIGKILL: claude on CLI-78 at 2026-10-14 15:29 UTC, killed (cause unknown)
+  0 of 1 SIGKILL ended with machine memory low
+
+$ /opt/homebrew/bin/node --test test/engine-resource.test.js test/engine-dispatch.test.js
+  ℹ tests 98
+  ℹ pass 98
+  ℹ fail 0
+  exit 0
+
+$ node bin/atris.js engine sweep   (this machine, read-only)
+  563 ssh-agents running, 530 look leaked (no parent, older than 10 min, not in use by any live shell)
+  nothing was stopped. run atris engine sweep --apply to stop them.
+  no sweep recorded yet
+  no engine run has ended in SIGKILL
+  exit 0 (no failed run in the real log, so the new line stays quiet)
+
+$ git diff --check
+  exit 0

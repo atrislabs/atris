@@ -1,0 +1,17 @@
+$ atris engine sweep
+881 ssh-agents running, 852 look leaked (no parent, older than 10 min, not in use by any live shell)
+  pid 124    2h 12m
+nothing was stopped. run atris engine sweep --apply to stop them.
+exit 0
+
+$ atris engine sweep --json > sweep.json; node -e <print running, leaked count, unread>
+{"running":881,"leaked":852,"unread":[]}
+exit 0
+
+# same sweep, with the mac sandbox refusing to start lsof, the agent socket reader
+$ sandbox-exec -p "(version 1)(allow default)(deny process-exec (literal \"/usr/sbin/lsof\"))" atris engine sweep
+0 ssh-agents running, 0 look leaked (no parent, older than 10 min, not in use by any live shell)
+could not read the process environments, so no ssh-agent could be proven unused; 0 leaked here does not mean none leaked
+nothing was stopped.
+exit 0
+# the sandbox also stopped ps from listing processes, so the reader that failed was the environment list; the warning named it

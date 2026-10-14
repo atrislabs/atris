@@ -1,0 +1,33 @@
+Partial agent socket readings now produce an honest warning; the frozen checks passed 128/128, exit 0.
+
+Files: lib/engine-resource.js; commands/engine.js; test/engine-resource.test.js; atris/MAP.md; atris/refs/MAP-NOTES.md; atris/team/executor/logs/2026-10-14.md; this receipt.
+Plan: one missing socket -> protect that agent -> warn that the leak count is incomplete.
+Failing-first command: node --test --test-name-pattern='partial socket scans|sweep says when' test/engine-resource.test.js
+Exit 1: both selected checks failed; unread was [] instead of ['agent sockets'], and the old warning claimed no agent could be proven unused.
+First full run: 127/128, exit 1. Test assumed referenced contained only the fixture pid; the real SSH_AGENT_PID is also retained. Fixed assertion to check the two fixture pids individually.
+Verify command: node --test test/engine-resource.test.js test/engine-dispatch.test.js
+Exit 0. Output:
+ℹ tests 128
+ℹ suites 0
+ℹ pass 128
+ℹ fail 0
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 24842.988292
+
+Real surface: the added test starts /usr/bin/ssh-agent -s -a <temporary socket> twice, then runs node --require <temporary socket-filter> bin/atris.js engine sweep and engine sweep --json. All process scans are real; the filter withholds one real lsof block to reproduce missing process visibility. Neither agent is stopped by the sweep; test teardown terminates only its own two agents.
+Replay: node --test --test-name-pattern='the real sweep warns when one live agent socket reading is withheld' test/engine-resource.test.js
+Text CLI exit 0; JSON CLI exit 0 with unread: ['agent sockets'].
+Output excerpt:
+partial live socket scan exit 0: 970 ssh-agents running, 933 look leaked (no parent, older than 10 min, not in use by any live shell)
+could not read the agent sockets for every process, so some ssh-agents could not be checked; the leak count may be incomplete
+nothing was stopped. run atris engine sweep --apply to stop them.
+nothing was stopped.
+
+Diff check: git diff --check, exit 0, no output.
+Independent review: approved, no correctness issue found.
+Progress: two new regression checks; every agent without a socket reading is protected and now makes the scan visibly incomplete.
+Setup: brain activate and compile returned plan-only; no generated policy files changed.
+next_push: report unreadable scans in the cleanup result, including the recheck before stopping agents.
+layer: capabilities

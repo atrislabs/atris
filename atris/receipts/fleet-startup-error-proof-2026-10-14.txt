@@ -1,0 +1,19 @@
+Fleet startup error proof, 2026-10-14
+
+Before the fix: the new regression failed on all three startup shapes.
+  thrown: the end reading must keep the startup error
+  rejected: the end reading must keep the startup error
+  returned: the end reading must keep the startup error
+
+After the fix:
+$ /opt/homebrew/bin/node --test test/engine-resource.test.js test/engine-dispatch.test.js
+  thrown startup failure end reading: {"at":"2026-10-14T15:25:25.381Z","phase":"end","engine":"claude","task":"CLI-900","free_pct":78,"swap_used_mb":1172.75,"swap_total_mb":2048,"load":[6.83,4.21,4.01],"run_id":"11651b08-5523-423f-a907-c26bce8b55e8","duration_ms":1,"error":"spawnSync /var/folders/t1/2_4kmb5n4c71dxm26zc8dgzr0000gn/T/atris-missing-engine-19686 ENOENT"}
+  rejected startup failure end reading: {"at":"2026-10-14T15:25:25.894Z","phase":"end","engine":"claude","task":"CLI-900","free_pct":79,"swap_used_mb":1172.75,"swap_total_mb":2048,"load":[8.05,4.5,4.12],"run_id":"47e34f0a-6a04-477f-96c2-f176305e8671","duration_ms":1,"error":"spawn /var/folders/t1/2_4kmb5n4c71dxm26zc8dgzr0000gn/T/atris-missing-engine-19686 ENOENT"}
+  returned startup failure end reading: {"at":"2026-10-14T15:25:26.367Z","phase":"end","engine":"claude","task":"CLI-900","free_pct":79,"swap_used_mb":1172.75,"swap_total_mb":2048,"load":[8.05,4.5,4.12],"run_id":"b7d9410c-d9fd-4f4a-bb33-60901af04659","duration_ms":0,"error":"spawnSync /var/folders/t1/2_4kmb5n4c71dxm26zc8dgzr0000gn/T/atris-missing-engine-19686 ENOENT"}
+  ℹ tests 97
+  ℹ pass 97
+  ℹ fail 0
+  exit 0
+
+$ git diff --check
+  exit 0

@@ -3,9 +3,9 @@ const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
-const { spawnSync } = require('node:child_process');
+const { spawn, spawnSync } = require('node:child_process');
 
-const { readBoard, renderBoard, ago } = require('../lib/member-board');
+const { readBoard, renderBoard, ago, isAlive, stopMember } = require('../lib/member-board');
 
 const repoRoot = path.resolve(__dirname, '..');
 const cliPath = path.join(repoRoot, 'bin', 'atris.js');
@@ -75,9 +75,9 @@ test('board shows working, quiet, done ok, and done failed from fake logs', () =
 
     const screen = renderBoard(rows, dir);
     assert.equal(screen.split('\n').length, 5, 'one header plus one row per member');
-    assert.match(screen, /^member\s+state\s+ago\s+job\s+last step$/m);
-    assert.match(screen, /^scout\s+quiet\s+5m ago\s+find stale docs\s+running: rg stale$/m);
-    assert.match(screen, /^breaker\s+done failed\s+1m ago\s+try the risky thing\s+running: node boom\.js$/m);
+    assert.match(screen, /^member\s+state\s+last result\s+alive\s+engine\s+running for\s+ago\s+job\s+last step$/m);
+    assert.match(screen, /^scout\s+quiet\s+-\s+-\s+-\s+-\s+5m ago\s+find stale docs\s+running: rg stale$/m);
+    assert.match(screen, /^breaker\s+done failed\s+failed 1m ago\s+-\s+-\s+-\s+1m ago\s+try the risky thing\s+running: node boom\.js$/m);
   } finally {
     fs.rmSync(dir, { recursive: true, force: true });
   }
@@ -153,7 +153,7 @@ test('atris member board reads ATRIS_PROGRESS_DIR for real', () => {
     const env = { ...process.env, ATRIS_PROGRESS_DIR: dir };
     const once = spawnSync(process.execPath, [cliPath, 'member', 'board'], { cwd: dir, env, encoding: 'utf8' });
     assert.equal(once.status, 0, once.stderr);
-    assert.match(once.stdout, /^navigator\s+working\s+\d+s ago\s+map the repo\s+reading atris\/MAP\.md$/m);
+    assert.match(once.stdout, /^navigator\s+working\s+-\s+-\s+-\s+-\s+\d+s ago\s+map the repo\s+reading atris\/MAP\.md$/m);
 
     const watch = spawnSync(process.execPath, [cliPath, 'member', 'board', '--watch'], { cwd: dir, env, encoding: 'utf8', timeout: 3700 });
     assert.equal(watch.signal, 'SIGTERM', 'watch stays open until stopped');
@@ -284,5 +284,261 @@ test('follow finishes a line that was half written before it started', () => {
   } finally {
     follower.stop();
     fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+// A spawned sleeper stands in for a member's engine run. detached makes it a
+// process group leader, the same way the mission runner spawns the engine.
+// The sleepers are node processes; stand in for a real engine command line.
+// agoSec matches the started line's age, so the run's start time lines up.
+const TOKEN = '0123456789abcdef';
+const engineAs = (program, agoSec = 60, member = 'builder', token = TOKEN) => {
+  const startedAt = Date.now() - agoSec * 1000;
+  return {
+    readProcess: (pid) => (pid === process.pid
+      ? { pgid: -1, command: 'node test', startedAt: Date.now() }
+      : { pgid: pid, command: `${program} -p atris-run ${member} ${token}\\012work --model x`, startedAt }),
+  };
+};
+const asEngine = engineAs('claude');
+
+function spawnSleeper(script) {
+  const child = spawn(process.execPath, ['-e', script], { detached: true, stdio: ['ignore', 'pipe', 'ignore'] });
+  const ready = new Promise((resolve) => {
+    let out = '';
+    child.stdout.on('data', (d) => { out += d; if (out.includes('\n')) resolve(out.trim()); });
+  });
+  return { child, ready };
+}
+
+const waitFor = async (check, ms = 3000) => {
+  for (const end = Date.now() + ms; Date.now() < end; await new Promise((r) => setTimeout(r, 25))) if (check()) return true;
+  return check();
+};
+
+const killAll = (pid) => { try { process.kill(-pid, 'SIGKILL'); } catch {} };
+const isoAgo = (s) => new Date(Date.now() - s * 1000).toISOString();
+
+test('board shows a live run as alive with its engine, and a dead one as stopped', async () => {
+  const { child, ready } = spawnSleeper("console.log('up'); setInterval(() => {}, 1000)");
+  await ready;
+  const dir = fakeDir({
+    builder: [`${isoAgo(90)} m-1 started: [pid ${child.pid} engine claude run ${TOKEN}] ship the board`, `${isoAgo(5)} m-1 reading lib/a.js`],
+    legacy: [`${isoAgo(30)} m-2 started: old line with no pid`, `${isoAgo(5)} m-2 reading x`],
+  });
+  try {
+    let by = Object.fromEntries(readBoard({ dir }).map((r) => [r.member, r]));
+    assert.equal(by.builder.state, 'working');
+    assert.equal(by.builder.alive, true);
+    assert.equal(by.builder.engine, 'claude');
+    assert.equal(by.builder.running_for, '1m');
+    assert.equal(by.builder.job, 'ship the board', 'the run tag stays out of the job column');
+    assert.equal(by.legacy.alive, null, 'no pid means the board cannot tell');
+    assert.equal(by.legacy.state, 'working');
+    assert.match(renderBoard(readBoard({ dir }), dir), /^builder\s+working\s+-\s+yes\s+claude\s+1m\s+\d+s ago\s+ship the board/m);
+
+    child.kill('SIGKILL');
+    assert.ok(await waitFor(() => !isAlive(child.pid)), 'sleeper should be gone');
+    by = Object.fromEntries(readBoard({ dir }).map((r) => [r.member, r]));
+    assert.equal(by.builder.state, 'stopped', 'marked working but the process is gone');
+    assert.equal(by.builder.alive, false);
+    assert.equal(by.builder.running_for, '');
+    assert.match(renderBoard(readBoard({ dir }), dir), /^builder\s+stopped\s+-\s+no\s+claude\s+-\s+/m);
+  } finally {
+    killAll(child.pid);
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test('member stop ends the run and everything it started, then logs finished: stopped', async () => {
+  // The sleeper starts its own grandchild, like an engine running a shell command.
+  const { child, ready } = spawnSleeper(
+    "const c = require('child_process').spawn('sleep', ['60'], { stdio: 'ignore' }); console.log(c.pid); setInterval(() => {}, 1000)",
+  );
+  const grandchild = Number(await ready);
+  const dir = fakeDir({ builder: [`${isoAgo(125)} m-9 started: [pid ${child.pid} engine claude run ${TOKEN}] long job`, `${isoAgo(3)} m-9 running: npm test`] });
+  try {
+    assert.ok(isAlive(grandchild));
+    const result = await stopMember('builder', { dir, deps: engineAs('claude', 125) });
+    assert.equal(result.ok, true);
+    assert.equal(result.forced, false);
+    assert.equal(result.message, 'stopped builder after 2m of work');
+    assert.ok(await waitFor(() => !isAlive(child.pid)), 'member run is gone');
+    assert.ok(await waitFor(() => !isAlive(grandchild)), 'what it started is gone too');
+    const log = fs.readFileSync(path.join(dir, 'builder.log'), 'utf8');
+    assert.match(log.trim().split('\n').pop(), /^\S+ m-9 finished: stopped$/);
+    const [row] = readBoard({ dir });
+    assert.equal(row.state, 'stopped');
+    assert.equal((await stopMember('builder', { dir, deps: asEngine })).message, 'nothing running', 'second stop finds nothing');
+  } finally {
+    killAll(child.pid);
+    try { process.kill(grandchild, 'SIGKILL'); } catch {}
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test('member stop forces a run that ignores the polite signal', async () => {
+  const { child, ready } = spawnSleeper("process.on('SIGTERM', () => {}); console.log('up'); setInterval(() => {}, 1000)");
+  await ready;
+  const dir = fakeDir({ stubborn: [`${isoAgo(10)} m-5 started: [pid ${child.pid} engine codex run ${TOKEN}] dig in`] });
+  try {
+    const result = await stopMember('stubborn', { dir, graceMs: 300, deps: engineAs('/opt/homebrew/bin/codex', 10, 'stubborn') });
+    assert.equal(result.ok, true);
+    assert.equal(result.forced, true);
+    assert.match(result.message, /^stopped stubborn after \d+s of work, it had to be forced$/);
+    assert.ok(await waitFor(() => !isAlive(child.pid)));
+  } finally {
+    killAll(child.pid);
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test('member stop says nothing running for unknown, finished, untagged, or dead runs', async () => {
+  const dir = fakeDir({
+    done: [`${isoAgo(60)} m-1 started: [pid ${process.pid} engine claude] x`, `${isoAgo(30)} m-1 finished: ok`],
+    legacy: [`${isoAgo(60)} m-2 started: no pid here`],
+    ghost: [`${isoAgo(60)} m-3 started: [pid 2147483646 engine claude] gone`],
+  });
+  try {
+    for (const name of ['nobody', 'done', 'legacy', 'ghost', '', '../done']) {
+      assert.equal((await stopMember(name, { dir, deps: asEngine })).message, 'nothing running', name);
+    }
+    assert.equal(fs.readFileSync(path.join(dir, 'done.log'), 'utf8').includes('stopped'), false);
+    const res = spawnSync(process.execPath, [cliPath, 'member', 'stop', 'nobody'], {
+      cwd: dir,
+      encoding: 'utf8',
+      env: { ...process.env, ATRIS_PROGRESS_DIR: dir },
+    });
+    assert.equal(res.status, 0, res.stderr);
+    assert.equal(res.stdout.trim().split('\n').pop(), 'nothing running');
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test('member stop leaves a reused pid alone when its command is no longer the engine', async () => {
+  const { child, ready } = spawnSleeper("console.log('up'); setInterval(() => {}, 1000)");
+  await ready;
+  const dir = fakeDir({ builder: [`${isoAgo(60)} m-7 started: [pid ${child.pid} engine claude] old job`] });
+  try {
+    const result = await stopMember('builder', { dir, deps: { readProcess: (pid) => ({ pgid: pid, command: 'node /usr/local/bin/some-other-app', startedAt: Date.now() - 60000 }) } });
+    assert.equal(result.message, 'nothing running');
+    assert.equal(isAlive(child.pid), true, 'the unrelated process keeps running');
+  } finally {
+    try { process.kill(-child.pid, 'SIGKILL'); } catch {}
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test('member stop refuses system pids, its own group, and engines it does not know', async () => {
+  const lines = (pid, engine) => [`${isoAgo(20)} m-8 started: [pid ${pid} engine ${engine}] forged`];
+  for (const [pid, engine] of [[1, 'launchd'], [1, 'claude'], [process.pid, 'claude'], [4242, 'launchd']]) {
+    const dir = fakeDir({ forged: lines(pid, engine) });
+    try {
+      const deps = { readProcess: (p) => ({ pgid: p, command: `${engine} -p`, startedAt: Date.now() - 20000 }) };
+      const result = await stopMember('forged', { dir, graceMs: 50, deps });
+      assert.equal(result.message, 'nothing running', `pid ${pid} engine ${engine}`);
+    } finally {
+      fs.rmSync(dir, { recursive: true, force: true });
+    }
+  }
+});
+
+test('member stop leaves a same-named engine alone when it started at a different time', async () => {
+  const { child, ready } = spawnSleeper("console.log('up'); setInterval(() => {}, 1000)");
+  await ready;
+  const dir = fakeDir({ builder: [`${isoAgo(600)} m-6 started: [pid ${child.pid} engine claude] long gone`] });
+  try {
+    const result = await stopMember('builder', { dir, deps: engineAs('claude', 5) });
+    assert.equal(result.message, 'nothing running');
+    assert.equal(isAlive(child.pid), true);
+  } finally {
+    try { process.kill(-child.pid, 'SIGKILL'); } catch {}
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test('member stop ignores engine names that are object keys', async () => {
+  for (const engine of ['constructor', '__proto__', 'toString']) {
+    const dir = fakeDir({ odd: [`${isoAgo(20)} m-4 started: [pid 4242 engine ${engine}] odd`] });
+    try {
+      const result = await stopMember('odd', { dir, deps: engineAs('claude', 20) });
+      assert.equal(result.message, 'nothing running', engine);
+    } finally {
+      fs.rmSync(dir, { recursive: true, force: true });
+    }
+  }
+});
+
+test('member stop needs the run token of that member in the live command', async () => {
+  const { child, ready } = spawnSleeper("console.log('up'); setInterval(() => {}, 1000)");
+  await ready;
+  try {
+    for (const [line, deps, label] of [
+      [`started: [pid ${child.pid} engine claude] no token`, engineAs('claude', 20), 'no token in the log'],
+      [`started: [pid ${child.pid} engine claude run ${TOKEN}] x`, engineAs('claude', 20, 'someone-else'), 'token belongs to another member'],
+      [`started: [pid ${child.pid} engine claude run ${TOKEN}] x`, engineAs('claude', 20, 'builder', 'ffffffffffffffff'), 'different token'],
+    ]) {
+      const dir = fakeDir({ builder: [`${isoAgo(20)} m-2 ${line}`] });
+      try {
+        assert.equal((await stopMember('builder', { dir, graceMs: 50, deps })).message, 'nothing running', label);
+      } finally {
+        fs.rmSync(dir, { recursive: true, force: true });
+      }
+    }
+    assert.equal(isAlive(child.pid), true);
+  } finally {
+    try { process.kill(-child.pid, 'SIGKILL'); } catch {}
+  }
+});
+
+test('member stop does not hard-kill a process that replaced the run during the grace wait', async () => {
+  const { child, ready } = spawnSleeper("process.on('SIGTERM', () => {}); console.log('up'); setInterval(() => {}, 1000)");
+  await ready;
+  const dir = fakeDir({ builder: [`${isoAgo(20)} m-3 started: [pid ${child.pid} engine claude run ${TOKEN}] x`] });
+  let calls = 0;
+  const first = engineAs('claude', 20).readProcess;
+  const deps = {
+    readProcess: (pid) => {
+      if (pid === process.pid) return first(pid);
+      calls += 1;
+      const info = first(pid);
+      // After the polite signal, the pid now belongs to a newer process.
+      return calls === 1 ? info : { ...info, startedAt: info.startedAt + 10000 };
+    },
+  };
+  try {
+    const result = await stopMember('builder', { dir, graceMs: 200, deps });
+    assert.equal(result.forced, false);
+    assert.equal(isAlive(child.pid), true, 'the replacement was not hard-killed');
+  } finally {
+    try { process.kill(-child.pid, 'SIGKILL'); } catch {}
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test('member stop needs the marker to open the prompt, as whole words', async () => {
+  const { child, ready } = spawnSleeper("console.log('up'); setInterval(() => {}, 1000)");
+  await ready;
+  try {
+    for (const command of [
+      `claude -p hello atris-run builder ${TOKEN}`,
+      `claude -p atris-run builder ${TOKEN}ff more`,
+      `claude -p atris-run builderx ${TOKEN}`,
+      `claude --resume x atris-run builder ${TOKEN}`,
+      `claude -p other prompt -p atris-run builder ${TOKEN} more`,
+      `node claude -p atris-run builder ${TOKEN} x`,
+    ]) {
+      const dir = fakeDir({ builder: [`${isoAgo(20)} m-2 started: [pid ${child.pid} engine claude run ${TOKEN}] x`] });
+      const deps = { readProcess: (pid) => (pid === process.pid ? { pgid: -1, command: 'node', startedAt: Date.now() } : { pgid: pid, command, startedAt: Date.now() - 20000 }) };
+      try {
+        assert.equal((await stopMember('builder', { dir, graceMs: 50, deps })).message, 'nothing running', command);
+      } finally {
+        fs.rmSync(dir, { recursive: true, force: true });
+      }
+    }
+    assert.equal(isAlive(child.pid), true);
+  } finally {
+    try { process.kill(-child.pid, 'SIGKILL'); } catch {}
   }
 });

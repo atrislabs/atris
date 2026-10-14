@@ -10,7 +10,7 @@ const { scrubAgentEnv } = require('./helpers/agent-env');
 
 const cliPath = path.resolve(__dirname, '..', 'bin', 'atris.js');
 
-function workspace(t) {
+function workspace(t, verdict = 'VERDICT: PASS') {
   const base = fs.mkdtempSync(path.join(os.tmpdir(), 'atris-default-referee-'));
   t.after(() => fs.rmSync(base, { recursive: true, force: true }));
   const root = path.join(base, 'repo');
@@ -27,7 +27,7 @@ function workspace(t) {
     'echo \'{"type":"result","is_error":false,"result":"wrote work.txt"}\'',
     '',
   ].join('\n'), 'utf8');
-  fs.writeFileSync(path.join(binDir, 'codex'), `#!/bin/sh\ntouch "${reviewMark}"\necho "VERDICT: PASS"\n`, 'utf8');
+  fs.writeFileSync(path.join(binDir, 'codex'), `#!/bin/sh\ntouch "${reviewMark}"\necho "${verdict}"\n`, 'utf8');
   fs.chmodSync(path.join(binDir, 'claude'), 0o755);
   fs.chmodSync(path.join(binDir, 'codex'), 0o755);
   const git = (args) => {
@@ -104,4 +104,12 @@ test('the default reviewer is never the builder engine, even when the usual pick
   } finally {
     fs.rmSync(base, { recursive: true, force: true });
   }
+});
+
+test('work the reviewer turns down says so with its reason, not that the check failed', (t) => {
+  const { run } = workspace(t, 'VERDICT: FAIL; the new file is empty on a second run');
+  const res = run([]);
+  assert.equal(res.status, 1, res.stderr || res.stdout);
+  const payload = JSON.parse(res.stdout);
+  assert.equal(payload.error, 'turned down in review: the new file is empty on a second run');
 });

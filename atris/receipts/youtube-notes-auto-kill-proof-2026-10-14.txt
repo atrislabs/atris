@@ -1,0 +1,18 @@
+# scratch Atris workspace; stand-in yt-dlp writes one caption line (no network); stand-in claude kills itself; stand-in codex answers; writer left on auto
+$ atris youtube notes 'https://www.youtube.com/watch?v=sled123'
+claude stopped by SIGKILL; killed (cause unknown)
+Haiku did not answer; writing the notes with Codex instead.
+notes by Codex
+# Sled Dogs
+
+The dog sets the pace.
+quotes: 0 kept, 0 repaired, 0 dropped
+check: fill this
+next: atris youtube teach "https://www.youtube.com/watch?v=sled123"
+exit 0
+
+$ cat .atris/state/engine-resource.jsonl
+{"at":"2026-10-14T17:20:46.590Z","phase":"start","engine":"claude","task":"youtube notes","free_pct":79,"swap_used_mb":null,"swap_total_mb":null,"load":[2.39,2.82,3.41],"run_id":"584f2382-104c-4842-a2d9-24f349411198","pid":75160,"leaked_ssh_agents":0}
+{"at":"2026-10-14T17:20:47.009Z","phase":"end","engine":"claude","task":"youtube notes","free_pct":79,"swap_used_mb":null,"swap_total_mb":null,"load":[2.39,2.82,3.41],"run_id":"584f2382-104c-4842-a2d9-24f349411198","duration_ms":284,"signal":"SIGKILL","cause":"killed (cause unknown)"}
+{"at":"2026-10-14T17:20:47.082Z","phase":"start","engine":"codex","task":"youtube notes","free_pct":79,"swap_used_mb":null,"swap_total_mb":null,"load":[2.39,2.82,3.41],"run_id":"636358c0-ae03-43ba-9961-5098ae5aa2ad","pid":75160,"leaked_ssh_agents":0}
+{"at":"2026-10-14T17:20:47.629Z","phase":"end","engine":"codex","task":"youtube notes","free_pct":79,"swap_used_mb":null,"swap_total_mb":null,"load":[2.39,2.82,3.41],"run_id":"636358c0-ae03-43ba-9961-5098ae5aa2ad","duration_ms":414}

@@ -1,0 +1,19 @@
+unreadable run log shown in the sweep listing and the landing status, 2026-10-14
+
+failing first:
+  node --test --test-name-pattern="unreadable run log instead of showing no history" test/engine-resource.test.js
+  AssertionError [ERR_ASSERTION]: undefined == 'EISDIR'
+
+frozen check after the fix:
+  node --test test/engine-resource.test.js test/engine-dispatch.test.js
+  tests 143, pass 143, fail 0, exit 0
+
+real CLI, scratch repo with a folder where the run log should be:
+  $ node bin/atris.js engine sweep
+  could not read the engine run log: EISDIR, so past sweeps, kills, and errors are unknown
+  sweep exit=0
+  $ node bin/atris.js autoland status
+    engine run log: could not read it (EISDIR), so lost, killed, and failed runs in the last day are unknown
+  status exit=0
+
+before: both views read the unreadable log as empty and printed no sweep and no SIGKILL, or nothing at all.

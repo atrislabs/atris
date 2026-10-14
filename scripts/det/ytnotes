@@ -315,6 +315,28 @@ run_with_timeout() {
   perl -e '$seconds = shift @ARGV; alarm $seconds; exec @ARGV or do { print STDERR "$ARGV[0]: not installed\n"; exit 127 }' "$seconds" "$@"
 }
 
+# Machine memory and load at both ends of one writer launch, in the caller's
+# Atris workspace, so a writer killed with SIGKILL says whether the machine
+# was short on memory. A reading that fails never stops the notes.
+engine_reading() {
+  (cd "$CALLER_CWD" && node "$SCRIPT_DIR/engine-reading.js" "$@") 2>/dev/null || true
+}
+
+with_readings() {
+  local engine="$1" token cause status=0
+  shift
+  token=$(engine_reading start "$engine" "youtube notes" "$$")
+  "$@" || status=$?
+  [ -n "$token" ] || return "$status"
+  cause=$(engine_reading end "$engine" "youtube notes" "$token" "$status")
+  if [ -n "$cause" ]; then
+    echo "$engine stopped by SIGKILL; $cause" >&2
+    # auto sends writer errors to a file; it shows this line on screen.
+    echo "$engine stopped by SIGKILL; $cause" > "$WORK/yt_${ID}.kill"
+  fi
+  return "$status"
+}
+
 run_atris_fast() {
   if [ ! -d "$CALLER_CWD/atris" ]; then
     echo "atris-fast requires ytnotes to run from an initialized Atris workspace" >&2
@@ -392,12 +414,12 @@ process.stdin.on("end", () => {
 }
 
 run_grok() {
-  run_with_timeout 240 grok --verbatim --no-memory --no-plan --no-subagents \
+  with_readings grok run_with_timeout 240 grok --verbatim --no-memory --no-plan --no-subagents \
     --disable-web-search --max-turns 3 -p "$PROMPT"
 }
 
 run_haiku() {
-  run_with_timeout 240 claude -p "$PROMPT" --model "${1:-claude-haiku-5-5}"
+  with_readings claude run_with_timeout 240 claude -p "$PROMPT" --model "${1:-claude-haiku-5-5}"
 }
 
 # Gemini Flash through the Antigravity CLI (agy). On an 85-minute transcript it
@@ -426,7 +448,7 @@ run_gemini() {
   command -v agy >/dev/null 2>&1 || { echo "agy is not installed" >&2; return 127; }
   agy_is_cli || { echo "agy on PATH is the Antigravity editor launcher, which has no -p mode. Install the Antigravity CLI for Gemini notes." >&2; return 127; }
   agy_signed_in || { echo "agy is installed but not signed in. Run: agy (sign in once) for Gemini notes." >&2; return 127; }
-  run_with_timeout 120 agy -p "$PROMPT" --model "${ATRIS_YTNOTES_GEMINI_MODEL:-${1:-gemini-3.8-flash}}" \
+  with_readings agy run_with_timeout 120 agy -p "$PROMPT" --model "${ATRIS_YTNOTES_GEMINI_MODEL:-${1:-gemini-3.8-flash}}" \
     --effort "${2:-low}" --print-timeout 110s </dev/null
 }
 
@@ -483,8 +505,8 @@ run_writer() {
   case "$1" in
     agy) run_gemini "$model" "${3:-}" ;;
     claude) run_haiku "$model" ;;
-    codex) run_with_timeout 240 codex exec ${model:+-m "$model"} --sandbox read-only --skip-git-repo-check "$PROMPT" </dev/null ;;
-    cursor-agent) run_with_timeout 240 cursor-agent --trust ${model:+--model "$model"} -p "$PROMPT" ;;
+    codex) with_readings codex run_with_timeout 240 codex exec ${model:+-m "$model"} --sandbox read-only --skip-git-repo-check "$PROMPT" </dev/null ;;
+    cursor-agent) with_readings cursor-agent run_with_timeout 240 cursor-agent --trust ${model:+--model "$model"} -p "$PROMPT" ;;
   esac
 }
 
@@ -501,11 +523,13 @@ run_auto() {
     if [ -n "$tried" ]; then
       echo "$tried did not answer; writing the notes with $label instead." >&2
     fi
+    rm -f "$WORK/yt_${ID}.kill"
     if out=$(run_writer "$cmd" "$model" "$effort" 2>>"$WORK/yt_${ID}.engine.err") && printf '%s' "$out" | grep -q '[[:alnum:]]'; then
       printf '%s\n' "$out"
       echo "notes by $label" >&2
       return 0
     fi
+    [ -f "$WORK/yt_${ID}.kill" ] && cat "$WORK/yt_${ID}.kill" >&2
     tried="$label"
   done
   if [ -n "$tried" ]; then

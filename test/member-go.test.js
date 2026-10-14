@@ -205,6 +205,15 @@ test('a pulled task moves to review on a passing check and back to the list on a
       });
       assert.equal(noProof.outcome, 'released');
 
+      const slow = add('Long job');
+      taskDb.claimTask(db, { id: slow, claimedBy: 'executor' });
+      const timedOut = memberGoFinishTask('executor', taskDb.getTask(db, slow), {
+        started: true, mission_id: 'm-6', mission: { status: 'running' },
+        ticks: [{ status: 'errored', reason: 'claude-timeout', ran: false }],
+      });
+      assert.equal(timedOut.outcome, 'released');
+      assert.equal(timedOut.reason, 'ran out of time before the work finished');
+
       const failed = memberGoFinishTask('executor', taskDb.getTask(db, fail), {
         started: true, mission_id: 'm-2', mission: { status: 'running' }, error: 'check failed: 2 tests red\nstack',
       });
@@ -230,5 +239,25 @@ test('member go never claims a task for a human member', () => {
     const row = taskDb.getTask(db, id);
     assert.equal(row.status, 'open');
     assert.equal(row.claimed_by, null);
+  });
+});
+
+
+test('supervised go stays idle instead of running a goal when checks are missing or prose', () => {
+  withTaskProject(({ root, taskDb, db, add, env }) => {
+    writeGoal(root, 'executor', { title: 'Old goal', next_push: 'Old next push' });
+    const missing = add('Tidy the readme');
+    const prose = add('Polish the docs', { metadata: { verify: 'looks good to a reader' } });
+    const result = runCli(['member', 'go', 'executor', '--needs-check'], root, env);
+    assert.equal(result.status, 75, result.stderr || result.stdout);
+    assert.equal(result.stdout.trim(), 'executor is idle, no task with a check');
+    assert.equal(taskDb.getTask(db, missing).status, 'open');
+    assert.equal(taskDb.getTask(db, prose).status, 'open');
+    assert.equal(fs.existsSync(path.join(root, '.atris', 'state', 'missions.jsonl')), false);
+    const valid = add('Fix clock behavior', { metadata: { verify: 'node --test test/clock.test.js' } });
+    const preview = runCli(['member', 'go', 'executor', '--needs-check', '--dry-run', '--json'], root, env);
+    assert.equal(preview.status, 0, preview.stderr || preview.stdout);
+    assert.equal(JSON.parse(preview.stdout).task.id, valid);
+    assert.equal(taskDb.getTask(db, valid).status, 'open');
   });
 });
