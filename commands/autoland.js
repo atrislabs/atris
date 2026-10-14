@@ -536,10 +536,17 @@ function showStatus(root, args) {
     console.log(`  engine runs closed after their parent died in the last day: ${lost.lost_closed_day}, newest ${newest.engine || 'unknown engine'} on ${newest.task || 'no task'} at ${when}`);
   }
   if (lost.kills_day) {
-    const kill = lost.last_kill;
+    // Timeouts are counted apart, and the newest kill named is the newest one
+    // that was not a timeout, so a night of timeouts cannot hide a crash.
+    const timeLimit = lost.time_limit_kills_day;
+    const counts = timeLimit === lost.kills_day
+      ? 'all at their time limit'
+      : `${timeLimit ? `${timeLimit} at their time limit, ` : ''}${lost.low_memory_kills_day} with machine memory low`;
+    const kill = lost.last_day_other_kill || lost.last_kill;
+    const label = timeLimit && lost.last_day_other_kill ? 'newest not at a time limit:' : 'newest';
     const when = `${String(kill.at || '').slice(0, 16).replace('T', ' ')} UTC`;
     const free = Number.isFinite(kill.free_pct) ? `, ${kill.free_pct}% memory free` : '';
-    console.log(`  engine runs force-killed in the last day: ${lost.kills_day}, ${lost.low_memory_kills_day} with machine memory low; newest ${kill.engine || 'unknown engine'} on ${kill.task || 'no task'} at ${when}, ${kill.cause || 'cause unknown'}${free}`);
+    console.log(`  engine runs force-killed in the last day: ${lost.kills_day}, ${counts}; ${label} ${kill.engine || 'unknown engine'} on ${kill.task || 'no task'} at ${when}, ${kill.cause || 'cause unknown'}${free}`);
   }
   console.log('');
   const humanOnly = blocked.filter((r) => String(r.reason || '').startsWith('denied_tag_'));
