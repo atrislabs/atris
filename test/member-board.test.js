@@ -430,6 +430,27 @@ test('board shows the command inside a shell wrapper or after a cd, but not in t
   assert.equal(rows[0].step, 'Run: cd /repo/app && git rev-parse HEAD', 'apps reading the rows get the step as written');
 });
 
+test('board says a heredoc step is a script or a file write, but not in the row data', () => {
+  const now = Date.parse('2026-10-14T13:00:00Z');
+  const step = (name, text) => memberRow(name, `2026-10-14T12:58:00Z m-1 started: map it\n2026-10-14T12:59:30Z m-1 ${text}\n`, now);
+  const rows = [
+    step('py', "running: python3 - <<'PY'"),
+    step('nd', 'Run: cd /repo && node <<NODE'),
+    step('add', "running: cat >> atris/team/scout/logs/day.md <<'EOF'"),
+    step('new', `Run: /bin/zsh -lc "cat > notes/plan.md <<'EOF'"`),
+    step('msg', "running: git commit -q -F - <<'EOF'"),
+    step('mid', "running: python3 - <<'PY' && ls"),
+  ];
+  const shown = (name) => renderBoard(rows, '/x').split('\n').find((l) => l.startsWith(`${name} `));
+  assert.ok(shown('py').endsWith('running: python3 script'), shown('py'));
+  assert.ok(shown('nd').endsWith('Run: node script'), shown('nd'));
+  assert.ok(shown('add').endsWith('running: append to atris/team/scout/logs/day.md'), shown('add'));
+  assert.ok(shown('new').endsWith('Run: write notes/plan.md'), shown('new'));
+  assert.ok(shown('msg').endsWith("running: git commit -q -F - <<'EOF'"), 'any other heredoc stays as written');
+  assert.ok(shown('mid').endsWith("running: python3 - <<'PY' && ls"), 'a heredoc that is not the end of the step stays');
+  assert.equal(rows[0].step, "running: python3 - <<'PY'", 'apps reading the rows get the step as written');
+});
+
 test('board leaves the member name off a job that repeats it, but not off the row data', () => {
   const now = Date.parse('2026-10-14T13:00:00Z');
   const job = (name, text) => memberRow(name, `2026-10-14T12:58:00Z m-1 started: ${text}\n2026-10-14T12:59:30Z m-1 running: ls\n`, now);
