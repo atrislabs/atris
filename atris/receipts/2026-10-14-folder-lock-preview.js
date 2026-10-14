@@ -51,6 +51,8 @@ function main() {
   assert.equal(fs.existsSync(path.join(repo, '.atris/state/worktree_removals.jsonl')), false);
   console.log(`unsafe preview observed: ${/would remove\s+landed-with-lock/.test(result.stdout)}`);
   console.log(`exact lock reported: ${result.stdout.includes(lock)}`);
+  assert.ok(!/would remove\s+landed-with-lock/.test(result.stdout));
+  assert.ok(result.stdout.includes(`${lock} (7200s old)`));
   console.log('fixture retained for inspection; no folder removal attempted');
 
 }

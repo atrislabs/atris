@@ -99,6 +99,11 @@ test('tidy removes landed clean copies and leaves everything else to git and the
     assert.equal(byName(result, 'landed-clean').action, 'removed');
     assert.equal(fs.existsSync(clean), false);
     assert.equal(branchExists(fx.repo, 'landed-clean'), false);
+    const removals = fs.readFileSync(path.join(fx.repo, '.atris/state/worktree_removals.jsonl'), 'utf8')
+      .trim().split('\n').map(JSON.parse);
+    assert.equal(removals.length, 2);
+    assert.ok(removals.some((line) => line.path === clean && line.branch === 'landed-clean'));
+    assert.ok(removals.every((line) => line.by === 'atris member tidy' && line.reason === 'branch_landed'));
 
     // Landed on origin but the local master is behind: git removes the copy
     // and `branch -d` keeps the branch.
@@ -128,6 +133,36 @@ test('tidy removes landed clean copies and leaves everything else to git and the
     assert.match(text, /tidy: removed 2, kept 4, of 6 copies/);
   } finally {
     if (busyProcess) busyProcess.kill();
+    fs.rmSync(fx.base, { recursive: true, force: true });
+  }
+});
+
+test('tidy keeps old private and shared git locks and reports every path and age', () => {
+  const fx = makeFixture();
+  try {
+    const copy = addCopy(fx, 'landed-locked');
+    const privateDir = runGit(['rev-parse', '--absolute-git-dir'], copy);
+    const locks = [path.join(privateDir, 'index.lock'), path.join(fx.repo, '.git', 'refs', 'heads', 'master.lock')];
+    const now = Date.now();
+    const aged = new Date(now - 7200000);
+    for (const lock of locks) {
+      fs.writeFileSync(lock, 'unfinished git work\n');
+      fs.utimesSync(lock, aged, aged);
+    }
+    for (const dryRun of [true, false]) {
+      const result = tidyMemberCopies({ repoRoot: fx.repo, dryRun, now });
+      assert.equal(result.aborted, null);
+      assert.equal(result.removed, 0);
+      assert.equal(byName(result, 'landed-locked').action, 'kept');
+      for (const lock of locks) {
+        assert.ok(formatTidy(result).includes(`${lock} (7200s old)`), formatTidy(result));
+        assert.ok(fs.existsSync(lock));
+      }
+      assert.ok(fs.existsSync(copy));
+      assert.ok(branchExists(fx.repo, 'landed-locked'));
+      assert.equal(fs.existsSync(path.join(fx.repo, '.atris/state/worktree_removals.jsonl')), false);
+    }
+  } finally {
     fs.rmSync(fx.base, { recursive: true, force: true });
   }
 });

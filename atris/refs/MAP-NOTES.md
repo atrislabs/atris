@@ -2295,4 +2295,4 @@ npm publish
 
 ## Old Git-lock cleanup audit
 - `atris/receipts/2026-10-14-folder-lock-preview.js:1`: real CLI preview using an old lock, without removing a folder; output and required check in the matching receipt.
-- `lib/member-tidy.js:197`: current direct removal boundary; `commands/member.js:11356`: actual tidy CLI handler.
+- `lib/member-tidy.js:194`: shared activity check before preview or removal; `lib/member-tidy.js:209`: successful removal record; `lib/git-activity.js:9`: private and shared lock paths and ages; `commands/member.js:11356`: actual tidy CLI handler.
