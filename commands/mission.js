@@ -10288,6 +10288,9 @@ async function executeMissionRunTicksPhase(context) {
         } finally {
           restoreTickRunnerProfile();
         }
+        // A note can arrive while the worker runs. Session bookkeeping below
+        // must not overwrite it with the snapshot used to build the prompt.
+        mission = resolveMission(mission.id, cwd) || mission;
         tickWorkerRun = { endedMs: Date.now(), usage: (claudeResult && claudeResult.run_usage) || {}, prep: tickPrep, startedAt: workerStartedAt };
         result.claude = {
           ok: claudeResult.ok,
@@ -10459,6 +10462,9 @@ async function executeMissionRunTicksPhase(context) {
       // reopen closed rooms, mission 32 complete@19:23:33 → ready@19:23:48).
       const latestOnDisk = loadMissionMap(cwd).get(mission.id) || mission;
       const alreadyTerminal = TERMINAL_STATUSES.has(String(latestOnDisk.status || ''));
+      const needsDirection = !alreadyTerminal && !tickSkipWorker
+        && result.status === 'ran' && !pauseReason
+        && pendingMissionPings(latestOnDisk).length > 0;
       // A passing verifier alone never completes a mission whose linked task
       // is not accepted: park it ready and name the accept command instead.
       const acceptGate = (verifierResult?.passed && completeOnPass && !fullBudgetMode && !mission.always_on && !xpReadyAction)
@@ -10472,7 +10478,11 @@ async function executeMissionRunTicksPhase(context) {
                         (verifierResult ? 'blocked' :
                         (result.status === 'ran' ? 'running' : mission.status)));
       let nextAction = mission.next_action;
-      if (alreadyTerminal) {
+      if (needsDirection) {
+        newStatus = 'running';
+        nextAction = 'read the unread operator note before finishing';
+        cycleTickLimit = Math.max(cycleTickLimit, ticks.length + 1);
+      } else if (alreadyTerminal) {
         newStatus = latestOnDisk.status;
         nextAction = latestOnDisk.next_action
           || (latestOnDisk.status === 'complete' ? 'mission complete' : nextAction);
@@ -10621,6 +10631,9 @@ async function executeMissionRunTicksPhase(context) {
       if (['mission-diff-unreadable', 'protected-lane-review'].includes(pauseReason)) break;
       if (callerSessionRunner && result.status === 'ran') break;
       if (newStatus === 'complete' || (newStatus === 'ready' && !mission.always_on && !fullBudgetMode)) break;
+      // Deliver late direction immediately, including on a one-tick job.
+      // The wall, abort, frozen contract and protected lane gates still apply.
+      if (needsDirection) continue;
       // BCK-1324: two consecutive ticks that each self-report "ran" but leave no
       // structural trace is a manufactured-busywork loop, not progress. Stop
       // honestly (clean stop, not a pause/blocker) rather than burn the rest
