@@ -79,6 +79,10 @@ function fixEmDash(s, { endsBlock = false } = {}) {
   const quoted = label && /^(?:"[^"]*"|\u201c[^\u201c\u201d]*\u201d)$/.test(label[2]);
   if (label) return `${label[1]}${label[2]}${!quoted && /[.,;:!?][*_`"'\u201d\u2019]*$/.test(label[2]) ? '' : ':'}${s.length > label[0].length ? ' ' : ''}${fixEmDash(s.slice(label[0].length), { endsBlock })}`;
   return s
+    // a bold phrase that opens a sentence partway through the line is a label
+    // too: "etc. **Include eliminate steps**: what gets deleted". One that ends
+    // in its own punctuation, "**What now?**", keeps it and just loses the dash.
+    .replace(/([.!?]["'\u201d\u2019)]*\s+)(\*\*[^*\u2014]*[^\s*\u2014]\*\*|__[^_\u2014]*[^\s_\u2014]__)\s*\u2014\s*(?=\S)/g, (m, lead, bold) => `${lead}${bold}${/[.,;:!?][*_]+$/.test(bold) ? '' : ':'} `)
     // an aside never crosses a sentence end; dashes split by one are fixed alone
     .replace(/\s*\u2014\s*((?:(?![.!?]["'\u201d\u2019)]*\s)[^\u2014])*[^\s\u2014])\s*\u2014\s*(?=(.?))/g, (m, aside, next) => ` ${wrappedInParens(aside) ? aside : `(${aside})`}${next && !/[.,;:!?)]/.test(next) ? ' ' : ''}`)
     // a leftover dash after a quote that already ends its sentence goes, and

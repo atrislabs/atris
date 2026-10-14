@@ -659,6 +659,23 @@ test('fix gives a heading title and subtitle a colon, but not before a joining w
   ]);
 });
 
+test('fix gives a bold phrase that opens a sentence partway through a line a colon', () => {
+  // from the endgame skill and a numbered setup step in this repo
+  const file = tmpFile('mid-label.md', [
+    '2. **Path**: Chain backward, etc. **Include eliminate steps** \u2014 what gets deleted.',
+    'Review it. **Always re-run the checks** \u2014 the sandbox gives false failures.',
+    'We ran it **twice** \u2014 and it held.',
+    'It held. **What now?** \u2014 we ship.',
+  ].join('\n'));
+  const { changes } = applyFixes([file], RULES);
+  assert.deepEqual(changes.map((c) => c.after), [
+    '2. **Path**: Chain backward, etc. **Include eliminate steps**: what gets deleted.',
+    'Review it. **Always re-run the checks**: the sandbox gives false failures.',
+    'We ran it **twice**, and it held.',
+    'It held. **What now?** we ship.',
+  ]);
+});
+
 test('fix drops a dash after a quote that already ends its sentence', () => {
   // from this repo's feature notes, policies, and the endgame skill
   const file = tmpFile('quote-end.md', [
