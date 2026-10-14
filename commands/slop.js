@@ -488,10 +488,11 @@ function fixEmDash(s, { endsBlock = false, startsBlock = false, spans = [] } = {
   // [b]". Two pressed dashes in a sentence are still one break: "He said,".
   s = s.replace(/(?<=[\])|+][ \t]*)\u2014{2,}(?=[ \t]*[[(|+])/g, (m) => '-'.repeat(m.length));
   // a line indented like a code block is where a diagram lives, and so is a
-  // line that opens with a box, not a link or a checkbox, at any indent. Any
-  // run of pressed dashes there is a drawn line, between plain-word steps or
-  // opening a branch: "plan --- do --- review", "  -- [b]", never "plan (do)".
-  const diagramStart = /^(?: {4}|\t)|^\s*(?:\[(?![ xX]\])[^\]\n]*\](?![([\uE000])|\([^)\n]*\))/;
+  // line that opens with a box, not a link or a checkbox, at any indent or
+  // after a list marker. Any run of pressed dashes there is a drawn line,
+  // between plain-word steps or opening a branch: "plan --- do --- review",
+  // "  -- [b]", "1. [a] --- b", never "plan (do)".
+  const diagramStart = /^(?: {4}|\t)|^\s*(?:(?:[-*+]|\d+[.)])\s+)?(?:\[(?![ xX]\])[^\]\n]*\](?![([\uE000])|\([^)\n]*\))/;
   if (diagramStart.test(s)) s = s.replace(/\u2014{2,}/g, (m) => '-'.repeat(m.length));
   // once such a line holds a drawn line or an arrow it is a diagram, so a
   // single dash on it is one more short link: "[a] - done -> [c]", never

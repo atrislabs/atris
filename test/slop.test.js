@@ -2511,6 +2511,23 @@ test('fix keeps pressed dashes on a line that opens with a box as a drawn line',
   ]);
 });
 
+test('fix reads a list item that opens with a box as a diagram line', () => {
+  // the list marker hid the box: "- [plan]: build -> [review]"
+  const file = tmpFile('list-diagram.md', [
+    '- [plan] \u2014 build \u2014> [review]',
+    '1. [plan] \u2014\u2014\u2014 build \u2014\u2014\u2014 [review]',
+    '- [Title](file.md) \u2014 hook -> more',
+    '- [ ] ship it \u2014\u2014 today',
+  ].join('\n\n'));
+  const { changes } = applyFixes([file], RULES, { write: false });
+  assert.deepEqual(changes.map((c) => c.after), [
+    '- [plan] - build -> [review]',
+    '1. [plan] --- build --- [review]',
+    '- [Title](file.md): hook -> more',
+    '- [ ] ship it: today',
+  ]);
+});
+
 test('fix keeps a journal heading that ends in a time readable for its hour', () => {
   // analytics reads the hour after a dash or a spaced hyphen at the end of a
   // heading; the fix wrote "### Watch: 19:05", which hides it, and glued
