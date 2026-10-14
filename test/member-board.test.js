@@ -187,6 +187,32 @@ test('a busy row with an earlier failure shrinks its last result before it overf
   }
 });
 
+test('a live run with a long name drops last step before it overflows 80', () => {
+  const dir = fakeDir({
+    'objective-generator': [
+      `${at(900)} m-1 started: fix it`,
+      `${at(840)} m-1 finished: failed (bad exit 2)`,
+      `${at(60)} m-2 started: try again on the chat page`,
+      `${at(5)} m-2 running: npm test`,
+    ],
+    builder: [`${at(100)} m-3 started: build`, `${at(80)} m-3 finished: failed (engine error)`],
+  });
+  try {
+    const rows = readBoard({ dir, now: NOW }).map((r) => (r.member === 'objective-generator'
+      ? { ...r, alive: true, engine: 'claude', running_for: '1m' } : r));
+    const roomy = renderBoard(rows, dir, 0, 100);
+    for (const l of roomy.split('\n')) assert.ok(l.length <= 100, `fits in 100: ${l.length}`);
+    assert.match(roomy, /^member\s+state\s+last result\s+run\s+ago\s+job\s+last step$/m, 'room for both: both stay');
+    const tiny = renderBoard(rows, dir, 0, 80);
+    for (const l of tiny.split('\n')) assert.ok(l.length <= 80, `fits in 80: ${l.length}`);
+    assert.match(tiny, /^member\s+state\s+last result\s+run\s+ago\s+job$/m, 'last step leaves');
+    assert.match(tiny, /^objective-generator\s+working\s+failed 14m\s+claude 1m\s+5s ago\s+try again \.\.\.$/m, 'the job gets the room');
+    assert.match(tiny, /^builder\s+done failed\s+engine error\s+-\s+1m ago\s+build$/m);
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
 test('a short window keeps the header and the newest rows, and says how many did not fit', () => {
   const logs = {};
   for (let i = 1; i <= 8; i++) logs[`m${i}`] = [`${at(i * 10)} m-${i} started: job ${i}`, `${at(i * 10 - 5)} m-${i} running: step ${i}`];
