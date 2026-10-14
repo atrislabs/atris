@@ -660,8 +660,10 @@ function fixEmDash(s, { endsBlock = false, startsBlock = false, spans = [] } = {
       // too: "We ship, *fast*, every day", never "We ship (*fast*) every day".
       // So is a lone word that only says how often or how sure: "The gate,
       // always, blocks it". A lone name keeps its brackets: "the tool (Redis)".
+      // A short stock phrase is the same: "It works, of course, on day one".
       const stressed = /^(\*{1,2}|_{1,2})[\w'-]+\1$/.test(aside)
-        || /^(?:always|never|often|still|again|sometimes|usually|rarely|seldom|maybe|perhaps|probably|certainly|surely|honestly|finally|eventually)$/i.test(aside);
+        || /^(?:always|never|often|still|again|sometimes|usually|rarely|seldom|maybe|perhaps|probably|certainly|surely|honestly|finally|eventually)$/i.test(aside)
+        || /^(?:of course|for now|at least|at most|at best|at worst|at first|in fact|in short|in theory|in practice|for sure|so far|by far|after all|above all|as usual|once again)$/i.test(aside);
       if (holdsParens || stressed || insideParens(whole.slice(0, at))) return `${/[,;:]$/.test(whole.slice(0, at)) ? ' ' : ', '}${aside}${gap ? ', ' : ''}`;
       // the closing dash also stood in for the comma before a "which" remark:
       // "scale (model size, data), which is a bet", never "data) which is".

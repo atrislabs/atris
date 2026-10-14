@@ -1905,6 +1905,23 @@ test('fix gives a pair of dashes around a lone how-often word commas', () => {
   ]);
 });
 
+test('fix gives a pair of dashes around a short stock phrase commas', () => {
+  // "of course" read as a bracketed aside: "It works (of course) on day one"
+  const file = tmpFile('stock-dash-pair.md', [
+    'It works \u2014 of course \u2014 on day one.',
+    '',
+    'We keep it \u2014 for now \u2014 as is.',
+    '',
+    'The tool \u2014 in fact Redis \u2014 runs it.',
+  ].join('\n'));
+  const { changes } = applyFixes([file], RULES);
+  assert.deepEqual(changes.map((c) => c.after), [
+    'It works, of course, on day one.',
+    'We keep it, for now, as is.',
+    'The tool (in fact Redis) runs it.',
+  ]);
+});
+
 test('fix reads no word that only says when as the subject of a clause', () => {
   // "now ships" after a dash read as a bare subject and a verb
   const file = tmpFile('when-word.md', [
