@@ -2783,8 +2783,8 @@ test('fix draws a dash pressed against a fat arrow as more of its shaft', () => 
   // the arrow lost its shaft to a comma, "plan, => build", or got a mixed
   // one, "plan --=> build"
   const file = tmpFile('fat-arrow-shaft.md', [
-    'plan —=> build',
-    'plan ——=> build — review => ship',
+    'plan \u2014=> build',
+    'plan \u2014\u2014=> build \u2014 review => ship',
   ].join('\n\n'));
   const { changes } = applyFixes([file], RULES, { write: false });
   assert.deepEqual(changes.map((c) => c.after), [
