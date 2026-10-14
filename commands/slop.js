@@ -25,14 +25,21 @@ const SCAN_EXTS = new Set(['.css', '.scss', '.sass', '.less', '.tsx', '.jsx', '.
 const SKIP_DIRS = new Set(['node_modules', '.git', 'dist', 'build', '.next', '.astro', 'coverage', '.cache', 'out', 'vendor']);
 
 // A heading or a line-opening label (bold, code span, or bracket) takes a colon
-// at its first dash; "**Verify claims**, If" read worse than the dash. Every
-// other dash becomes a comma.
+// at its first dash; "**Verify claims**, If" read worse than the dash. So does
+// a list item opening with five words or fewer ("- Accuracy over speed —").
+// Exactly two dashes around an aside become parentheses, unless the line holds
+// a code span the parentheses could cut across. Every other dash becomes a comma.
 const EM_DASH_LABEL = /^(\s*(?:[-*+]\s+|\d+\.\s+)?(?:\*\*[^*]+\*\*|__[^_]+__|`[^`]+`|\[[^\]]+\]))\s*—\s*/;
+const EM_DASH_SHORT_OPENER = /^(\s*(?:[-*+]\s+|\d+\.\s+)(?:[^\s—.,;:!?]+ ){0,4}[^\s—.,;:!?]+)\s*—\s*/;
+const EM_DASH_ASIDE = /^([^—]*\S)\s*—\s*([^—()]*[^\s—()])\s*—\s*(\S[^—]*)$/;
 function fixEmDash(line) {
   let out = line;
   if (/^\s*#{1,6}\s/.test(out)) out = out.replace(/\s*—\s*/, ': ');
-  else out = out.replace(EM_DASH_LABEL, '$1: ');
-  return out.replace(/\s*—\s*/g, ', ');
+  else if (EM_DASH_LABEL.test(out)) out = out.replace(EM_DASH_LABEL, '$1: ');
+  else out = out.replace(EM_DASH_SHORT_OPENER, '$1: ');
+  if (!out.includes('`')) out = out.replace(EM_DASH_ASIDE, '$1 ($2) $3');
+  out = out.replace(/\s*—\s*/g, ', ');
+  return /\s$/.test(line) ? out : out.trimEnd(); // a line-end dash leaves no trailing space
 }
 
 // Each rule is deterministic: a regex + a one-line why. severity drives the icon.
