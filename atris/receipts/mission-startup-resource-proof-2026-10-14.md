@@ -26,6 +26,8 @@ Initial checks rejected the Claude fixture before startup, then exposed that CLI
 
 Independent review approved; targeted real CLI check passed, exit 0: `node --test --test-name-pattern='mission runners record paired readings' test/engine-resource.test.js`.
 
+Review gate: plain `node` selected an older installation and failed four existing CLI checks, exit 1. Explicit `/opt/homebrew/bin/node --test test/engine-resource.test.js test/engine-dispatch.test.js` passed, exit 0; task moved to Review. Supported runtime remains Node 25.6.1.
+
 Plan: startup failure -> one final reading -> frozen checks -> review -> push.
 
 next_push: preserve the original mission runner startup error in its saved result so operators can see why it failed.
