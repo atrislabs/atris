@@ -2291,3 +2291,7 @@ npm publish
 ## Read-only status scheduler check
 
 - `test/autoland.test.js:791` runs the real status CLI against a slow fake crontab; `test/autoland.test.js:806` asserts its invocation marker is absent instead of measuring startup time.
+
+## Mission lock fixture isolation
+
+- `test/mission-run-reliability.test.js:14` imports the shared environment scrubber; both real CLI launch helpers apply fixture settings after scrubbing. `test/agent-env-runner-isolation.test.js:93` runs the live lock collision check with inherited codex markers and immediately failing runner templates.
