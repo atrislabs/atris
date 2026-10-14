@@ -306,6 +306,56 @@ test('when process environments cannot be read, every agent counts as in use', (
   assert.ok(referenced.has(200));
 });
 
+test('the agent scan names a reader it could not run, so an empty leak list is not read as clean', () => {
+  const agentLine = '  200     1   501    14:50:14 ssh-agent -s';
+  const scan = ({ env = true, sockets = true, agents = true } = {}) => readSshAgents({ run: (cmd, args) => {
+    if (cmd === 'lsof') return sockets ? { status: 0, stdout: 'p200\nf3\nn/tmp/ssh-a/agent.199' } : { status: 1, stdout: '' };
+    if (args.includes('-E')) return env ? { status: 0, stdout: '  300 SHELL=/bin/zsh' } : { status: 1, stdout: '' };
+    return { status: 0, stdout: agents ? agentLine : '' };
+  } });
+  assert.deepStrictEqual(scan().unread, []);
+  assert.deepStrictEqual(scan({ env: false }).unread, ['process environments']);
+  assert.deepStrictEqual(scan({ sockets: false }).unread, ['agent sockets']);
+  // With no agents running, lsof finds no sockets, and that is a clean answer.
+  assert.deepStrictEqual(scan({ sockets: false, agents: false }).unread, []);
+});
+
+test('atris engine sweep says when a reader could not run, in text and json', () => {
+  const { engineCommand } = require('../commands/engine');
+  const read = () => ({
+    agents: [{ pid: 200, ppid: 1, uid: 501, age_sec: 53414, args: 'ssh-agent -s' }],
+    referenced: new Set([200]),
+    unread: ['agent sockets'],
+  });
+  const run = (args) => {
+    const out = [];
+    const original = console.log;
+    console.log = (line) => out.push(String(line));
+    try {
+      engineCommand(['sweep', ...args], { root: os.tmpdir(), engineSweep: { read, uid: 501 } });
+    } finally {
+      console.log = original;
+    }
+    return out.join('\n');
+  };
+  const text = run([]);
+  assert.match(text, /1 ssh-agent running, 0 look leaked/);
+  assert.match(text, /^could not read the agent sockets, so no ssh-agent could be proven unused; 0 leaked here does not mean none leaked$/m);
+  assert.deepStrictEqual(JSON.parse(run(['--json'])).unread, ['agent sockets']);
+  const clean = (() => {
+    const out = [];
+    const original = console.log;
+    console.log = (line) => out.push(String(line));
+    try {
+      engineCommand(['sweep'], { root: os.tmpdir(), engineSweep: { read: () => ({ agents: [], referenced: new Set(), unread: [] }), uid: 501 } });
+    } finally {
+      console.log = original;
+    }
+    return out.join('\n');
+  })();
+  assert.doesNotMatch(clean, /could not read/);
+});
+
 test('the hourly landing pass stops agents still leaked on the recheck and names the count', () => {
   const { runSshAgentSweep, sshAgentSweepNote } = require('../commands/autoland');
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'autoland-ssh-sweep-'));

@@ -2342,7 +2342,7 @@ function formatAgentAge(seconds) {
 function runEngineSweepCommand(args, root, deps = {}) {
   const { readSshAgents, findLeakedSshAgents, stopLeakedSshAgents, closeLostRuns, readResourceHistory, leakGrowthNote, LEAK_MIN_AGE_SEC } = require('../lib/engine-resource');
   const read = deps.read || readSshAgents;
-  const { agents, referenced } = read();
+  const { agents, referenced, unread = [] } = read();
   const uid = deps.uid !== undefined ? deps.uid : process.getuid();
   const leaked = findLeakedSshAgents(agents, { referenced, uid });
   const apply = args.includes('--apply');
@@ -2352,7 +2352,7 @@ function runEngineSweepCommand(args, root, deps = {}) {
   result.closed_runs = apply ? closeLostRuns(root, deps.now ? { now: deps.now } : {}) : [];
   const code = result.failed.length ? 1 : 0;
   if (args.includes('--json')) {
-    console.log(JSON.stringify({ running: agents.length, leaked, ...result, history: readResourceHistory(root) }, null, 2));
+    console.log(JSON.stringify({ running: agents.length, leaked, unread, ...result, history: readResourceHistory(root) }, null, 2));
     return code;
   }
   const plural = (n, word) => `${n} ${word}${n === 1 ? '' : 's'}`;
@@ -2372,6 +2372,9 @@ function runEngineSweepCommand(args, root, deps = {}) {
     ...leaked.slice(0, shown).map((agent) => `  pid ${String(agent.pid).padEnd(6)} ${formatAgentAge(agent.age_sec)}`),
   ];
   if (leaked.length > shown) lines.push(`  and ${leaked.length - shown} more`);
+  if (unread.length) {
+    lines.push(`could not read the ${unread.join(' or the ')}, so no ssh-agent could be proven unused; ${leaked.length} leaked here does not mean none leaked`);
+  }
   lines.push(leaked.length ? 'nothing was stopped. run atris engine sweep --apply to stop them.' : 'nothing was stopped.');
   lines.push('', ...resourceHistoryLines(history));
   console.log(lines.join('\n'));
