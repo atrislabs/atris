@@ -145,3 +145,122 @@ test('tidy removes nothing when it cannot ask the remote for its default branch'
   assert.match(String(result.error), /could not ask origin/i);
   for (const wt of [fx.merged, fx.old, fx.dirty]) assert.ok(fs.existsSync(wt), `${wt} should still exist`);
 });
+
+// Fail-closed checks: when tidy cannot be sure a copy is safe to remove, the
+// copy stays.
+
+function fakeBin(fx, name, script) {
+  const bin = path.join(fx.base, 'bin');
+  fs.mkdirSync(bin, { recursive: true });
+  fs.writeFileSync(path.join(bin, name), script, { mode: 0o755 });
+  return bin;
+}
+
+function withPath(bin, env, fn) {
+  const saved = { PATH: process.env.PATH };
+  for (const key of Object.keys(env)) saved[key] = process.env[key];
+  process.env.PATH = `${bin}${path.delimiter}${process.env.PATH}`;
+  Object.assign(process.env, env);
+  try { return fn(); } finally {
+    for (const [key, value] of Object.entries(saved)) {
+      if (value === undefined) delete process.env[key]; else process.env[key] = value;
+    }
+  }
+}
+
+test('an untracked draft is kept even when git is told to hide untracked files', () => {
+  const fx = fixture();
+  runGit(['config', 'status.showUntrackedFiles', 'no'], fx.repo);
+  fs.writeFileSync(path.join(fx.merged, 'draft.md'), 'unsaved idea\n');
+
+  const result = tidyMemberCopies(fx.repo, { noFetch: true });
+  assert.equal(byName(result, fx.merged).action, 'skipped', formatTidy(result));
+  assert.match(byName(result, fx.merged).reason, /uncommitted changes: draft\.md/);
+  assert.equal(fs.readFileSync(path.join(fx.merged, 'draft.md'), 'utf8'), 'unsaved idea\n');
+});
+
+test('edits hidden by assume-unchanged or skip-worktree are kept', () => {
+  for (const flag of ['--assume-unchanged', '--skip-worktree']) {
+    const fx = fixture();
+    runGit(['update-index', flag, 'README.md'], fx.merged);
+    fs.writeFileSync(path.join(fx.merged, 'README.md'), '# hidden edit\n');
+    assert.equal(runGit(['status', '--porcelain'], fx.merged), '', 'git status hides the edit');
+
+    const result = tidyMemberCopies(fx.repo, { noFetch: true });
+    assert.equal(byName(result, fx.merged).action, 'skipped', `${flag}: ${formatTidy(result)}`);
+    assert.match(byName(result, fx.merged).reason, /README\.md/);
+    assert.equal(fs.readFileSync(path.join(fx.merged, 'README.md'), 'utf8'), '# hidden edit\n');
+  }
+});
+
+test('a failed process scan keeps every copy', () => {
+  const fx = fixture();
+  const bin = fakeBin(fx, 'lsof', '#!/bin/sh\necho "lsof: broken" >&2\nexit 1\n');
+
+  const result = withPath(bin, {}, () => tidyMemberCopies(fx.repo, { noFetch: true }));
+  assert.equal(result.totals.removed + result.totals['backed up'], 0, formatTidy(result));
+  assert.equal(byName(result, fx.merged).reason, 'could not check for running processes');
+  for (const wt of [fx.merged, fx.old, fx.dirty]) assert.ok(fs.existsSync(wt), `${wt} should still exist`);
+  assert.notEqual(runGit(['branch', '--list', 'codex/architect-merged-20261001-000000'], fx.repo), '');
+});
+
+test('a copies folder that is a symlink to elsewhere removes nothing', () => {
+  const fx = fixture();
+  for (const wt of [fx.merged, fx.old, fx.dirty]) runGit(['worktree', 'remove', '--force', wt], fx.repo);
+  const outside = path.join(fx.base, 'outside');
+  fs.mkdirSync(outside);
+  fs.rmSync(fx.folder, { recursive: true, force: true });
+  fs.symlinkSync(outside, fx.folder);
+  const external = path.join(outside, 'external-copy');
+  runGit(['worktree', 'add', '-q', '-b', 'member/outside', external, 'origin/master'], fx.repo);
+
+  const result = tidyMemberCopies(fx.repo, { noFetch: true });
+  assert.match(String(result.error), /is a symlink, so nothing was removed/);
+  assert.ok(fs.existsSync(path.join(external, 'README.md')), 'outside copy untouched');
+  assert.notEqual(runGit(['branch', '--list', 'member/outside'], fx.repo), '');
+});
+
+test('a copy that is a symlink pointing outside is kept and the outside is untouched', () => {
+  const fx = fixture();
+  const outside = path.join(fx.base, 'outside');
+  fs.mkdirSync(outside);
+  const moved = path.join(outside, path.basename(fx.merged));
+  fs.renameSync(fx.merged, moved);
+  fs.symlinkSync(moved, fx.merged);
+
+  const result = tidyMemberCopies(fx.repo, { noFetch: true });
+  const row = byName(result, fx.merged);
+  assert.equal(row.action, 'skipped', formatTidy(result));
+  assert.match(row.reason, /outside the member copies folder|symlink/);
+  assert.ok(fs.existsSync(path.join(moved, 'merged.txt')), 'outside folder untouched');
+  assert.notEqual(runGit(['branch', '--list', 'codex/architect-merged-20261001-000000'], fx.repo), '');
+});
+
+test('a commit arriving after the merge check keeps the copy and its branch', () => {
+  const fx = fixture();
+  const realGit = spawnSync('sh', ['-c', 'command -v git'], { encoding: 'utf8' }).stdout.trim();
+  // A git that lands a new commit in the copy right after tidy asks whether
+  // the copy is merged, the way a member still working would.
+  const bin = fakeBin(fx, 'git', [
+    '#!/bin/sh',
+    '"$REAL_GIT" "$@"; st=$?',
+    'if [ "$1" = merge-base ] && [ "$(pwd -P)" = "$RACE_COPY" ] && [ ! -e "$RACE_FLAG" ]; then',
+    '  : > "$RACE_FLAG"',
+    '  echo late > late.txt',
+    '  "$REAL_GIT" add late.txt',
+    '  "$REAL_GIT" -c user.email=t@example.com -c user.name=T commit -q -m late',
+    'fi',
+    'exit $st',
+    '',
+  ].join('\n'));
+  const env = { REAL_GIT: realGit, RACE_COPY: fs.realpathSync(fx.merged), RACE_FLAG: path.join(fx.base, 'raced') };
+
+  const result = withPath(bin, env, () => tidyMemberCopies(fx.repo, { noFetch: true }));
+  assert.ok(fs.existsSync(env.RACE_FLAG), 'the late commit landed');
+  const row = byName(result, fx.merged);
+  assert.equal(row.action, 'kept', formatTidy(result));
+  assert.match(row.reason, /new commit arrived after the check/);
+  assert.ok(fs.existsSync(path.join(fx.merged, 'late.txt')));
+  const branchTip = runGit(['rev-parse', 'refs/heads/codex/architect-merged-20261001-000000'], fx.repo);
+  assert.equal(runGit(['log', '-1', '--format=%s', branchTip], fx.repo), 'late');
+});
