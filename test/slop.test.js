@@ -2779,6 +2779,20 @@ test('fix reads the ASCII fat arrow as an arrow, but not a comparison', () => {
   ]);
 });
 
+test('fix draws a dash pressed against a fat arrow as more of its shaft', () => {
+  // the arrow lost its shaft to a comma, "plan, => build", or got a mixed
+  // one, "plan --=> build"
+  const file = tmpFile('fat-arrow-shaft.md', [
+    'plan —=> build',
+    'plan ——=> build — review => ship',
+  ].join('\n\n'));
+  const { changes } = applyFixes([file], RULES, { write: false });
+  assert.deepEqual(changes.map((c) => c.after), [
+    'plan ==> build',
+    'plan ===> build - review => ship',
+  ]);
+});
+
 test('fix keeps a journal heading that ends in a time readable for its hour', () => {
   // analytics reads the hour after a dash or a spaced hyphen at the end of a
   // heading; the fix wrote "### Watch: 19:05", which hides it, and glued
