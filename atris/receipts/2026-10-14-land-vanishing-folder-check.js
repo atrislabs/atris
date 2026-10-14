@@ -22,8 +22,9 @@ function git(cwd, ...args) {
   return result.stdout.trim();
 }
 
-for (const withLock of [false, true]) {
-  const root = path.join(base, withLock ? 'locked' : 'unlocked');
+for (const mode of ['unlocked', 'locked', 'ordinary']) {
+  const withLock = mode === 'locked';
+  const root = path.join(base, mode);
   const repo = path.join(root, 'repo');
   const toolsDir = path.join(root, 'tools');
   fs.mkdirSync(repo, { recursive: true });
@@ -38,7 +39,10 @@ for (const withLock of [false, true]) {
   const copy = path.join(root, 'landed-copy');
   const moved = path.join(root, 'moved-copy');
   git(repo, 'worktree', 'add', '-q', '-b', 'landed-copy', copy);
-  const lock = path.join(git(copy, 'rev-parse', '--absolute-git-dir'), 'locked');
+  const privateDir = git(copy, 'rev-parse', '--absolute-git-dir');
+  const lock = path.join(privateDir, 'locked');
+  const ordinaryLocks = [path.join(privateDir, 'index.lock'), path.join(repo, '.git', 'packed-refs.lock')];
+  const expectedLocks = withLock ? [lock] : mode === 'ordinary' ? ordinaryLocks : [];
   const aged = new Date(Date.now() - 7200000);
   fs.utimesSync(copy, aged, aged);
   const countFile = path.join(root, 'checks');
@@ -58,6 +62,11 @@ if (args.includes('--git-dir') && args.includes('--git-common-dir') && process.c
       const aged = new Date(Date.now() - 7200000);
       fs.utimesSync(${JSON.stringify(lock)}, aged, aged);
     }
+    for (const [index, lock] of ${JSON.stringify(mode === 'ordinary' ? ordinaryLocks : [])}.entries()) {
+      fs.writeFileSync(lock, 'fixture lock\\n');
+      const aged = new Date(Date.now() - (7200000 + index * 3600000));
+      fs.utimesSync(lock, aged, aged);
+    }
     fs.renameSync(${JSON.stringify(copy)}, ${JSON.stringify(moved)});
   }
 }
@@ -76,14 +85,16 @@ process.exit(result.status === null ? 1 : result.status);
   console.log(`cli exit: ${result.status}`);
   assert.equal(result.status, 0);
   assert.equal(fs.readFileSync(countFile, 'utf8'), '2');
-  assert.ok(result.stdout.includes(`${copy} (folder is missing${withLock ? '; git lock: ' + lock : ')'}`), result.stdout);
-  if (withLock) {
-    assert.ok(fs.existsSync(lock));
-    assert.match(result.stdout.slice(result.stdout.indexOf(lock) + lock.length), /^ \(720\d+s old\)/);
+  assert.ok(result.stdout.includes(`${copy} (folder is missing${expectedLocks.length ? '; git lock: ' : ')'}`), result.stdout);
+  for (const [index, lock] of expectedLocks.entries()) {
+    assert.equal(fs.readFileSync(lock, 'utf8'), withLock ? 'drive moved during cleanup\n' : 'fixture lock\n');
+    const age = result.stdout.split(`${lock} (`)[1]?.match(/^(\d+)s old\)/);
+    const expectedAge = 7200 + index * 3600;
+    assert.ok(age && Number(age[1]) >= expectedAge - 10 && Number(age[1]) <= expectedAge, result.stdout);
   }
   assert.equal(fs.existsSync(copy), false);
   assert.equal(fs.readFileSync(path.join(moved, 'README.md'), 'utf8'), '# fixture\n');
   git(repo, 'rev-parse', '--verify', 'refs/heads/landed-copy');
   assert.equal(fs.existsSync(path.join(repo, '.atris/state/worktree_removals.jsonl')), false);
 }
-console.log('both vanished folders reported; moved files and branches retained; no removal recorded');
+console.log('all three timing cases passed; moved files, locks, and branches retained; no removal recorded');

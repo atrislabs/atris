@@ -44,3 +44,37 @@ Review handoff: the login shell selected Node 20.18.0 and the real CLI refused i
 next_push: Report folders disappearing during member tidy's final activity check, including retained lock paths and ages.
 
 layer: behaviors
+
+## Ordinary locks during the final check
+
+Extended the existing audit to cover ordinary private and shared locks appearing during the final old-folder cleanup check. Three real cleanup commands exited 0; all 21 required tests passed, exit 0.
+
+Files edited: `atris/receipts/2026-10-14-land-vanishing-folder-check.js`, this receipt, `test/worktree-removal-guard.test.js`, `atris/MAP.md`, `atris/refs/MAP-NOTES.md`, `atris/team/architect/logs/2026-10-14.md`. No new files or dependencies.
+
+Plan: plan removal -> create two ordinary locks -> move generated folder -> report missing folder and both locks -> keep branch.
+
+Real command: `node atris/receipts/2026-10-14-land-vanishing-folder-check.js`, exit 0. This invokes `node bin/atris.js land --reap --force --no-remote` three times against generated repositories using real Git. Output excerpt:
+```text
+fixture: /private/var/folders/t1/2_4kmb5n4c71dxm26zc8dgzr0000gn/T/atris-land-vanishing-5wOnTO
+  ✋ kept, needs a human: /private/var/folders/t1/2_4kmb5n4c71dxm26zc8dgzr0000gn/T/atris-land-vanishing-5wOnTO/ordinary/landed-copy (folder is missing; git lock: /private/var/folders/t1/2_4kmb5n4c71dxm26zc8dgzr0000gn/T/atris-land-vanishing-5wOnTO/ordinary/repo/.git/packed-refs.lock (10800s old), /private/var/folders/t1/2_4kmb5n4c71dxm26zc8dgzr0000gn/T/atris-land-vanishing-5wOnTO/ordinary/repo/.git/worktrees/landed-copy/index.lock (7200s old))
+cli exit: 0
+all three timing cases passed; moved files, locks, and branches retained; no removal recorded
+```
+
+Rerun: `node --test test/worktree-removal-guard.test.js test/member-tidy.test.js`, exit 0. Exact final output:
+```text
+ℹ tests 21
+ℹ suites 0
+ℹ pass 21
+ℹ fail 0
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 9744.222292
+```
+
+The first audit run exposed an assertion that assumed only explicit keep markers; the first test run also caught the old two-case summary expectation. Both were corrected before the passing run. Progress: one new timing case, two ordinary lock paths checked with distinct ages, three branches retained, zero removal records. Lock contents and moved file contents are checked too. Existing unrelated edits remain unstaged.
+
+next_push: Prove an ordinary lock appearing during the final old-folder check without the folder moving still prevents removal.
+
+layer: behaviors
