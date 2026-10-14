@@ -42,8 +42,12 @@ function fixEmDash(s) {
   return s
     .replace(/\s*\u2014\s*([^\u2014]*[^\s\u2014])\s*\u2014\s*(?=(.?))/g, (m, aside, next) => ` (${aside})${next && !/[.,;:!?)]/.test(next) ? ' ' : ''}`)
     // keep punctuation the writer already put beside the dash instead of
-    // stacking a comma on it, and never leave a trailing space
-    .replace(/([,;:.!?]?)\s*\u2014\s*([,;:.!?]?)\s*(?=(.?))/g, (m, before, after, next) => `${before || after || ','}${next ? ' ' : ''}`);
+    // stacking a comma on it, and never leave a trailing space. A dash pressed
+    // against a closing quote or bracket takes its comma with no space after.
+    .replace(/([,;:.!?]?)\s*\u2014(\s*)([,;:.!?]?)\s*(?=(.?))/g, (m, before, gap, after, next) => {
+      const closes = /[\u201d\u2019]/.test(next) || (!gap && !after && /["')\]]/.test(next));
+      return `${before || after || ','}${next && !closes ? ' ' : ''}`;
+    });
 }
 
 // Code in markdown is literal: a dash in `inline code` or a fenced block is

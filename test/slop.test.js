@@ -512,3 +512,19 @@ test('fix treats dashes in a row as one dash, never a comma run', () => {
     'the old attribution',
   ]);
 });
+
+test('fix puts a comma against a closing quote with no stray space', () => {
+  const file = tmpFile('quotes.md', [
+    '"Hold on \u2014" she said.',
+    '\u201cWait\u2014\u201d he said.',
+    'He said \u2014 "go" and left.',
+    "It was 'nearly done\u2014' by then.",
+  ].join('\n'));
+  const { changes } = applyFixes([file], RULES);
+  assert.deepEqual(changes.map((c) => c.after), [
+    '"Hold on," she said.',
+    '\u201cWait,\u201d he said.',
+    'He said, "go" and left.',
+    "It was 'nearly done,' by then.",
+  ]);
+});
