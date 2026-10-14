@@ -23,6 +23,8 @@ Details for any task: atris task show <ID>
 
 ## Review
 
+- **[AIC-53]** Reduce setup launches in human acceptance test · auto-improver
+  **Done looks like:** Developers can check human acceptance with one fewer setup command, saving a process launch while keeping every acceptance check.
 - **[AIC-52]** Seed proof-derived review chat setup through the task store · auto-improver
   **Done looks like:** Developers can run the proof extraction test about a third of a second faster, which saves time on every run.
 - **[AIC-51]** Seed backlog and clear-plan setup through the task store · auto-improver

@@ -11763,15 +11763,18 @@ test('task ready holds work in review until human accept', () => {
     assert.equal(acceptPayload.xp_projection.latest_accepted_proof.source_task_id, acceptPayload.task_id);
 
     const clearCliRef = seedClaimedTask('Clear stale CLI review guidance');
-    const clearCliReady = runCli([
-      'task', 'ready', clearCliRef,
-      '--proof', 'cli clear validation passed',
-      '--lesson', 'stale CLI lesson',
-      '--next', 'stale CLI next',
-      '--as', 'codex',
-      '--json',
-    ], { cwd: dir, env });
-    assert.equal(clearCliReady.status, 0, clearCliReady.stderr);
+    // Only seed stale guidance here; acceptance still clears it on the CLI.
+    withStore((db) => {
+      const seeded = taskStore.readyTask(db, {
+        id: clearCliRef,
+        actor: 'codex',
+        proof: 'cli clear validation passed',
+        lesson: 'stale CLI lesson',
+        nextTask: 'stale CLI next',
+        result: FIXTURE_RESULT_SENTENCE,
+      });
+      assert.equal(seeded.ready, true, seeded.reason);
+    });
     const clearCliAccept = runCli([
       'task', 'accept', clearCliRef,
       '--as', 'keshavrao',
