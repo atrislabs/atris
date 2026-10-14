@@ -10517,6 +10517,18 @@ test('task current-step advances the scoped current task one safe action', () =>
         taskStore.close();
       }
     };
+    // Show is the store projection plus enrichment, so untouched-task checks
+    // read it in-process; the scoped show below still runs the CLI and
+    // proves the two reads agree.
+    const { enrichTaskProjection } = require('../commands/task');
+    const showTask = (id) => {
+      const db = taskStore.open(dbPath);
+      try {
+        return enrichTaskProjection(taskStore.taskProjection(db, { taskId: id })).tasks[0];
+      } finally {
+        taskStore.close();
+      }
+    };
 
     const reviewTask = seedClaimedTask({ title: 'Unrelated review debt stays global', tag: 'agent', owner: 'codex' });
     assert.equal(runCli([
@@ -10615,15 +10627,17 @@ test('task current-step advances the scoped current task one safe action', () =>
     assert.equal(reviewChatPayload.page.review.human_accept.enabled, true);
     assert.equal(reviewChatPayload.safety.human_accept, false);
 
-    const reviewShow = runCli(['task', 'show', reviewTask.display_id, '--json'], { cwd: dir, env });
-    assert.equal(reviewShow.status, 0, reviewShow.stderr);
-    assert.equal(JSON.parse(reviewShow.stdout).messages.some(message => message.content.includes('TASK_REVIEW_CHAT')), false);
+    assert.equal(showTask(reviewTask.id).messages.some(message => message.content.includes('TASK_REVIEW_CHAT')), false);
     const scopedShow = runCli(['task', 'show', scopedTask.display_id, '--json'], { cwd: dir, env });
     assert.equal(scopedShow.status, 0, scopedShow.stderr);
     const scopedDetail = JSON.parse(scopedShow.stdout);
     assert.equal(scopedDetail.status, 'review');
     assert.equal(scopedDetail.review.approval_status, 'pending');
     assert.ok(scopedDetail.messages.some(message => message.content.includes('TASK_REVIEW_CHAT')));
+    const scopedInProcess = showTask(scopedTask.id);
+    assert.equal(scopedInProcess.status, scopedDetail.status);
+    assert.equal(scopedInProcess.review.approval_status, scopedDetail.review.approval_status);
+    assert.deepEqual(scopedInProcess.messages, scopedDetail.messages);
 
     const continueTask = seedClaimedTask({ title: 'Current-step certified continuation parent', tag: 'task', goalId: 'OBL-931', owner: 'codex' });
     assert.equal(runCli([
@@ -10676,9 +10690,7 @@ test('task current-step advances the scoped current task one safe action', () =>
     assert.equal(continueStepPayload.page.task.id, continueStepPayload.step.next_task.id);
     assert.equal(continueStepPayload.safety.human_accept, false);
     assert.equal(continueStepPayload.safety.claims_work, false);
-    const continueParentShow = runCli(['task', 'show', continueTask.display_id, '--json'], { cwd: dir, env });
-    assert.equal(continueParentShow.status, 0, continueParentShow.stderr);
-    const continueParentDetail = JSON.parse(continueParentShow.stdout);
+    const continueParentDetail = showTask(continueTask.id);
     assert.equal(continueParentDetail.status, 'review');
     assert.equal(continueParentDetail.review.approval_status, 'pending');
 
@@ -10700,9 +10712,7 @@ test('task current-step advances the scoped current task one safe action', () =>
     assert.equal(waitingStepPayload.current.next.key, 'human_accept_waiting');
     assert.equal(waitingStepPayload.page.stage.next_action.command, null);
     assert.equal(waitingStepPayload.page.stage.next_action.api, null);
-    const waitingShow = runCli(['task', 'show', waitingTask.display_id, '--json'], { cwd: dir, env });
-    assert.equal(waitingShow.status, 0, waitingShow.stderr);
-    const waitingDetail = JSON.parse(waitingShow.stdout);
+    const waitingDetail = showTask(waitingTask.id);
     assert.equal(waitingDetail.status, 'review');
     assert.equal(waitingDetail.review.approval_status, 'pending');
 
@@ -10723,9 +10733,7 @@ test('task current-step advances the scoped current task one safe action', () =>
     assert.equal(otherPayload.current.selected_task_id, otherTask.id);
     assert.equal(otherPayload.current.selected_ref, otherTask.display_id);
     assert.equal(otherPayload.current.selected_reason, 'active_do_elsewhere');
-    const otherShow = runCli(['task', 'show', otherTask.display_id, '--json'], { cwd: dir, env });
-    assert.equal(otherShow.status, 0, otherShow.stderr);
-    const otherDetail = JSON.parse(otherShow.stdout);
+    const otherDetail = showTask(otherTask.id);
     assert.equal(otherDetail.status, 'claimed');
     assert.equal(otherDetail.claimed_by, 'other-agent');
 
@@ -10748,9 +10756,7 @@ test('task current-step advances the scoped current task one safe action', () =>
     assert.equal(otherReviewPayload.reason, 'claimed_by_other');
     assert.equal(otherReviewPayload.current.selected_task_id, otherReviewTask.id);
     assert.equal(otherReviewPayload.current.selected_reason, 'review_needs_agent_verification');
-    const otherReviewShow = runCli(['task', 'show', otherReviewTask.display_id, '--json'], { cwd: dir, env });
-    assert.equal(otherReviewShow.status, 0, otherReviewShow.stderr);
-    const otherReviewDetail = JSON.parse(otherReviewShow.stdout);
+    const otherReviewDetail = showTask(otherReviewTask.id);
     assert.equal(otherReviewDetail.status, 'review');
     assert.equal(otherReviewDetail.claimed_by, 'other-agent');
     assert.equal(otherReviewDetail.messages.some(message => message.content.includes('TASK_REVIEW_CHAT')), false);
