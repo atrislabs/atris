@@ -741,7 +741,7 @@ test('fix gives a numbered name that opens a line a colon, like a label', () => 
     '**Next:** Tick 2: wire the smoke check into CI.',
     '> Phase B: the cleanup pass',
     'We ran Class 1, and it held.',
-    'Plan 2 (and the gate) held up.',
+    'Plan 2, and the gate, held up.',
   ]);
 });
 
@@ -1192,7 +1192,7 @@ test('fix never pairs two dashes across a sentence end', () => {
   assert.deepEqual(changes.map((c) => c.after), [
     'Steal from sites you like, linear.app, arc. But do not copy, learn.',
     'Not rules, beliefs. Not copied, earned.',
-    'It said "stop." (then it went) and left.',
+    'It said "stop." then it went, and left.',
     'Doubt (a failing check, a bad lesson) is a map.',
   ]);
 });
@@ -1300,6 +1300,21 @@ test('fix gives an aside that holds its own parentheses commas, not a second pai
     'Read it, then (maybe) stop, ok.',
     'The gate, the one CI (and hooks) run, blocks it.',
     'Scale (model size, data) is a bet.',
+  ]);
+});
+
+test('fix gives an aside that opens with a joining word commas, not parentheses', () => {
+  // the words between the dashes go on with the sentence instead of breaking it
+  const file = tmpFile('joining-aside.md', [
+    '- **Setup** \u2014 install it \u2014 then run it \u2014 and ship',
+    'A file \u2014 or a folder \u2014 works.',
+    'The gate \u2014 the strict one \u2014 holds.',
+  ].join('\n'));
+  const { changes } = applyFixes([file], RULES, { write: false });
+  assert.deepEqual(changes.map((c) => c.after), [
+    '- **Setup**: install it, then run it, and ship',
+    'A file, or a folder, works.',
+    'The gate (the strict one) holds.',
   ]);
 });
 

@@ -224,7 +224,13 @@ function fixEmDash(s, { endsBlock = false, startsBlock = false } = {}) {
       // each dash is fixed alone: 'said "go, now", and left', never '"go (now")'.
       const count = (re) => (aside.match(re) || []).length;
       if (count(/"/g) % 2 || count(/\u201c/g) !== count(/\u201d/g)) return m;
+      // An aside that opens with a joining word goes on with the sentence, so
+      // it takes commas too: "install it, then run it, and ship". Punctuation
+      // already before it keeps its place: 'said "stop." then it went, and left'.
       const holdsParens = /[()]/.test(aside) && !wrappedInParens(aside);
+      if (/^(?:and|but|or|nor|so|yet|then)\b/.test(aside)) {
+        return `${/[.,;:!?]["'”’)]*$/.test(whole.slice(0, at)) ? ' ' : ', '}${aside}${gap ? ', ' : ''}`;
+      }
       if (holdsParens || insideParens(whole.slice(0, at))) return `, ${aside}${gap ? ', ' : ''}`;
       // the closing dash also stood in for the comma before a "which" remark:
       // "scale (model size, data), which is a bet", never "data) which is".
