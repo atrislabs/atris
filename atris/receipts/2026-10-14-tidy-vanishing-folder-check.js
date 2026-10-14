@@ -81,13 +81,14 @@ process.exit(result.status === null ? 1 : result.status);
   console.log(`cli exit: ${result.status}`);
   assert.equal(result.status, 0);
   assert.equal(fs.readFileSync(countFile, 'utf8'), '1');
-  assert.match(result.stdout, /kept\s+landed-copy\s+could not check git activity: could not locate git metadata/);
+  assert.match(result.stdout, /kept\s+landed-copy\s+folder is missing/);
   console.log(`missing folder reported: ${result.stdout.includes('folder is missing')}`);
   console.log(`retained lock reported: ${withLock ? result.stdout.includes(lock) : 'no lock created'}`);
-  assert.equal(result.stdout.includes('folder is missing'), false);
+  assert.equal(result.stdout.includes('folder is missing'), true);
   if (withLock) {
     assert.ok(fs.existsSync(lock));
-    assert.equal(result.stdout.includes(lock), false);
+    const age = result.stdout.split(`${lock} (`)[1]?.match(/^(\d+)s old\)/);
+    assert.ok(age && Number(age[1]) >= 7190 && Number(age[1]) <= 7200, result.stdout);
     console.log(`retained lock: ${lock} (${Math.floor((Date.now() - fs.statSync(lock).mtimeMs) / 1000)}s old)`);
   }
   assert.equal(fs.existsSync(copy), false);
@@ -95,4 +96,4 @@ process.exit(result.status === null ? 1 : result.status);
   git(repo, 'rev-parse', '--verify', 'refs/heads/landed-copy');
   assert.equal(fs.existsSync(path.join(repo, '.atris/state/worktree_removals.jsonl')), false);
 }
-console.log('both timing cases reproduced; moved files and branches retained; no removal recorded');
+console.log('both timing cases passed; moved files and branches retained; no removal recorded');
