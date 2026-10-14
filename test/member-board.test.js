@@ -262,3 +262,27 @@ test('atris member board --json --follow streams one JSON object per line', asyn
     fs.rmSync(dir, { recursive: true, force: true });
   }
 });
+
+test('follow finishes a line that was half written before it started', () => {
+  const { followBoard } = require('../lib/member-board');
+  const dir = fakeDir({ builder: [`${at(60)} m-1 started: verify stream`] });
+  const log = path.join(dir, 'builder.log');
+  fs.appendFileSync(log, `${at(30)} m-1 reading par`);
+  fs.writeFileSync(path.join(dir, 'blank.log'), `${at(20)} m-2 no newline yet`);
+  const events = [];
+  const follower = followBoard({ dir, emit: (e) => events.push(e), pollMs: 60_000 });
+  try {
+    follower.scan();
+    assert.deepEqual(events, [], 'nothing complete yet');
+    fs.appendFileSync(log, 'tial at startup\n');
+    fs.appendFileSync(path.join(dir, 'blank.log'), ' until now\n');
+    follower.scan();
+    assert.deepEqual(events.map((e) => [e.member, e.text]), [
+      ['blank', 'no newline yet until now'],
+      ['builder', 'reading partial at startup'],
+    ]);
+  } finally {
+    follower.stop();
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
