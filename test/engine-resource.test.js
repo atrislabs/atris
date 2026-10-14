@@ -1633,3 +1633,63 @@ test('mission runners record paired readings on success, SIGKILL and startup fai
     fs.rmSync(dir, { recursive: true, force: true });
   }
 });
+
+test('prep passes record paired readings and name the cause of a SIGKILL', async () => {
+  const { spawnSync } = require('node:child_process');
+  const { readEngineRegistry, setEngineHealth } = require('../lib/engine-registry');
+  const { runPrepPass, runPrepPassSync } = require('../lib/roster-prep');
+  const keys = ['ATRIS_MACHINE_ROSTER_PATH', 'ATRIS_ROUTER_EXPLAIN', 'ATRIS_RUNNER_PROFILE', 'ATRIS_RUNNER_MODEL', 'ATRIS_RUNNER_BIN',
+    'ATRIS_RUNNER_COMMAND_TEMPLATE', 'ATRIS_CLAUDE_MODEL', 'ATRIS_CLAUDE_BIN', 'ATRIS_CLAUDE_COMMAND_TEMPLATE', 'PATH'];
+  const saved = new Map(keys.map((key) => [key, process.env[key]]));
+  const root = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'prep-resource-')));
+  const home = fs.mkdtempSync(path.join(os.tmpdir(), 'prep-resource-home-'));
+  const bin = fs.mkdtempSync(path.join(os.tmpdir(), 'prep-resource-bin-'));
+  const engine = (body) => fs.writeFileSync(path.join(bin, 'claude'), `#!/bin/sh\n${body}\n`, { mode: 0o755 });
+  const task = { id: 'CLI-1', title: 'build the widget' };
+  const pass = { prepJob: 'search', forJob: 'build', task, root, worktreePath: root };
+  try {
+    spawnSync('git', ['init', '-q', root]);
+    fs.mkdirSync(path.join(root, 'atris'));
+    fs.writeFileSync(path.join(root, 'atris', 'ROSTER.md'), '# roster\n\n## search\n- claude, model: haiku\n\n## build\n- cursor, prep: search\n');
+    for (const key of keys) if (key !== 'PATH') delete process.env[key];
+    process.env.ATRIS_MACHINE_ROSTER_PATH = path.join(home, '.atris', 'roster.json');
+    process.env.ATRIS_ROUTER_EXPLAIN = '0';
+    process.env.PATH = `${bin}${path.delimiter}${saved.get('PATH') || ''}`;
+    readEngineRegistry(root);
+    for (const name of ['cursor', 'claude', 'haiku']) setEngineHealth(name, 'ready', root);
+    engine('echo "read lib/widget.js first"');
+    const ok = runPrepPassSync(pass);
+    engine('kill -KILL $$');
+    const killed = runPrepPassSync(pass);
+    const killedAsync = await runPrepPass(pass);
+    assert.equal(ok.ok, true, ok.reason);
+    assert.equal(killed.ok, false);
+    assert.equal(killedAsync.ok, false);
+    const lines = fs.readFileSync(path.join(root, RESOURCE_LOG), 'utf8').trim().split('\n').map(JSON.parse);
+    assert.deepEqual(lines.map((line) => line.phase), ['start', 'end', 'start', 'end', 'start', 'end']);
+    for (let i = 0; i < lines.length; i += 2) {
+      assert.match(lines[i].run_id, /^[0-9a-f-]{36}$/);
+      assert.equal(lines[i + 1].run_id, lines[i].run_id);
+      assert.equal(lines[i].engine, 'claude');
+      assert.equal(lines[i].task, 'prep for build');
+      assert.ok(Array.isArray(lines[i + 1].load));
+      assert.ok(Number.isInteger(lines[i + 1].duration_ms));
+    }
+    assert.equal(lines[1].signal, undefined);
+    assert.equal(lines[1].error, undefined);
+    for (const [line, result] of [[lines[3], killed], [lines[5], killedAsync]]) {
+      assert.equal(line.signal, 'SIGKILL');
+      assert.match(line.cause, /^killed \((machine memory low|cause unknown)\)$/);
+      // The reason the prep pass hands back, and the run record keeps, names the cause.
+      assert.ok(result.reason.includes(line.cause), result.reason);
+    }
+    console.log(`prep readings: ${JSON.stringify([lines[3], lines[5]])}`);
+    console.log(`prep kill reasons: ${killed.reason} | ${killedAsync.reason}`);
+  } finally {
+    for (const [key, value] of saved) {
+      if (value === undefined) delete process.env[key];
+      else process.env[key] = value;
+    }
+    for (const dir of [root, home, bin]) fs.rmSync(dir, { recursive: true, force: true });
+  }
+});

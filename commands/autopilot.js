@@ -609,7 +609,7 @@ function executePhaseDetailed(phase, context, options = {}) {
 
   let rosterRunner = null;
   let startedMs = Date.now();
-  // Prep runs before the phase launch and writes no readings of its own.
+  // Prep writes its own pair of readings inside the pass, before this launch's.
   let endResource = () => null;
   try {
     let cmd = options.cmdOverride;
