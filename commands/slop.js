@@ -71,6 +71,11 @@ function wrappedInParens(s) {
   return depth === 0;
 }
 
+// A word-only phrase of one to four words, then a list of three or more of
+// them separated by commas, ending the sentence or the line.
+const LIST_ITEM = "[A-Za-z0-9][\\w'/-]*(?: [A-Za-z0-9][\\w'/-]*){0,3}";
+const LIST_AFTER_DASH = new RegExp(`(?<=[\\w)\\]*_\`])\\s*\u2014\\s*(?!(?:and|but|or|nor|so|yet|then) )(?=${LIST_ITEM}(?:, ${LIST_ITEM}){1,}, (?:and |or )?${LIST_ITEM}(?:[.!?](?:\\s|$)|$))`, 'g');
+
 function fixEmDash(s, { endsBlock = false } = {}) {
   s = s.replace(/\u2014(?:\s*\u2014)+/g, '\u2014').replace(/(\d)\s*\u2014\s*(?=\d+(?![\d-]))/g, '$1-').replace(/^(\s*(?:>\s*)*)\u2014\s*/, '$1');
   if (endsBlock) s = s.replace(/([.,;:!?]?)\s*\u2014\s*$/, (m, p) => p || '.');
@@ -99,6 +104,9 @@ function fixEmDash(s, { endsBlock = false } = {}) {
     // the quote keeps its own stop: 'backward." Steve Jobs', not '.",'.
     // A quoted question before a lowercase word keeps the comma below.
     .replace(/(\.["'\u201d\u2019]+|[!?]["'\u201d\u2019]+(?=\s*\u2014\s*[A-Z]))\s*\u2014\s*(?=\S)/g, '$1 ')
+    // a dash that opens a list of three or more short items running to the
+    // end of the sentence introduces it: "sweep: arxiv, github, web."
+    .replace(LIST_AFTER_DASH, ': ')
     // keep punctuation the writer already put beside the dash instead of
     // stacking a comma on it, and never leave a trailing space. A dash pressed
     // against a closing quote or bracket takes its comma with no space after.

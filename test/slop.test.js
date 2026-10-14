@@ -691,6 +691,28 @@ test('fix gives an aside already inside parentheses commas, so none nest', () =>
   ]);
 });
 
+test('fix gives a dash that opens a short list a colon', () => {
+  // from this repo's skill files, where a comma made the list read as more of
+  // the phrase before it: "broken refs, ghost names, stale lessons"
+  const file = tmpFile('list.md', [
+    'Fast research sweep \u2014 arxiv, semantic scholar, github, web.',
+    'Not just broken refs \u2014 ghost names, stale lessons, and dead code. Then stop.',
+    'How execution flows \u2014 dev server startup, request lifecycle, build pipeline',
+    'Works with Docs, Sheets, Slides \u2014 creates a full copy.',
+    'It held \u2014 and we ran, tested, shipped.',
+    'We tried \u2014 one, two, three times it failed here today and then.',
+  ].join('\n'));
+  const { changes } = applyFixes([file], RULES);
+  assert.deepEqual(changes.map((c) => c.after), [
+    'Fast research sweep: arxiv, semantic scholar, github, web.',
+    'Not just broken refs: ghost names, stale lessons, and dead code. Then stop.',
+    'How execution flows: dev server startup, request lifecycle, build pipeline',
+    'Works with Docs, Sheets, Slides, creates a full copy.',
+    'It held, and we ran, tested, shipped.',
+    'We tried, one, two, three times it failed here today and then.',
+  ]);
+});
+
 test('fix drops a dash after a quote that already ends its sentence', () => {
   // from this repo's feature notes, policies, and the endgame skill
   const file = tmpFile('quote-end.md', [
