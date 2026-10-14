@@ -10905,6 +10905,7 @@ async function memberUp(...args) {
     console.log('Keeps the team working: every minute, starts each free member that has a fitting task with a runnable check.');
     console.log('A member with no such task stays idle; it never runs its own goal instead.');
     console.log('The longer a member stays idle, the less often it is checked: 5, 10, 20, then every 30 minutes.');
+    console.log('A working member with no new step for 20 minutes is called out as stuck, once until it moves again.');
     console.log('--only limits it to those members. Same as atris member wake 5 or atris member wake a b.');
     console.log('Ctrl-C or atris member sleep --all ends it. Runs it started keep going.');
     return;
