@@ -312,7 +312,14 @@ function fixEmDash(s, { endsBlock = false, startsBlock = false } = {}) {
   // is one whole quote is a phrase being explained, so its colon goes after
   // the closing quote: '- "What did we miss?": summarizes calls'.
   const quoted = label && /^(?:"[^"]*"|\u201c[^\u201c\u201d]*\u201d)$/.test(label[2]);
-  if (label) return `${label[1]}${label[2]}${!quoted && /[.,;:!?][*_`"'\u201d\u2019]*$/.test(label[2]) ? '' : ':'}${s.length > label[0].length ? ' ' : ''}${fixEmDash(s.slice(label[0].length), { endsBlock })}`;
+  // A code or bold label after a comma in the same line opens a second field
+  // of the same kind, so it takes a colon too: "`floor`: line 21,
+  // `isConfident`: line 22", never "`isConfident`, line 22".
+  let rest = label && s.slice(label[0].length);
+  if (label && /^(?:`[^`]+`|\ue000\d+\ue001|\*\*[^*]+\*\*)$/.test(label[2])) {
+    rest = rest.replace(/([,;]\s+)(`[^`]+`|\ue000\d+\ue001|\*\*[^*\u2014]+\*\*)\s*\u2014\s*(?=\S)(?!(?:and|but|or|nor|so|yet|then)\b)/g, '$1$2: ');
+  }
+  if (label) return `${label[1]}${label[2]}${!quoted && /[.,;:!?][*_`"'\u201d\u2019]*$/.test(label[2]) ? '' : ':'}${s.length > label[0].length ? ' ' : ''}${fixEmDash(rest, { endsBlock })}`;
   const term = startsBlock && (TERM_DASH.exec(s) || TITLE_DASH.exec(s));
   if (term) return `${term[1]}: ${fixEmDash(s.slice(term[0].length), { endsBlock })}`;
   // in a sentence with an odd run of three or more dashes, one before a

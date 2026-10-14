@@ -629,6 +629,22 @@ test('fix gives a bold label that opens a line a colon, like a list label', () =
   ]);
 });
 
+test('fix gives a second code or bold label in a list line a colon, like the first', () => {
+  // sfhq's map came out "`confidenceFloor`: line 21, `isConfident`, line 22"
+  const file = tmpFile('fields.md', [
+    '- `confidenceFloor` \u2014 line 21, `isConfident` \u2014 line 22',
+    '- **Board** \u2014 tab 0; **Guides** \u2014 tab 1',
+    // a dash before a joining word goes on with the sentence
+    '- `fix` \u2014 runs it, `slow` \u2014 and the old one waits',
+  ].join('\n'));
+  const { changes } = applyFixes([file], RULES);
+  assert.deepEqual(changes.map((c) => c.after), [
+    '- `confidenceFloor`: line 21, `isConfident`: line 22',
+    '- **Board**: tab 0; **Guides**: tab 1',
+    '- `fix`: runs it, `slow`, and the old one waits',
+  ]);
+});
+
 test('fix keeps a label that ends in its own punctuation and adds no colon', () => {
   // the question list in the design policy came out as a question mark then a colon
   const file = tmpFile('punct-label.md', [
