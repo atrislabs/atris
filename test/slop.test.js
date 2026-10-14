@@ -1716,3 +1716,23 @@ test('fix gives a name that opens a quote a comma, like a greeting', () => {
     '- **Personalization:** "18 hours: how much of that is Sunday nights?"',
   ]);
 });
+
+test('fix keeps the comma between two orders and joins a new order after a clause', () => {
+  // from popshare and atrisos-web: "found across 5 repos, consolidate to one
+  // place" is a splice, but two orders side by side are one sentence
+  const file = tmpFile('paired-orders.md', [
+    'Duplicate commands found across 5 repos \u2014 consolidate to one folder.',
+    'They are the first thing a cleanup deletes \u2014 pin them.',
+    '**Task:** Kill the process group at phase timeout \u2014 spawn the phase detached.',
+    'don\'t cram everything into tight spacing \u2014 use dramatic gaps.',
+    'Built `calendar-probe` \u2014 fork of relay-probe.',
+  ].join('\n'));
+  const { changes } = applyFixes([file], RULES);
+  assert.deepEqual(changes.map((c) => c.after), [
+    'Duplicate commands found across 5 repos; consolidate to one folder.',
+    'They are the first thing a cleanup deletes; pin them.',
+    '**Task:** Kill the process group at phase timeout, spawn the phase detached.',
+    'don\'t cram everything into tight spacing, use dramatic gaps.',
+    'Built `calendar-probe`, fork of relay-probe.',
+  ]);
+});

@@ -227,10 +227,14 @@ const QUESTION_AFTER_DASH = new RegExp(`(?<=[\\w)\\]"'*_\`%\\u201d\\u2019\\uE001
 // An order after a full clause is a sentence of its own, so a comma there is
 // a splice: "pruning the worktree deletes proof; copy receipts out first".
 // The verb needs a plain word after it, so a noun in a label field ("verify:
-// tests pass") or before a past verb ("copy drafted for 1.6") keeps its comma.
+// tests pass"), before a past verb ("copy drafted for 1.6"), or before "of"
+// ("calendar-probe, fork of relay-probe") keeps its comma.
 // "never" stays out: "it never crashes the tick" has its subject left off.
 // "Let's" asks the reader to act too: "Congrats on the award; let's talk".
-const ORDER_CLAUSE_AFTER_DASH = new RegExp(`(?<=[\\w)\\]"'*_\`\\u201d\\u2019\\uE001])\\s*\\u2014\\s*(?=(?:don['\\u2019]t|do not|let['\\u2019]s|let us|pick|copy|reframe|judge|plug|retry|rename|propose|inspect|keep|leave|use|run|read|ask|add|check|make|move|stop|try|wait|skip|take|look|call|write|delete|remove|fix|put|say|tell|give|treat|verify|ship|commit|push|kill|mark|start|avoid|prefer|trust|drop|cut|split|merge|revert|rerun|re-run)\\s+(?![a-z]+ed\\b)[\\w\`"'(\\uE000])`, 'g');
+// Two orders side by side are one sentence, so the comma stays: "Kill the
+// group at timeout, spawn the phase detached", "don't impose, match it".
+const ORDER_VERB = `(?:don['\\u2019]t|do not|let['\\u2019]s|let us|pick|copy|reframe|judge|plug|retry|rename|propose|inspect|keep|leave|use|run|read|ask|add|check|make|move|stop|try|wait|skip|take|look|call|write|delete|remove|fix|put|say|tell|give|treat|verify|ship|commit|push|kill|mark|start|avoid|prefer|trust|drop|cut|split|merge|revert|rerun|re-run|consolidate|pin|automate|clamp|fork|spawn|adapt)`;
+const ORDER_CLAUSE_AFTER_DASH = new RegExp(`(?<=[\\w)\\]"'*_\`\\u201d\\u2019\\uE001])\\s*\\u2014\\s*(?=${ORDER_VERB}\\s+(?![a-z]+ed\\b|of\\b)[\\w\`"'(\\uE000])`, 'g');
 
 // The mark that joins a full clause to the sentence before the dash. A short
 // opener led by "not" has no verb of its own, so the clause explains it and
@@ -433,6 +437,9 @@ function fixEmDash(s, { endsBlock = false, startsBlock = false } = {}) {
       const inner = left.split('(').pop();
       const words = (left.includes('(') && !inner.includes(')') ? inner : left).replace(/^[\s"'*_]+/, '').split(/\s+/);
       if (words.length < 2 || words.every((w) => /^[A-Z][A-Za-z0-9'-]*$/.test(w))) return m;
+      const leftOrder = new RegExp(`^${ORDER_VERB}\\s`, 'i');
+      const quoted = left.split(/["\u201c]/).pop();
+      if ([left, quoted].some((part) => leftOrder.test(part.replace(/^(?:(?:\*\*[^*]+\*\*:?|[-*+>]|\d+[.)]|[\s'_])\s*)+/, '')))) return m;
       const named = left.replace(/^(?:\*\*[^*]+:\*\*\s*)/, '').split(/\s+/).length === 2;
       return named && !/^\s+[a-z]/.test(whole) ? ': ' : clauseJoin(left);
     })
