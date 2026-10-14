@@ -307,6 +307,16 @@ const ORDER_CLAUSE_AFTER_DASH = new RegExp(`(?<=[\\w)\\]"'*_\`\\u201d\\u2019\\uE
 // companies and agents should run together".
 const AND_PART = `(?:(?:the|a|an|our|your|their|its|my)\\s+)?(?:(?!(?:the|a|an|that|whose|this|it|they|we|you|he|she|I|how|what|why|whether|${HELPING_VERB})\\b)${SUBJECT_WORD}){1,3}`;
 const AND_CLAUSE_AFTER_DASH = new RegExp(`(?<=[\\w)\\]"'*_\`\\u201d\\u2019\\uE001])\\s*\\u2014\\s*(?!${NAMING_PHRASE})(?!${TIME_OPENER})(?!${ORDER_VERB}\\s)(?=${AND_PART}and\\s+${AND_PART}(?:are|were|have|had|will|would|can|cannot|could|must|should|may|might|do|did)\\s+[^\\s\\u2014])`, 'g');
+// A short subject with no "the", then a verb that reports how a run went
+// and ends the clause, starts one too: "health tick green; gate
+// inbox-contract passed (receipt saved)", "woke up clean; morning protocol
+// held". A count before the verb is a tally, so "pass, 3613 passed" and
+// "one-time, 122d stalled" keep their comma. An adverb or a preposition is
+// no subject, nor is an "ing" verb with its object, so "never deleted, never
+// merged" and "done, verifying nothing broke" stay, and so does a list of
+// states: "show landed, failed, or waiting".
+const STATUS_PAST = '(?:passed|failed|shipped|landed|merged|broke|crashed|stalled|regressed|succeeded|held|worked|reverted|deployed|timed\\s+out)';
+const STATUS_CLAUSE_AFTER_DASH = new RegExp(`(?<=[\\w)\\]"'*_\`\\u201d\\u2019\\uE001])\\s*\\u2014\\s*(?!${NAMING_PHRASE})(?!${ORDER_VERB}\\s)(?![\\d$])(?=(?!(?:the|a|an|no|${COUNT_WORD}|several|each|every|any|only)\\b)(?![a-z]+ing\\s+(?:nothing|everything|something|anything|the|a|an|it|that|this|all|no|its|their)\\b)(?:(?!(?:the|a|an|that|whose|this|it|they|we|you|he|she|I|how|what|why|whether|to|from|in|of|for|with|by|at|on|into|never|already|always|also|still|now|again|NOT|Not|${HELPING_VERB})\\b)${SUBJECT_WORD}){1,3}${STATUS_PAST}(?!,?\\s+(?:or\\b|[a-z]+ed\\b,))(?:\\s+\\(|[.!?;,]|$|\\s+and\\b))`, 'g');
 // "Only" before a subject and its verb starts one too: "tested 6 contact
 // pages; only Austin exposed an email", "only the build packet exists".
 // With no verb it only narrows what came before, so "only if outbound
@@ -514,6 +524,10 @@ function fixEmDash(s, { endsBlock = false, startsBlock = false } = {}) {
       return left ? clauseJoin(left) : m;
     })
     .replace(ONLY_CLAUSE_AFTER_DASH, (m, at, whole) => {
+      const left = clauseLeft(at, whole);
+      return left ? clauseJoin(left) : m;
+    })
+    .replace(STATUS_CLAUSE_AFTER_DASH, (m, at, whole) => {
       const left = clauseLeft(at, whole);
       return left ? clauseJoin(left) : m;
     })

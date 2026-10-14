@@ -1826,6 +1826,28 @@ test('fix reads "only" before a subject and its verb as a clause', () => {
   ]);
 });
 
+test('fix reads a short subject and a verb that reports a run as a clause', () => {
+  // from build receipts, which came out "**FAIL**, context-package smoke suite passed (29 tests)"
+  const file = tmpFile('status.md', [
+    '- Result: **FAIL** \u2014 context-package smoke suite passed (29 tests), and dental did not',
+    'Woke up clean \u2014 morning protocol held',
+    // a count is a tally, and an adverb, an "ing" word or a list of states is no subject
+    '- **result:** pass \u2014 3613 passed, 2 pre-existing failures',
+    'The ledger mystery is closed \u2014 never deleted, never merged',
+    'Cleanup done \u2014 verifying nothing broke.',
+    'The report is unclear \u2014 show landed, failed, or waiting status',
+  ].join('\n'));
+  const { changes } = applyFixes([file], RULES);
+  assert.deepEqual(changes.map((c) => c.after), [
+    '- Result: **FAIL**; context-package smoke suite passed (29 tests), and dental did not',
+    'Woke up clean; morning protocol held',
+    '- **result:** pass: 3613 passed, 2 pre-existing failures',
+    'The ledger mystery is closed, never deleted, never merged',
+    'Cleanup done, verifying nothing broke.',
+    'The report is unclear: show landed, failed, or waiting status',
+  ]);
+});
+
 test('fix starts the next sentence after a stop that sits before a dash', () => {
   // from the terrace repo, which came out "fine with try? the cost"
   const file = tmpFile('stop.md', [
