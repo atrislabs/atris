@@ -92,15 +92,17 @@ const LIST_AFTER_DASH = new RegExp(`(?<=[\\w)\\]*_\`])\\s*\u2014\\s*(?!(?:and|bu
 const CLAUSE_AFTER_DASH = /(?<=[\w)\]"'*_`\u201d\u2019\uE001])\s*\u2014\s*(?=(?:(?:it|we|they|you|I|he|she)(?:['\u2019](?:s|re|ll|ve|d|m))?|(?:this|that|these|those|there)(?:['\u2019]s|\s+(?:is|are|was|were|used|will|would|can|cannot|must|should|has|have))\b)\s+[^\s\u2014])/g;
 // A noun subject and its helping verb start a second sentence too: "is not a
 // twin, restart is allowed". "Did", "could", "had" and their kin count as
-// helping verbs too: "still open, receipt did not move it". Up to five plain
-// words reach the verb, none of them a joining word, so "not X, even when
-// the build is red" keeps its comma. A second "the" or a "that" means a phrase with a clause inside it,
-// "the verb the fleet runs", so the dash there keeps its comma. So does a
-// naming word with more words before the verb, which restates what came
-// before: "the same intersection, the next thing /autopilot should ship".
+// helping verbs too: "still open, receipt did not move it". So do common
+// plain verbs after a noun subject: "an hour old, the tick runs". Up to
+// five plain words reach the verb, none of them a joining word, so "not X,
+// even when the build is red" keeps its comma. A second "the" or a "that"
+// means a phrase with a clause inside it, "the verb the fleet runs", so the
+// dash there keeps its comma. So does a naming word with more words before
+// the verb, which restates what came before: "the same intersection, the
+// next thing /autopilot should ship".
 const NOUN_WORD = "(?:[A-Za-z0-9_/'-]+(?:\\.[A-Za-z0-9_]+)*|\\uE000\\d+\\uE001)";
 const SUBJECT_WORD = `(?:(?!(?:and|but|or|nor|so|yet|then|not|even|when|if|unless|until|because|since|while|where|which|who|as|after|before|though|although|once|just|only)\\b)${NOUN_WORD}\\s+)`;
-const HELPING_VERB = '(?:is|are|was|were|will|would|can|cannot|could|must|should|may|might|has|have|had|does|did|exists)';
+const HELPING_VERB = '(?:is|are|was|were|will|would|can|cannot|could|must|should|may|might|has|have|had|does|did|exists|gets|got|needs|keeps|makes|runs|takes|goes|stays|means)';
 const NAMING_WORD = '(?:thing|one|part|piece|kind|place|point|moment|step|move|reason|question|answer)s?';
 const NAMING_PHRASE = `(?:the|a|an)\\s+(?:(?:next|only|same|first|last|real|one)\\s+)?${NAMING_WORD}\\s+(?!(?:${HELPING_VERB}|${NAMING_WORD})\\b)`;
 const NOUN_CLAUSE_AFTER_DASH = new RegExp(`(?<=[\\w)\\]"'*_\`\\u201d\\u2019\\uE001])\\s*\\u2014\\s*(?!${NAMING_PHRASE})(?=${SUBJECT_WORD}(?:(?!(?:the|a|an|that|whose)\\b)${SUBJECT_WORD}){0,4}${HELPING_VERB}\\s+[^\\s\\u2014])`, 'g');

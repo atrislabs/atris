@@ -912,6 +912,8 @@ test('fix joins a noun clause after the dash with a semicolon', () => {
     'The tool is fast \u2014 the build is green.',
     'Task is still open \u2014 receipt did not move it to review.',
     'The cache was cold \u2014 the first call could take a second.',
+    'Same pid but an hour old \u2014 the tick runs and clears the lock.',
+    'It MUST keep its own root \u2014 task state stays isolated.',
     // a short "not" opener has no verb, so the clause explains it with a colon
     'Zero hits. Not exhaustive \u2014 the frontier was not extended.',
     'Not yet \u2014 it ships Friday.',
@@ -941,6 +943,8 @@ test('fix joins a noun clause after the dash with a semicolon', () => {
     'The tool is fast; the build is green.',
     'Task is still open; receipt did not move it to review.',
     'The cache was cold; the first call could take a second.',
+    'Same pid but an hour old; the tick runs and clears the lock.',
+    'It MUST keep its own root; task state stays isolated.',
     'Zero hits. Not exhaustive: the frontier was not extended.',
     'Not yet: it ships Friday.',
     '- **Not yet**: it ships Friday.',
