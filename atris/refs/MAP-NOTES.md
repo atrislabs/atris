@@ -2298,3 +2298,8 @@ npm publish
 ## Old Git-lock cleanup audit
 - `atris/receipts/2026-10-14-folder-lock-preview.js:1`: real CLI preview using an old lock, without removing a folder; output and required check in the matching receipt.
 - `lib/member-tidy.js:194`: shared activity check before preview or removal; `lib/member-tidy.js:209`: successful removal record; `lib/git-activity.js:9`: private and shared lock paths and ages; `commands/member.js:11356`: actual tidy CLI handler.
+
+## Fleet review-folder cleanup audit
+
+- `lib/fleet.js:2464`: `disposeReviewSandbox` forces Git removal, then removes the work folder, Git metadata, quarantine, and parent directly. Real private and shared two-hour-old locks are deleted without a removal record.
+- `atris/receipts/2026-10-14-fleet-folder-check.js:10`: repeatable actual-routine audit, using disposable real Git repositories and an in-memory export without replacing helpers. Decision and exact proof: `atris/receipts/2026-10-14-fleet-folder-check.md`. Keep the whole folder group before attempting any child removal.
