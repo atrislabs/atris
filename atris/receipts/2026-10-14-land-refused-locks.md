@@ -70,4 +70,7 @@ Slop: added JavaScript lines checked with atris slop detect /tmp/atris-late-lock
 Other checks: git diff --check, exit 0. Brain activation and compile were invoked in preview mode; compiled files are absent and broad generated policy changes were left outside this slice.
 Existing edits in bin/atris.js, atris/TODO.md, and earlier member log entries were preserved.
 next_push: Name late locks when Git refuses member-folder cleanup.
+
+Proof follow-up: the proof-saving shell selected Node 20.18 and failed before the CLI could run; the direct frozen command passed under Node 25.6.1. Re-running proof capture with the supported runtime placed first in PATH; mission verification command unchanged.
+Proof capture passed with Node 25.6.1 first in PATH: exit 0, 30 passed, 0 failed. Saved receipt: atris/runs/2026-10-14-task-acw-42-2026-10-14T21-47-36-846Z.json. Work is ready for review; automatic review cannot rerun the runtime-prefixed command. Code and proof committed and pushed.
 layer: behaviors
