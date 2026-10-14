@@ -2353,12 +2353,21 @@ function runEngineSweepCommand(args, root, deps = {}) {
   const scanWarning = result.unread.length
     ? `could not read the ${result.unread.join(' or the ')} for every process, so some ssh-agents could not be checked; the leak count may be incomplete`
     : null;
-  result.closed_runs = apply ? closeLostRuns(root, deps.now ? { now: deps.now } : {}) : [];
+  result.closed_runs = [];
+  if (apply) {
+    // Agents may already be stopped here, so a failed close is reported
+    // beside them rather than thrown away with the whole report.
+    try {
+      result.closed_runs = closeLostRuns(root, deps.now ? { now: deps.now } : {});
+    } catch (err) {
+      result.close_error = String((err && err.message) || err).slice(0, 200);
+    }
+  }
   // A test run reads only the home it was handed, never the real one.
   const startLines = leaked.length && (deps.home || !process.env.NODE_TEST_CONTEXT)
     ? findAgentStartLines(deps.home ? { home: deps.home } : {})
     : [];
-  const code = result.failed.length ? 1 : 0;
+  const code = result.failed.length || result.close_error ? 1 : 0;
   if (args.includes('--json')) {
     console.log(JSON.stringify({ running: agents.length, leaked, unread, ...result, agent_start_lines: startLines, history: readResourceHistory(root) }, null, 2));
     return code;
@@ -2371,7 +2380,8 @@ function runEngineSweepCommand(args, root, deps = {}) {
     if (replaced) lines.push(`${replaced} skipped because ${replaced === 1 ? 'a younger ssh-agent now has' : 'younger ssh-agents now have'} the same process number`);
     if (otherSkipped) lines.push(`${otherSkipped} skipped because they were in use or gone on the recheck`);
     for (const { pid, code: reason } of result.failed) lines.push(`could not stop pid ${pid}: ${reason}`);
-    lines.push(`closed ${plural(result.closed_runs.length, 'run')} whose parent is gone`);
+    if (result.close_error) lines.push(`could not close lost runs, so unfinished records may remain: ${result.close_error}`);
+    else lines.push(`closed ${plural(result.closed_runs.length, 'run')} whose parent is gone`);
     if (scanWarning) lines.push(scanWarning);
     console.log(lines.join('\n'));
     return code;

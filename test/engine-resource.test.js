@@ -972,6 +972,40 @@ test('the hourly cleanup summary reports lost run close failures', () => {
   }
 });
 
+test('the hourly cleanup summary reports an unreadable run log instead of finding no lost runs', () => {
+  const { runLostRunSweep, lostRunSweepNote } = require('../commands/autoland');
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'autoland-lost-unread-'));
+  try {
+    const missing = {};
+    runLostRunSweep(root, missing);
+    assert.deepEqual(missing.lost_run_sweep, { closed: [] });
+    assert.equal(lostRunSweepNote(missing), '');
+    const file = path.join(root, RESOURCE_LOG);
+    fs.mkdirSync(file, { recursive: true });
+    const receipt = {};
+    runLostRunSweep(root, receipt);
+    assert.match(receipt.lost_run_sweep_error, /could not read the engine run log: EISDIR/);
+    assert.equal(receipt.lost_run_sweep, undefined);
+    assert.equal(lostRunSweepNote(receipt), ', could not close lost engine runs, so unfinished records may remain');
+    console.log('real unreadable run log: ' + receipt.lost_run_sweep_error);
+    const { engineCommand } = require('../commands/engine');
+    const out = [];
+    const original = console.log;
+    console.log = (line) => out.push(String(line));
+    let code;
+    try {
+      code = engineCommand(['sweep', '--apply'], { root, engineSweep: { read: () => ({ agents: [], referenced: new Set() }), uid: 501 } });
+    } finally {
+      console.log = original;
+    }
+    assert.equal(code, 1);
+    assert.match(out.join('\n'), /^stopped 0 leaked ssh-agents\ncould not close lost runs, so unfinished records may remain: could not read the engine run log: EISDIR$/);
+    console.log('real sweep with unreadable run log: ' + out.join(' / '));
+  } finally {
+    fs.rmSync(root, { recursive: true, force: true });
+  }
+});
+
 test('the landing status names runs closed after their parent died in the last day, and stays quiet with none', () => {
   const { spawnSync } = require('node:child_process');
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'autoland-status-lost-'));
