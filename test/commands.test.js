@@ -20586,7 +20586,6 @@ test('wiki orphan checks accept markdown links in legacy indexes', () => {
 test('loop flags stale wiki pages and refreshes status/log', () => {
   const dir = makeTempDir();
   try {
-    initWorkspace(dir);
     fs.writeFileSync(path.join(dir, 'README.md'), '# Repo\n', 'utf8');
     const pagePath = path.join(dir, 'atris', 'wiki', 'concepts', 'stale-page.md');
     fs.mkdirSync(path.dirname(pagePath), { recursive: true });
@@ -20629,13 +20628,12 @@ test('loop flags stale wiki pages and refreshes status/log', () => {
 test('loop suggests next ingest candidates when wiki is clean', () => {
   const dir = makeTempDir();
   try {
-    initWorkspace(dir);
     fs.writeFileSync(path.join(dir, 'README.md'), '# Repo\n', 'utf8');
     const res = runCli(['loop', 'wiki', '--json'], { cwd: dir });
     assert.equal(res.status, 0, res.stderr);
     const report = JSON.parse(res.stdout);
-    assert.ok(report.nextSources.includes('README.md'));
-    assert.match(report.health, /ready for ingest|stable/i);
+    assert.deepEqual(report.nextSources, ['README.md']);
+    assert.equal(report.health, 'wiki is stable, 1 high-value source ready for ingest');
   } finally {
     cleanupTempDir(dir);
   }
@@ -20644,11 +20642,11 @@ test('loop suggests next ingest candidates when wiki is clean', () => {
 test('wiki loop alias runs the same upkeep analysis', () => {
   const dir = makeTempDir();
   try {
-    initWorkspace(dir);
     fs.writeFileSync(path.join(dir, 'README.md'), '# Repo\n', 'utf8');
     const res = runCli(['wiki', 'loop'], { cwd: dir });
     assert.equal(res.status, 0, res.stderr);
     assert.match(res.stdout, /Wiki Loop/);
+    assert.match(res.stdout, /Pages: 0 \| Stale: 0 \| Orphans: 0 \| Next: 1 /);
   } finally {
     cleanupTempDir(dir);
   }

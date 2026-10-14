@@ -2438,7 +2438,7 @@ npm publish
 
 ## Task lineage fixture setup
 
-- `test/commands.test.js:21135` checks that task lineage prints the parent before the child in text and JSON and survives a home with no git. Real-store creation at `test/commands.test.js:21143` saves two setup launches and seeds the child with the same goal link that task add stores; removing that link makes the test fail, so the seeded link is what the lineage reads check.
+- `test/commands.test.js:21133` checks that task lineage prints the parent before the child in text and JSON and survives a home with no git. Real-store creation at `test/commands.test.js:21141` saves two setup launches and seeds the child with the same goal link that task add stores; removing that link makes the test fail, so the seeded link is what the lineage reads check.
 
 ## Reviewed failure status fixture setup
 
