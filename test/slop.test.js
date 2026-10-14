@@ -919,6 +919,9 @@ test('fix joins a noun clause after the dash with a semicolon', () => {
     'Pin it for `tick` \u2014 the verb the fleet runs every cycle.',
     'Tick history (the compounding signal \u2014 proves the loop is recursive).',
     'Command tests for autopilot \u2014 the decision helpers the CLI uses.',
+    // a naming word that restates the noun before it keeps its comma
+    'They meet at the same intersection \u2014 the next thing /autopilot should ship.',
+    'Read the logs \u2014 the one thing is clear.',
   ].join('\n'));
   const { changes } = applyFixes([file], RULES);
   assert.deepEqual(changes.map((c) => c.after), [
@@ -941,6 +944,8 @@ test('fix joins a noun clause after the dash with a semicolon', () => {
     'Pin it for `tick`, the verb the fleet runs every cycle.',
     'Tick history (the compounding signal, proves the loop is recursive).',
     'Command tests for autopilot, the decision helpers the CLI uses.',
+    'They meet at the same intersection, the next thing /autopilot should ship.',
+    'Read the logs; the one thing is clear.',
   ]);
 });
 
