@@ -1331,13 +1331,14 @@ test('every engine started through a runner or profile variable records its run 
     for (const match of code.matchAll(VAR_LAUNCH)) {
       const [, program, called, args] = match;
       const before = code.slice(0, match.index);
-      const fnStart = Math.max(0, ...[...before.matchAll(FUNCTION_START)].map((start) => start.index));
-      const fnName = (/^(?:async\s+)?(?:function|const|let)\s+([\w$]+)/.exec(code.slice(fnStart)) || [])[1] || '';
+      const fnStart = Math.max(0, ...definitionSpans(code).filter(([open, close]) => open <= match.index && match.index < close).map(([open]) => open));
+      const fnName = (/^(?:async\s+)?(?:function|const|let)\s+([\w$]+)/.exec(code.slice(fnStart).trimStart()) || [])[1] || '';
       let isEngine = engineSourceAt(program + (called || ''), match.index);
       if (!isEngine && !called) {
         // Follow simple parameters only when a call in this file supplies a
         // known runner. An unrelated parameter name alone is not evidence.
-        const header = /^(?:async\s+)?function\s+([\w$]+)\s*\(([^)]*)\)/.exec(code.slice(fnStart));
+        const header = /^(?:async\s+)?function\s+([\w$]+)\s*\(([^)]*)\)/.exec(code.slice(fnStart).trimStart())
+          || /^(?:const|let)\s+([\w$]+)\s*=\s*(?:async\s*)?\(([^)]*)\)\s*=>/.exec(code.slice(fnStart).trimStart());
         const source = sourceAt(program, match.index);
         const parameter = /^([A-Za-z_$][\w$]*)(?:\.[\w$]+)*$/.exec(source)?.[1];
         const slot = header ? header[2].split(',').map((name) => name.trim()).indexOf(parameter) : -1;
@@ -1403,6 +1404,14 @@ test('every engine started through a runner or profile variable records its run 
   assert.deepStrictEqual(planted("function launch(runner) {\n  const program = runner;\n  spawnSync(program, ['--help']);\n}\nlaunch(resolveClaudeRunnerBin());\n"), []);
   assert.deepStrictEqual(planted("function launch(runner) {\n  const program = runner;\n  spawnSync(program, args);\n}\nlaunch(findExecutable('git'));\n"), []);
   assert.deepStrictEqual(planted("function launch(runner) {\n  const program = buildCommand(runner);\n  spawnSync(program, args);\n}\nlaunch(resolveClaudeRunnerBin());\n"), []);
+  assert.deepStrictEqual(planted("function outer() {\n  const launch = (program) => {\n    spawnSync(program, args);\n  };\n  launch(resolveClaudeRunnerBin());\n}\n"), ['commands/planted.js:3 program']);
+  assert.deepStrictEqual(planted("const launch = (program) => {\n  spawnSync(program, args);\n};\nlaunch(resolveClaudeRunnerBin());\n"), ['commands/planted.js:2 program']);
+  assert.deepStrictEqual(planted("const launch = async (prompt, profile) => {\n  const runner = profile.bin;\n  spawn(runner, args);\n};\nlaunch(prompt, resolveEngineProfile(engine));\n"), ['commands/planted.js:3 runner']);
+  assert.deepStrictEqual(planted("let launch = (program) => spawnSync(program, args);\nlaunch(resolveClaudeRunnerBin());\n"), ['commands/planted.js:1 program']);
+  assert.deepStrictEqual(planted("const launch = (program) => {\n  startEngineRun(root);\n  spawnSync(program, args);\n};\nlaunch(resolveClaudeRunnerBin());\n"), []);
+  assert.deepStrictEqual(planted("const launch = (program) => {\n  spawnSync(program, ['--help']);\n};\nlaunch(resolveClaudeRunnerBin());\n"), []);
+  assert.deepStrictEqual(planted("const launch = (program) => {\n  spawnSync(program, args);\n};\nlaunch(findExecutable('git'));\n"), []);
+  assert.deepStrictEqual(planted("const launch = (prompt, program) => {\n  spawnSync(program, args);\n};\nlaunch(resolveClaudeRunnerBin(), git);\n"), []);
   {
     const source = "function outer() {\n  function helper() {\n    startEngineRun(root);\n  }\n  spawn(resolveClaudeRunnerBin(), args);\n}\n";
     assert.deepStrictEqual(planted(source), ['commands/planted.js:5 resolveClaudeRunnerBin()']);
