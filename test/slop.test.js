@@ -1831,6 +1831,24 @@ test('fix leaves a file reference note readable to the ref healer', () => {
   assert.equal(fs.readFileSync(map, 'utf8'), '- `lib/plug.js:8`: `buildPlugin` packages the skills\n');
 });
 
+test('fix gives a file reference the colon before the code it points at, past a label', () => {
+  // the line already holds a label colon, so the fix wrote a comma or a
+  // semicolon and the map healer lost the name after the reference
+  const file = tmpFile('notes.md', [
+    '**Write path:** `commands/autopilot.js:25` \u2014 `PHASE_TIMEOUT = 600000` (10 min per phase)',
+    '- Real data contract verified: `services/credits.py:35` \u2014 `AUDIT_SOURCES` has 4 sources.',
+    '- `people/`    \u2014 `notes.md` per person',
+    '**Write path:** `the plan` \u2014 `step one` first',
+  ].join('\n'));
+  const { changes } = applyFixes([file], RULES, { write: false });
+  assert.deepEqual(changes.map((c) => c.after), [
+    '**Write path:** `commands/autopilot.js:25`: `PHASE_TIMEOUT = 600000` (10 min per phase)',
+    '- Real data contract verified: `services/credits.py:35`: `AUDIT_SOURCES` has 4 sources.',
+    '- `people/`      `notes.md` per person',
+    '**Write path:** `the plan`, `step one` first',
+  ]);
+});
+
 test('fix keeps a journal heading that ends in a time readable for its hour', () => {
   // analytics reads the hour after a dash or a spaced hyphen at the end of a
   // heading; the fix wrote "### Watch: 19:05", which hides it, and glued

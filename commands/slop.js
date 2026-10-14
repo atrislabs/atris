@@ -383,7 +383,11 @@ function isRange(a, b) {
   return +b > +a || (a.length >= 3 && b.length < a.length && +b > +a.slice(-b.length));
 }
 
-function fixEmDash(s, { endsBlock = false, startsBlock = false } = {}) {
+function fixEmDash(s, { endsBlock = false, startsBlock = false, spans = [] } = {}) {
+  // a dash between a file reference and the code it points at reads "is",
+  // so it takes a colon even past a label colon: "`lib/a.js:12`: `runTick`",
+  // which is also what the map healer reads the name from
+  s = s.replace(/\uE000(\d+)\uE001[ \t]?\u2014[ \t]*(?=\uE000\d+\uE001)/g, (m, n) => (FILE_REF.test(spans[n] || '') ? `\uE000${n}\uE001: ` : m));
   // a table cell that holds only a dash means "nothing here"; a hyphen keeps
   // the cell instead of turning it into a stray comma
   if (/^\s*\|/.test(s)) s = s.replace(/(\|\s*)\u2014(\s*)(?=\||$)/g, '$1-$2');
@@ -759,10 +763,11 @@ function fencedLines(lines) {
 // "<one line \u2014 what this member does>", stays open to the scan and the fix.
 // Each is masked while the fix runs.
 const LITERAL_SPAN = /(`+).+?\1|(?<=[(\["'\u201c\u2018])\u2014(?=[)\]"'\u201d\u2019])|<(kbd|code|samp|var|tt)\b[^<>]*>.*?<\/\2\s*>|\$\$.+?\$\$|\$(?=\S)[^$]+?(?<=\S)\$(?!\d)|\[\^[^\]\s]+\]|^\s{0,3}\[[^\]]+\]:\s*\S+|(?<=\])\[[^\]]+\]|(?<=\])\((?:[^()\s]|\([^()\s]*\))*(?:\s+"[^"]*")?\)?|<(?![A-Za-z][^<>="']*\s\u2014\s)[A-Za-z/!][^<>]*>/g;
+const FILE_REF = /^(`+)[^`\s]+\.\w{1,5}:\d+(?:-\d+)?\1$/;
 function maskInlineCode(line) {
   const spans = [];
   const masked = line.replace(LITERAL_SPAN, (m) => `\uE000${spans.push(m) - 1}\uE001`);
-  return { masked, restore: (s) => s.replace(/\uE000(\d+)\uE001/g, (m, n) => spans[n]) };
+  return { masked, spans, restore: (s) => s.replace(/\uE000(\d+)\uE001/g, (m, n) => spans[n]) };
 }
 
 // Each rule is deterministic: a regex + a one-line why. severity drives the icon.
@@ -951,10 +956,10 @@ function applyFixes(files, rules, { write = true } = {}) {
         // a code span is code in any file, a script comment or a plain text
         // note too: "`selection-\u2014-member`" names a slug, and a comma in it
         // would name a different one
-        const { masked, restore } = r.proseOnly ? maskInlineCode(line.slice(at)) : { masked: line.slice(at), restore: (x) => x };
+        const { masked, spans, restore } = r.proseOnly ? maskInlineCode(line.slice(at)) : { masked: line.slice(at), spans: [], restore: (x) => x };
         if (!r.re.test(masked)) continue;
         const startsBlock = at === 0 && (i === 0 || !lines[i - 1].trim() || /^\s{0,3}#/.test(lines[i - 1]));
-        const nl = line.slice(0, at) + restore(r.fix(masked, { endsBlock: i === lines.length - 1 || !lines[i + 1].trim(), startsBlock }));
+        const nl = line.slice(0, at) + restore(r.fix(masked, { endsBlock: i === lines.length - 1 || !lines[i + 1].trim(), startsBlock, spans }));
         if (nl !== line) { line = nl; fixedCount++; }
       }
       if (line !== lines[i]) { changes.push({ file, line: i + 1, before: lines[i], after: line, kind: fixKind(lines[i], line) }); lines[i] = line; touched = true; }
