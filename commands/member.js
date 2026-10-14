@@ -10795,6 +10795,20 @@ function memberUpPick(root, name, taken) {
   }
 }
 
+// Every open task a member could start, with the job it needs.
+function memberUpWaiting(root) {
+  try {
+    const taskDb = require('../lib/task-db');
+    const { fittingTasks } = require('../lib/member-task-pick');
+    const db = taskDb.open();
+    const workspaceRoot = taskDb.workspaceRoot(root);
+    return ['build', 'review', 'search'].flatMap((job) => fittingTasks(taskDb, db, { workspaceRoot, job, requireCheck: true })
+      .map((task) => ({ id: task.id, title: task.title, job })));
+  } catch {
+    return [];
+  }
+}
+
 function memberUpSpawn(root, name, onExit) {
   const { spawn } = require('child_process');
   const logDir = path.join(root, '.atris', 'state', 'member-up');
@@ -10857,6 +10871,8 @@ async function memberUp(...args) {
     pickTask: (name, taken) => memberUpPick(root, name, taken),
     spawn: (name, onExit) => memberUpSpawn(root, name, onExit),
     now: () => Date.now(),
+    jobOf: (name) => memberGoJob(name, root),
+    waitingTasks: () => memberUpWaiting(root),
   };
   if (parsed.dryRun) {
     const up = createMemberUp(deps, { max, only, dryRun: true });
