@@ -1654,6 +1654,29 @@ test('fix joins a plural and a common verb with more words after a dash with a s
   ]);
 });
 
+test('fix joins a "the" subject and a verb that is rarely a noun after a dash with a semicolon', () => {
+  const file = tmpFile('rare-verb.md', [
+    'Keep it short \u2014 the config lives in one file.',
+    'It is simple \u2014 the answer appears in the log.',
+    'We moved it \u2014 the signing key belongs to the team now.',
+    'Read the notes \u2014 the rule applies to every file.',
+    // a pronoun before the verb, "of" after it, or no words after it stays
+    'Open the folder \u2014 the file it belongs to.',
+    'We read the book \u2014 the private lives of founders.',
+    'Ship it \u2014 the config lives.',
+  ].join('\n'));
+  const { changes } = applyFixes([file], RULES);
+  assert.deepEqual(changes.map((c) => c.after), [
+    'Keep it short; the config lives in one file.',
+    'It is simple; the answer appears in the log.',
+    'We moved it; the signing key belongs to the team now.',
+    'Read the notes; the rule applies to every file.',
+    'Open the folder, the file it belongs to.',
+    'We read the book, the private lives of founders.',
+    'Ship it, the config lives.',
+  ]);
+});
+
 test('fix starts the next sentence after a stop that sits before a dash', () => {
   // from the terrace repo, which came out "fine with try? the cost"
   const file = tmpFile('stop.md', [
