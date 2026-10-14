@@ -2397,3 +2397,7 @@ npm publish
 ## Tampered receipt ledger fixture setup
 
 - `test/commands.test.js:13463` checks that an edited reward receipt makes the status read fail closed. Real-store creation at `test/commands.test.js:13476` saves one setup launch, resolves the display reference and closes in finally; claim, ready, accept with its reward total, and the tampered status read remain on the CLI with every behavior assertion preserved.
+
+## Ready-work revise fixture setup
+
+- `test/commands.test.js:13507` checks that a human revise sends ready work back to claimed with a revision count. Real-store creation at `test/commands.test.js:13520` saves one setup launch, resolves the display reference and closes in finally; claim, both readies, revise, show, the refused stale accept and the re-ready remain on the CLI with every behavior assertion preserved.
