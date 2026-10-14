@@ -145,7 +145,10 @@ test('a narrow terminal trims job and last step so every line fits', () => {
     for (const l of folded.split('\n')) assert.ok(l.length <= 100, `a live run fits in 100: ${l.length}`);
     assert.match(folded, /^member\s+state\s+last result\s+run\s+ago\s+job\s+last step$/m, 'too narrow: one run column');
     assert.match(folded, /^builder\s+working\s+-\s+claude 1m\s+12s ago\s/m);
-    assert.match(folded, /^breaker\s+done failed\s+failed \(timed out\) 1m ago\s+-\s+1m ago\s/m);
+    assert.match(folded, /^breaker\s+done failed\s+timed out\s+-\s+1m ago\s+risky fix\s+-$/m, 'a done row keeps only the reason');
+    const live80 = renderBoard(live, dir, 0, 80);
+    for (const l of live80.split('\n')) assert.ok(l.length <= 80, `a live run and a reason fit in 80: ${l.length}`);
+    assert.match(live80, /^builder\s+working\s+-\s+claude 1m\s/m);
 
     const roomy = renderBoard(rows, dir, 0, 400);
     assert.match(roomy, /^member\s+state\s+last result\s+ago\s+job\s+last step$/m);
