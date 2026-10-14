@@ -2307,3 +2307,5 @@ npm publish
 - `atris/receipts/2026-10-14-fleet-folder-check.js:51`: live child program in the independent repository; the real process scan sees activity under the parent, but disposal removes the parent while the program remains alive.
 
 - `atris/receipts/2026-10-14-fleet-folder-check.js:83`: sibling-copy private lock is invisible to both the main copy and shared-repository checks; disposal deletes the parent and lock without recording removal. Inspect all linked copies before removing shared metadata.
+
+- `atris/receipts/2026-10-14-fleet-folder-check.js:83`: outside linked copy survives disposal but loses its private Git metadata and can no longer run Git status. Enumerate all copies registered with the shared repository, including paths outside the removal group.

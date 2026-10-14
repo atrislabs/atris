@@ -166,3 +166,43 @@ Commands run: mission status, task list/new/claim/note/ready, Git status and rem
 Progress: one additional real lock case, five reproduced unlogged deletions overall, twelve required tests passed, zero production changes and zero new dependencies.
 next_push: Include every linked copy's private Git metadata in the whole-group keep decision before removing shared storage.
 layer: beliefs
+
+## Outside linked copy follow-up
+
+Added a real outside-copy case to the cleanup audit. The actual cleanup routine ran with exit 0, and the required check passed with twelve tests, zero failures, exit 0. The outside folder survives but Git status fails after its shared metadata is deleted. This is evidence of unsafe cleanup, not a production repair.
+
+Verdict: proceed-with-changes. The single risk is limiting enumeration to copies physically inside the removal group. Enumerate every copy registered with shared Git storage, including outside paths, and keep the group when a linked copy is active or its state cannot be checked. Inspect private locks with exact paths and ages before any removal. This advisory evidence neither changes production behavior nor approves deletion of user data.
+
+Plan: shared repository registrations -> every linked copy -> activity check -> keep group on refusal -> otherwise remove and record.
+
+Runtime command: `node atris/receipts/2026-10-14-fleet-folder-check.js`
+Exit: 0. Actual additional output:
+```text
+outside case: work-folder and shared-repository checks both report safe
+outside before cleanup: git locks: /private/var/folders/t1/2_4kmb5n4c71dxm26zc8dgzr0000gn/T/atris-fleet-check-XcgLwb/review-ycPiP7/objects.git/worktrees/outside-review-ycPiP7/index.lock (7200s old)
+{"kind":"outside","folderKept":false,"lockKept":false,"parentKept":false,"removalRecorded":false}
+{"kind":"outside","outsideFolderKept":true,"outsideGitStatusExit":128,"error":"fatal: not a git repository: /private/var/folders/t1/2_4kmb5n4c71dxm26zc8dgzr0000gn/T/atris-fleet-check-XcgLwb/review-ycPiP7/objects.git/worktrees/outside-review-ycPiP7"}
+```
+
+The disposable fixture uses unchanged production cleanup and real Git operations. Git status succeeds in the outside copy before cleanup, its private lock is exactly two hours old, and both narrower activity checks report safe. After cleanup the copy remains, the lock and parent are gone, no removal was recorded, and Git status fails with exit 128. Retained fixture: `/private/var/folders/t1/2_4kmb5n4c71dxm26zc8dgzr0000gn/T/atris-fleet-check-XcgLwb`. Change defect-reproduction assertions to preservation assertions when repairing cleanup.
+
+Required rerun command: `node --test test/worktree-removal-guard.test.js test/member-tidy.test.js`
+Exit: 0. Actual final output:
+```text
+ℹ tests 12
+ℹ suites 0
+ℹ pass 12
+ℹ fail 0
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 2807.21075
+```
+
+Files edited: `atris/receipts/2026-10-14-fleet-folder-check.js`, this receipt, `atris/MAP.md`, `atris/refs/MAP-NOTES.md`, and the new member-log entry in `atris/team/architect/logs/2026-10-14.md`. Task commands regenerate `atris/TODO.md`; existing changes there, in `bin/atris.js`, and earlier member-log entries are excluded from staging.
+
+Commands run: brain activation, mission status and goal lookup, workspace status, task list/new/claim/note/ready, Git status/branch/remote lookup, targeted reads/searches, the runtime and required check above, brain compile, whitespace check, explicit staging, commit, and push. Brain activation returned exit 2 with a write plan; compilation is likewise plan-only. Artifacts: extended audit, this decision card, retained disposable fixture, navigation updates, and member log.
+
+Progress: one additional reproduced failure, six audit cases overall, twelve required checks passed, zero new filenames, zero dependencies, zero production changes.
+next_push: Enumerate all registered linked copies, including outside paths, before allowing shared Git storage removal.
+layer: beliefs
