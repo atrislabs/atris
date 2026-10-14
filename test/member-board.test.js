@@ -247,17 +247,40 @@ test('watch says more runs ended between redraws than the board keeps', () => {
     + `2026-10-14T13:00:05Z m-6 started: [pid ${process.pid} engine claude] try 5\n`;
   const done = changeTracker(60_000);
   done([memberRow('builder', first, now)], now);
-  assert.deepEqual(done([memberRow('builder', busy, now + 6_000)], now + 6_000), ['builder done ok -> more runs -> done ok -> done failed -> done failed -> working'],
-    'the run seen last time fell off the 3 kept, so the note says some are not shown');
+  assert.equal(memberRow('builder', busy, now + 6_000).earlier_runs, 5, 'every earlier run in the log, not just the 3 kept');
+  assert.deepEqual(done([memberRow('builder', busy, now + 6_000)], now + 6_000), ['builder done ok -> 1 more run -> done ok -> done failed -> done failed -> working'],
+    'the run seen last time fell off the 3 kept, so the note says how many are not shown');
   const open = changeTracker(60_000);
   open([{ ...memberRow('builder', '2026-10-14T12:58:00Z m-1 started: [pid 11 engine claude] build\n', now), state: 'working' }], now);
-  assert.deepEqual(open([memberRow('builder', busy, now + 6_000)], now + 6_000), ['builder working -> more runs -> done ok -> done failed -> done failed -> working'],
+  assert.deepEqual(open([memberRow('builder', busy, now + 6_000)], now + 6_000), ['builder working -> 2 more runs -> done ok -> done failed -> done failed -> working'],
     'how the watched run ended is not kept either');
+  const unknown = changeTracker(60_000);
+  unknown([memberRow('builder', first, now)], now);
+  assert.deepEqual(unknown([{ ...memberRow('builder', busy, now + 6_000), earlier_runs: null }], now + 6_000),
+    ['builder done ok -> more runs -> done ok -> done failed -> done failed -> working'], 'a log too long to count still says some are not shown');
+  const fresh = changeTracker(60_000);
+  fresh([{ ...memberRow('scout', first, now), state: 'working' }], now);
+  assert.deepEqual(fresh([{ ...memberRow('scout', first, now), state: 'working' }, memberRow('builder', busy, now + 6_000)], now + 6_000),
+    ['builder new -> 2 more runs -> done ok -> done failed -> done failed -> working'], 'a new member with more ended runs than kept says so too');
   const fits = changeTracker(60_000);
   fits([memberRow('builder', first, now)], now);
   const three = first + quick(1, 'failed') + quick(2, 'ok') + `2026-10-14T13:00:05Z m-6 started: [pid ${process.pid} engine claude] try 3\n`;
   assert.deepEqual(fits([memberRow('builder', three, now + 6_000)], now + 6_000), ['builder done ok -> done failed -> done ok -> working'],
     'when the run seen last time is still kept, nothing is missing');
+});
+
+test('board leaves the earlier run count empty when the log is too long to read whole', () => {
+  const now = Date.parse('2026-10-14T13:00:00Z');
+  const run = (n) => `2026-10-14T12:${String(n % 60).padStart(2, '0')}:00Z m-${n} started: try ${n}\n2026-10-14T12:${String(n % 60).padStart(2, '0')}:00Z m-${n} finished: ok`;
+  const dir = fakeDir({ short: [run(1), run(2), '2026-10-14T12:59:00Z m-3 started: now'], long: [...Array.from({ length: 4000 }, (_, i) => run(i)), '2026-10-14T12:59:00Z m-x started: now'] });
+  try {
+    const by = Object.fromEntries(readBoard({ dir, now, all: true }).map((r) => [r.member, r]));
+    assert.equal(by.short.earlier_runs, 2);
+    assert.ok(fs.statSync(path.join(dir, 'long.log')).size > 256 * 1024, 'the long log is past what the board reads');
+    assert.equal(by.long.earlier_runs, null, 'only the end of the log was read, so the count is not known');
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
 });
 
 test('watch names the runs a new member already ended before its current one', () => {
