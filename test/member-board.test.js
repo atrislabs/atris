@@ -1392,7 +1392,7 @@ test('board says nobody is working when every member is hidden', () => {
   assert.equal(renderBoard([], '/x', 3), 'nobody is working right now. 3 finished over an hour ago, hidden. --all shows them');
 });
 
-test('atris member board reads ATRIS_PROGRESS_DIR for real', () => {
+test('atris member board reads ATRIS_PROGRESS_DIR for real', async () => {
   const recent = new Date(Date.now() - 5_000).toISOString();
   const dir = fakeDir({ navigator: [`${recent} m-9 started: map the repo`, `${recent} m-9 reading atris/MAP.md`] });
   try {
@@ -1401,12 +1401,26 @@ test('atris member board reads ATRIS_PROGRESS_DIR for real', () => {
     assert.equal(once.status, 0, once.stderr);
     assert.match(once.stdout, /^navigator\s+working\s+-\s+-\s+-\s+-\s+\d+s ago\s+map the repo\s+reading atris\/MAP\.md$/m);
 
-    const watch = spawnSync(process.execPath, [cliPath, 'member', 'board', '--watch'], { cwd: dir, env, encoding: 'utf8', timeout: 3700 });
+    // Wait for the redraw rather than stopping at a fixed time: on a busy
+    // machine the CLI can take most of a second just to start.
+    const child = spawn(process.execPath, [cliPath, 'member', 'board', '--watch'], { cwd: dir, env });
+    let stdout = '';
+    const draws = [];
+    const watch = await new Promise((resolve) => {
+      const cap = setTimeout(() => child.kill('SIGTERM'), 15_000);
+      child.stdout.on('data', (chunk) => {
+        stdout += chunk;
+        while (draws.length < stdout.split('redraws every 3s').length - 1) draws.push(Date.now());
+        if (draws.length === 2) child.kill('SIGTERM');
+      });
+      child.on('close', (code, signal) => { clearTimeout(cap); resolve({ code, signal }); });
+    });
     assert.equal(watch.signal, 'SIGTERM', 'watch stays open until stopped');
-    assert.equal(watch.stdout.split('redraws every 3s').length - 1, 2, 'drew once, then redrew at 3s');
-    assert.match(watch.stdout, /\x1b\[2J\x1b\[H/);
-    assert.match(watch.stdout, /navigator\s+working/);
-    assert.match(watch.stdout, /redraws every 3s/);
+    assert.equal(draws.length, 2, 'drew once, then redrew');
+    assert.ok(draws[1] - draws[0] >= 2500, `the redraw waited about 3s: ${draws[1] - draws[0]}ms`);
+    assert.match(stdout, /\x1b\[2J\x1b\[H/);
+    assert.match(stdout, /navigator\s+working/);
+    assert.match(stdout, /redraws every 3s/);
   } finally {
     fs.rmSync(dir, { recursive: true, force: true });
   }
