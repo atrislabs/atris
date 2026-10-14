@@ -1093,18 +1093,41 @@ test('every launch of an engine program by name records its run or is named as e
     ['commands/console.js', 'interactive codex session'],
     ['commands/interview.js', 'interactive claude session'],
   ]);
+  // Comments are blanked with their line breaks kept, so a mention there
+  // never counts and line numbers still match the file.
+  const stripComments = (text) => text
+    .replace(/\/\*[\s\S]*?\*\//g, (block) => block.replace(/[^\n]/g, ' '))
+    .replace(/(^|[^:\\'"`])\/\/.*$/gm, '$1');
+  // Each launch needs its own recording call in the dozen lines up to it.
+  const RECORD_WINDOW = 12;
   const unrecorded = (rel, text) => {
-    if (EXEMPT.has(rel) || /startEngineRun|recordEngineResource/.test(text)) return [];
+    if (EXEMPT.has(rel)) return [];
+    const code = stripComments(text);
+    const lines = code.split('\n');
     const found = [];
-    for (const match of text.matchAll(ENGINE_LAUNCH)) {
+    for (const match of code.matchAll(ENGINE_LAUNCH)) {
       // A version probe starts no engine run.
       if (/^\[\s*['"`]--version['"`]\s*\]$/.test(match[2] || '')) continue;
-      found.push(`${rel}:${text.slice(0, match.index).split('\n').length} ${match[1]}`);
+      const line = code.slice(0, match.index).split('\n').length;
+      const window = lines.slice(Math.max(0, line - RECORD_WINDOW), line).join('\n');
+      if (/\b(?:startEngineRun|recordEngineResource)\(/.test(window)) continue;
+      found.push(`${rel}:${line} ${match[1]}`);
     }
     return found;
   };
   assert.deepStrictEqual(unrecorded('commands/planted.js', "const r = spawnSync('claude', ['-p', prompt]);\n"), ['commands/planted.js:1 claude']);
   assert.deepStrictEqual(unrecorded('commands/planted.js', "spawnSync('claude', ['--version']);\n"), []);
+  // A mention in a comment, or a recorded launch elsewhere in the file, does
+  // not cover this launch.
+  assert.deepStrictEqual(unrecorded('commands/planted.js', "// startEngineRun is called elsewhere\nconst r = spawnSync('claude', ['-p', prompt]);\n"), ['commands/planted.js:2 claude']);
+  assert.deepStrictEqual(unrecorded('commands/planted.js', "/* recordEngineResource( */ spawnSync('codex', ['exec']);\n"), ['commands/planted.js:1 codex']);
+  const recordedThenBare = [
+    "const end = startEngineRun(root, { engine: 'claude' });",
+    "spawnSync('claude', ['-p', a]);",
+    ...Array(20).fill(''),
+    "spawnSync('claude', ['-p', b]);",
+  ].join('\n');
+  assert.deepStrictEqual(unrecorded('commands/planted.js', recordedThenBare), ['commands/planted.js:23 claude']);
   const repo = path.join(__dirname, '..');
   const missing = [];
   let launches = 0;
