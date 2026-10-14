@@ -5,7 +5,7 @@ const os = require('node:os');
 const path = require('node:path');
 const { spawn, spawnSync } = require('node:child_process');
 
-const { readBoard, renderBoard, ago, isAlive, stopMember } = require('../lib/member-board');
+const { readBoard, renderBoard, changeTracker, ago, isAlive, stopMember } = require('../lib/member-board');
 
 const repoRoot = path.resolve(__dirname, '..');
 const cliPath = path.join(repoRoot, 'bin', 'atris.js');
@@ -205,6 +205,19 @@ test('members that ended over an hour ago, finished or died, hide unless --all',
 test('board summary says one member, not one members', () => {
   const row = { member: 'builder', state: 'stopped', before: [], alive: false, engine: 'claude', running_for: '', lasted: '1m', ago: '5s ago', job: 'ship', step: 'edit' };
   assert.equal(renderBoard([row], '/x').split('\n')[0], '1 member: 1 stopped');
+});
+
+test('watch names state changes from the last minute, then drops them', () => {
+  const row = (member, state) => ({ member, state, before: [], alive: null, engine: '', running_for: '', lasted: '', ago: '1s ago', job: 'j', step: 's' });
+  const changed = changeTracker(60_000);
+  assert.deepEqual(changed([row('builder', 'working'), row('scout', 'working')], 0), [], 'the first redraw has nothing to compare');
+  assert.deepEqual(changed([row('builder', 'died'), row('scout', 'working')], 3_000), ['builder working -> died']);
+  const rows = [row('builder', 'died'), row('scout', 'stopped')];
+  const both = changed(rows, 6_000);
+  assert.deepEqual(both, ['builder working -> died', 'scout working -> stopped'], 'oldest first, kept across redraws');
+  assert.match(renderBoard(rows, '/x', 0, null, both).split('\n')[1], /^changed in the last minute: builder working -> died, scout working -> stopped$/);
+  assert.deepEqual(changed(rows, 64_000), ['scout working -> stopped'], 'a change older than a minute drops off');
+  assert.doesNotMatch(renderBoard(rows, '/x'), /changed in the last minute/, 'no changes, no line');
 });
 
 test('board says nobody is working when every member is hidden', () => {
