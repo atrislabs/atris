@@ -64,8 +64,7 @@ test('board shows working, quiet, done ok, and done failed from fake logs', () =
     assert.deepEqual(by.scout.before, []);
     assert.equal(by.builder.ago, '12s ago');
     assert.equal(by.builder.step, 'editing lib/b.js');
-    assert.equal(by.builder.job.length, 50);
-    assert.ok(by.builder.job.startsWith('Ship the member board'));
+    assert.equal(by.builder.job, longJob, 'rows keep the whole job for --json');
 
     assert.equal(by.scout.state, 'quiet');
     assert.equal(by.scout.ago, '5m ago');
@@ -79,6 +78,12 @@ test('board shows working, quiet, done ok, and done failed from fake logs', () =
     assert.equal(by.scout.lasted, '', 'a run that may still be going has no length yet');
 
     const screen = renderBoard(rows, dir);
+    assert.ok(screen.includes(`${longJob.slice(0, 47)}...`), 'with no terminal width the job cuts at 50');
+    const wide = renderBoard(rows, dir, 0, 220);
+    assert.ok(wide.includes(longJob), 'a wide terminal shows the whole job');
+    const narrow = renderBoard(rows, dir, 0, 140);
+    assert.ok(narrow.split('\n').every((l) => l.length <= 140), 'every line fits a 140 column terminal');
+    assert.match(narrow, /^builder\s.*editing lib\/b\.js$/m, 'the short step keeps its length');
     assert.equal(screen.split('\n').length, 5, 'one header plus one row per member');
     assert.match(screen, /^member\s+state\s+before\s+alive\s+engine\s+run time\s+ago\s+job\s+last step$/m);
     assert.match(screen, /^scout\s+quiet\s+-\s+-\s+-\s+-\s+5m ago\s+find stale docs\s+running: rg stale$/m);
