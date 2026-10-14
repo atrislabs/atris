@@ -9,6 +9,9 @@ const { readBoard, renderBoard, changeTracker, ago, memberRow, isAlive, stopMemb
 
 const repoRoot = path.resolve(__dirname, '..');
 const cliPath = path.join(repoRoot, 'bin', 'atris.js');
+// Every CLI run below copies this env. Without it, a newer version on npm
+// adds an update notice to the board output (and may start an update).
+process.env.ATRIS_SKIP_UPDATE_CHECK = '1';
 
 const NOW = Date.parse('2026-10-13T12:00:00.000Z');
 const at = (secondsAgo) => new Date(NOW - secondsAgo * 1000).toISOString();
@@ -510,7 +513,8 @@ test('board shows a live run as alive with its engine, and a dead one as died, n
     assert.equal(by.builder.alive, false);
     assert.equal(by.builder.running_for, '');
     assert.equal(by.builder.lasted, '1m', 'a died run lasts from start to its last line');
-    assert.match(renderBoard(readBoard({ dir }), dir), /^builder\s+died\s+no\s+claude\s+1m\s+/m);
+    assert.match(renderBoard(readBoard({ dir }), dir), /^builder\s+died\s+no\s+claude\s+at least 1m\s+/m, 'the crash came some time after the last line');
+    assert.equal(by.builder.lasted, '1m', 'json keeps the bare length');
   } finally {
     killAll(child.pid);
     fs.rmSync(dir, { recursive: true, force: true });
