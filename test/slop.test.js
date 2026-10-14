@@ -1375,3 +1375,17 @@ test('fix ends a paragraph-ending dash with a period, keeps a wrapping one a com
     'The last line ends here.',
   ]);
 });
+
+test('fix leaves a dash alone in brackets or quotes, since it names the mark', () => {
+  // a style guide line in a sibling repo came out "No em dashes (: ) unless"
+  const file = tmpFile('names.md', [
+    '- [ ] No em dashes (\u2014) unless direct quote or title separator',
+    'The mark "\u2014" is banned \u2014 use a comma.',
+    'A [\u2014] cell \u2014 it means nothing.',
+  ].join('\n'));
+  const { changes } = applyFixes([file], RULES);
+  assert.deepEqual(changes.map((c) => c.after), [
+    'The mark "\u2014" is banned, use a comma.',
+    'A [\u2014] cell; it means nothing.',
+  ]);
+});

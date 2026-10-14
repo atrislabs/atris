@@ -390,8 +390,10 @@ function fencedLines(lines) {
 // non-space with no digit after, so "$5 and $10" stays prose. A link address
 // may hold one level of parentheses, like a wiki page ending in "_(film)",
 // and its quoted title is masked with it, like an HTML title attribute.
+// A dash alone in brackets or quotes names the mark instead of using it,
+// "no em dashes (\u2014) unless", so it is masked too and never turns into "(: )".
 // Each is masked while the fix runs.
-const LITERAL_SPAN = /(`+).+?\1|<(kbd|code|samp|var|tt)\b[^<>]*>.*?<\/\2\s*>|\$\$.+?\$\$|\$(?=\S)[^$]+?(?<=\S)\$(?!\d)|\[\^[^\]\s]+\]|^\s{0,3}\[[^\]]+\]:\s*\S+|(?<=\])\[[^\]]+\]|(?<=\])\((?:[^()\s]|\([^()\s]*\))*(?:\s+"[^"]*")?\)?|<[A-Za-z/!][^<>]*>/g;
+const LITERAL_SPAN = /(`+).+?\1|(?<=[(\["'\u201c\u2018])\u2014(?=[)\]"'\u201d\u2019])|<(kbd|code|samp|var|tt)\b[^<>]*>.*?<\/\2\s*>|\$\$.+?\$\$|\$(?=\S)[^$]+?(?<=\S)\$(?!\d)|\[\^[^\]\s]+\]|^\s{0,3}\[[^\]]+\]:\s*\S+|(?<=\])\[[^\]]+\]|(?<=\])\((?:[^()\s]|\([^()\s]*\))*(?:\s+"[^"]*")?\)?|<[A-Za-z/!][^<>]*>/g;
 function maskInlineCode(line) {
   const spans = [];
   const masked = line.replace(LITERAL_SPAN, (m) => `\uE000${spans.push(m) - 1}\uE001`);
