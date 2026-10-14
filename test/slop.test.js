@@ -2543,6 +2543,23 @@ test('fix reads a quoted line that opens with a box as a diagram line', () => {
   ]);
 });
 
+test('fix turns a single dash between two arrows into a hyphen', () => {
+  // the middle link of a chain read as a clause break: "build, review"
+  const file = tmpFile('arrow-chain.md', [
+    'plan \u2014> build \u2014 review \u2014> ship',
+    'plan \u2192 build \u2014 review \u2192 ship',
+    'Ship it \u2014 then a -> b',
+    '| a -> b | foo \u2014 bar | c -> d |',
+  ].join('\n\n'));
+  const { changes } = applyFixes([file], RULES, { write: false });
+  assert.deepEqual(changes.map((c) => c.after), [
+    'plan -> build - review -> ship',
+    'plan \u2192 build - review \u2192 ship',
+    'Ship it, then a -> b',
+    '| a -> b | foo, bar | c -> d |',
+  ]);
+});
+
 test('fix keeps a journal heading that ends in a time readable for its hour', () => {
   // analytics reads the hour after a dash or a spaced hyphen at the end of a
   // heading; the fix wrote "### Watch: 19:05", which hides it, and glued

@@ -501,6 +501,10 @@ function fixEmDash(s, { endsBlock = false, startsBlock = false, spans = [] } = {
   // a single dash with a box edge on both sides is a short link between two
   // boxes, so it takes a hyphen: "[a] - [b] - [c]", never "[a] ([b]) [c]"
   if (!/^\s*\|/.test(s)) s = s.replace(/(?<=[\])|+][ \t]*)\u2014(?=[ \t]*[[(|+])/g, '-');
+  // a single dash with an arrow before it and an arrow after it sits inside
+  // a chain of steps, so it takes a hyphen: "plan -> build - review -> ship",
+  // never "build, review". A table row is fixed cell by cell below.
+  if (!/^\s*\|/.test(s)) s = s.replace(/(?<=(?:->|<-|[\u2190\u2192\u2194\u21d0\u21d2]).*)\u2014(?=.*(?:->|<-|[\u2190\u2192\u2194\u21d0\u21d2]))/g, '-');
   // a table cell that holds only a dash means "nothing here"; a hyphen keeps
   // the cell instead of turning it into a stray comma
   if (/^\s*\|/.test(s)) s = s.replace(/(\|\s*)\u2014(\s*)(?=\||$)/g, '$1-$2');
