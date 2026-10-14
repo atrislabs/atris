@@ -6487,9 +6487,17 @@ test('brain scorecard uses latest review episode per task', () => {
     seedBrainWorkspace(dir);
     fs.rmSync(path.join(dir, '.atris', 'state', 'agent_mail.jsonl'), { force: true });
 
-    const add = runCli(['task', 'add', 'Avoid duplicate task scorecards', '--json'], { cwd: dir, env });
-    assert.equal(add.status, 0, add.stderr);
-    const ref = JSON.parse(add.stdout).task.display_id;
+    // Seed creation only; done, review, scorecard and compile stay on the CLI.
+    const db = taskStore.open(dbPath);
+    let ref;
+    try {
+      const created = addSeedTask(db, { title: 'Avoid duplicate task scorecards', workspaceRoot: taskStore.workspaceRoot(dir) });
+      assert.equal(created.inserted, true);
+      ref = taskStore.taskDisplayRefMap(taskStore.listTasks(db, { workspaceRoot: taskStore.workspaceRoot(dir) })).get(created.id);
+      assert.ok(ref);
+    } finally {
+      taskStore.close();
+    }
 
     const done = runCli(['task', 'done', ref, '--proof', 'first validation passed'], { cwd: dir, env });
     assert.equal(done.status, 0, done.stderr);
