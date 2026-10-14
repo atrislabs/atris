@@ -15654,26 +15654,33 @@ test('task serve continue-work creates scoped follow-up', async () => {
   try {
     fs.mkdirSync(path.join(dir, 'atris'), { recursive: true });
 
-    const created = runCli([
-      'task', 'add', 'API certified continuation parent',
-      '--tag', 'factory',
-      '--goal-id', 'OBL-933',
-      '--json',
-    ], { cwd: dir, env });
-    assert.equal(created.status, 0, created.stderr);
-    const parent = JSON.parse(created.stdout).task;
-    assert.equal(runCli([
-      'task', 'ready', parent.display_id,
-      '--as', 'codex',
-      '--proof', 'node --check test/commands.test.js passed before API continue-work',
-    ], { cwd: dir, env }).status, 0);
-    assert.equal(runCli([
-      'task', 'review', parent.display_id,
-      '--reward', '0',
-      '--as', 'codex-review',
-      '--proof', 'node --test test/commands.test.js passed during API continue-work review',
-      '--next', 'API scoped continuation child',
-    ], { cwd: dir, env }).status, 0);
+    // Add, ready and review are one store call each in the CLI, so the parent
+    // reaches review in-process. Continue work still goes through the server.
+    const parent = (() => {
+      const db = taskStore.open(dbPath);
+      try {
+        const workspaceRoot = taskStore.workspaceRoot(dir);
+        const { id } = addSeedTask(db, { title: 'API certified continuation parent', tag: 'factory', workspaceRoot, metadata: { goal_id: 'OBL-933' } });
+        const readied = taskStore.readyTask(db, {
+          id,
+          actor: 'codex',
+          proof: 'node --check test/commands.test.js passed before API continue-work',
+          result: FIXTURE_RESULT_SENTENCE,
+        });
+        assert.equal(readied.ready, true, readied.reason);
+        const reviewed = taskStore.reviewTask(db, {
+          id,
+          actor: 'codex-review',
+          reward: 0,
+          proof: 'node --test test/commands.test.js passed during API continue-work review',
+          nextTask: 'API scoped continuation child',
+        });
+        assert.equal(reviewed.reviewed, true, reviewed.reason);
+        return { id, display_id: taskStore.taskDisplayRefMap(taskStore.listTasks(db, { workspaceRoot })).get(id) };
+      } finally {
+        taskStore.close();
+      }
+    })();
 
     child = spawn(process.execPath, [cliPath, 'task', 'serve', '--host', '127.0.0.1', '--port', '0'], {
       cwd: dir,
