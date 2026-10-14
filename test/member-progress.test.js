@@ -22,7 +22,7 @@ test('formatToolStep turns each tool into one plain line', () => {
   assert.equal(formatToolStep(tool('Write', { file_path: '/work/repo/z/new.js' }), cwd), 'editing z/new.js');
   assert.equal(formatToolStep(tool('Bash', { command: 'npm test\necho done' }), cwd), 'running: npm test');
   const long = 'x'.repeat(100);
-  assert.equal(formatToolStep(tool('Bash', { command: long }), cwd), `running: ${'x'.repeat(70)}`);
+  assert.equal(formatToolStep(tool('Bash', { command: long }), cwd), `running: ${'x'.repeat(70)}...`);
   assert.equal(formatToolStep(tool('Grep', { pattern: 'formatToolStep' }), cwd), 'searching for formatToolStep');
   assert.equal(formatToolStep(tool('Glob', { pattern: 'lib/**/*.js' }), cwd), 'finding lib/**/*.js');
   assert.equal(formatToolStep(tool('WebFetch', { url: 'https://x' }), cwd), 'webfetch');

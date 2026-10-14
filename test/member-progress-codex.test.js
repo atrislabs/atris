@@ -26,7 +26,7 @@ test('formatCodexEvent turns codex steps into the same plain lines', () => {
   assert.equal(formatCodexEvent(cmd("/bin/zsh -lc 'npm test'"), cwd), 'running: npm test');
   assert.equal(formatCodexEvent(cmd('/bin/bash -lc "node --test a.js\necho done"'), cwd), 'running: node --test a.js');
   assert.equal(formatCodexEvent(cmd('ls -la'), cwd), 'running: ls -la');
-  assert.equal(formatCodexEvent(cmd(`/bin/zsh -lc '${'x'.repeat(100)}'`), cwd), `running: ${'x'.repeat(70)}`);
+  assert.equal(formatCodexEvent(cmd(`/bin/zsh -lc '${'x'.repeat(100)}'`), cwd), `running: ${'x'.repeat(70)}...`);
   assert.equal(formatCodexEvent(cmd("/bin/zsh -lc 'rg -n formatToolStep lib'"), cwd), 'searching for formatToolStep');
   assert.equal(formatCodexEvent(cmd(`/bin/zsh -lc "grep -n 'hello' a.txt"`), cwd), 'searching for hello');
   assert.equal(formatCodexEvent(completed('item_2', {
