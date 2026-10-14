@@ -25,6 +25,7 @@ function writeFakeGh(bin, log, config) {
     "if (a === 'pr' && b === 'view') { if (!cfg.view) process.exit(1); console.log(JSON.stringify(cfg.view)); }",
     "if (a === 'pr' && b === 'list') console.log(JSON.stringify(cfg.list || []));",
     "if (a === 'pr' && b === 'create') console.log(cfg.createUrl || 'https://github.com/acme/repo/pull/7');",
+    "if (a === 'pr' && b === 'merge' && cfg.mergeFails) process.exit(1);",
   ].join('\n'), { mode: 0o755 });
 }
 
@@ -149,6 +150,29 @@ test('dropped with master unmoved: queues the same commit again without a push',
     assert.equal(remoteBranch(fx), fx.pushed);
     assert.deepEqual(ghCalls(fx).filter((c) => c[1] === 'merge'),
       [['pr', 'merge', '7', '--auto', '--merge', '--match-head-commit', fx.pushed]]);
+  });
+});
+
+test('catch-up pushed but github slow to queue it: the next look still knows the commit is ours', () => {
+  const fx = fixture();
+  withFakeGh(fx, () => {
+    setView(fx, {}, { mergeFails: true });
+    moveMaster(fx);
+    const first = requeueDroppedAutolands({ cwd: fx.main });
+    assert.equal(first.results[0].state, 'auto-merge');
+    const head = remoteBranch(fx);
+    assert.notEqual(head, fx.pushed, 'the catch-up reached github');
+    assert.equal(readQueue(fx)[BRANCH].pushed, head);
+    assert.equal(readQueue(fx)[BRANCH].requeues, 1);
+
+    setView(fx, { headRefOid: head });
+    const second = requeueDroppedAutolands({ cwd: fx.main });
+    assert.equal(second.results[0].state, 'requeued', second.results[0].line);
+    assert.match(second.results[0].line, /queued again$/);
+    assert.equal(remoteBranch(fx), head, 'no second catch-up push');
+    assert.deepEqual(ghCalls(fx).filter((c) => c[1] === 'merge').at(-1),
+      ['pr', 'merge', '7', '--auto', '--merge', '--match-head-commit', head]);
+    assert.equal(readQueue(fx)[BRANCH].pushed, head);
   });
 });
 
