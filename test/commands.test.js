@@ -18234,7 +18234,8 @@ test('analytics shows zero completions on fresh workspace', () => {
 test('analytics counts completions in journal', () => {
   const dir = makeTempDir();
   try {
-    initWorkspace(dir);
+    // The log below replaces the one init would write, so the workspace folder is enough.
+    fs.mkdirSync(path.join(dir, 'atris'), { recursive: true });
     writeTodayLog(dir, '# Log\n\n## Completed ✅\n\n- **C1: Shipped auth**\n- **C2: Fixed bug**\n\n## Inbox\n\n');
     const res = runCli(['analytics'], { cwd: dir });
     assert.equal(res.status, 0, res.stderr);
@@ -18248,7 +18249,7 @@ test('analytics counts completions in journal', () => {
 test('analytics counts inbox items when Inbox is last section', () => {
   const dir = makeTempDir();
   try {
-    initWorkspace(dir);
+    fs.mkdirSync(path.join(dir, 'atris'), { recursive: true });
     // Inbox at the end with no ## or --- after it (regression test)
     writeTodayLog(dir, '# Log\n\n## Completed ✅\n\n---\n\n## Inbox\n\n- **I1:** Fix auth\n- **I2:** Add tests\n');
     const res = runCli(['analytics'], { cwd: dir });
