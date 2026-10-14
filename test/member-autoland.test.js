@@ -81,12 +81,14 @@ function writeRunReceipt(fx, { missionId = 'mission-test', offsetMs = 0, ticks, 
   const dir = path.join(fx.worktree, 'atris', 'runs');
   fs.mkdirSync(dir, { recursive: true });
   const at = new Date(Date.now() + offsetMs).toISOString();
-  const runTicks = ticks || [passingTick()];
+  const headTree = git(['rev-parse', 'HEAD^{tree}'], fx.worktree);
+  const runTicks = (ticks || [passingTick()]).map((tick) => (
+    tick && !('reviewed_git_tree' in tick) ? { ...tick, reviewed_git_tree: headTree } : tick));
   const receipt = {
     schema: 'atris.mission_receipt.v1',
     tree_hash: 'doctrine-only',
     clean,
-    git_tree: gitTree === undefined ? git(['rev-parse', 'HEAD^{tree}'], fx.worktree) : gitTree,
+    git_tree: gitTree === undefined ? headTree : gitTree,
     mission_id: missionId,
     at,
     result: kind === 'mission_run_summary'
@@ -414,6 +416,24 @@ test('unsaved changes in the mission folder hold the branch', () => {
     out = autolandMemberRun({ mission: mission(), cwd: fx.worktree, loadTask: () => null });
     assert.equal(out.gate, 'unsaved');
     fs.rmSync(path.join(fx.worktree, 'helper.js'));
+    // Changes git was told to hide still count as unsaved.
+    const hide = (args, edit) => {
+      git(args, fx.worktree);
+      if (edit) fs.writeFileSync(path.join(fx.worktree, 'work.txt'), 'hidden edit\n');
+      const res = autolandMemberRun({ mission: mission(), cwd: fx.worktree, loadTask: () => null });
+      assert.equal(res.gate, 'unsaved', args.join(' '));
+    };
+    hide(['update-index', '--assume-unchanged', 'work.txt'], true);
+    git(['update-index', '--no-assume-unchanged', 'work.txt'], fx.worktree);
+    git(['checkout', '--', 'work.txt'], fx.worktree);
+    // Marked, even with no edit yet, the flag alone holds.
+    hide(['update-index', '--skip-worktree', 'work.txt'], false);
+    git(['update-index', '--no-skip-worktree', 'work.txt'], fx.worktree);
+    git(['config', 'status.showUntrackedFiles', 'no'], fx.worktree);
+    fs.writeFileSync(path.join(fx.worktree, 'helper.js'), 'module.exports = 1;\n');
+    assert.equal(autolandMemberRun({ mission: mission(), cwd: fx.worktree, loadTask: () => null }).gate, 'unsaved');
+    fs.rmSync(path.join(fx.worktree, 'helper.js'));
+    git(['config', '--unset', 'status.showUntrackedFiles'], fx.worktree);
     // The run itself ended dirty, even though the folder is clean now.
     writeRunReceipt(fx, { offsetMs: 1000, clean: false, gitTree: null });
     out = autolandMemberRun({ mission: mission(), cwd: fx.worktree, loadTask: () => null });
@@ -455,6 +475,11 @@ test('review must cover every step of the final run and nothing may come after i
     assert.match(gate(mission({ last_tick_index: 3 })).line, /ran again/);
     assert.equal(gate(mission({ last_tick_at: undefined })).gate, 'review');
 
+    // The final review saw a different code tree than the one checked out.
+    reset();
+    writeRunReceipt(fx, { ticks: [passingTick({ reviewed_git_tree: 'f'.repeat(40) })] });
+    assert.match(gate().line, /review did not see the code/);
+
     // A commit made after the receipt, even one that keeps the same code tree.
     reset();
     writeRunReceipt(fx);
@@ -483,6 +508,11 @@ test('protected text anywhere in metadata holds the branch', () => {
       // Tags are read under any tag key, at any depth.
       { metadata: { labels: { tags: ['ux', 'security'] } }, lane: /security/ },
       { metadata: { routing: { lane: 'payments' } }, lane: /payments/ },
+      // Strings nested anywhere below a tag key are tags too.
+      { metadata: { tags: { primary: 'security' } }, lane: /security/ },
+      { metadata: { tag: { name: 'payments' } }, lane: /payments/ },
+      { metadata: { lane: { name: 'deploy' } }, lane: /deploy/ },
+      { metadata: { todo_tags: [{ kind: ['billing'] }] }, lane: /billing/ },
       // Too deep to read whole holds instead of guessing.
       { metadata: { a: { b: { c: { d: { e: { f: { g: 'ok' } } } } } } }, lane: /too large/ },
       { metadata: { blob: 'x'.repeat(70 * 1024) }, lane: /too large/ },
@@ -501,7 +531,7 @@ test('protected text anywhere in metadata holds the branch', () => {
 // Drives the real CLI end to end: a fake codex worker, a fake claude
 // referee that passes, a bare origin, and the fake gh. Run output is
 // gitignored the way this repo ignores it.
-function runIgnitedMember({ codexLines, cliArgs }, check) {
+function runIgnitedMember({ codexLines, claudeLines = [], cliArgs }, check) {
   const { scrubAgentEnv } = require('./helpers/agent-env');
   const cliPath = path.resolve(__dirname, '..', 'bin', 'atris.js');
   const base = fs.mkdtempSync(path.join(os.tmpdir(), 'atris-member-autoland-cli-'));
@@ -528,6 +558,7 @@ function runIgnitedMember({ codexLines, cliArgs }, check) {
     script('codex', codexLines(base));
     script('claude', [
       'if [ "$1" = "--help" ]; then echo "--output-format --permission-mode --resume --session-id --include-partial-messages"; exit 0; fi',
+      ...claudeLines,
       `echo '${JSON.stringify({ type: 'result', subtype: 'success', is_error: false, result: 'VERDICT: PASS' })}'`,
     ]);
     writeFakeGh(bin, log, path.join(base, 'gh-config.json'));
@@ -587,5 +618,32 @@ test('a later failed worker that commits unreviewed code does not reuse the earl
     assert.match(out, /\[tick 2\] status=errored/, out);
     assert.doesNotMatch(out, /merges on its own/, out);
     assert.deepEqual(calls.filter((c) => c[1] === 'merge'), [], out);
+  });
+});
+
+// Review repro: the command check passes, then the referee itself commits
+// failing code and says pass. The referee did not review what would merge.
+test('a referee that changes the code during review fails the step and nothing merges', () => {
+  runIgnitedMember({
+    codexLines: () => [
+      'echo done > work.txt',
+      'git add work.txt >/dev/null 2>&1 && git commit -qm "write work.txt" >/dev/null 2>&1',
+      'echo "wrote work.txt"',
+    ],
+    claudeLines: ['echo broken > work.txt; git add work.txt >/dev/null 2>&1; git commit -qm reviewer-change >/dev/null 2>&1'],
+    cliArgs: ['--verify', 'test "$(cat work.txt)" = done'],
+  }, ({ out, calls }) => {
+    assert.doesNotMatch(out, /merges on its own/, out);
+    assert.deepEqual(calls.filter((c) => c[1] === 'merge'), [], out);
+    const worktree = (out.match(/^worktree: (.+)$/m) || [])[1];
+    assert.ok(worktree, out);
+    assert.equal(fs.readFileSync(path.join(worktree, 'work.txt'), 'utf8'), 'broken\n', 'the referee did commit a change');
+    const runs = path.join(worktree, 'atris', 'runs');
+    const summary = fs.readdirSync(runs).sort().map((name) => JSON.parse(fs.readFileSync(path.join(runs, name), 'utf8')))
+      .filter((r) => r.result && r.result.kind === 'mission_run_summary').pop();
+    const tick = summary.result.ticks[0];
+    assert.equal(tick.verifier_passed, false);
+    assert.equal(tick.referee_result.passed, false);
+    assert.equal(tick.referee_result.reason, 'code changed during review');
   });
 });

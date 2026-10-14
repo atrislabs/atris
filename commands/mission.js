@@ -6514,14 +6514,12 @@ function writeReceipt(mission, result, root = process.cwd()) {
   // checks saw, so a later reader can tell whether the code has moved since.
   // With unsaved changes the checks saw more than any commit holds, so no
   // code tree is recorded and clean is false.
-  const gitStatus = spawnSync('git', ['status', '--porcelain'], { cwd: root, encoding: 'utf8' });
-  const clean = gitStatus.status === 0 && !String(gitStatus.stdout || '').trim();
-  const gitTree = clean ? spawnSync('git', ['rev-parse', 'HEAD^{tree}'], { cwd: root, encoding: 'utf8' }) : null;
+  const codeState = require('../lib/member-autoland').gitCodeState(root);
   const receipt = {
     schema: 'atris.mission_receipt.v1',
     tree_hash: treeHashFor(root),
-    clean,
-    git_tree: gitTree && gitTree.status === 0 ? String(gitTree.stdout || '').trim() || null : null,
+    clean: codeState.clean,
+    git_tree: codeState.clean ? codeState.tree : null,
     mission_id: mission.id,
     objective: mission.objective,
     owner: mission.owner,
@@ -10759,12 +10757,22 @@ async function verifyMissionRunTickPhase(context) {
         || (!currentTick.storedVerifier && !process.env.NODE_TEST_CONTEXT)
       );
     if (shouldRunReferee) {
-      const refereeResult = await runEngineVerifier(currentTick.tickRuntimeMission, {
+      // Pin the code before the referee looks; a referee that changes the
+      // code or its unsaved state has not reviewed what would merge.
+      const { gitCodeState } = require('../lib/member-autoland');
+      const beforeReview = gitCodeState(cwd);
+      const reviewed = await runEngineVerifier(currentTick.tickRuntimeMission, {
         cwd,
         signal: controller.signal,
         tickIndex: currentTick.tickIdx,
         refereeEngine: context.refereeEngine,
       });
+      const afterReview = gitCodeState(cwd);
+      const codeMoved = beforeReview.tree !== afterReview.tree
+        || beforeReview.status !== afterReview.status
+        || beforeReview.clean !== afterReview.clean;
+      const refereeResult = codeMoved ? { ...reviewed, passed: false, reason: 'code changed during review' } : reviewed;
+      result.reviewed_git_tree = beforeReview.clean ? beforeReview.tree : null;
       result.referee_result = refereeResult;
       if (!verifierResult || !refereeResult.passed) {
         verifierResult = verifierResult
