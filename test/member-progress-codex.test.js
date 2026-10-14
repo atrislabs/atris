@@ -29,6 +29,9 @@ test('formatCodexEvent turns codex steps into the same plain lines', () => {
   assert.equal(formatCodexEvent(cmd(`/bin/zsh -lc '${'x'.repeat(100)}'`), cwd), `running: ${'x'.repeat(70)}...`);
   assert.equal(formatCodexEvent(cmd("/bin/zsh -lc 'rg -n formatToolStep lib'"), cwd), 'searching for formatToolStep');
   assert.equal(formatCodexEvent(cmd(`/bin/zsh -lc "grep -n 'hello' a.txt"`), cwd), 'searching for hello');
+  assert.equal(formatCodexEvent(cmd(`/bin/zsh -lc "rg -n 'pending tasks' lib"`), cwd), 'searching for pending tasks', 'a quoted pattern with a space is one argument');
+  assert.equal(formatCodexEvent(cmd(`/bin/zsh -lc 'rg -n "say \\"hi\\" now" lib'`), cwd), 'searching for say "hi" now');
+  assert.equal(formatCodexEvent(cmd(`/bin/zsh -lc "rg -n 'tag scope be"`), cwd), 'searching for tag scope be', 'a pattern cut before its closing quote keeps what is there');
   assert.equal(formatCodexEvent(completed('item_2', {
     type: 'file_change',
     changes: [{ path: '/work/repo/lib/a.js', kind: 'update' }, { path: '/work/repo/b.md', kind: 'add' }],
