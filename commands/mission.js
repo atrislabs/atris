@@ -6638,12 +6638,17 @@ function runReviewLaneDrain(root = process.cwd()) {
 }
 
 function gitWorktreeSnapshot(root = process.cwd()) {
-  const inside = spawnSync('git', ['rev-parse', '--is-inside-work-tree'], {
+  // One call answers both questions: line 1 is "true" inside a work tree, and
+  // line 2 is the HEAD sha (git exits nonzero with "HEAD" there before the
+  // first commit). Snapshots run before and after every tick, so a call saved
+  // here is saved many times per run.
+  const probe = spawnSync('git', ['rev-parse', '--is-inside-work-tree', 'HEAD'], {
     cwd: root,
     encoding: 'utf8',
     timeout: 5000,
   });
-  if (inside.status !== 0 || String(inside.stdout || '').trim() !== 'true') {
+  const [insideLine, headLine] = String(probe.stdout || '').split(/\r?\n/).map((line) => line.trim());
+  if (insideLine !== 'true') {
     return { available: false, reason: 'not-git-worktree' };
   }
   const status = spawnSync('git', ['status', '--porcelain=v1', '--untracked-files=all'], {
@@ -6660,14 +6665,9 @@ function gitWorktreeSnapshot(root = process.cwd()) {
   }
   const entries = String(status.stdout || '').split(/\r?\n/).filter(Boolean).sort();
   const digest = crypto.createHash('sha1').update(entries.join('\n')).digest('hex');
-  const head = spawnSync('git', ['rev-parse', '--verify', 'HEAD'], {
-    cwd: root,
-    encoding: 'utf8',
-    timeout: 5000,
-  });
   return {
     available: true,
-    head: head.status === 0 ? String(head.stdout || '').trim() : null,
+    head: probe.status === 0 && /^[0-9a-f]{40,64}$/.test(headLine || '') ? headLine : null,
     dirty_count: entries.length,
     dirty_hash: digest,
     dirty_sample: entries.slice(0, 25),
@@ -12488,5 +12488,6 @@ module.exports = {
   missionShippedCard,
   appendMissionJudgmentCard,
   acquireMissionLock,
+  gitWorktreeSnapshot,
   releaseMissionLock,
 };

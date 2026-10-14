@@ -107,3 +107,25 @@ test('mission run receipt records verifier worktree deltas', () => {
     cleanupTempDir(dir);
   }
 });
+
+test('a worktree snapshot reads inside-ness and HEAD in one probe across repo states', () => {
+  const { gitWorktreeSnapshot } = require('../commands/mission');
+  const dir = makeTempDir();
+  try {
+    assert.deepEqual(gitWorktreeSnapshot(dir), { available: false, reason: 'not-git-worktree' });
+    const repo = path.join(dir, 'repo');
+    assert.equal(spawnSync('git', ['init', '-q', repo]).status, 0);
+    fs.writeFileSync(path.join(repo, 'a.txt'), 'a\n');
+    const unborn = gitWorktreeSnapshot(repo);
+    assert.equal(unborn.available, true);
+    assert.equal(unborn.head, null);
+    assert.deepEqual(unborn.entries, ['?? a.txt']);
+    const commit = spawnSync('git', ['-c', 'user.name=t', '-c', 'user.email=t@t', 'commit', '-q', '--allow-empty', '-m', 'base'], { cwd: repo });
+    assert.equal(commit.status, 0);
+    const sha = spawnSync('git', ['rev-parse', 'HEAD'], { cwd: repo, encoding: 'utf8' }).stdout.trim();
+    assert.equal(gitWorktreeSnapshot(repo).head, sha);
+    assert.equal(gitWorktreeSnapshot(path.join(repo, '.git')).reason, 'not-git-worktree');
+  } finally {
+    cleanupTempDir(dir);
+  }
+});
