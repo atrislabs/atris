@@ -2,7 +2,7 @@ const fs = require('fs');
 const path = require('path');
 const gitSpawn = require('../lib/git-spawn');
 const { compactErrorPayload, printCliJson } = require('../lib/cli-json');
-const { listWorktrees, statusCounts, defaultMainlineBase, listActiveProcessCwds, worktreeHasActiveProcess, recordWorktreeRemoval } = require('./worktree');
+const { listWorktrees, statusCounts, defaultMainlineBase, listActiveProcessPaths, worktreeHasActiveProcess, recordWorktreeRemoval } = require('./worktree');
 
 const DEFAULT_TTL_DAYS = 7;
 const DEFAULT_STALE_HOURS = 48;
@@ -545,7 +545,7 @@ function reapReason(w, board, ttlDays, force) {
 // bundle cannot cover their commits, unattended reaps (autoland) pass false
 // and leave them for a human reap.
 function reap(root, { ttlDays = DEFAULT_TTL_DAYS, staleHours = DEFAULT_STALE_HOURS, base: baseOverride = '', dryRun = false, remote = true, includeDetached = true, protectCurrent = true, force = false, now = Date.now(), activeCwds: activeCwdsOverride, by = 'atris land --reap' } = {}) {
-  const readActiveCwds = () => (Array.isArray(activeCwdsOverride) ? activeCwdsOverride : listActiveProcessCwds());
+  const readActiveCwds = () => (Array.isArray(activeCwdsOverride) ? activeCwdsOverride : listActiveProcessPaths());
   let activeCwds;
   const board = collectBoard(root, { ttlDays, staleHours, base: baseOverride, now });
   const targets = board.branches.filter((b) => b.state === 'landed' || b.state === 'due');

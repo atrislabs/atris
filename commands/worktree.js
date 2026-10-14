@@ -1177,6 +1177,43 @@ function listActiveProcessCwds() {
     .filter(Boolean);
 }
 
+// Absolute paths named on each program's command line, including flag values
+// like --require=/x.js. A program can run a script from a work folder while
+// its current folder is elsewhere; the folder scan alone misses it. The list
+// prints arguments unquoted, so a path with a space is also kept as the rest
+// of the line from where it starts; the folder match is a prefix check.
+function parseProcessArgPaths(psOutput) {
+  const paths = new Set();
+  const starts = /(?:^|\s)(?:[^\s=]*=)?(?=\/)/g;
+  for (const raw of String(psOutput || '').split(/\r?\n/)) {
+    const line = raw.trim();
+    for (const match of line.matchAll(starts)) {
+      const rest = line.slice(match.index + match[0].length);
+      const token = rest.split(/\s/, 1)[0];
+      if (token.length > 1) paths.add(token);
+      if (rest.length > token.length) paths.add(rest);
+    }
+  }
+  return [...paths];
+}
+
+function listActiveProcessArgPaths() {
+  const result = spawnSync('ps', ['-axww', '-o', 'args='], {
+    encoding: 'utf8',
+    maxBuffer: COMMAND_MAX_BUFFER_BYTES,
+  });
+  if (result.error || result.status !== 0) return [];
+  return parseProcessArgPaths(result.stdout);
+}
+
+// Everything a running program is anchored to: its current folder plus any
+// script path on its command line.
+function listActiveProcessPaths() {
+  const cwds = listActiveProcessCwds();
+  if (!Array.isArray(cwds)) return cwds;
+  return cwds.concat(listActiveProcessArgPaths());
+}
+
 function worktreeHasActiveProcess(worktreePath, activeCwds) {
   if (!Array.isArray(activeCwds)) return true;
   const resolved = canonicalPath(worktreePath);
@@ -1226,7 +1263,7 @@ function cleanupWorktrees({ root = repoRoot(), base: baseOverride = '', apply = 
   const worktrees = listWorktrees(root);
   const primary = worktrees[0]?.path ? path.resolve(worktrees[0].path) : '';
   const current = path.resolve(root);
-  const activeCwds = Array.isArray(activeCwdsOverride) ? activeCwdsOverride.map(canonicalPath) : listActiveProcessCwds();
+  const activeCwds = Array.isArray(activeCwdsOverride) ? activeCwdsOverride.map(canonicalPath) : listActiveProcessPaths();
   const base = normalizeTargetRef(root, baseOverride || defaultShipTarget(root));
   refreshRemoteRef(root, base);
   const candidates = [];
@@ -1451,9 +1488,10 @@ module.exports = {
   gitNetworkEnvironment,
   describeFlightAge,
   flightStampMs,
-  listActiveProcessCwds,
+  listActiveProcessPaths,
   listWorktrees,
   parseAgentFlightName,
+  parseProcessArgPaths,
   parseWorktrees,
   normalizeTargetRef,
   recordWorktreeRemoval,
