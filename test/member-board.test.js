@@ -1459,6 +1459,24 @@ test('a run with no pid that has been silent for over an hour is named as likely
   assert.match(renderBoard([old, two], '/x'), /^orb\s+quiet\s+-\s+8h ago\s/m, 'nothing past its start: no made-up length');
 });
 
+test('board refuses a flag or name it does not know, instead of printing the wrong view', () => {
+  const dir = fakeDir({ scout: [`${isoAgo(600)} m-3 started: look`, `${isoAgo(300)} m-3 running: rg x`] });
+  try {
+    const env = { ...process.env, ATRIS_PROGRESS_DIR: dir };
+    const typo = spawnSync(process.execPath, [cliPath, 'member', 'board', '--jsno'], { cwd: dir, env, encoding: 'utf8' });
+    assert.equal(typo.status, 1);
+    assert.equal(typo.stdout.trim(), 'atris member board does not take --jsno; it takes --all, --json, --watch, --follow');
+    const named = spawnSync(process.execPath, [cliPath, 'member', 'board', 'builder', '--json'], { cwd: dir, env, encoding: 'utf8' });
+    assert.equal(named.status, 1);
+    assert.match(named.stdout, /does not take builder;/);
+    const fine = spawnSync(process.execPath, [cliPath, 'member', 'board', '--json', '--all'], { cwd: dir, env, encoding: 'utf8' });
+    assert.equal(fine.status, 0, fine.stderr);
+    assert.deepEqual(JSON.parse(fine.stdout).members.map((r) => r.member), ['scout']);
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
 test('a run that most likely ended stays on the board for a day, then hides with the ended runs', () => {
   const dir = fakeDir({
     launcher: [`${isoAgo(8 * 3600)} m-1 started: score launcher`, `${isoAgo(7 * 3600)} m-1 running: npm test`],
