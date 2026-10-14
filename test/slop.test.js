@@ -980,6 +980,7 @@ test('fix in a script changes comments only, never strings or patterns', () => {
     "const pattern = /https?:\\/\\//; const label = 'keep \u2014 exactly';",
     "const slash = /[/]x/; const note = 'a \u2014 b';",
     "const half = total / 2; // split \u2014 evenly",
+    "// e.g. `selection-\u2014-member` stays \u2014 the slug is code",
   ].join('\n'));
   const { changes } = applyFixes([file], RULES, { write: false });
   assert.deepEqual(changes.map((c) => c.after), [
@@ -988,6 +989,7 @@ test('fix in a script changes comments only, never strings or patterns', () => {
     "const url = 'https://x.dev'; // the docs, this time with tests",
     ' * Retries (up to 3) happen automatically.',
     'const half = total / 2; // split, evenly',
+    "// e.g. `selection-\u2014-member` stays; the slug is code",
   ]);
 });
 

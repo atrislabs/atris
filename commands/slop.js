@@ -458,9 +458,12 @@ function applyFixes(files, rules, { write = true } = {}) {
         if (prose && fenced.has(i)) continue;
         if (r.proseOnly && from === -1) continue;
         const at = r.proseOnly ? from : 0;
-        const { masked, restore } = prose ? maskInlineCode(line) : { masked: line.slice(at), restore: (x) => x };
+        // a code span in a script comment is code too: "`selection-\u2014-member`"
+        // names a slug, and a comma in it would name a different one
+        const code = prose || (script && r.proseOnly);
+        const { masked, restore } = code ? maskInlineCode(line.slice(at)) : { masked: line.slice(at), restore: (x) => x };
         if (!r.re.test(masked)) continue;
-        const nl = line.slice(0, prose ? 0 : at) + restore(r.fix(masked, { endsBlock: i === lines.length - 1 || !lines[i + 1].trim() }));
+        const nl = line.slice(0, at) + restore(r.fix(masked, { endsBlock: i === lines.length - 1 || !lines[i + 1].trim() }));
         if (nl !== line) { line = nl; fixedCount++; }
       }
       if (line !== lines[i]) { changes.push({ file, line: i + 1, before: lines[i], after: line, kind: fixKind(lines[i], line) }); lines[i] = line; touched = true; }
