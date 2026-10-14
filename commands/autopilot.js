@@ -3967,10 +3967,14 @@ Search the codebase to verify. Reply: YES <reason> or NO <reason>`;
   const tmpFile = path.join(cwd, '.staleness-prompt.tmp');
   fs.writeFileSync(tmpFile, prompt);
 
+  let endResource = () => null;
   try {
     const env = { ...process.env };
     delete env.CLAUDECODE;
     const cmd = buildRunnerCommand({ promptFile: tmpFile, allowedTools: 'Bash,Read,Glob,Grep' });
+    // Machine memory and load at both ends of the check, so one killed with
+    // SIGKILL says whether the machine was short on memory.
+    endResource = require('../lib/engine-resource').startEngineRun(cwd, { engine: 'runner', task: 'staleness check' });
     const output = execPhaseCommandSync(cmd, {
       cwd,
       encoding: 'utf8',
@@ -3979,6 +3983,7 @@ Search the codebase to verify. Reply: YES <reason> or NO <reason>`;
       maxBuffer: 2 * 1024 * 1024,
       env
     }).trim();
+    endResource();
 
     try { fs.unlinkSync(tmpFile); } catch {}
 
@@ -3991,7 +3996,10 @@ Search the codebase to verify. Reply: YES <reason> or NO <reason>`;
   } catch (err) {
     try { fs.unlinkSync(tmpFile); } catch {}
     // On timeout or crash, treat as unverifiable, conservative default
-    return { fresh: false, reasoning: `Model check failed: ${(err.message || '').slice(0, 100)}` };
+    // A kill leaves no report of its own, so the reason names the likely cause.
+    const end = endResource(err);
+    const cause = end && end.cause ? `; ${end.cause}` : '';
+    return { fresh: false, reasoning: `Model check failed: ${(err.message || '').slice(0, 100)}${cause}` };
   }
 }
 
@@ -4003,6 +4011,7 @@ async function autopilotFromTodo(options = {}) {
 }
 
 module.exports = {
+  askModel,
   snapshotRepoHeads,
   diffAdvancedRepoHeads,
   reconcileTimedOutTick,
