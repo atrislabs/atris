@@ -518,6 +518,18 @@ test('board says nobody is working when every member is hidden', () => {
   );
 });
 
+test('empty board message wraps between words on a narrow screen', () => {
+  const missing = '/tmp/atris-no-such-progress-folder';
+  const absent = `no progress folder at ${missing}; a member's first run makes it, so if members have run, the board is looking in the wrong place`;
+  assert.equal(renderBoard([], missing), absent, 'no width, one line');
+  const lines = renderBoard([], missing, 0, 60).split('\n');
+  assert.ok(lines.length > 1 && lines.every((l) => l.length <= 60), `every line fits 60 columns:\n${lines.join('\n')}`);
+  assert.ok(lines.slice(1).every((l) => l.startsWith('  ')), 'lines after the first are indented');
+  assert.equal(lines.map((l) => l.trim()).join(' '), absent, 'no word is lost or split');
+  const hidden = renderBoard([], missing, 3, 40).split('\n');
+  assert.ok(hidden.length > 1 && hidden.every((l) => l.length <= 40), `the hidden note fits 40 columns:\n${hidden.join('\n')}`);
+});
+
 test('atris member board reads ATRIS_PROGRESS_DIR for real', () => {
   const recent = new Date(Date.now() - 5_000).toISOString();
   const dir = fakeDir({ navigator: [`${recent} m-9 started: map the repo`, `${recent} m-9 reading atris/MAP.md`] });
