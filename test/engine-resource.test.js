@@ -1827,3 +1827,46 @@ test('a killed ask prints the cause from its end reading in link and engine ask'
     fs.rmSync(root, { recursive: true, force: true });
   }
 });
+
+test('the write coach records paired readings and names the cause of a SIGKILL', () => {
+  const { spawnSync } = require('node:child_process');
+  const root = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'write-resource-')));
+  const bin = path.join(root, 'bin');
+  const env = { ...process.env, ATRIS_SKIP_UPDATE_CHECK: '1', PATH: `${bin}${path.delimiter}${process.env.PATH}` };
+  const atris = (...args) => spawnSync(process.execPath, [path.join(__dirname, '..', 'bin', 'atris.js'), ...args], { cwd: root, encoding: 'utf8', timeout: 60000, env });
+  // Answers the installed check, then runs the given body for the coach prompt.
+  const engine = (body) => fs.writeFileSync(path.join(bin, 'claude'), `#!/bin/sh\n[ "$1" = "--version" ] && { echo 1.0; exit 0; }\n${body}\n`, { mode: 0o755 });
+  try {
+    fs.mkdirSync(bin);
+    engine('exit 0');
+    const started = atris('write', 'start', 'why sleds need dogs');
+    assert.equal(started.status, 0, started.stderr);
+    engine('printf "QUESTION: what does the dog want?\\nLESSON: start with the dog\\n"');
+    const ok = atris('write', 'coach');
+    engine('kill -KILL $$');
+    const killed = atris('write', 'coach');
+    assert.equal(ok.status, 0, ok.stderr);
+    assert.match(ok.stdout, /QUESTION: what does the dog want/);
+    assert.equal(killed.status, 0, killed.stderr);
+    const lines = fs.readFileSync(path.join(root, RESOURCE_LOG), 'utf8').trim().split('\n').map(JSON.parse);
+    assert.deepEqual(lines.map((line) => line.phase), ['start', 'end', 'start', 'end']);
+    for (let i = 0; i < lines.length; i += 2) {
+      assert.match(lines[i].run_id, /^[0-9a-f-]{36}$/);
+      assert.equal(lines[i + 1].run_id, lines[i].run_id);
+      assert.equal(lines[i].engine, 'claude');
+      assert.equal(lines[i].task, 'write coach');
+      assert.ok(Array.isArray(lines[i + 1].load));
+      assert.ok(Number.isInteger(lines[i + 1].duration_ms));
+    }
+    assert.equal(lines[1].signal, undefined);
+    assert.equal(lines[1].error, undefined);
+    assert.equal(lines[3].signal, 'SIGKILL');
+    assert.match(lines[3].cause, /^killed \((machine memory low|cause unknown)\)$/);
+    // The fallback line the writer reads names the cause.
+    assert.ok(killed.stdout.includes(lines[3].cause), killed.stdout);
+    console.log(`write readings: ${JSON.stringify(lines[3])}`);
+    console.log(`write fallback line: ${killed.stdout.split('\n').find((line) => line.includes('coach')) || ''}`);
+  } finally {
+    fs.rmSync(root, { recursive: true, force: true });
+  }
+});
