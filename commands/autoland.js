@@ -9,7 +9,7 @@ const autoland = require('../lib/autoland');
 const { gateForHuman, plainLandingReason } = require('../lib/voice-gate');
 const { evaluateAutoAccept } = require('../lib/auto-accept-certified');
 const { sweepEngineAskReceipts } = require('../lib/engine-receipt-sweep');
-const { readSshAgents, findLeakedSshAgents, stopLeakedSshAgents, closeLostRuns } = require('../lib/engine-resource');
+const { readSshAgents, findLeakedSshAgents, stopLeakedSshAgents, closeLostRuns, readResourceHistory } = require('../lib/engine-resource');
 const { validateRecentAskReceipts } = require('../lib/engine-validate');
 const { operatorReady, hasAgentJargon, explainResult } = autoland;
 const MISSION_AUTO_VERIFY_STATUSES = new Set(['planning', 'paused', 'ready']);
@@ -529,6 +529,12 @@ function showStatus(root, args) {
   if (policy && policy.imessage_to) console.log(`  daily message: ${policy.imessage_to} at ${policy.digest_hour ?? autoland.DEFAULT_DIGEST_HOUR}:00`);
   const reapTrouble = autoland.readState(root).last_reap_error;
   if (reapTrouble) console.log(`  cleanup trouble: landing sweep failed on ${reapTrouble.date} (${reapTrouble.error}) - run: atris land --reap`);
+  const lost = readResourceHistory(root);
+  if (lost.lost_closed) {
+    const newest = lost.last_lost_closed;
+    const when = `${String(newest.at || '').slice(0, 16).replace('T', ' ')} UTC`;
+    console.log(`  engine runs closed after their parent died: ${lost.lost_closed}, newest ${newest.engine || 'unknown engine'} on ${newest.task || 'no task'} at ${when}`);
+  }
   console.log('');
   const humanOnly = blocked.filter((r) => String(r.reason || '').startsWith('denied_tag_'));
   const needsWork = blocked.filter((r) => !String(r.reason || '').startsWith('denied_tag_'));

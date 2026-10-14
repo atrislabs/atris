@@ -338,7 +338,7 @@ test('history reads back the latest sweep and the latest SIGKILL, skipping bad l
     assert.strictEqual(history.last_kill.task, 'CLI-2');
     assert.strictEqual(history.kills, 2);
     assert.strictEqual(history.low_memory_kills, 1);
-    assert.deepStrictEqual(readResourceHistory(path.join(root, 'missing')), { last_sweep: null, last_kill: null, kills: 0, low_memory_kills: 0, open_runs: 0, parent_gone: 0, still_running: 0, last_open: null });
+    assert.deepStrictEqual(readResourceHistory(path.join(root, 'missing')), { last_sweep: null, last_kill: null, kills: 0, low_memory_kills: 0, open_runs: 0, parent_gone: 0, still_running: 0, last_open: null, lost_closed: 0, last_lost_closed: null });
   } finally {
     fs.rmSync(root, { recursive: true, force: true });
   }
@@ -601,4 +601,36 @@ test('a lost run close that throws never breaks the hourly landing pass', () => 
   runLostRunSweep(os.tmpdir(), receipt, { close: () => { throw new Error('log unreadable'); } });
   assert.match(receipt.lost_run_sweep_error, /log unreadable/);
   assert.strictEqual(receipt.lost_run_sweep, undefined);
+});
+
+test('the landing status names runs closed after their parent died, and stays quiet with none', () => {
+  const { spawnSync } = require('node:child_process');
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'autoland-status-lost-'));
+  const cli = path.join(__dirname, '..', 'bin', 'atris.js');
+  const status = () => spawnSync(process.execPath, [cli, 'autoland', 'status'], {
+    cwd: root,
+    encoding: 'utf8',
+    env: { ...process.env, ATRIS_SKIP_UPDATE_CHECK: '1', NODE_NO_WARNINGS: '1' },
+  });
+  try {
+    spawnSync('git', ['init', '-q'], { cwd: root });
+    const quiet = status();
+    assert.strictEqual(quiet.status, 0, quiet.stderr);
+    assert.doesNotMatch(quiet.stdout, /parent died/);
+
+    const file = path.join(root, RESOURCE_LOG);
+    fs.mkdirSync(path.dirname(file), { recursive: true });
+    fs.writeFileSync(file, [
+      JSON.stringify({ at: '2026-10-14T13:00:00.000Z', phase: 'end', engine: 'claude', task: 'A', run_id: 'a', cause: 'parent gone', closed_by: 'sweep' }),
+      JSON.stringify({ at: '2026-10-14T13:10:00.000Z', phase: 'end', engine: 'codex', task: 'B', run_id: 'b', signal: 'SIGKILL', cause: 'unknown' }),
+      JSON.stringify({ at: '2026-10-14T13:25:00.000Z', phase: 'end', engine: 'cursor', task: 'LOST', run_id: 'c', cause: 'parent gone', closed_by: 'sweep' }),
+      '',
+    ].join('\n'));
+    const loud = status();
+    assert.strictEqual(loud.status, 0, loud.stderr);
+    assert.match(loud.stdout, /engine runs closed after their parent died: 2, newest cursor on LOST at 2026-10-14 13:25 UTC/);
+    assert.strictEqual(readResourceHistory(root).lost_closed, 2);
+  } finally {
+    fs.rmSync(root, { recursive: true, force: true });
+  }
 });
