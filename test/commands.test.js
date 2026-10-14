@@ -11260,7 +11260,7 @@ test('task backlog and clear-plan demote only planned open tasks', () => {
     fs.mkdirSync(path.join(dir, 'atris'), { recursive: true });
     const workspaceRoot = fs.realpathSync(dir);
 
-    // Seed both rows in creation order; plan, backlog, show and do stay on the CLI.
+    // Seed both rows in creation order; backlog, show and do stay on the CLI.
     let rawRef;
     let singleRef;
     const seedDb = taskDb.open(dbPath);
@@ -11268,6 +11268,15 @@ test('task backlog and clear-plan demote only planned open tasks', () => {
       const raw = addSeedTask(seedDb, { title: 'Raw capture stays backlog', tag: 'capture', workspaceRoot });
       const single = addSeedTask(seedDb, { title: 'Single planned row moves back', tag: 'plan', workspaceRoot });
       assert.equal(raw.inserted && single.inserted, true);
+      const planned = taskDb.stageTask(seedDb, {
+        id: single.id,
+        actor: 'codex',
+        stage: 'plan',
+        goal: 'Single row has a plan',
+        exit: 'single row can be demoted',
+        proofNeeded: 'node --test task backlog coverage passes',
+      });
+      assert.equal(planned.staged, true, planned.reason);
       const refs = taskDb.taskDisplayRefMap(taskDb.listTasks(seedDb, { workspaceRoot }));
       rawRef = refs.get(raw.id);
       singleRef = refs.get(single.id);
@@ -11275,14 +11284,6 @@ test('task backlog and clear-plan demote only planned open tasks', () => {
       taskDb.close();
     }
     assert.ok(rawRef && singleRef);
-    assert.equal(runCli([
-      'task', 'plan', singleRef,
-      '--as', 'codex',
-      '--goal', 'Single row has a plan',
-      '--exit', 'single row can be demoted',
-      '--proof-needed', 'node --test task backlog coverage passes',
-      '--json',
-    ], { cwd: dir, env }).status, 0);
 
     const singleBacklog = runCli(['task', 'backlog', singleRef, '--as', 'codex', '--reason', 'operator moved it', '--tag', 'feature', '--json'], { cwd: dir, env });
     assert.equal(singleBacklog.status, 0, singleBacklog.stderr);
@@ -11379,16 +11380,17 @@ test('task backlog and clear-plan demote only planned open tasks', () => {
     const delegated = runCli(['task', 'delegate', 'Delegated planned row keeps owner', '--to', 'alice', '--tag', 'capture', '--json'], { cwd: dir, env });
     assert.equal(delegated.status, 0, delegated.stderr);
     const delegatedRef = JSON.parse(delegated.stdout).task.display_id;
-    const delegatedPlan = runCli([
-      'task', 'plan', delegatedRef,
-      '--as', 'alice',
-      '--owner', 'alice',
-      '--goal', 'Delegated owner has a plan',
-      '--exit', 'owner survives demotion',
-      '--proof-needed', 'owner preservation regression passes',
-      '--json',
-    ], { cwd: dir, env });
-    assert.equal(delegatedPlan.status, 0, delegatedPlan.stderr);
+    const delegatedPlan = taskDb.stageTask(db, {
+      id: JSON.parse(delegated.stdout).task.id,
+      actor: 'alice',
+      stage: 'plan',
+      owner: 'alice',
+      ownerExplicit: true,
+      goal: 'Delegated owner has a plan',
+      exit: 'owner survives demotion',
+      proofNeeded: 'owner preservation regression passes',
+    });
+    assert.equal(delegatedPlan.staged, true, delegatedPlan.reason);
     const delegatedBacklog = runCli(['task', 'backlog', delegatedRef, '--as', 'alice', '--reason', 'operator cleared delegated plan', '--json'], { cwd: dir, env });
     assert.equal(delegatedBacklog.status, 0, delegatedBacklog.stderr);
     const delegatedShow = runCli(['task', 'show', delegatedRef, '--json'], { cwd: dir, env });

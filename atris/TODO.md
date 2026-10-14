@@ -19,112 +19,110 @@ Details for any task: atris task show <ID>
 
 ## In Progress
 
-(Empty)
+- **[AIC-51]** Seed backlog and clear-plan setup through the task store · auto-improver
 
 ## Review
 
-- **[AIC-51]** Remove duplicate receipt repair setup launch · auto-improver
-  **Done looks like:** Developers finish duplicate receipt repair checks sooner because setup launches one fewer command.
-- **[AIC-50]** Remove duplicate reward review setup launch · auto-improver
-  **Done looks like:** Developers finish duplicate reward review checks sooner because setup launches one fewer command.
-- **[AIC-49]** Remove auto-accept confirmation setup launch · auto-improver
-  **Done looks like:** Developers finish auto-accept confirmation checks sooner because setup launches one fewer command.
-- **[AIC-48]** Remove proof-only guard setup launch · auto-improver
-  **Done looks like:** Developers finish proof-only guard checks sooner because setup launches one fewer command.
-- **[AIC-47]** Remove reward rejection setup launch · auto-improver
-  **Done looks like:** Developers finish reward rejection checks sooner because setup launches one fewer command.
-- **[AIC-46]** Remove weak landing rejection setup launch · auto-improver
-  **Done looks like:** Developers finish weak landing rejection checks sooner because setup launches one fewer command.
-- **[AIC-45]** Remove landing sentence setup launches · auto-improver
-  **Done looks like:** Developers finish landing sentence checks sooner because setup launches three fewer commands.
-- **[AIC-44]** Remove unmapped landing setup launch · auto-improver
-  **Done looks like:** Developers finish the same landing checks sooner because setup starts one fewer command.
-- **[AIC-43]** Remove incidental wording review setup launch · auto-improver
-  **Done looks like:** Developers finish the same wording review checks sooner because setup starts one fewer command.
-- **[AIC-42]** Remove existing seed selection setup launches · auto-improver
-  **Done looks like:** Developers finish the same selection checks sooner because setup starts two fewer commands.
-- **[AIC-41]** Remove certified checkpoint setup launch · auto-improver
-  **Done looks like:** Developers finish the same selection checks sooner because setup starts one fewer command.
-- **[AIC-40]** Remove step selection setup launches · auto-improver
-  **Done looks like:** Developers finish step selection checks sooner because setup starts two fewer commands.
-- **[AIC-39]** Remove tag filtering setup launches · auto-improver
-  **Done looks like:** Developers finish the same checks sooner because setup starts two fewer commands.
-- **[AIC-38]** Remove filtered task reference setup launches · auto-improver
-  **Done looks like:** Developers finish filtered task reference checks sooner because setup starts two fewer commands.
-- **[AIC-37]** Remove stale markdown claim setup launch · auto-improver
-  **Done looks like:** Developers finish stale markdown checks sooner because setup starts one fewer command.
-- **[AIC-36]** Speed up stale markdown check setup · auto-improver
-  **Done looks like:** Developers finish stale markdown checks sooner because setup starts one fewer command.
-- **[AIC-35]** Speed up task rendering fixture setup · auto-improver
-  **Done looks like:** Developers finish task rendering checks sooner because setup starts one fewer command.
-- **[AIC-34]** Make task lineage checks faster for developers · auto-improver
-  **Done looks like:** Developers finish lineage checks sooner because setup starts three fewer commands.
-- **[AIC-33]** Finish ordered in-process task fixtures · auto-improver
-  **Done looks like:** Developers get stable task test setup because fast inserts retain creation order without extra command launches.
-- **[AIC-32]** Seed task page parent fixtures in process · auto-improver
-  **Done looks like:** Developers finish the task page check sooner because setup starts two fewer commands.
-- **[AIC-31]** Seed goal chat parent fixture in process · auto-improver
-  **Done looks like:** Developers finish the goal chat check sooner because setup starts one fewer command.
-- **[AIC-30]** Seed headless stage parent fixtures in process · auto-improver
-  **Done looks like:** Developers finish the headless plan and do check sooner because setup starts four fewer commands.
-- **[AIC-29]** Seed proof-event parent fixture in process · auto-improver
-  **Done looks like:** Developers finish proof event checks sooner because setup starts one fewer command.
-- **[AIC-28]** Seed RSI review parent fixture in process · auto-improver
-  **Done looks like:** Developers finish RSI review checks sooner because setup starts one fewer command.
-- **[AIC-27]** Seed dialogue parent fixture in process · auto-improver
-  **Done looks like:** Developers finish dialogue checks sooner because setup starts one fewer command.
-- **[AIC-26]** Seed compact event parent fixture in process · auto-improver
-  **Done looks like:** Event output checks pass with direct parent setup.
-- **[AIC-25]** Seed existing follow-up drain parent fixtures · auto-improver
-  **Done looks like:** Developers finish follow-up drain checks sooner because parent setup starts two fewer commands.
-- **[AIC-24]** Remove duplicate review baseline read launch · auto-improver
-  **Done looks like:** Developers can finish duplicate review checks sooner because the baseline read starts one fewer command.
-- **[AIC-23]** Remove baseline receipt test read launch · auto-improver
-  **Done looks like:** Developers can finish receipt checks sooner because the baseline read starts one fewer command.
-- **[AIC-22]** Seed bounded review receipt fixtures in process · auto-improver
-  **Done looks like:** Developers can finish receipt checks sooner because setup starts two fewer commands.
-- **[AIC-21]** Seed duplicate review loop fixtures in process · auto-improver
-  **Done looks like:** Developers can run duplicate review checks sooner because setup starts one fewer command.
-- **[AIC-20]** Seed review-chat fixtures in process · auto-improver
-  **Done looks like:** Developers can run review packet checks sooner because setup starts two fewer commands.
-- **[AIC-19]** Seed agent-ready review fixtures in process · auto-improver
-  **Done looks like:** Developers can run approval queue checks sooner because setup starts six fewer commands.
-- **[AIC-18]** Isolate saved-proof environment in lap runtime tests · auto-improver
-  **Done looks like:** Developers can run child cleanup checks reliably, saving time because the checks use a supported interpreter.
-- **[AIC-17]** Wait for escaped test children instead of sleeping · auto-improver
-  **Done looks like:** Developers finish escaped-child cleanup checks sooner because the checks wait for the child to finish instead of sleeping.
-- **[AIC-16]** Remove loops test temp folders so disk space stops filling · auto-improver
-  **Done looks like:** Developers keep a clean temp folder, saving disk space because the loops tests now remove the folders they make.
-- **[AIC-15]** Remove YouTube watch test temp folders so disk space stops filling · auto-improver
-  **Done looks like:** Developers keep a clean temp folder, saving disk space because the watch tests now remove the folders they make.
-- **[AIC-14]** Remove YouTube test temp folders so disk space stops filling · auto-improver
-  **Done looks like:** Developers keep a clean temp folder, saving disk space because the YouTube tests now remove the folders they make.
-- **[AIC-13]** Remove YouTube teach test temp folders so disk space stops filling · auto-improver
-  **Done looks like:** Developers keep a clean temp folder, saving disk space because the teach tests now remove the folders they make.
-- **[AIC-12]** Remove project board test temp folders · auto-improver
-  **Done looks like:** Developers keep a clean temp folder, saving disk space because board tests now remove the folders they make.
-- **[AIC-11]** Await project-filtered board child closure · auto-improver
-  **Done looks like:** Developers can finish board checks reliably, saving time by waiting for final output before checking it.
-- **[AIC-10]** Wait safely for board follow child closure · auto-improver
-  **Done looks like:** Developers can finish board update checks after an early process exit, saving time when a check fails.
-- **[AIC-9]** Parse only complete board follow output lines · auto-improver
-  **Done looks like:** Developers can check board updates reliably, saving time when output arrives in pieces.
-- **[AIC-8]** Poll board watch until second redraw · auto-improver
-  **Done looks like:** Developers can check board updates sooner, saving time and avoiding missed updates on busy computers.
-- **[AIC-7]** Poll board output instead of waiting 700ms · auto-improver
-  **Done looks like:** Developers can check board updates sooner, saving time and avoiding missed updates on busy computers.
-- **[AIC-6]** Replace stalled crontab timing assertion with call marker · auto-improver
-  **Done looks like:** Developers can check status without a speed threshold, saving time by avoiding false failures on busy computers.
-- **[AIC-5]** Edit tampered-proof test fixtures in process · auto-improver
-  **Done looks like:** Developers can check altered proof with two fewer setup launches, saving time while keeping every rejection check.
-- **[AIC-4]** Seed task continuation review fixtures in process · auto-improver
-  **Done looks like:** Developers can check review status with three fewer setup launches, saving time while preserving every status assertion.
-- **[AIC-3]** Seed remaining unclaimed landing fixtures in process · auto-improver
-  **Done looks like:** Developers can check landing behavior with six fewer setup launches, saving time while keeping every safety assertion.
-- **[AIC-2]** Seed protected landing-status fixtures in process · auto-improver
-  **Done looks like:** Developers can check protected landing output with six fewer setup launches, saving time while keeping every behavior assertion.
-- **[AIC-1]** Finish in-process autoland test setup · auto-improver
-  **Done looks like:** Developers can check landing behavior faster, saving time while keeping every safety check intact.
+- **[AIC-50]** Seed the continue work server parent through the task store · auto-improver
+  **Done looks like:** Developers wait about half a second less on the continue work server test, which saves time on every run, and it still catches a wrong continue pick, which red…
+- **[AIC-49]** Seed review lane drain API rows through the task store · auto-improver
+  **Done looks like:** Developers wait almost two seconds less on the review lane drain connection test, which saves time on every run, and it still catches a wrong continue pick, wh…
+- **[AIC-48]** Stage task factory API owner tasks through the task store · auto-improver
+  **Done looks like:** Developers wait most of a second less on the task factory connection test, which saves time on every run, and it still catches a wrong owner pick, which reduce…
+- **[AIC-47]** Seed task factory API side tasks into review through the task store · auto-improver
+  **Done looks like:** Developers wait most of a second less on the task factory connection test, which saves time on every run, and it still catches a wrong pick, which reduces risk.
+- **[AIC-46]** Run the headless contract read-only tail at once · auto-improver
+  **Done looks like:** Developers wait over half a second less on the headless task test, which saves time on every run, and it still catches a wrong event order, which reduces risk.
+- **[AIC-45]** Seed current step side tasks into review through the task store · auto-improver
+  **Done looks like:** Developers wait most of a second less on the current step test, which saves time on every run, and it still catches a wrong pick, which reduces risk.
+- **[AIC-44]** Read saved task state from the store in the ready holds work check · auto-improver
+  **Done looks like:** Developers wait a third of a second less on the human approval test, which saves time on every run, and it still catches work that skips approval, which reduce…
+- **[AIC-43]** Build the review chat landing sentences in the test process · auto-improver
+  **Done looks like:** Developers wait half a second less on the slowest command test, which saves time on every run, and a kept real run still catches the two paths drifting apart, …
+- **[AIC-42]** Run the review default screen test on a bare atris folder · auto-improver
+  **Done looks like:** Developers wait a fifth of a second less on the review screen test, which saves time, and it no longer cleans up leftover task state first, which reduces risk.
+- **[AIC-41]** Run the recent signals tests on a bare atris folder · auto-improver
+  **Done looks like:** Developers wait about two thirds of a second less on the recent signals tests, and the empty case now checks a truly empty folder instead of deleting what setu…
+- **[AIC-40]** Run the visualize preview tests on a bare atris folder · auto-improver
+  **Done looks like:** Developers wait half a second less on the visualize tests, which saves time and reduces risk: they fail if raw prompts pick up workspace context.
+- **[AIC-39]** Run the cleanup preview report test on a bare atris folder · auto-improver
+  **Done looks like:** Developers wait a quarter second less on the cleanup preview test, which saves time and reduces risk: it fails if a preview ever writes a file.
+- **[AIC-38]** Run the verbose review board test on a bare atris folder · auto-improver
+  **Done looks like:** Developers wait a quarter second less on the review board test, which saves time and reduces risk: it fails if the board stops working without a validator file.
+- **[AIC-37]** Run the unknown command test on a bare atris folder · auto-improver
+  **Done looks like:** Developers wait a quarter second less on the unknown command test, which saves time and reduces risk: it now fails if a typo leaves any file behind.
+- **[AIC-36]** Run the verify command finder test on a bare atris folder · auto-improver
+  **Done looks like:** Developers wait about a quarter second less on the verify command finder test, which saves time on every full test run while keeping the same exact checks.
+- **[AIC-35]** Run the scorecard writer tests on a bare atris folder · auto-improver
+  **Done looks like:** Developers wait about half a second less on the scorecard writer tests, and the writer test now fails if a stray lesson or wrong attempted count reaches the sc…
+- **[AIC-34]** Run the endgame scoring tests on a bare atris folder · auto-improver
+  **Done looks like:** Developers wait about a second and a third less on the endgame scoring tests, and the two fallback tests now fail if they reach the wrong fallback.
+- **[AIC-33]** Run the wiki loop tests on a bare workspace · auto-improver
+  **Done looks like:** Developers wait about three quarters of a second less on the three wiki loop tests, and two of them now fail if the loop suggests extra files or miscounts its …
+- **[AIC-32]** Run the computer card tests on a bare workspace · auto-improver
+  **Done looks like:** Developers wait about half a second less on the two computer card tests, and the card test now fails if the memory line lists the wrong files.
+- **[AIC-31]** Run the verify map test on a bare workspace · auto-improver
+  **Done looks like:** Developers wait about a quarter second less on the verify map test, and it now fails if verify miscounts the refs in the map the test wrote.
+- **[AIC-30]** Seed the status business file test task directly · auto-improver
+  **Done looks like:** Developers wait over half a second less on the status business file test, and it now fails if the claim line stops naming the task the test seeded.
+- **[AIC-29]** Run the status board test on a bare workspace · auto-improver
+  **Done looks like:** Developers wait about a quarter second less on the status board test, and it now fails if the board stops showing the task the test wrote.
+- **[AIC-28]** Run the status summary test on a bare workspace · auto-improver
+  **Done looks like:** Developers wait about a quarter second less on the status summary test, and it now fails if status stops showing the task the test wrote.
+- **[AIC-27]** Make the docs check flag line ranges that end before they start · auto-improver
+  **Done looks like:** Developers now see a backwards line range in the map notes reported as broken, instead of passing the docs check or being rewritten still backwards.
+- **[AIC-26]** Point the backwards test ranges in the map notes at the right tests · auto-improver
+  **Done looks like:** Readers following a test range in the map notes now land on the help test the sentence describes, instead of an unrelated test.
+- **[AIC-25]** Run the journal ID test on a bare workspace · auto-improver
+  **Done looks like:** Developers wait about a quarter second less on the journal ID test, because it no longer sets up a workspace it never reads.
+- **[AIC-24]** Run visualize inbox tests on a bare workspace · auto-improver
+  **Done looks like:** Developers can run the visualize inbox tests in under half a second instead of over a second, because they no longer set up a workspace they never read.
+- **[AIC-23]** Make analytics completions test check the count · auto-improver
+  **Done looks like:** Developers now get a failing analytics test when completions are miscounted, instead of a pass that only matched the date.
+- **[AIC-22]** Run analytics journal tests on a bare workspace · auto-improver
+  **Done looks like:** Developers can run the analytics journal tests in a third of a second instead of most of a second, because they no longer set up a workspace they replace.
+- **[AIC-21]** Run search tests on a bare workspace instead of init · auto-improver
+  **Done looks like:** Developers can run the search tests about three times faster, because they no longer set up a full workspace they never read.
+- **[AIC-20]** Seed backlog demotion fixture in process · auto-improver
+  **Done looks like:** Developers can check backlog demotion with two fewer setup commands, saving time while keeping every backlog check.
+- **[AIC-19]** Repoint drifted test fixture refs in map notes · auto-improver
+  **Done looks like:** Developers following a setup note now land on the test it describes, so finding a sped-up test takes one jump instead of a search.
+- **[AIC-18]** Seed task sync dry-run fixture in process · auto-improver
+  **Done looks like:** Developers can check the task sync plan with one fewer setup command, saving time while keeping every sync check.
+- **[AIC-17]** Seed review certified accept fixture in process · auto-improver
+  **Done looks like:** Developers can check the default review screen with one fewer setup command, saving time while keeping every review check.
+- **[AIC-16]** Seed live status contract fixture in process · auto-improver
+  **Done looks like:** Developers can check the live status contract with three fewer setup commands, saving time while keeping every status check.
+- **[AIC-15]** Seed natural task action setup in process · auto-improver
+  **Done looks like:** Developers can check status wording with one fewer setup command, saving time while keeping both output checks.
+- **[AIC-14]** Seed certified review checkpoint fixture in process · auto-improver
+  **Done looks like:** Developers can check human approval selection with one fewer setup command, saving time while keeping every safety check.
+- **[AIC-13]** Seed dry-run waiting-for-human fixture in process · auto-improver
+  **Done looks like:** Maintainers can now check human approval safety with one fewer setup command, saving time without losing coverage.
+- **[AIC-12]** Seed dry-run human approval fixture in process · auto-improver
+  **Done looks like:** Maintainers can now check human approval safety with one fewer setup command, saving time without losing coverage.
+- **[AIC-11]** Seed dry-run review continuation fixture in process · auto-improver
+  **Done looks like:** Maintainers can now check continuation safety with one fewer setup command, saving time without losing coverage.
+- **[AIC-10]** Seed dry-run review chat fixture in process · auto-improver
+  **Done looks like:** Maintainers can now check approval safety with one fewer setup command, saving time without losing coverage.
+- **[AIC-9]** Seed review action human-only fixture in process · auto-improver
+  **Done looks like:** Maintainers can now check human approval safety with one fewer setup command, saving time without losing coverage.
+- **[AIC-8]** Seed review action continuation fixture in process · auto-improver
+  **Done looks like:** Maintainers can now check human approval safety with one fewer setup command, saving time without losing coverage.
+- **[AIC-7]** Seed review action chat fixture in process · auto-improver
+  **Done looks like:** Maintainers can now check human approval safety with one fewer setup command, saving time without losing coverage.
+- **[AIC-6]** Seed human-only review fixture in process · auto-improver
+  **Done looks like:** Maintainers can now check human approval safety with one fewer setup command, saving time without losing coverage.
+- **[AIC-5]** Seed human waiting review fixture in process · auto-improver
+  **Done looks like:** Maintainers can now check human approval safety with one fewer setup command, saving time without losing coverage.
+- **[AIC-4]** Seed safe review drain fixture in process · auto-improver
+  **Done looks like:** Maintainers can now check safe review selection with one fewer setup command, saving time without losing coverage.
+- **[AIC-3]** Seed capabilities check fixture in process · auto-improver
+  **Done looks like:** Maintainers can now check capability safety with one fewer setup command, saving time without losing coverage.
+- **[AIC-2]** Seed latest review scorecard fixture in process · auto-improver
+  **Done looks like:** Maintainers can now check the latest review outcome with one fewer setup command, saving time without losing coverage.
+- **[AIC-1]** Seed landing quality scorecard fixtures in process · auto-improver
+  **Done looks like:** Maintainers can now check approval outcomes with fewer setup commands, saving time without losing coverage.
 
 ## Blocked
 

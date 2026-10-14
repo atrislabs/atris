@@ -2532,7 +2532,7 @@ npm publish
 
 ## Backlog demotion fixture setup
 
-- `test/commands.test.js:11252` checks that backlog and clear-plan demote only planned open tasks. Ordered real-store creation at `test/commands.test.js:11263` preserves both titles, the capture and plan tags and the workspace root, asserts both insertions and display references, and closes before the CLI plan. No init runs, and the add command stores nothing else without flags. Two creation-only launches removed; plan, backlog, show, do and every later assertion remain unchanged.
+- `test/commands.test.js:11252` checks that backlog and clear-plan demote only planned open tasks. Ordered real-store creation at `test/commands.test.js:11263` preserves both titles, the capture and plan tags and the workspace root, asserts both insertions and display references, and closes before the CLI plan. No init runs, and the add command stores nothing else without flags. Two creation-only launches were removed previously. Initial single and delegated plans now use stageTask in process at `test/commands.test.js:11271` and `test/commands.test.js:11383`, saving two further launches (twenty-one to nineteen); delegation, replans, backlog, clear-plan, show, do and all cleanup assertions stay on the CLI.
 
 ## Search fixtures without init
 
