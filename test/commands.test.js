@@ -8429,15 +8429,22 @@ test('task review-lane-drain picks safe agent action without mutating human acce
   try {
     fs.mkdirSync(path.join(dir, 'atris'), { recursive: true });
 
-    const continueCreated = runCli([
-      'task', 'new', 'Certified drain task with executable continuation',
-      '--tag', 'task',
-      '--goal-id', 'OBL-928',
-      '--json',
-    ], { cwd: dir, env });
-    assert.equal(continueCreated.status, 0, continueCreated.stderr);
-    const continueTask = JSON.parse(continueCreated.stdout).task;
-    const continueRef = continueTask.display_id;
+    // Creation only prepares the fixture. Keep certification, drain and
+    // human-gate nonmutation checks on the CLI.
+    const workspaceRoot = taskStore.workspaceRoot(dir);
+    const db = taskStore.open(dbPath);
+    let continueTask;
+    let continueRef;
+    try {
+      continueTask = addSeedTask(db, {
+        title: 'Certified drain task with executable continuation',
+        tag: 'task', workspaceRoot, metadata: { goal_id: 'OBL-928' },
+      });
+      assert.equal(continueTask.inserted, true);
+      continueRef = taskStore.taskDisplayRefMap(taskStore.listTasks(db, { workspaceRoot })).get(continueTask.id);
+    } finally {
+      taskStore.close();
+    }
     assert.equal(runCli([
       'task', 'ready', continueRef,
       '--as', 'codex',
