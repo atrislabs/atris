@@ -1870,3 +1870,45 @@ test('the write coach records paired readings and names the cause of a SIGKILL',
     fs.rmSync(root, { recursive: true, force: true });
   }
 });
+
+test('the youtube digest records paired readings and names the cause of a SIGKILL', () => {
+  const { spawnSync } = require('node:child_process');
+  const root = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'digest-resource-')));
+  const bin = path.join(root, 'bin');
+  const env = { ...process.env, ATRIS_SKIP_UPDATE_CHECK: '1', PATH: `${bin}${path.delimiter}${process.env.PATH}` };
+  const digest = () => spawnSync(process.execPath, [path.join(__dirname, '..', 'bin', 'atris.js'), 'youtube', 'digest'], { cwd: root, encoding: 'utf8', timeout: 60000, env });
+  const engine = (body) => fs.writeFileSync(path.join(bin, 'claude'), `#!/bin/sh\n${body}\n`, { mode: 0o755 });
+  try {
+    fs.mkdirSync(bin);
+    fs.mkdirSync(path.join(root, 'atris', 'wiki', 'briefs'), { recursive: true });
+    const today = new Date().toISOString().slice(0, 10);
+    fs.writeFileSync(path.join(root, 'atris', 'wiki', 'briefs', 'youtube-abc.md'), `source: https://www.youtube.com/watch?v=abc\ndate: ${today}\n\n# sleds and dogs\n\nthe dog sets the pace.\n`);
+    engine('echo "# what this week\'s videos changed"; echo "- the dog sets the pace (atris/wiki/briefs/youtube-abc.md)"');
+    const ok = digest();
+    engine('kill -KILL $$');
+    const killed = digest();
+    assert.equal(ok.status, 0, `${ok.stdout}${ok.stderr}`);
+    assert.match(ok.stdout, /digest filed/);
+    assert.equal(killed.status, 1, `${killed.stdout}${killed.stderr}`);
+    const lines = fs.readFileSync(path.join(root, RESOURCE_LOG), 'utf8').trim().split('\n').map(JSON.parse);
+    assert.deepEqual(lines.map((line) => line.phase), ['start', 'end', 'start', 'end']);
+    for (let i = 0; i < lines.length; i += 2) {
+      assert.match(lines[i].run_id, /^[0-9a-f-]{36}$/);
+      assert.equal(lines[i + 1].run_id, lines[i].run_id);
+      assert.equal(lines[i].engine, 'claude');
+      assert.equal(lines[i].task, 'youtube digest');
+      assert.ok(Array.isArray(lines[i + 1].load));
+      assert.ok(Number.isInteger(lines[i + 1].duration_ms));
+    }
+    assert.equal(lines[1].signal, undefined);
+    assert.equal(lines[1].error, undefined);
+    assert.equal(lines[3].signal, 'SIGKILL');
+    assert.match(lines[3].cause, /^killed \((machine memory low|cause unknown)\)$/);
+    // A kill used to read as an engine that returned no text.
+    assert.ok(killed.stdout.includes(`digest engine stopped by SIGKILL; ${lines[3].cause}`), killed.stdout);
+    console.log(`digest readings: ${JSON.stringify(lines[3])}`);
+    console.log(`digest kill line: ${killed.stdout.trim()}`);
+  } finally {
+    fs.rmSync(root, { recursive: true, force: true });
+  }
+});

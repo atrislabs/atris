@@ -1239,17 +1239,32 @@ function buildDigestPrompt(briefs = []) {
 
 function defaultDigestRunner(prompt, deps = {}) {
   const spawn = deps.spawnSync || spawnSync;
-  return spawn('claude', ['-p', prompt, '--model', 'claude-haiku-5-5'], {
+  // Machine memory and load at both ends of the launch, so one killed with
+  // SIGKILL says whether the machine was short on memory.
+  const endResource = require('../lib/engine-resource').startEngineRun(deps.cwd || process.cwd(), { engine: 'claude', task: 'youtube digest' });
+  const result = spawn('claude', ['-p', prompt, '--model', 'claude-haiku-5-5'], {
     encoding: 'utf8',
     timeout: DIGEST_ENGINE_TIMEOUT_MS,
     maxBuffer: 10 * 1024 * 1024,
   });
+  // spawnSync does not throw, so a failure is passed in the thrown shape.
+  const failed = !result || result.error || result.signal || result.status !== 0;
+  const end = endResource(failed ? {
+    code: result && result.error && result.error.code,
+    signal: result && result.signal,
+    stderr: result && result.stderr,
+    message: result && result.error ? result.error.message : `claude exited ${result && result.status}`,
+  } : null);
+  return end && end.cause && result && !(result.error && result.error.code === 'ETIMEDOUT') ? { ...result, cause: end.cause } : result;
 }
 
 function invokeDigestEngine(prompt, deps = {}) {
   const runner = deps.runner || ((nextPrompt) => defaultDigestRunner(nextPrompt, deps));
   const result = runner(prompt, deps);
   if (typeof result === 'string') return result.trim();
+  if (result && result.signal && !result.error) {
+    throw new Error(`digest engine stopped by ${result.signal}${result.cause ? `; ${result.cause}` : ''}`);
+  }
   if (!result || result.error || (result.status != null && result.status !== 0)) {
     const detail = String(result?.stderr || result?.error?.message || 'digest engine failed').trim();
     throw new Error(detail || 'digest engine failed');
@@ -1401,7 +1416,7 @@ function runYoutubeDigest(args = [], deps = {}) {
   const prompt = buildDigestPrompt(briefs);
   let text;
   try {
-    text = invokeDigestEngine(prompt, deps);
+    text = invokeDigestEngine(prompt, { ...deps, cwd });
   } catch (err) {
     output(err.message || 'digest engine failed');
     return 1;
