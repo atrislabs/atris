@@ -4067,8 +4067,10 @@ function appendMemberGoalLog(memberDir, name, title, fields = {}) {
     `## ${stamp} · ${title}`,
     `- team: ${name}`,
     ...Object.entries(fields)
-      .filter(([, value]) => value !== undefined && value !== null && value !== '')
-      .map(([key, value]) => `- ${key}: ${String(value).replace(/\n/g, ' ')}`),
+      .filter(([, value]) => value !== undefined && value !== null)
+      .map(([key, value]) => [key, String(value).replace(/\n/g, ' ').trim()])
+      .filter(([, text]) => text !== '')
+      .map(([key, text]) => `- ${key}: ${text}`),
     '',
   ];
   fs.appendFileSync(logPath, rows.join('\n'), 'utf8');
@@ -4085,8 +4087,10 @@ function appendProjectLog(title, fields = {}) {
   const rows = [
     `## ${stamp} · ${title}`,
     ...Object.entries(fields)
-      .filter(([, value]) => value !== undefined && value !== null && value !== '')
-      .map(([key, value]) => `- ${key}: ${String(value).replace(/\n/g, ' ')}`),
+      .filter(([, value]) => value !== undefined && value !== null)
+      .map(([key, value]) => [key, String(value).replace(/\n/g, ' ').trim()])
+      .filter(([, text]) => text !== '')
+      .map(([key, text]) => `- ${key}: ${text}`),
     '',
   ];
   fs.appendFileSync(logPath, rows.join('\n'), 'utf8');
@@ -9780,6 +9784,8 @@ async function memberCommand(subcommand, ...args) {
 
 module.exports = {
   proposalPromptForGoal,
+  appendMemberGoalLog,
+  appendProjectLog,
   memberCommand,
   findAllMembers,
   findWorkspaceBusinessId,
