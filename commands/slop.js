@@ -143,6 +143,8 @@ const LIST_AFTER_DASH = new RegExp(`(?<=[\\w)\\]*_\`%])\\s*\u2014\\s*(?!(?:and|b
 // items, with "and" or "or" before the last one or not.
 const BARE_ITEM = `(?:${LIST_ITEM}|"[^"]+"|\u201c[^\u201d]+\u201d)`;
 const BARE_LIST = new RegExp(`^${BARE_ITEM}(?:(?:, ${BARE_ITEM}){2,}|(?:, ${BARE_ITEM})+,? (?:and|or) ${BARE_ITEM})$`);
+// The short words a title leaves in lowercase: "The Lord of the Rings".
+const TITLE_SMALL_WORD = /^(?:a|an|the|and|but|or|nor|of|in|on|at|to|by|for|with|from|as|vs)$/;
 // One to three words after a dash that end the sentence, the tail a list
 // may close with. A joining word goes on with the sentence instead.
 const LIST_TAIL_DASH = /\s*\u2014\s*(?!(?:and|or|but|nor|so|yet|then|etc)\b)([A-Za-z0-9][\w'-]*(?: [A-Za-z0-9][\w'-]*){0,2})(?=[.!?]["'\u201d\u2019)]*(?:\s|$)|\s*$)/g;
@@ -910,6 +912,16 @@ function fixEmDash(s, { endsBlock = false, startsBlock = false, spans = [] } = {
       const left = whole.slice(0, at).split(/[.!?:]\s/).pop().replace(/^\s*(?:(?:[-*+>]|\d+[.)])\s+)*/, '').trim();
       if (!BARE_LIST.test(left) || insideParens(whole.slice(0, at))) return m;
       return /^(?:not|no|never)\b/i.test(left) ? `: ${tail}` : ` (${tail})`;
+    })
+    // an article after a dash mid-sentence only took its capital because the
+    // dash looked like a fresh start, so after the comma it goes lowercase:
+    // "[VISION.md](VISION.md), the AtrisOS philosophy", never ", The AtrisOS".
+    // A title keeps its capitals: "Star Wars, The Empire Strikes Back".
+    .replace(/(\s*\u2014\s*)(The|An?)(?= )/g, (m, dash, article, at, whole) => {
+      if (/(?:^|[.!?]["'\u201d\u2019)*_]*)\s*$/.test(whole.slice(0, at))) return m;
+      const phrase = whole.slice(at + m.length).split(/[.,;:!?()\[\]\u2014]/)[0];
+      const prose = phrase.split(/\s+/).some((w) => /^[a-z]/.test(w) && !TITLE_SMALL_WORD.test(w));
+      return prose ? `${dash}${article.toLowerCase()}` : m;
     })
     // keep punctuation the writer already put beside the dash instead of
     // stacking a comma on it, and never leave a trailing space. A dash pressed

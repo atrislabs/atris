@@ -2879,6 +2879,23 @@ test('fix puts a short tail after a list in parentheses, not in the list', () =>
   ]);
 });
 
+test('fix lowers a capital article after a dash mid-sentence, not a title', () => {
+  // the comma kept the capital: "[VISION.md](VISION.md), The AtrisOS philosophy"
+  const file = tmpFile('dash-article.md', [
+    '**Read first:** [VISION.md](VISION.md) \u2014 The AtrisOS philosophy',
+    'It ran fast \u2014 A big step for the team.',
+    'My favorite film is Star Wars \u2014 The Empire Strikes Back.',
+    'We shipped it. \u2014 The gate held.',
+  ].join('\n\n'));
+  const { changes } = applyFixes([file], RULES, { write: false });
+  assert.deepEqual(changes.map((c) => c.after), [
+    '**Read first:** [VISION.md](VISION.md), the AtrisOS philosophy',
+    'It ran fast, a big step for the team.',
+    'My favorite film is Star Wars, The Empire Strikes Back.',
+    'We shipped it. The gate held.',
+  ]);
+});
+
 test('fix keeps a journal heading that ends in a time readable for its hour', () => {
   // analytics reads the hour after a dash or a spaced hyphen at the end of a
   // heading; the fix wrote "### Watch: 19:05", which hides it, and glued
