@@ -754,7 +754,11 @@ function fixEmDash(s, { endsBlock = false, startsBlock = false, spans = [] } = {
       const leftOrder = new RegExp(`^${ORDER_VERB}\\s`, 'i');
       const quoted = left.split(/["\u201c]/).pop();
       if ([left, quoted].some((part) => leftOrder.test(part.replace(/^(?:(?:\*\*[^*]+\*\*:?|[-*+>]|\d+[.)]|[\s'_])\s*)+/, '')))) return m;
-      const named = left.replace(/^(?:\*\*[^*]+:\*\*\s*)/, '').split(/\s+/).length === 2;
+      // a code comment's own "//" is no word, so "// Hard deadline" names a
+      // thing too: "// Hard deadline: kill the request". A comment that opens
+      // in lowercase may carry on the line above, so it keeps its semicolon.
+      const body = left.replace(/^(?:\*\*[^*]+:\*\*\s*)/, '').replace(/^\/\/+\s*(?=[A-Z])/, '');
+      const named = body.split(/\s+/).length === 2;
       return named && !/^\s+[a-z]/.test(whole) ? ': ' : clauseJoin(left);
     })
     // a stop right before the dash ended the sentence, so the lowercase word

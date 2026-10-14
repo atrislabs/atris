@@ -691,6 +691,22 @@ test('fix keeps a label that ends in its own punctuation and adds no colon', () 
   ]);
 });
 
+test('fix gives a two-word name in a code comment a colon before an order', () => {
+  // from the API client, where "// Hard deadline" took a semicolon
+  const file = tmpFile('comment-name.js', [
+    '    // Hard deadline \u2014 kill request after 2x the timeout regardless of activity',
+    '// Retry budget \u2014 stop after three tries',
+    // a lowercase comment may carry on the line above
+    '    // slow path \u2014 run it again later',
+  ].join('\n'));
+  const { changes } = applyFixes([file], RULES);
+  assert.deepEqual(changes.map((c) => c.after), [
+    '    // Hard deadline: kill request after 2x the timeout regardless of activity',
+    '// Retry budget: stop after three tries',
+    '    // slow path; run it again later',
+  ]);
+});
+
 test('fix keeps a lone letter before a hyphen lowercase when it starts a sentence', () => {
   // from a vision summary, where "k-anonymous" came out "K-anonymous"
   const file = tmpFile('letter-term.md', [
