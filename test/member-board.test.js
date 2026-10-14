@@ -836,17 +836,33 @@ test('member stop says nothing running for unknown, finished, untagged, or dead 
     ghost: [`${isoAgo(60)} m-3 started: [pid 2147483646 engine claude] gone`],
   });
   try {
-    for (const name of ['nobody', 'done', 'legacy', 'ghost', '', '../done']) {
+    for (const name of ['done', 'legacy', 'ghost']) {
       assert.equal((await stopMember(name, { dir, deps: asEngine })).message, 'nothing running', name);
     }
     assert.equal(fs.readFileSync(path.join(dir, 'done.log'), 'utf8').includes('stopped'), false);
-    const res = spawnSync(process.execPath, [cliPath, 'member', 'stop', 'nobody'], {
+    // A typo is not a member with nothing running: say there is no log by that name.
+    for (const name of ['nobody', '../done']) {
+      assert.equal((await stopMember(name, { dir, deps: asEngine })).message,
+        `no progress log for ${name} in ${dir}, so there is nothing to stop; atris member board lists who has one`, name);
+    }
+    for (const name of ['', '--pid']) {
+      assert.equal((await stopMember(name, { dir, deps: asEngine })).message, 'say which member to stop, like: atris member stop builder', name);
+    }
+    const cli = (...args) => spawnSync(process.execPath, [cliPath, 'member', 'stop', ...args], {
       cwd: dir,
       encoding: 'utf8',
       env: { ...process.env, ATRIS_PROGRESS_DIR: dir },
     });
+    const last = (res) => res.stdout.trim().split('\n').pop();
+    let res = cli('done');
     assert.equal(res.status, 0, res.stderr);
-    assert.equal(res.stdout.trim().split('\n').pop(), 'nothing running');
+    assert.equal(last(res), 'nothing running');
+    res = cli('nobody');
+    assert.equal(res.status, 1, 'a name with no log is a mistake, not a quiet success');
+    assert.match(last(res), /^no progress log for nobody in /);
+    res = cli('--pid', '4242');
+    assert.equal(res.status, 1);
+    assert.equal(last(res), 'say which member to stop, like: atris member stop builder');
   } finally {
     fs.rmSync(dir, { recursive: true, force: true });
   }
