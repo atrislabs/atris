@@ -232,6 +232,9 @@ test('a job that can read whole gets its room before the last step', () => {
     assert.match(board, /^builder\s+done failed\s+timed out\s+5m ago\s+fix the login flow\s+readin\.\.\.$/m, board);
     assert.match(renderBoard(rows, dir, 0, 72), /^scribe\s+.*\s+write rele\.\.\.\s+editing lib\.\.\.$/m,
       'no room to keep the last step at its heading width: they split the room');
+    const busy = rows.map((r) => (r.member === 'scribe' ? { ...r, state: 'working' } : r));
+    assert.match(renderBoard(busy, dir, 0, 73), /^scribe\s+working\s.*\s+write relea\.\.\.\s+editing lib\.\.\.$/m,
+      'a live step says what the run is doing now, so the job never cuts it');
   } finally {
     fs.rmSync(dir, { recursive: true, force: true });
   }
