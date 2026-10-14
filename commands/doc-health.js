@@ -159,6 +159,19 @@ function newestLog(dir, freshAfter = Infinity) {
   return newest;
 }
 
+// Member logs are gitignored, so a git worktree never has them. Find the main
+// checkout so a worktree scores the same logs the main checkout does.
+function mainCheckout(root) {
+  let text;
+  try { text = fs.readFileSync(path.join(root, '.git'), 'utf8'); } catch { return null; }
+  const match = text.match(/^gitdir:\s*(.+)$/m);
+  if (!match) return null;
+  const gitDir = path.resolve(root, match[1].trim());
+  let common;
+  try { common = path.resolve(gitDir, fs.readFileSync(path.join(gitDir, 'commondir'), 'utf8').trim()); } catch { return null; }
+  return path.basename(common) === '.git' && path.resolve(path.dirname(common)) !== path.resolve(root) ? path.dirname(common) : null;
+}
+
 function freshness(items, thresholdDays) {
   const flagged = items.filter(item => item.stale);
   return {
@@ -191,13 +204,16 @@ function collectStaleness(root, featureNames, memberNames, now, scoreOnly = fals
       const exempt = /complete|shipped|live|archived|parked|retired|superseded/i.test(status);
       return { name, path: file, date: date || null, status, age_days: age === null ? null : Math.floor(age), stale: age !== null && age > 60 && !exempt };
     });
+  const main = mainCheckout(root);
   const members = memberNames.filter(name => stat(path.join(root, 'atris/team', name, 'MEMBER.md'))?.isFile())
     .filter(name => !inactiveMember(readText(path.join(root, 'atris/team', name, 'MEMBER.md'))))
     .map(name => {
-      const newest = newestLog(path.join(root, 'atris/team', name, 'logs'), scoreOnly ? now - 30 * DAY : Infinity);
+      const freshAfter = scoreOnly ? now - 30 * DAY : Infinity;
+      const newest = [root, main].filter(Boolean).map(base => newestLog(path.join(base, 'atris/team', name, 'logs'), freshAfter))
+        .reduce((best, log) => (log && (!best || log.mtime > best.mtime) ? log : best), null);
       const age = newest ? (now - newest.mtime) / DAY : null;
       return {
-        name, path: `atris/team/${name}`, newest_log: newest ? path.relative(root, newest.file) : null,
+        name, path: `atris/team/${name}`, newest_log: newest ? (newest.file.startsWith(root + path.sep) ? path.relative(root, newest.file) : newest.file) : null,
         last_activity: newest ? new Date(newest.mtime).toISOString() : null,
         age_days: age === null ? null : Math.floor(age), stale: !newest || age > 30,
       };

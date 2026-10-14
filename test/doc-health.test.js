@@ -219,6 +219,27 @@ test('staleness flags old active features and members with no logs or old nested
   assert.match(text, /no-logs\s+no logs/);
 });
 
+test('a git worktree counts member logs kept in the main checkout', t => {
+  const main = workspace(t);
+  const git = (cwd, ...args) => {
+    const result = spawnSync('git', args, { cwd, encoding: 'utf8', env: scrubAgentEnv(process.env) });
+    assert.equal(result.status, 0, result.stderr);
+  };
+  write(main, 'atris/atris.md', '');
+  write(main, 'atris/team/worker/MEMBER.md', '# member\n');
+  write(main, '.gitignore', 'atris/team/*/logs/\n');
+  git(main, 'init', '-q');
+  git(main, 'add', '.');
+  git(main, '-c', 'user.name=t', '-c', 'user.email=t@t', 'commit', '-qm', 'seed');
+  write(main, 'atris/team/worker/logs/today.md', 'log\n');
+  const tree = path.join(main, 'wt');
+  git(main, 'worktree', 'add', '-q', tree);
+  const payload = collectDocHealth({ cwd: tree });
+  const worker = payload.staleness.members.items.find(item => item.name === 'worker');
+  assert.equal(worker.stale, false);
+  assert.equal(fs.realpathSync(worker.newest_log), fs.realpathSync(path.join(main, 'atris/team/worker/logs/today.md')));
+});
+
 test('freshness thresholds are strictly older than 60 and 30 days and oldest lists stop at ten', t => {
   const root = workspace(t);
   const now = Date.parse('2026-09-15T00:00:00Z');
