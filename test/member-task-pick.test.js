@@ -1,0 +1,78 @@
+'use strict';
+
+const test = require('node:test');
+const assert = require('node:assert/strict');
+const fs = require('fs');
+const os = require('os');
+const path = require('path');
+
+const taskDb = require('../lib/task-db');
+const { claimTaskForMember, jobForTask, pickTaskForMember, taskObjective } = require('../lib/member-task-pick');
+
+function withProject(fn) {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'atris-member-pick-'));
+  taskDb.close();
+  const db = taskDb.open(path.join(dir, 'tasks.db'));
+  const ws = taskDb.workspaceRoot(dir);
+  let clock = 1000;
+  const add = (title, opts = {}) => {
+    const { id } = taskDb.addTask(db, { title, workspaceRoot: ws, ...opts });
+    db.prepare('UPDATE tasks SET created_at = ? WHERE id = ?').run(clock += 1000, id);
+    return id;
+  };
+  try {
+    fn({ db, ws, add });
+  } finally {
+    taskDb.close();
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+}
+
+test('picks the oldest open build task and claims it for the member', () => {
+  withProject(({ db, ws, add }) => {
+    const oldest = add('Fix the flaky clock test', { metadata: { objective: 'The clock test fails one run in five.' } });
+    add('Add a retry to the uploader');
+    const got = claimTaskForMember(taskDb, db, { workspaceRoot: ws, member: 'executor', job: 'build' });
+    assert.equal(got.task.id, oldest);
+    assert.equal(got.task.status, 'claimed');
+    assert.equal(got.task.claimed_by, 'executor');
+    assert.equal(got.objective, 'Fix the flaky clock test\n\nThe clock test fails one run in five.');
+    assert.equal(taskDb.getTask(db, oldest).claimed_by, 'executor');
+  });
+});
+
+test('skips needs-human, claimed, and billing tasks', () => {
+  withProject(({ db, ws, add }) => {
+    add('Pick the launch price', { tag: 'needs-human' });
+    add('Decide the copy', { metadata: { tags: ['needs-human'] } });
+    add('Already being built', { status: 'claimed', claimedBy: 'someone' });
+    add('Refund the duplicate charge', { tag: 'billing' });
+    const fits = add('Rename the stale flag');
+    assert.equal(pickTaskForMember(taskDb, db, { workspaceRoot: ws, job: 'build' }).id, fits);
+  });
+});
+
+test('matches the member job: review and search tasks go to their members', () => {
+  withProject(({ db, ws, add }) => {
+    const build = add('Wire the new flag');
+    const review = add('Review the uploader change', { tag: 'review' });
+    const search = add('Research how other tools page results');
+    assert.equal(jobForTask({ title: 'Review the uploader change' }), 'review');
+    assert.equal(pickTaskForMember(taskDb, db, { workspaceRoot: ws, job: 'review' }).id, review);
+    assert.equal(pickTaskForMember(taskDb, db, { workspaceRoot: ws, job: 'search' }).id, search);
+    assert.equal(pickTaskForMember(taskDb, db, { workspaceRoot: ws, job: 'build' }).id, build);
+  });
+});
+
+test('returns null when nothing fits so the caller falls back', () => {
+  withProject(({ db, ws, add }) => {
+    assert.equal(claimTaskForMember(taskDb, db, { workspaceRoot: ws, member: 'executor', job: 'build' }), null);
+    add('Ship the invoice email', { tag: 'payments' });
+    add('Hold for owner', { tag: 'needs-human' });
+    assert.equal(claimTaskForMember(taskDb, db, { workspaceRoot: ws, member: 'executor', job: 'build' }), null);
+  });
+});
+
+test('objective is just the title when the task has no body', () => {
+  assert.equal(taskObjective({ title: 'Rename the flag', metadata: {} }), 'Rename the flag');
+});
