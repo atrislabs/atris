@@ -219,7 +219,9 @@ function fixEmDash(s, { endsBlock = false, startsBlock = false } = {}) {
   // a table cell that holds only a dash means "nothing here"; a hyphen keeps
   // the cell instead of turning it into a stray comma
   if (/^\s*\|/.test(s)) s = s.replace(/(\|\s*)\u2014(\s*)(?=\||$)/g, '$1-$2');
-  s = s.replace(/\u2014(?:\s*\u2014)+/g, '\u2014').replace(/(\d)\s*\u2014\s*(?=\d+(?![\d-]))/g, '$1-').replace(/^(\s*(?:>\s*)*)\u2014\s*/, '$1');
+  // a dash between two numbers is a range, "10-20", unless the first has a
+  // sign, which makes it a score: "reward: +4, 404 on missing routes"
+  s = s.replace(/\u2014(?:\s*\u2014)+/g, '\u2014').replace(/(?<![+-]\d*)(\d)\s*\u2014\s*(?=\d+(?![\d-]))/g, '$1-').replace(/^(\s*(?:>\s*)*)\u2014\s*/, '$1');
   if (endsBlock) s = s.replace(/([.,;:!?]?)\s*\u2014\s*$/, (m, p) => p || '.');
   const heading = [HEADING_DASH, BOLD_HEADING_DASH].find((re) => re.test(s));
   if (heading) {
@@ -271,6 +273,10 @@ function fixEmDash(s, { endsBlock = false, startsBlock = false } = {}) {
       const sentence = whole.slice(from, to < 0 ? whole.length : at + to);
       const run = (sentence.match(/\u2014/g) || []).length;
       if (run >= 3 && run % 2) return m;
+      // A run where each dash opens a "label: value" field is a list of
+      // fields, so each is fixed alone: "shipped: 1/1, halt: 0%, reward: 0",
+      // never "shipped: 1/1 (halt: 0%) reward: 0".
+      if (sentence.split('\u2014').slice(1).every((part) => /^\s*[\w-]+(?: [\w-]+)?:\s/.test(part))) return m;
       // an aside that holds one side of a quote crosses the quote's edge, so
       // each dash is fixed alone: 'said "go, now", and left', never '"go (now")'.
       const count = (re) => (aside.match(re) || []).length;

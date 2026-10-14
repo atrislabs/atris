@@ -1291,6 +1291,21 @@ test('fix gives an odd run of three dashes in one sentence commas, not one pair'
   ]);
 });
 
+test('fix gives a run of "label: value" fields commas, and a signed score no range', () => {
+  // swarlo scorecards came out "shipped: 1/1 (halt: 0%) reward: 0" and "+4-404"
+  const file = tmpFile('field-run.md', [
+    '- **loop** \u2014 shipped: 1/1 \u2014 wall-clock: 20.6h \u2014 halt: 0% \u2014 reward: 0 \u2014 lessons: 0',
+    '- **hint** \u2014 shipped: 1/1 \u2014 verify: 437 tests \u2014 reward: +4 \u2014 404 on missing routes',
+    'Pages 10 \u2014 20 cover it.',
+  ].join('\n'));
+  const { changes } = applyFixes([file], RULES, { write: false });
+  assert.deepEqual(changes.map((c) => c.after), [
+    '- **loop**: shipped: 1/1, wall-clock: 20.6h, halt: 0%, reward: 0, lessons: 0',
+    '- **hint**: shipped: 1/1, verify: 437 tests, reward: +4, 404 on missing routes',
+    'Pages 10-20 cover it.',
+  ]);
+});
+
 test('fix never pairs two dashes across the edge of a quote', () => {
   // the aside opened inside the quote and closed outside it: '"go (now") and'
   const file = tmpFile('quote-edge.md', [
