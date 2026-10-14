@@ -516,3 +516,27 @@ test('member stop does not hard-kill a process that replaced the run during the 
     fs.rmSync(dir, { recursive: true, force: true });
   }
 });
+
+test('member stop needs the marker to open the prompt, as whole words', async () => {
+  const { child, ready } = spawnSleeper("console.log('up'); setInterval(() => {}, 1000)");
+  await ready;
+  try {
+    for (const command of [
+      `claude -p hello atris-run builder ${TOKEN}`,
+      `claude -p atris-run builder ${TOKEN}ff more`,
+      `claude -p atris-run builderx ${TOKEN}`,
+      `claude --resume x atris-run builder ${TOKEN}`,
+    ]) {
+      const dir = fakeDir({ builder: [`${isoAgo(20)} m-2 started: [pid ${child.pid} engine claude run ${TOKEN}] x`] });
+      const deps = { readProcess: (pid) => (pid === process.pid ? { pgid: -1, command: 'node', startedAt: Date.now() } : { pgid: pid, command, startedAt: Date.now() - 20000 }) };
+      try {
+        assert.equal((await stopMember('builder', { dir, graceMs: 50, deps })).message, 'nothing running', command);
+      } finally {
+        fs.rmSync(dir, { recursive: true, force: true });
+      }
+    }
+    assert.equal(isAlive(child.pid), true);
+  } finally {
+    try { process.kill(-child.pid, 'SIGKILL'); } catch {}
+  }
+});
