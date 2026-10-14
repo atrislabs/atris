@@ -921,3 +921,12 @@ test('member stop needs the marker to open the prompt, as whole words', async ()
     try { process.kill(-child.pid, 'SIGKILL'); } catch {}
   }
 });
+
+test('the stream notes list every way the before column can say a run ended', () => {
+  const { ENDED_AS } = require('../lib/member-board');
+  const source = fs.readFileSync(path.join(repoRoot, 'lib', 'member-board.js'), 'utf8');
+  const notes = source.slice(source.indexOf('// Live stream format'), source.indexOf('function progressEvent'));
+  const line = notes.split('\n').find((l) => l.includes('"before"'));
+  assert.ok(line, 'stream notes have a line about "before"');
+  for (const value of Object.keys(ENDED_AS)) assert.ok(line.includes(`"${value}"`), value);
+});
