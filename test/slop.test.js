@@ -485,6 +485,21 @@ test('fix turns a dash between two numbers into a hyphen, keeping the range', ()
   ]);
 });
 
+test('fix does not join a number to a date or a hyphenated word as a range', () => {
+  // from a validator log heading and the math harvest reports
+  const file = tmpFile('not-ranges.md', [
+    '### Tick 1 \u2014 2026-04-15',
+    'Class 1 \u2014 8-regular graphs on n=14',
+    'pages 10\u201420 and 30 \u2014 40.',
+  ].join('\n'));
+  const { changes } = applyFixes([file], RULES);
+  assert.deepEqual(changes.map((c) => c.after), [
+    '### Tick 1: 2026-04-15',
+    'Class 1, 8-regular graphs on n=14',
+    'pages 10-20 and 30-40.',
+  ]);
+});
+
 test('fix drops a dash that opens a line instead of leaving a leading comma', () => {
   const file = tmpFile('attribution.md', [
     '\u2014 Keshav, on the first run',

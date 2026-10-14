@@ -31,7 +31,9 @@ const SKIP_DIRS = new Set(['node_modules', '.git', 'dist', 'build', '.next', '.a
 // runs, blocks it" never comes out as a comma run-on. A lone dash left over
 // becomes a comma, unless punctuation already sits beside it. A dash between
 // two numbers is a range ("pages 10 to 20"), so it becomes a hyphen; a comma
-// there would turn one range into two separate numbers. A dash that opens
+// there would turn one range into two separate numbers. A number that runs
+// into a hyphen after the dash (a date, "8-regular") is not the end of a
+// range, so that dash is fixed like any other. A dash that opens
 // the line (a quote attribution) is dropped; a comma cannot start a line.
 // A run of dashes in a row is one break, so it is fixed as a single dash.
 // Two dashes with a sentence end between them are not an aside; each one is
@@ -62,7 +64,7 @@ function wrappedInParens(s) {
 }
 
 function fixEmDash(s, { endsBlock = false } = {}) {
-  s = s.replace(/\u2014(?:\s*\u2014)+/g, '\u2014').replace(/(\d)\s*\u2014\s*(?=\d)/g, '$1-').replace(/^(\s*(?:>\s*)*)\u2014\s*/, '$1');
+  s = s.replace(/\u2014(?:\s*\u2014)+/g, '\u2014').replace(/(\d)\s*\u2014\s*(?=\d+(?![\d-]))/g, '$1-').replace(/^(\s*(?:>\s*)*)\u2014\s*/, '$1');
   if (endsBlock) s = s.replace(/([.,;:!?]?)\s*\u2014\s*$/, (m, p) => p || '.');
   if (HEADING_DASH.test(s)) return s.replace(HEADING_DASH, '$1: ');
   const label = LIST_LABEL_DASH.exec(s) || LINE_LABEL_DASH.exec(s);
