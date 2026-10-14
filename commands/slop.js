@@ -401,15 +401,31 @@ function isRange(a, b) {
 // Who said a quote, when the words after its dash are only a name: one to
 // four capitalized words, "of" or "da" between them, and maybe a period.
 // It goes in parentheses after the quote, with that period outside:
-// '"one person."** (Sam Altman).' Returns null for anything else.
-const CREDIT_NAME = /^((?!(?:Then|And|But|So|This|That|It)\b)[A-Z][\w'.-]*(?:\s+(?:of|de|da|di|der|la|le|van|von|[A-Z][\w'.-]*)){0,3})\s*$/;
+// '"one person."** (Sam Altman).' A short note can follow the name after a
+// comma, in parentheses, or as "via" or "on" something, and joins it:
+// '(Steve Jobs, WWDC 1997)', '(Evan Wilson, same)', '(Prydz on Call on Me)'.
+// A note that holds a second sentence, or a name like "Honestly, I liked
+// it" that opens a sentence, is no credit. Returns null for anything else.
+const CREDIT_NAME = /^((?!(?:Then|And|But|So|This|That|It|Now)\b)\p{Lu}[\p{L}\p{N}_'.-]*(?:\s+(?:of|de|da|di|der|la|le|van|von|\p{Lu}[\p{L}\p{N}_'.-]*)){0,3})(.*)$/u;
 function creditAfterQuote(quote, rest) {
-  const name = CREDIT_NAME.exec(rest);
-  const end = name && /[a-z]{2}\.$/.test(name[1]) ? '.' : '';
+  const credit = CREDIT_NAME.exec(rest.trim());
+  if (!credit) return null;
+  let name = credit[1];
+  let tail = credit[2];
+  let end = '';
+  if (!tail) {
+    if (/\p{Ll}{2}\.$/u.test(name)) { end = '.'; name = name.slice(0, -1); }
+  } else {
+    const note = /^,\s+(.+)$/.exec(tail) || /^\s+\((.+)\)$/.exec(tail) || /^(\s+(?:via|on)\s.+)$/.exec(tail);
+    if (!note || /[.!?;]\s|:\s/.test(note[1]) || /^(?:I|we|you|he|she|they|it|this|that|there)\b/i.test(note[1]) || /ly$/.test(name)) return null;
+    let text = note[1];
+    if (/[\p{L}\p{N}]\.$/u.test(text) && !/\b\p{Lu}\.$/u.test(text)) { end = '.'; text = text.slice(0, -1); }
+    name += note[0].startsWith(',') || note[0].startsWith(' (') ? `, ${text}` : text;
+  }
   // one word and a period is a verdict on the quote, not who said it:
   // '"Let\'s circle back.": Dead.'
-  if (!name || (end && !/\s/.test(name[1]))) return null;
-  return `${quote} (${end ? name[1].slice(0, -1) : name[1]})${end}`;
+  if (end && !/\s/.test(name)) return null;
+  return `${quote} (${name})${end}`;
 }
 
 function fixEmDash(s, { endsBlock = false, startsBlock = false, spans = [] } = {}) {
@@ -524,7 +540,13 @@ function fixEmDash(s, { endsBlock = false, startsBlock = false, spans = [] } = {
     // a bold phrase that opens a sentence partway through the line is a label
     // too: "etc. **Include eliminate steps**: what gets deleted". One that ends
     // in its own punctuation, "**What now?**", keeps it and just loses the dash.
-    .replace(/([.!?]["'\u201d\u2019)]*\s+)(\*\*[^*\u2014]*[^\s*\u2014]\*\*|__[^_\u2014]*[^\s_\u2014]__)\s*\u2014\s*(?=\S)/g, (m, lead, bold) => `${lead}${bold}${/[.,;:!?][*_]+$/.test(bold) ? '' : ':'} `)
+    // A bold quote that ends its sentence and then a name is a credit, left
+    // for the credit rule below: '1. **"just a fun thing."** (Prydz)'.
+    .replace(/([.!?]["'\u201d\u2019)]*\s+)(\*\*[^*\u2014]*[^\s*\u2014]\*\*|__[^_\u2014]*[^\s_\u2014]__)\s*\u2014\s*(?=\S)/g, (m, lead, bold, at, whole) => {
+      const rest = whole.slice(at + m.length);
+      if (/[.!?]["'\u201d\u2019]+[*_]+$/.test(bold) && !/\u2014/.test(rest) && creditAfterQuote(bold, rest)) return m;
+      return `${lead}${bold}${/[.,;:!?][*_]+$/.test(bold) ? '' : ':'} `;
+    })
     // an aside never crosses a sentence end; dashes split by one are fixed alone.
     // An aside already inside parentheses, or holding its own, takes commas,
     // so none nest: "then (maybe) stop" never becomes "(then (maybe) stop)".

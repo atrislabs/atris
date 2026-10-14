@@ -1332,6 +1332,30 @@ test('fix credits a quote in bold or italics the same way as a plain one', () =>
   ]);
 });
 
+test('fix credits a speaker with a short note after the name', () => {
+  // a note after the name left the whole credit bare: '"Make it good." Steve
+  // Jobs, WWDC 1997'; a sentence after a quote is no credit and keeps its fix
+  const file = tmpFile('credit-note.md', [
+    '> "Make it good." \u2014 Steve Jobs, WWDC 1997',
+    '> "Good." \u2014 Tony M. (same sources)',
+    '> "Action produces information." \u2014 Armstrong via Marchese',
+    '> "Less is more." \u2014 Antoine de Saint-Exup\u00e9ry',
+    '1. **"It took me half an hour to make, just a fun thing on the side."** \u2014 Prydz on Call on Me',
+    '> "Stop." \u2014 Honestly, I liked it.',
+    '> "Coffee?" \u2014 Banner Dark is the safe pick.',
+  ].join('\n'));
+  const { changes } = applyFixes([file], RULES, { write: false });
+  assert.deepEqual(changes.map((c) => c.after), [
+    '> "Make it good." (Steve Jobs, WWDC 1997)',
+    '> "Good." (Tony M., same sources)',
+    '> "Action produces information." (Armstrong via Marchese)',
+    '> "Less is more." (Antoine de Saint-Exup\u00e9ry)',
+    '1. **"It took me half an hour to make, just a fun thing on the side."** (Prydz on Call on Me)',
+    '> "Stop." Honestly, I liked it.',
+    '> "Coffee?" Banner Dark is the safe pick.',
+  ]);
+});
+
 test('fix gives a list label that is one whole quote a colon after the quote', () => {
   // the skill zones one-pager lists sample questions, each with what it does
   const file = tmpFile('quote-label.md', [
