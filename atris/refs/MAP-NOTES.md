@@ -2309,7 +2309,7 @@ npm publish
 
 ## Continuation status test setup
 
-- `test/commands.test.js:14068` checks review continuation, human approval waiting, and blocked review separately. Its local real-store seed helper removes three setup command launches; ready, review, status, and all result assertions stay on the CLI.
+- `test/commands.test.js:14318` checks review continuation, human approval waiting, and blocked review separately. Its local real-store seed helper removes three setup command launches; ready, review, status, and all result assertions stay on the CLI.
 
 ## Board stream readiness
 
@@ -2321,18 +2321,18 @@ npm publish
 
 ## Compact approval queue test setup
 
-- `test/commands.test.js:14150` checks certified, second-review-blocked, and unsafe-check queue entries. Its local real-store helper at `test/commands.test.js:14161` creates and claims three fixtures without six setup command launches; ready, review, JSON, plain, verbose, and grouped output stay on the CLI with every queue assertion intact.
-- `test/commands.test.js:11931` checks proof-specific review-chat packets. Creation and claiming use the real task store, saving two setup launches; open-task rejection, ready, review-chat, review, status, show, and all assertions still exercise the CLI. The fixture preserves both task_goal and goal_objective metadata from command creation.
+- `test/commands.test.js:14400` checks certified, second-review-blocked, and unsafe-check queue entries. Its local real-store helper at `test/commands.test.js:14411` creates and claims three fixtures without six setup command launches; ready, review, JSON, plain, verbose, and grouped output stay on the CLI with every queue assertion intact.
+- `test/commands.test.js:11983` checks proof-specific review-chat packets. Creation and claiming use the real task store, saving two setup launches; open-task rejection, ready, review-chat, review, status, show, and all assertions still exercise the CLI. The fixture preserves both task_goal and goal_objective metadata from command creation.
 
-- `test/commands.test.js:9125` checks duplicate review-chat suppression across inner loops. Creation at `test/commands.test.js:9139` uses the real task store without a setup launch; the baseline at `test/commands.test.js:9155` reads full message history and version in process, saving another launch, and closes the store in finally. Ready still handles the unclaimed row through the CLI; both loop calls, drain, final show calls, and every version/message assertion remain, with an added identity check.
+- `test/commands.test.js:9160` checks duplicate review-chat suppression across inner loops. Creation at `test/commands.test.js:9174` uses the real task store without a setup launch; the baseline at `test/commands.test.js:9190` reads full message history and version in process, saving another launch, and closes the store in finally. Ready still handles the unclaimed row through the CLI; both loop calls, drain, final show calls, and every version/message assertion remain, with an added identity check.
 
-- `test/commands.test.js:8994` checks bounded review receipts and the human approval stop. Its real-store helper at `test/commands.test.js:9006` seeds two unclaimed rows with the original goal metadata, saving two setup launches. The baseline at `test/commands.test.js:9071` reads the real-store projection without a third launch, checks a review row with a positive version, and closes the store in finally. Ready, review, dry and live run, receipt reads, and final CLI show remain; final show checks both identity and unchanged version.
+- `test/commands.test.js:9029` checks bounded review receipts and the human approval stop. Its real-store helper at `test/commands.test.js:9041` seeds two unclaimed rows with the original goal metadata, saving two setup launches. The baseline at `test/commands.test.js:9106` reads the real-store projection without a third launch, checks a review row with a positive version, and closes the store in finally. Ready, review, dry and live run, receipt reads, and final CLI show remain; final show checks both identity and unchanged version.
 
-- `test/commands.test.js:9234` checks drain selection after an existing follow-up child. Its parent helper at `test/commands.test.js:9245` seeds two unclaimed rows with goal metadata through the real task store, saving two setup launches. Ready, review, child creation and reuse, drain, status, and current remain CLI calls with all assertions preserved.
+- `test/commands.test.js:9269` checks drain selection after an existing follow-up child. Its parent helper at `test/commands.test.js:9280` seeds two unclaimed rows with goal metadata through the real task store, saving two setup launches. Ready, review, child creation and reuse, drain, status, and current remain CLI calls with all assertions preserved.
 
 ## Compact event test setup
 
-- `test/commands.test.js:9367` checks recent, full and exported event history. Parent creation and the first 29 notes share the real task store at `test/commands.test.js:9378`, saving one setup launch. The final note, plain and JSON recent views, full ledger and export remain CLI calls with every history assertion intact; the store closes in finally.
+- `test/commands.test.js:9402` checks recent, full and exported event history. Parent creation and the first 29 notes share the real task store at `test/commands.test.js:9413`, saving one setup launch. The final note, plain and JSON recent views, full ledger and export remain CLI calls with every history assertion intact; the store closes in finally.
 
 ## Ordered task fixture setup
 
@@ -2340,89 +2340,89 @@ npm publish
 
 ## Task lineage fixture setup
 
-- `test/commands.test.js:17028` checks goal inference, completed proof, parent-child lineage and stream counts. Three ordered real-store seeds replace three setup launches; finish and export still exercise the CLI, with every assertion preserved.
+- `test/commands.test.js:17332` checks goal inference, completed proof, parent-child lineage and stream counts. Three ordered real-store seeds replace three setup launches; finish and export still exercise the CLI, with every assertion preserved.
 
 ## Task rendering fixture setup
 
-- `test/commands.test.js:7840` checks Endgame metadata, removal of stale generated rows, stable display references and repeat rendering. An ordered real-store seed saves one setup launch; the generated-file marker formerly written by task creation is explicit in the fixture. Both renders and lookup still exercise the CLI with every assertion preserved.
+- `test/commands.test.js:7852` checks Endgame metadata, removal of stale generated rows, stable display references and repeat rendering. An ordered real-store seed saves one setup launch; the generated-file marker formerly written by task creation is explicit in the fixture. Both renders and lookup still exercise the CLI with every assertion preserved.
 
 ## Stale generated markdown fixture setup
 
-- `test/commands.test.js:7914` checks legacy row migration followed by generated row cleanup. An ordered real-store task seed and real-store claim save two setup launches and close in finally; ready and both renders still exercise the CLI with every assertion preserved.
+- `test/commands.test.js:7926` checks legacy row migration followed by generated row cleanup. An ordered real-store task seed and real-store claim save two setup launches and close in finally; ready and both renders still exercise the CLI with every assertion preserved.
 
 ## Filtered task reference fixture setup
 
-- `test/commands.test.js:8026` checks stable display references across open and done list filters. Two ordered real-store seeds replace two creation launches, and the database closes in finally. Completion and all three list calls still exercise the CLI with every assertion preserved.
+- `test/commands.test.js:8038` checks stable display references across open and done list filters. Two ordered real-store seeds replace two creation launches, and the database closes in finally. Completion and all three list calls still exercise the CLI with every assertion preserved.
 
-- `test/commands.test.js:7689` checks tag-scoped next selection without mutation and list filtering. Ordered real-store creation replaces two setup launches; claim, next, show and list remain CLI calls with all behavior assertions preserved, and each seed closes the store in finally.
+- `test/commands.test.js:7707` checks tag-scoped next selection without mutation and list filtering. Ordered real-store creation replaces two setup launches; claim, next, show and list remain CLI calls with all behavior assertions preserved, and each seed closes the store in finally.
 
 ## Earlier step selection fixture setup
 
-- `test/commands.test.js:7747` checks that the earlier pass stays selected after the later pass is planned more recently. Ordered real-store creation at `test/commands.test.js:7757` saves two setup launches and closes the store in finally; both plan calls and current selection still exercise the CLI with every behavior assertion preserved.
+- `test/commands.test.js:7765` checks that the earlier pass stays selected after the later pass is planned more recently. Ordered real-store creation at `test/commands.test.js:7775` saves two setup launches and closes the store in finally; both plan calls and current selection still exercise the CLI with every behavior assertion preserved.
 
 ## Certified checkpoint selection fixture setup
 
-- `test/commands.test.js:12661` checks scoped next selection without unrelated Endgame fallback. Real-store creation at `test/commands.test.js:12680` saves one setup launch and closes in finally; claim, ready, review and all three next calls remain on the CLI with every behavior assertion preserved.
+- `test/commands.test.js:12730` checks scoped next selection without unrelated Endgame fallback. Real-store creation at `test/commands.test.js:12751` saves one setup launch and closes in finally; claim, ready, review and all three next calls remain on the CLI with every behavior assertion preserved.
 
 ## Existing Endgame seed selection fixture setup
 
-- `test/commands.test.js:12733` checks that next selection does not repeat a seed already present. Ordered real-store creation at `test/commands.test.js:12757` saves two setup launches and closes each seed in finally; both claims, ready, review and all three next calls remain on the CLI with every behavior assertion preserved.
+- `test/commands.test.js:12802` checks that next selection does not repeat a seed already present. Ordered real-store creation at `test/commands.test.js:12826` saves two setup launches and closes each seed in finally; both claims, ready, review and all three next calls remain on the CLI with every behavior assertion preserved.
 
 ## Incidental XP wording review fixture setup
 
-- `test/commands.test.js:12803` checks that incidental XP wording does not produce an AgentXP result. Real-store creation at `test/commands.test.js:12814` saves one setup launch and closes in finally; claim, ready, show and every summary, landing, proof and output assertion remain on the CLI.
+- `test/commands.test.js:12872` checks that incidental XP wording does not produce an AgentXP result. Real-store creation at `test/commands.test.js:12883` saves one setup launch and closes in finally; claim, ready, show and every summary, landing, proof and output assertion remain on the CLI.
 
-- `test/commands.test.js:12863` checks default landing output for unmapped titles. Real-store creation at `test/commands.test.js:12874` saves one setup launch and closes in finally; claim, ready, show and every landing assertion remain on the CLI.
+- `test/commands.test.js:12932` checks default landing output for unmapped titles. Real-store creation at `test/commands.test.js:12943` saves one setup launch and closes in finally; claim, ready, show and every landing assertion remain on the CLI.
 
-- `test/commands.test.js:12909` checks landing capability sentences. The local real-store seed helper saves three creation launches and closes the database before each CLI claim; ready, missing-landing advisory, finish and accepted projection assertions remain unchanged.
+- `test/commands.test.js:12978` checks landing capability sentences. The local real-store seed helper saves three creation launches and closes the database before each CLI claim; ready, missing-landing advisory, finish and accepted projection assertions remain unchanged.
 
 ## Weak landing rejection fixture setup
 
-- `test/commands.test.js:12987` checks both explicit weak landing rejections and keeps the task claimed. Real-store creation at `test/commands.test.js:12999` saves one setup launch, resolves the display reference and closes in finally; claim, both ready rejections and final show remain on the CLI with every behavior assertion preserved.
+- `test/commands.test.js:13056` checks both explicit weak landing rejections and keeps the task claimed. Real-store creation at `test/commands.test.js:13068` saves one setup launch, resolves the display reference and closes in finally; claim, both ready rejections and final show remain on the CLI with every behavior assertion preserved.
 
 ## Reward rejection fixture setup
 
-- `test/commands.test.js:13108` checks that a zero reward cannot mark a task done. Real-store creation at `test/commands.test.js:13121` saves one setup launch, resolves the display reference and closes in finally; claim, ready, rejection and final review-status show remain on the CLI with every behavior assertion preserved.
+- `test/commands.test.js:13177` checks that a zero reward cannot mark a task done. Real-store creation at `test/commands.test.js:13190` saves one setup launch, resolves the display reference and closes in finally; claim, ready, rejection and final review-status show remain on the CLI with every behavior assertion preserved.
 
 ## Proof-only acceptance guard fixture setup
 
-- `test/commands.test.js:13147` checks that agent proof-only mode blocks done, finish, positive review, accept and certified auto-accept. Real-store creation at `test/commands.test.js:13166` saves one setup launch, resolves the display reference and closes in finally; claim, every blocked verb, ready, zero-reward review and final show remain on the CLI with every behavior assertion preserved.
+- `test/commands.test.js:13216` checks that agent proof-only mode blocks done, finish, positive review, accept and certified auto-accept. Real-store creation at `test/commands.test.js:13235` saves one setup launch, resolves the display reference and closes in finally; claim, every blocked verb, ready, zero-reward review and final show remain on the CLI with every behavior assertion preserved.
 
 ## Auto-accept confirmation fixture setup
 
-- `test/commands.test.js:13234` checks that certified auto-accept needs an explicit human confirmation and a real human actor. Real-store creation at `test/commands.test.js:13248` saves one setup launch, resolves the display reference and closes in finally; claim, ready, review, the refusals, both previews and the confirmed accept remain on the CLI with every behavior assertion preserved.
+- `test/commands.test.js:13303` checks that certified auto-accept needs an explicit human confirmation and a real human actor. Real-store creation at `test/commands.test.js:13317` saves one setup launch, resolves the display reference and closes in finally; claim, ready, review, the refusals, both previews and the confirmed accept remain on the CLI with every behavior assertion preserved.
 
 ## Duplicate reward review fixture setup
 
-- `test/commands.test.js:13405` checks that a review after acceptance cannot add a second reward. Real-store creation at `test/commands.test.js:13419` saves one setup launch, resolves the display reference and closes in finally; claim, ready, accept, the second review and the XP status read remain on the CLI with every behavior assertion preserved.
+- `test/commands.test.js:13474` checks that a review after acceptance cannot add a second reward. Real-store creation at `test/commands.test.js:13488` saves one setup launch, resolves the display reference and closes in finally; claim, ready, accept, the second review and the XP status read remain on the CLI with every behavior assertion preserved.
 
 ## Duplicate receipt repair fixture setup
 
-- `test/commands.test.js:13455` checks that the reward status read repairs an exact duplicate receipt line. Real-store creation at `test/commands.test.js:13469` saves one setup launch, resolves the display reference and closes in finally; claim, ready, accept and the repairing status read remain on the CLI with every behavior assertion preserved.
+- `test/commands.test.js:13524` checks that the reward status read repairs an exact duplicate receipt line. Real-store creation at `test/commands.test.js:13538` saves one setup launch, resolves the display reference and closes in finally; claim, ready, accept and the repairing status read remain on the CLI with every behavior assertion preserved.
 
 ## Conflicting receipt fail-closed fixture setup
 
-- `test/commands.test.js:13498` checks that conflicting duplicate receipts make the reward status read fail closed with readable labels. Real-store creation at `test/commands.test.js:13512` saves one setup launch, resolves the display reference and closes in finally; claim, ready, accept and the fail-closed status read remain on the CLI with every behavior assertion preserved.
+- `test/commands.test.js:13567` checks that conflicting duplicate receipts make the reward status read fail closed with readable labels. Real-store creation at `test/commands.test.js:13581` saves one setup launch, resolves the display reference and closes in finally; claim, ready, accept and the fail-closed status read remain on the CLI with every behavior assertion preserved.
 
 ## Tampered receipt ledger fixture setup
 
-- `test/commands.test.js:13541` checks that an edited reward receipt makes the status read fail closed. Real-store creation at `test/commands.test.js:13554` saves one setup launch, resolves the display reference and closes in finally; claim, ready, accept with its reward total, and the tampered status read remain on the CLI with every behavior assertion preserved.
+- `test/commands.test.js:13610` checks that an edited reward receipt makes the status read fail closed. Real-store creation at `test/commands.test.js:13623` saves one setup launch, resolves the display reference and closes in finally; claim, ready, accept with its reward total, and the tampered status read remain on the CLI with every behavior assertion preserved.
 
 ## Ready-work revise fixture setup
 
-- `test/commands.test.js:13585` checks that a human revise sends ready work back to claimed with a revision count. Real-store creation at `test/commands.test.js:13598` saves one setup launch, resolves the display reference and closes in finally; claim, both readies, revise, show, the refused stale accept and the re-ready remain on the CLI with every behavior assertion preserved.
+- `test/commands.test.js:13654` checks that a human revise sends ready work back to claimed with a revision count. Real-store creation at `test/commands.test.js:13667` saves one setup launch, resolves the display reference and closes in finally; claim, both readies, revise, show, the refused stale accept and the re-ready remain on the CLI with every behavior assertion preserved.
 
 ## Unclaimed ready revise fixture setup
 
-- `test/commands.test.js:13650` checks that revising ready work nobody claimed returns it to open for agents to claim. Real-store creation at `test/commands.test.js:13663` saves one setup launch, resolves the display reference and closes in finally; the unclaimed ready, revise and claim remain on the CLI with every behavior assertion preserved.
+- `test/commands.test.js:13719` checks that revising ready work nobody claimed returns it to open for agents to claim. Real-store creation at `test/commands.test.js:13732` saves one setup launch, resolves the display reference and closes in finally; the unclaimed ready, revise and claim remain on the CLI with every behavior assertion preserved.
 
 ## Accepted-task revise refusal fixture setup
 
-- `test/commands.test.js:13686` checks that revise is refused on accepted work so the reward total stays current. Real-store creation at `test/commands.test.js:13699` saves one setup launch, resolves the display reference and closes in finally; claim, ready, accept, the refused revise and the XP status read remain on the CLI with every behavior assertion preserved.
+- `test/commands.test.js:13755` checks that revise is refused on accepted work so the reward total stays current. Real-store creation at `test/commands.test.js:13768` saves one setup launch, resolves the display reference and closes in finally; claim, ready, accept, the refused revise and the XP status read remain on the CLI with every behavior assertion preserved.
 
 ## Already-claimed claim fixture setup
 
-- `test/commands.test.js:14069` checks that a claim refused because another agent holds the task never suggests a next task. Real-store creation at `test/commands.test.js:14081` saves one setup launch, resolves the display reference and closes in finally; both claims and the conflict reason and empty suggestion assertions remain on the CLI.
+- `test/commands.test.js:14138` checks that a claim refused because another agent holds the task never suggests a next task. Real-store creation at `test/commands.test.js:14150` saves one setup launch, resolves the display reference and closes in finally; both claims and the conflict reason and empty suggestion assertions remain on the CLI.
 
 ## Handover prep call-order race
 
@@ -2430,11 +2430,11 @@ npm publish
 
 ## Goal display-ref status fixture setup
 
-- `test/commands.test.js:14511` checks that task status reads a parent goal's title as the current task's objective when the child was linked by display reference. Real-store parent creation at `test/commands.test.js:14530` saves one setup launch and reads id, title and display reference from the stored row; the child add that resolves the display reference, the claim and the status read remain on the CLI.
+- `test/commands.test.js:14596` checks that task status reads a parent goal's title as the current task's objective when the child was linked by display reference. Real-store parent creation at `test/commands.test.js:14615` saves one setup launch and reads id, title and display reference from the stored row; the child add that resolves the display reference, the claim and the status read remain on the CLI.
 
 ## Rendered task list accept refresh fixture setup
 
-- `test/commands.test.js:19947` checks that accepting a task refreshes an existing rendered task list file. Real-store creation at `test/commands.test.js:19971` saves one setup launch and never touches the file, so the completed entry can only come from the CLI ready and accept that remain.
+- `test/commands.test.js:20065` checks that accepting a task refreshes an existing rendered task list file. Real-store creation at `test/commands.test.js:20089` saves one setup launch and never touches the file, so the completed entry can only come from the CLI ready and accept that remain.
 
 ## Task lineage fixture setup
 
@@ -2442,23 +2442,23 @@ npm publish
 
 ## Reviewed failure status fixture setup
 
-- `test/commands.test.js:14562` checks that task status counts a reviewed failed task as closed, with nothing active or waiting for review. Real-store creation at `test/commands.test.js:14569` saves one setup launch; task add only stores the row and redraws the task view, which the claim and failed finish redraw again, so the claim, failed finish and status read remain on the CLI.
+- `test/commands.test.js:14647` checks that task status counts a reviewed failed task as closed, with nothing active or waiting for review. Real-store creation at `test/commands.test.js:14654` saves one setup launch; task add only stores the row and redraws the task view, which the claim and failed finish redraw again, so the claim, failed finish and status read remain on the CLI.
 
 ## Failed blocker status fixture setup
 
-- `test/commands.test.js:14600` checks that a failed task without a proof counts as blocked and stays out of the review handoff in both JSON and text status. Real-store creation at `test/commands.test.js:14607` saves one setup launch; the claim, failed finish and both status reads remain on the CLI.
+- `test/commands.test.js:14685` checks that a failed task without a proof counts as blocked and stays out of the review handoff in both JSON and text status. Real-store creation at `test/commands.test.js:14692` saves one setup launch; the claim, failed finish and both status reads remain on the CLI.
 
 ## Status history fixture setup
 
-- `test/commands.test.js:14637` checks that the default task status card leaves out history while the history view shows all ten events. Setup at `test/commands.test.js:14644` writes the creation, claim and eight notes in process through the same store calls task new, claim and say make, saving ten launches; a throwaway copy seeding seven notes failed the history count, so the count still tracks the seeded events.
+- `test/commands.test.js:14722` checks that the default task status card leaves out history while the history view shows all ten events. Setup at `test/commands.test.js:14729` writes the creation, claim and eight notes in process through the same store calls task new, claim and say make, saving ten launches; a throwaway copy seeding seven notes failed the history count, so the count still tracks the seeded events.
 
 ## Review create-next goal scope fixture setup
 
-- `test/commands.test.js:14789` checks that finishing a task with create-next carries its tag and goal link to the new task, and that the goal-scoped current pick selects it. Real-store creation at `test/commands.test.js:14797` saves one setup launch and writes the same goal link task new stores; a throwaway copy without that link failed, so the goal checks still read the seeded link.
+- `test/commands.test.js:14874` checks that finishing a task with create-next carries its tag and goal link to the new task, and that the goal-scoped current pick selects it. Real-store creation at `test/commands.test.js:14882` saves one setup launch and writes the same goal link task new stores; a throwaway copy without that link failed, so the goal checks still read the seeded link.
 
 ## Continue-work certified review fixture setup
 
-- `test/commands.test.js:14845` checks that continue-work on a certified review creates one goal-scoped next task, reuses it on a second call, and leaves the parent waiting for a human. Real-store parent creation at `test/commands.test.js:14853` saves one setup launch and reads the display reference from the stored rows; a throwaway copy without the goal link failed, so the next task's goal check still reads the seeded link.
+- `test/commands.test.js:14930` checks that continue-work on a certified review creates one goal-scoped next task, reuses it on a second call, and leaves the parent waiting for a human. Real-store parent creation at `test/commands.test.js:14938` saves one setup launch and reads the display reference from the stored rows; a throwaway copy without the goal link failed, so the next task's goal check still reads the seeded link.
 
 ## Uncertified review next fixture setup
 
