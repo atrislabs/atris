@@ -2311,4 +2311,6 @@ npm publish
 
 - **Smallest board columns:** `renderBoard()` (`lib/member-board.js:367`) keeps member and whole state from 18 to 29 columns, shortening long names. The result column returns at 30 columns. Regression: `test/member-board.test.js:246`; real terminal proof: `python3 atris/runs/member-board-smallest-columns-proof.py`.
 
-- **Failure reasons beside finishing:** `renderBoard()` (`lib/member-board.js:380`) shortens the compact member heading to name before clipping the result, preserving engine error alongside finishing at 30 columns. Regression: `test/member-board.test.js:267`; real terminal proof: `python3 atris/runs/member-board-finishing-reason-proof.py`.
+- **Failure reasons beside finishing:** `renderBoard()` (`lib/member-board.js:385`) shortens the compact member heading to name before clipping the result, preserving engine error alongside finishing at 30 columns. Regression: `test/member-board.test.js:267`; real terminal proof: `python3 atris/runs/member-board-finishing-reason-proof.py`.
+
+- **Missing results beside finishing:** `renderBoard()` (`lib/member-board.js:379`) keeps ended, no result when four name characters and the state fit, shortening to no result only when needed. Regression: `test/member-board.test.js:288`; actual terminal proof: `python3 atris/runs/member-board-no-result-proof.py`.

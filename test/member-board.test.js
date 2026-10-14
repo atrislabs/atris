@@ -285,6 +285,31 @@ test('finishing members leave common failure reasons whole at 30 columns', () =>
   }
 });
 
+test('compact rows keep missing results clear beside a finishing member', async () => {
+  const { child, ready } = spawnSleeper("console.log('up'); setInterval(() => {}, 1000)");
+  await ready;
+  child.kill('SIGKILL');
+  assert.ok(await waitFor(() => !isAlive(child.pid)), 'the real run has ended');
+  const dir = fakeDir({
+    'chat-experience-lead': [`${at(100)} m-1 started: [pid ${child.pid} engine claude] build`],
+    scout: [`${at(50)} m-2 started: search`],
+  });
+  try {
+    const rows = readBoard({ dir, now: NOW, asleep: ['scout'] });
+    for (const width of [30, 32, 33, 34, 38]) {
+      const board = renderBoard(rows, dir, 0, width);
+      assert.ok(board.split('\n').every((line) => line.length <= width), `${width}: ${board}`);
+      assert.match(board, /stopped\s+(?:ended, )?no result$/m);
+      assert.match(board, /finishing\s+-$/m);
+      assert.equal(board.includes('ended, no result'), width >= 33, `${width}: full wording when it fits`);
+    }
+    assert.match(renderBoard(rows, dir), /stopped\s+ended, no result\s/m, 'piped output keeps the full wording');
+  } finally {
+    killAll(child.pid);
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
 test('a busy row with an earlier failure shrinks its last result before it overflows', () => {
   const dir = fakeDir({
     'chat-experience-lead': [
