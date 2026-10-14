@@ -225,6 +225,27 @@ test('autopilot regression check names who removed its folder and why', () => {
   }
 });
 
+for (const dirty of [false, true]) {
+  test(`autopilot regression check keeps an existing ${dirty ? 'dirty' : 'clean'} folder when creation fails`, () => {
+    const { base, repo, folder } = regressionRepo('touch verify-ran');
+    try {
+      git(repo, ['worktree', 'add', '-q', '--detach', folder, 'HEAD']);
+      const head = git(folder, ['rev-parse', 'HEAD']);
+      if (dirty) fs.writeFileSync(path.join(folder, 'unfinished.txt'), 'keep this work\n');
+      const [row] = regressionCheck(repo, { activeCwds: [] });
+      assert.equal(row.skipped, true, JSON.stringify(row));
+      assert.ok(fs.existsSync(folder), 'the folder existed before this invocation');
+      assert.equal(git(folder, ['rev-parse', 'HEAD']), head);
+      assert.ok(git(repo, ['worktree', 'list']).includes(folder));
+      assert.equal(fs.existsSync(path.join(folder, 'verify-ran')), false);
+      if (dirty) assert.equal(fs.readFileSync(path.join(folder, 'unfinished.txt'), 'utf8'), 'keep this work\n');
+      assert.deepEqual(removalLines(repo), []);
+    } finally {
+      fs.rmSync(base, { recursive: true, force: true });
+    }
+  });
+}
+
 // Tripwire: a work folder removal anywhere in lib/ or commands/, by git or by a
 // raw delete of a worktree path, must sit in a function that also asks the
 // git-activity check and writes the removal log. A new file that removes

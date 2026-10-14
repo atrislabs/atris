@@ -1212,11 +1212,13 @@ function regressionCheck(cwd, { activeCwds } = {}) {
     }
 
     const worktreePath = path.join(cwd, '.regression-worktree-' + entry.hash.slice(0, 8));
+    let created = false;
     let pass = false;
     let kept = null;
     try {
       // Create a worktree at the commit
       execSync(`git worktree add "${worktreePath}" ${entry.hash} --detach 2>/dev/null`, { cwd, stdio: 'pipe' });
+      created = true;
       try {
         execSync(entry.verifyCmd, { cwd: worktreePath, stdio: 'pipe', timeout: 60000 });
         pass = true;
@@ -1231,12 +1233,13 @@ function regressionCheck(cwd, { activeCwds } = {}) {
       // A timed-out verify can leave a child running in the folder or git
       // mid-write there. Keep the folder then; log every real removal.
       const guard = require('./worktree');
-      if (fs.existsSync(worktreePath)) {
+      // Failed creation does not give us ownership of an existing folder.
+      if (created && fs.existsSync(worktreePath)) {
         kept = guard.worktreeHasActiveProcess(worktreePath, activeCwds || guard.listActiveProcessCwds())
           ? 'active_process'
           : guard.worktreeGitActivity(worktreePath);
       }
-      if (fs.existsSync(worktreePath) && !kept) {
+      if (created && fs.existsSync(worktreePath) && !kept) {
         try {
           execSync(`git worktree remove "${worktreePath}" --force 2>/dev/null`, { cwd, stdio: 'pipe' });
           guard.recordWorktreeRemoval(cwd, { path: worktreePath, by: 'atris autopilot regression check', reason: 'regression_check_done' });

@@ -1163,7 +1163,7 @@ rg "printRoster|registryPayload|canPersistEngineRegistry|speakFirstMinute|--glob
 - **Reward config:** `lib/reward-config.js`: frozen `REWARD_CONFIG` object + `REWARD_CHECKSUM` (SHA-256 of `JSON.stringify(REWARD_CONFIG) + computeTickReward.toString()` at ship time). The loop cannot edit its own judge.
 - **Reward computer:** `commands/autopilot.js:2202` (`computeTickReward`): computes per-tick reward score from `REWARD_CONFIG` constants (commit +1, npm test +2, verify +3, validator clean +1, halt -3) and only awards verify points when verify actually ran
 - **Tick registry writer:** `commands/autopilot.js:1181` (`recordTickCommit`): persists `{hash, verifyCmd, slug, timestamp}` to `atris/tick-registry.json` after each successful tick
-- **Regression checker:** `commands/autopilot.js:1197` (`regressionCheck`): reads last 10 tick-registry entries, re-runs verify at original commit via git worktree, writes lesson + -5 penalty on failure
+- **Regression checker:** `commands/autopilot.js:1197` (`regressionCheck`): reads last 10 tick-registry entries, re-runs verify at original commit via git worktree, writes lesson + -5 penalty on failure; cleanup requires successful creation, preserving existing clean or dirty folders when creation fails (`test/worktree-removal-guard.test.js:228`)
 - **Judge integrity guard:** `commands/autopilot.js:1391` (`verifyJudgeIntegrity`): SHA-256 checksums `JSON.stringify(REWARD_CONFIG) + computeTickReward.toString()` against `REWARD_CHECKSUM`; called at top of `runTaskOnce`; halts tick + writes lesson on mismatch
 - **Lesson gate tests:** `test/lesson-gate.test.js` covers unresolved/resolved lesson filtering and detector-backed lesson metadata before horizon selection.
 - **Heartbeat writer:** `commands/autopilot.js:2246` (`appendTickSummary`): appends a plain-language tick summary block to today's journal `## Notes`; includes reward score if present; idle ticks include the literal `0 tasks in 0s` so `getIdleTickCount` can still count them
@@ -1958,7 +1958,7 @@ rg "printRoster|registryPayload|canPersistEngineRegistry|speakFirstMinute|--glob
 - `writeLesson()` → `commands/autopilot.js:999-1023`
 - `getVerifyCommand()` → `commands/autopilot.js:1099-1111`
 - `recordTickCommit()` → `commands/autopilot.js:1029-1037`
-- `regressionCheck()` → `commands/autopilot.js:1045-1091`
+- `regressionCheck()` → `commands/autopilot.js:1197`
 - `runTaskOnce()` → `commands/autopilot.js:1781-1995`
 - `getTaskAgeDays()` → `commands/autopilot.js:3680-3697`
 - `askHuman()` → `commands/autopilot.js:428-437`

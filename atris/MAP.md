@@ -57,7 +57,7 @@ checks the refs in both files; `atris doc-health --fix-refs` moves drifted ones.
 | engine default branch and refusal handling | `lib/fleet.js`, `commands/worktree.js`, `commands/land.js`, `lib/codex-flight.js`, `lib/one-lap-validator.js`, `test/engine-dispatch-mainline.test.js`, `test/one-lap-runtime.test.js` | preserve custom SSH commands, bound shared fetch/push/lookup processes, fetch missing live default refs or stop, pin once per flight through sealed review; refusal checks read startup lines before tool transcripts and credit failures take precedence; backup receipts keep the sentence; local landing skips absent origin |
 | engine dispatch without origin | `lib/fleet.js`, `test/engine-dispatch-no-origin.test.js` | pin local HEAD when origin is absent, verify and stop ready with a local merge command; origin and sealed review paths retain their gates |
 | dispatch run history from a linked checkout | `test/roster-runs-worktree.test.js` | remote-landing test creates a local bare origin so it keeps asserting landed and records history in the main checkout |
-| autopilot | `commands/autopilot.js` | one tick plan, do, review |
+| autopilot | `commands/autopilot.js` | one tick plan, do, review; regression cleanup only removes folders created by that invocation |
 | wish intake | `commands/wish.js` | wish to build slices |
 | worktree command | `commands/worktree.js`, `test/worktree-start-retry.test.js` | isolated checkouts, bounded config-lock retries and cleanup of failed starts |
 | brain compile command | `commands/brain.js` | brain artifacts compiled here |
