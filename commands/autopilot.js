@@ -1538,6 +1538,7 @@ function defaultPlanReviewExecutor(prompt, { cwd, timeout = 180000 } = {}) {
   fs.writeFileSync(tmpFile, prompt);
   let runner = null;
   let startedMs = Date.now();
+  let endResource = () => null;
   try {
     runner = buildPlanReviewRunner(tmpFile, cwd, timeout);
     const cmd = runner.command;
@@ -1545,6 +1546,12 @@ function defaultPlanReviewExecutor(prompt, { cwd, timeout = 180000 } = {}) {
     const env = { ...process.env };
     delete env.CLAUDECODE;
     startedMs = Date.now();
+    // Machine memory and load at both ends of the review, so one killed with
+    // SIGKILL says whether the machine was short on memory.
+    endResource = require('../lib/engine-resource').startEngineRun(cwd, {
+      engine: (runner && runner.engineId) || 'runner',
+      task: 'autopilot plan review',
+    });
     const output = execPhaseCommandSync(cmd, {
       cwd,
       encoding: 'utf8',
@@ -1553,11 +1560,15 @@ function defaultPlanReviewExecutor(prompt, { cwd, timeout = 180000 } = {}) {
       maxBuffer: 10 * 1024 * 1024,
       env,
     });
+    endResource();
     recordPhaseRosterRun(cwd, 'plan review', runner, startedMs, { outcome: 'landed', stdout: output || '' });
     return output || '';
   } catch (err) {
+    const end = endResource(err);
     recordPhaseRosterRun(cwd, 'plan review', runner, startedMs, phaseFailureOutcome(err, runner), err);
     if (err.stdout) return err.stdout;
+    // A kill leaves no report of its own, so the error names the likely cause.
+    if (end && end.cause && err instanceof Error) err.message = `${err.message}; ${end.cause}`;
     throw err;
   } finally {
     try { fs.unlinkSync(tmpFile); } catch {}

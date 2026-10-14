@@ -1073,6 +1073,57 @@ test('autopilot names a failed horizon proposal instead of calling the workspace
     fs.rmSync(root, { recursive: true, force: true });
   }
 });
+
+test('plan reviews record paired readings on success, SIGKILL and startup failure', () => {
+  const { execFileSync } = require('node:child_process');
+  const { runPlanReview } = require('../commands/autopilot');
+  const root = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'plan-review-resource-')));
+  const saved = process.env.ATRIS_RUNNER_COMMAND_TEMPLATE;
+  const missing = path.join(os.tmpdir(), `atris-missing-engine-${process.pid}`);
+  const review = (template) => {
+    process.env.ATRIS_RUNNER_COMMAND_TEMPLATE = template;
+    try {
+      return { result: runPlanReview({ cwd: root, context: { task: 'fixture', tags: [] }, planOutput: 'fixture plan' }) };
+    } catch (error) {
+      return { error };
+    }
+  };
+  try {
+    execFileSync('git', ['init', '-q', root]);
+    const ok = review('echo VERDICT: SIGNOFF');
+    const killed = review('sh -c "kill -KILL $$"');
+    const failed = review(missing);
+    assert.equal(ok.error, undefined);
+    assert.ok(ok.result.signers.includes('validator'));
+    const lines = fs.readFileSync(path.join(root, RESOURCE_LOG), 'utf8').trim().split('\n').map(JSON.parse);
+    assert.deepEqual(lines.map((line) => line.phase), ['start', 'end', 'start', 'end', 'start', 'end']);
+    for (let i = 0; i < lines.length; i += 2) {
+      assert.match(lines[i].run_id, /^[0-9a-f-]{36}$/);
+      assert.equal(lines[i + 1].run_id, lines[i].run_id);
+      assert.equal(lines[i].task, 'autopilot plan review');
+      assert.ok(Array.isArray(lines[i + 1].load));
+      assert.ok(Number.isInteger(lines[i + 1].duration_ms));
+    }
+    assert.notEqual(lines[0].run_id, lines[2].run_id);
+    assert.equal(lines[1].signal, undefined);
+    assert.equal(lines[1].error, undefined);
+    assert.equal(lines[3].signal, 'SIGKILL');
+    assert.match(lines[3].cause, /^killed \((machine memory low|cause unknown)\)$/);
+    // The thrown review error names the cause, and stays the original error.
+    assert.ok(killed.error.message.includes(lines[3].cause), killed.error.message);
+    assert.equal(killed.error.signal, 'SIGKILL');
+    assert.equal(lines[5].signal, undefined);
+    assert.match(lines[5].error, /not found|No such file/i);
+    assert.doesNotMatch(failed.error.message, /killed \(/);
+    console.log(`plan review readings: ${JSON.stringify([lines[3], lines[5]])}`);
+    console.log(`plan review kill message: ${killed.error.message}`);
+  } finally {
+    if (saved === undefined) delete process.env.ATRIS_RUNNER_COMMAND_TEMPLATE;
+    else process.env.ATRIS_RUNNER_COMMAND_TEMPLATE = saved;
+    fs.rmSync(root, { recursive: true, force: true });
+  }
+});
+
 test('a kill sent by the run time limit names the time limit even with memory low', () => {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'engine-resource-timeout-'));
   try {
