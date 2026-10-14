@@ -566,7 +566,16 @@ function memberLatestMission(name, missionMap = memberRunMissionMap()) {
 
 function memberLiveMission(name, missionMap = memberRunMissionMap()) {
   return memberOwnedMissions(name, missionMap)
-    .find((mission) => MEMBER_LIVE_MISSION_STATUSES.has(String(mission?.status || '').toLowerCase())) || null;
+    .find((mission) => {
+      if (!MEMBER_LIVE_MISSION_STATUSES.has(String(mission?.status || '').toLowerCase())) return false;
+      // A closed window can leave a running row behind. Only a known dead
+      // process proves it is free; missing process records still hold it.
+      try {
+        const root = mission.worktree_root || mission.worktree?.path || process.cwd();
+        const health = require('./mission').missionDriverHealth(mission, root);
+        return !health.pid || health.alive;
+      } catch { return true; }
+    }) || null;
 }
 
 function missionShortName(mission, max = 36) {
@@ -10501,10 +10510,10 @@ function memberGoTask(owner, root, { claim, requireCheck = false }) {
     const job = memberGoJob(owner, root);
     const workspaceRoot = taskDb.workspaceRoot(root);
     if (claim) {
-      const got = picker.claimTaskForMember(taskDb, db, { workspaceRoot, member: owner, job, requireCheck });
+      const got = picker.claimTaskForMember(taskDb, db, { workspaceRoot, member: owner, job, requireCheck, recoverClaimed: true });
       return got ? { ...got, job } : null;
     }
-    const task = picker.pickTaskForMember(taskDb, db, { workspaceRoot, job, requireCheck });
+    const task = picker.pickTaskForMember(taskDb, db, { workspaceRoot, member: owner, job, requireCheck, recoverClaimed: true });
     return task ? { task, objective: picker.taskObjective(task), job } : null;
   } catch (error) {
     console.error(`could not take a task from the list: ${String(error && error.message || error).split('\n')[0]}`);
@@ -10637,7 +10646,7 @@ async function memberSteerOrDispatchWith({ pullTask = false } = {}, rawArgs = []
   const missionSummary = memberMissionSummary(owner, missionMap, root);
   // A human or odd-typed member never takes a task: it would be claimed and
   // then stranded when the run refuses the member.
-  const pulled = pullTask && !prompt && !missionSummary.live && !memberRefusalFor(targetMember, paths.memberFile)
+  const pulled = pullTask && !prompt && !missionSummary.live_mission && !memberRefusalFor(targetMember, paths.memberFile)
     ? memberGoTask(owner, root, { claim: !dryRun, requireCheck: needsCheck })
     : null;
   if (needsCheck && !pulled) {
@@ -10836,7 +10845,7 @@ function memberUpPick(root, name, taken) {
     const { fittingTasks } = require('../lib/member-task-pick');
     const db = taskDb.open();
     const job = memberGoJob(name, root);
-    return fittingTasks(taskDb, db, { workspaceRoot: taskDb.workspaceRoot(root), job, requireCheck: true })
+    return fittingTasks(taskDb, db, { workspaceRoot: taskDb.workspaceRoot(root), member: name, job, requireCheck: true, recoverClaimed: true })
       .find((task) => !taken.has(task.id)) || null;
   } catch {
     return null;
@@ -10905,6 +10914,7 @@ async function memberUp(...args) {
     console.log('Keeps the team working: every minute, starts each free member that has a fitting task with a runnable check.');
     console.log('A member with no such task stays idle; it never runs its own goal instead.');
     console.log('The longer a member stays idle, the less often it is checked: 5, 10, 20, then every 30 minutes.');
+    console.log('A working member with no new step for 20 minutes is called out as stuck, once until it moves again.');
     console.log('--only limits it to those members. Same as atris member wake 5 or atris member wake a b.');
     console.log('Ctrl-C or atris member sleep --all ends it. Runs it started keep going.');
     return;
