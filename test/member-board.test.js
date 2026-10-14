@@ -157,6 +157,9 @@ test('the runner writes why a run failed and the board reads it back', () => {
     assert.match(narrow[1], /^locked\s+done failed\s+signed out\s+1m ago\s+sign in to claude$/, 'the fix takes the job cell');
     assert.match(narrow[2], /^broke\s+done failed\s+engine error\s+1m ago\s+job$/, 'other rows keep their job');
     assert.ok(narrow.every((l) => l.length <= 60));
+    const tight = renderBoard([{ ...by.locked, engine: 'claude' }, by.broke], dir, 0, 50).split('\n');
+    assert.match(tight[1], /^locked\s+done failed\s+signed out\s+1m ago\s+sign in$/, 'too tight for the engine name: just "sign in", not cut');
+    assert.ok(tight.every((l) => l.length <= 50));
     for (const name of Object.keys(ends).filter((n) => n !== 'good')) assert.equal(by[name].state, 'done failed', name);
   } finally {
     fs.rmSync(dir, { recursive: true, force: true });
