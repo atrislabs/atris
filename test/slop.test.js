@@ -2670,6 +2670,23 @@ test('fix reads a line that opens with a box-drawing corner as a diagram line', 
   ]);
 });
 
+test('fix reads a branch nested under an upright bar as a diagram line', () => {
+  // the bar hid the branch: "\u2502   \u251c, step", "\u2502   \u2514 (done) ship"
+  const file = tmpFile('nested-branch.md', [
+    '\u2502   \u251c \u2014 step',
+    '\u2502   \u2514 \u2014\u2014 done \u2014\u2014 ship',
+    '\u2502   \u251c\u2500\u2500 people/      \u2014 one page',
+    '\u2502 He left \u2014 for good',
+  ].join('\n\n'));
+  const { changes } = applyFixes([file], RULES, { write: false });
+  assert.deepEqual(changes.map((c) => c.after), [
+    '\u2502   \u251c - step',
+    '\u2502   \u2514 -- done -- ship',
+    '\u2502   \u251c\u2500\u2500 people/        one page',
+    '\u2502 He left, for good',
+  ]);
+});
+
 test('fix keeps a journal heading that ends in a time readable for its hour', () => {
   // analytics reads the hour after a dash or a spaced hyphen at the end of a
   // heading; the fix wrote "### Watch: 19:05", which hides it, and glued
