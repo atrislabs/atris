@@ -1091,6 +1091,25 @@ test('the narrowest footers say just the hidden count before cutting a word', ()
   assert.equal(renderBoard(rows, '/progress', 0, 24, 2).split('\n').pop(), '5 hidden (1 failed, ...)');
 });
 
+test('a footer drops an earlier failure reason before the reason a run is done failed', () => {
+  const base = { alive: null, engine: '', running_for: '', job: 'b', step: 's', ago: '1m ago' };
+  const rows = [
+    { ...base, member: 'f1', state: 'done failed', last_result: 'failed', last_result_reason: 'timed out', last_result_ago: '1m ago' },
+    { ...base, member: 'h1', state: 'stopped', last_result: 'stopped', last_result_reason: '', last_result_ago: '7m ago' },
+    { ...base, member: 'g1', state: 'stopped', no_result: true, last_result: '', last_result_reason: '', last_result_ago: '' },
+    { ...base, member: 'w1', state: 'working', last_result: 'failed', last_result_reason: 'engine error', last_result_ago: '14m ago' },
+    { ...base, member: 'w2', state: 'working', last_result: '', last_result_reason: '', last_result_ago: '' },
+  ];
+  const footer = (width) => renderBoard(rows, '/progress', 0, width, 2).split('\n').pop();
+  // Both used to drop "timed out" at 73 to 86 columns.
+  assert.equal(footer(73), '5 hidden (1 failed, timed out, 1 stopped, 1 no result, 1 earlier failure)');
+  assert.equal(footer(86), '5 hidden (1 failed, timed out, 1 stopped, 1 no result, 1 earlier failure, w2 working)');
+  assert.equal(footer(87), '5 hidden (1 failed, timed out, 1 stopped, 1 no result, 1 earlier failure, engine error)');
+  for (let width = 18; width <= 120; width++) {
+    if (footer(width).includes('engine error')) assert.ok(footer(width).includes('timed out'), `${width}: ${footer(width)}`);
+  }
+});
+
 test('narrow footers drop whole mixed counts from the end instead of cutting one', () => {
   const dir = fakeDir({
     a: [`${at(20)} m-1 started: [pid ${process.pid} engine claude] check the board`],
