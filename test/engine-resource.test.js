@@ -1316,12 +1316,17 @@ test('every engine started through a runner or profile variable records its run 
       while (!ENGINE_SOURCE.test(source)) {
         const alias = /^([A-Za-z_$][\w$]*)(?:\.[\w$]+)*$/.exec(source.trim());
         if (!alias) break;
-        const declaration = [...code.slice(scopeStart, declarationEnd).matchAll(new RegExp(`\\b(?:const|let|var)\\s+${alias[1].replace(/\$/g, '\\$')}\\s*=\\s*([^;\\n]*)`, 'g'))].pop();
+        // Captured variables remain visible until a matching parameter hides them.
+        const shadowStart = Math.max(scopeStart, ...definitionSpans(code).filter(([open, close]) => open <= declarationEnd && declarationEnd < close).filter(([open]) => {
+          const header = /^(?:async\s+)?function\s+[\w$]+\s*\(([^)]*)\)|^(?:const|let|var)\s+[\w$]+\s*=\s*(?:async\s*)?(?:function\s*)?\(([^)]*)\)/.exec(code.slice(open).trimStart());
+          return header && (header[1] ?? header[2]).split(',').some((name) => name.trim() === alias[1]);
+        }).map(([open]) => open));
+        const declaration = [...code.slice(shadowStart, declarationEnd).matchAll(new RegExp(`\\b(?:const|let|var)\\s+${alias[1].replace(/\$/g, '\\$')}\\s*=\\s*([^;\\n]*)`, 'g'))].pop();
         if (!declaration) break;
         source = declaration[1];
         // Only earlier declarations can supply this alias, which also makes
         // a circular alias chain terminate without a separate depth limit.
-        declarationEnd = scopeStart + declaration.index;
+        declarationEnd = shadowStart + declaration.index;
       }
       return source.trim();
     };
@@ -1432,6 +1437,19 @@ test('every engine started through a runner or profile variable records its run 
   assert.deepStrictEqual(planted("function outer() {\n  function helper() {\n    startEngineRun(root);\n    spawn(resolveClaudeRunnerBin(), args);\n  }\n}\n"), [], 'a recorded launch inside a helper stays covered');
   assert.deepStrictEqual(planted("function outer() {\n  startEngineRun(root);\n  function helper() {\n    spawn(resolveClaudeRunnerBin(), args);\n  }\n}\n"), ['commands/planted.js:4 resolveClaudeRunnerBin()'], 'a parent recording does not cover a launch inside its helper');
   assert.deepStrictEqual(planted("function outer() {\n  startEngineRun(root);\n  const helper = () => {\n    const runner = resolveClaudeRunnerBin();\n    spawn(runner, args);\n  };\n}\n"), ['commands/planted.js:5 runner']);
+  // A helper parameter hides an outer declaration with the same name.
+  for (const arrow of [false, true]) {
+    const helper = arrow ? 'const launch = (runner) =>' : 'function launch(runner)';
+    const outer = (runner, body, argument) => `function outer() {\n  const runner = ${runner};\n  ${helper} {\n${body}\n  }${arrow ? ';' : ''}\n  launch(${argument});\n}\n`;
+    assert.deepStrictEqual(planted(`function outer() {\n  const runner = resolveClaudeRunnerBin();\n  const program = runner;\n  ${helper} {\n    spawnSync(program, args);\n  }${arrow ? ';' : ''}\n  launch(findExecutable('git'));\n}\n`), ['commands/planted.js:5 program'], 'a captured alias resolves where it was declared');
+    const captured = arrow ? 'const launch = () =>' : 'function launch()';
+    assert.deepStrictEqual(planted(`function outer() {\n  const runner = resolveClaudeRunnerBin();\n  ${captured} {\n    spawnSync(runner, args);\n  }${arrow ? ';' : ''}\n  launch();\n}\n`), ['commands/planted.js:4 runner'], 'a helper without a matching parameter still captures the outer runner');
+    assert.deepStrictEqual(planted(outer("findExecutable('git')", '    spawnSync(runner, args);', 'resolveClaudeRunnerBin()')), ['commands/planted.js:4 runner']);
+    assert.deepStrictEqual(planted(outer('resolveClaudeRunnerBin()', '    spawnSync(runner, args);', "findExecutable('git')")), [], 'the outer engine is hidden by the helper parameter');
+    assert.deepStrictEqual(planted(outer("findExecutable('git')", '    const program = runner.bin;\n    spawnSync(program, args);', 'resolveEngineProfile(engine)')), ['commands/planted.js:5 program']);
+    assert.deepStrictEqual(planted(outer("findExecutable('git')", '    startEngineRun(root);\n    spawnSync(runner, args);', 'resolveClaudeRunnerBin()')), []);
+    assert.deepStrictEqual(planted(outer("findExecutable('git')", "    spawnSync(runner, ['--help']);", 'resolveClaudeRunnerBin()')), []);
+  }
   // A variable declared in another function is not this launch's program.
   assert.deepStrictEqual(planted("function a() {\n  const command = buildEngineCommand(engine);\n}\nfunction b(command) {\n  spawnSync(command, { shell: true });\n}\n"), []);
   // A local wrapper that records the run covers the launch below it; a
