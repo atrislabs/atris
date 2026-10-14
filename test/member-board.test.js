@@ -153,9 +153,9 @@ test('the runner writes why a run failed and the board reads it back', () => {
     assert.doesNotMatch(busy, /sign in/, 'a busy row is past it');
     assert.match(renderBoard([{ ...by.locked, engine: 'codex' }], dir), /sign in to codex, then run it again$/m);
     const narrow = renderBoard([{ ...by.locked, engine: 'claude' }, by.broke], dir, 0, 60).split('\n');
-    assert.equal(narrow[0].trimEnd().split(/\s{2,}/).pop(), 'job', 'too narrow: last step is gone');
-    assert.match(narrow[1], /^locked\s+done failed\s+signed out\s+1m ago\s+sign in to claude$/, 'the fix takes the job cell');
-    assert.match(narrow[2], /^broke\s+done failed\s+engine error\s+1m ago\s+job$/, 'other rows keep their job');
+    assert.equal(narrow[0].trimEnd().split(/\s{2,}/).pop(), 'last step', '"failed" for "done failed" brings the last step back');
+    assert.match(narrow[1], /^locked\s+failed\s+signed out\s+1m ago\s+job\s+sign in to claude$/, 'the fix keeps the last step');
+    assert.match(narrow[2], /^broke\s+failed\s+engine error\s+1m ago\s+job\s+-$/, 'other rows keep their job');
     assert.ok(narrow.every((l) => l.length <= 60));
     const tight = renderBoard([{ ...by.locked, engine: 'claude' }, by.broke], dir, 0, 50).split('\n');
     assert.match(tight[1], /^locked\s+done failed\s+signed out\s+1m ago\s+sign in$/, 'too tight for the engine name: just "sign in", not cut');
@@ -244,28 +244,33 @@ test('a job that can read whole gets its room before the last step', () => {
   }
 });
 
-test('a hidden last step comes back when the engine word is the only thing in the way', () => {
+test('a hidden last step comes back with the cheapest change that makes room', () => {
   const dir = fakeDir({
     builder: [`${at(180)} m-1 started: fix login`, `${at(60)} m-1 editing lib/auth/session.js to refresh tokens`],
     editor: [`${at(2400)} m-3 started: tidy docs`, `${at(2100)} m-3 running: node --test`, `${at(1980)} m-3 finished: failed (bad exit 2)`],
   });
   try {
     const rows = readBoard({ dir, now: NOW }).map((r) => (r.member === 'builder' ? { ...r, alive: true, engine: 'codex', running_for: '3m' } : r));
-    const board = renderBoard(rows, dir, 0, 72);
-    assert.ok(board.split('\n').every((line) => line.length <= 72), board);
-    assert.match(board, /^member\s+state\s+last result\s+run\s+ago\s+job\s+last step$/m, board);
-    assert.match(board, /^builder\s+working\s+-\s+3m\s+1m ago\s+fix login\s+editing l\.\.\.$/m, board);
-    const long = rows.map((r) => (r.member === 'builder' ? { ...r, job: 'fix the login flow' } : r));
-    assert.match(renderBoard(long, dir, 0, 72), /^builder\s+working\s+-\s+codex 3m\s+1m ago\s+fix the login flow$/m,
-      'a job that would be cut keeps the engine word and no last step');
-    const tight = renderBoard(rows, dir, 0, 68);
-    assert.ok(tight.split('\n').every((line) => line.length <= 68), tight);
-    assert.match(tight, /^member\s+state\s+result\s+run\s+ago\s+job\s+last step$/m, 'the heading gives way too when the engine word is not enough');
+    const board = (list, w) => {
+      const out = renderBoard(list, dir, 0, w);
+      assert.ok(out.split('\n').every((line) => line.length <= w), out);
+      return out;
+    };
+    const wide = board(rows, 72);
+    assert.match(wide, /^member\s+state\s+last result\s+run\s+ago\s+job\s+last step$/m, wide);
+    assert.match(wide, /^builder\s+working\s+-\s+codex 3m\s+1m ago\s+fix login\s+editing \.\.\.$/m, 'first "failed" for "done failed", keeping the engine');
+    assert.match(wide, /^editor\s+failed\s+bad exit 2\s/m, wide);
+    assert.match(board(rows, 68), /^builder\s+working\s+-\s+3m\s+1m ago\s+fix login\s+editing l\.\.\.$/m, 'then the engine word, keeping the heading');
+    const tight = board(rows, 64);
+    assert.match(tight, /^member\s+state\s+result\s+run\s+ago\s+job\s+last step$/m, 'then the heading too');
     assert.match(tight, /^builder\s+working\s+-\s+3m\s+1m ago\s+fix login\s+editin\.\.\.$/m, tight);
-    assert.match(renderBoard(rows, dir, 0, 70), /^member\s+state\s+last result\s+run\s/m, 'the heading stays whole when the engine word is enough');
+    const long = rows.map((r) => (r.member === 'builder' ? { ...r, job: 'fix the login flow' } : r));
+    assert.match(board(long, 72), /^builder\s+working\s+-\s+codex 3m\s+1m ago\s+fix the login flow$/m,
+      'a job that would be cut keeps every word and no last step');
     const done = rows.filter((r) => r.member !== 'builder');
-    assert.match(renderBoard(done, dir, 0, 62), /^member\s+state\s+result\s+ago\s+job\s+last step$/m, 'with no live run, the heading alone brings it back');
-    assert.match(renderBoard(done, dir, 0, 61), /^member\s+state\s+last result\s+ago\s+job$/m, 'no room even then: the heading stays whole');
+    assert.match(board(done, 58), /^member\s+state\s+last result\s+ago\s+job\s+last step$/m, 'with no live run, the state alone can bring it back');
+    assert.match(board(done, 57), /^member\s+state\s+result\s+ago\s+job\s+last step$/m, 'then the heading');
+    assert.match(board(done, 56), /^editor\s+done failed\s+bad exit 2\s+\S+ ago\s+tidy docs$/m, 'no room even then: every word stays');
   } finally {
     fs.rmSync(dir, { recursive: true, force: true });
   }
