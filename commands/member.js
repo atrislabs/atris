@@ -11129,6 +11129,8 @@ async function memberCommand(subcommand, ...args) {
       return memberArchive(args[0]);
     case 'purge-archived':
       return memberPurgeArchived(...args);
+    case 'tidy':
+      return require('../lib/member-tidy').memberTidyCommand(...args);
     case undefined:
     case '--json':
       if (fs.existsSync(path.join(process.cwd(), 'atris', 'team'))) {
@@ -11155,6 +11157,7 @@ async function memberCommand(subcommand, ...args) {
       console.log('  sleep [name|--all]  Park active member loops so your team rests until woken');
       console.log('  room [--json]       Render the visual Team Room and desktop UI payload');
       console.log('  board [--watch]     One screen of every member: job, last step, working/quiet/done');
+      console.log('  tidy [--dry-run]    Put away member copies of this repo: merged ones go, old ones are backed up first');
       console.log('  create <name>       Scaffold a new team member (MEMBER.md + dirs) [--push]');
       console.log('  install <slug> [--update]  Install missing files, or refresh template skills');
       console.log('  chat <name> "..."   Send a message to this member\'s desk in Atris Desktop');
