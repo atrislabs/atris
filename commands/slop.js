@@ -403,6 +403,9 @@ function fixEmDash(s, { endsBlock = false, startsBlock = false, spans = [] } = {
   // so it takes a colon even past a label colon: "`lib/a.js:12`: `runTick`",
   // which is also what the map healer reads the name from
   s = s.replace(/\uE000(\d+)\uE001[ \t]?\u2014[ \t]*(?=\uE000\d+\uE001)/g, (m, n) => (FILE_REF.test(spans[n] || '') ? `\uE000${n}\uE001: ` : m));
+  // a dash touching an arrowhead is the arrow's shaft, so it turns into a
+  // hyphen of the same width: "RN -> HUC", "29->29", "a <-> b", never "RN: > HUC"
+  s = s.replace(/\u2014+(?=>)|(?<=<)\u2014+/g, (m) => '-'.repeat(m.length));
   // a table cell that holds only a dash means "nothing here"; a hyphen keeps
   // the cell instead of turning it into a stray comma
   if (/^\s*\|/.test(s)) s = s.replace(/(\|\s*)\u2014(\s*)(?=\||$)/g, '$1-$2');

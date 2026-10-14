@@ -1933,6 +1933,22 @@ test('fix gives a dash before "(a)" or "(1)" a colon, since a list follows', () 
   ]);
 });
 
+test('fix turns a dash that touches an arrowhead into the arrow\'s shaft', () => {
+  // a dash right before ">" or after "<" draws an arrow; the fix split it
+  // into "updated RN: > HUC" and a table cell "29: >29"
+  const file = tmpFile('arrows.md', [
+    'Updated RN \u2014> HUC on 1/2 (Seed \u2014> Series C).',
+    '| 29\u2014>29 | 5\u2014>8 |',
+    'Sync runs both ways: app <\u2014\u2014> server.',
+  ].join('\n\n'));
+  const { changes } = applyFixes([file], RULES, { write: false });
+  assert.deepEqual(changes.map((c) => c.after), [
+    'Updated RN -> HUC on 1/2 (Seed -> Series C).',
+    '| 29->29 | 5->8 |',
+    'Sync runs both ways: app <--> server.',
+  ]);
+});
+
 test('fix keeps a journal heading that ends in a time readable for its hour', () => {
   // analytics reads the hour after a dash or a spaced hyphen at the end of a
   // heading; the fix wrote "### Watch: 19:05", which hides it, and glued
