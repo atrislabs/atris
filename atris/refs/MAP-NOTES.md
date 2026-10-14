@@ -2361,3 +2361,5 @@ npm publish
 ## Incidental XP wording review fixture setup
 
 - `test/commands.test.js:12725` checks that incidental XP wording does not produce an AgentXP result. Real-store creation at `test/commands.test.js:12736` saves one setup launch and closes in finally; claim, ready, show and every summary, landing, proof and output assertion remain on the CLI.
+
+- `test/commands.test.js:12785` checks default landing output for unmapped titles. Real-store creation at `test/commands.test.js:12796` saves one setup launch and closes in finally; claim, ready, show and every landing assertion remain on the CLI.

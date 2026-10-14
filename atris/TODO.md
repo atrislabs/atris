@@ -19,7 +19,7 @@ Details for any task: atris task show <ID>
 
 ## In Progress
 
-(Empty)
+- **[AIC-44]** Remove unmapped landing setup launch · auto-improver
 
 ## Review
 
