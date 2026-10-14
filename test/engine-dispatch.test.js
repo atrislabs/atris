@@ -1457,6 +1457,59 @@ test('thrown and rejected engine runners save end resources and preserve the ori
   }
 });
 
+test('an engine that cannot start keeps its startup error in the end resources', async (t) => {
+  const { execFile, execFileSync, spawnSync } = require('node:child_process');
+  const missing = path.join(os.tmpdir(), `atris-missing-engine-${process.pid}`);
+  const shapes = {
+    thrown: () => execFileSync(missing, [], { stdio: 'pipe' }),
+    rejected: () => require('node:util').promisify(execFile)(missing, []),
+    returned: () => spawnSync(missing, [], { encoding: 'utf8' }),
+  };
+  for (const [shape, start] of Object.entries(shapes)) {
+    await t.test(`${shape} startup failure`, async () => {
+      const root = makeTempRoot();
+      execFileSync('git', ['init', '-q', root]);
+      const worktree = fs.mkdtempSync(path.join(os.tmpdir(), 'engine-dispatch-startup-'));
+      let original;
+      try {
+        try {
+          const run = await fleet.dispatchToEngine({
+            task: TASK, engine: 'claude', worktreePath: worktree, root, skipBriefCapture: true,
+            runner: () => {
+              try {
+                const result = start();
+                if (result && typeof result.then === 'function') return result.catch((error) => { original = error; throw error; });
+                original = result.error;
+                return result;
+              } catch (error) {
+                original = error;
+                throw error;
+              }
+            },
+          });
+          assert.equal(shape, 'returned', `${shape}: dispatch must surface the failure`);
+          assert.equal(run.exitCode, null);
+        } catch (error) {
+          assert.strictEqual(error, original, `${shape}: the original error must be rethrown`);
+        }
+        assert.equal(original && original.code, 'ENOENT', `${shape}: the engine must really fail to start`);
+        const lines = fs.readFileSync(path.join(root, '.atris/state/engine-resource.jsonl'), 'utf8')
+          .trim().split('\n').map(JSON.parse);
+        assert.deepEqual(lines.map((line) => line.phase), ['start', 'end']);
+        const [first, end] = lines;
+        assert.equal(end.run_id, first.run_id);
+        assert.strictEqual(first.error, undefined);
+        assert.strictEqual(end.error, original.message, `${shape}: the end reading must keep the startup error`);
+        assert.ok(Array.isArray(end.load));
+        console.log(`${shape} startup failure end reading: ${JSON.stringify(end)}`);
+      } finally {
+        fs.rmSync(root, { recursive: true, force: true });
+        fs.rmSync(worktree, { recursive: true, force: true });
+      }
+    });
+  }
+});
+
 test('a thrown child timeout records the known time limit cause before rethrowing', () => {
   const { execFileSync } = require('node:child_process');
   const root = makeTempRoot();
