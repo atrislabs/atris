@@ -12,6 +12,7 @@ const { spawn, spawnSync } = require('node:child_process');
 const { reap } = require('../commands/land');
 const { cleanupWorktrees } = require('../commands/worktree');
 const { regressionCheck } = require('../commands/autopilot');
+const { locksAfterRefusal } = require('../lib/git-activity');
 
 function git(cwd, args) {
   const result = spawnSync('git', args, { cwd, encoding: 'utf8' });
@@ -44,6 +45,30 @@ function removalLines(repo) {
   if (!fs.existsSync(file)) return [];
   return fs.readFileSync(file, 'utf8').trim().split('\n').map((line) => JSON.parse(line));
 }
+
+test('after a refusal, the shared check names locks in place and after the folder moves', () => {
+  const { base, repo, wt } = landedWorktree();
+  try {
+    assert.deepEqual(locksAfterRefusal(repo, wt), { missing: false, locks: [], reason: null });
+    const privateDir = git(wt, ['rev-parse', '--absolute-git-dir']);
+    const lock = path.join(privateDir, 'index.lock');
+    fs.writeFileSync(lock, 'held\n');
+    const aged = new Date(Date.now() - 3600000);
+    fs.utimesSync(lock, aged, aged);
+    const present = locksAfterRefusal(repo, wt);
+    assert.equal(present.missing, false);
+    assert.match(present.reason, new RegExp(`^git locks: ${lock.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')} \\(36\\d\\ds old\\)$`));
+    fs.renameSync(wt, path.join(base, 'moved'));
+    const moved = locksAfterRefusal(repo, wt);
+    assert.equal(moved.missing, true);
+    assert.equal(moved.locks.length, 1);
+    assert.ok(moved.reason.startsWith(`folder is missing; git lock: ${lock} (`), moved.reason);
+    fs.unlinkSync(lock);
+    assert.deepEqual(locksAfterRefusal(repo, wt), { missing: true, locks: [], reason: 'folder is missing' });
+  } finally {
+    fs.rmSync(base, { recursive: true, force: true });
+  }
+});
 
 test('real cleanup names missing-folder ordinary locks without naming neighboring private locks', () => {
   const proof = path.resolve(__dirname, '../atris/receipts/2026-10-14-missing-ordinary-lock-check.js');

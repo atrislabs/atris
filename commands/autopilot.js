@@ -27,7 +27,7 @@ const {
 } = require('../lib/scorecard');
 const { REWARD_CONFIG, REWARD_CHECKSUM } = require('../lib/reward-config');
 const { ownerIdentity } = require('../utils/owner-identity');
-const { inspectGitActivity, missingFolderLock } = require('../lib/git-activity');
+const { inspectGitActivity, missingFolderLock, locksAfterRefusal } = require('../lib/git-activity');
 
 const pkg = require('../package.json');
 
@@ -1252,12 +1252,9 @@ function regressionCheck(cwd) {
             recordWorktreeRemoval(cwd, { path: worktreePath, by: 'atris autopilot', reason: 'regression_check_finished' });
             cleanup = { path: worktreePath, removed: true };
           } else {
-            // The folder can also move while git refuses; its locks still apply.
-            const missingNow = !fs.existsSync(worktreePath);
-            const retained = missingNow ? missingFolderLock(cwd, worktreePath) : inspectGitActivity(worktreePath);
-            const reason = retained.locks.length ? retained.reason
-              : missingNow ? 'folder is missing'
-              : String(removed.error?.message || removed.stderr || removed.stdout || 'could not remove folder').trim();
+            const retained = locksAfterRefusal(cwd, worktreePath);
+            const reason = retained.reason
+              || String(removed.error?.message || removed.stderr || removed.stdout || 'could not remove folder').trim();
             cleanup = { path: worktreePath, removed: false, reason };
           }
         }

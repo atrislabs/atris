@@ -1189,7 +1189,7 @@ rg "printRoster|registryPayload|canPersistEngineRegistry|speakFirstMinute|--glob
 - **Prompt builder:** `commands/autopilot.js:678` (buildPrompt function; SHARED_CHECKOUT_GIT_CONTRACT at :500 injects the worktree/destructive-git rule into default + self-heal do prompts): adapts prompts per task kind, including strategy-specific benchmark runs
 - **Autopilot glass log:** `commands/autopilot.js:702` (`buildAutopilotGlassLog`, `writeAutopilotGlassLog`): successful ticks write `atris/logs/autopilot/<timestamp>-<task>.md` with Plan, Plan Review, Action, Result, and Proof sections. Regression: `test/autopilot-glass-logging.test.js`
 - **Single-task runner:** `commands/autopilot.js:1976` (`runTaskOnce`): guards against missing Verify fields (halts tick), runs judge integrity check, then plan/do/review, always runs verify command (decoupled from review proxy), success requires verify ran AND passed, returns `verifyCmd`, `verifyRan`, `verifyPass`, and `glassLogPath`
-- **Verify executor helper:** `commands/autopilot.js:1285-1297` (`getVerifyCommand`): reads TODO.md across backlog/in-progress/completed tasks, extracts the verify field; returns `{ cmd, explicit }`: no default, tasks without Verify halt
+- **Verify executor helper:** `commands/autopilot.js:1282-1294` (`getVerifyCommand`): reads TODO.md across backlog/in-progress/completed tasks, extracts the verify field; returns `{ cmd, explicit }`: no default, tasks without Verify halt
 - **Lesson writer helper:** `commands/autopilot.js:1151-1175` (`writeLesson`): appends lesson line to atris/lessons.md in format `- **[YYYY-MM-DD] slug**: pass/fail: explanation`
 - **Phase executor:** `commands/autopilot.js:488` (executePhaseDetailed function): runs `buildRunnerCommand()` (default Claude-compatible `claude -p`, configurable with `ATRIS_RUNNER_*` env or runner flags)
 - **Approval gate:** `commands/autopilot.js:410` (askApproval function): enter/skip/quit
@@ -2297,7 +2297,7 @@ npm publish
 
 ## Old Git-lock cleanup audit
 - `atris/receipts/2026-10-14-folder-lock-preview.js:1`: real CLI preview using an old lock, without removing a folder; output and required check in the matching receipt.
-- `lib/member-tidy.js:160` (`missingFolderLock`): a locked copy gone from disk names its lock file and age; `lib/member-tidy.js:200` (`inspectGitActivity`): shared activity check before preview or removal; `lib/member-tidy.js:223` (`recordWorktreeRemoval`): successful removal record; `lib/git-activity.js:24`: private and shared lock paths and ages; `commands/member.js:11356`: actual tidy CLI handler.
+- `lib/member-tidy.js:160` (`missingFolderLock`): a locked copy gone from disk names its lock file and age; `lib/member-tidy.js:200` (`inspectGitActivity`): shared activity check before preview or removal; `lib/member-tidy.js:225` (`recordWorktreeRemoval`): successful removal record; `lib/git-activity.js:24`: private and shared lock paths and ages; `commands/member.js:11356`: actual tidy CLI handler.
 
 ## Fleet review-folder cleanup audit
 
@@ -2346,6 +2346,6 @@ npm publish
 
 - `lib/member-tidy.js:220`: Git refusal triggers a fresh activity check and appends retained lock paths and ages to the original error. The seventh timing case in `atris/receipts/2026-10-14-tidy-vanishing-folder-check.js:25` adds three real locks at removal, checks distinct ages, and proves files, branch, and registration survive without a removal record. If the folder is gone after the refusal, the check reads the copy's metadata through the main repo and says the folder is missing; the eighth case moves the folder during the refused removal and proves the same three locks and ages are named.
 
-- Automatic cleanup refusal: `commands/autopilot.js:1255` rescans retained Git locks after removal fails, and reports a folder that moved during the refusal as missing with its locks through `missingFolderLock()` (`commands/autopilot.js:1257`); `atris/receipts/2026-10-14-autopilot-folder-check.js:1` reproduces real Git refusal after three late locks with distinct ages, with the folder in place and moved; `test/worktree-removal-guard.test.js:62` reruns the timing proof.
+- Automatic cleanup refusal: `commands/autopilot.js:1255` rescans retained Git locks after removal fails, and reports a folder that moved during the refusal as missing with its locks through the shared `locksAfterRefusal()` (`lib/git-activity.js:70`), which tidy also uses at `lib/member-tidy.js:221`; `atris/receipts/2026-10-14-autopilot-folder-check.js:1` reproduces real Git refusal after three late locks with distinct ages, with the folder in place and moved; `test/worktree-removal-guard.test.js:62` reruns the timing proof.
 
 - Cleanup review runtime: `lib/task-proof.js:157` starts the proof in a login shell; `bin/atris.js:12` checks the minimum Node version. Reproduced shell selection and real cleanup output: `atris/receipts/2026-10-14-cleanup-review-runtime.md`.
