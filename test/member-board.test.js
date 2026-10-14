@@ -300,7 +300,7 @@ test('board names an earlier run whose process is still running', () => {
   assert.deepEqual(nopid.earlier_alive, [], 'no process id to check');
   const stopped = memberRow('builder', `2026-10-14T12:50:00Z m-1 started: [pid ${process.pid} engine claude] build\n2026-10-14T12:55:00Z m-1 finished: ok\n2026-10-14T12:59:00Z m-2 started: next\n`, now);
   assert.deepEqual(stopped.earlier_alive, [], 'it said how it ended');
-  assert.match(renderBoard([twice, nopid], '/x'), new RegExp(`^still running from an earlier run: builder \\(pid ${process.pid}\\)$`, 'm'));
+  assert.match(renderBoard([twice, nopid], '/x'), new RegExp(`^still running from an earlier run: builder \\(pid ${process.pid}\\); atris member stop ends only the newest run$`, 'm'));
   assert.doesNotMatch(renderBoard([nopid], '/x'), /^still running/m);
 });
 
@@ -1025,6 +1025,30 @@ test('atris member board --json --follow says how the last run ended when a new 
   } finally {
     child.kill('SIGINT');
     await new Promise((r) => child.once('exit', r));
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test('member stop ends only the newest run, and the board still names the older one', async () => {
+  const older = spawnSleeper("console.log('up'); setInterval(() => {}, 1000)");
+  const newer = spawnSleeper("console.log('up'); setInterval(() => {}, 1000)");
+  await Promise.all([older.ready, newer.ready]);
+  const dir = fakeDir({ builder: [
+    `${isoAgo(120)} m-1 started: [pid ${older.child.pid} engine claude run ${TOKEN}] first try`,
+    `${isoAgo(60)} m-2 started: [pid ${newer.child.pid} engine claude run ${TOKEN}] second try`,
+  ] });
+  try {
+    const result = await stopMember('builder', { dir, deps: engineAs('claude', 60) });
+    assert.equal(result.pid, newer.child.pid);
+    assert.ok(await waitFor(() => !isAlive(newer.child.pid)), 'the newest run is gone');
+    assert.equal(isAlive(older.child.pid), true, 'the older run is left alone');
+    const [row] = readBoard({ dir });
+    assert.equal(row.state, 'stopped');
+    assert.deepEqual(row.earlier_alive, [older.child.pid]);
+    assert.match(renderBoard([row], dir), /^still running from an earlier run: builder \(pid \d+\); atris member stop ends only the newest run$/m);
+  } finally {
+    killAll(older.child.pid);
+    killAll(newer.child.pid);
     fs.rmSync(dir, { recursive: true, force: true });
   }
 });
