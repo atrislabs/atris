@@ -138,6 +138,12 @@ atris member wake 5
 atris member wake navigator executor
 ```
 
+Naming just one member runs one step of work. Add `--keep` to keep that one member working.
+
+```bash
+atris member wake executor --keep
+```
+
 Sleep stops the members that are awake.
 
 ```bash
