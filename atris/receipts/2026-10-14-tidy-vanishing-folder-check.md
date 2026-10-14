@@ -120,3 +120,32 @@ Progress: one added timing case, two exact lock paths with distinct ages, four r
 next_push: Prove ordinary locks arriving during the final old-folder cleanup check prevent removal while the folder stays present.
 
 layer: behaviors
+
+## Late keep marker in a still-present folder
+
+Added a fifth case: a special Git keep marker arrives during member tidy's final check while the folder stays in place. Tidy kept the folder, its files, the marker and the branch, named the marker path and age, and never asked Git to remove anything.
+
+Files edited: `atris/receipts/2026-10-14-tidy-vanishing-folder-check.js`, `test/member-tidy.test.js`, `atris/MAP.md`, `atris/refs/MAP-NOTES.md`, this receipt, `atris/team/architect/logs/2026-10-14.md`. No new files.
+
+Real command: `node atris/receipts/2026-10-14-tidy-vanishing-folder-check.js`, exit 0. It runs `node bin/atris.js member tidy --dir <generated copies>` five times against generated repositories with real Git. New case output:
+```text
+kept  landed-copy  git locks: /private/var/folders/t1/2_4kmb5n4c71dxm26zc8dgzr0000gn/T/atris-tidy-vanishing-pnLrCF/locked-present/repo/.git/worktrees/landed-copy/locked (7198s old)
+tidy: removed 0, kept 1, of 1 copy in /private/var/folders/t1/2_4kmb5n4c71dxm26zc8dgzr0000gn/T/atris-tidy-vanishing-pnLrCF/locked-present/copies
+cli exit: 0
+all five timing cases passed; files, locks, and branches retained; no removal attempted or recorded
+```
+The generated fixture folder was removed afterward.
+
+Rerun: `node --test test/worktree-removal-guard.test.js test/member-tidy.test.js`, Node 25.6.1, exit 0:
+```text
+ℹ tests 21
+ℹ pass 21
+ℹ fail 0
+ℹ duration_ms 44861.526834
+```
+
+Progress: both cleanup paths, old-folder cleanup and member tidy, now prove the same five timing cases with zero removal attempts and zero removal records.
+
+next_push: Prove a late keep marker during the regression cleanup's final check keeps a still-present folder and names the marker age.
+
+layer: behaviors
