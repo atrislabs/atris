@@ -211,6 +211,8 @@ test('members that ended over an hour ago, finished or died, hide unless --all',
     assert.deepEqual(JSON.parse(json.stdout).hidden_counts, { died: 2, 'done failed': 1, working: 0, quiet: 0, stopped: 0, 'done ok': 1 }, 'json says which hidden runs ended badly, like the screen note');
     assert.equal(Object.values(JSON.parse(jsonAll.stdout).hidden_counts).reduce((a, b) => a + b), 0, 'nothing hidden with --all');
     assert.equal(JSON.parse(json.stdout).unchecked, 1, 'stuck has no pid, so json warns like the screen note');
+    assert.equal(JSON.parse(json.stdout).likely_ended, 1, 'stuck went silent long ago with no pid: json says most likely ended, like the count line');
+    assert.equal(JSON.parse(json.stdout).counts.quiet, 1, 'and still counts it under its state');
     assert.equal(JSON.parse(jsonAll.stdout).unchecked, 1, 'crashed and broke have pids and read died, so only stuck counts');
     assert.equal(JSON.parse(jsonAll.stdout).members.length, 5);
     assert.deepEqual(JSON.parse(json.stdout).counts, { died: 0, 'done failed': 0, working: 0, quiet: 1, stopped: 0, 'done ok': 0 }, 'counts cover only the members shown');
@@ -1349,6 +1351,7 @@ test('atris member board --json --follow streams one JSON object per line', asyn
     assert.equal(snapshot.members[0].last_active, recent, 'a readable time for its last line');
     assert.equal(snapshot.hidden, 0);
     assert.equal(snapshot.hidden_counts.died, 0, 'the snapshot counts hidden states like --json');
+    assert.equal(snapshot.likely_ended, 0, 'navigator logged just now');
     assert.equal(snapshot.unchecked, 1, 'navigator started without a pid');
     assert.equal(snapshot.counts.working, 1, 'the snapshot counts states like --json');
     assert.equal(snapshot.counts.stopped, 0);
