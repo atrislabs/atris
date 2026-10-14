@@ -847,8 +847,32 @@ test('fix drops a dash after a quote that already ends its sentence', () => {
     'He said "the gap is wiring." PERSONA.md exists.',
     '"Connect them looking backward." Steve Jobs',
     'Ask "what did we miss?" Then read the calls.',
-    'They think "who made this?", that is the goal.',
+    'They think "who made this?"; that is the goal.',
     '- "What did we miss?": summarizes calls',
+  ]);
+});
+
+test('fix joins two full clauses with a semicolon, not a comma splice', () => {
+  // from the design policy, the spaceship idea, and the validator; 33 repo
+  // lines took a semicolon here and each was read
+  const file = tmpFile('clause-join.md', [
+    "this isn't optional \u2014 it's part of good design.",
+    'It never dies on a bad tick \u2014 it survives halts.',
+    'Never animate width or height \u2014 they trigger layout.',
+    "Skip the dark default \u2014 that's how it starts looking the same.",
+    'We fixed the gap \u2014 this time with tests.',
+    'Then \u2014 it stops.',
+    'Use `PUT` \u2014 that is for updates.',
+  ].join('\n'));
+  const { changes } = applyFixes([file], RULES);
+  assert.deepEqual(changes.map((c) => c.after), [
+    "this isn't optional; it's part of good design.",
+    'It never dies on a bad tick; it survives halts.',
+    'Never animate width or height; they trigger layout.',
+    "Skip the dark default; that's how it starts looking the same.",
+    'We fixed the gap, this time with tests.',
+    'Then, it stops.',
+    'Use `PUT`, that is for updates.',
   ]);
 });
 

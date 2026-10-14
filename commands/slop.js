@@ -85,6 +85,11 @@ function wrappedInParens(s) {
 const LIST_ITEM = "[A-Za-z0-9][\\w'/-]*(?: [A-Za-z0-9][\\w'/-]*){0,3}";
 const LIST_AFTER_DASH = new RegExp(`(?<=[\\w)\\]*_\`])\\s*\u2014\\s*(?!(?:and|but|or|nor|so|yet|then) )(?=${LIST_ITEM}(?:, ${LIST_ITEM}){1,}, (?:and |or )?${LIST_ITEM}(?:[.!?](?:\\s|$)|$))`, 'g');
 
+// A lone dash with a word before it, then a subject pronoun and its verb:
+// "it survives", "they'd pass", "that's the goal". "This" and its kin count
+// only before a verb, so "the gap, this time with tests" stays a comma.
+const CLAUSE_AFTER_DASH = /(?<=[\w)\]"'*_`\u201d\u2019])\s*\u2014\s*(?=(?:(?:it|we|they|you|I|he|she)(?:['\u2019](?:s|re|ll|ve|d|m))?|(?:this|that|these|those|there)(?:['\u2019]s|\s+(?:is|are|was|were|used|will|would|can|cannot|must|should|has|have))\b)\s+[a-z])/g;
+
 function fixEmDash(s, { endsBlock = false } = {}) {
   // a table cell that holds only a dash means "nothing here"; a hyphen keeps
   // the cell instead of turning it into a stray comma
@@ -124,6 +129,11 @@ function fixEmDash(s, { endsBlock = false } = {}) {
     // a dash that opens a list of three or more short items running to the
     // end of the sentence introduces it: "sweep: arxiv, github, web."
     .replace(LIST_AFTER_DASH, ': ')
+    // a dash between two full clauses joins them; a comma there is a splice
+    // ("this isn't optional, it's part of design"), so it takes a semicolon.
+    // The left side needs three words of its own sentence to be a clause, so
+    // an opener like "Then" keeps its comma.
+    .replace(CLAUSE_AFTER_DASH, (m, at, whole) => (whole.slice(0, at).split(/[.!?:]\s/).pop().trim().split(/\s+/).length >= 3 ? '; ' : m))
     // keep punctuation the writer already put beside the dash instead of
     // stacking a comma on it, and never leave a trailing space. A dash pressed
     // against a closing quote or bracket takes its comma with no space after.
