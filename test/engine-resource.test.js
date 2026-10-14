@@ -565,3 +565,40 @@ test('sweep apply writes a parent gone end for lost runs only, and a plain sweep
     fs.rmSync(root, { recursive: true, force: true });
   }
 });
+
+test('the hourly landing pass closes runs whose parent is gone and names the count', () => {
+  const { spawnSync } = require('node:child_process');
+  const { runLostRunSweep, lostRunSweepNote } = require('../commands/autoland');
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'autoland-lost-runs-'));
+  const file = path.join(root, RESOURCE_LOG);
+  fs.mkdirSync(path.dirname(file), { recursive: true });
+  const goneParent = spawnSync(process.execPath, ['-e', '']).pid;
+  fs.writeFileSync(file, [
+    JSON.stringify({ at: '2026-10-14T10:00:00.000Z', phase: 'start', engine: 'cursor', task: 'LOST', run_id: 'gone', pid: goneParent }),
+    JSON.stringify({ at: '2026-10-14T10:05:00.000Z', phase: 'start', engine: 'codex', task: 'LIVE', run_id: 'live', pid: process.pid }),
+    '',
+  ].join('\n'));
+  try {
+    const receipt = {};
+    runLostRunSweep(root, receipt, { now: () => '2026-10-14T13:00:00.000Z' });
+    assert.deepStrictEqual(receipt.lost_run_sweep, { closed: ['gone'] });
+    assert.strictEqual(lostRunSweepNote(receipt), ', closed 1 lost engine run');
+    const ends = fs.readFileSync(file, 'utf8').trim().split('\n').map(JSON.parse).filter((line) => line.phase === 'end');
+    assert.deepStrictEqual(ends.map((line) => [line.run_id, line.cause, line.at]), [['gone', 'parent gone', '2026-10-14T13:00:00.000Z']]);
+
+    const again = {};
+    runLostRunSweep(root, again);
+    assert.deepStrictEqual(again.lost_run_sweep, { closed: [] });
+    assert.strictEqual(lostRunSweepNote(again), '');
+  } finally {
+    fs.rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test('a lost run close that throws never breaks the hourly landing pass', () => {
+  const { runLostRunSweep } = require('../commands/autoland');
+  const receipt = {};
+  runLostRunSweep(os.tmpdir(), receipt, { close: () => { throw new Error('log unreadable'); } });
+  assert.match(receipt.lost_run_sweep_error, /log unreadable/);
+  assert.strictEqual(receipt.lost_run_sweep, undefined);
+});

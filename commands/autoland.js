@@ -9,7 +9,7 @@ const autoland = require('../lib/autoland');
 const { gateForHuman, plainLandingReason } = require('../lib/voice-gate');
 const { evaluateAutoAccept } = require('../lib/auto-accept-certified');
 const { sweepEngineAskReceipts } = require('../lib/engine-receipt-sweep');
-const { readSshAgents, findLeakedSshAgents, stopLeakedSshAgents } = require('../lib/engine-resource');
+const { readSshAgents, findLeakedSshAgents, stopLeakedSshAgents, closeLostRuns } = require('../lib/engine-resource');
 const { validateRecentAskReceipts } = require('../lib/engine-validate');
 const { operatorReady, hasAgentJargon, explainResult } = autoland;
 const MISSION_AUTO_VERIFY_STATUSES = new Set(['planning', 'paused', 'ready']);
@@ -804,6 +804,26 @@ function sshAgentSweepNote(receipt) {
   return `, stopped ${stopped} leaked ssh-agent${stopped === 1 ? '' : 's'}`;
 }
 
+// An engine run whose dispatching process died never writes its own end.
+// Each pass writes a "parent gone" end for those, so the log stops carrying
+// them as open, and never lets a failed read break the pass.
+function runLostRunSweep(root, receipt, deps = {}) {
+  try {
+    const close = deps.close || closeLostRuns;
+    const closed = close(root, deps.now ? { now: deps.now } : {});
+    receipt.lost_run_sweep = { closed: closed.map((end) => end.run_id) };
+  } catch (err) {
+    receipt.lost_run_sweep_error = String((err && err.message) || err).slice(0, 200);
+  }
+  return receipt.lost_run_sweep || null;
+}
+
+function lostRunSweepNote(receipt) {
+  const closed = (receipt.lost_run_sweep?.closed || []).length;
+  if (!closed) return '';
+  return `, closed ${closed} lost engine run${closed === 1 ? '' : 's'}`;
+}
+
 async function runEngineAnswerValidation(root, receipt, deps = {}) {
   try {
     receipt.engine_answer_validation = await validateRecentAskReceipts(root, deps);
@@ -828,6 +848,7 @@ async function runTickBody(root, { json, policy, receipt, engineValidationDeps =
   }
 
   runSshAgentSweep(root, receipt);
+  runLostRunSweep(root, receipt);
 
   await runEngineAnswerValidation(root, receipt, engineValidationDeps);
 
@@ -1181,7 +1202,7 @@ async function runTickBody(root, { json, policy, receipt, engineValidationDeps =
     // Always print the standing backlog, and name work that cleared every
     // gate and still did not land. That is the shape of a stuck loop.
     const stuckNote = stuckBacklogNote(receipt);
-    const summary = `autoland tick: ${receipt.reviews_certified ?? 0} reviews certified, ${receipt.landed.length} landed${receipt.landed.length ? ` (${receipt.landed.join(', ')})` : ''}, ${receipt.alarms} alarms${stuckNote}, digest ${digestTickStatus(receipt)}${reapNote}${janitorNote}${heldNote}${wishNote}${engineSweepNote}${sshAgentSweepNote(receipt)}${receiptNote}`;
+    const summary = `autoland tick: ${receipt.reviews_certified ?? 0} reviews certified, ${receipt.landed.length} landed${receipt.landed.length ? ` (${receipt.landed.join(', ')})` : ''}, ${receipt.alarms} alarms${stuckNote}, digest ${digestTickStatus(receipt)}${reapNote}${janitorNote}${heldNote}${wishNote}${engineSweepNote}${sshAgentSweepNote(receipt)}${lostRunSweepNote(receipt)}${receiptNote}`;
     const validationLine = engineAnswerValidationLine(receipt);
     if (validationLine) console.log(validationLine);
     console.log(gateForHuman(summary).text);
@@ -1256,6 +1277,8 @@ module.exports = {
   runTickBody,
   runSshAgentSweep,
   sshAgentSweepNote,
+  runLostRunSweep,
+  lostRunSweepNote,
   sweepLanding,
   verifyClosedTaskMissions,
 };
