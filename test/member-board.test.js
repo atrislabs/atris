@@ -63,7 +63,7 @@ test('board shows working, quiet, done ok, and done failed from fake logs', () =
     assert.equal(by.builder.ago, '12s ago');
     assert.equal(by.builder.step, 'editing lib/b.js');
     assert.equal(by.builder.job.length, 50);
-    assert.ok(by.builder.job.startsWith('Ship the member board'));
+    assert.ok(by.builder.job.startsWith('ship the member board'));
 
     assert.equal(by.scout.state, 'quiet');
     assert.equal(by.scout.ago, '5m ago');
@@ -83,6 +83,28 @@ test('board shows working, quiet, done ok, and done failed from fake logs', () =
   }
 });
 
+test('a log past 256 KB keeps its job, and every row is lowercase', () => {
+  const dir = fakeDir({
+    LongRun: [
+      `${at(900)} m-1 started: Retain This Job`,
+      ...Array(9000).fill(`${at(30)} m-1 reading README.md`),
+      `${at(10)} m-1 editing Lib/Board.JS`,
+    ],
+  });
+  try {
+    assert.ok(fs.statSync(path.join(dir, 'LongRun.log')).size > 256 * 1024);
+    const [row] = readBoard({ dir, now: NOW });
+    assert.equal(row.member, 'longrun');
+    assert.equal(row.job, 'retain this job');
+    assert.equal(row.step, 'editing lib/board.js');
+    assert.equal(row.state, 'working');
+    const screen = renderBoard([row], dir);
+    assert.equal(screen, screen.toLowerCase());
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
 test('atris member board reads ATRIS_PROGRESS_DIR for real', () => {
   const recent = new Date(Date.now() - 5_000).toISOString();
   const dir = fakeDir({ navigator: [`${recent} m-9 started: map the repo`, `${recent} m-9 reading atris/MAP.md`] });
@@ -90,7 +112,7 @@ test('atris member board reads ATRIS_PROGRESS_DIR for real', () => {
     const env = { ...process.env, ATRIS_PROGRESS_DIR: dir };
     const once = spawnSync(process.execPath, [cliPath, 'member', 'board'], { cwd: dir, env, encoding: 'utf8' });
     assert.equal(once.status, 0, once.stderr);
-    assert.match(once.stdout, /^navigator\s+working\s+\d+s ago\s+map the repo\s+reading atris\/MAP\.md$/m);
+    assert.match(once.stdout, /^navigator\s+working\s+\d+s ago\s+map the repo\s+reading atris\/map\.md$/m);
 
     const watch = spawnSync(process.execPath, [cliPath, 'member', 'board', '--watch'], { cwd: dir, env, encoding: 'utf8', timeout: 3700 });
     assert.equal(watch.signal, 'SIGTERM', 'watch stays open until stopped');
