@@ -1242,7 +1242,23 @@ const GIT_ACTIVITY_MARKERS = [
 // Returns the reason git is busy in the folder, or null. Reads the .git
 // pointer file directly so the check costs no spawn per worktree.
 function worktreeGitActivity(worktreePath) {
-  return gitStoreActivity(worktreeGitDir(worktreePath));
+  const gitDir = worktreeGitDir(worktreePath);
+  return gitStoreActivity(gitDir) || (sharedStoreLockFile(gitDir) ? 'git_lock' : null);
+}
+
+// A linked worktree shares the main store's refs, so a branch update there
+// (refs/<name>.lock, packed-refs.lock) is git busy in this folder too. Only
+// locks count: a merge paused in the main checkout is not this folder's work.
+function sharedStoreLockFile(gitDir) {
+  let common;
+  try {
+    common = path.resolve(gitDir, fs.readFileSync(path.join(gitDir, 'commondir'), 'utf8').trim());
+  } catch {
+    return null;
+  }
+  if (common === path.resolve(gitDir)) return null;
+  const packed = path.join(common, 'packed-refs.lock');
+  return fs.existsSync(packed) ? packed : refsLockFile(path.join(common, 'refs'));
 }
 
 function worktreeGitDir(worktreePath) {
@@ -1281,7 +1297,16 @@ function refsLockFile(dir) {
 // The lock file keeping a folder and how long it has sat there, so a lock left
 // by a crashed git shows up instead of silently holding the folder.
 function worktreeGitLock(worktreePath, now = Date.now()) {
-  return gitStoreLock(worktreeGitDir(worktreePath), now);
+  const gitDir = worktreeGitDir(worktreePath);
+  const own = gitStoreLock(gitDir, now);
+  if (own || !gitDir) return own;
+  const file = sharedStoreLockFile(gitDir);
+  if (!file) return null;
+  try {
+    return { file, ageMs: Math.max(0, now - fs.statSync(file).mtimeMs) };
+  } catch {
+    return null;
+  }
 }
 
 // Same lookup against a git store itself, for callers that hold the store path.

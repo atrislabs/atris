@@ -182,6 +182,27 @@ test('worktree cleanup names the lock holding a folder and how old it is', () =>
   }
 });
 
+test('reap and worktree cleanup keep a folder while git updates a branch in the shared store', () => {
+  const { base, repo, wt } = landedWorktree();
+  try {
+    const lock = path.join(repo, '.git', 'refs', 'heads', 'master.lock');
+    fs.writeFileSync(lock, '');
+    const stale = new Date(Date.now() - 3 * 60 * 60 * 1000);
+    fs.utimesSync(lock, stale, stale);
+    const result = cleanupWorktrees({ root: repo, base: 'HEAD', apply: true, activeCwds: [] });
+    const held = result.kept.find((item) => item.path === wt);
+    assert.equal(held && held.reason, 'git_lock', JSON.stringify(result));
+    assert.equal(held.lock, lock);
+    const receipt = reap(repo, { remote: false, force: true, activeCwds: [] });
+    assert.ok(receipt.keptWorktrees.includes(`${wt} (git_lock: ${lock}, 3 h old)`), JSON.stringify(receipt));
+    assert.ok(fs.existsSync(wt));
+    assert.ok(fs.existsSync(lock));
+    assert.deepEqual(removalLines(repo), []);
+  } finally {
+    fs.rmSync(base, { recursive: true, force: true });
+  }
+});
+
 test('worktree cleanup keeps a clean folder paused mid-rebase', () => {
   const { base, repo, wt } = landedWorktree();
   try {
