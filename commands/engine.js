@@ -2324,9 +2324,10 @@ function formatAgentAge(seconds) {
 }
 
 // atris engine sweep: list ssh-agents that engine shells started and left
-// behind. With --apply it rechecks each one and stops it with SIGTERM.
+// behind. With --apply it rechecks each one and stops it with SIGTERM, and
+// writes a parent gone end line for each run whose parent process is gone.
 function runEngineSweepCommand(args, root, deps = {}) {
-  const { readSshAgents, findLeakedSshAgents, stopLeakedSshAgents, readResourceHistory, LEAK_MIN_AGE_SEC } = require('../lib/engine-resource');
+  const { readSshAgents, findLeakedSshAgents, stopLeakedSshAgents, closeLostRuns, readResourceHistory, LEAK_MIN_AGE_SEC } = require('../lib/engine-resource');
   const read = deps.read || readSshAgents;
   const { agents, referenced } = read();
   const uid = deps.uid !== undefined ? deps.uid : process.getuid();
@@ -2335,6 +2336,7 @@ function runEngineSweepCommand(args, root, deps = {}) {
   const result = apply
     ? stopLeakedSshAgents(root, leaked, { read, uid, ...(deps.kill ? { kill: deps.kill } : {}), ...(deps.now ? { now: deps.now } : {}) })
     : { stopped: [], failed: [], skipped: [] };
+  result.closed_runs = apply ? closeLostRuns(root, deps.now ? { now: deps.now } : {}) : [];
   const code = result.failed.length ? 1 : 0;
   if (args.includes('--json')) {
     console.log(JSON.stringify({ running: agents.length, leaked, ...result, history: readResourceHistory(root) }, null, 2));
@@ -2345,6 +2347,7 @@ function runEngineSweepCommand(args, root, deps = {}) {
     const lines = [`stopped ${plural(result.stopped.length, 'leaked ssh-agent')}`];
     if (result.skipped.length) lines.push(`${result.skipped.length} skipped because they were in use or gone on the recheck`);
     for (const { pid, code: reason } of result.failed) lines.push(`could not stop pid ${pid}: ${reason}`);
+    lines.push(`closed ${plural(result.closed_runs.length, 'run')} whose parent is gone`);
     console.log(lines.join('\n'));
     return code;
   }

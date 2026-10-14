@@ -523,3 +523,45 @@ test('start lines name the process that will write the end, and sweep splits unf
   }
   assert.match(out.join('\n'), /3 runs started with no end recorded: 1 whose parent is gone, 1 still running, 1 from before parents were recorded; newest: cursor on LOST at 2026-10-14 10:00 UTC/);
 });
+
+test('sweep apply writes a parent gone end for lost runs only, and a plain sweep writes nothing', () => {
+  const { spawnSync } = require('node:child_process');
+  const { engineCommand } = require('../commands/engine');
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'engine-resource-close-'));
+  const file = path.join(root, RESOURCE_LOG);
+  fs.mkdirSync(path.dirname(file), { recursive: true });
+  const goneParent = spawnSync(process.execPath, ['-e', '']).pid;
+  fs.writeFileSync(file, [
+    JSON.stringify({ at: '2026-10-14T09:00:00.000Z', phase: 'start', engine: 'claude', task: 'OLD', run_id: 'no-pid' }),
+    JSON.stringify({ at: '2026-10-14T10:00:00.000Z', phase: 'start', engine: 'cursor', task: 'LOST', run_id: 'gone', pid: goneParent }),
+    JSON.stringify({ at: '2026-10-14T10:05:00.000Z', phase: 'start', engine: 'codex', task: 'LIVE', run_id: 'live', pid: process.pid }),
+    '',
+  ].join('\n'));
+  const sweep = (args) => {
+    const out = [];
+    const original = console.log;
+    console.log = (line) => out.push(String(line));
+    try {
+      engineCommand(['sweep', ...args], { root, engineSweep: { read: () => ({ agents: [], referenced: new Set() }), uid: 501, now: () => '2026-10-14T12:00:00.000Z' } });
+    } finally {
+      console.log = original;
+    }
+    return out.join('\n');
+  };
+  const lineCount = () => fs.readFileSync(file, 'utf8').trim().split('\n').length;
+  try {
+    sweep([]);
+    assert.strictEqual(lineCount(), 3);
+    assert.match(sweep(['--apply']), /closed 1 run whose parent is gone/);
+    const lines = fs.readFileSync(file, 'utf8').trim().split('\n').map(JSON.parse);
+    const ends = lines.filter((line) => line.phase === 'end');
+    assert.deepStrictEqual(ends, [{ at: '2026-10-14T12:00:00.000Z', phase: 'end', engine: 'cursor', task: 'LOST', run_id: 'gone', cause: 'parent gone', closed_by: 'sweep' }]);
+    const history = readResourceHistory(root);
+    assert.strictEqual(history.open_runs, 2);
+    assert.strictEqual(history.parent_gone, 0);
+    assert.match(sweep(['--apply']), /closed 0 runs whose parent is gone/);
+    assert.strictEqual(fs.readFileSync(file, 'utf8').trim().split('\n').filter((line) => line.includes('"parent gone"')).length, 1);
+  } finally {
+    fs.rmSync(root, { recursive: true, force: true });
+  }
+});
