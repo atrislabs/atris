@@ -2304,10 +2304,12 @@ npm publish
 - `lib/fleet.js:2464`: `disposeReviewSandbox` forces Git removal, then removes the work folder, Git metadata, quarantine, and parent directly. Real private, shared, and independent review-repository two-hour-old locks are deleted without a removal record. Checking only the work folder misses the independent repository lock and a running program inside that repository.
 - `atris/receipts/2026-10-14-fleet-folder-check.js:10`: repeatable actual-routine audit, using disposable real Git repositories and an in-memory export without replacing helpers. Decision and exact proof: `atris/receipts/2026-10-14-fleet-folder-check.md`. Keep the whole folder group before attempting any child removal.
 
-- `atris/receipts/2026-10-14-fleet-folder-check.js:51`: live child program in the independent repository; the real process scan sees activity under the parent, but disposal removes the parent while the program remains alive.
+- `atris/receipts/2026-10-14-fleet-folder-check.js:82`: live child program in the independent repository; the real process scan sees activity under the parent, but disposal removes the parent while the program remains alive.
 
-- `atris/receipts/2026-10-14-fleet-folder-check.js:106`: sibling-copy private lock is invisible to both the main copy and shared-repository checks; disposal deletes the parent and lock without recording removal. Inspect all linked copies before removing shared metadata.
+- `atris/receipts/2026-10-14-fleet-folder-check.js:137`: sibling-copy private lock is invisible to both the main copy and shared-repository checks; disposal deletes the parent and lock without recording removal. Inspect all linked copies before removing shared metadata.
 
-- `atris/receipts/2026-10-14-fleet-folder-check.js:106`: outside linked copy survives disposal but loses its private Git metadata and can no longer run Git status. Enumerate all copies registered with the shared repository, including paths outside the removal group.
+- `atris/receipts/2026-10-14-fleet-folder-check.js:137`: outside linked copy survives disposal but loses its private Git metadata and can no longer run Git status. Enumerate all copies registered with the shared repository, including paths outside the removal group.
 
-- `atris/receipts/2026-10-14-fleet-folder-check.js:51`: outside running-copy audit confirms parent-only scans report clear while a registered outside copy has a live program; shared metadata removal breaks its Git status. Scan every registered copy before group disposal.
+- `atris/receipts/2026-10-14-fleet-folder-check.js:82`: outside running-copy audit confirms parent-only scans report clear while a registered outside copy has a live program; shared metadata removal breaks its Git status. Scan every registered copy before group disposal.
+
+- `atris/receipts/2026-10-14-fleet-folder-check.js:51`: idle registered outside copy has no locks or running programs, yet disposal breaks its Git status. Outside dependency alone must preserve shared storage.

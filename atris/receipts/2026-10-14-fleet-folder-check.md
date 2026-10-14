@@ -244,3 +244,40 @@ Commands run: mission status, Git status/remote lookup, task list/new/claim/note
 Progress: one new real failure case, seven cases overall, twelve required tests passed, zero production changes, zero dependencies, zero new filenames.
 next_push: Scan running programs in every registered linked copy before removing shared Git storage.
 layer: beliefs
+
+## Idle outside copy follow-up
+
+Added an idle outside-copy case, verified by the real cleanup audit and twelve passing required tests, both exit 0. Cleanup breaks the registered outside copy despite every Git activity and process check reporting clear. This is defect evidence, not a production repair.
+
+Verdict: proceed-with-changes. The single risk is treating absence of activity as proof that shared Git storage is disposable. Preserve shared storage whenever any registered copy outside the removal group still depends on it, even when idle. Enumeration failure must also keep the group. No production execution boundary is changed or approved.
+
+Plan: registered copies -> outside dependency exists -> keep shared storage and group.
+
+Runtime command: `node atris/receipts/2026-10-14-fleet-folder-check.js`
+Exit: 0. Actual additional output:
+```text
+outside-idle before cleanup: all git activity and process checks report clear
+{"kind":"outside-idle","outsideFolderKept":true,"outsideGitStatusExit":128,"removalRecorded":false}
+audit complete; surviving fixture data retained for inspection
+```
+
+The case checks real registration and clean Git status before cleanup, no Git locks in either repository or outside copy, and no running programs in the parent or outside copy. Unchanged cleanup then deletes shared files, leaves the outside folder, breaks Git status with exit 128, and writes no removal record. Only newly created disposable fixture data is removed. Retained fixture: `/private/var/folders/t1/2_4kmb5n4c71dxm26zc8dgzr0000gn/T/atris-fleet-check-ghuzY1`. Replace deletion assertions with preservation assertions when repairing cleanup.
+
+Required rerun: `node --test test/worktree-removal-guard.test.js test/member-tidy.test.js`
+Exit: 0. Actual final output:
+```text
+ℹ tests 12
+ℹ suites 0
+ℹ pass 12
+ℹ fail 0
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 2888.750583
+```
+
+Files edited: `atris/receipts/2026-10-14-fleet-folder-check.js`, this receipt, `atris/MAP.md`, `atris/refs/MAP-NOTES.md`, and the new evidence entry in `atris/team/architect/logs/2026-10-14.md`. Existing router, rendered task view, and earlier log edits are excluded from staging.
+Commands run: mission status and goal lookup, Git status/log/remote lookup, task list/new/claim/note/ready, brain activation, targeted reads/searches, runtime audit, required rerun, brain compile, whitespace check, explicit staging, commit, and push. Brain activation returned exit 2 with a write plan; no generated policy files were written. Artifacts: extended audit, this decision card, navigation updates, member evidence, and retained disposable fixture.
+Progress: one new dependency-loss case, eight audit cases overall, twelve required checks passed, zero production changes, zero dependencies, zero new filenames.
+next_push: Preserve shared Git storage whenever a registered outside copy still depends on it, even with no current activity.
+layer: beliefs

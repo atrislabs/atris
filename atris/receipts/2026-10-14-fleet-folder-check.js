@@ -35,7 +35,7 @@ async function main() {
   git('add', '.');
   git('commit', '-qm', 'fixture');
   console.log(`fixture: ${root}`);
-  for (const kind of ['private', 'shared', 'quarantine', 'running', 'sibling', 'outside', 'outside-running']) {
+  for (const kind of ['private', 'shared', 'quarantine', 'running', 'sibling', 'outside', 'outside-running', 'outside-idle']) {
     const parent = fs.mkdtempSync(path.join(root, 'review-'));
     const boundary = {
       trustedRoot: root,
@@ -47,6 +47,31 @@ async function main() {
     git('clone', '-q', '--bare', root, boundary.gitDir);
     git('init', '-q', '--bare', boundary.quarantine);
     git('--git-dir', boundary.gitDir, 'worktree', 'add', '-q', boundary.worktreePath, 'master');
+    if (kind === 'outside-idle') {
+      const outside = path.join(root, `outside-${path.basename(parent)}`);
+      git('--git-dir', boundary.gitDir, 'worktree', 'add', '-q', '--detach', outside, 'master');
+      assert.equal(git('-C', outside, 'status', '--porcelain'), '');
+      const registered = git('--git-dir', boundary.gitDir, 'worktree', 'list', '--porcelain');
+      assert.ok(registered.split('\n').includes(`worktree ${outside}`));
+      const activePaths = listActiveProcessPaths();
+      assert.ok(Array.isArray(activePaths), 'the real process scan must succeed');
+      for (const folder of [parent, outside]) {
+        assert.equal(worktreeHasActiveProcess(folder, activePaths), false);
+      }
+      for (const folder of [boundary.worktreePath, boundary.gitDir, boundary.quarantine, outside]) {
+        assert.equal(inspectGitActivity(folder).safe, true);
+      }
+      console.log('outside-idle before cleanup: all git activity and process checks report clear');
+      fleet.exports.auditDispose(boundary);
+      assert.equal(fs.existsSync(parent), false, 'update this audit when outside-copy protection is implemented');
+      assert.equal(fs.existsSync(outside), true);
+      const status = spawnSync('git', ['-C', outside, 'status', '--porcelain'], { encoding: 'utf8' });
+      assert.equal(status.status, 128);
+      assert.match(status.stderr, /not a git repository/);
+      assert.equal(fs.existsSync(path.join(root, '.atris/state/worktree_removals.jsonl')), false);
+      console.log(JSON.stringify({ kind, outsideFolderKept: true, outsideGitStatusExit: status.status, removalRecorded: false }));
+      continue;
+    }
     if (kind === 'running' || kind === 'outside-running') {
       const outside = kind === 'outside-running';
       const programFolder = outside ? path.join(root, `outside-${path.basename(parent)}`) : boundary.quarantine;
