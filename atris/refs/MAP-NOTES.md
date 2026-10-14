@@ -2303,9 +2303,9 @@ npm publish
 
 - **Very short board screens:** `renderBoard()` (`lib/member-board.js:274`) omits the spacer at three lines, rows at two, and the footer at one, preserving the header within the height limit. Regression: `test/member-board.test.js:880`; terminal proof: `python3 atris/runs/member-board-short-height-proof.py`.
 
-- **Tiny watch screens:** `memberBoardCommand()` (`lib/member-board.js:896`) gives the board all rows when the terminal has one to three, omitting the hint and final newline to avoid scrolling the header. Resize restores the hint above three rows. Regression: `test/member-board.test.js:740`; terminal proof: `python3 atris/runs/member-board-watch-height-proof.py`.
+- **Tiny watch screens:** `memberBoardCommand()` (`lib/member-board.js:900`) gives the board all rows when the terminal has one to three, omitting the hint and final newline to avoid scrolling the header. Resize restores the hint above three rows. Regression: `test/member-board.test.js:740`; terminal proof: `python3 atris/runs/member-board-watch-height-proof.py`.
 
-- **Narrow watch hint:** `memberBoardCommand()` (`lib/member-board.js:896`) picks the longest whole hint that fits, down to "ctrl-c", and omits it below six columns. Resize regression: `test/member-board.test.js:699`; real terminal proof: `python3 atris/runs/member-board-watch-width-proof.py`.
+- **Narrow watch hint:** `memberBoardCommand()` (`lib/member-board.js:900`) picks the longest whole hint that fits, down to "ctrl-c", and omits it below six columns. Resize regression: `test/member-board.test.js:699`; real terminal proof: `python3 atris/runs/member-board-watch-width-proof.py`.
 
 - **Compact board columns:** `renderBoard()` (`lib/member-board.js:274`) falls back to member, state and last result when the normal columns still overflow a terminal at least 30 columns wide. Done states use ok/failed, long names trim, and common failure reasons stay whole. Regression: `test/member-board.test.js:447`; real terminal proof: `python3 atris/runs/member-board-compact-columns-proof.py`.
 
@@ -2326,3 +2326,5 @@ npm publish
 - **Live members named or counted:** `renderBoard()` (`lib/member-board.js:274`) names up to three hidden working, quiet, or finishing members in the footer (`busy working, scout quiet`), all or none; when names do not fit, or four or more are hidden, it counts them (`3 running`). Either fits only by dropping "the window is too short", shortening labels, or shortening the older-runs note, so failure counts and reasons never give way. Regression: `test/member-board.test.js:817`; terminal proofs: `python3 atris/runs/member-board-live-names-proof.py`, `python3 atris/runs/member-board-running-count-proof.py`.
 
 - **Failure reasons outlast the older note:** `renderBoard()` (`lib/member-board.js:274`) shortens the older-runs note and drops it before dropping a failure reason, so `bad exit 2` stays beside older runs down to 44 columns instead of vanishing below 100. Regression: `test/member-board.test.js:1139`; terminal proof: `python3 atris/runs/member-board-reason-over-older-proof.py`.
+
+- **Every hidden reason named:** `renderBoard()` (`lib/member-board.js:274`) names two or three different hidden failure reasons when none leads and every failure wrote one (`2 failed, timed out and engine error`), with counts on a tie; without room it falls back to the bare count. Regression: `test/member-board.test.js:1177`.

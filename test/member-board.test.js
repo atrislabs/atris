@@ -891,7 +891,7 @@ test('one to three board lines keep the header without scrolling away failures',
         assert.equal(lines.length, height, `fits ${height} lines with ${hidden} older runs`);
         assert.match(lines[0], /^member\s+state/, 'the header stays');
         assert.ok(lines.every((line) => line.length <= 80));
-        if (height === 2) assert.match(lines[1], /^3 more not shown \(2 failed, busy working\)/);
+        if (height === 2) assert.match(lines[1], /^3 (?:more not shown|hidden) \(2 failed, timed out and bad exit 2, busy working\)/);
         if (height === 3) {
           assert.match(lines[1], /^broke\s+done failed\s+(?:failed \()?timed out\b/);
           assert.match(lines[2], /^2 more not shown \(1 failed, bad exit 2, busy working\)/);
@@ -980,7 +980,7 @@ test('short boards distinguish a hidden busy member earlier failure from a curre
     const shared = [...rows, { ...busy, member: 'busy2' }];
     assert.match(renderBoard(shared, dir, 0, 100, 4).split('\n')[3], /2 with earlier failure, all timed out/);
     const mixed = [...rows, { ...busy, member: 'busy2', last_result_reason: 'bad exit 2' }];
-    assert.match(renderBoard(mixed, dir, 0, 100, 4).split('\n')[3], /2 with earlier failure\)/);
+    assert.match(renderBoard(mixed, dir, 0, 100, 4).split('\n')[3], /2 with earlier failure, timed out and bad exit 2\)/);
     const sleeping = rows.map((r) => r.member === 'busy' ? { ...r, state: 'asleep' } : r);
     assert.doesNotMatch(renderBoard(sleeping, dir, 0, 100, 4), /earlier failure/);
     assert.doesNotMatch(renderBoard(rows, dir), /more not shown/);
@@ -1195,11 +1195,16 @@ test('hidden failures that share a reason say it once in the count', () => {
     assert.equal(renderBoard(mixed, dir, 0, 0, 4).split('\n')[3], '4 more not shown (3 failed, 2 signed out, 1 stopped), the window is too short',
       'mixed reasons: the one most of them share');
     const split = rows.map((r) => (r.member === 'f3' || r.member === 'f4' ? { ...r, last_result_reason: r.member === 'f3' ? 'timed out' : 'bad exit 2' } : r));
-    assert.equal(renderBoard(split, dir, 0, 0, 4).split('\n')[3], '4 more not shown (3 failed, 1 stopped), the window is too short',
-      'no reason shared by two: just the count');
+    assert.equal(renderBoard(split, dir, 0, 0, 4).split('\n')[3], '4 more not shown (3 failed, signed out, timed out and bad exit 2, 1 stopped), the window is too short',
+      'no reason shared by two: each one named');
+    assert.equal(renderBoard(split, dir, 0, 50, 4).split('\n')[3], '4 more not shown (3 failed, 1 stopped)',
+      'no room for every reason: just the count');
     const tied = [...mixed, { ...mixed.find((r) => r.member === 'f4'), member: 'f5', last_result_reason: 'timed out' }];
-    assert.equal(renderBoard(tied, dir, 0, 0, 4).split('\n')[3], '5 more not shown (4 failed, 1 stopped), the window is too short',
-      'two reasons tied: just the count');
+    assert.equal(renderBoard(tied, dir, 0, 0, 4).split('\n')[3], '5 more not shown (4 failed, 2 signed out and 2 timed out, 1 stopped), the window is too short',
+      'two reasons tied: both named with their counts');
+    const partial = split.map((r) => (r.member === 'f4' ? { ...r, last_result_reason: '' } : r));
+    assert.equal(renderBoard(partial, dir, 0, 0, 4).split('\n')[3], '4 more not shown (3 failed, 1 stopped), the window is too short',
+      'a failure with no written reason: naming the rest would read as all of them');
     const unwritten = rows.map((r) => (r.member.startsWith('f') ? { ...r, last_result_reason: '' } : r));
     assert.equal(renderBoard(unwritten, dir, 0, 0, 4).split('\n')[3], '4 more not shown (3 failed, 1 stopped), the window is too short',
       'no written reason: just the count');
