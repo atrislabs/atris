@@ -58,3 +58,20 @@ Learned: cleanup reads its clock before the marker lands, so a marker aged exact
 next_push: Prove a late ordinary private and shared lock during the regression cleanup's safety check keeps the folder and names both lock paths with distinct ages.
 
 layer: behaviors
+
+## Late ordinary locks during the safety check
+
+Regression cleanup now has proof that a folder is kept when ordinary Git locks appear while cleanup runs its safety check. One lock sits in the folder's own Git files, aged three hours, and one sits in the shared Git files, aged four hours.
+
+Cleanup keeps the folder, its files and both locks, names both lock paths with their own ages, and never tries to remove it. The removal log still holds only the earlier clean removal.
+
+Real surface: `node atris/receipts/2026-10-14-autopilot-folder-check.js`, exit 0.
+
+```text
+  kept .../.regression-worktree-5da2e599: git locks: .../.git/packed-refs.lock (14399s old), .../.git/worktrees/-regression-worktree-5da2e599/index.lock (10799s old)
+late private and shared locks during the safety check kept the folder, named both paths with distinct ages, and no removal was attempted
+```
+
+next_push: Prove a folder that disappears during the regression cleanup's safety check is reported as missing, names any retained lock and its age, and attempts no removal.
+
+layer: behaviors
