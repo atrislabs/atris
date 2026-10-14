@@ -976,6 +976,11 @@ test('fix joins a noun clause after the dash with a semicolon', () => {
     'Your journal tracks how ideas evolve \u2014 the navigator reads it to understand context.',
     'Ship it \u2014 the gate checks them.',
     'Command tests for autopilot \u2014 the decision helpers it uses.',
+    // an object with its own "the" joins when a stop or "on" ends it; a word
+    // after it makes the right side one noun phrase
+    'IDs can be short \u2014 the CLI resolves the prefix',
+    'Pills are tappable \u2014 a tap focuses the next turn on that computer.',
+    'Author block docs \u2014 the live docs the Atris editor renders, with charts.',
     // "once", "when" or "if" with a comma and a subject after it starts a
     // second sentence; with no subject after the comma it only adds a condition
     'This is the archive \u2014 once the endgame closes, future runs can read this.',
@@ -1036,6 +1041,9 @@ test('fix joins a noun clause after the dash with a semicolon', () => {
     'Your journal tracks how ideas evolve; the navigator reads it to understand context.',
     'Ship it; the gate checks them.',
     'Command tests for autopilot, the decision helpers it uses.',
+    'IDs can be short; the CLI resolves the prefix',
+    'Pills are tappable; a tap focuses the next turn on that computer.',
+    'Author block docs, the live docs the Atris editor renders, with charts.',
     'This is the archive; once the endgame closes, future runs can read this.',
     'Run the gate; when it passes, the branch lands.',
     'It fails, when the disk is full.',
