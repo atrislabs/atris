@@ -363,6 +363,31 @@ test('board titles run time as run when nothing else is left to drop', () => {
   assert.match(renderBoard(rows, '/x'), /\srun time\s/, 'piped output keeps the full header');
 });
 
+test('board keeps only the newest earlier run, then drops before, when nothing else is left to drop', () => {
+  const now = Date.parse('2026-10-14T13:00:00Z');
+  const rows = [
+    memberRow('checker', '2026-10-14T12:58:00Z m-4 started: [pid 1 engine claude] check the release\n2026-10-14T12:59:30Z m-4 finished: failed\n', now),
+    memberRow('builder', [
+      '2026-10-14T12:10:00Z m-0 started: [pid 1 engine claude] first', '2026-10-14T12:12:00Z m-0 finished: ok',
+      '2026-10-14T12:20:00Z m-0 started: [pid 1 engine claude] second', '2026-10-14T12:22:00Z m-0 finished: failed',
+      '2026-10-14T12:30:00Z m-0 started: [pid 1 engine claude] third', '2026-10-14T12:32:00Z m-0 finished: stopped',
+      `2026-10-14T12:50:00Z m-1 started: [pid ${process.pid} engine claude] fit the board`, '2026-10-14T12:59:30Z m-1 running: node --test', '',
+    ].join('\n'), now),
+  ];
+  const table = (w) => {
+    const lines = renderBoard(rows, '/x', 0, w).split('\n');
+    return lines.slice(lines.indexOf('') + 1, lines.indexOf('', lines.indexOf('') + 1));
+  };
+  assert.match(table(80).find((l) => l.startsWith('builder')), /^builder\s+working\s+stopped failed ok\s/, 'at 80 columns all three stay');
+  const mid = table(52);
+  assert.match(mid.find((l) => l.startsWith('builder')), /^builder\s+working\s+stopped\s+10m\s/, 'at 52 columns only the newest stays');
+  assert.ok(mid.every((l) => l.length <= 52), `every line fits a 52 column pane:\n${mid.join('\n')}`);
+  const pane = table(40);
+  assert.match(pane[0], /^member\s+state\s+run\s+ago\s+job$/, 'at 40 columns before is gone');
+  assert.ok(pane.every((l) => l.length <= 40), `every line fits a 40 column pane:\n${pane.join('\n')}`);
+  assert.match(renderBoard(rows, '/x'), /^builder\s+working\s+stopped failed ok\s/m, 'piped output keeps all three');
+});
+
 test('board breaks the count line after a comma on a narrow screen', () => {
   const now = Date.parse('2026-10-14T13:00:00Z');
   const base = memberRow('scout', '2026-10-14T12:55:00Z m-3 started: map the repo\n', now);
@@ -390,7 +415,7 @@ test('board lets job shrink to the room left on a narrow screen', () => {
   assert.match(table.find((l) => l.startsWith('builder')), /make the footer\.\.\.$/, 'the job is cut to the room left, not held at 20');
   const sixty = renderBoard(rows, '/x', 0, 60).split('\n').find((l) => l.startsWith('builder'));
   assert.ok(sixty.length <= 60 && sixty.endsWith('  make the f...'), `at 60 columns engine and alive go and the row fits: ${sixty}`);
-  const narrow = renderBoard(rows, '/x', 0, 40).split('\n').find((l) => l.startsWith('builder'));
+  const narrow = renderBoard(rows, '/x', 0, 30).split('\n').find((l) => l.startsWith('builder'));
   assert.ok(narrow.endsWith('  make th...'), `a much narrower screen still shows 10 characters of job: ${narrow}`);
 });
 
