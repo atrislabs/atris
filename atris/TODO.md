@@ -23,6 +23,8 @@ Details for any task: atris task show <ID>
 
 ## Review
 
+- **[AIC-51]** Remove duplicate receipt repair setup launch · auto-improver
+  **Done looks like:** Developers finish duplicate receipt repair checks sooner because setup launches one fewer command.
 - **[AIC-50]** Remove duplicate reward review setup launch · auto-improver
   **Done looks like:** Developers finish duplicate reward review checks sooner because setup launches one fewer command.
 - **[AIC-49]** Remove auto-accept confirmation setup launch · auto-improver
