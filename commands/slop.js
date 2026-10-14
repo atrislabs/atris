@@ -332,9 +332,11 @@ const BARE_CLAUSE_AFTER_DASH = new RegExp(`(?<=[\\w)\\]"'*_\`\\u201d\\u2019\\uE0
 // The same bare word in the past tense starts one too, with "alone" or
 // "also" before its verb or not, when an object like "it" or "the" or two
 // more words follow, none a preposition: "carry no signal; calibration
-// showed annealing misses", "greedy alone decomposed everything". So "data
-// stored in atris" and "manual signed builds" stay phrases.
-const BARE_PAST_CLAUSE_AFTER_DASH = new RegExp(`(?<=[\\w)\\]"'*_\`\\u201d\\u2019\\uE001])\\s*\\u2014\\s*(?!${NAMING_PHRASE})(?!${WHEN_WORD}\\b)(?=(?!(?:and|but|or|nor|so|yet|then|not|even|when|if|unless|until|because|since|while|where|which|who|as|after|before|though|although|once|just|only|also|still|this|that|it|its|one|two|three|four|five|six|seven|eight|nine|ten|eleven|twelve|several|many|few|both|the|our|your|their|her|his|any|every|each)\\b)[a-z]{3,}(?<!s|ly|[^e]ed|ing)\\s+(?:(?:alone|also|then|just|still|never|always|already|finally)\\s+)?${PAST_VERB}\\s+(?!(?:by|as|for|in|on|at|to|from|with|of|into|onto|over|under|and|or|than|like|via|per)\\b)(?:(?:it|them|him|her|us|everything|nothing|something|anything|all|the|a|an|every|each|this|that|these|those|its|their|our|my|your|his)\\b|[a-z]{2,}\\s+[a-z]{2,}))`, 'g');
+// showed annealing misses", "greedy alone decomposed everything". A verb
+// in "s" counts when an object like "the" follows it: "the change is
+// additive; reverting only removes the section". So "data stored in
+// atris", "manual signed builds" and "universal tools that work" stay phrases.
+const BARE_VERB_CLAUSE_AFTER_DASH = new RegExp(`(?<=[\\w)\\]"'*_\`\\u201d\\u2019\\uE001])\\s*\\u2014\\s*(?!${NAMING_PHRASE})(?!${WHEN_WORD}\\b)(?=(?!(?:and|but|or|nor|so|yet|then|not|even|when|if|unless|until|because|since|while|where|which|who|as|after|before|though|although|once|just|only|also|still|this|that|it|its|one|two|three|four|five|six|seven|eight|nine|ten|eleven|twelve|several|many|few|both|the|our|your|their|her|his|any|every|each)\\b)[a-z]{3,}(?<!s|ly|[^e]ed)\\s+(?:(?:alone|also|only|then|just|still|never|always|already|finally)\\s+)?(?:${PAST_VERB}\\s+(?!(?:by|as|for|in|on|at|to|from|with|of|into|onto|over|under|and|or|than|like|via|per)\\b)(?:(?:it|them|him|her|us|everything|nothing|something|anything|all|the|a|an|every|each|this|that|these|those|its|their|our|my|your|his)\\b|[a-z]{2,}\\s+[a-z]{2,})|[a-z]{3,}(?<!ss)s\\s+(?:it|them|him|her|us|everything|nothing|something|anything|all|the|a|an|every|each|its|their|our|my|your|his)\\b))`, 'g');
 
 // "Our", "your", "their" or "my" and one to three words, then a verb, start
 // a second sentence too: "Saw your post on falls after rehab; our scheduling
@@ -853,7 +855,7 @@ function fixEmDash(s, { endsBlock = false, startsBlock = false, spans = [] } = {
       const left = clauseLeft(at, whole);
       return left ? clauseJoin(left) : m;
     })
-    .replace(BARE_PAST_CLAUSE_AFTER_DASH, (m, at, whole) => {
+    .replace(BARE_VERB_CLAUSE_AFTER_DASH, (m, at, whole) => {
       const left = clauseLeft(at, whole);
       return left ? clauseJoin(left) : m;
     })

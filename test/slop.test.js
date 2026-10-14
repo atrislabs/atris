@@ -2943,6 +2943,23 @@ test('fix joins a bare word and a past verb after a dash as a clause', () => {
   ]);
 });
 
+test('fix joins a bare word and a verb in "s" before an object as a clause', () => {
+  // from a build note, where a comma made a splice: "additive, reverting only removes"
+  const file = tmpFile('bare-present.md', [
+    'The change is additive \u2014 reverting only removes the plan-review section.',
+    'It works \u2014 testing showed the bug.',
+    'Two plugins in Cowork \u2014 universal tools that work for everyone.',
+    'It works \u2014 using the cache.',
+  ].join('\n\n'));
+  const { changes } = applyFixes([file], RULES, { write: false });
+  assert.deepEqual(changes.map((c) => c.after), [
+    'The change is additive; reverting only removes the plan-review section.',
+    'It works; testing showed the bug.',
+    'Two plugins in Cowork, universal tools that work for everyone.',
+    'It works, using the cache.',
+  ]);
+});
+
 test('fix keeps a journal heading that ends in a time readable for its hour', () => {
   // analytics reads the hour after a dash or a spaced hyphen at the end of a
   // heading; the fix wrote "### Watch: 19:05", which hides it, and glued
