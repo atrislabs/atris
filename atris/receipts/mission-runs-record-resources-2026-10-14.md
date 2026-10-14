@@ -24,6 +24,8 @@ Cross-model review: no implementation defect found; inherited dispatch-depth set
 
 Brain activation/compile returned plan-only, exit 2; no generated policy files were overwritten. The initial direct proof needed an absolute Node path; corrected before proof passed. Existing unrelated TODO and member-log edits are preserved.
 
+Review gate: login bash selected Node 20.18.0, which this CLI rejects; its rerun failed with 88 pass and 4 fail, exit 1. The task then reached Review using `/opt/homebrew/bin/node --test test/engine-resource.test.js test/engine-dispatch.test.js`, exit 0, receipt `atris/runs/2026-10-14-task-efm-6-2026-10-14T14-56-16-183Z.json`. The mission verifier was not changed. The absolute task command is outside automatic certification, so acceptance remains pending. Code and evidence were committed and pushed to origin.
+
 Progress: two previously unrecorded local mission runner paths now have paired resource evidence, one added runtime regression.
 next_push: add mission runner regression coverage for spawn errors and force kills, including the known time limit cause.
 layer: capabilities
