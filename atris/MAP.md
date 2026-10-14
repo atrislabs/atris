@@ -77,6 +77,7 @@ checks the refs in both files; `atris doc-health --fix-refs` moves drifted ones.
 | backend root and owner identity | `utils/backend-root.js` `utils/owner-identity.js` | portable local roots; installed CLI sibling fenced under node tests, ATRIS_BACKEND_INSTALL_SIBLING=1 opts in and 0 disables the probe |
 | update check | `utils/update-check.js` | version check |
 | swarlo client | `lib/self-drive.js` | hub URL and keys |
+| member GitHub handoff honors turn-downs | `lib/member-autoland.js`, `test/member-refused-no-pr.test.js` | current approval on every linked task holds revise, revised, and rejected work before remote operations; fresh submitted proof resets pending and keeps review gates |
 | member command | `commands/member.js` | member goals, alive loop; one-run check failures return exit 1 in JSON and live output, saved quoted checks remain intact; `test/member-run-one-run-outcome.test.js` |
 | keep the team working (member up) | `lib/member-up.js` | task-only supervisor with runnable checks, live progress through `followBoard` in `lib/member-board.js`, and checked finish results; wiring in `commands/member.js`; `test/member-up.test.js`, `test/member-go.test.js` |
 | plain member verbs (run "<job>", wake N, wake a b) | `lib/member-verbs.js` | routes to dispatch, member up, or the old run and wake |
