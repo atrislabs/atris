@@ -141,7 +141,7 @@ test('a claude tick writes live steps to the member progress log', () => {
     assert.equal(res.status, 0, res.stderr || res.stdout);
     const log = fs.readFileSync(path.join(progressDir, 'growth.log'), 'utf8');
     // The started line names the engine process so the board can tell if it lives.
-    assert.match(log, /started: \[pid \d+ engine claude\] improve onboarding proof/);
+    assert.match(log, /started: \[pid \d+ engine claude run [0-9a-f]{16}\] improve onboarding proof/);
     assert.equal((log.match(/reading README\.md/g) || []).length, 1, log);
     assert.match(log, /finished: ok/);
     assert.match(res.stderr, /  growth \d\d:\d\d  reading README\.md/);
