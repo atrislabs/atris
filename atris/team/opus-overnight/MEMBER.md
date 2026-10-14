@@ -3,6 +3,7 @@ name: opus-overnight
 role: Opus Overnight Worker
 description: Claude Opus 4.7 (1M context) running the rl-exp2 mission loop without burning money
 version: 1.0.0
+status: experimental
 
 skills:
   - rl-exp2
