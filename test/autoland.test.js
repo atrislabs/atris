@@ -155,29 +155,18 @@ function landedWorkTask(repo, title) {
 function replaceLatestProof(repo, ref, proof) {
   const task = projectionByRef(repo)[ref];
   assert.ok(task, 'task must exist before replacing its proof');
-  const script = [
-    "const { DatabaseSync } = require('node:sqlite');",
-    'const sqlite = new DatabaseSync(process.argv[1]);',
-    'try {',
-    "  const row = sqlite.prepare('SELECT metadata FROM tasks WHERE id = ?').get(process.argv[2]);",
-    "  const metadata = JSON.parse(row.metadata || '{}');",
-    '  metadata.latest_agent_proof = process.argv[3];',
-    "  sqlite.prepare('UPDATE tasks SET metadata = ?, updated_at = ? WHERE id = ?').run(JSON.stringify(metadata), Date.now(), process.argv[2]);",
-    '} finally {',
-    '  sqlite.close();',
-    '}',
-  ].join('\n');
-  const seeded = spawnSync(process.execPath, [
-    '-e',
-    script,
-    path.join(repo, '.atris', 'fixture-tasks.db'),
-    task.id,
-    proof,
-  ], {
-    encoding: 'utf8',
-    env: { ...process.env, NODE_NO_WARNINGS: '1' },
-  });
-  assert.equal(seeded.status, 0, seeded.stderr || seeded.stdout);
+  // Tamper with the stored proof without recertifying it through `task ready`.
+  const db = taskStore.open(path.join(repo, '.atris', 'fixture-tasks.db'));
+  try {
+    const row = db.prepare('SELECT metadata FROM tasks WHERE id = ?').get(task.id);
+    assert.ok(row, 'task must exist in the database before replacing its proof');
+    const metadata = JSON.parse(row.metadata || '{}');
+    metadata.latest_agent_proof = proof;
+    db.prepare('UPDATE tasks SET metadata = ?, updated_at = ? WHERE id = ?')
+      .run(JSON.stringify(metadata), Date.now(), task.id);
+  } finally {
+    taskStore.close();
+  }
 }
 
 test('digest and alarm compose in plain language', () => {
