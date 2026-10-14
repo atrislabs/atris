@@ -60,9 +60,23 @@ The frozen three-file check passed 35 checks, failed 0, cancelled 0, exit 0, in 
 node --test test/stall-signal-health.test.js test/roster-prep-brief.test.js test/roster-run-record.test.js
 ```
 
+## Task claim command group, step 16
+
+All eight selected checks passed, failed 0, cancelled 0, exit 0, in 5712.168 milliseconds. The process finished in 5.774 seconds within its 120-second deadline. No test code changed and no failure was repaired. Output: `/tmp/auto-improver-command16.tap`.
+
+```sh
+node --test --test-name-pattern='task command adds, claims|task do |task headless JSON|claiming a' test/commands.test.js
+```
+
+The frozen three-file check passed 35 checks, failed 0, cancelled 0, exit 0, in 12280.11725 milliseconds. Output: `/tmp/auto-improver-required16.tap`.
+
+```sh
+node --test test/stall-signal-health.test.js test/roster-prep-brief.test.js test/roster-run-record.test.js
+```
+
 ## Next move
 
-Inspect the task-claim command group implicated by the earlier process snapshot, then run that group with a bounded deadline and repair a reproduced cause. The full command file remains unverified; passing selected groups cannot rule out failures caused by state left by earlier tests.
+Task claiming does not reproduce the slow scan independently. Stop subdividing passing command groups: run the whole command file alone with a longer bounded deadline and save child-process snapshots if it exceeds the earlier 180-second limit. This can distinguish cumulative runtime from state leaked by earlier tests. The full command file remains unverified.
 
-next_push: Isolate the task-claim command checks where the earlier full-file scan was still running at its deadline.
+next_push: Run the whole command file alone with a ten-minute deadline and capture child-process state after three minutes.
 layer: capabilities
