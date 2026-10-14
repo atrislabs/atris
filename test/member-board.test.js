@@ -246,6 +246,11 @@ test('watch names a put-away run with when it last did anything, even once it is
 
 test('board says nobody is working when every member is hidden', () => {
   assert.equal(renderBoard([], '/x', 3), 'nobody is working right now. 3 ended over an hour ago, hidden. --all shows them');
+  assert.equal(
+    renderBoard([], '/x', 1, null, ['launcher quiet -> stopped, last active 7h ago']),
+    'changed in the last minute: launcher quiet -> stopped, last active 7h ago\n\nnobody is working right now. 1 ended over an hour ago, hidden. --all shows them',
+    'the last shown run hiding as it changes is still named',
+  );
 });
 
 test('atris member board reads ATRIS_PROGRESS_DIR for real', () => {
