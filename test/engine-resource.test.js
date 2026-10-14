@@ -1148,10 +1148,32 @@ const recordingCall = (code) => {
   }
   return new RegExp(`\\b(?:${[...new Set(names)].join('|')})\\(`);
 };
-// Each launch needs its own recording call on its line or in the dozen
-// lines above it.
+// Each launch needs a recording call on its line or in the dozen lines
+// above it, without crossing a top-level function boundary.
 const RECORD_WINDOW = 12;
-const recordedAbove = (lines, line, recorder) => recorder.test(lines.slice(Math.max(0, line - 1 - RECORD_WINDOW), line).join('\n'));
+const FUNCTION_START = /^(?:async\s+)?function\b|^(?:const|let)\s+[\w$]+\s*=\s*(?:async\s*)?(?:function\b|\([^)]*\)\s*=>)/gm;
+const recordedAbove = (lines, line, recorder) => {
+  let start = Math.max(0, line - 1 - RECORD_WINDOW);
+  for (let index = line - 1; index >= start; index -= 1) {
+    // A closed function's readings cannot cover a later top-level launch.
+    if (/^\}/.test(lines[index])) {
+      start = index + 1;
+      break;
+    }
+    if (lines[index].match(FUNCTION_START)) {
+      // A concise arrow ends at its statement, without a closing brace.
+      const concise = /=>\s*(?:[^\s{]|$)/.test(lines[index]);
+      const statementEnd = concise ? lines.slice(index, line).findIndex((candidate) => /;\s*$/.test(candidate)) : -1;
+      const end = statementEnd >= 0 ? index + statementEnd : index;
+      const complete = /\}\s*;?\s*$/.test(lines[index]) || (concise && statementEnd >= 0);
+      start = complete && end < line - 1 ? end + 1 : index;
+      break;
+    }
+  }
+  // Defining a recording wrapper is not a call to that wrapper.
+  const nearby = lines.slice(start, line).join('\n').replace(/\bfunction\s+[\w$]+\s*\([^)]*\)/g, '');
+  return recorder.test(nearby);
+};
 // A version or help probe starts no engine run.
 const isProbe = (args) => /^\[\s*(?:['"`][\w-]+['"`]\s*,\s*)?['"`]--(?:version|help)['"`]\s*\]$/.test(args || '');
 
@@ -1177,6 +1199,15 @@ test('every launch of an engine program by name records its run or is named as e
   // not cover this launch.
   assert.deepStrictEqual(unrecorded('commands/planted.js', "// startEngineRun is called elsewhere\nconst r = spawnSync('claude', ['-p', prompt]);\n"), ['commands/planted.js:2 claude']);
   assert.deepStrictEqual(unrecorded('commands/planted.js', "/* recordEngineResource( */ spawnSync('codex', ['exec']);\n"), ['commands/planted.js:1 codex']);
+  const previousFunction = "function recorded() {\n  const end = startEngineRun(root);\n  spawnSync('claude', args);\n}\n";
+  assert.deepStrictEqual(unrecorded('commands/planted.js', `${previousFunction}function bare() {\n  spawnSync('claude', args);\n}\n`), ['commands/planted.js:6 claude']);
+  assert.deepStrictEqual(unrecorded('commands/planted.js', `${previousFunction}spawnSync('claude', args);\n`), ['commands/planted.js:5 claude']);
+  assert.deepStrictEqual(unrecorded('commands/planted.js', `${previousFunction}const bare = () => {\n  spawnSync('claude', args);\n};\n`), ['commands/planted.js:6 claude']);
+  assert.deepStrictEqual(unrecorded('commands/planted.js', `${previousFunction}function covered() {\n  const end = startEngineRun(root);\n  spawnSync('claude', args);\n}\n`), []);
+  assert.deepStrictEqual(unrecorded('commands/planted.js', "const record = () => startEngineRun(root);\nspawnSync('claude', args);\n"), ['commands/planted.js:2 claude']);
+  assert.deepStrictEqual(unrecorded('commands/planted.js', "const record = () =>\n  startEngineRun(root);\nspawnSync('claude', args);\n"), ['commands/planted.js:3 claude']);
+  assert.deepStrictEqual(unrecorded('commands/planted.js', "function record() { startEngineRun(root); }\nspawnSync('claude', args);\n"), ['commands/planted.js:2 claude']);
+  assert.deepStrictEqual(unrecorded('commands/planted.js', "function covered() { const end = startEngineRun(root);\n  spawnSync('claude', args);\n}\n"), []);
   const recordedThenBare = [
     "const end = startEngineRun(root, { engine: 'claude' });",
     "spawnSync('claude', ['-p', a]);",
@@ -1207,7 +1238,6 @@ test('every engine started through a runner or profile variable records its run 
   // It is an engine when the call, or the variable's declaration in the same
   // function, names an engine program or an engine or runner resolver.
   const ENGINE_SOURCE = new RegExp(`['"\`](?:${ENGINE_NAMES})['"\`]|\\b[\\w$]*(?:Engine|engine|Runner|runner)[\\w$]*\\(`);
-  const FUNCTION_START = /^(?:async\s+)?function\b|^(?:const|let)\s+[\w$]+\s*=\s*(?:async\s*)?(?:function\b|\([^)]*\)\s*=>)/gm;
   // Launches whose run is recorded somewhere this scan cannot see, by
   // file and the function holding the launch.
   const EXEMPT_LAUNCHES = new Map([
@@ -1310,6 +1340,13 @@ test('every engine started through a runner or profile variable records its run 
   // comment naming the recorder does not.
   const wrapper = "function startTick(cwd) {\n  return startEngineRun(cwd, { engine: 'claude' });\n}\n";
   assert.deepStrictEqual(planted(`${wrapper}function a() {\n  const end = startTick(cwd);\n  spawn(resolveClaudeRunnerBin(), args);\n}\n`), []);
+  assert.deepStrictEqual(planted(`${wrapper}function bare() {\n  spawn(resolveClaudeRunnerBin(), args);\n}\n`), ['commands/planted.js:5 resolveClaudeRunnerBin()']);
+  assert.deepStrictEqual(planted(`${wrapper}spawn(resolveClaudeRunnerBin(), args);\n`), ['commands/planted.js:4 resolveClaudeRunnerBin()']);
+  assert.deepStrictEqual(planted("const record = () => startEngineRun(root);\nspawn(resolveClaudeRunnerBin(), args);\n"), ['commands/planted.js:2 resolveClaudeRunnerBin()']);
+  assert.deepStrictEqual(planted("const record = () =>\n  startEngineRun(root);\nspawn(resolveClaudeRunnerBin(), args);\n"), ['commands/planted.js:3 resolveClaudeRunnerBin()']);
+  assert.deepStrictEqual(planted("function record() { startEngineRun(root); }\nspawn(resolveClaudeRunnerBin(), args);\n"), ['commands/planted.js:2 resolveClaudeRunnerBin()']);
+  assert.deepStrictEqual(planted(`${wrapper}const bare = () => {\n  spawn(resolveClaudeRunnerBin(), args);\n};\n`), ['commands/planted.js:5 resolveClaudeRunnerBin()']);
+  assert.deepStrictEqual(planted("function recordAndLaunch() {\n  startEngineRun(root);\n}\nfunction bare() {\n  const profile = resolveEngineProfile(engine);\n  const runner = profile.bin;\n  spawnSync(runner, args);\n}\n"), ['commands/planted.js:7 runner']);
   assert.deepStrictEqual(planted("function a() {\n  // startEngineRun(root)\n  spawn(resolveClaudeRunnerBin(), args);\n}\n"), ['commands/planted.js:3 resolveClaudeRunnerBin()']);
   const repo = path.join(__dirname, '..');
   const missing = [];
