@@ -289,6 +289,9 @@ test('follow finishes a line that was half written before it started', () => {
 
 // A spawned sleeper stands in for a member's engine run. detached makes it a
 // process group leader, the same way the mission runner spawns the engine.
+// The sleepers are node processes; stand in for a real engine command line.
+const asEngine = { readCommand: (pid) => `claude codex -p acting as builder ${pid}` };
+
 function spawnSleeper(script) {
   const child = spawn(process.execPath, ['-e', script], { detached: true, stdio: ['ignore', 'pipe', 'ignore'] });
   const ready = new Promise((resolve) => {
@@ -346,7 +349,7 @@ test('member stop ends the run and everything it started, then logs finished: st
   const dir = fakeDir({ builder: [`${isoAgo(125)} m-9 started: [pid ${child.pid} engine claude] long job`, `${isoAgo(3)} m-9 running: npm test`] });
   try {
     assert.ok(isAlive(grandchild));
-    const result = await stopMember('builder', { dir });
+    const result = await stopMember('builder', { dir, deps: asEngine });
     assert.equal(result.ok, true);
     assert.equal(result.forced, false);
     assert.equal(result.message, 'stopped builder after 2m of work');
@@ -356,7 +359,7 @@ test('member stop ends the run and everything it started, then logs finished: st
     assert.match(log.trim().split('\n').pop(), /^\S+ m-9 finished: stopped$/);
     const [row] = readBoard({ dir });
     assert.equal(row.state, 'stopped');
-    assert.equal((await stopMember('builder', { dir })).message, 'nothing running', 'second stop finds nothing');
+    assert.equal((await stopMember('builder', { dir, deps: asEngine })).message, 'nothing running', 'second stop finds nothing');
   } finally {
     killAll(child.pid);
     try { process.kill(grandchild, 'SIGKILL'); } catch {}
@@ -369,7 +372,7 @@ test('member stop forces a run that ignores the polite signal', async () => {
   await ready;
   const dir = fakeDir({ stubborn: [`${isoAgo(10)} m-5 started: [pid ${child.pid} engine codex] dig in`] });
   try {
-    const result = await stopMember('stubborn', { dir, graceMs: 300 });
+    const result = await stopMember('stubborn', { dir, graceMs: 300, deps: asEngine });
     assert.equal(result.ok, true);
     assert.equal(result.forced, true);
     assert.match(result.message, /^stopped stubborn after \d+s of work, it had to be forced$/);
@@ -388,16 +391,31 @@ test('member stop says nothing running for unknown, finished, untagged, or dead 
   });
   try {
     for (const name of ['nobody', 'done', 'legacy', 'ghost', '', '../done']) {
-      assert.equal((await stopMember(name, { dir })).message, 'nothing running', name);
+      assert.equal((await stopMember(name, { dir, deps: asEngine })).message, 'nothing running', name);
     }
     assert.equal(fs.readFileSync(path.join(dir, 'done.log'), 'utf8').includes('stopped'), false);
     const res = spawnSync(process.execPath, [cliPath, 'member', 'stop', 'nobody'], {
+      cwd: dir,
       encoding: 'utf8',
       env: { ...process.env, ATRIS_PROGRESS_DIR: dir },
     });
     assert.equal(res.status, 0, res.stderr);
     assert.equal(res.stdout.trim().split('\n').pop(), 'nothing running');
   } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test('member stop leaves a reused pid alone when its command is no longer the engine', async () => {
+  const { child, ready } = spawnSleeper("console.log('up'); setInterval(() => {}, 1000)");
+  await ready;
+  const dir = fakeDir({ builder: [`${isoAgo(60)} m-7 started: [pid ${child.pid} engine claude] old job`] });
+  try {
+    const result = await stopMember('builder', { dir, deps: { readCommand: () => 'node /usr/local/bin/some-other-app' } });
+    assert.equal(result.message, 'nothing running');
+    assert.equal(isAlive(child.pid), true, 'the unrelated process keeps running');
+  } finally {
+    try { process.kill(-child.pid, 'SIGKILL'); } catch {}
     fs.rmSync(dir, { recursive: true, force: true });
   }
 });
