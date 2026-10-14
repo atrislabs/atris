@@ -9789,9 +9789,20 @@ test('task done with proof writes a reviewed proof event', () => {
   try {
     fs.mkdirSync(path.join(dir, 'atris'), { recursive: true });
 
-    const add = runCli(['task', 'add', 'Validate proof persistence', '--tag', 'rsi'], { cwd: dir, env });
-    assert.equal(add.status, 0, add.stderr);
-    const id = add.stdout.trim().split('\t')[0];
+    // Seed only the parent; done and show still use the CLI.
+    let id;
+    const db = taskStore.open(dbPath);
+    try {
+      const created = taskStore.addTask(db, {
+        title: 'Validate proof persistence',
+        tag: 'rsi',
+        workspaceRoot: taskStore.workspaceRoot(dir),
+      });
+      assert.equal(created.inserted, true);
+      id = created.id;
+    } finally {
+      taskStore.close();
+    }
 
     const done = runCli([
       'task', 'done', id,
