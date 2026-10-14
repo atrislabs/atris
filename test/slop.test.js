@@ -2720,6 +2720,31 @@ test('fix reads backward, double-line, hollow and sign arrows as arrows', () => 
   ]);
 });
 
+test('fix turns a dash pressed against an arrow sign or arrowhead into its shaft', () => {
+  // the dash split the arrow off its shaft: "plan, \u25b6 build", "build \u25c0, review"
+  const file = tmpFile('arrow-shaft-signs.md', [
+    'plan \u2014\u2014\u25b6 build',
+    'plan \u2014\u2192 build',
+    'build \u25c0\u2014\u2014 review',
+    'a \u2190\u2014 b',
+    'plan \u2014\u2014\u25b7 ship',
+    'x \u2014\u21d2 y \u21d4\u2014 z',
+    'Costs went up \u2014\u2193 not down.',
+    'Press play \u25b6 \u2014 then wait.',
+  ].join('\n\n'));
+  const { changes } = applyFixes([file], RULES, { write: false });
+  assert.deepEqual(changes.map((c) => c.after), [
+    'plan --\u25b6 build',
+    'plan -\u2192 build',
+    'build \u25c0-- review',
+    'a \u2190- b',
+    'plan --\u25b7 ship',
+    'x -\u21d2 y \u21d4- z',
+    'Costs went up, \u2193 not down.',
+    'Press play \u25b6, then wait.',
+  ]);
+});
+
 test('fix keeps a journal heading that ends in a time readable for its hour', () => {
   // analytics reads the hour after a dash or a spaced hyphen at the end of a
   // heading; the fix wrote "### Watch: 19:05", which hides it, and glued

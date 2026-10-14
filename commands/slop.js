@@ -488,8 +488,12 @@ function fixEmDash(s, { endsBlock = false, startsBlock = false, spans = [] } = {
   // which is also what the map healer reads the name from
   s = s.replace(/\uE000(\d+)\uE001[ \t]?\u2014[ \t]*(?=\uE000\d+\uE001)/g, (m, n) => (FILE_REF.test(spans[n] || '') ? `\uE000${n}\uE001: ` : m));
   // a dash touching an arrowhead is the arrow's shaft, so it turns into a
-  // hyphen of the same width: "RN -> HUC", "29->29", "a <-> b", never "RN: > HUC"
-  s = s.replace(/\u2014+(?=>)|(?<=<)\u2014+/g, (m) => '-'.repeat(m.length));
+  // hyphen of the same width: "RN -> HUC", "29->29", "a <-> b", never "RN: > HUC".
+  // The same goes for a dash pressed against a sideways arrow sign on either
+  // side, "plan -\u2192 build", or against a triangle arrowhead on the side it
+  // points from, "plan --\u25b6 build", "build \u25c0-- review", never "plan, \u25b6 build".
+  // An up or down arrow marks a change, so "cost \u2014\u2193" stays prose.
+  s = s.replace(/\u2014+(?=[>\u25b6\u25b7\u25b8\u25b9\u25ba\u2190\u2192\u2194\u21a6\u21d0\u21d2\u21d4\u27f5-\u27ff\u2794-\u27be])|(?<=[<\u25c0\u25c1\u25c2\u25c3\u25c4\u2190\u2192\u2194\u21a6\u21d0\u21d2\u21d4\u27f5-\u27ff\u2794-\u27be])\u2014+/g, (m) => '-'.repeat(m.length));
   // dashes pressed together between two boxes draw the line that joins them,
   // so they turn into hyphens of the same width: "[a] --- [b]", never "[a],
   // [b]". Two pressed dashes in a sentence are still one break: "He said,".
