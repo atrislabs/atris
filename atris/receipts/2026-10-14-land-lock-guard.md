@@ -35,6 +35,8 @@ Actual final output excerpt:
 Commands: git status --short; atris mission status mission-2026-10-14-continue-work-folder-protect-04f87dc9; atris mission goal --json; atris task list; atris; targeted reads; atris task new/claim/note/ready; git diff --check; explicit git add; git commit; git push origin HEAD.
 Mission attach-task returned lock busy; used a separate bounded task without changing mission settings. Brain activate and compile returned exit 2, plan only; no generated policy files written.
 
+Landing: committed and pushed to origin. Task proof is ready for review, not accepted. The task gate required its own real check invocation, which exited 0 and saved atris/runs/2026-10-14-task-acw-2-2026-10-14T18-12-17-543Z.json.
+
 Progress: one additional removal path protected, two real CLI modes proved, two old locks preserved, ten required checks passed, zero removal records for kept folders. Fleet and autopilot removal paths remain for later increments.
 next_push: Route regression-folder cleanup in autopilot through the Git-activity check and removal log, with real-runtime coverage for old locks.
 layer: behaviors
