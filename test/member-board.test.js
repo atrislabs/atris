@@ -451,6 +451,20 @@ test('board says a heredoc step is a script or a file write, but not in the row 
   assert.equal(rows[0].step, "running: python3 - <<'PY'", 'apps reading the rows get the step as written');
 });
 
+test('board shows an all-ok history as one ok, and a mixed one in full', () => {
+  const now = Date.parse('2026-10-14T13:00:00Z');
+  const runs = (name, ends) => memberRow(name, [
+    ...ends.flatMap((e, i) => [`2026-10-14T12:1${i}:00Z m-${i} started: run ${i}`, `2026-10-14T12:1${i}:30Z m-${i} finished: ${e}`]),
+    '2026-10-14T12:50:00Z m-9 started: now', '2026-10-14T12:59:30Z m-9 running: ls', '',
+  ].join('\n'), now);
+  const rows = [runs('steady', ['ok', 'ok', 'ok']), runs('shaky', ['failed', 'ok', 'ok']), runs('new', [])];
+  const shown = (name) => renderBoard(rows, '/x').split('\n').find((l) => l.startsWith(`${name} `));
+  assert.match(shown('steady'), /^steady\s+working\s+ok\s{2,}\S/, shown('steady'));
+  assert.match(shown('shaky'), /^shaky\s+working\s+ok ok failed\s/, shown('shaky'));
+  assert.match(shown('new'), /^new\s+working\s+-\s/, 'no earlier runs still reads -');
+  assert.deepEqual(rows[0].before, ['ok', 'ok', 'ok'], 'apps reading the rows get every outcome');
+});
+
 test('board shortens the run\'s own fixed status lines, but not in the row data', () => {
   const now = Date.parse('2026-10-14T13:00:00Z');
   const step = (name, text) => memberRow(name, `2026-10-14T12:58:00Z m-1 started: map it\n2026-10-14T12:59:30Z m-1 ${text}\n`, now);
