@@ -1361,9 +1361,11 @@ test('every engine started through a runner or profile variable records its run 
             if (internalOnly && (call.index < fnStart || call.index >= fnEnd)) continue;
             // A parameter or earlier local alias of another function holding the
             // call hides either name, and the launcher's own alias hides its
-            // internal name. An alias inside a sibling helper does not count.
+            // internal name. An alias inside a sibling helper does not count, and
+            // a destructured alias counts unless the name is only a renamed key.
             const visible = withoutHelperDefinitions(code, call.index);
-            const alias = new RegExp(`\\b(?:const|let|var)\\s+${call[1].replace(/\$/g, '\\$')}\\s*=`);
+            const escaped = call[1].replace(/\$/g, '\\$');
+            const alias = new RegExp(`\\b(?:const|let|var)\\s+${escaped}\\s*=|\\b(?:const|let|var)\\s*[{[](?:[^=;]*?[,:{[])?\\s*${escaped}\\s*[,}\\]=]`);
             const hides = ([open, close]) => !(open <= fnStart && fnStart < close) || (internalOnly && open === fnStart);
             if (definitionSpans(code).some(([open, close]) => open < call.index && call.index < close && hides([open, close]) && (parametersOf(open).includes(call[1]) || alias.test(visible.slice(open, call.index))))) continue;
             const prefix = code.slice(0, call.index);
@@ -1527,6 +1529,13 @@ test('every engine started through a runner or profile variable records its run 
     assert.deepStrictEqual(planted(launcher('  function helper() {\n    var launch = wrap;\n    launch(resolveClaudeRunnerBin());\n  }')), [], 'a helper alias hides the launcher name');
     assert.deepStrictEqual(planted(launcher('', 'function other() {\n  function inner() {\n    const launch = wrap;\n  }\n  launch(resolveClaudeRunnerBin());\n}\n')), ['commands/planted.js:3 runner'], 'an alias in a sibling helper does not hide the call');
     assert.deepStrictEqual(planted(launcher('', 'function other() {\n  const launcher = wrap;\n  launch(resolveClaudeRunnerBin());\n}\n')), ['commands/planted.js:3 runner'], 'a longer name is not an alias of the launcher');
+    // A destructured copy hides the launcher name; a renamed key does not.
+    for (const copy of ['const { launch } = tools;', 'let { run, launch = wrap } = tools;', 'var { run: launch } = tools;', 'const [launch] = tools;', 'const [, launch] = tools;', 'const {\n    launch,\n  } = tools;']) {
+      assert.deepStrictEqual(planted(launcher('', `function other() {\n  ${copy}\n  launch(resolveClaudeRunnerBin());\n}\n`)), [], `a destructured copy hides the launcher name: ${copy}`);
+    }
+    for (const copy of ['const { launch: run } = tools;', 'const { launcher } = tools;', 'const [launcher] = tools;']) {
+      assert.deepStrictEqual(planted(launcher('', `function other() {\n  ${copy}\n  launch(resolveClaudeRunnerBin());\n}\n`)), ['commands/planted.js:3 runner'], `a destructured copy of another name still calls the launcher: ${copy}`);
+    }
   }
   assert.deepStrictEqual(planted('const launch = function launch(runner) {\n  spawnSync(runner, args);\n};\nlaunch(resolveClaudeRunnerBin());\n'), ['commands/planted.js:2 runner'], 'matching expression and variable names keep external arguments visible');
   assert.deepStrictEqual(planted('const launch = function launch(runner) {\n  launch(resolveClaudeRunnerBin());\n  spawnSync(runner, args);\n};\n'), ['commands/planted.js:3 runner'], 'the defining assignment does not hide same-name recursion');
