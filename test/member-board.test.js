@@ -641,6 +641,32 @@ test('tiny footers shorten the hidden prefix before cutting failure counts', () 
   }
 });
 
+test('narrow footers keep hidden missing-result counts whole', () => {
+  const dir = fakeDir(Object.fromEntries(['a', 'b', 'c', 'd'].map((name) => [name, [
+    `${at(20)} m-1 started: [pid 999999999 engine claude] check the board`,
+  ]])));
+  try {
+    const rows = readBoard({ dir, now: NOW });
+    assert.ok(rows.every((r) => r.no_result));
+    for (const [width, footer] of [
+      [80, '3 more not shown (3 ended with no result), the window is too short'],
+      [41, '3 more not shown (3 ended with no result)'],
+      [31, '3 more not shown (3 no result)'],
+      [22, '3 hidden (3 no result)'],
+    ]) {
+      const lines = renderBoard(rows, dir, 0, width, 4).split('\n');
+      assert.equal(lines[3], footer, `${width}: a whole count and label`);
+      assert.equal(lines.length, 4);
+      assert.ok(lines.every((line) => line.length <= width));
+    }
+    const mixed = rows.map((r, i) => i === 1 ? { ...r, no_result: false } : r);
+    assert.equal(renderBoard(mixed, dir, 0, 33, 4).split('\n')[3],
+      '3 hidden (1 stopped, 2 no result)');
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
 test('hidden failures that share a reason say it once in the count', () => {
   const logs = {};
   for (let i = 1; i <= 4; i++) logs[`f${i}`] = [`${at(900 + i)} m-${i} started: job ${i}`, `${at(800 + i)} m-${i} finished: failed (signed out)`];

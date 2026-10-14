@@ -2314,3 +2314,5 @@ npm publish
 - **Failure reasons beside finishing:** `renderBoard()` (`lib/member-board.js:385`) shortens the compact member heading to name before clipping the result, preserving engine error alongside finishing at 30 columns. Regression: `test/member-board.test.js:267`; real terminal proof: `python3 atris/runs/member-board-finishing-reason-proof.py`.
 
 - **Missing results beside finishing:** `renderBoard()` (`lib/member-board.js:379`) keeps ended, no result when four name characters and the state fit, shortening to no result only when needed. Regression: `test/member-board.test.js:288`; actual terminal proof: `python3 atris/runs/member-board-no-result-proof.py`.
+
+- **Hidden missing results:** `renderBoard()` (`lib/member-board.js:286`) shortens the missing-result tally to no result before cutting the footer, preserving counts from 22 columns. Regression: `test/member-board.test.js:644`; terminal proof: `python3 atris/runs/member-board-hidden-no-result-proof.py`.
