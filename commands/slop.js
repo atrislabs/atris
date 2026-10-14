@@ -213,7 +213,8 @@ function installHook(root = process.cwd()) {
 // Apply every fixable rule's safe transform in place.
 // Returns { fixedCount, fixedFiles, changes }, where changes lists each edited
 // line as { file, line, before, after } so the writer can review the fix.
-function applyFixes(files, rules) {
+// With write: false it only reports what it would change (a dry run).
+function applyFixes(files, rules, { write = true } = {}) {
   const fixable = rules.filter((r) => typeof r.fix === 'function');
   let fixedCount = 0; const fixedFiles = []; const changes = [];
   for (const file of files) {
@@ -236,7 +237,7 @@ function applyFixes(files, rules) {
       }
       if (line !== lines[i]) { changes.push({ file, line: i + 1, before: lines[i], after: line }); lines[i] = line; touched = true; }
     }
-    if (touched) { fs.writeFileSync(file, lines.join('\n')); fixedFiles.push(file); }
+    if (touched) { if (write) fs.writeFileSync(file, lines.join('\n')); fixedFiles.push(file); }
   }
   return { fixedCount, fixedFiles, changes };
 }
@@ -347,7 +348,8 @@ function scanPaths(targets, options = {}) {
 function detect(argv) {
   const json = argv.includes('--json');
   const quiet = argv.includes('--quiet');
-  const doFix = argv.includes('--fix');
+  const dryRun = argv.includes('--dry-run');
+  const doFix = dryRun || argv.includes('--fix');
   const staged = argv.includes('--staged');
   const diffMode = staged || argv.includes('--diff');
   const rules = RULES.concat(loadProjectRules());
@@ -371,9 +373,9 @@ function detect(argv) {
 
   let fixed = null;
   if (doFix) {
-    fixed = applyFixes(files, rules);
+    fixed = applyFixes(files, rules, { write: !dryRun });
     if (!json && fixed.fixedCount) {
-      console.log(`\n  ✎ fixed ${fixed.fixedCount} tell${fixed.fixedCount === 1 ? '' : 's'} in ${fixed.fixedFiles.length} file${fixed.fixedFiles.length === 1 ? '' : 's'}`);
+      console.log(`\n  ✎ ${dryRun ? 'would fix' : 'fixed'} ${fixed.fixedCount} tell${fixed.fixedCount === 1 ? '' : 's'} in ${fixed.fixedFiles.length} file${fixed.fixedFiles.length === 1 ? '' : 's'}`);
       if (!quiet) {
         for (const c of fixed.changes) {
           console.log(`\n    ${path.relative(process.cwd(), c.file)}:${c.line}\n      before  ${c.before.trim()}\n      after   ${c.after.trim()}`);
@@ -391,6 +393,7 @@ function detect(argv) {
       ok: findings.length === 0, scanned: files.length,
       mode: diffMode ? (staged ? 'staged' : 'diff') : 'path',
       fixed: fixed ? fixed.fixedCount : 0,
+      dryRun,
       changes: fixed ? fixed.changes.map((c) => ({ ...c, file: path.relative(process.cwd(), c.file) })) : [],
       slop: findings.length, errors,
       findings: findings.map((f) => ({ ...f, file: path.relative(process.cwd(), f.file) })),
@@ -682,6 +685,7 @@ function slopCommand(argv) {
     atris slop detect --diff      scan only changed lines (commit/PR gate)
     atris slop detect --staged    scan only staged changes (pre-commit hook)
     atris slop detect --fix       auto-repair the safe tells (em dashes), report the rest
+    atris slop detect --dry-run   show what --fix would change, write nothing
     atris slop detect [path...] --json   machine output for CI / the loop
     atris slop rules              list active rules (built-in + project)
     atris slop rules --add <id> <pattern> <why>   grow the project ruleset

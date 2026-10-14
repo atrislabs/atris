@@ -428,3 +428,28 @@ test('in markdown the dash rule leaves inline code and fenced blocks alone', () 
   // backticks mean nothing in plain text, so every dash there still counts
   assert.equal(scanFile(tmpFile('doc.txt', body)).length, 5);
 });
+
+test('a dry run shows what the fix would change and leaves the file alone', () => {
+  const D = '\u2014';
+  const body = ['# Notes', `We checked it, ${D} and it held.`, ''].join('\n');
+  const file = tmpFile('note.md', body);
+  const run = (argv) => {
+    const lines = [];
+    const orig = console.log;
+    console.log = (...a) => lines.push(a.join(' '));
+    let code;
+    try { code = detect(argv); } finally { console.log = orig; }
+    return { code, out: lines.join('\n') };
+  };
+  const { code, out } = run([file, '--dry-run']);
+  assert.equal(code, 1, 'the slop is still there, so the gate still fails');
+  assert.match(out, /would fix 1 tell/);
+  assert.match(out, /after   We checked it, and it held\./);
+  assert.equal(fs.readFileSync(file, 'utf8'), body, 'nothing written');
+
+  const json = JSON.parse(run([file, '--dry-run', '--json']).out);
+  assert.equal(json.dryRun, true);
+  assert.equal(json.changes.length, 1);
+  assert.equal(json.slop, 1);
+  assert.equal(fs.readFileSync(file, 'utf8'), body, 'nothing written in machine mode either');
+});
