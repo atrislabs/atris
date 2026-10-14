@@ -121,7 +121,10 @@ function fixEmDash(s, { endsBlock = false } = {}) {
     .replace(/\s*\u2014\s*((?:(?![.!?]["'\u201d\u2019)]*\s)[^\u2014])*[^\s\u2014])\s*\u2014\s*(?=(.?))/g, (m, aside, next, at, whole) => {
       const gap = next && !/[.,;:!?)]/.test(next);
       if (insideParens(whole.slice(0, at))) return `, ${aside}${gap ? ', ' : ''}`;
-      return ` ${wrappedInParens(aside) ? aside : `(${aside})`}${gap ? ' ' : ''}`;
+      // the closing dash also stood in for the comma before a "which" remark:
+      // "scale (model size, data), which is a bet", never "data) which is".
+      const remark = /^(?:which|although|whereas)\b/.test(whole.slice(at + m.length));
+      return ` ${wrappedInParens(aside) ? aside : `(${aside})`}${remark ? ', ' : gap ? ' ' : ''}`;
     })
     // a leftover dash after a quote that already ends its sentence goes, and
     // the quote keeps its own stop: 'backward." Steve Jobs', not '.",'.

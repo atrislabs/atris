@@ -582,12 +582,17 @@ test('fix keeps an aside that already has parentheses in one pair', () => {
     'It works \u2014 (mostly) \u2014 fine.',
     'Pick one \u2014 (a) or (b) \u2014 then go.',
     'The tool \u2014 which we built \u2014 now ships.',
+    // shape from this repo's weight-optimize README
+    'ASI is **scale** \u2014 model size, data, compute \u2014 which is a bet.',
+    'It held \u2014 mostly \u2014 although slowly.',
   ].join('\n'));
   const { changes } = applyFixes([file], RULES);
   assert.deepEqual(changes.map((c) => c.after), [
     'It works (mostly) fine.',
     'Pick one ((a) or (b)) then go.',
     'The tool (which we built) now ships.',
+    'ASI is **scale** (model size, data, compute), which is a bet.',
+    'It held (mostly), although slowly.',
   ]);
 });
 
