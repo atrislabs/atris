@@ -2745,6 +2745,23 @@ test('fix turns a dash pressed against an arrow sign or arrowhead into its shaft
   ]);
 });
 
+test('fix reads a hyphen shaft with a triangle arrowhead as an arrow on its line', () => {
+  // the line was not seen as a diagram: "plan --\u25b6 build, review"
+  const file = tmpFile('hyphen-arrowhead.md', [
+    'plan --\u25b6 build \u2014 review --\u25b6 ship',
+    'plan \u2014\u2014\u25b6 build \u2014\u2014\u2014 review',
+    'build \u25c0-- review \u2014 ship \u25c0-- done',
+    'Press play \u25b6 \u2014 then wait \u2014 then go \u25b6.',
+  ].join('\n\n'));
+  const { changes } = applyFixes([file], RULES, { write: false });
+  assert.deepEqual(changes.map((c) => c.after), [
+    'plan --\u25b6 build - review --\u25b6 ship',
+    'plan --\u25b6 build --- review',
+    'build \u25c0-- review - ship \u25c0-- done',
+    'Press play \u25b6, then wait, then go \u25b6.',
+  ]);
+});
+
 test('fix keeps a journal heading that ends in a time readable for its hour', () => {
   // analytics reads the hour after a dash or a spaced hyphen at the end of a
   // heading; the fix wrote "### Watch: 19:05", which hides it, and glued
