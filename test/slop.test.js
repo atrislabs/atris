@@ -1433,3 +1433,22 @@ test('fix keeps a colon before a dash pair and stacks no comma on it', () => {
     'The gate, strict (very), held.',
   ]);
 });
+
+test('fix joins a subject with a "not" contraction or "still" before its verb with a semicolon', () => {
+  // from the terrace repo, where the comma made a splice
+  const file = tmpFile('adverb.md', [
+    'The tests ran on unchecked bullets \u2014 the picker can\'t see DONE state.',
+    'Hand it to the skill \u2014 the member still owns verification.',
+    'Run it and wait \u2014 a one-shot session never wakes again.',
+    'Atris owns the report \u2014 the same surface that already runs agent work.',
+    'Keep the list \u2014 the files still open.',
+  ].join('\n'));
+  const { changes } = applyFixes([file], RULES);
+  assert.deepEqual(changes.map((c) => c.after), [
+    'The tests ran on unchecked bullets; the picker can\'t see DONE state.',
+    'Hand it to the skill; the member still owns verification.',
+    'Run it and wait; a one-shot session never wakes again.',
+    'Atris owns the report, the same surface that already runs agent work.',
+    'Keep the list, the files still open.',
+  ]);
+});
