@@ -141,8 +141,8 @@ test('before shows how the last three runs ended, newest first', () => {
   });
   try {
     const [row] = readBoard({ dir, now: NOW });
-    assert.deepEqual(row.before, ['died', 'stopped', 'failed'], 'a stop wins over failed; the oldest run drops off');
-    assert.match(renderBoard([row], dir), /^builder\s+working\s+died stopped failed\s+\d+s\s+\d+s ago\s+/m);
+    assert.deepEqual(row.before, ['replaced', 'stopped', 'failed'], 'a stop wins over failed; the oldest run drops off');
+    assert.match(renderBoard([row], dir), /^builder\s+working\s+replaced stopped failed\s+\d+s\s+\d+s ago\s+/m);
   } finally {
     fs.rmSync(dir, { recursive: true, force: true });
   }
@@ -257,7 +257,16 @@ test('watch tells apart two runs with no process id on the same mission by their
   assert.equal(memberRow('builder', first, now).started_at, '2026-10-14T12:59:00.000Z', 'a readable start time');
   const changed = changeTracker(60_000);
   changed([memberRow('builder', first, now)], now);
-  assert.deepEqual(changed([memberRow('builder', again, now)], now + 3_000), ['builder working -> died -> working']);
+  assert.deepEqual(changed([memberRow('builder', again, now)], now + 3_000), ['builder working -> replaced -> working'],
+    'no process id to check, so the board does not claim a crash');
+});
+
+test('before says died only when the cut-off run had a process id that is gone', () => {
+  const now = Date.parse('2026-10-14T13:00:00Z');
+  const cut = (pid) => `2026-10-14T12:50:00Z m-1 started: [pid ${pid} engine claude] build\n2026-10-14T12:59:00Z m-2 started: next\n`;
+  assert.deepEqual(memberRow('builder', cut(2147483646), now).before, ['died'], 'its process is gone');
+  assert.deepEqual(memberRow('builder', cut(process.pid), now).before, ['replaced'], 'its process lives, so it did not die');
+  assert.deepEqual(memberRow('builder', '2026-10-14T12:50:00Z m-1 started: build\n2026-10-14T12:59:00Z m-2 started: next\n', now).before, ['replaced']);
 });
 
 test('watch names a put-away run with when it last did anything, even once it is hidden', () => {
