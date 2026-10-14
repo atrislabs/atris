@@ -630,7 +630,7 @@ function showHelpAll() {
   console.log('  rainmaker  - Relationship manager dashboard (atrisos-backend/scripts/rainmaker.py)');
   console.log('  meet       - onboard a stranger in one sitting and print their /book link');
   console.log('  avail      - Booking availability (/book/{username} weekly windows)');
-  console.log('  scoreboard - Today\'s github contributions vs your best day, streak, repo commits (--watch)');
+  console.log('  scoreboard - Today\'s github contributions vs your best day, streak, repo commits (--watch, --json)');
   console.log('  brain      - Compile MAP/TODO/wiki/state into a loadable agent brain');
   console.log('  lesson     - atris lesson add <slug> <pass|fail> "<text>" (mine/sweep/resolve/revert/ledger; --detector validates the falsifier at write time)');
   console.log('  taste      - Record the operator\'s keep, kill, and more creative verdicts');
