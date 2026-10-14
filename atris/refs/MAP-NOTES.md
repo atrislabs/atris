@@ -2276,3 +2276,7 @@ npm publish
 ## One-run member outcomes
 
 - `commands/member.js:1037` preserves tick check results when reading the live run receipt; `commands/member.js:1346` makes a failed explicit completion check return failure; `commands/member.js:1374` names the failed check. `commands/member.js:4249` removes only matching outer quotes from saved member settings. `test/member-run-one-run-outcome.test.js:1` runs the real CLI in initialized, committed temporary projects with a fake engine.
+
+## Folder-removal scanner review
+
+- `atris/receipts/work-folder-scan-probe.js:10` reads the actual scanner and bypass predicate; synthetic cases at line 21; acceptance mode at line 47. `atris/receipts/work-folder-scan-handoff-2026-10-14.md:1` records observations and the bounded repair safeguard.
