@@ -239,6 +239,18 @@ test('watch names a member whose first run appears between redraws', () => {
   assert.deepEqual(changed([row('builder', 'working'), row('scout', 'done ok')], 67_000), [], 'and it drops off a minute after its last change');
 });
 
+test('watch names the runs a new member already ended before its current one', () => {
+  const now = Date.parse('2026-10-14T13:00:00Z');
+  const builder = { ...memberRow('builder', '2026-10-14T12:58:00Z m-1 started: build\n', now), state: 'working' };
+  const scout = '2026-10-14T13:00:01Z m-2 started: [pid 22 engine claude] map\n2026-10-14T13:00:02Z m-2 finished: failed\n'
+    + `2026-10-14T13:00:02Z m-3 started: [pid ${process.pid} engine claude] map again\n`;
+  const changed = changeTracker(60_000);
+  changed([builder], now);
+  assert.deepEqual(changed([builder, memberRow('scout', scout, now + 3_000)], now + 3_000), ['scout new -> done failed -> working'],
+    'its first run failed before the second started, all between two redraws');
+  assert.deepEqual(changed([builder, memberRow('scout', scout, now + 6_000)], now + 6_000), ['scout new -> done failed -> working'], 'the same run again is not a new change');
+});
+
 test('watch keeps a crash in view when the same member restarts within the minute', () => {
   const row = (member, state) => ({ member, state, before: [], alive: null, engine: '', running_for: '', lasted: '', ago: '1s ago', job: 'j', step: 's' });
   const changed = changeTracker(60_000);
