@@ -934,7 +934,7 @@ test('a read-only ask run writes a start and an end reading, and a run past its 
   }
 });
 
-test('a mission tick writes a start and an end reading for both the codex and the claude runner', () => {
+test('mission runners record paired readings on success and SIGKILL, including shell exit 137', () => {
   const { spawnSync } = require('node:child_process');
   const { withMissionFullJson } = require('./helpers/mission-json');
   const { scrubAgentEnv } = require('./helpers/agent-env');
@@ -990,6 +990,23 @@ test('a mission tick writes a start and an end reading for both the codex and th
     assert.notStrictEqual(log[0].run_id, log[2].run_id);
     assert.ok(log.filter((entry) => entry.phase === 'end').every((entry) => entry.duration_ms >= 0));
     assert.ok(Array.isArray(log[0].load) && Number.isFinite(log[1].duration_ms) && Number.isFinite(log[3].duration_ms));
+    for (const runner of ['codex', 'claude']) {
+      fs.writeFileSync(path.join(bin, runner), `#!/bin/sh\nif [ "$1" = --help ]; then echo '--output-format --permission-mode --resume --session-id --include-partial-messages --verbose --model --effort'; exit 0; fi\nkill -9 $$\n`);
+      const started = run(['mission', 'start', `${runner} killed reading`, '--owner', 'mission-lead', '--runner', runner, '--no-verify', '--json']);
+      assert.strictEqual(started.status, 0, started.stderr || started.stdout);
+      const mission = JSON.parse(started.stdout).mission;
+      const ran = run(['mission', 'run', mission.id, '--max-ticks', '1', '--max-wall', '60', '--no-verify', '--json']);
+      assert.strictEqual(ran.error, undefined, ran.stderr || ran.stdout);
+      const killed = fs.readFileSync(path.join(dir, RESOURCE_LOG), 'utf8').trim().split('\n')
+        .map((line) => JSON.parse(line)).filter((entry) => entry.task === mission.id);
+      assert.deepStrictEqual(killed.map((entry) => entry.phase), ['start', 'end']);
+      assert.strictEqual(killed[0].run_id, killed[1].run_id);
+      assert.strictEqual(killed[1].signal, 'SIGKILL', `${runner}: ${ran.stdout}`);
+      assert.strictEqual(killed[1].cause, killedCauseText(killed[1]));
+      assert.strictEqual(killed[1].timed_out, undefined);
+      assert.ok(Number.isFinite(killed[1].duration_ms) && killed[1].duration_ms >= 0);
+      console.log(`${runner} force-kill CLI exit ${ran.status}: ${JSON.stringify(killed[1])}`);
+    }
   } finally {
     fs.rmSync(dir, { recursive: true, force: true });
   }

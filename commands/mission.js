@@ -9322,7 +9322,8 @@ function spawnGenericRunnerTick(mission, opts) {
 
     proc.on('close', (code, closeSignal) => {
       clearTimeout(timer);
-      endResource({ signal: closeSignal, timedOut });
+      // The shell returns 128 + 9 when its engine child was force-killed.
+      endResource({ signal: closeSignal || (code === 137 ? 'SIGKILL' : null), timedOut });
       if (lastMessageFile && eventBuf.trim()) readCodexEvent(eventBuf.trim());
       let finalText = String(stdout || '').trim();
       if (lastMessageFile) {
