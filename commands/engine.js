@@ -2393,9 +2393,16 @@ function resourceHistoryLines(history) {
     lines.push('no engine run has ended in SIGKILL');
     return lines;
   }
-  const free = Number.isFinite(kill.free_pct) ? `, ${kill.free_pct}% memory free` : '';
-  lines.push(`last SIGKILL: ${kill.engine || 'engine'} on ${kill.task || 'an unnamed task'} at ${utcMinute(kill.at)}, ${kill.cause}${free}`);
-  lines.push(`${history.low_memory_kills} of ${history.kills} SIGKILL${history.kills === 1 ? '' : 's'} ended with machine memory low`);
+  const killLine = (entry) => {
+    const free = Number.isFinite(entry.free_pct) ? `, ${entry.free_pct}% memory free` : '';
+    return `${entry.engine || 'engine'} on ${entry.task || 'an unnamed task'} at ${utcMinute(entry.at)}, ${entry.cause}${free}`;
+  };
+  lines.push(`last SIGKILL: ${killLine(kill)}`);
+  // Timeouts can pile up after a crash; still name the newest kill that was not one.
+  const other = history.last_other_kill;
+  if (other && other !== kill) lines.push(`last SIGKILL not at a time limit: ${killLine(other)}`);
+  const timeLimit = history.time_limit_kills ? `, ${history.time_limit_kills} at their time limit` : '';
+  lines.push(`${history.low_memory_kills} of ${history.kills} SIGKILL${history.kills === 1 ? '' : 's'} ended with machine memory low${timeLimit}`);
   return lines;
 }
 

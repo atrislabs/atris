@@ -338,7 +338,7 @@ test('history reads back the latest sweep and the latest SIGKILL, skipping bad l
     assert.strictEqual(history.last_kill.task, 'CLI-2');
     assert.strictEqual(history.kills, 2);
     assert.strictEqual(history.low_memory_kills, 1);
-    assert.deepStrictEqual(readResourceHistory(path.join(root, 'missing')), { last_sweep: null, last_kill: null, kills: 0, low_memory_kills: 0, kills_day: 0, low_memory_kills_day: 0, time_limit_kills_day: 0, last_day_other_kill: null, open_runs: 0, parent_gone: 0, still_running: 0, last_open: null, lost_closed: 0, lost_closed_day: 0, last_lost_closed: null });
+    assert.deepStrictEqual(readResourceHistory(path.join(root, 'missing')), { last_sweep: null, last_kill: null, kills: 0, low_memory_kills: 0, time_limit_kills: 0, last_other_kill: null, kills_day: 0, low_memory_kills_day: 0, time_limit_kills_day: 0, last_day_other_kill: null, open_runs: 0, parent_gone: 0, still_running: 0, last_open: null, lost_closed: 0, lost_closed_day: 0, last_lost_closed: null });
   } finally {
     fs.rmSync(root, { recursive: true, force: true });
   }
@@ -737,4 +737,31 @@ test('the landing status counts time limit kills apart and names the newest kill
   } finally {
     fs.rmSync(root, { recursive: true, force: true });
   }
+});
+
+test('atris engine sweep counts time limit kills apart and still names the newest kill that was not one', () => {
+  const { engineCommand } = require('../commands/engine');
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'engine-sweep-time-limit-'));
+  const file = path.join(root, RESOURCE_LOG);
+  fs.mkdirSync(path.dirname(file), { recursive: true });
+  const timeLimit = (at, task) => JSON.stringify({ at, phase: 'end', engine: 'codex', task, run_id: task, free_pct: 70, signal: 'SIGKILL', timed_out: true, cause: 'killed (time limit reached)' });
+  fs.writeFileSync(file, [
+    JSON.stringify({ at: '2026-10-14T11:30:00.000Z', phase: 'end', engine: 'claude', task: 'CLI-2', run_id: 'crash', free_pct: 9, signal: 'SIGKILL', cause: 'killed (machine memory low)' }),
+    timeLimit('2026-10-14T12:10:00.000Z', 'SLOW1'),
+    timeLimit('2026-10-14T12:20:00.000Z', 'SLOW2'),
+    '',
+  ].join('\n'));
+  const out = [];
+  const original = console.log;
+  console.log = (line) => out.push(String(line));
+  try {
+    engineCommand(['sweep'], { root, engineSweep: { read: () => ({ agents: [], referenced: new Set() }), uid: 501 } });
+  } finally {
+    console.log = original;
+    fs.rmSync(root, { recursive: true, force: true });
+  }
+  const text = out.join('\n');
+  assert.match(text, /last SIGKILL: codex on SLOW2 at 2026-10-14 12:20 UTC, killed \(time limit reached\), 70% memory free/);
+  assert.match(text, /last SIGKILL not at a time limit: claude on CLI-2 at 2026-10-14 11:30 UTC, killed \(machine memory low\), 9% memory free/);
+  assert.match(text, /1 of 3 SIGKILLs ended with machine memory low, 2 at their time limit/);
 });
