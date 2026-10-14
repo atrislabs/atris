@@ -735,7 +735,7 @@ MCP stdio request flow: `mcp/atris-mcp/index.mjs:142` reads requests while desig
 - `--create-next` on `task finish|review` converts the review `--next` suggestion into the next durable task
 - `atris task add` creates a workspace-scoped row in `~/.atris/tasks.db` (or `ATRIS_TASKS_DB`)
 - `atris task note <id> "<message>"` appends task dialogue/context as an event
-- `atris task review <id> --reward <n> --lesson "..." --next "..."` appends a reviewed event and `.atris/state/task_episodes.jsonl`
+- `atris task review <id> --reward <n> --lesson "..." --next "..."` appends a reviewed event and `.atris/state/task_episodes.jsonl`; `test/commands.test.js:9706` seeds its parent through the real task store and computes its display reference in process, while done, review, and events checks run the CLI
 - `atris brain --help` and `atris brain -h` short-circuit before workspace compilation via `commands/brain.js:1071-1075`; regression: `test/commands.test.js:4304-4318`
 - `atris brain compile` refreshes generated `atris/now.md` before state collection while preserving custom front doors via `commands/brain.js:294-296` and `commands/now.js:204-256`; regressions: `test/commands.test.js:2315-2389`
 - `atris brain compile` counts `.atris/state/task_episodes.jsonl` as episode state via `commands/brain.js:499` (`collectState`) and `commands/brain.js:561-566` (`countStateRows`/`nextMove`)

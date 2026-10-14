@@ -9712,11 +9712,23 @@ test('task review writes a reviewed event and RSI episode jsonl', () => {
     fs.mkdirSync(path.join(dir, 'atris'), { recursive: true });
     fs.writeFileSync(path.join(dir, 'atris.md'), '# task tree\n', 'utf8');
 
-    const add = runCli(['task', 'add', 'Close RSI task loop', '--tag', 'rsi', '--json'], { cwd: dir, env });
-    assert.equal(add.status, 0, add.stderr);
-    const addPayload = JSON.parse(add.stdout);
-    const id = addPayload.task_id;
-    const ref = addPayload.task.display_id;
+    // Seed only the parent; done, review, and events still use the CLI.
+    let id;
+    let ref;
+    const db = taskStore.open(dbPath);
+    try {
+      const created = taskStore.addTask(db, {
+        title: 'Close RSI task loop',
+        tag: 'rsi',
+        workspaceRoot: taskStore.workspaceRoot(dir),
+      });
+      assert.equal(created.inserted, true);
+      id = created.id;
+      ref = taskStore.withTaskDisplayRefs([taskStore.getTask(db, id)])[0].display_id;
+      assert.ok(ref);
+    } finally {
+      taskStore.close();
+    }
     assert.equal(runCli(['task', 'done', ref, '--proof', 'node --test test/commands.test.js passed'], { cwd: dir, env }).status, 0);
 
     const review = runCli([
