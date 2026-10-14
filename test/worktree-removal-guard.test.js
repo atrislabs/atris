@@ -10,7 +10,7 @@ const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
 const { spawn, spawnSync } = require('node:child_process');
-const { reap } = require('../commands/land');
+const { reap, removalsTodayLine } = require('../commands/land');
 const { cleanupWorktrees } = require('../commands/worktree');
 const { disposeReviewSandbox } = require('../lib/fleet');
 const { regressionCheck } = require('../commands/autopilot');
@@ -87,6 +87,29 @@ test('reap names who removed a folder and why', () => {
     assert.equal(line.by, 'atris autoland');
     assert.equal(line.reason, 'branch_landed');
     assert.equal(line.pid, process.pid);
+  } finally {
+    fs.rmSync(base, { recursive: true, force: true });
+  }
+});
+
+// The log is read back: one line counts today's removals by who did them,
+// leaving out yesterday and skipping a torn last write.
+test('reap summary counts folders removed today and by whom', () => {
+  const { base, repo } = landedWorktree();
+  try {
+    const now = new Date(2026, 9, 14, 15, 0).getTime();
+    const at = (day, hour) => new Date(2026, 9, day, hour).toISOString();
+    const file = path.join(repo, '.atris', 'state', 'worktree_removals.jsonl');
+    fs.mkdirSync(path.dirname(file), { recursive: true });
+    fs.writeFileSync(file, [
+      { at: at(13, 23), by: 'atris worktree cleanup' },
+      { at: at(14, 1), by: 'atris land --reap' },
+      { at: at(14, 9), by: 'atris member tidy' },
+      { at: at(14, 10), by: 'atris member tidy' },
+    ].map((row) => JSON.stringify(row)).join('\n') + '\n{"at":"2026-10-14T1');
+    assert.equal(removalsTodayLine(repo, now), '  folders removed today: 3 (atris member tidy 2, atris land --reap 1)');
+    fs.rmSync(file);
+    assert.equal(removalsTodayLine(repo, now), '');
   } finally {
     fs.rmSync(base, { recursive: true, force: true });
   }

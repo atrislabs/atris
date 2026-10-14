@@ -1223,16 +1223,34 @@ function worktreeGitActivity(worktreePath) {
 
 // Every work-folder removal leaves one line naming who removed it and why, in
 // the main checkout's state so the line outlives the folder it describes.
+// The log lives in the main checkout, so every linked folder writes one file.
+function worktreeRemovalLogPath(root) {
+  const common = runGit(['rev-parse', '--path-format=absolute', '--git-common-dir'], { cwd: root, check: false });
+  const main = common.status === 0 ? path.dirname(common.stdout.trim()) : root;
+  return path.join(main, '.atris', 'state', 'worktree_removals.jsonl');
+}
+
 function recordWorktreeRemoval(root, { path: removedPath, branch = '', by, reason }) {
   try {
-    const common = runGit(['rev-parse', '--path-format=absolute', '--git-common-dir'], { cwd: root, check: false });
-    const main = common.status === 0 ? path.dirname(common.stdout.trim()) : root;
-    const file = path.join(main, '.atris', 'state', 'worktree_removals.jsonl');
+    const file = worktreeRemovalLogPath(root);
     fs.mkdirSync(path.dirname(file), { recursive: true });
     fs.appendFileSync(file, `${JSON.stringify({
       at: new Date().toISOString(), path: removedPath, branch: branch || null, by, reason, pid: process.pid,
     })}\n`);
   } catch {}
+}
+
+// Removals logged at or after `since` (ms), oldest first. Bad lines are skipped
+// so one torn write never hides the rest.
+function readWorktreeRemovals(root, { since = 0 } = {}) {
+  let text = '';
+  try { text = fs.readFileSync(worktreeRemovalLogPath(root), 'utf8'); } catch { return []; }
+  return text.split('\n').flatMap((line) => {
+    try {
+      const row = JSON.parse(line);
+      return Date.parse(row.at) >= since ? [row] : [];
+    } catch { return []; }
+  });
 }
 
 function pruneGeneratedWorktreeCaches(worktreePath, { apply = false } = {}) {
@@ -1496,6 +1514,7 @@ module.exports = {
   parseWorktrees,
   normalizeTargetRef,
   recordWorktreeRemoval,
+  readWorktreeRemovals,
   refreshMovedMapRefs,
   slugify,
   taskTokens,

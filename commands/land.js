@@ -2,7 +2,7 @@ const fs = require('fs');
 const path = require('path');
 const gitSpawn = require('../lib/git-spawn');
 const { compactErrorPayload, printCliJson } = require('../lib/cli-json');
-const { listWorktrees, statusCounts, defaultMainlineBase, listActiveProcessCwds, worktreeHasActiveProcess, worktreeGitActivity, recordWorktreeRemoval } = require('./worktree');
+const { listWorktrees, statusCounts, defaultMainlineBase, listActiveProcessCwds, worktreeHasActiveProcess, worktreeGitActivity, recordWorktreeRemoval, readWorktreeRemovals } = require('./worktree');
 
 const DEFAULT_TTL_DAYS = 7;
 const DEFAULT_STALE_HOURS = 48;
@@ -906,7 +906,20 @@ function printBoard(board) {
   console.log('');
 }
 
-function printReceipt(receipt) {
+// One line from the removal log so it is read, not only written: how many
+// folders were removed since local midnight, and by which command.
+function removalsTodayLine(root, now = Date.now()) {
+  const midnight = new Date(now);
+  midnight.setHours(0, 0, 0, 0);
+  const rows = readWorktreeRemovals(root, { since: midnight.getTime() });
+  if (rows.length === 0) return '';
+  const counts = new Map();
+  for (const row of rows) counts.set(row.by || 'unknown', (counts.get(row.by || 'unknown') || 0) + 1);
+  const who = [...counts].sort((a, b) => b[1] - a[1]).map(([by, n]) => `${by} ${n}`).join(', ');
+  return `  folders removed today: ${rows.length} (${who})`;
+}
+
+function printReceipt(receipt, { removalsToday = '' } = {}) {
   console.log('');
   if (receipt.dryRun) {
     console.log(`landing cleanup preview: would clear ${receipt.deletedBranches.length} pieces of work, ${receipt.removedWorktrees.length} side copies:`);
@@ -928,6 +941,7 @@ function printReceipt(receipt) {
     }
     for (const m of receipt.keptMovedBranches || []) console.log(`  moved since scan, left alone: ${m}`);
     if (receipt.deletedRemote.length > 0) console.log(`  also cleared on github: ${receipt.deletedRemote.length}`);
+    if (removalsToday) console.log(removalsToday);
   }
   console.log(`  still flying (recent work, left alone): ${receipt.kept.length}`);
   console.log('');
@@ -1042,7 +1056,7 @@ function landCommand(args = []) {
     try {
       const receipt = reap(root, { ttlDays, base, dryRun: args.includes('--dry-run'), remote: !args.includes('--no-remote'), force: args.includes('--force') });
       if (json) console.log(JSON.stringify(receipt, null, 2));
-      else printReceipt(receipt);
+      else printReceipt(receipt, { removalsToday: receipt.dryRun ? '' : removalsTodayLine(root) });
       return 0;
     } catch (err) {
       return finishLandError(err, json);
@@ -1077,6 +1091,7 @@ function landCommand(args = []) {
 }
 
 module.exports = {
+  removalsTodayLine,
   clearBoardMemo,
   collectBoard,
   countLabel,
