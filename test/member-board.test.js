@@ -60,6 +60,8 @@ test('board shows working, quiet, done ok, and done failed from fake logs', () =
     assert.deepEqual(rows.map((r) => r.member), ['builder', 'breaker', 'shipper', 'scout']);
 
     assert.equal(by.builder.state, 'working');
+    assert.deepEqual(by.builder.before, ['ok'], 'the older run that finished ok');
+    assert.deepEqual(by.scout.before, []);
     assert.equal(by.builder.ago, '12s ago');
     assert.equal(by.builder.step, 'editing lib/b.js');
     assert.equal(by.builder.job.length, 50);
@@ -78,9 +80,9 @@ test('board shows working, quiet, done ok, and done failed from fake logs', () =
 
     const screen = renderBoard(rows, dir);
     assert.equal(screen.split('\n').length, 5, 'one header plus one row per member');
-    assert.match(screen, /^member\s+state\s+alive\s+engine\s+run time\s+ago\s+job\s+last step$/m);
-    assert.match(screen, /^scout\s+quiet\s+-\s+-\s+-\s+5m ago\s+find stale docs\s+running: rg stale$/m);
-    assert.match(screen, /^breaker\s+done failed\s+-\s+-\s+20s\s+1m ago\s+try the risky thing\s+running: node boom\.js$/m);
+    assert.match(screen, /^member\s+state\s+before\s+alive\s+engine\s+run time\s+ago\s+job\s+last step$/m);
+    assert.match(screen, /^scout\s+quiet\s+-\s+-\s+-\s+-\s+5m ago\s+find stale docs\s+running: rg stale$/m);
+    assert.match(screen, /^breaker\s+done failed\s+-\s+-\s+-\s+20s\s+1m ago\s+try the risky thing\s+running: node boom\.js$/m);
   } finally {
     fs.rmSync(dir, { recursive: true, force: true });
   }
@@ -109,6 +111,25 @@ test('last step skips writes to the member own log', () => {
     assert.equal(by.architect.ago, '50s ago', 'the log write still counts as activity');
     assert.match(by.scribe.step, /^running: cat >> atris\/team\/scribe\/logs/, 'falls back when only housekeeping happened');
     assert.match(by.helper.step, /scribe\/logs/, 'another member log is real work');
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test('before shows how the last three runs ended, newest first', () => {
+  const dir = fakeDir({
+    builder: [
+      `${at(900)} m-1 started: oldest`, `${at(890)} m-1 finished: ok`,
+      `${at(800)} m-2 started: broke`, `${at(790)} m-2 finished: failed`,
+      `${at(700)} m-3 started: halted`, `${at(695)} m-3 finished: failed`, `${at(690)} m-3 finished: stopped`,
+      `${at(600)} m-4 started: cut off`, `${at(590)} m-4 reading lib/a.js`,
+      `${at(30)} m-5 started: now`, `${at(10)} m-5 reading lib/b.js`,
+    ],
+  });
+  try {
+    const [row] = readBoard({ dir, now: NOW });
+    assert.deepEqual(row.before, ['died', 'stopped', 'failed'], 'a stop wins over failed; the oldest run drops off');
+    assert.match(renderBoard([row], dir), /^builder\s+working\s+died stopped failed\s+-\s+/m);
   } finally {
     fs.rmSync(dir, { recursive: true, force: true });
   }
@@ -156,7 +177,7 @@ test('atris member board reads ATRIS_PROGRESS_DIR for real', () => {
     const env = { ...process.env, ATRIS_PROGRESS_DIR: dir };
     const once = spawnSync(process.execPath, [cliPath, 'member', 'board'], { cwd: dir, env, encoding: 'utf8' });
     assert.equal(once.status, 0, once.stderr);
-    assert.match(once.stdout, /^navigator\s+working\s+-\s+-\s+-\s+\d+s ago\s+map the repo\s+reading atris\/MAP\.md$/m);
+    assert.match(once.stdout, /^navigator\s+working\s+-\s+-\s+-\s+-\s+\d+s ago\s+map the repo\s+reading atris\/MAP\.md$/m);
 
     const watch = spawnSync(process.execPath, [cliPath, 'member', 'board', '--watch'], { cwd: dir, env, encoding: 'utf8', timeout: 3700 });
     assert.equal(watch.signal, 'SIGTERM', 'watch stays open until stopped');
@@ -341,7 +362,7 @@ test('board shows a live run as alive with its engine, and a dead one as died, n
     assert.equal(by.builder.job, 'ship the board', 'the run tag stays out of the job column');
     assert.equal(by.legacy.alive, null, 'no pid means the board cannot tell');
     assert.equal(by.legacy.state, 'working');
-    assert.match(renderBoard(readBoard({ dir }), dir), /^builder\s+working\s+yes\s+claude\s+1m\s+\d+s ago\s+ship the board/m);
+    assert.match(renderBoard(readBoard({ dir }), dir), /^builder\s+working\s+-\s+yes\s+claude\s+1m\s+\d+s ago\s+ship the board/m);
 
     child.kill('SIGKILL');
     assert.ok(await waitFor(() => !isAlive(child.pid)), 'sleeper should be gone');
@@ -350,7 +371,7 @@ test('board shows a live run as alive with its engine, and a dead one as died, n
     assert.equal(by.builder.alive, false);
     assert.equal(by.builder.running_for, '');
     assert.equal(by.builder.lasted, '1m', 'a died run lasts from start to its last line');
-    assert.match(renderBoard(readBoard({ dir }), dir), /^builder\s+died\s+no\s+claude\s+1m\s+/m);
+    assert.match(renderBoard(readBoard({ dir }), dir), /^builder\s+died\s+-\s+no\s+claude\s+1m\s+/m);
   } finally {
     killAll(child.pid);
     fs.rmSync(dir, { recursive: true, force: true });
