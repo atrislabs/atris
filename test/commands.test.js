@@ -12152,9 +12152,12 @@ test('task review-chat extracts only proof-derived verifier commands', () => {
     // launch the CLI. Ready and review-chat build the command list from the
     // saved proof alone, so plain cases call that builder in-process; the
     // first and last plain cases run both commands and prove all three match.
-    const { taskReviewVerificationFocus } = require('../commands/task');
+    const { taskReviewLanding, taskReviewVerificationFocus } = require('../commands/task');
     const proofCommands = (proof) => taskReviewVerificationFocus({ review: { proof } }).commands_to_verify;
     const workspaceRoot = taskStore.workspaceRoot(dir);
+    // With only a proof given, ready writes the checked and tested sentences
+    // from that proof, so landing-only cases call the same builder in-process.
+    const proofLanding = (proof) => taskReviewLanding({ title: 'Proof landing', metadata: {}, workspace_root: dir }, { proof });
     const seedClaimedTask = (title) => {
       const db = taskStore.open(dbPath);
       try {
@@ -12466,61 +12469,28 @@ test('task review-chat extracts only proof-derived verifier commands', () => {
     ]);
 
     const withPassingRef = seedClaimedTask('Trim with passing test tail');
+    const withPassingProof = "Checks passed: node --check test/commands.test.js --test-name-pattern 'task review-chat extracts only proof-derived verifier commands' with 380 passing tests; git status --porcelain.";
     const withPassingReady = runCli([
       'task', 'ready', withPassingRef,
       '--as', 'codex',
-      '--proof', "Checks passed: node --check test/commands.test.js --test-name-pattern 'task review-chat extracts only proof-derived verifier commands' with 380 passing tests; git status --porcelain.",
+      '--proof', withPassingProof,
       '--json',
     ], { cwd: dir, env });
     assert.equal(withPassingReady.status, 0, withPassingReady.stderr);
     const withPassingPayload = JSON.parse(withPassingReady.stdout);
     assert.doesNotMatch(withPassingPayload.task.review.landing.tested, /with 380 passing tests/);
     assert.equal(withPassingPayload.task.review.landing.checked, 'I ran the verifier named in the proof.');
+    assert.equal(proofLanding(withPassingProof).checked, withPassingPayload.task.review.landing.checked, 'the in-process checked sentence matches what ready printed');
+    assert.equal(proofLanding(withPassingProof).tested, withPassingPayload.task.review.landing.tested, 'the in-process tested sentence matches what ready printed');
     assert.deepEqual(JSON.parse(withPassingReady.stdout).handoff.verification_focus.commands_to_verify, [
       "node --check test/commands.test.js --test-name-pattern 'task review-chat extracts only proof-derived verifier commands'",
       'git status --porcelain',
     ]);
 
-    const receiptCheckedRef = seedClaimedTask('Receipt-specific checked landing');
-    const receiptCheckedReady = runCli([
-      'task', 'ready', receiptCheckedRef,
-      '--as', 'codex',
-      '--proof', 'Second-pass review: receipt atris/runs/mission-example-2026-06-30T00-00-00-000Z.json verifier_result.passed=true.',
-      '--json',
-    ], { cwd: dir, env });
-    assert.equal(receiptCheckedReady.status, 0, receiptCheckedReady.stderr);
-    const receiptCheckedPayload = JSON.parse(receiptCheckedReady.stdout);
-    assert.equal(receiptCheckedPayload.task.review.landing.checked, 'I inspected the passing receipt named in the proof.');
-
-    const outputCheckedRef = seedClaimedTask('Verifier output checked landing');
-    const outputCheckedReady = runCli([
-      'task', 'ready', outputCheckedRef,
-      '--as', 'codex',
-      '--proof', 'node scripts/verify-mission-product-wedge.js printed MISSION PRODUCT WEDGE VERIFIED.',
-      '--json',
-    ], { cwd: dir, env });
-    assert.equal(outputCheckedReady.status, 0, outputCheckedReady.stderr);
-    assert.equal(JSON.parse(outputCheckedReady.stdout).task.review.landing.checked, 'I checked the verifier output named in the proof.');
-
-    const passesCheckedRef = seedClaimedTask('Passes checked landing');
-    const passesCheckedReady = runCli([
-      'task', 'ready', passesCheckedRef,
-      '--as', 'codex',
-      '--proof', 'node scripts/verify-mission-artifact-timeline.js passes.',
-      '--json',
-    ], { cwd: dir, env });
-    assert.equal(passesCheckedReady.status, 0, passesCheckedReady.stderr);
-    assert.equal(JSON.parse(passesCheckedReady.stdout).task.review.landing.checked, 'I ran the verifier named in the proof.');
-
-    const proseCheckedRef = seedClaimedTask('Prose-only proof landing');
-    const proseCheckedReady = runCli([
-      'task', 'ready', proseCheckedRef,
-      '--as', 'codex',
-      '--proof', 'Agent review: help output renders, clean dry-run dropped stale pages, the help-focused test slice passed 379/379, and diff cleanliness passed.',
-      '--json',
-    ], { cwd: dir, env });
-    assert.equal(proseCheckedReady.status, 0, proseCheckedReady.stderr);
-    assert.equal(JSON.parse(proseCheckedReady.stdout).task.review.landing.tested, 'I checked: help output, clean dry-run, passing tests, and 1 more check.');
+    assert.equal(proofLanding('Second-pass review: receipt atris/runs/mission-example-2026-06-30T00-00-00-000Z.json verifier_result.passed=true.').checked, 'I inspected the passing receipt named in the proof.');
+    assert.equal(proofLanding('node scripts/verify-mission-product-wedge.js printed MISSION PRODUCT WEDGE VERIFIED.').checked, 'I checked the verifier output named in the proof.');
+    assert.equal(proofLanding('node scripts/verify-mission-artifact-timeline.js passes.').checked, 'I ran the verifier named in the proof.');
+    assert.equal(proofLanding('Agent review: help output renders, clean dry-run dropped stale pages, the help-focused test slice passed 379/379, and diff cleanliness passed.').tested, 'I checked: help output, clean dry-run, passing tests, and 1 more check.');
 
     assert.deepEqual(proofCommands('Receipt saved at atris/runs/proof.json. node --check test/commands.test.js. Reward remains 0; no human accept or XP.'), [
       'node --check test/commands.test.js',
