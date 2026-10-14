@@ -545,6 +545,24 @@ test('fix keeps an aside that already has parentheses in one pair', () => {
   ]);
 });
 
+test('fix never pairs two dashes across a sentence end', () => {
+  // shapes taken from this repo's own docs, where the old fixer opened a
+  // parenthesis in one sentence and closed it in the next
+  const file = tmpFile('sentences.md', [
+    'Steal from sites you like \u2014 linear.app, arc. But do not copy \u2014 learn.',
+    'Not rules \u2014 beliefs. Not copied \u2014 earned.',
+    'It said "stop." \u2014 then it went \u2014 and left.',
+    'Doubt \u2014 a failing check, a bad lesson \u2014 is a map.',
+  ].join('\n'));
+  const { changes } = applyFixes([file], RULES);
+  assert.deepEqual(changes.map((c) => c.after), [
+    'Steal from sites you like, linear.app, arc. But do not copy, learn.',
+    'Not rules, beliefs. Not copied, earned.',
+    'It said "stop." (then it went) and left.',
+    'Doubt (a failing check, a bad lesson) is a map.',
+  ]);
+});
+
 test('fix ends a paragraph-ending dash with a period, keeps a wrapping one a comma', () => {
   const file = tmpFile('line-end.md', [
     'The tool we built \u2014',

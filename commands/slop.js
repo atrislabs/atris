@@ -33,6 +33,8 @@ const SKIP_DIRS = new Set(['node_modules', '.git', 'dist', 'build', '.next', '.a
 // there would turn one range into two separate numbers. A dash that opens
 // the line (a quote attribution) is dropped; a comma cannot start a line.
 // A run of dashes in a row is one break, so it is fixed as a single dash.
+// Two dashes with a sentence end between them are not an aside; each one is
+// fixed alone, so no parenthesis opens in one sentence and closes in another.
 // A dash that ends a line stays a comma when the sentence wraps onto the
 // next line, and becomes a period when the paragraph ends there.
 const LIST_LABEL_DASH = /^(\s*(?:[-*+]|\d+[.)])\s+)([^\u2014]{0,59}[^\s\u2014,;:.])\s*\u2014\s*/;
@@ -55,7 +57,8 @@ function fixEmDash(s, { endsBlock = false } = {}) {
   const label = LIST_LABEL_DASH.exec(s);
   if (label) return `${label[1]}${label[2]}:${s.length > label[0].length ? ' ' : ''}${fixEmDash(s.slice(label[0].length), { endsBlock })}`;
   return s
-    .replace(/\s*\u2014\s*([^\u2014]*[^\s\u2014])\s*\u2014\s*(?=(.?))/g, (m, aside, next) => ` ${wrappedInParens(aside) ? aside : `(${aside})`}${next && !/[.,;:!?)]/.test(next) ? ' ' : ''}`)
+    // an aside never crosses a sentence end; dashes split by one are fixed alone
+    .replace(/\s*\u2014\s*((?:(?![.!?]["'\u201d\u2019)]*\s)[^\u2014])*[^\s\u2014])\s*\u2014\s*(?=(.?))/g, (m, aside, next) => ` ${wrappedInParens(aside) ? aside : `(${aside})`}${next && !/[.,;:!?)]/.test(next) ? ' ' : ''}`)
     // keep punctuation the writer already put beside the dash instead of
     // stacking a comma on it, and never leave a trailing space. A dash pressed
     // against a closing quote or bracket takes its comma with no space after.
