@@ -556,6 +556,32 @@ test('watchCrashes still reports a replaced run whose process dies later', () =>
     [['died', 'builder', 'm-1', process.pid, 'build', 'running: npm test', '10s', t(20)]], 'named once, once its process is gone');
 });
 
+test('watchCrashes sends no died line for an earlier run that stop ended by its pid', () => {
+  const { watchCrashes, previousRun, stoppedEarlier } = require('../lib/member-board');
+  const now = Date.now();
+  const t = (s) => new Date(now - s * 1000).toISOString();
+  const first = `${t(30)} m-1 started: [pid ${process.pid} engine claude] build\n${t(20)} m-1 running: npm test\n`;
+  let log = `${first}${t(5)} m-2 started: build again\n`;
+  const events = [];
+  let oldLives = true;
+  const check = watchCrashes([memberRow('builder', first, now)], (e) => events.push(e),
+    () => [memberRow('builder', log, now)], (member) => previousRun(member, log, now),
+    (pid) => (pid === process.pid ? oldLives : false),
+    (member, mission, pid) => stoppedEarlier(log, mission, pid));
+  check();
+  // The stop writes its line just after the process exits, so a check can
+  // land in between: the process is gone and the line is not there yet.
+  oldLives = false;
+  check();
+  log += `${t(0)} m-1 finished: stopped [pid ${process.pid}]\n`;
+  check();
+  check();
+  assert.deepEqual(events, [], 'a stopped run is not a crash');
+  assert.equal(stoppedEarlier(log, 'm-1', process.pid), true);
+  assert.equal(stoppedEarlier(log, 'm-9', process.pid), false, 'another mission with the same pid');
+  assert.equal(stoppedEarlier(first, 'm-1', process.pid), false, 'no stop line');
+});
+
 test('watchCrashes reports a run that died and was replaced between two checks', () => {
   const { watchCrashes, previousRun } = require('../lib/member-board');
   const now = Date.now();
