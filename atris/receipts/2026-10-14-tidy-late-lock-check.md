@@ -20,5 +20,6 @@ Other commands: atris brain activate --root . --verify; atris; git status --shor
 Brain activation and compilation returned exit 2, plan only, and wrote no files. No native goal candidate was offered. Existing unrelated edits remain intact.
 Metric: one additional timing case, three late locks named with distinct ages, zero removals recorded, 30 checks pass. No dependencies or protected new filenames.
 Learning: Git refusal can expose locks created after a passing activity scan; rescan before composing the kept-folder explanation.
-next_push: Name retained locks when member cleanup loses its folder during a refused removal.
+Landing: committed and pushed to the current remote branch. Review transition did not succeed: the automatic task rerun returned exit 1, 17 pass and 13 fail, despite the direct frozen invocation returning exit 0 with 30 pass. Failure artifact: atris/runs/2026-10-14-task-acw-43-2026-10-14T21-50-26-141Z.json. Task remains claimed; no acceptance or merge performed.
+next_push: Explain and fix the difference between direct passing checks and the failed automatic review rerun.
 layer: behaviors
