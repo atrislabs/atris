@@ -2481,6 +2481,21 @@ test('fix turns a single dash on an indented diagram line into a hyphen', () => 
   ]);
 });
 
+test('fix turns a single dash into a hyphen on a line that opens with a box and draws an arrow', () => {
+  // an unindented diagram lost its first link: "[plan], build -> [review]"
+  const file = tmpFile('box-arrow.md', [
+    '[plan] \u2014 build \u2014> [review]',
+    '(start) \u2014 build --- [end]',
+    '[docs](a.md) \u2014 read it -> then ship',
+  ].join('\n\n'));
+  const { changes } = applyFixes([file], RULES, { write: false });
+  assert.deepEqual(changes.map((c) => c.after), [
+    '[plan] - build -> [review]',
+    '(start) - build --- [end]',
+    '[docs](a.md), read it -> then ship',
+  ]);
+});
+
 test('fix keeps a journal heading that ends in a time readable for its hour', () => {
   // analytics reads the hour after a dash or a spaced hyphen at the end of a
   // heading; the fix wrote "### Watch: 19:05", which hides it, and glued
