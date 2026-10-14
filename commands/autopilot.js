@@ -1252,7 +1252,10 @@ function regressionCheck(cwd) {
             recordWorktreeRemoval(cwd, { path: worktreePath, by: 'atris autopilot', reason: 'regression_check_finished' });
             cleanup = { path: worktreePath, removed: true };
           } else {
-            cleanup = { path: worktreePath, removed: false, reason: String(removed.error?.message || removed.stderr || removed.stdout || 'could not remove folder').trim() };
+            const retained = inspectGitActivity(worktreePath);
+            const reason = retained.locks.length ? retained.reason
+              : String(removed.error?.message || removed.stderr || removed.stdout || 'could not remove folder').trim();
+            cleanup = { path: worktreePath, removed: false, reason };
           }
         }
         if (!cleanup.removed) console.log(`  kept ${worktreePath}: ${cleanup.reason}`);

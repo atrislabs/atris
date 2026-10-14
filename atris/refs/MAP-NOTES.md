@@ -2345,3 +2345,5 @@ npm publish
 - `commands/land.js:729`: after Git refuses removal, cleanup checks retained locks again and reports their full paths and ages before falling back to the Git error. The seventh case in `atris/receipts/2026-10-14-land-vanishing-folder-check.js:25` adds a real keep marker plus private and shared locks at the removal attempt, then checks that files, branch, Git record, and locks survive without a removal log entry.
 
 - `lib/member-tidy.js:220`: Git refusal triggers a fresh activity check and appends retained lock paths and ages to the original error. The seventh timing case in `atris/receipts/2026-10-14-tidy-vanishing-folder-check.js:25` adds three real locks at removal, checks distinct ages, and proves files, branch, and registration survive without a removal record.
+
+- Automatic cleanup refusal: `commands/autopilot.js:1255` rescans retained Git locks after removal fails; `atris/receipts/2026-10-14-autopilot-folder-check.js:1` reproduces real Git refusal after three late locks with distinct ages; `test/worktree-removal-guard.test.js:62` reruns the timing proof.
