@@ -531,11 +531,11 @@ test('a too-tall board keeps the last step of a run that died or failed', () => 
     ended('ann', 'ok'),
     ended('bo', 'stopped'),
   ];
-  const short = renderBoard(rows, '/x', 0, 60, [], 13).split('\n');
+  const short = renderBoard(rows, '/x', 0, 60, [], 12).split('\n');
   assert.ok(['crashed ', 'broke ', 'builder ', 'ann ', 'bo '].every((m) => short.some((l) => l.startsWith(m))), `every member shows:\n${short.join('\n')}`);
   assert.deepEqual(short.filter((l) => l.startsWith('  last step:')), ['  last step: running: npm run build', '  last step: running: npm test', '  last step: running: node --test'], `died, failed, and live runs keep their step; clean endings give theirs up:\n${short.join('\n')}`);
-  assert.ok(short.length <= 13);
-  const shorter = renderBoard(rows, '/x', 0, 60, [], 11).split('\n');
+  assert.ok(short.length <= 12);
+  const shorter = renderBoard(rows, '/x', 0, 60, [], 10).split('\n');
   assert.ok(['crashed ', 'broke ', 'builder ', 'ann ', 'bo '].every((m) => shorter.some((l) => l.startsWith(m))), `a member still costs more than those steps:\n${shorter.join('\n')}`);
   assert.deepEqual(shorter.filter((l) => l.startsWith('  last step:')), ['  last step: running: node --test'], 'only the live run keeps its step');
 });
@@ -788,6 +788,17 @@ test('board breaks the count line after a comma on a narrow screen', () => {
   const head = lines.slice(0, lines.indexOf(''));
   assert.deepEqual(head, ['6 members: 1 died, 1 done failed,', '  1 working, 1 quiet, 1 stopped,', '  1 done ok'], 'a count and its state stay together');
   assert.equal(head.map((l) => l.trim()).join(' '), count, 'nothing is lost');
+});
+
+test('a count line that would wrap says failed and done when that keeps it to one line', () => {
+  const now = Date.parse('2026-10-14T13:00:00Z');
+  const base = memberRow('scout', '2026-10-14T12:55:00Z m-3 started: map the repo\n', now);
+  const rows = ['done ok', 'stopped', 'working', 'done failed', 'died'].map((state, i) => ({ ...base, member: `m${i}`, state }));
+  const head = (w) => { const l = renderBoard(rows, '/x', 0, w).split('\n'); return l.slice(0, l.indexOf('')); };
+  assert.deepEqual(head(80), ['5 members: 1 died, 1 done failed, 1 working, 1 stopped, 1 done ok'], 'room for the full names: they stay');
+  assert.deepEqual(head(60), ['5 members: 1 died, 1 failed, 1 working, 1 stopped, 1 done'], 'one line instead of two');
+  assert.deepEqual(head(40), ['5 members: 1 died, 1 done failed,', '  1 working, 1 stopped, 1 done ok'], 'two lines either way: the full names stay');
+  assert.equal(renderBoard(rows, '/x').split('\n')[0], '5 members: 1 died, 1 done failed, 1 working, 1 stopped, 1 done ok', 'piped output keeps the full names');
 });
 
 test('board lets job shrink to the room left on a narrow screen', () => {
@@ -1099,9 +1110,9 @@ test('board leaves rows off the bottom, not the top, when it is taller than the 
   const narrow = renderBoard(rows, '/x', 0, 30, [], 10).split('\n');
   assert.ok(narrow.length <= 10, narrow.join('\n'));
   assert.match(narrow.join('\n'), /^\d more members did not fit$/m, `names that would wrap give way to the count:\n${narrow.join('\n')}`);
-  assert.ok(!narrow.some((l) => /\b(bo|cy|di)\b/.test(l)), 'so no hidden name shows');
-  const tiny = renderBoard(rows, '/x', 0, 30, [], 6).split('\n');
-  assert.ok(tiny.length <= 6, `too short for one row with blank lines, so they go:\n${tiny.join('\n')}`);
+  assert.ok(!narrow.some((l) => /\b(cy|di)\b/.test(l)), 'so no hidden name shows');
+  const tiny = renderBoard(rows, '/x', 0, 30, [], 5).split('\n');
+  assert.ok(tiny.length <= 5, `too short for one row with blank lines, so they go:\n${tiny.join('\n')}`);
   assert.match(tiny[0], /^5 members:/, 'the count line stays on screen');
   assert.ok(!tiny.includes(''), 'no blank lines');
   assert.match(tiny.join('\n'), /^checker\s+failed\s/m, 'and the failed member still shows');
