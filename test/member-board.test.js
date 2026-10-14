@@ -422,6 +422,30 @@ test('short boards distinguish a hidden busy member earlier failure from a curre
   }
 });
 
+test('compact footers drop all before dropping a shared failure reason', () => {
+  for (const reason of ['timed out', 'engine error', 'bad exit 2']) {
+    const logs = {};
+    for (let i = 1; i <= 4; i++) logs[`f${i}`] = [
+      `${at(90 + i)} m-${i} started: job`,
+      `${at(80 + i)} m-${i} finished: failed (${reason})`,
+    ];
+    const dir = fakeDir(logs);
+    try {
+      const rows = readBoard({ dir, now: NOW });
+      const footer = `3 more not shown (3 failed, ${reason})`;
+      const compact = renderBoard(rows, dir, 0, footer.length, 4).split('\n');
+      assert.equal(compact.length, 4);
+      assert.equal(compact[3], footer);
+      assert.match(renderBoard(rows, dir, 0, 100, 4), new RegExp(`3 failed, all ${reason}`));
+      const earlier = rows.map((r, i) => i ? { ...r, state: 'working' } : r);
+      const earlierFooter = `3 more not shown (3 earlier failure, ${reason})`;
+      assert.equal(renderBoard(earlier, dir, 0, earlierFooter.length, 4).split('\n')[3], earlierFooter);
+    } finally {
+      fs.rmSync(dir, { recursive: true, force: true });
+    }
+  }
+});
+
 test('hidden failures that share a reason say it once in the count', () => {
   const logs = {};
   for (let i = 1; i <= 4; i++) logs[`f${i}`] = [`${at(900 + i)} m-${i} started: job ${i}`, `${at(800 + i)} m-${i} finished: failed (signed out)`];
@@ -433,7 +457,9 @@ test('hidden failures that share a reason say it once in the count', () => {
     assert.match(lines[1], /^f1\s+done failed\s+failed \(signed out\)/);
     assert.equal(lines[3], '4 more not shown (3 failed, all signed out, 1 stopped), the window is too short');
     const narrow = renderBoard(rows, dir, 0, 50, 4).split('\n')[3];
-    assert.equal(narrow, '4 more not shown (3 failed, 1 stopped)', 'too narrow: the shared reason goes before anything is cut');
+    assert.equal(narrow, '4 more not shown (3 failed, signed out, 1 stopped)', 'drop all to keep the shared reason');
+    assert.equal(renderBoard(rows, dir, 0, 45, 4).split('\n')[3], '4 more not shown (3 failed, 1 stopped)',
+      'still too narrow: the shared reason goes before anything is cut');
     assert.equal(renderBoard(rows, dir, 0, 60, 4).split('\n')[3], '4 more not shown (3 failed, all signed out, 1 stopped)',
       'room for it: the reason stays and only the why goes');
 

@@ -2294,3 +2294,5 @@ npm publish
 - Bounded member progress: `lib/member-progress.js:15` scans oversized logs backwards in bounded buffers and replaces them with recent whole lines plus the latest start marker; `lib/member-progress.js:201` appends and trims. Regression: `test/member-progress-trim.test.js:1`.
 
 - **Member board short screens:** `renderBoard()` (`lib/member-board.js:261`) counts hidden busy members with a failed earlier run separately from current failures, including quiet runs and runs finishing before sleep. The footer drops "with" from "with earlier failure" before dropping the reason, keeping "timed out" at 47 columns and the earlier failure label intact at 36 columns. Regression: `test/member-board.test.js:380`; real terminal proof: `python3 atris/runs/member-board-compact-earlier-proof.py`.
+
+- **Compact shared failure reasons:** `renderBoard()` (`lib/member-board.js:261`) drops "all" before dropping a shared reason in hidden current and earlier failure counts. Regression covers timeout, engine error, and bad exit: `test/member-board.test.js:425`; real terminal proof: `python3 atris/runs/member-board-shared-reason-proof.py`.
