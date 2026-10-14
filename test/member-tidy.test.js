@@ -167,6 +167,33 @@ test('tidy keeps old private and shared git locks and reports every path and age
   }
 });
 
+// `git worktree lock` writes a `locked` file in the copy's private metadata.
+// Tidy must name that file and its age, not just git's refusal text.
+test('tidy keeps a copy git itself locked and reports the lock file and age', () => {
+  const fx = makeFixture();
+  try {
+    const copy = addCopy(fx, 'landed-git-locked');
+    runGit(['worktree', 'lock', '--reason', 'operator hold', copy], fx.repo);
+    const lock = path.join(runGit(['rev-parse', '--absolute-git-dir'], copy), 'locked');
+    const now = Date.now();
+    const aged = new Date(now - 7200000);
+    fs.utimesSync(lock, aged, aged);
+    for (const dryRun of [true, false]) {
+      const result = tidyMemberCopies({ repoRoot: fx.repo, dryRun, now });
+      assert.equal(result.aborted, null);
+      assert.equal(result.removed, 0);
+      assert.equal(byName(result, 'landed-git-locked').action, 'kept');
+      assert.ok(formatTidy(result).includes(`${lock} (7200s old)`), formatTidy(result));
+      assert.ok(fs.existsSync(lock));
+      assert.ok(fs.existsSync(copy));
+      assert.ok(branchExists(fx.repo, 'landed-git-locked'));
+      assert.equal(fs.existsSync(path.join(fx.repo, '.atris/state/worktree_removals.jsonl')), false);
+    }
+  } finally {
+    fs.rmSync(fx.base, { recursive: true, force: true });
+  }
+});
+
 // Origin switched its default branch, but the local origin/HEAD note still
 // points at the old one. Work that only lives on the old branch is not landed.
 test('tidy asks origin for its current default branch instead of the stale local note', () => {
