@@ -1773,6 +1773,22 @@ test('fix gives an order a colon when a bold phrase closes the clause before it'
   ]);
 });
 
+test('fix gives a dash before a list of site or file names a colon', () => {
+  // from the design policy, where the dots in the names hid the list
+  const file = tmpFile('dotted-list.md', [
+    'steal from places you like \u2014 linear.app, vercel.com, raycast.com, arc browser. but go on.',
+    'The checks run \u2014 lint, test.js, build.',
+    // a sentence-ending stop is no inner dot, so two names stay a comma
+    'We ship it \u2014 linear.app, vercel.com.',
+  ].join('\n'));
+  const { changes } = applyFixes([file], RULES);
+  assert.deepEqual(changes.map((c) => c.after), [
+    'steal from places you like: linear.app, vercel.com, raycast.com, arc browser. but go on.',
+    'The checks run: lint, test.js, build.',
+    'We ship it, linear.app, vercel.com.',
+  ]);
+});
+
 test('fix reads no word that only says when as the subject of a clause', () => {
   // "now ships" after a dash read as a bare subject and a verb
   const file = tmpFile('when-word.md', [

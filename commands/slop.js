@@ -133,8 +133,9 @@ function wrappedInParens(s) {
 // bracket the dash sits inside: "(the mechanical 80%: scaffolding, grids,
 // state matrices)", so the number is not read as one of the items. Items that
 // open with "when" or "if" are clauses, not a list: "when it fills, if it
-// stalls, drain it".
-const LIST_ITEM = "[A-Za-z0-9][\\w'/-]*(?: [A-Za-z0-9][\\w'/-]*){0,3}";
+// stalls, drain it". A dot inside a word is a site or file name, so
+// "steal from places you like: linear.app, vercel.com, arc browser".
+const LIST_ITEM = "[A-Za-z0-9][\\w'/-]*(?:\\.\\w[\\w'/-]*)*(?: [A-Za-z0-9][\\w'/-]*(?:\\.\\w[\\w'/-]*)*){0,3}";
 const LIST_AFTER_DASH = new RegExp(`(?<=[\\w)\\]*_\`%])\\s*\u2014\\s*(?!(?:and|but|or|nor|so|yet|then|once|when|whenever|if|unless|until|after|before|while) )(?=${LIST_ITEM}(?:, ${LIST_ITEM}){1,}, (?:and |or )?${LIST_ITEM}(?:[.!?](?:\\s|$)|$|(\\))))`, 'g');
 // Three or more phrases that each open with an "ing" word list what the
 // sentence before does, however long each one runs, so they take a colon too:
