@@ -710,6 +710,12 @@ test('board leaves rows off the bottom, not the top, when it is taller than the 
   assert.ok(narrow.length <= 10, narrow.join('\n'));
   assert.match(narrow.join('\n'), /^\d more members did not fit$/m, `names that would wrap give way to the count:\n${narrow.join('\n')}`);
   assert.ok(!narrow.some((l) => /\b(bo|cy|di)\b/.test(l)), 'so no hidden name shows');
+  const tiny = renderBoard(rows, '/x', 0, 30, [], 6).split('\n');
+  assert.ok(tiny.length <= 6, `too short for one row with blank lines, so they go:\n${tiny.join('\n')}`);
+  assert.match(tiny[0], /^5 members:/, 'the count line stays on screen');
+  assert.ok(!tiny.includes(''), 'no blank lines');
+  assert.match(tiny.join('\n'), /^checker\s+failed\s/m, 'and the failed member still shows');
+  assert.ok(narrow.includes(''), 'a screen with room for a row keeps its blank lines');
   assert.match(renderBoard(rows, '/x', 0, null, [], 2), /^checker\s/m, 'at least one row always shows');
 });
 
