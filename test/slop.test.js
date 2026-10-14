@@ -972,6 +972,10 @@ test('fix joins a noun clause after the dash with a semicolon', () => {
     // joins; words in all capitals are shouting and still do
     'Inbox Triage \u2014 23 emails processed',
     'Release Notes \u2014 it ships Friday.',
+    // a plain verb with "it" or "them" after it joins; one with its own verb after does not
+    'Your journal tracks how ideas evolve \u2014 the navigator reads it to understand context.',
+    'Ship it \u2014 the gate checks them.',
+    'Command tests for autopilot \u2014 the decision helpers it uses.',
   ].join('\n'));
   const { changes } = applyFixes([file], RULES);
   assert.deepEqual(changes.map((c) => c.after), [
@@ -1017,6 +1021,9 @@ test('fix joins a noun clause after the dash with a semicolon', () => {
     'Keep notes, the files stored in atris.',
     'Inbox Triage, 23 emails processed',
     'Release Notes, it ships Friday.',
+    'Your journal tracks how ideas evolve; the navigator reads it to understand context.',
+    'Ship it; the gate checks them.',
+    'Command tests for autopilot, the decision helpers it uses.',
   ]);
 });
 

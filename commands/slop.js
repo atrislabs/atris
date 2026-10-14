@@ -145,6 +145,10 @@ const PAST_CLAUSE_AFTER_DASH = new RegExp(`(?<=[\\w)\\]"'*_\`\\u201d\\u2019\\uE0
 // runs after a "not" sentence, where 3 of 3 repo lines read as clauses.
 const PLAIN_VERB = '(?!(?:this|his|its|was|has|does|thus|plus|always|perhaps|unless|whereas|across)\\b)[a-z]{2,}[a-rt-z]s\\s+(?!(?:from|of|in|on|for|with|at|by|to|and|or|that|which|who|like|than|as)\\b)';
 const PLAIN_CLAUSE_AFTER_DASH = new RegExp(`(?<=[\\w)\\]"'*_\`\\u201d\\u2019\\uE001])\\s*\\u2014\\s*(?=(?:a|an|the|every|each|no)\\s+${NOUN_WORD}\\s+(?:${NOUN_WORD}\\s+){0,2}${PLAIN_VERB}[^\\s\\u2014])`, 'g');
+// Outside a "not" sentence the verb needs "it" or "them" after it with no
+// verb of their own, so "the navigator reads it" joins but "the decision
+// helpers it uses" and "the decision helpers the CLI uses" stay noun phrases.
+const PLAIN_OBJECT_CLAUSE = new RegExp(`^\\s*\\u2014\\s*(?:a|an|the|every|each|no)\\s+${NOUN_WORD}\\s+(?:${NOUN_WORD}\\s+){0,2}${PLAIN_VERB}(?:it|them)(?:[.!?;,]|$|\\s+(?![a-z]+(?:s|ed)\\b))`);
 
 // The mark that joins a full clause to the sentence before the dash. A short
 // opener led by "not" has no verb of its own, so the clause explains it and
@@ -273,7 +277,7 @@ function fixEmDash(s, { endsBlock = false, startsBlock = false } = {}) {
     })
     .replace(PLAIN_CLAUSE_AFTER_DASH, (m, at, whole) => {
       const left = clauseLeft(at, whole);
-      return left && /\b(?:not|cannot)\b/i.test(left) ? clauseJoin(left) : m;
+      return left && (/\b(?:not|cannot)\b/i.test(left) || PLAIN_OBJECT_CLAUSE.test(whole.slice(at))) ? clauseJoin(left) : m;
     })
     // keep punctuation the writer already put beside the dash instead of
     // stacking a comma on it, and never leave a trailing space. A dash pressed
