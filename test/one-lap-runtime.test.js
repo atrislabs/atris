@@ -94,7 +94,9 @@ if [ -f "$ATRIS_ENGINE_COUNT" ]; then count=$(cat "$ATRIS_ENGINE_COUNT"); fi
 count=$((count + 1))
 printf '%s\n' "$count" > "$ATRIS_ENGINE_COUNT"
 printf 'mode=%s\n%s\n' "\${ATRIS_ENGINE_MODE:-pass}" "$*" > "$ATRIS_ENGINE_PROMPT"
-if [ -n "\${ATRIS_ENGINE_DELAY:-}" ]; then sleep "$ATRIS_ENGINE_DELAY"; fi
+if [ -n "\${ATRIS_ENGINE_RELEASE:-}" ]; then
+  while [ ! -f "$ATRIS_ENGINE_RELEASE" ]; do sleep 0.02; done
+fi
 if [ "\${ATRIS_ENGINE_MODE:-pass}" = "restaff" ] && [ "$(basename "$0")" = "codex" ]; then
   printf 'usage limit reached\n' >&2
   exit 1
@@ -584,20 +586,24 @@ test('one lap freezes the repo default verifier before dispatch', { timeout: LAP
 test('identical asks in separate processes run one atomic lap', { timeout: LAP_TEST_TIMEOUT_MS }, async () => {
   const setup = setupRuntime('pass');
   try {
-    setup.env.ATRIS_ENGINE_DELAY = '5';
+    const release = path.join(setup.base, 'engine-release');
+    setup.env.ATRIS_ENGINE_RELEASE = release;
     const firstRun = cliAsync([ASK, '--engine', 'codex', '--json'], setup);
-    await waitForFile(setup.env.ATRIS_ENGINE_PROMPT);
-
-    const concurrent = cli([ASK, '--engine', 'codex', '--json'], setup);
-    assert.equal(concurrent.status, 0, concurrent.stderr || concurrent.stdout);
-    const concurrentPayload = json(concurrent, 'concurrent one lap');
-    assert.ok(['waiting_input', 'done'].includes(concurrentPayload.status));
-    if (concurrentPayload.status === 'waiting_input') {
+    let first;
+    try {
+      await waitForFile(setup.env.ATRIS_ENGINE_PROMPT);
+      // Drain both processes while the builder is held, then release it only
+      // after the duplicate has observed the active request's lock.
+      const concurrent = await cliAsync([ASK, '--engine', 'codex', '--json'], setup);
+      assert.equal(concurrent.status, 0, concurrent.stderr || concurrent.stdout);
+      const concurrentPayload = json(concurrent, 'concurrent one lap');
+      assert.equal(concurrentPayload.status, 'waiting_input');
       assert.equal(concurrentPayload.question, 'an identical lap is already running');
+      assert.equal(concurrentPayload.resumed, true);
+    } finally {
+      fs.writeFileSync(release, 'continue\n');
+      first = await firstRun;
     }
-    assert.equal(concurrentPayload.resumed, true);
-
-    const first = await firstRun;
     assert.equal(first.status, 0, `stdout:\n${first.stdout}\nstderr:\n${first.stderr}`);
     const firstPayload = json(first, 'first atomic one lap');
     assert.equal(firstPayload.status, 'done');

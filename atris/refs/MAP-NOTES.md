@@ -2277,3 +2277,5 @@ npm publish
 - Quick command check isolation: `test/smoke.fast.test.js:36` removes the enclosing mission engine selection before explicit fixture overrides; `test/smoke.fast.test.js:55` reproduces inherited codex selection and restores it after checking the actual CLI.
 
 - Isolated command test environment: `test/one-lap-runtime.test.js:23` excludes enclosing mission Git wrappers from fixture PATH and prefers the launching Node runtime; `test/one-lap-runtime.test.js:267` resolves real Git using that same PATH.
+
+- Concurrent duplicate request proof: `test/one-lap-runtime.test.js:97` holds the fake builder on a release file; `test/one-lap-runtime.test.js:586` runs both real CLIs asynchronously and requires waiting before release, retaining single-build, single-review, single-wish and unchanged-master checks.

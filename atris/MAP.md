@@ -99,6 +99,7 @@ checks the refs in both files; `atris doc-health --fix-refs` moves drifted ones.
 | design system commands | `commands/design.js` `lib/design-api.js` | atris design extract and check; shared with atris mcp |
 | improvement attempt ledger | `commands/rsi.js` `lib/rsi-record.js` | read and record Dream-RSI attempts |
 | workspace tree hash | `commands/tree.js` `lib/tree-hash.js` | atris tree hash over the doctrine files |
+| concurrent duplicate request proof | `test/one-lap-runtime.test.js` | fake builder waits for a release file; duplicate must report waiting before the first request can finish; both CLI processes drain asynchronously |
 | isolated command test environment | `test/one-lap-runtime.test.js` | fixture PATH omits enclosing mission Git wrappers and prefers the launching Node runtime; real main-branch review passes under mission PATH |
 | shell supervisor alert tests | `scripts/spaceship.sh`, `test/spaceship-supervisor.test.js:14` | real shell and git outcome checks; test clock advances only on supervisor sleep, so ten prescribed steps complete independently of host speed |
 | quick command checks under a running mission | `test/smoke.fast.test.js` | inherited engine selection is removed before fixture overrides; the core check deliberately inherits codex |

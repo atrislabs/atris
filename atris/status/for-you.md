@@ -21,3 +21,8 @@
 - shipped: Command fixtures now avoid enclosing mission Git wrappers, preventing a confirmed false build failure.
 - proof: /opt/homebrew/bin/node --test --test-name-pattern='a real isolated review on main' test/one-lap-runtime.test.js, exit 0; frozen checks, exit 0, 35 passed.
 - reply: keep / revert
+
+## Duplicate requests prove they overlap
+- shipped: the duplicate-request check uses a release signal and requires the second request to wait, reducing timing sensitivity and removing five seconds of fixed delay.
+- proof: /opt/homebrew/bin/node --test --test-name-pattern=identical test/one-lap-runtime.test.js, exit 0; frozen checks, 35 passed, exit 0.
+- reply: keep / revert
