@@ -72,12 +72,15 @@ test('board shows working, quiet, done ok, and done failed from fake logs', () =
     assert.equal(by.shipper.state, 'done ok');
     assert.equal(by.shipper.step, 'running: npm test');
     assert.equal(by.breaker.state, 'done failed');
+    assert.equal(by.shipper.lasted, '2m', 'an ended run shows how long it took');
+    assert.equal(by.breaker.lasted, '20s');
+    assert.equal(by.scout.lasted, '', 'a run that may still be going has no length yet');
 
     const screen = renderBoard(rows, dir);
     assert.equal(screen.split('\n').length, 5, 'one header plus one row per member');
-    assert.match(screen, /^member\s+state\s+alive\s+engine\s+running for\s+ago\s+job\s+last step$/m);
+    assert.match(screen, /^member\s+state\s+alive\s+engine\s+run time\s+ago\s+job\s+last step$/m);
     assert.match(screen, /^scout\s+quiet\s+-\s+-\s+-\s+5m ago\s+find stale docs\s+running: rg stale$/m);
-    assert.match(screen, /^breaker\s+done failed\s+-\s+-\s+-\s+1m ago\s+try the risky thing\s+running: node boom\.js$/m);
+    assert.match(screen, /^breaker\s+done failed\s+-\s+-\s+20s\s+1m ago\s+try the risky thing\s+running: node boom\.js$/m);
   } finally {
     fs.rmSync(dir, { recursive: true, force: true });
   }
@@ -346,7 +349,8 @@ test('board shows a live run as alive with its engine, and a dead one as died, n
     assert.equal(by.builder.state, 'died', 'gone without a finished line is not a clean stop');
     assert.equal(by.builder.alive, false);
     assert.equal(by.builder.running_for, '');
-    assert.match(renderBoard(readBoard({ dir }), dir), /^builder\s+died\s+no\s+claude\s+-\s+/m);
+    assert.equal(by.builder.lasted, '1m', 'a died run lasts from start to its last line');
+    assert.match(renderBoard(readBoard({ dir }), dir), /^builder\s+died\s+no\s+claude\s+1m\s+/m);
   } finally {
     killAll(child.pid);
     fs.rmSync(dir, { recursive: true, force: true });
