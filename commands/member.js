@@ -10499,15 +10499,20 @@ async function memberGo(...rawArgs) {
   const root = process.cwd();
   const teamDir = path.join(root, 'atris', 'team');
   const coreOrder = ['auto-improver', 'executor', 'navigator', 'validator', 'architect', 'customer-lead', 'researcher'];
-  let chosen = 'auto-improver';
+  let chosen = '';
   for (const slug of coreOrder) {
     const mDir = path.join(teamDir, slug);
     if (!fs.existsSync(path.join(mDir, 'MEMBER.md'))) continue;
-    const gp = memberGoalPlaneStatus(slug, { memberDir: mDir, goalsFile: path.join(mDir, 'goals.json') });
+    if (!chosen) chosen = slug;
+    const gp = memberGoalPlaneStatus(slug, { memberDir: mDir, goalsJson: path.join(mDir, 'goals.json') });
     if (gp?.goal?.next_push || gp?.goal?.title) {
       chosen = slug;
       break;
     }
+  }
+  if (!chosen) {
+    const fallback = findAllMembers(teamDir).filter(isFleetMember)[0];
+    if (fallback) chosen = memberSlugFromRecord(fallback);
   }
   return memberSteerOrDispatch(chosen, ...rawArgs);
 }
