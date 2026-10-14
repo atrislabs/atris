@@ -11268,13 +11268,21 @@ test('task backlog and clear-plan demote only planned open tasks', () => {
     fs.mkdirSync(path.join(dir, 'atris'), { recursive: true });
     const workspaceRoot = fs.realpathSync(dir);
 
-    const raw = runCli(['task', 'add', 'Raw capture stays backlog', '--tag', 'capture', '--json'], { cwd: dir, env });
-    assert.equal(raw.status, 0, raw.stderr);
-    const rawRef = JSON.parse(raw.stdout).task.display_id;
-
-    const single = runCli(['task', 'add', 'Single planned row moves back', '--tag', 'plan', '--json'], { cwd: dir, env });
-    assert.equal(single.status, 0, single.stderr);
-    const singleRef = JSON.parse(single.stdout).task.display_id;
+    // Seed both rows in creation order; plan, backlog, show and do stay on the CLI.
+    let rawRef;
+    let singleRef;
+    const seedDb = taskDb.open(dbPath);
+    try {
+      const raw = addSeedTask(seedDb, { title: 'Raw capture stays backlog', tag: 'capture', workspaceRoot });
+      const single = addSeedTask(seedDb, { title: 'Single planned row moves back', tag: 'plan', workspaceRoot });
+      assert.equal(raw.inserted && single.inserted, true);
+      const refs = taskDb.taskDisplayRefMap(taskDb.listTasks(seedDb, { workspaceRoot }));
+      rawRef = refs.get(raw.id);
+      singleRef = refs.get(single.id);
+    } finally {
+      taskDb.close();
+    }
+    assert.ok(rawRef && singleRef);
     assert.equal(runCli([
       'task', 'plan', singleRef,
       '--as', 'codex',
