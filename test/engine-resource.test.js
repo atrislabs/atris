@@ -95,7 +95,7 @@ test('start and end lines append to the durable resource log', () => {
       at: '2026-10-14T08:00:00.000Z', phase: 'start', engine: 'codex', task: 'CLI-1',
       run_id: 'run-one',
       free_pct: 9, swap_used_mb: 512.25, swap_total_mb: 2048, load: [4, 3, 2],
-      pid: process.pid, leaked_ssh_agents: 0,
+      pid: process.pid, leaked_ssh_agents: null,
     });
     assert.strictEqual(lines[1].phase, 'end');
     assert.strictEqual(lines[1].signal, 'SIGKILL');
@@ -2162,4 +2162,40 @@ test('the real sweep warns when the system cannot provide its process list', { s
   assert.equal(ran.status, 0, ran.stderr);
   assert.match(ran.stdout, /could not read the process list/);
   assert.match(ran.stdout, /0 leaked here does not mean none leaked/);
+});
+
+test('start leak readings stay unknown when any scan reader is unavailable', () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'engine-resource-unread-'));
+  try {
+    for (const missing of ['process list', 'process environments', 'agent sockets']) {
+      const start = recordEngineResource(root, { phase: 'start' }, {
+        platform: 'linux', uid: 501, loadavg: () => [0, 0, 0],
+        readSshAgents: () => ({ agents: [], referenced: new Set(), unread: [missing] }),
+      });
+      assert.strictEqual(start.leaked_ssh_agents, null, missing);
+    }
+  } finally {
+    fs.rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test('real start recording keeps a denied process scan unknown on disk', { skip: process.platform !== 'darwin' }, () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'engine-resource-denied-'));
+  try {
+    const probe = `
+      const { recordEngineResource } = require(${JSON.stringify(path.join(__dirname, '..', 'lib', 'engine-resource'))});
+      process.stdout.write(JSON.stringify(recordEngineResource(${JSON.stringify(root)}, { phase: 'start', engine: 'probe' })));
+    `;
+    const ran = require('node:child_process').spawnSync('/usr/bin/sandbox-exec', [
+      '-p', '(version 1)(allow default)(deny process-exec (literal "/bin/ps"))',
+      process.execPath, '-e', probe,
+    ], { encoding: 'utf8', timeout: 30000 });
+    assert.equal(ran.status, 0, ran.stderr);
+    const saved = JSON.parse(fs.readFileSync(path.join(root, RESOURCE_LOG), 'utf8'));
+    assert.strictEqual(saved.leaked_ssh_agents, null);
+    assert.deepStrictEqual(saved, JSON.parse(ran.stdout));
+    console.log(`denied process scan exit ${ran.status}: ${ran.stdout}`);
+  } finally {
+    fs.rmSync(root, { recursive: true, force: true });
+  }
 });
