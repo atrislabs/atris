@@ -144,7 +144,7 @@ test('member go with no idea takes the oldest fitting task, skipping held, claim
       const payload = JSON.parse(result.stdout);
       assert.equal(payload.member, 'executor');
       assert.equal(payload.task.id, fits);
-      assert.equal(payload.prompt, 'Fix the flaky clock test\n\nIt fails one run in five.');
+      assert.equal(payload.prompt, 'Fix the flaky clock test. It fails one run in five.');
     }
     // A dry run only looks.
     assert.equal(taskDb.getTask(db, fits).status, 'open');
@@ -182,6 +182,13 @@ test('a pulled task moves to review on a passing check and back to the list on a
       const reviewed = taskDb.getTask(db, pass);
       assert.equal(reviewed.status, 'review');
       assert.match(reviewed.metadata.latest_agent_proof, /atris\/runs\/mission-m-1\.json/);
+
+      const waiting = add('Tidy the board copy');
+      taskDb.claimTask(db, { id: waiting, claimedBy: 'executor' });
+      const ready = memberGoFinishTask('executor', taskDb.getTask(db, waiting), {
+        started: true, mission_id: 'm-3', mission: { status: 'ready' },
+      });
+      assert.equal(ready.outcome, 'review');
 
       const failed = memberGoFinishTask('executor', taskDb.getTask(db, fail), {
         started: true, mission_id: 'm-2', mission: { status: 'running' }, error: 'check failed: 2 tests red\nstack',

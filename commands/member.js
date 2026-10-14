@@ -10404,14 +10404,14 @@ function memberGoTask(owner, root, { claim }) {
 }
 
 // A pulled task leaves the run in review when the run's check passed (the
-// mission completes only on a passing check), else back on the list with a
-// one-line reason.
+// mission is complete, or ready: checked and waiting on a person), else back
+// on the list with a one-line reason.
 function memberGoFinishTask(owner, task, result, thrown = null) {
   const taskDb = require('../lib/task-db');
   const db = taskDb.open();
   const mission = (result && result.mission) || {};
   const receipt = (result && result.work_step && result.work_step.receipt_path) || mission.receipt_path || '';
-  if (!thrown && result && result.started && mission.status === 'complete') {
+  if (!thrown && result && result.started && ['complete', 'ready'].includes(mission.status)) {
     const proof = [`[verified] ${owner} ran mission ${result.mission_id} and its check passed.`,
       receipt ? `Receipt: ${receipt}` : ''].filter(Boolean).join('\n');
     const ready = taskDb.readyTask(db, { id: task.id, actor: owner, proof });

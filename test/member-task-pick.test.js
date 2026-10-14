@@ -36,7 +36,7 @@ test('picks the oldest open build task and claims it for the member', () => {
     assert.equal(got.task.id, oldest);
     assert.equal(got.task.status, 'claimed');
     assert.equal(got.task.claimed_by, 'executor');
-    assert.equal(got.objective, 'Fix the flaky clock test\n\nThe clock test fails one run in five.');
+    assert.equal(got.objective, 'Fix the flaky clock test. The clock test fails one run in five.');
     assert.equal(taskDb.getTask(db, oldest).claimed_by, 'executor');
   });
 });
@@ -75,4 +75,13 @@ test('returns null when nothing fits so the caller falls back', () => {
 
 test('objective is just the title when the task has no body', () => {
   assert.equal(taskObjective({ title: 'Rename the flag', metadata: {} }), 'Rename the flag');
+});
+
+test('objective with a body stays on one line so mission start accepts it', () => {
+  const objective = taskObjective({
+    title: 'Read README.md and report the documented upload retry policy',
+    metadata: { body: 'Confirm uploads retry three times\nbefore reporting failure.' },
+  });
+  assert.equal(objective, 'Read README.md and report the documented upload retry policy. Confirm uploads retry three times before reporting failure.');
+  assert.doesNotMatch(objective, /[\n\r]/);
 });
