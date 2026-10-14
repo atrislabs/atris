@@ -23,6 +23,8 @@ Details for any task: atris task show <ID>
 
 ## Review
 
+- **[AIC-23]** Remove baseline receipt test read launch · auto-improver
+  **Done looks like:** Developers can finish receipt checks sooner because the baseline read starts one fewer command.
 - **[AIC-22]** Seed bounded review receipt fixtures in process · auto-improver
   **Done looks like:** Developers can finish receipt checks sooner because setup starts two fewer commands.
 - **[AIC-21]** Seed duplicate review loop fixtures in process · auto-improver

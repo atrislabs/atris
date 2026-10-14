@@ -8909,8 +8909,8 @@ test('task review-lane-run writes bounded receipts and stops before human accept
   try {
     fs.mkdirSync(path.join(dir, 'atris'), { recursive: true });
 
-    // Only fixture creation stays in process; ready, review, run, and show
-    // still exercise the CLI and its persisted state.
+    // Fixture creation and the baseline read stay in process; ready, review,
+    // run, and the final show still exercise the CLI and its persisted state.
     const workspaceRoot = taskStore.workspaceRoot(dir);
     const seedTask = (title) => {
       const db = taskStore.open(dbPath);
@@ -8978,7 +8978,17 @@ test('task review-lane-run writes bounded receipts and stops before human accept
     assert.equal(fs.existsSync(receiptPath), false);
     assert.equal(fs.existsSync(latestPath), false);
 
-    const beforeWaiting = JSON.parse(runCli(['task', 'show', waitingRef, '--json'], { cwd: dir, env }).stdout);
+    const baselineDb = taskStore.open(dbPath);
+    let beforeWaiting;
+    try {
+      beforeWaiting = taskStore.taskProjection(baselineDb, { workspaceRoot })
+        .tasks.find(task => task.display_id === waitingRef);
+      assert.ok(beforeWaiting);
+      assert.equal(beforeWaiting.status, 'review');
+      assert.ok(beforeWaiting.current_version > 0);
+    } finally {
+      taskStore.close();
+    }
     const liveRun = runCli([
       'task', 'review-lane-run',
       '--goal-id', 'OBL-953',
@@ -9015,6 +9025,7 @@ test('task review-lane-run writes bounded receipts and stops before human accept
     assert.equal(latestReceipt.safety.human_accept, false);
 
     const afterWaiting = JSON.parse(runCli(['task', 'show', waitingRef, '--json'], { cwd: dir, env }).stdout);
+    assert.equal(afterWaiting.id, beforeWaiting.id);
     assert.equal(afterWaiting.current_version, beforeWaiting.current_version);
   } finally {
     cleanupTempDir(dir);
