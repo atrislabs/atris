@@ -1300,6 +1300,13 @@ function memberRunWith(name, args, { quiet = false } = {}) {
     if (nodeModulesLinked) console.log(`linked node_modules from ${nodeModulesSource}`);
   }
 
+  // An ignited run works for minutes; say where to watch it before it starts.
+  if (ignite && !asJson && !quiet && !hasFlag(args, '--quiet')) {
+    const progressDir = process.env.ATRIS_PROGRESS_DIR || '~/.atris/progress';
+    console.log(`watch: tail -f ${progressDir}/${String(name).replace(/[^A-Za-z0-9._-]/g, '_')}.log`);
+    console.log('board: atris member board --watch');
+  }
+
   const cwd = mission.worktree?.path || process.cwd();
   const verifier = readFlag(args, '--verify', '') || mission.verifier || requestedVerifier;
   if (verifier && verifier !== mission.verifier) {

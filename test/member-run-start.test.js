@@ -257,3 +257,21 @@ test('member run uses an explicit check in member config', (t) => {
   assert.equal(result.status, 0, result.stderr || result.stdout);
   assert.equal(JSON.parse(result.stdout).started, true);
 });
+
+test('ignited member run says where to watch, and json or quiet skip it', (t) => {
+  const root = workspace(t);
+  const bin = fakeClaude(root);
+  const base = ['bounded work', '--engine', 'claude', '--ignite', '--shared-checkout', '--max-ticks', '1', '--minutes', '1'];
+
+  const plain = run(root, base, bin);
+  assert.equal(plain.status, 0, plain.stderr || plain.stdout);
+  assert.match(plain.stdout, /^watch: tail -f ~\/\.atris\/progress\/demo\.log$/m);
+  assert.match(plain.stdout, /^board: atris member board --watch$/m);
+
+  const json = run(root, [...base, '--json'], bin);
+  assert.equal(json.status, 0, json.stderr || json.stdout);
+  assert.doesNotMatch(json.stdout + json.stderr, /watch: tail -f|board: atris member board/);
+
+  const quiet = run(root, [...base, '--quiet'], bin);
+  assert.doesNotMatch(quiet.stdout + quiet.stderr, /watch: tail -f|board: atris member board/);
+});
