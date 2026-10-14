@@ -1723,7 +1723,18 @@ function appendMemberLog(owner, title, fields = {}, root = process.cwd()) {
       .map(([key, value]) => `- ${key}: ${String(value).replace(/\n/g, ' ')}`),
     '',
   ];
-  fs.appendFileSync(logPath, rows.join('\n'), 'utf8');
+  let lead = '';
+  try {
+    const size = fs.statSync(logPath).size;
+    if (size > 0) {
+      const fd = fs.openSync(logPath, 'r');
+      const last = Buffer.alloc(1);
+      fs.readSync(fd, last, 0, 1, size - 1);
+      fs.closeSync(fd);
+      if (last[0] !== 0x0a) lead = '\n';
+    }
+  } catch {}
+  fs.appendFileSync(logPath, lead + rows.join('\n'), 'utf8');
   return logPath;
 }
 
