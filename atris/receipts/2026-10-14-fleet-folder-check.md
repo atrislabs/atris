@@ -87,3 +87,42 @@ Files edited: `atris/receipts/2026-10-14-fleet-folder-check.js`, this receipt, `
 Progress: one additional real lock case, three reproduced unlogged deletions overall, twelve required checks passed, zero dependencies and zero production changes.
 next_push: Check both review repositories before removing any child, preserve the whole group on activity, and record successful removals.
 layer: beliefs
+
+## Running program follow-up
+
+Extended the cleanup audit to reproduce deletion around a running program. The actual cleanup routine and required checks both exited 0; all twelve required tests passed.
+
+Verdict: proceed-with-changes. The single failure mode is checking activity only under the work folder before removing the parent, which also contains an independent repository. The real process scan reports that repository's running program under the parent, while the work-folder scan reports clear. Check both repositories for Git activity and the entire parent for running programs before removing any child. Keep the entire group if either check refuses or cannot run. This is a decision card, with no production implementation or approval.
+
+Plan: both repositories + parent process scan -> keep whole group on activity or uncertainty -> otherwise remove and record.
+
+Runtime command: `node atris/receipts/2026-10-14-fleet-folder-check.js`
+Exit: 0. Actual new output:
+```text
+running before cleanup: live program in /private/var/folders/t1/2_4kmb5n4c71dxm26zc8dgzr0000gn/T/atris-fleet-check-zEgagN/review-oNpBL9/quarantine.git; work-folder-only scan reports clear
+{"kind":"running","parentKept":false,"programAlive":true,"removalRecorded":false}
+audit complete; surviving fixture data retained for inspection
+```
+
+The audit starts a real child program in disposable review metadata, asserts the actual scan detects activity under the parent but not the work folder, and confirms both repositories have no Git locks. It invokes unchanged production cleanup and proves the parent is gone while the program remains alive. The child is stopped and awaited in cleanup. No filesystem, process scan, or Git helper is replaced. Success reproduces a defect; it does not certify safe removal. Change the deletion assertion to preservation when implementing the repair.
+
+Rerun required check: `node --test test/worktree-removal-guard.test.js test/member-tidy.test.js`
+Exit: 0. Actual output excerpt:
+```text
+ℹ tests 12
+ℹ suites 0
+ℹ pass 12
+ℹ fail 0
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 2770.98475
+```
+
+Files edited: `atris/receipts/2026-10-14-fleet-folder-check.js`, this receipt, `atris/MAP.md`, `atris/refs/MAP-NOTES.md`, and `atris/team/architect/logs/2026-10-14.md`. Task commands regenerate `atris/TODO.md`; that rendered file, existing `bin/atris.js` changes, and the prior result entry in the member log are excluded from staging.
+
+Commands run: mission status, git status, brain activation, workspace status, mission goal lookup, task list/new/claim/note/ready, targeted reads and searches, the two proof commands above, brain compile, whitespace check, explicit staging, commit, and push. Brain activation returned exit 2 with a write plan. No compiled files were created. Artifacts: extended runtime audit, this decision card, and retained disposable fixture `/private/var/folders/t1/2_4kmb5n4c71dxm26zc8dgzr0000gn/T/atris-fleet-check-zEgagN`.
+
+Progress: one additional real running-program case, four reproduced unlogged deletions overall, twelve required checks passed, zero production changes and zero new dependencies.
+next_push: Implement one keep decision for both review repositories and the whole parent process scan before any removal, then log successful removals.
+layer: beliefs

@@ -2301,5 +2301,7 @@ npm publish
 
 ## Fleet review-folder cleanup audit
 
-- `lib/fleet.js:2464`: `disposeReviewSandbox` forces Git removal, then removes the work folder, Git metadata, quarantine, and parent directly. Real private, shared, and independent review-repository two-hour-old locks are deleted without a removal record. Checking only the work folder misses the independent repository lock.
+- `lib/fleet.js:2464`: `disposeReviewSandbox` forces Git removal, then removes the work folder, Git metadata, quarantine, and parent directly. Real private, shared, and independent review-repository two-hour-old locks are deleted without a removal record. Checking only the work folder misses the independent repository lock and a running program inside that repository.
 - `atris/receipts/2026-10-14-fleet-folder-check.js:10`: repeatable actual-routine audit, using disposable real Git repositories and an in-memory export without replacing helpers. Decision and exact proof: `atris/receipts/2026-10-14-fleet-folder-check.md`. Keep the whole folder group before attempting any child removal.
+
+- `atris/receipts/2026-10-14-fleet-folder-check.js:51`: live child program in the independent repository; the real process scan sees activity under the parent, but disposal removes the parent while the program remains alive.

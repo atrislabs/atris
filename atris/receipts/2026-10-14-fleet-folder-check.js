@@ -5,9 +5,9 @@ const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
 const Module = require('node:module');
-const { spawnSync } = require('node:child_process');
+const { spawn, spawnSync } = require('node:child_process');
 
-function main() {
+async function main() {
   // Keep inherited commit-hook Git settings away from the disposable fixture.
   for (const name of Object.keys(process.env)) {
     if (name.startsWith('GIT_')) delete process.env[name];
@@ -20,6 +20,7 @@ function main() {
   // or replacing filesystem operations, Git, or any imported helper.
   fleet._compile(`${fs.readFileSync(sourcePath, 'utf8')}\nmodule.exports.auditDispose = disposeReviewSandbox;\n`, sourcePath);
   const { inspectGitActivity } = require('../../lib/git-activity');
+  const { listActiveProcessPaths, worktreeHasActiveProcess } = require('../../commands/worktree');
   const root = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'atris-fleet-check-')));
   function git(...args) {
     const result = spawnSync('git', args, { cwd: root, encoding: 'utf8' });
@@ -34,7 +35,7 @@ function main() {
   git('add', '.');
   git('commit', '-qm', 'fixture');
   console.log(`fixture: ${root}`);
-  for (const kind of ['private', 'shared', 'quarantine']) {
+  for (const kind of ['private', 'shared', 'quarantine', 'running']) {
     const parent = fs.mkdtempSync(path.join(root, 'review-'));
     const boundary = {
       trustedRoot: root,
@@ -46,6 +47,34 @@ function main() {
     git('clone', '-q', '--bare', root, boundary.gitDir);
     git('init', '-q', '--bare', boundary.quarantine);
     git('--git-dir', boundary.gitDir, 'worktree', 'add', '-q', boundary.worktreePath, 'master');
+    if (kind === 'running') {
+      const child = spawn('sleep', ['30'], { cwd: boundary.quarantine, stdio: 'ignore' });
+      try {
+        await new Promise((resolve, reject) => {
+          child.once('spawn', resolve);
+          child.once('error', reject);
+        });
+        process.kill(child.pid, 0);
+        const activePaths = listActiveProcessPaths();
+        assert.ok(Array.isArray(activePaths), 'the real process scan must succeed');
+        assert.equal(worktreeHasActiveProcess(boundary.worktreePath, activePaths), false);
+        assert.equal(worktreeHasActiveProcess(parent, activePaths), true);
+        assert.equal(inspectGitActivity(boundary.worktreePath).safe, true);
+        assert.equal(inspectGitActivity(boundary.quarantine).safe, true);
+        console.log(`running before cleanup: live program in ${boundary.quarantine}; work-folder-only scan reports clear`);
+        fleet.exports.auditDispose(boundary);
+        process.kill(child.pid, 0);
+        const removalFile = path.join(root, '.atris/state/worktree_removals.jsonl');
+        assert.equal(fs.existsSync(parent), false, 'update this audit when group protection is implemented');
+        assert.equal(fs.existsSync(removalFile), false);
+        console.log(JSON.stringify({ kind, parentKept: false, programAlive: true, removalRecorded: false }));
+      } finally {
+        const exited = new Promise((resolve) => child.once('exit', resolve));
+        child.kill('SIGKILL');
+        if (child.exitCode === null && child.signalCode === null) await exited;
+      }
+      continue;
+    }
     const privateDir = git('-C', boundary.worktreePath, 'rev-parse', '--absolute-git-dir');
     const lock = kind === 'private' ? path.join(privateDir, 'index.lock')
       : kind === 'shared' ? path.join(boundary.gitDir, 'refs/heads/master.lock')
@@ -79,4 +108,7 @@ function main() {
   console.log('audit complete; surviving fixture data retained for inspection');
 }
 
-if (require.main === module) main();
+if (require.main === module) main().catch((error) => {
+  console.error(error);
+  process.exitCode = 1;
+});
