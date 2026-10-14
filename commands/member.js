@@ -10846,7 +10846,7 @@ async function memberRoom(...args) {
     : ['  No work recorded yet. Run: atris member go'];
 
   const lines = [
-    'WORKDAY BRIEFING · TEAM ROOM (100% Autonomous Member Loop)',
+    'Your team · workday briefing',
     `Engines ready: ${engineSummary}`,
     `Loop: ${room.utopia.loop}`,
     '',
