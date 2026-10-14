@@ -313,3 +313,47 @@ Files edited: this receipt and `atris/team/architect/logs/2026-10-14.md`. No new
 Progress: one remaining full-suite failure attributed to unchanged main; two matching failure outputs; all 13 required folder checks passing. No new dependencies or product behavior changes.
 next_push: Compare the two remaining mission-run reliability failures with the same unchanged main input to attribute them before considering the folder repair.
 layer: beliefs
+
+
+## Detached-run failure compared
+
+Recorded that the detached-run failure occurs on unchanged main as well as the combined folder repair. This keeps an existing failure from being mistaken for a folder-repair regression. No production behavior changed.
+
+Plan: unchanged main -> exact failed case <- combined repair -> compare -> required folder checks.
+
+Inputs: unchanged main `a8b9f17b2ed955df4fdff1717cc6057aea7f480a` in `/var/folders/t1/2_4kmb5n4c71dxm26zc8dgzr0000gn/T/atris-map-baseline-djmm0y95`; combined tree `554b49cbbd0b172b00470b4ab382987d26a83531` in `/var/folders/t1/2_4kmb5n4c71dxm26zc8dgzr0000gn/T/atris-lock-suite-lp74sw3m`.
+
+Real-surface command in each saved copy: `node --test --test-name-pattern='mission run --detach writes driver state and appends to the mission log' test/mission-run-reliability.test.js > detached-driver-check.txt 2>&1`. Each test invokes the actual CLI. Runs were concurrent; no root-cause or isolation claim follows from this comparison. Full output is retained in `detached-driver-check.txt` in each copy.
+
+```text
+baseline: tests 1, pass 0, fail 1, exit 1
+another driver is already running mission mission-2026-10-14-detach-mission-driver-5317755f (pid 80938)
+3 !== 0
+at test/mission-run-reliability.test.js:166:12
+combined: tests 1, pass 0, fail 1, exit 1
+another driver is already running mission mission-2026-10-14-detach-mission-driver-5317755f (pid 80939)
+3 !== 0
+at test/mission-run-reliability.test.js:166:12
+```
+
+`git diff a8b9f17b2ed955df4fdff1717cc6057aea7f480a 554b49cbbd0b172b00470b4ab382987d26a83531 -- test/mission-run-reliability.test.js commands/mission.js` exited 0 with no output. Matching baseline failure and unchanged relevant code support existing-failure attribution under this environment; they do not prove full-suite health.
+
+Rerunnable verify command: `node --test test/worktree-removal-guard.test.js test/member-tidy.test.js`, current checkout, exit 0. Actual output excerpt:
+
+```text
+✔ tidy keeps old private and shared git locks and reports every path and age
+✔ regression cleanup keeps old private and shared git locks created by the real check
+ℹ tests 13
+ℹ suites 0
+ℹ pass 13
+ℹ fail 0
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 2892.546584
+```
+
+Files edited: this receipt and `atris/team/architect/logs/2026-10-14.md`. Artifacts: two raw comparison outputs in existing disposable copies. Commands run: mission status/goal, task list/new/claim/note/ready, brain activate/compile (plan only), Git status/log/remote/diff reads, exact-case tests, required folder checks, whitespace check, explicit staging, commit and push. Existing router and rendered task-view edits excluded. No new repository filenames or dependencies.
+Progress: one additional broad-suite failure attributed to unchanged main; two matching failure outputs; 13 required folder checks passing, exit 0.
+next_push: Compare the live-subprocess lock failure at test/mission-run-reliability.test.js:211 with unchanged main in sequential isolated runs.
+layer: beliefs
