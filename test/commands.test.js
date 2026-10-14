@@ -8519,14 +8519,18 @@ test('task review-lane-drain picks safe agent action without mutating human acce
     assert.equal(afterWaiting.latest_event_type, beforeWaiting.latest_event_type);
     assert.equal(afterWaiting.status, beforeWaiting.status);
 
-    const humanOnlyCreated = runCli([
-      'task', 'new', 'Only human can accept this certified task',
-      '--tag', 'task',
-      '--goal-id', 'OBL-929',
-      '--json',
-    ], { cwd: dir, env });
-    assert.equal(humanOnlyCreated.status, 0, humanOnlyCreated.stderr);
-    const humanOnlyRef = JSON.parse(humanOnlyCreated.stdout).task.display_id;
+    const humanOnlyDb = taskStore.open(dbPath);
+    let humanOnlyRef;
+    try {
+      const humanOnlyTask = addSeedTask(humanOnlyDb, {
+        title: 'Only human can accept this certified task',
+        tag: 'task', workspaceRoot, metadata: { goal_id: 'OBL-929' },
+      });
+      assert.equal(humanOnlyTask.inserted, true);
+      humanOnlyRef = taskStore.taskDisplayRefMap(taskStore.listTasks(humanOnlyDb, { workspaceRoot })).get(humanOnlyTask.id);
+    } finally {
+      taskStore.close();
+    }
     assert.equal(runCli([
       'task', 'ready', humanOnlyRef,
       '--as', 'codex',
