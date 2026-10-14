@@ -1157,6 +1157,20 @@ test('a footer list of different reasons names signed out first', () => {
   assert.equal(footer(['timed out', 'signed out', 'timed out', 'signed out'], 60), '4 more not shown (4 failed, 2 signed out and 2 timed out)');
 });
 
+test('hidden failures all signed out of one engine say which to sign in to', () => {
+  const base = { alive: false, engine: 'claude', running_for: '', job: 'b', step: 's', ago: '1m ago' };
+  const out = (m, engine = 'claude') => ({ ...base, engine, member: m, state: 'done failed', last_result: 'failed', last_result_reason: 'signed out', last_result_ago: '1m ago' });
+  const halt = { ...base, member: 'h1', state: 'stopped', last_result: 'stopped', last_result_reason: '', last_result_ago: '7m ago' };
+  const footer = (rows, width) => renderBoard(rows, '/progress', 0, width, 2).split('\n').pop();
+  const three = [out('f1'), out('f2'), out('f3'), halt];
+  // It used to read "3 failed, all signed out".
+  assert.equal(footer(three, 60), '4 more not shown (3 failed, sign in to claude, 1 stopped)');
+  assert.equal(footer(three, 40), '4 more not shown (3 failed, 1 stopped)', 'no room: the same footer as before');
+  assert.equal(footer([out('f1'), out('f2', 'codex')], 60), '2 more not shown (2 failed, all signed out)', 'two engines: no single fix to name');
+  const unnamed = [out('f1', ''), out('f2', '')];
+  assert.equal(footer(unnamed, 60), '2 more not shown (2 failed, all signed out)', 'no engine on record: say signed out');
+});
+
 test('narrow footers drop whole mixed counts from the end instead of cutting one', () => {
   const dir = fakeDir({
     a: [`${at(20)} m-1 started: [pid ${process.pid} engine claude] check the board`],
