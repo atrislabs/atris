@@ -1238,6 +1238,7 @@ function memberRun(name, ...args) {
 function memberRunWith(name, args, { quiet = false } = {}) {
   if (!name || name === '--help' || name === '-h' || hasFlag(args, '--help') || hasFlag(args, '-h')) {
     console.log('usage: atris member run <name> ["mission text"] [--verify "<cmd>"] [--minutes N|--hours N] [--json]');
+    console.log('pick for me: atris member run "fix the flaky login test" (the best member takes it and runs it)');
     console.log('new mission: atris member run growth "improve onboarding proof" --verify "npm test" --minutes 30 --json');
     console.log('choose work: atris member run growth --verify "npm test" --industry logistics --minutes 30 --json');
     console.log('subagent shell: atris member run growth "improve onboarding proof" --engine claude --ignite --json');
@@ -1378,6 +1379,16 @@ function memberRunWith(name, args, { quiet = false } = {}) {
   if (!reviewAsk && payload.reason === 'human_asks_open' && Array.isArray(payload.human_asks) && payload.human_asks.length) {
     result.ask = `${name} is waiting on you: ${payload.human_asks[0]}`;
     result.next_command = payload.next_command || 'atris decide';
+  }
+  // A finished ignited run whose check passed hands its branch to GitHub
+  // auto-merge, only past the local gates; any held gate leaves the branch.
+  if (ignite && ok && started && !reviewAsk && finalMission.verifier_result?.passed === true) {
+    const ticks = Array.isArray(payload.ticks) ? payload.ticks : [];
+    const summary = ticks.map((tick) => tick?.summary || tick?.claude?.summary).filter(Boolean).pop() || '';
+    const workerEngine = ticks.map((tick) => tick?.engine_id).filter(Boolean).pop()
+      || runnerSwap?.to || readFlag(args, '--runner', '') || '';
+    result.autoland = require('../lib/member-autoland').autolandMemberRun({ mission: finalMission, cwd, summary, workerEngine });
+    if (!asJson && !quiet) console.log(result.autoland.line);
   }
   if (checkFailed) {
     result.check_failed = true;
@@ -10426,7 +10437,8 @@ function memberGoJob(owner, root) {
 
 // With no idea given, member go takes the next real job from the task list:
 // the oldest open task that fits the member's job. A dry run only looks.
-function memberGoTask(owner, root, { claim }) {
+// requireCheck: only tasks with a runnable check count.
+function memberGoTask(owner, root, { claim, requireCheck = false }) {
   try {
     const taskDb = require('../lib/task-db');
     const picker = require('../lib/member-task-pick');
@@ -10434,10 +10446,10 @@ function memberGoTask(owner, root, { claim }) {
     const job = memberGoJob(owner, root);
     const workspaceRoot = taskDb.workspaceRoot(root);
     if (claim) {
-      const got = picker.claimTaskForMember(taskDb, db, { workspaceRoot, member: owner, job });
+      const got = picker.claimTaskForMember(taskDb, db, { workspaceRoot, member: owner, job, requireCheck });
       return got ? { ...got, job } : null;
     }
-    const task = picker.pickTaskForMember(taskDb, db, { workspaceRoot, job });
+    const task = picker.pickTaskForMember(taskDb, db, { workspaceRoot, job, requireCheck });
     return task ? { task, objective: picker.taskObjective(task), job } : null;
   } catch (error) {
     console.error(`could not take a task from the list: ${String(error && error.message || error).split('\n')[0]}`);
@@ -10484,6 +10496,9 @@ async function memberSteerOrDispatchWith({ pullTask = false } = {}, rawArgs = []
   const root = process.cwd();
   const asJson = hasFlag(rawArgs, '--json');
   const dryRun = hasFlag(rawArgs, '--dry-run');
+  // Set by `member up`: run only a claimed task with a runnable check, never
+  // the member's own goal text.
+  const needsCheck = pullTask && hasFlag(rawArgs, '--needs-check');
   const valueFlags = new Set(['--engine', '--model', '--verify', '--referee-engine', '--minutes', '--hours', '--max-ticks', '--from']);
   const positionals = [];
   const flagArgs = [];
@@ -10491,6 +10506,7 @@ async function memberSteerOrDispatchWith({ pullTask = false } = {}, rawArgs = []
     const token = String(rawArgs[i] || '');
     if (!token) continue;
     if (token.startsWith('-')) {
+      if (token === '--needs-check') continue;
       flagArgs.push(token);
       if (valueFlags.has(token) && i + 1 < rawArgs.length) {
         flagArgs.push(rawArgs[i + 1]);
@@ -10527,8 +10543,14 @@ async function memberSteerOrDispatchWith({ pullTask = false } = {}, rawArgs = []
   // A human or odd-typed member never takes a task: it would be claimed and
   // then stranded when the run refuses the member.
   const pulled = pullTask && !prompt && !missionSummary.live && !memberRefusalFor(targetMember, paths.memberFile)
-    ? memberGoTask(owner, root, { claim: !dryRun })
+    ? memberGoTask(owner, root, { claim: !dryRun, requireCheck: needsCheck })
     : null;
+  if (needsCheck && !pulled) {
+    const payload = { ok: true, action: 'member_go', mode: 'idle', member: owner, reason: 'no task with a check' };
+    printJsonOrText(payload, [`${owner} is idle, no task with a check`], asJson);
+    process.exitCode = require('../lib/member-up').IDLE_EXIT;
+    return payload;
+  }
   const effectivePrompt = prompt
     || pulled?.objective
     || goalPlane.goal?.next_push
@@ -10636,7 +10658,9 @@ async function memberSteerOrDispatchWith({ pullTask = false } = {}, rawArgs = []
   }
   const task = memberGoFinishTask(owner, pulled.task, result);
   const merged = { ...(result || {}), task };
-  if (asJson) console.log(JSON.stringify(merged));
+  if (asJson) console.log(JSON.stringify(needsCheck
+    ? { task, work_step: { summary: result?.work_step?.summary || null }, error: result?.error || null }
+    : merged));
   else if (task.outcome === 'review') console.log(`Task "${task.title}" is ready for review.`);
   else console.log(`Task "${task.title}" went back on the list: ${task.reason}`);
   return merged;
@@ -10673,6 +10697,154 @@ async function memberGo(...rawArgs) {
   return memberSteerOrDispatchWith({ pullTask: true }, [chosen, ...rawArgs]);
 }
 
+// Where a running `atris member up` leaves its pid, so a whole-team sleep
+// can end it.
+function memberUpPidFile(root) {
+  return path.join(root, '.atris', 'state', 'member-up.json');
+}
+
+// A member slept by name stays asleep for member up until someone wakes it;
+// a whole-team sleep only rests the team for now.
+function memberSleepingByChoice(latest) {
+  return Boolean(latest && latest.status === 'paused' && latest.stop_reason === 'member-sleep'
+    && latest.sleep_target === 'member');
+}
+
+function memberUpTeam(root) {
+  const { isMemberParked } = require('../lib/member-park');
+  const missionMap = memberRunMissionMap(root);
+  return findAllMembers(path.join(root, 'atris', 'team')).filter(isFleetMember).map((record) => {
+    const name = memberSlugFromRecord(record);
+    const summary = memberMissionSummary(name, missionMap, root);
+    return {
+      name,
+      parked: isMemberParked(root, name),
+      human: Boolean(memberRefusalFor(name, path.join(root, 'atris', 'team', name, 'MEMBER.md'))),
+      sleeping: memberSleepingByChoice(summary.latest),
+      live: Boolean(summary.live_mission),
+    };
+  });
+}
+
+// The task `member go <name>` would claim, skipping ones already handed out.
+// Looks only; the child claims it.
+function memberUpPick(root, name, taken) {
+  try {
+    const taskDb = require('../lib/task-db');
+    const { fittingTasks } = require('../lib/member-task-pick');
+    const db = taskDb.open();
+    const job = memberGoJob(name, root);
+    return fittingTasks(taskDb, db, { workspaceRoot: taskDb.workspaceRoot(root), job, requireCheck: true })
+      .find((task) => !taken.has(task.id)) || null;
+  } catch {
+    return null;
+  }
+}
+
+function memberUpSpawn(root, name, onExit) {
+  const { spawn } = require('child_process');
+  const logDir = path.join(root, '.atris', 'state', 'member-up');
+  fs.mkdirSync(logDir, { recursive: true });
+  const logFile = path.join(logDir, `${name}.log`);
+  const out = fs.openSync(logFile, 'a');
+  const start = fs.fstatSync(out).size;
+  let child;
+  try {
+    child = spawn(process.execPath, [path.join(__dirname, '..', 'bin', 'atris.js'), 'member', 'go', name, '--needs-check', '--json'], {
+      cwd: root,
+      detached: true,
+      // Children keep their log handle when the foreground supervisor stops.
+      stdio: ['ignore', out, out],
+      env: process.env,
+    });
+  } finally {
+    fs.closeSync(out);
+  }
+  child.on('error', (error) => onExit(null, { ok: false, reason: error.message }));
+  child.on('close', (code, signal) => {
+    let output = '';
+    let fd;
+    try {
+      fd = fs.openSync(logFile, 'r');
+      const size = fs.fstatSync(fd).size;
+      const from = Math.max(start, size - 64 * 1024);
+      const buf = Buffer.alloc(Math.max(0, size - from));
+      const read = fs.readSync(fd, buf, 0, buf.length, from);
+      output = buf.subarray(0, read).toString('utf8');
+    } catch {} finally {
+      if (fd !== undefined) fs.closeSync(fd);
+    }
+    const { memberUpResult } = require('../lib/member-up');
+    onExit(code, memberUpResult(output, '', signal));
+  });
+  return child;
+}
+
+async function memberUp(...args) {
+  if (hasFlag(args, '--help') || hasFlag(args, '-h')) {
+    console.log('Usage: atris member up [--max N] [--only a,b] [--dry-run]');
+    console.log('Keeps the team working: every minute, starts each free member that has a fitting task with a runnable check.');
+    console.log('A member with no such task stays idle; it never runs its own goal instead.');
+    console.log('--only limits it to those members. Same as atris member wake 5 or atris member wake a b.');
+    console.log('Ctrl-C or atris member sleep --all ends it. Runs it started keep going.');
+    return;
+  }
+  const root = process.cwd();
+  const { createMemberUp, runMemberUp, parseMemberUpArgs, DEFAULT_MAX } = require('../lib/member-up');
+  const parsed = parseMemberUpArgs(args);
+  if (parsed.error) {
+    console.error(parsed.error);
+    process.exitCode = 1;
+    return;
+  }
+  const { max, only } = parsed;
+  const deps = {
+    listMembers: () => memberUpTeam(root),
+    pickTask: (name, taken) => memberUpPick(root, name, taken),
+    spawn: (name, onExit) => memberUpSpawn(root, name, onExit),
+    now: () => Date.now(),
+  };
+  if (parsed.dryRun) {
+    const up = createMemberUp(deps, { max, only, dryRun: true });
+    const started = up.check();
+    if (!started.length && up.working() >= up.max) {
+      console.log(`nothing to start: ${up.working()} already working, the limit is ${up.max}`);
+    } else if (!started.length) {
+      console.log('nothing to start: no free member has a task with a runnable check');
+    }
+    return started;
+  }
+  const pidFile = memberUpPidFile(root);
+  fs.mkdirSync(path.dirname(pidFile), { recursive: true });
+  fs.writeFileSync(pidFile, JSON.stringify({ pid: process.pid, started_at: new Date().toISOString() }));
+  const loop = runMemberUp(deps, { max, only });
+  const end = () => loop.stop();
+  process.once('SIGINT', end);
+  process.once('SIGTERM', end);
+  const who = only ? ` for ${only.join(', ')}` : '';
+  console.log(`team is up${who} (at most ${max || DEFAULT_MAX} at once). Ctrl-C to stop.`);
+  await loop.done;
+  process.removeListener('SIGINT', end);
+  process.removeListener('SIGTERM', end);
+  try {
+    if (JSON.parse(fs.readFileSync(pidFile, 'utf8')).pid === process.pid) fs.unlinkSync(pidFile);
+  } catch {}
+  const working = loop.up.running();
+  console.log(working.length ? `team is down; still finishing: ${working.join(', ')}` : 'team is down');
+}
+
+// Ends a running `atris member up`. Returns true when one was told to stop.
+function stopMemberUp(root) {
+  try {
+    const { pid } = JSON.parse(fs.readFileSync(memberUpPidFile(root), 'utf8'));
+    if (!Number.isInteger(pid) || pid === process.pid) return false;
+    process.kill(pid, 'SIGTERM');
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 function memberSleep(target, ...args) {
   if (hasFlag(args, '--help') || hasFlag(args, '-h') || target === '--help' || target === '-h') {
     console.log('Usage: atris member sleep [member|--all] [--json]');
@@ -10696,6 +10868,7 @@ function memberSleep(target, ...args) {
       status: 'paused',
       paused_at: new Date().toISOString(),
       stop_reason: 'member-sleep',
+      sleep_target: filterMember ? 'member' : 'all',
       next_action: `sleeping; wake with: atris member go ${owner || ''}`.trim(),
       updated_at: new Date().toISOString(),
     };
@@ -10705,9 +10878,11 @@ function memberSleep(target, ...args) {
     slept.push({ mission_id: m.id, member: owner || 'mission-lead', objective: m.objective });
   }
 
+  const supervisorStopped = !filterMember && stopMemberUp(root);
   const payload = {
     ok: true,
     action: 'member_sleep',
+    supervisor_stopped: supervisorStopped,
     target: filterMember || 'all',
     slept_count: slept.length,
     slept,
@@ -10723,6 +10898,7 @@ function memberSleep(target, ...args) {
         `All members are already resting.`,
         `Wake anytime: ${payload.wake_command}`,
       ];
+  if (supervisorStopped) lines.unshift('Stopped member up; it starts nobody new.');
   printJsonOrText(payload, lines, asJson);
   return payload;
 }
@@ -11073,7 +11249,7 @@ async function memberCommand(subcommand, ...args) {
   // help themselves (with subcommand-specific usage), leave those alone.
   const HELP_AWARE_SUBCOMMANDS = new Set([
     'create', 'new', 'run', 'install', 'result', 'dispatch', 'route', 'feed', 'stream',
-    'card', 'cards', 'go', 'work', 'steer', 'sleep', 'rest', '1on1', 'interview',
+    'card', 'cards', 'go', 'work', 'up', 'steer', 'sleep', 'rest', '1on1', 'interview',
     'room', 'ui', 'day', 'standup', 'handoff', 'handoffs',
   ]);
   const explicitHelp = subcommand === 'help' || subcommand === '--help' || subcommand === '-h'
@@ -11111,9 +11287,17 @@ async function memberCommand(subcommand, ...args) {
     case 'tick':
       return memberTick(args[0], ...args.slice(1));
     case 'wake':
-      return memberWake(args[0], ...args.slice(1));
+      return require('../lib/member-verbs').memberWakeVerb(args, {
+        wake: memberWake,
+        up: memberUp,
+      });
     case 'run':
-      return memberRun(args[0], ...args.slice(1));
+      return require('../lib/member-verbs').memberRunVerb(args, {
+        root: process.cwd(),
+        aliasOf: memberRuntimeKind,
+        run: memberRun,
+        dispatch: memberDispatch,
+      });
     case 'result': {
       const code = require('../lib/member-result').memberResultCommand(args);
       if (code) process.exitCode = code;
@@ -11122,6 +11306,8 @@ async function memberCommand(subcommand, ...args) {
     case 'go':
     case 'work':
       return memberGo(...args);
+    case 'up':
+      return memberUp(...args);
     case 'steer':
       return memberSteerOrDispatch(...args);
     case 'sleep':
@@ -11200,6 +11386,9 @@ async function memberCommand(subcommand, ...args) {
         }
         return memberSteerOrDispatch(subcommand, ...args);
       }
+      console.log('run "<job>"          pick the right member and run it: atris member run "fix the flaky login test"');
+      console.log('wake <N|names>       keep members working: atris member wake 5  or  atris member wake navigator executor');
+      console.log('sleep [name|--all]   rest the team: atris member sleep --all');
       console.log('');
       console.log('Usage: atris member <subcommand|"<prompt>"> [name]');
       console.log('');
@@ -11225,10 +11414,12 @@ async function memberCommand(subcommand, ...args) {
       console.log('  goal <name> "..."   Create/update a member long-term goal');
       console.log('  goal-from-mission <name>  Create/reuse a goal from MISSION.md and now.md');
       console.log('  goal-from-score <name>    Create/reuse an active goal from Team score evidence');
-      console.log('  wake <name>         Decide tick/wait/ask/stop, then run one bounded work step on the roster engine (--plan to only decide)');
+      console.log('  wake <name>         Decide tick/wait/ask/stop, then run one bounded work step on the roster engine (--plan to only decide; --keep keeps it working)');
+      console.log('  run "<job>"         Pick the best member for the job and run it (same as dispatch "<job>" --ignite)');
       console.log('  run <name> ["..."]  Start a budgeted member mission, or run its active Mission Runtime');
       console.log('  result <name>       Newest run result: run record, receipt, artifacts, number [--since <iso>] [--json]');
       console.log('  dispatch "<idea>"   Route an idea to the best specialist member and start work');
+      console.log('  up [--max N] [--only a,b]  Keep the team working: start free members on fitting tasks every minute (wake 5 / wake a b)');
       console.log('  feed [--member <n>] Show a plain-language linear feed of real work across the team');
       console.log('  card [name|--all]   Show a member\'s roadmap, unlocked skills, live work, and recent wins');
       console.log('  loop <name|--all>   Repeat wake on a bounded cadence with a no-overlap lease');

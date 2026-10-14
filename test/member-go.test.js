@@ -232,3 +232,23 @@ test('member go never claims a task for a human member', () => {
     assert.equal(row.claimed_by, null);
   });
 });
+
+
+test('supervised go stays idle instead of running a goal when checks are missing or prose', () => {
+  withTaskProject(({ root, taskDb, db, add, env }) => {
+    writeGoal(root, 'executor', { title: 'Old goal', next_push: 'Old next push' });
+    const missing = add('Tidy the readme');
+    const prose = add('Polish the docs', { metadata: { verify: 'looks good to a reader' } });
+    const result = runCli(['member', 'go', 'executor', '--needs-check'], root, env);
+    assert.equal(result.status, 75, result.stderr || result.stdout);
+    assert.equal(result.stdout.trim(), 'executor is idle, no task with a check');
+    assert.equal(taskDb.getTask(db, missing).status, 'open');
+    assert.equal(taskDb.getTask(db, prose).status, 'open');
+    assert.equal(fs.existsSync(path.join(root, '.atris', 'state', 'missions.jsonl')), false);
+    const valid = add('Fix clock behavior', { metadata: { verify: 'node --test test/clock.test.js' } });
+    const preview = runCli(['member', 'go', 'executor', '--needs-check', '--dry-run', '--json'], root, env);
+    assert.equal(preview.status, 0, preview.stderr || preview.stdout);
+    assert.equal(JSON.parse(preview.stdout).task.id, valid);
+    assert.equal(taskDb.getTask(db, valid).status, 'open');
+  });
+});

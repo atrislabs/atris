@@ -139,3 +139,15 @@ test('skips a task whose required check is prose that cannot be run', () => {
     assert.equal(got.task.id, ok);
   });
 });
+
+test('requireCheck skips tasks with no check or a prose check, and finds nothing when none has one', () => {
+  withProject(({ db, ws, add }) => {
+    add('Tidy the readme');
+    add('Polish the docs', { metadata: { verify: 'looks good to a reader' } });
+    assert.equal(pickTaskForMember(taskDb, db, { workspaceRoot: ws, job: 'build', requireCheck: true }), null);
+    assert.equal(claimTaskForMember(taskDb, db, { workspaceRoot: ws, member: 'executor', job: 'build', requireCheck: true }), null);
+    const ok = add('Add a retry to the uploader', { metadata: { verify: 'node --test test/upload.test.js' } });
+    assert.equal(pickTaskForMember(taskDb, db, { workspaceRoot: ws, job: 'build', requireCheck: true }).id, ok);
+    assert.notEqual(pickTaskForMember(taskDb, db, { workspaceRoot: ws, job: 'build' }).id, ok, 'without the flag a task with no check still fits');
+  });
+});
