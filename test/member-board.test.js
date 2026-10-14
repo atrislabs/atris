@@ -501,6 +501,18 @@ test('a narrow board gives up a before column that says ok on every row first', 
   assert.match(head(mixed, 60), /^member\s+state\s+before\s/, 'a failed run among them keeps the column');
 });
 
+test('a wider board never gives the job less than its 24 columns beside the step', () => {
+  const now = Date.parse('2026-10-14T13:00:00Z');
+  const rows = [memberRow('builder', `2026-10-14T12:50:00Z m-1 started: [pid ${process.pid} engine claude] keep the job readable when the screen is wide enough\n2026-10-14T12:59:30Z m-1 running: node --test test/member-board.test.js test/member-result.test.js\n`, now)];
+  const lines = (w) => renderBoard(rows, '/x', 0, w).split('\n');
+  const side = lines(100).find((l) => l.startsWith('builder '));
+  assert.match(side, /\s30s ago\s+keep the job readable\.\.\.\s+running: node --tes\.\.\.$/, 'the job keeps 24 columns and the step gets the rest');
+  const narrow = lines(96);
+  assert.match(narrow.find((l) => l.startsWith('builder ')), /keep the job readable when the screen is \.\.\.$/, 'too little room for 24 beside 20: the step gets its own line');
+  assert.ok(narrow.some((l) => l.startsWith('  last step: running: node --test')), narrow.join('\n'));
+  assert.ok([...lines(100), ...narrow].every((l) => l.length <= 100));
+});
+
 test('an 80 column board gives the job 24 columns before it keeps ago on every row', () => {
   const now = Date.parse('2026-10-14T13:00:00Z');
   const rows = [
