@@ -238,7 +238,9 @@ test('atris member board reads ATRIS_PROGRESS_DIR for real', () => {
     assert.equal(watch.stdout.split('redraws every 3s').length - 1, 2, 'drew once, then redrew at 3s');
     assert.match(watch.stdout, /\x1b\[2J\x1b\[H/);
     assert.match(watch.stdout, /navigator\s+working/);
-    assert.match(watch.stdout, /redraws every 3s/);
+    const times = [...watch.stdout.matchAll(/^redrawn at (\d\d:\d\d:\d\d), redraws every 3s, ctrl-c to stop$/gm)].map((m) => m[1]);
+    assert.equal(times.length, 2, 'every redraw says when it happened');
+    assert.notEqual(times[0], times[1], 'the time moves, so a frozen screen shows an old one');
   } finally {
     fs.rmSync(dir, { recursive: true, force: true });
   }
