@@ -180,3 +180,20 @@ In the current checkout, exit 0:
 Files edited: this receipt and `atris/team/architect/logs/2026-10-14.md`. Artifact: retained combined Git copy and its full raw output. Commands also run: Atris boot, mission status/goal, task list/new/claim/note/ready, Git status/config/object reads, brain activate/compile (plan only, exit 2), explicit staging, whitespace check, commit, and push. Existing router changes and the regenerated task view are excluded. Progress: one complete full-suite attempt, twelve exact failures recorded, 34 combined and 13 current required checks passing, two cleanup paths kept the locked folder, zero production edits or new repository filenames.
 next_push: Remove the unused describeLocks export from the repair branch and prove its repository-hygiene check alongside the required folder checks.
 layer: beliefs
+
+
+## Unused lock description export removed
+
+Removed only the unused public describeLocks entry from the existing repair copy; its internal definition and caller remain. Repository search found only the definition, internal call, and export before the change, so no external caller loses behavior. No new filenames, dependencies, folder-removal behavior, or protected landing.
+
+Edited: `commands/worktree.js` in `/Users/keshavrao/arena/empire/.agent-worktrees/atris-cli/architect-1184-shared-lock-check`; this receipt; `atris/team/architect/logs/2026-10-14.md`.
+
+Actual CLI command in the repair copy: `node bin/atris.js slop dead --exports`, exit 0. Output: `✓ no dead code, all 362 files reachable from the entrypoints`.
+
+Rerunnable repair proof: `node --test test/repo-hygiene.test.js test/worktree-removal-guard.test.js test/member-tidy.test.js`, exit 0. Exact summary: tests 37, pass 37, fail 0, cancelled 0, skipped 0, todo 0. The export-hygiene assertion passed. Required command in the current checkout: `node --test test/worktree-removal-guard.test.js test/member-tidy.test.js`, exit 0; tests 13, pass 13, fail 0, cancelled 0, skipped 0, todo 0. No full-suite rerun or claim of full-suite green.
+
+Other commands: Atris boot, brain activate/compile (plan only, exit 2), mission status/goal, task list/new/claim/note/ready, Git status/diff/log/worktree/branch/remote reads, rg caller search, explicit staging, commit and push. Existing router and rendered task-view edits are excluded.
+
+Progress: one orphaned export removed; all 37 repair checks and 13 current checks pass; no production behavior changed.
+next_push: Compare the remaining combined-suite failures with master to separate existing failures from repair regressions.
+layer: capabilities
