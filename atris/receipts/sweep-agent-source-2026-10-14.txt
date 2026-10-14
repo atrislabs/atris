@@ -1,0 +1,27 @@
+The engine sweep now names the shell startup line that starts a new ssh-agent in every shell, verified by 133 passing checks and the real sweep on this machine, exit 0.
+
+Files edited: lib/engine-resource.js, commands/engine.js, test/engine-resource.test.js, atris/MAP.md, atris/refs/MAP-NOTES.md, atris/team/executor/logs/2026-10-14.md, this receipt. Existing atris/TODO.md changes are not staged.
+Plan: read the usual zsh and bash startup files in the home folder -> keep uncommented lines that run ssh-agent through eval or command substitution -> print them under the leaked list only when agents look leaked, and carry them in the json.
+
+Failing-first command: node --test --test-name-pattern='shell startup line' test/engine-resource.test.js
+Exit: 1. pass 0, fail 1; the finder did not exist.
+
+Rerunnable verification: node --test test/engine-resource.test.js test/engine-dispatch.test.js
+Exit: 0. tests 133; pass 133; fail 0.
+
+Real command: node bin/atris.js engine sweep
+Exit: 0.
+Output excerpt:
+1027 ssh-agents running, 995 look leaked (no parent, older than 10 min, not in use by any live shell)
+  and 975 more
+likely source: ~/.zshrc line 1 starts a new ssh-agent in every shell that reads it
+nothing was stopped. run atris engine sweep --apply to stop them.
+
+Real command: node bin/atris.js engine sweep --json, parsed through a pipe
+Exit: 0. leaked 995, agent_start_lines [{"file":"~/.zshrc","line":1}], stopped 0.
+
+Nothing was stopped and no startup file was changed; editing the home shell file is outside this lane and is the human's call.
+A guard on an earlier line is not detected, so the line is reported as a likely source, not a proven one.
+Metric: one failing-first regression added, 133 checks passed, the sweep now points at the cause of 995 leaked agents.
+next_push: when the named startup line has no guard, print the one-line guarded form beside it so the human can fix the leak at the source in one edit.
+layer: capabilities

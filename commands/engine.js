@@ -2340,7 +2340,7 @@ function formatAgentAge(seconds) {
 // behind. With --apply it rechecks each one and stops it with SIGTERM, and
 // writes a parent gone end line for each run whose parent process is gone.
 function runEngineSweepCommand(args, root, deps = {}) {
-  const { readSshAgents, findLeakedSshAgents, stopLeakedSshAgents, closeLostRuns, readResourceHistory, leakGrowthNote, LEAK_MIN_AGE_SEC } = require('../lib/engine-resource');
+  const { readSshAgents, findLeakedSshAgents, findAgentStartLines, stopLeakedSshAgents, closeLostRuns, readResourceHistory, leakGrowthNote, LEAK_MIN_AGE_SEC } = require('../lib/engine-resource');
   const read = deps.read || readSshAgents;
   const { agents, referenced, unread = [] } = read();
   const uid = deps.uid !== undefined ? deps.uid : process.getuid();
@@ -2354,9 +2354,13 @@ function runEngineSweepCommand(args, root, deps = {}) {
     ? `could not read the ${result.unread.join(' or the ')} for every process, so some ssh-agents could not be checked; the leak count may be incomplete`
     : null;
   result.closed_runs = apply ? closeLostRuns(root, deps.now ? { now: deps.now } : {}) : [];
+  // A test run reads only the home it was handed, never the real one.
+  const startLines = leaked.length && (deps.home || !process.env.NODE_TEST_CONTEXT)
+    ? findAgentStartLines(deps.home ? { home: deps.home } : {})
+    : [];
   const code = result.failed.length ? 1 : 0;
   if (args.includes('--json')) {
-    console.log(JSON.stringify({ running: agents.length, leaked, unread, ...result, history: readResourceHistory(root) }, null, 2));
+    console.log(JSON.stringify({ running: agents.length, leaked, unread, ...result, agent_start_lines: startLines, history: readResourceHistory(root) }, null, 2));
     return code;
   }
   const plural = (n, word) => `${n} ${word}${n === 1 ? '' : 's'}`;
@@ -2377,6 +2381,7 @@ function runEngineSweepCommand(args, root, deps = {}) {
     ...leaked.slice(0, shown).map((agent) => `  pid ${String(agent.pid).padEnd(6)} ${formatAgentAge(agent.age_sec)}`),
   ];
   if (leaked.length > shown) lines.push(`  and ${leaked.length - shown} more`);
+  for (const { file, line } of startLines) lines.push(`likely source: ${file} line ${line} starts a new ssh-agent in every shell that reads it`);
   if (scanWarning) lines.push(scanWarning);
   lines.push(leaked.length ? 'nothing was stopped. run atris engine sweep --apply to stop them.' : 'nothing was stopped.');
   lines.push('', ...resourceHistoryLines(history));

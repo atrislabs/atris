@@ -296,6 +296,36 @@ test('atris engine sweep lists leaked agents and stops nothing', () => {
   assert.deepStrictEqual(signals, []);
 });
 
+test('atris engine sweep names the shell startup line that starts an agent per shell', () => {
+  const { engineCommand } = require('../commands/engine');
+  const { findAgentStartLines } = require('../lib/engine-resource');
+  const home = fs.mkdtempSync(path.join(os.tmpdir(), 'engine-sweep-home-'));
+  try {
+    fs.writeFileSync(path.join(home, '.zshrc'), 'eval "$(ssh-agent -s)"  # Start SSH agent\n# eval "$(ssh-agent -s)"\nexport PATH\n');
+    fs.writeFileSync(path.join(home, '.bashrc'), 'echo ssh-agent is handy\n');
+    assert.deepStrictEqual(findAgentStartLines({ home }), [{ file: '~/.zshrc', line: 1 }]);
+    assert.deepStrictEqual(findAgentStartLines({ home: path.join(home, 'missing') }), []);
+
+    const sweep = (agents, json) => {
+      const out = [];
+      const original = console.log;
+      console.log = (line) => out.push(String(line));
+      try {
+        engineCommand(['sweep', ...(json ? ['--json'] : [])], { engineSweep: { read: () => ({ agents, referenced: new Set() }), uid: 501, home } });
+      } finally {
+        console.log = original;
+      }
+      return out.join('\n');
+    };
+    const leaked = [{ pid: 200, ppid: 1, uid: 501, age_sec: 53414, args: 'ssh-agent -s' }];
+    assert.match(sweep(leaked), /likely source: ~\/\.zshrc line 1 starts a new ssh-agent in every shell that reads it/);
+    assert.deepStrictEqual(JSON.parse(sweep(leaked, true)).agent_start_lines, [{ file: '~/.zshrc', line: 1 }]);
+    assert.doesNotMatch(sweep([]), /likely source/, 'no leak, no source line');
+  } finally {
+    fs.rmSync(home, { recursive: true, force: true });
+  }
+});
+
 test('when process environments cannot be read, every agent counts as in use', () => {
   const run = (cmd, args) => {
     if (cmd === 'lsof') return { status: 0, stdout: 'p200\nf3\nn/tmp/ssh-a/agent.199' };
