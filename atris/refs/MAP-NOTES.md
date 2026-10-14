@@ -2279,6 +2279,8 @@ npm publish
 
 ## Folder-removal scanner review
 
+- `atris/receipts/work-folder-completion-runtime-probe.js:7` calls the actual receipt writer for login-selected and parent-pinned runtime identities; `atris/receipts/work-folder-completion-runtime-plan-2026-10-14.md:3` records the pre-build verdict and shell-compatibility safeguard.
+
 - `atris/receipts/work-folder-scan-probe.js:10` reads the actual scanner and bypass predicate; sixteen synthetic cases at line 21 include sync, callback, promise and multiline recursive rmdir, nested paths, direct Git listing, and parser listing; acceptance mode at line 62; `test/worktree-removal-guard.test.js:558` runs the probe in acceptance mode inside the required checks. `atris/receipts/work-folder-scan-rmdir-2026-10-14.md:1` records the old/new comparison and required checks.
 
 ## Locked quarantine cleanup review
