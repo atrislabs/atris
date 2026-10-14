@@ -230,6 +230,15 @@ test('watch names state changes from the last minute, then drops them', () => {
   assert.doesNotMatch(renderBoard(rows, '/x'), /changed in the last minute/, 'no changes, no line');
 });
 
+test('watch keeps a crash in view when the same member restarts within the minute', () => {
+  const row = (member, state) => ({ member, state, before: [], alive: null, engine: '', running_for: '', lasted: '', ago: '1s ago', job: 'j', step: 's' });
+  const changed = changeTracker(60_000);
+  changed([row('builder', 'working')], 0);
+  changed([row('builder', 'died')], 3_000);
+  assert.deepEqual(changed([row('builder', 'working')], 9_000), ['builder working -> died -> working'], 'the restart does not erase the crash');
+  assert.deepEqual(changed([row('builder', 'done ok')], 80_000), ['builder working -> done ok'], 'past the minute, a new change starts fresh');
+});
+
 test('watch names a put-away run with when it last did anything, even once it is hidden', () => {
   const now = Date.parse('2026-10-14T13:00:00Z');
   const quiet = memberRow('launcher', '2026-10-14T05:00:00Z m-4 started: score\n2026-10-14T06:00:00Z m-4 running: npm test\n', now);
