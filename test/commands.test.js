@@ -15271,14 +15271,30 @@ test('task serve exposes review-lane-drain API', async () => {
   let child = null;
   try {
     fs.mkdirSync(path.join(dir, 'atris'), { recursive: true });
-    const continueCreated = runCli([
-      'task', 'new', 'API drain row with executable continuation',
-      '--tag', 'task',
-      '--goal-id', 'OBL-930',
-      '--json',
-    ], { cwd: dir, env });
-    assert.equal(continueCreated.status, 0, continueCreated.stderr);
-    const continueTask = JSON.parse(continueCreated.stdout).task;
+    // New is one store insert with the goal id, and show is the store
+    // projection plus enrichment, so setup and version reads run in-process.
+    // The show after the review-lane-run call still runs the CLI and proves the
+    // two reads agree.
+    const workspaceRoot = taskStore.workspaceRoot(dir);
+    const seedTask = (title, goalId) => {
+      const db = taskStore.open(dbPath);
+      try {
+        const { id } = taskStore.addTask(db, { title, tag: 'task', workspaceRoot, metadata: { goal_id: goalId } });
+        return { id, display_id: taskStore.taskDisplayRefMap(taskStore.listTasks(db, { workspaceRoot })).get(id) };
+      } finally {
+        taskStore.close();
+      }
+    };
+    const { enrichTaskProjection } = require('../commands/task');
+    const showTask = (id) => {
+      const db = taskStore.open(dbPath);
+      try {
+        return enrichTaskProjection(taskStore.taskProjection(db, { taskId: id })).tasks[0];
+      } finally {
+        taskStore.close();
+      }
+    };
+    const continueTask = seedTask('API drain row with executable continuation', 'OBL-930');
     const continueRef = continueTask.display_id;
     assert.equal(runCli([
       'task', 'ready', continueRef,
@@ -15293,14 +15309,7 @@ test('task serve exposes review-lane-drain API', async () => {
       '--next', 'Add a scoped API review drain follow-up',
     ], { cwd: dir, env }).status, 0);
 
-    const waitingCreated = runCli([
-      'task', 'new', 'API drain row waiting on human accept',
-      '--tag', 'task',
-      '--goal-id', 'OBL-930',
-      '--json',
-    ], { cwd: dir, env });
-    assert.equal(waitingCreated.status, 0, waitingCreated.stderr);
-    const waitingTask = JSON.parse(waitingCreated.stdout).task;
+    const waitingTask = seedTask('API drain row waiting on human accept', 'OBL-930');
     const waitingRef = waitingTask.display_id;
     assert.equal(runCli([
       'task', 'ready', waitingRef,
@@ -15314,14 +15323,8 @@ test('task serve exposes review-lane-drain API', async () => {
       '--proof', 'node --test test/commands.test.js passed during API human accept wait drain',
     ], { cwd: dir, env }).status, 0);
 
-    const humanOnlyCreated = runCli([
-      'task', 'new', 'API act row waiting on human accept',
-      '--tag', 'task',
-      '--goal-id', 'OBL-931',
-      '--json',
-    ], { cwd: dir, env });
-    assert.equal(humanOnlyCreated.status, 0, humanOnlyCreated.stderr);
-    const humanOnlyRef = JSON.parse(humanOnlyCreated.stdout).task.display_id;
+    const humanOnlyTask = seedTask('API act row waiting on human accept', 'OBL-931');
+    const humanOnlyRef = humanOnlyTask.display_id;
     assert.equal(runCli([
       'task', 'ready', humanOnlyRef,
       '--as', 'codex',
@@ -15334,14 +15337,8 @@ test('task serve exposes review-lane-drain API', async () => {
       '--proof', 'node --test test/commands.test.js passed during API review-lane-act human block',
     ], { cwd: dir, env }).status, 0);
 
-    const runContinueCreated = runCli([
-      'task', 'new', 'API run should continue one certified task',
-      '--tag', 'task',
-      '--goal-id', 'OBL-932',
-      '--json',
-    ], { cwd: dir, env });
-    assert.equal(runContinueCreated.status, 0, runContinueCreated.stderr);
-    const runContinueRef = JSON.parse(runContinueCreated.stdout).task.display_id;
+    const runContinueTask = seedTask('API run should continue one certified task', 'OBL-932');
+    const runContinueRef = runContinueTask.display_id;
     assert.equal(runCli([
       'task', 'ready', runContinueRef,
       '--as', 'codex',
@@ -15355,14 +15352,8 @@ test('task serve exposes review-lane-drain API', async () => {
       '--next', 'Add a follow-up created by API review lane run',
     ], { cwd: dir, env }).status, 0);
 
-    const runWaitingCreated = runCli([
-      'task', 'new', 'API run should stop on human accept wait',
-      '--tag', 'task',
-      '--goal-id', 'OBL-932',
-      '--json',
-    ], { cwd: dir, env });
-    assert.equal(runWaitingCreated.status, 0, runWaitingCreated.stderr);
-    const runWaitingRef = JSON.parse(runWaitingCreated.stdout).task.display_id;
+    const runWaitingTask = seedTask('API run should stop on human accept wait', 'OBL-932');
+    const runWaitingRef = runWaitingTask.display_id;
     assert.equal(runCli([
       'task', 'ready', runWaitingRef,
       '--as', 'codex',
@@ -15472,7 +15463,7 @@ test('task serve exposes review-lane-drain API', async () => {
     assert.equal(runDryRun.would_write_receipt_path, apiRunReceiptPath);
     assert.equal(fs.existsSync(apiRunReceiptPath), false);
 
-    const beforeRunWaiting = JSON.parse(runCli(['task', 'show', runWaitingRef, '--json'], { cwd: dir, env }).stdout);
+    const beforeRunWaiting = showTask(runWaitingTask.id);
     const runResponse = await fetch(`${base}/api/tasks/review-lane-run?goal_id=OBL-932`, {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
@@ -15494,6 +15485,9 @@ test('task serve exposes review-lane-drain API', async () => {
     assert.equal(fs.existsSync(apiRunLatestPath), true);
     const afterRunWaiting = JSON.parse(runCli(['task', 'show', runWaitingRef, '--json'], { cwd: dir, env }).stdout);
     assert.equal(afterRunWaiting.current_version, beforeRunWaiting.current_version);
+    const afterRunWaitingInProcess = showTask(runWaitingTask.id);
+    assert.equal(afterRunWaitingInProcess.current_version, afterRunWaiting.current_version);
+    assert.equal(afterRunWaitingInProcess.latest_event_type, afterRunWaiting.latest_event_type);
 
     const actResponse = await fetch(`${base}/api/tasks/review-lane-act?goal_id=OBL-930`, {
       method: 'POST',
