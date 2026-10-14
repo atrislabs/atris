@@ -364,8 +364,10 @@ test('a signed out row costs a wider board only the widths it is known to', () =
     // engine column stays away while it would push the board past the window,
     // as it used to come back at 87 for the signed out row alone.
     assert.deepEqual(cliffs(rows.filter((r) => r.member !== 'builder'), dir, 50, 140), [
-      // Open: the step column returns and the fix moves there as "sign in".
-      '75 locked job 36->21 step 0->7',
+      // A trade: the step comes back once the fix there still names the
+      // engine, so the job and every finished step read, and the fix gives
+      // up only "then run it again". It used to come back at 75 as "sign in".
+      '83 locked job 36->21 step 0->17',
     ]);
     // Open: the same live-run cliff as above, whole jobs or the live step.
     assert.deepEqual(cliffs(rows, dir, 50, 140), [
