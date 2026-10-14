@@ -48,13 +48,21 @@ function bar(count, target) {
   return `[${'#'.repeat(filled)}${'-'.repeat(BAR_WIDTH - filled)}]`;
 }
 
+// Today's commits on every ref (all local and remote branches, the checkout,
+// tags), so an old branch checked out still sees today's work. Stash is left
+// out. Each commit counts once, keyed by hash.
 function repoCommits(cwd = process.cwd(), now = new Date()) {
   const midnight = new Date(now.getFullYear(), now.getMonth(), now.getDate());
   try {
-    const out = execFileSync('git', ['log', `--since=${midnight.toISOString()}`, '--format=%B%x1e'], {
+    const out = execFileSync('git', ['log', '--exclude=refs/stash', '--all', `--since=${midnight.toISOString()}`, '--format=%H%x1f%B%x1e'], {
       cwd, encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'],
     });
-    const bodies = out.split('\x1e').map((b) => b.trim()).filter(Boolean);
+    const byHash = new Map();
+    for (const rec of out.split('\x1e')) {
+      const [hash, body = ''] = rec.trim().split('\x1f');
+      if (hash) byHash.set(hash, body);
+    }
+    const bodies = [...byHash.values()];
     const members = bodies.filter((b) => b.includes(MEMBER_TRAILER)).length;
     return { total: bodies.length, you: bodies.length - members, members };
   } catch {

@@ -20,7 +20,7 @@ function daysAgo(n) {
 
 // Fake gh: answers `gh api graphql` with a calendar. Today's count is read from
 // counts.json, one value per call, so --watch sees it climb.
-function makeSandbox(todayCounts, history) {
+function makeSandbox(todayCounts, history, { oldCommit = false } = {}) {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'atris-scoreboard-'));
   const binDir = path.join(dir, 'bin');
   fs.mkdirSync(binDir);
@@ -44,10 +44,16 @@ process.stdout.write(JSON.stringify({ data: { viewer: { contributionsCollection:
   git('init', '-q');
   git('config', 'user.email', 'me@example.com');
   git('config', 'user.name', 'me');
+  if (oldCommit) {
+    const when = new Date(Date.now() - 3 * 86400000).toISOString();
+    spawnSync('git', ['commit', '-q', '--allow-empty', '-m', 'old work'], {
+      cwd: repo, env: { ...process.env, GIT_AUTHOR_DATE: when, GIT_COMMITTER_DATE: when },
+    });
+  }
   git('commit', '-q', '--allow-empty', '-m', 'mine');
   git('commit', '-q', '--allow-empty', '-m', `member work\n\n${TRAILER}`);
   git('commit', '-q', '--allow-empty', '-m', `more member work\n\n${TRAILER}`);
-  return { dir, repo, env: { ...process.env, PATH: `${binDir}${path.delimiter}${process.env.PATH}` } };
+  return { dir, repo, git, env: { ...process.env, PATH: `${binDir}${path.delimiter}${process.env.PATH}` } };
 }
 
 const HISTORY = [
@@ -111,6 +117,28 @@ test('atris scoreboard --json prints the same numbers as one object', (t) => {
       streak: 3,
       repo: { total: 3, you: 1, members: 2 },
     });
+  } finally {
+    fs.rmSync(sb.dir, { recursive: true, force: true });
+  }
+});
+
+test('atris scoreboard counts today on every branch when an old branch is checked out', () => {
+  const sb = makeSandbox([37], HISTORY, { oldCommit: true });
+  try {
+    // Today's three commits live on the default branch, a feature branch, and a
+    // remote branch at once; the checkout sits on a branch from three days ago.
+    sb.git('branch', 'feature');
+    sb.git('update-ref', 'refs/remotes/origin/master', 'HEAD');
+    assert.strictEqual(sb.git('checkout', '-q', '-b', 'old', 'HEAD~3').status, 0);
+    // A stash made today is work in progress, not a commit.
+    fs.writeFileSync(path.join(sb.repo, 'wip.txt'), 'wip');
+    assert.strictEqual(sb.git('stash', 'push', '-q', '-u', '-m', 'wip').status, 0);
+    for (const args of [['scoreboard'], ['scoreboard', '--json']]) {
+      const r = spawnSync(process.execPath, [CLI, ...args], { cwd: sb.repo, env: sb.env, encoding: 'utf8' });
+      assert.strictEqual(r.status, 0, r.stderr);
+      if (args[1]) assert.deepStrictEqual(JSON.parse(r.stdout).repo, { total: 3, you: 1, members: 2 });
+      else assert.match(r.stdout, /this repo today: 3 commits, you 1, members 2/);
+    }
   } finally {
     fs.rmSync(sb.dir, { recursive: true, force: true });
   }
