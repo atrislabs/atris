@@ -124,6 +124,11 @@ const NOUN_CLAUSE_AFTER_DASH = new RegExp(`(?<=[\\w)\\]"'*_\`\\u201d\\u2019\\uE0
 // "for" and their kin describes the noun instead, so "two tests marked as
 // flaky" and "12 files touched by the sweep" keep their comma.
 const QUANTITY_CLAUSE_AFTER_DASH = new RegExp(`(?<=[\\w)\\]"'*_\`\\u201d\\u2019\\uE001])\\s*\\u2014\\s*(?=(?:(?:nothing|everything|nobody|everyone)\\s+(?:else\\s+)?${PLACE_PHRASE}[a-z]{2,}(?:ed|[a-rt-z]s)|(?:two|three|four|five|six|seven|eight|nine|ten|both|several|many|few|\\d+)\\s+(?:[a-z]+\\s+)?[a-z]+s\\s+${PLACE_PHRASE}[a-z]{2,}ed(?!\\s+(?:by|as|for|from|to|into|with|under)\\b))(?:\\s+[^\\s\\u2014]|[.!?;,]|$))`, 'g');
+// "The" and up to three words before a verb in "ed" start one only when a
+// stop, a word like "out" or "working", or an object like "every" follows, so
+// "the slow tests timed out" joins but "the new signed build" and "the files
+// stored in atris" are noun phrases and keep their comma.
+const PAST_CLAUSE_AFTER_DASH = new RegExp(`(?<=[\\w)\\]"'*_\`\\u201d\\u2019\\uE001])\\s*\\u2014\\s*(?!${NAMING_PHRASE})(?=(?:the|a|an)\\s+(?:(?!(?:the|a|an|that|whose)\\b)${SUBJECT_WORD}){1,3}[a-z]{2,}ed(?:[.!?;,]|$|\\s+(?:out|up|down|off|back|over|away|again|it|them|its|their|every|all|each|the|a|an|this|no|[a-z]{2,}ing)\\b))`, 'g');
 // A plain verb ending in "s" counts only after a determiner and one more word,
 // and never right before a preposition: "a stray file turns them" joins, but
 // "the changes from whoever" and "the old tests from CI" stay noun phrases.
@@ -219,6 +224,10 @@ function fixEmDash(s, { endsBlock = false, startsBlock = false } = {}) {
       return left.split(/\s+/).length >= 2 ? clauseJoin(left) : m;
     })
     .replace(QUANTITY_CLAUSE_AFTER_DASH, (m, at, whole) => {
+      const left = whole.slice(0, at).split(/[.!?:]\s/).pop().trim();
+      return left.split(/\s+/).length >= 2 ? clauseJoin(left) : m;
+    })
+    .replace(PAST_CLAUSE_AFTER_DASH, (m, at, whole) => {
       const left = whole.slice(0, at).split(/[.!?:]\s/).pop().trim();
       return left.split(/\s+/).length >= 2 ? clauseJoin(left) : m;
     })

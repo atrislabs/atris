@@ -947,6 +947,12 @@ test('fix joins a noun clause after the dash with a semicolon', () => {
     'The fix is small \u2014 two lines in the fixer changed.',
     'It is done \u2014 both checks passed.',
     'Keep the board \u2014 two tests marked as flaky.',
+    // "the" and a verb in "ed" start a clause only before a stop, a word
+    // like "out", or an object; a noun phrase keeps its comma
+    'Ran the suite \u2014 the slow tests timed out.',
+    'We shipped it \u2014 the old flag stopped working.',
+    'Ship it \u2014 the new signed build.',
+    'Keep notes \u2014 the files stored in atris.',
   ].join('\n'));
   const { changes } = applyFixes([file], RULES);
   assert.deepEqual(changes.map((c) => c.after), [
@@ -986,6 +992,10 @@ test('fix joins a noun clause after the dash with a semicolon', () => {
     'The fix is small; two lines in the fixer changed.',
     'It is done; both checks passed.',
     'Keep the board, two tests marked as flaky.',
+    'Ran the suite; the slow tests timed out.',
+    'We shipped it; the old flag stopped working.',
+    'Ship it, the new signed build.',
+    'Keep notes, the files stored in atris.',
   ]);
 });
 
