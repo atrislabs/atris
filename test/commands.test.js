@@ -20749,7 +20749,7 @@ test('verifyJudgeIntegrity returns ok:true on clean state', () => {
 test('maybeWriteCompletedEndgameScorecard writes a scorecard from closed endgame state', () => {
   const dir = makeTempDir();
   try {
-    initWorkspace(dir);
+    fs.mkdirSync(path.join(dir, 'atris'), { recursive: true });
     const now = new Date();
     const yyyy = now.getFullYear().toString();
     const mm = String(now.getMonth() + 1).padStart(2, '0');
@@ -20824,7 +20824,9 @@ slug: verify-loop
     assert.equal(scorecards.length, 1);
     assert.equal(scorecards[0].slug, 'verify-loop');
     assert.equal(scorecards[0].tasksShipped, 1);
+    assert.equal(scorecards[0].tasksAttempted, 1);
     assert.equal(scorecards[0].totalReward, 6);
+    assert.equal(scorecards[0].lessonsGenerated, 0);
 
     const wroteAgain = maybeWriteCompletedEndgameScorecard(dir, {
       slug: 'verify-loop',
@@ -20840,7 +20842,7 @@ slug: verify-loop
 test('maybeWriteCompletedEndgameScorecard treats Review endgame work as active', () => {
   const dir = makeTempDir();
   try {
-    initWorkspace(dir);
+    fs.mkdirSync(path.join(dir, 'atris'), { recursive: true });
     const now = new Date();
     const yyyy = now.getFullYear().toString();
     const mm = String(now.getMonth() + 1).padStart(2, '0');
