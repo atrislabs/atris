@@ -121,6 +121,38 @@ atris host import people.jsonl       # bulk add people and who already knows who
 atris host room                      # the host's weekly read
 ```
 
+### Put members to work
+
+Members are helpers that work in their own copy of the repo. Three words cover it.
+
+Run hands over one job. Atris picks the right member and starts it.
+
+```bash
+atris member run "fix one failing test"
+```
+
+Wake keeps members working, each one pulling the next task that fits. Give a number, or name the members you want.
+
+```bash
+atris member wake 5
+atris member wake navigator executor
+```
+
+Sleep stops the members that are awake.
+
+```bash
+atris member sleep --all
+```
+
+To watch them, open the board, or follow one member's steps as they happen.
+
+```bash
+atris member board --watch
+tail -f ~/.atris/progress/executor.log
+```
+
+The older words still work as aliases: `dispatch` and `go` do what run does, and `up` does what wake does. Run with a job, wake with a number or names, and `up` need the release after 3.68.9.
+
 ## Chat With Atris 2
 
 `ax` is the Atris 2 chat and coding-agent CLI. It uses the hosted Atris cloud by default, streams text, shows tool activity, and keeps fresh installs away from local setup.
