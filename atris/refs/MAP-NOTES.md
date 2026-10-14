@@ -2561,3 +2561,5 @@ Landing capability test setup: `test/commands.test.js:12964` seeds creation and 
 - Duplicate reward review setup: `test/commands.test.js:13460` seeds creation and ownership through the real task store; ready, accept, second review and XP status retain real CLI coverage.
 
 - `test/roster-run-record.test.js:405` - autopilot run accounting: successful worker has a 30-second cap; roster rewrites to one second before the intentional real-process stall, and both recorded caps are asserted.
+
+- Duplicate receipt repair setup: `test/commands.test.js:13508` uses production claimTask in the setup connection, removing one launch (four to three); the real XP status command still verifies integrity, XP, receipt count and the repaired ledger length.

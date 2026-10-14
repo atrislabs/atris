@@ -124,3 +124,5 @@ checks the refs in both files; `atris doc-health --fix-refs` moves drifted ones.
 3. `atris/MAP.md` to route work, `atris/TODO.md` for the queue
 4. `atris/wiki/index.md` if present (local), and `atris/skills/atris/SKILL.md` as needed
 5. Exact lines and search shortcuts: `atris/refs/MAP-NOTES.md`
+
+Duplicate receipt repair setup: `test/commands.test.js:13508` seeds creation and ownership through the real task store; readiness, acceptance and XP receipt repair stay on the CLI.
