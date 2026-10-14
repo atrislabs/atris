@@ -8659,14 +8659,18 @@ test('task review-lane-act executes safe drain actions and refuses human accept 
     assert.ok(continuePayload.result.next_task_id);
     assert.equal(continuePayload.result.safety.human_accept, false);
 
-    const humanOnlyCreated = runCli([
-      'task', 'new', 'Review lane act must not accept human-only row',
-      '--tag', 'task',
-      '--goal-id', 'OBL-933',
-      '--json',
-    ], { cwd: dir, env });
-    assert.equal(humanOnlyCreated.status, 0, humanOnlyCreated.stderr);
-    const humanOnlyRef = JSON.parse(humanOnlyCreated.stdout).task.display_id;
+    const humanOnlyDb = taskStore.open(dbPath);
+    let humanOnlyRef;
+    try {
+      const humanOnlyTask = addSeedTask(humanOnlyDb, {
+        title: 'Review lane act must not accept human-only row',
+        tag: 'task', workspaceRoot, metadata: { goal_id: 'OBL-933' },
+      });
+      assert.equal(humanOnlyTask.inserted, true);
+      humanOnlyRef = taskStore.taskDisplayRefMap(taskStore.listTasks(humanOnlyDb, { workspaceRoot })).get(humanOnlyTask.id);
+    } finally {
+      taskStore.close();
+    }
     assert.equal(runCli([
       'task', 'ready', humanOnlyRef,
       '--as', 'codex',
