@@ -164,6 +164,8 @@ test('the runner writes why a run failed and the board reads it back', () => {
       const at = renderBoard([{ ...by.locked, engine: 'claude', alive: false }, by.broke], dir, 0, w).split('\n')[1];
       assert.match(at, /\s{2}(sign in to claude, then run it again|sign in to claude|sign in)$/, `the fix shrinks, never cut, at ${w} columns: ${at}`);
     }
+    const mid = renderBoard([{ ...by.locked, engine: 'claude', alive: false }, by.broke], dir, 0, 95).split('\n');
+    assert.match(mid[1], /^locked\s+done failed\s+signed out\s.*\s{2}sign in to claude$/, 'the last result gives up its room before the fix does');
     for (const name of Object.keys(ends).filter((n) => n !== 'good')) assert.equal(by[name].state, 'done failed', name);
   } finally {
     fs.rmSync(dir, { recursive: true, force: true });
@@ -188,11 +190,14 @@ test('a narrow terminal trims job and last step so every line fits', () => {
     for (const l of narrow.split('\n')) assert.ok(l.length <= 120, `fits in 120: ${l.length}`);
     assert.match(narrow, /^member\s+state\s+last result\s+ago\s+job\s+last step$/m, 'columns that are all dashes leave');
     assert.match(narrow, /^builder\s+working\s.*\s+Ship the member [^.]+\.\.\.\s+running: node [^.]+\.\.\.$/m);
-    assert.match(narrow, /^breaker\s+done failed\s+failed \(timed out\) 1m ago\s.*risky fix\s+-$/m, 'short text stays whole');
+    assert.match(narrow, /^breaker\s+done failed\s+timed out\s+1m ago\s+risky fix\s+-$/m,
+      'short text stays whole, and a done row says just the reason, since state and ago say the rest');
+    assert.match(narrow, /Ship the member board so the opera\.\.\./, 'the room goes to the busy row');
+    assert.match(renderBoard(rows.slice(1), dir, 0, 120), /^breaker\s+done failed\s+failed \(timed out\) 1m ago\s/m, 'with room it stays whole');
 
     const tiny = renderBoard(rows, dir, 0, 80);
     for (const l of tiny.split('\n')) assert.ok(l.length <= 80, `fits in 80: ${l.length}`);
-    assert.match(tiny, /^breaker\s+done failed\s+failed \(timed out\) 1m ago\s+1m ago\s/m, 'the reason survives at 80');
+    assert.match(tiny, /^breaker\s+done failed\s+timed out\s+1m ago\s+risky fix/m, 'the reason survives at 80, without the age twice');
 
     const live = [{ ...rows[0], alive: true, engine: 'claude', running_for: '1m' }, rows[1]];
     assert.match(renderBoard(live, dir, 0, 120), /^member\s+state\s+last result\s+alive\s+engine\s+running for\s+ago\s+job\s+last step$/m,
