@@ -141,6 +141,11 @@ test('a narrow terminal trims job and last step so every line fits', () => {
     const live = [{ ...rows[0], alive: true, engine: 'claude', running_for: '1m' }, rows[1]];
     assert.match(renderBoard(live, dir, 0, 120), /^member\s+state\s+last result\s+alive\s+engine\s+running for\s+ago\s+job\s+last step$/m,
       'one live run keeps them');
+    const folded = renderBoard(live, dir, 0, 100);
+    for (const l of folded.split('\n')) assert.ok(l.length <= 100, `a live run fits in 100: ${l.length}`);
+    assert.match(folded, /^member\s+state\s+last result\s+run\s+ago\s+job\s+last step$/m, 'too narrow: one run column');
+    assert.match(folded, /^builder\s+working\s+-\s+claude 1m\s+12s ago\s/m);
+    assert.match(folded, /^breaker\s+done failed\s+failed \(timed out\) 1m ago\s+-\s+1m ago\s/m);
 
     const roomy = renderBoard(rows, dir, 0, 400);
     assert.match(roomy, /^member\s+state\s+last result\s+ago\s+job\s+last step$/m);
