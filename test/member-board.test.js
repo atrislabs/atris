@@ -196,7 +196,12 @@ test('a short window keeps failed and stopped rows on screen ahead of newer ones
     assert.deepEqual(lines.slice(1, 5).map((l) => l.split(/\s+/)[0]), ['m1', 'm2', 'broke', 'halted'],
       'they stay, and rows keep board order');
     assert.match(lines[3], /^broke\s+done failed\s+failed \(engine error\) 13m ago\s/);
-    assert.equal(lines[6], '4 more not shown, the window is too short');
+    assert.equal(lines[6], '4 more not shown, the window is too short', 'no count when every failure is on screen');
+
+    const tiny = renderBoard(rows, dir, 0, 0, 4).split('\n');
+    assert.equal(tiny.length, 4);
+    assert.match(tiny[1], /^broke\s+done failed/, 'the newest failure wins the one row');
+    assert.equal(tiny[3], '7 more not shown (1 stopped), the window is too short');
   } finally {
     fs.rmSync(dir, { recursive: true, force: true });
   }
