@@ -90,6 +90,11 @@ const TERM_DASH = /^(\s*(?:>\s*)*(?=[\w./-]*?(?:[\d/_]|\.\w|[A-Z][\w./-]*[A-Z]))
 // them, so the names take a comma like a greeting: '"George, Nick, covering
 // all of Milwaukee County is a serious operation"', never "George, Nick:".
 const NAME_ADDRESS_DASH = /((?:^|[\s(])["\u201c])((?:Dr\.\s+)?[A-Z][a-z]+(?:-[A-Z][a-z]+)?(?:,\s+(?:Dr\.\s+)?[A-Z][a-z]+(?:-[A-Z][a-z]+)?){0,3})\s*\u2014\s*(?=[A-Za-z0-9])/g;
+// A dated lesson, "- **[2026-05-11] slug** \u2014 pass \u2014 what was learned", is
+// read back by the lesson tools, which take a dash or a hyphen between its
+// parts and nothing else, so those dashes become spaced hyphens; a colon or
+// parentheses there would hide the lesson from them.
+const LESSON_DASH = /^(\s*[-*]\s+\*\*\[\d{4}-\d{2}-\d{2}\]\s+[^*]+\*\*)\s*\u2014\s*(?:(pass|fail)\s*\u2014\s*)?/i;
 // A greeting that opens a line, then a dash, is a salutation, and a
 // salutation takes a comma: "Hey Mark," on its own line, never "Hey Mark.",
 // and "Hey [Name], I run an AI company", never a semicolon.
@@ -407,6 +412,7 @@ function fixEmDash(s, { endsBlock = false, startsBlock = false } = {}) {
   // sign, which makes it a score: "reward: +4, 404 on missing routes"
   // A dash that opens a line, a quote or a list item names nothing and goes.
   s = s.replace(/\u2014(?:\s*\u2014)+/g, '\u2014').replace(/(?<![+-]\d*)(\d+)\s*\u2014\s*(?=(\d+)(?![\d-]))/g, (m, a, b) => (isRange(a, b) ? `${a}-` : m)).replace(/^(\s*(?:>\s*)*)(?:([-*+]|\d+\.)\s+)?\u2014\s*/, (m, lead, marker) => (marker ? lead + marker + ' ' : lead));
+  s = s.replace(LESSON_DASH, (m, head, verdict) => `${head} - ${verdict ? `${verdict} - ` : ''}`);
   s = s.replace(NAME_ADDRESS_DASH, '$1$2, ');
   const greeting = GREETING_DASH.exec(s);
   if (greeting) {

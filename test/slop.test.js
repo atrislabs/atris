@@ -1785,6 +1785,29 @@ test('fix turns a padded dash into spaces so a column of descriptions stays in l
   for (const c of changes.slice(0, 4)) assert.equal(c.after.length, c.before.length);
 });
 
+test('fix keeps a dated lesson readable to the lesson tools', () => {
+  // the lesson readers take a dash or a hyphen between slug, verdict and text;
+  // the fix used to write "slug**: pass, The ..." or "slug** (pass) The ...",
+  // which read back with no verdict or with a stray comma in the text
+  const { parseLessons } = require('../lib/memory-view');
+  const file = tmpFile('lessons.md', [
+    '- **[2026-05-11] history-not-review** \u2014 pass \u2014 The dispatcher should not route to review.',
+    '- **[2026-05-09] member-must-not-fallback** \u2014 fail \u2014 `brain activate` must stop \u2014 not guess.',
+    '- **[2026-02-10] auth-duplication** \u2014 Auth logic exists in two places.',
+  ].join('\n'));
+  const { changes } = applyFixes([file], RULES);
+  assert.deepEqual(changes.map((c) => c.after), [
+    '- **[2026-05-11] history-not-review** - pass - The dispatcher should not route to review.',
+    '- **[2026-05-09] member-must-not-fallback** - fail - `brain activate` must stop, not guess.',
+    '- **[2026-02-10] auth-duplication** - Auth logic exists in two places.',
+  ]);
+  assert.deepEqual(parseLessons(fs.readFileSync(file, 'utf8')).map((l) => [l.id, l.status, l.text]), [
+    ['history-not-review', 'pass', 'The dispatcher should not route to review.'],
+    ['member-must-not-fallback', 'fail', '`brain activate` must stop, not guess.'],
+    ['auth-duplication', '', 'Auth logic exists in two places.'],
+  ]);
+});
+
 test('fix keeps the comma when "that" opens a clause inside the noun after a dash', () => {
   const file = tmpFile('that.md', [
     'Not a tool that stores your work \u2014 a computer that finishes it.',
