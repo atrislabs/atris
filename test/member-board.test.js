@@ -531,7 +531,10 @@ test('board shows a live run as alive with its engine, and a dead one as stopped
     assert.equal(by.builder.state, 'stopped', 'marked working but the process is gone');
     assert.equal(by.builder.alive, false);
     assert.equal(by.builder.running_for, '');
-    assert.match(renderBoard(readBoard({ dir }), dir), /^builder\s+stopped\s+-\s+no\s+claude\s+-\s+/m);
+    assert.equal(by.builder.no_result, true, 'it ended without a finished line');
+    assert.equal(by.legacy.no_result, false, 'no pid: the board cannot tell');
+    assert.match(renderBoard(readBoard({ dir }), dir), /^builder\s+stopped\s+ended, no result\s+no\s+claude\s+-\s+/m);
+    assert.match(renderBoard(readBoard({ dir }), dir, 0, 60), /^builder\s+stopped\s+ended, no result\s/m, 'a narrow board keeps it whole');
   } finally {
     killAll(child.pid);
     fs.rmSync(dir, { recursive: true, force: true });
