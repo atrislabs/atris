@@ -10904,6 +10904,29 @@ async function memberRoom(...args) {
   return room;
 }
 
+// --- EXPORT subcommand ---
+
+function memberExport(...args) {
+  const { exportMembers, summaryLine } = require('../lib/member-export');
+  const dryRun = args.includes('--dry-run');
+  const root = process.cwd();
+  if (!fs.existsSync(path.join(root, 'atris', 'team'))) {
+    console.error('No atris/team folder here, so there are no members to export.');
+    process.exitCode = 1;
+    return null;
+  }
+  const result = exportMembers(root, { dryRun });
+  if (args.includes('--json')) {
+    console.log(JSON.stringify({ dry_run: dryRun, ...result }, null, 2));
+    return result;
+  }
+  for (const file of result.written) console.log(`${dryRun ? 'Would write' : '✓ Wrote'} ${file}`);
+  for (const file of result.removed) console.log(`${dryRun ? 'Would remove' : '✓ Removed'} ${file}`);
+  for (const file of result.kept) console.log(`Left alone ${file} (hand-written, not made by export)`);
+  console.log(summaryLine(result, { dryRun }));
+  return result;
+}
+
 async function memberCommand(subcommand, ...args) {
   // Subcommands that take a member name as args[0] otherwise treat `--help` as
   // a name and error with "Member '--help' not found". `create`/`new` handle
@@ -11013,6 +11036,8 @@ async function memberCommand(subcommand, ...args) {
       return memberObjectiveGeneratorCommand(args[0], ...args.slice(1));
     case 'generalist':
       return memberGeneralistCommand(args[0], ...args.slice(1));
+    case 'export':
+      return memberExport(...args);
     case 'archive':
       return memberArchive(args[0]);
     case 'purge-archived':
@@ -11047,6 +11072,7 @@ async function memberCommand(subcommand, ...args) {
       console.log('  install <slug> [--update]  Install missing files, or refresh template skills');
       console.log('  chat <name> "..."   Send a message to this member\'s desk in Atris Desktop');
       console.log('  list [--json]       Show all team members');
+      console.log('  export [--dry-run]  Write each member as a subagent for Claude Code, Cursor, and Codex');
       console.log('  activate <name>     Symlink member skills, show context and permissions');
       console.log('  upgrade <name>      Convert flat file (name.md) to directory format');
       console.log('  push <name>         Push a local team member to the cloud');

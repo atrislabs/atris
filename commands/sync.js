@@ -695,6 +695,16 @@ Key behaviors:
     console.log(`\n✓ Updated ${updated} file(s), ${skipped} unchanged`);
     console.log('\nRun your AI agent again to use the latest specs and agent templates.');
   }
+
+  // Team members follow the update into Claude Code, Cursor, and Codex as subagents.
+  if (!dryRun && fs.existsSync(path.join(process.cwd(), 'atris', 'team'))) {
+    try {
+      const { exportMembers, summaryLine } = require('../lib/member-export');
+      console.log(`✓ Team: ${summaryLine(exportMembers(process.cwd()))}`);
+    } catch (err) {
+      console.log(`Team export skipped: ${err.message || err}`);
+    }
+  }
 }
 
 /**
