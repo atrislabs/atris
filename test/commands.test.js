@@ -8769,15 +8769,19 @@ test('task review-lane-act executes only safe drain actions and supports dry-run
     assert.equal(afterLiveNeedsInProcess.current_version, afterLiveNeeds.current_version);
     assert.equal(afterLiveNeedsInProcess.latest_event_type, afterLiveNeeds.latest_event_type);
 
-    const continueCreated = runCli([
-      'task', 'new', 'Review lane act should continue certified task',
-      '--tag', 'task',
-      '--goal-id', 'OBL-941',
-      '--json',
-    ], { cwd: dir, env });
-    assert.equal(continueCreated.status, 0, continueCreated.stderr);
-    const continueTask = JSON.parse(continueCreated.stdout).task;
-    const continueRef = continueTask.display_id;
+    const continueDb = taskStore.open(dbPath);
+    let continueTask;
+    let continueRef;
+    try {
+      continueTask = addSeedTask(continueDb, {
+        title: 'Review lane act should continue certified task',
+        tag: 'task', workspaceRoot, metadata: { goal_id: 'OBL-941' },
+      });
+      assert.equal(continueTask.inserted, true);
+      continueRef = taskStore.taskDisplayRefMap(taskStore.listTasks(continueDb, { workspaceRoot })).get(continueTask.id);
+    } finally {
+      taskStore.close();
+    }
     assert.equal(runCli([
       'task', 'ready', continueRef,
       '--as', 'codex',
