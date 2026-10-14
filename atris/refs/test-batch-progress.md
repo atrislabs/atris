@@ -46,9 +46,23 @@ The frozen three-file check passed 35 checks, failed 0, cancelled 0, exit 0, in 
 node --test test/stall-signal-health.test.js test/roster-prep-brief.test.js test/roster-run-record.test.js
 ```
 
+## Member status and mission lifecycle command group, step 15
+
+All five selected checks passed, failed 0, cancelled 0, exit 0, in 3691.957042 milliseconds. No test code changed and no failure was repaired. Output: `/tmp/auto-improver-command15.tap`.
+
+```sh
+node --test --test-name-pattern='member status|member block|mission start tick complete|always-on mission run|mission run bounds' test/commands.test.js
+```
+
+The frozen three-file check passed 35 checks, failed 0, cancelled 0, exit 0, in 10487.470333 milliseconds. Output: `/tmp/auto-improver-required15.tap`.
+
+```sh
+node --test test/stall-signal-health.test.js test/roster-prep-brief.test.js test/roster-run-record.test.js
+```
+
 ## Next move
 
-Run the next bounded command group: `member status|member block|mission start tick complete|always-on mission run|mission run bounds`. Repair only a reproduced cause. The full command file remains unverified; passing selected groups cannot rule out failures caused by state left by earlier tests.
+Inspect the task-claim command group implicated by the earlier process snapshot, then run that group with a bounded deadline and repair a reproduced cause. The full command file remains unverified; passing selected groups cannot rule out failures caused by state left by earlier tests.
 
-next_push: Check member status, member block, and mission lifecycle command checks as one bounded named group.
+next_push: Isolate the task-claim command checks where the earlier full-file scan was still running at its deadline.
 layer: capabilities
