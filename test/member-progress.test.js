@@ -24,6 +24,9 @@ test('formatToolStep turns each tool into one plain line', () => {
   const long = 'x'.repeat(100);
   assert.equal(formatToolStep(tool('Bash', { command: long }), cwd), `running: ${'x'.repeat(70)}...`);
   assert.equal(formatToolStep(tool('Grep', { pattern: 'formatToolStep' }), cwd), 'searching for formatToolStep');
+  assert.equal(formatToolStep(tool('Bash', { command: "rg -n -g '*.js' 'two words' lib | head" }), cwd), 'searching for two words', 'a shell search reads like a Codex one');
+  assert.equal(formatToolStep(tool('Bash', { command: 'grep -rn needle .' }), cwd), 'searching for needle');
+  assert.equal(formatToolStep(tool('Bash', { command: 'rgx --help' }), cwd), 'running: rgx --help', 'only rg and grep themselves are searches');
   assert.equal(formatToolStep(tool('Glob', { pattern: 'lib/**/*.js' }), cwd), 'finding lib/**/*.js');
   assert.equal(formatToolStep(tool('WebFetch', { url: 'https://x' }), cwd), 'webfetch');
   assert.equal(formatToolStep({ type: 'text', text: 'hi' }, cwd), null);
