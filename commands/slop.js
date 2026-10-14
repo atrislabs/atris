@@ -428,6 +428,11 @@ function creditAfterQuote(quote, rest) {
   return `${quote} (${name})${end}`;
 }
 
+// A short form whose period ends no sentence: "etc.", "e.g.", "et al.",
+// and the end of a company or a name, "Inc.", "Jr.". A dash after one goes on
+// with the sentence instead of starting the next.
+const SHORT_FORM_END = /\b(?:etc|e\.g|i\.e|vs|cf|approx|incl|et al|Inc|Ltd|Corp|Co|Jr|Sr)$/i;
+
 function fixEmDash(s, { endsBlock = false, startsBlock = false, spans = [] } = {}) {
   // a dash between a file reference and the code it points at reads "is",
   // so it takes a colon even past a label colon: "`lib/a.js:12`: `runTick`",
@@ -728,7 +733,7 @@ function fixEmDash(s, { endsBlock = false, startsBlock = false, spans = [] } = {
     // on purpose and keeps its lowercase, and so does a line that opens in
     // lowercase, since its writer starts sentences that way.
     .replace(/(^|[^.])([.!?])\s*\u2014\s*([a-z])(?=[a-z']*(?![\w\uE000]))/g, (m, lead, stop, ch, at, whole) => {
-      if (stop === '.' && /\b(?:etc|e\.g|i\.e|vs|cf|approx|incl)$/i.test(whole.slice(0, at) + lead)) return `${lead}., ${ch}`;
+      if (stop === '.' && SHORT_FORM_END.test(whole.slice(0, at) + lead)) return `${lead}., ${ch}`;
       return `${lead}${stop} ${/^[^A-Za-z]*[a-z]/.test(whole) ? ch : ch.toUpperCase()}`;
     })
     // keep punctuation the writer already put beside the dash instead of
@@ -739,13 +744,16 @@ function fixEmDash(s, { endsBlock = false, startsBlock = false, spans = [] } = {
     // word, a short lead-in to a colon, or one closing word ('no longer
     // "what would you like?" it\'s:'). A new clause there keeps its comma,
     // since without one 'ask "anything else?" bring up the bid' runs on.
+    // The period of a short form ends no sentence, so a comma joins it too:
+    // "Cooling, Inc., Columbus, OH", "Yang et al., 61 citations".
     .replace(/([,;:.!?]?)\s*\u2014(\s*)([,;:.!?]?)\s*(?=(.?))/g, (m, before, gap, after, next, at, whole) => {
       const closes = /[\u201d\u2019]/.test(next) || (!gap && !after && /["')\]]/.test(next));
       const rest = whole.slice(at + m.length);
       const asked = !before && !after && /[!?]["'\u201d\u2019]+\s*$/.test(whole.slice(0, at))
         && (/^(?:and|or|but|nor|if|vs\.?|versus|not|with|without|is|are|was|were|becomes|became|answered|matches)\b/.test(rest)
           || /^[^.!?;:]{0,30}:\s*$/.test(rest) || /^[\w-]+[.!?]?\s*$/.test(rest));
-      return `${before || after || (asked ? '' : ',')}${next && !closes ? ' ' : ''}`;
+      const short = before === '.' && !after && SHORT_FORM_END.test(whole.slice(0, at));
+      return `${short ? '.,' : before || after || (asked ? '' : ',')}${next && !closes ? ' ' : ''}`;
     });
 }
 

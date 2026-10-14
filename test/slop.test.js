@@ -1332,6 +1332,26 @@ test('fix credits a quote in bold or italics the same way as a plain one', () =>
   ]);
 });
 
+test('fix joins a dash after "Inc." or "et al." with a comma, since no sentence ended', () => {
+  // the period read as a sentence end, so the dash just went and fused the
+  // line: "Cooling, Inc. Columbus, OH", "Yang et al. Forward testing effect"
+  const file = tmpFile('short-forms.md', [
+    '## Airfast Heating & Cooling, Inc. \u2014 Columbus, OH',
+    '- Pastotter; Yang et al. \u2014 forward testing effect',
+    'Rulin Shao et al. \u2014 61 citations',
+    'Covers resets, OAuth callbacks, etc. \u2014 NOT checkout.',
+    'Admin-only, path-safe. \u2014 DONE.',
+  ].join('\n'));
+  const { changes } = applyFixes([file], RULES, { write: false });
+  assert.deepEqual(changes.map((c) => c.after), [
+    '## Airfast Heating & Cooling, Inc., Columbus, OH',
+    '- Pastotter; Yang et al., forward testing effect',
+    'Rulin Shao et al., 61 citations',
+    'Covers resets, OAuth callbacks, etc., NOT checkout.',
+    'Admin-only, path-safe. DONE.',
+  ]);
+});
+
 test('fix gives a long bold list label a colon, but a comma before a joining word', () => {
   // the "1." of a numbered list ends no sentence, but a long bold phrase after
   // it still labels what follows; before "and", "but", "or" or "so" it goes on
