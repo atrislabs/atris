@@ -20294,19 +20294,17 @@ test('casual launch words route to the durable mission loop', () => {
 test('unknown single-word command exits 2 without creating work', () => {
   const dir = makeTempDir();
   try {
-    initWorkspace(dir);
+    fs.mkdirSync(path.join(dir, 'atris'), { recursive: true });
     fs.writeFileSync(path.join(dir, 'atris', 'MAP.md'), '# MAP.md\n\n## By-Feature\n- example: bin/atris.js:1\n', 'utf8');
-    const beforeTodo = fs.existsSync(path.join(dir, 'atris', 'TODO.md'))
-      ? fs.readFileSync(path.join(dir, 'atris', 'TODO.md'), 'utf8')
-      : null;
+    const todo = '# TODO.md\n\n## Backlog\n\n## In Progress\n\n## Completed\n';
+    fs.writeFileSync(path.join(dir, 'atris', 'TODO.md'), todo, 'utf8');
     const res = runCli(['foobarxyz'], { cwd: dir });
     assert.equal(res.status, 2, res.stderr || res.stdout);
     assert.match(res.stderr + res.stdout, /Unknown command.*foobarxyz/i);
     assert.doesNotMatch(res.stderr + res.stdout, /Treating as natural language/i);
-    const afterTodo = fs.existsSync(path.join(dir, 'atris', 'TODO.md'))
-      ? fs.readFileSync(path.join(dir, 'atris', 'TODO.md'), 'utf8')
-      : null;
-    assert.equal(afterTodo, beforeTodo);
+    assert.equal(fs.readFileSync(path.join(dir, 'atris', 'TODO.md'), 'utf8'), todo);
+    const files = fs.readdirSync(dir, { recursive: true }).map((file) => file.split(path.sep).join('/')).sort();
+    assert.deepEqual(files, ['atris', 'atris/MAP.md', 'atris/TODO.md']);
   } finally {
     cleanupTempDir(dir);
   }
