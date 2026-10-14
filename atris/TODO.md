@@ -23,6 +23,8 @@ Details for any task: atris task show <ID>
 
 ## Review
 
+- **[AIC-33]** Finish ordered in-process task fixtures · auto-improver
+  **Done looks like:** Developers get stable task test setup because fast inserts retain creation order without extra command launches.
 - **[AIC-32]** Seed task page parent fixtures in process · auto-improver
   **Done looks like:** Developers finish the task page check sooner because setup starts two fewer commands.
 - **[AIC-31]** Seed goal chat parent fixture in process · auto-improver

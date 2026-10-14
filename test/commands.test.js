@@ -4957,6 +4957,18 @@ function hasNodeSqlite() {
   return result.status === 0;
 }
 
+// Task refs and queue order sort on creation time, then random id. Separate CLI
+// launches always got distinct times; in-process seeds can share a millisecond,
+// which let a later insert renumber an earlier ref. Poll the clock past the
+// previous seed so every seeded task keeps the order it was inserted in.
+let lastSeededTaskMs = 0;
+function addSeedTask(db, options) {
+  while (Date.now() <= lastSeededTaskMs) { /* poll until the next millisecond */ }
+  const created = taskStore.addTask(db, options);
+  lastSeededTaskMs = Date.now();
+  return created;
+}
+
 function waitForOutput(child, pattern, timeoutMs = 5000) {
   return new Promise((resolve, reject) => {
     let output = '';
@@ -8777,7 +8789,7 @@ test('task review-lane-loop runs bounded safe actions and stops before human acc
     const seedTask = (title, goalId) => {
       const db = taskStore.open(dbPath);
       try {
-        const { id } = taskStore.addTask(db, { title, tag: 'task', workspaceRoot, metadata: { goal_id: goalId } });
+        const { id } = addSeedTask(db, { title, tag: 'task', workspaceRoot, metadata: { goal_id: goalId } });
         return { id, display_id: taskStore.taskDisplayRefMap(taskStore.listTasks(db, { workspaceRoot })).get(id) };
       } finally {
         taskStore.close();
@@ -8915,7 +8927,7 @@ test('task review-lane-run writes bounded receipts and stops before human accept
     const seedTask = (title) => {
       const db = taskStore.open(dbPath);
       try {
-        const { id } = taskStore.addTask(db, {
+        const { id } = addSeedTask(db, {
           title, tag: 'task', workspaceRoot, metadata: { goal_id: 'OBL-953' },
         });
         return taskStore.taskDisplayRefMap(taskStore.listTasks(db, { workspaceRoot })).get(id);
@@ -9046,7 +9058,7 @@ test('task review-lane-run does not repeat the same review_chat task across inne
     const db = taskStore.open(dbPath);
     let ref;
     try {
-      const { id } = taskStore.addTask(db, {
+      const { id } = addSeedTask(db, {
         title: 'Run should not duplicate review chat packets',
         tag: 'task',
         workspaceRoot,
@@ -9155,7 +9167,7 @@ test('task review-lane-drain skips continue-work rows with existing follow-up ch
       const workspaceRoot = taskStore.workspaceRoot(dir);
       const db = taskStore.open(dbPath);
       try {
-        const added = taskStore.addTask(db, {
+        const added = addSeedTask(db, {
           title,
           tag: 'task',
           workspaceRoot,
@@ -9221,7 +9233,7 @@ test('task review-lane-drain skips continue-work rows with existing follow-up ch
     }).updated, true);
     const workspaceRoot = fs.realpathSync(dir);
     for (let i = 0; i < 9; i += 1) {
-      const filler = taskStore.addTask(db, {
+      const filler = addSeedTask(db, {
         title: `Projection filler done child ${i}`,
         workspaceRoot,
         status: 'done',
@@ -9287,7 +9299,7 @@ test('task events defaults to a recent compact view', () => {
     let id;
     const db = taskStore.open(dbPath);
     try {
-      const created = taskStore.addTask(db, {
+      const created = addSeedTask(db, {
         title: 'Keep the ledger behind the cockpit',
         tag: 'task',
         workspaceRoot: taskStore.workspaceRoot(dir),
@@ -9354,7 +9366,7 @@ test('task note, show, and export expose a dialogue projection for UI surfaces',
     let ref;
     const db = taskStore.open(dbPath);
     try {
-      const created = taskStore.addTask(db, {
+      const created = addSeedTask(db, {
         title: 'Design task dialogue cards',
         tag: 'ui',
         workspaceRoot: taskStore.workspaceRoot(dir),
@@ -9717,7 +9729,7 @@ test('task review writes a reviewed event and RSI episode jsonl', () => {
     let ref;
     const db = taskStore.open(dbPath);
     try {
-      const created = taskStore.addTask(db, {
+      const created = addSeedTask(db, {
         title: 'Close RSI task loop',
         tag: 'rsi',
         workspaceRoot: taskStore.workspaceRoot(dir),
@@ -9793,7 +9805,7 @@ test('task done with proof writes a reviewed proof event', () => {
     let id;
     const db = taskStore.open(dbPath);
     try {
-      const created = taskStore.addTask(db, {
+      const created = addSeedTask(db, {
         title: 'Validate proof persistence',
         tag: 'rsi',
         workspaceRoot: taskStore.workspaceRoot(dir),
@@ -9856,7 +9868,7 @@ test('task plan and do record an explicit headless stage contract', () => {
         'Do not plan another owner task',
         'Do not start after external claim',
       ].map((title) => {
-        const created = taskStore.addTask(db, { title, tag: 'capture', workspaceRoot });
+        const created = addSeedTask(db, { title, tag: 'capture', workspaceRoot });
         assert.equal(created.inserted, true);
         return created.id;
       });
@@ -10274,7 +10286,7 @@ test('task chat refines a durable goal before plan', () => {
     let ref;
     const db = taskStore.open(dbPath);
     try {
-      const created = taskStore.addTask(db, {
+      const created = addSeedTask(db, {
         title: 'Make a vague task useful',
         tag: 'capture',
         workspaceRoot: taskStore.workspaceRoot(dir),
@@ -10346,7 +10358,7 @@ test('task page exposes one-task goal chat stage and review actions', () => {
     let ref;
     const db = taskStore.open(dbPath);
     try {
-      const created = taskStore.addTask(db, {
+      const created = addSeedTask(db, {
         title: 'Make one task page useful',
         tag: 'capture',
         workspaceRoot: taskStore.workspaceRoot(dir),
@@ -10531,7 +10543,7 @@ test('task step advances one safe headless action and never human-accepts', () =
     let ref;
     const db = taskStore.open(dbPath);
     try {
-      const created = taskStore.addTask(db, {
+      const created = addSeedTask(db, {
         title: 'Drive task loop from a single headless step',
         tag: 'capture',
         workspaceRoot: taskStore.workspaceRoot(dir),
@@ -10663,7 +10675,7 @@ test('task current-step advances the scoped current task one safe action', () =>
       const db = taskStore.open(dbPath);
       try {
         const metadata = goalId ? { goal_id: goalId } : null;
-        const { id } = taskStore.addTask(db, { title, tag, workspaceRoot, metadata });
+        const { id } = addSeedTask(db, { title, tag, workspaceRoot, metadata });
         assert.equal(taskStore.claimTask(db, { id, claimedBy: owner }).claimed, true);
         return { id, display_id: taskStore.taskDisplayRefMap(taskStore.listTasks(db, { workspaceRoot })).get(id) };
       } finally {
@@ -10929,19 +10941,14 @@ test('task current returns read-only selected page and queue lanes', () => {
     // Seed tasks straight in the task store at their original points; ready,
     // current, queue, and every selection check still run through the CLI.
     // Display refs are numbered across the workspace, so read them after inserts.
-    // Queue order breaks ties on creation time, so each insert waits for the
-    // clock to pass the previous one, as separate CLI launches always did.
     const workspaceRoot = taskStore.workspaceRoot(dir);
-    let lastInsertMs = 0;
     const seedTasks = (specs) => {
       const db = taskStore.open(dbPath);
       try {
         const ids = specs.map(({ title, tag, goalId, claimedBy }) => {
-          while (Date.now() <= lastInsertMs) { /* poll until the next millisecond */ }
           const metadata = goalId ? { goal_id: goalId } : null;
-          const created = taskStore.addTask(db, { title, tag, workspaceRoot, metadata });
+          const created = addSeedTask(db, { title, tag, workspaceRoot, metadata });
           assert.equal(created.inserted, true);
-          lastInsertMs = Date.now();
           if (claimedBy) assert.equal(taskStore.claimTask(db, { id: created.id, claimedBy }).claimed, true);
           return created.id;
         });
@@ -11392,7 +11399,7 @@ test('task ready holds work in review until human accept', () => {
       }
     };
     const seedClaimedTask = (title) => withStore((db) => {
-      const created = taskStore.addTask(db, { title, tag: 'agent', workspaceRoot });
+      const created = addSeedTask(db, { title, tag: 'agent', workspaceRoot });
       assert.equal(taskStore.claimTask(db, { id: created.id, claimedBy: 'codex' }).claimed, true);
       return created.id;
     });
@@ -11858,7 +11865,7 @@ test('task review-chat emits proof-specific verifier packet', () => {
     let id;
     let ref;
     try {
-      ({ id } = taskStore.addTask(db, {
+      ({ id } = addSeedTask(db, {
         title: 'Verify review chat specificity',
         tag: 'agent',
         workspaceRoot,
@@ -12013,7 +12020,7 @@ test('task review-chat extracts only proof-derived verifier commands', () => {
     const seedClaimedTask = (title) => {
       const db = taskStore.open(dbPath);
       try {
-        const created = taskStore.addTask(db, { title, workspaceRoot });
+        const created = addSeedTask(db, { title, workspaceRoot });
         assert.equal(taskStore.claimTask(db, { id: created.id, claimedBy: 'codex' }).claimed, true);
         return created.id;
       } finally {
@@ -13192,7 +13199,7 @@ test('task auto-accept-certified --all sweeps past the old 12-row cap', () => {
       const db = taskStore.open(dbPath);
       let ref;
       try {
-        ref = taskStore.addTask(db, { title: `Row ${i} lands under --all`, tag: 'code', workspaceRoot }).id;
+        ref = addSeedTask(db, { title: `Row ${i} lands under --all`, tag: 'code', workspaceRoot }).id;
         assert.equal(taskStore.claimTask(db, { id: ref, claimedBy: 'codex' }).claimed, true);
         if (i < ROW_COUNT - 1) {
           assert.equal(taskStore.readyTask(db, { id: ref, actor: 'codex', proof, result: FIXTURE_RESULT_SENTENCE }).ready, true);
@@ -13776,7 +13783,7 @@ test('claiming an already-done task suggests the next open task from the same ta
         ['Ship the other widget', 'speedy'],
         ['Unrelated open task', 'other'],
       ].map(([title, tag]) => {
-        const created = taskStore.addTask(db, { title, tag, workspaceRoot });
+        const created = addSeedTask(db, { title, tag, workspaceRoot });
         assert.equal(created.inserted, true);
         return created.id;
       });
@@ -13952,7 +13959,7 @@ test('task status stream tasks use latest agent proof fallback', () => {
     const db = taskStore.open(dbPath);
     const proof = 'agent-only proof is visible in stream rows';
     const objective = 'Make proof visible in stream status';
-    const added = taskStore.addTask(db, {
+    const added = addSeedTask(db, {
       title: 'Expose stream proof fallback',
       tag: 'tasks',
       workspaceRoot: taskStore.workspaceRoot(dir),
@@ -13994,7 +14001,7 @@ test('task status separates review continue-work from human accept waiting', () 
     const seedTask = (title) => {
       const db = taskStore.open(dbPath);
       try {
-        const created = taskStore.addTask(db, { title, tag: 'task', workspaceRoot });
+        const created = addSeedTask(db, { title, tag: 'task', workspaceRoot });
         return taskStore.withTaskDisplayRefs(taskStore.listTasks(db, { workspaceRoot }))
           .find((row) => row.id === created.id);
       } finally {
@@ -14076,7 +14083,7 @@ test('task reviews gives a compact certified accept queue', () => {
     function seedClaimedTask(title) {
       const db = taskStore.open(dbPath);
       try {
-        const { id } = taskStore.addTask(db, { title, tag: 'review', workspaceRoot });
+        const { id } = addSeedTask(db, { title, tag: 'review', workspaceRoot });
         assert.equal(taskStore.claimTask(db, { id, claimedBy: 'codex' }).claimed, true);
         return { id, display_id: taskStore.taskDisplayRefMap(taskStore.listTasks(db, { workspaceRoot })).get(id) };
       } finally {
@@ -14216,7 +14223,7 @@ test('task review groups are capped by default for human scan', () => {
       const db = taskStore.open(dbPath);
       let taskId;
       try {
-        taskId = taskStore.addTask(db, { title: `Grouped approval ${index}`, tag, workspaceRoot }).id;
+        taskId = addSeedTask(db, { title: `Grouped approval ${index}`, tag, workspaceRoot }).id;
         assert.equal(taskStore.claimTask(db, { id: taskId, claimedBy: 'codex' }).claimed, true);
         if (index < 12) {
           assert.equal(taskStore.readyTask(db, { id: taskId, actor: 'codex', proof, result: FIXTURE_RESULT_SENTENCE }).ready, true);
@@ -14405,7 +14412,7 @@ test('task render archives old completed records from TODO view', () => {
     const db = taskStore.open(dbPath);
     try {
       for (let i = 0; i < 12; i += 1) {
-        const { id } = taskStore.addTask(db, { title: `Completed task ${i}`, tag: 'agent', workspaceRoot });
+        const { id } = addSeedTask(db, { title: `Completed task ${i}`, tag: 'agent', workspaceRoot });
         const proof = `node --test test/commands.test.js passed for archive ${i}`;
         assert.equal(taskStore.doneTask(db, { id, status: 'done', actor, action: 'done', proof }).updated, true);
         assert.equal(taskStore.reviewTask(db, { id, actor, reward: 1, lesson: '', nextTask: '', proof }).reviewed, true);
@@ -14479,7 +14486,7 @@ test('task render archives old blocked records from TODO view', () => {
     const db = taskStore.open(dbPath);
     try {
       for (let i = 0; i < 16; i += 1) {
-        const { id } = taskStore.addTask(db, { title: `Blocked task ${i}`, tag: 'agent', workspaceRoot });
+        const { id } = addSeedTask(db, { title: `Blocked task ${i}`, tag: 'agent', workspaceRoot });
         const proof = `node --test test/commands.test.js passed for blocked archive ${i}`;
         assert.equal(taskStore.doneTask(db, { id, status: 'failed', actor, action: 'failed', proof }).updated, true);
         assert.equal(taskStore.reviewTask(db, { id, actor, reward: 0, lesson: '', nextTask: '', proof }).reviewed, true);
@@ -15457,7 +15464,7 @@ test('task serve exposes review-lane-drain API', async () => {
     const seedTask = (title, goalId) => {
       const db = taskStore.open(dbPath);
       try {
-        const { id } = taskStore.addTask(db, { title, tag: 'task', workspaceRoot, metadata: { goal_id: goalId } });
+        const { id } = addSeedTask(db, { title, tag: 'task', workspaceRoot, metadata: { goal_id: goalId } });
         return { id, display_id: taskStore.taskDisplayRefMap(taskStore.listTasks(db, { workspaceRoot })).get(id) };
       } finally {
         taskStore.close();
@@ -15736,7 +15743,7 @@ test('task serve exposes a local task factory API', async () => {
     const seedTask = (title, tag, goalId) => {
       const db = taskStore.open(dbPath);
       try {
-        const { id } = taskStore.addTask(db, { title, tag, workspaceRoot, metadata: { goal_id: goalId } });
+        const { id } = addSeedTask(db, { title, tag, workspaceRoot, metadata: { goal_id: goalId } });
         return { id, display_id: taskStore.taskDisplayRefMap(taskStore.listTasks(db, { workspaceRoot })).get(id) };
       } finally {
         taskStore.close();
@@ -19641,7 +19648,7 @@ test('status counts completed tasks from db without task db todo shim flag', () 
 
     const db = taskStore.open(dbPath);
     const workspaceRoot = taskStore.workspaceRoot(dir);
-    const created = taskStore.addTask(db, {
+    const created = addSeedTask(db, {
       title: 'Accepted task should count in status',
       tag: 'status',
       workspaceRoot,
