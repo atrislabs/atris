@@ -656,7 +656,10 @@ function fixEmDash(s, { endsBlock = false, startsBlock = false, spans = [] } = {
       if (/[([]$/.test(whole.slice(0, at))) return `${aside}${gap ? ', ' : ''}`;
       // A colon or comma the writer already put before the dash stays, so no
       // comma stacks on it: '"T35b: DONE (navigator), Name it"', never "T35b:,".
-      if (holdsParens || insideParens(whole.slice(0, at))) return `${/[,;:]$/.test(whole.slice(0, at)) ? ' ' : ', '}${aside}${gap ? ', ' : ''}`;
+      // One emphasized word alone is stress, not an aside, so it takes commas
+      // too: "We ship, *fast*, every day", never "We ship (*fast*) every day".
+      const stressed = /^(\*{1,2}|_{1,2})[\w'-]+\1$/.test(aside);
+      if (holdsParens || stressed || insideParens(whole.slice(0, at))) return `${/[,;:]$/.test(whole.slice(0, at)) ? ' ' : ', '}${aside}${gap ? ', ' : ''}`;
       // the closing dash also stood in for the comma before a "which" remark:
       // "scale (model size, data), which is a bet", never "data) which is".
       const after = whole.slice(at + m.length);

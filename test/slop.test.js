@@ -1871,6 +1871,23 @@ test('fix moves a dash just inside a closing mark out of the mark', () => {
   ]);
 });
 
+test('fix gives a pair of dashes around one emphasized word commas', () => {
+  // one stressed word read as a bracketed aside: "We ship (*fast*) every day"
+  const file = tmpFile('mark-dash-pair.md', [
+    'We ship *\u2014 fast \u2014* every day.',
+    '',
+    'The gate \u2014 **always** \u2014 blocks it.',
+    '',
+    'The gate \u2014 *the one CI runs* \u2014 blocks it.',
+  ].join('\n'));
+  const { changes } = applyFixes([file], RULES);
+  assert.deepEqual(changes.map((c) => c.after), [
+    'We ship, *fast*, every day.',
+    'The gate, **always**, blocks it.',
+    'The gate (*the one CI runs*) blocks it.',
+  ]);
+});
+
 test('fix reads no word that only says when as the subject of a clause', () => {
   // "now ships" after a dash read as a bare subject and a verb
   const file = tmpFile('when-word.md', [
