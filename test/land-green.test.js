@@ -288,24 +288,53 @@ test('a merge that reaches no branch is not called landed, and still spends the 
   }
 });
 
-test('a pushed merge whose landing check fails says pushed, with the check result', () => {
+test('a check that cannot fail, or that dirtied the merged tree, holds the merge before any push', () => {
   const root = makeRepo();
   const bare = fs.mkdtempSync(path.join(os.tmpdir(), 'atris-land-green-origin-'));
   try {
     git(bare, ['init', '-q', '--bare', '-b', 'master']);
     git(root, ['remote', 'add', 'origin', bare]);
     git(root, ['push', '-q', 'origin', 'master']);
+    const originBefore = git(bare, ['rev-parse', 'master']);
+    const localBefore = git(root, ['rev-parse', 'master']);
     branchWith(root, 'member/green', (dir) => fs.writeFileSync(path.join(dir, 'feature.txt'), 'shipped\n'));
-    // A check that cannot fail does not back a landing, even after the push.
-    const result = landStaleGreenBranches(root, { push: true, verifyCommand: 'git diff --check', openFlags: false });
+
+    const hollow = landStaleGreenBranches(root, { push: true, verifyCommand: 'git diff --check', openFlags: false });
+    assert.deepEqual(hollow.landed, []);
+    assert.equal(hollow.verdicts[0].action, 'skipped');
+    assert.equal(hollow.verdicts[0].reason, 'check_cannot_fail');
+    assert.equal(git(bare, ['rev-parse', 'master']), originBefore, 'nothing was pushed');
+    assert.equal(git(root, ['rev-parse', 'master']), localBefore, 'local master did not move');
+    assert.match(summaryLine(hollow), /member\/green held \(check cannot fail/);
+
+    // The check passed only after editing a changed file in the scratch tree,
+    // so it did not run on the committed merge.
+    const dirtied = landStaleGreenBranches(root, { push: true, verifyCommand: 'node check.js && echo extra >> feature.txt', openFlags: false });
+    assert.deepEqual(dirtied.landed, []);
+    assert.equal(dirtied.verdicts[0].action, 'skipped');
+    assert.equal(dirtied.verdicts[0].reason, 'checked_uncommitted_files');
+    assert.equal(git(bare, ['rev-parse', 'master']), originBefore, 'nothing was pushed');
+  } finally {
+    fs.rmSync(root, { recursive: true, force: true });
+    fs.rmSync(bare, { recursive: true, force: true });
+  }
+});
+
+test('with a remote, a merge that only moved the local branch is not landed', () => {
+  const root = makeRepo();
+  const bare = fs.mkdtempSync(path.join(os.tmpdir(), 'atris-land-green-origin-'));
+  try {
+    git(bare, ['init', '-q', '--bare', '-b', 'master']);
+    git(root, ['remote', 'add', 'origin', bare]);
+    git(root, ['push', '-q', 'origin', 'master']);
+    const greenSha = branchWith(root, 'member/green', (dir) => fs.writeFileSync(path.join(dir, 'feature.txt'), 'shipped\n'));
+    const result = landStaleGreenBranches(root, { push: false, openFlags: false });
 
     assert.deepEqual(result.landed, []);
     const verdict = result.verdicts[0];
-    assert.equal(verdict.action, 'pushed');
-    assert.equal(verdict.landing_check, 'unverified');
-    assert.equal(verdict.reason, 'check_cannot_fail');
-    assert.match(git(bare, ['log', '--format=%s', 'master']), /member\/green work/);
-    assert.match(summaryLine(result), /member\/green pushed, landing check: unverified \(check cannot fail\)/);
+    assert.equal(verdict.action, 'not_landed', JSON.stringify(verdict));
+    assert.equal(verdict.reason, 'content_not_on_target');
+    assert.equal(git(root, ['merge-base', '--is-ancestor', greenSha, 'master']), '', 'the local branch did move');
   } finally {
     fs.rmSync(root, { recursive: true, force: true });
     fs.rmSync(bare, { recursive: true, force: true });

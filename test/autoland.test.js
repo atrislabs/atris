@@ -391,6 +391,22 @@ test('digest folds unclear landed results across members into one count', () => 
   assert.doesNotMatch(digest, /member-1|could not explain themselves/);
 });
 
+test('unclear accepted-but-not-landed results read as plain English, never "accepteds"', () => {
+  const unclear = Array.from({ length: 3 }, (_, index) => ({
+    ref: `CLI-${index + 1}`,
+    title: 'Refactor internals',
+    member: `member-${index + 1}`,
+  }));
+  const digest = autoland.composeDigest({
+    accepted: { auto: unclear, human: [] },
+    waiting: [],
+    landed: null,
+    project: 'atris-cli',
+  });
+  assert.match(digest, /3 accepted results stayed hidden because their outcomes were unclear/);
+  assert.doesNotMatch(digest, /accepteds/);
+});
+
 test('expanded story excludes a saved landing when its digest result did not clear the headline gate', () => {
   const accepted = {
     auto: [{ ref: 'REP-1', title: 'Refactor internal worker', result: '', happened: '' }],

@@ -10411,13 +10411,32 @@ async function cmdAccept(args) {
 // Every auto-accept passes through here, so this is where the record says
 // whether the work actually landed. Accepted is a review verdict; landed is a
 // fact about git, proven by lib/landing-proof.js or not claimed at all.
+// The check behind a landing is the one that actually ran: the verifier's
+// passing re-run first, then the check the proof names, then the builder's
+// recorded verify.
+function landingProofVerify(task) {
+  const metadata = task.metadata || {};
+  const cache = metadata.verify_cache;
+  if (cache && typeof cache === 'object' && cache.ok === true && String(cache.command || '').trim()) {
+    return String(cache.command).trim();
+  }
+  return certifyVerifyCandidate(task) || String(metadata.verify || '').trim();
+}
+
 function stampAutoAcceptMetadata(taskDb, db, task, actor, policy) {
   const taskId = task.id;
   const row = taskDb.getTask(db, taskId);
   if (!row) return null;
+  // The caller's task object was read before the re-check ran, so it lacks
+  // the verify_cache and certify stamps written since. Prove from the row as
+  // it stands now, keeping the caller's events and review for claimed paths.
+  const current = { ...task, ...row, metadata: row.metadata && typeof row.metadata === 'object' ? row.metadata : {} };
   let landing;
   try {
-    landing = proveTaskLanding(task, { files: declaredCandidatePathValues(task) });
+    landing = proveTaskLanding(current, {
+      files: declaredCandidatePathValues(current),
+      verify: landingProofVerify(current),
+    });
   } catch (err) {
     landing = { status: 'unverified', reason: 'landing_proof_failed', detail: String((err && err.message) || err).slice(0, 200) };
   }
@@ -13615,4 +13634,6 @@ module.exports = {
   taskDescriptionForCloud,
   taskReviewCleanEvidenceCommand,
   certifyVerifyCandidate,
+  landingProofVerify,
+  stampAutoAcceptMetadata,
 };
