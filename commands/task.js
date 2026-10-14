@@ -6474,10 +6474,28 @@ function keptCount(result) {
     + (result && result.reaped ? result.reaped.length : 0);
 }
 
+// Jobs waiting in review follow their change on GitHub: merged closes them,
+// closed without merging sends them back to open with the reason.
+function settleMergedTasks(cwd) {
+  try {
+    const taskDb = getTaskDb();
+    if (!fs.existsSync(taskDb.getDbPath())) return { closed: [], reopened: [] };
+    return require('../lib/task-close-on-merge').closeMergedTasks(taskDb.open(), {
+      workspaceRoot: taskDb.workspaceRoot(cwd),
+      actor: 'task-list',
+    });
+  } catch {
+    // GitHub or git trouble leaves the jobs waiting; the next keep tries again.
+    return { closed: [], reopened: [] };
+  }
+}
+
 function cmdKeep(args) {
   const result = require('../lib/task-list-keeper').keepWorkspaceTaskList(process.cwd());
-  if (keptCount(result)) refreshKeptTaskList(process.cwd());
-  const count = keptCount(result);
+  const settled = settleMergedTasks(process.cwd());
+  const keptOnly = keptCount(result);
+  const count = keptOnly + settled.closed.length + settled.reopened.length;
+  if (count) refreshKeptTaskList(process.cwd());
   if (wantsJson(args)) {
     printJson({
       ok: true,
@@ -6485,6 +6503,8 @@ function cmdKeep(args) {
       count,
       put_away: result.put_away,
       reaped: result.reaped,
+      closed_merged: settled.closed,
+      reopened_rejected: settled.reopened,
     });
     return;
   }
@@ -6492,8 +6512,17 @@ function cmdKeep(args) {
     console.log('task list is current. nothing to put away.');
     return;
   }
-  const noun = count === 1 ? 'item' : 'items';
-  console.log(`put away ${count} ${noun} that were finished or sitting still.`);
+  if (keptOnly) {
+    const noun = keptOnly === 1 ? 'item' : 'items';
+    console.log(`put away ${keptOnly} ${noun} that were finished or sitting still.`);
+  }
+  if (settled.closed.length) {
+    const noun = settled.closed.length === 1 ? 'job' : 'jobs';
+    console.log(`closed ${settled.closed.length} finished ${noun} whose change merged.`);
+  }
+  for (const job of settled.reopened) {
+    console.log(`reopened "${job.title}": ${job.reason}`);
+  }
 }
 
 function cmdDay(args) {
