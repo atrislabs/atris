@@ -406,7 +406,7 @@ test('an autopilot phase on a roster worker records landed with tokens, or stall
   const roster = `# roster
 
 ## review
-- codex, max: 1 s
+- codex, max: 30 s
 `;
   await withRoom(async ({ root, bin }) => {
     const { executePhaseDetailed } = require('../commands/autopilot');
@@ -419,6 +419,9 @@ test('an autopilot phase on a roster worker records landed with tokens, or stall
     } finally {
       process.chdir(cwd);
     }
+    // Only the deliberate stall needs a short cap; successful startup can
+    // take more than a second when other test files are launching workers.
+    fs.writeFileSync(path.join(root, 'atris', 'ROSTER.md'), roster.replace('max: 30 s', 'max: 1 s'));
     fs.writeFileSync(path.join(bin, 'codex'), '#!/bin/sh\nsleep 30\n');
     process.chdir(root);
     try {
@@ -432,6 +435,7 @@ test('an autopilot phase on a roster worker records landed with tokens, or stall
       ['review', 'validator', 'codex', 'stalled', 'stalled at 1s'],
     ]);
     assert.equal(rows[0].tokens, 812);
+    assert.equal(rows[0].max_seconds, 30);
     assert.equal(rows[1].max_seconds, 1);
     assert.equal(rows[0].source, 'autopilot');
   }, { roster });

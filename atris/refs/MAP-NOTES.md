@@ -2283,3 +2283,5 @@ npm publish
 - `test/runner-model-leak.test.js:17` scrubs parent engine and caller settings before each test and restores them after async dispatches finish. `test/agent-env-runner-isolation.test.js:28` runs all seven real runner checks under contaminated mission and caller settings.
 
 - `test/stall-signal-health.test.js:148` dispatches the immediately failing fixture with a 30-second deadlock backstop, so batch startup load cannot masquerade as a one-second engine stall. Failure classification and no-handover assertions stay intact.
+
+- `test/roster-run-record.test.js:405` gives the successful autopilot fixture a 30-second startup backstop, rewrites its scratch roster to one second before the deliberate stall, and asserts both recorded caps.
