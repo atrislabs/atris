@@ -224,13 +224,16 @@ test('autopilot regression check names who removed its folder and why', () => {
   }
 });
 
-// Tripwire: a git worktree removal in these files must sit in a function that
-// also asks the git-activity check and writes the removal log. An exception
-// needs a reason here, and a stale exception fails too.
+// Tripwire: a work folder removal in these files, by git or by a raw delete of
+// a worktree path, must sit in a function that also asks the git-activity
+// check and writes the removal log. An exception needs a reason here, and a
+// stale exception fails too.
 const GUARDED_FILES = ['lib/fleet.js', 'commands/land.js', 'commands/autopilot.js', 'commands/worktree.js'];
 const UNGUARDED_REMOVALS = {
   'commands/worktree.js:createAgentWorktree': 'drops a folder it just made before any engine entered; plain remove refuses dirt',
+  'lib/fleet.js:prepareReviewSandbox': 'wipes its own temp sandbox when setup fails; only that call touched it, so any lock is stale',
 };
+const WORKTREE_REMOVAL = /worktree['"]?\s*,\s*['"]remove['"]|git worktree remove|rmSync\(\s*[^,)]*(?:worktree|wtPath|\bwt\b|\bw\.path)/i;
 
 function worktreeRemovalSites(file) {
   const lines = fs.readFileSync(path.join(__dirname, '..', file), 'utf8').split('\n');
@@ -240,7 +243,7 @@ function worktreeRemovalSites(file) {
   });
   const sites = [];
   lines.forEach((line, index) => {
-    if (!/worktree['"]?\s*,\s*['"]remove['"]|git worktree remove/.test(line)) return;
+    if (!WORKTREE_REMOVAL.test(line)) return;
     const owner = starts.filter((start) => start.index <= index).pop();
     const next = starts.find((start) => start.index > index);
     const body = lines.slice(owner ? owner.index : 0, next ? next.index : lines.length).join('\n');
