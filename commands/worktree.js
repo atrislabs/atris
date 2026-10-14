@@ -1202,21 +1202,18 @@ const GIT_ACTIVITY_MARKERS = [
 // Returns the reason git is busy in the folder, or null. Reads the .git
 // pointer file directly so the check costs no spawn per worktree.
 function worktreeGitActivity(worktreePath) {
-  let gitDir;
+  return gitStoreActivity(worktreeGitDir(worktreePath));
+}
+
+function worktreeGitDir(worktreePath) {
   try {
     const dotGit = path.join(worktreePath, '.git');
-    const stat = fs.statSync(dotGit);
-    if (stat.isDirectory()) {
-      gitDir = dotGit;
-    } else {
-      const match = fs.readFileSync(dotGit, 'utf8').match(/^gitdir:\s*(.+)\s*$/m);
-      if (!match) return null;
-      gitDir = path.resolve(worktreePath, match[1].trim());
-    }
+    if (fs.statSync(dotGit).isDirectory()) return dotGit;
+    const match = fs.readFileSync(dotGit, 'utf8').match(/^gitdir:\s*(.+)\s*$/m);
+    return match ? path.resolve(worktreePath, match[1].trim()) : null;
   } catch {
     return null;
   }
-  return gitStoreActivity(gitDir);
 }
 
 // Same check against a git store itself (bare repo or .git dir), for callers
@@ -1226,16 +1223,43 @@ function gitStoreActivity(gitDir) {
   for (const [marker, reason] of GIT_ACTIVITY_MARKERS) {
     if (fs.existsSync(path.join(gitDir, marker))) return reason;
   }
-  return refsHoldLock(path.join(gitDir, 'refs')) ? 'git_lock' : null;
+  return refsLockFile(path.join(gitDir, 'refs')) ? 'git_lock' : null;
 }
 
 // A branch or tag update writes refs/<name>.lock until it commits, at any depth.
-function refsHoldLock(dir) {
+function refsLockFile(dir) {
   let entries;
-  try { entries = fs.readdirSync(dir, { withFileTypes: true }); } catch { return false; }
-  return entries.some((entry) => (entry.isDirectory()
-    ? refsHoldLock(path.join(dir, entry.name))
-    : entry.name.endsWith('.lock')));
+  try { entries = fs.readdirSync(dir, { withFileTypes: true }); } catch { return null; }
+  for (const entry of entries) {
+    const file = path.join(dir, entry.name);
+    const found = entry.isDirectory() ? refsLockFile(file) : (entry.name.endsWith('.lock') ? file : null);
+    if (found) return found;
+  }
+  return null;
+}
+
+// The lock file keeping a folder and how long it has sat there, so a lock left
+// by a crashed git shows up instead of silently holding the folder.
+function worktreeGitLock(worktreePath, now = Date.now()) {
+  const gitDir = worktreeGitDir(worktreePath);
+  if (!gitDir) return null;
+  const file = GIT_ACTIVITY_MARKERS
+    .filter(([, reason]) => reason === 'git_lock')
+    .map(([marker]) => path.join(gitDir, marker))
+    .find((candidate) => fs.existsSync(candidate)) || refsLockFile(path.join(gitDir, 'refs'));
+  if (!file) return null;
+  try {
+    return { file, ageMs: Math.max(0, now - fs.statSync(file).mtimeMs) };
+  } catch {
+    return null;
+  }
+}
+
+function describeLockAge(ms) {
+  const minutes = Math.floor(ms / 60000);
+  if (minutes < 1) return 'under a minute';
+  if (minutes < 120) return `${minutes} min`;
+  return `${Math.floor(minutes / 60)} h`;
 }
 
 // Every work-folder removal leaves one line naming who removed it and why, in
@@ -1335,7 +1359,8 @@ function cleanupWorktrees({ root = repoRoot(), base: baseOverride = '', apply = 
     }
     const gitActivity = worktreeGitActivity(wtPath);
     if (gitActivity) {
-      kept.push({ ...item, reason: gitActivity });
+      const lock = gitActivity === 'git_lock' ? worktreeGitLock(wtPath) : null;
+      kept.push({ ...item, reason: gitActivity, ...(lock ? { lock: lock.file, lock_age_ms: lock.ageMs } : {}) });
       continue;
     }
     const rawCounts = statusCounts(wt.path);
@@ -1435,6 +1460,9 @@ function cleanup(args) {
     console.log(`${cacheAction}: ${item.path}`);
   }
   console.log(`kept: ${result.kept.length}`);
+  for (const item of result.kept.filter((kept) => kept.lock)) {
+    console.log(`held by git lock: ${item.path} lock=${item.lock} age=${describeLockAge(item.lock_age_ms)}`);
+  }
   if (!result.apply && result.candidates.length) console.log('next: atris worktree cleanup --apply');
   return 0;
 }
@@ -1524,6 +1552,7 @@ module.exports = {
   gitFailureDetail,
   gitNetworkEnvironment,
   gitStoreActivity,
+  worktreeGitLock,
   describeFlightAge,
   flightStampMs,
   listActiveProcessCwds,

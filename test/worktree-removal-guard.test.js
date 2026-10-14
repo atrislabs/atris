@@ -148,6 +148,25 @@ test('reap keeps a folder while git holds its lock, even with --force', () => {
   }
 });
 
+test('worktree cleanup names the lock holding a folder and how old it is', () => {
+  const { base, repo, wt } = landedWorktree();
+  try {
+    const lock = path.join(worktreeGitDir(wt), 'index.lock');
+    fs.writeFileSync(lock, '');
+    const stale = new Date(Date.now() - 3 * 60 * 60 * 1000);
+    fs.utimesSync(lock, stale, stale);
+    const result = cleanupWorktrees({ root: repo, base: 'HEAD', apply: true, activeCwds: [] });
+    const held = result.kept.find((item) => item.path === wt);
+    assert.equal(held.reason, 'git_lock', JSON.stringify(result.kept));
+    assert.equal(held.lock, lock);
+    assert.ok(held.lock_age_ms >= 3 * 60 * 60 * 1000 - 1000, String(held.lock_age_ms));
+    assert.ok(fs.existsSync(wt));
+    assert.deepEqual(removalLines(repo), []);
+  } finally {
+    fs.rmSync(base, { recursive: true, force: true });
+  }
+});
+
 test('worktree cleanup keeps a clean folder paused mid-rebase', () => {
   const { base, repo, wt } = landedWorktree();
   try {
