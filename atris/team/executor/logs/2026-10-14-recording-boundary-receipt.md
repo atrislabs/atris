@@ -36,4 +36,9 @@ Bookkeeping: the running parent holds the mission mutation lock, so mission stat
 
 Metric: 15 new assertions; 148 tests passed; 13 real engine launches checked with zero missing recordings.
 next_push: prevent a recorder inside a nested helper from covering its enclosing function's unrecorded launch.
+Saved review proof: atris/runs/2026-10-14-task-ecm-3-2026-10-14T21-12-55-852Z.json, exit 0. Exact command: node bin/atris.js task ready ECM-3 --verify "node --test test/engine-resource.test.js test/engine-dispatch.test.js" with the result and receipt note above. Task state is Review, pending acceptance.
+
+Proof environment lesson: the installed CLI uses a login shell that resolves Node 20.18.0; its save-proof run failed (127 passed, 21 failed, exit 1). The local CLI pins the running Node 25.6.1 after the login profile, and the same frozen command passed (148 passed, 0 failed, exit 0). This was resolved by invoking the existing local CLI, without changing verification policy or broadening the code slice.
+
+Additional produced artifact: atris/runs/2026-10-14-task-ecm-3-2026-10-14T21-12-55-852Z.json, the machine-readable successful proof included with this change.
 layer: capabilities
