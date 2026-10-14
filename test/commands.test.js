@@ -9985,6 +9985,7 @@ test('task plan and do record an explicit headless stage contract', () => {
         assert.equal(created.inserted, true);
         return created.id;
       });
+      assert.equal(taskStore.claimTask(db, { id: ids[2], claimedBy: 'alice' }).claimed, true);
       const byId = new Map(taskStore.withTaskDisplayRefs(taskStore.listTasks(db, { workspaceRoot }))
         .map((row) => [row.id, row.display_id]));
       refs = ids.map((id) => byId.get(id));
@@ -10009,7 +10010,6 @@ test('task plan and do record an explicit headless stage contract', () => {
     assert.equal(inlineDo.status, 1);
     assert.equal(JSON.parse(inlineDo.stdout).reason, 'plan_required');
 
-    assert.equal(runCli(['task', 'claim', ownedRef, '--as', 'alice'], { cwd: dir, env }).status, 0);
     const otherOwnerPlan = runCli([
       'task', 'plan', ownedRef,
       '--as', 'codex',

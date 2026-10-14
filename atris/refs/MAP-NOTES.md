@@ -2549,3 +2549,5 @@ npm publish
 - `test/commands.test.js:12136` checks proof-derived verifier extraction. Title-only and path-only readiness at `test/commands.test.js:12220` and `test/commands.test.js:12235` use readyTask, removing two setup launches (18 to 16); both review-chat calls and all command/path assertions remain on the CLI.
 
 - `test/commands.test.js:11506` checks review before human acceptance. Stale guidance setup at `test/commands.test.js:11766` uses readyTask, removing one launch (16 to 15); real CLI acceptance still proves empty lesson and next values clear the saved guidance. Readiness output and review checks remain on the CLI.
+
+- `test/commands.test.js:9964` seeds the pre-plan side owner with the real claimTask operation at `test/commands.test.js:9988`, removing one setup launch (17 to 16). Both CLI plan refusals still check claimed_by_other, and the post-plan external CLI claim and rejected do remain unchanged.
