@@ -1234,6 +1234,15 @@ function memberRun(name, ...args) {
   return memberRunWith(name, args);
 }
 
+// One plain line for why the reviewing engine refused the work.
+function reviewRefusalLine(refusal) {
+  if (refusal.timed_out) return 'the reviewer ran out of time';
+  const text = String(refusal.output || refusal.reason || '');
+  const verdict = text.match(/VERDICT:\s*FAIL\s*[;:]\s*(.+)/i);
+  const line = verdict ? verdict[1] : (text.split(/\r?\n/).find((l) => l.trim()) || refusal.reason || 'no reason given');
+  return line.trim().slice(0, 200);
+}
+
 function memberRunWith(name, args, { quiet = false } = {}) {
   if (!name || name === '--help' || name === '-h' || hasFlag(args, '--help') || hasFlag(args, '-h')) {
     console.log('usage: atris member run <name> ["mission text"] [--verify "<cmd>"] [--minutes N|--hours N] [--json]');
@@ -1391,7 +1400,10 @@ function memberRunWith(name, args, { quiet = false } = {}) {
   }
   if (checkFailed) {
     result.check_failed = true;
-    result.error = `the work ran but its check failed: ${finalMission.verifier || 'completion check'}`;
+    const refusal = lastRanTick?.referee_result?.passed === false ? lastRanTick.referee_result : null;
+    result.error = refusal
+      ? `turned down in review: ${reviewRefusalLine(refusal)}`
+      : `the work ran but its check failed: ${finalMission.verifier || 'completion check'}`;
   } else if (!ok) {
     result.error = result.ask || payload.detail || payload.error || payload.reason || payload.next_action
       || run.stderr || 'mission did not run a work step';
@@ -10481,8 +10493,35 @@ function memberGoFinishTask(owner, task, result, thrown = null) {
     : (result && result.error) || (result && result.started ? 'the check did not pass' : 'the run did not start');
   const reason = String(why || 'the run did not finish').split(/\r?\n/)[0].trim().slice(0, 200);
   try { taskDb.noteTask(db, { id: task.id, actor: owner, content: `Released by ${owner}: ${reason}` }); } catch {}
+  // Third failure in a row: hold the task for a person instead of letting
+  // members pick it up again forever.
+  let held = false;
+  if (memberGoFailStreak(taskDb, db, task.id) >= MEMBER_GO_STRIKES) {
+    try {
+      held = taskDb.tagTask(db, { id: task.id, actor: owner, add: ['needs-human'] }).tagged === true;
+      if (held) taskDb.noteTask(db, { id: task.id, actor: owner,
+        content: `Held for a person: failed ${MEMBER_GO_STRIKES} times in a row. Last reason: ${reason}` });
+    } catch {}
+  }
   const released = taskDb.releaseTask(db, { id: task.id, actor: owner });
-  return { id: task.id, title: task.title, outcome: released.released ? 'released' : 'left_claimed', reason };
+  const outcome = released.released ? (held ? 'needs_human' : 'released') : 'left_claimed';
+  return { id: task.id, title: task.title, outcome, reason };
+}
+
+const MEMBER_GO_STRIKES = 3;
+
+// Failed runs on a task since its last pass, review, reopen, or a person
+// clearing its hold.
+function memberGoFailStreak(taskDb, db, taskId) {
+  let streak = 0;
+  for (const event of taskDb.listTaskEvents(db, { taskId })) {
+    const type = event.event_type;
+    const payload = event.payload || {};
+    if (type === 'message' && /^Released by \S+: /.test(String(payload.content || ''))) streak += 1;
+    else if (['proof_ready', 'reviewed', 'reopened'].includes(type)) streak = 0;
+    else if (type === 'task_tags_updated' && (payload.removed || []).includes('needs-human')) streak = 0;
+  }
+  return streak;
 }
 
 async function memberSteerOrDispatch(...rawArgs) {
@@ -10665,6 +10704,7 @@ async function memberSteerOrDispatchWith({ pullTask = false } = {}, rawArgs = []
     ? { task, work_step: { summary: result?.work_step?.summary || null }, error: result?.error || null }
     : merged));
   else if (task.outcome === 'review') console.log(`Task "${task.title}" is ready for review.`);
+  else if (task.outcome === 'needs_human') console.log(`Task "${task.title}" failed three times in a row and now waits for a person: ${task.reason}`);
   else console.log(`Task "${task.title}" went back on the list: ${task.reason}`);
   return merged;
 }
