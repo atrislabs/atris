@@ -9,7 +9,7 @@ const autoland = require('../lib/autoland');
 const { gateForHuman, plainLandingReason } = require('../lib/voice-gate');
 const { evaluateAutoAccept } = require('../lib/auto-accept-certified');
 const { sweepEngineAskReceipts } = require('../lib/engine-receipt-sweep');
-const { readSshAgents, findLeakedSshAgents, stopLeakedSshAgents, closeLostRuns, readResourceHistory, errorReason, leakGrowthNote } = require('../lib/engine-resource');
+const { readSshAgents, findLeakedSshAgents, findAgentStartLines, agentStartLineText, stopLeakedSshAgents, closeLostRuns, readResourceHistory, errorReason, leakGrowthNote } = require('../lib/engine-resource');
 const { validateRecentAskReceipts } = require('../lib/engine-validate');
 const { operatorReady, hasAgentJargon, explainResult } = autoland;
 const MISSION_AUTO_VERIFY_STATUSES = new Set(['planning', 'paused', 'ready']);
@@ -560,6 +560,10 @@ function showStatus(root, args, deps = {}) {
   if (leakedAgents) {
     const stop = heartbeatLive ? 'the next hourly pass stops them' : 'stop them now: atris engine sweep --apply';
     console.log(`  leaked ssh-agents on this machine: ${unchecked ? 'at least ' : ''}${leakedAgents}${leakGrowthNote(lost.first_day_leak_reading, leakedAgents)}; ${stop}${unchecked ? `; ${unchecked}` : ''}`);
+    // A test run reads only the home it was handed, never the real one.
+    if (deps.home || !process.env.NODE_TEST_CONTEXT) {
+      for (const found of findAgentStartLines(deps.home ? { home: deps.home } : {})) console.log(`    ${agentStartLineText(found)}`);
+    }
   } else if (unchecked) {
     console.log(`  leaked ssh-agents on this machine: unknown, ${unchecked}`);
   }

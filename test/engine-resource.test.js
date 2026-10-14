@@ -1663,6 +1663,35 @@ test('the landing status names an unreadable agent scan instead of showing no le
   }
 });
 
+test('the landing status names the startup line behind leaked ssh-agents and its fix', () => {
+  const { showStatus } = require('../commands/autoland');
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'autoland-status-agent-source-'));
+  const home = fs.mkdtempSync(path.join(os.tmpdir(), 'autoland-status-agent-home-'));
+  const agent = (pid) => ({ pid, ppid: 1, uid: 501, age_sec: 3600, args: 'ssh-agent -s' });
+  const status = (deps) => {
+    const out = [];
+    const original = console.log;
+    console.log = (line = '') => out.push(String(line));
+    try {
+      showStatus(root, [], deps);
+    } finally {
+      console.log = original;
+    }
+    return out.join('\n');
+  };
+  try {
+    require('node:child_process').spawnSync('git', ['init', '-q'], { cwd: root });
+    fs.writeFileSync(path.join(home, '.zshrc'), 'eval "$(ssh-agent -s)"\n');
+    const leaked = status({ readSshAgents: () => ({ agents: [agent(200)], referenced: new Set() }), uid: 501, home });
+    assert.match(leaked, /leaked ssh-agents on this machine: 1;[^\n]*\n {4}likely source: ~\/\.zshrc line 1 starts a new ssh-agent in every shell that reads it; to start one only when none is reachable, change it to: \[ -S "\$SSH_AUTH_SOCK" \] \|\| eval "\$\(ssh-agent -s\)"/);
+    const clean = status({ readSshAgents: () => ({ agents: [agent(200)], referenced: new Set([200]) }), uid: 501, home });
+    assert.doesNotMatch(clean, /likely source/, 'no leak, no source line');
+  } finally {
+    fs.rmSync(root, { recursive: true, force: true });
+    fs.rmSync(home, { recursive: true, force: true });
+  }
+});
+
 test('the landing status says how fast leaked ssh-agents grew since the oldest reading in the last day', () => {
   const { showStatus } = require('../commands/autoland');
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'autoland-status-agent-growth-'));

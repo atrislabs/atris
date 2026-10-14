@@ -1,0 +1,24 @@
+The landing status now shows the startup line behind leaked ssh-agents and its one-line fix under the leaked count, verified by 135 passing checks and the real status command, exit 0.
+
+Files edited: commands/autoland.js, commands/engine.js, lib/engine-resource.js, test/engine-resource.test.js, atris/MAP.md, atris/refs/MAP-NOTES.md, atris/team/executor/logs/2026-10-14.md, this receipt. Existing atris/TODO.md changes are not staged.
+Plan: move the source line wording into one shared helper -> sweep and landing status both print it -> status reads the home startup files only when agents look leaked.
+
+Failing-first command: node --test --test-name-pattern='startup line behind leaked' test/engine-resource.test.js
+Exit: 1. pass 0, fail 1; the status printed no source line.
+
+Rerunnable verification: node --test test/engine-resource.test.js test/engine-dispatch.test.js
+Exit: 0. tests 135; pass 135; fail 0.
+
+Real command: node bin/atris.js autoland status
+Exit: 0.
+Output excerpt:
+  leaked ssh-agents on this machine: 1016; stop them now: atris engine sweep --apply
+    likely source: ~/.zshrc line 1 starts a new ssh-agent in every shell that reads it; to start one only when none is reachable, change it to: [ -S "$SSH_AUTH_SOCK" ] || eval "$(ssh-agent -s)"
+
+Real command: node bin/atris.js engine sweep
+Exit: 0. Prints the same likely source line, unchanged by the move to the shared helper.
+
+Both commands are read only; nothing was stopped and the home startup file was not changed.
+Metric: one failing-first regression added, 135 checks passed, the hourly view now names the cause of 1016 leaked agents and its fix.
+next_push: count how many new leaked agents appear per engine run from the start lines already logged, so the status can show the leak rate each run adds, not only the total.
+layer: capabilities
