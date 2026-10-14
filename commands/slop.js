@@ -522,8 +522,10 @@ function fixEmDash(s, { endsBlock = false, startsBlock = false, spans = [] } = {
   s = s.replace(/(?<=[\w)\]"'*_`%\u201d\u2019\uE001])[ \t]*\u2014[ \t]*(?=\((?:a|1|i)\)\s)(?![^\u2014.!?]*\u2014)/g, ': ');
   // a dash between two numbers is a range, "10-20", unless the first has a
   // sign, which makes it a score: "reward: +4, 404 on missing routes"
-  // A dash that opens a line, a quote or a list item names nothing and goes.
-  s = s.replace(/\u2014(?:\s*\u2014)+/g, '\u2014').replace(/(?<![+-]\d*)(\d+)\s*\u2014\s*(?=(\d+)(?![\d-]))/g, (m, a, b) => (isRange(a, b) ? `${a}-` : m)).replace(/^(\s*(?:>\s*)*)(?:([-*+]|\d+\.)\s+)?\u2014\s*/, (m, lead, marker) => (marker ? lead + marker + ' ' : lead));
+  // A dash that opens a line, a quote or a list item names nothing and goes,
+  // and so does one just inside an opening italic or bold mark, which keeps
+  // the mark: "*an agent who tried it*", never "*, an agent".
+  s = s.replace(/\u2014(?:\s*\u2014)+/g, '\u2014').replace(/(?<![+-]\d*)(\d+)\s*\u2014\s*(?=(\d+)(?![\d-]))/g, (m, a, b) => (isRange(a, b) ? `${a}-` : m)).replace(/^(\s*(?:>\s*)*)(?:([-*+]|\d+\.)\s+)?(\*{1,2}|_{1,2})?\u2014\s*/, (m, lead, marker, mark = '') => (marker ? lead + marker + ' ' : lead) + mark);
   s = s.replace(LESSON_DASH, (m, head, verdict) => `${head} - ${verdict ? `${verdict} - ` : ''}`)
     .replace(/^(\s*[-*]\s+\*\*\[[^\]]+\][^*]+\*\* - [a-z][\w-]*:\s.*)$/, (line) => line.replace(/\s*\u2014\s*(?=[a-z][\w-]*:\s)/g, ' - '));
   s = s.replace(NAME_ADDRESS_DASH, '$1$2, ');

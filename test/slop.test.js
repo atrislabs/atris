@@ -1820,6 +1820,23 @@ test('fix gives a script header comment that names its own file a colon', () => 
   ]);
 });
 
+test('fix drops a dash just inside an opening italic or bold mark at line start', () => {
+  // from the agents page, where the credit kept a comma after the mark
+  const file = tmpFile('mark-dash.md', [
+    '*\u2014 an agent who tried it*',
+    '',
+    '**\u2014 the team**',
+    '',
+    '- _\u2014 someone_',
+  ].join('\n'));
+  const { changes } = applyFixes([file], RULES);
+  assert.deepEqual(changes.map((c) => c.after), [
+    '*an agent who tried it*',
+    '**the team**',
+    '- _someone_',
+  ]);
+});
+
 test('fix reads no word that only says when as the subject of a clause', () => {
   // "now ships" after a dash read as a bare subject and a verb
   const file = tmpFile('when-word.md', [
