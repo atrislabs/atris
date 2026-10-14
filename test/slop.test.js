@@ -985,6 +985,9 @@ test('fix joins a noun clause after the dash with a semicolon', () => {
     // a command with "it" after the comma is a sentence; "then it" is not
     'Keep the log \u2014 if it breaks, trace it.',
     'Ship it \u2014 if you can, then it lands.',
+    // clauses that open with "when" or "if" are not a list, and may hold commas
+    'Watch the queue \u2014 when it fills, if it stalls, drain it.',
+    'The tool runs \u2014 when needed, before lunch, after the build.',
   ].join('\n'));
   const { changes } = applyFixes([file], RULES);
   assert.deepEqual(changes.map((c) => c.after), [
@@ -1039,6 +1042,8 @@ test('fix joins a noun clause after the dash with a semicolon', () => {
     'Ship it, if you can, after lunch.',
     'Keep the log; if it breaks, trace it.',
     'Ship it, if you can, then it lands.',
+    'Watch the queue; when it fills, if it stalls, drain it.',
+    'The tool runs, when needed, before lunch, after the build.',
   ]);
 });
 
