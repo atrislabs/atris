@@ -35,12 +35,24 @@ const SKIP_DIRS = new Set(['node_modules', '.git', 'dist', 'build', '.next', '.a
 // A run of dashes in a row is one break, so it is fixed as a single dash.
 const LIST_LABEL_DASH = /^(\s*(?:[-*+]|\d+[.)])\s+)([^\u2014]{0,59}[^\s\u2014,;:.])\s*\u2014\s*/;
 
+// True when one pair of parentheses wraps the whole aside, "(mostly)" but
+// not "(a) or (b)", so the fixer keeps them instead of adding a second pair.
+function wrappedInParens(s) {
+  if (s[0] !== '(' || s[s.length - 1] !== ')') return false;
+  let depth = 0;
+  for (let i = 0; i < s.length; i++) {
+    if (s[i] === '(') depth++;
+    else if (s[i] === ')' && --depth === 0 && i < s.length - 1) return false;
+  }
+  return depth === 0;
+}
+
 function fixEmDash(s) {
   s = s.replace(/\u2014(?:\s*\u2014)+/g, '\u2014').replace(/(\d)\s*\u2014\s*(?=\d)/g, '$1-').replace(/^(\s*(?:>\s*)*)\u2014\s*/, '$1');
   const label = LIST_LABEL_DASH.exec(s);
   if (label) return `${label[1]}${label[2]}:${s.length > label[0].length ? ' ' : ''}${fixEmDash(s.slice(label[0].length))}`;
   return s
-    .replace(/\s*\u2014\s*([^\u2014]*[^\s\u2014])\s*\u2014\s*(?=(.?))/g, (m, aside, next) => ` (${aside})${next && !/[.,;:!?)]/.test(next) ? ' ' : ''}`)
+    .replace(/\s*\u2014\s*([^\u2014]*[^\s\u2014])\s*\u2014\s*(?=(.?))/g, (m, aside, next) => ` ${wrappedInParens(aside) ? aside : `(${aside})`}${next && !/[.,;:!?)]/.test(next) ? ' ' : ''}`)
     // keep punctuation the writer already put beside the dash instead of
     // stacking a comma on it, and never leave a trailing space. A dash pressed
     // against a closing quote or bracket takes its comma with no space after.

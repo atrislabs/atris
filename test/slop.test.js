@@ -528,3 +528,17 @@ test('fix puts a comma against a closing quote with no stray space', () => {
     "It was 'nearly done,' by then.",
   ]);
 });
+
+test('fix keeps an aside that already has parentheses in one pair', () => {
+  const file = tmpFile('parens.md', [
+    'It works \u2014 (mostly) \u2014 fine.',
+    'Pick one \u2014 (a) or (b) \u2014 then go.',
+    'The tool \u2014 which we built \u2014 now ships.',
+  ].join('\n'));
+  const { changes } = applyFixes([file], RULES);
+  assert.deepEqual(changes.map((c) => c.after), [
+    'It works (mostly) fine.',
+    'Pick one ((a) or (b)) then go.',
+    'The tool (which we built) now ships.',
+  ]);
+});
