@@ -227,6 +227,12 @@ const ADVERB_CLAUSE_AFTER_DASH = new RegExp(`(?<=[\\w)\\]"'*_\`\\u201d\\u2019\\u
 // after the verb that ends the sentence: '"one font weight"; scarcity forces
 // creativity', "not build errors; xcodebuild compiles fine". A "the" or
 // "our" is no bare word, so "old code, the tests mostly" keeps its comma.
+// "Each" takes a verb in "s", so "each", up to four words and a verb in "s"
+// with more words after it start one too: "started the loop; each tick
+// re-reads the latest logs". No "the", "that" or place word may sit before
+// the verb, so "each time the loop runs" and "each with its own tests in CI"
+// keep their comma.
+const EACH_CLAUSE_AFTER_DASH = new RegExp(`(?<=[\\w)\\]"'*_\`\\u201d\\u2019\\uE001])\\s*\\u2014\\s*(?=each\\s+(?:(?!(?:the|a|an|that|whose|of|with|in|on|for|from|at|by|to|per|and|or|but)\\b)${NOUN_WORD}\\s+){0,4}(?:[a-z]+-)?${PLAIN_VERB}[^\\s\\u2014])`, 'g');
 const BARE_CLAUSE_AFTER_DASH = new RegExp(`(?<=[\\w)\\]"'*_\`\\u201d\\u2019\\uE001])\\s*\\u2014\\s*(?!${NAMING_PHRASE})(?=(?!(?:and|but|or|nor|so|yet|then|not|even|when|if|unless|until|because|since|while|where|which|who|as|after|before|though|although|once|just|only|also|still|this|that|it|its|one|the|our|your|their|her|his|any|every|each)\\b)[a-z]{3,}(?<!s|ly)\\s+${PLAIN_VERB_WORD}\\s+(?:(?:to|into|onto|through)\\s|[a-z]{3,}(?:[.!?;]|$)))`, 'g');
 
 // "Our", "your", "their" or "my" and one to three words, then a verb, start
@@ -447,6 +453,10 @@ function fixEmDash(s, { endsBlock = false, startsBlock = false } = {}) {
       return left && (/\b(?:not|cannot)\b/i.test(left) || PLAIN_OBJECT_CLAUSE.test(whole.slice(at))) ? clauseJoin(left) : m;
     })
     .replace(ADVERB_CLAUSE_AFTER_DASH, (m, at, whole) => {
+      const left = clauseLeft(at, whole);
+      return left ? clauseJoin(left) : m;
+    })
+    .replace(EACH_CLAUSE_AFTER_DASH, (m, at, whole) => {
       const left = clauseLeft(at, whole);
       return left ? clauseJoin(left) : m;
     })

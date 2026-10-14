@@ -1596,6 +1596,26 @@ test('fix joins a subject with a "not" contraction or "still" before its verb wi
   ]);
 });
 
+test('fix joins "each", its noun and a verb in "s" after a dash with a semicolon', () => {
+  // from the terrace repo, where the comma made a splice
+  const file = tmpFile('each.md', [
+    'Started the loop (15m) \u2014 each tick re-reads the latest logs for new items.',
+    'Events are a proxy \u2014 each completed Magic Circle session writes a summary.',
+    'Two reviewers looked \u2014 each signs off on the merge.',
+    // no "the" or place word may sit before the verb
+    'The cache warms up \u2014 each time the loop runs.',
+    'The repos are split \u2014 each with its own tests folder.',
+  ].join('\n'));
+  const { changes } = applyFixes([file], RULES);
+  assert.deepEqual(changes.map((c) => c.after), [
+    'Started the loop (15m); each tick re-reads the latest logs for new items.',
+    'Events are a proxy; each completed Magic Circle session writes a summary.',
+    'Two reviewers looked; each signs off on the merge.',
+    'The cache warms up, each time the loop runs.',
+    'The repos are split, each with its own tests folder.',
+  ]);
+});
+
 test('fix starts the next sentence after a stop that sits before a dash', () => {
   // from the terrace repo, which came out "fine with try? the cost"
   const file = tmpFile('stop.md', [
