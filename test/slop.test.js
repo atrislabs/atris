@@ -903,6 +903,11 @@ test('fix joins a noun clause after a "not" sentence with a semicolon', () => {
     'Not sends, not laps \u2014 replies. A reply is the market.',
     // without a "not" the left side is too often a label, so the rule waits
     'The tool is fast \u2014 the build is green.',
+    // a short "not" opener has no verb, so the clause explains it with a colon
+    'Zero hits. Not exhaustive \u2014 the frontier was not extended.',
+    'Not yet \u2014 it ships Friday.',
+    '- **Not yet** \u2014 it ships Friday.',
+    'Not only does it fail \u2014 it crashes.',
   ].join('\n'));
   const { changes } = applyFixes([file], RULES);
   assert.deepEqual(changes.map((c) => c.after), [
@@ -912,6 +917,10 @@ test('fix joins a noun clause after a "not" sentence with a semicolon', () => {
     'It is not green, even when the build is red.',
     'Not sends, not laps, replies. A reply is the market.',
     'The tool is fast, the build is green.',
+    'Zero hits. Not exhaustive: the frontier was not extended.',
+    'Not yet: it ships Friday.',
+    '- **Not yet**: it ships Friday.',
+    'Not only does it fail; it crashes.',
   ]);
 });
 

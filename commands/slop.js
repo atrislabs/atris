@@ -96,6 +96,14 @@ const CLAUSE_AFTER_DASH = /(?<=[\w)\]"'*_`\u201d\u2019\uE001])\s*\u2014\s*(?=(?:
 // build is red" keeps its comma.
 const NOUN_CLAUSE_AFTER_DASH = /(?<=[\w)\]"'*_`\u201d\u2019\uE001])\s*\u2014\s*(?=(?:(?!(?:and|but|or|nor|so|yet|then|not|even|when|if|unless|until|because|since|while|where|which|who|as|after|before|though|although|once|just|only)\b)(?:[A-Za-z0-9_/'-]+(?:\.[A-Za-z0-9_]+)*|\ue000\d+\uE001)\s+){1,5}(?:is|are|was|were|will|would|can|cannot|must|should|has|have|exists)\s+[^\s\u2014])/g;
 
+// The mark that joins a full clause to the sentence before the dash. A short
+// opener led by "not" has no verb of its own, so the clause explains it and
+// takes a colon: "Not exhaustive: the frontier was not extended".
+function clauseJoin(left) {
+  const opener = left.replace(/^(?:(?:[-*+>]|\d+[.)]|\*\*|__)\s*)+/, '');
+  return /^not\b/i.test(opener) && opener.split(/\s+/).length <= 3 ? ': ' : '; ';
+}
+
 function fixEmDash(s, { endsBlock = false } = {}) {
   // a table cell that holds only a dash means "nothing here"; a hyphen keeps
   // the cell instead of turning it into a stray comma
@@ -142,10 +150,13 @@ function fixEmDash(s, { endsBlock = false } = {}) {
     // ("this isn't optional, it's part of design"), so it takes a semicolon.
     // The left side needs two words of its own sentence to be a clause, so
     // an opener like "Then" keeps its comma.
-    .replace(CLAUSE_AFTER_DASH, (m, at, whole) => (whole.slice(0, at).split(/[.!?:]\s/).pop().trim().split(/\s+/).length >= 2 ? '; ' : m))
+    .replace(CLAUSE_AFTER_DASH, (m, at, whole) => {
+      const left = whole.slice(0, at).split(/[.!?:]\s/).pop().trim();
+      return left.split(/\s+/).length >= 2 ? clauseJoin(left) : m;
+    })
     .replace(NOUN_CLAUSE_AFTER_DASH, (m, at, whole) => {
       const left = whole.slice(0, at).split(/[.!?:]\s/).pop().trim();
-      return /\b(?:not|cannot)\b/i.test(left) && left.split(/\s+/).length >= 2 ? '; ' : m;
+      return /\b(?:not|cannot)\b/i.test(left) && left.split(/\s+/).length >= 2 ? clauseJoin(left) : m;
     })
     // keep punctuation the writer already put beside the dash instead of
     // stacking a comma on it, and never leave a trailing space. A dash pressed
