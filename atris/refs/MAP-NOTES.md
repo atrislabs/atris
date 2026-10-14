@@ -2282,3 +2282,12 @@ npm publish
 
 - `lib/member-autoland.js:353` reads current approval from each linked task before any remote operation. Revise, revised, and rejected states hold at approval; resubmitted pending proof continues through the existing review gates.
 - `test/member-refused-no-pr.test.js:1` uses the real task database and Git, including a separate command process with network and GitHub call traps. Verify: `node --test test/member-refused-no-pr.test.js`.
+
+## Member changes dropped from the merge line
+
+- `lib/member-autoland.js:283` builds a catch-up commit with the fetched base as a parent, without touching the member checkout; code conflicts hold and map-only conflicts retain both sides.
+- `lib/member-autoland.js:337` reruns the local handoff gates, checks the saved open request and exact remote head, then requests auto-merge pinned to the caught-up commit.
+- `lib/member-autoland.js:486` atomically saves successful handoffs under the main checkout's `.atris/state/member-autoland/`; recovery also saves a pushed catch-up before enqueueing so a GitHub failure can be retried.
+- `lib/member-autoland.js:504` recovers at most three dropped handoffs per heartbeat, skips requests still waiting to merge, and retires closed requests without reopening them.
+- `commands/autoland.js:811` runs recovery under the existing heartbeat lock and records `member_requeue` or an explicit error in its receipt.
+- `test/autoland-requeue-dropped.test.js:1` runs real Git merges and pushes against a temporary bare remote, with a simulated GitHub CLI, and invokes the actual Atris CLI. Verify: `node --test test/autoland-requeue-dropped.test.js`.

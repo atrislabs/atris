@@ -807,6 +807,12 @@ async function runTickBody(root, { json, policy, receipt, engineValidationDeps =
 
   await runEngineAnswerValidation(root, receipt, engineValidationDeps);
 
+  try {
+    receipt.member_requeue = require('../lib/member-autoland').requeueDroppedMemberRuns(root);
+  } catch (err) {
+    receipt.member_requeue_error = String(err?.message || err).slice(0, 200);
+  }
+
   // 1. certify and land in one task process. Keeping both phases together lets
   // the landing gate reuse the live certification verifier result without
   // persisting trust across heartbeats. Denied lanes and check-less proofs wait.
