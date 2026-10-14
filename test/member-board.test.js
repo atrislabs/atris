@@ -286,6 +286,26 @@ test('board moves the last step under its row when the screen is too narrow for 
   assert.match(renderBoard(rows, '/x'), /^member\s.*\sjob\s+last step$/m, 'piped output keeps the column');
 });
 
+test('board drops engine, then alive, when the screen is too narrow for them', () => {
+  const now = Date.parse('2026-10-14T13:00:00Z');
+  const rows = [
+    memberRow('builder', `2026-10-14T12:50:00Z m-1 started: [pid ${process.pid} engine claude] make the table fit a narrow terminal\n2026-10-14T12:59:30Z m-1 running: node --test\n`, now),
+    memberRow('scout', '2026-10-14T12:55:00Z m-3 started: map the repo for stale refs\n', now),
+  ];
+  const table = (w) => {
+    const lines = renderBoard(rows, '/x', 0, w).split('\n');
+    return lines.slice(lines.indexOf('') + 1, lines.indexOf('', lines.indexOf('') + 1));
+  };
+  assert.match(table(80)[0], /\salive\s+engine\s/, 'room for both at 80 columns');
+  assert.match(renderBoard(rows, '/x'), /\salive\s+engine\s/, 'piped output keeps both');
+  const sixty = table(60);
+  assert.match(sixty[0], /^member\s+state\s+alive\s+run time\s/, 'engine goes first');
+  assert.match(sixty[1], /^builder\s+working\s+yes\s+10m\s/);
+  const narrow = table(52);
+  assert.match(narrow[0], /^member\s+state\s+run time\s/, 'then alive');
+  assert.ok([...sixty, ...narrow].every((l) => l.length <= 52 || (sixty.includes(l) && l.length <= 60)), `every line fits:\n${sixty.join('\n')}\n${narrow.join('\n')}`);
+});
+
 test('board breaks the count line after a comma on a narrow screen', () => {
   const now = Date.parse('2026-10-14T13:00:00Z');
   const base = memberRow('scout', '2026-10-14T12:55:00Z m-3 started: map the repo\n', now);
@@ -311,7 +331,9 @@ test('board lets job shrink to the room left on a narrow screen', () => {
   const table = lines.slice(lines.indexOf('') + 1, lines.indexOf('', lines.indexOf('') + 1));
   assert.ok(table.every((l) => l.length <= 80), `every table line fits 80 columns:\n${table.join('\n')}`);
   assert.match(table.find((l) => l.startsWith('builder')), /make the footer\.\.\.$/, 'the job is cut to the room left, not held at 20');
-  const narrow = renderBoard(rows, '/x', 0, 60).split('\n').find((l) => l.startsWith('builder'));
+  const sixty = renderBoard(rows, '/x', 0, 60).split('\n').find((l) => l.startsWith('builder'));
+  assert.ok(sixty.length <= 60 && sixty.endsWith('  make the f...'), `at 60 columns engine and alive go and the row fits: ${sixty}`);
+  const narrow = renderBoard(rows, '/x', 0, 40).split('\n').find((l) => l.startsWith('builder'));
   assert.ok(narrow.endsWith('  make th...'), `a much narrower screen still shows 10 characters of job: ${narrow}`);
 });
 
