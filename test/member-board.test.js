@@ -406,6 +406,28 @@ test('atris member board says so plainly when no member has a log', () => {
   }
 });
 
+test('atris member board tells a missing progress folder from an empty one', () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'atris-board-empty-'));
+  const missing = path.join(dir, 'not-made-yet');
+  const board = (where, ...args) => spawnSync(process.execPath, [cliPath, 'member', 'board', ...args], {
+    cwd: dir, env: { ...process.env, ATRIS_PROGRESS_DIR: where }, encoding: 'utf8',
+  });
+  try {
+    let res = board(dir, '--json');
+    assert.equal(res.status, 0, res.stderr);
+    assert.equal(JSON.parse(res.stdout).dir_exists, true, 'empty, but there');
+    res = board(missing, '--json');
+    assert.equal(res.status, 0, res.stderr);
+    assert.equal(JSON.parse(res.stdout).dir_exists, false);
+    res = board(missing);
+    assert.equal(res.status, 0, res.stderr);
+    assert.equal(res.stdout.trim(), `no progress folder at ${missing}; a member's first run makes it, so if members have run, the board is looking in the wrong place`);
+    assert.equal(fs.existsSync(missing), false, 'looking does not make the folder');
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
 test('progress lines turn into stream events', () => {
   const { progressEvent } = require('../lib/member-board');
   assert.deepEqual(progressEvent('builder', '2026-10-13T12:00:00.000Z m-1 started: ship the stream'),
