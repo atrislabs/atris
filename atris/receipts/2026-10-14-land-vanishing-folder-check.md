@@ -78,3 +78,5 @@ The first audit run exposed an assertion that assumed only explicit keep markers
 next_push: Prove an ordinary lock appearing during the final old-folder check without the folder moving still prevents removal.
 
 layer: behaviors
+
+Review handoff: the bare required command passed directly under Node 25.6.1. The task recorder's shell returned 18 passes and 3 failures, exit 1; its abbreviated receipt does not identify the failures. Repeating through the recorder with `/opt/homebrew/bin/node --test test/worktree-removal-guard.test.js test/member-tidy.test.js` passed, exit 0, and placed the task in review. Receipt: `atris/runs/2026-10-14-task-acw-32-2026-10-14T20-27-02-563Z.json`. The explicit runtime needs a second review before automatic landing. This increment was committed and pushed; unrelated edits remain local.
