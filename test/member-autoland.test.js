@@ -646,7 +646,9 @@ function runIgnitedMember({ codexLines, claudeLines = [], cliArgs }, check) {
     git(['remote', 'add', 'origin', origin], root);
     git(['push', '-q', 'origin', 'master'], root);
     const script = (file, lines) => fs.writeFileSync(path.join(bin, file), ['#!/bin/sh', ...lines, ''].join('\n'), { mode: 0o755 });
-    script('codex', codexLines(base));
+    // The live-steps support check runs 'codex exec --help'; answer it without
+    // doing the job.
+    script('codex', ['if [ "$2" = "--help" ]; then echo "usage: codex exec"; exit 0; fi', ...codexLines(base)]);
     script('claude', [
       'if [ "$1" = "--help" ]; then echo "--output-format --permission-mode --resume --session-id --include-partial-messages"; exit 0; fi',
       ...claudeLines,
