@@ -2381,3 +2381,7 @@ npm publish
 ## Auto-accept confirmation fixture setup
 
 - `test/commands.test.js:13156` checks that certified auto-accept needs an explicit human confirmation and a real human actor. Real-store creation at `test/commands.test.js:13170` saves one setup launch, resolves the display reference and closes in finally; claim, ready, review, the refusals, both previews and the confirmed accept remain on the CLI with every behavior assertion preserved.
+
+## Duplicate reward review fixture setup
+
+- `test/commands.test.js:13327` checks that a review after acceptance cannot add a second reward. Real-store creation at `test/commands.test.js:13341` saves one setup launch, resolves the display reference and closes in finally; claim, ready, accept, the second review and the XP status read remain on the CLI with every behavior assertion preserved.
