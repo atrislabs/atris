@@ -547,7 +547,10 @@ function fencedLines(lines) {
   let fence = null;
   for (let i = 0; i < lines.length; i++) {
     const m = /^\s{0,3}(`{3,}|~{3,})/.exec(lines[i]);
-    if (m && (!fence || m[1][0] === fence)) { fence = fence ? null : m[1][0]; fenced.add(i); continue; }
+    // a block closes only on a fence at least as long as the one that opened
+    // it, so a four-backtick example that shows a three-backtick block inside
+    // stays code to its end
+    if (m && (!fence || (m[1][0] === fence[0] && m[1].length >= fence.length))) { fence = fence ? null : m[1]; fenced.add(i); continue; }
     if (fence) fenced.add(i);
   }
   return fenced;
