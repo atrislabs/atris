@@ -18390,7 +18390,8 @@ test('visualize renders breakdown for inbox items', () => {
 test('visualize dry-run accepts any prompt without requiring inbox', () => {
   const dir = makeTempDir();
   try {
-    initWorkspace(dir);
+    fs.mkdirSync(path.join(dir, 'atris'), { recursive: true });
+    fs.writeFileSync(path.join(dir, 'atris', 'MAP.md'), '# MAP.md\n\n- onboarding: src/onboard.js:1\n', 'utf8');
     const res = runCli(['visualize', 'show the connect-api workflow for onboarding', '--dry-run'], { cwd: dir });
     assert.equal(res.status, 0, res.stderr);
     assert.match(res.stdout, /Atris Visualize dry run/);
@@ -18398,6 +18399,7 @@ test('visualize dry-run accepts any prompt without requiring inbox', () => {
     assert.match(res.stdout, /connect-api workflow/);
     assert.match(res.stdout, /Artifact type: workflow/);
     assert.match(res.stdout, /atris\/reports\/visuals/);
+    assert.match(res.stdout, /Workspace context to respect:\nMAP excerpt:\n# MAP\.md\n\n- onboarding: src\/onboard\.js:1/);
   } finally {
     cleanupTempDir(dir);
   }
@@ -18406,7 +18408,9 @@ test('visualize dry-run accepts any prompt without requiring inbox', () => {
 test('visualize dry-run supports custom output and raw prompt', () => {
   const dir = makeTempDir();
   try {
-    initWorkspace(dir);
+    // A map gives the non-raw prompt context, so the raw check below has something to leave out.
+    fs.mkdirSync(path.join(dir, 'atris'), { recursive: true });
+    fs.writeFileSync(path.join(dir, 'atris', 'MAP.md'), '# MAP.md\n\n- diagram: src/diagram.js:1\n', 'utf8');
     const res = runCli([
       'visualize',
       'exact raw diagram prompt',
