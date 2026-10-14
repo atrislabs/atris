@@ -380,10 +380,45 @@ test('atris engine sweep shows the last sweep and the last SIGKILL', () => {
 
 test('a test run never writes into this checkout\'s own resource log', () => {
   const repoRoot = path.join(__dirname, '..');
-  const file = path.join(repoRoot, RESOURCE_LOG);
+  const { mainCheckoutRoot } = require('../lib/engine-registry');
+  const file = path.join(mainCheckoutRoot(repoRoot) || repoRoot, RESOURCE_LOG);
   const size = () => (fs.existsSync(file) ? fs.statSync(file).size : 0);
   const before = size();
   const entry = recordEngineResource(repoRoot, { phase: 'end', engine: 'cursor', task: 'CLI-TEST-ONLY', signal: 'SIGKILL' }, { platform: 'linux', loadavg: () => [0, 0, 0] });
   assert.strictEqual(entry.cause, 'killed (cause unknown)');
   assert.strictEqual(size(), before);
+});
+
+
+test('resource history survives removal of a real linked checkout', () => {
+  const { spawnSync } = require('node:child_process');
+  const { stopLeakedSshAgents } = require('../lib/engine-resource');
+  const room = fs.mkdtempSync(path.join(os.tmpdir(), 'engine-resource-linked-'));
+  const root = path.join(room, 'main');
+  const linked = path.join(room, 'linked');
+  fs.mkdirSync(root);
+  const git = (args) => {
+    const result = spawnSync('git', ['-c', 'user.name=resource test', '-c', 'user.email=resource@example.com', ...args], { cwd: root, encoding: 'utf8' });
+    assert.strictEqual(result.status, 0, result.stderr);
+  };
+  try {
+    git(['init', '-q']);
+    git(['commit', '-q', '--allow-empty', '-m', 'init']);
+    git(['worktree', 'add', '-q', '--detach', linked]);
+    const deps = { platform: 'linux', loadavg: () => [0, 0, 0], readSshAgents: () => ({ agents: [], referenced: new Set() }) };
+    recordEngineResource(linked, { phase: 'start', run_id: 'linked-run' }, deps);
+    recordEngineResource(linked, { phase: 'end', run_id: 'linked-run', signal: 'SIGKILL' }, deps);
+    stopLeakedSshAgents(linked, [], { read: () => ({ agents: [], referenced: new Set() }), uid: 501 });
+    assert.strictEqual(fs.existsSync(path.join(linked, RESOURCE_LOG)), false);
+    const lines = fs.readFileSync(path.join(root, RESOURCE_LOG), 'utf8').trim().split('\n').map(JSON.parse);
+    assert.deepStrictEqual(lines.map((line) => line.phase), ['start', 'end', 'sweep']);
+    const history = readResourceHistory(root);
+    assert.strictEqual(history.kills, 1);
+    assert.ok(history.last_sweep);
+    assert.deepStrictEqual(readResourceHistory(linked), history);
+    git(['worktree', 'remove', linked]);
+    assert.deepStrictEqual(readResourceHistory(root), history);
+  } finally {
+    fs.rmSync(room, { recursive: true, force: true });
+  }
 });
