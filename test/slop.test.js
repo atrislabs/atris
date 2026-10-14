@@ -2560,6 +2560,23 @@ test('fix turns a single dash between two arrows into a hyphen', () => {
   ]);
 });
 
+test('fix reads a line that opens with a bold or italic box as a diagram line', () => {
+  // the bold marks hid the box: "**[plan]**: build -> [review]"
+  const file = tmpFile('bold-diagram.md', [
+    '**[plan]** \u2014 build \u2014> [review]',
+    '- *[plan]* \u2014\u2014\u2014 build \u2014\u2014\u2014 [review]',
+    '**[Title](file.md)** \u2014 hook -> more',
+    '**[P1]** \u2014 fix the login page',
+  ].join('\n\n'));
+  const { changes } = applyFixes([file], RULES, { write: false });
+  assert.deepEqual(changes.map((c) => c.after), [
+    '**[plan]** - build -> [review]',
+    '- *[plan]* --- build --- [review]',
+    '**[Title](file.md)**: hook -> more',
+    '**[P1]**: fix the login page',
+  ]);
+});
+
 test('fix keeps a journal heading that ends in a time readable for its hour', () => {
   // analytics reads the hour after a dash or a spaced hyphen at the end of a
   // heading; the fix wrote "### Watch: 19:05", which hides it, and glued

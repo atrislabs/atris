@@ -489,10 +489,11 @@ function fixEmDash(s, { endsBlock = false, startsBlock = false, spans = [] } = {
   s = s.replace(/(?<=[\])|+][ \t]*)\u2014{2,}(?=[ \t]*[[(|+])/g, (m) => '-'.repeat(m.length));
   // a line indented like a code block is where a diagram lives, and so is a
   // line that opens with a box, not a link or a checkbox, at any indent or
-  // after quote marks and a list marker. Any run of pressed dashes there is a
-  // drawn line, between plain-word steps or opening a branch: "plan --- do
-  // --- review", "  -- [b]", "1. [a] --- b", "> [a] --- b", never "plan (do)".
-  const diagramStart = /^(?: {4}|\t)|^\s*(?:>\s*)*(?:(?:[-*+]|\d+[.)])\s+)?(?:\[(?![ xX]\])[^\]\n]*\](?![([\uE000])|\([^)\n]*\))/;
+  // after quote marks, a list marker and bold or italic marks. Any run of
+  // pressed dashes there is a drawn line, between plain-word steps or opening
+  // a branch: "plan --- do --- review", "  -- [b]", "1. [a] --- b",
+  // "> [a] --- b", "**[a]** --- b", never "plan (do)".
+  const diagramStart = /^(?: {4}|\t)|^\s*(?:>\s*)*(?:(?:[-*+]|\d+[.)])\s+)?[*_]{0,3}(?:\[(?![ xX]\])[^\]\n]*\](?![([\uE000])|\([^)\n]*\))/;
   if (diagramStart.test(s)) s = s.replace(/\u2014{2,}/g, (m) => '-'.repeat(m.length));
   // once such a line holds a drawn line or an arrow it is a diagram, so a
   // single dash on it is one more short link: "[a] - done -> [c]", never
