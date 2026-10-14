@@ -9028,14 +9028,22 @@ test('task review-lane-run does not repeat the same review_chat task across inne
   try {
     fs.mkdirSync(path.join(dir, 'atris'), { recursive: true });
 
-    const created = runCli([
-      'task', 'new', 'Run should not duplicate review chat packets',
-      '--tag', 'task',
-      '--goal-id', 'OBL-954',
-      '--json',
-    ], { cwd: dir, env });
-    assert.equal(created.status, 0, created.stderr);
-    const ref = JSON.parse(created.stdout).task.display_id;
+    // Only creation prepares the fixture; keep ready and every loop/drain
+    // command on the CLI, including ready's handling of an unclaimed task.
+    const workspaceRoot = taskStore.workspaceRoot(dir);
+    const db = taskStore.open(dbPath);
+    let ref;
+    try {
+      const { id } = taskStore.addTask(db, {
+        title: 'Run should not duplicate review chat packets',
+        tag: 'task',
+        workspaceRoot,
+        metadata: { goal_id: 'OBL-954' },
+      });
+      ref = taskStore.taskDisplayRefMap(taskStore.listTasks(db, { workspaceRoot })).get(id);
+    } finally {
+      taskStore.close();
+    }
     assert.equal(runCli([
       'task', 'ready', ref,
       '--as', 'codex',

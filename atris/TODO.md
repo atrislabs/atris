@@ -23,6 +23,8 @@ Details for any task: atris task show <ID>
 
 ## Review
 
+- **[AIC-21]** Seed duplicate review loop fixtures in process · auto-improver
+  **Done looks like:** Developers can run duplicate review checks sooner because setup starts one fewer command.
 - **[AIC-20]** Seed review-chat fixtures in process · auto-improver
   **Done looks like:** Developers can run review packet checks sooner because setup starts two fewer commands.
 - **[AIC-19]** Seed agent-ready review fixtures in process · auto-improver
