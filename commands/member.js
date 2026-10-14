@@ -9008,6 +9008,26 @@ async function memberLoopWakeTick(name, run, index, tickStartedAt) {
 const MEMBER_LOOP_IDLE_BREAK_THRESHOLD = 2;
 const MEMBER_LOOP_IDENTICAL_ASK_BREAK_THRESHOLD = 2;
 
+// A loop kept running for days would keep old code after an atris upgrade. Read the
+// installed version from disk, not the cached require, so a new install is seen.
+function memberLoopInstalledVersion() {
+  try {
+    return JSON.parse(fs.readFileSync(path.join(__dirname, '..', 'package.json'), 'utf8')).version || null;
+  } catch {
+    return null;
+  }
+}
+
+// Start the same loop again on the new code. The lease is already released, so the
+// fresh process takes it over; this one exits with the fresh run's status.
+function memberLoopRestartOnNewVersion(upgrade) {
+  const child = spawnSync(process.execPath, process.argv.slice(1), {
+    stdio: 'inherit',
+    env: { ...process.env, ATRIS_MEMBER_LOOP_RESTARTED_FROM: upgrade.from },
+  });
+  process.exit(child.status == null ? 1 : child.status);
+}
+
 // Loop phase: control. Hold the lease, honor the stop file, pace ticks by interval, and
 // break early when the member is idling instead of faking activity.
 async function memberLoopRunTicks(name, paths, lease, run) {
@@ -9017,6 +9037,13 @@ async function memberLoopRunTicks(name, paths, lease, run) {
       if (fs.existsSync(paths.stopPath)) {
         state.stopped = true;
         break;
+      }
+      if (index > 0 && plan.forever && state.startVersion) {
+        const installed = memberLoopInstalledVersion();
+        if (installed && installed !== state.startVersion) {
+          state.upgrade = { from: state.startVersion, to: installed };
+          break;
+        }
       }
       refreshMemberLoopLease(paths, lease.lease, plan.ttlMs);
       const tickStartedAt = stampIso();
@@ -9071,7 +9098,7 @@ function memberLoopRecordResult(name, paths, lease, run) {
   const { options, plan, state } = run;
   const { execute, aliveMode, asJson } = options;
   const { hourly, forever, runId, ticks, intervalMs, durationMs, startedAt } = plan;
-  const { tickResults, decisions, stopped, failed, earlyExit, tickLogPath } = state;
+  const { tickResults, decisions, stopped, failed, earlyExit, tickLogPath, upgrade } = state;
   const finishedAt = stampIso();
   const plannedOnly = aliveMode && tickResults.length > 0 && tickResults.every((tick) => tick.decision === 'planned');
   const summary = {
@@ -9080,7 +9107,7 @@ function memberLoopRecordResult(name, paths, lease, run) {
     schema: aliveMode ? 'atris.member_alive.v1' : 'atris.member_loop.v1',
     member: name,
     alive: aliveMode,
-    status: failed ? 'failed' : stopped ? 'stopped' : plannedOnly ? 'planned' : earlyExit ? (earlyExit.blocked_on_human ? 'blocked_on_human' : 'idle') : 'completed',
+    status: failed ? 'failed' : stopped ? 'stopped' : upgrade ? 'restarting_on_new_version' : plannedOnly ? 'planned' : earlyExit ? (earlyExit.blocked_on_human ? 'blocked_on_human' : 'idle') : 'completed',
     mode: execute ? 'execute' : 'dry_run',
     cadence: hourly ? 'hourly' : 'custom',
     forever,
@@ -9096,6 +9123,8 @@ function memberLoopRecordResult(name, paths, lease, run) {
     duration_ms_actual: Date.parse(finishedAt) - Date.parse(startedAt),
     decisions,
     early_exit: earlyExit,
+    upgrade: upgrade || null,
+    restarted_from_version: process.env.ATRIS_MEMBER_LOOP_RESTARTED_FROM || null,
     stop: earlyExit?.stop || null,
     blocked_on_human: earlyExit?.blocked_on_human === true,
     needs_user: earlyExit?.needs_user === true,
@@ -9120,6 +9149,7 @@ function memberLoopRecordResult(name, paths, lease, run) {
     `Status: ${payload.status}`,
     `Cadence: ${payload.cadence}${payload.forever ? ' forever' : ''}`,
     `Ticks: ${payload.ticks}/${payload.ticks_requested}`,
+    ...(upgrade ? [`Upgrade: atris ${upgrade.from} -> ${upgrade.to}, restarting on the new version`] : []),
     `Decisions: ${Object.entries(decisions).map(([key, count]) => `${key} x${count}`).join(', ') || 'none'}`,
     `Stop: ${payload.stop_command}`,
     `Receipt: ${path.relative(process.cwd(), receiptPath)}`,
@@ -9185,11 +9215,14 @@ async function memberLoop(name, ...args) {
     lastAskKey: null,
     consecutiveIdenticalAsk: 0,
     tickLogPath,
+    startVersion: memberLoopInstalledVersion(),
+    upgrade: null,
   };
 
   const run = { options, plan, state };
   await memberLoopRunTicks(name, paths, lease, run);
   memberLoopRecordResult(name, paths, lease, run);
+  if (state.upgrade) memberLoopRestartOnNewVersion(state.upgrade);
 }
 
 async function memberTick(name, ...args) {
@@ -10795,6 +10828,20 @@ function memberUpPick(root, name, taken) {
   }
 }
 
+// Every open task a member could start, with the job it needs.
+function memberUpWaiting(root) {
+  try {
+    const taskDb = require('../lib/task-db');
+    const { fittingTasks } = require('../lib/member-task-pick');
+    const db = taskDb.open();
+    const workspaceRoot = taskDb.workspaceRoot(root);
+    return ['build', 'review', 'search'].flatMap((job) => fittingTasks(taskDb, db, { workspaceRoot, job, requireCheck: true })
+      .map((task) => ({ id: task.id, title: task.title, job })));
+  } catch {
+    return [];
+  }
+}
+
 function memberUpSpawn(root, name, onExit) {
   const { spawn } = require('child_process');
   const logDir = path.join(root, '.atris', 'state', 'member-up');
@@ -10857,6 +10904,8 @@ async function memberUp(...args) {
     pickTask: (name, taken) => memberUpPick(root, name, taken),
     spawn: (name, onExit) => memberUpSpawn(root, name, onExit),
     now: () => Date.now(),
+    jobOf: (name) => memberGoJob(name, root),
+    waitingTasks: () => memberUpWaiting(root),
   };
   if (parsed.dryRun) {
     const up = createMemberUp(deps, { max, only, dryRun: true });
@@ -11304,7 +11353,7 @@ async function memberCommand(subcommand, ...args) {
   const HELP_AWARE_SUBCOMMANDS = new Set([
     'create', 'new', 'run', 'install', 'result', 'dispatch', 'route', 'feed', 'stream',
     'card', 'cards', 'go', 'work', 'up', 'steer', 'sleep', 'rest', '1on1', 'interview',
-    'room', 'ui', 'day', 'standup', 'handoff', 'handoffs',
+    'room', 'ui', 'day', 'standup', 'handoff', 'handoffs', 'report',
   ]);
   const explicitHelp = subcommand === 'help' || subcommand === '--help' || subcommand === '-h'
     || (!HELP_AWARE_SUBCOMMANDS.has(subcommand) && (args[0] === '-h' || args[0] === '--help'));
@@ -11410,6 +11459,8 @@ async function memberCommand(subcommand, ...args) {
       return memberHeartbeat(args[0], ...args.slice(1));
     case 'improvements':
       return memberImprovements(args[0], ...args.slice(1));
+    case 'report':
+      return require('../lib/member-report').memberReportCommand(...args);
     case 'history':
       return memberHistory(args[0], ...args.slice(1));
     case 'supervisor':
@@ -11471,6 +11522,7 @@ async function memberCommand(subcommand, ...args) {
       console.log('  wake <name>         Decide tick/wait/ask/stop, then run one bounded work step on the roster engine (--plan to only decide; --keep keeps it working)');
       console.log('  run "<job>"         Pick the best member for the job and run it (same as dispatch "<job>" --ignite)');
       console.log('  run <name> ["..."]  Start a budgeted member mission, or run its active Mission Runtime');
+      console.log('  report [--since 2h] Short summary per member: merged, finished, turned down, done but not merged yet [--json]');
       console.log('  result <name>       Newest run result: run record, receipt, artifacts, number [--since <iso>] [--json]');
       console.log('  dispatch "<idea>"   Route an idea to the best specialist member and start work');
       console.log('  up [--max N] [--only a,b]  Keep the team working: start free members on fitting tasks every minute (wake 5 / wake a b)');

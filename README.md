@@ -138,6 +138,24 @@ atris member wake 5
 atris member wake navigator executor
 ```
 
+Wake only picks jobs that have a test to pass, so members know when they are done. Add one like this:
+
+```bash
+atris task new "fix the flaky login test" --verify "node --test test/login.test.js"
+```
+
+Each job gets the time limit set for building in your roster, plus a few minutes for review. To see or change it:
+
+```bash
+atris engine roster
+```
+
+Naming just one member runs one step of work. Add `--keep` to keep that one member working.
+
+```bash
+atris member wake executor --keep
+```
+
 Sleep stops the members that are awake.
 
 ```bash
@@ -151,7 +169,28 @@ atris member board --watch
 tail -f ~/.atris/progress/executor.log
 ```
 
-The older words still work as aliases: `dispatch` and `go` do what run does, and `up` does what wake does. Run with a job, wake with a number or names, and `up` need the release after 3.68.9.
+When a member finishes, ask for its result: what it changed, its receipt, and one number. Each member's copy of the repo stays until its work lands, then tidy puts it away.
+
+```bash
+atris member result executor
+atris member tidy --dry-run
+```
+
+The older words still work as aliases: `dispatch` and `go` do what run does, and `up` does what wake does.
+
+### How member work gets checked and lands
+
+Every member job ends with its own check, a command that must pass. Then a second engine reviews the change, and it is never the engine that did the work.
+
+Work lands on its own only after you switch self-landing on, once. From then on Atris pushes the branch, opens a pull request, and turns on GitHub auto-merge, so GitHub merges it when the branch is up to date and CI passes.
+
+```bash
+atris autoland on
+```
+
+Anything else keeps the work on its branch, with one plain line saying why. That covers a failed check or review, unsaved changes, a clash with the main branch, and work that touches a protected area like payments, deploys, or credentials.
+
+A job that fails three times in a row stops and waits for a person.
 
 ## Chat With Atris 2
 
