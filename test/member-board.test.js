@@ -271,6 +271,24 @@ test('watch rewrites replaced to died once the old run turns out to be dead', ()
     'the new run finishing first does not drop the fix');
 });
 
+test('watch rewrites replaced to stopped when stop ends the old run by its pid', () => {
+  const run = (mission, pid, before) => ({ member: 'builder', state: 'working', mission, pid, before, ago: '1s ago' });
+  const changed = changeTracker(60_000);
+  changed([run('m-1', 11, [])], 0);
+  changed([run('m-2', 22, ['replaced'])], 3_000);
+  assert.deepEqual(changed([run('m-2', 22, ['stopped'])], 6_000), ['builder working -> stopped -> working'], 'the note agrees with the before column');
+
+  // A redraw can land after the old process exits and before the stop line
+  // is written: the column reads died for that one redraw, then stopped.
+  const race = changeTracker(60_000);
+  race([run('m-1', 11, [])], 0);
+  race([run('m-2', 22, ['replaced'])], 3_000);
+  assert.deepEqual(race([run('m-2', 22, ['died'])], 6_000), ['builder working -> died -> working']);
+  assert.deepEqual(race([run('m-2', 22, ['stopped'])], 9_000), ['builder working -> stopped -> working'], 'the stop line wins over the guess');
+  assert.deepEqual(race([run('m-2', 22, ['stopped'])], 63_000), ['builder working -> stopped -> working'], 'the fix did not restart the minute');
+  assert.deepEqual(race([run('m-2', 22, ['stopped'])], 64_000), []);
+});
+
 test('watch tells apart two runs with no process id on the same mission by their start', () => {
   const now = Date.parse('2026-10-14T13:00:00Z');
   const first = '2026-10-14T12:59:00Z m-1 started: build\n2026-10-14T12:59:30Z m-1 running: npm test\n';
