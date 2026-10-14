@@ -18576,7 +18576,8 @@ test('verify detects placeholder MAP.md', () => {
 test('verify passes with populated MAP.md', () => {
   const dir = makeTempDir();
   try {
-    initWorkspace(dir);
+    // Workspace verify reads only MAP.md here (no package.json, no git), so the atris folder is the setup.
+    fs.mkdirSync(path.join(dir, 'atris'), { recursive: true });
     // Write a MAP.md with enough file refs (verify regex: `filename.ext` with known extensions)
     const mapContent = [
       '# MAP.md', '',
@@ -18591,6 +18592,7 @@ test('verify passes with populated MAP.md', () => {
     const res = runCli(['verify'], { cwd: dir });
     assert.equal(res.status, 0, res.stderr);
     assert.match(res.stdout, /MAP\.md.*Valid/i);
+    assert.match(res.stdout, /4 file refs/);
   } finally {
     cleanupTempDir(dir);
   }
