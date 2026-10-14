@@ -9925,6 +9925,11 @@ function memberDispatch(...args) {
   if (!asJson) {
     console.log(`${picked.member} (${picked.role}) is taking this because it ${picked.reason.replace(/^[A-Z]/, (c) => c.toLowerCase())}.`);
   }
+  // --ignite means do the work now, the same as the previewed member run;
+  // without it dispatch only opens the mission.
+  if (hasFlag(args, '--ignite') || hasFlag(args, '--wait') || hasFlag(args, '--sync')) {
+    return memberRun(picked.member, ...forwardedArgs);
+  }
   return startMemberRunMission(picked.member, ideaText, forwardedArgs);
 }
 
