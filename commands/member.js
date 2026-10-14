@@ -1017,6 +1017,12 @@ function startMemberRunMission(name, missionText, args = []) {
   return memberRunCli(startArgs, process.cwd());
 }
 
+// An ignited run asks a second engine to review the work by default, so every
+// run ends with a verdict. --no-referee skips it; an explicit --referee is kept.
+function memberRunWantsReferee(runArgs, ignite) {
+  return Boolean(ignite) && !hasFlag(runArgs, '--referee') && !hasFlag(runArgs, '--no-referee');
+}
+
 function memberRunCli(args, cwd, { live = false, missionId = '' } = {}) {
   const cliPath = path.join(__dirname, '..', 'bin', 'atris.js');
   const runsDir = path.join(cwd, 'atris', 'runs');
@@ -1241,6 +1247,7 @@ function memberRunWith(name, args, { quiet = false } = {}) {
     console.log('truth: useful work must improve revenue, reliability, speed, security, clarity, or trust, then show plain proof.');
     console.log('isolation: new missions use --worktree by default; add --shared-checkout to stay here.');
     console.log('check: --verify or a verify field in the member file adds a mission check.');
+    console.log('review: an --ignite run has a different engine review the work; add --no-referee to skip it.');
     return;
   }
 
@@ -1325,6 +1332,7 @@ function memberRunWith(name, args, { quiet = false } = {}) {
     ['--mission', '--mission-id', '--minutes', '--hours', '--industry', '--domain', '--value', '--outcome', '--truth', '--proof', '--base'],
     ['--worktree', '--shared-checkout', '--no-worktree', '--choose-work', '--auto', '--ignite', '--wait', '--sync']);
   if (ignite && !hasFlag(runArgs, '--complete-on-pass')) runArgs.push('--complete-on-pass');
+  if (memberRunWantsReferee(runArgs, ignite)) runArgs.push('--referee');
   const budgetSeconds = memberRunBudgetSeconds(args);
   if (!readFlag(runArgs, '--max-ticks', '')) {
     runArgs.push('--max-ticks', budgetSeconds ? String(Math.max(4, Math.ceil(budgetSeconds / 300))) : '1');
@@ -11396,6 +11404,7 @@ async function memberCommand(subcommand, ...args) {
 }
 
 module.exports = {
+  memberRunWantsReferee,
   proposalPromptForGoal,
   memberGoFinishTask,
   appendMemberGoalLog,
