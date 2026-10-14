@@ -1232,6 +1232,7 @@ function memberRun(name, ...args) {
 function memberRunWith(name, args, { quiet = false } = {}) {
   if (!name || name === '--help' || name === '-h' || hasFlag(args, '--help') || hasFlag(args, '-h')) {
     console.log('usage: atris member run <name> ["mission text"] [--verify "<cmd>"] [--minutes N|--hours N] [--json]');
+    console.log('pick for me: atris member run "fix the flaky login test" (the best member takes it and runs it)');
     console.log('new mission: atris member run growth "improve onboarding proof" --verify "npm test" --minutes 30 --json');
     console.log('choose work: atris member run growth --verify "npm test" --industry logistics --minutes 30 --json');
     console.log('subagent shell: atris member run growth "improve onboarding proof" --engine claude --ignite --json');
@@ -10716,28 +10717,29 @@ function memberUpSpawn(root, name, onExit) {
 
 async function memberUp(...args) {
   if (hasFlag(args, '--help') || hasFlag(args, '-h')) {
-    console.log('Usage: atris member up [--max N] [--dry-run]');
+    console.log('Usage: atris member up [--max N] [--only a,b] [--dry-run]');
     console.log('Keeps the team working: every minute, starts each free member that has a fitting task.');
+    console.log('--only limits it to those members. Same as atris member wake 5 or atris member wake a b.');
     console.log('Ctrl-C or atris member sleep --all ends it. Runs it started keep going.');
     return;
   }
   const root = process.cwd();
-  const maxAt = args.indexOf('--max');
-  const max = maxAt >= 0 ? Number(args[maxAt + 1]) : undefined;
-  if (maxAt >= 0 && !(Number.isInteger(max) && max > 0)) {
-    console.error('--max needs a whole number above zero.');
+  const { createMemberUp, runMemberUp, parseMemberUpArgs, DEFAULT_MAX } = require('../lib/member-up');
+  const parsed = parseMemberUpArgs(args);
+  if (parsed.error) {
+    console.error(parsed.error);
     process.exitCode = 1;
     return;
   }
-  const { createMemberUp, runMemberUp } = require('../lib/member-up');
+  const { max, only } = parsed;
   const deps = {
     listMembers: () => memberUpTeam(root),
     pickTask: (name, taken) => memberUpPick(root, name, taken),
     spawn: (name, onExit) => memberUpSpawn(root, name, onExit),
     now: () => Date.now(),
   };
-  if (hasFlag(args, '--dry-run')) {
-    const up = createMemberUp(deps, { max, dryRun: true });
+  if (parsed.dryRun) {
+    const up = createMemberUp(deps, { max, only, dryRun: true });
     const started = up.check();
     if (!started.length && up.working() >= up.max) {
       console.log(`nothing to start: ${up.working()} already working, the limit is ${up.max}`);
@@ -10749,11 +10751,12 @@ async function memberUp(...args) {
   const pidFile = memberUpPidFile(root);
   fs.mkdirSync(path.dirname(pidFile), { recursive: true });
   fs.writeFileSync(pidFile, JSON.stringify({ pid: process.pid, started_at: new Date().toISOString() }));
-  const loop = runMemberUp(deps, { max });
+  const loop = runMemberUp(deps, { max, only });
   const end = () => loop.stop();
   process.once('SIGINT', end);
   process.once('SIGTERM', end);
-  console.log(`team is up (at most ${max || require('../lib/member-up').DEFAULT_MAX} at once). Ctrl-C to stop.`);
+  const who = only ? ` for ${only.join(', ')}` : '';
+  console.log(`team is up${who} (at most ${max || DEFAULT_MAX} at once). Ctrl-C to stop.`);
   await loop.done;
   process.removeListener('SIGINT', end);
   process.removeListener('SIGTERM', end);
@@ -11206,9 +11209,16 @@ async function memberCommand(subcommand, ...args) {
     case 'tick':
       return memberTick(args[0], ...args.slice(1));
     case 'wake':
-      return memberWake(args[0], ...args.slice(1));
+      return require('../lib/member-verbs').memberWakeVerb(args, {
+        wake: memberWake,
+        up: memberUp,
+      });
     case 'run':
-      return memberRun(args[0], ...args.slice(1));
+      return require('../lib/member-verbs').memberRunVerb(args, {
+        root: process.cwd(),
+        run: memberRun,
+        dispatch: memberDispatch,
+      });
     case 'result': {
       const code = require('../lib/member-result').memberResultCommand(args);
       if (code) process.exitCode = code;
@@ -11293,6 +11303,9 @@ async function memberCommand(subcommand, ...args) {
         }
         return memberSteerOrDispatch(subcommand, ...args);
       }
+      console.log('run "<job>"          pick the right member and run it: atris member run "fix the flaky login test"');
+      console.log('wake <N|names>       keep members working: atris member wake 5  or  atris member wake navigator executor');
+      console.log('sleep [name|--all]   rest the team: atris member sleep --all');
       console.log('');
       console.log('Usage: atris member <subcommand|"<prompt>"> [name]');
       console.log('');
@@ -11317,11 +11330,12 @@ async function memberCommand(subcommand, ...args) {
       console.log('  goal <name> "..."   Create/update a member long-term goal');
       console.log('  goal-from-mission <name>  Create/reuse a goal from MISSION.md and now.md');
       console.log('  goal-from-score <name>    Create/reuse an active goal from Team score evidence');
-      console.log('  wake <name>         Decide tick/wait/ask/stop, then run one bounded work step on the roster engine (--plan to only decide)');
+      console.log('  wake <name>         Decide tick/wait/ask/stop, then run one bounded work step on the roster engine (--plan to only decide; --keep keeps it working)');
+      console.log('  run "<job>"         Pick the best member for the job and run it (same as dispatch "<job>" --ignite)');
       console.log('  run <name> ["..."]  Start a budgeted member mission, or run its active Mission Runtime');
       console.log('  result <name>       Newest run result: run record, receipt, artifacts, number [--since <iso>] [--json]');
       console.log('  dispatch "<idea>"   Route an idea to the best specialist member and start work');
-      console.log('  up [--max N]        Keep the team working: start free members on fitting tasks every minute');
+      console.log('  up [--max N] [--only a,b]  Keep the team working: start free members on fitting tasks every minute (wake 5 / wake a b)');
       console.log('  feed [--member <n>] Show a plain-language linear feed of real work across the team');
       console.log('  card [name|--all]   Show a member\'s roadmap, unlocked skills, live work, and recent wins');
       console.log('  loop <name|--all>   Repeat wake on a bounded cadence with a no-overlap lease');
