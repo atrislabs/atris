@@ -2653,6 +2653,23 @@ test('fix turns dashes pressed against a box-drawing corner into hyphens', () =>
   ]);
 });
 
+test('fix reads a line that opens with a box-drawing corner as a diagram line', () => {
+  // spaced dashes on a drawn line read as an aside: "\u250c (plan) \u2510"
+  const file = tmpFile('box-line.md', [
+    '\u250c \u2014\u2014 plan \u2014\u2014 \u2510',
+    '\u251c \u2014 step \u2014 done',
+    '> \u2514 \u2014 done',
+    '\u2502 He left \u2014 for good \u2502',
+  ].join('\n\n'));
+  const { changes } = applyFixes([file], RULES, { write: false });
+  assert.deepEqual(changes.map((c) => c.after), [
+    '\u250c -- plan -- \u2510',
+    '\u251c - step - done',
+    '> \u2514 - done',
+    '\u2502 He left, for good  \u2502',
+  ]);
+});
+
 test('fix keeps a journal heading that ends in a time readable for its hour', () => {
   // analytics reads the hour after a dash or a spaced hyphen at the end of a
   // heading; the fix wrote "### Watch: 19:05", which hides it, and glued

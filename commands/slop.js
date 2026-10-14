@@ -506,6 +506,13 @@ function fixEmDash(s, { endsBlock = false, startsBlock = false, spans = [] } = {
   // single dash on it is one more short link: "[a] - done -> [c]", never
   // "[a], done". A flag like "--fix" is not a drawn line.
   if (diagramStart.test(s) && /(?:^|[\s\])|+])-{2,}(?=[\s[(|+]|$)|->|<-/.test(s)) s = s.replace(/\u2014/g, '-');
+  // a line that opens with a box-drawing corner or line and a dash right
+  // after it is drawn from its first mark, so every dash on it is part of
+  // the drawing: "\u250c -- plan -- \u2510", "\u2514 - done", never "\u250c (plan) \u2510".
+  // A line that opens with an upright bar is the inside of a box, fixed cell
+  // by cell below, and a tree line names a file before its dash, so
+  // "\u251c\u2500\u2500 people/  one page" keeps its padded description.
+  if (/^\s*(?:>\s*)*(?![\u2502\u2503\u2506\u2507\u250a\u250b\u2551\u2575\u2577\u2579\u257b\u257d\u257f])[\u2500-\u257f]+[ \t]*\u2014/.test(s)) s = s.replace(/\u2014/g, '-');
   // a line that draws an arrow is a diagram too, so a run of pressed dashes
   // on it is a drawn line of the same width: "plan --- build -> review",
   // never "plan, build". The close of an HTML comment is not an arrow.
