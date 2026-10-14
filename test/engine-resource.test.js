@@ -1317,6 +1317,16 @@ test('every engine started through a runner or profile variable records its run 
       // renamed keys and default values.
       return header ? [...(header[1] ?? header[2] ?? header[3]).matchAll(/(?<=^|[,{[:]|\.\.\.)\s*([A-Za-z_$][\w$]*)\s*(?=[,}\]=]|$)/g)].map((name) => name[1]) : [];
     };
+    // A declaration at the start of this text still reaches its end when no
+    // brace or parenthesis open before the declaration closes in between.
+    const inScope = (text) => {
+      let depth = 0;
+      for (const token of text.matchAll(/'(?:\\.|[^'\\])*'|"(?:\\.|[^"\\])*"|`(?:\\.|[^`\\])*`|[{}()]/g)) {
+        depth += token[0] === '{' || token[0] === '(' ? 1 : token[0] === '}' || token[0] === ')' ? -1 : 0;
+        if (depth < 0) return false;
+      }
+      return true;
+    };
     const sourceAt = (source, position) => {
       const scopeStart = Math.max(0, ...[...code.slice(0, position).matchAll(FUNCTION_START)].map((start) => start.index));
       let declarationEnd = position;
@@ -1325,7 +1335,9 @@ test('every engine started through a runner or profile variable records its run 
         if (!alias) break;
         // Captured variables remain visible until a matching parameter hides them.
         const shadowStart = Math.max(scopeStart, ...definitionSpans(code).filter(([open, close]) => open <= declarationEnd && declarationEnd < close && parametersOf(open).includes(alias[1])).map(([open]) => open));
-        const declaration = [...code.slice(shadowStart, declarationEnd).matchAll(new RegExp(`\\b(?:const|let|var)\\s+${alias[1].replace(/\$/g, '\\$')}\\s*=\\s*([^;\\n]*)`, 'g'))].pop();
+        const visibleText = code.slice(shadowStart, declarationEnd);
+        const declaration = [...visibleText.matchAll(new RegExp(`\\b(?:const|let|var)\\s+${alias[1].replace(/\$/g, '\\$')}\\s*=\\s*([^;\\n]*)`, 'g'))]
+          .filter((candidate) => inScope(visibleText.slice(candidate.index))).pop();
         if (!declaration) break;
         source = declaration[1];
         // Only earlier declarations can supply this alias, which also makes
@@ -1368,17 +1380,9 @@ test('every engine started through a runner or profile variable records its run 
             const visible = withoutHelperDefinitions(code, call.index);
             const escaped = call[1].replace(/\$/g, '\\$');
             const alias = new RegExp(`\\b(?:const|let|var)\\s+${escaped}\\s*=|\\b(?:const|let|var)\\s*[{[](?:[^=;]*?[,:{[])?\\s*${escaped}\\s*[,}\\]=]`, 'g');
-            // A copy covers the call only while no brace or parenthesis open
-            // before it has closed, so a copy in an inner block, a loop header,
-            // or an inline callback does not hide a later call.
-            const covers = (text) => [...text.matchAll(alias)].some((copy) => {
-              let depth = 0;
-              for (const token of text.slice(copy.index).matchAll(/'(?:\\.|[^'\\])*'|"(?:\\.|[^"\\])*"|`(?:\\.|[^`\\])*`|[{}()]/g)) {
-                depth += token[0] === '{' || token[0] === '(' ? 1 : token[0] === '}' || token[0] === ')' ? -1 : 0;
-                if (depth < 0) return false;
-              }
-              return true;
-            });
+            // A copy in an inner block, a loop header, or an inline callback
+            // does not hide a later call.
+            const covers = (text) => [...text.matchAll(alias)].some((copy) => inScope(text.slice(copy.index)));
             const hides = ([open, close]) => !(open <= fnStart && fnStart < close) || (internalOnly && open === fnStart);
             if (definitionSpans(code).some(([open, close]) => open < call.index && call.index < close && hides([open, close]) && (parametersOf(open).includes(call[1]) || covers(visible.slice(open, call.index))))) continue;
             // A loop or catch variable with the name hides it inside that block only.
@@ -1585,6 +1589,11 @@ test('every engine started through a runner or profile variable records its run 
     }
     assert.deepStrictEqual(planted(launcher('', 'function other() {\n  if (ready) {\n    const launch = wrap;\n    launch(resolveClaudeRunnerBin());\n  }\n}\n')), [], 'a copy hides the launcher name inside its own block');
   }
+  // A program declared in a closed block does not supply a later launch.
+  assert.deepStrictEqual(planted("function a() {\n  const program = resolveClaudeRunnerBin();\n  if (x) {\n    const program = 'git';\n  }\n  spawnSync(program, args);\n}\n"), ['commands/planted.js:6 program'], 'an inner plain program does not hide the outer engine');
+  assert.deepStrictEqual(planted("function a() {\n  const program = 'git';\n  if (x) {\n    const program = resolveClaudeRunnerBin();\n  }\n  spawnSync(program, args);\n}\n"), [], 'an inner engine program does not reach a later launch');
+  assert.deepStrictEqual(planted("function a() {\n  const program = 'git';\n  if (x) {\n    const program = resolveClaudeRunnerBin();\n    spawnSync(program, args);\n  }\n}\n"), ['commands/planted.js:5 program'], 'a program declared in the same block still supplies the launch');
+  assert.deepStrictEqual(planted("function a() {\n  const runner = resolveClaudeRunnerBin();\n  list.forEach(() => { const runner = 'git'; });\n  const program = runner;\n  spawnSync(program, args);\n}\n"), ['commands/planted.js:5 program'], 'a chained alias skips a declaration in a closed callback');
   assert.deepStrictEqual(planted('const launch = function launch(runner) {\n  spawnSync(runner, args);\n};\nlaunch(resolveClaudeRunnerBin());\n'), ['commands/planted.js:2 runner'], 'matching expression and variable names keep external arguments visible');
   assert.deepStrictEqual(planted('const launch = function launch(runner) {\n  launch(resolveClaudeRunnerBin());\n  spawnSync(runner, args);\n};\n'), ['commands/planted.js:3 runner'], 'the defining assignment does not hide same-name recursion');
   // A variable declared in another function is not this launch's program.
