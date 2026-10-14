@@ -362,8 +362,14 @@ test('hidden failures that share a reason say it once in the count', () => {
       'room for it: the reason stays and only the why goes');
 
     const mixed = rows.map((r) => (r.member === 'f4' ? { ...r, last_result_reason: 'timed out' } : r));
-    assert.equal(renderBoard(mixed, dir, 0, 0, 4).split('\n')[3], '4 more not shown (3 failed, 1 stopped), the window is too short',
-      'different reasons: just the count');
+    assert.equal(renderBoard(mixed, dir, 0, 0, 4).split('\n')[3], '4 more not shown (3 failed, 2 signed out, 1 stopped), the window is too short',
+      'mixed reasons: the one most of them share');
+    const split = rows.map((r) => (r.member === 'f3' || r.member === 'f4' ? { ...r, last_result_reason: r.member === 'f3' ? 'timed out' : 'bad exit 2' } : r));
+    assert.equal(renderBoard(split, dir, 0, 0, 4).split('\n')[3], '4 more not shown (3 failed, 1 stopped), the window is too short',
+      'no reason shared by two: just the count');
+    const tied = [...mixed, { ...mixed.find((r) => r.member === 'f4'), member: 'f5', last_result_reason: 'timed out' }];
+    assert.equal(renderBoard(tied, dir, 0, 0, 4).split('\n')[3], '5 more not shown (4 failed, 1 stopped), the window is too short',
+      'two reasons tied: just the count');
     const unwritten = rows.map((r) => (r.member.startsWith('f') ? { ...r, last_result_reason: '' } : r));
     assert.equal(renderBoard(unwritten, dir, 0, 0, 4).split('\n')[3], '4 more not shown (3 failed, 1 stopped), the window is too short',
       'no written reason: just the count');
