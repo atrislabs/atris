@@ -12502,9 +12502,20 @@ test('task next surfaces review debt when no open work exists', () => {
   try {
     fs.mkdirSync(path.join(dir, 'atris'), { recursive: true });
 
-    const reviewAdd = runCli(['task', 'add', 'Needs second review before continuing', '--tag', 'agent', '--json'], { cwd: dir, env });
-    assert.equal(reviewAdd.status, 0, reviewAdd.stderr);
-    const reviewRef = JSON.parse(reviewAdd.stdout).task.display_id;
+    // Seed the review task; the claim, ready and next stay on the CLI.
+    const workspaceRoot = taskStore.workspaceRoot(dir);
+    const db = taskStore.open(dbPath);
+    let reviewId;
+    let reviewRef;
+    try {
+      const review = addSeedTask(db, { title: 'Needs second review before continuing', tag: 'agent', workspaceRoot });
+      assert.equal(review.inserted, true);
+      reviewId = review.id;
+      reviewRef = taskStore.taskDisplayRefMap(taskStore.listTasks(db, { workspaceRoot })).get(review.id);
+      assert.ok(reviewRef);
+    } finally {
+      taskStore.close();
+    }
     assert.equal(runCli(['task', 'claim', reviewRef, '--as', 'codex'], { cwd: dir, env }).status, 0);
     assert.equal(runCli(['task', 'ready', reviewRef, '--proof', 'first pass validation passed', '--as', 'codex'], { cwd: dir, env }).status, 0);
 
@@ -12513,7 +12524,7 @@ test('task next surfaces review debt when no open work exists', () => {
     const payload = JSON.parse(next.stdout);
     assert.equal(payload.action, 'accept');
     assert.equal(payload.command, `atris task accept ${reviewRef}`);
-    assert.equal(payload.task_id, JSON.parse(reviewAdd.stdout).task.id);
+    assert.equal(payload.task_id, reviewId);
   } finally {
     cleanupTempDir(dir);
   }
