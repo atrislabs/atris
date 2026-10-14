@@ -979,6 +979,27 @@ test('a left-off note names as many members as fit on one line and counts the re
   assert.match(withQuiet.at(-1), /^5 more members did not fit: launcher and 4 others$/, `the live run is named ahead of newer finished runs:\n${withQuiet.join('\n')}`);
 });
 
+test('the live watch screen carries no update notice, the plain board still does', () => {
+  const recent = new Date(Date.now() - 20_000).toISOString();
+  const dir = fakeDir({ ada: [`${recent} m-1 started: map the repo`] });
+  const home = fs.mkdtempSync(path.join(os.tmpdir(), 'board-update-'));
+  fs.mkdirSync(path.join(home, '.atris'));
+  fs.writeFileSync(path.join(home, '.atris', '.update-check'), JSON.stringify({ lastCheck: new Date().toISOString(), latestVersion: '999.0.0' }));
+  const env = { ...process.env, ATRIS_PROGRESS_DIR: dir, ATRIS_TEST_STATE_DIR: home, ATRIS_AUTO_UPDATE: 'off', LINES: '10' };
+  delete env.ATRIS_SKIP_UPDATE_CHECK;
+  delete env.NO_UPDATE_NOTIFIER;
+  try {
+    const plain = spawnSync(process.execPath, [cliPath, 'member', 'board'], { cwd: dir, env, encoding: 'utf8', timeout: 5000 });
+    assert.match(plain.stdout, /update available: .* -> 999\.0\.0/, `the cached newer version is seen:\n${plain.stdout}`);
+    const watch = spawnSync(process.execPath, [cliPath, 'member', 'board', '--watch'], { cwd: dir, env, encoding: 'utf8', timeout: 1500 });
+    assert.match(watch.stdout, /redrawn at /);
+    assert.doesNotMatch(watch.stdout, /update available/, 'a line below the footer would make a screen-sized board one line too tall');
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+    fs.rmSync(home, { recursive: true, force: true });
+  }
+});
+
 test('watch fits a screen LINES tall, footer included', () => {
   const recent = new Date(Date.now() - 20_000).toISOString();
   const dir = fakeDir(Object.fromEntries(['ada', 'bo', 'cy', 'di', 'ed', 'flo'].map((name) => [name, [`${recent} m-1 started: map the repo`, `${recent} m-1 reading atris/MAP.md`]])));

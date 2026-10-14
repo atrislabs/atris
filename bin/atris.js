@@ -134,8 +134,11 @@ const helpRequested = updateCommand === 'help'
   || updateArgs.includes('-h')
   || updateArgs[0] === 'help';
 const jsonRequested = process.argv.slice(2).includes('--json');
+// The member board's watch view sizes itself to the screen and redraws
+// from the top; a notice printed below its footer would scroll it.
+const liveScreenRequested = updateCommand === 'member' && updateArgs.includes('--watch');
 const dryRunRequested = updateArgs.includes('--dry-run');
-const skipUpdateCheck = Boolean(process.env.ATRIS_SKIP_UPDATE_CHECK || process.env.NO_UPDATE_NOTIFIER || helpRequested || jsonRequested);
+const skipUpdateCheck = Boolean(process.env.ATRIS_SKIP_UPDATE_CHECK || process.env.NO_UPDATE_NOTIFIER || helpRequested || jsonRequested || liveScreenRequested);
 if (!skipUpdateCheck && (!updateCommand || (updateCommand && !['version', 'update', 'mcp'].includes(updateCommand)))) {
   updateCheckPromise = checkForUpdates()
     .then((updateInfo) => {
