@@ -372,15 +372,15 @@ test('a signed out row costs a wider board only the widths it is known to', () =
       // A trade: the step comes back once the fix there still names the
       // engine, so the job and every finished step read, and the fix gives
       // up only "then run it again". It used to come back at 75 as "sign in".
-      '83 locked job 0->21 fix 36->17',
+      '77 locked job 0->21 fix 36->17',
     ]);
     // Open: the same live-run cliff as above, whole jobs or the live step.
-    // Here the fix also drops below naming the engine, to "sign in".
+    // The step waits until the fix there still names the engine; it used to
+    // come back at 74 with just "sign in".
     assert.deepEqual(cliffs(rows, dir, 50, 140), [
-      '74 builder job 18->10 step 0->11',
-      '74 locked job 0->10 fix 17->7',
-      '74 scout job 19->10 step 0->11',
-      '74 editor job 20->10 step 0->11',
+      '79 builder job 18->13 step 0->14',
+      '79 scout job 19->13 step 0->14',
+      '79 editor job 20->13 step 0->14',
     ]);
     assert.match(renderBoard(rows.filter((r) => r.member !== 'builder'), dir, 0, 60), /^scout\s+ok\s+-\s+20m ago\s+write release notes$/m,
       'one column past where the fix needed it, "done" still stays away so no job is cut');
