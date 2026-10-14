@@ -51,8 +51,7 @@ function ensureMemberLog(memberDir, { name, role, description, source = 'cli' } 
     description ? `- mission: ${description}` : '',
     `- source: ${source}`,
     '- status: ready_for_room',
-    '',
-  ].filter(Boolean).join('\n');
+  ].filter(Boolean).join('\n') + '\n';
   fs.writeFileSync(logPath, content, 'utf8');
   return logPath;
 }
@@ -915,6 +914,17 @@ function memberRunBudgetSeconds(args = []) {
   return null;
 }
 
+// A job with no time given gets 15 minutes, or the roster's limit for this
+// member's engine plus ten minutes for the review, whichever is longer.
+function memberRunDefaultWallSeconds(name, cwd = process.cwd()) {
+  let cap = 0;
+  try {
+    const picked = require('../lib/member-engine').memberRosterEngine(name, cwd);
+    cap = Number(picked && picked.engine && picked.engine.roster_max_seconds) || 0;
+  } catch {}
+  return Math.max(900, cap ? cap + 600 : 0);
+}
+
 function pushFlagValue(out, args, name) {
   const value = readFlag(args, name, '');
   if (value) out.push(name, String(value));
@@ -1235,6 +1245,15 @@ function memberRun(name, ...args) {
   return memberRunWith(name, args);
 }
 
+// One plain line for why the reviewing engine refused the work.
+function reviewRefusalLine(refusal) {
+  if (refusal.timed_out) return 'the reviewer ran out of time';
+  const text = String(refusal.output || refusal.reason || '');
+  const verdict = text.match(/VERDICT:\s*FAIL\s*[;:]\s*(.+)/i);
+  const line = verdict ? verdict[1] : (text.split(/\r?\n/).find((l) => l.trim()) || refusal.reason || 'no reason given');
+  return line.trim().slice(0, 200);
+}
+
 function memberRunWith(name, args, { quiet = false } = {}) {
   if (!name || name === '--help' || name === '-h' || hasFlag(args, '--help') || hasFlag(args, '-h')) {
     console.log('usage: atris member run <name> ["mission text"] [--verify "<cmd>"] [--minutes N|--hours N] [--json]');
@@ -1338,7 +1357,7 @@ function memberRunWith(name, args, { quiet = false } = {}) {
   if (!readFlag(runArgs, '--max-ticks', '')) {
     runArgs.push('--max-ticks', budgetSeconds ? String(Math.max(4, Math.ceil(budgetSeconds / 300))) : '1');
   }
-  if (!readFlag(runArgs, '--max-wall', '')) runArgs.push('--max-wall', String(budgetSeconds || 900));
+  if (!readFlag(runArgs, '--max-wall', '')) runArgs.push('--max-wall', String(budgetSeconds || memberRunDefaultWallSeconds(name, cwd)));
   const caller = callerRuntime(args);
   const runnerSwap = memberRunRunnerSwap(mission, args, caller);
   if (runnerSwap) runArgs.push('--engine', runnerSwap.to);
@@ -1392,7 +1411,10 @@ function memberRunWith(name, args, { quiet = false } = {}) {
   }
   if (checkFailed) {
     result.check_failed = true;
-    result.error = `the work ran but its check failed: ${finalMission.verifier || 'completion check'}`;
+    const refusal = lastRanTick?.referee_result?.passed === false ? lastRanTick.referee_result : null;
+    result.error = refusal
+      ? `turned down in review: ${reviewRefusalLine(refusal)}`
+      : `the work ran but its check failed: ${finalMission.verifier || 'completion check'}`;
   } else if (!ok) {
     result.error = result.ask || payload.detail || payload.error || payload.reason || payload.next_action
       || run.stderr || 'mission did not run a work step';
@@ -10515,8 +10537,35 @@ function memberGoFinishTask(owner, task, result, thrown = null) {
     : (result && result.error) || (result && result.started ? 'the check did not pass' : 'the run did not start');
   const reason = String(why || 'the run did not finish').split(/\r?\n/)[0].trim().slice(0, 200);
   try { taskDb.noteTask(db, { id: task.id, actor: owner, content: `Released by ${owner}: ${reason}` }); } catch {}
+  // Third failure in a row: hold the task for a person instead of letting
+  // members pick it up again forever.
+  let held = false;
+  if (memberGoFailStreak(taskDb, db, task.id) >= MEMBER_GO_STRIKES) {
+    try {
+      held = taskDb.tagTask(db, { id: task.id, actor: owner, add: ['needs-human'] }).tagged === true;
+      if (held) taskDb.noteTask(db, { id: task.id, actor: owner,
+        content: `Held for a person: failed ${MEMBER_GO_STRIKES} times in a row. Last reason: ${reason}` });
+    } catch {}
+  }
   const released = taskDb.releaseTask(db, { id: task.id, actor: owner });
-  return { id: task.id, title: task.title, outcome: released.released ? 'released' : 'left_claimed', reason };
+  const outcome = released.released ? (held ? 'needs_human' : 'released') : 'left_claimed';
+  return { id: task.id, title: task.title, outcome, reason };
+}
+
+const MEMBER_GO_STRIKES = 3;
+
+// Failed runs on a task since its last pass, review, reopen, or a person
+// clearing its hold.
+function memberGoFailStreak(taskDb, db, taskId) {
+  let streak = 0;
+  for (const event of taskDb.listTaskEvents(db, { taskId })) {
+    const type = event.event_type;
+    const payload = event.payload || {};
+    if (type === 'message' && /^Released by \S+: /.test(String(payload.content || ''))) streak += 1;
+    else if (['proof_ready', 'reviewed', 'reopened'].includes(type)) streak = 0;
+    else if (type === 'task_tags_updated' && (payload.removed || []).includes('needs-human')) streak = 0;
+  }
+  return streak;
 }
 
 async function memberSteerOrDispatch(...rawArgs) {
@@ -10699,6 +10748,7 @@ async function memberSteerOrDispatchWith({ pullTask = false } = {}, rawArgs = []
     ? { task, work_step: { summary: result?.work_step?.summary || null }, error: result?.error || null }
     : merged));
   else if (task.outcome === 'review') console.log(`Task "${task.title}" is ready for review.`);
+  else if (task.outcome === 'needs_human') console.log(`Task "${task.title}" failed three times in a row and now waits for a person: ${task.reason}`);
   else console.log(`Task "${task.title}" went back on the list: ${task.reason}`);
   return merged;
 }
@@ -11287,7 +11337,7 @@ async function memberCommand(subcommand, ...args) {
   const HELP_AWARE_SUBCOMMANDS = new Set([
     'create', 'new', 'run', 'install', 'result', 'dispatch', 'route', 'feed', 'stream',
     'card', 'cards', 'go', 'work', 'up', 'steer', 'sleep', 'rest', '1on1', 'interview',
-    'room', 'ui', 'day', 'standup', 'handoff', 'handoffs',
+    'room', 'ui', 'day', 'standup', 'handoff', 'handoffs', 'report',
   ]);
   const explicitHelp = subcommand === 'help' || subcommand === '--help' || subcommand === '-h'
     || (!HELP_AWARE_SUBCOMMANDS.has(subcommand) && (args[0] === '-h' || args[0] === '--help'));
@@ -11393,6 +11443,8 @@ async function memberCommand(subcommand, ...args) {
       return memberHeartbeat(args[0], ...args.slice(1));
     case 'improvements':
       return memberImprovements(args[0], ...args.slice(1));
+    case 'report':
+      return require('../lib/member-report').memberReportCommand(...args);
     case 'history':
       return memberHistory(args[0], ...args.slice(1));
     case 'supervisor':
@@ -11454,6 +11506,7 @@ async function memberCommand(subcommand, ...args) {
       console.log('  wake <name>         Decide tick/wait/ask/stop, then run one bounded work step on the roster engine (--plan to only decide; --keep keeps it working)');
       console.log('  run "<job>"         Pick the best member for the job and run it (same as dispatch "<job>" --ignite)');
       console.log('  run <name> ["..."]  Start a budgeted member mission, or run its active Mission Runtime');
+      console.log('  report [--since 2h] Short summary per member: merged, finished, turned down, done but not merged yet [--json]');
       console.log('  result <name>       Newest run result: run record, receipt, artifacts, number [--since <iso>] [--json]');
       console.log('  dispatch "<idea>"   Route an idea to the best specialist member and start work');
       console.log('  up [--max N] [--only a,b]  Keep the team working: start free members on fitting tasks every minute (wake 5 / wake a b)');
@@ -11517,6 +11570,7 @@ async function memberCommand(subcommand, ...args) {
 }
 
 module.exports = {
+  memberRunDefaultWallSeconds,
   memberRunWantsReferee,
   proposalPromptForGoal,
   memberGoFinishTask,
