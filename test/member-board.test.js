@@ -929,6 +929,15 @@ test('a short window keeps failed and stopped rows on screen ahead of newer ones
     const gone = renderBoard(withGone, dir, 0, 0, 4).split('\n');
     assert.equal(gone[3], '8 more not shown (1 stopped, 1 ended with no result, 6 running), the window is too short',
       'a run that died silently is not counted as a stop');
+
+    // A newer hand stop never takes the one row from an older failure.
+    const newer = rows.map((r) => (r.member === 'halted' ? { ...r, at: NOW } : r)).sort((a, b) => b.at - a.at);
+    assert.equal(newer[0].member, 'halted', 'the stop is newest');
+    const first = renderBoard(newer, dir, 0, 0, 4).split('\n');
+    assert.match(first[1], /^broke\s+done failed\s+failed \(engine error\)/, 'the failure wins the one row');
+    assert.equal(first[3], '7 more not shown (1 stopped, 6 running), the window is too short');
+    const died = renderBoard([{ ...halted, member: 'gone', no_result: true, at: NOW - 1 }, { ...halted, at: NOW }], dir, 0, 0, 4).split('\n');
+    assert.match(died[1], /^gone\s+stopped\s+ended, no result/, 'a run that died outranks a newer stop too');
   } finally {
     fs.rmSync(dir, { recursive: true, force: true });
   }
