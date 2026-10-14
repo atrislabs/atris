@@ -3279,10 +3279,14 @@ Reply with the JSON array and nothing else.`;
   fs.writeFileSync(tmpFile, prompt);
 
   let output = '';
+  let endResource = () => null;
   try {
     const cmd = buildRunnerCommand({ promptFile: tmpFile });
     const env = { ...process.env };
     delete env.CLAUDECODE;
+    // Machine memory and load at both ends of the proposal, so one killed
+    // with SIGKILL says whether the machine was short on memory.
+    endResource = require('../lib/engine-resource').startEngineRun(cwd, { engine: 'runner', task: 'horizon proposal' });
     output = execPhaseCommandSync(cmd, {
       cwd,
       encoding: 'utf8',
@@ -3291,12 +3295,15 @@ Reply with the JSON array and nothing else.`;
       maxBuffer: 10 * 1024 * 1024,
       env
     }).toString();
+    endResource();
   } catch (err) {
+    const end = endResource(err);
     if (isPhaseTimeoutError(err)) {
       throw new Error(`horizon-proposal phase timed out after ${PHASE_TIMEOUT / 1000}s`);
     }
     if (isPhaseKillError(err)) {
-      throw new Error(`horizon-proposal phase killed by ${err.signal || 'a signal'} before the ${PHASE_TIMEOUT / 1000}s wall, not a timeout`);
+      const cause = end && end.cause ? `; ${end.cause}` : '';
+      throw new Error(`horizon-proposal phase killed by ${err.signal || 'a signal'} before the ${PHASE_TIMEOUT / 1000}s wall, not a timeout${cause}`);
     }
     throw err;
   } finally {

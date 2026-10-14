@@ -986,6 +986,59 @@ test('staleness checks record paired readings on success, SIGKILL and startup fa
   }
 });
 
+
+test('horizon proposals record paired readings on success, SIGKILL and startup failure', async () => {
+  const { execFileSync } = require('node:child_process');
+  const { proposeCandidateHorizons } = require('../commands/autopilot');
+  const root = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'horizon-resource-')));
+  const before = process.cwd();
+  const saved = process.env.ATRIS_RUNNER_COMMAND_TEMPLATE;
+  const missing = path.join(os.tmpdir(), `atris-missing-engine-${process.pid}`);
+  const candidates = JSON.stringify([1, 2, 3].map((n) => ({ title: `Ship widget step ${n}`, confidence: 0.8, rationale: 'fixture' })));
+  const propose = async (template) => {
+    process.env.ATRIS_RUNNER_COMMAND_TEMPLATE = template;
+    try {
+      return { result: await proposeCandidateHorizons(root) };
+    } catch (error) {
+      return { error };
+    }
+  };
+  try {
+    execFileSync('git', ['init', '-q', root]);
+    process.chdir(root);
+    const ok = await propose(`printf '%s' '${candidates}'`);
+    const killed = await propose('sh -c "kill -KILL $$"');
+    const failed = await propose(missing);
+    process.chdir(before);
+    assert.equal(ok.error, undefined);
+    assert.equal(ok.result.length, 3);
+    const lines = fs.readFileSync(path.join(root, RESOURCE_LOG), 'utf8').trim().split('\n').map(JSON.parse);
+    assert.deepEqual(lines.map((line) => line.phase), ['start', 'end', 'start', 'end', 'start', 'end']);
+    for (let i = 0; i < lines.length; i += 2) {
+      assert.match(lines[i].run_id, /^[0-9a-f-]{36}$/);
+      assert.equal(lines[i + 1].run_id, lines[i].run_id);
+      assert.equal(lines[i].task, 'horizon proposal');
+      assert.ok(Array.isArray(lines[i + 1].load));
+      assert.ok(Number.isInteger(lines[i + 1].duration_ms));
+    }
+    assert.notEqual(lines[0].run_id, lines[2].run_id);
+    assert.equal(lines[1].signal, undefined);
+    assert.equal(lines[1].error, undefined);
+    assert.equal(lines[3].signal, 'SIGKILL');
+    assert.match(lines[3].cause, /^killed \((machine memory low|cause unknown)\)$/);
+    assert.ok(killed.error.message.includes(lines[3].cause), killed.error.message);
+    assert.equal(lines[5].signal, undefined);
+    assert.match(lines[5].error, /not found|No such file/i);
+    assert.doesNotMatch(failed.error.message, /killed \(/);
+    console.log(`horizon readings: ${JSON.stringify([lines[3], lines[5]])}`);
+    console.log(`horizon kill message: ${killed.error.message}`);
+  } finally {
+    process.chdir(before);
+    if (saved === undefined) delete process.env.ATRIS_RUNNER_COMMAND_TEMPLATE;
+    else process.env.ATRIS_RUNNER_COMMAND_TEMPLATE = saved;
+    fs.rmSync(root, { recursive: true, force: true });
+  }
+});
 test('a kill sent by the run time limit names the time limit even with memory low', () => {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'engine-resource-timeout-'));
   try {

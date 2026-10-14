@@ -1,0 +1,14 @@
+# scratch workspace: empty TODO, one commit, so autopilot asks the engine for new horizons
+$ ATRIS_RUNNER_BIN=sh ATRIS_RUNNER_COMMAND_TEMPLATE='sh -c "kill -KILL $$"' atris autopilot --legacy --auto --dry-run --iterations=1
+  The workspace looks clean.
+  
+  Next I will stop until a new signal appears.
+
+  Autopilot finished.
+  It completed 0 tasks in 0s.
+
+exit 0
+
+$ cat .atris/state/engine-resource.jsonl
+{"at":"2026-10-14T16:05:59.632Z","phase":"start","engine":"runner","task":"horizon proposal","free_pct":80,"swap_used_mb":1172.75,"swap_total_mb":2048,"load":[3.27,3.21,3.31],"run_id":"4c4b90b8-2867-4cc2-b4c5-959574012416","pid":7533,"leaked_ssh_agents":634}
+{"at":"2026-10-14T16:05:59.792Z","phase":"end","engine":"runner","task":"horizon proposal","free_pct":80,"swap_used_mb":1172.75,"swap_total_mb":2048,"load":[3.27,3.21,3.31],"run_id":"4c4b90b8-2867-4cc2-b4c5-959574012416","duration_ms":7,"signal":"SIGKILL","cause":"killed (cause unknown)"}
