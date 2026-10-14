@@ -313,6 +313,50 @@ test('watch mode redraws at once when the window is resized', async () => {
   }
 });
 
+test('watch mode uses the whole screen in one to three terminal rows', async () => {
+  const dir = fakeDir({
+    builder: [`${at(100)} m-1 started: job`, `${at(80)} m-1 finished: failed (timed out)`],
+    scout: [`${at(100)} m-2 started: job`, `${at(70)} m-2 finished: failed (timed out)`],
+  });
+  const out = process.stdout;
+  const saved = ['isTTY', 'columns', 'rows'].map((k) => [k, Object.getOwnPropertyDescriptor(out, k)]);
+  const write = out.write;
+  const env = process.env.ATRIS_PROGRESS_DIR;
+  const frames = [];
+  let done;
+  try {
+    process.env.ATRIS_PROGRESS_DIR = dir;
+    Object.defineProperty(out, 'isTTY', { value: true, configurable: true });
+    Object.defineProperty(out, 'columns', { value: 80, configurable: true });
+    Object.defineProperty(out, 'rows', { value: 1, configurable: true, writable: true });
+    out.write = (chunk) => { frames.push(String(chunk)); return true; };
+    done = memberBoardCommand('--watch', '--all');
+    for (const height of [2, 3, 6]) { out.rows = height; out.emit('resize'); }
+    process.emit('SIGINT');
+  } finally {
+    out.write = write;
+    for (const [k, d] of saved) { if (d) Object.defineProperty(out, k, d); else delete out[k]; }
+    if (env === undefined) delete process.env.ATRIS_PROGRESS_DIR; else process.env.ATRIS_PROGRESS_DIR = env;
+  }
+  try {
+    await done;
+    assert.equal(frames.length, 4, 'initial draw and three resizes');
+    for (let i = 0; i < 3; i++) {
+      const frame = frames[i].replace(/\x1b\[[0-9;]*[A-Za-z]/g, '');
+      assert.equal(frame.split('\n').length, i + 1);
+      assert.match(frame, /^member\s+state/);
+      assert.doesNotMatch(frame, /redraws every/);
+      assert.ok(!frame.endsWith('\n'), 'no newline scrolls the bottom row');
+      if (i === 1) assert.match(frame, /2 more not shown \(2 failed, all timed out\)/);
+      if (i === 2) assert.match(frame, /scout\s+done failed/);
+    }
+    assert.match(frames[3], /redraws every 3s, ctrl-c to stop\n$/, 'the hint returns after growing');
+    assert.equal(out.listenerCount('resize'), 0);
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
 test('a short window keeps the header and the newest rows, and says how many did not fit', () => {
   const logs = {};
   for (let i = 1; i <= 8; i++) logs[`m${i}`] = [`${at(i * 10)} m-${i} started: job ${i}`, `${at(i * 10 - 5)} m-${i} running: step ${i}`];

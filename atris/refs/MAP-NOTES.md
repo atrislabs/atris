@@ -2302,3 +2302,5 @@ npm publish
 - **Tiny shared failure reasons:** `renderBoard()` (`lib/member-board.js:261`) tries "hidden" with a shared reason before dropping that reason. Current and earlier failures retain timeout, engine error, and bad exit reasons eight columns sooner. Regression: `test/member-board.test.js:451`; terminal proof: `python3 atris/runs/member-board-tiny-reason-proof.py`.
 
 - **Very short board screens:** `renderBoard()` (`lib/member-board.js:261`) omits the spacer at three lines, rows at two, and the footer at one, preserving the header within the height limit. Regression: `test/member-board.test.js:349`; terminal proof: `python3 atris/runs/member-board-short-height-proof.py`.
+
+- **Tiny watch screens:** `memberBoardCommand()` (`lib/member-board.js:617`) gives the board all rows when the terminal has one to three, omitting the hint and final newline to avoid scrolling the header. Resize restores the hint above three rows. Regression: `test/member-board.test.js:316`; terminal proof: `python3 atris/runs/member-board-watch-height-proof.py`.
