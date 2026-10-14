@@ -43,6 +43,9 @@ Brain activation and compile ran in preview mode and wrote no compiled policy fi
 The requested earlier branch has only two log commits missing here; its code is already carried forward with subsequent guard repairs. No old code was restored.
 The task-generated TODO view was restored to its prior content to avoid replacing the larger existing view with this checkout's small local database.
 
+Landing: code and evidence committed and pushed to origin. Task is in Review after its own required check exited 0; gate receipt: atris/runs/2026-10-14-task-acw-1-2026-10-14T23-06-22-056Z.json. No acceptance or merge performed.
+The commit load check initially rejected the probe because importing it executed the CLI in the staged-file mirror. The probe now runs only as an entry point; its real CLI proof passed again and the commit check passed.
+
 Stop: this increment passed its required verification. No second slice started; the eight-hour mission remains with its runner.
 next_push: prove that every cleanup path reports paused Git work consistently, including autopilot's retained regression folder.
 layer: behaviors
