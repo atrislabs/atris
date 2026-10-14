@@ -23,4 +23,7 @@ Each CLI invocation exited 0. Proof script exited 0.
 
 Progress: five narrow widths keep the hint within one line; no new dependencies. The board's minimum columns still overflow these extreme widths, which is outside this hint-only slice.
 next_push: Fit the board's essential columns within terminals below 43 columns.
+Review handoff: the task runner's login shell picked Node 20.18.0, below the CLI minimum, so two handoff attempts failed. The direct frozen check ran on Node 25.6.1 and passed. The handoff then ran /opt/homebrew/Cellar/node/25.6.1/bin/node --test test/member-board.test.js test/member-result.test.js, exit 0, and moved the task to Review. It needs independent review because the absolute command cannot be automatically certified. No mission settings changed.
+Review artifact: atris/runs/2026-10-14-task-bci-8-2026-10-14T20-32-15-541Z.json.
+Landing: committed and pushed successfully.
 layer: behaviors
