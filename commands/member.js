@@ -10915,6 +10915,7 @@ async function memberUp(...args) {
     console.log('A member with no such task stays idle; it never runs its own goal instead.');
     console.log('The longer a member stays idle, the less often it is checked: 5, 10, 20, then every 30 minutes.');
     console.log('A working member with no new step for 20 minutes is called out as stuck, once until it moves again.');
+    console.log('Every 5 minutes it also puts member changes github dropped from its merge line back in, when self-landing is on.');
     console.log('--only limits it to those members. Same as atris member wake 5 or atris member wake a b.');
     console.log('Ctrl-C or atris member sleep --all ends it. Runs it started keep going.');
     return;
@@ -10935,6 +10936,7 @@ async function memberUp(...args) {
     now: () => Date.now(),
     jobOf: (name) => memberGoJob(name, root),
     waitingTasks: () => memberUpWaiting(root),
+    requeueDropped: () => require('../lib/member-autoland').requeueDroppedAutolands({ cwd: root }),
   };
   if (parsed.dryRun) {
     const up = createMemberUp(deps, { max, only, dryRun: true });
