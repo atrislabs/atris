@@ -487,6 +487,10 @@ function fixEmDash(s, { endsBlock = false, startsBlock = false, spans = [] } = {
   // so they turn into hyphens of the same width: "[a] --- [b]", never "[a],
   // [b]". Two pressed dashes in a sentence are still one break: "He said,".
   s = s.replace(/(?<=[\])|+][ \t]*)\u2014{2,}(?=[ \t]*[[(|+])/g, (m) => '-'.repeat(m.length));
+  // a run of pressed dashes that touches a drawn corner or pipe, or two runs
+  // that meet at a lone corner, is the drawn line itself: "+---+", "|-- a",
+  // "a --- + --- b", never "a (+) b". A table row is fixed cell by cell below.
+  if (!/^\s*\|/.test(s)) s = s.replace(/\u2014{2,}(?=[+|])|(?<=[+|])\u2014{2,}|\u2014{2,}[ \t]*\+[ \t]*\u2014{2,}/g, (m) => m.replace(/\u2014/g, '-'));
   // a line indented like a code block is where a diagram lives, and so is a
   // line that opens with a box, not a link or a checkbox, at any indent or
   // after quote marks, a list marker and bold or italic marks. Any run of

@@ -2596,6 +2596,25 @@ test('fix keeps a run of pressed dashes on a line that draws an arrow', () => {
   ]);
 });
 
+test('fix keeps a run of pressed dashes that touches a drawn corner or pipe', () => {
+  // the runs read as an aside or a break: "a (+) b", "plan, +"
+  const file = tmpFile('corner-run.md', [
+    'a \u2014\u2014\u2014 + \u2014\u2014\u2014 b',
+    'plan \u2014\u2014+',
+    'step |\u2014\u2014 next',
+    'x + y \u2014\u2014 then z',
+    'He left \u2014\u2014 for good.',
+  ].join('\n\n'));
+  const { changes } = applyFixes([file], RULES, { write: false });
+  assert.deepEqual(changes.map((c) => c.after), [
+    'a --- + --- b',
+    'plan --+',
+    'step |-- next',
+    'x + y, then z',
+    'He left, for good.',
+  ]);
+});
+
 test('fix keeps a journal heading that ends in a time readable for its hour', () => {
   // analytics reads the hour after a dash or a spaced hyphen at the end of a
   // heading; the fix wrote "### Watch: 19:05", which hides it, and glued
