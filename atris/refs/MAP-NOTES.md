@@ -2401,3 +2401,7 @@ npm publish
 ## Ready-work revise fixture setup
 
 - `test/commands.test.js:13507` checks that a human revise sends ready work back to claimed with a revision count. Real-store creation at `test/commands.test.js:13520` saves one setup launch, resolves the display reference and closes in finally; claim, both readies, revise, show, the refused stale accept and the re-ready remain on the CLI with every behavior assertion preserved.
+
+## Unclaimed ready revise fixture setup
+
+- `test/commands.test.js:13572` checks that revising ready work nobody claimed returns it to open for agents to claim. Real-store creation at `test/commands.test.js:13585` saves one setup launch, resolves the display reference and closes in finally; the unclaimed ready, revise and claim remain on the CLI with every behavior assertion preserved.
