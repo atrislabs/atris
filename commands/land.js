@@ -1,7 +1,7 @@
 const fs = require('fs');
 const path = require('path');
 const gitSpawn = require('../lib/git-spawn');
-const { inspectGitActivity, missingFolderLock } = require('../lib/git-activity');
+const { inspectGitActivity, missingFolderLock, locksAfterRefusal } = require('../lib/git-activity');
 const { compactErrorPayload, printCliJson } = require('../lib/cli-json');
 const { listWorktrees, statusCounts, defaultMainlineBase, listActiveProcessPaths, worktreeHasActiveProcess, recordWorktreeRemoval } = require('./worktree');
 
@@ -726,12 +726,12 @@ function reap(root, { ttlDays = DEFAULT_TTL_DAYS, staleHours = DEFAULT_STALE_HOU
       receipt.removedWorktrees.push(w.path);
       recordWorktreeRemoval(root, { path: w.path, branch: w.branch, by, reason: reapReason(w, board, ttlDays, force) });
     } else {
-      // A lock can appear after the final check. Name all retained locks
-      // before falling back to Git's refusal, which may omit their paths.
-      if (keptAsMissing(w)) continue;
-      const retained = inspectGitActivity(w.path);
-      const reason = retained.locks.length ? retained.reason
-        : String(removed.stderr || removed.stdout || 'remove failed').trim().slice(0, 160);
+      // A lock can appear after the final check, and the folder can move.
+      // Name all retained locks before falling back to Git's refusal, which
+      // may omit their paths.
+      const retained = locksAfterRefusal(root, w.path);
+      const reason = retained.reason
+        || String(removed.stderr || removed.stdout || 'remove failed').trim().slice(0, 160);
       receipt.keptWorktrees.push(`${w.path} (${reason})`);
       if (w.branch) targetNames.delete(w.branch);
     }

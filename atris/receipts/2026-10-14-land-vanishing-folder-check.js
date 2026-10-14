@@ -22,11 +22,12 @@ function git(cwd, ...args) {
   return result.stdout.trim();
 }
 
-for (const mode of ['unlocked', 'locked', 'ordinary', 'ordinary-present', 'locked-present', 'after', 'refused']) {
-  const refused = mode === 'refused';
+for (const mode of ['unlocked', 'locked', 'ordinary', 'ordinary-present', 'locked-present', 'after', 'refused', 'refused-moved']) {
+  const refused = mode.startsWith('refused');
+  const refusedPresent = mode === 'refused';
   const after = mode === 'after';
   const withLock = mode.startsWith('locked') || refused;
-  const staysPresent = mode.endsWith('-present') || refused;
+  const staysPresent = mode.endsWith('-present') || refusedPresent;
   const ordinary = mode.startsWith('ordinary');
   const root = path.join(base, mode);
   const repo = path.join(root, 'repo');
@@ -66,6 +67,7 @@ if (args[0] === 'worktree' && args[1] === 'remove') {
       const aged = new Date(Date.now() - (7200000 + index * 3600000));
       fs.utimesSync(file, aged, aged);
     }
+    if (!${refusedPresent}) fs.renameSync(${JSON.stringify(copy)}, ${JSON.stringify(moved)});
   }
 }
 if (args.includes('--git-dir') && args.includes('--git-common-dir') && process.cwd() === ${JSON.stringify(copy)}) {
@@ -104,7 +106,7 @@ process.exit(result.status === null ? 1 : result.status);
   if (result.stderr.trim()) console.log(result.stderr.trim());
   console.log(`cli exit: ${result.status}`);
   assert.equal(result.status, 0);
-  assert.equal(fs.readFileSync(countFile, 'utf8'), refused ? '3' : '2');
+  assert.equal(fs.readFileSync(countFile, 'utf8'), refusedPresent ? '3' : '2');
   assert.ok(result.stdout.includes(staysPresent ? `${copy} (git locks:` : `${copy} (folder is missing${expectedLocks.length ? '; git lock: ' : ')'}`), result.stdout);
   assert.equal(result.stdout.includes('folder is missing'), !staysPresent);
   for (const [index, lock] of expectedLocks.entries()) {
@@ -120,4 +122,4 @@ process.exit(result.status === null ? 1 : result.status);
   assert.equal(fs.existsSync(path.join(repo, '.atris/state/worktree_removals.jsonl')), false);
   if (after || refused) assert.ok(git(repo, 'worktree', 'list', '--porcelain').includes(`worktree ${copy}\n`));
 }
-console.log('all seven timing cases passed; Git refusal after a passing check named three locks and distinct ages; files, locks, branches, and Git records retained; no removal recorded');
+console.log('all eight timing cases passed; Git refusal after a passing check named three locks and distinct ages, also when the folder moved; files, locks, branches, and Git records retained; no removal recorded');
