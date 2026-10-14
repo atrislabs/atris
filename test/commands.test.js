@@ -10342,9 +10342,21 @@ test('task page exposes one-task goal chat stage and review actions', () => {
   try {
     fs.mkdirSync(path.join(dir, 'atris'), { recursive: true });
 
-    const add = runCli(['task', 'add', 'Make one task page useful', '--tag', 'capture', '--json'], { cwd: dir, env });
-    assert.equal(add.status, 0, add.stderr);
-    const ref = JSON.parse(add.stdout).task.display_id;
+    // Seed both parents in process; page, chat, plan, do, ready, review, and show still use the CLI.
+    let ref;
+    const db = taskStore.open(dbPath);
+    try {
+      const created = taskStore.addTask(db, {
+        title: 'Make one task page useful',
+        tag: 'capture',
+        workspaceRoot: taskStore.workspaceRoot(dir),
+      });
+      assert.equal(created.inserted, true);
+      ref = taskStore.withTaskDisplayRefs([taskStore.getTask(db, created.id)])[0].display_id;
+      assert.ok(ref);
+    } finally {
+      taskStore.close();
+    }
 
     const firstPage = runCli(['task', 'page', ref, '--json'], { cwd: dir, env });
     assert.equal(firstPage.status, 0, firstPage.stderr);
@@ -10463,17 +10475,27 @@ test('task page exposes one-task goal chat stage and review actions', () => {
     assert.equal(certifiedShow.status, 0, certifiedShow.stderr);
     assert.equal(JSON.parse(certifiedShow.stdout).review.verification_chat, undefined);
 
-    const legacyAdd = runCli(['task', 'add', 'Legacy done row still needs review', '--tag', 'capture', '--json'], { cwd: dir, env });
-    assert.equal(legacyAdd.status, 0, legacyAdd.stderr);
-    const legacyAddPayload = JSON.parse(legacyAdd.stdout);
-    const legacyRef = legacyAddPayload.task.display_id;
+    // The legacy row is seeded only after the first task is certified, matching the old order.
+    // Display refs are numbered across the workspace, so compute this one from the full list.
+    let legacyRef;
     const previousTaskDb = process.env.ATRIS_TASKS_DB;
     const taskDb = require('../lib/task-db');
     try {
       process.env.ATRIS_TASKS_DB = dbPath;
       taskDb.close();
       const db = taskDb.open();
-      const legacyDone = taskDb.doneTask(db, { id: legacyAddPayload.task_id, status: 'done', actor: 'codex' });
+      const workspaceRoot = taskDb.workspaceRoot(dir);
+      const legacyCreated = taskDb.addTask(db, {
+        title: 'Legacy done row still needs review',
+        tag: 'capture',
+        workspaceRoot,
+      });
+      assert.equal(legacyCreated.inserted, true);
+      legacyRef = taskDb.withTaskDisplayRefs(taskDb.listTasks(db, { workspaceRoot }))
+        .find((row) => row.id === legacyCreated.id).display_id;
+      assert.ok(legacyRef);
+      assert.notEqual(legacyRef, ref);
+      const legacyDone = taskDb.doneTask(db, { id: legacyCreated.id, status: 'done', actor: 'codex' });
       assert.equal(legacyDone.updated, true);
       taskDb.close();
     } finally {

@@ -23,6 +23,8 @@ Details for any task: atris task show <ID>
 
 ## Review
 
+- **[AIC-32]** Seed task page parent fixtures in process · auto-improver
+  **Done looks like:** Developers finish the task page check sooner because setup starts two fewer commands.
 - **[AIC-31]** Seed goal chat parent fixture in process · auto-improver
   **Done looks like:** Developers finish the goal chat check sooner because setup starts one fewer command.
 - **[AIC-30]** Seed headless stage parent fixtures in process · auto-improver
