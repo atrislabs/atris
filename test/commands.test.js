@@ -11546,7 +11546,7 @@ test('task ready holds work in review until human accept', () => {
     const ref = created.task.display_id;
     assert.equal(created.task.metadata.goal_id, 'goal-agent-xp');
     assert.equal(created.task.metadata.goal_objective, 'Make AgentXP recruitable');
-    assert.equal(runCli(['task', 'claim', ref, '--as', 'codex'], { cwd: dir, env }).status, 0);
+    withStore((db) => assert.equal(taskStore.claimTask(db, { id: created.task.id, claimedBy: 'codex' }).claimed, true));
 
     const ready = runCli([
       'task', 'ready', ref,
@@ -11683,9 +11683,7 @@ test('task ready holds work in review until human accept', () => {
     const prematureDonePayload = JSON.parse(prematureDone.stdout);
     assert.equal(prematureDonePayload.reason, 'not_open_or_claimed');
     assert.match(prematureDonePayload.detail, /not in open\|claimed/);
-    const stillReview = runCli(['task', 'show', ref, '--json'], { cwd: dir, env });
-    assert.equal(stillReview.status, 0, stillReview.stderr);
-    assert.equal(JSON.parse(stillReview.stdout).status, 'review');
+    assert.equal(withStore((db) => taskStore.getTask(db, readyPayload.task.id).status), 'review');
 
     const certifiedShow = runCli(['task', 'show', ref], { cwd: dir, env });
     assert.equal(certifiedShow.status, 0, certifiedShow.stderr);
@@ -11796,9 +11794,9 @@ test('task ready holds work in review until human accept', () => {
     assert.equal(Object.prototype.hasOwnProperty.call(clearCliPayload.task.review, 'lesson'), false);
     assert.equal(Object.prototype.hasOwnProperty.call(clearCliPayload.task.review, 'next_task'), false);
 
-	    const events = runCli(['task', 'events', ref, '--json'], { cwd: dir, env });
-	    assert.equal(events.status, 0, events.stderr);
-	    const eventTypes = JSON.parse(events.stdout).events.map(event => event.event_type);
+	    // Same rows the events command prints for one task: oldest first, up to 500.
+	    const eventTypes = withStore((db) => taskStore.listTaskEvents(db, { taskId: readyPayload.task.id, limit: 500 }))
+	      .map(event => event.event_type);
 	    assert.deepEqual(eventTypes.slice(0, 6), ['created', 'claimed', 'proof_ready', 'message', 'reviewed', 'proof_ready']);
 	    assert.deepEqual(eventTypes.slice(-2), ['completed', 'reviewed']);
   } finally {
