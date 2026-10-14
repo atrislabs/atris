@@ -98,6 +98,24 @@ test('atris scoreboard prints the board from gh and this repo', (t) => {
   }
 });
 
+test('atris scoreboard --json prints the same numbers as one object', (t) => {
+  if (daysAgo(2).slice(0, 4) !== daysAgo(0).slice(0, 4)) return t.skip('best day falls in last year on jan 1-2');
+  const sb = makeSandbox([37], HISTORY);
+  try {
+    const r = spawnSync(process.execPath, [CLI, 'scoreboard', '--json'], { cwd: sb.repo, env: sb.env, encoding: 'utf8' });
+    assert.strictEqual(r.status, 0, r.stderr);
+    assert.deepStrictEqual(JSON.parse(r.stdout), {
+      date: daysAgo(0),
+      today: 37,
+      best: { date: daysAgo(2), count: 41 },
+      streak: 3,
+      repo: { total: 3, you: 1, members: 2 },
+    });
+  } finally {
+    fs.rmSync(sb.dir, { recursive: true, force: true });
+  }
+});
+
 test('atris scoreboard fails plainly when gh is missing or broken', () => {
   const sb = makeSandbox([1], HISTORY);
   try {

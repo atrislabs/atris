@@ -90,14 +90,21 @@ function cheers(prev, next) {
 
 function snapshot() {
   const s = score(fetchDays());
-  return { s, text: render(s, repoCommits()) };
+  const commits = repoCommits();
+  return { s, commits, text: render(s, commits) };
+}
+
+// Same numbers as the board, as one object for scripts.
+function toJson(s, commits, date = localDate()) {
+  return { date, today: s.today, best: s.best, streak: s.streak, repo: commits };
 }
 
 async function scoreboardCommand(args = []) {
   if (args.includes('--help') || args.includes('-h')) {
-    console.log('usage: atris scoreboard [--watch]');
+    console.log('usage: atris scoreboard [--watch | --json]');
     console.log('  today\'s github contributions, your best day this year, your streak, and this repo\'s commits');
     console.log('  --watch   refresh every 60 seconds and cheer at every 50');
+    console.log('  --json    print the same numbers once as one json object');
     return 0;
   }
   let snap;
@@ -106,6 +113,10 @@ async function scoreboardCommand(args = []) {
   } catch {
     console.error('could not read your github contributions. check that gh is installed and logged in (gh auth status).');
     return 1;
+  }
+  if (args.includes('--json')) {
+    console.log(JSON.stringify(toJson(snap.s, snap.commits), null, 2));
+    return 0;
   }
   console.log(snap.text);
   if (!args.includes('--watch')) return 0;
@@ -129,4 +140,4 @@ async function scoreboardCommand(args = []) {
   return 0;
 }
 
-module.exports = { scoreboardCommand, score, render, cheers, bar, localDate };
+module.exports = { scoreboardCommand, score, render, toJson, cheers, bar, localDate };
