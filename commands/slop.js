@@ -299,6 +299,15 @@ const QUESTION_AFTER_DASH = new RegExp(`(?<=[\\w)\\]"'*_\`%\\u201d\\u2019\\uE001
 const ORDER_VERB = `(?:don['\\u2019]t|do not|let['\\u2019]s|let us|pick|copy|reframe|judge|plug|retry|rename|propose|inspect|keep|leave|use|run|read|ask|add|check|make|move|stop|try|wait|skip|take|look|call|write|delete|remove|fix|put|say|tell|give|treat|verify|ship|commit|push|kill|mark|start|avoid|prefer|trust|drop|cut|split|merge|revert|rerun|re-run|consolidate|pin|automate|clamp|fork|spawn|adapt)`;
 const ORDER_CLAUSE_AFTER_DASH = new RegExp(`(?<=[\\w)\\]"'*_\`\\u201d\\u2019\\uE001])\\s*\\u2014\\s*(?=${ORDER_VERB}\\s+(?![a-z]+ed\\b|of\\b)[\\w\`"'(\\uE000])`, 'g');
 
+// Two short subjects joined by "and", then a helper that takes them both,
+// start one too: "had no guard; render.py and render_reel.py are coupled",
+// "the phone audit and control contract are absent". An order or a helper
+// is no subject word, so "it failed, and would have shipped" stays, and
+// "how" opens a phrase that explains the noun: "a philosophy of work, how
+// companies and agents should run together".
+const AND_PART = `(?:(?:the|a|an|our|your|their|its|my)\\s+)?(?:(?!(?:the|a|an|that|whose|this|it|they|we|you|he|she|I|how|what|why|whether|${HELPING_VERB})\\b)${SUBJECT_WORD}){1,3}`;
+const AND_CLAUSE_AFTER_DASH = new RegExp(`(?<=[\\w)\\]"'*_\`\\u201d\\u2019\\uE001])\\s*\\u2014\\s*(?!${NAMING_PHRASE})(?!${TIME_OPENER})(?!${ORDER_VERB}\\s)(?=${AND_PART}and\\s+${AND_PART}(?:are|were|have|had|will|would|can|cannot|could|must|should|may|might|do|did)\\s+[^\\s\\u2014])`, 'g');
+
 // The mark that joins a full clause to the sentence before the dash. A short
 // opener led by "not" has no verb of its own, so the clause explains it and
 // takes a colon: "Not exhaustive: the frontier was not extended". A quoted
@@ -492,6 +501,10 @@ function fixEmDash(s, { endsBlock = false, startsBlock = false } = {}) {
       return left ? clauseJoin(left) : m;
     })
     .replace(NOUN_CLAUSE_AFTER_DASH, (m, at, whole) => {
+      const left = clauseLeft(at, whole);
+      return left ? clauseJoin(left) : m;
+    })
+    .replace(AND_CLAUSE_AFTER_DASH, (m, at, whole) => {
       const left = clauseLeft(at, whole);
       return left ? clauseJoin(left) : m;
     })

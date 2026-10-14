@@ -1792,6 +1792,22 @@ test('fix reads a bold verdict as a clause, so a clause after it takes a semicol
   ]);
 });
 
+test('fix reads two subjects joined by "and" before a helper as a clause', () => {
+  // from build notes, which came out "had no guard, render.py and render_reel.py are coupled"
+  const file = tmpFile('and.md', [
+    'Bottleneck: the reel regression had no guard \u2014 render.py and render_reel.py are coupled',
+    '- Result: **FAIL** \u2014 the phone audit and control contract are absent',
+    // "how" opens a phrase that explains the noun, so it keeps its comma
+    'Humans are building a philosophy of work \u2014 how companies and agents should run together.',
+  ].join('\n'));
+  const { changes } = applyFixes([file], RULES);
+  assert.deepEqual(changes.map((c) => c.after), [
+    'Bottleneck: the reel regression had no guard; render.py and render_reel.py are coupled',
+    '- Result: **FAIL**; the phone audit and control contract are absent',
+    'Humans are building a philosophy of work, how companies and agents should run together.',
+  ]);
+});
+
 test('fix starts the next sentence after a stop that sits before a dash', () => {
   // from the terrace repo, which came out "fine with try? the cost"
   const file = tmpFile('stop.md', [
