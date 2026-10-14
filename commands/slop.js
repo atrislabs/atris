@@ -143,6 +143,9 @@ const LIST_AFTER_DASH = new RegExp(`(?<=[\\w)\\]*_\`%])\\s*\u2014\\s*(?!(?:and|b
 // items, with "and" or "or" before the last one or not.
 const BARE_ITEM = `(?:${LIST_ITEM}|"[^"]+"|\u201c[^\u201d]+\u201d)`;
 const BARE_LIST = new RegExp(`^${BARE_ITEM}(?:(?:, ${BARE_ITEM}){2,}|(?:, ${BARE_ITEM})+,? (?:and|or) ${BARE_ITEM})$`);
+// One to three words after a dash that end the sentence, the tail a list
+// may close with. A joining word goes on with the sentence instead.
+const LIST_TAIL_DASH = /\s*\u2014\s*(?!(?:and|or|but|nor|so|yet|then|etc)\b)([A-Za-z0-9][\w'-]*(?: [A-Za-z0-9][\w'-]*){0,2})(?=[.!?]["'\u201d\u2019)]*(?:\s|$)|\s*$)/g;
 // Three or more phrases that each open with an "ing" word list what the
 // sentence before does, however long each one runs, so they take a colon too:
 // "Sessions build on each other: extracting what was learned, understanding
@@ -896,6 +899,17 @@ function fixEmDash(s, { endsBlock = false, startsBlock = false, spans = [] } = {
     .replace(/(^|[^.])([.!?])(\*{1,2}|_{1,2})?\s*\u2014\s*([a-z])(?=[a-z']*(?![\w\uE000]))/g, (m, lead, stop, mark = '', ch, at, whole) => {
       if (stop === '.' && SHORT_FORM_END.test(whole.slice(0, at) + lead)) return `${lead}.${mark}, ${ch}`;
       return `${lead}${stop}${mark} ${sentenceStart(whole.slice(at + m.length - 1), whole).charAt(0)}`;
+    })
+    // a short tail after a list of three or more items that runs from the
+    // start of its sentence is a note on the whole list, so it goes in
+    // parentheses: "site, X, blog, GitHub (weekly)", never "GitHub, weekly",
+    // which reads as one more item. A list already in parentheses keeps its
+    // comma. A list of what it is not leads to what it is, so that takes a
+    // colon: "Not sends, not laps, not meetings: replies".
+    .replace(LIST_TAIL_DASH, (m, tail, at, whole) => {
+      const left = whole.slice(0, at).split(/[.!?:]\s/).pop().replace(/^\s*(?:(?:[-*+>]|\d+[.)])\s+)*/, '').trim();
+      if (!BARE_LIST.test(left) || insideParens(whole.slice(0, at))) return m;
+      return /^(?:not|no|never)\b/i.test(left) ? `: ${tail}` : ` (${tail})`;
     })
     // keep punctuation the writer already put beside the dash instead of
     // stacking a comma on it, and never leave a trailing space. A dash pressed

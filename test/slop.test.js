@@ -2860,6 +2860,25 @@ test('fix keeps a time phrase with a number word after a dash as an aside', () =
   ]);
 });
 
+test('fix puts a short tail after a list in parentheses, not in the list', () => {
+  // a comma made the tail one more item: "site, X, blog, GitHub, weekly."
+  const file = tmpFile('list-tail.md', [
+    '- **Track**: site, X, blog, GitHub \u2014 weekly.',
+    'Tested on macOS, Linux, Windows \u2014 all pass.',
+    'Not sends, not laps, not meetings \u2014 replies.',
+    'red, green, blue \u2014 and more.',
+    'Ship it \u2014 weekly.',
+  ].join('\n\n'));
+  const { changes } = applyFixes([file], RULES, { write: false });
+  assert.deepEqual(changes.map((c) => c.after), [
+    '- **Track**: site, X, blog, GitHub (weekly).',
+    'Tested on macOS, Linux, Windows (all pass).',
+    'Not sends, not laps, not meetings: replies.',
+    'red, green, blue, and more.',
+    'Ship it, weekly.',
+  ]);
+});
+
 test('fix keeps a journal heading that ends in a time readable for its hour', () => {
   // analytics reads the hour after a dash or a spaced hyphen at the end of a
   // heading; the fix wrote "### Watch: 19:05", which hides it, and glued
@@ -2926,7 +2945,7 @@ test('fix reads a word in "ed" as part of a noun and a helper at a line wrap as 
     '| Other backlog, closed entries within | 35/186 closed |',
     'security company is the bigger market, deferred blocks to resume after',
     'Nothing is broken; one request flag is',
-    '| P3 | Minor cleanup, dead code, logging, nice to have |',
+    '| P3 | Minor cleanup, dead code, logging (nice to have) |',
   ]);
 });
 
