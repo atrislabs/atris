@@ -334,7 +334,8 @@ const WORKTREE_REMOVAL = /worktree['"]?\s*,\s*['"]remove['"]|git worktree remove
 // function lists, adds, or walks worktrees, so renaming a variable can't hide one.
 // Callback and promise deletes (fs.rm, fs.promises.rm) count the same as rmSync,
 // and so does a shell rm -r, typed out or passed to spawn as arguments.
-const RECURSIVE_DELETE = /\brm(?:Sync)?\([^)]*recursive|\brm\s+-[a-zA-Z]*[rR]|['"]rm['"]\s*,\s*\[\s*['"]-[a-zA-Z]*[rR]/;
+// A path built by a call, like rmSync(path.join(root, x), { recursive }), is read through.
+const RECURSIVE_DELETE = /\brm(?:Sync)?\((?:[^()]|\([^()]*\))*recursive|\brm\s+-[a-zA-Z]*[rR]|['"]rm['"]\s*,\s*\[\s*['"]-[a-zA-Z]*[rR]/;
 const HANDLES_WORKTREES = /listWorktrees\(|agent-worktrees|['"]worktree['"]\s*,\s*['"]add['"]|git worktree add/;
 const COMMENT_LINE = /^\s*(\/\/|\*|\/\*)/;
 
