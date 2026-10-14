@@ -501,6 +501,21 @@ test('a narrow board gives up a before column that says ok on every row first', 
   assert.match(head(mixed, 60), /^member\s+state\s+before\s/, 'a failed run among them keeps the column');
 });
 
+test('a board too tall for its screen drops ended runs\' last steps before any member', () => {
+  const now = Date.parse('2026-10-14T13:00:00Z');
+  const done = (name) => memberRow(name, `2026-10-14T12:40:00Z m-1 started: ship the ${name} change\n2026-10-14T12:41:00Z m-1 running: npm test\n2026-10-14T12:42:00Z m-1 finished: ok\n`, now);
+  const rows = [
+    memberRow('builder', `2026-10-14T12:50:00Z m-2 started: [pid ${process.pid}] fit the board\n2026-10-14T12:59:30Z m-2 running: node --test\n`, now),
+    done('ann'), done('bo'), done('cy'),
+  ];
+  const short = renderBoard(rows, '/x', 0, 60, [], 9).split('\n');
+  assert.ok(['builder ', 'ann ', 'bo ', 'cy '].every((m) => short.some((l) => l.startsWith(m))), `every member shows:\n${short.join('\n')}`);
+  assert.deepEqual(short.filter((l) => l.startsWith('  last step:')), ['  last step: running: node --test'], 'the live run keeps its step');
+  assert.ok(short.length <= 9);
+  const tall = renderBoard(rows, '/x', 0, 60, [], 40).split('\n');
+  assert.equal(tall.filter((l) => l.startsWith('  last step:')).length, 4, 'with room, every step shows');
+});
+
 test('a wider board never gives the job less than its 24 columns beside the step', () => {
   const now = Date.parse('2026-10-14T13:00:00Z');
   const rows = [memberRow('builder', `2026-10-14T12:50:00Z m-1 started: [pid ${process.pid} engine claude] keep the job readable when the screen is wide enough\n2026-10-14T12:59:30Z m-1 running: node --test test/member-board.test.js test/member-result.test.js\n`, now)];
