@@ -1250,6 +1250,13 @@ test('fix gives a name that opens a paragraph a colon, like a definition', () =>
     'Atris Labs \u2014 a wrapped line keeps its comma.',
     '',
     'Yes Sir \u2014 and then some.',
+    '',
+    // a last dash before a joining word goes on with the sentence
+    'v2 \u2014 shipped \u2014 then rolled back',
+    '',
+    'Inbox Triage \u2014 23 emails \u2014 and 4 drafts.',
+    '',
+    'v3 \u2014 shipped \u2014 then pulled \u2014 for a week \u2014 ok',
   ].join('\n'));
   const { changes } = applyFixes([file], RULES, { write: false });
   assert.deepEqual(changes.map((c) => c.after), [
@@ -1261,6 +1268,9 @@ test('fix gives a name that opens a paragraph a colon, like a definition', () =>
     'Inbox Triage: 23 emails processed',
     'Atris Labs, a wrapped line keeps its comma.',
     'Yes Sir, and then some.',
+    'v2: shipped, then rolled back',
+    'Inbox Triage: 23 emails, and 4 drafts.',
+    'v3 (shipped) then pulled (for a week) ok',
   ]);
 });
 
