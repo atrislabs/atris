@@ -732,6 +732,7 @@ const MISSION_RUN_VALUE_FLAGS = [
   '--stop',
   '--model',
   '--engine',
+  '--referee-engine',
   '--budget',
   '--repo',
   '--native-goal-status',
@@ -752,6 +753,8 @@ const MISSION_RUN_BOOLEAN_FLAGS = [
   '--land',
   '--no-claude',
   '--no-verify',
+  '--referee',
+  '--no-referee',
   '--complete-on-pass',
   '--no-drain',
   '--create-next',
@@ -1623,6 +1626,28 @@ function appendJsonLine(file, payload) {
   fs.appendFileSync(file, JSON.stringify(payload) + '\n', 'utf8');
 }
 
+function resolveMemberWorkspaceRoot(root = process.cwd()) {
+  const resolved = path.resolve(root || process.cwd());
+  const agentWorktreesMarker = `${path.sep}.agent-worktrees${path.sep}`;
+  const agentIdx = resolved.indexOf(agentWorktreesMarker);
+  if (agentIdx > 0) {
+    const parentDir = resolved.slice(0, agentIdx);
+    const after = resolved.slice(agentIdx + agentWorktreesMarker.length);
+    const repoName = after.split(path.sep)[0];
+    if (repoName) {
+      const primaryRoot = path.join(parentDir, repoName);
+      if (fs.existsSync(path.join(primaryRoot, 'atris'))) return primaryRoot;
+    }
+  }
+  const marker = `${path.sep}.atris${path.sep}worktrees${path.sep}`;
+  const idx = resolved.indexOf(marker);
+  if (idx > 0) {
+    const parentRoot = resolved.slice(0, idx);
+    if (fs.existsSync(path.join(parentRoot, 'atris'))) return parentRoot;
+  }
+  return resolved;
+}
+
 function appendEvent(type, mission, payload = {}, root = process.cwd()) {
   const paths = statePaths(root);
   const event = {
@@ -1634,6 +1659,12 @@ function appendEvent(type, mission, payload = {}, root = process.cwd()) {
     payload,
   };
   appendJsonLine(paths.eventsJsonl, event);
+  const parentRoot = resolveMemberWorkspaceRoot(root);
+  if (type === 'mission_tick' && parentRoot !== path.resolve(root || process.cwd())) {
+    try {
+      appendJsonLine(statePaths(parentRoot).eventsJsonl, event);
+    } catch {}
+  }
   return event;
 }
 
@@ -1664,9 +1695,15 @@ function saveMission(mission, root = process.cwd(), eventType = 'mission_updated
 
 function memberDir(owner, root = process.cwd()) {
   if (!owner || !/^[a-zA-Z0-9._-]+$/.test(owner)) return null;
-  const dir = path.join(root, 'atris', 'team', owner);
-  if (!fs.existsSync(path.join(dir, 'MEMBER.md'))) return null;
-  return dir;
+  const parentRoot = resolveMemberWorkspaceRoot(root);
+  const candidates = parentRoot !== path.resolve(root || process.cwd())
+    ? [parentRoot, root]
+    : [root];
+  for (const base of candidates) {
+    const dir = path.join(base, 'atris', 'team', owner);
+    if (fs.existsSync(path.join(dir, 'MEMBER.md'))) return dir;
+  }
+  return null;
 }
 
 function appendMemberLog(owner, title, fields = {}, root = process.cwd()) {
@@ -1686,6 +1723,158 @@ function appendMemberLog(owner, title, fields = {}, root = process.cwd()) {
   ];
   fs.appendFileSync(logPath, rows.join('\n'), 'utf8');
   return logPath;
+}
+
+function crystallizeMemberSkillLesson(owner, entry = {}, root = process.cwd()) {
+  const dir = memberDir(owner, root);
+  if (!dir) return null;
+  const summary = String(entry.summary || entry.objective || '').replace(/\s+/g, ' ').trim();
+  if (!summary) return null;
+  const skillDir = path.join(dir, 'skills', 'auto-learned');
+  fs.mkdirSync(skillDir, { recursive: true });
+  const skillPath = path.join(skillDir, 'SKILL.md');
+  const existingBullets = [];
+  if (fs.existsSync(skillPath)) {
+    try {
+      const raw = fs.readFileSync(skillPath, 'utf8');
+      for (const line of raw.split(/\r?\n/)) {
+        if (line.trim().startsWith('- **')) existingBullets.push(line.trim());
+      }
+    } catch {}
+  }
+  const verifierText = String(entry.verifier || '').replace(/\s+/g, ' ').trim();
+  const nextPushText = String(entry.next_push || '').replace(/\s+/g, ' ').trim();
+  const layerLabel = String(entry.layer || 'capabilities').trim();
+  const parts = [`- **${todayName()} (${layerLabel})**: ${summary.slice(0, 140)}`];
+  if (verifierText) parts.push(`Verify: \`${verifierText.slice(0, 80)}\``);
+  if (nextPushText) parts.push(`Next push: ${nextPushText.slice(0, 120)}`);
+  const newBullet = parts.join(' -> ');
+  const deduped = [
+    newBullet,
+    ...existingBullets.filter((b) => !b.includes(summary.slice(0, 80))),
+  ].slice(0, 5);
+
+  const content = [
+    '---',
+    'name: auto-learned',
+    `description: Verified patterns crystallized from passing runs for ${owner}. Bounded to 5 newest patterns so context never bloats.`,
+    '---',
+    '',
+    '# Auto-Learned Verified Patterns',
+    '',
+    ...deduped,
+    '',
+  ].join('\n');
+  fs.writeFileSync(skillPath, content, 'utf8');
+  return skillPath;
+}
+
+function autoQueueMemberNextPush(owner, nextPush, parentObjective = '', root = process.cwd(), { promote = false } = {}) {
+  const cleanPush = String(nextPush || '').replace(/\s+/g, ' ').trim();
+  if (!cleanPush) return null;
+  const dir = memberDir(owner, root);
+  if (!dir) return null;
+  const goalsPath = path.join(dir, 'goals.json');
+  let store = { schema_version: 1, member: owner, updated_at: stampIso(), goals: [] };
+  if (fs.existsSync(goalsPath)) {
+    try {
+      const parsed = JSON.parse(fs.readFileSync(goalsPath, 'utf8'));
+      if (parsed && Array.isArray(parsed.goals)) store = parsed;
+    } catch {}
+  }
+  const now = stampIso();
+  const activeIdx = store.goals.findIndex((g) => g && g.status === 'active');
+  if (activeIdx >= 0) {
+    const prev = store.goals[activeIdx];
+    store.goals[activeIdx] = {
+      ...prev,
+      ...(promote ? { previous_title: prev.title, title: cleanPush } : {}),
+      next_push: cleanPush,
+      updated_at: now,
+    };
+  } else {
+    store.goals.push({
+      id: `goal_${Date.now().toString(36)}`,
+      member: owner,
+      title: cleanPush,
+      why: parentObjective ? `Compounds after verified win on: ${parentObjective}` : 'Self-proposed next optimization from verified run.',
+      metric: 'verified_slices_shipped',
+      target: '1',
+      horizon: '7d',
+      acceptance: ['Passes test check and cross-model referee'],
+      next_push: cleanPush,
+      status: 'active',
+      created_at: now,
+      updated_at: now,
+    });
+  }
+  store.updated_at = now;
+  fs.writeFileSync(goalsPath, `${JSON.stringify(store, null, 2)}\n`, 'utf8');
+  return goalsPath;
+}
+
+const DEFAULT_MEMBER_BATON_RELAY = {
+  researcher: 'navigator',
+  'customer-lead': 'navigator',
+  navigator: 'executor',
+  architect: 'executor',
+  executor: 'validator',
+  'auto-improver': 'validator',
+};
+
+function recordMemberHandoff(fromMember, toMember, sliceSummary, root = process.cwd(), extra = {}) {
+  const from = String(fromMember || '').trim().toLowerCase();
+  const to = String(toMember || DEFAULT_MEMBER_BATON_RELAY[from] || '').trim().toLowerCase();
+  const cleanSummary = String(sliceSummary || '').replace(/\s+/g, ' ').trim();
+  if (!from || !to || !cleanSummary) return null;
+  const parentRoot = resolveMemberWorkspaceRoot(root);
+  if (!memberDir(to, parentRoot)) return null;
+  const now = stampIso();
+  const handoff = {
+    id: `handoff_${Date.now().toString(36)}`,
+    from,
+    to,
+    summary: cleanSummary.slice(0, 180),
+    status: extra.status || 'open',
+    next_command: `atris member go ${to}`,
+    created_at: now,
+  };
+  try {
+    const handoffsFile = path.join(parentRoot, '.atris', 'state', 'member-handoffs.jsonl');
+    fs.mkdirSync(path.dirname(handoffsFile), { recursive: true });
+    fs.appendFileSync(handoffsFile, `${JSON.stringify(handoff)}\n`, 'utf8');
+    autoQueueMemberNextPush(to, `${from} handoff: ${cleanSummary}`, `Baton pass from ${from}`, parentRoot);
+  } catch {}
+  return handoff;
+}
+
+function closeMemberHandoffsForReceiver(receiverMember, root = process.cwd()) {
+  const receiver = String(receiverMember || '').trim().toLowerCase();
+  if (!receiver) return 0;
+  const parentRoot = resolveMemberWorkspaceRoot(root);
+  const handoffsFile = path.join(parentRoot, '.atris', 'state', 'member-handoffs.jsonl');
+  if (!fs.existsSync(handoffsFile)) return 0;
+  try {
+    const rawLines = fs.readFileSync(handoffsFile, 'utf8').split(/\r?\n/).filter((l) => l.trim());
+    let closedCount = 0;
+    const now = stampIso();
+    const updatedLines = rawLines.map((line) => {
+      try {
+        const row = JSON.parse(line);
+        if (row && String(row.to || '').toLowerCase() === receiver && (row.status || 'open') === 'open') {
+          closedCount++;
+          return JSON.stringify({ ...row, status: 'closed', closed_at: now });
+        }
+      } catch {}
+      return line;
+    });
+    if (closedCount > 0) {
+      fs.writeFileSync(handoffsFile, `${updatedLines.join('\n')}\n`, 'utf8');
+    }
+    return closedCount;
+  } catch {
+    return 0;
+  }
 }
 
 function memberMissionFile(owner, root = process.cwd()) {
@@ -2942,6 +3131,7 @@ function missionFromArgs(args) {
     '--cadence',
     '--loop',
     '--runner',
+    '--engine',
     '--lane',
     '--verify',
     '--stop',
@@ -2970,7 +3160,10 @@ function missionFromArgs(args) {
   const maxTicksOverride = readPositiveIntegerFlag(args, '--max-ticks', null, { json: wantsJson(args) });
   const requestedOwner = readFlag(args, '--owner', process.env.ATRIS_AGENT_ID || 'mission-lead');
   const cadence = readFlag(args, '--cadence', readFlag(args, '--loop', 'manual')) || 'manual';
-  const runnerSelection = resolveMissionRunnerSelection(readFlag(args, '--runner', 'manual'), { asJson: wantsJson(args), label: 'runner' });
+  const engineFlag = readFlag(args, '--engine', '');
+  const runnerSelection = engineFlag
+    ? resolveMissionRunnerSelection(engineFlag, { asJson: wantsJson(args), engineOnly: true, label: 'engine' })
+    : resolveMissionRunnerSelection(readFlag(args, '--runner', 'manual'), { asJson: wantsJson(args), label: 'runner' });
   const runner = runnerSelection.runner;
   const model = readFlag(args, '--model', '') || (String(runner).toLowerCase() === 'atris2' ? 'atris:fast' : '');
   const lane = readFlag(args, '--lane', 'workspace');
@@ -8615,6 +8808,101 @@ function consumeMissionPings(mission, cwd) {
   return { mission: saved, pings: pending };
 }
 
+function readBoundedContextFile(filePath, maxChars = 1600) {
+  try {
+    if (!fs.existsSync(filePath)) return '';
+    // Frontmatter is machine config (skills, permissions); the prompt only
+    // needs the body.
+    const raw = fs.readFileSync(filePath, 'utf8')
+      .replace(/^---\r?\n[\s\S]*?\r?\n---[ \t]*(?:\r?\n|$)/, '')
+      .replace(/<!--[\s\S]*?-->/g, '')
+      .trim();
+    if (!raw) return '';
+    return raw.length > maxChars ? `${raw.slice(0, maxChars).trimEnd()}\n...[truncated]` : raw;
+  } catch {
+    return '';
+  }
+}
+
+function buildPreloadedMemberContextLines(mission, root = process.cwd()) {
+  const owner = String(mission?.owner || '').trim();
+  const baseRoot = mission?.worktree_root || mission?.worktree?.path || root;
+  const sections = [];
+  if (owner && /^[a-zA-Z0-9._-]+$/.test(owner)) {
+    const teamMemberDir = memberDir(owner, baseRoot) || path.join(baseRoot, 'atris', 'team', owner);
+    const memberMd = readBoundedContextFile(path.join(teamMemberDir, 'MEMBER.md'), 1800);
+    const soulMd = readBoundedContextFile(path.join(teamMemberDir, 'SOUL.md'), 1200);
+    const missionMd = readBoundedContextFile(path.join(teamMemberDir, 'MISSION.md'), 800);
+    if (memberMd) {
+      sections.push(`### Member Identity (atris/team/${owner}/MEMBER.md)`, memberMd);
+    }
+    if (soulMd) {
+      sections.push(`### Member Soul (atris/team/${owner}/SOUL.md)`, soulMd);
+    }
+    if (missionMd) {
+      sections.push(`### Member Standing Mission (atris/team/${owner}/MISSION.md)`, missionMd);
+    }
+    try {
+      const skillsDir = path.join(teamMemberDir, 'skills');
+      if (fs.existsSync(skillsDir)) {
+        const skillSnippets = fs.readdirSync(skillsDir)
+          .sort()
+          .slice(0, 3)
+          .map((slug) => {
+            const skillText = readBoundedContextFile(path.join(skillsDir, slug, 'SKILL.md'), 500);
+            return skillText ? `#### Skill: ${slug}\n${skillText}` : '';
+          })
+          .filter(Boolean);
+        if (skillSnippets.length) {
+          sections.push(`### Unlocked Member Skills (atris/team/${owner}/skills/)`, skillSnippets.join('\n\n'));
+        }
+      }
+    } catch {}
+    try {
+      const logsDir = path.join(teamMemberDir, 'logs');
+      if (fs.existsSync(logsDir)) {
+        const latestLog = fs.readdirSync(logsDir)
+          .filter((name) => name.endsWith('.md'))
+          .sort()
+          .pop();
+        if (latestLog) {
+          const rawLog = fs.readFileSync(path.join(logsDir, latestLog), 'utf8').trim();
+          if (rawLog) {
+            const tail = rawLog.length > 500 ? `...[earlier entries]\n${rawLog.slice(-500).trimStart()}` : rawLog;
+            sections.push(`### Recent Member Memory (atris/team/${owner}/logs/${latestLog})`, tail);
+          }
+        }
+      }
+    } catch {}
+  }
+  const boundTask = mission?.xp_task || mission?.selected_target_task || null;
+  if (boundTask && (boundTask.title || boundTask.ref || boundTask.task_id)) {
+    const taskRef = boundTask.ref || boundTask.task_ref || boundTask.task_id;
+    const taskTitle = boundTask.title ? `: ${boundTask.title}` : '';
+    const taskStatus = boundTask.status ? ` (${boundTask.status})` : '';
+    sections.push(`### Bound Task Context`, `- Active task: ${taskRef}${taskTitle}${taskStatus}`);
+  }
+  try {
+    const tasteHistory = readTasteReviewHistory(baseRoot);
+    const tasteLines = [];
+    if (tasteHistory?.accepted?.length) {
+      tasteLines.push(...tasteHistory.accepted.slice(0, 2).map((line) => `- Accepted: ${line}`));
+    }
+    if (tasteHistory?.revised?.length) {
+      tasteLines.push(...tasteHistory.revised.slice(0, 2).map((line) => `- Sent back: ${line}`));
+    }
+    if (tasteLines.length) {
+      sections.push(`### Operator Taste & Review Notes`, tasteLines.join('\n'));
+    }
+  } catch {}
+  if (!sections.length) return [];
+  return [
+    ``,
+    `## Preloaded Member & Task Context`,
+    ...sections,
+  ];
+}
+
 function buildTickPrompt(mission, tickIndex, maxTicks, frozen, pings = [], cwd = process.cwd()) {
   const sharedProcess = memberProcessPrompt(cwd);
   const pingLines = pings.length
@@ -8634,6 +8922,7 @@ function buildTickPrompt(mission, tickIndex, maxTicks, frozen, pings = [], cwd =
       checkFeedback,
     ]
     : [];
+  const preloadedContextLines = buildPreloadedMemberContextLines(mission, cwd);
   const lines = [
     `# Mission Tick ${tickIndex}/${maxTicks}`,
     ...pingLines,
@@ -8649,6 +8938,7 @@ function buildTickPrompt(mission, tickIndex, maxTicks, frozen, pings = [], cwd =
     ...missionBudgetPromptLines(mission),
     ...checkFeedbackLines,
     ...(sharedProcess ? ['', sharedProcess] : []),
+    ...preloadedContextLines,
     ``,
     `## Your task`,
     `Do ONE increment of work toward the stop condition. ONE. No more.`,
@@ -8660,6 +8950,7 @@ function buildTickPrompt(mission, tickIndex, maxTicks, frozen, pings = [], cwd =
     `- The tick is not done until the verify step passes. If a frozen verifier exists, the harness runs it, but that does not replace the real-surface proof below. If no frozen verifier exists, finish by actually running the surface you changed on this computer and paste the real command output into your receipt.`,
     `- After that one verify step, STOP. Never start a second slice in one tick.`,
     `- Write the tick summary in operator language: what changed and what it buys or costs in plain words, with no flags, task ids, or code identifiers.`,
+    `- Propose the next needle-mover: include a \`next_push: <one concrete feature or optimization to build next>\` line in your receipt and member log so the team compounds exponentially.`,
     ``,
     `## No claimable work? Work the backstop ladder`,
     `If the mission and task state offer no claimable work, inspect these rungs in order. Pick the FIRST rung with real fuel and do ONE bounded slice:`,
@@ -9220,10 +9511,25 @@ function engineVerifierResultFromRun(engineResult, engine = 'codex') {
   };
 }
 
+function pickCrossEngineVerifier(mission, cwd = process.cwd(), preferredEngine = '') {
+  const explicit = canonicalEngineName(preferredEngine || mission?.referee_engine || '');
+  if (explicit) return explicit;
+  const workerEngine = canonicalEngineName(mission?.runner) || 'claude';
+  const candidates = workerEngine === 'codex' ? ['claude', 'fable', 'codex'] : ['codex', 'claude'];
+  try {
+    const engines = engineRegistryView(cwd);
+    for (const candidate of candidates) {
+      const entry = engines.find((e) => e.id === candidate);
+      if (entry && entry.installed && entry.health?.status === 'ready') return candidate;
+    }
+  } catch {}
+  return workerEngine === 'codex' ? 'claude' : 'codex';
+}
+
 async function runEngineVerifier(mission, options = {}) {
   const cwd = options.cwd || process.cwd();
-  const engine = 'codex';
-  const verifyMission = { ...mission, runner: engine, runner_kind: 'engine' };
+  const engine = pickCrossEngineVerifier(mission, cwd, options.refereeEngine);
+  const verifyMission = { ...mission, runner: engine, runner_kind: 'engine', model: '' };
   const restoreRunnerProfile = applyMissionRunnerProfile(engine);
   let engineResult;
   try {
@@ -9262,6 +9568,22 @@ function usefulClaudeReceiptSummary(text, fallback = 'no-text') {
     return clean.slice(0, 240);
   }
   return fallback;
+}
+
+function extractNextPushFromReceiptText(text) {
+  const raw = String(text || '');
+  if (!raw.trim()) return null;
+  const explicitMatch = raw.match(/^\s*(?:[-*]\s*)?(?:next_push|next push|next needle[- ]mover)\s*:\s*(.+)$/im);
+  if (explicitMatch && explicitMatch[1]) {
+    const cleaned = explicitMatch[1].replace(/`/g, '').replace(/\s+/g, ' ').trim();
+    if (cleaned && !/^<one concrete/i.test(cleaned)) return cleaned.slice(0, 180);
+  }
+  const numberedMatch = raw.match(/^\s*(?:\(3\)|3[.)])\s*(?:next(?:\s+tick)?\s*:\s*)?(.+)$/im);
+  if (numberedMatch && numberedMatch[1]) {
+    const cleaned = numberedMatch[1].replace(/`/g, '').replace(/\s+/g, ' ').trim();
+    if (cleaned && !/^layer\s*:/i.test(cleaned)) return cleaned.slice(0, 180);
+  }
+  return null;
 }
 
 function cappedClaudeReceiptText(text, limit = 4000) {
@@ -9319,6 +9641,8 @@ async function parseAndValidateMissionRunPhase(args) {
   const selfDrive = dueMode || headlessOnly || hasFlag(args, '--self-drive');
   const skipClaude = hasFlag(args, '--no-claude');
   const verifyEach = !hasFlag(args, '--no-verify');
+  const refereeEach = hasFlag(args, '--referee') && !hasFlag(args, '--no-referee');
+  const refereeEngine = readFlag(args, '--referee-engine', '');
   const completeOnPass = hasFlag(args, '--complete-on-pass');
   const skipDrain = hasFlag(args, '--no-drain');
   const createNext = hasFlag(args, '--create-next');
@@ -9354,6 +9678,8 @@ async function parseAndValidateMissionRunPhase(args) {
     selfDrive,
     skipClaude,
     verifyEach,
+    refereeEach,
+    refereeEngine,
     completeOnPass,
     skipDrain,
     createNext,
@@ -9379,7 +9705,6 @@ async function resolveMissionRunPhase(context) {
   const {
     args,
     asJson,
-    cwd,
     dueMode,
     headlessOnly,
     budgetTier,
@@ -9392,7 +9717,7 @@ async function resolveMissionRunPhase(context) {
     ref,
     runArgs,
   } = context;
-  let { maxTicks, maxWallSeconds } = context;
+  let { cwd, maxTicks, maxWallSeconds } = context;
 
   if (!dueMode && !ref) {
     if (asJson || !process.stdin.isTTY || !process.stderr.isTTY) {
@@ -9430,6 +9755,13 @@ async function resolveMissionRunPhase(context) {
   }
   if (!mission) {
     exitMissionError('Usage: atris mission run <id|objective> [--max-ticks 4] [--max-wall 3600]', 1, asJson);
+  }
+  const worktreeRoot = mission.worktree_root || mission.worktree?.path || '';
+  if (worktreeRoot && fs.existsSync(worktreeRoot) && path.resolve(worktreeRoot) !== path.resolve(cwd)) {
+    cwd = path.resolve(worktreeRoot);
+    context.cwd = cwd;
+    process.chdir(cwd);
+    mission = resolveMission(mission.id, cwd) || mission;
   }
   if (!maxTicksFlag && !budgetTier && Number(mission.max_ticks) > 0) {
     maxTicks = Math.max(1, Number(mission.max_ticks));
@@ -9973,6 +10305,7 @@ async function executeMissionRunTicksPhase(context) {
         tickSkipWorker,
         tickIdx,
         frozen,
+        storedVerifier,
       };
       let verifierResult = null;
       if (cachedStep) {
@@ -10014,11 +10347,14 @@ async function executeMissionRunTicksPhase(context) {
 
       // Layer classification needs the receipt text AND the worktree receipt, so it
       // runs here, after both exist, covering the claude and atris2 branches alike.
+      const tickReceiptText = result.atris2?.receipt_text || result.claude?.receipt_text || result.drill?.receipt_text || '';
       if (!(cachedStep && cachedStep.tick && cachedStep.tick.layer)) {
-        const tickReceiptText = result.atris2?.receipt_text || result.claude?.receipt_text || result.drill?.receipt_text || '';
         const layerInfo = extractLayerFromReceiptText(tickReceiptText, tickWorktree?.new_since_baseline_sample);
         result.layer = layerInfo.layer;
         result.layer_source = layerInfo.source;
+      }
+      if (!result.next_push) {
+        result.next_push = extractNextPushFromReceiptText(tickReceiptText);
       }
 
       // Persist tick to mission state + write structured receipt
@@ -10105,6 +10441,7 @@ async function executeMissionRunTicksPhase(context) {
         last_tick_layer: result.layer,
         last_tick_layer_source: result.layer_source,
         error_streak_count: errorStreakCount,
+        last_next_push: result.next_push || latestOnDisk.last_next_push || null,
         verifier_result: verifierResult || (verifyEach && result.protected_lane_guard && result.protected_lane_guard.allowed === false ? null : latestOnDisk.verifier_result) || null,
         last_check_feedback: verifierResult
           ? extractCheckFeedback(verifierResult)
@@ -10113,7 +10450,16 @@ async function executeMissionRunTicksPhase(context) {
         next_action: nextAction,
         claude_session_ticks: rotateSessionForContext ? 0 : claudeSessionTicks,
       }, cwd, 'mission_tick', {
-        tick_index: tickIdx, status: result.status, reason: result.reason, receipt_path: receiptPath, layer: result.layer,
+        tick_index: tickIdx,
+        status: result.status,
+        reason: result.reason,
+        receipt_path: receiptPath,
+        layer: result.layer,
+        next_push: result.next_push || undefined,
+        engine: result.engine_id || runtimeMission.runner || mission.runner || null,
+        task_type: 'executor',
+        verified_passed: verifierResult && typeof verifierResult.passed === 'boolean' ? verifierResult.passed : undefined,
+        duration_ms: Math.max(0, (Date.parse(finishedAt) || 0) - (Date.parse(tickStart) || 0)),
       }).mission;
       if (rotateSessionForContext) {
         // Same shape as the stale-lock rotation above: mint the fresh pending
@@ -10128,6 +10474,7 @@ async function executeMissionRunTicksPhase(context) {
           },
         ).mission;
       }
+      const tickSummaryText = String(result?.claude?.summary || '').replace(/\s+/g, ' ').trim();
       appendMemberLog(mission.owner, `Mission run tick ${tickIdx}`, {
         mission: mission.objective,
         state: mission.status,
@@ -10135,8 +10482,39 @@ async function executeMissionRunTicksPhase(context) {
         reason: result.reason,
         layer: result.layer || undefined,
         verifier: verifierResult ? (verifierResult.passed ? 'passed' : 'failed') : 'not_run',
+        summary: tickSummaryText ? tickSummaryText.slice(0, 240) : undefined,
+        next_push: result.next_push ? String(result.next_push).slice(0, 180) : undefined,
+        feedback: verifierResult && !verifierResult.passed ? String(mission.last_check_feedback || '').slice(0, 240) : undefined,
         receipt: receiptPath,
-      });
+      }, cwd);
+      if (verifierResult && verifierResult.passed === true && result.status === 'ran') {
+        try {
+          crystallizeMemberSkillLesson(mission.owner, {
+            objective: mission.objective,
+            summary: tickSummaryText || mission.objective,
+            verifier: frozen.verifier || mission.verifier || '',
+            next_push: result.next_push || '',
+            layer: result.layer || 'capabilities',
+          }, cwd);
+        } catch {}
+        if (result.next_push) {
+          try {
+            autoQueueMemberNextPush(mission.owner, result.next_push, mission.objective, cwd, {
+              promote: newStatus === 'complete',
+            });
+          } catch {}
+        }
+        if (mission.owner) {
+          try {
+            closeMemberHandoffsForReceiver(mission.owner, cwd);
+          } catch {}
+        }
+        if (newStatus === 'complete' && mission.owner) {
+          try {
+            recordMemberHandoff(mission.owner, '', tickSummaryText || mission.objective, cwd);
+          } catch {}
+        }
+      }
       if (newStatus === 'complete') {
         continuationGoal = seedMissionRunContinuation(mission, cwd, receiptPath);
         if (continuationGoal?.parent) mission = continuationGoal.parent;
@@ -10297,12 +10675,37 @@ async function verifyMissionRunTickPhase(context) {
   if (result.status === 'ran' && verifyEach) {
     if (currentTick.frozen.verifier) {
       verifierResult = runVerifier(currentTick.frozen.verifier);
-    } else if (!currentTick.tickSkipWorker) {
-      verifierResult = await runEngineVerifier(currentTick.tickRuntimeMission, {
+    }
+    const shouldRunReferee = !currentTick.tickSkipWorker
+      && (!verifierResult || verifierResult.passed)
+      && (
+        !currentTick.frozen.verifier
+        || context.refereeEach
+        || (!currentTick.storedVerifier && !process.env.NODE_TEST_CONTEXT)
+      );
+    if (shouldRunReferee) {
+      const refereeResult = await runEngineVerifier(currentTick.tickRuntimeMission, {
         cwd,
         signal: controller.signal,
         tickIndex: currentTick.tickIdx,
+        refereeEngine: context.refereeEngine,
       });
+      result.referee_result = refereeResult;
+      if (!verifierResult || !refereeResult.passed) {
+        verifierResult = verifierResult
+          ? {
+            ...verifierResult,
+            passed: Boolean(verifierResult.passed && refereeResult.passed),
+            referee: refereeResult,
+            output: [verifierResult.stdout, verifierResult.stderr, refereeResult.output].filter(Boolean).join('\n'),
+          }
+          : refereeResult;
+      } else {
+        verifierResult = {
+          ...verifierResult,
+          referee: refereeResult,
+        };
+      }
     }
     if (verifierResult) result.verifier_passed = verifierResult.passed;
   }
@@ -11929,6 +12332,7 @@ module.exports = {
   startMission,
   resolveMission,
   spawnMissionDriver,
+  missionDriverHealth,
   missionRunnerNeedsLiveSession,
   completeMission,
   inspectMission,
@@ -11954,6 +12358,9 @@ module.exports = {
   selectCodexGoalMission,
   codexGoalNextCommand,
   usefulClaudeReceiptSummary,
+  autoQueueMemberNextPush,
+  recordMemberHandoff,
+  closeMemberHandoffsForReceiver,
   cappedClaudeReceiptText,
   extractLayerFromReceiptText,
   classifyPathsByLayer,
@@ -11973,6 +12380,7 @@ module.exports = {
   missionVerifierHighLevelTestText,
   buildEngineVerifyPrompt,
   engineVerifierResultFromRun,
+  pickCrossEngineVerifier,
   runVerifier,
   missionFullBudgetRemainingSeconds,
   missionBudgetContinuationText,

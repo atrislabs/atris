@@ -65,6 +65,7 @@ function withTemplateEnv(value, fn) {
 test('resolveClaudeRunnerModel honors explicit model first', () => {
   withEnv('sonnet', () => {
     assert.equal(resolveClaudeRunnerModel({ model: 'claude-opus-5-5' }), 'claude-opus-5-5');
+    assert.equal(resolveClaudeRunnerModel({ model: 'opus 5.5' }), 'claude-opus-5-5');
   });
 });
 

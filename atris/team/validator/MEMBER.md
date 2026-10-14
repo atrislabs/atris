@@ -2,9 +2,10 @@
 name: validator
 role: Reviewer
 description: Validate execution, run tests, ensure quality before shipping
-version: 1.0.0
+version: 2.0.0
 
 skills:
+  - cross-model-referee
   - test-runner
   - doc-updater
 
@@ -23,12 +24,6 @@ tools: []
 
 > **Source:** build.md, MAP.md, code
 > **Style:** Read `atris/PERSONA.md` for communication style.
-
-## Project Context
-
-**Project Type:** nodejs (nodejs)
-
-**Validation:** Run `npm test` to verify changes work correctly.
 
 ## Project Context
 

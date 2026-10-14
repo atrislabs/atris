@@ -77,3 +77,45 @@ test('layer parser round-trips explicit receipt layer and ignores enum docs', ()
     { layer: null, source: 'unknown' },
   );
 });
+
+test('buildTickPrompt preloads member identity, soul, standing mission, and bound task context', () => {
+  const fs = require('node:fs');
+  const os = require('node:os');
+  const path = require('node:path');
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'atris-tick-preload-'));
+  try {
+    const memberDir = path.join(root, 'atris', 'team', 'navigator');
+    fs.mkdirSync(memberDir, { recursive: true });
+    fs.writeFileSync(path.join(memberDir, 'MEMBER.md'), '# Navigator\nRole: Strategic Planner\n', 'utf8');
+    fs.writeFileSync(path.join(memberDir, 'SOUL.md'), '# Soul\nThink from first principles.\n', 'utf8');
+    fs.writeFileSync(path.join(memberDir, 'MISSION.md'), '# Mission\nKeep the fleet aligned.\n', 'utf8');
+
+    const prompt = buildTickPrompt(
+      {
+        id: 'mission-preload',
+        objective: 'Map the fleet HUD contract',
+        owner: 'navigator',
+        cadence: 'manual',
+        status: 'running',
+        xp_task: { ref: 'TSK-42', title: 'Expose fleet HUD JSON', status: 'claimed' },
+      },
+      1,
+      2,
+      { lane: 'code', verifier: 'true' },
+      [],
+      root,
+    );
+
+    assert.ok(prompt.includes('## Preloaded Member & Task Context'));
+    assert.ok(prompt.includes('### Member Identity (atris/team/navigator/MEMBER.md)'));
+    assert.ok(prompt.includes('Role: Strategic Planner'));
+    assert.ok(prompt.includes('### Member Soul (atris/team/navigator/SOUL.md)'));
+    assert.ok(prompt.includes('Think from first principles.'));
+    assert.ok(prompt.includes('### Member Standing Mission (atris/team/navigator/MISSION.md)'));
+    assert.ok(prompt.includes('Keep the fleet aligned.'));
+    assert.ok(prompt.includes('### Bound Task Context'));
+    assert.ok(prompt.includes('TSK-42: Expose fleet HUD JSON (claimed)'));
+  } finally {
+    fs.rmSync(root, { recursive: true, force: true });
+  }
+});
