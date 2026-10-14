@@ -286,6 +286,18 @@ test('board moves the last step under its row when the screen is too narrow for 
   assert.match(renderBoard(rows, '/x'), /^member\s.*\sjob\s+last step$/m, 'piped output keeps the column');
 });
 
+test('board wraps a footer note at word boundaries to the screen width', () => {
+  const now = Date.parse('2026-10-14T13:00:00Z');
+  const rows = [memberRow('scout', '2026-10-14T12:59:00Z m-3 started: map the repo\n', now)];
+  const note = '1 unfinished run recorded no process id, so a crash there shows as working or quiet, not died';
+  const lines = renderBoard(rows, '/x', 0, 80).split('\n');
+  const footer = lines.slice(lines.lastIndexOf('') + 1);
+  assert.deepEqual(footer, ['1 unfinished run recorded no process id, so a crash there shows as working or', '  quiet, not died']);
+  assert.equal(footer.map((l) => l.trim()).join(' '), note, 'no word is lost or cut');
+  assert.equal(renderBoard(rows, '/x').split('\n').pop(), note, 'piped output keeps one line');
+  assert.equal(renderBoard(rows, '/x', 0, 160).split('\n').pop(), note, 'a note that fits stays on one line');
+});
+
 test('board gives each change its own line when the shared line is wider than the screen', () => {
   const now = Date.parse('2026-10-14T13:00:00Z');
   const row = memberRow('builder', '2026-10-14T12:59:00Z m-1 started: build\n', now);
