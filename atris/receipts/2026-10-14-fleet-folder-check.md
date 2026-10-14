@@ -355,3 +355,49 @@ Files edited: `atris/receipts/2026-10-14-fleet-folder-check.js`, its matching `.
 Progress: one new containment counterexample, ten real audit cases overall, thirteen required checks passed, zero production changes, zero dependencies, zero new repository filenames.
 next_push: Build component-aware containment for exact registered folder paths before deciding shared Git storage is disposable.
 layer: beliefs
+
+## Linked input path follow-up
+
+Added one real linked-folder audit case. Git resolves a caller path through a directory link inside the removal parent and registers the real outside location. Cleanup leaves that outside folder but deletes its shared metadata, so Git status fails with exit 128. This is reproduced unsafe behavior, not a production repair.
+
+Verdict: proceed-with-changes. The single risk is using caller path containment instead of registered folder locations to decide shared storage is disposable. Consume exact Git registrations, check component boundaries, and retain shared files needed by outside copies. The initial audit incorrectly expected Git to retain the lexical link path and exited 1; the actual listing disproved that assumption, and the corrected audit asserts the canonical registration.
+
+Plan: linked input -> actual Git registration -> outside dependency -> retain shared storage.
+
+Runtime command: `node atris/receipts/2026-10-14-fleet-folder-check.js`, exit 0. Actual new output:
+```text
+outside-link boundary: input path says inside; git registers the real outside location
+outside-link before cleanup: all git activity and process checks report clear
+{"kind":"outside-link","outsideFolderKept":true,"outsideGitStatusExit":128,"removalRecorded":false}
+audit complete; surviving fixture data retained for inspection
+```
+Retained disposable fixture: `/private/var/folders/t1/2_4kmb5n4c71dxm26zc8dgzr0000gn/T/atris-fleet-check-aVm2zf`. Real Git, real filesystem operations, and unchanged cleanup and activity helpers were used. Only newly created fixture folders were removed.
+
+Files edited: `atris/receipts/2026-10-14-fleet-folder-check.js`, this receipt, `atris/MAP.md`, `atris/refs/MAP-NOTES.md`, and `atris/team/architect/logs/2026-10-14.md`. Existing router and rendered task-view edits are excluded from staging. Commands: mission status/goal, brain activation preview, workspace status, task list/new/claim/note/ready, Git status/remote, targeted reads/search, runtime audit, required checks, brain compile preview, whitespace check, explicit staging, commit, push. Artifacts: audit, decision card, navigation and member log, retained fixture.
+
+Progress: one added linked-path case, eleven real audit cases overall, zero production changes, zero dependencies, zero new repository filenames.
+next_push: Use exact registered Git folder locations and component boundaries to retain shared storage for every surviving outside copy.
+layer: beliefs
+
+Required rerunnable check: `node --test test/worktree-removal-guard.test.js test/member-tidy.test.js`, exit 0. Saved proof: `atris/runs/2026-10-14-task-acw-22-2026-10-14T19-40-53-171Z.json`. Actual output excerpt:
+```text
+TAP version 13
+# Subtest: tidy removes landed clean copies and leaves everything else to git and the rules
+ok 1 - tidy removes landed clean copies and leaves everything else to git and the rules
+  ---
+...
+ - worktree cleanup names who removed a folder and why
+  ---
+  duration_ms: 234.865958
+  ...
+1..13
+# tests 13
+# suites 0
+# pass 13
+# fail 0
+# cancelled 0
+# skipped 0
+# todo 0
+# duration_ms 3843.951708
+```
+All thirteen required checks passed. Brain activation and compilation returned exit 2 with write plans; generated policy remained untouched.

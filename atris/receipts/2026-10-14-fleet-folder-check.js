@@ -35,7 +35,7 @@ async function main() {
   git('add', '.');
   git('commit', '-qm', 'fixture');
   console.log(`fixture: ${root}`);
-  for (const kind of ['private', 'shared', 'quarantine', 'running', 'sibling', 'outside', 'outside-running', 'outside-idle', 'outside-linebreak', 'outside-prefix']) {
+  for (const kind of ['private', 'shared', 'quarantine', 'running', 'sibling', 'outside', 'outside-running', 'outside-idle', 'outside-linebreak', 'outside-prefix', 'outside-link']) {
     const parent = fs.mkdtempSync(path.join(root, 'review-'));
     const boundary = {
       trustedRoot: root,
@@ -47,9 +47,16 @@ async function main() {
     git('clone', '-q', '--bare', root, boundary.gitDir);
     git('init', '-q', '--bare', boundary.quarantine);
     git('--git-dir', boundary.gitDir, 'worktree', 'add', '-q', boundary.worktreePath, 'master');
-    if (['outside-idle', 'outside-linebreak', 'outside-prefix'].includes(kind)) {
-      const outside = kind === 'outside-prefix' ? `${parent}-copy`
+    if (['outside-idle', 'outside-linebreak', 'outside-prefix', 'outside-link'].includes(kind)) {
+      const outside = kind === 'outside-link' ? path.join(parent, 'linked', 'copy')
+        : kind === 'outside-prefix' ? `${parent}-copy`
         : path.join(root, `outside-${path.basename(parent)}${kind === 'outside-linebreak' ? '\ncopy' : ''}`);
+      let realOutside = outside;
+      if (kind === 'outside-link') {
+        const target = fs.mkdtempSync(path.join(root, 'outside-'));
+        fs.symlinkSync(target, path.join(parent, 'linked'), 'dir');
+        realOutside = path.join(target, 'copy');
+      }
       git('--git-dir', boundary.gitDir, 'worktree', 'add', '-q', '--detach', outside, 'master');
       assert.equal(git('-C', outside, 'status', '--porcelain'), '');
       const registered = git('--git-dir', boundary.gitDir, 'worktree', 'list', '--porcelain');
@@ -59,7 +66,7 @@ async function main() {
         assert.ok(exact.split('\0').includes(`worktree ${outside}`));
         console.log('outside-linebreak listing: line splitting misses the path; zero-byte splitting preserves it');
       } else {
-        assert.ok(registered.split('\n').includes(`worktree ${outside}`));
+        assert.ok(registered.split('\n').includes(`worktree ${realOutside}`));
       }
       if (kind === 'outside-prefix') {
         const exact = git('--git-dir', boundary.gitDir, 'worktree', 'list', '--porcelain', '-z');
@@ -68,9 +75,19 @@ async function main() {
         assert.ok(path.relative(parent, outside).startsWith(`..${path.sep}`));
         console.log('outside-prefix boundary: string prefix says inside; path components say outside');
       }
+      if (kind === 'outside-link') {
+        const exact = git('--git-dir', boundary.gitDir, 'worktree', 'list', '--porcelain', '-z');
+        assert.ok(exact.split('\0').includes(`worktree ${realOutside}`));
+        assert.equal(exact.split('\0').includes(`worktree ${outside}`), false);
+        assert.equal(path.relative(parent, outside).startsWith(`..${path.sep}`), false);
+        assert.equal(fs.realpathSync(outside), realOutside);
+        assert.ok(path.relative(parent, realOutside).startsWith(`..${path.sep}`));
+        assert.equal(git('-C', realOutside, 'status', '--porcelain'), '');
+        console.log('outside-link boundary: input path says inside; git registers the real outside location');
+      }
       const activePaths = listActiveProcessPaths();
       assert.ok(Array.isArray(activePaths), 'the real process scan must succeed');
-      for (const folder of [parent, outside]) {
+      for (const folder of [parent, realOutside]) {
         assert.equal(worktreeHasActiveProcess(folder, activePaths), false);
       }
       for (const folder of [boundary.worktreePath, boundary.gitDir, boundary.quarantine, outside]) {
@@ -79,8 +96,8 @@ async function main() {
       console.log(`${kind} before cleanup: all git activity and process checks report clear`);
       fleet.exports.auditDispose(boundary);
       assert.equal(fs.existsSync(parent), false, 'update this audit when outside-copy protection is implemented');
-      assert.equal(fs.existsSync(outside), true);
-      const status = spawnSync('git', ['-C', outside, 'status', '--porcelain'], { encoding: 'utf8' });
+      assert.equal(fs.existsSync(realOutside), true);
+      const status = spawnSync('git', ['-C', realOutside, 'status', '--porcelain'], { encoding: 'utf8' });
       assert.equal(status.status, 128);
       assert.match(status.stderr, /not a git repository/);
       assert.equal(fs.existsSync(path.join(root, '.atris/state/worktree_removals.jsonl')), false);

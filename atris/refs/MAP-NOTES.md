@@ -2304,16 +2304,18 @@ npm publish
 - `lib/fleet.js:2464`: `disposeReviewSandbox` forces Git removal, then removes the work folder, Git metadata, quarantine, and parent directly. Real private, shared, and independent review-repository two-hour-old locks are deleted without a removal record. Checking only the work folder misses the independent repository lock and a running program inside that repository.
 - `atris/receipts/2026-10-14-fleet-folder-check.js:10`: repeatable actual-routine audit, using disposable real Git repositories and an in-memory export without replacing helpers. Decision and exact proof: `atris/receipts/2026-10-14-fleet-folder-check.md`. Keep the whole folder group before attempting any child removal.
 
-- `atris/receipts/2026-10-14-fleet-folder-check.js:82`: live child program in the independent repository; the real process scan sees activity under the parent, but disposal removes the parent while the program remains alive.
+- `atris/receipts/2026-10-14-fleet-folder-check.js:107`: live child program in the independent repository; the real process scan sees activity under the parent, but disposal removes the parent while the program remains alive.
 
-- `atris/receipts/2026-10-14-fleet-folder-check.js:137`: sibling-copy private lock is invisible to both the main copy and shared-repository checks; disposal deletes the parent and lock without recording removal. Inspect all linked copies before removing shared metadata.
+- `atris/receipts/2026-10-14-fleet-folder-check.js:152`: sibling-copy private lock is invisible to both the main copy and shared-repository checks; disposal deletes the parent and lock without recording removal. Inspect all linked copies before removing shared metadata.
 
-- `atris/receipts/2026-10-14-fleet-folder-check.js:137`: outside linked copy survives disposal but loses its private Git metadata and can no longer run Git status. Enumerate all copies registered with the shared repository, including paths outside the removal group.
+- `atris/receipts/2026-10-14-fleet-folder-check.js:152`: outside linked copy survives disposal but loses its private Git metadata and can no longer run Git status. Enumerate all copies registered with the shared repository, including paths outside the removal group.
 
-- `atris/receipts/2026-10-14-fleet-folder-check.js:82`: outside running-copy audit confirms parent-only scans report clear while a registered outside copy has a live program; shared metadata removal breaks its Git status. Scan every registered copy before group disposal.
+- `atris/receipts/2026-10-14-fleet-folder-check.js:107`: outside running-copy audit confirms parent-only scans report clear while a registered outside copy has a live program; shared metadata removal breaks its Git status. Scan every registered copy before group disposal.
 
 - `atris/receipts/2026-10-14-fleet-folder-check.js:51`: idle registered outside copy has no locks or running programs, yet disposal breaks its Git status. Outside dependency alone must preserve shared storage.
 
 - `atris/receipts/2026-10-14-fleet-folder-check.js:51`: a registered outside path containing a line break is missed by line splitting; `git worktree list --porcelain -z` preserves the exact path. Use zero-byte-separated records before deciding whether shared storage has surviving dependents.
 
-- `atris/receipts/2026-10-14-fleet-folder-check.js:67`: exact registration preserves an outside neighbor named after the removal parent plus a suffix, but string-prefix containment misclassifies it. Use path-component boundaries before removing shared Git storage.
+- `atris/receipts/2026-10-14-fleet-folder-check.js:74`: exact registration preserves an outside neighbor named after the removal parent plus a suffix, but string-prefix containment misclassifies it. Use path-component boundaries before removing shared Git storage.
+
+- `atris/receipts/2026-10-14-fleet-folder-check.js:81`: a path through a link inside the removal parent is registered by Git at its real outside location. Consume registered paths rather than caller input; the real outside copy survives disposal but loses shared Git files.
