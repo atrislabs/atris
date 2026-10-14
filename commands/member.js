@@ -9796,11 +9796,35 @@ const IDEA_ARCHETYPE_RULES = [
   },
 ];
 
-// Dispatch defaults to the core team. Other members (experiments, one-off
-// workers) win only when the idea names them or out-scores the core by 2x.
-const CORE_DISPATCH_MEMBERS = new Set([
-  'executor', 'architect', 'auto-improver', 'navigator', 'validator', 'customer-lead', 'researcher',
-]);
+// Keep specialized idea rules, then fall back to the same job inference used
+// by the engine roster. Renamed members get the same job score as built-ins.
+const ARCHETYPE_FOR_JOB = { build: 'executor', review: 'validator', search: 'researcher' };
+const EXPERIMENT_STATUSES = new Set(['experimental', 'one-off']);
+
+function ideaRuleFor(slug, record, text) {
+  const own = IDEA_ARCHETYPE_RULES.find((rule) => rule.slugs.includes(slug));
+  if (own && own.pattern.test(text)) return own;
+  const { autoJobForMember } = require('../lib/member-engine');
+  const archetype = ARCHETYPE_FOR_JOB[autoJobForMember(slug, record.role)];
+  return IDEA_ARCHETYPE_RULES.find((rule) => rule.slugs.includes(archetype)) || null;
+}
+
+// 0 = normal, 1 = experiment or one-off, 2 = parked, human, or odd-typed.
+function dispatchTier(record) {
+  const frontmatter = record.frontmatter || {};
+  const status = String(frontmatter.status || '').trim().toLowerCase();
+  if (status === 'parked' || memberRefusalReason(memberSlugFromRecord(record), frontmatter)) return 2;
+  if (EXPERIMENT_STATUSES.has(status)) return 1;
+  return 0;
+}
+
+// Lower tier wins first, then higher score, then name order for a stable pick.
+function outranksDispatch(candidate, best) {
+  if (!best) return true;
+  if (candidate.tier !== best.tier) return candidate.tier < best.tier;
+  if (candidate.score !== best.score) return candidate.score > best.score;
+  return candidate.member.localeCompare(best.member) < 0;
+}
 
 function ideaNamesMember(text, slug) {
   const escaped = slug.replace(/[.*+?^${}()|[\]\\]/g, '\\$&').replace(/-/g, '[-\\s]+');
@@ -9835,15 +9859,17 @@ function pickMemberForIdea(ideaText, root = process.cwd(), preferredMember = '')
   let best = null;
   for (const record of members) {
     const slug = memberSlugFromRecord(record);
+    const named = ideaNamesMember(text, slug);
+    // Naming an experiment in the idea is the owner's pick, so it ranks normally.
+    const baseTier = dispatchTier(record);
+    const tier = named && baseTier === 1 ? 0 : baseTier;
     let score = 0;
     let matchedReason = '';
 
-    for (const rule of IDEA_ARCHETYPE_RULES) {
-      if (rule.slugs.includes(slug) && rule.pattern.test(text)) {
-        score += 25 + (rule.slugs[0] === slug ? 5 : 0);
-        matchedReason = rule.reason;
-        break;
-      }
+    const rule = ideaRuleFor(slug, record, text);
+    if (rule && rule.pattern.test(text)) {
+      score += 30;
+      matchedReason = rule.reason;
     }
 
     const missionFile = path.join(teamDir, slug, 'MISSION.md');
@@ -9856,14 +9882,10 @@ function pickMemberForIdea(ideaText, root = process.cwd(), preferredMember = '')
     }
     score += overlapCount * 4;
     if (Number(record.skillCount || 0) > 0) score += 2;
-    if (slug === 'executor') score += 3;
-    if (slug === 'auto-improver') score += 2;
 
-    if (ideaNamesMember(text, slug)) {
+    if (named) {
       score += 40;
       matchedReason = 'named in the idea';
-    } else if (!CORE_DISPATCH_MEMBERS.has(slug)) {
-      score = Math.floor(score / 2);
     }
 
     if (!matchedReason) {
@@ -9877,10 +9899,9 @@ function pickMemberForIdea(ideaText, root = process.cwd(), preferredMember = '')
       role: record.role || 'Team Member',
       reason: matchedReason,
       score,
+      tier,
     };
-    if (!best || candidate.score > best.score || (candidate.score === best.score && candidate.member.localeCompare(best.member) < 0)) {
-      best = candidate;
-    }
+    if (outranksDispatch(candidate, best)) best = candidate;
   }
 
   return best;

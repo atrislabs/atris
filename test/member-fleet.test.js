@@ -428,6 +428,16 @@ test('member dispatch prefers the core team over an experiment member unless the
     // The experiment member's mission happens to share many words with the idea,
     // which is how a scoreboard fix landed on opus-overnight.
     const experimentDir = writeMember(root, 'opus-overnight');
+    fs.writeFileSync(path.join(experimentDir, 'MEMBER.md'), [
+      '---',
+      'name: opus-overnight',
+      'role: Test Member',
+      'status: experimental',
+      '---',
+      '',
+      '# opus-overnight',
+      '',
+    ].join('\n'));
     fs.writeFileSync(path.join(experimentDir, 'MISSION.md'), [
       'Run the overnight mission loop: count commits today on every branch,',
       'fix the scoreboard repo line, check the remote default branch, the current',
@@ -441,6 +451,71 @@ test('member dispatch prefers the core team over an experiment member unless the
 
     const namedPick = pickMemberForIdea('Have opus-overnight rerun the scoreboard check tonight', root);
     assert.equal(namedPick.member, 'opus-overnight');
+    assert.equal(namedPick.reason, 'named in the idea');
+  } finally {
+    fs.rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test('member dispatch ranks renamed members by their inferred job through the CLI', () => {
+  const root = makeTempWorkspace();
+  try {
+    // A company's team with its own names: none of these are built-in members.
+    const renamed = (name, { role, status = '', type = '', mission = '' }) => {
+      const dir = writeMember(root, name);
+      const frontmatter = [
+        '---',
+        `name: ${name}`,
+        `role: ${role}`,
+        ...(status ? [`status: ${status}`] : []),
+        ...(type ? [`type: ${type}`] : []),
+        '---',
+        '',
+        `# ${name}`,
+        '',
+      ].join('\n');
+      fs.writeFileSync(path.join(dir, 'MEMBER.md'), frontmatter);
+      if (mission) fs.writeFileSync(path.join(dir, 'MISSION.md'), mission);
+    };
+    const dispatch = (idea) => {
+      const result = runCli(['member', 'dispatch', idea, '--dry-run', '--json'], root);
+      assert.equal(result.status, 0, result.stderr || result.stdout);
+      return JSON.parse(result.stdout);
+    };
+    renamed('payments', { role: 'Payments Builder', mission: 'Build refund and charge flows, add tests.\n' });
+    renamed('qa', { role: 'QA Reviewer', mission: 'Review diffs and verify test results before merge.\n' });
+    renamed('scout', { role: 'Market Scout', mission: 'Research competitors and survey pricing.\n' });
+
+    const buildPick = dispatch('Build the refund flow for failed card charges');
+    assert.equal(buildPick.member, 'payments');
+
+    const reviewPick = dispatch('Review the diff and verify the tests before merge');
+    assert.equal(reviewPick.member, 'qa');
+
+    const searchPick = dispatch('Research how competitors price their annual plans');
+    assert.equal(searchPick.member, 'scout');
+
+    // Experiments, parked members, and people rank after a normal member that
+    // does the same job, even when they share more words with the idea.
+    renamed('payments-spike', {
+      role: 'Payments Builder',
+      status: 'experimental',
+      mission: 'Build refund and charge flows, build refund flows, add tests, refund charge.\n',
+    });
+    renamed('payments-once', { role: 'Payments Builder', status: 'one-off', mission: 'Build refund flows.\n' });
+    renamed('payments-old', { role: 'Payments Builder', status: 'parked', mission: 'Build refund flows.\n' });
+    renamed('dana', { role: 'Payments Builder', type: 'human', mission: 'Build refund flows.\n' });
+    const rankedPick = dispatch('Build the refund flow for failed card charges');
+    assert.equal(rankedPick.member, 'payments');
+
+    // An unfamiliar title still gets the engine roster's default build job.
+    renamed('payments', { role: 'Payments Owner' });
+    renamed('qa', { role: 'QA Reviewer', mission: 'Build refund flows for failed card charges.\n' });
+    assert.equal(dispatch('Build the refund flow for failed card charges').member, 'payments');
+
+    // Naming an experiment in the idea is the owner's pick.
+    const namedPick = dispatch('Have payments-spike build the refund flow');
+    assert.equal(namedPick.member, 'payments-spike');
     assert.equal(namedPick.reason, 'named in the idea');
   } finally {
     fs.rmSync(root, { recursive: true, force: true });
