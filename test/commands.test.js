@@ -11210,6 +11210,22 @@ test('task ready holds work in review until human accept', () => {
   try {
     fs.mkdirSync(path.join(dir, 'atris'), { recursive: true });
     writePolicy(dir, { enabled: false, enabled_by: 'keshavrao' });
+    // Side tasks and padding notes go straight to the task store; every
+    // step this test asserts on still runs through the CLI.
+    const workspaceRoot = taskStore.workspaceRoot(dir);
+    const withStore = (fn) => {
+      const db = taskStore.open(dbPath);
+      try {
+        return fn(db);
+      } finally {
+        taskStore.close();
+      }
+    };
+    const seedClaimedTask = (title) => withStore((db) => {
+      const created = taskStore.addTask(db, { title, tag: 'agent', workspaceRoot });
+      assert.equal(taskStore.claimTask(db, { id: created.id, claimedBy: 'codex' }).claimed, true);
+      return created.id;
+    });
 
     const add = runCli([
       'task', 'add', 'Approve autonomous work before XP',
@@ -11370,10 +11386,12 @@ test('task ready holds work in review until human accept', () => {
 	    assert.match(certifiedShow.stdout, /Landing: waiting on human/);
 	    assert.match(certifiedShow.stdout, /Checked: yes \(3 agent checks\)/);
 
-	    for (let i = 0; i < 10; i += 1) {
-	      const note = runCli(['task', 'note', ref, `post-ready context ${i}`, '--as', 'codex'], { cwd: dir, env });
-	      assert.equal(note.status, 0, note.stderr);
-	    }
+	    withStore((db) => {
+	      for (let i = 0; i < 10; i += 1) {
+	        const note = taskStore.noteTask(db, { id: readyPayload.task.id, actor: 'codex', content: `post-ready context ${i}` });
+	        assert.equal(note.noted, true, note.reason);
+	      }
+	    });
 
     const statusAfterCertification = runCli(['task', 'status', '--json'], { cwd: dir, env });
     assert.equal(statusAfterCertification.status, 0, statusAfterCertification.stderr);
@@ -11408,10 +11426,7 @@ test('task ready holds work in review until human accept', () => {
     assert.equal(nextPayload.command, `atris task accept ${ref}`);
     assert.equal(nextPayload.task_id, certifiedPayload.task.id);
 
-    const textAdd = runCli(['task', 'add', 'Render native goal handoff copy', '--tag', 'agent', '--json'], { cwd: dir, env });
-    assert.equal(textAdd.status, 0, textAdd.stderr);
-    const textRef = JSON.parse(textAdd.stdout).task.display_id;
-    assert.equal(runCli(['task', 'claim', textRef, '--as', 'codex'], { cwd: dir, env }).status, 0);
+    const textRef = seedClaimedTask('Render native goal handoff copy');
     const readyText = runCli([
       'task', 'ready', textRef,
       '--proof', 'second validation pass',
@@ -11448,10 +11463,7 @@ test('task ready holds work in review until human accept', () => {
     assert.equal(acceptPayload.xp_projection.total_xp, 1);
     assert.equal(acceptPayload.xp_projection.latest_accepted_proof.source_task_id, acceptPayload.task_id);
 
-    const clearCli = runCli(['task', 'add', 'Clear stale CLI review guidance', '--tag', 'agent', '--json'], { cwd: dir, env });
-    assert.equal(clearCli.status, 0, clearCli.stderr);
-    const clearCliRef = JSON.parse(clearCli.stdout).task.display_id;
-    assert.equal(runCli(['task', 'claim', clearCliRef, '--as', 'codex'], { cwd: dir, env }).status, 0);
+    const clearCliRef = seedClaimedTask('Clear stale CLI review guidance');
     const clearCliReady = runCli([
       'task', 'ready', clearCliRef,
       '--proof', 'cli clear validation passed',
