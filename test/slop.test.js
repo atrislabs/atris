@@ -453,3 +453,16 @@ test('a dry run shows what the fix would change and leaves the file alone', () =
   assert.equal(json.slop, 1);
   assert.equal(fs.readFileSync(file, 'utf8'), body, 'nothing written in machine mode either');
 });
+
+test('machine output through a pipe arrives whole, past the 64 KB pipe buffer', () => {
+  const { spawnSync } = require('node:child_process');
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'slop-pipe-'));
+  const lines = Array.from({ length: 1500 }, (_, i) => `line ${i} keeps going — and on`);
+  fs.writeFileSync(path.join(dir, 'big.md'), lines.join('\n') + '\n');
+  const bin = path.join(__dirname, '..', 'bin', 'atris.js');
+  const r = spawnSync(process.execPath, [bin, 'slop', 'detect', dir, '--json'], { encoding: 'utf8', maxBuffer: 64 * 1024 * 1024 });
+  assert.equal(r.status, 1, 'slop found still exits 1');
+  assert.ok(r.stdout.length > 65536, `output should pass one pipe buffer, got ${r.stdout.length} bytes`);
+  const json = JSON.parse(r.stdout);
+  assert.equal(json.slop, 1500);
+});
