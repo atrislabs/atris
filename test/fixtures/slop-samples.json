@@ -1,0 +1,19 @@
+{
+  "gradientHeadlineOpen": "<div className=\"bg-gradient-to-r from-purple-500 text-transparent bg-clip-text\">",
+  "hypeLine": "  Supercharge your workflow ✨",
+  "emDashCopy": "<p>Fast, reliable — and calm.</p>",
+  "hoverLiftCard": "<div className=\"transition hover:-translate-y-1 hover:scale-110\">",
+  "blurBlob": "<div className=\"absolute -z-10 blur-3xl bg-sky-400/20 rounded-full\" />",
+  "backdropBlurSmall": "<div className=\"backdrop-blur-sm\" />",
+  "kickerDot": "  <span className=\"h-2 w-2 rounded-full bg-orange-500\" />",
+  "kickerDotCaps": "<span>● NATURAL VOICE</span>",
+  "boxDrawingControls": "│ ▶ PLAY ■ STOP ● REC │",
+  "pastelIconTile": "<div className=\"flex h-12 w-12 items-center justify-center rounded-xl bg-indigo-100\">",
+  "pastelSection": "<section className=\"rounded-lg bg-indigo-50 p-12\">",
+  "darkHeroGradient": "<section className=\"bg-gradient-to-b from-slate-900 via-slate-800 to-black\">",
+  "glowShadowButton": "<button className=\"rounded-lg shadow-lg shadow-indigo-500/50\">Go</button>",
+  "rainbowButton": "<button className=\"bg-gradient-to-r from-pink-500 to-orange-500\">Go</button>",
+  "grainFilter": "<filter id=\"n\"><feTurbulence type=\"fractalNoise\" baseFrequency=\"0.8\" /></filter>",
+  "glassCss": "\n\n.x { backdrop-filter: blur(8px); }",
+  "gradientHeadlineLine": "<div className=\"bg-gradient-to-r from-purple-500 text-transparent bg-clip-text\">bad</div>\n"
+}

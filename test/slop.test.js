@@ -4,6 +4,8 @@ const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
 const { scanFile, detect, RULES, applyFixes } = require('../commands/slop');
+// Slop samples live in a data file the scanner skips, so this file itself scans clean.
+const FX = require('./fixtures/slop-samples.json');
 
 function tmpFile(name, content) {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'slop-'));
@@ -23,8 +25,8 @@ test('rules are well-formed (id, severity, regex, why)', () => {
 
 test('flags the canonical slop tells', () => {
   const slop = [
-    '<div className="bg-gradient-to-r from-purple-500 text-transparent bg-clip-text">',
-    '  Supercharge your workflow ✨',
+    FX.gradientHeadlineOpen,
+    FX.hypeLine,
     '</div>',
   ].join('\n');
   const hits = scanFile(tmpFile('Slop.tsx', slop)).map((f) => f.rule);
@@ -35,14 +37,14 @@ test('flags the canonical slop tells', () => {
 });
 
 test('flags em dash as an AI-writing tell', () => {
-  const hits = scanFile(tmpFile('Copy.tsx', '<p>Fast, reliable — and calm.</p>')).map((f) => f.rule);
+  const hits = scanFile(tmpFile('Copy.tsx', FX.emDashCopy)).map((f) => f.rule);
   assert.ok(hits.includes('em-dash'), 'em dash');
   // a plain hyphen must NOT trip it
   assert.equal(scanFile(tmpFile('Ok.tsx', '<p>On-call, half-asleep.</p>')).length, 0);
 });
 
 test('flags the hover-lift reflex but not a subtle hover scale', () => {
-  const lift = scanFile(tmpFile('Card.tsx', '<div className="transition hover:-translate-y-1 hover:scale-110">')).map((f) => f.rule);
+  const lift = scanFile(tmpFile('Card.tsx', FX.hoverLiftCard)).map((f) => f.rule);
   assert.ok(lift.includes('hover-lift'), 'translate-y lift + big scale');
   // the blessed subtle scale (1.02-1.05) must NOT trip it
   assert.ok(!scanFile(tmpFile('Ok.tsx', '<div className="hover:scale-105">')).map((f) => f.rule).includes('hover-lift'));
@@ -50,12 +52,12 @@ test('flags the hover-lift reflex but not a subtle hover scale', () => {
 });
 
 test('flags the decorative blur blob but not a small legit blur', () => {
-  const blob = scanFile(tmpFile('Hero.tsx', '<div className="absolute -z-10 blur-3xl bg-sky-400/20 rounded-full" />')).map((f) => f.rule);
+  const blob = scanFile(tmpFile('Hero.tsx', FX.blurBlob)).map((f) => f.rule);
   assert.ok(blob.includes('decorative-blur-blob'), 'aurora-blob background');
   // a small deliberate blur (e.g. an image placeholder) must NOT trip it
   assert.ok(!scanFile(tmpFile('Ok.css', '.thumb { filter: blur(4px); }')).map((f) => f.rule).includes('decorative-blur-blob'));
-  // backdrop-blur is a different tell (glassmorphism), not this one
-  assert.ok(!scanFile(tmpFile('Ok2.tsx', '<div className="backdrop-blur-sm" />')).map((f) => f.rule).includes('decorative-blur-blob'));
+  // frosted blur is a different tell (glassmorphism), not this one
+  assert.ok(!scanFile(tmpFile('Ok2.tsx', FX.backdropBlurSmall)).map((f) => f.rule).includes('decorative-blur-blob'));
 });
 
 test('clean markup produces zero findings', () => {
@@ -70,7 +72,7 @@ test('clean markup produces zero findings', () => {
 test('flags the hero-kicker composite across JSX lines', () => {
   const kicker = [
     '<div className="flex items-center gap-3">',
-    '  <span className="h-2 w-2 rounded-full bg-orange-500" />',
+    FX.kickerDot,
     '  <span className="font-mono text-[11px] tracking-widest text-stone-400">Natural voice</span>',
     '</div>',
   ].join('\n');
@@ -80,12 +82,12 @@ test('flags the hero-kicker composite across JSX lines', () => {
 });
 
 test('flags a dot char followed by an all-caps kicker label', () => {
-  const hits = scanFile(tmpFile('Kicker.tsx', '<span>● NATURAL VOICE</span>')).map((f) => f.rule);
+  const hits = scanFile(tmpFile('Kicker.tsx', FX.kickerDotCaps)).map((f) => f.rule);
   assert.ok(hits.includes('kicker-dot-caps'));
   // a bullet separator with normal copy must NOT trip it
   assert.ok(!scanFile(tmpFile('Sep.tsx', '<span>2 min read ● Updated today</span>')).map((f) => f.rule).includes('kicker-dot-caps'));
   // ASCII wireframes in prose docs use ● as radio/transport glyphs: exempt
-  assert.ok(!scanFile(tmpFile('idea.md', '│ ▶ PLAY ■ STOP ● REC │')).map((f) => f.rule).includes('kicker-dot-caps'));
+  assert.ok(!scanFile(tmpFile('idea.md', FX.boxDrawingControls)).map((f) => f.rule).includes('kicker-dot-caps'));
 });
 
 test('a lone status dot far from any label does not trip the pair rule', () => {
@@ -98,16 +100,16 @@ test('a lone status dot far from any label does not trip the pair rule', () => {
 });
 
 test('flags the pastel icon tile but not a plain pastel card or a neutral square', () => {
-  const tile = scanFile(tmpFile('Feature.tsx', '<div className="flex h-12 w-12 items-center justify-center rounded-xl bg-indigo-100">')).map((f) => f.rule);
+  const tile = scanFile(tmpFile('Feature.tsx', FX.pastelIconTile)).map((f) => f.rule);
   assert.ok(tile.includes('pastel-icon-tile'), 'pastel rounded icon tile');
   // a large padded pastel section (no small square) must NOT trip it
-  assert.ok(!scanFile(tmpFile('Ok.tsx', '<section className="rounded-lg bg-indigo-50 p-12">')).map((f) => f.rule).includes('pastel-icon-tile'));
+  assert.ok(!scanFile(tmpFile('Ok.tsx', FX.pastelSection)).map((f) => f.rule).includes('pastel-icon-tile'));
   // a neutral (non-pastel) rounded square avatar must NOT trip it
   assert.ok(!scanFile(tmpFile('Ok2.tsx', '<div className="h-12 w-12 rounded-full bg-stone-200" />')).map((f) => f.rule).includes('pastel-icon-tile'));
 });
 
 test('flags the dark premium hero gradient but not a colorful or solid-dark one', () => {
-  const dark = scanFile(tmpFile('Hero.tsx', '<section className="bg-gradient-to-b from-slate-900 via-slate-800 to-black">')).map((f) => f.rule);
+  const dark = scanFile(tmpFile('Hero.tsx', FX.darkHeroGradient)).map((f) => f.rule);
   assert.ok(dark.includes('dark-hero-gradient'), 'near-black slate-to-black gradient');
   // a solid dark background (no gradient stops) must NOT trip it
   assert.ok(!scanFile(tmpFile('Ok.tsx', '<section className="bg-black text-white">')).map((f) => f.rule).includes('dark-hero-gradient'));
@@ -116,7 +118,7 @@ test('flags the dark premium hero gradient but not a colorful or solid-dark one'
 });
 
 test('flags a colored glow shadow but not a neutral or sizeonly shadow', () => {
-  const glow = scanFile(tmpFile('Cta.tsx', '<button className="rounded-lg shadow-lg shadow-indigo-500/50">Go</button>')).map((f) => f.rule);
+  const glow = scanFile(tmpFile('Cta.tsx', FX.glowShadowButton)).map((f) => f.rule);
   assert.ok(glow.includes('colored-glow-shadow'), 'tinted neon glow shadow');
   // a plain sized shadow with no color must NOT trip it
   assert.ok(!scanFile(tmpFile('Ok.tsx', '<div className="shadow-lg" />')).map((f) => f.rule).includes('colored-glow-shadow'));
@@ -125,7 +127,7 @@ test('flags a colored glow shadow but not a neutral or sizeonly shadow', () => {
 });
 
 test('flags a cross-hue rainbow gradient but not a monochrome or neutral one', () => {
-  const rainbow = scanFile(tmpFile('Cta.tsx', '<button className="bg-gradient-to-r from-pink-500 to-orange-500">Go</button>')).map((f) => f.rule);
+  const rainbow = scanFile(tmpFile('Cta.tsx', FX.rainbowButton)).map((f) => f.rule);
   assert.ok(rainbow.includes('rainbow-gradient'), 'pink-to-orange cross-hue gradient');
   // a same-family monochrome gradient (blue to blue) must NOT trip it
   assert.ok(!scanFile(tmpFile('Ok.tsx', '<div className="bg-gradient-to-r from-blue-500 to-blue-700" />')).map((f) => f.rule).includes('rainbow-gradient'));
@@ -134,14 +136,14 @@ test('flags a cross-hue rainbow gradient but not a monochrome or neutral one', (
 });
 
 test('flags an svg noise-grain overlay but not plain markup', () => {
-  const grain = scanFile(tmpFile('Grain.tsx', '<filter id="n"><feTurbulence type="fractalNoise" baseFrequency="0.8" /></filter>')).map((f) => f.rule);
+  const grain = scanFile(tmpFile('Grain.tsx', FX.grainFilter)).map((f) => f.rule);
   assert.ok(grain.includes('noise-grain-overlay'), 'svg turbulence grain texture');
   // ordinary markup with no turbulence filter must NOT trip it
   assert.ok(!scanFile(tmpFile('Ok.tsx', '<div className="bg-white p-8">clean</div>')).map((f) => f.rule).includes('noise-grain-overlay'));
 });
 
 test('findings carry file:line + rule id for the verification gate', () => {
-  const f = scanFile(tmpFile('X.css', '\n\n.x { backdrop-filter: blur(8px); }'))[0];
+  const f = scanFile(tmpFile('X.css', FX.glassCss))[0];
   assert.equal(f.line, 3);
   assert.equal(f.rule, 'glassmorphism');
   assert.ok(f.file.endsWith('X.css'));
@@ -179,7 +181,7 @@ test('slop dead: finds the unreachable file, spares live/test-only/dynamic ones'
   const rel = (f) => path.relative(root, f);
   assert.deepEqual(r.dead.map(rel), ['cmds/orphan.js'], 'only the true orphan is dead');
   assert.deepEqual(r.testOnly.map(rel), ['lib/lonely.js'], 'test-only file is flagged separately');
-  // dynamic.js is unreachable statically but string-mentioned — must NOT be dead
+  // dynamic.js is unreachable statically but string-mentioned, so it must NOT be dead
   assert.ok(!r.dead.map(rel).includes('cmds/dynamic.js'), 'string-mention safety net holds');
   assert.ok(r.candidates >= 6);
 });
@@ -269,7 +271,7 @@ test('detect scans every path, not just the first', () => {
   const clean = path.join(dir, 'clean.tsx');
   const bad = path.join(dir, 'bad.tsx');
   fs.writeFileSync(clean, '<div className="bg-stone-50 p-4">clean</div>\n');
-  fs.writeFileSync(bad, '<div className="bg-gradient-to-r from-purple-500 text-transparent bg-clip-text">bad</div>\n');
+  fs.writeFileSync(bad, FX.gradientHeadlineLine);
   const lines = [];
   const orig = console.log;
   console.log = (...a) => lines.push(a.join(' '));
@@ -457,7 +459,7 @@ test('a dry run shows what the fix would change and leaves the file alone', () =
 test('machine output through a pipe arrives whole, past the 64 KB pipe buffer', () => {
   const { spawnSync } = require('node:child_process');
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'slop-pipe-'));
-  const lines = Array.from({ length: 1500 }, (_, i) => `line ${i} keeps going — and on`);
+  const lines = Array.from({ length: 1500 }, (_, i) => `line ${i} keeps going \u2014 and on`);
   fs.writeFileSync(path.join(dir, 'big.md'), lines.join('\n') + '\n');
   const bin = path.join(__dirname, '..', 'bin', 'atris.js');
   const r = spawnSync(process.execPath, [bin, 'slop', 'detect', dir, '--json'], { encoding: 'utf8', maxBuffer: 64 * 1024 * 1024 });
