@@ -20,3 +20,7 @@ Learned: the saved close error never reached the summary. Log scanning and appen
 Brain activation/compile: plan-only, exit 2; generated policy files left untouched.
 next_push: Make lost-run cleanup report unreadable resource logs instead of treating them as empty.
 layer: capabilities
+
+Landing: code and proof committed and pushed. Review submission reran the frozen command in its login-shell runner and failed, exit 1: tests 141, pass 123, fail 18. Its receipt truncates individual failures: atris/runs/2026-10-14-task-efm-27-2026-10-14T19-34-41-963Z.json. A second bare run passed: tests 141, pass 141, fail 0, exit 0. Task remains claimed, not in Review; no acceptance attempted. The cause of the review-run difference is unproven.
+next_push: Reproduce the review runner's 18 failures with full output before attempting review again.
+layer: capabilities
