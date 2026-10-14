@@ -104,6 +104,13 @@ test('worktree cleanup names locks and ages when Git refuses removal, in place a
   assert.match(result.stdout, /Git refusal named three locks and distinct ages, in place and after the copy moved; files, branch, locks, and Git record retained; no removal recorded/);
 });
 
+test('green landing keeps a scratch copy holding Git locks, in place or moved, and logs a clean removal', () => {
+  const proof = path.resolve(__dirname, '../atris/receipts/2026-10-14-land-green-scratch-check.js');
+  const result = spawnSync(process.execPath, [proof], { encoding: 'utf8', timeout: 120000 });
+  assert.equal(result.status, 0, result.stderr || result.stdout);
+  assert.match(result.stdout, /clean scratch copy removed and logged; scratch copies holding aged private and shared locks, in place or moved, were kept with each lock path and age named, their Git record retained, and no removal recorded/);
+});
+
 test('worktree cleanup keeps a copy moved after its final checks pass', () => {
   const proof = path.resolve(__dirname, '../atris/receipts/2026-10-14-worktree-cleanup-moved-folder-check.js');
   const result = spawnSync(process.execPath, [proof], { encoding: 'utf8', timeout: 120000 });
