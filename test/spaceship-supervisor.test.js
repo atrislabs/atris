@@ -9,6 +9,25 @@ const { execFileSync, spawnSync } = require('child_process');
 
 const SCRIPT = path.join(__dirname, '..', 'scripts', 'spaceship.sh');
 
+// Only the supervisor's sleep advances its budget. Git and the shell still run
+// for real, but a busy host cannot exhaust the budget before the alert sequence.
+function supervisorClockEnv(repo) {
+  const bin = path.join(repo, 'clock-bin');
+  const clock = path.join(repo, 'clock-seconds');
+  fs.mkdirSync(bin);
+  fs.writeFileSync(clock, '0\n');
+  fs.writeFileSync(path.join(bin, 'date'), [
+    '#!/bin/sh',
+    'if [ "$1" = "+%s" ]; then cat "$SUPERVISOR_TEST_CLOCK"; else exec /bin/date "$@"; fi',
+  ].join('\n'), { mode: 0o755 });
+  fs.writeFileSync(path.join(bin, 'sleep'), [
+    '#!/bin/sh',
+    'seconds=$(cat "$SUPERVISOR_TEST_CLOCK")',
+    'echo "$((seconds + $1))" > "$SUPERVISOR_TEST_CLOCK"',
+  ].join('\n'), { mode: 0o755 });
+  return { ...process.env, PATH: `${bin}${path.delimiter}${process.env.PATH}`, SUPERVISOR_TEST_CLOCK: clock };
+}
+
 test('spaceship names the backend setting when its email helper is unavailable', () => {
   const repo = fs.mkdtempSync(path.join(os.tmpdir(), 'spaceship-backend-'));
   try {
@@ -91,14 +110,14 @@ test('spaceship supervisor survives halts and classifies outcomes', () => {
     const out = execFileSync('bash', [
       SCRIPT,
       '--repo', repo,
-      '--hours', '0.003',     // ~10s budget
+      '--hours', '0.003',     // ten simulated seconds, ten real ticks
       '--interval', '1',
       '--tick-timeout', '20',
       '--idle-alert', '3',
       '--halt-alert', '2',
       '--tick-cmd', stub,
       '--no-email',
-    ], { encoding: 'utf8', timeout: 60000 });
+    ], { encoding: 'utf8', timeout: 60000, env: supervisorClockEnv(repo) });
 
     // 1. it shipped the one real commit
     assert.match(out, /tick 1 SHIPPED/, 'should detect the committed tick as shipped');
@@ -116,6 +135,7 @@ test('spaceship supervisor survives halts and classifies outcomes', () => {
     const idleAlerts = (out.match(/backlog looks empty/g) || []).length;
     assert.ok(idleAlerts >= 1, 'should fire the idle-streak alert at least once');
     assert.ok(idleAlerts <= 1, 'idle-streak alert must not duplicate every idle tick');
+    assert.match(out, /RESULT shipped=1 halted=2 idle=7 ticks=10/, 'must exercise the complete sequence');
 
     // 5. a run-log was written for durable forensics
     const log = path.join(repo, 'atris', '.spaceship', 'run.log');
@@ -176,13 +196,14 @@ test('spaceship counts a commit on another branch/worktree as shipped, not idle'
       '--halt-alert', '2',
       '--tick-cmd', stub,
       '--no-email',
-    ], { encoding: 'utf8', timeout: 60000 });
+    ], { encoding: 'utf8', timeout: 60000, env: supervisorClockEnv(repo) });
 
     // The fix: a commit anywhere in the object store is SHIPPED.
     assert.match(out, /tick 1 SHIPPED/,
       'a commit on another branch/worktree must be detected as shipped');
     // And it must NOT be miscounted as idle (the lie we are preventing).
     assert.doesNotMatch(out, /tick 1 IDLE/, 'the committing tick must not be classified idle');
+    assert.match(out, /RESULT shipped=1 halted=0 idle=9 ticks=10/);
   } finally {
     fs.rmSync(repo, { recursive: true, force: true });
   }
