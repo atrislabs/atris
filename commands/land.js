@@ -2,7 +2,7 @@ const fs = require('fs');
 const path = require('path');
 const gitSpawn = require('../lib/git-spawn');
 const { compactErrorPayload, printCliJson } = require('../lib/cli-json');
-const { listWorktrees, statusCounts, defaultMainlineBase, listActiveProcessCwds, worktreeHasActiveProcess, worktreeGitActivity, recordWorktreeRemoval, readWorktreeRemovals } = require('./worktree');
+const { listWorktrees, statusCounts, defaultMainlineBase, listActiveProcessCwds, worktreeHasActiveProcess, worktreeGitActivity, describeGitActivity, recordWorktreeRemoval, readWorktreeRemovals } = require('./worktree');
 
 const DEFAULT_TTL_DAYS = 7;
 const DEFAULT_STALE_HOURS = 48;
@@ -577,7 +577,7 @@ function reap(root, { ttlDays = DEFAULT_TTL_DAYS, staleHours = DEFAULT_STALE_HOU
     // also outranks --force: removal would strand the operation half done.
     const gitActivity = worktreeGitActivity(w.path);
     if (gitActivity) {
-      protectedWorktrees.push({ ...w, reason: gitActivity });
+      protectedWorktrees.push({ ...w, reason: describeGitActivity(w.path, gitActivity, now) });
       continue;
     }
     if (worktreeWithinReapGrace(w.path, now)) {
@@ -678,7 +678,7 @@ function reap(root, { ttlDays = DEFAULT_TTL_DAYS, staleHours = DEFAULT_STALE_HOU
     }
     const gitActivityAtRemoval = worktreeGitActivity(w.path);
     if (gitActivityAtRemoval) {
-      receipt.keptWorktrees.push(`${w.path} (${gitActivityAtRemoval})`);
+      receipt.keptWorktrees.push(`${w.path} (${describeGitActivity(w.path, gitActivityAtRemoval)})`);
       if (w.branch) targetNames.delete(w.branch);
       continue;
     }

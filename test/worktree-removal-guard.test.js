@@ -137,10 +137,13 @@ function worktreeGitDir(wt) {
 test('reap keeps a folder while git holds its lock, even with --force', () => {
   const { base, repo, wt } = landedWorktree();
   try {
-    fs.writeFileSync(path.join(worktreeGitDir(wt), 'index.lock'), '');
+    const lock = path.join(worktreeGitDir(wt), 'index.lock');
+    fs.writeFileSync(lock, '');
+    const stale = new Date(Date.now() - 3 * 60 * 60 * 1000);
+    fs.utimesSync(lock, stale, stale);
     const receipt = reap(repo, { remote: false, force: true, activeCwds: [] });
     assert.ok(fs.existsSync(wt), JSON.stringify(receipt));
-    assert.ok(receipt.keptWorktrees.some((line) => line.includes('git_lock')), JSON.stringify(receipt));
+    assert.ok(receipt.keptWorktrees.includes(`${wt} (git_lock: ${lock}, 3 h old)`), JSON.stringify(receipt));
     assert.ok(!receipt.deletedBranches.includes('engine-run'));
     assert.deepEqual(removalLines(repo), []);
   } finally {

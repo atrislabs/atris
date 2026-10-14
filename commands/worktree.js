@@ -1262,6 +1262,14 @@ function describeLockAge(ms) {
   return `${Math.floor(minutes / 60)} h`;
 }
 
+// The kept reason as reap prints it: a git lock also names its file and age,
+// so the line an operator reads says what to check before clearing it.
+function describeGitActivity(worktreePath, reason, now = Date.now()) {
+  if (reason !== 'git_lock') return reason;
+  const lock = worktreeGitLock(worktreePath, now);
+  return lock ? `git_lock: ${lock.file}, ${describeLockAge(lock.ageMs)} old` : reason;
+}
+
 // Every work-folder removal leaves one line naming who removed it and why, in
 // the main checkout's state so the line outlives the folder it describes.
 // The log lives in the main checkout, so every linked folder writes one file.
@@ -1553,6 +1561,7 @@ module.exports = {
   gitNetworkEnvironment,
   gitStoreActivity,
   worktreeGitLock,
+  describeGitActivity,
   describeFlightAge,
   flightStampMs,
   listActiveProcessCwds,
