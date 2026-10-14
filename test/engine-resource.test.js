@@ -2495,15 +2495,36 @@ test('real cleanup skips a younger replacement pid while stopping an unchanged a
     const report = JSON.parse(ran.stdout);
     assert.deepStrictEqual(report.stopped, [pids[1]]);
     assert.deepStrictEqual(report.skipped, [pids[0]]);
+    assert.deepStrictEqual(report.replaced, [pids[0]]);
     const reachable = spawnSync('/usr/bin/ssh-add', ['-l'], {
       encoding: 'utf8', timeout: 10000, env: { ...process.env, SSH_AUTH_SOCK: path.join(root, 'replacement') },
     });
     assert.equal(reachable.status, 1, reachable.stderr);
     assert.match(reachable.stdout, /no identities/i);
     assert.deepStrictEqual(report.history.last_sweep.skipped, [pids[0]]);
+    assert.deepStrictEqual(report.history.last_sweep.replaced, [pids[0]]);
+    const text = spawnSync(process.execPath, ['--require', preload, cli, 'engine', 'sweep', '--apply'], {
+      cwd: root, encoding: 'utf8', timeout: 30000, env: { ...process.env, ATRIS_AUTO_UPDATE: 'off' },
+    });
+    assert.equal(text.status, 0, text.stderr);
+    assert.match(text.stdout, /1 skipped because a younger ssh-agent now has the same process number/);
+    assert.doesNotMatch(text.stdout, /in use or gone/);
+    console.log('replacement text cleanup exit ' + text.status + ': ' + text.stdout.trim());
     console.log('replacement cleanup exit ' + ran.status + ': stopped one unchanged agent, skipped one younger replacement; replacement socket still answers');
   } finally {
     for (const pid of pids) { try { process.kill(pid, 'SIGTERM'); } catch {} }
     fs.rmSync(root, { recursive: true, force: true });
   }
+});
+
+
+test('cleanup separates younger replacements from in-use or gone skips', () => {
+  const agent = (pid, age_sec = 3600) => ({ pid, ppid: 1, uid: 501, age_sec, args: 'ssh-agent -s' });
+  const first = { agents: [agent(200), agent(201), agent(202)], referenced: new Set() };
+  const second = { agents: [agent(200, 90), agent(201)], referenced: new Set([201]) };
+  const report = sweepWithReads([first, second], { kill: () => assert.fail('all agents must stay safe') });
+  assert.match(report.text, /1 skipped because a younger ssh-agent now has the same process number/);
+  assert.match(report.text, /2 skipped because they were in use or gone on the recheck/);
+  assert.deepStrictEqual(report.log[0].replaced, [200]);
+  assert.deepStrictEqual(report.log[0].skipped, [200, 201, 202]);
 });
