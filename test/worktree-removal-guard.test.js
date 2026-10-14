@@ -308,9 +308,9 @@ for (const dirty of [false, true]) {
 
 // Tripwire: a work folder removal anywhere in lib/ or commands/, by git or by a
 // raw delete of a worktree path, must sit in a function whose git-activity
-// check, written above the delete, and removal log name the folder it deletes.
-// A new file that removes folders is caught too. Exceptions need a reason;
-// stale entries fail.
+// check, written above the delete with an answer that can stop it, and removal
+// log name the folder it deletes. A new file that removes folders is caught
+// too. Exceptions need a reason; stale entries fail.
 function sourceFiles(dir) {
   return fs.readdirSync(path.join(__dirname, '..', dir), { withFileTypes: true }).flatMap((entry) => {
     const relative = path.join(dir, entry.name);
@@ -439,8 +439,51 @@ function sameFolder(body) {
   };
 }
 
-function checkedPaths(body) {
-  return [...body.matchAll(/worktreeGitActivity\(\s*([^()]*?)\s*\)/g)].map((match) => match[1].replace(/\s+/g, ''));
+function checkedCalls(body) {
+  return [...body.matchAll(/worktreeGitActivity\(\s*([^()]*?)\s*\)/g)]
+    .map((match) => ({ arg: match[1].replace(/\s+/g, ''), index: match.index }));
+}
+
+// Just past the bracket that closes the one at start, or -1 when the text ends
+// first, which means the delete sits inside it.
+function closing(text, start) {
+  const open = text[start];
+  const close = open === '(' ? ')' : '}';
+  let depth = 0;
+  for (let i = start; i < text.length; i++) {
+    if (text[i] === open) depth++;
+    else if (text[i] === close && --depth === 0) return i + 1;
+  }
+  return -1;
+}
+
+// A check protects only when its answer can stop the delete: an if on the
+// answer that returns, continues, breaks, or throws, or an if on the negated
+// answer whose branch holds the delete. The answer is read in place or through
+// the name it was stored under.
+function answerStops(before, at) {
+  const start = Math.max(before.lastIndexOf(';', at), before.lastIndexOf('{', at), before.lastIndexOf('}', at)) + 1;
+  const stored = before.slice(start, at).match(/^\s*(?:(?:const|let|var)\s+)?([\w$]+)\s*=(?!=)/);
+  for (const match of before.matchAll(/\bif\s*\(/g)) {
+    const open = match.index + match[0].length - 1;
+    const end = closing(before, open);
+    if (end < 0) continue;
+    const condition = before.slice(open, end);
+    const inPlace = open < at && at < end;
+    const byName = stored && match.index > at && new RegExp(`(?:^|[^\\w$.])${stored[1]}\\b`).test(condition);
+    if (!inPlace && !byName) continue;
+    const negated = inPlace
+      ? /!\s*(?:[\w$]+\.)?$/.test(before.slice(open + 1, at))
+      : new RegExp(`!\\s*${stored[1]}\\b`).test(condition);
+    let from = end;
+    while (/\s/.test(before[from] || '')) from++;
+    const stop = before[from] === '{' ? closing(before, from) : before.indexOf(';', from) + 1;
+    const holdsDelete = stop <= 0;
+    const branch = before.slice(from, holdsDelete ? before.length : stop);
+    if (!negated && !holdsDelete && /\b(?:return|continue|break|throw)\b/.test(branch)) return true;
+    if (negated && holdsDelete) return true;
+  }
+  return false;
 }
 
 function loggedPaths(body) {
@@ -448,19 +491,24 @@ function loggedPaths(body) {
 }
 
 // True when a delete is not covered: the git check or the log names some other
-// folder, the check only runs after the delete, the scan cannot tell which
-// folder is deleted, or a group lost a check.
+// folder, the check only runs after the delete, its answer never stops the
+// delete, the scan cannot tell which folder is deleted, or a group lost a check.
 function removalGap(site) {
   const group = GROUPED_REMOVALS[site.key];
   if (group) {
-    const flat = site.before.replace(/\s+/g, '');
-    return !group.checks.every((check) => flat.includes(check)) || !loggedPaths(site.body).includes(group.logs);
+    const stops = (check) => {
+      const written = new RegExp(check.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+        .replace(/\\\(/g, '\\(\\s*').replace(/\\\)/g, '\\s*\\)')).exec(site.before);
+      return Boolean(written) && answerStops(site.before, written.index);
+    };
+    return !group.checks.every(stops) || !loggedPaths(site.body).includes(group.logs);
   }
   const target = removedTarget(site.call, site.body);
   if (!target) return true;
   const folder = sameFolder(site.body);
   const names = (paths) => paths.some((named) => folder(named) === folder(target));
-  return !names(checkedPaths(site.before)) || !names(loggedPaths(site.body));
+  const stopping = checkedCalls(site.before).filter((check) => answerStops(site.before, check.index));
+  return !names(stopping.map((check) => check.arg)) || !names(loggedPaths(site.body));
 }
 
 test('every work folder removal goes through the git check and the removal log', () => {
@@ -495,7 +543,7 @@ test('saved scanner examples reject missed removals in the required checks', () 
   assert.match(result.stdout, /review gaps: 0; synthetic source only, no folders removed/);
 });
 
-test('a git check after the delete, or naming another folder, does not count as protection', () => {
+test('a git check that comes late, names another folder, or is ignored does not count as protection', () => {
   const result = spawnSync(process.execPath, [
     path.join(__dirname, '../atris/receipts/work-folder-scan-binding-probe.js'),
     '--require-protection',

@@ -18,20 +18,28 @@ const scanner = source.slice(start, end);
 const bypassFilter = source.slice(predicateStart, predicateEnd).trim();
 
 let gaps = 0;
-for (const [label, protectedPath, loggedPath, wantedBypasses, checkAfter] of [
+const removal = 'fs.rmSync(worktreePath, { recursive: true });';
+for (const [label, protectedPath, loggedPath, wantedBypasses, shape] of [
   ['matching folder control', 'worktreePath', 'worktreePath', 0],
   ['resolved same folder control', 'realFolder', 'worktreePath', 0],
   ['unrelated folder guard', 'otherWorktreePath', 'worktreePath', 1],
   ['unrelated folder log', 'worktreePath', 'otherWorktreePath', 1],
   ['unrelated folder protection', 'otherWorktreePath', 'otherWorktreePath', 1],
-  ['check only after the delete', 'worktreePath', 'worktreePath', 1, true],
+  ['check only after the delete', 'worktreePath', 'worktreePath', 1, 'after'],
+  ['answer ignored', 'worktreePath', 'worktreePath', 1, 'ignored'],
+  ['answer stored and never read', 'worktreePath', 'worktreePath', 1, 'unread'],
+  ['delete inside the not-busy branch control', 'worktreePath', 'worktreePath', 0, 'wrapped'],
 ]) {
   const check = `if (worktreeGitActivity(${protectedPath})) return;`;
+  const guarded = {
+    after: `${removal}\n  ${check}`,
+    ignored: `worktreeGitActivity(${protectedPath});\n  ${removal}`,
+    unread: `const busy = worktreeGitActivity(${protectedPath});\n  ${removal}`,
+    wrapped: `const busy = worktreeGitActivity(${protectedPath});\n  if (!busy) {\n    ${removal}\n  }`,
+  }[shape] || `${check}\n  ${removal}`;
   const body = `function cleanup() {
   const realFolder = fs.realpathSync(worktreePath);
-  ${checkAfter ? '' : check}
-  fs.rmSync(worktreePath, { recursive: true });
-  ${checkAfter ? check : ''}
+  ${guarded}
   recordWorktreeRemoval(root, { path: ${loggedPath} });
 }`;
   const context = vm.createContext({
