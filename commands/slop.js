@@ -435,6 +435,11 @@ function fixEmDash(s, { endsBlock = false, startsBlock = false, spans = [] } = {
     return pad.length >= 3 || left.trim().split(/\s+/).length <= 3 ? `${pad}  ` : m;
   });
   s = s.replace(TIMED_HEADING_DASH, '$1 - $2');
+  // a dash before "(a)", "(1)" or "(i)" opens a run of lettered or numbered
+  // items, so it takes a colon like any list: "caught 2 issues: (a) the
+  // floor was too weak, (b) one seed", never "issues, (a)". A second dash
+  // in the sentence closes an aside instead: "pick one, (a) or (b), then go"
+  s = s.replace(/(?<=[\w)\]"'*_`%\u201d\u2019\uE001])[ \t]*\u2014[ \t]*(?=\((?:a|1|i)\)\s)(?![^\u2014.!?]*\u2014)/g, ': ');
   // a dash between two numbers is a range, "10-20", unless the first has a
   // sign, which makes it a score: "reward: +4, 404 on missing routes"
   // A dash that opens a line, a quote or a list item names nothing and goes.

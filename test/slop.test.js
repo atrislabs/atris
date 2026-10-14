@@ -1919,6 +1919,20 @@ test('fix closes the first half of a "when" or "if" sentence with a comma', () =
   ]);
 });
 
+test('fix gives a dash before "(a)" or "(1)" a colon, since a list follows', () => {
+  // a run of lettered or numbered items is a list; the fix used to write
+  // "caught 2 issues, (a) raw delta too weak"
+  const file = tmpFile('enumerated.md', [
+    '**Plan review:** caught 2 real issues \u2014 (a) raw delta too weak, (b) one seed only.',
+    'Self-audit \u2014 (1) no fake numbers, (2) no skipped tests.',
+  ].join('\n\n'));
+  const { changes } = applyFixes([file], RULES, { write: false });
+  assert.deepEqual(changes.map((c) => c.after), [
+    '**Plan review:** caught 2 real issues: (a) raw delta too weak, (b) one seed only.',
+    'Self-audit: (1) no fake numbers, (2) no skipped tests.',
+  ]);
+});
+
 test('fix keeps a journal heading that ends in a time readable for its hour', () => {
   // analytics reads the hour after a dash or a spaced hyphen at the end of a
   // heading; the fix wrote "### Watch: 19:05", which hides it, and glued
