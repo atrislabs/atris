@@ -632,7 +632,7 @@ test('tiny footers shorten the hidden prefix before cutting failure counts', () 
     const footer = '3 hidden (2 failed, 1 stopped)';
     assert.equal(renderBoard(rows, dir, 0, footer.length, 4).split('\n')[3], footer);
     assert.equal(renderBoard(rows, dir, 0, footer.length - 1, 4).split('\n')[3],
-      `${footer.slice(0, footer.length - 4)}...`);
+      '3 hidden (2 failed, ...)', 'drop the whole last count, never half of it');
     const earlier = rows.map((r, i) => i === 1 ? { ...r, state: 'working' } : r);
     const earlierFooter = '3 hidden (1 failed, 1 stopped, 1 earlier failure)';
     assert.equal(renderBoard(earlier, dir, 0, earlierFooter.length, 4).split('\n')[3], earlierFooter);
@@ -662,6 +662,32 @@ test('narrow footers keep hidden missing-result counts whole', () => {
     const mixed = rows.map((r, i) => i === 1 ? { ...r, no_result: false } : r);
     assert.equal(renderBoard(mixed, dir, 0, 33, 4).split('\n')[3],
       '3 hidden (1 stopped, 2 no result)');
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test('narrow footers drop whole mixed counts from the end instead of cutting one', () => {
+  const dir = fakeDir({
+    a: [`${at(20)} m-1 started: [pid ${process.pid} engine claude] check the board`],
+    f1: [`${at(80)} m-1 finished: failed (timed out)`],
+    f2: [`${at(90)} m-2 finished: failed (bad exit 2)`],
+    halt: [`${at(110)} m-4 finished: stopped`],
+    gone: [`${at(200)} m-5 started: [pid 999999999 engine claude] check the board`],
+  });
+  try {
+    const rows = readBoard({ dir, now: NOW });
+    for (const [width, footer] of [
+      [43, '4 hidden (1 failed, 1 stopped, 1 no result)'],
+      [42, '4 hidden (1 failed, 1 stopped, ...)'],
+      [34, '4 hidden (1 failed, ...)'],
+      [24, '4 hidden (1 failed, ...)'],
+    ]) {
+      const lines = renderBoard(rows, dir, 0, width, 4).split('\n');
+      assert.equal(lines[3], footer, `${width}: every count shown is whole`);
+      assert.equal(lines.length, 4);
+      assert.ok(lines.every((line) => line.length <= width));
+    }
   } finally {
     fs.rmSync(dir, { recursive: true, force: true });
   }
