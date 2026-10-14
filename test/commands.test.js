@@ -15824,77 +15824,51 @@ test('task serve exposes review-lane-drain API', async () => {
         taskStore.close();
       }
     };
-    const continueTask = seedTask('API drain row with executable continuation', 'OBL-930');
+    // Ready and review are one store call each in the CLI, so the five drain
+    // rows reach review in-process. The drain, act, loop and run requests
+    // still go through the server.
+    const seedReviewed = (title, goalId, readyProof, reviewProof, nextTask) => {
+      const task = seedTask(title, goalId);
+      const db = taskStore.open(dbPath);
+      try {
+        const readied = taskStore.readyTask(db, { id: task.id, actor: 'codex', proof: readyProof, result: FIXTURE_RESULT_SENTENCE });
+        assert.equal(readied.ready, true, readied.reason);
+        const reviewed = taskStore.reviewTask(db, { id: task.id, actor: 'codex-review', reward: 0, proof: reviewProof, nextTask });
+        assert.equal(reviewed.reviewed, true, reviewed.reason);
+      } finally {
+        taskStore.close();
+      }
+      return task;
+    };
+    const continueTask = seedReviewed(
+      'API drain row with executable continuation', 'OBL-930',
+      'node --check test/commands.test.js passed before API review lane drain',
+      'node --test test/commands.test.js passed during API review lane drain',
+      'Add a scoped API review drain follow-up',
+    );
     const continueRef = continueTask.display_id;
-    assert.equal(runCli([
-      'task', 'ready', continueRef,
-      '--as', 'codex',
-      '--proof', 'node --check test/commands.test.js passed before API review lane drain',
-    ], { cwd: dir, env }).status, 0);
-    assert.equal(runCli([
-      'task', 'review', continueRef,
-      '--reward', '0',
-      '--as', 'codex-review',
-      '--proof', 'node --test test/commands.test.js passed during API review lane drain',
-      '--next', 'Add a scoped API review drain follow-up',
-    ], { cwd: dir, env }).status, 0);
-
-    const waitingTask = seedTask('API drain row waiting on human accept', 'OBL-930');
-    const waitingRef = waitingTask.display_id;
-    assert.equal(runCli([
-      'task', 'ready', waitingRef,
-      '--as', 'codex',
-      '--proof', 'node --check test/commands.test.js passed before API human accept wait drain',
-    ], { cwd: dir, env }).status, 0);
-    assert.equal(runCli([
-      'task', 'review', waitingRef,
-      '--reward', '0',
-      '--as', 'codex-review',
-      '--proof', 'node --test test/commands.test.js passed during API human accept wait drain',
-    ], { cwd: dir, env }).status, 0);
-
-    const humanOnlyTask = seedTask('API act row waiting on human accept', 'OBL-931');
-    const humanOnlyRef = humanOnlyTask.display_id;
-    assert.equal(runCli([
-      'task', 'ready', humanOnlyRef,
-      '--as', 'codex',
-      '--proof', 'node --check test/commands.test.js passed before API review-lane-act human block',
-    ], { cwd: dir, env }).status, 0);
-    assert.equal(runCli([
-      'task', 'review', humanOnlyRef,
-      '--reward', '0',
-      '--as', 'codex-review',
-      '--proof', 'node --test test/commands.test.js passed during API review-lane-act human block',
-    ], { cwd: dir, env }).status, 0);
-
-    const runContinueTask = seedTask('API run should continue one certified task', 'OBL-932');
-    const runContinueRef = runContinueTask.display_id;
-    assert.equal(runCli([
-      'task', 'ready', runContinueRef,
-      '--as', 'codex',
-      '--proof', 'node --check test/commands.test.js passed before API review-lane-run continuation',
-    ], { cwd: dir, env }).status, 0);
-    assert.equal(runCli([
-      'task', 'review', runContinueRef,
-      '--reward', '0',
-      '--as', 'codex-review',
-      '--proof', 'node --test test/commands.test.js passed during API review-lane-run continuation',
-      '--next', 'Add a follow-up created by API review lane run',
-    ], { cwd: dir, env }).status, 0);
-
-    const runWaitingTask = seedTask('API run should stop on human accept wait', 'OBL-932');
+    const waitingTask = seedReviewed(
+      'API drain row waiting on human accept', 'OBL-930',
+      'node --check test/commands.test.js passed before API human accept wait drain',
+      'node --test test/commands.test.js passed during API human accept wait drain',
+    );
+    seedReviewed(
+      'API act row waiting on human accept', 'OBL-931',
+      'node --check test/commands.test.js passed before API review-lane-act human block',
+      'node --test test/commands.test.js passed during API review-lane-act human block',
+    );
+    seedReviewed(
+      'API run should continue one certified task', 'OBL-932',
+      'node --check test/commands.test.js passed before API review-lane-run continuation',
+      'node --test test/commands.test.js passed during API review-lane-run continuation',
+      'Add a follow-up created by API review lane run',
+    );
+    const runWaitingTask = seedReviewed(
+      'API run should stop on human accept wait', 'OBL-932',
+      'node --check test/commands.test.js passed before API review-lane-run human gate',
+      'node --test test/commands.test.js passed during API review-lane-run human gate',
+    );
     const runWaitingRef = runWaitingTask.display_id;
-    assert.equal(runCli([
-      'task', 'ready', runWaitingRef,
-      '--as', 'codex',
-      '--proof', 'node --check test/commands.test.js passed before API review-lane-run human gate',
-    ], { cwd: dir, env }).status, 0);
-    assert.equal(runCli([
-      'task', 'review', runWaitingRef,
-      '--reward', '0',
-      '--as', 'codex-review',
-      '--proof', 'node --test test/commands.test.js passed during API review-lane-run human gate',
-    ], { cwd: dir, env }).status, 0);
 
     child = spawn(process.execPath, [cliPath, 'task', 'serve', '--host', '127.0.0.1', '--port', '0'], {
       cwd: dir,
