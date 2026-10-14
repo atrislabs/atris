@@ -1133,6 +1133,21 @@ test('fix never pairs two dashes across a sentence end', () => {
   ]);
 });
 
+test('fix gives a list item inside a quote the same label colon', () => {
+  // the label rule stopped at the quote mark, so "> - item" kept a comma
+  const file = tmpFile('quoted-list.md', [
+    '> - quoted item \u2014 what it does',
+    '> > 1. **Gate** \u2014 blocks bad copy',
+    '> - Redis \u2014 and more',
+  ].join('\n'));
+  const { changes } = applyFixes([file], RULES, { write: false });
+  assert.deepEqual(changes.map((c) => c.after), [
+    '> - quoted item: what it does',
+    '> > 1. **Gate**: blocks bad copy',
+    '> - Redis, and more',
+  ]);
+});
+
 test('fix gives an aside that holds its own parentheses commas, not a second pair', () => {
   // "(then (maybe) stop)" nests; an aside that is one whole pair keeps it
   const file = tmpFile('nested-aside.md', [
