@@ -2365,3 +2365,7 @@ npm publish
 - `test/commands.test.js:12785` checks default landing output for unmapped titles. Real-store creation at `test/commands.test.js:12796` saves one setup launch and closes in finally; claim, ready, show and every landing assertion remain on the CLI.
 
 - `test/commands.test.js:12831` checks landing capability sentences. The local real-store seed helper saves three creation launches and closes the database before each CLI claim; ready, missing-landing advisory, finish and accepted projection assertions remain unchanged.
+
+## Weak landing rejection fixture setup
+
+- `test/commands.test.js:12909` checks both explicit weak landing rejections and keeps the task claimed. Real-store creation at `test/commands.test.js:12921` saves one setup launch, resolves the display reference and closes in finally; claim, both ready rejections and final show remain on the CLI with every behavior assertion preserved.

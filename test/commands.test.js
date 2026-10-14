@@ -12913,13 +12913,22 @@ test('task ready rejects an explicit landing sentence a day-one PM cannot act on
   const env = { ATRIS_TASKS_DB: dbPath, NODE_NO_WARNINGS: '1', ATRIS_AGENT_ID: 'codex' };
   try {
     fs.mkdirSync(path.join(dir, 'atris'), { recursive: true });
-    const added = runCli([
-      'task', 'add', 'Make the team stream actionable for a new operator',
-      '--tag', 'language',
-      '--json',
-    ], { cwd: dir, env });
-    assert.equal(added.status, 0, added.stderr);
-    const ref = JSON.parse(added.stdout).task.display_id;
+    // Seed creation only; claim and both landing rejections stay on the CLI.
+    const workspaceRoot = taskStore.workspaceRoot(dir);
+    const db = taskStore.open(dbPath);
+    let ref;
+    try {
+      const created = addSeedTask(db, {
+        title: 'Make the team stream actionable for a new operator',
+        tag: 'language',
+        workspaceRoot,
+      });
+      assert.equal(created.inserted, true);
+      ref = taskStore.taskDisplayRefMap(taskStore.listTasks(db, { workspaceRoot })).get(created.id);
+      assert.ok(ref);
+    } finally {
+      taskStore.close();
+    }
     assert.equal(runCli(['task', 'claim', ref, '--as', 'codex'], { cwd: dir, env }).status, 0);
 
     const brokenGrammar = runCli([
