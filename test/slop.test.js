@@ -1571,6 +1571,11 @@ test('fix joins a subject with a "not" contraction or "still" before its verb wi
     'Run it and wait \u2014 a one-shot session never wakes again.',
     'Atris owns the report \u2014 the same surface that already runs agent work.',
     'Keep the list \u2014 the files still open.',
+    // the "the" may be left off; a joining word is no subject
+    'PR #59 merged \u2014 review queue now loads each item.',
+    'Two helpers survived \u2014 `findAppsTab` still reached for the tab bar.',
+    'Trigger it as sections enter \u2014 but don\'t mess with scroll speed.',
+    'It computes a leaderboard \u2014 not just likes.',
   ].join('\n'));
   const { changes } = applyFixes([file], RULES);
   assert.deepEqual(changes.map((c) => c.after), [
@@ -1579,6 +1584,10 @@ test('fix joins a subject with a "not" contraction or "still" before its verb wi
     'Run it and wait; a one-shot session never wakes again.',
     'Atris owns the report, the same surface that already runs agent work.',
     'Keep the list, the files still open.',
+    'PR #59 merged; review queue now loads each item.',
+    'Two helpers survived; `findAppsTab` still reached for the tab bar.',
+    'Trigger it as sections enter, but don\'t mess with scroll speed.',
+    'It computes a leaderboard, not just likes.',
   ]);
 });
 
