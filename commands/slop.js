@@ -364,8 +364,14 @@ function fixEmDash(s, { endsBlock = false, startsBlock = false } = {}) {
       if (holdsParens || insideParens(whole.slice(0, at))) return `${/[,;:]$/.test(whole.slice(0, at)) ? ' ' : ', '}${aside}${gap ? ', ' : ''}`;
       // the closing dash also stood in for the comma before a "which" remark:
       // "scale (model size, data), which is a bet", never "data) which is".
-      const remark = /^(?:which|although|whereas)\b/.test(whole.slice(at + m.length));
-      return ` ${wrappedInParens(aside) ? aside : `(${aside})`}${remark ? ', ' : gap ? ' ' : ''}`;
+      const after = whole.slice(at + m.length);
+      // So did it for the comma that ends an opening "if" or "when" clause
+      // when the main clause starts right after: "if the cluster is big
+      // enough (like continent-sized), that thing could be powerful".
+      const opening = /\b(?:if|when|whenever|unless|until|because|although|though|any time|every time)\b[^,;:()]*$/i.test(whole.slice(from, at))
+        && /^(?:it|we|they|you|I|he|she|there|that thing|this thing)(?:['’](?:s|re|ll|ve|d|m))?\s/.test(after);
+      const remark = /^(?:which|although|whereas)\b/.test(after);
+      return ` ${wrappedInParens(aside) ? aside : `(${aside})`}${remark || (gap && opening) ? ', ' : gap ? ' ' : ''}`;
     })
     // a name that closes the line after a quote with its own stop is who said
     // it, so it goes in parentheses: 'backward." (Steve Jobs)', never a bare

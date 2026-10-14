@@ -1752,3 +1752,21 @@ test('fix gives a run of "ing" phrases after a dash a colon, like a list', () =>
     'Ship the fix, testing it twice, then merging.',
   ]);
 });
+
+test('fix puts a comma after an aside that closes an opening "if" or "when" clause', () => {
+  // from hugolearn and dream-gtm: the closing dash also stood in for the comma
+  // before the main clause, so "big enough (like X) that thing" lost it
+  const file = tmpFile('opening-aside.md', [
+    'I think that if the cluster is big enough \u2014 like continent-sized \u2014 that thing could be powerful.',
+    'When customers feel part of something \u2014 a movement, a tribe \u2014 they stop comparing on price.',
+    'Swarlo is the shared board \u2014 claims and locks \u2014 that lets agents share a repo.',
+    'If it fails, the gate \u2014 the strict one \u2014 still holds.',
+  ].join('\n'));
+  const { changes } = applyFixes([file], RULES);
+  assert.deepEqual(changes.map((c) => c.after), [
+    'I think that if the cluster is big enough (like continent-sized), that thing could be powerful.',
+    'When customers feel part of something (a movement, a tribe), they stop comparing on price.',
+    'Swarlo is the shared board (claims and locks) that lets agents share a repo.',
+    'If it fails, the gate (the strict one) still holds.',
+  ]);
+});
