@@ -2557,3 +2557,5 @@ Landing capability test setup: `test/commands.test.js:12964` seeds creation and 
 ## Non-positive reward rejection claimed fixture setup
 
 - `test/commands.test.js:13161` seeds creation and ownership through the real task store, asserting claim success and closing before CLI calls. Four launches become three; readiness, zero-reward rejection and the final review-status and pending-approval checks remain unchanged on the CLI.
+
+- Duplicate reward review setup: `test/commands.test.js:13460` seeds creation and ownership through the real task store; ready, accept, second review and XP status retain real CLI coverage.
