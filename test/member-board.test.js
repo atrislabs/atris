@@ -193,7 +193,7 @@ test('members that ended over an hour ago, finished or died, hide unless --all',
     assert.equal(res.status, 0, res.stderr);
     assert.doesNotMatch(res.stdout, /^(old|fresh|crashed|broke)\s/m);
     assert.match(res.stdout, /^stuck\s+quiet/m);
-    assert.match(res.stdout, /^4 ended over an hour ago, hidden\. --all shows them$/m);
+    assert.match(res.stdout, /^4 ended over an hour ago, hidden: 2 died, 1 failed\. --all shows them$/m, 'the note says which hidden runs ended badly');
 
     const all = spawnSync(process.execPath, [cliPath, 'member', 'board', '--all'], { cwd: dir, env, encoding: 'utf8' });
     assert.equal(all.status, 0, all.stderr);
@@ -1037,7 +1037,10 @@ test('watch names a put-away run with when it last did anything, even once it is
 });
 
 test('board says nobody is working when every member is hidden', () => {
+  const row = (member, state) => ({ member, state, before: [], alive: false, engine: '', running_for: '', lasted: '1m', ago: '2h ago', job: 'ship', step: 'edit' });
   assert.equal(renderBoard([], '/x', 3), 'nobody is working right now. 3 ended over an hour ago, hidden. --all shows them');
+  assert.equal(renderBoard([], '/x', [row('a', 'done ok'), row('b', 'stopped')]), 'nobody is working right now. 2 ended over an hour ago, hidden. --all shows them', 'clean ends add nothing');
+  assert.equal(renderBoard([], '/x', [row('a', 'done failed'), row('b', 'done ok')]), 'nobody is working right now. 2 ended over an hour ago, hidden: 1 failed. --all shows them', 'a hidden failure is counted');
   assert.equal(
     renderBoard([], '/x', 1, null, ['launcher quiet -> stopped, last active 7h ago']),
     'changed in the last minute: launcher quiet -> stopped, last active 7h ago\n\nnobody is working right now. 1 ended over an hour ago, hidden. --all shows them',
