@@ -1754,10 +1754,32 @@ test('fix keeps the right border of a drawn box in line', () => {
   const { changes } = applyFixes([file], RULES, { write: false });
   assert.deepEqual(changes.map((c) => c.after), [
     `${B} STEP 1/5, Creating middleware       ${B}`,
-    `${B}         ${B} 1. BUILD: Does it compile?              ${B}             ${B}`,
-    `${B}  0. RESUME: read previous logs          ${B}`,
+    `${B}         ${B} 1. BUILD    Does it compile?            ${B}             ${B}`,
+    `${B}  0. RESUME       read previous logs     ${B}`,
   ]);
   for (const c of changes) assert.equal(c.after.length, c.before.length);
+});
+
+test('fix turns a padded dash into spaces so a column of descriptions stays in line', () => {
+  // a folder tree came out "people/, one page" beside "schema.md: page
+  // conventions", the column gone and the marks mixed; two spaces after a
+  // long phrase is a typo in a sentence and keeps the usual fix
+  const file = tmpFile('columns.md', [
+    '\u251c\u2500\u2500 people/            \u2014 one page per human being',
+    '\u251c\u2500\u2500 schema.md          \u2014 page conventions, templates, workflows',
+    '/atris-do           \u2014 Executor: build step-by-step',
+    '\u251c\u2500\u2500 permissions: text[]  \u2014 execute, read_secrets, emit_output',
+    '4. Latest team member log for the horizon  \u2014 prior handoff',
+  ].join('\n'));
+  const { changes } = applyFixes([file], RULES, { write: false });
+  assert.deepEqual(changes.map((c) => c.after), [
+    '\u251c\u2500\u2500 people/              one page per human being',
+    '\u251c\u2500\u2500 schema.md            page conventions, templates, workflows',
+    '/atris-do             Executor: build step-by-step',
+    '\u251c\u2500\u2500 permissions: text[]    execute, read_secrets, emit_output',
+    '4. Latest team member log for the horizon: prior handoff',
+  ]);
+  for (const c of changes.slice(0, 4)) assert.equal(c.after.length, c.before.length);
 });
 
 test('fix keeps the comma when "that" opens a clause inside the noun after a dash', () => {

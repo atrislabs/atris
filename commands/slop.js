@@ -393,6 +393,14 @@ function fixEmDash(s, { endsBlock = false, startsBlock = false } = {}) {
         return `${lead}${fixed}${' '.repeat(Math.max(room, tail ? 1 : 0))}`;
       }))).join('');
   }
+  // padding before a dash lines descriptions up in a column, as in a folder
+  // tree or a command list: "people/            \u2014 one page". The spaces already
+  // part name from description, so the dash turns into spaces and the column
+  // stays put. Two spaces after a long phrase is a typo in a sentence, not a column.
+  s = s.replace(/(?<=\S)( {2,})\u2014 (?=\S)/g, (m, pad, at) => {
+    const left = s.slice(0, at).split(/ {2,}|^\s*(?:[-*+]|\d+[.)])\s+/).pop();
+    return pad.length >= 3 || left.trim().split(/\s+/).length <= 3 ? `${pad}  ` : m;
+  });
   // a dash between two numbers is a range, "10-20", unless the first has a
   // sign, which makes it a score: "reward: +4, 404 on missing routes"
   s = s.replace(/\u2014(?:\s*\u2014)+/g, '\u2014').replace(/(?<![+-]\d*)(\d+)\s*\u2014\s*(?=(\d+)(?![\d-]))/g, (m, a, b) => (isRange(a, b) ? `${a}-` : m)).replace(/^(\s*(?:>\s*)*)\u2014\s*/, '$1');
