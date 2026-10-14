@@ -1395,6 +1395,16 @@ test('a run that died before logging past its start has no run time, not 0s', ()
   assert.equal(bare.lasted, '', 'put away with nothing logged past its start: no made-up time');
 });
 
+test('an ended run that logged no step says none logged, in the column and on its own line', () => {
+  const now = Date.parse('2026-10-14T12:00:00Z');
+  const failed = memberRow('arch', '2026-10-14T11:50:00Z m-1 started: protect work folders\n2026-10-14T11:50:02Z m-1 finished: failed\n', now);
+  const fresh = memberRow('ada', '2026-10-14T11:59:50Z m-2 started: [pid ' + process.pid + ' engine claude] work\n', now);
+  assert.equal(failed.step, '', 'json keeps the step empty');
+  assert.match(renderBoard([failed], '/x'), /^arch\s+done failed\s+2s\s+9m ago\s+protect work folders\s+none logged$/m);
+  assert.match(renderBoard([failed], '/x', 0, 40), /^  last step: none logged$/m, 'the step line no longer drops out');
+  assert.match(renderBoard([fresh], '/x'), /work\s+-$/m, 'a live run with no step yet keeps the dash');
+});
+
 test('a too-tall board shortens its long notes to one line before leaving a member off', () => {
   const now = Date.parse('2026-10-14T12:00:00Z');
   const rows = [
