@@ -70,9 +70,16 @@ test('member board outside a project still shows every member', () => {
 
 test('follow stream in a project skips other projects\' new lines', async () => {
   const ctx = setup();
-  const child = spawn(process.execPath, [cliPath, 'member', 'board', '--json', '--follow'], { cwd: ctx.project, env: ctx.env });
+  const child = spawn(process.execPath, [cliPath, 'member', 'board', '--json', '--follow'], {
+    cwd: ctx.project, env: ctx.env, timeout: 15_000,
+  });
+  // Subscribe before polling so cleanup also handles an early child exit.
+  const closed = new Promise((resolve) => child.once('close', resolve));
   let out = '';
+  let stderr = '';
   child.stdout.on('data', (d) => { out += d; });
+  child.stderr.on('data', (d) => { stderr += d; });
+  child.on('error', (error) => { stderr += error.message; });
   const waitForOutput = async (check) => {
     const deadline = Date.now() + 5000;
     while (!check() && Date.now() < deadline) {
@@ -85,8 +92,11 @@ test('follow stream in a project skips other projects\' new lines', async () => 
     fs.appendFileSync(path.join(ctx.progress, 'payments-infra.log'), `${recent(0)} m-9 editing other.js\n`);
     fs.appendFileSync(path.join(ctx.progress, 'builder.log'), `${recent(0)} m-1 editing mine.js\n`);
     await waitForOutput(() => out.split('\n').slice(0, -1).some((line) => line.includes('mine.js')));
+    assert.equal(child.exitCode, null, `still following: ${stderr}`);
+    assert.equal(child.signalCode, null, 'follow was not stopped by its timeout');
   } finally {
     child.kill('SIGINT');
+    await closed;
   }
   const events = out.trim().split('\n').map((l) => JSON.parse(l));
   assert.deepEqual(events[0].members.map((r) => r.member).sort(), ['builder', 'validator']);

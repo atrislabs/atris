@@ -23,6 +23,8 @@ Details for any task: atris task show <ID>
 
 ## Review
 
+- **[AIC-11]** Await project-filtered board child closure · auto-improver
+  **Done looks like:** Developers can finish board checks reliably, saving time by waiting for final output before checking it.
 - **[AIC-10]** Wait safely for board follow child closure · auto-improver
   **Done looks like:** Developers can finish board update checks after an early process exit, saving time when a check fails.
 - **[AIC-9]** Parse only complete board follow output lines · auto-improver
