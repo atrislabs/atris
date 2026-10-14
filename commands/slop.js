@@ -338,7 +338,7 @@ const QUESTION_AFTER_DASH = new RegExp(`(?<=[\\w)\\]"'*_\`%\\u201d\\u2019\\uE001
 // "Let's" asks the reader to act too: "Congrats on the award; let's talk".
 // Two orders side by side are one sentence, so the comma stays: "Kill the
 // group at timeout, spawn the phase detached", "don't impose, match it".
-const ORDER_VERB = `(?:don['\\u2019]t|do not|let['\\u2019]s|let us|pick|copy|reframe|judge|plug|retry|rename|propose|inspect|keep|leave|use|run|read|ask|add|check|make|move|stop|try|wait|skip|take|look|call|write|delete|remove|fix|put|say|tell|give|treat|verify|ship|commit|push|kill|mark|start|avoid|prefer|trust|drop|cut|split|merge|revert|rerun|re-run|consolidate|pin|automate|clamp|fork|spawn|adapt)`;
+const ORDER_VERB = `(?:don['\\u2019]t|do not|let['\\u2019]s|let us|pick|copy|reframe|judge|plug|retry|rename|propose|inspect|keep|leave|use|run|read|ask|add|check|make|move|stop|try|wait|skip|take|look|call|write|delete|remove|fix|put|say|tell|give|treat|verify|ship|commit|push|kill|mark|start|avoid|prefer|trust|drop|cut|split|merge|revert|rerun|re-run|consolidate|pin|automate|clamp|fork|spawn|adapt|halt)`;
 const ORDER_CLAUSE_AFTER_DASH = new RegExp(`(?<=[\\w)\\]"'*_\`\\u201d\\u2019\\uE001])\\s*\\u2014\\s*(?=${ORDER_VERB}\\s+(?![a-z]+ed\\b|of\\b)[\\w\`"'(\\uE000])`, 'g');
 
 // Two short subjects joined by "and", then a helper that takes them both,
@@ -768,8 +768,12 @@ function fixEmDash(s, { endsBlock = false, startsBlock = false, spans = [] } = {
       const words = (left.includes('(') && !inner.includes(')') ? inner : left).replace(/^[\s"'*_]+/, '').split(/\s+/);
       if (words.length < 2 || words.every((w) => /^[A-Z][A-Za-z0-9'-]*$/.test(w))) return m;
       const leftOrder = new RegExp(`^${ORDER_VERB}\\s`, 'i');
-      const quoted = left.split(/["\u201c]/).pop();
-      if ([left, quoted].some((part) => leftOrder.test(part.replace(/^(?:(?:\*\*[^*]+\*\*:?|[-*+>]|\d+[.)]|[\s'_])\s*)+/, '')))) return m;
+      // A semicolon already closed an earlier clause, so only the one after
+      // it sits beside the order: "run it first; if it passes, the task is
+      // done; halt and write why", never "done, halt".
+      const near = left.split(/;\s/).pop();
+      const quoted = near.split(/["\u201c]/).pop();
+      if ([near, quoted].some((part) => leftOrder.test(part.replace(/^(?:(?:\*\*[^*]+\*\*:?|[-*+>]|\d+[.)]|[\s'_])\s*)+/, '')))) return m;
       // a code comment's own "//" is no word, so "// Hard deadline" names a
       // thing too: "// Hard deadline: kill the request". A comment that opens
       // in lowercase may carry on the line above, so it keeps its semicolon.

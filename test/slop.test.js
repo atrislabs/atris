@@ -1726,6 +1726,20 @@ test('fix gives a whole-line bold sentence a comma before through, via or with',
   ]);
 });
 
+test('fix starts an order after a clause that follows a semicolon', () => {
+  // from the kernel prompt, where an order opened the line before the semicolon
+  const file = tmpFile('order-after-semicolon.md', [
+    'preflight: run the verifier first; if it passes, the task is already done \u2014 halt and write rubric-not-falsifiable',
+    // two orders side by side are still one sentence
+    'Kill the group at timeout \u2014 spawn the phase detached.',
+  ].join('\n'));
+  const { changes } = applyFixes([file], RULES);
+  assert.deepEqual(changes.map((c) => c.after), [
+    'preflight: run the verifier first; if it passes, the task is already done; halt and write rubric-not-falsifiable',
+    'Kill the group at timeout, spawn the phase detached.',
+  ]);
+});
+
 test('fix reads no word that only says when as the subject of a clause', () => {
   // "now ships" after a dash read as a bare subject and a verb
   const file = tmpFile('when-word.md', [
