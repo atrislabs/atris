@@ -1,6 +1,6 @@
 'use strict';
 
-// Real cleanup previews against a moved disposable folder with ordinary Git locks.
+// Real cleanup preview and execution against a moved disposable folder with Git locks.
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const os = require('node:os');
@@ -37,7 +37,7 @@ function main() {
   const moved = path.join(base, 'moved-copy');
   fs.renameSync(copy, moved);
   console.log(`fixture: ${base}`);
-  for (const preview of [true]) {
+  for (const preview of [true, false]) {
     const args = [cli, 'land', '--reap', '--force', '--no-remote', ...(preview ? ['--dry-run'] : [])];
     const result = spawnSync(process.execPath, args, { cwd: repo, env, encoding: 'utf8', timeout: 60000 });
     console.log(`command: node bin/atris.js ${args.slice(1).join(' ')}`);
@@ -57,7 +57,7 @@ function main() {
     git(repo, 'rev-parse', '--verify', 'refs/heads/landed-with-lock');
     assert.equal(fs.existsSync(path.join(repo, '.atris/state/worktree_removals.jsonl')), false);
   }
-  console.log('missing folder reported; two ordinary lock paths omitted; moved files and branch retained; no removal recorded');
+  console.log('preview and cleanup reported a missing folder; both omitted two ordinary lock paths; moved files and branch retained; no removal recorded');
 }
 
 if (require.main === module) main();

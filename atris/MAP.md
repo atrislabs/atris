@@ -120,7 +120,7 @@ checks the refs in both files; `atris doc-health --fix-refs` moves drifted ones.
 
 ## Missing-folder ordinary lock audit
 
-`atris/receipts/2026-10-14-missing-ordinary-lock-check.js` runs real cleanup preview against a moved generated copy with private and shared ordinary locks. Both survive, but their paths and ages are omitted. Recommendation and output: matching `.md` receipt.
+`atris/receipts/2026-10-14-missing-ordinary-lock-check.js` runs real cleanup preview and execution against a moved generated copy with private and shared ordinary locks. Both survive, but their paths and ages are omitted. Recommendation and output: matching `.md` receipt.
 
 ## Load order
 

@@ -2324,4 +2324,4 @@ npm publish
 
 - `lib/member-tidy.js:195`: final activity failure keeps the branch but omits the missing-folder reason and retained lock details. `atris/receipts/2026-10-14-tidy-vanishing-folder-check.js:1` reproduces locked and unlocked disappearance using the real tidy CLI and forwarding Git; moved files and branches survive, with no removal record.
 
-- `lib/git-activity.js:47`: missing-folder lookup reads only the matching special `locked` file, omitting ordinary private and shared locks. `atris/receipts/2026-10-14-missing-ordinary-lock-check.js:1` proves both omissions through real cleanup preview, retaining moved files and the branch.
+- `lib/git-activity.js:47`: missing-folder lookup reads only the matching special `locked` file, omitting ordinary private and shared locks. `atris/receipts/2026-10-14-missing-ordinary-lock-check.js:1` proves both omissions through real cleanup preview and execution, retaining moved files and the branch.
