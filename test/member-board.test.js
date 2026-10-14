@@ -195,6 +195,8 @@ test('members that ended over an hour ago, finished or died, hide unless --all',
     const jsonAll = spawnSync(process.execPath, [cliPath, 'member', 'board', '--json', '--all'], { cwd: dir, env, encoding: 'utf8' });
     assert.equal(JSON.parse(jsonAll.stdout).hidden, 0);
     assert.equal(JSON.parse(jsonAll.stdout).members.length, 5);
+    assert.deepEqual(JSON.parse(json.stdout).counts, { died: 0, 'done failed': 0, working: 0, quiet: 1, stopped: 0, 'done ok': 0 }, 'counts cover only the members shown');
+    assert.deepEqual(JSON.parse(jsonAll.stdout).counts, { died: 2, 'done failed': 1, working: 0, quiet: 1, stopped: 0, 'done ok': 1 });
   } finally {
     fs.rmSync(dir, { recursive: true, force: true });
   }
@@ -313,6 +315,8 @@ test('atris member board --json --follow streams one JSON object per line', asyn
     assert.equal(snapshot.dir, dir);
     assert.deepEqual(snapshot.members.map((m) => [m.member, m.state]), [['navigator', 'working']]);
     assert.equal(snapshot.hidden, 0);
+    assert.equal(snapshot.counts.working, 1, 'the snapshot counts states like --json');
+    assert.equal(snapshot.counts.stopped, 0);
 
     const now = new Date().toISOString();
     fs.appendFileSync(path.join(dir, 'navigator.log'), `${now} m-9 reading atris/MAP.md\n`);
