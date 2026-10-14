@@ -389,6 +389,16 @@ test('board keeps only the newest earlier run, then drops before, when nothing e
   assert.match(renderBoard(rows, '/x'), /^builder\s+working\s+stopped failed ok\s/m, 'piped output keeps all three');
 });
 
+test('board shows the home folder as ~ in job and last step, but not in the row data', () => {
+  const now = Date.parse('2026-10-14T13:00:00Z');
+  const home = os.homedir();
+  const row = memberRow('scout', `2026-10-14T12:58:00Z m-1 started: tidy ${home}/notes\n2026-10-14T12:59:30Z m-1 running: cd ${home}/arena/x && ls ${home}2/y ${home}\n`, now);
+  const shown = renderBoard([row], '/x').split('\n').find((l) => l.startsWith('scout'));
+  assert.match(shown, /\btidy ~\/notes\s/, shown);
+  assert.ok(shown.endsWith(`running: cd ~/arena/x && ls ${home}2/y ~`), `a folder that only starts with the home name keeps its path: ${shown}`);
+  assert.equal(row.step, `running: cd ${home}/arena/x && ls ${home}2/y ${home}`, 'apps reading the rows get the full path');
+});
+
 test('board breaks the count line after a comma on a narrow screen', () => {
   const now = Date.parse('2026-10-14T13:00:00Z');
   const base = memberRow('scout', '2026-10-14T12:55:00Z m-3 started: map the repo\n', now);
