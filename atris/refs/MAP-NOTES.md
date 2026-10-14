@@ -2308,3 +2308,5 @@ npm publish
 - **Narrow watch hint:** `memberBoardCommand()` (`lib/member-board.js:648`) picks the longest whole hint that fits, down to "ctrl-c", and omits it below six columns. Resize regression: `test/member-board.test.js:279`; real terminal proof: `python3 atris/runs/member-board-watch-width-proof.py`.
 
 - **Compact board columns:** `renderBoard()` (`lib/member-board.js:367`) falls back to member, state and last result when the normal columns still overflow a terminal at least 30 columns wide. Done states use ok/failed, long names trim, and common failure reasons stay whole. Regression: `test/member-board.test.js:225`; real terminal proof: `python3 atris/runs/member-board-compact-columns-proof.py`.
+
+- **Smallest board columns:** `renderBoard()` (`lib/member-board.js:367`) keeps member and whole state from 18 to 29 columns, shortening long names. The result column returns at 30 columns. Regression: `test/member-board.test.js:246`; real terminal proof: `python3 atris/runs/member-board-smallest-columns-proof.py`.

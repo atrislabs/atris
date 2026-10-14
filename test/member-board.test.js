@@ -243,6 +243,26 @@ test('a tiny terminal keeps member states and common failure reasons within its 
   }
 });
 
+test('below 30 columns the board keeps whole states and trims only member names', () => {
+  const states = ['done failed', 'done ok', 'working', 'quiet', 'stopped', 'asleep', 'asleep after this run'];
+  const rows = states.map((state) => ({
+    member: 'chat-experience-lead', state, alive: null,
+    last_result: 'failed', last_result_reason: 'engine error', last_result_ago: '1m ago',
+    ago: '1m ago',
+  }));
+  for (const width of [18, 20, 24, 29]) {
+    const lines = renderBoard(rows, '/progress', 0, width).split('\n');
+    assert.equal(lines.length, states.length + 1);
+    assert.match(lines[0], /^member\s+state$/);
+    assert.ok(lines.every((line) => line.length <= width), `${width}: ${lines.join('\n')}`);
+    states.forEach((state, i) => {
+      const expected = state.replace(/^done /, '').replace('asleep after this run', 'finishing');
+      assert.equal(lines[i + 1].split(/\s{2,}/)[1], expected, `${width}: ${state}`);
+    });
+  }
+  assert.match(renderBoard(rows, '/progress', 0, 30), /^member\s+state\s+last result$/m, 'the result column returns at 30 columns');
+});
+
 test('a busy row with an earlier failure shrinks its last result before it overflows', () => {
   const dir = fakeDir({
     'chat-experience-lead': [
