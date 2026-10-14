@@ -269,9 +269,12 @@ function fencedLines(lines) {
   return fenced;
 }
 
+// Inline code, a link or image address, and an HTML tag are all literal: a
+// dash there is part of a path or attribute, and pairing it with a prose dash
+// would drop a parenthesis into the address. Each is masked while the fix runs.
 function maskInlineCode(line) {
   const spans = [];
-  const masked = line.replace(/(`+).+?\1/g, (m) => `\uE000${spans.push(m) - 1}\uE001`);
+  const masked = line.replace(/(`+).+?\1|(?<=\])\([^)\s]*\)|<[A-Za-z/!][^<>]*>/g, (m) => `\uE000${spans.push(m) - 1}\uE001`);
   return { masked, restore: (s) => s.replace(/\uE000(\d+)\uE001/g, (m, n) => spans[n]) };
 }
 
@@ -458,10 +461,10 @@ function applyFixes(files, rules, { write = true } = {}) {
         if (prose && fenced.has(i)) continue;
         if (r.proseOnly && from === -1) continue;
         const at = r.proseOnly ? from : 0;
-        // a code span in a script comment is code too: "`selection-\u2014-member`"
-        // names a slug, and a comma in it would name a different one
-        const code = prose || (script && r.proseOnly);
-        const { masked, restore } = code ? maskInlineCode(line.slice(at)) : { masked: line.slice(at), restore: (x) => x };
+        // a code span is code in any file, a script comment or a plain text
+        // note too: "`selection-\u2014-member`" names a slug, and a comma in it
+        // would name a different one
+        const { masked, restore } = r.proseOnly ? maskInlineCode(line.slice(at)) : { masked: line.slice(at), restore: (x) => x };
         if (!r.re.test(masked)) continue;
         const nl = line.slice(0, at) + restore(r.fix(masked, { endsBlock: i === lines.length - 1 || !lines[i + 1].trim() }));
         if (nl !== line) { line = nl; fixedCount++; }

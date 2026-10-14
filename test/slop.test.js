@@ -993,6 +993,26 @@ test('fix in a script changes comments only, never strings or patterns', () => {
   ]);
 });
 
+test('fix leaves link addresses, HTML tags, and code in plain text alone', () => {
+  // a dash in an address or attribute used to pair with a prose dash and drop
+  // a parenthesis into the path; alt text and link text are still prose
+  const md = tmpFile('links.md', [
+    'See <https://x.dev/a\u2014b> for it \u2014 really.',
+    'Open [the guide](https://x.dev/a\u2014b) \u2014 it helps.',
+    '<a title="x \u2014 y" href="/z">link</a> works \u2014 well.',
+    '![chart \u2014 q3](img/a\u2014b.png) shows it.',
+  ].join('\n'));
+  const txt = tmpFile('note.txt', 'Run `a \u2014 b` here \u2014 then stop.');
+  const { changes } = applyFixes([md, txt], RULES, { write: false });
+  assert.deepEqual(changes.map((c) => c.after), [
+    'See <https://x.dev/a\u2014b> for it, really.',
+    'Open [the guide](https://x.dev/a\u2014b); it helps.',
+    '<a title="x \u2014 y" href="/z">link</a> works, well.',
+    '![chart, q3](img/a\u2014b.png) shows it.',
+    'Run `a \u2014 b` here, then stop.',
+  ]);
+});
+
 test('fix attributes a quote with no stop of its own with a comma', () => {
   // a README testimonial; of 22 repo lines with a dash after a closing quote,
   // none read better with another mark, so the comma is the settled choice
