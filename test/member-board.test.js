@@ -290,7 +290,11 @@ test('follow finishes a line that was half written before it started', () => {
 // A spawned sleeper stands in for a member's engine run. detached makes it a
 // process group leader, the same way the mission runner spawns the engine.
 // The sleepers are node processes; stand in for a real engine command line.
-const asEngine = { readCommand: (pid) => `claude codex -p acting as builder ${pid}` };
+const engineAs = (program) => ({
+  readProcess: (pid) => (pid === process.pid ? { pgid: -1, command: 'node test' } : { pgid: pid, command: `${program} -p acting as builder` }),
+});
+const asEngine = engineAs('claude');
+const asCodex = engineAs('/opt/homebrew/bin/codex');
 
 function spawnSleeper(script) {
   const child = spawn(process.execPath, ['-e', script], { detached: true, stdio: ['ignore', 'pipe', 'ignore'] });
@@ -372,7 +376,7 @@ test('member stop forces a run that ignores the polite signal', async () => {
   await ready;
   const dir = fakeDir({ stubborn: [`${isoAgo(10)} m-5 started: [pid ${child.pid} engine codex] dig in`] });
   try {
-    const result = await stopMember('stubborn', { dir, graceMs: 300, deps: asEngine });
+    const result = await stopMember('stubborn', { dir, graceMs: 300, deps: asCodex });
     assert.equal(result.ok, true);
     assert.equal(result.forced, true);
     assert.match(result.message, /^stopped stubborn after \d+s of work, it had to be forced$/);
@@ -411,11 +415,25 @@ test('member stop leaves a reused pid alone when its command is no longer the en
   await ready;
   const dir = fakeDir({ builder: [`${isoAgo(60)} m-7 started: [pid ${child.pid} engine claude] old job`] });
   try {
-    const result = await stopMember('builder', { dir, deps: { readCommand: () => 'node /usr/local/bin/some-other-app' } });
+    const result = await stopMember('builder', { dir, deps: { readProcess: (pid) => ({ pgid: pid, command: 'node /usr/local/bin/some-other-app' }) } });
     assert.equal(result.message, 'nothing running');
     assert.equal(isAlive(child.pid), true, 'the unrelated process keeps running');
   } finally {
     try { process.kill(-child.pid, 'SIGKILL'); } catch {}
     fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test('member stop refuses system pids, its own group, and engines it does not know', async () => {
+  const lines = (pid, engine) => [`${isoAgo(20)} m-8 started: [pid ${pid} engine ${engine}] forged`];
+  for (const [pid, engine] of [[1, 'launchd'], [1, 'claude'], [process.pid, 'claude'], [4242, 'launchd']]) {
+    const dir = fakeDir({ forged: lines(pid, engine) });
+    try {
+      const deps = { readProcess: (p) => ({ pgid: p, command: `${engine} -p` }) };
+      const result = await stopMember('forged', { dir, graceMs: 50, deps });
+      assert.equal(result.message, 'nothing running', `pid ${pid} engine ${engine}`);
+    } finally {
+      fs.rmSync(dir, { recursive: true, force: true });
+    }
   }
 });
