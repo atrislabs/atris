@@ -286,6 +286,20 @@ test('board moves the last step under its row when the screen is too narrow for 
   assert.match(renderBoard(rows, '/x'), /^member\s.*\sjob\s+last step$/m, 'piped output keeps the column');
 });
 
+test('board breaks the count line after a comma on a narrow screen', () => {
+  const now = Date.parse('2026-10-14T13:00:00Z');
+  const base = memberRow('scout', '2026-10-14T12:55:00Z m-3 started: map the repo\n', now);
+  const states = ['done ok', 'stopped', 'quiet', 'working', 'done failed', 'died'];
+  const rows = states.map((state, i) => ({ ...base, member: `m${i}`, state }));
+  const count = '6 members: 1 died, 1 done failed, 1 working, 1 quiet, 1 stopped, 1 done ok';
+  assert.equal(renderBoard(rows, '/x').split('\n')[0], count, 'no width, one line');
+  assert.equal(renderBoard(rows, '/x', 0, 80).split('\n')[0], count, 'fits 80 columns, one line');
+  const lines = renderBoard(rows, '/x', 0, 40).split('\n');
+  const head = lines.slice(0, lines.indexOf(''));
+  assert.deepEqual(head, ['6 members: 1 died, 1 done failed,', '  1 working, 1 quiet, 1 stopped,', '  1 done ok'], 'a count and its state stay together');
+  assert.equal(head.map((l) => l.trim()).join(' '), count, 'nothing is lost');
+});
+
 test('board lets job shrink to the room left on a narrow screen', () => {
   const now = Date.parse('2026-10-14T13:00:00Z');
   // A wide before column leaves job 18 characters at 80 columns.
