@@ -186,3 +186,33 @@ test('tidy keeps every copy when origin cannot be fetched', () => {
     fs.rmSync(fx.base, { recursive: true, force: true });
   }
 });
+
+function removalLines(repo) {
+  const file = path.join(repo, '.atris', 'state', 'worktree_removals.jsonl');
+  if (!fs.existsSync(file)) return [];
+  return fs.readFileSync(file, 'utf8').trim().split('\n').map((line) => JSON.parse(line));
+}
+
+test('tidy keeps a landed copy while git is paused mid-rebase in it, and logs what it removes', () => {
+  const fx = makeFixture();
+  try {
+    const paused = addCopy(fx, 'landed-paused');
+    const gitDir = runGit(['rev-parse', '--path-format=absolute', '--git-dir'], paused);
+    fs.mkdirSync(path.join(gitDir, 'rebase-merge'));
+    const clean = addCopy(fx, 'landed-clean');
+
+    const result = tidyMemberCopies({ repoRoot: fx.repo });
+    assert.equal(byName(result, 'landed-paused').action, 'kept');
+    assert.match(byName(result, 'landed-paused').reason, /git is in the middle of something/);
+    assert.ok(fs.existsSync(paused));
+    assert.equal(byName(result, 'landed-clean').action, 'removed');
+
+    const lines = removalLines(fx.repo);
+    assert.deepEqual(lines.map((line) => line.path), [clean]);
+    assert.equal(lines[0].branch, 'landed-clean');
+    assert.equal(lines[0].by, 'atris member tidy');
+    assert.equal(lines[0].reason, 'work_landed');
+  } finally {
+    fs.rmSync(fx.base, { recursive: true, force: true });
+  }
+});

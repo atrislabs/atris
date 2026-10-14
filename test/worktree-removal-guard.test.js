@@ -244,7 +244,6 @@ const UNGUARDED_REMOVALS = {
 // Real work folder removals still waiting for the guard. Each one is a gap;
 // guard it and delete its line here.
 const NOT_YET_GUARDED = {
-  'lib/member-tidy.js:tidyMemberCopies': 'checks for a live run but not for git mid-operation, and logs nowhere',
 };
 const WORKTREE_REMOVAL = /worktree['"]?\s*,\s*['"]remove['"]|git worktree remove|rmSync\(\s*[^,)]*(?:worktree|wtPath|\bwt\b|\bw\.path)/i;
 
