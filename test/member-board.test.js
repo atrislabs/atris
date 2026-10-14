@@ -621,6 +621,27 @@ test('board shortens the run\'s own fixed status lines, but not in the row data'
   assert.equal(rows[0].step, 'Landing verified changes onto the workspace.', 'apps reading the rows get the line as written');
 });
 
+test('a fixed status line that would be cut uses its shortest form, one that fits keeps the longer one', () => {
+  const now = Date.parse('2026-10-14T13:00:00Z');
+  const step = (name, text) => memberRow(name, `2026-10-14T12:58:00Z m-1 started: [pid ${process.pid}] keep the board readable on a narrow screen\n2026-10-14T12:59:30Z m-1 ${text}\n`, now);
+  const rows = [
+    step('land', 'Landing verified changes onto the workspace.'),
+    step('pick', 'Choosing the next useful task.'),
+    step('setup', 'Set up an isolated checkout for this run.'),
+    step('resume', 'Resuming the saved isolated checkout.'),
+  ];
+  const at = (w) => Object.fromEntries(renderBoard(rows, '/x', 0, w).split('\n').filter((l) => /^(land|pick|setup|resume) /.test(l)).map((l) => [l.split(' ')[0], l]));
+  const wide = at(140);
+  assert.ok(wide.land.endsWith('  Landing verified changes'), 'room for it: the longer form stays');
+  const narrow = at(90);
+  assert.ok(narrow.land.endsWith('  Landing changes'), Object.values(narrow).join('\n'));
+  assert.ok(narrow.pick.endsWith('  Choosing a task'), narrow.pick);
+  assert.ok(narrow.setup.endsWith('  Set up a checkout'), narrow.setup);
+  assert.ok(narrow.resume.endsWith('  Resuming checkout'), narrow.resume);
+  assert.ok(Object.values(narrow).every((l) => l.length <= 90 && !l.endsWith('...')), Object.values(narrow).join('\n'));
+  assert.equal(rows[0].step, 'Landing verified changes onto the workspace.', 'apps reading the rows get the line as written');
+});
+
 test('board shortens a hand-off step to who was asked and the model, but not in the row data', () => {
   const now = Date.parse('2026-10-14T13:00:00Z');
   const step = (name, text) => memberRow(name, `2026-10-14T12:58:00Z m-1 started: map it\n2026-10-14T12:59:30Z m-1 ${text}\n`, now);
