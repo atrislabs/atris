@@ -1279,6 +1279,15 @@ function cleanupWorktrees({ root = repoRoot(), base: baseOverride = '', apply = 
     cachePruned.push(...caches.pruned);
   };
 
+  // The folder can disappear after its checks pass. Git still exits 0
+  // removing a missing folder, so look on disk right before removal.
+  const keptAsMissing = (item, wtPath) => {
+    if (fs.existsSync(wtPath)) return false;
+    const lock = missingFolderLock(root, wtPath);
+    kept.push({ ...item, reason: 'missing', detail: lock.locks.length ? lock.reason : 'folder is missing', locks: lock.locks });
+    return true;
+  };
+
   for (const wt of worktrees) {
     const wtPath = path.resolve(wt.path);
     const item = { path: wt.path, branch: wt.branch, head: wt.head };
@@ -1341,6 +1350,7 @@ function cleanupWorktrees({ root = repoRoot(), base: baseOverride = '', apply = 
         });
         continue;
       }
+      if (keptAsMissing(item, wtPath)) continue;
       const candidate = {
         ...item,
         reason: 'completed_unmerged_checkout_expired',
@@ -1365,6 +1375,7 @@ function cleanupWorktrees({ root = repoRoot(), base: baseOverride = '', apply = 
       kept.push({ ...item, reason: 'fresh_worktree_grace' });
       continue;
     }
+    if (keptAsMissing(item, wtPath)) continue;
     const candidate = { ...item, reason: 'merged_into_base', artifact_only_dirty: artifactOnlyDirty };
     candidates.push(candidate);
     if (!apply) continue;
@@ -1407,7 +1418,7 @@ function cleanup(args) {
   }
   console.log(`kept: ${result.kept.length}`);
   for (const item of result.kept) {
-    if (item.detail && ['git_activity', 'locked'].includes(item.reason)) console.log(`kept: ${item.path} reason=${item.reason} ${item.detail}`);
+    if (item.detail && ['git_activity', 'locked', 'missing'].includes(item.reason)) console.log(`kept: ${item.path} reason=${item.reason} ${item.detail}`);
   }
   if (!result.apply && result.candidates.length) console.log('next: atris worktree cleanup --apply');
   return 0;
