@@ -2284,3 +2284,5 @@ npm publish
 ## Locked quarantine cleanup review
 
 - `atris/receipts/work-folder-quarantine-probe.js:16` creates disposable real Git stores and calls sandbox disposal with and without a quarantine lock; `atris/receipts/work-folder-quarantine-review-2026-10-14.md:1` records the pre-build safeguard and actual output.
+
+- `atris/receipts/work-folder-scan-binding-probe.js:21` compares matching and unrelated protection paths against the actual source scanner and bypass predicate; advisory output reports any path-binding gap, without executing synthetic deletes.
