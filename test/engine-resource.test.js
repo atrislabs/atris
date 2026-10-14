@@ -221,7 +221,7 @@ test('sweep apply rechecks right before stopping, and logs what it stopped', () 
   assert.deepStrictEqual(signals, [[200, 'SIGTERM']]);
   assert.match(text, /stopped 1 leaked ssh-agent/);
   assert.match(text, /2 skipped because they were in use or gone on the recheck/);
-  assert.deepStrictEqual(log, [{ at: '2026-10-14T12:00:00.000Z', phase: 'sweep', stopped: [200], failed: [], skipped: [201, 202] }]);
+  assert.deepStrictEqual(log, [{ at: '2026-10-14T12:00:00.000Z', phase: 'sweep', stopped: [200], failed: [], skipped: [201, 202], leaked_ssh_agents: 0 }]);
 });
 
 test('sweep apply reports an agent it could not stop', () => {
@@ -865,6 +865,32 @@ test('atris engine sweep says how fast leaked ssh-agents grew, the same way the 
     const first = at.slice(0, 16).replace('T', ' ');
     assert.match(sweep(5), new RegExp(`5 ssh-agents running, 5 look leaked, up from 1 at ${first} UTC, about 2 more an hour \\(no parent`));
     assert.match(sweep(1), /1 ssh-agent running, 1 looks leaked \(no parent/, 'no growth, no growth note');
+  } finally {
+    fs.rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test('after a sweep stops agents, the growth note counts from what that sweep left', () => {
+  const { leakGrowthNote } = require('../lib/engine-resource');
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'engine-resource-sweep-baseline-'));
+  const file = path.join(root, RESOURCE_LOG);
+  const hour = 3600 * 1000;
+  const ago = (ms) => new Date(Date.now() - ms).toISOString();
+  try {
+    fs.mkdirSync(path.dirname(file), { recursive: true });
+    const sweepAt = ago(2 * hour);
+    fs.writeFileSync(file, [
+      JSON.stringify({ at: ago(5 * hour), phase: 'start', engine: 'claude', task: 'A', run_id: 'A', leaked_ssh_agents: 300 }),
+      JSON.stringify({ at: sweepAt, phase: 'sweep', stopped: [1, 2, 3], failed: [], skipped: [], leaked_ssh_agents: 10 }),
+      JSON.stringify({ at: ago(hour), phase: 'sweep', stopped: [], failed: [], skipped: [], leaked_ssh_agents: 40 }),
+      JSON.stringify({ at: ago(hour / 2), phase: 'start', engine: 'claude', task: 'B', run_id: 'B', leaked_ssh_agents: 70 }),
+      '',
+    ].join('\n'));
+    const reading = readResourceHistory(root).first_day_leak_reading;
+    assert.strictEqual(reading.at, sweepAt, 'the newest sweep that stopped agents is the baseline, not an older start or an idle sweep');
+    const when = sweepAt.slice(0, 16).replace('T', ' ');
+    assert.strictEqual(leakGrowthNote(reading, 90), `, up from 10 left by the sweep at ${when} UTC, about 40 more an hour`);
+    assert.strictEqual(leakGrowthNote(reading, 10), '');
   } finally {
     fs.rmSync(root, { recursive: true, force: true });
   }
