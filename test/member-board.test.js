@@ -356,6 +356,10 @@ test('hidden failures that share a reason say it once in the count', () => {
     const lines = renderBoard(rows, dir, 0, 0, 4).split('\n');
     assert.match(lines[1], /^f1\s+done failed\s+failed \(signed out\)/);
     assert.equal(lines[3], '4 more not shown (3 failed, all signed out, 1 stopped), the window is too short');
+    const narrow = renderBoard(rows, dir, 0, 50, 4).split('\n')[3];
+    assert.equal(narrow, '4 more not shown (3 failed, 1 stopped)', 'too narrow: the shared reason goes before anything is cut');
+    assert.equal(renderBoard(rows, dir, 0, 60, 4).split('\n')[3], '4 more not shown (3 failed, all signed out, 1 stopped)',
+      'room for it: the reason stays and only the why goes');
 
     const mixed = rows.map((r) => (r.member === 'f4' ? { ...r, last_result_reason: 'timed out' } : r));
     assert.equal(renderBoard(mixed, dir, 0, 0, 4).split('\n')[3], '4 more not shown (3 failed, 1 stopped), the window is too short',
