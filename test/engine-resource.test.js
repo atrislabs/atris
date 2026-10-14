@@ -1139,7 +1139,7 @@ const stripComments = (text) => text
   .replace(/(^|[^:\\'"`])\/\/.*$/gm, '$1');
 // Each function definition, named or bound to a variable, as start and end offsets.
 const definitionSpans = (code) => {
-  const definitions = /^[ \t]*(?:async\s+)?function\s+[\w$]+\s*\([^)]*\)\s*\{|^[ \t]*(?:const|let|var)\s+[\w$]+\s*=\s*(?:async\s*)?(?:function\s*\([^)]*\)\s*\{|(?:\([^)]*\)|[\w$]+)\s*=>)/gm;
+  const definitions = /^[ \t]*(?:async\s+)?function\s+[\w$]+\s*\([^)]*\)\s*\{|^[ \t]*(?:const|let|var)\s+[\w$]+\s*=\s*(?:async\s*)?(?:function(?:\s+[\w$]+)?\s*\([^)]*\)\s*\{|(?:\([^)]*\)|[\w$]+)\s*=>)/gm;
   const spans = [];
   for (const header of code.matchAll(definitions)) {
     let body = header.index + header[0].length;
@@ -1185,7 +1185,7 @@ const recordingCall = (code) => {
 // Each launch needs a recording call on its line or in the dozen lines
 // above it, without crossing a top-level function boundary.
 const RECORD_WINDOW = 12;
-const FUNCTION_START = /^(?:async\s+)?function\b|^(?:const|let)\s+[\w$]+\s*=\s*(?:async\s*)?(?:function\b|(?:\([^)]*\)|[\w$]+)\s*=>)/gm;
+const FUNCTION_START = /^(?:async\s+)?function\b|^(?:const|let|var)\s+[\w$]+\s*=\s*(?:async\s*)?(?:function\b|(?:\([^)]*\)|[\w$]+)\s*=>)/gm;
 const recordedAbove = (lines, line, recorder) => {
   const code = lines.join('\n');
   const launch = lines.slice(0, line - 1).join('\n').length + (line > 1 ? 1 : 0) + lines[line - 1].search(/\S/);
@@ -1318,7 +1318,7 @@ test('every engine started through a runner or profile variable records its run 
         if (!alias) break;
         // Captured variables remain visible until a matching parameter hides them.
         const shadowStart = Math.max(scopeStart, ...definitionSpans(code).filter(([open, close]) => open <= declarationEnd && declarationEnd < close).filter(([open]) => {
-          const header = /^(?:async\s+)?function\s+[\w$]+\s*\(([^)]*)\)|^(?:const|let|var)\s+[\w$]+\s*=\s*(?:async\s*)?(?:function\s*)?(?:\(([^)]*)\)|([\w$]+)\s*=>)/.exec(code.slice(open).trimStart());
+          const header = /^(?:async\s+)?function\s+[\w$]+\s*\(([^)]*)\)|^(?:const|let|var)\s+[\w$]+\s*=\s*(?:async\s*)?(?:function(?:\s+[\w$]+)?\s*)?(?:\(([^)]*)\)|([\w$]+)\s*=>)/.exec(code.slice(open).trimStart());
           return header && (header[1] ?? header[2] ?? header[3]).split(',').some((name) => name.trim() === alias[1]);
         }).map(([open]) => open));
         const declaration = [...code.slice(shadowStart, declarationEnd).matchAll(new RegExp(`\\b(?:const|let|var)\\s+${alias[1].replace(/\$/g, '\\$')}\\s*=\\s*([^;\\n]*)`, 'g'))].pop();
@@ -1337,16 +1337,16 @@ test('every engine started through a runner or profile variable records its run 
       const [, program, called, args] = match;
       const before = code.slice(0, match.index);
       const fnStart = Math.max(0, ...definitionSpans(code).filter(([open, close]) => open <= match.index && match.index < close).map(([open]) => open));
-      const fnName = (/^(?:async\s+)?(?:function|const|let)\s+([\w$]+)/.exec(code.slice(fnStart).trimStart()) || [])[1] || '';
+      const fnName = (/^(?:async\s+)?(?:function|const|let|var)\s+([\w$]+)/.exec(code.slice(fnStart).trimStart()) || [])[1] || '';
       let isEngine = engineSourceAt(program + (called || ''), match.index);
       if (!isEngine && !called) {
         // Follow simple parameters only when a call in this file supplies a
         // known runner. An unrelated parameter name alone is not evidence.
         const header = /^(?:async\s+)?function\s+([\w$]+)\s*\(([^)]*)\)/.exec(code.slice(fnStart).trimStart())
-          || /^(?:const|let)\s+([\w$]+)\s*=\s*(?:async\s*)?(?:\(([^)]*)\)|([\w$]+))\s*=>/.exec(code.slice(fnStart).trimStart());
+          || /^(?:const|let|var)\s+([\w$]+)\s*=\s*(?:async\s*)?(?:function(?:\s+[\w$]+)?\s*\(([^)]*)\)|(?:\(([^)]*)\)|([\w$]+))\s*=>)/.exec(code.slice(fnStart).trimStart());
         const source = sourceAt(program, match.index);
         const parameter = /^([A-Za-z_$][\w$]*)(?:\.[\w$]+)*$/.exec(source)?.[1];
-        const slot = header ? (header[2] ?? header[3]).split(',').map((name) => name.trim()).indexOf(parameter) : -1;
+        const slot = header ? (header[2] ?? header[3] ?? header[4]).split(',').map((name) => name.trim()).indexOf(parameter) : -1;
         if (slot >= 0) {
           const calls = new RegExp(`\\b${header[1].replace(/\$/g, '\\$')}\\(`, 'g');
           for (const call of code.matchAll(calls)) {
@@ -1460,6 +1460,20 @@ test('every engine started through a runner or profile variable records its run 
     assert.deepStrictEqual(planted(outer("findExecutable('git')", '    const program = runner.bin;\n    spawnSync(program, args);', 'resolveEngineProfile(engine)')), ['commands/planted.js:5 program']);
     assert.deepStrictEqual(planted(outer("findExecutable('git')", '    startEngineRun(root);\n    spawnSync(runner, args);', 'resolveClaudeRunnerBin()')), []);
     assert.deepStrictEqual(planted(outer("findExecutable('git')", "    spawnSync(runner, ['--help']);", 'resolveClaudeRunnerBin()')), []);
+  }
+  // Function expressions receive runners through the variable used to call them.
+  for (const prefix of ['const launch = function', 'let launch = async function', 'var launch = function worker']) {
+    assert.deepStrictEqual(planted(`${prefix}(runner) {\n  spawnSync(runner, args);\n};\nlaunch(resolveClaudeRunnerBin());\n`), ['commands/planted.js:2 runner']);
+    assert.deepStrictEqual(planted(`${prefix}(prompt, profile) {\n  const program = profile.bin;\n  spawnSync(program, args);\n};\nlaunch(prompt, resolveEngineProfile(engine));\n`), ['commands/planted.js:3 program']);
+    assert.deepStrictEqual(planted(`${prefix}(runner) {\n  startEngineRun(root);\n  spawnSync(runner, args);\n};\nlaunch(resolveClaudeRunnerBin());\n`), []);
+    assert.deepStrictEqual(planted(`${prefix}(runner) {\n  spawnSync(runner, ['--help']);\n};\nlaunch(resolveClaudeRunnerBin());\n`), []);
+    assert.deepStrictEqual(planted(`${prefix}(runner) {\n  spawnSync(runner, args);\n};\nlaunch(findExecutable('git'));\n`), []);
+    assert.deepStrictEqual(planted(`${prefix}(prompt, runner) {\n  spawnSync(runner, args);\n};\nlaunch(resolveClaudeRunnerBin(), git);\n`), []);
+    const nested = (outerRunner, argument) => `function outer() {\n  const runner = ${outerRunner};\n  ${prefix}(runner) {\n    spawnSync(runner, args);\n  };\n  launch(${argument});\n}\n`;
+    assert.deepStrictEqual(planted(nested("findExecutable('git')", 'resolveClaudeRunnerBin()')), ['commands/planted.js:4 runner']);
+    assert.deepStrictEqual(planted(nested('resolveClaudeRunnerBin()', "findExecutable('git')")), [], 'function expression parameters hide captured runners');
+    assert.deepStrictEqual(planted(`function outer() {\n  startEngineRun(root);\n  ${prefix}(runner) {\n    spawnSync(runner, args);\n  };\n  launch(resolveClaudeRunnerBin());\n}\n`), ['commands/planted.js:4 runner'], 'a parent recording cannot cover a function expression');
+    assert.deepStrictEqual(planted(`${prefix}(runner) { startEngineRun(root); };\nspawn(resolveClaudeRunnerBin(), args);\n`), ['commands/planted.js:2 resolveClaudeRunnerBin()'], 'a function expression definition is not a recording call');
   }
   // A variable declared in another function is not this launch's program.
   assert.deepStrictEqual(planted("function a() {\n  const command = buildEngineCommand(engine);\n}\nfunction b(command) {\n  spawnSync(command, { shell: true });\n}\n"), []);
