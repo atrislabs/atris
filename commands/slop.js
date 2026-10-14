@@ -197,6 +197,13 @@ const ADVERB_CLAUSE_AFTER_DASH = new RegExp(`(?<=[\\w)\\]"'*_\`\\u201d\\u2019\\u
 // "tests runs" or "quickly moves", is not a subject.
 const BARE_CLAUSE_AFTER_DASH = new RegExp(`(?<=[\\w)\\]"'*_\`\\u201d\\u2019\\uE001])\\s*\\u2014\\s*(?!${NAMING_PHRASE})(?=(?!(?:and|but|or|nor|so|yet|then|not|even|when|if|unless|until|because|since|while|where|which|who|as|after|before|though|although|once|just|only|also|still|this|that|it|its|one)\\b)[a-z]{3,}(?<!s|ly)\\s+${PLAIN_VERB_WORD}\\s+(?:to|into|onto|through)\\s)`, 'g');
 
+// An order after a full clause is a sentence of its own, so a comma there is
+// a splice: "pruning the worktree deletes proof; copy receipts out first".
+// The verb needs a plain word after it, so a noun in a label field ("verify:
+// tests pass") or before a past verb ("copy drafted for 1.6") keeps its comma.
+// "never" stays out: "it never crashes the tick" has its subject left off.
+const ORDER_CLAUSE_AFTER_DASH = new RegExp(`(?<=[\\w)\\]"'*_\`\\u201d\\u2019\\uE001])\\s*\\u2014\\s*(?=(?:don['\\u2019]t|do not|pick|copy|reframe|judge|plug|retry|rename|propose|inspect|keep|leave|use|run|read|ask|add|check|make|move|stop|try|wait|skip|take|look|call|write|delete|remove|fix|put|say|tell|give|treat|verify|ship|commit|push|kill|mark|start|avoid|prefer|trust|drop|cut|split|merge|revert|rerun|re-run)\\s+(?![a-z]+ed\\b)[\\w\`"'(\\uE000])`, 'g');
+
 // The mark that joins a full clause to the sentence before the dash. A short
 // opener led by "not" has no verb of its own, so the clause explains it and
 // takes a colon: "Not exhaustive: the frontier was not extended".
@@ -351,6 +358,15 @@ function fixEmDash(s, { endsBlock = false, startsBlock = false } = {}) {
     .replace(LEADING_CLAUSE_AFTER_DASH, (m, at, whole) => {
       const left = clauseLeft(at, whole);
       return left ? clauseJoin(left) : m;
+    })
+    // one word in an open bracket, "(IMPORTANT, use this)", or a quoted
+    // title, '"AI Engine Optimization, write content"', is no clause.
+    .replace(ORDER_CLAUSE_AFTER_DASH, (m, at, whole) => {
+      const left = clauseLeft(at, whole);
+      if (!left) return m;
+      const inner = left.split('(').pop();
+      const words = (left.includes('(') && !inner.includes(')') ? inner : left).replace(/^[\s"'*_]+/, '').split(/\s+/);
+      return words.length < 2 || words.every((w) => /^[A-Z][A-Za-z0-9'-]*$/.test(w)) ? m : clauseJoin(left);
     })
     // a stop right before the dash ended the sentence, so the lowercase word
     // after it starts the next one: "why bother? Nobody reads it", never

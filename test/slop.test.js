@@ -1450,7 +1450,7 @@ test('fix leaves a dash alone in brackets or quotes, since it names the mark', (
   ].join('\n'));
   const { changes } = applyFixes([file], RULES);
   assert.deepEqual(changes.map((c) => c.after), [
-    'The mark "\u2014" is banned, use a comma.',
+    'The mark "\u2014" is banned; use a comma.',
     'A [\u2014] cell; it means nothing.',
   ]);
 });
@@ -1534,5 +1534,26 @@ test('fix starts the next sentence after a stop that sits before a dash', () => 
     'the build passed. the log is clean.',
     'We kept the rest, etc., the gate holds.',
     'It trails off... the rest waits.',
+  ]);
+});
+
+test('fix joins a full clause and an order after a dash with a semicolon', () => {
+  // from the five-repo sweep, where the comma made a splice
+  const file = tmpFile('order.md', [
+    'Pruning the worktree deletes proof \u2014 copy receipts out first.',
+    'If it can\'t, the horizon is too far \u2014 pick a closer one.',
+    'The field should hide while the user is searching \u2014 don\'t compete with their intent.',
+    'Last updated: the store page (version 1.5) \u2014 copy drafted for 1.6.',
+    '**Reply in thread (IMPORTANT \u2014 use this for all replies):**',
+    'description: "AI Engine Optimization \u2014 write content that gets cited"',
+  ].join('\n'));
+  const { changes } = applyFixes([file], RULES);
+  assert.deepEqual(changes.map((c) => c.after), [
+    'Pruning the worktree deletes proof; copy receipts out first.',
+    'If it can\'t, the horizon is too far; pick a closer one.',
+    'The field should hide while the user is searching; don\'t compete with their intent.',
+    'Last updated: the store page (version 1.5), copy drafted for 1.6.',
+    '**Reply in thread (IMPORTANT, use this for all replies):**',
+    'description: "AI Engine Optimization, write content that gets cited"',
   ]);
 });
