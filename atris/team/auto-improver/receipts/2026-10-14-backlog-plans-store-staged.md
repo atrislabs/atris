@@ -1,6 +1,6 @@
 The backlog cleanup test now stages two setup plans through the real task store. The changed test passed, and all 35 required checks passed, exit 0.
 
-Files edited: test/commands.test.js; atris/MAP.md; atris/refs/MAP-NOTES.md; atris/team/auto-improver/logs/2026-10-14.md; this receipt.
+Files edited: atris/TODO.md (task-command generated); test/commands.test.js; atris/MAP.md; atris/refs/MAP-NOTES.md; atris/team/auto-improver/logs/2026-10-14.md; this receipt.
 
 Change: Initial single-row and delegated-row plan setup now calls stageTask. Creation order, explicit delegated owner, goal, exit and required proof are preserved. The CLI automatic plan trace and projection are not seeded, because these setup rows test cleanup state, not automatic planning. Real delegation, both replans, backlog, clear-plan, rejection paths and every cleanup assertion remain on the CLI. No product code or dependencies changed.
 
@@ -16,6 +16,8 @@ This launches the real backlog and clear-plan CLI against SQLite fixtures.
 Output: tests 35; pass 35; fail 0; duration_ms 11075.441916; exit 0.
 
 Other commands: atris brain activate --root . --verify; atris brain compile --root . (both plan-only, exit 2, no writes); atris; atris mission status mission-2026-10-14-continue-speeding-up-slow-te-f4a7db0c; atris mission goal --json; atris task list --status open; atris task current; atris task new; atris task claim; atris task note; git status; git diff.
+
+Review gate: the first ready invocation used its shell default Node, which lacked node:sqlite (exit 1). Retried with /opt/homebrew/bin/node explicitly, the runtime used in the passing test runs. The retry exited 0, saved atris/runs/2026-10-14-task-aic-51-2026-10-14T22-42-39-825Z.json, and moved the task to review. No test or frozen mission command was changed.
 
 Lesson: Use the existing stageTask setup pattern when the assertion targets cleanup. Keep CLI replans that prove fallback goal behavior, and preserve explicit owner assignment when staging delegated fixtures.
 next_push: Reduce setup-only launches in the proof-derived review-chat test, currently the slowest measured commands check with plain git.

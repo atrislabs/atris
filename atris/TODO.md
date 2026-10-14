@@ -19,10 +19,12 @@ Details for any task: atris task show <ID>
 
 ## In Progress
 
-- **[AIC-51]** Seed backlog and clear-plan setup through the task store · auto-improver
+(Empty)
 
 ## Review
 
+- **[AIC-51]** Seed backlog and clear-plan setup through the task store · auto-improver
+  **Done looks like:** Developers can run the cleanup test about a quarter second faster, which saves time on every run.
 - **[AIC-50]** Seed the continue work server parent through the task store · auto-improver
   **Done looks like:** Developers wait about half a second less on the continue work server test, which saves time on every run, and it still catches a wrong continue pick, which red…
 - **[AIC-49]** Seed review lane drain API rows through the task store · auto-improver
