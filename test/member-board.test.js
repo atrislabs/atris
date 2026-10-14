@@ -377,6 +377,46 @@ test('a short window keeps failed and stopped rows on screen ahead of newer ones
   }
 });
 
+test('short boards distinguish a hidden busy member earlier failure from a current failure', () => {
+  const dir = fakeDir({
+    busy: [
+      `${at(900)} m-1 started: first job`,
+      `${at(800)} m-1 finished: failed (timed out)`,
+      `${at(60)} m-2 started: try again`,
+      `${at(5)} m-2 running: check the fix`,
+    ],
+    ok1: [`${at(70)} m-4 finished: ok`],
+    ok2: [`${at(75)} m-5 finished: ok`],
+    broke: [`${at(90)} m-3 started: other job`, `${at(80)} m-3 finished: failed (engine error)`],
+  });
+  try {
+    const rows = readBoard({ dir, now: NOW });
+    assert.equal(renderBoard(rows, dir, 0, 100, 4).split('\n')[3],
+      '3 more not shown (1 with earlier failure, timed out), the window is too short');
+    assert.match(renderBoard(rows, dir, 0, 100, 4).split('\n')[1], /^broke\s+done failed/);
+    for (const state of ['working', 'quiet', 'asleep after this run']) {
+      const changed = rows.map((r) => r.member === 'busy' ? { ...r, state } : r);
+      assert.equal(renderBoard(changed, dir, 0, 60, 4).split('\n')[3],
+        '3 more not shown (1 with earlier failure, timed out)');
+      const tiny = renderBoard(changed, dir, 0, 45, 4).split('\n');
+      assert.equal(tiny.length, 4);
+      assert.equal(tiny[3], '3 more not shown (1 with earlier failure)');
+    }
+    const ok = rows.map((r) => r.member === 'busy' ? { ...r, last_result: 'ok' } : r);
+    assert.equal(renderBoard(ok, dir, 0, 100, 4).split('\n')[3], '3 more not shown, the window is too short');
+    const busy = rows.find((r) => r.member === 'busy');
+    const shared = [...rows, { ...busy, member: 'busy2' }];
+    assert.match(renderBoard(shared, dir, 0, 100, 4).split('\n')[3], /2 with earlier failure, all timed out/);
+    const mixed = [...rows, { ...busy, member: 'busy2', last_result_reason: 'bad exit 2' }];
+    assert.match(renderBoard(mixed, dir, 0, 100, 4).split('\n')[3], /2 with earlier failure\)/);
+    const sleeping = rows.map((r) => r.member === 'busy' ? { ...r, state: 'asleep' } : r);
+    assert.doesNotMatch(renderBoard(sleeping, dir, 0, 100, 4), /earlier failure/);
+    assert.doesNotMatch(renderBoard(rows, dir), /more not shown/);
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
 test('hidden failures that share a reason say it once in the count', () => {
   const logs = {};
   for (let i = 1; i <= 4; i++) logs[`f${i}`] = [`${at(900 + i)} m-${i} started: job ${i}`, `${at(800 + i)} m-${i} finished: failed (signed out)`];
