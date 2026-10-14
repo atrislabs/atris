@@ -9,6 +9,9 @@ const os = require('node:os');
 const path = require('node:path');
 const { spawnSync } = require('node:child_process');
 
+// Build fixtures only when run directly, never when a check loads this file.
+if (require.main !== module) return;
+
 const env = { ...Object.fromEntries(Object.entries(process.env).filter(([name]) => !name.startsWith('GIT_'))), ATRIS_NO_UPDATE_CHECK: '1' };
 const located = spawnSync('which', ['git'], { env, encoding: 'utf8' });
 assert.equal(located.status, 0, located.stderr);
