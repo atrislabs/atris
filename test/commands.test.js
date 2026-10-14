@@ -11802,6 +11802,23 @@ test('task review-chat extracts only proof-derived verifier commands', () => {
   try {
     fs.mkdirSync(path.join(dir, 'atris'), { recursive: true });
 
+    // Only the first case needs CLI creation/claim coverage. Seed the other
+    // fixtures through real SQLite, keeping every ready/review-chat invocation
+    // and proof-parsing assertion below on the real CLI path.
+    function makeClaimedProofTask(title) {
+      const db = taskStore.open(dbPath);
+      try {
+        const added = taskStore.addTask(db, { title, workspaceRoot: fs.realpathSync(dir) });
+        assert.equal(added.inserted, true);
+        const claimed = taskStore.claimTask(db, { id: added.id, claimedBy: 'codex' });
+        assert.equal(claimed.claimed, true, claimed.reason);
+        const rows = taskStore.listTasks(db, { workspaceRoot: fs.realpathSync(dir) });
+        return taskStore.withTaskDisplayRefs(rows).find(row => row.id === added.id).display_id;
+      } finally {
+        taskStore.close();
+      }
+    }
+
     const semicolonTask = runCli(['task', 'new', 'Semicolon proof commands', '--json'], { cwd: dir, env });
     assert.equal(semicolonTask.status, 0, semicolonTask.stderr);
     const semicolonRef = JSON.parse(semicolonTask.stdout).task.display_id;
@@ -11820,10 +11837,7 @@ test('task review-chat extracts only proof-derived verifier commands', () => {
       'node --check test/commands.test.js',
     ]);
 
-    const commaTask = runCli(['task', 'new', 'Comma proof commands', '--json'], { cwd: dir, env });
-    assert.equal(commaTask.status, 0, commaTask.stderr);
-    const commaRef = JSON.parse(commaTask.stdout).task.display_id;
-    assert.equal(runCli(['task', 'claim', commaRef, '--as', 'codex'], { cwd: dir, env }).status, 0);
+    const commaRef = makeClaimedProofTask('Comma proof commands');
     const commaReady = runCli([
       'task', 'ready', commaRef,
       '--as', 'codex',
@@ -11840,10 +11854,7 @@ test('task review-chat extracts only proof-derived verifier commands', () => {
       'ATRIS_SKIP_UPDATE_CHECK=1 atris task status --json',
     ]);
 
-    const narratedTask = runCli(['task', 'new', 'Narrated CLI proof commands', '--json'], { cwd: dir, env });
-    assert.equal(narratedTask.status, 0, narratedTask.stderr);
-    const narratedRef = JSON.parse(narratedTask.stdout).task.display_id;
-    assert.equal(runCli(['task', 'claim', narratedRef, '--as', 'codex'], { cwd: dir, env }).status, 0);
+    const narratedRef = makeClaimedProofTask('Narrated CLI proof commands');
     const narratedReady = runCli([
       'task', 'ready', narratedRef,
       '--as', 'codex',
@@ -11859,10 +11870,7 @@ test('task review-chat extracts only proof-derived verifier commands', () => {
       'node /Users/owner/arena/atris-cli/bin/atris.js app list',
     ]);
 
-    const pathPassedTask = runCli(['task', 'new', 'Path then passed proof commands', '--json'], { cwd: dir, env });
-    assert.equal(pathPassedTask.status, 0, pathPassedTask.stderr);
-    const pathPassedRef = JSON.parse(pathPassedTask.stdout).task.display_id;
-    assert.equal(runCli(['task', 'claim', pathPassedRef, '--as', 'codex'], { cwd: dir, env }).status, 0);
+    const pathPassedRef = makeClaimedProofTask('Path then passed proof commands');
     const pathPassedReady = runCli([
       'task', 'ready', pathPassedRef,
       '--as', 'codex',
@@ -11878,10 +11886,7 @@ test('task review-chat extracts only proof-derived verifier commands', () => {
       'git status --porcelain -- commands/workflow.js bin/atris.js atris/MAP.md',
     ]);
 
-    const chainedTask = runCli(['task', 'new', 'Chained proof commands', '--json'], { cwd: dir, env });
-    assert.equal(chainedTask.status, 0, chainedTask.stderr);
-    const chainedRef = JSON.parse(chainedTask.stdout).task.display_id;
-    assert.equal(runCli(['task', 'claim', chainedRef, '--as', 'codex'], { cwd: dir, env }).status, 0);
+    const chainedRef = makeClaimedProofTask('Chained proof commands');
     const chainedReady = runCli([
       'task', 'ready', chainedRef,
       '--as', 'codex',
@@ -11897,10 +11902,7 @@ test('task review-chat extracts only proof-derived verifier commands', () => {
       'node --check test/auto-accept-certified.test.js',
     ]);
 
-    const fencedTask = runCli(['task', 'new', 'Fenced proof commands', '--json'], { cwd: dir, env });
-    assert.equal(fencedTask.status, 0, fencedTask.stderr);
-    const fencedRef = JSON.parse(fencedTask.stdout).task.display_id;
-    assert.equal(runCli(['task', 'claim', fencedRef, '--as', 'codex'], { cwd: dir, env }).status, 0);
+    const fencedRef = makeClaimedProofTask('Fenced proof commands');
     const fencedReady = runCli([
       'task', 'ready', fencedRef,
       '--as', 'codex',
@@ -11915,10 +11917,7 @@ test('task review-chat extracts only proof-derived verifier commands', () => {
       'node --check test/json-output.test.js',
     ]);
 
-    const titleOnlyTask = runCli(['task', 'new', 'Fix git diff display', '--json'], { cwd: dir, env });
-    assert.equal(titleOnlyTask.status, 0, titleOnlyTask.stderr);
-    const titleOnlyRef = JSON.parse(titleOnlyTask.stdout).task.display_id;
-    assert.equal(runCli(['task', 'claim', titleOnlyRef, '--as', 'codex'], { cwd: dir, env }).status, 0);
+    const titleOnlyRef = makeClaimedProofTask('Fix git diff display');
     const titleOnlyReady = runCli([
       'task', 'ready', titleOnlyRef,
       '--as', 'codex',
@@ -11932,10 +11931,7 @@ test('task review-chat extracts only proof-derived verifier commands', () => {
     assert.deepEqual(titleOnlyPayload.contract.verification_focus.commands_to_verify, []);
     assert.match(titleOnlyPayload.contract.required_checks.join('\n'), /Find the concrete verifier command/);
 
-    const pathOnlyTask = runCli(['task', 'new', 'Inspect artifact path', '--json'], { cwd: dir, env });
-    assert.equal(pathOnlyTask.status, 0, pathOnlyTask.stderr);
-    const pathOnlyRef = JSON.parse(pathOnlyTask.stdout).task.display_id;
-    assert.equal(runCli(['task', 'claim', pathOnlyRef, '--as', 'codex'], { cwd: dir, env }).status, 0);
+    const pathOnlyRef = makeClaimedProofTask('Inspect artifact path');
     const pathOnlyReady = runCli([
       'task', 'ready', pathOnlyRef,
       '--as', 'codex',
@@ -11949,10 +11945,7 @@ test('task review-chat extracts only proof-derived verifier commands', () => {
     assert.deepEqual(pathOnlyPayload.contract.verification_focus.commands_to_verify, []);
     assert.ok(pathOnlyPayload.contract.verification_focus.files_to_inspect.includes('commands/git-diff.js'));
 
-    const detailTask = runCli(['task', 'new', 'Trim status details', '--json'], { cwd: dir, env });
-    assert.equal(detailTask.status, 0, detailTask.stderr);
-    const detailRef = JSON.parse(detailTask.stdout).task.display_id;
-    assert.equal(runCli(['task', 'claim', detailRef, '--as', 'codex'], { cwd: dir, env }).status, 0);
+    const detailRef = makeClaimedProofTask('Trim status details');
     const detailReady = runCli([
       'task', 'ready', detailRef,
       '--as', 'codex',
@@ -11966,10 +11959,7 @@ test('task review-chat extracts only proof-derived verifier commands', () => {
       'node --check test/commands.test.js',
     ]);
 
-    const punctuationTask = runCli(['task', 'new', 'Trim status punctuation', '--json'], { cwd: dir, env });
-    assert.equal(punctuationTask.status, 0, punctuationTask.stderr);
-    const punctuationRef = JSON.parse(punctuationTask.stdout).task.display_id;
-    assert.equal(runCli(['task', 'claim', punctuationRef, '--as', 'codex'], { cwd: dir, env }).status, 0);
+    const punctuationRef = makeClaimedProofTask('Trim status punctuation');
     const punctuationReady = runCli([
       'task', 'ready', punctuationRef,
       '--as', 'codex',
@@ -11983,10 +11973,7 @@ test('task review-chat extracts only proof-derived verifier commands', () => {
       'node --check test/commands.test.js',
     ]);
 
-    const bracketTask = runCli(['task', 'new', 'Bracket proof list', '--json'], { cwd: dir, env });
-    assert.equal(bracketTask.status, 0, bracketTask.stderr);
-    const bracketRef = JSON.parse(bracketTask.stdout).task.display_id;
-    assert.equal(runCli(['task', 'claim', bracketRef, '--as', 'codex'], { cwd: dir, env }).status, 0);
+    const bracketRef = makeClaimedProofTask('Bracket proof list');
     const bracketProof = 'live review-chat dry-run emitted [node --check commands/task.js, node --check test/commands.test.js, git diff --check]';
     const bracketRow = JSON.parse(runCli(['task', 'show', bracketRef, '--json'], { cwd: dir, env }).stdout);
     const bracketDb = taskStore.open(dbPath);
@@ -12004,10 +11991,7 @@ test('task review-chat extracts only proof-derived verifier commands', () => {
       'git diff --check',
     ]);
 
-    const pseudoTask = runCli(['task', 'new', 'Reject prose pseudo command', '--json'], { cwd: dir, env });
-    assert.equal(pseudoTask.status, 0, pseudoTask.stderr);
-    const pseudoRef = JSON.parse(pseudoTask.stdout).task.display_id;
-    assert.equal(runCli(['task', 'claim', pseudoRef, '--as', 'codex'], { cwd: dir, env }).status, 0);
+    const pseudoRef = makeClaimedProofTask('Reject prose pseudo command');
     const pseudoReady = runCli([
       'task', 'ready', pseudoRef,
       '--as', 'codex',
@@ -12019,10 +12003,7 @@ test('task review-chat extracts only proof-derived verifier commands', () => {
     assert.equal(pseudoChat.status, 0, pseudoChat.stderr);
     assert.deepEqual(JSON.parse(pseudoChat.stdout).contract.verification_focus.commands_to_verify, []);
 
-    const npmPseudoTask = runCli(['task', 'new', 'Reject npm prose pseudo command', '--json'], { cwd: dir, env });
-    assert.equal(npmPseudoTask.status, 0, npmPseudoTask.stderr);
-    const npmPseudoRef = JSON.parse(npmPseudoTask.stdout).task.display_id;
-    assert.equal(runCli(['task', 'claim', npmPseudoRef, '--as', 'codex'], { cwd: dir, env }).status, 0);
+    const npmPseudoRef = makeClaimedProofTask('Reject npm prose pseudo command');
     const npmPseudoReady = runCli([
       'task', 'ready', npmPseudoRef,
       '--as', 'codex',
@@ -12034,10 +12015,7 @@ test('task review-chat extracts only proof-derived verifier commands', () => {
     assert.equal(npmPseudoChat.status, 0, npmPseudoChat.stderr);
     assert.deepEqual(JSON.parse(npmPseudoChat.stdout).contract.verification_focus.commands_to_verify, []);
 
-    const pluralPseudoTask = runCli(['task', 'new', 'Reject plural prose pseudo commands', '--json'], { cwd: dir, env });
-    assert.equal(pluralPseudoTask.status, 0, pluralPseudoTask.stderr);
-    const pluralPseudoRef = JSON.parse(pluralPseudoTask.stdout).task.display_id;
-    assert.equal(runCli(['task', 'claim', pluralPseudoRef, '--as', 'codex'], { cwd: dir, env }).status, 0);
+    const pluralPseudoRef = makeClaimedProofTask('Reject plural prose pseudo commands');
     const pluralPseudoReady = runCli([
       'task', 'ready', pluralPseudoRef,
       '--as', 'codex',
@@ -12049,10 +12027,7 @@ test('task review-chat extracts only proof-derived verifier commands', () => {
     assert.equal(pluralPseudoChat.status, 0, pluralPseudoChat.stderr);
     assert.deepEqual(JSON.parse(pluralPseudoChat.stdout).contract.verification_focus.commands_to_verify, []);
 
-    const atrisSlugTask = runCli(['task', 'new', 'Reject Atris slug prose pseudo command', '--json'], { cwd: dir, env });
-    assert.equal(atrisSlugTask.status, 0, atrisSlugTask.stderr);
-    const atrisSlugRef = JSON.parse(atrisSlugTask.stdout).task.display_id;
-    assert.equal(runCli(['task', 'claim', atrisSlugRef, '--as', 'codex'], { cwd: dir, env }).status, 0);
+    const atrisSlugRef = makeClaimedProofTask('Reject Atris slug prose pseudo command');
     const atrisSlugReady = runCli([
       'task', 'ready', atrisSlugRef,
       '--as', 'codex',
@@ -12066,10 +12041,7 @@ test('task review-chat extracts only proof-derived verifier commands', () => {
     assert.equal(atrisSlugChat.status, 0, atrisSlugChat.stderr);
     assert.deepEqual(JSON.parse(atrisSlugChat.stdout).contract.verification_focus.commands_to_verify, []);
 
-    const atrisWildcardTask = runCli(['task', 'new', 'Reject Atris wildcard prose pseudo command', '--json'], { cwd: dir, env });
-    assert.equal(atrisWildcardTask.status, 0, atrisWildcardTask.stderr);
-    const atrisWildcardRef = JSON.parse(atrisWildcardTask.stdout).task.display_id;
-    assert.equal(runCli(['task', 'claim', atrisWildcardRef, '--as', 'codex'], { cwd: dir, env }).status, 0);
+    const atrisWildcardRef = makeClaimedProofTask('Reject Atris wildcard prose pseudo command');
     const atrisWildcardReady = runCli([
       'task', 'ready', atrisWildcardRef,
       '--as', 'codex',
@@ -12087,10 +12059,7 @@ test('task review-chat extracts only proof-derived verifier commands', () => {
       'node --check test/commands.test.js',
     ]);
 
-    const proseSegmentTask = runCli(['task', 'new', 'Semicolon prose segment', '--json'], { cwd: dir, env });
-    assert.equal(proseSegmentTask.status, 0, proseSegmentTask.stderr);
-    const proseSegmentRef = JSON.parse(proseSegmentTask.stdout).task.display_id;
-    assert.equal(runCli(['task', 'claim', proseSegmentRef, '--as', 'codex'], { cwd: dir, env }).status, 0);
+    const proseSegmentRef = makeClaimedProofTask('Semicolon prose segment');
     const proseSegmentReady = runCli([
       'task', 'ready', proseSegmentRef,
       '--as', 'codex',
@@ -12105,10 +12074,7 @@ test('task review-chat extracts only proof-derived verifier commands', () => {
       'git status --porcelain -- commands/task.js test/commands.test.js',
     ]);
 
-    const thenJoinedTask = runCli(['task', 'new', 'Then joined commands', '--json'], { cwd: dir, env });
-    assert.equal(thenJoinedTask.status, 0, thenJoinedTask.stderr);
-    const thenJoinedRef = JSON.parse(thenJoinedTask.stdout).task.display_id;
-    assert.equal(runCli(['task', 'claim', thenJoinedRef, '--as', 'codex'], { cwd: dir, env }).status, 0);
+    const thenJoinedRef = makeClaimedProofTask('Then joined commands');
     const thenJoinedReady = runCli([
       'task', 'ready', thenJoinedRef,
       '--as', 'codex',
@@ -12123,10 +12089,7 @@ test('task review-chat extracts only proof-derived verifier commands', () => {
       'node --check test/commands.test.js',
     ]);
 
-    const pipelineTask = runCli(['task', 'new', 'Preserve pipeline command', '--json'], { cwd: dir, env });
-    assert.equal(pipelineTask.status, 0, pipelineTask.stderr);
-    const pipelineRef = JSON.parse(pipelineTask.stdout).task.display_id;
-    assert.equal(runCli(['task', 'claim', pipelineRef, '--as', 'codex'], { cwd: dir, env }).status, 0);
+    const pipelineRef = makeClaimedProofTask('Preserve pipeline command');
     const pipelineReady = runCli([
       'task', 'ready', pipelineRef,
       '--as', 'codex',
@@ -12140,10 +12103,7 @@ test('task review-chat extracts only proof-derived verifier commands', () => {
       'curl -fsS http://127.0.0.1:8000/api/health | rg ok',
     ]);
 
-    const parenStatusTask = runCli(['task', 'new', 'Trim parenthesized status', '--json'], { cwd: dir, env });
-    assert.equal(parenStatusTask.status, 0, parenStatusTask.stderr);
-    const parenStatusRef = JSON.parse(parenStatusTask.stdout).task.display_id;
-    assert.equal(runCli(['task', 'claim', parenStatusRef, '--as', 'codex'], { cwd: dir, env }).status, 0);
+    const parenStatusRef = makeClaimedProofTask('Trim parenthesized status');
     const parenStatusReady = runCli([
       'task', 'ready', parenStatusRef,
       '--as', 'codex',
@@ -12157,10 +12117,7 @@ test('task review-chat extracts only proof-derived verifier commands', () => {
       'node --check test/commands.test.js',
     ]);
 
-    const exitStatusTask = runCli(['task', 'new', 'Trim exit status annotation', '--json'], { cwd: dir, env });
-    assert.equal(exitStatusTask.status, 0, exitStatusTask.stderr);
-    const exitStatusRef = JSON.parse(exitStatusTask.stdout).task.display_id;
-    assert.equal(runCli(['task', 'claim', exitStatusRef, '--as', 'codex'], { cwd: dir, env }).status, 0);
+    const exitStatusRef = makeClaimedProofTask('Trim exit status annotation');
     const exitStatusReady = runCli([
       'task', 'ready', exitStatusRef,
       '--as', 'codex',
@@ -12174,10 +12131,7 @@ test('task review-chat extracts only proof-derived verifier commands', () => {
       'node --check test/commands.test.js',
     ]);
 
-    const statusSentenceTask = runCli(['task', 'new', 'Trim status sentence', '--json'], { cwd: dir, env });
-    assert.equal(statusSentenceTask.status, 0, statusSentenceTask.stderr);
-    const statusSentenceRef = JSON.parse(statusSentenceTask.stdout).task.display_id;
-    assert.equal(runCli(['task', 'claim', statusSentenceRef, '--as', 'codex'], { cwd: dir, env }).status, 0);
+    const statusSentenceRef = makeClaimedProofTask('Trim status sentence');
     const statusSentenceReady = runCli([
       'task', 'ready', statusSentenceRef,
       '--as', 'codex',
@@ -12191,10 +12145,7 @@ test('task review-chat extracts only proof-derived verifier commands', () => {
       'node --check commands/task.js',
     ]);
 
-    const passCountTask = runCli(['task', 'new', 'Trim pass count suffix', '--json'], { cwd: dir, env });
-    assert.equal(passCountTask.status, 0, passCountTask.stderr);
-    const passCountRef = JSON.parse(passCountTask.stdout).task.display_id;
-    assert.equal(runCli(['task', 'claim', passCountRef, '--as', 'codex'], { cwd: dir, env }).status, 0);
+    const passCountRef = makeClaimedProofTask('Trim pass count suffix');
     const passCountReady = runCli([
       'task', 'ready', passCountRef,
       '--as', 'codex',
@@ -12208,10 +12159,7 @@ test('task review-chat extracts only proof-derived verifier commands', () => {
       'node --check test/commands.test.js',
     ]);
 
-    const passExplanationTask = runCli(['task', 'new', 'Trim pass count explanation', '--json'], { cwd: dir, env });
-    assert.equal(passExplanationTask.status, 0, passExplanationTask.stderr);
-    const passExplanationRef = JSON.parse(passExplanationTask.stdout).task.display_id;
-    assert.equal(runCli(['task', 'claim', passExplanationRef, '--as', 'codex'], { cwd: dir, env }).status, 0);
+    const passExplanationRef = makeClaimedProofTask('Trim pass count explanation');
     const passExplanationReady = runCli([
       'task', 'ready', passExplanationRef,
       '--as', 'codex',
@@ -12225,10 +12173,7 @@ test('task review-chat extracts only proof-derived verifier commands', () => {
       'node --check test/mission-status.test.js',
     ]);
 
-    const changedFilesTailTask = runCli(['task', 'new', 'Trim changed files tail', '--json'], { cwd: dir, env });
-    assert.equal(changedFilesTailTask.status, 0, changedFilesTailTask.stderr);
-    const changedFilesTailRef = JSON.parse(changedFilesTailTask.stdout).task.display_id;
-    assert.equal(runCli(['task', 'claim', changedFilesTailRef, '--as', 'codex'], { cwd: dir, env }).status, 0);
+    const changedFilesTailRef = makeClaimedProofTask('Trim changed files tail');
     const changedFilesTailReady = runCli([
       'task', 'ready', changedFilesTailRef,
       '--as', 'codex',
@@ -12242,10 +12187,7 @@ test('task review-chat extracts only proof-derived verifier commands', () => {
       'node --check test/mission-status.test.js',
     ]);
 
-    const passedWithTailTask = runCli(['task', 'new', 'Trim passed with tail', '--json'], { cwd: dir, env });
-    assert.equal(passedWithTailTask.status, 0, passedWithTailTask.stderr);
-    const passedWithTailRef = JSON.parse(passedWithTailTask.stdout).task.display_id;
-    assert.equal(runCli(['task', 'claim', passedWithTailRef, '--as', 'codex'], { cwd: dir, env }).status, 0);
+    const passedWithTailRef = makeClaimedProofTask('Trim passed with tail');
     const passedWithTailReady = runCli([
       'task', 'ready', passedWithTailRef,
       '--as', 'codex',
@@ -12260,10 +12202,7 @@ test('task review-chat extracts only proof-derived verifier commands', () => {
       'node --check test/mission-status.test.js',
     ]);
 
-    const exampleCommandTask = runCli(['task', 'new', 'Ignore example command subject', '--json'], { cwd: dir, env });
-    assert.equal(exampleCommandTask.status, 0, exampleCommandTask.stderr);
-    const exampleCommandRef = JSON.parse(exampleCommandTask.stdout).task.display_id;
-    assert.equal(runCli(['task', 'claim', exampleCommandRef, '--as', 'codex'], { cwd: dir, env }).status, 0);
+    const exampleCommandRef = makeClaimedProofTask('Ignore example command subject');
     const exampleCommandReady = runCli([
       'task', 'ready', exampleCommandRef,
       '--as', 'codex',
@@ -12278,10 +12217,7 @@ test('task review-chat extracts only proof-derived verifier commands', () => {
       'git status --porcelain',
     ]);
 
-    const commaResultTask = runCli(['task', 'new', 'Trim comma result prose', '--json'], { cwd: dir, env });
-    assert.equal(commaResultTask.status, 0, commaResultTask.stderr);
-    const commaResultRef = JSON.parse(commaResultTask.stdout).task.display_id;
-    assert.equal(runCli(['task', 'claim', commaResultRef, '--as', 'codex'], { cwd: dir, env }).status, 0);
+    const commaResultRef = makeClaimedProofTask('Trim comma result prose');
     const commaResultReady = runCli([
       'task', 'ready', commaResultRef,
       '--as', 'codex',
@@ -12296,10 +12232,7 @@ test('task review-chat extracts only proof-derived verifier commands', () => {
       'git status --porcelain',
     ]);
 
-    const focusedSuiteTask = runCli(['task', 'new', 'Split focused suite verifier', '--json'], { cwd: dir, env });
-    assert.equal(focusedSuiteTask.status, 0, focusedSuiteTask.stderr);
-    const focusedSuiteRef = JSON.parse(focusedSuiteTask.stdout).task.display_id;
-    assert.equal(runCli(['task', 'claim', focusedSuiteRef, '--as', 'codex'], { cwd: dir, env }).status, 0);
+    const focusedSuiteRef = makeClaimedProofTask('Split focused suite verifier');
     const focusedSuiteReady = runCli([
       'task', 'ready', focusedSuiteRef,
       '--as', 'codex',
@@ -12314,10 +12247,7 @@ test('task review-chat extracts only proof-derived verifier commands', () => {
       'node --check test/mission-status.test.js',
     ]);
 
-    const commaProseTask = runCli(['task', 'new', 'Trim comma prose command list', '--json'], { cwd: dir, env });
-    assert.equal(commaProseTask.status, 0, commaProseTask.stderr);
-    const commaProseRef = JSON.parse(commaProseTask.stdout).task.display_id;
-    assert.equal(runCli(['task', 'claim', commaProseRef, '--as', 'codex'], { cwd: dir, env }).status, 0);
+    const commaProseRef = makeClaimedProofTask('Trim comma prose command list');
     const commaProseReady = runCli([
       'task', 'ready', commaProseRef,
       '--as', 'codex',
@@ -12331,10 +12261,7 @@ test('task review-chat extracts only proof-derived verifier commands', () => {
       'node -c commands/task.js',
     ]);
 
-    const describedCommandTask = runCli(['task', 'new', 'Ignore described command subject', '--json'], { cwd: dir, env });
-    assert.equal(describedCommandTask.status, 0, describedCommandTask.stderr);
-    const describedCommandRef = JSON.parse(describedCommandTask.stdout).task.display_id;
-    assert.equal(runCli(['task', 'claim', describedCommandRef, '--as', 'codex'], { cwd: dir, env }).status, 0);
+    const describedCommandRef = makeClaimedProofTask('Ignore described command subject');
     const describedCommandReady = runCli([
       'task', 'ready', describedCommandRef,
       '--as', 'codex',
@@ -12349,10 +12276,7 @@ test('task review-chat extracts only proof-derived verifier commands', () => {
       'git status --porcelain',
     ]);
 
-    const productProofTask = runCli(['task', 'new', 'Product proof command extraction', '--json'], { cwd: dir, env });
-    assert.equal(productProofTask.status, 0, productProofTask.stderr);
-    const productProofRef = JSON.parse(productProofTask.stdout).task.display_id;
-    assert.equal(runCli(['task', 'claim', productProofRef, '--as', 'codex'], { cwd: dir, env }).status, 0);
+    const productProofRef = makeClaimedProofTask('Product proof command extraction');
     const productProofReady = runCli([
       'task', 'ready', productProofRef,
       '--as', 'codex',
@@ -12377,10 +12301,7 @@ test('task review-chat extracts only proof-derived verifier commands', () => {
     assert.match(productProofPayload.contract.codex_prompt, /command 1: node -c commands\/mission\.js/);
     assert.doesNotMatch(productProofPayload.contract.codex_prompt, /node -c commands\/mission\.js \| node --check/);
 
-    const quotedPipeTask = runCli(['task', 'new', 'Quoted pipe proof command', '--json'], { cwd: dir, env });
-    assert.equal(quotedPipeTask.status, 0, quotedPipeTask.stderr);
-    const quotedPipeRef = JSON.parse(quotedPipeTask.stdout).task.display_id;
-    assert.equal(runCli(['task', 'claim', quotedPipeRef, '--as', 'codex'], { cwd: dir, env }).status, 0);
+    const quotedPipeRef = makeClaimedProofTask('Quoted pipe proof command');
     const quotedPipeReady = runCli([
       'task', 'ready', quotedPipeRef,
       '--as', 'codex',
@@ -12403,10 +12324,7 @@ test('task review-chat extracts only proof-derived verifier commands', () => {
     assert.doesNotMatch(quotedPipePayload.contract.codex_prompt, /health' \| git status --porcelain/);
     assert.doesNotMatch(quotedPipePayload.contract.required_checks.join('\n'), /health' \| git status --porcelain/);
 
-    const quotedListTask = runCli(['task', 'new', 'Quoted command-list examples', '--json'], { cwd: dir, env });
-    assert.equal(quotedListTask.status, 0, quotedListTask.stderr);
-    const quotedListRef = JSON.parse(quotedListTask.stdout).task.display_id;
-    assert.equal(runCli(['task', 'claim', quotedListRef, '--as', 'codex'], { cwd: dir, env }).status, 0);
+    const quotedListRef = makeClaimedProofTask('Quoted command-list examples');
     const quotedListReady = runCli([
       'task', 'ready', quotedListRef,
       '--as', 'codex',
@@ -12421,10 +12339,7 @@ test('task review-chat extracts only proof-derived verifier commands', () => {
     ]);
     assert.equal(quotedListPayload.task.review.landing.tested, 'I ran the listed checks for this result.');
 
-    const quotedProductTask = runCli(['task', 'new', 'Quoted product command example', '--json'], { cwd: dir, env });
-    assert.equal(quotedProductTask.status, 0, quotedProductTask.stderr);
-    const quotedProductRef = JSON.parse(quotedProductTask.stdout).task.display_id;
-    assert.equal(runCli(['task', 'claim', quotedProductRef, '--as', 'codex'], { cwd: dir, env }).status, 0);
+    const quotedProductRef = makeClaimedProofTask('Quoted product command example');
     const quotedProductReady = runCli([
       'task', 'ready', quotedProductRef,
       '--as', 'codex',
@@ -12440,10 +12355,7 @@ test('task review-chat extracts only proof-derived verifier commands', () => {
       'git status --porcelain',
     ]);
 
-    const optionBeforeFileTask = runCli(['task', 'new', 'Quoted option-before-file verifier', '--json'], { cwd: dir, env });
-    assert.equal(optionBeforeFileTask.status, 0, optionBeforeFileTask.stderr);
-    const optionBeforeFileRef = JSON.parse(optionBeforeFileTask.stdout).task.display_id;
-    assert.equal(runCli(['task', 'claim', optionBeforeFileRef, '--as', 'codex'], { cwd: dir, env }).status, 0);
+    const optionBeforeFileRef = makeClaimedProofTask('Quoted option-before-file verifier');
     const optionBeforeFileReady = runCli([
       'task', 'ready', optionBeforeFileRef,
       '--as', 'codex',
@@ -12460,10 +12372,7 @@ test('task review-chat extracts only proof-derived verifier commands', () => {
       'atris brain compile --root . --verify',
     ]);
 
-    const noteTailTask = runCli(['task', 'new', 'Trim note tail from verifier command', '--json'], { cwd: dir, env });
-    assert.equal(noteTailTask.status, 0, noteTailTask.stderr);
-    const noteTailRef = JSON.parse(noteTailTask.stdout).task.display_id;
-    assert.equal(runCli(['task', 'claim', noteTailRef, '--as', 'codex'], { cwd: dir, env }).status, 0);
+    const noteTailRef = makeClaimedProofTask('Trim note tail from verifier command');
     const noteTailReady = runCli([
       'task', 'ready', noteTailRef,
       '--as', 'codex',
@@ -12475,10 +12384,7 @@ test('task review-chat extracts only proof-derived verifier commands', () => {
       'atris brain compile --root . --verify',
     ]);
 
-    const withPassingTask = runCli(['task', 'new', 'Trim with passing test tail', '--json'], { cwd: dir, env });
-    assert.equal(withPassingTask.status, 0, withPassingTask.stderr);
-    const withPassingRef = JSON.parse(withPassingTask.stdout).task.display_id;
-    assert.equal(runCli(['task', 'claim', withPassingRef, '--as', 'codex'], { cwd: dir, env }).status, 0);
+    const withPassingRef = makeClaimedProofTask('Trim with passing test tail');
     const withPassingReady = runCli([
       'task', 'ready', withPassingRef,
       '--as', 'codex',
@@ -12496,10 +12402,7 @@ test('task review-chat extracts only proof-derived verifier commands', () => {
       'git status --porcelain',
     ]);
 
-    const receiptCheckedTask = runCli(['task', 'new', 'Receipt-specific checked landing', '--json'], { cwd: dir, env });
-    assert.equal(receiptCheckedTask.status, 0, receiptCheckedTask.stderr);
-    const receiptCheckedRef = JSON.parse(receiptCheckedTask.stdout).task.display_id;
-    assert.equal(runCli(['task', 'claim', receiptCheckedRef, '--as', 'codex'], { cwd: dir, env }).status, 0);
+    const receiptCheckedRef = makeClaimedProofTask('Receipt-specific checked landing');
     const receiptCheckedReady = runCli([
       'task', 'ready', receiptCheckedRef,
       '--as', 'codex',
@@ -12510,10 +12413,7 @@ test('task review-chat extracts only proof-derived verifier commands', () => {
     const receiptCheckedPayload = JSON.parse(receiptCheckedReady.stdout);
     assert.equal(receiptCheckedPayload.task.review.landing.checked, 'I inspected the passing receipt named in the proof.');
 
-    const outputCheckedTask = runCli(['task', 'new', 'Verifier output checked landing', '--json'], { cwd: dir, env });
-    assert.equal(outputCheckedTask.status, 0, outputCheckedTask.stderr);
-    const outputCheckedRef = JSON.parse(outputCheckedTask.stdout).task.display_id;
-    assert.equal(runCli(['task', 'claim', outputCheckedRef, '--as', 'codex'], { cwd: dir, env }).status, 0);
+    const outputCheckedRef = makeClaimedProofTask('Verifier output checked landing');
     const outputCheckedReady = runCli([
       'task', 'ready', outputCheckedRef,
       '--as', 'codex',
@@ -12523,10 +12423,7 @@ test('task review-chat extracts only proof-derived verifier commands', () => {
     assert.equal(outputCheckedReady.status, 0, outputCheckedReady.stderr);
     assert.equal(JSON.parse(outputCheckedReady.stdout).task.review.landing.checked, 'I checked the verifier output named in the proof.');
 
-    const passesCheckedTask = runCli(['task', 'new', 'Passes checked landing', '--json'], { cwd: dir, env });
-    assert.equal(passesCheckedTask.status, 0, passesCheckedTask.stderr);
-    const passesCheckedRef = JSON.parse(passesCheckedTask.stdout).task.display_id;
-    assert.equal(runCli(['task', 'claim', passesCheckedRef, '--as', 'codex'], { cwd: dir, env }).status, 0);
+    const passesCheckedRef = makeClaimedProofTask('Passes checked landing');
     const passesCheckedReady = runCli([
       'task', 'ready', passesCheckedRef,
       '--as', 'codex',
@@ -12536,10 +12433,7 @@ test('task review-chat extracts only proof-derived verifier commands', () => {
     assert.equal(passesCheckedReady.status, 0, passesCheckedReady.stderr);
     assert.equal(JSON.parse(passesCheckedReady.stdout).task.review.landing.checked, 'I ran the verifier named in the proof.');
 
-    const proseCheckedTask = runCli(['task', 'new', 'Prose-only proof landing', '--json'], { cwd: dir, env });
-    assert.equal(proseCheckedTask.status, 0, proseCheckedTask.stderr);
-    const proseCheckedRef = JSON.parse(proseCheckedTask.stdout).task.display_id;
-    assert.equal(runCli(['task', 'claim', proseCheckedRef, '--as', 'codex'], { cwd: dir, env }).status, 0);
+    const proseCheckedRef = makeClaimedProofTask('Prose-only proof landing');
     const proseCheckedReady = runCli([
       'task', 'ready', proseCheckedRef,
       '--as', 'codex',
@@ -12549,10 +12443,7 @@ test('task review-chat extracts only proof-derived verifier commands', () => {
     assert.equal(proseCheckedReady.status, 0, proseCheckedReady.stderr);
     assert.equal(JSON.parse(proseCheckedReady.stdout).task.review.landing.tested, 'I checked: help output, clean dry-run, passing tests, and 1 more check.');
 
-    const rewardTailTask = runCli(['task', 'new', 'Trim human gate tail', '--json'], { cwd: dir, env });
-    assert.equal(rewardTailTask.status, 0, rewardTailTask.stderr);
-    const rewardTailRef = JSON.parse(rewardTailTask.stdout).task.display_id;
-    assert.equal(runCli(['task', 'claim', rewardTailRef, '--as', 'codex'], { cwd: dir, env }).status, 0);
+    const rewardTailRef = makeClaimedProofTask('Trim human gate tail');
     const rewardTailReady = runCli([
       'task', 'ready', rewardTailRef,
       '--as', 'codex',
@@ -12566,10 +12457,7 @@ test('task review-chat extracts only proof-derived verifier commands', () => {
       'node --check test/commands.test.js',
     ]);
 
-    const humanAcceptTask = runCli(['task', 'new', 'Reject human accept proof prose', '--json'], { cwd: dir, env });
-    assert.equal(humanAcceptTask.status, 0, humanAcceptTask.stderr);
-    const humanAcceptRef = JSON.parse(humanAcceptTask.stdout).task.display_id;
-    assert.equal(runCli(['task', 'claim', humanAcceptRef, '--as', 'codex'], { cwd: dir, env }).status, 0);
+    const humanAcceptRef = makeClaimedProofTask('Reject human accept proof prose');
     const humanAcceptReady = runCli([
       'task', 'ready', humanAcceptRef,
       '--as', 'codex',
@@ -12586,10 +12474,7 @@ test('task review-chat extracts only proof-derived verifier commands', () => {
     const longFiles = Array.from({ length: 10 }, (_, index) => `test/long-${index}.test.js`).join(' ');
     const longCommand = `node --check ${longFiles}`;
     assert.ok(longCommand.length > 180);
-    const longCommandTask = runCli(['task', 'new', 'Preserve long verifier command', '--json'], { cwd: dir, env });
-    assert.equal(longCommandTask.status, 0, longCommandTask.stderr);
-    const longCommandRef = JSON.parse(longCommandTask.stdout).task.display_id;
-    assert.equal(runCli(['task', 'claim', longCommandRef, '--as', 'codex'], { cwd: dir, env }).status, 0);
+    const longCommandRef = makeClaimedProofTask('Preserve long verifier command');
     const longCommandReady = runCli([
       'task', 'ready', longCommandRef,
       '--as', 'codex',
@@ -12603,10 +12488,7 @@ test('task review-chat extracts only proof-derived verifier commands', () => {
       longCommand,
     ]);
 
-    const jsonFileTask = runCli(['task', 'new', 'JSON named verifier file', '--json'], { cwd: dir, env });
-    assert.equal(jsonFileTask.status, 0, jsonFileTask.stderr);
-    const jsonFileRef = JSON.parse(jsonFileTask.stdout).task.display_id;
-    assert.equal(runCli(['task', 'claim', jsonFileRef, '--as', 'codex'], { cwd: dir, env }).status, 0);
+    const jsonFileRef = makeClaimedProofTask('JSON named verifier file');
     const jsonFileReady = runCli([
       'task', 'ready', jsonFileRef,
       '--as', 'codex',

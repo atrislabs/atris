@@ -96,6 +96,7 @@ checks the refs in both files; `atris doc-health --fix-refs` moves drifted ones.
 | design system commands | `commands/design.js` `lib/design-api.js` | atris design extract and check; shared with atris mcp |
 | improvement attempt ledger | `commands/rsi.js` `lib/rsi-record.js` | read and record Dream-RSI attempts |
 | workspace tree hash | `commands/tree.js` `lib/tree-hash.js` | atris tree hash over the doctrine files |
+| proof-command extraction test setup | `test/commands.test.js:11808` | one complete CLI creation/claim flow; 45 remaining fixtures use real SQLite helpers and resolved workspace paths; all 46 proof inputs and ready/review-chat parsing assertions retained |
 | command test SQLite capability | `test/commands.test.js` | one lazy capability probe per test process; original database checks remain; proof in `atris/runs/2026-10-13-command-sqlite-probe.md` |
 | tests | `test/commands.test.js` | node --test test/ |
 | run one test | `package.json` | npm test, node --test |
