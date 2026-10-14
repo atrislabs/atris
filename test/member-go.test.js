@@ -11,7 +11,7 @@ const { scrubAgentEnv } = require('./helpers/agent-env');
 const repoRoot = path.resolve(__dirname, '..');
 const cliPath = path.join(repoRoot, 'bin', 'atris.js');
 
-function runCli(args, cwd) {
+function runCli(args, cwd, env = {}) {
   const result = spawnSync(process.execPath, [cliPath, ...args], {
     cwd,
     encoding: 'utf8',
@@ -19,6 +19,7 @@ function runCli(args, cwd) {
     env: {
       ...scrubAgentEnv(),
       ATRIS_SKIP_UPDATE_CHECK: '1',
+      ...env,
     },
   });
   if (result.error) throw result.error;
@@ -102,4 +103,96 @@ test('member go --dry-run uses the member real next job when a goal exists', () 
   } finally {
     fs.rmSync(root, { recursive: true, force: true });
   }
+});
+
+// A temp project with its own task list. Tasks get spaced creation times so
+// "oldest" is unambiguous.
+function withTaskProject(fn) {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'atris-member-go-tasks-'));
+  const dbPath = path.join(root, 'tasks.db');
+  const taskDb = require('../lib/task-db');
+  taskDb.close();
+  const db = taskDb.open(dbPath);
+  const ws = taskDb.workspaceRoot(root);
+  let clock = 1000;
+  const add = (title, opts = {}) => {
+    const { id } = taskDb.addTask(db, { title, workspaceRoot: ws, ...opts });
+    db.prepare('UPDATE tasks SET created_at = ? WHERE id = ?').run(clock += 1000, id);
+    return id;
+  };
+  try {
+    for (const slug of ['executor', 'navigator']) writeMember(root, slug);
+    fn({ root, db, taskDb, add, env: { ATRIS_TASKS_DB: dbPath } });
+  } finally {
+    taskDb.close();
+    fs.rmSync(root, { recursive: true, force: true });
+  }
+}
+
+test('member go with no idea takes the oldest fitting task, skipping held, claimed, and billing rows', () => {
+  withTaskProject(({ root, taskDb, db, add, env }) => {
+    writeGoal(root, 'executor', { title: 'Old goal', next_push: 'Old next push' });
+    add('Pick the launch price', { tag: 'needs-human' });
+    add('Already taken', { status: 'claimed', claimedBy: 'someone' });
+    add('Refund the double charge', { tag: 'billing' });
+    const fits = add('Fix the flaky clock test', { metadata: { objective: 'It fails one run in five.' } });
+    add('Rename the stale flag');
+
+    for (const args of [['member', 'go', '--dry-run', '--json'], ['member', 'go', 'executor', '--dry-run', '--json']]) {
+      const result = runCli(args, root, env);
+      assert.equal(result.status, 0, result.stderr || result.stdout);
+      const payload = JSON.parse(result.stdout);
+      assert.equal(payload.member, 'executor');
+      assert.equal(payload.task.id, fits);
+      assert.equal(payload.prompt, 'Fix the flaky clock test\n\nIt fails one run in five.');
+    }
+    // A dry run only looks.
+    assert.equal(taskDb.getTask(db, fits).status, 'open');
+  });
+});
+
+test('member go falls back to the member goal when no task fits', () => {
+  withTaskProject(({ root, add, env }) => {
+    writeGoal(root, 'executor', { title: 'Old goal', next_push: 'Old next push' });
+    add('Hold for owner', { tag: 'needs-human' });
+    add('Ship the invoice email', { tag: 'payments' });
+    const result = runCli(['member', 'go', 'executor', '--dry-run', '--json'], root, env);
+    assert.equal(result.status, 0, result.stderr || result.stdout);
+    const payload = JSON.parse(result.stdout);
+    assert.equal(payload.task, null);
+    assert.equal(payload.prompt, 'Old next push');
+  });
+});
+
+test('a pulled task moves to review on a passing check and back to the list on a failing one', () => {
+  const { memberGoFinishTask } = require('../commands/member');
+  withTaskProject(({ taskDb, db, add, env }) => {
+    process.env.ATRIS_TASKS_DB = env.ATRIS_TASKS_DB;
+    try {
+      const pass = add('Fix the clock test');
+      const fail = add('Rename the flag');
+      taskDb.claimTask(db, { id: pass, claimedBy: 'executor' });
+      taskDb.claimTask(db, { id: fail, claimedBy: 'executor' });
+
+      const passed = memberGoFinishTask('executor', taskDb.getTask(db, pass), {
+        started: true, mission_id: 'm-1', mission: { status: 'complete' },
+        work_step: { receipt_path: 'atris/runs/mission-m-1.json' },
+      });
+      assert.equal(passed.outcome, 'review');
+      const reviewed = taskDb.getTask(db, pass);
+      assert.equal(reviewed.status, 'review');
+      assert.match(reviewed.metadata.latest_agent_proof, /atris\/runs\/mission-m-1\.json/);
+
+      const failed = memberGoFinishTask('executor', taskDb.getTask(db, fail), {
+        started: true, mission_id: 'm-2', mission: { status: 'running' }, error: 'check failed: 2 tests red\nstack',
+      });
+      assert.equal(failed.outcome, 'released');
+      assert.equal(failed.reason, 'check failed: 2 tests red');
+      const reopened = taskDb.getTask(db, fail);
+      assert.equal(reopened.status, 'open');
+      assert.equal(reopened.claimed_by, null);
+    } finally {
+      delete process.env.ATRIS_TASKS_DB;
+    }
+  });
 });

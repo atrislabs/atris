@@ -10371,7 +10371,65 @@ function isKnownMemberSlug(token, root = process.cwd()) {
     || fs.existsSync(path.join(root, 'atris', 'team', `${clean}.md`));
 }
 
+// The job a member does (build, review or search), read from the same team
+// roster that picks its engine.
+function memberGoJob(owner, root) {
+  const byRole = { navigator: 'search', executor: 'build', validator: 'review' };
+  try {
+    const seat = require('../lib/member-engine').resolveEngineForMember(owner, root);
+    return byRole[seat.role] || byRole[seat.job_key] || 'build';
+  } catch {
+    return 'build';
+  }
+}
+
+// With no idea given, member go takes the next real job from the task list:
+// the oldest open task that fits the member's job. A dry run only looks.
+function memberGoTask(owner, root, { claim }) {
+  try {
+    const taskDb = require('../lib/task-db');
+    const picker = require('../lib/member-task-pick');
+    const db = taskDb.open();
+    const job = memberGoJob(owner, root);
+    const workspaceRoot = taskDb.workspaceRoot(root);
+    if (claim) {
+      const got = picker.claimTaskForMember(taskDb, db, { workspaceRoot, member: owner, job });
+      return got ? { ...got, job } : null;
+    }
+    const task = picker.pickTaskForMember(taskDb, db, { workspaceRoot, job });
+    return task ? { task, objective: picker.taskObjective(task), job } : null;
+  } catch {
+    return null;
+  }
+}
+
+// A pulled task leaves the run in review when the run's check passed (the
+// mission completes only on a passing check), else back on the list with a
+// one-line reason.
+function memberGoFinishTask(owner, task, result, thrown = null) {
+  const taskDb = require('../lib/task-db');
+  const db = taskDb.open();
+  const mission = (result && result.mission) || {};
+  const receipt = (result && result.work_step && result.work_step.receipt_path) || mission.receipt_path || '';
+  if (!thrown && result && result.started && mission.status === 'complete') {
+    const proof = [`[verified] ${owner} ran mission ${result.mission_id} and its check passed.`,
+      receipt ? `Receipt: ${receipt}` : ''].filter(Boolean).join('\n');
+    const ready = taskDb.readyTask(db, { id: task.id, actor: owner, proof });
+    if (ready.ready !== false) return { id: task.id, title: task.title, outcome: 'review', receipt: receipt || null };
+  }
+  const why = thrown ? thrown.message
+    : (result && result.error) || (result && result.started ? 'the check did not pass' : 'the run did not start');
+  const reason = String(why || 'the run did not finish').split(/\r?\n/)[0].trim().slice(0, 200);
+  try { taskDb.noteTask(db, { id: task.id, actor: owner, content: `Released by ${owner}: ${reason}` }); } catch {}
+  const released = taskDb.releaseTask(db, { id: task.id, actor: owner });
+  return { id: task.id, title: task.title, outcome: released.released ? 'released' : 'left_claimed', reason };
+}
+
 async function memberSteerOrDispatch(...rawArgs) {
+  return memberSteerOrDispatchWith({}, rawArgs);
+}
+
+async function memberSteerOrDispatchWith({ pullTask = false } = {}, rawArgs = []) {
   if (hasFlag(rawArgs, '--help') || hasFlag(rawArgs, '-h')) {
     console.log('Usage: atris member steer [member] "<direction>" [--dry-run] [--json]');
     console.log('       atris member "<direction>" [--dry-run] [--json]');
@@ -10419,18 +10477,23 @@ async function memberSteerOrDispatch(...rawArgs) {
     fm = parseFrontmatter(fs.readFileSync(paths.memberFile, 'utf8')) || {};
   } catch {}
   const goalPlane = memberGoalPlaneStatus(owner, paths);
+  const missionMap = memberRunMissionMap(root);
+  const missionSummary = memberMissionSummary(owner, missionMap, root);
+  const pulled = pullTask && !prompt && !missionSummary.live
+    ? memberGoTask(owner, root, { claim: !dryRun })
+    : null;
   const effectivePrompt = prompt
+    || pulled?.objective
     || goalPlane.goal?.next_push
     || goalPlane.goal?.title
     || extractMemberNorthStar(paths.memberDir, '');
-
-  const missionMap = memberRunMissionMap(root);
-  const missionSummary = memberMissionSummary(owner, missionMap, root);
+  const pulledTask = pulled ? { id: pulled.task.id, title: pulled.task.title, job: pulled.job } : null;
+  if (pulled) whyPicked = `${whyPicked} Took the oldest open ${pulled.job} task from the list.`.trim();
   const engineSeat = resolveMemberEngineSeat(owner, root);
   const { autoQueueMemberNextPush, closeMemberHandoffsForReceiver } = require('./mission');
   const subagentShell = buildMemberSubagentShell(owner, fm.role || 'Team Member', engineSeat.engine_id, effectivePrompt, root);
 
-  if (effectivePrompt) {
+  if (effectivePrompt && !pulled) {
     try {
       autoQueueMemberNextPush(owner, effectivePrompt, missionSummary.live?.objective || '', root);
     } catch {}
@@ -10494,11 +10557,13 @@ async function memberSteerOrDispatch(...rawArgs) {
       engine_reason: engineSeat.reason,
       prompt: effectivePrompt,
       why: whyPicked,
+      task: pulledTask,
       command,
       subagent_shell: subagentShell,
     };
     const lines = [
       `Routed to ${owner} on engine ${engineSeat.engine_id}: ${whyPicked}`,
+      ...(pulledTask ? [`Task: ${pulledTask.title}`] : []),
       `Objective: ${effectivePrompt}`,
       `Next: ${command}`,
     ];
@@ -10511,7 +10576,20 @@ async function memberSteerOrDispatch(...rawArgs) {
   }
   const hasExplicitEngine = flagArgs.includes('--engine');
   const nextFlags = hasExplicitEngine ? flagArgs : ['--engine', engineSeat.engine_id, ...flagArgs];
-  return memberRun(owner, effectivePrompt, '--ignite', ...nextFlags);
+  if (!pulled) return memberRun(owner, effectivePrompt, '--ignite', ...nextFlags);
+  let result = null;
+  try {
+    result = await memberRunWith(owner, [effectivePrompt, '--ignite', ...nextFlags], { quiet: asJson });
+  } catch (error) {
+    memberGoFinishTask(owner, pulled.task, null, error);
+    throw error;
+  }
+  const task = memberGoFinishTask(owner, pulled.task, result);
+  const merged = { ...(result || {}), task };
+  if (asJson) console.log(JSON.stringify(merged));
+  else if (task.outcome === 'review') console.log(`Task "${task.title}" is ready for review.`);
+  else console.log(`Task "${task.title}" went back on the list: ${task.reason}`);
+  return merged;
 }
 
 async function memberGo(...rawArgs) {
@@ -10522,7 +10600,7 @@ async function memberGo(...rawArgs) {
   }
   const nonFlags = rawArgs.filter((a) => a && !String(a).startsWith('-'));
   if (nonFlags.length > 0) {
-    return memberSteerOrDispatch(...rawArgs);
+    return memberSteerOrDispatchWith({ pullTask: true }, rawArgs);
   }
   const root = process.cwd();
   const teamDir = path.join(root, 'atris', 'team');
@@ -10542,7 +10620,7 @@ async function memberGo(...rawArgs) {
     const fallback = findAllMembers(teamDir).filter(isFleetMember)[0];
     if (fallback) chosen = memberSlugFromRecord(fallback);
   }
-  return memberSteerOrDispatch(chosen, ...rawArgs);
+  return memberSteerOrDispatchWith({ pullTask: true }, [chosen, ...rawArgs]);
 }
 
 function memberSleep(target, ...args) {
@@ -11145,6 +11223,7 @@ async function memberCommand(subcommand, ...args) {
 
 module.exports = {
   proposalPromptForGoal,
+  memberGoFinishTask,
   appendMemberGoalLog,
   appendProjectLog,
   memberCommand,
