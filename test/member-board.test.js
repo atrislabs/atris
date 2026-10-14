@@ -435,10 +435,10 @@ test('board shows the command inside a shell wrapper or after a cd, but not in t
     step('plain', 'Reading the release notes.'),
   ];
   const shown = (name) => renderBoard(rows, '/x').split('\n').find((l) => l.startsWith(`${name} `));
-  assert.ok(shown('cdand').endsWith('Run: git rev-parse HEAD'), shown('cdand'));
-  assert.ok(shown('zsh').endsWith(`Run: git log -1 --format='%h %s'; echo "done"`), shown('zsh'));
+  assert.ok(shown('cdand').endsWith('running: git rev-parse HEAD'), 'Run: from the other writer reads running: like the rest');
+  assert.ok(shown('zsh').endsWith(`running: git log -1 --format='%h %s'; echo "done"`), shown('zsh'));
   assert.ok(shown('both').endsWith('running: npm test'), shown('both'));
-  assert.ok(shown('cut').endsWith('Run: sed -n 1,5p a.js; rg -n foo'), `a step cut before its closing quote still unwraps: ${shown('cut')}`);
+  assert.ok(shown('cut').endsWith('running: sed -n 1,5p a.js; rg -n foo'), `a step cut before its closing quote still unwraps: ${shown('cut')}`);
   assert.ok(shown('cdonly').endsWith('running: cd /repo/app'), 'a cd with nothing after it stays');
   assert.ok(shown('plain').endsWith('Reading the release notes.'), shown('plain'));
   assert.equal(rows[0].step, 'Run: cd /repo/app && git rev-parse HEAD', 'apps reading the rows get the step as written');
@@ -457,9 +457,9 @@ test('board says a heredoc step is a script or a file write, but not in the row 
   ];
   const shown = (name) => renderBoard(rows, '/x').split('\n').find((l) => l.startsWith(`${name} `));
   assert.ok(shown('py').endsWith('running: python3 script'), shown('py'));
-  assert.ok(shown('nd').endsWith('Run: node script'), shown('nd'));
+  assert.ok(shown('nd').endsWith('running: node script'), shown('nd'));
   assert.ok(shown('add').endsWith('running: append to atris/team/scout/logs/day.md'), shown('add'));
-  assert.ok(shown('new').endsWith('Run: write notes/plan.md'), shown('new'));
+  assert.ok(shown('new').endsWith('running: write notes/plan.md'), shown('new'));
   assert.ok(shown('msg').endsWith("running: git commit -q -F - <<'EOF'"), 'any other heredoc stays as written');
   assert.ok(shown('mid').endsWith("running: python3 - <<'PY' && ls"), 'a heredoc that is not the end of the step stays');
   assert.equal(rows[0].step, "running: python3 - <<'PY'", 'apps reading the rows get the step as written');
@@ -580,7 +580,7 @@ test('a last step that will be cut drops the words in front of its command, one 
   const at = (w) => Object.fromEntries(renderBoard(rows, '/x', 0, w).split('\n').filter((l) => /^(builder|orb|scout) /.test(l)).map((l) => [l.split(' ')[0], l]));
   const wide = at(140);
   assert.match(wide.builder, /running: sed -n 288,300p lib\/member-board\.js$/, 'room for it all: nothing changes');
-  assert.match(wide.orb, /Run: git status -sb$/);
+  assert.match(wide.orb, /running: git status -sb$/, 'Run: reads running: like the rest');
   const narrow = at(90);
   assert.match(narrow.builder, /readable\s{2}sed -n 288,300p\.\.\.$/, `a cut command starts at the command:\n${Object.values(narrow).join('\n')}`);
   assert.match(narrow.scout, /running: rg x$/, 'a step that fits keeps its words');
