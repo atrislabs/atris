@@ -18,17 +18,20 @@ const scanner = source.slice(start, end);
 const bypassFilter = source.slice(predicateStart, predicateEnd).trim();
 
 let gaps = 0;
-for (const [label, protectedPath, loggedPath, wantedBypasses] of [
+for (const [label, protectedPath, loggedPath, wantedBypasses, checkAfter] of [
   ['matching folder control', 'worktreePath', 'worktreePath', 0],
   ['resolved same folder control', 'realFolder', 'worktreePath', 0],
   ['unrelated folder guard', 'otherWorktreePath', 'worktreePath', 1],
   ['unrelated folder log', 'worktreePath', 'otherWorktreePath', 1],
   ['unrelated folder protection', 'otherWorktreePath', 'otherWorktreePath', 1],
+  ['check only after the delete', 'worktreePath', 'worktreePath', 1, true],
 ]) {
+  const check = `if (worktreeGitActivity(${protectedPath})) return;`;
   const body = `function cleanup() {
   const realFolder = fs.realpathSync(worktreePath);
-  if (worktreeGitActivity(${protectedPath})) return;
+  ${checkAfter ? '' : check}
   fs.rmSync(worktreePath, { recursive: true });
+  ${checkAfter ? check : ''}
   recordWorktreeRemoval(root, { path: ${loggedPath} });
 }`;
   const context = vm.createContext({

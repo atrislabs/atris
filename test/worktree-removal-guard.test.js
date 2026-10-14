@@ -308,8 +308,9 @@ for (const dirty of [false, true]) {
 
 // Tripwire: a work folder removal anywhere in lib/ or commands/, by git or by a
 // raw delete of a worktree path, must sit in a function whose git-activity
-// check and removal log name the folder it deletes. A new file that removes
-// folders is caught too. Exceptions need a reason; stale entries fail.
+// check, written above the delete, and removal log name the folder it deletes.
+// A new file that removes folders is caught too. Exceptions need a reason;
+// stale entries fail.
 function sourceFiles(dir) {
   return fs.readdirSync(path.join(__dirname, '..', dir), { withFileTypes: true }).flatMap((entry) => {
     const relative = path.join(dir, entry.name);
@@ -367,12 +368,15 @@ function worktreeRemovalSites(file) {
     const owner = starts.filter((start) => start.index <= index).pop();
     const next = starts.find((start) => start.index > index);
     // Comments are dropped so a note naming the check never counts as the check.
-    const body = lines.slice(owner ? owner.index : 0, next ? next.index : lines.length)
+    const code = (from, to) => lines.slice(from, to)
       .filter((text) => !COMMENT_LINE.test(text))
       .map((text) => text.replace(/\s\/\/.*$/, ''))
       .join('\n');
+    const body = code(owner ? owner.index : 0, next ? next.index : lines.length);
     if (!named && !HANDLES_WORKTREES.test(body)) return;
-    sites.push({ key: `${file}:${owner ? owner.name : '(top level)'}`, line: index + 1, call, body });
+    // The function's code above the delete, where its git check has to sit.
+    const before = code(owner ? owner.index : 0, index);
+    sites.push({ key: `${file}:${owner ? owner.name : '(top level)'}`, line: index + 1, call, body, before });
   });
   return sites;
 }
@@ -444,18 +448,19 @@ function loggedPaths(body) {
 }
 
 // True when a delete is not covered: the git check or the log names some other
-// folder, the scan cannot tell which folder is deleted, or a group lost a check.
+// folder, the check only runs after the delete, the scan cannot tell which
+// folder is deleted, or a group lost a check.
 function removalGap(site) {
   const group = GROUPED_REMOVALS[site.key];
   if (group) {
-    const flat = site.body.replace(/\s+/g, '');
+    const flat = site.before.replace(/\s+/g, '');
     return !group.checks.every((check) => flat.includes(check)) || !loggedPaths(site.body).includes(group.logs);
   }
   const target = removedTarget(site.call, site.body);
   if (!target) return true;
   const folder = sameFolder(site.body);
   const names = (paths) => paths.some((named) => folder(named) === folder(target));
-  return !names(checkedPaths(site.body)) || !names(loggedPaths(site.body));
+  return !names(checkedPaths(site.before)) || !names(loggedPaths(site.body));
 }
 
 test('every work folder removal goes through the git check and the removal log', () => {
@@ -490,7 +495,7 @@ test('saved scanner examples reject missed removals in the required checks', () 
   assert.match(result.stdout, /review gaps: 0; synthetic source only, no folders removed/);
 });
 
-test('a git check or log naming another folder does not count as protection', () => {
+test('a git check after the delete, or naming another folder, does not count as protection', () => {
   const result = spawnSync(process.execPath, [
     path.join(__dirname, '../atris/receipts/work-folder-scan-binding-probe.js'),
     '--require-protection',
