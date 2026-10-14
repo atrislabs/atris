@@ -306,6 +306,24 @@ test('board drops engine, then alive, when the screen is too narrow for them', (
   assert.ok([...sixty, ...narrow].every((l) => l.length <= 52 || (sixty.includes(l) && l.length <= 60)), `every line fits:\n${sixty.join('\n')}\n${narrow.join('\n')}`);
 });
 
+test('board stops repeating ago in its rows when engine and alive are not enough', () => {
+  const now = Date.parse('2026-10-14T13:00:00Z');
+  const rows = [
+    memberRow('builder', `2026-10-14T12:50:00Z m-1 started: [pid ${process.pid} engine claude] make the table fit a split pane\n2026-10-14T12:59:30Z m-1 running: node --test\n`, now),
+    memberRow('scout', '2026-10-14T12:55:00Z m-3 started: map the repo for stale refs\n', now),
+  ];
+  const table = (w) => {
+    const lines = renderBoard(rows, '/x', 0, w).split('\n');
+    return lines.slice(lines.indexOf('') + 1, lines.indexOf('', lines.indexOf('') + 1));
+  };
+  assert.match(table(52)[1], /\s30s ago\s/, 'at 52 columns the rows still say ago');
+  const pane = table(44);
+  assert.match(pane[0], /^member\s+state\s+run time\s+ago\s+job$/, 'the header keeps the word');
+  assert.match(pane[1], /^builder\s+working\s+10m\s+30s\s+make/, 'the row drops it');
+  assert.ok(pane.every((l) => l.length <= 44), `every line fits a 44 column pane:\n${pane.join('\n')}`);
+  assert.match(renderBoard(rows, '/x'), /\s30s ago\s/, 'piped output keeps ago');
+});
+
 test('board breaks the count line after a comma on a narrow screen', () => {
   const now = Date.parse('2026-10-14T13:00:00Z');
   const base = memberRow('scout', '2026-10-14T12:55:00Z m-3 started: map the repo\n', now);
