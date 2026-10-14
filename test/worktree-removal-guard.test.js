@@ -97,6 +97,13 @@ test('regression cleanup keeps folders that gain locks or disappear during or af
   assert.match(result.stdout, /a folder that disappeared after a passing safety check was reported missing, kept in Git, and no removal was attempted or recorded/);
 });
 
+test('worktree cleanup names locks and ages when Git refuses removal, in place and after a move', () => {
+  const proof = path.resolve(__dirname, '../atris/receipts/2026-10-14-worktree-cleanup-refused-check.js');
+  const result = spawnSync(process.execPath, [proof], { encoding: 'utf8', timeout: 120000 });
+  assert.equal(result.status, 0, result.stderr || result.stdout);
+  assert.match(result.stdout, /Git refusal named three locks and distinct ages, in place and after the copy moved; files, branch, locks, and Git record retained; no removal recorded/);
+});
+
 test('worktree cleanup keeps a copy moved after its final checks pass', () => {
   const proof = path.resolve(__dirname, '../atris/receipts/2026-10-14-worktree-cleanup-moved-folder-check.js');
   const result = spawnSync(process.execPath, [proof], { encoding: 'utf8', timeout: 120000 });

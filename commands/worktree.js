@@ -8,7 +8,7 @@ const { stampLatestOpenBriefForWorktree } = require('../lib/brief-ledger');
 const { isConductorArtifact } = require('../lib/conductor-artifacts');
 const { fixMapDocs } = require('../lib/map-refs');
 const { sleepSync } = require('../lib/sleep-sync');
-const { inspectGitActivity, missingFolderLock } = require('../lib/git-activity');
+const { inspectGitActivity, missingFolderLock, locksAfterRefusal } = require('../lib/git-activity');
 const close = require('./close');
 
 const REGEN_ADAPTER_FILES = ['AGENTS.md', 'CLAUDE.md', 'GEMINI.md'];
@@ -1288,6 +1288,15 @@ function cleanupWorktrees({ root = repoRoot(), base: baseOverride = '', apply = 
     return true;
   };
 
+  // Git can still refuse after every check passes, and the folder can move
+  // meanwhile. Keep Git's error and name each lock still holding the folder.
+  const keptAfterRefusal = (item, removedResult) => {
+    const error = (removedResult.stderr || removedResult.stdout || '').trim();
+    const retained = locksAfterRefusal(root, item.path);
+    const refusal = `git refused: ${error.split('\n')[0] || 'remove failed'}`;
+    kept.push({ ...item, reason: 'remove_failed', error, detail: retained.reason ? `${refusal}; ${retained.reason}` : refusal, locks: retained.locks });
+  };
+
   for (const wt of worktrees) {
     const wtPath = path.resolve(wt.path);
     const item = { path: wt.path, branch: wt.branch, head: wt.head };
@@ -1367,7 +1376,7 @@ function cleanupWorktrees({ root = repoRoot(), base: baseOverride = '', apply = 
         removed.push(candidate);
         recordWorktreeRemoval(root, { path: wt.path, branch: wt.branch, by, reason: candidate.reason });
       } else {
-        kept.push({ ...item, reason: 'remove_failed', error: (removedResult.stderr || removedResult.stdout || '').trim() });
+        keptAfterRefusal(item, removedResult);
       }
       continue;
     }
@@ -1387,7 +1396,7 @@ function cleanupWorktrees({ root = repoRoot(), base: baseOverride = '', apply = 
       removed.push(candidate);
       recordWorktreeRemoval(root, { path: wt.path, branch: wt.branch, by, reason: candidate.reason });
     } else {
-      kept.push({ ...item, reason: 'remove_failed', error: (removedResult.stderr || removedResult.stdout || '').trim() });
+      keptAfterRefusal(item, removedResult);
     }
   }
 
@@ -1418,7 +1427,7 @@ function cleanup(args) {
   }
   console.log(`kept: ${result.kept.length}`);
   for (const item of result.kept) {
-    if (item.detail && ['git_activity', 'locked', 'missing'].includes(item.reason)) console.log(`kept: ${item.path} reason=${item.reason} ${item.detail}`);
+    if (item.detail && ['git_activity', 'locked', 'missing', 'remove_failed'].includes(item.reason)) console.log(`kept: ${item.path} reason=${item.reason} ${item.detail}`);
   }
   if (!result.apply && result.candidates.length) console.log('next: atris worktree cleanup --apply');
   return 0;
