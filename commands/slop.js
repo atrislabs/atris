@@ -417,9 +417,10 @@ function installHook(root = process.cwd()) {
 }
 
 // Name the shape of a fix by the punctuation it added: an aside put in
-// parentheses, a colon, a comma, a period, or a range hyphen. A line that
-// gained none of these just had its dash dropped. Two shapes join with " + ".
-const FIX_KINDS = [['(', 'parentheses'], [':', 'colon'], [',', 'comma'], ['.', 'period'], ['-', 'hyphen']];
+// parentheses, a colon, a semicolon joining two sentences, a comma, a period,
+// or a range hyphen. A line that gained none of these just had its dash
+// dropped. Two shapes join with " + ".
+const FIX_KINDS = [['(', 'parentheses'], [':', 'colon'], [';', 'semicolon'], [',', 'comma'], ['.', 'period'], ['-', 'hyphen']];
 function fixKind(before, after) {
   const count = (s, ch) => s.split(ch).length - 1;
   const kinds = FIX_KINDS.filter(([ch]) => count(after, ch) > count(before, ch)).map(([, k]) => k);

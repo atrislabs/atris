@@ -446,18 +446,19 @@ test('each fix is named by the shape it took, and the preview groups them by kin
     `It works ${D} and the gate ${D} the strict one ${D} still holds.`,
     `${D} a dash that opens the line`,
     `We tried twice ${D} and it held.`,
+    `The tool is fast ${D} the build is green.`,
   ].join('\n');
   const file = tmpFile('kinds.md', body);
   const { changes } = applyFixes([file], RULES, { write: false });
   assert.deepEqual(changes.map((c) => c.kind), [
-    'parentheses', 'colon', 'comma', 'period', 'hyphen', 'parentheses + comma', 'dropped', 'comma',
+    'parentheses', 'colon', 'comma', 'period', 'hyphen', 'parentheses + comma', 'dropped', 'comma', 'semicolon',
   ]);
   const lines = [];
   const orig = console.log;
   console.log = (...a) => lines.push(a.join(' '));
   try { detect([file, '--dry-run']); } finally { console.log = orig; }
   const out = lines.join('\n');
-  assert.match(out, /by kind: comma 2, parentheses 1, colon 1, period 1, hyphen 1, parentheses \+ comma 1, dropped 1/);
+  assert.match(out, /by kind: comma 2, parentheses 1, colon 1, period 1, hyphen 1, parentheses \+ comma 1, dropped 1, semicolon 1/);
   // the two comma fixes sit together under their own heading, biggest group first
   assert.match(out, /comma \(2\)\n\n\s+\S+kinds\.md:3\n.*\n.*\n\n\s+\S+kinds\.md:9\n/);
   assert.ok(out.indexOf('comma (2)') < out.indexOf('parentheses (1)'), 'biggest group comes first');
