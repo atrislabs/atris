@@ -2559,3 +2559,5 @@ Landing capability test setup: `test/commands.test.js:12964` seeds creation and 
 - `test/commands.test.js:13161` seeds creation and ownership through the real task store, asserting claim success and closing before CLI calls. Four launches become three; readiness, zero-reward rejection and the final review-status and pending-approval checks remain unchanged on the CLI.
 
 - Duplicate reward review setup: `test/commands.test.js:13460` seeds creation and ownership through the real task store; ready, accept, second review and XP status retain real CLI coverage.
+
+- `test/roster-run-record.test.js:405` - autopilot run accounting: successful worker has a 30-second cap; roster rewrites to one second before the intentional real-process stall, and both recorded caps are asserted.
