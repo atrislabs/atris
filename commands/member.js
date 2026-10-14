@@ -9938,7 +9938,7 @@ function memberDispatch(...args) {
     printJsonOrText(
       payload,
       [
-        `${picked.member} (${picked.role}) will take this because it ${picked.reason.replace(/^[A-Z]/, (c) => c.toLowerCase())}.`,
+        `${picked.member} (${picked.role}) will take this: ${picked.reason.replace(/\.$/, '')}.`,
         '',
         commandPreview,
       ],
@@ -9948,7 +9948,7 @@ function memberDispatch(...args) {
   }
 
   if (!asJson) {
-    console.log(`${picked.member} (${picked.role}) is taking this because it ${picked.reason.replace(/^[A-Z]/, (c) => c.toLowerCase())}.`);
+    console.log(`${picked.member} (${picked.role}) is taking this: ${picked.reason.replace(/\.$/, '')}.`);
   }
   // --ignite means do the work now, the same as the previewed member run;
   // without it dispatch only opens the mission.
