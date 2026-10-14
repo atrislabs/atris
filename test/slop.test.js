@@ -1306,6 +1306,21 @@ test('fix never pairs two dashes across the edge of a quote', () => {
   ]);
 });
 
+test('fix never pairs two dashes across the edge of a bold or code mark', () => {
+  // a sfhq log came out '**SFH-16 (insider guide library.** The old one was fake) seven'
+  const file = tmpFile('bold-edge.md', [
+    '**SFH-16 \u2014 insider guide library.** The old one was fake \u2014 seven left.',
+    '`npm test \u2014 strict` passed \u2014 then it shipped.',
+    'The gate \u2014 **the strict one** \u2014 holds.',
+  ].join('\n'));
+  const { changes } = applyFixes([file], RULES, { write: false });
+  assert.deepEqual(changes.map((c) => c.after), [
+    '**SFH-16, insider guide library.** The old one was fake, seven left.',
+    '`npm test \u2014 strict` passed, then it shipped.',
+    'The gate (**the strict one**) holds.',
+  ]);
+});
+
 test('fix gives a name that opens a paragraph a colon, like a definition', () => {
   // from this repo's feature docs: "v2 then a dash then harness re-verified"
   // under a heading, and "MEMBER.md then a dash then an open-source standard"

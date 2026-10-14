@@ -275,6 +275,9 @@ function fixEmDash(s, { endsBlock = false, startsBlock = false } = {}) {
       // each dash is fixed alone: 'said "go, now", and left', never '"go (now")'.
       const count = (re) => (aside.match(re) || []).length;
       if (count(/"/g) % 2 || count(/\u201c/g) !== count(/\u201d/g)) return m;
+      // So does one that holds one side of a bold or code mark: "**SFH-16:
+      // insider guide library.** The old one was fake", never "(insider ...**".
+      if (count(/\*\*/g) % 2 || count(/__/g) % 2 || count(/`/g) % 2) return m;
       // An aside that opens with a joining word goes on with the sentence, so
       // it takes commas too: "install it, then run it, and ship". Punctuation
       // already before it keeps its place: 'said "stop." then it went, and left'.
