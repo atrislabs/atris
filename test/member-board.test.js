@@ -1455,6 +1455,17 @@ test('a run with no pid that has been silent for over an hour is named as likely
   assert.match(renderBoard([old, two], '/x'), /^orb\s+quiet\s+-\s+8h ago\s/m, 'nothing past its start: no made-up length');
 });
 
+test('the count line says how many quiet runs most likely ended, when it stays one line', () => {
+  const now = Date.parse('2026-10-14T12:00:00Z');
+  const old = memberRow('launcher', '2026-10-14T04:00:00Z m-1 started: score launcher\n2026-10-14T05:00:00Z m-1 running: npm test\n', now);
+  const fresh = memberRow('scout', '2026-10-14T11:00:00Z m-2 started: look\n2026-10-14T11:50:00Z m-2 running: rg x\n', now);
+  const done = memberRow('shipper', '2026-10-14T11:00:00Z m-3 started: ship\n2026-10-14T11:30:00Z m-3 finished: ok\n', now);
+  assert.equal(renderBoard([old, fresh, done], '/x').split('\n')[0], '3 members: 2 quiet (1 likely ended), 1 done ok');
+  assert.equal(renderBoard([old, fresh], '/x').split('\n')[0], '2 members, all quiet (1 likely ended)');
+  assert.equal(renderBoard([fresh, done], '/x').split('\n')[0], '2 members: 1 quiet, 1 done ok', 'a pause adds nothing');
+  assert.equal(renderBoard([old, fresh, done], '/x', 0, 30).split('\n')[0], '3 members: 2 quiet, 1 done ok', 'too narrow for both: the count keeps one line and the note below names it');
+});
+
 test('watchCrashes reports each newly died run once, not ones dead at start', () => {
   const { watchCrashes } = require('../lib/member-board');
   const row = (member, state, pid) => ({ member, mission: `m-${member}`, state, pid, job: `${member} job`, step: 'npm test', lasted: '4m' });
