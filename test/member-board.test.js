@@ -485,7 +485,7 @@ test('a short window keeps the header and the newest rows, and says how many did
   }
 });
 
-test('a short screen names its one hidden live member, never at the cost of a failure reason', () => {
+test('a short screen names up to three hidden live members, never at the cost of a failure reason', () => {
   const dir = fakeDir({
     busy: [`${at(10)} m-1 started: [pid ${process.pid} engine claude] job`],
     f1: [`${at(80)} m-1 finished: failed (timed out)`],
@@ -505,7 +505,17 @@ test('a short screen names its one hidden live member, never at the cost of a fa
       assert.ok(lines.every((line) => line.length <= width));
     }
     const two = [...rows, { ...rows.find((r) => r.member === 'busy'), member: 'also' }];
-    assert.doesNotMatch(renderBoard(two, dir, 0, 100, 4), /working\)/, 'two live members stay a count');
+    assert.equal(renderBoard(two, dir, 0, 100, 4).split('\n')[3],
+      '4 more not shown (1 failed, bad exit 2, 1 stopped, busy working, also working)', 'two live members are both named');
+    const busyRow = rows.find((r) => r.member === 'busy');
+    const three = [...two, { ...busyRow, member: 'scout', state: 'quiet' }];
+    assert.equal(renderBoard(three, dir, 0, 100, 4).split('\n')[3],
+      '5 more not shown (1 failed, bad exit 2, 1 stopped, busy working, also working, scout quiet)', 'each says its own state');
+    assert.equal(renderBoard(three, dir, 0, 80, 4).split('\n')[3], '5 more not shown (1 failed, bad exit 2, 1 stopped), the window is too short',
+      'all names or none, so no live run looks missing');
+    const four = [...three, { ...busyRow, member: 'extra' }];
+    assert.equal(renderBoard(four, dir, 0, 120, 4).split('\n')[3], '6 more not shown (1 failed, bad exit 2, 1 stopped), the window is too short',
+      'four or more stay a count');
     const finishing = rows.map((r) => r.member === 'busy' ? { ...r, state: 'asleep after this run' } : r);
     assert.match(renderBoard(finishing, dir, 0, 80, 4).split('\n')[3], /busy finishing\)$/);
   } finally {
