@@ -679,7 +679,7 @@ test('watch breaks its footer between words to the screen width', () => {
     const watch = spawnSync(process.execPath, [cliPath, 'member', 'board', '--watch'], {
       cwd: dir, env: { ...process.env, ATRIS_PROGRESS_DIR: dir, COLUMNS: '40' }, encoding: 'utf8', timeout: 1500,
     });
-    const screen = watch.stdout.replace(/\x1b\[2J\x1b\[H/g, '').split('\n');
+    const screen = watch.stdout.replace(/\x1b\[\d*[A-Z]/g, '').split('\n');
     const at = screen.findIndex((l) => l.startsWith('redrawn at'));
     assert.match(screen[at], /^redrawn at \d\d:\d\d:\d\d, redraws every 3s,$/, watch.stdout);
     assert.equal(screen[at + 1], '  ctrl-c to stop', 'the rest goes on its own indented line');
@@ -702,9 +702,16 @@ test('atris member board reads ATRIS_PROGRESS_DIR for real', () => {
     const watch = spawnSync(process.execPath, [cliPath, 'member', 'board', '--watch'], { cwd: dir, env, encoding: 'utf8', timeout: 3700 });
     assert.equal(watch.signal, 'SIGTERM', 'watch stays open until stopped');
     assert.equal(watch.stdout.split('redraws every 3s').length - 1, 2, 'drew once, then redrew at 3s');
-    assert.match(watch.stdout, /\x1b\[2J\x1b\[H/);
-    assert.match(watch.stdout, /navigator\s+working/);
-    const times = [...watch.stdout.matchAll(/^redrawn at (\d\d:\d\d:\d\d), redraws every 3s, ctrl-c to stop$/gm)].map((m) => m[1]);
+    // The first draw clears the screen; the redraw writes over it in place,
+    // erasing each line's leftover tail and everything below.
+    const [clear, , redrawn] = watch.stdout.split('\x1b[H');
+    assert.equal(clear, '\x1b[2J', 'the first draw clears the screen, then starts at the top');
+    assert.equal(watch.stdout.split('\x1b[2J').length - 1, 1, 'only the first draw clears the screen');
+    assert.match(redrawn, /navigator\s+working.*\x1b\[K\n/, 'each line erases what the last draw left after it');
+    assert.ok(redrawn.endsWith('\n\x1b[J'), 'and the rows below the board are erased');
+    const plain = watch.stdout.replace(/\x1b\[\d*[A-Z]/g, '');
+    assert.match(plain, /navigator\s+working/);
+    const times = [...plain.matchAll(/^redrawn at (\d\d:\d\d:\d\d), redraws every 3s, ctrl-c to stop$/gm)].map((m) => m[1]);
     assert.equal(times.length, 2, 'every redraw says when it happened');
     assert.notEqual(times[0], times[1], 'the time moves, so a frozen screen shows an old one');
   } finally {
