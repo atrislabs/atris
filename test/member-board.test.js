@@ -485,6 +485,28 @@ test('a short window keeps the header and the newest rows, and says how many did
   }
 });
 
+test('the older-runs note never pushes a current member off a short screen', () => {
+  const dir = fakeDir({
+    busy: [`${at(10)} m-1 started: [pid ${process.pid} engine claude] job`],
+    broke: [`${at(90)} m-2 started: fix`, `${at(80)} m-2 finished: failed (engine error)`],
+  });
+  try {
+    const rows = readBoard({ dir, now: NOW });
+    const names = (lines) => lines.slice(1).map((l) => l.split(/\s+/)[0]).filter((n) => n === 'busy' || n === 'broke');
+    const three = renderBoard(rows, dir, 2, 80, 3).split('\n');
+    assert.deepEqual(names(three), ['busy', 'broke'], 'both members fit, so both show');
+    assert.equal(three.length, 3, 'no room left for the note, so it waits');
+    const four = renderBoard(rows, dir, 2, 80, 4).split('\n');
+    assert.deepEqual(names(four), ['busy', 'broke']);
+    assert.equal(four[3], '2 finished over an hour ago, hidden. --all shows them', 'a spare row carries the note');
+    const one = renderBoard(rows.slice(0, 1), dir, 2, 80, 2).split('\n');
+    assert.equal(one.length, 2);
+    assert.match(one[1], /^busy\s+working/, 'the one live member beats the note');
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
 test('one to three board lines keep the header without scrolling away failures', () => {
   const dir = fakeDir({
     busy: [`${at(10)} m-1 started: job`],
