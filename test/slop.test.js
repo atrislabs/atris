@@ -1311,6 +1311,27 @@ test('fix attributes a quote with no stop of its own with a comma', () => {
   ]);
 });
 
+test('fix credits a quote in bold or italics the same way as a plain one', () => {
+  // the fix wrote '*"power."*, Musk' mid-paragraph and '*"power."* Musk' at
+  // its end, and a list label quote took a colon: '"Less, but better.": Dieter Rams'
+  const file = tmpFile('emphasis-credit.md', [
+    '> *"The limiting factor is electrical power."* \u2014 Musk',
+    '> *"Token pricing drops by half every three months."* \u2014 Nadella',
+    '',
+    '- "Simplicity is the ultimate sophistication." \u2014 Leonardo da Vinci',
+    '- **"We will see one-person companies."** \u2014 Sam Altman.',
+    '- "Let\'s circle back on this." \u2014 Dead.',
+  ].join('\n'));
+  const { changes } = applyFixes([file], RULES, { write: false });
+  assert.deepEqual(changes.map((c) => c.after), [
+    '> *"The limiting factor is electrical power."* (Musk)',
+    '> *"Token pricing drops by half every three months."* (Nadella)',
+    '- "Simplicity is the ultimate sophistication." (Leonardo da Vinci)',
+    '- **"We will see one-person companies."** (Sam Altman).',
+    '- "Let\'s circle back on this.": Dead.',
+  ]);
+});
+
 test('fix gives a list label that is one whole quote a colon after the quote', () => {
   // the skill zones one-pager lists sample questions, each with what it does
   const file = tmpFile('quote-label.md', [

@@ -398,6 +398,20 @@ function isRange(a, b) {
   return +b > +a || (a.length >= 3 && b.length < a.length && +b > +a.slice(-b.length));
 }
 
+// Who said a quote, when the words after its dash are only a name: one to
+// four capitalized words, "of" or "da" between them, and maybe a period.
+// It goes in parentheses after the quote, with that period outside:
+// '"one person."** (Sam Altman).' Returns null for anything else.
+const CREDIT_NAME = /^((?!(?:Then|And|But|So|This|That|It)\b)[A-Z][\w'.-]*(?:\s+(?:of|de|da|di|der|la|le|van|von|[A-Z][\w'.-]*)){0,3})\s*$/;
+function creditAfterQuote(quote, rest) {
+  const name = CREDIT_NAME.exec(rest);
+  const end = name && /[a-z]{2}\.$/.test(name[1]) ? '.' : '';
+  // one word and a period is a verdict on the quote, not who said it:
+  // '"Let\'s circle back.": Dead.'
+  if (!name || (end && !/\s/.test(name[1]))) return null;
+  return `${quote} (${end ? name[1].slice(0, -1) : name[1]})${end}`;
+}
+
 function fixEmDash(s, { endsBlock = false, startsBlock = false, spans = [] } = {}) {
   // a dash between a file reference and the code it points at reads "is",
   // so it takes a colon even past a label colon: "`lib/a.js:12`: `runTick`",
@@ -485,6 +499,10 @@ function fixEmDash(s, { endsBlock = false, startsBlock = false, spans = [] } = {
   if (label && /^(?:`[^`]+`|\ue000\d+\ue001|\*\*[^*]+\*\*)$/.test(label[2])) {
     rest = rest.replace(/([,;]\s+)(`[^`]+`|\ue000\d+\ue001|\*\*[^*\u2014]+\*\*)\s*\u2014\s*(?=\S)(?!(?:and|but|or|nor|so|yet|then)\b)/g, '$1$2: ');
   }
+  // a quote that leads the line and ends its own sentence, then a name, is
+  // a credit, not a label: '> *"Power is the limit."* (Musk)'
+  const credit = label && /[.!?]["'\u201d\u2019*_]*["'\u201d\u2019][*_]*$/.test(label[2]) && creditAfterQuote(label[1] + label[2], rest);
+  if (credit) return credit;
   if (label) return `${label[1]}${label[2]}${!quoted && /[.,;:!?][*_`"'\u201d\u2019]*$/.test(label[2]) ? '' : ':'}${s.length > label[0].length ? ' ' : ''}${fixEmDash(rest, { endsBlock })}`;
   const term = startsBlock && (TERM_DASH.exec(s) || TITLE_DASH.exec(s));
   if (term) return `${term[1]}: ${fixEmDash(s.slice(term[0].length), { endsBlock })}`;
@@ -562,8 +580,10 @@ function fixEmDash(s, { endsBlock = false, startsBlock = false, spans = [] } = {
     })
     // a name that closes the line after a quote with its own stop is who said
     // it, so it goes in parentheses: 'backward." (Steve Jobs)', never a bare
-    // name that reads as a fragment or a stacked '.",'.
-    .replace(/([.!?]["'\u201d\u2019]+)\s*\u2014\s*((?!(?:Then|And|But|So|This|That|It)\b)[A-Z][\w'.-]*(?:\s+(?:of|de|van|von|[A-Z][\w'.-]*)){0,3})\s*$/, '$1 ($2)')
+    // name that reads as a fragment or a stacked '.",'. Bold or italics around
+    // the quote close it the same way, '*"power."* (Musk)', and a period after
+    // the name stays outside: '"one person."** (Sam Altman).'
+    .replace(/([.!?]["'\u201d\u2019*_]*["'\u201d\u2019][*_]*)\s*\u2014\s*([^\u2014]+)$/, (m, stop, rest) => creditAfterQuote(stop, rest) || m)
     // a lowercase word after a quote that ends its sentence starts the next
     // one, so the dash goes and the word takes its capital: 'automatically."
     // Transactions stay unfinished'. A joining word goes on with the sentence,
