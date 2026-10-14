@@ -382,6 +382,22 @@ test('a run that died before logging past its start has no run time, not 0s', ()
   assert.equal(stopped.lasted, '0s', 'a run that finished right away really took 0s');
 });
 
+test('a run with no pid that has been silent for over an hour is named as likely ended', () => {
+  const now = Date.parse('2026-10-14T12:00:00Z');
+  const old = memberRow('launcher', '2026-10-14T04:00:00Z m-1 started: score launcher\n2026-10-14T05:00:00Z m-1 running: npm test\n', now);
+  const fresh = memberRow('scout', '2026-10-14T11:00:00Z m-2 started: look\n2026-10-14T11:50:00Z m-2 running: rg x\n', now);
+  const done = memberRow('shipper', '2026-10-14T04:00:00Z m-3 started: ship\n2026-10-14T05:00:00Z m-3 finished: ok\n', now);
+  assert.equal(old.state, 'quiet', 'still a guess, so the state does not change');
+  assert.equal(old.likely_ended, true);
+  assert.equal(fresh.likely_ended, false, '10 minutes quiet is a pause');
+  assert.equal(done.likely_ended, false, 'a finished run is not a guess');
+  const screen = renderBoard([old, fresh, done], '/x');
+  assert.match(screen, /^launcher has logged nothing for over an hour with no process id to check, so it most likely ended without saying so$/m);
+  const two = memberRow('orb', '2026-10-14T04:00:00Z m-4 started: x\n', now);
+  assert.match(renderBoard([old, two], '/x'), /^launcher, orb have logged nothing for over an hour with no process id to check, so they most likely ended without saying so$/m);
+  assert.doesNotMatch(renderBoard([fresh, done], '/x'), /most likely ended/);
+});
+
 test('watchCrashes reports each newly died run once, not ones dead at start', () => {
   const { watchCrashes } = require('../lib/member-board');
   const row = (member, state, pid) => ({ member, mission: `m-${member}`, state, pid, job: `${member} job`, step: 'npm test', lasted: '4m' });
