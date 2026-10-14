@@ -28,12 +28,15 @@ function jwt(claims) {
   return `${header}.${payload}.sig`;
 }
 
+// One expiry for the whole run. Read per call, the clock could cross a second
+// between minting a token and rebuilding it to compare, and the strings differ.
+const AGENT_EXP = Math.floor(Date.now() / 1000) + 3600;
+
 function agentJwt(n) {
-  return jwt({ type: 'agent_access', n, exp: Math.floor(Date.now() / 1000) + 3600 });
+  return jwt({ type: 'agent_access', n, exp: AGENT_EXP });
 }
 
-// Which minted token this is. The exp claim moves with the clock, so tests
-// compare the counter, never the whole string.
+// Which minted token this is.
 function tokenNumber(token) {
   return JSON.parse(Buffer.from(String(token).split('.')[1], 'base64url').toString()).n;
 }

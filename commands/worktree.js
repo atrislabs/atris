@@ -1162,12 +1162,14 @@ function canonicalPath(value) {
   }
 }
 
+// null means the scan failed: we cannot tell who is inside, so callers keep
+// every folder. An empty list would read as "nobody is here" and delete.
 function listActiveProcessCwds() {
   const result = spawnSync('lsof', ['-n', '-a', '-d', 'cwd', '-F', 'n'], {
     encoding: 'utf8',
     maxBuffer: COMMAND_MAX_BUFFER_BYTES,
   });
-  if (result.status !== 0) return [];
+  if (result.error || result.status !== 0) return null;
   return String(result.stdout || '')
     .split(/\r?\n/)
     .filter((line) => line.startsWith('n'))
@@ -1176,6 +1178,7 @@ function listActiveProcessCwds() {
 }
 
 function worktreeHasActiveProcess(worktreePath, activeCwds) {
+  if (!Array.isArray(activeCwds)) return true;
   const resolved = canonicalPath(worktreePath);
   const prefix = `${resolved}${path.sep}`;
   return activeCwds.some((cwd) => {
@@ -1258,7 +1261,7 @@ function cleanupWorktrees({ root = repoRoot(), base: baseOverride = '', apply = 
       continue;
     }
     if (worktreeHasActiveProcess(wtPath, activeCwds)) {
-      kept.push({ ...item, reason: 'active_process' });
+      kept.push({ ...item, reason: activeCwds ? 'active_process' : 'process_scan_failed' });
       continue;
     }
     const rawCounts = statusCounts(wt.path);
