@@ -11373,6 +11373,15 @@ async function memberCommand(subcommand, ...args) {
         if (isKnownMemberSlug(subcommand, process.cwd()) && args.filter((a) => !String(a).startsWith('-')).length === 0) {
           return memberCard(subcommand, ...args);
         }
+        // "board --all" or "stop builder" arriving as one piece of text (a
+        // shell that did not split it) would steer a running member, so it
+        // stops here and says how to run it or send it on purpose.
+        const [word, ...rest] = subcommand.trim().split(/\s+/);
+        if ((word === 'board' || word === 'stop') && rest.length) {
+          console.log(`"${subcommand}" starts with the ${word} command, so it was not sent to any member. To run it: atris member ${word} ${rest.join(' ')}. To send it to a running member as a direction: atris member steer "${subcommand}"`);
+          process.exitCode = 1;
+          return undefined;
+        }
         return memberSteerOrDispatch(subcommand, ...args);
       }
       console.log('run "<job>"          pick the right member and run it: atris member run "fix the flaky login test"');

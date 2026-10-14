@@ -444,6 +444,22 @@ test('board shows the command inside a shell wrapper or after a cd, but not in t
   assert.equal(rows[0].step, 'Run: cd /repo/app && git rev-parse HEAD', 'apps reading the rows get the step as written');
 });
 
+test('board or stop arriving as one piece of text is not sent to a running member', () => {
+  // Runs in a throwaway folder, so even a failure here steers no real member.
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'atris-board-steer-'));
+  try {
+    const env = { ...process.env, ATRIS_PROGRESS_DIR: dir };
+    for (const [text, run] of [['board --jsno', 'atris member board --jsno'], ['stop command-leader', 'atris member stop command-leader']]) {
+      const res = spawnSync(process.execPath, [cliPath, 'member', text], { cwd: dir, env, encoding: 'utf8' });
+      assert.equal(res.status, 1, res.stdout + res.stderr);
+      assert.ok(res.stdout.includes(`"${text}" starts with the ${text.split(' ')[0]} command, so it was not sent to any member. To run it: ${run}. To send it to a running member as a direction: atris member steer "${text}"`), res.stdout);
+    }
+    assert.equal(fs.existsSync(path.join(dir, '.atris')), false, 'nothing was written as a steer');
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
 test('board shows a complete command as written, even at the length an older writer cut at', () => {
   // An older writer cut commands at 70 ("running: ") and 95 ("Run: ")
   // without saying so, but a complete command can be that long too, and the
