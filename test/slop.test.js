@@ -562,6 +562,23 @@ test('fix gives a bold label that opens a line a colon, like a list label', () =
   ]);
 });
 
+test('fix keeps a label that ends in its own punctuation and adds no colon', () => {
+  // the question list in the design policy came out as a question mark then a colon
+  const file = tmpFile('punct-label.md', [
+    '1. **what is it?** \u2014 clear product description',
+    '**Note:** \u2014 read this first.',
+    '- **Done.** \u2014 shipped',
+    '- **Name** \u2014 what it does',
+  ].join('\n'));
+  const { changes } = applyFixes([file], RULES);
+  assert.deepEqual(changes.map((c) => c.after), [
+    '1. **what is it?** clear product description',
+    '**Note:** read this first.',
+    '- **Done.** shipped',
+    '- **Name**: what it does',
+  ]);
+});
+
 test('fix never pairs two dashes across a sentence end', () => {
   // shapes taken from this repo's own docs, where the old fixer opened a
   // parenthesis in one sentence and closed it in the next
