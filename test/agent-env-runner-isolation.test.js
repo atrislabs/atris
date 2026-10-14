@@ -48,3 +48,23 @@ test('runner fixtures ignore inherited mission and caller settings', () => {
   assert.equal(result.status, 0, result.stderr || result.stdout);
   assert.match(result.stdout, /pass 7/);
 });
+
+test('runner command checks ignore an inherited runner profile', () => {
+  const env = { ...process.env };
+  delete env.NODE_TEST_CONTEXT;
+  const result = spawnSync(process.execPath, [
+    '--test', path.join(__dirname, 'runner-command.test.js'),
+  ], {
+    encoding: 'utf8',
+    timeout: 60000,
+    env: {
+      ...env,
+      ATRIS_RUNNER_PROFILE: 'codex',
+      ATRIS_RUNNER_BIN: 'codex',
+      ATRIS_CALLER_RUNTIME: 'codex',
+    },
+  });
+  assert.ifError(result.error);
+  assert.equal(result.status, 0, result.stderr || result.stdout);
+  assert.match(result.stdout, /fail 0/);
+});

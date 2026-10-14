@@ -20,6 +20,21 @@ const {
   buildRunnerCommand,
   runnerModelFor,
 } = require('../lib/runner-command');
+const { scrubAgentEnv } = require('./helpers/agent-env');
+
+// Default-shape checks expect the plain claude command. Remove the parent
+// mission's runner and caller settings before each test, then restore them.
+let inheritedEnv;
+test.beforeEach(() => {
+  const clean = scrubAgentEnv();
+  inheritedEnv = new Map(Object.keys(process.env)
+    .filter((key) => !Object.hasOwn(clean, key))
+    .map((key) => [key, process.env[key]]));
+  for (const key of inheritedEnv.keys()) delete process.env[key];
+});
+test.afterEach(() => {
+  for (const [key, value] of inheritedEnv) process.env[key] = value;
+});
 
 const RUNNER_ENV_KEYS = [
   'ATRIS_RUNNER_PROFILE',

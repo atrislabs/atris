@@ -2285,3 +2285,4 @@ npm publish
 - `test/stall-signal-health.test.js:148` dispatches the immediately failing fixture with a 30-second deadlock backstop, so batch startup load cannot masquerade as a one-second engine stall. Failure classification and no-handover assertions stay intact.
 
 - `test/roster-run-record.test.js:405` gives the successful autopilot fixture a 30-second startup backstop, rewrites its scratch roster to one second before the deliberate stall, and asserts both recorded caps.
+- `test/runner-command.test.js:28` scrubs parent runner and caller settings before each test so default command checks see the plain claude shape. `test/agent-env-runner-isolation.test.js:52` runs that file under an inherited codex profile.
