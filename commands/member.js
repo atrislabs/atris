@@ -9937,6 +9937,7 @@ function scrubFeedJargon(text) {
   return String(text || '')
     .replace(/\bmission-\d{4}-\d{2}-\d{2}-[a-z0-9-]+\b/gi, '')
     .replace(/\b[0-9a-f]{7,40}\b/g, '')
+    .replace(/\(\s*(commit\s*)?\)/gi, '')
     .replace(/\s+/g, ' ')
     .trim();
 }
@@ -9966,68 +9967,65 @@ function buildMemberImpactChain({ summary, verified, goalWhy, nextPush, skills =
   };
 }
 
+// Rows that only look like work: placeholder goals, wake and blocked
+// notices, empty "logged update" rows, and raw commands.
+function isFeedFillerText(text) {
+  const t = String(text || '').trim();
+  if (!t) return true;
+  if (/^serve the team as\b/i.test(t)) return true;
+  if (/^member (wake|goal-from-mission|goal created|initialized)\b/i.test(t)) return true;
+  if (/^\[?logged update\]?$/i.test(t)) return true;
+  if (/^(next[_ ]push|verdict):/i.test(t)) return true;
+  if (/^[`'"]?atris\s/i.test(t) || /\batris\s+[a-z-]+\s+[a-z-]+\s+--[a-z]/i.test(t)) return true;
+  return false;
+}
+
+// How a row was checked, in words a reader can follow without the command.
+function plainFeedCheckLabel(state, verifierCommand = '') {
+  if (state === 'failed') return 'check failed, needs another pass';
+  if (state !== 'passed') return 'not checked yet';
+  const cmd = String(verifierCommand || '');
+  if (/\b(npm|pnpm|yarn)\s+(run\s+)?test\b|--test\b|\bpytest\b|\bjest\b|\bvitest\b/i.test(cmd)) return 'checked: tests passed';
+  if (/git\s+diff\s+--check/i.test(cmd)) return 'checked: the change has no whitespace errors';
+  if (/\b(lint|eslint|tsc)\b/i.test(cmd)) return 'checked: lint passed';
+  return 'checked: its check passed';
+}
+
+function feedEntryTimeMs(file, header, fallbackMs) {
+  const day = String(file).match(/^(\d{4})-(\d{2})-(\d{2})\.md$/);
+  const clock = String(header).match(/^(\d{2}):(\d{2})\b/);
+  if (!day) return fallbackMs;
+  const ms = new Date(Number(day[1]), Number(day[2]) - 1, Number(day[3]), clock ? Number(clock[1]) : 23, clock ? Number(clock[2]) : 59).getTime();
+  return Number.isFinite(ms) ? Math.min(ms, fallbackMs || ms) : fallbackMs;
+}
+
+// The feed reads member log entries that say what changed. Mission records
+// only hold the assignment, so they are used to name how the work was checked.
 function collectMemberWorkFeed(root = process.cwd(), options = {}) {
   const teamDir = path.join(root, 'atris', 'team');
   const members = findAllMembers(teamDir).filter(isFleetMember);
-  const roleByMember = new Map(members.map((m) => [memberSlugFromRecord(m), m.role || 'Team Member']));
-  const metaByMember = new Map();
-  for (const m of members) {
-    const slug = memberSlugFromRecord(m);
-    const mDir = path.join(teamDir, slug);
-    const skills = listMemberUnlockedSkills(mDir, m.skills);
-    let goalWhy = null;
-    let goalTitle = null;
-    try {
-      const gp = memberGoalPlaneStatus(slug, { memberDir: mDir, goalsFile: path.join(mDir, 'goals.json') });
-      goalWhy = gp?.goal?.why || null;
-      goalTitle = gp?.goal?.title || null;
-    } catch {}
-    metaByMember.set(slug, { skills, goalWhy, goalTitle });
-  }
   const filterMember = String(options.member || '').trim().toLowerCase();
   const limit = Number.isFinite(Number(options.limit)) && Number(options.limit) > 0 ? Number(options.limit) : 15;
 
-  const items = [];
-  const missionMap = memberRunMissionMap(root);
-  for (const mission of missionMap.values()) {
-    const owner = String(mission?.owner || '').trim();
-    if (!owner) continue;
-    if (filterMember && owner.toLowerCase() !== filterMember) continue;
-    const atIso = mission.last_tick_at || mission.updated_at || mission.created_at || null;
-    const atMs = timestampMs(atIso);
-    const summaryText = scrubFeedJargon(mission.last_summary || mission.objective || '');
-    if (!summaryText) continue;
-    const cleanSummary = compactSentence(summaryText, 140);
-    const verified = Boolean(mission?.verifier_result?.passed);
-    const meta = metaByMember.get(owner) || { skills: [], goalWhy: null, goalTitle: null };
-    const nextPush = scrubFeedJargon(mission.last_next_push || meta.goalTitle || '');
-    const impactChain = buildMemberImpactChain({
-      summary: cleanSummary,
-      verified,
-      goalWhy: meta.goalWhy,
-      nextPush,
-      skills: meta.skills,
-    });
-    items.push({
-      member: owner,
-      role: roleByMember.get(owner) || 'Team Member',
-      at: atIso,
-      at_ms: atMs,
-      age: ageLabelFromMs(atMs),
-      summary: cleanSummary,
-      status: plainFeedStatusLabel(mission),
-      verified,
-      next_push: impactChain.compounding,
-      impact_chain: impactChain,
-    });
+  const verifierByObjective = new Map();
+  for (const mission of memberRunMissionMap(root).values()) {
+    const objective = String(mission?.objective || '').trim();
+    if (objective && mission?.verifier) verifierByObjective.set(`${mission.owner}\u0000${objective}`, String(mission.verifier));
   }
 
+  const items = [];
   for (const record of members) {
     const slug = memberSlugFromRecord(record);
     if (filterMember && slug.toLowerCase() !== filterMember) continue;
     const logsDir = path.join(teamDir, slug, 'logs');
     if (!fs.existsSync(logsDir)) continue;
-    const logFiles = fs.readdirSync(logsDir).filter((f) => f.endsWith('.md')).sort().slice(-2);
+    const mDir = path.join(teamDir, slug);
+    let goalWhy = null;
+    try {
+      goalWhy = memberGoalPlaneStatus(slug, { memberDir: mDir, goalsFile: path.join(mDir, 'goals.json') })?.goal?.why || null;
+    } catch {}
+    const skills = listMemberUnlockedSkills(mDir, record.skills);
+    const logFiles = fs.readdirSync(logsDir).filter((f) => f.endsWith('.md')).sort().slice(-7);
     for (const file of logFiles) {
       const fullPath = path.join(logsDir, file);
       let raw = '';
@@ -10038,42 +10036,45 @@ function collectMemberWorkFeed(root = process.cwd(), options = {}) {
       } catch {
         continue;
       }
-      const sections = raw.split(/^##\s+/m).slice(1);
-      for (const section of sections.slice(-3)) {
+      for (const section of raw.split(/^##\s+/m).slice(1)) {
         const lines = section.trim().split(/\r?\n/);
         const header = lines[0] || '';
-        const summaryLine = lines.find((l) => /^-\s*(summary|mission|title):/i.test(l));
-        const verifierLine = lines.find((l) => /^-\s*verifier:/i.test(l));
-        const nextPushLine = lines.find((l) => /^-\s*(next_push|next push|next):/i.test(l));
-        const rawSummary = summaryLine
-          ? summaryLine.replace(/^-\s*(summary|mission|title):\s*/i, '')
-          : header.replace(/^\d{2}:\d{2}\s*·\s*/, '');
+        const title = header.replace(/^\d{2}:\d{2}\s*·\s*/, '');
+        if (isFeedFillerText(title)) continue;
+        const field = (name) => {
+          const line = lines.find((l) => new RegExp(`^-\\s*${name}:`, 'i').test(l));
+          return line ? line.replace(new RegExp(`^-\\s*${name}:\\s*`, 'i'), '').trim() : '';
+        };
+        // No summary means nothing was recorded as changed: skip the row.
+        const rawSummary = field('summary');
+        if (isFeedFillerText(rawSummary)) continue;
         const cleanSummary = compactSentence(scrubFeedJargon(rawSummary), 140);
-        if (!cleanSummary) continue;
-        const alreadyInItems = items.some((item) => item.member === slug && item.summary === cleanSummary);
-        if (alreadyInItems) continue;
-        const passed = verifierLine ? /passed/i.test(verifierLine) : false;
-        const meta = metaByMember.get(slug) || { skills: [], goalWhy: null, goalTitle: null };
-        const rawNextPush = nextPushLine
-          ? nextPushLine.replace(/^-\s*(next_push|next push|next):\s*/i, '')
-          : (meta.goalTitle || '');
+        if (!cleanSummary || isFeedFillerText(cleanSummary)) continue;
+        if (items.some((item) => item.member === slug && item.summary === cleanSummary)) continue;
+        const verifierState = (field('verifier').match(/^(passed|failed)/i)?.[1] || '').toLowerCase();
+        const passed = verifierState === 'passed';
+        const verifierCommand = verifierByObjective.get(`${slug}\u0000${field('mission')}`) || '';
+        const rawNextPush = field('next_push') || field('next push');
+        const nextPush = isFeedFillerText(rawNextPush) ? '' : compactSentence(scrubFeedJargon(rawNextPush), 110);
+        const atMs = feedEntryTimeMs(file, header, mtimeMs);
         const impactChain = buildMemberImpactChain({
           summary: cleanSummary,
           verified: passed,
-          goalWhy: meta.goalWhy,
-          nextPush: rawNextPush,
-          skills: meta.skills,
+          goalWhy,
+          nextPush,
+          skills,
         });
         items.push({
           member: slug,
           role: record.role || 'Team Member',
-          at: new Date(mtimeMs).toISOString(),
-          at_ms: mtimeMs,
-          age: ageLabelFromMs(mtimeMs),
+          at: new Date(atMs).toISOString(),
+          at_ms: atMs,
+          age: ageLabelFromMs(atMs),
           summary: cleanSummary,
-          status: passed ? 'verified and ready' : 'logged update',
+          checked: plainFeedCheckLabel(verifierState, verifierCommand),
+          status: passed ? 'verified and ready' : verifierState === 'failed' ? 'check failed' : 'not checked yet',
           verified: passed,
-          next_push: impactChain.compounding,
+          next_push: nextPush || null,
           impact_chain: impactChain,
         });
       }
@@ -10083,6 +10084,14 @@ function collectMemberWorkFeed(root = process.cwd(), options = {}) {
   return items
     .sort((a, b) => (b.at_ms || 0) - (a.at_ms || 0))
     .slice(0, limit);
+}
+
+function formatMemberFeedRow(item, indent = '') {
+  const tail = item.next_push ? ` · next: ${item.next_push}` : '';
+  return [
+    `${indent}${item.age.padEnd(4)} · ${item.member}: ${item.summary}`,
+    `${indent}       ${item.checked}${tail}`,
+  ];
 }
 
 function memberFeed(...args) {
@@ -10096,14 +10105,8 @@ function memberFeed(...args) {
   const limit = readNumberFlag(args, '--limit', 15);
   const feed = collectMemberWorkFeed(process.cwd(), { member: memberFilter, limit });
   const lines = !feed.length
-    ? ['No team work recorded yet. Run: atris member dispatch "<idea>"']
-    : [
-        'Team work feed',
-        ...feed.flatMap((item) => [
-          `${item.age.padEnd(4)} · ${item.member} (${item.role}): ${item.summary} [${item.status}]`,
-          `       -> ${item.impact_chain.consequence} -> Next push: ${item.impact_chain.compounding}`,
-        ]),
-      ];
+    ? ['no real work yet']
+    : ['Team work feed', ...feed.flatMap((item) => formatMemberFeedRow(item))];
   printJsonOrText(
     {
       ok: true,
@@ -10849,11 +10852,8 @@ async function memberRoom(...args) {
     : ['  - Zero blocking 1-on-1s today. Every member has an active roadmap and engine seat.'];
 
   const feedRows = room.feed.length
-    ? room.feed.slice(0, 3).flatMap((item) => [
-        `  ${item.age.padEnd(4)} · ${item.member}: ${item.summary} [${item.status}]`,
-        `         -> ${item.impact_chain.consequence} -> Next push: ${item.impact_chain.compounding}`,
-      ])
-    : ['  No work recorded yet. Run: atris member go'];
+    ? room.feed.slice(0, 3).flatMap((item) => formatMemberFeedRow(item, '  '))
+    : ['  no real work yet'];
 
   const lines = [
     'Your team · workday briefing',

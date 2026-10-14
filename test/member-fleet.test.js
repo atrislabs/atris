@@ -295,7 +295,7 @@ test('member run infers test checks from goal text and runs a second-model refer
     const fakeCodex = path.join(binDir, 'codex');
     fs.writeFileSync(
       fakeCodex,
-      '#!/bin/sh\necho "worker touched artifact" > work.txt\necho "next_push: Add automated speed check for work.txt"\necho "VERDICT: PASS"\n',
+      '#!/bin/sh\necho "worker touched artifact" > work.txt\necho "Wrote work.txt with the worker artifact."\necho "next_push: Add automated speed check for work.txt"\necho "VERDICT: PASS"\n',
       'utf8'
     );
     fs.chmodSync(fakeCodex, 0o755);
@@ -375,8 +375,8 @@ test('member run infers test checks from goal text and runs a second-model refer
     const feedRes = runCli(['member', 'feed'], root);
     assert.equal(feedRes.status, 0, feedRes.stderr || feedRes.stdout);
     assert.match(feedRes.stdout, /Team work feed/);
-    assert.match(feedRes.stdout, /navigator \(Test Member\): Build work\.txt and verify with referee \[verified and ready\]/);
-    assert.match(feedRes.stdout, /-> Verified check passed so this slice stays solid -> Next push: Add automated speed check for work\.txt/);
+    assert.match(feedRes.stdout, /navigator: Wrote work\.txt with the worker artifact\./);
+    assert.match(feedRes.stdout, /checked: its check passed · next: Add automated speed check for work\.txt/);
 
     // Start a live mission on navigator, steer it mid-run with natural `atris member "prompt"`, then put it to sleep
     writeMissions(root, [{
