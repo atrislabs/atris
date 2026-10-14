@@ -399,6 +399,18 @@ test('board shows the home folder as ~ in job and last step, but not in the row 
   assert.equal(row.step, `running: cd ${home}/arena/x && ls ${home}2/y ${home}`, 'apps reading the rows get the full path');
 });
 
+test('board leaves the member name off a job that repeats it, but not off the row data', () => {
+  const now = Date.parse('2026-10-14T13:00:00Z');
+  const job = (name, text) => memberRow(name, `2026-10-14T12:58:00Z m-1 started: ${text}\n2026-10-14T12:59:30Z m-1 running: ls\n`, now);
+  const rows = [job('scout', 'scout continuous run'), job('lead', 'lead: make notes faster'), job('ops', 'opsbot sweep'), job('qa', 'qa')];
+  const shown = (name) => renderBoard(rows, '/x').split('\n').find((l) => l.startsWith(`${name} `));
+  assert.match(shown('scout'), /\s{2}continuous run\s{2}/, shown('scout'));
+  assert.match(shown('lead'), /\s{2}make notes faster\s{2}/, shown('lead'));
+  assert.match(shown('ops'), /\s{2}opsbot sweep\s{2}/, 'a longer word that starts with the name stays');
+  assert.match(shown('qa'), /\s{2}qa\s{2}/, 'a job that is only the name stays');
+  assert.equal(rows[0].job, 'scout continuous run', 'apps reading the rows get the job as written');
+});
+
 test('board breaks the count line after a comma on a narrow screen', () => {
   const now = Date.parse('2026-10-14T13:00:00Z');
   const base = memberRow('scout', '2026-10-14T12:55:00Z m-3 started: map the repo\n', now);
