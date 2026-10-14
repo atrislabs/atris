@@ -8795,15 +8795,19 @@ test('task review-lane-act executes only safe drain actions and supports dry-run
       '--next', 'Add a follow-up created by review lane act',
     ], { cwd: dir, env }).status, 0);
 
-    const waitingCreated = runCli([
-      'task', 'new', 'Review lane act should leave human accept alone',
-      '--tag', 'task',
-      '--goal-id', 'OBL-941',
-      '--json',
-    ], { cwd: dir, env });
-    assert.equal(waitingCreated.status, 0, waitingCreated.stderr);
-    const waitingTask = JSON.parse(waitingCreated.stdout).task;
-    const waitingRef = waitingTask.display_id;
+    const waitingDb = taskStore.open(dbPath);
+    let waitingTask;
+    let waitingRef;
+    try {
+      waitingTask = addSeedTask(waitingDb, {
+        title: 'Review lane act should leave human accept alone',
+        tag: 'task', workspaceRoot, metadata: { goal_id: 'OBL-941' },
+      });
+      assert.equal(waitingTask.inserted, true);
+      waitingRef = taskStore.taskDisplayRefMap(taskStore.listTasks(waitingDb, { workspaceRoot })).get(waitingTask.id);
+    } finally {
+      taskStore.close();
+    }
     assert.equal(runCli([
       'task', 'ready', waitingRef,
       '--as', 'codex',
