@@ -765,3 +765,32 @@ test('atris engine sweep counts time limit kills apart and still names the newes
   assert.match(text, /last SIGKILL not at a time limit: claude on CLI-2 at 2026-10-14 11:30 UTC, killed \(machine memory low\), 9% memory free/);
   assert.match(text, /1 of 3 SIGKILLs ended with machine memory low, 2 at their time limit/);
 });
+
+test('the landing status counts leaked ssh-agents, says how they get stopped, and stays quiet with none or a failed read', () => {
+  const { showStatus } = require('../commands/autoland');
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'autoland-status-agents-'));
+  const agent = (pid) => ({ pid, ppid: 1, uid: 501, age_sec: 3600, args: 'ssh-agent -s' });
+  const status = (deps) => {
+    const out = [];
+    const original = console.log;
+    console.log = (line = '') => out.push(String(line));
+    try {
+      showStatus(root, [], deps);
+    } finally {
+      console.log = original;
+    }
+    return out.join('\n');
+  };
+  try {
+    require('node:child_process').spawnSync('git', ['init', '-q'], { cwd: root });
+    const leaked = status({ readSshAgents: () => ({ agents: [agent(200), agent(201), agent(202)], referenced: new Set([202]) }), uid: 501 });
+    assert.match(leaked, /leaked ssh-agents on this machine: 2; stop them now: atris engine sweep --apply/);
+    const none = status({ readSshAgents: () => ({ agents: [agent(300)], referenced: new Set([300]) }), uid: 501 });
+    assert.doesNotMatch(none, /ssh-agents/);
+    const broken = status({ readSshAgents: () => { throw new Error('ps missing'); }, uid: 501 });
+    assert.doesNotMatch(broken, /ssh-agents/);
+    assert.doesNotMatch(status(), /ssh-agents/, 'a test run never reads the real machine');
+  } finally {
+    fs.rmSync(root, { recursive: true, force: true });
+  }
+});

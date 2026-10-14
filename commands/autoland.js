@@ -480,7 +480,7 @@ function protectedReviewWaiting(root, policy = {}, waiting = []) {
 // lib/voice-gate.js (plainLandingReason); this alias keeps call sites short.
 const plainReason = plainLandingReason;
 
-function showStatus(root, args) {
+function showStatus(root, args, deps = {}) {
   const json = args.includes('--json');
   const policy = autoland.readPolicy(root);
   const enabled = Boolean(policy && policy.enabled);
@@ -547,6 +547,11 @@ function showStatus(root, args) {
     const when = `${String(kill.at || '').slice(0, 16).replace('T', ' ')} UTC`;
     const free = Number.isFinite(kill.free_pct) ? `, ${kill.free_pct}% memory free` : '';
     console.log(`  engine runs force-killed in the last day: ${lost.kills_day}, ${counts}; ${label} ${kill.engine || 'unknown engine'} on ${kill.task || 'no task'} at ${when}, ${kill.cause || 'cause unknown'}${free}`);
+  }
+  const leakedAgents = countLeakedSshAgents(deps);
+  if (leakedAgents) {
+    const stop = heartbeatLive ? 'the next hourly pass stops them' : 'stop them now: atris engine sweep --apply';
+    console.log(`  leaked ssh-agents on this machine: ${leakedAgents}; ${stop}`);
   }
   console.log('');
   const humanOnly = blocked.filter((r) => String(r.reason || '').startsWith('denied_tag_'));
@@ -791,6 +796,21 @@ function engineReceiptSweepNote(receipt) {
   const finalized = Number(receipt.engine_receipt_sweep?.finalized) || 0;
   if (!finalized) return '';
   return `, finalized ${finalized} stale engine receipt${finalized === 1 ? '' : 's'} as presumed dead`;
+}
+
+// Read only: how many ssh-agents look leaked right now. A test run never
+// reads the real machine, and a failed read counts as none.
+function countLeakedSshAgents(deps = {}) {
+  try {
+    const read = deps.readSshAgents;
+    if (!read && process.env.NODE_TEST_CONTEXT) return 0;
+    const uid = deps.uid !== undefined ? deps.uid : (typeof process.getuid === 'function' ? process.getuid() : null);
+    if (uid === null) return 0;
+    const { agents, referenced } = (read || readSshAgents)();
+    return findLeakedSshAgents(agents, { referenced, uid }).length;
+  } catch {
+    return 0;
+  }
 }
 
 // Shell startup files that start an ssh-agent per shell leave one behind
@@ -1296,6 +1316,7 @@ module.exports = {
   runTickBody,
   runSshAgentSweep,
   sshAgentSweepNote,
+  showStatus,
   runLostRunSweep,
   lostRunSweepNote,
   sweepLanding,
