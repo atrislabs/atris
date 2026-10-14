@@ -2434,6 +2434,21 @@ test('fix keeps dashes pressed together between two boxes as the joining line', 
   ]);
 });
 
+test('fix keeps pressed dashes on a line indented like code as a drawn line', () => {
+  // plain-word steps paired up as an aside: "plan (do) review"
+  const file = tmpFile('indent-line.md', [
+    '    plan \u2014\u2014\u2014 do \u2014\u2014\u2014 review',
+    '     \u2014\u2014 [b]',
+    '    one dash \u2014 here.',
+  ].join('\n\n'));
+  const { changes } = applyFixes([file], RULES, { write: false });
+  assert.deepEqual(changes.map((c) => c.after), [
+    '    plan --- do --- review',
+    '     -- [b]',
+    '    one dash, here.',
+  ]);
+});
+
 test('fix keeps a journal heading that ends in a time readable for its hour', () => {
   // analytics reads the hour after a dash or a spaced hyphen at the end of a
   // heading; the fix wrote "### Watch: 19:05", which hides it, and glued

@@ -487,6 +487,10 @@ function fixEmDash(s, { endsBlock = false, startsBlock = false, spans = [] } = {
   // so they turn into hyphens of the same width: "[a] --- [b]", never "[a],
   // [b]". Two pressed dashes in a sentence are still one break: "He said,".
   s = s.replace(/(?<=[\])|+][ \t]*)\u2014{2,}(?=[ \t]*[[(|+])/g, (m) => '-'.repeat(m.length));
+  // a line indented like a code block is where a diagram lives, so any run
+  // of pressed dashes there is a drawn line, between plain-word steps or
+  // opening a branch: "plan --- do --- review", "  -- [b]", never "plan (do)".
+  if (/^(?: {4}|\t)/.test(s)) s = s.replace(/\u2014{2,}/g, (m) => '-'.repeat(m.length));
   // a table cell that holds only a dash means "nothing here"; a hyphen keeps
   // the cell instead of turning it into a stray comma
   if (/^\s*\|/.test(s)) s = s.replace(/(\|\s*)\u2014(\s*)(?=\||$)/g, '$1-$2');
