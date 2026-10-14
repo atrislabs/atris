@@ -49,7 +49,7 @@ The fresh `TMPDIR` matters. A transcript left over from an earlier run of the sa
 - **Action:** `node --test --test-name-pattern 'writer' test/ytnotes.test.js`, which runs the script with yt-dlp present and no writer on the PATH.
 - **Expect:** Exit code 3, a list of writers to install, and the transcript kept at `$TMPDIR/ytnotes/yt_<id>.clean.txt`. No blank notes file.
 
-### Step 5: The scorecard (in review)
+### Step 5: The scorecard
 
 - **Action:** `atris youtube bench --quick` (three cases) or `atris youtube bench` (all five)
 - **Expect:** One pass or fail per case, and one new line per run in `~/.atris/benchmarks/ytrail.jsonl`. The five cases are captioned-short `Z3JyAqh4ixg` (21 min), captioned-long `Am7IWP8IpEc` (85 min), no-captions `6DRlX5vIOE0`, stranger-no-downloader, and stranger-no-writer.
@@ -64,4 +64,4 @@ The fresh `TMPDIR` matters. A transcript left over from an earlier run of the sa
 
 ---
 
-**Status:** Verified on 2026-09-28 for steps 1 to 4 (step 3 rerun live on 2026-09-29, exit 2). Steps 1 and 3 rerun live on 2026-10-13: step 1 exit 0 with Gemini and 4 to 5 quotes kept, step 3 exit 2 with the install message. Step 5 waits on the bench landing.
+**Status:** Verified on 2026-09-28 for steps 1 to 4 (step 3 rerun live on 2026-09-29, exit 2). Steps 1 and 3 rerun live on 2026-10-13: step 1 exit 0 with Gemini and 4 to 5 quotes kept, step 3 exit 2 with the install message. Step 5 rerun live on 2026-10-14: `atris youtube bench --quick` exit 0, 3/3 cases passing, captioned-short 9.4s with Gemini and 5 quotes kept, three new lines in the log.
