@@ -32,7 +32,7 @@ checks the refs in both files; `atris doc-health --fix-refs` moves drifted ones.
 | todo fallback | `lib/todo-fallback.js` | legacy TODO read |
 | mission command | `commands/mission.js` | start, run, tick, complete, error streaks |
 | mission root resolver | `lib/mission-root.js` | workspace root resolved here |
-| engine dispatch runner command | `lib/runner-command.js`, `lib/runner-command.js:331` | builds runner argv, model precedence; each profile says whether it takes a pinned model and which effort words map to its own flag; codex and grok run only their own models, so `runnerModelFor` (`lib/runner-command.js:232`) drops a claude name for them, by profile or by bin name |
+| engine dispatch runner command | `lib/runner-command.js`, `lib/runner-command.js:331` | builds runner argv, model precedence; each profile says whether it takes a pinned model and which effort words map to its own flag; codex and grok run only their own models, so `runnerModelFor` (`lib/runner-command.js:253`) drops a claude name for them, by profile or by bin name |
 | engine profiles defined | `lib/engine-registry.js`, `lib/runner-command.js`, `lib/engine-ask.js` | profile-name list and launch paths, including mercury 3 test model |
 | mercury chat and live refining preview | `ax`, `test/ax.test.js` | `--mercury` pins the test model; `--diffuse` replaces terminal drafts; timing goes to stderr; piped output keeps only final text |
 | engine command | `commands/engine.js` | atris engine |
