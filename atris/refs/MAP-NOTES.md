@@ -2339,3 +2339,5 @@ npm publish
 - `lib/member-tidy.js:189`: failed branch ancestry lookup retains the Git error and appends exact private and shared lock paths and ages; `test/member-tidy.test.js:475` removes a generated branch reference with real Git and proves preview and cleanup preserve the files, locks, and Git record without a removal log.
 
 - `lib/member-tidy.js:174`: detached copies retain their explanation and append exact private and shared lock paths and ages; `test/member-tidy.test.js` checks real preview and cleanup preserve files, the saved branch, locks, and Git registration without removal records.
+
+- `lib/member-tidy.js:164`: outside-linked copies retain the outside-folder explanation and append exact private and shared lock paths and ages. `test/member-tidy.test.js:592` runs preview and cleanup through real Git and the CLI, preserving the link, outside files, branch, registration, and locks without removal records. Proof: `atris/receipts/2026-10-14-tidy-outside-lock-check.md`.

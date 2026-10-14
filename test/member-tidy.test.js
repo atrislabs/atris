@@ -589,6 +589,70 @@ test('tidy names private and shared locks when a copy is detached', () => {
   }
 });
 
+test('tidy names private and shared locks when a copy points outside the copies folder', () => {
+  const fx = makeFixture();
+  try {
+    const copy = addCopy(fx, 'outside-locked');
+    runGit(['worktree', 'lock', '--reason', 'unfinished work', copy], fx.repo);
+    const privateDir = runGit(['rev-parse', '--absolute-git-dir'], copy);
+    const locks = [
+      path.join(privateDir, 'index.lock'),
+      path.join(privateDir, 'locked'),
+      path.join(fx.repo, '.git', 'refs', 'heads', 'master.lock'),
+    ];
+    const now = Date.now();
+    for (const [index, lock] of locks.entries()) {
+      fs.writeFileSync(lock, 'unfinished git work\n');
+      const aged = new Date(now - (7200 + index * 60) * 1000);
+      fs.utimesSync(lock, aged, aged);
+    }
+
+    const outside = path.join(fx.base, 'outside');
+    fs.renameSync(copy, outside);
+    fs.symlinkSync(outside, copy);
+
+    for (const dryRun of [true, false]) {
+      const result = tidyMemberCopies({ repoRoot: fx.repo, dryRun, now });
+      assert.equal(result.aborted, null);
+      assert.equal(result.removed, 0);
+      assert.equal(result.kept, 1);
+      assert.equal(byName(result, 'outside-locked').action, 'kept');
+      assert.match(byName(result, 'outside-locked').reason, /^points outside the copies folder, left alone; git locks:/);
+      for (const [index, lock] of locks.entries()) {
+        assert.ok(formatTidy(result).includes(`${lock} (${7200 + index * 60}s old)`), formatTidy(result));
+      }
+
+      const args = [path.resolve(__dirname, '../bin/atris.js'), 'member', 'tidy', '--dir', fx.copies];
+      if (dryRun) args.push('--dry-run');
+      const cli = spawnSync(process.execPath, args, {
+        cwd: fx.repo, encoding: 'utf8', timeout: 90000,
+        env: { ...process.env, ATRIS_NO_UPDATE_CHECK: '1' },
+      });
+      console.log(`command: node ${args.join(' ')}\n${cli.stdout.trim()}\nexit: ${cli.status}`);
+      assert.equal(cli.status, 0, cli.stderr || cli.stdout);
+      assert.match(cli.stdout, /kept\s+outside-locked\s+points outside the copies folder, left alone; git locks:/);
+      assert.match(cli.stdout, /tidy: removed 0, kept 1|tidy: would remove 0, kept 1/);
+      for (const lock of locks) {
+        assert.ok(cli.stdout.includes(`${lock} (`), cli.stdout);
+        const age = Number(cli.stdout.split(`${lock} (`)[1].match(/^(\d+)s old\)/)?.[1]);
+        const elapsed = Math.floor((Date.now() - fs.statSync(lock).mtimeMs) / 1000);
+        assert.ok(age <= elapsed && elapsed - age <= 5, cli.stdout);
+        assert.ok(fs.existsSync(lock));
+      }
+      assert.ok(fs.existsSync(path.join(copy, 'README.md')));
+      assert.ok(branchExists(fx.repo, 'outside-locked'));
+      assert.equal(byName(result, 'outside-locked').branch, 'outside-locked');
+      assert.ok(fs.lstatSync(copy).isSymbolicLink());
+      assert.equal(fs.realpathSync(copy), outside);
+      assert.ok(fs.existsSync(path.join(outside, 'README.md')));
+      assert.ok(runGit(['worktree', 'list', '--porcelain'], fx.repo).includes(`worktree ${copy}`));
+      assert.equal(fs.existsSync(path.join(fx.repo, '.atris/state/worktree_removals.jsonl')), false);
+    }
+  } finally {
+    fs.rmSync(fx.base, { recursive: true, force: true });
+  }
+});
+
 // Move generated folders or add locks at the final check; calls use real git.
 test('tidy keeps late locks and keep markers whether the folder disappears or stays present, and folders moved after a passing check', () => {
   const audit = spawnSync(process.execPath, [path.resolve(__dirname, '../atris/receipts/2026-10-14-tidy-vanishing-folder-check.js')], {
