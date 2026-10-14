@@ -1027,9 +1027,7 @@ test('tick certifies proof-backed reviews by re-running their check, then lands 
   try {
     const codeTask = proofBackedTask(repo, 'One-tick landing', { tag: 'code', work: true });
     const securityTask = proofBackedTask(repo, 'Rotate the signing key', { tag: 'security' });
-    const noCheckCreated = runCli(['task', 'new', 'No runnable check', '--tag', 'code', '--json'], repo);
-    const noCheckTask = String(JSON.parse(noCheckCreated.stdout).task?.display_id);
-    assert.equal(runCli(['task', 'claim', noCheckTask, '--as', 'builder'], repo).status, 0);
+    const noCheckTask = seedClaimedTask(repo, 'No runnable check', 'code');
     // meaningful proof (receipt path) but no runnable command to re-run
     assert.equal(runCli(['task', 'ready', noCheckTask, '--proof', 'Receipt saved at atris/runs/demo-receipt.json, reviewed the rendered output end to end.', '--as', 'builder'], repo).status, 0);
 
@@ -1302,10 +1300,7 @@ test('tick never executes a non-allowlisted verify at landing — it bounces the
 test('auto-accept-certified json includes unsafe verify blockers with a reason', () => {
   const { base, repo } = makeTempRepo();
   try {
-    const created = runCli(['task', 'new', 'Unsafe verify blocker', '--tag', 'code', '--json'], repo);
-    assert.equal(created.status, 0, created.stderr || created.stdout);
-    const ref = String(JSON.parse(created.stdout).task?.display_id);
-    assert.equal(runCli(['task', 'claim', ref, '--as', 'builder'], repo).status, 0);
+    const ref = seedClaimedTask(repo, 'Unsafe verify blocker', 'code');
     // --no-falsify-check: this fixture NEEDS the unsafe no-op verify to reach
     // the autoland blocker it is testing; the falsifier probe would refuse it.
     const ready = runCli(['task', 'ready', ref, '--verify', 'true', '--no-falsify-check', '--as', 'builder'], repo);
@@ -1586,9 +1581,7 @@ test('accept_all policy: check-less work bounces back for a verify, protected la
     // one pass, one actor, no runnable check — even accept_all refuses to land
     // it (landing an unverified proof mints XP the signal chain can't trust);
     // the tick revises it back with instructions to record a verify instead.
-    const created = runCli(['task', 'new', 'Loose bar bounces back', '--tag', 'code', '--json'], repo);
-    const id = String(JSON.parse(created.stdout).task?.display_id);
-    assert.equal(runCli(['task', 'claim', id, '--as', 'builder'], repo).status, 0);
+    const id = seedClaimedTask(repo, 'Loose bar bounces back', 'code');
     assert.equal(runCli(['task', 'ready', id, '--proof', 'Receipt saved at atris/runs/demo-receipt.json, reviewed the rendered output end to end.', '--as', 'builder'], repo).status, 0);
     const billingTask = certifiedTask(repo, 'Wire the vendor payment', { tag: 'billing' });
 
