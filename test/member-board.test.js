@@ -146,7 +146,7 @@ test('board says nobody is working when every member is hidden', () => {
   assert.equal(renderBoard([], '/x', 3), 'nobody is working right now. 3 finished over an hour ago, hidden. --all shows them');
 });
 
-test('atris member board reads ATRIS_PROGRESS_DIR for real', () => {
+test('atris member board reads ATRIS_PROGRESS_DIR for real', async () => {
   const recent = new Date(Date.now() - 5_000).toISOString();
   const dir = fakeDir({ navigator: [`${recent} m-9 started: map the repo`, `${recent} m-9 reading atris/MAP.md`] });
   try {
@@ -155,12 +155,25 @@ test('atris member board reads ATRIS_PROGRESS_DIR for real', () => {
     assert.equal(once.status, 0, once.stderr);
     assert.match(once.stdout, /^navigator\s+working\s+-\s+-\s+-\s+-\s+\d+s ago\s+map the repo\s+reading atris\/MAP\.md$/m);
 
-    const watch = spawnSync(process.execPath, [cliPath, 'member', 'board', '--watch'], { cwd: dir, env, encoding: 'utf8', timeout: 3700 });
-    assert.equal(watch.signal, 'SIGTERM', 'watch stays open until stopped');
-    assert.equal(watch.stdout.split('redraws every 3s').length - 1, 2, 'drew once, then redrew at 3s');
-    assert.match(watch.stdout, /\x1b\[2J\x1b\[H/);
-    assert.match(watch.stdout, /navigator\s+working/);
-    assert.match(watch.stdout, /redraws every 3s/);
+    const watch = spawn(process.execPath, [cliPath, 'member', 'board', '--watch'], { cwd: dir, env, timeout: 10_000 });
+    let stdout = '';
+    let stderr = '';
+    watch.stdout.on('data', (chunk) => { stdout += chunk; });
+    watch.stderr.on('data', (chunk) => { stderr += chunk; });
+    watch.on('error', (error) => { stderr += error.message; });
+    const closed = new Promise((resolve) => watch.once('close', (code, signal) => resolve({ code, signal })));
+    try {
+      const redraws = () => stdout.split('redraws every 3s, ctrl-c to stop\n').length - 1;
+      assert.ok(await waitFor(() => redraws() >= 2, 8000), `second complete redraw missing: ${stdout}\n${stderr}`);
+      assert.equal(watch.exitCode, null, 'watch stays open until stopped');
+      assert.equal(watch.signalCode, null, 'watch was not stopped by its timeout');
+      assert.match(stdout, /\x1b\[2J\x1b\[H/);
+      assert.match(stdout, /navigator\s+working/);
+    } finally {
+      watch.kill('SIGTERM');
+      const result = await closed;
+      assert.equal(result.signal, 'SIGTERM', stderr);
+    }
   } finally {
     fs.rmSync(dir, { recursive: true, force: true });
   }

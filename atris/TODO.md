@@ -23,6 +23,8 @@ Details for any task: atris task show <ID>
 
 ## Review
 
+- **[AIC-8]** Poll board watch until second redraw · auto-improver
+  **Done looks like:** Developers can check board updates sooner, saving time and avoiding missed updates on busy computers.
 - **[AIC-7]** Poll board output instead of waiting 700ms · auto-improver
   **Done looks like:** Developers can check board updates sooner, saving time and avoiding missed updates on busy computers.
 - **[AIC-6]** Replace stalled crontab timing assertion with call marker · auto-improver
