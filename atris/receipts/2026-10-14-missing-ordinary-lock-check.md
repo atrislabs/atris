@@ -134,3 +134,5 @@ Progress: two omitted lock details repaired, two real CLI runs, one real-runtime
 next_push: Report missing folders and retained locks when member cleanup's final activity check sees the folder disappear.
 
 layer: behaviors
+
+Proof submission follow-up: the submission runner launches a login shell that selects Node 20.18.0. That runtime refuses the real CLI with `atris needs Node 22.13 or newer. this is Node 20.18.0.`, causing two CLI-proof failures. The bare frozen command passed again (20 passed, 0 failed, exit 0, duration_ms 7284.520542). Submission with `/opt/homebrew/Cellar/node/25.6.1/bin/node --test test/worktree-removal-guard.test.js test/member-tidy.test.js` passed, exit 0, and wrote `atris/runs/2026-10-14-task-acw-29-2026-10-14T20-20-01-423Z.json`. The mission's frozen verifier is unchanged. No runtime policy or unrelated code was edited.
