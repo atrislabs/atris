@@ -2924,6 +2924,25 @@ test('fix names two words inside an open parenthesis before an order', () => {
   ]);
 });
 
+test('fix joins a bare word and a past verb after a dash as a clause', () => {
+  // from research notes, where a comma made a splice: "no signal, calibration showed"
+  const file = tmpFile('bare-past.md', [
+    'Plateaus carry no signal \u2014 calibration showed annealing also misses solutions.',
+    'zero needed the exact solver \u2014 greedy alone decomposed everything.',
+    'Keep it \u2014 data stored in atris.',
+    'Two kinds \u2014 manual signed builds.',
+    'It broke \u2014 quickly fixed the bug.',
+  ].join('\n\n'));
+  const { changes } = applyFixes([file], RULES, { write: false });
+  assert.deepEqual(changes.map((c) => c.after), [
+    'Plateaus carry no signal; calibration showed annealing also misses solutions.',
+    'zero needed the exact solver; greedy alone decomposed everything.',
+    'Keep it, data stored in atris.',
+    'Two kinds, manual signed builds.',
+    'It broke, quickly fixed the bug.',
+  ]);
+});
+
 test('fix keeps a journal heading that ends in a time readable for its hour', () => {
   // analytics reads the hour after a dash or a spaced hyphen at the end of a
   // heading; the fix wrote "### Watch: 19:05", which hides it, and glued
