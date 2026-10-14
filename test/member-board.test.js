@@ -486,6 +486,18 @@ test('board keeps the order words while a history is as wide as they are', () =>
   assert.ok(at70.every((l) => l.length <= 70), at70.join('\n'));
 });
 
+test('board keeps the run time header beside a cell as wide as it', () => {
+  const now = Date.parse('2026-10-14T13:00:00Z');
+  const rows = [
+    memberRow('crashed', '2026-10-14T11:00:00Z m-1 started: [pid 2147483646 engine claude] build the release\n2026-10-14T12:10:00Z m-1 running: npm test\n', now),
+    memberRow('builder', `2026-10-14T12:50:00Z m-2 started: [pid ${process.pid} engine claude] fit the board\n2026-10-14T12:59:30Z m-2 running: node --test\n`, now),
+  ];
+  const pane = renderBoard(rows, '/x', 0, 50).split('\n');
+  assert.match(pane.find((l) => l.startsWith('member ')), /^member\s+state\s+run time\s+ago\s+job$/, 'the short header would free nothing here');
+  assert.match(pane.find((l) => l.startsWith('crashed ')), /^crashed\s+died\s+at least 1h\s+50m\s/);
+  assert.ok(pane.every((l) => l.length <= 50), pane.join('\n'));
+});
+
 test('board shortens the run\'s own fixed status lines, but not in the row data', () => {
   const now = Date.parse('2026-10-14T13:00:00Z');
   const step = (name, text) => memberRow(name, `2026-10-14T12:58:00Z m-1 started: map it\n2026-10-14T12:59:30Z m-1 ${text}\n`, now);
