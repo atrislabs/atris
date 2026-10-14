@@ -2298,3 +2298,5 @@ Mission engine resource readings: `commands/mission.js:9189` starts the paired r
 Sweep output through a pipe: `bin/atris.js:38` waits for queued stdout before exiting the engine command at `bin/atris.js:3256`; regression `test/engine-resource.test.js:359` reads more than 96 KB from the real CLI and parses the complete report.
 
 Process-list scan failure: `lib/engine-resource.js:232` returns `unread: ['process list']` on failed or thrown ps, rather than reporting a clean scan; real CLI regression `test/engine-resource.test.js:2156` blocks ps execution and checks the warning.
+
+- Readiness runtime selection: `lib/task-proof.js:157` uses `bash -lc`; a login profile can replace the caller's Node path. Reproduction and full failure evidence: `atris/receipts/readiness-runtime-proof-2026-10-14.txt`.
