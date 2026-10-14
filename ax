@@ -3065,6 +3065,13 @@ function buildPayload(message, options = {}) {
   if (!local && options.connectionUserId) {
     payload.connection_user_id = options.connectionUserId;
   }
+  if (payload.diffuse) {
+    // The refining view is plain chat: the backend skips tools while diffusing,
+    // and a workspace or tool list would route the turn away from it.
+    delete payload.local_tools;
+    delete payload.workspace_path;
+    payload.max_turns = 1;
+  }
   return payload;
 }
 
@@ -3111,19 +3118,25 @@ function renderTextSnapshot(state, output, content) {
   clearTextSnapshot(state, output);
   const width = Math.max(1, (output.columns || 80) - 1);
   const height = Math.max(1, (output.rows || 24) - 1);
-  const lines = String(content).replace(/[\x00-\x09\x0b-\x1f\x7f]/g, '').split('\n').slice(0, height);
-  const clipped = lines.map((line) => {
+  const clipped = [];
+  for (const line of String(content).replace(/[\x00-\x09\x0b-\x1f\x7f]/g, '').split('\n')) {
+    // Wrap each line to the terminal width so the whole draft stays visible.
     let used = 0;
     let text = '';
     for (const char of line) {
       // Non-ASCII cells are conservatively two columns, including emoji.
       const cells = /\p{Mark}/u.test(char) ? 0 : char.codePointAt(0) > 0xff ? 2 : 1;
-      if (used + cells > width) break;
+      if (used + cells > width) {
+        clipped.push(text);
+        text = '';
+        used = 0;
+      }
       text += char;
       used += cells;
     }
-    return text;
-  });
+    clipped.push(text);
+  }
+  clipped.splice(height);
   output.write(`${paint(clipped.join('\n'), [ANSI.dim], output)}\n`);
   state.snapshotRows = clipped.length;
 }
@@ -3376,6 +3389,7 @@ async function postTurn(message, options = {}) {
         const first = state.firstTextMs == null ? 'none' : `${(state.firstTextMs / 1000).toFixed(2)}s`;
         const steps = state.diffuse ? `, ${state.snapshotCount} refining steps` : '';
         const stderr = options.stderr || process.stderr;
+        if (output && output.isTTY && state.lastChar !== '\n') output.write('\n');
         stderr.write(`${paint(`mercury 3: first text ${first}, done ${(state.durationMs / 1000).toFixed(2)}s${steps}`, [ANSI.dim], stderr)}\n`);
       }
       if (error) reject(error);

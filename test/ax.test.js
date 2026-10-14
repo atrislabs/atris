@@ -1883,6 +1883,11 @@ test('mercury model and diffuse payload are opt-in', () => {
   assert.equal(ax.buildPayload('hello', { mode: 'mercury', diffuse: true }).diffuse, true);
   assert.equal(ax.buildPayload('hello', { mode: 'mercury' }).diffuse, undefined);
   assert.equal(ax.buildPayload('hello', { mode: 'fast', diffuse: true }).diffuse, undefined);
+  const diffusing = ax.buildPayload('hello', { mode: 'mercury', diffuse: true, route: 'local', cwd: '/tmp' });
+  assert.equal(diffusing.local_tools, undefined);
+  assert.equal(diffusing.workspace_path, undefined);
+  assert.equal(diffusing.max_turns, 1);
+  assert.ok(ax.buildPayload('hello', { mode: 'mercury', route: 'local', cwd: '/tmp' }).local_tools);
   assert.match(ax.tierLabel('mercury'), /test model/);
   assert.match(ax.formatUsage(), /--diffuse/);
 });
