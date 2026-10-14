@@ -2326,7 +2326,7 @@ function formatAgentAge(seconds) {
 // atris engine sweep: list ssh-agents that engine shells started and left
 // behind. With --apply it rechecks each one and stops it with SIGTERM.
 function runEngineSweepCommand(args, root, deps = {}) {
-  const { readSshAgents, findLeakedSshAgents, stopLeakedSshAgents, LEAK_MIN_AGE_SEC } = require('../lib/engine-resource');
+  const { readSshAgents, findLeakedSshAgents, stopLeakedSshAgents, readResourceHistory, LEAK_MIN_AGE_SEC } = require('../lib/engine-resource');
   const read = deps.read || readSshAgents;
   const { agents, referenced } = read();
   const uid = deps.uid !== undefined ? deps.uid : process.getuid();
@@ -2337,7 +2337,7 @@ function runEngineSweepCommand(args, root, deps = {}) {
     : { stopped: [], failed: [], skipped: [] };
   const code = result.failed.length ? 1 : 0;
   if (args.includes('--json')) {
-    console.log(JSON.stringify({ running: agents.length, leaked, ...result }, null, 2));
+    console.log(JSON.stringify({ running: agents.length, leaked, ...result, history: readResourceHistory(root) }, null, 2));
     return code;
   }
   const plural = (n, word) => `${n} ${word}${n === 1 ? '' : 's'}`;
@@ -2356,8 +2356,32 @@ function runEngineSweepCommand(args, root, deps = {}) {
   ];
   if (leaked.length > shown) lines.push(`  and ${leaked.length - shown} more`);
   lines.push(leaked.length ? 'nothing was stopped. run atris engine sweep --apply to stop them.' : 'nothing was stopped.');
+  lines.push('', ...resourceHistoryLines(readResourceHistory(root)));
   console.log(lines.join('\n'));
   return 0;
+}
+
+function utcMinute(at) {
+  return `${String(at || '').slice(0, 16).replace('T', ' ')} UTC`;
+}
+
+// What the resource log says about past runs: the newest sweep, the newest
+// SIGKILL and its likely cause, and how many SIGKILLs came with low memory.
+function resourceHistoryLines(history) {
+  const lines = [];
+  const sweep = history.last_sweep;
+  lines.push(sweep
+    ? `last sweep: ${utcMinute(sweep.at)}, stopped ${(sweep.stopped || []).length}`
+    : 'no sweep recorded yet');
+  const kill = history.last_kill;
+  if (!kill) {
+    lines.push('no engine run has ended in SIGKILL');
+    return lines;
+  }
+  const free = Number.isFinite(kill.free_pct) ? `, ${kill.free_pct}% memory free` : '';
+  lines.push(`last SIGKILL: ${kill.engine || 'engine'} on ${kill.task || 'an unnamed task'} at ${utcMinute(kill.at)}, ${kill.cause}${free}`);
+  lines.push(`${history.low_memory_kills} of ${history.kills} SIGKILL${history.kills === 1 ? '' : 's'} ended with machine memory low`);
+  return lines;
 }
 
 function engineCommand(args = [], deps = {}) {

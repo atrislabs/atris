@@ -269,3 +269,74 @@ test('a failing read never breaks the hourly landing pass', () => {
   runSshAgentSweep(os.tmpdir(), receipt, { read: () => { throw new Error('ps missing'); }, uid: 501 });
   assert.match(receipt.ssh_agent_sweep_error, /ps missing/);
 });
+
+const { readResourceHistory } = require('../lib/engine-resource');
+
+test('history reads back the latest sweep and the latest SIGKILL, skipping bad lines', () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'engine-resource-history-'));
+  try {
+    const file = path.join(root, RESOURCE_LOG);
+    fs.mkdirSync(path.dirname(file), { recursive: true });
+    fs.writeFileSync(file, [
+      JSON.stringify({ at: '2026-10-14T10:00:00.000Z', phase: 'end', engine: 'codex', task: 'CLI-1', free_pct: 9, signal: 'SIGKILL', cause: 'killed (machine memory low)' }),
+      JSON.stringify({ at: '2026-10-14T11:00:00.000Z', phase: 'sweep', stopped: [1, 2], failed: [], skipped: [] }),
+      'not json',
+      JSON.stringify({ at: '2026-10-14T11:30:00.000Z', phase: 'end', engine: 'claude', task: 'CLI-2', free_pct: 70, signal: 'SIGKILL', cause: 'killed (cause unknown)' }),
+      JSON.stringify({ at: '2026-10-14T11:40:00.000Z', phase: 'end', engine: 'claude', task: 'CLI-3', free_pct: 70 }),
+      JSON.stringify({ at: '2026-10-14T12:00:00.000Z', phase: 'sweep', stopped: [3], failed: [], skipped: [4] }),
+      '',
+    ].join('\n'));
+    const history = readResourceHistory(root);
+    assert.strictEqual(history.last_sweep.at, '2026-10-14T12:00:00.000Z');
+    assert.strictEqual(history.last_kill.task, 'CLI-2');
+    assert.strictEqual(history.kills, 2);
+    assert.strictEqual(history.low_memory_kills, 1);
+    assert.deepStrictEqual(readResourceHistory(path.join(root, 'missing')), { last_sweep: null, last_kill: null, kills: 0, low_memory_kills: 0 });
+  } finally {
+    fs.rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test('atris engine sweep shows the last sweep and the last SIGKILL', () => {
+  const { engineCommand } = require('../commands/engine');
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'engine-sweep-history-'));
+  const file = path.join(root, RESOURCE_LOG);
+  fs.mkdirSync(path.dirname(file), { recursive: true });
+  fs.writeFileSync(file, [
+    JSON.stringify({ at: '2026-10-14T11:30:00.000Z', phase: 'end', engine: 'claude', task: 'CLI-2', free_pct: 9, signal: 'SIGKILL', cause: 'killed (machine memory low)' }),
+    JSON.stringify({ at: '2026-10-14T12:00:00.000Z', phase: 'sweep', stopped: [3, 5], failed: [], skipped: [] }),
+  ].join('\n'));
+  const run = (deps) => {
+    const out = [];
+    const original = console.log;
+    console.log = (line) => out.push(String(line));
+    try {
+      engineCommand(['sweep'], { root, engineSweep: { read: () => ({ agents: [], referenced: new Set() }), uid: 501, ...deps } });
+    } finally {
+      console.log = original;
+    }
+    return out.join('\n');
+  };
+  try {
+    const text = run();
+    assert.match(text, /last sweep: 2026-10-14 12:00 UTC, stopped 2/);
+    assert.match(text, /last SIGKILL: claude on CLI-2 at 2026-10-14 11:30 UTC, killed \(machine memory low\), 9% memory free/);
+    assert.match(text, /1 of 1 SIGKILL ended with machine memory low/);
+    fs.rmSync(file);
+    const empty = run();
+    assert.match(empty, /no sweep recorded yet/);
+    assert.match(empty, /no engine run has ended in SIGKILL/);
+  } finally {
+    fs.rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test('a test run never writes into this checkout\'s own resource log', () => {
+  const repoRoot = path.join(__dirname, '..');
+  const file = path.join(repoRoot, RESOURCE_LOG);
+  const size = () => (fs.existsSync(file) ? fs.statSync(file).size : 0);
+  const before = size();
+  const entry = recordEngineResource(repoRoot, { phase: 'end', engine: 'cursor', task: 'CLI-TEST-ONLY', signal: 'SIGKILL' }, { platform: 'linux', loadavg: () => [0, 0, 0] });
+  assert.strictEqual(entry.cause, 'killed (cause unknown)');
+  assert.strictEqual(size(), before);
+});
