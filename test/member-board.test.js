@@ -84,7 +84,8 @@ test('board shows working, quiet, done ok, and done failed from fake logs', () =
     const narrow = renderBoard(rows, dir, 0, 140);
     assert.ok(narrow.split('\n').every((l) => l.length <= 140), 'every line fits a 140 column terminal');
     assert.match(narrow, /^builder\s.*editing lib\/b\.js$/m, 'the short step keeps its length');
-    assert.equal(screen.split('\n').length, 7, 'a summary, a blank line, one header, one row per member');
+    assert.equal(screen.split('\n').length, 9, 'a summary, a blank line, one header, one row per member, a blank line, the pid note');
+    assert.equal(screen.split('\n').pop(), '2 unfinished runs recorded no process id, so a crash there shows as working or quiet, not died', 'builder and scout cannot be checked');
     assert.equal(screen.split('\n')[0], '4 members: 1 done failed, 1 working, 1 quiet, 1 done ok', 'the summary counts states, trouble first');
     assert.match(screen, /^member\s+state\s+before\s+run time\s+ago\s+job\s+last step$/m, 'no run has a pid or engine, so those columns leave');
     assert.match(screen, /^scout\s+quiet\s+-\s+-\s+5m ago\s+find stale docs\s+running: rg stale$/m);
@@ -424,6 +425,7 @@ test('board shows a live run as alive with its engine, and a dead one as died, n
     assert.equal(by.legacy.alive, null, 'no pid means the board cannot tell');
     assert.equal(by.legacy.state, 'working');
     assert.match(renderBoard(readBoard({ dir }), dir), /^builder\s+working\s+yes\s+claude\s+1m\s+\d+s ago\s+ship the board/m);
+    assert.match(renderBoard(readBoard({ dir }), dir), /^1 unfinished run recorded no process id, so a crash there shows as working or quiet, not died$/m, 'only legacy counts; builder has a pid');
 
     child.kill('SIGKILL');
     assert.ok(await waitFor(() => !isAlive(child.pid)), 'sleeper should be gone');
