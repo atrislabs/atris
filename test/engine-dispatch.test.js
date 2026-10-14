@@ -1340,3 +1340,50 @@ test('every engine run writes a start and end machine line, and a SIGKILL names 
     fs.rmSync(worktree, { recursive: true, force: true });
   }
 });
+
+test('thrown and rejected engine runners save end resources and preserve the original error', async (t) => {
+  const { execFile, execFileSync } = require('node:child_process');
+  const execFileAsync = require('node:util').promisify(execFile);
+  for (const asynchronous of [false, true]) {
+    await t.test(asynchronous ? 'rejected child process' : 'thrown child process', async () => {
+      const root = makeTempRoot();
+      execFileSync('git', ['init', '-q', root]);
+      const worktree = fs.mkdtempSync(path.join(os.tmpdir(), 'engine-dispatch-wt-'));
+      let originalError;
+      try {
+        const invoke = () => fleet.dispatchToEngine({
+          task: TASK, engine: 'claude', worktreePath: worktree, root, skipBriefCapture: true,
+          runner: () => {
+            const args = ['-e', 'process.kill(process.pid, "SIGKILL")'];
+            if (asynchronous) {
+              return execFileAsync(process.execPath, args).catch((error) => {
+                originalError = error;
+                throw error;
+              });
+            }
+            try {
+              return execFileSync(process.execPath, args, { stdio: 'pipe' });
+            } catch (error) {
+              originalError = error;
+              throw error;
+            }
+          },
+        });
+        if (asynchronous) await assert.rejects(invoke, (error) => error === originalError);
+        else assert.throws(invoke, (error) => error === originalError);
+        const lines = fs.readFileSync(path.join(root, '.atris/state/engine-resource.jsonl'), 'utf8')
+          .trim().split('\n').map(JSON.parse);
+        assert.deepEqual(lines.map((line) => line.phase), ['start', 'end']);
+        const end = lines[1];
+        assert.equal(end.engine, 'claude');
+        assert.equal(end.task, TASK.display_id);
+        assert.ok(Array.isArray(end.load));
+        assert.equal(end.signal, 'SIGKILL');
+        assert.match(end.cause, /^killed \((machine memory low|cause unknown)\)$/);
+      } finally {
+        fs.rmSync(root, { recursive: true, force: true });
+        fs.rmSync(worktree, { recursive: true, force: true });
+      }
+    });
+  }
+});
