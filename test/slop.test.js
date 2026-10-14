@@ -290,3 +290,21 @@ test('a self-scan skips the rule tables but still checks the rest of the scanner
   const copy = tmpFile('slop.js', fs.readFileSync(self, 'utf8'));
   assert.ok(scanFile(copy).length > 0, 'the skip is tied to the scanner file, not its name');
 });
+
+test('the em dash fix turns a paired aside into parentheses and a lone dash into a comma', () => {
+  const { applyFixes } = require('../commands/slop');
+  const D = '\u2014';
+  const file = tmpFile('copy.md', [
+    `The gate ${D} the one CI runs ${D} blocks it.`,
+    `Fast, reliable ${D} and calm.`,
+    `word${D}aside${D}word`,
+    `ends with an aside ${D} like this ${D}.`,
+  ].join('\n'));
+  applyFixes([file], RULES);
+  assert.deepEqual(fs.readFileSync(file, 'utf8').split('\n'), [
+    'The gate (the one CI runs) blocks it.',
+    'Fast, reliable, and calm.',
+    'word (aside) word',
+    'ends with an aside (like this).',
+  ]);
+});
