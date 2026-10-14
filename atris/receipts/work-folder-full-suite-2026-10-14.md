@@ -63,3 +63,9 @@ The direct broader command passed all 95 tests, but running that same command th
 The direct frozen check then passed with exit 0: 27 passed, zero failed, zero skipped. Output: `work-folder-frozen-2026-10-14.tap`. A separate task-ready attempt was rejected before executing because its result sentence lacked the required operator benefit.
 
 layer: environment
+
+Completion status: proof-ready recording was rejected, so the task remains claimed with a handoff note rather than being marked reviewed or accepted. The proof artifacts were committed and pushed. Existing task-view edits were left untouched. Companion files also edited: work-folder-full-suite-ready-2026-10-14.txt and work-folder-frozen-2026-10-14.tap.
+
+next_push: capture full completion-runner failure output and compare its environment to the direct invocation.
+
+layer: environment
