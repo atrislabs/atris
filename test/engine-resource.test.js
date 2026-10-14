@@ -1367,9 +1367,20 @@ test('every engine started through a runner or profile variable records its run 
             // a destructured alias counts unless the name is only a renamed key.
             const visible = withoutHelperDefinitions(code, call.index);
             const escaped = call[1].replace(/\$/g, '\\$');
-            const alias = new RegExp(`\\b(?:const|let|var)\\s+${escaped}\\s*=|\\b(?:const|let|var)\\s*[{[](?:[^=;]*?[,:{[])?\\s*${escaped}\\s*[,}\\]=]`);
+            const alias = new RegExp(`\\b(?:const|let|var)\\s+${escaped}\\s*=|\\b(?:const|let|var)\\s*[{[](?:[^=;]*?[,:{[])?\\s*${escaped}\\s*[,}\\]=]`, 'g');
+            // A copy covers the call only while no brace or parenthesis open
+            // before it has closed, so a copy in an inner block, a loop header,
+            // or an inline callback does not hide a later call.
+            const covers = (text) => [...text.matchAll(alias)].some((copy) => {
+              let depth = 0;
+              for (const token of text.slice(copy.index).matchAll(/'(?:\\.|[^'\\])*'|"(?:\\.|[^"\\])*"|`(?:\\.|[^`\\])*`|[{}()]/g)) {
+                depth += token[0] === '{' || token[0] === '(' ? 1 : token[0] === '}' || token[0] === ')' ? -1 : 0;
+                if (depth < 0) return false;
+              }
+              return true;
+            });
             const hides = ([open, close]) => !(open <= fnStart && fnStart < close) || (internalOnly && open === fnStart);
-            if (definitionSpans(code).some(([open, close]) => open < call.index && call.index < close && hides([open, close]) && (parametersOf(open).includes(call[1]) || alias.test(visible.slice(open, call.index))))) continue;
+            if (definitionSpans(code).some(([open, close]) => open < call.index && call.index < close && hides([open, close]) && (parametersOf(open).includes(call[1]) || covers(visible.slice(open, call.index))))) continue;
             // A loop or catch variable with the name hides it inside that block only.
             // A loop without braces hides it until its statement ends at the
             // first semicolon or line break, so a following call still counts.
@@ -1568,6 +1579,11 @@ test('every engine started through a runner or profile variable records its run 
     for (const body of ['for (const launch of list) noop(launch);\n  launch(resolveClaudeRunnerBin());', 'for (const launch of list) noop(launch)\n  launch(resolveClaudeRunnerBin())']) {
       assert.deepStrictEqual(planted(launcher('', `function other(list) {\n  ${body}\n}\n`)), ['commands/planted.js:3 runner'], `a statement after the loop still reaches the launcher: ${body}`);
     }
+    // A copy hides the launcher name only until its block or parentheses close.
+    for (const body of ['if (ready) {\n    const launch = wrap;\n  }', 'for (let launch = 0; launch < 3; launch++) {}', 'list.forEach(() => { const launch = wrap; });']) {
+      assert.deepStrictEqual(planted(launcher('', `function other(list) {\n  ${body}\n  launch(resolveClaudeRunnerBin());\n}\n`)), ['commands/planted.js:3 runner'], `a copy in a closed block does not hide a later call: ${body}`);
+    }
+    assert.deepStrictEqual(planted(launcher('', 'function other() {\n  if (ready) {\n    const launch = wrap;\n    launch(resolveClaudeRunnerBin());\n  }\n}\n')), [], 'a copy hides the launcher name inside its own block');
   }
   assert.deepStrictEqual(planted('const launch = function launch(runner) {\n  spawnSync(runner, args);\n};\nlaunch(resolveClaudeRunnerBin());\n'), ['commands/planted.js:2 runner'], 'matching expression and variable names keep external arguments visible');
   assert.deepStrictEqual(planted('const launch = function launch(runner) {\n  launch(resolveClaudeRunnerBin());\n  spawnSync(runner, args);\n};\n'), ['commands/planted.js:3 runner'], 'the defining assignment does not hide same-name recursion');
