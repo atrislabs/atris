@@ -8,6 +8,7 @@ const { stampLatestOpenBriefForWorktree } = require('../lib/brief-ledger');
 const { isConductorArtifact } = require('../lib/conductor-artifacts');
 const { fixMapDocs } = require('../lib/map-refs');
 const { sleepSync } = require('../lib/sleep-sync');
+const { inspectGitActivity } = require('../lib/git-activity');
 const close = require('./close');
 
 const REGEN_ADAPTER_FILES = ['AGENTS.md', 'CLAUDE.md', 'GEMINI.md'];
@@ -1301,6 +1302,11 @@ function cleanupWorktrees({ root = repoRoot(), base: baseOverride = '', apply = 
       kept.push({ ...item, reason: activeCwds ? 'active_process' : 'process_scan_failed' });
       continue;
     }
+    const activity = inspectGitActivity(wt.path);
+    if (!activity.safe) {
+      kept.push({ ...item, reason: 'git_activity', detail: activity.reason, locks: activity.locks });
+      continue;
+    }
     const rawCounts = statusCounts(wt.path);
     const counts = statusCounts(wt.path, { ignoreAny: isConductorArtifact });
     if (!rawCounts || !counts) {
@@ -1398,6 +1404,9 @@ function cleanup(args) {
     console.log(`${cacheAction}: ${item.path}`);
   }
   console.log(`kept: ${result.kept.length}`);
+  for (const item of result.kept) {
+    if (item.reason === 'git_activity') console.log(`kept: ${item.path} reason=git_activity ${item.detail}`);
+  }
   if (!result.apply && result.candidates.length) console.log('next: atris worktree cleanup --apply');
   return 0;
 }
