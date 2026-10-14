@@ -306,12 +306,17 @@ const UNGUARDED_REMOVALS = {
   'commands/worktree.js:createAgentWorktree': 'drops a folder it just made before any engine entered; plain remove refuses dirt',
   'lib/fleet.js:prepareReviewSandbox': 'wipes its own temp sandbox when setup fails; only that call touched it, so any lock is stale',
   'commands/drill.js:landingShippedLocal': 'removes a worktree inside the drill\'s own throwaway practice repo',
+  'lib/land-green.js:scratchCheckout': 'drops its fresh temp folder only after git failed to make it a worktree',
 };
 // Real work folder removals still waiting for the guard. Each one is a gap;
 // guard it and delete its line here.
 const NOT_YET_GUARDED = {
 };
 const WORKTREE_REMOVAL = /worktree['"]?\s*,\s*['"]remove['"]|git worktree remove|rmSync\(\s*[^,)]*(?:worktree|wtPath|\bwt\b|\bw\.path)/i;
+// A recursive delete with a plain name (dir, target) still counts when its
+// function lists, adds, or walks worktrees, so renaming a variable can't hide one.
+const RECURSIVE_DELETE = /rmSync\([^)]*recursive/;
+const HANDLES_WORKTREES = /listWorktrees\(|agent-worktrees|['"]worktree['"]\s*,\s*['"]add['"]|git worktree add/;
 
 function worktreeRemovalSites(file) {
   const lines = fs.readFileSync(path.join(__dirname, '..', file), 'utf8').split('\n');
@@ -321,10 +326,13 @@ function worktreeRemovalSites(file) {
   });
   const sites = [];
   lines.forEach((line, index) => {
-    if (/^\s*(\/\/|\*)/.test(line) || !WORKTREE_REMOVAL.test(line)) return;
+    if (/^\s*(\/\/|\*)/.test(line)) return;
+    const named = WORKTREE_REMOVAL.test(line);
+    if (!named && !RECURSIVE_DELETE.test(line)) return;
     const owner = starts.filter((start) => start.index <= index).pop();
     const next = starts.find((start) => start.index > index);
     const body = lines.slice(owner ? owner.index : 0, next ? next.index : lines.length).join('\n');
+    if (!named && !HANDLES_WORKTREES.test(body)) return;
     sites.push({ key: `${file}:${owner ? owner.name : '(top level)'}`, line: index + 1, body });
   });
   return sites;
