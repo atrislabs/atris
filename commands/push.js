@@ -154,6 +154,7 @@ function mergePushScopes({ onlyRaw = null, pathArgs = [], changed = false, local
 function buildPushChangePlan({
   localFiles = {},
   baseFiles = {},
+  cloudHashes = null,
   onlyPrefixes = null,
   readFileContent,
   isLocalFilePresent,
@@ -163,7 +164,10 @@ function buildPushChangePlan({
 
   for (const [filePath, fileInfo] of Object.entries(localFiles)) {
     if (!pathInScope(filePath, onlyPrefixes)) continue;
-    const baseHash = baseFiles[filePath] ? baseFiles[filePath].hash : null;
+    // Uploads compare with current cloud truth; deletes still use the manifest.
+    const baseHash = cloudHashes !== null
+      ? cloudHashes[filePath]
+      : (baseFiles[filePath] ? baseFiles[filePath].hash : null);
     if (!baseHash || fileInfo.hash !== baseHash) {
       try {
         const content = readFileContent ? readFileContent(filePath) : '';
@@ -598,14 +602,18 @@ async function pushAtris() {
   // This prevents stale local state from clobbering fresh cloud changes, 
   // the "lagging version push" footgun. Use --force to bypass (e.g., for
   // genuine local-canonical pushes like align --hard).
+  // Use the same hash snapshot as pull, including for forced pushes. If it is
+  // unavailable, force still permits recovery, but must upload every scoped
+  // local file rather than trusting an old manifest and silently skipping it.
+  if (!force) process.stdout.write('  Checking cloud freshness... ');
+  const snapshotResult = await apiRequestJson(
+    `/business/${businessId}/workspaces/${workspaceId}/snapshot?include_content=false`,
+    { method: 'GET', token: creds.token, timeoutMs: 60000 }
+  );
+  const snapshotOk = snapshotResult.ok && snapshotResult.data && Array.isArray(snapshotResult.data.files);
+  const cloudHashes = snapshotOk ? filterSyncFiles(buildCloudHashMap(snapshotResult.data.files)) : {};
   if (!force) {
-    process.stdout.write('  Checking cloud freshness... ');
-    const snapshotResult = await apiRequestJson(
-      `/business/${businessId}/workspaces/${workspaceId}/snapshot?include_content=false`,
-      { method: 'GET', token: creds.token, timeoutMs: 60000 }
-    );
-    if (snapshotResult.ok && snapshotResult.data && Array.isArray(snapshotResult.data.files)) {
-      const cloudHashes = filterSyncFiles(buildCloudHashMap(snapshotResult.data.files));
+    if (snapshotOk) {
       const manifestFiles = filterSyncFiles((manifest && manifest.files) || {});
       const driftFiles = [];
       // Direction 1: cloud has files the manifest doesn't know about, OR
@@ -661,8 +669,8 @@ async function pushAtris() {
     }
   }
 
-  // Compare local hashes to manifest, NO server call needed
-  // Files where local hash differs from manifest = changed locally
+  // --changed remains a local-manifest scope; uploads within the scope compare
+  // against current cloud hashes, so cloud-side reverts cannot look unchanged.
   if (parsed.changed && Array.isArray(onlyPrefixes) && onlyPrefixes.length === 0 && (!parsed.pathArgs || parsed.pathArgs.length === 0) && !parsed.onlyRaw) {
     console.log('\n  Already up to date.\n');
     await emit('success', { files_unchanged: Object.keys(localFiles).length });
@@ -671,6 +679,7 @@ async function pushAtris() {
   const { filesToPush, deletedPaths, unchangedCount } = buildPushChangePlan({
     localFiles,
     baseFiles,
+    cloudHashes,
     onlyPrefixes,
     readFileContent: (filePath) => fs.readFileSync(path.join(sourceDir, filePath.replace(/^\//, '')), 'utf8'),
     isLocalFilePresent: (filePath) => fs.existsSync(path.join(sourceDir, filePath.replace(/^\//, ''))),

@@ -15,6 +15,7 @@ checks the refs in both files; `atris doc-health --fix-refs` moves drifted ones.
 | Task | Primary path | Notes |
 |------|--------------|-------|
 | cli entrypoint and command router | `bin/atris.js` | dispatch chain, knownCommands, help |
+| cloud push upload selection and safety | `commands/push.js`, `test/push-cloud-drift.test.js` | current snapshot hashes decide uploads even with force; manifest still controls deletes; freshness and mass-delete guards remain |
 | known commands list | `lib/known-commands.js` | command names and typo suggestions; the plain and JSON unknown-command errors both use suggestCommands |
 | Host member install, introductions, and Slack delivery | `templates/members/host/`, `commands/member.js`, `lib/member-scaffold.js`, `commands/host.js`, `lib/host.js` | packaged member copy and `member install host --update` for template skills, group or personal room setup, private records, bulk people and link import, published cards, late replies during timed rest, reply routing by outbox id or provider ref, introduction roster, followups, room coverage, draft outbox, Slack delivery through the shared API client, and daily archival of old sent messages; `test/host.test.js` |
 | plain english to a command | `lib/intents.js` `commands/guide.js`, `lib/intents.js:100`, `lib/intents.js:107` | atris guide; agents translate, users never learn verbs; "who does what" goes to `atris engine roster`, "change the builder" to `atris engine assign` and asks first |
