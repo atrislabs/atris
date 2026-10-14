@@ -239,6 +239,17 @@ test('watch keeps a crash in view when the same member restarts within the minut
   assert.deepEqual(changed([row('builder', 'done ok')], 80_000), ['builder working -> done ok'], 'past the minute, a new change starts fresh');
 });
 
+test('watch names a run that ended and was replaced between two redraws', () => {
+  const run = (mission, pid, before) => ({ member: 'builder', state: 'working', mission, pid, before, ago: '1s ago' });
+  const changed = changeTracker(60_000);
+  changed([run('m-1', 11, [])], 0);
+  assert.deepEqual(changed([run('m-2', 22, ['died'])], 3_000), ['builder working -> died -> working'], 'working both times, but a crash in between');
+  const clean = changeTracker(60_000);
+  clean([run('m-1', 11, [])], 0);
+  assert.deepEqual(clean([run('m-2', 22, ['ok', 'died'])], 3_000), ['builder working -> done ok -> working'], 'how the replaced run ended, not an older one');
+  assert.deepEqual(clean([run('m-2', 22, ['ok', 'died'])], 6_000), ['builder working -> done ok -> working'], 'the same run again is not a new change');
+});
+
 test('watch names a put-away run with when it last did anything, even once it is hidden', () => {
   const now = Date.parse('2026-10-14T13:00:00Z');
   const quiet = memberRow('launcher', '2026-10-14T05:00:00Z m-4 started: score\n2026-10-14T06:00:00Z m-4 running: npm test\n', now);
