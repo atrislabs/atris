@@ -551,11 +551,28 @@ test('a last step that will be cut drops the words in front of its command, one 
   assert.match(wide.builder, /running: sed -n 288,300p lib\/member-board\.js$/, 'room for it all: nothing changes');
   assert.match(wide.orb, /Run: git status -sb$/);
   const narrow = at(90);
-  assert.match(narrow.builder, /readable\s{2}sed -n 288,300p li\.\.\.$/, `a cut command starts at the command:\n${Object.values(narrow).join('\n')}`);
+  assert.match(narrow.builder, /readable\s{2}sed -n 288,300p\.\.\.$/, `a cut command starts at the command:\n${Object.values(narrow).join('\n')}`);
   assert.match(narrow.scout, /running: rg x$/, 'a step that fits keeps its words');
   assert.ok(Object.values(narrow).every((l) => l.length <= 90));
   const stacked = renderBoard(rows, '/x', 0, 40).split('\n').find((l) => l.includes('sed -n'));
-  assert.match(stacked, /^ {2}last step: sed -n 288,300p lib\/memb\.\.\.$/, 'on its own line too');
+  assert.match(stacked, /^ {2}last step: sed -n 288,300p lib\/\.\.\.$/, 'on its own line too');
+});
+
+test('a cut last step ends between words or path parts, one that fits stays whole', () => {
+  const now = Date.parse('2026-10-14T13:00:00Z');
+  const run = (name, step) => memberRow(name, `2026-10-14T12:50:00Z m-1 started: [pid ${process.pid}] fix it\n2026-10-14T12:59:30Z m-1 ${step}\n`, now);
+  const rows = [
+    run('builder', 'running: cat lib/member-board-renderer.js'),
+    run('qa', 'running: sed -n 1,20p lib/member-board.js'),
+    run('scout', 'running: rg x'),
+  ];
+  const lines = renderBoard(rows, '/x', 0, 40).split('\n');
+  const step = (word) => lines.find((l) => l.startsWith('  last step:') && l.includes(word));
+  assert.equal(step('cat'), '  last step: cat lib/member-board...', lines.join('\n'));
+  assert.equal(step('sed'), '  last step: sed -n 1,20p lib/member...', 'the latest break wins, here the hyphen after the slash');
+  assert.equal(step('rg'), '  last step: running: rg x', 'a step that fits stays whole');
+  assert.ok(lines.every((l) => l.length <= 40), lines.join('\n'));
+  assert.equal(rows[0].step, 'running: cat lib/member-board-renderer.js', 'apps reading the rows get the step as written');
 });
 
 test('a wider board never gives the job less than its 24 columns beside the step', () => {
@@ -563,7 +580,7 @@ test('a wider board never gives the job less than its 24 columns beside the step
   const rows = [memberRow('builder', `2026-10-14T12:50:00Z m-1 started: [pid ${process.pid} engine claude] keep the job readable when the screen is wide enough\n2026-10-14T12:59:30Z m-1 running: node --test test/member-board.test.js test/member-result.test.js\n`, now)];
   const lines = (w) => renderBoard(rows, '/x', 0, w).split('\n');
   const side = lines(100).find((l) => l.startsWith('builder '));
-  assert.match(side, /\s30s ago\s+keep the job readable\.\.\.\s+node --test test\/me\.\.\.$/, 'the job keeps 24 columns and the step gets the rest, without the words in front of a cut command');
+  assert.match(side, /\s30s ago\s+keep the job readable\.\.\.\s+node --test test\/\.\.\.$/, 'the job keeps 24 columns and the step gets the rest, without the words in front of a cut command');
   const narrow = lines(96);
   assert.match(narrow.find((l) => l.startsWith('builder ')), /keep the job readable when the screen is\.\.\.$/, 'too little room for 24 beside 20: the step gets its own line');
   assert.ok(narrow.some((l) => l.startsWith('  last step: running: node --test')), narrow.join('\n'));
