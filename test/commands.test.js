@@ -14498,12 +14498,20 @@ test('task render archives old blocked records from TODO view', () => {
   try {
     fs.mkdirSync(path.join(dir, 'atris'), { recursive: true });
 
-    for (let i = 0; i < 16; i += 1) {
-      const created = runCli(['task', 'new', `Blocked task ${i}`, '--tag', 'agent', '--json'], { cwd: dir, env });
-      assert.equal(created.status, 0, created.stderr);
-      const id = JSON.parse(created.stdout).task_id;
-      const failed = runCli(['task', 'done', id, '--failed', '--proof', `node --test test/commands.test.js passed for blocked archive ${i}`, '--json'], { cwd: dir, env });
-      assert.equal(failed.status, 0, failed.stderr);
+    // Seed the blocked rows straight in the task store with the same two
+    // writes `task done --failed --proof` makes; only render runs the CLI.
+    const workspaceRoot = taskStore.workspaceRoot(dir);
+    const actor = process.env.USER || os.userInfo().username;
+    const db = taskStore.open(dbPath);
+    try {
+      for (let i = 0; i < 16; i += 1) {
+        const { id } = taskStore.addTask(db, { title: `Blocked task ${i}`, tag: 'agent', workspaceRoot });
+        const proof = `node --test test/commands.test.js passed for blocked archive ${i}`;
+        assert.equal(taskStore.doneTask(db, { id, status: 'failed', actor, action: 'failed', proof }).updated, true);
+        assert.equal(taskStore.reviewTask(db, { id, actor, reward: 0, lesson: '', nextTask: '', proof }).reviewed, true);
+      }
+    } finally {
+      taskStore.close();
     }
 
     const render = runCli(['task', 'render', '--out', 'atris/TODO.md'], { cwd: dir, env });
