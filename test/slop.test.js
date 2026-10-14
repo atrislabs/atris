@@ -1742,6 +1742,24 @@ test('fix reads each table cell on its own, like the start of a block', () => {
   ]);
 });
 
+test('fix keeps the right border of a drawn box in line', () => {
+  // a dash is three characters with its spaces and a comma two, so every boxed
+  // line used to come out one column short of the border above it
+  const B = '\u2502';
+  const file = tmpFile('box.md', [
+    `${B} STEP 1/5 \u2014 Creating middleware      ${B}`,
+    `${B}         ${B} 1. BUILD  \u2014 Does it compile?            ${B}             ${B}`,
+    `${B}  0. RESUME     \u2014 read previous logs     ${B}`,
+  ].join('\n'));
+  const { changes } = applyFixes([file], RULES, { write: false });
+  assert.deepEqual(changes.map((c) => c.after), [
+    `${B} STEP 1/5, Creating middleware       ${B}`,
+    `${B}         ${B} 1. BUILD: Does it compile?              ${B}             ${B}`,
+    `${B}  0. RESUME: read previous logs          ${B}`,
+  ]);
+  for (const c of changes) assert.equal(c.after.length, c.before.length);
+});
+
 test('fix keeps the comma when "that" opens a clause inside the noun after a dash', () => {
   const file = tmpFile('that.md', [
     'Not a tool that stores your work \u2014 a computer that finishes it.',

@@ -382,6 +382,17 @@ function fixEmDash(s, { endsBlock = false, startsBlock = false } = {}) {
     return s.split(/((?<!\\)\|)/).map((cell, i) => (i % 2 || !/\u2014/.test(cell) ? cell
       : cell.replace(/^(\s*)([\s\S]*?)(\s*)$/, (m, lead, body, tail) => `${lead}${fixEmDash(body, { startsBlock: true })}${tail}`))).join('');
   }
+  // a line inside a drawn box is fixed cell by cell the same way, and each
+  // cell is padded back to its old width so the right border still lines up:
+  // "\u2502 STEP 1/5: Creating middleware       \u2502", not one column short
+  if (/^\s*[\u2502\u2503\u2551].*[\u2502\u2503\u2551]\s*$/.test(s) && /\u2014/.test(s)) {
+    return s.split(/([\u2502\u2503\u2551])/).map((cell, i) => (i % 2 || !/\u2014/.test(cell) ? cell
+      : cell.replace(/^(\s*)([\s\S]*?)(\s*)$/, (m, lead, body, tail) => {
+        const fixed = fixEmDash(body, { startsBlock: true });
+        const room = tail.length + body.length - fixed.length;
+        return `${lead}${fixed}${' '.repeat(Math.max(room, tail ? 1 : 0))}`;
+      }))).join('');
+  }
   // a dash between two numbers is a range, "10-20", unless the first has a
   // sign, which makes it a score: "reward: +4, 404 on missing routes"
   s = s.replace(/\u2014(?:\s*\u2014)+/g, '\u2014').replace(/(?<![+-]\d*)(\d+)\s*\u2014\s*(?=(\d+)(?![\d-]))/g, (m, a, b) => (isRange(a, b) ? `${a}-` : m)).replace(/^(\s*(?:>\s*)*)\u2014\s*/, '$1');
