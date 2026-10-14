@@ -857,6 +857,7 @@ test('fix joins two full clauses with a semicolon, not a comma splice', () => {
   // lines took a semicolon here and each was read
   const file = tmpFile('clause-join.md', [
     "this isn't optional \u2014 it's part of good design.",
+    "fastq isn't \u2014 it's ~200 lines.",
     'It never dies on a bad tick \u2014 it survives halts.',
     'Never animate width or height \u2014 they trigger layout.',
     "Skip the dark default \u2014 that's how it starts looking the same.",
@@ -867,6 +868,7 @@ test('fix joins two full clauses with a semicolon, not a comma splice', () => {
   const { changes } = applyFixes([file], RULES);
   assert.deepEqual(changes.map((c) => c.after), [
     "this isn't optional; it's part of good design.",
+    "fastq isn't; it's ~200 lines.",
     'It never dies on a bad tick; it survives halts.',
     'Never animate width or height; they trigger layout.',
     "Skip the dark default; that's how it starts looking the same.",
