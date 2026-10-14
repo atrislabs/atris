@@ -250,15 +250,17 @@ test('below 30 columns the board keeps whole states and trims only member names'
     last_result: 'failed', last_result_reason: 'engine error', last_result_ago: '1m ago',
     ago: '1m ago',
   }));
+  rows.push({ ...rows.find((r) => r.state === 'stopped'), last_result: '', last_result_reason: '', no_result: true });
   for (const width of [18, 20, 24, 29]) {
     const lines = renderBoard(rows, '/progress', 0, width).split('\n');
-    assert.equal(lines.length, states.length + 1);
+    assert.equal(lines.length, rows.length + 1);
     assert.match(lines[0], /^member\s+state$/);
     assert.ok(lines.every((line) => line.length <= width), `${width}: ${lines.join('\n')}`);
     states.forEach((state, i) => {
       const expected = state.replace(/^done /, '').replace('asleep after this run', 'finishing');
       assert.equal(lines[i + 1].split(/\s{2,}/)[1], expected, `${width}: ${state}`);
     });
+    assert.equal(lines[rows.length].split(/\s{2,}/)[1], 'no result', `${width}: a run that died reads apart from one stopped by hand`);
   }
   assert.match(renderBoard(rows, '/progress', 0, 30), /^name\s+state\s+last result$/m, 'the result column returns at 30 columns');
 });
