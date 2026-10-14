@@ -870,6 +870,11 @@ test('fix joins two full clauses with a semicolon, not a comma splice', () => {
     'Then \u2014 it stops.',
     'Use `PUT` \u2014 that is for updates.',
     'Run `npm test` \u2014 then ship.',
+    // a contrast that corrects itself is not two clauses; its right side is a
+    // fragment, so it keeps the comma (design policy, 45 "not" lines read)
+    "not because they're more creative \u2014 because they own the craft.",
+    "Not because it's fast \u2014 because it's honest.",
+    'Not rules \u2014 convictions.',
   ].join('\n'));
   const { changes } = applyFixes([file], RULES);
   assert.deepEqual(changes.map((c) => c.after), [
@@ -882,6 +887,9 @@ test('fix joins two full clauses with a semicolon, not a comma splice', () => {
     'Then, it stops.',
     'Use `PUT`; that is for updates.',
     'Run `npm test`, then ship.',
+    "not because they're more creative, because they own the craft.",
+    "Not because it's fast, because it's honest.",
+    'Not rules, convictions.',
   ]);
 });
 
