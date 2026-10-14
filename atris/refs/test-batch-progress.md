@@ -32,11 +32,23 @@ The required three-file command passed 35 checks, failed 0, cancelled 0, exit 0,
 node --test test/stall-signal-health.test.js test/roster-prep-brief.test.js test/roster-run-record.test.js
 ```
 
-Next: select the `generalist|member loop|member alive` command checks as one bounded named group. The full command file remains unverified.
+## Generalist and member lifecycle command group, step 14
+
+All ten selected checks passed, failed 0, cancelled 0, exit 0, in 3694.045834 milliseconds. The process finished in 3.753 seconds within its 120-second deadline. No test code changed and no failure was repaired. Output: `/tmp/auto-improver-command14.tap`.
+
+```sh
+node --test --test-name-pattern='generalist|member loop|member alive' test/commands.test.js
+```
+
+The frozen three-file check passed 35 checks, failed 0, cancelled 0, exit 0, in 10182.721833 milliseconds. Output: `/tmp/auto-improver-required14.tap`.
+
+```sh
+node --test test/stall-signal-health.test.js test/roster-prep-brief.test.js test/roster-run-record.test.js
+```
 
 ## Next move
 
-Run the command file in bounded groups selected by test names, continuing with generalist, member loop, and member alive checks. Keep each group under the step deadline; a short whole-file timeout cannot establish the next failing assertion. Preserve command exit codes and distinguish deadline termination from test failures.
+Run the next bounded command group: `member status|member block|mission start tick complete|always-on mission run|mission run bounds`. Repair only a reproduced cause. The full command file remains unverified; passing selected groups cannot rule out failures caused by state left by earlier tests.
 
-next_push: Run generalist, member loop, and member alive command checks as one bounded named group, then repair the first reproduced failure.
+next_push: Check member status, member block, and mission lifecycle command checks as one bounded named group.
 layer: capabilities
