@@ -91,6 +91,7 @@ checks the refs in both files; `atris doc-health --fix-refs` moves drifted ones.
 | lesson ledger | `lib/lesson-ledger.js` | compounding lessons |
 | receipt block builder | `lib/receipt-block.js` | proof receipts |
 | autoland gate | `lib/autoland.js` | certified landings |
+| landing test Git setup | `test/autoland.test.js` | one pristine real Git repository copied per fixture; isolated refs, objects, config and task databases; suite-level cleanup; proof in `atris/runs/2026-10-14-autoland-git-fixture.md` |
 | autoland command | `commands/autoland.js` | atris autoland |
 | slop detector | `commands/slop.js` | prose lint |
 | design system commands | `commands/design.js` `lib/design-api.js` | atris design extract and check; shared with atris mcp |

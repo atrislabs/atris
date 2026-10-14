@@ -11,8 +11,16 @@ const autoland = require('../lib/autoland');
 const { evaluateAutoAccept } = require('../lib/auto-accept-certified');
 const { withTaskReadyResult } = require('./helpers/task-result');
 
-function makeTempRepo() {
-  const base = fs.mkdtempSync(path.join(os.tmpdir(), 'atris-autoland-test-'));
+let pristineRepo;
+test.after(() => {
+  if (pristineRepo) cleanupTempDir(path.dirname(pristineRepo));
+});
+
+// Initialize real Git once, then copy all files (including independent Git
+// objects and refs). Tests never mutate the template or share task databases.
+function pristineGitRepo() {
+  if (pristineRepo) return pristineRepo;
+  const base = fs.mkdtempSync(path.join(os.tmpdir(), 'atris-autoland-template-'));
   const repo = path.join(base, 'repo');
   fs.mkdirSync(repo, { recursive: true });
   runGit(['init', '-b', 'master'], repo);
@@ -21,6 +29,15 @@ function makeTempRepo() {
   fs.writeFileSync(path.join(repo, 'README.md'), '# fixture\n');
   runGit(['add', '.'], repo);
   runGit(['commit', '-m', 'init'], repo);
+  pristineRepo = repo;
+  return repo;
+}
+
+function makeTempRepo() {
+  const template = pristineGitRepo();
+  const base = fs.mkdtempSync(path.join(os.tmpdir(), 'atris-autoland-test-'));
+  const repo = path.join(base, 'repo');
+  fs.cpSync(template, repo, { recursive: true });
   fs.mkdirSync(path.join(repo, 'atris'), { recursive: true });
   const state = path.join(repo, '.atris', 'state');
   fs.mkdirSync(state, { recursive: true });
@@ -151,6 +168,27 @@ function replaceLatestProof(repo, ref, proof) {
   });
   assert.equal(seeded.status, 0, seeded.stderr || seeded.stdout);
 }
+
+test('copied Git fixtures keep commits, config and task state isolated', () => {
+  const first = makeTempRepo();
+  const second = makeTempRepo();
+  try {
+    const originalHead = runGit(['rev-parse', 'HEAD'], second.repo).stdout.trim();
+    runGit(['config', 'user.name', 'Changed'], first.repo);
+    commitOnBranch(first.repo, 'fixture-isolation', 'only-first.txt');
+    fs.mkdirSync(path.join(first.repo, '.atris'), { recursive: true });
+    fs.writeFileSync(path.join(first.repo, '.atris', 'fixture-tasks.db'), 'first only');
+    assert.equal(runGit(['config', 'user.name'], second.repo).stdout.trim(), 'Test');
+    assert.equal(runGit(['rev-parse', 'HEAD'], second.repo).stdout.trim(), originalHead);
+    assert.equal(runGit(['branch', '--list', 'fixture-isolation'], second.repo).stdout.trim(), '');
+    assert.equal(fs.existsSync(path.join(second.repo, 'only-first.txt')), false);
+    assert.equal(fs.existsSync(path.join(second.repo, '.atris', 'fixture-tasks.db')), false);
+    assert.equal(runGit(['status', '--porcelain', '--untracked-files=no'], second.repo).stdout, '');
+  } finally {
+    cleanupTempDir(first.base);
+    cleanupTempDir(second.base);
+  }
+});
 
 test('digest and alarm compose in plain language', () => {
   const digest = autoland.composeDigest({
