@@ -985,6 +985,8 @@ test('fix joins a noun clause after the dash with a semicolon', () => {
     // after it makes the right side one noun phrase
     'IDs can be short \u2014 the CLI resolves the prefix',
     'Pills are tappable \u2014 a tap focuses the next turn on that computer.',
+    'Chat greps for it \u2014 a regression turns the gate red instead of waiting.',
+    'Read the board \u2014 the old builds the gate keeps green.',
     'Author block docs \u2014 the live docs the Atris editor renders, with charts.',
     // a word in "ly" that says how joins the same way; "mostly" does not
     'Hand off \u2014 the voice acknowledges instantly and the agent answers.',
@@ -1060,6 +1062,8 @@ test('fix joins a noun clause after the dash with a semicolon', () => {
     'Command tests for autopilot, the decision helpers it uses.',
     'IDs can be short; the CLI resolves the prefix',
     'Pills are tappable; a tap focuses the next turn on that computer.',
+    'Chat greps for it; a regression turns the gate red instead of waiting.',
+    'Read the board, the old builds the gate keeps green.',
     'Author block docs, the live docs the Atris editor renders, with charts.',
     'Hand off; the voice acknowledges instantly and the agent answers.',
     'Ship the patch; the fixer works cleanly.',
