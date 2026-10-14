@@ -260,9 +260,19 @@ function installHook(root = process.cwd()) {
   return { hookPath, already: false };
 }
 
+// Name the shape of a fix by the punctuation it added: an aside put in
+// parentheses, a colon, a comma, a period, or a range hyphen. A line that
+// gained none of these just had its dash dropped. Two shapes join with " + ".
+const FIX_KINDS = [['(', 'parentheses'], [':', 'colon'], [',', 'comma'], ['.', 'period'], ['-', 'hyphen']];
+function fixKind(before, after) {
+  const count = (s, ch) => s.split(ch).length - 1;
+  const kinds = FIX_KINDS.filter(([ch]) => count(after, ch) > count(before, ch)).map(([, k]) => k);
+  return kinds.length ? kinds.join(' + ') : 'dropped';
+}
+
 // Apply every fixable rule's safe transform in place.
 // Returns { fixedCount, fixedFiles, changes }, where changes lists each edited
-// line as { file, line, before, after } so the writer can review the fix.
+// line as { file, line, before, after, kind } so the writer can review the fix.
 // With write: false it only reports what it would change (a dry run).
 function applyFixes(files, rules, { write = true } = {}) {
   const fixable = rules.filter((r) => typeof r.fix === 'function');
@@ -285,7 +295,7 @@ function applyFixes(files, rules, { write = true } = {}) {
         const nl = restore(r.fix(masked, { endsBlock: i === lines.length - 1 || !lines[i + 1].trim() }));
         if (nl !== line) { line = nl; fixedCount++; }
       }
-      if (line !== lines[i]) { changes.push({ file, line: i + 1, before: lines[i], after: line }); lines[i] = line; touched = true; }
+      if (line !== lines[i]) { changes.push({ file, line: i + 1, before: lines[i], after: line, kind: fixKind(lines[i], line) }); lines[i] = line; touched = true; }
     }
     if (touched) { if (write) fs.writeFileSync(file, lines.join('\n')); fixedFiles.push(file); }
   }
@@ -426,9 +436,18 @@ function detect(argv) {
     fixed = applyFixes(files, rules, { write: !dryRun });
     if (!json && fixed.fixedCount) {
       console.log(`\n  ✎ ${dryRun ? 'would fix' : 'fixed'} ${fixed.fixedCount} tell${fixed.fixedCount === 1 ? '' : 's'} in ${fixed.fixedFiles.length} file${fixed.fixedFiles.length === 1 ? '' : 's'}`);
+      // group the edits by shape, biggest first, so a writer reviews a large
+      // fix one kind at a time instead of hundreds of lines in a row
+      const groups = new Map();
+      for (const c of fixed.changes) groups.set(c.kind, [...(groups.get(c.kind) || []), c]);
+      const byKind = [...groups].sort((a, b) => b[1].length - a[1].length);
+      console.log(`    by kind: ${byKind.map(([k, cs]) => `${k} ${cs.length}`).join(', ')}`);
       if (!quiet) {
-        for (const c of fixed.changes) {
-          console.log(`\n    ${path.relative(process.cwd(), c.file)}:${c.line}\n      before  ${c.before.trim()}\n      after   ${c.after.trim()}`);
+        for (const [kind, cs] of byKind) {
+          console.log(`\n    ${kind} (${cs.length})`);
+          for (const c of cs) {
+            console.log(`\n    ${path.relative(process.cwd(), c.file)}:${c.line}\n      before  ${c.before.trim()}\n      after   ${c.after.trim()}`);
+          }
         }
       }
     }

@@ -433,6 +433,37 @@ test('in markdown the dash rule leaves inline code and fenced blocks alone', () 
   assert.equal(scanFile(tmpFile('doc.txt', body)).length, 5);
 });
 
+test('each fix is named by the shape it took, and the preview groups them by kind', () => {
+  const { applyFixes } = require('../commands/slop');
+  const D = '\u2014';
+  const body = [
+    `The gate ${D} the one CI runs ${D} blocks it.`,
+    `## Setup ${D} first run`,
+    `We checked it ${D} and it held.`,
+    `It ran fine ${D}`,
+    '',
+    `Pages 10${D}12 cover it.`,
+    `It works ${D} and the gate ${D} the strict one ${D} still holds.`,
+    `${D} a dash that opens the line`,
+    `We tried twice ${D} and it held.`,
+  ].join('\n');
+  const file = tmpFile('kinds.md', body);
+  const { changes } = applyFixes([file], RULES, { write: false });
+  assert.deepEqual(changes.map((c) => c.kind), [
+    'parentheses', 'colon', 'comma', 'period', 'hyphen', 'parentheses + comma', 'dropped', 'comma',
+  ]);
+  const lines = [];
+  const orig = console.log;
+  console.log = (...a) => lines.push(a.join(' '));
+  try { detect([file, '--dry-run']); } finally { console.log = orig; }
+  const out = lines.join('\n');
+  assert.match(out, /by kind: comma 2, parentheses 1, colon 1, period 1, hyphen 1, parentheses \+ comma 1, dropped 1/);
+  // the two comma fixes sit together under their own heading, biggest group first
+  assert.match(out, /comma \(2\)\n\n\s+\S+kinds\.md:3\n.*\n.*\n\n\s+\S+kinds\.md:9\n/);
+  assert.ok(out.indexOf('comma (2)') < out.indexOf('parentheses (1)'), 'biggest group comes first');
+  assert.equal(fs.readFileSync(file, 'utf8'), body, 'a dry run writes nothing');
+});
+
 test('a dry run shows what the fix would change and leaves the file alone', () => {
   const D = '\u2014';
   const body = ['# Notes', `We checked it, ${D} and it held.`, ''].join('\n');
