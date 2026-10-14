@@ -4593,7 +4593,9 @@ test('member run --minutes scales max-ticks past a single tick, untimed stays at
     // An untimed run keeps the single-tick default; a timed run must loop.
     const untimed = startMission('untimed member run defaults to one tick');
     const untimedRun = runCli(['member', 'run', 'mission-lead', '--mission-id', untimed.id, '--json'], { cwd: dir, env });
-    assert.equal(untimedRun.status, 0, untimedRun.stderr || untimedRun.stdout);
+    // The check fails on purpose, so the run exits 1 and says so.
+    assert.equal(untimedRun.status, 1, untimedRun.stderr || untimedRun.stdout);
+    assert.equal(JSON.parse(untimedRun.stdout).check_failed, true);
     const untimedPayload = JSON.parse(untimedRun.stdout);
     // With max-ticks 1 it is impossible to tick more than once.
     assert.equal(untimedPayload.tick_count, 1);
@@ -4601,7 +4603,9 @@ test('member run --minutes scales max-ticks past a single tick, untimed stays at
 
     const timed = startMission('timed member run loops for the budget');
     const timedRun = runCli(['member', 'run', 'mission-lead', '--mission-id', timed.id, '--minutes', '10', '--json'], { cwd: dir, env, timeout: 60000 });
-    assert.equal(timedRun.status, 0, timedRun.stderr || timedRun.stdout);
+    // The check fails on purpose, so the run exits 1 and says so.
+    assert.equal(timedRun.status, 1, timedRun.stderr || timedRun.stdout);
+    assert.equal(JSON.parse(timedRun.stdout).check_failed, true);
     const timedPayload = JSON.parse(timedRun.stdout);
     // max(4, ceil(600/300)) = 4 > 1, so it ticks past one before the breaker trips.
     // The old default of max-ticks 1 could never reach a second tick.
@@ -4772,7 +4776,9 @@ test('stale session lock rotates to a fresh session instead of grinding the erro
     const mission = JSON.parse(start.stdout).mission;
 
     const run = runCli(['member', 'run', 'mission-lead', '--mission-id', mission.id, '--minutes', '10', '--json'], { cwd: dir, env });
-    assert.equal(run.status, 0, run.stderr || run.stdout);
+    // The check fails on purpose, so the run exits 1 and says so.
+    assert.equal(run.status, 1, run.stderr || run.stdout);
+    assert.equal(JSON.parse(run.stdout).check_failed, true);
     const payload = JSON.parse(run.stdout);
     // Tick 1 ran with a verifier failure. Tick 2 hit the stale lock, retried
     // immediately on a fresh session, then ran with the second verifier
@@ -4843,7 +4849,9 @@ test('a resume against a vanished session rotates instead of grinding the error 
     const mission = JSON.parse(start.stdout).mission;
 
     const run = runCli(['member', 'run', 'mission-lead', '--mission-id', mission.id, '--minutes', '10', '--json'], { cwd: dir, env });
-    assert.equal(run.status, 0, run.stderr || run.stdout);
+    // The check fails on purpose, so the run exits 1 and says so.
+    assert.equal(run.status, 1, run.stderr || run.stdout);
+    assert.equal(JSON.parse(run.stdout).check_failed, true);
     const payload = JSON.parse(run.stdout);
     assert.equal(payload.pause_reason, 'consecutive-verifier-fails');
 

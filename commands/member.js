@@ -1040,7 +1040,7 @@ function memberRunCli(args, cwd, { live = false, missionId = '' } = {}) {
       : null;
     const receipt = receiptName ? readJson(path.join(runsDir, receiptName), null) : null;
     return { status: result.status, payload: receipt?.result?.kind === 'mission_run_summary'
-      ? { ran_ticks: receipt.result.ran_ticks } : null, stderr: '', errorReported: result.status !== 0 };
+      ? { ran_ticks: receipt.result.ran_ticks, ticks: receipt.result.ticks } : null, stderr: '', errorReported: result.status !== 0 };
   }
   let payload = null;
   try {
@@ -1351,7 +1351,12 @@ function memberRunWith(name, args, { quiet = false } = {}) {
   const waitingOnNativeGoal = caller === 'codex' && payload.requires_native_goal_start === true
     && memberRunUsesCallerSession(finalMission.runner);
   const noWorkStepExpected = hasFlag(runArgs, '--detach') || hasFlag(runArgs, '--dry-run');
-  const ok = (run.status === 0 && payload.ok !== false && (started || noWorkStepExpected)) || waitingOnNativeGoal;
+  // The work ran but its check failed: the run failed, even though a work
+  // step happened. Scripts and the caller read this from the exit code.
+  const lastRanTick = [...(Array.isArray(payload.ticks) ? payload.ticks : [])].reverse().find((tick) => tick && tick.ran === true);
+  const checkFailed = started && Boolean(String(finalMission.verifier || '').trim())
+    && lastRanTick?.verifier_passed === false && finalMission.status !== 'complete';
+  const ok = ((run.status === 0 && payload.ok !== false && (started || noWorkStepExpected)) || waitingOnNativeGoal) && !checkFailed;
   const reviewAsk = memberRunReviewAsk(name, payload, finalMission, cwd);
   const result = { ...payload, ok, started, state: finalMission.status, mission_id: mission.id,
     mission: finalMission, node_modules_linked: nodeModulesLinked, node_modules_source: nodeModulesSource,
@@ -1385,7 +1390,10 @@ function memberRunWith(name, args, { quiet = false } = {}) {
     result.autoland = require('../lib/member-autoland').autolandMemberRun({ mission: finalMission, cwd, summary, workerEngine });
     if (!asJson && !quiet) console.log(result.autoland.line);
   }
-  if (!ok) {
+  if (checkFailed) {
+    result.check_failed = true;
+    result.error = `the work ran but its check failed: ${finalMission.verifier || 'completion check'}`;
+  } else if (!ok) {
     result.error = result.ask || payload.detail || payload.error || payload.reason || payload.next_action
       || run.stderr || 'mission did not run a work step';
   }
@@ -4256,7 +4264,10 @@ function parseFrontmatter(content) {
       } else if (val.startsWith('[') && val.endsWith(']')) {
         result[currentKey] = val.slice(1, -1).split(',').map(s => s.trim().replace(/^["']|["']$/g, ''));
       } else {
-        result[currentKey] = val.replace(/^["']|["']$/g, '');
+        // Unwrap only a matching outer pair: `verify: node -e "process.exit(0)"`
+        // must keep its closing quote or the check is a shell syntax error.
+        const quoted = val.match(/^(["'])([\s\S]*)\1$/);
+        result[currentKey] = quoted ? quoted[2] : val;
       }
     }
   }
@@ -10463,7 +10474,11 @@ function memberGoFinishTask(owner, task, result, thrown = null) {
     const ready = taskDb.readyTask(db, { id: task.id, actor: owner, proof });
     if (ready.ready !== false) return { id: task.id, title: task.title, outcome: 'review', receipt: receipt || null };
   }
+  const ticks = Array.isArray(result && result.ticks) ? result.ticks : [];
+  const lastReason = String((ticks[ticks.length - 1] || {}).reason || (ticks[ticks.length - 1] || {}).error || '');
+  const outOfTime = /timeout|wall-exceeded/.test(lastReason);
   const why = thrown ? thrown.message
+    : outOfTime ? 'ran out of time before the work finished'
     : (result && result.error) || (result && result.started ? 'the check did not pass' : 'the run did not start');
   const reason = String(why || 'the run did not finish').split(/\r?\n/)[0].trim().slice(0, 200);
   try { taskDb.noteTask(db, { id: task.id, actor: owner, content: `Released by ${owner}: ${reason}` }); } catch {}
