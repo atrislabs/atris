@@ -481,7 +481,9 @@ function executeBuild(root, name, options = {}) {
         env,
       });
     } catch (err) {
-      endResource(err);
+      // A kill leaves no report of its own, so the error names the likely cause.
+      const end = endResource(err);
+      if (end && end.cause && err instanceof Error) err.message = `${err.message}; ${end.cause}`;
       throw err;
     }
     endResource();

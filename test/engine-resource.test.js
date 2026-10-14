@@ -873,9 +873,23 @@ test('compile builds record paired readings on success, SIGKILL and startup fail
     assert.equal(lines[1].error, undefined);
     assert.equal(lines[3].signal, 'SIGKILL');
     assert.match(lines[3].cause, /^killed \((machine memory low|cause unknown)\)$/);
+    // The thrown error names the cause, and stays the original error.
+    assert.ok(killed.error.message.includes(lines[3].cause), killed.error.message);
+    assert.equal(killed.error.status, null);
     assert.equal(lines[5].signal, undefined);
     assert.match(lines[5].error, /not found|No such file/i);
+    assert.doesNotMatch(failed.error.message, /killed \(/);
     console.log(`compile build readings: ${JSON.stringify([lines[3], lines[5]])}`);
+
+    // The real command prints the cause where the operator reads it.
+    const cli = require('node:child_process').spawnSync(process.execPath, [path.join(__dirname, '..', 'bin', 'atris.js'), 'compile', 'build', 'demo'], {
+      cwd: root,
+      encoding: 'utf8',
+      env: { ...process.env, ATRIS_SKIP_UPDATE_CHECK: '1', ATRIS_RUNNER_BIN: 'sh', ATRIS_RUNNER_COMMAND_TEMPLATE: 'sh -c "kill -KILL $$"' },
+    });
+    assert.equal(cli.status, 1, cli.stderr);
+    assert.match(cli.stderr, /Error: Command failed: .*; killed \((machine memory low|cause unknown)\)/);
+    console.log(`compile build CLI exit ${cli.status}: ${cli.stderr.trim().split('\n').pop()}`);
   } finally {
     fs.rmSync(root, { recursive: true, force: true });
   }
