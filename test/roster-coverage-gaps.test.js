@@ -361,3 +361,17 @@ test('a member job with no time given gets the roster limit plus review time, ne
     assert.equal(memberRunDefaultWallSeconds('builder', root), 900);
   }, { roster: '# roster\n\n## build\n- claude, max: 2 min\n' });
 });
+
+test('a mission that names its engine still gets the roster time limit for that engine', async () => {
+  const { resolveMissionTickRunner, missionTickTimeoutMs } = require('../commands/mission');
+  const hour = 60 * 60 * 1000;
+  await withRoom(async ({ root }) => {
+    const picked = resolveMissionTickRunner({ id: 'm-1', runner: 'claude', owner: 'builder' }, root);
+    assert.equal(picked.mission.roster_max_seconds, 45 * 60);
+    assert.equal(missionTickTimeoutMs(picked.mission, hour), 45 * 60 * 1000);
+    // A different engine than the roster's pick keeps the default limit.
+    const other = resolveMissionTickRunner({ id: 'm-2', runner: 'codex', owner: 'builder' }, root);
+    assert.equal(other.mission.roster_max_seconds, undefined);
+    assert.equal(missionTickTimeoutMs(other.mission, hour), 10 * 60 * 1000);
+  }, { roster: '# roster\n\n## build\n- claude, max: 45 min\n' });
+});

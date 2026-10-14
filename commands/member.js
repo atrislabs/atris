@@ -51,8 +51,7 @@ function ensureMemberLog(memberDir, { name, role, description, source = 'cli' } 
     description ? `- mission: ${description}` : '',
     `- source: ${source}`,
     '- status: ready_for_room',
-    '',
-  ].filter(Boolean).join('\n');
+  ].filter(Boolean).join('\n') + '\n';
   fs.writeFileSync(logPath, content, 'utf8');
   return logPath;
 }

@@ -434,7 +434,13 @@ function missionTickTimeoutMs(mission, remainingMs) {
 
 function resolveMissionTickRunner(mission, root = process.cwd(), options = {}) {
   if (String(mission && mission.runner || '').trim().toLowerCase() !== MISSION_AUTO_RUNNER) {
-    return { mission, engine_id: null, requested_engine: null, engine_fallback_reason: null };
+    // A named engine still gets the roster's time limit for that engine.
+    const runner = String(mission && mission.runner || '').trim().toLowerCase();
+    const pin = runner && !(Number(mission && mission.roster_max_seconds) > 0)
+      ? require('../lib/engine-registry').rosterPinFor('executor', runner, root, options)
+      : {};
+    const limited = pin.roster_max_seconds ? { ...mission, roster_max_seconds: pin.roster_max_seconds } : mission;
+    return { mission: limited, engine_id: null, requested_engine: null, engine_fallback_reason: null };
   }
   // A mission owned by a team member runs on that member's roster pick. An
   // explicit preferred engine (or a run's --engine) still wins, and with no
@@ -1723,7 +1729,18 @@ function appendMemberLog(owner, title, fields = {}, root = process.cwd()) {
       .map(([key, value]) => `- ${key}: ${String(value).replace(/\n/g, ' ')}`),
     '',
   ];
-  fs.appendFileSync(logPath, rows.join('\n'), 'utf8');
+  let lead = '';
+  try {
+    const size = fs.statSync(logPath).size;
+    if (size > 0) {
+      const fd = fs.openSync(logPath, 'r');
+      const last = Buffer.alloc(1);
+      fs.readSync(fd, last, 0, 1, size - 1);
+      fs.closeSync(fd);
+      if (last[0] !== 0x0a) lead = '\n';
+    }
+  } catch {}
+  fs.appendFileSync(logPath, lead + rows.join('\n'), 'utf8');
   return logPath;
 }
 
