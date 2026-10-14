@@ -244,10 +244,15 @@ test('atris member board --json --follow streams one JSON object per line', asyn
   const recent = new Date(Date.now() - 5_000).toISOString();
   const dir = fakeDir({ navigator: [`${recent} m-9 started: map the repo`] });
   const child = spawn(process.execPath, [cliPath, 'member', 'board', '--json', '--follow'], {
-    cwd: dir, env: { ...process.env, ATRIS_PROGRESS_DIR: dir },
+    cwd: dir, env: { ...process.env, ATRIS_PROGRESS_DIR: dir }, timeout: 20_000,
   });
+  // Capture closure now, even if the child exits before cleanup starts.
+  const closed = new Promise((resolve) => child.once('close', resolve));
   let out = '';
+  let stderr = '';
   child.stdout.on('data', (d) => { out += d; });
+  child.stderr.on('data', (d) => { stderr += d; });
+  child.on('error', (error) => { stderr += error.message; });
   // stdout chunks can end inside an object; parse only newline-terminated output.
   const lines = () => out.split('\n').slice(0, -1).filter(Boolean).map((l) => JSON.parse(l));
   const waitFor = async (n) => {
@@ -269,10 +274,11 @@ test('atris member board --json --follow streams one JSON object per line', asyn
     const byMember = Object.fromEntries(got.slice(1).map((e) => [e.member, e]));
     assert.deepEqual(byMember.navigator, { member: 'navigator', mission: 'm-9', at: now, kind: 'step', text: 'reading atris/MAP.md' });
     assert.deepEqual(byMember.scout, { member: 'scout', mission: 'm-10', at: now, kind: 'finished', text: 'failed', ok: false });
-    assert.equal(child.exitCode, null, 'still following');
+    assert.equal(child.exitCode, null, `still following: ${stderr}`);
+    assert.equal(child.signalCode, null, 'follow was not stopped by its timeout');
   } finally {
     child.kill('SIGINT');
-    await new Promise((r) => child.once('exit', r));
+    await closed;
     fs.rmSync(dir, { recursive: true, force: true });
   }
 });
