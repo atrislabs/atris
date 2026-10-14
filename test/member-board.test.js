@@ -239,6 +239,27 @@ test('watch names a member whose first run appears between redraws', () => {
   assert.deepEqual(changed([row('builder', 'working'), row('scout', 'done ok')], 67_000), [], 'and it drops off a minute after its last change');
 });
 
+test('watch says more runs ended between redraws than the board keeps', () => {
+  const now = Date.parse('2026-10-14T13:00:00Z');
+  const first = '2026-10-14T12:58:00Z m-1 started: [pid 11 engine claude] build\n2026-10-14T12:58:30Z m-1 finished: ok\n';
+  const quick = (n, how) => `2026-10-14T13:00:0${n}Z m-${n + 1} started: [pid ${20 + n} engine claude] try ${n}\n2026-10-14T13:00:0${n}Z m-${n + 1} finished: ${how}\n`;
+  const busy = first + quick(1, 'failed') + quick(2, 'ok') + quick(3, 'failed') + quick(4, 'failed')
+    + `2026-10-14T13:00:05Z m-6 started: [pid ${process.pid} engine claude] try 5\n`;
+  const done = changeTracker(60_000);
+  done([memberRow('builder', first, now)], now);
+  assert.deepEqual(done([memberRow('builder', busy, now + 6_000)], now + 6_000), ['builder done ok -> more runs -> done ok -> done failed -> done failed -> working'],
+    'the run seen last time fell off the 3 kept, so the note says some are not shown');
+  const open = changeTracker(60_000);
+  open([{ ...memberRow('builder', '2026-10-14T12:58:00Z m-1 started: [pid 11 engine claude] build\n', now), state: 'working' }], now);
+  assert.deepEqual(open([memberRow('builder', busy, now + 6_000)], now + 6_000), ['builder working -> more runs -> done ok -> done failed -> done failed -> working'],
+    'how the watched run ended is not kept either');
+  const fits = changeTracker(60_000);
+  fits([memberRow('builder', first, now)], now);
+  const three = first + quick(1, 'failed') + quick(2, 'ok') + `2026-10-14T13:00:05Z m-6 started: [pid ${process.pid} engine claude] try 3\n`;
+  assert.deepEqual(fits([memberRow('builder', three, now + 6_000)], now + 6_000), ['builder done ok -> done failed -> done ok -> working'],
+    'when the run seen last time is still kept, nothing is missing');
+});
+
 test('watch names the runs a new member already ended before its current one', () => {
   const now = Date.parse('2026-10-14T13:00:00Z');
   const builder = { ...memberRow('builder', '2026-10-14T12:58:00Z m-1 started: build\n', now), state: 'working' };
