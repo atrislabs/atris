@@ -16102,6 +16102,24 @@ test('task serve exposes a local task factory API', async () => {
         taskStore.close();
       }
     };
+    // Side tasks that only need a review state for current and queue to read
+    // are readied and reviewed through the same store calls the CLI makes.
+    const readySeeded = (id, actor, proof) => {
+      const db = taskStore.open(dbPath);
+      try {
+        assert.equal(taskStore.readyTask(db, { id, actor, proof }).ready, true);
+      } finally {
+        taskStore.close();
+      }
+    };
+    const reviewSeeded = (id, proof, nextTask) => {
+      const db = taskStore.open(dbPath);
+      try {
+        assert.equal(taskStore.reviewTask(db, { id, actor: 'codex-review', reward: 0, proof, nextTask }).reviewed, true);
+      } finally {
+        taskStore.close();
+      }
+    };
 
 	    const html = await fetch(base).then(r => r.text());
 	    assert.match(html, /Atris Task Factory/);
@@ -16427,32 +16445,13 @@ test('task serve exposes a local task factory API', async () => {
 
 	    const apiContinueTask = seedTask('API certified task with continuation action', 'api-review-state', 'OBL-934');
 	    claimSeeded(apiContinueTask.id, 'codex');
-	    assert.equal(runCli([
-	      'task', 'ready', apiContinueTask.display_id,
-	      '--as', 'codex',
-	      '--proof', 'node --check test/commands.test.js passed before API continue-work filter',
-	    ], { cwd: dir, env }).status, 0);
-	    assert.equal(runCli([
-	      'task', 'review', apiContinueTask.display_id,
-	      '--reward', '0',
-	      '--as', 'codex-review',
-	      '--proof', 'node --test test/commands.test.js passed during API continue-work filter',
-	      '--next', 'Run the API continuation follow-up',
-	    ], { cwd: dir, env }).status, 0);
+	    readySeeded(apiContinueTask.id, 'codex', 'node --check test/commands.test.js passed before API continue-work filter');
+	    reviewSeeded(apiContinueTask.id, 'node --test test/commands.test.js passed during API continue-work filter', 'Run the API continuation follow-up');
 
 	    const apiWaitingTask = seedTask('API certified task waiting for human accept', 'api-review-state', 'OBL-934');
 	    claimSeeded(apiWaitingTask.id, 'codex');
-	    assert.equal(runCli([
-	      'task', 'ready', apiWaitingTask.display_id,
-	      '--as', 'codex',
-	      '--proof', 'node --check test/commands.test.js passed before API human-accept filter',
-	    ], { cwd: dir, env }).status, 0);
-	    assert.equal(runCli([
-	      'task', 'review', apiWaitingTask.display_id,
-	      '--reward', '0',
-	      '--as', 'codex-review',
-	      '--proof', 'node --test test/commands.test.js passed during API human-accept filter',
-	    ], { cwd: dir, env }).status, 0);
+	    readySeeded(apiWaitingTask.id, 'codex', 'node --check test/commands.test.js passed before API human-accept filter');
+	    reviewSeeded(apiWaitingTask.id, 'node --test test/commands.test.js passed during API human-accept filter');
 
 	    const apiContinueCommand = `atris task continue-work ${apiContinueTask.display_id} --as codex --json`;
 	    const apiContinueCurrent = await fetch(`${base}/api/tasks/current?owner=codex&goal_id=OBL-934&review_state=continue-work`).then(r => r.json());
@@ -16705,11 +16704,7 @@ test('task serve exposes a local task factory API', async () => {
 
 	    const apiOtherReviewTask = seedTask('API other owner review stays untouched', 'api-scope', 'OBL-930');
 	    claimSeeded(apiOtherReviewTask.id, 'alice');
-	    assert.equal(runCli([
-	      'task', 'ready', apiOtherReviewTask.display_id,
-	      '--as', 'alice',
-	      '--proof', 'node --check test/commands.test.js passed before API other owner review',
-	    ], { cwd: dir, env }).status, 0);
+	    readySeeded(apiOtherReviewTask.id, 'alice', 'node --check test/commands.test.js passed before API other owner review');
 	    const apiOtherReviewStepResponse = await fetch(`${base}/api/tasks/current/step?goal_id=OBL-930`, {
 	      method: 'POST',
 	      headers: { 'content-type': 'application/json' },
