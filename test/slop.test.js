@@ -1922,6 +1922,23 @@ test('fix gives a pair of dashes around a short stock phrase commas', () => {
   ]);
 });
 
+test('fix gives a pair of dashes around a lone linking word commas', () => {
+  // "however" read as a bracketed aside: "Ship it (however) when green"
+  const file = tmpFile('link-dash-pair.md', [
+    'Ship it \u2014 however \u2014 when green.',
+    '',
+    'The gate \u2014 too \u2014 blocks it.',
+    '',
+    'Ship it \u2014 however late \u2014 today.',
+  ].join('\n'));
+  const { changes } = applyFixes([file], RULES);
+  assert.deepEqual(changes.map((c) => c.after), [
+    'Ship it, however, when green.',
+    'The gate, too, blocks it.',
+    'Ship it (however late) today.',
+  ]);
+});
+
 test('fix reads no word that only says when as the subject of a clause', () => {
   // "now ships" after a dash read as a bare subject and a verb
   const file = tmpFile('when-word.md', [
