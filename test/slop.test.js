@@ -291,6 +291,21 @@ test('a self-scan skips the rule tables but still checks the rest of the scanner
   // a copy elsewhere is a different file, so its tables are scanned like any code
   const copy = tmpFile('slop.js', fs.readFileSync(self, 'utf8'));
   assert.ok(scanFile(copy).length > 0, 'the skip is tied to the scanner file, not its name');
+  // a rule that matches every line shows what the self-scan skips: only the
+  // two tables and lines marked to ignore, so a dash anywhere else is caught
+  const lines = fs.readFileSync(self, 'utf8').split('\n');
+  const tables = new Set();
+  let inside = false;
+  lines.forEach((line, i) => {
+    if (/^const (?:RULES|PAIR_RULES) = \[/.test(line)) inside = true;
+    if (line.includes('slop-ignore-next-line')) tables.add(i + 1);
+    else if (line.includes('slop-ignore')) tables.add(i);
+    if (inside) tables.add(i);
+    if (inside && /^\];/.test(line)) inside = false;
+  });
+  const seen = new Set(scanFile(self, [{ id: 'any', sev: 'warn', re: /^/ }], []).map((f) => f.line - 1));
+  assert.ok(tables.size > 50 && tables.size < lines.length / 4, 'both tables are found and stay a small part of the file');
+  lines.forEach((line, i) => assert.equal(seen.has(i), !tables.has(i), `line ${i + 1} is ${tables.has(i) ? 'skipped' : 'scanned'}`));
 });
 
 test('the em dash fix turns a paired aside into parentheses and a lone dash into a comma', () => {
