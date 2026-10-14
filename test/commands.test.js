@@ -9349,11 +9349,23 @@ test('task note, show, and export expose a dialogue projection for UI surfaces',
   try {
     fs.mkdirSync(path.join(dir, 'atris'), { recursive: true });
 
-    const add = runCli(['task', 'add', 'Design task dialogue cards', '--tag', 'ui', '--json'], { cwd: dir, env });
-    assert.equal(add.status, 0, add.stderr);
-    const addPayload = JSON.parse(add.stdout);
-    const id = addPayload.task_id;
-    const ref = addPayload.task.display_id;
+    // Seed only the parent; dialogue writes and readers still use the CLI.
+    let id;
+    let ref;
+    const db = taskStore.open(dbPath);
+    try {
+      const created = taskStore.addTask(db, {
+        title: 'Design task dialogue cards',
+        tag: 'ui',
+        workspaceRoot: taskStore.workspaceRoot(dir),
+      });
+      assert.equal(created.inserted, true);
+      id = created.id;
+      ref = taskStore.withTaskDisplayRefs([taskStore.getTask(db, id)])[0].display_id;
+      assert.ok(ref);
+    } finally {
+      taskStore.close();
+    }
 
     const note = runCli(['task', 'note', ref, 'User wants Cursor-like task chat', '--as', 'codex'], { cwd: dir, env });
     assert.equal(note.status, 0, note.stderr);

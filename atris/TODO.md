@@ -23,6 +23,8 @@ Details for any task: atris task show <ID>
 
 ## Review
 
+- **[AIC-27]** Seed dialogue parent fixture in process · auto-improver
+  **Done looks like:** Developers finish dialogue checks sooner because setup starts one fewer command.
 - **[AIC-26]** Seed compact event parent fixture in process · auto-improver
   **Done looks like:** Event output checks pass with direct parent setup.
 - **[AIC-25]** Seed existing follow-up drain parent fixtures · auto-improver

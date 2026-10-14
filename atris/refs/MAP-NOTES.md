@@ -741,7 +741,7 @@ MCP stdio request flow: `mcp/atris-mcp/index.mjs:142` reads requests while desig
 - `atris brain compile` counts `.atris/state/task_episodes.jsonl` as episode state via `commands/brain.js:499` (`collectState`) and `commands/brain.js:561-566` (`countStateRows`/`nextMove`)
 - `atris brain scorecard --verify` converts reviewed task episodes into one latest-review scorecard per task via `commands/brain.js:1214-1222` (`latestTaskEpisodes`/`recordTaskEpisodeScorecards`/`verifyTaskEpisodeScorecards`)
 - `atris brain compile` uses the latest scorecard's `next_task_suggestion` before the generic business-loop fallback when no open TODO remains (`commands/brain.js:194-265`)
-- `atris task show <id> --json` emits one task card with dialogue and events
+- `atris task show <id> --json` emits one task card with dialogue and events; `test/commands.test.js:9344` seeds its dialogue parent through the real task store and computes its display reference in process, while note, show, large JSON pipe, and export checks run the CLI
 - `atris task setup --import-todo` bootstraps durable state and writes `.atris/state/tasks.projection.json`
 - `atris task serve` starts the local Task Factory board backed by the same task events and projection; the board shows goals, work streams, task objectives, parent/child lineage, proof, lessons, and the compounding chain
 - task projections are enriched with `goals`, `streams`, `objective`, `review`, `lineage`, `history`, and `surface` fields for compact visual surfaces; older done rows and long event/message trails stay behind explicit task history commands
