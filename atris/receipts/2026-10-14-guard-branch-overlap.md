@@ -357,3 +357,45 @@ Files edited: this receipt and `atris/team/architect/logs/2026-10-14.md`. Artifa
 Progress: one additional broad-suite failure attributed to unchanged main; two matching failure outputs; 13 required folder checks passing, exit 0.
 next_push: Compare the live-subprocess lock failure at test/mission-run-reliability.test.js:211 with unchanged main in sequential isolated runs.
 layer: beliefs
+
+
+## Live-child lock failure compared separately
+
+Recorded that the remaining live-child lock failure also occurs on unchanged main. Both actual CLI test runs failed at the same assertion, and all 13 required folder checks passed, exit 0. This evidence supports limited baseline attribution, not a cause or approval to land the protected repair.
+
+Plan: unchanged input -> one real CLI case -> separate state -> combined input -> compare -> required folder checks.
+
+Inputs: unchanged main `a8b9f17b2ed955df4fdff1717cc6057aea7f480a` in `/var/folders/t1/2_4kmb5n4c71dxm26zc8dgzr0000gn/T/atris-map-baseline-djmm0y95`; combined tree `554b49cbbd0b172b00470b4ab382987d26a83531` in `/var/folders/t1/2_4kmb5n4c71dxm26zc8dgzr0000gn/T/atris-lock-suite-lp74sw3m`.
+
+Actual command in each saved copy: `node --test --test-name-pattern='the mission lock names the live tick subprocess until it exits' test/mission-run-reliability.test.js`. Python invoked the runs sequentially, with separate `ATRIS_TEST_STATE_DIR` values under `/var/folders/t1/2_4kmb5n4c71dxm26zc8dgzr0000gn/T/atris-live-child-check-qhsvioku`. The existing test invokes the real CLI with its own slow runner fixture.
+
+```text
+baseline: tests 1, pass 0, fail 1, exit 1
+combined: tests 1, pass 0, fail 1, exit 1
+both: AssertionError [ERR_ASSERTION]: tick subprocess never became the mission lock owner
+both: test/mission-run-reliability.test.js:246:12
+```
+
+Raw outputs: `baseline-output.txt` and `combined-output.txt` in the proof folder above. `git diff a8b9f17b2ed955df4fdff1717cc6057aea7f480a 554b49cbbd0b172b00470b4ab382987d26a83531 -- test/mission-run-reliability.test.js commands/mission.js` exited 0 with no output. Separate state and sequential execution reduce one source of interference; they do not identify root cause or establish full-suite health.
+
+Rerunnable required verify: `node --test test/worktree-removal-guard.test.js test/member-tidy.test.js`, current checkout, exit 0. Actual output excerpt:
+
+```text
+✔ tidy keeps old private and shared git locks and reports every path and age
+✔ regression cleanup keeps old private and shared git locks created by the real check
+ℹ tests 13
+ℹ suites 0
+ℹ pass 13
+ℹ fail 0
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 2973.370083
+```
+
+Files edited: this receipt and `atris/team/architect/logs/2026-10-14.md`. Artifacts: two raw test outputs and two separate disposable state folders. Commands run: brain activate, Atris boot, mission status/goal, task list/new/claim/note/ready, Git status/log/remote/diff, targeted reads/search, sequential exact-case comparison, required folder check, brain compile, whitespace check, explicit staging, commit and push. Brain commands only propose generated writes. Existing router and rendered task-view edits excluded. No production changes, new repository filenames, or dependencies.
+
+Progress: one remaining broad-suite failure attributed to unchanged main with separate state; two matching failures; 13 required folder checks pass.
+Learned: the previously concurrent comparison was not isolation evidence; separate test-state folders still reproduce this failure.
+next_push: Review the combined repair's folder-removal call sites against the saved eight-case fleet audit and record any unguarded path before protected landing.
+layer: beliefs
