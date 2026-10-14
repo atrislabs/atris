@@ -8,6 +8,7 @@ const { spawn, spawnSync } = require('child_process');
 const { hasFlag, readFlag, readIntFlag } = require('../lib/arg-parser');
 const { memberProcessPrompt } = require('../lib/member-context');
 const { memberIdentityLine, missionObjectiveLine } = require('../lib/member-identity');
+const { formatToolStep, appendProgress, reportProgress } = require('../lib/member-progress');
 const {
   compactErrorPayload,
   compactSuccessPayload,
@@ -9377,6 +9378,9 @@ function spawnClaudeTick(mission, opts) {
       env: { ...gitGuard.env, ATRIS_DISPATCH_DEPTH: String(dispatchDepth.depth + 1) },
     });
     updateMissionLockOwner(missionLock, proc.pid, { phase: 'tick' });
+    const progressMember = mission.owner || 'mission';
+    const seenToolIds = new Set();
+    appendProgress(progressMember, `started: ${mission.objective || ''}`, mission.id);
 
     let stdoutBuf = '';
     let observedSessionIds = new Set();
@@ -9417,6 +9421,14 @@ function spawnClaudeTick(mission, opts) {
         try {
           const ev = JSON.parse(line);
           if (ev.session_id) observedSessionIds.add(ev.session_id);
+          if (ev.type === 'assistant' && Array.isArray(ev.message?.content)) {
+            for (const block of ev.message.content) {
+              const step = formatToolStep(block, cwd);
+              if (!step || seenToolIds.has(block.id)) continue;
+              if (block.id) seenToolIds.add(block.id);
+              reportProgress(progressMember, step, mission.id);
+            }
+          }
           if (ev.type === 'rate_limit_event' && ev.rate_limit_info) {
             rateLimitInfo = ev.rate_limit_info;
           }
@@ -9443,6 +9455,7 @@ function spawnClaudeTick(mission, opts) {
       if (signal) signal.removeEventListener?.('abort', onAbort);
       updateMissionLockOwner(missionLock, missionLock?.driverPid);
       const ok = code === 0 && !isError && !timedOut && !aborted;
+      appendProgress(progressMember, `finished: ${ok ? 'ok' : 'failed'}`, mission.id);
       const errStr = stderr.slice(-2000);
       const authExpired = !ok && missionRunnerAuthExpired(errStr, finalText, stdoutBuf);
       resolve({
