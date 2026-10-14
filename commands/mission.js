@@ -3910,6 +3910,30 @@ function readTasteReviewHistory(root, limit = 4) {
   return { accepted, revised };
 }
 
+// Why the mission's own task was last sent back, or '' when it was not. Ticks
+// run in a worktree, so fall back to the main checkout's task projection.
+function readBoundTaskTurnDown(mission, root) {
+  const bound = mission?.xp_task || mission?.selected_target_task || null;
+  if (!bound) return '';
+  const keys = new Set([bound.task_id, bound.id, bound.ref, bound.task_ref].filter(Boolean).map(String));
+  if (!keys.size) return '';
+  const roots = [root];
+  const common = spawnSync('git', ['rev-parse', '--path-format=absolute', '--git-common-dir'], { cwd: root, encoding: 'utf8' });
+  if (common.status === 0 && String(common.stdout || '').trim()) roots.push(path.dirname(String(common.stdout).trim()));
+  for (const dir of roots) {
+    const projection = readJson(path.join(dir, '.atris', 'state', 'tasks.projection.json'));
+    const tasks = Array.isArray(projection?.tasks) ? projection.tasks : [];
+    const task = tasks.find((row) => row && [row.id, row.display_id, row.legacy_ref].some((key) => key && keys.has(String(key))));
+    if (!task) continue;
+    const metadata = task.metadata && typeof task.metadata === 'object' ? task.metadata : {};
+    if (metadata.approval_status && metadata.approval_status !== 'revise') return '';
+    const events = (Array.isArray(task.events) ? task.events : []).filter((event) => event?.event_type === 'revision_requested');
+    const note = metadata.human_revision_note || events[events.length - 1]?.payload?.note || '';
+    return missionTasteSnippet(String(note), 600);
+  }
+  return '';
+}
+
 function missionTasteMemorySignals(text) {
   const definitions = [
     ['plain_language', 'the operator asks for plain English', /\b(plain|jargon|feynman|understand|simple|clarify|clarity)\b/i],
@@ -8938,6 +8962,16 @@ function buildTickPrompt(mission, tickIndex, maxTicks, frozen, pings = [], cwd =
       checkFeedback,
     ]
     : [];
+  let turnDown = '';
+  try { turnDown = readBoundTaskTurnDown(mission, mission.worktree_root || mission.worktree?.path || cwd); } catch {}
+  const turnDownLines = turnDown
+    ? [
+      ``,
+      `## why the last try was turned down`,
+      `the reviewer sent this task back. fix this before anything else.`,
+      turnDown,
+    ]
+    : [];
   const preloadedContextLines = buildPreloadedMemberContextLines(mission, cwd);
   const lines = [
     `# Mission Tick ${tickIndex}/${maxTicks}`,
@@ -8953,6 +8987,7 @@ function buildTickPrompt(mission, tickIndex, maxTicks, frozen, pings = [], cwd =
     `**Last tick:** ${mission.last_tick_at || 'never'}`,
     ...missionBudgetPromptLines(mission),
     ...checkFeedbackLines,
+    ...turnDownLines,
     ...(sharedProcess ? ['', sharedProcess] : []),
     ...preloadedContextLines,
     ``,
