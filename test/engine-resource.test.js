@@ -1370,6 +1370,11 @@ test('every engine started through a runner or profile variable records its run 
             const alias = new RegExp(`\\b(?:const|let|var)\\s+${escaped}\\s*=|\\b(?:const|let|var)\\s*[{[](?:[^=;]*?[,:{[])?\\s*${escaped}\\s*[,}\\]=]`);
             const hides = ([open, close]) => !(open <= fnStart && fnStart < close) || (internalOnly && open === fnStart);
             if (definitionSpans(code).some(([open, close]) => open < call.index && call.index < close && hides([open, close]) && (parametersOf(open).includes(call[1]) || alias.test(visible.slice(open, call.index))))) continue;
+            // A loop or catch variable with the name hides it inside that block only.
+            const blockHeader = new RegExp(`\\b(?:for\\s*\\(\\s*(?:const|let|var)\\s+${escaped}\\s+(?:of|in)\\b[^{;]*|catch\\s*\\(\\s*${escaped}\\s*)\\)\\s*\\{`, 'g');
+            const stillOpen = (header) => [...code.slice(header.index + header[0].length - 1, call.index).matchAll(/'(?:\\.|[^'\\])*'|"(?:\\.|[^"\\])*"|`(?:\\.|[^`\\])*`|[{}]/g)]
+              .reduce((depth, token) => depth + (token[0] === '{' ? 1 : token[0] === '}' ? -1 : 0), 0) > 0;
+            if ([...code.slice(0, call.index).matchAll(blockHeader)].some(stillOpen)) continue;
             const prefix = code.slice(0, call.index);
             if (/\bfunction\s*$|\.\s*$/.test(prefix)) continue;
             // Keep nested calls and quoted commas in their own argument.
@@ -1545,6 +1550,13 @@ test('every engine started through a runner or profile variable records its run 
     for (const header of ['function other({ launch: run })', 'function other({ run = launch })', 'function other({ launcher })']) {
       assert.deepStrictEqual(planted(launcher('', `${header} {\n  launch(resolveClaudeRunnerBin());\n}\n`)), ['commands/planted.js:3 runner'], `a parameter that does not bind the name still calls the launcher: ${header}`);
     }
+    // A loop or catch variable hides the launcher name inside its own block only.
+    for (const block of ['for (const launch of list) {', 'for (let launch in tools) {', 'for (const launch of Object.values(tools)) {', 'try {\n    run();\n  } catch (launch) {']) {
+      assert.deepStrictEqual(planted(launcher('', `function other(list) {\n  ${block}\n    launch(resolveClaudeRunnerBin());\n  }\n}\n`)), [], `a block variable hides the launcher name: ${block}`);
+      assert.deepStrictEqual(planted(launcher('', `function other(list) {\n  ${block}\n    noop(launch);\n  }\n  launch(resolveClaudeRunnerBin());\n}\n`)), ['commands/planted.js:3 runner'], `a call after the block still reaches the launcher: ${block}`);
+    }
+    assert.deepStrictEqual(planted(launcher('', 'for (const launch of list) {\n  launch(resolveClaudeRunnerBin());\n}\n')), [], 'a top-level loop variable hides the launcher name');
+    assert.deepStrictEqual(planted(launcher('', 'try {\n  run();\n} catch (launcher) {\n  launch(resolveClaudeRunnerBin());\n}\n')), ['commands/planted.js:3 runner'], 'a longer catch name still calls the launcher');
   }
   assert.deepStrictEqual(planted('const launch = function launch(runner) {\n  spawnSync(runner, args);\n};\nlaunch(resolveClaudeRunnerBin());\n'), ['commands/planted.js:2 runner'], 'matching expression and variable names keep external arguments visible');
   assert.deepStrictEqual(planted('const launch = function launch(runner) {\n  launch(resolveClaudeRunnerBin());\n  spawnSync(runner, args);\n};\n'), ['commands/planted.js:3 runner'], 'the defining assignment does not hide same-name recursion');
