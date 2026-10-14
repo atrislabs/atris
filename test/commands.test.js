@@ -18351,13 +18351,8 @@ test('renderHumanSuggestion keeps the default suggestion briefing plain and narr
 test('visualize exits 1 when no journal exists', () => {
   const dir = makeTempDir();
   try {
-    initWorkspace(dir);
-    // Remove any auto-created log
-    const logsDir = path.join(dir, 'atris', 'logs');
-    if (fs.existsSync(logsDir)) {
-      fs.rmSync(logsDir, { recursive: true, force: true });
-      fs.mkdirSync(logsDir, { recursive: true });
-    }
+    // Visualize without a prompt reads only today's journal, so an empty logs folder is the whole setup.
+    fs.mkdirSync(path.join(dir, 'atris', 'logs'), { recursive: true });
     const res = runCli(['visualize'], { cwd: dir });
     assert.equal(res.status, 1);
     assert.match(res.stdout, /atris log/i);
@@ -18369,7 +18364,7 @@ test('visualize exits 1 when no journal exists', () => {
 test('visualize exits 1 when inbox is empty', () => {
   const dir = makeTempDir();
   try {
-    initWorkspace(dir);
+    fs.mkdirSync(path.join(dir, 'atris'), { recursive: true });
     writeTodayLog(dir, '# Log\n\n## Inbox\n\n\n## Notes\n\n');
     const res = runCli(['visualize'], { cwd: dir });
     assert.equal(res.status, 1);
@@ -18382,7 +18377,7 @@ test('visualize exits 1 when inbox is empty', () => {
 test('visualize renders breakdown for inbox items', () => {
   const dir = makeTempDir();
   try {
-    initWorkspace(dir);
+    fs.mkdirSync(path.join(dir, 'atris'), { recursive: true });
     writeTodayLog(dir, '# Log\n\n## Inbox\n\n- **I1:** Build the dashboard\n\n## Notes\n\n');
     const res = runCli(['visualize'], { cwd: dir });
     assert.equal(res.status, 0, res.stderr);
