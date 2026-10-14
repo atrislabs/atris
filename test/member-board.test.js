@@ -446,6 +446,29 @@ test('compact footers drop all before dropping a shared failure reason', () => {
   }
 });
 
+test('tiny footers shorten the hidden prefix before cutting failure counts', () => {
+  const dir = fakeDir({
+    f1: [`${at(80)} m-1 finished: failed (timed out)`],
+    f2: [`${at(90)} m-2 finished: failed (engine error)`],
+    f3: [`${at(100)} m-3 finished: failed (bad exit 2)`],
+    halt: [`${at(110)} m-4 finished: stopped`],
+  });
+  try {
+    const rows = readBoard({ dir, now: NOW });
+    assert.equal(renderBoard(rows, dir, 0, 40, 4).split('\n')[3],
+      '3 more not shown (2 failed, 1 stopped)');
+    const footer = '3 hidden (2 failed, 1 stopped)';
+    assert.equal(renderBoard(rows, dir, 0, footer.length, 4).split('\n')[3], footer);
+    assert.equal(renderBoard(rows, dir, 0, footer.length - 1, 4).split('\n')[3],
+      `${footer.slice(0, footer.length - 4)}...`);
+    const earlier = rows.map((r, i) => i === 1 ? { ...r, state: 'working' } : r);
+    const earlierFooter = '3 hidden (1 failed, 1 stopped, 1 earlier failure)';
+    assert.equal(renderBoard(earlier, dir, 0, earlierFooter.length, 4).split('\n')[3], earlierFooter);
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
 test('hidden failures that share a reason say it once in the count', () => {
   const logs = {};
   for (let i = 1; i <= 4; i++) logs[`f${i}`] = [`${at(900 + i)} m-${i} started: job ${i}`, `${at(800 + i)} m-${i} finished: failed (signed out)`];
