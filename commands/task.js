@@ -10154,7 +10154,9 @@ function cmdReady(args) {
         ? `double-check complete; autoland will accept this ${whenLands}.`
         : needsExternalVerifier
         ? 'proof is ready; this verifier needs a second agent review because autoland cannot rerun it.'
-        : `proof is ready; autoland runs the second check and lands it ${whenLands}.`)
+        // Autoland accepts; landing is a git fact it proves separately. Do not
+        // promise "lands it" for work that may not be committed or merged.
+        : `proof is ready; autoland runs the second check and accepts it ${whenLands}; it lands once committed and merged.`)
       : (agentCertified
         ? 'double-check complete; ready to keep moving. XP is awarded only after the human approves the task.'
         : 'proof is ready; one more agent check before human approval. XP waits for the human.'),

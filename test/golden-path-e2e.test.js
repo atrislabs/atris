@@ -367,14 +367,15 @@ test('packed golden path follows printed talk do ready and autoland handoffs', (
       'New users can now finish their first proof loop faster, skipping the hidden setup steps.',
     ]);
     assertGoldenPathStep(ready, 'task-ready after first-talk do');
-    assert.match(ready.stdout, /proof is ready; autoland runs the second check and lands it once the hourly heartbeat runs \(start one with atris autoland tick\)\./);
+    assert.match(ready.stdout, /proof is ready; autoland runs the second check and accepts it once the hourly heartbeat runs \(start one with atris autoland tick\); it lands once committed and merged\./);
 
     const landed = runInstalled(['autoland', 'tick']);
     assertGoldenPathStep(landed, 'autoland tick');
-    // The starter edit is never committed and its check is `git diff --check`,
-    // so the tick accepts it but must not call it landed.
+    // The starter edit is never committed, the toy repo has no origin, and its
+    // check is `git diff --check`, so the tick accepts it but must not call it
+    // landed.
     assert.match(landed.stdout, /\b0 landed\b/);
-    assert.match(landed.stdout, new RegExp(`1 accepted but not proven landed \\(${taskRef} no.op\\)`));
+    assert.match(landed.stdout, new RegExp(`1 accepted but not proven landed \\(${taskRef} (unverified|no op)\\)`));
 
     const taskResult = runInstalled(['task', 'show', taskRef, '--json']);
     assertGoldenPathStep(taskResult, 'landed task');

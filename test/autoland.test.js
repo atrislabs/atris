@@ -104,7 +104,7 @@ function certifiedTask(repo, title, { tag = 'code' } = {}) {
   return String(id);
 }
 
-function certifiedVerifiedTask(repo, title, { verify, proof = '', tag = 'code' } = {}) {
+function certifiedVerifiedTask(repo, title, { verify, proof = '', tag = 'code', work = false } = {}) {
   const created = runCli(['task', 'new', title, '--tag', tag, '--json'], repo);
   assert.equal(created.status, 0, created.stderr || created.stdout);
   const id = JSON.parse(created.stdout).task?.display_id
@@ -113,6 +113,7 @@ function certifiedVerifiedTask(repo, title, { verify, proof = '', tag = 'code' }
     || JSON.parse(created.stdout).id;
   assert.ok(id, `no task id in: ${created.stdout.slice(0, 200)}`);
   assert.equal(runCli(['task', 'claim', String(id), '--as', 'builder'], repo).status, 0);
+  if (work) verify = shipWork(repo, title, verify);
   const builderArgs = ['task', 'ready', String(id), '--verify', verify, '--as', 'builder'];
   if (proof) builderArgs.push('--proof', proof);
   const builderReady = runCli(builderArgs, repo);
@@ -124,29 +125,28 @@ function certifiedVerifiedTask(repo, title, { verify, proof = '', tag = 'code' }
   return String(id);
 }
 
-// Real work: claimed, then a committed change on master whose own test can
-// fail, then two reviews. The commit is dated after the claim so the landing
-// proof measures it as this task's change.
-function landedWorkTask(repo, title) {
-  const created = runCli(['task', 'new', title, '--tag', 'code', '--json'], repo);
-  assert.equal(created.status, 0, created.stderr || created.stdout);
-  const id = String(JSON.parse(created.stdout).task?.display_id || JSON.parse(created.stdout).task?.id);
-  assert.equal(runCli(['task', 'claim', id, '--as', 'builder'], repo).status, 0);
-  fs.mkdirSync(path.join(repo, 'test'), { recursive: true });
-  fs.writeFileSync(path.join(repo, 'test', 'feature.test.js'), "require('node:test')('feature', () => {});\n");
-  runGit(['add', 'test/feature.test.js'], repo);
-  const later = new Date(Date.now() + 60 * 1000).toISOString();
-  const committed = spawnSync('git', ['commit', '-q', '-m', 'Add the feature test'], {
-    cwd: repo,
-    encoding: 'utf8',
-    env: { ...process.env, GIT_AUTHOR_DATE: later, GIT_COMMITTER_DATE: later },
-  });
-  assert.equal(committed.status, 0, committed.stderr);
-  for (const actor of ['builder', 'codex-review']) {
-    const ready = runCli(['task', 'ready', id, '--verify', 'node --test test/feature.test.js', '--as', actor], repo);
-    assert.equal(ready.status, 0, ready.stderr || ready.stdout);
+// Real work for a tick to land: a committed test file pushed to an origin
+// remote, so the landing proof can find it on origin/master. Returns the
+// check that exercises it, chained before any extra check the test wants.
+function shipWork(repo, name, extraVerify = '') {
+  const origin = `${repo}-origin.git`;
+  if (!fs.existsSync(origin)) {
+    runGit(['init', '-q', '--bare', '-b', 'master', origin], repo);
+    runGit(['remote', 'add', 'origin', origin], repo);
   }
-  return id;
+  const slug = String(name).toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '').slice(0, 40);
+  const file = `test/${slug}.test.js`;
+  fs.mkdirSync(path.join(repo, 'test'), { recursive: true });
+  fs.writeFileSync(path.join(repo, file), "require('node:test')('feature', () => {});\n");
+  runGit(['add', file], repo);
+  runGit(['commit', '-q', '-m', `Ship ${slug}`], repo);
+  runGit(['push', '-q', 'origin', 'master'], repo);
+  const check = `node --test ${file}`;
+  return extraVerify ? `${check} && ${extraVerify}` : check;
+}
+
+function landedWorkTask(repo, title) {
+  return certifiedVerifiedTask(repo, title, { verify: '', work: true });
 }
 
 function replaceLatestProof(repo, ref, proof) {
@@ -181,11 +181,11 @@ test('digest and alarm compose in plain language', () => {
   const digest = autoland.composeDigest({
     accepted: {
       auto: [
-        { ref: 'CLI-1', title: 'Mission XP: Fix mission budget inference', happened: 'Slow mission budgets cost users trust, so long runs now keep using the promised time.' },
-        { ref: 'CLI-2', title: 'Manual member checks waste users time: hourly loops keep work moving' },
-        { ref: 'CLI-6', title: 'Add --hourly flag so users save time' },
-        { ref: 'CLI-4', title: 'Mission XP: Decide and start the next useful mission after: x', happened: 'Stopped with reason: no concrete follow-up mission found.' },
-        { ref: 'CLI-5', title: 'Mission XP: Decide and start the next useful mission after: y', happened: 'The continuation did not start fake work.' },
+        { ref: 'CLI-1', title: 'Mission XP: Fix mission budget inference', happened: 'Slow mission budgets cost users trust, so long runs now keep using the promised time.', landed: true },
+        { ref: 'CLI-2', title: 'Manual member checks waste users time: hourly loops keep work moving', landed: true },
+        { ref: 'CLI-6', title: 'Add --hourly flag so users save time', landed: true },
+        { ref: 'CLI-4', title: 'Mission XP: Decide and start the next useful mission after: x', happened: 'Stopped with reason: no concrete follow-up mission found.', landed: true },
+        { ref: 'CLI-5', title: 'Mission XP: Decide and start the next useful mission after: y', happened: 'The continuation did not start fake work.', landed: true },
       ],
       human: [{ ref: 'CLI-3', title: 'Ship release' }],
     },
@@ -319,6 +319,7 @@ test('digest acceptance history is not capped by the compact done-task projectio
       metadata: {
         accepted_at: acceptedAt,
         auto_accepted_at: acceptedAt,
+        landing: { status: 'landed' },
       },
     });
     db.prepare('UPDATE tasks SET created_at = ? WHERE id = ?').run(Date.now() - 10000, titleOnly.id);
@@ -330,6 +331,7 @@ test('digest acceptance history is not capped by the compact done-task projectio
         metadata: {
           accepted_at: acceptedAt,
           auto_accepted_at: acceptedAt,
+          landing: { status: 'landed' },
           result: `Accepted result ${i} saves operator time, so the daily count stays trustworthy.`,
           ...(i !== 1 ? { landing_happened: `Full story ${i} lets operators inspect the accepted result, so daily review stays trustworthy.` } : {}),
         },
@@ -354,11 +356,29 @@ test('digest acceptance history is not capped by the compact done-task projectio
   }
 });
 
+test('digest says accepted, not landed, for work without a passed landing proof', () => {
+  const digest = autoland.composeDigest({
+    accepted: {
+      auto: [
+        { ref: 'CLI-1', title: 'Faster boot saves users time', happened: 'Boot now takes one second, so users start working sooner.', landed: true },
+        { ref: 'CLI-2', title: 'Clearer errors save users time', happened: 'Errors now name the fix, so users recover sooner.' },
+      ],
+      human: [],
+    },
+    waiting: [],
+    landed: null,
+    project: 'atris-cli',
+  });
+  assert.match(digest, /^2 accepted, 1 landed;/m);
+  assert.doesNotMatch(digest, /^2 landed/m);
+});
+
 test('digest folds unclear landed results across members into one count', () => {
   const unclear = Array.from({ length: 4 }, (_, index) => ({
     ref: `CLI-${index + 1}`,
     title: 'Refactor internals',
     member: `member-${index + 1}`,
+    landed: true,
   }));
   const digest = autoland.composeDigest({
     accepted: { auto: unclear, human: [] },
@@ -950,6 +970,7 @@ test('tick lands the same suite-green proof when it cites a fetched CI run URL',
   try {
     const ref = certifiedVerifiedTask(repo, 'Land a cited green claim', {
       verify: 'git diff --check',
+      work: true,
       proof: 'suite green [i-fetched] https://github.com/acme/repo/actions/runs/123456789',
     });
     autoland.writePolicy(repo, { enabled: true, enabled_by: 'keshav', strict_verify: false });
@@ -957,7 +978,7 @@ test('tick lands the same suite-green proof when it cites a fetched CI run URL',
     const tick = runCli(['autoland', 'tick', '--json'], repo);
     assert.equal(tick.status, 0, tick.stderr || tick.stdout);
     const receipt = JSON.parse(tick.stdout.trim().split('\n').pop());
-    assert.deepEqual(receipt.accepted, [ref]);
+    assert.deepEqual(receipt.landed, [ref]);
     assert.equal(receipt.citation_blocks, undefined);
     assert.equal(projectionByRef(repo)[ref].status, 'done');
   } finally {
@@ -970,6 +991,7 @@ test('tick still lands an ordinary command proof with exit 0', () => {
   try {
     const ref = certifiedVerifiedTask(repo, 'Land an ordinary local verify', {
       verify: 'git diff --check',
+      work: true,
       proof: 'Command passed: git diff --check (exit 0).',
     });
     autoland.writePolicy(repo, { enabled: true, enabled_by: 'keshav', strict_verify: false });
@@ -977,7 +999,7 @@ test('tick still lands an ordinary command proof with exit 0', () => {
     const tick = runCli(['autoland', 'tick', '--json'], repo);
     assert.equal(tick.status, 0, tick.stderr || tick.stdout);
     const receipt = JSON.parse(tick.stdout.trim().split('\n').pop());
-    assert.deepEqual(receipt.accepted, [ref]);
+    assert.deepEqual(receipt.landed, [ref]);
     assert.equal(projectionByRef(repo)[ref].status, 'done');
   } finally {
     cleanupTempDir(base);
@@ -986,20 +1008,21 @@ test('tick still lands an ordinary command proof with exit 0', () => {
 
 // Walk a task only to first proof: builder ready, no second reviewer. The tick
 // must supply the second-actor check itself by re-running the proof's command.
-function proofBackedTask(repo, title, { tag = 'code' } = {}) {
+function proofBackedTask(repo, title, { tag = 'code', work = false } = {}) {
   const created = runCli(['task', 'new', title, '--tag', tag, '--json'], repo);
   assert.equal(created.status, 0, created.stderr || created.stdout);
   const id = JSON.parse(created.stdout).task?.display_id || JSON.parse(created.stdout).task?.id;
   assert.ok(id, `no task id in: ${created.stdout.slice(0, 200)}`);
   assert.equal(runCli(['task', 'claim', String(id), '--as', 'builder'], repo).status, 0);
-  assert.equal(runCli(['task', 'ready', String(id), '--verify', 'git diff --check', '--as', 'builder'], repo).status, 0);
+  const verify = work ? shipWork(repo, title, 'git diff --check') : 'git diff --check';
+  assert.equal(runCli(['task', 'ready', String(id), '--verify', verify, '--as', 'builder'], repo).status, 0);
   return String(id);
 }
 
 test('tick certifies proof-backed reviews by re-running their check, then lands them', () => {
   const { base, repo } = makeTempRepo();
   try {
-    const codeTask = proofBackedTask(repo, 'One-tick landing', { tag: 'code' });
+    const codeTask = proofBackedTask(repo, 'One-tick landing', { tag: 'code', work: true });
     const securityTask = proofBackedTask(repo, 'Rotate the signing key', { tag: 'security' });
     const noCheckCreated = runCli(['task', 'new', 'No runnable check', '--tag', 'code', '--json'], repo);
     const noCheckTask = String(JSON.parse(noCheckCreated.stdout).task?.display_id);
@@ -1013,7 +1036,7 @@ test('tick certifies proof-backed reviews by re-running their check, then lands 
     const receipt = JSON.parse(tick.stdout.trim().split('\n').pop());
     // one heartbeat: the code task is certified by the re-run check AND landed
     assert.equal(receipt.reviews_certified, 1);
-    assert.deepEqual(receipt.accepted, [codeTask]);
+    assert.deepEqual(receipt.landed, [codeTask]);
 
     const projection = JSON.parse(fs.readFileSync(path.join(repo, '.atris', 'state', 'tasks.projection.json'), 'utf8'));
     const byRef = Object.fromEntries(projection.tasks.map((t) => [t.display_id, t]));
@@ -1032,7 +1055,7 @@ test('tick reuses the certification verifier result at landing', () => {
   const { base, repo } = makeTempRepo();
   const marker = path.join(repo, 'cross-phase-verify-runs.txt');
   try {
-    const codeTask = proofBackedTask(repo, 'One check across certification and landing', { tag: 'code' });
+    const codeTask = proofBackedTask(repo, 'One check across certification and landing', { tag: 'code', work: true });
     const fakeBin = path.join(base, 'fake-bin');
     const fakeGit = path.join(fakeBin, 'git');
     fs.mkdirSync(fakeBin, { recursive: true });
@@ -1058,7 +1081,7 @@ test('tick reuses the certification verifier result at landing', () => {
     assert.equal(tick.status, 0, tick.stderr || tick.stdout);
     const receipt = JSON.parse(tick.stdout.trim().split('\n').pop());
     assert.equal(receipt.reviews_certified, 1, JSON.stringify(receipt));
-    assert.deepEqual(receipt.accepted, [codeTask]);
+    assert.deepEqual(receipt.landed, [codeTask]);
     assert.equal(fs.readFileSync(marker, 'utf8').trim().split('\n').filter(Boolean).length, 1);
     assert.equal(projectionByRef(repo)[codeTask].status, 'done');
   } finally {
@@ -1134,15 +1157,18 @@ test('tick lands certified allowlisted verify when the landing re-run passes', (
   const { base, repo } = makeTempRepo();
   try {
     fs.writeFileSync(path.join(repo, 'fresh-proof.js'), 'const ok = 1;\n');
+    // The checked file ships with the work; an untracked one could not back a landing.
+    runGit(['add', 'fresh-proof.js'], repo);
     const codeTask = certifiedVerifiedTask(repo, 'Fresh proof can land', {
       verify: 'node --check fresh-proof.js',
+      work: true,
     });
 
     autoland.writePolicy(repo, { enabled: true, enabled_by: 'keshav', strict_verify: false });
     const tick = runCli(['autoland', 'tick', '--json'], repo);
     assert.equal(tick.status, 0, tick.stderr || tick.stdout);
     const receipt = JSON.parse(tick.stdout.trim().split('\n').pop());
-    assert.deepEqual(receipt.accepted, [codeTask]);
+    assert.deepEqual(receipt.landed, [codeTask]);
     assert.equal(receipt.revised, 0);
 
     const byRef = projectionByRef(repo);
@@ -1309,7 +1335,7 @@ test('tick from an agent session lands under the standing policy with a real-num
   try {
     // a proof-backed row: runnable check, NOT yet agent_certified — the tick
     // must certify it via strict verify and land it in one heartbeat
-    const codeTask = proofBackedTask(repo, 'Agent-session landing', { tag: 'code' });
+    const codeTask = proofBackedTask(repo, 'Agent-session landing', { tag: 'code', work: true });
 
     // guard intact: without the standing policy, an agent env cannot
     // live-accept even with a per-run human-confirmation claim
@@ -1325,7 +1351,7 @@ test('tick from an agent session lands under the standing policy with a real-num
     assert.equal(tick.status, 0, tick.stderr || tick.stdout);
     const receipt = JSON.parse(tick.stdout.trim().split('\n').pop());
     assert.equal(receipt.accept_error, undefined, JSON.stringify(receipt));
-    assert.deepEqual(receipt.accepted, [codeTask]);
+    assert.deepEqual(receipt.landed, [codeTask]);
     // the receipt carries the sweep's real numbers, never nulls when rows exist
     assert.equal(typeof receipt.certified, 'number');
     assert.equal(typeof receipt.scanned, 'number');
@@ -1344,7 +1370,7 @@ test('tick from an agent session lands under the standing policy with a real-num
 test('tick still certifies when policy contains drain_reviews false', () => {
   const { base, repo } = makeTempRepo();
   try {
-    const id = proofBackedTask(repo, 'Drain reviews ignored', { tag: 'code' });
+    const id = proofBackedTask(repo, 'Drain reviews ignored', { tag: 'code', work: true });
     autoland.writePolicy(repo, {
       enabled: true,
       enabled_by: 'keshav',
@@ -1355,7 +1381,7 @@ test('tick still certifies when policy contains drain_reviews false', () => {
     assert.equal(tick.status, 0, tick.stderr || tick.stdout);
     const receipt = JSON.parse(tick.stdout.trim().split('\n').pop());
     assert.equal(receipt.reviews_certified, 1);
-    assert.deepEqual(receipt.accepted, [id]);
+    assert.deepEqual(receipt.landed, [id]);
   } finally {
     cleanupTempDir(base);
   }
@@ -1364,17 +1390,18 @@ test('tick still certifies when policy contains drain_reviews false', () => {
 test('two passes from one actor cannot land until the tick independently re-runs the check', () => {
   const { base, repo } = makeTempRepo();
   try {
-    const id = proofBackedTask(repo, 'Same reviewer twice', { tag: 'code' });
+    const id = proofBackedTask(repo, 'Same reviewer twice', { tag: 'code', work: true });
     // second pass by the SAME actor: not certified and not landable
     // (needs_independent_reviewer) until a distinct actor re-runs the check
-    assert.equal(runCli(['task', 'ready', String(id), '--verify', 'git diff --check', '--as', 'builder'], repo).status, 0);
+    const verify = projectionByRef(repo)[id].metadata.verify;
+    assert.equal(runCli(['task', 'ready', String(id), '--verify', verify, '--as', 'builder'], repo).status, 0);
 
     autoland.writePolicy(repo, { enabled: true, enabled_by: 'keshav', strict_verify: false });
     const tick = runCli(['autoland', 'tick', '--json'], repo);
     assert.equal(tick.status, 0, tick.stderr || tick.stdout);
     const receipt = JSON.parse(tick.stdout.trim().split('\n').pop());
     assert.equal(receipt.reviews_certified, 1);
-    assert.deepEqual(receipt.accepted, [id]);
+    assert.deepEqual(receipt.landed, [id]);
   } finally {
     cleanupTempDir(base);
   }

@@ -358,8 +358,8 @@ function refreshLandingRefs(root) {
   }
 }
 
-function sweepLanding(root, { ttlDays, staleHours, now = Date.now() } = {}) {
-  refreshLandingRefs(root);
+function sweepLanding(root, { ttlDays, staleHours, now = Date.now(), refresh = true } = {}) {
+  if (refresh) refreshLandingRefs(root);
   const { collectBoard, reap } = require('./land');
   // light: this board only feeds .branches staleness + .summary; reap builds
   // its own full board for dirty-count salvage decisions.
@@ -757,7 +757,10 @@ function stuckBacklogNote(receipt) {
   const parts = [];
   const scanned = Number(receipt.scanned || 0);
   const certified = Number(receipt.certified || 0);
-  if (scanned > 0 && receipt.landed.length === 0) {
+  // Stuck means nothing cleared review. Accepted-but-unproven work is named
+  // separately (accepted_not_landed), not misread as a wedged queue.
+  const accepted = Array.isArray(receipt.accepted) ? receipt.accepted.length : receipt.landed.length;
+  if (scanned > 0 && accepted === 0) {
     parts.push(`${certified}/${scanned} certified in review, none landed`);
   }
   const unrunnable = Array.isArray(receipt.unrunnable_verifiers) ? receipt.unrunnable_verifiers.length : 0;
@@ -812,6 +815,9 @@ async function runTickBody(root, { json, policy, receipt, engineValidationDeps =
   // 78 certified rows waiting. Let `atris task auto-accept-certified` apply
   // its own default (12 without --all, a high safety cap under --all) so a
   // policy with accept_all:true actually drains the full certified set.
+  // Refresh origin once, before anything is accepted: the landing proof reads
+  // origin's target, and a stale ref would call landed work unlanded.
+  refreshLandingRefs(root);
   const cliArgs = ['task', 'auto-accept-certified', '--json', '--certify-first'];
   if (policy.accept_all) cliArgs.push('--all');
   else if (policy.strict_verify === false) cliArgs.push('--no-strict-verify');
@@ -984,7 +990,7 @@ async function runTickBody(root, { json, policy, receipt, engineValidationDeps =
   // TTL-expired work is salvaged before deletion, and 48h-stale active work
   // is carried into the digest instead of silently aging forever.
   try {
-    const landingSweep = sweepLanding(root);
+    const landingSweep = sweepLanding(root, { refresh: false });
     receipt.reaped = landingSweep.reaped;
     receipt.landing_sweep = {
       before: landingSweep.before,
