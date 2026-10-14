@@ -2349,6 +2349,10 @@ function runEngineSweepCommand(args, root, deps = {}) {
   const result = apply
     ? stopLeakedSshAgents(root, leaked, { read, uid, ...(deps.kill ? { kill: deps.kill } : {}), ...(deps.now ? { now: deps.now } : {}) })
     : { stopped: [], failed: [], skipped: [] };
+  result.unread = [...new Set([...unread, ...(result.unread || [])])];
+  const scanWarning = result.unread.length
+    ? `could not read the ${result.unread.join(' or the ')} for every process, so some ssh-agents could not be checked; the leak count may be incomplete`
+    : null;
   result.closed_runs = apply ? closeLostRuns(root, deps.now ? { now: deps.now } : {}) : [];
   const code = result.failed.length ? 1 : 0;
   if (args.includes('--json')) {
@@ -2361,6 +2365,7 @@ function runEngineSweepCommand(args, root, deps = {}) {
     if (result.skipped.length) lines.push(`${result.skipped.length} skipped because they were in use or gone on the recheck`);
     for (const { pid, code: reason } of result.failed) lines.push(`could not stop pid ${pid}: ${reason}`);
     lines.push(`closed ${plural(result.closed_runs.length, 'run')} whose parent is gone`);
+    if (scanWarning) lines.push(scanWarning);
     console.log(lines.join('\n'));
     return code;
   }
@@ -2372,9 +2377,7 @@ function runEngineSweepCommand(args, root, deps = {}) {
     ...leaked.slice(0, shown).map((agent) => `  pid ${String(agent.pid).padEnd(6)} ${formatAgentAge(agent.age_sec)}`),
   ];
   if (leaked.length > shown) lines.push(`  and ${leaked.length - shown} more`);
-  if (unread.length) {
-    lines.push(`could not read the ${unread.join(' or the ')} for every process, so some ssh-agents could not be checked; the leak count may be incomplete`);
-  }
+  if (scanWarning) lines.push(scanWarning);
   lines.push(leaked.length ? 'nothing was stopped. run atris engine sweep --apply to stop them.' : 'nothing was stopped.');
   lines.push('', ...resourceHistoryLines(history));
   console.log(lines.join('\n'));

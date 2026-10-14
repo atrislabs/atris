@@ -2263,3 +2263,44 @@ test('real start recording keeps a denied process scan unknown on disk', { skip:
     fs.rmSync(root, { recursive: true, force: true });
   }
 });
+
+test('cleanup reports unreadable initial and final scans without saving a false zero', () => {
+  const agent = { pid: 200, ppid: 1, uid: 501, age_sec: 3600, args: 'ssh-agent -s' };
+  const reads = () => [
+    { agents: [agent], referenced: new Set(), unread: ['agent sockets'] },
+    { agents: [agent], referenced: new Set([200]), unread: ['process environments'] },
+  ];
+  const signals = [];
+  const text = sweepWithReads(reads(), { kill: (pid) => signals.push(pid) });
+  assert.match(text.text, /could not read the agent sockets or the process environments/);
+  assert.match(text.text, /the leak count may be incomplete/);
+  assert.deepStrictEqual(signals, []);
+  assert.strictEqual(text.log[0].leaked_ssh_agents, null);
+  assert.deepStrictEqual(text.log[0].unread, ['process environments']);
+  const json = sweepWithReads(reads(), { args: ['sweep', '--apply', '--json'], kill: () => assert.fail('unread agent must stay safe') });
+  assert.deepStrictEqual(JSON.parse(json.text).unread, ['agent sockets', 'process environments']);
+});
+
+test('real cleanup reports denied process scans and saves an unknown remaining count', { skip: process.platform !== 'darwin' }, () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'engine-cleanup-denied-'));
+  try {
+    const cli = path.join(__dirname, '..', 'bin', 'atris.js');
+    const run = (extra) => require('node:child_process').spawnSync('/usr/bin/sandbox-exec', [
+      '-p', '(version 1)(allow default)(deny process-exec (literal "/bin/ps"))',
+      process.execPath, cli, 'engine', 'sweep', '--apply', ...extra,
+    ], { cwd: root, encoding: 'utf8', timeout: 30000, env: { ...process.env, ATRIS_AUTO_UPDATE: 'off' } });
+    const text = run([]);
+    assert.equal(text.status, 0, text.stderr);
+    assert.match(text.stdout, /could not read the process list/);
+    const json = run(['--json']);
+    assert.equal(json.status, 0, json.stderr);
+    const report = JSON.parse(json.stdout);
+    assert.deepStrictEqual(report.unread, ['process list']);
+    assert.strictEqual(report.history.last_sweep.leaked_ssh_agents, null);
+    assert.deepStrictEqual(report.history.last_sweep.unread, ['process list']);
+    assert.deepStrictEqual(report.stopped, []);
+    console.log('denied cleanup exit ' + text.status + ': ' + text.stdout.trim());
+  } finally {
+    fs.rmSync(root, { recursive: true, force: true });
+  }
+});
