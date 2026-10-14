@@ -333,6 +333,18 @@ const WORKTREE_REMOVAL = /worktree['"]?\s*,\s*['"]remove['"]|git worktree remove
 // Callback and promise deletes (fs.rm, fs.promises.rm) count the same as rmSync.
 const RECURSIVE_DELETE = /\brm(?:Sync)?\([^)]*recursive/;
 const HANDLES_WORKTREES = /listWorktrees\(|agent-worktrees|['"]worktree['"]\s*,\s*['"]add['"]|git worktree add/;
+const COMMENT_LINE = /^\s*(\/\/|\*|\/\*)/;
+
+// A delete split across lines is read from its opening line to the line that
+// closes the call, so moving arguments onto their own lines can't hide one.
+function callText(lines, index) {
+  let depth = 0;
+  for (let end = index; end < lines.length && end < index + 12; end++) {
+    for (const ch of lines[end]) depth += ch === '(' ? 1 : ch === ')' ? -1 : 0;
+    if (depth <= 0) return lines.slice(index, end + 1).join('\n');
+  }
+  return lines.slice(index, index + 12).join('\n');
+}
 
 function worktreeRemovalSites(file) {
   const lines = fs.readFileSync(path.join(__dirname, '..', file), 'utf8').split('\n');
@@ -342,12 +354,17 @@ function worktreeRemovalSites(file) {
   });
   const sites = [];
   lines.forEach((line, index) => {
-    if (/^\s*(\/\/|\*)/.test(line)) return;
-    const named = WORKTREE_REMOVAL.test(line);
-    if (!named && !RECURSIVE_DELETE.test(line)) return;
+    if (COMMENT_LINE.test(line)) return;
+    const call = /\brm(?:Sync)?\(/.test(line) ? callText(lines, index) : line;
+    const named = WORKTREE_REMOVAL.test(call);
+    if (!named && !RECURSIVE_DELETE.test(call)) return;
     const owner = starts.filter((start) => start.index <= index).pop();
     const next = starts.find((start) => start.index > index);
-    const body = lines.slice(owner ? owner.index : 0, next ? next.index : lines.length).join('\n');
+    // Comments are dropped so a note naming the check never counts as the check.
+    const body = lines.slice(owner ? owner.index : 0, next ? next.index : lines.length)
+      .filter((text) => !COMMENT_LINE.test(text))
+      .map((text) => text.replace(/\s\/\/.*$/, ''))
+      .join('\n');
     if (!named && !HANDLES_WORKTREES.test(body)) return;
     sites.push({ key: `${file}:${owner ? owner.name : '(top level)'}`, line: index + 1, body });
   });
