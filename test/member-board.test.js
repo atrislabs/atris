@@ -354,6 +354,27 @@ test('the widths where a wider board shows less are known', () => {
   }
 });
 
+test('a stopped run and one that ended with no result never make a wider board show less', () => {
+  const dir = fakeDir({
+    halted: [`${at(1000)} m-5 started: migrate the billing tables`, `${at(950)} m-5 running: node scripts/migrate.js --dry-run`, `${at(900)} m-5 finished: stopped`],
+    gone: [`${at(1100)} m-6 started: [pid 999999 engine codex] rewrite the onboarding emails`, `${at(1050)} m-6 editing templates/welcome.md for the new tone`],
+    scout: [`${at(1800)} m-2 started: write release notes`, `${at(1500)} m-2 reading CHANGELOG.md and the merged pull requests`, `${at(1200)} m-2 finished: ok`],
+    editor: [`${at(2400)} m-3 started: tidy the docs folder`, `${at(2100)} m-3 running: node --test test/docs.test.js`, `${at(1980)} m-3 finished: failed (bad exit 2)`],
+  });
+  try {
+    const rows = readBoard({ dir, now: NOW });
+    assert.equal(rows.find((r) => r.member === 'gone').no_result, true);
+    // With no live run, the last step never cuts a job shorter than it reads
+    // without the step, whole or not; it used to cut every job to 6 letters
+    // at 68 columns, then vanish at 77.
+    assert.deepEqual(cliffs(rows, dir, 50, 150), []);
+    assert.match(renderBoard(rows, dir, 0, 72), /^gone\s+stopped\s+no result\s+17m ago\s+rewrite the onboarding emails$/m,
+      'with no step to make room for, the shorter wording lets every job read whole');
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
 test('a signed out row costs a wider board only the widths it is known to', () => {
   const dir = fakeDir({
     builder: [`${at(180)} m-1 started: fix the login flow`, `${at(60)} m-1 editing lib/auth/session.js to refresh tokens`],
