@@ -1745,3 +1745,53 @@ test('dream launches record paired readings and name the cause of a SIGKILL', ()
     fs.rmSync(root, { recursive: true, force: true });
   }
 });
+
+test('asks with their own launcher, like link and the dispatch scout, record paired readings', async () => {
+  const { linkCommand } = require('../commands/link');
+  const keys = ['ATRIS_CLAUDE_BIN', 'ATRIS_CLAUDE_COMMAND_TEMPLATE', 'ATRIS_RUNNER_PROFILE', 'ATRIS_RUNNER_BIN', 'ATRIS_RUNNER_COMMAND_TEMPLATE', 'PATH'];
+  const saved = new Map(keys.map((key) => [key, process.env[key]]));
+  const root = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'link-resource-')));
+  const bin = path.join(root, 'bin');
+  const engine = (body) => fs.writeFileSync(path.join(bin, 'claude'), `#!/bin/sh\n${body}\n`, { mode: 0o755 });
+  const report = { jobs: [{ job: 'build', engine: 'claude' }], team: [] };
+  const quiet = { log: console.log, error: console.error };
+  const link = async () => {
+    console.log = () => {};
+    console.error = () => {};
+    try {
+      return await linkCommand(['a sled', 'a dog', '--json'], { root, rosterReport: () => report, timeoutMs: 30000 });
+    } finally {
+      console.log = quiet.log;
+      console.error = quiet.error;
+    }
+  };
+  try {
+    fs.mkdirSync(bin);
+    for (const key of keys) if (key !== 'PATH') delete process.env[key];
+    process.env.PATH = `${bin}${path.delimiter}${saved.get('PATH') || ''}`;
+    engine('echo "{}"');
+    await link();
+    engine('kill -KILL $$');
+    await link();
+    const lines = fs.readFileSync(path.join(root, RESOURCE_LOG), 'utf8').trim().split('\n').map(JSON.parse);
+    assert.deepEqual(lines.map((line) => line.phase), ['start', 'end', 'start', 'end']);
+    for (let i = 0; i < lines.length; i += 2) {
+      assert.match(lines[i].run_id, /^[0-9a-f-]{36}$/);
+      assert.equal(lines[i + 1].run_id, lines[i].run_id);
+      assert.equal(lines[i].engine, 'claude');
+      assert.equal(lines[i].task, 'ask link');
+      assert.ok(Array.isArray(lines[i + 1].load));
+      assert.ok(Number.isInteger(lines[i + 1].duration_ms));
+    }
+    assert.equal(lines[1].signal, undefined);
+    assert.equal(lines[3].signal, 'SIGKILL');
+    assert.match(lines[3].cause, /^killed \((machine memory low|cause unknown)\)$/);
+    console.log(`link readings: ${JSON.stringify(lines[3])}`);
+  } finally {
+    for (const [key, value] of saved) {
+      if (value === undefined) delete process.env[key];
+      else process.env[key] = value;
+    }
+    fs.rmSync(root, { recursive: true, force: true });
+  }
+});
