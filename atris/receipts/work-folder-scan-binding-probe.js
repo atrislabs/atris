@@ -1,6 +1,6 @@
 'use strict';
 
-// Advisory only: synthetic source is scanned, never executed or deleted.
+// Synthetic source is scanned, never executed or deleted. --require-protection gates it.
 const fs = require('node:fs');
 const path = require('node:path');
 const vm = require('node:vm');
@@ -10,7 +10,7 @@ const root = path.resolve(__dirname, '../..');
 const source = fs.readFileSync(path.join(root, 'test/worktree-removal-guard.test.js'), 'utf8');
 const start = source.indexOf('const WORKTREE_REMOVAL =');
 const end = source.indexOf("test('every work folder removal", start);
-const predicateStart = source.indexOf('.filter((site) => !site.body.includes', end);
+const predicateStart = source.indexOf('.filter((site) => removalGap(', end);
 const predicateEnd = source.indexOf('.map((site)', predicateStart);
 assert.ok(start >= 0 && end > start && predicateStart > end && predicateEnd > predicateStart,
   'scanner layout changed: update this review before relying on its output');
@@ -20,11 +20,13 @@ const bypassFilter = source.slice(predicateStart, predicateEnd).trim();
 let gaps = 0;
 for (const [label, protectedPath, loggedPath, wantedBypasses] of [
   ['matching folder control', 'worktreePath', 'worktreePath', 0],
+  ['resolved same folder control', 'realFolder', 'worktreePath', 0],
   ['unrelated folder guard', 'otherWorktreePath', 'worktreePath', 1],
   ['unrelated folder log', 'worktreePath', 'otherWorktreePath', 1],
   ['unrelated folder protection', 'otherWorktreePath', 'otherWorktreePath', 1],
 ]) {
   const body = `function cleanup() {
+  const realFolder = fs.realpathSync(worktreePath);
   if (worktreeGitActivity(${protectedPath})) return;
   fs.rmSync(worktreePath, { recursive: true });
   recordWorktreeRemoval(root, { path: ${loggedPath} });
@@ -41,4 +43,6 @@ for (const [label, protectedPath, loggedPath, wantedBypasses] of [
   if (context.bypasses.length !== wantedBypasses) gaps++;
   console.log(`${label}: detected ${context.sites.length}, bypasses ${context.bypasses.length}; required 1, ${wantedBypasses}`);
 }
-console.log(`review gaps: ${gaps}; advisory only, synthetic source never executed`);
+console.log(`review gaps: ${gaps}; synthetic source only, never executed`);
+// Acceptance mode makes any mismatch a failing check.
+if (process.argv.includes('--require-protection') && gaps) process.exitCode = 1;

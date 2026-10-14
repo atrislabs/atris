@@ -11,7 +11,7 @@ const root = path.resolve(__dirname, '../..');
 const source = fs.readFileSync(path.join(root, 'test/worktree-removal-guard.test.js'), 'utf8');
 const start = source.indexOf('const WORKTREE_REMOVAL =');
 const end = source.indexOf("test('every work folder removal", start);
-const predicateStart = source.indexOf('.filter((site) => !site.body.includes', end);
+const predicateStart = source.indexOf('.filter((site) => removalGap(', end);
 const predicateEnd = source.indexOf('.map((site)', predicateStart);
 assert.ok(start >= 0 && end > start && predicateStart > end && predicateEnd > predicateStart,
   'scanner layout changed: update this review before relying on its output');

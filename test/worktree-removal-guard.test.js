@@ -307,8 +307,8 @@ for (const dirty of [false, true]) {
 }
 
 // Tripwire: a work folder removal anywhere in lib/ or commands/, by git or by a
-// raw delete of a worktree path, must sit in a function that also asks the
-// git-activity check and writes the removal log. A new file that removes
+// raw delete of a worktree path, must sit in a function whose git-activity
+// check and removal log name the folder it deletes. A new file that removes
 // folders is caught too. Exceptions need a reason; stale entries fail.
 function sourceFiles(dir) {
   return fs.readdirSync(path.join(__dirname, '..', dir), { withFileTypes: true }).flatMap((entry) => {
@@ -372,9 +372,90 @@ function worktreeRemovalSites(file) {
       .map((text) => text.replace(/\s\/\/.*$/, ''))
       .join('\n');
     if (!named && !HANDLES_WORKTREES.test(body)) return;
-    sites.push({ key: `${file}:${owner ? owner.name : '(top level)'}`, line: index + 1, body });
+    sites.push({ key: `${file}:${owner ? owner.name : '(top level)'}`, line: index + 1, call, body });
   });
   return sites;
+}
+
+// A cleanup that deletes a set of folders together checks every git store
+// before the first delete and writes one log line for the set. Each listed
+// check must be present, the log must name the work folder, and the delete
+// count is pinned so a new delete in the set gets reviewed.
+const GROUPED_REMOVALS = {
+  'lib/fleet.js:disposeReviewSandbox': {
+    sites: 5,
+    checks: ['worktreeGitActivity(boundary.worktreePath)', 'gitStoreActivity(boundary.gitDir)', 'gitStoreActivity(boundary.quarantine)'],
+    logs: 'boundary.worktreePath',
+    why: 'review sandbox: work folder, its git store, the quarantine store, and their parent go together',
+  },
+};
+
+// The first argument of a call, read up to the comma or paren that closes it.
+function firstArgument(text) {
+  let depth = 0;
+  for (let i = 0; i < text.length; i++) {
+    const ch = text[i];
+    if ('([{'.includes(ch)) depth++;
+    else if (depth === 0 && (ch === ',' || ch === ')')) return text.slice(0, i).replace(/\s+/g, '');
+    else if (')]}'.includes(ch)) depth--;
+  }
+  return '';
+}
+
+// The folder a delete removes, as written in the source. An empty answer
+// means the scan could not read it, which counts as a gap, never a pass.
+function removedTarget(call, body) {
+  const typed = call.match(/(?:git worktree remove|\brm\s+-[a-zA-Z]*[rR])[^`\n]*?\$\{([^}]+)\}/);
+  if (typed) return typed[1].replace(/\s+/g, '');
+  const rm = call.match(/\brm(?:dir)?(?:Sync)?\(/);
+  if (rm) return firstArgument(call.slice(rm.index + rm[0].length));
+  const list = call.match(/(?:['"]worktree['"]\s*,\s*['"]remove['"]|['"]rm['"]\s*,\s*\[)([^\]]*)\]/);
+  if (!list) return '';
+  const unquoted = (part) => part && !/^['"`]/.test(part);
+  const last = list[1].split(',').map((part) => part.trim()).pop();
+  if (unquoted(last)) return last.replace(/\s+/g, '');
+  // Arguments pushed onto a named list after it is built, like removeArgs.push(wt.path).
+  const named = call.match(/([\w$]+)\s*=\s*\[\s*['"]worktree['"]/);
+  if (!named) return '';
+  const pushed = [...body.matchAll(new RegExp(`\\b${named[1]}\\.push\\(([^()]*)\\)`, 'g'))]
+    .map((match) => match[1].trim()).filter(unquoted);
+  return pushed.length ? pushed.pop().replace(/\s+/g, '') : '';
+}
+
+// Names made by path.resolve or realpath of another name point at the same folder.
+function sameFolder(body) {
+  const from = new Map();
+  for (const [, alias, original] of body.matchAll(/([\w$]+)\s*=\s*(?:path\.resolve|fs\.realpathSync(?:\.native)?)\(\s*([\w$.]+)\s*\)/g)) {
+    from.set(alias, original);
+  }
+  return (name) => {
+    const seen = new Set();
+    while (from.has(name) && !seen.has(name)) { seen.add(name); name = from.get(name); }
+    return name;
+  };
+}
+
+function checkedPaths(body) {
+  return [...body.matchAll(/worktreeGitActivity\(\s*([^()]*?)\s*\)/g)].map((match) => match[1].replace(/\s+/g, ''));
+}
+
+function loggedPaths(body) {
+  return [...body.matchAll(/recordWorktreeRemoval\([^{]*\{[^}]*?\bpath:\s*([\w$.]+)/g)].map((match) => match[1]);
+}
+
+// True when a delete is not covered: the git check or the log names some other
+// folder, the scan cannot tell which folder is deleted, or a group lost a check.
+function removalGap(site) {
+  const group = GROUPED_REMOVALS[site.key];
+  if (group) {
+    const flat = site.body.replace(/\s+/g, '');
+    return !group.checks.every((check) => flat.includes(check)) || !loggedPaths(site.body).includes(group.logs);
+  }
+  const target = removedTarget(site.call, site.body);
+  if (!target) return true;
+  const folder = sameFolder(site.body);
+  const names = (paths) => paths.some((named) => folder(named) === folder(target));
+  return !names(checkedPaths(site.body)) || !names(loggedPaths(site.body));
 }
 
 test('every work folder removal goes through the git check and the removal log', () => {
@@ -382,20 +463,20 @@ test('every work folder removal goes through the git check and the removal log',
   assert.ok(sites.length >= 8, `expected the known removal sites, found ${sites.length}`);
   const bypasses = sites
     .filter((site) => !UNGUARDED_REMOVALS[site.key] && !NOT_YET_GUARDED[site.key])
-    .filter((site) => !site.body.includes('worktreeGitActivity') || !site.body.includes('recordWorktreeRemoval'))
+    .filter((site) => removalGap(site))
     .map((site) => `${site.key} (line ${site.line})`);
-  assert.deepEqual(bypasses, [], 'removal without the git check or the removal log');
-  const stale = [...Object.keys(UNGUARDED_REMOVALS), ...Object.keys(NOT_YET_GUARDED)]
+  assert.deepEqual(bypasses, [], 'removal without a git check and removal log naming the deleted folder');
+  const stale = [...Object.keys(UNGUARDED_REMOVALS), ...Object.keys(GROUPED_REMOVALS), ...Object.keys(NOT_YET_GUARDED)]
     .filter((key) => !sites.some((site) => site.key === key));
   assert.deepEqual(stale, [], 'exception names a function that no longer removes a folder');
-  const recounted = Object.entries(UNGUARDED_REMOVALS)
+  const recounted = Object.entries({ ...UNGUARDED_REMOVALS, ...GROUPED_REMOVALS })
     .map(([key, { sites: expected }]) => [key, expected, sites.filter((site) => site.key === key).length])
     .filter(([, expected, found]) => found !== expected)
     .map(([key, expected, found]) => `${key} (expected ${expected}, found ${found})`);
   assert.deepEqual(recounted, [], 'an exempt function gained or lost a delete; review it, then update its count');
   const nowGuarded = Object.keys(NOT_YET_GUARDED).filter((key) => sites
     .filter((site) => site.key === key)
-    .every((site) => site.body.includes('worktreeGitActivity') && site.body.includes('recordWorktreeRemoval')));
+    .every((site) => !removalGap(site)));
   assert.deepEqual(nowGuarded, [], 'guarded now: delete its line from NOT_YET_GUARDED');
 });
 
@@ -407,6 +488,16 @@ test('saved scanner examples reject missed removals in the required checks', () 
   assert.ifError(result.error);
   assert.equal(result.status, 0, result.stderr || result.stdout);
   assert.match(result.stdout, /review gaps: 0; synthetic source only, no folders removed/);
+});
+
+test('a git check or log naming another folder does not count as protection', () => {
+  const result = spawnSync(process.execPath, [
+    path.join(__dirname, '../atris/receipts/work-folder-scan-binding-probe.js'),
+    '--require-protection',
+  ], { encoding: 'utf8', timeout: 10000 });
+  assert.ifError(result.error);
+  assert.equal(result.status, 0, result.stderr || result.stdout);
+  assert.match(result.stdout, /review gaps: 0; synthetic source only, never executed/);
 });
 
 test('grouped sandbox cleanup exposes every recursive target to the scan', () => {
