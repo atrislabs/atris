@@ -1837,6 +1837,23 @@ test('fix drops a dash just inside an opening italic or bold mark at line start'
   ]);
 });
 
+test('fix moves a dash just inside an opening mark mid-line out of the mark', () => {
+  // the comma used to land inside the mark: "Ship it *, now*"
+  const file = tmpFile('mark-dash-mid.md', [
+    'Ship it *\u2014 now*.',
+    '',
+    'Ship it **\u2014 today**, then rest.',
+    '',
+    'Ship it _\u2014 now_ and go.',
+  ].join('\n'));
+  const { changes } = applyFixes([file], RULES);
+  assert.deepEqual(changes.map((c) => c.after), [
+    'Ship it, *now*.',
+    'Ship it, **today**, then rest.',
+    'Ship it, _now_ and go.',
+  ]);
+});
+
 test('fix reads no word that only says when as the subject of a clause', () => {
   // "now ships" after a dash read as a bare subject and a verb
   const file = tmpFile('when-word.md', [

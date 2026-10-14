@@ -520,6 +520,10 @@ function fixEmDash(s, { endsBlock = false, startsBlock = false, spans = [] } = {
   // floor was too weak, (b) one seed", never "issues, (a)". A second dash
   // in the sentence closes an aside instead: "pick one, (a) or (b), then go"
   s = s.replace(/(?<=[\w)\]"'*_`%\u201d\u2019\uE001])[ \t]*\u2014[ \t]*(?=\((?:a|1|i)\)\s)(?![^\u2014.!?]*\u2014)/g, ': ');
+  // a dash just inside an opening italic or bold mark mid-line moves out of
+  // the mark, so the rules below read it as any other dash: "Ship it, *now*",
+  // never "Ship it *, now*".
+  s = s.replace(/(?<=\S)[ \t]+(\*{1,2}|_{1,2})\u2014[ \t]*(?=\w)/g, ' \u2014 $1');
   // a dash between two numbers is a range, "10-20", unless the first has a
   // sign, which makes it a score: "reward: +4, 404 on missing routes"
   // A dash that opens a line, a quote or a list item names nothing and goes,
