@@ -16966,17 +16966,25 @@ test('task projection exposes goals, review proof, and task lineage for visual b
       '',
     ].join('\n'), 'utf8');
 
-    const created = runCli(['task', 'new', 'Improve task factory lineage view', '--tag', 'tasks', '--json'], { cwd: dir, env });
-    assert.equal(created.status, 0, created.stderr);
-    const id = JSON.parse(created.stdout).task_id;
-
-    const unrelated = runCli(['task', 'new', 'Repair notarized Mac installer', '--tag', 'release', '--json'], { cwd: dir, env });
-    assert.equal(unrelated.status, 0, unrelated.stderr);
-    const unrelatedId = JSON.parse(unrelated.stdout).task_id;
-
-    const genericLoop = runCli(['task', 'new', 'Loop tick: Validate local Claude /goal behavior', '--tag', 'agent', '--json'], { cwd: dir, env });
-    assert.equal(genericLoop.status, 0, genericLoop.stderr);
-    const genericLoopId = JSON.parse(genericLoop.stdout).task_id;
+    // Seed setup rows in the real store; finish and export remain CLI checks.
+    const workspaceRoot = taskStore.workspaceRoot(dir);
+    const db = taskStore.open(dbPath);
+    let id;
+    let unrelatedId;
+    let genericLoopId;
+    try {
+      ({ id } = addSeedTask(db, {
+        title: 'Improve task factory lineage view', tag: 'tasks', workspaceRoot,
+      }));
+      ({ id: unrelatedId } = addSeedTask(db, {
+        title: 'Repair notarized Mac installer', tag: 'release', workspaceRoot,
+      }));
+      ({ id: genericLoopId } = addSeedTask(db, {
+        title: 'Loop tick: Validate local Claude /goal behavior', tag: 'agent', workspaceRoot,
+      }));
+    } finally {
+      taskStore.close();
+    }
 
     const finished = runCli([
       'task', 'finish', id,
