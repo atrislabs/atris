@@ -2973,6 +2973,23 @@ test('fix reads a name and its value joined by "=" as one word in a subject', ()
   ]);
 });
 
+test('fix joins a subject that holds its own "that" clause as a clause', () => {
+  // from a member file, where a comma made a splice: "the receipt, a stuck loop that reports"
+  const file = tmpFile('that-subject.md', [
+    'say why in the receipt \u2014 a stuck loop that reports stuck is healthy.',
+    'We fixed it \u2014 the test that failed was flaky.',
+    'Use it \u2014 a plan that teams are using.',
+    'Keep it \u2014 a rule that is simple.',
+  ].join('\n\n'));
+  const { changes } = applyFixes([file], RULES, { write: false });
+  assert.deepEqual(changes.map((c) => c.after), [
+    'say why in the receipt; a stuck loop that reports stuck is healthy.',
+    'We fixed it; the test that failed was flaky.',
+    'Use it, a plan that teams are using.',
+    'Keep it, a rule that is simple.',
+  ]);
+});
+
 test('fix keeps a journal heading that ends in a time readable for its hour', () => {
   // analytics reads the hour after a dash or a spaced hyphen at the end of a
   // heading; the fix wrote "### Watch: 19:05", which hides it, and glued

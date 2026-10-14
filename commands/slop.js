@@ -312,6 +312,12 @@ const PLURAL_CLAUSE_AFTER_DASH = new RegExp(`(?<=[\\w)\\]"'*_\`\\u201d\\u2019\\u
 // noun, so "the private lives of founders" stays.
 const RARE_NOUN_VERB = '(?:lives|appears|belongs|depends|seems|happens|exists|sits|resides|occurs|arrives|applies)';
 const THE_CLAUSE_AFTER_DASH = new RegExp(`(?<=[\\w)\\]"'*_\`\\u201d\\u2019\\uE001])\\s*\\u2014\\s*(?!${TIME_OPENER})(?=(?:the|a|an|every|each|no)\\s+(?:(?!(?:the|a|an|that|whose|which|who|it|they|we|you|he|she|I|this|these|those)\\b)${NOUN_WORD}\\s+){1,2}${RARE_NOUN_VERB}\\s+(?!(?:of|and|or|that|which|who|like|than|as)\\b)[^\\s\\u2014])`, 'g');
+// A subject that holds its own "that" clause, a verb in "s" or "ed" right
+// after the "that", then a singular "is", "was" or "has", starts one too:
+// "say why in the receipt; a stuck loop that reports stuck is healthy". A
+// plural like "teams" after the "that" takes "are", so "a plan that teams
+// are using" stays a phrase.
+const THAT_CLAUSE_AFTER_DASH = new RegExp(`(?<=[\\w)\\]"'*_\`\\u201d\\u2019\\uE001])\\s*\\u2014\\s*(?=(?:the|a|an)\\s+(?:(?!(?:the|a|an|that|which|who)\\b)[a-z][\\w-]*\\s+){1,3}that\\s+[a-z]{3,}(?:s|ed)\\s+(?:(?!(?:is|was|has)\\b)[a-z][\\w-]*\\s+){0,2}(?:is|was|has)\\s+[a-z])`, 'g');
 // A short subject and a verb that ends its clause start one too, with
 // nothing after the verb: "swap the model; the brain stays", "the session
 // vanishes; no reusable artifact remains". Only verbs a noun rarely ends in
@@ -844,6 +850,10 @@ function fixEmDash(s, { endsBlock = false, startsBlock = false, spans = [] } = {
     .replace(THE_CLAUSE_AFTER_DASH, (m, at, whole) => {
       const left = clauseLeft(at, whole);
       return left && !NAME_BEFORE_PLAIN_VERB.test(whole.slice(at)) ? clauseJoin(left) : m;
+    })
+    .replace(THAT_CLAUSE_AFTER_DASH, (m, at, whole) => {
+      const left = clauseLeft(at, whole);
+      return left ? clauseJoin(left) : m;
     })
     .replace(END_CLAUSE_AFTER_DASH, (m, at, whole) => {
       const left = clauseLeft(at, whole);
