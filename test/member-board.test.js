@@ -83,6 +83,69 @@ test('board shows working, quiet, done ok, and done failed from fake logs', () =
   }
 });
 
+test('last step skips writes to the member own log', () => {
+  const dir = fakeDir({
+    architect: [
+      `${at(300)} m-5 started: plan the board`,
+      `${at(200)} m-5 running: node --test test/member-board.test.js`,
+      `${at(100)} m-5 running: mkdir -p atris/team/architect/logs && cat >> atris/team/architect/logs/2026-10-13.md`,
+      `${at(50)} m-5 running: cat >> atris/team/architect/logs/2026-10-13.md <<'EOF'`,
+    ],
+    scribe: [
+      `${at(40)} m-6 started: only log today`,
+      `${at(30)} m-6 running: cat >> atris/team/scribe/logs/2026-10-13.md`,
+    ],
+    helper: [
+      `${at(40)} m-7 started: write a teammate note`,
+      `${at(30)} m-7 running: cat >> atris/team/scribe/logs/2026-10-13.md`,
+    ],
+  });
+  try {
+    const by = Object.fromEntries(readBoard({ dir, now: NOW }).map((r) => [r.member, r]));
+    assert.equal(by.architect.step, 'running: node --test test/member-board.test.js');
+    assert.equal(by.architect.ago, '50s ago', 'the log write still counts as activity');
+    assert.match(by.scribe.step, /^running: cat >> atris\/team\/scribe\/logs/, 'falls back when only housekeeping happened');
+    assert.match(by.helper.step, /scribe\/logs/, 'another member log is real work');
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test('members that finished over an hour ago hide unless --all', () => {
+  const dir = fakeDir({
+    old: [`${at(7200)} m-8 started: yesterday's job`, `${at(3700)} m-8 finished: ok`],
+    fresh: [`${at(600)} m-9 started: just landed`, `${at(500)} m-9 finished: failed`],
+    stuck: [`${at(9000)} m-10 started: long quiet`, `${at(8000)} m-10 running: npm test`],
+  });
+  try {
+    assert.deepEqual(readBoard({ dir, now: NOW }).map((r) => r.member), ['fresh', 'stuck']);
+    assert.deepEqual(readBoard({ dir, now: NOW, all: true }).map((r) => r.member), ['fresh', 'old', 'stuck']);
+
+    const env = { ...process.env, ATRIS_PROGRESS_DIR: dir };
+    // Real clock: the fake logs are from 2026-10-13, so every finished member is old.
+    const res = spawnSync(process.execPath, [cliPath, 'member', 'board'], { cwd: dir, env, encoding: 'utf8' });
+    assert.equal(res.status, 0, res.stderr);
+    assert.doesNotMatch(res.stdout, /^(old|fresh)\s/m);
+    assert.match(res.stdout, /^stuck\s+quiet/m);
+    assert.match(res.stdout, /^2 finished over an hour ago, hidden\. --all shows them$/m);
+
+    const all = spawnSync(process.execPath, [cliPath, 'member', 'board', '--all'], { cwd: dir, env, encoding: 'utf8' });
+    assert.equal(all.status, 0, all.stderr);
+    assert.match(all.stdout, /^old\s+done ok/m);
+    assert.match(all.stdout, /^fresh\s+done failed/m);
+    assert.doesNotMatch(all.stdout, /hidden/);
+
+    const json = spawnSync(process.execPath, [cliPath, 'member', 'board', '--json'], { cwd: dir, env, encoding: 'utf8' });
+    assert.deepEqual(JSON.parse(json.stdout).members.map((r) => r.member), ['stuck']);
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test('board says nobody is working when every member is hidden', () => {
+  assert.equal(renderBoard([], '/x', 3), 'nobody is working right now. 3 finished over an hour ago, hidden. --all shows them');
+});
+
 test('atris member board reads ATRIS_PROGRESS_DIR for real', () => {
   const recent = new Date(Date.now() - 5_000).toISOString();
   const dir = fakeDir({ navigator: [`${recent} m-9 started: map the repo`, `${recent} m-9 reading atris/MAP.md`] });
