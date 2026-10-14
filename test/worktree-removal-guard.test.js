@@ -318,13 +318,14 @@ function sourceFiles(dir) {
     return relative.endsWith('.js') ? [relative] : [];
   });
 }
-// An exemption names a function and how many deletes it holds today, so a new
-// delete added to an exempt function fails until someone reviews it.
+// An exemption names a function and lists the folder each of its deletes
+// removes today, so a new delete added to an exempt function fails, naming its
+// line and folder, until someone reviews it.
 const UNGUARDED_REMOVALS = {
-  'commands/worktree.js:createAgentWorktree': { sites: 1, why: 'drops a folder it just made before any engine entered; plain remove refuses dirt' },
-  'lib/fleet.js:prepareReviewSandbox': { sites: 6, why: 'wipes its own temp sandbox when setup fails, and its seed folder after; only that call touched them, so any lock is stale' },
-  'commands/drill.js:landingShippedLocal': { sites: 1, why: 'removes a worktree inside the drill\'s own throwaway practice repo' },
-  'lib/land-green.js:scratchCheckout': { sites: 1, why: 'drops its fresh temp folder only after git failed to make it a worktree' },
+  'commands/worktree.js:createAgentWorktree': { deletes: ['target'], why: 'drops a folder it just made before any engine entered; plain remove refuses dirt' },
+  'lib/fleet.js:prepareReviewSandbox': { deletes: ['seedDir', 'worktreePath', 'gitDir', 'quarantine', 'sandboxRoot', 'seedDir'], why: 'wipes its own temp sandbox when setup fails, and its seed folder after; only that call touched them, so any lock is stale' },
+  'commands/drill.js:landingShippedLocal': { deletes: ['ctx.landingWorktree'], why: 'removes a worktree inside the drill\'s own throwaway practice repo' },
+  'lib/land-green.js:scratchCheckout': { deletes: ['dir'], why: 'drops its fresh temp folder only after git failed to make it a worktree' },
 };
 // Real work folder removals still waiting for the guard. Each one is a gap;
 // guard it and delete its line here.
@@ -383,11 +384,11 @@ function worktreeRemovalSites(file) {
 
 // A cleanup that deletes a set of folders together checks every git store
 // before the first delete and writes one log line for the set. Each listed
-// check must be present, the log must name the work folder, and the delete
-// count is pinned so a new delete in the set gets reviewed.
+// check must be present, the log must name the work folder, and the deletes
+// are listed by folder so a new delete in the set gets reviewed.
 const GROUPED_REMOVALS = {
   'lib/fleet.js:disposeReviewSandbox': {
-    sites: 5,
+    deletes: ['boundary.worktreePath', 'boundary.worktreePath', 'boundary.gitDir', 'boundary.quarantine', 'boundary.sandboxRoot'],
     checks: ['worktreeGitActivity(boundary.worktreePath)', 'gitStoreActivity(boundary.gitDir)', 'gitStoreActivity(boundary.quarantine)'],
     logs: 'boundary.worktreePath',
     why: 'review sandbox: work folder, its git store, the quarantine store, and their parent go together',
@@ -416,8 +417,9 @@ function removedTarget(call, body) {
   const list = call.match(/(?:['"]worktree['"]\s*,\s*['"]remove['"]|['"]rm['"]\s*,\s*\[)([^\]]*)\]/);
   if (!list) return '';
   const unquoted = (part) => part && !/^['"`]/.test(part);
-  const last = list[1].split(',').map((part) => part.trim()).pop();
-  if (unquoted(last)) return last.replace(/\s+/g, '');
+  // The folder is the last unquoted entry; options like '--force' may follow it.
+  const last = list[1].split(',').map((part) => part.trim()).filter(unquoted).pop();
+  if (last) return last.replace(/\s+/g, '');
   // Arguments pushed onto a named list after it is built, like removeArgs.push(wt.path).
   const named = call.match(/([\w$]+)\s*=\s*\[\s*['"]worktree['"]/);
   if (!named) return '';
@@ -519,6 +521,20 @@ function removalGap(site) {
   return loggedPaths(site.body).some((logged) => folder(logged) === folder(target)) ? '' : `removal log does not name ${target}`;
 }
 
+// Deletes found in a listed function, matched against its list by folder.
+// Anything left over on either side is named with its line or folder.
+function listedDeleteDrift(key, listed, found) {
+  const left = [...listed];
+  const added = [];
+  for (const site of found) {
+    const target = removedTarget(site.call, site.body) || '(unreadable folder)';
+    const at = left.indexOf(target);
+    if (at >= 0) left.splice(at, 1);
+    else added.push(`${key} (line ${site.line}): new delete of ${target}`);
+  }
+  return [...added, ...left.map((target) => `${key}: listed delete of ${target} is gone`)];
+}
+
 test('every work folder removal goes through the git check and the removal log', () => {
   const sites = [...sourceFiles('lib'), ...sourceFiles('commands')].flatMap(worktreeRemovalSites);
   assert.ok(sites.length >= 8, `expected the known removal sites, found ${sites.length}`);
@@ -530,11 +546,9 @@ test('every work folder removal goes through the git check and the removal log',
   const stale = [...Object.keys(UNGUARDED_REMOVALS), ...Object.keys(GROUPED_REMOVALS), ...Object.keys(NOT_YET_GUARDED)]
     .filter((key) => !sites.some((site) => site.key === key));
   assert.deepEqual(stale, [], 'exception names a function that no longer removes a folder');
-  const recounted = Object.entries({ ...UNGUARDED_REMOVALS, ...GROUPED_REMOVALS })
-    .map(([key, { sites: expected }]) => [key, expected, sites.filter((site) => site.key === key).length])
-    .filter(([, expected, found]) => found !== expected)
-    .map(([key, expected, found]) => `${key} (expected ${expected}, found ${found})`);
-  assert.deepEqual(recounted, [], 'an exempt function gained or lost a delete; review it, then update its count');
+  const drifted = Object.entries({ ...UNGUARDED_REMOVALS, ...GROUPED_REMOVALS })
+    .flatMap(([key, { deletes }]) => listedDeleteDrift(key, deletes, sites.filter((site) => site.key === key)));
+  assert.deepEqual(drifted, [], 'an exempt or grouped function gained or lost a delete; review it, then update its list');
   const nowGuarded = Object.keys(NOT_YET_GUARDED).filter((key) => sites
     .filter((site) => site.key === key)
     .every((site) => !removalGap(site)));
