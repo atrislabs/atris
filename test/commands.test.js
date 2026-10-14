@@ -9062,7 +9062,18 @@ test('task review-lane-run does not repeat the same review_chat task across inne
       '--proof', 'node --check test/commands.test.js passed before review-lane-run duplicate guard',
     ], { cwd: dir, env }).status, 0);
 
-    const before = JSON.parse(runCli(['task', 'show', ref, '--json'], { cwd: dir, env }).stdout);
+    const baselineDb = taskStore.open(dbPath);
+    let before;
+    try {
+      before = taskStore.taskProjection(baselineDb, { workspaceRoot, includeHistory: true })
+        .tasks.find(task => task.display_id === ref);
+      assert.ok(before);
+      assert.equal(before.status, 'review');
+      assert.ok(before.current_version > 0);
+      assert.ok(Array.isArray(before.messages));
+    } finally {
+      taskStore.close();
+    }
     const beforeReviewChats = (before.messages || []).filter(message => /TASK_REVIEW_CHAT/.test(message.content || '')).length;
     const liveRun = runCli([
       'task', 'review-lane-run',
@@ -9090,6 +9101,7 @@ test('task review-lane-run does not repeat the same review_chat task across inne
 
     const after = JSON.parse(runCli(['task', 'show', ref, '--json'], { cwd: dir, env }).stdout);
     const afterReviewChats = (after.messages || []).filter(message => /TASK_REVIEW_CHAT/.test(message.content || '')).length;
+    assert.equal(after.id, before.id);
     assert.equal(after.current_version, before.current_version + 1);
     assert.equal(afterReviewChats, beforeReviewChats + 1);
 
