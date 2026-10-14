@@ -1137,13 +1137,42 @@ const LAUNCH_EXEMPT_FILES = new Map([
 const stripComments = (text) => text
   .replace(/\/\*[\s\S]*?\*\//g, (block) => block.replace(/[^\n]/g, ' '))
   .replace(/(^|[^:\\'"`])\/\/.*$/gm, '$1');
+// Ignore helper definitions when looking for calls in their enclosing code.
+// Keep functions containing the launch, and blank siblings without moving lines.
+const withoutHelperDefinitions = (code, launch = -1) => {
+  const definitions = /^[ \t]*(?:async\s+)?function\s+[\w$]+\s*\([^)]*\)\s*\{|^[ \t]*(?:const|let|var)\s+[\w$]+\s*=\s*(?:async\s*)?(?:function\s*\([^)]*\)\s*\{|\([^)]*\)\s*=>)/gm;
+  const spans = [];
+  for (const header of code.matchAll(definitions)) {
+    let body = header.index + header[0].length;
+    const arrow = header[0].endsWith('=>');
+    if (arrow) while (/\s/.test(code[body] || '') && body < code.length) body += 1;
+    const block = !arrow || code[body] === '{';
+    const tokens = /'(?:\\.|[^'\\])*'|"(?:\\.|[^"\\])*"|`(?:\\.|[^`\\])*`|[{};]|[^'"`{};]+/g;
+    let depth = 1;
+    let end = code.length;
+    for (const token of code.slice(block && arrow ? body + 1 : body).matchAll(tokens)) {
+      if (block && token[0] === '{') depth += 1;
+      if (block && token[0] === '}') depth -= 1;
+      if ((block && depth === 0) || (!block && token[0] === ';')) {
+        end = (block && arrow ? body + 1 : body) + token.index + token[0].length;
+        break;
+      }
+    }
+    if (launch < header.index || launch >= end) spans.push([header.index, end]);
+  }
+  let visible = code;
+  for (const [start, end] of spans.reverse()) {
+    visible = visible.slice(0, start) + visible.slice(start, end).replace(/[^\n]/g, ' ') + visible.slice(end);
+  }
+  return visible;
+};
 // A function in the same file that records the run counts as a recording
 // call, the way the mission tick records through its own small wrapper.
 const recordingCall = (code) => {
   const names = ['startEngineRun', 'recordEngineResource'];
   for (const match of code.matchAll(/^(?:async\s+)?function\s+([\w$]+)\s*\(/gm)) {
     const end = code.slice(match.index).search(/^\}/m);
-    const body = code.slice(match.index, end < 0 ? undefined : match.index + end);
+    const body = withoutHelperDefinitions(code.slice(match.index + match[0].length, end < 0 ? undefined : match.index + end));
     if (/\b(?:startEngineRun|recordEngineResource)\(/.test(body)) names.push(match[1]);
   }
   return new RegExp(`\\b(?:${[...new Set(names)].join('|')})\\(`);
@@ -1153,6 +1182,9 @@ const recordingCall = (code) => {
 const RECORD_WINDOW = 12;
 const FUNCTION_START = /^(?:async\s+)?function\b|^(?:const|let)\s+[\w$]+\s*=\s*(?:async\s*)?(?:function\b|\([^)]*\)\s*=>)/gm;
 const recordedAbove = (lines, line, recorder) => {
+  const code = lines.join('\n');
+  const launch = lines.slice(0, line - 1).join('\n').length + (line > 1 ? 1 : 0);
+  lines = withoutHelperDefinitions(code, launch + lines[line - 1].search(/\S/)).split('\n');
   let start = Math.max(0, line - 1 - RECORD_WINDOW);
   for (let index = line - 1; index >= start; index -= 1) {
     // A closed function's readings cannot cover a later top-level launch.
@@ -1208,6 +1240,24 @@ test('every launch of an engine program by name records its run or is named as e
   assert.deepStrictEqual(unrecorded('commands/planted.js', "const record = () =>\n  startEngineRun(root);\nspawnSync('claude', args);\n"), ['commands/planted.js:3 claude']);
   assert.deepStrictEqual(unrecorded('commands/planted.js', "function record() { startEngineRun(root); }\nspawnSync('claude', args);\n"), ['commands/planted.js:2 claude']);
   assert.deepStrictEqual(unrecorded('commands/planted.js', "function covered() { const end = startEngineRun(root);\n  spawnSync('claude', args);\n}\n"), []);
+  {
+    const source = "function outer() {\n  function helper() {\n    startEngineRun(root);\n  }\n  spawnSync('claude', args);\n}\n";
+    assert.deepStrictEqual(unrecorded('commands/planted.js', source), ['commands/planted.js:5 claude']);
+  }
+  {
+    const source = "function outer() {\n  const helper = () => {\n    startEngineRun(root);\n  };\n  spawnSync('claude', args);\n}\n";
+    assert.deepStrictEqual(unrecorded('commands/planted.js', source), ['commands/planted.js:5 claude']);
+  }
+  {
+    const source = "function outer() {\n  const helper = () =>\n    startEngineRun(root);\n\n  spawnSync('claude', args);\n}\n";
+    assert.deepStrictEqual(unrecorded('commands/planted.js', source), ['commands/planted.js:5 claude']);
+  }
+  {
+    const source = "function outer() {\n  startEngineRun(root);\n  function helper() {\n    noop();\n  }\n  spawnSync('claude', args);\n}\n";
+    assert.deepStrictEqual(unrecorded('commands/planted.js', source), []);
+  }
+  assert.deepStrictEqual(unrecorded('commands/planted.js', "function outer() {\n  function helper() { startEngineRun(root); }\n}\nfunction caller() {\n  outer();\n  spawnSync('claude', args);\n}\n"), ['commands/planted.js:6 claude'], 'a parent with only a nested recorder is not a recording wrapper');
+  assert.deepStrictEqual(unrecorded('commands/planted.js', "function outer() {\n  function helper() {\n    startEngineRun(root);\n    spawnSync('claude', args);\n  }\n}\n"), [], 'a helper can record its own launch');
   const recordedThenBare = [
     "const end = startEngineRun(root, { engine: 'claude' });",
     "spawnSync('claude', ['-p', a]);",
@@ -1342,6 +1392,24 @@ test('every engine started through a runner or profile variable records its run 
   assert.deepStrictEqual(planted("function launch(runner) {\n  const program = runner;\n  spawnSync(program, ['--help']);\n}\nlaunch(resolveClaudeRunnerBin());\n"), []);
   assert.deepStrictEqual(planted("function launch(runner) {\n  const program = runner;\n  spawnSync(program, args);\n}\nlaunch(findExecutable('git'));\n"), []);
   assert.deepStrictEqual(planted("function launch(runner) {\n  const program = buildCommand(runner);\n  spawnSync(program, args);\n}\nlaunch(resolveClaudeRunnerBin());\n"), []);
+  {
+    const source = "function outer() {\n  function helper() {\n    startEngineRun(root);\n  }\n  spawn(resolveClaudeRunnerBin(), args);\n}\n";
+    assert.deepStrictEqual(planted(source), ['commands/planted.js:5 resolveClaudeRunnerBin()']);
+  }
+  {
+    const source = "function outer() {\n  const helper = () => {\n    startEngineRun(root);\n  };\n  spawn(resolveClaudeRunnerBin(), args);\n}\n";
+    assert.deepStrictEqual(planted(source), ['commands/planted.js:5 resolveClaudeRunnerBin()']);
+  }
+  {
+    const source = "function outer() {\n  const helper = () =>\n    startEngineRun(root);\n\n  spawn(resolveClaudeRunnerBin(), args);\n}\n";
+    assert.deepStrictEqual(planted(source), ['commands/planted.js:5 resolveClaudeRunnerBin()']);
+  }
+  {
+    const source = "function outer() {\n  startEngineRun(root);\n  function helper() {\n    noop();\n  }\n  spawn(resolveClaudeRunnerBin(), args);\n}\n";
+    assert.deepStrictEqual(planted(source), []);
+  }
+  assert.deepStrictEqual(planted("function outer() {\n  function helper() { startEngineRun(root); }\n}\nfunction caller() {\n  outer();\n  spawn(resolveClaudeRunnerBin(), args);\n}\n"), ['commands/planted.js:6 resolveClaudeRunnerBin()'], 'a nested recorder does not make the parent a recording wrapper');
+  assert.deepStrictEqual(planted("function outer() {\n  function helper() {\n    startEngineRun(root);\n    spawn(resolveClaudeRunnerBin(), args);\n  }\n}\n"), [], 'a recorded launch inside a helper stays covered');
   // A variable declared in another function is not this launch's program.
   assert.deepStrictEqual(planted("function a() {\n  const command = buildEngineCommand(engine);\n}\nfunction b(command) {\n  spawnSync(command, { shell: true });\n}\n"), []);
   // A local wrapper that records the run covers the launch below it; a
