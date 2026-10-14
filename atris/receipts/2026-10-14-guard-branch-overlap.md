@@ -32,3 +32,24 @@ Someone resolves the conflicts file by file and keeps both guards. Fleet cleanup
 ## Safeguard
 
 Merge pull request 1184 first, since it is the only side that covers fleet review cleanup and it merges clean. Then rebase this branch onto it and keep only three things: listing every lock instead of one, the cleanup audits, and the tests. Replace the pull request's single-lock lookups with that one helper in the same change. Do not merge this branch as it stands.
+
+## Correction: 1184 misses a shared branch lock
+
+Verdict changes from "merge 1184 first" to "merge 1184 only after it checks the shared Git storage too."
+
+This branch's two required test files, run against 1184's code in a scratch copy, pass 7 of 13. Every folder holding its own lock is still kept, but only that lock is named; the shared branch lock beside it never appears. Two regression-cleanup tests fail on a different result shape, not on safety.
+
+The probe holds only a two-hour-old shared branch lock and asks cleanup and reap, in preview, about a landed linked copy:
+
+```text
+$ node atris/receipts/2026-10-14-shared-lock-probe.js <1184 checkout>
+{ "cleanup": "would remove", "reap": "would remove" }
+exit 0
+
+$ node atris/receipts/2026-10-14-shared-lock-probe.js .
+cleanup: kept, git_activity, git locks: .../repo/.git/refs/heads/master.lock (7200s old)
+reap: kept, git locks: .../repo/.git/refs/heads/master.lock (7200s old)
+exit 0
+```
+
+Safeguard: before 1184 merges, swap its single-folder lock lookups for the helper that walks both the copy's own Git files and the shared ones, and bring this branch's lock tests with it. Then retire the rest of this branch.
