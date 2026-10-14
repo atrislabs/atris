@@ -91,6 +91,7 @@ checks the refs in both files; `atris doc-health --fix-refs` moves drifted ones.
 | receipt block builder | `lib/receipt-block.js` | proof receipts |
 | autoland gate | `lib/autoland.js` | certified landings |
 | autoland command | `commands/autoland.js` | atris autoland |
+| finished member work lands itself | `lib/member-autoland.js:82`, `commands/member.js:1375` | after `member run --ignite` completes: autoland switch on + no protected lane -> rebase on origin default, `worktree ship --verify --merge` reruns the check and merges; else one `left on its branch:` line; `test/member-autoland.test.js` |
 | slop detector | `commands/slop.js` | prose lint |
 | design system commands | `commands/design.js` `lib/design-api.js` | atris design extract and check; shared with atris mcp |
 | improvement attempt ledger | `commands/rsi.js` `lib/rsi-record.js` | read and record Dream-RSI attempts |
