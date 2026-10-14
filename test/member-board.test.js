@@ -79,6 +79,9 @@ test('board shows working, quiet, done ok, and done failed from fake logs', () =
     assert.equal(by.shipper.lasted, '2m', 'an ended run shows how long it took');
     assert.equal(by.breaker.lasted, '20s');
     assert.equal(by.scout.lasted, '', 'a run that may still be going has no length yet');
+    assert.equal(by.scout.running_for, '10m', 'no pid, but the start time is known');
+    assert.equal(by.builder.running_for, '1m');
+    assert.equal(by.shipper.running_for, '', 'an ended run uses lasted instead');
 
     const screen = renderBoard(rows, dir);
     assert.ok(screen.includes(`${longJob.slice(0, 47)}...`), 'with no terminal width the job cuts at 50');
@@ -91,7 +94,7 @@ test('board shows working, quiet, done ok, and done failed from fake logs', () =
     assert.equal(screen.split('\n').pop(), '2 unfinished runs recorded no process id, so a crash there shows as working or quiet, not died', 'builder and scout cannot be checked');
     assert.equal(screen.split('\n')[0], '4 members: 1 done failed, 1 working, 1 quiet, 1 done ok', 'the summary counts states, trouble first');
     assert.match(screen, /^member\s+state\s+before\s+run time\s+ago\s+job\s+last step$/m, 'no run has a pid or engine, so those columns leave');
-    assert.match(screen, /^scout\s+quiet\s+-\s+-\s+5m ago\s+find stale docs\s+running: rg stale$/m);
+    assert.match(screen, /^scout\s+quiet\s+-\s+10m\s+5m ago\s+find stale docs\s+running: rg stale$/m);
     assert.match(screen, /^breaker\s+done failed\s+-\s+20s\s+1m ago\s+try the risky thing\s+running: node boom\.js$/m);
   } finally {
     fs.rmSync(dir, { recursive: true, force: true });
@@ -139,7 +142,7 @@ test('before shows how the last three runs ended, newest first', () => {
   try {
     const [row] = readBoard({ dir, now: NOW });
     assert.deepEqual(row.before, ['died', 'stopped', 'failed'], 'a stop wins over failed; the oldest run drops off');
-    assert.match(renderBoard([row], dir), /^builder\s+working\s+died stopped failed\s+\d+s ago\s+/m);
+    assert.match(renderBoard([row], dir), /^builder\s+working\s+died stopped failed\s+\d+s\s+\d+s ago\s+/m);
   } finally {
     fs.rmSync(dir, { recursive: true, force: true });
   }
@@ -238,8 +241,8 @@ test('atris member board reads ATRIS_PROGRESS_DIR for real', () => {
     const env = { ...process.env, ATRIS_PROGRESS_DIR: dir };
     const once = spawnSync(process.execPath, [cliPath, 'member', 'board'], { cwd: dir, env, encoding: 'utf8' });
     assert.equal(once.status, 0, once.stderr);
-    assert.match(once.stdout, /^navigator\s+working\s+\d+s ago\s+map the repo\s+reading atris\/MAP\.md$/m, 'columns that are empty on every row leave');
-    assert.match(once.stdout, /^member\s+state\s+ago\s+job\s+last step$/m);
+    assert.match(once.stdout, /^navigator\s+working\s+\d+s\s+\d+s ago\s+map the repo\s+reading atris\/MAP\.md$/m, 'columns that are empty on every row leave');
+    assert.match(once.stdout, /^member\s+state\s+run time\s+ago\s+job\s+last step$/m, 'before, alive and engine leave; run time stays');
 
     const watch = spawnSync(process.execPath, [cliPath, 'member', 'board', '--watch'], { cwd: dir, env, encoding: 'utf8', timeout: 3700 });
     assert.equal(watch.signal, 'SIGTERM', 'watch stays open until stopped');
