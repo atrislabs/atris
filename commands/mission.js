@@ -434,7 +434,13 @@ function missionTickTimeoutMs(mission, remainingMs) {
 
 function resolveMissionTickRunner(mission, root = process.cwd(), options = {}) {
   if (String(mission && mission.runner || '').trim().toLowerCase() !== MISSION_AUTO_RUNNER) {
-    return { mission, engine_id: null, requested_engine: null, engine_fallback_reason: null };
+    // A named engine still gets the roster's time limit for that engine.
+    const runner = String(mission && mission.runner || '').trim().toLowerCase();
+    const pin = runner && !(Number(mission && mission.roster_max_seconds) > 0)
+      ? require('../lib/engine-registry').rosterPinFor('executor', runner, root, options)
+      : {};
+    const limited = pin.roster_max_seconds ? { ...mission, roster_max_seconds: pin.roster_max_seconds } : mission;
+    return { mission: limited, engine_id: null, requested_engine: null, engine_fallback_reason: null };
   }
   // A mission owned by a team member runs on that member's roster pick. An
   // explicit preferred engine (or a run's --engine) still wins, and with no
