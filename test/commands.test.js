@@ -10475,11 +10475,22 @@ test('task current-step advances the scoped current task one safe action', () =>
   const env = { ATRIS_TASKS_DB: dbPath, NODE_NO_WARNINGS: '1', ATRIS_AGENT_ID: 'codex', ATRIS_SKIP_UPDATE_CHECK: '1' };
   try {
     fs.mkdirSync(path.join(dir, 'atris'), { recursive: true });
+    // Side tasks are created and claimed straight in the task store; every
+    // current-step, ready, review, and show call still runs through the CLI.
+    const workspaceRoot = taskStore.workspaceRoot(dir);
+    const seedClaimedTask = ({ title, tag, goalId, owner }) => {
+      const db = taskStore.open(dbPath);
+      try {
+        const metadata = goalId ? { goal_id: goalId } : null;
+        const { id } = taskStore.addTask(db, { title, tag, workspaceRoot, metadata });
+        assert.equal(taskStore.claimTask(db, { id, claimedBy: owner }).claimed, true);
+        return { id, display_id: taskStore.taskDisplayRefMap(taskStore.listTasks(db, { workspaceRoot })).get(id) };
+      } finally {
+        taskStore.close();
+      }
+    };
 
-    const reviewAdd = runCli(['task', 'add', 'Unrelated review debt stays global', '--tag', 'agent', '--json'], { cwd: dir, env });
-    assert.equal(reviewAdd.status, 0, reviewAdd.stderr);
-    const reviewTask = JSON.parse(reviewAdd.stdout).task;
-    assert.equal(runCli(['task', 'claim', reviewTask.display_id, '--as', 'codex'], { cwd: dir, env }).status, 0);
+    const reviewTask = seedClaimedTask({ title: 'Unrelated review debt stays global', tag: 'agent', owner: 'codex' });
     assert.equal(runCli([
       'task', 'ready', reviewTask.display_id,
       '--as', 'codex',
@@ -10586,15 +10597,7 @@ test('task current-step advances the scoped current task one safe action', () =>
     assert.equal(scopedDetail.review.approval_status, 'pending');
     assert.ok(scopedDetail.messages.some(message => message.content.includes('TASK_REVIEW_CHAT')));
 
-    const continueAdd = runCli([
-      'task', 'add', 'Current-step certified continuation parent',
-      '--tag', 'task',
-      '--goal-id', 'OBL-931',
-      '--json',
-    ], { cwd: dir, env });
-    assert.equal(continueAdd.status, 0, continueAdd.stderr);
-    const continueTask = JSON.parse(continueAdd.stdout).task;
-    assert.equal(runCli(['task', 'claim', continueTask.display_id, '--as', 'codex'], { cwd: dir, env }).status, 0);
+    const continueTask = seedClaimedTask({ title: 'Current-step certified continuation parent', tag: 'task', goalId: 'OBL-931', owner: 'codex' });
     assert.equal(runCli([
       'task', 'ready', continueTask.display_id,
       '--as', 'codex',
@@ -10608,15 +10611,7 @@ test('task current-step advances the scoped current task one safe action', () =>
       '--next', 'Current-step continuation child',
     ], { cwd: dir, env }).status, 0);
 
-    const waitingAdd = runCli([
-      'task', 'add', 'Current-step waits for human accept only',
-      '--tag', 'task',
-      '--goal-id', 'OBL-931',
-      '--json',
-    ], { cwd: dir, env });
-    assert.equal(waitingAdd.status, 0, waitingAdd.stderr);
-    const waitingTask = JSON.parse(waitingAdd.stdout).task;
-    assert.equal(runCli(['task', 'claim', waitingTask.display_id, '--as', 'codex'], { cwd: dir, env }).status, 0);
+    const waitingTask = seedClaimedTask({ title: 'Current-step waits for human accept only', tag: 'task', goalId: 'OBL-931', owner: 'codex' });
     assert.equal(runCli([
       'task', 'ready', waitingTask.display_id,
       '--as', 'codex',
@@ -10683,15 +10678,7 @@ test('task current-step advances the scoped current task one safe action', () =>
     assert.equal(waitingDetail.status, 'review');
     assert.equal(waitingDetail.review.approval_status, 'pending');
 
-    const otherAdd = runCli([
-      'task', 'add', 'Other owner scoped task stays untouched',
-      '--tag', 'task',
-      '--goal-id', 'OBL-929',
-      '--json',
-    ], { cwd: dir, env });
-    assert.equal(otherAdd.status, 0, otherAdd.stderr);
-    const otherTask = JSON.parse(otherAdd.stdout).task;
-    assert.equal(runCli(['task', 'claim', otherTask.display_id, '--as', 'other-agent'], { cwd: dir, env }).status, 0);
+    const otherTask = seedClaimedTask({ title: 'Other owner scoped task stays untouched', tag: 'task', goalId: 'OBL-929', owner: 'other-agent' });
     const otherStep = runCli([
       'task', 'current-step',
       '--goal-id', 'OBL-929',
@@ -10714,15 +10701,7 @@ test('task current-step advances the scoped current task one safe action', () =>
     assert.equal(otherDetail.status, 'claimed');
     assert.equal(otherDetail.claimed_by, 'other-agent');
 
-    const otherReviewAdd = runCli([
-      'task', 'add', 'Other owner review task stays untouched',
-      '--tag', 'task',
-      '--goal-id', 'OBL-930',
-      '--json',
-    ], { cwd: dir, env });
-    assert.equal(otherReviewAdd.status, 0, otherReviewAdd.stderr);
-    const otherReviewTask = JSON.parse(otherReviewAdd.stdout).task;
-    assert.equal(runCli(['task', 'claim', otherReviewTask.display_id, '--as', 'other-agent'], { cwd: dir, env }).status, 0);
+    const otherReviewTask = seedClaimedTask({ title: 'Other owner review task stays untouched', tag: 'task', goalId: 'OBL-930', owner: 'other-agent' });
     assert.equal(runCli([
       'task', 'ready', otherReviewTask.display_id,
       '--as', 'other-agent',
