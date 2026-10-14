@@ -9969,7 +9969,7 @@ test('task plan and do record an explicit headless stage contract', () => {
   try {
     fs.mkdirSync(path.join(dir, 'atris'), { recursive: true });
 
-    // Seed only the four parents; claim, plan, do, show, status, and ready still use the CLI.
+    // Seed the four parents and the side plan; contract and ownership checks use the CLI.
     // Display refs are numbered across the workspace, so compute them after all inserts.
     let refs;
     const db = taskStore.open(dbPath);
@@ -10033,16 +10033,27 @@ test('task plan and do record an explicit headless stage contract', () => {
     assert.equal(otherOwnerPlanWithAssignee.status, 1);
     assert.equal(JSON.parse(otherOwnerPlanWithAssignee.stdout).reason, 'claimed_by_other');
 
-    const claimedAfterPlanStage = runCli([
-      'task', 'plan', claimedAfterPlanRef,
-      '--as', 'codex',
-      '--owner', 'codex',
-      '--goal', 'Keep planned owner aligned',
-      '--exit', 'claim owner and plan owner agree',
-      '--proof-needed', 'node --test task stage coverage passes',
-      '--json',
-    ], { cwd: dir, env });
-    assert.equal(claimedAfterPlanStage.status, 0, claimedAfterPlanStage.stderr);
+    // Only prepare the side plan here; the external claim and rejected do stay on the CLI.
+    const planDb = taskStore.open(dbPath);
+    try {
+      const sideTask = taskStore.withTaskDisplayRefs(taskStore.listTasks(planDb, {
+        workspaceRoot: taskStore.workspaceRoot(dir),
+      })).find((row) => row.display_id === claimedAfterPlanRef);
+      assert.ok(sideTask);
+      const staged = taskStore.stageTask(planDb, {
+        id: sideTask.id,
+        actor: 'codex',
+        stage: 'plan',
+        owner: 'codex',
+        ownerExplicit: true,
+        goal: 'Keep planned owner aligned',
+        exit: 'claim owner and plan owner agree',
+        proofNeeded: 'node --test task stage coverage passes',
+      });
+      assert.equal(staged.staged, true);
+    } finally {
+      taskStore.close();
+    }
     assert.equal(runCli(['task', 'claim', claimedAfterPlanRef, '--as', 'alice'], { cwd: dir, env }).status, 0);
     const claimedConflictDo = runCli([
       'task', 'do', claimedAfterPlanRef,
