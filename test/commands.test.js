@@ -19962,7 +19962,8 @@ test('proof remains a quiet alias for receipt', () => {
 test('log assigns sequential IDs across sessions', () => {
   const dir = makeTempDir();
   try {
-    initWorkspace(dir);
+    // Log creates today's journal itself, so a bare atris folder is the whole setup.
+    fs.mkdirSync(path.join(dir, 'atris'), { recursive: true });
     runCli(['log'], { cwd: dir, input: 'First idea\nexit\n' });
     runCli(['log'], { cwd: dir, input: 'Second idea\nexit\n' });
 
