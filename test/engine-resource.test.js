@@ -1795,3 +1795,35 @@ test('asks with their own launcher, like link and the dispatch scout, record pai
     fs.rmSync(root, { recursive: true, force: true });
   }
 });
+
+test('a killed ask prints the cause from its end reading in link and engine ask', () => {
+  const { spawnSync } = require('node:child_process');
+  const root = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'ask-cause-')));
+  const bin = path.join(root, 'bin');
+  const home = path.join(root, 'home');
+  const env = { ...process.env, HOME: home, ATRIS_SKIP_UPDATE_CHECK: '1', ATRIS_MACHINE_ROSTER_PATH: path.join(home, '.atris', 'roster.json'), PATH: `${bin}${path.delimiter}${process.env.PATH}` };
+  for (const key of ['ATRIS_RUNNER_PROFILE', 'ATRIS_RUNNER_BIN', 'ATRIS_RUNNER_COMMAND_TEMPLATE', 'ATRIS_CLAUDE_BIN', 'ATRIS_CLAUDE_COMMAND_TEMPLATE']) delete env[key];
+  const atris = (...args) => spawnSync(process.execPath, [path.join(__dirname, '..', 'bin', 'atris.js'), ...args], { cwd: root, encoding: 'utf8', timeout: 60000, env });
+  try {
+    fs.mkdirSync(bin);
+    fs.mkdirSync(home);
+    fs.mkdirSync(path.join(root, 'atris'));
+    fs.writeFileSync(path.join(root, 'atris', 'ROSTER.md'), '# roster\n\n## build\n- claude\n');
+    fs.writeFileSync(path.join(bin, 'claude'), '#!/bin/sh\nkill -KILL $$\n', { mode: 0o755 });
+    const link = atris('link', 'a sled', 'a dog');
+    const ask = atris('engine', 'ask', '--engine', 'claude', 'say hi');
+    const ends = fs.readFileSync(path.join(root, RESOURCE_LOG), 'utf8').trim().split('\n').map(JSON.parse).filter((line) => line.phase === 'end');
+    assert.equal(ends.length, 2);
+    for (const end of ends) {
+      assert.equal(end.signal, 'SIGKILL');
+      assert.match(end.cause, /^killed \((machine memory low|cause unknown)\)$/);
+    }
+    assert.equal(link.status, 1);
+    assert.ok(link.stderr.includes(`stopped by SIGKILL; ${ends[0].cause}`), link.stderr);
+    assert.ok(`${ask.stdout}${ask.stderr}`.includes(`stopped by SIGKILL; ${ends[1].cause}`), `${ask.stdout}${ask.stderr}`);
+    console.log(`link line: ${link.stderr.trim()}`);
+    console.log(`ask lines: ${`${ask.stdout}${ask.stderr}`.trim()}`);
+  } finally {
+    fs.rmSync(root, { recursive: true, force: true });
+  }
+});
