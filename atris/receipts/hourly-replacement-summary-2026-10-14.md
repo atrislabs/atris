@@ -23,6 +23,8 @@ replacement socket still answers: The agent has no identities.
 
 Age readings are staged to reproduce replacement safely. Equal-age reuse and replacement after the final scan remain outside the existing protection. The safety decision itself was unchanged.
 
+Readiness reran the bare check through a login shell and failed with exit 1, 120 passed and 18 failed. The existing runtime diagnosis in atris/receipts/readiness-runtime-proof-2026-10-14.txt explains the unsupported Node selection. Retried readiness with `PATH=/opt/homebrew/bin:$PATH node --test test/engine-resource.test.js test/engine-dispatch.test.js`; the frozen mission check is unchanged. This supported-runtime rerun exited 0, but readiness rejected the landing sentence after the check. A proof-only submission was also rejected because that process did not run the named test. The task remains claimed, not in Review; no acceptance is claimed. Product code and proof are committed and pushed.
+
 Mission attachment returned lock busy, so a separate claimed task records this slice. Brain activation and compile both returned plan-only exit 2 and would rewrite unrelated adapters; those changes were left out of this bounded slice.
 
 next_push: Include failed agent-stop attempts in the hourly cleanup summary so permissions failures cannot look quiet.
