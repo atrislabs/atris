@@ -208,8 +208,19 @@ test('a narrow terminal trims job and last step so every line fits', () => {
     assert.match(tiny, /^breaker\s+done failed\s+timed out\s+1m ago\s+risky fix/m, 'the reason survives at 80, without the age twice');
 
     const live = [{ ...rows[0], alive: true, engine: 'claude', running_for: '1m' }, rows[1]];
-    assert.match(renderBoard(live, dir, 0, 120), /^member\s+state\s+last result\s+alive\s+engine\s+running for\s+ago\s+job\s+last step$/m,
-      'one live run keeps them');
+    assert.match(renderBoard(live, dir, 0, 200), /^member\s+state\s+last result\s+alive\s+engine\s+running for\s+ago\s+job\s+last step$/m,
+      'one live run keeps them while the board fits');
+    const past = renderBoard(live, dir, 0, 120);
+    assert.match(past, /^member\s+state\s+last result\s+run\s+ago\s+job\s+last step$/m, 'wide but past the window: one run column');
+    assert.match(past, /^builder\s.*\s+Ship the member board so the op\.\.\.\s+running: node --test test\/member\.\.\.$/m,
+      'so the job and live step read further than beside three columns');
+    let read = 0;
+    for (let w = 90; w <= 180; w++) {
+      const line = renderBoard(live, dir, 0, w).split('\n').find((l) => l.startsWith('builder'));
+      const step = line.slice(line.lastIndexOf('  ') + 2).replace(/\.\.\.$/, '').length;
+      assert.ok(step >= read, `a wider board never shows less of a live step: ${w} columns`);
+      read = step;
+    }
     const folded = renderBoard(live, dir, 0, 100);
     for (const l of folded.split('\n')) assert.ok(l.length <= 100, `a live run fits in 100: ${l.length}`);
     assert.match(folded, /^member\s+state\s+last result\s+run\s+ago\s+job\s+last step$/m, 'too narrow: one run column');
