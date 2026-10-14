@@ -258,6 +258,14 @@ test('a hidden last step comes back when the engine word is the only thing in th
     const long = rows.map((r) => (r.member === 'builder' ? { ...r, job: 'fix the login flow' } : r));
     assert.match(renderBoard(long, dir, 0, 72), /^builder\s+working\s+-\s+codex 3m\s+1m ago\s+fix the login flow$/m,
       'a job that would be cut keeps the engine word and no last step');
+    const tight = renderBoard(rows, dir, 0, 68);
+    assert.ok(tight.split('\n').every((line) => line.length <= 68), tight);
+    assert.match(tight, /^member\s+state\s+result\s+run\s+ago\s+job\s+last step$/m, 'the heading gives way too when the engine word is not enough');
+    assert.match(tight, /^builder\s+working\s+-\s+3m\s+1m ago\s+fix login\s+editin\.\.\.$/m, tight);
+    assert.match(renderBoard(rows, dir, 0, 70), /^member\s+state\s+last result\s+run\s/m, 'the heading stays whole when the engine word is enough');
+    const done = rows.filter((r) => r.member !== 'builder');
+    assert.match(renderBoard(done, dir, 0, 62), /^member\s+state\s+result\s+ago\s+job\s+last step$/m, 'with no live run, the heading alone brings it back');
+    assert.match(renderBoard(done, dir, 0, 61), /^member\s+state\s+last result\s+ago\s+job$/m, 'no room even then: the heading stays whole');
   } finally {
     fs.rmSync(dir, { recursive: true, force: true });
   }
