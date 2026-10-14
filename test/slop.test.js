@@ -2896,6 +2896,21 @@ test('fix lowers a capital article after a dash mid-sentence, not a title', () =
   ]);
 });
 
+test('fix reads a dash inside parentheses in a heading as no subtitle', () => {
+  // the heading rule split "(path" from "32 files)" with a colon
+  const file = tmpFile('heading-parens.md', [
+    '### AI Clients (`backend/clients/` \u2014 32 files)',
+    '**Agent (`routers/agent/` \u2014 17 files):**',
+    '## Plan (draft) \u2014 Week One',
+  ].join('\n\n'));
+  const { changes } = applyFixes([file], RULES, { write: false });
+  assert.deepEqual(changes.map((c) => c.after), [
+    '### AI Clients (`backend/clients/`, 32 files)',
+    '**Agent (`routers/agent/`, 17 files):**',
+    '## Plan (draft): Week One',
+  ]);
+});
+
 test('fix keeps a journal heading that ends in a time readable for its hour', () => {
   // analytics reads the hour after a dash or a spaced hyphen at the end of a
   // heading; the fix wrote "### Watch: 19:05", which hides it, and glued

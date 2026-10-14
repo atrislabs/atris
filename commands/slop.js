@@ -617,7 +617,10 @@ function fixEmDash(s, { endsBlock = false, startsBlock = false, spans = [] } = {
   // the dash takes a comma: "**Add each step as a task, through the task
   // db.**", never a colon that reads as a title and a subtitle
   s = s.replace(/^(\s*(?:>\s*)*(?:(?:[-*+]|\d+[.)])\s+)?(?:\*\*|__)[^\u2014*_]*[^\s\u2014,;:*_])\s*\u2014\s*(?=(?:through|via|with)\b[^\u2014*_]*(?:\*\*|__)\s*$)/i, '$1, ');
-  const heading =[HEADING_DASH, BOLD_HEADING_DASH].find((re) => re.test(s));
+  // a dash inside an open parenthesis splits no title from a subtitle, so a
+  // heading fixes it like a bold one: "### AI Clients (`backend/clients/`,
+  // 32 files)", never "(`backend/clients/`: 32 files)"
+  const heading =[HEADING_DASH, BOLD_HEADING_DASH].find((re) => re.test(s) && !insideParens(re.exec(s)[1]));
   if (heading) {
     const m = heading.exec(s);
     return `${m[1]}: ${fixEmDash(s.slice(m[0].length), { endsBlock })}`;
