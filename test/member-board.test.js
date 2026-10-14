@@ -346,6 +346,32 @@ test('a short window keeps the header and the newest rows, and says how many did
   }
 });
 
+test('one to three board lines keep the header without scrolling away failures', () => {
+  const dir = fakeDir({
+    busy: [`${at(10)} m-1 started: job`],
+    broke: [`${at(90)} m-2 started: fix`, `${at(80)} m-2 finished: failed (timed out)`],
+    exit: [`${at(100)} m-3 started: fix`, `${at(90)} m-3 finished: failed (bad exit 2)`],
+  });
+  try {
+    const rows = readBoard({ dir, now: NOW });
+    for (const hidden of [0, 2]) {
+      for (const height of [1, 2, 3]) {
+        const lines = renderBoard(rows, dir, hidden, 80, height).split('\n');
+        assert.equal(lines.length, height, `fits ${height} lines with ${hidden} older runs`);
+        assert.match(lines[0], /^member\s+state/, 'the header stays');
+        assert.ok(lines.every((line) => line.length <= 80));
+        if (height === 2) assert.match(lines[1], /^3 more not shown \(2 failed\)/);
+        if (height === 3) {
+          assert.match(lines[1], /^broke\s+done failed\s+(?:failed \()?timed out\b/);
+          assert.match(lines[2], /^2 more not shown \(1 failed, bad exit 2\)/);
+        }
+      }
+    }
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
 test('a short window keeps failed and stopped rows on screen ahead of newer ones', () => {
   const logs = {};
   for (let i = 1; i <= 6; i++) logs[`m${i}`] = [`${at(i * 10)} m-${i} started: job ${i}`, `${at(i * 10 - 5)} m-${i} running: step ${i}`];
