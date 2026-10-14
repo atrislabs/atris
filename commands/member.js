@@ -10936,7 +10936,12 @@ async function memberUp(...args) {
     now: () => Date.now(),
     jobOf: (name) => memberGoJob(name, root),
     waitingTasks: () => memberUpWaiting(root),
-    requeueDropped: () => require('../lib/member-autoland').requeueDroppedAutolands({ cwd: root }),
+    requeueDropped: () => require('../lib/member-up').memberMaintenance({
+      cwd: root,
+      codeRoot: path.resolve(__dirname, '..'),
+      requeueDropped: () => require('../lib/member-autoland').requeueDroppedAutolands({ cwd: root }),
+      waitingTasks: () => memberUpWaiting(root),
+    }),
   };
   if (parsed.dryRun) {
     const up = createMemberUp(deps, { max, only, dryRun: true });

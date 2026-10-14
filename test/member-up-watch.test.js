@@ -10,7 +10,7 @@ const os = require('node:os');
 const path = require('node:path');
 const { spawn, spawnSync } = require('node:child_process');
 
-const { createMemberUp, CHECK_MS, REQUEUE_MS } = require('../lib/member-up');
+const { createMemberUp, memberMaintenance, CHECK_MS, REQUEUE_MS } = require('../lib/member-up');
 
 // A supervisor with no members, a fake clock, and a put-back step that
 // records each call and answers with whatever the test hands it.
@@ -98,7 +98,7 @@ function git(args, cwd) {
 // The real `atris member up`, in a checkout with self-landing on, one queued
 // member change whose auto-merge GitHub dropped after master moved, and a
 // fake gh on PATH that reports it so.
-test('atris member up catches up a dropped member change and queues it again with no command typed', async () => {
+test('two real member windows catch up a dropped change only once', async (t) => {
   const base = fs.mkdtempSync(path.join(os.tmpdir(), 'atris-up-watch-'));
   try {
     const origin = path.join(base, 'origin.git');
@@ -154,7 +154,7 @@ test('atris member up catches up a dropped member change and queues it again wit
 
     const home = path.join(base, 'home');
     fs.mkdirSync(home);
-    const child = spawn(process.execPath, [path.join(__dirname, '..', 'bin', 'atris.js'), 'member', 'up'], {
+    const children = [0, 1].map(() => spawn(process.execPath, [path.join(__dirname, '..', 'bin', 'atris.js'), 'member', 'up'], {
       cwd: main,
       env: {
         ...process.env,
@@ -164,18 +164,26 @@ test('atris member up catches up a dropped member change and queues it again wit
         ATRIS_TASKS_DB: path.join(home, 'tasks.db'),
       },
       stdio: ['ignore', 'pipe', 'pipe'],
-    });
+    }));
     let out = '';
-    child.stdout.on('data', (chunk) => { out += chunk; });
-    child.stderr.on('data', (chunk) => { out += chunk; });
-    const exited = new Promise((resolve) => child.on('close', resolve));
-    const deadline = Date.now() + 30000;
-    while (!/queued again/.test(out) && child.exitCode === null && Date.now() < deadline) {
-      await new Promise((resolve) => setTimeout(resolve, 100));
+    const exits = children.map((child) => {
+      child.stdout.on('data', (chunk) => { out += chunk; });
+      child.stderr.on('data', (chunk) => { out += chunk; });
+      return new Promise((resolve) => child.on('close', resolve));
+    });
+    let codes;
+    try {
+      const deadline = Date.now() + 30000;
+      while ((out.match(/team is up/g) || []).length < 2 && Date.now() < deadline
+        && children.every((child) => child.exitCode === null)) {
+        await new Promise((resolve) => setTimeout(resolve, 100));
+      }
+    } finally {
+      children.forEach((child) => child.kill('SIGTERM'));
+      codes = await Promise.all(exits);
     }
-    child.kill('SIGTERM');
-    await exited;
-
+    assert.deepEqual(codes, [0, 0], out);
+    t.diagnostic(`command: node bin/atris.js member up (two windows); exit: ${codes.join(', ')}\n${out.trim()}`);
     assert.match(out, /pull request #7 \(codex\/member-work\): caught up with the main branch and queued again/, out);
     const head = git(['ls-remote', origin, `refs/heads/${branch}`], base).split('\t')[0];
     assert.deepEqual(git(['rev-list', '--parents', '-n', '1', head], main).split(' ').slice(1), [pushed, masterSha]);
@@ -187,4 +195,139 @@ test('atris member up catches up a dropped member change and queues it again wit
   } finally {
     fs.rmSync(base, { recursive: true, force: true });
   }
+});
+
+function maintenanceFixture(t) {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'atris-maintenance-'));
+  t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+  git(['init', '-q', '-b', 'master'], root);
+  git(['config', 'user.email', 'test@example.com'], root);
+  git(['config', 'user.name', 'Test'], root);
+  fs.writeFileSync(path.join(root, '.gitignore'), '.atris/\n');
+  fs.writeFileSync(path.join(root, 'code.txt'), 'before\n');
+  git(['add', '.'], root);
+  git(['commit', '-qm', 'before'], root);
+  const dir = path.join(root, '.atris', 'state');
+  fs.mkdirSync(dir, { recursive: true });
+  return { root, dir, before: git(['rev-parse', 'HEAD'], root) };
+}
+
+test('windows and restarted windows share cadence, including linked folders', (t) => {
+  const { root, dir } = maintenanceFixture(t);
+  const linked = path.join(root, 'linked');
+  git(['worktree', 'add', '-q', '--detach', linked], root);
+  let calls = 0;
+  let now = Date.now();
+  const pass = (cwd) => memberMaintenance({ cwd, now, requeueDropped: () => { calls++; return { results: [] }; } });
+  pass(root);
+  pass(linked);
+  assert.equal(calls, 1);
+  assert.equal(fs.existsSync(path.join(dir, 'member-up-maintenance.lock')), false);
+  now += REQUEUE_MS;
+  pass(linked);
+  pass(root);
+  assert.equal(calls, 2);
+});
+
+test('a dead owner is recovered, but a live owner holds even past the short lease', (t) => {
+  const { root, dir } = maintenanceFixture(t);
+  const lock = path.join(dir, 'member-up-maintenance.lock');
+  const old = Date.now() - 60 * 60 * 1000;
+  fs.writeFileSync(lock, JSON.stringify({ pid: process.pid, at: old }));
+  fs.utimesSync(lock, old / 1000, old / 1000);
+  let calls = 0;
+  const pass = () => memberMaintenance({ cwd: root, requeueDropped: () => { calls++; return { results: [] }; } });
+  pass();
+  assert.equal(calls, 0);
+  // A real process that exited gives a dead owner without a guessed pid.
+  const dead = spawnSync(process.execPath, ['-e', ''], { encoding: 'utf8' });
+  assert.equal(dead.status, 0);
+  fs.writeFileSync(lock, JSON.stringify({ pid: dead.pid, at: old }));
+  pass();
+  assert.equal(calls, 1);
+  assert.equal(fs.existsSync(lock), false);
+});
+
+test('an unfinished lock gets a grace period, and failure releases ownership', (t) => {
+  const { root, dir } = maintenanceFixture(t);
+  const lock = path.join(dir, 'member-up-maintenance.lock');
+  fs.writeFileSync(lock, '');
+  const pass = (now) => memberMaintenance({ cwd: root, now, requeueDropped: () => { throw new Error('offline'); } });
+  assert.deepEqual(pass(Date.now()), { results: [] });
+  assert.throws(() => pass(Date.now() + 3 * 60 * 1000), /offline/);
+  assert.equal(fs.existsSync(lock), false);
+});
+
+test('two quiet hours with waiting jobs is said once across windows and resets after a merge', (t) => {
+  const { root } = maintenanceFixture(t);
+  let now = Date.now();
+  let results = [{ state: 'queued' }];
+  const pass = () => memberMaintenance({ cwd: root, now, requeueDropped: () => ({ results }) }).results;
+  assert.equal(pass().some((r) => r.state === 'stalled'), false);
+  now += 2 * 60 * 60 * 1000;
+  assert.equal(pass().filter((r) => r.state === 'stalled').length, 1);
+  now += REQUEUE_MS;
+  assert.equal(pass().some((r) => r.state === 'stalled'), false);
+  now += REQUEUE_MS;
+  results = [{ state: 'merged' }, { state: 'queued' }];
+  assert.equal(pass().some((r) => r.state === 'stalled'), false);
+  now += 2 * 60 * 60 * 1000;
+  results = [{ state: 'queued' }];
+  assert.equal(pass().filter((r) => r.state === 'stalled').length, 1);
+});
+
+test('waiting tasks also trigger the quiet warning, and an empty queue clears the incident', (t) => {
+  const { root } = maintenanceFixture(t);
+  let now = Date.now();
+  let waiting = [{}];
+  const pass = () => memberMaintenance({ cwd: root, now, requeueDropped: () => ({ results: [] }), waitingTasks: () => waiting });
+  pass();
+  now += 2 * 60 * 60 * 1000;
+  assert.equal(pass().results[0].state, 'stalled');
+  now += REQUEUE_MS;
+  waiting = [];
+  assert.deepEqual(pass().results, []);
+  now += REQUEUE_MS;
+  waiting = [{}];
+  assert.deepEqual(pass().results, []);
+});
+
+test('the members code copy advances only when it is a clean detached plain clone', (t) => {
+  const { root, before } = maintenanceFixture(t);
+  const origin = path.join(root, 'remote.git');
+  git(['init', '--bare', '-q', '-b', 'master', origin], root);
+  git(['remote', 'add', 'origin', origin], root);
+  git(['push', '-q', 'origin', 'master'], root);
+  const copy = path.join(root, 'copy');
+  git(['clone', '-q', origin, copy], root);
+  fs.writeFileSync(path.join(root, 'code.txt'), 'after\n');
+  git(['add', 'code.txt'], root);
+  git(['commit', '-qm', 'after'], root);
+  git(['push', '-q', 'origin', 'master'], root);
+  const after = git(['rev-parse', 'HEAD'], root);
+  let now = Date.now();
+  const pass = (codeRoot = copy) => {
+    const out = memberMaintenance({ cwd: root, codeRoot, now, requeueDropped: () => ({ results: [] }) });
+    now += REQUEUE_MS;
+    return out;
+  };
+  pass(); // A named branch stays put.
+  assert.equal(git(['rev-parse', 'HEAD'], copy), before);
+  git(['checkout', '-q', '--detach'], copy);
+  fs.writeFileSync(path.join(copy, 'code.txt'), 'my edit\n');
+  pass();
+  assert.equal(fs.readFileSync(path.join(copy, 'code.txt'), 'utf8'), 'my edit\n');
+  fs.writeFileSync(path.join(copy, 'code.txt'), 'before\n');
+  fs.writeFileSync(path.join(copy, 'untracked.txt'), 'keep\n');
+  pass();
+  assert.equal(git(['rev-parse', 'HEAD'], copy), before);
+  fs.unlinkSync(path.join(copy, 'untracked.txt'));
+  const linked = path.join(root, 'linked');
+  git(['worktree', 'add', '-q', '--detach', linked, before], root);
+  pass(linked);
+  assert.equal(git(['rev-parse', 'HEAD'], linked), before);
+  assert.equal(pass().results[0].state, 'refreshed');
+  assert.equal(git(['rev-parse', 'HEAD'], copy), after);
+  assert.equal(fs.readFileSync(path.join(copy, 'code.txt'), 'utf8'), 'after\n');
+  assert.notEqual(spawnSync('git', ['symbolic-ref', '-q', 'HEAD'], { cwd: copy }).status, 0);
 });
