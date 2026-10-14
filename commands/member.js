@@ -9789,6 +9789,17 @@ const IDEA_ARCHETYPE_RULES = [
   },
 ];
 
+// Dispatch defaults to the core team. Other members (experiments, one-off
+// workers) win only when the idea names them or out-scores the core by 2x.
+const CORE_DISPATCH_MEMBERS = new Set([
+  'executor', 'architect', 'auto-improver', 'navigator', 'validator', 'customer-lead', 'researcher',
+]);
+
+function ideaNamesMember(text, slug) {
+  const escaped = slug.replace(/[.*+?^${}()|[\]\\]/g, '\\$&').replace(/-/g, '[-\\s]+');
+  return new RegExp(`(^|[^a-z0-9-])${escaped}($|[^a-z0-9-])`, 'i').test(text);
+}
+
 function pickMemberForIdea(ideaText, root = process.cwd(), preferredMember = '') {
   const teamDir = path.join(root, 'atris', 'team');
   const members = findAllMembers(teamDir).filter(isFleetMember);
@@ -9840,6 +9851,13 @@ function pickMemberForIdea(ideaText, root = process.cwd(), preferredMember = '')
     if (Number(record.skillCount || 0) > 0) score += 2;
     if (slug === 'executor') score += 3;
     if (slug === 'auto-improver') score += 2;
+
+    if (ideaNamesMember(text, slug)) {
+      score += 40;
+      matchedReason = 'named in the idea';
+    } else if (!CORE_DISPATCH_MEMBERS.has(slug)) {
+      score = Math.floor(score / 2);
+    }
 
     if (!matchedReason) {
       matchedReason = record.description

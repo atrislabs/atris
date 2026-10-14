@@ -419,6 +419,34 @@ test('member run infers test checks from goal text and runs a second-model refer
   }
 });
 
+test('member dispatch prefers the core team over an experiment member unless the idea names it', () => {
+  const { pickMemberForIdea } = require('../commands/member');
+  const root = makeTempWorkspace();
+  try {
+    writeMember(root, 'executor');
+    fs.writeFileSync(path.join(root, 'atris', 'team', 'executor', 'MISSION.md'), 'Build and test concrete product changes.\n');
+    // The experiment member's mission happens to share many words with the idea,
+    // which is how a scoreboard fix landed on opus-overnight.
+    const experimentDir = writeMember(root, 'opus-overnight');
+    fs.writeFileSync(path.join(experimentDir, 'MISSION.md'), [
+      'Run the overnight mission loop: count commits today on every branch,',
+      'fix the scoreboard repo line, check the remote default branch, the current',
+      'checkout, local branches, and json output, add a test, dedupe by hash.',
+    ].join('\n'));
+
+    const idea = "Fix the 'atris scoreboard' repo line: it counts only commits on the current branch. "
+      + 'Count today\'s commits across every local and remote branch, deduped by hash, same for json. Add a test.';
+    const buildPick = pickMemberForIdea(idea, root);
+    assert.equal(buildPick.member, 'executor');
+
+    const namedPick = pickMemberForIdea('Have opus-overnight rerun the scoreboard check tonight', root);
+    assert.equal(namedPick.member, 'opus-overnight');
+    assert.equal(namedPick.reason, 'named in the idea');
+  } finally {
+    fs.rmSync(root, { recursive: true, force: true });
+  }
+});
+
 test('member dispatch, natural prompt, go, card, and room unite members, skills, and engines', () => {
   const { pickMemberForIdea } = require('../commands/member');
   const root = makeTeamWorkspace();
