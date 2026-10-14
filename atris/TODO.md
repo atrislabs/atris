@@ -23,6 +23,8 @@ Details for any task: atris task show <ID>
 
 ## Review
 
+- **[AIC-17]** Wait for escaped test children instead of sleeping · auto-improver
+  **Done looks like:** Developers finish escaped-child cleanup checks sooner because the checks wait for the child to finish instead of sleeping.
 - **[AIC-16]** Remove loops test temp folders so disk space stops filling · auto-improver
   **Done looks like:** Developers keep a clean temp folder, saving disk space because the loops tests now remove the folders they make.
 - **[AIC-15]** Remove YouTube watch test temp folders so disk space stops filling · auto-improver

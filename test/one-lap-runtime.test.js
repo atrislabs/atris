@@ -171,10 +171,10 @@ if [ "\${ATRIS_ENGINE_MODE:-pass}" = "late-mutate" ]; then
   nohup /bin/sh -c 'sleep 1; printf late > late.txt; git add late.txt; git commit -m "late detached mutation"' >/dev/null 2>&1 &
 fi
 if [ "\${ATRIS_ENGINE_MODE:-pass}" = "session-escape" ]; then
-  node -e 'const { spawn } = require("node:child_process"); spawn("/bin/sh", ["-c", "sleep 1; printf escaped > $ATRIS_PUSH_RESULT"], { detached: true, stdio: "ignore", env: process.env }).unref();'
+  node -e 'const { spawn } = require("node:child_process"); spawn("/bin/sh", ["-c", "sleep 1; printf escaped > \\"$1\\"", "escaped-child", process.env.ATRIS_PUSH_RESULT], { detached: true, stdio: "ignore", env: process.env }).unref();'
 fi
 if [ "\${ATRIS_ENGINE_MODE:-pass}" = "kill-lifecycle" ]; then
-  nohup /bin/sh -c 'sleep 1; printf escaped > "$ATRIS_PUSH_RESULT"' >/dev/null 2>&1 &
+  nohup /bin/sh -c 'sleep 1; printf escaped > "$1"' escaped-child "$ATRIS_PUSH_RESULT" >/dev/null 2>&1 &
   /usr/bin/perl -MPOSIX -e '$group = POSIX::getpgrp(); kill 9, $group'
 fi
 printf 'committed lap-marker.txt\n'
@@ -356,6 +356,20 @@ function cleanupRuntime(setup) {
   }
   run('git', ['worktree', 'prune'], { cwd: setup.workspace, env: setup.env });
   fs.rmSync(setup.base, { recursive: true, force: true });
+}
+
+// The escaped children name this lap's push result on their command line.
+// Wait until none is left: a reaped child returns at once, and a missed one
+// gets to write its result first.
+function waitForEscapedChild(setup, ms = 5000) {
+  const end = Date.now() + ms;
+  while (Date.now() < end) {
+    const ps = spawnSync('ps', ['-axww', '-o', 'command='], { encoding: 'utf8', timeout: ms });
+    assert.equal(ps.status, 0, ps.stderr);
+    if (!ps.stdout.includes(setup.env.ATRIS_PUSH_RESULT)) return;
+    Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 25);
+  }
+  assert.fail(`escaped child still running after ${ms}ms`);
 }
 
 function assertMasterUnchanged(setup) {
@@ -809,7 +823,7 @@ test('one lap reaps a detached child that creates a new session', { timeout: LAP
     assert.equal(result.status, 0, `stdout:\n${result.stdout}\nstderr:\n${result.stderr}`);
     const payload = json(result, 'new-session child one lap');
     setup.worktrees.push(payload.worktree);
-    Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 1500);
+    waitForEscapedChild(setup);
     assert.equal(fs.readFileSync(setup.env.ATRIS_PUSH_RESULT, 'utf8').trim(), '');
     assertMasterUnchanged(setup);
   } finally {
@@ -824,7 +838,7 @@ test('one lap cleanup survives an engine killing its sandbox group leader', { ti
     assert.equal(result.status, 1, `stdout:\n${result.stdout}\nstderr:\n${result.stderr}`);
     const payload = json(result, 'killed lifecycle one lap');
     if (payload.worktree) setup.worktrees.push(payload.worktree);
-    Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 1500);
+    waitForEscapedChild(setup);
     assert.equal(fs.readFileSync(setup.env.ATRIS_PUSH_RESULT, 'utf8').trim(), '');
     assertMasterUnchanged(setup);
   } finally {
