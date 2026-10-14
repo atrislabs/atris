@@ -9844,17 +9844,35 @@ test('task plan and do record an explicit headless stage contract', () => {
   try {
     fs.mkdirSync(path.join(dir, 'atris'), { recursive: true });
 
-    const add = runCli(['task', 'add', 'Make task stage loop explicit', '--tag', 'capture', '--json'], { cwd: dir, env });
-    assert.equal(add.status, 0, add.stderr);
-    const ref = JSON.parse(add.stdout).task.display_id;
+    // Seed only the four parents; claim, plan, do, show, status, and ready still use the CLI.
+    // Display refs are numbered across the workspace, so compute them after all inserts.
+    let refs;
+    const db = taskStore.open(dbPath);
+    try {
+      const workspaceRoot = taskStore.workspaceRoot(dir);
+      const ids = [
+        'Make task stage loop explicit',
+        'Inline do must not skip plan',
+        'Do not plan another owner task',
+        'Do not start after external claim',
+      ].map((title) => {
+        const created = taskStore.addTask(db, { title, tag: 'capture', workspaceRoot });
+        assert.equal(created.inserted, true);
+        return created.id;
+      });
+      const byId = new Map(taskStore.withTaskDisplayRefs(taskStore.listTasks(db, { workspaceRoot }))
+        .map((row) => [row.id, row.display_id]));
+      refs = ids.map((id) => byId.get(id));
+      assert.equal(new Set(refs).size, 4);
+    } finally {
+      taskStore.close();
+    }
+    const [ref, inlineDoRef, ownedRef, claimedAfterPlanRef] = refs;
 
     const unplannedDo = runCli(['task', 'do', ref, '--as', 'codex', '--first-move', 'patch the CLI', '--json'], { cwd: dir, env });
     assert.equal(unplannedDo.status, 1);
     assert.equal(JSON.parse(unplannedDo.stdout).reason, 'goal_required');
 
-    const inlineDoTask = runCli(['task', 'add', 'Inline do must not skip plan', '--tag', 'capture', '--json'], { cwd: dir, env });
-    assert.equal(inlineDoTask.status, 0, inlineDoTask.stderr);
-    const inlineDoRef = JSON.parse(inlineDoTask.stdout).task.display_id;
     const inlineDo = runCli([
       'task', 'do', inlineDoRef,
       '--as', 'codex',
@@ -9866,9 +9884,6 @@ test('task plan and do record an explicit headless stage contract', () => {
     assert.equal(inlineDo.status, 1);
     assert.equal(JSON.parse(inlineDo.stdout).reason, 'plan_required');
 
-    const owned = runCli(['task', 'add', 'Do not plan another owner task', '--tag', 'capture', '--json'], { cwd: dir, env });
-    assert.equal(owned.status, 0, owned.stderr);
-    const ownedRef = JSON.parse(owned.stdout).task.display_id;
     assert.equal(runCli(['task', 'claim', ownedRef, '--as', 'alice'], { cwd: dir, env }).status, 0);
     const otherOwnerPlan = runCli([
       'task', 'plan', ownedRef,
@@ -9893,9 +9908,6 @@ test('task plan and do record an explicit headless stage contract', () => {
     assert.equal(otherOwnerPlanWithAssignee.status, 1);
     assert.equal(JSON.parse(otherOwnerPlanWithAssignee.stdout).reason, 'claimed_by_other');
 
-    const claimedAfterPlan = runCli(['task', 'add', 'Do not start after external claim', '--tag', 'capture', '--json'], { cwd: dir, env });
-    assert.equal(claimedAfterPlan.status, 0, claimedAfterPlan.stderr);
-    const claimedAfterPlanRef = JSON.parse(claimedAfterPlan.stdout).task.display_id;
     const claimedAfterPlanStage = runCli([
       'task', 'plan', claimedAfterPlanRef,
       '--as', 'codex',

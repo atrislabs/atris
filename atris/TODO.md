@@ -23,6 +23,8 @@ Details for any task: atris task show <ID>
 
 ## Review
 
+- **[AIC-30]** Seed headless stage parent fixtures in process · auto-improver
+  **Done looks like:** Developers finish the headless plan and do check sooner because setup starts four fewer commands.
 - **[AIC-29]** Seed proof-event parent fixture in process · auto-improver
   **Done looks like:** Developers finish proof event checks sooner because setup starts one fewer command.
 - **[AIC-28]** Seed RSI review parent fixture in process · auto-improver
