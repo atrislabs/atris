@@ -10,11 +10,19 @@ const root = path.resolve(__dirname, '../..');
 const quote = value => "'" + String(value).replace(/'/g, "'\\''") + "'";
 const candidate = command => command.replace(/^node(?=\s|$)/, quote(process.execPath));
 const functionCommand = "node () { printf '%s' 'function retained'; }; node";
+const continuedFunction = "node \\\n() { printf '%s' 'continued function retained'; }; node";
+const excludeFunction = command => /^node\s*\(/.test(command) ? command : candidate(command);
+// Diagnostic plan: remove only shell line continuations for classification.
+// Return original text for definitions, including their original continuations.
+const excludeContinuedFunction = command => /^node\s*\(/.test(command.replace(/\\\n/g, '')) ? command : candidate(command);
 const cases = [
   ['original function', functionCommand, 0, 'function retained'],
   ['naive leading-word candidate', candidate(functionCommand), 0, null],
   ['function exclusion control', /^node\s*\(/.test(functionCommand) ? functionCommand : candidate(functionCommand), 0, 'function retained'],
   ['ordinary node candidate', candidate('node --version'), 0, process.version],
+  ['original continued function', continuedFunction, 0, 'continued function retained'],
+  ['prior exclusion misses continuation', excludeFunction(continuedFunction), 0, null],
+  ['continued function exclusion control', excludeContinuedFunction(continuedFunction), 0, 'continued function retained'],
 ];
 for (const [name, command, exit, output] of cases) {
   const result = writeTaskReceipt({ taskId: `completion-function-${name}`, command, root });
@@ -32,4 +40,4 @@ for (const [name, command, exit, output] of cases) {
   console.log(`${name}: ${output === null ? 'invalid function name, intended output lost' : result.output}, exit ${result.exit}, receipt retained`);
   console.log(`receipt: ${result.receiptPath}`);
 }
-console.log('diagnostic only: exclude shell function definitions before replacing the leading node word');
+console.log('diagnostic only: classify continued function definitions before replacing the leading node word');
