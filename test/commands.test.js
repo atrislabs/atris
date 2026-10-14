@@ -17522,7 +17522,8 @@ test('task import preserves Verify metadata through DB-backed TODO shim', () => 
 test('search with no keyword prints usage', () => {
   const dir = makeTempDir();
   try {
-    initWorkspace(dir);
+    // Search needs only the workspace folder; a full init adds a launch and nothing these checks read.
+    fs.mkdirSync(path.join(dir, 'atris'), { recursive: true });
     const res = runCli(['search'], { cwd: dir });
     assert.equal(res.status, 1);
     assert.match(res.stdout, /Usage: atris search/);
@@ -18166,7 +18167,7 @@ test('search without workspace data prints compact empty result', () => {
 test('search finds matches in journal files', () => {
   const dir = makeTempDir();
   try {
-    initWorkspace(dir);
+    fs.mkdirSync(path.join(dir, 'atris'), { recursive: true });
     writeTodayLog(dir, '# Log\n\n## Inbox\n\n- **I1:** Fix the auth module\n');
     const res = runCli(['search', 'auth'], { cwd: dir });
     assert.equal(res.status, 0, res.stderr);
@@ -18180,7 +18181,7 @@ test('search finds matches in journal files', () => {
 test('search is case-insensitive', () => {
   const dir = makeTempDir();
   try {
-    initWorkspace(dir);
+    fs.mkdirSync(path.join(dir, 'atris'), { recursive: true });
     writeTodayLog(dir, '# Log\n\n## Notes\n\nDebugged the AUTH flow\n');
     const res = runCli(['search', 'auth'], { cwd: dir });
     assert.equal(res.status, 0, res.stderr);
@@ -18193,7 +18194,7 @@ test('search is case-insensitive', () => {
 test('search with no matches prints no matches', () => {
   const dir = makeTempDir();
   try {
-    initWorkspace(dir);
+    fs.mkdirSync(path.join(dir, 'atris'), { recursive: true });
     writeTodayLog(dir, '# Log\n\n## Notes\n\nNothing relevant here\n');
     const res = runCli(['search', 'xyznonexistent'], { cwd: dir });
     assert.equal(res.status, 0, res.stderr);
