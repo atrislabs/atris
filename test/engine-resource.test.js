@@ -1912,3 +1912,89 @@ test('the youtube digest records paired readings and names the cause of a SIGKIL
     fs.rmSync(root, { recursive: true, force: true });
   }
 });
+
+test('youtube notes record paired readings around their writer and name the cause of a SIGKILL', () => {
+  const { spawnSync } = require('node:child_process');
+  const root = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'ytnotes-resource-')));
+  const bin = path.join(root, 'bin');
+  const work = path.join(root, 'work');
+  const exec = (file, lines) => fs.writeFileSync(path.join(bin, file), `${lines.join('\n')}\n`, { mode: 0o755 });
+  const d = new Date();
+  const today = `${d.getFullYear()}.${String(d.getMonth() + 1).padStart(2, '0')}.${String(d.getDate()).padStart(2, '0')}`;
+  const notes = () => spawnSync(path.join(__dirname, '..', 'scripts', 'det', 'ytnotes'), ['https://www.youtube.com/watch?v=sled123'], {
+    cwd: root,
+    encoding: 'utf8',
+    timeout: 30000,
+    env: { ...process.env, ATRIS_YTNOTES_ENGINE: 'haiku', ATRIS_YTNOTES_ROSTER: '0', TMPDIR: work, PATH: `${bin}:${process.env.PATH || '/usr/bin'}` },
+  });
+  try {
+    for (const dir of [bin, work, path.join(root, 'atris')]) fs.mkdirSync(dir);
+    // A stand-in caption tool: one caption line, no network.
+    exec('yt-dlp', [
+      '#!/bin/sh',
+      `if [ "$1" = "--version" ]; then echo "${today}"; exit 0; fi`,
+      'printf "%s\\n" "WEBVTT" "" "00:00:00.000 --> 00:00:02.000" "The dog sets the pace." > yt_sled123.en.vtt',
+      'printf "%s\\n" "sled123|Sled Dogs|Trail|0:02"',
+    ]);
+    exec('claude', ['#!/bin/sh', 'printf "%s\\n" "# Sled Dogs" "" "The dog sets the pace."']);
+    const ok = notes();
+    exec('claude', ['#!/bin/sh', 'kill -KILL $$']);
+    const killed = notes();
+    assert.equal(ok.status, 0, ok.stderr);
+    assert.equal(killed.status, 3, killed.stderr);
+    const lines = fs.readFileSync(path.join(root, RESOURCE_LOG), 'utf8').trim().split('\n').map(JSON.parse);
+    assert.deepEqual(lines.map((line) => line.phase), ['start', 'end', 'start', 'end']);
+    for (let i = 0; i < lines.length; i += 2) {
+      assert.match(lines[i].run_id, /^[0-9a-f-]{36}$/);
+      assert.equal(lines[i + 1].run_id, lines[i].run_id);
+      assert.equal(lines[i].engine, 'claude');
+      assert.equal(lines[i].task, 'youtube notes');
+      assert.ok(Array.isArray(lines[i + 1].load));
+      assert.ok(Number.isInteger(lines[i + 1].duration_ms));
+    }
+    // The start names the notes script, which lives for the whole run, not the
+    // short helper that wrote it, so a sweep never closes a run still going.
+    assert.equal(lines[0].pid, ok.pid);
+    assert.equal(lines[2].pid, killed.pid);
+    assert.equal(lines[1].signal, undefined);
+    assert.equal(lines[1].error, undefined);
+    assert.equal(lines[3].signal, 'SIGKILL');
+    assert.match(lines[3].cause, /^killed \((machine memory low|cause unknown)\)$/);
+    // The notes script says which writer was killed and why, before its no-notes line.
+    assert.ok(killed.stderr.includes(`claude stopped by SIGKILL; ${lines[3].cause}`), killed.stderr);
+    console.log(`ytnotes readings: ${JSON.stringify(lines[3])}`);
+    console.log(`ytnotes kill line: ${killed.stderr.split('\n').find((line) => line.includes('SIGKILL')) || ''}`);
+  } finally {
+    fs.rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test('youtube notes run outside an Atris workspace write no readings', () => {
+  const { spawnSync } = require('node:child_process');
+  const root = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'ytnotes-plain-')));
+  const bin = path.join(root, 'bin');
+  const work = path.join(root, 'work');
+  const exec = (file, lines) => fs.writeFileSync(path.join(bin, file), `${lines.join('\n')}\n`, { mode: 0o755 });
+  const d = new Date();
+  const today = `${d.getFullYear()}.${String(d.getMonth() + 1).padStart(2, '0')}.${String(d.getDate()).padStart(2, '0')}`;
+  try {
+    for (const dir of [bin, work]) fs.mkdirSync(dir);
+    exec('yt-dlp', [
+      '#!/bin/sh',
+      `if [ "$1" = "--version" ]; then echo "${today}"; exit 0; fi`,
+      'printf "%s\\n" "WEBVTT" "" "00:00:00.000 --> 00:00:02.000" "The dog sets the pace." > yt_sled123.en.vtt',
+      'printf "%s\\n" "sled123|Sled Dogs|Trail|0:02"',
+    ]);
+    exec('claude', ['#!/bin/sh', 'printf "%s\\n" "# Sled Dogs" "" "The dog sets the pace."']);
+    const ran = spawnSync(path.join(__dirname, '..', 'scripts', 'det', 'ytnotes'), ['https://www.youtube.com/watch?v=sled123'], {
+      cwd: root,
+      encoding: 'utf8',
+      timeout: 30000,
+      env: { ...process.env, ATRIS_YTNOTES_ENGINE: 'haiku', ATRIS_YTNOTES_ROSTER: '0', TMPDIR: work, PATH: `${bin}:${process.env.PATH || '/usr/bin'}` },
+    });
+    assert.equal(ran.status, 0, ran.stderr);
+    assert.equal(fs.existsSync(path.join(root, '.atris')), false);
+  } finally {
+    fs.rmSync(root, { recursive: true, force: true });
+  }
+});
