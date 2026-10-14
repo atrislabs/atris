@@ -286,6 +286,21 @@ test('board moves the last step under its row when the screen is too narrow for 
   assert.match(renderBoard(rows, '/x'), /^member\s.*\sjob\s+last step$/m, 'piped output keeps the column');
 });
 
+test('board lets job shrink to the room left on a narrow screen', () => {
+  const now = Date.parse('2026-10-14T13:00:00Z');
+  // A wide before column leaves job 18 characters at 80 columns.
+  const rows = [
+    memberRow('builder', `2026-10-14T12:45:00Z m-1 started: [pid ${process.pid} engine claude] improve the board\n2026-10-14T12:51:40Z m-2 started: [pid ${process.ppid} engine claude] make the footer fit\n2026-10-14T12:59:30Z m-2 running: node --test\n`, now),
+    memberRow('scout', '2026-10-14T12:53:20Z m-3 started: map the repo\n2026-10-14T12:55:00Z m-4 started: map the repo again\n2026-10-14T12:56:40Z m-4 running: rg -n board\n', now),
+  ];
+  const lines = renderBoard(rows, '/x', 0, 80).split('\n');
+  const table = lines.slice(lines.indexOf('') + 1, lines.indexOf('', lines.indexOf('') + 1));
+  assert.ok(table.every((l) => l.length <= 80), `every table line fits 80 columns:\n${table.join('\n')}`);
+  assert.match(table.find((l) => l.startsWith('builder')), /make the footer\.\.\.$/, 'the job is cut to the room left, not held at 20');
+  const narrow = renderBoard(rows, '/x', 0, 60).split('\n').find((l) => l.startsWith('builder'));
+  assert.ok(narrow.endsWith('  make th...'), `a much narrower screen still shows 10 characters of job: ${narrow}`);
+});
+
 test('board wraps a footer note at word boundaries to the screen width', () => {
   const now = Date.parse('2026-10-14T13:00:00Z');
   const rows = [memberRow('scout', '2026-10-14T12:59:00Z m-3 started: map the repo\n', now)];
