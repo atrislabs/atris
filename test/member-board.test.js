@@ -196,6 +196,8 @@ test('members that ended over an hour ago, finished or died, hide unless --all',
     assert.equal(JSON.parse(json.stdout).hidden, 4, 'json counts what it left out, like the screen');
     const jsonAll = spawnSync(process.execPath, [cliPath, 'member', 'board', '--json', '--all'], { cwd: dir, env, encoding: 'utf8' });
     assert.equal(JSON.parse(jsonAll.stdout).hidden, 0);
+    assert.equal(JSON.parse(json.stdout).unchecked, 1, 'stuck has no pid, so json warns like the screen note');
+    assert.equal(JSON.parse(jsonAll.stdout).unchecked, 1, 'crashed and broke have pids and read died, so only stuck counts');
     assert.equal(JSON.parse(jsonAll.stdout).members.length, 5);
     assert.deepEqual(JSON.parse(json.stdout).counts, { died: 0, 'done failed': 0, working: 0, quiet: 1, stopped: 0, 'done ok': 0 }, 'counts cover only the members shown');
     assert.deepEqual(JSON.parse(jsonAll.stdout).counts, { died: 2, 'done failed': 1, working: 0, quiet: 1, stopped: 0, 'done ok': 1 });
@@ -333,6 +335,7 @@ test('atris member board --json --follow streams one JSON object per line', asyn
     assert.equal(snapshot.dir, dir);
     assert.deepEqual(snapshot.members.map((m) => [m.member, m.state]), [['navigator', 'working']]);
     assert.equal(snapshot.hidden, 0);
+    assert.equal(snapshot.unchecked, 1, 'navigator started without a pid');
     assert.equal(snapshot.counts.working, 1, 'the snapshot counts states like --json');
     assert.equal(snapshot.counts.stopped, 0);
 
