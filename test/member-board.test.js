@@ -295,6 +295,7 @@ test('watch mode redraws at once when the window is resized', async () => {
     done = memberBoardCommand('--watch');
     out.columns = 50;
     out.emit('resize');
+    for (const width of [28, 24, 14, 6, 5]) { out.columns = width; out.emit('resize'); }
     process.emit('SIGINT');
   } finally {
     out.write = write;
@@ -303,10 +304,13 @@ test('watch mode redraws at once when the window is resized', async () => {
   }
   try {
     await done;
-    assert.equal(frames.length, 2, 'one frame at start, one on resize, none after ctrl-c');
+    assert.equal(frames.length, 7, 'one frame at start, six resizes, none after ctrl-c');
     const widest = (f) => Math.max(...f.replace(/\x1b\[[0-9;]*[A-Za-z]/g, '').split('\n').map((l) => l.length));
     assert.ok(widest(frames[0]) > 50, 'the first frame used the old width');
     assert.ok(widest(frames[1]) <= 50, `the redraw fits the new width: ${widest(frames[1])}`);
+    for (const [i, hint] of ['updates 3s, ctrl-c to stop', 'ctrl-c to stop', 'ctrl-c to stop', 'ctrl-c', ''].entries()) {
+      assert.equal(frames[i + 2].split('\n').at(-2), hint, 'the hint shrinks whole on resize');
+    }
     assert.equal(out.listenerCount('resize'), 0, 'ctrl-c stops listening for resizes');
   } finally {
     fs.rmSync(dir, { recursive: true, force: true });

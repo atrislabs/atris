@@ -2304,3 +2304,5 @@ npm publish
 - **Very short board screens:** `renderBoard()` (`lib/member-board.js:261`) omits the spacer at three lines, rows at two, and the footer at one, preserving the header within the height limit. Regression: `test/member-board.test.js:349`; terminal proof: `python3 atris/runs/member-board-short-height-proof.py`.
 
 - **Tiny watch screens:** `memberBoardCommand()` (`lib/member-board.js:617`) gives the board all rows when the terminal has one to three, omitting the hint and final newline to avoid scrolling the header. Resize restores the hint above three rows. Regression: `test/member-board.test.js:316`; terminal proof: `python3 atris/runs/member-board-watch-height-proof.py`.
+
+- **Narrow watch hint:** `memberBoardCommand()` (`lib/member-board.js:648`) picks the longest whole hint that fits, down to "ctrl-c", and omits it below six columns. Resize regression: `test/member-board.test.js:279`; real terminal proof: `python3 atris/runs/member-board-watch-width-proof.py`.
