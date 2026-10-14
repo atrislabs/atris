@@ -11389,7 +11389,8 @@ async function memberCommand(subcommand, ...args) {
       console.log('  1on1 <name>         Sit down for a 1-on-1 to review recent wins and set the roadmap');
       console.log('  sleep [name|--all]  Park active member loops so your team rests until woken');
       console.log('  room [--json]       Render the visual Team Room and desktop UI payload');
-      console.log('  board [--watch]     One screen of every member: job, last step, working/quiet/done');
+      console.log('  board [names]       One screen of every member, or just the named: job, last step, working/quiet/stopped/died/done');
+      console.log('                      [--all] shows runs that ended over an hour ago, [--watch] redraws, [--json] [--follow] for apps');
       console.log('  create <name>       Scaffold a new team member (MEMBER.md + dirs) [--push]');
       console.log('  install <slug> [--update]  Install missing files, or refresh template skills');
       console.log('  chat <name> "..."   Send a message to this member\'s desk in Atris Desktop');
