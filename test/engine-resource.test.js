@@ -1039,6 +1039,40 @@ test('horizon proposals record paired readings on success, SIGKILL and startup f
     fs.rmSync(root, { recursive: true, force: true });
   }
 });
+
+test('autopilot names a failed horizon proposal instead of calling the workspace clean', () => {
+  const { execFileSync, spawnSync } = require('node:child_process');
+  const root = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'horizon-idle-')));
+  const missing = path.join(os.tmpdir(), `atris-missing-engine-${process.pid}`);
+  const tick = (template) => spawnSync(process.execPath, [path.join(__dirname, '..', 'bin', 'atris.js'), 'autopilot', '--legacy', '--auto', '--dry-run', '--iterations=1'], {
+    cwd: root,
+    encoding: 'utf8',
+    timeout: 60000,
+    env: { ...process.env, ATRIS_SKIP_UPDATE_CHECK: '1', ATRIS_RUNNER_BIN: 'sh', ATRIS_RUNNER_COMMAND_TEMPLATE: template },
+  });
+  try {
+    fs.mkdirSync(path.join(root, 'atris'));
+    fs.writeFileSync(path.join(root, 'atris', 'TODO.md'), '# TODO\n\n## In Progress\n\n## Backlog\n\n## Completed\n');
+    execFileSync('git', ['init', '-q', root]);
+    execFileSync('git', ['-C', root, 'add', '-A']);
+    execFileSync('git', ['-C', root, '-c', 'user.name=t', '-c', 'user.email=t@t', 'commit', '-qm', 'init']);
+    const killed = tick('sh -c "kill -KILL $$"');
+    assert.equal(killed.status, 0, killed.stderr);
+    assert.match(killed.stdout, /I could not ask the engine for new work: horizon-proposal phase killed by SIGKILL .*; killed \((machine memory low|cause unknown)\)/);
+    assert.doesNotMatch(killed.stdout, /looks clean/);
+    const failed = tick(missing);
+    assert.equal(failed.status, 0, failed.stderr);
+    assert.match(failed.stdout, /I could not ask the engine for new work: Command failed: /);
+    assert.doesNotMatch(failed.stdout, /looks clean|killed \(/);
+    // An engine that answers with nothing usable still reads as no work.
+    const empty = tick('echo none');
+    assert.match(empty.stdout, /looks clean/);
+    assert.doesNotMatch(empty.stdout, /could not ask the engine/);
+    console.log(`autopilot idle on kill: ${killed.stdout.split('\n').find((line) => line.includes('could not ask')).trim()}`);
+  } finally {
+    fs.rmSync(root, { recursive: true, force: true });
+  }
+});
 test('a kill sent by the run time limit names the time limit even with memory low', () => {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'engine-resource-timeout-'));
   try {

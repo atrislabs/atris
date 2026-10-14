@@ -119,7 +119,7 @@ function repoMapAuditReportsClean(cwd) {
  * Scan workspace for the next thing worth doing.
  * Returns { task, why, kind } or null.
  */
-async function suggestNextTask(cwd, skipped = new Set(), { auto = false } = {}) {
+async function suggestNextTask(cwd, skipped = new Set(), { auto = false, problems = null } = {}) {
   const atrisDir = path.join(cwd, 'atris');
   const suggestions = [];
 
@@ -344,7 +344,9 @@ async function suggestNextTask(cwd, skipped = new Set(), { auto = false } = {}) 
         kind: 'imagined',
         priority: 99
       };
-    } catch {
+    } catch (err) {
+      // An engine that never answered is not an idle workspace; tell the caller.
+      if (problems && err && err.launchFailed) problems.push(String(err.message || '').split('\n')[0]);
       return null;
     }
   }
@@ -3298,13 +3300,15 @@ Reply with the JSON array and nothing else.`;
     endResource();
   } catch (err) {
     const end = endResource(err);
+    // launchFailed marks errors where the engine never answered.
     if (isPhaseTimeoutError(err)) {
-      throw new Error(`horizon-proposal phase timed out after ${PHASE_TIMEOUT / 1000}s`);
+      throw Object.assign(new Error(`horizon-proposal phase timed out after ${PHASE_TIMEOUT / 1000}s`), { launchFailed: true });
     }
     if (isPhaseKillError(err)) {
       const cause = end && end.cause ? `; ${end.cause}` : '';
-      throw new Error(`horizon-proposal phase killed by ${err.signal || 'a signal'} before the ${PHASE_TIMEOUT / 1000}s wall, not a timeout${cause}`);
+      throw Object.assign(new Error(`horizon-proposal phase killed by ${err.signal || 'a signal'} before the ${PHASE_TIMEOUT / 1000}s wall, not a timeout${cause}`), { launchFailed: true });
     }
+    if (err && typeof err === 'object') err.launchFailed = true;
     throw err;
   } finally {
     try { fs.unlinkSync(tmpFile); } catch {}
@@ -3488,18 +3492,23 @@ async function autopilotAtris(description, options = {}) {
       break;
     }
 
-    const suggestion = await suggestNextTask(cwd, skipped, { auto });
+    const problems = [];
+    const suggestion = await suggestNextTask(cwd, skipped, { auto, problems });
 
     if (!suggestion) {
+      // A failed proposal launch must not read as a clean workspace.
+      const proposalFailure = problems[0] ? `I could not ask the engine for new work: ${problems[0]}` : '';
       tickOutcome = 'idle';
-      tickOutcomeText = 'I checked the repo and found no work to pick up this tick.';
+      tickOutcomeText = proposalFailure
+        ? `I found no work to pick up this tick. ${proposalFailure}`
+        : 'I checked the repo and found no work to pick up this tick.';
       tickNextStep = 'scan for new signals and propose the next horizon';
       if (verbose) {
-        console.log('  nothing to do. workspace is clean.');
+        console.log(proposalFailure ? `  nothing to do. ${proposalFailure}` : '  nothing to do. workspace is clean.');
       } else {
         printPlainBlock([
           'I found no work this tick.',
-          'The workspace looks clean.',
+          proposalFailure || 'The workspace looks clean.',
           '',
           'Next I will stop until a new signal appears.'
         ].join('\n'));
