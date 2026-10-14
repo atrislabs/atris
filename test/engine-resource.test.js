@@ -30,6 +30,33 @@ test('mac snapshot reads free memory, swap, and load', () => {
   assert.deepStrictEqual(snap, { free_pct: 81, swap_used_mb: 512.25, swap_total_mb: 2048, load: [3.5, 2.25, 1] });
 });
 
+test('mac readings and the agent scan still find their system tools when the search path is narrow', { skip: process.platform !== 'darwin' }, () => {
+  const { spawnSync } = require('node:child_process');
+  // A launch from cron or launchd can carry a path without the system tools
+  // folders. Every tool call the readings make must still start.
+  const probe = `
+    const cp = require('child_process');
+    const real = cp.spawnSync;
+    const calls = [];
+    cp.spawnSync = (cmd, args, opts) => {
+      const result = real(cmd, args, opts);
+      calls.push({ cmd: require('path').basename(cmd), missing: Boolean(result.error && result.error.code === 'ENOENT') });
+      return result;
+    };
+    const { readMachineResources, readSshAgents } = require(${JSON.stringify(path.join(__dirname, '..', 'lib', 'engine-resource'))});
+    const snap = readMachineResources();
+    readSshAgents();
+    process.stdout.write(JSON.stringify({ snap, calls }));
+  `;
+  const ran = spawnSync(process.execPath, ['-e', probe], { encoding: 'utf8', env: { HOME: os.homedir(), PATH: '/nonexistent' } });
+  assert.equal(ran.status, 0, ran.stderr);
+  const { snap, calls } = JSON.parse(ran.stdout);
+  assert.deepEqual(calls.map((call) => call.cmd).sort(), ['lsof', 'memory_pressure', 'ps', 'ps', 'sysctl']);
+  assert.deepEqual(calls.filter((call) => call.missing), []);
+  assert.equal(typeof snap.free_pct, 'number');
+  assert.equal(typeof snap.swap_total_mb, 'number');
+});
+
 test('off mac, memory fields stay empty instead of guessing', () => {
   const snap = readMachineResources({ platform: 'linux', run: () => { throw new Error('must not run'); }, loadavg: () => [1, 1, 1] });
   assert.deepStrictEqual(snap, { free_pct: null, swap_used_mb: null, swap_total_mb: null, load: [1, 1, 1] });
