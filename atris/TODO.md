@@ -23,6 +23,8 @@ Details for any task: atris task show <ID>
 
 ## Review
 
+- **[AIC-12]** Remove project board test temp folders · auto-improver
+  **Done looks like:** Developers keep a clean temp folder, saving disk space because board tests now remove the folders they make.
 - **[AIC-11]** Await project-filtered board child closure · auto-improver
   **Done looks like:** Developers can finish board checks reliably, saving time by waiting for final output before checking it.
 - **[AIC-10]** Wait safely for board follow child closure · auto-improver

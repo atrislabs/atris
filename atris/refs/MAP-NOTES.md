@@ -2294,7 +2294,7 @@ npm publish
 
 ## Board stream readiness
 
-- `test/member-board-this-project.test.js:71` exercises the real board follow CLI with shared progress logs; `test/member-board-this-project.test.js:84` polls complete output before appending updates, with a five-second bound instead of a fixed 700ms startup wait. It captures closure at line 77, bounds the child lifetime to 15 seconds, and awaits closure before parsing final output.
+- `test/member-board-this-project.test.js:82` exercises the real board follow CLI with shared progress logs; `test/member-board-this-project.test.js:95` polls complete output before appending updates, with a five-second bound instead of a fixed 700ms startup wait. It captures closure at line 88, bounds the child lifetime to 15 seconds, and awaits closure before parsing final output. `test/member-board-this-project.test.js:13` tracks every temp folder the file makes and removes them after all tests finish.
 
 - `test/member-board.test.js:147` checks the real board CLI; its watch check at line 158 polls every 25ms for a second complete redraw, with an eight-second readiness bound and ten-second child timeout, then stops and awaits the child.
 
