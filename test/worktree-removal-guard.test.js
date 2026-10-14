@@ -14,6 +14,7 @@ const { reap } = require('../commands/land');
 const { cleanupWorktrees } = require('../commands/worktree');
 const { disposeReviewSandbox } = require('../lib/fleet');
 const { regressionCheck } = require('../commands/autopilot');
+const { dropScratch } = require('../lib/land-green');
 
 function git(cwd, args) {
   const result = spawnSync('git', args, { cwd, encoding: 'utf8' });
@@ -243,7 +244,6 @@ const UNGUARDED_REMOVALS = {
 // Real work folder removals still waiting for the guard. Each one is a gap;
 // guard it and delete its line here.
 const NOT_YET_GUARDED = {
-  'lib/land-green.js:dropScratch': 'scratch folder a timed-out verify may still be running in',
   'lib/member-tidy.js:tidyMemberCopies': 'checks for a live run but not for git mid-operation, and logs nowhere',
 };
 const WORKTREE_REMOVAL = /worktree['"]?\s*,\s*['"]remove['"]|git worktree remove|rmSync\(\s*[^,)]*(?:worktree|wtPath|\bwt\b|\bw\.path)/i;
@@ -280,4 +280,32 @@ test('every work folder removal goes through the git check and the removal log',
     .filter((site) => site.key === key)
     .every((site) => site.body.includes('worktreeGitActivity') && site.body.includes('recordWorktreeRemoval')));
   assert.deepEqual(nowGuarded, [], 'guarded now: delete its line from NOT_YET_GUARDED');
+});
+
+test('green landing keeps its scratch folder while a test is still running in it', () => {
+  const { base, repo, wt } = landedWorktree();
+  try {
+    assert.deepEqual(dropScratch(repo, wt, { activeCwds: [path.join(wt, 'node_modules')] }), { removed: false, reason: 'active_process' });
+    fs.writeFileSync(path.join(worktreeGitDir(wt), 'index.lock'), '');
+    assert.deepEqual(dropScratch(repo, wt, { activeCwds: [] }), { removed: false, reason: 'git_lock' });
+    assert.ok(fs.existsSync(wt));
+    assert.deepEqual(removalLines(repo), []);
+  } finally {
+    fs.rmSync(base, { recursive: true, force: true });
+  }
+});
+
+test('green landing names who removed its scratch folder and why', () => {
+  const { base, repo, wt } = landedWorktree();
+  try {
+    assert.deepEqual(dropScratch(repo, wt, { activeCwds: [] }), { removed: true });
+    assert.equal(fs.existsSync(wt), false);
+    assert.ok(!git(repo, ['worktree', 'list']).includes(wt));
+    const [line] = removalLines(repo);
+    assert.equal(line.path, wt);
+    assert.equal(line.by, 'atris land --auto');
+    assert.equal(line.reason, 'green_landing_scratch_done');
+  } finally {
+    fs.rmSync(base, { recursive: true, force: true });
+  }
 });
