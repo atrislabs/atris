@@ -268,3 +268,48 @@ Other commands: brain activate/compile (plan only, exit 2), Atris boot, mission 
 Learned: renaming a helper requires updating both its symbol and line pointer; passing the folder checks alone does not prove navigation remains accurate.
 next_push: Compare the combined repair's member-start failure with unchanged master to determine whether it is a repair regression.
 layer: capabilities
+
+
+## Member-start failure attributed to unchanged main
+
+Recorded that the background-driver failure already exists in the unchanged main input. The exact failing case invokes the real member CLI on both saved copies; both fail with the same already-running-driver refusal. Required folder checks passed here. No production fix or protected landing.
+
+Plan: unchanged main -> exact failed case <- combined repair -> compare -> required folder checks.
+
+Inputs: unchanged main `a8b9f17b2ed955df4fdff1717cc6057aea7f480a` at `/var/folders/t1/2_4kmb5n4c71dxm26zc8dgzr0000gn/T/atris-map-baseline-djmm0y95`; combined tree `554b49cbbd0b172b00470b4ab382987d26a83531` at `/var/folders/t1/2_4kmb5n4c71dxm26zc8dgzr0000gn/T/atris-lock-suite-lp74sw3m`.
+
+Actual command in each copy:
+`node --test --test-name-pattern='member run detach and dry-run do not require a completed work step' test/member-run-start.test.js`
+
+```text
+baseline: tests 1, pass 0, fail 1, exit 1
+AssertionError: another driver is already running mission mission-2026-10-14-bounded-work-9c183097 (pid 46485)
+1 !== 0
+at test/member-run-start.test.js:230:10
+combined: tests 1, pass 0, fail 1, exit 1
+AssertionError: another driver is already running mission mission-2026-10-14-bounded-work-e2dc71e8 (pid 46856)
+1 !== 0
+at test/member-run-start.test.js:230:10
+```
+
+`git diff a8b9f17b2ed955df4fdff1717cc6057aea7f480a 554b49cbbd0b172b00470b4ab382987d26a83531 -- test/member-run-start.test.js commands/member.js` returned no output, exit 0. The same comparison for `commands/mission.js` returned no differences. This establishes a pre-existing failure under this environment, not its root cause or full-suite health.
+
+Rerunnable required verify: `node --test test/worktree-removal-guard.test.js test/member-tidy.test.js`, current checkout, exit 0. Actual output excerpt:
+
+```text
+✔ tidy keeps old private and shared git locks and reports every path and age
+✔ regression cleanup keeps old private and shared git locks created by the real check
+ℹ tests 13
+ℹ suites 0
+ℹ pass 13
+ℹ fail 0
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 3156.203917
+```
+
+Files edited: this receipt and `atris/team/architect/logs/2026-10-14.md`. No new repository files. Commands run: mission status, Atris boot, task list/new/claim/note/ready, brain activate/compile (plan only), Git status/log/remote/diff reads, exact failed-case comparison, required folder checks, explicit staging, whitespace check, commit and push. Existing router and rendered task-view changes excluded.
+Progress: one remaining full-suite failure attributed to unchanged main; two matching failure outputs; all 13 required folder checks passing. No new dependencies or product behavior changes.
+next_push: Compare the two remaining mission-run reliability failures with the same unchanged main input to attribute them before considering the folder repair.
+layer: beliefs
