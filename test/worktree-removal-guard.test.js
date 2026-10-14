@@ -59,7 +59,7 @@ test('reap keeps late ordinary locks and keep markers in present and disappearin
   assert.match(result.stdout, /all five timing cases passed; files, locks, and branches retained; no removal attempted or recorded/);
 });
 
-test('regression cleanup keeps folders that gain locks or disappear during its safety check', () => {
+test('regression cleanup keeps folders that gain locks or disappear during or after its safety check', () => {
   const proof = path.resolve(__dirname, '../atris/receipts/2026-10-14-autopilot-folder-check.js');
   const result = spawnSync(process.execPath, [proof], { encoding: 'utf8', timeout: 120000 });
   assert.equal(result.status, 0, result.stderr || result.stdout);
@@ -67,6 +67,7 @@ test('regression cleanup keeps folders that gain locks or disappear during its s
   assert.match(result.stdout, /late private and shared locks during the safety check kept the folder, named both paths with distinct ages, and no removal was attempted/);
   assert.match(result.stdout, /a folder that disappeared during the safety check was reported missing with both retained lock paths and ages, and no removal was attempted/);
   assert.match(result.stdout, /a folder that disappeared during the safety check with no lock left was reported only as missing, and no removal was attempted/);
+  assert.match(result.stdout, /a folder that disappeared after a passing safety check was reported missing, kept in Git, and no removal was attempted or recorded/);
 });
 
 function regressionEntry(repo, verifyCmd) {

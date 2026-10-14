@@ -1236,8 +1236,9 @@ function regressionCheck(cwd) {
       if (created) {
         const activePaths = listActiveProcessPaths();
         const activity = inspectGitActivity(worktreePath);
-        // The folder can disappear during the git check; name what it left locked.
-        const lock = !activity.safe && !fs.existsSync(worktreePath) ? missingFolderLock(cwd, worktreePath) : null;
+        // The folder can disappear during or after the git check. Git still
+        // exits 0 removing a missing folder, so look on disk before removing.
+        const lock = !fs.existsSync(worktreePath) ? missingFolderLock(cwd, worktreePath) : null;
         const reason = lock ? (lock.locks.length ? lock.reason : 'folder is missing')
           : !activity.safe ? activity.reason
           : worktreeHasActiveProcess(worktreePath, activePaths)

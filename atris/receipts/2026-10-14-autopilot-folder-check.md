@@ -109,3 +109,27 @@ a folder that disappeared during the safety check with no lock left was reported
 next_push: Prove regression cleanup keeps a folder that disappears after a passing safety check but before removal, records no removal, and gives a plain reason.
 
 layer: behaviors
+
+## Folder disappearing after a passing safety check
+
+Regression cleanup now looks on disk right before removing a folder. Git's removal exits 0 even when the folder is already gone, and quietly drops Git's record of it.
+
+Before this change, a folder moved after a passing check was logged as removed. The moved copy also lost its link to Git. The proof moves the folder right after the check passes, and the previous code failed it:
+
+```text
+{"slug":"late-after","pass":true,"cleanup":{"path":".../.regression-worktree-0102e170","removed":true}}
+AssertionError [ERR_ASSERTION]: fatal: not a git repository: .../.git/worktrees/-regression-worktree-0102e170
+```
+
+Now cleanup reports the folder as missing, Git still lists it, no removal is attempted, and the removal log gains no line.
+
+Real surface: `node atris/receipts/2026-10-14-autopilot-folder-check.js`, exit 0.
+
+```text
+  kept .../.regression-worktree-287f9215: folder is missing
+a folder that disappeared after a passing safety check was reported missing, kept in Git, and no removal was attempted or recorded
+```
+
+next_push: Prove and close the same gap in old-folder cleanup, whose code hands a folder that passed its check straight to Git's removal without looking on disk.
+
+layer: behaviors
