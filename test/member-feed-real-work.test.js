@@ -62,6 +62,15 @@ const FILLER_LOG = [
   '## 09:25 · Mission run tick 2',
   '- member: builder',
   '- summary: atris member tick builder --goal "do the thing"',
+  '## 09:30 · Mission run tick 3',
+  '- summary: No changes made',
+  '- verifier: not_run',
+  '## 09:35 · Mission run tick 4',
+  '- summary: Nothing changed this tick because the page was already fixed.',
+  '## 09:40 · Mission run tick 5',
+  '- summary: no-text',
+  '## 09:45 · Mission run tick 6',
+  '- summary: Made no changes; waiting on review.',
   '',
 ].join('\n');
 

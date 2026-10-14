@@ -9976,6 +9976,9 @@ function isFeedFillerText(text) {
   if (/^member (wake|goal-from-mission|goal created|initialized)\b/i.test(t)) return true;
   if (/^\[?logged update\]?$/i.test(t)) return true;
   if (/^(next[_ ]push|verdict):/i.test(t)) return true;
+  // Runs that report no change, or left only an empty-output fallback word.
+  if (/^(no[- ]text|error|none|n\/a)\.?$/i.test(t)) return true;
+  if (/^(no (code |file )?(changes?|edits?)( (were )?(made|needed|required|done))?|nothing (changed|to (do|change))|made no changes|no[- ]op)(\s*$|[.,;:!]|\s+(because|since|as|this|in)\b)/i.test(t)) return true;
   if (/^[`'"]?atris\s/i.test(t) || /\batris\s+[a-z-]+\s+[a-z-]+\s+--[a-z]/i.test(t)) return true;
   return false;
 }
