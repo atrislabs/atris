@@ -1374,6 +1374,16 @@ function memberRunWith(name, args, { quiet = false } = {}) {
     result.ask = `${name} is waiting on you: ${payload.human_asks[0]}`;
     result.next_command = payload.next_command || 'atris decide';
   }
+  // A finished ignited run whose check passed hands its branch to GitHub
+  // auto-merge, only past the local gates; any held gate leaves the branch.
+  if (ignite && ok && started && !reviewAsk && finalMission.verifier_result?.passed === true) {
+    const ticks = Array.isArray(payload.ticks) ? payload.ticks : [];
+    const summary = ticks.map((tick) => tick?.summary || tick?.claude?.summary).filter(Boolean).pop() || '';
+    const workerEngine = ticks.map((tick) => tick?.engine_id).filter(Boolean).pop()
+      || runnerSwap?.to || readFlag(args, '--runner', '') || '';
+    result.autoland = require('../lib/member-autoland').autolandMemberRun({ mission: finalMission, cwd, summary, workerEngine });
+    if (!asJson && !quiet) console.log(result.autoland.line);
+  }
   if (!ok) {
     result.error = result.ask || payload.detail || payload.error || payload.reason || payload.next_action
       || run.stderr || 'mission did not run a work step';

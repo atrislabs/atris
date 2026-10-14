@@ -6510,9 +6510,16 @@ function writeReceipt(mission, result, root = process.cwd()) {
   const receiptPath = path.join(paths.runsDir, `mission-${mission.id}-${safeTime}.json`);
   const relativeReceiptPath = path.relative(root, receiptPath);
   const finalResult = normalizeMissionReceiptResult(mission, result, relativeReceiptPath);
+  // tree_hash covers only doctrine files; git_tree pins the code the run's
+  // checks saw, so a later reader can tell whether the code has moved since.
+  // With unsaved changes the checks saw more than any commit holds, so no
+  // code tree is recorded and clean is false.
+  const codeState = require('../lib/member-autoland').gitCodeState(root);
   const receipt = {
     schema: 'atris.mission_receipt.v1',
     tree_hash: treeHashFor(root),
+    clean: codeState.clean,
+    git_tree: codeState.clean ? codeState.tree : null,
     mission_id: mission.id,
     objective: mission.objective,
     owner: mission.owner,
@@ -10755,12 +10762,22 @@ async function verifyMissionRunTickPhase(context) {
         || (!currentTick.storedVerifier && !process.env.NODE_TEST_CONTEXT)
       );
     if (shouldRunReferee) {
-      const refereeResult = await runEngineVerifier(currentTick.tickRuntimeMission, {
+      // Pin the code before the referee looks; a referee that changes the
+      // code or its unsaved state has not reviewed what would merge.
+      const { gitCodeState, codeStatus } = require('../lib/member-autoland');
+      const beforeReview = gitCodeState(cwd);
+      const reviewed = await runEngineVerifier(currentTick.tickRuntimeMission, {
         cwd,
         signal: controller.signal,
         tickIndex: currentTick.tickIdx,
         refereeEngine: context.refereeEngine,
       });
+      const afterReview = gitCodeState(cwd);
+      const codeMoved = beforeReview.tree !== afterReview.tree
+        || codeStatus(beforeReview) !== codeStatus(afterReview)
+        || beforeReview.hidden !== afterReview.hidden;
+      const refereeResult = codeMoved ? { ...reviewed, passed: false, reason: 'code changed during review' } : reviewed;
+      result.reviewed_git_tree = beforeReview.clean ? beforeReview.tree : null;
       result.referee_result = refereeResult;
       if (!verifierResult || !refereeResult.passed) {
         verifierResult = verifierResult
