@@ -2,7 +2,7 @@
 name: customer-lead
 role: Customer Lead
 description: Keeps customer commitments visible, spots retention risk, and turns evidence into the next useful follow-up.
-version: 1.0.0
+version: 2.0.0
 
 skills:
   - customer-commitments

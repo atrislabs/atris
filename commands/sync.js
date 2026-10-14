@@ -83,6 +83,23 @@ function ensureRealDirectory(dir) {
   fs.mkdirSync(dir, { recursive: true });
 }
 
+// A hook script the project already has is never replaced. Projects harden
+// their hooks (nonce checks, queues, proof before pop); a sync must not
+// downgrade them to the shipped copy.
+function isProtectedHook(destPath) {
+  return path.basename(path.dirname(destPath)) === 'hooks' && fs.existsSync(destPath);
+}
+
+// A member retired to team/_archived/<name>-<date>/ must never come back.
+function isArchivedMember(teamDir, name) {
+  const archiveDir = path.join(teamDir, '_archived');
+  try {
+    return fs.readdirSync(archiveDir).some(entry => entry === name || (entry.startsWith(`${name}-`) && /^\d{4}-\d{2}-\d{2}$/.test(entry.slice(name.length + 1))));
+  } catch {
+    return false;
+  }
+}
+
 /**
  * Sync the canonical skill set from atris-cli/atris/skills/* into a
  * workspace's atris/skills/* (plus ensure .claude/skills/ symlinks).
@@ -128,7 +145,9 @@ function syncPackageSkills(targetAtrisDir, opts = {}) {
         } else {
           const srcContent = fs.readFileSync(srcPath, 'utf8');
           const destContent = fs.existsSync(destPath) ? fs.readFileSync(destPath, 'utf8') : '';
-          if (srcContent !== destContent) {
+          if (srcContent !== destContent && isProtectedHook(destPath)) {
+            if (verbose) console.log(`- Kept atris/skills/${skillName}/${relPath} (differs from shipped hook, not replaced)`);
+          } else if (srcContent !== destContent) {
             if (!dryRun) {
               fs.writeFileSync(destPath, srcContent);
               if (entry.endsWith('.sh')) fs.chmodSync(destPath, 0o755);
@@ -348,6 +367,12 @@ function syncWorkspaceTemplate(targetRoot, bizMeta, options = {}) {
     try { templateContent = fs.readFileSync(templatePath, 'utf-8'); } catch { continue; }
     const finalContent = _substituteParams(templateContent, params);
 
+    const memberMatch = targetRelPath.split(path.sep).join('/').match(/^team\/([^/_][^/]*)\//);
+    if (memberMatch && isArchivedMember(path.join(targetAtrisDir, 'team'), memberMatch[1])) {
+      skipped++;
+      continue;
+    }
+
     if (!fs.existsSync(targetPath)) {
       addedList.push(targetRelPath); added++;
       if (!dryRun) {
@@ -358,7 +383,7 @@ function syncWorkspaceTemplate(targetRoot, bizMeta, options = {}) {
       const existing = fs.readFileSync(targetPath, 'utf-8');
       if (existing === finalContent) {
         skipped++;
-      } else if (force) {
+      } else if (force && !memberMatch) {
         updatedList.push(targetRelPath); updated++;
         if (!dryRun) fs.writeFileSync(targetPath, finalContent);
       } else {
@@ -437,6 +462,18 @@ function syncBusinessCanonical(targetRoot, bizMeta, options = {}) {
   });
 }
 
+// Team members follow every written update, business or legacy, into Claude
+// Code, Cursor, and Codex as subagents. An export failure never fails the update.
+function exportTeamAfterUpdate(root, { dryRun = false } = {}) {
+  if (dryRun || !fs.existsSync(path.join(root, 'atris', 'team'))) return;
+  try {
+    const { exportMembers, summaryLine } = require('../lib/member-export');
+    console.log(`✓ Team: ${summaryLine(exportMembers(root))}`);
+  } catch (err) {
+    console.log(`Team export skipped: ${err.message || err}`);
+  }
+}
+
 function syncAtris(options = {}) {
   const explicitDryRun = options.dryRun != null ? options.dryRun : process.argv.includes('--dry-run');
   const yes = options.yes != null
@@ -455,6 +492,7 @@ function syncAtris(options = {}) {
         dryRun,
         force,
       });
+      exportTeamAfterUpdate(process.cwd(), { dryRun });
       if (!yes) {
         console.log('\nPlan only. Re-run with --yes to write these files.');
         if (!explicitDryRun && isNonInteractive()) process.exit(2);
@@ -548,6 +586,17 @@ function syncAtris(options = {}) {
     const newContent = fs.readFileSync(sourceFile, 'utf8');
 
     if (currentContent === newContent) {
+      skipped++;
+      return;
+    }
+
+    // Team members belong to the project. Update never adds a member (init
+    // does that, and a missing member may have been retired to
+    // team/_archived/) and never replaces one the project has changed.
+    if (target.startsWith('team/')) {
+      if (fs.existsSync(targetFile)) {
+        console.log(`- Kept ${target} (newer template exists in the package, yours not replaced)`);
+      }
       skipped++;
       return;
     }
@@ -695,6 +744,8 @@ Key behaviors:
     console.log(`\n✓ Updated ${updated} file(s), ${skipped} unchanged`);
     console.log('\nRun your AI agent again to use the latest specs and agent templates.');
   }
+
+  exportTeamAfterUpdate(process.cwd(), { dryRun });
 }
 
 /**
@@ -713,7 +764,9 @@ function syncRecursiveCount(src, dest, label, silent) {
     } else {
       const srcBuf = fs.readFileSync(srcPath);
       const destBuf = fs.existsSync(destPath) ? fs.readFileSync(destPath) : Buffer.alloc(0);
-      if (!srcBuf.equals(destBuf)) {
+      if (!srcBuf.equals(destBuf) && isProtectedHook(destPath)) {
+        if (!silent) console.log(`- Kept ${label}/${entry} (differs from shipped hook, not replaced)`);
+      } else if (!srcBuf.equals(destBuf)) {
         fs.writeFileSync(destPath, srcBuf);
         if (entry.endsWith('.sh')) {
           fs.chmodSync(destPath, 0o755);

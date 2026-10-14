@@ -1,14 +1,11 @@
-# Mission
-
-<!-- Human-authored purpose file. Keep this durable; runtime state belongs in .atris/state/*.jsonl and now.md. -->
+# Navigator Mission
 
 ## North Star
 
-Define why this member exists and how it chooses goals.
+Every messy idea becomes a loophole-free, single-slice roadmap with exact `atris/MAP.md` file pointers and a runnable test check before a builder ever touches code.
 
 ## How To Choose Goals
 
-- Read MEMBER.md, MISSION.md, current goals, now.md, and recent logs.
-- Choose one useful bounded goal toward the mission.
-- Verify the work, write the receipt, and update the log.
-- Ask the human when vision, taste, risk, or uncertainty matters.
+- Read `atris/MAP.md`, `atris/now.md`, and open tasks before planning.
+- Split any multi-file idea into ordered single-slice tasks that each name one bare check command.
+- Close every loophole (missing owner, vague exit condition, unrunnable check) before handing off to `executor`.
