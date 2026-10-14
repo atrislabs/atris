@@ -164,8 +164,11 @@ test('the runner writes why a run failed and the board reads it back', () => {
       const at = renderBoard([{ ...by.locked, engine: 'claude', alive: false }, by.broke], dir, 0, w).split('\n')[1];
       assert.match(at, /\s{2}(sign in to claude, then run it again|sign in to claude|sign in)$/, `the fix shrinks, never cut, at ${w} columns: ${at}`);
     }
-    const mid = renderBoard([{ ...by.locked, engine: 'claude', alive: false }, by.broke], dir, 0, 95).split('\n');
+    const mid = renderBoard([{ ...by.locked, engine: 'claude', alive: false }, by.broke], dir, 0, 80).split('\n');
     assert.match(mid[1], /^locked\s+failed\s+signed out\s.*\s{2}sign in to claude, then run it again$/, '"done" gives up its room before the fix does');
+    const roomy = renderBoard([{ ...by.locked, engine: 'claude', alive: false }, by.broke], dir, 0, 95).split('\n');
+    assert.match(roomy[1], /^locked\s+done failed\s+signed out\s+1m ago\s+job\s+sign in to claude, then run it again$/,
+      'with no live run, alive and engine leave before "done" does, since the fix names the engine');
     const said = [];
     for (let w = 50; w <= 140; w++) {
       const line = renderBoard([{ ...by.locked, engine: 'claude', alive: false }, by.broke], dir, 0, w).split('\n')[1];
@@ -357,13 +360,12 @@ test('a signed out row costs a wider board only the widths it is known to', () =
     const rows = readBoard({ dir, now: NOW }).map((r) => (r.member === 'builder' ? { ...r, alive: true, engine: 'codex', running_for: '3m' }
       : r.member === 'locked' ? { ...r, engine: 'claude' } : r));
     // "done" gave way for the fix at some width, so it stays away while it
-    // would cost a job or step; it used to come back at 60, 83, 87, 91, 110.
+    // would cost a job or step; it used to come back at 60, 83, 91, 110. The
+    // engine column stays away while it would push the board past the window,
+    // as it used to come back at 87 for the signed out row alone.
     assert.deepEqual(cliffs(rows.filter((r) => r.member !== 'builder'), dir, 50, 140), [
       // Open: the step column returns and the fix moves there as "sign in".
       '75 locked job 36->21 step 0->7',
-      // Open: the engine column returns for the signed out row alone.
-      '87 scout job 19->19 step 22->15',
-      '87 editor job 20->20 step 22->15',
     ]);
     // Open: the same live-run cliff as above, whole jobs or the live step.
     assert.deepEqual(cliffs(rows, dir, 50, 140), [
