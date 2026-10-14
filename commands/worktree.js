@@ -1175,6 +1175,37 @@ function listActiveProcessCwds() {
     .filter(Boolean);
 }
 
+// Absolute paths named on each program's command line, including flag values
+// like --require=/x.js. A program can run a script from a work folder while
+// its current folder is elsewhere; the folder scan alone misses it.
+function parseProcessArgPaths(psOutput) {
+  const paths = new Set();
+  for (const line of String(psOutput || '').split(/\r?\n/)) {
+    for (const token of line.trim().split(/\s+/)) {
+      const value = token.includes('=') ? token.slice(token.indexOf('=') + 1) : token;
+      if (value.length > 1 && value.startsWith('/')) paths.add(value);
+    }
+  }
+  return [...paths];
+}
+
+function listActiveProcessArgPaths() {
+  const result = spawnSync('ps', ['-axww', '-o', 'args='], {
+    encoding: 'utf8',
+    maxBuffer: COMMAND_MAX_BUFFER_BYTES,
+  });
+  if (result.error || result.status !== 0) return [];
+  return parseProcessArgPaths(result.stdout);
+}
+
+// Everything a running program is anchored to: its current folder plus any
+// script path on its command line.
+function listActiveProcessPaths() {
+  const cwds = listActiveProcessCwds();
+  if (!Array.isArray(cwds)) return cwds;
+  return cwds.concat(listActiveProcessArgPaths());
+}
+
 function worktreeHasActiveProcess(worktreePath, activeCwds) {
   const resolved = canonicalPath(worktreePath);
   const prefix = `${resolved}${path.sep}`;
@@ -1223,7 +1254,7 @@ function cleanupWorktrees({ root = repoRoot(), base: baseOverride = '', apply = 
   const worktrees = listWorktrees(root);
   const primary = worktrees[0]?.path ? path.resolve(worktrees[0].path) : '';
   const current = path.resolve(root);
-  const activeCwds = Array.isArray(activeCwdsOverride) ? activeCwdsOverride.map(canonicalPath) : listActiveProcessCwds();
+  const activeCwds = Array.isArray(activeCwdsOverride) ? activeCwdsOverride.map(canonicalPath) : listActiveProcessPaths();
   const base = normalizeTargetRef(root, baseOverride || defaultShipTarget(root));
   refreshRemoteRef(root, base);
   const candidates = [];
@@ -1449,8 +1480,10 @@ module.exports = {
   describeFlightAge,
   flightStampMs,
   listActiveProcessCwds,
+  listActiveProcessPaths,
   listWorktrees,
   parseAgentFlightName,
+  parseProcessArgPaths,
   parseWorktrees,
   normalizeTargetRef,
   recordWorktreeRemoval,
