@@ -684,3 +684,21 @@ test('the landing status names the last day of killed runs with the low memory c
     fs.rmSync(root, { recursive: true, force: true });
   }
 });
+
+test('a kill sent by the run time limit names the time limit even with memory low', () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'engine-resource-timeout-'));
+  try {
+    const lowMemory = { platform: 'darwin', run: fakeRun(PRESSURE_LOW, SWAP_FULL), loadavg: () => [9, 8, 7] };
+    const timed = recordEngineResource(root, { phase: 'end', engine: 'codex', task: 'T', run_id: 'r1', signal: 'SIGKILL', timed_out: true }, lowMemory);
+    assert.strictEqual(timed.cause, 'killed (time limit reached)');
+    assert.strictEqual(timed.timed_out, true);
+    const plain = recordEngineResource(root, { phase: 'end', engine: 'codex', task: 'T', run_id: 'r2', signal: 'SIGKILL' }, lowMemory);
+    assert.strictEqual(plain.cause, 'killed (machine memory low)');
+    assert.strictEqual(plain.timed_out, undefined);
+    const term = recordEngineResource(root, { phase: 'end', engine: 'codex', task: 'T', run_id: 'r3', signal: 'SIGTERM', timed_out: true }, lowMemory);
+    assert.strictEqual(term.timed_out, true);
+    assert.strictEqual(term.cause, undefined);
+  } finally {
+    fs.rmSync(root, { recursive: true, force: true });
+  }
+});

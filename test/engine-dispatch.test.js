@@ -1291,6 +1291,31 @@ test('runDispatchFlight ship args explicitly target HEAD when no remote mainline
   }
 });
 
+test('a run killed by its own time limit names the time limit as the cause', () => {
+  const root = makeTempRoot();
+  require('node:child_process').spawnSync('git', ['init', '-q', root], { encoding: 'utf8' });
+  const worktree = fs.mkdtempSync(path.join(os.tmpdir(), 'engine-dispatch-wt-'));
+  try {
+    const timedOut = fleet.dispatchToEngine({
+      task: TASK,
+      engine: 'claude',
+      worktreePath: worktree,
+      root,
+      skipBriefCapture: true,
+      runner: () => ({ status: null, signal: 'SIGKILL', stdout: '', stderr: '', error: Object.assign(new Error('spawn ETIMEDOUT'), { code: 'ETIMEDOUT' }) }),
+    });
+    const [, end] = fs.readFileSync(path.join(root, '.atris', 'state', 'engine-resource.jsonl'), 'utf8').trim().split('\n').map(JSON.parse);
+    assert.equal(end.signal, 'SIGKILL');
+    assert.equal(end.timed_out, true);
+    assert.equal(end.cause, 'killed (time limit reached)');
+    assert.equal(timedOut.timed_out, true);
+    assert.equal(timedOut.kill_cause, 'killed (time limit reached)');
+  } finally {
+    fs.rmSync(root, { recursive: true, force: true });
+    fs.rmSync(worktree, { recursive: true, force: true });
+  }
+});
+
 test('every engine run writes a start and end machine line, and a SIGKILL names its likely cause', () => {
   const root = makeTempRoot();
   require('node:child_process').spawnSync('git', ['init', '-q', root], { encoding: 'utf8' });
