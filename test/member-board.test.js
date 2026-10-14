@@ -419,7 +419,19 @@ test('a tiny terminal keeps member states and common failure reasons within its 
   });
   try {
     const rows = readBoard({ dir, now: NOW });
-    for (const width of [32, 38, 42]) {
+    // Until every name fits whole, the result column would only repeat the
+    // reasons two columns already say, so it stays away instead of cutting
+    // a name: one column wider never reads less of a name.
+    for (const width of [31, 32, 38, 42]) {
+      const board = renderBoard(rows, dir, 0, width);
+      for (const line of board.split('\n')) assert.ok(line.length <= width, `${width}: ${line}`);
+      assert.match(board, /^member\s+state$/m, `${width}: ${board}`);
+      assert.match(board, /^builder\s+timed out$/m);
+      assert.match(board, width >= 42 ? /^chat-experience-lead\s+engine error$/m : /^chat-experien\S*\s+engine error$/m);
+      assert.match(board, /^breaker\s+bad exit 2$/m);
+      assert.match(board, /^scout\s+working$/m);
+    }
+    for (const width of [43, 50]) {
       const board = renderBoard(rows, dir, 0, width);
       for (const line of board.split('\n')) assert.ok(line.length <= width, `${width}: ${line}`);
       assert.match(board, /^member\s+state\s+last result$/m);
@@ -499,9 +511,9 @@ test('finishing members leave common failure reasons whole at 30 columns', () =>
   });
   try {
     const rows = readBoard({ dir, now: NOW, asleep: ['scout'] });
-    for (const width of [30, 31, 32, 33, 38]) {
+    for (const width of [30, 31, 32, 33, 38, 44, 45]) {
       const lines = renderBoard(rows, dir, 0, width).split('\n');
-      const three = width >= 33;
+      const three = width >= 45;
       assert.ok(lines.every((line) => line.length <= width), `${width}: ${lines.join('\n')}`);
       assert.match(lines[0], three ? /^member\s+state\s+last result$/ : /^member\s+state$/, `${width}: names never shrink to a stub`);
       assert.match(lines.join('\n'), /^builder\s+(?:failed\s+)?timed out$/m);
@@ -525,12 +537,12 @@ test('compact rows keep missing results clear beside a finishing member', async 
   });
   try {
     const rows = readBoard({ dir, now: NOW, asleep: ['scout'] });
-    for (const width of [30, 31, 32, 33, 36, 37, 38]) {
+    for (const width of [30, 31, 32, 33, 36, 37, 38, 48, 49]) {
       const board = renderBoard(rows, dir, 0, width);
       assert.ok(board.split('\n').every((line) => line.length <= width), `${width}: ${board}`);
-      assert.match(board, width >= 32 ? /stopped\s+(?:ended, )?no result$/m : /^chat-\S+\s+no result$/m);
-      assert.match(board, width >= 32 ? /finishing\s+-$/m : /finishing$/m);
-      assert.equal(board.includes('ended, no result'), width >= 37, `${width}: full wording when names keep their room`);
+      assert.match(board, width >= 49 ? /stopped\s+ended, no result$/m : /^chat-\S+\s+no result$/m);
+      assert.match(board, width >= 49 ? /finishing\s+-$/m : /finishing$/m);
+      assert.equal(board.includes('ended, no result'), width >= 49, `${width}: full wording once no name is cut`);
     }
     assert.match(renderBoard(rows, dir), /stopped\s+ended, no result\s/m, 'piped output keeps the full wording');
   } finally {
