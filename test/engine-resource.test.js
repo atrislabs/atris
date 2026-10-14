@@ -1176,6 +1176,59 @@ test('codex plan review signers record paired readings on success, SIGKILL and s
   }
 });
 
+test('engine probes record paired readings on success, SIGKILL and startup failure', () => {
+  const { execFileSync, spawnSync } = require('node:child_process');
+  const root = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'engine-probe-resource-')));
+  const bin = path.join(root, 'bin');
+  const missing = path.join(os.tmpdir(), `atris-missing-engine-${process.pid}`);
+  const probe = (template) => {
+    const ran = spawnSync(process.execPath, [path.join(__dirname, '..', 'bin', 'atris.js'), 'engine', 'test', 'claude', '--json'], {
+      cwd: root,
+      encoding: 'utf8',
+      timeout: 60000,
+      env: { ...process.env, ATRIS_SKIP_UPDATE_CHECK: '1', ATRIS_RUNNER_COMMAND_TEMPLATE: template, PATH: `${bin}${path.delimiter}${process.env.PATH}` },
+    });
+    return { status: ran.status, result: JSON.parse(ran.stdout).results[0], stderr: ran.stderr };
+  };
+  try {
+    execFileSync('git', ['init', '-q', root]);
+    // A stand-in so the installed check passes; the template decides the run.
+    fs.mkdirSync(bin);
+    fs.writeFileSync(path.join(bin, 'claude'), '#!/bin/sh\necho OK\n', { mode: 0o755 });
+    const ok = probe('echo OK');
+    const killed = probe('sh -c "kill -KILL $$"');
+    const failed = probe(missing);
+    assert.equal(ok.status, 0, ok.stderr);
+    assert.equal(ok.result.pass, true);
+    assert.equal(killed.status, 1);
+    assert.equal(failed.status, 1);
+    const lines = fs.readFileSync(path.join(root, RESOURCE_LOG), 'utf8').trim().split('\n').map(JSON.parse);
+    assert.deepEqual(lines.map((line) => line.phase), ['start', 'end', 'start', 'end', 'start', 'end']);
+    for (let i = 0; i < lines.length; i += 2) {
+      assert.match(lines[i].run_id, /^[0-9a-f-]{36}$/);
+      assert.equal(lines[i + 1].run_id, lines[i].run_id);
+      assert.equal(lines[i].engine, 'claude');
+      assert.equal(lines[i].task, 'engine probe');
+      assert.ok(Array.isArray(lines[i + 1].load));
+      assert.ok(Number.isInteger(lines[i + 1].duration_ms));
+    }
+    assert.notEqual(lines[0].run_id, lines[2].run_id);
+    assert.equal(lines[1].signal, undefined);
+    assert.equal(lines[1].error, undefined);
+    assert.equal(lines[3].signal, 'SIGKILL');
+    assert.match(lines[3].cause, /^killed \((machine memory low|cause unknown)\)$/);
+    // The probe result the operator reads names the cause.
+    assert.ok(killed.result.message.includes(lines[3].cause), killed.result.message);
+    assert.equal(lines[5].signal, undefined);
+    assert.match(lines[5].error, /not found|No such file/i);
+    assert.doesNotMatch(failed.result.message, /killed \(/);
+    console.log(`engine probe readings: ${JSON.stringify([lines[3], lines[5]])}`);
+    console.log(`engine probe kill message: ${killed.result.message}`);
+  } finally {
+    fs.rmSync(root, { recursive: true, force: true });
+  }
+});
+
 test('a kill sent by the run time limit names the time limit even with memory low', () => {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'engine-resource-timeout-'));
   try {

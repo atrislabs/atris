@@ -1891,7 +1891,7 @@ const PROBE_PROMPT = 'Reply with exactly the two characters: OK';
 // answer on 2026-07-02. 30s produced a false FAIL on a healthy engine.
 const PROBE_DEFAULT_TIMEOUT_MS = 120000;
 
-function probeEngine(name, { timeout = PROBE_DEFAULT_TIMEOUT_MS } = {}) {
+function probeEngine(name, { timeout = PROBE_DEFAULT_TIMEOUT_MS, root = process.cwd() } = {}) {
   const def = RUNNER_PROFILE_DEFS[name];
   if (!binInstalled(def.bin)) {
     return {
@@ -1917,11 +1917,15 @@ function probeEngine(name, { timeout = PROBE_DEFAULT_TIMEOUT_MS } = {}) {
     if (prevProfile === undefined) delete process.env.ATRIS_RUNNER_PROFILE;
     else process.env.ATRIS_RUNNER_PROFILE = prevProfile;
   }
+  // Machine memory and load at both ends of the probe, so one killed with
+  // SIGKILL says whether the machine was short on memory.
+  const endResource = require('../lib/engine-resource').startEngineRun(root, { engine: name, task: 'engine probe' });
   const start = Date.now();
   let res;
   try {
     res = spawnSync('sh', ['-c', cmd], { encoding: 'utf8', timeout });
   } catch (err) {
+    endResource(err);
     fs.rmSync(tmpDir, { recursive: true, force: true });
     return {
       engine: name,
@@ -1935,6 +1939,15 @@ function probeEngine(name, { timeout = PROBE_DEFAULT_TIMEOUT_MS } = {}) {
     };
   }
   const durationMs = Date.now() - start;
+  // spawnSync does not throw, so a failure is passed in the thrown shape.
+  const launchFailed = res.error || res.signal || res.status !== 0;
+  const end = endResource(launchFailed ? {
+    code: res.error && res.error.code,
+    signal: res.signal,
+    stderr: res.stderr,
+    message: res.error ? res.error.message : `exit ${res.status}`,
+  } : null);
+  const cause = end && end.cause ? `; ${end.cause}` : '';
   fs.rmSync(tmpDir, { recursive: true, force: true });
   const stdout = res.stdout || '';
   const stderr = res.stderr || '';
@@ -1954,7 +1967,7 @@ function probeEngine(name, { timeout = PROBE_DEFAULT_TIMEOUT_MS } = {}) {
     reason,
     message: ok
       ? 'responded OK'
-      : (timedOut ? `no reply within ${timeout}ms` : `did not reply OK (exit ${res.status}, signal ${res.signal})`),
+      : (timedOut ? `no reply within ${timeout}ms` : `did not reply OK (exit ${res.status}, signal ${res.signal})${cause}`),
     stdout,
     stderr,
     durationMs,
@@ -2032,7 +2045,7 @@ function runBenchCommand(args, root, deps = {}) {
     }
   }
 
-  const probeOpts = {};
+  const probeOpts = { root };
   if (timeout) probeOpts.timeout = timeout;
 
   const results = [];
@@ -2154,7 +2167,7 @@ function runEngineTest(targets, { json, root } = {}) {
       return 1;
     }
   }
-  const results = enginesToTest.map((name) => probeEngine(name));
+  const results = enginesToTest.map((name) => probeEngine(name, { root }));
   const failures = results.filter((r) => !r.pass);
   const passed = results.length - failures.length;
   // A live probe is the freshest health evidence there is: write it back so
