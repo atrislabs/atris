@@ -480,3 +480,19 @@ test('fix turns a dash between two numbers into a hyphen, keeping the range', ()
     'Shipped 3, the rest wait.',
   ]);
 });
+
+test('fix drops a dash that opens a line instead of leaving a leading comma', () => {
+  const file = tmpFile('attribution.md', [
+    '\u2014 Keshav, on the first run',
+    '> \u2014 a quoted attribution',
+    '  \u2014indented and tight',
+    'Mid-line stays a comma \u2014 like this.',
+  ].join('\n'));
+  const { changes } = applyFixes([file], RULES);
+  assert.deepEqual(changes.map((c) => c.after), [
+    'Keshav, on the first run',
+    '> a quoted attribution',
+    '  indented and tight',
+    'Mid-line stays a comma, like this.',
+  ]);
+});

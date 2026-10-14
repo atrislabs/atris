@@ -30,11 +30,12 @@ const SKIP_DIRS = new Set(['node_modules', '.git', 'dist', 'build', '.next', '.a
 // runs, blocks it" never comes out as a comma run-on. A lone dash left over
 // becomes a comma, unless punctuation already sits beside it. A dash between
 // two numbers is a range ("pages 10 to 20"), so it becomes a hyphen; a comma
-// there would turn one range into two separate numbers.
+// there would turn one range into two separate numbers. A dash that opens
+// the line (a quote attribution) is dropped; a comma cannot start a line.
 const LIST_LABEL_DASH = /^(\s*(?:[-*+]|\d+[.)])\s+)([^\u2014]{0,59}[^\s\u2014,;:.])\s*\u2014\s*/;
 
 function fixEmDash(s) {
-  s = s.replace(/(\d)\s*\u2014\s*(?=\d)/g, '$1-');
+  s = s.replace(/(\d)\s*\u2014\s*(?=\d)/g, '$1-').replace(/^(\s*(?:>\s*)*)\u2014\s*/, '$1');
   const label = LIST_LABEL_DASH.exec(s);
   if (label) return `${label[1]}${label[2]}:${s.length > label[0].length ? ' ' : ''}${fixEmDash(s.slice(label[0].length))}`;
   return s
