@@ -3,7 +3,7 @@ const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
-const { scanFile, detect, RULES } = require('../commands/slop');
+const { scanFile, detect, RULES, applyFixes } = require('../commands/slop');
 
 function tmpFile(name, content) {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'slop-'));
@@ -465,4 +465,18 @@ test('machine output through a pipe arrives whole, past the 64 KB pipe buffer', 
   assert.ok(r.stdout.length > 65536, `output should pass one pipe buffer, got ${r.stdout.length} bytes`);
   const json = JSON.parse(r.stdout);
   assert.equal(json.slop, 1500);
+});
+
+test('fix turns a dash between two numbers into a hyphen, keeping the range', () => {
+  const file = tmpFile('ranges.md', [
+    'We ran it 2020\u20142024 and it held.',
+    '- pages 10 \u2014 20 cover setup',
+    'Shipped 3 \u2014 the rest wait.',
+  ].join('\n'));
+  const { changes } = applyFixes([file], RULES);
+  assert.deepEqual(changes.map((c) => c.after), [
+    'We ran it 2020-2024 and it held.',
+    '- pages 10-20 cover setup',
+    'Shipped 3, the rest wait.',
+  ]);
 });
