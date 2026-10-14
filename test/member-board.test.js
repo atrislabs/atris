@@ -661,6 +661,24 @@ test('board shortens a hand-off step to who was asked and the model, but not in 
   assert.equal(rows[0].step, 'Asked Claude (claude-sonnet-5-5) for help with this step.', 'apps reading the rows get the step as written');
 });
 
+test('a hand-off step that would be cut drops the model, one that fits keeps it', () => {
+  const now = Date.parse('2026-10-14T13:00:00Z');
+  const step = (name, text) => memberRow(name, `2026-10-14T12:58:00Z m-1 started: [pid ${process.pid}] keep the board readable on a narrow screen\n2026-10-14T12:59:30Z m-1 ${text}\n`, now);
+  const rows = [
+    step('cl', 'Asked Claude (claude-sonnet-5-5) for help with this step.'),
+    step('dv', 'Asked Devin (swe-2-max) for help with this step.'),
+    step('cx', 'Asked Codex for help with this step.'),
+  ];
+  const at = (w) => Object.fromEntries(renderBoard(rows, '/x', 0, w).split('\n').filter((l) => /^(cl|dv|cx) /.test(l)).map((l) => [l.split(' ')[0], l]));
+  assert.ok(at(140).cl.endsWith('  Asked Claude (sonnet-5-5)'), 'room for it: the model stays');
+  const narrow = at(90);
+  assert.ok(narrow.cl.endsWith('  Asked Claude'), Object.values(narrow).join('\n'));
+  assert.ok(narrow.dv.endsWith('  Asked Devin'), narrow.dv);
+  assert.ok(narrow.cx.endsWith('  Asked Codex'), narrow.cx);
+  assert.ok(Object.values(narrow).every((l) => l.length <= 90 && !l.endsWith('...')), Object.values(narrow).join('\n'));
+  assert.equal(rows[0].step, 'Asked Claude (claude-sonnet-5-5) for help with this step.', 'apps reading the rows get the step as written');
+});
+
 test('board shows a continuous run by its latest goal, and keeps the job in the row data', () => {
   const now = Date.parse('2026-10-14T13:00:00Z');
   const job = (name, lines) => memberRow(name, [`2026-10-14T12:50:00Z m-1 started: ${name} continuous run`, ...lines.map((l, i) => `2026-10-14T12:5${i + 1}:00Z m-1 ${l}`), ''].join('\n'), now);
