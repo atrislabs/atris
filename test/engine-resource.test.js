@@ -1693,3 +1693,55 @@ test('prep passes record paired readings and name the cause of a SIGKILL', async
     for (const dir of [root, home, bin]) fs.rmSync(dir, { recursive: true, force: true });
   }
 });
+
+test('dream launches record paired readings and name the cause of a SIGKILL', () => {
+  const { spawnSync } = require('node:child_process');
+  const root = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'dream-resource-')));
+  const bin = path.join(root, 'bin');
+  const dream = () => spawnSync(process.execPath, [path.join(__dirname, '..', 'bin', 'atris.js'), 'dream', '--yes'], {
+    cwd: root,
+    encoding: 'utf8',
+    timeout: 60000,
+    env: { ...process.env, ATRIS_SKIP_UPDATE_CHECK: '1', PATH: `${bin}${path.delimiter}${process.env.PATH}` },
+  });
+  const engine = (body) => fs.writeFileSync(path.join(bin, 'claude'), `#!/bin/sh\n${body}\n`, { mode: 0o755 });
+  try {
+    fs.mkdirSync(path.join(root, 'atris', 'logs', '2099'), { recursive: true });
+    fs.writeFileSync(path.join(root, 'atris', 'logs', '2099', '2099-01-01.md'), '# Log 2099-01-01\n\n## Completed\n\n- shipped a loop\n');
+    fs.mkdirSync(bin);
+    const cards = JSON.stringify([
+      { title: 'Check open wishes', why: 'A wish needs a next step.', move: 'Answer the waiting wish.' },
+      { title: 'Review mission proof', why: 'A proof is ready.', move: 'Read the latest receipt.' },
+    ]);
+    engine(`cat <<'CARDS'\n${cards}\nCARDS`);
+    const ok = dream();
+    engine('kill -KILL $$');
+    const killed = dream();
+    assert.equal(ok.status, 0, ok.stderr);
+    assert.match(ok.stdout, /Dreamed 2 cards/);
+    assert.equal(killed.status, 0, killed.stderr);
+    const lines = fs.readFileSync(path.join(root, RESOURCE_LOG), 'utf8').trim().split('\n').map(JSON.parse);
+    // One launch for the clean dream; the killed dream tries each model once.
+    assert.deepEqual(lines.map((line) => line.phase), ['start', 'end', 'start', 'end', 'start', 'end']);
+    for (let i = 0; i < lines.length; i += 2) {
+      assert.match(lines[i].run_id, /^[0-9a-f-]{36}$/);
+      assert.equal(lines[i + 1].run_id, lines[i].run_id);
+      assert.equal(lines[i].engine, 'claude');
+      assert.equal(lines[i].task, 'dream');
+      assert.ok(Array.isArray(lines[i + 1].load));
+      assert.ok(Number.isInteger(lines[i + 1].duration_ms));
+    }
+    assert.equal(lines[1].signal, undefined);
+    assert.equal(lines[1].error, undefined);
+    for (const line of [lines[3], lines[5]]) {
+      assert.equal(line.signal, 'SIGKILL');
+      assert.match(line.cause, /^killed \((machine memory low|cause unknown)\)$/);
+    }
+    // The line the operator reads names the cause.
+    assert.ok(killed.stdout.includes(lines[5].cause), killed.stdout);
+    console.log(`dream readings: ${JSON.stringify([lines[3], lines[5]])}`);
+    console.log(`dream kill line: ${killed.stdout.split('\n')[0]}`);
+  } finally {
+    fs.rmSync(root, { recursive: true, force: true });
+  }
+});
