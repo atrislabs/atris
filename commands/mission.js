@@ -9183,6 +9183,22 @@ function tooDeepRunnerResult(depth) {
   };
 }
 
+// Machine memory and load at both ends of a tick, like a dispatch, so a
+// killed tick still says whether the machine was short on memory. The
+// returned end writes once, whichever of close or error comes first.
+function startTickResource(cwd, engine, mission) {
+  const { recordEngineResource } = require('../lib/engine-resource');
+  const resource = { engine: engine || 'runner', task: mission.task_id || mission.id || '', run_id: crypto.randomUUID() };
+  recordEngineResource(cwd, { phase: 'start', ...resource });
+  const startedAt = process.hrtime.bigint();
+  let ended = false;
+  return ({ signal = null, timedOut = false } = {}) => {
+    if (ended) return;
+    ended = true;
+    recordEngineResource(cwd, { phase: 'end', ...resource, signal, timed_out: timedOut, duration_ms: Math.round(Number(process.hrtime.bigint() - startedAt) / 1e6) });
+  };
+}
+
 function spawnGenericRunnerTick(mission, opts) {
   const { sessionId, cwd, signal, timeoutMs, prompt, model, missionLock } = opts;
   const dispatchDepth = missionDispatchDepth();
@@ -9241,6 +9257,7 @@ function spawnGenericRunnerTick(mission, opts) {
     }
 
     const startedAt = Date.now();
+    const endResource = startTickResource(cwd, canonicalEngineName(mission.runner), mission);
     const guardedCommand = `PATH=${shellQuote(gitGuard.pathPrefix)}:$PATH; export PATH; ${cmd}`;
     const proc = spawn('sh', ['-lc', guardedCommand], {
       cwd,
@@ -9303,8 +9320,9 @@ function spawnGenericRunnerTick(mission, opts) {
     });
     proc.stderr.on('data', (chunk) => { stderr += chunk.toString(); });
 
-    proc.on('close', (code) => {
+    proc.on('close', (code, closeSignal) => {
       clearTimeout(timer);
+      endResource({ signal: closeSignal, timedOut });
       if (lastMessageFile && eventBuf.trim()) readCodexEvent(eventBuf.trim());
       let finalText = String(stdout || '').trim();
       if (lastMessageFile) {
@@ -9342,6 +9360,7 @@ function spawnGenericRunnerTick(mission, opts) {
 
     proc.on('error', (e) => {
       clearTimeout(timer);
+      endResource({ timedOut });
       cleanupPrompt();
       gitGuard.cleanup();
       if (signal) signal.removeEventListener?.('abort', onAbort);
@@ -9426,6 +9445,7 @@ function spawnClaudeTick(mission, opts) {
     // detached: the runner spawns its own children; killing only the direct
     // child on timeout leaves them holding the session lock, and the next
     // tick's resume fails with "Session ID ... is already in use".
+    const endResource = startTickResource(cwd, 'claude', mission);
     const proc = spawn(resolveClaudeRunnerBin(), args, {
       cwd,
       stdio: ['ignore', 'pipe', 'pipe'],
@@ -9504,8 +9524,9 @@ function spawnClaudeTick(mission, opts) {
 
     proc.stderr.on('data', (c) => { stderr += c.toString(); });
 
-    proc.on('close', (code) => {
+    proc.on('close', (code, closeSignal) => {
       clearTimeout(timer);
+      endResource({ signal: closeSignal, timedOut });
       gitGuard.cleanup();
       if (signal) signal.removeEventListener?.('abort', onAbort);
       updateMissionLockOwner(missionLock, missionLock?.driverPid);
@@ -9538,6 +9559,7 @@ function spawnClaudeTick(mission, opts) {
 
     proc.on('error', (e) => {
       clearTimeout(timer);
+      endResource({ timedOut });
       gitGuard.cleanup();
       updateMissionLockOwner(missionLock, missionLock?.driverPid);
       resolve({ ok: false, error: e.message, sessionIds: [], aborted, timedOut, authExpired: false });

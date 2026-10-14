@@ -933,3 +933,64 @@ test('a read-only ask run writes a start and an end reading, and a run past its 
     fs.rmSync(root, { recursive: true, force: true });
   }
 });
+
+test('a mission tick writes a start and an end reading for both the codex and the claude runner', () => {
+  const { spawnSync } = require('node:child_process');
+  const { withMissionFullJson } = require('./helpers/mission-json');
+  const { scrubAgentEnv } = require('./helpers/agent-env');
+  const cli = path.join(__dirname, '..', 'bin', 'atris.js');
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'engine-resource-mission-tick-'));
+  const runnerEnv = ['ATRIS_RUNNER_PROFILE', 'ATRIS_RUNNER_MODEL', 'ATRIS_RUNNER_BIN', 'ATRIS_RUNNER_COMMAND_TEMPLATE', 'ATRIS_CLAUDE_MODEL', 'ATRIS_CLAUDE_BIN', 'ATRIS_CLAUDE_COMMAND_TEMPLATE', 'ATRIS_DISPATCH_DEPTH', 'ATRIS_DISPATCH_MAX_DEPTH'];
+  const home = path.join(dir, 'home');
+  const bin = path.join(dir, 'bin');
+  const run = (args) => {
+    const clean = scrubAgentEnv(process.env);
+    for (const name of runnerEnv) delete clean[name];
+    return spawnSync(process.execPath, [cli, ...withMissionFullJson(args)], {
+      cwd: dir,
+      encoding: 'utf8',
+      timeout: 60000,
+      env: {
+        ...clean,
+        ATRIS_SKIP_UPDATE_CHECK: '1',
+        HOME: home,
+        ATRIS_TASKS_DB: path.join(dir, '.atris', 'tasks.db'),
+        CODEX_HOME: path.join(home, '.codex'),
+        ATRIS_MACHINE_ROSTER_PATH: path.join(home, 'roster.json'),
+        ATRIS_MACHINE_ROSTER_MD_PATH: path.join(home, 'roster.md'),
+        ATRIS_ROSTER_SESSIONS_DIR: path.join(home, 'roster-sessions'),
+        PATH: `${bin}${path.delimiter}/usr/bin${path.delimiter}/bin`,
+      },
+    });
+  };
+  try {
+    fs.mkdirSync(home, { recursive: true });
+    fs.mkdirSync(bin, { recursive: true });
+    for (const name of ['codex', 'claude']) {
+      // The claude runner reads --help for the flags it needs before a tick.
+      fs.writeFileSync(path.join(bin, name), `#!/bin/sh\nif [ "$1" = --help ]; then echo '--output-format --permission-mode --resume --session-id --include-partial-messages --verbose --model --effort'; exit 0; fi\necho ${name} tick\n`);
+      fs.chmodSync(path.join(bin, name), 0o755);
+    }
+    const ids = [];
+    for (const runner of ['codex', 'claude']) {
+      const started = run(['mission', 'start', `${runner} reading tick`, '--owner', 'mission-lead', '--runner', runner, '--no-verify', '--json']);
+      assert.strictEqual(started.status, 0, started.stderr || started.stdout);
+      const mission = JSON.parse(started.stdout).mission;
+      ids.push(mission.id);
+      const ran = run(['mission', 'run', mission.id, '--max-ticks', '1', '--max-wall', '60', '--no-verify', '--json']);
+      assert.strictEqual(ran.status, 0, ran.stderr || ran.stdout);
+    }
+    const log = fs.readFileSync(path.join(dir, RESOURCE_LOG), 'utf8').trim().split('\n').map((line) => JSON.parse(line));
+    assert.deepStrictEqual(log.map((e) => [e.phase, e.engine, e.task]), [
+      ['start', 'codex', ids[0]], ['end', 'codex', ids[0]],
+      ['start', 'claude', ids[1]], ['end', 'claude', ids[1]],
+    ]);
+    assert.strictEqual(log[0].run_id, log[1].run_id);
+    assert.strictEqual(log[2].run_id, log[3].run_id);
+    assert.notStrictEqual(log[0].run_id, log[2].run_id);
+    assert.ok(log.filter((entry) => entry.phase === 'end').every((entry) => entry.duration_ms >= 0));
+    assert.ok(Array.isArray(log[0].load) && Number.isFinite(log[1].duration_ms) && Number.isFinite(log[3].duration_ms));
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
