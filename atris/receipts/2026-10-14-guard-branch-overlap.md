@@ -53,3 +53,14 @@ exit 0
 ```
 
 Safeguard: before 1184 merges, swap its single-folder lock lookups for the helper that walks both the copy's own Git files and the shared ones, and bring this branch's lock tests with it. Then retire the rest of this branch.
+
+## Fix ready on top of 1184
+
+Branch `architect-1184-shared-lock-check` (commit `f1b29117`, parent `a34aa48d`) keeps 1184's helpers and makes its folder check also look for branch and packed-reference locks in the shared store. Only locks count there, so a merge paused in the main checkout does not hold linked folders.
+
+- New test first failed (cleanup removed the folder), then passed.
+- `node --test test/worktree-removal-guard.test.js test/member-tidy.test.js` on that branch: 33 of 33, exit 0. Neighboring cleanup, autoland, and green-landing tests: 99 of 99, exit 0.
+- `node atris/receipts/2026-10-14-shared-lock-probe.js <that checkout>`: cleanup and reap both keep the folder, reap naming `.../refs/heads/master.lock, 2 h old`, exit 0.
+- `atris worktree cleanup --base HEAD --apply --json` on a fixture with only a shared branch lock: kept, `git_lock`, the lock path, `lock_age_ms` 7201449, no removal record, exit 0.
+
+Still open: 1184 names one lock per folder; listing every lock and its age stays a follow-up.
