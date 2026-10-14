@@ -1,0 +1,20 @@
+The three tests that failed this branch's pull request checks now pass locally, verified by 135 required checks and the 5 map and repo hygiene checks, exit 0; the pull request checks rerun on push.
+
+Why this tick: the pull request was mergeable but blocked, and both of its check runs failed on the same three tests:
+1. engine dispatch: the start line's leak count was unknown on the Linux runner, while the test required a number. Process environments come from ps -E, which only macOS has, so the unknown is the right reading there. The test now requires a number on macOS and accepts unknown elsewhere.
+2. map refs: one boot map ref sat right after the json field name, so the checker bound it to that name instead of the finder. The sentence now names the finder before the ref.
+3. repo hygiene: the real sandboxed sweep test ran the command from the repo folder. It now runs from a temp folder and removes it.
+The required test command never ran the map and hygiene checks, which is how two of these passed every earlier tick.
+
+Files edited: test/engine-dispatch.test.js, test/engine-resource.test.js, atris/MAP.md, atris/team/executor/logs/2026-10-14.md, this receipt. Existing atris/TODO.md changes are not staged.
+
+Failing evidence: gh run view 38618646740 --log-failed and gh run view 38618632480 --log-failed, both listing the same three failing tests.
+Rerunnable verification: node --test test/engine-resource.test.js test/engine-dispatch.test.js
+Exit: 0. tests 135; pass 135; fail 0.
+Extra: node --test test/map-refs-accurate.test.js test/repo-hygiene.test.js
+Exit: 0. tests 5; pass 5; fail 0.
+Not run: a local Linux run; the Docker daemon was not running, so the Linux evidence is the failed check run itself.
+
+Metric: pull request failing tests from 3 to 0 locally.
+next_push: watch the rerun checks on the pull request; if green, ask for review, and if anything fails, fix that test the same way.
+layer: environment

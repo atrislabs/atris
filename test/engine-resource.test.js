@@ -1,0 +1,2817 @@
+const test = require('node:test');
+const assert = require('node:assert');
+const fs = require('node:fs');
+const os = require('node:os');
+const path = require('node:path');
+
+const {
+  RESOURCE_LOG,
+  readMachineResources,
+  memoryWasLow,
+  killedCauseText,
+  recordEngineResource,
+} = require('../lib/engine-resource');
+
+const PRESSURE_OK = 'The system has 38654705664 (2359296 pages with a page size of 16384).\nSystem-wide memory free percentage: 81%\n';
+const PRESSURE_LOW = 'System-wide memory free percentage: 9%\n';
+const SWAP_OK = 'vm.swapusage: total = 2048.00M  used = 512.25M  free = 1535.75M  (encrypted)\n';
+const SWAP_FULL = 'vm.swapusage: total = 4096.00M  used = 3900.00M  free = 196.00M  (encrypted)\n';
+
+function fakeRun(pressure, swap) {
+  return (cmd) => {
+    if (cmd === 'memory_pressure') return { status: 0, stdout: pressure };
+    if (cmd === 'sysctl') return { status: 0, stdout: swap };
+    return { status: 1, stdout: '' };
+  };
+}
+
+test('mac snapshot reads free memory, swap, and load', () => {
+  const snap = readMachineResources({ platform: 'darwin', run: fakeRun(PRESSURE_OK, SWAP_OK), loadavg: () => [3.5, 2.25, 1] });
+  assert.deepStrictEqual(snap, { free_pct: 81, swap_used_mb: 512.25, swap_total_mb: 2048, load: [3.5, 2.25, 1] });
+});
+
+test('mac readings and the agent scan still find their system tools when the search path is narrow', { skip: process.platform !== 'darwin' }, () => {
+  const { spawnSync } = require('node:child_process');
+  // A launch from cron or launchd can carry a path without the system tools
+  // folders. Every tool call the readings make must still start.
+  const probe = `
+    const cp = require('child_process');
+    const real = cp.spawnSync;
+    const calls = [];
+    cp.spawnSync = (cmd, args, opts) => {
+      const result = real(cmd, args, opts);
+      calls.push({ cmd: require('path').basename(cmd), missing: Boolean(result.error && result.error.code === 'ENOENT') });
+      return result;
+    };
+    const { readMachineResources, readSshAgents } = require(${JSON.stringify(path.join(__dirname, '..', 'lib', 'engine-resource'))});
+    const snap = readMachineResources();
+    readSshAgents();
+    process.stdout.write(JSON.stringify({ snap, calls }));
+  `;
+  const ran = spawnSync(process.execPath, ['-e', probe], { encoding: 'utf8', env: { HOME: os.homedir(), PATH: '/nonexistent' } });
+  assert.equal(ran.status, 0, ran.stderr);
+  const { snap, calls } = JSON.parse(ran.stdout);
+  assert.deepEqual(calls.map((call) => call.cmd).sort(), ['lsof', 'memory_pressure', 'ps', 'ps', 'sysctl']);
+  assert.deepEqual(calls.filter((call) => call.missing), []);
+  assert.equal(typeof snap.free_pct, 'number');
+  assert.equal(typeof snap.swap_total_mb, 'number');
+});
+
+test('off mac, memory fields stay empty instead of guessing', () => {
+  const snap = readMachineResources({ platform: 'linux', run: () => { throw new Error('must not run'); }, loadavg: () => [1, 1, 1] });
+  assert.deepStrictEqual(snap, { free_pct: null, swap_used_mb: null, swap_total_mb: null, load: [1, 1, 1] });
+});
+
+test('a failed tool leaves its field empty', () => {
+  const snap = readMachineResources({ platform: 'darwin', run: () => ({ status: 1, stdout: '' }), loadavg: () => [0, 0, 0] });
+  assert.strictEqual(snap.free_pct, null);
+  assert.strictEqual(snap.swap_used_mb, null);
+});
+
+test('a SIGKILL names low memory only when pressure or swap was high', () => {
+  const ok = readMachineResources({ platform: 'darwin', run: fakeRun(PRESSURE_OK, SWAP_OK), loadavg: () => [0, 0, 0] });
+  const lowFree = readMachineResources({ platform: 'darwin', run: fakeRun(PRESSURE_LOW, SWAP_OK), loadavg: () => [0, 0, 0] });
+  const fullSwap = readMachineResources({ platform: 'darwin', run: fakeRun(PRESSURE_OK, SWAP_FULL), loadavg: () => [0, 0, 0] });
+  assert.strictEqual(memoryWasLow(ok), false);
+  assert.strictEqual(memoryWasLow(lowFree), true);
+  assert.strictEqual(memoryWasLow(fullSwap), true);
+  assert.strictEqual(killedCauseText(ok), 'killed (cause unknown)');
+  assert.strictEqual(killedCauseText(lowFree), 'killed (machine memory low)');
+  assert.strictEqual(killedCauseText(fullSwap), 'killed (machine memory low)');
+  assert.strictEqual(killedCauseText(null), 'killed (cause unknown)');
+});
+
+test('start and end lines append to the durable resource log', () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'engine-resource-'));
+  try {
+    const deps = { platform: 'darwin', run: fakeRun(PRESSURE_LOW, SWAP_OK), loadavg: () => [4, 3, 2], now: () => '2026-10-14T08:00:00.000Z' };
+    recordEngineResource(root, { phase: 'start', engine: 'codex', task: 'CLI-1', run_id: 'run-one' }, deps);
+    const end = recordEngineResource(root, { phase: 'end', engine: 'codex', task: 'CLI-1', run_id: 'run-one', signal: 'SIGKILL' }, deps);
+    assert.strictEqual(end.cause, 'killed (machine memory low)');
+    const lines = fs.readFileSync(path.join(root, RESOURCE_LOG), 'utf8').trim().split('\n').map((l) => JSON.parse(l));
+    assert.deepStrictEqual(lines.map((line) => line.run_id), ['run-one', 'run-one']);
+    assert.strictEqual(lines.length, 2);
+    assert.deepStrictEqual(lines[0], {
+      at: '2026-10-14T08:00:00.000Z', phase: 'start', engine: 'codex', task: 'CLI-1',
+      run_id: 'run-one',
+      free_pct: 9, swap_used_mb: 512.25, swap_total_mb: 2048, load: [4, 3, 2],
+      pid: process.pid, leaked_ssh_agents: null,
+    });
+    assert.strictEqual(lines[1].phase, 'end');
+    assert.strictEqual(lines[1].signal, 'SIGKILL');
+    assert.strictEqual(lines[1].cause, 'killed (machine memory low)');
+  } finally {
+    fs.rmSync(root, { recursive: true, force: true });
+  }
+});
+
+const { parseElapsed, findLeakedSshAgents, readSshAgents } = require('../lib/engine-resource');
+
+test('elapsed milliseconds belong only to end resources and must be finite and nonnegative', () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'engine-resource-duration-'));
+  const deps = { platform: 'linux', loadavg: () => [0, 0, 0], readSshAgents: () => ({ agents: [], referenced: new Set() }) };
+  try {
+    for (const duration_ms of [0, 125]) {
+      const end = recordEngineResource(root, { phase: 'end', duration_ms }, deps);
+      assert.strictEqual(end.duration_ms, duration_ms);
+    }
+    for (const duration_ms of [undefined, -1, NaN, Infinity, '125']) {
+      assert.strictEqual(recordEngineResource(root, { phase: 'end', duration_ms }, deps).duration_ms, undefined);
+    }
+    assert.strictEqual(recordEngineResource(root, { phase: 'start', duration_ms: 125 }, deps).duration_ms, undefined);
+  } finally {
+    fs.rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test('start records the sweep leak count without stopping agents or reading again at end', () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'engine-resource-agents-'));
+  let reads = 0;
+  const agent = (pid, over = {}) => ({ pid, ppid: 1, uid: 501, age_sec: 3600, args: 'ssh-agent -s', ...over });
+  const deps = {
+    platform: 'linux', loadavg: () => [0, 0, 0], uid: 501,
+    readSshAgents: () => {
+      reads += 1;
+      return { agents: [agent(200), agent(201), agent(202, { age_sec: 120 }), agent(203, { uid: 0 })], referenced: new Set([201]) };
+    },
+  };
+  try {
+    recordEngineResource(root, { phase: 'start', engine: 'codex' }, deps);
+    recordEngineResource(root, { phase: 'end', engine: 'codex' }, deps);
+    const [start, end] = fs.readFileSync(path.join(root, RESOURCE_LOG), 'utf8').trim().split('\n').map(JSON.parse);
+    assert.strictEqual(start.leaked_ssh_agents, 1);
+    assert.strictEqual(end.leaked_ssh_agents, undefined);
+    assert.strictEqual(reads, 1);
+    const unknown = recordEngineResource(root, { engine: 'codex' }, {
+      ...deps, readSshAgents: () => { throw new Error('process read failed'); },
+    });
+    assert.strictEqual(unknown.leaked_ssh_agents, null);
+  } finally {
+    fs.rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test('elapsed time reads minutes, hours, and days', () => {
+  assert.strictEqual(parseElapsed('11:09'), 669);
+  assert.strictEqual(parseElapsed('14:50:14'), 53414);
+  assert.strictEqual(parseElapsed('2-01:00:00'), 176400);
+  assert.strictEqual(parseElapsed('junk'), null);
+});
+
+test('only orphaned, old, unreferenced shell agents count as leaked', () => {
+  const agent = (pid, over = {}) => ({ pid, ppid: 1, uid: 501, age_sec: 3600, args: 'ssh-agent -s', ...over });
+  const agents = [
+    agent(100),
+    agent(101),
+    agent(102, { age_sec: 120 }),
+    agent(103, { args: '/usr/bin/ssh-agent -l' }),
+    agent(104, { uid: 0 }),
+    agent(105, { ppid: 4242 }),
+    agent(106, { args: '/usr/bin/ssh-agent -c' }),
+    agent(107, { args: 'ssh-agent -a /Users/me/.ssh/agent.sock' }),
+  ];
+  const leaked = findLeakedSshAgents(agents, { referenced: new Set([101]), uid: 501 });
+  assert.deepStrictEqual(leaked.map((a) => a.pid), [100, 106]);
+});
+
+test('reading agents matches the program name and collects live references', () => {
+  const run = (cmd, args) => {
+    if (args.includes('-E')) {
+      return { status: 0, stdout: [
+        '  300 -zsh HOME=/Users/me SSH_AGENT_PID=201 TERM=xterm',
+        '  301 claude -p fix ssh-agent leaks PATH=/bin',
+        '  302 git fetch SSH_AUTH_SOCK=/tmp/ssh-c/agent.202 HOME=/Users/me',
+      ].join('\n') };
+    }
+    if (cmd === 'lsof') {
+      return { status: 0, stdout: ['p200', 'f3', 'n/tmp/ssh-a/agent.199', 'p201', 'f3', 'n/tmp/ssh-b/agent.200', 'p202', 'f3', 'n/tmp/ssh-c/agent.202'].join('\n') };
+    }
+    return { status: 0, stdout: [
+      '  200     1   501    14:50:14 ssh-agent -s',
+      '  201     1   501       11:09 /usr/bin/ssh-agent -s',
+      '  202     1   501       30:00 ssh-agent -s',
+      '  203     1   501       30:00 ssh-agent -s',
+      '  301   300   501       00:05 claude -p fix ssh-agent leaks',
+    ].join('\n') };
+  };
+  const { agents, referenced } = readSshAgents({ run });
+  assert.deepStrictEqual(agents.slice(0, 2), [
+    { pid: 200, ppid: 1, uid: 501, age_sec: 53414, args: 'ssh-agent -s' },
+    { pid: 201, ppid: 1, uid: 501, age_sec: 669, args: '/usr/bin/ssh-agent -s' },
+  ]);
+  assert.ok(!referenced.has(200));
+  assert.ok(referenced.has(201), 'named by SSH_AGENT_PID');
+  assert.ok(referenced.has(202), 'named by SSH_AUTH_SOCK');
+  assert.ok(referenced.has(203), 'socket unreadable, so treated as in use');
+});
+
+test('when the socket list cannot be read, every agent counts as in use', () => {
+  const run = (cmd, args) => {
+    if (cmd === 'lsof') return { status: 1, stdout: '' };
+    if (args.includes('-E')) return { status: 0, stdout: '' };
+    return { status: 0, stdout: '  200     1   501    14:50:14 ssh-agent -s' };
+  };
+  const { referenced } = readSshAgents({ run });
+  assert.ok(referenced.has(200));
+});
+
+function sweepWithReads(reads, { args = ['sweep', '--apply'], kill } = {}) {
+  const { engineCommand } = require('../commands/engine');
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'engine-sweep-'));
+  const out = [];
+  const original = console.log;
+  console.log = (line) => out.push(String(line));
+  let code;
+  try {
+    code = engineCommand(args, {
+      root,
+      engineSweep: { read: () => reads.shift(), uid: 501, kill, now: () => '2026-10-14T12:00:00.000Z' },
+    });
+  } finally {
+    console.log = original;
+  }
+  const logFile = path.join(root, RESOURCE_LOG);
+  const log = fs.existsSync(logFile) ? fs.readFileSync(logFile, 'utf8').trim().split('\n').map((l) => JSON.parse(l)) : [];
+  fs.rmSync(root, { recursive: true, force: true });
+  return { code, text: out.join('\n'), log };
+}
+
+test('sweep apply rechecks right before stopping, and logs what it stopped', () => {
+  const agent = (pid) => ({ pid, ppid: 1, uid: 501, age_sec: 3600, args: 'ssh-agent -s' });
+  const first = { agents: [agent(200), agent(201), agent(202)], referenced: new Set() };
+  const second = { agents: [agent(200), agent(201)], referenced: new Set([201]) };
+  const signals = [];
+  const { code, text, log } = sweepWithReads([first, second], {
+    kill: (pid, signal) => signals.push([pid, signal]),
+  });
+  assert.strictEqual(code, 0);
+  assert.deepStrictEqual(signals, [[200, 'SIGTERM']]);
+  assert.match(text, /stopped 1 leaked ssh-agent/);
+  assert.match(text, /2 skipped because they were in use or gone on the recheck/);
+  assert.deepStrictEqual(log, [{ at: '2026-10-14T12:00:00.000Z', phase: 'sweep', stopped: [200], failed: [], skipped: [201, 202], leaked_ssh_agents: 0 }]);
+});
+
+test('sweep apply reports an agent it could not stop', () => {
+  const agent = (pid) => ({ pid, ppid: 1, uid: 501, age_sec: 3600, args: 'ssh-agent -s' });
+  const read = { agents: [agent(200), agent(201)], referenced: new Set() };
+  const { code, text, log } = sweepWithReads([read, read], {
+    kill: (pid) => { if (pid === 201) throw Object.assign(new Error('no such process'), { code: 'ESRCH' }); },
+  });
+  assert.strictEqual(code, 1);
+  assert.match(text, /stopped 1 leaked ssh-agent/);
+  assert.match(text, /could not stop pid 201: ESRCH/);
+  assert.deepStrictEqual(log[0].failed, [201]);
+});
+
+test('atris engine sweep lists leaked agents and stops nothing', () => {
+  const { engineCommand } = require('../commands/engine');
+  const signals = [];
+  const deps = {
+    engineSweep: {
+      read: () => ({
+        agents: [
+          { pid: 200, ppid: 1, uid: 501, age_sec: 53414, args: 'ssh-agent -s' },
+          { pid: 201, ppid: 1, uid: 501, age_sec: 669, args: 'ssh-agent -s' },
+        ],
+        referenced: new Set([201]),
+      }),
+      uid: 501,
+      kill: (pid, signal) => signals.push([pid, signal]),
+    },
+  };
+  const out = [];
+  const original = console.log;
+  console.log = (line) => out.push(String(line));
+  let code;
+  try {
+    code = engineCommand(['sweep'], deps);
+  } finally {
+    console.log = original;
+  }
+  assert.strictEqual(code, 0);
+  const text = out.join('\n');
+  assert.match(text, /2 ssh-agents running, 1 looks leaked/);
+  assert.match(text, /pid 200 +14h 50m/);
+  assert.match(text, /nothing was stopped/);
+  assert.deepStrictEqual(signals, []);
+});
+
+test('atris engine sweep names the shell startup line that starts an agent per shell', () => {
+  const { engineCommand } = require('../commands/engine');
+  const { findAgentStartLines } = require('../lib/engine-resource');
+  const home = fs.mkdtempSync(path.join(os.tmpdir(), 'engine-sweep-home-'));
+  try {
+    fs.writeFileSync(path.join(home, '.zshrc'), 'eval "$(ssh-agent -s)"  # Start SSH agent\n# eval "$(ssh-agent -s)"\nexport PATH\n');
+    fs.writeFileSync(path.join(home, '.bashrc'), 'echo ssh-agent is handy\n');
+    assert.deepStrictEqual(findAgentStartLines({ home }), [{ file: '~/.zshrc', line: 1, fix: '[ -S "$SSH_AUTH_SOCK" ] || eval "$(ssh-agent -s)"' }]);
+    assert.deepStrictEqual(findAgentStartLines({ home: path.join(home, 'missing') }), []);
+
+    const sweep = (agents, json) => {
+      const out = [];
+      const original = console.log;
+      console.log = (line) => out.push(String(line));
+      try {
+        engineCommand(['sweep', ...(json ? ['--json'] : [])], { engineSweep: { read: () => ({ agents, referenced: new Set() }), uid: 501, home } });
+      } finally {
+        console.log = original;
+      }
+      return out.join('\n');
+    };
+    const leaked = [{ pid: 200, ppid: 1, uid: 501, age_sec: 53414, args: 'ssh-agent -s' }];
+    assert.match(sweep(leaked), /likely source: ~\/\.zshrc line 1 starts a new ssh-agent in every shell that reads it/);
+    assert.deepStrictEqual(JSON.parse(sweep(leaked, true)).agent_start_lines.map(({ file, line }) => ({ file, line })), [{ file: '~/.zshrc', line: 1 }]);
+    assert.doesNotMatch(sweep([]), /likely source/, 'no leak, no source line');
+  } finally {
+    fs.rmSync(home, { recursive: true, force: true });
+  }
+});
+
+test('the sweep offers a guarded line only for a lone unguarded agent start', () => {
+  const { engineCommand } = require('../commands/engine');
+  const { findAgentStartLines } = require('../lib/engine-resource');
+  const home = fs.mkdtempSync(path.join(os.tmpdir(), 'engine-sweep-fix-'));
+  try {
+    fs.writeFileSync(path.join(home, '.zshrc'), [
+      'eval "$(ssh-agent -s)"  # Start SSH agent',
+      '[ -n "$SSH_AUTH_SOCK" ] || eval "$(ssh-agent -s)"',
+      'if true; then eval `ssh-agent -s`; fi',
+    ].join('\n'));
+    assert.deepStrictEqual(findAgentStartLines({ home }), [
+      { file: '~/.zshrc', line: 1, fix: '[ -S "$SSH_AUTH_SOCK" ] || eval "$(ssh-agent -s)"' },
+      { file: '~/.zshrc', line: 3 },
+    ]);
+    const out = [];
+    const original = console.log;
+    console.log = (line) => out.push(String(line));
+    try {
+      engineCommand(['sweep'], { engineSweep: { read: () => ({ agents: [{ pid: 200, ppid: 1, uid: 501, age_sec: 53414, args: 'ssh-agent -s' }], referenced: new Set() }), uid: 501, home } });
+    } finally {
+      console.log = original;
+    }
+    const text = out.join('\n');
+    assert.match(text, /likely source: ~\/\.zshrc line 1 starts a new ssh-agent in every shell that reads it; to start one only when none is reachable, change it to: \[ -S "\$SSH_AUTH_SOCK" \] \|\| eval "\$\(ssh-agent -s\)"/);
+    assert.match(text, /likely source: ~\/\.zshrc line 3 starts a new ssh-agent in every shell that reads it\n/);
+  } finally {
+    fs.rmSync(home, { recursive: true, force: true });
+  }
+});
+
+test('when process environments cannot be read, every agent counts as in use', () => {
+  const run = (cmd, args) => {
+    if (cmd === 'lsof') return { status: 0, stdout: 'p200\nf3\nn/tmp/ssh-a/agent.199' };
+    if (args.includes('-E')) return { status: 1, stdout: '' };
+    return { status: 0, stdout: '  200     1   501    14:50:14 ssh-agent -s' };
+  };
+  const { referenced } = readSshAgents({ run });
+  assert.ok(referenced.has(200));
+});
+
+test('the agent scan names a reader it could not run, so an empty leak list is not read as clean', () => {
+  const agentLine = '  200     1   501    14:50:14 ssh-agent -s';
+  const scan = ({ env = true, sockets = true, agents = true } = {}) => readSshAgents({ run: (cmd, args) => {
+    if (cmd === 'lsof') return sockets ? { status: 0, stdout: 'p200\nf3\nn/tmp/ssh-a/agent.199' } : { status: 1, stdout: '' };
+    if (args.includes('-E')) return env ? { status: 0, stdout: '  300 SHELL=/bin/zsh' } : { status: 1, stdout: '' };
+    return { status: 0, stdout: agents ? agentLine : '' };
+  } });
+  assert.deepStrictEqual(scan().unread, []);
+  assert.deepStrictEqual(scan({ env: false }).unread, ['process environments']);
+  assert.deepStrictEqual(scan({ sockets: false }).unread, ['agent sockets']);
+  // With no agents running, lsof finds no sockets, and that is a clean answer.
+  assert.deepStrictEqual(scan({ sockets: false, agents: false }).unread, []);
+});
+
+test('partial socket scans keep unreadable agents safe and name the missing reading', () => {
+  const scan = readSshAgents({ run: (cmd, args) => {
+    if (cmd === 'lsof') return { status: 0, stdout: 'p200\nn/tmp/ssh-a/agent.199' };
+    if (args.includes('-E')) return { status: 0, stdout: '300 SHELL=/bin/zsh' };
+    return { status: 0, stdout: '200 1 501 01:00:00 ssh-agent -s\n201 1 501 01:00:00 ssh-agent -s' };
+  } });
+  assert.deepStrictEqual(scan.unread, ['agent sockets']);
+  assert.ok(scan.referenced.has(201));
+  assert.ok(!scan.referenced.has(200));
+  assert.deepStrictEqual(findLeakedSshAgents(scan.agents, { referenced: scan.referenced, uid: 501 }).map((agent) => agent.pid), [200]);
+});
+
+test('the real sweep warns when one live agent socket reading is withheld', { skip: process.platform !== 'darwin' }, () => {
+  const { spawnSync } = require('node:child_process');
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'engine-partial-sockets-'));
+  const pids = [];
+  try {
+    for (const name of ['visible', 'hidden']) {
+      const started = spawnSync('/usr/bin/ssh-agent', ['-s', '-a', path.join(root, name)], { encoding: 'utf8', timeout: 10000 });
+      const pid = Number((/SSH_AGENT_PID=(\d+)/.exec(started.stdout) || [])[1]);
+      if (pid) pids.push(pid);
+      assert.equal(started.status, 0, started.stderr);
+      assert.ok(pid);
+    }
+    // Use real process and socket scans, withholding only the second agent's
+    // socket block to reproduce a partially unreadable process on this host.
+    const preload = path.join(root, 'withhold-socket.cjs');
+    fs.writeFileSync(preload, `
+      const cp = require('node:child_process');
+      const real = cp.spawnSync;
+      cp.spawnSync = (cmd, args, opts) => {
+        const reading = real(cmd, args, opts);
+        if (require('node:path').basename(cmd) === 'lsof') {
+          let hidden = false;
+          reading.stdout = String(reading.stdout || '').split('\\n').filter(line => {
+            if (line.startsWith('p')) hidden = line === 'p${pids[1]}';
+            return !hidden;
+          }).join('\\n');
+        }
+        return reading;
+      };
+    `);
+    const env = { ...process.env };
+    delete env.SSH_AGENT_PID;
+    delete env.SSH_AUTH_SOCK;
+    const cli = path.join(__dirname, '..', 'bin', 'atris.js');
+    const ran = spawnSync(process.execPath, ['--require', preload, cli, 'engine', 'sweep'], { cwd: root, env, encoding: 'utf8', timeout: 30000 });
+    assert.equal(ran.status, 0, ran.stderr);
+    assert.match(ran.stdout, /could not read the agent sockets for every process/);
+    assert.match(ran.stdout, /the leak count may be incomplete/);
+    const json = spawnSync(process.execPath, ['--require', preload, cli, 'engine', 'sweep', '--json'], { cwd: root, env, encoding: 'utf8', timeout: 30000 });
+    assert.equal(json.status, 0, json.stderr);
+    const report = JSON.parse(json.stdout);
+    assert.ok(report.running >= 2);
+    assert.deepStrictEqual(report.unread, ['agent sockets']);
+    assert.ok(!report.leaked.some(agent => agent.pid === pids[1]));
+    for (const pid of pids) assert.doesNotThrow(() => process.kill(pid, 0));
+    console.log('partial live socket scan exit ' + ran.status + ': ' + ran.stdout.trim());
+  } finally {
+    for (const pid of pids) { try { process.kill(pid, 'SIGTERM'); } catch {} }
+    fs.rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test('atris engine sweep says when a reader could not run, in text and json', () => {
+  const { engineCommand } = require('../commands/engine');
+  const read = () => ({
+    agents: [{ pid: 200, ppid: 1, uid: 501, age_sec: 53414, args: 'ssh-agent -s' }],
+    referenced: new Set([200]),
+    unread: ['agent sockets'],
+  });
+  const run = (args) => {
+    const out = [];
+    const original = console.log;
+    console.log = (line) => out.push(String(line));
+    try {
+      engineCommand(['sweep', ...args], { root: os.tmpdir(), engineSweep: { read, uid: 501 } });
+    } finally {
+      console.log = original;
+    }
+    return out.join('\n');
+  };
+  const text = run([]);
+  assert.match(text, /1 ssh-agent running, 0 look leaked/);
+  assert.match(text, /^could not read the agent sockets for every process, so some ssh-agents could not be checked; the leak count may be incomplete$/m);
+  assert.deepStrictEqual(JSON.parse(run(['--json'])).unread, ['agent sockets']);
+  const clean = (() => {
+    const out = [];
+    const original = console.log;
+    console.log = (line) => out.push(String(line));
+    try {
+      engineCommand(['sweep'], { root: os.tmpdir(), engineSweep: { read: () => ({ agents: [], referenced: new Set(), unread: [] }), uid: 501 } });
+    } finally {
+      console.log = original;
+    }
+    return out.join('\n');
+  })();
+  assert.doesNotMatch(clean, /could not read/);
+});
+
+test('atris engine sweep json comes through a pipe whole when it is larger than the pipe buffer', () => {
+  const { spawnSync } = require('node:child_process');
+  const root = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'engine-sweep-pipe-')));
+  try {
+    // One engine error long enough to push the json past 64 KB.
+    const file = path.join(root, RESOURCE_LOG);
+    fs.mkdirSync(path.dirname(file), { recursive: true });
+    const error = `pipe proof ${'x'.repeat(96 * 1024)}`;
+    fs.writeFileSync(file, `${JSON.stringify({ at: new Date().toISOString(), phase: 'end', engine: 'codex', task: 'pipe', run_id: 'pipe-1', error })}\n`);
+    const ran = spawnSync(process.execPath, [path.join(__dirname, '..', 'bin', 'atris.js'), 'engine', 'sweep', '--json'], {
+      cwd: root,
+      encoding: 'utf8',
+      timeout: 60000,
+      maxBuffer: 16 * 1024 * 1024,
+      env: { ...process.env, ATRIS_AUTO_UPDATE: 'off' },
+    });
+    assert.equal(ran.status, 0, ran.stderr);
+    assert.ok(ran.stdout.length > 64 * 1024, `json must exceed a pipe buffer, got ${ran.stdout.length} bytes`);
+    const out = JSON.parse(ran.stdout);
+    assert.equal(out.history.last_error.error, error);
+  } finally {
+    fs.rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test('the hourly landing pass stops agents still leaked on the recheck and names the count', () => {
+  const { runSshAgentSweep, sshAgentSweepNote } = require('../commands/autoland');
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'autoland-ssh-sweep-'));
+  try {
+    const agent = (pid) => ({ pid, ppid: 1, uid: 501, age_sec: 3600, args: 'ssh-agent -s' });
+    const reads = [
+      { agents: [agent(200), agent(201)], referenced: new Set() },
+      { agents: [agent(200), agent(201)], referenced: new Set([201]) },
+    ];
+    const signals = [];
+    const receipt = {};
+    runSshAgentSweep(root, receipt, { read: () => reads.shift(), uid: 501, kill: (pid, signal) => signals.push([pid, signal]) });
+    assert.deepStrictEqual(signals, [[200, 'SIGTERM']]);
+    assert.deepStrictEqual(receipt.ssh_agent_sweep, { stopped: [200], failed: [], skipped: [201] });
+    assert.strictEqual(sshAgentSweepNote(receipt), ', stopped 1 leaked ssh-agent');
+
+    const quiet = {};
+    runSshAgentSweep(root, quiet, {
+      read: () => ({ agents: [agent(300)], referenced: new Set([300]) }),
+      uid: 501,
+      kill: () => assert.fail('nothing leaked, nothing stopped'),
+    });
+    assert.deepStrictEqual(quiet.ssh_agent_sweep, { stopped: [], failed: [], skipped: [] });
+    assert.strictEqual(sshAgentSweepNote(quiet), '');
+    const log = fs.readFileSync(path.join(root, RESOURCE_LOG), 'utf8').trim().split('\n');
+    assert.strictEqual(log.length, 1, 'a pass with nothing leaked writes no sweep line');
+  } finally {
+    fs.rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test('the hourly landing pass names unreadable agent scans instead of staying quiet', () => {
+  const { runSshAgentSweep, sshAgentSweepNote } = require('../commands/autoland');
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'autoland-ssh-unread-'));
+  try {
+    const agent = (pid) => ({ pid, ppid: 1, uid: 501, age_sec: 3600, args: 'ssh-agent -s' });
+    const blind = {};
+    runSshAgentSweep(root, blind, {
+      read: () => ({ agents: [], referenced: new Set(), unread: ['process list'] }),
+      uid: 501,
+      kill: () => assert.fail('an unread machine stops nothing'),
+    });
+    assert.deepStrictEqual(blind.ssh_agent_sweep, { stopped: [], failed: [], skipped: [], unread: ['process list'] });
+    assert.strictEqual(sshAgentSweepNote(blind), ', could not read the process list, so some ssh-agents went unchecked');
+
+    const reads = [
+      { agents: [agent(200), agent(201)], referenced: new Set([201]), unread: ['agent sockets'] },
+      { agents: [agent(200)], referenced: new Set([200]), unread: ['process environments'] },
+    ];
+    const partial = {};
+    runSshAgentSweep(root, partial, { read: () => reads.shift(), uid: 501, kill: () => assert.fail('an unread recheck stops nothing') });
+    assert.deepStrictEqual(partial.ssh_agent_sweep, { stopped: [], failed: [], skipped: [200], unread: ['agent sockets', 'process environments'] });
+    assert.strictEqual(sshAgentSweepNote(partial),
+      ', could not read the agent sockets or the process environments, so some ssh-agents went unchecked');
+  } finally {
+    fs.rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test('the hourly cleanup summary names younger replacements alongside stops and unread scans', () => {
+  const { runSshAgentSweep, sshAgentSweepNote } = require('../commands/autoland');
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'autoland-ssh-replaced-'));
+  try {
+    const agent = (pid, age_sec = 3600) => ({ pid, ppid: 1, uid: 501, age_sec, args: 'ssh-agent -s' });
+    const reads = [
+      { agents: [agent(200), agent(201)], referenced: new Set() },
+      { agents: [agent(200, 900), agent(201, 3601)], referenced: new Set(), unread: ['agent sockets'] },
+    ];
+    const signals = [];
+    const receipt = {};
+    runSshAgentSweep(root, receipt, { read: () => reads.shift(), uid: 501, kill: (pid, signal) => signals.push([pid, signal]) });
+    assert.deepStrictEqual(signals, [[201, 'SIGTERM']]);
+    assert.deepStrictEqual(receipt.ssh_agent_sweep.replaced, [200]);
+    assert.strictEqual(sshAgentSweepNote(receipt), ', stopped 1 leaked ssh-agent, left 1 younger replacement ssh-agent alone, could not read the agent sockets, so some ssh-agents went unchecked');
+    assert.strictEqual(sshAgentSweepNote({ ssh_agent_sweep: { replaced: [200, 201] } }), ', left 2 younger replacement ssh-agents alone');
+    assert.strictEqual(sshAgentSweepNote({ ssh_agent_sweep: { skipped: [200] } }), '');
+  } finally {
+    fs.rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test('the hourly cleanup summary reports failed stops alongside other outcomes', () => {
+  const { runSshAgentSweep, sshAgentSweepNote } = require('../commands/autoland');
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'autoland-ssh-failed-'));
+  try {
+    // An exited child reproduces an agent disappearing after the final scan.
+    // Probe with signal 0 so a reused pid cannot stop an unrelated process.
+    const exited = require('node:child_process').spawnSync(process.execPath, ['-e', ''], { timeout: 10000 });
+    assert.equal(exited.status, 0);
+    assert.ok(exited.pid);
+    const uid = typeof process.getuid === 'function' ? process.getuid() : 501;
+    const receipt = {};
+    runSshAgentSweep(root, receipt, {
+      uid,
+      read: () => ({ agents: [{ pid: exited.pid, ppid: 1, uid, age_sec: 3600, args: 'ssh-agent -s' }], referenced: new Set() }),
+      kill: (pid, signal) => {
+        assert.equal(signal, 'SIGTERM');
+        process.kill(pid, 0);
+      },
+    });
+    assert.deepStrictEqual(receipt.ssh_agent_sweep.failed, [{ pid: exited.pid, code: 'ESRCH' }]);
+    assert.deepStrictEqual(receipt.ssh_agent_sweep.stopped, []);
+    assert.strictEqual(sshAgentSweepNote(receipt), ', could not stop 1 leaked ssh-agent');
+    const saved = JSON.parse(fs.readFileSync(path.join(root, RESOURCE_LOG), 'utf8'));
+    assert.deepStrictEqual(saved.failed, [exited.pid]);
+    assert.strictEqual(saved.leaked_ssh_agents, 1);
+    assert.strictEqual(sshAgentSweepNote({ ssh_agent_sweep: {
+      stopped: [200], failed: [{ pid: 201, code: 'EPERM' }, { pid: 202, code: 'ESRCH' }],
+      replaced: [203], unread: ['agent sockets'],
+    } }), ', stopped 1 leaked ssh-agent, could not stop 2 leaked ssh-agents, left 1 younger replacement ssh-agent alone, could not read the agent sockets, so some ssh-agents went unchecked');
+    console.log('real stop failure: ' + sshAgentSweepNote(receipt).slice(2));
+  } finally {
+    fs.rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test('a failing read never breaks the hourly landing pass', () => {
+  const { runSshAgentSweep } = require('../commands/autoland');
+  const receipt = {};
+  runSshAgentSweep(os.tmpdir(), receipt, { read: () => { throw new Error('ps missing'); }, uid: 501 });
+  assert.match(receipt.ssh_agent_sweep_error, /ps missing/);
+});
+
+test('the hourly cleanup summary reports thrown scans and rechecks', () => {
+  const { runSshAgentSweep, sshAgentSweepNote } = require('../commands/autoland');
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'autoland-ssh-scan-error-'));
+  try {
+    // A real missing executable exercises the same child-process failure as ps.
+    const readFailure = () => require('node:child_process').execFileSync(path.join(root, 'missing-ps'));
+    for (const failOnRecheck of [false, true]) {
+      let reads = 0;
+      const receipt = {};
+      runSshAgentSweep(root, receipt, {
+        uid: 501,
+        read: () => {
+          if (!failOnRecheck || reads++) return readFailure();
+          return { agents: [{ pid: 200, ppid: 1, uid: 501, age_sec: 3600, args: 'ssh-agent -s' }], referenced: new Set() };
+        },
+        kill: () => assert.fail('a failed scan must stop nothing'),
+      });
+      assert.match(receipt.ssh_agent_sweep_error, /ENOENT/);
+      assert.equal(sshAgentSweepNote(receipt), ', could not scan ssh-agents, so leaked agents may remain');
+      assert.equal(fs.existsSync(path.join(root, RESOURCE_LOG)), false);
+      console.log('real scan failure: ' + sshAgentSweepNote(receipt).slice(2));
+    }
+    assert.equal(sshAgentSweepNote({}), '');
+  } finally {
+    fs.rmSync(root, { recursive: true, force: true });
+  }
+});
+
+const { readResourceHistory } = require('../lib/engine-resource');
+
+test('history reads back the latest sweep and the latest SIGKILL, skipping bad lines', () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'engine-resource-history-'));
+  try {
+    const file = path.join(root, RESOURCE_LOG);
+    fs.mkdirSync(path.dirname(file), { recursive: true });
+    fs.writeFileSync(file, [
+      JSON.stringify({ at: '2026-10-14T10:00:00.000Z', phase: 'end', engine: 'codex', task: 'CLI-1', free_pct: 9, signal: 'SIGKILL', cause: 'killed (machine memory low)' }),
+      JSON.stringify({ at: '2026-10-14T11:00:00.000Z', phase: 'sweep', stopped: [1, 2], failed: [], skipped: [] }),
+      'not json',
+      JSON.stringify({ at: '2026-10-14T11:30:00.000Z', phase: 'end', engine: 'claude', task: 'CLI-2', free_pct: 70, signal: 'SIGKILL', cause: 'killed (cause unknown)' }),
+      JSON.stringify({ at: '2026-10-14T11:40:00.000Z', phase: 'end', engine: 'claude', task: 'CLI-3', free_pct: 70 }),
+      JSON.stringify({ at: '2026-10-14T12:00:00.000Z', phase: 'sweep', stopped: [3], failed: [], skipped: [4] }),
+      '',
+    ].join('\n'));
+    const history = readResourceHistory(root);
+    assert.strictEqual(history.last_sweep.at, '2026-10-14T12:00:00.000Z');
+    assert.strictEqual(history.last_kill.task, 'CLI-2');
+    assert.strictEqual(history.kills, 2);
+    assert.strictEqual(history.low_memory_kills, 1);
+    assert.deepStrictEqual(readResourceHistory(path.join(root, 'missing')), { last_sweep: null, last_kill: null, kills: 0, low_memory_kills: 0, time_limit_kills: 0, last_other_kill: null, kills_day: 0, low_memory_kills_day: 0, time_limit_kills_day: 0, last_day_other_kill: null, open_runs: 0, parent_gone: 0, still_running: 0, last_open: null, lost_closed: 0, lost_closed_day: 0, last_lost_closed: null, first_day_leak_reading: null, last_error: null, errors_day: 0, last_day_error: null, read_error: null });
+  } finally {
+    fs.rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test('atris engine sweep shows the last sweep and the last SIGKILL', () => {
+  const { engineCommand } = require('../commands/engine');
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'engine-sweep-history-'));
+  const file = path.join(root, RESOURCE_LOG);
+  fs.mkdirSync(path.dirname(file), { recursive: true });
+  fs.writeFileSync(file, [
+    JSON.stringify({ at: '2026-10-14T11:30:00.000Z', phase: 'end', engine: 'claude', task: 'CLI-2', free_pct: 9, signal: 'SIGKILL', cause: 'killed (machine memory low)' }),
+    JSON.stringify({ at: '2026-10-14T12:00:00.000Z', phase: 'sweep', stopped: [3, 5], failed: [], skipped: [] }),
+  ].join('\n'));
+  const run = (deps) => {
+    const out = [];
+    const original = console.log;
+    console.log = (line) => out.push(String(line));
+    try {
+      engineCommand(['sweep'], { root, engineSweep: { read: () => ({ agents: [], referenced: new Set() }), uid: 501, ...deps } });
+    } finally {
+      console.log = original;
+    }
+    return out.join('\n');
+  };
+  try {
+    const text = run();
+    assert.match(text, /last sweep: 2026-10-14 12:00 UTC, stopped 2/);
+    assert.match(text, /last SIGKILL: claude on CLI-2 at 2026-10-14 11:30 UTC, killed \(machine memory low\), 9% memory free/);
+    assert.match(text, /1 of 1 SIGKILL ended with machine memory low/);
+    fs.rmSync(file);
+    const empty = run();
+    assert.match(empty, /no sweep recorded yet/);
+    assert.match(empty, /no engine run has ended in SIGKILL/);
+  } finally {
+    fs.rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test('a test run never writes into this checkout\'s own resource log', () => {
+  const repoRoot = path.join(__dirname, '..');
+  const { mainCheckoutRoot } = require('../lib/engine-registry');
+  const file = path.join(mainCheckoutRoot(repoRoot) || repoRoot, RESOURCE_LOG);
+  const size = () => (fs.existsSync(file) ? fs.statSync(file).size : 0);
+  const before = size();
+  const entry = recordEngineResource(repoRoot, { phase: 'end', engine: 'cursor', task: 'CLI-TEST-ONLY', signal: 'SIGKILL' }, { platform: 'linux', loadavg: () => [0, 0, 0] });
+  assert.strictEqual(entry.cause, 'killed (cause unknown)');
+  assert.strictEqual(size(), before);
+});
+
+
+test('resource history survives removal of a real linked checkout', () => {
+  const { spawnSync } = require('node:child_process');
+  const { stopLeakedSshAgents } = require('../lib/engine-resource');
+  const room = fs.mkdtempSync(path.join(os.tmpdir(), 'engine-resource-linked-'));
+  const root = path.join(room, 'main');
+  const linked = path.join(room, 'linked');
+  fs.mkdirSync(root);
+  const git = (args) => {
+    const result = spawnSync('git', ['-c', 'user.name=resource test', '-c', 'user.email=resource@example.com', ...args], { cwd: root, encoding: 'utf8' });
+    assert.strictEqual(result.status, 0, result.stderr);
+  };
+  try {
+    git(['init', '-q']);
+    git(['commit', '-q', '--allow-empty', '-m', 'init']);
+    git(['worktree', 'add', '-q', '--detach', linked]);
+    const deps = { platform: 'linux', loadavg: () => [0, 0, 0], readSshAgents: () => ({ agents: [], referenced: new Set() }) };
+    recordEngineResource(linked, { phase: 'start', run_id: 'linked-run' }, deps);
+    recordEngineResource(linked, { phase: 'end', run_id: 'linked-run', signal: 'SIGKILL' }, deps);
+    stopLeakedSshAgents(linked, [], { read: () => ({ agents: [], referenced: new Set() }), uid: 501 });
+    assert.strictEqual(fs.existsSync(path.join(linked, RESOURCE_LOG)), false);
+    const lines = fs.readFileSync(path.join(root, RESOURCE_LOG), 'utf8').trim().split('\n').map(JSON.parse);
+    assert.deepStrictEqual(lines.map((line) => line.phase), ['start', 'end', 'sweep']);
+    const history = readResourceHistory(root);
+    assert.strictEqual(history.kills, 1);
+    assert.ok(history.last_sweep);
+    assert.deepStrictEqual(readResourceHistory(linked), history);
+    git(['worktree', 'remove', linked]);
+    assert.deepStrictEqual(readResourceHistory(root), history);
+  } finally {
+    fs.rmSync(room, { recursive: true, force: true });
+  }
+});
+
+test('a full resource log is cut back to its newest lines but keeps starts still waiting for an end', () => {
+  const { MAX_LOG_BYTES } = require('../lib/engine-resource');
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'engine-resource-cap-'));
+  try {
+    const file = path.join(root, RESOURCE_LOG);
+    fs.mkdirSync(path.dirname(file), { recursive: true });
+    const old = (run_id, phase) => JSON.stringify({ at: '2026-10-01T00:00:00.000Z', phase, engine: 'cursor', task: 'OLD', run_id, pad: 'x'.repeat(200) });
+    const lines = [old('long-run', 'start'), old('done-run', 'start'), old('done-run', 'end')];
+    while (lines.join('\n').length < MAX_LOG_BYTES) lines.push(old(`filler-${lines.length}`, 'start'), old(`filler-${lines.length}`, 'end'));
+    fs.writeFileSync(file, `${lines.join('\n')}\n`);
+    const deps = { platform: 'linux', loadavg: () => [0, 0, 0], now: () => '2026-10-14T12:00:00.000Z' };
+    recordEngineResource(root, { phase: 'end', engine: 'cursor', task: 'LONG', run_id: 'long-run', signal: 'SIGKILL' }, deps);
+    assert.ok(fs.statSync(file).size < MAX_LOG_BYTES, 'log was not cut back');
+    const kept = fs.readFileSync(file, 'utf8').trim().split('\n').map(JSON.parse);
+    const ids = (phase) => kept.filter((line) => line.phase === phase).map((line) => line.run_id);
+    assert.ok(ids('start').includes('long-run'), 'the start of a run with no end was dropped');
+    assert.ok(!ids('start').includes('done-run'), 'an old finished run was kept');
+    assert.strictEqual(kept.at(-1).run_id, 'long-run');
+    assert.strictEqual(kept.at(-1).phase, 'end');
+    assert.strictEqual(readResourceHistory(root).last_kill.run_id, 'long-run');
+  } finally {
+    fs.rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test('atris engine sweep names runs that started and never wrote an end', () => {
+  const { engineCommand } = require('../commands/engine');
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'engine-sweep-open-'));
+  const file = path.join(root, RESOURCE_LOG);
+  fs.mkdirSync(path.dirname(file), { recursive: true });
+  fs.writeFileSync(file, [
+    JSON.stringify({ at: '2026-10-14T09:00:00.000Z', phase: 'start', engine: 'codex', task: 'OLD' }),
+    JSON.stringify({ at: '2026-10-14T10:00:00.000Z', phase: 'start', engine: 'codex', task: 'CLI-7', run_id: 'a' }),
+    JSON.stringify({ at: '2026-10-14T10:05:00.000Z', phase: 'start', engine: 'claude', task: 'CLI-8', run_id: 'b' }),
+    JSON.stringify({ at: '2026-10-14T10:30:00.000Z', phase: 'end', engine: 'claude', task: 'CLI-8', run_id: 'b' }),
+    JSON.stringify({ at: '2026-10-14T11:00:00.000Z', phase: 'start', engine: 'cursor', task: 'CLI-9', run_id: 'c' }),
+    '',
+  ].join('\n'));
+  const out = [];
+  const original = console.log;
+  console.log = (line) => out.push(String(line));
+  try {
+    const history = readResourceHistory(root);
+    assert.strictEqual(history.open_runs, 2);
+    assert.strictEqual(history.last_open.run_id, 'c');
+    engineCommand(['sweep'], { root, engineSweep: { read: () => ({ agents: [], referenced: new Set() }), uid: 501 } });
+  } finally {
+    console.log = original;
+    fs.rmSync(root, { recursive: true, force: true });
+  }
+  assert.match(out.join('\n'), /2 runs started with no end recorded: 2 from before parents were recorded; newest: cursor on CLI-9 at 2026-10-14 11:00 UTC/);
+});
+
+test('an unfinished run whose start sits more than a megabyte back is still counted', () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'engine-resource-deep-open-'));
+  try {
+    const file = path.join(root, RESOURCE_LOG);
+    fs.mkdirSync(path.dirname(file), { recursive: true });
+    const line = (run_id, phase) => JSON.stringify({ at: '2026-10-14T09:00:00.000Z', phase, engine: 'cursor', task: run_id, run_id, pad: 'x'.repeat(200) });
+    const lines = [line('deep-open', 'start')];
+    while (lines.join('\n').length < 1.2 * 1024 * 1024) lines.push(line(`done-${lines.length}`, 'start'), line(`done-${lines.length}`, 'end'));
+    fs.writeFileSync(file, `${lines.join('\n')}\n`);
+    const history = readResourceHistory(root);
+    assert.strictEqual(history.open_runs, 1);
+    assert.strictEqual(history.last_open.run_id, 'deep-open');
+  } finally {
+    fs.rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test('start lines name the process that will write the end, and sweep splits unfinished runs by whether it is alive', () => {
+  const { spawnSync } = require('node:child_process');
+  const { engineCommand } = require('../commands/engine');
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'engine-resource-parent-'));
+  const deps = { platform: 'linux', loadavg: () => [0, 0, 0], readSshAgents: () => ({ agents: [], referenced: new Set() }) };
+  const goneParent = spawnSync(process.execPath, ['-e', '']).pid;
+  const out = [];
+  const original = console.log;
+  try {
+    const start = recordEngineResource(root, { phase: 'start', engine: 'codex', task: 'LIVE', run_id: 'live' }, deps);
+    assert.strictEqual(start.pid, process.pid);
+    assert.strictEqual(recordEngineResource(root, { phase: 'end', run_id: 'live-done' }, deps).pid, undefined);
+    const file = path.join(root, RESOURCE_LOG);
+    fs.appendFileSync(file, [
+      JSON.stringify({ at: '2026-10-14T09:00:00.000Z', phase: 'start', engine: 'claude', task: 'OLD', run_id: 'no-pid' }),
+      JSON.stringify({ at: '2026-10-14T10:00:00.000Z', phase: 'start', engine: 'cursor', task: 'LOST', run_id: 'gone', pid: goneParent }),
+      '',
+    ].join('\n'));
+    const history = readResourceHistory(root);
+    assert.strictEqual(history.open_runs, 3);
+    assert.strictEqual(history.parent_gone, 1);
+    assert.strictEqual(history.still_running, 1);
+    console.log = (line) => out.push(String(line));
+    engineCommand(['sweep'], { root, engineSweep: { read: () => ({ agents: [], referenced: new Set() }), uid: 501 } });
+  } finally {
+    console.log = original;
+    fs.rmSync(root, { recursive: true, force: true });
+  }
+  assert.match(out.join('\n'), /3 runs started with no end recorded: 1 whose parent is gone, 1 still running, 1 from before parents were recorded; newest: cursor on LOST at 2026-10-14 10:00 UTC/);
+});
+
+test('sweep apply writes a parent gone end for lost runs only, and a plain sweep writes nothing', () => {
+  const { spawnSync } = require('node:child_process');
+  const { engineCommand } = require('../commands/engine');
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'engine-resource-close-'));
+  const file = path.join(root, RESOURCE_LOG);
+  fs.mkdirSync(path.dirname(file), { recursive: true });
+  const goneParent = spawnSync(process.execPath, ['-e', '']).pid;
+  fs.writeFileSync(file, [
+    JSON.stringify({ at: '2026-10-14T09:00:00.000Z', phase: 'start', engine: 'claude', task: 'OLD', run_id: 'no-pid' }),
+    JSON.stringify({ at: '2026-10-14T10:00:00.000Z', phase: 'start', engine: 'cursor', task: 'LOST', run_id: 'gone', pid: goneParent }),
+    JSON.stringify({ at: '2026-10-14T10:05:00.000Z', phase: 'start', engine: 'codex', task: 'LIVE', run_id: 'live', pid: process.pid }),
+    '',
+  ].join('\n'));
+  const sweep = (args) => {
+    const out = [];
+    const original = console.log;
+    console.log = (line) => out.push(String(line));
+    try {
+      engineCommand(['sweep', ...args], { root, engineSweep: { read: () => ({ agents: [], referenced: new Set() }), uid: 501, now: () => '2026-10-14T12:00:00.000Z' } });
+    } finally {
+      console.log = original;
+    }
+    return out.join('\n');
+  };
+  const lineCount = () => fs.readFileSync(file, 'utf8').trim().split('\n').length;
+  try {
+    sweep([]);
+    assert.strictEqual(lineCount(), 3);
+    assert.match(sweep(['--apply']), /closed 1 run whose parent is gone/);
+    const lines = fs.readFileSync(file, 'utf8').trim().split('\n').map(JSON.parse);
+    const ends = lines.filter((line) => line.phase === 'end');
+    assert.deepStrictEqual(ends, [{ at: '2026-10-14T12:00:00.000Z', phase: 'end', engine: 'cursor', task: 'LOST', run_id: 'gone', cause: 'parent gone', closed_by: 'sweep' }]);
+    const history = readResourceHistory(root);
+    assert.strictEqual(history.open_runs, 2);
+    assert.strictEqual(history.parent_gone, 0);
+    assert.match(sweep(['--apply']), /closed 0 runs whose parent is gone/);
+    assert.strictEqual(fs.readFileSync(file, 'utf8').trim().split('\n').filter((line) => line.includes('"parent gone"')).length, 1);
+  } finally {
+    fs.rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test('the hourly landing pass closes runs whose parent is gone and names the count', () => {
+  const { spawnSync } = require('node:child_process');
+  const { runLostRunSweep, lostRunSweepNote } = require('../commands/autoland');
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'autoland-lost-runs-'));
+  const file = path.join(root, RESOURCE_LOG);
+  fs.mkdirSync(path.dirname(file), { recursive: true });
+  const goneParent = spawnSync(process.execPath, ['-e', '']).pid;
+  fs.writeFileSync(file, [
+    JSON.stringify({ at: '2026-10-14T10:00:00.000Z', phase: 'start', engine: 'cursor', task: 'LOST', run_id: 'gone', pid: goneParent }),
+    JSON.stringify({ at: '2026-10-14T10:05:00.000Z', phase: 'start', engine: 'codex', task: 'LIVE', run_id: 'live', pid: process.pid }),
+    '',
+  ].join('\n'));
+  try {
+    const receipt = {};
+    runLostRunSweep(root, receipt, { now: () => '2026-10-14T13:00:00.000Z' });
+    assert.deepStrictEqual(receipt.lost_run_sweep, { closed: ['gone'] });
+    assert.strictEqual(lostRunSweepNote(receipt), ', closed 1 lost engine run');
+    const ends = fs.readFileSync(file, 'utf8').trim().split('\n').map(JSON.parse).filter((line) => line.phase === 'end');
+    assert.deepStrictEqual(ends.map((line) => [line.run_id, line.cause, line.at]), [['gone', 'parent gone', '2026-10-14T13:00:00.000Z']]);
+
+    const again = {};
+    runLostRunSweep(root, again);
+    assert.deepStrictEqual(again.lost_run_sweep, { closed: [] });
+    assert.strictEqual(lostRunSweepNote(again), '');
+  } finally {
+    fs.rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test('a lost run close that throws never breaks the hourly landing pass', () => {
+  const { runLostRunSweep } = require('../commands/autoland');
+  const receipt = {};
+  runLostRunSweep(os.tmpdir(), receipt, { close: () => { throw new Error('log unreadable'); } });
+  assert.match(receipt.lost_run_sweep_error, /log unreadable/);
+  assert.strictEqual(receipt.lost_run_sweep, undefined);
+});
+
+test('the hourly cleanup summary reports lost run close failures', () => {
+  const { spawnSync } = require('node:child_process');
+  const { runLostRunSweep, lostRunSweepNote } = require('../commands/autoland');
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'autoland-lost-error-'));
+  try {
+    const exited = spawnSync(process.execPath, ['-e', ''], { timeout: 10000 });
+    assert.equal(exited.status, 0);
+    assert.ok(exited.pid);
+    const file = path.join(root, RESOURCE_LOG);
+    fs.mkdirSync(path.dirname(file), { recursive: true });
+    const start = JSON.stringify({ phase: 'start', run_id: 'lost', pid: exited.pid });
+    fs.writeFileSync(file, `${start}\n`);
+    const receipt = {};
+    runLostRunSweep(root, receipt, {
+      now: () => fs.readFileSync(path.join(root, 'missing-clock'), 'utf8'),
+    });
+    assert.match(receipt.lost_run_sweep_error, /ENOENT/);
+    assert.equal(receipt.lost_run_sweep, undefined);
+    assert.equal(fs.readFileSync(file, 'utf8'), `${start}\n`);
+    assert.equal(lostRunSweepNote(receipt), ', could not close lost engine runs, so unfinished records may remain');
+    assert.equal(lostRunSweepNote({}), '');
+    assert.equal(lostRunSweepNote({ lost_run_sweep: { closed: ['one', 'two'] } }), ', closed 2 lost engine runs');
+    assert.equal(lostRunSweepNote({ lost_run_sweep: { closed: ['one'] }, lost_run_sweep_error: 'failed' }),
+      ', closed 1 lost engine run, could not close lost engine runs, so unfinished records may remain');
+    console.log('real lost-run close failure: ' + lostRunSweepNote(receipt).slice(2));
+  } finally {
+    fs.rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test('the hourly cleanup summary reports an unreadable run log instead of finding no lost runs', () => {
+  const { runLostRunSweep, lostRunSweepNote } = require('../commands/autoland');
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'autoland-lost-unread-'));
+  try {
+    const missing = {};
+    runLostRunSweep(root, missing);
+    assert.deepEqual(missing.lost_run_sweep, { closed: [] });
+    assert.equal(lostRunSweepNote(missing), '');
+    const file = path.join(root, RESOURCE_LOG);
+    fs.mkdirSync(file, { recursive: true });
+    const receipt = {};
+    runLostRunSweep(root, receipt);
+    assert.match(receipt.lost_run_sweep_error, /could not read the engine run log: EISDIR/);
+    assert.equal(receipt.lost_run_sweep, undefined);
+    assert.equal(lostRunSweepNote(receipt), ', could not close lost engine runs, so unfinished records may remain');
+    console.log('real unreadable run log: ' + receipt.lost_run_sweep_error);
+    const { engineCommand } = require('../commands/engine');
+    const out = [];
+    const original = console.log;
+    console.log = (line) => out.push(String(line));
+    let code;
+    try {
+      code = engineCommand(['sweep', '--apply'], { root, engineSweep: { read: () => ({ agents: [], referenced: new Set() }), uid: 501 } });
+    } finally {
+      console.log = original;
+    }
+    assert.equal(code, 1);
+    assert.match(out.join('\n'), /^stopped 0 leaked ssh-agents\ncould not close lost runs, so unfinished records may remain: could not read the engine run log: EISDIR$/);
+    console.log('real sweep with unreadable run log: ' + out.join(' / '));
+  } finally {
+    fs.rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test('the sweep listing and the landing status name an unreadable run log instead of showing no history', () => {
+  const { spawnSync } = require('node:child_process');
+  const { engineCommand } = require('../commands/engine');
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'engine-history-unread-'));
+  try {
+    spawnSync('git', ['init', '-q'], { cwd: root });
+    assert.strictEqual(readResourceHistory(root).read_error, null, 'no log yet is no history, not a failure');
+    fs.mkdirSync(path.join(root, RESOURCE_LOG), { recursive: true });
+    assert.equal(readResourceHistory(root).read_error, 'EISDIR');
+    const out = [];
+    const original = console.log;
+    console.log = (line) => out.push(String(line));
+    let code;
+    try {
+      code = engineCommand(['sweep'], { root, engineSweep: { read: () => ({ agents: [], referenced: new Set() }), uid: 501 } });
+    } finally {
+      console.log = original;
+    }
+    const listing = out.join('\n');
+    assert.equal(code, 0);
+    assert.match(listing, /\ncould not read the engine run log: EISDIR, so past sweeps, kills, and errors are unknown$/);
+    assert.doesNotMatch(listing, /no sweep recorded yet|no engine run has ended in SIGKILL/);
+    console.log('real sweep listing with unreadable run log: ' + out.join(' / '));
+    const cli = path.join(__dirname, '..', 'bin', 'atris.js');
+    const status = spawnSync(process.execPath, [cli, 'autoland', 'status'], {
+      cwd: root,
+      encoding: 'utf8',
+      env: { ...process.env, ATRIS_SKIP_UPDATE_CHECK: '1', NODE_NO_WARNINGS: '1' },
+    });
+    assert.strictEqual(status.status, 0, status.stderr);
+    const line = status.stdout.split('\n').find((text) => /engine run log/.test(text));
+    assert.equal(line, '  engine run log: could not read it (EISDIR), so lost, killed, and failed runs in the last day are unknown');
+    console.log('real landing status with unreadable run log: ' + line.trim());
+  } finally {
+    fs.rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test('atris scout records each engine run with a time limit kill and a crash told apart', () => {
+  const { spawnSync } = require('node:child_process');
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'scout-resource-'));
+  const bin = path.join(root, 'fake-bin');
+  const cli = path.join(__dirname, '..', 'bin', 'atris.js');
+  const fake = (body) => {
+    fs.writeFileSync(path.join(bin, 'cursor-agent'), `#!/bin/sh\n${body}\n`, { mode: 0o755 });
+  };
+  const scout = (timeoutSec) => spawnSync(process.execPath, [cli, 'scout', '--yes', '--engine', 'cursor', '--timeout', String(timeoutSec), 'where is it?'], {
+    cwd: root,
+    encoding: 'utf8',
+    env: { ...process.env, PATH: `${bin}${path.delimiter}${process.env.PATH}`, ATRIS_SKIP_UPDATE_CHECK: '1', NODE_NO_WARNINGS: '1' },
+  });
+  const ends = () => fs.readFileSync(path.join(root, RESOURCE_LOG), 'utf8').trim().split('\n').map((line) => JSON.parse(line)).filter((entry) => entry.phase === 'end');
+  try {
+    spawnSync('git', ['init', '-q'], { cwd: root });
+    fs.mkdirSync(bin);
+    fake('echo "it is in lib/fleet.js:1"');
+    const answered = scout(30);
+    assert.strictEqual(answered.status, 0, answered.stderr);
+    fake('sleep 30');
+    const slow = scout(1);
+    assert.strictEqual(slow.status, 1);
+    fake('kill -9 $$');
+    const crashed = scout(30);
+    assert.strictEqual(crashed.status, 1);
+    assert.match(crashed.stdout, /stopped by SIGKILL; killed \((machine memory low|cause unknown)/, 'the operator sees the cause, not a bare exit');
+    const log = fs.readFileSync(path.join(root, RESOURCE_LOG), 'utf8').trim().split('\n').map((line) => JSON.parse(line));
+    assert.deepStrictEqual(log.map((entry) => entry.phase), ['start', 'end', 'start', 'end', 'start', 'end']);
+    const [ok, timedOut, killed] = ends();
+    assert.deepStrictEqual([ok.engine, ok.task, ok.signal || null, ok.error || ''], ['cursor', 'scout', null, '']);
+    assert.deepStrictEqual([timedOut.signal, timedOut.timed_out, timedOut.cause], ['SIGKILL', true, 'killed (time limit reached)']);
+    assert.strictEqual(killed.signal, 'SIGKILL');
+    assert.notStrictEqual(killed.timed_out, true);
+    assert.match(killed.cause, /^killed \((machine memory low|cause unknown)/);
+    for (const entry of [ok, timedOut, killed]) assert.ok(Number.isFinite(entry.duration_ms), JSON.stringify(entry));
+    console.log('real scout run records: ' + [ok, timedOut, killed].map((entry) => `${entry.signal || 'exit'} ${entry.cause || 'no cause'}`).join(' / '));
+  } finally {
+    fs.rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test('every launch of an engine program by name records its run or is named as exempt', () => {
+  const ENGINE_LAUNCH = /\b(?:spawn|spawnSync|execFile|execFileSync)\(\s*['"`](claude|codex|cursor-agent|devin|agy|grok|opencode)['"`]\s*,\s*(\[[^\]]*\])?/g;
+  // Interactive sessions hand the terminal to the person, so no reading is kept.
+  const EXEMPT = new Map([
+    ['commands/console.js', 'interactive codex session'],
+    ['commands/interview.js', 'interactive claude session'],
+  ]);
+  // Comments are blanked with their line breaks kept, so a mention there
+  // never counts and line numbers still match the file.
+  const stripComments = (text) => text
+    .replace(/\/\*[\s\S]*?\*\//g, (block) => block.replace(/[^\n]/g, ' '))
+    .replace(/(^|[^:\\'"`])\/\/.*$/gm, '$1');
+  // Each launch needs its own recording call in the dozen lines up to it.
+  const RECORD_WINDOW = 12;
+  const unrecorded = (rel, text) => {
+    if (EXEMPT.has(rel)) return [];
+    const code = stripComments(text);
+    const lines = code.split('\n');
+    const found = [];
+    for (const match of code.matchAll(ENGINE_LAUNCH)) {
+      // A version probe starts no engine run.
+      if (/^\[\s*['"`]--version['"`]\s*\]$/.test(match[2] || '')) continue;
+      const line = code.slice(0, match.index).split('\n').length;
+      const window = lines.slice(Math.max(0, line - RECORD_WINDOW), line).join('\n');
+      if (/\b(?:startEngineRun|recordEngineResource)\(/.test(window)) continue;
+      found.push(`${rel}:${line} ${match[1]}`);
+    }
+    return found;
+  };
+  assert.deepStrictEqual(unrecorded('commands/planted.js', "const r = spawnSync('claude', ['-p', prompt]);\n"), ['commands/planted.js:1 claude']);
+  assert.deepStrictEqual(unrecorded('commands/planted.js', "spawnSync('claude', ['--version']);\n"), []);
+  // A mention in a comment, or a recorded launch elsewhere in the file, does
+  // not cover this launch.
+  assert.deepStrictEqual(unrecorded('commands/planted.js', "// startEngineRun is called elsewhere\nconst r = spawnSync('claude', ['-p', prompt]);\n"), ['commands/planted.js:2 claude']);
+  assert.deepStrictEqual(unrecorded('commands/planted.js', "/* recordEngineResource( */ spawnSync('codex', ['exec']);\n"), ['commands/planted.js:1 codex']);
+  const recordedThenBare = [
+    "const end = startEngineRun(root, { engine: 'claude' });",
+    "spawnSync('claude', ['-p', a]);",
+    ...Array(20).fill(''),
+    "spawnSync('claude', ['-p', b]);",
+  ].join('\n');
+  assert.deepStrictEqual(unrecorded('commands/planted.js', recordedThenBare), ['commands/planted.js:23 claude']);
+  const repo = path.join(__dirname, '..');
+  const missing = [];
+  let launches = 0;
+  for (const dir of ['commands', 'lib']) {
+    for (const name of fs.readdirSync(path.join(repo, dir)).filter((file) => file.endsWith('.js'))) {
+      const rel = `${dir}/${name}`;
+      const text = fs.readFileSync(path.join(repo, rel), 'utf8');
+      launches += [...text.matchAll(ENGINE_LAUNCH)].length;
+      missing.push(...unrecorded(rel, text));
+    }
+  }
+  assert.ok(launches >= 5, `the scan should see the known launches, saw ${launches}`);
+  assert.deepStrictEqual(missing, [], 'record the run with startEngineRun, or add the file to the exempt list with its reason');
+  console.log(`real engine launch scan: ${launches} launches by name, ${missing.length} unrecorded`);
+});
+
+test('the landing status names runs closed after their parent died in the last day, and stays quiet with none', () => {
+  const { spawnSync } = require('node:child_process');
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'autoland-status-lost-'));
+  const cli = path.join(__dirname, '..', 'bin', 'atris.js');
+  const status = () => spawnSync(process.execPath, [cli, 'autoland', 'status'], {
+    cwd: root,
+    encoding: 'utf8',
+    env: { ...process.env, ATRIS_SKIP_UPDATE_CHECK: '1', NODE_NO_WARNINGS: '1' },
+  });
+  const hoursAgo = (h) => new Date(Date.now() - h * 3600 * 1000).toISOString();
+  const closed = (at, engine, task, runId) => JSON.stringify({ at, phase: 'end', engine, task, run_id: runId, cause: 'parent gone', closed_by: 'sweep' });
+  const file = path.join(root, RESOURCE_LOG);
+  try {
+    spawnSync('git', ['init', '-q'], { cwd: root });
+    const quiet = status();
+    assert.strictEqual(quiet.status, 0, quiet.stderr);
+    assert.doesNotMatch(quiet.stdout, /parent died/);
+
+    fs.mkdirSync(path.dirname(file), { recursive: true });
+    fs.writeFileSync(file, [closed(hoursAgo(72), 'claude', 'OLD', 'old'), closed(hoursAgo(30), 'codex', 'OLDER', 'older'), ''].join('\n'));
+    const old = status();
+    assert.strictEqual(old.status, 0, old.stderr);
+    assert.doesNotMatch(old.stdout, /parent died/, 'closes older than a day do not read as current');
+
+    const recent = hoursAgo(2);
+    fs.appendFileSync(file, [
+      closed(hoursAgo(5), 'claude', 'A', 'a'),
+      JSON.stringify({ at: hoursAgo(3), phase: 'end', engine: 'codex', task: 'B', run_id: 'b', signal: 'SIGKILL', cause: 'unknown' }),
+      closed(recent, 'cursor', 'LOST', 'c'),
+      '',
+    ].join('\n'));
+    const loud = status();
+    assert.strictEqual(loud.status, 0, loud.stderr);
+    const when = `${recent.slice(0, 16).replace('T', ' ')} UTC`;
+    assert.ok(loud.stdout.includes(`engine runs closed after their parent died in the last day: 2, newest cursor on LOST at ${when}`), loud.stdout);
+    const history = readResourceHistory(root);
+    assert.strictEqual(history.lost_closed, 4);
+    assert.strictEqual(history.lost_closed_day, 2);
+    assert.strictEqual(readResourceHistory(root, { now: Date.now() + 48 * 3600 * 1000 }).lost_closed_day, 0);
+  } finally {
+    fs.rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test('the landing status names the last day of killed runs with the low memory count and the newest cause', () => {
+  const { spawnSync } = require('node:child_process');
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'autoland-status-kills-'));
+  const cli = path.join(__dirname, '..', 'bin', 'atris.js');
+  const status = () => spawnSync(process.execPath, [cli, 'autoland', 'status'], {
+    cwd: root,
+    encoding: 'utf8',
+    env: { ...process.env, ATRIS_SKIP_UPDATE_CHECK: '1', NODE_NO_WARNINGS: '1' },
+  });
+  const hoursAgo = (h) => new Date(Date.now() - h * 3600 * 1000).toISOString();
+  const killed = (at, engine, task, runId, cause, free) => JSON.stringify({ at, phase: 'end', engine, task, run_id: runId, signal: 'SIGKILL', cause, free_pct: free });
+  const file = path.join(root, RESOURCE_LOG);
+  try {
+    spawnSync('git', ['init', '-q'], { cwd: root });
+    fs.mkdirSync(path.dirname(file), { recursive: true });
+    fs.writeFileSync(file, [killed(hoursAgo(30), 'claude', 'OLD', 'old', 'killed (machine memory low)', 4), ''].join('\n'));
+    const old = status();
+    assert.strictEqual(old.status, 0, old.stderr);
+    assert.doesNotMatch(old.stdout, /killed/, 'a kill older than a day does not read as current');
+
+    const recent = hoursAgo(1);
+    fs.appendFileSync(file, [
+      killed(hoursAgo(3), 'codex', 'B', 'b', 'killed (cause unknown)', 70),
+      JSON.stringify({ at: hoursAgo(2), phase: 'end', engine: 'cursor', task: 'C', run_id: 'c', code: 0 }),
+      killed(recent, 'claude', 'HEAVY', 'h', 'killed (machine memory low)', 6),
+      '',
+    ].join('\n'));
+    const loud = status();
+    assert.strictEqual(loud.status, 0, loud.stderr);
+    const when = `${recent.slice(0, 16).replace('T', ' ')} UTC`;
+    assert.ok(loud.stdout.includes(`engine runs force-killed in the last day: 2, 1 with machine memory low; newest claude on HEAVY at ${when}, killed (machine memory low), 6% memory free`), loud.stdout);
+    const history = readResourceHistory(root);
+    assert.deepStrictEqual([history.kills, history.kills_day, history.low_memory_kills, history.low_memory_kills_day], [3, 2, 2, 1]);
+  } finally {
+    fs.rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test('the landing status names the last day of engine errors with the newest reason, apart from kills', () => {
+  const { spawnSync } = require('node:child_process');
+  const fleet = require('../lib/fleet');
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'autoland-status-errors-'));
+  const worktree = fs.mkdtempSync(path.join(os.tmpdir(), 'autoland-status-errors-wt-'));
+  const missing = path.join(os.tmpdir(), `atris-missing-engine-${process.pid}`);
+  const cli = path.join(__dirname, '..', 'bin', 'atris.js');
+  const status = () => spawnSync(process.execPath, [cli, 'autoland', 'status'], {
+    cwd: root,
+    encoding: 'utf8',
+    env: { ...process.env, ATRIS_SKIP_UPDATE_CHECK: '1', NODE_NO_WARNINGS: '1' },
+  });
+  const file = path.join(root, RESOURCE_LOG);
+  const old = new Date(Date.now() - 30 * 3600 * 1000).toISOString();
+  try {
+    spawnSync('git', ['init', '-q'], { cwd: root });
+    fs.mkdirSync(path.dirname(file), { recursive: true });
+    fs.writeFileSync(file, `${JSON.stringify({ at: old, phase: 'end', engine: 'codex', task: 'OLD', run_id: 'old', error: 'spawn codex ENOENT' })}\n`);
+    const quiet = status();
+    assert.strictEqual(quiet.status, 0, quiet.stderr);
+    assert.doesNotMatch(quiet.stdout, /ended in an error/, 'an error older than a day does not read as current');
+
+    let failure;
+    fleet.dispatchToEngine({
+      task: { id: 'CLI-77', display_id: 'CLI-77', title: 'start a missing engine' },
+      engine: 'cursor', worktreePath: worktree, root, skipBriefCapture: true,
+      runner: () => {
+        const run = spawnSync(missing, [], { encoding: 'utf8' });
+        failure = run.error;
+        return run;
+      },
+    });
+    assert.equal(failure && failure.code, 'ENOENT');
+    // A kill with an error is reported as a kill, not counted again here.
+    fs.appendFileSync(file, `${JSON.stringify({ at: new Date().toISOString(), phase: 'end', engine: 'claude', task: 'CLI-78', run_id: 'k', signal: 'SIGKILL', cause: 'killed (cause unknown)', error: 'Command failed' })}\n`);
+    const loud = status();
+    assert.strictEqual(loud.status, 0, loud.stderr);
+    const failedEnd = fs.readFileSync(file, 'utf8').trim().split('\n').map(JSON.parse).find((entry) => entry.task === 'CLI-77' && entry.phase === 'end');
+    const when = `${failedEnd.at.slice(0, 16).replace('T', ' ')} UTC`;
+    assert.ok(loud.stdout.includes(`engine runs that ended in an error in the last day: 1, newest cursor on CLI-77 at ${when}: ${failure.message}`), loud.stdout);
+    assert.doesNotMatch(loud.stdout, /Command failed/);
+    assert.ok(loud.stdout.includes('engine runs force-killed in the last day: 1'), loud.stdout);
+    console.log(`real landing status after a failed start:\n${loud.stdout.split('\n').filter((line) => /engine runs/.test(line)).join('\n')}`);
+  } finally {
+    fs.rmSync(root, { recursive: true, force: true });
+    fs.rmSync(worktree, { recursive: true, force: true });
+  }
+});
+
+test('autopilot phases record paired readings on success, SIGKILL and startup failure', () => {
+  const { execFileSync } = require('node:child_process');
+  const { executePhaseDetailed } = require('../commands/autopilot');
+  const root = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'autopilot-phase-resource-')));
+  const before = process.cwd();
+  const missing = path.join(os.tmpdir(), `atris-missing-engine-${process.pid}`);
+  const phase = (cmdOverride) => {
+    try {
+      return { result: executePhaseDetailed('do', { task: 'fixture', kind: 'endgame' }, { verbose: false, timeout: 5000, cmdOverride }) };
+    } catch (error) {
+      return { error };
+    }
+  };
+  try {
+    execFileSync('git', ['init', '-q', root]);
+    process.chdir(root);
+    const ok = phase('echo done');
+    const killed = phase('sh -c "kill -KILL $$"');
+    const failed = phase(missing);
+    process.chdir(before);
+    assert.equal(ok.result.output.trim(), 'done');
+    const lines = fs.readFileSync(path.join(root, RESOURCE_LOG), 'utf8').trim().split('\n').map(JSON.parse);
+    assert.deepEqual(lines.map((line) => line.phase), ['start', 'end', 'start', 'end', 'start', 'end']);
+    for (let i = 0; i < lines.length; i += 2) {
+      assert.match(lines[i].run_id, /^[0-9a-f-]{36}$/);
+      assert.equal(lines[i + 1].run_id, lines[i].run_id);
+      assert.equal(lines[i].task, 'autopilot do');
+      assert.ok(Array.isArray(lines[i + 1].load));
+      assert.ok(Number.isInteger(lines[i + 1].duration_ms));
+    }
+    assert.notEqual(lines[0].run_id, lines[2].run_id);
+    assert.equal(lines[1].signal, undefined);
+    assert.equal(lines[1].error, undefined);
+    const killEnd = lines[3];
+    assert.equal(killEnd.signal, 'SIGKILL');
+    assert.match(killEnd.cause, /^killed \((machine memory low|cause unknown)\)$/);
+    assert.match(killed.error.message, /^do phase killed by SIGKILL/);
+    assert.ok(killed.error.message.includes(killEnd.cause), killed.error.message);
+    const failEnd = lines[5];
+    assert.equal(failEnd.signal, undefined);
+    assert.match(failEnd.error, /not found|No such file/i);
+    assert.ok(failed.result || failed.error, 'the failed start must return or throw');
+    console.log(`autopilot phase readings: ${JSON.stringify([killEnd, failEnd])}`);
+    console.log(`autopilot kill message: ${killed.error.message}`);
+  } finally {
+    process.chdir(before);
+    fs.rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test('run command phases record paired readings on success, SIGKILL and startup failure', () => {
+  const { execFileSync } = require('node:child_process');
+  const { executePhase } = require('../commands/run');
+  const root = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'run-phase-resource-')));
+  const before = process.cwd();
+  const savedTemplate = process.env.ATRIS_RUNNER_COMMAND_TEMPLATE;
+  const missing = path.join(os.tmpdir(), `atris-missing-engine-${process.pid}`);
+  const phase = (template) => {
+    process.env.ATRIS_RUNNER_COMMAND_TEMPLATE = template;
+    try {
+      return { output: executePhase('do', { task: 'fixture' }, { timeout: 5000 }) };
+    } catch (error) {
+      return { error };
+    }
+  };
+  try {
+    execFileSync('git', ['init', '-q', root]);
+    process.chdir(root);
+    const ok = phase('echo done');
+    const killed = phase('sh -c "kill -KILL $$"');
+    const failed = phase(missing);
+    process.chdir(before);
+    assert.equal(ok.output.trim(), 'done');
+    const lines = fs.readFileSync(path.join(root, RESOURCE_LOG), 'utf8').trim().split('\n').map(JSON.parse);
+    assert.deepEqual(lines.map((line) => line.phase), ['start', 'end', 'start', 'end', 'start', 'end']);
+    for (let i = 0; i < lines.length; i += 2) {
+      assert.match(lines[i].run_id, /^[0-9a-f-]{36}$/);
+      assert.equal(lines[i + 1].run_id, lines[i].run_id);
+      assert.equal(lines[i].task, 'run do');
+      assert.ok(Array.isArray(lines[i + 1].load));
+      assert.ok(Number.isInteger(lines[i + 1].duration_ms));
+    }
+    assert.notEqual(lines[0].run_id, lines[2].run_id);
+    assert.equal(lines[1].signal, undefined);
+    assert.equal(lines[1].error, undefined);
+    const killEnd = lines[3];
+    assert.equal(killEnd.signal, 'SIGKILL');
+    assert.match(killEnd.cause, /^killed \((machine memory low|cause unknown)\)$/);
+    assert.ok(killed.error.message.includes(killEnd.cause), killed.error.message);
+    const failEnd = lines[5];
+    assert.equal(failEnd.signal, undefined);
+    assert.match(failEnd.error, /not found|No such file|exited with code 127/i);
+    assert.ok(failed.output !== undefined || failed.error, 'the failed start must return or throw');
+    console.log(`run phase readings: ${JSON.stringify([killEnd, failEnd])}`);
+    console.log(`run kill message: ${killed.error.message}`);
+  } finally {
+    process.chdir(before);
+    if (savedTemplate === undefined) delete process.env.ATRIS_RUNNER_COMMAND_TEMPLATE;
+    else process.env.ATRIS_RUNNER_COMMAND_TEMPLATE = savedTemplate;
+    fs.rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test('compile builds record paired readings on success, SIGKILL and startup failure', () => {
+  const { execFileSync } = require('node:child_process');
+  const { executeBuild, appendRecord } = require('../commands/compile');
+  const root = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'compile-build-resource-')));
+  const missing = path.join(os.tmpdir(), `atris-missing-engine-${process.pid}`);
+  const build = (cmdOverride) => {
+    try {
+      return { manifest: executeBuild(root, 'demo', { cmdOverride, timeout: 5000 }) };
+    } catch (error) {
+      return { error };
+    }
+  };
+  try {
+    execFileSync('git', ['init', '-q', root]);
+    appendRecord(root, 'demo', { input: { n: 1 }, output: { doubled: 2 } });
+    // The clean launch writes no runner, so the build itself refuses after it.
+    const ok = build('true');
+    const killed = build('sh -c "kill -KILL $$"');
+    const failed = build(missing);
+    assert.match(ok.error.message, /was not written/);
+    assert.equal(killed.error.signal, 'SIGKILL');
+    assert.ok(failed.error, 'a missing program must fail the build');
+    const lines = fs.readFileSync(path.join(root, RESOURCE_LOG), 'utf8').trim().split('\n').map(JSON.parse);
+    assert.deepEqual(lines.map((line) => line.phase), ['start', 'end', 'start', 'end', 'start', 'end']);
+    for (let i = 0; i < lines.length; i += 2) {
+      assert.match(lines[i].run_id, /^[0-9a-f-]{36}$/);
+      assert.equal(lines[i + 1].run_id, lines[i].run_id);
+      assert.equal(lines[i].task, 'compile demo');
+      assert.ok(Array.isArray(lines[i + 1].load));
+      assert.ok(Number.isInteger(lines[i + 1].duration_ms));
+    }
+    assert.notEqual(lines[0].run_id, lines[2].run_id);
+    assert.equal(lines[1].signal, undefined);
+    assert.equal(lines[1].error, undefined);
+    assert.equal(lines[3].signal, 'SIGKILL');
+    assert.match(lines[3].cause, /^killed \((machine memory low|cause unknown)\)$/);
+    // The thrown error names the cause, and stays the original error.
+    assert.ok(killed.error.message.includes(lines[3].cause), killed.error.message);
+    assert.equal(killed.error.status, null);
+    assert.equal(lines[5].signal, undefined);
+    assert.match(lines[5].error, /not found|No such file/i);
+    assert.doesNotMatch(failed.error.message, /killed \(/);
+    console.log(`compile build readings: ${JSON.stringify([lines[3], lines[5]])}`);
+
+    // The real command prints the cause where the operator reads it.
+    const cli = require('node:child_process').spawnSync(process.execPath, [path.join(__dirname, '..', 'bin', 'atris.js'), 'compile', 'build', 'demo'], {
+      cwd: root,
+      encoding: 'utf8',
+      env: { ...process.env, ATRIS_SKIP_UPDATE_CHECK: '1', ATRIS_RUNNER_BIN: 'sh', ATRIS_RUNNER_COMMAND_TEMPLATE: 'sh -c "kill -KILL $$"' },
+    });
+    assert.equal(cli.status, 1, cli.stderr);
+    assert.match(cli.stderr, /Error: Command failed: .*; killed \((machine memory low|cause unknown)\)/);
+    console.log(`compile build CLI exit ${cli.status}: ${cli.stderr.trim().split('\n').pop()}`);
+  } finally {
+    fs.rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test('unknowns runner launches record paired readings on success, SIGKILL and startup failure', () => {
+  const { runRunnerPrompt } = require('../commands/unknowns');
+  const root = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'unknowns-resource-')));
+  const saved = { bin: process.env.ATRIS_RUNNER_BIN, template: process.env.ATRIS_RUNNER_COMMAND_TEMPLATE };
+  const missing = path.join(os.tmpdir(), `atris-missing-engine-${process.pid}`);
+  const launch = (template) => {
+    process.env.ATRIS_RUNNER_COMMAND_TEMPLATE = template;
+    return runRunnerPrompt(root, 'fixture prompt');
+  };
+  try {
+    process.env.ATRIS_RUNNER_BIN = 'sh';
+    const ok = launch('echo done');
+    const killed = launch('sh -c "kill -KILL $$"');
+    const failed = launch(missing);
+    assert.deepEqual(ok, { ok: true, output: 'done' });
+    assert.equal(killed.ok, false);
+    assert.equal(failed.ok, false);
+    const lines = fs.readFileSync(path.join(root, RESOURCE_LOG), 'utf8').trim().split('\n').map(JSON.parse);
+    assert.deepEqual(lines.map((line) => line.phase), ['start', 'end', 'start', 'end', 'start', 'end']);
+    for (let i = 0; i < lines.length; i += 2) {
+      assert.match(lines[i].run_id, /^[0-9a-f-]{36}$/);
+      assert.equal(lines[i + 1].run_id, lines[i].run_id);
+      assert.equal(lines[i].task, 'unknowns');
+      assert.ok(Array.isArray(lines[i + 1].load));
+      assert.ok(Number.isInteger(lines[i + 1].duration_ms));
+    }
+    assert.notEqual(lines[0].run_id, lines[2].run_id);
+    assert.equal(lines[1].signal, undefined);
+    assert.equal(lines[1].error, undefined);
+    assert.equal(lines[3].signal, 'SIGKILL');
+    assert.match(lines[3].cause, /^killed \((machine memory low|cause unknown)\)$/);
+    // The reason the operator reads names the cause.
+    assert.ok(killed.reason.includes(lines[3].cause), killed.reason);
+    assert.equal(lines[5].signal, undefined);
+    assert.match(lines[5].error, /not found|No such file/i);
+    assert.doesNotMatch(failed.reason, /killed \(/);
+    console.log(`unknowns readings: ${JSON.stringify([lines[3], lines[5]])}`);
+    console.log(`unknowns kill reason: ${killed.reason}`);
+  } finally {
+    for (const [key, name] of [['bin', 'ATRIS_RUNNER_BIN'], ['template', 'ATRIS_RUNNER_COMMAND_TEMPLATE']]) {
+      if (saved[key] === undefined) delete process.env[name];
+      else process.env[name] = saved[key];
+    }
+    fs.rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test('staleness checks record paired readings on success, SIGKILL and startup failure', () => {
+  const { askModel } = require('../commands/autopilot');
+  const root = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'staleness-resource-')));
+  const saved = process.env.ATRIS_RUNNER_COMMAND_TEMPLATE;
+  const missing = path.join(os.tmpdir(), `atris-missing-engine-${process.pid}`);
+  const check = (template) => {
+    process.env.ATRIS_RUNNER_COMMAND_TEMPLATE = template;
+    return askModel({ title: 'fixture task', age: 9 }, root);
+  };
+  try {
+    const ok = check('echo YES still used');
+    const killed = check('sh -c "kill -KILL $$"');
+    const failed = check(missing);
+    assert.deepEqual(ok, { fresh: true, reasoning: 'still used' });
+    assert.equal(killed.fresh, false);
+    assert.equal(failed.fresh, false);
+    const lines = fs.readFileSync(path.join(root, RESOURCE_LOG), 'utf8').trim().split('\n').map(JSON.parse);
+    assert.deepEqual(lines.map((line) => line.phase), ['start', 'end', 'start', 'end', 'start', 'end']);
+    for (let i = 0; i < lines.length; i += 2) {
+      assert.match(lines[i].run_id, /^[0-9a-f-]{36}$/);
+      assert.equal(lines[i + 1].run_id, lines[i].run_id);
+      assert.equal(lines[i].task, 'staleness check');
+      assert.ok(Array.isArray(lines[i + 1].load));
+      assert.ok(Number.isInteger(lines[i + 1].duration_ms));
+    }
+    assert.notEqual(lines[0].run_id, lines[2].run_id);
+    assert.equal(lines[1].signal, undefined);
+    assert.equal(lines[1].error, undefined);
+    assert.equal(lines[3].signal, 'SIGKILL');
+    assert.match(lines[3].cause, /^killed \((machine memory low|cause unknown)\)$/);
+    // The skip reason written to the journal names the cause.
+    assert.ok(killed.reasoning.includes(lines[3].cause), killed.reasoning);
+    assert.equal(lines[5].signal, undefined);
+    assert.match(lines[5].error, /not found|No such file/i);
+    assert.doesNotMatch(failed.reasoning, /killed \(/);
+    console.log(`staleness readings: ${JSON.stringify([lines[3], lines[5]])}`);
+    console.log(`staleness kill reason: ${killed.reasoning}`);
+  } finally {
+    if (saved === undefined) delete process.env.ATRIS_RUNNER_COMMAND_TEMPLATE;
+    else process.env.ATRIS_RUNNER_COMMAND_TEMPLATE = saved;
+    fs.rmSync(root, { recursive: true, force: true });
+  }
+});
+
+
+test('horizon proposals record paired readings on success, SIGKILL and startup failure', async () => {
+  const { execFileSync } = require('node:child_process');
+  const { proposeCandidateHorizons } = require('../commands/autopilot');
+  const root = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'horizon-resource-')));
+  const before = process.cwd();
+  const saved = process.env.ATRIS_RUNNER_COMMAND_TEMPLATE;
+  const missing = path.join(os.tmpdir(), `atris-missing-engine-${process.pid}`);
+  const candidates = JSON.stringify([1, 2, 3].map((n) => ({ title: `Ship widget step ${n}`, confidence: 0.8, rationale: 'fixture' })));
+  const propose = async (template) => {
+    process.env.ATRIS_RUNNER_COMMAND_TEMPLATE = template;
+    try {
+      return { result: await proposeCandidateHorizons(root) };
+    } catch (error) {
+      return { error };
+    }
+  };
+  try {
+    execFileSync('git', ['init', '-q', root]);
+    process.chdir(root);
+    const ok = await propose(`printf '%s' '${candidates}'`);
+    const killed = await propose('sh -c "kill -KILL $$"');
+    const failed = await propose(missing);
+    process.chdir(before);
+    assert.equal(ok.error, undefined);
+    assert.equal(ok.result.length, 3);
+    const lines = fs.readFileSync(path.join(root, RESOURCE_LOG), 'utf8').trim().split('\n').map(JSON.parse);
+    assert.deepEqual(lines.map((line) => line.phase), ['start', 'end', 'start', 'end', 'start', 'end']);
+    for (let i = 0; i < lines.length; i += 2) {
+      assert.match(lines[i].run_id, /^[0-9a-f-]{36}$/);
+      assert.equal(lines[i + 1].run_id, lines[i].run_id);
+      assert.equal(lines[i].task, 'horizon proposal');
+      assert.ok(Array.isArray(lines[i + 1].load));
+      assert.ok(Number.isInteger(lines[i + 1].duration_ms));
+    }
+    assert.notEqual(lines[0].run_id, lines[2].run_id);
+    assert.equal(lines[1].signal, undefined);
+    assert.equal(lines[1].error, undefined);
+    assert.equal(lines[3].signal, 'SIGKILL');
+    assert.match(lines[3].cause, /^killed \((machine memory low|cause unknown)\)$/);
+    assert.ok(killed.error.message.includes(lines[3].cause), killed.error.message);
+    assert.equal(lines[5].signal, undefined);
+    assert.match(lines[5].error, /not found|No such file/i);
+    assert.doesNotMatch(failed.error.message, /killed \(/);
+    console.log(`horizon readings: ${JSON.stringify([lines[3], lines[5]])}`);
+    console.log(`horizon kill message: ${killed.error.message}`);
+  } finally {
+    process.chdir(before);
+    if (saved === undefined) delete process.env.ATRIS_RUNNER_COMMAND_TEMPLATE;
+    else process.env.ATRIS_RUNNER_COMMAND_TEMPLATE = saved;
+    fs.rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test('autopilot names a failed horizon proposal instead of calling the workspace clean', () => {
+  const { execFileSync, spawnSync } = require('node:child_process');
+  const root = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'horizon-idle-')));
+  const missing = path.join(os.tmpdir(), `atris-missing-engine-${process.pid}`);
+  const tick = (template) => spawnSync(process.execPath, [path.join(__dirname, '..', 'bin', 'atris.js'), 'autopilot', '--legacy', '--auto', '--dry-run', '--iterations=1'], {
+    cwd: root,
+    encoding: 'utf8',
+    timeout: 60000,
+    env: { ...process.env, ATRIS_SKIP_UPDATE_CHECK: '1', ATRIS_RUNNER_BIN: 'sh', ATRIS_RUNNER_COMMAND_TEMPLATE: template },
+  });
+  try {
+    fs.mkdirSync(path.join(root, 'atris'));
+    fs.writeFileSync(path.join(root, 'atris', 'TODO.md'), '# TODO\n\n## In Progress\n\n## Backlog\n\n## Completed\n');
+    execFileSync('git', ['init', '-q', root]);
+    execFileSync('git', ['-C', root, 'add', '-A']);
+    execFileSync('git', ['-C', root, '-c', 'user.name=t', '-c', 'user.email=t@t', 'commit', '-qm', 'init']);
+    const killed = tick('sh -c "kill -KILL $$"');
+    assert.equal(killed.status, 0, killed.stderr);
+    assert.match(killed.stdout, /I could not ask the engine for new work: horizon-proposal phase killed by SIGKILL .*; killed \((machine memory low|cause unknown)\)/);
+    assert.doesNotMatch(killed.stdout, /looks clean/);
+    const failed = tick(missing);
+    assert.equal(failed.status, 0, failed.stderr);
+    assert.match(failed.stdout, /I could not ask the engine for new work: Command failed: /);
+    assert.doesNotMatch(failed.stdout, /looks clean|killed \(/);
+    // An engine that answers with nothing usable still reads as no work.
+    const empty = tick('echo none');
+    assert.match(empty.stdout, /looks clean/);
+    assert.doesNotMatch(empty.stdout, /could not ask the engine/);
+    console.log(`autopilot idle on kill: ${killed.stdout.split('\n').find((line) => line.includes('could not ask')).trim()}`);
+  } finally {
+    fs.rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test('plan reviews record paired readings on success, SIGKILL and startup failure', () => {
+  const { execFileSync } = require('node:child_process');
+  const { runPlanReview } = require('../commands/autopilot');
+  const root = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'plan-review-resource-')));
+  const saved = process.env.ATRIS_RUNNER_COMMAND_TEMPLATE;
+  const missing = path.join(os.tmpdir(), `atris-missing-engine-${process.pid}`);
+  const review = (template) => {
+    process.env.ATRIS_RUNNER_COMMAND_TEMPLATE = template;
+    try {
+      return { result: runPlanReview({ cwd: root, context: { task: 'fixture', tags: [] }, planOutput: 'fixture plan' }) };
+    } catch (error) {
+      return { error };
+    }
+  };
+  try {
+    execFileSync('git', ['init', '-q', root]);
+    const ok = review('echo VERDICT: SIGNOFF');
+    const killed = review('sh -c "kill -KILL $$"');
+    const failed = review(missing);
+    assert.equal(ok.error, undefined);
+    assert.ok(ok.result.signers.includes('validator'));
+    const lines = fs.readFileSync(path.join(root, RESOURCE_LOG), 'utf8').trim().split('\n').map(JSON.parse);
+    assert.deepEqual(lines.map((line) => line.phase), ['start', 'end', 'start', 'end', 'start', 'end']);
+    for (let i = 0; i < lines.length; i += 2) {
+      assert.match(lines[i].run_id, /^[0-9a-f-]{36}$/);
+      assert.equal(lines[i + 1].run_id, lines[i].run_id);
+      assert.equal(lines[i].task, 'autopilot plan review');
+      assert.ok(Array.isArray(lines[i + 1].load));
+      assert.ok(Number.isInteger(lines[i + 1].duration_ms));
+    }
+    assert.notEqual(lines[0].run_id, lines[2].run_id);
+    assert.equal(lines[1].signal, undefined);
+    assert.equal(lines[1].error, undefined);
+    assert.equal(lines[3].signal, 'SIGKILL');
+    assert.match(lines[3].cause, /^killed \((machine memory low|cause unknown)\)$/);
+    // The thrown review error names the cause, and stays the original error.
+    assert.ok(killed.error.message.includes(lines[3].cause), killed.error.message);
+    assert.equal(killed.error.signal, 'SIGKILL');
+    assert.equal(lines[5].signal, undefined);
+    assert.match(lines[5].error, /not found|No such file/i);
+    assert.doesNotMatch(failed.error.message, /killed \(/);
+    console.log(`plan review readings: ${JSON.stringify([lines[3], lines[5]])}`);
+    console.log(`plan review kill message: ${killed.error.message}`);
+  } finally {
+    if (saved === undefined) delete process.env.ATRIS_RUNNER_COMMAND_TEMPLATE;
+    else process.env.ATRIS_RUNNER_COMMAND_TEMPLATE = saved;
+    fs.rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test('codex plan review signers record paired readings on success, SIGKILL and startup failure', () => {
+  const { execFileSync } = require('node:child_process');
+  const { runPlanReview } = require('../commands/autopilot');
+  const root = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'codex-review-resource-')));
+  const saved = { template: process.env.ATRIS_RUNNER_COMMAND_TEMPLATE, codex: process.env.ATRIS_CODEX_CMD };
+  const script = (name, body) => {
+    const file = path.join(root, name);
+    fs.writeFileSync(file, `#!/bin/sh\n${body}\n`, { mode: 0o755 });
+    return file;
+  };
+  const review = (codex) => {
+    process.env.ATRIS_CODEX_CMD = codex;
+    return runPlanReview({ cwd: root, context: { task: 'fixture', tags: ['codex'] }, planOutput: 'fixture plan', options: { hasCodex: true } });
+  };
+  try {
+    execFileSync('git', ['init', '-q', root]);
+    process.env.ATRIS_RUNNER_COMMAND_TEMPLATE = 'echo VERDICT: SIGNOFF';
+    const ok = review(script('codex-ok', 'echo VERDICT: SIGNOFF'));
+    const killed = review(script('codex-killed', 'kill -KILL $$'));
+    const failed = review(path.join(root, 'codex-missing'));
+    assert.deepEqual(ok.signers, ['validator', 'codex']);
+    const lines = fs.readFileSync(path.join(root, RESOURCE_LOG), 'utf8').trim().split('\n').map(JSON.parse)
+      .filter((line) => line.task === 'autopilot codex review');
+    assert.deepEqual(lines.map((line) => line.phase), ['start', 'end', 'start', 'end', 'start', 'end']);
+    for (let i = 0; i < lines.length; i += 2) {
+      assert.match(lines[i].run_id, /^[0-9a-f-]{36}$/);
+      assert.equal(lines[i + 1].run_id, lines[i].run_id);
+      assert.equal(lines[i].engine, 'codex');
+      assert.ok(Array.isArray(lines[i + 1].load));
+      assert.ok(Number.isInteger(lines[i + 1].duration_ms));
+    }
+    assert.notEqual(lines[0].run_id, lines[2].run_id);
+    assert.equal(lines[1].signal, undefined);
+    assert.equal(lines[1].error, undefined);
+    assert.equal(lines[3].signal, 'SIGKILL');
+    assert.match(lines[3].cause, /^killed \((machine memory low|cause unknown)\)$/);
+    // The fallback note the review carries names the cause.
+    assert.ok(killed.notes.includes(lines[3].cause), killed.notes);
+    assert.equal(lines[5].signal, undefined);
+    assert.match(lines[5].error, /ENOENT/);
+    assert.doesNotMatch(failed.notes, /killed \(/);
+    console.log(`codex review readings: ${JSON.stringify([lines[3], lines[5]])}`);
+    console.log(`codex review kill note: ${killed.notes}`);
+  } finally {
+    for (const [key, name] of [['template', 'ATRIS_RUNNER_COMMAND_TEMPLATE'], ['codex', 'ATRIS_CODEX_CMD']]) {
+      if (saved[key] === undefined) delete process.env[name];
+      else process.env[name] = saved[key];
+    }
+    fs.rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test('engine probes record paired readings on success, SIGKILL and startup failure', () => {
+  const { execFileSync, spawnSync } = require('node:child_process');
+  const root = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'engine-probe-resource-')));
+  const bin = path.join(root, 'bin');
+  const missing = path.join(os.tmpdir(), `atris-missing-engine-${process.pid}`);
+  const probe = (template) => {
+    const ran = spawnSync(process.execPath, [path.join(__dirname, '..', 'bin', 'atris.js'), 'engine', 'test', 'claude', '--json'], {
+      cwd: root,
+      encoding: 'utf8',
+      timeout: 60000,
+      env: { ...process.env, ATRIS_SKIP_UPDATE_CHECK: '1', ATRIS_RUNNER_COMMAND_TEMPLATE: template, PATH: `${bin}${path.delimiter}${process.env.PATH}` },
+    });
+    return { status: ran.status, result: JSON.parse(ran.stdout).results[0], stderr: ran.stderr };
+  };
+  try {
+    execFileSync('git', ['init', '-q', root]);
+    // A stand-in so the installed check passes; the template decides the run.
+    fs.mkdirSync(bin);
+    fs.writeFileSync(path.join(bin, 'claude'), '#!/bin/sh\necho OK\n', { mode: 0o755 });
+    const ok = probe('echo OK');
+    const killed = probe('sh -c "kill -KILL $$"');
+    const failed = probe(missing);
+    assert.equal(ok.status, 0, ok.stderr);
+    assert.equal(ok.result.pass, true);
+    assert.equal(killed.status, 1);
+    assert.equal(failed.status, 1);
+    const lines = fs.readFileSync(path.join(root, RESOURCE_LOG), 'utf8').trim().split('\n').map(JSON.parse);
+    assert.deepEqual(lines.map((line) => line.phase), ['start', 'end', 'start', 'end', 'start', 'end']);
+    for (let i = 0; i < lines.length; i += 2) {
+      assert.match(lines[i].run_id, /^[0-9a-f-]{36}$/);
+      assert.equal(lines[i + 1].run_id, lines[i].run_id);
+      assert.equal(lines[i].engine, 'claude');
+      assert.equal(lines[i].task, 'engine probe');
+      assert.ok(Array.isArray(lines[i + 1].load));
+      assert.ok(Number.isInteger(lines[i + 1].duration_ms));
+    }
+    assert.notEqual(lines[0].run_id, lines[2].run_id);
+    assert.equal(lines[1].signal, undefined);
+    assert.equal(lines[1].error, undefined);
+    assert.equal(lines[3].signal, 'SIGKILL');
+    assert.match(lines[3].cause, /^killed \((machine memory low|cause unknown)\)$/);
+    // The probe result the operator reads names the cause.
+    assert.ok(killed.result.message.includes(lines[3].cause), killed.result.message);
+    assert.equal(lines[5].signal, undefined);
+    assert.match(lines[5].error, /not found|No such file/i);
+    assert.doesNotMatch(failed.result.message, /killed \(/);
+    console.log(`engine probe readings: ${JSON.stringify([lines[3], lines[5]])}`);
+    console.log(`engine probe kill message: ${killed.result.message}`);
+  } finally {
+    fs.rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test('a kill sent by the run time limit names the time limit even with memory low', () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'engine-resource-timeout-'));
+  try {
+    const lowMemory = { platform: 'darwin', run: fakeRun(PRESSURE_LOW, SWAP_FULL), loadavg: () => [9, 8, 7] };
+    const timed = recordEngineResource(root, { phase: 'end', engine: 'codex', task: 'T', run_id: 'r1', signal: 'SIGKILL', timed_out: true }, lowMemory);
+    assert.strictEqual(timed.cause, 'killed (time limit reached)');
+    assert.strictEqual(timed.timed_out, true);
+    const plain = recordEngineResource(root, { phase: 'end', engine: 'codex', task: 'T', run_id: 'r2', signal: 'SIGKILL' }, lowMemory);
+    assert.strictEqual(plain.cause, 'killed (machine memory low)');
+    assert.strictEqual(plain.timed_out, undefined);
+    const term = recordEngineResource(root, { phase: 'end', engine: 'codex', task: 'T', run_id: 'r3', signal: 'SIGTERM', timed_out: true }, lowMemory);
+    assert.strictEqual(term.timed_out, true);
+    assert.strictEqual(term.cause, undefined);
+  } finally {
+    fs.rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test('the landing status counts time limit kills apart and names the newest kill that was not a time limit', () => {
+  const { spawnSync } = require('node:child_process');
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'autoland-status-time-limit-'));
+  const cli = path.join(__dirname, '..', 'bin', 'atris.js');
+  const status = () => spawnSync(process.execPath, [cli, 'autoland', 'status'], {
+    cwd: root,
+    encoding: 'utf8',
+    env: { ...process.env, ATRIS_SKIP_UPDATE_CHECK: '1', NODE_NO_WARNINGS: '1' },
+  });
+  const hoursAgo = (h) => new Date(Date.now() - h * 3600 * 1000).toISOString();
+  const killed = (at, task, cause, free, extra = {}) => JSON.stringify({ at, phase: 'end', engine: 'codex', task, run_id: task, signal: 'SIGKILL', cause, free_pct: free, ...extra });
+  const timeLimit = (at, task) => killed(at, task, 'killed (time limit reached)', 70, { timed_out: true });
+  const file = path.join(root, RESOURCE_LOG);
+  const minute = (at) => `${at.slice(0, 16).replace('T', ' ')} UTC`;
+  try {
+    spawnSync('git', ['init', '-q'], { cwd: root });
+    fs.mkdirSync(path.dirname(file), { recursive: true });
+    const firstTimeout = hoursAgo(4);
+    fs.writeFileSync(file, [timeLimit(hoursAgo(5), 'SLOW1'), timeLimit(firstTimeout, 'SLOW2'), ''].join('\n'));
+    const onlyTimeouts = status();
+    assert.strictEqual(onlyTimeouts.status, 0, onlyTimeouts.stderr);
+    assert.ok(onlyTimeouts.stdout.includes(`engine runs force-killed in the last day: 2, all at their time limit; newest codex on SLOW2 at ${minute(firstTimeout)}, killed (time limit reached), 70% memory free`), onlyTimeouts.stdout);
+
+    const crash = hoursAgo(3);
+    fs.appendFileSync(file, [killed(crash, 'HEAVY', 'killed (machine memory low)', 5), timeLimit(hoursAgo(1), 'SLOW3'), ''].join('\n'));
+    const mixed = status();
+    assert.strictEqual(mixed.status, 0, mixed.stderr);
+    assert.ok(mixed.stdout.includes(`engine runs force-killed in the last day: 4, 3 at their time limit, 1 with machine memory low; newest not at a time limit: codex on HEAVY at ${minute(crash)}, killed (machine memory low), 5% memory free`), mixed.stdout);
+    const history = readResourceHistory(root);
+    assert.strictEqual(history.time_limit_kills_day, 3);
+    assert.strictEqual(history.last_day_other_kill.task, 'HEAVY');
+  } finally {
+    fs.rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test('atris engine sweep names the newest engine error from a real failed start, apart from kills', () => {
+  const { execFileSync, spawnSync } = require('node:child_process');
+  const { engineCommand } = require('../commands/engine');
+  const fleet = require('../lib/fleet');
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'engine-sweep-error-'));
+  const worktree = fs.mkdtempSync(path.join(os.tmpdir(), 'engine-sweep-error-wt-'));
+  const missing = path.join(os.tmpdir(), `atris-missing-engine-${process.pid}`);
+  const sweep = () => {
+    const out = [];
+    const original = console.log;
+    console.log = (line) => out.push(String(line));
+    try {
+      engineCommand(['sweep'], { root, engineSweep: { read: () => ({ agents: [], referenced: new Set() }), uid: 501 } });
+    } finally {
+      console.log = original;
+    }
+    return out.join('\n');
+  };
+  try {
+    execFileSync('git', ['init', '-q', root]);
+    assert.doesNotMatch(sweep(), /last engine error/);
+    let failure;
+    fleet.dispatchToEngine({
+      task: { id: 'CLI-77', display_id: 'CLI-77', title: 'start a missing engine' },
+      engine: 'cursor', worktreePath: worktree, root, skipBriefCapture: true,
+      runner: () => {
+        const run = spawnSync(missing, [], { encoding: 'utf8' });
+        failure = run.error;
+        return run;
+      },
+    });
+    assert.equal(failure && failure.code, 'ENOENT');
+    // A later kill also carries an error, but it is already named as a kill.
+    fs.appendFileSync(path.join(root, RESOURCE_LOG), `${JSON.stringify({ at: new Date().toISOString(), phase: 'end', engine: 'claude', task: 'CLI-78', signal: 'SIGKILL', cause: 'killed (cause unknown)', error: 'Command failed' })}\n`);
+    const text = sweep();
+    assert.match(text, new RegExp(`last engine error: cursor on CLI-77 at \\d{4}-\\d\\d-\\d\\d \\d\\d:\\d\\d UTC: ${failure.message.replace(/[.*+?^${}()|[\]\\/]/g, '\\$&')}`));
+    assert.doesNotMatch(text, /Command failed/);
+    console.log(`real sweep after a failed start:\n${text}`);
+  } finally {
+    fs.rmSync(root, { recursive: true, force: true });
+    fs.rmSync(worktree, { recursive: true, force: true });
+  }
+});
+
+test('atris engine sweep counts time limit kills apart and still names the newest kill that was not one', () => {
+  const { engineCommand } = require('../commands/engine');
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'engine-sweep-time-limit-'));
+  const file = path.join(root, RESOURCE_LOG);
+  fs.mkdirSync(path.dirname(file), { recursive: true });
+  const timeLimit = (at, task) => JSON.stringify({ at, phase: 'end', engine: 'codex', task, run_id: task, free_pct: 70, signal: 'SIGKILL', timed_out: true, cause: 'killed (time limit reached)' });
+  fs.writeFileSync(file, [
+    JSON.stringify({ at: '2026-10-14T11:30:00.000Z', phase: 'end', engine: 'claude', task: 'CLI-2', run_id: 'crash', free_pct: 9, signal: 'SIGKILL', cause: 'killed (machine memory low)' }),
+    timeLimit('2026-10-14T12:10:00.000Z', 'SLOW1'),
+    timeLimit('2026-10-14T12:20:00.000Z', 'SLOW2'),
+    '',
+  ].join('\n'));
+  const out = [];
+  const original = console.log;
+  console.log = (line) => out.push(String(line));
+  try {
+    engineCommand(['sweep'], { root, engineSweep: { read: () => ({ agents: [], referenced: new Set() }), uid: 501 } });
+  } finally {
+    console.log = original;
+    fs.rmSync(root, { recursive: true, force: true });
+  }
+  const text = out.join('\n');
+  assert.match(text, /last SIGKILL: codex on SLOW2 at 2026-10-14 12:20 UTC, killed \(time limit reached\), 70% memory free/);
+  assert.match(text, /last SIGKILL not at a time limit: claude on CLI-2 at 2026-10-14 11:30 UTC, killed \(machine memory low\), 9% memory free/);
+  assert.match(text, /1 of 3 SIGKILLs ended with machine memory low, 2 at their time limit/);
+});
+
+test('the landing status counts leaked ssh-agents, says how they get stopped, and stays quiet with none or a failed read', () => {
+  const { showStatus } = require('../commands/autoland');
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'autoland-status-agents-'));
+  const agent = (pid) => ({ pid, ppid: 1, uid: 501, age_sec: 3600, args: 'ssh-agent -s' });
+  const status = (deps) => {
+    const out = [];
+    const original = console.log;
+    console.log = (line = '') => out.push(String(line));
+    try {
+      showStatus(root, [], deps);
+    } finally {
+      console.log = original;
+    }
+    return out.join('\n');
+  };
+  try {
+    require('node:child_process').spawnSync('git', ['init', '-q'], { cwd: root });
+    const leaked = status({ readSshAgents: () => ({ agents: [agent(200), agent(201), agent(202)], referenced: new Set([202]) }), uid: 501 });
+    assert.match(leaked, /leaked ssh-agents on this machine: 2; stop them now: atris engine sweep --apply/);
+    const none = status({ readSshAgents: () => ({ agents: [agent(300)], referenced: new Set([300]) }), uid: 501 });
+    assert.doesNotMatch(none, /ssh-agents/);
+    const broken = status({ readSshAgents: () => { throw new Error('ps missing'); }, uid: 501 });
+    assert.doesNotMatch(broken, /ssh-agents/);
+    assert.doesNotMatch(status(), /ssh-agents/, 'a test run never reads the real machine');
+  } finally {
+    fs.rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test('the landing status names an unreadable agent scan instead of showing no leaks', () => {
+  const { showStatus } = require('../commands/autoland');
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'autoland-status-agents-unread-'));
+  const agent = (pid) => ({ pid, ppid: 1, uid: 501, age_sec: 3600, args: 'ssh-agent -s' });
+  const status = (deps) => {
+    const out = [];
+    const original = console.log;
+    console.log = (line = '') => out.push(String(line));
+    try {
+      showStatus(root, [], deps);
+    } finally {
+      console.log = original;
+    }
+    return out.join('\n');
+  };
+  try {
+    require('node:child_process').spawnSync('git', ['init', '-q'], { cwd: root });
+    const blind = status({ readSshAgents: () => ({ agents: [], referenced: new Set(), unread: ['process list'] }), uid: 501 });
+    assert.match(blind, /leaked ssh-agents on this machine: unknown, could not read the process list, so some ssh-agents went unchecked/);
+    const partial = status({ readSshAgents: () => ({ agents: [agent(200), agent(201)], referenced: new Set([201]), unread: ['agent sockets'] }), uid: 501 });
+    assert.match(partial, /leaked ssh-agents on this machine: at least 1; stop them now: atris engine sweep --apply; could not read the agent sockets, so some ssh-agents went unchecked/);
+  } finally {
+    fs.rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test('the landing status names the startup line behind leaked ssh-agents and its fix', () => {
+  const { showStatus } = require('../commands/autoland');
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'autoland-status-agent-source-'));
+  const home = fs.mkdtempSync(path.join(os.tmpdir(), 'autoland-status-agent-home-'));
+  const agent = (pid) => ({ pid, ppid: 1, uid: 501, age_sec: 3600, args: 'ssh-agent -s' });
+  const status = (deps) => {
+    const out = [];
+    const original = console.log;
+    console.log = (line = '') => out.push(String(line));
+    try {
+      showStatus(root, [], deps);
+    } finally {
+      console.log = original;
+    }
+    return out.join('\n');
+  };
+  try {
+    require('node:child_process').spawnSync('git', ['init', '-q'], { cwd: root });
+    fs.writeFileSync(path.join(home, '.zshrc'), 'eval "$(ssh-agent -s)"\n');
+    const leaked = status({ readSshAgents: () => ({ agents: [agent(200)], referenced: new Set() }), uid: 501, home });
+    assert.match(leaked, /leaked ssh-agents on this machine: 1;[^\n]*\n {4}likely source: ~\/\.zshrc line 1 starts a new ssh-agent in every shell that reads it; to start one only when none is reachable, change it to: \[ -S "\$SSH_AUTH_SOCK" \] \|\| eval "\$\(ssh-agent -s\)"/);
+    const clean = status({ readSshAgents: () => ({ agents: [agent(200)], referenced: new Set([200]) }), uid: 501, home });
+    assert.doesNotMatch(clean, /likely source/, 'no leak, no source line');
+  } finally {
+    fs.rmSync(root, { recursive: true, force: true });
+    fs.rmSync(home, { recursive: true, force: true });
+  }
+});
+
+test('the landing status says how fast leaked ssh-agents grew since the oldest reading in the last day', () => {
+  const { showStatus } = require('../commands/autoland');
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'autoland-status-agent-growth-'));
+  const file = path.join(root, RESOURCE_LOG);
+  const agent = (pid) => ({ pid, ppid: 1, uid: 501, age_sec: 3600, args: 'ssh-agent -s' });
+  const agents = (n) => ({ readSshAgents: () => ({ agents: Array.from({ length: n }, (_, i) => agent(200 + i)), referenced: new Set() }), uid: 501 });
+  const start = (msAgo, count, run) => JSON.stringify({ at: new Date(Date.now() - msAgo).toISOString(), phase: 'start', engine: 'claude', task: run, run_id: run, leaked_ssh_agents: count });
+  const end = (run) => JSON.stringify({ at: new Date().toISOString(), phase: 'end', engine: 'claude', task: run, run_id: run });
+  const status = (deps) => {
+    const out = [];
+    const original = console.log;
+    console.log = (line = '') => out.push(String(line));
+    try {
+      showStatus(root, [], deps);
+    } finally {
+      console.log = original;
+    }
+    return out.join('\n');
+  };
+  const hour = 3600 * 1000;
+  try {
+    require('node:child_process').spawnSync('git', ['init', '-q'], { cwd: root });
+    fs.mkdirSync(path.dirname(file), { recursive: true });
+    const first = new Date(Date.now() - 2 * hour).toISOString().slice(0, 16).replace('T', ' ');
+    fs.writeFileSync(file, [
+      start(30 * hour, 0, 'OLD'), end('OLD'),
+      start(2 * hour, 1, 'A'), end('A'),
+      start(hour, 3, 'B'), end('B'),
+      JSON.stringify({ at: new Date(Date.now() - hour / 2).toISOString(), phase: 'start', engine: 'codex', task: 'C', run_id: 'C', leaked_ssh_agents: null }), end('C'),
+      '',
+    ].join('\n'));
+    const growing = status(agents(5));
+    assert.match(growing, new RegExp(`leaked ssh-agents on this machine: 5, up from 1 at ${first} UTC, about 2 more an hour; stop them now`));
+    const flat = status(agents(1));
+    assert.match(flat, /leaked ssh-agents on this machine: 1; stop them now/, 'no growth, no growth note');
+    fs.writeFileSync(file, `${start(30 * hour, 0, 'OLD')}\n`);
+    assert.match(status(agents(4)), /leaked ssh-agents on this machine: 4; stop them now/, 'a reading older than a day is not used');
+  } finally {
+    fs.rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test('atris engine sweep says how fast leaked ssh-agents grew, the same way the landing status does', () => {
+  const { engineCommand } = require('../commands/engine');
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'engine-sweep-agent-growth-'));
+  const file = path.join(root, RESOURCE_LOG);
+  const agent = (pid) => ({ pid, ppid: 1, uid: 501, age_sec: 3600, args: 'ssh-agent -s' });
+  const hour = 3600 * 1000;
+  const sweep = (n) => {
+    const out = [];
+    const original = console.log;
+    console.log = (line) => out.push(String(line));
+    try {
+      engineCommand(['sweep'], { root, engineSweep: { read: () => ({ agents: Array.from({ length: n }, (_, i) => agent(200 + i)), referenced: new Set() }), uid: 501 } });
+    } finally {
+      console.log = original;
+    }
+    return out.join('\n');
+  };
+  try {
+    fs.mkdirSync(path.dirname(file), { recursive: true });
+    const at = new Date(Date.now() - 2 * hour).toISOString();
+    fs.writeFileSync(file, [
+      JSON.stringify({ at, phase: 'start', engine: 'claude', task: 'A', run_id: 'A', leaked_ssh_agents: 1 }),
+      JSON.stringify({ at: new Date().toISOString(), phase: 'end', engine: 'claude', task: 'A', run_id: 'A' }),
+      '',
+    ].join('\n'));
+    const first = at.slice(0, 16).replace('T', ' ');
+    assert.match(sweep(5), new RegExp(`5 ssh-agents running, 5 look leaked, up from 1 at ${first} UTC, about 2 more an hour \\(no parent`));
+    assert.match(sweep(1), /1 ssh-agent running, 1 looks leaked \(no parent/, 'no growth, no growth note');
+  } finally {
+    fs.rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test('after a sweep stops agents, the growth note counts from what that sweep left', () => {
+  const { leakGrowthNote } = require('../lib/engine-resource');
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'engine-resource-sweep-baseline-'));
+  const file = path.join(root, RESOURCE_LOG);
+  const hour = 3600 * 1000;
+  const ago = (ms) => new Date(Date.now() - ms).toISOString();
+  try {
+    fs.mkdirSync(path.dirname(file), { recursive: true });
+    const sweepAt = ago(2 * hour);
+    fs.writeFileSync(file, [
+      JSON.stringify({ at: ago(5 * hour), phase: 'start', engine: 'claude', task: 'A', run_id: 'A', leaked_ssh_agents: 300 }),
+      JSON.stringify({ at: sweepAt, phase: 'sweep', stopped: [1, 2, 3], failed: [], skipped: [], leaked_ssh_agents: 10 }),
+      JSON.stringify({ at: ago(hour), phase: 'sweep', stopped: [], failed: [], skipped: [], leaked_ssh_agents: 40 }),
+      JSON.stringify({ at: ago(hour / 2), phase: 'start', engine: 'claude', task: 'B', run_id: 'B', leaked_ssh_agents: 70 }),
+      '',
+    ].join('\n'));
+    const reading = readResourceHistory(root).first_day_leak_reading;
+    assert.strictEqual(reading.at, sweepAt, 'the newest sweep that stopped agents is the baseline, not an older start or an idle sweep');
+    const when = sweepAt.slice(0, 16).replace('T', ' ');
+    assert.strictEqual(leakGrowthNote(reading, 90), `, up from 10 left by the sweep at ${when} UTC, about 40 more an hour`);
+    assert.strictEqual(leakGrowthNote(reading, 10), '');
+  } finally {
+    fs.rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test('a read-only ask run writes a start and an end reading, and a run past its time limit says so', async () => {
+  const { runEngineAskJobs } = require('../lib/engine-ask');
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'engine-resource-ask-'));
+  const bin = path.join(root, 'bin');
+  const savedPath = process.env.PATH;
+  try {
+    fs.mkdirSync(bin);
+    // A stand-in engine: answers at once unless the prompt asks it to hang.
+    fs.writeFileSync(path.join(bin, 'claude'), [
+      '#!/bin/sh',
+      'case "$*" in *hang*) sleep 5 ;; esac',
+      'echo "the answer is 42"',
+      '',
+    ].join('\n'));
+    fs.chmodSync(path.join(bin, 'claude'), 0o755);
+    process.env.PATH = `${bin}${path.delimiter}${savedPath}`;
+    const answers = await runEngineAskJobs([
+      { engine: 'claude', model: '', prompt: 'what is six times seven', label: 'quick' },
+      { engine: 'claude', model: '', prompt: 'hang here', label: 'slow' },
+    ], { root, timeoutMs: 1000, concurrency: 1 });
+    assert.strictEqual(answers[0].ok, true, answers[0].stderr);
+    assert.strictEqual(answers[1].timed_out, true);
+    const log = fs.readFileSync(path.join(root, RESOURCE_LOG), 'utf8').trim().split('\n').map((line) => JSON.parse(line));
+    assert.deepStrictEqual(log.map((e) => [e.phase, e.engine, e.task]), [
+      ['start', 'claude', 'ask quick'], ['end', 'claude', 'ask quick'],
+      ['start', 'claude', 'ask slow'], ['end', 'claude', 'ask slow'],
+    ]);
+    assert.strictEqual(log[0].run_id, log[1].run_id);
+    assert.notStrictEqual(log[0].run_id, log[2].run_id);
+    assert.ok(Array.isArray(log[0].load) && Number.isFinite(log[1].duration_ms));
+    assert.strictEqual(log[1].timed_out, undefined);
+    assert.strictEqual(log[3].timed_out, true, 'the end line says the run passed its time limit');
+  } finally {
+    process.env.PATH = savedPath;
+    fs.rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test('mission runners record paired readings on success, SIGKILL and startup failure', () => {
+  const { spawnSync } = require('node:child_process');
+  const { withMissionFullJson } = require('./helpers/mission-json');
+  const { scrubAgentEnv } = require('./helpers/agent-env');
+  const cli = path.join(__dirname, '..', 'bin', 'atris.js');
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'engine-resource-mission-tick-'));
+  const runnerEnv = ['ATRIS_RUNNER_PROFILE', 'ATRIS_RUNNER_MODEL', 'ATRIS_RUNNER_BIN', 'ATRIS_RUNNER_COMMAND_TEMPLATE', 'ATRIS_CLAUDE_MODEL', 'ATRIS_CLAUDE_BIN', 'ATRIS_CLAUDE_COMMAND_TEMPLATE', 'ATRIS_DISPATCH_DEPTH', 'ATRIS_DISPATCH_MAX_DEPTH'];
+  const home = path.join(dir, 'home');
+  const bin = path.join(dir, 'bin');
+  const run = (args) => {
+    const clean = scrubAgentEnv(process.env);
+    for (const name of runnerEnv) delete clean[name];
+    return spawnSync(process.execPath, [cli, ...withMissionFullJson(args)], {
+      cwd: dir,
+      encoding: 'utf8',
+      timeout: 60000,
+      env: {
+        ...clean,
+        ATRIS_SKIP_UPDATE_CHECK: '1',
+        HOME: home,
+        ATRIS_TASKS_DB: path.join(dir, '.atris', 'tasks.db'),
+        CODEX_HOME: path.join(home, '.codex'),
+        ATRIS_MACHINE_ROSTER_PATH: path.join(home, 'roster.json'),
+        ATRIS_MACHINE_ROSTER_MD_PATH: path.join(home, 'roster.md'),
+        ATRIS_ROSTER_SESSIONS_DIR: path.join(home, 'roster-sessions'),
+        PATH: `${bin}${path.delimiter}/usr/bin${path.delimiter}/bin`,
+      },
+    });
+  };
+  try {
+    fs.mkdirSync(home, { recursive: true });
+    fs.mkdirSync(bin, { recursive: true });
+    for (const name of ['codex', 'claude']) {
+      // The claude runner reads --help for the flags it needs before a tick.
+      fs.writeFileSync(path.join(bin, name), `#!/bin/sh\nif [ "$1" = --help ]; then echo '--output-format --permission-mode --resume --session-id --include-partial-messages --verbose --model --effort'; exit 0; fi\necho ${name} tick\n`);
+      fs.chmodSync(path.join(bin, name), 0o755);
+    }
+    const ids = [];
+    for (const runner of ['codex', 'claude']) {
+      const started = run(['mission', 'start', `${runner} reading tick`, '--owner', 'mission-lead', '--runner', runner, '--no-verify', '--json']);
+      assert.strictEqual(started.status, 0, started.stderr || started.stdout);
+      const mission = JSON.parse(started.stdout).mission;
+      ids.push(mission.id);
+      const ran = run(['mission', 'run', mission.id, '--max-ticks', '1', '--max-wall', '60', '--no-verify', '--json']);
+      assert.strictEqual(ran.status, 0, ran.stderr || ran.stdout);
+    }
+    const log = fs.readFileSync(path.join(dir, RESOURCE_LOG), 'utf8').trim().split('\n').map((line) => JSON.parse(line));
+    assert.deepStrictEqual(log.map((e) => [e.phase, e.engine, e.task]), [
+      ['start', 'codex', ids[0]], ['end', 'codex', ids[0]],
+      ['start', 'claude', ids[1]], ['end', 'claude', ids[1]],
+    ]);
+    assert.strictEqual(log[0].run_id, log[1].run_id);
+    assert.strictEqual(log[2].run_id, log[3].run_id);
+    assert.notStrictEqual(log[0].run_id, log[2].run_id);
+    assert.ok(log.filter((entry) => entry.phase === 'end').every((entry) => entry.duration_ms >= 0));
+    assert.ok(Array.isArray(log[0].load) && Number.isFinite(log[1].duration_ms) && Number.isFinite(log[3].duration_ms));
+    for (const runner of ['codex', 'claude']) {
+      fs.writeFileSync(path.join(bin, runner), `#!/bin/sh\nif [ "$1" = --help ]; then echo '--output-format --permission-mode --resume --session-id --include-partial-messages --verbose --model --effort'; exit 0; fi\nkill -9 $$\n`);
+      const started = run(['mission', 'start', `${runner} killed reading`, '--owner', 'mission-lead', '--runner', runner, '--no-verify', '--json']);
+      assert.strictEqual(started.status, 0, started.stderr || started.stdout);
+      const mission = JSON.parse(started.stdout).mission;
+      const ran = run(['mission', 'run', mission.id, '--max-ticks', '1', '--max-wall', '60', '--no-verify', '--json']);
+      assert.strictEqual(ran.error, undefined, ran.stderr || ran.stdout);
+      const killed = fs.readFileSync(path.join(dir, RESOURCE_LOG), 'utf8').trim().split('\n')
+        .map((line) => JSON.parse(line)).filter((entry) => entry.task === mission.id);
+      assert.deepStrictEqual(killed.map((entry) => entry.phase), ['start', 'end']);
+      assert.strictEqual(killed[0].run_id, killed[1].run_id);
+      assert.strictEqual(killed[1].signal, 'SIGKILL', `${runner}: ${ran.stdout}`);
+      assert.strictEqual(killed[1].cause, killedCauseText(killed[1]));
+      assert.strictEqual(killed[1].timed_out, undefined);
+      assert.ok(Number.isFinite(killed[1].duration_ms) && killed[1].duration_ms >= 0);
+      console.log(`${runner} force-kill CLI exit ${ran.status}: ${JSON.stringify(killed[1])}`);
+    }
+    for (const runner of ['codex', 'claude']) {
+      // Claude must pass its help probe, then disappear before the actual spawn.
+      // The generic runner starts through a shell, which reports the missing interpreter.
+      fs.writeFileSync(path.join(bin, runner), runner === 'claude'
+        ? '#!/bin/sh\nif [ "$1" = --help ]; then echo "--output-format --permission-mode --resume --session-id --include-partial-messages"; rm -- "$0"; exit 0; fi\nexit 99\n'
+        : `#!${path.join(dir, 'missing-interpreter')}\n`);
+      const started = run(['mission', 'start', `${runner} startup failure reading`, '--owner', 'mission-lead', '--runner', runner, '--no-verify', '--json']);
+      assert.strictEqual(started.status, 0, started.stderr || started.stdout);
+      const mission = JSON.parse(started.stdout).mission;
+      const ran = run(['mission', 'run', mission.id, '--max-ticks', '1', '--max-wall', '60', '--no-verify', '--json']);
+      assert.strictEqual(ran.error, undefined, ran.stderr || ran.stdout);
+      assert.ok(ran.stdout.trim(), `${runner}: exit ${ran.status}, stderr ${ran.stderr}`);
+      const result = JSON.parse(ran.stdout);
+      if (runner === 'claude') {
+        assert.strictEqual(result.ticks[0].status, 'errored');
+        assert.strictEqual(result.ticks[0].claude.ok, false);
+      } else {
+        assert.match(JSON.stringify(result), /not found|No such file/i, `${runner}: startup must fail`);
+      }
+      assert.strictEqual(fs.existsSync(path.join(bin, 'claude')), runner !== 'claude');
+      const failed = fs.readFileSync(path.join(dir, RESOURCE_LOG), 'utf8').trim().split('\n')
+        .map((line) => JSON.parse(line)).filter((entry) => entry.task === mission.id);
+      assert.deepStrictEqual(failed.map((entry) => entry.phase), ['start', 'end']);
+      assert.strictEqual(failed[0].run_id, failed[1].run_id);
+      assert.ok(Array.isArray(failed[0].load) && Array.isArray(failed[1].load));
+      assert.ok(Number.isInteger(failed[1].duration_ms) && failed[1].duration_ms >= 0);
+      assert.strictEqual(failed[1].signal, undefined);
+      assert.strictEqual(failed[1].cause, undefined);
+      assert.strictEqual(failed[1].timed_out, undefined);
+      const startupError = result.ticks[0].claude.error || result.ticks[0].claude.stderr;
+      assert.ok(startupError, `${runner}: the runner result must retain its startup error`);
+      assert.strictEqual(failed[1].error, startupError, `${runner}: the end reading must retain the original startup error`);
+      console.log(`${runner} startup failure CLI exit ${ran.status}: ${JSON.stringify(failed[1])}`);
+    }
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test('prep passes record paired readings and name the cause of a SIGKILL', async () => {
+  const { spawnSync } = require('node:child_process');
+  const { readEngineRegistry, setEngineHealth } = require('../lib/engine-registry');
+  const { runPrepPass, runPrepPassSync } = require('../lib/roster-prep');
+  const keys = ['ATRIS_MACHINE_ROSTER_PATH', 'ATRIS_ROUTER_EXPLAIN', 'ATRIS_RUNNER_PROFILE', 'ATRIS_RUNNER_MODEL', 'ATRIS_RUNNER_BIN',
+    'ATRIS_RUNNER_COMMAND_TEMPLATE', 'ATRIS_CLAUDE_MODEL', 'ATRIS_CLAUDE_BIN', 'ATRIS_CLAUDE_COMMAND_TEMPLATE', 'PATH'];
+  const saved = new Map(keys.map((key) => [key, process.env[key]]));
+  const root = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'prep-resource-')));
+  const home = fs.mkdtempSync(path.join(os.tmpdir(), 'prep-resource-home-'));
+  const bin = fs.mkdtempSync(path.join(os.tmpdir(), 'prep-resource-bin-'));
+  const engine = (body) => fs.writeFileSync(path.join(bin, 'claude'), `#!/bin/sh\n${body}\n`, { mode: 0o755 });
+  const task = { id: 'CLI-1', title: 'build the widget' };
+  const pass = { prepJob: 'search', forJob: 'build', task, root, worktreePath: root };
+  try {
+    spawnSync('git', ['init', '-q', root]);
+    fs.mkdirSync(path.join(root, 'atris'));
+    fs.writeFileSync(path.join(root, 'atris', 'ROSTER.md'), '# roster\n\n## search\n- claude, model: haiku\n\n## build\n- cursor, prep: search\n');
+    for (const key of keys) if (key !== 'PATH') delete process.env[key];
+    process.env.ATRIS_MACHINE_ROSTER_PATH = path.join(home, '.atris', 'roster.json');
+    process.env.ATRIS_ROUTER_EXPLAIN = '0';
+    process.env.PATH = `${bin}${path.delimiter}${saved.get('PATH') || ''}`;
+    readEngineRegistry(root);
+    for (const name of ['cursor', 'claude', 'haiku']) setEngineHealth(name, 'ready', root);
+    engine('echo "read lib/widget.js first"');
+    const ok = runPrepPassSync(pass);
+    engine('kill -KILL $$');
+    const killed = runPrepPassSync(pass);
+    const killedAsync = await runPrepPass(pass);
+    assert.equal(ok.ok, true, ok.reason);
+    assert.equal(killed.ok, false);
+    assert.equal(killedAsync.ok, false);
+    const lines = fs.readFileSync(path.join(root, RESOURCE_LOG), 'utf8').trim().split('\n').map(JSON.parse);
+    assert.deepEqual(lines.map((line) => line.phase), ['start', 'end', 'start', 'end', 'start', 'end']);
+    for (let i = 0; i < lines.length; i += 2) {
+      assert.match(lines[i].run_id, /^[0-9a-f-]{36}$/);
+      assert.equal(lines[i + 1].run_id, lines[i].run_id);
+      assert.equal(lines[i].engine, 'claude');
+      assert.equal(lines[i].task, 'prep for build');
+      assert.ok(Array.isArray(lines[i + 1].load));
+      assert.ok(Number.isInteger(lines[i + 1].duration_ms));
+    }
+    assert.equal(lines[1].signal, undefined);
+    assert.equal(lines[1].error, undefined);
+    for (const [line, result] of [[lines[3], killed], [lines[5], killedAsync]]) {
+      assert.equal(line.signal, 'SIGKILL');
+      assert.match(line.cause, /^killed \((machine memory low|cause unknown)\)$/);
+      // The reason the prep pass hands back, and the run record keeps, names the cause.
+      assert.ok(result.reason.includes(line.cause), result.reason);
+    }
+    console.log(`prep readings: ${JSON.stringify([lines[3], lines[5]])}`);
+    console.log(`prep kill reasons: ${killed.reason} | ${killedAsync.reason}`);
+  } finally {
+    for (const [key, value] of saved) {
+      if (value === undefined) delete process.env[key];
+      else process.env[key] = value;
+    }
+    for (const dir of [root, home, bin]) fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test('dream launches record paired readings and name the cause of a SIGKILL', () => {
+  const { spawnSync } = require('node:child_process');
+  const root = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'dream-resource-')));
+  const bin = path.join(root, 'bin');
+  const dream = () => spawnSync(process.execPath, [path.join(__dirname, '..', 'bin', 'atris.js'), 'dream', '--yes'], {
+    cwd: root,
+    encoding: 'utf8',
+    timeout: 60000,
+    env: { ...process.env, ATRIS_SKIP_UPDATE_CHECK: '1', PATH: `${bin}${path.delimiter}${process.env.PATH}` },
+  });
+  const engine = (body) => fs.writeFileSync(path.join(bin, 'claude'), `#!/bin/sh\n${body}\n`, { mode: 0o755 });
+  try {
+    fs.mkdirSync(path.join(root, 'atris', 'logs', '2099'), { recursive: true });
+    fs.writeFileSync(path.join(root, 'atris', 'logs', '2099', '2099-01-01.md'), '# Log 2099-01-01\n\n## Completed\n\n- shipped a loop\n');
+    fs.mkdirSync(bin);
+    const cards = JSON.stringify([
+      { title: 'Check open wishes', why: 'A wish needs a next step.', move: 'Answer the waiting wish.' },
+      { title: 'Review mission proof', why: 'A proof is ready.', move: 'Read the latest receipt.' },
+    ]);
+    engine(`cat <<'CARDS'\n${cards}\nCARDS`);
+    const ok = dream();
+    engine('kill -KILL $$');
+    const killed = dream();
+    assert.equal(ok.status, 0, ok.stderr);
+    assert.match(ok.stdout, /Dreamed 2 cards/);
+    assert.equal(killed.status, 0, killed.stderr);
+    const lines = fs.readFileSync(path.join(root, RESOURCE_LOG), 'utf8').trim().split('\n').map(JSON.parse);
+    // One launch for the clean dream; the killed dream tries each model once.
+    assert.deepEqual(lines.map((line) => line.phase), ['start', 'end', 'start', 'end', 'start', 'end']);
+    for (let i = 0; i < lines.length; i += 2) {
+      assert.match(lines[i].run_id, /^[0-9a-f-]{36}$/);
+      assert.equal(lines[i + 1].run_id, lines[i].run_id);
+      assert.equal(lines[i].engine, 'claude');
+      assert.equal(lines[i].task, 'dream');
+      assert.ok(Array.isArray(lines[i + 1].load));
+      assert.ok(Number.isInteger(lines[i + 1].duration_ms));
+    }
+    assert.equal(lines[1].signal, undefined);
+    assert.equal(lines[1].error, undefined);
+    for (const line of [lines[3], lines[5]]) {
+      assert.equal(line.signal, 'SIGKILL');
+      assert.match(line.cause, /^killed \((machine memory low|cause unknown)\)$/);
+    }
+    // The line the operator reads names the cause.
+    assert.ok(killed.stdout.includes(lines[5].cause), killed.stdout);
+    console.log(`dream readings: ${JSON.stringify([lines[3], lines[5]])}`);
+    console.log(`dream kill line: ${killed.stdout.split('\n')[0]}`);
+  } finally {
+    fs.rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test('asks with their own launcher, like link and the dispatch scout, record paired readings', async () => {
+  const { linkCommand } = require('../commands/link');
+  const keys = ['ATRIS_CLAUDE_BIN', 'ATRIS_CLAUDE_COMMAND_TEMPLATE', 'ATRIS_RUNNER_PROFILE', 'ATRIS_RUNNER_BIN', 'ATRIS_RUNNER_COMMAND_TEMPLATE', 'PATH'];
+  const saved = new Map(keys.map((key) => [key, process.env[key]]));
+  const root = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'link-resource-')));
+  const bin = path.join(root, 'bin');
+  const engine = (body) => fs.writeFileSync(path.join(bin, 'claude'), `#!/bin/sh\n${body}\n`, { mode: 0o755 });
+  const report = { jobs: [{ job: 'build', engine: 'claude' }], team: [] };
+  const quiet = { log: console.log, error: console.error };
+  const link = async () => {
+    console.log = () => {};
+    console.error = () => {};
+    try {
+      return await linkCommand(['a sled', 'a dog', '--json'], { root, rosterReport: () => report, timeoutMs: 30000 });
+    } finally {
+      console.log = quiet.log;
+      console.error = quiet.error;
+    }
+  };
+  try {
+    fs.mkdirSync(bin);
+    for (const key of keys) if (key !== 'PATH') delete process.env[key];
+    process.env.PATH = `${bin}${path.delimiter}${saved.get('PATH') || ''}`;
+    engine('echo "{}"');
+    await link();
+    engine('kill -KILL $$');
+    await link();
+    const lines = fs.readFileSync(path.join(root, RESOURCE_LOG), 'utf8').trim().split('\n').map(JSON.parse);
+    assert.deepEqual(lines.map((line) => line.phase), ['start', 'end', 'start', 'end']);
+    for (let i = 0; i < lines.length; i += 2) {
+      assert.match(lines[i].run_id, /^[0-9a-f-]{36}$/);
+      assert.equal(lines[i + 1].run_id, lines[i].run_id);
+      assert.equal(lines[i].engine, 'claude');
+      assert.equal(lines[i].task, 'ask link');
+      assert.ok(Array.isArray(lines[i + 1].load));
+      assert.ok(Number.isInteger(lines[i + 1].duration_ms));
+    }
+    assert.equal(lines[1].signal, undefined);
+    assert.equal(lines[3].signal, 'SIGKILL');
+    assert.match(lines[3].cause, /^killed \((machine memory low|cause unknown)\)$/);
+    console.log(`link readings: ${JSON.stringify(lines[3])}`);
+  } finally {
+    for (const [key, value] of saved) {
+      if (value === undefined) delete process.env[key];
+      else process.env[key] = value;
+    }
+    fs.rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test('a killed ask prints the cause from its end reading in link and engine ask', () => {
+  const { spawnSync } = require('node:child_process');
+  const root = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'ask-cause-')));
+  const bin = path.join(root, 'bin');
+  const home = path.join(root, 'home');
+  const env = { ...process.env, HOME: home, ATRIS_SKIP_UPDATE_CHECK: '1', ATRIS_MACHINE_ROSTER_PATH: path.join(home, '.atris', 'roster.json'), PATH: `${bin}${path.delimiter}${process.env.PATH}` };
+  for (const key of ['ATRIS_RUNNER_PROFILE', 'ATRIS_RUNNER_BIN', 'ATRIS_RUNNER_COMMAND_TEMPLATE', 'ATRIS_CLAUDE_BIN', 'ATRIS_CLAUDE_COMMAND_TEMPLATE']) delete env[key];
+  const atris = (...args) => spawnSync(process.execPath, [path.join(__dirname, '..', 'bin', 'atris.js'), ...args], { cwd: root, encoding: 'utf8', timeout: 60000, env });
+  try {
+    fs.mkdirSync(bin);
+    fs.mkdirSync(home);
+    fs.mkdirSync(path.join(root, 'atris'));
+    fs.writeFileSync(path.join(root, 'atris', 'ROSTER.md'), '# roster\n\n## build\n- claude\n');
+    fs.writeFileSync(path.join(bin, 'claude'), '#!/bin/sh\nkill -KILL $$\n', { mode: 0o755 });
+    const link = atris('link', 'a sled', 'a dog');
+    const ask = atris('engine', 'ask', '--engine', 'claude', 'say hi');
+    const ends = fs.readFileSync(path.join(root, RESOURCE_LOG), 'utf8').trim().split('\n').map(JSON.parse).filter((line) => line.phase === 'end');
+    assert.equal(ends.length, 2);
+    for (const end of ends) {
+      assert.equal(end.signal, 'SIGKILL');
+      assert.match(end.cause, /^killed \((machine memory low|cause unknown)\)$/);
+    }
+    assert.equal(link.status, 1);
+    assert.ok(link.stderr.includes(`stopped by SIGKILL; ${ends[0].cause}`), link.stderr);
+    assert.ok(`${ask.stdout}${ask.stderr}`.includes(`stopped by SIGKILL; ${ends[1].cause}`), `${ask.stdout}${ask.stderr}`);
+    console.log(`link line: ${link.stderr.trim()}`);
+    console.log(`ask lines: ${`${ask.stdout}${ask.stderr}`.trim()}`);
+  } finally {
+    fs.rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test('the write coach records paired readings and names the cause of a SIGKILL', () => {
+  const { spawnSync } = require('node:child_process');
+  const root = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'write-resource-')));
+  const bin = path.join(root, 'bin');
+  const env = { ...process.env, ATRIS_SKIP_UPDATE_CHECK: '1', PATH: `${bin}${path.delimiter}${process.env.PATH}` };
+  const atris = (...args) => spawnSync(process.execPath, [path.join(__dirname, '..', 'bin', 'atris.js'), ...args], { cwd: root, encoding: 'utf8', timeout: 60000, env });
+  // Answers the installed check, then runs the given body for the coach prompt.
+  const engine = (body) => fs.writeFileSync(path.join(bin, 'claude'), `#!/bin/sh\n[ "$1" = "--version" ] && { echo 1.0; exit 0; }\n${body}\n`, { mode: 0o755 });
+  try {
+    fs.mkdirSync(bin);
+    engine('exit 0');
+    const started = atris('write', 'start', 'why sleds need dogs');
+    assert.equal(started.status, 0, started.stderr);
+    engine('printf "QUESTION: what does the dog want?\\nLESSON: start with the dog\\n"');
+    const ok = atris('write', 'coach');
+    engine('kill -KILL $$');
+    const killed = atris('write', 'coach');
+    assert.equal(ok.status, 0, ok.stderr);
+    assert.match(ok.stdout, /QUESTION: what does the dog want/);
+    assert.equal(killed.status, 0, killed.stderr);
+    const lines = fs.readFileSync(path.join(root, RESOURCE_LOG), 'utf8').trim().split('\n').map(JSON.parse);
+    assert.deepEqual(lines.map((line) => line.phase), ['start', 'end', 'start', 'end']);
+    for (let i = 0; i < lines.length; i += 2) {
+      assert.match(lines[i].run_id, /^[0-9a-f-]{36}$/);
+      assert.equal(lines[i + 1].run_id, lines[i].run_id);
+      assert.equal(lines[i].engine, 'claude');
+      assert.equal(lines[i].task, 'write coach');
+      assert.ok(Array.isArray(lines[i + 1].load));
+      assert.ok(Number.isInteger(lines[i + 1].duration_ms));
+    }
+    assert.equal(lines[1].signal, undefined);
+    assert.equal(lines[1].error, undefined);
+    assert.equal(lines[3].signal, 'SIGKILL');
+    assert.match(lines[3].cause, /^killed \((machine memory low|cause unknown)\)$/);
+    // The fallback line the writer reads names the cause.
+    assert.ok(killed.stdout.includes(lines[3].cause), killed.stdout);
+    console.log(`write readings: ${JSON.stringify(lines[3])}`);
+    console.log(`write fallback line: ${killed.stdout.split('\n').find((line) => line.includes('coach')) || ''}`);
+  } finally {
+    fs.rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test('the youtube digest records paired readings and names the cause of a SIGKILL', () => {
+  const { spawnSync } = require('node:child_process');
+  const root = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'digest-resource-')));
+  const bin = path.join(root, 'bin');
+  const env = { ...process.env, ATRIS_SKIP_UPDATE_CHECK: '1', PATH: `${bin}${path.delimiter}${process.env.PATH}` };
+  const digest = () => spawnSync(process.execPath, [path.join(__dirname, '..', 'bin', 'atris.js'), 'youtube', 'digest'], { cwd: root, encoding: 'utf8', timeout: 60000, env });
+  const engine = (body) => fs.writeFileSync(path.join(bin, 'claude'), `#!/bin/sh\n${body}\n`, { mode: 0o755 });
+  try {
+    fs.mkdirSync(bin);
+    fs.mkdirSync(path.join(root, 'atris', 'wiki', 'briefs'), { recursive: true });
+    const today = new Date().toISOString().slice(0, 10);
+    fs.writeFileSync(path.join(root, 'atris', 'wiki', 'briefs', 'youtube-abc.md'), `source: https://www.youtube.com/watch?v=abc\ndate: ${today}\n\n# sleds and dogs\n\nthe dog sets the pace.\n`);
+    engine('echo "# what this week\'s videos changed"; echo "- the dog sets the pace (atris/wiki/briefs/youtube-abc.md)"');
+    const ok = digest();
+    engine('kill -KILL $$');
+    const killed = digest();
+    assert.equal(ok.status, 0, `${ok.stdout}${ok.stderr}`);
+    assert.match(ok.stdout, /digest filed/);
+    assert.equal(killed.status, 1, `${killed.stdout}${killed.stderr}`);
+    const lines = fs.readFileSync(path.join(root, RESOURCE_LOG), 'utf8').trim().split('\n').map(JSON.parse);
+    assert.deepEqual(lines.map((line) => line.phase), ['start', 'end', 'start', 'end']);
+    for (let i = 0; i < lines.length; i += 2) {
+      assert.match(lines[i].run_id, /^[0-9a-f-]{36}$/);
+      assert.equal(lines[i + 1].run_id, lines[i].run_id);
+      assert.equal(lines[i].engine, 'claude');
+      assert.equal(lines[i].task, 'youtube digest');
+      assert.ok(Array.isArray(lines[i + 1].load));
+      assert.ok(Number.isInteger(lines[i + 1].duration_ms));
+    }
+    assert.equal(lines[1].signal, undefined);
+    assert.equal(lines[1].error, undefined);
+    assert.equal(lines[3].signal, 'SIGKILL');
+    assert.match(lines[3].cause, /^killed \((machine memory low|cause unknown)\)$/);
+    // A kill used to read as an engine that returned no text.
+    assert.ok(killed.stdout.includes(`digest engine stopped by SIGKILL; ${lines[3].cause}`), killed.stdout);
+    console.log(`digest readings: ${JSON.stringify(lines[3])}`);
+    console.log(`digest kill line: ${killed.stdout.trim()}`);
+  } finally {
+    fs.rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test('youtube notes record paired readings around their writer and name the cause of a SIGKILL', () => {
+  const { spawnSync } = require('node:child_process');
+  const root = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'ytnotes-resource-')));
+  const bin = path.join(root, 'bin');
+  const work = path.join(root, 'work');
+  const exec = (file, lines) => fs.writeFileSync(path.join(bin, file), `${lines.join('\n')}\n`, { mode: 0o755 });
+  const d = new Date();
+  const today = `${d.getFullYear()}.${String(d.getMonth() + 1).padStart(2, '0')}.${String(d.getDate()).padStart(2, '0')}`;
+  const notes = () => spawnSync(path.join(__dirname, '..', 'scripts', 'det', 'ytnotes'), ['https://www.youtube.com/watch?v=sled123'], {
+    cwd: root,
+    encoding: 'utf8',
+    timeout: 30000,
+    env: { ...process.env, ATRIS_YTNOTES_ENGINE: 'haiku', ATRIS_YTNOTES_ROSTER: '0', TMPDIR: work, PATH: `${bin}:${process.env.PATH || '/usr/bin'}` },
+  });
+  try {
+    for (const dir of [bin, work, path.join(root, 'atris')]) fs.mkdirSync(dir);
+    // A stand-in caption tool: one caption line, no network.
+    exec('yt-dlp', [
+      '#!/bin/sh',
+      `if [ "$1" = "--version" ]; then echo "${today}"; exit 0; fi`,
+      'printf "%s\\n" "WEBVTT" "" "00:00:00.000 --> 00:00:02.000" "The dog sets the pace." > yt_sled123.en.vtt',
+      'printf "%s\\n" "sled123|Sled Dogs|Trail|0:02"',
+    ]);
+    exec('claude', ['#!/bin/sh', 'printf "%s\\n" "# Sled Dogs" "" "The dog sets the pace."']);
+    const ok = notes();
+    exec('claude', ['#!/bin/sh', 'kill -KILL $$']);
+    const killed = notes();
+    assert.equal(ok.status, 0, ok.stderr);
+    assert.equal(killed.status, 3, killed.stderr);
+    const lines = fs.readFileSync(path.join(root, RESOURCE_LOG), 'utf8').trim().split('\n').map(JSON.parse);
+    assert.deepEqual(lines.map((line) => line.phase), ['start', 'end', 'start', 'end']);
+    for (let i = 0; i < lines.length; i += 2) {
+      assert.match(lines[i].run_id, /^[0-9a-f-]{36}$/);
+      assert.equal(lines[i + 1].run_id, lines[i].run_id);
+      assert.equal(lines[i].engine, 'claude');
+      assert.equal(lines[i].task, 'youtube notes');
+      assert.ok(Array.isArray(lines[i + 1].load));
+      assert.ok(Number.isInteger(lines[i + 1].duration_ms));
+    }
+    // The start names the notes script, which lives for the whole run, not the
+    // short helper that wrote it, so a sweep never closes a run still going.
+    assert.equal(lines[0].pid, ok.pid);
+    assert.equal(lines[2].pid, killed.pid);
+    assert.equal(lines[1].signal, undefined);
+    assert.equal(lines[1].error, undefined);
+    assert.equal(lines[3].signal, 'SIGKILL');
+    assert.match(lines[3].cause, /^killed \((machine memory low|cause unknown)\)$/);
+    // The notes script says which writer was killed and why, before its no-notes line.
+    assert.ok(killed.stderr.includes(`claude stopped by SIGKILL; ${lines[3].cause}`), killed.stderr);
+    console.log(`ytnotes readings: ${JSON.stringify(lines[3])}`);
+    console.log(`ytnotes kill line: ${killed.stderr.split('\n').find((line) => line.includes('SIGKILL')) || ''}`);
+  } finally {
+    fs.rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test('youtube notes in auto mode show a killed writer\'s cause on screen before the fallback line', () => {
+  const { spawnSync } = require('node:child_process');
+  const root = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'ytnotes-auto-')));
+  const bin = path.join(root, 'bin');
+  const work = path.join(root, 'work');
+  const exec = (file, lines) => fs.writeFileSync(path.join(bin, file), `${lines.join('\n')}\n`, { mode: 0o755 });
+  const d = new Date();
+  const today = `${d.getFullYear()}.${String(d.getMonth() + 1).padStart(2, '0')}.${String(d.getDate()).padStart(2, '0')}`;
+  try {
+    for (const dir of [bin, work, path.join(root, 'atris')]) fs.mkdirSync(dir);
+    exec('yt-dlp', [
+      '#!/bin/sh',
+      `if [ "$1" = "--version" ]; then echo "${today}"; exit 0; fi`,
+      'printf "%s\\n" "WEBVTT" "" "00:00:00.000 --> 00:00:02.000" "The dog sets the pace." > yt_sled123.en.vtt',
+      'printf "%s\\n" "sled123|Sled Dogs|Trail|0:02"',
+    ]);
+    exec('claude', ['#!/bin/sh', 'kill -KILL $$']);
+    exec('codex', ['#!/bin/sh', 'printf "%s\\n" "# Sled Dogs" "" "The dog sets the pace."']);
+    // Only the stand-in writers are on the path, so no real writer is launched.
+    const ran = spawnSync(path.join(__dirname, '..', 'scripts', 'det', 'ytnotes'), ['https://www.youtube.com/watch?v=sled123'], {
+      cwd: root,
+      encoding: 'utf8',
+      timeout: 30000,
+      env: { ...process.env, ATRIS_YTNOTES_ENGINE: 'auto', ATRIS_YTNOTES_ROSTER: '0', TMPDIR: work, PATH: `${bin}:${path.dirname(process.execPath)}:/usr/bin:/bin` },
+    });
+    assert.equal(ran.status, 0, ran.stderr);
+    const lines = fs.readFileSync(path.join(root, RESOURCE_LOG), 'utf8').trim().split('\n').map(JSON.parse);
+    const killed = lines.find((line) => line.phase === 'end' && line.engine === 'claude');
+    assert.equal(killed.signal, 'SIGKILL');
+    const screen = ran.stderr.split('\n');
+    const fallback = screen.indexOf('Haiku did not answer; writing the notes with Codex instead.');
+    assert.ok(fallback > 0, ran.stderr);
+    assert.equal(screen[fallback - 1], `claude stopped by SIGKILL; ${killed.cause}`);
+    assert.ok(screen.includes('notes by Codex'), ran.stderr);
+    console.log(`ytnotes auto screen: ${screen.slice(fallback - 1, fallback + 1).join(' | ')}`);
+  } finally {
+    fs.rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test('youtube notes run outside an Atris workspace write no readings', () => {
+  const { spawnSync } = require('node:child_process');
+  const root = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'ytnotes-plain-')));
+  const bin = path.join(root, 'bin');
+  const work = path.join(root, 'work');
+  const exec = (file, lines) => fs.writeFileSync(path.join(bin, file), `${lines.join('\n')}\n`, { mode: 0o755 });
+  const d = new Date();
+  const today = `${d.getFullYear()}.${String(d.getMonth() + 1).padStart(2, '0')}.${String(d.getDate()).padStart(2, '0')}`;
+  try {
+    for (const dir of [bin, work]) fs.mkdirSync(dir);
+    exec('yt-dlp', [
+      '#!/bin/sh',
+      `if [ "$1" = "--version" ]; then echo "${today}"; exit 0; fi`,
+      'printf "%s\\n" "WEBVTT" "" "00:00:00.000 --> 00:00:02.000" "The dog sets the pace." > yt_sled123.en.vtt',
+      'printf "%s\\n" "sled123|Sled Dogs|Trail|0:02"',
+    ]);
+    exec('claude', ['#!/bin/sh', 'printf "%s\\n" "# Sled Dogs" "" "The dog sets the pace."']);
+    const ran = spawnSync(path.join(__dirname, '..', 'scripts', 'det', 'ytnotes'), ['https://www.youtube.com/watch?v=sled123'], {
+      cwd: root,
+      encoding: 'utf8',
+      timeout: 30000,
+      env: { ...process.env, ATRIS_YTNOTES_ENGINE: 'haiku', ATRIS_YTNOTES_ROSTER: '0', TMPDIR: work, PATH: `${bin}:${process.env.PATH || '/usr/bin'}` },
+    });
+    assert.equal(ran.status, 0, ran.stderr);
+    assert.equal(fs.existsSync(path.join(root, '.atris')), false);
+  } finally {
+    fs.rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test('an unreadable process list is reported instead of a clean agent count', () => {
+  for (const failure of [() => ({ status: 1, stdout: '' }), () => { throw new Error('process scan timed out'); }]) {
+    const scan = readSshAgents({ run: (cmd, args) => {
+      if (cmd === 'ps' && !args.includes('-E')) return failure();
+      if (cmd === 'ps') return { status: 0, stdout: '  300 SHELL=/bin/zsh' };
+      return { status: 1, stdout: '' };
+    } });
+    assert.deepStrictEqual(scan.unread, ['process list']);
+    assert.deepStrictEqual(scan.agents, []);
+  }
+});
+
+test('the real sweep warns when the system cannot provide its process list', { skip: process.platform !== 'darwin' }, () => {
+  const { spawnSync } = require('node:child_process');
+  const cwd = fs.mkdtempSync(path.join(os.tmpdir(), 'engine-sweep-no-ps-'));
+  try {
+    const ran = spawnSync('/usr/bin/sandbox-exec', [
+      '-p', '(version 1)(allow default)(deny process-exec (literal "/bin/ps"))',
+      process.execPath, path.join(__dirname, '..', 'bin', 'atris.js'), 'engine', 'sweep',
+    ], { cwd, encoding: 'utf8', timeout: 30000 });
+    assert.equal(ran.status, 0, ran.stderr);
+    assert.match(ran.stdout, /could not read the process list/);
+    assert.match(ran.stdout, /the leak count may be incomplete/);
+  } finally {
+    fs.rmSync(cwd, { recursive: true, force: true });
+  }
+});
+
+test('start leak readings stay unknown when any scan reader is unavailable', () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'engine-resource-unread-'));
+  try {
+    for (const missing of ['process list', 'process environments', 'agent sockets']) {
+      const start = recordEngineResource(root, { phase: 'start' }, {
+        platform: 'linux', uid: 501, loadavg: () => [0, 0, 0],
+        readSshAgents: () => ({ agents: [], referenced: new Set(), unread: [missing] }),
+      });
+      assert.strictEqual(start.leaked_ssh_agents, null, missing);
+    }
+  } finally {
+    fs.rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test('real start recording keeps a denied process scan unknown on disk', { skip: process.platform !== 'darwin' }, () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'engine-resource-denied-'));
+  try {
+    const probe = `
+      const { recordEngineResource } = require(${JSON.stringify(path.join(__dirname, '..', 'lib', 'engine-resource'))});
+      process.stdout.write(JSON.stringify(recordEngineResource(${JSON.stringify(root)}, { phase: 'start', engine: 'probe' })));
+    `;
+    const ran = require('node:child_process').spawnSync('/usr/bin/sandbox-exec', [
+      '-p', '(version 1)(allow default)(deny process-exec (literal "/bin/ps"))',
+      process.execPath, '-e', probe,
+    ], { encoding: 'utf8', timeout: 30000 });
+    assert.equal(ran.status, 0, ran.stderr);
+    const saved = JSON.parse(fs.readFileSync(path.join(root, RESOURCE_LOG), 'utf8'));
+    assert.strictEqual(saved.leaked_ssh_agents, null);
+    assert.deepStrictEqual(saved, JSON.parse(ran.stdout));
+    console.log(`denied process scan exit ${ran.status}: ${ran.stdout}`);
+  } finally {
+    fs.rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test('cleanup reports unreadable initial and final scans without saving a false zero', () => {
+  const agent = { pid: 200, ppid: 1, uid: 501, age_sec: 3600, args: 'ssh-agent -s' };
+  const reads = () => [
+    { agents: [agent], referenced: new Set(), unread: ['agent sockets'] },
+    { agents: [agent], referenced: new Set([200]), unread: ['process environments'] },
+  ];
+  const signals = [];
+  const text = sweepWithReads(reads(), { kill: (pid) => signals.push(pid) });
+  assert.match(text.text, /could not read the agent sockets or the process environments/);
+  assert.match(text.text, /the leak count may be incomplete/);
+  assert.deepStrictEqual(signals, []);
+  assert.strictEqual(text.log[0].leaked_ssh_agents, null);
+  assert.deepStrictEqual(text.log[0].unread, ['process environments']);
+  const json = sweepWithReads(reads(), { args: ['sweep', '--apply', '--json'], kill: () => assert.fail('unread agent must stay safe') });
+  assert.deepStrictEqual(JSON.parse(json.text).unread, ['agent sockets', 'process environments']);
+});
+
+test('real cleanup reports denied process scans and saves an unknown remaining count', { skip: process.platform !== 'darwin' }, () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'engine-cleanup-denied-'));
+  try {
+    const cli = path.join(__dirname, '..', 'bin', 'atris.js');
+    const run = (extra) => require('node:child_process').spawnSync('/usr/bin/sandbox-exec', [
+      '-p', '(version 1)(allow default)(deny process-exec (literal "/bin/ps"))',
+      process.execPath, cli, 'engine', 'sweep', '--apply', ...extra,
+    ], { cwd: root, encoding: 'utf8', timeout: 30000, env: { ...process.env, ATRIS_AUTO_UPDATE: 'off' } });
+    const text = run([]);
+    assert.equal(text.status, 0, text.stderr);
+    assert.match(text.stdout, /could not read the process list/);
+    const json = run(['--json']);
+    assert.equal(json.status, 0, json.stderr);
+    const report = JSON.parse(json.stdout);
+    assert.deepStrictEqual(report.unread, ['process list']);
+    assert.strictEqual(report.history.last_sweep.leaked_ssh_agents, null);
+    assert.deepStrictEqual(report.history.last_sweep.unread, ['process list']);
+    assert.deepStrictEqual(report.stopped, []);
+    console.log('denied cleanup exit ' + text.status + ': ' + text.stdout.trim());
+  } finally {
+    fs.rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test('real cleanup skips a younger replacement pid while stopping an unchanged agent', { skip: process.platform !== 'darwin' }, () => {
+  const { spawnSync } = require('node:child_process');
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'engine-reused-pid-'));
+  const pids = [];
+  try {
+    for (const name of ['replacement', 'unchanged']) {
+      const started = spawnSync('/usr/bin/ssh-agent', ['-s', '-a', path.join(root, name)], { encoding: 'utf8', timeout: 10000 });
+      const pid = Number((/SSH_AGENT_PID=(\d+)/.exec(started.stdout) || [])[1]);
+      if (pid) pids.push(pid);
+      assert.equal(started.status, 0, started.stderr);
+      assert.ok(pid);
+    }
+    // Keep real sockets and real signals, but stage the two process ages to
+    // reproduce reuse without waiting for the OS to recycle a process number.
+    // Restrict the process list to agents this test owns.
+    const preload = path.join(root, 'reuse.cjs');
+    fs.writeFileSync(preload, `
+      const cp = require('node:child_process');
+      const real = cp.spawnSync;
+      let scan = 0;
+      cp.spawnSync = (cmd, args, opts) => {
+        const reading = real(cmd, args, opts);
+        if (require('node:path').basename(cmd) === 'ps' && args.includes('pid=,ppid=,uid=,etime=,args=')) {
+          scan++;
+          reading.stdout = String(reading.stdout || '').split('\\n').flatMap(line => {
+            const match = /^\\s*(\\d+)\\s+(\\d+)\\s+(\\d+)\\s+\\S+\\s+(.+)$/.exec(line);
+            if (!match || !${JSON.stringify(pids)}.includes(Number(match[1]))) return [];
+            const age = scan === 1 ? '01:00:00' : Number(match[1]) === ${pids[0]} ? '15:00' : '01:00:01';
+            return [match[1] + ' 1 ' + match[3] + ' ' + age + ' ssh-agent -s'];
+          }).join('\\n');
+        }
+        return reading;
+      };
+    `);
+    const cli = path.join(__dirname, '..', 'bin', 'atris.js');
+    const ran = spawnSync(process.execPath, ['--require', preload, cli, 'engine', 'sweep', '--apply', '--json'], {
+      cwd: root, encoding: 'utf8', timeout: 30000, env: { ...process.env, ATRIS_AUTO_UPDATE: 'off' },
+    });
+    assert.equal(ran.status, 0, ran.stderr);
+    const report = JSON.parse(ran.stdout);
+    assert.deepStrictEqual(report.stopped, [pids[1]]);
+    assert.deepStrictEqual(report.skipped, [pids[0]]);
+    assert.deepStrictEqual(report.replaced, [pids[0]]);
+    const reachable = spawnSync('/usr/bin/ssh-add', ['-l'], {
+      encoding: 'utf8', timeout: 10000, env: { ...process.env, SSH_AUTH_SOCK: path.join(root, 'replacement') },
+    });
+    assert.equal(reachable.status, 1, reachable.stderr);
+    assert.match(reachable.stdout, /no identities/i);
+    assert.deepStrictEqual(report.history.last_sweep.skipped, [pids[0]]);
+    assert.deepStrictEqual(report.history.last_sweep.replaced, [pids[0]]);
+    const text = spawnSync(process.execPath, ['--require', preload, cli, 'engine', 'sweep', '--apply'], {
+      cwd: root, encoding: 'utf8', timeout: 30000, env: { ...process.env, ATRIS_AUTO_UPDATE: 'off' },
+    });
+    assert.equal(text.status, 0, text.stderr);
+    assert.match(text.stdout, /1 skipped because a younger ssh-agent now has the same process number/);
+    assert.doesNotMatch(text.stdout, /in use or gone/);
+    console.log('replacement text cleanup exit ' + text.status + ': ' + text.stdout.trim());
+    console.log('replacement cleanup exit ' + ran.status + ': stopped one unchanged agent, skipped one younger replacement; replacement socket still answers');
+  } finally {
+    for (const pid of pids) { try { process.kill(pid, 'SIGTERM'); } catch {} }
+    fs.rmSync(root, { recursive: true, force: true });
+  }
+});
+
+
+test('cleanup separates younger replacements from in-use or gone skips', () => {
+  const agent = (pid, age_sec = 3600) => ({ pid, ppid: 1, uid: 501, age_sec, args: 'ssh-agent -s' });
+  const first = { agents: [agent(200), agent(201), agent(202)], referenced: new Set() };
+  const second = { agents: [agent(200, 90), agent(201)], referenced: new Set([201]) };
+  const report = sweepWithReads([first, second], { kill: () => assert.fail('all agents must stay safe') });
+  assert.match(report.text, /1 skipped because a younger ssh-agent now has the same process number/);
+  assert.match(report.text, /2 skipped because they were in use or gone on the recheck/);
+  assert.deepStrictEqual(report.log[0].replaced, [200]);
+  assert.deepStrictEqual(report.log[0].skipped, [200, 201, 202]);
+});

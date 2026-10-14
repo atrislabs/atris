@@ -1,0 +1,24 @@
+scout engine runs write start and end readings, 2026-10-14
+
+failing first:
+  node --test --test-name-pattern="atris scout records" test/engine-resource.test.js
+  Error: ENOENT: no such file or directory, open '.../.atris/state/engine-resource.jsonl'
+
+frozen check after the fix:
+  node --test test/engine-resource.test.js test/engine-dispatch.test.js
+  tests 144, pass 144, fail 0, exit 0
+  node --test test/dispatch-scout.test.js
+  pass 9, fail 0
+
+real CLI, scratch repo with a fake cursor-agent that kills itself:
+  $ atris scout --yes --engine cursor "where is the sweep?"
+    -- x where is the sweep?
+       stopped by SIGKILL; killed (cause unknown)
+  scout exit=1
+  end line: {"phase":"end","engine":"cursor","task":"scout","free_pct":80,"swap_used_mb":757.38,"swap_total_mb":2048,"load":[2.74,4.84,5.8],"duration_ms":158,"signal":"SIGKILL","cause":"killed (cause unknown)"}
+
+test run records: exit no cause / SIGKILL killed (time limit reached) / SIGKILL killed (cause unknown)
+
+before: scout launched engines with no readings at all, and a kill printed a bare "exit null".
+
+next_push: record the read-only code review launcher, or prove it runs no engine, so every engine launch in the CLI is either recorded or named as exempt.

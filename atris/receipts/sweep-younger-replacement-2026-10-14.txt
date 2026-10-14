@@ -1,0 +1,26 @@
+Cleanup now skips a younger agent that reused a listed process number; the frozen checks and a real cleanup CLI regression passed.
+
+Plan: old list -> final age check -> skip younger replacement -> signal unchanged agent.
+Files: lib/engine-resource.js; test/engine-resource.test.js; atris/MAP.md; atris/refs/MAP-NOTES.md; atris/team/executor/logs/2026-10-14.md; atris/receipts/sweep-younger-replacement-2026-10-14.txt.
+
+Failing-first command: node --test --test-name-pattern='real cleanup skips a younger' test/engine-resource.test.js
+Before fix: exit 1; report.stopped contained both owned agents instead of only the unchanged agent.
+After fix: exit 0; tests 1, pass 1, fail 0.
+Changed surface invoked by that regression: node --require <temporary reuse.cjs> bin/atris.js engine sweep --apply --json
+The preloader restricts the process list to two owned real ssh-agents and stages their ages to reproduce reuse. Socket scans and signals are real; no unrelated process is a candidate.
+Output excerpt: replacement cleanup exit 0: stopped one unchanged agent, skipped one younger replacement; replacement socket still answers
+Socket proof: /usr/bin/ssh-add -l with the replacement fixture socket, exit 1, stdout: The agent has no identities.
+
+Rerun: node --test test/engine-resource.test.js test/engine-dispatch.test.js
+Actual exit: 0
+Output: tests 136; suites 0; pass 136; fail 0; cancelled 0; skipped 0; todo 0; duration_ms 63255.915209.
+Additional command: node --test test/map-refs-accurate.test.js test/repo-hygiene.test.js
+Actual exit: 0; tests 5; pass 5; fail 0.
+Additional command: git diff --check
+Actual exit: 0; no output.
+Review: independent reviewer found no actionable defects.
+Progress: one cleanup safety gap fixed; one failing-first real CLI regression added; zero new dependencies.
+Limit: age readings do not identify equal-age replacement, and a process can change after the final scan. This check protects younger replacements visible during the final scan.
+Workspace setup: atris brain activate --root . --verify and atris brain compile --root . returned exit 2, plan only, and wrote no files; unrelated policy adapters were left unchanged.
+next_push: report younger replacement skips separately from in-use or gone agents so cleanup explains why it preserved them.
+layer: capabilities

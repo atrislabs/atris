@@ -1,0 +1,25 @@
+The landing status now says the leaked ssh-agent count is unknown or only a floor when an agent scan was incomplete, verified by 132 passing checks and the real status command with the process lister blocked, exit 0.
+
+Files edited: commands/autoland.js, test/engine-resource.test.js, atris/MAP.md, atris/refs/MAP-NOTES.md, atris/team/executor/logs/2026-10-14.md, this receipt. Existing atris/TODO.md changes are not staged.
+Plan: keep failed readers beside the live leaked count -> print unknown when nothing was readable, at least N when part was readable.
+
+Failing-first command: node --test --test-name-pattern='unreadable agent scan instead' test/engine-resource.test.js
+Exit: 1. pass 0, fail 1; the status printed no ssh-agent line for a blind scan.
+
+Rerunnable verification: node --test test/engine-resource.test.js test/engine-dispatch.test.js
+Exit: 0. tests 132; pass 132; fail 0.
+
+Real command: /usr/bin/sandbox-exec -p '(version 1)(allow default)(deny process-exec (literal "/bin/ps"))' node bin/atris.js autoland status
+Exit: 0.
+Output line: leaked ssh-agents on this machine: unknown, could not read the process list, so some ssh-agents went unchecked
+
+Same command without the block: node bin/atris.js autoland status
+Exit: 0.
+Output line: leaked ssh-agents on this machine: 984; stop them now: atris engine sweep --apply
+Both runs are read only; nothing was stopped.
+
+A thrown read still prints nothing, as the existing regression requires; only the named unread readers are reported.
+Map refs: shifted from the diff offsets in commands/autoland.js and test/engine-resource.test.js.
+Metric: one failing-first regression added, 132 checks passed, status no longer shows a blind scan as zero leaks.
+next_push: this machine has 984 leaked ssh-agents right now; find which shell startup path keeps spawning them per engine shell and record that source in the sweep output.
+layer: capabilities

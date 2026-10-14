@@ -1891,7 +1891,7 @@ const PROBE_PROMPT = 'Reply with exactly the two characters: OK';
 // answer on 2026-07-02. 30s produced a false FAIL on a healthy engine.
 const PROBE_DEFAULT_TIMEOUT_MS = 120000;
 
-function probeEngine(name, { timeout = PROBE_DEFAULT_TIMEOUT_MS } = {}) {
+function probeEngine(name, { timeout = PROBE_DEFAULT_TIMEOUT_MS, root = process.cwd() } = {}) {
   const def = RUNNER_PROFILE_DEFS[name];
   if (!binInstalled(def.bin)) {
     return {
@@ -1917,11 +1917,15 @@ function probeEngine(name, { timeout = PROBE_DEFAULT_TIMEOUT_MS } = {}) {
     if (prevProfile === undefined) delete process.env.ATRIS_RUNNER_PROFILE;
     else process.env.ATRIS_RUNNER_PROFILE = prevProfile;
   }
+  // Machine memory and load at both ends of the probe, so one killed with
+  // SIGKILL says whether the machine was short on memory.
+  const endResource = require('../lib/engine-resource').startEngineRun(root, { engine: name, task: 'engine probe' });
   const start = Date.now();
   let res;
   try {
     res = spawnSync('sh', ['-c', cmd], { encoding: 'utf8', timeout });
   } catch (err) {
+    endResource(err);
     fs.rmSync(tmpDir, { recursive: true, force: true });
     return {
       engine: name,
@@ -1935,6 +1939,15 @@ function probeEngine(name, { timeout = PROBE_DEFAULT_TIMEOUT_MS } = {}) {
     };
   }
   const durationMs = Date.now() - start;
+  // spawnSync does not throw, so a failure is passed in the thrown shape.
+  const launchFailed = res.error || res.signal || res.status !== 0;
+  const end = endResource(launchFailed ? {
+    code: res.error && res.error.code,
+    signal: res.signal,
+    stderr: res.stderr,
+    message: res.error ? res.error.message : `exit ${res.status}`,
+  } : null);
+  const cause = end && end.cause ? `; ${end.cause}` : '';
   fs.rmSync(tmpDir, { recursive: true, force: true });
   const stdout = res.stdout || '';
   const stderr = res.stderr || '';
@@ -1954,7 +1967,7 @@ function probeEngine(name, { timeout = PROBE_DEFAULT_TIMEOUT_MS } = {}) {
     reason,
     message: ok
       ? 'responded OK'
-      : (timedOut ? `no reply within ${timeout}ms` : `did not reply OK (exit ${res.status}, signal ${res.signal})`),
+      : (timedOut ? `no reply within ${timeout}ms` : `did not reply OK (exit ${res.status}, signal ${res.signal})${cause}`),
     stdout,
     stderr,
     durationMs,
@@ -2032,7 +2045,7 @@ function runBenchCommand(args, root, deps = {}) {
     }
   }
 
-  const probeOpts = {};
+  const probeOpts = { root };
   if (timeout) probeOpts.timeout = timeout;
 
   const results = [];
@@ -2154,7 +2167,7 @@ function runEngineTest(targets, { json, root } = {}) {
       return 1;
     }
   }
-  const results = enginesToTest.map((name) => probeEngine(name));
+  const results = enginesToTest.map((name) => probeEngine(name, { root }));
   const failures = results.filter((r) => !r.pass);
   const passed = results.length - failures.length;
   // A live probe is the freshest health evidence there is: write it back so
@@ -2314,6 +2327,132 @@ function shorthandModelError(engine, args, root) {
   }
 }
 
+function formatAgentAge(seconds) {
+  const minutes = Math.floor(seconds / 60);
+  const hours = Math.floor(minutes / 60);
+  const days = Math.floor(hours / 24);
+  if (days) return `${days}d ${hours % 24}h`;
+  if (hours) return `${hours}h ${minutes % 60}m`;
+  return `${minutes}m`;
+}
+
+// atris engine sweep: list ssh-agents that engine shells started and left
+// behind. With --apply it rechecks each one and stops it with SIGTERM, and
+// writes a parent gone end line for each run whose parent process is gone.
+function runEngineSweepCommand(args, root, deps = {}) {
+  const { readSshAgents, findLeakedSshAgents, findAgentStartLines, agentStartLineText, stopLeakedSshAgents, closeLostRuns, readResourceHistory, leakGrowthNote, LEAK_MIN_AGE_SEC } = require('../lib/engine-resource');
+  const read = deps.read || readSshAgents;
+  const { agents, referenced, unread = [] } = read();
+  const uid = deps.uid !== undefined ? deps.uid : process.getuid();
+  const leaked = findLeakedSshAgents(agents, { referenced, uid });
+  const apply = args.includes('--apply');
+  const result = apply
+    ? stopLeakedSshAgents(root, leaked, { read, uid, ...(deps.kill ? { kill: deps.kill } : {}), ...(deps.now ? { now: deps.now } : {}) })
+    : { stopped: [], failed: [], skipped: [] };
+  result.unread = [...new Set([...unread, ...(result.unread || [])])];
+  const scanWarning = result.unread.length
+    ? `could not read the ${result.unread.join(' or the ')} for every process, so some ssh-agents could not be checked; the leak count may be incomplete`
+    : null;
+  result.closed_runs = [];
+  if (apply) {
+    // Agents may already be stopped here, so a failed close is reported
+    // beside them rather than thrown away with the whole report.
+    try {
+      result.closed_runs = closeLostRuns(root, deps.now ? { now: deps.now } : {});
+    } catch (err) {
+      result.close_error = String((err && err.message) || err).slice(0, 200);
+    }
+  }
+  // A test run reads only the home it was handed, never the real one.
+  const startLines = leaked.length && (deps.home || !process.env.NODE_TEST_CONTEXT)
+    ? findAgentStartLines(deps.home ? { home: deps.home } : {})
+    : [];
+  const code = result.failed.length || result.close_error ? 1 : 0;
+  if (args.includes('--json')) {
+    console.log(JSON.stringify({ running: agents.length, leaked, unread, ...result, agent_start_lines: startLines, history: readResourceHistory(root) }, null, 2));
+    return code;
+  }
+  const plural = (n, word) => `${n} ${word}${n === 1 ? '' : 's'}`;
+  if (apply) {
+    const lines = [`stopped ${plural(result.stopped.length, 'leaked ssh-agent')}`];
+    const replaced = (result.replaced || []).length;
+    const otherSkipped = result.skipped.length - replaced;
+    if (replaced) lines.push(`${replaced} skipped because ${replaced === 1 ? 'a younger ssh-agent now has' : 'younger ssh-agents now have'} the same process number`);
+    if (otherSkipped) lines.push(`${otherSkipped} skipped because they were in use or gone on the recheck`);
+    for (const { pid, code: reason } of result.failed) lines.push(`could not stop pid ${pid}: ${reason}`);
+    if (result.close_error) lines.push(`could not close lost runs, so unfinished records may remain: ${result.close_error}`);
+    else lines.push(`closed ${plural(result.closed_runs.length, 'run')} whose parent is gone`);
+    if (scanWarning) lines.push(scanWarning);
+    console.log(lines.join('\n'));
+    return code;
+  }
+  const shown = 20;
+  const history = readResourceHistory(root);
+  const lines = [
+    `${plural(agents.length, 'ssh-agent')} running, ${leaked.length} ${leaked.length === 1 ? 'looks' : 'look'} leaked${leakGrowthNote(history.first_day_leak_reading, leaked.length)}`
+      + ` (no parent, older than ${LEAK_MIN_AGE_SEC / 60} min, not in use by any live shell)`,
+    ...leaked.slice(0, shown).map((agent) => `  pid ${String(agent.pid).padEnd(6)} ${formatAgentAge(agent.age_sec)}`),
+  ];
+  if (leaked.length > shown) lines.push(`  and ${leaked.length - shown} more`);
+  lines.push(...startLines.map(agentStartLineText));
+  if (scanWarning) lines.push(scanWarning);
+  lines.push(leaked.length ? 'nothing was stopped. run atris engine sweep --apply to stop them.' : 'nothing was stopped.');
+  lines.push('', ...resourceHistoryLines(history));
+  console.log(lines.join('\n'));
+  return 0;
+}
+
+function utcMinute(at) {
+  return `${String(at || '').slice(0, 16).replace('T', ' ')} UTC`;
+}
+
+// What the resource log says about past runs: the newest sweep, runs with no
+// end, the newest run that failed without being killed and why, the newest
+// SIGKILL and its likely cause, and how many SIGKILLs came with low memory.
+function resourceHistoryLines(history) {
+  const { errorReason } = require('../lib/engine-resource');
+  const lines = [];
+  if (history.read_error) {
+    lines.push(`could not read the engine run log: ${history.read_error}, so past sweeps, kills, and errors are unknown`);
+    return lines;
+  }
+  const sweep = history.last_sweep;
+  lines.push(sweep
+    ? `last sweep: ${utcMinute(sweep.at)}, stopped ${(sweep.stopped || []).length}`
+    : 'no sweep recorded yet');
+  const started = history.last_open;
+  if (started) {
+    const unrecorded = history.open_runs - history.parent_gone - history.still_running;
+    const parts = [
+      history.parent_gone && `${history.parent_gone} whose parent is gone`,
+      history.still_running && `${history.still_running} still running`,
+      unrecorded && `${unrecorded} from before parents were recorded`,
+    ].filter(Boolean);
+    lines.push(`${history.open_runs} run${history.open_runs === 1 ? '' : 's'} started with no end recorded: ${parts.join(', ')};`
+      + ` newest: ${started.engine || 'engine'} on ${started.task || 'an unnamed task'} at ${utcMinute(started.at)}`);
+  }
+  const failed = history.last_error;
+  if (failed) {
+    lines.push(`last engine error: ${failed.engine || 'engine'} on ${failed.task || 'an unnamed task'} at ${utcMinute(failed.at)}: ${errorReason(failed)}`);
+  }
+  const kill = history.last_kill;
+  if (!kill) {
+    lines.push('no engine run has ended in SIGKILL');
+    return lines;
+  }
+  const killLine = (entry) => {
+    const free = Number.isFinite(entry.free_pct) ? `, ${entry.free_pct}% memory free` : '';
+    return `${entry.engine || 'engine'} on ${entry.task || 'an unnamed task'} at ${utcMinute(entry.at)}, ${entry.cause}${free}`;
+  };
+  lines.push(`last SIGKILL: ${killLine(kill)}`);
+  // Timeouts can pile up after a crash; still name the newest kill that was not one.
+  const other = history.last_other_kill;
+  if (other && other !== kill) lines.push(`last SIGKILL not at a time limit: ${killLine(other)}`);
+  const timeLimit = history.time_limit_kills ? `, ${history.time_limit_kills} at their time limit` : '';
+  lines.push(`${history.low_memory_kills} of ${history.kills} SIGKILL${history.kills === 1 ? '' : 's'} ended with machine memory low${timeLimit}`);
+  return lines;
+}
+
 function engineCommand(args = [], deps = {}) {
   const root = deps.root || process.cwd();
   const dispatch = deps.engineDispatch || runDispatchCommand;
@@ -2322,6 +2461,9 @@ function engineCommand(args = [], deps = {}) {
   }
   if ((args[0] || '').trim() === 'watch') {
     return runEngineWatchCommand(args.slice(1), root, deps.engineWatch || {});
+  }
+  if ((args[0] || '').trim() === 'sweep') {
+    return runEngineSweepCommand(args.slice(1), root, deps.engineSweep || {});
   }
   if ((args[0] || '').trim() === 'validate') {
     return runEngineValidateCommand(args.slice(1), root, deps.engineValidate || {});
@@ -2406,7 +2548,7 @@ function engineCommand(args = [], deps = {}) {
     if (sub === 'help' || args.includes('--help') || args.includes('-h')) {
       console.log('\n  atris engine watch [<id>|latest] [--no-follow]\n                           follow one live transcript or list running engine work');
       console.log('\n  long read-only asks: atris engine ask "..." --engine agy --timeout <seconds>\n                           quick asks default to 120 seconds; explicit jobs allow up to 3600\n                           follow live work with atris engine watch latest');
-      console.log('\n  atris engine            roster + current default\n  atris engine roster [--json] show every job and its workers in order: search, build, review, and your own\n                           flags a model with a newer version on this machine, or a pin not proven in 30 days\n                           (a landed run, or "verified 2026-09-30" on its line, proves it)\n  atris engine roster confirm renew every dated worker for 30 days\n  atris engine roster session [clear]\n                           show or drop the roster changes for this shell only\n  atris engine roster --available\n                           tools on this machine and the models each one offers\n  atris engine roster --runs [job]\n                           the last 20 runs, newest first, with tool, model, time, and outcome\n  atris engine assign <job> <tool> [--like <kind>] [--model <m>] [--effort <level>] [--max "20 min"] [--prep <job>] [--backup "<tool> [model]"] [--days <n>] [--add] [--session | --everywhere]\n  atris engine assign <job> --promote "<tool> [model]" | --remove <tool> | --clear [--session | --everywhere]\n                           sets the lead worker of the job; --promote moves one of its workers to the top as written;\n                           --add puts one more at the end; jobs: search, build, review,\n                           or your own like "small build" (--like search|build|review when the name does not say);\n                           --prep search has that job read the task first and hand this worker a short brief;\n                           --everywhere is for all projects; --session is this shell only (set ATRIS_ROSTER_SESSION=<name>)\n  atris engines --chart   show the fleet as an org chart\n  atris engine list --json [--all] full registry: default + engines with tier, roles, fallback, health (--all includes hidden engines)\n  atris engine set <name> --duty leader|errands|learning [--models "a, b"]\n                           arrange the fleet and save its model policy\n  atris engine resolve <role> or <job> [--json]\n                           choose the best ready engine for navigator|executor|validator or a roster job;\n                           notes always answers: its roster pick, else agy then haiku\n  atris engine health <name> --set ready|not_installed|credit_out\n                           flip runtime health, for example when credits run out\n  atris engine doctor [--json]\n                           probe which engine CLIs are installed here and sync that into health policy\n  atris engine <name>     make that engine the default here\n  atris engine test [name] preflight: run the engine CLI headless, report pass/fail\n  atris engine bench [names...] [--runs N]\n                           ranked latency scoreboard of engine passes\n  atris engine ask "<question>" --engine <name> [--engine <name> ...]\n                           ask several engines in parallel without allowing edits\n  atris engine ask --jobs <jobs.json>\n                           ask different read-only questions in parallel\n  atris engine validate <receipt-path|latest> [--engine <name>]\n                           check ask answers with a different read-only referee\n  atris engine validate scoreboard\n                           show pass rates by worker engine\n  atris engine dispatch <task-id> [<task-id> ...] --engine cursor|codex [--prompt-file <f>] [--yolo]\n                           one-command claim, worktree, build, verify, ship, ready\n  atris engine login <provider> --yes\n                           upload a local provider CLI login to the backend vault\n  atris engine login <provider> --computer [--seat <name>]\n  atris engine login <provider> --business <id> [--seat <name>]\n                           sign in on an Atris computer by device flow\n  atris engine login --list | --remove <provider>\n                           list or remove vaulted provider logins\n  atris engine seats       show which named accounts are ready to work\n  atris engine seed <provider> --business <id>|--user\n                           push a vaulted login onto an Atris computer\n  atris engine reset      back to the house default\n  --engine <name>         one run on that engine (mission run / autopilot / run)\n');
+      console.log('\n  atris engine            roster + current default\n  atris engine roster [--json] show every job and its workers in order: search, build, review, and your own\n                           flags a model with a newer version on this machine, or a pin not proven in 30 days\n                           (a landed run, or "verified 2026-09-30" on its line, proves it)\n  atris engine roster confirm renew every dated worker for 30 days\n  atris engine roster session [clear]\n                           show or drop the roster changes for this shell only\n  atris engine roster --available\n                           tools on this machine and the models each one offers\n  atris engine roster --runs [job]\n                           the last 20 runs, newest first, with tool, model, time, and outcome\n  atris engine assign <job> <tool> [--like <kind>] [--model <m>] [--effort <level>] [--max "20 min"] [--prep <job>] [--backup "<tool> [model]"] [--days <n>] [--add] [--session | --everywhere]\n  atris engine assign <job> --promote "<tool> [model]" | --remove <tool> | --clear [--session | --everywhere]\n                           sets the lead worker of the job; --promote moves one of its workers to the top as written;\n                           --add puts one more at the end; jobs: search, build, review,\n                           or your own like "small build" (--like search|build|review when the name does not say);\n                           --prep search has that job read the task first and hand this worker a short brief;\n                           --everywhere is for all projects; --session is this shell only (set ATRIS_ROSTER_SESSION=<name>)\n  atris engines --chart   show the fleet as an org chart\n  atris engine list --json [--all] full registry: default + engines with tier, roles, fallback, health (--all includes hidden engines)\n  atris engine set <name> --duty leader|errands|learning [--models "a, b"]\n                           arrange the fleet and save its model policy\n  atris engine resolve <role> or <job> [--json]\n                           choose the best ready engine for navigator|executor|validator or a roster job;\n                           notes always answers: its roster pick, else agy then haiku\n  atris engine health <name> --set ready|not_installed|credit_out\n                           flip runtime health, for example when credits run out\n  atris engine doctor [--json]\n                           probe which engine CLIs are installed here and sync that into health policy\n  atris engine <name>     make that engine the default here\n  atris engine test [name] preflight: run the engine CLI headless, report pass/fail\n  atris engine bench [names...] [--runs N]\n                           ranked latency scoreboard of engine passes\n  atris engine ask "<question>" --engine <name> [--engine <name> ...]\n                           ask several engines in parallel without allowing edits\n  atris engine ask --jobs <jobs.json>\n                           ask different read-only questions in parallel\n  atris engine validate <receipt-path|latest> [--engine <name>]\n                           check ask answers with a different read-only referee\n  atris engine validate scoreboard\n                           show pass rates by worker engine\n  atris engine sweep [--apply] [--json]\n                           list ssh-agents that engine shells left running; --apply rechecks and stops them\n  atris engine dispatch <task-id> [<task-id> ...] --engine cursor|codex [--prompt-file <f>] [--yolo]\n                           one-command claim, worktree, build, verify, ship, ready\n  atris engine login <provider> --yes\n                           upload a local provider CLI login to the backend vault\n  atris engine login <provider> --computer [--seat <name>]\n  atris engine login <provider> --business <id> [--seat <name>]\n                           sign in on an Atris computer by device flow\n  atris engine login --list | --remove <provider>\n                           list or remove vaulted provider logins\n  atris engine seats       show which named accounts are ready to work\n  atris engine seed <provider> --business <id>|--user\n                           push a vaulted login onto an Atris computer\n  atris engine reset      back to the house default\n  --engine <name>         one run on that engine (mission run / autopilot / run)\n');
       return 0;
     }
     if (isFreshWorkspace(root)) {
