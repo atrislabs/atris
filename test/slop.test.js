@@ -748,6 +748,9 @@ test('fix keeps a paired aside after a plain-word label as parentheses', () => {
     '- Retries \u2014 up to 3. Then \u2014 it stops.',
     // two more dashes after the label pair among themselves; the label stays
     '- Inbox Triage \u2014 23 emails \u2014 all read \u2014 processed today.',
+    // a next dash before a joining word goes on with the sentence, like the bold one
+    '1. Setup \u2014 install it \u2014 then run it',
+    '- Deploy \u2014 build the image \u2014 and push it.',
   ].join('\n'));
   const { changes } = applyFixes([file], RULES);
   assert.deepEqual(changes.map((c) => c.after), [
@@ -756,6 +759,8 @@ test('fix keeps a paired aside after a plain-word label as parentheses', () => {
     '- **Build**: run it, then ship.',
     '- Retries: up to 3. Then, it stops.',
     '- Inbox Triage: 23 emails (all read) processed today.',
+    '1. Setup: install it, then run it',
+    '- Deploy: build the image, and push it.',
   ]);
 });
 

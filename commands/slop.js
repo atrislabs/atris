@@ -173,9 +173,12 @@ function fixEmDash(s, { endsBlock = false, startsBlock = false } = {}) {
   // automatically", never "Retries: up to 3, happen". Marked and code labels stay.
   // An even count of dashes after the label pair among themselves, so the
   // label keeps its colon: "Inbox Triage: 23 emails (all read) processed".
+  // A next dash before a joining word goes on with the sentence instead of
+  // closing an aside, so the label stays: "1. Setup: install it, then run it".
   const restSentence = label && s.slice(label[0].length).split(/[.!?]["'\u201d\u2019)]*\s/)[0];
   if (label && !/^(?:\*|_|`|\uE000|"|\u201c)/.test(label[2])
-    && (restSentence.match(/\u2014/g) || []).length % 2) label = null;
+    && (restSentence.match(/\u2014/g) || []).length % 2
+    && !/^[^\u2014]*\u2014\s*(?:and|but|or|nor|so|yet|then)\b/i.test(restSentence)) label = null;
   // a label that already ends in its own punctuation, "**what is it?**",
   // keeps it and just loses the dash, so no colon stacks on top. A label that
   // is one whole quote is a phrase being explained, so its colon goes after
