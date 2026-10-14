@@ -106,21 +106,87 @@ test('reading agents matches the program name and collects live references', () 
       return { status: 0, stdout: [
         '  300 -zsh HOME=/Users/me SSH_AGENT_PID=201 TERM=xterm',
         '  301 claude -p fix ssh-agent leaks PATH=/bin',
+        '  302 git fetch SSH_AUTH_SOCK=/tmp/ssh-c/agent.202 HOME=/Users/me',
       ].join('\n') };
+    }
+    if (cmd === 'lsof') {
+      return { status: 0, stdout: ['p200', 'f3', 'n/tmp/ssh-a/agent.199', 'p201', 'f3', 'n/tmp/ssh-b/agent.200', 'p202', 'f3', 'n/tmp/ssh-c/agent.202'].join('\n') };
     }
     return { status: 0, stdout: [
       '  200     1   501    14:50:14 ssh-agent -s',
       '  201     1   501       11:09 /usr/bin/ssh-agent -s',
+      '  202     1   501       30:00 ssh-agent -s',
+      '  203     1   501       30:00 ssh-agent -s',
       '  301   300   501       00:05 claude -p fix ssh-agent leaks',
     ].join('\n') };
   };
   const { agents, referenced } = readSshAgents({ run });
-  assert.deepStrictEqual(agents, [
+  assert.deepStrictEqual(agents.slice(0, 2), [
     { pid: 200, ppid: 1, uid: 501, age_sec: 53414, args: 'ssh-agent -s' },
     { pid: 201, ppid: 1, uid: 501, age_sec: 669, args: '/usr/bin/ssh-agent -s' },
   ]);
-  assert.ok(referenced.has(201));
   assert.ok(!referenced.has(200));
+  assert.ok(referenced.has(201), 'named by SSH_AGENT_PID');
+  assert.ok(referenced.has(202), 'named by SSH_AUTH_SOCK');
+  assert.ok(referenced.has(203), 'socket unreadable, so treated as in use');
+});
+
+test('when the socket list cannot be read, every agent counts as in use', () => {
+  const run = (cmd, args) => {
+    if (cmd === 'lsof') return { status: 1, stdout: '' };
+    if (args.includes('-E')) return { status: 0, stdout: '' };
+    return { status: 0, stdout: '  200     1   501    14:50:14 ssh-agent -s' };
+  };
+  const { referenced } = readSshAgents({ run });
+  assert.ok(referenced.has(200));
+});
+
+function sweepWithReads(reads, { args = ['sweep', '--apply'], kill } = {}) {
+  const { engineCommand } = require('../commands/engine');
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'engine-sweep-'));
+  const out = [];
+  const original = console.log;
+  console.log = (line) => out.push(String(line));
+  let code;
+  try {
+    code = engineCommand(args, {
+      root,
+      engineSweep: { read: () => reads.shift(), uid: 501, kill, now: () => '2026-10-14T12:00:00.000Z' },
+    });
+  } finally {
+    console.log = original;
+  }
+  const logFile = path.join(root, RESOURCE_LOG);
+  const log = fs.existsSync(logFile) ? fs.readFileSync(logFile, 'utf8').trim().split('\n').map((l) => JSON.parse(l)) : [];
+  fs.rmSync(root, { recursive: true, force: true });
+  return { code, text: out.join('\n'), log };
+}
+
+test('sweep apply rechecks right before stopping, and logs what it stopped', () => {
+  const agent = (pid) => ({ pid, ppid: 1, uid: 501, age_sec: 3600, args: 'ssh-agent -s' });
+  const first = { agents: [agent(200), agent(201), agent(202)], referenced: new Set() };
+  const second = { agents: [agent(200), agent(201)], referenced: new Set([201]) };
+  const signals = [];
+  const { code, text, log } = sweepWithReads([first, second], {
+    kill: (pid, signal) => signals.push([pid, signal]),
+  });
+  assert.strictEqual(code, 0);
+  assert.deepStrictEqual(signals, [[200, 'SIGTERM']]);
+  assert.match(text, /stopped 1 leaked ssh-agent/);
+  assert.match(text, /2 skipped because they were in use or gone on the recheck/);
+  assert.deepStrictEqual(log, [{ at: '2026-10-14T12:00:00.000Z', phase: 'sweep', stopped: [200], failed: [], skipped: [201, 202] }]);
+});
+
+test('sweep apply reports an agent it could not stop', () => {
+  const agent = (pid) => ({ pid, ppid: 1, uid: 501, age_sec: 3600, args: 'ssh-agent -s' });
+  const read = { agents: [agent(200), agent(201)], referenced: new Set() };
+  const { code, text, log } = sweepWithReads([read, read], {
+    kill: (pid) => { if (pid === 201) throw Object.assign(new Error('no such process'), { code: 'ESRCH' }); },
+  });
+  assert.strictEqual(code, 1);
+  assert.match(text, /stopped 1 leaked ssh-agent/);
+  assert.match(text, /could not stop pid 201: ESRCH/);
+  assert.deepStrictEqual(log[0].failed, [201]);
 });
 
 test('atris engine sweep lists leaked agents and stops nothing', () => {
