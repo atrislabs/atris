@@ -95,6 +95,8 @@ function main() {
     assert.equal(fs.existsSync(mode === 'moved' ? moved : scratch), true);
     assert.equal(registered, true, 'the scratch copy record was dropped');
     assert.equal(removals.length, 0);
+    // A kept scratch copy sits outside the fixture; report it for removal.
+    if (fs.existsSync(scratch)) console.log(`fixture: ${scratch}`);
   }
   console.log('clean scratch copy removed and logged; scratch copies holding aged private and shared locks, in place or moved, were kept with each lock path and age named, their Git record retained, and no removal recorded');
 }

@@ -40,6 +40,18 @@ function landedWorktree() {
   return { base, repo, wt };
 }
 
+// Run a real proof script. Once it passes, remove each temporary fixture it
+// printed; a failing run keeps its fixture for inspection.
+function runProof(name) {
+  const result = spawnSync(process.execPath, [path.resolve(__dirname, '../atris/receipts', name)], { encoding: 'utf8', timeout: 120000 });
+  assert.equal(result.status, 0, result.stderr || result.stdout);
+  const tmp = fs.realpathSync(os.tmpdir());
+  for (const [, fixture] of result.stdout.matchAll(/^fixture: (.+)$/gm)) {
+    if (path.dirname(fixture) === tmp && path.basename(fixture).startsWith('atris-')) fs.rmSync(fixture, { recursive: true, force: true });
+  }
+  return result;
+}
+
 function removalLines(repo) {
   const file = path.join(repo, '.atris', 'state', 'worktree_removals.jsonl');
   if (!fs.existsSync(file)) return [];
@@ -71,23 +83,17 @@ test('after a refusal, the shared check names locks in place and after the folde
 });
 
 test('real cleanup names missing-folder ordinary locks without naming neighboring private locks', () => {
-  const proof = path.resolve(__dirname, '../atris/receipts/2026-10-14-missing-ordinary-lock-check.js');
-  const result = spawnSync(process.execPath, [proof], { encoding: 'utf8', timeout: 120000 });
-  assert.equal(result.status, 0, result.stderr || result.stdout);
+  const result = runProof('2026-10-14-missing-ordinary-lock-check.js');
   assert.match(result.stdout, /preview and cleanup named two missing-copy lock paths and ages/);
 });
 
 test('reap keeps late ordinary locks and keep markers in present and disappearing folders, and folders moved after a passing check', () => {
-  const proof = path.resolve(__dirname, '../atris/receipts/2026-10-14-land-vanishing-folder-check.js');
-  const result = spawnSync(process.execPath, [proof], { encoding: 'utf8', timeout: 120000 });
-  assert.equal(result.status, 0, result.stderr || result.stdout);
+  const result = runProof('2026-10-14-land-vanishing-folder-check.js');
   assert.match(result.stdout, /all eight timing cases passed; Git refusal after a passing check named three locks and distinct ages, also when the folder moved; files, locks, branches, and Git records retained; no removal recorded/);
 });
 
 test('regression cleanup keeps folders that gain locks or disappear during or after its safety check', () => {
-  const proof = path.resolve(__dirname, '../atris/receipts/2026-10-14-autopilot-folder-check.js');
-  const result = spawnSync(process.execPath, [proof], { encoding: 'utf8', timeout: 120000 });
-  assert.equal(result.status, 0, result.stderr || result.stdout);
+  const result = runProof('2026-10-14-autopilot-folder-check.js');
   assert.match(result.stdout, /Git refusal after a passing check named three locks and distinct ages; files and Git record retained; no removal recorded/);
   assert.match(result.stdout, /a folder that moved while Git refused removal was reported missing with three locks and distinct ages; files and Git record retained; no removal recorded/);
   assert.match(result.stdout, /late keep marker during the safety check kept the folder, named the marker and its age, and no removal was attempted/);
@@ -98,37 +104,27 @@ test('regression cleanup keeps folders that gain locks or disappear during or af
 });
 
 test('worktree cleanup names locks and ages when Git refuses removal, in place and after a move', () => {
-  const proof = path.resolve(__dirname, '../atris/receipts/2026-10-14-worktree-cleanup-refused-check.js');
-  const result = spawnSync(process.execPath, [proof], { encoding: 'utf8', timeout: 120000 });
-  assert.equal(result.status, 0, result.stderr || result.stdout);
+  const result = runProof('2026-10-14-worktree-cleanup-refused-check.js');
   assert.match(result.stdout, /Git refusal named three locks and distinct ages, in place and after the copy moved; files, branch, locks, and Git record retained; no removal recorded/);
 });
 
 test('green landing keeps a scratch copy holding Git locks, in place or moved, and logs a clean removal', () => {
-  const proof = path.resolve(__dirname, '../atris/receipts/2026-10-14-land-green-scratch-check.js');
-  const result = spawnSync(process.execPath, [proof], { encoding: 'utf8', timeout: 120000 });
-  assert.equal(result.status, 0, result.stderr || result.stdout);
+  const result = runProof('2026-10-14-land-green-scratch-check.js');
   assert.match(result.stdout, /clean scratch copy removed and logged; scratch copies holding aged private and shared locks, in place or moved, were kept with each lock path and age named, their Git record retained, and no removal recorded/);
 });
 
 test('worktree cleanup keeps a copy moved after its final checks pass', () => {
-  const proof = path.resolve(__dirname, '../atris/receipts/2026-10-14-worktree-cleanup-moved-folder-check.js');
-  const result = spawnSync(process.execPath, [proof], { encoding: 'utf8', timeout: 120000 });
-  assert.equal(result.status, 0, result.stderr || result.stdout);
+  const result = runProof('2026-10-14-worktree-cleanup-moved-folder-check.js');
   assert.match(result.stdout, /a copy moved after its final checks passed was kept as missing; files, branch, and Git record retained; no removal attempted or recorded/);
 });
 
 test('land keeps a dirty copy moved while its backup is built and names the leftover lock', () => {
-  const proof = path.resolve(__dirname, '../atris/receipts/2026-10-14-land-moved-dirty-folder-check.js');
-  const result = spawnSync(process.execPath, [proof], { encoding: 'utf8', timeout: 120000 });
-  assert.equal(result.status, 0, result.stderr || result.stdout);
+  const result = runProof('2026-10-14-land-moved-dirty-folder-check.js');
   assert.match(result.stdout, /a dirty copy moved while its backup was built was kept as missing with the leftover shared lock and its age named/);
 });
 
 test('worktree cleanup names the leftover shared lock and its age for a moved copy', () => {
-  const proof = path.resolve(__dirname, '../atris/receipts/2026-10-14-worktree-cleanup-moved-lock-check.js');
-  const result = spawnSync(process.execPath, [proof], { encoding: 'utf8', timeout: 120000 });
-  assert.equal(result.status, 0, result.stderr || result.stdout);
+  const result = runProof('2026-10-14-worktree-cleanup-moved-lock-check.js');
   assert.match(result.stdout, /kept as missing with the leftover shared lock and its age named; lock, files, branch, and Git record retained/);
 });
 
