@@ -345,20 +345,65 @@ test('tidy asks origin for its current default branch instead of the stale local
   }
 });
 
-test('tidy keeps every copy when the running-program scan fails', () => {
+test('tidy names locks and keeps every copy when the running-program scan fails', () => {
   const fx = makeFixture();
   try {
     const clean = addCopy(fx, 'landed-clean');
-    const failingLsof = path.join(fx.base, 'lsof-fails');
+    const copy = addCopy(fx, 'scan-failed-locked');
+    runGit(['worktree', 'lock', '--reason', 'unfinished work', copy], fx.repo);
+    const privateDir = runGit(['rev-parse', '--absolute-git-dir'], copy);
+    const locks = [
+      path.join(privateDir, 'index.lock'),
+      path.join(privateDir, 'locked'),
+      path.join(fx.repo, '.git', 'refs', 'heads', 'master.lock'),
+    ];
+    const now = Date.now();
+    for (const [index, lock] of locks.entries()) {
+      fs.writeFileSync(lock, 'unfinished git work\n');
+      const aged = new Date(now - (7200 + index * 60) * 1000);
+      fs.utimesSync(lock, aged, aged);
+    }
+    const failingLsof = path.join(fx.base, 'lsof');
     fs.writeFileSync(failingLsof, '#!/bin/sh\necho "lsof broke" >&2\nexit 1\n', { mode: 0o755 });
 
-    const result = tidyMemberCopies({ repoRoot: fx.repo, lsofBin: failingLsof });
-    assert.match(result.aborted, /could not check for running programs: lsof broke/);
-    assert.equal(result.removed, 0);
-    assert.equal(byName(result, 'landed-clean').action, 'kept');
-    assert.ok(fs.existsSync(clean));
-    assert.ok(branchExists(fx.repo, 'landed-clean'));
-    assert.match(formatTidy(result), /every copy is kept/);
+    for (const dryRun of [true, false]) {
+      const result = tidyMemberCopies({ repoRoot: fx.repo, lsofBin: failingLsof, dryRun, now });
+      assert.equal(result.aborted, 'could not check for running programs: lsof broke');
+      assert.equal(result.removed, 0);
+      assert.equal(result.kept, 2);
+      assert.equal(byName(result, 'landed-clean').action, 'kept');
+      assert.equal(byName(result, 'scan-failed-locked').action, 'kept');
+      assert.match(byName(result, 'scan-failed-locked').reason, /^could not check for running programs: lsof broke; git locks:/);
+      assert.match(formatTidy(result), /every copy is kept/);
+      for (const [index, lock] of locks.entries()) {
+        assert.ok(formatTidy(result).includes(`${lock} (${7200 + index * 60}s old)`), formatTidy(result));
+      }
+      assert.ok(!byName(result, 'landed-clean').reason.includes(locks[0]));
+      assert.ok(!byName(result, 'landed-clean').reason.includes(locks[1]));
+
+      const args = [path.resolve(__dirname, '../bin/atris.js'), 'member', 'tidy', '--dir', fx.copies];
+      if (dryRun) args.push('--dry-run');
+      const cli = spawnSync(process.execPath, args, {
+        cwd: fx.repo, encoding: 'utf8', timeout: 90000,
+        env: { ...process.env, PATH: `${fx.base}${path.delimiter}${process.env.PATH}`, ATRIS_NO_UPDATE_CHECK: '1' },
+      });
+      console.log(`command: PATH=${fx.base}:$PATH node ${args.join(' ')}\n${cli.stdout.trim()}\nexit: ${cli.status}`);
+      assert.equal(cli.status, 1, cli.stderr || cli.stdout);
+      assert.match(cli.stdout, /kept\s+scan-failed-locked\s+could not check for running programs: lsof broke; git locks:/);
+      assert.match(cli.stdout, /tidy: removed 0, kept 2|tidy: would remove 0, kept 2/);
+      for (const lock of locks) {
+        assert.ok(cli.stdout.includes(`${lock} (`), cli.stdout);
+        const age = Number(cli.stdout.split(`${lock} (`)[1].match(/^(\d+)s old\)/)?.[1]);
+        const elapsed = Math.floor((Date.now() - fs.statSync(lock).mtimeMs) / 1000);
+        assert.ok(age <= elapsed && elapsed - age <= 5, cli.stdout);
+        assert.ok(fs.existsSync(lock));
+      }
+      for (const folder of [clean, copy]) {
+        assert.ok(fs.existsSync(path.join(folder, 'README.md')));
+        assert.ok(branchExists(fx.repo, path.basename(folder)));
+      }
+      assert.equal(fs.existsSync(path.join(fx.repo, '.atris/state/worktree_removals.jsonl')), false);
+    }
   } finally {
     fs.rmSync(fx.base, { recursive: true, force: true });
   }
