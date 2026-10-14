@@ -840,10 +840,13 @@ test('a line marked slop-ignore is neither flagged nor fixed', () => {
 });
 
 test('fix drops a dash after a quote that already ends its sentence', () => {
-  // from this repo's feature notes, policies, and the endgame skill
+  // from this repo's feature notes, policies, and the endgame skill; a name
+  // that closes the line is who said the quote, so it takes parentheses
   const file = tmpFile('quote-end.md', [
     'He said "the gap is wiring." \u2014 PERSONA.md exists.',
     '"Connect them looking backward." \u2014 Steve Jobs',
+    '> \u201cWhy not now?\u201d \u2014 Grace Hopper',
+    'He said "it held." \u2014 Then',
     'Ask "what did we miss?" \u2014 Then read the calls.',
     'They think "who made this?" \u2014 that is the goal.',
     '- "What did we miss?" \u2014 summarizes calls',
@@ -851,7 +854,9 @@ test('fix drops a dash after a quote that already ends its sentence', () => {
   const { changes } = applyFixes([file], RULES);
   assert.deepEqual(changes.map((c) => c.after), [
     'He said "the gap is wiring." PERSONA.md exists.',
-    '"Connect them looking backward." Steve Jobs',
+    '"Connect them looking backward." (Steve Jobs)',
+    '> \u201cWhy not now?\u201d (Grace Hopper)',
+    'He said "it held." Then',
     'Ask "what did we miss?" Then read the calls.',
     'They think "who made this?"; that is the goal.',
     '- "What did we miss?": summarizes calls',

@@ -156,8 +156,12 @@ function fixEmDash(s, { endsBlock = false } = {}) {
       const remark = /^(?:which|although|whereas)\b/.test(whole.slice(at + m.length));
       return ` ${wrappedInParens(aside) ? aside : `(${aside})`}${remark ? ', ' : gap ? ' ' : ''}`;
     })
-    // a leftover dash after a quote that already ends its sentence goes, and
-    // the quote keeps its own stop: 'backward." Steve Jobs', not '.",'.
+    // a name that closes the line after a quote with its own stop is who said
+    // it, so it goes in parentheses: 'backward." (Steve Jobs)', never a bare
+    // name that reads as a fragment or a stacked '.",'.
+    .replace(/([.!?]["'\u201d\u2019]+)\s*\u2014\s*((?!(?:Then|And|But|So|This|That|It)\b)[A-Z][\w'.-]*(?:\s+(?:of|de|van|von|[A-Z][\w'.-]*)){0,3})\s*$/, '$1 ($2)')
+    // any other leftover dash after a quote that already ends its sentence
+    // goes, and the quote keeps its own stop: 'wiring." PERSONA.md exists'.
     // A quoted question before a lowercase word keeps the comma below.
     .replace(/(\.["'\u201d\u2019]+|[!?]["'\u201d\u2019]+(?=\s*\u2014\s*[A-Z]))\s*\u2014\s*(?=\S)/g, '$1 ')
     // a dash that opens a list of three or more short items running to the
