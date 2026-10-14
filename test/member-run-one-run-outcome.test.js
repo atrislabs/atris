@@ -53,7 +53,7 @@ function freshProject() {
 
 function memberRun(project, objective, verifier) {
   const res = spawnSync(process.execPath, [
-    cliPath, 'member', 'run', 'executor', objective, '--ignite', ...(verifier ? ['--verify', verifier] : []), '--json',
+    cliPath, 'member', 'run', 'executor', objective, '--ignite', '--no-referee', ...(verifier ? ['--verify', verifier] : []), '--json',
   ], { cwd: project.repo, encoding: 'utf8', env: project.env, timeout: 120000 });
   let payload = null;
   try { payload = JSON.parse(res.stdout); } catch {}
@@ -89,7 +89,7 @@ test('one member run ends clearly failed with the reason when its check fails', 
 
     // The plain run a person types streams live and must fail the same way.
     const plain = spawnSync(process.execPath, [
-      cliPath, 'member', 'run', 'executor', 'create bye.txt containing bye', '--ignite', '--verify', 'test "$(cat bye.txt)" = bye',
+      cliPath, 'member', 'run', 'executor', 'create bye.txt containing bye', '--ignite', '--no-referee', '--verify', 'test "$(cat bye.txt)" = bye',
     ], { cwd: project.repo, encoding: 'utf8', env: project.env, timeout: 120000 });
     assert.equal(plain.status, 1, plain.stdout + plain.stderr);
     assert.match(plain.stderr, /the work ran but its check failed/);
