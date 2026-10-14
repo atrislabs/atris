@@ -78,7 +78,7 @@ checks the refs in both files; `atris doc-health --fix-refs` moves drifted ones.
 | update check | `utils/update-check.js` | version check |
 | swarlo client | `lib/self-drive.js` | hub URL and keys |
 | member command | `commands/member.js` | member goals, alive loop |
-| keep the team working (member up) | `lib/member-up.js` | supervisor loop; wiring in `commands/member.js` |
+| keep the team working (member up) | `lib/member-up.js` | task-only supervisor with runnable checks, live progress through `followBoard` in `lib/member-board.js`, and checked finish results; wiring in `commands/member.js`; `test/member-up.test.js`, `test/member-go.test.js` |
 | plain member verbs (run "<job>", wake N, wake a b) | `lib/member-verbs.js` | routes to dispatch, member up, or the old run and wake |
 | member result (newest run, read back) | `lib/member-result.js:200`, `lib/member-result.js:69`, `lib/member-result.js:90`, `lib/member-result.js:161`, `commands/member.js:9452` | `atris member result <member> [--since] [--json]`: run line from the roster run record, newest logs/ receipt and work/ files after the run started, read in the run's own worktree (found by mission id) and the main checkout; one plain result number or null |
 | member tidy (put away landed copies) | `lib/member-tidy.js:101`, `lib/member-tidy.js:81`, `commands/member.js:11038` | `atris member tidy [--dry-run] [--dir <path>]`: fetches origin, keeps copies whose branch is not in origin's default branch (listed with age), copies with a running program inside (an lsof failure keeps all), and copies whose real path leaves the copies folder; the rest go through `git worktree remove` and `git branch -d`, so git refuses changed or untracked files; `test/member-tidy.test.js` |

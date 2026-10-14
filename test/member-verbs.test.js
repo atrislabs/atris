@@ -173,7 +173,7 @@ test('member up only option never starts other members, and skips unknown names 
   const members = ['a', 'b', 'c'].map((name) => ({ name }));
   const deps = {
     listMembers: () => members,
-    pickTask: (name) => ({ id: `t-${name}`, title: `task for ${name}` }),
+    pickTask: (name) => ({ id: `t-${name}`, title: `task for ${name}`, metadata: { verify: 'node --test test/x.test.js' } }),
     spawn: (name) => { spawned.push(name); },
     now: () => clock,
     print: (line) => lines.push(line),
@@ -191,7 +191,7 @@ test('member up only option ignores members working elsewhere when counting the 
   const spawned = [];
   const deps = {
     listMembers: () => [{ name: 'busy', live: true }, { name: 'a' }],
-    pickTask: (name) => ({ id: `t-${name}`, title: name }),
+    pickTask: (name) => ({ id: `t-${name}`, title: name, metadata: { verify: 'node --test test/x.test.js' } }),
     spawn: (name) => { spawned.push(name); },
     now: () => 0,
     print: () => {},

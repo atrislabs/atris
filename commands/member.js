@@ -10415,7 +10415,8 @@ function memberGoJob(owner, root) {
 
 // With no idea given, member go takes the next real job from the task list:
 // the oldest open task that fits the member's job. A dry run only looks.
-function memberGoTask(owner, root, { claim }) {
+// requireCheck: only tasks with a runnable check count.
+function memberGoTask(owner, root, { claim, requireCheck = false }) {
   try {
     const taskDb = require('../lib/task-db');
     const picker = require('../lib/member-task-pick');
@@ -10423,10 +10424,10 @@ function memberGoTask(owner, root, { claim }) {
     const job = memberGoJob(owner, root);
     const workspaceRoot = taskDb.workspaceRoot(root);
     if (claim) {
-      const got = picker.claimTaskForMember(taskDb, db, { workspaceRoot, member: owner, job });
+      const got = picker.claimTaskForMember(taskDb, db, { workspaceRoot, member: owner, job, requireCheck });
       return got ? { ...got, job } : null;
     }
-    const task = picker.pickTaskForMember(taskDb, db, { workspaceRoot, job });
+    const task = picker.pickTaskForMember(taskDb, db, { workspaceRoot, job, requireCheck });
     return task ? { task, objective: picker.taskObjective(task), job } : null;
   } catch (error) {
     console.error(`could not take a task from the list: ${String(error && error.message || error).split('\n')[0]}`);
@@ -10473,6 +10474,9 @@ async function memberSteerOrDispatchWith({ pullTask = false } = {}, rawArgs = []
   const root = process.cwd();
   const asJson = hasFlag(rawArgs, '--json');
   const dryRun = hasFlag(rawArgs, '--dry-run');
+  // Set by `member up`: run only a claimed task with a runnable check, never
+  // the member's own goal text.
+  const needsCheck = pullTask && hasFlag(rawArgs, '--needs-check');
   const valueFlags = new Set(['--engine', '--model', '--verify', '--referee-engine', '--minutes', '--hours', '--max-ticks', '--from']);
   const positionals = [];
   const flagArgs = [];
@@ -10480,6 +10484,7 @@ async function memberSteerOrDispatchWith({ pullTask = false } = {}, rawArgs = []
     const token = String(rawArgs[i] || '');
     if (!token) continue;
     if (token.startsWith('-')) {
+      if (token === '--needs-check') continue;
       flagArgs.push(token);
       if (valueFlags.has(token) && i + 1 < rawArgs.length) {
         flagArgs.push(rawArgs[i + 1]);
@@ -10516,8 +10521,14 @@ async function memberSteerOrDispatchWith({ pullTask = false } = {}, rawArgs = []
   // A human or odd-typed member never takes a task: it would be claimed and
   // then stranded when the run refuses the member.
   const pulled = pullTask && !prompt && !missionSummary.live && !memberRefusalFor(targetMember, paths.memberFile)
-    ? memberGoTask(owner, root, { claim: !dryRun })
+    ? memberGoTask(owner, root, { claim: !dryRun, requireCheck: needsCheck })
     : null;
+  if (needsCheck && !pulled) {
+    const payload = { ok: true, action: 'member_go', mode: 'idle', member: owner, reason: 'no task with a check' };
+    printJsonOrText(payload, [`${owner} is idle, no task with a check`], asJson);
+    process.exitCode = require('../lib/member-up').IDLE_EXIT;
+    return payload;
+  }
   const effectivePrompt = prompt
     || pulled?.objective
     || goalPlane.goal?.next_push
@@ -10625,7 +10636,9 @@ async function memberSteerOrDispatchWith({ pullTask = false } = {}, rawArgs = []
   }
   const task = memberGoFinishTask(owner, pulled.task, result);
   const merged = { ...(result || {}), task };
-  if (asJson) console.log(JSON.stringify(merged));
+  if (asJson) console.log(JSON.stringify(needsCheck
+    ? { task, work_step: { summary: result?.work_step?.summary || null }, error: result?.error || null }
+    : merged));
   else if (task.outcome === 'review') console.log(`Task "${task.title}" is ready for review.`);
   else console.log(`Task "${task.title}" went back on the list: ${task.reason}`);
   return merged;
@@ -10699,7 +10712,7 @@ function memberUpPick(root, name, taken) {
     const { fittingTasks } = require('../lib/member-task-pick');
     const db = taskDb.open();
     const job = memberGoJob(name, root);
-    return fittingTasks(taskDb, db, { workspaceRoot: taskDb.workspaceRoot(root), job })
+    return fittingTasks(taskDb, db, { workspaceRoot: taskDb.workspaceRoot(root), job, requireCheck: true })
       .find((task) => !taken.has(task.id)) || null;
   } catch {
     return null;
@@ -10710,23 +10723,46 @@ function memberUpSpawn(root, name, onExit) {
   const { spawn } = require('child_process');
   const logDir = path.join(root, '.atris', 'state', 'member-up');
   fs.mkdirSync(logDir, { recursive: true });
-  const out = fs.openSync(path.join(logDir, `${name}.log`), 'a');
-  const child = spawn(process.execPath, [path.join(__dirname, '..', 'bin', 'atris.js'), 'member', 'go', name], {
-    cwd: root,
-    detached: true,
-    stdio: ['ignore', out, out],
-    env: process.env,
+  const logFile = path.join(logDir, `${name}.log`);
+  const out = fs.openSync(logFile, 'a');
+  const start = fs.fstatSync(out).size;
+  let child;
+  try {
+    child = spawn(process.execPath, [path.join(__dirname, '..', 'bin', 'atris.js'), 'member', 'go', name, '--needs-check', '--json'], {
+      cwd: root,
+      detached: true,
+      // Children keep their log handle when the foreground supervisor stops.
+      stdio: ['ignore', out, out],
+      env: process.env,
+    });
+  } finally {
+    fs.closeSync(out);
+  }
+  child.on('error', (error) => onExit(null, { ok: false, reason: error.message }));
+  child.on('close', (code, signal) => {
+    let output = '';
+    let fd;
+    try {
+      fd = fs.openSync(logFile, 'r');
+      const size = fs.fstatSync(fd).size;
+      const from = Math.max(start, size - 64 * 1024);
+      const buf = Buffer.alloc(Math.max(0, size - from));
+      const read = fs.readSync(fd, buf, 0, buf.length, from);
+      output = buf.subarray(0, read).toString('utf8');
+    } catch {} finally {
+      if (fd !== undefined) fs.closeSync(fd);
+    }
+    const { memberUpResult } = require('../lib/member-up');
+    onExit(code, memberUpResult(output, '', signal));
   });
-  fs.closeSync(out);
-  child.on('error', () => onExit(null));
-  child.on('exit', (code) => onExit(code));
   return child;
 }
 
 async function memberUp(...args) {
   if (hasFlag(args, '--help') || hasFlag(args, '-h')) {
     console.log('Usage: atris member up [--max N] [--only a,b] [--dry-run]');
-    console.log('Keeps the team working: every minute, starts each free member that has a fitting task.');
+    console.log('Keeps the team working: every minute, starts each free member that has a fitting task with a runnable check.');
+    console.log('A member with no such task stays idle; it never runs its own goal instead.');
     console.log('--only limits it to those members. Same as atris member wake 5 or atris member wake a b.');
     console.log('Ctrl-C or atris member sleep --all ends it. Runs it started keep going.');
     return;
@@ -10752,7 +10788,7 @@ async function memberUp(...args) {
     if (!started.length && up.working() >= up.max) {
       console.log(`nothing to start: ${up.working()} already working, the limit is ${up.max}`);
     } else if (!started.length) {
-      console.log('nothing to start: no free member has a fitting task');
+      console.log('nothing to start: no free member has a task with a runnable check');
     }
     return started;
   }
