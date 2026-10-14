@@ -19,10 +19,12 @@ Details for any task: atris task show <ID>
 
 ## In Progress
 
-- **[AIC-44]** Remove unmapped landing setup launch · auto-improver
+(Empty)
 
 ## Review
 
+- **[AIC-44]** Remove unmapped landing setup launch · auto-improver
+  **Done looks like:** Developers finish the same landing checks sooner because setup starts one fewer command.
 - **[AIC-43]** Remove incidental wording review setup launch · auto-improver
   **Done looks like:** Developers finish the same wording review checks sooner because setup starts one fewer command.
 - **[AIC-42]** Remove existing seed selection setup launches · auto-improver
