@@ -182,6 +182,26 @@ test('a short window keeps the header and the newest rows, and says how many did
   }
 });
 
+test('a short window keeps failed and stopped rows on screen ahead of newer ones', () => {
+  const logs = {};
+  for (let i = 1; i <= 6; i++) logs[`m${i}`] = [`${at(i * 10)} m-${i} started: job ${i}`, `${at(i * 10 - 5)} m-${i} running: step ${i}`];
+  logs.broke = [`${at(900)} m-7 started: old job`, `${at(800)} m-7 finished: failed (engine error)`];
+  logs.halted = [`${at(950)} m-8 started: other job`, `${at(850)} m-8 finished: stopped`];
+  const dir = fakeDir(logs);
+  try {
+    const rows = readBoard({ dir, now: NOW });
+    assert.deepEqual(rows.slice(-2).map((r) => r.member), ['broke', 'halted'], 'by recency they are last');
+    const lines = renderBoard(rows, dir, 0, 0, 7).split('\n');
+    assert.equal(lines.length, 7);
+    assert.deepEqual(lines.slice(1, 5).map((l) => l.split(/\s+/)[0]), ['m1', 'm2', 'broke', 'halted'],
+      'they stay, and rows keep board order');
+    assert.match(lines[3], /^broke\s+done failed\s+failed \(engine error\) 13m ago\s/);
+    assert.equal(lines[6], '4 more not shown, the window is too short');
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
 test('last step skips writes to the member own log', () => {
   const dir = fakeDir({
     architect: [
