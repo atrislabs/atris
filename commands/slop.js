@@ -119,7 +119,11 @@ const NOUN_CLAUSE_AFTER_DASH = new RegExp(`(?<=[\\w)\\]"'*_\`\\u201d\\u2019\\uE0
 // "Nothing", "everything" and their kin before a plain verb in "ed" or "s"
 // are a subject too: "the gate held, nothing in the queue moved". A word in
 // "ss" is never the verb, so "nothing less than" and "nothing fancy" stay.
-const QUANTITY_CLAUSE_AFTER_DASH = new RegExp(`(?<=[\\w)\\]"'*_\`\\u201d\\u2019\\uE001])\\s*\\u2014\\s*(?=(?:nothing|everything|nobody|everyone)\\s+(?:else\\s+)?${PLACE_PHRASE}[a-z]{2,}(?:ed|[a-rt-z]s)(?:\\s+[^\\s\\u2014]|[.!?;,]|$))`, 'g');
+// A count and a plural noun before a verb in "ed" are one too: "the fix is
+// small, two lines in the fixer changed". A verb in "ed" before "by", "as",
+// "for" and their kin describes the noun instead, so "two tests marked as
+// flaky" and "12 files touched by the sweep" keep their comma.
+const QUANTITY_CLAUSE_AFTER_DASH = new RegExp(`(?<=[\\w)\\]"'*_\`\\u201d\\u2019\\uE001])\\s*\\u2014\\s*(?=(?:(?:nothing|everything|nobody|everyone)\\s+(?:else\\s+)?${PLACE_PHRASE}[a-z]{2,}(?:ed|[a-rt-z]s)|(?:two|three|four|five|six|seven|eight|nine|ten|both|several|many|few|\\d+)\\s+(?:[a-z]+\\s+)?[a-z]+s\\s+${PLACE_PHRASE}[a-z]{2,}ed(?!\\s+(?:by|as|for|from|to|into|with|under)\\b))(?:\\s+[^\\s\\u2014]|[.!?;,]|$))`, 'g');
 // A plain verb ending in "s" counts only after a determiner and one more word,
 // and never right before a preposition: "a stray file turns them" joins, but
 // "the changes from whoever" and "the old tests from CI" stay noun phrases.

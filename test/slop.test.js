@@ -943,6 +943,10 @@ test('fix joins a noun clause after the dash with a semicolon', () => {
     'Check the board \u2014 nobody claimed it.',
     'Ship it \u2014 nothing fancy.',
     'Keep it plain \u2014 nothing less than that.',
+    // a count and a plural noun before a verb in "ed" start a clause too
+    'The fix is small \u2014 two lines in the fixer changed.',
+    'It is done \u2014 both checks passed.',
+    'Keep the board \u2014 two tests marked as flaky.',
   ].join('\n'));
   const { changes } = applyFixes([file], RULES);
   assert.deepEqual(changes.map((c) => c.after), [
@@ -979,6 +983,9 @@ test('fix joins a noun clause after the dash with a semicolon', () => {
     'Check the board; nobody claimed it.',
     'Ship it, nothing fancy.',
     'Keep it plain, nothing less than that.',
+    'The fix is small; two lines in the fixer changed.',
+    'It is done; both checks passed.',
+    'Keep the board, two tests marked as flaky.',
   ]);
 });
 
