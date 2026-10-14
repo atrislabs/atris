@@ -159,6 +159,28 @@ test('reap keeps old private and shared git locks in preview and forced removal'
   }
 });
 
+test('reap says a locked folder is missing and still names the lock file, even with --force', () => {
+  const { base, repo, wt } = landedWorktree();
+  try {
+    git(repo, ['worktree', 'lock', '--reason', 'on an unplugged drive', wt]);
+    const lock = path.join(git(wt, ['rev-parse', '--absolute-git-dir']), 'locked');
+    const now = Date.now();
+    const aged = new Date(now - 7200000);
+    fs.utimesSync(lock, aged, aged);
+    fs.rmSync(wt, { recursive: true, force: true });
+    for (const dryRun of [true, false]) {
+      const receipt = reap(repo, { remote: false, force: true, dryRun, now, activeCwds: [] });
+      assert.deepEqual(receipt.removedWorktrees, []);
+      assert.deepEqual(receipt.deletedBranches, []);
+      assert.ok(receipt.keptWorktrees.includes(`${wt} (folder is missing; git lock: ${lock} (7200s old))`), JSON.stringify(receipt.keptWorktrees));
+      assert.ok(fs.existsSync(lock));
+      assert.deepEqual(removalLines(repo), []);
+    }
+  } finally {
+    fs.rmSync(base, { recursive: true, force: true });
+  }
+});
+
 test('reap names who removed a folder and why', () => {
   const { base, repo, wt } = landedWorktree();
   try {

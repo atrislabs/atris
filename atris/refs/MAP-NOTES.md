@@ -603,7 +603,7 @@ MCP stdio request flow: `mcp/atris-mcp/index.mjs:142` reads requests while desig
 
 ### Feature: Landing Contract (`atris land`)
 
-- `commands/land.js:581`: private and shared Git-lock check before backup or preview; `commands/land.js:697`: recheck immediately before removal; `commands/land.js:908`: preview prints exact lock paths and ages. Real CLI proof: `atris/receipts/2026-10-14-land-lock-preview.js`.
+- `commands/land.js:583`: missing folders read the retained lock from the main repository; `commands/land.js:588`: private and shared Git-lock check before backup or preview; `commands/land.js:704`: recheck immediately before removal; `commands/land.js:919`: preview prints exact lock paths and ages, including missing folders. Missing-folder CLI proof: `atris/receipts/2026-10-14-land-missing-folder-check.js`. Real CLI proof: `atris/receipts/2026-10-14-land-lock-preview.js`.
 
 **Purpose:** Work is merged or reaped, never limbo: the board shows every unlanded branch/worktree; `--reap` salvages then deletes anything landed or past TTL
 

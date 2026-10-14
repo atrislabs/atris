@@ -1,7 +1,7 @@
 const fs = require('fs');
 const path = require('path');
 const gitSpawn = require('../lib/git-spawn');
-const { inspectGitActivity } = require('../lib/git-activity');
+const { inspectGitActivity, missingFolderLock } = require('../lib/git-activity');
 const { compactErrorPayload, printCliJson } = require('../lib/cli-json');
 const { listWorktrees, statusCounts, defaultMainlineBase, listActiveProcessPaths, worktreeHasActiveProcess, recordWorktreeRemoval } = require('./worktree');
 
@@ -578,6 +578,13 @@ function reap(root, { ttlDays = DEFAULT_TTL_DAYS, staleHours = DEFAULT_STALE_HOU
       protectedWorktrees.push({ ...w, reason: 'fresh_worktree_grace' });
       continue;
     }
+    // A folder gone from disk (an unplugged drive) cannot answer for itself;
+    // the main repo still holds git's own lock file for it.
+    if (!fs.existsSync(w.path)) {
+      const lock = missingFolderLock(root, w.path, now);
+      protectedWorktrees.push({ ...w, reason: lock.locks.length ? lock.reason : 'folder is missing' });
+      continue;
+    }
     const activity = inspectGitActivity(w.path, now);
     if (!activity.safe) {
       protectedWorktrees.push({ ...w, reason: activity.reason });
@@ -912,7 +919,7 @@ function printReceipt(receipt) {
     for (const b of receipt.deletedBranches) console.log(`  would clear  ${b}`);
     for (const w of receipt.removedWorktrees) console.log(`  would remove ${w}`);
     for (const k of receipt.keptWorktrees || []) {
-      if (String(k).includes('(git locks:') || String(k).includes('(could not check git activity:')) {
+      if (['(git locks:', '(could not check git activity:', '(folder is missing'].some((reason) => String(k).includes(reason))) {
         console.log(`  kept, left alone: ${k}`);
       }
     }
