@@ -1,7 +1,8 @@
 'use strict';
 
 // Engine work folders are never removed while a run is inside them, and every
-// removal leaves one line saying who removed it and why.
+// removal leaves one line saying who removed it and why. Git mid-operation in
+// the folder (lock held, rebase or merge paused) holds removal the same way.
 
 const test = require('node:test');
 const assert = require('node:assert/strict');
@@ -98,6 +99,37 @@ test('worktree cleanup names who removed a folder and why', () => {
     assert.equal(line.path, wt);
     assert.equal(line.by, 'atris worktree cleanup');
     assert.equal(line.reason, 'merged_into_base');
+  } finally {
+    fs.rmSync(base, { recursive: true, force: true });
+  }
+});
+
+function worktreeGitDir(wt) {
+  return git(wt, ['rev-parse', '--path-format=absolute', '--git-dir']);
+}
+
+test('reap keeps a folder while git holds its lock, even with --force', () => {
+  const { base, repo, wt } = landedWorktree();
+  try {
+    fs.writeFileSync(path.join(worktreeGitDir(wt), 'index.lock'), '');
+    const receipt = reap(repo, { remote: false, force: true, activeCwds: [] });
+    assert.ok(fs.existsSync(wt), JSON.stringify(receipt));
+    assert.ok(receipt.keptWorktrees.some((line) => line.includes('git_lock')), JSON.stringify(receipt));
+    assert.ok(!receipt.deletedBranches.includes('engine-run'));
+    assert.deepEqual(removalLines(repo), []);
+  } finally {
+    fs.rmSync(base, { recursive: true, force: true });
+  }
+});
+
+test('worktree cleanup keeps a clean folder paused mid-rebase', () => {
+  const { base, repo, wt } = landedWorktree();
+  try {
+    fs.mkdirSync(path.join(worktreeGitDir(wt), 'rebase-merge'));
+    const result = cleanupWorktrees({ root: repo, base: 'HEAD', apply: true, activeCwds: [] });
+    assert.deepEqual(result.removed, []);
+    assert.ok(fs.existsSync(wt));
+    assert.ok(result.kept.some((item) => item.path === wt && item.reason === 'git_rebase_in_progress'), JSON.stringify(result.kept));
   } finally {
     fs.rmSync(base, { recursive: true, force: true });
   }

@@ -1147,6 +1147,43 @@ function worktreeHasActiveProcess(worktreePath, activeCwds) {
   });
 }
 
+// Git's own footprints for an operation still in flight in a linked worktree:
+// a write lock, or a merge/rebase/cherry-pick/revert/bisect paused mid-way.
+// A clean tree can still be mid-rebase, so the dirty check alone misses these.
+const GIT_ACTIVITY_MARKERS = [
+  ['index.lock', 'git_lock'],
+  ['HEAD.lock', 'git_lock'],
+  ['rebase-merge', 'git_rebase_in_progress'],
+  ['rebase-apply', 'git_rebase_in_progress'],
+  ['MERGE_HEAD', 'git_merge_in_progress'],
+  ['CHERRY_PICK_HEAD', 'git_cherry_pick_in_progress'],
+  ['REVERT_HEAD', 'git_revert_in_progress'],
+  ['BISECT_LOG', 'git_bisect_in_progress'],
+];
+
+// Returns the reason git is busy in the folder, or null. Reads the .git
+// pointer file directly so the check costs no spawn per worktree.
+function worktreeGitActivity(worktreePath) {
+  let gitDir;
+  try {
+    const dotGit = path.join(worktreePath, '.git');
+    const stat = fs.statSync(dotGit);
+    if (stat.isDirectory()) {
+      gitDir = dotGit;
+    } else {
+      const match = fs.readFileSync(dotGit, 'utf8').match(/^gitdir:\s*(.+)\s*$/m);
+      if (!match) return null;
+      gitDir = path.resolve(worktreePath, match[1].trim());
+    }
+  } catch {
+    return null;
+  }
+  for (const [marker, reason] of GIT_ACTIVITY_MARKERS) {
+    if (fs.existsSync(path.join(gitDir, marker))) return reason;
+  }
+  return null;
+}
+
 // Every work-folder removal leaves one line naming who removed it and why, in
 // the main checkout's state so the line outlives the folder it describes.
 function recordWorktreeRemoval(root, { path: removedPath, branch = '', by, reason }) {
@@ -1222,6 +1259,11 @@ function cleanupWorktrees({ root = repoRoot(), base: baseOverride = '', apply = 
     }
     if (worktreeHasActiveProcess(wtPath, activeCwds)) {
       kept.push({ ...item, reason: 'active_process' });
+      continue;
+    }
+    const gitActivity = worktreeGitActivity(wtPath);
+    if (gitActivity) {
+      kept.push({ ...item, reason: gitActivity });
       continue;
     }
     const rawCounts = statusCounts(wt.path);
@@ -1424,5 +1466,6 @@ module.exports = {
   swarloClaim,
   runShipHealthCheck,
   worktreeCommand,
+  worktreeGitActivity,
   worktreeHasActiveProcess,
 };
