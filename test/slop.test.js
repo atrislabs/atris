@@ -1849,6 +1849,24 @@ test('fix gives a file reference the colon before the code it points at, past a 
   ]);
 });
 
+test('fix joins a short subject and a verb that ends its clause with a semicolon', () => {
+  // "the brain stays" is a whole clause with nothing after the verb; the
+  // fix used to splice it on with a comma. "no code changes" names a thing.
+  const file = tmpFile('clause-end.md', [
+    'Swap the model \u2014 the brain stays.',
+    'Right now, every session vanishes \u2014 no reusable artifact remains.',
+    'Rollback: N/A \u2014 no code changes; revert if needed.',
+    'Pick the tool \u2014 the one that works.',
+  ].join('\n\n'));
+  const { changes } = applyFixes([file], RULES, { write: false });
+  assert.deepEqual(changes.map((c) => c.after), [
+    'Swap the model; the brain stays.',
+    'Right now, every session vanishes; no reusable artifact remains.',
+    'Rollback: N/A, no code changes; revert if needed.',
+    'Pick the tool, the one that works.',
+  ]);
+});
+
 test('fix keeps a journal heading that ends in a time readable for its hour', () => {
   // analytics reads the hour after a dash or a spaced hyphen at the end of a
   // heading; the fix wrote "### Watch: 19:05", which hides it, and glued

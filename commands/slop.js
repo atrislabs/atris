@@ -289,6 +289,14 @@ const PLURAL_CLAUSE_AFTER_DASH = new RegExp(`(?<=[\\w)\\]"'*_\`\\u201d\\u2019\\u
 // noun, so "the private lives of founders" stays.
 const RARE_NOUN_VERB = '(?:lives|appears|belongs|depends|seems|happens|exists|sits|resides|occurs|arrives|applies)';
 const THE_CLAUSE_AFTER_DASH = new RegExp(`(?<=[\\w)\\]"'*_\`\\u201d\\u2019\\uE001])\\s*\\u2014\\s*(?!${TIME_OPENER})(?=(?:the|a|an|every|each|no)\\s+(?:(?!(?:the|a|an|that|whose|which|who|it|they|we|you|he|she|I|this|these|those)\\b)${NOUN_WORD}\\s+){1,2}${RARE_NOUN_VERB}\\s+(?!(?:of|and|or|that|which|who|like|than|as)\\b)[^\\s\\u2014])`, 'g');
+// A short subject and a verb that ends its clause start one too, with
+// nothing after the verb: "swap the model; the brain stays", "the session
+// vanishes; no reusable artifact remains". Only verbs a noun rarely ends in
+// count here, so "no code changes" and "the config lives" keep their comma,
+// and no word in "s" may sit before the verb, since it can be the real verb:
+// "the backend captures runs".
+const END_VERB = '(?:remains|stays|works|survives|holds|runs|fails|breaks|helps|vanishes|persists|exists)';
+const END_CLAUSE_AFTER_DASH = new RegExp(`(?<=[\\w)\\]"'*_\`\\u201d\\u2019\\uE001])\\s*\\u2014\\s*(?=(?:the|a|an|every|each|no)\\s+(?:(?!(?:the|a|an|that|whose|which|who|it|they|we|you|he|she|I|this|these|those|one|ones)\\b)(?![A-Za-z_-]*[a-rt-z]s\\b)${NOUN_WORD}\\s+){1,2}${END_VERB}(?=[.;!?,]|$))`, 'g');
 // "Each" takes a verb in "s", so "each", up to four words and a verb in "s"
 // with more words after it start one too: "started the loop; each tick
 // re-reads the latest logs". No "the", "that" or place word may sit before
@@ -606,6 +614,10 @@ function fixEmDash(s, { endsBlock = false, startsBlock = false, spans = [] } = {
     .replace(THE_CLAUSE_AFTER_DASH, (m, at, whole) => {
       const left = clauseLeft(at, whole);
       return left && !NAME_BEFORE_PLAIN_VERB.test(whole.slice(at)) ? clauseJoin(left) : m;
+    })
+    .replace(END_CLAUSE_AFTER_DASH, (m, at, whole) => {
+      const left = clauseLeft(at, whole);
+      return left ? clauseJoin(left) : m;
     })
     .replace(EACH_CLAUSE_AFTER_DASH, (m, at, whole) => {
       const left = clauseLeft(at, whole);
