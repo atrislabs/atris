@@ -403,6 +403,10 @@ function fixEmDash(s, { endsBlock = false, startsBlock = false } = {}) {
       // So does one that holds one side of a bold or code mark: "**SFH-16:
       // insider guide library.** The old one was fake", never "(insider ...**".
       if (count(/\*\*/g) % 2 || count(/__/g) % 2 || count(/`/g) % 2) return m;
+      // So does one that crosses a table cell border, since each cell is its
+      // own thing: "HIGH, improves all output | HIGH, unique", never "HIGH
+      // (improves all output | HIGH) unique".
+      if (/^\s*\|/.test(whole) && /(?<!\\)\|/.test(aside)) return m;
       // An aside that opens with a joining word goes on with the sentence, so
       // it takes commas too: "install it, then run it, and ship". Punctuation
       // already before it keeps its place: 'said "stop." then it went, and left'.

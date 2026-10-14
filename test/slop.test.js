@@ -1693,6 +1693,22 @@ test('fix keeps the comma when a plain word and a name sit before the verb', () 
   ]);
 });
 
+test('fix never pairs two dashes across a table cell border', () => {
+  // from planning tables, which came out "HIGH (improves all output | HIGH) unique"
+  const file = tmpFile('table.md', [
+    '| 1 | /copy-edit skill | 2-3h | HIGH \u2014 improves all output | HIGH \u2014 unique, no equivalent |',
+    '| What it is | Hosted RL \u2014 bring your own envs | Self-hosted RL \u2014 the backend captures runs |',
+    // a pair inside one cell is still an aside
+    '| Gate | the strict one \u2014 the one CI runs \u2014 holds | done |',
+  ].join('\n'));
+  const { changes } = applyFixes([file], RULES);
+  assert.deepEqual(changes.map((c) => c.after), [
+    '| 1 | /copy-edit skill | 2-3h | HIGH, improves all output | HIGH, unique, no equivalent |',
+    '| What it is | Hosted RL, bring your own envs | Self-hosted RL; the backend captures runs |',
+    '| Gate | the strict one (the one CI runs) holds | done |',
+  ]);
+});
+
 test('fix starts the next sentence after a stop that sits before a dash', () => {
   // from the terrace repo, which came out "fine with try? the cost"
   const file = tmpFile('stop.md', [
