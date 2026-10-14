@@ -151,6 +151,18 @@ test('reap keeps a folder while git holds its lock, even with --force', () => {
   }
 });
 
+test('reap says which git work is paused in a folder it keeps', () => {
+  const { base, repo, wt } = landedWorktree();
+  try {
+    fs.writeFileSync(path.join(worktreeGitDir(wt), 'MERGE_HEAD'), `${git(repo, ['rev-parse', 'HEAD'])}\n`);
+    const receipt = reap(repo, { remote: false, force: true, activeCwds: [] });
+    assert.ok(fs.existsSync(wt));
+    assert.ok(receipt.keptWorktrees.includes(`${wt} (git_merge_in_progress: a merge is paused)`), JSON.stringify(receipt.keptWorktrees));
+  } finally {
+    fs.rmSync(base, { recursive: true, force: true });
+  }
+});
+
 test('worktree cleanup names the lock holding a folder and how old it is', () => {
   const { base, repo, wt } = landedWorktree();
   try {

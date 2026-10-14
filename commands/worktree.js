@@ -1306,9 +1306,25 @@ function describeLockAge(ms) {
   return `${Math.floor(minutes / 60)} h`;
 }
 
+// Plain words for what git is partway through when it holds a folder.
+const PAUSED_GIT_WORK = {
+  git_rebase_in_progress: 'a rebase',
+  git_merge_in_progress: 'a merge',
+  git_cherry_pick_in_progress: 'a cherry-pick',
+  git_revert_in_progress: 'a revert',
+  git_bisect_in_progress: 'a bisect',
+};
+
+function describePausedGitWork(reason) {
+  return PAUSED_GIT_WORK[reason] ? `${PAUSED_GIT_WORK[reason]} is paused` : null;
+}
+
 // The kept reason as reap prints it: a git lock also names its file and age,
-// so the line an operator reads says what to check before clearing it.
+// and paused work says what to finish, so the line an operator reads says
+// what to check before clearing it. The reason code stays first.
 function describeGitActivity(worktreePath, reason, now = Date.now()) {
+  const paused = describePausedGitWork(reason);
+  if (paused) return `${reason}: ${paused}`;
   if (reason !== 'git_lock') return reason;
   const lock = worktreeGitLock(worktreePath, now);
   return lock ? `git_lock: ${lock.file}, ${describeLockAge(lock.ageMs)} old` : reason;
@@ -1515,6 +1531,10 @@ function cleanup(args) {
   for (const item of result.kept.filter((kept) => kept.lock)) {
     console.log(`held by git lock: ${item.path} lock=${item.lock} age=${describeLockAge(item.lock_age_ms)}`);
   }
+  for (const item of result.kept) {
+    const paused = describePausedGitWork(item.reason);
+    if (paused) console.log(`held by paused git work: ${item.path} ${paused}`);
+  }
   if (!result.apply && result.candidates.length) console.log('next: atris worktree cleanup --apply');
   return 0;
 }
@@ -1608,6 +1628,7 @@ module.exports = {
   gitStoreLock,
   describeLockAge,
   describeGitActivity,
+  describePausedGitWork,
   describeFlightAge,
   flightStampMs,
   listActiveProcessPaths,
