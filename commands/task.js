@@ -6474,25 +6474,11 @@ function keptCount(result) {
     + (result && result.reaped ? result.reaped.length : 0);
 }
 
-// Jobs waiting in review follow their change on GitHub: merged closes them,
-// closed without merging sends them back to open with the reason.
-function settleMergedTasks(cwd) {
-  try {
-    const taskDb = getTaskDb();
-    if (!fs.existsSync(taskDb.getDbPath())) return { closed: [], reopened: [] };
-    return require('../lib/task-close-on-merge').closeMergedTasks(taskDb.open(), {
-      workspaceRoot: taskDb.workspaceRoot(cwd),
-      actor: 'task-list',
-    });
-  } catch {
-    // GitHub or git trouble leaves the jobs waiting; the next keep tries again.
-    return { closed: [], reopened: [] };
-  }
-}
-
 function cmdKeep(args) {
-  const result = require('../lib/task-list-keeper').keepWorkspaceTaskList(process.cwd());
-  const settled = settleMergedTasks(process.cwd());
+  // Jobs waiting in review follow their change on GitHub: merged closes them,
+  // closed without merging sends them back to open with the reason.
+  const result = require('../lib/task-list-keeper').keepWorkspaceTaskList(process.cwd(), { checkMerges: 'due' });
+  const settled = { closed: result.closed_merged, reopened: result.reopened_rejected };
   const keptOnly = keptCount(result);
   const count = keptOnly + settled.closed.length + settled.reopened.length;
   if (count) refreshKeptTaskList(process.cwd());

@@ -993,13 +993,14 @@ async function runTickBody(root, { json, policy, receipt, engineValidationDeps =
       const liveReasons = new Map(acceptResults
         .filter((r) => r && r.ref && r.reason && r.action !== 'accepted')
         .map((r) => [r.ref, r.reason]));
-      const kept = require('../lib/task-list-keeper').keepWorkspaceTaskList(root, { actor: 'autoland', includeDone: false });
+      const kept = require('../lib/task-list-keeper').keepWorkspaceTaskList(root, { actor: 'autoland', includeDone: false, checkMerges: 'force' });
       const idle = require('../lib/idle-review-sweep').sweepIdleReviews(root, {
         tasks: readProjection(root),
         policy,
         liveReasons,
       });
-      const putAway = (kept.put_away || []).length + (kept.reaped || []).length;
+      const putAway = (kept.put_away || []).length + (kept.reaped || []).length
+        + (kept.closed_merged || []).length + (kept.reopened_rejected || []).length;
       if (putAway + idle.closed.length > 0) require('./task').refreshKeptTaskList(root);
       receipt.idle_sweep = {
         closed: idle.closed.map((c) => ({ ref: c.ref, reason: c.reason })),

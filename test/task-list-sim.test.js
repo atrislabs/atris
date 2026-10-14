@@ -232,6 +232,10 @@ test('the original pile is gone from the screen after one open', () => {
     add(db, root, { title: 'live waiting task', when: now });
     add(db, root, { title: 'live moving task', status: 'claimed', claimedBy: 'worker', when: now });
     taskStore.close();
+    // The merge check has already looked at the waiting jobs, so cleanup may
+    // put the idle ones away; without it they stay until the check sees them.
+    fs.mkdirSync(path.join(root, '.atris', 'state'), { recursive: true });
+    fs.writeFileSync(path.join(root, '.atris', 'state', 'task_close_on_merge.json'), JSON.stringify({ checked_at: now }));
 
     const boot = runCli(['atris.md'], { cwd: root, env });
     assert.equal(boot.status, 0, boot.stderr);

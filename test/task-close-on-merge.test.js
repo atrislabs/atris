@@ -8,7 +8,8 @@ const path = require('node:path');
 const { spawnSync } = require('node:child_process');
 
 const taskStore = require('../lib/task-db');
-const { closeMergedTasks } = require('../lib/task-close-on-merge');
+const { CHECK_EVERY_MS, closeMergedTasks, closeMergedTasksIfDue } = require('../lib/task-close-on-merge');
+const { DAY_MS, keepTaskList } = require('../lib/task-list-keeper');
 
 const repoRoot = path.resolve(__dirname, '..');
 const cliPath = path.join(repoRoot, 'bin', 'atris.js');
@@ -38,16 +39,45 @@ function waitingJob(db, root, title, member, metadata = {}) {
 }
 
 const LATER = '2099-01-01T00:00:00Z';
+const ON_MASTER = 'a'.repeat(40);
+const OFF_MASTER = 'b'.repeat(40);
+const onMaster = commit => commit === ON_MASTER;
+
+function change(number, state, headRefName, extra = {}) {
+  const merged = state === 'MERGED';
+  return {
+    number,
+    state,
+    baseRefName: 'master',
+    headRefName,
+    mergedAt: merged ? LATER : null,
+    mergeCommit: merged ? { oid: ON_MASTER } : null,
+    createdAt: LATER,
+    url: `https://github.com/o/r/pull/${number}`,
+    ...extra,
+  };
+}
 
 // What `gh pr list --state all --json ...` answers for this repo.
 function githubAnswer() {
   return [
-    { number: 12, state: 'MERGED', mergedAt: LATER, createdAt: LATER, url: 'https://github.com/o/r/pull/12', headRefName: 'codex/builder-login-page-loads-fast-20990101-000000' },
-    { number: 13, state: 'CLOSED', mergedAt: null, createdAt: LATER, url: 'https://github.com/o/r/pull/13', headRefName: 'codex/generalist-sign-up-sends-a-welcome-note-20990101-000000' },
-    { number: 14, state: 'OPEN', mergedAt: null, createdAt: LATER, url: 'https://github.com/o/r/pull/14', headRefName: 'codex/builder-search-shows-recent-first-20990101-000000' },
-    { number: 15, state: 'MERGED', mergedAt: '2000-01-01T00:00:00Z', createdAt: '2000-01-01T00:00:00Z', url: 'https://github.com/o/r/pull/15', headRefName: 'codex/builder-old-title-reused-20000101-000000' },
-    { number: 16, state: 'MERGED', mergedAt: LATER, createdAt: LATER, url: 'https://github.com/o/r/pull/16', headRefName: 'feature/exact-branch' },
+    change(12, 'MERGED', 'codex/builder-login-page-loads-fast-20990101-000000'),
+    change(13, 'CLOSED', 'codex/generalist-sign-up-sends-a-welcome-note-20990101-000000'),
+    change(14, 'OPEN', 'codex/builder-search-shows-recent-first-20990101-000000'),
+    change(15, 'MERGED', 'codex/builder-old-title-reused-20000101-000000', { mergedAt: '2000-01-01T00:00:00Z', createdAt: '2000-01-01T00:00:00Z' }),
+    change(16, 'MERGED', 'feature/exact-branch'),
   ];
+}
+
+function withDb(fn) {
+  if (!hasNodeSqlite()) return;
+  const root = makeWorkspace();
+  try {
+    fn(taskStore.open(path.join(root, 'tasks.db')), root);
+  } finally {
+    taskStore.close();
+    fs.rmSync(root, { recursive: true, force: true });
+  }
 }
 
 test('a merged change closes its job and a rejected one reopens it', () => {
@@ -63,7 +93,7 @@ test('a merged change closes its job and a rejected one reopens it', () => {
     const otherMember = waitingJob(db, root, 'Login page loads fast', 'executor');
     const exact = waitingJob(db, root, 'Branch named by hand', 'builder', { branch: 'feature/exact-branch' });
 
-    const result = closeMergedTasks(db, { workspaceRoot: root, actor: 'tester', lookupPulls: githubAnswer });
+    const result = closeMergedTasks(db, { workspaceRoot: root, actor: 'tester', lookupPulls: githubAnswer, onMaster });
 
     assert.deepEqual(result.closed.map(job => job.id).sort(), [merged, exact].sort());
     assert.deepEqual(result.reopened.map(job => job.id), [rejected]);
@@ -81,7 +111,7 @@ test('a merged change closes its job and a rejected one reopens it', () => {
       assert.equal(taskStore.getTask(db, id).status, 'review');
     }
 
-    const again = closeMergedTasks(db, { workspaceRoot: root, actor: 'tester', lookupPulls: githubAnswer });
+    const again = closeMergedTasks(db, { workspaceRoot: root, actor: 'tester', lookupPulls: githubAnswer, onMaster });
     assert.deepEqual(again.closed, []);
     assert.deepEqual(again.reopened, []);
   } finally {
@@ -89,6 +119,78 @@ test('a merged change closes its job and a rejected one reopens it', () => {
     fs.rmSync(root, { recursive: true, force: true });
   }
 });
+
+test('jobs held for a human are never closed or reopened', () => withDb((db, root) => {
+  const byMetadata = waitingJob(db, root, 'Login page loads fast', 'builder', { tags: ['needs-human'] });
+  const byTitle = waitingJob(db, root, 'Sign up sends a welcome note #decision', 'generalist');
+  const answer = () => [
+    change(12, 'MERGED', 'codex/builder-login-page-loads-fast-20990101-000000'),
+    change(13, 'CLOSED', 'codex/generalist-sign-up-sends-a-welcome-note-decision-20990101-000000'),
+  ];
+  const result = closeMergedTasks(db, { workspaceRoot: root, actor: 'tester', lookupPulls: answer, onMaster });
+  assert.deepEqual(result.closed, []);
+  assert.deepEqual(result.reopened, []);
+  assert.equal(taskStore.getTask(db, byMetadata).status, 'review');
+  assert.equal(taskStore.getTask(db, byTitle).status, 'review');
+}));
+
+test('a merge counts only when it went into master and its merge commit is on master', () => withDb((db, root) => {
+  const otherBase = waitingJob(db, root, 'Login page loads fast', 'builder');
+  const offMaster = waitingJob(db, root, 'Search shows recent first', 'builder');
+  const noCommit = waitingJob(db, root, 'Old title reused', 'builder');
+  const good = waitingJob(db, root, 'Sign up sends a welcome note', 'builder');
+  const answer = () => [
+    change(12, 'MERGED', 'codex/builder-login-page-loads-fast-20990101-000000', { baseRefName: 'release' }),
+    change(14, 'MERGED', 'codex/builder-search-shows-recent-first-20990101-000000', { mergeCommit: { oid: OFF_MASTER } }),
+    change(15, 'MERGED', 'codex/builder-old-title-reused-20990101-000000', { mergeCommit: null }),
+    change(17, 'MERGED', 'codex/builder-sign-up-sends-a-welcome-note-20990101-000000'),
+  ];
+  const result = closeMergedTasks(db, { workspaceRoot: root, actor: 'tester', lookupPulls: answer, onMaster });
+  assert.deepEqual(result.closed.map(job => job.id), [good]);
+  for (const id of [otherBase, offMaster, noCommit]) assert.equal(taskStore.getTask(db, id).status, 'review');
+}));
+
+test('one merge closes only the job that owns that branch', () => withDb((db, root) => {
+  const first = waitingJob(db, root, 'Login page loads fast', 'builder');
+  const twin = waitingJob(db, root, 'Login page loads fast', 'builder');
+  const owner = waitingJob(db, root, 'Search shows recent first', 'builder', { branch: 'codex/builder-search-shows-recent-first-20990101-000000' });
+  const lookalike = waitingJob(db, root, 'Search shows recent first', 'builder');
+  const answer = () => [
+    change(12, 'MERGED', 'codex/builder-login-page-loads-fast-20990101-000000'),
+    change(14, 'MERGED', 'codex/builder-search-shows-recent-first-20990101-000000'),
+  ];
+  const result = closeMergedTasks(db, { workspaceRoot: root, actor: 'tester', lookupPulls: answer, onMaster });
+  assert.deepEqual(result.closed.map(job => job.id), [owner]);
+  for (const id of [first, twin, lookalike]) assert.equal(taskStore.getTask(db, id).status, 'review');
+}));
+
+test('GitHub is asked at most every ten minutes unless the landing tick forces it', () => withDb((db, root) => {
+  waitingJob(db, root, 'Login page loads fast', 'builder');
+  let asked = 0;
+  const lookupPulls = () => { asked += 1; return []; };
+  const now = Date.now();
+  const run = (at, force) => closeMergedTasksIfDue(db, { workspaceRoot: root, actor: 'tester', now: at, force, lookupPulls, onMaster });
+  run(now, false);
+  assert.equal(asked, 1);
+  assert.equal(run(now + CHECK_EVERY_MS - 1, false).skipped, 'not_due');
+  assert.equal(asked, 1);
+  run(now + 1000, true);
+  assert.equal(asked, 2);
+  run(now + 1000 + CHECK_EVERY_MS, false);
+  assert.equal(asked, 3);
+}));
+
+test('old-job cleanup waits until the merge check has seen a waiting job', () => withDb((db, root) => {
+  const id = waitingJob(db, root, 'Login page loads fast', 'builder');
+  const now = Date.now() + 30 * DAY_MS;
+  const neverChecked = keepTaskList(db, { workspaceRoot: root, actor: 'tester', now, missions: [], mergeCheckedAt: null });
+  assert.deepEqual(neverChecked.put_away, []);
+  const checkedBefore = keepTaskList(db, { workspaceRoot: root, actor: 'tester', now, missions: [], mergeCheckedAt: 1 });
+  assert.deepEqual(checkedBefore.put_away, []);
+  assert.equal(taskStore.getTask(db, id).status, 'review');
+  const checkedAfter = keepTaskList(db, { workspaceRoot: root, actor: 'tester', now, missions: [], mergeCheckedAt: now - DAY_MS });
+  assert.deepEqual(checkedAfter.put_away.map(item => item.id), [id]);
+}));
 
 test('when GitHub cannot answer, every job keeps waiting', () => {
   if (!hasNodeSqlite()) return;
@@ -111,8 +213,14 @@ test('atris task keep asks GitHub and settles waiting jobs', () => {
   const dbPath = path.join(root, 'tasks.db');
   const fakeBin = path.join(root, 'fake-bin');
   fs.mkdirSync(fakeBin);
+  const git = (...args) => spawnSync('git', ['-C', root, ...args], { encoding: 'utf8' });
+  git('init', '-q');
+  git('-c', 'user.email=t@t', '-c', 'user.name=t', 'commit', '-q', '--allow-empty', '-m', 'merged change');
+  const mergeCommit = git('rev-parse', 'HEAD').stdout.trim();
+  git('update-ref', 'refs/remotes/origin/master', mergeCommit);
+  const answer = githubAnswer().map(pull => (pull.mergeCommit ? { ...pull, mergeCommit: { oid: mergeCommit } } : pull));
   const answerPath = path.join(root, 'answer.json');
-  fs.writeFileSync(answerPath, JSON.stringify(githubAnswer()));
+  fs.writeFileSync(answerPath, JSON.stringify(answer));
   fs.writeFileSync(path.join(fakeBin, 'gh'), `#!/bin/sh\ncat "${answerPath}"\n`, { mode: 0o755 });
   try {
     const db = taskStore.open(dbPath);
