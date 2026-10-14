@@ -259,6 +259,29 @@ test('watch names a run that ended and was replaced between two redraws', () => 
   assert.deepEqual(clean([run('m-2', 22, ['ok', 'died'])], 6_000), ['builder working -> done ok -> working'], 'the same run again is not a new change');
 });
 
+test('watch names a quick run that started and ended between two redraws', () => {
+  const now = Date.parse('2026-10-14T13:00:00Z');
+  const first = '2026-10-14T12:58:00Z m-1 started: [pid 11 engine claude] build\n2026-10-14T12:58:30Z m-1 finished: ok\n';
+  const quick = `${first}2026-10-14T13:00:01Z m-2 started: [pid 22 engine claude] fix\n2026-10-14T13:00:02Z m-2 finished: failed\n`;
+  const next = `${quick}2026-10-14T13:00:02Z m-3 started: [pid ${process.pid} engine claude] retry\n`;
+  assert.deepEqual(memberRow('builder', next, now + 3_000).before_started, ['2026-10-14T13:00:01.000Z', '2026-10-14T12:58:00.000Z'],
+    'when each run in the before column started, newest first');
+  const done = changeTracker(60_000);
+  done([memberRow('builder', first, now)], now);
+  assert.deepEqual(done([memberRow('builder', next, now + 3_000)], now + 3_000), ['builder done ok -> done failed -> working'],
+    'the failed run in between is named');
+  const again = changeTracker(60_000);
+  again([memberRow('builder', quick, now + 2_000)], now + 2_000);
+  const twice = `${quick}2026-10-14T13:00:03Z m-3 started: [pid 33 engine claude] retry\n2026-10-14T13:00:04Z m-3 finished: failed\n`;
+  assert.deepEqual(again([memberRow('builder', twice, now + 5_000)], now + 5_000), ['builder done failed -> done failed'],
+    'a second failure is a change, though the state reads the same');
+  assert.deepEqual(again([memberRow('builder', twice, now + 8_000)], now + 8_000), ['builder done failed -> done failed'], 'the same run again is not a new change');
+  const busy = changeTracker(60_000);
+  busy([{ ...memberRow('builder', '2026-10-14T12:58:00Z m-1 started: [pid 11 engine claude] build\n', now), state: 'working' }], now);
+  assert.deepEqual(busy([memberRow('builder', next, now + 3_000)], now + 3_000), ['builder working -> done ok -> done failed -> working'],
+    'the watched run finished ok; the failure was the quick one after it');
+});
+
 test('watch rewrites replaced to died once the old run turns out to be dead', () => {
   const run = (mission, pid, before) => ({ member: 'builder', state: 'working', mission, pid, before, ago: '1s ago' });
   const changed = changeTracker(60_000);
