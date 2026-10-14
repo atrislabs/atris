@@ -24,6 +24,17 @@ const SCAN_EXTS = new Set(['.css', '.scss', '.sass', '.less', '.tsx', '.jsx', '.
   '.md', '.mdx', '.txt']); // prose too: the voice doctrine (em-dash, hype-copy) is enforceable, not just advice
 const SKIP_DIRS = new Set(['node_modules', '.git', 'dist', 'build', '.next', '.astro', 'coverage', '.cache', 'out', 'vendor']);
 
+// A heading or a line-opening label (bold, code span, or bracket) takes a colon
+// at its first dash; "**Verify claims**, If" read worse than the dash. Every
+// other dash becomes a comma.
+const EM_DASH_LABEL = /^(\s*(?:[-*+]\s+|\d+\.\s+)?(?:\*\*[^*]+\*\*|__[^_]+__|`[^`]+`|\[[^\]]+\]))\s*—\s*/;
+function fixEmDash(line) {
+  let out = line;
+  if (/^\s*#{1,6}\s/.test(out)) out = out.replace(/\s*—\s*/, ': ');
+  else out = out.replace(EM_DASH_LABEL, '$1: ');
+  return out.replace(/\s*—\s*/g, ', ');
+}
+
 // Each rule is deterministic: a regex + a one-line why. severity drives the icon.
 // Kept high-precision on purpose, a noisy gate gets muted, and a muted gate is dead.
 const RULES = [
@@ -80,7 +91,7 @@ const RULES = [
     why: 'decorative emoji in UI copy' },
   { id: 'em-dash', sev: 'warn',
     re: /\u2014/,
-    fix: (s) => s.replace(/\s*\u2014\s*/g, ', '), // safe deterministic repair (prose)
+    fix: fixEmDash, // safe deterministic repair (prose)
     why: 'em dash: a top AI-writing tell; use a comma, colon, or period' },
   { id: 'hype-copy', sev: 'error',
     re: /\b(boost your productivity|supercharge|unleash|game[- ]?chang(?:er|ing)|seamlessly|effortlessly|revolutioniz(?:e|ing)|take your .{1,30} to the next level|elevate your|cutting[- ]edge|powered by ai|next[- ]generation)\b/i,
