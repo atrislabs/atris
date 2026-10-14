@@ -162,6 +162,10 @@ function fixEmDash(s, { endsBlock = false, startsBlock = false } = {}) {
     // so none nest: "then (maybe) stop" never becomes "(then (maybe) stop)".
     .replace(/\s*\u2014\s*((?:(?![.!?]["'\u201d\u2019)]*\s)[^\u2014])*[^\s\u2014])\s*\u2014\s*(?=(.?))/g, (m, aside, next, at, whole) => {
       const gap = next && !/[.,;:!?)]/.test(next);
+      // an aside that holds one side of a quote crosses the quote's edge, so
+      // each dash is fixed alone: 'said "go, now", and left', never '"go (now")'.
+      const count = (re) => (aside.match(re) || []).length;
+      if (count(/"/g) % 2 || count(/\u201c/g) !== count(/\u201d/g)) return m;
       const holdsParens = /[()]/.test(aside) && !wrappedInParens(aside);
       if (holdsParens || insideParens(whole.slice(0, at))) return `, ${aside}${gap ? ', ' : ''}`;
       // the closing dash also stood in for the comma before a "which" remark:

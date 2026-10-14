@@ -1148,6 +1148,21 @@ test('fix gives a list item inside a quote the same label colon', () => {
   ]);
 });
 
+test('fix never pairs two dashes across the edge of a quote', () => {
+  // the aside opened inside the quote and closed outside it: '"go (now") and'
+  const file = tmpFile('quote-edge.md', [
+    'He said "go \u2014 now" \u2014 and left.',
+    'She wrote \u201cship it \u2014 today\u201d \u2014 then slept.',
+    'The tag \u2014 "beta" \u2014 stays on.',
+  ].join('\n'));
+  const { changes } = applyFixes([file], RULES, { write: false });
+  assert.deepEqual(changes.map((c) => c.after), [
+    'He said "go, now", and left.',
+    'She wrote \u201cship it, today\u201d, then slept.',
+    'The tag ("beta") stays on.',
+  ]);
+});
+
 test('fix gives a name that opens a paragraph a colon, like a definition', () => {
   // from this repo's feature docs: "v2 then a dash then harness re-verified"
   // under a heading, and "MEMBER.md then a dash then an open-source standard"
