@@ -1572,3 +1572,18 @@ test('fix keeps two numbers apart when they count down, since a range counts up'
     '- pages 10-20 cover setup',
   ]);
 });
+
+test('fix starts the next sentence with a capital after a quote that ends its own', () => {
+  // from the terrace runbook, which came out 'automatically." transactions stay'
+  const file = tmpFile('quote-stop.md', [
+    'The banner says "It will retry automatically." \u2014 transactions stay unfinished.',
+    'It reads "Day 1. The start." \u2014 which is more shareable.',
+    'the banner says "it will retry." \u2014 transactions stay unfinished.',
+  ].join('\n'));
+  const { changes } = applyFixes([file], RULES);
+  assert.deepEqual(changes.map((c) => c.after), [
+    'The banner says "It will retry automatically." Transactions stay unfinished.',
+    'It reads "Day 1. The start." which is more shareable.',
+    'the banner says "it will retry." transactions stay unfinished.',
+  ]);
+});

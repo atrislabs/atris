@@ -323,6 +323,12 @@ function fixEmDash(s, { endsBlock = false, startsBlock = false } = {}) {
     // it, so it goes in parentheses: 'backward." (Steve Jobs)', never a bare
     // name that reads as a fragment or a stacked '.",'.
     .replace(/([.!?]["'\u201d\u2019]+)\s*\u2014\s*((?!(?:Then|And|But|So|This|That|It)\b)[A-Z][\w'.-]*(?:\s+(?:of|de|van|von|[A-Z][\w'.-]*)){0,3})\s*$/, '$1 ($2)')
+    // a lowercase word after a quote that ends its sentence starts the next
+    // one, so the dash goes and the word takes its capital: 'automatically."
+    // Transactions stay unfinished'. A joining word goes on with the sentence,
+    // 'The start." which is more shareable', and a line that opens in
+    // lowercase keeps its writer's lowercase.
+    .replace(/(\.["'\u201d\u2019]+)\s*\u2014\s*(?!(?:which|who|whose|and|but|or|nor|so|yet|then|because|since|while|where|when|though|although|as|if|unless|until|than)\b)([a-z])(?=[a-z']*(?![\w\uE000]))/g, (m, stop, ch, at, whole) => (/^[^A-Za-z]*[a-z]/.test(whole) ? m : `${stop} ${ch.toUpperCase()}`))
     // any other leftover dash after a quote that already ends its sentence
     // goes, and the quote keeps its own stop: 'wiring." PERSONA.md exists'.
     // A quoted question before a lowercase word keeps the comma below.
