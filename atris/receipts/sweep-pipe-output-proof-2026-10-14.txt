@@ -54,5 +54,7 @@ exit: 0
 Independent review: passed; no blocking issue.
 Task attachment could not run: mission lock held by a live owner; created and claimed a bounded task instead.
 Metric: formerly truncated at 65536 bytes; now 107372 bytes parsed whole; 122 checks passed.
-next_push: report failure to read the process list itself, so an unreadable process table never appears as zero running agents.
+Readiness recording: atris task ready ran the same command through its login-shell runner and reported 108 passes, 14 failures, exit 1. Its receipt saved only head/tail output, so the failure cause is unresolved. A second direct invocation passed all 122 tests, exit 0. The code and proof are pushed; task readiness remains pending.
+
+next_push: capture the full readiness-run output and resolve why its login-shell check differs from the passing direct check.
 layer: capabilities
