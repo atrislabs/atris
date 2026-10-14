@@ -12452,24 +12452,37 @@ test('task next names accept for uncertified review and leaves open work unclaim
   try {
     fs.mkdirSync(path.join(dir, 'atris'), { recursive: true });
 
-    const reviewAdd = runCli(['task', 'add', 'Needs second review before continuing', '--tag', 'agent', '--json'], { cwd: dir, env });
-    assert.equal(reviewAdd.status, 0, reviewAdd.stderr);
-    const reviewRef = JSON.parse(reviewAdd.stdout).task.display_id;
+    // Seed both tasks in creation order; the claim, ready, next and both shows stay on the CLI.
+    const workspaceRoot = taskStore.workspaceRoot(dir);
+    const db = taskStore.open(dbPath);
+    let reviewId;
+    let reviewRef;
+    let openRef;
+    try {
+      const review = addSeedTask(db, { title: 'Needs second review before continuing', tag: 'agent', workspaceRoot });
+      const open = addSeedTask(db, { title: 'Open work must wait', tag: 'agent', workspaceRoot });
+      assert.equal(review.inserted, true);
+      assert.equal(open.inserted, true);
+      const refs = taskStore.taskDisplayRefMap(taskStore.listTasks(db, { workspaceRoot }));
+      reviewId = review.id;
+      reviewRef = refs.get(review.id);
+      openRef = refs.get(open.id);
+      assert.ok(reviewRef);
+      assert.ok(openRef);
+    } finally {
+      taskStore.close();
+    }
     assert.equal(runCli(['task', 'claim', reviewRef, '--as', 'codex'], { cwd: dir, env }).status, 0);
     assert.equal(runCli(['task', 'ready', reviewRef, '--proof', 'first pass validation passed', '--as', 'codex'], { cwd: dir, env }).status, 0);
-
-    const openAdd = runCli(['task', 'add', 'Open work must wait', '--tag', 'agent', '--json'], { cwd: dir, env });
-    assert.equal(openAdd.status, 0, openAdd.stderr);
-    const openPayload = JSON.parse(openAdd.stdout);
 
     const next = runCli(['task', 'next', '--as', 'codex', '--json'], { cwd: dir, env });
     assert.equal(next.status, 0, next.stderr);
     const payload = JSON.parse(next.stdout);
     assert.equal(payload.action, 'accept');
     assert.equal(payload.command, `atris task accept ${reviewRef}`);
-    assert.equal(payload.task_id, JSON.parse(reviewAdd.stdout).task.id);
+    assert.equal(payload.task_id, reviewId);
 
-    const openShow = runCli(['task', 'show', openPayload.task.display_id, '--json'], { cwd: dir, env });
+    const openShow = runCli(['task', 'show', openRef, '--json'], { cwd: dir, env });
     assert.equal(openShow.status, 0, openShow.stderr);
     assert.equal(JSON.parse(openShow.stdout).status, 'open');
 
