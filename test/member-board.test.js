@@ -297,7 +297,7 @@ const engineAs = (program, agoSec = 60, member = 'builder', token = TOKEN) => {
   return {
     readProcess: (pid) => (pid === process.pid
       ? { pgid: -1, command: 'node test', startedAt: Date.now() }
-      : { pgid: pid, command: `${program} -p atris-run ${member} ${token}\nwork`, startedAt }),
+      : { pgid: pid, command: `${program} -p atris-run ${member} ${token}\\012work --model x`, startedAt }),
   };
 };
 const asEngine = engineAs('claude');
@@ -526,6 +526,8 @@ test('member stop needs the marker to open the prompt, as whole words', async ()
       `claude -p atris-run builder ${TOKEN}ff more`,
       `claude -p atris-run builderx ${TOKEN}`,
       `claude --resume x atris-run builder ${TOKEN}`,
+      `claude -p other prompt -p atris-run builder ${TOKEN} more`,
+      `node claude -p atris-run builder ${TOKEN} x`,
     ]) {
       const dir = fakeDir({ builder: [`${isoAgo(20)} m-2 started: [pid ${child.pid} engine claude run ${TOKEN}] x`] });
       const deps = { readProcess: (pid) => (pid === process.pid ? { pgid: -1, command: 'node', startedAt: Date.now() } : { pgid: pid, command, startedAt: Date.now() - 20000 }) };
