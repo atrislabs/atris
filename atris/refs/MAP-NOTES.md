@@ -2298,3 +2298,5 @@ npm publish
 - **Compact shared failure reasons:** `renderBoard()` (`lib/member-board.js:261`) drops "all" before dropping a shared reason in hidden current and earlier failure counts. Regression covers timeout, engine error, and bad exit: `test/member-board.test.js:425`; real terminal proof: `python3 atris/runs/member-board-shared-reason-proof.py`.
 
 - **Tiny board footer counts:** `renderBoard()` (`lib/member-board.js:261`) shortens "more not shown" to "hidden" only after existing footer forms fail to fit. Failure and stopped counts stay whole at 30 columns. Regression: `test/member-board.test.js:449`; real terminal proof: `python3 atris/runs/member-board-tiny-footer-proof.py`.
+
+- **Tiny shared failure reasons:** `renderBoard()` (`lib/member-board.js:261`) tries "hidden" with a shared reason before dropping that reason. Current and earlier failures retain timeout, engine error, and bad exit reasons eight columns sooner. Regression: `test/member-board.test.js:425`; terminal proof: `python3 atris/runs/member-board-tiny-reason-proof.py`.

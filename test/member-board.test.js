@@ -440,6 +440,13 @@ test('compact footers drop all before dropping a shared failure reason', () => {
       const earlier = rows.map((r, i) => i ? { ...r, state: 'working' } : r);
       const earlierFooter = `3 more not shown (3 earlier failure, ${reason})`;
       assert.equal(renderBoard(earlier, dir, 0, earlierFooter.length, 4).split('\n')[3], earlierFooter);
+      for (const [board, label] of [[rows, 'failed'], [earlier, 'earlier failure']]) {
+        const tiny = `3 hidden (3 ${label}, ${reason})`;
+        const output = renderBoard(board, dir, 0, tiny.length, 4).split('\n');
+        assert.equal(output.length, 4);
+        assert.equal(output[3], tiny, 'shorten the prefix before dropping the reason');
+        assert.doesNotMatch(renderBoard(board, dir, 0, tiny.length - 1, 4).split('\n')[3], new RegExp(reason));
+      }
     } finally {
       fs.rmSync(dir, { recursive: true, force: true });
     }
@@ -481,8 +488,8 @@ test('hidden failures that share a reason say it once in the count', () => {
     assert.equal(lines[3], '4 more not shown (3 failed, all signed out, 1 stopped), the window is too short');
     const narrow = renderBoard(rows, dir, 0, 50, 4).split('\n')[3];
     assert.equal(narrow, '4 more not shown (3 failed, signed out, 1 stopped)', 'drop all to keep the shared reason');
-    assert.equal(renderBoard(rows, dir, 0, 45, 4).split('\n')[3], '4 more not shown (3 failed, 1 stopped)',
-      'still too narrow: the shared reason goes before anything is cut');
+    assert.equal(renderBoard(rows, dir, 0, 45, 4).split('\n')[3], '4 hidden (3 failed, signed out, 1 stopped)',
+      'the shorter prefix keeps the reason before it gives way');
     assert.equal(renderBoard(rows, dir, 0, 60, 4).split('\n')[3], '4 more not shown (3 failed, all signed out, 1 stopped)',
       'room for it: the reason stays and only the why goes');
 
