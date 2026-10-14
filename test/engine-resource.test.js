@@ -338,7 +338,7 @@ test('history reads back the latest sweep and the latest SIGKILL, skipping bad l
     assert.strictEqual(history.last_kill.task, 'CLI-2');
     assert.strictEqual(history.kills, 2);
     assert.strictEqual(history.low_memory_kills, 1);
-    assert.deepStrictEqual(readResourceHistory(path.join(root, 'missing')), { last_sweep: null, last_kill: null, kills: 0, low_memory_kills: 0, time_limit_kills: 0, last_other_kill: null, kills_day: 0, low_memory_kills_day: 0, time_limit_kills_day: 0, last_day_other_kill: null, open_runs: 0, parent_gone: 0, still_running: 0, last_open: null, lost_closed: 0, lost_closed_day: 0, last_lost_closed: null });
+    assert.deepStrictEqual(readResourceHistory(path.join(root, 'missing')), { last_sweep: null, last_kill: null, kills: 0, low_memory_kills: 0, time_limit_kills: 0, last_other_kill: null, kills_day: 0, low_memory_kills_day: 0, time_limit_kills_day: 0, last_day_other_kill: null, open_runs: 0, parent_gone: 0, still_running: 0, last_open: null, lost_closed: 0, lost_closed_day: 0, last_lost_closed: null, first_day_leak_reading: null });
   } finally {
     fs.rmSync(root, { recursive: true, force: true });
   }
@@ -790,6 +790,48 @@ test('the landing status counts leaked ssh-agents, says how they get stopped, an
     const broken = status({ readSshAgents: () => { throw new Error('ps missing'); }, uid: 501 });
     assert.doesNotMatch(broken, /ssh-agents/);
     assert.doesNotMatch(status(), /ssh-agents/, 'a test run never reads the real machine');
+  } finally {
+    fs.rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test('the landing status says how fast leaked ssh-agents grew since the oldest reading in the last day', () => {
+  const { showStatus } = require('../commands/autoland');
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'autoland-status-agent-growth-'));
+  const file = path.join(root, RESOURCE_LOG);
+  const agent = (pid) => ({ pid, ppid: 1, uid: 501, age_sec: 3600, args: 'ssh-agent -s' });
+  const agents = (n) => ({ readSshAgents: () => ({ agents: Array.from({ length: n }, (_, i) => agent(200 + i)), referenced: new Set() }), uid: 501 });
+  const start = (msAgo, count, run) => JSON.stringify({ at: new Date(Date.now() - msAgo).toISOString(), phase: 'start', engine: 'claude', task: run, run_id: run, leaked_ssh_agents: count });
+  const end = (run) => JSON.stringify({ at: new Date().toISOString(), phase: 'end', engine: 'claude', task: run, run_id: run });
+  const status = (deps) => {
+    const out = [];
+    const original = console.log;
+    console.log = (line = '') => out.push(String(line));
+    try {
+      showStatus(root, [], deps);
+    } finally {
+      console.log = original;
+    }
+    return out.join('\n');
+  };
+  const hour = 3600 * 1000;
+  try {
+    require('node:child_process').spawnSync('git', ['init', '-q'], { cwd: root });
+    fs.mkdirSync(path.dirname(file), { recursive: true });
+    const first = new Date(Date.now() - 2 * hour).toISOString().slice(0, 16).replace('T', ' ');
+    fs.writeFileSync(file, [
+      start(30 * hour, 0, 'OLD'), end('OLD'),
+      start(2 * hour, 1, 'A'), end('A'),
+      start(hour, 3, 'B'), end('B'),
+      JSON.stringify({ at: new Date(Date.now() - hour / 2).toISOString(), phase: 'start', engine: 'codex', task: 'C', run_id: 'C', leaked_ssh_agents: null }), end('C'),
+      '',
+    ].join('\n'));
+    const growing = status(agents(5));
+    assert.match(growing, new RegExp(`leaked ssh-agents on this machine: 5, up from 1 at ${first} UTC, about 2 more an hour; stop them now`));
+    const flat = status(agents(1));
+    assert.match(flat, /leaked ssh-agents on this machine: 1; stop them now/, 'no growth, no growth note');
+    fs.writeFileSync(file, `${start(30 * hour, 0, 'OLD')}\n`);
+    assert.match(status(agents(4)), /leaked ssh-agents on this machine: 4; stop them now/, 'a reading older than a day is not used');
   } finally {
     fs.rmSync(root, { recursive: true, force: true });
   }

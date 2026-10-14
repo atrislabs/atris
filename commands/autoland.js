@@ -551,7 +551,7 @@ function showStatus(root, args, deps = {}) {
   const leakedAgents = countLeakedSshAgents(deps);
   if (leakedAgents) {
     const stop = heartbeatLive ? 'the next hourly pass stops them' : 'stop them now: atris engine sweep --apply';
-    console.log(`  leaked ssh-agents on this machine: ${leakedAgents}; ${stop}`);
+    console.log(`  leaked ssh-agents on this machine: ${leakedAgents}${leakGrowthNote(lost.first_day_leak_reading, leakedAgents)}; ${stop}`);
   }
   console.log('');
   const humanOnly = blocked.filter((r) => String(r.reason || '').startsWith('denied_tag_'));
@@ -811,6 +811,16 @@ function countLeakedSshAgents(deps = {}) {
   } catch {
     return 0;
   }
+}
+
+// Growth since the oldest count a run start recorded in the last day; quiet
+// when the pile has not grown, so only a filling machine reads as urgent.
+function leakGrowthNote(reading, now, at = Date.now()) {
+  if (!reading || !(now > reading.leaked_ssh_agents)) return '';
+  const when = `${String(reading.at || '').slice(0, 16).replace('T', ' ')} UTC`;
+  const hours = (at - Date.parse(reading.at)) / 3600000;
+  const rate = hours >= 0.25 ? `, about ${Math.round((now - reading.leaked_ssh_agents) / hours)} more an hour` : '';
+  return `, up from ${reading.leaked_ssh_agents} at ${when}${rate}`;
 }
 
 // Shell startup files that start an ssh-agent per shell leave one behind
