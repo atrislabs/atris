@@ -364,6 +364,54 @@ test('atris member board --json --follow streams one JSON object per line', asyn
   }
 });
 
+test('watchCrashes reports each newly died run once, not ones dead at start', () => {
+  const { watchCrashes } = require('../lib/member-board');
+  const row = (member, state, pid) => ({ member, mission: `m-${member}`, state, pid, job: `${member} job` });
+  let rows = [row('old', 'died', 11), row('live', 'working', 22), row('legacy', 'quiet', null)];
+  const events = [];
+  const check = watchCrashes(rows, (e) => events.push(e), () => rows);
+  check();
+  assert.deepEqual(events, [], 'old was dead before the stream started');
+  rows = [row('old', 'died', 11), row('live', 'died', 22), row('legacy', 'quiet', null)];
+  check();
+  check();
+  assert.deepEqual(events.map((e) => [e.kind, e.member, e.mission, e.pid, e.job]), [['died', 'live', 'm-live', 22, 'live job']]);
+});
+
+test('atris member board --json --follow says when a running process dies', async () => {
+  const { spawn } = require('node:child_process');
+  const victim = spawn(process.execPath, ['-e', 'setTimeout(() => {}, 60000)']);
+  const recent = new Date(Date.now() - 5_000).toISOString();
+  const dir = fakeDir({ builder: [`${recent} m-4 started: [pid ${victim.pid} engine claude] long build`] });
+  const child = spawn(process.execPath, [cliPath, 'member', 'board', '--json', '--follow'], {
+    cwd: dir, env: { ...process.env, ATRIS_PROGRESS_DIR: dir },
+  });
+  let out = '';
+  child.stdout.on('data', (d) => { out += d; });
+  const lines = () => out.split('\n').filter(Boolean).map((l) => JSON.parse(l));
+  const waitFor = async (pred) => {
+    const until = Date.now() + 8000;
+    while (!pred(lines()) && Date.now() < until) await new Promise((r) => setTimeout(r, 50));
+    return lines();
+  };
+  try {
+    const [snapshot] = await waitFor((l) => l.length >= 1);
+    assert.equal(snapshot.members[0].state, 'working', 'alive at the start');
+    victim.kill('SIGKILL');
+    await new Promise((r) => victim.once('exit', r));
+    const got = await waitFor((l) => l.some((e) => e.kind === 'died'));
+    const died = got.find((e) => e.kind === 'died');
+    assert.ok(died, out);
+    assert.deepEqual([died.member, died.mission, died.pid, died.job], ['builder', 'm-4', victim.pid, 'long build']);
+    assert.equal(got.filter((e) => e.kind === 'died').length, 1);
+  } finally {
+    victim.kill('SIGKILL');
+    child.kill('SIGINT');
+    await new Promise((r) => child.once('exit', r));
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
 test('follow finishes a line that was half written before it started', () => {
   const { followBoard } = require('../lib/member-board');
   const dir = fakeDir({ builder: [`${at(60)} m-1 started: verify stream`] });
