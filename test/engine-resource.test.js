@@ -837,6 +837,50 @@ test('run command phases record paired readings on success, SIGKILL and startup 
   }
 });
 
+test('compile builds record paired readings on success, SIGKILL and startup failure', () => {
+  const { execFileSync } = require('node:child_process');
+  const { executeBuild, appendRecord } = require('../commands/compile');
+  const root = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'compile-build-resource-')));
+  const missing = path.join(os.tmpdir(), `atris-missing-engine-${process.pid}`);
+  const build = (cmdOverride) => {
+    try {
+      return { manifest: executeBuild(root, 'demo', { cmdOverride, timeout: 5000 }) };
+    } catch (error) {
+      return { error };
+    }
+  };
+  try {
+    execFileSync('git', ['init', '-q', root]);
+    appendRecord(root, 'demo', { input: { n: 1 }, output: { doubled: 2 } });
+    // The clean launch writes no runner, so the build itself refuses after it.
+    const ok = build('true');
+    const killed = build('sh -c "kill -KILL $$"');
+    const failed = build(missing);
+    assert.match(ok.error.message, /was not written/);
+    assert.equal(killed.error.signal, 'SIGKILL');
+    assert.ok(failed.error, 'a missing program must fail the build');
+    const lines = fs.readFileSync(path.join(root, RESOURCE_LOG), 'utf8').trim().split('\n').map(JSON.parse);
+    assert.deepEqual(lines.map((line) => line.phase), ['start', 'end', 'start', 'end', 'start', 'end']);
+    for (let i = 0; i < lines.length; i += 2) {
+      assert.match(lines[i].run_id, /^[0-9a-f-]{36}$/);
+      assert.equal(lines[i + 1].run_id, lines[i].run_id);
+      assert.equal(lines[i].task, 'compile demo');
+      assert.ok(Array.isArray(lines[i + 1].load));
+      assert.ok(Number.isInteger(lines[i + 1].duration_ms));
+    }
+    assert.notEqual(lines[0].run_id, lines[2].run_id);
+    assert.equal(lines[1].signal, undefined);
+    assert.equal(lines[1].error, undefined);
+    assert.equal(lines[3].signal, 'SIGKILL');
+    assert.match(lines[3].cause, /^killed \((machine memory low|cause unknown)\)$/);
+    assert.equal(lines[5].signal, undefined);
+    assert.match(lines[5].error, /not found|No such file/i);
+    console.log(`compile build readings: ${JSON.stringify([lines[3], lines[5]])}`);
+  } finally {
+    fs.rmSync(root, { recursive: true, force: true });
+  }
+});
+
 test('a kill sent by the run time limit names the time limit even with memory low', () => {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'engine-resource-timeout-'));
   try {

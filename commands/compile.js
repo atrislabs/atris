@@ -468,14 +468,23 @@ function executeBuild(root, name, options = {}) {
     const cmd = cmdOverride || buildRunnerCommand({ promptFile: tmpFile, allowedTools: 'Read,Write,Edit,Glob,Grep' });
     const env = { ...process.env };
     delete env.CLAUDECODE;
-    execSync(cmd, {
-      cwd: root,
-      encoding: 'utf8',
-      timeout,
-      stdio: verbose ? 'inherit' : 'pipe',
-      maxBuffer: 10 * 1024 * 1024,
-      env,
-    });
+    // Machine memory and load at both ends of the build, so one killed with
+    // SIGKILL says whether the machine was short on memory.
+    const endResource = require('../lib/engine-resource').startEngineRun(root, { engine: 'runner', task: `compile ${name}` });
+    try {
+      execSync(cmd, {
+        cwd: root,
+        encoding: 'utf8',
+        timeout,
+        stdio: verbose ? 'inherit' : 'pipe',
+        maxBuffer: 10 * 1024 * 1024,
+        env,
+      });
+    } catch (err) {
+      endResource(err);
+      throw err;
+    }
+    endResource();
   } finally {
     try { fs.unlinkSync(tmpFile); } catch {}
   }
