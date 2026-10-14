@@ -728,7 +728,25 @@ test('fix gives a numbered name that opens a line a colon, like a label', () => 
     '**Next:** Tick 2: wire the smoke check into CI.',
     '> Phase B: the cleanup pass',
     'We ran Class 1, and it held.',
-    'Plan 2: and the gate, held up.',
+    'Plan 2 (and the gate) held up.',
+  ]);
+});
+
+test('fix keeps a paired aside after a plain-word label as parentheses', () => {
+  // from a sample of AI-written docs, where the first dash took a colon and
+  // the second a comma: "Retries: up to 3, happen automatically"
+  const file = tmpFile('label-aside.md', [
+    '- Retries \u2014 up to 3 \u2014 happen automatically.',
+    'Version 1.2 \u2014 released March 2026 \u2014 adds rollback.',
+    '- **Build** \u2014 run it \u2014 then ship.',
+    '- Retries \u2014 up to 3. Then \u2014 it stops.',
+  ].join('\n'));
+  const { changes } = applyFixes([file], RULES);
+  assert.deepEqual(changes.map((c) => c.after), [
+    '- Retries (up to 3) happen automatically.',
+    'Version 1.2 (released March 2026) adds rollback.',
+    '- **Build**: run it, then ship.',
+    '- Retries: up to 3. Then, it stops.',
   ]);
 });
 

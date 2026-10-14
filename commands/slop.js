@@ -89,7 +89,12 @@ function fixEmDash(s, { endsBlock = false } = {}) {
   if (endsBlock) s = s.replace(/([.,;:!?]?)\s*\u2014\s*$/, (m, p) => p || '.');
   const heading = [HEADING_DASH, BOLD_HEADING_DASH].find((re) => re.test(s));
   if (heading) return s.replace(heading, '$1: ');
-  const label = LIST_LABEL_DASH.exec(s) || LINE_LABEL_DASH.exec(s) || NUMBERED_LABEL_DASH.exec(s);
+  let label = LIST_LABEL_DASH.exec(s) || LINE_LABEL_DASH.exec(s) || NUMBERED_LABEL_DASH.exec(s);
+  // a plain-word label whose dash opens an aside closed by a second dash in
+  // the same sentence is a subject, not a label: "Retries (up to 3) happen
+  // automatically", never "Retries: up to 3, happen". Bold and code labels stay.
+  if (label && !/^(?:\*\*|__|`|\uE000|"|\u201c)/.test(label[2])
+    && /^(?:(?![.!?]["'\u201d\u2019)]*\s)[^\u2014])*[^\s\u2014]\s*\u2014/.test(s.slice(label[0].length))) label = null;
   // a label that already ends in its own punctuation, "**what is it?**",
   // keeps it and just loses the dash, so no colon stacks on top. A label that
   // is one whole quote is a phrase being explained, so its colon goes after
