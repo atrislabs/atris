@@ -25,5 +25,10 @@ Context commands: atris mission status mission-2026-10-14-finish-machine-memory-
 Mission attachment could not write because the running harness holds its lock. A separate claimed task records this slice; no mission policy changed.
 Brain activate and compile both returned exit 2 with plan-only output; no generated policy files were changed.
 Residual limit: equal-age process reuse or replacement after the final scan is still outside the existing protection.
+Landing: committed and pushed the bounded change. Task is in Review, not accepted.
+Readiness proof required its own rerun. Its login shell selects unsupported Node 20 by default; the existing documented local PATH workaround ran the same checks successfully, exit 0. Initial readiness requests rejected insufficient result/landing prose; corrected wording then moved the task to Review, exit 0.
+Readiness command: atris task ready EFM-23 --verify 'PATH=/opt/homebrew/bin:$PATH node --test test/engine-resource.test.js test/engine-dispatch.test.js' with result, landing and proof prose.
+Readiness artifact: atris/runs/2026-10-14-task-efm-23-2026-10-14T19-13-20-032Z.json.
+The runtime-prefixed proof is outside automatic certification's allowlist; the direct frozen check still passed unchanged.
 next_push: Include younger replacement skips in the hourly cleanup summary.
 layer: capabilities
