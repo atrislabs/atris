@@ -895,3 +895,41 @@ test('after a sweep stops agents, the growth note counts from what that sweep le
     fs.rmSync(root, { recursive: true, force: true });
   }
 });
+
+test('a read-only ask run writes a start and an end reading, and a run past its time limit says so', async () => {
+  const { runEngineAskJobs } = require('../lib/engine-ask');
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'engine-resource-ask-'));
+  const bin = path.join(root, 'bin');
+  const savedPath = process.env.PATH;
+  try {
+    fs.mkdirSync(bin);
+    // A stand-in engine: answers at once unless the prompt asks it to hang.
+    fs.writeFileSync(path.join(bin, 'claude'), [
+      '#!/bin/sh',
+      'case "$*" in *hang*) sleep 5 ;; esac',
+      'echo "the answer is 42"',
+      '',
+    ].join('\n'));
+    fs.chmodSync(path.join(bin, 'claude'), 0o755);
+    process.env.PATH = `${bin}${path.delimiter}${savedPath}`;
+    const answers = await runEngineAskJobs([
+      { engine: 'claude', model: '', prompt: 'what is six times seven', label: 'quick' },
+      { engine: 'claude', model: '', prompt: 'hang here', label: 'slow' },
+    ], { root, timeoutMs: 1000, concurrency: 1 });
+    assert.strictEqual(answers[0].ok, true, answers[0].stderr);
+    assert.strictEqual(answers[1].timed_out, true);
+    const log = fs.readFileSync(path.join(root, RESOURCE_LOG), 'utf8').trim().split('\n').map((line) => JSON.parse(line));
+    assert.deepStrictEqual(log.map((e) => [e.phase, e.engine, e.task]), [
+      ['start', 'claude', 'ask quick'], ['end', 'claude', 'ask quick'],
+      ['start', 'claude', 'ask slow'], ['end', 'claude', 'ask slow'],
+    ]);
+    assert.strictEqual(log[0].run_id, log[1].run_id);
+    assert.notStrictEqual(log[0].run_id, log[2].run_id);
+    assert.ok(Array.isArray(log[0].load) && Number.isFinite(log[1].duration_ms));
+    assert.strictEqual(log[1].timed_out, undefined);
+    assert.strictEqual(log[3].timed_out, true, 'the end line says the run passed its time limit');
+  } finally {
+    process.env.PATH = savedPath;
+    fs.rmSync(root, { recursive: true, force: true });
+  }
+});
