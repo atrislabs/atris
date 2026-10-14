@@ -1808,6 +1808,24 @@ test('fix reads two subjects joined by "and" before a helper as a clause', () =>
   ]);
 });
 
+test('fix reads "only" before a subject and its verb as a clause', () => {
+  // from build notes, which came out "Tested 6 contact pages, only Austin exposed an email"
+  const file = tmpFile('only.md', [
+    'Tested 6 contact pages \u2014 only Austin exposed an email',
+    '- Result: **FAIL** \u2014 only the build packet exists. No runner yet.',
+    // with no verb, "only" narrows what came before, so these keep their comma
+    '- LinkedIn Sales Nav \u2014 only if outbound live',
+    'No private keys are stored in the database \u2014 only the wallet index and public address.',
+  ].join('\n'));
+  const { changes } = applyFixes([file], RULES);
+  assert.deepEqual(changes.map((c) => c.after), [
+    'Tested 6 contact pages; only Austin exposed an email',
+    '- Result: **FAIL**; only the build packet exists. No runner yet.',
+    '- LinkedIn Sales Nav: only if outbound live',
+    'No private keys are stored in the database, only the wallet index and public address.',
+  ]);
+});
+
 test('fix starts the next sentence after a stop that sits before a dash', () => {
   // from the terrace repo, which came out "fine with try? the cost"
   const file = tmpFile('stop.md', [

@@ -307,6 +307,11 @@ const ORDER_CLAUSE_AFTER_DASH = new RegExp(`(?<=[\\w)\\]"'*_\`\\u201d\\u2019\\uE
 // companies and agents should run together".
 const AND_PART = `(?:(?:the|a|an|our|your|their|its|my)\\s+)?(?:(?!(?:the|a|an|that|whose|this|it|they|we|you|he|she|I|how|what|why|whether|${HELPING_VERB})\\b)${SUBJECT_WORD}){1,3}`;
 const AND_CLAUSE_AFTER_DASH = new RegExp(`(?<=[\\w)\\]"'*_\`\\u201d\\u2019\\uE001])\\s*\\u2014\\s*(?!${NAMING_PHRASE})(?!${TIME_OPENER})(?!${ORDER_VERB}\\s)(?=${AND_PART}and\\s+${AND_PART}(?:are|were|have|had|will|would|can|cannot|could|must|should|may|might|do|did)\\s+[^\\s\\u2014])`, 'g');
+// "Only" before a subject and its verb starts one too: "tested 6 contact
+// pages; only Austin exposed an email", "only the build packet exists".
+// With no verb it only narrows what came before, so "only if outbound
+// live" and "only the wallet index and public address" keep their comma.
+const ONLY_CLAUSE_AFTER_DASH = new RegExp(`(?<=[\\w)\\]"'*_\`\\u201d\\u2019\\uE001])\\s*\\u2014\\s*(?=only\\s+(?!${ORDER_VERB}\\s)${AND_PART}(?:and\\s+${AND_PART})?(?:${HELPING_VERB}\\s+[^\\s\\u2014]|exists?\\b|${OPEN_HELPER}$|[a-z]{3,}ed\\s+(?!(?:by|as|for|in|on|at|to|from|with|of|into|and|or)\\b)[\\w\\uE000]))`, 'g');
 
 // The mark that joins a full clause to the sentence before the dash. A short
 // opener led by "not" has no verb of its own, so the clause explains it and
@@ -505,6 +510,10 @@ function fixEmDash(s, { endsBlock = false, startsBlock = false } = {}) {
       return left ? clauseJoin(left) : m;
     })
     .replace(AND_CLAUSE_AFTER_DASH, (m, at, whole) => {
+      const left = clauseLeft(at, whole);
+      return left ? clauseJoin(left) : m;
+    })
+    .replace(ONLY_CLAUSE_AFTER_DASH, (m, at, whole) => {
       const left = clauseLeft(at, whole);
       return left ? clauseJoin(left) : m;
     })
