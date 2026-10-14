@@ -8458,15 +8458,18 @@ test('task review-lane-drain picks safe agent action without mutating human acce
       '--next', 'Add the next safe review drain follow-up',
     ], { cwd: dir, env }).status, 0);
 
-    const waitingCreated = runCli([
-      'task', 'new', 'Certified drain task waiting for human accept',
-      '--tag', 'task',
-      '--goal-id', 'OBL-928',
-      '--json',
-    ], { cwd: dir, env });
-    assert.equal(waitingCreated.status, 0, waitingCreated.stderr);
-    const waitingTask = JSON.parse(waitingCreated.stdout).task;
-    const waitingRef = waitingTask.display_id;
+    const waitingDb = taskStore.open(dbPath);
+    let waitingRef;
+    try {
+      const waitingTask = addSeedTask(waitingDb, {
+        title: 'Certified drain task waiting for human accept',
+        tag: 'task', workspaceRoot, metadata: { goal_id: 'OBL-928' },
+      });
+      assert.equal(waitingTask.inserted, true);
+      waitingRef = taskStore.taskDisplayRefMap(taskStore.listTasks(waitingDb, { workspaceRoot })).get(waitingTask.id);
+    } finally {
+      taskStore.close();
+    }
     assert.equal(runCli([
       'task', 'ready', waitingRef,
       '--as', 'codex',
