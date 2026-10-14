@@ -63,4 +63,12 @@ Branch `architect-1184-shared-lock-check` (commit `f1b29117`, parent `a34aa48d`)
 - `node atris/receipts/2026-10-14-shared-lock-probe.js <that checkout>`: cleanup and reap both keep the folder, reap naming `.../refs/heads/master.lock, 2 h old`, exit 0.
 - `atris worktree cleanup --base HEAD --apply --json` on a fixture with only a shared branch lock: kept, `git_lock`, the lock path, `lock_age_ms` 7201449, no removal record, exit 0.
 
-Still open: 1184 names one lock per folder; listing every lock and its age stays a follow-up.
+## Every lock named
+
+Same branch, commit `59952d00`. The lookup returns every lock with its age instead of the first one. Cleanup prints one line per lock, reap and tidy list them all, and fleet review joins the locks from its folder, its git store, and its quarantine. The first lock keeps the fields earlier readers use.
+
+- New test with a 3 h own lock and a 5 h shared branch lock first failed (cleanup had no list), then passed.
+- `node --test test/worktree-removal-guard.test.js test/member-tidy.test.js` on that branch: 34 of 34, exit 0. Neighboring cleanup, land, fleet, and tidy tests: 206 of 207. The one failure, sealed flights keeping parent owner names, also fails with this change set aside.
+- `atris worktree cleanup --base HEAD --apply` on a fixture holding both locks: folder kept, two lines, `index.lock age=3 h` and `refs/heads/master.lock age=5 h`, exit 0. With the locks gone, the same command removed it, exit 0.
+
+Take into 1184: commits `f1b29117` and `59952d00` on `architect-1184-shared-lock-check`.
