@@ -606,6 +606,29 @@ test('member stop says nothing running for unknown, finished, untagged, or dead 
   }
 });
 
+test('member stop puts away a run with no pid that went silent for over an hour, and only that', async () => {
+  const dir = fakeDir({
+    launcher: [`${isoAgo(8 * 3600)} m-4 started: score launcher`, `${isoAgo(7 * 3600)} m-4 running: npm test`],
+    recent: [`${isoAgo(3 * 3600)} m-6 started: long think`, `${isoAgo(600)} m-6 running: grep`],
+  });
+  try {
+    assert.equal(readBoard({ dir }).find((r) => r.member === 'launcher').likely_ended, true);
+    const result = await stopMember('launcher', { dir });
+    assert.equal(result.ok, true);
+    assert.equal(result.pid, null);
+    assert.equal(result.message, 'marked launcher stopped, it logged nothing for 7h and had no process to end');
+    assert.match(fs.readFileSync(path.join(dir, 'launcher.log'), 'utf8').trim().split('\n').pop(), /^\S+ m-4 finished: stopped$/);
+    const by = Object.fromEntries(readBoard({ dir, all: true }).map((r) => [r.member, r]));
+    assert.equal(by.launcher.state, 'stopped');
+    assert.equal(by.launcher.likely_ended, false);
+    assert.equal((await stopMember('launcher', { dir })).message, 'nothing running', 'second stop finds nothing');
+    assert.equal((await stopMember('recent', { dir })).message, 'nothing running', '10m quiet may still be going');
+    assert.equal(fs.readFileSync(path.join(dir, 'recent.log'), 'utf8').includes('finished'), false);
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
 test('member stop leaves a reused pid alone when its command is no longer the engine', async () => {
   const { child, ready } = spawnSleeper("console.log('up'); setInterval(() => {}, 1000)");
   await ready;
