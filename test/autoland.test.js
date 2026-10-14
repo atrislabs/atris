@@ -792,14 +792,18 @@ test('autoland status never probes a stalled crontab', () => {
   const { base, repo } = makeTempRepo();
   const fakeBin = fs.mkdtempSync(path.join(os.tmpdir(), 'atris-slow-crontab-'));
   const crontab = path.join(fakeBin, 'crontab');
+  const invoked = path.join(fakeBin, 'crontab-invoked');
   try {
-    fs.writeFileSync(crontab, '#!/bin/sh\nexec /bin/sleep 3\n', 'utf8');
+    fs.writeFileSync(crontab, '#!/bin/sh\n: > "$ATRIS_TEST_CRONTAB_MARKER"\nexec /bin/sleep 3\n', 'utf8');
     fs.chmodSync(crontab, 0o755);
-    const started = Date.now();
-    const status = runCli(['autoland', 'status'], repo, { PATH: `${fakeBin}:${process.env.PATH}` });
+    const status = runCli(['autoland', 'status'], repo, {
+      PATH: `${fakeBin}:${process.env.PATH}`,
+      ATRIS_TEST_CRONTAB_MARKER: invoked,
+    });
     assert.equal(status.status, 0, status.stderr || status.stdout);
     assert.match(status.stdout, /heartbeat: unknown - run atris autoland on to check and repair/);
-    assert.ok(Date.now() - started < 1500, 'read-only status should not wait on crontab');
+    // Check the forbidden call itself, independent of CLI startup under load.
+    assert.equal(fs.existsSync(invoked), false, 'read-only status should not invoke crontab');
   } finally {
     cleanupTempDir(fakeBin);
     cleanupTempDir(base);

@@ -95,6 +95,7 @@ checks the refs in both files; `atris doc-health --fix-refs` moves drifted ones.
 | receipt block builder | `lib/receipt-block.js` | proof receipts |
 | autoland gate | `lib/autoland.js` | certified landings |
 | autoland command | `commands/autoland.js` | atris autoland |
+| read-only status scheduler regression | `test/autoland.test.js:791` | a shell invocation marker detects scheduler probes without a startup timing race |
 | slop detector | `commands/slop.js` | prose lint |
 | design system commands | `commands/design.js` `lib/design-api.js` | atris design extract and check; shared with atris mcp |
 | improvement attempt ledger | `commands/rsi.js` `lib/rsi-record.js` | read and record Dream-RSI attempts |

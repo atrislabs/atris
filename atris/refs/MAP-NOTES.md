@@ -2287,3 +2287,7 @@ npm publish
 - `test/roster-run-record.test.js:405` gives the successful autopilot fixture a 30-second startup backstop, rewrites its scratch roster to one second before the deliberate stall, and asserts both recorded caps.
 - `test/runner-command.test.js:28` scrubs parent runner and caller settings before each test so default command checks see the plain claude shape. `test/agent-env-runner-isolation.test.js:52` runs that file under an inherited codex profile.
 - `test/roster-markdown.test.js:44` clears the parent's runner and codex caller settings inside each scratch room so routing reads only what the test sets. `test/agent-env-runner-isolation.test.js:72` runs that file under an inherited codex caller session.
+
+## Read-only status scheduler check
+
+- `test/autoland.test.js:791` runs the real status CLI against a slow fake crontab; `test/autoland.test.js:806` asserts its invocation marker is absent instead of measuring startup time.
