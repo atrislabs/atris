@@ -145,7 +145,9 @@ function dispatchFlight(root, worktree, cli, lead) {
     rebase: () => ({ ok: true, stage: 'rebased' }),
     verifier: () => ({ status: 0, stdout: '# pass 1\n# fail 0\n', stderr: '' }),
     model: lead.roster_model || '',
-    maxSeconds: 1,
+    // Roomy on purpose: the fake engines exit at once, and a 1s cap let a slow
+    // process start under full-suite load read as a stall and hand to grok.
+    maxSeconds: 30,
   });
 }
 
