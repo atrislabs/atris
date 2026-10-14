@@ -22,6 +22,8 @@ function writeFakeGh(bin, log, config) {
     `fs.appendFileSync(${JSON.stringify(log)}, JSON.stringify(process.argv.slice(2)) + '\\n');`,
     `const cfg = fs.existsSync(${JSON.stringify(config)}) ? JSON.parse(fs.readFileSync(${JSON.stringify(config)}, 'utf8')) : {};`,
     "const [a, b] = process.argv.slice(2);",
+    // A commit lands in the mission folder while gh is being asked about PRs.
+    "if (a === 'pr' && b === 'list' && cfg.commitOnList) require('child_process').execFileSync('sh', ['-c', 'echo late > late.txt && git add late.txt && git commit -qm late'], { cwd: cfg.commitOnList });",
     "if (a === 'pr' && b === 'list') console.log(JSON.stringify(cfg.list || []));",
     "if (a === 'pr' && b === 'create') console.log(cfg.createUrl || 'https://github.com/acme/repo/pull/7');",
   ].join('\n'), { mode: 0o755 });
@@ -526,6 +528,95 @@ test('protected text anywhere in metadata holds the branch', () => {
     }
     assert.deepEqual(ghCalls(fx), []);
   });
+});
+
+test('a needs-human or decision tag holds the branch', () => {
+  const fx = fixture({ policy: JSON.stringify({ enabled: true }) });
+  withFakeGh(fx, () => {
+    const clean = { id: 'T-1', title: 'Tidy the board', metadata: {} };
+    const rows = [
+      { ...clean, tag: 'needs-human' },
+      { ...clean, lane: 'needs-human' },
+      { ...clean, metadata: { tags: ['decision'] } },
+      { ...clean, metadata: { labels: { tags: { primary: 'needs_human' } } } },
+      { ...clean, title: 'Pick a plan #decision' },
+    ];
+    for (const row of rows) {
+      const out = autolandMemberRun({ mission: mission({ task_ids: ['T-1'] }), cwd: fx.worktree, loadTask: () => row });
+      assert.equal(out.gate, 'protected', JSON.stringify(row));
+      assert.match(out.line, /human decision/);
+      const own = autolandMemberRun({ mission: mission({ ...row, id: 'mission-test', objective: row.title }), cwd: fx.worktree, loadTask: () => null });
+      assert.equal(own.gate, 'protected', `mission ${JSON.stringify(row)}`);
+    }
+    assert.deepEqual(ghCalls(fx), []);
+  });
+});
+
+test('a linked task whose stored metadata is malformed holds the branch', () => {
+  const fx = fixture({ policy: JSON.stringify({ enabled: true }) });
+  withFakeGh(fx, () => {
+    const taskDb = require('../lib/task-db');
+    const db = taskDb.open(path.join(fx.base, 'tasks.sqlite'));
+    try {
+      const created = taskDb.addTask(db, { title: 'Tidy the board', tag: 'workspace', workspaceRoot: fx.worktree, metadata: { note: 'fine' } });
+      const loadTask = (id) => taskDb.getTask(db, id);
+      // Well-formed metadata reads cleanly and does not hold on its own.
+      assert.equal(loadTask(created.id).metadata_unreadable, undefined);
+      for (const stored of ['{"tags": ["security"', 'security', '"a string"', '[1, 2]', '42']) {
+        db.prepare('UPDATE tasks SET metadata = ? WHERE id = ?').run(stored, created.id);
+        assert.equal(loadTask(created.id).metadata_unreadable, true, stored);
+        const out = autolandMemberRun({ mission: mission({ task_ids: [created.id] }), cwd: fx.worktree, loadTask });
+        assert.equal(out.gate, 'protected', stored);
+        assert.match(out.line, /metadata could not be read/);
+      }
+      // A loader that hands back non-object metadata directly holds too.
+      for (const metadata of ['{"tags":["security"]}', ['security'], 7]) {
+        const out = autolandMemberRun({ mission: mission({ task_ids: ['T-1'] }), cwd: fx.worktree, loadTask: () => ({ id: 'T-1', title: 'Tidy', metadata }) });
+        assert.equal(out.gate, 'protected', JSON.stringify(metadata));
+      }
+    } finally {
+      taskDb.close(db);
+    }
+    assert.deepEqual(ghCalls(fx), []);
+  });
+});
+
+// A commit lands in the mission folder after the review gate passed, either
+// while git asks GitHub for its main branch or while gh lists pull requests.
+// Only the reviewed commit may be pushed and merged.
+test('a commit made after the review gate is never pushed or merged', () => {
+  const realGit = spawnSync('git', ['--exec-path'], { encoding: 'utf8' }).stdout.trim() + '/git';
+  for (const moment of ['ls-remote', 'pr list']) {
+    const fx = fixture({ policy: JSON.stringify({ enabled: true }) });
+    if (moment === 'pr list') fs.writeFileSync(fx.config, JSON.stringify({ commitOnList: fx.worktree }));
+    else {
+      fs.writeFileSync(path.join(fx.bin, 'git'), [
+        '#!/usr/bin/env node',
+        "const { spawnSync, execFileSync } = require('child_process');",
+        `const git = ${JSON.stringify(realGit)};`,
+        'const args = process.argv.slice(2);',
+        `if (args[0] === 'ls-remote' && process.cwd() === ${JSON.stringify(fs.realpathSync(fx.worktree))}) {`,
+        "  require('fs').writeFileSync('late.txt', 'late\\n');",
+        "  execFileSync(git, ['add', 'late.txt']);",
+        "  execFileSync(git, ['commit', '-qm', 'late']);",
+        '}',
+        "const res = spawnSync(git, args, { stdio: 'inherit' });",
+        'process.exit(res.status === null ? 1 : res.status);',
+      ].join('\n'), { mode: 0o755 });
+    }
+    withFakeGh(fx, () => {
+      const reviewed = git(['rev-parse', 'HEAD'], fx.worktree);
+      const out = autolandMemberRun({ mission: mission(), cwd: fx.worktree, loadTask: () => null });
+      const late = git(['rev-parse', 'HEAD'], fx.worktree);
+      assert.notEqual(late, reviewed, `a commit landed during ${moment}`);
+      assert.equal(out.auto_merge, true, out.line);
+      const remote = git(['ls-remote', fx.origin, 'refs/heads/codex/member-work'], fx.base).split('\t')[0];
+      assert.equal(remote, reviewed, `only the reviewed commit is pushed (${moment})`);
+      const merge = ghCalls(fx).find((c) => c[1] === 'merge');
+      assert.deepEqual(merge.slice(3), ['--auto', '--merge', '--match-head-commit', reviewed]);
+      assert.doesNotMatch(git(['ls-tree', '--name-only', remote], fx.worktree), /late\.txt/);
+    });
+  }
 });
 
 // Drives the real CLI end to end: a fake codex worker, a fake claude
