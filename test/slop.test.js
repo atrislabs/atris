@@ -2793,6 +2793,21 @@ test('fix draws a dash pressed against a fat arrow as more of its shaft', () => 
   ]);
 });
 
+test('fix keeps a dash before a comparison as a break, not an arrow shaft', () => {
+  // ">=" read as an arrowhead glued the dash on: "x ->= 3"
+  const file = tmpFile('comparison-dash.md', [
+    'x \u2014>= 3 is fine',
+    'Keep the score\u2014>= 3 passes.',
+    'RN \u2014> HUC',
+  ].join('\n\n'));
+  const { changes } = applyFixes([file], RULES, { write: false });
+  assert.deepEqual(changes.map((c) => c.after), [
+    'x, >= 3 is fine',
+    'Keep the score, >= 3 passes.',
+    'RN -> HUC',
+  ]);
+});
+
 test('fix keeps a journal heading that ends in a time readable for its hour', () => {
   // analytics reads the hour after a dash or a spaced hyphen at the end of a
   // heading; the fix wrote "### Watch: 19:05", which hides it, and glued

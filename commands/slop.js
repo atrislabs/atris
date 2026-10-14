@@ -493,11 +493,12 @@ function fixEmDash(s, { endsBlock = false, startsBlock = false, spans = [] } = {
   // The same goes for a dash pressed against a sideways arrow sign on either
   // side, "plan -\u2192 build", or against a triangle arrowhead on the side it
   // points from, "plan --\u25b6 build", "build \u25c0-- review", never "plan, \u25b6 build".
-  // An up or down arrow marks a change, so "cost \u2014\u2193" stays prose.
+  // An up or down arrow marks a change, so "cost \u2014\u2193" stays prose, and
+  // ">=" compares, so "x \u2014>= 3" never turns into "x ->= 3".
   // A fat arrow's shaft is drawn with equals signs, so a dash pressed against
   // "=>" lengthens it: "plan ===> build", never "plan, => build" or "--=>".
   s = s.replace(/\u2014+(?==>)/g, (m) => '='.repeat(m.length));
-  s = s.replace(/\u2014+(?=[>\u25b6\u25b7\u25b8\u25b9\u25ba\u2190\u2192\u2194\u21a6\u21d0\u21d2\u21d4\u27f5-\u27ff\u2794-\u27be])|(?<=[<\u25c0\u25c1\u25c2\u25c3\u25c4\u2190\u2192\u2194\u21a6\u21d0\u21d2\u21d4\u27f5-\u27ff\u2794-\u27be])\u2014+/g, (m) => '-'.repeat(m.length));
+  s = s.replace(/\u2014+(?=>(?!=)|[\u25b6\u25b7\u25b8\u25b9\u25ba\u2190\u2192\u2194\u21a6\u21d0\u21d2\u21d4\u27f5-\u27ff\u2794-\u27be])|(?<=[<\u25c0\u25c1\u25c2\u25c3\u25c4\u2190\u2192\u2194\u21a6\u21d0\u21d2\u21d4\u27f5-\u27ff\u2794-\u27be])\u2014+/g, (m) => '-'.repeat(m.length));
   // dashes pressed together between two boxes draw the line that joins them,
   // so they turn into hyphens of the same width: "[a] --- [b]", never "[a],
   // [b]". Two pressed dashes in a sentence are still one break: "He said,".
