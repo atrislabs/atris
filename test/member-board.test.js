@@ -346,6 +346,32 @@ test('a short window keeps failed and stopped rows on screen ahead of newer ones
   }
 });
 
+test('hidden failures that share a reason say it once in the count', () => {
+  const logs = {};
+  for (let i = 1; i <= 4; i++) logs[`f${i}`] = [`${at(900 + i)} m-${i} started: job ${i}`, `${at(800 + i)} m-${i} finished: failed (signed out)`];
+  logs.halted = [`${at(950)} m-9 started: other job`, `${at(850)} m-9 finished: stopped`];
+  const dir = fakeDir(logs);
+  try {
+    const rows = readBoard({ dir, now: NOW });
+    const lines = renderBoard(rows, dir, 0, 0, 4).split('\n');
+    assert.match(lines[1], /^f1\s+done failed\s+failed \(signed out\)/);
+    assert.equal(lines[3], '4 more not shown (3 failed, all signed out, 1 stopped), the window is too short');
+
+    const mixed = rows.map((r) => (r.member === 'f4' ? { ...r, last_result_reason: 'timed out' } : r));
+    assert.equal(renderBoard(mixed, dir, 0, 0, 4).split('\n')[3], '4 more not shown (3 failed, 1 stopped), the window is too short',
+      'different reasons: just the count');
+    const unwritten = rows.map((r) => (r.member.startsWith('f') ? { ...r, last_result_reason: '' } : r));
+    assert.equal(renderBoard(unwritten, dir, 0, 0, 4).split('\n')[3], '4 more not shown (3 failed, 1 stopped), the window is too short',
+      'no written reason: just the count');
+    const one = rows.filter((r) => r.member !== 'f3' && r.member !== 'f4');
+    one.push({ ...one.find((r) => r.member === 'halted'), member: 'halted2' });
+    assert.equal(renderBoard(one, dir, 0, 0, 4).split('\n')[3], '3 more not shown (1 failed, 2 stopped), the window is too short',
+      'one hidden failure shares nothing');
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
 test('last step skips writes to the member own log', () => {
   const dir = fakeDir({
     architect: [
