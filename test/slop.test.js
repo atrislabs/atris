@@ -1557,3 +1557,18 @@ test('fix joins a full clause and an order after a dash with a semicolon', () =>
     'description: "AI Engine Optimization, write content that gets cited"',
   ]);
 });
+
+test('fix keeps two numbers apart when they count down, since a range counts up', () => {
+  // from the sfhq map, which came out "line 56-5 tabs"
+  const file = tmpFile('down.md', [
+    '- **MainTabView** \u2014 line 56 \u2014 5 tabs: Board, Guides',
+    'We ran it 1990 \u2014 95 and it held.',
+    '- pages 10 \u2014 20 cover setup',
+  ].join('\n'));
+  const { changes } = applyFixes([file], RULES);
+  assert.deepEqual(changes.map((c) => c.after), [
+    '- **MainTabView**: line 56, 5 tabs: Board, Guides',
+    'We ran it 1990-95 and it held.',
+    '- pages 10-20 cover setup',
+  ]);
+});
