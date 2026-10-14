@@ -5,7 +5,7 @@ const os = require('node:os');
 const path = require('node:path');
 const { spawnSync } = require('node:child_process');
 
-const { formatToolStep, appendProgress } = require('../lib/member-progress');
+const { formatToolStep, appendProgress, reportProgress, shortenLine } = require('../lib/member-progress');
 
 const repoRoot = path.resolve(__dirname, '..');
 const cliPath = path.join(repoRoot, 'bin', 'atris.js');
@@ -53,6 +53,41 @@ test('appendProgress writes to ATRIS_PROGRESS_DIR and never throws', () => {
     process.env.ATRIS_PROGRESS_DIR = path.join(dir, 'file', 'cannot-be-a-dir');
     assert.doesNotThrow(() => appendProgress('growth', 'x', 'mis-1'));
   } finally {
+    if (prev === undefined) delete process.env.ATRIS_PROGRESS_DIR;
+    else process.env.ATRIS_PROGRESS_DIR = prev;
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test('shortenLine caps a started objective at 80 chars and other lines at 100', () => {
+  assert.equal(shortenLine(`started: ${'x'.repeat(200)}`), `started: ${'x'.repeat(80)}...`);
+  assert.equal(shortenLine(`started: ${'a'.repeat(90)}\nsecond line`), `started: ${'a'.repeat(80)}...`);
+  assert.equal(shortenLine(`started: keep this\nsecond line`), 'started: keep this');
+  assert.equal(shortenLine('started: short objective'), 'started: short objective');
+  assert.equal(shortenLine(`started: ${'x'.repeat(80)}`), `started: ${'x'.repeat(80)}`);
+  assert.equal(shortenLine(`reading ${'x'.repeat(200)}`), `reading ${'x'.repeat(92)}...`);
+  assert.equal(shortenLine('y'.repeat(100)), 'y'.repeat(100));
+  assert.equal(shortenLine('y'.repeat(101)), `${'y'.repeat(100)}...`);
+});
+
+test('appendProgress and reportProgress store the short form of long lines', () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'atris-progress-'));
+  const prev = process.env.ATRIS_PROGRESS_DIR;
+  const writes = [];
+  const origWrite = process.stderr.write;
+  try {
+    process.env.ATRIS_PROGRESS_DIR = dir;
+    process.stderr.write = (s) => { writes.push(s); return true; };
+    appendProgress('growth', `started: ${'x'.repeat(200)}\nsecond line`, 'mis-1');
+    reportProgress('growth', `reading ${'y'.repeat(200)}`, 'mis-1');
+    const text = fs.readFileSync(path.join(dir, 'growth.log'), 'utf8');
+    assert.match(text, new RegExp(`started: ${'x'.repeat(80)}[.]{3}\n`));
+    assert.match(text, new RegExp(`reading ${'y'.repeat(92)}[.]{3}\n$`));
+    assert.ok(!text.includes('second line'), text);
+    assert.equal(writes.length, 1);
+    assert.match(writes[0], new RegExp(`  growth \\d\\d:\\d\\d  reading ${'y'.repeat(92)}[.]{3}\n$`));
+  } finally {
+    process.stderr.write = origWrite;
     if (prev === undefined) delete process.env.ATRIS_PROGRESS_DIR;
     else process.env.ATRIS_PROGRESS_DIR = prev;
     fs.rmSync(dir, { recursive: true, force: true });
