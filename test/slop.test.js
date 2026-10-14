@@ -1389,3 +1389,17 @@ test('fix leaves a dash alone in brackets or quotes, since it names the mark', (
     'A [\u2014] cell; it means nothing.',
   ]);
 });
+
+test('fix drops a pair of dashes pressed inside a bracket', () => {
+  const file = tmpFile('inside.md', [
+    'Ship it (\u2014 maybe \u2014) now.',
+    'See the list [\u2014 draft \u2014].',
+    'Ship it (soon \u2014 maybe \u2014) now.',
+  ].join('\n'));
+  const { changes } = applyFixes([file], RULES);
+  assert.deepEqual(changes.map((c) => c.after), [
+    'Ship it (maybe) now.',
+    'See the list [draft].',
+    'Ship it (soon, maybe) now.',
+  ]);
+});

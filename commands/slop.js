@@ -228,7 +228,7 @@ function fixEmDash(s, { endsBlock = false, startsBlock = false } = {}) {
     // An aside already inside parentheses, or holding its own, takes commas,
     // so none nest: "then (maybe) stop" never becomes "(then (maybe) stop)".
     .replace(/\s*\u2014\s*((?:(?![.!?]["'\u201d\u2019)]*\s)[^\u2014])*[^\s\u2014])\s*\u2014\s*(?=(.?))/g, (m, aside, next, at, whole) => {
-      const gap = next && !/[.,;:!?)]/.test(next);
+      const gap = next && !/[.,;:!?)\]]/.test(next);
       // an odd run of three or more dashes in one sentence has no clear pairs,
       // so each is fixed alone: "A, b, c, d", never "A (b) c, d".
       const stop = /[.!?]["'\u201d\u2019)]*\s/g;
@@ -251,6 +251,9 @@ function fixEmDash(s, { endsBlock = false, startsBlock = false } = {}) {
       if (/^(?:and|but|or|nor|then)\b|^so(?:$|\s+(?:it|we|they|you|I|he|she|the|a|an|this|that|these|those|there|nothing|everything)\b)|^yet\b(?!\s+(?:another|again|more)\b)/.test(aside)) {
         return `${/[.,;:!?]["'\u201d\u2019)]*$/.test(whole.slice(0, at)) ? ' ' : ', '}${aside}${!gap ? '' : /^\w+$/.test(aside) ? ' ' : ', '}`;
       }
+      // Dashes pressed inside a bracket only doubled it, so both just go:
+      // "Ship it (maybe) now", never "(, maybe)".
+      if (/[([]$/.test(whole.slice(0, at))) return `${aside}${gap ? ', ' : ''}`;
       if (holdsParens || insideParens(whole.slice(0, at))) return `, ${aside}${gap ? ', ' : ''}`;
       // the closing dash also stood in for the comma before a "which" remark:
       // "scale (model size, data), which is a bet", never "data) which is".
