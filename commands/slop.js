@@ -68,6 +68,9 @@ const HEADING_DASH = /^(\s{0,3}#{1,6}\s+[^\u2014:]*[^\s\u2014,;:.!?])\s*\u2014\s
 // so a plain opener like "Yes" or "Then" keeps its comma. A second dash on the
 // line means an aside, so the line is left to the pair fix.
 const TERM_DASH = /^(\s*(?:>\s*)*(?=[\w./-]*?(?:[\d/_]|\.\w|[A-Z][\w./-]*[A-Z]))[A-Za-z0-9][\w./-]*[^\s.\u2014,;:])\s*\u2014\s*(?=\S)(?!(?:and|but|or|nor|so|yet)\b)(?![^\u2014]*\u2014)/;
+// Two to four capitalized words that open a paragraph are a title, and the
+// words after the dash describe it: "Inbox Triage: 23 emails processed".
+const TITLE_DASH = /^(\s*(?:>\s*)*[A-Z][a-z0-9'\u2019-]+(?:\s+[A-Z][a-z0-9'\u2019-]+){1,3})\s*\u2014\s*(?=\S)(?!(?:and|but|or|nor|so|yet)\b)(?![^\u2014]*\u2014)/;
 const BOLD_HEADING_DASH = /^(\s*(?:>\s*)*(?:\*\*|__)[^\u2014:*_(]*[^\s\u2014,;:.!?*_(])\s*\u2014\s*(?!(?:and|but|or|nor|so|yet)\b)(?=[^\s\u2014][^\u2014*_]*(?:\*\*|__)\s*$)/i;
 
 // True when one pair of parentheses wraps the whole aside, "(mostly)" but
@@ -176,7 +179,7 @@ function fixEmDash(s, { endsBlock = false, startsBlock = false } = {}) {
   // the closing quote: '- "What did we miss?": summarizes calls'.
   const quoted = label && /^(?:"[^"]*"|\u201c[^\u201c\u201d]*\u201d)$/.test(label[2]);
   if (label) return `${label[1]}${label[2]}${!quoted && /[.,;:!?][*_`"'\u201d\u2019]*$/.test(label[2]) ? '' : ':'}${s.length > label[0].length ? ' ' : ''}${fixEmDash(s.slice(label[0].length), { endsBlock })}`;
-  const term = startsBlock && TERM_DASH.exec(s);
+  const term = startsBlock && (TERM_DASH.exec(s) || TITLE_DASH.exec(s));
   if (term) return `${term[1]}: ${fixEmDash(s.slice(term[0].length), { endsBlock })}`;
   // in a sentence with an odd run of three or more dashes, one before a
   // joining word only continues the sentence, so it takes its comma first and

@@ -1236,6 +1236,12 @@ test('fix gives a name that opens a paragraph a colon, like a definition', () =>
     'Yes \u2014 we did it.',
     '',
     'CLI \u2014 the tool \u2014 ships.',
+    '',
+    // two to four capitalized words are a title the rest describes
+    'Inbox Triage \u2014 23 emails processed',
+    'Atris Labs \u2014 a wrapped line keeps its comma.',
+    '',
+    'Yes Sir \u2014 and then some.',
   ].join('\n'));
   const { changes } = applyFixes([file], RULES, { write: false });
   assert.deepEqual(changes.map((c) => c.after), [
@@ -1244,6 +1250,9 @@ test('fix gives a name that opens a paragraph a colon, like a definition', () =>
     'MEMBER.md: an open standard.',
     'Yes, we did it.',
     'CLI (the tool) ships.',
+    'Inbox Triage: 23 emails processed',
+    'Atris Labs, a wrapped line keeps its comma.',
+    'Yes Sir, and then some.',
   ]);
 });
 
