@@ -2295,7 +2295,8 @@ test('fix gives a quote that opens a block or a list item a colon after its dash
 
 test('the fix diff script counts dashed lines and moves none against the same fixer', () => {
   const { spawnSync } = require('node:child_process');
-  const dir = path.dirname(tmpFile('corpus.md', ['The build passed \u2014 the log is clean.', 'No dash here.'].join('\n')));
+  // a dashed line inside a fenced block is code the fix never touches, so it is not counted
+  const dir = path.dirname(tmpFile('corpus.md', ['The build passed \u2014 the log is clean.', 'No dash here.', '```', 'people/   \u2014 one page', '```'].join('\n')));
   const script = path.join(__dirname, '..', 'scripts', 'slop-fix-diff.js');
   const r = spawnSync(process.execPath, [script, '--base', 'HEAD', dir], { encoding: 'utf8', cwd: path.join(__dirname, '..') });
   assert.equal(r.status, 0, r.stderr);

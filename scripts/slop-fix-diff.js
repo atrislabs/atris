@@ -37,14 +37,19 @@ function collectFiles(target, out) {
 }
 
 // Unique dashed lines, short enough to be prose and outside fence markers.
+// A line inside a fenced block in markdown is code the real fix never
+// touches, so it is left out, found by the fixer's own fence reader.
 function dashedLines(files) {
+  const { fencedLines } = require(path.join(ROOT, 'commands', 'slop.js'));
   const seen = new Set();
   for (const file of files) {
     let text = '';
     try { text = fs.readFileSync(file, 'utf8'); } catch { continue; }
-    for (const line of text.split('\n')) {
-      if (line.includes(DASH) && line.length < 400 && !line.includes('```')) seen.add(line);
-    }
+    const lines = text.split('\n');
+    const fenced = /\.mdx?$/i.test(file) ? fencedLines(lines) : new Set();
+    lines.forEach((line, i) => {
+      if (line.includes(DASH) && line.length < 400 && !line.includes('```') && !fenced.has(i)) seen.add(line);
+    });
   }
   return [...seen];
 }
