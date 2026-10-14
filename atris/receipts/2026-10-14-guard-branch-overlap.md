@@ -110,3 +110,73 @@ The same command in the current checkout passed 13 of 13, exit 0, duration 3068.
 Files edited: this receipt and `atris/team/architect/logs/2026-10-14.md`. Task commands regenerated the rendered task view, which is excluded alongside the existing router edit. Commands also run: mission status/goal, task list/new/claim/note/ready, Git status/fetch/revision reads, brain activate/compile (plan only), whitespace check, explicit staging, commit, and push. Artifacts: combined disposable copy and this proof. Progress: one clean trial combination, two cleanup paths kept the locked folder, 34 combined checks and 13 current checks passed, zero production edits, zero new filenames or dependencies.
 next_push: Run the full repair suite in a disposable Git checkout of the combined tree, with the local owner-name contamination removed.
 layer: beliefs
+
+
+## Full combined repair checks in a real Git copy
+
+Recorded the full combined repair check result. Required folder checks pass, but the full run is not green: 5891 passed and 12 failed. This is proof of remaining blockers, not approval to land the protected implementation.
+
+The previously combined tree `554b49cbbd0b172b00470b4ab382987d26a83531` was exported into `/var/folders/t1/2_4kmb5n4c71dxm26zc8dgzr0000gn/T/atris-lock-suite-lp74sw3m`, initialized with `git init -q --initial-branch=master`, staged with `git add .`, and committed with `git -c user.name=proof -c user.email=proof@example.com commit -qm "combined repair proof"`. Each command exited 0. `git config --local --get user.name` exited 1 with no output, confirming the local owner-name override is absent. The original checkout and repair branch were not merged or changed.
+
+Full command: `node --test > full-check.txt 2>&1`, from that copy, exit 1. This is the package's full test command, with output saved unchanged in `/var/folders/t1/2_4kmb5n4c71dxm26zc8dgzr0000gn/T/atris-lock-suite-lp74sw3m/full-check.txt`. An initial `node --test test` invocation exited 1 because this Node version treated the directory as a module; it ran no suite. The corrected invocation completed:
+
+```text
+ℹ tests 5903
+ℹ suites 22
+ℹ pass 5891
+ℹ fail 12
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 449271.733084
+```
+
+Exact failing locations:
+
+```text
+test at test/lesson-gate.test.js:113:3
+test at test/lesson-gate.test.js:150:3
+test at test/lesson-gate.test.js:180:3
+test at test/map-notes-readers.test.js:115:1
+test at test/map-refs-accurate.test.js:35:1
+test at test/member-run-start.test.js:226:1
+test at test/mission-run-reliability.test.js:156:1
+test at test/mission-run-reliability.test.js:211:1
+test at test/repo-hygiene.test.js:28:1
+test at test/roster-markdown.test.js:486:1
+test at test/roster-markdown.test.js:540:1
+test at test/smoke.fast.test.js:52:1
+```
+
+One failure names `commands/worktree.js -> describeLocks` as an unused export. The map failures name a missing "if present" qualifier and a stale `commands/worktree.js:1230` reference. Three lesson checks invoke the installed Codex executable and fail its trusted-directory check. Other failures concern detached drivers, routing defaults, and the fast smoke engine list. No baseline comparison ran, so those failures are not attributed to the repair.
+
+Real runtime command: `node atris/receipts/2026-10-14-shared-lock-probe.js /var/folders/t1/2_4kmb5n4c71dxm26zc8dgzr0000gn/T/atris-lock-suite-lp74sw3m`, run from the current checkout, exit 0. Actual output:
+
+```text
+{
+ "cleanup": "kept: git_lock",
+ "reap": "kept: /private/var/folders/t1/2_4kmb5n4c71dxm26zc8dgzr0000gn/T/acw-shared-only-BxWCGx/engine-wt (git_lock: /private/var/folders/t1/2_4kmb5n4c71dxm26zc8dgzr0000gn/T/acw-shared-only-BxWCGx/repo/.git/refs/heads/master.lock, 2 h old)"
+}
+```
+
+Rerunnable required command: `node --test test/worktree-removal-guard.test.js test/member-tidy.test.js`. In the combined Git copy, exit 0:
+
+```text
+ℹ tests 34
+ℹ pass 34
+ℹ fail 0
+ℹ duration_ms 3426.526
+```
+
+In the current checkout, exit 0:
+
+```text
+ℹ tests 13
+ℹ pass 13
+ℹ fail 0
+ℹ duration_ms 3058.426708
+```
+
+Files edited: this receipt and `atris/team/architect/logs/2026-10-14.md`. Artifact: retained combined Git copy and its full raw output. Commands also run: Atris boot, mission status/goal, task list/new/claim/note/ready, Git status/config/object reads, brain activate/compile (plan only, exit 2), explicit staging, whitespace check, commit, and push. Existing router changes and the regenerated task view are excluded. Progress: one complete full-suite attempt, twelve exact failures recorded, 34 combined and 13 current required checks passing, two cleanup paths kept the locked folder, zero production edits or new repository filenames.
+next_push: Remove the unused describeLocks export from the repair branch and prove its repository-hygiene check alongside the required folder checks.
+layer: beliefs
