@@ -428,8 +428,8 @@ function callText(lines, index) {
   return lines.slice(index, index + 12).join('\n');
 }
 
-function worktreeRemovalSites(file) {
-  const lines = fs.readFileSync(path.join(__dirname, '..', file), 'utf8').split('\n');
+function worktreeRemovalSites(file, text = fs.readFileSync(path.join(__dirname, '..', file), 'utf8')) {
+  const lines = text.split('\n');
   const starts = lines.flatMap((line, index) => {
     const match = line.match(/^(?:async\s+)?function\s+(\w+)/);
     return match ? [{ name: match[1], index }] : [];
@@ -610,7 +610,7 @@ function listedDeleteDrift(key, listed, found) {
 }
 
 test('every work folder removal goes through the git check and the removal log', () => {
-  const sites = [...sourceFiles('lib'), ...sourceFiles('commands')].flatMap(worktreeRemovalSites);
+  const sites = [...sourceFiles('lib'), ...sourceFiles('commands')].flatMap((file) => worktreeRemovalSites(file));
   assert.ok(sites.length >= 8, `expected the known removal sites, found ${sites.length}`);
   const bypasses = sites
     .filter((site) => !UNGUARDED_REMOVALS[site.key] && !NOT_YET_GUARDED[site.key])
@@ -627,6 +627,54 @@ test('every work folder removal goes through the git check and the removal log',
     .filter((site) => site.key === key)
     .every((site) => !removalGap(site)));
   assert.deepEqual(nowGuarded, [], 'guarded now: delete its line from NOT_YET_GUARDED');
+});
+
+// A function that deletes a folder path its caller hands it hides the folder's
+// name from the scan above, so a work folder could reach it unseen. Each such
+// delete must be one the scan already sees, or be listed here with a reason.
+const CALLER_PATH_DELETES = {};
+
+function callerPathDeletes(file, text = fs.readFileSync(path.join(__dirname, '..', file), 'utf8')) {
+  const lines = text.split('\n');
+  const found = [];
+  let owner = null;
+  let params = [];
+  lines.forEach((line, index) => {
+    const start = line.match(/^(?:async\s+)?function\s+(\w+)\s*\(([^)]*)\)/);
+    if (start) {
+      owner = start[1];
+      params = start[2].replace(/=[^,}]*/g, '').replace(/[{}\s]/g, '').split(',').filter(Boolean);
+    }
+    if (!owner || COMMENT_LINE.test(line) || !/\brm(?:dir)?(?:Sync)?\(/.test(line)) return;
+    const call = callText(lines, index);
+    if (!RECURSIVE_DELETE.test(call)) return;
+    const target = (call.match(/\brm(?:dir)?(?:Sync)?\(\s*([\w.]+)/) || [])[1] || '';
+    if (params.includes(target.split('.')[0])) found.push({ key: `${file}:${owner}`, line: index + 1, target });
+  });
+  return found;
+}
+
+function unseenCallerPathDeletes(file, text) {
+  const seen = new Set(worktreeRemovalSites(file, text).map((site) => site.line));
+  return callerPathDeletes(file, text)
+    .filter((del) => !seen.has(del.line) && !CALLER_PATH_DELETES[del.key])
+    .map((del) => `${del.key} (line ${del.line}) deletes ${del.target}, passed in by its caller`);
+}
+
+test('a function that deletes a folder its caller passes in is seen by the scan or listed', () => {
+  const files = [...sourceFiles('lib'), ...sourceFiles('commands')];
+  assert.deepEqual(files.flatMap((file) => unseenCallerPathDeletes(file)), []);
+  const stale = Object.keys(CALLER_PATH_DELETES)
+    .filter((key) => !files.some((file) => callerPathDeletes(file).some((del) => del.key === key)));
+  assert.deepEqual(stale, [], 'listed function no longer deletes a folder passed in by its caller');
+  // A shared helper like this would let any caller delete a work folder unseen.
+  const hidden = [
+    'function wipeFolder(folder) {',
+    '  fs.rmSync(folder, { recursive: true, force: true });',
+    '}',
+  ].join('\n');
+  assert.deepEqual(unseenCallerPathDeletes('lib/example.js', hidden),
+    ['lib/example.js:wipeFolder (line 2) deletes folder, passed in by its caller']);
 });
 
 test('saved scanner examples reject missed removals in the required checks', () => {
