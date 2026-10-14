@@ -437,6 +437,11 @@ function creditAfterQuote(quote, rest) {
 // with the sentence instead of starting the next.
 const SHORT_FORM_END = /\b(?:etc|e\.g|i\.e|vs|cf|approx|incl|et al|Inc|Ltd|Corp|Co|Jr|Sr)$/i;
 
+// a lone letter before a hyphen is usually a variable in a term, "k-means",
+// "n-gram", "x-axis", and keeps its lowercase even when it starts a sentence.
+// "a-ha" and "e-mail" are plain words and still take their capital.
+const LETTER_TERM = /^[b-df-z]-/;
+
 // a label that ends its own sentence, "**Why now?**", leaves the words after
 // its dropped dash to start the next one, so a lowercase first word takes its
 // capital: "**Why now?** The market moved". A short form such as "Inc." ends
@@ -447,7 +452,7 @@ function capitalAfterLabel(label, rest, line) {
   const stop = /([.!?])[*_]*$/.exec(label);
   if (!stop || /^[^A-Za-z]*[a-z]/.test(line)) return rest;
   if (stop[1] === '.' && SHORT_FORM_END.test(label.slice(0, stop.index).replace(/^[*_]+/, ''))) return rest;
-  return rest.replace(/^[a-z](?=[a-z']*(?![\w\uE000]))/, (ch) => ch.toUpperCase());
+  return LETTER_TERM.test(rest) ? rest : rest.replace(/^[a-z](?=[a-z']*(?![\w\uE000]))/, (ch) => ch.toUpperCase());
 }
 
 function fixEmDash(s, { endsBlock = false, startsBlock = false, spans = [] } = {}) {
@@ -636,7 +641,7 @@ function fixEmDash(s, { endsBlock = false, startsBlock = false, spans = [] } = {
     // Transactions stay unfinished'. A joining word goes on with the sentence,
     // 'The start." which is more shareable', and a line that opens in
     // lowercase keeps its writer's lowercase.
-    .replace(/(\.["'\u201d\u2019]+)\s*\u2014\s*(?!(?:which|who|whose|and|but|or|nor|so|yet|then|because|since|while|where|when|though|although|as|if|unless|until|than)\b)([a-z])(?=[a-z']*(?![\w\uE000]))/g, (m, stop, ch, at, whole) => (/^[^A-Za-z]*[a-z]/.test(whole) ? m : `${stop} ${ch.toUpperCase()}`))
+    .replace(/(\.["'\u201d\u2019]+)\s*\u2014\s*(?!(?:which|who|whose|and|but|or|nor|so|yet|then|because|since|while|where|when|though|although|as|if|unless|until|than)\b)([a-z])(?=[a-z']*(?![\w\uE000]))/g, (m, stop, ch, at, whole) => (/^[^A-Za-z]*[a-z]/.test(whole) || LETTER_TERM.test(whole.slice(at + m.length - 1)) ? m : `${stop} ${ch.toUpperCase()}`))
     // any other leftover dash after a quote that already ends its sentence
     // goes, and the quote keeps its own stop: 'wiring." PERSONA.md exists'.
     // A quoted question before a lowercase word goes on with its sentence.
@@ -753,7 +758,7 @@ function fixEmDash(s, { endsBlock = false, startsBlock = false, spans = [] } = {
     // The market moved".
     .replace(/(^|[^.])([.!?])(\*{1,2}|_{1,2})?\s*\u2014\s*([a-z])(?=[a-z']*(?![\w\uE000]))/g, (m, lead, stop, mark = '', ch, at, whole) => {
       if (stop === '.' && SHORT_FORM_END.test(whole.slice(0, at) + lead)) return `${lead}.${mark}, ${ch}`;
-      return `${lead}${stop}${mark} ${/^[^A-Za-z]*[a-z]/.test(whole) ? ch : ch.toUpperCase()}`;
+      return `${lead}${stop}${mark} ${/^[^A-Za-z]*[a-z]/.test(whole) || LETTER_TERM.test(whole.slice(at + m.length - 1)) ? ch : ch.toUpperCase()}`;
     })
     // keep punctuation the writer already put beside the dash instead of
     // stacking a comma on it, and never leave a trailing space. A dash pressed

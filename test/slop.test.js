@@ -691,6 +691,26 @@ test('fix keeps a label that ends in its own punctuation and adds no colon', () 
   ]);
 });
 
+test('fix keeps a lone letter before a hyphen lowercase when it starts a sentence', () => {
+  // from a vision summary, where "k-anonymous" came out "K-anonymous"
+  const file = tmpFile('letter-term.md', [
+    '7. **Patterns, not data.** \u2014 k-anonymous, example pattern',
+    'It clusters. \u2014 k-means works fine here.',
+    'He said "it held." \u2014 x-axis shows time.',
+    'It held. **What now?** \u2014 n-gram counts next.',
+    // a plain word still takes its capital
+    'It held. \u2014 a-ha, it works.',
+  ].join('\n'));
+  const { changes } = applyFixes([file], RULES);
+  assert.deepEqual(changes.map((c) => c.after), [
+    '7. **Patterns, not data.** k-anonymous, example pattern',
+    'It clusters. k-means works fine here.',
+    'He said "it held." x-axis shows time.',
+    'It held. **What now?** n-gram counts next.',
+    'It held. A-ha, it works.',
+  ]);
+});
+
 test('fix stacks no semicolon on a question that ends inside italics or bold', () => {
   // from podcast notes, where a full clause after the question took "?*;"
   const file = tmpFile('emphasis-stop-clause.md', [
