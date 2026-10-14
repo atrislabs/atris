@@ -184,7 +184,9 @@ const CLAUSE_AFTER_DASH = /(?<=[\w)\]"'*_`\u201d\u2019\uE001])\s*\u2014\s*(?=(?:
 // still joins. Only past forms that never describe a noun count, so
 // "suggested fix is ready" and "confirmed bugs are fixed" still join.
 const REPORT_VERB = '(?:proves|shows|means|suggests|confirms|implies|indicates|says|ensures|guarantees|proved|showed|meant)';
-const NOUN_WORD = "(?:[A-Za-z0-9_/'-]+(?:\\.[A-Za-z0-9_]+)*|\\uE000\\d+\\uE001)";
+// A word may hold one "=" joining a name and its value, as in a math or
+// config note: "the published figure at n=43 was not checked".
+const NOUN_WORD = "(?:[A-Za-z0-9_/'-]+(?:\\.[A-Za-z0-9_]+)*(?:=[A-Za-z0-9_'-]+(?:\\.[A-Za-z0-9_]+)*)?|\\uE000\\d+\\uE001)";
 // a word that only says when or how often is never the first word of a
 // subject: "The tool we built, now ships to everyone".
 const WHEN_WORD = '(?:now|already|never|always|finally|soon|often|usually|really|actually)';

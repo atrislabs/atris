@@ -2960,6 +2960,19 @@ test('fix joins a bare word and a verb in "s" before an object as a clause', () 
   ]);
 });
 
+test('fix reads a name and its value joined by "=" as one word in a subject', () => {
+  // from a research report, where "n=43" broke the subject: "a record, the published figure"
+  const file = tmpFile('equals-word.md', [
+    'Not claimed as a record \u2014 the published fewest-mono-K5 figure at n=43 was not checked.',
+    'Set it \u2014 k=5 is the default.',
+  ].join('\n\n'));
+  const { changes } = applyFixes([file], RULES, { write: false });
+  assert.deepEqual(changes.map((c) => c.after), [
+    'Not claimed as a record; the published fewest-mono-K5 figure at n=43 was not checked.',
+    'Set it; k=5 is the default.',
+  ]);
+});
+
 test('fix keeps a journal heading that ends in a time readable for its hour', () => {
   // analytics reads the hour after a dash or a spaced hyphen at the end of a
   // heading; the fix wrote "### Watch: 19:05", which hides it, and glued
