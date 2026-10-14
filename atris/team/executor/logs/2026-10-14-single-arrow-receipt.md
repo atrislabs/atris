@@ -27,6 +27,8 @@ Review: a separate agent inspected the diff and found no concrete correctness is
 
 First verification: exit 1, 147 passed and 1 failed because added lines moved existing map references. The references were corrected by matching each old test title to its current start line. Raw output: `/tmp/engine-single-arrow-proof.log`.
 
+Readiness notes: the handoff command rejected a proof-only invocation because it requires executing the check itself. Its plain command then failed 21 tests under the older Node selected by its login shell, matching the existing diagnosis in `atris/receipts/readiness-runtime-proof-2026-10-14.txt`. The direct Node 25 check above passed. A handoff rerun explicitly restores `/opt/homebrew/bin` first; that local workaround does not change the frozen mission command and remains outside automatic certification's command allowlist. The supported-runtime handoff passed, exit 0, and moved the task to Review. Saved receipt: `atris/runs/2026-10-14-task-ecm-8-2026-10-14T21-53-04-469Z.json`. Output: `/tmp/engine-single-arrow-ready.log` and `/tmp/engine-single-arrow-ready-final.log`. No task acceptance was performed.
+
 State notes: attaching the task to the mission was refused because its running parent holds the mission lock. The existing mission was preserved and a separate task records this slice. Brain activation and compilation returned plan-only output, exit 2; no generated policy files were written.
 
 Scope limit: this remains a text scan. Destructured inputs, reassignment, and imported callers are not resolved.
