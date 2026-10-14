@@ -188,6 +188,9 @@ test('progress lines turn into stream events', () => {
   assert.deepEqual(progressEvent('builder', '2026-10-13T12:00:02.000Z m-1 finished: ok'),
     { member: 'builder', mission: 'm-1', at: '2026-10-13T12:00:02.000Z', kind: 'finished', text: 'ok', ok: true });
   assert.equal(progressEvent('builder', '2026-10-13T12:00:03.000Z m-1 finished: failed').ok, false);
+  assert.equal(progressEvent('builder', '2026-10-13T12:00:03.000Z m-1 finished: failed').stopped, undefined);
+  assert.deepEqual(progressEvent('builder', '2026-10-13T12:00:04.000Z m-1 finished: stopped'),
+    { member: 'builder', mission: 'm-1', at: '2026-10-13T12:00:04.000Z', kind: 'finished', text: 'stopped', ok: false, stopped: true });
   assert.equal(progressEvent('builder', 'not a progress line'), null);
   assert.equal(progressEvent('builder', 'yesterday m-1 started: x'), null);
 });
