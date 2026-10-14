@@ -23,6 +23,8 @@ Details for any task: atris task show <ID>
 
 ## Review
 
+- **[AIC-45]** Remove landing sentence setup launches · auto-improver
+  **Done looks like:** Developers finish landing sentence checks sooner because setup launches three fewer commands.
 - **[AIC-44]** Remove unmapped landing setup launch · auto-improver
   **Done looks like:** Developers finish the same landing checks sooner because setup starts one fewer command.
 - **[AIC-43]** Remove incidental wording review setup launch · auto-improver

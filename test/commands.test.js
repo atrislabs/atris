@@ -12836,13 +12836,21 @@ test('task ready and finish accept landing capability sentences', () => {
   try {
     fs.mkdirSync(path.join(dir, 'atris'), { recursive: true });
 
-    const readyAdd = runCli([
-      'task', 'add', 'Add digest landing sentence',
-      '--tag', 'cli',
-      '--json',
-    ], { cwd: dir, env });
-    assert.equal(readyAdd.status, 0, readyAdd.stderr);
-    const readyRef = JSON.parse(readyAdd.stdout).task.display_id;
+    // Seed creation only; claim, ready, finish and projection stay on the CLI.
+    const workspaceRoot = taskStore.workspaceRoot(dir);
+    function seedLandingTask(title) {
+      const db = taskStore.open(dbPath);
+      try {
+        const created = addSeedTask(db, { title, tag: 'cli', workspaceRoot });
+        assert.equal(created.inserted, true);
+        const ref = taskStore.taskDisplayRefMap(taskStore.listTasks(db, { workspaceRoot })).get(created.id);
+        assert.ok(ref);
+        return ref;
+      } finally {
+        taskStore.close();
+      }
+    }
+    const readyRef = seedLandingTask('Add digest landing sentence');
     assert.equal(runCli(['task', 'claim', readyRef, '--as', 'codex'], { cwd: dir, env }).status, 0);
 
     const readySentence = 'Users can now trust the review queue to explain the result without opening the task.';
@@ -12859,13 +12867,7 @@ test('task ready and finish accept landing capability sentences', () => {
     assert.equal(readyPayload.landing_advisory, null);
     assert.equal(readyPayload.task.review.landing.happened, readySentence);
 
-    const missingAdd = runCli([
-      'task', 'add', 'Warn when landing is missing',
-      '--tag', 'cli',
-      '--json',
-    ], { cwd: dir, env });
-    assert.equal(missingAdd.status, 0, missingAdd.stderr);
-    const missingRef = JSON.parse(missingAdd.stdout).task.display_id;
+    const missingRef = seedLandingTask('Warn when landing is missing');
     assert.equal(runCli(['task', 'claim', missingRef, '--as', 'codex'], { cwd: dir, env }).status, 0);
     const missingReady = runCli([
       'task', 'ready', missingRef,
@@ -12877,13 +12879,7 @@ test('task ready and finish accept landing capability sentences', () => {
     assert.match(missingReady.stderr, /new teammate would get/);
     assert.match(JSON.parse(missingReady.stdout).landing_advisory, /new teammate would get/);
 
-    const finishAdd = runCli([
-      'task', 'add', 'Finish digest landing sentence',
-      '--tag', 'cli',
-      '--json',
-    ], { cwd: dir, env });
-    assert.equal(finishAdd.status, 0, finishAdd.stderr);
-    const finishRef = JSON.parse(finishAdd.stdout).task.display_id;
+    const finishRef = seedLandingTask('Finish digest landing sentence');
     assert.equal(runCli(['task', 'claim', finishRef, '--as', 'codex'], { cwd: dir, env }).status, 0);
 
     const finishSentence = 'Users can now trust the landed digest to explain the capability without opening the task.';
