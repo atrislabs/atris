@@ -1212,12 +1212,28 @@ test('every engine started through a runner or profile variable records its run 
   // file and the function holding the launch.
   const EXEMPT_LAUNCHES = new Map([
     ['lib/roster-prep.js#defaultPrepAskSync', 'recorded around the ask by startPrepReadings'],
+    ['commands/run.js#execPhaseCommandSync', 'recorded around the phase by executePhase'],
   ]);
   const engineLaunches = (rel, text) => {
     if (LAUNCH_EXEMPT_FILES.has(rel)) return { seen: 0, missing: [] };
     const code = stripComments(text);
     const lines = code.split('\n');
     const recorder = recordingCall(code);
+    const engineSourceAt = (source, position) => {
+      const scopeStart = Math.max(0, ...[...code.slice(0, position).matchAll(FUNCTION_START)].map((start) => start.index));
+      let declarationEnd = position;
+      while (!ENGINE_SOURCE.test(source)) {
+        const alias = /^([A-Za-z_$][\w$]*)(?:\.[\w$]+)*$/.exec(source.trim());
+        if (!alias) break;
+        const declaration = [...code.slice(scopeStart, declarationEnd).matchAll(new RegExp(`\\b(?:const|let|var)\\s+${alias[1].replace(/\$/g, '\\$')}\\s*=\\s*([^;\\n]*)`, 'g'))].pop();
+        if (!declaration) break;
+        source = declaration[1];
+        // Only earlier declarations can supply this alias, which also makes
+        // a circular alias chain terminate without a separate depth limit.
+        declarationEnd = scopeStart + declaration.index;
+      }
+      return ENGINE_SOURCE.test(source);
+    };
     let seen = 0;
     const missing = [];
     for (const match of code.matchAll(VAR_LAUNCH)) {
@@ -1225,19 +1241,40 @@ test('every engine started through a runner or profile variable records its run 
       const before = code.slice(0, match.index);
       const fnStart = Math.max(0, ...[...before.matchAll(FUNCTION_START)].map((start) => start.index));
       const fnName = (/^(?:async\s+)?(?:function|const|let)\s+([\w$]+)/.exec(code.slice(fnStart)) || [])[1] || '';
-      let source = program + (called || '');
-      let declarationEnd = match.index;
-      while (!ENGINE_SOURCE.test(source)) {
-        const alias = /^([A-Za-z_$][\w$]*)(?:\.[\w$]+)*$/.exec(source.trim());
-        if (!alias) break;
-        const declaration = [...code.slice(fnStart, declarationEnd).matchAll(new RegExp(`\\b(?:const|let|var)\\s+${alias[1].replace(/\$/g, '\\$')}\\s*=\\s*([^;\\n]*)`, 'g'))].pop();
-        if (!declaration) break;
-        source = declaration[1];
-        // Only earlier declarations can supply this alias, which also makes
-        // a circular alias chain terminate without a separate depth limit.
-        declarationEnd = fnStart + declaration.index;
+      let isEngine = engineSourceAt(program + (called || ''), match.index);
+      if (!isEngine && !called) {
+        // Follow simple parameters only when a call in this file supplies a
+        // known runner. An unrelated parameter name alone is not evidence.
+        const header = /^(?:async\s+)?function\s+([\w$]+)\s*\(([^)]*)\)/.exec(code.slice(fnStart));
+        const parameter = program.split('.')[0];
+        const slot = header ? header[2].split(',').map((name) => name.trim()).indexOf(parameter) : -1;
+        if (slot >= 0) {
+          const calls = new RegExp(`\\b${header[1].replace(/\$/g, '\\$')}\\(`, 'g');
+          for (const call of code.matchAll(calls)) {
+            const prefix = code.slice(0, call.index);
+            if (/\bfunction\s*$|\.\s*$/.test(prefix)) continue;
+            // Keep nested calls and quoted commas in their own argument.
+            const argumentsList = [''];
+            let depth = 0;
+            const tokens = /'(?:\\.|[^'\\])*'|"(?:\\.|[^"\\])*"|`(?:\\.|[^`\\])*`|[()[\]{},]|[^'"`()\[\]{},]+/g;
+            for (const token of code.slice(call.index + call[0].length).matchAll(tokens)) {
+              if (token[0] === ')' && depth === 0) break;
+              if (token[0] === ',' && depth === 0) {
+                argumentsList.push('');
+                continue;
+              }
+              if (/^[([{]$/.test(token[0])) depth += 1;
+              if (/^[)\]}]$/.test(token[0])) depth -= 1;
+              argumentsList[argumentsList.length - 1] += token[0];
+            }
+            if (engineSourceAt((argumentsList[slot] || '').trim(), call.index)) {
+              isEngine = true;
+              break;
+            }
+          }
+        }
       }
-      if (!source || !ENGINE_SOURCE.test(source) || isProbe(args)) continue;
+      if (!isEngine || isProbe(args)) continue;
       seen += 1;
       const line = before.split('\n').length;
       if (recordedAbove(lines, line, recorder) || EXEMPT_LAUNCHES.has(`${rel}#${fnName}`)) continue;
@@ -1255,6 +1292,18 @@ test('every engine started through a runner or profile variable records its run 
   assert.deepStrictEqual(planted("function a() {\n  const runner = resolveClaudeRunnerBin();\n  const program = runner;\n  spawnSync(program, ['--help']);\n}\n"), []);
   assert.deepStrictEqual(planted("function a() {\n  const runner = findExecutable('git');\n  const program = runner;\n  spawnSync(program, args);\n}\n"), []);
   assert.deepStrictEqual(planted("function a() {\n  const program = runner;\n  const runner = resolveClaudeRunnerBin();\n  spawnSync(program, args);\n}\n"), [], 'a later declaration is not the source of an earlier alias');
+  assert.deepStrictEqual(planted("function launch(program) {\n  spawnSync(program, args);\n}\nlaunch(resolveClaudeRunnerBin());\n"), ['commands/planted.js:2 program']);
+  assert.deepStrictEqual(planted("function launch(prompt, profile) {\n  spawnSync(profile.bin, args);\n}\nfunction caller() {\n  const runner = resolveEngineProfile(engine);\n  launch(prompt, runner);\n}\n"), ['commands/planted.js:2 profile.bin']);
+  assert.deepStrictEqual(planted("function launch(program) {\n  const end = startEngineRun(root);\n  spawnSync(program, args);\n}\nlaunch(resolveClaudeRunnerBin());\n"), []);
+  assert.deepStrictEqual(planted("function launch(program) {\n  spawnSync(program, ['--help']);\n}\nlaunch(resolveClaudeRunnerBin());\n"), []);
+  assert.deepStrictEqual(planted("function launch(program) {\n  spawnSync(program, args);\n}\nlaunch(findExecutable('git'));\n"), []);
+  assert.deepStrictEqual(planted("function launch(prompt, program) {\n  spawnSync(program, args);\n}\nlaunch(resolveClaudeRunnerBin(), git);\n"), [], 'an engine in another argument does not identify the program');
+  assert.deepStrictEqual(planted("function launch(program) {\n  spawnSync(program, args);\n}\n// launch(resolveClaudeRunnerBin());\n"), []);
+  assert.deepStrictEqual(planted("function launch(program) {\n  spawnSync(program, args);\n}\nlaunch(git);\nother.launch(resolveClaudeRunnerBin());\n"), [], 'a member call does not supply a local function parameter');
+  assert.deepStrictEqual(planted("function launch(prompt, program) {\n  spawnSync(program, args);\n}\nlaunch('hi, there', resolveClaudeRunnerBin());\n"), ['commands/planted.js:2 program']);
+  assert.deepStrictEqual(planted("function launch(program, options) {\n  spawnSync(program, args);\n}\nfunction caller() {\n  const runner = findExecutable('claude', env);\n  launch(\n    runner,\n    { prompt: buildPrompt(topic) }\n  );\n}\n"), ['commands/planted.js:2 program']);
+  assert.deepStrictEqual(planted("function launch(options, program) {\n  spawnSync(program, args);\n}\nlaunch({ a: 1, b: 2 }, resolveClaudeRunnerBin());\n"), ['commands/planted.js:2 program']);
+  assert.deepStrictEqual(planted("function launch(options, program) {\n  spawnSync(program, args);\n}\nlaunch([1, resolveClaudeRunnerBin()], git);\n"), [], 'an engine in an earlier array is not the program argument');
   // A variable declared in another function is not this launch's program.
   assert.deepStrictEqual(planted("function a() {\n  const command = buildEngineCommand(engine);\n}\nfunction b(command) {\n  spawnSync(command, { shell: true });\n}\n"), []);
   // A local wrapper that records the run covers the launch below it; a

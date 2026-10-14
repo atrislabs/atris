@@ -1,0 +1,69 @@
+Runner arguments now remain visible to the engine launch check. The frozen resource and dispatch check passed: 148 passed, 0 failed, exit 0.
+
+Files: test/engine-resource.test.js; atris/MAP.md; atris/refs/MAP-NOTES.md; atris/team/executor/logs/2026-10-14.md; this receipt.
+Plan: caller argument -> prior runner declaration -> named-function parameter -> nearby recording.
+
+Scope: simple named functions with same-file callers; direct runner and profile arguments. Member calls are excluded. Quoted commas and nested parentheses, arrays, and objects preserve argument positions. The existing run phase wrapper is explicitly exempt because executePhase records it around execution.
+Review: gpt-6-astra found member-call and argument-comma issues; both were fixed and reproduced as regressions. Final review found no blockers in scope.
+Limitations: reassignments, destructuring, aliases of parameters, imported callers, and template interpolation remain outside this text scan. Its existing nearby-recording window can cross function boundaries. The first appended-helper mutation was falsely covered by a nearby runJudge call; separating it beyond that window made the real unrecorded launch fail as expected.
+
+command: node --test --test-name-pattern="every engine started through" test/engine-resource.test.js
+mutation: route the real voice judge runner through an unrecorded function parameter, beyond the nearby-recording window
+exit: 1
+✖ every engine started through a runner or profile variable records its run or is named as exempt (78.882125ms)
+ℹ tests 1
+ℹ suites 0
+ℹ pass 0
+ℹ fail 1
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 161.682708
+
+✖ failing tests:
+
+test at test/engine-resource.test.js:1203:1
+✖ every engine started through a runner or profile variable records its run or is named as exempt (78.882125ms)
+  AssertionError [ERR_ASSERTION]: record the run with startEngineRun, or add the launch to the exempt list with its reason
+  + actual - expected
+  
+  + [
+  +   'commands/voice.js:243 program'
+  + ]
+  - []
+  
+      at TestContext.<anonymous> (/Users/keshavrao/arena/empire/.agent-worktrees/atris-cli/executor-continue-machine-memory-load-and-ssh-20261014-202028/test/engine-resource.test.js:1324:10)
+      at Test.runInAsyncScope (node:async_hooks:226:14)
+      at Test.run (node:internal/test_runner/test:1118:25)
+      at Test.start (node:internal/test_runner/test:1015:17)
+      at startSubtestAfterBootstrap (node:internal/test_runner/harness:358:17) {
+    generatedMessage: false,
+    code: 'ERR_ASSERTION',
+    actual: [ 'commands/voice.js:243 program' ],
+    expected: [],
+    operator: 'deepStrictEqual',
+    diff: 'simple'
+  }
+
+Mission attach-task returned exit 3: mission record lock held by the running supervisor; mission settings were untouched. Brain activate and compile returned exit 2, plan only; broad generated adapter writes were not applied.
+
+Final real check
+command: node --test test/engine-resource.test.js test/engine-dispatch.test.js
+exit: 0
+real runner and profile launch scan: 8 engine launches through a variable, 0 unrecorded
+ℹ tests 148
+ℹ suites 0
+ℹ pass 148
+ℹ fail 0
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 62364.038791
+
+command: git diff --check
+exit: 0
+output: empty
+Metric: 12 added guard scenarios; 8 real variable launches checked, 0 unrecorded; 148 behavior tests passed.
+
+next_push: stop nearby recording calls in a different function from covering an unrecorded launch.
+layer: capabilities
