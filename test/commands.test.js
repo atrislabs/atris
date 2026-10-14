@@ -8769,15 +8769,31 @@ test('task review-lane-loop runs bounded safe actions and stops before human acc
   const env = { ATRIS_TASKS_DB: dbPath, NODE_NO_WARNINGS: '1', ATRIS_AGENT_ID: 'codex', ATRIS_SKIP_UPDATE_CHECK: '1' };
   try {
     fs.mkdirSync(path.join(dir, 'atris'), { recursive: true });
+    // New is one store insert with the goal id, and show is the store
+    // projection plus enrichment, so setup and version reads run in-process.
+    // The show after the live review loop still runs the CLI and proves the
+    // two reads agree.
+    const workspaceRoot = taskStore.workspaceRoot(dir);
+    const seedTask = (title, goalId) => {
+      const db = taskStore.open(dbPath);
+      try {
+        const { id } = taskStore.addTask(db, { title, tag: 'task', workspaceRoot, metadata: { goal_id: goalId } });
+        return { id, display_id: taskStore.taskDisplayRefMap(taskStore.listTasks(db, { workspaceRoot })).get(id) };
+      } finally {
+        taskStore.close();
+      }
+    };
+    const { enrichTaskProjection } = require('../commands/task');
+    const showTask = (id) => {
+      const db = taskStore.open(dbPath);
+      try {
+        return enrichTaskProjection(taskStore.taskProjection(db, { taskId: id })).tasks[0];
+      } finally {
+        taskStore.close();
+      }
+    };
 
-    const reviewCreated = runCli([
-      'task', 'new', 'Loop should start one review chat and stop on repeat',
-      '--tag', 'task',
-      '--goal-id', 'OBL-950',
-      '--json',
-    ], { cwd: dir, env });
-    assert.equal(reviewCreated.status, 0, reviewCreated.stderr);
-    const reviewTask = JSON.parse(reviewCreated.stdout).task;
+    const reviewTask = seedTask('Loop should start one review chat and stop on repeat', 'OBL-950');
     const reviewRef = reviewTask.display_id;
     assert.equal(runCli([
       'task', 'ready', reviewRef,
@@ -8797,7 +8813,7 @@ test('task review-lane-loop runs bounded safe actions and stops before human acc
     assert.equal(dryPayload.safety.read_only, true);
     assert.equal(dryPayload.safety.human_accept, false);
 
-    const beforeReview = JSON.parse(runCli(['task', 'show', reviewRef, '--json'], { cwd: dir, env }).stdout);
+    const beforeReview = showTask(reviewTask.id);
     const liveReviewLoop = runCli(['task', 'review-lane-loop', '--goal-id', 'OBL-950', '--max-steps', '3', '--json'], { cwd: dir, env });
     assert.equal(liveReviewLoop.status, 0, liveReviewLoop.stderr);
     const liveReviewPayload = JSON.parse(liveReviewLoop.stdout);
@@ -8809,15 +8825,11 @@ test('task review-lane-loop runs bounded safe actions and stops before human acc
     assert.equal(liveReviewPayload.safety.repeat_selection_guard, true);
     const afterReview = JSON.parse(runCli(['task', 'show', reviewRef, '--json'], { cwd: dir, env }).stdout);
     assert.equal(afterReview.current_version, beforeReview.current_version + 1);
+    const afterReviewInProcess = showTask(reviewTask.id);
+    assert.equal(afterReviewInProcess.current_version, afterReview.current_version);
+    assert.equal(afterReviewInProcess.latest_event_type, afterReview.latest_event_type);
 
-    const continueCreated = runCli([
-      'task', 'new', 'Loop should continue one certified task and stop on repeat',
-      '--tag', 'task',
-      '--goal-id', 'OBL-951',
-      '--json',
-    ], { cwd: dir, env });
-    assert.equal(continueCreated.status, 0, continueCreated.stderr);
-    const continueTask = JSON.parse(continueCreated.stdout).task;
+    const continueTask = seedTask('Loop should continue one certified task and stop on repeat', 'OBL-951');
     const continueRef = continueTask.display_id;
     assert.equal(runCli([
       'task', 'ready', continueRef,
@@ -8832,14 +8844,8 @@ test('task review-lane-loop runs bounded safe actions and stops before human acc
       '--next', 'Add a follow-up created by review lane loop',
     ], { cwd: dir, env }).status, 0);
 
-    const waitingCreated = runCli([
-      'task', 'new', 'Loop should leave human accept waiting alone',
-      '--tag', 'task',
-      '--goal-id', 'OBL-951',
-      '--json',
-    ], { cwd: dir, env });
-    assert.equal(waitingCreated.status, 0, waitingCreated.stderr);
-    const waitingRef = JSON.parse(waitingCreated.stdout).task.display_id;
+    const waitingTask = seedTask('Loop should leave human accept waiting alone', 'OBL-951');
+    const waitingRef = waitingTask.display_id;
     assert.equal(runCli([
       'task', 'ready', waitingRef,
       '--as', 'codex',
@@ -8851,7 +8857,7 @@ test('task review-lane-loop runs bounded safe actions and stops before human acc
       '--as', 'codex-review',
       '--proof', 'node --test test/commands.test.js passed during review-lane-loop human gate',
     ], { cwd: dir, env }).status, 0);
-    const beforeWaiting = JSON.parse(runCli(['task', 'show', waitingRef, '--json'], { cwd: dir, env }).stdout);
+    const beforeWaiting = showTask(waitingTask.id);
 
     const liveContinueLoop = runCli(['task', 'review-lane-loop', '--goal-id', 'OBL-951', '--max-steps', '3', '--json'], { cwd: dir, env });
     assert.equal(liveContinueLoop.status, 0, liveContinueLoop.stderr);
@@ -8865,17 +8871,11 @@ test('task review-lane-loop runs bounded safe actions and stops before human acc
     assert.equal(liveContinuePayload.final_drain.command, null);
     assert.equal(liveContinuePayload.final_drain.api, null);
     assert.equal(liveContinuePayload.safety.human_accept, false);
-    const afterWaiting = JSON.parse(runCli(['task', 'show', waitingRef, '--json'], { cwd: dir, env }).stdout);
+    const afterWaiting = showTask(waitingTask.id);
     assert.equal(afterWaiting.current_version, beforeWaiting.current_version);
 
-    const humanOnlyCreated = runCli([
-      'task', 'new', 'Loop must stop on human-only review rows',
-      '--tag', 'task',
-      '--goal-id', 'OBL-952',
-      '--json',
-    ], { cwd: dir, env });
-    assert.equal(humanOnlyCreated.status, 0, humanOnlyCreated.stderr);
-    const humanOnlyRef = JSON.parse(humanOnlyCreated.stdout).task.display_id;
+    const humanOnlyTask = seedTask('Loop must stop on human-only review rows', 'OBL-952');
+    const humanOnlyRef = humanOnlyTask.display_id;
     assert.equal(runCli([
       'task', 'ready', humanOnlyRef,
       '--as', 'codex',
