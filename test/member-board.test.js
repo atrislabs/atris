@@ -6,9 +6,10 @@ const path = require('node:path');
 const { spawn, spawnSync } = require('node:child_process');
 
 const { readBoard, renderBoard, changeTracker, ago, memberRow, isAlive, stopMember } = require('../lib/member-board');
-// Piped board output reads COLUMNS as its width; the CLI runs below expect
-// the fixed cut unless a test sets it.
+// Piped board output reads COLUMNS as its width, and the live board reads
+// LINES as its height; the CLI runs below expect neither unless a test sets it.
 delete process.env.COLUMNS;
+delete process.env.LINES;
 
 const repoRoot = path.resolve(__dirname, '..');
 const cliPath = path.join(repoRoot, 'bin', 'atris.js');
@@ -684,6 +685,42 @@ test('watch breaks its footer between words to the screen width', () => {
     assert.match(screen[at], /^redrawn at \d\d:\d\d:\d\d, redraws every 3s,$/, watch.stdout);
     assert.equal(screen[at + 1], '  ctrl-c to stop', 'the rest goes on its own indented line');
     assert.ok(screen.every((l) => l.length <= 40), `every line fits 40 columns:\n${screen.join('\n')}`);
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test('board leaves rows off the bottom, not the top, when it is taller than the screen', () => {
+  const now = Date.parse('2026-10-14T13:00:00Z');
+  const rows = [
+    memberRow('checker', '2026-10-14T12:58:00Z m-4 started: [pid 1 engine claude] check the release\n2026-10-14T12:59:30Z m-4 finished: failed\n', now),
+    ...['ada', 'bo', 'cy', 'di'].map((name) => memberRow(name, `2026-10-14T12:50:00Z m-1 started: [pid ${process.pid} engine claude] work\n2026-10-14T12:59:30Z m-1 running: node --test\n`, now)),
+  ];
+  const full = renderBoard(rows, '/x').split('\n');
+  assert.ok(full.some((l) => l.startsWith('di ')) && !/did not fit/.test(full.join('\n')), 'with no height every row shows');
+  assert.deepEqual(renderBoard(rows, '/x', 0, null, [], 50).split('\n'), full, 'a tall screen changes nothing');
+  const short = renderBoard(rows, '/x', 0, null, [], 7).split('\n');
+  assert.ok(short.length <= 7, short.join('\n'));
+  assert.equal(short[0], '5 members: 1 done failed, 4 working', 'the count line stays and counts everyone');
+  assert.match(short[2], /^member\s+state\s/, 'the header stays');
+  assert.match(short[3], /^checker\s+done failed\s/, 'trouble sorts first, so it stays');
+  assert.equal(short.at(-1), '3 more members did not fit; a taller window shows them');
+  assert.match(renderBoard(rows, '/x', 0, null, [], 2), /^checker\s/m, 'at least one row always shows');
+});
+
+test('watch fits a screen LINES tall, footer included', () => {
+  const recent = new Date(Date.now() - 20_000).toISOString();
+  const dir = fakeDir(Object.fromEntries(['ada', 'bo', 'cy', 'di', 'ed', 'flo'].map((name) => [name, [`${recent} m-1 started: map the repo`, `${recent} m-1 reading atris/MAP.md`]])));
+  try {
+    const watch = spawnSync(process.execPath, [cliPath, 'member', 'board', '--watch'], {
+      cwd: dir, env: { ...process.env, ATRIS_PROGRESS_DIR: dir, LINES: '10' }, encoding: 'utf8', timeout: 1500,
+    });
+    // One draw, ending in a newline: lines before it are the rows it uses.
+    const screen = watch.stdout.replace(/\x1b\[\d*[A-Z]/g, '').split('\n').slice(0, -1);
+    assert.ok(screen.length < 10, `leaves the cursor on the last row, not past it:\n${screen.join('\n')}`);
+    assert.equal(screen[0], '6 members: 6 working');
+    assert.match(screen.join('\n'), /\d more members did not fit; a taller window shows them/);
+    assert.match(screen.at(-1), /^redrawn at /);
   } finally {
     fs.rmSync(dir, { recursive: true, force: true });
   }
