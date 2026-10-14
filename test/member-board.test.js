@@ -178,3 +178,87 @@ test('atris member board says so plainly when no member has a log', () => {
     fs.rmSync(dir, { recursive: true, force: true });
   }
 });
+
+test('progress lines turn into stream events', () => {
+  const { progressEvent } = require('../lib/member-board');
+  assert.deepEqual(progressEvent('builder', '2026-10-13T12:00:00.000Z m-1 started: ship the stream'),
+    { member: 'builder', mission: 'm-1', at: '2026-10-13T12:00:00.000Z', kind: 'started', text: 'ship the stream' });
+  assert.deepEqual(progressEvent('builder', '2026-10-13T12:00:01Z m-1 running: npm test'),
+    { member: 'builder', mission: 'm-1', at: '2026-10-13T12:00:01.000Z', kind: 'step', text: 'running: npm test' });
+  assert.deepEqual(progressEvent('builder', '2026-10-13T12:00:02.000Z m-1 finished: ok'),
+    { member: 'builder', mission: 'm-1', at: '2026-10-13T12:00:02.000Z', kind: 'finished', text: 'ok', ok: true });
+  assert.equal(progressEvent('builder', '2026-10-13T12:00:03.000Z m-1 finished: failed').ok, false);
+  assert.equal(progressEvent('builder', 'not a progress line'), null);
+  assert.equal(progressEvent('builder', 'yesterday m-1 started: x'), null);
+});
+
+test('follow emits only new full lines, picks up new members, survives truncation', () => {
+  const { followBoard } = require('../lib/member-board');
+  const dir = fakeDir({ builder: [`${at(60)} m-1 started: old job`] });
+  const events = [];
+  const follower = followBoard({ dir, emit: (e) => events.push(e), pollMs: 60_000 });
+  try {
+    follower.scan();
+    assert.deepEqual(events, [], 'lines already on disk belong to the snapshot');
+
+    const log = path.join(dir, 'builder.log');
+    fs.appendFileSync(log, `${at(30)} m-1 reading lib/a.js\n${at(20)} m-1 edit`);
+    follower.scan();
+    assert.deepEqual(events.map((e) => e.text), ['reading lib/a.js'], 'half-written line waits');
+
+    fs.appendFileSync(log, 'ing lib/b.js\n');
+    fs.writeFileSync(path.join(dir, 'scout.log'), `${at(10)} m-2 started: find stale docs\njunk line\n`);
+    follower.scan();
+    assert.deepEqual(events.slice(1).map((e) => [e.member, e.kind, e.text]), [
+      ['builder', 'step', 'editing lib/b.js'],
+      ['scout', 'started', 'find stale docs'],
+    ]);
+
+    fs.writeFileSync(log, `${at(5)} m-3 finished: ok\n`);
+    follower.scan();
+    assert.deepEqual(events[events.length - 1], {
+      member: 'builder', mission: 'm-3', at: at(5), kind: 'finished', text: 'ok', ok: true,
+    });
+    assert.equal(events.length, 4);
+  } finally {
+    follower.stop();
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test('atris member board --json --follow streams one JSON object per line', async () => {
+  const { spawn } = require('node:child_process');
+  const recent = new Date(Date.now() - 5_000).toISOString();
+  const dir = fakeDir({ navigator: [`${recent} m-9 started: map the repo`] });
+  const child = spawn(process.execPath, [cliPath, 'member', 'board', '--json', '--follow'], {
+    cwd: dir, env: { ...process.env, ATRIS_PROGRESS_DIR: dir },
+  });
+  let out = '';
+  child.stdout.on('data', (d) => { out += d; });
+  const lines = () => out.split('\n').filter(Boolean).map((l) => JSON.parse(l));
+  const waitFor = async (n) => {
+    const until = Date.now() + 8000;
+    while (lines().length < n && Date.now() < until) await new Promise((r) => setTimeout(r, 50));
+    return lines();
+  };
+  try {
+    const [snapshot] = await waitFor(1);
+    assert.equal(snapshot.kind, 'snapshot');
+    assert.equal(snapshot.dir, dir);
+    assert.deepEqual(snapshot.members.map((m) => [m.member, m.state]), [['navigator', 'working']]);
+
+    const now = new Date().toISOString();
+    fs.appendFileSync(path.join(dir, 'navigator.log'), `${now} m-9 reading atris/MAP.md\n`);
+    fs.writeFileSync(path.join(dir, 'scout.log'), `${now} m-10 finished: failed\n`);
+    const got = await waitFor(3);
+    assert.equal(got.length, 3, out);
+    const byMember = Object.fromEntries(got.slice(1).map((e) => [e.member, e]));
+    assert.deepEqual(byMember.navigator, { member: 'navigator', mission: 'm-9', at: now, kind: 'step', text: 'reading atris/MAP.md' });
+    assert.deepEqual(byMember.scout, { member: 'scout', mission: 'm-10', at: now, kind: 'finished', text: 'failed', ok: false });
+    assert.equal(child.exitCode, null, 'still following');
+  } finally {
+    child.kill('SIGINT');
+    await new Promise((r) => child.once('exit', r));
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
