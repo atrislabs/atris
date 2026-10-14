@@ -14444,9 +14444,22 @@ test('task status resolves goal_id display refs to parent task objectives', () =
       '',
     ].join('\n'), 'utf8');
 
-    const parentCreated = runCli(['task', 'add', 'GM Desk v0: make Acme Co open to one playable daily rep', '--tag', 'gm-desk', '--json'], { cwd: dir, env });
-    assert.equal(parentCreated.status, 0, parentCreated.stderr);
-    const parent = JSON.parse(parentCreated.stdout).task;
+    // Seed only the parent; the child add resolves the parent's display ref on the CLI.
+    const workspaceRoot = taskStore.workspaceRoot(dir);
+    const db = taskStore.open(dbPath);
+    let parent;
+    try {
+      const created = addSeedTask(db, {
+        title: 'GM Desk v0: make Acme Co open to one playable daily rep', tag: 'gm-desk', workspaceRoot,
+      });
+      assert.equal(created.inserted, true);
+      const rows = taskStore.listTasks(db, { workspaceRoot });
+      const row = rows.find(task => task.id === created.id);
+      parent = { id: row.id, title: row.title, display_id: taskStore.taskDisplayRefMap(rows).get(row.id) };
+      assert.ok(parent.display_id);
+    } finally {
+      taskStore.close();
+    }
 
     const childCreated = runCli(['task', 'add', 'GM Desk v0 step 2: route Acme Co open to daily surface, no /flow', '--tag', 'gm-desk', '--goal-id', parent.display_id, '--json'], { cwd: dir, env });
     assert.equal(childCreated.status, 0, childCreated.stderr);

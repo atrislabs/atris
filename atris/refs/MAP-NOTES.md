@@ -2417,3 +2417,7 @@ npm publish
 ## Handover prep call-order race
 
 - `test/roster-prep-brief.test.js:455` checks that a handover backup preps only when its own line asks. The one-second cap is wall time, so a loaded machine can kill the stalled lead fake before it logs its launch; the call-order check at `test/roster-prep-brief.test.js:481` requires prep then backup in order and the lead first only when it logged, while the run record rows prove the lead was launched and stalled.
+
+## Goal display-ref status fixture setup
+
+- `test/commands.test.js:14433` checks that task status reads a parent goal's title as the current task's objective when the child was linked by display reference. Real-store parent creation at `test/commands.test.js:14452` saves one setup launch and reads id, title and display reference from the stored row; the child add that resolves the display reference, the claim and the status read remain on the CLI.
