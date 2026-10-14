@@ -496,3 +496,17 @@ test('fix drops a dash that opens a line instead of leaving a leading comma', ()
     'Mid-line stays a comma, like this.',
   ]);
 });
+
+test('fix treats dashes in a row as one dash, never a comma run', () => {
+  const file = tmpFile('doubled.md', [
+    'He said \u2014\u2014 nothing at all.',
+    'Wait \u2014 \u2014 \u2014 what?',
+    '\u2014\u2014 the old attribution',
+  ].join('\n'));
+  const { changes } = applyFixes([file], RULES);
+  assert.deepEqual(changes.map((c) => c.after), [
+    'He said, nothing at all.',
+    'Wait, what?',
+    'the old attribution',
+  ]);
+});
