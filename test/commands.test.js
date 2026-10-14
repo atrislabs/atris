@@ -13848,7 +13848,7 @@ test('task natural flow creates, picks, talks, finishes, and refreshes projectio
   }
 });
 
-test('task headless JSON contract supports create, claim, note, finish, and events', () => {
+test('task headless JSON contract supports create, claim, note, finish, and events', async () => {
   if (!hasNodeSqlite()) return;
   const dir = makeTempDir();
   const dbPath = path.join(dir, 'tasks.db');
@@ -13970,19 +13970,27 @@ test('task headless JSON contract supports create, claim, note, finish, and even
     assert.equal(humanFinishConflict.stdout, '');
     assert.match(humanFinishConflict.stderr, /finish failed: .* not in open\|claimed/);
 
-    const events = runCli(['task', 'events', shortId, '--json'], { cwd: dir, env });
+    // Every write is done; the rest only read or refuse, so they run at once.
+    const [events, where, unknown, humanUnknown, missingTitle, missingClaimId, humanMissingTitle, missing] = await Promise.all([
+      runCliAsync(['task', 'events', shortId, '--json'], { cwd: dir, env }),
+      runCliAsync(['task', 'where', '--json'], { cwd: dir, env }),
+      runCliAsync(['task', 'not-a-subcommand', '--json'], { cwd: dir, env }),
+      runCliAsync(['task', 'not-a-subcommand'], { cwd: dir, env }),
+      runCliAsync(['task', 'add', '--json', '--full'], { cwd: dir, env }),
+      runCliAsync(['task', 'claim', '--json', '--full'], { cwd: dir, env }),
+      runCliAsync(['task', 'add'], { cwd: dir, env }),
+      runCliAsync(['task', 'show', 'DOESNOTEXIST', '--json', '--full'], { cwd: dir, env }),
+    ]);
     assert.equal(events.status, 0, events.stderr);
     const eventsPayload = JSON.parse(events.stdout);
     assert.deepEqual(eventsPayload.events.map(e => e.event_type), ['created', 'claimed', 'claim_released', 'claimed', 'message', 'completed', 'reviewed']);
 
-    const where = runCli(['task', 'where', '--json'], { cwd: dir, env });
     assert.equal(where.status, 0, where.stderr);
     const wherePayload = JSON.parse(where.stdout);
     assert.equal(wherePayload.ok, true);
     assert.equal(wherePayload.db, dbPath);
     assert.equal(wherePayload.workspace, fs.realpathSync(dir));
 
-    const unknown = runCli(['task', 'not-a-subcommand', '--json'], { cwd: dir, env });
     assert.equal(unknown.status, 2);
     assert.equal(unknown.stderr, '');
     const unknownPayload = JSON.parse(unknown.stdout);
@@ -13991,12 +13999,10 @@ test('task headless JSON contract supports create, claim, note, finish, and even
     assert.ok(Array.isArray(unknownPayload.usage));
     assert.ok(unknownPayload.usage.some(line => line.includes('atris task add')));
 
-    const humanUnknown = runCli(['task', 'not-a-subcommand'], { cwd: dir, env });
     assert.equal(humanUnknown.status, 2);
     assert.match(humanUnknown.stderr, /atris task: unknown subcommand "not-a-subcommand"/);
     assert.match(humanUnknown.stdout, /atris task - durable local task state/);
 
-    const missingTitle = runCli(['task', 'add', '--json', '--full'], { cwd: dir, env });
     assert.equal(missingTitle.status, 2);
     assert.equal(missingTitle.stderr, '');
     const missingTitlePayload = JSON.parse(missingTitle.stdout);
@@ -14004,7 +14010,6 @@ test('task headless JSON contract supports create, claim, note, finish, and even
     assert.equal(missingTitlePayload.command, 'atris task add');
     assert.equal(missingTitlePayload.reason, 'missing_title');
 
-    const missingClaimId = runCli(['task', 'claim', '--json', '--full'], { cwd: dir, env });
     assert.equal(missingClaimId.status, 2);
     assert.equal(missingClaimId.stderr, '');
     const missingClaimPayload = JSON.parse(missingClaimId.stdout);
@@ -14012,12 +14017,10 @@ test('task headless JSON contract supports create, claim, note, finish, and even
     assert.equal(missingClaimPayload.command, 'atris task claim');
     assert.equal(missingClaimPayload.reason, 'missing_id');
 
-    const humanMissingTitle = runCli(['task', 'add'], { cwd: dir, env });
     assert.equal(humanMissingTitle.status, 2);
     assert.equal(humanMissingTitle.stdout, '');
     assert.match(humanMissingTitle.stderr, /title required/);
 
-    const missing = runCli(['task', 'show', 'DOESNOTEXIST', '--json', '--full'], { cwd: dir, env });
     assert.equal(missing.status, 2);
     assert.equal(missing.stderr, '');
     const missingPayload = JSON.parse(missing.stdout);
