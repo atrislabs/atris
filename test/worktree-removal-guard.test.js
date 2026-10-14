@@ -66,6 +66,7 @@ test('regression cleanup keeps folders that gain locks or disappear during its s
   assert.match(result.stdout, /late keep marker during the safety check kept the folder, named the marker and its age, and no removal was attempted/);
   assert.match(result.stdout, /late private and shared locks during the safety check kept the folder, named both paths with distinct ages, and no removal was attempted/);
   assert.match(result.stdout, /a folder that disappeared during the safety check was reported missing with both retained lock paths and ages, and no removal was attempted/);
+  assert.match(result.stdout, /a folder that disappeared during the safety check with no lock left was reported only as missing, and no removal was attempted/);
 });
 
 function regressionEntry(repo, verifyCmd) {

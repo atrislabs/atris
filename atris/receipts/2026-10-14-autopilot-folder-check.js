@@ -62,7 +62,8 @@ function main() {
   const toolsDir = path.join(repo, '.atris', 'tools');
   const removeAttempt = path.join(repo, '.atris', 'remove-attempt');
   fs.mkdirSync(toolsDir, { recursive: true });
-  for (const kind of ['marker', 'ordinary', 'vanished']) {
+  for (const kind of ['gone', 'marker', 'ordinary', 'vanished']) {
+    const vanishes = kind === 'gone' || kind === 'vanished';
     fs.writeFileSync(path.join(repo, `late-${kind}.txt`), `late ${kind} case\n`);
     git('add', '.');
     git('commit', '-qm', `late ${kind} case`);
@@ -70,13 +71,14 @@ function main() {
     const lateFolder = path.join(repo, '.regression-worktree-' + lateHash.slice(0, 8));
     const privateDir = path.join(repo, '.git', 'worktrees', path.basename(lateFolder).replace(/^\./, '-'));
     const moved = path.join(repo, '.atris', `moved-${kind}`);
-    const expected = kind === 'marker'
-      ? [[path.join(privateDir, 'locked'), 10800]]
+    const expected = kind === 'gone' ? []
+      : kind === 'marker' ? [[path.join(privateDir, 'locked'), 10800]]
       : [[path.join(privateDir, 'index.lock'), 10800], [path.join(repo, '.git', 'packed-refs.lock'), 14400]];
     fs.writeFileSync(path.join(toolsDir, 'git'), `#!${process.execPath}
 const fs = require('node:fs');
 const { spawnSync } = require('node:child_process');
 const args = process.argv.slice(2);
+const cwd = process.cwd();
 if (args[0] === 'worktree' && args[1] === 'remove') fs.writeFileSync(${JSON.stringify(removeAttempt)}, 'attempted');
 if (args.includes('--git-dir') && args.includes('--git-common-dir') && process.cwd() === ${JSON.stringify(lateFolder)}) {
   if (${kind === 'marker'}) {
@@ -88,9 +90,9 @@ if (args.includes('--git-dir') && args.includes('--git-common-dir') && process.c
     const aged = new Date(Date.now() - seconds * 1000);
     fs.utimesSync(file, aged, aged);
   }
-  if (${kind === 'vanished'}) fs.renameSync(${JSON.stringify(lateFolder)}, ${JSON.stringify(moved)});
+  if (${vanishes}) fs.renameSync(${JSON.stringify(lateFolder)}, ${JSON.stringify(moved)});
 }
-const result = spawnSync(${JSON.stringify(realGit)}, args, { stdio: 'inherit' });
+const result = spawnSync(${JSON.stringify(realGit)}, args, { cwd, stdio: 'inherit' });
 process.exit(result.status === null ? 1 : result.status);
 `, { mode: 0o755 });
     const savedPath = process.env.PATH;
@@ -103,11 +105,12 @@ process.exit(result.status === null ? 1 : result.status);
       process.env.PATH = savedPath;
     }
     console.log(JSON.stringify(late));
-    const present = kind === 'vanished' ? moved : lateFolder;
-    assert.equal(fs.existsSync(lateFolder), kind !== 'vanished');
+    const present = vanishes ? moved : lateFolder;
+    assert.equal(fs.existsSync(lateFolder), !vanishes);
     assert.equal(git('-C', present, 'rev-parse', '--absolute-git-dir'), privateDir);
     assert.equal(late.pass, true);
     assert.equal(late.cleanup.removed, false);
+    if (kind === 'gone') assert.equal(late.cleanup.reason, 'folder is missing');
     if (kind === 'vanished') assert.ok(late.cleanup.reason.startsWith('folder is missing; git lock: '), late.cleanup.reason);
     for (const [file, seconds] of expected) {
       const escaped = file.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
@@ -120,6 +123,7 @@ process.exit(result.status === null ? 1 : result.status);
     assert.equal(fs.existsSync(removeAttempt), false);
     assert.equal(fs.readFileSync(removalFile, 'utf8').trim().split('\n').length, 1);
   }
+  console.log('a folder that disappeared during the safety check with no lock left was reported only as missing, and no removal was attempted');
   console.log('late keep marker during the safety check kept the folder, named the marker and its age, and no removal was attempted');
   console.log('late private and shared locks during the safety check kept the folder, named both paths with distinct ages, and no removal was attempted');
   console.log('a folder that disappeared during the safety check was reported missing with both retained lock paths and ages, and no removal was attempted');

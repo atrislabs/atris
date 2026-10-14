@@ -92,3 +92,20 @@ a folder that disappeared during the safety check was reported missing with both
 next_push: Prove regression cleanup says only that the folder is missing, naming no lock, when a folder disappears mid-check and no lock remains.
 
 layer: behaviors
+
+## Folder disappearing with no lock left
+
+Regression cleanup now has proof that a folder disappearing during the safety check with no lock behind it is reported only as missing. No lock is named, and no removal is attempted.
+
+This case runs first so no shared lock from a later case can leak into it. The forwarding git now runs the real check from the original folder path, so the check fails the way it would when a folder is truly gone.
+
+Real surface: `node atris/receipts/2026-10-14-autopilot-folder-check.js`, exit 0.
+
+```text
+  kept .../.regression-worktree-3e2b5fcf: folder is missing
+a folder that disappeared during the safety check with no lock left was reported only as missing, and no removal was attempted
+```
+
+next_push: Prove regression cleanup keeps a folder that disappears after a passing safety check but before removal, records no removal, and gives a plain reason.
+
+layer: behaviors
