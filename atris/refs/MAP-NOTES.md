@@ -2297,7 +2297,7 @@ npm publish
 
 ## Old Git-lock cleanup audit
 - `atris/receipts/2026-10-14-folder-lock-preview.js:1`: real CLI preview using an old lock, without removing a folder; output and required check in the matching receipt.
-- `lib/member-tidy.js:160` (`missingFolderLock`): a locked copy gone from disk names its lock file and age; `lib/member-tidy.js:199` (`inspectGitActivity`): shared activity check before preview or removal; `lib/member-tidy.js:222` (`recordWorktreeRemoval`): successful removal record; `lib/git-activity.js:24`: private and shared lock paths and ages; `commands/member.js:11356`: actual tidy CLI handler.
+- `lib/member-tidy.js:160` (`missingFolderLock`): a locked copy gone from disk names its lock file and age; `lib/member-tidy.js:200` (`inspectGitActivity`): shared activity check before preview or removal; `lib/member-tidy.js:223` (`recordWorktreeRemoval`): successful removal record; `lib/git-activity.js:24`: private and shared lock paths and ages; `commands/member.js:11356`: actual tidy CLI handler.
 
 ## Fleet review-folder cleanup audit
 
@@ -2337,3 +2337,5 @@ npm publish
 - `lib/member-tidy.js:170`: failed origin lookup also keeps exact private and shared lock paths and ages visible; `test/member-tidy.test.js` runs preview and cleanup against a missing local remote and checks that both folders and branches survive with no removal record.
 
 - `lib/member-tidy.js:189`: failed branch ancestry lookup retains the Git error and appends exact private and shared lock paths and ages; `test/member-tidy.test.js:475` removes a generated branch reference with real Git and proves preview and cleanup preserve the files, locks, and Git record without a removal log.
+
+- `lib/member-tidy.js:174`: detached copies retain their explanation and append exact private and shared lock paths and ages; `test/member-tidy.test.js` checks real preview and cleanup preserve files, the saved branch, locks, and Git registration without removal records.
