@@ -201,6 +201,10 @@ const PLAIN_CLAUSE_AFTER_DASH = new RegExp(`(?<=[\\w)\\]"'*_\`\\u201d\\u2019\\uE
 const OBJECT_WORD = "(?![a-z]+(?:s|ed)\\b)[A-Za-z0-9_/'-]+";
 const MANNER_WORD = '(?!(?:only|mostly|mainly|largely|partly|nearly|merely|simply|exactly|especially|particularly|probably|likely|really|actually|usually|generally|typically|certainly|clearly|apparently|basically|entirely|fully|early|daily|weekly|monthly|yearly|hourly|reply|apply|supply|family|rally)\\b)[a-z]{3,}ly';
 const PLAIN_OBJECT_CLAUSE = new RegExp(`^\\s*\\u2014\\s*(?:a|an|the|every|each|no)\\s+${NOUN_WORD}\\s+(?:${NOUN_WORD}\\s+){0,2}(?:${VERB_BEFORE_WHICH}|${PLAIN_VERB}(?:(?:it|them)(?:[.!?;,]|$|\\s+(?![a-z]+(?:s|ed)\\b))|(?:the|a|an|its|their)\\s+(?:${OBJECT_WORD}\\s+)?${OBJECT_WORD}(?:\\s+(?:red|green|fine|clean|stale|empty|safe))?(?:[.!?;,]|$|\\s+(?:on|in|at|to|into|for|from|with|by|via|when|if|before|after|until|once|while|because|instead|rather|without)\\b)|${MANNER_WORD}(?:[.!?;,]|$|\\s+(?:and|but|on|in|at|to|into|for|from|with|by|via|when|if|before|after|until|once|while|because|instead|rather|without)\\b)))`);
+// A plain word, then a name, then the verb hides a "that": "a topic Atris
+// sits directly on top of" names a topic, so it keeps its comma. A run of
+// capitals is no name, so "the new CLI resolves the prefix" still joins.
+const NAME_BEFORE_PLAIN_VERB = new RegExp(`^\\s*\\u2014\\s*(?:a|an|the|every|each|no)\\s+(?:${NOUN_WORD}\\s+){0,2}?[a-z][a-z'-]*\\s+[A-Z][a-z]+\\s+${PLAIN_VERB_WORD}\\b`);
 // A dash before "once", "when", "if" and their kin starts a second sentence
 // when that short clause ends in a comma and a subject and verb follow it:
 // "This is the archive; once the endgame closes, future runs can read this".
@@ -468,7 +472,8 @@ function fixEmDash(s, { endsBlock = false, startsBlock = false } = {}) {
     })
     .replace(PLAIN_CLAUSE_AFTER_DASH, (m, at, whole) => {
       const left = clauseLeft(at, whole);
-      return left && (/\b(?:not|cannot)\b/i.test(left) || PLAIN_OBJECT_CLAUSE.test(whole.slice(at))) ? clauseJoin(left) : m;
+      if (!left || NAME_BEFORE_PLAIN_VERB.test(whole.slice(at))) return m;
+      return /\b(?:not|cannot)\b/i.test(left) || PLAIN_OBJECT_CLAUSE.test(whole.slice(at)) ? clauseJoin(left) : m;
     })
     .replace(ADVERB_CLAUSE_AFTER_DASH, (m, at, whole) => {
       const left = clauseLeft(at, whole);
@@ -482,7 +487,7 @@ function fixEmDash(s, { endsBlock = false, startsBlock = false } = {}) {
     })
     .replace(THE_CLAUSE_AFTER_DASH, (m, at, whole) => {
       const left = clauseLeft(at, whole);
-      return left ? clauseJoin(left) : m;
+      return left && !NAME_BEFORE_PLAIN_VERB.test(whole.slice(at)) ? clauseJoin(left) : m;
     })
     .replace(EACH_CLAUSE_AFTER_DASH, (m, at, whole) => {
       const left = clauseLeft(at, whole);

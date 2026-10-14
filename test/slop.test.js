@@ -1677,6 +1677,22 @@ test('fix joins a "the" subject and a verb that is rarely a noun after a dash wi
   ]);
 });
 
+test('fix keeps the comma when a plain word and a name sit before the verb', () => {
+  // from a research note, where "a topic Atris sits on top of" names a topic
+  const file = tmpFile('name-verb.md', [
+    'Agents work offline now \u2014 a topic Atris sits directly on top of.',
+    'We cut the list \u2014 the release Keshav approves quickly before launch.',
+    // a run of capitals is no name, so the clause still joins
+    'The lookup is fixed \u2014 the new CLI resolves the prefix.',
+  ].join('\n'));
+  const { changes } = applyFixes([file], RULES);
+  assert.deepEqual(changes.map((c) => c.after), [
+    'Agents work offline now, a topic Atris sits directly on top of.',
+    'We cut the list, the release Keshav approves quickly before launch.',
+    'The lookup is fixed; the new CLI resolves the prefix.',
+  ]);
+});
+
 test('fix starts the next sentence after a stop that sits before a dash', () => {
   // from the terrace repo, which came out "fine with try? the cost"
   const file = tmpFile('stop.md', [
