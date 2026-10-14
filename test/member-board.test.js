@@ -250,6 +250,27 @@ test('watch names a run that ended and was replaced between two redraws', () => 
   assert.deepEqual(clean([run('m-2', 22, ['ok', 'died'])], 6_000), ['builder working -> done ok -> working'], 'the same run again is not a new change');
 });
 
+test('watch rewrites replaced to died once the old run turns out to be dead', () => {
+  const run = (mission, pid, before) => ({ member: 'builder', state: 'working', mission, pid, before, ago: '1s ago' });
+  const changed = changeTracker(60_000);
+  changed([run('m-1', 11, [])], 0);
+  assert.deepEqual(changed([run('m-2', 22, ['replaced'])], 3_000), ['builder working -> replaced -> working'], 'its process was still alive');
+  assert.deepEqual(changed([run('m-2', 22, ['replaced'])], 6_000), ['builder working -> replaced -> working']);
+  assert.deepEqual(changed([run('m-2', 22, ['died'])], 9_000), ['builder working -> died -> working'], 'the note agrees with the before column');
+  assert.deepEqual(changed([run('m-3', 33, ['ok', 'died'])], 12_000), ['builder working -> died -> working -> done ok -> working'],
+    'a later run does not touch the word already fixed');
+  assert.deepEqual(changed([run('m-3', 33, ['ok', 'died'])], 72_000), ['builder working -> died -> working -> done ok -> working'],
+    'the fix did not restart the minute');
+  assert.deepEqual(changed([run('m-3', 33, ['ok', 'died'])], 73_000), []);
+
+  const done = changeTracker(60_000);
+  done([run('m-1', 11, [])], 0);
+  done([run('m-2', 22, ['replaced'])], 3_000);
+  done([{ ...run('m-2', 22, ['replaced']), state: 'done ok' }], 6_000);
+  assert.deepEqual(done([{ ...run('m-2', 22, ['died']), state: 'done ok' }], 9_000), ['builder working -> died -> working -> done ok'],
+    'the new run finishing first does not drop the fix');
+});
+
 test('watch tells apart two runs with no process id on the same mission by their start', () => {
   const now = Date.parse('2026-10-14T13:00:00Z');
   const first = '2026-10-14T12:59:00Z m-1 started: build\n2026-10-14T12:59:30Z m-1 running: npm test\n';
