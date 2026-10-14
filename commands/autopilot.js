@@ -1194,7 +1194,7 @@ function recordTickCommit(cwd, hash, verifyCmd, slug) {
  * returns array of { hash, slug, pass }. On failure: writes a lesson with
  * retroactive context.
  */
-function regressionCheck(cwd) {
+function regressionCheck(cwd, { activeCwds } = {}) {
   const registryPath = path.join(cwd, 'atris', 'tick-registry.json');
   if (!fs.existsSync(registryPath)) return [];
 
@@ -1213,6 +1213,7 @@ function regressionCheck(cwd) {
 
     const worktreePath = path.join(cwd, '.regression-worktree-' + entry.hash.slice(0, 8));
     let pass = false;
+    let kept = null;
     try {
       // Create a worktree at the commit
       execSync(`git worktree add "${worktreePath}" ${entry.hash} --detach 2>/dev/null`, { cwd, stdio: 'pipe' });
@@ -1227,8 +1228,20 @@ function regressionCheck(cwd) {
       results.push({ hash: entry.hash, slug: entry.slug, pass: true, skipped: true });
       continue;
     } finally {
-      // Clean up worktree
-      try { execSync(`git worktree remove "${worktreePath}" --force 2>/dev/null`, { cwd, stdio: 'pipe' }); } catch {}
+      // A timed-out verify can leave a child running in the folder or git
+      // mid-write there. Keep the folder then; log every real removal.
+      const guard = require('./worktree');
+      if (fs.existsSync(worktreePath)) {
+        kept = guard.worktreeHasActiveProcess(worktreePath, activeCwds || guard.listActiveProcessCwds())
+          ? 'active_process'
+          : guard.worktreeGitActivity(worktreePath);
+      }
+      if (fs.existsSync(worktreePath) && !kept) {
+        try {
+          execSync(`git worktree remove "${worktreePath}" --force 2>/dev/null`, { cwd, stdio: 'pipe' });
+          guard.recordWorktreeRemoval(cwd, { path: worktreePath, by: 'atris autopilot regression check', reason: 'regression_check_done' });
+        } catch {}
+      }
     }
 
     if (!pass) {
@@ -1236,7 +1249,7 @@ function regressionCheck(cwd) {
         `Retroactive regression: verify command for tick ${entry.hash.slice(0, 7)} (${entry.slug}) now fails. -5 retroactive penalty applied.`);
     }
 
-    results.push({ hash: entry.hash, slug: entry.slug, pass });
+    results.push({ hash: entry.hash, slug: entry.slug, pass, ...(kept ? { kept } : {}) });
   }
 
   return results;
@@ -4022,6 +4035,7 @@ module.exports = {
   isTodoTracked,
   scanAnomalies,
   verifyJudgeIntegrity,
+  regressionCheck,
   maybeWriteCompletedEndgameScorecard,
   readEndgameState,
   renderHumanSuggestion,

@@ -13,6 +13,7 @@ const { spawn, spawnSync } = require('node:child_process');
 const { reap } = require('../commands/land');
 const { cleanupWorktrees } = require('../commands/worktree');
 const { disposeReviewSandbox } = require('../lib/fleet');
+const { regressionCheck } = require('../commands/autopilot');
 
 function git(cwd, args) {
   const result = spawnSync('git', args, { cwd, encoding: 'utf8' });
@@ -169,6 +170,55 @@ test('fleet review cleanup names who removed a sandbox and why', () => {
     assert.equal(line.path, wt);
     assert.equal(line.by, 'atris fleet review');
     assert.equal(line.reason, 'review_sandbox_imported');
+  } finally {
+    fs.rmSync(base, { recursive: true, force: true });
+  }
+});
+
+// One recorded tick whose verify command runs inside the regression folder.
+function regressionRepo(verifyCmd) {
+  const { base, repo } = landedWorktree();
+  const hash = git(repo, ['rev-parse', 'HEAD']);
+  fs.mkdirSync(path.join(repo, 'atris'));
+  fs.writeFileSync(path.join(repo, 'atris', 'tick-registry.json'), JSON.stringify([{ hash, verifyCmd, slug: 'fixture' }]));
+  return { base, repo, folder: path.join(repo, `.regression-worktree-${hash.slice(0, 8)}`) };
+}
+
+test('autopilot regression check keeps its folder while git holds its lock', () => {
+  const { base, repo, folder } = regressionRepo('touch "$(git rev-parse --git-dir)/index.lock"');
+  try {
+    const [row] = regressionCheck(repo, { activeCwds: [] });
+    assert.equal(row.kept, 'git_lock', JSON.stringify(row));
+    assert.ok(fs.existsSync(folder));
+    assert.deepEqual(removalLines(repo), []);
+  } finally {
+    fs.rmSync(base, { recursive: true, force: true });
+  }
+});
+
+test('autopilot regression check keeps its folder while a run is inside it', () => {
+  const { base, repo, folder } = regressionRepo('true');
+  try {
+    const [row] = regressionCheck(repo, { activeCwds: [path.join(folder, 'sub')] });
+    assert.equal(row.kept, 'active_process', JSON.stringify(row));
+    assert.ok(fs.existsSync(folder));
+    assert.deepEqual(removalLines(repo), []);
+  } finally {
+    fs.rmSync(base, { recursive: true, force: true });
+  }
+});
+
+test('autopilot regression check names who removed its folder and why', () => {
+  const { base, repo, folder } = regressionRepo('true');
+  try {
+    const [row] = regressionCheck(repo, { activeCwds: [] });
+    assert.equal(row.pass, true);
+    assert.equal(row.kept, undefined);
+    assert.equal(fs.existsSync(folder), false);
+    const [line] = removalLines(repo);
+    assert.equal(line.path, folder);
+    assert.equal(line.by, 'atris autopilot regression check');
+    assert.equal(line.reason, 'regression_check_done');
   } finally {
     fs.rmSync(base, { recursive: true, force: true });
   }
