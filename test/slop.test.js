@@ -1198,6 +1198,24 @@ test('fix leaves link addresses, HTML tags, and code in plain text alone', () =>
   ]);
 });
 
+test('a placeholder in angle brackets is prose, so its dash is flagged and fixed', () => {
+  // template fields like "<one line, what it does>" were read as HTML tags and
+  // kept their dash; a tag with an attribute or a comment stays literal
+  const lines = [
+    'description: <one line \u2014 what this member does>',
+    '- deferred: <ideas explicitly parked \u2014 must not invade the mission>',
+    '<a title="x \u2014 y">link</a> stays.',
+    '<!-- Workspace \u2014 2026-03-23 -->',
+  ];
+  const file = tmpFile('placeholder.md', lines.join('\n'));
+  assert.deepEqual(scanFile(file).filter((f) => f.rule === 'em-dash').map((f) => f.line), [1, 2]);
+  const { changes } = applyFixes([file], RULES, { write: false });
+  assert.deepEqual(changes.map((c) => c.after), [
+    'description: <one line, what this member does>',
+    '- deferred: <ideas explicitly parked, must not invade the mission>',
+  ]);
+});
+
 test('fix keeps a link address whole when it has a title or nested parentheses', () => {
   // a titled link used to lose its mask, so "a-b" in the path became "a, b";
   // the title is masked too, so its dash never pairs with one outside the link

@@ -717,8 +717,11 @@ function fencedLines(lines) {
 // and its quoted title is masked with it, like an HTML title attribute.
 // A dash alone in brackets or quotes names the mark instead of using it,
 // "no em dashes (\u2014) unless", so it is masked too and never turns into "(: )".
+// A template placeholder in angle brackets is prose, not a tag: one that
+// opens on a letter, holds a spaced dash and no "=" or quote, like
+// "<one line \u2014 what this member does>", stays open to the scan and the fix.
 // Each is masked while the fix runs.
-const LITERAL_SPAN = /(`+).+?\1|(?<=[(\["'\u201c\u2018])\u2014(?=[)\]"'\u201d\u2019])|<(kbd|code|samp|var|tt)\b[^<>]*>.*?<\/\2\s*>|\$\$.+?\$\$|\$(?=\S)[^$]+?(?<=\S)\$(?!\d)|\[\^[^\]\s]+\]|^\s{0,3}\[[^\]]+\]:\s*\S+|(?<=\])\[[^\]]+\]|(?<=\])\((?:[^()\s]|\([^()\s]*\))*(?:\s+"[^"]*")?\)?|<[A-Za-z/!][^<>]*>/g;
+const LITERAL_SPAN = /(`+).+?\1|(?<=[(\["'\u201c\u2018])\u2014(?=[)\]"'\u201d\u2019])|<(kbd|code|samp|var|tt)\b[^<>]*>.*?<\/\2\s*>|\$\$.+?\$\$|\$(?=\S)[^$]+?(?<=\S)\$(?!\d)|\[\^[^\]\s]+\]|^\s{0,3}\[[^\]]+\]:\s*\S+|(?<=\])\[[^\]]+\]|(?<=\])\((?:[^()\s]|\([^()\s]*\))*(?:\s+"[^"]*")?\)?|<(?![A-Za-z][^<>="']*\s\u2014\s)[A-Za-z/!][^<>]*>/g;
 function maskInlineCode(line) {
   const spans = [];
   const masked = line.replace(LITERAL_SPAN, (m) => `\uE000${spans.push(m) - 1}\uE001`);
