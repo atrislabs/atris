@@ -2373,3 +2373,7 @@ npm publish
 ## Reward rejection fixture setup
 
 - `test/commands.test.js:13030` checks that a zero reward cannot mark a task done. Real-store creation at `test/commands.test.js:13043` saves one setup launch, resolves the display reference and closes in finally; claim, ready, rejection and final review-status show remain on the CLI with every behavior assertion preserved.
+
+## Proof-only acceptance guard fixture setup
+
+- `test/commands.test.js:13069` checks that agent proof-only mode blocks done, finish, positive review, accept and certified auto-accept. Real-store creation at `test/commands.test.js:13088` saves one setup launch, resolves the display reference and closes in finally; claim, every blocked verb, ready, zero-reward review and final show remain on the CLI with every behavior assertion preserved.

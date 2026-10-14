@@ -13079,9 +13079,20 @@ test('task proof-only agent env blocks acceptance verbs', () => {
   try {
     fs.mkdirSync(path.join(dir, 'atris'), { recursive: true });
 
-    const add = runCli(['task', 'add', 'Proof-only guard task', '--tag', 'agent-xp', '--json'], { cwd: dir, env });
-    assert.equal(add.status, 0, add.stderr);
-    const ref = JSON.parse(add.stdout).task.display_id;
+    // Seed creation only; claim and every acceptance guard stay on the CLI.
+    const workspaceRoot = taskStore.workspaceRoot(dir);
+    const db = taskStore.open(dbPath);
+    let ref;
+    try {
+      const created = addSeedTask(db, {
+        title: 'Proof-only guard task', tag: 'agent-xp', workspaceRoot,
+      });
+      assert.equal(created.inserted, true);
+      ref = taskStore.taskDisplayRefMap(taskStore.listTasks(db, { workspaceRoot })).get(created.id);
+      assert.ok(ref);
+    } finally {
+      taskStore.close();
+    }
     assert.equal(runCli(['task', 'claim', ref, '--as', 'codex'], { cwd: dir, env }).status, 0);
 
     const done = runCli(['task', 'done', ref, '--as', 'codex', '--proof', 'proof-only guard checked done command', '--json'], { cwd: dir, env });

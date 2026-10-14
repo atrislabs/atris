@@ -23,6 +23,8 @@ Details for any task: atris task show <ID>
 
 ## Review
 
+- **[AIC-48]** Remove proof-only guard setup launch · auto-improver
+  **Done looks like:** Developers finish proof-only guard checks sooner because setup launches one fewer command.
 - **[AIC-47]** Remove reward rejection setup launch · auto-improver
   **Done looks like:** Developers finish reward rejection checks sooner because setup launches one fewer command.
 - **[AIC-46]** Remove weak landing rejection setup launch · auto-improver
