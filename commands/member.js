@@ -10793,7 +10793,7 @@ async function memberUp(...args) {
     return;
   }
   const root = process.cwd();
-  const { createMemberUp, runMemberUp, parseMemberUpArgs, DEFAULT_MAX } = require('../lib/member-up');
+  const { createMemberUp, runMemberUp, parseMemberUpArgs, DEFAULT_MAX, ADD_JOB_HINT } = require('../lib/member-up');
   const parsed = parseMemberUpArgs(args);
   if (parsed.error) {
     console.error(parsed.error);
@@ -10814,6 +10814,7 @@ async function memberUp(...args) {
       console.log(`nothing to start: ${up.working()} already working, the limit is ${up.max}`);
     } else if (!started.length) {
       console.log('nothing to start: no free member has a task with a runnable check');
+      if (up.idle().length) console.log(ADD_JOB_HINT);
     }
     return started;
   }

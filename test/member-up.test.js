@@ -6,7 +6,7 @@ const fs = require('fs');
 const os = require('os');
 const path = require('path');
 
-const { createMemberUp, runMemberUp, memberUpResult, IDLE_CHECK_MS, IDLE_EXIT, SUMMARY_MS, CHECK_MS } = require('../lib/member-up');
+const { createMemberUp, runMemberUp, memberUpResult, IDLE_CHECK_MS, IDLE_EXIT, SUMMARY_MS, CHECK_MS, ADD_JOB_HINT } = require('../lib/member-up');
 
 // A fake team: members, a task list per member, a clock and a spawner that
 // records starts and lets the test end a run with an exit code. Tasks written
@@ -185,7 +185,7 @@ test('a task with no check or a prose check never starts a member', () => {
   const up = createMemberUp(team.deps, {});
   assert.deepEqual(up.check(), []);
   assert.deepEqual(team.spawned, []);
-  assert.deepEqual(team.lines, ['a is idle, no task with a check', 'b is idle, no task with a check']);
+  assert.deepEqual(team.lines, ['a is idle, no task with a check', 'b is idle, no task with a check', ADD_JOB_HINT]);
 });
 
 test('a run that finds no task with a check to claim ends idle, not done', () => {
