@@ -290,11 +290,13 @@ test('follow finishes a line that was half written before it started', () => {
 // A spawned sleeper stands in for a member's engine run. detached makes it a
 // process group leader, the same way the mission runner spawns the engine.
 // The sleepers are node processes; stand in for a real engine command line.
-const engineAs = (program) => ({
-  readProcess: (pid) => (pid === process.pid ? { pgid: -1, command: 'node test' } : { pgid: pid, command: `${program} -p acting as builder` }),
+// agoSec matches the started line's age, so the run's start time lines up.
+const engineAs = (program, agoSec = 60) => ({
+  readProcess: (pid) => (pid === process.pid
+    ? { pgid: -1, command: 'node test', startedAt: Date.now() }
+    : { pgid: pid, command: `${program} -p acting as builder`, startedAt: Date.now() - agoSec * 1000 }),
 });
 const asEngine = engineAs('claude');
-const asCodex = engineAs('/opt/homebrew/bin/codex');
 
 function spawnSleeper(script) {
   const child = spawn(process.execPath, ['-e', script], { detached: true, stdio: ['ignore', 'pipe', 'ignore'] });
@@ -353,7 +355,7 @@ test('member stop ends the run and everything it started, then logs finished: st
   const dir = fakeDir({ builder: [`${isoAgo(125)} m-9 started: [pid ${child.pid} engine claude] long job`, `${isoAgo(3)} m-9 running: npm test`] });
   try {
     assert.ok(isAlive(grandchild));
-    const result = await stopMember('builder', { dir, deps: asEngine });
+    const result = await stopMember('builder', { dir, deps: engineAs('claude', 125) });
     assert.equal(result.ok, true);
     assert.equal(result.forced, false);
     assert.equal(result.message, 'stopped builder after 2m of work');
@@ -376,7 +378,7 @@ test('member stop forces a run that ignores the polite signal', async () => {
   await ready;
   const dir = fakeDir({ stubborn: [`${isoAgo(10)} m-5 started: [pid ${child.pid} engine codex] dig in`] });
   try {
-    const result = await stopMember('stubborn', { dir, graceMs: 300, deps: asCodex });
+    const result = await stopMember('stubborn', { dir, graceMs: 300, deps: engineAs('/opt/homebrew/bin/codex', 10) });
     assert.equal(result.ok, true);
     assert.equal(result.forced, true);
     assert.match(result.message, /^stopped stubborn after \d+s of work, it had to be forced$/);
@@ -415,7 +417,7 @@ test('member stop leaves a reused pid alone when its command is no longer the en
   await ready;
   const dir = fakeDir({ builder: [`${isoAgo(60)} m-7 started: [pid ${child.pid} engine claude] old job`] });
   try {
-    const result = await stopMember('builder', { dir, deps: { readProcess: (pid) => ({ pgid: pid, command: 'node /usr/local/bin/some-other-app' }) } });
+    const result = await stopMember('builder', { dir, deps: { readProcess: (pid) => ({ pgid: pid, command: 'node /usr/local/bin/some-other-app', startedAt: Date.now() - 60000 }) } });
     assert.equal(result.message, 'nothing running');
     assert.equal(isAlive(child.pid), true, 'the unrelated process keeps running');
   } finally {
@@ -429,9 +431,35 @@ test('member stop refuses system pids, its own group, and engines it does not kn
   for (const [pid, engine] of [[1, 'launchd'], [1, 'claude'], [process.pid, 'claude'], [4242, 'launchd']]) {
     const dir = fakeDir({ forged: lines(pid, engine) });
     try {
-      const deps = { readProcess: (p) => ({ pgid: p, command: `${engine} -p` }) };
+      const deps = { readProcess: (p) => ({ pgid: p, command: `${engine} -p`, startedAt: Date.now() - 20000 }) };
       const result = await stopMember('forged', { dir, graceMs: 50, deps });
       assert.equal(result.message, 'nothing running', `pid ${pid} engine ${engine}`);
+    } finally {
+      fs.rmSync(dir, { recursive: true, force: true });
+    }
+  }
+});
+
+test('member stop leaves a same-named engine alone when it started at a different time', async () => {
+  const { child, ready } = spawnSleeper("console.log('up'); setInterval(() => {}, 1000)");
+  await ready;
+  const dir = fakeDir({ builder: [`${isoAgo(600)} m-6 started: [pid ${child.pid} engine claude] long gone`] });
+  try {
+    const result = await stopMember('builder', { dir, deps: engineAs('claude', 5) });
+    assert.equal(result.message, 'nothing running');
+    assert.equal(isAlive(child.pid), true);
+  } finally {
+    try { process.kill(-child.pid, 'SIGKILL'); } catch {}
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test('member stop ignores engine names that are object keys', async () => {
+  for (const engine of ['constructor', '__proto__', 'toString']) {
+    const dir = fakeDir({ odd: [`${isoAgo(20)} m-4 started: [pid 4242 engine ${engine}] odd`] });
+    try {
+      const result = await stopMember('odd', { dir, deps: engineAs('claude', 20) });
+      assert.equal(result.message, 'nothing running', engine);
     } finally {
       fs.rmSync(dir, { recursive: true, force: true });
     }
