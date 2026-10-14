@@ -2393,3 +2393,7 @@ npm publish
 ## Conflicting receipt fail-closed fixture setup
 
 - `test/commands.test.js:13420` checks that conflicting duplicate receipts make the reward status read fail closed with readable labels. Real-store creation at `test/commands.test.js:13434` saves one setup launch, resolves the display reference and closes in finally; claim, ready, accept and the fail-closed status read remain on the CLI with every behavior assertion preserved.
+
+## Tampered receipt ledger fixture setup
+
+- `test/commands.test.js:13463` checks that an edited reward receipt makes the status read fail closed. Real-store creation at `test/commands.test.js:13476` saves one setup launch, resolves the display reference and closes in finally; claim, ready, accept with its reward total, and the tampered status read remain on the CLI with every behavior assertion preserved.
