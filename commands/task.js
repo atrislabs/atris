@@ -22,6 +22,7 @@ const {
 } = require('../lib/task-proof');
 const {
   candidatePolicyGate,
+  declaredCandidatePathValues,
   evaluateAutoAccept,
   isAgentCertified,
   isAutoCertifyVerifyCommandAllowed,
@@ -32,6 +33,7 @@ const {
   DENIED_TAGS,
 } = require('../lib/auto-accept-certified');
 const { evaluateAcceptVerify } = require('../lib/accept-verify-gate');
+const { proveTaskLanding } = require('../lib/landing-proof');
 const {
   taskExplanation,
   explanationFieldsFromInput,
@@ -253,6 +255,7 @@ atris task - durable local task state (SQLite, gitignored)
   atris task archive <id> --reason "..." [--from-failed]
                                            Sweep off-roadmap/duplicate work as archived (not failed);
                                            --from-failed opts in to relabel a fail-closed row (never done)
+  atris task reopen <id> [--reason "..."]  Send a done, waiting, failed, or archived task back to open
   atris task clear-done [--before <days>] [--dry-run] [--json]  Archive completed rows, oldest first
   atris task prune-test-junk [--yes] [--vacuum] [--json]
                                            Count rows test runs left from temp folders; --yes backs up the db, then removes them
@@ -5454,11 +5457,12 @@ function autoAcceptCertifiedSmallReviews(taskDb, db, projection) {
       results.push({ ...evaluation, action: 'accept_failed', task_id: task.id, reason: accepted.reason });
       continue;
     }
-    stampAutoAcceptMetadata(taskDb, db, task.id, REVIEW_AUTO_ACCEPT_ACTOR, REVIEW_AUTO_ACCEPT_POLICY);
+    const landing = stampAutoAcceptMetadata(taskDb, db, task, REVIEW_AUTO_ACCEPT_ACTOR, REVIEW_AUTO_ACCEPT_POLICY);
     refreshCareerXpAfterReview(accepted.reviewed);
     results.push({
       ...evaluation,
       action: 'accepted',
+      landing,
       task_id: task.id,
       reward: accepted.reviewed.episode.reward.value,
     });
@@ -6243,6 +6247,27 @@ function cmdAdd(args) {
   const taskDb = getTaskDb();
   const db = taskDb.open();
   const ws = taskDb.workspaceRoot();
+  // Filing a job that is already open or claimed hands back that job instead
+  // of making a copy. Work already handed in for review can be filed again.
+  const existing = taskDb.findUnfinishedTaskByTitle(db, { workspaceRoot: ws, title });
+  if (existing) {
+    const { projection, outPath } = writeDefaultProjection(taskDb, db);
+    const task = compactTaskFromProjection(projection, existing.id);
+    if (wantsJson(args)) {
+      printJson({
+        ok: true,
+        action: 'reused',
+        task_id: existing.id,
+        inserted: false,
+        operator_title_warning: null,
+        projection_path: outPath,
+        task,
+      });
+      return;
+    }
+    console.log(`${taskRef(task)}\t${existing.title}\t(already on the list, reused)`);
+    return;
+  }
   const operatorTitleWarning = warnIfTaskTitleNeedsOperatorWhy(title);
   // Generation throttle, the named root cause is generation > human-review rate. An AGENT cannot keep
   // minting tasks while a wall of certified-but-unaccepted work waits; that treadmill is what accept-group
@@ -9738,6 +9763,45 @@ function cmdArchive(args) {
   }
 }
 
+// Send a done, failed, or archived task back to open so it can be claimed
+// again. Review sign-offs are cleared; the old status and reason are kept.
+function cmdReopen(args) {
+  const pos = positional(args);
+  const id = pos[0];
+  if (!id) failTask('atris task reopen', 'missing_id', 'task id required');
+  const reason = textFlag(args, ['--reason']) || 'reopened';
+  const taskDb = getTaskDb();
+  const db = taskDb.open();
+  const taskId = requireTaskId(taskDb, db, id, 'atris task reopen');
+  const actor = String(flag(args, '--as') || DEFAULT_OWNER);
+  const result = taskDb.reopenTask(db, { id: taskId, actor, reason, fromReview: true });
+  if (!result.reopened) {
+    const detail = `reopen failed: ${taskId} ${result.reason}`;
+    if (wantsJson(args)) {
+      printJson({ ok: false, command: 'atris task reopen', reason: result.reason, task_id: taskId, detail });
+      process.exit(1);
+    }
+    console.error(detail);
+    process.exit(1);
+  }
+  const reopenedFrom = result.row && result.row.metadata && result.row.metadata.reopened_from || null;
+  const { projection, outPath } = writeDefaultProjection(taskDb, db);
+  const task = compactTaskFromProjection(projection, taskId);
+  if (wantsJson(args)) {
+    printJson({
+      ok: true,
+      action: 'reopened',
+      task_id: taskId,
+      reopened_from: reopenedFrom,
+      reason,
+      projection_path: outPath,
+      task,
+    });
+    return;
+  }
+  console.log(`reopened ${taskRef(task)}${reopenedFrom ? ` (was ${reopenedFrom})` : ''}: ${reason}`);
+}
+
 function taskCompletionTime(row) {
   const doneAt = Number(row && row.done_at);
   if (Number.isFinite(doneAt) && doneAt > 0) return doneAt;
@@ -10151,7 +10215,9 @@ function cmdReady(args) {
         ? `double-check complete; autoland will accept this ${whenLands}.`
         : needsExternalVerifier
         ? 'proof is ready; this verifier needs a second agent review because autoland cannot rerun it.'
-        : `proof is ready; autoland runs the second check and lands it ${whenLands}.`)
+        // Autoland accepts; landing is a git fact it proves separately. Do not
+        // promise "lands it" for work that may not be committed or merged.
+        : `proof is ready; autoland runs the second check and accepts it ${whenLands}; it lands once committed and merged.`)
       : (agentCertified
         ? 'double-check complete; ready to keep moving. XP is awarded only after the human approves the task.'
         : 'proof is ready; one more agent check before human approval. XP waits for the human.'),
@@ -10403,19 +10469,50 @@ async function cmdAccept(args) {
   if (publicSync && !publicSync.ok) process.exitCode = 1;
 }
 
-function stampAutoAcceptMetadata(taskDb, db, taskId, actor, policy) {
+// Every auto-accept passes through here, so this is where the record says
+// whether the work actually landed. Accepted is a review verdict; landed is a
+// fact about git, proven by lib/landing-proof.js or not claimed at all.
+// The check behind a landing is the one that actually ran: the verifier's
+// passing re-run first, then the check the proof names, then the builder's
+// recorded verify.
+function landingProofVerify(task) {
+  const metadata = task.metadata || {};
+  const cache = metadata.verify_cache;
+  if (cache && typeof cache === 'object' && cache.ok === true && String(cache.command || '').trim()) {
+    return String(cache.command).trim();
+  }
+  return certifyVerifyCandidate(task) || String(metadata.verify || '').trim();
+}
+
+function stampAutoAcceptMetadata(taskDb, db, task, actor, policy) {
+  const taskId = task.id;
   const row = taskDb.getTask(db, taskId);
-  if (!row) return;
+  if (!row) return null;
+  // The caller's task object was read before the re-check ran, so it lacks
+  // the verify_cache and certify stamps written since. Prove from the row as
+  // it stands now, keeping the caller's events and review for claimed paths.
+  const current = { ...task, ...row, metadata: row.metadata && typeof row.metadata === 'object' ? row.metadata : {} };
+  let landing;
+  try {
+    landing = proveTaskLanding(current, {
+      files: declaredCandidatePathValues(current),
+      verify: landingProofVerify(current),
+    });
+  } catch (err) {
+    landing = { status: 'unverified', reason: 'landing_proof_failed', detail: String((err && err.message) || err).slice(0, 200) };
+  }
   const metadata = row.metadata && typeof row.metadata === 'object' ? { ...row.metadata } : {};
   metadata.auto_accepted_at = new Date().toISOString();
   metadata.auto_accepted_by = actor;
   metadata.auto_accept_policy = policy;
+  metadata.landing = { ...landing, checked_at: metadata.auto_accepted_at };
   db.prepare(`
     UPDATE tasks
        SET metadata = ?,
            updated_at = ?
      WHERE id = ?
   `).run(JSON.stringify(metadata), Date.now(), taskId);
+  return landing;
 }
 
 function acceptReviewTask(taskDb, db, taskId, { actor, proof, reward, lesson = '', nextTask = '', autoAccepted = false }) {
@@ -10924,11 +11021,12 @@ function cmdAutoAcceptCertified(args) {
       results.push({ ...evaluation, action: 'accept_failed', reason: accepted.reason });
       continue;
     }
-    stampAutoAcceptMetadata(taskDb, db, task.id, actor, evaluation.policy);
+    const landing = stampAutoAcceptMetadata(taskDb, db, task, actor, evaluation.policy);
     refreshCareerXpAfterReview(accepted.reviewed);
     results.push({
       ...evaluation,
       action: 'accepted',
+      landing,
       reward: accepted.reviewed.episode.reward.value,
       task_id: task.id,
     });
@@ -11185,11 +11283,12 @@ function cmdSweep(args) {
       results.push({ ...evaluation, action: 'accept_failed', task_id: task.id, reason: accepted.reason });
       continue;
     }
-    stampAutoAcceptMetadata(taskDb, db, task.id, actor, evaluation.policy);
+    const landing = stampAutoAcceptMetadata(taskDb, db, task, actor, evaluation.policy);
     refreshCareerXpAfterReview(accepted.reviewed);
     results.push({
       ...evaluation,
       action: 'accepted',
+      landing,
       task_id: task.id,
       reward: accepted.reviewed.episode.reward.value,
     });
@@ -13475,6 +13574,7 @@ async function runTaskCommand(args) {
     case 'finish': return cmdFinish(rest);
     case 'fail':   return cmdDone([...rest, '--failed']);
     case 'archive': return cmdArchive(rest);
+    case 'reopen': return cmdReopen(rest);
     case 'clear-done': return cmdClearDone(rest);
     case 'prune-test-junk': return cmdPruneTestJunk(rest);
     case 'keep': return cmdKeep(rest);
@@ -13521,7 +13621,7 @@ const MUTATING_TASK_COMMANDS = new Set([
   'continue-work', 'continue', 'chat', 'note', 'say', 'retitle', 'tag', 'tags', 'step',
   'ready', 'result', 'accept', 'landing', 'land-review', 'auto-accept-certified',
   'auto-accept', 'sweep', 'audit', 'certify-verified', 'accept-group', 'revise',
-  'done', 'finish', 'fail', 'archive', 'clear-done', 'reap-mission-blockers', 'reap-blockers', 'relabel-archived', 'review', 'import',
+  'done', 'finish', 'fail', 'archive', 'reopen', 'clear-done', 'reap-mission-blockers', 'reap-blockers', 'relabel-archived', 'review', 'import',
   'setup', 'review-lane-act', 'review-act', 'act-review', 'review-lane-loop',
   'review-loop', 'loop-review', 'review-lane-run', 'review-run', 'run-review',
 ]);
@@ -13596,4 +13696,6 @@ module.exports = {
   taskDescriptionForCloud,
   taskReviewCleanEvidenceCommand,
   certifyVerifyCandidate,
+  landingProofVerify,
+  stampAutoAcceptMetadata,
 };
