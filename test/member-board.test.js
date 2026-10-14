@@ -486,16 +486,19 @@ test('board keeps the order words while a history is as wide as they are', () =>
   assert.ok(at70.every((l) => l.length <= 70), at70.join('\n'));
 });
 
-test('board keeps the run time header beside a cell as wide as it', () => {
+test('board writes "at least 1h" as "1h+" on a narrow screen, but not in the row data', () => {
   const now = Date.parse('2026-10-14T13:00:00Z');
   const rows = [
     memberRow('crashed', '2026-10-14T11:00:00Z m-1 started: [pid 2147483646 engine claude] build the release\n2026-10-14T12:10:00Z m-1 running: npm test\n', now),
     memberRow('builder', `2026-10-14T12:50:00Z m-2 started: [pid ${process.pid} engine claude] fit the board\n2026-10-14T12:59:30Z m-2 running: node --test\n`, now),
   ];
   const pane = renderBoard(rows, '/x', 0, 50).split('\n');
-  assert.match(pane.find((l) => l.startsWith('member ')), /^member\s+state\s+run time\s+ago\s+job$/, 'the short header would free nothing here');
-  assert.match(pane.find((l) => l.startsWith('crashed ')), /^crashed\s+died\s+at least 1h\s+50m\s/);
+  assert.match(pane.find((l) => l.startsWith('member ')), /^member\s+state\s+run\s+ago\s+job$/);
+  assert.match(pane.find((l) => l.startsWith('crashed ')), /^crashed\s+died\s+1h\+\s+50m\s+build the release$/, 'the job gets the room back');
   assert.ok(pane.every((l) => l.length <= 50), pane.join('\n'));
+  assert.match(renderBoard(rows, '/x', 0, 80), /^crashed\s+died\s+.*at least 1h\s/m, 'a screen with room keeps the words');
+  assert.equal(rows[0].lasted, '1h', 'apps reading the rows get the plain length');
+  assert.equal(rows[0].lasted_at_least, true);
 });
 
 test('board shortens the run\'s own fixed status lines, but not in the row data', () => {
