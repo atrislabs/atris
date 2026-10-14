@@ -16120,6 +16120,17 @@ test('task serve exposes a local task factory API', async () => {
         taskStore.close();
       }
     };
+    // Owner cases only read the claim and the Plan and Do fields, which the
+    // CLI plan and do commands write with one stageTask call each.
+    const stageSeeded = (id, actor, stage, fields) => {
+      const db = taskStore.open(dbPath);
+      try {
+        const staged = taskStore.stageTask(db, { id, actor, stage, owner: actor, ...fields });
+        assert.equal(staged.staged, true, staged.reason);
+      } finally {
+        taskStore.close();
+      }
+    };
 
 	    const html = await fetch(base).then(r => r.text());
 	    assert.match(html, /Atris Task Factory/);
@@ -16726,18 +16737,12 @@ test('task serve exposes a local task factory API', async () => {
 	    assert.ok(apiScopedDetailAfterCurrentStep.task.messages.some(m => m.content.includes('TASK_REVIEW_CHAT')));
 
 	    const apiOwnerQueryTask = seedTask('API owner query current-step task', 'api-owner', 'OBL-929');
-	    assert.equal(runCli([
-	      'task', 'plan', apiOwnerQueryTask.display_id,
-	      '--as', 'alice',
-	      '--goal', 'API current-step honors query owner',
-	      '--exit', 'owner query steps the owner current task',
-	      '--proof-needed', 'node --test test/commands.test.js passes API current-step owner query coverage',
-	    ], { cwd: dir, env }).status, 0);
-	    assert.equal(runCli([
-	      'task', 'do', apiOwnerQueryTask.display_id,
-	      '--as', 'alice',
-	      '--first-move', 'alice owns API current-step query work',
-	    ], { cwd: dir, env }).status, 0);
+	    stageSeeded(apiOwnerQueryTask.id, 'alice', 'plan', {
+	      goal: 'API current-step honors query owner',
+	      exit: 'owner query steps the owner current task',
+	      proofNeeded: 'node --test test/commands.test.js passes API current-step owner query coverage',
+	    });
+	    stageSeeded(apiOwnerQueryTask.id, 'alice', 'do', { firstMove: 'alice owns API current-step query work' });
 	    const apiOwnerQueryCurrent = await fetch(`${base}/api/tasks/current?owner=alice&goal_id=OBL-929`).then(r => r.json());
 	    assert.equal(apiOwnerQueryCurrent.ok, true);
 	    assert.equal(apiOwnerQueryCurrent.current.owner, 'alice');
@@ -16761,30 +16766,18 @@ test('task serve exposes a local task factory API', async () => {
 
 	    const apiOwnerPrecedenceAliceTask = seedTask('API owner precedence Alice task', 'api-owner', 'OBL-931');
 	    const apiOwnerPrecedenceCodexTask = seedTask('API owner precedence Codex task', 'api-owner', 'OBL-931');
-	    assert.equal(runCli([
-	      'task', 'plan', apiOwnerPrecedenceAliceTask.display_id,
-	      '--as', 'alice',
-	      '--goal', 'Alice owns the query-selected task',
-	      '--exit', 'query owner cannot be overridden by body actor',
-	      '--proof-needed', 'node --test test/commands.test.js passes API current-step owner precedence coverage',
-	    ], { cwd: dir, env }).status, 0);
-	    assert.equal(runCli([
-	      'task', 'do', apiOwnerPrecedenceAliceTask.display_id,
-	      '--as', 'alice',
-	      '--first-move', 'alice owns the query-selected work',
-	    ], { cwd: dir, env }).status, 0);
-	    assert.equal(runCli([
-	      'task', 'plan', apiOwnerPrecedenceCodexTask.display_id,
-	      '--as', 'codex',
-	      '--goal', 'Codex owns a different same-scope task',
-	      '--exit', 'query owner still selects Alice',
-	      '--proof-needed', 'node --test test/commands.test.js passes API current-step owner precedence coverage',
-	    ], { cwd: dir, env }).status, 0);
-	    assert.equal(runCli([
-	      'task', 'do', apiOwnerPrecedenceCodexTask.display_id,
-	      '--as', 'codex',
-	      '--first-move', 'codex owns separate same-scope work',
-	    ], { cwd: dir, env }).status, 0);
+	    stageSeeded(apiOwnerPrecedenceAliceTask.id, 'alice', 'plan', {
+	      goal: 'Alice owns the query-selected task',
+	      exit: 'query owner cannot be overridden by body actor',
+	      proofNeeded: 'node --test test/commands.test.js passes API current-step owner precedence coverage',
+	    });
+	    stageSeeded(apiOwnerPrecedenceAliceTask.id, 'alice', 'do', { firstMove: 'alice owns the query-selected work' });
+	    stageSeeded(apiOwnerPrecedenceCodexTask.id, 'codex', 'plan', {
+	      goal: 'Codex owns a different same-scope task',
+	      exit: 'query owner still selects Alice',
+	      proofNeeded: 'node --test test/commands.test.js passes API current-step owner precedence coverage',
+	    });
+	    stageSeeded(apiOwnerPrecedenceCodexTask.id, 'codex', 'do', { firstMove: 'codex owns separate same-scope work' });
 	    const apiOwnerPrecedenceCurrent = await fetch(`${base}/api/tasks/current?owner=alice&goal_id=OBL-931`).then(r => r.json());
 	    assert.equal(apiOwnerPrecedenceCurrent.current.selected_task_id, apiOwnerPrecedenceAliceTask.id);
 	    const apiOwnerPrecedenceResponse = await fetch(`${base}/api/tasks/current/step?owner=alice&goal_id=OBL-931`, {
