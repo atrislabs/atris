@@ -84,8 +84,10 @@ const HEADING_DASH = /^(\s{0,3}#{1,6}\s+(?![\d\s\u2013-]*\d:\d[\d:\s\u2013-]*(?:
 // so a plain opener like "Yes" or "Then" keeps its comma. A second dash on the
 // line means an aside, so the line is left to the pair fix, unless that dash
 // is the last one and comes before a joining word, so it goes on with the
-// sentence: "v2: shipped, then rolled back".
-const TERM_DASH = /^(\s*(?:>\s*)*(?=[\w./-]*?(?:[\d/_]|\.\w|[A-Z][\w./-]*[A-Z]))[A-Za-z0-9][\w./-]*[^\s.\u2014,;:])\s*\u2014\s*(?=\S)(?!(?:and|but|or|nor|so|yet)\b)(?![^\u2014]*\u2014(?!\s*(?:and|but|or|nor|so|yet|then)\b[^\u2014]*$))/;
+// sentence: "v2: shipped, then rolled back". A code comment that opens a
+// file with its own name defines it the same way: "// det/date.js: convert
+// dates".
+const TERM_DASH = /^(\s*(?:>\s*)*(?:\/\/+[ \t]*)?(?=[\w./-]*?(?:[\d/_]|\.\w|[A-Z][\w./-]*[A-Z]))[A-Za-z0-9][\w./-]*[^\s.\u2014,;:])\s*\u2014\s*(?=\S)(?!(?:and|but|or|nor|so|yet)\b)(?![^\u2014]*\u2014(?!\s*(?:and|but|or|nor|so|yet|then)\b[^\u2014]*$))/;
 // A quote that opens with a name, or a few names, then a dash speaks to
 // them, so the names take a comma like a greeting: '"George, Nick, covering
 // all of Milwaukee County is a serious operation"', never "George, Nick:".

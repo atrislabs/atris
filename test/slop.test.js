@@ -1805,6 +1805,21 @@ test('fix points back at a bare list with a colon before "these" or "those"', ()
   ]);
 });
 
+test('fix gives a script header comment that names its own file a colon', () => {
+  // from the deterministic task scripts, where the name took a comma
+  const file = tmpFile('header.js', [
+    '#!/usr/bin/env node',
+    '// det/changelog.js \u2014 build a grouped changelog from commit history.',
+    '',
+    '// Plain words \u2014 nothing to define here, so the comma stays.',
+  ].join('\n'));
+  const { changes } = applyFixes([file], RULES);
+  assert.deepEqual(changes.map((c) => c.after), [
+    '// det/changelog.js: build a grouped changelog from commit history.',
+    '// Plain words, nothing to define here, so the comma stays.',
+  ]);
+});
+
 test('fix reads no word that only says when as the subject of a clause', () => {
   // "now ships" after a dash read as a bare subject and a verb
   const file = tmpFile('when-word.md', [
