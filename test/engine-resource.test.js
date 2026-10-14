@@ -1249,7 +1249,7 @@ test('every engine started through a runner or profile variable records its run 
     const code = stripComments(text);
     const lines = code.split('\n');
     const recorder = recordingCall(code);
-    const engineSourceAt = (source, position) => {
+    const sourceAt = (source, position) => {
       const scopeStart = Math.max(0, ...[...code.slice(0, position).matchAll(FUNCTION_START)].map((start) => start.index));
       let declarationEnd = position;
       while (!ENGINE_SOURCE.test(source)) {
@@ -1262,8 +1262,9 @@ test('every engine started through a runner or profile variable records its run 
         // a circular alias chain terminate without a separate depth limit.
         declarationEnd = scopeStart + declaration.index;
       }
-      return ENGINE_SOURCE.test(source);
+      return source.trim();
     };
+    const engineSourceAt = (source, position) => ENGINE_SOURCE.test(sourceAt(source, position));
     let seen = 0;
     const missing = [];
     for (const match of code.matchAll(VAR_LAUNCH)) {
@@ -1276,7 +1277,8 @@ test('every engine started through a runner or profile variable records its run 
         // Follow simple parameters only when a call in this file supplies a
         // known runner. An unrelated parameter name alone is not evidence.
         const header = /^(?:async\s+)?function\s+([\w$]+)\s*\(([^)]*)\)/.exec(code.slice(fnStart));
-        const parameter = program.split('.')[0];
+        const source = sourceAt(program, match.index);
+        const parameter = /^([A-Za-z_$][\w$]*)(?:\.[\w$]+)*$/.exec(source)?.[1];
         const slot = header ? header[2].split(',').map((name) => name.trim()).indexOf(parameter) : -1;
         if (slot >= 0) {
           const calls = new RegExp(`\\b${header[1].replace(/\$/g, '\\$')}\\(`, 'g');
@@ -1334,6 +1336,12 @@ test('every engine started through a runner or profile variable records its run 
   assert.deepStrictEqual(planted("function launch(program, options) {\n  spawnSync(program, args);\n}\nfunction caller() {\n  const runner = findExecutable('claude', env);\n  launch(\n    runner,\n    { prompt: buildPrompt(topic) }\n  );\n}\n"), ['commands/planted.js:2 program']);
   assert.deepStrictEqual(planted("function launch(options, program) {\n  spawnSync(program, args);\n}\nlaunch({ a: 1, b: 2 }, resolveClaudeRunnerBin());\n"), ['commands/planted.js:2 program']);
   assert.deepStrictEqual(planted("function launch(options, program) {\n  spawnSync(program, args);\n}\nlaunch([1, resolveClaudeRunnerBin()], git);\n"), [], 'an engine in an earlier array is not the program argument');
+  assert.deepStrictEqual(planted("function launch(runner) {\n  const program = runner;\n  spawnSync(program, args);\n}\nlaunch(resolveClaudeRunnerBin());\n"), ['commands/planted.js:3 program']);
+  assert.deepStrictEqual(planted("function launch(profile) {\n  const runner = profile.bin;\n  const program = runner;\n  spawnSync(program, args);\n}\nlaunch(resolveEngineProfile(engine));\n"), ['commands/planted.js:4 program']);
+  assert.deepStrictEqual(planted("function launch(runner) {\n  const program = runner;\n  startEngineRun(root);\n  spawnSync(program, args);\n}\nlaunch(resolveClaudeRunnerBin());\n"), []);
+  assert.deepStrictEqual(planted("function launch(runner) {\n  const program = runner;\n  spawnSync(program, ['--help']);\n}\nlaunch(resolveClaudeRunnerBin());\n"), []);
+  assert.deepStrictEqual(planted("function launch(runner) {\n  const program = runner;\n  spawnSync(program, args);\n}\nlaunch(findExecutable('git'));\n"), []);
+  assert.deepStrictEqual(planted("function launch(runner) {\n  const program = buildCommand(runner);\n  spawnSync(program, args);\n}\nlaunch(resolveClaudeRunnerBin());\n"), []);
   // A variable declared in another function is not this launch's program.
   assert.deepStrictEqual(planted("function a() {\n  const command = buildEngineCommand(engine);\n}\nfunction b(command) {\n  spawnSync(command, { shell: true });\n}\n"), []);
   // A local wrapper that records the run covers the launch below it; a

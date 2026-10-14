@@ -1,0 +1,13 @@
+{
+  "schema": "atris.task_receipt.v1",
+  "task_id": "ECM-4",
+  "command": "node --test test/engine-resource.test.js test/engine-dispatch.test.js",
+  "at": "2026-10-14T21:20:26.019Z",
+  "commit": "f84ea0d5ccab80ad975d4aae4e40f28bdb821847",
+  "result": {
+    "passed": true,
+    "exit": 0,
+    "signal": null,
+    "output": "dispatch, 1 task -> cursor\n\n    building CLI-900 in dispatch-cli-900\n    landing CLI-900...\n    ✓ landed CLI-900\n\n  dispatch over: 1 landed, 0 paused - receipt: atris/runs/dispatch-2026-10-14T21-18-53\n...\np ref to an engine resource or dispatch test lands on the line that starts the test (2.810333ms)\nℹ tests 148\nℹ suites 0\nℹ pass 148\nℹ fail 0\nℹ cancelled 0\nℹ skipped 0\nℹ todo 0\nℹ duration_ms 92927.51325"
+  }
+}
