@@ -65,7 +65,9 @@ test('each member gets merged with links, finished in plain words, and turned do
 
   assert.deepEqual(report.members.map((row) => row.member), ['builder']);
   const builder = report.members[0];
-  assert.deepEqual(builder.merged, [{ title: 'Stop works for codex', link: 'https://github.com/acme/repo/pull/42' }]);
+  assert.deepEqual(builder.merged, [
+    { title: 'Stop works for codex', link: 'https://github.com/acme/repo/pull/42', took_minutes: 180, tries: 1 },
+  ]);
   // The tick that failed its check and the bookkeeping lines are left out; the
   // tick for the merged job is folded into the merge line.
   assert.deepEqual(builder.finished.map((item) => item.title), ['Make the board faster, a long job description']);
