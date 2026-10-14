@@ -153,6 +153,20 @@ tail -f ~/.atris/progress/executor.log
 
 The older words still work as aliases: `dispatch` and `go` do what run does, and `up` does what wake does. Run with a job, wake with a number or names, and `up` need the release after 3.68.9.
 
+### How member work gets checked and lands
+
+Every member job ends with its own check, a command that must pass. Then a second engine reviews the change, and it is never the engine that did the work.
+
+Work lands on its own only after you switch self-landing on, once. From then on Atris pushes the branch, opens a pull request, and turns on GitHub auto-merge, so GitHub merges it when the branch is up to date and CI passes.
+
+```bash
+atris autoland on
+```
+
+Anything else keeps the work on its branch, with one plain line saying why. That covers a failed check or review, unsaved changes, a clash with the main branch, and work that touches a protected area like payments, deploys, or credentials.
+
+A job that fails three times in a row stops and waits for a person.
+
 ## Chat With Atris 2
 
 `ax` is the Atris 2 chat and coding-agent CLI. It uses the hosted Atris cloud by default, streams text, shows tool activity, and keeps fresh installs away from local setup.
