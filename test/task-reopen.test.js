@@ -113,3 +113,21 @@ test('atris task reopen requires a task id', () => {
     assert.notEqual(result.status, 0);
   });
 });
+
+test('atris task reopen sends a job that is done and waiting to merge back to open', () => {
+  withTask(({ dir, env, task }) => {
+    const db = taskStore.open(env.ATRIS_TASKS_DB);
+    assert.equal(taskStore.claimTask(db, { id: task.id, claimedBy: 'builder' }).claimed, true);
+    assert.notEqual(taskStore.readyTask(db, { id: task.id, actor: 'builder', proof: 'checked by hand' }).ready, false);
+    assert.equal(show(dir, env, task.display_id).status, 'review');
+
+    const result = runCli(['task', 'reopen', task.display_id, '--reason', 'pulled before merge', '--json'], { cwd: dir, env });
+    assert.equal(result.status, 0, result.stderr);
+    assert.equal(JSON.parse(result.stdout).reopened_from, 'review');
+    const after = show(dir, env, task.display_id);
+    assert.equal(after.status, 'open');
+    assert.ok(!after.claimed_by);
+    // The store itself still refuses unless asked, so other callers keep their behavior.
+    assert.equal(taskStore.reopenTask(db, { id: task.id }).reopened, false);
+  });
+});
