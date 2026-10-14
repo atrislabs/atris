@@ -320,6 +320,70 @@ test('the agent scan names a reader it could not run, so an empty leak list is n
   assert.deepStrictEqual(scan({ sockets: false, agents: false }).unread, []);
 });
 
+test('partial socket scans keep unreadable agents safe and name the missing reading', () => {
+  const scan = readSshAgents({ run: (cmd, args) => {
+    if (cmd === 'lsof') return { status: 0, stdout: 'p200\nn/tmp/ssh-a/agent.199' };
+    if (args.includes('-E')) return { status: 0, stdout: '300 SHELL=/bin/zsh' };
+    return { status: 0, stdout: '200 1 501 01:00:00 ssh-agent -s\n201 1 501 01:00:00 ssh-agent -s' };
+  } });
+  assert.deepStrictEqual(scan.unread, ['agent sockets']);
+  assert.ok(scan.referenced.has(201));
+  assert.ok(!scan.referenced.has(200));
+  assert.deepStrictEqual(findLeakedSshAgents(scan.agents, { referenced: scan.referenced, uid: 501 }).map((agent) => agent.pid), [200]);
+});
+
+test('the real sweep warns when one live agent socket reading is withheld', { skip: process.platform !== 'darwin' }, () => {
+  const { spawnSync } = require('node:child_process');
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'engine-partial-sockets-'));
+  const pids = [];
+  try {
+    for (const name of ['visible', 'hidden']) {
+      const started = spawnSync('/usr/bin/ssh-agent', ['-s', '-a', path.join(root, name)], { encoding: 'utf8', timeout: 10000 });
+      const pid = Number((/SSH_AGENT_PID=(\d+)/.exec(started.stdout) || [])[1]);
+      if (pid) pids.push(pid);
+      assert.equal(started.status, 0, started.stderr);
+      assert.ok(pid);
+    }
+    // Use real process and socket scans, withholding only the second agent's
+    // socket block to reproduce a partially unreadable process on this host.
+    const preload = path.join(root, 'withhold-socket.cjs');
+    fs.writeFileSync(preload, `
+      const cp = require('node:child_process');
+      const real = cp.spawnSync;
+      cp.spawnSync = (cmd, args, opts) => {
+        const reading = real(cmd, args, opts);
+        if (require('node:path').basename(cmd) === 'lsof') {
+          let hidden = false;
+          reading.stdout = String(reading.stdout || '').split('\\n').filter(line => {
+            if (line.startsWith('p')) hidden = line === 'p${pids[1]}';
+            return !hidden;
+          }).join('\\n');
+        }
+        return reading;
+      };
+    `);
+    const env = { ...process.env };
+    delete env.SSH_AGENT_PID;
+    delete env.SSH_AUTH_SOCK;
+    const cli = path.join(__dirname, '..', 'bin', 'atris.js');
+    const ran = spawnSync(process.execPath, ['--require', preload, cli, 'engine', 'sweep'], { cwd: root, env, encoding: 'utf8', timeout: 30000 });
+    assert.equal(ran.status, 0, ran.stderr);
+    assert.match(ran.stdout, /could not read the agent sockets for every process/);
+    assert.match(ran.stdout, /the leak count may be incomplete/);
+    const json = spawnSync(process.execPath, ['--require', preload, cli, 'engine', 'sweep', '--json'], { cwd: root, env, encoding: 'utf8', timeout: 30000 });
+    assert.equal(json.status, 0, json.stderr);
+    const report = JSON.parse(json.stdout);
+    assert.ok(report.running >= 2);
+    assert.deepStrictEqual(report.unread, ['agent sockets']);
+    assert.ok(!report.leaked.some(agent => agent.pid === pids[1]));
+    for (const pid of pids) assert.doesNotThrow(() => process.kill(pid, 0));
+    console.log('partial live socket scan exit ' + ran.status + ': ' + ran.stdout.trim());
+  } finally {
+    for (const pid of pids) { try { process.kill(pid, 'SIGTERM'); } catch {} }
+    fs.rmSync(root, { recursive: true, force: true });
+  }
+});
+
 test('atris engine sweep says when a reader could not run, in text and json', () => {
   const { engineCommand } = require('../commands/engine');
   const read = () => ({
@@ -340,7 +404,7 @@ test('atris engine sweep says when a reader could not run, in text and json', ()
   };
   const text = run([]);
   assert.match(text, /1 ssh-agent running, 0 look leaked/);
-  assert.match(text, /^could not read the agent sockets, so no ssh-agent could be proven unused; 0 leaked here does not mean none leaked$/m);
+  assert.match(text, /^could not read the agent sockets for every process, so some ssh-agents could not be checked; the leak count may be incomplete$/m);
   assert.deepStrictEqual(JSON.parse(run(['--json'])).unread, ['agent sockets']);
   const clean = (() => {
     const out = [];
@@ -2161,7 +2225,7 @@ test('the real sweep warns when the system cannot provide its process list', { s
   ], { encoding: 'utf8', timeout: 30000 });
   assert.equal(ran.status, 0, ran.stderr);
   assert.match(ran.stdout, /could not read the process list/);
-  assert.match(ran.stdout, /0 leaked here does not mean none leaked/);
+  assert.match(ran.stdout, /the leak count may be incomplete/);
 });
 
 test('start leak readings stay unknown when any scan reader is unavailable', () => {

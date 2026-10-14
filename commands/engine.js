@@ -2373,7 +2373,7 @@ function runEngineSweepCommand(args, root, deps = {}) {
   ];
   if (leaked.length > shown) lines.push(`  and ${leaked.length - shown} more`);
   if (unread.length) {
-    lines.push(`could not read the ${unread.join(' or the ')}, so no ssh-agent could be proven unused; ${leaked.length} leaked here does not mean none leaked`);
+    lines.push(`could not read the ${unread.join(' or the ')} for every process, so some ssh-agents could not be checked; the leak count may be incomplete`);
   }
   lines.push(leaked.length ? 'nothing was stopped. run atris engine sweep --apply to stop them.' : 'nothing was stopped.');
   lines.push('', ...resourceHistoryLines(history));
