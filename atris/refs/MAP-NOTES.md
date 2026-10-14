@@ -2275,3 +2275,8 @@ Proof-command extraction setup: `test/commands.test.js:11808` seeds 45 claimed f
 Review-group cap setup: `test/commands.test.js:14266` keeps one full CLI new/claim/ready/review row and seeds eleven through the same SQLite steps; rows and events match the CLI ones apart from title.
 
 Bulk accept --all cap setup: `test/commands.test.js:13272` keeps row 0 on CLI add/claim, adds and claims the other 19 through SQLite, and sends all 20 through CLI ready so the result trace the sweep reads is real.
+
+## Landing task fixture setup
+
+- `test/autoland.test.js:112` (`claimedTask`) keeps one real CLI creation/claim flow per certification helper, then uses `lib/task-db.js:409` (`addTask`) and `lib/task-db.js:546` (`claimTask`) with isolated databases and resolved roots.
+- `test/autoland.test.js:147` and `test/autoland.test.js:155` retain both real CLI ready passes and their verifier invocations; no landing assertions changed. Proof: `atris/runs/2026-10-14-autoland-task-setup.md`.

@@ -15,3 +15,8 @@
 - why I did not change it: it enforces which files a mission may commit, so it is a policy surface and waits on you.
 - detail: atris/runs/2026-10-14-mission-git-guard-test-cost.md
 - reply: build it / leave it
+
+## Faster landing test setup
+- shipped: Repeated landing fixtures use the real task database directly, while certification and landing checks still run through the program.
+- proof: node --test test/autoland.test.js, exit 0, 68/68 twice; git diff --check, exit 0; mean 48.7 seconds before to 39.9 seconds after.
+- reply: keep / revert

@@ -8,6 +8,7 @@ const { spawnSync } = require('node:child_process');
 const repoRoot = path.resolve(__dirname, '..');
 const cliPath = path.join(repoRoot, 'bin', 'atris.js');
 const autoland = require('../lib/autoland');
+const taskStore = require('../lib/task-db');
 const { evaluateAutoAccept } = require('../lib/auto-accept-certified');
 const { withTaskReadyResult } = require('./helpers/task-result');
 
@@ -104,17 +105,47 @@ function projectionByRef(repo) {
   return Object.fromEntries(projection.tasks.map((t) => [t.display_id, t]));
 }
 
+// Keep one complete CLI new/claim flow for each certification helper. Other
+// fixtures use the same real SQLite operations, avoiding two CLI startups.
+// Both ready passes, their verifiers, and all landing commands stay on the CLI.
+const cliSetupCovered = new Set();
+function claimedTask(repo, title, tag, kind) {
+  if (!cliSetupCovered.has(kind)) {
+    const created = runCli(['task', 'new', title, '--tag', tag, '--json'], repo);
+    assert.equal(created.status, 0, created.stderr || created.stdout);
+    const id = JSON.parse(created.stdout).task?.display_id
+      || JSON.parse(created.stdout).task?.id
+      || JSON.parse(created.stdout).display_id
+      || JSON.parse(created.stdout).id;
+    assert.ok(id, `no task id in: ${created.stdout.slice(0, 200)}`);
+    assert.equal(runCli(['task', 'claim', String(id), '--as', 'builder'], repo).status, 0);
+    cliSetupCovered.add(kind);
+    return String(id);
+  }
+  const root = fs.realpathSync(repo);
+  const db = taskStore.open(path.join(repo, '.atris', 'fixture-tasks.db'));
+  try {
+    const added = taskStore.addTask(db, { title, tag, workspaceRoot: root });
+    assert.equal(added.inserted, true);
+    const claimed = taskStore.claimTask(db, { id: added.id, claimedBy: 'builder' });
+    assert.equal(claimed.claimed, true, claimed.reason);
+    assert.equal(claimed.row.title, title);
+    assert.equal(claimed.row.tag, tag);
+    assert.equal(claimed.row.workspace_root, root);
+    assert.equal(claimed.row.status, 'claimed');
+    assert.equal(claimed.row.claimed_by, 'builder');
+    assert.deepEqual(taskStore.listTaskEvents(db, { taskId: added.id }).map(event => event.event_type), ['created', 'claimed']);
+    const rows = taskStore.listTasks(db, { workspaceRoot: root });
+    return taskStore.withTaskDisplayRefs(rows).find(row => row.id === added.id).display_id;
+  } finally {
+    taskStore.close();
+  }
+}
+
 // Create a task and walk it to certified: proof from the builder, then a
 // second proof pass from an independent reviewer (2 passes, 2 actors).
 function certifiedTask(repo, title, { tag = 'code' } = {}) {
-  const created = runCli(['task', 'new', title, '--tag', tag, '--json'], repo);
-  assert.equal(created.status, 0, created.stderr || created.stdout);
-  const id = JSON.parse(created.stdout).task?.display_id
-    || JSON.parse(created.stdout).task?.id
-    || JSON.parse(created.stdout).display_id
-    || JSON.parse(created.stdout).id;
-  assert.ok(id, `no task id in: ${created.stdout.slice(0, 200)}`);
-  assert.equal(runCli(['task', 'claim', String(id), '--as', 'builder'], repo).status, 0);
+  const id = claimedTask(repo, title, tag, 'proof');
   const proof = 'Receipt saved at atris/runs/demo-receipt.json. Evidence inspected: clean tree, change verified in place.';
   assert.equal(runCli(['task', 'ready', String(id), '--proof', proof, '--as', 'builder'], repo).status, 0);
   assert.equal(runCli(['task', 'ready', String(id), '--proof', proof, '--as', 'codex-review'], repo).status, 0);
@@ -122,14 +153,7 @@ function certifiedTask(repo, title, { tag = 'code' } = {}) {
 }
 
 function certifiedVerifiedTask(repo, title, { verify, proof = '', tag = 'code' } = {}) {
-  const created = runCli(['task', 'new', title, '--tag', tag, '--json'], repo);
-  assert.equal(created.status, 0, created.stderr || created.stdout);
-  const id = JSON.parse(created.stdout).task?.display_id
-    || JSON.parse(created.stdout).task?.id
-    || JSON.parse(created.stdout).display_id
-    || JSON.parse(created.stdout).id;
-  assert.ok(id, `no task id in: ${created.stdout.slice(0, 200)}`);
-  assert.equal(runCli(['task', 'claim', String(id), '--as', 'builder'], repo).status, 0);
+  const id = claimedTask(repo, title, tag, 'verify');
   const builderArgs = ['task', 'ready', String(id), '--verify', verify, '--as', 'builder'];
   if (proof) builderArgs.push('--proof', proof);
   const builderReady = runCli(builderArgs, repo);
