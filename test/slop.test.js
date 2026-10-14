@@ -1756,6 +1756,23 @@ test('fix starts an order and a second order after a comma as their own clause',
   ]);
 });
 
+test('fix gives an order a colon when a bold phrase closes the clause before it', () => {
+  // from the design policy, where the order spelled out the bold phrase
+  const file = tmpFile('bold-then-order.md', [
+    'AI is best used to **raise the floor** \u2014 automate the mechanical 80% (layout, grids).',
+    // a plain clause before an order still starts a new one
+    'Pruning the worktree deletes proof \u2014 copy receipts out first.',
+    // a bold verdict as a field value never takes a second colon
+    'Result: **FAIL** \u2014 fix the repository first.',
+  ].join('\n'));
+  const { changes } = applyFixes([file], RULES);
+  assert.deepEqual(changes.map((c) => c.after), [
+    'AI is best used to **raise the floor**: automate the mechanical 80% (layout, grids).',
+    'Pruning the worktree deletes proof; copy receipts out first.',
+    'Result: **FAIL**, fix the repository first.',
+  ]);
+});
+
 test('fix reads no word that only says when as the subject of a clause', () => {
   // "now ships" after a dash read as a bare subject and a verb
   const file = tmpFile('when-word.md', [

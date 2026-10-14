@@ -781,6 +781,10 @@ function fixEmDash(s, { endsBlock = false, startsBlock = false, spans = [] } = {
       // in lowercase may carry on the line above, so it keeps its semicolon.
       const body = left.replace(/^(?:\*\*[^*]+:\*\*\s*)/, '').replace(/^\/\/+\s*(?=[A-Z])/, '');
       const named = body.split(/\s+/).length === 2;
+      // a bold phrase that closes the clause names the idea, and the order
+      // spells it out: "AI is best used to **raise the floor**: automate the
+      // mechanical 80%", never a semicolon that cuts the two apart
+      if (/\S\s+(?:\*\*[^*]+\*\*|__[^_]+__)$/.test(left)) return ': ';
       return named && !/^\s+[a-z]/.test(whole) ? ': ' : clauseJoin(left);
     })
     // a stop right before the dash ended the sentence, so the lowercase word
