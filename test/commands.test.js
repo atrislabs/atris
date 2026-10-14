@@ -20895,15 +20895,24 @@ test('task lineage', () => {
   try {
     fs.mkdirSync(path.join(dir, 'atris'), { recursive: true });
 
-    const parent = runCli(['task', 'new', 'Parent endgame task', '--json'], { cwd: dir, env });
-    assert.equal(parent.status, 0, parent.stderr);
-    const parentPayload = JSON.parse(parent.stdout);
-    const parentRef = parentPayload.task.display_id;
-
-    const child = runCli(['task', 'add', 'Child task under parent', '--goal-id', parentPayload.task_id, '--json'], { cwd: dir, env });
-    assert.equal(child.status, 0, child.stderr);
-    const childPayload = JSON.parse(child.stdout);
-    const childRef = childPayload.task.display_id;
+    // Seed both tasks with the same goal link task add stores; every lineage read stays on the CLI.
+    const workspaceRoot = taskStore.workspaceRoot(dir);
+    const db = taskStore.open(dbPath);
+    let parentRef;
+    let childRef;
+    try {
+      const parent = addSeedTask(db, { title: 'Parent endgame task', workspaceRoot });
+      assert.equal(parent.inserted, true);
+      const child = addSeedTask(db, { title: 'Child task under parent', workspaceRoot, metadata: { goal_id: parent.id } });
+      assert.equal(child.inserted, true);
+      const refs = taskStore.taskDisplayRefMap(taskStore.listTasks(db, { workspaceRoot }));
+      parentRef = refs.get(parent.id);
+      childRef = refs.get(child.id);
+      assert.ok(parentRef);
+      assert.ok(childRef);
+    } finally {
+      taskStore.close();
+    }
 
     const text = runCli(['task', 'lineage', childRef], { cwd: dir, env });
     assert.equal(text.status, 0, text.stderr);

@@ -2425,3 +2425,7 @@ npm publish
 ## Rendered task list accept refresh fixture setup
 
 - `test/commands.test.js:19861` checks that accepting a task refreshes an existing rendered task list file. Real-store creation at `test/commands.test.js:19885` saves one setup launch and never touches the file, so the completed entry can only come from the CLI ready and accept that remain.
+
+## Task lineage fixture setup
+
+- `test/commands.test.js:20890` checks that task lineage prints the parent before the child in text and JSON and survives a home with no git. Real-store creation at `test/commands.test.js:20898` saves two setup launches and seeds the child with the same goal link that task add stores; removing that link makes the test fail, so the seeded link is what the lineage reads check.
