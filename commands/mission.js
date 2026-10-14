@@ -9697,6 +9697,8 @@ function buildEngineVerifyPrompt(mission, tickIndex, doneLooksLike = '') {
     ...(doneLine ? [
       `The job says done looks like: ${doneLine}`,
       `Compare the work against that line. If the work does not show it, the verdict is FAIL even when the checks pass.`,
+      `Split that line into each separate thing it promises and check every one. List each part as met or missing.`,
+      `Work that does only some of the parts is not done. If any part is missing, end with 'VERDICT: FAIL; missing: <that part>'.`,
     ] : []),
     `Read the diff this tick produced. Do not edit files and do not start another work slice.`,
     `ACTUALLY RUN the changed surface on this computer using real commands and real exit codes.`,
