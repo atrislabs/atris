@@ -45,11 +45,11 @@ test('engine roster lists every profile with detection state', () => {
     assert.deepEqual(parsed.engines.find((e) => e.id === 'devin').models, ['built-in router']);
     assert.deepEqual(parsed.engines.find((e) => e.id === 'agy').models, [
       'gemini-3.8-flash',
+      'gemini-4-argon-high',
+      'gemini-4-argon-medium',
       'gemini-3.8-flash-high',
-      'gemini-3.7-flash-high',
-      'gemini-3.1-pro-high',
-      'claude-sonnet-4-6',
-      'claude-opus-4-6-thinking',
+      'claude-opus-5-5-high',
+      'claude-sonnet-5-5-high',
       'gpt-oss-120b-medium',
     ]);
     assert.deepEqual(parsed.engines.find((e) => e.id === 'haiku').models, ['haiku']);
