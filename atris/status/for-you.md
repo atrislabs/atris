@@ -14,3 +14,10 @@
 - evidence: real combined-repair cleanup removed the shared store while its idle outside copy survived; that copy's Git status exited 128. The required folder checks still passed, exit 0.
 - detail: atris/receipts/2026-10-14-guard-branch-overlap.md, combined repair still breaks an idle linked copy.
 - safeguard: enumerate registered copies before removing a store, preserve dependencies, and prove the idle outside-copy case.
+
+## Clear 588 leftover cleanup proof fixtures
+- decision: approve or decline deleting the leftover fixture folders that the work-folder cleanup proofs left in the temporary directory before they began cleaning up after themselves.
+- evidence: node scripts/preview-proof-fixtures.js --hours 0 lists 588 folders, 38.5 MB, all from today's proof runs, oldest about 7 hours; exit 0, nothing deleted. Passing runs now leave none.
+- detail: atris/receipts/2026-10-14-proof-fixture-preview.md
+- safeguard: the list matches exact fixture names only and skips green-landing scratch copies, which production keeps on purpose when they hold Git locks.
+- reply: clear / keep
