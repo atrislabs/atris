@@ -1785,6 +1785,21 @@ test('fix turns a padded dash into spaces so a column of descriptions stays in l
   for (const c of changes.slice(0, 4)) assert.equal(c.after.length, c.before.length);
 });
 
+test('fix keeps a journal heading that ends in a time readable for its hour', () => {
+  // analytics reads the hour after a dash or a spaced hyphen at the end of a
+  // heading; the fix wrote "### Watch: 19:05", which hides it, and glued
+  // "### Tick 14 \u2014 21:25" into the range "Tick 14-21:25"
+  const file = tmpFile('journal.md', [
+    '### Tick 14 \u2014 21:25',
+    '### Watch \u2014 19:05',
+    '## Brainstorm Session \u2014 09:30:12',
+  ].join('\n'));
+  const { changes } = applyFixes([file], RULES, { write: false });
+  assert.deepEqual(changes.map((c) => c.after), ['### Tick 14 - 21:25', '### Watch - 19:05', '## Brainstorm Session - 09:30:12']);
+  const hour = /^#{2,4} .*(?:\u2014|--| - )\s*(\d{2}):\d{2}(?::\d{2})?\s*$/;
+  assert.deepEqual(changes.map((c) => hour.exec(c.after)?.[1]), ['21', '19', '09']);
+});
+
 test('fix keeps a dated lesson readable to the lesson tools', () => {
   // the lesson readers take a dash or a hyphen between slug, verdict and text;
   // the fix used to write "slug**: pass, The ..." or "slug** (pass) The ...",

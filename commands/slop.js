@@ -95,6 +95,11 @@ const NAME_ADDRESS_DASH = /((?:^|[\s(])["\u201c])((?:Dr\.\s+)?[A-Z][a-z]+(?:-[A-
 // parts and nothing else, so those dashes become spaced hyphens; a colon or
 // parentheses there would hide the lesson from them.
 const LESSON_DASH = /^(\s*[-*]\s+\*\*\[\d{4}-\d{2}-\d{2}\]\s+[^*]+\*\*)\s*\u2014\s*(?:(pass|fail)\s*\u2014\s*)?/i;
+// A journal heading that ends in a clock time, "### Tick 14 \u2014 21:25", is read
+// back by analytics for the hour, which takes a dash or a spaced hyphen before
+// the time, so it keeps a spaced hyphen. A colon would hide the hour, and the
+// range rule would glue the two numbers into "Tick 14-21:25".
+const TIMED_HEADING_DASH = /^(\s{0,3}#{1,6}\s.*?\S)\s*\u2014\s*(\d{1,2}:\d{2}(?::\d{2})?)\s*$/;
 // A greeting that opens a line, then a dash, is a salutation, and a
 // salutation takes a comma: "Hey Mark," on its own line, never "Hey Mark.",
 // and "Hey [Name], I run an AI company", never a semicolon.
@@ -408,6 +413,7 @@ function fixEmDash(s, { endsBlock = false, startsBlock = false } = {}) {
     const left = s.slice(0, at).split(/ {2,}|^\s*(?:[-*+]|\d+[.)])\s+/).pop();
     return pad.length >= 3 || left.trim().split(/\s+/).length <= 3 ? `${pad}  ` : m;
   });
+  s = s.replace(TIMED_HEADING_DASH, '$1 - $2');
   // a dash between two numbers is a range, "10-20", unless the first has a
   // sign, which makes it a score: "reward: +4, 404 on missing routes"
   // A dash that opens a line, a quote or a list item names nothing and goes.
