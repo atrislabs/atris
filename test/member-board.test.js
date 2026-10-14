@@ -125,6 +125,7 @@ test('the runner writes why a run failed and the board reads it back', () => {
     slow: { ok: false, timedOut: true, code: 143 },
     halted: { ok: false, aborted: true, code: null, exitSignal: 'SIGTERM' },
     broke: { ok: false, engineError: true, code: 1 },
+    locked: { ok: false, signedOut: true, engineError: true, code: 1 },
     exit: { ok: false, code: 2 },
     killed: { ok: false, code: null, exitSignal: 'SIGKILL' },
     plain: { ok: false },
@@ -139,6 +140,7 @@ test('the runner writes why a run failed and the board reads it back', () => {
     assert.equal(by.slow.last_result_reason, 'timed out', 'the timeout, not the exit code its kill caused');
     assert.equal(by.halted.last_result_reason, 'stopped');
     assert.equal(by.broke.last_result_reason, 'engine error');
+    assert.equal(by.locked.last_result_reason, 'signed out', 'the sign-in, not the engine error it caused');
     assert.equal(by.exit.last_result_reason, 'bad exit 2');
     assert.equal(by.killed.last_result_reason, 'killed by SIGKILL');
     assert.equal(by.plain.last_result_reason, '');

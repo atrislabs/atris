@@ -9420,8 +9420,8 @@ function spawnGenericRunnerTick(mission, opts) {
       updateMissionLockOwner(missionLock, missionLock?.driverPid);
       const errStr = String(stderr || '').slice(-2000);
       const ok = code === 0 && !timedOut && !aborted;
-      if (lastMessageFile) appendProgress(progressMember, finishedLine({ ok, timedOut, aborted, code, exitSignal }), mission.id);
       const authExpired = !ok && missionRunnerAuthExpired(errStr, finalText);
+      if (lastMessageFile) appendProgress(progressMember, finishedLine({ ok, timedOut, aborted, signedOut: authExpired, code, exitSignal }), mission.id);
       resolve({
         ok,
         brief_id: briefId,
@@ -9612,9 +9612,9 @@ function spawnClaudeTick(mission, opts) {
       if (signal) signal.removeEventListener?.('abort', onAbort);
       updateMissionLockOwner(missionLock, missionLock?.driverPid);
       const ok = code === 0 && !isError && !timedOut && !aborted;
-      appendProgress(progressMember, finishedLine({ ok, timedOut, aborted, engineError: isError, code, exitSignal }), mission.id);
       const errStr = stderr.slice(-2000);
       const authExpired = !ok && missionRunnerAuthExpired(errStr, finalText, stdoutBuf);
+      appendProgress(progressMember, finishedLine({ ok, timedOut, aborted, signedOut: authExpired, engineError: isError, code, exitSignal }), mission.id);
       resolve({
         ok,
         timedOut,
