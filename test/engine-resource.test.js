@@ -1310,6 +1310,11 @@ test('every engine started through a runner or profile variable records its run 
     const code = stripComments(text);
     const lines = code.split('\n');
     const recorder = recordingCall(code);
+    // The parameter names of the definition starting at this offset.
+    const parametersOf = (open) => {
+      const header = /^(?:async\s+)?function\s+[\w$]+\s*\(([^)]*)\)|^(?:const|let|var)\s+[\w$]+\s*=\s*(?:async\s*)?(?:function(?:\s+[\w$]+)?\s*)?(?:\(([^)]*)\)|([\w$]+)\s*=>)/.exec(code.slice(open).trimStart());
+      return header ? (header[1] ?? header[2] ?? header[3]).split(',').map((name) => name.trim()) : [];
+    };
     const sourceAt = (source, position) => {
       const scopeStart = Math.max(0, ...[...code.slice(0, position).matchAll(FUNCTION_START)].map((start) => start.index));
       let declarationEnd = position;
@@ -1317,10 +1322,7 @@ test('every engine started through a runner or profile variable records its run 
         const alias = /^([A-Za-z_$][\w$]*)(?:\.[\w$]+)*$/.exec(source.trim());
         if (!alias) break;
         // Captured variables remain visible until a matching parameter hides them.
-        const shadowStart = Math.max(scopeStart, ...definitionSpans(code).filter(([open, close]) => open <= declarationEnd && declarationEnd < close).filter(([open]) => {
-          const header = /^(?:async\s+)?function\s+[\w$]+\s*\(([^)]*)\)|^(?:const|let|var)\s+[\w$]+\s*=\s*(?:async\s*)?(?:function(?:\s+[\w$]+)?\s*)?(?:\(([^)]*)\)|([\w$]+)\s*=>)/.exec(code.slice(open).trimStart());
-          return header && (header[1] ?? header[2] ?? header[3]).split(',').some((name) => name.trim() === alias[1]);
-        }).map(([open]) => open));
+        const shadowStart = Math.max(scopeStart, ...definitionSpans(code).filter(([open, close]) => open <= declarationEnd && declarationEnd < close && parametersOf(open).includes(alias[1])).map(([open]) => open));
         const declaration = [...code.slice(shadowStart, declarationEnd).matchAll(new RegExp(`\\b(?:const|let|var)\\s+${alias[1].replace(/\$/g, '\\$')}\\s*=\\s*([^;\\n]*)`, 'g'))].pop();
         if (!declaration) break;
         source = declaration[1];
@@ -1354,14 +1356,12 @@ test('every engine started through a runner or profile variable records its run 
           const calls = new RegExp(`\\b(${names.map((name) => name.replace(/\$/g, '\\$')).join('|')})\\(`, 'g');
           const fnEnd = definitionSpans(code).find(([open]) => open === fnStart)?.[1] ?? code.length;
           for (const call of code.matchAll(calls)) {
+            const internalOnly = call[1] === internalName && internalName !== header[1];
             // An expression's internal name exists only inside its body.
-            if (call[1] === internalName && internalName !== header[1] && (call.index < fnStart || call.index >= fnEnd)) continue;
-            if (call[1] === internalName && internalName !== header[1] && definitionSpans(code).some(([open, close]) => {
-              if (open <= fnStart || open > call.index || call.index >= close) return false;
-              const nested = /^(?:async\s+)?function\s+[\w$]+\s*\(([^)]*)\)|^(?:const|let|var)\s+[\w$]+\s*=\s*(?:async\s*)?(?:function(?:\s+[\w$]+)?\s*)?(?:\(([^)]*)\)|([\w$]+)\s*=>)/.exec(code.slice(open).trimStart());
-              return nested && (nested[1] ?? nested[2] ?? nested[3]).split(',').some((name) => name.trim() === internalName);
-            })) continue;
-            if (call[1] === internalName && internalName !== header[1] && new RegExp(`\\b(?:const|let|var)\\s+${internalName.replace(/\$/g, '\\$')}\\s*=`).test(code.slice(fnStart, call.index))) continue;
+            if (internalOnly && (call.index < fnStart || call.index >= fnEnd)) continue;
+            // A parameter of another function holding the call hides either name.
+            if (definitionSpans(code).some(([open, close]) => open < call.index && call.index < close && !(open <= fnStart && fnStart < close) && parametersOf(open).includes(call[1]))) continue;
+            if (internalOnly && new RegExp(`\\b(?:const|let|var)\\s+${internalName.replace(/\$/g, '\\$')}\\s*=`).test(code.slice(fnStart, call.index))) continue;
             const prefix = code.slice(0, call.index);
             if (/\bfunction\s*$|\.\s*$/.test(prefix)) continue;
             // Keep nested calls and quoted commas in their own argument.
@@ -1503,6 +1503,19 @@ test('every engine started through a runner or profile variable records its run 
     assert.deepStrictEqual(planted(`${prefix}(${name}) {\n  ${name}(resolveClaudeRunnerBin());\n  spawnSync(${name}, args);\n};\nlaunch(git);\n`), [], 'a parameter hides the internal function name');
     assert.deepStrictEqual(planted(expression(`  const ${name} = other;\n  ${name}(resolveClaudeRunnerBin());\n  spawnSync(runner, args);`)), [], 'a local alias hides the internal function name');
     assert.deepStrictEqual(planted(`function outer() {\n  const ${name} = other;\n  ${prefix}(runner) {\n    ${name}(resolveClaudeRunnerBin());\n    spawnSync(runner, args);\n  };\n}\n`), ['commands/planted.js:5 runner'], 'the internal function name hides an outer alias');
+  }
+  // A nested parameter hides the launcher's own name, even when the assigned
+  // and internal names match or the launcher is a plain declaration.
+  for (const prefix of ['const launch = function launch', 'let launch = async function launch', 'function launch']) {
+    const end = prefix.startsWith('function') ? '}' : '};';
+    const launcher = (body, outside = 'launch(git);\n') => `${prefix}(runner) {\n${body}\n  spawnSync(runner, args);\n${end}\n${outside}`;
+    assert.deepStrictEqual(planted(launcher('  function helper(launch) {\n    launch(resolveClaudeRunnerBin());\n  }')), [], 'a helper parameter hides the launcher name');
+    assert.deepStrictEqual(planted(launcher('  const helper = (launch) => launch(resolveClaudeRunnerBin());')), [], 'an arrow parameter hides the launcher name');
+    assert.deepStrictEqual(planted(launcher('  const helper = launch => {\n    launch(resolveClaudeRunnerBin());\n  };')), []);
+    assert.deepStrictEqual(planted(launcher('  function helper(other) {\n    launch(resolveClaudeRunnerBin());\n  }')), ['commands/planted.js:5 runner'], 'a helper without a matching parameter still calls the launcher');
+    assert.deepStrictEqual(planted(launcher('  function helper(launch) {\n    noop(launch);\n  }\n  launch(resolveClaudeRunnerBin());')), ['commands/planted.js:6 runner'], 'a call after the helper closes still reaches the launcher');
+    assert.deepStrictEqual(planted(launcher('', 'function other(launch) {\n  launch(resolveClaudeRunnerBin());\n}\n')), [], 'a later function parameter hides the launcher name');
+    assert.deepStrictEqual(planted(launcher('', 'function other(prompt) {\n  launch(resolveClaudeRunnerBin());\n}\n')), ['commands/planted.js:3 runner']);
   }
   assert.deepStrictEqual(planted('const launch = function launch(runner) {\n  spawnSync(runner, args);\n};\nlaunch(resolveClaudeRunnerBin());\n'), ['commands/planted.js:2 runner'], 'matching expression and variable names keep external arguments visible');
   assert.deepStrictEqual(planted('const launch = function launch(runner) {\n  launch(resolveClaudeRunnerBin());\n  spawnSync(runner, args);\n};\n'), ['commands/planted.js:3 runner'], 'the defining assignment does not hide same-name recursion');
