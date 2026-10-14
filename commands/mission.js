@@ -8,7 +8,7 @@ const { spawn, spawnSync } = require('child_process');
 const { hasFlag, readFlag, readIntFlag } = require('../lib/arg-parser');
 const { memberProcessPrompt } = require('../lib/member-context');
 const { memberIdentityLine, missionObjectiveLine } = require('../lib/member-identity');
-const { formatToolStep, formatCodexEvent, appendProgress, reportProgress, startedLine, newRunToken, runMarker } = require('../lib/member-progress');
+const { formatToolStep, formatCodexEvent, appendProgress, reportProgress, startedLine, finishedLine, newRunToken, runMarker } = require('../lib/member-progress');
 const {
   compactErrorPayload,
   compactSuccessPayload,
@@ -9405,7 +9405,7 @@ function spawnGenericRunnerTick(mission, opts) {
     });
     proc.stderr.on('data', (chunk) => { stderr += chunk.toString(); });
 
-    proc.on('close', (code) => {
+    proc.on('close', (code, exitSignal) => {
       clearTimeout(timer);
       if (lastMessageFile && eventBuf.trim()) readCodexEvent(eventBuf.trim());
       let finalText = String(stdout || '').trim();
@@ -9420,7 +9420,7 @@ function spawnGenericRunnerTick(mission, opts) {
       updateMissionLockOwner(missionLock, missionLock?.driverPid);
       const errStr = String(stderr || '').slice(-2000);
       const ok = code === 0 && !timedOut && !aborted;
-      if (lastMessageFile) appendProgress(progressMember, `finished: ${ok ? 'ok' : 'failed'}`, mission.id);
+      if (lastMessageFile) appendProgress(progressMember, finishedLine({ ok, timedOut, aborted, code, exitSignal }), mission.id);
       const authExpired = !ok && missionRunnerAuthExpired(errStr, finalText);
       resolve({
         ok,
@@ -9606,13 +9606,13 @@ function spawnClaudeTick(mission, opts) {
 
     proc.stderr.on('data', (c) => { stderr += c.toString(); });
 
-    proc.on('close', (code) => {
+    proc.on('close', (code, exitSignal) => {
       clearTimeout(timer);
       gitGuard.cleanup();
       if (signal) signal.removeEventListener?.('abort', onAbort);
       updateMissionLockOwner(missionLock, missionLock?.driverPid);
       const ok = code === 0 && !isError && !timedOut && !aborted;
-      appendProgress(progressMember, `finished: ${ok ? 'ok' : 'failed'}`, mission.id);
+      appendProgress(progressMember, finishedLine({ ok, timedOut, aborted, engineError: isError, code, exitSignal }), mission.id);
       const errStr = stderr.slice(-2000);
       const authExpired = !ok && missionRunnerAuthExpired(errStr, finalText, stdoutBuf);
       resolve({

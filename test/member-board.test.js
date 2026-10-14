@@ -118,6 +118,36 @@ test('a failed row says why when the finished line gives a reason', () => {
   }
 });
 
+test('the runner writes why a run failed and the board reads it back', () => {
+  const { finishedLine } = require('../lib/member-progress');
+  const ends = {
+    good: { ok: true, code: 0 },
+    slow: { ok: false, timedOut: true, code: 143 },
+    halted: { ok: false, aborted: true, code: null, exitSignal: 'SIGTERM' },
+    broke: { ok: false, engineError: true, code: 1 },
+    exit: { ok: false, code: 2 },
+    killed: { ok: false, code: null, exitSignal: 'SIGKILL' },
+    plain: { ok: false },
+  };
+  const dir = fakeDir(Object.fromEntries(Object.entries(ends).map(([name, end]) => (
+    [name, [`${at(100)} m-1 started: job`, `${at(60)} m-1 ${finishedLine(end)}`]]
+  ))));
+  try {
+    const by = Object.fromEntries(readBoard({ dir, now: NOW }).map((r) => [r.member, r]));
+    assert.equal(by.good.state, 'done ok');
+    assert.equal(by.good.last_result_reason, '');
+    assert.equal(by.slow.last_result_reason, 'timed out', 'the timeout, not the exit code its kill caused');
+    assert.equal(by.halted.last_result_reason, 'stopped');
+    assert.equal(by.broke.last_result_reason, 'engine error');
+    assert.equal(by.exit.last_result_reason, 'bad exit 2');
+    assert.equal(by.killed.last_result_reason, 'killed by SIGKILL');
+    assert.equal(by.plain.last_result_reason, '');
+    for (const name of Object.keys(ends).filter((n) => n !== 'good')) assert.equal(by[name].state, 'done failed', name);
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
 test('a narrow terminal trims job and last step so every line fits', () => {
   const dir = fakeDir({
     builder: [
