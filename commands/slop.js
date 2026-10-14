@@ -352,6 +352,16 @@ function fixEmDash(s, { endsBlock = false, startsBlock = false } = {}) {
       const left = clauseLeft(at, whole);
       return left ? clauseJoin(left) : m;
     })
+    // a stop right before the dash ended the sentence, so the lowercase word
+    // after it starts the next one: "why bother? Nobody reads it", never
+    // "why bother? nobody". A short form like "etc." ends no sentence, so it
+    // goes on with a comma: "etc., the gate holds". An ellipsis trails off
+    // on purpose and keeps its lowercase, and so does a line that opens in
+    // lowercase, since its writer starts sentences that way.
+    .replace(/(^|[^.])([.!?])\s*\u2014\s*([a-z])(?=[a-z']*(?![\w\uE000]))/g, (m, lead, stop, ch, at, whole) => {
+      if (stop === '.' && /\b(?:etc|e\.g|i\.e|vs|cf|approx|incl)$/i.test(whole.slice(0, at) + lead)) return `${lead}., ${ch}`;
+      return `${lead}${stop} ${/^[^A-Za-z]*[a-z]/.test(whole) ? ch : ch.toUpperCase()}`;
+    })
     // keep punctuation the writer already put beside the dash instead of
     // stacking a comma on it, and never leave a trailing space. A dash pressed
     // against a closing quote or bracket takes its comma with no space after.

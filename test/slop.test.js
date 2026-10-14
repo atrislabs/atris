@@ -1517,3 +1517,22 @@ test('fix joins a subject with a "not" contraction or "still" before its verb wi
     'Keep the list, the files still open.',
   ]);
 });
+
+test('fix starts the next sentence after a stop that sits before a dash', () => {
+  // from the terrace repo, which came out "fine with try? the cost"
+  const file = tmpFile('stop.md', [
+    'Photo loading is fine with try? \u2014 the cost of handling the error exceeds the value.',
+    'The build passed. \u2014 the log is clean.',
+    'the build passed. \u2014 the log is clean.',
+    'We kept the rest, etc. \u2014 the gate holds.',
+    'It trails off... \u2014 the rest waits.',
+  ].join('\n'));
+  const { changes } = applyFixes([file], RULES);
+  assert.deepEqual(changes.map((c) => c.after), [
+    'Photo loading is fine with try? The cost of handling the error exceeds the value.',
+    'The build passed. The log is clean.',
+    'the build passed. the log is clean.',
+    'We kept the rest, etc., the gate holds.',
+    'It trails off... the rest waits.',
+  ]);
+});
