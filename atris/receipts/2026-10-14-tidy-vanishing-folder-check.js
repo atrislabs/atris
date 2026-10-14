@@ -22,8 +22,9 @@ function git(cwd, ...args) {
   return result.stdout.trim();
 }
 
-for (const mode of ['unlocked', 'locked', 'ordinary', 'ordinary-present', 'locked-present', 'after']) {
+for (const mode of ['unlocked', 'locked', 'ordinary', 'ordinary-present', 'locked-present', 'after', 'refused']) {
   const after = mode === 'after';
+  const refused = mode === 'refused';
   const withLock = mode.startsWith('locked');
   const staysPresent = mode.endsWith('-present');
   const ordinary = mode.startsWith('ordinary');
@@ -50,7 +51,7 @@ for (const mode of ['unlocked', 'locked', 'ordinary', 'ordinary-present', 'locke
   const privateDir = git(copy, 'rev-parse', '--absolute-git-dir');
   const lock = path.join(privateDir, 'locked');
   const ordinaryLocks = [path.join(privateDir, 'index.lock'), path.join(repo, '.git', 'packed-refs.lock')];
-  const expectedLocks = withLock ? [lock] : ordinary ? ordinaryLocks : [];
+  const expectedLocks = refused ? [lock, ...ordinaryLocks] : withLock ? [lock] : ordinary ? ordinaryLocks : [];
   const aged = new Date(Date.now() - 7200000);
   fs.utimesSync(copy, aged, aged);
   const countFile = path.join(root, 'checks');
@@ -60,7 +61,18 @@ const fs = require('node:fs');
 const { spawnSync } = require('node:child_process');
 const args = process.argv.slice(2);
 const cwd = process.cwd();
-if (args[0] === 'worktree' && args[1] === 'remove') fs.writeFileSync(${JSON.stringify(removeAttempt)}, 'attempted');
+if (args[0] === 'worktree' && args[1] === 'remove') {
+  fs.writeFileSync(${JSON.stringify(removeAttempt)}, 'attempted');
+  if (${refused}) {
+    const held = spawnSync(${JSON.stringify(realGit)}, ['worktree', 'lock', '--reason', 'drive moved during cleanup', ${JSON.stringify(copy)}], { cwd: ${JSON.stringify(repo)}, encoding: 'utf8' });
+    if (held.status !== 0) { process.stderr.write(held.stderr); process.exit(1); }
+    for (const [index, lock] of ${JSON.stringify(expectedLocks)}.entries()) {
+      if (index) fs.writeFileSync(lock, 'fixture lock\\n');
+      const aged = new Date(Date.now() - (7200000 + index * 3600000));
+      fs.utimesSync(lock, aged, aged);
+    }
+  }
+}
 if (args.includes('--git-dir') && args.includes('--git-common-dir') && process.cwd() === ${JSON.stringify(copy)}) {
   const file = ${JSON.stringify(countFile)};
   const count = fs.existsSync(file) ? Number(fs.readFileSync(file, 'utf8')) + 1 : 1;
@@ -77,7 +89,7 @@ if (args.includes('--git-dir') && args.includes('--git-common-dir') && process.c
       const aged = new Date(Date.now() - (7200000 + index * 3600000));
       fs.utimesSync(lock, aged, aged);
     }
-    if (!${staysPresent || after}) fs.renameSync(${JSON.stringify(copy)}, ${JSON.stringify(moved)});
+    if (!${staysPresent || after || refused}) fs.renameSync(${JSON.stringify(copy)}, ${JSON.stringify(moved)});
   }
 }
 const result = spawnSync(${JSON.stringify(realGit)}, args, { cwd, encoding: 'utf8' });
@@ -95,23 +107,23 @@ process.exit(result.status === null ? 1 : result.status);
   if (result.stderr.trim()) console.log(result.stderr.trim());
   console.log(`cli exit: ${result.status}`);
   assert.equal(result.status, 0);
-  assert.equal(fs.readFileSync(countFile, 'utf8'), '1');
-  assert.match(result.stdout, staysPresent ? /kept\s+landed-copy\s+git locks:/ : /kept\s+landed-copy\s+folder is missing/);
+  assert.equal(fs.readFileSync(countFile, 'utf8'), refused ? '2' : '1');
+  assert.match(result.stdout, refused ? /kept\s+landed-copy\s+landed, but git refused:.*; git locks:/ : staysPresent ? /kept\s+landed-copy\s+git locks:/ : /kept\s+landed-copy\s+folder is missing/);
   console.log(`missing folder reported: ${result.stdout.includes('folder is missing')}`);
   console.log(`retained locks reported: ${expectedLocks.length ? expectedLocks.every((lock) => result.stdout.includes(lock)) : 'no lock created'}`);
-  assert.equal(result.stdout.includes('folder is missing'), !staysPresent);
+  assert.equal(result.stdout.includes('folder is missing'), !(staysPresent || refused));
   for (const [index, lock] of expectedLocks.entries()) {
-    assert.equal(fs.readFileSync(lock, 'utf8'), withLock ? 'drive moved during cleanup\n' : 'fixture lock\n');
+    assert.equal(fs.readFileSync(lock, 'utf8'), (withLock || (refused && index === 0)) ? 'drive moved during cleanup\n' : 'fixture lock\n');
     const age = result.stdout.split(`${lock} (`)[1]?.match(/^(\d+)s old\)/);
     const expectedAge = 7200 + index * 3600;
     assert.ok(age && Number(age[1]) >= expectedAge - 10 && Number(age[1]) <= expectedAge, result.stdout);
     console.log(`retained lock: ${lock} (${Math.floor((Date.now() - fs.statSync(lock).mtimeMs) / 1000)}s old)`);
   }
-  assert.equal(fs.existsSync(copy), staysPresent);
-  assert.equal(fs.readFileSync(path.join(staysPresent ? copy : moved, 'README.md'), 'utf8'), '# fixture\n');
-  assert.equal(fs.existsSync(removeAttempt), false);
+  assert.equal(fs.existsSync(copy), staysPresent || refused);
+  assert.equal(fs.readFileSync(path.join(staysPresent || refused ? copy : moved, 'README.md'), 'utf8'), '# fixture\n');
+  assert.equal(fs.existsSync(removeAttempt), refused);
   git(repo, 'rev-parse', '--verify', 'refs/heads/landed-copy');
   assert.equal(fs.existsSync(path.join(repo, '.atris/state/worktree_removals.jsonl')), false);
-  if (after) assert.ok(git(repo, 'worktree', 'list', '--porcelain').includes(`worktree ${copy}\n`));
+  if (after || refused) assert.ok(git(repo, 'worktree', 'list', '--porcelain').includes(`worktree ${copy}\n`));
 }
-console.log('all six timing cases passed, including a folder moved after a passing final check; files, locks, branches, and Git records retained; no removal attempted or recorded');
+console.log('all seven timing cases passed; Git refusal after a passing check named three locks and distinct ages; files, locks, branches, and Git records retained; no removal recorded');

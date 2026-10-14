@@ -661,7 +661,7 @@ test('tidy keeps late locks and keep markers whether the folder disappears or st
   const fixture = audit.stdout?.match(/^fixture: (.+)$/m)?.[1];
   try {
     assert.equal(audit.status, 0, audit.stderr || audit.stdout);
-    assert.match(audit.stdout, /all six timing cases passed, including a folder moved after a passing final check/);
+    assert.match(audit.stdout, /all seven timing cases passed; Git refusal after a passing check named three locks and distinct ages/);
   } finally {
     if (fixture && path.basename(fixture).startsWith('atris-tidy-vanishing-')
       && path.dirname(fixture) === fs.realpathSync(os.tmpdir())) {
