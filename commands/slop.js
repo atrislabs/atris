@@ -487,15 +487,15 @@ function fixEmDash(s, { endsBlock = false, startsBlock = false, spans = [] } = {
   // so they turn into hyphens of the same width: "[a] --- [b]", never "[a],
   // [b]". Two pressed dashes in a sentence are still one break: "He said,".
   s = s.replace(/(?<=[\])|+][ \t]*)\u2014{2,}(?=[ \t]*[[(|+])/g, (m) => '-'.repeat(m.length));
-  // a line indented like a code block is where a diagram lives, so any run
-  // of pressed dashes there is a drawn line, between plain-word steps or
+  // a line indented like a code block is where a diagram lives, and so is a
+  // line that opens with a box, not a link or a checkbox, at any indent. Any
+  // run of pressed dashes there is a drawn line, between plain-word steps or
   // opening a branch: "plan --- do --- review", "  -- [b]", never "plan (do)".
-  if (/^(?: {4}|\t)/.test(s)) s = s.replace(/\u2014{2,}/g, (m) => '-'.repeat(m.length));
+  const diagramStart = /^(?: {4}|\t)|^\s*(?:\[(?![ xX]\])[^\]\n]*\](?![([\uE000])|\([^)\n]*\))/;
+  if (diagramStart.test(s)) s = s.replace(/\u2014{2,}/g, (m) => '-'.repeat(m.length));
   // once such a line holds a drawn line or an arrow it is a diagram, so a
   // single dash on it is one more short link: "[a] - done -> [c]", never
-  // "[a], done". A flag like "--fix" is not a drawn line. A line that opens
-  // with a box, not a link or a checkbox, is drawn the same way at any indent.
-  const diagramStart = /^(?: {4}|\t)|^\s*(?:\[(?![ xX]\])[^\]\n]*\](?![([\uE000])|\([^)\n]*\))/;
+  // "[a], done". A flag like "--fix" is not a drawn line.
   if (diagramStart.test(s) && /(?:^|[\s\])|+])-{2,}(?=[\s[(|+]|$)|->|<-/.test(s)) s = s.replace(/\u2014/g, '-');
   // a single dash with a box edge on both sides is a short link between two
   // boxes, so it takes a hyphen: "[a] - [b] - [c]", never "[a] ([b]) [c]"
