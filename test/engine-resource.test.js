@@ -1313,7 +1313,9 @@ test('every engine started through a runner or profile variable records its run 
     // The parameter names of the definition starting at this offset.
     const parametersOf = (open) => {
       const header = /^(?:async\s+)?function\s+[\w$]+\s*\(([^)]*)\)|^(?:const|let|var)\s+[\w$]+\s*=\s*(?:async\s*)?(?:function(?:\s+[\w$]+)?\s*)?(?:\(([^)]*)\)|([\w$]+)\s*=>)/.exec(code.slice(open).trimStart());
-      return header ? (header[1] ?? header[2] ?? header[3]).split(',').map((name) => name.trim()) : [];
+      // Keep names the parameters bind, including destructured ones, and skip
+      // renamed keys and default values.
+      return header ? [...(header[1] ?? header[2] ?? header[3]).matchAll(/(?<=^|[,{[:]|\.\.\.)\s*([A-Za-z_$][\w$]*)\s*(?=[,}\]=]|$)/g)].map((name) => name[1]) : [];
     };
     const sourceAt = (source, position) => {
       const scopeStart = Math.max(0, ...[...code.slice(0, position).matchAll(FUNCTION_START)].map((start) => start.index));
@@ -1535,6 +1537,13 @@ test('every engine started through a runner or profile variable records its run 
     }
     for (const copy of ['const { launch: run } = tools;', 'const { launcher } = tools;', 'const [launcher] = tools;']) {
       assert.deepStrictEqual(planted(launcher('', `function other() {\n  ${copy}\n  launch(resolveClaudeRunnerBin());\n}\n`)), ['commands/planted.js:3 runner'], `a destructured copy of another name still calls the launcher: ${copy}`);
+    }
+    // A destructured parameter hides the launcher name; a renamed key or a default value does not.
+    for (const header of ['function other({ launch })', 'const other = ({ run, launch = wrap }) =>', 'function other([, launch])', 'function other(tools, { run: launch })', 'function other(...launch)']) {
+      assert.deepStrictEqual(planted(launcher('', `${header} {\n  launch(resolveClaudeRunnerBin());\n}\n`)), [], `a destructured parameter hides the launcher name: ${header}`);
+    }
+    for (const header of ['function other({ launch: run })', 'function other({ run = launch })', 'function other({ launcher })']) {
+      assert.deepStrictEqual(planted(launcher('', `${header} {\n  launch(resolveClaudeRunnerBin());\n}\n`)), ['commands/planted.js:3 runner'], `a parameter that does not bind the name still calls the launcher: ${header}`);
     }
   }
   assert.deepStrictEqual(planted('const launch = function launch(runner) {\n  spawnSync(runner, args);\n};\nlaunch(resolveClaudeRunnerBin());\n'), ['commands/planted.js:2 runner'], 'matching expression and variable names keep external arguments visible');
