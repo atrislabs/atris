@@ -485,6 +485,34 @@ test('a short window keeps the header and the newest rows, and says how many did
   }
 });
 
+test('a short screen names its one hidden live member, never at the cost of a failure reason', () => {
+  const dir = fakeDir({
+    busy: [`${at(10)} m-1 started: [pid ${process.pid} engine claude] job`],
+    f1: [`${at(80)} m-1 finished: failed (timed out)`],
+    f2: [`${at(90)} m-2 finished: failed (bad exit 2)`],
+    halt: [`${at(110)} m-4 finished: stopped`],
+  });
+  try {
+    const rows = readBoard({ dir, now: NOW });
+    for (const [width, footer] of [
+      [100, '3 more not shown (1 failed, bad exit 2, 1 stopped, busy working), the window is too short'],
+      [80, '3 more not shown (1 failed, bad exit 2, 1 stopped, busy working)'],
+      [50, '3 more not shown (1 failed, bad exit 2, 1 stopped)'],
+      [30, '3 hidden (1 failed, 1 stopped)'],
+    ]) {
+      const lines = renderBoard(rows, dir, 0, width, 4).split('\n');
+      assert.equal(lines[3], footer, `${width}: the name gives way first`);
+      assert.ok(lines.every((line) => line.length <= width));
+    }
+    const two = [...rows, { ...rows.find((r) => r.member === 'busy'), member: 'also' }];
+    assert.doesNotMatch(renderBoard(two, dir, 0, 100, 4), /working\)/, 'two live members stay a count');
+    const finishing = rows.map((r) => r.member === 'busy' ? { ...r, state: 'asleep after this run' } : r);
+    assert.match(renderBoard(finishing, dir, 0, 80, 4).split('\n')[3], /busy finishing\)$/);
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
 test('the older-runs note never pushes a current member off a short screen', () => {
   const dir = fakeDir({
     busy: [`${at(10)} m-1 started: [pid ${process.pid} engine claude] job`],
@@ -521,10 +549,10 @@ test('one to three board lines keep the header without scrolling away failures',
         assert.equal(lines.length, height, `fits ${height} lines with ${hidden} older runs`);
         assert.match(lines[0], /^member\s+state/, 'the header stays');
         assert.ok(lines.every((line) => line.length <= 80));
-        if (height === 2) assert.match(lines[1], /^3 more not shown \(2 failed\)/);
+        if (height === 2) assert.match(lines[1], /^3 more not shown \(2 failed, busy working\)/);
         if (height === 3) {
           assert.match(lines[1], /^broke\s+done failed\s+(?:failed \()?timed out\b/);
-          assert.match(lines[2], /^2 more not shown \(1 failed, bad exit 2\)/);
+          assert.match(lines[2], /^2 more not shown \(1 failed, bad exit 2, busy working\)/);
         }
       }
     }
@@ -595,7 +623,8 @@ test('short boards distinguish a hidden busy member earlier failure from a curre
       }
     }
     const ok = rows.map((r) => r.member === 'busy' ? { ...r, last_result: 'ok' } : r);
-    assert.equal(renderBoard(ok, dir, 0, 100, 4).split('\n')[3], '3 more not shown, the window is too short');
+    assert.equal(renderBoard(ok, dir, 0, 100, 4).split('\n')[3], '3 more not shown (busy working), the window is too short',
+      'the one live run is named, not counted silently');
     const busy = rows.find((r) => r.member === 'busy');
     const shared = [...rows, { ...busy, member: 'busy2' }];
     assert.match(renderBoard(shared, dir, 0, 100, 4).split('\n')[3], /2 with earlier failure, all timed out/);
@@ -725,9 +754,9 @@ test('narrow footers shorten the older-runs note before dropping hidden counts',
   try {
     const rows = readBoard({ dir, now: NOW });
     for (const [width, footer] of [
-      [77, '3 more not shown (1 failed, 1 stopped). 2 older runs hidden, --all shows them'],
-      [57, '3 hidden (1 failed, 1 stopped). 2 older, --all shows them'],
-      [46, '3 hidden (1 failed, 1 stopped). 2 older hidden'],
+      [77, '3 more not shown (1 failed, 1 stopped, a working). 2 older, --all shows them'],
+      [57, '3 hidden (1 failed, 1 stopped, a working). 2 older hidden'],
+      [46, '3 hidden (1 failed, 1 stopped, a working)'],
       [39, '3 hidden (1 failed, 1 stopped). 2 older'],
       [30, '3 hidden (1 failed, 1 stopped)'],
       [24, '3 hidden (1 failed, ...)'],
