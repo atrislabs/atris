@@ -10764,7 +10764,7 @@ async function verifyMissionRunTickPhase(context) {
     if (shouldRunReferee) {
       // Pin the code before the referee looks; a referee that changes the
       // code or its unsaved state has not reviewed what would merge.
-      const { gitCodeState } = require('../lib/member-autoland');
+      const { gitCodeState, codeStatus } = require('../lib/member-autoland');
       const beforeReview = gitCodeState(cwd);
       const reviewed = await runEngineVerifier(currentTick.tickRuntimeMission, {
         cwd,
@@ -10774,8 +10774,8 @@ async function verifyMissionRunTickPhase(context) {
       });
       const afterReview = gitCodeState(cwd);
       const codeMoved = beforeReview.tree !== afterReview.tree
-        || beforeReview.status !== afterReview.status
-        || beforeReview.clean !== afterReview.clean;
+        || codeStatus(beforeReview) !== codeStatus(afterReview)
+        || beforeReview.hidden !== afterReview.hidden;
       const refereeResult = codeMoved ? { ...reviewed, passed: false, reason: 'code changed during review' } : reviewed;
       result.reviewed_git_tree = beforeReview.clean ? beforeReview.tree : null;
       result.referee_result = refereeResult;
