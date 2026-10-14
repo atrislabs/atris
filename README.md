@@ -151,7 +151,14 @@ atris member board --watch
 tail -f ~/.atris/progress/executor.log
 ```
 
-The older words still work as aliases: `dispatch` and `go` do what run does, and `up` does what wake does. Run with a job, wake with a number or names, and `up` need the release after 3.68.9.
+When a member finishes, ask for its result: what it changed, its receipt, and one number. Each member's copy of the repo stays until its work lands, then tidy puts it away.
+
+```bash
+atris member result executor
+atris member tidy --dry-run
+```
+
+The older words still work as aliases: `dispatch` and `go` do what run does, and `up` does what wake does.
 
 ## Chat With Atris 2
 
