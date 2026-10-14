@@ -1252,8 +1252,11 @@ function regressionCheck(cwd) {
             recordWorktreeRemoval(cwd, { path: worktreePath, by: 'atris autopilot', reason: 'regression_check_finished' });
             cleanup = { path: worktreePath, removed: true };
           } else {
-            const retained = inspectGitActivity(worktreePath);
+            // The folder can also move while git refuses; its locks still apply.
+            const missingNow = !fs.existsSync(worktreePath);
+            const retained = missingNow ? missingFolderLock(cwd, worktreePath) : inspectGitActivity(worktreePath);
             const reason = retained.locks.length ? retained.reason
+              : missingNow ? 'folder is missing'
               : String(removed.error?.message || removed.stderr || removed.stdout || 'could not remove folder').trim();
             cleanup = { path: worktreePath, removed: false, reason };
           }

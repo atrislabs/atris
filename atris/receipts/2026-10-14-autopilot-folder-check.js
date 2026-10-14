@@ -62,8 +62,9 @@ function main() {
   const toolsDir = path.join(repo, '.atris', 'tools');
   const removeAttempt = path.join(repo, '.atris', 'remove-attempt');
   fs.mkdirSync(toolsDir, { recursive: true });
-  for (const kind of ['after', 'gone', 'marker', 'ordinary', 'vanished', 'refused']) {
+  for (const kind of ['after', 'gone', 'marker', 'ordinary', 'vanished', 'refused', 'refused-moved']) {
     const vanishes = !['marker', 'ordinary', 'refused'].includes(kind);
+    const refused = kind.startsWith('refused');
     fs.writeFileSync(path.join(repo, `late-${kind}.txt`), `late ${kind} case\n`);
     git('add', '.');
     git('commit', '-qm', `late ${kind} case`);
@@ -72,22 +73,22 @@ function main() {
     const privateDir = path.join(repo, '.git', 'worktrees', path.basename(lateFolder).replace(/^\./, '-'));
     const moved = path.join(repo, '.atris', `moved-${kind}`);
     const expected = kind === 'gone' || kind === 'after' ? []
-      : kind === 'refused' ? [[path.join(privateDir, 'locked'), 7200], [path.join(privateDir, 'index.lock'), 10800], [path.join(repo, '.git', 'packed-refs.lock'), 14400]]
+      : refused ? [[path.join(privateDir, 'locked'), 7200], [path.join(privateDir, 'index.lock'), 10800], [path.join(repo, '.git', 'packed-refs.lock'), 14400]]
       : kind === 'marker' ? [[path.join(privateDir, 'locked'), 10800]]
       : [[path.join(privateDir, 'index.lock'), 10800], [path.join(repo, '.git', 'packed-refs.lock'), 14400]];
     // Clear only the previous case's shared fixture lock so this check passes
     // before the forwarding Git creates fresh locks at removal.
-    if (kind === 'refused') fs.unlinkSync(path.join(repo, '.git', 'packed-refs.lock'));
+    if (refused) fs.rmSync(path.join(repo, '.git', 'packed-refs.lock'), { force: true });
     fs.writeFileSync(path.join(toolsDir, 'git'), `#!${process.execPath}
 const fs = require('node:fs');
 const { spawnSync } = require('node:child_process');
 const args = process.argv.slice(2);
 const cwd = process.cwd();
 if (args[0] === 'worktree' && args[1] === 'remove') fs.writeFileSync(${JSON.stringify(removeAttempt)}, 'attempted');
-if (${kind === 'refused'}
+if (${refused}
   ? args[0] === 'worktree' && args[1] === 'remove'
   : args.includes('--git-dir') && args.includes('--git-common-dir') && cwd === ${JSON.stringify(lateFolder)}) {
-  if (${kind === 'marker' || kind === 'refused'}) {
+  if (${kind === 'marker' || refused}) {
     const held = spawnSync(${JSON.stringify(realGit)}, ['worktree', 'lock', '--reason', 'held during cleanup', ${JSON.stringify(lateFolder)}], { cwd: ${JSON.stringify(repo)}, encoding: 'utf8' });
     if (held.status !== 0) { process.stderr.write(held.stderr); process.exit(1); }
   }
@@ -118,8 +119,8 @@ process.exit(result.status === null ? 1 : result.status);
     assert.equal(late.pass, true);
     assert.equal(late.cleanup.removed, false);
     if (kind === 'gone' || kind === 'after') assert.equal(late.cleanup.reason, 'folder is missing');
-    if (kind === 'after' || kind === 'refused') assert.ok(git('worktree', 'list', '--porcelain').includes(`worktree ${lateFolder}\n`));
-    if (kind === 'vanished') assert.ok(late.cleanup.reason.startsWith('folder is missing; git lock: '), late.cleanup.reason);
+    if (kind === 'after' || refused) assert.ok(git('worktree', 'list', '--porcelain').includes(`worktree ${lateFolder}\n`));
+    if (kind === 'vanished' || kind === 'refused-moved') assert.ok(late.cleanup.reason.startsWith('folder is missing; git lock: '), late.cleanup.reason);
     for (const [file, seconds] of expected) {
       const escaped = file.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
       const reported = late.cleanup.reason.match(new RegExp(`${escaped} \\((\\d+)s old\\)`));
@@ -128,10 +129,12 @@ process.exit(result.status === null ? 1 : result.status);
       assert.ok(fs.existsSync(file));
     }
     assert.ok(fs.existsSync(path.join(present, `late-${kind}.txt`)));
-    assert.equal(fs.existsSync(removeAttempt), kind === 'refused');
+    assert.equal(fs.existsSync(removeAttempt), refused);
+    fs.rmSync(removeAttempt, { force: true });
     assert.equal(fs.readFileSync(removalFile, 'utf8').trim().split('\n').length, 1);
   }
   console.log('Git refusal after a passing check named three locks and distinct ages; files and Git record retained; no removal recorded');
+  console.log('a folder that moved while Git refused removal was reported missing with three locks and distinct ages; files and Git record retained; no removal recorded');
   console.log('a folder that disappeared after a passing safety check was reported missing, kept in Git, and no removal was attempted or recorded');
   console.log('a folder that disappeared during the safety check with no lock left was reported only as missing, and no removal was attempted');
   console.log('late keep marker during the safety check kept the folder, named the marker and its age, and no removal was attempted');
