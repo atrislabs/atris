@@ -60,7 +60,10 @@ function jwt(claims) {
   return `${header}.${payload}.sig`;
 }
 const SIGNUP_TOKEN = jwt({ sub: 'agent-user-1', type: 'agent_identity', exp: Math.floor(Date.now() / 1000) + 30 * 86400 });
-const clientJwt = (n) => jwt({ type: 'agent_access', n, exp: Math.floor(Date.now() / 1000) + 3600 });
+// Fixed expiry: the server mints and the test rebuilds the same token at different moments,
+// so a clock-derived exp would differ whenever a second boundary falls between them.
+const CLIENT_JWT_EXP = Math.floor(Date.now() / 1000) + 3600;
+const clientJwt = (n) => jwt({ type: 'agent_access', n, exp: CLIENT_JWT_EXP });
 
 function startServer(signupBody) {
   const state = { tokenCalls: 0, requests: [] };
