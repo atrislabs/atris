@@ -59,6 +59,13 @@ test('reap keeps late ordinary locks and keep markers in present and disappearin
   assert.match(result.stdout, /all five timing cases passed; files, locks, and branches retained; no removal attempted or recorded/);
 });
 
+test('regression cleanup keeps a folder when a keep marker arrives during its safety check', () => {
+  const proof = path.resolve(__dirname, '../atris/receipts/2026-10-14-autopilot-folder-check.js');
+  const result = spawnSync(process.execPath, [proof], { encoding: 'utf8', timeout: 120000 });
+  assert.equal(result.status, 0, result.stderr || result.stdout);
+  assert.match(result.stdout, /late keep marker during the safety check kept the folder, named the marker and its age, and no removal was attempted/);
+});
+
 function regressionEntry(repo, verifyCmd) {
   const hash = git(repo, ['rev-parse', 'HEAD']);
   fs.mkdirSync(path.join(repo, 'atris'), { recursive: true });

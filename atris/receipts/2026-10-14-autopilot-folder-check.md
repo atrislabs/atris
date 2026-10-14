@@ -37,3 +37,24 @@ Save-check lesson: the proof now runs only when called directly and clears inher
 next_push: Protect fleet cleanup with the shared Git-activity check and removal log.
 
 layer: behaviors
+
+## Late keep marker during the safety check
+
+Regression cleanup now has proof that a folder is kept when Git's keep marker appears while cleanup runs its one safety check. The proof and the required tests both exited 0.
+
+How it works: the proof makes a fresh commit, puts a forwarding git first on the path, and adds an aged keep marker the moment cleanup asks Git about the folder. Cleanup keeps the folder, its files and the marker, names the marker path and its age, and never tries to remove it. The removal log still holds only the earlier clean removal.
+
+Real surface: `node atris/receipts/2026-10-14-autopilot-folder-check.js`, exit 0.
+
+```text
+  kept .../.regression-worktree-fcae3c20: git locks: .../.git/worktrees/-regression-worktree-fcae3c20/locked (10799s old)
+late keep marker during the safety check kept the folder, named the marker and its age, and no removal was attempted
+```
+
+Verify: `node --test test/worktree-removal-guard.test.js test/member-tidy.test.js`, exit 0, 22 passed, 0 failed.
+
+Learned: cleanup reads its clock before the marker lands, so a marker aged exactly two hours reports one second less. The proof ages the marker three hours and accepts a ten second window.
+
+next_push: Prove a late ordinary private and shared lock during the regression cleanup's safety check keeps the folder and names both lock paths with distinct ages.
+
+layer: behaviors

@@ -55,6 +55,53 @@ function main() {
   assert.ok(fs.existsSync(folder));
   assert.equal(fs.readFileSync(removalFile, 'utf8').trim().split('\n').length, 1);
   console.log('clean folder removed and logged; locked folder retained with its exact lock path and age');
+
+  // A forwarding git adds an aged keep marker while cleanup runs its safety check.
+  fs.writeFileSync(path.join(repo, 'late.txt'), 'late marker case\n');
+  git('add', '.');
+  git('commit', '-qm', 'late marker case');
+  const lateHash = git('rev-parse', 'HEAD');
+  const lateFolder = path.join(repo, '.regression-worktree-' + lateHash.slice(0, 8));
+  const realGit = spawnSync('which', ['git'], { encoding: 'utf8' }).stdout.trim();
+  const toolsDir = path.join(repo, '.atris', 'tools');
+  const removeAttempt = path.join(repo, '.atris', 'remove-attempt');
+  fs.mkdirSync(toolsDir, { recursive: true });
+  fs.writeFileSync(path.join(toolsDir, 'git'), `#!${process.execPath}
+const fs = require('node:fs');
+const path = require('node:path');
+const { spawnSync } = require('node:child_process');
+const args = process.argv.slice(2);
+if (args[0] === 'worktree' && args[1] === 'remove') fs.writeFileSync(${JSON.stringify(removeAttempt)}, 'attempted');
+if (args.includes('--git-dir') && args.includes('--git-common-dir') && process.cwd() === ${JSON.stringify(lateFolder)}) {
+  const held = spawnSync(${JSON.stringify(realGit)}, ['worktree', 'lock', '--reason', 'held during cleanup', ${JSON.stringify(lateFolder)}], { cwd: ${JSON.stringify(repo)}, encoding: 'utf8' });
+  const marker = path.join(spawnSync(${JSON.stringify(realGit)}, ['rev-parse', '--absolute-git-dir'], { encoding: 'utf8' }).stdout.trim(), 'locked');
+  const aged = new Date(Date.now() - 10800000);
+  if (held.status === 0) fs.utimesSync(marker, aged, aged);
+}
+const result = spawnSync(${JSON.stringify(realGit)}, args, { stdio: 'inherit' });
+process.exit(result.status === null ? 1 : result.status);
+`, { mode: 0o755 });
+  const savedPath = process.env.PATH;
+  process.env.PATH = `${toolsDir}${path.delimiter}${savedPath}`;
+  let late;
+  try {
+    fs.writeFileSync(registry, JSON.stringify([{ hash: lateHash, verifyCmd: 'node -e "process.exit(0)"', slug: 'late-marker' }]));
+    [late] = regressionCheck(repo);
+  } finally {
+    process.env.PATH = savedPath;
+  }
+  console.log(JSON.stringify(late));
+  const marker = path.join(git('-C', lateFolder, 'rev-parse', '--absolute-git-dir'), 'locked');
+  assert.equal(late.pass, true);
+  assert.equal(late.cleanup.removed, false);
+  assert.ok(late.cleanup.reason.includes(`${marker} (`), late.cleanup.reason);
+  const age = Number(late.cleanup.reason.match(/locked \((\d+)s old\)/)[1]);
+  assert.ok(age >= 10790 && age <= 10810, late.cleanup.reason);
+  assert.ok(fs.existsSync(marker));
+  assert.ok(fs.existsSync(path.join(lateFolder, 'late.txt')));
+  assert.equal(fs.existsSync(removeAttempt), false);
+  assert.equal(fs.readFileSync(removalFile, 'utf8').trim().split('\n').length, 1);
+  console.log('late keep marker during the safety check kept the folder, named the marker and its age, and no removal was attempted');
 }
 
 if (require.main === module) main();

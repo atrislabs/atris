@@ -1966,7 +1966,7 @@ rg "printRoster|registryPayload|canPersistEngineRegistry|speakFirstMinute|--glob
 - `writeLesson()` → `commands/autopilot.js:999-1023`
 - `getVerifyCommand()` → `commands/autopilot.js:1099-1111`
 - `recordTickCommit()` → `commands/autopilot.js:1029-1037`
-- `regressionCheck()` → `commands/autopilot.js:1198`: only removes folders it created, checks Git lock paths and ages plus running programs, and records successful removals at `commands/autopilot.js:1248`. Real routine proof: `node atris/receipts/2026-10-14-autopilot-folder-check.js`; regression coverage: `test/worktree-removal-guard.test.js:55`.
+- `regressionCheck()` → `commands/autopilot.js:1198`: only removes folders it created, checks Git lock paths and ages plus running programs, and records successful removals at `commands/autopilot.js:1248`. Real routine proof: `node atris/receipts/2026-10-14-autopilot-folder-check.js`, including a forwarding git that adds an aged keep marker during the safety check; the folder, files and marker stay, the marker path and age are named, and no removal is attempted. Regression coverage: `test/worktree-removal-guard.test.js:62`.
 - `runTaskOnce()` → `commands/autopilot.js:1781-1995`
 - `getTaskAgeDays()` → `commands/autopilot.js:3680-3697`
 - `askHuman()` → `commands/autopilot.js:428-437`
