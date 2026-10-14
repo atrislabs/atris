@@ -399,6 +399,16 @@ test('every work folder removal goes through the git check and the removal log',
   assert.deepEqual(nowGuarded, [], 'guarded now: delete its line from NOT_YET_GUARDED');
 });
 
+test('saved scanner examples reject missed removals in the required checks', () => {
+  const result = spawnSync(process.execPath, [
+    path.join(__dirname, '../atris/receipts/work-folder-scan-probe.js'),
+    '--require-protection',
+  ], { encoding: 'utf8', timeout: 10000 });
+  assert.ifError(result.error);
+  assert.equal(result.status, 0, result.stderr || result.stdout);
+  assert.match(result.stdout, /review gaps: 0; synthetic source only, no folders removed/);
+});
+
 test('green landing keeps its scratch folder while a test is still running in it', () => {
   const { base, repo, wt } = landedWorktree();
   try {
