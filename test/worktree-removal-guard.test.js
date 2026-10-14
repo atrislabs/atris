@@ -327,10 +327,11 @@ const UNGUARDED_REMOVALS = {
 // guard it and delete its line here.
 const NOT_YET_GUARDED = {
 };
-const WORKTREE_REMOVAL = /worktree['"]?\s*,\s*['"]remove['"]|git worktree remove|rmSync\(\s*[^,)]*(?:worktree|wtPath|\bwt\b|\bw\.path)/i;
+const WORKTREE_REMOVAL = /worktree['"]?\s*,\s*['"]remove['"]|git worktree remove|\brm(?:Sync)?\(\s*[^,)]*(?:worktree|wtPath|\bwt\b|\bw\.path)/i;
 // A recursive delete with a plain name (dir, target) still counts when its
 // function lists, adds, or walks worktrees, so renaming a variable can't hide one.
-const RECURSIVE_DELETE = /rmSync\([^)]*recursive/;
+// Callback and promise deletes (fs.rm, fs.promises.rm) count the same as rmSync.
+const RECURSIVE_DELETE = /\brm(?:Sync)?\([^)]*recursive/;
 const HANDLES_WORKTREES = /listWorktrees\(|agent-worktrees|['"]worktree['"]\s*,\s*['"]add['"]|git worktree add/;
 
 function worktreeRemovalSites(file) {
