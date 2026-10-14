@@ -6382,9 +6382,17 @@ test('brain scorecard carries task landing quality and human outcome', () => {
     seedBrainWorkspace(dir);
     fs.rmSync(path.join(dir, '.atris', 'state', 'agent_mail.jsonl'), { force: true });
 
-    const acceptedAdd = runCli(['task', 'add', 'Landing accepted task', '--tag', 'approval', '--json'], { cwd: dir, env });
-    assert.equal(acceptedAdd.status, 0, acceptedAdd.stderr);
-    const acceptedRef = JSON.parse(acceptedAdd.stdout).task.display_id;
+    // Seed creation only; claim, ready, human feedback and scorecard stay on the CLI.
+    const acceptedDb = taskStore.open(dbPath);
+    let acceptedRef;
+    try {
+      const created = addSeedTask(acceptedDb, { title: 'Landing accepted task', tag: 'approval', workspaceRoot: taskStore.workspaceRoot(dir) });
+      assert.equal(created.inserted, true);
+      acceptedRef = taskStore.taskDisplayRefMap(taskStore.listTasks(acceptedDb, { workspaceRoot: taskStore.workspaceRoot(dir) })).get(created.id);
+      assert.ok(acceptedRef);
+    } finally {
+      taskStore.close();
+    }
     assert.equal(runCli(['task', 'claim', acceptedRef, '--as', 'codex'], { cwd: dir, env }).status, 0);
     const acceptedReady = runCli([
       'task', 'ready', acceptedRef,
@@ -6417,9 +6425,17 @@ test('brain scorecard carries task landing quality and human outcome', () => {
     }
 	    fs.writeFileSync(episodePath, `${episodeRows.map(row => JSON.stringify(row)).join('\n')}\n`, 'utf8');
 
-    const revisedAdd = runCli(['task', 'add', 'Landing reworked task', '--tag', 'approval', '--json'], { cwd: dir, env });
-    assert.equal(revisedAdd.status, 0, revisedAdd.stderr);
-    const revisedRef = JSON.parse(revisedAdd.stdout).task.display_id;
+    // Seed creation only; claim, ready, human feedback and scorecard stay on the CLI.
+    const revisedDb = taskStore.open(dbPath);
+    let revisedRef;
+    try {
+      const created = addSeedTask(revisedDb, { title: 'Landing reworked task', tag: 'approval', workspaceRoot: taskStore.workspaceRoot(dir) });
+      assert.equal(created.inserted, true);
+      revisedRef = taskStore.taskDisplayRefMap(taskStore.listTasks(revisedDb, { workspaceRoot: taskStore.workspaceRoot(dir) })).get(created.id);
+      assert.ok(revisedRef);
+    } finally {
+      taskStore.close();
+    }
     assert.equal(runCli(['task', 'claim', revisedRef, '--as', 'codex'], { cwd: dir, env }).status, 0);
     const revisedReady = runCli([
       'task', 'ready', revisedRef,
