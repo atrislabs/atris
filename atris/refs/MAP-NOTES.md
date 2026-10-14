@@ -2272,3 +2272,5 @@ Command test SQLite capability: `test/commands.test.js:4926` caches the real chi
 Proof-command extraction setup: `test/commands.test.js:11808` seeds 45 claimed fixtures through the real SQLite helpers using the canonical temporary path, keeps the first complete CLI setup, and preserves every ready/review-chat parsing assertion.
 
 Review-group cap setup: `test/commands.test.js:14266` keeps one full CLI new/claim/ready/review row and seeds eleven through the same SQLite steps; rows and events match the CLI ones apart from title.
+
+Bulk accept --all cap setup: `test/commands.test.js:13272` keeps row 0 on CLI add/claim, adds and claims the other 19 through SQLite, and sends all 20 through CLI ready so the result trace the sweep reads is real.
