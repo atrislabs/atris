@@ -2315,3 +2315,5 @@ npm publish
 - `atris/receipts/2026-10-14-fleet-folder-check.js:51`: idle registered outside copy has no locks or running programs, yet disposal breaks its Git status. Outside dependency alone must preserve shared storage.
 
 - `atris/receipts/2026-10-14-fleet-folder-check.js:51`: a registered outside path containing a line break is missed by line splitting; `git worktree list --porcelain -z` preserves the exact path. Use zero-byte-separated records before deciding whether shared storage has surviving dependents.
+
+- `atris/receipts/2026-10-14-fleet-folder-check.js:67`: exact registration preserves an outside neighbor named after the removal parent plus a suffix, but string-prefix containment misclassifies it. Use path-component boundaries before removing shared Git storage.

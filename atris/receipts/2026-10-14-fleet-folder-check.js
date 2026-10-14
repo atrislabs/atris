@@ -35,7 +35,7 @@ async function main() {
   git('add', '.');
   git('commit', '-qm', 'fixture');
   console.log(`fixture: ${root}`);
-  for (const kind of ['private', 'shared', 'quarantine', 'running', 'sibling', 'outside', 'outside-running', 'outside-idle', 'outside-linebreak']) {
+  for (const kind of ['private', 'shared', 'quarantine', 'running', 'sibling', 'outside', 'outside-running', 'outside-idle', 'outside-linebreak', 'outside-prefix']) {
     const parent = fs.mkdtempSync(path.join(root, 'review-'));
     const boundary = {
       trustedRoot: root,
@@ -47,8 +47,9 @@ async function main() {
     git('clone', '-q', '--bare', root, boundary.gitDir);
     git('init', '-q', '--bare', boundary.quarantine);
     git('--git-dir', boundary.gitDir, 'worktree', 'add', '-q', boundary.worktreePath, 'master');
-    if (kind === 'outside-idle' || kind === 'outside-linebreak') {
-      const outside = path.join(root, `outside-${path.basename(parent)}${kind === 'outside-linebreak' ? '\ncopy' : ''}`);
+    if (['outside-idle', 'outside-linebreak', 'outside-prefix'].includes(kind)) {
+      const outside = kind === 'outside-prefix' ? `${parent}-copy`
+        : path.join(root, `outside-${path.basename(parent)}${kind === 'outside-linebreak' ? '\ncopy' : ''}`);
       git('--git-dir', boundary.gitDir, 'worktree', 'add', '-q', '--detach', outside, 'master');
       assert.equal(git('-C', outside, 'status', '--porcelain'), '');
       const registered = git('--git-dir', boundary.gitDir, 'worktree', 'list', '--porcelain');
@@ -59,6 +60,13 @@ async function main() {
         console.log('outside-linebreak listing: line splitting misses the path; zero-byte splitting preserves it');
       } else {
         assert.ok(registered.split('\n').includes(`worktree ${outside}`));
+      }
+      if (kind === 'outside-prefix') {
+        const exact = git('--git-dir', boundary.gitDir, 'worktree', 'list', '--porcelain', '-z');
+        assert.ok(exact.split('\0').includes(`worktree ${outside}`));
+        assert.equal(outside.startsWith(parent), true);
+        assert.ok(path.relative(parent, outside).startsWith(`..${path.sep}`));
+        console.log('outside-prefix boundary: string prefix says inside; path components say outside');
       }
       const activePaths = listActiveProcessPaths();
       assert.ok(Array.isArray(activePaths), 'the real process scan must succeed');
