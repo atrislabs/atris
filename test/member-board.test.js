@@ -1549,6 +1549,8 @@ test('the count line says how many quiet runs most likely ended, when it stays o
   assert.equal(renderBoard([old], '/x').split('\n')[0], '1 member, quiet (likely ended)');
   assert.equal(renderBoard([fresh, done], '/x').split('\n')[0], '2 members: 1 quiet, 1 done ok', 'a pause adds nothing');
   assert.equal(renderBoard([old, fresh, done], '/x', 0, 30).split('\n')[0], '3 members: 2 quiet, 1 done ok', 'too narrow for both: the count keeps one line and the note below names it');
+  assert.equal(renderBoard([old, fresh, done], '/x', 0, 43).split('\n')[0], '3 members: 2 quiet (1 likely ended), 1 done', 'done ok shortens before the guess goes');
+  assert.equal(renderBoard([old, fresh, done], '/x', 0, 42).split('\n')[0], '3 members: 2 quiet, 1 done ok', 'still too long: the guess goes and the done words stay');
 });
 
 test('watchCrashes reports each newly died run once, not ones dead at start', () => {
