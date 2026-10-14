@@ -451,6 +451,25 @@ test('board says a heredoc step is a script or a file write, but not in the row 
   assert.equal(rows[0].step, "running: python3 - <<'PY'", 'apps reading the rows get the step as written');
 });
 
+test('board shortens a hand-off step to who was asked and the model, but not in the row data', () => {
+  const now = Date.parse('2026-10-14T13:00:00Z');
+  const step = (name, text) => memberRow(name, `2026-10-14T12:58:00Z m-1 started: map it\n2026-10-14T12:59:30Z m-1 ${text}\n`, now);
+  const rows = [
+    step('cl', 'Asked Claude (claude-sonnet-5-5) for help with this step.'),
+    step('dv', 'Asked Devin (swe-2-max) for help with this step.'),
+    step('cx', 'Asked Codex for help with this step.'),
+    step('cu', 'Asked Cursor (cursorish) for help with this step.'),
+    step('other', 'Asked Claude (claude-opus-5-5) to review the diff.'),
+  ];
+  const shown = (name) => renderBoard(rows, '/x').split('\n').find((l) => l.startsWith(`${name} `));
+  assert.ok(shown('cl').endsWith('  Asked Claude (sonnet-5-5)'), shown('cl'));
+  assert.ok(shown('dv').endsWith('  Asked Devin (swe-2-max)'), shown('dv'));
+  assert.ok(shown('cx').endsWith('  Asked Codex'), shown('cx'));
+  assert.ok(shown('cu').endsWith('  Asked Cursor (cursorish)'), 'a model that only starts with the name keeps it');
+  assert.ok(shown('other').endsWith('  Asked Claude (claude-opus-5-5) to review the diff.'), 'any other ask stays as written');
+  assert.equal(rows[0].step, 'Asked Claude (claude-sonnet-5-5) for help with this step.', 'apps reading the rows get the step as written');
+});
+
 test('board shows a continuous run by its latest goal, and keeps the job in the row data', () => {
   const now = Date.parse('2026-10-14T13:00:00Z');
   const job = (name, lines) => memberRow(name, [`2026-10-14T12:50:00Z m-1 started: ${name} continuous run`, ...lines.map((l, i) => `2026-10-14T12:5${i + 1}:00Z m-1 ${l}`), ''].join('\n'), now);
