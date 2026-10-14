@@ -2140,3 +2140,26 @@ test('youtube notes run outside an Atris workspace write no readings', () => {
     fs.rmSync(root, { recursive: true, force: true });
   }
 });
+
+test('an unreadable process list is reported instead of a clean agent count', () => {
+  for (const failure of [() => ({ status: 1, stdout: '' }), () => { throw new Error('process scan timed out'); }]) {
+    const scan = readSshAgents({ run: (cmd, args) => {
+      if (cmd === 'ps' && !args.includes('-E')) return failure();
+      if (cmd === 'ps') return { status: 0, stdout: '  300 SHELL=/bin/zsh' };
+      return { status: 1, stdout: '' };
+    } });
+    assert.deepStrictEqual(scan.unread, ['process list']);
+    assert.deepStrictEqual(scan.agents, []);
+  }
+});
+
+test('the real sweep warns when the system cannot provide its process list', { skip: process.platform !== 'darwin' }, () => {
+  const { spawnSync } = require('node:child_process');
+  const ran = spawnSync('/usr/bin/sandbox-exec', [
+    '-p', '(version 1)(allow default)(deny process-exec (literal "/bin/ps"))',
+    process.execPath, path.join(__dirname, '..', 'bin', 'atris.js'), 'engine', 'sweep',
+  ], { encoding: 'utf8', timeout: 30000 });
+  assert.equal(ran.status, 0, ran.stderr);
+  assert.match(ran.stdout, /could not read the process list/);
+  assert.match(ran.stdout, /0 leaked here does not mean none leaked/);
+});
