@@ -322,7 +322,7 @@ const waitFor = async (check, ms = 3000) => {
 const killAll = (pid) => { try { process.kill(-pid, 'SIGKILL'); } catch {} };
 const isoAgo = (s) => new Date(Date.now() - s * 1000).toISOString();
 
-test('board shows a live run as alive with its engine, and a dead one as stopped', async () => {
+test('board shows a live run as alive with its engine, and a dead one as died, not stopped', async () => {
   const { child, ready } = spawnSleeper("console.log('up'); setInterval(() => {}, 1000)");
   await ready;
   const dir = fakeDir({
@@ -343,10 +343,10 @@ test('board shows a live run as alive with its engine, and a dead one as stopped
     child.kill('SIGKILL');
     assert.ok(await waitFor(() => !isAlive(child.pid)), 'sleeper should be gone');
     by = Object.fromEntries(readBoard({ dir }).map((r) => [r.member, r]));
-    assert.equal(by.builder.state, 'stopped', 'marked working but the process is gone');
+    assert.equal(by.builder.state, 'died', 'gone without a finished line is not a clean stop');
     assert.equal(by.builder.alive, false);
     assert.equal(by.builder.running_for, '');
-    assert.match(renderBoard(readBoard({ dir }), dir), /^builder\s+stopped\s+no\s+claude\s+-\s+/m);
+    assert.match(renderBoard(readBoard({ dir }), dir), /^builder\s+died\s+no\s+claude\s+-\s+/m);
   } finally {
     killAll(child.pid);
     fs.rmSync(dir, { recursive: true, force: true });
