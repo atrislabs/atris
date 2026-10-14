@@ -784,6 +784,59 @@ test('autopilot phases record paired readings on success, SIGKILL and startup fa
   }
 });
 
+test('run command phases record paired readings on success, SIGKILL and startup failure', () => {
+  const { execFileSync } = require('node:child_process');
+  const { executePhase } = require('../commands/run');
+  const root = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'run-phase-resource-')));
+  const before = process.cwd();
+  const savedTemplate = process.env.ATRIS_RUNNER_COMMAND_TEMPLATE;
+  const missing = path.join(os.tmpdir(), `atris-missing-engine-${process.pid}`);
+  const phase = (template) => {
+    process.env.ATRIS_RUNNER_COMMAND_TEMPLATE = template;
+    try {
+      return { output: executePhase('do', { task: 'fixture' }, { timeout: 5000 }) };
+    } catch (error) {
+      return { error };
+    }
+  };
+  try {
+    execFileSync('git', ['init', '-q', root]);
+    process.chdir(root);
+    const ok = phase('echo done');
+    const killed = phase('sh -c "kill -KILL $$"');
+    const failed = phase(missing);
+    process.chdir(before);
+    assert.equal(ok.output.trim(), 'done');
+    const lines = fs.readFileSync(path.join(root, RESOURCE_LOG), 'utf8').trim().split('\n').map(JSON.parse);
+    assert.deepEqual(lines.map((line) => line.phase), ['start', 'end', 'start', 'end', 'start', 'end']);
+    for (let i = 0; i < lines.length; i += 2) {
+      assert.match(lines[i].run_id, /^[0-9a-f-]{36}$/);
+      assert.equal(lines[i + 1].run_id, lines[i].run_id);
+      assert.equal(lines[i].task, 'run do');
+      assert.ok(Array.isArray(lines[i + 1].load));
+      assert.ok(Number.isInteger(lines[i + 1].duration_ms));
+    }
+    assert.notEqual(lines[0].run_id, lines[2].run_id);
+    assert.equal(lines[1].signal, undefined);
+    assert.equal(lines[1].error, undefined);
+    const killEnd = lines[3];
+    assert.equal(killEnd.signal, 'SIGKILL');
+    assert.match(killEnd.cause, /^killed \((machine memory low|cause unknown)\)$/);
+    assert.ok(killed.error.message.includes(killEnd.cause), killed.error.message);
+    const failEnd = lines[5];
+    assert.equal(failEnd.signal, undefined);
+    assert.match(failEnd.error, /not found|No such file|exited with code 127/i);
+    assert.ok(failed.output !== undefined || failed.error, 'the failed start must return or throw');
+    console.log(`run phase readings: ${JSON.stringify([killEnd, failEnd])}`);
+    console.log(`run kill message: ${killed.error.message}`);
+  } finally {
+    process.chdir(before);
+    if (savedTemplate === undefined) delete process.env.ATRIS_RUNNER_COMMAND_TEMPLATE;
+    else process.env.ATRIS_RUNNER_COMMAND_TEMPLATE = savedTemplate;
+    fs.rmSync(root, { recursive: true, force: true });
+  }
+});
+
 test('a kill sent by the run time limit names the time limit even with memory low', () => {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'engine-resource-timeout-'));
   try {

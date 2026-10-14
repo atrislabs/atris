@@ -223,12 +223,16 @@ function executePhase(phase, context, options = {}) {
   const prompt = buildRunPrompt(phase, context, priorCycleReview);
   const tmpFile = path.join(process.cwd(), '.run-prompt.tmp');
   fs.writeFileSync(tmpFile, prompt);
+  let endResource = () => null;
 
   try {
     const cmd = buildRunnerCommand({ promptFile: tmpFile, allowedTools: 'Bash,Read,Write,Edit,Glob,Grep' });
     // Strip CLAUDECODE env var to allow spawning from within a Claude Code session
     const env = { ...process.env };
     delete env.CLAUDECODE;
+    // Machine memory and load at both ends of the launch, so a phase killed
+    // with SIGKILL says whether the machine was short on memory.
+    endResource = require('../lib/engine-resource').startEngineRun(process.cwd(), { engine: 'runner', task: `run ${phase}` });
     const output = execPhaseCommandSync(cmd, {
       cwd: process.cwd(),
       encoding: 'utf8',
@@ -241,14 +245,17 @@ function executePhase(phase, context, options = {}) {
     });
 
     try { fs.unlinkSync(tmpFile); } catch {}
+    endResource();
     return output || '';
   } catch (err) {
     try { fs.unlinkSync(tmpFile); } catch {}
+    const resourceEnd = endResource(err);
     if (isPhaseTimeoutError(err)) {
       throw new Error(`${phase} timed out after ${timeout / 1000}s`);
     }
     if (isPhaseKillError(err)) {
-      throw new Error(`${phase} killed by ${err.signal || 'a signal'} before the ${timeout / 1000}s wall`);
+      const cause = resourceEnd && resourceEnd.cause ? `, ${resourceEnd.cause}` : '';
+      throw new Error(`${phase} killed by ${err.signal || 'a signal'} before the ${timeout / 1000}s wall${cause}`);
     }
     // execSync throws on non-zero exit but may still have output
     if (err.stdout) return err.stdout;
@@ -1068,4 +1075,4 @@ function diffRunLogs(args = []) {
   }
 }
 
-module.exports = { runAtris, hasWork, hasInboxOrBacklogWork, roadmapOpenCount, getRunLogDir, getRunLogPath, writePhaseToRunLog, appendMasterLoopReceipt, listRunLogs, pruneRunLogs, searchRunLogs, statsRunLogs, exportRunLogs, diffRunLogs, buildRunPrompt };
+module.exports = { runAtris, executePhase, hasWork, hasInboxOrBacklogWork, roadmapOpenCount, getRunLogDir, getRunLogPath, writePhaseToRunLog, appendMasterLoopReceipt, listRunLogs, pruneRunLogs, searchRunLogs, statsRunLogs, exportRunLogs, diffRunLogs, buildRunPrompt };
