@@ -24,3 +24,7 @@ fi
 # exist. Catches the silent partial-land failure (destructuring a missing
 # export is undefined, not an error) that broke master on 2026-07-02.
 node "$(git rev-parse --show-toplevel)/scripts/precommit-load-check.js" || exit 1
+
+# Map pointer note: warns when refs in atris/MAP.md or atris/refs/MAP-NOTES.md
+# that point into staged files drifted. Never blocks.
+node "$(git rev-parse --show-toplevel)/scripts/precommit-map-refs.js" || true

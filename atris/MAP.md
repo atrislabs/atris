@@ -105,7 +105,7 @@ checks the refs in both files; `atris doc-health --fix-refs` moves drifted ones.
 | run one test | `package.json` | npm test, node --test |
 | release publish script | `scripts/publish-atris-release.js` | tag-driven publish |
 | ci workflows | `.github/workflows` | test and publish gates |
-| pre-commit hook | `scripts/pre-commit` | local gate |
+| pre-commit hook | `scripts/pre-commit`, `scripts/precommit-map-refs.js` | local gate; notes drifted map pointers into staged files, never blocks |
 | workspace protocol spec | `atris/atris.md` | operating protocol |
 | persona voice spec | `atris/PERSONA.md` | communication style |
 | atris skill | `atris/skills/atris/SKILL.md` | workspace skill |
