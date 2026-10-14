@@ -490,8 +490,10 @@ function fixEmDash(s, { endsBlock = false, startsBlock = false, spans = [] } = {
   // a dash or a run of pressed dashes that touches a drawn corner or pipe,
   // or two runs that meet at a lone corner, is the drawn line itself: "+---+",
   // "|- a", "a --- + --- b", never "a (+) b". A plus inside a word is no corner,
-  // so "C++, the language" stays prose. A table row is fixed cell by cell below.
-  if (!/^\s*\|/.test(s)) s = s.replace(/\u2014+(?=[+|](?![\w+]))|(?<=(?<![\w+])[+|])\u2014+|\u2014{2,}[ \t]*\+[ \t]*\u2014{2,}/g, (m) => m.replace(/\u2014/g, '-'));
+  // so "C++, the language" stays prose. A box-drawing corner or line never
+  // shows up in prose, so a dash pressed against one is always drawn: "\u250c---\u2510",
+  // "\u2514- done", never "\u250c, \u2510". A table row is fixed cell by cell below.
+  if (!/^\s*\|/.test(s)) s = s.replace(/\u2014+(?=[\u2500-\u257f])|(?<=[\u2500-\u257f])\u2014+|\u2014+(?=[+|](?![\w+]))|(?<=(?<![\w+])[+|])\u2014+|\u2014{2,}[ \t]*\+[ \t]*\u2014{2,}/g, (m) => m.replace(/\u2014/g, '-'));
   // a line indented like a code block is where a diagram lives, and so is a
   // line that opens with a box, not a link or a checkbox, at any indent or
   // after quote marks, a list marker and bold or italic marks. Any run of
