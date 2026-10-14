@@ -1736,3 +1736,19 @@ test('fix keeps the comma between two orders and joins a new order after a claus
     'Built `calendar-probe`, fork of relay-probe.',
   ]);
 });
+
+test('fix gives a run of "ing" phrases after a dash a colon, like a list', () => {
+  // from hugolearn: "extracting what was learned" read as a subject and its
+  // verb, so the list after the dash got a semicolon
+  const file = tmpFile('ing-list.md', [
+    'Sessions build on each other \u2014 extracting what was learned, understanding the progression, and intelligently suggesting the next topic.',
+    'The gate held \u2014 nothing in the queue moved, everything stayed, and nothing broke.',
+    'Ship the fix \u2014 testing it twice, then merging.',
+  ].join('\n'));
+  const { changes } = applyFixes([file], RULES);
+  assert.deepEqual(changes.map((c) => c.after), [
+    'Sessions build on each other: extracting what was learned, understanding the progression, and intelligently suggesting the next topic.',
+    'The gate held; nothing in the queue moved, everything stayed, and nothing broke.',
+    'Ship the fix, testing it twice, then merging.',
+  ]);
+});

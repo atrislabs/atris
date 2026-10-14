@@ -111,6 +111,13 @@ function wrappedInParens(s) {
 // stalls, drain it".
 const LIST_ITEM = "[A-Za-z0-9][\\w'/-]*(?: [A-Za-z0-9][\\w'/-]*){0,3}";
 const LIST_AFTER_DASH = new RegExp(`(?<=[\\w)\\]*_\`%])\\s*\u2014\\s*(?!(?:and|but|or|nor|so|yet|then|once|when|whenever|if|unless|until|after|before|while) )(?=${LIST_ITEM}(?:, ${LIST_ITEM}){1,}, (?:and |or )?${LIST_ITEM}(?:[.!?](?:\\s|$)|$|(\\))))`, 'g');
+// Three or more phrases that each open with an "ing" word list what the
+// sentence before does, however long each one runs, so they take a colon too:
+// "Sessions build on each other: extracting what was learned, understanding
+// the progression, and intelligently suggesting the next topic". Without
+// this, "extracting what was learned" reads as a subject and its verb.
+const ING_ITEM = "(?:[a-z]+ly )?(?!(?:some|any|every|no)?thing\\b|during\\b|morning\\b|evening\\b|string\\b)[a-z]{2,}ing\\b[^,.!?;:\\u2014]*";
+const ING_LIST_AFTER_DASH = new RegExp(`(?<=[\\w)\\]*_\`%])\\s*\u2014\\s*(?=${ING_ITEM}(?:, ${ING_ITEM}){1,}, (?:and |or )?${ING_ITEM}(?:[.!?](?:\\s|$)|$))`, 'g');
 
 // A lone dash with a word before it, then a subject pronoun and its verb:
 // "it survives", "they'd pass", "that's the goal". "This" and its kin count
@@ -377,6 +384,7 @@ function fixEmDash(s, { endsBlock = false, startsBlock = false } = {}) {
     // a dash that opens a list of three or more short items running to the
     // end of the sentence introduces it: "sweep: arxiv, github, web."
     .replace(LIST_AFTER_DASH, (m, close, at, whole) => (close && !insideParens(whole.slice(0, at)) ? m : ': '))
+    .replace(ING_LIST_AFTER_DASH, ': ')
     // a dash between two full clauses joins them; a comma there is a splice
     // ("this isn't optional, it's part of design"), so it takes a semicolon.
     // The left side needs two words of its own sentence to be a clause, so
