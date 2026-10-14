@@ -392,11 +392,32 @@ test('board keeps only the newest earlier run, then drops before, when nothing e
 test('board shows the home folder as ~ in job and last step, but not in the row data', () => {
   const now = Date.parse('2026-10-14T13:00:00Z');
   const home = os.homedir();
-  const row = memberRow('scout', `2026-10-14T12:58:00Z m-1 started: tidy ${home}/notes\n2026-10-14T12:59:30Z m-1 running: cd ${home}/arena/x && ls ${home}2/y ${home}\n`, now);
+  const row = memberRow('scout', `2026-10-14T12:58:00Z m-1 started: tidy ${home}/notes\n2026-10-14T12:59:30Z m-1 running: ls ${home}/arena/x ${home}2/y ${home}\n`, now);
   const shown = renderBoard([row], '/x').split('\n').find((l) => l.startsWith('scout'));
   assert.match(shown, /\btidy ~\/notes\s/, shown);
-  assert.ok(shown.endsWith(`running: cd ~/arena/x && ls ${home}2/y ~`), `a folder that only starts with the home name keeps its path: ${shown}`);
-  assert.equal(row.step, `running: cd ${home}/arena/x && ls ${home}2/y ${home}`, 'apps reading the rows get the full path');
+  assert.ok(shown.endsWith(`running: ls ~/arena/x ${home}2/y ~`), `a folder that only starts with the home name keeps its path: ${shown}`);
+  assert.equal(row.step, `running: ls ${home}/arena/x ${home}2/y ${home}`, 'apps reading the rows get the full path');
+});
+
+test('board shows the command inside a shell wrapper or after a cd, but not in the row data', () => {
+  const now = Date.parse('2026-10-14T13:00:00Z');
+  const step = (name, text) => memberRow(name, `2026-10-14T12:58:00Z m-1 started: map it\n2026-10-14T12:59:30Z m-1 ${text}\n`, now);
+  const rows = [
+    step('cdand', 'Run: cd /repo/app && git rev-parse HEAD'),
+    step('zsh', `Run: /bin/zsh -lc "git log -1 --format='%h %s'; echo \\"done\\""`),
+    step('both', "running: bash -c 'cd \"/my repo\"; npm test'"),
+    step('cut', 'Run: /bin/zsh -lc "sed -n 1,5p a.js; rg -n foo'),
+    step('cdonly', 'running: cd /repo/app'),
+    step('plain', 'Landing verified changes onto the workspace.'),
+  ];
+  const shown = (name) => renderBoard(rows, '/x').split('\n').find((l) => l.startsWith(`${name} `));
+  assert.ok(shown('cdand').endsWith('Run: git rev-parse HEAD'), shown('cdand'));
+  assert.ok(shown('zsh').endsWith(`Run: git log -1 --format='%h %s'; echo "done"`), shown('zsh'));
+  assert.ok(shown('both').endsWith('running: npm test'), shown('both'));
+  assert.ok(shown('cut').endsWith('Run: sed -n 1,5p a.js; rg -n foo'), `a step cut before its closing quote still unwraps: ${shown('cut')}`);
+  assert.ok(shown('cdonly').endsWith('running: cd /repo/app'), 'a cd with nothing after it stays');
+  assert.ok(shown('plain').endsWith('Landing verified changes onto the workspace.'), shown('plain'));
+  assert.equal(rows[0].step, 'Run: cd /repo/app && git rev-parse HEAD', 'apps reading the rows get the step as written');
 });
 
 test('board leaves the member name off a job that repeats it, but not off the row data', () => {
