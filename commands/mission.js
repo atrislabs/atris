@@ -9671,6 +9671,20 @@ function cappedClaudeReceiptText(text, limit = 4000) {
   return clean.slice(0, limit - 16).trimEnd() + '\n...[truncated]';
 }
 
+// The receipt keeps a capped copy of the runner's report. When the report is
+// longer than that, the whole text goes to its own file beside the receipts
+// so nothing the member wrote is lost.
+function saveFullRunnerReport(mission, text, root = process.cwd()) {
+  const clean = String(text || '').trim();
+  if (!clean || cappedClaudeReceiptText(clean) === clean) return null;
+  const runsDir = statePaths(root).runsDir;
+  fs.mkdirSync(runsDir, { recursive: true });
+  const safeTime = stampIso().replace(/[:.]/g, '-');
+  const reportPath = path.join(runsDir, `mission-${mission.id}-${safeTime}-report.md`);
+  fs.writeFileSync(reportPath, clean + '\n', 'utf8');
+  return path.relative(root, reportPath);
+}
+
 async function parseAndValidateMissionRunPhase(args) {
   const asJson = wantsJson(args);
   const context = {
@@ -10296,6 +10310,7 @@ async function executeMissionRunTicksPhase(context) {
           brief_id: claudeResult.brief_id || null,
           summary: claudeResult.summary,
           receipt_text: claudeResult.receipt_text,
+          report_path: saveFullRunnerReport(mission, claudeResult.result, cwd),
           stop_reason: claudeResult.stop_reason,
           api_equivalent_estimate: claudeResult.api_equivalent_estimate,
           duration_total_ms: claudeResult.duration_total_ms,
