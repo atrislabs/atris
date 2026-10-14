@@ -1312,6 +1312,10 @@ test('fix gives an aside that opens with a joining word commas, not parentheses'
     // a lone joining word takes no comma after it
     'Ship it \u2014 then \u2014 wait.',
     'Run it \u2014 or \u2014 skip it.',
+    // "so" before a describing word and "yet another" are real asides
+    'The fix \u2014 so small it fits in a line \u2014 shipped.',
+    'The build \u2014 yet another one \u2014 failed.',
+    'We paused \u2014 so it could drain \u2014 and restarted.',
   ].join('\n'));
   const { changes } = applyFixes([file], RULES, { write: false });
   assert.deepEqual(changes.map((c) => c.after), [
@@ -1320,6 +1324,9 @@ test('fix gives an aside that opens with a joining word commas, not parentheses'
     'The gate (the strict one) holds.',
     'Ship it, then wait.',
     'Run it, or skip it.',
+    'The fix (so small it fits in a line) shipped.',
+    'The build (yet another one) failed.',
+    'We paused, so it could drain, and restarted.',
   ]);
 });
 

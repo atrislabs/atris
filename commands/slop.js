@@ -228,8 +228,10 @@ function fixEmDash(s, { endsBlock = false, startsBlock = false } = {}) {
       // it takes commas too: "install it, then run it, and ship". Punctuation
       // already before it keeps its place: 'said "stop." then it went, and left'.
       // A lone joining word takes no comma after it: "Ship it, then wait."
+      // "So" joins only before its subject ("so it ships"), and "yet" not
+      // before "another", so "the fix (so small it fits) shipped" stays an aside.
       const holdsParens = /[()]/.test(aside) && !wrappedInParens(aside);
-      if (/^(?:and|but|or|nor|so|yet|then)\b/.test(aside)) {
+      if (/^(?:and|but|or|nor|then)\b|^so(?:$|\s+(?:it|we|they|you|I|he|she|the|a|an|this|that|these|those|there|nothing|everything)\b)|^yet\b(?!\s+(?:another|again|more)\b)/.test(aside)) {
         return `${/[.,;:!?]["'\u201d\u2019)]*$/.test(whole.slice(0, at)) ? ' ' : ', '}${aside}${!gap ? '' : /^\w+$/.test(aside) ? ' ' : ', '}`;
       }
       if (holdsParens || insideParens(whole.slice(0, at))) return `, ${aside}${gap ? ', ' : ''}`;
