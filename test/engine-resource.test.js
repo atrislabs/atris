@@ -1356,6 +1356,11 @@ test('every engine started through a runner or profile variable records its run 
           for (const call of code.matchAll(calls)) {
             // An expression's internal name exists only inside its body.
             if (call[1] === internalName && internalName !== header[1] && (call.index < fnStart || call.index >= fnEnd)) continue;
+            if (call[1] === internalName && internalName !== header[1] && definitionSpans(code).some(([open, close]) => {
+              if (open <= fnStart || open > call.index || call.index >= close) return false;
+              const nested = /^(?:async\s+)?function\s+[\w$]+\s*\(([^)]*)\)|^(?:const|let|var)\s+[\w$]+\s*=\s*(?:async\s*)?(?:function(?:\s+[\w$]+)?\s*)?(?:\(([^)]*)\)|([\w$]+)\s*=>)/.exec(code.slice(open).trimStart());
+              return nested && (nested[1] ?? nested[2] ?? nested[3]).split(',').some((name) => name.trim() === internalName);
+            })) continue;
             if (call[1] === internalName && internalName !== header[1] && new RegExp(`\\b(?:const|let|var)\\s+${internalName.replace(/\$/g, '\\$')}\\s*=`).test(code.slice(fnStart, call.index))) continue;
             const prefix = code.slice(0, call.index);
             if (/\bfunction\s*$|\.\s*$/.test(prefix)) continue;
@@ -1515,6 +1520,22 @@ test('every engine started through a runner or profile variable records its run 
   assert.deepStrictEqual(planted(`${wrapper}const bare = () => {\n  spawn(resolveClaudeRunnerBin(), args);\n};\n`), ['commands/planted.js:5 resolveClaudeRunnerBin()']);
   assert.deepStrictEqual(planted("function recordAndLaunch() {\n  startEngineRun(root);\n}\nfunction bare() {\n  const profile = resolveEngineProfile(engine);\n  const runner = profile.bin;\n  spawnSync(runner, args);\n}\n"), ['commands/planted.js:7 runner']);
   assert.deepStrictEqual(planted("function a() {\n  // startEngineRun(root)\n  spawn(resolveClaudeRunnerBin(), args);\n}\n"), ['commands/planted.js:3 resolveClaudeRunnerBin()']);
+  // A nested helper's parameter can hide the expression's internal name.
+  for (const name of ['worker', 'worker$']) {
+    for (const helper of [
+      `function helper(${name})`,
+      `const helper = (${name}) =>`,
+      `let helper = async ${name} =>`,
+      `const helper = function nested(${name})`,
+    ]) {
+      const expression = (body) => `const launch = function ${name}(runner) {\n${body}\n  spawnSync(runner, args);\n};\n`;
+      assert.deepStrictEqual(planted(expression(`  ${helper} {\n    ${name}(resolveClaudeRunnerBin());\n  }`)), [], 'a nested parameter hides the internal name');
+      assert.deepStrictEqual(planted(expression(`  ${helper} {\n    const profile = resolveEngineProfile(engine);\n    ${name}(profile);\n  }`)), [], 'a profile argument to the hidden name belongs to the helper parameter');
+      assert.deepStrictEqual(planted(expression(`  ${helper} {\n    ${name}(resolveClaudeRunnerBin());\n  }\n  ${name}(resolveClaudeRunnerBin());`)), ['commands/planted.js:6 runner'], 'a closed helper does not hide a later internal call');
+      const captured = helper.replace(name, 'other');
+      assert.deepStrictEqual(planted(expression(`  ${captured} {\n    ${name}(resolveClaudeRunnerBin());\n  }`)), ['commands/planted.js:5 runner'], 'a helper without a matching parameter captures the internal name');
+    }
+  }
   const repo = path.join(__dirname, '..');
   const missing = [];
   let seen = 0;
