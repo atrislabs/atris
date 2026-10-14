@@ -99,6 +99,16 @@ test('last step skips writes to the member own log', () => {
       `${at(40)} m-7 started: write a teammate note`,
       `${at(30)} m-7 running: cat >> atris/team/scribe/logs/2026-10-13.md`,
     ],
+    stager: [
+      `${at(40)} m-11 started: land the fix`,
+      `${at(30)} m-11 running: npm test`,
+      `${at(20)} m-11 running: git add lib/fix.js atris/team/stager/logs/today.md`,
+    ],
+    cutter: [
+      `${at(40)} m-12 started: cut lines`,
+      `${at(30)} m-12 running: npm test`,
+      `${at(20)} m-12 running: mkdir -p atris/team/cutter/logs && cat >> atris/team/cut`,
+    ],
   });
   try {
     const by = Object.fromEntries(readBoard({ dir, now: NOW }).map((r) => [r.member, r]));
@@ -106,6 +116,8 @@ test('last step skips writes to the member own log', () => {
     assert.equal(by.architect.ago, '50s ago', 'the log write still counts as activity');
     assert.match(by.scribe.step, /^running: cat >> atris\/team\/scribe\/logs/, 'falls back when only housekeeping happened');
     assert.match(by.helper.step, /scribe\/logs/, 'another member log is real work');
+    assert.match(by.stager.step, /^running: git add lib\/fix\.js/, 'staging code with the log is real work');
+    assert.equal(by.cutter.step, 'running: npm test', 'a log path cut off at the line limit is still housekeeping');
   } finally {
     fs.rmSync(dir, { recursive: true, force: true });
   }
@@ -114,20 +126,21 @@ test('last step skips writes to the member own log', () => {
 test('members that finished over an hour ago hide unless --all', () => {
   const dir = fakeDir({
     old: [`${at(7200)} m-8 started: yesterday's job`, `${at(3700)} m-8 finished: ok`],
+    edge: [`${at(7200)} m-13 started: right on the hour`, `${at(3600)} m-13 finished: ok`],
     fresh: [`${at(600)} m-9 started: just landed`, `${at(500)} m-9 finished: failed`],
     stuck: [`${at(9000)} m-10 started: long quiet`, `${at(8000)} m-10 running: npm test`],
   });
   try {
-    assert.deepEqual(readBoard({ dir, now: NOW }).map((r) => r.member), ['fresh', 'stuck']);
-    assert.deepEqual(readBoard({ dir, now: NOW, all: true }).map((r) => r.member), ['fresh', 'old', 'stuck']);
+    assert.deepEqual(readBoard({ dir, now: NOW }).map((r) => r.member), ['fresh', 'edge', 'stuck'], 'exactly one hour is not older than one hour');
+    assert.deepEqual(readBoard({ dir, now: NOW, all: true }).map((r) => r.member), ['fresh', 'edge', 'old', 'stuck']);
 
     const env = { ...process.env, ATRIS_PROGRESS_DIR: dir };
     // Real clock: the fake logs are from 2026-10-13, so every finished member is old.
     const res = spawnSync(process.execPath, [cliPath, 'member', 'board'], { cwd: dir, env, encoding: 'utf8' });
     assert.equal(res.status, 0, res.stderr);
-    assert.doesNotMatch(res.stdout, /^(old|fresh)\s/m);
+    assert.doesNotMatch(res.stdout, /^(old|fresh|edge)\s/m);
     assert.match(res.stdout, /^stuck\s+quiet/m);
-    assert.match(res.stdout, /^2 finished over an hour ago, hidden\. --all shows them$/m);
+    assert.match(res.stdout, /^3 finished over an hour ago, hidden\. --all shows them$/m);
 
     const all = spawnSync(process.execPath, [cliPath, 'member', 'board', '--all'], { cwd: dir, env, encoding: 'utf8' });
     assert.equal(all.status, 0, all.stderr);
