@@ -137,6 +137,58 @@ test('tidy removes landed clean copies and leaves everything else to git and the
   }
 });
 
+test('tidy names private and shared locks even when the work has not landed', () => {
+  const fx = makeFixture();
+  try {
+    const copy = addCopy(fx, 'unlanded-locked', { commit: true });
+    runGit(['worktree', 'lock', '--reason', 'unfinished work', copy], fx.repo);
+    const privateDir = runGit(['rev-parse', '--absolute-git-dir'], copy);
+    const locks = [
+      path.join(privateDir, 'index.lock'),
+      path.join(privateDir, 'locked'),
+      path.join(fx.repo, '.git', 'refs', 'heads', 'master.lock'),
+    ];
+    const now = Date.now();
+    for (const [index, lock] of locks.entries()) {
+      fs.writeFileSync(lock, 'unfinished git work\n');
+      const aged = new Date(now - (7200 + index * 60) * 1000);
+      fs.utimesSync(lock, aged, aged);
+    }
+    for (const dryRun of [true, false]) {
+      const result = tidyMemberCopies({ repoRoot: fx.repo, dryRun, now });
+      assert.equal(result.aborted, null);
+      assert.equal(result.removed, 0);
+      assert.equal(byName(result, 'unlanded-locked').action, 'kept');
+      assert.match(byName(result, 'unlanded-locked').reason, /^work not landed yet, \d+m old; git locks:/);
+      for (const [index, lock] of locks.entries()) {
+        assert.ok(formatTidy(result).includes(`${lock} (${7200 + index * 60}s old)`), formatTidy(result));
+      }
+
+      const args = [path.resolve(__dirname, '../bin/atris.js'), 'member', 'tidy', '--dir', fx.copies];
+      if (dryRun) args.push('--dry-run');
+      const cli = spawnSync(process.execPath, args, {
+        cwd: fx.repo, encoding: 'utf8', timeout: 90000,
+        env: { ...process.env, ATRIS_NO_UPDATE_CHECK: '1' },
+      });
+      console.log(`command: node ${args.join(' ')}\n${cli.stdout.trim()}\nexit: ${cli.status}`);
+      assert.equal(cli.status, 0, cli.stderr || cli.stdout);
+      assert.match(cli.stdout, /kept\s+unlanded-locked\s+work not landed yet/);
+      for (const lock of locks) {
+        assert.ok(cli.stdout.includes(`${lock} (`), cli.stdout);
+        const age = Number(cli.stdout.split(`${lock} (`)[1].match(/^(\d+)s old\)/)?.[1]);
+        const elapsed = Math.floor((Date.now() - fs.statSync(lock).mtimeMs) / 1000);
+        assert.ok(age <= elapsed && elapsed - age <= 5, cli.stdout);
+        assert.ok(fs.existsSync(lock));
+      }
+      assert.ok(fs.existsSync(path.join(copy, 'unlanded-locked.txt')));
+      assert.ok(branchExists(fx.repo, 'unlanded-locked'));
+      assert.equal(fs.existsSync(path.join(fx.repo, '.atris/state/worktree_removals.jsonl')), false);
+    }
+  } finally {
+    fs.rmSync(fx.base, { recursive: true, force: true });
+  }
+});
+
 test('tidy keeps old private and shared git locks and reports every path and age', () => {
   const fx = makeFixture();
   try {
