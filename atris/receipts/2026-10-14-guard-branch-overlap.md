@@ -72,3 +72,7 @@ Same branch, commit `59952d00`. The lookup returns every lock with its age inste
 - `atris worktree cleanup --base HEAD --apply` on a fixture holding both locks: folder kept, two lines, `index.lock age=3 h` and `refs/heads/master.lock age=5 h`, exit 0. With the locks gone, the same command removed it, exit 0.
 
 Take into 1184: commits `f1b29117` and `59952d00` on `architect-1184-shared-lock-check`.
+
+## Owner-name test failure is not from 1184
+
+The sealed flights owner-name test fails the same on master (`a8b9f17b`), on 1184 (`a34aa48d`), and on the fix branch (`59952d00`): 1 of 2, exit 1 each. Cause: the owner lookup reads `git config user.name` from the folder the test runs in, and this checkout sets a local name (`T`) that hides the temporary home name. Run from a folder outside any repo, the test passes 2 of 2, exit 0. It does not block 1184 taking the two fix commits. Decision card: `atris/status/for-you.md`.
