@@ -2409,3 +2409,7 @@ npm publish
 ## Accepted-task revise refusal fixture setup
 
 - `test/commands.test.js:13608` checks that revise is refused on accepted work so the reward total stays current. Real-store creation at `test/commands.test.js:13621` saves one setup launch, resolves the display reference and closes in finally; claim, ready, accept, the refused revise and the XP status read remain on the CLI with every behavior assertion preserved.
+
+## Already-claimed claim fixture setup
+
+- `test/commands.test.js:13991` checks that a claim refused because another agent holds the task never suggests a next task. Real-store creation at `test/commands.test.js:14003` saves one setup launch, resolves the display reference and closes in finally; both claims and the conflict reason and empty suggestion assertions remain on the CLI.
