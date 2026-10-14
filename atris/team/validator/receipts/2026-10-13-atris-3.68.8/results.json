@@ -1,0 +1,48 @@
+[
+  {
+    "command": "git init",
+    "exit_code": 0,
+    "stdout": "Initialized empty Git repository in /private/var/folders/p2/s2tg3j6n1v9bwsbcqrjxnvnh0000gn/T/atris-3.68.8-validation-ovdm75kx/fresh-project/.git/\n",
+    "stderr": "hint: Using 'master' as the name for the initial branch. This default branch name\nhint: is subject to change. To configure the initial branch name to use in all\nhint: of your new repositories, which will suppress this warning, call:\nhint:\nhint: \tgit config --global init.defaultBranch <name>\nhint:\nhint: Names commonly chosen instead of 'master' are 'main', 'trunk' and\nhint: 'development'. The just-created branch can be renamed via this command:\nhint:\nhint: \tgit branch -m <name>\n",
+    "verdict": "PASS"
+  },
+  {
+    "command": "npx -y atris@3.68.8 init",
+    "exit_code": 0,
+    "stdout": "workspace files ready (18)\nteam members ready (6)\nmore members are available with atris member create <name>\nagent adapters ready (12)\nskills installed (42)\n\natris initialized.\nno commands to learn. tell your agent what you want in plain words.\n\nhey keshav, \"generate map.md, scan codebase, create\" is ready to claim.\n\nnext: atris task claim FRS-1 --as keshav\n",
+    "stderr": "",
+    "verdict": "PASS"
+  },
+  {
+    "command": "npx -y atris@3.68.8 update --yes",
+    "exit_code": 0,
+    "stdout": "\u2713 Created atris/policies/ folder\n\u2713 Updated team/validator/MEMBER.md\n\u2713 Updated team/launcher/MEMBER.md\n\u2713 Updated team/brainstormer/MEMBER.md\n\u2713 Updated team/researcher/MEMBER.md\n\u2713 Updated policies/ANTISLOP.md\n\u2713 Updated .claude/skills/atris/SKILL.md\n\n\u2713 Updated 6 file(s), 6 unchanged\n\nRun your AI agent again to use the latest specs and agent templates.\n\u2713 Team: 9 members exported to claude code, cursor, and codex, 27 files written\n",
+    "stderr": "",
+    "verdict": "PASS"
+  },
+  {
+    "command": "npx -y atris@3.68.8 member export",
+    "exit_code": 0,
+    "stdout": "9 members exported to claude code, cursor, and codex, already up to date\n",
+    "stderr": "",
+    "verdict": "PASS"
+  },
+  {
+    "command": "npx -y atris@3.68.8 member board --json",
+    "exit_code": 0,
+    "stdout": "{\n  \"ok\": true,\n  \"dir\": \"/Users/keshavrao/.atris/progress\",\n  \"members\": [\n    {\n      \"member\": \"architect\",\n      \"state\": \"done ok\",\n      \"job\": \"Write a short plain-words update for a develope...\",\n      \"step\": \"running: grep -oE '^Would write \\\\.[a-z]+/' /tmp...\",\n      \"ago\": \"1m ago\",\n      \"at\": 1791957733260,\n      \"idle\": false\n    },\n    {\n      \"member\": \"signal-scout\",\n      \"state\": \"done failed\",\n      \"job\": \"It learns.\",\n      \"step\": \"\",\n      \"ago\": \"1m ago\",\n      \"at\": 1791957709756,\n      \"idle\": false\n    },\n    {\n      \"member\": \"auto-improver\",\n      \"state\": \"done ok\",\n      \"job\": \"Two-hour improvement run on this repo. Each rou...\",\n      \"step\": \"running: git diff --check 00a73dfb~1 00a73dfb; ...\",\n      \"ago\": \"1m ago\",\n      \"at\": 1791957680220,\n      \"idle\": false\n    },\n    {\n      \"member\": \"executor\",\n      \"state\": \"quiet\",\n      \"job\": \"Ship Atris 3.68.8 from the latest origin/master...\",\n      \"step\": \"monitor\",\n      \"ago\": \"3m ago\",\n      \"at\": 1791957587615,\n      \"idle\": false\n    },\n    {\n      \"member\": \"alpha-scout\",\n      \"state\": \"done failed\",\n      \"job\": \"The team learns from it.\",\n      \"step\": \"\",\n      \"ago\": \"14m ago\",\n      \"at\": 1791956950196,\n      \"idle\": false\n    },\n    {\n      \"member\": \"validator\",\n      \"state\": \"done failed\",\n      \"job\": \"A daily verdict.\",\n      \"step\": \"\",\n      \"ago\": \"15m ago\",\n      \"at\": 1791956887105,\n      \"idle\": false\n    },\n    {\n      \"member\": \"demo\",\n      \"state\": \"done ok\",\n      \"job\": \"bounded work\",\n      \"step\": \"\",\n      \"ago\": \"38m ago\",\n      \"at\": 1791955508372,\n      \"idle\": false\n    },\n    {\n      \"member\": \"opus-overnight\",\n      \"state\": \"done ok\",\n      \"job\": \"Fix 'atris scoreboard' repo line: it counts onl...\",\n      \"step\": \"running: git add commands/scoreboard.js test/sc...\",\n      \"ago\": \"50m ago\",\n      \"at\": 1791954791813,\n      \"idle\": false\n    }\n  ]\n}\n",
+    "stderr": "",
+    "verdict": "PASS",
+    "json_valid": true,
+    "json_type": "dict"
+  },
+  {
+    "command": "npx -y atris@3.68.8 scoreboard --json",
+    "exit_code": 0,
+    "stdout": "{\n  \"date\": \"2026-10-13\",\n  \"today\": 629,\n  \"best\": {\n    \"date\": \"2026-06-14\",\n    \"count\": 1292\n  },\n  \"streak\": 129,\n  \"repo\": {\n    \"total\": 0,\n    \"you\": 0,\n    \"members\": 0\n  }\n}\n",
+    "stderr": "",
+    "verdict": "PASS",
+    "json_valid": true,
+    "json_type": "dict"
+  }
+]

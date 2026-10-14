@@ -1,0 +1,78 @@
+{
+  "ok": true,
+  "count": 9,
+  "members": [
+    {
+      "name": "brainstormer",
+      "role": "Idea Shaper",
+      "format": "directory",
+      "skills": 0,
+      "context": 0,
+      "version": "1.0.0"
+    },
+    {
+      "name": "customer-lead",
+      "role": "Customer Lead",
+      "format": "directory",
+      "skills": 1,
+      "context": 0,
+      "version": "2.0.0"
+    },
+    {
+      "name": "executor",
+      "role": "Builder",
+      "format": "directory",
+      "skills": 1,
+      "context": 0,
+      "version": "2.0.0"
+    },
+    {
+      "name": "improver",
+      "role": "Improver",
+      "format": "directory",
+      "skills": 0,
+      "context": 0,
+      "version": "1.0.0"
+    },
+    {
+      "name": "launcher",
+      "role": "Closer",
+      "format": "directory",
+      "skills": 0,
+      "context": 0,
+      "version": "1.0.0"
+    },
+    {
+      "name": "mission-lead",
+      "role": "Mission Lead",
+      "format": "directory",
+      "skills": 0,
+      "context": 0,
+      "version": "1.0.0"
+    },
+    {
+      "name": "navigator",
+      "role": "System Navigator",
+      "format": "directory",
+      "skills": 1,
+      "context": 0,
+      "version": "2.0.0"
+    },
+    {
+      "name": "researcher",
+      "role": "Deep Researcher",
+      "format": "directory",
+      "skills": 0,
+      "context": 0,
+      "version": "2.0.0"
+    },
+    {
+      "name": "validator",
+      "role": "Reviewer",
+      "format": "directory",
+      "skills": 1,
+      "context": 0,
+      "version": "2.0.0"
+    }
+  ]
+}

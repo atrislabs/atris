@@ -1,0 +1,89 @@
+{
+  "member_count": 9,
+  "agent_count": 9,
+  "checks": [
+    {
+      "member": "brainstormer",
+      "file": ".claude/agents/brainstormer.md",
+      "fields": {
+        "name": "brainstormer",
+        "description": "\"Shape ideas, explore possibilities, adapt to user depth. Use this agent when a task fits the Idea Shaper role on this project's Atris team.\""
+      },
+      "verdict": "PASS"
+    },
+    {
+      "member": "customer-lead",
+      "file": ".claude/agents/customer-lead.md",
+      "fields": {
+        "name": "customer-lead",
+        "description": "\"Keeps customer commitments visible, spots retention risk, and turns evidence into the next useful follow-up. Use this agent when a task fits the Customer Lead role on this project's Atris team.\""
+      },
+      "verdict": "PASS"
+    },
+    {
+      "member": "executor",
+      "file": ".claude/agents/executor.md",
+      "fields": {
+        "name": "executor",
+        "description": "\"Execute from build specs, one step at a time. Use this agent when a task fits the Builder role on this project's Atris team.\""
+      },
+      "verdict": "PASS"
+    },
+    {
+      "member": "improver",
+      "file": ".claude/agents/improver.md",
+      "fields": {
+        "name": "improver",
+        "description": "\"Proposes guarded member and workflow improvements from evidence. Use this agent when a task fits the Improver role on this project's Atris team.\""
+      },
+      "verdict": "PASS"
+    },
+    {
+      "member": "launcher",
+      "file": ".claude/agents/launcher.md",
+      "fields": {
+        "name": "launcher",
+        "description": "\"Document, capture learnings, publish, celebrate. Use this agent when a task fits the Closer role on this project's Atris team.\""
+      },
+      "verdict": "PASS"
+    },
+    {
+      "member": "mission-lead",
+      "file": ".claude/agents/mission-lead.md",
+      "fields": {
+        "name": "mission-lead",
+        "description": "\"Coordinates bounded Atris mission ticks from mission state to verified proof. Use this agent when a task fits the Mission Lead role on this project's Atris team.\""
+      },
+      "verdict": "PASS"
+    },
+    {
+      "member": "navigator",
+      "file": ".claude/agents/navigator.md",
+      "fields": {
+        "name": "navigator",
+        "description": "\"Transform messy human intent into precise execution plans. Use this agent when a task fits the System Navigator role on this project's Atris team.\""
+      },
+      "verdict": "PASS"
+    },
+    {
+      "member": "researcher",
+      "file": ".claude/agents/researcher.md",
+      "fields": {
+        "name": "researcher",
+        "description": "\"Find ground truth on any topic \u2014 competitors, standards, technologies, markets. Use this agent when a task fits the Deep Researcher role on this project's Atris team.\""
+      },
+      "verdict": "PASS"
+    },
+    {
+      "member": "validator",
+      "file": ".claude/agents/validator.md",
+      "fields": {
+        "name": "validator",
+        "description": "\"Validate execution, run tests, ensure quality before shipping. Use this agent when a task fits the Reviewer role on this project's Atris team.\""
+      },
+      "verdict": "PASS"
+    }
+  ],
+  "excluded": "atris/team/_template/MEMBER.md, confirmed absent from member list",
+  "verdict": "PASS"
+}
