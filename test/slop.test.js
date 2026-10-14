@@ -674,7 +674,24 @@ test('fix drops a dash after a quote that already ends its sentence', () => {
     '"Connect them looking backward." Steve Jobs',
     'Ask "what did we miss?" Then read the calls.',
     'They think "who made this?", that is the goal.',
-    '- "What did we miss?" summarizes calls',
+    '- "What did we miss?": summarizes calls',
+  ]);
+});
+
+test('fix gives a list label that is one whole quote a colon after the quote', () => {
+  // the skill zones one-pager lists sample questions, each with what it does
+  const file = tmpFile('quote-label.md', [
+    '- "What happened on the calls?" \u2014 summarizes transcripts',
+    '* \u201cShip it.\u201d \u2014 the motto we keep',
+    '- Ask "what did we miss?" \u2014 then read the calls',
+    '1. **what is it?** \u2014 clear product description',
+  ].join('\n'));
+  const { changes } = applyFixes([file], RULES);
+  assert.deepEqual(changes.map((c) => c.after), [
+    '- "What happened on the calls?": summarizes transcripts',
+    '* \u201cShip it.\u201d: the motto we keep',
+    '- Ask "what did we miss?" then read the calls',
+    '1. **what is it?** clear product description',
   ]);
 });
 

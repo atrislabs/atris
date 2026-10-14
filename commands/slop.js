@@ -73,8 +73,11 @@ function fixEmDash(s, { endsBlock = false } = {}) {
   if (heading) return s.replace(heading, '$1: ');
   const label = LIST_LABEL_DASH.exec(s) || LINE_LABEL_DASH.exec(s);
   // a label that already ends in its own punctuation, "**what is it?**",
-  // keeps it and just loses the dash, so no colon stacks on top
-  if (label) return `${label[1]}${label[2]}${/[.,;:!?][*_`"'\u201d\u2019]*$/.test(label[2]) ? '' : ':'}${s.length > label[0].length ? ' ' : ''}${fixEmDash(s.slice(label[0].length), { endsBlock })}`;
+  // keeps it and just loses the dash, so no colon stacks on top. A label that
+  // is one whole quote is a phrase being explained, so its colon goes after
+  // the closing quote: '- "What did we miss?": summarizes calls'.
+  const quoted = label && /^(?:"[^"]*"|\u201c[^\u201c\u201d]*\u201d)$/.test(label[2]);
+  if (label) return `${label[1]}${label[2]}${!quoted && /[.,;:!?][*_`"'\u201d\u2019]*$/.test(label[2]) ? '' : ':'}${s.length > label[0].length ? ' ' : ''}${fixEmDash(s.slice(label[0].length), { endsBlock })}`;
   return s
     // an aside never crosses a sentence end; dashes split by one are fixed alone
     .replace(/\s*\u2014\s*((?:(?![.!?]["'\u201d\u2019)]*\s)[^\u2014])*[^\s\u2014])\s*\u2014\s*(?=(.?))/g, (m, aside, next) => ` ${wrappedInParens(aside) ? aside : `(${aside})`}${next && !/[.,;:!?)]/.test(next) ? ' ' : ''}`)
