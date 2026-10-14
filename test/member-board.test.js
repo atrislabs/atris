@@ -398,9 +398,14 @@ test('short boards distinguish a hidden busy member earlier failure from a curre
       const changed = rows.map((r) => r.member === 'busy' ? { ...r, state } : r);
       assert.equal(renderBoard(changed, dir, 0, 60, 4).split('\n')[3],
         '3 more not shown (1 with earlier failure, timed out)');
-      const tiny = renderBoard(changed, dir, 0, 45, 4).split('\n');
+      const tiny = renderBoard(changed, dir, 0, 47, 4).split('\n');
       assert.equal(tiny.length, 4);
-      assert.equal(tiny[3], '3 more not shown (1 with earlier failure)');
+      assert.equal(tiny[3], '3 more not shown (1 earlier failure, timed out)');
+      assert.equal(renderBoard(changed, dir, 0, 36, 4).split('\n')[3],
+        '3 more not shown (1 earlier failure)');
+      for (const width of [36, 47]) {
+        assert.ok(renderBoard(changed, dir, 0, width, 4).split('\n')[3].length <= width);
+      }
     }
     const ok = rows.map((r) => r.member === 'busy' ? { ...r, last_result: 'ok' } : r);
     assert.equal(renderBoard(ok, dir, 0, 100, 4).split('\n')[3], '3 more not shown, the window is too short');
