@@ -704,7 +704,12 @@ test('board leaves rows off the bottom, not the top, when it is taller than the 
   assert.equal(short[0], '5 members: 1 done failed, 4 working', 'the count line stays and counts everyone');
   assert.match(short[2], /^member\s+state\s/, 'the header stays');
   assert.match(short[3], /^checker\s+done failed\s/, 'trouble sorts first, so it stays');
-  assert.equal(short.at(-1), '3 more members did not fit; a taller window shows them');
+  assert.equal(short.at(-1), '3 more members did not fit: bo, cy, di', 'the hidden members are named');
+  assert.match(renderBoard(rows, '/x', 0, 40, [], 9), /^3 more members did not fit: bo, cy, di$/m, 'names that fit 40 columns show');
+  const narrow = renderBoard(rows, '/x', 0, 30, [], 10).split('\n');
+  assert.ok(narrow.length <= 10, narrow.join('\n'));
+  assert.match(narrow.join('\n'), /^\d more members did not fit$/m, `names that would wrap give way to the count:\n${narrow.join('\n')}`);
+  assert.ok(!narrow.some((l) => /\b(bo|cy|di)\b/.test(l)), 'so no hidden name shows');
   assert.match(renderBoard(rows, '/x', 0, null, [], 2), /^checker\s/m, 'at least one row always shows');
 });
 
@@ -719,7 +724,7 @@ test('watch fits a screen LINES tall, footer included', () => {
     const screen = watch.stdout.replace(/\x1b\[\d*[A-Z]/g, '').split('\n').slice(0, -1);
     assert.ok(screen.length < 10, `leaves the cursor on the last row, not past it:\n${screen.join('\n')}`);
     assert.equal(screen[0], '6 members: 6 working');
-    assert.match(screen.join('\n'), /\d more members did not fit; a taller window shows them/);
+    assert.match(screen.join('\n'), /^\d more members did not fit: (\w+, )*\w+$/m);
     assert.match(screen.at(-1), /^redrawn at /);
   } finally {
     fs.rmSync(dir, { recursive: true, force: true });
