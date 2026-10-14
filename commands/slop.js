@@ -96,11 +96,13 @@ function wrappedInParens(s) {
 }
 
 // A word-only phrase of one to four words, then a list of three or more of
-// them separated by commas, ending the sentence or the line. Items that
+// them separated by commas, ending the sentence or the line, or closing a
+// bracket the dash sits inside: "(the mechanical 80%: scaffolding, grids,
+// state matrices)", so the number is not read as one of the items. Items that
 // open with "when" or "if" are clauses, not a list: "when it fills, if it
 // stalls, drain it".
 const LIST_ITEM = "[A-Za-z0-9][\\w'/-]*(?: [A-Za-z0-9][\\w'/-]*){0,3}";
-const LIST_AFTER_DASH = new RegExp(`(?<=[\\w)\\]*_\`])\\s*\u2014\\s*(?!(?:and|but|or|nor|so|yet|then|once|when|whenever|if|unless|until|after|before|while) )(?=${LIST_ITEM}(?:, ${LIST_ITEM}){1,}, (?:and |or )?${LIST_ITEM}(?:[.!?](?:\\s|$)|$))`, 'g');
+const LIST_AFTER_DASH = new RegExp(`(?<=[\\w)\\]*_\`%])\\s*\u2014\\s*(?!(?:and|but|or|nor|so|yet|then|once|when|whenever|if|unless|until|after|before|while) )(?=${LIST_ITEM}(?:, ${LIST_ITEM}){1,}, (?:and |or )?${LIST_ITEM}(?:[.!?](?:\\s|$)|$|(\\))))`, 'g');
 
 // A lone dash with a word before it, then a subject pronoun and its verb:
 // "it survives", "they'd pass", "that's the goal". "This" and its kin count
@@ -335,7 +337,7 @@ function fixEmDash(s, { endsBlock = false, startsBlock = false } = {}) {
     .replace(/(\.["'\u201d\u2019]+|[!?]["'\u201d\u2019]+(?=\s*\u2014\s*[A-Z]))\s*\u2014\s*(?=\S)/g, '$1 ')
     // a dash that opens a list of three or more short items running to the
     // end of the sentence introduces it: "sweep: arxiv, github, web."
-    .replace(LIST_AFTER_DASH, ': ')
+    .replace(LIST_AFTER_DASH, (m, close, at, whole) => (close && !insideParens(whole.slice(0, at)) ? m : ': '))
     // a dash between two full clauses joins them; a comma there is a splice
     // ("this isn't optional, it's part of design"), so it takes a semicolon.
     // The left side needs two words of its own sentence to be a clause, so

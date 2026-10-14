@@ -714,6 +714,10 @@ test('fix gives a dash that opens a short list a colon', () => {
     'Works with Docs, Sheets, Slides \u2014 creates a full copy.',
     'It held \u2014 and we ran, tested, shipped.',
     'We tried \u2014 one, two, three times it failed here today and then.',
+    // from the atris library design skill: a list that closes the bracket its
+    // dash sits in takes a colon too, so 80% is not read as one of the items
+    'Raise the floor (automate the mechanical 80% \u2014 scaffolding, grids, state matrices).',
+    'Run the gate \u2014 tests, docs, lint) after.',
   ].join('\n'));
   const { changes } = applyFixes([file], RULES);
   assert.deepEqual(changes.map((c) => c.after), [
@@ -723,6 +727,8 @@ test('fix gives a dash that opens a short list a colon', () => {
     'Works with Docs, Sheets, Slides, creates a full copy.',
     'It held, and we ran, tested, shipped.',
     'We tried, one, two, three times it failed here today and then.',
+    'Raise the floor (automate the mechanical 80%: scaffolding, grids, state matrices).',
+    'Run the gate, tests, docs, lint) after.',
   ]);
 });
 
