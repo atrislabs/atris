@@ -2389,3 +2389,7 @@ npm publish
 ## Duplicate receipt repair fixture setup
 
 - `test/commands.test.js:13377` checks that the reward status read repairs an exact duplicate receipt line. Real-store creation at `test/commands.test.js:13391` saves one setup launch, resolves the display reference and closes in finally; claim, ready, accept and the repairing status read remain on the CLI with every behavior assertion preserved.
+
+## Conflicting receipt fail-closed fixture setup
+
+- `test/commands.test.js:13420` checks that conflicting duplicate receipts make the reward status read fail closed with readable labels. Real-store creation at `test/commands.test.js:13434` saves one setup launch, resolves the display reference and closes in finally; claim, ready, accept and the fail-closed status read remain on the CLI with every behavior assertion preserved.
