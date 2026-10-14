@@ -1,0 +1,8 @@
+# scratch workspace with one saved video brief; a stand-in claude on the path kills itself
+$ atris youtube digest
+digest engine stopped by SIGKILL; killed (cause unknown)
+exit 1
+
+$ cat .atris/state/engine-resource.jsonl
+{"at":"2026-10-14T17:03:06.720Z","phase":"start","engine":"claude","task":"youtube digest","free_pct":78,"swap_used_mb":1172.75,"swap_total_mb":2048,"load":[4.12,4.53,4.4],"run_id":"0a454f02-50b3-43ac-a3dc-c016d67c72b7","pid":32720,"leaked_ssh_agents":779}
+{"at":"2026-10-14T17:03:07.024Z","phase":"end","engine":"claude","task":"youtube digest","free_pct":78,"swap_used_mb":1172.75,"swap_total_mb":2048,"load":[4.12,4.53,4.4],"run_id":"0a454f02-50b3-43ac-a3dc-c016d67c72b7","duration_ms":144,"signal":"SIGKILL","cause":"killed (cause unknown)"}

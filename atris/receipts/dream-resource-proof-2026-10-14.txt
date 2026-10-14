@@ -1,0 +1,14 @@
+# scratch workspace with one journal; a stand-in claude on the path kills itself
+$ atris dream --yes
+No dreams tonight: model stopped by SIGKILL; killed (cause unknown)
+Run me nightly: atris dream
+exit 0
+
+$ cat .atris/state/engine-resource.jsonl
+{"at":"2026-10-14T16:36:50.851Z","phase":"start","engine":"claude","task":"dream","free_pct":80,"swap_used_mb":1172.75,"swap_total_mb":2048,"load":[3.09,3.7,4.37],"run_id":"7ef5add0-a7e4-4d04-bd70-e0b97aab1359","pid":19026,"leaked_ssh_agents":715}
+{"at":"2026-10-14T16:36:51.343Z","phase":"end","engine":"claude","task":"dream","free_pct":80,"swap_used_mb":1172.75,"swap_total_mb":2048,"load":[3.09,3.7,4.37],"run_id":"7ef5add0-a7e4-4d04-bd70-e0b97aab1359","duration_ms":337,"signal":"SIGKILL","cause":"killed (cause unknown)"}
+{"at":"2026-10-14T16:36:51.347Z","phase":"start","engine":"claude","task":"dream","free_pct":80,"swap_used_mb":1172.75,"swap_total_mb":2048,"load":[3.09,3.7,4.37],"run_id":"3665b01d-aa45-4c3a-88c6-7dcd6b67747f","pid":19026,"leaked_ssh_agents":715}
+{"at":"2026-10-14T16:36:51.511Z","phase":"end","engine":"claude","task":"dream","free_pct":80,"swap_used_mb":1172.75,"swap_total_mb":2048,"load":[3.09,3.7,4.37],"run_id":"3665b01d-aa45-4c3a-88c6-7dcd6b67747f","duration_ms":4,"signal":"SIGKILL","cause":"killed (cause unknown)"}
+
+$ cat .atris/state/dreams.jsonl
+{"ts":"2026-10-14T16:36:50.850Z","kind":"dream_noop","reason":"model stopped by SIGKILL; killed (cause unknown)"}

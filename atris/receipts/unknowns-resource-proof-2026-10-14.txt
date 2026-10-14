@@ -1,0 +1,13 @@
+$ ATRIS_RUNNER_BIN=sh ATRIS_RUNNER_COMMAND_TEMPLATE='sh -c "kill -KILL $$"' atris unknowns "should the sweep run hourly"
+
+1 unknown written to ledger
+exit 0
+
+$ atris unknowns list
+01M4XJ3DJPGYG3EZT7XHGYG3EZ unknown_unknown costly
+  Model unavailable for blindspot pass. Re-run after configuring the shared runner/API key. Reason: runner stopped by SIGKILL; killed (cause unknown)
+exit 0
+
+$ cat .atris/state/engine-resource.jsonl
+{"at":"2026-10-14T15:57:07.376Z","phase":"start","engine":"runner","task":"unknowns","free_pct":80,"swap_used_mb":1172.75,"swap_total_mb":2048,"load":[3.14,3.18,3.37],"run_id":"6eae11c8-cd24-4adb-9974-86967a255268","pid":83096,"leaked_ssh_agents":607}
+{"at":"2026-10-14T15:57:07.538Z","phase":"end","engine":"runner","task":"unknowns","free_pct":80,"swap_used_mb":1172.75,"swap_total_mb":2048,"load":[3.14,3.18,3.37],"run_id":"6eae11c8-cd24-4adb-9974-86967a255268","duration_ms":7,"signal":"SIGKILL","cause":"killed (cause unknown)"}

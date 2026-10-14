@@ -1,0 +1,28 @@
+The engine sweep now prints a guarded replacement beside a startup line that starts an ssh-agent with no check, verified by 134 passing checks, the real sweep, and a scratch shell run of the suggested line, exit 0.
+
+Files edited: lib/engine-resource.js, commands/engine.js, test/engine-resource.test.js, atris/MAP.md, atris/refs/MAP-NOTES.md, atris/team/executor/logs/2026-10-14.md, this receipt. Existing atris/TODO.md changes are not staged.
+Plan: skip lines that already check for an agent on the same line -> for a line that is only an eval, offer the same eval behind a reachable-socket test -> leave compound lines named without a guessed edit.
+
+Failing-first command: node --test --test-name-pattern='guarded line only|shell startup line' test/engine-resource.test.js
+Exit: 1. pass 0, fail 2.
+
+Rerunnable verification: node --test test/engine-resource.test.js test/engine-dispatch.test.js
+Exit: 0. tests 134; pass 134; fail 0.
+
+Real command: node bin/atris.js engine sweep
+Exit: 0.
+Output excerpt:
+1038 ssh-agents running, 1007 look leaked (no parent, older than 10 min, not in use by any live shell)
+likely source: ~/.zshrc line 1 starts a new ssh-agent in every shell that reads it; to start one only when none is reachable, change it to: [ -S "$SSH_AUTH_SOCK" ] || eval "$(ssh-agent -s)"
+nothing was stopped. run atris engine sweep --apply to stop them.
+
+Suggested line checked in a scratch zsh (zsh -f, run from /tmp):
+socket reachable: agents before 1038 after 1038
+no socket: started pid 82830
+stopped the test agent 82830
+Exit: 0. The test agent it started was stopped with ssh-agent -k; no other agent was touched.
+
+The home startup file was not changed; that edit stays with the human.
+Metric: two failing-first assertions, 134 checks passed, the sweep now hands over a tested one-line fix for the source of 1007 leaked agents.
+next_push: add the same likely source line and fix to the landing status, where the leaked count is seen every hour, so the cause shows without running the sweep.
+layer: capabilities

@@ -119,7 +119,7 @@ function repoMapAuditReportsClean(cwd) {
  * Scan workspace for the next thing worth doing.
  * Returns { task, why, kind } or null.
  */
-async function suggestNextTask(cwd, skipped = new Set(), { auto = false } = {}) {
+async function suggestNextTask(cwd, skipped = new Set(), { auto = false, problems = null } = {}) {
   const atrisDir = path.join(cwd, 'atris');
   const suggestions = [];
 
@@ -344,7 +344,9 @@ async function suggestNextTask(cwd, skipped = new Set(), { auto = false } = {}) 
         kind: 'imagined',
         priority: 99
       };
-    } catch {
+    } catch (err) {
+      // An engine that never answered is not an idle workspace; tell the caller.
+      if (problems && err && err.launchFailed) problems.push(String(err.message || '').split('\n')[0]);
       return null;
     }
   }
@@ -607,6 +609,8 @@ function executePhaseDetailed(phase, context, options = {}) {
 
   let rosterRunner = null;
   let startedMs = Date.now();
+  // Prep writes its own pair of readings inside the pass, before this launch's.
+  let endResource = () => null;
   try {
     let cmd = options.cmdOverride;
     if (!cmd) {
@@ -638,6 +642,12 @@ function executePhaseDetailed(phase, context, options = {}) {
     const env = { ...process.env };
     delete env.CLAUDECODE;
     startedMs = Date.now();
+    // Machine memory and load at both ends of the launch, so a phase killed
+    // with SIGKILL says whether the machine was short on memory.
+    endResource = require('../lib/engine-resource').startEngineRun(process.cwd(), {
+      engine: (rosterRunner && rosterRunner.engineId) || 'runner',
+      task: `autopilot ${phase}`,
+    });
     const output = execPhaseCommandSync(cmd, {
       cwd: process.cwd(),
       encoding: 'utf8',
@@ -648,10 +658,12 @@ function executePhaseDetailed(phase, context, options = {}) {
     });
 
     try { fs.unlinkSync(tmpFile); } catch {}
+    endResource();
     recordPhaseRosterRun(process.cwd(), phase, rosterRunner, startedMs, { outcome: 'landed', stdout: output || '' });
     return { prompt, output: output || '' };
   } catch (err) {
     try { fs.unlinkSync(tmpFile); } catch {}
+    const resourceEnd = endResource(err);
     recordPhaseRosterRun(process.cwd(), phase, rosterRunner, startedMs, phaseFailureOutcome(err, rosterRunner), err);
     if (isPhaseTimeoutError(err)) {
       // A roster worker that stalls sits out the cooldown, so the next
@@ -664,7 +676,8 @@ function executePhaseDetailed(phase, context, options = {}) {
       throw new Error(`${phase} phase timed out after ${timeout / 1000}s (configured runner hit the wall; any work it committed survives, reconcile from pre-tick HEADs)`);
     }
     if (isPhaseKillError(err)) {
-      throw new Error(`${phase} phase killed by ${err.signal || 'a signal'} before the ${timeout / 1000}s wall, not a timeout; check memory pressure or an external supervisor`);
+      const cause = resourceEnd && resourceEnd.cause ? `${resourceEnd.cause}; ` : '';
+      throw new Error(`${phase} phase killed by ${err.signal || 'a signal'} before the ${timeout / 1000}s wall, not a timeout; ${cause}check memory pressure or an external supervisor`);
     }
     if (err.stdout) {
       return { prompt, output: err.stdout };
@@ -1525,6 +1538,7 @@ function defaultPlanReviewExecutor(prompt, { cwd, timeout = 180000 } = {}) {
   fs.writeFileSync(tmpFile, prompt);
   let runner = null;
   let startedMs = Date.now();
+  let endResource = () => null;
   try {
     runner = buildPlanReviewRunner(tmpFile, cwd, timeout);
     const cmd = runner.command;
@@ -1532,6 +1546,12 @@ function defaultPlanReviewExecutor(prompt, { cwd, timeout = 180000 } = {}) {
     const env = { ...process.env };
     delete env.CLAUDECODE;
     startedMs = Date.now();
+    // Machine memory and load at both ends of the review, so one killed with
+    // SIGKILL says whether the machine was short on memory.
+    endResource = require('../lib/engine-resource').startEngineRun(cwd, {
+      engine: (runner && runner.engineId) || 'runner',
+      task: 'autopilot plan review',
+    });
     const output = execPhaseCommandSync(cmd, {
       cwd,
       encoding: 'utf8',
@@ -1540,11 +1560,15 @@ function defaultPlanReviewExecutor(prompt, { cwd, timeout = 180000 } = {}) {
       maxBuffer: 10 * 1024 * 1024,
       env,
     });
+    endResource();
     recordPhaseRosterRun(cwd, 'plan review', runner, startedMs, { outcome: 'landed', stdout: output || '' });
     return output || '';
   } catch (err) {
+    const end = endResource(err);
     recordPhaseRosterRun(cwd, 'plan review', runner, startedMs, phaseFailureOutcome(err, runner), err);
     if (err.stdout) return err.stdout;
+    // A kill leaves no report of its own, so the error names the likely cause.
+    if (end && end.cause && err instanceof Error) err.message = `${err.message}; ${end.cause}`;
     throw err;
   } finally {
     try { fs.unlinkSync(tmpFile); } catch {}
@@ -1557,6 +1581,9 @@ function defaultPlanReviewExecutor(prompt, { cwd, timeout = 180000 } = {}) {
  */
 function defaultCodexExecutor(prompt, { cwd, timeout = 180000 } = {}) {
   const cmd = process.env.ATRIS_CODEX_CMD || 'codex';
+  // Machine memory and load at both ends of the signer, so one killed with
+  // SIGKILL says whether the machine was short on memory.
+  const endResource = require('../lib/engine-resource').startEngineRun(cwd, { engine: 'codex', task: 'autopilot codex review' });
   const proc = spawnSync(cmd, ['-p', prompt], {
     cwd,
     encoding: 'utf8',
@@ -1575,8 +1602,18 @@ function defaultCodexExecutor(prompt, { cwd, timeout = 180000 } = {}) {
       if (sweepErr.code !== 'ESRCH') throw sweepErr;
     }
   }
+  // spawnSync does not throw, so a failure is passed in the thrown shape.
+  const failed = proc.error || proc.signal || proc.status !== 0;
+  const end = endResource(failed ? {
+    code: proc.error && proc.error.code,
+    signal: proc.signal,
+    stderr: proc.stderr,
+    message: proc.error ? proc.error.message : `codex exited with status ${proc.status}`,
+  } : null);
+  const cause = end && end.cause ? `; ${end.cause}` : '';
   if (proc.status !== 0 && !proc.stdout) {
-    throw new Error(`codex exited with status ${proc.status}: ${proc.stderr || 'no output'}`);
+    const how = proc.signal ? `was stopped by ${proc.signal}` : `exited with status ${proc.status}`;
+    throw new Error(`codex ${how}: ${proc.stderr || 'no output'}${cause}`);
   }
   return proc.stdout || '';
 }
@@ -3268,10 +3305,14 @@ Reply with the JSON array and nothing else.`;
   fs.writeFileSync(tmpFile, prompt);
 
   let output = '';
+  let endResource = () => null;
   try {
     const cmd = buildRunnerCommand({ promptFile: tmpFile });
     const env = { ...process.env };
     delete env.CLAUDECODE;
+    // Machine memory and load at both ends of the proposal, so one killed
+    // with SIGKILL says whether the machine was short on memory.
+    endResource = require('../lib/engine-resource').startEngineRun(cwd, { engine: 'runner', task: 'horizon proposal' });
     output = execPhaseCommandSync(cmd, {
       cwd,
       encoding: 'utf8',
@@ -3280,13 +3321,18 @@ Reply with the JSON array and nothing else.`;
       maxBuffer: 10 * 1024 * 1024,
       env
     }).toString();
+    endResource();
   } catch (err) {
+    const end = endResource(err);
+    // launchFailed marks errors where the engine never answered.
     if (isPhaseTimeoutError(err)) {
-      throw new Error(`horizon-proposal phase timed out after ${PHASE_TIMEOUT / 1000}s`);
+      throw Object.assign(new Error(`horizon-proposal phase timed out after ${PHASE_TIMEOUT / 1000}s`), { launchFailed: true });
     }
     if (isPhaseKillError(err)) {
-      throw new Error(`horizon-proposal phase killed by ${err.signal || 'a signal'} before the ${PHASE_TIMEOUT / 1000}s wall, not a timeout`);
+      const cause = end && end.cause ? `; ${end.cause}` : '';
+      throw Object.assign(new Error(`horizon-proposal phase killed by ${err.signal || 'a signal'} before the ${PHASE_TIMEOUT / 1000}s wall, not a timeout${cause}`), { launchFailed: true });
     }
+    if (err && typeof err === 'object') err.launchFailed = true;
     throw err;
   } finally {
     try { fs.unlinkSync(tmpFile); } catch {}
@@ -3470,18 +3516,23 @@ async function autopilotAtris(description, options = {}) {
       break;
     }
 
-    const suggestion = await suggestNextTask(cwd, skipped, { auto });
+    const problems = [];
+    const suggestion = await suggestNextTask(cwd, skipped, { auto, problems });
 
     if (!suggestion) {
+      // A failed proposal launch must not read as a clean workspace.
+      const proposalFailure = problems[0] ? `I could not ask the engine for new work: ${problems[0]}` : '';
       tickOutcome = 'idle';
-      tickOutcomeText = 'I checked the repo and found no work to pick up this tick.';
+      tickOutcomeText = proposalFailure
+        ? `I found no work to pick up this tick. ${proposalFailure}`
+        : 'I checked the repo and found no work to pick up this tick.';
       tickNextStep = 'scan for new signals and propose the next horizon';
       if (verbose) {
-        console.log('  nothing to do. workspace is clean.');
+        console.log(proposalFailure ? `  nothing to do. ${proposalFailure}` : '  nothing to do. workspace is clean.');
       } else {
         printPlainBlock([
           'I found no work this tick.',
-          'The workspace looks clean.',
+          proposalFailure || 'The workspace looks clean.',
           '',
           'Next I will stop until a new signal appears.'
         ].join('\n'));
@@ -3956,10 +4007,14 @@ Search the codebase to verify. Reply: YES <reason> or NO <reason>`;
   const tmpFile = path.join(cwd, '.staleness-prompt.tmp');
   fs.writeFileSync(tmpFile, prompt);
 
+  let endResource = () => null;
   try {
     const env = { ...process.env };
     delete env.CLAUDECODE;
     const cmd = buildRunnerCommand({ promptFile: tmpFile, allowedTools: 'Bash,Read,Glob,Grep' });
+    // Machine memory and load at both ends of the check, so one killed with
+    // SIGKILL says whether the machine was short on memory.
+    endResource = require('../lib/engine-resource').startEngineRun(cwd, { engine: 'runner', task: 'staleness check' });
     const output = execPhaseCommandSync(cmd, {
       cwd,
       encoding: 'utf8',
@@ -3968,6 +4023,7 @@ Search the codebase to verify. Reply: YES <reason> or NO <reason>`;
       maxBuffer: 2 * 1024 * 1024,
       env
     }).trim();
+    endResource();
 
     try { fs.unlinkSync(tmpFile); } catch {}
 
@@ -3980,7 +4036,10 @@ Search the codebase to verify. Reply: YES <reason> or NO <reason>`;
   } catch (err) {
     try { fs.unlinkSync(tmpFile); } catch {}
     // On timeout or crash, treat as unverifiable, conservative default
-    return { fresh: false, reasoning: `Model check failed: ${(err.message || '').slice(0, 100)}` };
+    // A kill leaves no report of its own, so the reason names the likely cause.
+    const end = endResource(err);
+    const cause = end && end.cause ? `; ${end.cause}` : '';
+    return { fresh: false, reasoning: `Model check failed: ${(err.message || '').slice(0, 100)}${cause}` };
   }
 }
 
@@ -3992,6 +4051,7 @@ async function autopilotFromTodo(options = {}) {
 }
 
 module.exports = {
+  askModel,
   snapshotRepoHeads,
   diffAdvancedRepoHeads,
   reconcileTimedOutTick,

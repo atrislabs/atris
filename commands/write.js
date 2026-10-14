@@ -341,7 +341,17 @@ function coach(argv, root = process.cwd()) {
 
   if (!offline && claudeAvailable()) {
     const prompt = coachPrompt({ topic, beats, counts, findings, planText, draftText, currentBeat: current.title });
+    // Machine memory and load at both ends of the launch, so one killed with
+    // SIGKILL says whether the machine was short on memory.
+    const endResource = require('../lib/engine-resource').startEngineRun(root, { engine: 'claude', task: 'write coach' });
     const res = spawnSync('claude', ['-p', prompt], { encoding: 'utf8', timeout: 120000, maxBuffer: 1024 * 1024 });
+    // spawnSync does not throw, so a failure is passed in the thrown shape.
+    const end = endResource(res.error || res.signal || res.status !== 0 ? {
+      code: res.error && res.error.code,
+      signal: res.signal,
+      stderr: res.stderr,
+      message: res.error ? res.error.message : `claude exited ${res.status}`,
+    } : null);
     const out = (res.stdout || '').trim();
     if (res.status === 0 && /QUESTION:/.test(out)) {
       console.log(out.split('\n').map((l) => `  ${l}`).join('\n'));
@@ -350,7 +360,8 @@ function coach(argv, root = process.cwd()) {
       console.log(`\n  your move: answer under "## ${current.title}" in draft.md, then \`atris write status\`\n`);
       return 0;
     }
-    console.log('  (claude coach unavailable, falling back to the offline coach)\n');
+    const stopped = end && end.cause ? `claude coach stopped by ${res.signal}; ${end.cause}` : 'claude coach unavailable';
+    console.log(`  (${stopped}, falling back to the offline coach)\n`);
   }
 
   // Offline coach: still proactive, still gets you going. Seeds + one question.

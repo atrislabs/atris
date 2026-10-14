@@ -1,0 +1,14 @@
+# scratch workspace; roster build worker is claude; a stand-in claude on the path kills itself
+$ atris link "a sled" "a dog"
+link: the engine did not answer: exit unknown
+exit 1
+
+$ cat .atris/state/engine-resource.jsonl
+{"at":"2026-10-14T16:46:27.963Z","phase":"start","engine":"claude","task":"ask link","free_pct":80,"swap_used_mb":1172.75,"swap_total_mb":2048,"load":[3.33,3.56,3.97],"run_id":"bdcb1a08-37c4-4971-a534-5924be18bc44","pid":77452,"leaked_ssh_agents":740}
+{"at":"2026-10-14T16:46:28.340Z","phase":"end","engine":"claude","task":"ask link","free_pct":80,"swap_used_mb":1172.75,"swap_total_mb":2048,"load":[3.33,3.56,3.97],"run_id":"bdcb1a08-37c4-4971-a534-5924be18bc44","duration_ms":212,"signal":"SIGKILL","cause":"killed (cause unknown)"}
+
+$ atris engine sweep
+no sweep recorded yet
+last SIGKILL: claude on ask link at 2026-10-14 16:46 UTC, killed (cause unknown), 80% memory free
+0 of 1 SIGKILL ended with machine memory low
+exit 0

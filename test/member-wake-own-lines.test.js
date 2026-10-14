@@ -28,7 +28,7 @@ async function openWindow(t, wakeArgs) {
     // c is already working, started from another window.
     listMembers: () => [{ name: 'a' }, { name: 'b' }, { name: 'c', live: true }],
     pickTask: (name) => (tasks[name] ? withCheck(tasks[name][0]) : null),
-    spawn: (name, onExit) => { exits.set(name, onExit); },
+    spawn: (name, onExit, onClaim) => { exits.set(name, onExit); onClaim(tasks[name][0]); },
     now: () => now,
     print: (line) => lines.push(line),
     sleep: () => new Promise(() => {}),

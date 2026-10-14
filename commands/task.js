@@ -255,7 +255,7 @@ atris task - durable local task state (SQLite, gitignored)
   atris task archive <id> --reason "..." [--from-failed]
                                            Sweep off-roadmap/duplicate work as archived (not failed);
                                            --from-failed opts in to relabel a fail-closed row (never done)
-  atris task reopen <id> [--reason "..."]  Send a done, failed, or archived task back to open
+  atris task reopen <id> [--reason "..."]  Send a done, waiting, failed, or archived task back to open
   atris task clear-done [--before <days>] [--dry-run] [--json]  Archive completed rows, oldest first
   atris task prune-test-junk [--yes] [--vacuum] [--json]
                                            Count rows test runs left from temp folders; --yes backs up the db, then removes them
@@ -9774,7 +9774,7 @@ function cmdReopen(args) {
   const db = taskDb.open();
   const taskId = requireTaskId(taskDb, db, id, 'atris task reopen');
   const actor = String(flag(args, '--as') || DEFAULT_OWNER);
-  const result = taskDb.reopenTask(db, { id: taskId, actor, reason });
+  const result = taskDb.reopenTask(db, { id: taskId, actor, reason, fromReview: true });
   if (!result.reopened) {
     const detail = `reopen failed: ${taskId} ${result.reason}`;
     if (wantsJson(args)) {

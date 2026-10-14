@@ -65,12 +65,16 @@ function runScout(question, { dir, model, engine, timeoutMs }) {
   return new Promise((resolve) => {
     const eng = ENGINES[engine];
     const [cmd, cmdArgs] = eng.argv(scoutPrompt(question, dir), model);
+    // Machine memory and load at both ends of the run, so a SIGKILL says
+    // whether it was the time limit, low memory, or an unknown cause.
+    const endResource = require('../lib/engine-resource').startEngineRun(process.cwd(), { engine, task: 'scout' });
     const child = spawn(cmd, cmdArgs, { cwd: dir, stdio: ['ignore', 'pipe', 'pipe'] });
 
     let out = '';
     let err = '';
     const timer = setTimeout(() => {
       child.kill('SIGKILL');
+      endResource({ code: 'ETIMEDOUT', signal: 'SIGKILL' });
       resolve({ question, ok: false, text: `timed out after ${timeoutMs / 1000}s` });
     }, timeoutMs);
 
@@ -78,11 +82,15 @@ function runScout(question, { dir, model, engine, timeoutMs }) {
     child.stderr.on('data', (d) => { err += d; });
     child.on('error', (e) => {
       clearTimeout(timer);
+      endResource(e);
       resolve({ question, ok: false, text: `failed to spawn ${cmd}: ${e.message}` });
     });
-    child.on('close', (code) => {
+    child.on('close', (code, signal) => {
       clearTimeout(timer);
+      // The child does not throw, so a failure is passed in the thrown shape.
+      const end = endResource(code === 0 ? null : { signal, stderr: err, message: `${cmd} exited ${code}` });
       if (code === 0 && out.trim()) resolve({ question, ok: true, text: eng.parse(out) });
+      else if (signal) resolve({ question, ok: false, text: `stopped by ${signal}${end && end.cause ? `; ${end.cause}` : ''}` });
       else resolve({ question, ok: false, text: (err.trim() || out.trim() || `exit ${code}`) });
     });
   });

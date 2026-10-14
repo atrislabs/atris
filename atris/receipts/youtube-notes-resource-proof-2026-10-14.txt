@@ -1,0 +1,17 @@
+# scratch Atris workspace; stand-in yt-dlp writes one caption line (no network); stand-in claude kills itself; writer pinned to haiku
+$ atris youtube notes 'https://www.youtube.com/watch?v=sled123'
+<repo>/scripts/det/ytnotes: line 312: 21146 Killed: 9               perl -e '$seconds = shift @ARGV; alarm $seconds; exec @ARGV or do { print STDERR "$ARGV[0]: not installed\n"; exit 127 }' "$seconds" "$@"
+claude stopped by SIGKILL; killed (cause unknown)
+No notes were written. The transcript is saved at <work>/ytnotes/yt_sled123.clean.txt
+Paid notes, 5 credits, refunded if it fails: atris youtube process "https://www.youtube.com/watch?v=sled123"
+exit 3
+
+$ cat .atris/state/engine-resource.jsonl
+{"at":"2026-10-14T17:14:17.483Z","phase":"start","engine":"claude","task":"youtube notes","free_pct":80,"swap_used_mb":1172.75,"swap_total_mb":2048,"load":[3.76,3.67,3.93],"run_id":"ac77c5b5-7994-4897-834b-f7772878b21f","pid":21020,"leaked_ssh_agents":807}
+{"at":"2026-10-14T17:14:18.003Z","phase":"end","engine":"claude","task":"youtube notes","free_pct":80,"swap_used_mb":1172.75,"swap_total_mb":2048,"load":[3.76,3.67,3.93],"run_id":"ac77c5b5-7994-4897-834b-f7772878b21f","duration_ms":337,"signal":"SIGKILL","cause":"killed (cause unknown)"}
+
+$ atris engine sweep
+no sweep recorded yet
+last SIGKILL: claude on youtube notes at 2026-10-14 17:14 UTC, killed (cause unknown), 80% memory free
+0 of 1 SIGKILL ended with machine memory low
+exit 0

@@ -1,0 +1,13 @@
+# scratch workspace; a stand-in claude on PATH passes the installed check, and the runner kills itself
+$ ATRIS_RUNNER_COMMAND_TEMPLATE='sh -c "kill -KILL $$"' atris engine test claude
+
+  ✗ claude       FAIL, did not reply OK (exit null, signal SIGKILL); killed (cause unknown)
+
+  1 engine failed: claude
+  fix the login/binary, then re-run: atris engine test claude
+
+exit 1
+
+$ cat .atris/state/engine-resource.jsonl
+{"at":"2026-10-14T16:24:19.710Z","phase":"start","engine":"claude","task":"engine probe","free_pct":80,"swap_used_mb":1172.75,"swap_total_mb":2048,"load":[6.1,5.6,5.24],"run_id":"267ba38b-834b-487f-a069-cbaf64604afd","pid":66771,"leaked_ssh_agents":686}
+{"at":"2026-10-14T16:24:19.883Z","phase":"end","engine":"claude","task":"engine probe","free_pct":80,"swap_used_mb":1172.75,"swap_total_mb":2048,"load":[6.1,5.6,5.24],"run_id":"267ba38b-834b-487f-a069-cbaf64604afd","duration_ms":8,"signal":"SIGKILL","cause":"killed (cause unknown)"}

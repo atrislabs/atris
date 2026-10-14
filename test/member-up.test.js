@@ -26,9 +26,10 @@ function fakeTeam(members, tasks = {}) {
       picks.push(name);
       return withCheck((tasks[name] || []).find((t) => !taken.has(t.id))) || null;
     },
-    spawn: (name, onExit) => {
+    spawn: (name, onExit, onClaim) => {
       spawned.push(name);
       exits.set(name, onExit);
+      onClaim(tasks[name][0]);
     },
     now: () => clock,
     print: (line) => lines.push(line),

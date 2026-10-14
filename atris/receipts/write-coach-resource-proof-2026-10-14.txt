@@ -1,0 +1,18 @@
+# scratch folder with one writing session; a stand-in claude answers the installed check, then kills itself on the coach prompt
+$ atris write coach
+
+  coach · why sleds need dogs
+  · · · · ·   0 words in, 0/5 beats passed
+
+  (claude coach stopped by SIGKILL; killed (cause unknown), falling back to the offline coach)
+
+
+  next beat: Hook
+  question: What is the moment this became a question for you? Start naive: wonder on page one, never lecture.
+
+  your move: answer under "## Hook" in draft.md, then `atris write status`
+
+exit 0
+$ cat .atris/state/engine-resource.jsonl
+{"at":"2026-10-14T16:58:38.020Z","phase":"start","engine":"claude","task":"write coach","free_pct":80,"swap_used_mb":1172.75,"swap_total_mb":2048,"load":[5.32,4.56,4.35],"run_id":"6ac2326a-3e87-49f0-bd76-be6322e45cec","pid":72462,"leaked_ssh_agents":772}
+{"at":"2026-10-14T16:58:38.199Z","phase":"end","engine":"claude","task":"write coach","free_pct":80,"swap_used_mb":1172.75,"swap_total_mb":2048,"load":[5.32,4.56,4.35],"run_id":"6ac2326a-3e87-49f0-bd76-be6322e45cec","duration_ms":4,"signal":"SIGKILL","cause":"killed (cause unknown)"}

@@ -1,0 +1,25 @@
+engine launch guard: each launch needs its own recording call, 2026-10-14
+
+review finding fixed: a comment mentioning the recording call exempted
+every launch in the file.
+
+failing first (three counterexamples added to the guard test):
+  node --test --test-name-pattern="every launch of an engine program" test/engine-resource.test.js
+  pass 0, fail 1
+  actual: [], expected: [ 'commands/planted.js:2 claude' ]
+
+after the fix: comments are blanked with line breaks kept, and each launch
+needs a recording call in real code within the 12 lines up to it.
+  same command: pass 1, fail 0
+
+review counterexample on real code (youtube digest recording swapped for a
+comment that only mentions it, then restored with git checkout):
+  pass 0, fail 1
+  'commands/youtube.js:1245 claude'
+
+frozen check, tree restored:
+  node --test test/engine-resource.test.js test/engine-dispatch.test.js
+  tests 145, pass 145, fail 0, exit 0
+  real engine launch scan: 5 launches by name, 0 unrecorded
+
+next_push: extend the launch guard to engines started through a variable, by flagging any file that reads a runner or engine profile binary and spawns it without a recording call near the launch.

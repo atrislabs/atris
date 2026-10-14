@@ -1,0 +1,18 @@
+# scratch workspace; engine.sh prints a plan, and kills itself when handed the plan review prompt
+$ ATRIS_RUNNER_BIN=sh ATRIS_RUNNER_COMMAND_TEMPLATE="sh engine.sh {promptFile}" atris autopilot --legacy --auto --iterations=1 "add a comment to widget.js"
+
+  I hit an error while running the task.
+  Command failed: sh /tmp/review-script-v4bQ/engine.sh /private/tmp/review-proof-jkbQ/.autopilot-plan-review.tmp; killed (cause unknown)
+
+  Next I stopped the loop.
+
+  Autopilot finished.
+  It completed 0 tasks in 1s.
+
+exit 0
+
+$ cat .atris/state/engine-resource.jsonl
+{"at":"2026-10-14T16:17:13.018Z","phase":"start","engine":"runner","task":"autopilot plan","free_pct":80,"swap_used_mb":1172.75,"swap_total_mb":2048,"load":[6.76,7.05,5.33],"run_id":"ae84b8eb-6a7d-4984-b8bf-f19d37651721","pid":43204,"leaked_ssh_agents":664}
+{"at":"2026-10-14T16:17:13.186Z","phase":"end","engine":"runner","task":"autopilot plan","free_pct":80,"swap_used_mb":1172.75,"swap_total_mb":2048,"load":[6.76,7.05,5.33],"run_id":"ae84b8eb-6a7d-4984-b8bf-f19d37651721","duration_ms":7}
+{"at":"2026-10-14T16:17:13.191Z","phase":"start","engine":"runner","task":"autopilot plan review","free_pct":80,"swap_used_mb":1172.75,"swap_total_mb":2048,"load":[6.76,7.05,5.33],"run_id":"0a30ab28-c3f9-478b-9e4d-a39374e4af72","pid":43204,"leaked_ssh_agents":664}
+{"at":"2026-10-14T16:17:13.356Z","phase":"end","engine":"runner","task":"autopilot plan review","free_pct":80,"swap_used_mb":1172.75,"swap_total_mb":2048,"load":[6.76,7.05,5.33],"run_id":"0a30ab28-c3f9-478b-9e4d-a39374e4af72","duration_ms":7,"signal":"SIGKILL","cause":"killed (cause unknown)"}

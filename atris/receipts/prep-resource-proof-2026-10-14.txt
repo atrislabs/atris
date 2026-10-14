@@ -1,0 +1,14 @@
+# scratch workspace; a stand-in claude on the path kills itself; roster: build worker cursor preps with search (claude)
+# the prep pass is called with the arguments autopilot passes before its phase launch
+$ node -e "runPrepPassSync({ prepJob: 'search', forJob: 'build', task, prompt, root })"
+{"ok":false,"engine":"claude","reason":"claude stopped by SIGKILL; killed (cause unknown)"}
+exit 0
+
+$ cat .atris/state/engine-resource.jsonl
+{"at":"2026-10-14T16:31:48.987Z","phase":"start","engine":"claude","task":"prep for build","free_pct":80,"swap_used_mb":1172.75,"swap_total_mb":2048,"load":[4.43,4.91,4.96],"run_id":"552f502f-7d20-4db0-acb7-83cd214fc9fb","pid":24793,"leaked_ssh_agents":703}
+{"at":"2026-10-14T16:31:49.298Z","phase":"end","engine":"claude","task":"prep for build","free_pct":80,"swap_used_mb":1172.75,"swap_total_mb":2048,"load":[4.43,4.91,4.96],"run_id":"552f502f-7d20-4db0-acb7-83cd214fc9fb","duration_ms":159,"signal":"SIGKILL","cause":"killed (cause unknown)"}
+
+$ atris engine roster --runs
+recent runs, newest first
+oct 14 09:31  search for executor autopilot do: claude haiku (0s, cap 5 min), failed, claude stopped by SIGKILL; killed (cause unknown)
+exit 0
