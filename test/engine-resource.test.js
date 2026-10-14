@@ -338,7 +338,7 @@ test('history reads back the latest sweep and the latest SIGKILL, skipping bad l
     assert.strictEqual(history.last_kill.task, 'CLI-2');
     assert.strictEqual(history.kills, 2);
     assert.strictEqual(history.low_memory_kills, 1);
-    assert.deepStrictEqual(readResourceHistory(path.join(root, 'missing')), { last_sweep: null, last_kill: null, kills: 0, low_memory_kills: 0, open_runs: 0, parent_gone: 0, still_running: 0, last_open: null, lost_closed: 0, lost_closed_day: 0, last_lost_closed: null });
+    assert.deepStrictEqual(readResourceHistory(path.join(root, 'missing')), { last_sweep: null, last_kill: null, kills: 0, low_memory_kills: 0, kills_day: 0, low_memory_kills_day: 0, open_runs: 0, parent_gone: 0, still_running: 0, last_open: null, lost_closed: 0, lost_closed_day: 0, last_lost_closed: null });
   } finally {
     fs.rmSync(root, { recursive: true, force: true });
   }
@@ -642,6 +642,44 @@ test('the landing status names runs closed after their parent died in the last d
     assert.strictEqual(history.lost_closed, 4);
     assert.strictEqual(history.lost_closed_day, 2);
     assert.strictEqual(readResourceHistory(root, { now: Date.now() + 48 * 3600 * 1000 }).lost_closed_day, 0);
+  } finally {
+    fs.rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test('the landing status names the last day of killed runs with the low memory count and the newest cause', () => {
+  const { spawnSync } = require('node:child_process');
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'autoland-status-kills-'));
+  const cli = path.join(__dirname, '..', 'bin', 'atris.js');
+  const status = () => spawnSync(process.execPath, [cli, 'autoland', 'status'], {
+    cwd: root,
+    encoding: 'utf8',
+    env: { ...process.env, ATRIS_SKIP_UPDATE_CHECK: '1', NODE_NO_WARNINGS: '1' },
+  });
+  const hoursAgo = (h) => new Date(Date.now() - h * 3600 * 1000).toISOString();
+  const killed = (at, engine, task, runId, cause, free) => JSON.stringify({ at, phase: 'end', engine, task, run_id: runId, signal: 'SIGKILL', cause, free_pct: free });
+  const file = path.join(root, RESOURCE_LOG);
+  try {
+    spawnSync('git', ['init', '-q'], { cwd: root });
+    fs.mkdirSync(path.dirname(file), { recursive: true });
+    fs.writeFileSync(file, [killed(hoursAgo(30), 'claude', 'OLD', 'old', 'killed (machine memory low)', 4), ''].join('\n'));
+    const old = status();
+    assert.strictEqual(old.status, 0, old.stderr);
+    assert.doesNotMatch(old.stdout, /killed/, 'a kill older than a day does not read as current');
+
+    const recent = hoursAgo(1);
+    fs.appendFileSync(file, [
+      killed(hoursAgo(3), 'codex', 'B', 'b', 'killed (cause unknown)', 70),
+      JSON.stringify({ at: hoursAgo(2), phase: 'end', engine: 'cursor', task: 'C', run_id: 'c', code: 0 }),
+      killed(recent, 'claude', 'HEAVY', 'h', 'killed (machine memory low)', 6),
+      '',
+    ].join('\n'));
+    const loud = status();
+    assert.strictEqual(loud.status, 0, loud.stderr);
+    const when = `${recent.slice(0, 16).replace('T', ' ')} UTC`;
+    assert.ok(loud.stdout.includes(`engine runs force-killed in the last day: 2, 1 with machine memory low; newest claude on HEAVY at ${when}, killed (machine memory low), 6% memory free`), loud.stdout);
+    const history = readResourceHistory(root);
+    assert.deepStrictEqual([history.kills, history.kills_day, history.low_memory_kills, history.low_memory_kills_day], [3, 2, 2, 1]);
   } finally {
     fs.rmSync(root, { recursive: true, force: true });
   }

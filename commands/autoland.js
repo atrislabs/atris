@@ -535,6 +535,12 @@ function showStatus(root, args) {
     const when = `${String(newest.at || '').slice(0, 16).replace('T', ' ')} UTC`;
     console.log(`  engine runs closed after their parent died in the last day: ${lost.lost_closed_day}, newest ${newest.engine || 'unknown engine'} on ${newest.task || 'no task'} at ${when}`);
   }
+  if (lost.kills_day) {
+    const kill = lost.last_kill;
+    const when = `${String(kill.at || '').slice(0, 16).replace('T', ' ')} UTC`;
+    const free = Number.isFinite(kill.free_pct) ? `, ${kill.free_pct}% memory free` : '';
+    console.log(`  engine runs force-killed in the last day: ${lost.kills_day}, ${lost.low_memory_kills_day} with machine memory low; newest ${kill.engine || 'unknown engine'} on ${kill.task || 'no task'} at ${when}, ${kill.cause || 'cause unknown'}${free}`);
+  }
   console.log('');
   const humanOnly = blocked.filter((r) => String(r.reason || '').startsWith('denied_tag_'));
   const needsWork = blocked.filter((r) => !String(r.reason || '').startsWith('denied_tag_'));
