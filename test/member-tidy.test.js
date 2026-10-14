@@ -282,7 +282,7 @@ test('tidy reports missing folders and retained locks when they disappear at the
   const fixture = audit.stdout?.match(/^fixture: (.+)$/m)?.[1];
   try {
     assert.equal(audit.status, 0, audit.stderr || audit.stdout);
-    assert.match(audit.stdout, /both timing cases passed/);
+    assert.match(audit.stdout, /all three timing cases passed/);
   } finally {
     if (fixture && path.basename(fixture).startsWith('atris-tidy-vanishing-')
       && path.dirname(fixture) === fs.realpathSync(os.tmpdir())) {

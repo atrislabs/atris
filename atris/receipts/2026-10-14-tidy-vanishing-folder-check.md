@@ -45,3 +45,40 @@ Progress: one repaired explanation; two real timing cases; one new regression te
 next_push: Extend the final-check disappearance regression to ordinary private and shared locks.
 
 layer: behaviors
+
+
+## Ordinary locks during the final check
+
+Extended the existing real cleanup audit from two to three cases. The added case creates a two-hour-old private index lock and a three-hour-old shared packed-refs lock during the final activity check, then moves the generated folder. Exact paths, distinct reported ages, unchanged lock contents, moved file contents, retained branch, and absence of a removal record are asserted.
+
+Plan: final activity check -> create ordinary locks -> move generated folder -> report retained lock paths and ages -> preserve files and branch.
+
+Command: `node atris/receipts/2026-10-14-tidy-vanishing-folder-check.js`, exit 0. This invokes the actual cleanup CLI three times with real Git, forwarding calls through the timing driver.
+
+```text
+fixture: /private/var/folders/t1/2_4kmb5n4c71dxm26zc8dgzr0000gn/T/atris-tidy-vanishing-RisuwJ
+kept  landed-copy  folder is missing; git lock: /private/var/folders/t1/2_4kmb5n4c71dxm26zc8dgzr0000gn/T/atris-tidy-vanishing-RisuwJ/ordinary/repo/.git/packed-refs.lock (10799s old), /private/var/folders/t1/2_4kmb5n4c71dxm26zc8dgzr0000gn/T/atris-tidy-vanishing-RisuwJ/ordinary/repo/.git/worktrees/landed-copy/index.lock (7199s old)
+cli exit: 0
+all three timing cases passed; moved files, locks, and branches retained; no removal recorded
+```
+
+Rerun: `node --test test/worktree-removal-guard.test.js test/member-tidy.test.js`, exit 0.
+
+```text
+ℹ tests 21
+ℹ suites 0
+ℹ pass 21
+ℹ fail 0
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 8188.005042
+```
+
+Files edited: `atris/receipts/2026-10-14-tidy-vanishing-folder-check.js`, `test/member-tidy.test.js`, this receipt, `atris/MAP.md`, `atris/refs/MAP-NOTES.md`, and `atris/team/architect/logs/2026-10-14.md`. Artifacts: extended executable proof and this output receipt. Inspection commands: mission status and goal, task list/new/claim/note, Git status/diff/remote, member identity and notebook reads. Brain activation and compilation both exited 2 with a plan-only response; no generated policy files were written. Existing entrypoint, rendered task-list, and earlier member-log changes were preserved.
+
+Progress: one added real timing case, two additional lock paths checked with different ages, three cleanup invocations passing, all 21 required tests passing. No production changes, new dependencies, or new file names.
+
+next_push: Extend the old-folder final-check disappearance audit to ordinary private and shared locks.
+
+layer: behaviors
