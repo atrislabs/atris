@@ -2208,6 +2208,10 @@ function missionVerifierCheckedText(verifierResult, mission, guard = null) {
       ? 'Engine verify passed after running the changed surface on this computer.'
       : 'VERIFY FAILED: the engine verify pass did not end with VERDICT: PASS.';
   }
+  // A passing command plus a failing referee must name the referee, not the command.
+  if (verifierResult.referee?.passed === false && verifierResult.status === 0) {
+    return missionVerifierCheckedText(verifierResult.referee, mission, guard);
+  }
   const command = verifierResult.command || mission.verifier || 'configured verifier';
   if (!verifierResult.passed && verifierResult.timed_out) {
     return `VERIFY TIMED OUT: the check ran past its ${verifierTimeoutSeconds(verifierResult)}s window (took ${verifierElapsedSeconds(verifierResult)}s); the code is not failing, the suite is slow. Rerun with more room.`;
@@ -2241,6 +2245,9 @@ function missionVerifierHighLevelTestText(verifierResult, mission, guard = null)
     return verifierResult.passed
       ? 'The verify engine inspected the tick diff and reported real changed-surface command output.'
       : 'The verify engine did not provide a passing changed-surface verdict.';
+  }
+  if (verifierResult.referee?.passed === false && verifierResult.status === 0) {
+    return missionVerifierHighLevelTestText(verifierResult.referee, mission, guard);
   }
   const command = verifierResult.command || mission.verifier || 'configured verifier';
   if (!verifierResult.passed && verifierResult.timed_out) {
