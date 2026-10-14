@@ -6512,11 +6512,16 @@ function writeReceipt(mission, result, root = process.cwd()) {
   const finalResult = normalizeMissionReceiptResult(mission, result, relativeReceiptPath);
   // tree_hash covers only doctrine files; git_tree pins the code the run's
   // checks saw, so a later reader can tell whether the code has moved since.
-  const gitTree = spawnSync('git', ['rev-parse', 'HEAD^{tree}'], { cwd: root, encoding: 'utf8' });
+  // With unsaved changes the checks saw more than any commit holds, so no
+  // code tree is recorded and clean is false.
+  const gitStatus = spawnSync('git', ['status', '--porcelain'], { cwd: root, encoding: 'utf8' });
+  const clean = gitStatus.status === 0 && !String(gitStatus.stdout || '').trim();
+  const gitTree = clean ? spawnSync('git', ['rev-parse', 'HEAD^{tree}'], { cwd: root, encoding: 'utf8' }) : null;
   const receipt = {
     schema: 'atris.mission_receipt.v1',
     tree_hash: treeHashFor(root),
-    git_tree: gitTree.status === 0 ? String(gitTree.stdout || '').trim() || null : null,
+    clean,
+    git_tree: gitTree && gitTree.status === 0 ? String(gitTree.stdout || '').trim() || null : null,
     mission_id: mission.id,
     objective: mission.objective,
     owner: mission.owner,

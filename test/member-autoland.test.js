@@ -38,6 +38,7 @@ function fixture({ policy, branch = 'codex/member-work', gh = {} } = {}) {
   git(['config', 'user.email', 'test@example.com'], main);
   git(['config', 'user.name', 'Test'], main);
   fs.writeFileSync(path.join(main, 'README.md'), '# fixture\n');
+  fs.writeFileSync(path.join(main, '.gitignore'), 'atris/runs/\natris/status/\n');
   git(['add', '.'], main);
   git(['commit', '-m', 'init'], main);
   git(['remote', 'add', 'origin', origin], main);
@@ -63,22 +64,36 @@ function fixture({ policy, branch = 'codex/member-work', gh = {} } = {}) {
   return fx;
 }
 
-// The receipt shape a real run saves in the mission folder: the referee on
-// each tick and the code tree the run ended on.
-function writeRunReceipt(fx, { missionId = 'mission-test', at = '2026-10-14T06-58-08-502Z', ticks, gitTree } = {}) {
+function passingTick(overrides = {}) {
+  return {
+    status: 'ran',
+    tick_index: 1,
+    engine_id: 'claude',
+    verifier_passed: true,
+    referee_result: { passed: true, mode: 'engine', engine: 'codex', output: 'VERDICT: PASS' },
+    ...overrides,
+  };
+}
+
+// The receipt shape a real run saves in the mission folder: every tick with
+// its check and referee, whether the folder was clean, and the code tree.
+function writeRunReceipt(fx, { missionId = 'mission-test', offsetMs = 0, ticks, gitTree, clean = true, kind = 'mission_run_summary' } = {}) {
   const dir = path.join(fx.worktree, 'atris', 'runs');
   fs.mkdirSync(dir, { recursive: true });
+  const at = new Date(Date.now() + offsetMs).toISOString();
+  const runTicks = ticks || [passingTick()];
   const receipt = {
     schema: 'atris.mission_receipt.v1',
     tree_hash: 'doctrine-only',
+    clean,
     git_tree: gitTree === undefined ? git(['rev-parse', 'HEAD^{tree}'], fx.worktree) : gitTree,
     mission_id: missionId,
-    result: {
-      kind: 'mission_run_summary',
-      ticks: ticks || [{ engine_id: 'claude', referee_result: { passed: true, mode: 'engine', engine: 'codex', output: 'VERDICT: PASS' } }],
-    },
+    at,
+    result: kind === 'mission_run_summary'
+      ? { kind, tick_count: runTicks.length, ticks: runTicks }
+      : { kind, tick: runTicks[0] },
   };
-  fs.writeFileSync(path.join(dir, `mission-${missionId}-${at}.json`), JSON.stringify(receipt));
+  fs.writeFileSync(path.join(dir, `mission-${missionId}-${at.replace(/[:.]/g, '-')}.json`), JSON.stringify(receipt));
 }
 
 function ghCalls(fx) {
@@ -97,6 +112,9 @@ function mission(overrides = {}) {
     task_ids: [],
     verifier_result: { passed: true, command: 'git diff --check' },
     worktree: { branch: 'codex/member-work' },
+    last_tick_at: '2000-01-01T00:00:00.000Z',
+    last_tick_status: 'ran',
+    last_tick_index: 1,
     ...overrides,
   };
 }
@@ -172,7 +190,7 @@ test('linked billing task: branch stays, gh is never called', () => {
 
 test('no review verdict: branch stays, gh is never called', () => {
   const fx = fixture({ policy: JSON.stringify({ enabled: true }) });
-  const tick = (referee, engine = 'claude') => [{ engine_id: engine, ...(referee ? { referee_result: referee } : {}) }];
+  const tick = (referee, engine = 'claude') => [passingTick({ engine_id: engine, referee_result: referee })];
   withFakeGh(fx, () => {
     const cases = [
       { ticks: tick(null) },
@@ -185,6 +203,7 @@ test('no review verdict: branch stays, gh is never called', () => {
       { ticks: tick({ passed: true, mode: 'engine', engine: 'codex' }, ''), mission: { runner: 'auto' } },
     ];
     for (const c of cases) {
+      fs.rmSync(path.join(fx.worktree, 'atris', 'runs'), { recursive: true, force: true });
       writeRunReceipt(fx, { ticks: c.ticks });
       const out = autolandMemberRun({ mission: mission(c.mission || {}), cwd: fx.worktree, loadTask: () => null });
       assert.equal(out.gate, 'review', JSON.stringify(c));
@@ -203,7 +222,7 @@ test('no review verdict: branch stays, gh is never called', () => {
 test('a referee from another engine opens the review gate when the run names its worker engine', () => {
   const fx = fixture({ policy: JSON.stringify({ enabled: true }) });
   withFakeGh(fx, () => {
-    writeRunReceipt(fx, { ticks: [{ engine_id: 'codex', referee_result: { passed: true, mode: 'engine', engine: 'claude', output: 'VERDICT: PASS' } }] });
+    writeRunReceipt(fx, { offsetMs: 1000, ticks: [passingTick({ engine_id: 'codex', referee_result: { passed: true, mode: 'engine', engine: 'claude', output: 'VERDICT: PASS' } })] });
     const m = mission({ runner: 'auto' });
     const out = autolandMemberRun({ mission: m, cwd: fx.worktree, workerEngine: 'codex', loadTask: () => null });
     assert.equal(out.auto_merge, true, out.line);
@@ -222,7 +241,7 @@ test('a review recorded on an older code tree holds the branch', () => {
     assert.equal(out.gate, 'review');
     assert.match(out.line, /not recorded on the code/);
     // A receipt with no code tree at all holds too.
-    writeRunReceipt(fx, { gitTree: null });
+    writeRunReceipt(fx, { offsetMs: 1000, gitTree: null });
     assert.equal(autolandMemberRun({ mission: mission(), cwd: fx.worktree, loadTask: () => null }).gate, 'review');
     assert.deepEqual(ghCalls(fx), []);
   });
@@ -233,21 +252,23 @@ test('a failing referee on the latest run holds even when an older run passed', 
   withFakeGh(fx, () => {
     // Older passing run is written by the fixture; the newer run failed review.
     writeRunReceipt(fx, {
-      at: '2026-10-14T07-10-00-000Z',
-      ticks: [{ engine_id: 'claude', referee_result: { passed: false, mode: 'engine', engine: 'codex', output: 'VERDICT: FAIL' } }],
+      offsetMs: 1000,
+      ticks: [passingTick({ referee_result: { passed: false, mode: 'engine', engine: 'codex', output: 'VERDICT: FAIL' } })],
     });
     const out = autolandMemberRun({ mission: mission(), cwd: fx.worktree, loadTask: () => null });
     assert.equal(out.gate, 'review');
     assert.match(out.line, /did not pass/);
     // One failing tick among passing ones on the same run also holds.
     writeRunReceipt(fx, {
-      at: '2026-10-14T07-20-00-000Z',
+      offsetMs: 2000,
       ticks: [
-        { engine_id: 'claude', referee_result: { passed: false, mode: 'engine', engine: 'codex' } },
-        { engine_id: 'claude', referee_result: { passed: true, mode: 'engine', engine: 'codex' } },
+        passingTick({ referee_result: { passed: false, mode: 'engine', engine: 'codex' } }),
+        passingTick({ tick_index: 2 }),
       ],
     });
-    assert.equal(autolandMemberRun({ mission: mission(), cwd: fx.worktree, loadTask: () => null }).gate, 'review');
+    const multi = autolandMemberRun({ mission: mission({ last_tick_index: 2 }), cwd: fx.worktree, loadTask: () => null });
+    assert.equal(multi.gate, 'review');
+    assert.match(multi.line, /did not pass/);
     // Another mission's passing receipt does not count for this one.
     fs.rmSync(path.join(fx.worktree, 'atris', 'runs'), { recursive: true, force: true });
     writeRunReceipt(fx, { missionId: 'mission-test-other' });
@@ -379,10 +400,108 @@ test('malformed or switched-off policy holds the branch too', () => {
   }
 });
 
-// Live repro: a real ignited run passed its check and a claude referee, but
-// auto-merge held at review because the referee rides on the saved check
-// result, not a separate field. This drives the real CLI end to end.
-test('a real ignited run with a passing cross-engine referee turns on auto-merge', () => {
+test('unsaved changes in the mission folder hold the branch', () => {
+  const fx = fixture({ policy: JSON.stringify({ enabled: true }) });
+  withFakeGh(fx, () => {
+    // A tracked file edited but not committed.
+    fs.writeFileSync(path.join(fx.worktree, 'work.txt'), 'fixed but not committed\n');
+    let out = autolandMemberRun({ mission: mission(), cwd: fx.worktree, loadTask: () => null });
+    assert.equal(out.gate, 'unsaved');
+    assert.equal(out.line, 'left the branch for you: unsaved changes; the check may not match what would merge');
+    git(['checkout', '--', 'work.txt'], fx.worktree);
+    // A new file that is not ignored.
+    fs.writeFileSync(path.join(fx.worktree, 'helper.js'), 'module.exports = 1;\n');
+    out = autolandMemberRun({ mission: mission(), cwd: fx.worktree, loadTask: () => null });
+    assert.equal(out.gate, 'unsaved');
+    fs.rmSync(path.join(fx.worktree, 'helper.js'));
+    // The run itself ended dirty, even though the folder is clean now.
+    writeRunReceipt(fx, { offsetMs: 1000, clean: false, gitTree: null });
+    out = autolandMemberRun({ mission: mission(), cwd: fx.worktree, loadTask: () => null });
+    assert.equal(out.gate, 'review');
+    assert.match(out.line, /unsaved changes/);
+    assert.deepEqual(ghCalls(fx), []);
+  });
+});
+
+test('review must cover every step of the final run and nothing may come after it', () => {
+  const fx = fixture({ policy: JSON.stringify({ enabled: true }) });
+  withFakeGh(fx, () => {
+    const reset = () => fs.rmSync(path.join(fx.worktree, 'atris', 'runs'), { recursive: true, force: true });
+    const gate = (m = mission()) => autolandMemberRun({ mission: m, cwd: fx.worktree, loadTask: () => null });
+
+    // A final step that errored with no check or referee, after a passing one.
+    reset();
+    writeRunReceipt(fx, { ticks: [passingTick(), { status: 'errored', tick_index: 2, engine_id: 'claude' }] });
+    let out = gate(mission({ last_tick_index: 2, last_tick_status: 'errored' }));
+    assert.equal(out.gate, 'review');
+    out = gate(mission({ last_tick_index: 2 }));
+    assert.equal(out.gate, 'review');
+    assert.match(out.line, /did not pass its check/);
+
+    // A step whose check failed, even with a passing referee.
+    reset();
+    writeRunReceipt(fx, { ticks: [passingTick({ verifier_passed: false })] });
+    assert.match(gate().line, /did not pass its check/);
+
+    // The newest receipt is a step receipt, so the run never finished.
+    reset();
+    writeRunReceipt(fx, { kind: 'mission_run_tick' });
+    assert.match(gate().line, /has not finished/);
+
+    // The mission ran another step after the receipt.
+    reset();
+    writeRunReceipt(fx);
+    assert.match(gate(mission({ last_tick_at: new Date(Date.now() + 60000).toISOString() })).line, /ran again/);
+    assert.match(gate(mission({ last_tick_index: 3 })).line, /ran again/);
+    assert.equal(gate(mission({ last_tick_at: undefined })).gate, 'review');
+
+    // A commit made after the receipt, even one that keeps the same code tree.
+    reset();
+    writeRunReceipt(fx);
+    const later = String(Math.floor(Date.now() / 1000) + 120);
+    const res = spawnSync('git', ['commit', '-q', '--allow-empty', '-m', 'after review'], {
+      cwd: fx.worktree,
+      encoding: 'utf8',
+      env: { ...process.env, GIT_COMMITTER_DATE: `${later} +0000`, GIT_AUTHOR_DATE: `${later} +0000` },
+    });
+    assert.equal(res.status, 0, res.stderr);
+    assert.match(gate().line, /committed after/);
+    assert.deepEqual(ghCalls(fx), []);
+  });
+});
+
+test('protected text anywhere in metadata holds the branch', () => {
+  const fx = fixture({ policy: JSON.stringify({ enabled: true }) });
+  withFakeGh(fx, () => {
+    const clean = { id: 'T-1', title: 'Tidy the board', metadata: {} };
+    const cases = [
+      { metadata: { what_changes: 'Never self-land this one.' }, lane: /never self-land/ },
+      { metadata: { explanation: 'Rotates the service token on the worker.' }, lane: /security/ },
+      { metadata: { task_goal: 'Human must accept before merge.' }, lane: /human must accept/ },
+      { metadata: { notes: { inner: 'Adds a stripe webhook.' } }, lane: /billing/ },
+      { metadata: { notes: [{ inner: ['Production deploy after merge.'] }] }, lane: /deploy/ },
+      // Tags are read under any tag key, at any depth.
+      { metadata: { labels: { tags: ['ux', 'security'] } }, lane: /security/ },
+      { metadata: { routing: { lane: 'payments' } }, lane: /payments/ },
+      // Too deep to read whole holds instead of guessing.
+      { metadata: { a: { b: { c: { d: { e: { f: { g: 'ok' } } } } } } }, lane: /too large/ },
+      { metadata: { blob: 'x'.repeat(70 * 1024) }, lane: /too large/ },
+    ];
+    for (const c of cases) {
+      const out = autolandMemberRun({ mission: mission({ task_ids: ['T-1'] }), cwd: fx.worktree, loadTask: () => ({ ...clean, metadata: c.metadata }) });
+      assert.equal(out.gate, 'protected', JSON.stringify(c.metadata).slice(0, 80));
+      assert.match(out.line, c.lane);
+      const own = autolandMemberRun({ mission: mission({ metadata: c.metadata }), cwd: fx.worktree, loadTask: () => null });
+      assert.equal(own.gate, 'protected', `mission ${JSON.stringify(c.metadata).slice(0, 80)}`);
+    }
+    assert.deepEqual(ghCalls(fx), []);
+  });
+});
+
+// Drives the real CLI end to end: a fake codex worker, a fake claude
+// referee that passes, a bare origin, and the fake gh. Run output is
+// gitignored the way this repo ignores it.
+function runIgnitedMember({ codexLines, cliArgs }, check) {
   const { scrubAgentEnv } = require('./helpers/agent-env');
   const cliPath = path.resolve(__dirname, '..', 'bin', 'atris.js');
   const base = fs.mkdtempSync(path.join(os.tmpdir(), 'atris-member-autoland-cli-'));
@@ -396,7 +515,7 @@ test('a real ignited run with a passing cross-engine referee turns on auto-merge
     fs.mkdirSync(bin);
     fs.writeFileSync(path.join(root, 'atris', 'team', 'executor', 'MEMBER.md'), '---\nname: executor\nrole: Test Member\n---\n\n# executor\n');
     fs.writeFileSync(path.join(root, '.atris', 'policy', 'autoland.json'), JSON.stringify({ enabled: true, owner: 'keshav' }));
-    fs.writeFileSync(path.join(root, '.gitignore'), '.atris/\n');
+    fs.writeFileSync(path.join(root, '.gitignore'), '.atris/\natris/runs/\natris/status/\n');
     git(['init', '-q', '--bare', '-b', 'master', origin], base);
     git(['init', '-q', '-b', 'master'], root);
     git(['config', 'user.email', 'test@example.com'], root);
@@ -406,11 +525,7 @@ test('a real ignited run with a passing cross-engine referee turns on auto-merge
     git(['remote', 'add', 'origin', origin], root);
     git(['push', '-q', 'origin', 'master'], root);
     const script = (file, lines) => fs.writeFileSync(path.join(bin, file), ['#!/bin/sh', ...lines, ''].join('\n'), { mode: 0o755 });
-    script('codex', [
-      'echo done > work.txt',
-      'git add work.txt >/dev/null 2>&1 && git commit -qm "write work.txt" >/dev/null 2>&1',
-      'echo "wrote work.txt"',
-    ]);
+    script('codex', codexLines(base));
     script('claude', [
       'if [ "$1" = "--help" ]; then echo "--output-format --permission-mode --resume --session-id --include-partial-messages"; exit 0; fi',
       `echo '${JSON.stringify({ type: 'result', subtype: 'success', is_error: false, result: 'VERDICT: PASS' })}'`,
@@ -419,8 +534,7 @@ test('a real ignited run with a passing cross-engine referee turns on auto-merge
 
     const res = spawnSync(process.execPath, [
       cliPath, 'member', 'run', 'executor', 'Write work.txt',
-      '--engine', 'codex', '--referee', '--referee-engine', 'claude',
-      '--ignite', '--verify', 'test -s work.txt',
+      '--engine', 'codex', '--referee', '--referee-engine', 'claude', '--ignite', ...cliArgs,
     ], {
       cwd: root,
       encoding: 'utf8',
@@ -428,14 +542,50 @@ test('a real ignited run with a passing cross-engine referee turns on auto-merge
       env: { ...scrubAgentEnv(), ATRIS_SKIP_UPDATE_CHECK: '1', PATH: `${bin}${path.delimiter}${process.env.PATH || ''}` },
     });
     const out = `${res.stdout}\n${res.stderr}`;
+    const calls = fs.existsSync(log) ? fs.readFileSync(log, 'utf8').trim().split('\n').filter(Boolean).map((line) => JSON.parse(line)) : [];
+    check({ res, out, calls, origin, base });
+  } finally {
+    fs.rmSync(base, { recursive: true, force: true });
+  }
+}
+
+// Live repro: a real ignited run passed its check and a claude referee, but
+// auto-merge held at review because the referee rides on the saved check
+// result, not a separate field.
+test('a real ignited run with a passing cross-engine referee turns on auto-merge', () => {
+  runIgnitedMember({
+    codexLines: () => [
+      'echo done > work.txt',
+      'git add work.txt >/dev/null 2>&1 && git commit -qm "write work.txt" >/dev/null 2>&1',
+      'echo "wrote work.txt"',
+    ],
+    cliArgs: ['--verify', 'test -s work.txt'],
+  }, ({ res, out, calls, origin, base }) => {
     assert.equal(res.status, 0, out);
     assert.match(out, /merges on its own once checks pass: https:\/\/github\.com\/acme\/repo\/pull\/7/, out);
-    const calls = fs.readFileSync(log, 'utf8').trim().split('\n').map((line) => JSON.parse(line));
     assert.deepEqual(calls.map((c) => c.slice(0, 2)), [['pr', 'list'], ['pr', 'create'], ['pr', 'merge']], out);
     assert.deepEqual(calls[2].slice(2, 6), ['7', '--auto', '--merge', '--match-head-commit']);
     const branch = calls[1][calls[1].indexOf('--head') + 1];
     assert.equal(git(['ls-remote', origin, `refs/heads/${branch}`], base).split('\t')[0], calls[2][6], 'pushed commit is the pinned one');
-  } finally {
-    fs.rmSync(base, { recursive: true, force: true });
-  }
+  });
+});
+
+// Review repro: tick one passes check and referee, then tick two's worker
+// commits broken code and errors out, so no check or referee runs on it. The
+// mission still carries tick one's passing check. This must not merge.
+test('a later failed worker that commits unreviewed code does not reuse the earlier pass', () => {
+  runIgnitedMember({
+    codexLines: (base) => [
+      `if [ -f ${JSON.stringify(path.join(base, 'counter'))} ]; then echo broken > work.txt; git add work.txt && git commit -qm broken; echo worker-failed >&2; exit 1; fi`,
+      `touch ${JSON.stringify(path.join(base, 'counter'))}`,
+      'echo done > work.txt',
+      'git add work.txt && git commit -qm first-pass',
+      'echo wrote work.txt',
+    ],
+    cliArgs: ['--verify', 'test "$(cat work.txt)" = done', '--minutes', '1', '--spend-full-budget', '--max-ticks', '2', '--max-wall', '20', '--cadence', '0'],
+  }, ({ out, calls }) => {
+    assert.match(out, /\[tick 2\] status=errored/, out);
+    assert.doesNotMatch(out, /merges on its own/, out);
+    assert.deepEqual(calls.filter((c) => c[1] === 'merge'), [], out);
+  });
 });
