@@ -219,6 +219,24 @@ test('a narrow terminal trims job and last step so every line fits', () => {
   }
 });
 
+test('a job that can read whole gets its room before the last step', () => {
+  const dir = fakeDir({
+    builder: [`${at(900)} m-1 started: fix the login flow`, `${at(800)} m-1 reading lib/a.js`, `${at(300)} m-1 finished: failed (timed out)`],
+    scribe: [`${at(700)} m-2 started: write release notes`, `${at(600)} m-2 editing lib/member-board.js`, `${at(400)} m-2 finished: failed (bad exit 2)`],
+  });
+  try {
+    const rows = readBoard({ dir, now: NOW });
+    const board = renderBoard(rows, dir, 0, 73);
+    assert.ok(board.split('\n').every((line) => line.length <= 73), board);
+    assert.match(board, /^scribe\s+done failed\s+bad exit 2\s+6m ago\s+write release notes\s+editin\.\.\.$/m, board);
+    assert.match(board, /^builder\s+done failed\s+timed out\s+5m ago\s+fix the login flow\s+readin\.\.\.$/m, board);
+    assert.match(renderBoard(rows, dir, 0, 72), /^scribe\s+.*\s+write rele\.\.\.\s+editing lib\.\.\.$/m,
+      'no room to keep the last step at its heading width: they split the room');
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
 test('a tiny terminal keeps member states and common failure reasons within its width', () => {
   const dir = fakeDir({
     builder: [`${at(100)} m-1 started: build`, `${at(80)} m-1 finished: failed (timed out)`],
