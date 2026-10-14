@@ -2295,3 +2295,5 @@ npm publish
 ## Mission lock fixture isolation
 
 - `test/mission-run-reliability.test.js:14` imports the shared environment scrubber; both real CLI launch helpers apply fixture settings after scrubbing. `test/agent-env-runner-isolation.test.js:93` runs the live lock collision check with inherited codex markers and immediately failing runner templates.
+
+- `test/commands.test.js:3327` proves supervisor local-to-cloud downgrade against a loopback server, clears the higher-priority AX_BACKEND_URL and injected analysis/mode, and bounds the child to 30 seconds with SIGKILL. `test/agent-env-runner-isolation.test.js:6` reproduces a parent carrying all three overrides against the real CLI.

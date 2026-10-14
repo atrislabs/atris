@@ -3362,10 +3362,16 @@ test('supervisor llm call downgrades to the cloud endpoint when no local backend
 
     const child = spawn(process.execPath, [cliPath, 'member', 'wake', 'supervisor', '--execute', '--json'], {
       cwd: dir,
+      timeout: 30000,
+      killSignal: 'SIGKILL',
       env: {
         ...scrubAgentEnv(),
         ATRIS_SKIP_UPDATE_CHECK: '1',
         ATRIS_SUPERVISOR_LLM: '1',
+        ATRIS_SUPERVISOR_LLM_JSON: '',
+        ATRIS_SUPERVISOR_LLM_MODE: 'fast',
+        // AX_BACKEND_URL takes precedence over both fixture endpoints.
+        AX_BACKEND_URL: '',
         OBELISK_LOCAL_ATRIS2_BACKEND_URL: `http://127.0.0.1:${deadPort}`,
         OBELISK_ATRIS2_BACKEND_URL: `http://127.0.0.1:${cloudPort}`,
       },
@@ -3374,8 +3380,11 @@ test('supervisor llm call downgrades to the cloud endpoint when no local backend
     let stderr = '';
     child.stdout.on('data', (chunk) => { stdout += chunk; });
     child.stderr.on('data', (chunk) => { stderr += chunk; });
-    const code = await new Promise((resolve) => child.on('close', resolve));
-    assert.equal(code, 0, stderr || stdout);
+    const { code, signal } = await new Promise((resolve, reject) => {
+      child.once('error', reject);
+      child.once('close', (code, signal) => resolve({ code, signal }));
+    });
+    assert.equal(code, 0, `supervisor child ended with ${signal || code}\n${stderr || stdout}`);
     assert.ok(
       requests.some((entry) => entry.method === 'POST' && entry.url === '/api/atris2/turn'),
       'expected the supervisor turn to reach the cloud stub via the downgrade',

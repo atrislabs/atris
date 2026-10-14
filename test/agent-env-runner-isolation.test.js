@@ -3,6 +3,28 @@ const assert = require('node:assert/strict');
 const path = require('node:path');
 const { spawnSync } = require('node:child_process');
 
+test('supervisor cloud fixture ignores inherited backend and analysis overrides', () => {
+  const env = { ...process.env };
+  delete env.NODE_TEST_CONTEXT;
+  const result = spawnSync(process.execPath, [
+    '--test', '--test-name-pattern=supervisor llm call downgrades',
+    path.join(__dirname, 'commands.test.js'),
+  ], {
+    encoding: 'utf8',
+    timeout: 45000,
+    killSignal: 'SIGKILL',
+    env: {
+      ...env,
+      AX_BACKEND_URL: 'http://127.0.0.1:1',
+      ATRIS_SUPERVISOR_LLM_JSON: '{"recommendations":[]}',
+      ATRIS_SUPERVISOR_LLM_MODE: 'alpha',
+    },
+  });
+  assert.ifError(result.error);
+  assert.equal(result.status, 0, result.stderr || result.stdout);
+  assert.match(result.stdout, /pass 1/);
+});
+
 test('command fixtures ignore inherited runner commands', () => {
   const env = { ...process.env };
   // Run an independent test process, rather than inheriting the worker role.
