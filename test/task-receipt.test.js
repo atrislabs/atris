@@ -72,6 +72,25 @@ test('writeTaskReceipt still writes a receipt when the verifier fails', () => {
   }
 });
 
+test('writeTaskReceipt runs the check on the node running atris, not an older node first on PATH', () => {
+  const dir = makeTempDir();
+  const fakeBin = path.join(dir, 'fake-bin');
+  fs.mkdirSync(fakeBin);
+  fs.writeFileSync(path.join(fakeBin, 'node'), '#!/bin/sh\necho old-node\n', { mode: 0o755 });
+  const saved = { PATH: process.env.PATH, HOME: process.env.HOME };
+  try {
+    process.env.PATH = `${fakeBin}:${saved.PATH}`;
+    process.env.HOME = dir;
+    const receipt = writeTaskReceipt({ taskId: 'CLI-902', command: 'node -p process.execPath', root: dir });
+    assert.equal(receipt.passed, true);
+    assert.equal(receipt.output, process.execPath);
+  } finally {
+    process.env.PATH = saved.PATH;
+    process.env.HOME = saved.HOME;
+    cleanupTempDir(dir);
+  }
+});
+
 test('atris task receipt writes evidence without moving the task to ready', () => {
   const dir = makeTempDir();
   const dbPath = path.join(dir, 'tasks.db');

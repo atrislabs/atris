@@ -1,0 +1,31 @@
+Review runner node version proof, 2026-10-14
+
+Cause of the 18 review-gate failures on EFM-27:
+The review gate runs checks in a bash login shell. On this Mac the login
+profile puts /usr/local/bin first, which holds node v20.18.0. The package needs
+node 22.13 or newer (it loads the built-in sqlite module). The bare run uses
+node v25.6.1 from /opt/homebrew/bin.
+
+Reproduce before the fix:
+bash -lc 'node --version; node --test test/engine-resource.test.js test/engine-dispatch.test.js'
+Output: v20.18.0; tests 141; pass 123; fail 18. Exit: 1.
+One cause named in the output: No such built-in module node sqlite.
+
+Fix: lib/task-receipt.js puts the folder of the node running atris first on
+PATH after the login profile loads.
+
+Failing-first command:
+node --test --test-name-pattern='older node first on PATH' test/task-receipt.test.js
+Before: exit 1. actual '/usr/local/bin/node', expected the node running the test.
+After: exit 0.
+
+Real surface: writeTaskReceipt running the frozen check through its login shell.
+Output: passed true exit 0; v25.6.1; tests 141; pass 141; fail 0. Exit: 0.
+
+Receipt test files: tests 23; pass 23; fail 0. Exit: 0.
+Frozen check bare: node --test test/engine-resource.test.js test/engine-dispatch.test.js
+Output: tests 141; pass 141; fail 0. Exit: 0.
+git diff --check: exit 0, no output.
+
+Not changed: lib/task-proof.js and lib/falsifier-probe.js use the same login
+shell wrapper and can still pick the older node.
