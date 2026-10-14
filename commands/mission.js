@@ -7,6 +7,7 @@ const readline = require('readline');
 const { spawn, spawnSync } = require('child_process');
 const { hasFlag, readFlag, readIntFlag } = require('../lib/arg-parser');
 const { memberProcessPrompt } = require('../lib/member-context');
+const { defaultObjectiveRunner } = require('../lib/default-runner');
 const { memberIdentityLine, missionObjectiveLine } = require('../lib/member-identity');
 const { formatToolStep, formatCodexEvent, appendProgress, reportProgress, startedLine, newRunToken, runMarker } = require('../lib/member-progress');
 const {
@@ -4693,13 +4694,8 @@ async function startMissionFromRunObjective(objective, args) {
     '--owner',
     runOwner,
     '--runner',
-    // `mission run` is the codex-native shaping surface: it always builds
-    // codex_goal_state and asks a live codex session to start the native goal
-    // (requires_native_goal_start). So it defaults to codex_goal. The headless
-    // footgun (codex_goal stalls with no live session) is handled on the
-    // `member run` path (commands/member.js), where cron/fleet loops default to
-    // the self-driving claude runner instead. An explicit --runner always wins.
-    readFlag(args, '--runner', 'codex_goal'),
+    // A terminal needs a worker; a live Codex session owns its native goal.
+    readFlag(args, '--runner', readFlag(args, '--engine', '') || defaultObjectiveRunner(args)),
     '--lane',
     readFlag(args, '--lane', 'workspace'),
     '--cadence',
@@ -4831,6 +4827,22 @@ async function startMissionFromRunObjective(objective, args) {
     verifier: saved.verifier,
   });
   const worktreeBaseline = captureMissionWorktreeBaseline(saved, process.cwd());
+  if (!missionRunnerNeedsLiveSession(saved.runner) && !runnerUsesCallerSession(saved.runner)) {
+    // Resume through the same guarded execution path as an existing mission.
+    // Keep flag values intact while dropping the objective/owner positionals.
+    const executionArgs = [saved.id];
+    for (let i = 0; i < args.length; i += 1) {
+      const arg = String(args[i]);
+      if (!arg.startsWith('-')) continue;
+      executionArgs.push(arg);
+      if (MISSION_RUN_VALUE_FLAGS.includes(arg) && args[i + 1]
+        && !String(args[i + 1]).startsWith('--')) {
+        executionArgs.push(args[++i]);
+      }
+    }
+    if (!hasFlag(args, '--max-ticks')) executionArgs.push('--max-ticks', '1');
+    return runMission(executionArgs);
+  }
   const completedContinuationGoal = completeActiveContinuationForStartedMission(saved, process.cwd());
   const nativeGoalOptions = codexNativeGoalOptionsFromArgs(args);
   const goalSlotHandoff = hasFlag(args, '--take-goal-slot') && isCodexGoalMission(saved)
