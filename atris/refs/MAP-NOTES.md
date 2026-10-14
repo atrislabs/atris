@@ -559,6 +559,8 @@ MCP stdio request flow: `mcp/atris-mcp/index.mjs:142` reads requests while desig
 
 ### Feature: Autoland (`atris autoland`)
 
+- **Test setup:** `test/autoland.test.js:94` (`seedClaimedTask`) creates and claims fixture tasks through `lib/task-db.js`; certification and landing still invoke the real CLI, removing two setup launches per task.
+
 **Purpose:** The owner approves the policy once; certified work lands itself with receipts. Money, deploys, security, customer, and outward lanes always wait for the human.
 
 - **Implementation:** `commands/autoland.js` (status/on/off/tick/digest) + `lib/autoland.js` (policy, heartbeat cron, digest/alarm composition)
