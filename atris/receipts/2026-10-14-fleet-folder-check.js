@@ -35,7 +35,7 @@ async function main() {
   git('add', '.');
   git('commit', '-qm', 'fixture');
   console.log(`fixture: ${root}`);
-  for (const kind of ['private', 'shared', 'quarantine', 'running']) {
+  for (const kind of ['private', 'shared', 'quarantine', 'running', 'sibling']) {
     const parent = fs.mkdtempSync(path.join(root, 'review-'));
     const boundary = {
       trustedRoot: root,
@@ -75,8 +75,12 @@ async function main() {
       }
       continue;
     }
-    const privateDir = git('-C', boundary.worktreePath, 'rev-parse', '--absolute-git-dir');
-    const lock = kind === 'private' ? path.join(privateDir, 'index.lock')
+    const sibling = path.join(parent, 'sibling');
+    if (kind === 'sibling') {
+      git('--git-dir', boundary.gitDir, 'worktree', 'add', '-q', '--detach', sibling, 'master');
+    }
+    const privateDir = git('-C', kind === 'sibling' ? sibling : boundary.worktreePath, 'rev-parse', '--absolute-git-dir');
+    const lock = ['private', 'sibling'].includes(kind) ? path.join(privateDir, 'index.lock')
       : kind === 'shared' ? path.join(boundary.gitDir, 'refs/heads/master.lock')
         : path.join(boundary.quarantine, 'refs/heads/review.lock');
     fs.writeFileSync(lock, 'unfinished git work\n');
@@ -84,7 +88,13 @@ async function main() {
     const aged = new Date(now - 7200000);
     fs.utimesSync(lock, aged, aged);
     const workActivity = inspectGitActivity(boundary.worktreePath, now);
-    const activity = kind === 'quarantine' ? inspectGitActivity(boundary.quarantine, now) : workActivity;
+    const activity = kind === 'quarantine' ? inspectGitActivity(boundary.quarantine, now)
+      : kind === 'sibling' ? inspectGitActivity(sibling, now) : workActivity;
+    if (kind === 'sibling') {
+      assert.equal(workActivity.safe, true);
+      assert.equal(inspectGitActivity(boundary.gitDir, now).safe, true);
+      console.log('sibling case: work-folder and shared-repository checks both report safe');
+    }
     if (kind === 'quarantine') {
       assert.equal(workActivity.safe, true);
       console.log('quarantine case: work-folder-only check reports safe');
@@ -99,7 +109,7 @@ async function main() {
       kind, folderKept: fs.existsSync(boundary.worktreePath), lockKept: fs.existsSync(lock),
       parentKept: fs.existsSync(parent), removalRecorded: lines.some((line) => line.path === boundary.worktreePath),
     }));
-    if (kind === 'quarantine') {
+    if (['quarantine', 'sibling'].includes(kind)) {
       assert.equal(fs.existsSync(parent), false, 'update this audit when group protection is implemented');
       assert.equal(fs.existsSync(lock), false);
       assert.equal(lines.length, 0);

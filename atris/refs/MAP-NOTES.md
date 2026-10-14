@@ -2305,3 +2305,5 @@ npm publish
 - `atris/receipts/2026-10-14-fleet-folder-check.js:10`: repeatable actual-routine audit, using disposable real Git repositories and an in-memory export without replacing helpers. Decision and exact proof: `atris/receipts/2026-10-14-fleet-folder-check.md`. Keep the whole folder group before attempting any child removal.
 
 - `atris/receipts/2026-10-14-fleet-folder-check.js:51`: live child program in the independent repository; the real process scan sees activity under the parent, but disposal removes the parent while the program remains alive.
+
+- `atris/receipts/2026-10-14-fleet-folder-check.js:83`: sibling-copy private lock is invisible to both the main copy and shared-repository checks; disposal deletes the parent and lock without recording removal. Inspect all linked copies before removing shared metadata.

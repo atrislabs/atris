@@ -126,3 +126,43 @@ Commands run: mission status, git status, brain activation, workspace status, mi
 Progress: one additional real running-program case, four reproduced unlogged deletions overall, twelve required checks passed, zero production changes and zero new dependencies.
 next_push: Implement one keep decision for both review repositories and the whole parent process scan before any removal, then log successful removals.
 layer: beliefs
+
+## Sibling copy follow-up
+
+Added a real sibling-copy lock case. The unchanged cleanup routine deleted its two-hour-old lock even though checks of the main copy and shared repository both reported safe. The runtime audit exited 0 and all twelve required tests passed, exit 0.
+
+Verdict: proceed-with-changes. The single risk is removing shared Git storage without checking private metadata belonging to every copy inside the removal group. Inspect those copies as well as both repositories before any child removal; keep the entire group on activity or uncertainty, report exact lock paths and ages, and record successful removals. This evidence does not approve or implement a change at the execution boundary.
+
+Plan: enumerate copies in group -> check each copy and both repositories -> keep whole group on refusal -> otherwise remove and record.
+
+Runtime command: `node atris/receipts/2026-10-14-fleet-folder-check.js`
+Exit: 0. Actual additional output:
+```text
+sibling case: work-folder and shared-repository checks both report safe
+sibling before cleanup: git locks: /private/var/folders/t1/2_4kmb5n4c71dxm26zc8dgzr0000gn/T/atris-fleet-check-4IISwG/review-WoPMiq/objects.git/worktrees/sibling/index.lock (7200s old)
+{"kind":"sibling","folderKept":false,"lockKept":false,"parentKept":false,"removalRecorded":false}
+audit complete; surviving fixture data retained for inspection
+```
+
+The existing audit exposes the actual private routine in memory, uses real Git repositories and unchanged helpers, and removes only newly created disposable fixtures. The new case asserts that both narrower checks report safe, the sibling check detects the exact lock path and age, and cleanup deletes the parent and lock without a removal record. Successful execution reproduces unsafe behavior, rather than certifying safe removal. Retained fixture: `/private/var/folders/t1/2_4kmb5n4c71dxm26zc8dgzr0000gn/T/atris-fleet-check-4IISwG`.
+
+Required rerun command: `node --test test/worktree-removal-guard.test.js test/member-tidy.test.js`
+Exit: 0. Actual final output:
+```text
+ℹ tests 12
+ℹ suites 0
+ℹ pass 12
+ℹ fail 0
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 2925.108333
+```
+
+Files edited: `atris/receipts/2026-10-14-fleet-folder-check.js`, this receipt, `atris/MAP.md`, `atris/refs/MAP-NOTES.md`, and the new entry in `atris/team/architect/logs/2026-10-14.md`. Existing changes to `bin/atris.js`, rendered `atris/TODO.md`, and the earlier member-log result are excluded from staging.
+
+Commands run: mission status, task list/new/claim/note/ready, Git status and remote lookup, workspace status, mission goal lookup, brain activation, targeted reads/search, the runtime and required rerun commands above, brain compile, whitespace check, explicit staging, commit, and push. Brain activation and compilation produced write plans only; no generated policy was changed.
+
+Progress: one additional real lock case, five reproduced unlogged deletions overall, twelve required tests passed, zero production changes and zero new dependencies.
+next_push: Include every linked copy's private Git metadata in the whole-group keep decision before removing shared storage.
+layer: beliefs
