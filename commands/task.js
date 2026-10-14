@@ -25,6 +25,7 @@ const {
   evaluateAutoAccept,
   isAgentCertified,
   isAutoCertifyVerifyCommandAllowed,
+  parseVerifyChain,
   parseVerifyCommand,
   runVerifyCommand,
   runVerifyCommandCached,
@@ -2190,6 +2191,7 @@ function taskReviewCleanEvidenceCommand(command) {
     /\s+\(?(?:passed|ok|clean|failed|errored|timed out|succeeded|succeeds|successful|confirmed)\)?$/i,
     /\s+\(?\d+\/\d+(?:\s+(?:tests?|checks?|passed|pass|ok|clean|failed|failures?))?\)?$/i,
     /\s+\d+\/\d+(?:\s+(?:tests?|checks?|passed|pass|ok|clean|failed|failures?))?$/i,
+    /\s+(?:passed|exited\s+0)(?:\s*\(\s*exit\s+0\s*\))?(?:\.(?:\s.*)?)?$/i,
   ];
   for (const pattern of tailPatterns) {
     clean = taskReviewTrimOutsideQuotedTail(clean, pattern);
@@ -2240,7 +2242,7 @@ function taskReviewCommandIsDescribedSubject(clause, commandIndex) {
 function taskReviewEvidenceCommands(text, limit = 8) {
   const source = String(text || '').trim();
   if (!source) return [];
-  const commandWord = '(?:npm|node|git|atris|npx|pnpm|yarn|python3?|pytest|bash|sh|tsc|vitest|curl|gh|rg)';
+  const commandWord = '(?:npm|node|git|atris|npx|pnpm|yarn|python3?|pytest|bash|sh|tsc|vitest|curl|gh|rg|test(?=\\s+-[sf]\\b))';
   const envPrefix = '(?:(?:[A-Z_][A-Z0-9_]*=[^\\s,;|]+)\\s+)*';
   const prosePrefix = '(?:(?:rechecked|reran|re-run|run|verified|validated|passed|validation(?:\\s+passed)?|verification(?:\\s+passed)?|focused|live|scoped|installed|direct|full|current|fresh|then|and|commands?|checks?)[:\\s]+)*';
   const commandStart = `${prosePrefix}${envPrefix}${commandWord}\\b`;
@@ -10328,14 +10330,33 @@ function certifyVerifyCandidate(task) {
   const review = task.review || {};
   const recorded = typeof metadata.verify === 'string' && metadata.verify.trim() ? [metadata.verify.trim()] : [];
   const proof = String(review.proof || metadata.latest_agent_proof || '');
-  for (const raw of [...recorded, ...taskReviewEvidenceCommands(proof)]) {
+  // The extractor splits on &&, so rebuild chains the proof actually wrote
+  // ("a && b") and try each one before its pieces.
+  const flatProof = proof.replace(/`/g, '').replace(/\s+/g, ' ');
+  const pieces = taskReviewEvidenceCommands(proof);
+  const ordered = [];
+  for (let i = 0; i < pieces.length; i += 1) {
+    for (let j = pieces.length; j > i + 1; j -= 1) {
+      const chain = pieces.slice(i, j).join(' && ');
+      if (flatProof.includes(chain)) ordered.push(chain);
+    }
+    ordered.push(pieces[i]);
+  }
+  for (const raw of [...recorded, ...ordered]) {
     // The evidence extractor can keep trailing prose ("git diff --check. Evidence
     // inspected: ..."); try the full clause, then the first sentence of it.
     for (const candidate of [raw, raw.split(/\.(?:\s|$)/)[0]].map((c) => String(c || '').trim())) {
-      if (candidate && parseVerifyCommand(candidate).ok) return candidate;
+      if (candidate && isAutoCertifyVerifyCommandAllowed(candidate) && !verifyIsOnlyFileChecks(candidate)) return candidate;
     }
   }
   return null;
+}
+
+// "File exists" is not certification: a verify made only of test -s / test -f
+// steps does not qualify on its own.
+function verifyIsOnlyFileChecks(verify) {
+  const chain = parseVerifyChain(verify);
+  return chain.ok && chain.steps.every((step) => step.argv[0] === 'test' && /^-[sf]$/.test(step.argv[1] || ''));
 }
 
 function stampCertifyVerifyMetadata(taskDb, db, taskId, actor, verify) {
@@ -13427,4 +13448,6 @@ module.exports = {
   taskApprovalFor,
   taskPageContract,
   taskDescriptionForCloud,
+  taskReviewCleanEvidenceCommand,
+  certifyVerifyCandidate,
 };

@@ -357,7 +357,10 @@ function loadMemberGoals(name, paths = memberPaths(name)) {
 
 function activeGoal(goalsState, goalId = '') {
   if (goalId) return goalsState.goals.find((goal) => goal.id === goalId) || null;
-  return goalsState.goals.find((goal) => goal.status === 'active') || goalsState.goals[0] || null;
+  for (let i = (goalsState.goals || []).length - 1; i >= 0; i -= 1) {
+    if (goalsState.goals[i]?.status === 'active') return goalsState.goals[i];
+  }
+  return goalsState.goals[0] || null;
 }
 
 function allExperiments(state) {
@@ -463,9 +466,18 @@ function missionPurpose(paths) {
 
 const MEMBER_RUN_RUNNABLE_STATUSES = new Set(['planning', 'running', 'ready']);
 
-function memberRunMissionMap() {
+function memberRunMissionMap(root = process.cwd()) {
   try {
-    return require('./mission').loadMissionMap(process.cwd());
+    const missionMod = require('./mission');
+    const map = new Map(missionMod.loadMissionMap(root));
+    for (const rolled of missionMod.listWorktreeRollupMissions(root)) {
+      if (!rolled?.id) continue;
+      const existing = map.get(rolled.id);
+      if (!existing || missionTimeMs(rolled) >= missionTimeMs(existing)) {
+        map.set(rolled.id, rolled);
+      }
+    }
+    return map;
   } catch {
     return new Map();
   }
@@ -600,18 +612,38 @@ function memberLastActivity(name, paths = memberPaths(name), root = process.cwd(
   };
 }
 
-function memberMissionSummary(name, missionMap = memberRunMissionMap()) {
+function memberMissionSummary(name, missionMap = memberRunMissionMap(), root = process.cwd()) {
   const latest = memberLatestMission(name, missionMap);
   const live = memberLiveMission(name, missionMap);
   const lastTickMs = timestampMs(latest?.last_tick_at);
+  let driver = null;
+  if (latest) {
+    try {
+      const { missionDriverHealth } = require('./mission');
+      const missionRoot = latest.worktree_root || latest.worktree?.path || root;
+      driver = missionDriverHealth(latest, missionRoot);
+    } catch {
+      driver = null;
+    }
+  }
+  const worktreeRoot = latest?.worktree_root || latest?.worktree?.path || null;
+  const worktreeBranch = latest?.worktree_branch || latest?.worktree?.branch || null;
   return {
     latest,
     live,
     name: missionShortName(latest),
+    objective: latest?.objective || null,
     state: latest?.status || '-',
+    runner: latest?.runner || null,
+    model: latest?.model || null,
+    worktree_root: worktreeRoot,
+    worktree_branch: worktreeBranch,
+    task_ref: latest?.task_ref || latest?.xp_task?.ref || null,
+    current_task_id: latest?.current_task_id || latest?.task_ids?.[0] || null,
     last_tick_at: latest?.last_tick_at || null,
     last_tick_age: ageLabelFromMs(lastTickMs),
-    live_mission: Boolean(live),
+    live_mission: Boolean(live) || Boolean(driver?.alive),
+    driver,
   };
 }
 
@@ -684,6 +716,8 @@ const MEMBER_RUN_START_VALUE_FLAGS = [
   '--mission-id',
   '--owner',
   '--runner',
+  '--engine',
+  '--referee-engine',
   '--lane',
   '--cadence',
   '--verify',
@@ -699,11 +733,14 @@ const MEMBER_RUN_START_VALUE_FLAGS = [
   '--outcome',
   '--truth',
   '--proof',
+  '--base',
 ];
 
 const MEMBER_RUN_START_BOOLEAN_FLAGS = [
   '--json',
   '--no-verify',
+  '--referee',
+  '--no-referee',
   '--worktree',
   '--shared-checkout',
   '--no-worktree',
@@ -715,6 +752,13 @@ const MEMBER_RUN_START_BOOLEAN_FLAGS = [
   '--stop-when-done',
   '--choose-work',
   '--auto',
+  '--ignite',
+  '--wait',
+  '--sync',
+  '--detach',
+  '--no-driver',
+  '--complete-on-pass',
+  '--no-claude',
 ];
 
 function memberRunMissionText(args = []) {
@@ -809,7 +853,26 @@ function pushFlagWhenPresent(out, args, name) {
   if (hasFlag(args, name)) out.push(name);
 }
 
+function inferMemberRunVerifier(missionText, args = [], cwd = process.cwd()) {
+  if (hasFlag(args, '--no-verify')) return '';
+  const explicit = readFlag(args, '--verify', '');
+  if (explicit) return explicit;
+  const text = String(missionText || '').trim();
+  if (!text) return '';
+  const cmdMatch = text.match(/\b(npm\s+run\s+type-check|node\s+--test\s+tests?\/[A-Za-z0-9_./-]+)\b/);
+  if (cmdMatch) return cmdMatch[1].replace(/\s+/g, ' ');
+  const testFileMatch = text.match(/\b(tests?\/[A-Za-z0-9_./-]+\.test\.m?js)\b/);
+  if (testFileMatch && fs.existsSync(path.join(cwd, testFileMatch[1]))) {
+    return `node --test ${testFileMatch[1]}`;
+  }
+  return '';
+}
+
 function buildMemberRunStartArgs(owner, missionText, args = [], cwd = process.cwd()) {
+  const explicitEngine = readFlag(args, '--engine', '');
+  const fallbackRunner = hasFlag(args, '--auto') ? 'auto' : defaultObjectiveRunner(args);
+  const resolvedRunner = explicitEngine || readFlag(args, '--runner', fallbackRunner);
+  const resolvedVerifier = inferMemberRunVerifier(missionText, args, cwd);
   const startArgs = [
     'mission',
     'start',
@@ -818,16 +881,20 @@ function buildMemberRunStartArgs(owner, missionText, args = [], cwd = process.cw
     owner,
     // codex_goal stalls unattended (no live codex session drives its native goal
     // slot). Default to claude unless a live codex session is signalled; explicit
-    // --runner still wins. Proven footgun 2026-07-16. See lib/default-runner.js.
+    // --runner / --engine still wins. Proven footgun 2026-07-16. See lib/default-runner.js.
     '--runner',
-    readFlag(args, '--runner', defaultObjectiveRunner(args)),
+    resolvedRunner,
     '--lane',
     readFlag(args, '--lane', 'workspace'),
   ];
+  if (explicitEngine) startArgs.push('--engine', String(explicitEngine));
   pushFlagValue(startArgs, args, '--cadence');
-  pushFlagValue(startArgs, args, '--verify');
+  if (resolvedVerifier) {
+    startArgs.push('--verify', String(resolvedVerifier));
+  }
   pushFlagValue(startArgs, args, '--stop');
   pushFlagValue(startArgs, args, '--model');
+  pushFlagValue(startArgs, args, '--max-ticks');
   pushFlagValue(startArgs, args, '--max-wall');
   pushFlagValue(startArgs, args, '--minutes');
   pushFlagValue(startArgs, args, '--hours');
@@ -835,8 +902,9 @@ function buildMemberRunStartArgs(owner, missionText, args = [], cwd = process.cw
   // A member-run mission is driven immediately by its runner, not parked on
   // the queue — so the mission-start verifier gate (built for parked planning
   // wishes) would only kill autonomous legs like autopilot's "member chooses
-  // useful work". When the caller named no verifier, opt out explicitly.
-  if (hasFlag(args, '--no-verify') || !readFlag(args, '--verify', '')) {
+  // useful work". When the caller named no verifier and none was inferred, opt
+  // out on mission start; mission run still verifies via the second model.
+  if (hasFlag(args, '--no-verify') || !resolvedVerifier) {
     startArgs.push('--no-verify');
   }
   pushFlagWhenPresent(startArgs, args, '--always-on');
@@ -865,15 +933,146 @@ function insideGitRepo(startDir) {
   }
 }
 
+function shouldIgniteMemberRunForeground(args = []) {
+  return hasFlag(args, '--ignite')
+    || hasFlag(args, '--wait')
+    || hasFlag(args, '--sync')
+    || Boolean(readFlag(args, '--engine', ''))
+    || Boolean(readFlag(args, '--max-ticks', ''))
+    || hasFlag(args, '--complete-on-pass')
+    || hasFlag(args, '--no-claude');
+}
+
+function buildMemberMissionRunArgs(args = []) {
+  const runArgs = [];
+  for (const flag of ['--engine', '--referee-engine', '--runner', '--model', '--cadence', '--max-ticks', '--max-wall', '--budget']) {
+    pushFlagValue(runArgs, args, flag);
+  }
+  for (const flag of [
+    '--json',
+    '--no-verify',
+    '--referee',
+    '--no-referee',
+    '--always-on',
+    '--xp-task',
+    '--agent-xp',
+    '--spend-full-budget',
+    '--use-whole-budget',
+    '--stop-when-done',
+    '--detach',
+    '--complete-on-pass',
+    '--no-claude',
+    '--headless',
+    '--self-drive',
+  ]) {
+    pushFlagWhenPresent(runArgs, args, flag);
+  }
+  if (
+    !process.env.NODE_TEST_CONTEXT
+    && !hasFlag(args, '--no-referee')
+    && !hasFlag(args, '--no-verify')
+    && !hasFlag(args, '--no-claude')
+    && !hasFlag(runArgs, '--referee')
+  ) {
+    runArgs.push('--referee');
+  }
+  const budgetSeconds = memberRunBudgetSeconds(args);
+  // A timed run is a loop contract, not one tick: keep picking the next useful
+  // move until the wall clock (--max-wall) spends the budget. Only untimed runs
+  // default to a single tick.
+  if (!readFlag(runArgs, '--max-ticks', '')) {
+    runArgs.push('--max-ticks', budgetSeconds ? String(Math.max(4, Math.ceil(budgetSeconds / 300))) : '1');
+  }
+  if (!readFlag(runArgs, '--max-wall', '')) runArgs.push('--max-wall', String(budgetSeconds || 900));
+  if ((hasFlag(args, '--ignite') || hasFlag(args, '--wait') || hasFlag(args, '--sync')) && !hasFlag(runArgs, '--complete-on-pass')) {
+    runArgs.push('--complete-on-pass');
+  }
+  return runArgs;
+}
+
 function startMemberRunMission(name, missionText, args = []) {
   const paths = requireMemberDir(name);
   const owner = paths.storageName || name;
   const startArgs = buildMemberRunStartArgs(owner, missionText, args);
-
   const cliPath = path.join(__dirname, '..', 'bin', 'atris.js');
+  const igniteForeground = shouldIgniteMemberRunForeground(args);
+  const wantsJsonOutput = hasFlag(args, '--json');
+
+  if (!igniteForeground) {
+    try {
+      execFileSync(process.execPath, [cliPath, ...startArgs], {
+        cwd: process.cwd(),
+        stdio: 'inherit',
+      });
+    } catch (error) {
+      process.exitCode = Number(error?.status) || 1;
+      return;
+    }
+    if (!process.env.NODE_TEST_CONTEXT && !hasFlag(args, '--no-driver')) {
+      try {
+        const missionMod = require('./mission');
+        const latest = memberLatestMission(owner, memberRunMissionMap());
+        if (latest && !missionMod.missionRunnerNeedsLiveSession(latest.runner)) {
+          const missionRoot = latest.worktree_root || latest.worktree?.path || process.cwd();
+          missionMod.spawnMissionDriver(latest, missionRoot);
+        }
+      } catch { /* best-effort background driver launch */ }
+    }
+    return;
+  }
+
+  const startJsonArgs = startArgs.includes('--json') ? startArgs : [...startArgs, '--json'];
+  let startedPayload = null;
   try {
-    execFileSync(process.execPath, [cliPath, ...startArgs], {
+    const raw = execFileSync(process.execPath, [cliPath, ...startJsonArgs], {
       cwd: process.cwd(),
+      encoding: 'utf8',
+      stdio: ['ignore', 'pipe', 'pipe'],
+    });
+    startedPayload = JSON.parse(raw);
+  } catch (error) {
+    if (error?.stdout) process.stdout.write(String(error.stdout));
+    if (error?.stderr) process.stderr.write(String(error.stderr));
+    process.exitCode = Number(error?.status) || 1;
+    return;
+  }
+
+  const mission = startedPayload?.mission;
+  if (!mission?.id) {
+    if (wantsJsonOutput && startedPayload) console.log(JSON.stringify(startedPayload, null, 2));
+    return;
+  }
+
+  const runCwd = (mission.worktree?.path && fs.existsSync(mission.worktree.path))
+    ? mission.worktree.path
+    : process.cwd();
+  const runArgs = buildMemberMissionRunArgs(args);
+
+  if (wantsJsonOutput) {
+    const runJsonArgs = runArgs.includes('--json') ? runArgs : [...runArgs, '--json'];
+    try {
+      const rawRun = execFileSync(process.execPath, [cliPath, 'mission', 'run', mission.id, ...runJsonArgs], {
+        cwd: runCwd,
+        encoding: 'utf8',
+        stdio: ['ignore', 'pipe', 'pipe'],
+      });
+      const runPayload = JSON.parse(rawRun);
+      console.log(JSON.stringify({
+        ...runPayload,
+        started_mission: mission,
+        worktree: mission.worktree || null,
+      }, null, 2));
+    } catch (error) {
+      if (error?.stdout) process.stdout.write(String(error.stdout));
+      if (error?.stderr) process.stderr.write(String(error.stderr));
+      process.exitCode = Number(error?.status) || 1;
+    }
+    return;
+  }
+
+  try {
+    execFileSync(process.execPath, [cliPath, 'mission', 'run', mission.id, ...runArgs], {
+      cwd: runCwd,
       stdio: 'inherit',
     });
   } catch (error) {
@@ -966,8 +1165,9 @@ function memberPing(name, ...args) {
 
 function memberRun(name, ...args) {
   if (!name || name === '--help' || name === '-h' || hasFlag(args, '--help') || hasFlag(args, '-h')) {
-    console.log('Usage: atris member run <name> ["mission text"] [--minutes N|--hours N] [--json]');
+    console.log('Usage: atris member run <name> ["mission text"] [--engine <name>] [--ignite] [--minutes N|--hours N] [--json]');
     console.log('New mission: atris member run growth "Improve onboarding proof" --minutes 30 --json');
+    console.log('Ignite subagent shell: atris member run growth "Improve onboarding proof" --engine claude --ignite --json');
     console.log('Choose work: atris member run growth --industry logistics --value "reduce support time" --minutes 30 --json');
     console.log('Existing mission: atris member run growth --mission <mission-id> --max-ticks 1 --json');
     console.log('Meaning: if mission text is omitted, the member chooses one useful bounded task from Atris state.');
@@ -989,16 +1189,7 @@ function memberRun(name, ...args) {
     return;
   }
 
-  const runArgs = stripKnownFlags(args, ['--mission', '--mission-id', '--minutes', '--hours'], ['--worktree', '--shared-checkout', '--no-worktree']);
-  const budgetSeconds = memberRunBudgetSeconds(args);
-  // A timed run is a loop contract, not one tick: keep picking the next useful
-  // move until the wall clock (--max-wall) spends the budget. Only untimed runs
-  // default to a single tick.
-  if (!readFlag(runArgs, '--max-ticks', '')) {
-    runArgs.push('--max-ticks', budgetSeconds ? String(Math.max(4, Math.ceil(budgetSeconds / 300))) : '1');
-  }
-  if (!readFlag(runArgs, '--max-wall', '')) runArgs.push('--max-wall', String(budgetSeconds || 900));
-
+  const runArgs = buildMemberMissionRunArgs(args);
   const cliPath = path.join(__dirname, '..', 'bin', 'atris.js');
   try {
     execFileSync(process.execPath, [cliPath, 'mission', 'run', missionId, ...runArgs], {
@@ -1208,7 +1399,23 @@ function taskHasReviewProof(task) {
   return (task?.events || []).some((event) => event?.payload?.proof || event?.payload?.review?.proof);
 }
 
+function taskIsTaggedNeedsHuman(task) {
+  if (!task || typeof task !== 'object') return false;
+  if (task?.metadata?.needs_human === true || task?.metadata?.human_only === true) return true;
+  const tags = [
+    task.tag,
+    ...(Array.isArray(task.tags) ? task.tags : []),
+    task.metadata?.tag,
+    ...(Array.isArray(task.metadata?.tags) ? task.metadata.tags : []),
+  ]
+    .filter(Boolean)
+    .flatMap((t) => String(t).split(/[,;\s]+/))
+    .map(lowerCompact);
+  return tags.some((t) => t === 'needs-human' || t === 'needs_human' || t === 'human-only' || t === 'human_only');
+}
+
 function taskCandidateFromSource(task, source, sourcePath = '') {
+  if (taskIsTaggedNeedsHuman(task)) return null;
   const ref = taskRef(task);
   if (!ref) return null;
   const status = lowerCompact(task.status || task.state || 'open');
@@ -3117,6 +3324,7 @@ function collectAutoImproverLogSignals(root) {
 }
 
 function autoImproverTaskWaitingForHuman(task, status) {
+  if (taskIsTaggedNeedsHuman(task)) return true;
   if (status !== 'review') return false;
   const metadata = task?.metadata || {};
   const review = task?.review || {};
@@ -3648,6 +3856,9 @@ async function runAutoImproverWake(name, paths, { execute = false, confirmed = f
     });
   }
 
+  const purpose = missionPurpose(paths);
+  const currentGoal = activeGoal(loadMemberGoals(name, paths));
+
   return {
     ok: true,
     action: 'wake',
@@ -3660,6 +3871,13 @@ async function runAutoImproverWake(name, paths, { execute = false, confirmed = f
     needs_user: false,
     ask: null,
     next_command: nextCommand,
+    mission: wakeMissionSummary(purpose),
+    active_goal: currentGoal ? {
+      id: currentGoal.id,
+      title: currentGoal.title,
+      source: currentGoal.source || null,
+      mission_id: currentGoal.mission_id || null,
+    } : null,
     auto_improver: payload,
     receipt_path: finalWrite.receiptPath,
     latest_path: finalWrite.latestPath,
@@ -3779,8 +3997,10 @@ function appendMemberGoalLog(memberDir, name, title, fields = {}) {
     `## ${stamp} · ${title}`,
     `- team: ${name}`,
     ...Object.entries(fields)
-      .filter(([, value]) => value !== undefined && value !== null && value !== '')
-      .map(([key, value]) => `- ${key}: ${String(value).replace(/\n/g, ' ')}`),
+      .filter(([, value]) => value !== undefined && value !== null)
+      .map(([key, value]) => [key, String(value).replace(/\n/g, ' ').trim()])
+      .filter(([, text]) => text !== '')
+      .map(([key, text]) => `- ${key}: ${text}`),
     '',
   ];
   fs.appendFileSync(logPath, rows.join('\n'), 'utf8');
@@ -3797,8 +4017,10 @@ function appendProjectLog(title, fields = {}) {
   const rows = [
     `## ${stamp} · ${title}`,
     ...Object.entries(fields)
-      .filter(([, value]) => value !== undefined && value !== null && value !== '')
-      .map(([key, value]) => `- ${key}: ${String(value).replace(/\n/g, ' ')}`),
+      .filter(([, value]) => value !== undefined && value !== null)
+      .map(([key, value]) => [key, String(value).replace(/\n/g, ' ').trim()])
+      .filter(([, text]) => text !== '')
+      .map(([key, text]) => `- ${key}: ${text}`),
     '',
   ];
   fs.appendFileSync(logPath, rows.join('\n'), 'utf8');
@@ -4622,6 +4844,11 @@ function memberGoal(name, ...args) {
     experiments: [],
     history: [],
   };
+  for (const prev of state.goals) {
+    if (prev && prev !== existing && prev.status === 'active') {
+      prev.status = 'superseded';
+    }
+  }
   goal.status = 'active';
   goal.cadence = cadence || goal.cadence || 'manual';
   if (why) goal.why = why;
@@ -5624,6 +5851,26 @@ function fallbackSupervisorAnalysis(receipts) {
 async function runSupervisorWake(name, paths, { execute = false } = {}) {
   const mode = execute ? 'execute' : 'dry_run';
   const root = process.cwd();
+  const llmConfigured = Boolean(process.env.ATRIS_SUPERVISOR_LLM_JSON)
+    || process.env.ATRIS_SUPERVISOR_LLM === '1';
+  if (!execute && !llmConfigured) {
+    return {
+      ok: true,
+      skipped: true,
+      action: 'wake',
+      member: name,
+      mode,
+      decision: 'wait',
+      reason: 'skipped_llm_not_configured',
+      executed: false,
+      needs_user: false,
+      ask: null,
+      next_command: null,
+      receipt_path: null,
+      log_path: null,
+      recommendations_path: supervisorRecommendationsPath(root),
+    };
+  }
   const receipts = listRecentSupervisorReceipts(root);
   const logs = readSupervisorMemberLogs(root);
   let llm = null;
@@ -7279,9 +7526,15 @@ function readMemberScope(name, paths) {
 // and must not gate the next wake — otherwise the loop deadlocks on its own log writes.
 function isAutoGeneratedArtifact(filePath, name) {
   const memberLogs = `atris/team/${name}/logs/`;
+  const memberSkills = `atris/team/${name}/skills/`;
   if (filePath.startsWith(memberLogs)) return true;
+  if (filePath.startsWith(memberSkills)) return true;
   if (filePath === `atris/team/${name}/goals.json`) return true;
+  if (filePath === `atris/team/${name}/goals.md`) return true;
   if (filePath === `atris/team/${name}/now.md`) return true;
+  if (filePath === `atris/team/${name}/MEMBER.md`) return true;
+  if (filePath === `atris/team/${name}/MISSION.md`) return true;
+  if (filePath === `atris/team/${name}/SOUL.md`) return true;
   return false;
 }
 
@@ -7818,6 +8071,7 @@ const WAKE_REASON_TEXT = {
   heuristic_objective_proposal_written: 'it drafted an objective proposal using its built-in heuristics',
   install_requires_clean_git: 'installing needs a clean git tree first',
   insufficient_world_model_data: 'its world model is too thin to act on yet',
+  skipped_llm_not_configured: 'no model is configured here, so it skipped quietly instead of writing another dry-run receipt',
   llm_json_parse_failed: 'the model reply did not parse, so it stopped rather than act on garbage',
   llm_json_parse_failed_heuristic_used: 'the model reply did not parse, so it fell back to built-in heuristics',
   missing_domain_input: 'it needs a domain file or domain text from you to work on',
@@ -7909,7 +8163,9 @@ function wakeBootLines(name, result) {
       || /^open_experiment_/.test(result.reason || '');
     lines.push('', `  ${s.bold(ballWithHuman ? 'Your move' : 'Next step')}`, `    ${s.cyan(result.next_command)}`);
   }
-  lines.push('', `  ${s.dim(`receipt \u00b7 ${path.relative(process.cwd(), result.receipt_path)}`)}`, '');
+  if (result.receipt_path) {
+    lines.push('', `  ${s.dim(`receipt \u00b7 ${path.relative(process.cwd(), result.receipt_path)}`)}`, '');
+  }
   return lines;
 }
 
@@ -8664,14 +8920,14 @@ function memberBlock(name, experimentId, ...args) {
 
 function collectFleetMemberStatus(root = process.cwd()) {
   const teamDir = path.join(root, 'atris', 'team');
-  const missionMap = memberRunMissionMap();
+  const missionMap = memberRunMissionMap(root);
   return findAllMembers(teamDir)
     .filter(isFleetMember)
     .map((member) => {
       const slug = memberSlugFromRecord(member);
       const paths = memberPaths(slug);
       const goalPlane = memberGoalPlaneStatus(slug, paths);
-      const mission = memberMissionSummary(slug, missionMap);
+      const mission = memberMissionSummary(slug, missionMap, root);
       const activity = memberLastActivity(slug, paths, root);
       const verdict = memberVerdict({ mission, activity });
       return {
@@ -8682,10 +8938,18 @@ function collectFleetMemberStatus(root = process.cwd()) {
         mission: mission.latest ? {
           id: mission.latest.id || null,
           name: mission.name,
+          objective: mission.objective,
           state: mission.state,
+          runner: mission.runner,
+          model: mission.model,
+          worktree_root: mission.worktree_root,
+          worktree_branch: mission.worktree_branch,
+          task_ref: mission.task_ref,
+          current_task_id: mission.current_task_id,
           last_tick_at: mission.last_tick_at,
           last_tick_age: mission.last_tick_age,
           live: mission.live_mission,
+          driver: mission.driver,
         } : null,
         last_activity: activity,
         verdict,
@@ -8797,10 +9061,18 @@ function memberStatus(name, ...args) {
     mission: mission.latest ? {
       id: mission.latest.id || null,
       name: mission.name,
+      objective: mission.objective,
       state: mission.state,
+      runner: mission.runner,
+      model: mission.model,
+      worktree_root: mission.worktree_root,
+      worktree_branch: mission.worktree_branch,
+      task_ref: mission.task_ref,
+      current_task_id: mission.current_task_id,
       last_tick_at: mission.last_tick_at,
       last_tick_age: mission.last_tick_age,
       live: mission.live_mission,
+      driver: mission.driver,
     } : null,
     last_activity: activity,
     verdict,
@@ -9080,13 +9352,1135 @@ async function memberChat(name, ...rest) {
   return { ok: true };
 }
 
+const IDEA_ARCHETYPE_RULES = [
+  {
+    slugs: ['auto-improver', 'improver'],
+    pattern: /\b(repeat|recurring|broken\s+test|flaky|error|regression|pain|fix\s+bug|self[- ]improv|crash)\b/i,
+    reason: 'handles recurring errors, regressions, and test fixes',
+  },
+  {
+    slugs: ['validator', 'orb'],
+    pattern: /\b(review|audit|validate|verify|check\s+diff|quality|slop|security)\b/i,
+    reason: 'reviews changes and blocks weak work before merge',
+  },
+  {
+    slugs: ['architect'],
+    pattern: /\b(architect|migration|schema|api\s+design|refactor|boundary)\b/i,
+    reason: 'judges architecture and multi-file design before code changes',
+  },
+  {
+    slugs: ['navigator', 'task-planner'],
+    pattern: /\b(roadmap|plan|spec|break\s+down|map|where\s+is|navigate)\b/i,
+    reason: 'maps the codebase and breaks ideas into clear steps',
+  },
+  {
+    slugs: ['customer-lead'],
+    pattern: /\b(customer|churn|retention|onboarding|support|user\s+feedback|commitment)\b/i,
+    reason: 'turns customer signals into clear commitments and next moves',
+  },
+  {
+    slugs: ['researcher', 'scout'],
+    pattern: /\b(research|benchmark|investigate|compare|study|survey)\b/i,
+    reason: 'researches options and gathers grounded evidence',
+  },
+  {
+    slugs: ['executor', 'builder', 'codex-executor'],
+    pattern: /\b(build|implement|feature|add|wire|create|ship|code|update)\b/i,
+    reason: 'builds and tests concrete product changes',
+  },
+];
+
+function pickMemberForIdea(ideaText, root = process.cwd(), preferredMember = '') {
+  const teamDir = path.join(root, 'atris', 'team');
+  const members = findAllMembers(teamDir).filter(isFleetMember);
+  if (!members.length) return null;
+
+  const cleanPreferred = String(preferredMember || '').trim().toLowerCase();
+  if (cleanPreferred) {
+    const match = members.find((m) => memberSlugFromRecord(m).toLowerCase() === cleanPreferred);
+    if (match) {
+      const slug = memberSlugFromRecord(match);
+      return {
+        member: slug,
+        role: match.role || 'Team Member',
+        reason: 'selected directly by you',
+        score: 100,
+      };
+    }
+  }
+
+  const text = String(ideaText || '').trim();
+  const words = text
+    .toLowerCase()
+    .split(/[^a-z0-9]+/)
+    .filter((w) => w.length >= 4);
+
+  let best = null;
+  for (const record of members) {
+    const slug = memberSlugFromRecord(record);
+    let score = 0;
+    let matchedReason = '';
+
+    for (const rule of IDEA_ARCHETYPE_RULES) {
+      if (rule.slugs.includes(slug) && rule.pattern.test(text)) {
+        score += 25 + (rule.slugs[0] === slug ? 5 : 0);
+        matchedReason = rule.reason;
+        break;
+      }
+    }
+
+    const missionFile = path.join(teamDir, slug, 'MISSION.md');
+    const missionText = fs.existsSync(missionFile) ? fs.readFileSync(missionFile, 'utf8') : '';
+    const corpus = `${slug} ${record.role || ''} ${record.description || ''} ${(record.skills || []).join(' ')} ${missionText}`.toLowerCase();
+
+    let overlapCount = 0;
+    for (const word of words) {
+      if (corpus.includes(word)) overlapCount += 1;
+    }
+    score += overlapCount * 4;
+    if (Number(record.skillCount || 0) > 0) score += 2;
+    if (slug === 'executor') score += 3;
+    if (slug === 'auto-improver') score += 2;
+
+    if (!matchedReason) {
+      matchedReason = record.description
+        ? compactSentence(record.description, 90)
+        : `fits ${record.role || slug} responsibilities`;
+    }
+
+    const candidate = {
+      member: slug,
+      role: record.role || 'Team Member',
+      reason: matchedReason,
+      score,
+    };
+    if (!best || candidate.score > best.score || (candidate.score === best.score && candidate.member.localeCompare(best.member) < 0)) {
+      best = candidate;
+    }
+  }
+
+  return best;
+}
+
+function memberDispatch(...args) {
+  if (!args.length || hasFlag(args, '--help') || hasFlag(args, '-h')) {
+    console.log('Usage: atris member dispatch "<idea>" [--to <member>] [--engine <name>] [--ignite] [--dry-run] [--json]');
+    console.log('Routes your idea to the best-suited team member and starts the work in an isolated checkout.');
+    return;
+  }
+  const asJson = hasFlag(args, '--json');
+  const dryRun = hasFlag(args, '--dry-run');
+  const preferredMember = readFlag(args, '--to', '') || readFlag(args, '--member', '');
+  const valueFlags = [...MEMBER_RUN_START_VALUE_FLAGS, '--to', '--member'];
+  const boolFlags = [...MEMBER_RUN_START_BOOLEAN_FLAGS, '--dry-run'];
+  const ideaText = stripKnownFlags(args, valueFlags, boolFlags).join(' ').trim();
+  if (!ideaText) {
+    console.error('atris member dispatch: idea text is required.');
+    process.exitCode = 2;
+    return;
+  }
+
+  const picked = pickMemberForIdea(ideaText, process.cwd(), preferredMember);
+  if (!picked) {
+    console.error('No active team members found in atris/team/.');
+    process.exitCode = 1;
+    return;
+  }
+
+  const forwardedArgs = [];
+  for (let i = 0; i < args.length; i += 1) {
+    const token = String(args[i] || '');
+    if (token === '--dry-run') continue;
+    if (token === '--to' || token === '--member') {
+      i += 1;
+      continue;
+    }
+    if (token.startsWith('--to=') || token.startsWith('--member=')) continue;
+    forwardedArgs.push(args[i]);
+  }
+
+  const commandPreview = `atris member run ${picked.member} ${JSON.stringify(ideaText)} --ignite`;
+  if (dryRun) {
+    const payload = {
+      ok: true,
+      action: 'member_dispatch',
+      dry_run: true,
+      idea: ideaText,
+      member: picked.member,
+      role: picked.role,
+      reason: picked.reason,
+      command: commandPreview,
+    };
+    printJsonOrText(
+      payload,
+      [
+        `${picked.member} (${picked.role}) will take this because it ${picked.reason.replace(/^[A-Z]/, (c) => c.toLowerCase())}.`,
+        '',
+        commandPreview,
+      ],
+      asJson,
+    );
+    return payload;
+  }
+
+  if (!asJson) {
+    console.log(`${picked.member} (${picked.role}) is taking this because it ${picked.reason.replace(/^[A-Z]/, (c) => c.toLowerCase())}.`);
+  }
+  return startMemberRunMission(picked.member, ideaText, forwardedArgs);
+}
+
+function scrubFeedJargon(text) {
+  return String(text || '')
+    .replace(/\bmission-\d{4}-\d{2}-\d{2}-[a-z0-9-]+\b/gi, '')
+    .replace(/\b[0-9a-f]{7,40}\b/g, '')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
+function plainFeedStatusLabel(mission) {
+  const status = String(mission?.status || '').toLowerCase();
+  if (mission?.verifier_result?.passed && (status === 'complete' || status === 'ready')) return 'verified and ready';
+  if (status === 'complete' || status === 'ready') return 'ready for review';
+  if (status === 'running') return 'working now';
+  if (status === 'blocked' || status === 'paused') return 'needs your input';
+  return 'queued';
+}
+
+function buildMemberImpactChain({ summary, verified, goalWhy, nextPush, skills = [] }) {
+  const action = compactSentence(scrubFeedJargon(summary || 'Shipped one bounded slice'), 100);
+  const rawConsequence = verified
+    ? (goalWhy ? scrubFeedJargon(goalWhy) : 'Verified check passed so this slice stays solid')
+    : (goalWhy ? scrubFeedJargon(goalWhy) : 'Work is in flight toward a verified check');
+  const consequence = compactSentence(rawConsequence, 100);
+  const skillHint = Array.isArray(skills) && skills.length ? `Sharpens ${skills[0]} and queues the next optimization` : 'Queues the next optimization automatically';
+  const compounding = compactSentence(scrubFeedJargon(nextPush || skillHint), 110);
+  return {
+    action,
+    consequence,
+    compounding,
+    arrow: `${action} -> ${consequence} -> ${compounding}`,
+  };
+}
+
+function collectMemberWorkFeed(root = process.cwd(), options = {}) {
+  const teamDir = path.join(root, 'atris', 'team');
+  const members = findAllMembers(teamDir).filter(isFleetMember);
+  const roleByMember = new Map(members.map((m) => [memberSlugFromRecord(m), m.role || 'Team Member']));
+  const metaByMember = new Map();
+  for (const m of members) {
+    const slug = memberSlugFromRecord(m);
+    const mDir = path.join(teamDir, slug);
+    const skills = listMemberUnlockedSkills(mDir, m.skills);
+    let goalWhy = null;
+    let goalTitle = null;
+    try {
+      const gp = memberGoalPlaneStatus(slug, { memberDir: mDir, goalsFile: path.join(mDir, 'goals.json') });
+      goalWhy = gp?.goal?.why || null;
+      goalTitle = gp?.goal?.title || null;
+    } catch {}
+    metaByMember.set(slug, { skills, goalWhy, goalTitle });
+  }
+  const filterMember = String(options.member || '').trim().toLowerCase();
+  const limit = Number.isFinite(Number(options.limit)) && Number(options.limit) > 0 ? Number(options.limit) : 15;
+
+  const items = [];
+  const missionMap = memberRunMissionMap(root);
+  for (const mission of missionMap.values()) {
+    const owner = String(mission?.owner || '').trim();
+    if (!owner) continue;
+    if (filterMember && owner.toLowerCase() !== filterMember) continue;
+    const atIso = mission.last_tick_at || mission.updated_at || mission.created_at || null;
+    const atMs = timestampMs(atIso);
+    const summaryText = scrubFeedJargon(mission.last_summary || mission.objective || '');
+    if (!summaryText) continue;
+    const cleanSummary = compactSentence(summaryText, 140);
+    const verified = Boolean(mission?.verifier_result?.passed);
+    const meta = metaByMember.get(owner) || { skills: [], goalWhy: null, goalTitle: null };
+    const nextPush = scrubFeedJargon(mission.last_next_push || meta.goalTitle || '');
+    const impactChain = buildMemberImpactChain({
+      summary: cleanSummary,
+      verified,
+      goalWhy: meta.goalWhy,
+      nextPush,
+      skills: meta.skills,
+    });
+    items.push({
+      member: owner,
+      role: roleByMember.get(owner) || 'Team Member',
+      at: atIso,
+      at_ms: atMs,
+      age: ageLabelFromMs(atMs),
+      summary: cleanSummary,
+      status: plainFeedStatusLabel(mission),
+      verified,
+      next_push: impactChain.compounding,
+      impact_chain: impactChain,
+    });
+  }
+
+  for (const record of members) {
+    const slug = memberSlugFromRecord(record);
+    if (filterMember && slug.toLowerCase() !== filterMember) continue;
+    const logsDir = path.join(teamDir, slug, 'logs');
+    if (!fs.existsSync(logsDir)) continue;
+    const logFiles = fs.readdirSync(logsDir).filter((f) => f.endsWith('.md')).sort().slice(-2);
+    for (const file of logFiles) {
+      const fullPath = path.join(logsDir, file);
+      let raw = '';
+      let mtimeMs = 0;
+      try {
+        raw = fs.readFileSync(fullPath, 'utf8');
+        mtimeMs = fs.statSync(fullPath).mtimeMs || 0;
+      } catch {
+        continue;
+      }
+      const sections = raw.split(/^##\s+/m).slice(1);
+      for (const section of sections.slice(-3)) {
+        const lines = section.trim().split(/\r?\n/);
+        const header = lines[0] || '';
+        const summaryLine = lines.find((l) => /^-\s*(summary|mission|title):/i.test(l));
+        const verifierLine = lines.find((l) => /^-\s*verifier:/i.test(l));
+        const nextPushLine = lines.find((l) => /^-\s*(next_push|next push|next):/i.test(l));
+        const rawSummary = summaryLine
+          ? summaryLine.replace(/^-\s*(summary|mission|title):\s*/i, '')
+          : header.replace(/^\d{2}:\d{2}\s*·\s*/, '');
+        const cleanSummary = compactSentence(scrubFeedJargon(rawSummary), 140);
+        if (!cleanSummary) continue;
+        const alreadyInItems = items.some((item) => item.member === slug && item.summary === cleanSummary);
+        if (alreadyInItems) continue;
+        const passed = verifierLine ? /passed/i.test(verifierLine) : false;
+        const meta = metaByMember.get(slug) || { skills: [], goalWhy: null, goalTitle: null };
+        const rawNextPush = nextPushLine
+          ? nextPushLine.replace(/^-\s*(next_push|next push|next):\s*/i, '')
+          : (meta.goalTitle || '');
+        const impactChain = buildMemberImpactChain({
+          summary: cleanSummary,
+          verified: passed,
+          goalWhy: meta.goalWhy,
+          nextPush: rawNextPush,
+          skills: meta.skills,
+        });
+        items.push({
+          member: slug,
+          role: record.role || 'Team Member',
+          at: new Date(mtimeMs).toISOString(),
+          at_ms: mtimeMs,
+          age: ageLabelFromMs(mtimeMs),
+          summary: cleanSummary,
+          status: passed ? 'verified and ready' : 'logged update',
+          verified: passed,
+          next_push: impactChain.compounding,
+          impact_chain: impactChain,
+        });
+      }
+    }
+  }
+
+  return items
+    .sort((a, b) => (b.at_ms || 0) - (a.at_ms || 0))
+    .slice(0, limit);
+}
+
+function memberFeed(...args) {
+  if (hasFlag(args, '--help') || hasFlag(args, '-h')) {
+    console.log('Usage: atris member feed [--member <name>] [--limit N] [--json]');
+    console.log('Shows a plain-language linear feed of real work across your team.');
+    return;
+  }
+  const asJson = hasFlag(args, '--json');
+  const memberFilter = readFlag(args, '--member', '') || readFlag(args, '--author', '');
+  const limit = readNumberFlag(args, '--limit', 15);
+  const feed = collectMemberWorkFeed(process.cwd(), { member: memberFilter, limit });
+  const lines = !feed.length
+    ? ['No team work recorded yet. Run: atris member dispatch "<idea>"']
+    : [
+        'Team work feed',
+        ...feed.flatMap((item) => [
+          `${item.age.padEnd(4)} · ${item.member} (${item.role}): ${item.summary} [${item.status}]`,
+          `       -> ${item.impact_chain.consequence} -> Next push: ${item.impact_chain.compounding}`,
+        ]),
+      ];
+  printJsonOrText(
+    {
+      ok: true,
+      action: 'member_feed',
+      items: feed,
+    },
+    lines,
+    asJson,
+  );
+  return feed;
+}
+
+function extractMemberNorthStar(memberDir, fallbackDescription = '') {
+  const missionPath = path.join(memberDir, 'MISSION.md');
+  if (fs.existsSync(missionPath)) {
+    try {
+      const raw = fs.readFileSync(missionPath, 'utf8');
+      const northStarMatch = raw.match(/##\s+North Star\s+([^\n#]+)/i);
+      if (northStarMatch && northStarMatch[1].trim()) {
+        return compactSentence(northStarMatch[1].trim(), 160);
+      }
+      const firstPara = raw
+        .split(/\r?\n/)
+        .map((l) => l.trim())
+        .find((l) => l && !l.startsWith('#') && !l.startsWith('-'));
+      if (firstPara) return compactSentence(firstPara, 160);
+    } catch {}
+  }
+  return compactSentence(fallbackDescription || 'Execute bounded, verified work in this member lane.', 160);
+}
+
+function listMemberUnlockedSkills(memberDir, frontmatterSkills = []) {
+  const skills = new Set();
+  const skillsDir = path.join(memberDir, 'skills');
+  if (fs.existsSync(skillsDir)) {
+    try {
+      for (const entry of fs.readdirSync(skillsDir)) {
+        if (fs.existsSync(path.join(skillsDir, entry, 'SKILL.md'))) skills.add(entry);
+      }
+    } catch {}
+  }
+  for (const s of Array.isArray(frontmatterSkills) ? frontmatterSkills : []) {
+    if (s && typeof s === 'string') skills.add(s.trim());
+  }
+  return [...skills];
+}
+
+function resolveMemberEngineSeat(memberSlug, root = process.cwd()) {
+  const slug = String(memberSlug || '').trim().toLowerCase();
+  const engineRole = slug === 'navigator'
+    ? 'navigator'
+    : (slug === 'validator' || slug === 'architect')
+      ? 'validator'
+      : 'executor';
+  try {
+    const { resolveEngineForRoleRanked } = require('../lib/engine-registry');
+    const picked = resolveEngineForRoleRanked(engineRole, root, { taskType: engineRole });
+    if (picked && picked.engine) {
+      return {
+        engine_id: picked.engine.id,
+        tier: picked.engine.tier || 'pro',
+        models: Array.isArray(picked.engine.models) ? picked.engine.models : [],
+        role: engineRole,
+        reason: picked.reason || `${picked.engine.id} selected for ${engineRole}.`,
+      };
+    }
+  } catch {}
+  return {
+    engine_id: 'claude',
+    tier: 'pro',
+    models: ['claude'],
+    role: engineRole,
+    reason: 'Default engine seat.',
+  };
+}
+
+function buildMemberSubagentShell(owner, role, engineId, objective, root = process.cwd()) {
+  const cleanObjective = compactSentence(objective || `Advance ${owner} roadmap`, 160);
+  const verify = inferMemberRunVerifier(owner, cleanObjective, root);
+  return {
+    role: `${owner} (${role || 'Team Member'})`,
+    member: owner,
+    engine: engineId || 'claude',
+    objective: cleanObjective,
+    verify,
+    prompt: `You are ${owner} (${role || 'Team Member'}). Read atris/team/${owner}/MEMBER.md, MISSION.md, goals.json, and skills/. Execute one bounded slice for: "${cleanObjective}". Run verify: ${verify}. Report 3 lines: Found, Fixed, Next push.`,
+    shell_command: `atris member run ${owner} ${JSON.stringify(cleanObjective)} --engine ${engineId || 'claude'} --ignite`,
+  };
+}
+
+function buildMemberCard(name, root = process.cwd()) {
+  const paths = requireMemberDir(name);
+  const owner = paths.storageName || name;
+  let fm = {};
+  try {
+    fm = parseFrontmatter(fs.readFileSync(paths.memberFile, 'utf8')) || {};
+  } catch {}
+  const goalPlane = memberGoalPlaneStatus(owner, paths);
+  const mission = memberMissionSummary(owner, memberRunMissionMap(root), root);
+  const activity = memberLastActivity(owner, paths, root);
+  const verdict = memberVerdict({ mission, activity });
+  const skills = listMemberUnlockedSkills(paths.memberDir, fm.skills);
+  const northStar = extractMemberNorthStar(paths.memberDir, fm.description);
+  const recentWork = collectMemberWorkFeed(root, { member: owner, limit: 3 });
+  const engineSeat = resolveMemberEngineSeat(owner, root);
+
+  const doingNow = mission.latest
+    ? {
+        summary: compactSentence(scrubFeedJargon(mission.latest.last_summary || mission.objective || mission.name || ''), 120),
+        state: plainFeedStatusLabel(mission.latest),
+        engine: mission.runner || engineSeat.engine_id || null,
+        model: mission.model || null,
+        worktree_branch: mission.worktree_branch || null,
+        last_tick_age: mission.last_tick_age,
+      }
+    : null;
+
+  const activeGoalTitle = goalPlane.goal?.title || null;
+  const activeGoalWhy = goalPlane.goal?.why || null;
+  const activeGoalNextPush = goalPlane.goal?.next_push || null;
+  const latestItem = recentWork[0] || null;
+  const isVerified = doingNow?.state === 'verified and ready' || Boolean(latestItem?.verified);
+  const impactChain = buildMemberImpactChain({
+    summary: doingNow?.summary || latestItem?.summary || activeGoalTitle || northStar,
+    verified: isVerified,
+    goalWhy: activeGoalWhy || northStar,
+    nextPush: mission.latest?.last_next_push || activeGoalNextPush || activeGoalTitle,
+    skills,
+  });
+
+  const nextMove = mission.live
+    ? `atris member run ${owner} --mission ${mission.live.id} --ignite`
+    : activeGoalTitle
+      ? `atris member run ${owner} ${JSON.stringify(activeGoalTitle)} --ignite`
+      : `atris interview ${owner}`;
+  const roleLabel = fm.role || 'Team Member';
+  const subagentShell = buildMemberSubagentShell(
+    owner,
+    roleLabel,
+    engineSeat?.engine_id || 'claude',
+    impactChain.compounding || activeGoalTitle || northStar,
+    root,
+  );
+
+  return {
+    member: owner,
+    role: roleLabel,
+    version: fm.version || '1.0.0',
+    verdict,
+    last_activity_age: activity.age,
+    north_star: northStar,
+    engine_seat: engineSeat,
+    skills,
+    impact_chain: impactChain,
+    next_push: impactChain.compounding,
+    subagent_shell: subagentShell,
+    roadmap: {
+      active_goal: activeGoalTitle,
+      why: activeGoalWhy,
+      acceptance: goalPlane.goal?.acceptance || [],
+      doing_now: doingNow,
+    },
+    actions: {
+      go: `atris member go ${owner}`,
+      steer: `atris member steer ${owner} "<direction>"`,
+      one_on_one: `atris member 1on1 ${owner}`,
+      sleep: `atris member sleep ${owner}`,
+    },
+    recent_work: recentWork,
+    next_move: nextMove,
+  };
+}
+
+function renderMemberCardLines(card) {
+  const skillsLabel = card.skills.length ? card.skills.join(', ') : 'none yet';
+  const engineLabel = card.engine_seat ? `${card.engine_seat.engine_id} (${card.engine_seat.tier})` : 'auto';
+  const goalLabel = card.roadmap.active_goal || 'none set yet (run atris member 1on1 ' + card.member + ')';
+  const doingLabel = card.roadmap.doing_now
+    ? `${card.roadmap.doing_now.summary} [${card.roadmap.doing_now.state}]`
+    : 'idle, ready for next dispatch';
+  const recentLines = card.recent_work.length
+    ? card.recent_work.map((item) => `  - ${item.age}: ${item.summary} [${item.status}]`)
+    : ['  - no verified runs logged yet'];
+
+  return [
+    `┌─ ${card.member} · ${card.role} (v${card.version}) · ${card.verdict.toLowerCase()} · engine: ${engineLabel}`,
+    `│ North Star: ${card.north_star}`,
+    `│ Skills:     ${skillsLabel}`,
+    `│ Roadmap:    ${goalLabel}`,
+    `│ Doing now:  ${doingLabel}`,
+    `│ Loop:       ${card.impact_chain.arrow}`,
+    `│ Next push:  ${card.next_push}`,
+    `│ Recent work:`,
+    ...recentLines,
+    `└─ Controls:  go: ${card.actions.go} | 1on1: ${card.actions.one_on_one} | sleep: ${card.actions.sleep}`,
+  ];
+}
+
+function memberCard(name, ...args) {
+  if (hasFlag(args, '--help') || hasFlag(args, '-h') || name === '--help' || name === '-h') {
+    console.log('Usage: atris member card <name|--all> [--json]');
+    console.log('Shows a member\'s long-horizon roadmap, unlocked skills, current work, and recent wins.');
+    return;
+  }
+  const asJson = hasFlag(args, '--json') || name === '--json';
+  if (!name || name === '--all' || name === 'all' || name === '--json') {
+    const teamDir = path.join(process.cwd(), 'atris', 'team');
+    const coreOrder = ['auto-improver', 'navigator', 'executor', 'validator', 'architect', 'customer-lead', 'researcher'];
+    const allSlugs = findAllMembers(teamDir)
+      .filter(isFleetMember)
+      .map(memberSlugFromRecord);
+    const ordered = [
+      ...coreOrder.filter((s) => allSlugs.includes(s)),
+      ...allSlugs.filter((s) => !coreOrder.includes(s) && hasFlag(args, '--all')),
+    ];
+    const cards = ordered.map((slug) => buildMemberCard(slug, process.cwd()));
+    printJsonOrText(
+      { ok: true, action: 'member_card_all', cards },
+      cards.flatMap((c) => [...renderMemberCardLines(c), '']),
+      asJson,
+    );
+    return cards;
+  }
+  const card = buildMemberCard(name, process.cwd());
+  printJsonOrText(
+    { ok: true, action: 'member_card', card },
+    renderMemberCardLines(card),
+    asJson,
+  );
+  return card;
+}
+
+function isKnownMemberSlug(token, root = process.cwd()) {
+  const clean = String(token || '').trim();
+  if (!clean || clean.startsWith('-')) return false;
+  return fs.existsSync(path.join(root, 'atris', 'team', clean, 'MEMBER.md'))
+    || fs.existsSync(path.join(root, 'atris', 'team', `${clean}.md`));
+}
+
+async function memberSteerOrDispatch(...rawArgs) {
+  if (hasFlag(rawArgs, '--help') || hasFlag(rawArgs, '-h')) {
+    console.log('Usage: atris member steer [member] "<direction>" [--dry-run] [--json]');
+    console.log('       atris member "<direction>" [--dry-run] [--json]');
+    console.log('Steers a running member mid-flight or dispatches the best specialist if idle.');
+    return;
+  }
+  const root = process.cwd();
+  const asJson = hasFlag(rawArgs, '--json');
+  const dryRun = hasFlag(rawArgs, '--dry-run');
+  const valueFlags = new Set(['--engine', '--model', '--verify', '--referee-engine', '--minutes', '--hours', '--max-ticks', '--from']);
+  const positionals = [];
+  const flagArgs = [];
+  for (let i = 0; i < rawArgs.length; i++) {
+    const token = String(rawArgs[i] || '');
+    if (!token) continue;
+    if (token.startsWith('-')) {
+      flagArgs.push(token);
+      if (valueFlags.has(token) && i + 1 < rawArgs.length) {
+        flagArgs.push(rawArgs[i + 1]);
+        i++;
+      }
+      continue;
+    }
+    positionals.push(token);
+  }
+
+  let targetMember = null;
+  let prompt = '';
+  let whyPicked = '';
+  if (positionals.length > 0 && isKnownMemberSlug(positionals[0], root)) {
+    targetMember = positionals[0];
+    prompt = positionals.slice(1).join(' ').trim();
+    whyPicked = `Explicitly targeted ${targetMember}.`;
+  } else {
+    prompt = positionals.join(' ').trim();
+    const picked = pickMemberForIdea(prompt, root);
+    targetMember = picked.member;
+    whyPicked = picked.reason || picked.why || `fits ${picked.member} responsibilities`;
+  }
+
+  const paths = requireMemberDir(targetMember);
+  const owner = paths.storageName || targetMember;
+  let fm = {};
+  try {
+    fm = parseFrontmatter(fs.readFileSync(paths.memberFile, 'utf8')) || {};
+  } catch {}
+  const goalPlane = memberGoalPlaneStatus(owner, paths);
+  const effectivePrompt = prompt
+    || goalPlane.goal?.next_push
+    || goalPlane.goal?.title
+    || extractMemberNorthStar(paths.memberDir, '');
+
+  const missionMap = memberRunMissionMap(root);
+  const missionSummary = memberMissionSummary(owner, missionMap, root);
+  const engineSeat = resolveMemberEngineSeat(owner, root);
+  const { autoQueueMemberNextPush, closeMemberHandoffsForReceiver } = require('./mission');
+  const subagentShell = buildMemberSubagentShell(owner, fm.role || 'Team Member', engineSeat.engine_id, effectivePrompt, root);
+
+  if (effectivePrompt) {
+    try {
+      autoQueueMemberNextPush(owner, effectivePrompt, missionSummary.live?.objective || '', root);
+    } catch {}
+  }
+  if (!dryRun) {
+    try {
+      closeMemberHandoffsForReceiver(owner, root);
+    } catch {}
+  }
+
+  if (missionSummary.live) {
+    if (!dryRun) {
+      try {
+        const liveM = missionSummary.live;
+        const targetRoot = liveM.worktree_root || root;
+        const missionsFile = path.join(targetRoot, '.atris', 'state', 'missions.jsonl');
+        const nextPings = [
+          ...(Array.isArray(liveM.pings) ? liveM.pings : []),
+          { at: new Date().toISOString(), from: 'operator', text: effectivePrompt },
+        ];
+        const updatedMission = {
+          ...liveM,
+          pings: nextPings,
+          last_next_push: effectivePrompt,
+          updated_at: new Date().toISOString(),
+        };
+        fs.mkdirSync(path.dirname(missionsFile), { recursive: true });
+        fs.appendFileSync(missionsFile, `${JSON.stringify(updatedMission)}\n`, 'utf8');
+      } catch {}
+    }
+    const payload = {
+      ok: true,
+      action: 'member_steered',
+      mode: 'steered_live',
+      dry_run: dryRun,
+      member: owner,
+      mission_id: missionSummary.live.id,
+      engine: missionSummary.runner || engineSeat.engine_id,
+      prompt: effectivePrompt,
+      why: whyPicked,
+      subagent_shell: subagentShell,
+    };
+    const lines = [
+      `Steered ${owner} mid-run (${missionSummary.live.id}).`,
+      `Direction: ${effectivePrompt}`,
+      `Consequence: ${owner} will read this steer on the next loop and adjust course.`,
+    ];
+    printJsonOrText(payload, lines, asJson);
+    return payload;
+  }
+
+  const command = `atris member run ${owner} ${JSON.stringify(effectivePrompt)} --engine ${engineSeat.engine_id} --ignite`;
+  if (dryRun) {
+    const payload = {
+      ok: true,
+      action: 'member_go',
+      mode: 'dispatched_idle',
+      dry_run: true,
+      member: owner,
+      engine: engineSeat.engine_id,
+      engine_reason: engineSeat.reason,
+      prompt: effectivePrompt,
+      why: whyPicked,
+      command,
+      subagent_shell: subagentShell,
+    };
+    const lines = [
+      `Routed to ${owner} on engine ${engineSeat.engine_id}: ${whyPicked}`,
+      `Objective: ${effectivePrompt}`,
+      `Next: ${command}`,
+    ];
+    printJsonOrText(payload, lines, asJson);
+    return payload;
+  }
+
+  if (!asJson) {
+    console.log(`Routed to ${owner} on engine ${engineSeat.engine_id}: ${whyPicked}`);
+  }
+  const hasExplicitEngine = flagArgs.includes('--engine');
+  const nextFlags = hasExplicitEngine ? flagArgs : ['--engine', engineSeat.engine_id, ...flagArgs];
+  return memberRun(owner, effectivePrompt, '--ignite', ...nextFlags);
+}
+
+async function memberGo(...rawArgs) {
+  if (hasFlag(rawArgs, '--help') || hasFlag(rawArgs, '-h')) {
+    console.log('Usage: atris member go [member|"<direction>"] [--dry-run] [--json]');
+    console.log('Wakes the highest-leverage member on their next_push, or routes a prompt to the right specialist.');
+    return;
+  }
+  const nonFlags = rawArgs.filter((a) => a && !String(a).startsWith('-'));
+  if (nonFlags.length > 0) {
+    return memberSteerOrDispatch(...rawArgs);
+  }
+  const root = process.cwd();
+  const teamDir = path.join(root, 'atris', 'team');
+  const coreOrder = ['auto-improver', 'executor', 'navigator', 'validator', 'architect', 'customer-lead', 'researcher'];
+  let chosen = 'auto-improver';
+  for (const slug of coreOrder) {
+    const mDir = path.join(teamDir, slug);
+    if (!fs.existsSync(path.join(mDir, 'MEMBER.md'))) continue;
+    const gp = memberGoalPlaneStatus(slug, { memberDir: mDir, goalsFile: path.join(mDir, 'goals.json') });
+    if (gp?.goal?.next_push || gp?.goal?.title) {
+      chosen = slug;
+      break;
+    }
+  }
+  return memberSteerOrDispatch(chosen, ...rawArgs);
+}
+
+function memberSleep(target, ...args) {
+  if (hasFlag(args, '--help') || hasFlag(args, '-h') || target === '--help' || target === '-h') {
+    console.log('Usage: atris member sleep [member|--all] [--json]');
+    console.log('Cleanly parks active member loops so your team rests until you wake them.');
+    return;
+  }
+  const root = process.cwd();
+  const asJson = hasFlag(args, '--json') || target === '--json';
+  const filterMember = target && !target.startsWith('-') && target !== 'all' ? target.trim().toLowerCase() : '';
+  const { loadMissionMap } = require('./mission');
+  const missions = loadMissionMap(root);
+  const activeStatuses = new Set(['running', 'planning', 'ready']);
+  const slept = [];
+
+  for (const m of missions.values()) {
+    if (!m || !activeStatuses.has(String(m.status || '').toLowerCase())) continue;
+    const owner = String(m.owner || '').trim();
+    if (filterMember && owner.toLowerCase() !== filterMember) continue;
+    const updated = {
+      ...m,
+      status: 'paused',
+      paused_at: new Date().toISOString(),
+      stop_reason: 'member-sleep',
+      next_action: `sleeping; wake with: atris member go ${owner || ''}`.trim(),
+      updated_at: new Date().toISOString(),
+    };
+    const missionsFile = path.join(root, '.atris', 'state', 'missions.jsonl');
+    fs.mkdirSync(path.dirname(missionsFile), { recursive: true });
+    fs.appendFileSync(missionsFile, `${JSON.stringify(updated)}\n`, 'utf8');
+    slept.push({ mission_id: m.id, member: owner || 'mission-lead', objective: m.objective });
+  }
+
+  const payload = {
+    ok: true,
+    action: 'member_sleep',
+    target: filterMember || 'all',
+    slept_count: slept.length,
+    slept,
+    wake_command: filterMember ? `atris member go ${filterMember}` : 'atris member go',
+  };
+  const lines = slept.length
+    ? [
+        `Put ${slept.length} active member loop${slept.length === 1 ? '' : 's'} to sleep.`,
+        ...slept.map((s) => `  - ${s.member}: ${s.objective}`),
+        `Wake anytime: ${payload.wake_command}`,
+      ]
+    : [
+        `All members are already resting.`,
+        `Wake anytime: ${payload.wake_command}`,
+      ];
+  printJsonOrText(payload, lines, asJson);
+  return payload;
+}
+
+async function memberOneOnOne(name, ...args) {
+  if (!name || name === '--help' || name === '-h' || hasFlag(args, '--help') || hasFlag(args, '-h')) {
+    console.log('Usage: atris member 1on1 <name> [--note "..."]');
+    console.log('Sit down for a 1-on-1 with a team member to review recent work and set their next roadmap goal.');
+    return;
+  }
+  const { interviewAtris } = require('./interview');
+  return interviewAtris(name, ...args);
+}
+
+function collectMemberHandoffs(root = process.cwd(), cards = []) {
+  const handoffsFile = path.join(root, '.atris', 'state', 'member-handoffs.jsonl');
+  const recorded = readJsonlRowsIfExists(handoffsFile, 20)
+    .filter((h) => h && h.from && h.to && (h.status || 'open') === 'open')
+    .reverse();
+  if (recorded.length > 0) return recorded.slice(0, 6);
+  const relay = {
+    researcher: 'navigator',
+    'customer-lead': 'navigator',
+    navigator: 'executor',
+    architect: 'executor',
+    executor: 'validator',
+    'auto-improver': 'validator',
+  };
+  const inferred = [];
+  for (const c of cards) {
+    const to = relay[c.member];
+    if (!to) continue;
+    const state = c.roadmap?.doing_now?.state || '';
+    if (state === 'verified and ready' || c.verdict === 'ACTIVE') {
+      inferred.push({
+        id: `relay_${c.member}_${to}`,
+        from: c.member,
+        to,
+        summary: compactSentence(c.roadmap?.doing_now?.summary || c.roadmap?.active_goal || c.next_push, 90),
+        status: 'ready',
+        next_command: `atris member go ${to}`,
+      });
+    }
+  }
+  return inferred.slice(0, 4);
+}
+
+function collectMemberOneOnOnes(root = process.cwd(), slugs = []) {
+  const queue = [];
+  for (const slug of slugs) {
+    try {
+      const paths = requireMemberDir(slug);
+      const gp = memberGoalPlaneStatus(slug, paths);
+      if (!gp.goal) {
+        queue.push({
+          member: slug,
+          reason: 'No active roadmap goal set yet',
+          command: `atris member 1on1 ${slug}`,
+        });
+      } else if (gp.needsUser) {
+        queue.push({
+          member: slug,
+          reason: gp.ask || 'Blocked and waiting on your answer',
+          command: `atris member 1on1 ${slug}`,
+        });
+      }
+    } catch {}
+  }
+  return queue;
+}
+
+function memberHandoff(from, to, ...args) {
+  if (from === '--help' || from === '-h' || hasFlag(args, '--help') || hasFlag(args, '-h')) {
+    console.log('Usage: atris member handoff [<from> <to> "<slice>"] [--json]');
+    console.log('Passes a completed slice from one member to the next specialist and queues their next_push.');
+    return;
+  }
+  const root = process.cwd();
+  const asJson = from === '--json' || to === '--json' || hasFlag(args, '--json');
+  const sliceWords = [to, ...args].filter((a) => a && !String(a).startsWith('-'));
+  if (!from || from.startsWith('-') || sliceWords.length < 2) {
+    const room = buildMemberRoom(root);
+    const lines = room.handoffs.length
+      ? [
+          'Active Member Handoffs:',
+          ...room.handoffs.map((h) => `  - ${h.from} -> ${h.to}: ${h.summary} (run: ${h.next_command})`),
+        ]
+      : ['No open handoffs right now.'];
+    printJsonOrText({ ok: true, action: 'member_handoffs', handoffs: room.handoffs }, lines, asJson);
+    return room.handoffs;
+  }
+  const targetTo = sliceWords[0];
+  const summary = sliceWords.slice(1).join(' ').trim();
+  const { recordMemberHandoff } = require('./mission');
+  const handoff = recordMemberHandoff(from, targetTo, summary, root);
+  if (!handoff) {
+    console.error(`Could not record handoff from ${from} to ${targetTo}. Check member names.`);
+    process.exitCode = 1;
+    return null;
+  }
+  const lines = [
+    `Handoff recorded: ${handoff.from} -> ${handoff.to}`,
+    `Slice: ${handoff.summary}`,
+    `Next: ${handoff.next_command}`,
+  ];
+  printJsonOrText({ ok: true, action: 'member_handoff', handoff }, lines, asJson);
+  return handoff;
+}
+
+function buildMemberRoom(root = process.cwd()) {
+  const teamDir = path.join(root, 'atris', 'team');
+  const coreOrder = ['auto-improver', 'navigator', 'executor', 'validator', 'architect', 'customer-lead', 'researcher'];
+  const allSlugs = findAllMembers(teamDir)
+    .filter(isFleetMember)
+    .map(memberSlugFromRecord);
+  const ordered = coreOrder.filter((s) => allSlugs.includes(s));
+  const cards = ordered.map((slug) => buildMemberCard(slug, root));
+  const feed = collectMemberWorkFeed(root, { limit: 6 });
+
+  const standup = cards.map((c) => {
+    const status = c.roadmap.doing_now ? c.roadmap.doing_now.state : c.verdict.toLowerCase();
+    const latestUpdate = c.roadmap.doing_now?.summary
+      || c.recent_work[0]?.summary
+      || c.roadmap.active_goal
+      || c.north_star;
+    return {
+      member: c.member,
+      role: c.role,
+      status,
+      engine: c.engine_seat?.engine_id || 'auto',
+      skills_count: c.skills.length,
+      latest_update: compactSentence(latestUpdate, 92),
+      consequence: c.impact_chain.consequence,
+      next_push: compactSentence(c.next_push, 84),
+      subagent_shell: c.subagent_shell,
+      one_on_one: `atris member 1on1 ${c.member}`,
+    };
+  });
+
+  const handoffs = collectMemberHandoffs(root, cards);
+  const oneOnOnes = collectMemberOneOnOnes(root, ordered);
+
+  let readyEngines = [];
+  try {
+    const { engineRegistryView } = require('../lib/engine-registry');
+    readyEngines = engineRegistryView(root)
+      .filter((e) => e.health && e.health.status === 'ready')
+      .map((e) => ({
+        id: e.id,
+        tier: e.tier,
+        roles: e.roles,
+        models: e.models,
+      }));
+  } catch {}
+
+  return {
+    schema: 'atris.member.room.v1',
+    utopia: {
+      percent: 100,
+      loop: 'ACTION: Plain prompt or click -> CONSEQUENCE: Verified two-model execution + SKILL.md lesson -> COMPOUNDING: Self-queued next_push + Moneyball engine routing -> UTOPIA: Autonomous team that improves forever',
+    },
+    engines: readyEngines,
+    members: cards,
+    standup,
+    handoffs,
+    one_on_ones: oneOnOnes,
+    feed,
+    controls: {
+      go: 'atris member go',
+      day: 'atris member day',
+      handoff: 'atris member handoff <from> <to> "<slice>"',
+      steer: 'atris member "<prompt>"',
+      one_on_one: 'atris member 1on1 <member>',
+      sleep: 'atris member sleep',
+      feed: 'atris member feed',
+    },
+  };
+}
+
+async function memberStandupWalk(room, args = []) {
+  const asJson = hasFlag(args, '--json');
+  const limit = Number(readNumberFlag(args, '--limit', 0)) || room.standup.length;
+  const rawDecisions = readFlag(args, '--decisions', '');
+  const scripted = rawDecisions
+    ? rawDecisions.split('|').map((s) => s.trim())
+    : [];
+  const slice = room.standup.slice(0, Math.max(1, limit));
+  const { autoQueueMemberNextPush } = require('./mission');
+  const results = [];
+
+  let rl = null;
+  if (!scripted.length && process.stdin.isTTY && !asJson) {
+    const readline = require('readline');
+    rl = readline.createInterface({ input: process.stdin, output: process.stdout });
+  }
+  const askLine = (promptText) => new Promise((resolve) => {
+    if (!rl) return resolve('y');
+    rl.question(promptText, (ans) => resolve(String(ans || '').trim()));
+  });
+
+  try {
+    for (let i = 0; i < slice.length; i++) {
+      const s = slice[i];
+      if (!asJson) {
+        console.log(`\n+-----------------------------------------------------------------------+`);
+        console.log(`| ${i + 1}. ${s.member.toUpperCase()} (${s.role})`);
+        console.log(`|    Found:   ${s.latest_update}`);
+        console.log(`|    Push:    ${s.next_push}`);
+        console.log(`+-----------------------------------------------------------------------+`);
+      }
+      const rawAns = scripted[i] !== undefined
+        ? scripted[i]
+        : await askLine('  Decision [y = approve / n = skip / or type new idea]: ');
+      const cleanAns = String(rawAns || 'y').trim();
+      const lower = cleanAns.toLowerCase();
+
+      if (lower === 'n' || lower === 'no' || lower === 'skip' || lower === 'sleep') {
+        results.push({ member: s.member, decision: 'skip', engine: s.engine, next_push: s.next_push });
+        if (!asJson) console.log(`  -> NO: skipped ${s.member} for this cycle.`);
+      } else if (lower === 'y' || lower === 'yes' || lower === '') {
+        autoQueueMemberNextPush(s.member, s.next_push, s.latest_update, process.cwd(), { promote: true });
+        results.push({ member: s.member, decision: 'approved', engine: s.engine, next_push: s.next_push, command: `atris member go ${s.member}`, subagent_shell: s.subagent_shell });
+        if (!asJson) console.log(`  -> YES: approved "${s.next_push}" on ${s.engine} (run: atris member go ${s.member})`);
+      } else {
+        autoQueueMemberNextPush(s.member, cleanAns, 'Operator standup steer', process.cwd(), { promote: true });
+        const steeredShell = buildMemberSubagentShell(s.member, s.role, s.engine, cleanAns, process.cwd());
+        results.push({ member: s.member, decision: 'steered', engine: s.engine, next_push: cleanAns, command: `atris member go ${s.member}`, subagent_shell: steeredShell });
+        if (!asJson) console.log(`  -> IDEA: steered ${s.member} to "${cleanAns}" on ${s.engine} (run: atris member go ${s.member})`);
+      }
+    }
+  } finally {
+    if (rl) rl.close();
+  }
+
+  const payload = {
+    ok: true,
+    action: 'member_standup_walk',
+    reviewed: results.length,
+    results,
+  };
+  if (asJson) {
+    console.log(JSON.stringify(payload, null, 2));
+  } else {
+    console.log(`\nStandup complete (${results.length} members reviewed). Launch any approved member with: atris member go <name>`);
+  }
+  return payload;
+}
+
+async function memberRoom(...args) {
+  if (hasFlag(args, '--help') || hasFlag(args, '-h')) {
+    console.log('Usage: atris member [day|standup|room] [--walk] [--limit N] [--decisions "y|idea|n"] [--json]');
+    console.log('Shows your Workday Briefing & Team Room: member-by-member standup, handoffs, 1-on-1 queue, and controls.');
+    return;
+  }
+  const asJson = hasFlag(args, '--json');
+  const room = buildMemberRoom(process.cwd());
+  if (hasFlag(args, '--walk') || Boolean(readFlag(args, '--decisions', ''))) {
+    return memberStandupWalk(room, args);
+  }
+  const engineSummary = room.engines.length
+    ? room.engines.map((e) => `${e.id}(${e.tier})`).join(', ')
+    : 'claude, codex';
+
+  const standupRows = room.standup.flatMap((s, idx) => [
+    `+-----------------------------------------------------------------------+`,
+    `| ${idx + 1}. ${s.member.toUpperCase()} (${s.role}) · ${s.status} · engine:${s.engine}`,
+    `|    Found:   ${s.latest_update}`,
+    `|    Push:    ${s.next_push}`,
+    `+-----------------------------------------------------------------------+`,
+  ]);
+
+  const handoffRows = room.handoffs.length
+    ? room.handoffs.map((h) => `  - ${h.from} -> ${h.to}: ${h.summary} (run: ${h.next_command})`)
+    : ['  - No pending baton passes right now.'];
+
+  const oneOnOneRows = room.one_on_ones.length
+    ? room.one_on_ones.map((o) => `  - ${o.member}: ${o.reason} -> ${o.command}`)
+    : ['  - Zero blocking 1-on-1s today. Every member has an active roadmap and engine seat.'];
+
+  const feedRows = room.feed.length
+    ? room.feed.slice(0, 3).flatMap((item) => [
+        `  ${item.age.padEnd(4)} · ${item.member}: ${item.summary} [${item.status}]`,
+        `         -> ${item.impact_chain.consequence} -> Next push: ${item.impact_chain.compounding}`,
+      ])
+    : ['  No work recorded yet. Run: atris member go'];
+
+  const lines = [
+    'WORKDAY BRIEFING · TEAM ROOM (100% Autonomous Member Loop)',
+    `Engines ready: ${engineSummary}`,
+    `Loop: ${room.utopia.loop}`,
+    '',
+    '1. Member-by-Member Standup (detail: `atris member card <name>` | rapid walk: `atris member standup --walk`):',
+    ...standupRows,
+    '',
+    '2. Handoffs & Baton Passes (`atris member handoff <from> <to> "<slice>"`):',
+    ...handoffRows,
+    '',
+    '3. Your 1-on-1s Today (`atris member 1on1 <name>`):',
+    ...oneOnOneRows,
+    '',
+    'Live Consequence Feed:',
+    ...feedRows,
+    '',
+    'Controls: atris member standup --walk | atris member go | atris member "<prompt>" | atris member 1on1 <name> | atris member sleep',
+  ];
+
+  printJsonOrText({ ok: true, action: 'member_room', ...room }, lines, asJson);
+  return room;
+}
+
 async function memberCommand(subcommand, ...args) {
   // Subcommands that take a member name as args[0] otherwise treat `--help` as
   // a name and error with "Member '--help' not found". `create`/`new` handle
   // help themselves (with subcommand-specific usage) — leave those alone.
-  const HELP_AWARE_SUBCOMMANDS = new Set(['create', 'new', 'run', 'install']);
-  if (!HELP_AWARE_SUBCOMMANDS.has(subcommand) && (args[0] === '-h' || args[0] === '--help')) {
-    subcommand = undefined;
+  const HELP_AWARE_SUBCOMMANDS = new Set([
+    'create', 'new', 'run', 'install', 'dispatch', 'route', 'feed', 'stream',
+    'card', 'cards', 'go', 'work', 'steer', 'sleep', 'rest', '1on1', 'interview',
+    'room', 'ui', 'day', 'standup', 'handoff', 'handoffs',
+  ]);
+  const explicitHelp = subcommand === 'help' || subcommand === '--help' || subcommand === '-h'
+    || (!HELP_AWARE_SUBCOMMANDS.has(subcommand) && (args[0] === '-h' || args[0] === '--help'));
+  if (explicitHelp) {
+    subcommand = 'help';
   }
   switch (subcommand) {
     case 'list':
@@ -9121,6 +10515,34 @@ async function memberCommand(subcommand, ...args) {
       return memberWake(args[0], ...args.slice(1));
     case 'run':
       return memberRun(args[0], ...args.slice(1));
+    case 'go':
+    case 'work':
+      return memberGo(...args);
+    case 'steer':
+      return memberSteerOrDispatch(...args);
+    case 'sleep':
+    case 'rest':
+      return memberSleep(args[0], ...args.slice(1));
+    case '1on1':
+    case 'interview':
+      return memberOneOnOne(args[0], ...args.slice(1));
+    case 'room':
+    case 'ui':
+    case 'day':
+    case 'standup':
+      return memberRoom(...args);
+    case 'handoff':
+    case 'handoffs':
+      return memberHandoff(args[0], args[1], ...args.slice(2));
+    case 'dispatch':
+    case 'route':
+      return memberDispatch(...args);
+    case 'feed':
+    case 'stream':
+      return memberFeed(...args);
+    case 'card':
+    case 'cards':
+      return memberCard(args[0], ...args.slice(1));
     case 'ping':
       return memberPing(args[0], ...args.slice(1));
     case 'loop':
@@ -9152,11 +10574,31 @@ async function memberCommand(subcommand, ...args) {
       return memberArchive(args[0]);
     case 'purge-archived':
       return memberPurgeArchived(...args);
+    case undefined:
+    case '--json':
+      if (fs.existsSync(path.join(process.cwd(), 'atris', 'team'))) {
+        return memberRoom(...(subcommand === '--json' ? ['--json', ...args] : args));
+      }
+      // fall through to help if not in a workspace with atris/team
     default:
+      if (subcommand && subcommand !== 'help' && !subcommand.startsWith('-')) {
+        // Natural prompt or member name: `atris member "make checkout faster"` or `atris member navigator`
+        if (isKnownMemberSlug(subcommand, process.cwd()) && args.filter((a) => !String(a).startsWith('-')).length === 0) {
+          return memberCard(subcommand, ...args);
+        }
+        return memberSteerOrDispatch(subcommand, ...args);
+      }
       console.log('');
-      console.log('Usage: atris member <subcommand> [name]');
+      console.log('Usage: atris member <subcommand|"<prompt>"> [name]');
       console.log('');
       console.log('Subcommands:');
+      console.log('  (bare)              Open the Team Room (members, engines, live consequence feed)');
+      console.log('  "<prompt>"          Steer a running member mid-flight or start the best specialist');
+      console.log('  go [name|"..."]     Wake the highest-leverage member on its next_push or run a prompt');
+      console.log('  steer [name] "..."  Steer a member mid-run or update its immediate direction');
+      console.log('  1on1 <name>         Sit down for a 1-on-1 to review recent wins and set the roadmap');
+      console.log('  sleep [name|--all]  Park active member loops so your team rests until woken');
+      console.log('  room [--json]       Render the visual Team Room and desktop UI payload');
       console.log('  create <name>       Scaffold a new team member (MEMBER.md + dirs) [--push]');
       console.log('  install <slug>      Install the full MEMBER bundle if missing; never overwrite');
       console.log('  chat <name> "..."   Send a message to this member\'s desk in Atris Desktop');
@@ -9170,6 +10612,9 @@ async function memberCommand(subcommand, ...args) {
       console.log('  goal-from-score <name>    Create/reuse an active goal from Team score evidence');
       console.log('  wake <name>         Read Mission state and decide tick/wait/ask/stop');
       console.log('  run <name> ["..."]  Start a budgeted member mission, or run its active Mission Runtime');
+      console.log('  dispatch "<idea>"   Route an idea to the best specialist member and start work');
+      console.log('  feed [--member <n>] Show a plain-language linear feed of real work across the team');
+      console.log('  card [name|--all]   Show a member\'s roadmap, unlocked skills, live work, and recent wins');
       console.log('  loop <name|--all>   Repeat wake on a bounded cadence with a no-overlap lease');
       console.log('  tick <name>         Propose the next bounded experiment');
       console.log('  review <name> <id>  Accept/discard an experiment with proof');
@@ -9233,4 +10678,20 @@ module.exports = {
   parseFrontmatter,
   wakeBootLines,
   buildMemberRunStartArgs,
+  inferMemberRunVerifier,
+  buildMemberMissionRunArgs,
+  shouldIgniteMemberRunForeground,
+  collectFleetMemberStatus,
+  memberRunMissionMap,
+  pickMemberForIdea,
+  buildMemberImpactChain,
+  collectMemberWorkFeed,
+  resolveMemberEngineSeat,
+  buildMemberCard,
+  buildMemberRoom,
+  memberSteerOrDispatch,
+  memberGo,
+  memberSleep,
+  appendMemberGoalLog,
+  appendProjectLog,
 };

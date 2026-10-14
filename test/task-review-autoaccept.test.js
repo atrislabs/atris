@@ -237,3 +237,29 @@ test('review autoaccept config off restores the human approval queue', () => {
     cleanupTempDir(dir);
   }
 });
+
+test('evidence tail trim keeps a real "passed" argument and trims trailing pass prose', () => {
+  const { taskReviewCleanEvidenceCommand } = require('../commands/task');
+  assert.equal(
+    taskReviewCleanEvidenceCommand('node --test --test-name-pattern passed test/a.test.js'),
+    'node --test --test-name-pattern passed test/a.test.js',
+  );
+  assert.equal(taskReviewCleanEvidenceCommand('node --test test/a.test.js passed (exit 0)'), 'node --test test/a.test.js');
+  assert.equal(taskReviewCleanEvidenceCommand('npm test exited 0. Then I checked the diff'), 'npm test');
+  assert.equal(taskReviewCleanEvidenceCommand('npm test exited 0'), 'npm test');
+});
+
+test('certifyVerifyCandidate skips file-exists-only checks and prefers the full chain', () => {
+  const { certifyVerifyCandidate } = require('../commands/task');
+  const pick = (proof, metadata = {}) => certifyVerifyCandidate({ metadata, review: { proof } });
+  assert.equal(pick('Checks: `test -s atris/out.md` passed.'), null);
+  assert.equal(pick('ok', { verify: 'test -f a.md && test -s b.md' }), null);
+  assert.equal(
+    pick('Checks: `test -s atris/out.md` passed; `node --check lib/task-db.js` passed.'),
+    'node --check lib/task-db.js',
+  );
+  assert.equal(
+    pick('Verified: `node scripts/test-foo.mjs && test -s atris/out.md` passed (exit 0).'),
+    'node scripts/test-foo.mjs && test -s atris/out.md',
+  );
+});

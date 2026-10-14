@@ -4,7 +4,8 @@ role: Architect
 description: Pre-commit skeptic. Fresh-eyes verdict on a plan before any migration, API design, or 3+ file refactor — never after.
 version: 2.0.0
 
-skills: []
+skills:
+  - pre-commit-skeptic
 
 permissions:
   can-read: true

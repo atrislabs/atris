@@ -1,0 +1,30 @@
+{"q": "where is the task database", "expect": "lib/task-db.js"}
+{"q": "where is the TODO markdown renderer", "expect": "lib/task-db.js"}
+{"q": "where do cli commands get registered", "expect": "bin/atris.js"}
+{"q": "where is the cli entrypoint", "expect": "bin/atris.js"}
+{"q": "where is the known commands list", "expect": "lib/known-commands.js"}
+{"q": "where is the brain compile command", "expect": "commands/brain.js"}
+{"q": "where does engine dispatch build the runner command", "expect": "lib/runner-command.js"}
+{"q": "where are engine profiles defined", "expect": "lib/engine-registry.js"}
+{"q": "where is the engine command", "expect": "commands/engine.js"}
+{"q": "where is the wiki command", "expect": "commands/wiki.js"}
+{"q": "where is the wiki ingest library", "expect": "lib/wiki.js"}
+{"q": "where is the mission root resolver", "expect": "lib/mission-root.js"}
+{"q": "where is the mission command", "expect": "commands/mission.js"}
+{"q": "where is the worktree command", "expect": "commands/worktree.js"}
+{"q": "where are the tests", "expect": "test/commands.test.js"}
+{"q": "how do i run one test", "expect": "package.json"}
+{"q": "where is the login and token code", "expect": "commands/auth.js"}
+{"q": "where is the stored auth token reader", "expect": "utils/auth.js"}
+{"q": "where is the swarlo client", "expect": "lib/self-drive.js"}
+{"q": "where are the member files", "expect": "atris/team"}
+{"q": "where is the release publish script", "expect": "scripts/publish-atris-release.js"}
+{"q": "where is the journal writer", "expect": "lib/journal.js"}
+{"q": "where is the autoland gate", "expect": "lib/autoland.js"}
+{"q": "where is the slop detector", "expect": "commands/slop.js"}
+{"q": "where is the lesson ledger", "expect": "lib/lesson-ledger.js"}
+{"q": "where is the first minute boot flow", "expect": "lib/first-minute.js"}
+{"q": "where is the api client", "expect": "utils/api.js"}
+{"q": "where is the task projection file", "expect": ".atris/state/tasks.projection.json"}
+{"q": "where is the compiled brain status", "expect": "atris/brain/STATUS.md"}
+{"q": "where is the workspace protocol spec", "expect": "atris/atris.md"}

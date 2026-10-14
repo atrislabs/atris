@@ -37,13 +37,14 @@ test('engine roster lists every profile with detection state', () => {
     assert.deepEqual(codex.models, ['codex']);
     assert.equal(codex.fallback_order, 10);
     assert.ok(codex.health);
-    assert.deepEqual(parsed.engines.find((e) => e.id === 'claude').models, ['opus 5', 'opus 4.8', 'fable', 'haiku']);
-    assert.deepEqual(parsed.engines.find((e) => e.id === 'fable').models, ['opus 5', 'opus 4.8', 'fable', 'haiku']);
+    assert.deepEqual(parsed.engines.find((e) => e.id === 'claude').models, ['opus 5.5', 'opus 5', 'fable', 'haiku']);
+    assert.deepEqual(parsed.engines.find((e) => e.id === 'fable').models, ['opus 5.5', 'opus 5', 'fable', 'haiku']);
     assert.deepEqual(parsed.engines.find((e) => e.id === 'cursor').models, ['composer 2.5', 'grok 4.6', 'kimi 3']);
     assert.deepEqual(parsed.engines.find((e) => e.id === 'composer').models, ['composer 2.5']);
     assert.deepEqual(parsed.engines.find((e) => e.id === 'grok').models, ['grok 4.6', 'grok 4.5']);
     assert.deepEqual(parsed.engines.find((e) => e.id === 'devin').models, ['built-in router']);
     assert.deepEqual(parsed.engines.find((e) => e.id === 'agy').models, [
+      'gemini-3.8-flash-high',
       'gemini-3.7-flash-high',
       'gemini-3.1-pro-high',
       'claude-sonnet-4-6',
@@ -278,7 +279,7 @@ test('engines list renders models and errand duty', () => {
   try {
     const res = runCli(['engines', '--global'], dir, { PATH: CLEAN_PATH });
     assert.equal(res.status, 0, res.stderr || res.stdout);
-    assert.match(res.stdout, /models: opus 5, opus 4\.8, fable, haiku/);
+    assert.match(res.stdout, /models: opus 5\.5, opus 5, fable, haiku/);
     assert.match(res.stdout, /models: composer 2\.5, grok 4\.6, kimi 3/);
     assert.match(res.stdout, /models: built-in router\s+duty: errands/);
     assert.doesNotMatch(res.stdout, /—/);
