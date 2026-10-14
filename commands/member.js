@@ -11173,6 +11173,18 @@ function memberExport(...args) {
   return result;
 }
 
+function memberTidy(...args) {
+  const { tidyMemberCopies, formatTidy } = require('../lib/member-tidy');
+  const dirIndex = args.indexOf('--dir');
+  const result = tidyMemberCopies({
+    dryRun: args.includes('--dry-run'),
+    worktreesDir: dirIndex >= 0 ? args[dirIndex + 1] : undefined,
+  });
+  console.log(formatTidy(result));
+  if (result.aborted) process.exitCode = 1;
+  return result;
+}
+
 async function memberCommand(subcommand, ...args) {
   // Subcommands that take a member name as args[0] otherwise treat `--help` as
   // a name and error with "Member '--help' not found". `create`/`new` handle
@@ -11297,6 +11309,8 @@ async function memberCommand(subcommand, ...args) {
       return memberArchive(args[0]);
     case 'purge-archived':
       return memberPurgeArchived(...args);
+    case 'tidy':
+      return memberTidy(...args);
     case undefined:
     case '--json':
       if (fs.existsSync(path.join(process.cwd(), 'atris', 'team'))) {
@@ -11330,6 +11344,7 @@ async function memberCommand(subcommand, ...args) {
       console.log('  install <slug> [--update]  Install missing files, or refresh template skills');
       console.log('  chat <name> "..."   Send a message to this member\'s desk in Atris Desktop');
       console.log('  list [--json]       Show all team members');
+      console.log('  tidy [--dry-run]    Put away member copies of the repo whose work already landed');
       console.log('  export [--dry-run]  Write each member as a subagent for Claude Code, Cursor, and Codex');
       console.log('  activate <name>     Symlink member skills, show context and permissions');
       console.log('  upgrade <name>      Convert flat file (name.md) to directory format');
