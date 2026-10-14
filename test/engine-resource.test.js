@@ -2362,13 +2362,18 @@ test('an unreadable process list is reported instead of a clean agent count', ()
 
 test('the real sweep warns when the system cannot provide its process list', { skip: process.platform !== 'darwin' }, () => {
   const { spawnSync } = require('node:child_process');
-  const ran = spawnSync('/usr/bin/sandbox-exec', [
-    '-p', '(version 1)(allow default)(deny process-exec (literal "/bin/ps"))',
-    process.execPath, path.join(__dirname, '..', 'bin', 'atris.js'), 'engine', 'sweep',
-  ], { encoding: 'utf8', timeout: 30000 });
-  assert.equal(ran.status, 0, ran.stderr);
-  assert.match(ran.stdout, /could not read the process list/);
-  assert.match(ran.stdout, /the leak count may be incomplete/);
+  const cwd = fs.mkdtempSync(path.join(os.tmpdir(), 'engine-sweep-no-ps-'));
+  try {
+    const ran = spawnSync('/usr/bin/sandbox-exec', [
+      '-p', '(version 1)(allow default)(deny process-exec (literal "/bin/ps"))',
+      process.execPath, path.join(__dirname, '..', 'bin', 'atris.js'), 'engine', 'sweep',
+    ], { cwd, encoding: 'utf8', timeout: 30000 });
+    assert.equal(ran.status, 0, ran.stderr);
+    assert.match(ran.stdout, /could not read the process list/);
+    assert.match(ran.stdout, /the leak count may be incomplete/);
+  } finally {
+    fs.rmSync(cwd, { recursive: true, force: true });
+  }
 });
 
 test('start leak readings stay unknown when any scan reader is unavailable', () => {
