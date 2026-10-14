@@ -628,7 +628,8 @@ test('member stop puts away a run with no pid that went silent for over an hour,
     assert.equal(by.launcher.likely_ended, false);
     assert.equal(by.launcher.lasted, '1h', 'start to its last real line, not to the stop 7h later');
     assert.equal(by.launcher.lasted_at_least, true);
-    assert.match(renderBoard(readBoard({ dir, all: true }), dir), /^launcher\s+stopped\s+at least 1h\s+/m);
+    assert.match(renderBoard(readBoard({ dir, all: true }), dir), /^launcher\s+stopped\s+at least 1h\s+7h ago\s+/m, 'ago counts from its last real line, not the stop');
+    assert.deepEqual(readBoard({ dir }).map((r) => r.member), ['recent'], 'a put-away run ended hours ago, so it leaves the board at once');
     assert.equal((await stopMember('launcher', { dir })).message, 'nothing running', 'second stop finds nothing');
     assert.equal((await stopMember('recent', { dir })).message, 'nothing running', '10m quiet may still be going');
     assert.equal(fs.readFileSync(path.join(dir, 'recent.log'), 'utf8').includes('finished'), false);
