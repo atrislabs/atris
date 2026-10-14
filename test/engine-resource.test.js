@@ -1348,8 +1348,15 @@ test('every engine started through a runner or profile variable records its run 
         const parameter = /^([A-Za-z_$][\w$]*)(?:\.[\w$]+)*$/.exec(source)?.[1];
         const slot = header ? (header[2] ?? header[3] ?? header[4]).split(',').map((name) => name.trim()).indexOf(parameter) : -1;
         if (slot >= 0) {
-          const calls = new RegExp(`\\b${header[1].replace(/\$/g, '\\$')}\\(`, 'g');
+          const expressionName = /\bfunction\s+([\w$]+)\s*\(/.exec(header[0])?.[1];
+          const internalName = (header[2] ?? header[3] ?? header[4]).split(',').some((name) => name.trim() === expressionName) ? undefined : expressionName;
+          const names = [...new Set([header[1], internalName].filter(Boolean))];
+          const calls = new RegExp(`\\b(${names.map((name) => name.replace(/\$/g, '\\$')).join('|')})\\(`, 'g');
+          const fnEnd = definitionSpans(code).find(([open]) => open === fnStart)?.[1] ?? code.length;
           for (const call of code.matchAll(calls)) {
+            // An expression's internal name exists only inside its body.
+            if (call[1] === internalName && internalName !== header[1] && (call.index < fnStart || call.index >= fnEnd)) continue;
+            if (call[1] === internalName && internalName !== header[1] && new RegExp(`\\b(?:const|let|var)\\s+${internalName.replace(/\$/g, '\\$')}\\s*=`).test(code.slice(fnStart, call.index))) continue;
             const prefix = code.slice(0, call.index);
             if (/\bfunction\s*$|\.\s*$/.test(prefix)) continue;
             // Keep nested calls and quoted commas in their own argument.
@@ -1475,6 +1482,25 @@ test('every engine started through a runner or profile variable records its run 
     assert.deepStrictEqual(planted(`function outer() {\n  startEngineRun(root);\n  ${prefix}(runner) {\n    spawnSync(runner, args);\n  };\n  launch(resolveClaudeRunnerBin());\n}\n`), ['commands/planted.js:4 runner'], 'a parent recording cannot cover a function expression');
     assert.deepStrictEqual(planted(`${prefix}(runner) { startEngineRun(root); };\nspawn(resolveClaudeRunnerBin(), args);\n`), ['commands/planted.js:2 resolveClaudeRunnerBin()'], 'a function expression definition is not a recording call');
   }
+  // Named expressions can supply runner arguments through their own name.
+  for (const prefix of ['const launch = function worker', 'let launch = async function worker$']) {
+    const name = prefix.endsWith('$') ? 'worker$' : 'worker';
+    const expression = (body, outside = '') => `${prefix}(runner) {\n${body}\n};\n${outside}`;
+    assert.deepStrictEqual(planted(expression(`  ${name}(resolveClaudeRunnerBin());\n  spawnSync(runner, args);`)), ['commands/planted.js:3 runner']);
+    assert.deepStrictEqual(planted(expression(`  const profile = resolveEngineProfile(engine);\n  ${name}(profile);\n  const program = runner.bin;\n  spawnSync(program, args);`)), ['commands/planted.js:5 program']);
+    assert.deepStrictEqual(planted(expression(`  ${name}(resolveClaudeRunnerBin());\n  startEngineRun(root);\n  spawnSync(runner, args);`)), []);
+    assert.deepStrictEqual(planted(expression(`  ${name}(resolveClaudeRunnerBin());\n  spawnSync(runner, ['--help']);`)), []);
+    assert.deepStrictEqual(planted(expression(`  ${name}(findExecutable('git'));\n  spawnSync(runner, args);`)), []);
+    assert.deepStrictEqual(planted(expression('  spawnSync(runner, args);', `${name}(resolveClaudeRunnerBin());\n`)), [], 'an internal name is not visible after the expression');
+    assert.deepStrictEqual(planted(`${name}(resolveClaudeRunnerBin());\n` + expression('  spawnSync(runner, args);')), [], 'an internal name is not visible before the expression');
+    assert.deepStrictEqual(planted(expression(`  other.${name}(resolveClaudeRunnerBin());\n  spawnSync(runner, args);`)), [], 'a member call does not supply the internal parameter');
+    assert.deepStrictEqual(planted(expression('  spawnSync(runner, args);', 'launch(resolveClaudeRunnerBin());\n')), ['commands/planted.js:2 runner'], 'the assigned variable still supplies parameters');
+    assert.deepStrictEqual(planted(`${prefix}(${name}) {\n  ${name}(resolveClaudeRunnerBin());\n  spawnSync(${name}, args);\n};\nlaunch(git);\n`), [], 'a parameter hides the internal function name');
+    assert.deepStrictEqual(planted(expression(`  const ${name} = other;\n  ${name}(resolveClaudeRunnerBin());\n  spawnSync(runner, args);`)), [], 'a local alias hides the internal function name');
+    assert.deepStrictEqual(planted(`function outer() {\n  const ${name} = other;\n  ${prefix}(runner) {\n    ${name}(resolveClaudeRunnerBin());\n    spawnSync(runner, args);\n  };\n}\n`), ['commands/planted.js:5 runner'], 'the internal function name hides an outer alias');
+  }
+  assert.deepStrictEqual(planted('const launch = function launch(runner) {\n  spawnSync(runner, args);\n};\nlaunch(resolveClaudeRunnerBin());\n'), ['commands/planted.js:2 runner'], 'matching expression and variable names keep external arguments visible');
+  assert.deepStrictEqual(planted('const launch = function launch(runner) {\n  launch(resolveClaudeRunnerBin());\n  spawnSync(runner, args);\n};\n'), ['commands/planted.js:3 runner'], 'the defining assignment does not hide same-name recursion');
   // A variable declared in another function is not this launch's program.
   assert.deepStrictEqual(planted("function a() {\n  const command = buildEngineCommand(engine);\n}\nfunction b(command) {\n  spawnSync(command, { shell: true });\n}\n"), []);
   // A local wrapper that records the run covers the launch below it; a
