@@ -2509,3 +2509,7 @@ npm publish
 ## Safe review action dry-run chat, continuation and human approval fixture setup
 
 - `test/commands.test.js:8722` seeds the first goal-linked chat task through the real store at its original creation point and closes the store before readiness. The continuation at `test/commands.test.js:8772` also uses ordered real-store creation at its original point with the same title, tag and goal link, closing before readiness. The human-only task at `test/commands.test.js:8849` now uses the same real-store creation and closes before readiness. The waiting-for-human fixture at `test/commands.test.js:8798` also uses ordered real-store creation and closes before readiness, preserving the unchanged version and event checks after live continuation. Four creation-only launches are removed (seventeen to thirteen); dry-run, live chat, certification, continuation, human refusal and every safety assertion remain unchanged on the CLI.
+
+## Human-only certified review fallback fixture setup
+
+- `test/commands.test.js:12646` checks selection of reviewed work awaiting human approval and explicit Endgame follow-up creation. Ordered real-store creation at `test/commands.test.js:12673` preserves the checkpoint title, runner tag and original creation point, asserts insertion and a display reference, and closes before CLI claim. One creation-only launch is removed (nine to eight); claim, ready, review, JSON and text next, explicit follow-up creation, repeated approval selection and final CLI show remain unchanged.

@@ -12664,9 +12664,19 @@ test('task next surfaces Endgame fallback for human-only certified review', () =
       '',
     ].join('\n'), 'utf8');
 
-    const created = runCli(['task', 'new', 'Certified checkpoint', '--tag', 'runner', '--json'], { cwd: dir, env });
-    assert.equal(created.status, 0, created.stderr);
-    const ref = JSON.parse(created.stdout).task.display_id;
+    // Only creation is setup; claim, certification and human approval
+    // selection still run through the real CLI.
+    const workspaceRoot = taskStore.workspaceRoot(dir);
+    const db = taskStore.open(dbPath);
+    let ref;
+    try {
+      const created = addSeedTask(db, { title: 'Certified checkpoint', tag: 'runner', workspaceRoot });
+      assert.equal(created.inserted, true);
+      ref = taskStore.taskDisplayRefMap(taskStore.listTasks(db, { workspaceRoot })).get(created.id);
+      assert.ok(ref);
+    } finally {
+      taskStore.close();
+    }
     assert.equal(runCli(['task', 'claim', ref, '--as', 'codex-executor'], { cwd: dir, env }).status, 0);
     assert.equal(runCli(['task', 'ready', ref, '--proof', 'node --check test/commands.test.js passed', '--as', 'codex-executor'], { cwd: dir, env }).status, 0);
     assert.equal(runCli([
