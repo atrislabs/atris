@@ -1848,6 +1848,24 @@ test('fix reads a short subject and a verb that reports a run as a clause', () =
   ]);
 });
 
+test('fix gives a heading with a time in it a colon, but not one that is only a time', () => {
+  // from tick logs, which came out "### Tick 4 (03:05-03:15 PDT); E1 activity rollup landed"
+  const file = tmpFile('timed.md', [
+    '### Tick 4 (03:05-03:15 PDT) \u2014 E1 activity rollup landed',
+    '## 11:44 \u00b7 interface-dev tick \u2014 OBL-1931 shipped',
+    // a colon after a bare time reads as seconds, and a heading never holds two
+    '## 08:25 \u2014 orb evidence-pack run',
+    '### 01:00 learn #11 \u2014 Self-Healing Metrics: How to measure it',
+  ].join('\n'));
+  const { changes } = applyFixes([file], RULES);
+  assert.deepEqual(changes.map((c) => c.after), [
+    '### Tick 4 (03:05-03:15 PDT): E1 activity rollup landed',
+    '## 11:44 \u00b7 interface-dev tick: OBL-1931 shipped',
+    '## 08:25, orb evidence-pack run',
+    '### 01:00 learn #11, Self-Healing Metrics: How to measure it',
+  ]);
+});
+
 test('fix starts the next sentence after a stop that sits before a dash', () => {
   // from the terrace repo, which came out "fine with try? the cost"
   const file = tmpFile('stop.md', [
