@@ -330,3 +330,23 @@ test('the em dash fix gives a short list label a colon and leaves long list sent
     'Name, not a list line',
   ]);
 });
+
+test('the em dash fix keeps punctuation already beside a dash instead of doubling it', () => {
+  const { applyFixes } = require('../commands/slop');
+  const D = '\u2014';
+  const file = tmpFile('punct.md', [
+    `first, ${D} then`,
+    `done; ${D} next`,
+    `word ${D}, more`,
+    `ends ${D}.`,
+    `wraps to the next line ${D}`,
+  ].join('\n'));
+  applyFixes([file], RULES);
+  assert.deepEqual(fs.readFileSync(file, 'utf8').split('\n'), [
+    'first, then',
+    'done; next',
+    'word, more',
+    'ends.',
+    'wraps to the next line,',
+  ]);
+});

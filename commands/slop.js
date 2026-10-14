@@ -28,7 +28,7 @@ const SKIP_DIRS = new Set(['node_modules', '.git', 'dist', 'build', '.next', '.a
 // ("- **Name** then a dash then what it does") gets a colon after the label.
 // Two dashes around an aside become parentheses, so "the gate, the one CI
 // runs, blocks it" never comes out as a comma run-on. A lone dash left over
-// becomes a comma.
+// becomes a comma, unless punctuation already sits beside it.
 const LIST_LABEL_DASH = /^(\s*(?:[-*+]|\d+[.)])\s+)([^\u2014]{0,59}[^\s\u2014,;:.])\s*\u2014\s*/;
 
 function fixEmDash(s) {
@@ -36,7 +36,9 @@ function fixEmDash(s) {
   if (label) return `${label[1]}${label[2]}:${s.length > label[0].length ? ' ' : ''}${fixEmDash(s.slice(label[0].length))}`;
   return s
     .replace(/\s*\u2014\s*([^\u2014]*[^\s\u2014])\s*\u2014\s*(?=(.?))/g, (m, aside, next) => ` (${aside})${/[\w(]/.test(next) ? ' ' : ''}`)
-    .replace(/\s*\u2014\s*/g, ', ');
+    // keep punctuation the writer already put beside the dash instead of
+    // stacking a comma on it, and never leave a trailing space
+    .replace(/([,;:.!?]?)\s*\u2014\s*([,;:.!?]?)\s*(?=(.?))/g, (m, before, after, next) => `${before || after || ','}${next ? ' ' : ''}`);
 }
 
 // Each rule is deterministic: a regex + a one-line why. severity drives the icon.
