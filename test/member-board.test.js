@@ -286,6 +286,15 @@ test('below 30 columns the board keeps whole states and trims only member names'
     'builder  failed  timed out',
     'odd      failed  verifier s...',
   ].join('\n'), 'whole short names keep the result column, cutting only an odd reason');
+  const halted = [
+    ...short,
+    { ...rows[0], member: 'halt', state: 'stopped', last_result: 'stopped', last_result_reason: '' },
+    { ...rows[0], member: 'gone', state: 'stopped', last_result: '', last_result_reason: '', no_result: true },
+  ];
+  assert.deepEqual(renderBoard(halted, '/progress', 0, 30).split('\n').slice(3), [
+    'halt     stopped  on purpose',
+    'gone     stopped  no result',
+  ], 'a stop says how instead of saying stopped twice');
   assert.match(renderBoard(rows, '/progress', 0, 32), /^member\s+state$/m);
   assert.match(renderBoard(rows, '/progress', 0, 33), /^member\s+state\s+last result$/m, 'the result column returns once names keep their room');
 });
