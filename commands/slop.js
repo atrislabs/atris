@@ -318,6 +318,13 @@ function fixEmDash(s, { endsBlock = false, startsBlock = false } = {}) {
     return i % 2 || run < 3 || run % 2 === 0 ? part : part.replace(/\s*\u2014\s*(?=(?:and|but|or|nor|so|yet)\b)/g, ', ');
   }).join('');
   return s
+    // a quote that opens a block or a list item, alone or after a bold label,
+    // names a term or a question, so the words after its dash explain it and
+    // take a colon: '"Where does the byte stop?": traces the path first'. A
+    // quote on a wrapped line is mid-sentence ('its button said / "Find
+    // people", now one voice'), and a quote that ends its own sentence, or
+    // speech that goes on with "and" or "she said", keeps its other fixes.
+    .replace(/^(\s*(?:(?:[-*+]|\d+[.)])\s+)?(?:\*\*[^*]+:\*\*\s+)?)("[^"]*[^".]"|\u201c[^\u201c\u201d]*[^\u201d.]\u201d)\s*\u2014\s*(?=[^\s\u2014])(?!(?:and|but|or|nor|so|yet|then|he|she|they|I|we|you)\b)/, (m, lead, quote) => (startsBlock || /^\s*(?:[-*+]|\d+[.)])\s/.test(lead) ? `${lead}${quote}: ` : m))
     // a bold phrase that opens a sentence partway through the line is a label
     // too: "etc. **Include eliminate steps**: what gets deleted". One that ends
     // in its own punctuation, "**What now?**", keeps it and just loses the dash.

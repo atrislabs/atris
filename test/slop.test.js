@@ -1837,3 +1837,26 @@ test('text indented under a list item is prose, not indented code', () => {
     [4, '     what it would cost, presented to the operator.'],
   ], 'the fix keeps the indent');
 });
+
+test('fix gives a quote that opens a block or a list item a colon after its dash', () => {
+  // from terrace: a quoted error or question opening the line is a term the
+  // words after it explain; a quote on a wrapped line is mid-sentence
+  const D = String.fromCharCode(0x2014);
+  const file = tmpFile('quoted-opener.md', [
+    `"Where does the byte actually stop?" ${D} traces the path before the theory.`,
+    '',
+    `- **Root cause:** "workspace personal doesn't exist" ${D} iOS tells the model its cwd.`,
+    '',
+    'Activity said "drop a pin" while its button said',
+    `"Find people" ${D} now one voice.`,
+    '',
+    `"Go now" ${D} and she left.`,
+  ].join('\n'));
+  const { changes } = applyFixes([file], RULES);
+  assert.deepEqual(changes.map((c) => c.after), [
+    '"Where does the byte actually stop?": traces the path before the theory.',
+    '- **Root cause:** "workspace personal doesn\'t exist": iOS tells the model its cwd.',
+    '"Find people", now one voice.',
+    '"Go now", and she left.',
+  ]);
+});
