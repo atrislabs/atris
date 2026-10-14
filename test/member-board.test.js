@@ -1188,6 +1188,25 @@ test('a run that died before logging past its start has no run time, not 0s', ()
   assert.equal(bare.lasted, '', 'put away with nothing logged past its start: no made-up time');
 });
 
+test('a too-tall board shortens its long notes to one line before leaving a member off', () => {
+  const now = Date.parse('2026-10-14T12:00:00Z');
+  const rows = [
+    memberRow('launcher', '2026-10-14T04:00:00Z m-1 started: score launcher\n2026-10-14T05:00:00Z m-1 running: npm test\n', now),
+    ...['ada', 'bo', 'cy', 'di'].map((name) => memberRow(name, '2026-10-14T11:50:00Z m-2 started: work\n2026-10-14T11:59:00Z m-2 running: rg x\n', now)),
+  ];
+  const full = renderBoard(rows, '/x', 0, 80).split('\n');
+  assert.deepEqual(full.slice(-4).map((l) => l.startsWith('  ')), [false, true, false, true], `each note wraps to two lines at 80 columns:\n${full.join('\n')}`);
+  assert.deepEqual(renderBoard(rows, '/x', 0, 80, [], full.length).split('\n'), full, 'a screen that holds it all keeps the full notes');
+  const short = renderBoard(rows, '/x', 0, 80, [], full.length - 2).split('\n');
+  assert.ok(short.length <= full.length - 2 && short.every((l) => l.length <= 80), short.join('\n'));
+  assert.ok(['launcher', 'ada', 'bo', 'cy', 'di'].every((m) => short.some((l) => l.startsWith(`${m} `))), `every member still shows:\n${short.join('\n')}`);
+  assert.doesNotMatch(short.join('\n'), /did not fit/);
+  assert.deepEqual(short.slice(-2), [
+    '5 unfinished runs have no process id, so a crash there will not show as died',
+    'launcher logged nothing for over an hour and has no process id, so likely ended',
+  ], 'each note keeps its point on one line');
+});
+
 test('a run with no pid that has been silent for over an hour is named as likely ended', () => {
   const now = Date.parse('2026-10-14T12:00:00Z');
   const old = memberRow('launcher', '2026-10-14T04:00:00Z m-1 started: score launcher\n2026-10-14T05:00:00Z m-1 running: npm test\n', now);
