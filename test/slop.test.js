@@ -1819,3 +1819,21 @@ test('a shorter or other-mark fence inside an example block stays code', () => {
   ]);
   assert.deepEqual(scanFile(file).map((f) => f.line), [], 'the fixed file has nothing left to flag');
 });
+
+test('text indented under a list item is prose, not indented code', () => {
+  // from terrace and the alpha-judge member file: nested bullets and wrapped
+  // list text sit four or more spaces in, but they follow a list item, not a
+  // blank line, so the fixer still edits them
+  const D = String.fromCharCode(0x2014);
+  const file = tmpFile('list-indent.md', [
+    '*   **Response**: `SubscriptionStatus`',
+    `    *   \`billing_conflict: bool\` ${D} \`true\` when both are active`,
+    '   - innovation lane: true gaps get one paragraph each,',
+    `     what it would cost ${D} presented to the operator.`,
+  ].join('\n'));
+  const { changes } = applyFixes([file], RULES);
+  assert.deepEqual(changes.map((c) => [c.line, c.after]), [
+    [2, '    *   `billing_conflict: bool`: `true` when both are active'],
+    [4, '     what it would cost, presented to the operator.'],
+  ], 'the fix keeps the indent');
+});
