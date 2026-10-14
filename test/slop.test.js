@@ -732,6 +732,22 @@ test('fix gives a numbered name that opens a line a colon, like a label', () => 
   ]);
 });
 
+test('fix turns a table cell that holds only a dash into a hyphen', () => {
+  // from the skill zones one-pager, where the cell became a stray comma
+  const file = tmpFile('table.md', [
+    '| 1 | We sit with one person on your team | \u2014 |',
+    '| \u2014 | none yet |\u2014|',
+    '| 2 | Build the skill \u2014 then ship it | done |',
+  ].join('\n'));
+  const { changes } = applyFixes([file], RULES);
+  assert.deepEqual(changes.map((c) => c.after), [
+    '| 1 | We sit with one person on your team | - |',
+    '| - | none yet |-|',
+    '| 2 | Build the skill, then ship it | done |',
+  ]);
+  assert.deepEqual(scanFile(file).map((f) => f.line), [], 'nothing left to flag');
+});
+
 test('fix drops a dash after a quote that already ends its sentence', () => {
   // from this repo's feature notes, policies, and the endgame skill
   const file = tmpFile('quote-end.md', [
