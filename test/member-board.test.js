@@ -1449,9 +1449,9 @@ test('a run with no pid that has been silent for over an hour is named as likely
   assert.equal(fresh.likely_ended, false, '10 minutes quiet is a pause');
   assert.equal(done.likely_ended, false, 'a finished run is not a guess');
   const screen = renderBoard([old, fresh, done], '/x');
-  assert.match(screen, /^launcher has logged nothing for over an hour with no process id to check, so it most likely ended without saying so$/m);
+  assert.match(screen, /^launcher has logged nothing for over an hour with no process id to check, so it most likely ended without saying so; atris member stop launcher clears it$/m);
   const two = memberRow('orb', '2026-10-14T04:00:00Z m-4 started: x\n', now);
-  assert.match(renderBoard([old, two], '/x'), /^launcher, orb have logged nothing for over an hour with no process id to check, so they most likely ended without saying so$/m);
+  assert.match(renderBoard([old, two], '/x'), /^launcher, orb have logged nothing for over an hour with no process id to check, so they most likely ended without saying so; atris member stop <name> clears one$/m);
   assert.doesNotMatch(renderBoard([fresh, done], '/x'), /most likely ended/);
   assert.equal(old.running_for, '8h', 'json still counts from the start');
   assert.match(screen, /^launcher\s+quiet\s+at least 1h\s+7h ago\s/m, 'the screen counts only to its last line, not 8h of silence');
