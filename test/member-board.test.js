@@ -471,6 +471,7 @@ test('atris member board --json --follow says when a running process dies', asyn
     assert.deepEqual([died.member, died.mission, died.pid, died.job], ['builder', 'm-4', victim.pid, 'long build']);
     assert.equal(died.step, 'running: npm test', 'the crash line says what the run was doing');
     assert.equal(died.lasted, '3s', 'start to its last line');
+    assert.equal(died.last_active, later, 'when it last logged, not when the crash was found');
     assert.equal(got.filter((e) => e.kind === 'died').length, 1);
   } finally {
     victim.kill('SIGKILL');
