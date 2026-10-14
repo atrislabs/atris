@@ -2437,3 +2437,7 @@ npm publish
 ## Failed blocker status fixture setup
 
 - `test/commands.test.js:14522` checks that a failed task without a proof counts as blocked and stays out of the review handoff in both JSON and text status. Real-store creation at `test/commands.test.js:14529` saves one setup launch; the claim, failed finish and both status reads remain on the CLI.
+
+## Status history fixture setup
+
+- `test/commands.test.js:14559` checks that the default task status card leaves out history while the history view shows all ten events. Setup at `test/commands.test.js:14566` writes the creation, claim and eight notes in process through the same store calls task new, claim and say make, saving ten launches; a throwaway copy seeding seven notes failed the history count, so the count still tracks the seeded events.

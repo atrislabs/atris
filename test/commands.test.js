@@ -14563,15 +14563,18 @@ test('task status keeps history out of the default live card', () => {
   const env = { ATRIS_TASKS_DB: dbPath, NODE_NO_WARNINGS: '1' };
   try {
     fs.mkdirSync(path.join(dir, 'atris'), { recursive: true });
-    const created = runCli(['task', 'new', 'Keep operator status compact', '--json'], { cwd: dir, env });
-    assert.equal(created.status, 0, created.stderr);
-    const id = JSON.parse(created.stdout).task_id;
-    const claimed = runCli(['task', 'claim', id, '--as', 'codex', '--json'], { cwd: dir, env });
-    assert.equal(claimed.status, 0, claimed.stderr);
-
-    for (let i = 0; i < 8; i += 1) {
-      const noted = runCli(['task', 'say', id, `status note ${i}`, '--as', 'codex', '--json'], { cwd: dir, env });
-      assert.equal(noted.status, 0, noted.stderr);
+    // Seed the history through the same store calls task new, claim and say
+    // make (one created, one claimed, eight noted events); both status reads stay on the CLI.
+    const db = taskStore.open(dbPath);
+    try {
+      const created = addSeedTask(db, { title: 'Keep operator status compact', workspaceRoot: taskStore.workspaceRoot(dir) });
+      assert.equal(created.inserted, true);
+      assert.equal(taskStore.claimTask(db, { id: created.id, claimedBy: 'codex' }).claimed, true);
+      for (let i = 0; i < 8; i += 1) {
+        assert.equal(taskStore.noteTask(db, { id: created.id, actor: 'codex', content: `status note ${i}` }).noted, true);
+      }
+    } finally {
+      taskStore.close();
     }
 
     const status = runCli(['task', 'status', '--json'], { cwd: dir, env });
