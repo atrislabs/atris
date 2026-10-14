@@ -2577,6 +2577,25 @@ test('fix reads a line that opens with a bold or italic box as a diagram line', 
   ]);
 });
 
+test('fix keeps a run of pressed dashes on a line that draws an arrow', () => {
+  // the run read as a clause break: "plan, build -> review"
+  const file = tmpFile('arrow-run.md', [
+    'plan \u2014\u2014\u2014 build \u2014> review',
+    'plan \u2014\u2014 build -> review \u2014\u2014 ship',
+    'a \u2192 b \u2014\u2014 c',
+    'He left \u2014\u2014 for good.',
+    'He left \u2014\u2014 for good. <!-- note -->',
+  ].join('\n\n'));
+  const { changes } = applyFixes([file], RULES, { write: false });
+  assert.deepEqual(changes.map((c) => c.after), [
+    'plan --- build -> review',
+    'plan -- build -> review -- ship',
+    'a \u2192 b -- c',
+    'He left, for good.',
+    'He left, for good. <!-- note -->',
+  ]);
+});
+
 test('fix keeps a journal heading that ends in a time readable for its hour', () => {
   // analytics reads the hour after a dash or a spaced hyphen at the end of a
   // heading; the fix wrote "### Watch: 19:05", which hides it, and glued

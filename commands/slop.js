@@ -499,6 +499,10 @@ function fixEmDash(s, { endsBlock = false, startsBlock = false, spans = [] } = {
   // single dash on it is one more short link: "[a] - done -> [c]", never
   // "[a], done". A flag like "--fix" is not a drawn line.
   if (diagramStart.test(s) && /(?:^|[\s\])|+])-{2,}(?=[\s[(|+]|$)|->|<-/.test(s)) s = s.replace(/\u2014/g, '-');
+  // a line that draws an arrow is a diagram too, so a run of pressed dashes
+  // on it is a drawn line of the same width: "plan --- build -> review",
+  // never "plan, build". The close of an HTML comment is not an arrow.
+  if (!/^\s*\|/.test(s) && /->|<-|[\u2190\u2192\u2194\u21d0\u21d2]/.test(s.replace(/<!--|-->/g, ''))) s = s.replace(/\u2014{2,}/g, (m) => '-'.repeat(m.length));
   // a single dash with a box edge on both sides is a short link between two
   // boxes, so it takes a hyphen: "[a] - [b] - [c]", never "[a] ([b]) [c]"
   if (!/^\s*\|/.test(s)) s = s.replace(/(?<=[\])|+][ \t]*)\u2014(?=[ \t]*[[(|+])/g, '-');
