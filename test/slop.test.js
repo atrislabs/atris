@@ -1883,6 +1883,25 @@ test('fix joins a clause whose helper is in capitals like one in lowercase', () 
   ]);
 });
 
+test('fix stacks no comma on a quoted question when the sentence goes on', () => {
+  // the question mark already does the comma's job: 'asked "why not build
+  // it?" and the answer' read '?", and'. A new clause keeps its comma, since
+  // without one 'ask "anything else?" bring up the bid' runs on.
+  const file = tmpFile('asked.md', [
+    'They asked "why not build in-house?" \u2014 and the answer landed.',
+    'The message is no longer "what would you like to do?" \u2014 is it:',
+    'The standard is "would you sign this?" \u2014 yes.',
+    'Never ask "anything else?" \u2014 bring up the next bid.',
+  ].join('\n\n'));
+  const { changes } = applyFixes([file], RULES, { write: false });
+  assert.deepEqual(changes.map((c) => c.after), [
+    'They asked "why not build in-house?" and the answer landed.',
+    'The message is no longer "what would you like to do?" is it:',
+    'The standard is "would you sign this?" yes.',
+    'Never ask "anything else?", bring up the next bid.',
+  ]);
+});
+
 test('fix keeps a journal heading that ends in a time readable for its hour', () => {
   // analytics reads the hour after a dash or a spaced hyphen at the end of a
   // heading; the fix wrote "### Watch: 19:05", which hides it, and glued

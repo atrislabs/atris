@@ -559,7 +559,7 @@ function fixEmDash(s, { endsBlock = false, startsBlock = false, spans = [] } = {
     .replace(/(\.["'\u201d\u2019]+)\s*\u2014\s*(?!(?:which|who|whose|and|but|or|nor|so|yet|then|because|since|while|where|when|though|although|as|if|unless|until|than)\b)([a-z])(?=[a-z']*(?![\w\uE000]))/g, (m, stop, ch, at, whole) => (/^[^A-Za-z]*[a-z]/.test(whole) ? m : `${stop} ${ch.toUpperCase()}`))
     // any other leftover dash after a quote that already ends its sentence
     // goes, and the quote keeps its own stop: 'wiring." PERSONA.md exists'.
-    // A quoted question before a lowercase word keeps the comma below.
+    // A quoted question before a lowercase word goes on with its sentence.
     .replace(/(\.["'\u201d\u2019]+|[!?]["'\u201d\u2019]+(?=\s*\u2014\s*[A-Z]))\s*\u2014\s*(?=\S)/g, '$1 ')
     // a dash that opens a list of three or more short items running to the
     // end of the sentence introduces it: "sweep: arxiv, github, web."
@@ -676,9 +676,18 @@ function fixEmDash(s, { endsBlock = false, startsBlock = false, spans = [] } = {
     // keep punctuation the writer already put beside the dash instead of
     // stacking a comma on it, and never leave a trailing space. A dash pressed
     // against a closing quote or bracket takes its comma with no space after.
-    .replace(/([,;:.!?]?)\s*\u2014(\s*)([,;:.!?]?)\s*(?=(.?))/g, (m, before, gap, after, next) => {
+    // A quote that ends in a question or a shout already does a comma's job,
+    // so none is stacked on it when the sentence plainly goes on: a joining
+    // word, a short lead-in to a colon, or one closing word ('no longer
+    // "what would you like?" it\'s:'). A new clause there keeps its comma,
+    // since without one 'ask "anything else?" bring up the bid' runs on.
+    .replace(/([,;:.!?]?)\s*\u2014(\s*)([,;:.!?]?)\s*(?=(.?))/g, (m, before, gap, after, next, at, whole) => {
       const closes = /[\u201d\u2019]/.test(next) || (!gap && !after && /["')\]]/.test(next));
-      return `${before || after || ','}${next && !closes ? ' ' : ''}`;
+      const rest = whole.slice(at + m.length);
+      const asked = !before && !after && /[!?]["'\u201d\u2019]+\s*$/.test(whole.slice(0, at))
+        && (/^(?:and|or|but|nor|if|vs\.?|versus|not|with|without|is|are|was|were|becomes|became|answered|matches)\b/.test(rest)
+          || /^[^.!?;:]{0,30}:\s*$/.test(rest) || /^[\w-]+[.!?]?\s*$/.test(rest));
+      return `${before || after || (asked ? '' : ',')}${next && !closes ? ' ' : ''}`;
     });
 }
 
