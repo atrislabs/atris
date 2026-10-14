@@ -369,8 +369,11 @@ test('hidden failures that share a reason say it once in the count', () => {
       'no written reason: just the count');
     const one = rows.filter((r) => r.member !== 'f3' && r.member !== 'f4');
     one.push({ ...one.find((r) => r.member === 'halted'), member: 'halted2' });
-    assert.equal(renderBoard(one, dir, 0, 0, 4).split('\n')[3], '3 more not shown (1 failed, 2 stopped), the window is too short',
-      'one hidden failure shares nothing');
+    assert.equal(renderBoard(one, dir, 0, 0, 4).split('\n')[3], '3 more not shown (1 failed, signed out, 2 stopped), the window is too short',
+      'one hidden failure says its own reason');
+    const quiet = one.map((r) => (r.member === 'f2' ? { ...r, last_result_reason: '' } : r));
+    assert.equal(renderBoard(quiet, dir, 0, 0, 4).split('\n')[3], '3 more not shown (1 failed, 2 stopped), the window is too short',
+      'one hidden failure with no written reason: just the count');
   } finally {
     fs.rmSync(dir, { recursive: true, force: true });
   }
