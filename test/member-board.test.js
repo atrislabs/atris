@@ -962,6 +962,17 @@ test('board leaves rows off the bottom, not the top, when it is taller than the 
   assert.match(renderBoard(rows, '/x', 0, null, [], 2), /^checker\s/m, 'at least one row always shows');
 });
 
+test('a left-off note names as many members as fit on one line and counts the rest', () => {
+  const now = Date.parse('2026-10-14T13:00:00Z');
+  const names = ['release-sentinel', 'health-sentinel', 'frontend-dev', 'voice-owner', 'gtm-engineer'];
+  const rows = names.map((name) => memberRow(name, '2026-10-14T12:00:00Z m-1 started: work\n2026-10-14T12:30:00Z m-1 finished: ok\n', now));
+  const note = (columns, height) => renderBoard(rows, '/x', 0, columns, [], height).split('\n').at(-1);
+  assert.equal(note(120, 6), '4 more members did not fit: health-sentinel, frontend-dev, voice-owner, gtm-engineer', 'all names fit: all show');
+  assert.equal(note(60, 6), '4 more members did not fit: health-sentinel and 3 others', 'names that would wrap: as many as fit, then a count');
+  assert.equal(note(66, 7), '3 more members did not fit: frontend-dev, voice-owner and 1 other', 'one left over reads singular');
+  assert.equal(note(40, 6), '4 more members did not fit', 'no room for even one name: the count alone');
+});
+
 test('watch fits a screen LINES tall, footer included', () => {
   const recent = new Date(Date.now() - 20_000).toISOString();
   const dir = fakeDir(Object.fromEntries(['ada', 'bo', 'cy', 'di', 'ed', 'flo'].map((name) => [name, [`${recent} m-1 started: map the repo`, `${recent} m-1 reading atris/MAP.md`]])));
