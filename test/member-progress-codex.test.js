@@ -119,7 +119,7 @@ test('a codex tick writes live steps and keeps its final answer', () => {
 
     const argv = fs.readFileSync(argsLog, 'utf8').split('\n');
     assert.deepEqual(argv.slice(0, 3), ['exec', '--json', '--output-last-message']);
-    assert.match(log, /started: tidy the readme/);
+    assert.match(log, /started: \[pid \d+ engine codex run [0-9a-f]{16}\] tidy the readme/);
     assert.equal((log.match(/searching for needle/g) || []).length, 1, log);
     assert.equal((log.match(/running: npm test/g) || []).length, 1, log);
     assert.match(log, /editing README\.md/);

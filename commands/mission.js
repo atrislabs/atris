@@ -9241,7 +9241,16 @@ function spawnGenericRunnerTick(mission, opts) {
     }
 
     const startedAt = Date.now();
-    const guardedCommand = `PATH=${shellQuote(gitGuard.pathPrefix)}:$PATH; export PATH; ${cmd}`;
+    const progressMember = mission.owner || 'mission';
+    // A codex run opens its shell script with the run marker as a no-op, so
+    // member stop can prove the shell leading this group is this run. Only
+    // names member stop accepts go into the shell line.
+    const runToken = lastMessageFile && /^[A-Za-z0-9._-]+$/.test(progressMember) ? newRunToken() : '';
+    const markerPrefix = runToken ? `: ${runMarker(progressMember, runToken)}; ` : '';
+    // The trailing exit keeps a shell like dash from replacing itself with
+    // codex, which would take the marker out of the process list.
+    const markerSuffix = runToken ? '; exit $?' : '';
+    const guardedCommand = `${markerPrefix}PATH=${shellQuote(gitGuard.pathPrefix)}:$PATH; export PATH; ${cmd}${markerSuffix}`;
     const proc = spawn('sh', ['-lc', guardedCommand], {
       cwd,
       stdio: ['ignore', 'pipe', 'pipe'],
@@ -9249,9 +9258,11 @@ function spawnGenericRunnerTick(mission, opts) {
       env: { ...gitGuard.env, ATRIS_DISPATCH_DEPTH: String(dispatchDepth.depth + 1) },
     });
     updateMissionLockOwner(missionLock, proc.pid, { phase: 'tick' });
-    const progressMember = mission.owner || 'mission';
     const seenItemIds = new Set();
-    if (lastMessageFile) appendProgress(progressMember, `started: ${mission.objective || ''}`, mission.id);
+    if (lastMessageFile) {
+      const tag = runToken ? { pid: proc.pid, engine: 'codex', run: runToken } : {};
+      appendProgress(progressMember, startedLine(mission.objective, tag), mission.id);
+    }
     let stdout = '';
     let eventBuf = '';
     let lastAgentMessage = '';
