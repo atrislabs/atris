@@ -1669,7 +1669,6 @@ module.exports = {
   worktreeGitLock,
   gitStoreLock,
   describeLockAge,
-  describeLocks,
   lockFields,
   describeGitActivity,
   describePausedGitWork,
