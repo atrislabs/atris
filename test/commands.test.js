@@ -20230,10 +20230,12 @@ test('review default mode leads with certified accept like first-minute', () => 
 test('review verbose mode keeps the legacy validator board', () => {
   const dir = makeTempDir();
   try {
-    initWorkspace(dir);
+    fs.mkdirSync(path.join(dir, 'atris'), { recursive: true });
     const res = runCli(['review', '--verbose'], { cwd: dir });
     assert.equal(res.status, 0, res.stderr);
     assert.match(res.stdout, /Atris Review|Validator Agent Activated/);
+    // A missing validator spec is optional context, so the board still renders.
+    assert.match(res.stdout, /^- Validator spec: atris\/team\/validator\/MEMBER\.md \(missing\)$/m);
     assert.match(res.stdout, /Confirm active task state is clean/);
     assert.doesNotMatch(res.stdout, /delete completed tasks|DELETE completed tasks/);
     assert.match(res.stdout, /┌|└|│/);
