@@ -2298,4 +2298,4 @@ npm publish
 
 - `test/commands.test.js:3327` proves supervisor local-to-cloud downgrade against a loopback server, clears the higher-priority AX_BACKEND_URL and injected analysis/mode, and bounds the child to 30 seconds with SIGKILL. `test/agent-env-runner-isolation.test.js:6` reproduces a parent carrying all three overrides against the real CLI.
 
-- Bounded command/mission scan: `atris/refs/test-batch-progress.md:1` records 161 passing mission checks and why a whole-command-file deadline does not identify a failing test.
+- Bounded command/mission scan: `atris/refs/test-batch-progress.md:1` records 161 passing mission checks, nine passing objective/member command checks, and why a whole-command-file deadline does not identify a failing test.
