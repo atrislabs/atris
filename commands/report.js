@@ -88,20 +88,36 @@ function withWorkspaceCwd(root, fn) {
   }
 }
 
-function buildLandings(root, cutoff) {
+// A done task is only a landing when its stored git proof says so. Done
+// without that proof is reported separately, never counted as landed.
+function buildDoneTasks(root, cutoff) {
   const tasks = readProjection(root) || [];
   return tasks
     .filter(task => task && task.status === 'done' && Number(timestampMs(task.done_at)) >= cutoff)
     .sort((a, b) => Number(timestampMs(b.done_at) || 0) - Number(timestampMs(a.done_at) || 0))
     .map((task) => {
       const id = inlineText(task.display_id || task.task_ref || task.id, 'task');
+      const landing = task.metadata && typeof task.metadata.landing === 'object' ? task.metadata.landing : null;
       return {
         id,
         title: inlineText(task.title, 'untitled task'),
         done_at: task.done_at || null,
         source: `task ${id}`,
+        landed: landing?.status === 'landed',
+        landing_status: landing?.status || 'unchecked',
+        landing_reason: landing?.reason || (landing ? '' : 'no landing proof recorded'),
       };
     });
+}
+
+function buildLandings(root, cutoff) {
+  return buildDoneTasks(root, cutoff).filter(task => task.landed);
+}
+
+function landingStatusText(task) {
+  const status = String(task?.landing_status || 'unchecked').replace(/_/g, ' ');
+  const reason = String(task?.landing_reason || '').replace(/_/g, ' ');
+  return reason ? `${status}, ${reason}` : status;
 }
 
 function buildJournalCompletions(root, days, now) {
@@ -198,13 +214,16 @@ function buildWeekReportData(root = process.cwd(), { days = DEFAULT_DAYS, now = 
   const windowDays = asWindowDays(days);
   const nowMs = timestampMs(now) || Date.now();
   const cutoff = nowMs - windowDays * DAY_MS;
-  const landings = buildLandings(root, cutoff);
+  const done = buildDoneTasks(root, cutoff);
+  const landings = done.filter(task => task.landed);
+  const unproven = done.filter(task => !task.landed);
   const completions = buildJournalCompletions(root, windowDays, nowMs);
   const xp = buildXp(root, cutoff);
   return {
-    empty: landings.length === 0 && completions.length === 0 && xp.total <= 0,
+    empty: done.length === 0 && completions.length === 0 && xp.total <= 0,
     days: windowDays,
     landings,
+    unproven,
     completions,
     xp,
   };
@@ -212,11 +231,13 @@ function buildWeekReportData(root = process.cwd(), { days = DEFAULT_DAYS, now = 
 
 function renderWeekReport(data) {
   const landings = Array.isArray(data?.landings) ? data.landings : [];
+  const unproven = Array.isArray(data?.unproven) ? data.unproven : [];
   const completions = Array.isArray(data?.completions) ? data.completions : [];
   const xp = data?.xp && typeof data.xp === 'object' ? data.xp : { total: 0, receipts: [] };
   const receipts = Array.isArray(xp.receipts) ? xp.receipts : [];
+  const unprovenHeader = unproven.length ? `, ${unproven.length} done but not proven landed` : '';
   const lines = [
-    `week in review: ${landings.length} landed, ${completions.length} completions, ${formatXp(xp.total)} xp`,
+    `week in review: ${landings.length} landed${unprovenHeader}, ${completions.length} completions, ${formatXp(xp.total)} xp`,
   ];
 
   if (data?.empty) {
@@ -227,9 +248,17 @@ function renderWeekReport(data) {
 
   if (landings.length) {
     lines.push('');
-    lines.push(`landings: ${landings.length} tasks, known from task projection`);
+    lines.push(`landings: ${landings.length} tasks, proven by a git landing check`);
     for (const landing of landings) {
       lines.push(`- landed: ${inlineText(landing.title)} | size: 1 task | know: ${inlineText(landing.source || landing.id, 'task')}`);
+    }
+  }
+
+  if (unproven.length) {
+    lines.push('');
+    lines.push(`done but not proven landed: ${unproven.length} tasks, git could not confirm the work reached the target`);
+    for (const task of unproven) {
+      lines.push(`- done: ${inlineText(task.title)} | landing: ${inlineText(landingStatusText(task))} | know: ${inlineText(task.source || task.id, 'task')}`);
     }
   }
 
@@ -258,6 +287,7 @@ function panelRows(rows, emptyTitle, emptySub) {
 
 function buildWeekReportHtmlSpec(data) {
   const landings = Array.isArray(data?.landings) ? data.landings : [];
+  const unproven = Array.isArray(data?.unproven) ? data.unproven : [];
   const completions = Array.isArray(data?.completions) ? data.completions : [];
   const xp = data?.xp && typeof data.xp === 'object' ? data.xp : { total: 0, receipts: [] };
   const receipts = Array.isArray(xp.receipts) ? xp.receipts : [];
@@ -277,18 +307,22 @@ function buildWeekReportHtmlSpec(data) {
     {
       type: 'panel',
       heading: 'landings',
-      sub: 'done tasks from the local task projection',
+      sub: 'done tasks whose git landing check passed; the rest are marked not proven',
       panel: {
         header: {
           title: 'task landings',
-          meta: `${landings.length} ${plural(landings.length, 'task')}`,
+          meta: `${landings.length} landed${unproven.length ? `, ${unproven.length} not proven` : ''}`,
         },
         rows: panelRows(
           landings.map((landing) => ({
             title: `${inlineText(landing.id, 'task')}: ${lowerText(landing.title, 'untitled task')}`,
             sub: lowerText(landing.source || landing.id, 'task'),
             sev: 0,
-          })),
+          })).concat(unproven.map((task) => ({
+            title: `${inlineText(task.id, 'task')}: ${lowerText(task.title, 'untitled task')}`,
+            sub: `not proven landed: ${lowerText(landingStatusText(task), 'unchecked')}`,
+            sev: 2,
+          }))),
           'no task landings found',
           'task projection had no done items in this window'
         ),

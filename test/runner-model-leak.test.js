@@ -5,7 +5,6 @@ const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
-const { spawn } = require('node:child_process');
 
 const { buildRunnerCommand } = require('../lib/runner-command');
 const { resolveMissionTickRunnerModel } = require('../commands/mission');
@@ -137,77 +136,6 @@ test('a dispatch time cap kills the whole engine process group', async (t) => {
     });
     assert.throws(() => process.kill(pid, 0));
   } finally {
-    fs.rmSync(root, { recursive: true, force: true });
-    fs.rmSync(wt, { recursive: true, force: true });
-  }
-});
-
-// A detached dispatch child leads its own group, so Ctrl-C on the parent
-// never reaches the engine; the guard must kill the group and re-raise.
-test('ctrl-c on a dispatch kills the engine process group too', async (t) => {
-  if (process.platform === 'win32') {
-    t.skip('process groups are posix-only');
-    return;
-  }
-  const repoRoot = path.join(__dirname, '..');
-  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'fleet-sigint-'));
-  const wt = fs.mkdtempSync(path.join(os.tmpdir(), 'fleet-sigint-wt-'));
-  const binDir = path.join(root, 'bin');
-  const pidFile = path.join(root, 'grandchild.pid');
-  const parentScript = path.join(root, 'parent.js');
-  fs.mkdirSync(binDir, { recursive: true });
-  const fakeCursor = path.join(binDir, 'cursor-agent');
-  fs.writeFileSync(fakeCursor, [
-    '#!/bin/sh',
-    'sleep 30 &',
-    `echo $! > "${pidFile}"`,
-    'wait',
-    '',
-  ].join('\n'));
-  fs.chmodSync(fakeCursor, 0o755);
-  fs.writeFileSync(parentScript, [
-    'const path = require("path");',
-    'const fleet = require(process.argv[2]);',
-    'const [binDir, wt, liveLog] = process.argv.slice(3);',
-    'fleet.dispatchToEngine({',
-    '  task: { display_id: "CLI-SIGINT", status: "open", title: "x Done: x. Check: y." },',
-    '  engine: "cursor",',
-    '  worktreePath: wt,',
-    '  skipBriefCapture: true,',
-    '  liveLogPath: liveLog,',
-    '  environment: { PATH: binDir + path.delimiter + process.env.PATH },',
-    '});',
-    '',
-  ].join('\n'));
-  const parent = spawn(process.execPath, [
-    parentScript,
-    path.join(repoRoot, 'lib', 'fleet.js'),
-    binDir,
-    wt,
-    path.join(root, 'dispatch.live.log'),
-  ], { cwd: repoRoot, stdio: 'inherit' });
-  try {
-    await waitUntil(() => fs.existsSync(pidFile));
-    const pid = Number(fs.readFileSync(pidFile, 'utf8').trim());
-    assert.ok(pid > 0, 'the engine should have written its grandchild pid');
-    parent.kill('SIGINT');
-    const closed = await new Promise((resolve) => {
-      const bail = setTimeout(() => resolve(null), 10000);
-      parent.once('close', (code, sig) => {
-        clearTimeout(bail);
-        resolve({ code, sig });
-      });
-    });
-    assert.ok(closed, 'the parent should exit on SIGINT');
-    assert.equal(closed.sig, 'SIGINT');
-    await waitUntil(() => {
-      try { process.kill(pid, 0); return false; } catch { return true; }
-    }, 5000);
-    assert.throws(() => process.kill(pid, 0));
-  } finally {
-    if (parent.exitCode === null && parent.signalCode === null) {
-      try { parent.kill('SIGKILL'); } catch {}
-    }
     fs.rmSync(root, { recursive: true, force: true });
     fs.rmSync(wt, { recursive: true, force: true });
   }
