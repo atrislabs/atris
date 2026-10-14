@@ -227,9 +227,10 @@ function fixEmDash(s, { endsBlock = false, startsBlock = false } = {}) {
       // An aside that opens with a joining word goes on with the sentence, so
       // it takes commas too: "install it, then run it, and ship". Punctuation
       // already before it keeps its place: 'said "stop." then it went, and left'.
+      // A lone joining word takes no comma after it: "Ship it, then wait."
       const holdsParens = /[()]/.test(aside) && !wrappedInParens(aside);
       if (/^(?:and|but|or|nor|so|yet|then)\b/.test(aside)) {
-        return `${/[.,;:!?]["'”’)]*$/.test(whole.slice(0, at)) ? ' ' : ', '}${aside}${gap ? ', ' : ''}`;
+        return `${/[.,;:!?]["'\u201d\u2019)]*$/.test(whole.slice(0, at)) ? ' ' : ', '}${aside}${!gap ? '' : /^\w+$/.test(aside) ? ' ' : ', '}`;
       }
       if (holdsParens || insideParens(whole.slice(0, at))) return `, ${aside}${gap ? ', ' : ''}`;
       // the closing dash also stood in for the comma before a "which" remark:

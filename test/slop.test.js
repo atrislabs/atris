@@ -1309,12 +1309,17 @@ test('fix gives an aside that opens with a joining word commas, not parentheses'
     '- **Setup** \u2014 install it \u2014 then run it \u2014 and ship',
     'A file \u2014 or a folder \u2014 works.',
     'The gate \u2014 the strict one \u2014 holds.',
+    // a lone joining word takes no comma after it
+    'Ship it \u2014 then \u2014 wait.',
+    'Run it \u2014 or \u2014 skip it.',
   ].join('\n'));
   const { changes } = applyFixes([file], RULES, { write: false });
   assert.deepEqual(changes.map((c) => c.after), [
     '- **Setup**: install it, then run it, and ship',
     'A file, or a folder, works.',
     'The gate (the strict one) holds.',
+    'Ship it, then wait.',
+    'Run it, or skip it.',
   ]);
 });
 
