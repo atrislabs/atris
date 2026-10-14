@@ -10643,6 +10643,11 @@ async function memberSteerOrDispatchWith({ pullTask = false } = {}, rawArgs = []
     || goalPlane.goal?.title
     || extractMemberNorthStar(paths.memberDir, '');
   const pulledTask = pulled ? { id: pulled.task.id, title: pulled.task.title, job: pulled.job } : null;
+  // The supervisor's preview can lose a race. Only the child that claimed
+  // the task may announce which job it actually got.
+  if (needsCheck && pulledTask && !dryRun && process.connected && process.send) {
+    process.send({ type: 'member_task_claimed', member: owner, task: pulledTask }, () => {});
+  }
   if (pulled) whyPicked = `${whyPicked} Took the oldest open ${pulled.job} task from the list.`.trim();
   const engineSeat = resolveMemberEngineSeat(owner, root);
   const { autoQueueMemberNextPush, closeMemberHandoffsForReceiver } = require('./mission');
@@ -10842,7 +10847,7 @@ function memberUpWaiting(root) {
   }
 }
 
-function memberUpSpawn(root, name, onExit) {
+function memberUpSpawn(root, name, onExit, onClaim) {
   const { spawn } = require('child_process');
   const logDir = path.join(root, '.atris', 'state', 'member-up');
   fs.mkdirSync(logDir, { recursive: true });
@@ -10855,12 +10860,15 @@ function memberUpSpawn(root, name, onExit) {
       cwd: root,
       detached: true,
       // Children keep their log handle when the foreground supervisor stops.
-      stdio: ['ignore', out, out],
+      stdio: ['ignore', out, out, 'ipc'],
       env: process.env,
     });
   } finally {
     fs.closeSync(out);
   }
+  child.on('message', (message) => {
+    if (message?.type === 'member_task_claimed' && message.member === name) onClaim?.(message.task);
+  });
   child.on('error', (error) => onExit(null, { ok: false, reason: error.message }));
   child.on('close', (code, signal) => {
     let output = '';
@@ -10902,7 +10910,7 @@ async function memberUp(...args) {
   const deps = {
     listMembers: () => memberUpTeam(root),
     pickTask: (name, taken) => memberUpPick(root, name, taken),
-    spawn: (name, onExit) => memberUpSpawn(root, name, onExit),
+    spawn: (name, onExit, onClaim) => memberUpSpawn(root, name, onExit, onClaim),
     now: () => Date.now(),
     jobOf: (name) => memberGoJob(name, root),
     waitingTasks: () => memberUpWaiting(root),
@@ -11590,6 +11598,7 @@ module.exports = {
   memberRunWantsReferee,
   proposalPromptForGoal,
   memberGoFinishTask,
+  memberUpSpawn,
   appendMemberGoalLog,
   appendProjectLog,
   memberCommand,
