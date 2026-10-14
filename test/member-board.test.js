@@ -452,6 +452,30 @@ test('watchCrashes reports each newly died run once, not ones dead at start', ()
   assert.deepEqual(events.map((e) => [e.kind, e.member, e.mission, e.pid, e.job, e.step, e.lasted]), [['died', 'live', 'm-live', 22, 'live job', 'npm test', '4m']]);
 });
 
+test('watchCrashes reports a run that died and was replaced between two checks', () => {
+  const { watchCrashes, previousRun } = require('../lib/member-board');
+  const now = Date.now();
+  const t = (s) => new Date(now - s * 1000).toISOString();
+  const gone = 2147483646;
+  const first = `${t(30)} m-1 started: [pid ${gone} engine claude] build\n${t(20)} m-1 running: npm test\n`;
+  const restarted = `${first}${t(1)} m-2 started: [pid ${process.pid} engine claude] retry\n`;
+  const events = [];
+  // Alive at the first check, then dead and replaced before the next one.
+  const check = watchCrashes([{ ...memberRow('builder', first, now), state: 'working' }], (e) => events.push(e),
+    () => [memberRow('builder', restarted, now)], (member) => previousRun(member, restarted, now));
+  check();
+  check();
+  assert.deepEqual(events.map((e) => [e.kind, e.member, e.mission, e.pid, e.job, e.step, e.lasted, e.last_active]),
+    [['died', 'builder', 'm-1', gone, 'build', 'running: npm test', '10s', t(20)]], 'named once, from its own lines');
+
+  // A replaced run whose process still lives did not die.
+  const both = `${t(30)} m-1 started: [pid ${process.pid} engine claude] build\n${t(1)} m-2 started: [pid ${process.pid} engine claude] retry\n`;
+  const quiet = [];
+  watchCrashes([{ ...memberRow('builder', both, now), mission: 'm-1' }], (e) => quiet.push(e),
+    () => [memberRow('builder', both, now)], (member) => previousRun(member, both, now))();
+  assert.deepEqual(quiet, []);
+});
+
 test('atris member board --json --follow says when a running process dies', async () => {
   const { spawn } = require('node:child_process');
   const victim = spawn(process.execPath, ['-e', 'setTimeout(() => {}, 60000)']);
