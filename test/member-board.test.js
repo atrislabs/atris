@@ -496,7 +496,10 @@ test('a narrow board gives up a before column that says ok on every row first', 
   ].join('\n'), now);
   const rows = [row('builder', 'claude', ['ok', 'ok']), row('scout', 'codex', ['ok'])];
   const head = (rs, w) => renderBoard(rs, '/x', 0, w).split('\n').find((l) => l.startsWith('member '));
-  assert.match(head(rows, 120), /^member\s+state\s+before\s+alive\s+engine\s/, 'a wide screen keeps it');
+  assert.match(head(rows, 160), /^member\s+state\s+before\s+alive\s+engine\s/, 'a screen with room for every word keeps it');
+  const at120 = renderBoard(rows, '/x', 0, 120).split('\n');
+  assert.match(at120.find((l) => l.startsWith('member ')), /^member\s+state\s+alive\s+engine\s/, 'it goes when job and last step would be cut');
+  assert.ok(at120.some((l) => l.includes('keep the board readable on a small screen') && l.endsWith('running: node --test')), `so both read whole:\n${at120.join('\n')}`);
   assert.match(head(rows, 70), /^member\s+state\s+alive\s+run time\s+ago\s+job$/, 'it goes before alive does');
   assert.match(head(rows, 60), /^member\s+state\s+run time\s+ago\s+job$/, 'the headers keep their words instead');
   const mixed = [rows[0], row('scout', 'codex', ['failed'])];
