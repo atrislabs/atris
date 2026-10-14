@@ -253,6 +253,7 @@ atris task - durable local task state (SQLite, gitignored)
   atris task archive <id> --reason "..." [--from-failed]
                                            Sweep off-roadmap/duplicate work as archived (not failed);
                                            --from-failed opts in to relabel a fail-closed row (never done)
+  atris task reopen <id> [--reason "..."]  Send a done, failed, or archived task back to open
   atris task clear-done [--before <days>] [--dry-run] [--json]  Archive completed rows, oldest first
   atris task prune-test-junk [--yes] [--vacuum] [--json]
                                            Count rows test runs left from temp folders; --yes backs up the db, then removes them
@@ -9759,6 +9760,45 @@ function cmdArchive(args) {
   }
 }
 
+// Send a done, failed, or archived task back to open so it can be claimed
+// again. Review sign-offs are cleared; the old status and reason are kept.
+function cmdReopen(args) {
+  const pos = positional(args);
+  const id = pos[0];
+  if (!id) failTask('atris task reopen', 'missing_id', 'task id required');
+  const reason = textFlag(args, ['--reason']) || 'reopened';
+  const taskDb = getTaskDb();
+  const db = taskDb.open();
+  const taskId = requireTaskId(taskDb, db, id, 'atris task reopen');
+  const actor = String(flag(args, '--as') || DEFAULT_OWNER);
+  const result = taskDb.reopenTask(db, { id: taskId, actor, reason });
+  if (!result.reopened) {
+    const detail = `reopen failed: ${taskId} ${result.reason}`;
+    if (wantsJson(args)) {
+      printJson({ ok: false, command: 'atris task reopen', reason: result.reason, task_id: taskId, detail });
+      process.exit(1);
+    }
+    console.error(detail);
+    process.exit(1);
+  }
+  const reopenedFrom = result.row && result.row.metadata && result.row.metadata.reopened_from || null;
+  const { projection, outPath } = writeDefaultProjection(taskDb, db);
+  const task = compactTaskFromProjection(projection, taskId);
+  if (wantsJson(args)) {
+    printJson({
+      ok: true,
+      action: 'reopened',
+      task_id: taskId,
+      reopened_from: reopenedFrom,
+      reason,
+      projection_path: outPath,
+      task,
+    });
+    return;
+  }
+  console.log(`reopened ${taskRef(task)}${reopenedFrom ? ` (was ${reopenedFrom})` : ''}: ${reason}`);
+}
+
 function taskCompletionTime(row) {
   const doneAt = Number(row && row.done_at);
   if (Number.isFinite(doneAt) && doneAt > 0) return doneAt;
@@ -13496,6 +13536,7 @@ async function runTaskCommand(args) {
     case 'finish': return cmdFinish(rest);
     case 'fail':   return cmdDone([...rest, '--failed']);
     case 'archive': return cmdArchive(rest);
+    case 'reopen': return cmdReopen(rest);
     case 'clear-done': return cmdClearDone(rest);
     case 'prune-test-junk': return cmdPruneTestJunk(rest);
     case 'keep': return cmdKeep(rest);
@@ -13542,7 +13583,7 @@ const MUTATING_TASK_COMMANDS = new Set([
   'continue-work', 'continue', 'chat', 'note', 'say', 'retitle', 'tag', 'tags', 'step',
   'ready', 'result', 'accept', 'landing', 'land-review', 'auto-accept-certified',
   'auto-accept', 'sweep', 'audit', 'certify-verified', 'accept-group', 'revise',
-  'done', 'finish', 'fail', 'archive', 'clear-done', 'reap-mission-blockers', 'reap-blockers', 'relabel-archived', 'review', 'import',
+  'done', 'finish', 'fail', 'archive', 'reopen', 'clear-done', 'reap-mission-blockers', 'reap-blockers', 'relabel-archived', 'review', 'import',
   'setup', 'review-lane-act', 'review-act', 'act-review', 'review-lane-loop',
   'review-loop', 'loop-review', 'review-lane-run', 'review-run', 'run-review',
 ]);
