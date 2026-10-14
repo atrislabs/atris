@@ -6,6 +6,7 @@ const crypto = require('crypto');
 const readline = require('readline');
 const { spawn, spawnSync } = require('child_process');
 const { hasFlag, readFlag, readIntFlag } = require('../lib/arg-parser');
+const { defaultObjectiveRunner } = require('../lib/default-runner');
 const { memberProcessPrompt } = require('../lib/member-context');
 const { memberIdentityLine, missionObjectiveLine } = require('../lib/member-identity');
 const { formatToolStep, formatCodexEvent, appendProgress, reportProgress, startedLine, newRunToken, runMarker } = require('../lib/member-progress');
@@ -4693,13 +4694,9 @@ async function startMissionFromRunObjective(objective, args) {
     '--owner',
     runOwner,
     '--runner',
-    // `mission run` is the codex-native shaping surface: it always builds
-    // codex_goal_state and asks a live codex session to start the native goal
-    // (requires_native_goal_start). So it defaults to codex_goal. The headless
-    // footgun (codex_goal stalls with no live session) is handled on the
-    // `member run` path (commands/member.js), where cron/fleet loops default to
-    // the self-driving claude runner instead. An explicit --runner always wins.
-    readFlag(args, '--runner', 'codex_goal'),
+    // Only a live Codex session can drive a native goal. Plain shells need
+    // a worker, using the same context-aware default as member run.
+    readFlag(args, '--runner', defaultObjectiveRunner(args)),
     '--lane',
     readFlag(args, '--lane', 'workspace'),
     '--cadence',
@@ -4841,6 +4838,11 @@ async function startMissionFromRunObjective(objective, args) {
     ? refreshCodexGoalController(process.cwd(), { missionId: saved.id, ...nativeGoalOptions })
     : null;
   const outputMission = resolveMission(saved.id, process.cwd()) || saved;
+  // Creating a goal is setup, not work. Local workers continue through the
+  // normal run path; caller sessions, manual runs, and platform goals hand off.
+  if (!runnerUsesCallerSession(outputMission.runner) && !['manual', 'atris2'].includes(outputMission.runner)) {
+    return outputMission;
+  }
   const nativeGoal = codexGoalState?.native_goal_action
     || (codexGoalState?.goal?.requires_native_goal_start ? codexGoalState.goal.native_goal_action : null);
   const nextCommand = codexGoalState?.next_command || codexGoalState?.goal?.next_command || atrisGoalState.goal?.next_command || `atris mission tick ${saved.id} --summary "<what changed>"`;
@@ -4873,6 +4875,7 @@ async function startMissionFromRunObjective(objective, args) {
     missionRunTakeoffLines(outputMission, { warnings, nextCommand }),
     asJson,
   );
+  return null;
 }
 
 function attachMissionTask(args) {
@@ -9802,7 +9805,12 @@ async function resolveMissionRunPhase(context) {
       missionRunInputRequired(asJson, input.owner);
     }
     const prompted = await promptMissionRunInput(runArgs);
-    await startMissionFromRunObjective(prompted.objective, prompted.args);
+    const started = await startMissionFromRunObjective(prompted.objective, prompted.args);
+    if (started) {
+      context.ref = started.id;
+      context.runArgs = prompted.args;
+      return resolveMissionRunPhase(context);
+    }
     context.handled = true;
     return;
   }
@@ -9827,9 +9835,11 @@ async function resolveMissionRunPhase(context) {
     exitMissingMission(ref, 1, asJson);
   }
   if (!mission && ref) {
-    await startMissionFromRunObjective(ref, runArgs);
-    context.handled = true;
-    return;
+    mission = await startMissionFromRunObjective(ref, runArgs);
+    if (!mission) {
+      context.handled = true;
+      return;
+    }
   }
   if (!mission) {
     exitMissionError('Usage: atris mission run <id|objective> [--max-ticks 4] [--max-wall 3600]', 1, asJson);

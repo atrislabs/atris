@@ -1,0 +1,40 @@
+{
+  "command": [
+    "node",
+    "/Users/keshavrao/arena/.agent-worktrees/atris-cli/architect-a-plain-mission-run-with-a-goal-actu-20261014-123615/bin/atris.js",
+    "mission",
+    "run",
+    "write the local result file",
+    "--owner",
+    "mission-lead",
+    "--verify",
+    "test -s result.txt",
+    "--max-ticks",
+    "1",
+    "--max-wall",
+    "30",
+    "--complete-on-pass",
+    "--json"
+  ],
+  "cwd": "/var/folders/p2/s2tg3j6n1v9bwsbcqrjxnvnh0000gn/T/atris-plain-goal-live-k3wjylca",
+  "exit_code": 0,
+  "action": "mission_run",
+  "runner": "claude",
+  "status": "complete",
+  "ran_ticks": 1,
+  "verifier": {
+    "command": "test -s result.txt",
+    "resolved_command": null,
+    "status": 0,
+    "signal": null,
+    "passed": true,
+    "timed_out": false,
+    "elapsed_ms": 9,
+    "timeout_ms": 120000,
+    "stdout": "",
+    "stderr": ""
+  },
+  "artifact": "work completed\n",
+  "runtime_receipt": "/var/folders/p2/s2tg3j6n1v9bwsbcqrjxnvnh0000gn/T/atris-plain-goal-live-k3wjylca/atris/runs/mission-mission-2026-10-14-write-the-local-result-file-434842af-2026-10-14T12-40-44-573Z.json",
+  "worker": "controlled local executable, no model service used"
+}

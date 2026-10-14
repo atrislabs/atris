@@ -33,6 +33,7 @@ function runMission(root, extraArgs = []) {
     env: {
       ...process.env,
       ATRIS_SKIP_UPDATE_CHECK: '1',
+      ATRIS_CALLER_RUNTIME: 'codex',
       NODE_NO_WARNINGS: '1',
     },
   });
