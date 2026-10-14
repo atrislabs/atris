@@ -248,7 +248,8 @@ test('atris member board --json --follow streams one JSON object per line', asyn
   });
   let out = '';
   child.stdout.on('data', (d) => { out += d; });
-  const lines = () => out.split('\n').filter(Boolean).map((l) => JSON.parse(l));
+  // stdout chunks can end inside an object; parse only newline-terminated output.
+  const lines = () => out.split('\n').slice(0, -1).filter(Boolean).map((l) => JSON.parse(l));
   const waitFor = async (n) => {
     const until = Date.now() + 8000;
     while (lines().length < n && Date.now() < until) await new Promise((r) => setTimeout(r, 50));
