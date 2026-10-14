@@ -2378,7 +2378,7 @@ npm publish
 
 ## Weak landing rejection fixture setup
 
-- `test/commands.test.js:13024` checks both explicit weak landing rejections and keeps the task claimed. Real-store creation at `test/commands.test.js:13036` saves one setup launch, resolves the display reference and closes in finally; claim, both ready rejections and final show remain on the CLI with every behavior assertion preserved.
+- `test/commands.test.js:13039` checks both explicit weak landing rejections and keeps the task claimed. Real-store creation and claim at `test/commands.test.js:13052` save two setup launches, resolve the display reference and close in finally; both ready rejections and final show remain on the CLI with every behavior assertion preserved.
 
 ## Reward rejection fixture setup
 
