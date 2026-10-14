@@ -269,6 +269,23 @@ test('watch says more runs ended between redraws than the board keeps', () => {
     'when the run seen last time is still kept, nothing is missing');
 });
 
+test('board moves the last step under its row when the screen is too narrow for both', () => {
+  const now = Date.parse('2026-10-14T13:00:00Z');
+  const rows = [
+    memberRow('builder', `2026-10-14T12:50:00Z m-1 started: [pid ${process.pid} engine claude] make the table fit an 80 column terminal\n2026-10-14T12:59:30Z m-1 running: node --test test/member-board.test.js\n`, now),
+    memberRow('scout', '2026-10-14T12:55:00Z m-3 started: map the repo for stale refs\n', now),
+  ];
+  const screen = renderBoard(rows, '/x', 0, 80).split('\n');
+  const table = screen.slice(screen.indexOf('') + 1, screen.lastIndexOf(''));
+  assert.ok(table.every((l) => l.length <= 80), `the table fits 80 columns:\n${table.join('\n')}`);
+  assert.match(table[0], /\sjob$/, 'the header has no last step column');
+  assert.match(table[1], /^builder\s+working\s.*make the table fit/);
+  assert.match(table[2], /^ {2}last step: running: node --test test\//, 'the step sits under its member');
+  assert.match(table[3], /^scout\s+quiet\s/, 'a run with no step gets no step line');
+  assert.match(renderBoard(rows, '/x', 0, 160), /^member\s.*\sjob\s+last step$/m, 'wide enough for both, the column stays');
+  assert.match(renderBoard(rows, '/x'), /^member\s.*\sjob\s+last step$/m, 'piped output keeps the column');
+});
+
 test('board gives each change its own line when the shared line is wider than the screen', () => {
   const now = Date.parse('2026-10-14T13:00:00Z');
   const row = memberRow('builder', '2026-10-14T12:59:00Z m-1 started: build\n', now);
