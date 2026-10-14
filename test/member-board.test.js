@@ -269,6 +269,14 @@ test('before says died only when the cut-off run had a process id that is gone',
   assert.deepEqual(memberRow('builder', '2026-10-14T12:50:00Z m-1 started: build\n2026-10-14T12:59:00Z m-2 started: next\n', now).before, ['replaced']);
 });
 
+test('board explains replaced only when a replaced run is shown', () => {
+  const now = Date.parse('2026-10-14T13:00:00Z');
+  const cut = memberRow('scout', '2026-10-14T12:50:00Z m-1 started: build\n2026-10-14T12:59:00Z m-2 started: next\n', now);
+  const plain = memberRow('builder', '2026-10-14T12:59:00Z m-3 started: build\n', now);
+  assert.match(renderBoard([cut, plain], '/x'), /^replaced \(scout\): the next run started before that run said how it ended$/m);
+  assert.doesNotMatch(renderBoard([plain], '/x'), /^replaced/m);
+});
+
 test('watch names a put-away run with when it last did anything, even once it is hidden', () => {
   const now = Date.parse('2026-10-14T13:00:00Z');
   const quiet = memberRow('launcher', '2026-10-14T05:00:00Z m-4 started: score\n2026-10-14T06:00:00Z m-4 running: npm test\n', now);
