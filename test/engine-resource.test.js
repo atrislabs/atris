@@ -1086,6 +1086,41 @@ test('atris scout records each engine run with a time limit kill and a crash tol
   }
 });
 
+test('every launch of an engine program by name records its run or is named as exempt', () => {
+  const ENGINE_LAUNCH = /\b(?:spawn|spawnSync|execFile|execFileSync)\(\s*['"`](claude|codex|cursor-agent|devin|agy|grok|opencode)['"`]\s*,\s*(\[[^\]]*\])?/g;
+  // Interactive sessions hand the terminal to the person, so no reading is kept.
+  const EXEMPT = new Map([
+    ['commands/console.js', 'interactive codex session'],
+    ['commands/interview.js', 'interactive claude session'],
+  ]);
+  const unrecorded = (rel, text) => {
+    if (EXEMPT.has(rel) || /startEngineRun|recordEngineResource/.test(text)) return [];
+    const found = [];
+    for (const match of text.matchAll(ENGINE_LAUNCH)) {
+      // A version probe starts no engine run.
+      if (/^\[\s*['"`]--version['"`]\s*\]$/.test(match[2] || '')) continue;
+      found.push(`${rel}:${text.slice(0, match.index).split('\n').length} ${match[1]}`);
+    }
+    return found;
+  };
+  assert.deepStrictEqual(unrecorded('commands/planted.js', "const r = spawnSync('claude', ['-p', prompt]);\n"), ['commands/planted.js:1 claude']);
+  assert.deepStrictEqual(unrecorded('commands/planted.js', "spawnSync('claude', ['--version']);\n"), []);
+  const repo = path.join(__dirname, '..');
+  const missing = [];
+  let launches = 0;
+  for (const dir of ['commands', 'lib']) {
+    for (const name of fs.readdirSync(path.join(repo, dir)).filter((file) => file.endsWith('.js'))) {
+      const rel = `${dir}/${name}`;
+      const text = fs.readFileSync(path.join(repo, rel), 'utf8');
+      launches += [...text.matchAll(ENGINE_LAUNCH)].length;
+      missing.push(...unrecorded(rel, text));
+    }
+  }
+  assert.ok(launches >= 5, `the scan should see the known launches, saw ${launches}`);
+  assert.deepStrictEqual(missing, [], 'record the run with startEngineRun, or add the file to the exempt list with its reason');
+  console.log(`real engine launch scan: ${launches} launches by name, ${missing.length} unrecorded`);
+});
+
 test('the landing status names runs closed after their parent died in the last day, and stays quiet with none', () => {
   const { spawnSync } = require('node:child_process');
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'autoland-status-lost-'));
