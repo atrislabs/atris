@@ -904,6 +904,8 @@ test('fix joins a noun clause after the dash with a semicolon', () => {
     // a helping verb joins with no "not" too, unless a second "the" or a
     // "that" makes the right side one phrase; a plain verb still needs "not"
     'The tool is fast \u2014 the build is green.',
+    'Task is still open \u2014 receipt did not move it to review.',
+    'The cache was cold \u2014 the first call could take a second.',
     // a short "not" opener has no verb, so the clause explains it with a colon
     'Zero hits. Not exhaustive \u2014 the frontier was not extended.',
     'Not yet \u2014 it ships Friday.',
@@ -931,6 +933,8 @@ test('fix joins a noun clause after the dash with a semicolon', () => {
     'It is not green, even when the build is red.',
     'Not sends, not laps, replies. A reply is the market.',
     'The tool is fast; the build is green.',
+    'Task is still open; receipt did not move it to review.',
+    'The cache was cold; the first call could take a second.',
     'Zero hits. Not exhaustive: the frontier was not extended.',
     'Not yet: it ships Friday.',
     '- **Not yet**: it ships Friday.',
