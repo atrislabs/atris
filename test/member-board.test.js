@@ -77,7 +77,7 @@ test('board shows working, quiet, done ok, and done failed from fake logs', () =
     assert.equal(screen.split('\n').length, 5, 'one header plus one row per member');
     assert.match(screen, /^member\s+state\s+last result\s+alive\s+engine\s+running for\s+ago\s+job\s+last step$/m);
     assert.match(screen, /^scout\s+quiet\s+-\s+-\s+-\s+-\s+5m ago\s+find stale docs\s+running: rg stale$/m);
-    assert.match(screen, /^breaker\s+done failed\s+failed 1m ago\s+-\s+-\s+-\s+1m ago\s+try the risky thing\s+running: node boom\.js$/m);
+    assert.match(screen, /^breaker\s+done failed\s+failed \(after 20s\) 1m ago\s+-\s+-\s+-\s+1m ago\s+try the risky thing\s+running: node boom\.js$/m);
   } finally {
     fs.rmSync(dir, { recursive: true, force: true });
   }
@@ -91,6 +91,7 @@ test('a failed row says why when the finished line gives a reason', () => {
     plain: [`${at(100)} m-8 started: old runner`, `${at(50)} m-8 finished: failed`],
     wordy: [`${at(100)} m-9 started: chatty job`, `${at(40)} m-9 finished: failed the engine wrote a very long story about why`],
     fine: [`${at(100)} m-10 started: good job`, `${at(30)} m-10 finished: ok (all green)`],
+    bare: [`${at(20)} m-11 finished: failed`],
   });
   try {
     const rows = readBoard({ dir, now: NOW });
@@ -99,7 +100,9 @@ test('a failed row says why when the finished line gives a reason', () => {
     assert.equal(by.slow.last_result_reason, 'timed out');
     assert.equal(by.broke.last_result_reason, 'engine error');
     assert.equal(by.exit.last_result_reason, 'bad exit 2');
-    assert.equal(by.plain.last_result_reason, '');
+    assert.equal(by.plain.last_result_reason, '', 'the written reason field stays empty');
+    assert.equal(by.plain.last_result_ran, '50s');
+    assert.equal(by.bare.last_result_ran, '', 'no started line, no run length');
     assert.equal(by.wordy.last_result_reason.length, 30);
     assert.equal(by.fine.last_result_reason, '', 'only a failure carries a reason');
 
@@ -107,7 +110,8 @@ test('a failed row says why when the finished line gives a reason', () => {
     assert.match(screen, /^slow\s+done failed\s+failed \(timed out\) 1m ago\s/m);
     assert.match(screen, /^broke\s+done failed\s+failed \(engine error\) 1m ago\s/m);
     assert.match(screen, /^exit\s+done failed\s+failed \(bad exit 2\) 1m ago\s/m);
-    assert.match(screen, /^plain\s+done failed\s+failed 50s ago\s/m);
+    assert.match(screen, /^plain\s+done failed\s+failed \(after 50s\) 50s ago\s/m, 'no reason written: how long it ran');
+    assert.match(screen, /^bare\s+done failed\s+failed 20s ago\s/m);
     assert.match(screen, /^fine\s+done ok\s+ok 30s ago\s/m);
   } finally {
     fs.rmSync(dir, { recursive: true, force: true });
