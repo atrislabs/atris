@@ -72,6 +72,36 @@ test('reap sees a real live process in the folder without being told', async () 
   }
 });
 
+test('reap keeps old private and shared git locks in preview and forced removal', () => {
+  const { base, repo, wt } = landedWorktree();
+  try {
+    const privateDir = git(wt, ['rev-parse', '--absolute-git-dir']);
+    const locks = [path.join(privateDir, 'index.lock'), path.join(repo, '.git', 'refs', 'heads', 'master.lock')];
+    const now = Date.now();
+    const aged = new Date(now - 7200000);
+    for (const lock of locks) {
+      fs.writeFileSync(lock, 'unfinished git work\n');
+      fs.utimesSync(lock, aged, aged);
+    }
+    for (const dryRun of [true, false]) {
+      const receipt = reap(repo, { remote: false, force: true, dryRun, now, activeCwds: [] });
+      assert.deepEqual(receipt.removedWorktrees, []);
+      assert.deepEqual(receipt.deletedBranches, []);
+      for (const lock of locks) {
+        assert.ok(receipt.keptWorktrees.some((line) => line.includes(`${lock} (7200s old)`)), JSON.stringify(receipt));
+        assert.ok(fs.existsSync(lock));
+      }
+      assert.ok(fs.existsSync(wt));
+      assert.equal(git(repo, ['rev-parse', '--verify', 'refs/heads/engine-run']), git(repo, ['rev-parse', 'HEAD']));
+      assert.deepEqual(removalLines(repo), []);
+      assert.equal(receipt.bundle, null);
+      assert.deepEqual(receipt.patches, []);
+    }
+  } finally {
+    fs.rmSync(base, { recursive: true, force: true });
+  }
+});
+
 test('reap names who removed a folder and why', () => {
   const { base, repo, wt } = landedWorktree();
   try {

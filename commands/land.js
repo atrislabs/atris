@@ -1,6 +1,7 @@
 const fs = require('fs');
 const path = require('path');
 const gitSpawn = require('../lib/git-spawn');
+const { inspectGitActivity } = require('../lib/git-activity');
 const { compactErrorPayload, printCliJson } = require('../lib/cli-json');
 const { listWorktrees, statusCounts, defaultMainlineBase, listActiveProcessPaths, worktreeHasActiveProcess, recordWorktreeRemoval } = require('./worktree');
 
@@ -577,6 +578,11 @@ function reap(root, { ttlDays = DEFAULT_TTL_DAYS, staleHours = DEFAULT_STALE_HOU
       protectedWorktrees.push({ ...w, reason: 'fresh_worktree_grace' });
       continue;
     }
+    const activity = inspectGitActivity(w.path, now);
+    if (!activity.safe) {
+      protectedWorktrees.push({ ...w, reason: activity.reason });
+      continue;
+    }
     // Unlanded commits that no branch salvage bundle will cover are lost by a
     // force-remove: a detached worktree's commits ride no branch, and an active
     // branch worktree is not a reap target so its commits are never bundled.
@@ -685,6 +691,12 @@ function reap(root, { ttlDays = DEFAULT_TTL_DAYS, staleHours = DEFAULT_STALE_HOU
       // and say why: a bare path in the receipt reads as an unexplained
       // no-op (the exact silence BCK-1232 was about).
       receipt.keptWorktrees.push(`${w.path} (salvage incomplete: patch/copy failed, kept to avoid losing work)`);
+      if (w.branch) targetNames.delete(w.branch);
+      continue;
+    }
+    const activity = inspectGitActivity(w.path);
+    if (!activity.safe) {
+      receipt.keptWorktrees.push(`${w.path} (${activity.reason})`);
       if (w.branch) targetNames.delete(w.branch);
       continue;
     }
@@ -899,6 +911,11 @@ function printReceipt(receipt) {
     console.log(`landing cleanup preview: would clear ${receipt.deletedBranches.length} pieces of work, ${receipt.removedWorktrees.length} side copies:`);
     for (const b of receipt.deletedBranches) console.log(`  would clear  ${b}`);
     for (const w of receipt.removedWorktrees) console.log(`  would remove ${w}`);
+    for (const k of receipt.keptWorktrees || []) {
+      if (String(k).includes('(git locks:') || String(k).includes('(could not check git activity:')) {
+        console.log(`  kept, left alone: ${k}`);
+      }
+    }
   } else {
     console.log(`landing cleanup done: ${receipt.deletedBranches.length} pieces cleared, ${receipt.removedWorktrees.length} side copies removed`);
     if (receipt.bundle) console.log(`  backed up first, nothing lost: ${receipt.bundle}`);

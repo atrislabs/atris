@@ -603,6 +603,8 @@ MCP stdio request flow: `mcp/atris-mcp/index.mjs:142` reads requests while desig
 
 ### Feature: Landing Contract (`atris land`)
 
+- `commands/land.js:581`: private and shared Git-lock check before backup or preview; `commands/land.js:697`: recheck immediately before removal; `commands/land.js:908`: preview prints exact lock paths and ages. Real CLI proof: `atris/receipts/2026-10-14-land-lock-preview.js`.
+
 **Purpose:** Work is merged or reaped, never limbo: the board shows every unlanded branch/worktree; `--reap` salvages then deletes anything landed or past TTL
 
 - **Implementation:** `commands/land.js` (collectBoard, printBoard, reap, landSummary, printEmptyLand); the board orders overdue, active, then landed residue, labels aging active rows `stale`, and keeps fresh rows `in the air`; counts separate tracked, stale, overdue, and landed work
