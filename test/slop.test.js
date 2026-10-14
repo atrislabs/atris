@@ -1897,6 +1897,22 @@ test('fix keeps the comma in a bold heading whose subtitle has its own colon', (
   ]);
 });
 
+test('fix gives a list after a one-word verdict a comma, not a second colon', () => {
+  // from tick receipts, which came out "risk: none: read-only verification, no credits spent"
+  const file = tmpFile('verdictlist.md', [
+    '- risk: none \u2014 read-only verification, no credits spent, no task state mutated.',
+    '  R2: PASS \u2014 file exists, content matches, op_log entry present',
+    // any other value may be what the list spells out, so it keeps its colon
+    '**What it protects:** All Postgres data \u2014 user conversations, agent configurations, schedules',
+  ].join('\n'));
+  const { changes } = applyFixes([file], RULES);
+  assert.deepEqual(changes.map((c) => c.after), [
+    '- risk: none, read-only verification, no credits spent, no task state mutated.',
+    '  R2: PASS, file exists, content matches, op_log entry present',
+    '**What it protects:** All Postgres data: user conversations, agent configurations, schedules',
+  ]);
+});
+
 test('fix starts the next sentence after a stop that sits before a dash', () => {
   // from the terrace repo, which came out "fine with try? the cost"
   const file = tmpFile('stop.md', [

@@ -130,7 +130,13 @@ const LIST_AFTER_DASH = new RegExp(`(?<=[\\w)\\]*_\`%])\\s*\u2014\\s*(?!(?:and|b
 // the progression, and intelligently suggesting the next topic". Without
 // this, "extracting what was learned" reads as a subject and its verb.
 const ING_ITEM = "(?:[a-z]+ly )?(?!(?:some|any|every|no)?thing\\b|during\\b|morning\\b|evening\\b|string\\b)[a-z]{2,}ing\\b[^,.!?;:\\u2014]*";
-const ING_LIST_AFTER_DASH = new RegExp(`(?<=[\\w)\\]*_\`%])\\s*\u2014\\s*(?=${ING_ITEM}(?:, ${ING_ITEM}){1,}, (?:and |or )?${ING_ITEM}(?:[.!?](?:\\s|$)|$))`, 'g');
+// A field whose value is one verdict word, "risk: none" or "R2: PASS", is
+// only backed up by a list after its dash, so the list takes a comma, not a
+// second colon: "risk: none, read-only, no credits spent, no state mutated".
+// Any other value may be what the list spells out ("All Postgres data:
+// conversations, configs"), so that keeps its colon.
+const VERDICT_FIELD = /:[*_]*\s+(?:\*\*|__)?(?:none|n\/a|pass|passed|fail|failed|ok|okay|yes|no|done|clean|green|red|blocked|held|skip|skipped|unchanged|true|false)(?:\*\*|__)?$/i;
+const ING_LIST_AFTER_DASH =new RegExp(`(?<=[\\w)\\]*_\`%])\\s*\u2014\\s*(?=${ING_ITEM}(?:, ${ING_ITEM}){1,}, (?:and |or )?${ING_ITEM}(?:[.!?](?:\\s|$)|$))`, 'g');
 
 // A lone dash with a word before it, then a subject pronoun and its verb:
 // "it survives", "they'd pass", "that's the goal". "This" and its kin count
@@ -506,8 +512,9 @@ function fixEmDash(s, { endsBlock = false, startsBlock = false } = {}) {
     .replace(/(\.["'\u201d\u2019]+|[!?]["'\u201d\u2019]+(?=\s*\u2014\s*[A-Z]))\s*\u2014\s*(?=\S)/g, '$1 ')
     // a dash that opens a list of three or more short items running to the
     // end of the sentence introduces it: "sweep: arxiv, github, web."
-    .replace(LIST_AFTER_DASH, (m, close, at, whole) => (close && !insideParens(whole.slice(0, at)) ? m : ': '))
-    .replace(ING_LIST_AFTER_DASH, ': ')
+    // a field whose value is one verdict word keeps the comma instead
+    .replace(LIST_AFTER_DASH, (m, close, at, whole) => (close && !insideParens(whole.slice(0, at)) || VERDICT_FIELD.test(whole.slice(0, at)) ? m : ': '))
+    .replace(ING_LIST_AFTER_DASH, (m, at, whole) => (VERDICT_FIELD.test(whole.slice(0, at)) ? m : ': '))
     // a dash between two full clauses joins them; a comma there is a splice
     // ("this isn't optional, it's part of design"), so it takes a semicolon.
     // The left side needs two words of its own sentence to be a clause, so
