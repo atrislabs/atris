@@ -2429,3 +2429,7 @@ npm publish
 ## Task lineage fixture setup
 
 - `test/commands.test.js:20890` checks that task lineage prints the parent before the child in text and JSON and survives a home with no git. Real-store creation at `test/commands.test.js:20898` saves two setup launches and seeds the child with the same goal link that task add stores; removing that link makes the test fail, so the seeded link is what the lineage reads check.
+
+## Reviewed failure status fixture setup
+
+- `test/commands.test.js:14484` checks that task status counts a reviewed failed task as closed, with nothing active or waiting for review. Real-store creation at `test/commands.test.js:14491` saves one setup launch; task add only stores the row and redraws the task view, which the claim and failed finish redraw again, so the claim, failed finish and status read remain on the CLI.

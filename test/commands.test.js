@@ -14488,9 +14488,16 @@ test('task status treats reviewed failures as closed task health', () => {
   const dbPath = path.join(dir, 'tasks.db');
   const env = { ATRIS_TASKS_DB: dbPath, NODE_NO_WARNINGS: '1' };
   try {
-    const created = runCli(['task', 'new', 'Goal: who r u', '--tag', 'goal', '--json'], { cwd: dir, env });
-    assert.equal(created.status, 0, created.stderr);
-    const id = JSON.parse(created.stdout).task_id;
+    // Seed creation only; the claim, failed finish and status read stay on the CLI.
+    const db = taskStore.open(dbPath);
+    let id;
+    try {
+      const created = addSeedTask(db, { title: 'Goal: who r u', tag: 'goal', workspaceRoot: taskStore.workspaceRoot(dir) });
+      assert.equal(created.inserted, true);
+      id = created.id;
+    } finally {
+      taskStore.close();
+    }
     const claimed = runCli(['task', 'claim', id, '--as', 'command-leader', '--json'], { cwd: dir, env });
     assert.equal(claimed.status, 0, claimed.stderr);
     const failed = runCli(['task', 'done', id, '--failed', '--proof', 'Misrouted small talk; validation failed in intake triage.', '--json'], { cwd: dir, env });
