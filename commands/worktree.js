@@ -1260,6 +1260,24 @@ function pruneGeneratedWorktreeCaches(worktreePath, { apply = false } = {}) {
   return { candidates, pruned };
 }
 
+// A locked folder can be gone from disk (an unplugged drive), so read git's
+// own lock file from the main repo instead of from inside the folder.
+function missingFolderLock(root, wtPath, now = Date.now()) {
+  const locks = [];
+  try {
+    const common = runGit(['rev-parse', '--path-format=absolute', '--git-common-dir'], { cwd: root, check: false });
+    const admin = path.join(common.stdout.trim(), 'worktrees');
+    for (const name of common.status === 0 ? fs.readdirSync(admin) : []) {
+      const gitdir = path.join(admin, name, 'gitdir');
+      if (!fs.existsSync(gitdir) || path.dirname(path.resolve(fs.readFileSync(gitdir, 'utf8').trim())) !== wtPath) continue;
+      const lock = path.join(admin, name, 'locked');
+      if (fs.existsSync(lock)) locks.push({ path: lock, ageSeconds: Math.max(0, Math.floor((now - fs.lstatSync(lock).mtimeMs) / 1000)) });
+    }
+  } catch {}
+  const named = locks.map((lock) => `${lock.path} (${lock.ageSeconds}s old)`).join(', ');
+  return { locks, reason: `folder is missing; git lock: ${named || 'lock file not found'}` };
+}
+
 function cleanupWorktrees({ root = repoRoot(), base: baseOverride = '', apply = false, activeCwds: activeCwdsOverride, by = 'atris worktree cleanup' } = {}) {
   const worktrees = listWorktrees(root);
   const primary = worktrees[0]?.path ? path.resolve(worktrees[0].path) : '';
@@ -1292,7 +1310,7 @@ function cleanupWorktrees({ root = repoRoot(), base: baseOverride = '', apply = 
     }
     if (wt.locked) {
       // Name the lock file and its age so a person can judge a stale hold.
-      const activity = inspectGitActivity(wt.path);
+      const activity = fs.existsSync(wtPath) ? inspectGitActivity(wt.path) : missingFolderLock(root, wtPath);
       kept.push({ ...item, reason: 'locked', detail: activity.reason, locks: activity.locks });
       continue;
     }

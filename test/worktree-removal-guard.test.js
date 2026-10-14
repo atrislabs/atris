@@ -227,6 +227,30 @@ test('worktree cleanup names the lock file and age when git itself locked a fold
   }
 });
 
+test('worktree cleanup says a locked folder is missing and still names the lock file', () => {
+  const { base, repo, wt } = landedWorktree();
+  try {
+    git(repo, ['worktree', 'lock', '--reason', 'on an unplugged drive', wt]);
+    const lock = path.join(git(wt, ['rev-parse', '--absolute-git-dir']), 'locked');
+    const aged = new Date(Date.now() - 7200000);
+    fs.utimesSync(lock, aged, aged);
+    fs.rmSync(wt, { recursive: true, force: true });
+    for (const apply of [false, true]) {
+      const result = cleanupWorktrees({ root: repo, base: 'HEAD', apply, activeCwds: [] });
+      assert.deepEqual(result.removed, []);
+      const kept = result.kept.find((item) => item.path === wt);
+      assert.equal(kept.reason, 'locked', JSON.stringify(result));
+      assert.ok(kept.detail.startsWith('folder is missing;'), kept.detail);
+      assert.ok(kept.detail.includes(`${lock} (`), kept.detail);
+      assert.ok(kept.locks.some((item) => item.path === lock && item.ageSeconds >= 7200), JSON.stringify(kept.locks));
+      assert.ok(fs.existsSync(lock));
+      assert.deepEqual(removalLines(repo), []);
+    }
+  } finally {
+    fs.rmSync(base, { recursive: true, force: true });
+  }
+});
+
 test('worktree cleanup names who removed a folder and why', () => {
   const { base, repo, wt } = landedWorktree();
   try {
