@@ -20,6 +20,12 @@ if git diff --cached --name-only --diff-filter=AM | grep -q '^atris/wiki/'; then
   exit 1
 fi
 
+if git diff --cached --name-only --diff-filter=AM | grep -q '^atris/team/[^/]*/logs/'; then
+  echo "error: atris/team/<member>/logs/ is local member memory and must not be committed."
+  echo "unstage it with: git restore --staged atris/team/*/logs"
+  exit 1
+fi
+
 # Load check: staged modules must load and their destructured imports must
 # exist. Catches the silent partial-land failure (destructuring a missing
 # export is undefined, not an error) that broke master on 2026-07-02.
