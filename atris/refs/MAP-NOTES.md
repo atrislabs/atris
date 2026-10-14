@@ -2270,3 +2270,5 @@ MCP retry cadence: `mcp/atris-mcp/index.mjs:93` reads the positive finite design
 Command test SQLite capability: `test/commands.test.js:4926` caches the real child probe for the fixed Node executable; database tests retain their existing checks.
 
 Proof-command extraction setup: `test/commands.test.js:11808` seeds 45 claimed fixtures through the real SQLite helpers using the canonical temporary path, keeps the first complete CLI setup, and preserves every ready/review-chat parsing assertion.
+
+Review-group cap setup: `test/commands.test.js:14266` keeps one full CLI new/claim/ready/review row and seeds eleven through the same SQLite steps; rows and events match the CLI ones apart from title.

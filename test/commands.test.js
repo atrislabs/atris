@@ -14255,14 +14255,29 @@ test('task review groups are capped by default for human scan', () => {
   try {
     fs.mkdirSync(path.join(dir, 'atris'), { recursive: true });
 
-    for (let index = 1; index <= 12; index += 1) {
-      const tag = `tag-${String(index).padStart(2, '0')}`;
-      const created = runCli(['task', 'new', `Grouped approval ${index}`, '--tag', tag, '--json'], { cwd: dir, env });
-      assert.equal(created.status, 0, created.stderr);
-      const task = JSON.parse(created.stdout).task;
-      assert.equal(runCli(['task', 'claim', task.display_id, '--as', 'codex'], { cwd: dir, env }).status, 0);
-      assert.equal(runCli(['task', 'ready', task.display_id, '--proof', 'node --check test/commands.test.js passed', '--as', 'codex'], { cwd: dir, env }).status, 0);
-      assert.equal(runCli(['task', 'review', task.display_id, '--reward', '0', '--as', 'validator'], { cwd: dir, env }).status, 0);
+    const proof = 'node --check test/commands.test.js passed';
+    const created = runCli(['task', 'new', 'Grouped approval 1', '--tag', 'tag-01', '--json'], { cwd: dir, env });
+    assert.equal(created.status, 0, created.stderr);
+    const first = JSON.parse(created.stdout).task;
+    assert.equal(runCli(['task', 'claim', first.display_id, '--as', 'codex'], { cwd: dir, env }).status, 0);
+    assert.equal(runCli(['task', 'ready', first.display_id, '--proof', proof, '--as', 'codex'], { cwd: dir, env }).status, 0);
+    assert.equal(runCli(['task', 'review', first.display_id, '--reward', '0', '--as', 'validator'], { cwd: dir, env }).status, 0);
+
+    // The first row covers the CLI new/claim/ready/review path. Seed the other
+    // eleven through the same SQLite steps; the rows and events match the CLI
+    // ones apart from title, and every grouping assertion below runs the CLI.
+    const db = taskStore.open(dbPath);
+    try {
+      for (let index = 2; index <= 12; index += 1) {
+        const tag = `tag-${String(index).padStart(2, '0')}`;
+        const added = taskStore.addTask(db, { title: `Grouped approval ${index}`, tag, workspaceRoot: fs.realpathSync(dir) });
+        assert.equal(added.inserted, true);
+        assert.equal(taskStore.claimTask(db, { id: added.id, claimedBy: 'codex' }).claimed, true);
+        assert.equal(taskStore.readyTask(db, { id: added.id, actor: 'codex', proof, result: FIXTURE_RESULT_SENTENCE }).ready, true);
+        assert.equal(taskStore.reviewTask(db, { id: added.id, actor: 'validator', reward: 0 }).reviewed, true);
+      }
+    } finally {
+      taskStore.close();
     }
 
     const grouped = runCli(['task', 'reviews', '--group-by', 'tag'], { cwd: dir, env });
