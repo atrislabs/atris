@@ -1644,3 +1644,19 @@ test('fix gives a greeting a comma, on its own line or before the message', () =
     'Hi Tim, Amy, quick question.',
   ]);
 });
+
+test('fix joins a second sentence led by "our" with a semicolon', () => {
+  // from dream-gtm's outreach openers, which came out "Saw your recent post on
+  // falls after rehab, our scheduling AI ensures reliable care"
+  const file = tmpFile('possessive.md', [
+    'Saw your recent post on falls after rehab \u2014 our scheduling AI ensures reliable care.',
+    'Congrats on 16 years serving Pinellas \u2014 our AI tool could save you hours.',
+    'We shipped the tool \u2014 our best work so far.',
+  ].join('\n'));
+  const { changes } = applyFixes([file], RULES);
+  assert.deepEqual(changes.map((c) => c.after), [
+    'Saw your recent post on falls after rehab; our scheduling AI ensures reliable care.',
+    'Congrats on 16 years serving Pinellas; our AI tool could save you hours.',
+    'We shipped the tool, our best work so far.',
+  ]);
+});

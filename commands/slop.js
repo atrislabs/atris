@@ -203,6 +203,12 @@ const ADVERB_CLAUSE_AFTER_DASH = new RegExp(`(?<=[\\w)\\]"'*_\`\\u201d\\u2019\\u
 // "tests runs" or "quickly moves", is not a subject.
 const BARE_CLAUSE_AFTER_DASH = new RegExp(`(?<=[\\w)\\]"'*_\`\\u201d\\u2019\\uE001])\\s*\\u2014\\s*(?!${NAMING_PHRASE})(?=(?!(?:and|but|or|nor|so|yet|then|not|even|when|if|unless|until|because|since|while|where|which|who|as|after|before|though|although|once|just|only|also|still|this|that|it|its|one)\\b)[a-z]{3,}(?<!s|ly)\\s+${PLAIN_VERB_WORD}\\s+(?:to|into|onto|through)\\s)`, 'g');
 
+// "Our", "your", "their" or "my" and one to three words, then a verb, start
+// a second sentence too: "Saw your post on falls after rehab; our scheduling
+// AI ensures reliable care". With no verb it only renames what came before,
+// so "the tool, our best work so far" keeps its comma.
+const POSSESSIVE_CLAUSE_AFTER_DASH = new RegExp(`(?<=[\\w)\\]"'*_\`\\u201d\\u2019\\uE001])\\s*\\u2014\\s*(?=(?:our|your|their|my)\\s+(?:${NOUN_WORD}\\s+){1,3}(?:${PLAIN_VERB}[^\\s\\u2014]|${HELPING_VERB}\\s+[^\\s\\u2014]))`, 'g');
+
 // An order after a full clause is a sentence of its own, so a comma there is
 // a splice: "pruning the worktree deletes proof; copy receipts out first".
 // The verb needs a plain word after it, so a noun in a label field ("verify:
@@ -379,6 +385,10 @@ function fixEmDash(s, { endsBlock = false, startsBlock = false } = {}) {
       return left ? clauseJoin(left) : m;
     })
     .replace(BARE_CLAUSE_AFTER_DASH, (m, at, whole) => {
+      const left = clauseLeft(at, whole);
+      return left ? clauseJoin(left) : m;
+    })
+    .replace(POSSESSIVE_CLAUSE_AFTER_DASH, (m, at, whole) => {
       const left = clauseLeft(at, whole);
       return left ? clauseJoin(left) : m;
     })
