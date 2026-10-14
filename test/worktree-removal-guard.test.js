@@ -203,6 +203,34 @@ test('reap and worktree cleanup keep a folder while git updates a branch in the 
   }
 });
 
+test('reap, cleanup, and fleet review name every lock holding a folder with its age', () => {
+  const { base, repo, wt } = landedWorktree();
+  try {
+    const own = path.join(worktreeGitDir(wt), 'index.lock');
+    const shared = path.join(repo, '.git', 'refs', 'heads', 'master.lock');
+    for (const [file, hours] of [[own, 3], [shared, 5]]) {
+      fs.writeFileSync(file, '');
+      const stale = new Date(Date.now() - hours * 60 * 60 * 1000);
+      fs.utimesSync(file, stale, stale);
+    }
+    const result = cleanupWorktrees({ root: repo, base: 'HEAD', apply: true, activeCwds: [] });
+    const held = result.kept.find((item) => item.path === wt);
+    assert.equal(held.lock, own, JSON.stringify(result.kept));
+    assert.deepEqual(held.locks.map((lock) => lock.file), [own, shared]);
+    assert.ok(held.locks[1].age_ms >= 5 * 60 * 60 * 1000 - 1000, JSON.stringify(held.locks));
+    const receipt = reap(repo, { remote: false, force: true, activeCwds: [] });
+    assert.ok(receipt.keptWorktrees.includes(`${wt} (git_lock: ${own}, 3 h old; ${shared}, 5 h old)`), JSON.stringify(receipt));
+    const quarantine = path.join(base, 'quarantine.git');
+    fs.mkdirSync(quarantine);
+    const disposed = disposeReviewSandbox({ trustedRoot: repo, sandboxRoot: path.join(base, 'sandbox'), worktreePath: wt, gitDir: path.join(base, 'sandbox.git'), quarantine });
+    assert.deepEqual(disposed.locks.map((lock) => lock.file), [own, shared]);
+    assert.ok(fs.existsSync(wt));
+    assert.deepEqual(removalLines(repo), []);
+  } finally {
+    fs.rmSync(base, { recursive: true, force: true });
+  }
+});
+
 test('worktree cleanup keeps a clean folder paused mid-rebase', () => {
   const { base, repo, wt } = landedWorktree();
   try {
@@ -232,8 +260,9 @@ test('fleet review cleanup keeps a sandbox while git holds its lock', () => {
     fs.writeFileSync(lock, '');
     const stale = new Date(Date.now() - 3 * 60 * 60 * 1000);
     fs.utimesSync(lock, stale, stale);
-    const { lock_age_ms: age, ...result } = disposeReviewSandbox(boundary);
+    const { lock_age_ms: age, locks, ...result } = disposeReviewSandbox(boundary);
     assert.deepEqual(result, { removed: false, reason: 'git_lock', lock });
+    assert.deepEqual(locks, [{ file: lock, age_ms: age }]);
     assert.ok(age >= 3 * 60 * 60 * 1000 - 1000, String(age));
     assert.ok(fs.existsSync(wt));
     assert.ok(fs.existsSync(boundary.quarantine));
@@ -262,7 +291,7 @@ test('fleet review cleanup keeps a sandbox while git holds its quarantine store'
     git(base, ['init', '-q', '--bare', boundary.quarantine]);
     const lock = path.join(boundary.quarantine, 'HEAD.lock');
     fs.writeFileSync(lock, '');
-    const { lock_age_ms: age, ...result } = disposeReviewSandbox(boundary);
+    const { lock_age_ms: age, locks: _locks, ...result } = disposeReviewSandbox(boundary);
     assert.deepEqual(result, { removed: false, reason: 'git_lock', lock });
     assert.equal(typeof age, 'number');
     assert.ok(fs.existsSync(wt));
@@ -282,7 +311,7 @@ test('fleet review cleanup keeps a sandbox while git updates a branch in either 
         git(base, ['init', '-q', '--bare', boundary.quarantine]);
         const lock = path.join(boundary[store], marker);
         fs.writeFileSync(lock, '');
-        const { lock_age_ms: age, ...result } = disposeReviewSandbox(boundary);
+        const { lock_age_ms: age, locks: _locks, ...result } = disposeReviewSandbox(boundary);
         assert.deepEqual(result, { removed: false, reason: 'git_lock', lock }, `${store} ${marker}`);
         assert.equal(typeof age, 'number', `${store} ${marker}`);
         assert.ok([wt, boundary.gitDir, boundary.quarantine].every((folder) => fs.existsSync(folder)), `${store} ${marker}`);

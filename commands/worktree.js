@@ -1243,22 +1243,22 @@ const GIT_ACTIVITY_MARKERS = [
 // pointer file directly so the check costs no spawn per worktree.
 function worktreeGitActivity(worktreePath) {
   const gitDir = worktreeGitDir(worktreePath);
-  return gitStoreActivity(gitDir) || (sharedStoreLockFile(gitDir) ? 'git_lock' : null);
+  return gitStoreActivity(gitDir) || (sharedStoreLockFiles(gitDir).length ? 'git_lock' : null);
 }
 
 // A linked worktree shares the main store's refs, so a branch update there
 // (refs/<name>.lock, packed-refs.lock) is git busy in this folder too. Only
 // locks count: a merge paused in the main checkout is not this folder's work.
-function sharedStoreLockFile(gitDir) {
+function sharedStoreLockFiles(gitDir) {
   let common;
   try {
     common = path.resolve(gitDir, fs.readFileSync(path.join(gitDir, 'commondir'), 'utf8').trim());
   } catch {
-    return null;
+    return [];
   }
-  if (common === path.resolve(gitDir)) return null;
+  if (common === path.resolve(gitDir)) return [];
   const packed = path.join(common, 'packed-refs.lock');
-  return fs.existsSync(packed) ? packed : refsLockFile(path.join(common, 'refs'));
+  return [...(fs.existsSync(packed) ? [packed] : []), ...refsLockFiles(path.join(common, 'refs'))];
 }
 
 function worktreeGitDir(worktreePath) {
@@ -1279,49 +1279,64 @@ function gitStoreActivity(gitDir) {
   for (const [marker, reason] of GIT_ACTIVITY_MARKERS) {
     if (fs.existsSync(path.join(gitDir, marker))) return reason;
   }
-  return refsLockFile(path.join(gitDir, 'refs')) ? 'git_lock' : null;
+  return refsLockFiles(path.join(gitDir, 'refs')).length ? 'git_lock' : null;
 }
 
 // A branch or tag update writes refs/<name>.lock until it commits, at any depth.
-function refsLockFile(dir) {
+function refsLockFiles(dir) {
   let entries;
-  try { entries = fs.readdirSync(dir, { withFileTypes: true }); } catch { return null; }
-  for (const entry of entries) {
+  try { entries = fs.readdirSync(dir, { withFileTypes: true }); } catch { return []; }
+  return entries.flatMap((entry) => {
     const file = path.join(dir, entry.name);
-    const found = entry.isDirectory() ? refsLockFile(file) : (entry.name.endsWith('.lock') ? file : null);
-    if (found) return found;
-  }
-  return null;
+    if (entry.isDirectory()) return refsLockFiles(file);
+    return entry.name.endsWith('.lock') ? [file] : [];
+  });
 }
 
-// The lock file keeping a folder and how long it has sat there, so a lock left
-// by a crashed git shows up instead of silently holding the folder.
+function lockAges(files, now) {
+  return files.flatMap((file) => {
+    try {
+      return [{ file, ageMs: Math.max(0, now - fs.statSync(file).mtimeMs) }];
+    } catch {
+      return [];
+    }
+  });
+}
+
+// The first lock keeps the fields callers already read; locks lists all of them.
+function firstLockWithAll(locks) {
+  return locks.length ? { ...locks[0], locks } : null;
+}
+
+// The lock files keeping a folder and how long each has sat there, so a lock
+// left by a crashed git shows up instead of silently holding the folder.
 function worktreeGitLock(worktreePath, now = Date.now()) {
   const gitDir = worktreeGitDir(worktreePath);
-  const own = gitStoreLock(gitDir, now);
-  if (own || !gitDir) return own;
-  const file = sharedStoreLockFile(gitDir);
-  if (!file) return null;
-  try {
-    return { file, ageMs: Math.max(0, now - fs.statSync(file).mtimeMs) };
-  } catch {
-    return null;
-  }
+  if (!gitDir) return null;
+  return firstLockWithAll(lockAges([...gitStoreLockFiles(gitDir), ...sharedStoreLockFiles(gitDir)], now));
 }
 
 // Same lookup against a git store itself, for callers that hold the store path.
 function gitStoreLock(gitDir, now = Date.now()) {
-  if (!gitDir) return null;
-  const file = GIT_ACTIVITY_MARKERS
+  return gitDir ? firstLockWithAll(lockAges(gitStoreLockFiles(gitDir), now)) : null;
+}
+
+function gitStoreLockFiles(gitDir) {
+  const markers = GIT_ACTIVITY_MARKERS
     .filter(([, reason]) => reason === 'git_lock')
     .map(([marker]) => path.join(gitDir, marker))
-    .find((candidate) => fs.existsSync(candidate)) || refsLockFile(path.join(gitDir, 'refs'));
-  if (!file) return null;
-  try {
-    return { file, ageMs: Math.max(0, now - fs.statSync(file).mtimeMs) };
-  } catch {
-    return null;
-  }
+    .filter((candidate) => fs.existsSync(candidate));
+  return [...markers, ...refsLockFiles(path.join(gitDir, 'refs'))];
+}
+
+// "a, 3 h old; b, 5 h old" for every lock holding a folder.
+function describeLocks(locks) {
+  return locks.map((lock) => `${lock.file}, ${describeLockAge(lock.ageMs)} old`).join('; ');
+}
+
+// The record shape a kept folder carries: the first lock as before, plus all.
+function lockFields(lock) {
+  return { lock: lock.file, lock_age_ms: lock.ageMs, locks: lock.locks.map((held) => ({ file: held.file, age_ms: held.ageMs })) };
 }
 
 function describeLockAge(ms) {
@@ -1352,7 +1367,7 @@ function describeGitActivity(worktreePath, reason, now = Date.now()) {
   if (paused) return `${reason}: ${paused}`;
   if (reason !== 'git_lock') return reason;
   const lock = worktreeGitLock(worktreePath, now);
-  return lock ? `git_lock: ${lock.file}, ${describeLockAge(lock.ageMs)} old` : reason;
+  return lock ? `git_lock: ${describeLocks(lock.locks)}` : reason;
 }
 
 // Every work-folder removal leaves one line naming who removed it and why, in
@@ -1453,7 +1468,7 @@ function cleanupWorktrees({ root = repoRoot(), base: baseOverride = '', apply = 
     const gitActivity = worktreeGitActivity(wtPath);
     if (gitActivity) {
       const lock = gitActivity === 'git_lock' ? worktreeGitLock(wtPath) : null;
-      kept.push({ ...item, reason: gitActivity, ...(lock ? { lock: lock.file, lock_age_ms: lock.ageMs } : {}) });
+      kept.push({ ...item, reason: gitActivity, ...(lock ? lockFields(lock) : {}) });
       continue;
     }
     const rawCounts = statusCounts(wt.path);
@@ -1554,7 +1569,9 @@ function cleanup(args) {
   }
   console.log(`kept: ${result.kept.length}`);
   for (const item of result.kept.filter((kept) => kept.lock)) {
-    console.log(`held by git lock: ${item.path} lock=${item.lock} age=${describeLockAge(item.lock_age_ms)}`);
+    for (const held of item.locks) {
+      console.log(`held by git lock: ${item.path} lock=${held.file} age=${describeLockAge(held.age_ms)}`);
+    }
   }
   for (const item of result.kept) {
     const paused = describePausedGitWork(item.reason);
@@ -1652,6 +1669,8 @@ module.exports = {
   worktreeGitLock,
   gitStoreLock,
   describeLockAge,
+  describeLocks,
+  lockFields,
   describeGitActivity,
   describePausedGitWork,
   describeFlightAge,
