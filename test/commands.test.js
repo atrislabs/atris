@@ -18566,7 +18566,7 @@ test('clean --dry-run --json reports machine-readable health', () => {
   }
 });
 
-test('clean dry-run shows MAP refs it would heal', () => {
+test('clean dry-run shows MAP refs it would heal', async () => {
   const dir = makeTempDir();
   try {
     fs.mkdirSync(path.join(dir, 'atris'), { recursive: true });
@@ -18584,7 +18584,10 @@ test('clean dry-run shows MAP refs it would heal', () => {
       '',
     ].join('\n'), 'utf8');
 
-    const res = runCli(['clean', '--dry-run', '--json'], { cwd: dir });
+    const [res, text] = await Promise.all([
+      runCliAsync(['clean', '--dry-run', '--json'], { cwd: dir }),
+      runCliAsync(['clean', '--dry-run'], { cwd: dir }),
+    ]);
     assert.equal(res.status, 0, res.stderr);
     const payload = JSON.parse(res.stdout);
     assert.equal(payload.results.map_refs.healed_count, 1);
@@ -18597,7 +18600,6 @@ test('clean dry-run shows MAP refs it would heal', () => {
     ]);
     assert.match(fs.readFileSync(path.join(dir, 'atris', 'MAP.md'), 'utf8'), /src\/app\.js:20/);
 
-    const text = runCli(['clean', '--dry-run'], { cwd: dir });
     assert.equal(text.status, 0, text.stderr);
     assert.match(text.stdout, /Would heal 1 MAP\.md reference/);
     assert.match(text.stdout, /`src\/app\.js:20` -> `src\/app\.js:1` \(main\)/);

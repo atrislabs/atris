@@ -232,3 +232,5 @@ Help update-cache checks: `test/commands.test.js:18750` runs six help launches t
 Status and analytics help checks: `test/commands.test.js:18776` runs both help launches together with the existing async CLI helper, retaining every output and no-state assertion. `bin/atris.js:2833` and `bin/atris.js:2850` return help before workspace lookup. Two sequential stages become one.
 
 Update and sync help checks: `test/commands.test.js:18692` runs both help launches together, each with its own home folder and skill file, retaining every output, skill-file, and no-state assertion. `bin/atris.js:2305` returns help before any sync work. Two sequential stages become one; a planted skill-file write in sync help still fails the test.
+
+Clean preview read batching: `test/commands.test.js:18569` awaits both real CLI preview formats together before checking output and unchanged map contents. `commands/clean.js:48` passes the preview setting into map healing; archive and empty-section writes also honor it. Two sequential launch stages become one, with every assertion retained.
