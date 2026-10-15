@@ -241,7 +241,7 @@ Healthy refresh staged tracked edits: `test/member-tidy.test.js:1374` runs real 
 
 Offline cleanup staged deletion: `test/member-tidy.test.js` runs real preview and apply with an unavailable origin and a staged README deletion. Both calls preserve the missing file, saved deletion patch, original committed contents, draft, branch and registration.
 
-Offline cleanup staged rename: `test/member-tidy.test.js:1628` runs real preview and apply with an unavailable origin after README is renamed in the index and edited again. Both calls keep the old name absent, the saved rename, the later edit, the branch and registration.
+Offline cleanup staged rename: `test/member-tidy.test.js:1646` runs real preview and apply with an unavailable origin after README is renamed in the index and edited again. Both calls keep the old name absent, the saved rename, the later edit, the branch and registration.
 
 Offline cleanup staged new file: `test/member-tidy.test.js:1514` runs real preview and apply with an unavailable origin after a new file is staged and edited again. Both calls keep the saved first version, the later edit, the branch and registration, and name the copy as kept with one staged and one unsaved change.
 
@@ -282,8 +282,10 @@ Healthy cleanup link-to-folder proof: `test/member-tidy.test.js:1439` runs real 
 
 Healthy cleanup rename-to-folder proof: `test/member-tidy.test.js:1448` runs real preview and apply after a saved rename destination becomes a folder containing a draft, preserving the original committed contents, saved destination and mode, missing source, draft bytes and full staged tree.
 
-Healthy cleanup reused rename source proof: `test/member-tidy.test.js:1453` recreates the original name with new draft bytes after a saved rename. Real preview and apply preserve the new draft, original committed bytes, saved destination, replacement folder draft and complete staged tree.
+Healthy cleanup reused rename source proof: `test/member-tidy.test.js:1454` recreates the original name with new draft bytes after a saved rename. Real preview and apply preserve the new draft, original committed bytes, saved destination, replacement folder draft and complete staged tree.
 
-Healthy cleanup linked rename source proof: `test/member-tidy.test.js:1466` turns the original name into a symbolic link after a saved rename. Real preview and apply preserve the link target, original committed bytes, saved destination and complete staged tree.
+Healthy cleanup linked rename source proof: `test/member-tidy.test.js:1467` turns the original name into a symbolic link after a saved rename. Real preview and apply preserve the link target, original committed bytes, saved destination and complete staged tree.
 
-Healthy cleanup folded rename source proof: `test/member-tidy.test.js:1474` turns the original name into a folder holding a draft after a saved rename. Real preview and apply preserve the folder draft, original committed bytes, saved destination and complete staged tree.
+Healthy cleanup folded rename source proof: `test/member-tidy.test.js:1475` turns the original name into a folder holding a draft after a saved rename. Real preview and apply preserve the folder draft, original committed bytes, saved destination and complete staged tree.
+
+Healthy cleanup runnable rename source proof: `test/member-tidy.test.js:1485` turns the original name into an executable script after a saved rename. Real preview and apply preserve the script bytes and run bit, original committed bytes, saved destination and complete staged tree.
