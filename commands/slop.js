@@ -360,7 +360,11 @@ const NAME_TAIL_PHRASE = new RegExp(`^\\s*\\u2014\\s*the\\s+[a-z][\\w-]*\\s+(?:[
 // A subject in "as", "is", "us" or "ss" is one thing: "the canvas".
 const LONE_VERB_WORD = '(?:listens|focuses|fills|lands|relies|depends|refers|belongs|applies|waits|fails|happens|sits|comes|goes|reacts|responds|subscribes|defaults|hangs|converges|agrees|differs|compiles|scrolls|resolves|reads|writes)';
 const LONE_VERB_CLAUSE_AFTER_DASH = new RegExp(`${CLAUSE_END}\\s*\\u2014\\s*(?=the\\s+(?!${NAME_PAIR}\\b)(?!(?:one|two|three|four|five|six|seven|eight|nine|ten|few|many|several|same|other|first|last|next|main|key|core|new|old|real|whole|exact|only)\\b)(?:(?![A-Za-z-]*s\\b)(?:[A-Z]{2,}|[a-z][a-z-]*[a-z])\\s+(?!(?:that|which|who)\\b))?(?![a-z]*[^aisu]s\\b)[a-z]{2,}\\s+(?:${MANNER_WORD}\\s+)?${LONE_VERB_WORD}\\s+(?:${MANNER_WORD}\\s+)?(?:in|on|to|for|at|with)\\s+[^\\s\\u2014])`, 'g');
-const RELATIVE_OBJECT_PHRASE = /^\s*\u2014\s*the\s+[A-Za-z][\w-]*\s+(?:[a-z][\w-]*\s+)?(?!(?:proves|shows|means|ensures|confirms|says|assumes|knows|finds)\b)[a-z]+s\s+(?:the|a|an|your|our|their|its|this|these|those)\s+\S+\s+(?:\S+\s+){0,2}[a-z]+s\s*(?:[.!?;,]|$)/;
+// A plural, "the" and a short clause ending on its own verb in "s" names
+// the plural: "the decision helpers the CLI uses". A "the" or "a" inside
+// that clause starts an object, so the last word is a noun and the whole is
+// a clause: "the learner watches the model do the reps".
+const RELATIVE_OBJECT_PHRASE = /^\s*\u2014\s*the\s+[A-Za-z][\w-]*\s+(?:[a-z][\w-]*\s+)?(?!(?:proves|shows|means|ensures|confirms|says|assumes|knows|finds)\b)[a-z]+s\s+(?:the|a|an|your|our|their|its|this|these|those)\s+\S+\s+(?:(?!(?:the|a|an)\b)\S+\s+){0,2}[a-z]+s\s*(?:[.!?;,]|$)/;
 const BARE_OBJECT_CLAUSE = new RegExp(`^\\s*\\u2014\\s*the\\s+(?!${NAME_PAIR}\\b)(?![a-z]*s\\b)[a-z]{2,}\\s+${PLAIN_VERB_WORD}\\s+(?!${NAME_END_WORD}\\b)[a-z]{2,}(?=[.!?;]|\\s+(?:into|onto|to|for|from|on|at|with|until)\\s)`);
 // A verb in "s" with a tail that says how, not what, is a clause too: "the
 // engine blocks regardless of context", "the runner catches instead of

@@ -157,3 +157,10 @@ The row is stale \u2014 the migration shows as applied and is skipped.
 => The row is stale; the migration shows as applied and is skipped.
 Check one place \u2014 the error logs and traces folder.
 => Check one place, the error logs and traces folder.
+
+# from real repo text: a "the" inside the clause after a plural starts an
+# object, so the line is a clause, not a plural with a clause on it
+It mirrors what the model produces \u2014 the learner watches the model do the reps.
+=> It mirrors what the model produces; the learner watches the model do the reps.
+One place \u2014 the live markdown docs the Atris editor renders.
+=> One place, the live markdown docs the Atris editor renders.

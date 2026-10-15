@@ -2434,6 +2434,22 @@ test('fix joins a field value and a "the" clause after a dash with a semicolon',
   ]);
 });
 
+test('fix reads a "the" inside the clause after a plural as an object, so the clause joins', () => {
+  // from real repo text: "the learner watches the model do the reps" kept a
+  // comma, since "watches the model do the reps" read as a plural with a
+  // clause on it, like "the decision helpers the CLI uses". A "the" inside
+  // that clause starts an object, so the last word is a noun.
+  const file = tmpFile('relative-object-clause.md', [
+    'It mirrors what the model produces \u2014 the learner watches the model do the reps.',
+    'Command tests \u2014 the decision helpers the CLI uses.',
+  ].join('\n'));
+  const { changes } = applyFixes([file], RULES);
+  assert.deepEqual(changes.map((c) => c.after), [
+    'It mirrors what the model produces; the learner watches the model do the reps.',
+    'Command tests, the decision helpers the CLI uses.',
+  ]);
+});
+
 test('fix joins "the", a noun and two verbs in s joined by "and" after a dash', () => {
   // from real repo text: "the app captures stdout and writes the file"
   // spliced, since no rule took two verbs. The second verb counts when an
@@ -4276,12 +4292,11 @@ test('the fix diff script lists each comma it writes before a "the" clause once'
   // a dash fixed into a comma before "the" and a subject and a verb is a
   // splice still left; a phrase the fixer reads as one ("the API that
   // turns", "the three ways") is not, and a line repeated with another code
-  // name counts once
+  // name counts once. The gym line is a splice the fixer still leaves; if
+  // it learns to join that line, swap in another one it leaves.
   const D = String.fromCharCode(0x2014);
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'splices-'));
   fs.writeFileSync(path.join(dir, 'notes.md'), [
-    `It mirrors what the model produces ${D} the learner watches the model do the reps.`,
-    '',
     `Feedback ${D} the API that turns complaints into fixes.`,
     '',
     `All closed ${D} the three ways a first run could waste itself.`,
@@ -4294,10 +4309,9 @@ test('the fix diff script lists each comma it writes before a "the" clause once'
   const r = spawnSync(process.execPath, [script, '--splices', dir], { encoding: 'utf8', cwd: path.join(__dirname, '..') });
   fs.rmSync(dir, { recursive: true, force: true });
   assert.equal(r.status, 0, r.stderr);
-  assert.match(r.stdout, /^ {2}, the learner watches the model do the reps$/m);
   assert.match(r.stdout, /^ {2}, the gym measures `a` per task {2}\(x2\)$/m);
   assert.doesNotMatch(r.stdout, /API that turns|three ways/);
-  assert.match(r.stdout, /; 2 fixes put a comma before "the"/);
+  assert.match(r.stdout, /; 1 fix put a comma before "the"/);
 });
 
 test('the fix diff script lists the dash rules and checks that match a probe', () => {
