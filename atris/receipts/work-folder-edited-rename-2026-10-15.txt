@@ -1,0 +1,37 @@
+Cleanup now has proof that a saved rename carrying a saved content edit at the new name survives preview and apply.
+Files: test/member-tidy.test.js, atris/MAP.md, atris/refs/MAP-NOTES.md, atris/receipts/work-folder-edited-rename-2026-10-15.txt.
+Verify: node --test test/worktree-removal-guard.test.js test/member-tidy.test.js && node bin/atris.js slop --staged
+Exit: 0. Tests: 90 passed, 0 failed, 0 skipped, 0 todo. Writing check: clean, no slop tells in 3 files.
+Real surface: node bin/atris.js worktree cleanup and node bin/atris.js worktree cleanup --apply, run in disposable repositories by the test, both exit 0.
+Progress: one existing regression extended; runtime unchanged. The edited bytes, the saved rename with its edit, the original committed bytes and the absent old name all survive. The kept line now counts 19 staged, up from 18; unstaged stays 14 because the edit is fully saved. Eight drifted map line references were repointed.
+next_push: Prove the overdue put-away path, the one the boot screen recommends, keeps a copy holding a saved rename with a saved edit.
+layer: capabilities
+
+Full command output:
+command: node bin/atris.js worktree cleanup (healthy origin, local base behind)
+cleanup: dry-run base=origin/master
+candidates: 0
+cache_candidates: 0
+kept: 2
+left alone: primary_checkout=1
+kept: /private/var/folders/t1/2_4kmb5n4c71dxm26zc8dgzr0000gn/T/atris-member-tidy-zHQQQa/arena/.agent-worktrees/repo/healthy-draft branch=healthy-draft reason=dirty staged=19 unstaged=14 untracked=9
+exit: 0
+command: node bin/atris.js worktree cleanup --apply (healthy origin, local base behind)
+cleanup: applied base=origin/master
+removeds: 0
+cache_pruneds: 0
+kept: 2
+left alone: primary_checkout=1
+kept: /private/var/folders/t1/2_4kmb5n4c71dxm26zc8dgzr0000gn/T/atris-member-tidy-zHQQQa/arena/.agent-worktrees/repo/healthy-draft branch=healthy-draft reason=dirty staged=19 unstaged=14 untracked=9
+exit: 0
+ℹ tests 90
+ℹ suites 0
+ℹ pass 90
+ℹ fail 0
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 201435.168625
+
+  ✓ clean, no slop tells in 3 files
+tests_exit=0 slop_exit=0

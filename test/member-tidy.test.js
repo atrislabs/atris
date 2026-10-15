@@ -1383,7 +1383,8 @@ test('worktree cleanup quietly refreshes an outdated base and keeps staged notes
     fs.writeFileSync(path.join(copy, 'glossary.txt'), 'original glossary terms\n');
     fs.writeFileSync(path.join(copy, 'index.txt'), 'original index entries\n');
     fs.writeFileSync(path.join(copy, 'summary.txt'), 'original summary lines\n');
-    runGit(['add', 'outline.txt', 'guide.txt', 'manual.txt', 'chapter.txt', 'appendix.txt', 'glossary.txt', 'index.txt', 'summary.txt'], copy);
+    fs.writeFileSync(path.join(copy, 'preface.txt'), 'original preface one\noriginal preface two\noriginal preface three\n');
+    runGit(['add', 'outline.txt', 'guide.txt', 'manual.txt', 'chapter.txt', 'appendix.txt', 'glossary.txt', 'index.txt', 'summary.txt', 'preface.txt'], copy);
     runGit(['commit', '-q', '-m', 'add outline'], copy);
     runGit(['rm', 'outline.txt'], copy);
     fs.writeFileSync(replaced, 'replacement outline\n');
@@ -1513,6 +1514,14 @@ test('worktree cleanup quietly refreshes an outdated base and keeps staged notes
     const savedSummary = runGit(['show', ':renamed-summary'], copy);
     assert.equal(savedSummary, summarySource);
     assert.match(runGit(['diff', '--cached', '--summary', '--', 'summary.txt', 'renamed-summary'], copy), /rename summary.txt => renamed-summary/);
+    const editedPreface = path.join(copy, 'renamed-preface');
+    const prefaceSource = runGit(['show', 'HEAD:preface.txt'], copy);
+    runGit(['mv', 'preface.txt', 'renamed-preface'], copy);
+    fs.writeFileSync(editedPreface, 'original preface one\noriginal preface two\noriginal preface three\nsaved preface edit\n');
+    runGit(['add', 'renamed-preface'], copy);
+    const savedPreface = runGit(['show', ':renamed-preface'], copy);
+    assert.notEqual(savedPreface, prefaceSource);
+    assert.match(runGit(['diff', '--cached', '--summary', '--', 'preface.txt', 'renamed-preface'], copy), /rename preface.txt => renamed-preface \(\d+%\)/);
     const binary = path.join(copy, 'drawing.bin');
     const savedBytes = Buffer.from([0, 255, 10, 128, 13]);
     const laterBytes = Buffer.from([0, 254, 10, 129, 13, 0]);
@@ -1633,6 +1642,12 @@ test('worktree cleanup quietly refreshes an outdated base and keeps staged notes
       assert.equal(runGit(['ls-files', '--', 'summary.txt'], copy), '');
       assert.equal(runGit(['show', ':renamed-summary'], copy), savedSummary);
       assert.match(runGit(['ls-files', '--stage', '--', 'renamed-summary'], copy), /^100644 /);
+      assert.equal(fs.readFileSync(editedPreface, 'utf8'), 'original preface one\noriginal preface two\noriginal preface three\nsaved preface edit\n');
+      assert.equal(fs.existsSync(path.join(copy, 'preface.txt')), false);
+      assert.equal(runGit(['show', 'HEAD:preface.txt'], copy), prefaceSource);
+      assert.equal(runGit(['ls-files', '--', 'preface.txt'], copy), '');
+      assert.equal(runGit(['show', ':renamed-preface'], copy), savedPreface);
+      assert.match(runGit(['ls-files', '--stage', '--', 'renamed-preface'], copy), /^100644 /);
       assert.deepEqual(fs.readFileSync(binary), laterBytes);
       const savedBinary = spawnSync('git', ['show', ':drawing.bin'], { cwd: copy });
       assert.equal(savedBinary.status, 0);
