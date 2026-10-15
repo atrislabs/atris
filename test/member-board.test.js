@@ -2335,11 +2335,13 @@ test('a signed out run written with CRLF keeps its engine and sign-in fix when t
   }
 });
 
-for (const pendingAtStartup of [false, true]) {
-  test(`live follow preserves a multibyte character split ${pendingAtStartup ? 'before' : 'after'} startup`, async (t) => {
+for (const mode of ['before', 'after', 'new file']) {
+  const pendingAtStartup = mode === 'before';
+  const newFile = mode === 'new file';
+  test(`live follow preserves a multibyte character split ${mode === 'before' ? 'before startup' : mode === 'after' ? 'after startup' : 'in a new file'}`, async (t) => {
     for (const [character, byte] of [['é', 1], ['界', 1], ['界', 2], ['🧭', 1], ['🧭', 2], ['🧭', 3]]) {
       const stamp = new Date().toISOString();
-      const dir = fakeDir({ navigator: [`${stamp} m-unicode started: check text`] });
+      const dir = fakeDir(newFile ? {} : { navigator: [`${stamp} m-unicode started: check text`] });
       const log = path.join(dir, 'navigator.log');
       const text = `reading ${character} notes`;
       const line = Buffer.from(`${stamp} m-unicode ${text}\n`);
@@ -2366,7 +2368,8 @@ for (const pendingAtStartup of [false, true]) {
       try {
         const [snapshot] = await receive(1);
         assert.equal(snapshot.kind, 'snapshot');
-        assert.equal(snapshot.members[0].step, '', 'an incomplete character stays out of the opening board');
+        if (newFile) assert.deepEqual(snapshot.members, [], 'the follower opens before the log exists');
+        else assert.equal(snapshot.members[0].step, '', 'an incomplete character stays out of the opening board');
         if (!pendingAtStartup) fs.appendFileSync(log, line.subarray(0, split));
         await new Promise((r) => setTimeout(r, QUIET_MS));
         assert.equal(records().length, 1, 'an incomplete character must not emit');
@@ -2381,7 +2384,7 @@ for (const pendingAtStartup of [false, true]) {
         child.kill('SIGINT');
         assert.equal(await done, 0, stderr);
         t.diagnostic(`actual command: ${process.execPath} ${cliPath} member board --json --follow`);
-        t.diagnostic(`character ${character}, split after byte ${byte}, startup pending ${pendingAtStartup}:\n${out}exit: 0`);
+        t.diagnostic(`character ${character}, split after byte ${byte}, mode ${mode}:\n${out}exit: 0`);
       } finally {
         if (!closed) child.kill('SIGINT');
         await done;
