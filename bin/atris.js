@@ -520,6 +520,11 @@ function showStartHelp() {
 function showHelpShort() {
   console.log('atris: you say what you want. already won. one next step.');
   console.log('');
+  console.log('Start here:');
+  console.log('  1. atris init                    set up this folder');
+  console.log('  2. atris doctor                  check this computer is ready');
+  console.log('  3. atris "what you want"         say it, the work starts');
+  console.log('');
   console.log('  atris "what do you want here?"   empty folder');
   console.log('  atris later "..."                remember without a room');
   console.log('  atris guide "..."                translate your words');

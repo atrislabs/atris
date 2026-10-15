@@ -88,6 +88,48 @@ function installWarnings(packageRoot) {
   return warnings;
 }
 
+// Outside coding tools a member can run on. The built-in tool (ax) ships
+// with atris and only needs a sign-in, so it is counted through auth.
+const MEMBER_TOOL_BINS = ['claude', 'codex', 'cursor-agent', 'opencode', 'devin', 'grok', 'agy'];
+
+function teamMembers(workspaceRoot) {
+  const teamDir = path.join(workspaceRoot, 'atris', 'team');
+  let entries = [];
+  try { entries = fs.readdirSync(teamDir, { withFileTypes: true }); } catch { return []; }
+  return entries
+    .filter((entry) => entry.isDirectory() && !entry.name.startsWith('_'))
+    .filter((entry) => fs.existsSync(path.join(teamDir, entry.name, 'MEMBER.md')))
+    .map((entry) => entry.name)
+    .sort();
+}
+
+// What a member run needs before it can start: someone on the team, git for
+// its own copy of the work, and a coding tool to think with. One fix line
+// names the first missing piece.
+function memberReadiness(workspaceRoot, auth, probe) {
+  const members = teamMembers(workspaceRoot);
+  const git_installed = probe('git');
+  const git_repo = fs.existsSync(path.join(workspaceRoot, '.git'));
+  const tools = MEMBER_TOOL_BINS.filter((bin) => probe(bin));
+  const built_in_tool = Boolean(auth && auth.signed_in);
+  const has_tool = tools.length > 0 || built_in_tool;
+  let next = null;
+  if (!members.length) next = 'run atris init to add a team to this folder.';
+  else if (!git_installed) next = 'install git so members can work on their own copy.';
+  else if (!git_repo) next = 'run git init here so members can work on their own copy.';
+  else if (!has_tool) next = 'install claude code or codex, or run atris login to use the built-in tool.';
+  return {
+    ready: next === null,
+    members: members.length,
+    member_names: members,
+    git_installed,
+    git_repo,
+    tools,
+    built_in_tool,
+    next,
+  };
+}
+
 function collectDoctor(options = {}) {
   const packageRoot = options.packageRoot || path.join(__dirname, '..');
   const node = parseNodeVersion(options.nodeVersion || process.version);
@@ -100,6 +142,8 @@ function collectDoctor(options = {}) {
   const version_line = formatCliVersionLine(version, packageRoot);
   const install_git = inspectInstallGitState(packageRoot);
   const warnings = installWarnings(packageRoot);
+  const probe = options.binInstalled || require('../lib/engine-registry').binInstalled;
+  const members = memberReadiness(workspace_root, auth, probe);
   return {
     ok: true,
     action: 'doctor',
@@ -125,6 +169,7 @@ function collectDoctor(options = {}) {
       branch: install_git.branch || null,
       head: install_git.head || null,
     },
+    members,
     warnings,
   };
 }
@@ -140,6 +185,16 @@ function renderDoctor(payload) {
   lines.push(`workspace: ${payload.workspace_root}`);
   lines.push(`cli runnable: ${payload.cli_runnable ? 'yes' : 'no'}`);
   lines.push(`public bin: ${payload.bin.public_bin} (${payload.bin.shim ? `${payload.bin.shim_bytes} byte shim` : 'not a shim'})`);
+  const m = payload.members;
+  if (m) {
+    const toolNames = m.tools.concat(m.built_in_tool ? ['built-in'] : []);
+    lines.push('');
+    lines.push(`members: ${m.ready ? 'ready' : 'not ready yet'}`);
+    lines.push(`  team: ${m.members ? `${m.members} member${m.members === 1 ? '' : 's'}` : 'none'}`);
+    lines.push(`  git: ${!m.git_installed ? 'not installed' : (m.git_repo ? 'yes' : 'installed, but this folder is not a git repo')}`);
+    lines.push(`  coding tool: ${toolNames.length ? toolNames.join(', ') : 'none'}`);
+    if (m.next) lines.push(`  next: ${m.next}`);
+  }
   if (payload.warnings && payload.warnings.length) {
     lines.push('');
     for (const warning of payload.warnings) lines.push(`warning: ${warning}`);
@@ -156,6 +211,7 @@ function doctorCommand(args = [], options = {}) {
     console.log('Usage: atris doctor [--json]');
     console.log('');
     console.log('Reports node version, task-support (22+), auth, workspace root, and whether the CLI can run.');
+    console.log('Also checks what members need: a team, git, and a coding tool.');
     console.log('Public install entry is bin/atris (tiny POSIX shim) -> bin/atris.js.');
     return 0;
   }
@@ -171,4 +227,6 @@ function doctorCommand(args = [], options = {}) {
 
 module.exports = {
   doctorCommand,
+  collectDoctor,
+  renderDoctor,
 };
