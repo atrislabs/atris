@@ -257,9 +257,11 @@ const QUANTITY_CLAUSE_AFTER_DASH = new RegExp(`${CLAUSE_END}\\s*\\u2014\\s*(?=(?
 // without "ed" count too, and so does "fine" or "green" after the verb: "the
 // gate let the tick through", "the file built fine". A "they" or "we" before
 // the verb opens a clause inside a noun phrase, so "the version they made"
-// and "the version they shipped" keep their comma.
-const PAST_VERB = '(?:[a-z]{2,}ed|built|ran|broke|took|made|gave|got|went|came|sent|kept|held|found|lost|wrote|let|caught|brought|threw|grew|knew|began|stood|told|sold|became|fell|stuck)';
-const PAST_CLAUSE_AFTER_DASH = new RegExp(`${CLAUSE_END}\\s*\\u2014\\s*(?!${NAMING_PHRASE})(?=(?:the|a|an)\\s+(?:(?!(?:the|a|an|that|whose|they|we|you|he|she|I)\\b)${SUBJECT_WORD}){1,3}${PAST_VERB}(?:[.!?;,]|$|\\s+(?:out|up|down|off|back|over|away|again|fine|green|it|them|its|their|every|all|each|the|a|an|this|no|[a-z]{2,}ing)\\b))`, 'g');
+// and "the version they shipped" keep their comma. A verb may carry a
+// prefix, "re-filtered", and a bare plural with a place word after it is an
+// object: "the card re-filtered orders against today's date".
+const PAST_VERB = '(?:(?:re|pre|un|over|under|auto)-?[a-z]{2,}ed|[a-z]{2,}ed|built|ran|broke|took|made|gave|got|went|came|sent|kept|held|found|lost|wrote|let|caught|brought|threw|grew|knew|began|stood|told|sold|became|fell|stuck)';
+const PAST_CLAUSE_AFTER_DASH = new RegExp(`${CLAUSE_END}\\s*\\u2014\\s*(?!${NAMING_PHRASE})(?=(?:the|a|an)\\s+(?:(?!(?:the|a|an|that|whose|they|we|you|he|she|I)\\b)${SUBJECT_WORD}){1,3}${PAST_VERB}(?:[.!?;,]|$|\\s+(?:out|up|down|off|back|over|away|again|fine|green|it|them|its|their|every|all|each|the|a|an|this|no|[a-z]{2,}ing)\\b|\\s+[a-z]{3,}(?<!ss|us|is)s\\s+(?:against|from|into|onto|across|through|before|after|instead)\\b))`, 'g');
 // A plain verb ending in "s" counts only after a determiner and one more word,
 // and never right before a preposition: "a stray file turns them" joins, but
 // "the changes from whoever" and "the old tests from CI" stay noun phrases.

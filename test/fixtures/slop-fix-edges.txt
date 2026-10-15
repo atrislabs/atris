@@ -211,3 +211,9 @@ Joint pool \u2014 the whole story is in three rows:
 # and words after a list label's own colon open no line
 - `list_runs()` \u2014 line 134 \u2014 the runs come back newest first.
 => - `list_runs()`: line 134; the runs come back newest first.
+# a past verb with a prefix and a bare plural before a place word is a clause
+It only passed that week \u2014 the card re-filtered orders against today's date.
+=> It only passed that week; the card re-filtered orders against today's date.
+# but "in" after the plural can still close a noun phrase
+We kept them \u2014 the auto generated files in the repo.
+=> We kept them, the auto generated files in the repo.

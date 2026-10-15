@@ -2453,6 +2453,23 @@ test('fix reads a pronoun or a code name with a place word after it as the objec
   ]);
 });
 
+test('fix joins a prefixed past verb and a bare plural before a place word', () => {
+  // from real repo text: "the card re-filtered orders against today's date"
+  // spliced, since a past verb could not carry "re-" and a bare plural
+  // object fit no follow word. "in" after the plural keeps the phrase.
+  const file = tmpFile('past-prefix-plural.md', [
+    'It only passed that week \u2014 the card re-filtered orders against today\'s date.',
+    'The run stalled \u2014 the job pre-loaded caches from the old build.',
+    'We kept them \u2014 the auto generated files in the repo.',
+  ].join('\n'));
+  const { changes } = applyFixes([file], RULES);
+  assert.deepEqual(changes.map((c) => c.after), [
+    'It only passed that week; the card re-filtered orders against today\'s date.',
+    'The run stalled; the job pre-loaded caches from the old build.',
+    'We kept them, the auto generated files in the repo.',
+  ]);
+});
+
 test('fix reads "yes" or "this" after a pronoun object as no second verb', () => {
   // from real repo text: "the tag tells you yes/no instantly" spliced, since
   // any word in "s" after the pronoun read as a second verb.
