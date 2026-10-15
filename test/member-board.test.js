@@ -3818,3 +3818,19 @@ test('every map line ref into this file lands on a test, a test loop, or a const
   }
   assert.deepEqual(bad, [], 'repoint each ref at the test it describes');
 });
+
+// Refs into the board code cite a function or constant by its first line, so
+// a comment or a line inside a body counts as drift. When the map names the
+// function beside the ref, the cited line must declare that name.
+test('every map line ref into the board code lands on the function or constant it names', () => {
+  const lines = fs.readFileSync(path.join(repoRoot, 'lib/member-board.js'), 'utf8').split('\n');
+  const bad = [];
+  for (const doc of ['atris/MAP.md', 'atris/refs/MAP-NOTES.md']) {
+    const text = fs.readFileSync(path.join(repoRoot, doc), 'utf8');
+    for (const [, named, n] of text.matchAll(/(?:`(\w+)\(\)` (?:\(|in ))?`lib\/member-board\.js:(\d+)/g)) {
+      const declared = ((lines[n - 1] || '').match(/^(?:async )?function (\w+)|^const (\w+)/) || []).slice(1).find(Boolean);
+      if (!declared || (named && named !== declared)) bad.push(`${doc} cites line ${n}${named ? ` as ${named}()` : ''}: ${(lines[n - 1] ?? '(past the end)').trim().slice(0, 60)}`);
+    }
+  }
+  assert.deepEqual(bad, [], 'repoint each ref at the first line of what it describes');
+});
