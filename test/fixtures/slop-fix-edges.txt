@@ -348,3 +348,9 @@ Two builds \u2014 the new build signed but not shipped, and the old one.
 => Two builds, the new build signed but not shipped, and the old one.
 _Dropped: Nothing \u2014 the source returned no posts to filter._
 => _Dropped: Nothing; the source returned no posts to filter._
+Result: 0 trainable / 0 dead \u2014 every task passed all 5 samples.
+=> Result: 0 trainable / 0 dead; every task passed all 5 samples.
+A falsifier for "why is it silent?" \u2014 each layer narrowed the hypothesis space.
+=> A falsifier for "why is it silent?"; each layer narrowed the hypothesis space.
+Built with care \u2014 every claim measured, not asserted.
+=> Built with care, every claim measured, not asserted.
