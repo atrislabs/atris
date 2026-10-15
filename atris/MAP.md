@@ -317,6 +317,8 @@ Archive export and status batching: `test/commands.test.js:14848` awaits the exp
 
 Pack inspect envelope batching: `test/pack.test.js:1079` writes every fixture first, then awaits all seven inspect reads together. Inspect only reads, and the slug scan skips broken folders, so the added fixtures change no answer. Seven sequential CLI stages become one; every assertion remains.
 
+Pack doctor envelope batching: `test/pack.test.js:1512` writes both fixtures first, then awaits all six doctor reads together. Doctor only reads, through the same slug scan as inspect, so the earlier fixtures change no answer. Six sequential CLI stages become one; every assertion remains.
+
 Certified review fallback read batching: `test/commands.test.js:12603` overlaps the two next reads after certification and before creation. Six sequential CLI stages become five; all assertions remain. Details: `atris/refs/MAP-NOTES.md`.
 
 Final fallback read batching: `test/commands.test.js:12684` awaits next and show together after follow-up creation. Both read unchanged task rows; every assertion remains. Five sequential CLI stages become four.

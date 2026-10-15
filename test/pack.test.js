@@ -1499,10 +1499,24 @@ test('pack doctor keeps a non-empty binary entrypoint eligible for ready', () =>
   }
 });
 
-test('pack doctor --json returns one parseable envelope for help and every error class', () => {
+test('pack doctor --json returns one parseable envelope for help and every error class', async () => {
   const dir = makeTempDir();
   try {
-    const missingSource = runCli(['pack', 'doctor', '--json'], { cwd: dir });
+    // Doctor only reads, and the slug scan skips broken folders, so every
+    // fixture is written first and the six reads run at once.
+    const target = path.join(dir, 'valid-pack');
+    writePackDir(target);
+    const invalidPack = path.join(dir, 'invalid-pack');
+    fs.mkdirSync(invalidPack);
+    fs.writeFileSync(path.join(invalidPack, 'pack.json'), '{not json}\n', 'utf8');
+    const [missingSource, missingPack, badArgument, invalid, help, human] = await Promise.all([
+      runCliAsync(['pack', 'doctor', '--json'], { cwd: dir }),
+      runCliAsync(['pack', 'doctor', 'missing-pack', '--json'], { cwd: dir }),
+      runCliAsync(['pack', 'doctor', target, '--json', '--wat'], { cwd: dir }),
+      runCliAsync(['pack', 'doctor', invalidPack, '--json'], { cwd: dir }),
+      runCliAsync(['pack', 'doctor', '--json', '--help'], { cwd: dir }),
+      runCliAsync(['pack', 'doctor', 'missing-pack'], { cwd: dir }),
+    ]);
     assert.equal(missingSource.status, 2);
     assert.equal(missingSource.stderr, '');
     assert.deepEqual(JSON.parse(missingSource.stdout), {
@@ -1515,7 +1529,6 @@ test('pack doctor --json returns one parseable envelope for help and every error
       },
     });
 
-    const missingPack = runCli(['pack', 'doctor', 'missing-pack', '--json'], { cwd: dir });
     assert.equal(missingPack.status, 1);
     assert.equal(missingPack.stderr, '');
     assert.deepEqual(JSON.parse(missingPack.stdout).error, {
@@ -1523,9 +1536,6 @@ test('pack doctor --json returns one parseable envelope for help and every error
       message: 'installed pack not found: missing-pack',
     });
 
-    const target = path.join(dir, 'valid-pack');
-    writePackDir(target);
-    const badArgument = runCli(['pack', 'doctor', target, '--json', '--wat'], { cwd: dir });
     assert.equal(badArgument.status, 2);
     assert.equal(badArgument.stderr, '');
     assert.deepEqual(JSON.parse(badArgument.stdout).error, {
@@ -1533,15 +1543,10 @@ test('pack doctor --json returns one parseable envelope for help and every error
       message: 'unknown pack doctor argument: --wat',
     });
 
-    const invalidPack = path.join(dir, 'invalid-pack');
-    fs.mkdirSync(invalidPack);
-    fs.writeFileSync(path.join(invalidPack, 'pack.json'), '{not json}\n', 'utf8');
-    const invalid = runCli(['pack', 'doctor', invalidPack, '--json'], { cwd: dir });
     assert.equal(invalid.status, 1);
     assert.equal(invalid.stderr, '');
     assert.equal(JSON.parse(invalid.stdout).error.code, 'invalid-pack');
 
-    const help = runCli(['pack', 'doctor', '--json', '--help'], { cwd: dir });
     assert.equal(help.status, 0);
     assert.equal(help.stderr, '');
     assert.deepEqual(JSON.parse(help.stdout), {
@@ -1551,7 +1556,6 @@ test('pack doctor --json returns one parseable envelope for help and every error
       usage: 'atris pack doctor <slug|dir> [--json]',
     });
 
-    const human = runCli(['pack', 'doctor', 'missing-pack'], { cwd: dir });
     assert.equal(human.status, 1);
     assert.equal(human.stdout, '');
     assert.match(human.stderr, /installed pack not found: missing-pack/);
