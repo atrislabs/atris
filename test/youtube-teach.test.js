@@ -32,6 +32,18 @@ const {
 } = require('../commands/youtube');
 const { ephemeralApplyMessage } = require('../lib/apply-gate');
 
+// Every temp folder this file makes is removed when the file finishes, so
+// repeated runs do not pile folders into the system temp folder.
+const madeDirs = [];
+function tmpDir(prefix) {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), prefix));
+  madeDirs.push(dir);
+  return dir;
+}
+test.after(() => {
+  for (const dir of madeDirs) fs.rmSync(dir, { recursive: true, force: true });
+});
+
 const REPO_ROOT = path.resolve(__dirname, '..');
 const VALIDATE_PY = path.join(REPO_ROOT, 'atris', 'experiments', 'validate.py');
 const CLI_PATH = path.join(REPO_ROOT, 'bin', 'atris.js');
@@ -303,7 +315,7 @@ test('oneTeachCheck uses a number or named mechanism and otherwise fill this', (
 });
 
 test('proveSavedLearnerBaseline requires a failing apply fixture', () => {
-  const cwd = fs.mkdtempSync(path.join(os.tmpdir(), 'atris-yt-baseline-'));
+  const cwd = tmpDir('atris-yt-baseline-');
   fs.mkdirSync(path.join(cwd, 'atris', 'wiki', 'briefs'), { recursive: true });
   const applyRel = 'atris/wiki/briefs/youtube-base01.apply.md';
   const lesson = { numbers: [], mechanisms: ['omakase model'] };
@@ -510,7 +522,7 @@ test('youtube help lists youtube teach', async () => {
 });
 
 test('youtube teach prints one chapter from fixture captions and chapters', async () => {
-  const cwd = fs.mkdtempSync(path.join(os.tmpdir(), 'atris-yt-teach-print-'));
+  const cwd = tmpDir('atris-yt-teach-print-');
   const out = collect();
   let apiCalls = 0;
   const status = await youtubeCommand(['teach', TEACH_URL], {
@@ -539,7 +551,7 @@ test('youtube teach prints one chapter from fixture captions and chapters', asyn
 });
 
 test('youtube teach prints the lex highlight as 60s install, Overton, and a real check', async () => {
-  const cwd = fs.mkdtempSync(path.join(os.tmpdir(), 'atris-yt-teach-lex-'));
+  const cwd = tmpDir('atris-yt-teach-lex-');
   const out = collect();
   const status = await youtubeCommand(['teach', LEX_URL], {
     cwd,
@@ -568,7 +580,7 @@ test('youtube teach prints the lex highlight as 60s install, Overton, and a real
 });
 
 test('youtube teach --section 2 prints the second chapter after skip', async () => {
-  const cwd = fs.mkdtempSync(path.join(os.tmpdir(), 'atris-yt-teach-s2-'));
+  const cwd = tmpDir('atris-yt-teach-s2-');
   const first = await youtubeCommand(['teach', TEACH_URL], {
     cwd,
     output: () => {},
@@ -603,7 +615,7 @@ test('youtube teach --section 2 prints the second chapter after skip', async () 
 });
 
 test('youtube teach last section of a one-chapter video prints watch-tick next', async () => {
-  const cwd = fs.mkdtempSync(path.join(os.tmpdir(), 'atris-yt-teach-one-'));
+  const cwd = tmpDir('atris-yt-teach-one-');
   const out = collect();
   const status = await youtubeCommand(['teach', TEACH_URL], {
     cwd,
@@ -621,7 +633,7 @@ test('youtube teach last section of a one-chapter video prints watch-tick next',
 });
 
 test('youtube teach section past the end prints no watch-tick next', async () => {
-  const cwd = fs.mkdtempSync(path.join(os.tmpdir(), 'atris-yt-teach-past-'));
+  const cwd = tmpDir('atris-yt-teach-past-');
   const out = collect();
   const status = await youtubeCommand(['teach', TEACH_URL, '--section', '3'], {
     cwd,
@@ -636,7 +648,7 @@ test('youtube teach section past the end prints no watch-tick next', async () =>
 });
 
 test('youtube teach without --save writes no atris files', async () => {
-  const cwd = fs.mkdtempSync(path.join(os.tmpdir(), 'atris-yt-teach-nosave-'));
+  const cwd = tmpDir('atris-yt-teach-nosave-');
   const out = collect();
   const status = await youtubeCommand(['teach', TEACH_URL], {
     cwd,
@@ -654,7 +666,7 @@ test('youtube teach without --save writes no atris files', async () => {
 });
 
 test('youtube teach without --save prints a failing learner check', async () => {
-  const cwd = fs.mkdtempSync(path.join(os.tmpdir(), 'atris-yt-teach-ephemeral-check-'));
+  const cwd = tmpDir('atris-yt-teach-ephemeral-check-');
   const out = collect();
   const status = await youtubeCommand(['teach', TEACH_URL], {
     cwd,
@@ -679,7 +691,7 @@ test('youtube teach without --save prints a failing learner check', async () => 
 });
 
 test('youtube teach --save writes one pack-named apply claimable', async () => {
-  const cwd = fs.mkdtempSync(path.join(os.tmpdir(), 'atris-yt-teach-save-'));
+  const cwd = tmpDir('atris-yt-teach-save-');
   fs.mkdirSync(path.join(cwd, 'atris', 'wiki'), { recursive: true });
   const out = collect();
   const status = await youtubeCommand(['teach', TEACH_URL, '--save'], {
@@ -706,7 +718,7 @@ test('youtube teach --save writes one pack-named apply claimable', async () => {
 });
 
 test('youtube unsave after rich teach --save removes briefs apply and every section pack', async () => {
-  const cwd = fs.mkdtempSync(path.join(os.tmpdir(), 'atris-yt-teach-unsave-'));
+  const cwd = tmpDir('atris-yt-teach-unsave-');
   fs.mkdirSync(path.join(cwd, 'atris', 'wiki'), { recursive: true });
   const save1 = await youtubeCommand(['teach', TEACH_URL, '--save'], {
     cwd,
@@ -764,7 +776,7 @@ test('youtube unsave after rich teach --save removes briefs apply and every sect
 });
 
 test('youtube teach --save on lex highlight files the brief and a pack-named apply', async () => {
-  const cwd = fs.mkdtempSync(path.join(os.tmpdir(), 'atris-yt-teach-lex-save-'));
+  const cwd = tmpDir('atris-yt-teach-lex-save-');
   fs.mkdirSync(path.join(cwd, 'atris', 'wiki'), { recursive: true });
   const out = collect();
   const status = await youtubeCommand(['teach', LEX_URL, '--save'], {
@@ -789,7 +801,7 @@ test('youtube teach --save on lex highlight files the brief and a pack-named app
 });
 
 test('youtube teach --save refuses a thin chapter and writes no brief', async () => {
-  const cwd = fs.mkdtempSync(path.join(os.tmpdir(), 'atris-yt-teach-thin-save-'));
+  const cwd = tmpDir('atris-yt-teach-thin-save-');
   fs.mkdirSync(path.join(cwd, 'atris', 'wiki'), { recursive: true });
   const source = thinSource();
   const body = source.cues.map((cue) => cue.text).join(' ');
@@ -823,7 +835,7 @@ test('youtube teach --save refuses a thin chapter and writes no brief', async ()
 
 test('youtube teach rich --save mints a measure.py that validate.py accepts and scores 0 or 1 honestly', async () => {
   assert.ok(pythonCmd, 'python3 is required to score the minted pack');
-  const cwd = fs.mkdtempSync(path.join(os.tmpdir(), 'atris-yt-teach-mint-'));
+  const cwd = tmpDir('atris-yt-teach-mint-');
   fs.mkdirSync(path.join(cwd, 'atris', 'wiki'), { recursive: true });
   const out = collect();
   const status = await youtubeCommand(['teach', TEACH_URL, '--save'], {
@@ -895,7 +907,7 @@ test('youtube teach rich --save mints a measure.py that validate.py accepts and 
 
 test('youtube teach rich --save apply sidecar omits check tokens so measure.py scores 0', async () => {
   assert.ok(pythonCmd, 'python3 is required to score the minted pack');
-  const cwd = fs.mkdtempSync(path.join(os.tmpdir(), 'atris-yt-teach-apply-claim-'));
+  const cwd = tmpDir('atris-yt-teach-apply-claim-');
   fs.mkdirSync(path.join(cwd, 'atris', 'wiki'), { recursive: true });
   const out = collect();
   const status = await youtubeCommand(['teach', TEACH_URL, '--save'], {
@@ -931,7 +943,7 @@ test('youtube teach rich --save apply sidecar omits check tokens so measure.py s
 
 test('experiments keep refuses a minted teach pack at 0 and keeps after check tokens', async () => {
   assert.ok(pythonCmd, 'python3 is required to score the minted pack');
-  const cwd = fs.mkdtempSync(path.join(os.tmpdir(), 'atris-yt-teach-keep-'));
+  const cwd = tmpDir('atris-yt-teach-keep-');
   fs.mkdirSync(path.join(cwd, 'atris', 'wiki'), { recursive: true });
   const out = collect();
   const status = await youtubeCommand(['teach', TEACH_URL, '--save'], {
@@ -964,7 +976,7 @@ test('experiments keep refuses a minted teach pack at 0 and keeps after check to
 
 test('experiments revert runs minted reset.py after a refused keep', async () => {
   assert.ok(pythonCmd, 'python3 is required to score the minted pack');
-  const cwd = fs.mkdtempSync(path.join(os.tmpdir(), 'atris-yt-teach-revert-'));
+  const cwd = tmpDir('atris-yt-teach-revert-');
   fs.mkdirSync(path.join(cwd, 'atris', 'wiki'), { recursive: true });
   const out = collect();
   const status = await youtubeCommand(['teach', TEACH_URL, '--save'], {
@@ -990,7 +1002,7 @@ test('experiments revert runs minted reset.py after a refused keep', async () =>
 });
 
 test('youtube teach thin chapter without --save still writes no atris files', async () => {
-  const cwd = fs.mkdtempSync(path.join(os.tmpdir(), 'atris-yt-teach-thin-nosave-'));
+  const cwd = tmpDir('atris-yt-teach-thin-nosave-');
   const out = collect();
   const status = await youtubeCommand(['teach', THIN_URL], {
     cwd,
@@ -1012,7 +1024,7 @@ test('youtube teach thin chapter without --save still writes no atris files', as
 });
 
 test('youtube teach ephemeral mid-section thin prints recap next only', async () => {
-  const cwd = fs.mkdtempSync(path.join(os.tmpdir(), 'atris-yt-teach-thin-mid-'));
+  const cwd = tmpDir('atris-yt-teach-thin-mid-');
   const out = collect();
   const status = await youtubeCommand(['teach', THIN_URL], {
     cwd,
@@ -1035,7 +1047,7 @@ test('youtube teach ephemeral mid-section thin prints recap next only', async ()
 });
 
 test('youtube teach --save last-section thin refuses and prints watch-tick next', async () => {
-  const cwd = fs.mkdtempSync(path.join(os.tmpdir(), 'atris-yt-teach-thin-save-last-'));
+  const cwd = tmpDir('atris-yt-teach-thin-save-last-');
   const out = collect();
   const status = await youtubeCommand(['teach', THIN_URL, '--save'], {
     cwd,
@@ -1056,7 +1068,7 @@ test('youtube teach --save last-section thin refuses and prints watch-tick next'
 });
 
 test('youtube teach --save mid-section thin refuses without watch-tick', async () => {
-  const cwd = fs.mkdtempSync(path.join(os.tmpdir(), 'atris-yt-teach-thin-save-mid-'));
+  const cwd = tmpDir('atris-yt-teach-thin-save-mid-');
   const out = collect();
   const status = await youtubeCommand(['teach', THIN_URL, '--save'], {
     cwd,
@@ -1076,7 +1088,7 @@ test('youtube teach --save mid-section thin refuses without watch-tick', async (
 });
 
 test('youtube teach --json last-section thin prints no watch-tick next', async () => {
-  const cwd = fs.mkdtempSync(path.join(os.tmpdir(), 'atris-yt-teach-thin-json-'));
+  const cwd = tmpDir('atris-yt-teach-thin-json-');
   const out = collect();
   const status = await youtubeCommand(['teach', THIN_URL, '--json'], {
     cwd,
@@ -1176,7 +1188,7 @@ test('extractTeachSource keeps 429 json when a warning line prefixes the dump', 
 });
 
 test('extractTeachSource keeps a written vtt when caption fetch fails after 429 json', async () => {
-  const workDir = fs.mkdtempSync(path.join(os.tmpdir(), 'atris-yt-teach-vtt-'));
+  const workDir = tmpDir('atris-yt-teach-vtt-');
   fs.writeFileSync(path.join(workDir, 'yt_teach01.en.vtt'), TEACH_VTT);
 
   const source = await extractTeachSource(TEACH_URL, {
@@ -1205,7 +1217,7 @@ test('extractTeachSource keeps a written vtt when caption fetch fails after 429 
 });
 
 test('extractTeachSource keeps leftover clean.txt when captions are gone', async () => {
-  const workDir = fs.mkdtempSync(path.join(os.tmpdir(), 'atris-yt-teach-clean-txt-'));
+  const workDir = tmpDir('atris-yt-teach-clean-txt-');
   fs.writeFileSync(path.join(workDir, 'yt_teach01.clean.txt'), TEACH_CLEAN_TXT);
 
   const source = await extractTeachSource(TEACH_URL, {
@@ -1227,7 +1239,7 @@ test('extractTeachSource keeps leftover clean.txt when captions are gone', async
 });
 
 test('extractTeachSource does not invent-keep another video leftover clean.txt', async () => {
-  const workDir = fs.mkdtempSync(path.join(os.tmpdir(), 'atris-yt-teach-clean-other-'));
+  const workDir = tmpDir('atris-yt-teach-clean-other-');
   fs.writeFileSync(path.join(workDir, 'yt_otherid.clean.txt'), TEACH_CLEAN_TXT);
 
   const source = await extractTeachSource(TEACH_URL, {
@@ -1247,7 +1259,7 @@ test('extractTeachSource does not invent-keep another video leftover clean.txt',
 });
 
 test('extractTeachSource still fails when caption fetch fails and no vtt was written', async () => {
-  const workDir = fs.mkdtempSync(path.join(os.tmpdir(), 'atris-yt-teach-novtt-'));
+  const workDir = tmpDir('atris-yt-teach-novtt-');
   const source = await extractTeachSource(TEACH_URL, {
     workDir,
     spawnSync: () => ({
@@ -1295,7 +1307,7 @@ test('extractTeachSource still fails when 429 stdout is empty or broken', async 
 });
 
 test('extractTeachSource keeps a written vtt when 429 stdout is empty', async () => {
-  const workDir = fs.mkdtempSync(path.join(os.tmpdir(), 'atris-yt-teach-emptyjson-'));
+  const workDir = tmpDir('atris-yt-teach-emptyjson-');
   fs.writeFileSync(path.join(workDir, 'yt_teach01.en.vtt'), TEACH_VTT);
 
   const source = await extractTeachSource(TEACH_URL, {
@@ -1319,7 +1331,7 @@ test('extractTeachSource keeps a written vtt when 429 stdout is empty', async ()
 });
 
 test('extractTeachSource keeps a written vtt for a copied #t= url when 429 stdout is empty', async () => {
-  const workDir = fs.mkdtempSync(path.join(os.tmpdir(), 'atris-yt-teach-hash-t-'));
+  const workDir = tmpDir('atris-yt-teach-hash-t-');
   fs.writeFileSync(path.join(workDir, 'yt_teach01.en.vtt'), TEACH_VTT);
   const hashUrl = 'https://www.youtube.com/watch?v=teach01#t=30';
 
@@ -1342,7 +1354,7 @@ test('extractTeachSource keeps a written vtt for a copied #t= url when 429 stdou
 });
 
 test('extractTeachSource keeps a written vtt for an /e/ url when 429 stdout is empty', async () => {
-  const workDir = fs.mkdtempSync(path.join(os.tmpdir(), 'atris-yt-teach-e-'));
+  const workDir = tmpDir('atris-yt-teach-e-');
   fs.writeFileSync(path.join(workDir, 'yt_teach01.en.vtt'), TEACH_VTT);
   const embedUrl = 'https://www.youtube.com/e/teach01';
 
@@ -1365,7 +1377,7 @@ test('extractTeachSource keeps a written vtt for an /e/ url when 429 stdout is e
 });
 
 test('extractTeachSource keeps a written vtt for a shorts url when 429 stdout is empty', async () => {
-  const workDir = fs.mkdtempSync(path.join(os.tmpdir(), 'atris-yt-teach-shorts-'));
+  const workDir = tmpDir('atris-yt-teach-shorts-');
   fs.writeFileSync(path.join(workDir, 'yt_teach01.en.vtt'), TEACH_VTT);
   const shortsUrl = 'https://www.youtube.com/shorts/teach01';
 
@@ -1388,7 +1400,7 @@ test('extractTeachSource keeps a written vtt for a shorts url when 429 stdout is
 });
 
 test('extractTeachSource keeps a written vtt when 429 json is a playlist', async () => {
-  const workDir = fs.mkdtempSync(path.join(os.tmpdir(), 'atris-yt-teach-playlist-'));
+  const workDir = tmpDir('atris-yt-teach-playlist-');
   fs.writeFileSync(path.join(workDir, 'yt_teach01.en.vtt'), TEACH_VTT);
   const url = 'https://www.youtube.com/watch?v=teach01&list=PLxyz';
   const args = [];
@@ -1418,7 +1430,7 @@ test('extractTeachSource keeps a written vtt when 429 json is a playlist', async
 });
 
 test('youtube teach keeps the lesson when yt-dlp exits 429 with json', async () => {
-  const cwd = fs.mkdtempSync(path.join(os.tmpdir(), 'atris-yt-teach-429-'));
+  const cwd = tmpDir('atris-yt-teach-429-');
   const out = collect();
   const status = await youtubeCommand(['teach', TEACH_URL], {
     cwd,
@@ -1447,8 +1459,8 @@ test('youtube teach keeps the lesson when yt-dlp exits 429 with json', async () 
 });
 
 test('youtube teach keeps the lesson from a written vtt when caption fetch fails', async () => {
-  const cwd = fs.mkdtempSync(path.join(os.tmpdir(), 'atris-yt-teach-keepvtt-'));
-  const workDir = fs.mkdtempSync(path.join(os.tmpdir(), 'atris-yt-teach-keepvtt-notes-'));
+  const cwd = tmpDir('atris-yt-teach-keepvtt-');
+  const workDir = tmpDir('atris-yt-teach-keepvtt-notes-');
   fs.writeFileSync(path.join(workDir, 'yt_teach01.en.vtt'), TEACH_VTT);
   const out = collect();
   const status = await youtubeCommand(['teach', TEACH_URL], {
@@ -1479,8 +1491,8 @@ test('youtube teach keeps the lesson from a written vtt when caption fetch fails
 });
 
 test('youtube teach keeps the lesson from leftover clean.txt when captions are gone', async () => {
-  const cwd = fs.mkdtempSync(path.join(os.tmpdir(), 'atris-yt-teach-keepclean-'));
-  const workDir = fs.mkdtempSync(path.join(os.tmpdir(), 'atris-yt-teach-keepclean-notes-'));
+  const cwd = tmpDir('atris-yt-teach-keepclean-');
+  const workDir = tmpDir('atris-yt-teach-keepclean-notes-');
   fs.writeFileSync(path.join(workDir, 'yt_teach01.clean.txt'), TEACH_CLEAN_TXT);
   const out = collect();
   const status = await youtubeCommand(['teach', TEACH_URL], {
@@ -1511,7 +1523,7 @@ test('youtube teach keeps the lesson from leftover clean.txt when captions are g
 });
 
 test('youtube teach without captions prints no apply next-step', async () => {
-  const cwd = fs.mkdtempSync(path.join(os.tmpdir(), 'atris-yt-teach-nocap-'));
+  const cwd = tmpDir('atris-yt-teach-nocap-');
   const out = collect();
   const status = await youtubeCommand(['teach', TEACH_URL], {
     cwd,
@@ -1527,7 +1539,7 @@ test('youtube teach without captions prints no apply next-step', async () => {
 });
 
 test('youtube teach empty tmp section 1 still prints the check and writes no atris tree', async () => {
-  const cwd = fs.mkdtempSync(path.join(os.tmpdir(), 'atris-yt-teach-empty-'));
+  const cwd = tmpDir('atris-yt-teach-empty-');
   const out = collect();
   const status = await youtubeCommand(['teach', TEACH_URL], {
     cwd,
@@ -1545,7 +1557,7 @@ test('youtube teach empty tmp section 1 still prints the check and writes no atr
 });
 
 test('youtube teach --section 2 without recap exits 2 and prints the unpaid check', async () => {
-  const cwd = fs.mkdtempSync(path.join(os.tmpdir(), 'atris-yt-teach-unpaid-'));
+  const cwd = tmpDir('atris-yt-teach-unpaid-');
   const first = await youtubeCommand(['teach', TEACH_URL], {
     cwd,
     output: () => {},
@@ -1574,7 +1586,7 @@ test('youtube teach --section 2 without recap exits 2 and prints the unpaid chec
 });
 
 test('youtube teach --json stays quiet when a recap is still owed', async () => {
-  const cwd = fs.mkdtempSync(path.join(os.tmpdir(), 'atris-yt-teach-json-owed-'));
+  const cwd = tmpDir('atris-yt-teach-json-owed-');
   const first = await youtubeCommand(['teach', TEACH_URL], {
     cwd,
     output: () => {},
@@ -1595,7 +1607,7 @@ test('youtube teach --json stays quiet when a recap is still owed', async () => 
 });
 
 test('youtube teach recap with check tokens unlocks the next section', async () => {
-  const cwd = fs.mkdtempSync(path.join(os.tmpdir(), 'atris-yt-teach-recap-ok-'));
+  const cwd = tmpDir('atris-yt-teach-recap-ok-');
   const first = await youtubeCommand(['teach', TEACH_URL], {
     cwd,
     output: () => {},
@@ -1632,7 +1644,7 @@ test('youtube teach recap with check tokens unlocks the next section', async () 
 });
 
 test('youtube teach wrong recap still refuses the next section', async () => {
-  const cwd = fs.mkdtempSync(path.join(os.tmpdir(), 'atris-yt-teach-recap-wrong-'));
+  const cwd = tmpDir('atris-yt-teach-recap-wrong-');
   const first = await youtubeCommand(['teach', TEACH_URL], {
     cwd,
     output: () => {},
@@ -1664,7 +1676,7 @@ test('youtube teach wrong recap still refuses the next section', async () => {
 });
 
 test('youtube teach --skip unlocks the next section without claiming an answer', async () => {
-  const cwd = fs.mkdtempSync(path.join(os.tmpdir(), 'atris-yt-teach-skip-'));
+  const cwd = tmpDir('atris-yt-teach-skip-');
   const first = await youtubeCommand(['teach', TEACH_URL], {
     cwd,
     output: () => {},
@@ -1698,7 +1710,7 @@ test('youtube teach --skip unlocks the next section without claiming an answer',
 });
 
 test('youtube teach recap writes no wiki brief apply or experiment pack', async () => {
-  const cwd = fs.mkdtempSync(path.join(os.tmpdir(), 'atris-yt-teach-recap-nowiki-'));
+  const cwd = tmpDir('atris-yt-teach-recap-nowiki-');
   fs.mkdirSync(path.join(cwd, 'atris', 'wiki'), { recursive: true });
   const first = await youtubeCommand(['teach', TEACH_URL], {
     cwd,
@@ -1722,7 +1734,7 @@ test('youtube teach recap writes no wiki brief apply or experiment pack', async 
 });
 
 test('youtube teach --save path stays unchanged after a recap unlock', async () => {
-  const cwd = fs.mkdtempSync(path.join(os.tmpdir(), 'atris-yt-teach-save-recap-'));
+  const cwd = tmpDir('atris-yt-teach-save-recap-');
   fs.mkdirSync(path.join(cwd, 'atris', 'wiki'), { recursive: true });
   const first = await youtubeCommand(['teach', TEACH_URL, '--save'], {
     cwd,
@@ -1755,7 +1767,7 @@ test('youtube teach --save path stays unchanged after a recap unlock', async () 
 });
 
 test('youtube teach owed prints the unpaid check after section 1', async () => {
-  const cwd = fs.mkdtempSync(path.join(os.tmpdir(), 'atris-yt-teach-owed-print-'));
+  const cwd = tmpDir('atris-yt-teach-owed-print-');
   const first = await youtubeCommand(['teach', TEACH_URL], {
     cwd,
     output: () => {},
@@ -1783,7 +1795,7 @@ test('youtube teach owed prints the unpaid check after section 1', async () => {
 });
 
 test('youtube teach owed on a fresh cwd prints nothing owed', async () => {
-  const cwd = fs.mkdtempSync(path.join(os.tmpdir(), 'atris-yt-teach-owed-empty-'));
+  const cwd = tmpDir('atris-yt-teach-owed-empty-');
   const out = collect();
   const status = await youtubeCommand(['teach', '--owed'], {
     cwd,
@@ -1798,7 +1810,7 @@ test('youtube teach owed on a fresh cwd prints nothing owed', async () => {
 });
 
 test('bare youtube teach with unpaid owed prints the check and one next line', async () => {
-  const cwd = fs.mkdtempSync(path.join(os.tmpdir(), 'atris-yt-teach-bare-owed-'));
+  const cwd = tmpDir('atris-yt-teach-bare-owed-');
   const first = await youtubeCommand(['teach', TEACH_URL], {
     cwd,
     output: () => {},
@@ -1838,7 +1850,7 @@ test('bare youtube teach with unpaid owed prints the check and one next line', a
 });
 
 test('bare youtube teach with empty owed prints nothing owed and one start command', async () => {
-  const cwd = fs.mkdtempSync(path.join(os.tmpdir(), 'atris-yt-teach-bare-empty-'));
+  const cwd = tmpDir('atris-yt-teach-bare-empty-');
   const out = collect();
   let extractCalls = 0;
   const status = await youtubeCommand(['teach'], {
@@ -1859,7 +1871,7 @@ test('bare youtube teach with empty owed prints nothing owed and one start comma
 });
 
 test('bare youtube teach after skip continues the next chapter without a url', async () => {
-  const cwd = fs.mkdtempSync(path.join(os.tmpdir(), 'atris-yt-teach-bare-skip-'));
+  const cwd = tmpDir('atris-yt-teach-bare-skip-');
   const first = await youtubeCommand(['teach', TEACH_URL], {
     cwd,
     output: () => {},
@@ -1910,7 +1922,7 @@ test('bare youtube teach after skip continues the next chapter without a url', a
 });
 
 test('bare youtube teach after recap continues the next chapter without a url', async () => {
-  const cwd = fs.mkdtempSync(path.join(os.tmpdir(), 'atris-yt-teach-bare-recap-'));
+  const cwd = tmpDir('atris-yt-teach-bare-recap-');
   const first = await youtubeCommand(['teach', TEACH_URL], {
     cwd,
     output: () => {},
@@ -1942,7 +1954,7 @@ test('bare youtube teach after recap continues the next chapter without a url', 
 });
 
 test('bare youtube teach --json after skip stays without human next lines', async () => {
-  const cwd = fs.mkdtempSync(path.join(os.tmpdir(), 'atris-yt-teach-bare-json-skip-'));
+  const cwd = tmpDir('atris-yt-teach-bare-json-skip-');
   const first = await youtubeCommand(['teach', TEACH_URL], {
     cwd,
     output: () => {},
@@ -1971,7 +1983,7 @@ test('bare youtube teach --json after skip stays without human next lines', asyn
 });
 
 test('bare youtube teach unpaid owed still wins over a continue-cursor', async () => {
-  const cwd = fs.mkdtempSync(path.join(os.tmpdir(), 'atris-yt-teach-bare-unpaid-wins-'));
+  const cwd = tmpDir('atris-yt-teach-bare-unpaid-wins-');
   fs.mkdirSync(path.join(cwd, '.atris'), { recursive: true });
   fs.writeFileSync(path.join(cwd, '.atris', 'youtube-teach-owed.json'), `${JSON.stringify({
     other99: {
@@ -2005,7 +2017,7 @@ test('bare youtube teach unpaid owed still wins over a continue-cursor', async (
 });
 
 test('bare youtube teach does not steal a url or --section invocation', async () => {
-  const cwd = fs.mkdtempSync(path.join(os.tmpdir(), 'atris-yt-teach-bare-steal-'));
+  const cwd = tmpDir('atris-yt-teach-bare-steal-');
   let extractCalls = 0;
   const firstOut = collect();
   const first = await youtubeCommand(['teach', TEACH_URL], {
@@ -2062,7 +2074,7 @@ test('youtube teach --help still prints real help', async () => {
 });
 
 test('youtube teach --skip prints the next section command', async () => {
-  const cwd = fs.mkdtempSync(path.join(os.tmpdir(), 'atris-yt-teach-skip-next-'));
+  const cwd = tmpDir('atris-yt-teach-skip-next-');
   const first = await youtubeCommand(['teach', TEACH_URL], {
     cwd,
     output: () => {},
@@ -2096,7 +2108,7 @@ test('youtube teach --skip prints the next section command', async () => {
 });
 
 test('youtube teach matching --recap prints the next section command', async () => {
-  const cwd = fs.mkdtempSync(path.join(os.tmpdir(), 'atris-yt-teach-recap-next-'));
+  const cwd = tmpDir('atris-yt-teach-recap-next-');
   const first = await youtubeCommand(['teach', TEACH_URL], {
     cwd,
     output: () => {},
@@ -2130,7 +2142,7 @@ test('youtube teach matching --recap prints the next section command', async () 
 });
 
 test('youtube teach --json owed and unlock stay without the human next line', async () => {
-  const cwd = fs.mkdtempSync(path.join(os.tmpdir(), 'atris-yt-teach-json-owed-next-'));
+  const cwd = tmpDir('atris-yt-teach-json-owed-next-');
   const empty = collect();
   const emptyStatus = await youtubeCommand(['teach', 'owed', '--json'], {
     cwd,
@@ -2178,7 +2190,7 @@ test('youtube teach --json owed and unlock stay without the human next line', as
 });
 
 test('youtube teach next after skip prints section 2 without a url', async () => {
-  const cwd = fs.mkdtempSync(path.join(os.tmpdir(), 'atris-yt-teach-next-skip-'));
+  const cwd = tmpDir('atris-yt-teach-next-skip-');
   const first = await youtubeCommand(['teach', TEACH_URL], {
     cwd,
     output: () => {},
@@ -2216,7 +2228,7 @@ test('youtube teach next after skip prints section 2 without a url', async () =>
 });
 
 test('youtube teach next after recap prints section 2 without a url', async () => {
-  const cwd = fs.mkdtempSync(path.join(os.tmpdir(), 'atris-yt-teach-next-recap-'));
+  const cwd = tmpDir('atris-yt-teach-next-recap-');
   const first = await youtubeCommand(['teach', TEACH_URL], {
     cwd,
     output: () => {},
@@ -2245,7 +2257,7 @@ test('youtube teach next after recap prints section 2 without a url', async () =
 });
 
 test('youtube teach next with an unpaid check reprints it and does not fetch captions', async () => {
-  const cwd = fs.mkdtempSync(path.join(os.tmpdir(), 'atris-yt-teach-next-unpaid-'));
+  const cwd = tmpDir('atris-yt-teach-next-unpaid-');
   const first = await youtubeCommand(['teach', TEACH_URL], {
     cwd,
     output: () => {},
@@ -2270,7 +2282,7 @@ test('youtube teach next with an unpaid check reprints it and does not fetch cap
 });
 
 test('youtube teach next on an empty cwd prints nothing owed and the start command', async () => {
-  const cwd = fs.mkdtempSync(path.join(os.tmpdir(), 'atris-yt-teach-next-empty-'));
+  const cwd = tmpDir('atris-yt-teach-next-empty-');
   const out = collect();
   let extractCalls = 0;
   const status = await youtubeCommand(['teach', 'next'], {
@@ -2292,7 +2304,7 @@ test('youtube teach next on an empty cwd prints nothing owed and the start comma
 test('youtube teach next --json stays quiet on unpaid and empty continue', async () => {
   const empty = collect();
   const emptyStatus = await youtubeCommand(['teach', 'next', '--json'], {
-    cwd: fs.mkdtempSync(path.join(os.tmpdir(), 'atris-yt-teach-next-json-empty-')),
+    cwd: tmpDir('atris-yt-teach-next-json-empty-'),
     output: empty.output,
     extractTeachSource: async () => {
       throw new Error('empty next must not fetch captions');
@@ -2302,7 +2314,7 @@ test('youtube teach next --json stays quiet on unpaid and empty continue', async
   assert.equal(empty.text().trim(), '[]');
   assert.doesNotMatch(empty.text(), /nothing owed|next:|Usage:/);
 
-  const cwd = fs.mkdtempSync(path.join(os.tmpdir(), 'atris-yt-teach-next-json-unpaid-'));
+  const cwd = tmpDir('atris-yt-teach-next-json-unpaid-');
   const first = await youtubeCommand(['teach', TEACH_URL], {
     cwd,
     output: () => {},
@@ -2327,7 +2339,7 @@ test('youtube teach next --json stays quiet on unpaid and empty continue', async
 });
 
 test('youtube teach next does not steal a url or --section invocation', async () => {
-  const cwd = fs.mkdtempSync(path.join(os.tmpdir(), 'atris-yt-teach-next-steal-'));
+  const cwd = tmpDir('atris-yt-teach-next-steal-');
   let extractCalls = 0;
   const firstOut = collect();
   const first = await youtubeCommand(['teach', TEACH_URL], {
