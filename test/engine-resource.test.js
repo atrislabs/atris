@@ -1184,37 +1184,51 @@ test('the sweep listing and the landing status name an unreadable run log instea
   }
 });
 
-test('atris scout records each engine run with a time limit kill and a crash told apart', () => {
-  const { spawnSync } = require('node:child_process');
+test('atris scout records each engine run with a time limit kill and a crash told apart', async () => {
+  const { spawnSync, spawn } = require('node:child_process');
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'scout-resource-'));
-  const bin = path.join(root, 'fake-bin');
   const cli = path.join(__dirname, '..', 'bin', 'atris.js');
-  const fake = (body) => {
-    fs.writeFileSync(path.join(bin, 'cursor-agent'), `#!/bin/sh\n${body}\n`, { mode: 0o755 });
-  };
-  const scout = (timeoutSec) => spawnSync(process.execPath, [cli, 'scout', '--yes', '--engine', 'cursor', '--timeout', String(timeoutSec), 'where is it?'], {
-    cwd: root,
-    encoding: 'utf8',
-    env: { ...process.env, PATH: `${bin}${path.delimiter}${process.env.PATH}`, ATRIS_SKIP_UPDATE_CHECK: '1', NODE_NO_WARNINGS: '1' },
+  // Each run gets its own folder, run log, and stand-in engine, so the quick
+  // runs go during the slow run's time limit instead of after it.
+  const scout = (name, body, timeoutSec) => new Promise((resolve) => {
+    const dir = path.join(root, name);
+    const bin = path.join(dir, 'fake-bin');
+    fs.mkdirSync(bin, { recursive: true });
+    spawnSync('git', ['init', '-q'], { cwd: dir });
+    fs.writeFileSync(path.join(bin, 'cursor-agent'), `#!/bin/sh\n${body(dir)}\n`, { mode: 0o755 });
+    const started = Date.now();
+    const child = spawn(process.execPath, [cli, 'scout', '--yes', '--engine', 'cursor', '--timeout', String(timeoutSec), 'where is it?'], {
+      cwd: dir,
+      env: { ...process.env, PATH: `${bin}${path.delimiter}${process.env.PATH}`, ATRIS_SKIP_UPDATE_CHECK: '1', NODE_NO_WARNINGS: '1' },
+    });
+    let stdout = '';
+    let stderr = '';
+    child.stdout.setEncoding('utf8').on('data', (chunk) => { stdout += chunk; });
+    child.stderr.setEncoding('utf8').on('data', (chunk) => { stderr += chunk; });
+    const done = (status) => resolve({
+      dir,
+      status,
+      stdout,
+      stderr,
+      ms: Date.now() - started,
+      log: fs.existsSync(path.join(dir, RESOURCE_LOG)) ? fs.readFileSync(path.join(dir, RESOURCE_LOG), 'utf8').trim().split('\n').map((line) => JSON.parse(line)) : [],
+    });
+    child.on('error', (error) => { stderr += error.message; done(null); });
+    child.on('close', done);
   });
-  const ends = () => fs.readFileSync(path.join(root, RESOURCE_LOG), 'utf8').trim().split('\n').map((line) => JSON.parse(line)).filter((entry) => entry.phase === 'end');
   try {
-    spawnSync('git', ['init', '-q'], { cwd: root });
-    fs.mkdirSync(bin);
-    fake('echo "it is in lib/fleet.js:1"');
-    const answered = scout(30);
+    const [answered, slow, crashed] = await Promise.all([
+      scout('answered', () => 'echo "it is in lib/fleet.js:1"', 30),
+      // The slow engine starts its own child, which the time limit must stop too.
+      scout('slow', (dir) => `sleep 30 &\necho $! > "${path.join(dir, 'helper.pid')}"\nwait`, 1),
+      scout('crashed', () => 'kill -9 $$', 30),
+    ]);
     assert.strictEqual(answered.status, 0, answered.stderr);
-    // The slow engine starts its own child, which the time limit must stop too.
-    const helperPid = path.join(root, 'helper.pid');
-    fake(`sleep 30 &\necho $! > "${helperPid}"\nwait`);
-    const slowStarted = Date.now();
-    const slow = scout(1);
-    const slowMs = Date.now() - slowStarted;
     assert.strictEqual(slow.status, 1);
     assert.match(slow.stdout, /timed out after 1s/);
     // A surviving child holds the output pipe, so the scout would hang until it ends.
-    assert.ok(slowMs < 15000, `a 1s scout time limit returned in ${slowMs} ms, not after the engine's child finished`);
-    const helper = Number(fs.readFileSync(helperPid, 'utf8').trim());
+    assert.ok(slow.ms < 15000, `a 1s scout time limit returned in ${slow.ms} ms, not after the engine's child finished`);
+    const helper = Number(fs.readFileSync(path.join(slow.dir, 'helper.pid'), 'utf8').trim());
     assert.ok(helper > 0, 'the fake engine recorded the process it started');
     const helperAlive = () => { try { process.kill(helper, 0); return true; } catch { return false; } };
     const stopBy = Date.now() + 3000;
@@ -1223,13 +1237,10 @@ test('atris scout records each engine run with a time limit kill and a crash tol
     if (leftBehind) process.kill(helper, 'SIGKILL');
     assert.strictEqual(leftBehind, false, 'a timed out scout leaves no process the engine started');
     console.log(`real scout time limit also stopped the engine's own child (pid ${helper})`);
-    fake('kill -9 $$');
-    const crashed = scout(30);
     assert.strictEqual(crashed.status, 1);
     assert.match(crashed.stdout, /stopped by SIGKILL; killed \((machine memory low|cause unknown)/, 'the operator sees the cause, not a bare exit');
-    const log = fs.readFileSync(path.join(root, RESOURCE_LOG), 'utf8').trim().split('\n').map((line) => JSON.parse(line));
-    assert.deepStrictEqual(log.map((entry) => entry.phase), ['start', 'end', 'start', 'end', 'start', 'end']);
-    const [ok, timedOut, killed] = ends();
+    for (const run of [answered, slow, crashed]) assert.deepStrictEqual(run.log.map((entry) => entry.phase), ['start', 'end'], run.dir);
+    const [ok, timedOut, killed] = [answered, slow, crashed].map((run) => run.log[1]);
     assert.deepStrictEqual([ok.engine, ok.task, ok.signal || null, ok.error || ''], ['cursor', 'scout', null, '']);
     assert.deepStrictEqual([timedOut.signal, timedOut.timed_out, timedOut.cause], ['SIGKILL', true, 'killed (time limit reached)']);
     assert.strictEqual(killed.signal, 'SIGKILL');
