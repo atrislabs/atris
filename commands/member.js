@@ -10614,12 +10614,12 @@ function memberGoFinishTask(owner, task, result, thrown = null) {
   const checked = mission.verifier_result && mission.verifier_result.passed === true
     && (!required || String(mission.verifier_result.command || '').trim() === required);
   if (!thrown && result && result.started && ['complete', 'ready'].includes(mission.status) && checked) {
-    // Its change already merged and the merge line closed the job.
-    if (taskDb.getTask(db, task.id)?.status === 'done') return { id: task.id, title: task.title, outcome: 'done', receipt: receipt || null };
     const proof = [`[verified] ${owner} ran mission ${result.mission_id} and its check passed.`,
       receipt ? `Receipt: ${receipt}` : ''].filter(Boolean).join('\n');
     const ready = taskDb.readyTask(db, { id: task.id, actor: owner, proof });
     if (ready.ready !== false) return { id: task.id, title: task.title, outcome: 'review', receipt: receipt || null };
+    // Its change already merged and the merge line closed the job.
+    if (taskDb.getTask(db, task.id)?.status === 'done') return { id: task.id, title: task.title, outcome: 'done', receipt: receipt || null };
   }
   const ticks = Array.isArray(result && result.ticks) ? result.ticks : [];
   const lastReason = String((ticks[ticks.length - 1] || {}).reason || (ticks[ticks.length - 1] || {}).error || '');

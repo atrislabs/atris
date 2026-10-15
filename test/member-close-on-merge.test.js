@@ -221,6 +221,9 @@ test('a job a person held while the change waited is not closed by the merge', (
     const held = job(fx, 'review');
     const free = job(fx, 'review');
     taskDb.tagTask(fx.db, { id: held, actor: 'keshav', add: ['needs-human'] });
+    // Proof prose that names a protected word is not a hold.
+    fx.db.prepare('UPDATE tasks SET metadata = ? WHERE id = ?')
+      .run(JSON.stringify({ latest_agent_proof: 'confirmed no invoice text changed' }), free);
     queue(fx, [held, free]);
     setView(fx, { state: 'MERGED' });
     const out = requeueDroppedAutolands({ cwd: fx.main });
