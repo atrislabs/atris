@@ -170,6 +170,24 @@ function runCli(args, { cwd, input, env, timeout = 15000 } = {}) {
   return result;
 }
 
+// runCli without blocking, so independent launches can overlap.
+function runCliAsync(args, { cwd, env, timeout = 15000 } = {}) {
+  return new Promise((resolve, reject) => {
+    const child = spawn(process.execPath, [cliPath, ...withFixtureReadyResult(args)], {
+      cwd,
+      env: { ...scrubAgentEnv(), ATRIS_SKIP_UPDATE_CHECK: '1', ...(env || {}) },
+      stdio: ['ignore', 'pipe', 'pipe'],
+    });
+    let stdout = '';
+    let stderr = '';
+    child.stdout.setEncoding('utf8').on('data', (chunk) => { stdout += chunk; });
+    child.stderr.setEncoding('utf8').on('data', (chunk) => { stderr += chunk; });
+    const timer = setTimeout(() => child.kill('SIGTERM'), timeout);
+    child.once('error', (error) => { clearTimeout(timer); reject(error); });
+    child.once('close', (status, signal) => { clearTimeout(timer); resolve({ status, signal, stdout, stderr }); });
+  });
+}
+
 function fakeMemberRunClaude(dir) {
   const bin = path.join(dir, 'fake-bin');
   fs.mkdirSync(bin, { recursive: true });
@@ -1325,11 +1343,13 @@ test('member goal-from-mission does not append a duplicate history entry on ever
 
     // The cadence loop reuses the same goal every tick. Before the fix each tick appended an identical
     // no-op `goal_from_mission_reused` entry, growing goals.json without bound (2,200+ entries live).
-    for (let i = 0; i < 30; i += 1) {
+    // Three reuses are enough: the old bug added one entry per reuse, past the one-entry allowance.
+    const REUSES = 3;
+    for (let i = 0; i < REUSES; i += 1) {
       assert.equal(runCli(['member', 'goal-from-mission', 'mission-lead', '--json'], { cwd: dir }).status, 0);
     }
     const afterReuse = historyLen();
-    assert.ok(afterReuse <= afterCreate + 1, `reuse ticks must not append duplicate history (was ${afterCreate}, now ${afterReuse} after 30 identical reuses)`);
+    assert.ok(afterReuse <= afterCreate + 1, `reuse ticks must not append duplicate history (was ${afterCreate}, now ${afterReuse} after ${REUSES} identical reuses)`);
     assert.ok(afterReuse <= 50, `history must stay capped, got ${afterReuse}`);
   } finally {
     cleanupTempDir(dir);
@@ -4937,6 +4957,18 @@ function hasNodeSqlite() {
   return result.status === 0;
 }
 
+// Task refs and queue order sort on creation time, then random id. Separate CLI
+// launches always got distinct times; in-process seeds can share a millisecond,
+// which let a later insert renumber an earlier ref. Poll the clock past the
+// previous seed so every seeded task keeps the order it was inserted in.
+let lastSeededTaskMs = 0;
+function addSeedTask(db, options) {
+  while (Date.now() <= lastSeededTaskMs) { /* poll until the next millisecond */ }
+  const created = taskStore.addTask(db, options);
+  lastSeededTaskMs = Date.now();
+  return created;
+}
+
 function waitForOutput(child, pattern, timeoutMs = 5000) {
   return new Promise((resolve, reject) => {
     let output = '';
@@ -6243,9 +6275,18 @@ test('brain compile counts task review episodes as learning state', () => {
     seedBrainWorkspace(dir);
     fs.rmSync(path.join(dir, '.atris', 'state', 'agent_mail.jsonl'), { force: true });
 
-    const add = runCli(['task', 'add', 'Teach brain about reviewed tasks', '--json'], { cwd: dir, env });
-    assert.equal(add.status, 0, add.stderr);
-    const ref = JSON.parse(add.stdout).task.display_id;
+    // Seed the untagged task; the done, review and compile stay on the CLI.
+    const workspaceRoot = taskStore.workspaceRoot(dir);
+    const db = taskStore.open(dbPath);
+    let ref;
+    try {
+      const created = addSeedTask(db, { title: 'Teach brain about reviewed tasks', workspaceRoot });
+      assert.equal(created.inserted, true);
+      ref = taskStore.taskDisplayRefMap(taskStore.listTasks(db, { workspaceRoot })).get(created.id);
+      assert.ok(ref);
+    } finally {
+      taskStore.close();
+    }
     assert.equal(runCli(['task', 'done', ref, '--proof', 'node --test test/commands.test.js passed'], { cwd: dir, env }).status, 0);
 
     const review = runCli([
@@ -6284,9 +6325,18 @@ test('brain scorecard derives deduped scorecards from task review episodes', () 
     seedBrainWorkspace(dir);
     fs.rmSync(path.join(dir, '.atris', 'state', 'agent_mail.jsonl'), { force: true });
 
-    const add = runCli(['task', 'add', 'Score reviewed task episodes', '--tag', 'rsi', '--json'], { cwd: dir, env });
-    assert.equal(add.status, 0, add.stderr);
-    const ref = JSON.parse(add.stdout).task.display_id;
+    // Seed the tagged task; the done, review, both scorecards and compile stay on the CLI.
+    const workspaceRoot = taskStore.workspaceRoot(dir);
+    const db = taskStore.open(dbPath);
+    let ref;
+    try {
+      const created = addSeedTask(db, { title: 'Score reviewed task episodes', tag: 'rsi', workspaceRoot });
+      assert.equal(created.inserted, true);
+      ref = taskStore.taskDisplayRefMap(taskStore.listTasks(db, { workspaceRoot })).get(created.id);
+      assert.ok(ref);
+    } finally {
+      taskStore.close();
+    }
     assert.equal(runCli(['task', 'done', ref, '--proof', 'node --test test/commands.test.js passed'], { cwd: dir, env }).status, 0);
 
     const review = runCli([
@@ -6332,9 +6382,17 @@ test('brain scorecard carries task landing quality and human outcome', () => {
     seedBrainWorkspace(dir);
     fs.rmSync(path.join(dir, '.atris', 'state', 'agent_mail.jsonl'), { force: true });
 
-    const acceptedAdd = runCli(['task', 'add', 'Landing accepted task', '--tag', 'approval', '--json'], { cwd: dir, env });
-    assert.equal(acceptedAdd.status, 0, acceptedAdd.stderr);
-    const acceptedRef = JSON.parse(acceptedAdd.stdout).task.display_id;
+    // Seed creation only; claim, ready, human feedback and scorecard stay on the CLI.
+    const acceptedDb = taskStore.open(dbPath);
+    let acceptedRef;
+    try {
+      const created = addSeedTask(acceptedDb, { title: 'Landing accepted task', tag: 'approval', workspaceRoot: taskStore.workspaceRoot(dir) });
+      assert.equal(created.inserted, true);
+      acceptedRef = taskStore.taskDisplayRefMap(taskStore.listTasks(acceptedDb, { workspaceRoot: taskStore.workspaceRoot(dir) })).get(created.id);
+      assert.ok(acceptedRef);
+    } finally {
+      taskStore.close();
+    }
     assert.equal(runCli(['task', 'claim', acceptedRef, '--as', 'codex'], { cwd: dir, env }).status, 0);
     const acceptedReady = runCli([
       'task', 'ready', acceptedRef,
@@ -6367,9 +6425,17 @@ test('brain scorecard carries task landing quality and human outcome', () => {
     }
 	    fs.writeFileSync(episodePath, `${episodeRows.map(row => JSON.stringify(row)).join('\n')}\n`, 'utf8');
 
-    const revisedAdd = runCli(['task', 'add', 'Landing reworked task', '--tag', 'approval', '--json'], { cwd: dir, env });
-    assert.equal(revisedAdd.status, 0, revisedAdd.stderr);
-    const revisedRef = JSON.parse(revisedAdd.stdout).task.display_id;
+    // Seed creation only; claim, ready, human feedback and scorecard stay on the CLI.
+    const revisedDb = taskStore.open(dbPath);
+    let revisedRef;
+    try {
+      const created = addSeedTask(revisedDb, { title: 'Landing reworked task', tag: 'approval', workspaceRoot: taskStore.workspaceRoot(dir) });
+      assert.equal(created.inserted, true);
+      revisedRef = taskStore.taskDisplayRefMap(taskStore.listTasks(revisedDb, { workspaceRoot: taskStore.workspaceRoot(dir) })).get(created.id);
+      assert.ok(revisedRef);
+    } finally {
+      taskStore.close();
+    }
     assert.equal(runCli(['task', 'claim', revisedRef, '--as', 'codex'], { cwd: dir, env }).status, 0);
     const revisedReady = runCli([
       'task', 'ready', revisedRef,
@@ -6421,9 +6487,17 @@ test('brain scorecard uses latest review episode per task', () => {
     seedBrainWorkspace(dir);
     fs.rmSync(path.join(dir, '.atris', 'state', 'agent_mail.jsonl'), { force: true });
 
-    const add = runCli(['task', 'add', 'Avoid duplicate task scorecards', '--json'], { cwd: dir, env });
-    assert.equal(add.status, 0, add.stderr);
-    const ref = JSON.parse(add.stdout).task.display_id;
+    // Seed creation only; done, review, scorecard and compile stay on the CLI.
+    const db = taskStore.open(dbPath);
+    let ref;
+    try {
+      const created = addSeedTask(db, { title: 'Avoid duplicate task scorecards', workspaceRoot: taskStore.workspaceRoot(dir) });
+      assert.equal(created.inserted, true);
+      ref = taskStore.taskDisplayRefMap(taskStore.listTasks(db, { workspaceRoot: taskStore.workspaceRoot(dir) })).get(created.id);
+      assert.ok(ref);
+    } finally {
+      taskStore.close();
+    }
 
     const done = runCli(['task', 'done', ref, '--proof', 'first validation passed'], { cwd: dir, env });
     assert.equal(done.status, 0, done.stderr);
@@ -7638,16 +7712,19 @@ test('task next and list honor tag scope before mutating tasks', () => {
   try {
     fs.mkdirSync(path.join(dir, 'atris'), { recursive: true });
 
-    const loopCreated = runCli([
-      'task',
-      'new',
-      'Loop janitor keeps unrelated work visible to operators',
-      '--tag',
-      'loop',
-      '--json',
-    ], { cwd: dir, env });
-    assert.equal(loopCreated.status, 0, loopCreated.stderr);
-    const loopTask = JSON.parse(loopCreated.stdout).task;
+    // Only creation is setup; claim, next, show, and list still use the CLI.
+    const workspaceRoot = taskStore.workspaceRoot(dir);
+    const seedTask = (title, tag) => {
+      const db = taskStore.open(dbPath);
+      try {
+        const created = addSeedTask(db, { title, tag, workspaceRoot });
+        return taskStore.withTaskDisplayRefs(taskStore.listTasks(db, { workspaceRoot }))
+          .find((row) => row.id === created.id);
+      } finally {
+        taskStore.close();
+      }
+    };
+    const loopTask = seedTask('Loop janitor keeps unrelated work visible to operators', 'loop');
     const loopClaim = runCli(['task', 'claim', loopTask.display_id, '--as', 'onboarding'], { cwd: dir, env });
     assert.equal(loopClaim.status, 0, loopClaim.stderr);
 
@@ -7664,16 +7741,7 @@ test('task next and list honor tag scope before mutating tasks', () => {
     assert.equal(loopAfterNoMatch.claimed_by, 'onboarding');
     assert.equal(loopAfterNoMatch.tag, 'loop');
 
-    const goldenCreated = runCli([
-      'task',
-      'new',
-      'Golden path work keeps first-run onboarding focused',
-      '--tag',
-      'golden-path',
-      '--json',
-    ], { cwd: dir, env });
-    assert.equal(goldenCreated.status, 0, goldenCreated.stderr);
-    const goldenTask = JSON.parse(goldenCreated.stdout).task;
+    const goldenTask = seedTask('Golden path work keeps first-run onboarding focused', 'golden-path');
 
     const scopedNext = runCli(['task', 'next', '--tag', 'golden-path', '--as', 'onboarding', '--json'], { cwd: dir, env });
     assert.equal(scopedNext.status, 0, scopedNext.stderr);
@@ -7702,30 +7770,24 @@ test('task current picks earlier golden-path pass step over a later one touched 
   try {
     fs.mkdirSync(path.join(dir, 'atris'), { recursive: true });
 
-    const pass1aCreated = runCli([
-      'task',
-      'new',
-      'Golden path pass 1a: fresh install prints one next command',
-      '--tag',
-      'golden-path',
-      '--json',
-    ], { cwd: dir, env });
-    assert.equal(pass1aCreated.status, 0, pass1aCreated.stderr);
-    const pass1aTask = JSON.parse(pass1aCreated.stdout).task;
+    // Only creation is setup; both plans and current selection use the CLI.
+    const workspaceRoot = taskStore.workspaceRoot(dir);
+    const seedTask = (title) => {
+      const db = taskStore.open(dbPath);
+      try {
+        const created = addSeedTask(db, { title, tag: 'golden-path', workspaceRoot });
+        return taskStore.withTaskDisplayRefs(taskStore.listTasks(db, { workspaceRoot }))
+          .find((row) => row.id === created.id);
+      } finally {
+        taskStore.close();
+      }
+    };
+    const pass1aTask = seedTask('Golden path pass 1a: fresh install prints one next command');
 
     const pass1aPlanned = runCli(['task', 'plan', pass1aTask.display_id, '--goal', 'ship pass 1a', '--exit', 'pass 1a lands', '--proof-needed', 'node --test', '--as', 'onboarding', '--json'], { cwd: dir, env });
     assert.equal(pass1aPlanned.status, 0, pass1aPlanned.stderr);
 
-    const pass2Created = runCli([
-      'task',
-      'new',
-      'Golden path pass 2: mission tick recovery is actionable',
-      '--tag',
-      'golden-path',
-      '--json',
-    ], { cwd: dir, env });
-    assert.equal(pass2Created.status, 0, pass2Created.stderr);
-    const pass2Task = JSON.parse(pass2Created.stdout).task;
+    const pass2Task = seedTask('Golden path pass 2: mission tick recovery is actionable');
 
     // Plan the later pass step *after* pass 1a, so it has a newer updated_at.
     // This mirrors the real report: a later pass step gets planned/re-touched
@@ -7798,6 +7860,9 @@ test('task render preserves Endgame metadata and drops markdown-only rows', () =
     fs.writeFileSync(todoPath, [
       '# TODO.md',
       '',
+      // task new previously added this marker while refreshing the fixture.
+      '> Regenerated from durable Atris task state. Do not treat this file as truth.',
+      '',
       '## Endgame',
       '',
       '**Slug:** renderer-horizon',
@@ -7820,9 +7885,16 @@ test('task render preserves Endgame metadata and drops markdown-only rows', () =
       '## Completed',
       '',
     ].join('\n'), 'utf8');
-    const created = runCli(['task', 'new', 'DB state task', '--tag', 'agent', '--json'], { cwd: dir, env });
-    assert.equal(created.status, 0, created.stderr);
-    const createdTask = JSON.parse(created.stdout).task;
+    // Seed only setup; rendering and lookup still exercise the real CLI.
+    const workspaceRoot = taskStore.workspaceRoot(dir);
+    const db = taskStore.open(dbPath);
+    let createdTask;
+    try {
+      const { id } = addSeedTask(db, { title: 'DB state task', tag: 'agent', workspaceRoot });
+      createdTask = { id, display_id: taskStore.taskDisplayRefMap(taskStore.listTasks(db, { workspaceRoot })).get(id) };
+    } finally {
+      taskStore.close();
+    }
 
     const render = runCli(['task', 'render', '--out', 'atris/TODO.md'], { cwd: dir, env });
     assert.equal(render.status, 0, render.stderr);
@@ -7859,10 +7931,17 @@ test('task render drops stale generated markdown rows for DB-backed tasks', () =
   try {
     fs.mkdirSync(path.join(dir, 'atris'), { recursive: true });
     const todoPath = path.join(dir, 'atris', 'TODO.md');
-    const created = runCli(['task', 'new', 'Move review work forward', '--tag', 'task-plane', '--json'], { cwd: dir, env });
-    assert.equal(created.status, 0, created.stderr);
-    const ref = JSON.parse(created.stdout).task.display_id;
-    assert.equal(runCli(['task', 'claim', ref, '--as', 'codex'], { cwd: dir, env }).status, 0);
+    // Seed claimed setup; ready and both renders stay on the real CLI.
+    const workspaceRoot = taskStore.workspaceRoot(dir);
+    const db = taskStore.open(dbPath);
+    let ref;
+    try {
+      const { id } = addSeedTask(db, { title: 'Move review work forward', tag: 'task-plane', workspaceRoot });
+      assert.equal(taskStore.claimTask(db, { id, claimedBy: 'codex' }).claimed, true);
+      ref = taskStore.taskDisplayRefMap(taskStore.listTasks(db, { workspaceRoot })).get(id);
+    } finally {
+      taskStore.close();
+    }
     assert.equal(runCli(['task', 'ready', ref, '--proof', 'render smoke passed', '--as', 'codex'], { cwd: dir, env }).status, 0);
 
     fs.writeFileSync(todoPath, [
@@ -7964,8 +8043,20 @@ test('task display refs stay stable in filtered list views', () => {
   try {
     fs.mkdirSync(path.join(dir, 'atris'), { recursive: true });
 
-    const older = JSON.parse(runCli(['task', 'add', 'Older closed task', '--json'], { cwd: dir, env }).stdout);
-    const current = JSON.parse(runCli(['task', 'add', 'Current open task', '--json'], { cwd: dir, env }).stdout);
+    // Seed setup in order; completion and filtered lists still use the CLI.
+    const workspaceRoot = taskStore.workspaceRoot(dir);
+    const db = taskStore.open(dbPath);
+    let older;
+    let current;
+    try {
+      const olderSeed = addSeedTask(db, { title: 'Older closed task', workspaceRoot });
+      const currentSeed = addSeedTask(db, { title: 'Current open task', workspaceRoot });
+      const refs = taskStore.taskDisplayRefMap(taskStore.listTasks(db, { workspaceRoot }));
+      older = { task: { ...olderSeed, display_id: refs.get(olderSeed.id) } };
+      current = { task: { ...currentSeed, display_id: refs.get(currentSeed.id) } };
+    } finally {
+      taskStore.close();
+    }
     assert.equal(runCli(['task', 'done', older.task.display_id, '--proof', 'node --test test/commands.test.js passed'], { cwd: dir, env }).status, 0);
 
     const open = runCli(['task', 'list', '--status', 'open'], { cwd: dir, env });
@@ -8241,13 +8332,20 @@ test('task capabilities-check reports contract drift without mutating task truth
   try {
     fs.mkdirSync(path.join(dir, 'atris'), { recursive: true });
 
-    const created = runCli(['task', 'add', 'Check capability conformance without mutating tasks', '--tag', 'agent', '--json'], { cwd: dir, env });
-    assert.equal(created.status, 0, created.stderr);
-    const task = JSON.parse(created.stdout).task;
-    const before = runCli(['task', 'show', task.display_id, '--json'], { cwd: dir, env });
-    assert.equal(before.status, 0, before.stderr);
-    const beforePayload = JSON.parse(before.stdout);
-
+    // Read the baseline while seeding; both checks and the final read stay on the CLI.
+    const db = taskStore.open(dbPath);
+    let task;
+    let beforePayload;
+    try {
+      const workspaceRoot = taskStore.workspaceRoot(dir);
+      const created = addSeedTask(db, { title: 'Check capability conformance without mutating tasks', tag: 'agent', workspaceRoot });
+      assert.equal(created.inserted, true);
+      task = { display_id: taskStore.taskDisplayRefMap(taskStore.listTasks(db, { workspaceRoot })).get(created.id) };
+      assert.ok(task.display_id);
+      beforePayload = taskStore.taskProjection(db, { taskId: created.id }).tasks[0];
+    } finally {
+      taskStore.close();
+    }
     const report = runCli(['task', 'capabilities-check', '--json'], { cwd: dir, env });
     assert.equal(report.status, 0, report.stderr);
     const payload = JSON.parse(report.stdout);
@@ -8329,15 +8427,31 @@ test('task review-lane-drain picks safe agent action without mutating human acce
   try {
     fs.mkdirSync(path.join(dir, 'atris'), { recursive: true });
 
-    const continueCreated = runCli([
-      'task', 'new', 'Certified drain task with executable continuation',
-      '--tag', 'task',
-      '--goal-id', 'OBL-928',
-      '--json',
-    ], { cwd: dir, env });
-    assert.equal(continueCreated.status, 0, continueCreated.stderr);
-    const continueTask = JSON.parse(continueCreated.stdout).task;
-    const continueRef = continueTask.display_id;
+    // Creation and the before-drain snapshot read the store directly; keep
+    // certification, drain and the after-drain human-gate read on the CLI.
+    const { enrichTaskProjection } = require('../commands/task');
+    const showTask = (id) => {
+      const showDb = taskStore.open(dbPath);
+      try {
+        return enrichTaskProjection(taskStore.taskProjection(showDb, { taskId: id })).tasks[0];
+      } finally {
+        taskStore.close();
+      }
+    };
+    const workspaceRoot = taskStore.workspaceRoot(dir);
+    const db = taskStore.open(dbPath);
+    let continueTask;
+    let continueRef;
+    try {
+      continueTask = addSeedTask(db, {
+        title: 'Certified drain task with executable continuation',
+        tag: 'task', workspaceRoot, metadata: { goal_id: 'OBL-928' },
+      });
+      assert.equal(continueTask.inserted, true);
+      continueRef = taskStore.taskDisplayRefMap(taskStore.listTasks(db, { workspaceRoot })).get(continueTask.id);
+    } finally {
+      taskStore.close();
+    }
     assert.equal(runCli([
       'task', 'ready', continueRef,
       '--as', 'codex',
@@ -8351,15 +8465,19 @@ test('task review-lane-drain picks safe agent action without mutating human acce
       '--next', 'Add the next safe review drain follow-up',
     ], { cwd: dir, env }).status, 0);
 
-    const waitingCreated = runCli([
-      'task', 'new', 'Certified drain task waiting for human accept',
-      '--tag', 'task',
-      '--goal-id', 'OBL-928',
-      '--json',
-    ], { cwd: dir, env });
-    assert.equal(waitingCreated.status, 0, waitingCreated.stderr);
-    const waitingTask = JSON.parse(waitingCreated.stdout).task;
-    const waitingRef = waitingTask.display_id;
+    const waitingDb = taskStore.open(dbPath);
+    let waitingTask;
+    let waitingRef;
+    try {
+      waitingTask = addSeedTask(waitingDb, {
+        title: 'Certified drain task waiting for human accept',
+        tag: 'task', workspaceRoot, metadata: { goal_id: 'OBL-928' },
+      });
+      assert.equal(waitingTask.inserted, true);
+      waitingRef = taskStore.taskDisplayRefMap(taskStore.listTasks(waitingDb, { workspaceRoot })).get(waitingTask.id);
+    } finally {
+      taskStore.close();
+    }
     assert.equal(runCli([
       'task', 'ready', waitingRef,
       '--as', 'codex',
@@ -8371,7 +8489,7 @@ test('task review-lane-drain picks safe agent action without mutating human acce
       '--as', 'codex-review',
       '--proof', 'node --test test/commands.test.js passed during review lane drain human gate',
     ], { cwd: dir, env }).status, 0);
-    const beforeWaiting = JSON.parse(runCli(['task', 'show', waitingRef, '--json'], { cwd: dir, env }).stdout);
+    const beforeWaiting = showTask(waitingTask.id);
 
     const drain = runCli(['task', 'review-lane-drain', '--goal-id', 'OBL-928', '--json'], { cwd: dir, env });
     assert.equal(drain.status, 0, drain.stderr);
@@ -8409,14 +8527,18 @@ test('task review-lane-drain picks safe agent action without mutating human acce
     assert.equal(afterWaiting.latest_event_type, beforeWaiting.latest_event_type);
     assert.equal(afterWaiting.status, beforeWaiting.status);
 
-    const humanOnlyCreated = runCli([
-      'task', 'new', 'Only human can accept this certified task',
-      '--tag', 'task',
-      '--goal-id', 'OBL-929',
-      '--json',
-    ], { cwd: dir, env });
-    assert.equal(humanOnlyCreated.status, 0, humanOnlyCreated.stderr);
-    const humanOnlyRef = JSON.parse(humanOnlyCreated.stdout).task.display_id;
+    const humanOnlyDb = taskStore.open(dbPath);
+    let humanOnlyRef;
+    try {
+      const humanOnlyTask = addSeedTask(humanOnlyDb, {
+        title: 'Only human can accept this certified task',
+        tag: 'task', workspaceRoot, metadata: { goal_id: 'OBL-929' },
+      });
+      assert.equal(humanOnlyTask.inserted, true);
+      humanOnlyRef = taskStore.taskDisplayRefMap(taskStore.listTasks(humanOnlyDb, { workspaceRoot })).get(humanOnlyTask.id);
+    } finally {
+      taskStore.close();
+    }
     assert.equal(runCli([
       'task', 'ready', humanOnlyRef,
       '--as', 'codex',
@@ -8455,22 +8577,39 @@ test('task review-lane-act executes safe drain actions and refuses human accept 
   const env = { ATRIS_TASKS_DB: dbPath, NODE_NO_WARNINGS: '1', ATRIS_AGENT_ID: 'codex', ATRIS_SKIP_UPDATE_CHECK: '1' };
   try {
     fs.mkdirSync(path.join(dir, 'atris'), { recursive: true });
+    // Baselines read the same enriched projection task show prints; every
+    // after-action read still runs the CLI.
+    const { enrichTaskProjection } = require('../commands/task');
+    const showTask = (id) => {
+      const showDb = taskStore.open(dbPath);
+      try {
+        return enrichTaskProjection(taskStore.taskProjection(showDb, { taskId: id })).tasks[0];
+      } finally {
+        taskStore.close();
+      }
+    };
 
-    const reviewCreated = runCli([
-      'task', 'new', 'Review lane act starts verification chat',
-      '--tag', 'task',
-      '--goal-id', 'OBL-931',
-      '--json',
-    ], { cwd: dir, env });
-    assert.equal(reviewCreated.status, 0, reviewCreated.stderr);
-    const reviewTask = JSON.parse(reviewCreated.stdout).task;
-    const reviewRef = reviewTask.display_id;
+    // Seed creation only; exercise review actions and human refusal on the CLI.
+    const workspaceRoot = taskStore.workspaceRoot(dir);
+    const db = taskStore.open(dbPath);
+    let reviewTask;
+    let reviewRef;
+    try {
+      reviewTask = addSeedTask(db, {
+        title: 'Review lane act starts verification chat',
+        tag: 'task', workspaceRoot, metadata: { goal_id: 'OBL-931' },
+      });
+      assert.equal(reviewTask.inserted, true);
+      reviewRef = taskStore.taskDisplayRefMap(taskStore.listTasks(db, { workspaceRoot })).get(reviewTask.id);
+    } finally {
+      taskStore.close();
+    }
     assert.equal(runCli([
       'task', 'ready', reviewRef,
       '--as', 'codex',
       '--proof', 'node --check test/commands.test.js passed before review-lane-act review chat',
     ], { cwd: dir, env }).status, 0);
-    const beforeReviewChat = JSON.parse(runCli(['task', 'show', reviewRef, '--json'], { cwd: dir, env }).stdout);
+    const beforeReviewChat = showTask(reviewTask.id);
     const reviewAct = runCli(['task', 'review-lane-act', '--goal-id', 'OBL-931', '--json'], { cwd: dir, env });
     assert.equal(reviewAct.status, 0, reviewAct.stderr);
     const reviewPayload = JSON.parse(reviewAct.stdout);
@@ -8487,15 +8626,19 @@ test('task review-lane-act executes safe drain actions and refuses human accept 
     assert.equal(afterReviewChat.current_version, beforeReviewChat.current_version + 1);
     assert.ok(afterReviewChat.messages.some(message => message.content.includes('TASK_REVIEW_CHAT')));
 
-    const continueCreated = runCli([
-      'task', 'new', 'Review lane act continues certified work',
-      '--tag', 'task',
-      '--goal-id', 'OBL-932',
-      '--json',
-    ], { cwd: dir, env });
-    assert.equal(continueCreated.status, 0, continueCreated.stderr);
-    const continueTask = JSON.parse(continueCreated.stdout).task;
-    const continueRef = continueTask.display_id;
+    const continueDb = taskStore.open(dbPath);
+    let continueTask;
+    let continueRef;
+    try {
+      continueTask = addSeedTask(continueDb, {
+        title: 'Review lane act continues certified work',
+        tag: 'task', workspaceRoot, metadata: { goal_id: 'OBL-932' },
+      });
+      assert.equal(continueTask.inserted, true);
+      continueRef = taskStore.taskDisplayRefMap(taskStore.listTasks(continueDb, { workspaceRoot })).get(continueTask.id);
+    } finally {
+      taskStore.close();
+    }
     assert.equal(runCli([
       'task', 'ready', continueRef,
       '--as', 'codex',
@@ -8508,7 +8651,7 @@ test('task review-lane-act executes safe drain actions and refuses human accept 
       '--proof', 'node --test test/commands.test.js passed during review-lane-act continuation',
       '--next', 'Add the review lane act follow-up task',
     ], { cwd: dir, env }).status, 0);
-    const beforeDryRun = JSON.parse(runCli(['task', 'show', continueRef, '--json'], { cwd: dir, env }).stdout);
+    const beforeDryRun = showTask(continueTask.id);
     const dryRun = runCli(['task', 'review-lane-act', '--goal-id', 'OBL-932', '--dry-run', '--json'], { cwd: dir, env });
     assert.equal(dryRun.status, 0, dryRun.stderr);
     const dryPayload = JSON.parse(dryRun.stdout);
@@ -8536,14 +8679,18 @@ test('task review-lane-act executes safe drain actions and refuses human accept 
     assert.ok(continuePayload.result.next_task_id);
     assert.equal(continuePayload.result.safety.human_accept, false);
 
-    const humanOnlyCreated = runCli([
-      'task', 'new', 'Review lane act must not accept human-only row',
-      '--tag', 'task',
-      '--goal-id', 'OBL-933',
-      '--json',
-    ], { cwd: dir, env });
-    assert.equal(humanOnlyCreated.status, 0, humanOnlyCreated.stderr);
-    const humanOnlyRef = JSON.parse(humanOnlyCreated.stdout).task.display_id;
+    const humanOnlyDb = taskStore.open(dbPath);
+    let humanOnlyRef;
+    try {
+      const humanOnlyTask = addSeedTask(humanOnlyDb, {
+        title: 'Review lane act must not accept human-only row',
+        tag: 'task', workspaceRoot, metadata: { goal_id: 'OBL-933' },
+      });
+      assert.equal(humanOnlyTask.inserted, true);
+      humanOnlyRef = taskStore.taskDisplayRefMap(taskStore.listTasks(humanOnlyDb, { workspaceRoot })).get(humanOnlyTask.id);
+    } finally {
+      taskStore.close();
+    }
     assert.equal(runCli([
       'task', 'ready', humanOnlyRef,
       '--as', 'codex',
@@ -8579,22 +8726,40 @@ test('task review-lane-act executes only safe drain actions and supports dry-run
   const env = { ATRIS_TASKS_DB: dbPath, NODE_NO_WARNINGS: '1', ATRIS_AGENT_ID: 'codex', ATRIS_SKIP_UPDATE_CHECK: '1' };
   try {
     fs.mkdirSync(path.join(dir, 'atris'), { recursive: true });
+    // Show is the store projection plus enrichment, so version checks read it
+    // in-process; the show after the live review chat still runs the CLI and
+    // proves the two reads agree.
+    const { enrichTaskProjection } = require('../commands/task');
+    const showTask = (id) => {
+      const db = taskStore.open(dbPath);
+      try {
+        return enrichTaskProjection(taskStore.taskProjection(db, { taskId: id })).tasks[0];
+      } finally {
+        taskStore.close();
+      }
+    };
 
-    const needsCreated = runCli([
-      'task', 'new', 'Review lane act should start verification chat',
-      '--tag', 'task',
-      '--goal-id', 'OBL-940',
-      '--json',
-    ], { cwd: dir, env });
-    assert.equal(needsCreated.status, 0, needsCreated.stderr);
-    const needsTask = JSON.parse(needsCreated.stdout).task;
-    const needsRef = needsTask.display_id;
+    // Seed creation only; dry-run and live safety checks stay on the CLI.
+    const workspaceRoot = taskStore.workspaceRoot(dir);
+    const db = taskStore.open(dbPath);
+    let needsTask;
+    let needsRef;
+    try {
+      needsTask = addSeedTask(db, {
+        title: 'Review lane act should start verification chat',
+        tag: 'task', workspaceRoot, metadata: { goal_id: 'OBL-940' },
+      });
+      assert.equal(needsTask.inserted, true);
+      needsRef = taskStore.taskDisplayRefMap(taskStore.listTasks(db, { workspaceRoot })).get(needsTask.id);
+    } finally {
+      taskStore.close();
+    }
     assert.equal(runCli([
       'task', 'ready', needsRef,
       '--as', 'codex',
       '--proof', 'node --check test/commands.test.js passed before review-lane-act chat',
     ], { cwd: dir, env }).status, 0);
-    const beforeNeeds = JSON.parse(runCli(['task', 'show', needsRef, '--json'], { cwd: dir, env }).stdout);
+    const beforeNeeds = showTask(needsTask.id);
 
     const dryReviewChat = runCli(['task', 'review-lane-act', '--goal-id', 'OBL-940', '--dry-run', '--json'], { cwd: dir, env });
     assert.equal(dryReviewChat.status, 0, dryReviewChat.stderr);
@@ -8605,7 +8770,7 @@ test('task review-lane-act executes only safe drain actions and supports dry-run
     assert.equal(dryReviewChatPayload.decision.step_action, 'review_chat');
     assert.equal(dryReviewChatPayload.safety.read_only, true);
     assert.equal(dryReviewChatPayload.safety.human_accept, false);
-    const afterDryNeeds = JSON.parse(runCli(['task', 'show', needsRef, '--json'], { cwd: dir, env }).stdout);
+    const afterDryNeeds = showTask(needsTask.id);
     assert.equal(afterDryNeeds.current_version, beforeNeeds.current_version);
 
     const liveReviewChat = runCli(['task', 'review-lane-act', '--goal-id', 'OBL-940', '--json'], { cwd: dir, env });
@@ -8620,16 +8785,23 @@ test('task review-lane-act executes only safe drain actions and supports dry-run
     const afterLiveNeeds = JSON.parse(runCli(['task', 'show', needsRef, '--json'], { cwd: dir, env }).stdout);
     assert.equal(afterLiveNeeds.current_version, beforeNeeds.current_version + 1);
     assert.equal(afterLiveNeeds.latest_event_type, 'message');
+    const afterLiveNeedsInProcess = showTask(needsTask.id);
+    assert.equal(afterLiveNeedsInProcess.current_version, afterLiveNeeds.current_version);
+    assert.equal(afterLiveNeedsInProcess.latest_event_type, afterLiveNeeds.latest_event_type);
 
-    const continueCreated = runCli([
-      'task', 'new', 'Review lane act should continue certified task',
-      '--tag', 'task',
-      '--goal-id', 'OBL-941',
-      '--json',
-    ], { cwd: dir, env });
-    assert.equal(continueCreated.status, 0, continueCreated.stderr);
-    const continueTask = JSON.parse(continueCreated.stdout).task;
-    const continueRef = continueTask.display_id;
+    const continueDb = taskStore.open(dbPath);
+    let continueTask;
+    let continueRef;
+    try {
+      continueTask = addSeedTask(continueDb, {
+        title: 'Review lane act should continue certified task',
+        tag: 'task', workspaceRoot, metadata: { goal_id: 'OBL-941' },
+      });
+      assert.equal(continueTask.inserted, true);
+      continueRef = taskStore.taskDisplayRefMap(taskStore.listTasks(continueDb, { workspaceRoot })).get(continueTask.id);
+    } finally {
+      taskStore.close();
+    }
     assert.equal(runCli([
       'task', 'ready', continueRef,
       '--as', 'codex',
@@ -8643,14 +8815,19 @@ test('task review-lane-act executes only safe drain actions and supports dry-run
       '--next', 'Add a follow-up created by review lane act',
     ], { cwd: dir, env }).status, 0);
 
-    const waitingCreated = runCli([
-      'task', 'new', 'Review lane act should leave human accept alone',
-      '--tag', 'task',
-      '--goal-id', 'OBL-941',
-      '--json',
-    ], { cwd: dir, env });
-    assert.equal(waitingCreated.status, 0, waitingCreated.stderr);
-    const waitingRef = JSON.parse(waitingCreated.stdout).task.display_id;
+    const waitingDb = taskStore.open(dbPath);
+    let waitingTask;
+    let waitingRef;
+    try {
+      waitingTask = addSeedTask(waitingDb, {
+        title: 'Review lane act should leave human accept alone',
+        tag: 'task', workspaceRoot, metadata: { goal_id: 'OBL-941' },
+      });
+      assert.equal(waitingTask.inserted, true);
+      waitingRef = taskStore.taskDisplayRefMap(taskStore.listTasks(waitingDb, { workspaceRoot })).get(waitingTask.id);
+    } finally {
+      taskStore.close();
+    }
     assert.equal(runCli([
       'task', 'ready', waitingRef,
       '--as', 'codex',
@@ -8662,8 +8839,8 @@ test('task review-lane-act executes only safe drain actions and supports dry-run
       '--as', 'codex-review',
       '--proof', 'node --test test/commands.test.js passed during review-lane-act human gate',
     ], { cwd: dir, env }).status, 0);
-    const beforeWaiting = JSON.parse(runCli(['task', 'show', waitingRef, '--json'], { cwd: dir, env }).stdout);
-    const beforeContinue = JSON.parse(runCli(['task', 'show', continueRef, '--json'], { cwd: dir, env }).stdout);
+    const beforeWaiting = showTask(waitingTask.id);
+    const beforeContinue = showTask(continueTask.id);
 
     const dryContinue = runCli(['task', 'review-lane-act', '--goal-id', 'OBL-941', '--dry-run', '--json'], { cwd: dir, env });
     assert.equal(dryContinue.status, 0, dryContinue.stderr);
@@ -8672,7 +8849,7 @@ test('task review-lane-act executes only safe drain actions and supports dry-run
     assert.equal(dryContinuePayload.acted, false);
     assert.equal(dryContinuePayload.decision.step_action, 'continue_work');
     assert.equal(dryContinuePayload.safety.read_only, true);
-    const afterDryContinue = JSON.parse(runCli(['task', 'show', continueRef, '--json'], { cwd: dir, env }).stdout);
+    const afterDryContinue = showTask(continueTask.id);
     assert.equal(afterDryContinue.current_version, beforeContinue.current_version);
 
     const liveContinue = runCli(['task', 'review-lane-act', '--goal-id', 'OBL-941', '--json'], { cwd: dir, env });
@@ -8685,18 +8862,23 @@ test('task review-lane-act executes only safe drain actions and supports dry-run
     assert.equal(liveContinuePayload.result.parent_task_id, continueTask.id);
     assert.equal(liveContinuePayload.result.next_task.title, 'Add a follow-up created by review lane act');
     assert.equal(liveContinuePayload.safety.human_accept, false);
-    const afterWaiting = JSON.parse(runCli(['task', 'show', waitingRef, '--json'], { cwd: dir, env }).stdout);
+    const afterWaiting = showTask(waitingTask.id);
     assert.equal(afterWaiting.current_version, beforeWaiting.current_version);
     assert.equal(afterWaiting.latest_event_type, beforeWaiting.latest_event_type);
 
-    const humanOnlyCreated = runCli([
-      'task', 'new', 'Review lane act must not human accept',
-      '--tag', 'task',
-      '--goal-id', 'OBL-942',
-      '--json',
-    ], { cwd: dir, env });
-    assert.equal(humanOnlyCreated.status, 0, humanOnlyCreated.stderr);
-    const humanOnlyRef = JSON.parse(humanOnlyCreated.stdout).task.display_id;
+    const humanOnlyDb = taskStore.open(dbPath);
+    let humanOnlyTask;
+    let humanOnlyRef;
+    try {
+      humanOnlyTask = addSeedTask(humanOnlyDb, {
+        title: 'Review lane act must not human accept',
+        tag: 'task', workspaceRoot, metadata: { goal_id: 'OBL-942' },
+      });
+      assert.equal(humanOnlyTask.inserted, true);
+      humanOnlyRef = taskStore.taskDisplayRefMap(taskStore.listTasks(humanOnlyDb, { workspaceRoot })).get(humanOnlyTask.id);
+    } finally {
+      taskStore.close();
+    }
     assert.equal(runCli([
       'task', 'ready', humanOnlyRef,
       '--as', 'codex',
@@ -8708,7 +8890,7 @@ test('task review-lane-act executes only safe drain actions and supports dry-run
       '--as', 'codex-review',
       '--proof', 'node --test test/commands.test.js passed during review-lane-act human only',
     ], { cwd: dir, env }).status, 0);
-    const beforeHumanOnly = JSON.parse(runCli(['task', 'show', humanOnlyRef, '--json'], { cwd: dir, env }).stdout);
+    const beforeHumanOnly = showTask(humanOnlyTask.id);
     const blockedHumanOnly = runCli(['task', 'review-lane-act', '--goal-id', 'OBL-942', '--json'], { cwd: dir, env });
     assert.equal(blockedHumanOnly.status, 1);
     const blockedPayload = JSON.parse(blockedHumanOnly.stdout);
@@ -8718,7 +8900,7 @@ test('task review-lane-act executes only safe drain actions and supports dry-run
     assert.equal(blockedPayload.safety.human_accept, false);
     assert.equal(blockedPayload.drain.command, null);
     assert.equal(blockedPayload.drain.api, null);
-    const afterHumanOnly = JSON.parse(runCli(['task', 'show', humanOnlyRef, '--json'], { cwd: dir, env }).stdout);
+    const afterHumanOnly = showTask(humanOnlyTask.id);
     assert.equal(afterHumanOnly.current_version, beforeHumanOnly.current_version);
   } finally {
     cleanupTempDir(dir);
@@ -8732,15 +8914,31 @@ test('task review-lane-loop runs bounded safe actions and stops before human acc
   const env = { ATRIS_TASKS_DB: dbPath, NODE_NO_WARNINGS: '1', ATRIS_AGENT_ID: 'codex', ATRIS_SKIP_UPDATE_CHECK: '1' };
   try {
     fs.mkdirSync(path.join(dir, 'atris'), { recursive: true });
+    // New is one store insert with the goal id, and show is the store
+    // projection plus enrichment, so setup and version reads run in-process.
+    // The show after the live review loop still runs the CLI and proves the
+    // two reads agree.
+    const workspaceRoot = taskStore.workspaceRoot(dir);
+    const seedTask = (title, goalId) => {
+      const db = taskStore.open(dbPath);
+      try {
+        const { id } = addSeedTask(db, { title, tag: 'task', workspaceRoot, metadata: { goal_id: goalId } });
+        return { id, display_id: taskStore.taskDisplayRefMap(taskStore.listTasks(db, { workspaceRoot })).get(id) };
+      } finally {
+        taskStore.close();
+      }
+    };
+    const { enrichTaskProjection } = require('../commands/task');
+    const showTask = (id) => {
+      const db = taskStore.open(dbPath);
+      try {
+        return enrichTaskProjection(taskStore.taskProjection(db, { taskId: id })).tasks[0];
+      } finally {
+        taskStore.close();
+      }
+    };
 
-    const reviewCreated = runCli([
-      'task', 'new', 'Loop should start one review chat and stop on repeat',
-      '--tag', 'task',
-      '--goal-id', 'OBL-950',
-      '--json',
-    ], { cwd: dir, env });
-    assert.equal(reviewCreated.status, 0, reviewCreated.stderr);
-    const reviewTask = JSON.parse(reviewCreated.stdout).task;
+    const reviewTask = seedTask('Loop should start one review chat and stop on repeat', 'OBL-950');
     const reviewRef = reviewTask.display_id;
     assert.equal(runCli([
       'task', 'ready', reviewRef,
@@ -8760,7 +8958,7 @@ test('task review-lane-loop runs bounded safe actions and stops before human acc
     assert.equal(dryPayload.safety.read_only, true);
     assert.equal(dryPayload.safety.human_accept, false);
 
-    const beforeReview = JSON.parse(runCli(['task', 'show', reviewRef, '--json'], { cwd: dir, env }).stdout);
+    const beforeReview = showTask(reviewTask.id);
     const liveReviewLoop = runCli(['task', 'review-lane-loop', '--goal-id', 'OBL-950', '--max-steps', '3', '--json'], { cwd: dir, env });
     assert.equal(liveReviewLoop.status, 0, liveReviewLoop.stderr);
     const liveReviewPayload = JSON.parse(liveReviewLoop.stdout);
@@ -8772,15 +8970,11 @@ test('task review-lane-loop runs bounded safe actions and stops before human acc
     assert.equal(liveReviewPayload.safety.repeat_selection_guard, true);
     const afterReview = JSON.parse(runCli(['task', 'show', reviewRef, '--json'], { cwd: dir, env }).stdout);
     assert.equal(afterReview.current_version, beforeReview.current_version + 1);
+    const afterReviewInProcess = showTask(reviewTask.id);
+    assert.equal(afterReviewInProcess.current_version, afterReview.current_version);
+    assert.equal(afterReviewInProcess.latest_event_type, afterReview.latest_event_type);
 
-    const continueCreated = runCli([
-      'task', 'new', 'Loop should continue one certified task and stop on repeat',
-      '--tag', 'task',
-      '--goal-id', 'OBL-951',
-      '--json',
-    ], { cwd: dir, env });
-    assert.equal(continueCreated.status, 0, continueCreated.stderr);
-    const continueTask = JSON.parse(continueCreated.stdout).task;
+    const continueTask = seedTask('Loop should continue one certified task and stop on repeat', 'OBL-951');
     const continueRef = continueTask.display_id;
     assert.equal(runCli([
       'task', 'ready', continueRef,
@@ -8795,14 +8989,8 @@ test('task review-lane-loop runs bounded safe actions and stops before human acc
       '--next', 'Add a follow-up created by review lane loop',
     ], { cwd: dir, env }).status, 0);
 
-    const waitingCreated = runCli([
-      'task', 'new', 'Loop should leave human accept waiting alone',
-      '--tag', 'task',
-      '--goal-id', 'OBL-951',
-      '--json',
-    ], { cwd: dir, env });
-    assert.equal(waitingCreated.status, 0, waitingCreated.stderr);
-    const waitingRef = JSON.parse(waitingCreated.stdout).task.display_id;
+    const waitingTask = seedTask('Loop should leave human accept waiting alone', 'OBL-951');
+    const waitingRef = waitingTask.display_id;
     assert.equal(runCli([
       'task', 'ready', waitingRef,
       '--as', 'codex',
@@ -8814,7 +9002,7 @@ test('task review-lane-loop runs bounded safe actions and stops before human acc
       '--as', 'codex-review',
       '--proof', 'node --test test/commands.test.js passed during review-lane-loop human gate',
     ], { cwd: dir, env }).status, 0);
-    const beforeWaiting = JSON.parse(runCli(['task', 'show', waitingRef, '--json'], { cwd: dir, env }).stdout);
+    const beforeWaiting = showTask(waitingTask.id);
 
     const liveContinueLoop = runCli(['task', 'review-lane-loop', '--goal-id', 'OBL-951', '--max-steps', '3', '--json'], { cwd: dir, env });
     assert.equal(liveContinueLoop.status, 0, liveContinueLoop.stderr);
@@ -8828,17 +9016,11 @@ test('task review-lane-loop runs bounded safe actions and stops before human acc
     assert.equal(liveContinuePayload.final_drain.command, null);
     assert.equal(liveContinuePayload.final_drain.api, null);
     assert.equal(liveContinuePayload.safety.human_accept, false);
-    const afterWaiting = JSON.parse(runCli(['task', 'show', waitingRef, '--json'], { cwd: dir, env }).stdout);
+    const afterWaiting = showTask(waitingTask.id);
     assert.equal(afterWaiting.current_version, beforeWaiting.current_version);
 
-    const humanOnlyCreated = runCli([
-      'task', 'new', 'Loop must stop on human-only review rows',
-      '--tag', 'task',
-      '--goal-id', 'OBL-952',
-      '--json',
-    ], { cwd: dir, env });
-    assert.equal(humanOnlyCreated.status, 0, humanOnlyCreated.stderr);
-    const humanOnlyRef = JSON.parse(humanOnlyCreated.stdout).task.display_id;
+    const humanOnlyTask = seedTask('Loop must stop on human-only review rows', 'OBL-952');
+    const humanOnlyRef = humanOnlyTask.display_id;
     assert.equal(runCli([
       'task', 'ready', humanOnlyRef,
       '--as', 'codex',
@@ -8872,14 +9054,22 @@ test('task review-lane-run writes bounded receipts and stops before human accept
   try {
     fs.mkdirSync(path.join(dir, 'atris'), { recursive: true });
 
-    const continueCreated = runCli([
-      'task', 'new', 'Run should continue one certified task and write a receipt',
-      '--tag', 'task',
-      '--goal-id', 'OBL-953',
-      '--json',
-    ], { cwd: dir, env });
-    assert.equal(continueCreated.status, 0, continueCreated.stderr);
-    const continueRef = JSON.parse(continueCreated.stdout).task.display_id;
+    // Fixture creation and the baseline read stay in process; ready, review,
+    // run, and the final show still exercise the CLI and its persisted state.
+    const workspaceRoot = taskStore.workspaceRoot(dir);
+    const seedTask = (title) => {
+      const db = taskStore.open(dbPath);
+      try {
+        const { id } = addSeedTask(db, {
+          title, tag: 'task', workspaceRoot, metadata: { goal_id: 'OBL-953' },
+        });
+        return taskStore.taskDisplayRefMap(taskStore.listTasks(db, { workspaceRoot })).get(id);
+      } finally {
+        taskStore.close();
+      }
+    };
+
+    const continueRef = seedTask('Run should continue one certified task and write a receipt');
     assert.equal(runCli([
       'task', 'ready', continueRef,
       '--as', 'codex',
@@ -8893,14 +9083,7 @@ test('task review-lane-run writes bounded receipts and stops before human accept
       '--next', 'Add a follow-up created by review lane run',
     ], { cwd: dir, env }).status, 0);
 
-    const waitingCreated = runCli([
-      'task', 'new', 'Run should leave human accept waiting alone',
-      '--tag', 'task',
-      '--goal-id', 'OBL-953',
-      '--json',
-    ], { cwd: dir, env });
-    assert.equal(waitingCreated.status, 0, waitingCreated.stderr);
-    const waitingRef = JSON.parse(waitingCreated.stdout).task.display_id;
+    const waitingRef = seedTask('Run should leave human accept waiting alone');
     assert.equal(runCli([
       'task', 'ready', waitingRef,
       '--as', 'codex',
@@ -8940,7 +9123,17 @@ test('task review-lane-run writes bounded receipts and stops before human accept
     assert.equal(fs.existsSync(receiptPath), false);
     assert.equal(fs.existsSync(latestPath), false);
 
-    const beforeWaiting = JSON.parse(runCli(['task', 'show', waitingRef, '--json'], { cwd: dir, env }).stdout);
+    const baselineDb = taskStore.open(dbPath);
+    let beforeWaiting;
+    try {
+      beforeWaiting = taskStore.taskProjection(baselineDb, { workspaceRoot })
+        .tasks.find(task => task.display_id === waitingRef);
+      assert.ok(beforeWaiting);
+      assert.equal(beforeWaiting.status, 'review');
+      assert.ok(beforeWaiting.current_version > 0);
+    } finally {
+      taskStore.close();
+    }
     const liveRun = runCli([
       'task', 'review-lane-run',
       '--goal-id', 'OBL-953',
@@ -8977,6 +9170,7 @@ test('task review-lane-run writes bounded receipts and stops before human accept
     assert.equal(latestReceipt.safety.human_accept, false);
 
     const afterWaiting = JSON.parse(runCli(['task', 'show', waitingRef, '--json'], { cwd: dir, env }).stdout);
+    assert.equal(afterWaiting.id, beforeWaiting.id);
     assert.equal(afterWaiting.current_version, beforeWaiting.current_version);
   } finally {
     cleanupTempDir(dir);
@@ -8991,21 +9185,40 @@ test('task review-lane-run does not repeat the same review_chat task across inne
   try {
     fs.mkdirSync(path.join(dir, 'atris'), { recursive: true });
 
-    const created = runCli([
-      'task', 'new', 'Run should not duplicate review chat packets',
-      '--tag', 'task',
-      '--goal-id', 'OBL-954',
-      '--json',
-    ], { cwd: dir, env });
-    assert.equal(created.status, 0, created.stderr);
-    const ref = JSON.parse(created.stdout).task.display_id;
+    // Only creation prepares the fixture; keep ready and every loop/drain
+    // command on the CLI, including ready's handling of an unclaimed task.
+    const workspaceRoot = taskStore.workspaceRoot(dir);
+    const db = taskStore.open(dbPath);
+    let ref;
+    try {
+      const { id } = addSeedTask(db, {
+        title: 'Run should not duplicate review chat packets',
+        tag: 'task',
+        workspaceRoot,
+        metadata: { goal_id: 'OBL-954' },
+      });
+      ref = taskStore.taskDisplayRefMap(taskStore.listTasks(db, { workspaceRoot })).get(id);
+    } finally {
+      taskStore.close();
+    }
     assert.equal(runCli([
       'task', 'ready', ref,
       '--as', 'codex',
       '--proof', 'node --check test/commands.test.js passed before review-lane-run duplicate guard',
     ], { cwd: dir, env }).status, 0);
 
-    const before = JSON.parse(runCli(['task', 'show', ref, '--json'], { cwd: dir, env }).stdout);
+    const baselineDb = taskStore.open(dbPath);
+    let before;
+    try {
+      before = taskStore.taskProjection(baselineDb, { workspaceRoot, includeHistory: true })
+        .tasks.find(task => task.display_id === ref);
+      assert.ok(before);
+      assert.equal(before.status, 'review');
+      assert.ok(before.current_version > 0);
+      assert.ok(Array.isArray(before.messages));
+    } finally {
+      taskStore.close();
+    }
     const beforeReviewChats = (before.messages || []).filter(message => /TASK_REVIEW_CHAT/.test(message.content || '')).length;
     const liveRun = runCli([
       'task', 'review-lane-run',
@@ -9033,6 +9246,7 @@ test('task review-lane-run does not repeat the same review_chat task across inne
 
     const after = JSON.parse(runCli(['task', 'show', ref, '--json'], { cwd: dir, env }).stdout);
     const afterReviewChats = (after.messages || []).filter(message => /TASK_REVIEW_CHAT/.test(message.content || '')).length;
+    assert.equal(after.id, before.id);
     assert.equal(after.current_version, before.current_version + 1);
     assert.equal(afterReviewChats, beforeReviewChats + 1);
 
@@ -9080,14 +9294,27 @@ test('task review-lane-drain skips continue-work rows with existing follow-up ch
   try {
     fs.mkdirSync(path.join(dir, 'atris'), { recursive: true });
 
-    const freshCreated = runCli([
-      'task', 'new', 'Drain should eventually choose this fresh continuation',
-      '--tag', 'task',
-      '--goal-id', 'OBL-953',
-      '--json',
-    ], { cwd: dir, env });
-    assert.equal(freshCreated.status, 0, freshCreated.stderr);
-    const freshRef = JSON.parse(freshCreated.stdout).task.display_id;
+    // Seed only the parents; keep ready, review, continuation and drain
+    // on the CLI so the existing-child behavior still uses the real commands.
+    const seedParent = (title) => {
+      const workspaceRoot = taskStore.workspaceRoot(dir);
+      const db = taskStore.open(dbPath);
+      try {
+        const added = addSeedTask(db, {
+          title,
+          tag: 'task',
+          workspaceRoot,
+          metadata: { goal_id: 'OBL-953' },
+        });
+        assert.equal(added.inserted, true);
+        const ref = taskStore.taskDisplayRefMap(taskStore.listTasks(db, { workspaceRoot })).get(added.id);
+        assert.ok(ref);
+        return ref;
+      } finally {
+        taskStore.close();
+      }
+    };
+    const freshRef = seedParent('Drain should eventually choose this fresh continuation');
     assert.equal(runCli([
       'task', 'ready', freshRef,
       '--as', 'codex',
@@ -9101,14 +9328,7 @@ test('task review-lane-drain skips continue-work rows with existing follow-up ch
       '--next', 'Add the fresh child selected by review lane drain',
     ], { cwd: dir, env }).status, 0);
 
-    const followedCreated = runCli([
-      'task', 'new', 'Drain should skip this already-followed continuation',
-      '--tag', 'task',
-      '--goal-id', 'OBL-953',
-      '--json',
-    ], { cwd: dir, env });
-    assert.equal(followedCreated.status, 0, followedCreated.stderr);
-    const followedRef = JSON.parse(followedCreated.stdout).task.display_id;
+    const followedRef = seedParent('Drain should skip this already-followed continuation');
     assert.equal(runCli([
       'task', 'ready', followedRef,
       '--as', 'codex',
@@ -9146,7 +9366,7 @@ test('task review-lane-drain skips continue-work rows with existing follow-up ch
     }).updated, true);
     const workspaceRoot = fs.realpathSync(dir);
     for (let i = 0; i < 9; i += 1) {
-      const filler = taskStore.addTask(db, {
+      const filler = addSeedTask(db, {
         title: `Projection filler done child ${i}`,
         workspaceRoot,
         status: 'done',
@@ -9207,13 +9427,26 @@ test('task events defaults to a recent compact view', () => {
   try {
     fs.mkdirSync(path.join(dir, 'atris'), { recursive: true });
 
-    const created = runCli(['task', 'new', 'Keep the ledger behind the cockpit', '--json'], { cwd: dir, env });
-    assert.equal(created.status, 0, created.stderr);
-    const id = JSON.parse(created.stdout).task_id;
-    for (let i = 0; i < 30; i += 1) {
-      const note = runCli(['task', 'say', id, `status note ${i}`, '--as', 'codex'], { cwd: dir, env });
-      assert.equal(note.status, 0, note.stderr);
+    // Seed the parent and first 29 notes directly; the newest still runs
+    // through the CLI so the events view reads what the CLI writes.
+    let id;
+    const db = taskStore.open(dbPath);
+    try {
+      const created = addSeedTask(db, {
+        title: 'Keep the ledger behind the cockpit',
+        tag: 'task',
+        workspaceRoot: taskStore.workspaceRoot(dir),
+      });
+      assert.equal(created.inserted, true);
+      id = created.id;
+      for (let i = 0; i < 29; i += 1) {
+        assert.equal(taskStore.noteTask(db, { id, actor: 'codex', content: `status note ${i}` }).noted, true);
+      }
+    } finally {
+      taskStore.close();
     }
+    const note = runCli(['task', 'say', id, 'status note 29', '--as', 'codex'], { cwd: dir, env });
+    assert.equal(note.status, 0, note.stderr);
 
     const recent = runCli(['task', 'events'], { cwd: dir, env });
     assert.equal(recent.status, 0, recent.stderr);
@@ -9261,11 +9494,23 @@ test('task note, show, and export expose a dialogue projection for UI surfaces',
   try {
     fs.mkdirSync(path.join(dir, 'atris'), { recursive: true });
 
-    const add = runCli(['task', 'add', 'Design task dialogue cards', '--tag', 'ui', '--json'], { cwd: dir, env });
-    assert.equal(add.status, 0, add.stderr);
-    const addPayload = JSON.parse(add.stdout);
-    const id = addPayload.task_id;
-    const ref = addPayload.task.display_id;
+    // Seed only the parent; dialogue writes and readers still use the CLI.
+    let id;
+    let ref;
+    const db = taskStore.open(dbPath);
+    try {
+      const created = addSeedTask(db, {
+        title: 'Design task dialogue cards',
+        tag: 'ui',
+        workspaceRoot: taskStore.workspaceRoot(dir),
+      });
+      assert.equal(created.inserted, true);
+      id = created.id;
+      ref = taskStore.withTaskDisplayRefs([taskStore.getTask(db, id)])[0].display_id;
+      assert.ok(ref);
+    } finally {
+      taskStore.close();
+    }
 
     const note = runCli(['task', 'note', ref, 'User wants Cursor-like task chat', '--as', 'codex'], { cwd: dir, env });
     assert.equal(note.status, 0, note.stderr);
@@ -9612,11 +9857,23 @@ test('task review writes a reviewed event and RSI episode jsonl', () => {
     fs.mkdirSync(path.join(dir, 'atris'), { recursive: true });
     fs.writeFileSync(path.join(dir, 'atris.md'), '# task tree\n', 'utf8');
 
-    const add = runCli(['task', 'add', 'Close RSI task loop', '--tag', 'rsi', '--json'], { cwd: dir, env });
-    assert.equal(add.status, 0, add.stderr);
-    const addPayload = JSON.parse(add.stdout);
-    const id = addPayload.task_id;
-    const ref = addPayload.task.display_id;
+    // Seed only the parent; done, review, and events still use the CLI.
+    let id;
+    let ref;
+    const db = taskStore.open(dbPath);
+    try {
+      const created = addSeedTask(db, {
+        title: 'Close RSI task loop',
+        tag: 'rsi',
+        workspaceRoot: taskStore.workspaceRoot(dir),
+      });
+      assert.equal(created.inserted, true);
+      id = created.id;
+      ref = taskStore.withTaskDisplayRefs([taskStore.getTask(db, id)])[0].display_id;
+      assert.ok(ref);
+    } finally {
+      taskStore.close();
+    }
     assert.equal(runCli(['task', 'done', ref, '--proof', 'node --test test/commands.test.js passed'], { cwd: dir, env }).status, 0);
 
     const review = runCli([
@@ -9677,9 +9934,20 @@ test('task done with proof writes a reviewed proof event', () => {
   try {
     fs.mkdirSync(path.join(dir, 'atris'), { recursive: true });
 
-    const add = runCli(['task', 'add', 'Validate proof persistence', '--tag', 'rsi'], { cwd: dir, env });
-    assert.equal(add.status, 0, add.stderr);
-    const id = add.stdout.trim().split('\t')[0];
+    // Seed only the parent; done and show still use the CLI.
+    let id;
+    const db = taskStore.open(dbPath);
+    try {
+      const created = addSeedTask(db, {
+        title: 'Validate proof persistence',
+        tag: 'rsi',
+        workspaceRoot: taskStore.workspaceRoot(dir),
+      });
+      assert.equal(created.inserted, true);
+      id = created.id;
+    } finally {
+      taskStore.close();
+    }
 
     const done = runCli([
       'task', 'done', id,
@@ -9721,17 +9989,36 @@ test('task plan and do record an explicit headless stage contract', () => {
   try {
     fs.mkdirSync(path.join(dir, 'atris'), { recursive: true });
 
-    const add = runCli(['task', 'add', 'Make task stage loop explicit', '--tag', 'capture', '--json'], { cwd: dir, env });
-    assert.equal(add.status, 0, add.stderr);
-    const ref = JSON.parse(add.stdout).task.display_id;
+    // Seed the four parents and the side plan; contract and ownership checks use the CLI.
+    // Display refs are numbered across the workspace, so compute them after all inserts.
+    let refs;
+    const db = taskStore.open(dbPath);
+    try {
+      const workspaceRoot = taskStore.workspaceRoot(dir);
+      const ids = [
+        'Make task stage loop explicit',
+        'Inline do must not skip plan',
+        'Do not plan another owner task',
+        'Do not start after external claim',
+      ].map((title) => {
+        const created = addSeedTask(db, { title, tag: 'capture', workspaceRoot });
+        assert.equal(created.inserted, true);
+        return created.id;
+      });
+      assert.equal(taskStore.claimTask(db, { id: ids[2], claimedBy: 'alice' }).claimed, true);
+      const byId = new Map(taskStore.withTaskDisplayRefs(taskStore.listTasks(db, { workspaceRoot }))
+        .map((row) => [row.id, row.display_id]));
+      refs = ids.map((id) => byId.get(id));
+      assert.equal(new Set(refs).size, 4);
+    } finally {
+      taskStore.close();
+    }
+    const [ref, inlineDoRef, ownedRef, claimedAfterPlanRef] = refs;
 
     const unplannedDo = runCli(['task', 'do', ref, '--as', 'codex', '--first-move', 'patch the CLI', '--json'], { cwd: dir, env });
     assert.equal(unplannedDo.status, 1);
     assert.equal(JSON.parse(unplannedDo.stdout).reason, 'goal_required');
 
-    const inlineDoTask = runCli(['task', 'add', 'Inline do must not skip plan', '--tag', 'capture', '--json'], { cwd: dir, env });
-    assert.equal(inlineDoTask.status, 0, inlineDoTask.stderr);
-    const inlineDoRef = JSON.parse(inlineDoTask.stdout).task.display_id;
     const inlineDo = runCli([
       'task', 'do', inlineDoRef,
       '--as', 'codex',
@@ -9743,10 +10030,6 @@ test('task plan and do record an explicit headless stage contract', () => {
     assert.equal(inlineDo.status, 1);
     assert.equal(JSON.parse(inlineDo.stdout).reason, 'plan_required');
 
-    const owned = runCli(['task', 'add', 'Do not plan another owner task', '--tag', 'capture', '--json'], { cwd: dir, env });
-    assert.equal(owned.status, 0, owned.stderr);
-    const ownedRef = JSON.parse(owned.stdout).task.display_id;
-    assert.equal(runCli(['task', 'claim', ownedRef, '--as', 'alice'], { cwd: dir, env }).status, 0);
     const otherOwnerPlan = runCli([
       'task', 'plan', ownedRef,
       '--as', 'codex',
@@ -9770,19 +10053,27 @@ test('task plan and do record an explicit headless stage contract', () => {
     assert.equal(otherOwnerPlanWithAssignee.status, 1);
     assert.equal(JSON.parse(otherOwnerPlanWithAssignee.stdout).reason, 'claimed_by_other');
 
-    const claimedAfterPlan = runCli(['task', 'add', 'Do not start after external claim', '--tag', 'capture', '--json'], { cwd: dir, env });
-    assert.equal(claimedAfterPlan.status, 0, claimedAfterPlan.stderr);
-    const claimedAfterPlanRef = JSON.parse(claimedAfterPlan.stdout).task.display_id;
-    const claimedAfterPlanStage = runCli([
-      'task', 'plan', claimedAfterPlanRef,
-      '--as', 'codex',
-      '--owner', 'codex',
-      '--goal', 'Keep planned owner aligned',
-      '--exit', 'claim owner and plan owner agree',
-      '--proof-needed', 'node --test task stage coverage passes',
-      '--json',
-    ], { cwd: dir, env });
-    assert.equal(claimedAfterPlanStage.status, 0, claimedAfterPlanStage.stderr);
+    // Only prepare the side plan here; the external claim and rejected do stay on the CLI.
+    const planDb = taskStore.open(dbPath);
+    try {
+      const sideTask = taskStore.withTaskDisplayRefs(taskStore.listTasks(planDb, {
+        workspaceRoot: taskStore.workspaceRoot(dir),
+      })).find((row) => row.display_id === claimedAfterPlanRef);
+      assert.ok(sideTask);
+      const staged = taskStore.stageTask(planDb, {
+        id: sideTask.id,
+        actor: 'codex',
+        stage: 'plan',
+        owner: 'codex',
+        ownerExplicit: true,
+        goal: 'Keep planned owner aligned',
+        exit: 'claim owner and plan owner agree',
+        proofNeeded: 'node --test task stage coverage passes',
+      });
+      assert.equal(staged.staged, true);
+    } finally {
+      taskStore.close();
+    }
     assert.equal(runCli(['task', 'claim', claimedAfterPlanRef, '--as', 'alice'], { cwd: dir, env }).status, 0);
     const claimedConflictDo = runCli([
       'task', 'do', claimedAfterPlanRef,
@@ -10135,9 +10426,21 @@ test('task chat refines a durable goal before plan', () => {
   try {
     fs.mkdirSync(path.join(dir, 'atris'), { recursive: true });
 
-    const add = runCli(['task', 'add', 'Make a vague task useful', '--tag', 'capture', '--json'], { cwd: dir, env });
-    assert.equal(add.status, 0, add.stderr);
-    const ref = JSON.parse(add.stdout).task.display_id;
+    // Seed only the parent; chat, clear-plan, show, and plan still use the CLI.
+    let ref;
+    const db = taskStore.open(dbPath);
+    try {
+      const created = addSeedTask(db, {
+        title: 'Make a vague task useful',
+        tag: 'capture',
+        workspaceRoot: taskStore.workspaceRoot(dir),
+      });
+      assert.equal(created.inserted, true);
+      ref = taskStore.withTaskDisplayRefs([taskStore.getTask(db, created.id)])[0].display_id;
+      assert.ok(ref);
+    } finally {
+      taskStore.close();
+    }
 
     const emptyChat = runCli(['task', 'chat', ref, '--json'], { cwd: dir, env });
     assert.equal(emptyChat.status, 2);
@@ -10195,9 +10498,23 @@ test('task page exposes one-task goal chat stage and review actions', () => {
   try {
     fs.mkdirSync(path.join(dir, 'atris'), { recursive: true });
 
-    const add = runCli(['task', 'add', 'Make one task page useful', '--tag', 'capture', '--json'], { cwd: dir, env });
-    assert.equal(add.status, 0, add.stderr);
-    const ref = JSON.parse(add.stdout).task.display_id;
+    // Seed both parents in process; page, chat, plan, ready, review, and show still use the CLI.
+    let ref;
+    let taskId;
+    const db = taskStore.open(dbPath);
+    try {
+      const created = addSeedTask(db, {
+        title: 'Make one task page useful',
+        tag: 'capture',
+        workspaceRoot: taskStore.workspaceRoot(dir),
+      });
+      assert.equal(created.inserted, true);
+      taskId = created.id;
+      ref = taskStore.withTaskDisplayRefs([taskStore.getTask(db, created.id)])[0].display_id;
+      assert.ok(ref);
+    } finally {
+      taskStore.close();
+    }
 
     const firstPage = runCli(['task', 'page', ref, '--json'], { cwd: dir, env });
     assert.equal(firstPage.status, 0, firstPage.stderr);
@@ -10247,8 +10564,15 @@ test('task page exposes one-task goal chat stage and review actions', () => {
     assert.match(planned.stage.next_action.command, new RegExp(`atris task do ${ref}`));
     assert.equal(planned.stage.rail.find(item => item.key === 'plan').state, 'current');
 
-    const doing = runCli(['task', 'do', ref, '--as', 'codex', '--first-move', 'patch the page contract', '--json'], { cwd: dir, env });
-    assert.equal(doing.status, 0, doing.stderr);
+    // Do is one stageTask call, and the page reads the store, so stage it in
+    // process; the Do page itself still runs on the CLI.
+    const doDb = taskStore.open(dbPath);
+    try {
+      const doing = taskStore.stageTask(doDb, { id: taskId, actor: 'codex', stage: 'do', owner: 'codex', firstMove: 'patch the page contract' });
+      assert.equal(doing.staged, true, doing.reason);
+    } finally {
+      taskStore.close();
+    }
 
     const doPage = runCli(['task', 'page', ref, '--json'], { cwd: dir, env });
     assert.equal(doPage.status, 0, doPage.stderr);
@@ -10316,17 +10640,27 @@ test('task page exposes one-task goal chat stage and review actions', () => {
     assert.equal(certifiedShow.status, 0, certifiedShow.stderr);
     assert.equal(JSON.parse(certifiedShow.stdout).review.verification_chat, undefined);
 
-    const legacyAdd = runCli(['task', 'add', 'Legacy done row still needs review', '--tag', 'capture', '--json'], { cwd: dir, env });
-    assert.equal(legacyAdd.status, 0, legacyAdd.stderr);
-    const legacyAddPayload = JSON.parse(legacyAdd.stdout);
-    const legacyRef = legacyAddPayload.task.display_id;
+    // The legacy row is seeded only after the first task is certified, matching the old order.
+    // Display refs are numbered across the workspace, so compute this one from the full list.
+    let legacyRef;
     const previousTaskDb = process.env.ATRIS_TASKS_DB;
     const taskDb = require('../lib/task-db');
     try {
       process.env.ATRIS_TASKS_DB = dbPath;
       taskDb.close();
       const db = taskDb.open();
-      const legacyDone = taskDb.doneTask(db, { id: legacyAddPayload.task_id, status: 'done', actor: 'codex' });
+      const workspaceRoot = taskDb.workspaceRoot(dir);
+      const legacyCreated = taskDb.addTask(db, {
+        title: 'Legacy done row still needs review',
+        tag: 'capture',
+        workspaceRoot,
+      });
+      assert.equal(legacyCreated.inserted, true);
+      legacyRef = taskDb.withTaskDisplayRefs(taskDb.listTasks(db, { workspaceRoot }))
+        .find((row) => row.id === legacyCreated.id).display_id;
+      assert.ok(legacyRef);
+      assert.notEqual(legacyRef, ref);
+      const legacyDone = taskDb.doneTask(db, { id: legacyCreated.id, status: 'done', actor: 'codex' });
       assert.equal(legacyDone.updated, true);
       taskDb.close();
     } finally {
@@ -10358,9 +10692,21 @@ test('task step advances one safe headless action and never human-accepts', () =
   try {
     fs.mkdirSync(path.join(dir, 'atris'), { recursive: true });
 
-    const add = runCli(['task', 'add', 'Drive task loop from a single headless step', '--tag', 'capture', '--json'], { cwd: dir, env });
-    assert.equal(add.status, 0, add.stderr);
-    const ref = JSON.parse(add.stdout).task.display_id;
+    // Seed only the parent; step, review, and show still use the CLI.
+    let ref;
+    const db = taskStore.open(dbPath);
+    try {
+      const created = addSeedTask(db, {
+        title: 'Drive task loop from a single headless step',
+        tag: 'capture',
+        workspaceRoot: taskStore.workspaceRoot(dir),
+      });
+      assert.equal(created.inserted, true);
+      ref = taskStore.withTaskDisplayRefs([taskStore.getTask(db, created.id)])[0].display_id;
+      assert.ok(ref);
+    } finally {
+      taskStore.close();
+    }
 
     const missingGoal = runCli(['task', 'step', ref, '--exit', 'needs a goal first', '--proof-needed', 'node --check missing goal coverage passes', '--json'], { cwd: dir, env });
     assert.equal(missingGoal.status, 2);
@@ -10475,16 +10821,54 @@ test('task current-step advances the scoped current task one safe action', () =>
   const env = { ATRIS_TASKS_DB: dbPath, NODE_NO_WARNINGS: '1', ATRIS_AGENT_ID: 'codex', ATRIS_SKIP_UPDATE_CHECK: '1' };
   try {
     fs.mkdirSync(path.join(dir, 'atris'), { recursive: true });
+    // Side tasks are created and claimed straight in the task store; every
+    // current-step call still runs through the CLI.
+    const workspaceRoot = taskStore.workspaceRoot(dir);
+    const seedClaimedTask = ({ title, tag, goalId, owner }) => {
+      const db = taskStore.open(dbPath);
+      try {
+        const metadata = goalId ? { goal_id: goalId } : null;
+        const { id } = addSeedTask(db, { title, tag, workspaceRoot, metadata });
+        assert.equal(taskStore.claimTask(db, { id, claimedBy: owner }).claimed, true);
+        return { id, display_id: taskStore.taskDisplayRefMap(taskStore.listTasks(db, { workspaceRoot })).get(id) };
+      } finally {
+        taskStore.close();
+      }
+    };
+    // Side tasks only need a review state for current-step to pick from, so
+    // ready and review go straight to the store; the scoped task still moves
+    // through ready and review-chat via the CLI.
+    const storeReady = (id, actor, proof) => {
+      const db = taskStore.open(dbPath);
+      try {
+        assert.equal(taskStore.readyTask(db, { id, actor, proof }).ready, true);
+      } finally {
+        taskStore.close();
+      }
+    };
+    const storeReview = (id, proof, nextTask) => {
+      const db = taskStore.open(dbPath);
+      try {
+        assert.equal(taskStore.reviewTask(db, { id, actor: 'codex-review', reward: 0, proof, nextTask }).reviewed, true);
+      } finally {
+        taskStore.close();
+      }
+    };
+    // Show is the store projection plus enrichment, so untouched-task checks
+    // read it in-process; the scoped show below still runs the CLI and
+    // proves the two reads agree.
+    const { enrichTaskProjection } = require('../commands/task');
+    const showTask = (id) => {
+      const db = taskStore.open(dbPath);
+      try {
+        return enrichTaskProjection(taskStore.taskProjection(db, { taskId: id })).tasks[0];
+      } finally {
+        taskStore.close();
+      }
+    };
 
-    const reviewAdd = runCli(['task', 'add', 'Unrelated review debt stays global', '--tag', 'agent', '--json'], { cwd: dir, env });
-    assert.equal(reviewAdd.status, 0, reviewAdd.stderr);
-    const reviewTask = JSON.parse(reviewAdd.stdout).task;
-    assert.equal(runCli(['task', 'claim', reviewTask.display_id, '--as', 'codex'], { cwd: dir, env }).status, 0);
-    assert.equal(runCli([
-      'task', 'ready', reviewTask.display_id,
-      '--as', 'codex',
-      '--proof', 'node --check test/commands.test.js passed for unrelated review debt',
-    ], { cwd: dir, env }).status, 0);
+    const reviewTask = seedClaimedTask({ title: 'Unrelated review debt stays global', tag: 'agent', owner: 'codex' });
+    storeReady(reviewTask.id, 'codex', 'node --check test/commands.test.js passed for unrelated review debt');
 
     const scopedAdd = runCli([
       'task', 'add', 'Scoped current step task',
@@ -10576,58 +10960,25 @@ test('task current-step advances the scoped current task one safe action', () =>
     assert.equal(reviewChatPayload.page.review.human_accept.enabled, true);
     assert.equal(reviewChatPayload.safety.human_accept, false);
 
-    const reviewShow = runCli(['task', 'show', reviewTask.display_id, '--json'], { cwd: dir, env });
-    assert.equal(reviewShow.status, 0, reviewShow.stderr);
-    assert.equal(JSON.parse(reviewShow.stdout).messages.some(message => message.content.includes('TASK_REVIEW_CHAT')), false);
+    assert.equal(showTask(reviewTask.id).messages.some(message => message.content.includes('TASK_REVIEW_CHAT')), false);
     const scopedShow = runCli(['task', 'show', scopedTask.display_id, '--json'], { cwd: dir, env });
     assert.equal(scopedShow.status, 0, scopedShow.stderr);
     const scopedDetail = JSON.parse(scopedShow.stdout);
     assert.equal(scopedDetail.status, 'review');
     assert.equal(scopedDetail.review.approval_status, 'pending');
     assert.ok(scopedDetail.messages.some(message => message.content.includes('TASK_REVIEW_CHAT')));
+    const scopedInProcess = showTask(scopedTask.id);
+    assert.equal(scopedInProcess.status, scopedDetail.status);
+    assert.equal(scopedInProcess.review.approval_status, scopedDetail.review.approval_status);
+    assert.deepEqual(scopedInProcess.messages, scopedDetail.messages);
 
-    const continueAdd = runCli([
-      'task', 'add', 'Current-step certified continuation parent',
-      '--tag', 'task',
-      '--goal-id', 'OBL-931',
-      '--json',
-    ], { cwd: dir, env });
-    assert.equal(continueAdd.status, 0, continueAdd.stderr);
-    const continueTask = JSON.parse(continueAdd.stdout).task;
-    assert.equal(runCli(['task', 'claim', continueTask.display_id, '--as', 'codex'], { cwd: dir, env }).status, 0);
-    assert.equal(runCli([
-      'task', 'ready', continueTask.display_id,
-      '--as', 'codex',
-      '--proof', 'node --check test/commands.test.js passed before current-step continue-work',
-    ], { cwd: dir, env }).status, 0);
-    assert.equal(runCli([
-      'task', 'review', continueTask.display_id,
-      '--reward', '0',
-      '--as', 'codex-review',
-      '--proof', 'node --test test/commands.test.js passed during current-step continue-work review',
-      '--next', 'Current-step continuation child',
-    ], { cwd: dir, env }).status, 0);
+    const continueTask = seedClaimedTask({ title: 'Current-step certified continuation parent', tag: 'task', goalId: 'OBL-931', owner: 'codex' });
+    storeReady(continueTask.id, 'codex', 'node --check test/commands.test.js passed before current-step continue-work');
+    storeReview(continueTask.id, 'node --test test/commands.test.js passed during current-step continue-work review', 'Current-step continuation child');
 
-    const waitingAdd = runCli([
-      'task', 'add', 'Current-step waits for human accept only',
-      '--tag', 'task',
-      '--goal-id', 'OBL-931',
-      '--json',
-    ], { cwd: dir, env });
-    assert.equal(waitingAdd.status, 0, waitingAdd.stderr);
-    const waitingTask = JSON.parse(waitingAdd.stdout).task;
-    assert.equal(runCli(['task', 'claim', waitingTask.display_id, '--as', 'codex'], { cwd: dir, env }).status, 0);
-    assert.equal(runCli([
-      'task', 'ready', waitingTask.display_id,
-      '--as', 'codex',
-      '--proof', 'node --check test/commands.test.js passed before current-step human wait',
-    ], { cwd: dir, env }).status, 0);
-    assert.equal(runCli([
-      'task', 'review', waitingTask.display_id,
-      '--reward', '0',
-      '--as', 'codex-review',
-      '--proof', 'node --test test/commands.test.js passed during current-step human wait review',
-    ], { cwd: dir, env }).status, 0);
+    const waitingTask = seedClaimedTask({ title: 'Current-step waits for human accept only', tag: 'task', goalId: 'OBL-931', owner: 'codex' });
+    storeReady(waitingTask.id, 'codex', 'node --check test/commands.test.js passed before current-step human wait');
+    storeReview(waitingTask.id, 'node --test test/commands.test.js passed during current-step human wait review');
 
     const continueStep = runCli([
       'task', 'current-step',
@@ -10653,9 +11004,7 @@ test('task current-step advances the scoped current task one safe action', () =>
     assert.equal(continueStepPayload.page.task.id, continueStepPayload.step.next_task.id);
     assert.equal(continueStepPayload.safety.human_accept, false);
     assert.equal(continueStepPayload.safety.claims_work, false);
-    const continueParentShow = runCli(['task', 'show', continueTask.display_id, '--json'], { cwd: dir, env });
-    assert.equal(continueParentShow.status, 0, continueParentShow.stderr);
-    const continueParentDetail = JSON.parse(continueParentShow.stdout);
+    const continueParentDetail = showTask(continueTask.id);
     assert.equal(continueParentDetail.status, 'review');
     assert.equal(continueParentDetail.review.approval_status, 'pending');
 
@@ -10677,21 +11026,11 @@ test('task current-step advances the scoped current task one safe action', () =>
     assert.equal(waitingStepPayload.current.next.key, 'human_accept_waiting');
     assert.equal(waitingStepPayload.page.stage.next_action.command, null);
     assert.equal(waitingStepPayload.page.stage.next_action.api, null);
-    const waitingShow = runCli(['task', 'show', waitingTask.display_id, '--json'], { cwd: dir, env });
-    assert.equal(waitingShow.status, 0, waitingShow.stderr);
-    const waitingDetail = JSON.parse(waitingShow.stdout);
+    const waitingDetail = showTask(waitingTask.id);
     assert.equal(waitingDetail.status, 'review');
     assert.equal(waitingDetail.review.approval_status, 'pending');
 
-    const otherAdd = runCli([
-      'task', 'add', 'Other owner scoped task stays untouched',
-      '--tag', 'task',
-      '--goal-id', 'OBL-929',
-      '--json',
-    ], { cwd: dir, env });
-    assert.equal(otherAdd.status, 0, otherAdd.stderr);
-    const otherTask = JSON.parse(otherAdd.stdout).task;
-    assert.equal(runCli(['task', 'claim', otherTask.display_id, '--as', 'other-agent'], { cwd: dir, env }).status, 0);
+    const otherTask = seedClaimedTask({ title: 'Other owner scoped task stays untouched', tag: 'task', goalId: 'OBL-929', owner: 'other-agent' });
     const otherStep = runCli([
       'task', 'current-step',
       '--goal-id', 'OBL-929',
@@ -10708,26 +11047,12 @@ test('task current-step advances the scoped current task one safe action', () =>
     assert.equal(otherPayload.current.selected_task_id, otherTask.id);
     assert.equal(otherPayload.current.selected_ref, otherTask.display_id);
     assert.equal(otherPayload.current.selected_reason, 'active_do_elsewhere');
-    const otherShow = runCli(['task', 'show', otherTask.display_id, '--json'], { cwd: dir, env });
-    assert.equal(otherShow.status, 0, otherShow.stderr);
-    const otherDetail = JSON.parse(otherShow.stdout);
+    const otherDetail = showTask(otherTask.id);
     assert.equal(otherDetail.status, 'claimed');
     assert.equal(otherDetail.claimed_by, 'other-agent');
 
-    const otherReviewAdd = runCli([
-      'task', 'add', 'Other owner review task stays untouched',
-      '--tag', 'task',
-      '--goal-id', 'OBL-930',
-      '--json',
-    ], { cwd: dir, env });
-    assert.equal(otherReviewAdd.status, 0, otherReviewAdd.stderr);
-    const otherReviewTask = JSON.parse(otherReviewAdd.stdout).task;
-    assert.equal(runCli(['task', 'claim', otherReviewTask.display_id, '--as', 'other-agent'], { cwd: dir, env }).status, 0);
-    assert.equal(runCli([
-      'task', 'ready', otherReviewTask.display_id,
-      '--as', 'other-agent',
-      '--proof', 'node --check test/commands.test.js passed before other owner review',
-    ], { cwd: dir, env }).status, 0);
+    const otherReviewTask = seedClaimedTask({ title: 'Other owner review task stays untouched', tag: 'task', goalId: 'OBL-930', owner: 'other-agent' });
+    storeReady(otherReviewTask.id, 'other-agent', 'node --check test/commands.test.js passed before other owner review');
     const otherReviewStep = runCli([
       'task', 'current-step',
       '--goal-id', 'OBL-930',
@@ -10741,9 +11066,7 @@ test('task current-step advances the scoped current task one safe action', () =>
     assert.equal(otherReviewPayload.reason, 'claimed_by_other');
     assert.equal(otherReviewPayload.current.selected_task_id, otherReviewTask.id);
     assert.equal(otherReviewPayload.current.selected_reason, 'review_needs_agent_verification');
-    const otherReviewShow = runCli(['task', 'show', otherReviewTask.display_id, '--json'], { cwd: dir, env });
-    assert.equal(otherReviewShow.status, 0, otherReviewShow.stderr);
-    const otherReviewDetail = JSON.parse(otherReviewShow.stdout);
+    const otherReviewDetail = showTask(otherReviewTask.id);
     assert.equal(otherReviewDetail.status, 'review');
     assert.equal(otherReviewDetail.claimed_by, 'other-agent');
     assert.equal(otherReviewDetail.messages.some(message => message.content.includes('TASK_REVIEW_CHAT')), false);
@@ -10760,10 +11083,28 @@ test('task current returns read-only selected page and queue lanes', () => {
   try {
     fs.mkdirSync(path.join(dir, 'atris'), { recursive: true });
 
-    const reviewAdd = runCli(['task', 'add', 'Verify this task before more work', '--tag', 'agent', '--json'], { cwd: dir, env });
-    assert.equal(reviewAdd.status, 0, reviewAdd.stderr);
-    const reviewTask = JSON.parse(reviewAdd.stdout).task;
-    assert.equal(runCli(['task', 'claim', reviewTask.display_id, '--as', 'codex'], { cwd: dir, env }).status, 0);
+    // Seed tasks straight in the task store at their original points; ready,
+    // current, queue, and every selection check still run through the CLI.
+    // Display refs are numbered across the workspace, so read them after inserts.
+    const workspaceRoot = taskStore.workspaceRoot(dir);
+    const seedTasks = (specs) => {
+      const db = taskStore.open(dbPath);
+      try {
+        const ids = specs.map(({ title, tag, goalId, claimedBy }) => {
+          const metadata = goalId ? { goal_id: goalId } : null;
+          const created = addSeedTask(db, { title, tag, workspaceRoot, metadata });
+          assert.equal(created.inserted, true);
+          if (claimedBy) assert.equal(taskStore.claimTask(db, { id: created.id, claimedBy }).claimed, true);
+          return created.id;
+        });
+        const refs = taskStore.taskDisplayRefMap(taskStore.listTasks(db, { workspaceRoot }));
+        return ids.map((id) => ({ id, display_id: refs.get(id) }));
+      } finally {
+        taskStore.close();
+      }
+    };
+
+    const [reviewTask] = seedTasks([{ title: 'Verify this task before more work', tag: 'agent', claimedBy: 'codex' }]);
 	    assert.equal(runCli([
 	      'task', 'ready', reviewTask.display_id,
 	      '--as', 'codex',
@@ -10771,30 +11112,13 @@ test('task current returns read-only selected page and queue lanes', () => {
 	      '--next', 'Create a continuation only after agent certification',
 	    ], { cwd: dir, env }).status, 0);
 
-    const planAdd = runCli(['task', 'add', 'Plan ready fallback task', '--tag', 'agent', '--json'], { cwd: dir, env });
-    assert.equal(planAdd.status, 0, planAdd.stderr);
-    const planTask = JSON.parse(planAdd.stdout).task;
-
-    const scopedPlanAdd = runCli([
-      'task', 'add', 'Scoped OBL-928 fallback task',
-      '--tag', 'agent',
-      '--goal-id', 'OBL-928',
-      '--json',
-    ], { cwd: dir, env });
-    assert.equal(scopedPlanAdd.status, 0, scopedPlanAdd.stderr);
-    const scopedPlanTask = JSON.parse(scopedPlanAdd.stdout).task;
-    const scopedParallelAdd = runCli([
-      'task', 'add', 'Scoped OBL-928 validator task should wait',
-      '--tag', 'agent',
-      '--goal-id', 'OBL-928',
-      '--json',
-    ], { cwd: dir, env });
-    assert.equal(scopedParallelAdd.status, 0, scopedParallelAdd.stderr);
-    const scopedParallelTask = JSON.parse(scopedParallelAdd.stdout).task;
-
-    const backlogAdd = runCli(['task', 'add', 'Raw inbox idea', '--tag', 'capture', '--json'], { cwd: dir, env });
-    assert.equal(backlogAdd.status, 0, backlogAdd.stderr);
-    const backlogTask = JSON.parse(backlogAdd.stdout).task;
+    const [planTask, scopedPlanTask, scopedParallelTask, backlogTask] = seedTasks([
+      { title: 'Plan ready fallback task', tag: 'agent' },
+      { title: 'Scoped OBL-928 fallback task', tag: 'agent', goalId: 'OBL-928' },
+      { title: 'Scoped OBL-928 validator task should wait', tag: 'agent', goalId: 'OBL-928' },
+      { title: 'Raw inbox idea', tag: 'capture' },
+    ]);
+    assert.equal(new Set([reviewTask, planTask, scopedPlanTask, scopedParallelTask, backlogTask].map((task) => task.display_id)).size, 5);
 
     const current = runCli(['task', 'current', '--as', 'codex', '--json'], { cwd: dir, env });
     assert.equal(current.status, 0, current.stderr);
@@ -10965,7 +11289,7 @@ test('task current returns read-only selected page and queue lanes', () => {
   }
 });
 
-test('task backlog and clear-plan demote only planned open tasks', () => {
+test('task backlog and clear-plan demote only planned open tasks', async () => {
   if (!hasNodeSqlite()) return;
   const dir = makeTempDir();
   const dbPath = path.join(dir, 'tasks.db');
@@ -10976,21 +11300,30 @@ test('task backlog and clear-plan demote only planned open tasks', () => {
     fs.mkdirSync(path.join(dir, 'atris'), { recursive: true });
     const workspaceRoot = fs.realpathSync(dir);
 
-    const raw = runCli(['task', 'add', 'Raw capture stays backlog', '--tag', 'capture', '--json'], { cwd: dir, env });
-    assert.equal(raw.status, 0, raw.stderr);
-    const rawRef = JSON.parse(raw.stdout).task.display_id;
-
-    const single = runCli(['task', 'add', 'Single planned row moves back', '--tag', 'plan', '--json'], { cwd: dir, env });
-    assert.equal(single.status, 0, single.stderr);
-    const singleRef = JSON.parse(single.stdout).task.display_id;
-    assert.equal(runCli([
-      'task', 'plan', singleRef,
-      '--as', 'codex',
-      '--goal', 'Single row has a plan',
-      '--exit', 'single row can be demoted',
-      '--proof-needed', 'node --test task backlog coverage passes',
-      '--json',
-    ], { cwd: dir, env }).status, 0);
+    // Seed both rows in creation order; backlog, show and do stay on the CLI.
+    let rawRef;
+    let singleRef;
+    const seedDb = taskDb.open(dbPath);
+    try {
+      const raw = addSeedTask(seedDb, { title: 'Raw capture stays backlog', tag: 'capture', workspaceRoot });
+      const single = addSeedTask(seedDb, { title: 'Single planned row moves back', tag: 'plan', workspaceRoot });
+      assert.equal(raw.inserted && single.inserted, true);
+      const planned = taskDb.stageTask(seedDb, {
+        id: single.id,
+        actor: 'codex',
+        stage: 'plan',
+        goal: 'Single row has a plan',
+        exit: 'single row can be demoted',
+        proofNeeded: 'node --test task backlog coverage passes',
+      });
+      assert.equal(planned.staged, true, planned.reason);
+      const refs = taskDb.taskDisplayRefMap(taskDb.listTasks(seedDb, { workspaceRoot }));
+      rawRef = refs.get(raw.id);
+      singleRef = refs.get(single.id);
+    } finally {
+      taskDb.close();
+    }
+    assert.ok(rawRef && singleRef);
 
     const singleBacklog = runCli(['task', 'backlog', singleRef, '--as', 'codex', '--reason', 'operator moved it', '--tag', 'feature', '--json'], { cwd: dir, env });
     assert.equal(singleBacklog.status, 0, singleBacklog.stderr);
@@ -11049,14 +11382,17 @@ test('task backlog and clear-plan demote only planned open tasks', () => {
     for (const key of ['goal', 'loop', 'cron', 'next_run_at']) {
       assert.ok(signalBacklogPayload.cleared_keys.includes(key), `${key} should be cleared`);
     }
-    const signalShow = runCli(['task', 'show', signalTask.id, '--json'], { cwd: dir, env });
+    // Show reads and the second backlog refuses before any write, so both run at once.
+    const [signalShow, signalBacklogAgain] = await Promise.all([
+      runCliAsync(['task', 'show', signalTask.id, '--json'], { cwd: dir, env }),
+      runCliAsync(['task', 'backlog', signalTask.id, '--as', 'codex', '--json'], { cwd: dir, env }),
+    ]);
     assert.equal(signalShow.status, 0, signalShow.stderr);
     const signalShowTask = JSON.parse(signalShow.stdout);
     assert.equal(signalShowTask.metadata.goal, undefined);
     assert.equal(signalShowTask.metadata.loop, undefined);
     assert.equal(signalShowTask.metadata.cron, undefined);
     assert.equal(signalShowTask.metadata.next_run_at, undefined);
-    const signalBacklogAgain = runCli(['task', 'backlog', signalTask.id, '--as', 'codex', '--json'], { cwd: dir, env });
     assert.equal(signalBacklogAgain.status, 1);
     assert.equal(JSON.parse(signalBacklogAgain.stdout).reason, 'not_planned');
 
@@ -11084,19 +11420,28 @@ test('task backlog and clear-plan demote only planned open tasks', () => {
     const goalOnlyBacklogAfterPlan = runCli(['task', 'backlog', goalOnlyTask.id, '--as', 'codex', '--reason', 'operator cleared real plan', '--json'], { cwd: dir, env });
     assert.equal(goalOnlyBacklogAfterPlan.status, 0, goalOnlyBacklogAfterPlan.stderr);
 
-    const delegated = runCli(['task', 'delegate', 'Delegated planned row keeps owner', '--to', 'alice', '--tag', 'capture', '--json'], { cwd: dir, env });
-    assert.equal(delegated.status, 0, delegated.stderr);
-    const delegatedRef = JSON.parse(delegated.stdout).task.display_id;
-    const delegatedPlan = runCli([
-      'task', 'plan', delegatedRef,
-      '--as', 'alice',
-      '--owner', 'alice',
-      '--goal', 'Delegated owner has a plan',
-      '--exit', 'owner survives demotion',
-      '--proof-needed', 'owner preservation regression passes',
-      '--json',
-    ], { cwd: dir, env });
-    assert.equal(delegatedPlan.status, 0, delegatedPlan.stderr);
+    // Delegate has its own tests; seed the owner fields it writes so backlog,
+    // which must keep them, stays the only CLI step for this row.
+    const delegated = addSeedTask(db, {
+      title: 'Delegated planned row keeps owner',
+      tag: 'capture',
+      workspaceRoot,
+      metadata: { assigned_to: 'alice', delegate_via: 'local' },
+    });
+    assert.equal(delegated.inserted, true);
+    const delegatedRef = taskDb.taskDisplayRefMap(taskDb.listTasks(db, { workspaceRoot })).get(delegated.id);
+    assert.ok(delegatedRef);
+    const delegatedPlan = taskDb.stageTask(db, {
+      id: delegated.id,
+      actor: 'alice',
+      stage: 'plan',
+      owner: 'alice',
+      ownerExplicit: true,
+      goal: 'Delegated owner has a plan',
+      exit: 'owner survives demotion',
+      proofNeeded: 'owner preservation regression passes',
+    });
+    assert.equal(delegatedPlan.staged, true, delegatedPlan.reason);
     const delegatedBacklog = runCli(['task', 'backlog', delegatedRef, '--as', 'alice', '--reason', 'operator cleared delegated plan', '--json'], { cwd: dir, env });
     assert.equal(delegatedBacklog.status, 0, delegatedBacklog.stderr);
     const delegatedShow = runCli(['task', 'show', delegatedRef, '--json'], { cwd: dir, env });
@@ -11106,29 +11451,27 @@ test('task backlog and clear-plan demote only planned open tasks', () => {
     assert.equal(delegatedTask.metadata.delegate_via, 'local');
     assert.equal(delegatedTask.metadata.stage_owner, undefined);
 
-    const bulkA = runCli(['task', 'add', 'Bulk planned A', '--tag', 'feature', '--json'], { cwd: dir, env });
-    const bulkB = runCli(['task', 'add', 'Bulk planned B', '--tag', 'capture', '--json'], { cwd: dir, env });
-    const claimed = runCli(['task', 'add', 'Claimed Do row stays active', '--tag', 'plan', '--json'], { cwd: dir, env });
-    assert.equal(bulkA.status, 0, bulkA.stderr);
-    assert.equal(bulkB.status, 0, bulkB.stderr);
-    assert.equal(claimed.status, 0, claimed.stderr);
-    const bulkARef = JSON.parse(bulkA.stdout).task.display_id;
-    const bulkBRef = JSON.parse(bulkB.stdout).task.display_id;
-    const claimedRef = JSON.parse(claimed.stdout).task.display_id;
-    for (const ref of [bulkARef, bulkBRef, claimedRef]) {
-      const planned = runCli([
-        'task', 'plan', ref,
-        '--as', 'codex',
-        '--owner', 'codex',
-        '--goal', `Goal ${ref}`,
-        '--exit', `Exit ${ref}`,
-        '--proof-needed', `Proof ${ref}`,
-        '--json',
-      ], { cwd: dir, env });
-      assert.equal(planned.status, 0, planned.stderr);
-    }
-    const claimedDo = runCli(['task', 'do', claimedRef, '--as', 'codex', '--first-move', 'keep doing this row', '--json'], { cwd: dir, env });
-    assert.equal(claimedDo.status, 0, claimedDo.stderr);
+    // The plan and do commands are one stageTask call each; seed the bulk rows through the store.
+    const seedPlanned = (title, tag) => {
+      const { id } = taskDb.addTask(db, { title, tag, workspaceRoot });
+      const planned = taskDb.stageTask(db, {
+        id,
+        actor: 'codex',
+        stage: 'plan',
+        owner: 'codex',
+        ownerExplicit: true,
+        goal: `Goal ${title}`,
+        exit: `Exit ${title}`,
+        proofNeeded: `Proof ${title}`,
+      });
+      assert.equal(planned.staged, true, planned.reason);
+      return id;
+    };
+    const bulkAId = seedPlanned('Bulk planned A', 'feature');
+    const bulkBId = seedPlanned('Bulk planned B', 'capture');
+    const claimedId = seedPlanned('Claimed Do row stays active', 'plan');
+    const claimedDo = taskDb.stageTask(db, { id: claimedId, actor: 'codex', stage: 'do', owner: 'codex', firstMove: 'keep doing this row' });
+    assert.equal(claimedDo.staged, true, claimedDo.reason);
 
     const missingConfirm = runCli(['task', 'clear-plan', '--json'], { cwd: dir, env });
     assert.equal(missingConfirm.status, 2);
@@ -11139,21 +11482,24 @@ test('task backlog and clear-plan demote only planned open tasks', () => {
     const clearedPayload = JSON.parse(cleared.stdout);
     assert.equal(clearedPayload.action, 'clear_plan');
     assert.equal(clearedPayload.cleared_count, 2);
-    assert.deepEqual(clearedPayload.tasks.map(task => task.display_id).sort(), [bulkARef, bulkBRef].sort());
+    assert.deepEqual(clearedPayload.tasks.map(task => task.id).sort(), [bulkAId, bulkBId].sort());
     assert.ok(clearedPayload.tasks.every(task => task.tag === 'capture'));
 
-    const status = runCli(['task', 'status', '--json'], { cwd: dir, env });
+    // Every write is done; the closing reads run at once.
+    const [status, claimedShow, rawShow] = await Promise.all([
+      runCliAsync(['task', 'status', '--json'], { cwd: dir, env }),
+      runCliAsync(['task', 'show', claimedId, '--json'], { cwd: dir, env }),
+      runCliAsync(['task', 'show', rawRef, '--json'], { cwd: dir, env }),
+    ]);
     assert.equal(status.status, 0, status.stderr);
     const counts = JSON.parse(status.stdout).status.counts;
     assert.equal(counts.plan, 0);
     assert.equal(counts.do, 1);
     assert.equal(counts.backlog, 7);
 
-    const claimedShow = runCli(['task', 'show', claimedRef, '--json'], { cwd: dir, env });
     assert.equal(claimedShow.status, 0, claimedShow.stderr);
     assert.equal(JSON.parse(claimedShow.stdout).status, 'claimed');
 
-    const rawShow = runCli(['task', 'show', rawRef, '--json'], { cwd: dir, env });
     assert.equal(rawShow.status, 0, rawShow.stderr);
     assert.equal(JSON.parse(rawShow.stdout).latest_event_type, 'created');
   } finally {
@@ -11170,9 +11516,18 @@ test('task review does not mint AgentXP before the task is done', () => {
   try {
     fs.mkdirSync(path.join(dir, 'atris'), { recursive: true });
 
-    const add = runCli(['task', 'add', 'Do not pay XP before accept', '--tag', 'agent-xp', '--json'], { cwd: dir, env });
-    assert.equal(add.status, 0, add.stderr);
-    const ref = JSON.parse(add.stdout).task.display_id;
+    // Seed the open task; the review, XP status and refused accept stay on the CLI.
+    const workspaceRoot = taskStore.workspaceRoot(dir);
+    const db = taskStore.open(dbPath);
+    let ref;
+    try {
+      const created = addSeedTask(db, { title: 'Do not pay XP before accept', tag: 'agent-xp', workspaceRoot });
+      assert.equal(created.inserted, true);
+      ref = taskStore.taskDisplayRefMap(taskStore.listTasks(db, { workspaceRoot })).get(created.id);
+      assert.ok(ref);
+    } finally {
+      taskStore.close();
+    }
 
     const review = runCli([
       'task', 'review', ref,
@@ -11210,20 +11565,37 @@ test('task ready holds work in review until human accept', () => {
   try {
     fs.mkdirSync(path.join(dir, 'atris'), { recursive: true });
     writePolicy(dir, { enabled: false, enabled_by: 'keshavrao' });
+    // Side tasks and padding notes go straight to the task store; every
+    // step this test asserts on still runs through the CLI.
+    const workspaceRoot = taskStore.workspaceRoot(dir);
+    const withStore = (fn) => {
+      const db = taskStore.open(dbPath);
+      try {
+        return fn(db);
+      } finally {
+        taskStore.close();
+      }
+    };
+    const seedClaimedTask = (title) => withStore((db) => {
+      const created = addSeedTask(db, { title, tag: 'agent', workspaceRoot });
+      assert.equal(taskStore.claimTask(db, { id: created.id, claimedBy: 'codex' }).claimed, true);
+      return created.id;
+    });
 
-    const add = runCli([
-      'task', 'add', 'Approve autonomous work before XP',
-      '--tag', 'agent',
-      '--goal-id', 'goal-agent-xp',
-      '--goal-objective', 'Make AgentXP recruitable',
-      '--json',
-    ], { cwd: dir, env });
-    assert.equal(add.status, 0, add.stderr);
-    const created = JSON.parse(add.stdout);
-    const ref = created.task.display_id;
-    assert.equal(created.task.metadata.goal_id, 'goal-agent-xp');
-    assert.equal(created.task.metadata.goal_objective, 'Make AgentXP recruitable');
-    assert.equal(runCli(['task', 'claim', ref, '--as', 'codex'], { cwd: dir, env }).status, 0);
+    // Seed the goal fields task add writes for its goal flags; the local XP
+    // ledger test still checks them on a real add.
+    const ref = withStore((db) => {
+      const created = addSeedTask(db, {
+        title: 'Approve autonomous work before XP',
+        tag: 'agent',
+        workspaceRoot,
+        metadata: { goal_id: 'goal-agent-xp', task_goal: 'Make AgentXP recruitable', goal_objective: 'Make AgentXP recruitable' },
+      });
+      assert.equal(created.inserted, true);
+      assert.equal(taskStore.claimTask(db, { id: created.id, claimedBy: 'codex' }).claimed, true);
+      return taskStore.taskDisplayRefMap(taskStore.listTasks(db, { workspaceRoot })).get(created.id);
+    });
+    assert.ok(ref);
 
     const ready = runCli([
       'task', 'ready', ref,
@@ -11360,9 +11732,7 @@ test('task ready holds work in review until human accept', () => {
     const prematureDonePayload = JSON.parse(prematureDone.stdout);
     assert.equal(prematureDonePayload.reason, 'not_open_or_claimed');
     assert.match(prematureDonePayload.detail, /not in open\|claimed/);
-    const stillReview = runCli(['task', 'show', ref, '--json'], { cwd: dir, env });
-    assert.equal(stillReview.status, 0, stillReview.stderr);
-    assert.equal(JSON.parse(stillReview.stdout).status, 'review');
+    assert.equal(withStore((db) => taskStore.getTask(db, readyPayload.task.id).status), 'review');
 
     const certifiedShow = runCli(['task', 'show', ref], { cwd: dir, env });
     assert.equal(certifiedShow.status, 0, certifiedShow.stderr);
@@ -11370,10 +11740,12 @@ test('task ready holds work in review until human accept', () => {
 	    assert.match(certifiedShow.stdout, /Landing: waiting on human/);
 	    assert.match(certifiedShow.stdout, /Checked: yes \(3 agent checks\)/);
 
-	    for (let i = 0; i < 10; i += 1) {
-	      const note = runCli(['task', 'note', ref, `post-ready context ${i}`, '--as', 'codex'], { cwd: dir, env });
-	      assert.equal(note.status, 0, note.stderr);
-	    }
+	    withStore((db) => {
+	      for (let i = 0; i < 10; i += 1) {
+	        const note = taskStore.noteTask(db, { id: readyPayload.task.id, actor: 'codex', content: `post-ready context ${i}` });
+	        assert.equal(note.noted, true, note.reason);
+	      }
+	    });
 
     const statusAfterCertification = runCli(['task', 'status', '--json'], { cwd: dir, env });
     assert.equal(statusAfterCertification.status, 0, statusAfterCertification.stderr);
@@ -11408,10 +11780,7 @@ test('task ready holds work in review until human accept', () => {
     assert.equal(nextPayload.command, `atris task accept ${ref}`);
     assert.equal(nextPayload.task_id, certifiedPayload.task.id);
 
-    const textAdd = runCli(['task', 'add', 'Render native goal handoff copy', '--tag', 'agent', '--json'], { cwd: dir, env });
-    assert.equal(textAdd.status, 0, textAdd.stderr);
-    const textRef = JSON.parse(textAdd.stdout).task.display_id;
-    assert.equal(runCli(['task', 'claim', textRef, '--as', 'codex'], { cwd: dir, env }).status, 0);
+    const textRef = seedClaimedTask('Render native goal handoff copy');
     const readyText = runCli([
       'task', 'ready', textRef,
       '--proof', 'second validation pass',
@@ -11448,19 +11817,19 @@ test('task ready holds work in review until human accept', () => {
     assert.equal(acceptPayload.xp_projection.total_xp, 1);
     assert.equal(acceptPayload.xp_projection.latest_accepted_proof.source_task_id, acceptPayload.task_id);
 
-    const clearCli = runCli(['task', 'add', 'Clear stale CLI review guidance', '--tag', 'agent', '--json'], { cwd: dir, env });
-    assert.equal(clearCli.status, 0, clearCli.stderr);
-    const clearCliRef = JSON.parse(clearCli.stdout).task.display_id;
-    assert.equal(runCli(['task', 'claim', clearCliRef, '--as', 'codex'], { cwd: dir, env }).status, 0);
-    const clearCliReady = runCli([
-      'task', 'ready', clearCliRef,
-      '--proof', 'cli clear validation passed',
-      '--lesson', 'stale CLI lesson',
-      '--next', 'stale CLI next',
-      '--as', 'codex',
-      '--json',
-    ], { cwd: dir, env });
-    assert.equal(clearCliReady.status, 0, clearCliReady.stderr);
+    const clearCliRef = seedClaimedTask('Clear stale CLI review guidance');
+    // Only seed stale guidance here; acceptance still clears it on the CLI.
+    withStore((db) => {
+      const seeded = taskStore.readyTask(db, {
+        id: clearCliRef,
+        actor: 'codex',
+        proof: 'cli clear validation passed',
+        lesson: 'stale CLI lesson',
+        nextTask: 'stale CLI next',
+        result: FIXTURE_RESULT_SENTENCE,
+      });
+      assert.equal(seeded.ready, true, seeded.reason);
+    });
     const clearCliAccept = runCli([
       'task', 'accept', clearCliRef,
       '--as', 'keshavrao',
@@ -11477,9 +11846,9 @@ test('task ready holds work in review until human accept', () => {
     assert.equal(Object.prototype.hasOwnProperty.call(clearCliPayload.task.review, 'lesson'), false);
     assert.equal(Object.prototype.hasOwnProperty.call(clearCliPayload.task.review, 'next_task'), false);
 
-	    const events = runCli(['task', 'events', ref, '--json'], { cwd: dir, env });
-	    assert.equal(events.status, 0, events.stderr);
-	    const eventTypes = JSON.parse(events.stdout).events.map(event => event.event_type);
+	    // Same rows the events command prints for one task: oldest first, up to 500.
+	    const eventTypes = withStore((db) => taskStore.listTaskEvents(db, { taskId: readyPayload.task.id, limit: 500 }))
+	      .map(event => event.event_type);
 	    assert.deepEqual(eventTypes.slice(0, 6), ['created', 'claimed', 'proof_ready', 'message', 'reviewed', 'proof_ready']);
 	    assert.deepEqual(eventTypes.slice(-2), ['completed', 'reviewed']);
   } finally {
@@ -11498,13 +11867,22 @@ test('task ready uses autoland-aware handoff copy when policy is on', () => {
     fs.writeFileSync(path.join(dir, 'atris', 'runs', 'autoland-tick-live.json'), '{}\n');
     writePolicy(dir, { enabled: true, enabled_by: 'keshavrao' });
 
-    const add = runCli([
-      'task', 'add', 'Autoland ready messaging',
-      '--tag', 'agent',
-      '--json',
-    ], { cwd: dir, env });
-    assert.equal(add.status, 0, add.stderr);
-    const ref = JSON.parse(add.stdout).task.display_id;
+    // Seed all three tasks in creation order; every claim and ready stays on the CLI.
+    const workspaceRoot = taskStore.workspaceRoot(dir);
+    const db = taskStore.open(dbPath);
+    let ref;
+    let textRef;
+    let externalRef;
+    try {
+      const created = ['Autoland ready messaging', 'Autoland ready text copy', 'Autoland external verifier copy']
+        .map((title) => addSeedTask(db, { title, tag: 'agent', workspaceRoot }));
+      created.forEach((row) => assert.equal(row.inserted, true));
+      const refs = taskStore.taskDisplayRefMap(taskStore.listTasks(db, { workspaceRoot }));
+      [ref, textRef, externalRef] = created.map((row) => refs.get(row.id));
+      assert.ok(ref && textRef && externalRef);
+    } finally {
+      taskStore.close();
+    }
     assert.equal(runCli(['task', 'claim', ref, '--as', 'codex'], { cwd: dir, env }).status, 0);
 
     const ready = runCli([
@@ -11524,9 +11902,6 @@ test('task ready uses autoland-aware handoff copy when policy is on', () => {
       'proof is ready; one more agent check before human approval. XP waits for the human.',
     );
 
-    const textAdd = runCli(['task', 'add', 'Autoland ready text copy', '--tag', 'agent', '--json'], { cwd: dir, env });
-    assert.equal(textAdd.status, 0, textAdd.stderr);
-    const textRef = JSON.parse(textAdd.stdout).task.display_id;
     assert.equal(runCli(['task', 'claim', textRef, '--as', 'codex'], { cwd: dir, env }).status, 0);
     const readyText = runCli([
       'task', 'ready', textRef,
@@ -11537,9 +11912,6 @@ test('task ready uses autoland-aware handoff copy when policy is on', () => {
     assert.match(readyText.stdout, /proof is ready; autoland runs the second check and accepts it on the next tick; it lands once committed and merged\./);
     assert.doesNotMatch(readyText.stdout, /one more agent check before human approval/);
 
-    const externalAdd = runCli(['task', 'add', 'Autoland external verifier copy', '--tag', 'agent', '--json'], { cwd: dir, env });
-    assert.equal(externalAdd.status, 0, externalAdd.stderr);
-    const externalRef = JSON.parse(externalAdd.stdout).task.display_id;
     assert.equal(runCli(['task', 'claim', externalRef, '--as', 'codex'], { cwd: dir, env }).status, 0);
     const externalReady = runCli([
       'task', 'ready', externalRef,
@@ -11570,13 +11942,21 @@ test('task ready uses honest landing copy when autoland heartbeat is stale', () 
     const threeHoursAgo = Date.now() - (3 * 60 * 60 * 1000);
     fs.utimesSync(stalePath, threeHoursAgo / 1000, threeHoursAgo / 1000);
 
-    const add = runCli([
-      'task', 'add', 'Stale heartbeat ready wording',
-      '--tag', 'agent',
-      '--json',
-    ], { cwd: dir, env });
-    assert.equal(add.status, 0, add.stderr);
-    const ref = JSON.parse(add.stdout).task.display_id;
+    // Seed both tasks in creation order; every claim and ready stays on the CLI.
+    const workspaceRoot = taskStore.workspaceRoot(dir);
+    const db = taskStore.open(dbPath);
+    let ref;
+    let textRef;
+    try {
+      const created = ['Stale heartbeat ready wording', 'Stale heartbeat text copy']
+        .map((title) => addSeedTask(db, { title, tag: 'agent', workspaceRoot }));
+      created.forEach((row) => assert.equal(row.inserted, true));
+      const refs = taskStore.taskDisplayRefMap(taskStore.listTasks(db, { workspaceRoot }));
+      [ref, textRef] = created.map((row) => refs.get(row.id));
+      assert.ok(ref && textRef);
+    } finally {
+      taskStore.close();
+    }
     assert.equal(runCli(['task', 'claim', ref, '--as', 'codex'], { cwd: dir, env }).status, 0);
 
     const ready = runCli([
@@ -11593,9 +11973,6 @@ test('task ready uses honest landing copy when autoland heartbeat is stale', () 
     );
     assert.doesNotMatch(ready.stdout, /on the next tick/);
 
-    const textAdd = runCli(['task', 'add', 'Stale heartbeat text copy', '--tag', 'agent', '--json'], { cwd: dir, env });
-    assert.equal(textAdd.status, 0, textAdd.stderr);
-    const textRef = JSON.parse(textAdd.stdout).task.display_id;
     assert.equal(runCli(['task', 'claim', textRef, '--as', 'codex'], { cwd: dir, env }).status, 0);
     const readyText = runCli([
       'task', 'ready', textRef,
@@ -11669,20 +12046,37 @@ test('task review-chat emits proof-specific verifier packet', () => {
   try {
     fs.mkdirSync(path.join(dir, 'atris'), { recursive: true });
 
-    const add = runCli([
-      'task', 'add', 'Verify review chat specificity',
-      '--tag', 'agent',
-      '--goal-objective', 'Make Review chat tell Codex exactly what to verify',
-      '--json',
-    ], { cwd: dir, env });
-    assert.equal(add.status, 0, add.stderr);
-    const ref = JSON.parse(add.stdout).task.display_id;
+    // Creation and claiming only prepare the fixture. Keep the open-task
+    // rejection and every proof/review command on the CLI.
+    const workspaceRoot = taskStore.workspaceRoot(dir);
+    const db = taskStore.open(dbPath);
+    let id;
+    let ref;
+    try {
+      ({ id } = addSeedTask(db, {
+        title: 'Verify review chat specificity',
+        tag: 'agent',
+        workspaceRoot,
+        metadata: {
+          task_goal: 'Make Review chat tell Codex exactly what to verify',
+          goal_objective: 'Make Review chat tell Codex exactly what to verify',
+        },
+      }));
+      ref = taskStore.taskDisplayRefMap(taskStore.listTasks(db, { workspaceRoot })).get(id);
+    } finally {
+      taskStore.close();
+    }
 
     const tooEarly = runCli(['task', 'review-chat', ref, '--json'], { cwd: dir, env });
     assert.equal(tooEarly.status, 1);
     assert.equal(JSON.parse(tooEarly.stdout).reason, 'not_reviewable_open');
 
-    assert.equal(runCli(['task', 'claim', ref, '--as', 'codex'], { cwd: dir, env }).status, 0);
+    const claimDb = taskStore.open(dbPath);
+    try {
+      assert.equal(taskStore.claimTask(claimDb, { id, claimedBy: 'codex' }).claimed, true);
+    } finally {
+      taskStore.close();
+    }
     const proofContext = `${'context '.repeat(180)}Long proofs can carry setup notes before the verification commands.`;
     const proof = [
       proofContext,
@@ -11804,11 +12198,28 @@ test('task review-chat extracts only proof-derived verifier commands', () => {
   const env = { ATRIS_TASKS_DB: dbPath, NODE_NO_WARNINGS: '1', ATRIS_AGENT_ID: 'codex' };
   try {
     fs.mkdirSync(path.join(dir, 'atris'), { recursive: true });
+    // Setup goes straight to the task store so only ready and review-chat
+    // launch the CLI. Ready and review-chat build the command list from the
+    // saved proof alone, so plain cases call that builder in-process; the
+    // first and last plain cases run both commands and prove all three match.
+    const { taskReviewLanding, taskReviewVerificationFocus } = require('../commands/task');
+    const proofCommands = (proof) => taskReviewVerificationFocus({ review: { proof } }).commands_to_verify;
+    const workspaceRoot = taskStore.workspaceRoot(dir);
+    // With only a proof given, ready writes the checked and tested sentences
+    // from that proof, so landing-only cases call the same builder in-process.
+    const proofLanding = (proof) => taskReviewLanding({ title: 'Proof landing', metadata: {}, workspace_root: dir }, { proof });
+    const seedClaimedTask = (title) => {
+      const db = taskStore.open(dbPath);
+      try {
+        const created = addSeedTask(db, { title, workspaceRoot });
+        assert.equal(taskStore.claimTask(db, { id: created.id, claimedBy: 'codex' }).claimed, true);
+        return created.id;
+      } finally {
+        taskStore.close();
+      }
+    };
 
-    const semicolonTask = runCli(['task', 'new', 'Semicolon proof commands', '--json'], { cwd: dir, env });
-    assert.equal(semicolonTask.status, 0, semicolonTask.stderr);
-    const semicolonRef = JSON.parse(semicolonTask.stdout).task.display_id;
-    assert.equal(runCli(['task', 'claim', semicolonRef, '--as', 'codex'], { cwd: dir, env }).status, 0);
+    const semicolonRef = seedClaimedTask('Semicolon proof commands');
     const semicolonReady = runCli([
       'task', 'ready', semicolonRef,
       '--as', 'codex',
@@ -11818,183 +12229,94 @@ test('task review-chat extracts only proof-derived verifier commands', () => {
     assert.equal(semicolonReady.status, 0, semicolonReady.stderr);
     const semicolonChat = runCli(['task', 'review-chat', semicolonRef, '--json'], { cwd: dir, env });
     assert.equal(semicolonChat.status, 0, semicolonChat.stderr);
+    assert.deepEqual(
+      JSON.parse(semicolonChat.stdout).contract.verification_focus.commands_to_verify,
+      JSON.parse(semicolonReady.stdout).handoff.verification_focus.commands_to_verify,
+      'review-chat shows the same commands ready already printed',
+    );
+    assert.deepEqual(
+      proofCommands('`node --check commands/task.js` passed; `node --check test/commands.test.js` passed'),
+      JSON.parse(semicolonReady.stdout).handoff.verification_focus.commands_to_verify,
+      'the in-process builder matches what ready printed',
+    );
     assert.deepEqual(JSON.parse(semicolonChat.stdout).contract.verification_focus.commands_to_verify, [
       'node --check commands/task.js',
       'node --check test/commands.test.js',
     ]);
 
-    const commaTask = runCli(['task', 'new', 'Comma proof commands', '--json'], { cwd: dir, env });
-    assert.equal(commaTask.status, 0, commaTask.stderr);
-    const commaRef = JSON.parse(commaTask.stdout).task.display_id;
-    assert.equal(runCli(['task', 'claim', commaRef, '--as', 'codex'], { cwd: dir, env }).status, 0);
-    const commaReady = runCli([
-      'task', 'ready', commaRef,
-      '--as', 'codex',
-      '--proof', 'Installed Atris review-chat command extraction changed. Verification passed: node --check commands/task.js, verified node --check test/commands.test.js 295/295, scoped git status --porcelain -- commands/task.js test/commands.test.js clean, live ATRIS_SKIP_UPDATE_CHECK=1 atris task status --json returned ok',
-      '--json',
-    ], { cwd: dir, env });
-    assert.equal(commaReady.status, 0, commaReady.stderr);
-    const commaChat = runCli(['task', 'review-chat', commaRef, '--json'], { cwd: dir, env });
-    assert.equal(commaChat.status, 0, commaChat.stderr);
-    assert.deepEqual(JSON.parse(commaChat.stdout).contract.verification_focus.commands_to_verify, [
+    assert.deepEqual(proofCommands('Installed Atris review-chat command extraction changed. Verification passed: node --check commands/task.js, verified node --check test/commands.test.js 295/295, scoped git status --porcelain -- commands/task.js test/commands.test.js clean, live ATRIS_SKIP_UPDATE_CHECK=1 atris task status --json returned ok'), [
       'node --check commands/task.js',
       'node --check test/commands.test.js',
       'git status --porcelain -- commands/task.js test/commands.test.js',
       'ATRIS_SKIP_UPDATE_CHECK=1 atris task status --json',
     ]);
 
-    const narratedTask = runCli(['task', 'new', 'Narrated CLI proof commands', '--json'], { cwd: dir, env });
-    assert.equal(narratedTask.status, 0, narratedTask.stderr);
-    const narratedRef = JSON.parse(narratedTask.stdout).task.display_id;
-    assert.equal(runCli(['task', 'claim', narratedRef, '--as', 'codex'], { cwd: dir, env }).status, 0);
-    const narratedReady = runCli([
-      'task', 'ready', narratedRef,
-      '--as', 'codex',
-      '--proof', 'Validation passed: node /Users/owner/arena/atris-cli/bin/atris.js business check printed Ready: yes; node /Users/owner/arena/atris-cli/bin/atris.js business share --write wrote atris/reports/share.md; node /Users/owner/arena/atris-cli/bin/atris.js app list reported agentgrads-match-room runtime=local',
-      '--json',
-    ], { cwd: dir, env });
-    assert.equal(narratedReady.status, 0, narratedReady.stderr);
-    const narratedChat = runCli(['task', 'review-chat', narratedRef, '--json'], { cwd: dir, env });
-    assert.equal(narratedChat.status, 0, narratedChat.stderr);
-    assert.deepEqual(JSON.parse(narratedChat.stdout).contract.verification_focus.commands_to_verify, [
+    assert.deepEqual(proofCommands('Validation passed: node /Users/owner/arena/atris-cli/bin/atris.js business check printed Ready: yes; node /Users/owner/arena/atris-cli/bin/atris.js business share --write wrote atris/reports/share.md; node /Users/owner/arena/atris-cli/bin/atris.js app list reported agentgrads-match-room runtime=local'), [
       'node /Users/owner/arena/atris-cli/bin/atris.js business check',
       'node /Users/owner/arena/atris-cli/bin/atris.js business share --write',
       'node /Users/owner/arena/atris-cli/bin/atris.js app list',
     ]);
 
-    const pathPassedTask = runCli(['task', 'new', 'Path then passed proof commands', '--json'], { cwd: dir, env });
-    assert.equal(pathPassedTask.status, 0, pathPassedTask.stderr);
-    const pathPassedRef = JSON.parse(pathPassedTask.stdout).task.display_id;
-    assert.equal(runCli(['task', 'claim', pathPassedRef, '--as', 'codex'], { cwd: dir, env }).status, 0);
-    const pathPassedReady = runCli([
-      'task', 'ready', pathPassedRef,
-      '--as', 'codex',
-      '--proof', 'Inspected commands/workflow.js, bin/atris.js, and atris/MAP.md. Passed: node --check commands/workflow.js; node --check test/apps.test.js (11/11); git status --porcelain -- commands/workflow.js bin/atris.js atris/MAP.md clean',
-      '--json',
-    ], { cwd: dir, env });
-    assert.equal(pathPassedReady.status, 0, pathPassedReady.stderr);
-    const pathPassedChat = runCli(['task', 'review-chat', pathPassedRef, '--json'], { cwd: dir, env });
-    assert.equal(pathPassedChat.status, 0, pathPassedChat.stderr);
-    assert.deepEqual(JSON.parse(pathPassedChat.stdout).contract.verification_focus.commands_to_verify, [
+    assert.deepEqual(proofCommands('Inspected commands/workflow.js, bin/atris.js, and atris/MAP.md. Passed: node --check commands/workflow.js; node --check test/apps.test.js (11/11); git status --porcelain -- commands/workflow.js bin/atris.js atris/MAP.md clean'), [
       'node --check commands/workflow.js',
       'node --check test/apps.test.js',
       'git status --porcelain -- commands/workflow.js bin/atris.js atris/MAP.md',
     ]);
 
-    const chainedTask = runCli(['task', 'new', 'Chained proof commands', '--json'], { cwd: dir, env });
-    assert.equal(chainedTask.status, 0, chainedTask.stderr);
-    const chainedRef = JSON.parse(chainedTask.stdout).task.display_id;
-    assert.equal(runCli(['task', 'claim', chainedRef, '--as', 'codex'], { cwd: dir, env }).status, 0);
-    const chainedReady = runCli([
-      'task', 'ready', chainedRef,
-      '--as', 'codex',
-      '--proof', 'Verified node --check commands/task.js && node --check lib/task-db.js; node --check test/auto-accept-certified.test.js 6/6; typecheck passed; installed Atris review-chat command extraction changed; installed atris temp review-chat smoke confirmed specificity; installed atris smoke confirmed review-chat specificity',
-      '--json',
-    ], { cwd: dir, env });
-    assert.equal(chainedReady.status, 0, chainedReady.stderr);
-    const chainedChat = runCli(['task', 'review-chat', chainedRef, '--json'], { cwd: dir, env });
-    assert.equal(chainedChat.status, 0, chainedChat.stderr);
-    assert.deepEqual(JSON.parse(chainedChat.stdout).contract.verification_focus.commands_to_verify, [
+    assert.deepEqual(proofCommands('Verified node --check commands/task.js && node --check lib/task-db.js; node --check test/auto-accept-certified.test.js 6/6; typecheck passed; installed Atris review-chat command extraction changed; installed atris temp review-chat smoke confirmed specificity; installed atris smoke confirmed review-chat specificity'), [
       'node --check commands/task.js',
       'node --check lib/task-db.js',
       'node --check test/auto-accept-certified.test.js',
     ]);
 
-    const fencedTask = runCli(['task', 'new', 'Fenced proof commands', '--json'], { cwd: dir, env });
-    assert.equal(fencedTask.status, 0, fencedTask.stderr);
-    const fencedRef = JSON.parse(fencedTask.stdout).task.display_id;
-    assert.equal(runCli(['task', 'claim', fencedRef, '--as', 'codex'], { cwd: dir, env }).status, 0);
-    const fencedReady = runCli([
-      'task', 'ready', fencedRef,
-      '--as', 'codex',
-      '--proof', '```bash\nnode --check commands/task.js\nnode --check test/json-output.test.js passed\n```',
-      '--json',
-    ], { cwd: dir, env });
-    assert.equal(fencedReady.status, 0, fencedReady.stderr);
-    const fencedChat = runCli(['task', 'review-chat', fencedRef, '--json'], { cwd: dir, env });
-    assert.equal(fencedChat.status, 0, fencedChat.stderr);
-    assert.deepEqual(JSON.parse(fencedChat.stdout).contract.verification_focus.commands_to_verify, [
+    assert.deepEqual(proofCommands('```bash\nnode --check commands/task.js\nnode --check test/json-output.test.js passed\n```'), [
       'node --check commands/task.js',
       'node --check test/json-output.test.js',
     ]);
 
-    const titleOnlyTask = runCli(['task', 'new', 'Fix git diff display', '--json'], { cwd: dir, env });
-    assert.equal(titleOnlyTask.status, 0, titleOnlyTask.stderr);
-    const titleOnlyRef = JSON.parse(titleOnlyTask.stdout).task.display_id;
-    assert.equal(runCli(['task', 'claim', titleOnlyRef, '--as', 'codex'], { cwd: dir, env }).status, 0);
-    const titleOnlyReady = runCli([
-      'task', 'ready', titleOnlyRef,
-      '--as', 'codex',
-      '--proof', 'manual browser validation passed',
-      '--json',
-    ], { cwd: dir, env });
-    assert.equal(titleOnlyReady.status, 0, titleOnlyReady.stderr);
+    const titleOnlyRef = seedClaimedTask('Fix git diff display');
+    // Readiness only seeds the proof here; review-chat reads it on the CLI.
+    const titleOnlyDb = taskStore.open(dbPath);
+    try {
+      const seeded = taskStore.readyTask(titleOnlyDb, { id: titleOnlyRef, actor: 'codex', proof: 'manual browser validation passed' });
+      assert.equal(seeded.ready, true, seeded.reason);
+    } finally {
+      taskStore.close();
+    }
     const titleOnlyChat = runCli(['task', 'review-chat', titleOnlyRef, '--json'], { cwd: dir, env });
     assert.equal(titleOnlyChat.status, 0, titleOnlyChat.stderr);
     const titleOnlyPayload = JSON.parse(titleOnlyChat.stdout);
     assert.deepEqual(titleOnlyPayload.contract.verification_focus.commands_to_verify, []);
     assert.match(titleOnlyPayload.contract.required_checks.join('\n'), /Find the concrete verifier command/);
 
-    const pathOnlyTask = runCli(['task', 'new', 'Inspect artifact path', '--json'], { cwd: dir, env });
-    assert.equal(pathOnlyTask.status, 0, pathOnlyTask.stderr);
-    const pathOnlyRef = JSON.parse(pathOnlyTask.stdout).task.display_id;
-    assert.equal(runCli(['task', 'claim', pathOnlyRef, '--as', 'codex'], { cwd: dir, env }).status, 0);
-    const pathOnlyReady = runCli([
-      'task', 'ready', pathOnlyRef,
-      '--as', 'codex',
-      '--proof', 'inspected commands/git-diff.js passed',
-      '--json',
-    ], { cwd: dir, env });
-    assert.equal(pathOnlyReady.status, 0, pathOnlyReady.stderr);
+    const pathOnlyRef = seedClaimedTask('Inspect artifact path');
+    // Readiness only seeds the proof here; review-chat reads it on the CLI.
+    const pathOnlyDb = taskStore.open(dbPath);
+    try {
+      const seeded = taskStore.readyTask(pathOnlyDb, { id: pathOnlyRef, actor: 'codex', proof: 'inspected commands/git-diff.js passed' });
+      assert.equal(seeded.ready, true, seeded.reason);
+    } finally {
+      taskStore.close();
+    }
     const pathOnlyChat = runCli(['task', 'review-chat', pathOnlyRef, '--json'], { cwd: dir, env });
     assert.equal(pathOnlyChat.status, 0, pathOnlyChat.stderr);
     const pathOnlyPayload = JSON.parse(pathOnlyChat.stdout);
     assert.deepEqual(pathOnlyPayload.contract.verification_focus.commands_to_verify, []);
     assert.ok(pathOnlyPayload.contract.verification_focus.files_to_inspect.includes('commands/git-diff.js'));
 
-    const detailTask = runCli(['task', 'new', 'Trim status details', '--json'], { cwd: dir, env });
-    assert.equal(detailTask.status, 0, detailTask.stderr);
-    const detailRef = JSON.parse(detailTask.stdout).task.display_id;
-    assert.equal(runCli(['task', 'claim', detailRef, '--as', 'codex'], { cwd: dir, env }).status, 0);
-    const detailReady = runCli([
-      'task', 'ready', detailRef,
-      '--as', 'codex',
-      '--proof', 'Full `node --check test/commands.test.js` passed: 299 tests, 0 failures.',
-      '--json',
-    ], { cwd: dir, env });
-    assert.equal(detailReady.status, 0, detailReady.stderr);
-    const detailChat = runCli(['task', 'review-chat', detailRef, '--json'], { cwd: dir, env });
-    assert.equal(detailChat.status, 0, detailChat.stderr);
-    assert.deepEqual(JSON.parse(detailChat.stdout).contract.verification_focus.commands_to_verify, [
+    assert.deepEqual(proofCommands('Full `node --check test/commands.test.js` passed: 299 tests, 0 failures.'), [
       'node --check test/commands.test.js',
     ]);
 
-    const punctuationTask = runCli(['task', 'new', 'Trim status punctuation', '--json'], { cwd: dir, env });
-    assert.equal(punctuationTask.status, 0, punctuationTask.stderr);
-    const punctuationRef = JSON.parse(punctuationTask.stdout).task.display_id;
-    assert.equal(runCli(['task', 'claim', punctuationRef, '--as', 'codex'], { cwd: dir, env }).status, 0);
-    const punctuationReady = runCli([
-      'task', 'ready', punctuationRef,
-      '--as', 'codex',
-      '--proof', 'node --check test/commands.test.js passed.',
-      '--json',
-    ], { cwd: dir, env });
-    assert.equal(punctuationReady.status, 0, punctuationReady.stderr);
-    const punctuationChat = runCli(['task', 'review-chat', punctuationRef, '--json'], { cwd: dir, env });
-    assert.equal(punctuationChat.status, 0, punctuationChat.stderr);
-    assert.deepEqual(JSON.parse(punctuationChat.stdout).contract.verification_focus.commands_to_verify, [
+    assert.deepEqual(proofCommands('node --check test/commands.test.js passed.'), [
       'node --check test/commands.test.js',
     ]);
 
-    const bracketTask = runCli(['task', 'new', 'Bracket proof list', '--json'], { cwd: dir, env });
-    assert.equal(bracketTask.status, 0, bracketTask.stderr);
-    const bracketRef = JSON.parse(bracketTask.stdout).task.display_id;
-    assert.equal(runCli(['task', 'claim', bracketRef, '--as', 'codex'], { cwd: dir, env }).status, 0);
+    const bracketRef = seedClaimedTask('Bracket proof list');
     const bracketProof = 'live review-chat dry-run emitted [node --check commands/task.js, node --check test/commands.test.js, git diff --check]';
-    const bracketRow = JSON.parse(runCli(['task', 'show', bracketRef, '--json'], { cwd: dir, env }).stdout);
     const bracketDb = taskStore.open(dbPath);
     try {
-      const seeded = taskStore.readyTask(bracketDb, { id: bracketRow.id, actor: 'codex', proof: bracketProof });
+      const seeded = taskStore.readyTask(bracketDb, { id: bracketRef, actor: 'codex', proof: bracketProof });
       assert.equal(seeded.ready, true, seeded.reason);
     } finally {
       taskStore.close();
@@ -12007,355 +12329,96 @@ test('task review-chat extracts only proof-derived verifier commands', () => {
       'git diff --check',
     ]);
 
-    const pseudoTask = runCli(['task', 'new', 'Reject prose pseudo command', '--json'], { cwd: dir, env });
-    assert.equal(pseudoTask.status, 0, pseudoTask.stderr);
-    const pseudoRef = JSON.parse(pseudoTask.stdout).task.display_id;
-    assert.equal(runCli(['task', 'claim', pseudoRef, '--as', 'codex'], { cwd: dir, env }).status, 0);
-    const pseudoReady = runCli([
-      'task', 'ready', pseudoRef,
-      '--as', 'codex',
-      '--proof', 'validation passed: node command tests passed; run_id=123456789',
-      '--json',
-    ], { cwd: dir, env });
-    assert.equal(pseudoReady.status, 0, pseudoReady.stderr);
-    const pseudoChat = runCli(['task', 'review-chat', pseudoRef, '--json'], { cwd: dir, env });
-    assert.equal(pseudoChat.status, 0, pseudoChat.stderr);
-    assert.deepEqual(JSON.parse(pseudoChat.stdout).contract.verification_focus.commands_to_verify, []);
+    assert.deepEqual(proofCommands('validation passed: node command tests passed; run_id=123456789'), []);
 
-    const npmPseudoTask = runCli(['task', 'new', 'Reject npm prose pseudo command', '--json'], { cwd: dir, env });
-    assert.equal(npmPseudoTask.status, 0, npmPseudoTask.stderr);
-    const npmPseudoRef = JSON.parse(npmPseudoTask.stdout).task.display_id;
-    assert.equal(runCli(['task', 'claim', npmPseudoRef, '--as', 'codex'], { cwd: dir, env }).status, 0);
-    const npmPseudoReady = runCli([
-      'task', 'ready', npmPseudoRef,
-      '--as', 'codex',
-      '--proof', 'validation passed: npm command tests passed; run_id=123456789',
-      '--json',
-    ], { cwd: dir, env });
-    assert.equal(npmPseudoReady.status, 0, npmPseudoReady.stderr);
-    const npmPseudoChat = runCli(['task', 'review-chat', npmPseudoRef, '--json'], { cwd: dir, env });
-    assert.equal(npmPseudoChat.status, 0, npmPseudoChat.stderr);
-    assert.deepEqual(JSON.parse(npmPseudoChat.stdout).contract.verification_focus.commands_to_verify, []);
+    assert.deepEqual(proofCommands('validation passed: npm command tests passed; run_id=123456789'), []);
 
-    const pluralPseudoTask = runCli(['task', 'new', 'Reject plural prose pseudo commands', '--json'], { cwd: dir, env });
-    assert.equal(pluralPseudoTask.status, 0, pluralPseudoTask.stderr);
-    const pluralPseudoRef = JSON.parse(pluralPseudoTask.stdout).task.display_id;
-    assert.equal(runCli(['task', 'claim', pluralPseudoRef, '--as', 'codex'], { cwd: dir, env }).status, 0);
-    const pluralPseudoReady = runCli([
-      'task', 'ready', pluralPseudoRef,
-      '--as', 'codex',
-      '--proof', 'validation passed: typechecks passed, git checks passed; run_id=123456789',
-      '--json',
-    ], { cwd: dir, env });
-    assert.equal(pluralPseudoReady.status, 0, pluralPseudoReady.stderr);
-    const pluralPseudoChat = runCli(['task', 'review-chat', pluralPseudoRef, '--json'], { cwd: dir, env });
-    assert.equal(pluralPseudoChat.status, 0, pluralPseudoChat.stderr);
-    assert.deepEqual(JSON.parse(pluralPseudoChat.stdout).contract.verification_focus.commands_to_verify, []);
+    assert.deepEqual(proofCommands('validation passed: typechecks passed, git checks passed; run_id=123456789'), []);
 
-    const atrisSlugTask = runCli(['task', 'new', 'Reject Atris slug prose pseudo command', '--json'], { cwd: dir, env });
-    assert.equal(atrisSlugTask.status, 0, atrisSlugTask.stderr);
-    const atrisSlugRef = JSON.parse(atrisSlugTask.stdout).task.display_id;
-    assert.equal(runCli(['task', 'claim', atrisSlugRef, '--as', 'codex'], { cwd: dir, env }).status, 0);
-    const atrisSlugReady = runCli([
-      'task', 'ready', atrisSlugRef,
-      '--as', 'codex',
-      '--proof', 'Second-pass review: recruiting shortcut fallback is scoped to the built-in atris-labs shortcut, keeps generic business lookup strict, and full typecheck passed 1635/1635; run_id=123456789.',
-      '--json',
-    ], { cwd: dir, env });
-    assert.equal(atrisSlugReady.status, 0, atrisSlugReady.stderr);
-    const atrisSlugReadyPayload = JSON.parse(atrisSlugReady.stdout);
-    assert.equal(atrisSlugReadyPayload.task.review.landing.tested, 'I attached the proof below.');
-    const atrisSlugChat = runCli(['task', 'review-chat', atrisSlugRef, '--json'], { cwd: dir, env });
-    assert.equal(atrisSlugChat.status, 0, atrisSlugChat.stderr);
-    assert.deepEqual(JSON.parse(atrisSlugChat.stdout).contract.verification_focus.commands_to_verify, []);
+    // Ready-only cases read the command list and tested sentence that ready
+    // builds from the proof alone; the semicolon and passing-tail cases keep
+    // the CLI parity checks for both builders.
+    const atrisSlugProof = 'Second-pass review: recruiting shortcut fallback is scoped to the built-in atris-labs shortcut, keeps generic business lookup strict, and full typecheck passed 1635/1635; run_id=123456789.';
+    assert.equal(proofLanding(atrisSlugProof).tested, 'I attached the proof below.');
+    assert.deepEqual(proofCommands(atrisSlugProof), []);
 
-    const atrisWildcardTask = runCli(['task', 'new', 'Reject Atris wildcard prose pseudo command', '--json'], { cwd: dir, env });
-    assert.equal(atrisWildcardTask.status, 0, atrisWildcardTask.stderr);
-    const atrisWildcardRef = JSON.parse(atrisWildcardTask.stdout).task.display_id;
-    assert.equal(runCli(['task', 'claim', atrisWildcardRef, '--as', 'codex'], { cwd: dir, env }).status, 0);
-    const atrisWildcardReady = runCli([
-      'task', 'ready', atrisWildcardRef,
-      '--as', 'codex',
-      '--proof', 'Second-pass review: extractor now rejects atris-* slug prose before command token matching; live review queue shows CLI-640 Commands: typecheck only; node --check test/commands.test.js passed 381/381.',
-      '--json',
-    ], { cwd: dir, env });
-    assert.equal(atrisWildcardReady.status, 0, atrisWildcardReady.stderr);
-    const atrisWildcardReadyPayload = JSON.parse(atrisWildcardReady.stdout);
-    assert.equal(atrisWildcardReadyPayload.task.review.landing.tested, 'I ran the listed check for this result.');
-    assert.doesNotMatch(atrisWildcardReadyPayload.task.review.landing.tested, /atris-\*/);
-    assert.doesNotMatch(atrisWildcardReadyPayload.task.review.landing.tested, /npm test only/);
-    const atrisWildcardChat = runCli(['task', 'review-chat', atrisWildcardRef, '--json'], { cwd: dir, env });
-    assert.equal(atrisWildcardChat.status, 0, atrisWildcardChat.stderr);
-    assert.deepEqual(JSON.parse(atrisWildcardChat.stdout).contract.verification_focus.commands_to_verify, [
+    const atrisWildcardProof = 'Second-pass review: extractor now rejects atris-* slug prose before command token matching; live review queue shows CLI-640 Commands: typecheck only; node --check test/commands.test.js passed 381/381.';
+    const atrisWildcardTested = proofLanding(atrisWildcardProof).tested;
+    assert.equal(atrisWildcardTested, 'I ran the listed check for this result.');
+    assert.doesNotMatch(atrisWildcardTested, /atris-\*/);
+    assert.doesNotMatch(atrisWildcardTested, /npm test only/);
+    assert.deepEqual(proofCommands(atrisWildcardProof), [
       'node --check test/commands.test.js',
     ]);
 
-    const proseSegmentTask = runCli(['task', 'new', 'Semicolon prose segment', '--json'], { cwd: dir, env });
-    assert.equal(proseSegmentTask.status, 0, proseSegmentTask.stderr);
-    const proseSegmentRef = JSON.parse(proseSegmentTask.stdout).task.display_id;
-    assert.equal(runCli(['task', 'claim', proseSegmentRef, '--as', 'codex'], { cwd: dir, env }).status, 0);
-    const proseSegmentReady = runCli([
-      'task', 'ready', proseSegmentRef,
-      '--as', 'codex',
-      '--proof', 'Receipt saved at atris/runs/proof.json. node --check commands/task.js; focused three-test command; git status --porcelain -- commands/task.js test/commands.test.js',
-      '--json',
-    ], { cwd: dir, env });
-    assert.equal(proseSegmentReady.status, 0, proseSegmentReady.stderr);
-    const proseSegmentChat = runCli(['task', 'review-chat', proseSegmentRef, '--json'], { cwd: dir, env });
-    assert.equal(proseSegmentChat.status, 0, proseSegmentChat.stderr);
-    assert.deepEqual(JSON.parse(proseSegmentChat.stdout).contract.verification_focus.commands_to_verify, [
+    assert.deepEqual(proofCommands('Receipt saved at atris/runs/proof.json. node --check commands/task.js; focused three-test command; git status --porcelain -- commands/task.js test/commands.test.js'), [
       'node --check commands/task.js',
       'git status --porcelain -- commands/task.js test/commands.test.js',
     ]);
 
-    const thenJoinedTask = runCli(['task', 'new', 'Then joined commands', '--json'], { cwd: dir, env });
-    assert.equal(thenJoinedTask.status, 0, thenJoinedTask.stderr);
-    const thenJoinedRef = JSON.parse(thenJoinedTask.stdout).task.display_id;
-    assert.equal(runCli(['task', 'claim', thenJoinedRef, '--as', 'codex'], { cwd: dir, env }).status, 0);
-    const thenJoinedReady = runCli([
-      'task', 'ready', thenJoinedRef,
-      '--as', 'codex',
-      '--proof', 'node --check commands/task.js then node --check test/commands.test.js passed',
-      '--json',
-    ], { cwd: dir, env });
-    assert.equal(thenJoinedReady.status, 0, thenJoinedReady.stderr);
-    const thenJoinedChat = runCli(['task', 'review-chat', thenJoinedRef, '--json'], { cwd: dir, env });
-    assert.equal(thenJoinedChat.status, 0, thenJoinedChat.stderr);
-    assert.deepEqual(JSON.parse(thenJoinedChat.stdout).contract.verification_focus.commands_to_verify, [
+    assert.deepEqual(proofCommands('node --check commands/task.js then node --check test/commands.test.js passed'), [
       'node --check commands/task.js',
       'node --check test/commands.test.js',
     ]);
 
-    const pipelineTask = runCli(['task', 'new', 'Preserve pipeline command', '--json'], { cwd: dir, env });
-    assert.equal(pipelineTask.status, 0, pipelineTask.stderr);
-    const pipelineRef = JSON.parse(pipelineTask.stdout).task.display_id;
-    assert.equal(runCli(['task', 'claim', pipelineRef, '--as', 'codex'], { cwd: dir, env }).status, 0);
-    const pipelineReady = runCli([
-      'task', 'ready', pipelineRef,
-      '--as', 'codex',
-      '--proof', 'curl -fsS http://127.0.0.1:8000/api/health | rg ok passed',
-      '--json',
-    ], { cwd: dir, env });
-    assert.equal(pipelineReady.status, 0, pipelineReady.stderr);
-    const pipelineChat = runCli(['task', 'review-chat', pipelineRef, '--json'], { cwd: dir, env });
-    assert.equal(pipelineChat.status, 0, pipelineChat.stderr);
-    assert.deepEqual(JSON.parse(pipelineChat.stdout).contract.verification_focus.commands_to_verify, [
+    assert.deepEqual(proofCommands('curl -fsS http://127.0.0.1:8000/api/health | rg ok passed'), [
       'curl -fsS http://127.0.0.1:8000/api/health | rg ok',
     ]);
 
-    const parenStatusTask = runCli(['task', 'new', 'Trim parenthesized status', '--json'], { cwd: dir, env });
-    assert.equal(parenStatusTask.status, 0, parenStatusTask.stderr);
-    const parenStatusRef = JSON.parse(parenStatusTask.stdout).task.display_id;
-    assert.equal(runCli(['task', 'claim', parenStatusRef, '--as', 'codex'], { cwd: dir, env }).status, 0);
-    const parenStatusReady = runCli([
-      'task', 'ready', parenStatusRef,
-      '--as', 'codex',
-      '--proof', 'node --check test/commands.test.js (passed)',
-      '--json',
-    ], { cwd: dir, env });
-    assert.equal(parenStatusReady.status, 0, parenStatusReady.stderr);
-    const parenStatusChat = runCli(['task', 'review-chat', parenStatusRef, '--json'], { cwd: dir, env });
-    assert.equal(parenStatusChat.status, 0, parenStatusChat.stderr);
-    assert.deepEqual(JSON.parse(parenStatusChat.stdout).contract.verification_focus.commands_to_verify, [
+    assert.deepEqual(proofCommands('node --check test/commands.test.js (passed)'), [
       'node --check test/commands.test.js',
     ]);
 
-    const exitStatusTask = runCli(['task', 'new', 'Trim exit status annotation', '--json'], { cwd: dir, env });
-    assert.equal(exitStatusTask.status, 0, exitStatusTask.stderr);
-    const exitStatusRef = JSON.parse(exitStatusTask.stdout).task.display_id;
-    assert.equal(runCli(['task', 'claim', exitStatusRef, '--as', 'codex'], { cwd: dir, env }).status, 0);
-    const exitStatusReady = runCli([
-      'task', 'ready', exitStatusRef,
-      '--as', 'codex',
-      '--proof', 'node --check test/commands.test.js passed (exit 0)',
-      '--json',
-    ], { cwd: dir, env });
-    assert.equal(exitStatusReady.status, 0, exitStatusReady.stderr);
-    const exitStatusChat = runCli(['task', 'review-chat', exitStatusRef, '--json'], { cwd: dir, env });
-    assert.equal(exitStatusChat.status, 0, exitStatusChat.stderr);
-    assert.deepEqual(JSON.parse(exitStatusChat.stdout).contract.verification_focus.commands_to_verify, [
+    assert.deepEqual(proofCommands('node --check test/commands.test.js passed (exit 0)'), [
       'node --check test/commands.test.js',
     ]);
 
-    const statusSentenceTask = runCli(['task', 'new', 'Trim status sentence', '--json'], { cwd: dir, env });
-    assert.equal(statusSentenceTask.status, 0, statusSentenceTask.stderr);
-    const statusSentenceRef = JSON.parse(statusSentenceTask.stdout).task.display_id;
-    assert.equal(runCli(['task', 'claim', statusSentenceRef, '--as', 'codex'], { cwd: dir, env }).status, 0);
-    const statusSentenceReady = runCli([
-      'task', 'ready', statusSentenceRef,
-      '--as', 'codex',
-      '--proof', 'validation passed: node --check commands/task.js passed. Output clean.',
-      '--json',
-    ], { cwd: dir, env });
-    assert.equal(statusSentenceReady.status, 0, statusSentenceReady.stderr);
-    const statusSentenceChat = runCli(['task', 'review-chat', statusSentenceRef, '--json'], { cwd: dir, env });
-    assert.equal(statusSentenceChat.status, 0, statusSentenceChat.stderr);
-    assert.deepEqual(JSON.parse(statusSentenceChat.stdout).contract.verification_focus.commands_to_verify, [
+    assert.deepEqual(proofCommands('validation passed: node --check commands/task.js passed. Output clean.'), [
       'node --check commands/task.js',
     ]);
 
-    const passCountTask = runCli(['task', 'new', 'Trim pass count suffix', '--json'], { cwd: dir, env });
-    assert.equal(passCountTask.status, 0, passCountTask.stderr);
-    const passCountRef = JSON.parse(passCountTask.stdout).task.display_id;
-    assert.equal(runCli(['task', 'claim', passCountRef, '--as', 'codex'], { cwd: dir, env }).status, 0);
-    const passCountReady = runCli([
-      'task', 'ready', passCountRef,
-      '--as', 'codex',
-      '--proof', 'full node --check test/commands.test.js passed 299/299',
-      '--json',
-    ], { cwd: dir, env });
-    assert.equal(passCountReady.status, 0, passCountReady.stderr);
-    const passCountChat = runCli(['task', 'review-chat', passCountRef, '--json'], { cwd: dir, env });
-    assert.equal(passCountChat.status, 0, passCountChat.stderr);
-    assert.deepEqual(JSON.parse(passCountChat.stdout).contract.verification_focus.commands_to_verify, [
+    assert.deepEqual(proofCommands('full node --check test/commands.test.js passed 299/299'), [
       'node --check test/commands.test.js',
     ]);
 
-    const passExplanationTask = runCli(['task', 'new', 'Trim pass count explanation', '--json'], { cwd: dir, env });
-    assert.equal(passExplanationTask.status, 0, passExplanationTask.stderr);
-    const passExplanationRef = JSON.parse(passExplanationTask.stdout).task.display_id;
-    assert.equal(runCli(['task', 'claim', passExplanationRef, '--as', 'codex'], { cwd: dir, env }).status, 0);
-    const passExplanationReady = runCli([
-      'task', 'ready', passExplanationRef,
-      '--as', 'codex',
-      '--proof', "node --check test/mission-status.test.js passed 51/51, including the new regression 'mission tick keeps task-backed always-on caller-session missions runnable without verifier'. Live proof: atris mission tick mission-abc.",
-      '--json',
-    ], { cwd: dir, env });
-    assert.equal(passExplanationReady.status, 0, passExplanationReady.stderr);
-    const passExplanationChat = runCli(['task', 'review-chat', passExplanationRef, '--json'], { cwd: dir, env });
-    assert.equal(passExplanationChat.status, 0, passExplanationChat.stderr);
-    assert.deepEqual(JSON.parse(passExplanationChat.stdout).contract.verification_focus.commands_to_verify, [
+    assert.deepEqual(proofCommands("node --check test/mission-status.test.js passed 51/51, including the new regression 'mission tick keeps task-backed always-on caller-session missions runnable without verifier'. Live proof: atris mission tick mission-abc."), [
       'node --check test/mission-status.test.js',
     ]);
 
-    const changedFilesTailTask = runCli(['task', 'new', 'Trim changed files tail', '--json'], { cwd: dir, env });
-    assert.equal(changedFilesTailTask.status, 0, changedFilesTailTask.stderr);
-    const changedFilesTailRef = JSON.parse(changedFilesTailTask.stdout).task.display_id;
-    assert.equal(runCli(['task', 'claim', changedFilesTailRef, '--as', 'codex'], { cwd: dir, env }).status, 0);
-    const changedFilesTailReady = runCli([
-      'task', 'ready', changedFilesTailRef,
-      '--as', 'codex',
-      '--proof', 'node --check test/mission-status.test.js passed 46/46. Changed files: lib/mission-room.js adds business-move naming.',
-      '--json',
-    ], { cwd: dir, env });
-    assert.equal(changedFilesTailReady.status, 0, changedFilesTailReady.stderr);
-    const changedFilesTailChat = runCli(['task', 'review-chat', changedFilesTailRef, '--json'], { cwd: dir, env });
-    assert.equal(changedFilesTailChat.status, 0, changedFilesTailChat.stderr);
-    assert.deepEqual(JSON.parse(changedFilesTailChat.stdout).contract.verification_focus.commands_to_verify, [
+    assert.deepEqual(proofCommands('node --check test/mission-status.test.js passed 46/46. Changed files: lib/mission-room.js adds business-move naming.'), [
       'node --check test/mission-status.test.js',
     ]);
 
-    const passedWithTailTask = runCli(['task', 'new', 'Trim passed with tail', '--json'], { cwd: dir, env });
-    assert.equal(passedWithTailTask.status, 0, passedWithTailTask.stderr);
-    const passedWithTailRef = JSON.parse(passedWithTailTask.stdout).task.display_id;
-    assert.equal(runCli(['task', 'claim', passedWithTailRef, '--as', 'codex'], { cwd: dir, env }).status, 0);
-    const passedWithTailReady = runCli([
-      'task', 'ready', passedWithTailRef,
-      '--as', 'codex',
-      '--proof', 'node scripts/verify-mission-room.js passed with member=mission-lead. node --check test/mission-status.test.js passed.',
-      '--json',
-    ], { cwd: dir, env });
-    assert.equal(passedWithTailReady.status, 0, passedWithTailReady.stderr);
-    const passedWithTailChat = runCli(['task', 'review-chat', passedWithTailRef, '--json'], { cwd: dir, env });
-    assert.equal(passedWithTailChat.status, 0, passedWithTailChat.stderr);
-    assert.deepEqual(JSON.parse(passedWithTailChat.stdout).contract.verification_focus.commands_to_verify, [
+    assert.deepEqual(proofCommands('node scripts/verify-mission-room.js passed with member=mission-lead. node --check test/mission-status.test.js passed.'), [
       'node scripts/verify-mission-room.js',
       'node --check test/mission-status.test.js',
     ]);
 
-    const exampleCommandTask = runCli(['task', 'new', 'Ignore example command subject', '--json'], { cwd: dir, env });
-    assert.equal(exampleCommandTask.status, 0, exampleCommandTask.stderr);
-    const exampleCommandRef = JSON.parse(exampleCommandTask.stdout).task.display_id;
-    assert.equal(runCli(['task', 'claim', exampleCommandRef, '--as', 'codex'], { cwd: dir, env }).status, 0);
-    const exampleCommandReady = runCli([
-      'task', 'ready', exampleCommandRef,
-      '--as', 'codex',
-      '--proof', 'Product proof: review packets no longer ask humans to rerun result text like node scripts/verify-mission-room.js passed with member=mission-lead. Checks: node -c commands/task.js; git status --porcelain.',
-      '--json',
-    ], { cwd: dir, env });
-    assert.equal(exampleCommandReady.status, 0, exampleCommandReady.stderr);
-    const exampleCommandChat = runCli(['task', 'review-chat', exampleCommandRef, '--json'], { cwd: dir, env });
-    assert.equal(exampleCommandChat.status, 0, exampleCommandChat.stderr);
-    assert.deepEqual(JSON.parse(exampleCommandChat.stdout).contract.verification_focus.commands_to_verify, [
+    assert.deepEqual(proofCommands('Product proof: review packets no longer ask humans to rerun result text like node scripts/verify-mission-room.js passed with member=mission-lead. Checks: node -c commands/task.js; git status --porcelain.'), [
       'node -c commands/task.js',
       'git status --porcelain',
     ]);
 
-    const commaResultTask = runCli(['task', 'new', 'Trim comma result prose', '--json'], { cwd: dir, env });
-    assert.equal(commaResultTask.status, 0, commaResultTask.stderr);
-    const commaResultRef = JSON.parse(commaResultTask.stdout).task.display_id;
-    assert.equal(runCli(['task', 'claim', commaResultRef, '--as', 'codex'], { cwd: dir, env }).status, 0);
-    const commaResultReady = runCli([
-      'task', 'ready', commaResultRef,
-      '--as', 'codex',
-      '--proof', 'Receipt saved at atris/runs/proof.json. node --check commands/mission.js passed, live run proved stderr_empty=true. Checks: git status --porcelain.',
-      '--json',
-    ], { cwd: dir, env });
-    assert.equal(commaResultReady.status, 0, commaResultReady.stderr);
-    const commaResultChat = runCli(['task', 'review-chat', commaResultRef, '--json'], { cwd: dir, env });
-    assert.equal(commaResultChat.status, 0, commaResultChat.stderr);
-    assert.deepEqual(JSON.parse(commaResultChat.stdout).contract.verification_focus.commands_to_verify, [
+    assert.deepEqual(proofCommands('Receipt saved at atris/runs/proof.json. node --check commands/mission.js passed, live run proved stderr_empty=true. Checks: git status --porcelain.'), [
       'node --check commands/mission.js',
       'git status --porcelain',
     ]);
 
-    const focusedSuiteTask = runCli(['task', 'new', 'Split focused suite verifier', '--json'], { cwd: dir, env });
-    assert.equal(focusedSuiteTask.status, 0, focusedSuiteTask.stderr);
-    const focusedSuiteRef = JSON.parse(focusedSuiteTask.stdout).task.display_id;
-    assert.equal(runCli(['task', 'claim', focusedSuiteRef, '--as', 'codex'], { cwd: dir, env }).status, 0);
-    const focusedSuiteReady = runCli([
-      'task', 'ready', focusedSuiteRef,
-      '--as', 'codex',
-      '--proof', 'node scripts/verify-mission-room.js. Focused suite also passed separately: node --check test/mission-status.test.js.',
-      '--json',
-    ], { cwd: dir, env });
-    assert.equal(focusedSuiteReady.status, 0, focusedSuiteReady.stderr);
-    const focusedSuiteChat = runCli(['task', 'review-chat', focusedSuiteRef, '--json'], { cwd: dir, env });
-    assert.equal(focusedSuiteChat.status, 0, focusedSuiteChat.stderr);
-    assert.deepEqual(JSON.parse(focusedSuiteChat.stdout).contract.verification_focus.commands_to_verify, [
+    assert.deepEqual(proofCommands('node scripts/verify-mission-room.js. Focused suite also passed separately: node --check test/mission-status.test.js.'), [
       'node scripts/verify-mission-room.js',
       'node --check test/mission-status.test.js',
     ]);
 
-    const commaProseTask = runCli(['task', 'new', 'Trim comma prose command list', '--json'], { cwd: dir, env });
-    assert.equal(commaProseTask.status, 0, commaProseTask.stderr);
-    const commaProseRef = JSON.parse(commaProseTask.stdout).task.display_id;
-    assert.equal(runCli(['task', 'claim', commaProseRef, '--as', 'codex'], { cwd: dir, env }).status, 0);
-    const commaProseReady = runCli([
-      'task', 'ready', commaProseRef,
-      '--as', 'codex',
-      '--proof', 'Verified commands/task.js with node -c commands/task.js passed, command suite, clean dry-run, brain compile.',
-      '--json',
-    ], { cwd: dir, env });
-    assert.equal(commaProseReady.status, 0, commaProseReady.stderr);
-    const commaProseChat = runCli(['task', 'review-chat', commaProseRef, '--json'], { cwd: dir, env });
-    assert.equal(commaProseChat.status, 0, commaProseChat.stderr);
-    assert.deepEqual(JSON.parse(commaProseChat.stdout).contract.verification_focus.commands_to_verify, [
+    assert.deepEqual(proofCommands('Verified commands/task.js with node -c commands/task.js passed, command suite, clean dry-run, brain compile.'), [
       'node -c commands/task.js',
     ]);
 
-    const describedCommandTask = runCli(['task', 'new', 'Ignore described command subject', '--json'], { cwd: dir, env });
-    assert.equal(describedCommandTask.status, 0, describedCommandTask.stderr);
-    const describedCommandRef = JSON.parse(describedCommandTask.stdout).task.display_id;
-    assert.equal(runCli(['task', 'claim', describedCommandRef, '--as', 'codex'], { cwd: dir, env }).status, 0);
-    const describedCommandReady = runCli([
-      'task', 'ready', describedCommandRef,
-      '--as', 'codex',
-      '--proof', 'Receipt saved at atris/runs/proof.json. Product proof: parser extracts only node --check test/mission-status.test.js. Checks: node -c commands/task.js; git status --porcelain.',
-      '--json',
-    ], { cwd: dir, env });
-    assert.equal(describedCommandReady.status, 0, describedCommandReady.stderr);
-    const describedCommandChat = runCli(['task', 'review-chat', describedCommandRef, '--json'], { cwd: dir, env });
-    assert.equal(describedCommandChat.status, 0, describedCommandChat.stderr);
-    assert.deepEqual(JSON.parse(describedCommandChat.stdout).contract.verification_focus.commands_to_verify, [
+    assert.deepEqual(proofCommands('Receipt saved at atris/runs/proof.json. Product proof: parser extracts only node --check test/mission-status.test.js. Checks: node -c commands/task.js; git status --porcelain.'), [
       'node -c commands/task.js',
       'git status --porcelain',
     ]);
 
-    const productProofTask = runCli(['task', 'new', 'Product proof command extraction', '--json'], { cwd: dir, env });
-    assert.equal(productProofTask.status, 0, productProofTask.stderr);
-    const productProofRef = JSON.parse(productProofTask.stdout).task.display_id;
-    assert.equal(runCli(['task', 'claim', productProofRef, '--as', 'codex'], { cwd: dir, env }).status, 0);
+    const productProofRef = seedClaimedTask('Product proof command extraction');
     const productProofReady = runCli([
       'task', 'ready', productProofRef,
       '--as', 'codex',
@@ -12380,10 +12443,7 @@ test('task review-chat extracts only proof-derived verifier commands', () => {
     assert.match(productProofPayload.contract.codex_prompt, /command 1: node -c commands\/mission\.js/);
     assert.doesNotMatch(productProofPayload.contract.codex_prompt, /node -c commands\/mission\.js \| node --check/);
 
-    const quotedPipeTask = runCli(['task', 'new', 'Quoted pipe proof command', '--json'], { cwd: dir, env });
-    assert.equal(quotedPipeTask.status, 0, quotedPipeTask.stderr);
-    const quotedPipeRef = JSON.parse(quotedPipeTask.stdout).task.display_id;
-    assert.equal(runCli(['task', 'claim', quotedPipeRef, '--as', 'codex'], { cwd: dir, env }).status, 0);
+    const quotedPipeRef = seedClaimedTask('Quoted pipe proof command');
     const quotedPipeReady = runCli([
       'task', 'ready', quotedPipeRef,
       '--as', 'codex',
@@ -12406,56 +12466,20 @@ test('task review-chat extracts only proof-derived verifier commands', () => {
     assert.doesNotMatch(quotedPipePayload.contract.codex_prompt, /health' \| git status --porcelain/);
     assert.doesNotMatch(quotedPipePayload.contract.required_checks.join('\n'), /health' \| git status --porcelain/);
 
-    const quotedListTask = runCli(['task', 'new', 'Quoted command-list examples', '--json'], { cwd: dir, env });
-    assert.equal(quotedListTask.status, 0, quotedListTask.stderr);
-    const quotedListRef = JSON.parse(quotedListTask.stdout).task.display_id;
-    assert.equal(runCli(['task', 'claim', quotedListRef, '--as', 'codex'], { cwd: dir, env }).status, 0);
-    const quotedListReady = runCli([
-      'task', 'ready', quotedListRef,
-      '--as', 'codex',
-      '--proof', "Product proof says 'Commands: command 1: <pipe-containing test command>; command 2: git status --porcelain'. Checks passed: node -c commands/task.js; git status --porcelain.",
-      '--json',
-    ], { cwd: dir, env });
-    assert.equal(quotedListReady.status, 0, quotedListReady.stderr);
-    const quotedListPayload = JSON.parse(quotedListReady.stdout);
-    assert.deepEqual(quotedListPayload.handoff.verification_focus.commands_to_verify, [
+    const quotedListProof = "Product proof says 'Commands: command 1: <pipe-containing test command>; command 2: git status --porcelain'. Checks passed: node -c commands/task.js; git status --porcelain.";
+    assert.deepEqual(proofCommands(quotedListProof), [
       'node -c commands/task.js',
       'git status --porcelain',
     ]);
-    assert.equal(quotedListPayload.task.review.landing.tested, 'I ran the listed checks for this result.');
+    assert.equal(proofLanding(quotedListProof).tested, 'I ran the listed checks for this result.');
 
-    const quotedProductTask = runCli(['task', 'new', 'Quoted product command example', '--json'], { cwd: dir, env });
-    assert.equal(quotedProductTask.status, 0, quotedProductTask.stderr);
-    const quotedProductRef = JSON.parse(quotedProductTask.stdout).task.display_id;
-    assert.equal(runCli(['task', 'claim', quotedProductRef, '--as', 'codex'], { cwd: dir, env }).status, 0);
-    const quotedProductReady = runCli([
-      'task', 'ready', quotedProductRef,
-      '--as', 'codex',
-      '--proof', "Product proof: live Mission Report plain text now ends with 'Next: atris mission run mission-2026-06-30-work-overnight-and-see-where-1858e505' instead of 'Next: next move: run ...'. JSON still keeps operator_next raw for machines. Checks: node -c commands/mission.js; node --check test/mission-status.test.js --test-name-pattern 'mission report' (60 pass); git status --porcelain.",
-      '--json',
-    ], { cwd: dir, env });
-    assert.equal(quotedProductReady.status, 0, quotedProductReady.stderr);
-    const quotedProductChat = runCli(['task', 'review-chat', quotedProductRef, '--json'], { cwd: dir, env });
-    assert.equal(quotedProductChat.status, 0, quotedProductChat.stderr);
-    assert.deepEqual(JSON.parse(quotedProductChat.stdout).contract.verification_focus.commands_to_verify, [
+    assert.deepEqual(proofCommands("Product proof: live Mission Report plain text now ends with 'Next: atris mission run mission-2026-06-30-work-overnight-and-see-where-1858e505' instead of 'Next: next move: run ...'. JSON still keeps operator_next raw for machines. Checks: node -c commands/mission.js; node --check test/mission-status.test.js --test-name-pattern 'mission report' (60 pass); git status --porcelain."), [
       'node -c commands/mission.js',
       "node --check test/mission-status.test.js --test-name-pattern 'mission report'",
       'git status --porcelain',
     ]);
 
-    const optionBeforeFileTask = runCli(['task', 'new', 'Quoted option-before-file verifier', '--json'], { cwd: dir, env });
-    assert.equal(optionBeforeFileTask.status, 0, optionBeforeFileTask.stderr);
-    const optionBeforeFileRef = JSON.parse(optionBeforeFileTask.stdout).task.display_id;
-    assert.equal(runCli(['task', 'claim', optionBeforeFileRef, '--as', 'codex'], { cwd: dir, env }).status, 0);
-    const optionBeforeFileReady = runCli([
-      'task', 'ready', optionBeforeFileRef,
-      '--as', 'codex',
-      '--proof', "Receipt saved at atris/runs/proof.json. Product proof: the review handoff preserves the full verifier command, including node --check --test-name-pattern with quoted test names containing 'and'. Checks: node --check test/mission-xp.test.js; node --check --test-name-pattern 'mission run blocks Codex-goal work until native goal ack|mission goal-loop attaches task spine before due mission work|mission goal-loop runs due mission work once and refreshes final state' test/mission-status.test.js; git status --porcelain; atris clean --dry-run --json; atris brain compile --root . --verify.",
-      '--json',
-    ], { cwd: dir, env });
-    assert.equal(optionBeforeFileReady.status, 0, optionBeforeFileReady.stderr);
-    const optionBeforeFilePayload = JSON.parse(optionBeforeFileReady.stdout);
-    assert.deepEqual(optionBeforeFilePayload.handoff.verification_focus.commands_to_verify, [
+    assert.deepEqual(proofCommands("Receipt saved at atris/runs/proof.json. Product proof: the review handoff preserves the full verifier command, including node --check --test-name-pattern with quoted test names containing 'and'. Checks: node --check test/mission-xp.test.js; node --check --test-name-pattern 'mission run blocks Codex-goal work until native goal ack|mission goal-loop attaches task spine before due mission work|mission goal-loop runs due mission work once and refreshes final state' test/mission-status.test.js; git status --porcelain; atris clean --dry-run --json; atris brain compile --root . --verify."), [
       'node --check test/mission-xp.test.js',
       "node --check --test-name-pattern 'mission run blocks Codex-goal work until native goal ack|mission goal-loop attaches task spine before due mission work|mission goal-loop runs due mission work once and refreshes final state' test/mission-status.test.js",
       'git status --porcelain',
@@ -12463,153 +12487,50 @@ test('task review-chat extracts only proof-derived verifier commands', () => {
       'atris brain compile --root . --verify',
     ]);
 
-    const noteTailTask = runCli(['task', 'new', 'Trim note tail from verifier command', '--json'], { cwd: dir, env });
-    assert.equal(noteTailTask.status, 0, noteTailTask.stderr);
-    const noteTailRef = JSON.parse(noteTailTask.stdout).task.display_id;
-    assert.equal(runCli(['task', 'claim', noteTailRef, '--as', 'codex'], { cwd: dir, env }).status, 0);
-    const noteTailReady = runCli([
-      'task', 'ready', noteTailRef,
-      '--as', 'codex',
-      '--proof', 'Receipt saved at atris/runs/proof.json. Checks: atris brain compile --root . --verify. Note: full typecheck still has unrelated failures queued for later work.',
-      '--json',
-    ], { cwd: dir, env });
-    assert.equal(noteTailReady.status, 0, noteTailReady.stderr);
-    assert.deepEqual(JSON.parse(noteTailReady.stdout).handoff.verification_focus.commands_to_verify, [
+    assert.deepEqual(proofCommands('Receipt saved at atris/runs/proof.json. Checks: atris brain compile --root . --verify. Note: full typecheck still has unrelated failures queued for later work.'), [
       'atris brain compile --root . --verify',
     ]);
 
-    const withPassingTask = runCli(['task', 'new', 'Trim with passing test tail', '--json'], { cwd: dir, env });
-    assert.equal(withPassingTask.status, 0, withPassingTask.stderr);
-    const withPassingRef = JSON.parse(withPassingTask.stdout).task.display_id;
-    assert.equal(runCli(['task', 'claim', withPassingRef, '--as', 'codex'], { cwd: dir, env }).status, 0);
+    const withPassingRef = seedClaimedTask('Trim with passing test tail');
+    const withPassingProof = "Checks passed: node --check test/commands.test.js --test-name-pattern 'task review-chat extracts only proof-derived verifier commands' with 380 passing tests; git status --porcelain.";
     const withPassingReady = runCli([
       'task', 'ready', withPassingRef,
       '--as', 'codex',
-      '--proof', "Checks passed: node --check test/commands.test.js --test-name-pattern 'task review-chat extracts only proof-derived verifier commands' with 380 passing tests; git status --porcelain.",
+      '--proof', withPassingProof,
       '--json',
     ], { cwd: dir, env });
     assert.equal(withPassingReady.status, 0, withPassingReady.stderr);
     const withPassingPayload = JSON.parse(withPassingReady.stdout);
     assert.doesNotMatch(withPassingPayload.task.review.landing.tested, /with 380 passing tests/);
     assert.equal(withPassingPayload.task.review.landing.checked, 'I ran the verifier named in the proof.');
-    const withPassingChat = runCli(['task', 'review-chat', withPassingRef, '--json'], { cwd: dir, env });
-    assert.equal(withPassingChat.status, 0, withPassingChat.stderr);
-    assert.deepEqual(JSON.parse(withPassingChat.stdout).contract.verification_focus.commands_to_verify, [
+    assert.equal(proofLanding(withPassingProof).checked, withPassingPayload.task.review.landing.checked, 'the in-process checked sentence matches what ready printed');
+    assert.equal(proofLanding(withPassingProof).tested, withPassingPayload.task.review.landing.tested, 'the in-process tested sentence matches what ready printed');
+    assert.deepEqual(JSON.parse(withPassingReady.stdout).handoff.verification_focus.commands_to_verify, [
       "node --check test/commands.test.js --test-name-pattern 'task review-chat extracts only proof-derived verifier commands'",
       'git status --porcelain',
     ]);
 
-    const receiptCheckedTask = runCli(['task', 'new', 'Receipt-specific checked landing', '--json'], { cwd: dir, env });
-    assert.equal(receiptCheckedTask.status, 0, receiptCheckedTask.stderr);
-    const receiptCheckedRef = JSON.parse(receiptCheckedTask.stdout).task.display_id;
-    assert.equal(runCli(['task', 'claim', receiptCheckedRef, '--as', 'codex'], { cwd: dir, env }).status, 0);
-    const receiptCheckedReady = runCli([
-      'task', 'ready', receiptCheckedRef,
-      '--as', 'codex',
-      '--proof', 'Second-pass review: receipt atris/runs/mission-example-2026-06-30T00-00-00-000Z.json verifier_result.passed=true.',
-      '--json',
-    ], { cwd: dir, env });
-    assert.equal(receiptCheckedReady.status, 0, receiptCheckedReady.stderr);
-    const receiptCheckedPayload = JSON.parse(receiptCheckedReady.stdout);
-    assert.equal(receiptCheckedPayload.task.review.landing.checked, 'I inspected the passing receipt named in the proof.');
+    assert.equal(proofLanding('Second-pass review: receipt atris/runs/mission-example-2026-06-30T00-00-00-000Z.json verifier_result.passed=true.').checked, 'I inspected the passing receipt named in the proof.');
+    assert.equal(proofLanding('node scripts/verify-mission-product-wedge.js printed MISSION PRODUCT WEDGE VERIFIED.').checked, 'I checked the verifier output named in the proof.');
+    assert.equal(proofLanding('node scripts/verify-mission-artifact-timeline.js passes.').checked, 'I ran the verifier named in the proof.');
+    assert.equal(proofLanding('Agent review: help output renders, clean dry-run dropped stale pages, the help-focused test slice passed 379/379, and diff cleanliness passed.').tested, 'I checked: help output, clean dry-run, passing tests, and 1 more check.');
 
-    const outputCheckedTask = runCli(['task', 'new', 'Verifier output checked landing', '--json'], { cwd: dir, env });
-    assert.equal(outputCheckedTask.status, 0, outputCheckedTask.stderr);
-    const outputCheckedRef = JSON.parse(outputCheckedTask.stdout).task.display_id;
-    assert.equal(runCli(['task', 'claim', outputCheckedRef, '--as', 'codex'], { cwd: dir, env }).status, 0);
-    const outputCheckedReady = runCli([
-      'task', 'ready', outputCheckedRef,
-      '--as', 'codex',
-      '--proof', 'node scripts/verify-mission-product-wedge.js printed MISSION PRODUCT WEDGE VERIFIED.',
-      '--json',
-    ], { cwd: dir, env });
-    assert.equal(outputCheckedReady.status, 0, outputCheckedReady.stderr);
-    assert.equal(JSON.parse(outputCheckedReady.stdout).task.review.landing.checked, 'I checked the verifier output named in the proof.');
-
-    const passesCheckedTask = runCli(['task', 'new', 'Passes checked landing', '--json'], { cwd: dir, env });
-    assert.equal(passesCheckedTask.status, 0, passesCheckedTask.stderr);
-    const passesCheckedRef = JSON.parse(passesCheckedTask.stdout).task.display_id;
-    assert.equal(runCli(['task', 'claim', passesCheckedRef, '--as', 'codex'], { cwd: dir, env }).status, 0);
-    const passesCheckedReady = runCli([
-      'task', 'ready', passesCheckedRef,
-      '--as', 'codex',
-      '--proof', 'node scripts/verify-mission-artifact-timeline.js passes.',
-      '--json',
-    ], { cwd: dir, env });
-    assert.equal(passesCheckedReady.status, 0, passesCheckedReady.stderr);
-    assert.equal(JSON.parse(passesCheckedReady.stdout).task.review.landing.checked, 'I ran the verifier named in the proof.');
-
-    const proseCheckedTask = runCli(['task', 'new', 'Prose-only proof landing', '--json'], { cwd: dir, env });
-    assert.equal(proseCheckedTask.status, 0, proseCheckedTask.stderr);
-    const proseCheckedRef = JSON.parse(proseCheckedTask.stdout).task.display_id;
-    assert.equal(runCli(['task', 'claim', proseCheckedRef, '--as', 'codex'], { cwd: dir, env }).status, 0);
-    const proseCheckedReady = runCli([
-      'task', 'ready', proseCheckedRef,
-      '--as', 'codex',
-      '--proof', 'Agent review: help output renders, clean dry-run dropped stale pages, the help-focused test slice passed 379/379, and diff cleanliness passed.',
-      '--json',
-    ], { cwd: dir, env });
-    assert.equal(proseCheckedReady.status, 0, proseCheckedReady.stderr);
-    assert.equal(JSON.parse(proseCheckedReady.stdout).task.review.landing.tested, 'I checked: help output, clean dry-run, passing tests, and 1 more check.');
-
-    const rewardTailTask = runCli(['task', 'new', 'Trim human gate tail', '--json'], { cwd: dir, env });
-    assert.equal(rewardTailTask.status, 0, rewardTailTask.stderr);
-    const rewardTailRef = JSON.parse(rewardTailTask.stdout).task.display_id;
-    assert.equal(runCli(['task', 'claim', rewardTailRef, '--as', 'codex'], { cwd: dir, env }).status, 0);
-    const rewardTailReady = runCli([
-      'task', 'ready', rewardTailRef,
-      '--as', 'codex',
-      '--proof', 'Receipt saved at atris/runs/proof.json. node --check test/commands.test.js. Reward remains 0; no human accept or XP.',
-      '--json',
-    ], { cwd: dir, env });
-    assert.equal(rewardTailReady.status, 0, rewardTailReady.stderr);
-    const rewardTailChat = runCli(['task', 'review-chat', rewardTailRef, '--json'], { cwd: dir, env });
-    assert.equal(rewardTailChat.status, 0, rewardTailChat.stderr);
-    assert.deepEqual(JSON.parse(rewardTailChat.stdout).contract.verification_focus.commands_to_verify, [
+    assert.deepEqual(proofCommands('Receipt saved at atris/runs/proof.json. node --check test/commands.test.js. Reward remains 0; no human accept or XP.'), [
       'node --check test/commands.test.js',
     ]);
 
-    const humanAcceptTask = runCli(['task', 'new', 'Reject human accept proof prose', '--json'], { cwd: dir, env });
-    assert.equal(humanAcceptTask.status, 0, humanAcceptTask.stderr);
-    const humanAcceptRef = JSON.parse(humanAcceptTask.stdout).task.display_id;
-    assert.equal(runCli(['task', 'claim', humanAcceptRef, '--as', 'codex'], { cwd: dir, env }).status, 0);
-    const humanAcceptReady = runCli([
-      'task', 'ready', humanAcceptRef,
-      '--as', 'codex',
-      '--proof', 'node --check commands/task.js passed. Do not run atris task accept OBL-1; no human accept or XP.',
-      '--json',
-    ], { cwd: dir, env });
-    assert.equal(humanAcceptReady.status, 0, humanAcceptReady.stderr);
-    const humanAcceptChat = runCli(['task', 'review-chat', humanAcceptRef, '--json'], { cwd: dir, env });
-    assert.equal(humanAcceptChat.status, 0, humanAcceptChat.stderr);
-    assert.deepEqual(JSON.parse(humanAcceptChat.stdout).contract.verification_focus.commands_to_verify, [
+    assert.deepEqual(proofCommands('node --check commands/task.js passed. Do not run atris task accept OBL-1; no human accept or XP.'), [
       'node --check commands/task.js',
     ]);
 
     const longFiles = Array.from({ length: 10 }, (_, index) => `test/long-${index}.test.js`).join(' ');
     const longCommand = `node --check ${longFiles}`;
     assert.ok(longCommand.length > 180);
-    const longCommandTask = runCli(['task', 'new', 'Preserve long verifier command', '--json'], { cwd: dir, env });
-    assert.equal(longCommandTask.status, 0, longCommandTask.stderr);
-    const longCommandRef = JSON.parse(longCommandTask.stdout).task.display_id;
-    assert.equal(runCli(['task', 'claim', longCommandRef, '--as', 'codex'], { cwd: dir, env }).status, 0);
-    const longCommandReady = runCli([
-      'task', 'ready', longCommandRef,
-      '--as', 'codex',
-      '--proof', `${longCommand} passed`,
-      '--json',
-    ], { cwd: dir, env });
-    assert.equal(longCommandReady.status, 0, longCommandReady.stderr);
-    const longCommandChat = runCli(['task', 'review-chat', longCommandRef, '--json'], { cwd: dir, env });
-    assert.equal(longCommandChat.status, 0, longCommandChat.stderr);
-    assert.deepEqual(JSON.parse(longCommandChat.stdout).contract.verification_focus.commands_to_verify, [
+    assert.deepEqual(proofCommands(`${longCommand} passed`), [
       longCommand,
     ]);
 
-    const jsonFileTask = runCli(['task', 'new', 'JSON named verifier file', '--json'], { cwd: dir, env });
-    assert.equal(jsonFileTask.status, 0, jsonFileTask.stderr);
-    const jsonFileRef = JSON.parse(jsonFileTask.stdout).task.display_id;
-    assert.equal(runCli(['task', 'claim', jsonFileRef, '--as', 'codex'], { cwd: dir, env }).status, 0);
+    const jsonFileRef = seedClaimedTask('JSON named verifier file');
     const jsonFileReady = runCli([
       'task', 'ready', jsonFileRef,
       '--as', 'codex',
@@ -12619,6 +12540,16 @@ test('task review-chat extracts only proof-derived verifier commands', () => {
     assert.equal(jsonFileReady.status, 0, jsonFileReady.stderr);
     const jsonFileChat = runCli(['task', 'review-chat', jsonFileRef, '--json'], { cwd: dir, env });
     assert.equal(jsonFileChat.status, 0, jsonFileChat.stderr);
+    assert.deepEqual(
+      JSON.parse(jsonFileChat.stdout).contract.verification_focus.commands_to_verify,
+      JSON.parse(jsonFileReady.stdout).handoff.verification_focus.commands_to_verify,
+      'review-chat shows the same commands ready already printed',
+    );
+    assert.deepEqual(
+      proofCommands('`node --check test/json-output.test.js` passed'),
+      JSON.parse(jsonFileReady.stdout).handoff.verification_focus.commands_to_verify,
+      'the in-process builder matches what ready printed',
+    );
     assert.deepEqual(JSON.parse(jsonFileChat.stdout).contract.verification_focus.commands_to_verify, [
       'node --check test/json-output.test.js',
     ]);
@@ -12635,24 +12566,37 @@ test('task next names accept for uncertified review and leaves open work unclaim
   try {
     fs.mkdirSync(path.join(dir, 'atris'), { recursive: true });
 
-    const reviewAdd = runCli(['task', 'add', 'Needs second review before continuing', '--tag', 'agent', '--json'], { cwd: dir, env });
-    assert.equal(reviewAdd.status, 0, reviewAdd.stderr);
-    const reviewRef = JSON.parse(reviewAdd.stdout).task.display_id;
+    // Seed both tasks in creation order; the claim, ready, next and both shows stay on the CLI.
+    const workspaceRoot = taskStore.workspaceRoot(dir);
+    const db = taskStore.open(dbPath);
+    let reviewId;
+    let reviewRef;
+    let openRef;
+    try {
+      const review = addSeedTask(db, { title: 'Needs second review before continuing', tag: 'agent', workspaceRoot });
+      const open = addSeedTask(db, { title: 'Open work must wait', tag: 'agent', workspaceRoot });
+      assert.equal(review.inserted, true);
+      assert.equal(open.inserted, true);
+      const refs = taskStore.taskDisplayRefMap(taskStore.listTasks(db, { workspaceRoot }));
+      reviewId = review.id;
+      reviewRef = refs.get(review.id);
+      openRef = refs.get(open.id);
+      assert.ok(reviewRef);
+      assert.ok(openRef);
+    } finally {
+      taskStore.close();
+    }
     assert.equal(runCli(['task', 'claim', reviewRef, '--as', 'codex'], { cwd: dir, env }).status, 0);
     assert.equal(runCli(['task', 'ready', reviewRef, '--proof', 'first pass validation passed', '--as', 'codex'], { cwd: dir, env }).status, 0);
-
-    const openAdd = runCli(['task', 'add', 'Open work must wait', '--tag', 'agent', '--json'], { cwd: dir, env });
-    assert.equal(openAdd.status, 0, openAdd.stderr);
-    const openPayload = JSON.parse(openAdd.stdout);
 
     const next = runCli(['task', 'next', '--as', 'codex', '--json'], { cwd: dir, env });
     assert.equal(next.status, 0, next.stderr);
     const payload = JSON.parse(next.stdout);
     assert.equal(payload.action, 'accept');
     assert.equal(payload.command, `atris task accept ${reviewRef}`);
-    assert.equal(payload.task_id, JSON.parse(reviewAdd.stdout).task.id);
+    assert.equal(payload.task_id, reviewId);
 
-    const openShow = runCli(['task', 'show', openPayload.task.display_id, '--json'], { cwd: dir, env });
+    const openShow = runCli(['task', 'show', openRef, '--json'], { cwd: dir, env });
     assert.equal(openShow.status, 0, openShow.stderr);
     assert.equal(JSON.parse(openShow.stdout).status, 'open');
 
@@ -12672,9 +12616,20 @@ test('task next surfaces review debt when no open work exists', () => {
   try {
     fs.mkdirSync(path.join(dir, 'atris'), { recursive: true });
 
-    const reviewAdd = runCli(['task', 'add', 'Needs second review before continuing', '--tag', 'agent', '--json'], { cwd: dir, env });
-    assert.equal(reviewAdd.status, 0, reviewAdd.stderr);
-    const reviewRef = JSON.parse(reviewAdd.stdout).task.display_id;
+    // Seed the review task; the claim, ready and next stay on the CLI.
+    const workspaceRoot = taskStore.workspaceRoot(dir);
+    const db = taskStore.open(dbPath);
+    let reviewId;
+    let reviewRef;
+    try {
+      const review = addSeedTask(db, { title: 'Needs second review before continuing', tag: 'agent', workspaceRoot });
+      assert.equal(review.inserted, true);
+      reviewId = review.id;
+      reviewRef = taskStore.taskDisplayRefMap(taskStore.listTasks(db, { workspaceRoot })).get(review.id);
+      assert.ok(reviewRef);
+    } finally {
+      taskStore.close();
+    }
     assert.equal(runCli(['task', 'claim', reviewRef, '--as', 'codex'], { cwd: dir, env }).status, 0);
     assert.equal(runCli(['task', 'ready', reviewRef, '--proof', 'first pass validation passed', '--as', 'codex'], { cwd: dir, env }).status, 0);
 
@@ -12683,7 +12638,7 @@ test('task next surfaces review debt when no open work exists', () => {
     const payload = JSON.parse(next.stdout);
     assert.equal(payload.action, 'accept');
     assert.equal(payload.command, `atris task accept ${reviewRef}`);
-    assert.equal(payload.task_id, JSON.parse(reviewAdd.stdout).task.id);
+    assert.equal(payload.task_id, reviewId);
   } finally {
     cleanupTempDir(dir);
   }
@@ -12710,9 +12665,19 @@ test('task next surfaces Endgame fallback for human-only certified review', () =
       '',
     ].join('\n'), 'utf8');
 
-    const created = runCli(['task', 'new', 'Certified checkpoint', '--tag', 'runner', '--json'], { cwd: dir, env });
-    assert.equal(created.status, 0, created.stderr);
-    const ref = JSON.parse(created.stdout).task.display_id;
+    // Only creation is setup; claim, certification and human approval
+    // selection still run through the real CLI.
+    const workspaceRoot = taskStore.workspaceRoot(dir);
+    const db = taskStore.open(dbPath);
+    let ref;
+    try {
+      const created = addSeedTask(db, { title: 'Certified checkpoint', tag: 'runner', workspaceRoot });
+      assert.equal(created.inserted, true);
+      ref = taskStore.taskDisplayRefMap(taskStore.listTasks(db, { workspaceRoot })).get(created.id);
+      assert.ok(ref);
+    } finally {
+      taskStore.close();
+    }
     assert.equal(runCli(['task', 'claim', ref, '--as', 'codex-executor'], { cwd: dir, env }).status, 0);
     assert.equal(runCli(['task', 'ready', ref, '--proof', 'node --check test/commands.test.js passed', '--as', 'codex-executor'], { cwd: dir, env }).status, 0);
     assert.equal(runCli([
@@ -12784,9 +12749,22 @@ test('task next scoped by tag does not surface unrelated Endgame fallback', () =
       '',
     ].join('\n'), 'utf8');
 
-    const created = runCli(['task', 'new', 'Golden path certified checkpoint', '--tag', 'golden-path', '--json'], { cwd: dir, env });
-    assert.equal(created.status, 0, created.stderr);
-    const ref = JSON.parse(created.stdout).task.display_id;
+    // Only creation is setup; certification and scoped next stay on the CLI.
+    const workspaceRoot = taskStore.workspaceRoot(dir);
+    const db = taskStore.open(dbPath);
+    let ref;
+    try {
+      const created = addSeedTask(db, {
+        title: 'Golden path certified checkpoint',
+        tag: 'golden-path',
+        workspaceRoot,
+      });
+      assert.equal(created.inserted, true);
+      ref = taskStore.taskDisplayRefMap(taskStore.listTasks(db, { workspaceRoot })).get(created.id);
+      assert.ok(ref);
+    } finally {
+      taskStore.close();
+    }
     assert.equal(runCli(['task', 'claim', ref, '--as', 'onboarding'], { cwd: dir, env }).status, 0);
     assert.equal(runCli(['task', 'ready', ref, '--proof', 'node --check test/commands.test.js passed', '--as', 'onboarding'], { cwd: dir, env }).status, 0);
     assert.equal(runCli([
@@ -12843,18 +12821,24 @@ test('task next does not repeat an Endgame seed that already exists', () => {
       '',
     ].join('\n'), 'utf8');
 
-    const existing = runCli([
-      'task', 'new', 'Audit and close next runner-agnostic heartbeat gap',
-      '--tag', 'runner',
-      '--json',
-    ], { cwd: dir, env });
-    assert.equal(existing.status, 0, existing.stderr);
-    const existingTask = JSON.parse(existing.stdout).task;
-    assert.equal(runCli(['task', 'claim', existingTask.display_id, '--as', 'auto-improver'], { cwd: dir, env }).status, 0);
+    // Seed only creation; claims, certification and next stay on the CLI.
+    const workspaceRoot = taskStore.workspaceRoot(dir);
+    const seed = (title) => {
+      const db = taskStore.open(dbPath);
+      try {
+        const created = addSeedTask(db, { title, tag: 'runner', workspaceRoot });
+        assert.equal(created.inserted, true);
+        const ref = taskStore.taskDisplayRefMap(taskStore.listTasks(db, { workspaceRoot })).get(created.id);
+        assert.ok(ref);
+        return ref;
+      } finally {
+        taskStore.close();
+      }
+    };
+    const existingRef = seed('Audit and close next runner-agnostic heartbeat gap');
+    assert.equal(runCli(['task', 'claim', existingRef, '--as', 'auto-improver'], { cwd: dir, env }).status, 0);
 
-    const created = runCli(['task', 'new', 'Certified checkpoint', '--tag', 'runner', '--json'], { cwd: dir, env });
-    assert.equal(created.status, 0, created.stderr);
-    const ref = JSON.parse(created.stdout).task.display_id;
+    const ref = seed('Certified checkpoint');
     assert.equal(runCli(['task', 'claim', ref, '--as', 'codex-executor'], { cwd: dir, env }).status, 0);
     assert.equal(runCli(['task', 'ready', ref, '--proof', 'node --check test/commands.test.js passed', '--as', 'codex-executor'], { cwd: dir, env }).status, 0);
     assert.equal(runCli([
@@ -12894,13 +12878,20 @@ test('task review summary does not treat incidental XP wording as AgentXP work',
   try {
     fs.mkdirSync(path.join(dir, 'atris'), { recursive: true });
 
-    const add = runCli([
-      'task', 'add', 'Clean stale claimed task queue after XP review',
-      '--tag', 'hygiene',
-      '--json',
-    ], { cwd: dir, env });
-    assert.equal(add.status, 0, add.stderr);
-    const ref = JSON.parse(add.stdout).task.display_id;
+    // Seed creation only; claim, ready and show still exercise the CLI.
+    const workspaceRoot = taskStore.workspaceRoot(dir);
+    const db = taskStore.open(dbPath);
+    let ref;
+    try {
+      const created = addSeedTask(db, {
+        title: 'Clean stale claimed task queue after XP review', tag: 'hygiene', workspaceRoot,
+      });
+      assert.equal(created.inserted, true);
+      ref = taskStore.taskDisplayRefMap(taskStore.listTasks(db, { workspaceRoot })).get(created.id);
+      assert.ok(ref);
+    } finally {
+      taskStore.close();
+    }
     assert.equal(runCli(['task', 'claim', ref, '--as', 'codex'], { cwd: dir, env }).status, 0);
 
     const ready = runCli([
@@ -12947,13 +12938,20 @@ test('task ready default landing describes completed work for unmapped titles', 
   try {
     fs.mkdirSync(path.join(dir, 'atris'), { recursive: true });
 
-    const add = runCli([
-      'task', 'add', 'Explore review landing output',
-      '--tag', 'cli',
-      '--json',
-    ], { cwd: dir, env });
-    assert.equal(add.status, 0, add.stderr);
-    const ref = JSON.parse(add.stdout).task.display_id;
+    // Seed creation only; claim, ready and show still exercise the CLI.
+    const workspaceRoot = taskStore.workspaceRoot(dir);
+    const db = taskStore.open(dbPath);
+    let ref;
+    try {
+      const created = addSeedTask(db, {
+        title: 'Explore review landing output', tag: 'cli', workspaceRoot,
+      });
+      assert.equal(created.inserted, true);
+      ref = taskStore.taskDisplayRefMap(taskStore.listTasks(db, { workspaceRoot })).get(created.id);
+      assert.ok(ref);
+    } finally {
+      taskStore.close();
+    }
     assert.equal(runCli(['task', 'claim', ref, '--as', 'codex'], { cwd: dir, env }).status, 0);
 
     const ready = runCli([
@@ -12986,14 +12984,22 @@ test('task ready and finish accept landing capability sentences', () => {
   try {
     fs.mkdirSync(path.join(dir, 'atris'), { recursive: true });
 
-    const readyAdd = runCli([
-      'task', 'add', 'Add digest landing sentence',
-      '--tag', 'cli',
-      '--json',
-    ], { cwd: dir, env });
-    assert.equal(readyAdd.status, 0, readyAdd.stderr);
-    const readyRef = JSON.parse(readyAdd.stdout).task.display_id;
-    assert.equal(runCli(['task', 'claim', readyRef, '--as', 'codex'], { cwd: dir, env }).status, 0);
+    // Seed claimed setup through the real store; ready, finish and projection stay on the CLI.
+    const workspaceRoot = taskStore.workspaceRoot(dir);
+    function seedLandingTask(title) {
+      const db = taskStore.open(dbPath);
+      try {
+        const created = addSeedTask(db, { title, tag: 'cli', workspaceRoot });
+        assert.equal(created.inserted, true);
+        assert.equal(taskStore.claimTask(db, { id: created.id, claimedBy: 'codex' }).claimed, true);
+        const ref = taskStore.taskDisplayRefMap(taskStore.listTasks(db, { workspaceRoot })).get(created.id);
+        assert.ok(ref);
+        return ref;
+      } finally {
+        taskStore.close();
+      }
+    }
+    const readyRef = seedLandingTask('Add digest landing sentence');
 
     const readySentence = 'Users can now trust the review queue to explain the result without opening the task.';
     const ready = runCli([
@@ -13009,14 +13015,7 @@ test('task ready and finish accept landing capability sentences', () => {
     assert.equal(readyPayload.landing_advisory, null);
     assert.equal(readyPayload.task.review.landing.happened, readySentence);
 
-    const missingAdd = runCli([
-      'task', 'add', 'Warn when landing is missing',
-      '--tag', 'cli',
-      '--json',
-    ], { cwd: dir, env });
-    assert.equal(missingAdd.status, 0, missingAdd.stderr);
-    const missingRef = JSON.parse(missingAdd.stdout).task.display_id;
-    assert.equal(runCli(['task', 'claim', missingRef, '--as', 'codex'], { cwd: dir, env }).status, 0);
+    const missingRef = seedLandingTask('Warn when landing is missing');
     const missingReady = runCli([
       'task', 'ready', missingRef,
       '--proof', 'node --check test/autoland.test.js passed',
@@ -13027,14 +13026,7 @@ test('task ready and finish accept landing capability sentences', () => {
     assert.match(missingReady.stderr, /new teammate would get/);
     assert.match(JSON.parse(missingReady.stdout).landing_advisory, /new teammate would get/);
 
-    const finishAdd = runCli([
-      'task', 'add', 'Finish digest landing sentence',
-      '--tag', 'cli',
-      '--json',
-    ], { cwd: dir, env });
-    assert.equal(finishAdd.status, 0, finishAdd.stderr);
-    const finishRef = JSON.parse(finishAdd.stdout).task.display_id;
-    assert.equal(runCli(['task', 'claim', finishRef, '--as', 'codex'], { cwd: dir, env }).status, 0);
+    const finishRef = seedLandingTask('Finish digest landing sentence');
 
     const finishSentence = 'Users can now trust the landed digest to explain the capability without opening the task.';
     const finish = runCli([
@@ -13067,14 +13059,23 @@ test('task ready rejects an explicit landing sentence a day-one PM cannot act on
   const env = { ATRIS_TASKS_DB: dbPath, NODE_NO_WARNINGS: '1', ATRIS_AGENT_ID: 'codex' };
   try {
     fs.mkdirSync(path.join(dir, 'atris'), { recursive: true });
-    const added = runCli([
-      'task', 'add', 'Make the team stream actionable for a new operator',
-      '--tag', 'language',
-      '--json',
-    ], { cwd: dir, env });
-    assert.equal(added.status, 0, added.stderr);
-    const ref = JSON.parse(added.stdout).task.display_id;
-    assert.equal(runCli(['task', 'claim', ref, '--as', 'codex'], { cwd: dir, env }).status, 0);
+    // Seed claimed setup through the real store; both landing rejections stay on the CLI.
+    const workspaceRoot = taskStore.workspaceRoot(dir);
+    const db = taskStore.open(dbPath);
+    let ref;
+    try {
+      const created = addSeedTask(db, {
+        title: 'Make the team stream actionable for a new operator',
+        tag: 'language',
+        workspaceRoot,
+      });
+      assert.equal(created.inserted, true);
+      assert.equal(taskStore.claimTask(db, { id: created.id, claimedBy: 'codex' }).claimed, true);
+      ref = taskStore.taskDisplayRefMap(taskStore.listTasks(db, { workspaceRoot })).get(created.id);
+      assert.ok(ref);
+    } finally {
+      taskStore.close();
+    }
 
     const brokenGrammar = runCli([
       'task', 'ready', ref,
@@ -13121,6 +13122,8 @@ test('task accept automatically projects accepted proof into durable local XP le
     ], { cwd: dir, env });
     assert.equal(add.status, 0, add.stderr);
     const ref = JSON.parse(add.stdout).task.display_id;
+    assert.equal(JSON.parse(add.stdout).task.metadata.goal_id, 'goal-agent-xp');
+    assert.equal(JSON.parse(add.stdout).task.metadata.goal_objective, 'Make XP collectible anywhere');
     assert.equal(runCli(['task', 'claim', ref, '--as', 'codex'], { cwd: dir, env }).status, 0);
     assert.equal(runCli(['task', 'ready', ref, '--proof', 'xp projection test passed', '--as', 'codex'], { cwd: dir, env }).status, 0);
     const accept = runCli(['task', 'accept', ref, '--reward', '2', '--as', 'keshavrao', '--json'], { cwd: dir, env });
@@ -13180,10 +13183,21 @@ test('task accept rejects non-positive rewards before marking done', () => {
   try {
     fs.mkdirSync(path.join(dir, 'atris'), { recursive: true });
 
-    const add = runCli(['task', 'add', 'Reject zero reward accept', '--tag', 'career-xp', '--json'], { cwd: dir, env });
-    assert.equal(add.status, 0, add.stderr);
-    const ref = JSON.parse(add.stdout).task.display_id;
-    assert.equal(runCli(['task', 'claim', ref, '--as', 'codex'], { cwd: dir, env }).status, 0);
+    // Seed claimed setup through the real store; ready and reward rejection stay on the CLI.
+    const workspaceRoot = taskStore.workspaceRoot(dir);
+    const db = taskStore.open(dbPath);
+    let ref;
+    try {
+      const created = addSeedTask(db, {
+        title: 'Reject zero reward accept', tag: 'career-xp', workspaceRoot,
+      });
+      assert.equal(created.inserted, true);
+      assert.equal(taskStore.claimTask(db, { id: created.id, claimedBy: 'codex' }).claimed, true);
+      ref = taskStore.taskDisplayRefMap(taskStore.listTasks(db, { workspaceRoot })).get(created.id);
+      assert.ok(ref);
+    } finally {
+      taskStore.close();
+    }
     assert.equal(runCli(['task', 'ready', ref, '--proof', 'accept validation passed', '--as', 'codex'], { cwd: dir, env }).status, 0);
 
     const accept = runCli(['task', 'accept', ref, '--reward', '0', '--as', 'keshavrao', '--json'], { cwd: dir, env });
@@ -13213,10 +13227,21 @@ test('task proof-only agent env blocks acceptance verbs', () => {
   try {
     fs.mkdirSync(path.join(dir, 'atris'), { recursive: true });
 
-    const add = runCli(['task', 'add', 'Proof-only guard task', '--tag', 'agent-xp', '--json'], { cwd: dir, env });
-    assert.equal(add.status, 0, add.stderr);
-    const ref = JSON.parse(add.stdout).task.display_id;
-    assert.equal(runCli(['task', 'claim', ref, '--as', 'codex'], { cwd: dir, env }).status, 0);
+    // Seed creation and ownership; every acceptance guard stays on the CLI.
+    const workspaceRoot = taskStore.workspaceRoot(dir);
+    const db = taskStore.open(dbPath);
+    let ref;
+    try {
+      const created = addSeedTask(db, {
+        title: 'Proof-only guard task', tag: 'agent-xp', workspaceRoot,
+      });
+      assert.equal(created.inserted, true);
+      assert.equal(taskStore.claimTask(db, { id: created.id, claimedBy: 'codex' }).claimed, true);
+      ref = taskStore.taskDisplayRefMap(taskStore.listTasks(db, { workspaceRoot })).get(created.id);
+      assert.ok(ref);
+    } finally {
+      taskStore.close();
+    }
 
     const done = runCli(['task', 'done', ref, '--as', 'codex', '--proof', 'proof-only guard checked done command', '--json'], { cwd: dir, env });
     assert.equal(done.status, 2);
@@ -13284,10 +13309,21 @@ test('task auto-accept-certified requires explicit human confirmation', () => {
   try {
     fs.mkdirSync(path.join(dir, 'atris'), { recursive: true });
     writePolicy(dir, { enabled: false, enabled_by: 'test' });
-    const add = runCli(['task', 'add', 'Auto accept still needs a human', '--tag', 'agent-xp', '--json'], { cwd: dir, env });
-    assert.equal(add.status, 0, add.stderr);
-    const ref = JSON.parse(add.stdout).task.display_id;
-    assert.equal(runCli(['task', 'claim', ref, '--as', 'codex'], { cwd: dir, env }).status, 0);
+    // Seed creation and ownership; certification and every auto-accept check stay on the CLI.
+    const workspaceRoot = taskStore.workspaceRoot(dir);
+    const db = taskStore.open(dbPath);
+    let ref;
+    try {
+      const created = addSeedTask(db, {
+        title: 'Auto accept still needs a human', tag: 'agent-xp', workspaceRoot,
+      });
+      assert.equal(created.inserted, true);
+      assert.equal(taskStore.claimTask(db, { id: created.id, claimedBy: 'codex' }).claimed, true);
+      ref = taskStore.taskDisplayRefMap(taskStore.listTasks(db, { workspaceRoot })).get(created.id);
+      assert.ok(ref);
+    } finally {
+      taskStore.close();
+    }
     assert.equal(runCli([
       'task', 'ready', ref,
       '--proof', 'node --check test/commands.test.js passed and git status --porcelain passed',
@@ -13390,16 +13426,26 @@ test('task auto-accept-certified --all sweeps past the old 12-row cap', () => {
     fs.writeFileSync(path.join(trustState, 'career_xp_receipts.jsonl'), `${trustedCodex.join('\n')}\n`);
     fs.writeFileSync(path.join(trustState, 'scorecards.jsonl'), '');
     writePolicy(dir, { enabled: false, enabled_by: 'test' });
+    // Every row but the last is readied straight in the task store. The last
+    // still runs through the CLI, so the certified scan reads what the CLI
+    // writes, and its write lands after every row exists.
+    const workspaceRoot = taskStore.workspaceRoot(dir);
     for (let i = 0; i < ROW_COUNT; i += 1) {
-      const add = runCli(['task', 'add', `Row ${i} lands under --all`, '--tag', 'code', '--json'], { cwd: dir, env });
-      assert.equal(add.status, 0, add.stderr);
-      const ref = JSON.parse(add.stdout).task.display_id;
-      assert.equal(runCli(['task', 'claim', ref, '--as', 'codex'], { cwd: dir, env }).status, 0);
-      assert.equal(runCli([
-        'task', 'ready', ref,
-        '--proof', `Row ${i}: node --check test/commands.test.js passed and diff inspected end to end`,
-        '--as', 'codex',
-      ], { cwd: dir, env }).status, 0);
+      const proof = `Row ${i}: node --check test/commands.test.js passed and diff inspected end to end`;
+      const db = taskStore.open(dbPath);
+      let ref;
+      try {
+        ref = addSeedTask(db, { title: `Row ${i} lands under --all`, tag: 'code', workspaceRoot }).id;
+        assert.equal(taskStore.claimTask(db, { id: ref, claimedBy: 'codex' }).claimed, true);
+        if (i < ROW_COUNT - 1) {
+          assert.equal(taskStore.readyTask(db, { id: ref, actor: 'codex', proof, result: FIXTURE_RESULT_SENTENCE }).ready, true);
+        }
+      } finally {
+        taskStore.close();
+      }
+      if (i === ROW_COUNT - 1) {
+        assert.equal(runCli(['task', 'ready', ref, '--proof', proof, '--as', 'codex'], { cwd: dir, env }).status, 0);
+      }
     }
 
     // Without --all, the certified-only queue is unchanged: none of these
@@ -13434,10 +13480,21 @@ test('task review after acceptance cannot mint duplicate AgentXP', () => {
   try {
     fs.mkdirSync(path.join(dir, 'atris'), { recursive: true });
 
-    const add = runCli(['task', 'add', 'Keep accepted XP idempotent', '--tag', 'agent-xp', '--json'], { cwd: dir, env });
-    assert.equal(add.status, 0, add.stderr);
-    const ref = JSON.parse(add.stdout).task.display_id;
-    assert.equal(runCli(['task', 'claim', ref, '--as', 'codex'], { cwd: dir, env }).status, 0);
+    // Seed creation and ownership; ready, accept, duplicate review and XP status stay on the CLI.
+    const workspaceRoot = taskStore.workspaceRoot(dir);
+    const db = taskStore.open(dbPath);
+    let ref;
+    try {
+      const created = addSeedTask(db, {
+        title: 'Keep accepted XP idempotent', tag: 'agent-xp', workspaceRoot,
+      });
+      assert.equal(created.inserted, true);
+      assert.equal(taskStore.claimTask(db, { id: created.id, claimedBy: 'codex' }).claimed, true);
+      ref = taskStore.taskDisplayRefMap(taskStore.listTasks(db, { workspaceRoot })).get(created.id);
+      assert.ok(ref);
+    } finally {
+      taskStore.close();
+    }
     assert.equal(runCli(['task', 'ready', ref, '--proof', 'accepted once validation passed', '--as', 'codex'], { cwd: dir, env }).status, 0);
 
     const accept = runCli(['task', 'accept', ref, '--as', 'keshavrao', '--json'], { cwd: dir, env });
@@ -13473,10 +13530,21 @@ test('xp status repairs exact duplicate local XP receipts', () => {
   try {
     fs.mkdirSync(path.join(dir, 'atris'), { recursive: true });
 
-    const add = runCli(['task', 'add', 'Repair duplicate XP receipt', '--tag', 'career-xp', '--json'], { cwd: dir, env });
-    assert.equal(add.status, 0, add.stderr);
-    const ref = JSON.parse(add.stdout).task.display_id;
-    assert.equal(runCli(['task', 'claim', ref, '--as', 'codex'], { cwd: dir, env }).status, 0);
+    // Seed creation and ownership; ready, accept and the status repair stay on the CLI.
+    const workspaceRoot = taskStore.workspaceRoot(dir);
+    const db = taskStore.open(dbPath);
+    let ref;
+    try {
+      const created = addSeedTask(db, {
+        title: 'Repair duplicate XP receipt', tag: 'career-xp', workspaceRoot,
+      });
+      assert.equal(created.inserted, true);
+      assert.equal(taskStore.claimTask(db, { id: created.id, claimedBy: 'codex' }).claimed, true);
+      ref = taskStore.taskDisplayRefMap(taskStore.listTasks(db, { workspaceRoot })).get(created.id);
+      assert.ok(ref);
+    } finally {
+      taskStore.close();
+    }
     assert.equal(runCli(['task', 'ready', ref, '--proof', 'duplicate receipt repair validation passed', '--as', 'codex'], { cwd: dir, env }).status, 0);
     const accept = runCli(['task', 'accept', ref, '--reward', '1', '--as', 'keshavrao', '--json'], { cwd: dir, env });
     assert.equal(accept.status, 0, accept.stderr);
@@ -13506,10 +13574,19 @@ test('xp status fails closed on conflicting duplicate receipts with readable lab
     fs.mkdirSync(path.join(dir, 'atris'), { recursive: true });
 
     const title = 'Detect conflicting XP receipt';
-    const add = runCli(['task', 'add', title, '--tag', 'career-xp', '--json'], { cwd: dir, env });
-    assert.equal(add.status, 0, add.stderr);
-    const ref = JSON.parse(add.stdout).task.display_id;
-    assert.equal(runCli(['task', 'claim', ref, '--as', 'codex'], { cwd: dir, env }).status, 0);
+    // Seed creation and ownership; ready, accept and the fail-closed status read stay on the CLI.
+    const workspaceRoot = taskStore.workspaceRoot(dir);
+    const db = taskStore.open(dbPath);
+    let ref;
+    try {
+      const created = addSeedTask(db, { title, tag: 'career-xp', workspaceRoot });
+      assert.equal(created.inserted, true);
+      assert.equal(taskStore.claimTask(db, { id: created.id, claimedBy: 'codex' }).claimed, true);
+      ref = taskStore.taskDisplayRefMap(taskStore.listTasks(db, { workspaceRoot })).get(created.id);
+      assert.ok(ref);
+    } finally {
+      taskStore.close();
+    }
     assert.equal(runCli(['task', 'ready', ref, '--proof', 'conflict validation passed', '--as', 'codex'], { cwd: dir, env }).status, 0);
     const accept = runCli(['task', 'accept', ref, '--reward', '1', '--as', 'keshavrao', '--json'], { cwd: dir, env });
     assert.equal(accept.status, 0, accept.stderr);
@@ -13539,10 +13616,19 @@ test('xp status fails closed when local receipt ledger is tampered', () => {
   try {
     fs.mkdirSync(path.join(dir, 'atris'), { recursive: true });
 
-    const add = runCli(['task', 'add', 'Detect XP tampering', '--tag', 'career-xp', '--json'], { cwd: dir, env });
-    assert.equal(add.status, 0, add.stderr);
-    const ref = JSON.parse(add.stdout).task.display_id;
-    assert.equal(runCli(['task', 'claim', ref, '--as', 'codex'], { cwd: dir, env }).status, 0);
+    // Seed creation and ownership; ready, accept and the tampered status read stay on the CLI.
+    const workspaceRoot = taskStore.workspaceRoot(dir);
+    const db = taskStore.open(dbPath);
+    let ref;
+    try {
+      const created = addSeedTask(db, { title: 'Detect XP tampering', tag: 'career-xp', workspaceRoot });
+      assert.equal(created.inserted, true);
+      assert.equal(taskStore.claimTask(db, { id: created.id, claimedBy: 'codex' }).claimed, true);
+      ref = taskStore.taskDisplayRefMap(taskStore.listTasks(db, { workspaceRoot })).get(created.id);
+      assert.ok(ref);
+    } finally {
+      taskStore.close();
+    }
     assert.equal(runCli(['task', 'ready', ref, '--proof', 'tamper test passed', '--as', 'codex'], { cwd: dir, env }).status, 0);
     const accept = runCli(['task', 'accept', ref, '--reward', '1', '--as', 'keshavrao', '--json'], { cwd: dir, env });
     assert.equal(accept.status, 0, accept.stderr);
@@ -13574,10 +13660,19 @@ test('task revise sends ready work back to claimed with revision count', () => {
   try {
     fs.mkdirSync(path.join(dir, 'atris'), { recursive: true });
 
-    const add = runCli(['task', 'add', 'Revise autonomous work', '--tag', 'agent', '--json'], { cwd: dir, env });
-    assert.equal(add.status, 0, add.stderr);
-    const ref = JSON.parse(add.stdout).task.display_id;
-    assert.equal(runCli(['task', 'claim', ref, '--as', 'codex'], { cwd: dir, env }).status, 0);
+    // Seed creation and ownership; both readies, revise, show, the stale accept and re-ready stay on the CLI.
+    const workspaceRoot = taskStore.workspaceRoot(dir);
+    const db = taskStore.open(dbPath);
+    let ref;
+    try {
+      const created = addSeedTask(db, { title: 'Revise autonomous work', tag: 'agent', workspaceRoot });
+      assert.equal(created.inserted, true);
+      assert.equal(taskStore.claimTask(db, { id: created.id, claimedBy: 'codex' }).claimed, true);
+      ref = taskStore.taskDisplayRefMap(taskStore.listTasks(db, { workspaceRoot })).get(created.id);
+      assert.ok(ref);
+    } finally {
+      taskStore.close();
+    }
     assert.equal(runCli(['task', 'ready', ref, '--proof', 'smoke passed', '--as', 'codex'], { cwd: dir, env }).status, 0);
     assert.equal(runCli(['task', 'ready', ref, '--proof', 'second smoke passed', '--as', 'codex'], { cwd: dir, env }).status, 0);
 
@@ -13630,9 +13725,18 @@ test('task revise returns unclaimed ready work to open so agents can claim it', 
   try {
     fs.mkdirSync(path.join(dir, 'atris'), { recursive: true });
 
-    const add = runCli(['task', 'add', 'Revise open ready task', '--tag', 'agent', '--json'], { cwd: dir, env });
-    assert.equal(add.status, 0, add.stderr);
-    const ref = JSON.parse(add.stdout).task.display_id;
+    // Seed creation only; the unclaimed ready, revise and claim stay on the CLI.
+    const workspaceRoot = taskStore.workspaceRoot(dir);
+    const db = taskStore.open(dbPath);
+    let ref;
+    try {
+      const created = addSeedTask(db, { title: 'Revise open ready task', tag: 'agent', workspaceRoot });
+      assert.equal(created.inserted, true);
+      ref = taskStore.taskDisplayRefMap(taskStore.listTasks(db, { workspaceRoot })).get(created.id);
+      assert.ok(ref);
+    } finally {
+      taskStore.close();
+    }
     assert.equal(runCli(['task', 'ready', ref, '--proof', 'open task validation passed', '--as', 'codex'], { cwd: dir, env }).status, 0);
 
     const revise = runCli(['task', 'revise', ref, '--note', 'tighten proof', '--as', 'keshavrao', '--json'], { cwd: dir, env });
@@ -13657,10 +13761,19 @@ test('task revise refuses accepted tasks so XP is not stale', () => {
   try {
     fs.mkdirSync(path.join(dir, 'atris'), { recursive: true });
 
-    const add = runCli(['task', 'add', 'Do not revise accepted XP', '--tag', 'career-xp', '--json'], { cwd: dir, env });
-    assert.equal(add.status, 0, add.stderr);
-    const ref = JSON.parse(add.stdout).task.display_id;
-    assert.equal(runCli(['task', 'claim', ref, '--as', 'codex'], { cwd: dir, env }).status, 0);
+    // Seed creation and ownership; ready, accept, the refused revise and the XP status stay on the CLI.
+    const workspaceRoot = taskStore.workspaceRoot(dir);
+    const db = taskStore.open(dbPath);
+    let ref;
+    try {
+      const created = addSeedTask(db, { title: 'Do not revise accepted XP', tag: 'career-xp', workspaceRoot });
+      assert.equal(created.inserted, true);
+      assert.equal(taskStore.claimTask(db, { id: created.id, claimedBy: 'codex' }).claimed, true);
+      ref = taskStore.taskDisplayRefMap(taskStore.listTasks(db, { workspaceRoot })).get(created.id);
+      assert.ok(ref);
+    } finally {
+      taskStore.close();
+    }
     assert.equal(runCli(['task', 'ready', ref, '--proof', 'accepted validation passed', '--as', 'codex'], { cwd: dir, env }).status, 0);
     const accept = runCli(['task', 'accept', ref, '--as', 'keshavrao', '--json'], { cwd: dir, env });
     assert.equal(accept.status, 0, accept.stderr);
@@ -13768,7 +13881,7 @@ test('task natural flow creates, picks, talks, finishes, and refreshes projectio
   }
 });
 
-test('task headless JSON contract supports create, claim, note, finish, and events', () => {
+test('task headless JSON contract supports create, claim, note, finish, and events', async () => {
   if (!hasNodeSqlite()) return;
   const dir = makeTempDir();
   const dbPath = path.join(dir, 'tasks.db');
@@ -13800,9 +13913,20 @@ test('task headless JSON contract supports create, claim, note, finish, and even
     assert.equal(nextPayload.command, `atris task claim ${createPayload.task.display_id} --as bot`);
     assert.equal(nextPayload.owner, 'bot');
     assert.equal(nextPayload.task.status, 'open');
-    assert.equal(runCli(['task', 'claim', shortId, '--as', 'bot', '--json'], { cwd: dir, env }).status, 0);
+    // Setup claim for the refusal checks; the reclaim below covers claim JSON.
+    const db = taskStore.open(dbPath);
+    try {
+      assert.equal(taskStore.claimTask(db, { id, claimedBy: 'bot' }).claimed, true);
+    } finally {
+      taskStore.close();
+    }
 
-    const claimConflict = runCli(['task', 'claim', shortId, '--as', 'other', '--json'], { cwd: dir, env });
+    // These refusals change nothing, so they run at once.
+    const [claimConflict, humanClaimConflict, releaseOther] = await Promise.all([
+      runCliAsync(['task', 'claim', shortId, '--as', 'other', '--json'], { cwd: dir, env }),
+      runCliAsync(['task', 'claim', shortId, '--as', 'other'], { cwd: dir, env }),
+      runCliAsync(['task', 'release', shortId, '--as', 'other', '--json'], { cwd: dir, env }),
+    ]);
     assert.equal(claimConflict.status, 1);
     assert.equal(claimConflict.stderr, '');
     const claimConflictPayload = JSON.parse(claimConflict.stdout);
@@ -13812,13 +13936,11 @@ test('task headless JSON contract supports create, claim, note, finish, and even
     assert.equal(claimConflictPayload.claimed_by, 'bot');
     assert.equal(claimConflictPayload.recovery_command, `atris task release ${shortId} --as bot`);
 
-    const humanClaimConflict = runCli(['task', 'claim', shortId, '--as', 'other'], { cwd: dir, env });
     assert.equal(humanClaimConflict.status, 1);
     assert.equal(humanClaimConflict.stdout, '');
     assert.match(humanClaimConflict.stderr, /claim failed: already_claimed \(held by bot\)/);
     assert.match(humanClaimConflict.stderr, new RegExp(`Recovery: atris task release ${shortId} --as bot`));
 
-    const releaseOther = runCli(['task', 'release', shortId, '--as', 'other', '--json'], { cwd: dir, env });
     assert.equal(releaseOther.status, 1);
     assert.equal(releaseOther.stderr, '');
     const releaseOtherPayload = JSON.parse(releaseOther.stdout);
@@ -13867,7 +13989,11 @@ test('task headless JSON contract supports create, claim, note, finish, and even
     assert.equal(finishPayload.task.status, 'done');
     assert.equal(finishPayload.episode.action.actor, 'bot');
 
-    const doneConflict = runCli(['task', 'done', shortId, '--json'], { cwd: dir, env });
+    const [doneConflict, finishConflict, humanFinishConflict] = await Promise.all([
+      runCliAsync(['task', 'done', shortId, '--json'], { cwd: dir, env }),
+      runCliAsync(['task', 'finish', shortId, '--json'], { cwd: dir, env }),
+      runCliAsync(['task', 'finish', shortId], { cwd: dir, env }),
+    ]);
     assert.equal(doneConflict.status, 1);
     assert.equal(doneConflict.stderr, '');
     const doneConflictPayload = JSON.parse(doneConflict.stdout);
@@ -13876,7 +14002,6 @@ test('task headless JSON contract supports create, claim, note, finish, and even
     assert.equal(doneConflictPayload.reason, 'not_open_or_claimed');
     assert.equal(doneConflictPayload.task_id, id);
 
-    const finishConflict = runCli(['task', 'finish', shortId, '--json'], { cwd: dir, env });
     assert.equal(finishConflict.status, 1);
     assert.equal(finishConflict.stderr, '');
     const finishConflictPayload = JSON.parse(finishConflict.stdout);
@@ -13885,24 +14010,31 @@ test('task headless JSON contract supports create, claim, note, finish, and even
     assert.equal(finishConflictPayload.reason, 'not_open_or_claimed');
     assert.equal(finishConflictPayload.task_id, id);
 
-    const humanFinishConflict = runCli(['task', 'finish', shortId], { cwd: dir, env });
     assert.equal(humanFinishConflict.status, 1);
     assert.equal(humanFinishConflict.stdout, '');
     assert.match(humanFinishConflict.stderr, /finish failed: .* not in open\|claimed/);
 
-    const events = runCli(['task', 'events', shortId, '--json'], { cwd: dir, env });
+    // Every write is done; the rest only read or refuse, so they run at once.
+    const [events, where, unknown, humanUnknown, missingTitle, missingClaimId, humanMissingTitle, missing] = await Promise.all([
+      runCliAsync(['task', 'events', shortId, '--json'], { cwd: dir, env }),
+      runCliAsync(['task', 'where', '--json'], { cwd: dir, env }),
+      runCliAsync(['task', 'not-a-subcommand', '--json'], { cwd: dir, env }),
+      runCliAsync(['task', 'not-a-subcommand'], { cwd: dir, env }),
+      runCliAsync(['task', 'add', '--json', '--full'], { cwd: dir, env }),
+      runCliAsync(['task', 'claim', '--json', '--full'], { cwd: dir, env }),
+      runCliAsync(['task', 'add'], { cwd: dir, env }),
+      runCliAsync(['task', 'show', 'DOESNOTEXIST', '--json', '--full'], { cwd: dir, env }),
+    ]);
     assert.equal(events.status, 0, events.stderr);
     const eventsPayload = JSON.parse(events.stdout);
     assert.deepEqual(eventsPayload.events.map(e => e.event_type), ['created', 'claimed', 'claim_released', 'claimed', 'message', 'completed', 'reviewed']);
 
-    const where = runCli(['task', 'where', '--json'], { cwd: dir, env });
     assert.equal(where.status, 0, where.stderr);
     const wherePayload = JSON.parse(where.stdout);
     assert.equal(wherePayload.ok, true);
     assert.equal(wherePayload.db, dbPath);
     assert.equal(wherePayload.workspace, fs.realpathSync(dir));
 
-    const unknown = runCli(['task', 'not-a-subcommand', '--json'], { cwd: dir, env });
     assert.equal(unknown.status, 2);
     assert.equal(unknown.stderr, '');
     const unknownPayload = JSON.parse(unknown.stdout);
@@ -13911,12 +14043,10 @@ test('task headless JSON contract supports create, claim, note, finish, and even
     assert.ok(Array.isArray(unknownPayload.usage));
     assert.ok(unknownPayload.usage.some(line => line.includes('atris task add')));
 
-    const humanUnknown = runCli(['task', 'not-a-subcommand'], { cwd: dir, env });
     assert.equal(humanUnknown.status, 2);
     assert.match(humanUnknown.stderr, /atris task: unknown subcommand "not-a-subcommand"/);
     assert.match(humanUnknown.stdout, /atris task - durable local task state/);
 
-    const missingTitle = runCli(['task', 'add', '--json', '--full'], { cwd: dir, env });
     assert.equal(missingTitle.status, 2);
     assert.equal(missingTitle.stderr, '');
     const missingTitlePayload = JSON.parse(missingTitle.stdout);
@@ -13924,7 +14054,6 @@ test('task headless JSON contract supports create, claim, note, finish, and even
     assert.equal(missingTitlePayload.command, 'atris task add');
     assert.equal(missingTitlePayload.reason, 'missing_title');
 
-    const missingClaimId = runCli(['task', 'claim', '--json', '--full'], { cwd: dir, env });
     assert.equal(missingClaimId.status, 2);
     assert.equal(missingClaimId.stderr, '');
     const missingClaimPayload = JSON.parse(missingClaimId.stdout);
@@ -13932,12 +14061,10 @@ test('task headless JSON contract supports create, claim, note, finish, and even
     assert.equal(missingClaimPayload.command, 'atris task claim');
     assert.equal(missingClaimPayload.reason, 'missing_id');
 
-    const humanMissingTitle = runCli(['task', 'add'], { cwd: dir, env });
     assert.equal(humanMissingTitle.status, 2);
     assert.equal(humanMissingTitle.stdout, '');
     assert.match(humanMissingTitle.stderr, /title required/);
 
-    const missing = runCli(['task', 'show', 'DOESNOTEXIST', '--json', '--full'], { cwd: dir, env });
     assert.equal(missing.status, 2);
     assert.equal(missing.stderr, '');
     const missingPayload = JSON.parse(missing.stdout);
@@ -13962,14 +14089,29 @@ test('claiming an already-done task suggests the next open task from the same ta
   try {
     fs.mkdirSync(path.join(dir, 'atris'), { recursive: true });
 
-    const doneTask = runCli(['task', 'add', 'Ship the widget', '--tag', 'speedy', '--json'], { cwd: dir, env });
-    assert.equal(doneTask.status, 0, doneTask.stderr);
-    const doneRef = JSON.parse(doneTask.stdout).task.display_id;
-    const sameTagOpen = runCli(['task', 'add', 'Ship the other widget', '--tag', 'speedy', '--json'], { cwd: dir, env });
-    assert.equal(sameTagOpen.status, 0, sameTagOpen.stderr);
-    const sameTagRef = JSON.parse(sameTagOpen.stdout).task.display_id;
-    const otherTagOpen = runCli(['task', 'add', 'Unrelated open task', '--tag', 'other', '--json'], { cwd: dir, env });
-    assert.equal(otherTagOpen.status, 0, otherTagOpen.stderr);
+    // Seed only the three tasks; claim, finish, and every suggestion check still use the CLI.
+    // Display refs are numbered across the workspace, so compute them after all inserts.
+    let refs;
+    const db = taskStore.open(dbPath);
+    try {
+      const workspaceRoot = taskStore.workspaceRoot(dir);
+      const ids = [
+        ['Ship the widget', 'speedy'],
+        ['Ship the other widget', 'speedy'],
+        ['Unrelated open task', 'other'],
+      ].map(([title, tag]) => {
+        const created = addSeedTask(db, { title, tag, workspaceRoot });
+        assert.equal(created.inserted, true);
+        return created.id;
+      });
+      const byId = new Map(taskStore.withTaskDisplayRefs(taskStore.listTasks(db, { workspaceRoot }))
+        .map((row) => [row.id, row.display_id]));
+      refs = ids.map((id) => byId.get(id));
+      assert.equal(new Set(refs).size, 3);
+    } finally {
+      taskStore.close();
+    }
+    const [doneRef, sameTagRef, otherTagRef] = refs;
 
     assert.equal(runCli(['task', 'claim', doneRef, '--as', 'codex'], { cwd: dir, env }).status, 0);
     const finish = runCli(['task', 'finish', doneRef, '--proof', 'node --test', '--as', 'codex', '--json'], { cwd: dir, env });
@@ -13997,10 +14139,10 @@ test('claiming an already-done task suggests the next open task from the same ta
     assert.equal(finish2.status, 0, finish2.stderr);
     const claimFallback = runCli(['task', 'claim', doneRef, '--as', 'sonnet', '--json'], { cwd: dir, env });
     const fallbackPayload = JSON.parse(claimFallback.stdout);
-    assert.equal(fallbackPayload.next_claimable.ref, JSON.parse(otherTagOpen.stdout).task.display_id);
+    assert.equal(fallbackPayload.next_claimable.ref, otherTagRef);
 
     // Once every task is claimed/done, there is nothing left to suggest.
-    assert.equal(runCli(['task', 'claim', JSON.parse(otherTagOpen.stdout).task.display_id, '--as', 'codex'], { cwd: dir, env }).status, 0);
+    assert.equal(runCli(['task', 'claim', otherTagRef, '--as', 'codex'], { cwd: dir, env }).status, 0);
     const claimNoneLeft = runCli(['task', 'claim', doneRef, '--as', 'sonnet', '--json'], { cwd: dir, env });
     assert.equal(JSON.parse(claimNoneLeft.stdout).next_claimable, null);
   } finally {
@@ -14015,8 +14157,18 @@ test('claiming a task that is only already_claimed (not already_done) never sugg
   const env = { ATRIS_TASKS_DB: dbPath, NODE_NO_WARNINGS: '1', ATRIS_AGENT_ID: 'codex' };
   try {
     fs.mkdirSync(path.join(dir, 'atris'), { recursive: true });
-    const created = runCli(['task', 'add', 'Ship the widget', '--tag', 'speedy', '--json'], { cwd: dir, env });
-    const ref = JSON.parse(created.stdout).task.display_id;
+    // Seed creation only; both claims and the no-suggestion check stay on the CLI.
+    const workspaceRoot = taskStore.workspaceRoot(dir);
+    const db = taskStore.open(dbPath);
+    let ref;
+    try {
+      const created = addSeedTask(db, { title: 'Ship the widget', tag: 'speedy', workspaceRoot });
+      assert.equal(created.inserted, true);
+      ref = taskStore.taskDisplayRefMap(taskStore.listTasks(db, { workspaceRoot })).get(created.id);
+      assert.ok(ref);
+    } finally {
+      taskStore.close();
+    }
     assert.equal(runCli(['task', 'claim', ref, '--as', 'codex'], { cwd: dir, env }).status, 0);
     const conflict = runCli(['task', 'claim', ref, '--as', 'sonnet', '--json'], { cwd: dir, env });
     assert.equal(JSON.parse(conflict.stdout).reason, 'already_claimed');
@@ -14040,16 +14192,23 @@ test('task status gives web and Swarlo a compact live contract', () => {
       '',
     ].join('\n'), 'utf8');
 
-    const created = runCli(['task', 'new', 'Show live task status in Atris Web', '--tag', 'swarlo', '--json'], { cwd: dir, env });
-    assert.equal(created.status, 0, created.stderr);
-    const id = JSON.parse(created.stdout).task_id;
-
-    const parked = runCli(['task', 'new', 'Old imported TODO record', '--json'], { cwd: dir, env });
-    assert.equal(parked.status, 0, parked.stderr);
-
-    const explicitNext = runCli(['task', 'new', 'Shape explicit agent goal', '--tag', 'agent', '--json'], { cwd: dir, env });
-    assert.equal(explicitNext.status, 0, explicitNext.stderr);
-    const explicitNextId = JSON.parse(explicitNext.stdout).task_id;
+    // Creation is setup; claim and all three status reads still exercise the CLI.
+    const workspaceRoot = taskStore.workspaceRoot(dir);
+    const db = taskStore.open(env.ATRIS_TASKS_DB);
+    let id;
+    let explicitNextId;
+    try {
+      const created = addSeedTask(db, { title: 'Show live task status in Atris Web', tag: 'swarlo', workspaceRoot });
+      assert.equal(created.inserted, true);
+      id = created.id;
+      const parked = addSeedTask(db, { title: 'Old imported TODO record', workspaceRoot });
+      assert.equal(parked.inserted, true);
+      const explicitNext = addSeedTask(db, { title: 'Shape explicit agent goal', tag: 'agent', workspaceRoot });
+      assert.equal(explicitNext.inserted, true);
+      explicitNextId = explicitNext.id;
+    } finally {
+      taskStore.close();
+    }
 
     const claimed = runCli(['task', 'claim', id, '--as', 'codex', '--json'], { cwd: dir, env });
     assert.equal(claimed.status, 0, claimed.stderr);
@@ -14103,9 +14262,18 @@ test('task status closes long current titles at a clause', () => {
   try {
     fs.mkdirSync(path.join(dir, 'atris'), { recursive: true });
     const title = 'The current status sentence now explains the operator consequence in one complete clause; this second clause is deliberately long enough that a character slice would end it in the middle of a word and append an ellipsis';
-    const created = runCli(['task', 'new', title, '--tag', 'voice', '--json'], { cwd: dir, env });
-    assert.equal(created.status, 0, created.stderr || created.stdout);
-    const ref = JSON.parse(created.stdout).task.display_id;
+    // Creation is setup; claim and both status formats still exercise the CLI.
+    const workspaceRoot = taskStore.workspaceRoot(dir);
+    const db = taskStore.open(env.ATRIS_TASKS_DB);
+    let ref;
+    try {
+      const created = addSeedTask(db, { title, tag: 'voice', workspaceRoot });
+      assert.equal(created.inserted, true);
+      ref = taskStore.taskDisplayRefMap(taskStore.listTasks(db, { workspaceRoot })).get(created.id);
+      assert.ok(ref);
+    } finally {
+      taskStore.close();
+    }
     const claimed = runCli(['task', 'claim', ref, '--as', 'linguist'], { cwd: dir, env });
     assert.equal(claimed.status, 0, claimed.stderr || claimed.stdout);
 
@@ -14134,7 +14302,7 @@ test('task status stream tasks use latest agent proof fallback', () => {
     const db = taskStore.open(dbPath);
     const proof = 'agent-only proof is visible in stream rows';
     const objective = 'Make proof visible in stream status';
-    const added = taskStore.addTask(db, {
+    const added = addSeedTask(db, {
       title: 'Expose stream proof fallback',
       tag: 'tasks',
       workspaceRoot: taskStore.workspaceRoot(dir),
@@ -14170,9 +14338,21 @@ test('task status separates review continue-work from human accept waiting', () 
   try {
     fs.mkdirSync(path.join(dir, 'atris'), { recursive: true });
 
-    const continuationCreated = runCli(['task', 'new', 'Certified row with concrete continuation', '--tag', 'task', '--json'], { cwd: dir, env });
-    assert.equal(continuationCreated.status, 0, continuationCreated.stderr);
-    const continuationTask = JSON.parse(continuationCreated.stdout).task;
+    // Only fixture creation stays in process; ready, review, and status
+    // still exercise the CLI and its persisted state.
+    const workspaceRoot = taskStore.workspaceRoot(dir);
+    const seedTask = (title) => {
+      const db = taskStore.open(dbPath);
+      try {
+        const created = addSeedTask(db, { title, tag: 'task', workspaceRoot });
+        return taskStore.withTaskDisplayRefs(taskStore.listTasks(db, { workspaceRoot }))
+          .find((row) => row.id === created.id);
+      } finally {
+        taskStore.close();
+      }
+    };
+
+    const continuationTask = seedTask('Certified row with concrete continuation');
     assert.equal(runCli([
       'task', 'ready', continuationTask.display_id,
       '--as', 'codex',
@@ -14186,9 +14366,7 @@ test('task status separates review continue-work from human accept waiting', () 
       '--next', 'Build the next concrete continuation slice',
     ], { cwd: dir, env }).status, 0);
 
-    const waitingCreated = runCli(['task', 'new', 'Certified row waiting on human accept', '--tag', 'task', '--json'], { cwd: dir, env });
-    assert.equal(waitingCreated.status, 0, waitingCreated.stderr);
-    const waitingTask = JSON.parse(waitingCreated.stdout).task;
+    const waitingTask = seedTask('Certified row waiting on human accept');
     assert.equal(runCli([
       'task', 'ready', waitingTask.display_id,
       '--as', 'codex',
@@ -14201,9 +14379,7 @@ test('task status separates review continue-work from human accept waiting', () 
       '--proof', 'node --test test/commands.test.js passed during human accept split',
     ], { cwd: dir, env }).status, 0);
 
-    const blockingCreated = runCli(['task', 'new', 'Review row still needs second agent check', '--tag', 'task', '--json'], { cwd: dir, env });
-    assert.equal(blockingCreated.status, 0, blockingCreated.stderr);
-    const blockingTask = JSON.parse(blockingCreated.stdout).task;
+    const blockingTask = seedTask('Review row still needs second agent check');
     assert.equal(runCli([
       'task', 'ready', blockingTask.display_id,
       '--as', 'codex',
@@ -14244,10 +14420,20 @@ test('task reviews gives a compact certified accept queue', () => {
   try {
     fs.mkdirSync(path.join(dir, 'atris'), { recursive: true });
 
-    const certifiedCreated = runCli(['task', 'new', 'Ship certified proof packet', '--tag', 'review', '--json'], { cwd: dir, env });
-    assert.equal(certifiedCreated.status, 0, certifiedCreated.stderr);
-    const certifiedTask = JSON.parse(certifiedCreated.stdout).task;
-    assert.equal(runCli(['task', 'claim', certifiedTask.display_id, '--as', 'codex'], { cwd: dir, env }).status, 0);
+    // Only creation and claiming are fixture setup. Keep ready, review, and
+    // queue rendering on the CLI so the queue reads real command output.
+    const workspaceRoot = taskStore.workspaceRoot(dir);
+    function seedClaimedTask(title) {
+      const db = taskStore.open(dbPath);
+      try {
+        const { id } = addSeedTask(db, { title, tag: 'review', workspaceRoot });
+        assert.equal(taskStore.claimTask(db, { id, claimedBy: 'codex' }).claimed, true);
+        return { id, display_id: taskStore.taskDisplayRefMap(taskStore.listTasks(db, { workspaceRoot })).get(id) };
+      } finally {
+        taskStore.close();
+      }
+    }
+    const certifiedTask = seedClaimedTask('Ship certified proof packet');
     const certifiedProof = `Product proof: Human approval queue shows a compact certified packet without stale objective text. ${'context '.repeat(35)}Verifiers: node --check test/commands.test.js passed, focused review queue behavior checked, live atris task reviews json showing rows, git status --porcelain -- commands/task.js test/commands.test.js clean`;
     assert.equal(runCli([
       'task', 'ready', certifiedTask.display_id,
@@ -14272,16 +14458,10 @@ test('task reviews gives a compact certified accept queue', () => {
     }
     assert.equal(runCli(['task', 'review', certifiedTask.display_id, '--reward', '0', '--as', 'validator'], { cwd: dir, env }).status, 0);
 
-    const blockingCreated = runCli(['task', 'new', 'Needs another agent review', '--tag', 'review', '--json'], { cwd: dir, env });
-    assert.equal(blockingCreated.status, 0, blockingCreated.stderr);
-    const blockingTask = JSON.parse(blockingCreated.stdout).task;
-    assert.equal(runCli(['task', 'claim', blockingTask.display_id, '--as', 'codex'], { cwd: dir, env }).status, 0);
+    const blockingTask = seedClaimedTask('Needs another agent review');
     assert.equal(runCli(['task', 'ready', blockingTask.display_id, '--proof', 'one review validation passed', '--as', 'codex'], { cwd: dir, env }).status, 0);
 
-    const unsafeCreated = runCli(['task', 'new', 'Used a check outside the allowlist', '--tag', 'review', '--json'], { cwd: dir, env });
-    assert.equal(unsafeCreated.status, 0, unsafeCreated.stderr);
-    const unsafeTask = JSON.parse(unsafeCreated.stdout).task;
-    assert.equal(runCli(['task', 'claim', unsafeTask.display_id, '--as', 'codex'], { cwd: dir, env }).status, 0);
+    const unsafeTask = seedClaimedTask('Used a check outside the allowlist');
     const unsafeReady = runCli([
       'task', 'ready', unsafeTask.display_id,
       '--verify', 'ls atris',
@@ -14376,14 +14556,29 @@ test('task review groups are capped by default for human scan', () => {
   try {
     fs.mkdirSync(path.join(dir, 'atris'), { recursive: true });
 
+    // The first eleven tasks go straight through the task store. The last one
+    // is readied and reviewed through the CLI, so the review queue still reads
+    // what the CLI writes, and its write lands after every task exists.
+    const workspaceRoot = taskStore.workspaceRoot(dir);
+    const proof = 'node --check test/commands.test.js passed';
     for (let index = 1; index <= 12; index += 1) {
       const tag = `tag-${String(index).padStart(2, '0')}`;
-      const created = runCli(['task', 'new', `Grouped approval ${index}`, '--tag', tag, '--json'], { cwd: dir, env });
-      assert.equal(created.status, 0, created.stderr);
-      const task = JSON.parse(created.stdout).task;
-      assert.equal(runCli(['task', 'claim', task.display_id, '--as', 'codex'], { cwd: dir, env }).status, 0);
-      assert.equal(runCli(['task', 'ready', task.display_id, '--proof', 'node --check test/commands.test.js passed', '--as', 'codex'], { cwd: dir, env }).status, 0);
-      assert.equal(runCli(['task', 'review', task.display_id, '--reward', '0', '--as', 'validator'], { cwd: dir, env }).status, 0);
+      const db = taskStore.open(dbPath);
+      let taskId;
+      try {
+        taskId = addSeedTask(db, { title: `Grouped approval ${index}`, tag, workspaceRoot }).id;
+        assert.equal(taskStore.claimTask(db, { id: taskId, claimedBy: 'codex' }).claimed, true);
+        if (index < 12) {
+          assert.equal(taskStore.readyTask(db, { id: taskId, actor: 'codex', proof, result: FIXTURE_RESULT_SENTENCE }).ready, true);
+          assert.equal(taskStore.reviewTask(db, { id: taskId, actor: 'validator', reward: 0 }).reviewed, true);
+        }
+      } finally {
+        taskStore.close();
+      }
+      if (index === 12) {
+        assert.equal(runCli(['task', 'ready', taskId, '--proof', proof, '--as', 'codex'], { cwd: dir, env }).status, 0);
+        assert.equal(runCli(['task', 'review', taskId, '--reward', '0', '--as', 'validator'], { cwd: dir, env }).status, 0);
+      }
     }
 
     const grouped = runCli(['task', 'reviews', '--group-by', 'tag'], { cwd: dir, env });
@@ -14427,16 +14622,34 @@ test('task status resolves goal_id display refs to parent task objectives', () =
       '',
     ].join('\n'), 'utf8');
 
-    const parentCreated = runCli(['task', 'add', 'GM Desk v0: make Acme Co open to one playable daily rep', '--tag', 'gm-desk', '--json'], { cwd: dir, env });
-    assert.equal(parentCreated.status, 0, parentCreated.stderr);
-    const parent = JSON.parse(parentCreated.stdout).task;
+    // Seed only the parent; the child add resolves the parent's display ref on the CLI.
+    const workspaceRoot = taskStore.workspaceRoot(dir);
+    const db = taskStore.open(dbPath);
+    let parent;
+    try {
+      const created = addSeedTask(db, {
+        title: 'GM Desk v0: make Acme Co open to one playable daily rep', tag: 'gm-desk', workspaceRoot,
+      });
+      assert.equal(created.inserted, true);
+      const rows = taskStore.listTasks(db, { workspaceRoot });
+      const row = rows.find(task => task.id === created.id);
+      parent = { id: row.id, title: row.title, display_id: taskStore.taskDisplayRefMap(rows).get(row.id) };
+      assert.ok(parent.display_id);
+    } finally {
+      taskStore.close();
+    }
 
     const childCreated = runCli(['task', 'add', 'GM Desk v0 step 2: route Acme Co open to daily surface, no /flow', '--tag', 'gm-desk', '--goal-id', parent.display_id, '--json'], { cwd: dir, env });
     assert.equal(childCreated.status, 0, childCreated.stderr);
     const child = JSON.parse(childCreated.stdout).task;
 
-    const claimed = runCli(['task', 'claim', child.id, '--as', 'builder', '--json'], { cwd: dir, env });
-    assert.equal(claimed.status, 0, claimed.stderr);
+    // Seed ownership only; child creation and goal resolution stay on the CLI.
+    const claimDb = taskStore.open(dbPath);
+    try {
+      assert.equal(taskStore.claimTask(claimDb, { id: child.id, claimedBy: 'builder' }).claimed, true);
+    } finally {
+      taskStore.close();
+    }
 
     const status = runCli(['task', 'status', '--json'], { cwd: dir, env });
     assert.equal(status.status, 0, status.stderr);
@@ -14458,11 +14671,17 @@ test('task status treats reviewed failures as closed task health', () => {
   const dbPath = path.join(dir, 'tasks.db');
   const env = { ATRIS_TASKS_DB: dbPath, NODE_NO_WARNINGS: '1' };
   try {
-    const created = runCli(['task', 'new', 'Goal: who r u', '--tag', 'goal', '--json'], { cwd: dir, env });
-    assert.equal(created.status, 0, created.stderr);
-    const id = JSON.parse(created.stdout).task_id;
-    const claimed = runCli(['task', 'claim', id, '--as', 'command-leader', '--json'], { cwd: dir, env });
-    assert.equal(claimed.status, 0, claimed.stderr);
+    // Seed creation and ownership; failed finish and status read stay on the CLI.
+    const db = taskStore.open(dbPath);
+    let id;
+    try {
+      const created = addSeedTask(db, { title: 'Goal: who r u', tag: 'goal', workspaceRoot: taskStore.workspaceRoot(dir) });
+      assert.equal(created.inserted, true);
+      id = created.id;
+      assert.equal(taskStore.claimTask(db, { id, claimedBy: 'command-leader' }).claimed, true);
+    } finally {
+      taskStore.close();
+    }
     const failed = runCli(['task', 'done', id, '--failed', '--proof', 'Misrouted small talk; validation failed in intake triage.', '--json'], { cwd: dir, env });
     assert.equal(failed.status, 0, failed.stderr);
     const failedPayload = JSON.parse(failed.stdout);
@@ -14489,11 +14708,17 @@ test('task status keeps failed blockers out of review handoff', () => {
   const dbPath = path.join(dir, 'tasks.db');
   const env = { ATRIS_TASKS_DB: dbPath, NODE_NO_WARNINGS: '1' };
   try {
-    const created = runCli(['task', 'new', 'Owner-gated route decision', '--tag', 'business-gm', '--json'], { cwd: dir, env });
-    assert.equal(created.status, 0, created.stderr);
-    const id = JSON.parse(created.stdout).task_id;
-    const claimed = runCli(['task', 'claim', id, '--as', 'codex', '--json'], { cwd: dir, env });
-    assert.equal(claimed.status, 0, claimed.stderr);
+    // Seed creation and ownership; failed finish and both status reads stay on the CLI.
+    const db = taskStore.open(dbPath);
+    let id;
+    try {
+      const created = addSeedTask(db, { title: 'Owner-gated route decision', tag: 'business-gm', workspaceRoot: taskStore.workspaceRoot(dir) });
+      assert.equal(created.inserted, true);
+      id = created.id;
+      assert.equal(taskStore.claimTask(db, { id, claimedBy: 'codex' }).claimed, true);
+    } finally {
+      taskStore.close();
+    }
     const failed = runCli(['task', 'done', id, '--failed', '--json'], { cwd: dir, env });
     assert.equal(failed.status, 0, failed.stderr);
 
@@ -14519,15 +14744,18 @@ test('task status keeps history out of the default live card', () => {
   const env = { ATRIS_TASKS_DB: dbPath, NODE_NO_WARNINGS: '1' };
   try {
     fs.mkdirSync(path.join(dir, 'atris'), { recursive: true });
-    const created = runCli(['task', 'new', 'Keep operator status compact', '--json'], { cwd: dir, env });
-    assert.equal(created.status, 0, created.stderr);
-    const id = JSON.parse(created.stdout).task_id;
-    const claimed = runCli(['task', 'claim', id, '--as', 'codex', '--json'], { cwd: dir, env });
-    assert.equal(claimed.status, 0, claimed.stderr);
-
-    for (let i = 0; i < 8; i += 1) {
-      const noted = runCli(['task', 'say', id, `status note ${i}`, '--as', 'codex', '--json'], { cwd: dir, env });
-      assert.equal(noted.status, 0, noted.stderr);
+    // Seed the history through the same store calls task new, claim and say
+    // make (one created, one claimed, eight noted events); both status reads stay on the CLI.
+    const db = taskStore.open(dbPath);
+    try {
+      const created = addSeedTask(db, { title: 'Keep operator status compact', workspaceRoot: taskStore.workspaceRoot(dir) });
+      assert.equal(created.inserted, true);
+      assert.equal(taskStore.claimTask(db, { id: created.id, claimedBy: 'codex' }).claimed, true);
+      for (let i = 0; i < 8; i += 1) {
+        assert.equal(taskStore.noteTask(db, { id: created.id, actor: 'codex', content: `status note ${i}` }).noted, true);
+      }
+    } finally {
+      taskStore.close();
     }
 
     const status = runCli(['task', 'status', '--json'], { cwd: dir, env });
@@ -14553,12 +14781,20 @@ test('task render archives old completed records from TODO view', () => {
   try {
     fs.mkdirSync(path.join(dir, 'atris'), { recursive: true });
 
-    for (let i = 0; i < 12; i += 1) {
-      const created = runCli(['task', 'new', `Completed task ${i}`, '--tag', 'agent', '--json'], { cwd: dir, env });
-      assert.equal(created.status, 0, created.stderr);
-      const id = JSON.parse(created.stdout).task_id;
-      const done = runCli(['task', 'done', id, '--proof', `node --test test/commands.test.js passed for archive ${i}`, '--json'], { cwd: dir, env });
-      assert.equal(done.status, 0, done.stderr);
+    // Seed the completed rows straight in the task store with the same two
+    // writes `task done --proof` makes; render, export, and status run the CLI.
+    const workspaceRoot = taskStore.workspaceRoot(dir);
+    const actor = process.env.USER || os.userInfo().username;
+    const db = taskStore.open(dbPath);
+    try {
+      for (let i = 0; i < 12; i += 1) {
+        const { id } = addSeedTask(db, { title: `Completed task ${i}`, tag: 'agent', workspaceRoot });
+        const proof = `node --test test/commands.test.js passed for archive ${i}`;
+        assert.equal(taskStore.doneTask(db, { id, status: 'done', actor, action: 'done', proof }).updated, true);
+        assert.equal(taskStore.reviewTask(db, { id, actor, reward: 1, lesson: '', nextTask: '', proof }).reviewed, true);
+      }
+    } finally {
+      taskStore.close();
     }
 
     const render = runCli(['task', 'render', '--out', 'atris/TODO.md'], { cwd: dir, env });
@@ -14619,12 +14855,20 @@ test('task render archives old blocked records from TODO view', () => {
   try {
     fs.mkdirSync(path.join(dir, 'atris'), { recursive: true });
 
-    for (let i = 0; i < 16; i += 1) {
-      const created = runCli(['task', 'new', `Blocked task ${i}`, '--tag', 'agent', '--json'], { cwd: dir, env });
-      assert.equal(created.status, 0, created.stderr);
-      const id = JSON.parse(created.stdout).task_id;
-      const failed = runCli(['task', 'done', id, '--failed', '--proof', `node --test test/commands.test.js passed for blocked archive ${i}`, '--json'], { cwd: dir, env });
-      assert.equal(failed.status, 0, failed.stderr);
+    // Seed the blocked rows straight in the task store with the same two
+    // writes `task done --failed --proof` makes; only render runs the CLI.
+    const workspaceRoot = taskStore.workspaceRoot(dir);
+    const actor = process.env.USER || os.userInfo().username;
+    const db = taskStore.open(dbPath);
+    try {
+      for (let i = 0; i < 16; i += 1) {
+        const { id } = addSeedTask(db, { title: `Blocked task ${i}`, tag: 'agent', workspaceRoot });
+        const proof = `node --test test/commands.test.js passed for blocked archive ${i}`;
+        assert.equal(taskStore.doneTask(db, { id, status: 'failed', actor, action: 'failed', proof }).updated, true);
+        assert.equal(taskStore.reviewTask(db, { id, actor, reward: 0, lesson: '', nextTask: '', proof }).reviewed, true);
+      }
+    } finally {
+      taskStore.close();
     }
 
     const render = runCli(['task', 'render', '--out', 'atris/TODO.md'], { cwd: dir, env });
@@ -14653,9 +14897,18 @@ test('task review create-next preserves goal scope', () => {
   try {
     fs.mkdirSync(path.join(dir, 'atris'), { recursive: true });
 
-    const created = runCli(['task', 'new', 'Improve task loop', '--tag', 'rsi', '--goal-id', 'OBL-928', '--json'], { cwd: dir, env });
-    assert.equal(created.status, 0, created.stderr);
-    const id = JSON.parse(created.stdout).task_id;
+    // Seed creation with the goal link task new stores; the finish and scoped current read stay on the CLI.
+    const db = taskStore.open(dbPath);
+    let id;
+    try {
+      const created = addSeedTask(db, {
+        title: 'Improve task loop', tag: 'rsi', workspaceRoot: taskStore.workspaceRoot(dir), metadata: { goal_id: 'OBL-928' },
+      });
+      assert.equal(created.inserted, true);
+      id = created.id;
+    } finally {
+      taskStore.close();
+    }
 
     const finished = runCli([
       'task', 'finish', id,
@@ -14700,15 +14953,22 @@ test('task continue-work creates the certified review next task', () => {
   try {
     fs.mkdirSync(path.join(dir, 'atris'), { recursive: true });
 
-    const created = runCli([
-      'task', 'new', 'Certify the task continuation path',
-      '--tag', 'task',
-      '--goal-id', 'OBL-928',
-      '--json',
-    ], { cwd: dir, env });
-    assert.equal(created.status, 0, created.stderr);
-    const parent = JSON.parse(created.stdout).task;
-    const ref = parent.display_id;
+    // Seed creation with the goal link task new stores; ready, review and continue-work stay on the CLI.
+    const workspaceRoot = taskStore.workspaceRoot(dir);
+    const db = taskStore.open(dbPath);
+    let parent;
+    let ref;
+    try {
+      const created = addSeedTask(db, {
+        title: 'Certify the task continuation path', tag: 'task', workspaceRoot, metadata: { goal_id: 'OBL-928' },
+      });
+      assert.equal(created.inserted, true);
+      parent = { id: created.id };
+      ref = taskStore.taskDisplayRefMap(taskStore.listTasks(db, { workspaceRoot })).get(created.id);
+      assert.ok(ref);
+    } finally {
+      taskStore.close();
+    }
 
     const ready = runCli([
       'task', 'ready', ref,
@@ -14849,14 +15109,22 @@ test('task review hygiene reports generic continuation debt without mutation', (
   try {
     fs.mkdirSync(path.join(dir, 'atris'), { recursive: true });
 
-    const created = runCli([
-      'task', 'new', 'Certified row with stale generic review-next debt',
-      '--tag', 'task',
-      '--goal-id', 'OBL-928',
-      '--json',
-    ], { cwd: dir, env });
-    assert.equal(created.status, 0, created.stderr);
-    const parent = JSON.parse(created.stdout).task;
+    // Seed creation through the real store; review behavior stays on the CLI.
+    const parent = (() => {
+      const db = taskStore.open(dbPath);
+      try {
+        const workspaceRoot = taskStore.workspaceRoot(dir);
+        const { id } = addSeedTask(db, {
+          title: 'Certified row with stale generic review-next debt',
+          tag: 'task',
+          workspaceRoot,
+          metadata: { goal_id: 'OBL-928' },
+        });
+        return { id, display_id: taskStore.taskDisplayRefMap(taskStore.listTasks(db, { workspaceRoot })).get(id) };
+      } finally {
+        taskStore.close();
+      }
+    })();
     const ref = parent.display_id;
 
     const ready = runCli([
@@ -14876,22 +15144,16 @@ test('task review hygiene reports generic continuation debt without mutation', (
     ], { cwd: dir, env });
     assert.equal(certified.status, 0, certified.stderr);
 
-    const seeded = spawnSync(process.execPath, ['-e', `
-      const { DatabaseSync } = require('node:sqlite');
-      const sqlite = new DatabaseSync(process.argv[1]);
-      try {
-        const row = sqlite.prepare('SELECT metadata FROM tasks WHERE id = ?').get(process.argv[2]);
-        const metadata = JSON.parse(row.metadata || '{}');
-        metadata.latest_agent_next_task = 'Human accept remains pending for XP; next agent-actionable work can continue from OBL-1008.';
-        sqlite.prepare('UPDATE tasks SET metadata = ? WHERE id = ?').run(JSON.stringify(metadata), process.argv[2]);
-      } finally {
-        sqlite.close();
-      }
-    `, dbPath, parent.id], {
-      encoding: 'utf8',
-      env: { ...process.env, NODE_NO_WARNINGS: '1' },
-    });
-    assert.equal(seeded.status, 0, seeded.stderr);
+    // Inject stale continuation metadata; queue and continuation checks stay on the CLI.
+    const db = taskStore.open(dbPath);
+    try {
+      const row = db.prepare('SELECT metadata FROM tasks WHERE id = ?').get(parent.id);
+      const metadata = JSON.parse(row.metadata || '{}');
+      metadata.latest_agent_next_task = 'Human accept remains pending for XP; next agent-actionable work can continue from OBL-1008.';
+      db.prepare('UPDATE tasks SET metadata = ? WHERE id = ?').run(JSON.stringify(metadata), parent.id);
+    } finally {
+      taskStore.close();
+    }
 
     const reviews = runCli(['task', 'reviews', '--json'], { cwd: dir, env });
     assert.equal(reviews.status, 0, reviews.stderr);
@@ -14922,14 +15184,22 @@ test('task current exposes continue-work for certified review suggestions', () =
   try {
     fs.mkdirSync(path.join(dir, 'atris'), { recursive: true });
 
-    const created = runCli([
-      'task', 'new', 'Surface the certified continuation command',
-      '--tag', 'task',
-      '--goal-id', 'OBL-928',
-      '--json',
-    ], { cwd: dir, env });
-    assert.equal(created.status, 0, created.stderr);
-    const parent = JSON.parse(created.stdout).task;
+    // Seed creation through the real store; continuation display stays on the CLI.
+    const parent = (() => {
+      const db = taskStore.open(dbPath);
+      try {
+        const workspaceRoot = taskStore.workspaceRoot(dir);
+        const { id } = addSeedTask(db, {
+          title: 'Surface the certified continuation command',
+          tag: 'task',
+          workspaceRoot,
+          metadata: { goal_id: 'OBL-928' },
+        });
+        return { id, display_id: taskStore.taskDisplayRefMap(taskStore.listTasks(db, { workspaceRoot })).get(id) };
+      } finally {
+        taskStore.close();
+      }
+    })();
     const ref = parent.display_id;
 
     assert.equal(runCli([
@@ -15002,14 +15272,22 @@ test('task queue filters certified review rows by continue-work and human-accept
   try {
     fs.mkdirSync(path.join(dir, 'atris'), { recursive: true });
 
-    const continueCreated = runCli([
-      'task', 'new', 'Certified task with executable continuation',
-      '--tag', 'task',
-      '--goal-id', 'OBL-928',
-      '--json',
-    ], { cwd: dir, env });
-    assert.equal(continueCreated.status, 0, continueCreated.stderr);
-    const continueTask = JSON.parse(continueCreated.stdout).task;
+    // Seed creation through the real store; review filtering stays on the CLI.
+    const continueTask = (() => {
+      const db = taskStore.open(dbPath);
+      try {
+        const workspaceRoot = taskStore.workspaceRoot(dir);
+        const { id } = addSeedTask(db, {
+          title: 'Certified task with executable continuation',
+          tag: 'task',
+          workspaceRoot,
+          metadata: { goal_id: 'OBL-928' },
+        });
+        return { id, display_id: taskStore.taskDisplayRefMap(taskStore.listTasks(db, { workspaceRoot })).get(id) };
+      } finally {
+        taskStore.close();
+      }
+    })();
     const continueRef = continueTask.display_id;
     assert.equal(runCli([
       'task', 'ready', continueRef,
@@ -15024,14 +15302,22 @@ test('task queue filters certified review rows by continue-work and human-accept
       '--next', 'Add the next queue lane filter regression',
     ], { cwd: dir, env }).status, 0);
 
-    const waitingCreated = runCli([
-      'task', 'new', 'Certified task waiting for human accept only',
-      '--tag', 'task',
-      '--goal-id', 'OBL-928',
-      '--json',
-    ], { cwd: dir, env });
-    assert.equal(waitingCreated.status, 0, waitingCreated.stderr);
-    const waitingTask = JSON.parse(waitingCreated.stdout).task;
+    // Seed creation through the real store; review filtering stays on the CLI.
+    const waitingTask = (() => {
+      const db = taskStore.open(dbPath);
+      try {
+        const workspaceRoot = taskStore.workspaceRoot(dir);
+        const { id } = addSeedTask(db, {
+          title: 'Certified task waiting for human accept only',
+          tag: 'task',
+          workspaceRoot,
+          metadata: { goal_id: 'OBL-928' },
+        });
+        return { id, display_id: taskStore.taskDisplayRefMap(taskStore.listTasks(db, { workspaceRoot })).get(id) };
+      } finally {
+        taskStore.close();
+      }
+    })();
     const waitingRef = waitingTask.display_id;
     assert.equal(runCli([
       'task', 'ready', waitingRef,
@@ -15166,14 +15452,22 @@ test('task review lanes route stale PR proof out of human accept waiting', () =>
   try {
     fs.mkdirSync(path.join(dir, 'atris'), { recursive: true });
 
-    const created = runCli([
-      'task', 'new', 'Certified stale PR proof boundary',
-      '--tag', 'task',
-      '--goal-id', 'OBL-928',
-      '--json',
-    ], { cwd: dir, env });
-    assert.equal(created.status, 0, created.stderr);
-    const task = JSON.parse(created.stdout).task;
+    // Seed creation through the real store; stale proof routing stays on the CLI.
+    const task = (() => {
+      const db = taskStore.open(dbPath);
+      try {
+        const workspaceRoot = taskStore.workspaceRoot(dir);
+        const { id } = addSeedTask(db, {
+          title: 'Certified stale PR proof boundary',
+          tag: 'task',
+          workspaceRoot,
+          metadata: { goal_id: 'OBL-928' },
+        });
+        return { id, display_id: taskStore.taskDisplayRefMap(taskStore.listTasks(db, { workspaceRoot })).get(id) };
+      } finally {
+        taskStore.close();
+      }
+    })();
     const ref = task.display_id;
     const stalePrVerify = `node --check ${path.join(repoRoot, 'commands', 'task.js')}`;
     const stalePrProof = `Verified #1600 remains OPEN/draft/CLEAN at head be8797f. ${stalePrVerify} passed.`;
@@ -15294,17 +15588,24 @@ test('task current-step rejects bookkeeping receipts for golden-path mission XP'
       },
     }, null, 2), 'utf8');
 
-    const created = runCli([
-      'task', 'new',
-      'Mission XP: Golden path zero-knowledge fresh-laptop pass',
-      '--tag', 'agent-xp',
-      '--goal-id', 'mission-golden-path',
-      '--json',
-    ], { cwd: dir, env });
-    assert.equal(created.status, 0, created.stderr);
-    const task = JSON.parse(created.stdout).task;
+    // Seed creation and ownership; both proof gates stay on the CLI.
+    const task = (() => {
+      const db = taskStore.open(dbPath);
+      try {
+        const workspaceRoot = taskStore.workspaceRoot(dir);
+        const { id } = addSeedTask(db, {
+          title: 'Mission XP: Golden path zero-knowledge fresh-laptop pass',
+          tag: 'agent-xp',
+          workspaceRoot,
+          metadata: { goal_id: 'mission-golden-path' },
+        });
+        assert.equal(taskStore.claimTask(db, { id, claimedBy: 'onboarding' }).claimed, true);
+        return { id, display_id: taskStore.taskDisplayRefMap(taskStore.listTasks(db, { workspaceRoot })).get(id) };
+      } finally {
+        taskStore.close();
+      }
+    })();
     const ref = task.display_id;
-    assert.equal(runCli(['task', 'claim', ref, '--as', 'onboarding', '--json'], { cwd: dir, env }).status, 0);
 
     const weakProof = 'atris/runs/bookkeeping.json';
     const blocked = runCli([
@@ -15360,41 +15661,42 @@ test('task review lanes block weak golden-path mission XP proof from accept', ()
     }, null, 2), 'utf8');
 
     const strongProof = 'zero-papercut end-to-end fresh install -> init -> first mission -> first self-landed task receipt: atris/runs/bookkeeping.json';
-    const created = runCli([
-      'task', 'new',
-      'Mission XP: Golden path zero-knowledge fresh-laptop pass',
-      '--tag', 'agent-xp',
-      '--goal-id', 'mission-golden-path',
-      '--json',
-    ], { cwd: dir, env });
-    assert.equal(created.status, 0, created.stderr);
-    const task = JSON.parse(created.stdout).task;
+    // Seed creation and ownership; readiness, review and acceptance gates stay on the CLI.
+    const task = (() => {
+      const db = taskStore.open(dbPath);
+      try {
+        const workspaceRoot = taskStore.workspaceRoot(dir);
+        const { id } = addSeedTask(db, {
+          title: 'Mission XP: Golden path zero-knowledge fresh-laptop pass',
+          tag: 'agent-xp',
+          workspaceRoot,
+          metadata: { goal_id: 'mission-golden-path' },
+        });
+        assert.equal(taskStore.claimTask(db, { id, claimedBy: 'onboarding' }).claimed, true);
+        return { id, display_id: taskStore.taskDisplayRefMap(taskStore.listTasks(db, { workspaceRoot })).get(id) };
+      } finally {
+        taskStore.close();
+      }
+    })();
     const ref = task.display_id;
-    assert.equal(runCli(['task', 'claim', ref, '--as', 'onboarding', '--json'], { cwd: dir, env }).status, 0);
     assert.equal(runCli(['task', 'ready', ref, '--as', 'onboarding', '--proof', strongProof, '--json'], { cwd: dir, env }).status, 0);
     assert.equal(runCli(['task', 'review', ref, '--reward', '0', '--as', 'codex-review', '--proof', strongProof, '--json'], { cwd: dir, env }).status, 0);
 
     const weakProof = 'atris/runs/bookkeeping.json';
-    const seeded = spawnSync(process.execPath, ['-e', `
-      const { DatabaseSync } = require('node:sqlite');
-      const sqlite = new DatabaseSync(process.argv[1]);
-      try {
-        const row = sqlite.prepare('SELECT metadata FROM tasks WHERE id = ?').get(process.argv[2]);
-        const metadata = JSON.parse(row.metadata || '{}');
-        metadata.latest_agent_proof = process.argv[3];
-        metadata.agent_certified = true;
-        metadata.approval_status = 'pending';
-        metadata.agent_review_pass_count = 2;
-        metadata.stop_condition = 'a full fresh-environment pass completes with zero new papercuts';
-        sqlite.prepare('UPDATE tasks SET metadata = ?, updated_at = ? WHERE id = ?').run(JSON.stringify(metadata), Date.now(), process.argv[2]);
-      } finally {
-        sqlite.close();
-      }
-    `, dbPath, task.id, weakProof], {
-      encoding: 'utf8',
-      env: { ...process.env, NODE_NO_WARNINGS: '1' },
-    });
-    assert.equal(seeded.status, 0, seeded.stderr);
+    // Inject weak proof after review; queue and acceptance checks use the CLI.
+    const reviewDb = taskStore.open(dbPath);
+    try {
+      const row = reviewDb.prepare('SELECT metadata FROM tasks WHERE id = ?').get(task.id);
+      const metadata = JSON.parse(row.metadata || '{}');
+      metadata.latest_agent_proof = weakProof;
+      metadata.agent_certified = true;
+      metadata.approval_status = 'pending';
+      metadata.agent_review_pass_count = 2;
+      metadata.stop_condition = 'a full fresh-environment pass completes with zero new papercuts';
+      reviewDb.prepare('UPDATE tasks SET metadata = ?, updated_at = ? WHERE id = ?').run(JSON.stringify(metadata), Date.now(), task.id);
+    } finally {
+      taskStore.close();
+    }
 
     const reviews = runCli(['task', 'reviews', '--json'], { cwd: dir, env });
     assert.equal(reviews.status, 0, reviews.stderr);
@@ -15441,26 +15743,33 @@ test('task serve continue-work creates scoped follow-up', async () => {
   try {
     fs.mkdirSync(path.join(dir, 'atris'), { recursive: true });
 
-    const created = runCli([
-      'task', 'add', 'API certified continuation parent',
-      '--tag', 'factory',
-      '--goal-id', 'OBL-933',
-      '--json',
-    ], { cwd: dir, env });
-    assert.equal(created.status, 0, created.stderr);
-    const parent = JSON.parse(created.stdout).task;
-    assert.equal(runCli([
-      'task', 'ready', parent.display_id,
-      '--as', 'codex',
-      '--proof', 'node --check test/commands.test.js passed before API continue-work',
-    ], { cwd: dir, env }).status, 0);
-    assert.equal(runCli([
-      'task', 'review', parent.display_id,
-      '--reward', '0',
-      '--as', 'codex-review',
-      '--proof', 'node --test test/commands.test.js passed during API continue-work review',
-      '--next', 'API scoped continuation child',
-    ], { cwd: dir, env }).status, 0);
+    // Add, ready and review are one store call each in the CLI, so the parent
+    // reaches review in-process. Continue work still goes through the server.
+    const parent = (() => {
+      const db = taskStore.open(dbPath);
+      try {
+        const workspaceRoot = taskStore.workspaceRoot(dir);
+        const { id } = addSeedTask(db, { title: 'API certified continuation parent', tag: 'factory', workspaceRoot, metadata: { goal_id: 'OBL-933' } });
+        const readied = taskStore.readyTask(db, {
+          id,
+          actor: 'codex',
+          proof: 'node --check test/commands.test.js passed before API continue-work',
+          result: FIXTURE_RESULT_SENTENCE,
+        });
+        assert.equal(readied.ready, true, readied.reason);
+        const reviewed = taskStore.reviewTask(db, {
+          id,
+          actor: 'codex-review',
+          reward: 0,
+          proof: 'node --test test/commands.test.js passed during API continue-work review',
+          nextTask: 'API scoped continuation child',
+        });
+        assert.equal(reviewed.reviewed, true, reviewed.reason);
+        return { id, display_id: taskStore.taskDisplayRefMap(taskStore.listTasks(db, { workspaceRoot })).get(id) };
+      } finally {
+        taskStore.close();
+      }
+    })();
 
     child = spawn(process.execPath, [cliPath, 'task', 'serve', '--host', '127.0.0.1', '--port', '0'], {
       cwd: dir,
@@ -15588,109 +15897,74 @@ test('task serve exposes review-lane-drain API', async () => {
   let child = null;
   try {
     fs.mkdirSync(path.join(dir, 'atris'), { recursive: true });
-    const continueCreated = runCli([
-      'task', 'new', 'API drain row with executable continuation',
-      '--tag', 'task',
-      '--goal-id', 'OBL-930',
-      '--json',
-    ], { cwd: dir, env });
-    assert.equal(continueCreated.status, 0, continueCreated.stderr);
-    const continueTask = JSON.parse(continueCreated.stdout).task;
+    // New is one store insert with the goal id, and show is the store
+    // projection plus enrichment, so setup and version reads run in-process.
+    // The show after the review-lane-run call still runs the CLI and proves the
+    // two reads agree.
+    const workspaceRoot = taskStore.workspaceRoot(dir);
+    const seedTask = (title, goalId) => {
+      const db = taskStore.open(dbPath);
+      try {
+        const { id } = addSeedTask(db, { title, tag: 'task', workspaceRoot, metadata: { goal_id: goalId } });
+        return { id, display_id: taskStore.taskDisplayRefMap(taskStore.listTasks(db, { workspaceRoot })).get(id) };
+      } finally {
+        taskStore.close();
+      }
+    };
+    const { enrichTaskProjection } = require('../commands/task');
+    const showTask = (id) => {
+      const db = taskStore.open(dbPath);
+      try {
+        return enrichTaskProjection(taskStore.taskProjection(db, { taskId: id })).tasks[0];
+      } finally {
+        taskStore.close();
+      }
+    };
+    // Ready and review are one store call each in the CLI, so the five drain
+    // rows reach review in-process. The drain, act, loop and run requests
+    // still go through the server.
+    const seedReviewed = (title, goalId, readyProof, reviewProof, nextTask) => {
+      const task = seedTask(title, goalId);
+      const db = taskStore.open(dbPath);
+      try {
+        const readied = taskStore.readyTask(db, { id: task.id, actor: 'codex', proof: readyProof, result: FIXTURE_RESULT_SENTENCE });
+        assert.equal(readied.ready, true, readied.reason);
+        const reviewed = taskStore.reviewTask(db, { id: task.id, actor: 'codex-review', reward: 0, proof: reviewProof, nextTask });
+        assert.equal(reviewed.reviewed, true, reviewed.reason);
+      } finally {
+        taskStore.close();
+      }
+      return task;
+    };
+    const continueTask = seedReviewed(
+      'API drain row with executable continuation', 'OBL-930',
+      'node --check test/commands.test.js passed before API review lane drain',
+      'node --test test/commands.test.js passed during API review lane drain',
+      'Add a scoped API review drain follow-up',
+    );
     const continueRef = continueTask.display_id;
-    assert.equal(runCli([
-      'task', 'ready', continueRef,
-      '--as', 'codex',
-      '--proof', 'node --check test/commands.test.js passed before API review lane drain',
-    ], { cwd: dir, env }).status, 0);
-    assert.equal(runCli([
-      'task', 'review', continueRef,
-      '--reward', '0',
-      '--as', 'codex-review',
-      '--proof', 'node --test test/commands.test.js passed during API review lane drain',
-      '--next', 'Add a scoped API review drain follow-up',
-    ], { cwd: dir, env }).status, 0);
-
-    const waitingCreated = runCli([
-      'task', 'new', 'API drain row waiting on human accept',
-      '--tag', 'task',
-      '--goal-id', 'OBL-930',
-      '--json',
-    ], { cwd: dir, env });
-    assert.equal(waitingCreated.status, 0, waitingCreated.stderr);
-    const waitingTask = JSON.parse(waitingCreated.stdout).task;
-    const waitingRef = waitingTask.display_id;
-    assert.equal(runCli([
-      'task', 'ready', waitingRef,
-      '--as', 'codex',
-      '--proof', 'node --check test/commands.test.js passed before API human accept wait drain',
-    ], { cwd: dir, env }).status, 0);
-    assert.equal(runCli([
-      'task', 'review', waitingRef,
-      '--reward', '0',
-      '--as', 'codex-review',
-      '--proof', 'node --test test/commands.test.js passed during API human accept wait drain',
-    ], { cwd: dir, env }).status, 0);
-
-    const humanOnlyCreated = runCli([
-      'task', 'new', 'API act row waiting on human accept',
-      '--tag', 'task',
-      '--goal-id', 'OBL-931',
-      '--json',
-    ], { cwd: dir, env });
-    assert.equal(humanOnlyCreated.status, 0, humanOnlyCreated.stderr);
-    const humanOnlyRef = JSON.parse(humanOnlyCreated.stdout).task.display_id;
-    assert.equal(runCli([
-      'task', 'ready', humanOnlyRef,
-      '--as', 'codex',
-      '--proof', 'node --check test/commands.test.js passed before API review-lane-act human block',
-    ], { cwd: dir, env }).status, 0);
-    assert.equal(runCli([
-      'task', 'review', humanOnlyRef,
-      '--reward', '0',
-      '--as', 'codex-review',
-      '--proof', 'node --test test/commands.test.js passed during API review-lane-act human block',
-    ], { cwd: dir, env }).status, 0);
-
-    const runContinueCreated = runCli([
-      'task', 'new', 'API run should continue one certified task',
-      '--tag', 'task',
-      '--goal-id', 'OBL-932',
-      '--json',
-    ], { cwd: dir, env });
-    assert.equal(runContinueCreated.status, 0, runContinueCreated.stderr);
-    const runContinueRef = JSON.parse(runContinueCreated.stdout).task.display_id;
-    assert.equal(runCli([
-      'task', 'ready', runContinueRef,
-      '--as', 'codex',
-      '--proof', 'node --check test/commands.test.js passed before API review-lane-run continuation',
-    ], { cwd: dir, env }).status, 0);
-    assert.equal(runCli([
-      'task', 'review', runContinueRef,
-      '--reward', '0',
-      '--as', 'codex-review',
-      '--proof', 'node --test test/commands.test.js passed during API review-lane-run continuation',
-      '--next', 'Add a follow-up created by API review lane run',
-    ], { cwd: dir, env }).status, 0);
-
-    const runWaitingCreated = runCli([
-      'task', 'new', 'API run should stop on human accept wait',
-      '--tag', 'task',
-      '--goal-id', 'OBL-932',
-      '--json',
-    ], { cwd: dir, env });
-    assert.equal(runWaitingCreated.status, 0, runWaitingCreated.stderr);
-    const runWaitingRef = JSON.parse(runWaitingCreated.stdout).task.display_id;
-    assert.equal(runCli([
-      'task', 'ready', runWaitingRef,
-      '--as', 'codex',
-      '--proof', 'node --check test/commands.test.js passed before API review-lane-run human gate',
-    ], { cwd: dir, env }).status, 0);
-    assert.equal(runCli([
-      'task', 'review', runWaitingRef,
-      '--reward', '0',
-      '--as', 'codex-review',
-      '--proof', 'node --test test/commands.test.js passed during API review-lane-run human gate',
-    ], { cwd: dir, env }).status, 0);
+    const waitingTask = seedReviewed(
+      'API drain row waiting on human accept', 'OBL-930',
+      'node --check test/commands.test.js passed before API human accept wait drain',
+      'node --test test/commands.test.js passed during API human accept wait drain',
+    );
+    seedReviewed(
+      'API act row waiting on human accept', 'OBL-931',
+      'node --check test/commands.test.js passed before API review-lane-act human block',
+      'node --test test/commands.test.js passed during API review-lane-act human block',
+    );
+    seedReviewed(
+      'API run should continue one certified task', 'OBL-932',
+      'node --check test/commands.test.js passed before API review-lane-run continuation',
+      'node --test test/commands.test.js passed during API review-lane-run continuation',
+      'Add a follow-up created by API review lane run',
+    );
+    const runWaitingTask = seedReviewed(
+      'API run should stop on human accept wait', 'OBL-932',
+      'node --check test/commands.test.js passed before API review-lane-run human gate',
+      'node --test test/commands.test.js passed during API review-lane-run human gate',
+    );
+    const runWaitingRef = runWaitingTask.display_id;
 
     child = spawn(process.execPath, [cliPath, 'task', 'serve', '--host', '127.0.0.1', '--port', '0'], {
       cwd: dir,
@@ -15789,7 +16063,7 @@ test('task serve exposes review-lane-drain API', async () => {
     assert.equal(runDryRun.would_write_receipt_path, apiRunReceiptPath);
     assert.equal(fs.existsSync(apiRunReceiptPath), false);
 
-    const beforeRunWaiting = JSON.parse(runCli(['task', 'show', runWaitingRef, '--json'], { cwd: dir, env }).stdout);
+    const beforeRunWaiting = showTask(runWaitingTask.id);
     const runResponse = await fetch(`${base}/api/tasks/review-lane-run?goal_id=OBL-932`, {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
@@ -15811,6 +16085,9 @@ test('task serve exposes review-lane-drain API', async () => {
     assert.equal(fs.existsSync(apiRunLatestPath), true);
     const afterRunWaiting = JSON.parse(runCli(['task', 'show', runWaitingRef, '--json'], { cwd: dir, env }).stdout);
     assert.equal(afterRunWaiting.current_version, beforeRunWaiting.current_version);
+    const afterRunWaitingInProcess = showTask(runWaitingTask.id);
+    assert.equal(afterRunWaitingInProcess.current_version, afterRunWaiting.current_version);
+    assert.equal(afterRunWaitingInProcess.latest_event_type, afterRunWaiting.latest_event_type);
 
     const actResponse = await fetch(`${base}/api/tasks/review-lane-act?goal_id=OBL-930`, {
       method: 'POST',
@@ -15874,6 +16151,56 @@ test('task serve exposes a local task factory API', async () => {
     });
     const ready = await waitForOutput(child, /Task board: (http:\/\/127\.0\.0\.1:\d+)/);
     const base = ready.match[1];
+    // Side tasks are added and claimed straight in the task store; the server
+    // rebuilds from the store on every request, and add and claim are one
+    // store call each in the CLI.
+    const workspaceRoot = taskStore.workspaceRoot(dir);
+    const seedTask = (title, tag, goalId) => {
+      const db = taskStore.open(dbPath);
+      try {
+        const { id } = addSeedTask(db, { title, tag, workspaceRoot, metadata: { goal_id: goalId } });
+        return { id, display_id: taskStore.taskDisplayRefMap(taskStore.listTasks(db, { workspaceRoot })).get(id) };
+      } finally {
+        taskStore.close();
+      }
+    };
+    const claimSeeded = (id, owner) => {
+      const db = taskStore.open(dbPath);
+      try {
+        assert.equal(taskStore.claimTask(db, { id, claimedBy: owner }).claimed, true);
+      } finally {
+        taskStore.close();
+      }
+    };
+    // Side tasks that only need a review state for current and queue to read
+    // are readied and reviewed through the same store calls the CLI makes.
+    const readySeeded = (id, actor, proof) => {
+      const db = taskStore.open(dbPath);
+      try {
+        assert.equal(taskStore.readyTask(db, { id, actor, proof }).ready, true);
+      } finally {
+        taskStore.close();
+      }
+    };
+    const reviewSeeded = (id, proof, nextTask) => {
+      const db = taskStore.open(dbPath);
+      try {
+        assert.equal(taskStore.reviewTask(db, { id, actor: 'codex-review', reward: 0, proof, nextTask }).reviewed, true);
+      } finally {
+        taskStore.close();
+      }
+    };
+    // Owner cases only read the claim and the Plan and Do fields, which the
+    // CLI plan and do commands write with one stageTask call each.
+    const stageSeeded = (id, actor, stage, fields) => {
+      const db = taskStore.open(dbPath);
+      try {
+        const staged = taskStore.stageTask(db, { id, actor, stage, owner: actor, ...fields });
+        assert.equal(staged.staged, true, staged.reason);
+      } finally {
+        taskStore.close();
+      }
+    };
 
 	    const html = await fetch(base).then(r => r.text());
 	    assert.match(html, /Atris Task Factory/);
@@ -16084,14 +16411,7 @@ test('task serve exposes a local task factory API', async () => {
 	    assert.equal(apiStepReviewChat.contract.schema, 'atris.task_review_chat.v1');
 	    assert.equal(apiStepReviewChat.page.task.status, 'review');
 
-	    const apiScopedAdd = runCli([
-	      'task', 'add', 'Scoped API current task',
-	      '--tag', 'api-scope',
-	      '--goal-id', 'OBL-928',
-	      '--json',
-	    ], { cwd: dir, env });
-	    assert.equal(apiScopedAdd.status, 0, apiScopedAdd.stderr);
-	    const apiScopedTask = JSON.parse(apiScopedAdd.stdout).task;
+	    const apiScopedTask = seedTask('Scoped API current task', 'api-scope', 'OBL-928');
 
 	    const apiCurrent = await fetch(`${base}/api/tasks/current?owner=codex&reviewer=codex-review`).then(r => r.json());
 	    assert.equal(apiCurrent.ok, true);
@@ -16129,7 +16449,7 @@ test('task serve exposes a local task factory API', async () => {
 	    assert.ok(apiCapabilitiesCheck.checks.some(check => check.name === 'read_only_projection_semantics_declared' && check.ok));
 	    assert.ok(apiCapabilitiesCheck.checks.some(check => check.name === 'capabilities_check_surface_declared' && check.ok));
 
-	    assert.equal(runCli(['task', 'claim', apiScopedTask.display_id, '--as', 'codex'], { cwd: dir, env }).status, 0);
+	    claimSeeded(apiScopedTask.id, 'codex');
 	    const apiScopedCurrent = await fetch(`${base}/api/tasks/current?owner=codex&goal_id=OBL-928`).then(r => r.json());
 	    assert.equal(apiScopedCurrent.ok, true);
 	    assert.equal(apiScopedCurrent.current.scope.goal_id, 'OBL-928');
@@ -16204,48 +16524,15 @@ test('task serve exposes a local task factory API', async () => {
 		    assert.equal(apiNeedsAgentItem.continue_work_command, undefined);
 		    assert.equal(apiNeedsAgentItem.commands.continue_work, undefined);
 
-	    const apiContinueCreated = runCli([
-	      'task', 'add', 'API certified task with continuation action',
-	      '--tag', 'api-review-state',
-	      '--goal-id', 'OBL-934',
-	      '--json',
-	    ], { cwd: dir, env });
-	    assert.equal(apiContinueCreated.status, 0, apiContinueCreated.stderr);
-	    const apiContinueTask = JSON.parse(apiContinueCreated.stdout).task;
-	    assert.equal(runCli(['task', 'claim', apiContinueTask.display_id, '--as', 'codex'], { cwd: dir, env }).status, 0);
-	    assert.equal(runCli([
-	      'task', 'ready', apiContinueTask.display_id,
-	      '--as', 'codex',
-	      '--proof', 'node --check test/commands.test.js passed before API continue-work filter',
-	    ], { cwd: dir, env }).status, 0);
-	    assert.equal(runCli([
-	      'task', 'review', apiContinueTask.display_id,
-	      '--reward', '0',
-	      '--as', 'codex-review',
-	      '--proof', 'node --test test/commands.test.js passed during API continue-work filter',
-	      '--next', 'Run the API continuation follow-up',
-	    ], { cwd: dir, env }).status, 0);
+	    const apiContinueTask = seedTask('API certified task with continuation action', 'api-review-state', 'OBL-934');
+	    claimSeeded(apiContinueTask.id, 'codex');
+	    readySeeded(apiContinueTask.id, 'codex', 'node --check test/commands.test.js passed before API continue-work filter');
+	    reviewSeeded(apiContinueTask.id, 'node --test test/commands.test.js passed during API continue-work filter', 'Run the API continuation follow-up');
 
-	    const apiWaitingCreated = runCli([
-	      'task', 'add', 'API certified task waiting for human accept',
-	      '--tag', 'api-review-state',
-	      '--goal-id', 'OBL-934',
-	      '--json',
-	    ], { cwd: dir, env });
-	    assert.equal(apiWaitingCreated.status, 0, apiWaitingCreated.stderr);
-	    const apiWaitingTask = JSON.parse(apiWaitingCreated.stdout).task;
-	    assert.equal(runCli(['task', 'claim', apiWaitingTask.display_id, '--as', 'codex'], { cwd: dir, env }).status, 0);
-	    assert.equal(runCli([
-	      'task', 'ready', apiWaitingTask.display_id,
-	      '--as', 'codex',
-	      '--proof', 'node --check test/commands.test.js passed before API human-accept filter',
-	    ], { cwd: dir, env }).status, 0);
-	    assert.equal(runCli([
-	      'task', 'review', apiWaitingTask.display_id,
-	      '--reward', '0',
-	      '--as', 'codex-review',
-	      '--proof', 'node --test test/commands.test.js passed during API human-accept filter',
-	    ], { cwd: dir, env }).status, 0);
+	    const apiWaitingTask = seedTask('API certified task waiting for human accept', 'api-review-state', 'OBL-934');
+	    claimSeeded(apiWaitingTask.id, 'codex');
+	    readySeeded(apiWaitingTask.id, 'codex', 'node --check test/commands.test.js passed before API human-accept filter');
+	    reviewSeeded(apiWaitingTask.id, 'node --test test/commands.test.js passed during API human-accept filter');
 
 	    const apiContinueCommand = `atris task continue-work ${apiContinueTask.display_id} --as codex --json`;
 	    const apiContinueCurrent = await fetch(`${base}/api/tasks/current?owner=codex&goal_id=OBL-934&review_state=continue-work`).then(r => r.json());
@@ -16496,20 +16783,9 @@ test('task serve exposes a local task factory API', async () => {
 	    assert.equal(apiCurrentStepReviewChat.page.review.human_accept.enabled, true);
 	    assert.equal(apiCurrentStepReviewChat.safety.human_accept, false);
 
-	    const apiOtherReviewAdd = runCli([
-	      'task', 'add', 'API other owner review stays untouched',
-	      '--tag', 'api-scope',
-	      '--goal-id', 'OBL-930',
-	      '--json',
-	    ], { cwd: dir, env });
-	    assert.equal(apiOtherReviewAdd.status, 0, apiOtherReviewAdd.stderr);
-	    const apiOtherReviewTask = JSON.parse(apiOtherReviewAdd.stdout).task;
-	    assert.equal(runCli(['task', 'claim', apiOtherReviewTask.display_id, '--as', 'alice'], { cwd: dir, env }).status, 0);
-	    assert.equal(runCli([
-	      'task', 'ready', apiOtherReviewTask.display_id,
-	      '--as', 'alice',
-	      '--proof', 'node --check test/commands.test.js passed before API other owner review',
-	    ], { cwd: dir, env }).status, 0);
+	    const apiOtherReviewTask = seedTask('API other owner review stays untouched', 'api-scope', 'OBL-930');
+	    claimSeeded(apiOtherReviewTask.id, 'alice');
+	    readySeeded(apiOtherReviewTask.id, 'alice', 'node --check test/commands.test.js passed before API other owner review');
 	    const apiOtherReviewStepResponse = await fetch(`${base}/api/tasks/current/step?goal_id=OBL-930`, {
 	      method: 'POST',
 	      headers: { 'content-type': 'application/json' },
@@ -16530,26 +16806,13 @@ test('task serve exposes a local task factory API', async () => {
 	    assert.equal(apiScopedDetailAfterCurrentStep.task.review.approval_status, 'pending');
 	    assert.ok(apiScopedDetailAfterCurrentStep.task.messages.some(m => m.content.includes('TASK_REVIEW_CHAT')));
 
-	    const apiOwnerQueryAdd = runCli([
-	      'task', 'add', 'API owner query current-step task',
-	      '--tag', 'api-owner',
-	      '--goal-id', 'OBL-929',
-	      '--json',
-	    ], { cwd: dir, env });
-	    assert.equal(apiOwnerQueryAdd.status, 0, apiOwnerQueryAdd.stderr);
-	    const apiOwnerQueryTask = JSON.parse(apiOwnerQueryAdd.stdout).task;
-	    assert.equal(runCli([
-	      'task', 'plan', apiOwnerQueryTask.display_id,
-	      '--as', 'alice',
-	      '--goal', 'API current-step honors query owner',
-	      '--exit', 'owner query steps the owner current task',
-	      '--proof-needed', 'node --test test/commands.test.js passes API current-step owner query coverage',
-	    ], { cwd: dir, env }).status, 0);
-	    assert.equal(runCli([
-	      'task', 'do', apiOwnerQueryTask.display_id,
-	      '--as', 'alice',
-	      '--first-move', 'alice owns API current-step query work',
-	    ], { cwd: dir, env }).status, 0);
+	    const apiOwnerQueryTask = seedTask('API owner query current-step task', 'api-owner', 'OBL-929');
+	    stageSeeded(apiOwnerQueryTask.id, 'alice', 'plan', {
+	      goal: 'API current-step honors query owner',
+	      exit: 'owner query steps the owner current task',
+	      proofNeeded: 'node --test test/commands.test.js passes API current-step owner query coverage',
+	    });
+	    stageSeeded(apiOwnerQueryTask.id, 'alice', 'do', { firstMove: 'alice owns API current-step query work' });
 	    const apiOwnerQueryCurrent = await fetch(`${base}/api/tasks/current?owner=alice&goal_id=OBL-929`).then(r => r.json());
 	    assert.equal(apiOwnerQueryCurrent.ok, true);
 	    assert.equal(apiOwnerQueryCurrent.current.owner, 'alice');
@@ -16571,46 +16834,20 @@ test('task serve exposes a local task factory API', async () => {
 	    assert.equal(apiOwnerQueryStep.step.task.id, apiOwnerQueryTask.id);
 	    assert.equal(apiOwnerQueryStep.safety.human_accept, false);
 
-	    const apiOwnerPrecedenceAliceAdd = runCli([
-	      'task', 'add', 'API owner precedence Alice task',
-	      '--tag', 'api-owner',
-	      '--goal-id', 'OBL-931',
-	      '--json',
-	    ], { cwd: dir, env });
-	    assert.equal(apiOwnerPrecedenceAliceAdd.status, 0, apiOwnerPrecedenceAliceAdd.stderr);
-	    const apiOwnerPrecedenceAliceTask = JSON.parse(apiOwnerPrecedenceAliceAdd.stdout).task;
-	    const apiOwnerPrecedenceCodexAdd = runCli([
-	      'task', 'add', 'API owner precedence Codex task',
-	      '--tag', 'api-owner',
-	      '--goal-id', 'OBL-931',
-	      '--json',
-	    ], { cwd: dir, env });
-	    assert.equal(apiOwnerPrecedenceCodexAdd.status, 0, apiOwnerPrecedenceCodexAdd.stderr);
-	    const apiOwnerPrecedenceCodexTask = JSON.parse(apiOwnerPrecedenceCodexAdd.stdout).task;
-	    assert.equal(runCli([
-	      'task', 'plan', apiOwnerPrecedenceAliceTask.display_id,
-	      '--as', 'alice',
-	      '--goal', 'Alice owns the query-selected task',
-	      '--exit', 'query owner cannot be overridden by body actor',
-	      '--proof-needed', 'node --test test/commands.test.js passes API current-step owner precedence coverage',
-	    ], { cwd: dir, env }).status, 0);
-	    assert.equal(runCli([
-	      'task', 'do', apiOwnerPrecedenceAliceTask.display_id,
-	      '--as', 'alice',
-	      '--first-move', 'alice owns the query-selected work',
-	    ], { cwd: dir, env }).status, 0);
-	    assert.equal(runCli([
-	      'task', 'plan', apiOwnerPrecedenceCodexTask.display_id,
-	      '--as', 'codex',
-	      '--goal', 'Codex owns a different same-scope task',
-	      '--exit', 'query owner still selects Alice',
-	      '--proof-needed', 'node --test test/commands.test.js passes API current-step owner precedence coverage',
-	    ], { cwd: dir, env }).status, 0);
-	    assert.equal(runCli([
-	      'task', 'do', apiOwnerPrecedenceCodexTask.display_id,
-	      '--as', 'codex',
-	      '--first-move', 'codex owns separate same-scope work',
-	    ], { cwd: dir, env }).status, 0);
+	    const apiOwnerPrecedenceAliceTask = seedTask('API owner precedence Alice task', 'api-owner', 'OBL-931');
+	    const apiOwnerPrecedenceCodexTask = seedTask('API owner precedence Codex task', 'api-owner', 'OBL-931');
+	    stageSeeded(apiOwnerPrecedenceAliceTask.id, 'alice', 'plan', {
+	      goal: 'Alice owns the query-selected task',
+	      exit: 'query owner cannot be overridden by body actor',
+	      proofNeeded: 'node --test test/commands.test.js passes API current-step owner precedence coverage',
+	    });
+	    stageSeeded(apiOwnerPrecedenceAliceTask.id, 'alice', 'do', { firstMove: 'alice owns the query-selected work' });
+	    stageSeeded(apiOwnerPrecedenceCodexTask.id, 'codex', 'plan', {
+	      goal: 'Codex owns a different same-scope task',
+	      exit: 'query owner still selects Alice',
+	      proofNeeded: 'node --test test/commands.test.js passes API current-step owner precedence coverage',
+	    });
+	    stageSeeded(apiOwnerPrecedenceCodexTask.id, 'codex', 'do', { firstMove: 'codex owns separate same-scope work' });
 	    const apiOwnerPrecedenceCurrent = await fetch(`${base}/api/tasks/current?owner=alice&goal_id=OBL-931`).then(r => r.json());
 	    assert.equal(apiOwnerPrecedenceCurrent.current.selected_task_id, apiOwnerPrecedenceAliceTask.id);
 	    const apiOwnerPrecedenceResponse = await fetch(`${base}/api/tasks/current/step?owner=alice&goal_id=OBL-931`, {
@@ -17030,14 +17267,7 @@ test('task serve exposes a local task factory API', async () => {
     assert.equal(clearAccept.task.review.lesson, null);
     assert.equal(clearAccept.task.review.next_task, null);
 
-    const scopedApiCreateNext = runCli([
-      'task', 'add', 'Scoped API create-next parent',
-      '--tag', 'factory',
-      '--goal-id', 'OBL-932',
-      '--json',
-    ], { cwd: dir, env });
-    assert.equal(scopedApiCreateNext.status, 0, scopedApiCreateNext.stderr);
-    const scopedApiParent = JSON.parse(scopedApiCreateNext.stdout).task;
+    const scopedApiParent = seedTask('Scoped API create-next parent', 'factory', 'OBL-932');
     const scopedApiReady = await fetch(`${base}/api/tasks/${scopedApiParent.id}/ready`, {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
@@ -17083,9 +17313,17 @@ test('task sync dry-run maps local tasks to canonical cloud task writes', () => 
       slug: 'task-sync-lab',
     }), 'utf8');
 
-    const created = runCli(['task', 'new', 'Sync local task to cloud control plane', '--tag', 'swarlo', '--json'], { cwd: dir, env });
-    assert.equal(created.status, 0, created.stderr);
-    const id = JSON.parse(created.stdout).task_id;
+    // Creation is setup; claim, say, ready and the sync plan still use the CLI.
+    const workspaceRoot = taskStore.workspaceRoot(dir);
+    const db = taskStore.open(dbPath);
+    let id;
+    try {
+      const created = addSeedTask(db, { title: 'Sync local task to cloud control plane', tag: 'swarlo', workspaceRoot });
+      assert.equal(created.inserted, true);
+      id = created.id;
+    } finally {
+      taskStore.close();
+    }
 
     const claimed = runCli(['task', 'claim', id, '--as', 'codex', '--json'], { cwd: dir, env });
     assert.equal(claimed.status, 0, claimed.stderr);
@@ -17139,17 +17377,25 @@ test('task projection exposes goals, review proof, and task lineage for visual b
       '',
     ].join('\n'), 'utf8');
 
-    const created = runCli(['task', 'new', 'Improve task factory lineage view', '--tag', 'tasks', '--json'], { cwd: dir, env });
-    assert.equal(created.status, 0, created.stderr);
-    const id = JSON.parse(created.stdout).task_id;
-
-    const unrelated = runCli(['task', 'new', 'Repair notarized Mac installer', '--tag', 'release', '--json'], { cwd: dir, env });
-    assert.equal(unrelated.status, 0, unrelated.stderr);
-    const unrelatedId = JSON.parse(unrelated.stdout).task_id;
-
-    const genericLoop = runCli(['task', 'new', 'Loop tick: Validate local Claude /goal behavior', '--tag', 'agent', '--json'], { cwd: dir, env });
-    assert.equal(genericLoop.status, 0, genericLoop.stderr);
-    const genericLoopId = JSON.parse(genericLoop.stdout).task_id;
+    // Seed setup rows in the real store; finish and export remain CLI checks.
+    const workspaceRoot = taskStore.workspaceRoot(dir);
+    const db = taskStore.open(dbPath);
+    let id;
+    let unrelatedId;
+    let genericLoopId;
+    try {
+      ({ id } = addSeedTask(db, {
+        title: 'Improve task factory lineage view', tag: 'tasks', workspaceRoot,
+      }));
+      ({ id: unrelatedId } = addSeedTask(db, {
+        title: 'Repair notarized Mac installer', tag: 'release', workspaceRoot,
+      }));
+      ({ id: genericLoopId } = addSeedTask(db, {
+        title: 'Loop tick: Validate local Claude /goal behavior', tag: 'agent', workspaceRoot,
+      }));
+    } finally {
+      taskStore.close();
+    }
 
     const finished = runCli([
       'task', 'finish', id,
@@ -17297,7 +17543,8 @@ test('task import preserves Verify metadata through DB-backed TODO shim', () => 
 test('search with no keyword prints usage', () => {
   const dir = makeTempDir();
   try {
-    initWorkspace(dir);
+    // Search needs only the workspace folder; a full init adds a launch and nothing these checks read.
+    fs.mkdirSync(path.join(dir, 'atris'), { recursive: true });
     const res = runCli(['search'], { cwd: dir });
     assert.equal(res.status, 1);
     assert.match(res.stdout, /Usage: atris search/);
@@ -17455,7 +17702,7 @@ test('fresh workspace prompt gives one primary first command plus local fallback
   }
 });
 
-test('workspace-free help smoke sweep covers common entrypoints', () => {
+test('workspace-free help smoke sweep covers common entrypoints', async () => {
   const cases = [
     ['--help'],
     ['status', '--help'],
@@ -17517,11 +17764,12 @@ test('workspace-free help smoke sweep covers common entrypoints', () => {
     ['cr', '--help'],
   ];
 
-  for (const args of cases) {
+  // Every case gets its own folder and home, so six run at once.
+  const checkCase = async (args) => {
     const dir = makeTempDir();
     try {
       const home = path.join(dir, 'home');
-      const res = runCli(args, { cwd: dir, env: { HOME: home } });
+      const res = await runCliAsync(args, { cwd: dir, env: { HOME: home } });
       const label = args.join(' ');
       assert.equal(res.status, 0, `${label}: ${res.stderr || res.stdout}`);
       assert.ok((res.stdout + res.stderr).trim().length > 0, `${label} printed no help`);
@@ -17531,7 +17779,11 @@ test('workspace-free help smoke sweep covers common entrypoints', () => {
     } finally {
       cleanupTempDir(dir);
     }
-  }
+  };
+  const queue = [...cases];
+  await Promise.all(Array.from({ length: 6 }, async () => {
+    while (queue.length) await checkCase(queue.shift());
+  }));
 });
 
 test('launchpad --json picks the current actor claimed task first', () => {
@@ -17936,7 +18188,7 @@ test('search without workspace data prints compact empty result', () => {
 test('search finds matches in journal files', () => {
   const dir = makeTempDir();
   try {
-    initWorkspace(dir);
+    fs.mkdirSync(path.join(dir, 'atris'), { recursive: true });
     writeTodayLog(dir, '# Log\n\n## Inbox\n\n- **I1:** Fix the auth module\n');
     const res = runCli(['search', 'auth'], { cwd: dir });
     assert.equal(res.status, 0, res.stderr);
@@ -17950,7 +18202,7 @@ test('search finds matches in journal files', () => {
 test('search is case-insensitive', () => {
   const dir = makeTempDir();
   try {
-    initWorkspace(dir);
+    fs.mkdirSync(path.join(dir, 'atris'), { recursive: true });
     writeTodayLog(dir, '# Log\n\n## Notes\n\nDebugged the AUTH flow\n');
     const res = runCli(['search', 'auth'], { cwd: dir });
     assert.equal(res.status, 0, res.stderr);
@@ -17963,7 +18215,7 @@ test('search is case-insensitive', () => {
 test('search with no matches prints no matches', () => {
   const dir = makeTempDir();
   try {
-    initWorkspace(dir);
+    fs.mkdirSync(path.join(dir, 'atris'), { recursive: true });
     writeTodayLog(dir, '# Log\n\n## Notes\n\nNothing relevant here\n');
     const res = runCli(['search', 'xyznonexistent'], { cwd: dir });
     assert.equal(res.status, 0, res.stderr);
@@ -18003,12 +18255,14 @@ test('analytics shows zero completions on fresh workspace', () => {
 test('analytics counts completions in journal', () => {
   const dir = makeTempDir();
   try {
-    initWorkspace(dir);
+    // The log below replaces the one init would write, so the workspace folder is enough.
+    fs.mkdirSync(path.join(dir, 'atris'), { recursive: true });
     writeTodayLog(dir, '# Log\n\n## Completed ✅\n\n- **C1: Shipped auth**\n- **C2: Fixed bug**\n\n## Inbox\n\n');
     const res = runCli(['analytics'], { cwd: dir });
     assert.equal(res.status, 0, res.stderr);
-    // Today should show 2 completions
-    assert.match(res.stdout, /2/);
+    // Match the count lines; a bare 2 also matches today's date.
+    assert.match(res.stdout, /^ +Completions: 2$/m);
+    assert.match(res.stdout, /^ +Total completions: 2$/m);
   } finally {
     cleanupTempDir(dir);
   }
@@ -18017,7 +18271,7 @@ test('analytics counts completions in journal', () => {
 test('analytics counts inbox items when Inbox is last section', () => {
   const dir = makeTempDir();
   try {
-    initWorkspace(dir);
+    fs.mkdirSync(path.join(dir, 'atris'), { recursive: true });
     // Inbox at the end with no ## or --- after it (regression test)
     writeTodayLog(dir, '# Log\n\n## Completed ✅\n\n---\n\n## Inbox\n\n- **I1:** Fix auth\n- **I2:** Add tests\n');
     const res = runCli(['analytics'], { cwd: dir });
@@ -18031,9 +18285,7 @@ test('analytics counts inbox items when Inbox is last section', () => {
 test('getRecentSignals returns empty commit/wiki/lesson signals when sources are missing', () => {
   const dir = makeTempDir();
   try {
-    initWorkspace(dir);
-    fs.rmSync(path.join(dir, 'atris', 'wiki', 'STATUS.md'), { force: true });
-    fs.rmSync(path.join(dir, 'atris', 'lessons.md'), { force: true });
+    fs.mkdirSync(path.join(dir, 'atris', 'wiki'), { recursive: true });
 
     const signals = getRecentSignals(dir);
     assert.deepEqual(signals.recentCommits, []);
@@ -18047,7 +18299,13 @@ test('getRecentSignals returns empty commit/wiki/lesson signals when sources are
 test('getRecentSignals reads recent git commits, wiki health, and last 10 lesson lines', () => {
   const dir = makeTempDir();
   try {
-    initWorkspace(dir);
+    fs.mkdirSync(path.join(dir, 'atris', 'wiki'), { recursive: true });
+    const statusPath = path.join(dir, 'atris', 'wiki', 'STATUS.md');
+    fs.writeFileSync(statusPath, '# STATUS\n\nHealth: 3/5\nNext move: tighten loop\n', 'utf8');
+
+    const lessonsPath = path.join(dir, 'atris', 'lessons.md');
+    const lessonLines = Array.from({ length: 12 }, (_, i) => `- lesson ${i + 1}`);
+    fs.writeFileSync(lessonsPath, `${lessonLines.join('\n')}\n`, 'utf8');
 
     const initResult = runGit(['init'], dir);
     assert.equal(initResult.status, 0, initResult.stderr);
@@ -18056,13 +18314,6 @@ test('getRecentSignals reads recent git commits, wiki health, and last 10 lesson
     assert.equal(runGit(['add', '.'], dir).status, 0);
     const commitResult = runGit(['commit', '-m', 'seed workspace'], dir);
     assert.equal(commitResult.status, 0, commitResult.stderr);
-
-    const statusPath = path.join(dir, 'atris', 'wiki', 'STATUS.md');
-    fs.writeFileSync(statusPath, '# STATUS\n\nHealth: 3/5\nNext move: tighten loop\n', 'utf8');
-
-    const lessonsPath = path.join(dir, 'atris', 'lessons.md');
-    const lessonLines = Array.from({ length: 12 }, (_, i) => `- lesson ${i + 1}`);
-    fs.writeFileSync(lessonsPath, `${lessonLines.join('\n')}\n`, 'utf8');
 
     const signals = getRecentSignals(dir);
     assert.equal(signals.recentCommits.length, 1);
@@ -18118,13 +18369,8 @@ test('renderHumanSuggestion keeps the default suggestion briefing plain and narr
 test('visualize exits 1 when no journal exists', () => {
   const dir = makeTempDir();
   try {
-    initWorkspace(dir);
-    // Remove any auto-created log
-    const logsDir = path.join(dir, 'atris', 'logs');
-    if (fs.existsSync(logsDir)) {
-      fs.rmSync(logsDir, { recursive: true, force: true });
-      fs.mkdirSync(logsDir, { recursive: true });
-    }
+    // Visualize without a prompt reads only today's journal, so an empty logs folder is the whole setup.
+    fs.mkdirSync(path.join(dir, 'atris', 'logs'), { recursive: true });
     const res = runCli(['visualize'], { cwd: dir });
     assert.equal(res.status, 1);
     assert.match(res.stdout, /atris log/i);
@@ -18136,7 +18382,7 @@ test('visualize exits 1 when no journal exists', () => {
 test('visualize exits 1 when inbox is empty', () => {
   const dir = makeTempDir();
   try {
-    initWorkspace(dir);
+    fs.mkdirSync(path.join(dir, 'atris'), { recursive: true });
     writeTodayLog(dir, '# Log\n\n## Inbox\n\n\n## Notes\n\n');
     const res = runCli(['visualize'], { cwd: dir });
     assert.equal(res.status, 1);
@@ -18149,7 +18395,7 @@ test('visualize exits 1 when inbox is empty', () => {
 test('visualize renders breakdown for inbox items', () => {
   const dir = makeTempDir();
   try {
-    initWorkspace(dir);
+    fs.mkdirSync(path.join(dir, 'atris'), { recursive: true });
     writeTodayLog(dir, '# Log\n\n## Inbox\n\n- **I1:** Build the dashboard\n\n## Notes\n\n');
     const res = runCli(['visualize'], { cwd: dir });
     assert.equal(res.status, 0, res.stderr);
@@ -18162,7 +18408,8 @@ test('visualize renders breakdown for inbox items', () => {
 test('visualize dry-run accepts any prompt without requiring inbox', () => {
   const dir = makeTempDir();
   try {
-    initWorkspace(dir);
+    fs.mkdirSync(path.join(dir, 'atris'), { recursive: true });
+    fs.writeFileSync(path.join(dir, 'atris', 'MAP.md'), '# MAP.md\n\n- onboarding: src/onboard.js:1\n', 'utf8');
     const res = runCli(['visualize', 'show the connect-api workflow for onboarding', '--dry-run'], { cwd: dir });
     assert.equal(res.status, 0, res.stderr);
     assert.match(res.stdout, /Atris Visualize dry run/);
@@ -18170,6 +18417,7 @@ test('visualize dry-run accepts any prompt without requiring inbox', () => {
     assert.match(res.stdout, /connect-api workflow/);
     assert.match(res.stdout, /Artifact type: workflow/);
     assert.match(res.stdout, /atris\/reports\/visuals/);
+    assert.match(res.stdout, /Workspace context to respect:\nMAP excerpt:\n# MAP\.md\n\n- onboarding: src\/onboard\.js:1/);
   } finally {
     cleanupTempDir(dir);
   }
@@ -18178,7 +18426,9 @@ test('visualize dry-run accepts any prompt without requiring inbox', () => {
 test('visualize dry-run supports custom output and raw prompt', () => {
   const dir = makeTempDir();
   try {
-    initWorkspace(dir);
+    // A map gives the non-raw prompt context, so the raw check below has something to leave out.
+    fs.mkdirSync(path.join(dir, 'atris'), { recursive: true });
+    fs.writeFileSync(path.join(dir, 'atris', 'MAP.md'), '# MAP.md\n\n- diagram: src/diagram.js:1\n', 'utf8');
     const res = runCli([
       'visualize',
       'exact raw diagram prompt',
@@ -18244,10 +18494,12 @@ test('clean --help prints usage without touching workspace', () => {
 test('clean --dry-run --json reports machine-readable health', () => {
   const dir = makeTempDir();
   try {
-    initWorkspace(dir);
+    fs.mkdirSync(path.join(dir, 'atris'), { recursive: true });
     const res = runCli(['clean', '--dry-run', '--json'], { cwd: dir });
     assert.equal(res.status, 0, res.stderr);
     assert.doesNotMatch(res.stdout, /Atris Clean/);
+    // A dry run writes nothing.
+    assert.deepEqual(fs.readdirSync(dir, { recursive: true }), ['atris']);
     const payload = JSON.parse(res.stdout);
     assert.equal(payload.action, 'clean');
     assert.equal(payload.dry_run, true);
@@ -18348,7 +18600,8 @@ test('verify detects placeholder MAP.md', () => {
 test('verify passes with populated MAP.md', () => {
   const dir = makeTempDir();
   try {
-    initWorkspace(dir);
+    // Workspace verify reads only MAP.md here (no package.json, no git), so the atris folder is the setup.
+    fs.mkdirSync(path.join(dir, 'atris'), { recursive: true });
     // Write a MAP.md with enough file refs (verify regex: `filename.ext` with known extensions)
     const mapContent = [
       '# MAP.md', '',
@@ -18363,6 +18616,7 @@ test('verify passes with populated MAP.md', () => {
     const res = runCli(['verify'], { cwd: dir });
     assert.equal(res.status, 0, res.stderr);
     assert.match(res.stdout, /MAP\.md.*Valid/i);
+    assert.match(res.stdout, /4 file refs/);
   } finally {
     cleanupTempDir(dir);
   }
@@ -19679,14 +19933,16 @@ test('computer card prints local workspace card without auth', () => {
       JSON.stringify({ name: 'demo-workspace', bin: { demo: 'bin/demo.js' }, scripts: { test: 'node --test' } }, null, 2),
       'utf8'
     );
-    initWorkspace(dir);
+    // The card lists memory files that exist, so the test writes the one it checks instead of running init.
+    fs.mkdirSync(path.join(dir, 'atris'), { recursive: true });
+    fs.writeFileSync(path.join(dir, 'atris', 'MAP.md'), '# MAP.md\n', 'utf8');
 
     const res = runCli(['computer', 'card'], { cwd: dir });
     assert.equal(res.status, 0, res.stderr);
     assert.match(res.stdout, /Atris Computer Card/);
     assert.match(res.stdout, /Owner:\s+demo-workspace \(project\)/);
     assert.match(res.stdout, /Type:\s+codeops/);
-    assert.match(res.stdout, /Memory:\s+atris\/MAP\.md/);
+    assert.match(res.stdout, /Memory:\s+atris\/MAP\.md$/m);
     assert.match(res.stdout, /Validate:\s+npm test/);
     assert.doesNotMatch(res.stderr, /Not logged in/);
   } finally {
@@ -19697,7 +19953,8 @@ test('computer card prints local workspace card without auth', () => {
 test('computer card --write saves an inspectable markdown artifact', () => {
   const dir = makeTempDir();
   try {
-    initWorkspace(dir);
+    // With an atris folder the card is written under atris/reports; nothing else from init is read.
+    fs.mkdirSync(path.join(dir, 'atris'), { recursive: true });
 
     const res = runCli(['computer', 'card', '--write'], { cwd: dir });
     assert.equal(res.status, 0, res.stderr);
@@ -19734,7 +19991,8 @@ test('proof remains a quiet alias for receipt', () => {
 test('log assigns sequential IDs across sessions', () => {
   const dir = makeTempDir();
   try {
-    initWorkspace(dir);
+    // Log creates today's journal itself, so a bare atris folder is the whole setup.
+    fs.mkdirSync(path.join(dir, 'atris'), { recursive: true });
     runCli(['log'], { cwd: dir, input: 'First idea\nexit\n' });
     runCli(['log'], { cwd: dir, input: 'Second idea\nexit\n' });
 
@@ -19760,7 +20018,9 @@ test('log assigns sequential IDs across sessions', () => {
 test('status default mode renders human summary', () => {
   const dir = makeTempDir();
   try {
-    initWorkspace(dir);
+    // The test writes the TODO and live mission status reads, so init is not needed. A task db
+    // path of its own that does not exist makes status read this TODO, not the shared test db.
+    fs.mkdirSync(path.join(dir, 'atris'), { recursive: true });
     const todoPath = path.join(dir, 'atris', 'TODO.md');
     fs.writeFileSync(todoPath, [
       '# TODO.md',
@@ -19779,10 +20039,11 @@ test('status default mode renders human summary', () => {
     ].join('\n'), 'utf8');
     writeLiveMission(dir);
 
-    const res = runCli(['status'], { cwd: dir });
+    const res = runCli(['status'], { cwd: dir, env: { ATRIS_TASKS_DB: path.join(dir, '.atris', 'tasks.db') } });
     assert.equal(res.status, 0, res.stderr);
     assert.match(res.stdout, /Where we are:/);
     assert.match(res.stdout, /What is queued:/);
+    assert.match(res.stdout, /Next backlog item: Implement feature X/);
     assert.match(res.stdout, /What is blocking:/);
     assert.doesNotMatch(res.stdout, /TASK BOARD|┌|└|│/);
   } finally {
@@ -19816,7 +20077,7 @@ test('status counts completed tasks from db without task db todo shim flag', () 
 
     const db = taskStore.open(dbPath);
     const workspaceRoot = taskStore.workspaceRoot(dir);
-    const created = taskStore.addTask(db, {
+    const created = addSeedTask(db, {
       title: 'Accepted task should count in status',
       tag: 'status',
       workspaceRoot,
@@ -19864,9 +20125,18 @@ test('task accept refreshes existing rendered todo view', () => {
       '(Empty)',
     ].join('\n'), 'utf8');
 
-    const add = runCli(['task', 'add', 'Refresh todo after accept', '--tag', 'status', '--json'], { cwd: dir, env });
-    assert.equal(add.status, 0, add.stderr);
-    const ref = JSON.parse(add.stdout).task.display_id;
+    // Seed creation only; ready, accept and the rendered file refresh stay on the CLI.
+    const workspaceRoot = taskStore.workspaceRoot(dir);
+    const db = taskStore.open(dbPath);
+    let ref;
+    try {
+      const created = addSeedTask(db, { title: 'Refresh todo after accept', tag: 'status', workspaceRoot });
+      assert.equal(created.inserted, true);
+      ref = taskStore.taskDisplayRefMap(taskStore.listTasks(db, { workspaceRoot })).get(created.id);
+      assert.ok(ref);
+    } finally {
+      taskStore.close();
+    }
     const ready = runCli([
       'task',
       'ready',
@@ -19893,20 +20163,33 @@ test('task accept refreshes existing rendered todo view', () => {
 test('status verbose mode keeps the legacy task board', () => {
   const dir = makeTempDir();
   try {
-    initWorkspace(dir);
-    const res = runCli(['status', '--verbose'], { cwd: dir });
+    // The board reads only the TODO the test writes, so init is not needed. A task db
+    // path of its own that does not exist makes status read this TODO, not the shared test db.
+    fs.mkdirSync(path.join(dir, 'atris'), { recursive: true });
+    fs.writeFileSync(path.join(dir, 'atris', 'TODO.md'), '# TODO.md\n\n## Backlog\n\n- **T1:** Implement feature X\n', 'utf8');
+    const res = runCli(['status', '--verbose'], { cwd: dir, env: { ATRIS_TASKS_DB: path.join(dir, '.atris', 'tasks.db') } });
     assert.equal(res.status, 0, res.stderr);
     assert.match(res.stdout, /TASK BOARD|Backlog/i);
     assert.match(res.stdout, /┌|└|│/);
+    assert.match(res.stdout, /Implement feature X/);
   } finally {
     cleanupTempDir(dir);
   }
 });
 
 test('status stays local even when .atris/business.json exists', () => {
+  if (!hasNodeSqlite()) return;
   const dir = makeTempDir();
+  const dbPath = path.join(dir, '.atris', 'tasks.db');
   try {
-    initWorkspace(dir);
+    // The claim line needs one open task; seed it in process instead of running init.
+    fs.mkdirSync(path.join(dir, 'atris'), { recursive: true });
+    const db = taskStore.open(dbPath);
+    try {
+      addSeedTask(db, { title: 'Ship the local status check', workspaceRoot: taskStore.workspaceRoot(dir) });
+    } finally {
+      taskStore.close();
+    }
     const metaDir = path.join(dir, '.atris');
     fs.mkdirSync(metaDir, { recursive: true });
     fs.writeFileSync(
@@ -19915,9 +20198,10 @@ test('status stays local even when .atris/business.json exists', () => {
       'utf8'
     );
 
-    const res = runCli(['status'], { cwd: dir });
+    const res = runCli(['status'], { cwd: dir, env: { ATRIS_TASKS_DB: dbPath } });
     assert.equal(res.status, 0, res.stderr);
     assert.match(res.stdout, /ready to claim/);
+    assert.match(res.stdout, /"ship the local status check" is ready to claim/i);
     assert.match(res.stdout, /^next: atris task claim /m);
     assert.doesNotMatch(res.stdout, /last synced/i);
     assert.doesNotMatch(res.stdout, /Where we are|Decision: let it run/);
@@ -19932,11 +20216,20 @@ test('review default mode leads with certified accept like first-minute', () => 
   const dbPath = path.join(dir, 'tasks.db');
   const env = { ATRIS_TASKS_DB: dbPath, NODE_NO_WARNINGS: '1' };
   try {
-    initWorkspace(dir);
-    const created = runCli(['task', 'new', 'Ship reviewed operator checkpoint', '--tag', 'review', '--json'], { cwd: dir, env });
-    assert.equal(created.status, 0, created.stderr);
-    const task = JSON.parse(created.stdout).task;
-    const ref = task.display_id;
+    fs.mkdirSync(path.join(dir, 'atris'), { recursive: true });
+
+    // Creation is setup; claim, ready, review and the review screen still use the CLI.
+    const workspaceRoot = taskStore.workspaceRoot(dir);
+    const db = taskStore.open(dbPath);
+    let ref;
+    try {
+      const created = addSeedTask(db, { title: 'Ship reviewed operator checkpoint', tag: 'review', workspaceRoot });
+      assert.equal(created.inserted, true);
+      ref = taskStore.taskDisplayRefMap(taskStore.listTasks(db, { workspaceRoot })).get(created.id);
+    } finally {
+      taskStore.close();
+    }
+    assert.ok(ref);
     assert.equal(runCli(['task', 'claim', ref, '--as', 'codex'], { cwd: dir, env }).status, 0);
     const proof = `${'context '.repeat(35)}Verifiers: node --check test/commands.test.js passed, live atris review showed certified queue`;
     assert.equal(runCli(['task', 'ready', ref, '--proof', proof, '--as', 'codex'], { cwd: dir, env }).status, 0);
@@ -19958,10 +20251,12 @@ test('review default mode leads with certified accept like first-minute', () => 
 test('review verbose mode keeps the legacy validator board', () => {
   const dir = makeTempDir();
   try {
-    initWorkspace(dir);
+    fs.mkdirSync(path.join(dir, 'atris'), { recursive: true });
     const res = runCli(['review', '--verbose'], { cwd: dir });
     assert.equal(res.status, 0, res.stderr);
     assert.match(res.stdout, /Atris Review|Validator Agent Activated/);
+    // A missing validator spec is optional context, so the board still renders.
+    assert.match(res.stdout, /^- Validator spec: atris\/team\/validator\/MEMBER\.md \(missing\)$/m);
     assert.match(res.stdout, /Confirm active task state is clean/);
     assert.doesNotMatch(res.stdout, /delete completed tasks|DELETE completed tasks/);
     assert.match(res.stdout, /┌|└|│/);
@@ -20022,19 +20317,17 @@ test('casual launch words route to the durable mission loop', () => {
 test('unknown single-word command exits 2 without creating work', () => {
   const dir = makeTempDir();
   try {
-    initWorkspace(dir);
+    fs.mkdirSync(path.join(dir, 'atris'), { recursive: true });
     fs.writeFileSync(path.join(dir, 'atris', 'MAP.md'), '# MAP.md\n\n## By-Feature\n- example: bin/atris.js:1\n', 'utf8');
-    const beforeTodo = fs.existsSync(path.join(dir, 'atris', 'TODO.md'))
-      ? fs.readFileSync(path.join(dir, 'atris', 'TODO.md'), 'utf8')
-      : null;
+    const todo = '# TODO.md\n\n## Backlog\n\n## In Progress\n\n## Completed\n';
+    fs.writeFileSync(path.join(dir, 'atris', 'TODO.md'), todo, 'utf8');
     const res = runCli(['foobarxyz'], { cwd: dir });
     assert.equal(res.status, 2, res.stderr || res.stdout);
     assert.match(res.stderr + res.stdout, /Unknown command.*foobarxyz/i);
     assert.doesNotMatch(res.stderr + res.stdout, /Treating as natural language/i);
-    const afterTodo = fs.existsSync(path.join(dir, 'atris', 'TODO.md'))
-      ? fs.readFileSync(path.join(dir, 'atris', 'TODO.md'), 'utf8')
-      : null;
-    assert.equal(afterTodo, beforeTodo);
+    assert.equal(fs.readFileSync(path.join(dir, 'atris', 'TODO.md'), 'utf8'), todo);
+    const files = fs.readdirSync(dir, { recursive: true }).map((file) => file.split(path.sep).join('/')).sort();
+    assert.deepEqual(files, ['atris', 'atris/MAP.md', 'atris/TODO.md']);
   } finally {
     cleanupTempDir(dir);
   }
@@ -20314,7 +20607,6 @@ test('wiki orphan checks accept markdown links in legacy indexes', () => {
 test('loop flags stale wiki pages and refreshes status/log', () => {
   const dir = makeTempDir();
   try {
-    initWorkspace(dir);
     fs.writeFileSync(path.join(dir, 'README.md'), '# Repo\n', 'utf8');
     const pagePath = path.join(dir, 'atris', 'wiki', 'concepts', 'stale-page.md');
     fs.mkdirSync(path.dirname(pagePath), { recursive: true });
@@ -20357,13 +20649,12 @@ test('loop flags stale wiki pages and refreshes status/log', () => {
 test('loop suggests next ingest candidates when wiki is clean', () => {
   const dir = makeTempDir();
   try {
-    initWorkspace(dir);
     fs.writeFileSync(path.join(dir, 'README.md'), '# Repo\n', 'utf8');
     const res = runCli(['loop', 'wiki', '--json'], { cwd: dir });
     assert.equal(res.status, 0, res.stderr);
     const report = JSON.parse(res.stdout);
-    assert.ok(report.nextSources.includes('README.md'));
-    assert.match(report.health, /ready for ingest|stable/i);
+    assert.deepEqual(report.nextSources, ['README.md']);
+    assert.equal(report.health, 'wiki is stable, 1 high-value source ready for ingest');
   } finally {
     cleanupTempDir(dir);
   }
@@ -20372,11 +20663,11 @@ test('loop suggests next ingest candidates when wiki is clean', () => {
 test('wiki loop alias runs the same upkeep analysis', () => {
   const dir = makeTempDir();
   try {
-    initWorkspace(dir);
     fs.writeFileSync(path.join(dir, 'README.md'), '# Repo\n', 'utf8');
     const res = runCli(['wiki', 'loop'], { cwd: dir });
     assert.equal(res.status, 0, res.stderr);
     assert.match(res.stdout, /Wiki Loop/);
+    assert.match(res.stdout, /Pages: 0 \| Stale: 0 \| Orphans: 0 \| Next: 1 /);
   } finally {
     cleanupTempDir(dir);
   }
@@ -20385,7 +20676,7 @@ test('wiki loop alias runs the same upkeep analysis', () => {
 test('getVerifyCommand finds task-specific verify commands before and after task moves', () => {
   const dir = makeTempDir();
   try {
-    initWorkspace(dir);
+    fs.mkdirSync(path.join(dir, 'atris'), { recursive: true });
     const todoPath = path.join(dir, 'atris', 'TODO.md');
     fs.writeFileSync(todoPath, `# TODO.md
 
@@ -20479,7 +20770,7 @@ test('verifyJudgeIntegrity returns ok:true on clean state', () => {
 test('maybeWriteCompletedEndgameScorecard writes a scorecard from closed endgame state', () => {
   const dir = makeTempDir();
   try {
-    initWorkspace(dir);
+    fs.mkdirSync(path.join(dir, 'atris'), { recursive: true });
     const now = new Date();
     const yyyy = now.getFullYear().toString();
     const mm = String(now.getMonth() + 1).padStart(2, '0');
@@ -20554,7 +20845,9 @@ slug: verify-loop
     assert.equal(scorecards.length, 1);
     assert.equal(scorecards[0].slug, 'verify-loop');
     assert.equal(scorecards[0].tasksShipped, 1);
+    assert.equal(scorecards[0].tasksAttempted, 1);
     assert.equal(scorecards[0].totalReward, 6);
+    assert.equal(scorecards[0].lessonsGenerated, 0);
 
     const wroteAgain = maybeWriteCompletedEndgameScorecard(dir, {
       slug: 'verify-loop',
@@ -20570,7 +20863,7 @@ slug: verify-loop
 test('maybeWriteCompletedEndgameScorecard treats Review endgame work as active', () => {
   const dir = makeTempDir();
   try {
-    initWorkspace(dir);
+    fs.mkdirSync(path.join(dir, 'atris'), { recursive: true });
     const now = new Date();
     const yyyy = now.getFullYear().toString();
     const mm = String(now.getMonth() + 1).padStart(2, '0');
@@ -20642,7 +20935,7 @@ test('scoreEndgameCandidates returns best by confidence when no atris folder', (
 test('scoreEndgameCandidates returns best by confidence when no scorecards', () => {
   const dir = makeTempDir();
   try {
-    initWorkspace(dir);
+    fs.mkdirSync(path.join(dir, 'atris'), { recursive: true });
     const candidates = [
       { title: 'wiki-search', confidence: 0.6, rationale: 'Medium confidence' },
       { title: 'verify-tests', confidence: 0.8, rationale: 'High confidence' },
@@ -20652,6 +20945,7 @@ test('scoreEndgameCandidates returns best by confidence when no scorecards', () 
     assert.equal(result.title, 'verify-tests', 'should pick highest confidence');
     assert.equal(result.confidence, 0.8);
     assert.equal(result.scored, false);
+    assert.equal(result.reason, 'no scorecards');
   } finally {
     cleanupTempDir(dir);
   }
@@ -20660,7 +20954,7 @@ test('scoreEndgameCandidates returns best by confidence when no scorecards', () 
 test('scoreEndgameCandidates scores candidates by historical reward with adaptive explore rate', () => {
   const dir = makeTempDir();
   try {
-    initWorkspace(dir);
+    fs.mkdirSync(path.join(dir, 'atris'), { recursive: true });
 
     // Create scorecards with diverse types (wiki, verify, refactor, harden)
     const scorecardsPath = getScorecardsPath(path.join(dir, 'atris'));
@@ -20708,7 +21002,7 @@ test('scoreEndgameCandidates scores candidates by historical reward with adaptiv
 test('scoreEndgameCandidates boosts explore to 50% when last 5 are same type', () => {
   const dir = makeTempDir();
   try {
-    initWorkspace(dir);
+    fs.mkdirSync(path.join(dir, 'atris'), { recursive: true });
 
     // All 5 scorecards are wiki-* type
     const scorecardsPath = getScorecardsPath(path.join(dir, 'atris'));
@@ -20752,7 +21046,7 @@ test('scoreEndgameCandidates boosts explore to 50% when last 5 are same type', (
 test('scoreEndgameCandidates filters easy-win candidates when harder ones exist', () => {
   const dir = makeTempDir();
   try {
-    initWorkspace(dir);
+    fs.mkdirSync(path.join(dir, 'atris'), { recursive: true });
 
     // wiki type: high success rate (9/10 = 90%) and high mean reward (50)
     // verify type: low success rate (3/6 = 50%) and low mean reward (10)
@@ -20798,7 +21092,7 @@ test('scoreEndgameCandidates filters easy-win candidates when harder ones exist'
 test('scoreEndgameCandidates returns fallback when scoring fails', () => {
   const dir = makeTempDir();
   try {
-    initWorkspace(dir);
+    fs.mkdirSync(path.join(dir, 'atris'), { recursive: true });
 
     // Write malformed scorecards to trigger parsing error
     const scorecardsPath = getScorecardsPath(path.join(dir, 'atris'));
@@ -20813,7 +21107,9 @@ test('scoreEndgameCandidates returns fallback when scoring fails', () => {
     // Should fall back to best by confidence
     assert.equal(result.title, 'wiki-work');
     assert.equal(result.confidence, 0.9);
-    // scored flag tells us it fell back (if there was an error)
+    // The malformed line is skipped, so scoring falls back to confidence order.
+    assert.equal(result.scored, false);
+    assert.equal(result.reason, 'no scorecards');
   } finally {
     cleanupTempDir(dir);
   }
@@ -20868,15 +21164,24 @@ test('task lineage', () => {
   try {
     fs.mkdirSync(path.join(dir, 'atris'), { recursive: true });
 
-    const parent = runCli(['task', 'new', 'Parent endgame task', '--json'], { cwd: dir, env });
-    assert.equal(parent.status, 0, parent.stderr);
-    const parentPayload = JSON.parse(parent.stdout);
-    const parentRef = parentPayload.task.display_id;
-
-    const child = runCli(['task', 'add', 'Child task under parent', '--goal-id', parentPayload.task_id, '--json'], { cwd: dir, env });
-    assert.equal(child.status, 0, child.stderr);
-    const childPayload = JSON.parse(child.stdout);
-    const childRef = childPayload.task.display_id;
+    // Seed both tasks with the same goal link task add stores; every lineage read stays on the CLI.
+    const workspaceRoot = taskStore.workspaceRoot(dir);
+    const db = taskStore.open(dbPath);
+    let parentRef;
+    let childRef;
+    try {
+      const parent = addSeedTask(db, { title: 'Parent endgame task', workspaceRoot });
+      assert.equal(parent.inserted, true);
+      const child = addSeedTask(db, { title: 'Child task under parent', workspaceRoot, metadata: { goal_id: parent.id } });
+      assert.equal(child.inserted, true);
+      const refs = taskStore.taskDisplayRefMap(taskStore.listTasks(db, { workspaceRoot }));
+      parentRef = refs.get(parent.id);
+      childRef = refs.get(child.id);
+      assert.ok(parentRef);
+      assert.ok(childRef);
+    } finally {
+      taskStore.close();
+    }
 
     const text = runCli(['task', 'lineage', childRef], { cwd: dir, env });
     assert.equal(text.status, 0, text.stderr);

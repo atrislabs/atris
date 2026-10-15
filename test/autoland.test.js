@@ -8,6 +8,7 @@ const { spawnSync } = require('node:child_process');
 const repoRoot = path.resolve(__dirname, '..');
 const cliPath = path.join(repoRoot, 'bin', 'atris.js');
 const autoland = require('../lib/autoland');
+const taskStore = require('../lib/task-db');
 const { evaluateAutoAccept } = require('../lib/auto-accept-certified');
 const { withTaskReadyResult } = require('./helpers/task-result');
 
@@ -87,17 +88,26 @@ function projectionByRef(repo) {
   return Object.fromEntries(projection.tasks.map((t) => [t.display_id, t]));
 }
 
+// Create and claim straight in the task store with the same writes `task new`
+// and `task claim` make; ready and the tick still run through the CLI because
+// certification reads what they write. Returns the display ref (REP-1).
+function seedClaimedTask(repo, title, tag, claimedBy = 'builder') {
+  const db = taskStore.open(path.join(repo, '.atris', 'fixture-tasks.db'));
+  try {
+    const workspaceRoot = taskStore.workspaceRoot(repo);
+    const { id } = taskStore.addTask(db, { title, tag, workspaceRoot });
+    assert.equal(taskStore.claimTask(db, { id, claimedBy }).claimed, true);
+    const row = taskStore.withTaskDisplayRefs(taskStore.listTasks(db, { workspaceRoot })).find((r) => r.id === id);
+    return row.display_id;
+  } finally {
+    taskStore.close();
+  }
+}
+
 // Create a task and walk it to certified: proof from the builder, then a
 // second proof pass from an independent reviewer (2 passes, 2 actors).
 function certifiedTask(repo, title, { tag = 'code' } = {}) {
-  const created = runCli(['task', 'new', title, '--tag', tag, '--json'], repo);
-  assert.equal(created.status, 0, created.stderr || created.stdout);
-  const id = JSON.parse(created.stdout).task?.display_id
-    || JSON.parse(created.stdout).task?.id
-    || JSON.parse(created.stdout).display_id
-    || JSON.parse(created.stdout).id;
-  assert.ok(id, `no task id in: ${created.stdout.slice(0, 200)}`);
-  assert.equal(runCli(['task', 'claim', String(id), '--as', 'builder'], repo).status, 0);
+  const id = seedClaimedTask(repo, title, tag);
   const proof = 'Receipt saved at atris/runs/demo-receipt.json. Evidence inspected: clean tree, change verified in place.';
   assert.equal(runCli(['task', 'ready', String(id), '--proof', proof, '--as', 'builder'], repo).status, 0);
   assert.equal(runCli(['task', 'ready', String(id), '--proof', proof, '--as', 'codex-review'], repo).status, 0);
@@ -105,14 +115,7 @@ function certifiedTask(repo, title, { tag = 'code' } = {}) {
 }
 
 function certifiedVerifiedTask(repo, title, { verify, proof = '', tag = 'code', work = false } = {}) {
-  const created = runCli(['task', 'new', title, '--tag', tag, '--json'], repo);
-  assert.equal(created.status, 0, created.stderr || created.stdout);
-  const id = JSON.parse(created.stdout).task?.display_id
-    || JSON.parse(created.stdout).task?.id
-    || JSON.parse(created.stdout).display_id
-    || JSON.parse(created.stdout).id;
-  assert.ok(id, `no task id in: ${created.stdout.slice(0, 200)}`);
-  assert.equal(runCli(['task', 'claim', String(id), '--as', 'builder'], repo).status, 0);
+  const id = seedClaimedTask(repo, title, tag);
   if (work) verify = shipWork(repo, title, verify);
   const builderArgs = ['task', 'ready', String(id), '--verify', verify, '--as', 'builder'];
   if (proof) builderArgs.push('--proof', proof);
@@ -152,29 +155,18 @@ function landedWorkTask(repo, title) {
 function replaceLatestProof(repo, ref, proof) {
   const task = projectionByRef(repo)[ref];
   assert.ok(task, 'task must exist before replacing its proof');
-  const script = [
-    "const { DatabaseSync } = require('node:sqlite');",
-    'const sqlite = new DatabaseSync(process.argv[1]);',
-    'try {',
-    "  const row = sqlite.prepare('SELECT metadata FROM tasks WHERE id = ?').get(process.argv[2]);",
-    "  const metadata = JSON.parse(row.metadata || '{}');",
-    '  metadata.latest_agent_proof = process.argv[3];',
-    "  sqlite.prepare('UPDATE tasks SET metadata = ?, updated_at = ? WHERE id = ?').run(JSON.stringify(metadata), Date.now(), process.argv[2]);",
-    '} finally {',
-    '  sqlite.close();',
-    '}',
-  ].join('\n');
-  const seeded = spawnSync(process.execPath, [
-    '-e',
-    script,
-    path.join(repo, '.atris', 'fixture-tasks.db'),
-    task.id,
-    proof,
-  ], {
-    encoding: 'utf8',
-    env: { ...process.env, NODE_NO_WARNINGS: '1' },
-  });
-  assert.equal(seeded.status, 0, seeded.stderr || seeded.stdout);
+  // Tamper with the stored proof without recertifying it through `task ready`.
+  const db = taskStore.open(path.join(repo, '.atris', 'fixture-tasks.db'));
+  try {
+    const row = db.prepare('SELECT metadata FROM tasks WHERE id = ?').get(task.id);
+    assert.ok(row, 'task must exist in the database before replacing its proof');
+    const metadata = JSON.parse(row.metadata || '{}');
+    metadata.latest_agent_proof = proof;
+    db.prepare('UPDATE tasks SET metadata = ?, updated_at = ? WHERE id = ?')
+      .run(JSON.stringify(metadata), Date.now(), task.id);
+  } finally {
+    taskStore.close();
+  }
 }
 
 test('digest and alarm compose in plain language', () => {
@@ -500,11 +492,7 @@ test('digest reports protected reviews before certification', () => {
 
   const { base, repo } = makeTempRepo();
   try {
-    const created = runCli(['task', 'new', 'Keep the customer-facing sentence clear so operators can approve it', '--tag', 'security', '--json'], repo);
-    assert.equal(created.status, 0, created.stderr || created.stdout);
-    const task = JSON.parse(created.stdout).task || JSON.parse(created.stdout);
-    const ref = task.display_id || task.id;
-    assert.equal(runCli(['task', 'claim', ref, '--as', 'linguist'], repo).status, 0);
+    const ref = seedClaimedTask(repo, 'Keep the customer-facing sentence clear so operators can approve it', 'security', 'linguist');
     const ready = runCli([
       'task', 'ready', ref, '--verify', 'git diff --check', '--as', 'linguist',
     ], repo);
@@ -522,11 +510,7 @@ test('digest reports protected reviews before certification', () => {
 test('autoland status does not call one-pass protected work approval-ready', () => {
   const { base, repo } = makeTempRepo();
   try {
-    const created = runCli(['task', 'new', 'Keep the protected sentence clear so a human can judge it', '--tag', 'security', '--json'], repo);
-    assert.equal(created.status, 0, created.stderr || created.stdout);
-    const task = JSON.parse(created.stdout).task || JSON.parse(created.stdout);
-    const ref = task.display_id || task.id;
-    assert.equal(runCli(['task', 'claim', ref, '--as', 'linguist'], repo).status, 0);
+    const ref = seedClaimedTask(repo, 'Keep the protected sentence clear so a human can judge it', 'security', 'linguist');
     const ready = runCli([
       'task', 'ready', ref, '--verify', 'git diff --check', '--as', 'linguist',
     ], repo);
@@ -552,11 +536,7 @@ test('autoland status speaks in plain sentences and puts your decisions first', 
     });
     const heldBack = certifiedTask(repo, 'Tidy the settings copy so the panel reads clearly');
     replaceLatestProof(repo, heldBack, '');
-    const created = runCli(['task', 'new', 'Keep the protected wording clear so a human can judge it', '--tag', 'security', '--json'], repo);
-    assert.equal(created.status, 0, created.stderr || created.stdout);
-    const task = JSON.parse(created.stdout).task || JSON.parse(created.stdout);
-    const protectedRef = task.display_id || task.id;
-    assert.equal(runCli(['task', 'claim', protectedRef, '--as', 'linguist'], repo).status, 0);
+    const protectedRef = seedClaimedTask(repo, 'Keep the protected wording clear so a human can judge it', 'security', 'linguist');
     const ready = runCli([
       'task', 'ready', protectedRef, '--verify', 'git diff --check', '--as', 'linguist',
     ], repo);
@@ -847,18 +827,21 @@ test('cron line is labeled and removable', () => {
   assert.match(line, /autoland tick/);
 });
 
-test('autoland status never probes a stalled crontab', () => {
+test('autoland status never probes crontab', () => {
   const { base, repo } = makeTempRepo();
   const fakeBin = fs.mkdtempSync(path.join(os.tmpdir(), 'atris-slow-crontab-'));
   const crontab = path.join(fakeBin, 'crontab');
+  const marker = path.join(fakeBin, 'crontab-called');
   try {
-    fs.writeFileSync(crontab, '#!/bin/sh\nexec /bin/sleep 3\n', 'utf8');
+    fs.writeFileSync(crontab, '#!/bin/sh\nprintf called > "$ATRIS_TEST_CRONTAB_MARKER"\nexit 1\n', 'utf8');
     fs.chmodSync(crontab, 0o755);
-    const started = Date.now();
-    const status = runCli(['autoland', 'status'], repo, { PATH: `${fakeBin}:${process.env.PATH}` });
+    const status = runCli(['autoland', 'status'], repo, {
+      PATH: `${fakeBin}${path.delimiter}${process.env.PATH}`,
+      ATRIS_TEST_CRONTAB_MARKER: marker,
+    });
     assert.equal(status.status, 0, status.stderr || status.stdout);
     assert.match(status.stdout, /heartbeat: unknown - run atris autoland on to check and repair/);
-    assert.ok(Date.now() - started < 1500, 'read-only status should not wait on crontab');
+    assert.equal(fs.existsSync(marker), false, 'read-only status should not invoke crontab');
   } finally {
     cleanupTempDir(fakeBin);
     cleanupTempDir(base);
@@ -1025,11 +1008,7 @@ test('tick still lands an ordinary command proof with exit 0', () => {
 // Walk a task only to first proof: builder ready, no second reviewer. The tick
 // must supply the second-actor check itself by re-running the proof's command.
 function proofBackedTask(repo, title, { tag = 'code', work = false } = {}) {
-  const created = runCli(['task', 'new', title, '--tag', tag, '--json'], repo);
-  assert.equal(created.status, 0, created.stderr || created.stdout);
-  const id = JSON.parse(created.stdout).task?.display_id || JSON.parse(created.stdout).task?.id;
-  assert.ok(id, `no task id in: ${created.stdout.slice(0, 200)}`);
-  assert.equal(runCli(['task', 'claim', String(id), '--as', 'builder'], repo).status, 0);
+  const id = seedClaimedTask(repo, title, tag);
   const verify = work ? shipWork(repo, title, 'git diff --check') : 'git diff --check';
   assert.equal(runCli(['task', 'ready', String(id), '--verify', verify, '--as', 'builder'], repo).status, 0);
   return String(id);
@@ -1040,9 +1019,7 @@ test('tick certifies proof-backed reviews by re-running their check, then lands 
   try {
     const codeTask = proofBackedTask(repo, 'One-tick landing', { tag: 'code', work: true });
     const securityTask = proofBackedTask(repo, 'Rotate the signing key', { tag: 'security' });
-    const noCheckCreated = runCli(['task', 'new', 'No runnable check', '--tag', 'code', '--json'], repo);
-    const noCheckTask = String(JSON.parse(noCheckCreated.stdout).task?.display_id);
-    assert.equal(runCli(['task', 'claim', noCheckTask, '--as', 'builder'], repo).status, 0);
+    const noCheckTask = seedClaimedTask(repo, 'No runnable check', 'code');
     // meaningful proof (receipt path) but no runnable command to re-run
     assert.equal(runCli(['task', 'ready', noCheckTask, '--proof', 'Receipt saved at atris/runs/demo-receipt.json, reviewed the rendered output end to end.', '--as', 'builder'], repo).status, 0);
 
@@ -1315,10 +1292,7 @@ test('tick never executes a non-allowlisted verify at landing — it bounces the
 test('auto-accept-certified json includes unsafe verify blockers with a reason', () => {
   const { base, repo } = makeTempRepo();
   try {
-    const created = runCli(['task', 'new', 'Unsafe verify blocker', '--tag', 'code', '--json'], repo);
-    assert.equal(created.status, 0, created.stderr || created.stdout);
-    const ref = String(JSON.parse(created.stdout).task?.display_id);
-    assert.equal(runCli(['task', 'claim', ref, '--as', 'builder'], repo).status, 0);
+    const ref = seedClaimedTask(repo, 'Unsafe verify blocker', 'code');
     // --no-falsify-check: this fixture NEEDS the unsafe no-op verify to reach
     // the autoland blocker it is testing; the falsifier probe would refuse it.
     const ready = runCli(['task', 'ready', ref, '--verify', 'true', '--no-falsify-check', '--as', 'builder'], repo);
@@ -1599,9 +1573,7 @@ test('accept_all policy: check-less work bounces back for a verify, protected la
     // one pass, one actor, no runnable check — even accept_all refuses to land
     // it (landing an unverified proof mints XP the signal chain can't trust);
     // the tick revises it back with instructions to record a verify instead.
-    const created = runCli(['task', 'new', 'Loose bar bounces back', '--tag', 'code', '--json'], repo);
-    const id = String(JSON.parse(created.stdout).task?.display_id);
-    assert.equal(runCli(['task', 'claim', id, '--as', 'builder'], repo).status, 0);
+    const id = seedClaimedTask(repo, 'Loose bar bounces back', 'code');
     assert.equal(runCli(['task', 'ready', id, '--proof', 'Receipt saved at atris/runs/demo-receipt.json, reviewed the rendered output end to end.', '--as', 'builder'], repo).status, 0);
     const billingTask = certifiedTask(repo, 'Wire the vendor payment', { tag: 'billing' });
 

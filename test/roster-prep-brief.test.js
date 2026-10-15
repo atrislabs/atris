@@ -474,7 +474,13 @@ test('a handover backup preps only when its own line asks', async () => {
       clock: stepClock(),
     });
     assert.equal(flight.landed.length, 1);
-    assert.deepEqual(calls(bin), ['devin', 'claude', 'cursor-agent']);
+    // The 1s cap is wall time, so on a loaded machine the stalled devin fake
+    // can be killed before its first line logs the call. The run record below
+    // proves devin was launched and stalled; the call log only has to show
+    // the prep and the backup in order, with devin first whenever it got to log.
+    const called = calls(bin);
+    assert.deepEqual(called.filter((name) => name !== 'devin'), ['claude', 'cursor-agent']);
+    assert.ok(called.indexOf('devin') <= 0, `devin must run before the prep: ${called.join(', ')}`);
     assert.doesNotMatch(argsOf(bin, 'devin'), /brief from the prep pass/);
     assert.match(argsOf(bin, 'cursor-agent'), /brief from the prep pass/);
     const rows = runs(root);

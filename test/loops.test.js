@@ -5,8 +5,19 @@ const os = require('node:os');
 const path = require('node:path');
 const { spawnSync } = require('node:child_process');
 
+// Every temp folder this file makes, removed once all tests finish.
+const scratch = [];
+const tempDir = (prefix) => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), prefix));
+  scratch.push(dir);
+  return dir;
+};
+test.after(() => {
+  for (const dir of scratch) fs.rmSync(dir, { recursive: true, force: true });
+});
+
 function makeHeartbeatFixture() {
-  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'atris-loops-'));
+  const dir = tempDir('atris-loops-');
   fs.writeFileSync(path.join(dir, 'registry.json'), JSON.stringify({
     jobs: [
       { id: 'demo-loop', purpose: 'demo purpose line', command: 'true', cadence_minutes: 15, enabled: true },
@@ -23,7 +34,7 @@ function runLoops(args, dir) {
   return spawnSync(process.execPath, [path.join(__dirname, '..', 'bin', 'atris.js'), 'loops', ...args], {
     encoding: 'utf8',
     env: { ...process.env, ATRIS_HEARTBEAT_DIR: dir, NODE_NO_WARNINGS: '1' },
-    cwd: fs.mkdtempSync(path.join(os.tmpdir(), 'atris-loops-cwd-')),
+    cwd: tempDir('atris-loops-cwd-'),
   });
 }
 
@@ -86,7 +97,7 @@ test('loops stop rejects unknown ids', () => {
 });
 
 test('loops init scaffolds project loop files idempotently', () => {
-  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'atris-loops-project-'));
+  const dir = tempDir('atris-loops-project-');
   const res = runCli(['loops', 'init'], dir);
   assert.equal(res.status, 0, res.stderr);
   assert.match(res.stdout, /created:/);
@@ -103,7 +114,7 @@ test('loops init scaffolds project loop files idempotently', () => {
 });
 
 test('self-improve aliases loops init', () => {
-  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'atris-self-improve-'));
+  const dir = tempDir('atris-self-improve-');
   const res = runCli(['self-improve'], dir);
   assert.equal(res.status, 0, res.stderr);
   assert.match(res.stdout, /atris loops init/);
@@ -111,7 +122,7 @@ test('self-improve aliases loops init', () => {
 });
 
 test('loops audit checks structural contract and optional Check command', () => {
-  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'atris-loops-audit-'));
+  const dir = tempDir('atris-loops-audit-');
   assert.equal(runCli(['loops', 'init'], dir).status, 0);
 
   const res = runCli(['loops', 'audit'], dir);
@@ -123,7 +134,7 @@ test('loops audit checks structural contract and optional Check command', () => 
 });
 
 test('loops audit finds owners that live in atris/team', () => {
-  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'atris-loops-owner-'));
+  const dir = tempDir('atris-loops-owner-');
   assert.equal(runCli(['loops', 'init'], dir).status, 0);
   const loopPath = path.join(dir, 'atris', 'loops', 'feedback.md');
   fs.writeFileSync(loopPath, fs.readFileSync(loopPath, 'utf8').replace(/\*\*Owner:\*\*\s*`team\/[^`]+`/, '**Owner:** `team/validator`'));
@@ -134,7 +145,7 @@ test('loops audit finds owners that live in atris/team', () => {
 });
 
 test('loops tick prints project tick protocol', () => {
-  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'atris-loops-tick-'));
+  const dir = tempDir('atris-loops-tick-');
   assert.equal(runCli(['loops', 'init'], dir).status, 0);
 
   const res = runCli(['loops', 'tick'], dir);

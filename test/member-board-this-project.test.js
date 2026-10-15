@@ -10,10 +10,21 @@ const { readBoard, teamHere } = require('../lib/member-board');
 const cliPath = path.join(path.resolve(__dirname, '..'), 'bin', 'atris.js');
 const recent = (secondsAgo) => new Date(Date.now() - secondsAgo * 1000).toISOString();
 
+// Every temp folder this file makes, removed once all tests (and the follow child) finish.
+const scratch = [];
+const tempDir = (prefix) => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), prefix));
+  scratch.push(dir);
+  return dir;
+};
+test.after(() => {
+  for (const dir of scratch) fs.rmSync(dir, { recursive: true, force: true });
+});
+
 // One progress folder shared by two projects: builder and validator belong
 // here, payments-infra belongs to some other repo on the same computer.
 function setup() {
-  const progress = fs.mkdtempSync(path.join(os.tmpdir(), 'atris-board-progress-'));
+  const progress = tempDir('atris-board-progress-');
   const lines = {
     builder: [`${recent(60)} m-1 started: build the thing`, `${recent(10)} m-1 editing lib/a.js`],
     validator: [`${recent(50)} m-2 started: check the thing`, `${recent(20)} m-2 reading lib/a.js`],
@@ -22,7 +33,7 @@ function setup() {
   for (const [name, rows] of Object.entries(lines)) {
     fs.writeFileSync(path.join(progress, `${name}.log`), rows.map((l) => `${l}\n`).join(''));
   }
-  const project = fs.mkdtempSync(path.join(os.tmpdir(), 'atris-board-project-'));
+  const project = tempDir('atris-board-project-');
   for (const name of ['builder', 'validator', '_template']) {
     fs.mkdirSync(path.join(project, 'atris', 'team', name), { recursive: true });
   }
@@ -36,7 +47,7 @@ const board = (args, { project, env }) =>
 test('team here is the member folders under atris/team, null outside a project', () => {
   const { project } = setup();
   assert.deepEqual(teamHere(project).sort(), ['builder', 'validator']);
-  assert.equal(teamHere(fs.mkdtempSync(path.join(os.tmpdir(), 'atris-board-none-'))), null);
+  assert.equal(teamHere(tempDir('atris-board-none-')), null);
 });
 
 test('readBoard with only drops logs from other projects', () => {
@@ -62,7 +73,7 @@ test('member board in a project shows only that project\'s members', () => {
 
 test('member board outside a project still shows every member', () => {
   const ctx = setup();
-  const outside = fs.mkdtempSync(path.join(os.tmpdir(), 'atris-board-outside-'));
+  const outside = tempDir('atris-board-outside-');
   const res = board(['--json'], { ...ctx, project: outside });
   assert.equal(res.status, 0, res.stderr);
   assert.equal(JSON.parse(res.stdout).members.length, 3);
@@ -70,17 +81,33 @@ test('member board outside a project still shows every member', () => {
 
 test('follow stream in a project skips other projects\' new lines', async () => {
   const ctx = setup();
-  const child = spawn(process.execPath, [cliPath, 'member', 'board', '--json', '--follow'], { cwd: ctx.project, env: ctx.env });
+  const child = spawn(process.execPath, [cliPath, 'member', 'board', '--json', '--follow'], {
+    cwd: ctx.project, env: ctx.env, timeout: 15_000,
+  });
+  // Subscribe before polling so cleanup also handles an early child exit.
+  const closed = new Promise((resolve) => child.once('close', resolve));
   let out = '';
+  let stderr = '';
   child.stdout.on('data', (d) => { out += d; });
+  child.stderr.on('data', (d) => { stderr += d; });
+  child.on('error', (error) => { stderr += error.message; });
+  const waitForOutput = async (check) => {
+    const deadline = Date.now() + 5000;
+    while (!check() && Date.now() < deadline) {
+      await new Promise((r) => setTimeout(r, 25));
+    }
+    assert.ok(check(), `expected board output before timeout: ${out}`);
+  };
   try {
-    await new Promise((r) => setTimeout(r, 700));
+    await waitForOutput(() => out.includes('\n'));
     fs.appendFileSync(path.join(ctx.progress, 'payments-infra.log'), `${recent(0)} m-9 editing other.js\n`);
     fs.appendFileSync(path.join(ctx.progress, 'builder.log'), `${recent(0)} m-1 editing mine.js\n`);
-    const deadline = Date.now() + 5000;
-    while (!out.includes('mine.js') && Date.now() < deadline) await new Promise((r) => setTimeout(r, 100));
+    await waitForOutput(() => out.split('\n').slice(0, -1).some((line) => line.includes('mine.js')));
+    assert.equal(child.exitCode, null, `still following: ${stderr}`);
+    assert.equal(child.signalCode, null, 'follow was not stopped by its timeout');
   } finally {
     child.kill('SIGINT');
+    await closed;
   }
   const events = out.trim().split('\n').map((l) => JSON.parse(l));
   assert.deepEqual(events[0].members.map((r) => r.member).sort(), ['builder', 'validator']);
