@@ -2809,3 +2809,5 @@ Proof packet inspection batching: `test/commands.test.js:12115` and `test/comman
 Proof extraction fixture setup: `test/commands.test.js:12180` creates, claims and optionally readies each fixture through one production store connection, closed in finally. Title-only, path-only and bracket cases use three connections instead of six; every real CLI comparison and assertion remains.
 
 Review selection status batching: `test/commands.test.js:12525` awaits both show reads together after selection. `commands/task.js:7744` reads each existing row from the store without saving a shared view. All assertions remain; three sequential CLI stages become two.
+
+Duplicate selection fixture reuse: `test/commands.test.js:12776` readies the checkpoint in its creation connection, closed in finally before real CLI checks. Two store connections replace three; all command assertions remain.
