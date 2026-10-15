@@ -3190,6 +3190,27 @@ test('fix puts a colon after a short label before an "a" or "every" clause', () 
   ]);
 });
 
+test('fix puts a colon or a semicolon after a short label before a "has" or "is" clause', () => {
+  // from a review note: "each G8. Folded, every row above has explicit line
+  // ranges" spliced on a wrapped line, and "Risk: low, edits are confined"
+  // past a field. A label after a stop on its own line takes a colon, a
+  // field value a semicolon; a capital after the dash opens a sentence.
+  const file = tmpFile('label-has.md', [
+    '- HIGH: cite the fetch line for',
+    '  each G8. Folded \u2014 every row above has explicit line ranges.',
+    '',
+    '- Risk: low \u2014 edits are confined to the ranked section.',
+    '',
+    '## Phase 1: INVENTORY \u2014 What did we produce?',
+  ].join('\n'));
+  const { changes } = applyFixes([file], RULES, { write: false });
+  assert.deepEqual(changes.map((c) => c.after), [
+    '  each G8. Folded: every row above has explicit line ranges.',
+    '- Risk: low; edits are confined to the ranked section.',
+    '## Phase 1: INVENTORY, What did we produce?',
+  ]);
+});
+
 test('fix joins a subject with "also" before its verb with a semicolon', () => {
   // from a probe of the loop note: "now", "still" and "already" before a
   // verb joined the clause, but "also" did not, so "the gate also checks

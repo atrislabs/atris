@@ -733,11 +733,12 @@ function clauseLeft(at, whole) {
 // "neither: that's a personal profile". Past a field's own colon it takes a
 // semicolon instead: "Severity: High; this is the first command". An
 // opener ("Then"), a greeting ("Hi Maya"), an answer word ("No") and a line
-// that carries on the one above keep their comma.
+// that carries on the one above keep their comma, unless a stop on the line
+// itself starts the label: "each G8. Folded: every row above has ranges".
 const OPENER_WORD = /^(?:then|also|and|but|so|or|yet|nor|now|plus|again|still|here|well|oh|hi|hello|hey|dear|thanks|thank you|yes|no|ok|okay|sure|right|if|when|whenever|once|because|since|while|though|although|unless|until|after|before|as|otherwise|instead|anyway|honestly|basically|actually|today|tomorrow|tonight|later|first|second|third|finally|meanwhile|sometimes|maybe|perhaps)\b/i;
 function labelJoin(at, whole) {
   const before = whole.slice(0, at);
-  if (lineAbove || /[.!?,;:][*_"'\u201d\u2019)]*\s*$/.test(before)) return null;
+  if ((lineAbove && !/[.!?]\s/.test(before)) || /[.!?,;:][*_"'\u201d\u2019)]*\s*$/.test(before)) return null;
   const parts = before.split(/[.!?]\s|\s\|\s/).pop().split(/:\s/);
   const label = parts.pop().replace(/^(?:\s*(?:[-*+>#|]|\d+[.)]|\*\*|__))*\s*/, '').replace(/[*_]+$/, '').trim();
   if (!label || label.split(/\s+/).length > 3 || OPENER_WORD.test(label)) return null;
@@ -1194,7 +1195,12 @@ function fixEmDash(s, { endsBlock = false, startsBlock = false, spans = [], abov
     })
     .replace(NOUN_CLAUSE_AFTER_DASH, (m, at, whole) => {
       const left = clauseOrFieldLeft(at, whole);
-      return left && !NAME_TAIL_PHRASE.test(whole.slice(at)) ? clauseJoin(left, at, whole) : m;
+      if (NAME_TAIL_PHRASE.test(whole.slice(at))) return m;
+      if (left) return clauseJoin(left, at, whole);
+      // a short label takes a colon here too, as before "it": "each G8.
+      // Folded: every row above has ranges". A capital after the dash opens
+      // a sentence of its own, so "INVENTORY, What did we produce?" stays.
+      return /^\s*\u2014\s*[A-Z][a-z]/.test(whole.slice(at)) ? m : labelJoin(at, whole) || m;
     })
     .replace(AND_CLAUSE_AFTER_DASH, (m, at, whole) => {
       const left = clauseLeft(at, whole);
