@@ -2301,3 +2301,59 @@ test('live follow detects an in-place same-size log rewrite with split output', 
     fs.rmSync(dir, { recursive: true, force: true });
   }
 });
+
+test('live follow detects an in-place log rewrite that grows past the reading position', async (t) => {
+  const stamp = new Date().toISOString();
+  const dir = fakeDir({ navigator: [`${stamp} m-old started: old job`] });
+  const log = path.join(dir, 'navigator.log');
+  const child = spawn(process.execPath, [cliPath, 'member', 'board', '--json', '--follow'], {
+    cwd: dir, env: { ...process.env, ATRIS_PROGRESS_DIR: dir },
+  });
+  child.stdout.setEncoding('utf8');
+  let out = '';
+  let stderr = '';
+  let closed = false;
+  const done = new Promise((resolve) => child.once('close', (code) => { closed = true; resolve(code); }));
+  child.stdout.on('data', (chunk) => { out += chunk; });
+  child.stderr.on('data', (chunk) => { stderr += chunk; });
+  const records = () => out.split('\n').slice(0, -1).filter(Boolean).map((line) => JSON.parse(line));
+  const receive = async (count) => {
+    const until = Date.now() + 15_000;
+    while (records().length < count && !closed && Date.now() < until) await new Promise((r) => setTimeout(r, 50));
+    assert.equal(records().length, count, `stdout=${out}; stderr=${stderr}; closed=${closed}`);
+    return records();
+  };
+  try {
+    assert.equal((await receive(1))[0].kind, 'snapshot');
+    const before = fs.statSync(log);
+
+    // Overwrite from the top without truncating, so no scan can see a smaller
+    // file. The new text runs past the old reading position and ends mid-line.
+    const job = 'longer next job';
+    const grown = `${stamp} m-new started: ${job}\r\n${stamp} m-new reading ${'fresh '.repeat(20)}`;
+    assert.ok(Buffer.byteLength(grown) > before.size);
+    const fd = fs.openSync(log, 'r+');
+    try { fs.writeSync(fd, grown, 0); } finally { fs.closeSync(fd); }
+    assert.equal(fs.statSync(log).ino, before.ino);
+    const started = await receive(2);
+    assert.deepEqual(started[1], { member: 'navigator', mission: 'm-new', at: stamp, kind: 'started', text: job });
+    await new Promise((r) => setTimeout(r, 1_200));
+    assert.equal(records().length, 2, 'the grown partial line waits');
+    fs.appendFileSync(log, 'notes\r\n');
+    const step = await receive(3);
+    assert.deepEqual(step[2], { member: 'navigator', mission: 'm-new', at: stamp, kind: 'step', text: `reading ${'fresh '.repeat(20)}notes` });
+    fs.appendFileSync(log, `${stamp} m-new finished: ok\n`);
+    const finished = await receive(4);
+    assert.deepEqual(finished[3], { member: 'navigator', mission: 'm-new', at: stamp, kind: 'finished', text: 'ok', ok: true });
+    await new Promise((r) => setTimeout(r, 1_200));
+    assert.equal(records().length, 4, 'watching and polling neither replay old text nor duplicate new events');
+    child.kill('SIGINT');
+    assert.equal(await done, 0, stderr);
+    t.diagnostic(`actual command: ${process.execPath} ${cliPath} member board --json --follow`);
+    t.diagnostic(`actual stdout:\n${out}exit: 0`);
+  } finally {
+    if (!closed) child.kill('SIGINT');
+    await done;
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
