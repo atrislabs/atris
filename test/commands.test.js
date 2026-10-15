@@ -17375,7 +17375,7 @@ test('task sync dry-run maps local tasks to canonical cloud task writes', () => 
       slug: 'task-sync-lab',
     }), 'utf8');
 
-    // Creation is setup; claim, say, ready and the sync plan still use the CLI.
+    // Creation and ownership are setup; say, ready and the sync plan still use the CLI.
     const workspaceRoot = taskStore.workspaceRoot(dir);
     const db = taskStore.open(dbPath);
     let id;
@@ -17383,12 +17383,10 @@ test('task sync dry-run maps local tasks to canonical cloud task writes', () => 
       const created = addSeedTask(db, { title: 'Sync local task to cloud control plane', tag: 'swarlo', workspaceRoot });
       assert.equal(created.inserted, true);
       id = created.id;
+      assert.equal(taskStore.claimTask(db, { id, claimedBy: 'codex' }).claimed, true);
     } finally {
       taskStore.close();
     }
-
-    const claimed = runCli(['task', 'claim', id, '--as', 'codex', '--json'], { cwd: dir, env });
-    assert.equal(claimed.status, 0, claimed.stderr);
 
     const noted = runCli(['task', 'say', id, 'Use dry-run before cloud writes', '--as', 'codex', '--json'], { cwd: dir, env });
     assert.equal(noted.status, 0, noted.stderr);

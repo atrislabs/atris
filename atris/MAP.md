@@ -206,3 +206,5 @@ Accepted revision refusal batch: `test/commands.test.js:13767` awaits refused re
 Reward projection readiness setup: `test/commands.test.js:13094` calls production readyTask with the original proof and actor before closing fixture setup in finally. Acceptance, collection and local status retain every CLI assertion; four launches become three. Collection and status remain sequential because both write shared XP state in `commands/xp.js:1050`.
 
 Reward rejection readiness setup: `test/commands.test.js:13170` seeds production readyTask with the original actor and proof, asserts success and closes in finally. CLI zero-reward refusal and the unchanged pending-review read retain every assertion; two launches replace three.
+
+Sync preview ownership setup: `test/commands.test.js:17365` seeds creation and claim through the production store, closed before CLI message, readiness and dry-run checks. Three CLI launches replace four; all sync assertions remain.
