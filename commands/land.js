@@ -519,10 +519,14 @@ function savedFingerprint(file) {
   return crypto.createHash('sha256').update(fs.readFileSync(file)).digest('hex');
 }
 
-// A saved patch is only a backup if it applies. A diff setting such as a
-// text conversion driver writes the converted text, which no longer matches
-// the files, so each patch is tried against the folder's commit in a
-// throwaway index before the folder may be removed.
+// Patches are saved as git apply reads them, whatever the folder's diff
+// settings: no text conversion, outside diff program or color, and the
+// usual a/ b/ name prefixes even under a no-prefix setting.
+const PLAIN_PATCH = ['--binary', '--no-textconv', '--no-ext-diff', '--no-color', '--src-prefix=a/', '--dst-prefix=b/'];
+
+// A saved patch is only a backup if it applies. A setting such as strict
+// whitespace checks can still refuse it, so each patch is tried against the
+// folder's commit in a throwaway index before the folder may be removed.
 function patchApplies(cwd, sha, patchFile) {
   const index = path.join(os.tmpdir(), `atris-patch-check-${process.pid}-${crypto.randomBytes(6).toString('hex')}.index`);
   try {
@@ -545,7 +549,7 @@ function salvageWorktree(root, w, dir, receipt) {
     // stdout hits Node's 1MB default maxBuffer, so any worktree more than
     // ~1MB dirty read as "salvage failed" and was kept on every reap pass.
     const patchPath = path.join(dir, `${path.basename(w.path)}.dirty.patch`);
-    const diff = runGit(['diff', 'HEAD', '--binary', `--output=${patchPath}`], { cwd: w.path, check: false });
+    const diff = runGit(['diff', 'HEAD', ...PLAIN_PATCH, `--output=${patchPath}`], { cwd: w.path, check: false });
     if (diff.status !== 0) {
       fs.rmSync(patchPath, { force: true });
       return false;
@@ -562,7 +566,7 @@ function salvageWorktree(root, w, dir, receipt) {
       w.patchFingerprints[patchPath] = savedFingerprint(patchPath);
     } else fs.rmSync(patchPath, { force: true });
     const stagedPath = path.join(dir, `${path.basename(w.path)}.staged.patch`);
-    const staged = runGit(['diff', '--cached', '--binary', `--output=${stagedPath}`], { cwd: w.path, check: false });
+    const staged = runGit(['diff', '--cached', ...PLAIN_PATCH, `--output=${stagedPath}`], { cwd: w.path, check: false });
     if (staged.status !== 0) {
       fs.rmSync(stagedPath, { force: true });
       return false;
