@@ -2683,3 +2683,5 @@ Approval confirmation refusals: `test/commands.test.js:13375` overlaps the missi
 Lineage read concurrency: `test/commands.test.js:21208` runs text, JSON and alternate-home lineage reads together after closing fixture setup. `commands/task.js:11796` reads the production projection and git history without writing task rows or shared output files; all original assertions remain.
 
 Live-status ownership setup: `test/commands.test.js:14230` creates all three rows and claims through the real store, waiting past the final creation timestamp before claiming. `commands/task.js:2656` builds the history feed and sorts only by timestamp, so distinct setup times preserve the latest claim. JSON, text and history status remain sequential CLI invocations.
+
+Review-debt next-selection setup: `test/commands.test.js:12644` seeds creation and ownership through the production store in one connection; ready and next stay on the CLI, removing one setup launch.
