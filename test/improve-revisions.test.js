@@ -538,3 +538,28 @@ test('a file named like a commit hash stays a file of its own commit', () => {
     cleanup(cwd);
   }
 });
+
+test('editing a member role or goals after a landing is coaching, not a fix', () => {
+  const cwd = initRepo();
+  const now = Date.now();
+  const base = now - 2 * 24 * HOUR;
+  try {
+    fs.mkdirSync(path.join(cwd, 'atris', 'team', 'builder'), { recursive: true });
+    commitFile(cwd, 'atris/team/builder/goals.json', '{"goals":[1]}\n', 'bot sets builder goals', { bot: true, atMs: base });
+    commitFile(cwd, 'atris/team/builder/goals.json', '{"goals":[2]}\n', 'keshav steers builder goals', { atMs: base + HOUR });
+    commitFile(cwd, 'a.js', 'v1\n', 'bot lands feature a', { bot: true, atMs: base + 2 * HOUR });
+    commitFile(cwd, 'a.js', 'v2\n', 'human fixes feature a', { atMs: base + 3 * HOUR });
+    const summary = collectRevisionSignals(cwd, { days: 14, now });
+    assert.strictEqual(summary.revised, 2);
+    assert.strictEqual(summary.fixed, 1);
+    assert.strictEqual(summary.coached, 1);
+    assert.deepStrictEqual(summary.revisions.map((r) => r.kind).sort(), ['coaching', 'fix']);
+    const text = formatRevisionsReport(summary);
+    assert.match(text, /real fixes: 1\. coaching \(roles, goals, context\): 1\./);
+    assert.match(text, /a human then coached the team in atris\/team\/builder\/goals\.json/);
+    const vitals = collectImproveVitals({ workspace: cwd, now }, { cronInstalled: () => true });
+    assert.strictEqual(vitals.guarantee.sentence, 'two landings this fortnight, one needed a human fix, one got your coaching.');
+  } finally {
+    cleanup(cwd);
+  }
+});
