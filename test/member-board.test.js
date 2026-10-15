@@ -1448,7 +1448,7 @@ test('a hidden earlier sign-in failure drops its reason once the member runs on 
   });
   for (const [before, now, footer] of [
     ['[pid 1 engine claude] ', 'claude', '3 more not shown (1 with earlier failure)'],
-    ['[pid 1 engine claude] ', 'codex', '3 more not shown (1 with earlier failure, signed out)'],
+    ['[pid 1 engine claude] ', 'codex', '3 more not shown (1 earlier failure, signed out of claude)'],
     ['', 'claude', '3 more not shown (1 with earlier failure, signed out)'],
   ]) {
     const dir = board(before, now);
@@ -1807,8 +1807,8 @@ test('a hidden sign-in failure is named after a different lead reason when it fi
     const footer = (width, list = rows) => renderBoard(list, dir, 0, width, 3).split('\n').pop();
     for (const [width, text] of [
       [0, '3 more not shown (3 failed, 2 timed out, 1 signed out of claude), the window is too short'],
-      [80, '3 more not shown (3 failed, 2 timed out, 1 signed out), the window is too short'],
-      [60, '3 more not shown (3 failed, 2 timed out, 1 signed out)'],
+      [80, '3 more not shown (3 failed, 2 timed out, 1 signed out of claude)'],
+      [60, '3 hidden (3 failed, 2 timed out, 1 signed out of claude)'],
       [50, '3 more not shown (3 failed, 2 timed out)'],
       [34, '3 hidden (3 failed, 2 timed out)'],
     ]) {
@@ -1840,9 +1840,9 @@ test('a hidden earlier sign-in failure is named after a different lead reason wh
     const footer = (width, list = rows) => renderBoard(list, dir, 0, width, 3).split('\n').pop();
     for (const [width, text] of [
       [120, '3 more not shown (3 with earlier failure, 2 timed out, 1 signed out of claude), the window is too short'],
-      [100, '3 more not shown (3 with earlier failure, 2 timed out, 1 signed out), the window is too short'],
+      [100, '3 more not shown (3 with earlier failure, 2 timed out, 1 signed out of claude)'],
       [80, '3 more not shown (3 with earlier failure, 2 timed out, 1 signed out of claude)'],
-      [70, '3 more not shown (3 with earlier failure, 2 timed out, 1 signed out)'],
+      [70, '3 hidden (3 earlier failure, 2 timed out, 1 signed out of claude)'],
       [60, '3 more not shown (3 with earlier failure, 2 timed out)'],
       [50, '3 more not shown (3 earlier failure, 2 timed out)'],
     ]) {
@@ -2654,7 +2654,8 @@ test('hidden earlier sign-in failures name their old engine only in spare room',
   const other = { ...base, member: 'other', last_result: 'ok', last_result_reason: '' };
   const footer = (rows, width, height = 2) => renderBoard(rows, '/progress', 0, width, height).split('\n').pop();
   assert.equal(footer([busy, other], 80), '2 more not shown (1 with earlier failure, signed out of claude, other working)');
-  assert.equal(footer([busy, other], 70), '2 more not shown (1 with earlier failure, signed out, other working)');
+  assert.equal(footer([busy, other], 70), '2 hidden (1 earlier failure, signed out of claude, other working)', 'the engine name takes the room of longer wording');
+  assert.equal(footer([busy, other], 60), '2 hidden (1 earlier failure, signed out, other working)');
   for (const rows of [
     [busy, other],
     [busy, { ...busy, member: 'second' }, other],
@@ -2662,12 +2663,21 @@ test('hidden earlier sign-in failures name their old engine only in spare room',
     [busy, { ...busy, member: 'second', engine: 'claude', last_result_engine: 'claude' }, other],
   ]) {
     const unnamed = rows.map((r) => r.last_result_engine === r.engine ? r : { ...r, last_result_engine: '' });
-    for (let width = 18; width <= 140; width++) {
-      for (const height of [2, 3]) {
+    // The same counts and reasons, whatever the labels say.
+    const gist = (f) => f.replaceAll('signed out of claude', 'signed out').replace(', the window is too short', '')
+      .replace(/^(\d+) more not shown/, '$1 hidden').replace('with earlier failure', 'earlier failure').replace('earlier failure, all ', 'earlier failure, ');
+    const live = /running|working/;
+    for (const height of [2, 3]) {
+      let before = '';
+      for (let width = 18; width <= 140; width++) {
         const plain = footer(unnamed, width, height);
         const named = footer(rows, width, height);
-        assert.equal(named.replaceAll('signed out of claude', 'signed out'), plain, `${width}x${height}: engine names never displace other information`);
+        assert.equal(gist(named), gist(plain), `${width}x${height}: engine names never displace a count or reason`);
         assert.ok(named.length <= width, `${width}x${height}: fits the window`);
+        if (before.includes('signed out of claude') && !named.includes('signed out of claude')) {
+          assert.ok(live.test(named) && !live.test(before), `${width}x${height}: only a live member newly in view, never longer wording, takes the name: ${before} -> ${named}`);
+        }
+        before = named;
       }
     }
   }
