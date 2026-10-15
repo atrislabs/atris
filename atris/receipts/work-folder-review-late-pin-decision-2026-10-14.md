@@ -77,3 +77,15 @@ Plan: removal result -> exactly-zero gate -> shared reader on refusal -> caller 
 `node atris/receipts/work-folder-review-result-probe.js` invokes real interrupted, failed-launch and timed-out children through the shared reader. The timeout child writes partial output first; the report still names the timeout. A separately labeled synthetic missing-metadata case checks the final fallback. This proves the proposed reporting dependency only, not fleet retention or caller output. Production disposal still needs the retention and output regressions above before landing.
 
 next_push: implement the two-site refusal gate after protected review, using the whole-result reader and converting the existing disposal diagnostic to retention assertions.
+
+## Pending regression and fixture risk
+
+Verdict: proceed with the two-site plan after protected review, with one change. The single failure mode is the idle-removal fixture: `reviewSandbox()` in `test/worktree-removal-guard.test.js` points at a git store that does not exist, so git's removal always exits 128 there. The test that checks who removed a review copy passes today only because that result is ignored. A trial of the exactly-zero gate, reverted before commit, failed that test and passed every other required check. The builder must give that fixture a real review store in the same change, so the idle control keeps proving intended disposal instead of being rewritten to expect a refusal.
+
+The late-pin retention regression is now in the required suite as a todo test, written to this contract: `{ removed: false, reason: 'removal_refused', detail }`, every store kept, the pin unchanged, and no removal record. Today it reproduces the deleted copy (`removed: true`). Drop the todo when the fleet change lands.
+
+A pin-only gate was tried and rejected: it puts generic refusal text in the pin field and still deletes copies git refused for other reasons.
+
+Proof: `node --test test/worktree-removal-guard.test.js test/member-tidy.test.js`, exit 0, 57 passed, zero failed, one todo.
+
+next_push: after protected review, land the exactly-zero gate and caller detail line, give the review fixture a real store, and drop the todo.

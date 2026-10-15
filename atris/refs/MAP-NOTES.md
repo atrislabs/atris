@@ -2383,6 +2383,8 @@ Lost-run cleanup error summary: `commands/autoland.js:895` keeps successful clos
 
 - Review refusal contract: `lib/fleet.js:2502` must check the Git result before deleting stores; `lib/fleet.js:4006` currently reads only known hold or pin fields. `commands/worktree.js:1385` returns refusal text, so the proposed result carries `detail` and the caller must print it. Contract and pending proof requirements: `atris/receipts/work-folder-review-late-pin-decision-2026-10-14.md`.
 
+- Pending review retention regression: `test/worktree-removal-guard.test.js:934` is a todo test written to that contract. It reproduces the deleted copy until the fleet change lands. The idle fixture `test/worktree-removal-guard.test.js:250` uses a missing review store, so it must get a real one with the gate.
+
 - Interrupted review removal: `atris/receipts/work-folder-review-late-pin-probe.js:50` terminates a real child and propagates SIGTERM through the removal wrapper, obtaining null status without stderr. Actual disposal still deletes every store and logs success. Diagnostic only; production unchanged. Proof: `atris/receipts/work-folder-review-interrupted-proof-2026-10-14.txt`.
 
 - Earlier review refusal wording proof: the string-only helper needed caller fallbacks for launch errors, signals and missing status. Superseded by the whole-result reader plan below, which also preserves timeout precedence. Contract: `atris/receipts/work-folder-review-late-pin-decision-2026-10-14.md`. Proof: `atris/receipts/work-folder-review-fallback-wording-2026-10-14.txt`.
