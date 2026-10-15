@@ -1,0 +1,29 @@
+Busy unfinished folders now have real preview and cleanup proof that their saved protection reason remains visible. The required checks passed, exit 0.
+
+Files edited: test/member-tidy.test.js, atris/MAP.md, atris/refs/MAP-NOTES.md, atris/team/architect/logs/2026-10-15.md. Task commands refreshed atris/TODO.md.
+Artifact: atris/receipts/work-folder-busy-unfinished-2026-10-15.txt.
+
+Verify command: node --test test/worktree-removal-guard.test.js test/member-tidy.test.js && node bin/atris.js slop --staged
+Output excerpt:
+  tests 73
+  pass 73
+  fail 0
+  skipped 0
+  todo 0
+  clean, no slop tells in 3 files
+Exit: 0.
+
+Real command invoked by the regression, from disposable repository cwd:
+node bin/atris.js member tidy --dir <fixture copies> --dry-run
+node bin/atris.js member tidy --dir <fixture copies>
+Output excerpt from apply:
+kept  busy-pinned  work not landed yet, pinned by git worktree lock, 3 h old: writer still active keep these notes
+left alone  1 work not landed yet
+tidy: removed 0, kept 2, of 2 copies in <fixture copies>
+Exit: 0 for preview and apply.
+
+Progress: one additional regression, 72 to 73 passing, zero pending. Both children remain alive; committed contents, branch registrations, exact multiline pin and empty removal log are asserted after both commands. No production behavior changed.
+Learned: unfinished work takes precedence over the ordinary busy group, while the pin remains individually named.
+Setup commands: mission status, task list, task new, task claim, task note, mission goal, brain activate and brain compile. Brain commands returned plan-only exit 2; no generated policy files written. Mission goal returned no candidate.
+next_push: Prove pinned busy unfinished folders retain uncommitted notes during cleanup.
+layer: behaviors

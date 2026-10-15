@@ -568,19 +568,21 @@ test('tidy names pinned unfinished work beside the count of ordinary ongoing wor
 });
 
 
-test('tidy names pinned busy landed copies beside the ordinary busy count', async () => {
+for (const unfinished of [false, true]) {
+test(`tidy names pinned busy ${unfinished ? 'unfinished' : 'landed'} copies beside the ordinary ongoing count`, async () => {
   const fx = makeFixture();
   const children = [];
   try {
-    const pinned = addCopy(fx, 'busy-pinned');
-    const ordinary = addCopy(fx, 'busy-ordinary');
+    const pinned = addCopy(fx, 'busy-pinned', { commit: unfinished });
+    const ordinary = addCopy(fx, 'busy-ordinary', { commit: unfinished });
     const reason = 'writer still active\n  keep these notes';
     runGit(['worktree', 'lock', '--reason', reason, pinned], fx.repo);
     const pin = path.join(runGit(['rev-parse', '--absolute-git-dir'], pinned), 'locked');
     const now = Date.now();
     const aged = new Date(now - 3 * 60 * 60 * 1000);
     fs.utimesSync(pin, aged, aged);
-    const words = 'landed, but pinned by git worktree lock, 3 h old: writer still active keep these notes';
+    const words = `${unfinished ? 'work not landed yet,' : 'landed, but'} pinned by git worktree lock, 3 h old: writer still active keep these notes`;
+    const group = unfinished ? 'work not landed yet' : 'something still running inside';
     for (const copy of [pinned, ordinary]) {
       const child = spawn(process.execPath, ['-e', 'setInterval(() => {}, 1000)'], { cwd: copy, stdio: 'ignore' });
       children.push(child);
@@ -590,7 +592,7 @@ test('tidy names pinned busy landed copies beside the ordinary busy count', asyn
     assert.equal(preview.aborted, null);
     assert.equal(byName(preview, 'busy-pinned').reason, words);
     assert.equal(byName(preview, 'busy-pinned').quiet, undefined);
-    assert.equal(byName(preview, 'busy-ordinary').quiet, 'something still running inside');
+    assert.equal(byName(preview, 'busy-ordinary').quiet, group);
 
     for (const extra of [['--dry-run'], []]) {
       const args = [path.resolve(__dirname, '../bin/atris.js'), 'member', 'tidy', '--dir', fx.copies, ...extra];
@@ -601,13 +603,14 @@ test('tidy names pinned busy landed copies beside the ordinary busy count', asyn
       assert.equal(cli.status, 0, cli.stderr);
       assert.deepEqual(cli.stdout.trim().split('\n'), [
         `kept  busy-pinned  ${words}`,
-        'left alone  1 something still running inside',
+        `left alone  1 ${group}`,
         `tidy: ${extra.length ? 'would remove' : 'removed'} 0, kept 2, of 2 copies in ${fx.copies}`,
       ]);
       assert.equal(fs.readFileSync(pin, 'utf8'), `${reason}\n`);
       const registered = runGit(['worktree', 'list', '--porcelain'], fx.repo);
       for (const copy of [pinned, ordinary]) {
         assert.equal(fs.readFileSync(path.join(copy, 'README.md'), 'utf8'), '# fixture\n');
+        if (unfinished) assert.equal(fs.readFileSync(path.join(copy, `${path.basename(copy)}.txt`), 'utf8'), 'work\n');
         assert.ok(branchExists(fx.repo, path.basename(copy)));
         assert.ok(registered.includes(`worktree ${copy}\n`));
       }
@@ -623,7 +626,7 @@ test('tidy names pinned busy landed copies beside the ordinary busy count', asyn
     fs.rmSync(fx.base, { recursive: true, force: true });
   }
 });
-
+}
 
 test('tidy names its own pinned landed copy from the root and a nested folder', () => {
   const fx = makeFixture();
