@@ -25,7 +25,8 @@ function writeFakeGh(bin, log, config) {
     `fs.appendFileSync(${JSON.stringify(log)}, JSON.stringify(process.argv.slice(2)) + '\\n');`,
     `const cfg = JSON.parse(fs.readFileSync(${JSON.stringify(config)}, 'utf8'));`,
     "const [a, b] = process.argv.slice(2);",
-    "if (a === 'pr' && b === 'view') { if (!cfg.view) process.exit(1); console.log(JSON.stringify(cfg.view)); }",
+    "const n = process.argv[4];",
+    "if (a === 'pr' && b === 'view') { const v = (cfg.views && cfg.views[n]) || cfg.view; if (!v) process.exit(1); console.log(JSON.stringify(v)); }",
     "if (a === 'pr' && b === 'list') console.log(JSON.stringify(cfg.list || []));",
     "if (a === 'pr' && b === 'create') console.log(cfg.createUrl || 'https://github.com/acme/repo/pull/7');",
   ].join('\n'), { mode: 0o755 });
@@ -271,4 +272,93 @@ test('a job already closed, or one that is missing, is not counted twice', () =>
     assert.equal(out.results[0].line, 'pull request #7 (codex/member-work): merged');
     assert.deepEqual(readQueue(fx), {});
   });
+});
+
+// The main branch takes a different work.txt, so the member's change clashes.
+function clashOnMaster(fx) {
+  fs.writeFileSync(path.join(fx.main, 'work.txt'), 'someone else\n');
+  git(['add', '.'], fx.main);
+  git(['commit', '-qm', 'other work'], fx.main);
+  git(['push', '-q', 'origin', 'master'], fx.main);
+}
+
+test('a change that clashes with the main branch sends its job back on the list', () => {
+  withFixture((fx) => {
+    const a = job(fx, 'review');
+    queue(fx, [a]);
+    clashOnMaster(fx);
+    const out = requeueDroppedAutolands({ cwd: fx.main });
+    assert.equal(out.results[0].state, 'clash', out.line);
+    assert.match(out.results[0].line, /clashes with the main branch in work\.txt; its job went back on the list$/);
+    const row = taskDb.getTask(fx.db, a);
+    assert.equal(row.status, 'open');
+    assert.equal(row.claimed_by, null);
+    assert.equal(row.metadata.clash_restarts, 1);
+    assert.match(row.metadata.reopen_reason, /pull request #7 could not merge: .*work\.txt; start again/);
+    assert.deepEqual(readQueue(fx), {});
+  });
+});
+
+test('a clash leaves held jobs, jobs not in review, and twice-restarted jobs for a person', () => {
+  withFixture((fx) => {
+    const held = job(fx, 'review');
+    taskDb.tagTask(fx.db, { id: held, actor: 'keshav', add: ['needs-human'] });
+    const claimed = job(fx, 'claimed');
+    const tired = job(fx, 'review');
+    fx.db.prepare('UPDATE tasks SET metadata = ? WHERE id = ?').run(JSON.stringify({ clash_restarts: 2 }), tired);
+    queue(fx, [held, claimed, tired, 'no-such-job']);
+    clashOnMaster(fx);
+    const out = requeueDroppedAutolands({ cwd: fx.main });
+    assert.equal(out.results[0].state, 'clash', out.line);
+    assert.match(out.results[0].line, /; left for you$/);
+    assert.equal(statusOf(fx, held), 'review');
+    assert.equal(statusOf(fx, claimed), 'claimed');
+    assert.equal(statusOf(fx, tired), 'review');
+  });
+});
+
+const ghCalls = (fx) => fs.readFileSync(fx.log, 'utf8').trim().split('\n').filter(Boolean).map((line) => JSON.parse(line));
+
+// The job's redo merges as pull request #8 while the clashing #7 still sits open.
+function redoMerges(fx, id, oldView) {
+  fs.writeFileSync(queuePath(fx), JSON.stringify({
+    schema: 'atris.autoland_queue.v1',
+    entries: { [BRANCH]: { branch: BRANCH, base: 'master', number: 8, pushed: fx.pushed, requeues: 0, task_ids: [id] } },
+  }));
+  const merged = { number: 8, state: 'MERGED', headRefName: BRANCH, baseRefName: 'master', headRefOid: fx.pushed, isCrossRepository: false };
+  fs.writeFileSync(fx.config, JSON.stringify({ views: { 8: merged, 7: oldView } }));
+  taskDb.claimTask(fx.db, { id, claimedBy: 'generalist' });
+  return requeueDroppedAutolands({ cwd: fx.main });
+}
+
+test('the clashing change closes itself once its job\'s redo merges', () => {
+  withFixture((fx) => {
+    const a = job(fx, 'review');
+    queue(fx, [a]);
+    clashOnMaster(fx);
+    requeueDroppedAutolands({ cwd: fx.main });
+    assert.deepEqual(taskDb.getTask(fx.db, a).metadata.replaced_pull_requests, [{ number: 7, pushed: fx.pushed }]);
+    const out = redoMerges(fx, a, { state: 'OPEN', headRefOid: fx.pushed });
+    assert.equal(statusOf(fx, a), 'done', out.line);
+    assert.deepEqual(out.results[0].replaced, [7]);
+    assert.match(out.results[0].line, /merged; closed its job; closed the clashing change it replaced \(#7\)$/);
+    const close = ghCalls(fx).find((args) => args[0] === 'pr' && args[1] === 'close');
+    assert.deepEqual(close.slice(0, 3), ['pr', 'close', '7']);
+    assert.match(close[4], /Replaced by #8, which merged/);
+  });
+});
+
+test('a clashing change someone else pushed to, or already closed, stays as it is', () => {
+  for (const oldView of [{ state: 'OPEN', headRefOid: 'f'.repeat(40) }, { state: 'CLOSED', headRefOid: null }]) {
+    withFixture((fx) => {
+      const a = job(fx, 'review');
+      queue(fx, [a]);
+      clashOnMaster(fx);
+      requeueDroppedAutolands({ cwd: fx.main });
+      const out = redoMerges(fx, a, oldView);
+      assert.equal(statusOf(fx, a), 'done', out.line);
+      assert.deepEqual(out.results[0].replaced, []);
+      assert.equal(ghCalls(fx).some((args) => args[1] === 'close'), false);
+    });
+  }
 });

@@ -1,0 +1,305 @@
+{
+  "name": "money-rounding-and-duplicate-id",
+  "about": "Cents are floor(x*100+0.5): 0.105->11, 1.005->100 (1.005*100 is 100.49999999999999 in IEEE, +0.5 is 100.99999999999999, floor 100), 2.675->268 (267.5 exactly), 0.1->10, 0.2->20, 0.015->2; sums are in cents (409 spent, 4.09). A second event reusing evt id of m3 ended (cost 50) is dropped.",
+  "events": [
+    {
+      "id": "evt-0001",
+      "campaign_id": "cmp-ship",
+      "type": "campaign_started",
+      "at": "2026-10-15T10:00:00Z",
+      "origin": "laptop",
+      "seq": 1,
+      "actor": "human:keshav",
+      "data": {
+        "title": "Ship campaign core",
+        "judge": "npm run validate:campaign",
+        "budget": 100
+      }
+    },
+    {
+      "id": "evt-0002",
+      "campaign_id": "cmp-ship",
+      "type": "mission_started",
+      "at": "2026-10-15T10:01:00Z",
+      "origin": "laptop",
+      "seq": 2,
+      "actor": "builder",
+      "data": {
+        "mission_id": "m1",
+        "member": "builder"
+      }
+    },
+    {
+      "id": "evt-0003",
+      "campaign_id": "cmp-ship",
+      "type": "mission_ended",
+      "at": "2026-10-15T10:02:00Z",
+      "origin": "laptop",
+      "seq": 3,
+      "actor": "builder",
+      "data": {
+        "mission_id": "m1",
+        "outcome": "kept",
+        "cost_usd": 0.105
+      }
+    },
+    {
+      "id": "evt-0004",
+      "campaign_id": "cmp-ship",
+      "type": "mission_started",
+      "at": "2026-10-15T10:03:00Z",
+      "origin": "laptop",
+      "seq": 4,
+      "actor": "builder",
+      "data": {
+        "mission_id": "m2",
+        "member": "builder"
+      }
+    },
+    {
+      "id": "evt-0005",
+      "campaign_id": "cmp-ship",
+      "type": "mission_ended",
+      "at": "2026-10-15T10:04:00Z",
+      "origin": "laptop",
+      "seq": 5,
+      "actor": "builder",
+      "data": {
+        "mission_id": "m2",
+        "outcome": "kept",
+        "cost_usd": 1.005
+      }
+    },
+    {
+      "id": "evt-0006",
+      "campaign_id": "cmp-ship",
+      "type": "mission_started",
+      "at": "2026-10-15T10:05:00Z",
+      "origin": "laptop",
+      "seq": 6,
+      "actor": "builder",
+      "data": {
+        "mission_id": "m3",
+        "member": "builder"
+      }
+    },
+    {
+      "id": "evt-0007",
+      "campaign_id": "cmp-ship",
+      "type": "mission_ended",
+      "at": "2026-10-15T10:06:00Z",
+      "origin": "laptop",
+      "seq": 7,
+      "actor": "builder",
+      "data": {
+        "mission_id": "m3",
+        "outcome": "kept",
+        "cost_usd": 2.675
+      }
+    },
+    {
+      "id": "evt-0008",
+      "campaign_id": "cmp-ship",
+      "type": "mission_started",
+      "at": "2026-10-15T10:07:00Z",
+      "origin": "laptop",
+      "seq": 8,
+      "actor": "builder",
+      "data": {
+        "mission_id": "m4",
+        "member": "builder"
+      }
+    },
+    {
+      "id": "evt-0009",
+      "campaign_id": "cmp-ship",
+      "type": "mission_ended",
+      "at": "2026-10-15T10:08:00Z",
+      "origin": "laptop",
+      "seq": 9,
+      "actor": "builder",
+      "data": {
+        "mission_id": "m4",
+        "outcome": "kept",
+        "cost_usd": 0.1
+      }
+    },
+    {
+      "id": "evt-0010",
+      "campaign_id": "cmp-ship",
+      "type": "mission_started",
+      "at": "2026-10-15T10:09:00Z",
+      "origin": "laptop",
+      "seq": 10,
+      "actor": "builder",
+      "data": {
+        "mission_id": "m5",
+        "member": "builder"
+      }
+    },
+    {
+      "id": "evt-0011",
+      "campaign_id": "cmp-ship",
+      "type": "mission_ended",
+      "at": "2026-10-15T10:10:00Z",
+      "origin": "laptop",
+      "seq": 11,
+      "actor": "builder",
+      "data": {
+        "mission_id": "m5",
+        "outcome": "kept",
+        "cost_usd": 0.2
+      }
+    },
+    {
+      "id": "evt-0007",
+      "campaign_id": "cmp-ship",
+      "type": "mission_ended",
+      "at": "2026-10-15T10:20:00Z",
+      "origin": "laptop",
+      "seq": 99,
+      "actor": "builder",
+      "data": {
+        "mission_id": "m3",
+        "outcome": "failed",
+        "cost_usd": 50
+      }
+    },
+    {
+      "id": "evt-0012",
+      "campaign_id": "cmp-ship",
+      "type": "mission_proposed",
+      "at": "2026-10-15T10:21:00Z",
+      "origin": "laptop",
+      "seq": 100,
+      "actor": "scout",
+      "data": {
+        "mission_id": "m6",
+        "member": "scout",
+        "estimate_usd": 2.675
+      }
+    },
+    {
+      "id": "evt-0013",
+      "campaign_id": "cmp-ship",
+      "type": "budget_reserved",
+      "at": "2026-10-15T10:22:00Z",
+      "origin": "laptop",
+      "seq": 101,
+      "actor": "scout",
+      "data": {
+        "mission_id": "m6",
+        "amount_usd": 0.015
+      }
+    },
+    {
+      "id": "evt-0014",
+      "campaign_id": "cmp-ship",
+      "type": "budget_added",
+      "at": "2026-10-15T10:23:00Z",
+      "origin": "laptop",
+      "seq": 102,
+      "actor": "human:keshav",
+      "data": {
+        "amount_usd": 1.005
+      }
+    }
+  ],
+  "expected": {
+    "id": "cmp-ship",
+    "title": "Ship campaign core",
+    "judge": "npm run validate:campaign",
+    "owner": "mission-lead",
+    "standing": false,
+    "bet": null,
+    "parent": null,
+    "home": "laptop",
+    "created_from": null,
+    "seats": [],
+    "state": "queued",
+    "stop_reason": null,
+    "answer": {
+      "text": null,
+      "confidence": "open"
+    },
+    "budget": {
+      "total": 101,
+      "spent": 4.09,
+      "reserved": 0.02,
+      "available": 96.89
+    },
+    "asks": [],
+    "missions": [
+      {
+        "id": "m1",
+        "member": "builder",
+        "status": "ended",
+        "outcome": "kept",
+        "cost_usd": 0.11,
+        "estimate_usd": null,
+        "steps": 0,
+        "kept": 0,
+        "reverted": 0
+      },
+      {
+        "id": "m2",
+        "member": "builder",
+        "status": "ended",
+        "outcome": "kept",
+        "cost_usd": 1,
+        "estimate_usd": null,
+        "steps": 0,
+        "kept": 0,
+        "reverted": 0
+      },
+      {
+        "id": "m3",
+        "member": "builder",
+        "status": "ended",
+        "outcome": "kept",
+        "cost_usd": 2.68,
+        "estimate_usd": null,
+        "steps": 0,
+        "kept": 0,
+        "reverted": 0
+      },
+      {
+        "id": "m4",
+        "member": "builder",
+        "status": "ended",
+        "outcome": "kept",
+        "cost_usd": 0.1,
+        "estimate_usd": null,
+        "steps": 0,
+        "kept": 0,
+        "reverted": 0
+      },
+      {
+        "id": "m5",
+        "member": "builder",
+        "status": "ended",
+        "outcome": "kept",
+        "cost_usd": 0.2,
+        "estimate_usd": null,
+        "steps": 0,
+        "kept": 0,
+        "reverted": 0
+      },
+      {
+        "id": "m6",
+        "member": "scout",
+        "status": "proposed",
+        "outcome": null,
+        "cost_usd": null,
+        "estimate_usd": 2.68,
+        "steps": 0,
+        "kept": 0,
+        "reverted": 0
+      }
+    ],
+    "judge_runs": 0,
+    "judge_due": true,
+    "last_judge": null,
+    "warnings": []
+  }
+}

@@ -4,8 +4,8 @@
 // to start one git process per recent commit, which made boot take seconds
 // on a busy repo. This runs the real boot against a repo with many commits,
 // with a logging git first on PATH, and checks git is asked a fixed number of
-// questions: history once, commit files at most once, and on the next boot
-// no commit files at all because they were saved by hash.
+// questions: history once, commit files at most once, one line check per
+// suspected fix, and on the next boot none of those because they were saved.
 
 const test = require('node:test');
 const assert = require('node:assert/strict');
@@ -89,12 +89,17 @@ test('boot asks git for commit files once, then not at all on the next boot', { 
   const first = boot(repo, logger);
   assert.equal(first.count('log'), 1, `history is read once: ${first.calls.join(', ')}`);
   assert.ok(first.count('diff-tree') <= 1, `commit files come from one batch: ${first.calls.join(', ')}`);
-  assert.equal(first.count('diff'), 0);
+  // Each suspected fix (a person's commit after a landing, same file) costs
+  // one diff and one blame to see whose lines it changed. The fixture has six
+  // person commits, so never more than six of each.
+  assert.equal(first.count('diff'), first.count('blame'));
+  assert.ok(first.count('diff') <= 6, `one line check per suspected fix: ${first.calls.join(', ')}`);
 
   const second = boot(repo, logger);
   assert.equal(second.count('log'), 1);
   assert.equal(second.count('diff-tree'), 0, `saved commit files are reused: ${second.calls.join(', ')}`);
   assert.equal(second.count('diff'), 0);
+  assert.equal(second.count('blame'), 0, `saved line checks are reused: ${second.calls.join(', ')}`);
   assert.equal(second.stdout, first.stdout, 'the cache does not change what boot prints');
   assert.ok(!second.calls.includes('-c'), `every call is logged by its subcommand: ${second.calls.join(', ')}`);
 

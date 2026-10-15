@@ -70,6 +70,34 @@ test('extractCheckFeedback returns nothing for a pass or empty failed output', (
   assert.equal(extractCheckFeedback(null), '');
 });
 
+test('extractCheckFeedback leads with the reviewer turn-down when a big suite passed', () => {
+  const passing = Array.from({ length: 200 }, (_, i) => `✔ case ${i} returns a JSON error when the slug is missing (12.5ms)`);
+  const stdout = [...passing, 'ℹ tests 200', 'ℹ pass 200', 'ℹ fail 0'].join('\n');
+  const refereeOutput = 'Verification failed: a rejected change never reopens its job.\nVERDICT: FAIL';
+  const feedback = extractCheckFeedback({
+    passed: false,
+    status: 0,
+    stdout,
+    stderr: '',
+    referee: { passed: false, mode: 'engine', output: refereeOutput },
+    output: [stdout, refereeOutput].join('\n'),
+  });
+
+  assert.ok(feedback.startsWith('Verification failed: a rejected change never reopens its job.'), feedback.slice(0, 200));
+  assert.equal(feedback.split('\n').filter((line) => line.startsWith('Verification failed')).length, 1);
+  assert.doesNotMatch(feedback, /ℹ fail 0/);
+});
+
+test('extractCheckFeedback names a reviewer turn-down that has only a reason', () => {
+  const feedback = extractCheckFeedback({
+    passed: false,
+    status: 0,
+    stdout: 'check passed',
+    referee: { passed: false, reason: 'code changed during review' },
+  });
+  assert.match(feedback.split('\n')[0], /code changed during review/);
+});
+
 test('extractCheckFeedback puts useful lines first without reordering their source order', () => {
   const feedback = extractCheckFeedback({
     passed: false,

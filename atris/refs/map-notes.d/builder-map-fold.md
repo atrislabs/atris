@@ -1,2 +1,0 @@
-## Hourly map note fold
-rg "foldMapNotesOnMain|foldNotesText|foldDue|map-notes.d|map_fold|last_map_fold_at" lib/member-map-fold.js commands/autoland.js test/member-map-fold.test.js # Member changes save map notes as their own file under atris/refs/map-notes.d/ (open with a "## " heading to join that section) instead of editing this file; once an hour the autoland tick folds them into MAP-NOTES.md on main and removes them in one pushed commit, no checkout touched. Off switch: policy map_fold:false. Regression: test/member-map-fold.test.js

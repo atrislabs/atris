@@ -60,6 +60,9 @@ atris/features/*
 !atris/features/README.md
 !atris/features/endstate/
 !atris/features/endstate/**
+# Campaign: shared struct spec a builder will pick up.
+!atris/features/campaign/
+!atris/features/campaign/**
 # Contract features: their validate.md rubrics are load-bearing; must travel with the code.
 !atris/features/verify-falsifiability/
 !atris/features/verify-falsifiability/**

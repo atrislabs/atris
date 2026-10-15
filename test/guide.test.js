@@ -112,6 +112,9 @@ test('matchIntent finds everyday requests by token overlap', () => {
     ['change the builder', 'change_roster'],
     ['switch the reviewer', 'change_roster'],
     ['make codex review', 'change_roster'],
+    ['run a campaign', 'run_a_campaign'],
+    ['this is a long goal', 'run_a_campaign'],
+    ['set the goal', 'set_goal'],
   ];
   cases.forEach(([phrase, expected]) => {
     assert.equal(matchIntent(phrase).intent?.id, expected, phrase);

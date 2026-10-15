@@ -931,7 +931,10 @@ function memberRunDefaultWallSeconds(name, cwd = process.cwd()) {
     const picked = require('../lib/member-engine').memberRosterEngine(name, cwd);
     cap = Number(picked && picked.engine && picked.engine.roster_max_seconds) || 0;
   } catch {}
-  return Math.max(900, cap ? cap + 600 : 0);
+  // No roster cap means the tick runs on the default tick cap, so the run
+  // needs that much plus review time, or the wall kills it first.
+  const tickSeconds = cap || require('./mission').missionTickTimeoutMs({}, Infinity) / 1000;
+  return Math.max(900, tickSeconds + 600);
 }
 
 function pushFlagValue(out, args, name) {
@@ -3353,6 +3356,19 @@ function dateFromLogPath(relativePath) {
   return match ? match[1] : null;
 }
 
+// Mission driver logs, goals files, and the wiki log have no date in their
+// name; without one they skipped the 7-day window and months-old lines kept
+// counting as this week's pain. The last write date stands in for them.
+function logDateForScan(relativePath, filePath) {
+  const named = dateFromLogPath(relativePath);
+  if (named) return named;
+  try {
+    return fs.statSync(filePath).mtime.toISOString().slice(0, 10);
+  } catch {
+    return null;
+  }
+}
+
 function compareLogEvidenceRecentFirst(a, b) {
   const dateA = a?.date || '';
   const dateB = b?.date || '';
@@ -3417,7 +3433,11 @@ function isAutoImproverGeneratedLogLine(line, relativePath = '') {
   if (/^[-*]?\s*Next tick will verify failed, halting\.?$/i.test(text)) return true;
   if (/^##\s+\d{1,2}:\d{2}\s+·\s+Task failed$/i.test(text)) return true;
   if (/^[-*]?\s*(status|action|state|verifier)\s*:\s*(failed|blocked)\s*$/i.test(text)) return true;
-  if (/^[-*]?\s*(title|proof):\s*/i.test(text)) return true;
+  // Mission lines state a goal; their words ("leftover error text", "done failed") are not failures.
+  // Goal files say the same in JSON ("stop_rule": "Stop if ... risk is unclear").
+  if (/^[-*]?\s*"?(title|proof|proof_target|mission|objective|acceptance|stop_rule)"?\s*:\s*/i.test(text)) return true;
+  // Driver logs print "error": null on every clean run.
+  if (/^"?(error|failure)s?"?\s*:\s*(null|false|""|\[\]|\{\})\s*,?$/i.test(text)) return true;
   if (String(relativePath || '').startsWith('atris/team/auto-improver/logs/') && /^-\s*summary:\s*/i.test(text)) return true;
   if (/\bauto[- ]improver\b/i.test(text) && /\b(dogfood|receipt|prevented|pain_)\b/i.test(text)) return true;
   if (/\bauto_improver\b/i.test(text)) return true;
@@ -3515,7 +3535,7 @@ function collectAutoImproverLogSignals(root) {
   let unclearNextActions = 0;
   for (const filePath of listAutoImproverRuntimeLogs(root)) {
     const relative = repoRelative(root, filePath);
-    const logDate = dateFromLogPath(relative);
+    const logDate = logDateForScan(relative, filePath);
     if (relative.startsWith('atris/logs/archive/')) continue;
     const isRuntimeLog = relative.startsWith('atris/logs/')
       || /^atris\/team\/[^/]+\/logs\//.test(relative)
@@ -3550,7 +3570,10 @@ function collectAutoImproverLogSignals(root) {
       if (/\b(errors?|fail(?:ed|ures?)|blocked|timeouts?)\s*:\s*0\b/i.test(line)) continue;
       if (/\bblocked\s*(?:->|→|to)\s*ready\b/i.test(line)) continue;
       if (failureCoveredByPassLesson(line, passLessonText, passLessonLower)) continue;
-      if (unclearRegex.test(line)) {
+      // A file name is not a next step ("receipt: atris/runs/...-unknown-word-...json"),
+      // and "learned:" / "why:" lines explain the past, so neither counts as unclear.
+      const unclearText = line.replace(/[\w.@~-]*\/[\w./@~-]*\.\w{1,5}\b/g, ' ');
+      if (!/^\s*[-*]?\s*(learned|why)\s*:/i.test(line) && unclearRegex.test(unclearText)) {
         unclearNextActions += 1;
         unclearActions.push({
           path: relative,
@@ -10616,7 +10639,9 @@ function memberGoFinishTask(owner, task, result, thrown = null) {
   if (!thrown && result && result.started && ['complete', 'ready'].includes(mission.status) && checked) {
     const proof = [`[verified] ${owner} ran mission ${result.mission_id} and its check passed.`,
       receipt ? `Receipt: ${receipt}` : ''].filter(Boolean).join('\n');
-    const ready = taskDb.readyTask(db, { id: task.id, actor: owner, proof });
+    // The commit comes from the member's own work copy, not the main folder.
+    const workRoot = (result.worktree && result.worktree.path) || (mission.worktree && mission.worktree.path) || undefined;
+    const ready = taskDb.readyTask(db, { id: task.id, actor: owner, proof, workRoot });
     if (ready.ready !== false) return { id: task.id, title: task.title, outcome: 'review', receipt: receipt || null };
     // Its change already merged and the merge line closed the job.
     if (taskDb.getTask(db, task.id)?.status === 'done') return { id: task.id, title: task.title, outcome: 'done', receipt: receipt || null };

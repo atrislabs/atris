@@ -360,6 +360,12 @@ test('a member job with no time given gets the roster limit plus review time, ne
     addBuilder(root);
     assert.equal(memberRunDefaultWallSeconds('builder', root), 900);
   }, { roster: '# roster\n\n## build\n- claude, max: 2 min\n' });
+  // No cap on the line: the run fits the default 20 min tick plus review time,
+  // so the wall never kills a tick the tick limit would have allowed.
+  await withRoom(async ({ root }) => {
+    addBuilder(root);
+    assert.equal(memberRunDefaultWallSeconds('builder', root), 20 * 60 + 600);
+  }, { roster: '# roster\n\n## build\n- claude\n' });
 });
 
 test('a mission that names its engine still gets the roster time limit for that engine', async () => {
@@ -372,6 +378,31 @@ test('a mission that names its engine still gets the roster time limit for that 
     // A different engine than the roster's pick keeps the default limit.
     const other = resolveMissionTickRunner({ id: 'm-2', runner: 'codex', owner: 'builder' }, root);
     assert.equal(other.mission.roster_max_seconds, undefined);
-    assert.equal(missionTickTimeoutMs(other.mission, hour), 10 * 60 * 1000);
+    assert.equal(missionTickTimeoutMs(other.mission, hour), 20 * 60 * 1000);
   }, { roster: '# roster\n\n## build\n- claude, max: 45 min\n' });
+});
+
+test('a killed tick blames the mission clock only when the mission clock set the limit', () => {
+  const { missionTickWallBound } = require('../commands/mission');
+  const min = 60 * 1000;
+  // A 45 min roster limit with 30 min left: the mission clock cut the tick.
+  assert.equal(missionTickWallBound({ roster_max_seconds: 45 * 60 }, 30 * min), true);
+  // A 5 min roster limit with 15 min left: the tick's own limit cut it.
+  assert.equal(missionTickWallBound({ roster_max_seconds: 5 * 60 }, 15 * min), false);
+  // No roster limit: compare against the default 20 min tick limit.
+  assert.equal(missionTickWallBound({}, 15 * min), true);
+  assert.equal(missionTickWallBound({}, 40 * min), false);
+});
+
+test('a failed engine tick names its engine in the member log reason', () => {
+  const { memberLogTickReason } = require('../commands/mission');
+  // A codex tick that timed out says so, and keeps the label other code matches on.
+  assert.equal(
+    memberLogTickReason({ status: 'errored', reason: 'claude-timeout', engine_id: 'codex' }),
+    'claude-timeout (engine: codex)',
+  );
+  // A plain claude run has no engine to name.
+  assert.equal(memberLogTickReason({ status: 'errored', reason: 'claude-timeout' }), 'claude-timeout');
+  // A tick that ran fine is left alone.
+  assert.equal(memberLogTickReason({ status: 'ran', reason: 'tick-ok', engine_id: 'codex' }), 'tick-ok');
 });

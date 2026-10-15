@@ -1,0 +1,108 @@
+{
+  "name": "start-first-duplicate-start",
+  "about": "The first campaign_started in sorted order (cloud, 09:30Z) is applied before the 09:00Z proposal and 09:01Z veto, so owner lead2 may veto and home is cloud; the later laptop start is ignored with duplicate_start.",
+  "events": [
+    {
+      "id": "evt-0001",
+      "campaign_id": "cmp-ship",
+      "type": "mission_proposed",
+      "at": "2026-10-15T09:00:00Z",
+      "origin": "laptop",
+      "seq": 1,
+      "actor": "builder",
+      "data": {
+        "mission_id": "m1",
+        "member": "builder"
+      }
+    },
+    {
+      "id": "evt-0002",
+      "campaign_id": "cmp-ship",
+      "type": "mission_vetoed",
+      "at": "2026-10-15T09:01:00Z",
+      "origin": "laptop",
+      "seq": 2,
+      "actor": "lead2",
+      "data": {
+        "mission_id": "m1"
+      }
+    },
+    {
+      "id": "evt-0003",
+      "campaign_id": "cmp-ship",
+      "type": "campaign_started",
+      "at": "2026-10-15T10:00:00Z",
+      "origin": "laptop",
+      "seq": 3,
+      "actor": "human:keshav",
+      "data": {
+        "title": "Laptop attempt",
+        "judge": "echo no",
+        "budget": 999,
+        "owner": "lead2"
+      }
+    },
+    {
+      "id": "evt-0004",
+      "campaign_id": "cmp-ship",
+      "type": "campaign_started",
+      "at": "2026-10-15T09:30:00Z",
+      "origin": "cloud",
+      "seq": 1,
+      "actor": "human:keshav",
+      "data": {
+        "title": "Cloud-born campaign",
+        "judge": "npm run validate:campaign",
+        "budget": 40,
+        "owner": "lead2"
+      }
+    }
+  ],
+  "expected": {
+    "id": "cmp-ship",
+    "title": "Cloud-born campaign",
+    "judge": "npm run validate:campaign",
+    "owner": "lead2",
+    "standing": false,
+    "bet": null,
+    "parent": null,
+    "home": "cloud",
+    "created_from": null,
+    "seats": [],
+    "state": "resting",
+    "stop_reason": null,
+    "answer": {
+      "text": null,
+      "confidence": "open"
+    },
+    "budget": {
+      "total": 40,
+      "spent": 0,
+      "reserved": 0,
+      "available": 40
+    },
+    "asks": [],
+    "missions": [
+      {
+        "id": "m1",
+        "member": "builder",
+        "status": "vetoed",
+        "outcome": null,
+        "cost_usd": null,
+        "estimate_usd": null,
+        "steps": 0,
+        "kept": 0,
+        "reverted": 0
+      }
+    ],
+    "judge_runs": 0,
+    "judge_due": true,
+    "last_judge": null,
+    "warnings": [
+      {
+        "event_id": "evt-0003",
+        "code": "duplicate_start"
+      }
+    ]
+  }
+}

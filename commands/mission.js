@@ -115,6 +115,8 @@ const {
 
 const VALID_STATUSES = new Set(['planning', 'running', 'ready', 'paused', 'blocked', 'stopped', 'complete']);
 const TERMINAL_STATUSES = new Set(['stopped', 'complete']);
+// Campaign hooks load on first use, so missions without a campaign never open its store.
+const campaignMissions = () => require('../lib/campaign-missions');
 const GOAL_LOOP_STATUSES = new Set(['planning', 'running', 'ready']);
 const STATUS_ALIASES = new Set(['active']);
 const CODEX_NATIVE_GOAL_SLOT_STATUSES = new Set(['active', 'paused', 'usage_limited']);
@@ -425,11 +427,30 @@ async function missionTickPrep(root, { mission, runtimeMission, job, prompt, ask
 
 // A tick's time limit: the time left on the mission, capped by the roster
 // line's "max 20 min" when it sets one, else by the default tick cap.
-function missionTickTimeoutMs(mission, remainingMs) {
-  const cap = Number(mission && mission.roster_max_seconds) > 0
+function missionTickCapMs(mission) {
+  return Number(mission && mission.roster_max_seconds) > 0
     ? Number(mission.roster_max_seconds) * 1000
     : MISSION_RUN_DEFAULTS.claudeTimeoutMs;
-  return clampTimeoutMs(remainingMs, cap);
+}
+
+function missionTickTimeoutMs(mission, remainingMs) {
+  return clampTimeoutMs(remainingMs, missionTickCapMs(mission));
+}
+
+// True when the time left on the mission, not the tick's own cap, set the
+// tick's limit, so a kill there means the mission clock ran out.
+function missionTickWallBound(mission, remainingMs) {
+  return remainingMs <= missionTickCapMs(mission);
+}
+
+// The reason a member log shows for a tick. A failed engine tick names its
+// engine beside the reason, so a codex run that timed out stops counting as
+// a claude timeout in the repeat-problem scan. The reason itself is left as
+// is because engine health and backoff match on it.
+function memberLogTickReason(result) {
+  const reason = result && result.reason;
+  if (!reason || !result.engine_id || result.status !== 'errored') return reason;
+  return `${reason} (engine: ${result.engine_id})`;
 }
 
 function resolveMissionTickRunner(mission, root = process.cwd(), options = {}) {
@@ -742,6 +763,8 @@ const MISSION_RUN_VALUE_FLAGS = [
   '--engine',
   '--referee-engine',
   '--budget',
+  '--campaign',
+  '--reserve',
   '--repo',
   '--native-goal-status',
   '--native-goal-objective',
@@ -1696,6 +1719,7 @@ function saveMission(mission, root = process.cwd(), eventType = 'mission_updated
   // this file several times, so unbounded snapshot history taxes everything.
   try { compactMissionLedger(paths.missionsJsonl); } catch {}
   const event = appendEvent(eventType, next, payload, root);
+  if (next.campaign_id) campaignMissions().recordCampaignMissionEnded(root, existing, next, TERMINAL_STATUSES);
   renderMissionStatus(root);
   renderMemberMissionState(next.owner, root);
   return { mission: next, event };
@@ -3169,6 +3193,9 @@ function missionFromArgs(args) {
     '--base',
     '--task',
     '--ask',
+    '--campaign',
+    '--reserve',
+    '--mission-id',
     '--model',
     '--destination',
     '--native-goal-status',
@@ -3185,6 +3212,7 @@ function missionFromArgs(args) {
   const budgetContract = inferRunObjectiveBudgetContract(objective, args);
   const maxTicksOverride = readPositiveIntegerFlag(args, '--max-ticks', null, { json: wantsJson(args) });
   const requestedOwner = readFlag(args, '--owner', process.env.ATRIS_AGENT_ID || 'mission-lead');
+  const campaignId = readFlag(args, '--campaign', '');
   const cadence = readFlag(args, '--cadence', readFlag(args, '--loop', 'manual')) || 'manual';
   const engineFlag = readFlag(args, '--engine', '');
   const runnerSelection = engineFlag
@@ -3212,7 +3240,13 @@ function missionFromArgs(args) {
   const alwaysOn = hasFlag(args, '--always-on');
   const xpTaskEnabled = hasFlag(args, '--xp-task') || hasFlag(args, '--agent-xp');
   const businessBinding = readBusinessBinding(process.cwd());
-  const id = missionId(objective);
+  // A campaign proposes a mission under an id before it runs; --mission-id
+  // keeps that id so the campaign and the mission name the same thing.
+  const givenId = readFlag(args, '--mission-id', '');
+  if (givenId && !/^[a-z0-9][a-z0-9-]{2,120}$/.test(givenId)) {
+    exitMissionError('--mission-id takes lowercase letters, digits, and dashes', 2, wantsJson(args));
+  }
+  const id = givenId || missionId(objective);
   const mission = {
     schema: 'atris.mission.v1',
     id,
@@ -3238,6 +3272,7 @@ function missionFromArgs(args) {
     stop_condition: stopCondition,
     task_ids: taskIds,
     human_asks: humanAsks,
+    ...(campaignId ? { campaign_id: campaignId } : {}),
     ...(drive ? { drive } : {}),
     next_action: verifier ? 'run verifier with `atris mission tick <id> --verify`' : 'define verifier or run next task',
     receipt_path: null,
@@ -4351,6 +4386,7 @@ function seedMissionRunContinuation(parent, root = process.cwd(), proof = '') {
     ...mission,
     started_from: 'mission_run_continuation',
     parent_mission_id: parent.id,
+    ...(parent.campaign_id && campaignMissions().checkCampaignStart(root, parent.campaign_id, { reserveUsd: 0 }).ok ? { campaign_id: parent.campaign_id } : {}),
     parent_objective: parent.objective,
     continue_on_complete: false,
     continuation_policy: 'choose_next_mission',
@@ -4367,6 +4403,7 @@ function seedMissionRunContinuation(parent, root = process.cwd(), proof = '') {
     parent_objective: parent.objective,
     proof: proof || null,
   });
+  if (saved.campaign_id) campaignMissions().recordCampaignMissionStarted(root, saved, 0);
   const worktreeBaseline = captureMissionWorktreeBaseline(saved, root);
   const seededAt = stampIso();
   const { mission: updatedParent } = saveMission({
@@ -4452,7 +4489,7 @@ function startMission(args, options = {}) {
   const asJson = wantsJson(args);
   const firstArg = String(args[0] || '').trim().toLowerCase();
   if (args.length === 1 && (firstArg === '--help' || firstArg === '-h' || firstArg === 'help')) {
-    console.log('Usage: atris mission start "<objective>" --owner <member> --verify "..." [--destination "..."] [--no-verify] [--always-on] [--budget quick|long|deep] [--runner manual|claude|atris2|codex_goal|auto]');
+    console.log('Usage: atris mission start "<objective>" --owner <member> --verify "..." [--destination "..."] [--no-verify] [--always-on] [--budget quick|long|deep] [--runner manual|claude|atris2|codex_goal|auto] [--campaign <id> [--reserve <dollars>]]');
     console.log('Run `atris mission --help` for the full option list.');
     process.exit(0);
   }
@@ -4538,6 +4575,18 @@ function startMission(args, options = {}) {
       2,
       asJson,
     );
+  }
+  // --campaign: the campaign must be open and able to hold this mission's
+  // reserve. Checked before any state exists, so a refusal leaves nothing behind.
+  let campaignReserve = 0;
+  if (mission.campaign_id) {
+    const check = campaignMissions().checkCampaignStart(process.cwd(), mission.campaign_id, { missionId: mission.id, reserveUsd: readFlag(args, '--reserve', '') });
+    if (!check.ok) exitMissionError(`mission start refused: ${check.error}`, 2, asJson);
+    try {
+      campaignMissions().reserveCampaignMission(process.cwd(), mission.campaign_id, mission.id, check.reserve, mission.owner || 'mission-lead');
+    } catch (error) {
+      exitMissionError(`mission start refused: ${error.message}`, 2, asJson);
+    }
   }
   // --worktree: bind the mission to its own isolated checkout. We chdir before
   // any state writes so the mission record, baseline sidecar, receipts, and
@@ -4630,6 +4679,7 @@ function startMission(args, options = {}) {
   const warnings = [missingVerifierWarning(mission), missingOwnerMemberWarning(mission.owner)].filter(Boolean);
   ensureMemberMissionFile(mission.owner, process.cwd(), mission.objective);
   const { mission: saved } = saveMission(assignMissionNumber(mission, process.cwd()), process.cwd(), 'mission_started', { objective: mission.objective });
+  if (saved.campaign_id) campaignMissions().recordCampaignMissionStarted(process.cwd(), saved, campaignReserve);
   const goalSlotHandoff = hasFlag(args, '--take-goal-slot') && isCodexGoalMission(saved)
     ? takeCodexGoalSlotForMission(saved, process.cwd())
     : null;
@@ -4750,6 +4800,8 @@ async function startMissionFromRunObjective(objective, args) {
   ];
   if (verifier) startArgs.push('--verify', verifier);
   if (budgetTier) startArgs.push('--budget', budgetTier.name);
+  const campaignFlag = readFlag(args, '--campaign', '');
+  if (campaignFlag) startArgs.push('--campaign', campaignFlag);
   if (maxTicksOverride) startArgs.push('--max-ticks', String(maxTicksOverride));
   const model = readFlag(args, '--model', '');
   if (model) startArgs.push('--model', model);
@@ -4757,6 +4809,16 @@ async function startMissionFromRunObjective(objective, args) {
   if (hasFlag(args, '--xp-task') || hasFlag(args, '--agent-xp') || missionRunPreflight?.task_spine_required) startArgs.push('--xp-task');
 
   const mission = markMissionRunContinuation(missionFromArgs(startArgs));
+  let campaignReserve = 0;
+  if (mission.campaign_id) {
+    const check = campaignMissions().checkCampaignStart(process.cwd(), mission.campaign_id, { missionId: mission.id, reserveUsd: readFlag(args, '--reserve', '') });
+    if (!check.ok) exitMissionError(`mission start refused: ${check.error}`, 2, wantsJson(args));
+    try {
+      campaignMissions().reserveCampaignMission(process.cwd(), mission.campaign_id, mission.id, check.reserve, mission.owner || 'mission-lead');
+    } catch (error) {
+      exitMissionError(`mission start refused: ${error.message}`, 2, wantsJson(args));
+    }
+  }
   if (landOwnerResolution) {
     mission.owner = runOwner;
     mission.owner_resolution = landOwnerResolution.reason || mission.owner_resolution;
@@ -4840,6 +4902,7 @@ async function startMissionFromRunObjective(objective, args) {
   const warnings = [missingVerifierWarning(mission), missingOwnerMemberWarning(mission.owner)].filter(Boolean);
   ensureMemberMissionFile(mission.owner, process.cwd(), mission.objective);
   const { mission: saved } = saveMission(assignMissionNumber(mission, process.cwd()), process.cwd(), 'mission_started', { objective: mission.objective, source: 'mission_run_objective' });
+  if (saved.campaign_id) campaignMissions().recordCampaignMissionStarted(process.cwd(), saved, campaignReserve);
   if (landRun) {
     const memberState = renderMemberMissionState(saved.owner);
     const logPath = appendMemberLog(saved.owner, 'Mission landing flight dispatched', {
@@ -6597,7 +6660,7 @@ function runVerifier(command, root = process.cwd()) {
   const resolvedCommand = resolveVerifierCommand(command);
   const { envWithNodeDir } = require('../lib/spawn-env');
   const timeoutMs = missionVerifierTimeoutMs();
-  const startedAt = Date.now();
+  const startedAt = process.hrtime.bigint();
   const result = spawnSync(resolvedCommand, {
     cwd: root,
     shell: true,
@@ -6605,11 +6668,15 @@ function runVerifier(command, root = process.cwd()) {
     timeout: timeoutMs,
     env: envWithNodeDir(process.env),
   });
-  const elapsedMs = Date.now() - startedAt;
   // A verifier that blows its window is not a failing check: the code may be
   // fine and the suite merely slow (or starved by a concurrent flight). Report
   // it as a distinct timed-out state so operators do not read slow as broken.
   const timedOut = result.error ? result.error.code === 'ETIMEDOUT' : false;
+  // Steady clock, not wall time: the wall clock can slew, and a kill at the
+  // window once read as 927ms of a 1000ms window. A timed-out run used the
+  // whole window by definition.
+  const measuredMs = Number((process.hrtime.bigint() - startedAt) / 1000000n);
+  const elapsedMs = timedOut ? Math.max(measuredMs, timeoutMs) : measuredMs;
   return {
     command,
     resolved_command: resolvedCommand === command ? null : resolvedCommand,
@@ -6629,17 +6696,29 @@ const CHECK_FEEDBACK_TRIM_MARKER = 'output trimmed';
 
 function extractCheckFeedback(verifierResult) {
   if (!verifierResult || verifierResult.passed !== false) return '';
-  const lines = [verifierResult.output, verifierResult.stdout, verifierResult.stderr]
+  // A reviewer turn-down goes first: when the tests passed, it is the only
+  // real reason the try failed, and passing test names must not crowd it out.
+  const referee = verifierResult.referee && verifierResult.referee.passed === false
+    ? verifierResult.referee
+    : null;
+  const refereeLines = referee
+    ? [referee.reason, referee.output].filter((value) => String(value || '').trim())
+    : [];
+  const lines = [...new Set([...refereeLines, verifierResult.output, verifierResult.stdout, verifierResult.stderr]
     .filter((value) => String(value || '').trim())
     .flatMap((value) => String(value).split(/\r?\n/))
     .map((line) => line.trim())
-    .filter(Boolean);
+    .filter(Boolean))];
   if (!lines.length) return '';
 
+  const refereeSet = new Set(refereeLines.flatMap((value) => String(value).split(/\r?\n/)).map((line) => line.trim()).filter(Boolean));
+  const passingLine = /^(?:✔|ℹ )/;
   const usefulPattern = /\b(?:error|fail|expected|assert)\w*\b|(?:^|\s|\()[^:\s()]+:\d+(?::\d+)?(?:\b|$)/i;
-  const useful = lines.filter((line) => usefulPattern.test(line));
-  const context = lines.filter((line) => !usefulPattern.test(line));
-  const feedback = [...useful, ...context].join('\n');
+  const rest = lines.filter((line) => !refereeSet.has(line));
+  const useful = rest.filter((line) => !passingLine.test(line) && usefulPattern.test(line));
+  const context = rest.filter((line) => !passingLine.test(line) && !usefulPattern.test(line));
+  const passing = rest.filter((line) => passingLine.test(line));
+  const feedback = [...lines.filter((line) => refereeSet.has(line)), ...useful, ...context, ...passing].join('\n');
   if (feedback.length <= CHECK_FEEDBACK_LIMIT) return feedback;
 
   const contentLimit = CHECK_FEEDBACK_LIMIT - CHECK_FEEDBACK_TRIM_MARKER.length - 1;
@@ -6878,7 +6957,10 @@ function worktreeReceipt(before, after, { verifier = '', baseline = null } = {})
 const MISSION_RUN_DEFAULTS = {
   maxTicks: 4,
   maxWallSeconds: 3600,
-  claudeTimeoutMs: 10 * 60 * 1000,
+  // Sized from real runs: claude ticks that landed 10/08-10/14 ran a median
+  // 4 min, but 15 of 92 needed more than 10 and the slowest 5% took 17+.
+  // A 10 min cap killed 12 runs at exactly 10:00; 20 min fits 89 of 92.
+  claudeTimeoutMs: 20 * 60 * 1000,
   backoff: { initialMs: 30_000, maxMs: 10 * 60_000, factor: 2, jitter: 0.3 },
 };
 
@@ -10232,6 +10314,9 @@ async function executeMissionRunTicksPhase(context) {
     let cycleTickLimit = effectiveMaxTicks;
     while (true) {
       while (ticks.length < cycleTickLimit) {
+        // A campaign that is done, paused, or out of money stops its missions.
+        const campaignStop = mission.campaign_id ? campaignMissions().campaignGate(cwd, mission) : null;
+        if (campaignStop) { pauseReason = campaignStop; break; }
         // Re-read before measuring the wall. Detached full-budget drivers use
         // the mission contract as their wall so process startup drift cannot
         // shorten the promised work window.
@@ -10515,7 +10600,7 @@ async function executeMissionRunTicksPhase(context) {
 
         if (!claudeResult.ok) {
           const deadModel = detectUnavailableModel(claudeResult.summary || claudeResult.receipt_text);
-          const wallBoundTimeout = remainingWall * 1000 <= MISSION_RUN_DEFAULTS.claudeTimeoutMs;
+          const wallBoundTimeout = missionTickWallBound(tickRuntimeMission, remainingWall * 1000);
           let reason = claudeResult.reason === 'too-deep'
             ? 'too-deep'
             : claudeResult.timedOut
@@ -10605,6 +10690,7 @@ async function executeMissionRunTicksPhase(context) {
           prep: tickWorkerRun.prep || null,
         });
       }
+      if (mission.campaign_id && !cachedStep) campaignMissions().recordCampaignTick(cwd, mission, { ...((tickWorkerRun && tickWorkerRun.usage) || {}), ...(tickEngineId ? { engine: tickEngineId } : {}) });
       let receiptPath = cachedStep ? cachedStep.receipt_path : null;
 
       // Review-lane drain: always-on loops sweep the agent-safe review actions
@@ -10752,7 +10838,7 @@ async function executeMissionRunTicksPhase(context) {
         mission: mission.objective,
         state: mission.status,
         tick_status: result.status,
-        reason: result.reason,
+        reason: memberLogTickReason(result),
         layer: result.layer || undefined,
         verifier: verifierResult ? (verifierResult.passed ? 'passed' : 'failed') : 'not_run',
         summary: tickSummaryText ? tickSummaryText.slice(0, 240) : undefined,
@@ -12674,6 +12760,8 @@ module.exports = {
   resolveMissionTickRunner,
   resolveMissionTickRunnerModel,
   missionTickTimeoutMs,
+  missionTickWallBound,
+  memberLogTickReason,
   engineFailureHealthStatus,
   recordMissionEngineTickOutcome,
   recordMissionTickRosterRun,
