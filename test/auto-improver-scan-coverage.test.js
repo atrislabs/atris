@@ -52,3 +52,37 @@ test('auto-improver scan reads recent member logs even when old team files pile 
     fs.rmSync(dir, { recursive: true, force: true });
   }
 });
+
+// Goal lines and empty error fields are not failures. On 2026-10-14 they were
+// 3 of the 8 repeat problems (a mission naming "leftover error text", a board
+// mission listing "failed" as a state, and driver logs printing "error": null),
+// which pinned the pain score at its ceiling so it could never trend down.
+test('auto-improver scan skips mission goal lines and empty error fields', () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'atris-scan-noise-'));
+  try {
+    fs.mkdirSync(path.join(dir, 'atris'), { recursive: true });
+    assert.equal(runCli(['member', 'create', 'auto-improver', '--description="Finds problems before they grow"'], dir).status, 0);
+
+    const logs = path.join(dir, 'atris', 'team', 'builder', 'logs');
+    fs.mkdirSync(logs, { recursive: true });
+    fs.writeFileSync(path.join(logs, `${dateDaysAgo(1)}.md`), [
+      '# builder log',
+      '- mission: The team briefing tells the truth: no empty commit ids or leftover error text',
+      '- mission: The team briefing tells the truth: no empty commit ids or leftover error text',
+      '  "error": null,',
+      '  "error": null,',
+      '- note: Released by builder: the work ran but its check failed: npm run test:fast',
+      '- note: Released by builder: the work ran but its check failed: npm run test:fast',
+      '',
+    ].join('\n'), 'utf8');
+
+    const wake = runCli(['member', 'wake', 'auto-improver', '--json'], dir);
+    assert.equal(wake.status, 0, wake.stderr || wake.stdout);
+    const patterns = JSON.parse(wake.stdout).auto_improver.scan.log_signals.repeated_failures.map((failure) => failure.pattern);
+    assert.ok(patterns.some((pattern) => /check failed/.test(pattern)), `real failure was dropped: ${JSON.stringify(patterns)}`);
+    assert.ok(!patterns.some((pattern) => /^mission:/.test(pattern)), `goal line counted as failure: ${JSON.stringify(patterns)}`);
+    assert.ok(!patterns.some((pattern) => /"error":\s*null/.test(pattern)), `empty error field counted as failure: ${JSON.stringify(patterns)}`);
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
