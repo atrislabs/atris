@@ -606,6 +606,86 @@ test('below 30 columns the board keeps whole states and trims only member names'
   assert.match(renderBoard(rows, '/progress', 0, 33), /^member\s+state\s+last result$/m, 'the result column returns once names keep their room');
 });
 
+test('below 18 columns the board keeps shrinking: names while they read, then a column of states', () => {
+  const rows = [
+    { member: 'builder', state: 'done failed', alive: null, last_result: 'failed', last_result_reason: 'timed out', last_result_ago: '1m ago', ago: '1m ago', job: 'job' },
+    { member: 'scout', state: 'working', alive: true, engine: 'codex', running_for: '2m', ago: '5s ago', job: 'map the repo' },
+  ];
+  const board = (width) => renderBoard(rows, '/progress', 0, width).split('\n');
+  for (let width = 3; width <= 17; width++) {
+    const lines = board(width);
+    assert.equal(lines.length, 3, `${width}: one line per member`);
+    assert.ok(lines.every((line) => line.length <= width), `${width}: fits: ${JSON.stringify(lines)}`);
+  }
+  assert.deepEqual(board(17), ['member  state', 'bui...  timed out', 'scout   working']);
+  assert.deepEqual(board(16), ['member   state', 'builder  failed', 'scout    working']);
+  assert.deepEqual(board(14), ['member  state', 'bu...  failed', 'scout  working'], 'the narrowest name that still reads');
+  assert.deepEqual(board(13), ['state', 'failed', 'working'], 'past that, states in board order');
+  assert.deepEqual(board(7), ['state', 'failed', 'working']);
+  assert.deepEqual(board(5), ['state', 'fa...', 'wo...']);
+});
+
+test('seeded random boards: every footer count matches the members it hides, at every size', () => {
+  let seed = 43;
+  const rnd = () => ((seed = (seed * 1103515245 + 12345) % 2147483648) / 2147483648);
+  const pick = (list) => list[Math.floor(rnd() * list.length)];
+  const tag = (engine) => (engine ? `[pid 1 engine ${engine}] ` : '');
+  const reasons = ['timed out', 'signed out', 'engine error', 'bad exit 2'];
+  const kinds = [
+    (t) => [`${at(t + 5)} m-1 started: ${tag(pick(['', 'claude', 'codex']))}job`, `${at(t)} m-1 finished: failed (${pick(reasons)})`],
+    (t) => [`${at(t + 5)} m-1 started: job`, `${at(t)} m-1 finished: ok`],
+    (t) => [`${at(t + 5)} m-1 started: job`, `${at(t)} m-1 finished: stopped`],
+    (t) => [`${at(t)} m-1 started: [pid 999999999 engine claude] job`],
+    (t) => [`${at(t)} m-1 started: [pid ${process.pid} engine codex] job`],
+    (t) => [`${at(t + 900)} m-1 started: ${tag(pick(['', 'claude']))}first`, `${at(t + 800)} m-1 finished: failed (${pick(reasons)})`,
+      `${at(t + 60)} m-2 started: [pid ${process.pid} engine ${pick(['claude', 'codex'])}] again`, `${at(t)} m-2 running: npm test`],
+  ];
+  const top = /^(\d+) (failed|stopped|no result|ended with no result|earlier failure|with earlier failure|running)$/;
+  for (let trial = 0; trial < 40; trial++) {
+    const count = 2 + Math.floor(rnd() * 7);
+    const dir = fakeDir(Object.fromEntries(Array.from({ length: count }, (_, i) => [`m${i}`, pick(kinds)(10 + i * 7 + Math.floor(rnd() * 5))])));
+    try {
+      const rows = readBoard({ dir, now: NOW });
+      for (const height of [2, 3, 4, 5]) {
+        for (let width = 3; width <= 130; width++) {
+          const lines = renderBoard(rows, dir, 0, width, height).split('\n');
+          const where = `trial ${trial}, ${width}x${height}: ${JSON.stringify(lines)}`;
+          assert.ok(lines.length <= height, where);
+          assert.ok(lines.every((line) => line.length <= width), where);
+          const footer = lines.at(-1).match(/^(\d+) (?:hidden|more not shown)(?: \((.*)\))?/);
+          const shown = lines.slice(1, -1).map((line) => line.split(/\s+/)[0]);
+          if (!footer || !lines[0].startsWith('member') || shown.some((name) => name.includes('...'))) continue;
+          const hid = rows.filter((r) => !shown.includes(r.member));
+          assert.equal(Number(footer[1]), hid.length, `${where}: the hidden count`);
+          const truth = {
+            failed: hid.filter((r) => r.state === 'done failed').length,
+            stopped: hid.filter((r) => r.state === 'stopped' && !r.no_result).length,
+            'no result': hid.filter((r) => r.no_result).length,
+          };
+          let parent = null;
+          let reasoned = 0;
+          let counted = 0;
+          for (const part of (footer[2] || '').replace(/, \.\.\.$/, '').split(/, | and /).filter(Boolean)) {
+            const head = part.match(top);
+            if (head) {
+              assert.ok(!parent || reasoned <= parent, `${where}: reasons never outnumber their count`);
+              const key = head[2].replace('ended with no result', 'no result');
+              if (key in truth) assert.equal(Number(head[1]), truth[key], `${where}: ${part}`);
+              [parent, reasoned] = [Number(head[1]), 0];
+              counted += parent;
+            } else if (/^\d+ /.test(part)) reasoned += parseInt(part, 10);
+            else if (/ (working|quiet|finishing)$/.test(part)) counted += 1;
+          }
+          assert.ok(!parent || reasoned <= parent, `${where}: reasons never outnumber their count`);
+          assert.ok(counted <= hid.length, `${where}: counts never add past the hidden total`);
+        }
+      }
+    } finally {
+      fs.rmSync(dir, { recursive: true, force: true });
+    }
+  }
+});
+
 test('finishing members leave common failure reasons whole at 30 columns', () => {
   const dir = fakeDir({
     builder: [`${at(100)} m-1 started: build`, `${at(80)} m-1 finished: failed (timed out)`],
