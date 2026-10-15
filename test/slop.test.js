@@ -2044,6 +2044,24 @@ test('fix reads a line-end dash past a code span in either line', () => {
   ]);
 });
 
+test('fix reads a line-end dash up to the first stop when the next line holds another dash', () => {
+  // from a research note: a dash later on the next line made the line-end
+  // rule give up, so the comma spliced the clause. A dash past the first
+  // stop belongs to the next sentence; one before it may close an aside,
+  // so the rule still gives up there.
+  const file = tmpFile('line-end-next-dash.md', [
+    'Do not build against a "unified conversations API" \u2014',
+    'it isn\'t the documented route right now. (New features \u2014 an AI chat',
+    'assistant \u2014 are product UI.)',
+    '',
+    'We tried the tool \u2014',
+    'it \u2014 the old one \u2014 failed.',
+  ].join('\n'));
+  const { changes } = applyFixes([file], RULES);
+  assert.equal(changes[0].after, 'Do not build against a "unified conversations API";');
+  assert.equal(changes.find((c) => c.line === 5).after, 'We tried the tool,');
+});
+
 test('fix ends a paragraph-ending dash with a period, keeps a wrapping one a comma', () => {
   const file = tmpFile('line-end.md', [
     'The tool we built \u2014',

@@ -1433,14 +1433,20 @@ function splitAside(line, below) {
 // A code span in either line is masked while the two are read as one
 // sentence, as the line fix masks it: "The `by-time` path doesn't need to
 // change;" then "that's a different access pattern." A span that would
-// run across the seam leaves the dash to the line fix.
+// run across the seam leaves the dash to the line fix. A dash further on
+// the next line, past its first stop, belongs to the next sentence, so only
+// the words up to that stop are read: "the API;" then "it isn't the
+// documented route. (New features \u2014 ...". A dash before the
+// stop may close an aside, so the dash is left to the line fix.
 function trailingMark(line, below) {
   const end = /^(.*?\S)\s*\u2014\s*$/.exec(line);
-  if (!end || !below.trim() || /\u2014/.test(end[1]) || /\u2014/.test(below)) return null;
+  if (!end || !below.trim() || /\u2014/.test(end[1])) return null;
+  const words = /\u2014/.test(below) ? (/^[^\u2014]*?[.!?](?=\s)/.exec(below) || [''])[0] : below;
+  if (!words.trim() || (words.split('`').length - 1) % 2) return null;
   if (!/^\s*(?:it|this|that|we|they|you|he|she|I|there)(?:['\u2019](?:s|re|ll|ve|d|m))?\s/.test(below)) return null;
   if (/^\s{0,3}(?:#|\||```|~~~)/.test(line) || /^\s*(?:#|>|\||```|~~~|[-*+]\s|\d+[.)]\s)/.test(below)) return null;
   const head = maskInlineCode(end[1].trim()).masked;
-  const { masked, spans } = maskInlineCode(`${end[1].trim()} \u2014 ${below.trim()}`);
+  const { masked, spans } = maskInlineCode(`${end[1].trim()} \u2014 ${words.trim()}`);
   if (!masked.startsWith(`${head} \u2014 `)) return null;
   const next = masked.slice(head.length + 3);
   const joined = fixEmDash(masked, { spans });
