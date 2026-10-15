@@ -9220,7 +9220,7 @@ test('task review-lane-run does not repeat the same review_chat task across inne
   }
 });
 
-test('task review-lane-drain skips continue-work rows with existing follow-up children', () => {
+test('task review-lane-drain skips continue-work rows with existing follow-up children', async () => {
   if (!hasNodeSqlite()) return;
   const dir = makeTempDir();
   const dbPath = path.join(dir, 'tasks.db');
@@ -9300,7 +9300,18 @@ test('task review-lane-drain skips continue-work rows with existing follow-up ch
     }
     taskStore.close();
 
-    const drain = runCli(['task', 'review-lane-drain', '--goal-id', 'OBL-953', '--json'], { cwd: dir, env });
+    // The drain, status and current reads change no task rows, so all three
+    // run at once.
+    const [drain, status, followedCurrent] = await Promise.all([
+      runCliAsync(['task', 'review-lane-drain', '--goal-id', 'OBL-953', '--json'], { cwd: dir, env }),
+      runCliAsync(['task', 'status', '--json'], { cwd: dir, env }),
+      runCliAsync([
+        'task', 'current',
+        '--goal-id', 'OBL-953',
+        '--review-state', 'human-accept-waiting',
+        '--json',
+      ], { cwd: dir, env }),
+    ]);
     assert.equal(drain.status, 0, drain.stderr);
     const payload = JSON.parse(drain.stdout);
     assert.equal(payload.drain.next_action, 'continue_work');
@@ -9315,7 +9326,6 @@ test('task review-lane-drain skips continue-work rows with existing follow-up ch
     assert.equal(payload.review_state_actions.skipped_continue_work_with_follow_up[0].command, null);
     assert.equal(payload.review_state_actions.skipped_continue_work_with_follow_up[0].continue_work_command, undefined);
 
-    const status = runCli(['task', 'status', '--json'], { cwd: dir, env });
     assert.equal(status.status, 0, status.stderr);
     const statusPayload = JSON.parse(status.stdout);
     assert.equal(statusPayload.status.counts.review_continue_work, 1);
@@ -9327,12 +9337,6 @@ test('task review-lane-drain skips continue-work rows with existing follow-up ch
     assert.equal(statusPayload.status.review_actions.human_accept_waiting.first.ref, followedRef);
     assert.equal(statusPayload.status.review_actions.human_accept_waiting.first.command, null);
 
-    const followedCurrent = runCli([
-      'task', 'current',
-      '--goal-id', 'OBL-953',
-      '--review-state', 'human-accept-waiting',
-      '--json',
-    ], { cwd: dir, env });
     assert.equal(followedCurrent.status, 0, followedCurrent.stderr);
     const followedCurrentPayload = JSON.parse(followedCurrent.stdout);
     assert.equal(followedCurrentPayload.current.review_state_actions.human_accept_waiting.ref, followedRef);
