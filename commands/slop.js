@@ -815,7 +815,8 @@ function labelJoin(at, whole) {
 // pronoun clause does: "Top blocker: friction_points; the known failure
 // modes are undocumented". "a", "an", "every", "each" and "this" open
 // one the same way: "machine_readable_entrypoint; an AI agent has no
-// entrypoint". The value alone is no clause, so only a label
+// entrypoint". A past verb joins the same way: "Dropped: Nothing; the
+// source returned no posts". The value alone is no clause, so only a label
 // past the field's own colon counts, only before those, and only where it
 // takes a semicolon; a heading or a question after a field keeps its comma.
 function clauseOrFieldLeft(at, whole) {
@@ -1268,7 +1269,7 @@ function fixEmDash(s, { endsBlock = false, startsBlock = false, spans = [], abov
       return left ? clauseJoin(left, at, whole) : m;
     })
     .replace(PAST_CLAUSE_AFTER_DASH, (m, at, whole) => {
-      const left = clauseLeft(at, whole);
+      const left = clauseOrFieldLeft(at, whole);
       return left ? clauseJoin(left, at, whole) : m;
     })
     .replace(NOUN_CLAUSE_AFTER_DASH, (m, at, whole) => {

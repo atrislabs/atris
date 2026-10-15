@@ -346,3 +346,5 @@ Parse failures drop tool calls \u2014 the agent thinks it completed but nothing 
 => Parse failures drop tool calls; the agent thinks it completed but nothing happened.
 Two builds \u2014 the new build signed but not shipped, and the old one.
 => Two builds, the new build signed but not shipped, and the old one.
+_Dropped: Nothing \u2014 the source returned no posts to filter._
+=> _Dropped: Nothing; the source returned no posts to filter._
