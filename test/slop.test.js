@@ -4981,6 +4981,21 @@ test('the fix diff script leaves out big prose files unless --max-kb raises the 
   assert.match(run('--max-kb', '4').stdout, /^1 dashed paragraph in 1 file;/m);
 });
 
+test('the fix diff script skips the checkouts in a .claude worktrees folder', () => {
+  const { spawnSync } = require('node:child_process');
+  // agent sessions left 17,726 copied prose files under one repo's
+  // .claude/worktrees; a skill note in .claude itself is still read
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'slop-worktrees-'));
+  fs.mkdirSync(path.join(dir, '.claude', 'skills'), { recursive: true });
+  fs.mkdirSync(path.join(dir, '.claude', 'worktrees', 'copy'), { recursive: true });
+  fs.writeFileSync(path.join(dir, '.claude', 'skills', 'a.md'), 'The build passed \u2014 the log is clean.\n');
+  fs.writeFileSync(path.join(dir, '.claude', 'worktrees', 'copy', 'b.md'), 'The gate held \u2014 the run is green.\n');
+  const script = path.join(__dirname, '..', 'scripts', 'slop-fix-diff.js');
+  const r = spawnSync(process.execPath, [script, '--splices', dir], { encoding: 'utf8', cwd: path.join(__dirname, '..') });
+  assert.equal(r.status, 0, r.stderr);
+  assert.match(r.stdout, /^1 dashed paragraph in 1 file;/m);
+});
+
 test('the fix diff script feeds whole paragraphs by default', () => {
   const { spawnSync } = require('node:child_process');
   // a wrapped line that opens with a dash is fixed against the line above,

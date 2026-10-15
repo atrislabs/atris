@@ -54,6 +54,8 @@ const Module = require('module');
 const { execFileSync } = require('child_process');
 
 const ROOT = path.resolve(__dirname, '..');
+// A "worktrees" folder inside ".claude" holds whole checkouts an agent
+// session made, copies of prose already read, so it is left out with the rest.
 const SKIP_DIRS = new Set(['.git', 'node_modules', 'dist', 'coverage', '.next', '.agent-worktrees']);
 const PROSE_EXT = /\.(?:md|mdx|txt)$/i;
 const DASH = '\u2014';
@@ -68,7 +70,7 @@ function collectFiles(target, out, maxBytes = MAX_BYTES) {
   try { entries = fs.readdirSync(target, { withFileTypes: true }); } catch { return out; }
   for (const entry of entries) {
     const full = path.join(target, entry.name);
-    if (entry.isDirectory()) { if (!SKIP_DIRS.has(entry.name)) collectFiles(full, out, maxBytes); }
+    if (entry.isDirectory()) { if (!SKIP_DIRS.has(entry.name) && !(entry.name === 'worktrees' && path.basename(target) === '.claude')) collectFiles(full, out, maxBytes); }
     else if (entry.isFile() && PROSE_EXT.test(entry.name) && fs.statSync(full).size < maxBytes) out.push(full);
   }
   return out;
