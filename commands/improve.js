@@ -535,13 +535,17 @@ function collectImproveVitals(options = {}, deps = {}) {
     const collect = deps.collectRevisionSignals || collectRevisionSignals;
     const rev = collect(root, { days: 14, now: nowMs });
     const landingsPhrase = `${countWord(rev.landings)} landing${rev.landings === 1 ? '' : 's'} this fortnight`;
-    const fixPhrase = `${countWord(rev.revised)} needed a human fix`;
+    const fixed = Number.isFinite(rev.fixed) ? rev.fixed : rev.revised;
+    const fixPhrase = `${countWord(fixed)} needed a human fix`;
+    const coachPhrase = rev.coached ? `, ${countWord(rev.coached)} got your coaching` : '';
     guarantee = {
       days: rev.days,
       landings: rev.landings,
       revised: rev.revised,
+      fixed,
+      coached: rev.coached || 0,
       rate: rev.rate,
-      sentence: plainSentence(`${landingsPhrase}, ${fixPhrase}.`),
+      sentence: plainSentence(`${landingsPhrase}, ${fixPhrase}${coachPhrase}.`),
     };
   } catch {
     guarantee = null;
@@ -1057,6 +1061,23 @@ const REVISION_IGNORED_FILES = [
 function isRevisionSignalFile(file) {
   return !REVISION_IGNORED_FILES.some((re) => re.test(String(file || '')));
 }
+
+// A person editing a member's role, goals, context, or the team roster after a
+// landing is coaching the team, not fixing broken work. Live 2026-10-15: most
+// of 51 "revisions" in atris-desktop-v2 were goals.json and MEMBER.md edits,
+// so the boot line told Keshav he fixed work he had only steered.
+const COACHING_FILES = [
+  /^atris\/team\/[^/]+\/(?:MEMBER\.md|MISSION\.md|WAKE\.md|lessons\.md|goals\.(?:json|md))$/,
+  /^atris\/team\/[^/]+\/(?:context|skills)\//,
+  /^atris\/team\/ROSTER\.(?:json|md)$/,
+  /^atris\/ROSTER\.md$/,
+  /^atris\/(?:PERSONA|STANDARD)\.md$/,
+  /^atris\/policies\//,
+];
+
+function isCoachingFile(file) {
+  return COACHING_FILES.some((re) => re.test(String(file || '')));
+}
 const REVISION_WINDOW_MS = REVISION_WINDOW_HOURS * 60 * 60 * 1000;
 const AGENT_TRAILER_MARKERS = [
   'atris-builder[bot]',
@@ -1381,10 +1402,12 @@ function collectRevisionSignals(root, options = {}) {
       overlap.forEach((f) => touched.add(f));
     }
     if (revisedBy.length) {
+      const files = [...touched].sort();
       revisions.push({
         landing: { hash: landing.hash, subject: landing.subject, at: landing.at },
         revised_by: revisedBy,
-        files: [...touched].sort(),
+        files,
+        kind: files.every(isCoachingFile) ? 'coaching' : 'fix',
       });
     }
   }
@@ -1398,6 +1421,9 @@ function collectRevisionSignals(root, options = {}) {
     landings: landings.length,
     revised: revisions.length,
     rate: landings.length ? revisions.length / landings.length : 0,
+    fixed: revisions.filter((r) => r.kind === 'fix').length,
+    coached: revisions.filter((r) => r.kind === 'coaching').length,
+    fix_rate: landings.length ? revisions.filter((r) => r.kind === 'fix').length / landings.length : 0,
     revisions,
   };
 }
@@ -1417,9 +1443,15 @@ function formatRevisionsReport(summary = {}) {
   lines.push(`agent landings in the last ${plural(days, 'day')}: ${summary.landings}.`);
   lines.push(`landings a human then revised: ${summary.revised}.`);
   lines.push(`revision rate: ${Math.round((summary.rate || 0) * 100)} percent. the target is zero.`);
+  if (Number.isFinite(summary.fixed)) {
+    lines.push(`real fixes: ${summary.fixed}. coaching (roles, goals, context): ${summary.coached || 0}.`);
+  }
   for (const item of Array.isArray(summary.revisions) ? summary.revisions : []) {
     lines.push('');
-    lines.push(`an agent landed "${plainSentence(item.landing.subject)}". a human then changed ${listFilesPhrase(item.files)} within ${REVISION_WINDOW_HOURS} hours.`);
+    const after = item.kind === 'coaching'
+      ? `a human then coached the team in ${listFilesPhrase(item.files)} within ${REVISION_WINDOW_HOURS} hours.`
+      : `a human then changed ${listFilesPhrase(item.files)} within ${REVISION_WINDOW_HOURS} hours.`;
+    lines.push(`an agent landed "${plainSentence(item.landing.subject)}". ${after}`);
   }
   return lines.join('\n');
 }
@@ -1702,6 +1734,7 @@ module.exports = {
   runLoopDoctor,
   collectRevisionSignals,
   formatRevisionsReport,
+  isCoachingFile,
   isAgentCommitBody,
   runLocalFallback,
   summarizeLocalMissionRun,
