@@ -105,6 +105,9 @@ function dispatchFlight(root, wt, options = {}) {
     ownCli: ownCli(wt),
     rebase: () => ({ ok: true, stage: 'rebased' }),
     verifier: () => ({ status: 0, stdout: '# pass 1\n', stderr: '' }),
+    // A fresh room has no origin and no commit, so the land target is HEAD;
+    // passing it skips the git lookups. The landed case checks the lookup.
+    checkoutBase: 'HEAD',
     scoutAsk: false,
     log: () => {},
     ...options,
@@ -164,6 +167,7 @@ function command(root, args) {
 test('a successful dispatch records landed with its engine, model, time cap, and seconds', async () => {
   await withRoom(async ({ root, bin, wt }) => {
     fakeEngine(bin, 'devin', { stdout: 'built the widget\n' });
+    assert.equal(fleet.resolveDispatchLandTarget(root), 'HEAD');
     const flight = await dispatchFlight(root, wt, {
       engine: 'devin',
       installedEngines: [],
