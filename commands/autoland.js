@@ -547,7 +547,10 @@ function showStatus(root, args, deps = {}) {
     const label = timeLimit && lost.last_day_other_kill ? 'newest not at a time limit:' : 'newest';
     const when = `${String(kill.at || '').slice(0, 16).replace('T', ' ')} UTC`;
     const free = Number.isFinite(kill.free_pct) ? `, ${kill.free_pct}% memory free` : '';
-    console.log(`  engine runs force-killed in the last day: ${lost.kills_day}, ${counts}; ${label} ${kill.engine || 'unknown engine'} on ${kill.task || 'no task'} at ${when}, ${kill.cause || 'cause unknown'}${free}`);
+    // Load beside the core count, so a run that hit its time limit on a
+    // crowded machine reads apart from one that was slow on its own.
+    const loadNow = Array.isArray(kill.load) && Number.isFinite(kill.load[0]) ? `, load ${kill.load[0]} on ${os.availableParallelism ? os.availableParallelism() : os.cpus().length} cores` : '';
+    console.log(`  engine runs force-killed in the last day: ${lost.kills_day}, ${counts}; ${label} ${kill.engine || 'unknown engine'} on ${kill.task || 'no task'} at ${when}, ${kill.cause || 'cause unknown'}${free}${loadNow}`);
   }
   if (lost.errors_day) {
     // Runs that failed with a message and were not killed, such as an engine
