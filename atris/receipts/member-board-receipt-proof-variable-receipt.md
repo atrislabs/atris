@@ -7,11 +7,7 @@ Files edited: test/member-board.test.js; atris/refs/MAP-NOTES.md; this receipt. 
 Verify command: `node --test test/member-board.test.js test/member-result.test.js`
 Exit code: 0. 119 tests, 119 passed, 0 failed, 0 skipped.
 
-Teeth: with a made-up proof variable added to the wide footer receipt's rerun line, the check failed (exit 1) and named it:
-
-```
-+   'atris/receipts/member-board-wide-footer-receipt.md names ATRIS_BOARD_GONE_PROOF'
-```
+Teeth: with a made-up proof variable added to the wide footer receipt's rerun line, the check failed (exit 1) and named both that receipt and the made-up variable. The name is left out here on purpose: a receipt that spells out a planted name trips the check itself, which is how the first version of this receipt failed the suite.
 
 The receipt was restored from git afterward and the check passes again.
 
