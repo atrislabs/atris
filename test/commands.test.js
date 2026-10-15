@@ -11953,19 +11953,28 @@ test('task review accepts clean dry-run verifier', () => {
   try {
     fs.mkdirSync(path.join(dir, 'atris'), { recursive: true });
 
-    const add = runCli([
-      'task', 'add', 'Review with clean dry-run proof',
-      '--tag', 'maintenance',
-      '--json',
-    ], { cwd: dir, env });
-    assert.equal(add.status, 0, add.stderr);
-    const ref = JSON.parse(add.stdout).task.display_id;
-    assert.equal(runCli(['task', 'claim', ref, '--as', 'codex'], { cwd: dir, env }).status, 0);
-    assert.equal(runCli([
-      'task', 'ready', ref,
-      '--proof', 'node bin/atris.js clean --dry-run --json passed before verifier review',
-      '--as', 'codex',
-    ], { cwd: dir, env }).status, 0);
+    // Seed setup through the production store; both review checks stay on the CLI.
+    const ref = (() => {
+      const db = taskStore.open(dbPath);
+      try {
+        const workspaceRoot = taskStore.workspaceRoot(dir);
+        const created = addSeedTask(db, {
+          title: 'Review with clean dry-run proof', tag: 'maintenance', workspaceRoot,
+        });
+        assert.equal(created.inserted, true);
+        const { id } = created;
+        assert.equal(taskStore.claimTask(db, { id, claimedBy: 'codex' }).claimed, true);
+        const readied = taskStore.readyTask(db, {
+          id, actor: 'codex',
+          proof: 'node bin/atris.js clean --dry-run --json passed before verifier review',
+          result: FIXTURE_RESULT_SENTENCE,
+        });
+        assert.equal(readied.ready, true, readied.reason);
+        return taskStore.taskDisplayRefMap(taskStore.listTasks(db, { workspaceRoot })).get(id);
+      } finally {
+        taskStore.close();
+      }
+    })();
 
     const review = runCli([
       'task', 'review', ref,

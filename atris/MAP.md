@@ -258,3 +258,5 @@ Continuation display readiness setup: `test/commands.test.js:15237` seeds readin
 Continuation display read batching: `test/commands.test.js:15230` overlaps current selection and review queue reads after certification, before clearing the suggestion. Both read unchanged task rows; five sequential launch stages become four, with every assertion retained.
 
 Queue filtering read batching: `test/commands.test.js:15322` runs three queue/current CLI reads together after both fixtures close. `commands/task.js:3962` derives each response from stored rows, and the saved view is not consumed by these reads. All assertions remain; three sequential launch stages become one.
+
+Clean review setup: `test/commands.test.js:11948` seeds creation, claim and readiness through the production store, asserts each result and closes before both real CLI review checks. Five launches become two; the accepted read-only check and refused mutating check retain every assertion.

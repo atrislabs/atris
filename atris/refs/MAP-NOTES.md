@@ -2785,3 +2785,5 @@ Continuation display readiness setup: `test/commands.test.js:15237` seeds readin
 Continuation display read batching: `test/commands.test.js:15271` awaits current selection and review queue output together. `commands/task.js:3962` and `commands/task.js:5747` build output from stored rows and save a derived view, without consuming that saved file. The later review write waits for both reads; all assertions remain. Five launches take four sequential stages.
 
 Queue filtering read batching: `test/commands.test.js:15322` runs three queue/current CLI reads together after both fixtures close. `commands/task.js:3962` derives each response from stored rows, and the saved view is not consumed by these reads. All assertions remain; three sequential launch stages become one.
+
+Clean review setup: `test/commands.test.js:11948` seeds creation, claim and readiness through the production store, asserts each result and closes before both real CLI review checks. Five launches become two; the accepted read-only check and refused mutating check retain every assertion.
