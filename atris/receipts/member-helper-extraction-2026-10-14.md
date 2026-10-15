@@ -59,6 +59,8 @@ Exact output excerpt:
 Reviewer rerun: `env -u ATRIS_RUNNER_PROFILE npm run test:fast`.
 Full local outputs: /tmp/member-helpers-fast-tests.log (initial environment failure), /tmp/member-helpers-fast-tests-clean.log (passing run).
 
+Review submission: ready for approval, backed by the successful machine receipt at `atris/runs/2026-10-15-task-atm-1-2026-10-15T02-39-38-187Z.json` (exit 0). The implementation and this receipt are committed and pushed for review.
+
 ## Coordination
 
 The preloaded task reference did not exist in this checkout's task database. The running mission owns its lock, so attaching a task was refused as busy. A local task was created and claimed by architect before editing. The outer mission runner will record its own final check and completion; its lock was left intact.
