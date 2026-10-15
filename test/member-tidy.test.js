@@ -1428,6 +1428,14 @@ test('worktree cleanup quietly refreshes an outdated base and keeps staged notes
     fs.writeFileSync(plain, 'later runnable outline\n', { mode: 0o755 });
     assert.match(runGit(['ls-files', '--stage', '--', 'outline-check'], copy), /^100644 /);
     assert.equal(fs.statSync(plain).mode & 0o111, 0o111);
+    const expanded = path.join(copy, 'outline-folder');
+    fs.writeFileSync(expanded, 'saved outline before folder\n');
+    runGit(['add', 'outline-folder'], copy);
+    fs.unlinkSync(expanded);
+    fs.mkdirSync(expanded);
+    const nestedDraft = path.join(expanded, 'draft.txt');
+    fs.writeFileSync(nestedDraft, 'later draft inside folder\n');
+    assert.match(runGit(['ls-files', '--stage', '--', 'outline-folder'], copy), /^100644 /);
     const binary = path.join(copy, 'drawing.bin');
     const savedBytes = Buffer.from([0, 255, 10, 128, 13]);
     const laterBytes = Buffer.from([0, 254, 10, 129, 13, 0]);
@@ -1491,6 +1499,10 @@ test('worktree cleanup quietly refreshes an outdated base and keeps staged notes
       assert.equal(fs.statSync(plain).mode & 0o111, 0o111);
       assert.equal(runGit(['show', ':outline-check'], copy), 'saved plain outline');
       assert.match(runGit(['ls-files', '--stage', '--', 'outline-check'], copy), /^100644 /);
+      assert.equal(fs.lstatSync(expanded).isDirectory(), true);
+      assert.equal(fs.readFileSync(nestedDraft, 'utf8'), 'later draft inside folder\n');
+      assert.equal(runGit(['show', ':outline-folder'], copy), 'saved outline before folder');
+      assert.match(runGit(['ls-files', '--stage', '--', 'outline-folder'], copy), /^100644 /);
       assert.deepEqual(fs.readFileSync(binary), laterBytes);
       const savedBinary = spawnSync('git', ['show', ':drawing.bin'], { cwd: copy });
       assert.equal(savedBinary.status, 0);
