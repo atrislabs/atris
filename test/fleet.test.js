@@ -58,8 +58,9 @@ test('buildFleetPrompt is generated, bounded, and carries the contract', () => {
   const prompt = fleet.buildFleetPrompt(TASK, { worktreePath: '/wt/x' });
   assert.equal(prompt.split('\n')[0], 'First, run `atris worktree guard`; if it fails, stop immediately, report back, and do not edit anything. Do this before any file edit.');
   assert.match(prompt, /CLI-900/);
-  assert.match(prompt, /isolated git worktree at \/wt\/x/);
-  assert.match(prompt, /NEVER push/);
+  assert.match(prompt, /its own git worktree at \/wt\/x/);
+  assert.match(prompt, /Do not push and do not create branches; the conductor lands your commit\./);
+  assert.doesNotMatch(prompt, /atris worktree ship/);
   assert.match(prompt, /Done criteria: widget renders once/);
   assert.match(prompt, /atris\/MAP\.md first/);
   assert.match(prompt, /atris worktree guard/);
@@ -81,9 +82,11 @@ test('buildFleetPrompt yolo asks the engine to land itself', () => {
   assert.match(prompt, /atris worktree guard/);
   assert.match(prompt, /atris\/MAP\.md first/);
   assert.match(prompt, /plain-English message/);
-  assert.match(prompt, /atris worktree ship --message "<msg>" --verify "npm run test:fast && node --test <focused files>" --merge/);
+  assert.match(prompt, /atris worktree ship --message "Fix the widget so operators stop retyping \(CLI-900\)" --verify 'focused node --test test\/widget\.test\.js\.' --merge/);
+  assert.match(prompt, /That ship command is the only push allowed/);
   assert.match(prompt, /never resolve conflicts yourself/);
-  assert.doesNotMatch(prompt, /Do not push\. Do not create branches\./);
+  assert.doesNotMatch(prompt, /Do not push/);
+  assert.doesNotMatch(prompt, /NEVER push/);
 });
 
 test('METHOD_KERNEL is exported and fully present in the prompt', () => {

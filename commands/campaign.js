@@ -13,6 +13,7 @@ const { readFlag } = require('../lib/arg-parser');
 const { CAMPAIGN_ID, isHumanActor, validateCampaign } = require('../lib/campaign-schema');
 const { decide } = require('../lib/campaign-core');
 const { getCampaign, listCampaigns, newCampaignId, openCampaignStore } = require('../lib/campaign-store');
+const { judgeRanData, judgeReading, outputTail } = require('../lib/campaign-reading');
 const { cloudLink, sendPersonAction, syncCampaign } = require('../lib/campaign-sync');
 
 const JUDGE_TIMEOUT_SECONDS = 15 * 60;
@@ -39,6 +40,7 @@ function printHelp() {
   console.log('        add --work 50m --break 10m [--rounds N] to work in rounds; each break judges and writes lessons the next round plans from');
   console.log('  atris campaign step <id>               one step of that loop');
   console.log('  atris campaign propose <id> [--count 3]   ask the owner\'s engine for the next missions');
+  console.log('  atris campaign export <id> --trace [--out <file.jsonl>] [--full]   one row per mission for learning; redacted unless --full');
   console.log('  atris campaign sync <id>               trade events with the Atris cloud so web and iOS show it');
   console.log('        start --cloud syncs at once; run syncs before and after every step of a synced campaign');
   console.log('');
@@ -158,7 +160,7 @@ function runJudgeCommand(command, cwd, timeoutSeconds) {
       clearTimeout(timer);
       const seconds = Math.round((Date.now() - started) / 1000);
       if (timedOut) return resolve({ passed: false, exit: null, summary: `timed out after ${timeoutSeconds}s`, seconds });
-      resolve({ passed: code === 0, exit: code, summary: judgeSummary(output), seconds });
+      resolve({ passed: code === 0, exit: code, summary: judgeSummary(output), seconds, reading: judgeReading(output), output_tail: outputTail(output) });
     });
   });
 }
@@ -286,7 +288,7 @@ async function cmdStart(args, ctx) {
   ctx.append(id, 'campaign_started', startData);
   if (bet && wrongIf) ctx.append(id, 'bet_set', { bet, wrong_if: wrongIf });
   if (parent) ctx.append(id, 'attached', { parent_id: parent });
-  ctx.append(id, 'judge_ran', { passed: reading.passed, summary: reading.summary || `exit ${reading.exit}`, seconds: reading.seconds }, 'judge');
+  ctx.append(id, 'judge_ran', judgeRanData(reading), 'judge');
 
   let cloud = null;
   if (args.includes('--cloud')) {
@@ -357,7 +359,7 @@ async function cmdJudge(args, ctx) {
   const timeout = Number(readFlag(args, '--timeout', '')) || JUDGE_TIMEOUT_SECONDS;
   if (!ctx.asJson) console.error(`running the judge: ${view.judge}`);
   const reading = await ctx.judge(view.judge, timeout);
-  ctx.append(view.id, 'judge_ran', { passed: reading.passed, summary: reading.summary || `exit ${reading.exit}`, seconds: reading.seconds }, 'judge');
+  ctx.append(view.id, 'judge_ran', judgeRanData(reading), 'judge');
   const after = getCampaign(ctx.store, view.id);
   const verdict = reading.passed ? 'passed' : 'failed';
   ctx.out(`judge ${verdict} in ${reading.seconds}s: ${reading.summary || `exit ${reading.exit}`}\n${renderShow(after)}`,
@@ -539,6 +541,7 @@ const VERBS = {
   run: (args, ctx) => cmdLoop(args, ctx, 'run'),
   step: (args, ctx) => cmdLoop(args, ctx, 'step'),
   propose: (args, ctx) => cmdLoop(args, ctx, 'propose'),
+  export: (args, ctx) => require('../lib/campaign-trace').exportTrace(args, ctx),
 };
 
 function campaignCommand(args = [], deps = {}) {
