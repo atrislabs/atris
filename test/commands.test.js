@@ -10726,52 +10726,42 @@ test('task current-step advances the scoped current task one safe action', () =>
     fs.mkdirSync(path.join(dir, 'atris'), { recursive: true });
     // Side tasks are created and claimed straight in the task store; every
     // current-step call still runs through the CLI.
-    const workspaceRoot = taskStore.workspaceRoot(dir);
-    const seedClaimedTask = ({ title, tag, goalId, owner }) => {
+    // Each setup phase runs on one connection, closed before the CLI runs.
+    const withStore = (fn) => {
       const db = taskStore.open(dbPath);
       try {
-        const metadata = goalId ? { goal_id: goalId } : null;
-        const { id } = addSeedTask(db, { title, tag, workspaceRoot, metadata });
-        assert.equal(taskStore.claimTask(db, { id, claimedBy: owner }).claimed, true);
-        return { id, display_id: taskStore.taskDisplayRefMap(taskStore.listTasks(db, { workspaceRoot })).get(id) };
+        return fn(db);
       } finally {
         taskStore.close();
       }
+    };
+    const workspaceRoot = taskStore.workspaceRoot(dir);
+    const seedClaimedTask = (db, { title, tag, goalId, owner }) => {
+      const metadata = goalId ? { goal_id: goalId } : null;
+      const { id } = addSeedTask(db, { title, tag, workspaceRoot, metadata });
+      assert.equal(taskStore.claimTask(db, { id, claimedBy: owner }).claimed, true);
+      return { id, display_id: taskStore.taskDisplayRefMap(taskStore.listTasks(db, { workspaceRoot })).get(id) };
     };
     // Side tasks only need a review state for current-step to pick from, so
     // ready and review go straight to the store; the scoped task still moves
     // through ready and review-chat via the CLI.
-    const storeReady = (id, actor, proof) => {
-      const db = taskStore.open(dbPath);
-      try {
-        assert.equal(taskStore.readyTask(db, { id, actor, proof }).ready, true);
-      } finally {
-        taskStore.close();
-      }
+    const storeReady = (db, id, actor, proof) => {
+      assert.equal(taskStore.readyTask(db, { id, actor, proof }).ready, true);
     };
-    const storeReview = (id, proof, nextTask) => {
-      const db = taskStore.open(dbPath);
-      try {
-        assert.equal(taskStore.reviewTask(db, { id, actor: 'codex-review', reward: 0, proof, nextTask }).reviewed, true);
-      } finally {
-        taskStore.close();
-      }
+    const storeReview = (db, id, proof, nextTask) => {
+      assert.equal(taskStore.reviewTask(db, { id, actor: 'codex-review', reward: 0, proof, nextTask }).reviewed, true);
     };
     // Show is the store projection plus enrichment, so untouched-task checks
     // read it in-process; the scoped show below still runs the CLI and
     // proves the two reads agree.
     const { enrichTaskProjection } = require('../commands/task');
-    const showTask = (id) => {
-      const db = taskStore.open(dbPath);
-      try {
-        return enrichTaskProjection(taskStore.taskProjection(db, { taskId: id })).tasks[0];
-      } finally {
-        taskStore.close();
-      }
-    };
+    const showTask = (id) => withStore((db) => enrichTaskProjection(taskStore.taskProjection(db, { taskId: id })).tasks[0]);
 
-    const reviewTask = seedClaimedTask({ title: 'Unrelated review debt stays global', tag: 'agent', owner: 'codex' });
-    storeReady(reviewTask.id, 'codex', 'node --check test/commands.test.js passed for unrelated review debt');
+    const reviewTask = withStore((db) => {
+      const seeded = seedClaimedTask(db, { title: 'Unrelated review debt stays global', tag: 'agent', owner: 'codex' });
+      storeReady(db, seeded.id, 'codex', 'node --check test/commands.test.js passed for unrelated review debt');
+      return seeded;
+    });
 
     const scopedAdd = runCli([
       'task', 'add', 'Scoped current step task',
@@ -10875,13 +10865,16 @@ test('task current-step advances the scoped current task one safe action', () =>
     assert.equal(scopedInProcess.review.approval_status, scopedDetail.review.approval_status);
     assert.deepEqual(scopedInProcess.messages, scopedDetail.messages);
 
-    const continueTask = seedClaimedTask({ title: 'Current-step certified continuation parent', tag: 'task', goalId: 'OBL-931', owner: 'codex' });
-    storeReady(continueTask.id, 'codex', 'node --check test/commands.test.js passed before current-step continue-work');
-    storeReview(continueTask.id, 'node --test test/commands.test.js passed during current-step continue-work review', 'Current-step continuation child');
+    const { continueTask, waitingTask } = withStore((db) => {
+      const continued = seedClaimedTask(db, { title: 'Current-step certified continuation parent', tag: 'task', goalId: 'OBL-931', owner: 'codex' });
+      storeReady(db, continued.id, 'codex', 'node --check test/commands.test.js passed before current-step continue-work');
+      storeReview(db, continued.id, 'node --test test/commands.test.js passed during current-step continue-work review', 'Current-step continuation child');
 
-    const waitingTask = seedClaimedTask({ title: 'Current-step waits for human accept only', tag: 'task', goalId: 'OBL-931', owner: 'codex' });
-    storeReady(waitingTask.id, 'codex', 'node --check test/commands.test.js passed before current-step human wait');
-    storeReview(waitingTask.id, 'node --test test/commands.test.js passed during current-step human wait review');
+      const waiting = seedClaimedTask(db, { title: 'Current-step waits for human accept only', tag: 'task', goalId: 'OBL-931', owner: 'codex' });
+      storeReady(db, waiting.id, 'codex', 'node --check test/commands.test.js passed before current-step human wait');
+      storeReview(db, waiting.id, 'node --test test/commands.test.js passed during current-step human wait review');
+      return { continueTask: continued, waitingTask: waiting };
+    });
 
     const continueStep = runCli([
       'task', 'current-step',
@@ -10933,7 +10926,7 @@ test('task current-step advances the scoped current task one safe action', () =>
     assert.equal(waitingDetail.status, 'review');
     assert.equal(waitingDetail.review.approval_status, 'pending');
 
-    const otherTask = seedClaimedTask({ title: 'Other owner scoped task stays untouched', tag: 'task', goalId: 'OBL-929', owner: 'other-agent' });
+    const otherTask = withStore((db) => seedClaimedTask(db, { title: 'Other owner scoped task stays untouched', tag: 'task', goalId: 'OBL-929', owner: 'other-agent' }));
     const otherStep = runCli([
       'task', 'current-step',
       '--goal-id', 'OBL-929',
@@ -10954,8 +10947,11 @@ test('task current-step advances the scoped current task one safe action', () =>
     assert.equal(otherDetail.status, 'claimed');
     assert.equal(otherDetail.claimed_by, 'other-agent');
 
-    const otherReviewTask = seedClaimedTask({ title: 'Other owner review task stays untouched', tag: 'task', goalId: 'OBL-930', owner: 'other-agent' });
-    storeReady(otherReviewTask.id, 'other-agent', 'node --check test/commands.test.js passed before other owner review');
+    const otherReviewTask = withStore((db) => {
+      const seeded = seedClaimedTask(db, { title: 'Other owner review task stays untouched', tag: 'task', goalId: 'OBL-930', owner: 'other-agent' });
+      storeReady(db, seeded.id, 'other-agent', 'node --check test/commands.test.js passed before other owner review');
+      return seeded;
+    });
     const otherReviewStep = runCli([
       'task', 'current-step',
       '--goal-id', 'OBL-930',
