@@ -300,6 +300,45 @@ test('boot reads the task list once for the todo buckets and the status glance',
   }
 });
 
+test('status glance counts every unfinished task past the 500 row read', (t) => {
+  const base = fs.mkdtempSync(path.join(os.tmpdir(), 'atris-glance-many-'));
+  const repo = path.join(base, 'repo');
+  fs.mkdirSync(path.join(repo, 'atris'), { recursive: true });
+  const previous = process.env.ATRIS_TASKS_DB;
+  process.env.ATRIS_TASKS_DB = path.join(base, 'tasks.db');
+  const taskDb = require('../lib/task-db');
+  taskDb.close();
+  t.after(() => {
+    taskDb.close();
+    if (previous === undefined) delete process.env.ATRIS_TASKS_DB;
+    else process.env.ATRIS_TASKS_DB = previous;
+    fs.rmSync(base, { recursive: true, force: true });
+  });
+  const db = taskDb.open();
+  const workspaceRoot = taskDb.workspaceRoot(repo);
+  const seed = (status, n, metadata) => {
+    for (let i = 0; i < n; i++) {
+      taskDb.addTask(db, { title: `${status} task ${i}`, status, claimedBy: 'builder', workspaceRoot, metadata });
+    }
+  };
+  // 520 unfinished rows, with the claimed and certified review rows sorted
+  // past the 500 row cap, plus finished rows that must not count.
+  seed('open', 495);
+  seed('claimed', 7);
+  seed('review', 10);
+  seed('review', 8, { agent_certified: true });
+  seed('done', 30);
+  const { getTaskGlance } = require('../lib/state-detection');
+  const glance = getTaskGlance(path.join(repo, 'atris'));
+  assert.equal(glance.backlog, 495);
+  assert.equal(glance.active, 7);
+  assert.equal(glance.review, 18);
+  assert.equal(glance.reviewCertified, 8);
+  assert.equal(glance.backlog + glance.active + glance.review, 520);
+  assert.equal(glance.activeTitles.length, 3);
+  assert.equal(glance.certifiedTitles.length, 3);
+});
+
 test('stream reads worktree owner and task with one git config call per root', () => {
   const stream = require('../commands/stream');
   const calls = [];
