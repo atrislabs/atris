@@ -1,5 +1,7 @@
 # MAP.md: atris-cli navigation
 
+Remote default rename proof: `test/member-tidy.test.js:149` runs real preview and apply after the remote renames its default and deletes the old branch. Stale local default and tracking refs remain; staged notes, later edits, drafts, branch and registration survive while only a clean neighbor is removed.
+
 Unrelated upstream cleanup proof: `test/member-tidy.test.js:928` runs real preview and apply after the remote switches to unrelated history. Staged notes, later edits, drafts, branch and registration survive; only a clean copy on the new history is removed.
 
 Missing-branch cleanup proof: `test/member-tidy.test.js:775` runs real preview and cleanup after a branch disappears, preserving the folder, draft and registration while removing a clean neighbor.

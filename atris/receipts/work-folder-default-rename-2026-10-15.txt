@@ -1,0 +1,28 @@
+Cleanup has a real CLI regression proving notes survive a remote default branch rename and deletion of the old branch.
+Files: test/member-tidy.test.js, atris/MAP.md, atris/refs/MAP-NOTES.md, atris/team/architect/logs/2026-10-15.md, this receipt.
+Verify: node --test test/worktree-removal-guard.test.js test/member-tidy.test.js && node bin/atris.js slop --staged
+Actual CLI commands exercised: node bin/atris.js member tidy --dir <disposable copies> --dry-run; node bin/atris.js member tidy --dir <disposable copies>.
+Assertions preserve the stale local default and tracking refs, staged patch and contents, later edits, drafts, HEAD, branch and registration. The clean neighbor must be removed, and only its removal is logged.
+next_push: Prove cleanup retains all notes when the remote default points to a missing branch.
+Progress: extended one existing regression; 78 passed, zero failed, cancelled, skipped or pending. Combined verify exit: 0.
+Actual output excerpt:
+command: node bin/atris.js member tidy --dir <fixture copies> --dry-run (renamed remote default)
+would remove  landed-clean  work landed
+left alone  1 work not landed yet
+tidy: would remove 1, kept 1, of 2 copies in /private/var/folders/t1/2_4kmb5n4c71dxm26zc8dgzr0000gn/T/atris-member-tidy-4fMwVW/arena/.agent-worktrees/repo
+exit: 0
+command: node bin/atris.js member tidy --dir <fixture copies> (renamed remote default)
+removed  landed-clean  work landed, branch deleted
+left alone  1 work not landed yet
+tidy: removed 1, kept 1, of 2 copies in /private/var/folders/t1/2_4kmb5n4c71dxm26zc8dgzr0000gn/T/atris-member-tidy-4fMwVW/arena/.agent-worktrees/repo
+exit: 0
+ℹ tests 78
+ℹ pass 78
+ℹ fail 0
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+  ✓ clean, no slop tells in 5 files
+Setup notes: mission task attachment could not acquire an existing lock; a separate bounded task records this increment. Brain activation and compile returned plan-only exit 2 without writes. Existing rendered TODO changes were not staged.
+Review recording: the task recorder reran the same checks with the supported Node directory prepended to PATH, exit 0. Task is ready for review, not accepted. Proof: atris/runs/2026-10-15-task-acw-16-2026-10-15T08-01-20-032Z.json.
+layer: behaviors

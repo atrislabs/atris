@@ -2444,3 +2444,5 @@ Missing-branch cleanup proof: `test/member-tidy.test.js:775` runs real preview a
 Upstream rewind cleanup proof: `test/member-tidy.test.js:811` runs real preview and apply after a disposable remote moves backward. It preserves staged contents, later edits, drafts, branch and registration while removing only a clean neighbor. Proof: `atris/receipts/work-folder-upstream-rewind-2026-10-15.txt`.
 
 Unrelated upstream cleanup proof: `test/member-tidy.test.js:928` runs real preview and apply after the remote switches to unrelated history. Staged notes, later edits, drafts, branch and registration survive; only a clean copy on the new history is removed.
+
+Remote default rename proof: `test/member-tidy.test.js:149` runs real preview and apply after the remote renames its default and deletes the old branch. Stale local default and tracking refs remain; staged notes, later edits, drafts, branch and registration survive while only a clean neighbor is removed.

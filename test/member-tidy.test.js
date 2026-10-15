@@ -144,23 +144,60 @@ test('tidy removes landed clean copies and leaves everything else to git and the
   }
 });
 
-// Origin switched its default branch, but the local origin/HEAD note still
-// points at the old one. Work that only lives on the old branch is not landed.
-test('tidy asks origin for its current default branch instead of the stale local note', () => {
+// Keep the local default note stale while the remote renames its default
+// and removes the old branch. Only the current default decides what landed.
+test('tidy keeps staged and unsaved notes after the remote default branch is renamed', () => {
   const fx = makeFixture();
   try {
     const remote = path.join(fx.base, 'remote.git');
+    const clean = addCopy(fx, 'landed-clean');
+    const base = runGit(['rev-parse', 'HEAD'], clean);
     runGit(['push', '-q', remote, 'master:main'], path.join(fx.base, 'seed'));
-    const oldOnly = addCopy(fx, 'old-default-only', { commit: true, pushToOrigin: true });
+    const kept = addCopy(fx, 'old-default-only', { commit: true, pushToOrigin: true });
+    const tip = runGit(['rev-parse', 'HEAD'], kept);
+    runGit(['fetch', '-q', 'origin'], fx.repo);
+    assert.equal(runGit(['rev-parse', 'origin/master'], fx.repo), tip);
+    fs.writeFileSync(path.join(kept, 'draft.txt'), 'unsaved notes\n');
+    fs.appendFileSync(path.join(kept, 'README.md'), 'unsaved edits\n');
+    fs.writeFileSync(path.join(kept, 'staged.txt'), 'prepared notes\n');
+    runGit(['add', 'staged.txt'], kept);
+    fs.appendFileSync(path.join(kept, 'staged.txt'), 'later edits\n');
+    const status = runGit(['status', '--porcelain'], kept);
+    const patch = runGit(['diff', '--cached', '--binary'], kept);
+    assert.match(status, /AM staged.txt/);
     runGit(['symbolic-ref', 'HEAD', 'refs/heads/main'], remote);
-    assert.equal(runGit(['symbolic-ref', 'refs/remotes/origin/HEAD'], fx.repo), 'refs/remotes/origin/master');
+    runGit(['push', '-q', 'origin', '--delete', 'master'], fx.repo);
+    // Recreate the stale tracking ref that another client may still have.
+    runGit(['update-ref', 'refs/remotes/origin/master', tip], fx.repo);
+    assert.equal(branchExists(remote, 'master'), false);
 
-    const result = tidyMemberCopies({ repoRoot: fx.repo });
-    assert.equal(result.aborted, null);
-    assert.equal(byName(result, 'old-default-only').action, 'kept');
-    assert.match(byName(result, 'old-default-only').reason, /work not landed yet/);
-    assert.ok(fs.existsSync(path.join(oldOnly, 'old-default-only.txt')));
-    assert.ok(branchExists(fx.repo, 'old-default-only'));
+    for (const extra of [['--dry-run'], []]) {
+      const args = [path.resolve(__dirname, '../bin/atris.js'), 'member', 'tidy', '--dir', fx.copies, ...extra];
+      const cli = spawnSync(process.execPath, args, { cwd: fx.repo, encoding: 'utf8', timeout: 15000 });
+      console.log(`command: node bin/atris.js member tidy --dir <fixture copies>${extra.length ? ' --dry-run' : ''} (renamed remote default)`);
+      console.log(cli.stdout.trim());
+      console.log(`exit: ${cli.status}`);
+      assert.equal(cli.status, 0, cli.stderr);
+      const lines = cli.stdout.trim().split('\n').map((line) => line.replace(/ {2,}/g, '  '));
+      assert.ok(lines.includes('left alone  1 work not landed yet'), lines.join('\n'));
+      assert.ok(lines.some((line) => line.startsWith(`${extra.length ? 'would remove' : 'removed'}  landed-clean  work landed`)));
+      assert.equal(lines.at(-1), `tidy: ${extra.length ? 'would remove' : 'removed'} 1, kept 1, of 2 copies in ${fx.copies}`);
+      assert.equal(runGit(['rev-parse', 'FETCH_HEAD'], fx.repo), base);
+      assert.equal(runGit(['symbolic-ref', 'refs/remotes/origin/HEAD'], fx.repo), 'refs/remotes/origin/master');
+      assert.equal(runGit(['rev-parse', 'origin/master'], fx.repo), tip);
+      assert.equal(runGit(['rev-parse', 'HEAD'], kept), tip);
+      assert.equal(fs.readFileSync(path.join(kept, 'old-default-only.txt'), 'utf8'), 'work\n');
+      assert.equal(fs.readFileSync(path.join(kept, 'draft.txt'), 'utf8'), 'unsaved notes\n');
+      assert.equal(fs.readFileSync(path.join(kept, 'README.md'), 'utf8'), '# fixture\nunsaved edits\n');
+      assert.equal(fs.readFileSync(path.join(kept, 'staged.txt'), 'utf8'), 'prepared notes\nlater edits\n');
+      assert.equal(runGit(['show', ':staged.txt'], kept), 'prepared notes');
+      assert.equal(runGit(['diff', '--cached', '--binary'], kept), patch);
+      assert.equal(runGit(['status', '--porcelain'], kept), status);
+      assert.ok(branchExists(fx.repo, 'old-default-only'));
+      assert.ok(runGit(['worktree', 'list', '--porcelain'], fx.repo).includes(`worktree ${kept}\n`));
+      assert.deepEqual(removalLines(fx.repo).map((line) => line.path), extra.length ? [] : [clean]);
+    }
+    assert.equal(fs.existsSync(clean), false);
   } finally {
     fs.rmSync(fx.base, { recursive: true, force: true });
   }
