@@ -1053,6 +1053,7 @@ test('fix joins two full clauses with a semicolon, not a comma splice', () => {
     // "these" and "those" before a common plain verb are a subject too; a
     // word in "s" after the verb, "those work items", makes it a noun
     'It skips live streaming \u2014 those stay open questions for v2.',
+    'Keep the protected lanes (money, outward \u2014 these always wait for review).',
     'We kept two builds \u2014 those work items stay.',
     'Then \u2014 it stops.',
     'Use `PUT` \u2014 that is for updates.',
@@ -1074,6 +1075,7 @@ test('fix joins two full clauses with a semicolon, not a comma splice', () => {
     'See the banner; this no longer applies after T34.',
     'We fixed the gap, this series of fixes.',
     'It skips live streaming; those stay open questions for v2.',
+    'Keep the protected lanes (money, outward; these always wait for review).',
     'We kept two builds, those work items stay.',
     'Then, it stops.',
     'Use `PUT`; that is for updates.',
