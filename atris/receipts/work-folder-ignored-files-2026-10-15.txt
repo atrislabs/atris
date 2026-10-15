@@ -86,3 +86,20 @@ Paths that delete ignored files in a finished copy:
 
 next_push: once a reply lands, put the chosen rule in one shared check that
 all three paths call, with one failing-first test per path.
+
+Addendum, tick 52: autopilot's regression check is outside this loss.
+
+commands/autopilot.js:1237 creates a fresh folder at a past commit, runs that
+commit's check inside it, and commands/autopilot.js:1262 force-removes it only
+when this same run created it and no run or git hold is inside. Any ignored
+files there were written by the check moments earlier, not by a person, so
+nothing of value is lost. Failed creation never removes an existing folder.
+
+Map across the four mission files:
+- commands/worktree.js cleanup: loses ignored files (reproduced)
+- lib/member-tidy.js: loses ignored files and the branch (reproduced)
+- commands/land.js reap: loses ignored files (read from code)
+- commands/autopilot.js regression check: safe, removes only its own new folder
+
+next_push: once a reply lands, put the chosen rule in one shared check that
+cleanup, member tidy, and land reap call, with one failing-first test per path.
