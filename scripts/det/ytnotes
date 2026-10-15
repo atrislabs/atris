@@ -551,10 +551,12 @@ run_grok() {
 # login, unlike --bare. Under an agent or a pipe that never closes, claude
 # waits 3s for stdin before it starts; </dev/null skips that wait. Skipping
 # the update check and telemetry calls takes startup from about 2.8s to 2.0s.
+# Low effort took Haiku from about 15.7s to 12.7s on a 21-minute video (four
+# paired runs, quotes still checked), so low is the default, like Gemini's.
 run_haiku() {
   CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC=1 \
   run_with_timeout 240 claude -p "$PROMPT" --model "${1:-claude-haiku-5-5}" \
-    --tools "" --strict-mcp-config --setting-sources "" \
+    --effort "${2:-low}" --tools "" --strict-mcp-config --setting-sources "" \
     --no-session-persistence --disable-slash-commands </dev/null
 }
 
@@ -615,7 +617,7 @@ run_writer() {
   local model="${2:-}"
   case "$1" in
     agy) AGY_READY=1 run_gemini "$model" "${3:-}" ;;
-    claude) run_haiku "$model" ;;
+    claude) run_haiku "$model" "${3:-}" ;;
     codex) run_with_timeout 240 codex exec ${model:+-m "$model"} --sandbox read-only --skip-git-repo-check "$PROMPT" </dev/null ;;
     cursor-agent) run_with_timeout 240 cursor-agent --trust ${model:+--model "$model"} -p "$PROMPT" ;;
   esac
