@@ -60,7 +60,7 @@ Dead numbers \u2014 the machine filters all of that out.
 We kept the memory \u2014 the fix inlines a sync per emission.
 => We kept the memory; the fix inlines a sync per emission.
 Smoke test \u2014 the phone calls the user.
-=> Smoke test; the phone calls the user.
+=> Smoke test: the phone calls the user.
 Inside the template \u2014 the system prompts that every app inherits.
 => Inside the template, the system prompts that every app inherits.
 All closed \u2014 the three ways a first run could waste itself.
@@ -98,7 +98,7 @@ One trick \u2014 the test cases across repos.
 # words or a number before a stop or comma is a clause; a longer name
 # with no verb keeps the phrase
 Local search first \u2014 the post claims 99% token reduction.
-=> Local search first; the post claims 99% token reduction.
+=> Local search first: the post claims 99% token reduction.
 Reverse the curve \u2014 the scorer tracks signal quality, not order or noise.
 => Reverse the curve; the scorer tracks signal quality, not order or noise.
 Same as before \u2014 the feature flags service config.
@@ -201,4 +201,10 @@ No direct calls beyond the list \u2014 the dashboard component drives everything
 => "Describe who you need; the orchestrator drafts it"
 # a two-word label before the dash is no clause, so a colon reads better
 LLM psychosis \u2014 every AI validates you, agrees with you.
-~> LLM psychosis: every AI validates you, agrees with you.
+=> LLM psychosis: every AI validates you, agrees with you.
+# but a colon at the end of the same sentence would stack, so it stays
+Joint pool \u2014 the whole story is in three rows:
+=> Joint pool; the whole story is in three rows:
+# and words after a list label's own colon open no line
+- `list_runs()` \u2014 line 134 \u2014 the runs come back newest first.
+=> - `list_runs()`: line 134; the runs come back newest first.

@@ -2366,7 +2366,8 @@ test('fix joins "the", a noun, a verb in s and a place word as a clause after a 
 test('fix joins "the", a noun, a verb in s and a bare object of plain words after a dash', () => {
   // from real repo text: "the post claims 99% token reduction" spliced,
   // since a bare object of more than one word fit no object shape. A
-  // longer name with no verb keeps the phrase.
+  // longer name with no verb keeps the phrase. A short topic with no verb
+  // of its own before the dash takes a colon.
   const file = tmpFile('the-bare-phrase-clause.md', [
     'Local search first \u2014 the post claims 99% token reduction.',
     'Off-topic noise \u2014 the proxy flatters bad behavior most.',
@@ -2374,8 +2375,8 @@ test('fix joins "the", a noun, a verb in s and a bare object of plain words afte
   ].join('\n'));
   const { changes } = applyFixes([file], RULES);
   assert.deepEqual(changes.map((c) => c.after), [
-    'Local search first; the post claims 99% token reduction.',
-    'Off-topic noise; the proxy flatters bad behavior most.',
+    'Local search first: the post claims 99% token reduction.',
+    'Off-topic noise: the proxy flatters bad behavior most.',
     'Same as before, the feature flags service config.',
   ]);
 });
@@ -2449,6 +2450,28 @@ test('fix reads a pronoun or a code name with a place word after it as the objec
     'Enforced at sandbox level; the subprocess restricts `__import__` to only these modules.',
     'No direct calls beyond the list; the dashboard component drives everything else.',
     '"Describe who you need; the orchestrator drafts it"',
+  ]);
+});
+
+test('fix gives a colon after a short verbless topic that opens its line', () => {
+  // from real repo text: "LLM psychosis" before a dash names the topic the
+  // clause explains, so it took a semicolon where a colon reads right. A
+  // sentence that ends on its own colon, words after a list label's colon,
+  // and a command keep the semicolon.
+  const file = tmpFile('topic-label.md', [
+    'LLM psychosis \u2014 every AI validates you, agrees with you.',
+    'Zip bomb DoS \u2014 the compressed request can exhaust memory.',
+    'Joint pool \u2014 the whole story is in three rows:',
+    '- `list_runs()` \u2014 line 134 \u2014 the runs come back newest first.',
+    'Never run git \u2014 the orchestrator lands your work.',
+  ].join('\n'));
+  const { changes } = applyFixes([file], RULES);
+  assert.deepEqual(changes.map((c) => c.after), [
+    'LLM psychosis: every AI validates you, agrees with you.',
+    'Zip bomb DoS: the compressed request can exhaust memory.',
+    'Joint pool; the whole story is in three rows:',
+    '- `list_runs()`: line 134; the runs come back newest first.',
+    'Never run git; the orchestrator lands your work.',
   ]);
 });
 

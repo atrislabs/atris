@@ -570,6 +570,7 @@ const SUBJECTLESS_CLAUSE_AFTER_DASH = new RegExp(`(?<=[\\w)\\]%\\uE001])\\s*\\u2
 // its left words from up there, so it keeps the colon, and so does a name
 // after a semicolon: "Post-merge review: clean; one gap: web never sent".
 function clauseJoin(left, at, whole) {
+  if (whole !== undefined && topicLabel(left, at, whole)) return ': ';
   const mark = openerJoin(left);
   if (mark !== ': ' || whole === undefined || /;\s/.test(left)) return mark;
   const before = whole.slice(0, at).trimEnd();
@@ -586,11 +587,38 @@ function openerJoin(left) {
   // after the first in "ed" or "s" is a verb, so "production delivered 72"
   // is a clause, and a bracket means the semicolon sat inside it.
   const parts = opener.split(/;\s/);
-  if (parts.length > 1 && !/[()]/.test(parts[parts.length - 1])) {
-    const words = parts[parts.length - 1].replace(/[*_`]/g, '').trim().split(/\s+/);
-    if (words[0] && words.length <= 3 && !words.slice(1).some((w) => /(?:ed|[^s]s)$/.test(w)) && !words.some((w) => /^(?:it|this|that|these|those|we|they|you|he|she|I|there|is|are|was|were|will|would|can|could|must|should|has|have|had|does|did|do|not|no)$/i.test(w))) return ': ';
-  }
+  if (parts.length > 1 && !/[()]/.test(parts[parts.length - 1]) && verblessLabel(parts[parts.length - 1])) return ': ';
   return /^(?:"[^"]+"|\u201c[^\u201c\u201d]+\u201d)$/.test(opener) ? ': ' : '; ';
+}
+
+// Two or three such words that open their line and are the whole sentence
+// name its topic, so the clause after the dash takes a colon: "LLM
+// psychosis: every AI validates you". A wrapped line, an opener ("Then the")
+// and a bracket keep the semicolon, and so does a sentence that ends on a
+// colon of its own, since two colons would stack: "Joint pool; the whole
+// story is in three rows:". "the", "by", "out", "them" or "still" after the
+// first word, a lead "never" or "be", a "n't", or a code span or link
+// makes a command or a phrase around a verb, so "Open the panel; the page
+// is gone", "Never run git; the orchestrator lands it" and "Run `atris slop
+// detect`; it reports" keep the semicolon too. A topic opens with a capital
+// and no "the" or plural: a lowercase line may carry on the one above, and
+// "The gate held" or "Backgrounds set mood" hold a verb no word check sees.
+function topicLabel(left, at, whole) {
+  if (lineAbove || lineMid || /[()[\]`\uE000]|n't\b/.test(left) || OPENER_WORD.test(left)) return false;
+  if (!/^[\W_]*[A-Z]/.test(left) || /^\W*(?:the|a|an|never|always|be|don't|do|please|just)\b/i.test(left) || /^\W*[A-Za-z]+[^s]s\s/.test(left)) return false;
+  if (/\s(?:the|a|an|my|your|our|their|its|his|her|them|me|us|him|by|to|of|in|on|at|for|with|from|into|out|up|down|off|back|away|over|still|now|already|just|also)\b/i.test(left)) return false;
+  if (/:(?:\s|$)/.test(whole.slice(at).split(/[.!?](?:\s|$)/)[0])) return false;
+  const line = whole.slice(0, at).split('\n').pop().replace(/^(?:\s*(?:[-*+>#]|\d+[.)]|\*\*|__))*\s*/, '').trim();
+  return line === left && left.split(/\s+/).length >= 2 && verblessLabel(left);
+}
+
+// Up to three words with no verb or subject of their own. A word after the
+// first in "ed" or "s" is a verb, but "-sis", "-ness" and "-ss" end nouns.
+function verblessLabel(text) {
+  const words = text.replace(/[*_`"\u201c\u201d]/g, '').trim().split(/\s+/);
+  return Boolean(words[0]) && words.length <= 3
+    && !words.slice(1).some((w) => /(?:ed|[^s]s)$/.test(w) && !/(?:sis|ness)$/i.test(w))
+    && !words.some((w) => /^(?:it|this|that|these|those|we|they|you|he|she|I|there|is|are|was|were|will|would|can|could|must|should|has|have|had|does|did|do|not|no)$/i.test(w));
 }
 
 // The words before the dash in the same sentence, when they can be a clause:
@@ -724,9 +752,23 @@ const ARROW_CHAIN_DASH = new RegExp(`(?<=(?:${ARROW.source}).*)\\u2014(?=.*(?:${
 // The line above, when this line carries on its sentence, set for each
 // fixEmDash call so clauseLeft can count the words it holds.
 let lineAbove = '';
+// Set while fixing the words after a label, a field or a greeting that
+// already stand before them on the line, so a short topic there is no
+// topic of the whole line.
+let lineMid = false;
 
-function fixEmDash(s, { endsBlock = false, startsBlock = false, spans = [], above = '' } = {}) {
+// Fixes the words after a label, a field or a greeting, which never open
+// their line, and puts the line's own flag back for the caller.
+function fixAfterLabel(text, opts = {}) {
+  const mid = lineMid;
+  const out = fixEmDash(text, { ...opts, midLine: true });
+  lineMid = mid;
+  return out;
+}
+
+function fixEmDash(s, { endsBlock = false, startsBlock = false, spans = [], above = '', midLine = false } = {}) {
   lineAbove = above;
+  lineMid = midLine;
   // a dash between a file reference and the code it points at reads "is",
   // so it takes a colon even past a label colon: "`lib/a.js:12`: `runTick`",
   // which is also what the map healer reads the name from
@@ -841,7 +883,7 @@ function fixEmDash(s, { endsBlock = false, startsBlock = false, spans = [], abov
   const greeting = GREETING_DASH.exec(s);
   if (greeting) {
     const rest = s.slice(greeting[0].length);
-    return `${greeting[1].replace(/,$/, '')},${rest ? ` ${fixEmDash(rest, { endsBlock })}` : ''}`;
+    return `${greeting[1].replace(/,$/, '')},${rest ? ` ${fixAfterLabel(rest, { endsBlock })}` : ''}`;
   }
   if (endsBlock) s = s.replace(/([.,;:!?]?)\s*\u2014\s*$/, (m, p) => p || '.');
   // a bold sentence that is the whole line or the whole list item goes on
@@ -855,7 +897,7 @@ function fixEmDash(s, { endsBlock = false, startsBlock = false, spans = [], abov
   const heading =[HEADING_DASH, BOLD_HEADING_DASH].find((re) => re.test(s) && !insideParens(re.exec(s)[1]));
   if (heading) {
     const m = heading.exec(s);
-    return `${m[1]}: ${fixEmDash(s.slice(m[0].length), { endsBlock })}`;
+    return `${m[1]}: ${fixAfterLabel(s.slice(m[0].length), { endsBlock })}`;
   }
   let label = LIST_LABEL_DASH.exec(s) || LINE_LABEL_DASH.exec(s) || NUMBERED_LABEL_DASH.exec(s);
   if (label && CONTINUES_AFTER_LABEL.test(s.slice(label[0].length))) label = null;
@@ -882,7 +924,7 @@ function fixEmDash(s, { endsBlock = false, startsBlock = false, spans = [], abov
   const fieldThenWords = label && /^((?:\*\*[^*]+[:.!?]\*\*|__[^_]+[:.!?]__)\s+)([^*_`\uE000()]*[^\s*_`\uE001()])$/.exec(label[2]);
   if (fieldThenWords) {
     const body = fieldThenWords[2] + s.slice(label[1].length + label[2].length);
-    const alt = fixEmDash(body, { endsBlock });
+    const alt = fixAfterLabel(body, { endsBlock });
     const paired = (/:(?:\*\*|__)\s*$/.test(fieldThenWords[1]) || (body.match(/\u2014/g) || []).length >= 2) && (alt.match(/\(/g) || []).length > (body.match(/\(/g) || []).length;
     const runsOn = alt.startsWith(`${fieldThenWords[2]} (`) && (alt.match(ASIDE_THEN_HELPER) || []).length > (body.match(ASIDE_THEN_HELPER) || []).length;
     if (paired && (runsOn || fieldThenWords[2].trim().split(/\s+/).length >= 4)) return `${label[1]}${fieldThenWords[1]}${alt}`;
@@ -914,11 +956,11 @@ function fixEmDash(s, { endsBlock = false, startsBlock = false, spans = [], abov
   // value the way the clause rules join it mid-line: "...holds up; the AI
   // never calls it". A list or an explanation after it keeps the colon.
   const field = label && /^[A-Za-z][\w #()-]{0,29}:\s+(\S.*)$/.exec(label[2]);
-  if (field && fixEmDash(`${field[1]} \u2014 ${rest}`).startsWith(`${field[1]}; `)) return `${label[1]}${label[2]}; ${fixEmDash(rest, { endsBlock })}`;
-  if (label) return `${label[1]}${label[2]}${!quoted && /[.,;:!?][*_`"'\u201d\u2019]*$/.test(label[2]) ? '' : ':'}${s.length > label[0].length ? ' ' : ''}${fixEmDash(capitalAfterLabel(label[2], rest, s), { endsBlock })}`;
+  if (field && fixAfterLabel(`${field[1]} \u2014 ${rest}`).startsWith(`${field[1]}; `)) return `${label[1]}${label[2]}; ${fixAfterLabel(rest, { endsBlock })}`;
+  if (label) return `${label[1]}${label[2]}${!quoted && /[.,;:!?][*_`"'\u201d\u2019]*$/.test(label[2]) ? '' : ':'}${s.length > label[0].length ? ' ' : ''}${fixAfterLabel(capitalAfterLabel(label[2], rest, s), { endsBlock })}`;
   const word = startsBlock && WORD_LABEL_DASH.exec(s);
   const term = startsBlock && (TERM_DASH.exec(s) || TITLE_DASH.exec(s) || (word && !OPENER_WORD.test(word[2]) ? word : null));
-  if (term) return `${term[1]}: ${fixEmDash(s.slice(term[0].length), { endsBlock })}`;
+  if (term) return `${term[1]}: ${fixAfterLabel(s.slice(term[0].length), { endsBlock })}`;
   // in a sentence with an odd run of three or more dashes, one before a
   // joining word only continues the sentence, so it takes its comma first and
   // the rest pair: "It works, and the gate (the strict one) still holds".
