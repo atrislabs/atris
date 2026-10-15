@@ -60,10 +60,42 @@ if (process.env.ATRIS_REFUSAL_CALLER_PROBE === '1') {
     }
     const runs = path.join(root, 'atris', 'runs');
     assert.ok(!fs.existsSync(runs) || fs.readdirSync(runs).length === 0);
+    // Real failures must keep their records when pre-launch refusal reporting
+    // is repaired. No injected runner result is used for these controls.
+    const failedCommand = `printf 'ordinary-failure-control\\n'; printf ran > '${sentinel}'; exit 7`;
+    for (const [name, args] of cases) {
+      const before = new Set(fs.existsSync(runs) ? fs.readdirSync(runs) : []);
+      const failedArgs = args.map(arg => arg === command ? failedCommand : arg);
+      const result = run(failedArgs);
+      const output = (result.stdout + result.stderr).trim();
+      assert.equal(result.status, 1, output);
+      assert.equal(fs.readFileSync(sentinel, 'utf8'), 'ran');
+      const created = fs.readdirSync(runs).filter(file => !before.has(file));
+      assert.equal(created.length, 1, output);
+      const receiptPath = path.join('atris', 'runs', created[0]);
+      const receipt = JSON.parse(fs.readFileSync(path.join(root, receiptPath), 'utf8'));
+      assert.equal(receipt.command, failedCommand);
+      assert.equal(receipt.result.passed, false);
+      assert.equal(receipt.result.exit, 7);
+      assert.equal(receipt.result.output, 'ordinary-failure-control');
+      assert.ok(output.includes(receiptPath), output);
+      if (name === 'receipt json') {
+        const json = JSON.parse(result.stdout);
+        assert.equal(json.passed, false);
+        assert.equal(json.exit, 7);
+        assert.equal(json.receipt_path, receiptPath);
+      } else {
+        assert.ok(output.includes('exit 7'), output);
+        assert.ok(output.includes('ordinary-failure-control'), output);
+      }
+      console.log(`${name}: real child exit 7; CLI exit ${result.status}; failed receipt retained`);
+      console.log(output);
+      fs.unlinkSync(sentinel);
+    }
     const listed = run(['task', 'list', '--json']);
     assert.equal(listed.status, 0, listed.stdout + listed.stderr);
     assert.ok(!listed.stdout.includes('"status": "review"'));
-    console.log('three real CLI calls, synthetic refusal; no check ran or receipt was written');
+    console.log('three synthetic refusals ran no check and wrote no receipt; three real failures retained failed receipts');
   } finally {
     // Only this invocation's generated fixture is removed.
     fs.rmSync(root, { recursive: true, force: true });

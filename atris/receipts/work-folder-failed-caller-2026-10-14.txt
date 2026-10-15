@@ -1,0 +1,49 @@
+Added three real failed-check controls; the diagnostic passed, exit 0, and the frozen tests passed, 57 passed, zero failed, exit 0.
+
+Files edited: atris/receipts/work-folder-refusal-caller-probe.js,
+atris/MAP.md, atris/refs/MAP-NOTES.md,
+atris/team/architect/logs/2026-10-14.md.
+Artifacts: this receipt and work-folder-failed-caller-tests-2026-10-14.tap.
+Commands: mission status and goal, git status/log/remotes/diff, activation and
+compile previews (exit 2, no writes), Atris boot, task list/new/claim/note/ready,
+targeted reads, diagnostic, frozen tests, scoped commit and push.
+Rerun: node atris/receipts/work-folder-refusal-caller-probe.js
+Exit: 0. Output follows.
+
+ready: exit 1; refusal detail absent
+atris task ready: verifier failed: printf ran > '/var/folders/t1/2_4kmb5n4c71dxm26zc8dgzr0000gn/T/atris-refusal-caller-4rtps6/command-ran.txt'
+receipt text: exit 1; refusal detail absent
+verifier failed (exit undefined); receipt written: undefined
+receipt json: exit 1; refusal detail absent
+{
+  "ok": false,
+  "task_id": "01M4YVDYPQ7FD0EMD0DN7FD0EM",
+  "command": "printf ran > '/var/folders/t1/2_4kmb5n4c71dxm26zc8dgzr0000gn/T/atris-refusal-caller-4rtps6/command-ran.txt'",
+  "passed": false
+}
+ready: real child exit 7; CLI exit 1; failed receipt retained
+atris task ready: verifier failed (exit 7): printf 'ordinary-failure-control\n'; printf ran > '/var/folders/t1/2_4kmb5n4c71dxm26zc8dgzr0000gn/T/atris-refusal-caller-4rtps6/command-ran.txt'; exit 7
+ordinary-failure-control
+receipt: atris/runs/2026-10-15-task-rc4-2-2026-10-15T03-59-24-810Z.json
+receipt text: real child exit 7; CLI exit 1; failed receipt retained
+verifier failed (exit 7); receipt written: atris/runs/2026-10-15-task-01m4yvdypq7fd0emd0dn7fd0em-2026-10-15T03-59-24-922Z.json
+ordinary-failure-control
+receipt json: real child exit 7; CLI exit 1; failed receipt retained
+{
+  "ok": false,
+  "task_id": "01M4YVDYPQ7FD0EMD0DN7FD0EM",
+  "command": "printf 'ordinary-failure-control\\n'; printf ran > '/var/folders/t1/2_4kmb5n4c71dxm26zc8dgzr0000gn/T/atris-refusal-caller-4rtps6/command-ran.txt'; exit 7",
+  "receipt_path": "atris/runs/2026-10-15-task-01m4yvdypq7fd0emd0dn7fd0em-2026-10-15T03-59-25-034Z.json",
+  "exit": 7,
+  "passed": false
+}
+three synthetic refusals ran no check and wrote no receipt; three real failures retained failed receipts
+
+Frozen command: node --test test/worktree-removal-guard.test.js test/member-tidy.test.js
+Exit: 0. Output: tests 57, pass 57, fail 0, cancelled 0, skipped 0, todo 0.
+Full output: work-folder-failed-caller-tests-2026-10-14.tap.
+Metric: three new actual failed-command controls preserve one failed receipt each;
+three existing synthetic refusals still create neither side effects nor receipts.
+Production unchanged. Proof is ready for human review; no acceptance performed.
+next_push: implement the reviewed pre-launch refusal and caller explanation while preserving ordinary failed-check receipts.
+layer: capabilities
