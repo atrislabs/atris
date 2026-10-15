@@ -2767,3 +2767,5 @@ Feedback rejection read batching: `test/commands.test.js:20354` runs both unsupp
 Casual launch refusal batching: `test/commands.test.js:20379` awaits both JSON launch reads at line 20387 before the final keep check. `bin/atris.js:1290` returns the JSON error before workspace entry, so the two reads share no writes. Three launches take two sequential stages instead of three.
 
 Wiki help read batching: `test/commands.test.js:20458` awaits five real CLI help launches together, each with a separate home folder. `commands/wiki.js:518` returns help before any worker runs. All output and no-state assertions remain; five sequential launch stages become one.
+
+Local wiki graph lookup batching: `test/commands.test.js:3136` awaits related and entity reads together after graph creation, before the next page write. `commands/wiki.js:244` reads the saved graph without writes. Every output assertion remains; four sequential CLI stages become three.

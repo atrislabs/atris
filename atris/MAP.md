@@ -240,3 +240,5 @@ Feedback rejection read batching: `test/commands.test.js:20354` runs both unsupp
 Casual launch checks: `test/commands.test.js:20379` runs the two early launch refusals together; the final keep check stays ordered and every assertion remains.
 
 Wiki help checks: `test/commands.test.js:20445` runs five real help launches together with separate home folders, retaining every output and no-state assertion. Five sequential launch stages become one.
+
+Local wiki graph lookup batching: `test/commands.test.js:3136` awaits related and entity reads together after graph creation, before the next page write. `commands/wiki.js:244` reads the saved graph without writes. Every output assertion remains; four sequential CLI stages become three.

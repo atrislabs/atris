@@ -3058,7 +3058,7 @@ console.log(JSON.stringify({ ok: true, schema: 'atris.error_scan.v1', threshold:
   }
 });
 
-test('wiki-miner wake builds wiki graph and wiki graph queries read it', () => {
+test('wiki-miner wake builds wiki graph and wiki graph queries read it', async () => {
   const dir = makeTempDir();
   try {
     fs.mkdirSync(path.join(dir, 'atris', 'team', 'wiki-miner'), { recursive: true });
@@ -3133,13 +3133,15 @@ test('wiki-miner wake builds wiki graph and wiki graph queries read it', () => {
     assert.equal(graph.causal_patterns.length, 1);
     assert.equal(payload.wiki_miner.causal_pattern_count, 1);
 
-    const related = runCli(['wiki', 'related', 'signal-scout', '--json'], { cwd: dir });
+    const [related, entities] = await Promise.all([
+      runCliAsync(['wiki', 'related', 'signal-scout', '--json'], { cwd: dir }),
+      runCliAsync(['wiki', 'entities', '--type', 'system', '--json'], { cwd: dir }),
+    ]);
     assert.equal(related.status, 0, related.stderr || related.stdout);
     const relatedPayload = JSON.parse(related.stdout);
     assert.equal(relatedPayload.relationships.length, 1);
     assert.equal(relatedPayload.relationships[0].to, 'wiki graph');
 
-    const entities = runCli(['wiki', 'entities', '--type', 'system', '--json'], { cwd: dir });
     assert.equal(entities.status, 0, entities.stderr || entities.stdout);
     const entitiesPayload = JSON.parse(entities.stdout);
     assert.deepEqual(entitiesPayload.entities.map((entity) => entity.name), ['signal-scout']);
