@@ -17713,12 +17713,15 @@ test('learn help prints usage without workspace state', () => {
   }
 });
 
-test('soul help prints usage without workspace state', () => {
+test('soul help prints usage without workspace state', async () => {
   const dir = makeTempDir();
   try {
     const home = path.join(dir, 'home');
-    for (const helpArg of ['--help', '-h', 'help']) {
-      const res = runCli(['soul', helpArg], { cwd: dir, env: { HOME: home } });
+    const helpArgs = ['--help', '-h', 'help'];
+    const results = await Promise.all(helpArgs.map(helpArg =>
+      runCliAsync(['soul', helpArg], { cwd: dir, env: { HOME: home } })));
+    for (const [index, helpArg] of helpArgs.entries()) {
+      const res = results[index];
       assert.equal(res.status, 0, `soul ${helpArg}: ${res.stderr || res.stdout}`);
       assert.match(res.stdout, /atris soul/);
       assert.doesNotMatch(res.stderr, /No atris\/ folder found/);

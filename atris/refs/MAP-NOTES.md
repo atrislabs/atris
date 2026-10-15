@@ -1509,8 +1509,8 @@ rg "printRoster|registryPayload|canPersistEngineRegistry|speakFirstMinute|--glob
 
 - **Entry point:** `bin/atris.js:1644-1648` routes to `commands/soul.js`
 - **Handler:** `commands/soul.js:310-381` (`soul`)
-- **Help:** `commands/soul.js:299-308` (`showSoulHelp`) and `commands/soul.js:316-319` short-circuit before `findAtrisDir`
-- **Regression:** `test/commands.test.js:17632-17680` covers `soul --help`, `soul -h`, and `soul help` without temp workspace state
+- **Help:** `commands/soul.js:299-308` (`showSoulHelp`) and `commands/soul.js:312-315` short-circuit before `findAtrisDir`
+- **Regression:** `test/commands.test.js:17716` runs `soul --help`, `soul -h`, and `soul help` together, retaining every output and no-state assertion; three CLI launches take one sequential stage
 - **Value:** Agents can learn what the workspace has retained without requiring initialized state for documentation paths.
 
 **Search:** `rg "showSoulHelp|async function soul|soul help" commands/soul.js test/commands.test.js`

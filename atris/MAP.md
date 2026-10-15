@@ -212,3 +212,5 @@ Sync preview ownership setup: `test/commands.test.js:17365` seeds creation, clai
 Default review fixture setup: `test/commands.test.js:20273` seeds creation, claim and readiness through the production store, asserts each success, and closes before CLI certification and review screen checks. Two CLI launches remain; every screen assertion remains.
 
 Search help checks: `test/commands.test.js:17616` runs both help spellings together with the existing async CLI helper, then checks each output and confirms neither workspace nor home state was created. `commands/search.js:420` routes both help spellings before searching or creating state. Two launches take one sequential stage.
+
+Soul help checks: `test/commands.test.js:17716` runs all three help spellings together, retaining every output and no-state assertion. `commands/soul.js:312` returns before workspace discovery. Three CLI launches take one sequential stage.
