@@ -2335,13 +2335,14 @@ test('a signed out run written with CRLF keeps its engine and sign-in fix when t
   }
 });
 
-for (const mode of ['before', 'after', 'new file', 'replacement', 'rewrite', 'same-size rewrite']) {
+for (const mode of ['before', 'after', 'new file', 'replacement', 'rewrite', 'same-size rewrite', 'same-size rewrite after a step']) {
   const pendingAtStartup = mode === 'before';
   const newFile = mode === 'new file';
   const replacement = mode === 'replacement';
-  const sameSizeRewrite = mode === 'same-size rewrite';
+  const afterStep = mode === 'same-size rewrite after a step';
+  const sameSizeRewrite = mode === 'same-size rewrite' || afterStep;
   const rewrite = mode === 'rewrite' || sameSizeRewrite;
-  test(`live follow preserves a multibyte character split ${mode === 'before' ? 'before startup' : mode === 'after' ? 'after startup' : newFile ? 'in a new file' : replacement ? 'across log replacement' : sameSizeRewrite ? 'across a same-size log rewrite' : 'across an in-place log rewrite'}`, async (t) => {
+  test(`live follow preserves a multibyte character split ${mode === 'before' ? 'before startup' : mode === 'after' ? 'after startup' : newFile ? 'in a new file' : replacement ? 'across log replacement' : afterStep ? 'across a same-size rewrite of a shown step' : sameSizeRewrite ? 'across a same-size log rewrite' : 'across an in-place log rewrite'}`, async (t) => {
     for (const [character, byte] of [['é', 1], ['界', 1], ['界', 2], ['🧭', 1], ['🧭', 2], ['🧭', 3]]) {
       const stamp = new Date().toISOString();
       const dir = fakeDir(newFile ? {} : { navigator: [`${stamp} m-unicode started: check text`] });
@@ -2353,7 +2354,13 @@ for (const mode of ['before', 'after', 'new file', 'replacement', 'rewrite', 'sa
         const abandoned = Buffer.from(`${stamp} m-old reading 🧨 abandoned text\n`);
         fs.appendFileSync(log, abandoned.subarray(0, abandoned.indexOf(Buffer.from('🧨')) + 1));
       }
-      if (sameSizeRewrite) {
+      const oldStep = 'old step'.padEnd(split - Buffer.byteLength(`${stamp} m-old `) - 1, '.');
+      if (afterStep) {
+        // A complete step of the same byte count, already shown before the
+        // rewrite, so recovery cannot lean on leftover partial bytes either.
+        fs.writeFileSync(log, `${stamp} m-old ${oldStep}\n`);
+        assert.equal(fs.statSync(log).size, split);
+      } else if (sameSizeRewrite) {
         // Match the replacement's byte count, including an abandoned UTF-8 lead
         // byte, so recovery cannot rely on a shrink or a changed file identity.
         const oldPrefix = Buffer.from(`${stamp} m-old `);
@@ -2383,7 +2390,8 @@ for (const mode of ['before', 'after', 'new file', 'replacement', 'rewrite', 'sa
       try {
         const [snapshot] = await receive(1);
         assert.equal(snapshot.kind, 'snapshot');
-        if (newFile || sameSizeRewrite) assert.deepEqual(snapshot.members, [], 'no complete line is available at startup');
+        if (afterStep) assert.equal(snapshot.members[0].step, oldStep, 'the old step shows first');
+        else if (newFile || sameSizeRewrite) assert.deepEqual(snapshot.members, [], 'no complete line is available at startup');
         else assert.equal(snapshot.members[0].step, '', 'an incomplete character stays out of the opening board');
         if (replacement) {
           fs.writeFileSync(`${log}.next`, line.subarray(0, split));
