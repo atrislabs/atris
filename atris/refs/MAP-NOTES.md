@@ -2650,9 +2650,9 @@ Review queue filter creation fixture: `test/commands.test.js:15316` seeds both g
 
 - `test/commands.test.js:15503` seeds creation and readiness with production readyTask, asserts success and closes in finally before CLI review. The original verification command is stored in metadata. Eight CLI launches replace nine; review, status, filtered current reads, reviews, dry-run acceptance and current-step refusal retain every assertion.
 
-## Weak proof review creation fixture
+## Weak proof review fixture
 
-- `test/commands.test.js:15714` uses addSeedTask with the original title, tag, workspace and goal; production ownership and display-reference resolution share the connection, closed in finally. Seven CLI calls become six; all readiness, review, queue/current selection and acceptance assertions remain.
+- `test/commands.test.js:15714` uses addSeedTask with the original title, tag, workspace and goal; production claimTask, readyTask and display-reference resolution share the connection, closed in finally. Readiness preserves the original actor and strong proof and asserts success. Five CLI calls replace six; all review, queue/current selection and acceptance assertions remain.
 
 - Capability safety baseline: `test/commands.test.js:8337` seeds creation and reads initial version, event and status through the real task store; both capability checks and the final CLI state comparison remain live.
 

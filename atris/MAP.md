@@ -181,7 +181,7 @@ Review queue filter creation setup: `test/commands.test.js:15316` seeds both goa
 
 Stale proof routing fixture: `test/commands.test.js:15503` seeds creation and readiness through the production store, retaining the verification command in metadata; review, routing reads and approval refusal stay on the CLI. Eight launches replace nine.
 
-Weak proof review creation setup: `test/commands.test.js:15714` seeds creation and ownership together through the production task store; six CLI calls retain readiness, review, queue selection and both acceptance gates.
+Weak proof review setup: `test/commands.test.js:15714` seeds creation, ownership and readiness through the production task store, closed in finally; five CLI calls retain review, queue selection and both acceptance gates.
 
 Capability safety baseline: `test/commands.test.js:8337` reads the initial production-store projection in its fixture connection; both capability checks and the final CLI read remain, reducing launches from four to three.
 

@@ -15723,7 +15723,7 @@ test('task review lanes block weak golden-path mission XP proof from accept', as
     }, null, 2), 'utf8');
 
     const strongProof = 'zero-papercut end-to-end fresh install -> init -> first mission -> first self-landed task receipt: atris/runs/bookkeeping.json';
-    // Seed creation and ownership; readiness, review and acceptance gates stay on the CLI.
+    // Seed creation, ownership and readiness; review and acceptance gates stay on the CLI.
     const task = (() => {
       const db = taskStore.open(dbPath);
       try {
@@ -15735,13 +15735,16 @@ test('task review lanes block weak golden-path mission XP proof from accept', as
           metadata: { goal_id: 'mission-golden-path' },
         });
         assert.equal(taskStore.claimTask(db, { id, claimedBy: 'onboarding' }).claimed, true);
+        const readied = taskStore.readyTask(db, {
+          id, actor: 'onboarding', proof: strongProof, result: FIXTURE_RESULT_SENTENCE,
+        });
+        assert.equal(readied.ready, true, readied.reason);
         return { id, display_id: taskStore.taskDisplayRefMap(taskStore.listTasks(db, { workspaceRoot })).get(id) };
       } finally {
         taskStore.close();
       }
     })();
     const ref = task.display_id;
-    assert.equal(runCli(['task', 'ready', ref, '--as', 'onboarding', '--proof', strongProof, '--json'], { cwd: dir, env }).status, 0);
     assert.equal(runCli(['task', 'review', ref, '--reward', '0', '--as', 'codex-review', '--proof', strongProof, '--json'], { cwd: dir, env }).status, 0);
 
     const weakProof = 'atris/runs/bookkeeping.json';
