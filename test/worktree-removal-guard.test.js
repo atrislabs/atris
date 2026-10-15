@@ -1588,3 +1588,28 @@ test(`reap saves staged and binary work and restores it exactly${quoted ? ' with
   }
 });
 }
+
+test('reap keeps a folder whose saved edits would not apply, as a text conversion setting causes', () => {
+  const { base, repo, wt } = landedWorktree();
+  try {
+    // A diff driver that rewrites text makes git save the converted words,
+    // which the folder's real files never held, so a restore would fail.
+    fs.writeFileSync(path.join(repo, '.git', 'info', 'attributes'), 'README.md diff=upper\n');
+    git(repo, ['config', 'diff.upper.textconv', 'tr a-z A-Z <']);
+    fs.writeFileSync(path.join(wt, 'README.md'), '# fixture\nunsaved line\n');
+    const aged = new Date(Date.now() - 2 * 60 * 60 * 1000);
+    fs.utimesSync(wt, aged, aged);
+    const run = spawnSync(process.execPath, [path.resolve(__dirname, '../bin/atris.js'), 'land', '--reap', '--no-remote', '--base', 'master', '--ttl', '0'], { cwd: repo, encoding: 'utf8' });
+    console.log('command: node bin/atris.js land --reap --no-remote --base master --ttl 0 (text conversion setting)');
+    console.log(run.stdout.trim());
+    console.log(`exit: ${run.status}`);
+    assert.equal(run.status, 0, run.stderr);
+    assert.equal(fs.readFileSync(path.join(wt, 'README.md'), 'utf8'), '# fixture\nunsaved line\n');
+    assert.ok(git(repo, ['worktree', 'list', '--porcelain']).includes(`worktree ${wt}\n`));
+    assert.ok(run.stdout.includes("saved edits would not apply to the folder's commit"), run.stdout);
+    assert.ok(!run.stdout.includes(`to restore ${wt}`), run.stdout);
+    assert.deepEqual(removalLines(repo), []);
+  } finally {
+    fs.rmSync(base, { recursive: true, force: true });
+  }
+});

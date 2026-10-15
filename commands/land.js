@@ -1,5 +1,6 @@
 const crypto = require('crypto');
 const fs = require('fs');
+const os = require('os');
 const path = require('path');
 const gitSpawn = require('../lib/git-spawn');
 const { compactErrorPayload, printCliJson } = require('../lib/cli-json');
@@ -518,6 +519,21 @@ function savedFingerprint(file) {
   return crypto.createHash('sha256').update(fs.readFileSync(file)).digest('hex');
 }
 
+// A saved patch is only a backup if it applies. A diff setting such as a
+// text conversion driver writes the converted text, which no longer matches
+// the files, so each patch is tried against the folder's commit in a
+// throwaway index before the folder may be removed.
+function patchApplies(cwd, sha, patchFile) {
+  const index = path.join(os.tmpdir(), `atris-patch-check-${process.pid}-${crypto.randomBytes(6).toString('hex')}.index`);
+  try {
+    const env = { GIT_INDEX_FILE: index };
+    if (runGit(['read-tree', sha], { cwd, check: false, env }).status !== 0) return false;
+    return runGit(['apply', '--cached', '--check', patchFile], { cwd, check: false, env }).status === 0;
+  } finally {
+    fs.rmSync(index, { force: true });
+  }
+}
+
 function salvageWorktree(root, w, dir, receipt) {
   try {
     const head = runGit(['rev-parse', '--verify', 'HEAD^{commit}'], { cwd: w.path, check: false });
@@ -535,6 +551,11 @@ function salvageWorktree(root, w, dir, receipt) {
       return false;
     }
     const dirtySaved = fs.statSync(patchPath).size > 0;
+    if (dirtySaved && !patchApplies(w.path, sha, patchPath)) {
+      fs.rmSync(patchPath, { force: true });
+      w.salvageProblem = 'saved edits would not apply to the folder\'s commit';
+      return false;
+    }
     w.patchFingerprints = {};
     if (dirtySaved) {
       receipt.patches.push(patchPath);
@@ -544,6 +565,11 @@ function salvageWorktree(root, w, dir, receipt) {
     const staged = runGit(['diff', '--cached', '--binary', `--output=${stagedPath}`], { cwd: w.path, check: false });
     if (staged.status !== 0) {
       fs.rmSync(stagedPath, { force: true });
+      return false;
+    }
+    if (fs.statSync(stagedPath).size > 0 && !patchApplies(w.path, sha, stagedPath)) {
+      fs.rmSync(stagedPath, { force: true });
+      w.salvageProblem = 'saved staged changes would not apply to the folder\'s commit';
       return false;
     }
     if (fs.statSync(stagedPath).size > 0) {
@@ -791,7 +817,7 @@ function reap(root, { ttlDays = DEFAULT_TTL_DAYS, staleHours = DEFAULT_STALE_HOU
       // could not fully back up what force-remove would destroy, keep it,
       // and say why: a bare path in the receipt reads as an unexplained
       // no-op (the exact silence BCK-1232 was about).
-      receipt.keptWorktrees.push(`${w.path} (salvage incomplete: patch/copy failed, kept to avoid losing work)`);
+      receipt.keptWorktrees.push(`${w.path} (salvage incomplete: ${w.salvageProblem || 'patch/copy failed'}, kept to avoid losing work)`);
       if (w.branch) targetNames.delete(w.branch);
       continue;
     }
