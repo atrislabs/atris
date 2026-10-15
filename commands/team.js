@@ -175,6 +175,19 @@ function memberIsActive({ awake, activity }) {
 
 const ACTIVITY_WINDOW_MS = IDLE_AFTER_DAYS * 24 * 60 * 60 * 1000;
 
+// A log whose only entry is the note setup writes ("Member initialized") is
+// not work: a fresh project's members have never run.
+const SEED_LOG_MAX_BYTES = 1024;
+function isSeedOnlyLog(file) {
+  try {
+    if (fs.statSync(file).size > SEED_LOG_MAX_BYTES) return false;
+    const headings = fs.readFileSync(file, 'utf8').split(/\r?\n/).filter((line) => line.startsWith('## '));
+    return headings.length > 0 && headings.every((line) => /·\s*Member initialized\s*$/.test(line));
+  } catch {
+    return false;
+  }
+}
+
 // Dated file names under the member's logs/ folder and one level below it
 // (logs/2026/2026-09-28.md). The date in the name, never the file time: a
 // fresh checkout stamps every file with today.
@@ -191,12 +204,12 @@ function memberLogDays(member, root) {
       try { inner = fs.readdirSync(path.join(dir, entry.name)); } catch { inner = []; }
       for (const name of inner) {
         const day = logFileDay(name);
-        if (day) days.push(day);
+        if (day && !isSeedOnlyLog(path.join(dir, entry.name, name))) days.push(day);
       }
       continue;
     }
     const day = logFileDay(entry.name);
-    if (day) days.push(day);
+    if (day && !isSeedOnlyLog(path.join(dir, entry.name))) days.push(day);
   }
   return days;
 }
@@ -430,6 +443,63 @@ function liveRunJson(run) {
     doing: run.doing,
     elapsed_seconds: run.elapsed_seconds,
   };
+}
+
+function realFolder(folder) {
+  try { return fs.realpathSync(folder); } catch { return path.resolve(folder); }
+}
+
+// Each run's working folder in one lookup: /proc on Linux, lsof elsewhere.
+// A folder that cannot be read stays unknown.
+function liveRunFolders(pids, deps = {}) {
+  if (typeof deps.runFolders === 'function') return deps.runFolders(pids);
+  const folders = new Map();
+  if (!pids.length) return folders;
+  if (process.platform === 'linux') {
+    for (const pid of pids) {
+      try { folders.set(pid, fs.readlinkSync(`/proc/${pid}/cwd`)); } catch { /* unknown */ }
+    }
+    return folders;
+  }
+  let result;
+  try {
+    result = spawnSync('lsof', ['-a', '-p', pids.join(','), '-d', 'cwd', '-Fpn'], { encoding: 'utf8', timeout: 3000 });
+  } catch {
+    return folders;
+  }
+  let pid = null;
+  for (const line of String(result?.stdout || '').split(/\r?\n/)) {
+    if (line.startsWith('p')) pid = Number(line.slice(1));
+    else if (line.startsWith('n') && pid) folders.set(pid, line.slice(1));
+  }
+  return folders;
+}
+
+// This project's folders: the checkout and every work copy git knows for it.
+function projectFolders(root, deps = {}) {
+  if (Array.isArray(deps.projectFolders)) return deps.projectFolders.map(realFolder);
+  const folders = [realFolder(root)];
+  const result = spawnSync('git', ['worktree', 'list', '--porcelain'], { cwd: root, encoding: 'utf8', timeout: 3000 });
+  if (result && result.status === 0) {
+    for (const line of String(result.stdout || '').split(/\r?\n/)) {
+      if (line.startsWith('worktree ')) folders.push(realFolder(line.slice('worktree '.length)));
+    }
+  }
+  return [...new Set(folders)];
+}
+
+// Live runs on this machine that work in this project. A run in another
+// project is not this team working; a run whose folder cannot be read stays.
+function liveRunsInProject(runs, root, deps = {}) {
+  if (!runs.length) return runs;
+  const folders = projectFolders(root, deps);
+  const where = liveRunFolders(runs.map((run) => run.pid), deps);
+  return runs.filter((run) => {
+    const folder = where.get(run.pid);
+    if (!folder) return true;
+    const real = realFolder(folder);
+    return folders.some((base) => real === base || real.startsWith(base + path.sep));
+  });
 }
 
 // The table's rows, in order, for text and json alike. Parked members are
@@ -907,8 +977,10 @@ function teamCommand(args = [], deps = {}) {
     const lineup = deps.lineup !== undefined
       ? deps.lineup
       : readLineupSafe(deps.root || repoRoot(deps.cwd || process.cwd()), deps.lineupNow || new Date());
-    // Who is working this minute: live engine runs on this machine.
-    const liveRuns = Array.isArray(deps.liveRuns) ? deps.liveRuns : listLiveEngineRuns(deps);
+    // Who is working this minute: live engine runs in this project.
+    const liveRuns = Array.isArray(deps.liveRuns)
+      ? deps.liveRuns
+      : liveRunsInProject(listLiveEngineRuns(deps), deps.root || repoRoot(deps.cwd || process.cwd()), deps);
     const output = json
       ? JSON.stringify(teamJsonRows(roster, { lineup, liveRuns }), null, 2)
       : renderTeamRoster(roster, { ...deps, lineup, liveRuns, all });
