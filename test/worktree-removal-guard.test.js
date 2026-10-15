@@ -741,11 +741,21 @@ test('every work folder removal goes through the git check and the removal log',
 const PASSED_IN_DELETES = {
 };
 
+// A helper can be a plain function, a named arrow (const wipe = (dir) => or
+// wipe: dir =>), or a class or object method (wipe(dir) {).
+const HELPER_START = [
+  /^(?:async\s+)?function\s+([\w$]+)\s*\(([^)]*)\)/,
+  /^\s*(?:(?:export\s+)?(?:const|let|var)\s+)?([\w$]+)\s*[=:]\s*(?:async\s+)?(?:function\s*)?\(([^()]*)\)\s*(?:=>|\{)/,
+  /^\s*(?:(?:export\s+)?(?:const|let|var)\s+)?([\w$]+)\s*[=:]\s*(?:async\s+)?([\w$]+)\s*=>/,
+  /^\s+(?:static\s+)?(?:async\s+)?([\w$]+)\s*\(([^()]*)\)\s*\{/,
+];
+const NOT_A_HELPER = new Set(['if', 'for', 'while', 'switch', 'catch', 'function', 'return']);
+
 function passedInDeletes(file, text) {
   const lines = text.split('\n');
   const starts = lines.flatMap((line, index) => {
-    const match = line.match(/^(?:async\s+)?function\s+(\w+)\s*\(([^)]*)\)/);
-    if (!match) return [];
+    const match = HELPER_START.map((pattern) => line.match(pattern)).find(Boolean);
+    if (!match || NOT_A_HELPER.has(match[1])) return [];
     const params = match[2].split(',')
       .map((part) => part.trim().replace(/^\.\.\./, '').replace(/\s*=.*$/, ''))
       .filter((part) => /^[\w$]+$/.test(part));
@@ -767,18 +777,22 @@ function passedInDeletes(file, text) {
 
 test('a helper that deletes a folder its caller passed in is checked or reviewed', () => {
   const files = [...sourceFiles('lib'), ...sourceFiles('commands')];
-  const scanned = new Set(files.flatMap(worktreeRemovalSites).map((site) => `${site.key}:${site.line}`));
+  // Matched by file and line: the scan above names only plain functions, so an
+  // arrow or method helper carries a different owner name there.
+  const scanned = new Set(files.flatMap(worktreeRemovalSites).map((site) => `${site.key.split(':')[0]}:${site.line}`));
   const found = files.flatMap((file) => passedInDeletes(file, fs.readFileSync(path.join(__dirname, '..', file), 'utf8')));
   assert.ok(found.length >= 1, 'expected the green landing scratch cleanup to be found');
   const unreviewed = found
-    .filter((site) => !scanned.has(`${site.key}:${site.line}`) && !PASSED_IN_DELETES[site.key])
+    .filter((site) => !scanned.has(`${site.key.split(':')[0]}:${site.line}`) && !PASSED_IN_DELETES[site.key])
     .map((site) => `${site.key} (line ${site.line}): deletes ${site.target}, which its caller chooses`);
   assert.deepEqual(unreviewed, [], 'guard this delete like a work folder removal, or review it and list it');
   const stale = Object.keys(PASSED_IN_DELETES).filter((key) => !found.some((site) => site.key === key));
   assert.deepEqual(stale, [], 'listed helper no longer deletes a folder its caller passed in');
 
-  // A planted helper in a file that never mentions worktrees is still found,
-  // read through a path.resolve rename and a delete split across lines.
+  // Planted helpers in a file that never mentions worktrees are still found:
+  // a plain function read through a path.resolve rename and a delete split
+  // across lines, two named arrows, and a class method whose delete sits in a
+  // callback.
   const planted = [
     'function wipe(folder, opts = {}) {',
     '  const where = path.resolve(folder);',
@@ -788,9 +802,24 @@ test('a helper that deletes a folder its caller passed in is checked or reviewed
     '  );',
     '}',
     'function tidy() { fs.rmSync(cacheDir, { recursive: true }); }',
+    'const clear = async (dir) => {',
+    '  await fs.promises.rm(dir, { recursive: true });',
+    '};',
+    'const drop = dir => fs.rmSync(dir, { recursive: true });',
+    'class Shelf {',
+    '  empty(where) {',
+    '    setTimeout(function () { fs.rmSync(where, { recursive: true, force: true }); });',
+    '  }',
+    '  log(dir) { console.log(dir); }',
+    '}',
   ].join('\n');
   assert.ok(!WORKTREE_REMOVAL.test(planted) && !HANDLES_WORKTREES.test(planted), 'the main scan would skip this helper');
-  assert.deepEqual(passedInDeletes('lib/planted.js', planted), [{ key: 'lib/planted.js:wipe', line: 3, target: 'folder' }]);
+  assert.deepEqual(passedInDeletes('lib/planted.js', planted), [
+    { key: 'lib/planted.js:wipe', line: 3, target: 'folder' },
+    { key: 'lib/planted.js:clear', line: 10, target: 'dir' },
+    { key: 'lib/planted.js:drop', line: 12, target: 'dir' },
+    { key: 'lib/planted.js:empty', line: 15, target: 'where' },
+  ]);
 });
 
 test('saved scanner examples reject missed removals in the required checks', () => {
