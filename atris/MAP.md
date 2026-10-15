@@ -156,4 +156,4 @@ Hourly cleanup scan failures: `commands/autoland.js:878` includes a saved scan e
 
 Last-moment pin coverage: `test/member-tidy.test.js` runs real tidy, cleanup, branch cleanup, and autopilot regression execution with a pin acquired at removal; both successful and failed automatic checks are covered, including the saved failure lesson. Latest proof is `atris/receipts/work-folder-failed-check-late-pin-2026-10-14.txt`.
 
-Review cleanup late-pin defect: `atris/receipts/work-folder-review-late-pin-probe.js` reproduces a real Git refusal followed by raw deletion of all disposable review paths. The decision card is `atris/receipts/work-folder-review-late-pin-decision-2026-10-14.md`; production cleanup is unchanged pending protected-surface review.
+Review cleanup late-pin defect: `atris/receipts/work-folder-review-late-pin-probe.js` uses actual review setup to compare idle disposal with a late-pin refusal, proving deletion of all disposable review paths and a false success record after refusal. The decision card is `atris/receipts/work-folder-review-late-pin-decision-2026-10-14.md`; production cleanup is unchanged pending protected-surface review.

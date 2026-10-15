@@ -1,0 +1,56 @@
+Review cleanup now has a real setup reproduction with separate stores and a successful idle control; the required checks passed.
+
+Changed files:
+atris/receipts/work-folder-review-late-pin-probe.js
+atris/receipts/work-folder-review-late-pin-decision-2026-10-14.md
+atris/MAP.md
+atris/refs/MAP-NOTES.md
+atris/team/architect/logs/2026-10-14.md (local member memory, not staged)
+atris/receipts/work-folder-review-store-proof-2026-10-14.txt
+
+Real surface command:
+node atris/receipts/work-folder-review-late-pin-probe.js
+Exit: 0
+Output excerpts:
+control: git removed the idle copy, cleanup cleared its stores and recorded success
+confirmed: git refused the pin, all review paths were deleted, and cleanup recorded success
+
+Observed data:
+Idle: gitRemoval.status=0, disposal.removed=true, remaining paths=0/4, removalRecords=1, trustedProjectUnchanged=true.
+Late pin: gitRemoval.status=128, disposal.removed=true, remaining paths=0/4, removalRecords=1, trustedProjectUnchanged=true.
+Git stderr: fatal: cannot remove a locked working tree, lock reason: review still writing
+use 'remove -f -f' to override or unlock first
+
+The diagnostic exit 0 proves the defect, not safe cleanup. Actual review setup creates separate object and quarantine stores from a disposable local origin. Both controls check tracked content and both trusted/origin commits. No production code changed; proposed retention fix remains in the decision card under the mission's protected-surface rule.
+
+Rerunnable required check:
+node --test test/worktree-removal-guard.test.js test/member-tidy.test.js
+Exit: 0
+Exact summary:
+ℹ tests 48
+ℹ suites 0
+ℹ pass 48
+ℹ fail 0
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 14534.03525
+
+Other commands:
+atris mission status mission-2026-10-14-continue-work-folder-protect-cd299a9a
+atris mission goal --json (no goal candidate)
+atris task list
+atris task claim ACW-11 --as architect
+atris slop detect atris/receipts/work-folder-review-late-pin-decision-2026-10-14.md
+Output: ✓ clean, no slop tells in 1 file
+Exit: 0
+git diff --check
+Output: empty
+Exit: 0
+atris brain activate --root . --verify
+atris brain compile --root .
+Both offered a plan only, requiring --yes to write generated policy adapters; no generated files changed.
+
+Metric: one synthetic disposal reproduction replaced by two controls through actual review setup; one additional false success record proven; required checks 48 passed, zero failed.
+next_push: review the decision card, then add refusal retention with shared reporting and no removal record while retaining the idle disposal control.
+layer: behaviors
