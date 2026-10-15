@@ -1,0 +1,11 @@
+Saved rename and replacement folder draft survive real cleanup preview and application.
+
+Files: test/member-tidy.test.js, atris/MAP.md, atris/refs/MAP-NOTES.md, atris/team/architect/logs/2026-10-15.md
+Verify: node --test test/worktree-removal-guard.test.js test/member-tidy.test.js && node bin/atris.js slop --staged
+Exit: 0
+Output: tests 90; pass 90; fail 0; skipped 0; todo 0. clean, no slop tells in 3 files.
+Real CLI output: cleanup: dry-run base=origin/master; candidates: 0; exit: 0. cleanup: applied base=origin/master; removeds: 0; exit: 0.
+Progress: one additional saved-rename replacement case covered in both real CLI modes.
+Task attachment could not update because the existing mission lock was held; no lock changed.
+next_push: Prove cleanup preserves a saved rename whose original name is recreated with new draft bytes.
+layer: capabilities
