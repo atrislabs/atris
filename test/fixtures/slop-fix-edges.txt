@@ -146,3 +146,14 @@ Check one place \u2014 the error logs instead of the console.
 # a noun before a plural reads like a subject and its verb
 Two views \u2014 the admin panels server-side.
 ~> Two views, the admin panels server-side.
+
+# from real repo text: two verbs in s joined by "and", the second one shown
+# to be a verb by an object, a how tail or a helper verb in its place
+So no new parsing code \u2014 the app captures stdout and writes the file.
+=> So no new parsing code; the app captures stdout and writes the file.
+No latency impact \u2014 the tracing client buffers and uploads out-of-band.
+=> No latency impact; the tracing client buffers and uploads out-of-band.
+The row is stale \u2014 the migration shows as applied and is skipped.
+=> The row is stale; the migration shows as applied and is skipped.
+Check one place \u2014 the error logs and traces folder.
+=> Check one place, the error logs and traces folder.

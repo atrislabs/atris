@@ -342,6 +342,12 @@ const PLACE_CLAUSE_AFTER_DASH = new RegExp(`${CLAUSE_END}\\s*\\u2014\\s*(?=the\\
 // or a number before a stop or a comma is a clause too: "the post claims
 // 99% token reduction", "the scorer tracks signal quality, not order".
 const BARE_PHRASE_CLAUSE_AFTER_DASH = new RegExp(`${CLAUSE_END}\\s*\\u2014\\s*(?=the\\s+(?!${NAME_PAIR}\\b)(?!(?:one|two|three|four|five|six|seven|eight|nine|ten|few|many|several|same|other|first|last|next|main|key|core|new|old|real|whole|exact|only)\\b)(?:(?![A-Za-z-]*s\\b)(?:[A-Z]{2,}|[a-z][a-z-]*[a-z])\\s+(?!(?:that|which|who)\\b))?(?![a-z]*s\\b)[a-z]{2,}\\s+(?!${PLURAL_NOUN_WORD}\\b)${PLAIN_VERB_WORD}\\s+(?!(?:the|a|an|your|our|their|its|this|these|those|that|it|them|from|of|in|on|for|with|at|by|to|and|or|as|than|like)\\b)(?:\\d+%?|[a-z][\\w-]*)(?:\\s+(?!(?:and|or|but|that|which|who|the|a|an|in|of|on|for|with|at|by|to|from|into)\\b)[a-z][\\w-]*){1,3}[.!?;,])`, 'g');
+// Two verbs in "s" joined by "and" are a clause when the second one shows
+// it is a verb: an object or a how tail after it, or a helper verb in its
+// place. "the app captures stdout and writes the file", "the orb reads and
+// writes it", "the migration shows as applied and is skipped". Two plurals
+// that share a word stay a phrase: "the error logs and traces folder".
+const AND_VERB_CLAUSE_AFTER_DASH = new RegExp(`${CLAUSE_END}\\s*\\u2014\\s*(?=the\\s+(?!${NAME_PAIR}\\b)(?!(?:one|two|three|four|five|six|seven|eight|nine|ten|few|many|several|same|other|first|last|next|main|key|core|new|old|real|whole|exact|only)\\b)(?:(?![A-Za-z-]*s\\b)(?:[A-Z]{2,}|[a-z][a-z-]*[a-z])\\s+(?!(?:that|which|who)\\b))?(?![a-z]*[^aisu]s\\b)[a-z]{2,}\\s+(?!${PLURAL_NOUN_WORD}\\b)${PLAIN_VERB_WORD}\\s+(?:(?:as\\s+)?(?!(?:the|a|an|and|or|of|in|on|for|to)\\b)[a-z][\\w-]*\\s+)?and\\s+(?:(?!${PLURAL_NOUN_WORD}\\b)${PLAIN_VERB_WORD}\\s+(?:(?:the|a|an|it|them|its|their|this|these|those)\\b|(?:(?:client|server|browser|edge)-side|out-of-band|in-process|in-place)(?=[.!?;,]|$))|(?:is|are|was|were|has|had)\\s+[a-z]))`, 'g');
 // A word in "s" and at most one more word before a name word and a stop
 // read as one long name, not a verb and its object: "one place, the agent
 // runs dashboard view", "the team calls schedule". Every dash clause rule
@@ -1072,6 +1078,10 @@ function fixEmDash(s, { endsBlock = false, startsBlock = false, spans = [], abov
     .replace(THE_OBJECT_CLAUSE_AFTER_DASH, (m, at, whole) => {
       const left = clauseOrFieldLeft(at, whole);
       return left && !RELATIVE_OBJECT_PHRASE.test(whole.slice(at)) ? clauseJoin(left, at, whole) : m;
+    })
+    .replace(AND_VERB_CLAUSE_AFTER_DASH, (m, at, whole) => {
+      const left = clauseOrFieldLeft(at, whole);
+      return left ? clauseJoin(left, at, whole) : m;
     })
     .replace(BARE_PHRASE_CLAUSE_AFTER_DASH, (m, at, whole) => {
       const left = clauseOrFieldLeft(at, whole);

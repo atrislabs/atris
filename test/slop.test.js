@@ -2434,6 +2434,26 @@ test('fix joins a field value and a "the" clause after a dash with a semicolon',
   ]);
 });
 
+test('fix joins "the", a noun and two verbs in s joined by "and" after a dash', () => {
+  // from real repo text: "the app captures stdout and writes the file"
+  // spliced, since no rule took two verbs. The second verb counts when an
+  // object, a how tail or a helper verb in its place shows it is a verb;
+  // two plurals that share a word stay a phrase.
+  const file = tmpFile('and-verb-clause.md', [
+    'So no new parsing code \u2014 the app captures stdout and writes the file.',
+    'No latency impact \u2014 the tracing client buffers and uploads out-of-band.',
+    'The row is stale \u2014 the migration shows as applied and is skipped.',
+    'Check one place \u2014 the error logs and traces folder.',
+  ].join('\n'));
+  const { changes } = applyFixes([file], RULES);
+  assert.deepEqual(changes.map((c) => c.after), [
+    'So no new parsing code; the app captures stdout and writes the file.',
+    'No latency impact; the tracing client buffers and uploads out-of-band.',
+    'The row is stale; the migration shows as applied and is skipped.',
+    'Check one place, the error logs and traces folder.',
+  ]);
+});
+
 test('fix joins "the", a noun and a verb in s with a tail that says how', () => {
   // from real repo text: "the engine blocks regardless of context" and
   // "the widget computes client-side" spliced, since no object follows the
@@ -4217,14 +4237,14 @@ test('the fix diff script counts known gaps with a "~> " line and never fails on
   // prints its gap line, a closed one does not, and the run still exits 0
   const script = path.join(__dirname, '..', 'scripts', 'slop-fix-diff.js');
   const file = tmpFile('gaps.txt', [
-    String.raw`No latency impact \u2014 the tracing client buffers and uploads out-of-band.`,
-    '~> No latency impact; the tracing client buffers and uploads out-of-band.',
+    String.raw`Two views \u2014 the admin panels server-side.`,
+    '~> Two views, the admin panels server-side.',
     String.raw`We fixed it \u2014 the loop kicks work.`,
     '~> We fixed it; the loop kicks work.',
   ].join('\n'));
   const r = spawnSync(process.execPath, [script, '--probe-file', file], { encoding: 'utf8', cwd: path.join(__dirname, '..') });
   assert.equal(r.status, 0, r.stdout);
-  assert.match(r.stdout, /^ {2}gap {3}No latency impact; the tracing client buffers and uploads out-of-band\.$/m);
+  assert.match(r.stdout, /^ {2}gap {3}Two views, the admin panels server-side\.$/m);
   assert.doesNotMatch(r.stdout, /^ {2}gap {3}We fixed it/m);
   assert.match(r.stdout, /^1 of 2 known gaps still open$/m);
 });
@@ -4238,7 +4258,7 @@ test('the fix diff script lists each comma it writes before a "the" clause once'
   const D = String.fromCharCode(0x2014);
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'splices-'));
   fs.writeFileSync(path.join(dir, 'notes.md'), [
-    `No latency impact ${D} the tracing client buffers and uploads out-of-band.`,
+    `Author Atris block documents ${D} the live markdown docs the Atris (obelisk) editor renders, with charts.`,
     '',
     `Feedback ${D} the API that turns complaints into fixes.`,
     '',
@@ -4252,7 +4272,7 @@ test('the fix diff script lists each comma it writes before a "the" clause once'
   const r = spawnSync(process.execPath, [script, '--splices', dir], { encoding: 'utf8', cwd: path.join(__dirname, '..') });
   fs.rmSync(dir, { recursive: true, force: true });
   assert.equal(r.status, 0, r.stderr);
-  assert.match(r.stdout, /^ {2}, the tracing client buffers and uploads out-of-band$/m);
+  assert.match(r.stdout, /^ {2}, the live markdown docs the Atris \(obelisk\) editor renders$/m);
   assert.match(r.stdout, /^ {2}, the gym measures `a` per task {2}\(x2\)$/m);
   assert.doesNotMatch(r.stdout, /API that turns|three ways/);
   assert.match(r.stdout, /; 2 fixes put a comma before "the"/);
