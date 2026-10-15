@@ -13247,7 +13247,7 @@ test('task accept rejects non-positive rewards before marking done', () => {
   }
 });
 
-test('task proof-only agent env blocks acceptance verbs', () => {
+test('task proof-only agent env blocks acceptance verbs', async () => {
   if (!hasNodeSqlite()) return;
   const dir = makeTempDir();
   const dbPath = path.join(dir, 'tasks.db');
@@ -13276,21 +13276,22 @@ test('task proof-only agent env blocks acceptance verbs', () => {
       taskStore.close();
     }
 
-    const done = runCli(['task', 'done', ref, '--as', 'codex', '--proof', 'proof-only guard checked done command', '--json'], { cwd: dir, env });
+    // All three guards return before task writes; readiness waits for them all.
+    const [done, finish, positiveReview] = await Promise.all([
+      runCliAsync(['task', 'done', ref, '--as', 'codex', '--proof', 'proof-only guard checked done command', '--json'], { cwd: dir, env }),
+      runCliAsync(['task', 'finish', ref, '--as', 'codex', '--proof', 'proof-only guard checked finish command', '--json'], { cwd: dir, env }),
+      runCliAsync([
+        'task', 'review', ref,
+        '--reward', '1',
+        '--as', 'codex-review',
+        '--proof', 'proof-only guard checked positive review command',
+        '--json',
+      ], { cwd: dir, env }),
+    ]);
     assert.equal(done.status, 2);
     assert.equal(JSON.parse(done.stdout).reason, 'agent_proof_only_human_accept_blocked');
-
-    const finish = runCli(['task', 'finish', ref, '--as', 'codex', '--proof', 'proof-only guard checked finish command', '--json'], { cwd: dir, env });
     assert.equal(finish.status, 2);
     assert.equal(JSON.parse(finish.stdout).reason, 'agent_proof_only_human_accept_blocked');
-
-    const positiveReview = runCli([
-      'task', 'review', ref,
-      '--reward', '1',
-      '--as', 'codex-review',
-      '--proof', 'proof-only guard checked positive review command',
-      '--json',
-    ], { cwd: dir, env });
     assert.equal(positiveReview.status, 2);
     assert.equal(JSON.parse(positiveReview.stdout).reason, 'agent_proof_only_human_accept_blocked');
 
