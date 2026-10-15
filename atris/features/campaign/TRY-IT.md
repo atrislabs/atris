@@ -64,6 +64,7 @@ On the `campaign/phase2-cli-verbs` branch, point the store at a scratch file so 
 export ATRIS_CAMPAIGN_DB=/tmp/try-campaign.db
 node bin/atris.js campaign start "Try it" --judge "echo two of five; exit 1" --budget 20 --id cmp-try
 node bin/atris.js campaign start "Too easy" --judge true --budget 5     # refused: write a judge that fails first
+node bin/atris.js campaign "Every command has a --help that exits 0" --run   # one sentence: drafts a judge, starts on a yes, keeps going
 node bin/atris.js campaign seat cmp-try validator
 node bin/atris.js campaign event cmp-try mission_started --data '{"mission_id":"m1","member":"builder"}'
 node bin/atris.js campaign event cmp-try mission_ended --data '{"mission_id":"m1","outcome":"kept","cost_usd":4.4}'

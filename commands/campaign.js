@@ -27,11 +27,12 @@ function printHelp() {
   console.log('Usage:');
   console.log('  atris campaign "<goal as a sentence>" --judge "<cmd>"   begin a campaign from one sentence; every flag below works here too');
   console.log('  atris campaign                         every campaign: state, money, and the next move');
-  console.log('  atris campaign new "<goal>" [--budget 20] [--owner <member>] [--yes]   draft a judge that fails today, then start');
+  console.log('  atris campaign "<goal>"                draft a judge that fails today, start on a yes; same as campaign new');
+  console.log('  atris campaign new "<goal>" [--budget 20] [--owner <member>] [--yes] [--run]   --run keeps going after the start');
   console.log('  atris campaign start "<title>" --judge "<cmd>" [--budget <dollars>]   no --budget means no limit; --cloud needs one');
   console.log('        [--holdout <file>]   move held-out data out of the repo; the judge reads it from $ATRIS_CAMPAIGN_HOLDOUT');
   console.log('        [--owner <member>] [--seat <member>[:<role>]]... [--bet "<bet>" [--wrong-if "<what proves it wrong>"]]');
-  console.log('        [--standing] [--parent <id>] [--id cmp-<name>] [--cloud [--basis atris_cloud]] [--protect <path>]...');
+  console.log('        [--standing] [--parent <id>] [--id cmp-<name>] [--cloud [--basis atris_cloud]] [--protect <path>]... [--run]');
   console.log('        --protect saves paths agents must not touch, and the commit they start from');
   console.log('        --basis atris_cloud: Atris runs it on your Atris computer and bills its engines; the default is your own engines');
   console.log('  atris campaign show <id>               bet, judge, answer, budget, seats, missions, asks');
@@ -384,6 +385,8 @@ async function cmdStart(args, ctx) {
   const view = getCampaign(ctx.store, id);
   const synced = cloud && cloud.ok ? `\nin the cloud: ${cloud.pushed} event${cloud.pushed === 1 ? '' : 's'} sent` : '';
   ctx.out(`started ${view.title} (${id})${synced}\n${renderShow(view)}`, { ok: true, action: 'campaign_started', campaign: view, next: decide(view), ...(cloud ? { cloud } : {}) });
+  // --run keeps going: plan and run missions until the judge passes or a stop.
+  if (args.includes('--run')) return cmdLoop(['run', id, ...args.slice(2)], ctx, 'run');
   return 0;
 }
 
@@ -715,7 +718,7 @@ const VERBS = {
   step: (args, ctx) => cmdLoop(args, ctx, 'step'),
   propose: (args, ctx) => cmdLoop(args, ctx, 'propose'),
   // atris campaign new "<goal>": the owner's engine drafts a judge that fails today (lib/campaign-new.js).
-  new: (args, ctx) => require('../lib/campaign-new').draftAndStart(args, ctx, { start: cmdStart, goal: positionals(args)[1], ask: ctx.loopDeps && ctx.loopDeps.ask }),
+  new: (args, ctx) => require('../lib/campaign-new').draftAndStart(args, ctx, { start: cmdStart, goal: positionals(args)[1], ask: ctx.loopDeps && ctx.loopDeps.ask, confirm: ctx.loopDeps && ctx.loopDeps.confirm }),
   export: (args, ctx) => require('../lib/campaign-trace').exportTrace(args, ctx),
   features: (args, ctx) => {
     ctx.out(`this atris CLI can: ${CLOUD_FEATURES.join(', ')}`, { ok: true, features: CLOUD_FEATURES });
@@ -748,8 +751,9 @@ function campaignCommand(args = [], deps = {}) {
   if (handler) return handler(args, ctx);
   // A sentence where the verb goes is a title: it starts a campaign with the
   // same flags as start. One word is more likely a mistyped verb, so it is not.
-  if (/\s/.test(verb.trim())) return cmdStart(['start', ...args], ctx);
-  return ctx.fail(`unknown verb ${verb}. Verbs: ${Object.keys(VERBS).join(', ')}. To start a campaign, write the goal as a sentence: atris campaign "<goal>" --judge "<cmd>"`);
+  // With no --judge, the owner's engine drafts one first, as campaign new does.
+  if (/\s/.test(verb.trim())) return args.includes('--judge') ? cmdStart(['start', ...args], ctx) : VERBS.new(['new', ...args], ctx);
+  return ctx.fail(`unknown verb ${verb}. Verbs: ${Object.keys(VERBS).join(', ')}. To start a campaign, write the goal as a sentence: atris campaign "<goal>" [--judge "<cmd>"]`);
 }
 
 module.exports = { campaignCommand, renderShow, runJudgeCommand };

@@ -136,3 +136,57 @@ test('parseDraft keeps only real scripts and known members', () => {
   assert.equal(draft.title, 'Ship dark mode');
   assert.doesNotMatch(judgePrompt({ goal: 'g', members: [], hints: [], previous: '' }), /Your last draft/);
 });
+
+test('a sentence with no --judge drafts one, the same as campaign new', async () => {
+  await inWorkspace(async () => {
+    const store = createMemoryStore({ origin: 'laptop' });
+    const lines = [];
+    const log = console.log;
+    const error = console.error;
+    console.log = (line) => lines.push(String(line));
+    console.error = () => {};
+    let code;
+    try {
+      code = await campaignCommand(['make every screen support dark mode', '--json'], {
+        store, actor: 'human:test',
+        loopDeps: { ask: async () => ({ ok: true, engine: 'fake', text: reply(FAILING) }) },
+      });
+    } finally {
+      console.log = log;
+      console.error = error;
+    }
+    assert.equal(code, 0);
+    assert.equal(JSON.parse(lines[lines.length - 1]).action, 'campaign_drafted');
+    assert.equal(listCampaigns(store).length, 0, 'nothing starts without a yes');
+  });
+});
+
+test('a yes at the terminal starts the drafted campaign; a no starts nothing', async () => {
+  for (const answer of [true, false]) {
+    await inWorkspace(async () => {
+      const store = createMemoryStore({ origin: 'laptop' });
+      const questions = [];
+      const log = console.log;
+      const error = console.error;
+      console.log = () => {};
+      console.error = () => {};
+      let code;
+      try {
+        code = await campaignCommand(['new', 'make every screen support dark mode'], {
+          store, actor: 'human:test',
+          loopDeps: {
+            ask: async () => ({ ok: true, engine: 'fake', text: reply(FAILING) }),
+            confirm: async (question) => { questions.push(question); return answer; },
+          },
+        });
+      } finally {
+        console.log = log;
+        console.error = error;
+      }
+      assert.equal(code, 0);
+      assert.equal(questions.length, 1);
+      assert.match(questions[0], /start it\? \[y\/N\]/);
+      assert.equal(listCampaigns(store).length, answer ? 1 : 0);
+    });
+  }
+});

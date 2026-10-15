@@ -378,7 +378,6 @@ test('a plain sentence with no verb starts a campaign; verbs stay verbs and one-
   const view = getCampaign(store, 'cmp-moon');
   assert.equal(view.title, 'Make the moon landing replay load fast');
   assert.deepEqual(view.seats, [{ member: 'builder', role: null }]);
-  assert.equal((await run(store, ['A sentence with no judge'])).code, 2);
   const shown = await run(store, ['show', 'cmp-moon']);
   assert.equal(shown.code, 0);
   assert.equal((await run(store, ['show', 'cmp-missing'])).code, 1);
@@ -386,4 +385,35 @@ test('a plain sentence with no verb starts a campaign; verbs stay verbs and one-
   assert.equal(typo.code, 2);
   assert.match(typo.err, /unknown verb shwo/);
   assert.equal(getCampaign(store, 'cmp-shwo'), null);
+});
+
+test('start --run keeps going into the loop after the start', async () => {
+  const store = createMemoryStore({ origin: 'laptop' });
+  const asks = [];
+  const logs = [];
+  const saved = { log: console.log, error: console.error };
+  console.log = (line) => logs.push(String(line));
+  console.error = () => {};
+  let code;
+  try {
+    code = await campaignCommand([...startArgs, '--run', '--max-steps', '1'], {
+      store,
+      actor: 'human:keshav',
+      runJudge: () => ({ passed: false, exit: 1, summary: 'not yet', seconds: 0 }),
+      loopDeps: { skipReconcile: true, cli: async () => ({ code: 0, out: '', err: '' }), ask: async (root, view, prompt) => { asks.push(prompt); return { ok: true, text: '[]' }; } },
+    });
+  } finally {
+    console.log = saved.log;
+    console.error = saved.error;
+  }
+  assert.ok(getCampaign(store, 'cmp-ship'), 'the campaign started');
+  assert.equal(asks.length, 1, `the loop asked the owner for missions: ${logs.join('\n')}`);
+  assert.equal(typeof code, 'number');
+});
+
+test('a judge that prints no counts saves its last line, not a bare exit code', () => {
+  const { judgeRanData } = require('../lib/campaign-reading');
+  assert.equal(judgeRanData({ passed: false, exit: 1, output_tail: 'checking\nstill four of nine\n\n', seconds: 1 }).summary, 'still four of nine');
+  assert.equal(judgeRanData({ passed: false, exit: 3, output_tail: '', seconds: 1 }).summary, 'exit 3');
+  assert.equal(judgeRanData({ passed: true, exit: 0, summary: '9 of 9', output_tail: 'x', seconds: 1 }).summary, '9 of 9');
 });
