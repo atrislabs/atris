@@ -2441,3 +2441,5 @@ Receipt test name patterns: `test/member-board.test.js:4009` fails when a checke
 Wide random board sizes: `test/member-board.test.js:695` draws seeded random boards with wide-character member names and jobs at every width from 1 to 130, four heights, and with or without hidden older runs, and fails when a line runs past the width in screen cells. Its cell count covers only the CJK and Hangul ranges the fixtures use, so it never checks the board's width table against itself.
 
 Tiny wide watch screens: `test/member-board.test.js:3366` runs the real watch command in a pseudo-terminal at 1 to 12 columns, tall and short, with wide-character member names, and asserts every frame line: one column of states in order, only the dots that fit below 3 columns, and the hint from 6 columns on a tall screen.
+
+One-row idle wake: `test/member-board.test.js:4048` runs `python3 atris/receipts/member-board-idle-wake-proof.py` against the real watch command at 18x1, writes a new run, grows to 18x3, and shrinks back; each frame keeps the correct hidden older count and headings return at three rows.

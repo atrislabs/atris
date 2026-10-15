@@ -4043,3 +4043,13 @@ test('the map board row ref into the member command lands on the board hand-off'
   assert.ok(refs.length, 'the board row cites the member command');
   for (const n of refs) assert.match(lines[n - 1] ?? '(past the end)', /memberBoardCommand/, `atris/MAP.md board row cites commands/member.js:${n}`);
 });
+
+
+test('a one-row idle watch wakes and restores member headings after resize', { skip: process.platform === 'win32' }, (t) => {
+  const proof = spawnSync('python3', [path.join(repoRoot, 'atris/receipts/member-board-idle-wake-proof.py'), process.execPath], {
+    encoding: 'utf8', timeout: 20_000,
+  });
+  assert.equal(proof.status, 0, `${proof.stdout}\n${proof.stderr}\n${proof.error || ''}`);
+  assert.match(proof.stdout, /one-row idle board wakes; headings return after resize/);
+  t.diagnostic(proof.stdout);
+});
