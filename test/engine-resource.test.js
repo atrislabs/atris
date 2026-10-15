@@ -4270,3 +4270,34 @@ test('a headless pack run records its print run through the real command', () =>
     fs.rmSync(dir, { recursive: true, force: true });
   }
 });
+
+test('each sweep line counts the unguarded agent starts in the shell startup files it read', () => {
+  const { runSshAgentSweep } = require('../commands/autoland');
+  const { engineCommand } = require('../commands/engine');
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'sweep-start-lines-'));
+  const home = fs.mkdtempSync(path.join(os.tmpdir(), 'sweep-start-lines-home-'));
+  const agent = (pid) => ({ pid, ppid: 1, uid: 501, age_sec: 3600, args: 'ssh-agent -s' });
+  const read = () => ({ agents: [agent(200)], referenced: new Set() });
+  const lines = () => fs.readFileSync(path.join(root, RESOURCE_LOG), 'utf8').trim().split('\n').map((l) => JSON.parse(l));
+  try {
+    fs.writeFileSync(path.join(home, '.zshrc'), 'eval "$(ssh-agent -s)"\n');
+    fs.writeFileSync(path.join(home, '.zprofile'), 'if true; then eval `ssh-agent -s`; fi\n');
+    runSshAgentSweep(root, {}, { read, uid: 501, home, kill: () => {} });
+    assert.strictEqual(lines().pop().unguarded_start_lines, 2, 'the hourly pass counts every unguarded start, fixable or not');
+    fs.writeFileSync(path.join(home, '.zshrc'), '[ -S "$SSH_AUTH_SOCK" ] || eval "$(ssh-agent -s)"\n');
+    fs.rmSync(path.join(home, '.zprofile'));
+    const original = console.log;
+    console.log = () => {};
+    try {
+      engineCommand(['sweep', '--apply'], { root, engineSweep: { read, uid: 501, home, kill: () => {} } });
+    } finally {
+      console.log = original;
+    }
+    assert.strictEqual(lines().pop().unguarded_start_lines, 0, 'a guarded line is recorded as fixed');
+    runSshAgentSweep(root, {}, { read, uid: 501, kill: () => {} });
+    assert.ok(!('unguarded_start_lines' in lines().pop()), 'a sweep that read no startup files records no count');
+  } finally {
+    fs.rmSync(root, { recursive: true, force: true });
+    fs.rmSync(home, { recursive: true, force: true });
+  }
+});

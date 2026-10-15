@@ -867,8 +867,10 @@ function runSshAgentSweep(root, receipt, deps = {}) {
     }
     const { agents, referenced, unread = [] } = read();
     const leaked = findLeakedSshAgents(agents, { referenced, uid });
+    // A test run reads only the home it was handed, never the real one.
+    const startLines = deps.home || !process.env.NODE_TEST_CONTEXT ? findAgentStartLines(deps.home ? { home: deps.home } : {}) : undefined;
     const result = leaked.length
-      ? stopLeakedSshAgents(root, leaked, { read, uid, limit: deps.limit || HOURLY_SSH_AGENT_STOP_LIMIT, ...(deps.kill ? { kill: deps.kill } : {}) })
+      ? stopLeakedSshAgents(root, leaked, { read, uid, limit: deps.limit || HOURLY_SSH_AGENT_STOP_LIMIT, startLines, ...(deps.kill ? { kill: deps.kill } : {}) })
       : empty;
     // A reading that failed on either scan is kept, so the summary can say
     // some agents went unchecked instead of reading as a clean machine.

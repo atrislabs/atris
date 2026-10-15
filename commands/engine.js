@@ -2349,8 +2349,10 @@ function runEngineSweepCommand(args, root, deps = {}) {
   const uid = deps.uid !== undefined ? deps.uid : process.getuid();
   const leaked = findLeakedSshAgents(agents, { referenced, uid });
   const apply = args.includes('--apply');
+  // A test run reads only the home it was handed, never the real one.
+  const readsHome = deps.home || !process.env.NODE_TEST_CONTEXT;
   const result = apply
-    ? stopLeakedSshAgents(root, leaked, { read, uid, ...(deps.kill ? { kill: deps.kill } : {}), ...(deps.now ? { now: deps.now } : {}) })
+    ? stopLeakedSshAgents(root, leaked, { read, uid, ...(readsHome ? { startLines: findAgentStartLines(deps.home ? { home: deps.home } : {}) } : {}), ...(deps.kill ? { kill: deps.kill } : {}), ...(deps.now ? { now: deps.now } : {}) })
     : { stopped: [], failed: [], skipped: [] };
   result.unread = [...new Set([...unread, ...(result.unread || [])])];
   const scanWarning = result.unread.length
@@ -2366,8 +2368,7 @@ function runEngineSweepCommand(args, root, deps = {}) {
       result.close_error = String((err && err.message) || err).slice(0, 200);
     }
   }
-  // A test run reads only the home it was handed, never the real one.
-  const startLines = leaked.length && (deps.home || !process.env.NODE_TEST_CONTEXT)
+  const startLines = leaked.length && readsHome
     ? findAgentStartLines(deps.home ? { home: deps.home } : {})
     : [];
   const code = result.failed.length || result.close_error ? 1 : 0;
