@@ -286,3 +286,5 @@ Duplicate selection fixture reuse: `test/commands.test.js:12776` readies the che
 Certified review fallback read batching: `test/commands.test.js:12603` overlaps the two next reads after certification and before creation. Six sequential CLI stages become five; all assertions remain. Details: `atris/refs/MAP-NOTES.md`.
 
 Final fallback read batching: `test/commands.test.js:12684` awaits next and show together after follow-up creation. Both read unchanged task rows; every assertion remains. Five sequential CLI stages become four.
+
+Scoped fallback read batching: `test/commands.test.js:12700` runs the two scoped next reads together after certification, before the refused creation. All assertions remain; four sequential CLI stages become three.

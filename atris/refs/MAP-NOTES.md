@@ -2815,3 +2815,5 @@ Duplicate selection fixture reuse: `test/commands.test.js:12776` readies the che
 Certified review fallback read batching: `test/commands.test.js:12603` awaits both next output formats together after certification, before creating follow-up work. `commands/task.js:6948` builds next output from task rows, independent of the saved view. All assertions remain; six sequential CLI stages become five.
 
 Final fallback read batching: `test/commands.test.js:12684` awaits next and show together after follow-up creation. Both read unchanged task rows; every assertion remains. Five sequential CLI stages become four.
+
+Scoped fallback read batching: `test/commands.test.js:12700` runs the two scoped next reads together after certification, before the refused creation. All assertions remain; four sequential CLI stages become three.

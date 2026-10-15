@@ -12690,7 +12690,7 @@ test('task next surfaces Endgame fallback for human-only certified review', asyn
   }
 });
 
-test('task next scoped by tag does not surface unrelated Endgame fallback', () => {
+test('task next scoped by tag does not surface unrelated Endgame fallback', async () => {
   if (!hasNodeSqlite()) return;
   const dir = makeTempDir();
   const dbPath = path.join(dir, 'tasks.db');
@@ -12738,7 +12738,10 @@ test('task next scoped by tag does not surface unrelated Endgame fallback', () =
       '--proof', 'node --test test/commands.test.js passed during certification',
     ], { cwd: dir, env }).status, 0);
 
-    const scopedNext = runCli(['task', 'next', '--tag', 'golden-path', '--as', 'onboarding', '--json'], { cwd: dir, env });
+    const [scopedNext, scopedText] = await Promise.all([
+      runCliAsync(['task', 'next', '--tag', 'golden-path', '--as', 'onboarding', '--json'], { cwd: dir, env }),
+      runCliAsync(['task', 'next', '--tag', 'golden-path', '--as', 'onboarding'], { cwd: dir, env }),
+    ]);
     assert.equal(scopedNext.status, 0, scopedNext.stderr);
     const payload = JSON.parse(scopedNext.stdout);
     assert.equal(payload.action, 'accept');
@@ -12747,7 +12750,6 @@ test('task next scoped by tag does not surface unrelated Endgame fallback', () =
     assert.equal(payload.task.display_id, ref);
     assert.equal(payload.task.tag, 'golden-path');
 
-    const scopedText = runCli(['task', 'next', '--tag', 'golden-path', '--as', 'onboarding'], { cwd: dir, env });
     assert.equal(scopedText.status, 0, scopedText.stderr);
     assert.match(scopedText.stdout, new RegExp(`^next: atris task accept ${ref}$`, 'm'));
     assert.doesNotMatch(scopedText.stdout, /No open tasks for tag=golden-path/);
