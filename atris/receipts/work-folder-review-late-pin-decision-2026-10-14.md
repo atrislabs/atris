@@ -42,3 +42,13 @@ The disposable diagnostic now also moves the owned copy's `.git` link immediatel
 Verdict: proceed with the existing fail-closed plan after production review. The single failure mode remains treating a refused removal as success. This case proves the safeguard must inspect the process result for every refusal, rather than retaining only pinned copies. A missing process status still needs separate proof.
 
 next_push: prove missing removal status with a terminated disposable child before production implementation.
+
+## Interrupted removal proof
+
+The fourth disposable case terminates a real Node child with SIGTERM, asserts its actual process result has null status and SIGTERM, then propagates that signal through the Git wrapper at removal. The actual disposal function still returns removed true, deletes all four review paths and records success. The trusted content and both saved commits remain unchanged. This is process-boundary fault injection, not a claim that Git itself crashed.
+
+Verdict: proceed with the existing plan after production review. The single failure mode is treating an interrupted removal as success. Require status exactly zero before deleting any store; truthiness or a positive-status test would miss null. Preserve all stores and registration on interruption, return a useful detail even without stderr, and write no success record.
+
+Plan: real child terminates -> wrapper propagates signal -> null removal status -> retain all stores in the proposed fix.
+
+next_push: add signal and process-error fallback wording to the refusal contract before production review.

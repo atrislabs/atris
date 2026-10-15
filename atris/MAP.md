@@ -159,3 +159,5 @@ Last-moment pin coverage: `test/member-tidy.test.js` runs real tidy, cleanup, br
 Review cleanup late-pin defect: `atris/receipts/work-folder-review-late-pin-probe.js` uses actual review setup to compare idle disposal with late-pin and invalid-link refusals, proving deletion of all disposable review paths and a false success record after refusal. The decision card is `atris/receipts/work-folder-review-late-pin-decision-2026-10-14.md`; production cleanup is unchanged pending protected-surface review.
 
 Review refusal reporting contract: the existing decision card also specifies the shared helper's text result and the caller's required detail fallback, with generic-refusal and missing-status proof required before implementation.
+
+Interrupted review removal: the existing review diagnostic also terminates a real child and propagates SIGTERM at removal, proving null status still causes deletion and a false success record. Proof: `atris/receipts/work-folder-review-interrupted-proof-2026-10-14.txt`.
