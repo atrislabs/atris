@@ -57,6 +57,11 @@ const LIST_LABEL_DASH = /^(\s*(?:>\s*)*(?:[-*+]|\d+[.)])\s+)((?![^\u2014]*:\s+(?
 // "_Note_: requires Node 18". An italic mark must touch its word, so a "* "
 // list marker never counts. In markdown the fixer sees inline code masked,
 // so the masked span counts as code too.
+// Lowercase "then", "because", "though" and "even when" go on the same way:
+// "any credentials, even when embedded". A capital opens a new sentence, so
+// "**still includes full content**: Even when" keeps its colon, and "even"
+// before a subject is a clause of its own: "**stable**: even one byte misses".
+const CONTINUES_AFTER_LABEL = /^(?:then|because|though|although|even (?:when|if|though))\b/;
 const LINE_LABEL_DASH = /^(\s*(?:>\s*)*)(\*\*[^*\u2014]{0,58}[^\s*\u2014]\*\*|__[^_\u2014]{0,58}[^\s_\u2014]__|\*[^*\s\u2014](?:[^*\u2014]{0,57}[^\s*\u2014])?\*|_[^_\s\u2014](?:[^_\u2014]{0,57}[^\s_\u2014])?_|`[^`]+`|\uE000\d+\uE001)\s*\u2014\s*/;
 
 // A numbered name that opens a line, alone or after a bold label that ends in
@@ -687,6 +692,7 @@ function fixEmDash(s, { endsBlock = false, startsBlock = false, spans = [], abov
     return `${m[1]}: ${fixEmDash(s.slice(m[0].length), { endsBlock })}`;
   }
   let label = LIST_LABEL_DASH.exec(s) || LINE_LABEL_DASH.exec(s) || NUMBERED_LABEL_DASH.exec(s);
+  if (label && CONTINUES_AFTER_LABEL.test(s.slice(label[0].length))) label = null;
   // a plain-word label whose dash opens an aside closed by a second dash in
   // the same sentence is a subject, not a label: "Retries (up to 3) happen
   // automatically", never "Retries: up to 3, happen". Marked and code labels stay.

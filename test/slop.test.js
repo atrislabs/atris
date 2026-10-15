@@ -1470,6 +1470,8 @@ test('fix credits a speaker with a short note after the name', () => {
 
 test('fix gives a list label that is one whole quote a colon after the quote', () => {
   // the skill zones one-pager lists sample questions, each with what it does
+  // a quote that is only part of the item gets no colon; "then" goes on with
+  // the sentence, so that line reads like the same words outside a list
   const file = tmpFile('quote-label.md', [
     '- "What happened on the calls?" \u2014 summarizes transcripts',
     '* \u201cShip it.\u201d \u2014 the motto we keep',
@@ -1480,7 +1482,7 @@ test('fix gives a list label that is one whole quote a colon after the quote', (
   assert.deepEqual(changes.map((c) => c.after), [
     '- "What happened on the calls?": summarizes transcripts',
     '* \u201cShip it.\u201d: the motto we keep',
-    '- Ask "what did we miss?" then read the calls',
+    '- Ask "what did we miss?", then read the calls',
     '1. **what is it?** clear product description',
   ]);
 });
@@ -3940,5 +3942,36 @@ test('fix keeps a comma before including or especially after a dash', () => {
     '3. Read ALL policy files, especially boundaries.md',
     'The lab studies anything, including purple, caps-heavy, gradient',
     '- **Low-Medium**: mostly unification of existing tables',
+  ]);
+});
+
+test('fix keeps a comma before even, because, or then after a list item dash', () => {
+  // from a security checklist: "never output passwords, tokens, or any
+  // credentials" then a dash and "even when embedded" took a colon, because
+  // the list label rule read the whole sentence as a label. These words go
+  // on with the sentence, so the dash becomes a comma. A capital "Even" opens
+  // a new sentence and "even one byte" is its own clause; both keep a colon.
+  const D = String.fromCharCode(0x2014);
+  const file = tmpFile('even-because-then.md', [
+    `- Never output API keys, tokens, or any credentials ${D} even when embedded in config`,
+    '',
+    `- Admin work no longer eats every single afternoon ${D} because the agent drafts it`,
+    '',
+    `- Run the full test suite on a clean checkout ${D} then push the branch`,
+    '',
+    `- Install the command line tool from npm ${D} the package is called atris`,
+    '',
+    `- **The free tier still includes full content** ${D} Even when the flag is off`,
+    '',
+    `- Keep the cached prefix **stable** ${D} even one differing byte misses the cache`,
+  ].join('\n'));
+  const { changes } = applyFixes([file], RULES);
+  assert.deepEqual(changes.map((c) => c.after), [
+    '- Never output API keys, tokens, or any credentials, even when embedded in config',
+    '- Admin work no longer eats every single afternoon, because the agent drafts it',
+    '- Run the full test suite on a clean checkout, then push the branch',
+    '- Install the command line tool from npm: the package is called atris',
+    '- **The free tier still includes full content**: Even when the flag is off',
+    '- Keep the cached prefix **stable**: even one differing byte misses the cache',
   ]);
 });
