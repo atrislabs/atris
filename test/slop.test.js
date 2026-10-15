@@ -2434,6 +2434,27 @@ test('fix joins a field value and a "the" clause after a dash with a semicolon',
   ]);
 });
 
+test('fix joins "the", a noun, a verb in s and "but" with a second clause after a dash', () => {
+  // from real repo text: "the lead capture works but the follow-up routing
+  // is broken" spliced, and "the route looks like it logs backend errors but
+  // doesn't" matched no rule. A second clause or verb after "but" makes the
+  // line a clause; "but not" and "but the" with no verb set two things side
+  // by side, so they keep the comma.
+  const file = tmpFile('but-clause.md', [
+    'Partly fixed \u2014 the lead capture works but the follow-up routing is broken.',
+    "Read it twice \u2014 the route looks like it logs backend errors but doesn't.",
+    'Check one place \u2014 the error logs but not the traces.',
+    'Check one place \u2014 the user stories but the epics too.',
+  ].join('\n'));
+  const { changes } = applyFixes([file], RULES);
+  assert.deepEqual(changes.map((c) => c.after), [
+    'Partly fixed; the lead capture works but the follow-up routing is broken.',
+    "Read it twice; the route looks like it logs backend errors but doesn't.",
+    'Check one place, the error logs but not the traces.',
+    'Check one place, the user stories but the epics too.',
+  ]);
+});
+
 test('fix joins "the", a noun and a verb in s with a "what" clause or a quote after a dash', () => {
   // from real repo text: "the business owns what its agents learn" and 'the
   // verdict reads "Human decision needed."' spliced, since neither object

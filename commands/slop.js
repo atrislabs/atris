@@ -348,6 +348,14 @@ const BARE_PHRASE_CLAUSE_AFTER_DASH = new RegExp(`${CLAUSE_END}\\s*\\u2014\\s*(?
 // writes it", "the migration shows as applied and is skipped". Two plurals
 // that share a word stay a phrase: "the error logs and traces folder".
 const AND_VERB_CLAUSE_AFTER_DASH = new RegExp(`${CLAUSE_END}\\s*\\u2014\\s*(?=the\\s+(?!${NAME_PAIR}\\b)(?!(?:one|two|three|four|five|six|seven|eight|nine|ten|few|many|several|same|other|first|last|next|main|key|core|new|old|real|whole|exact|only)\\b)(?:(?![A-Za-z-]*s\\b)(?:[A-Z]{2,}|[a-z][a-z-]*[a-z])\\s+(?!(?:that|which|who)\\b))?(?![a-z]*[^aisu]s\\b)[a-z]{2,}\\s+(?!${PLURAL_NOUN_WORD}\\b)${PLAIN_VERB_WORD}\\s+(?:(?:as\\s+)?(?!(?:the|a|an|and|or|of|in|on|for|to)\\b)[a-z][\\w-]*\\s+)?and\\s+(?:(?!${PLURAL_NOUN_WORD}\\b)${PLAIN_VERB_WORD}\\s+(?:(?:the|a|an|it|them|its|their|this|these|those)\\b|(?:(?:client|server|browser|edge)-side|out-of-band|in-process|in-place)(?=[.!?;,]|$))|(?:is|are|was|were|has|had)\\s+[a-z]))`, 'g');
+// A verb in "s", a few words and "but" with a second clause or verb after it
+// is a clause too: "the lead capture works but the follow-up routing is
+// broken", "the route looks like it logs backend errors but doesn't". "but
+// not" sets two things side by side, so "the error logs but not the traces"
+// keeps its comma. After "but the" a helper verb or a word in "ed" must
+// follow within a few words, since "the user stories but the epics too"
+// names two things.
+const BUT_CLAUSE_AFTER_DASH = new RegExp(`${CLAUSE_END}\\s*\\u2014\\s*(?=the\\s+(?!${NAME_PAIR}\\b)(?!(?:one|two|three|four|five|six|seven|eight|nine|ten|few|many|several|same|other|first|last|next|main|key|core|new|old|real|whole|exact|only)\\b)(?:(?![A-Za-z-]*s\\b)(?:[A-Z]{2,}|[a-z][a-z-]*[a-z])\\s+(?!(?:that|which|who)\\b))?(?![a-z]*[^aisu]s\\b)[a-z]{2,}\\s+(?!${PLURAL_NOUN_WORD}\\b)${PLAIN_VERB_WORD}\\s+(?:[^\\s,;.!?\\u2014]+\\s+){0,6}?but\\s+(?!not\\b)(?:(?:the|a|an)\\s+(?:[\\w-]+\\s+){1,3}(?:is|are|was|were|has|have|had|does|did|can|will|(?:is|are|was|does|did|has|wo)n['\\u2019]t|[a-z]{3,}ed)|it|they|this|that|never|still|(?:does|did|do|is|was|are|were|has|have|can|could|wo)n['\\u2019]t|does|is|was|has|can|[a-z]{2,}s)\\b)`, 'g');
 // A word in "s" and at most one more word before a name word and a stop
 // read as one long name, not a verb and its object: "one place, the agent
 // runs dashboard view", "the team calls schedule". Every dash clause rule
@@ -1089,6 +1097,10 @@ function fixEmDash(s, { endsBlock = false, startsBlock = false, spans = [], abov
     .replace(THE_OBJECT_CLAUSE_AFTER_DASH, (m, at, whole) => {
       const left = clauseOrFieldLeft(at, whole);
       return left && !RELATIVE_OBJECT_PHRASE.test(whole.slice(at)) ? clauseJoin(left, at, whole) : m;
+    })
+    .replace(BUT_CLAUSE_AFTER_DASH, (m, at, whole) => {
+      const left = clauseOrFieldLeft(at, whole);
+      return left ? clauseJoin(left, at, whole) : m;
     })
     .replace(AND_VERB_CLAUSE_AFTER_DASH, (m, at, whole) => {
       const left = clauseOrFieldLeft(at, whole);

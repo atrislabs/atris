@@ -178,3 +178,15 @@ One place \u2014 the server logs "error" lines.
 # "names" is a verb here, but it is too often a noun to trust before a quote
 note: caution \u2014 the verbatim quote names "Dave," not the owner Eric.
 ~> note: caution; the verbatim quote names "Dave," not the owner Eric.
+
+# from real repo text: a verb in s, a few words and "but" with a second
+# clause or verb; "but not" and "but the" with no verb set two things side
+# by side
+Partly fixed \u2014 the lead capture works but the follow-up routing is broken.
+=> Partly fixed; the lead capture works but the follow-up routing is broken.
+Read it twice \u2014 the route looks like it logs backend errors but doesn't.
+=> Read it twice; the route looks like it logs backend errors but doesn't.
+Check one place \u2014 the error logs but not the traces.
+=> Check one place, the error logs but not the traces.
+Check one place \u2014 the user stories but the epics too.
+=> Check one place, the user stories but the epics too.
