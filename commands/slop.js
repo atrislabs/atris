@@ -1722,10 +1722,14 @@ function trailingMark(line, below, above = '') {
 // reading replaces that comma. A dash further on the next line, past its
 // first stop, belongs to the next sentence, as in trailingMark. A code span
 // on the next line counts as a plain word ("it" then "runs the `claude mcp
-// add` for you"); one past the first stop is not read at all.
+// add` for you"); one past the first stop is not read at all. Inside a
+// quote the next line at the same depth goes on with the sentence, so its
+// quote marks are left off: "focuses on" then "> the delta between".
 function wrappedClause(masked, fixed, below, fix, opts) {
   const at = masked.indexOf('\u2014');
   if (at < 0 || masked.split('\u2014').length !== 2 || !masked.slice(at + 1).trim()) return fixed;
+  const depth = (s) => (/^\s*(?:>\s*)*/.exec(s)[0].match(/>/g) || []).length;
+  if (depth(masked) && depth(masked) === depth(below)) below = below.replace(/^\s*(?:>\s*)+/, '');
   if (!wrappedFrom(masked, below)) return fixed;
   const stop = /^[^\u2014`]*?[.!?](?=\s|$)/.exec(below);
   let words = /\u2014/.test(below) || /`/.test(below) ? (stop || [below])[0] : below;

@@ -245,3 +245,9 @@ The claim "closes the loop with the gate work \u2014 the classifier reads real o
 # but a plural noun where the verb would be keeps the phrase
 He wrote "start with one screen \u2014 the user settings page layout" in the doc.
 => He wrote "start with one screen, the user settings page layout" in the doc.
+# a wrapped clause inside a quote reads on into the next line at the same depth
+> Pass the brain context as part of the prompt \u2014 the web search focuses on\n> the delta between brain knowledge and web state.
+=> > Pass the brain context as part of the prompt; the web search focuses on\n> the delta between brain knowledge and web state.
+# but a quote one level up is no wrap
+>> Keep the whole note short \u2014 the web search focuses on\n> the delta between them.
+=> >> Keep the whole note short, the web search focuses on\n> the delta between them.

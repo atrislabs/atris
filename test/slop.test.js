@@ -2471,6 +2471,29 @@ test('fix joins a past verb with a word in "ly" before it after a dash', () => {
   ]);
 });
 
+test('fix reads a wrapped clause inside a quote with the next quoted line', () => {
+  // from real repo text: "the web search focuses on" then "> the delta
+  // between" spliced, since a next line that opens on a quote mark never
+  // counted as a wrap. At the same quote depth it goes on with the
+  // sentence; a list item inside the quote or a shallower line does not.
+  const file = tmpFile('quote-wrap.md', [
+    '> Pass the brain context as part of the prompt \u2014 the web search focuses on',
+    '> the delta between brain knowledge and web state.',
+    '',
+    '> Keep the whole note short \u2014 it',
+    '> - lists the steps.',
+    '',
+    '>> Keep the whole note short \u2014 the web search focuses on',
+    '> the delta between them.',
+  ].join('\n'));
+  const { changes } = applyFixes([file], RULES);
+  assert.deepEqual(changes.map((c) => c.after), [
+    '> Pass the brain context as part of the prompt; the web search focuses on',
+    '> Keep the whole note short, it',
+    '>> Keep the whole note short, the web search focuses on',
+  ]);
+});
+
 test('fix joins a verb and a bare object that ends at a closing quote after a dash', () => {
   // from real repo text: "the classifier reads real outcome data" sat
   // inside a quote and spliced, since a bare object had to end at a stop
