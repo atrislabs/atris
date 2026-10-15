@@ -1253,17 +1253,24 @@ test('member goal-from-mission creates a bounded goal without a human title', ()
     ], { cwd: dir, env });
     assert.equal(startedMission.status, 0, startedMission.stderr || startedMission.stdout);
     const mission = JSON.parse(startedMission.stdout).mission;
-    const missionTaskAdd = runCli([
-      'task', 'add', 'Build the mission-owned task loop',
-      '--tag', 'mission',
-      '--goal-id', mission.id,
-      '--json',
-    ], { cwd: dir, env });
-    assert.equal(missionTaskAdd.status, 0, missionTaskAdd.stderr || missionTaskAdd.stdout);
-    const missionTask = JSON.parse(missionTaskAdd.stdout).task;
     const db = taskStore.open(dbPath);
+    let missionTask;
     try {
-      assert.equal(taskStore.claimTask(db, { id: missionTask.id, claimedBy: 'mission-lead' }).claimed, true);
+      const created = addSeedTask(db, {
+        title: 'Build the mission-owned task loop',
+        tag: 'mission',
+        workspaceRoot: taskStore.workspaceRoot(dir),
+        metadata: { goal_id: mission.id },
+      });
+      assert.equal(created.inserted, true);
+      assert.equal(taskStore.claimTask(db, { id: created.id, claimedBy: 'mission-lead' }).claimed, true);
+      // Member goal discovery reads the saved task view, rather than the database.
+      const projection = taskStore.taskProjection(db, { workspaceRoot: taskStore.workspaceRoot(dir) });
+      const projectionPath = path.join(dir, '.atris', 'state', 'tasks.projection.json');
+      fs.mkdirSync(path.dirname(projectionPath), { recursive: true });
+      fs.writeFileSync(projectionPath, JSON.stringify(projection));
+      missionTask = projection.tasks.find((task) => task.id === created.id);
+      assert.ok(missionTask);
     } finally {
       taskStore.close();
     }
