@@ -316,7 +316,7 @@ function initAtris() {
     console.log('  Use --verbose to list every file installed.');
     console.log('  Use --minimal for atris.md + MAP + TODO + today journal + .atris/state (no IDE farm).');
     console.log('  Use --with-adapters / --with-skills with --minimal, or --full for the default full scaffold.');
-    console.log('  In a git repo, init commits the files it creates so every member copy starts with them.');
+    console.log('  In a git repo with no commits yet, init commits the files it creates so every member copy starts with them.');
     console.log('  Use --no-commit to leave them uncommitted.');
     return;
   }
@@ -1132,6 +1132,8 @@ Read atris/MAP.md. Begin iteration 1.`;
       const saved = commitInitFiles(gitSnapshot);
       if (saved.committed) {
         console.log('setup saved to git, so every member starts with it');
+      } else if (saved.reason === 'has_history') {
+        console.log('commit the new atris files so members start with them');
       } else if (saved.reason === 'add_failed' || saved.reason === 'commit_failed') {
         console.log('setup files are not committed yet. members only see them after you commit.');
         if (saved.detail) console.log(`  git said: ${saved.detail.split('\n')[0]}`);

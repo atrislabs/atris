@@ -1,8 +1,8 @@
 'use strict';
 
-// Members work in copies cut from committed history. A brand new project's
-// setup files have to be committed by `atris init` itself, or the first
-// member copy starts without its own team, map, or task list.
+// Members work in copies cut from committed history. A brand new project has
+// no history yet, so `atris init` commits its own setup files there, or the
+// first member copy starts without its own team, map, or task list.
 
 const test = require('node:test');
 const assert = require('node:assert/strict');
@@ -72,10 +72,6 @@ test('init in a brand new repo commits its setup and a member copy has it', (t) 
 
 test('init leaves the person\'s own uncommitted and staged work alone', (t) => {
   const { root, git, atris } = project(t);
-  fs.writeFileSync(path.join(root, 'README.md'), 'first\n');
-  git(['add', 'README.md']);
-  git(['commit', '-qm', 'readme']);
-  fs.writeFileSync(path.join(root, 'README.md'), 'my edit\n');
   fs.writeFileSync(path.join(root, 'draft.txt'), 'not ready\n');
   fs.writeFileSync(path.join(root, 'staged.txt'), 'staged by me\n');
   git(['add', 'staged.txt']);
@@ -87,11 +83,22 @@ test('init leaves the person\'s own uncommitted and staged work alone', (t) => {
   assert.ok(files.includes('atris/team/executor/MEMBER.md'));
   assert.ok(!files.includes('draft.txt'), 'untracked user file is not committed');
   assert.ok(!files.includes('staged.txt'), 'staged user file is not committed');
-  assert.equal(git(['show', 'HEAD:README.md']).stdout, 'first\n', 'user edit is not committed');
   const status = git(['status', '--porcelain']).stdout;
-  assert.match(status, /^ M README\.md$/m);
   assert.match(status, /^\?\? draft\.txt$/m);
   assert.match(status, /^A  staged\.txt$/m);
+});
+
+test('init in a repo that already has history makes no commit and says how members get the files', (t) => {
+  const { root, git, atris } = project(t);
+  fs.writeFileSync(path.join(root, 'README.md'), 'first\n');
+  git(['add', 'README.md']);
+  git(['commit', '-qm', 'readme']);
+  const before = git(['rev-parse', 'HEAD']).stdout.trim();
+
+  const init = atris(['init', '--yes']);
+  assert.equal(init.status, 0, init.stderr || init.stdout);
+  assert.equal(git(['rev-parse', 'HEAD']).stdout.trim(), before, 'existing history is untouched');
+  assert.match(init.stdout, /commit the new atris files so members start with them/);
 });
 
 test('init --no-commit leaves setup uncommitted', (t) => {
