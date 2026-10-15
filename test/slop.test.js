@@ -2321,6 +2321,23 @@ test('fix keeps a colon before a dash pair and stacks no comma on it', () => {
   ]);
 });
 
+test('fix joins a subject with "also" before its verb with a semicolon', () => {
+  // from a probe of the loop note: "now", "still" and "already" before a
+  // verb joined the clause, but "also" did not, so "the gate also checks
+  // drafts" spliced. "also" with no verb after it stays a phrase.
+  const file = tmpFile('also-clause.md', [
+    'We fixed it \u2014 the gate also checks drafts.',
+    'We fixed it \u2014 the tests also pass the gate.',
+    'Ship the tool \u2014 the docs also, for later.',
+  ].join('\n'));
+  const { changes } = applyFixes([file], RULES, { write: false });
+  assert.deepEqual(changes.map((c) => c.after), [
+    'We fixed it; the gate also checks drafts.',
+    'We fixed it; the tests also pass the gate.',
+    'Ship the tool, the docs also, for later.',
+  ]);
+});
+
 test('fix joins a subject with a "not" contraction or "still" before its verb with a semicolon', () => {
   // from the terrace repo, where the comma made a splice
   const file = tmpFile('adverb.md', [

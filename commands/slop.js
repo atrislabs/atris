@@ -311,7 +311,8 @@ const LEADING_CLAUSE_AFTER_DASH = new RegExp(`${CLAUSE_END}\\s*\\u2014\\s*(?=(?:
 // A "not" contraction or a word like "still" or "never" right after a
 // noun subject marks a verb, which no plain noun phrase has: "the picker
 // can't see it", "the member still owns the receipt", "a session never wakes".
-// The word after "still" must be a verb, so "the files still open" stays.
+// The word after "still" or "also" must be a verb, so "the files still open"
+// stays, and "the docs also, for later" stays a phrase.
 // A "that" before it opens a clause inside a noun phrase, so "the same
 // surface that already runs it" stays too. The "the" may be left off:
 // "PR merged; review queue now loads", "helpers survived; `findAppsTab`
@@ -321,7 +322,7 @@ const LEADING_CLAUSE_AFTER_DASH = new RegExp(`${CLAUSE_END}\\s*\\u2014\\s*(?=(?:
 // moving", "dead sheets still cause conflicts". A verb like "is" right
 // after the dash has its subject before it, so the dash closed an aside:
 // "the slice, a smoke session, is protected and won't self-land".
-const ADVERB_CLAUSE_AFTER_DASH = new RegExp(`${CLAUSE_END}\\s*\\u2014\\s*(?!${NAMING_PHRASE})(?!${TIME_OPENER})(?!${OPEN_HELPER}\\b)(?=(?:(?:the|a|an|every|each|no)\\s+)?(?!(?:and|but|or|nor|so|yet|then|not|even|when|if|unless|until|because|since|while|where|which|who|as|after|before|though|although|once|just|only)\\b)(?:(?!(?:the|a|an|that|whose)\\b)${SUBJECT_WORD}){0,2}(?!(?:that|whose)\\b)${NOUN_WORD}\\s+(?:(?:just|still|never|already|always|now|really|actually|often|usually|rarely|finally)\\s+(?:[a-z]{2,}(?:s|ed)\\b(?<!ss|ous)|(?<=s\\s+(?:now|still|never|already|always|often|usually|rarely|finally|just)\\s+)[a-z]{3,}\\b(?=\\s+[a-z])|(?:is|are|was|were|will|would|can|could|must|should|has|have|had|does|did)\\b|[a-z]+n['\\u2019]t\\b)|[a-z]+n['\\u2019]t\\b))`, 'g');
+const ADVERB_CLAUSE_AFTER_DASH = new RegExp(`${CLAUSE_END}\\s*\\u2014\\s*(?!${NAMING_PHRASE})(?!${TIME_OPENER})(?!${OPEN_HELPER}\\b)(?=(?:(?:the|a|an|every|each|no)\\s+)?(?!(?:and|but|or|nor|so|yet|then|not|even|when|if|unless|until|because|since|while|where|which|who|as|after|before|though|although|once|just|only)\\b)(?:(?!(?:the|a|an|that|whose)\\b)${SUBJECT_WORD}){0,2}(?!(?:that|whose)\\b)${NOUN_WORD}\\s+(?:(?:just|still|never|already|always|now|also|really|actually|often|usually|rarely|finally)\\s+(?:[a-z]{2,}(?:s|ed)\\b(?<!ss|ous)|(?<=s\\s+(?:now|still|never|already|always|also|often|usually|rarely|finally|just)\\s+)[a-z]{3,}\\b(?=\\s+[a-z])|(?:is|are|was|were|will|would|can|could|must|should|has|have|had|does|did)\\b|[a-z]+n['\\u2019]t\\b)|[a-z]+n['\\u2019]t\\b))`, 'g');
 // One bare word with no "s" and a verb in "s" that moves toward a place
 // start one too: "Blocks use overflow, content clips to the bounding box",
 // "data flows into the sheet". A plural or a word in "ly" before the verb,
