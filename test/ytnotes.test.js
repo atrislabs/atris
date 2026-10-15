@@ -9,6 +9,18 @@ const { spawnSync } = require('node:child_process');
 
 const YTNOTES = path.resolve(__dirname, '..', 'scripts', 'det', 'ytnotes');
 
+// Every temp folder this file makes is removed when the file finishes, so
+// repeated runs do not pile folders into the system temp folder.
+const madeDirs = [];
+function tmpDir(prefix) {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), prefix));
+  madeDirs.push(dir);
+  return dir;
+}
+test.after(() => {
+  for (const dir of madeDirs) fs.rmSync(dir, { recursive: true, force: true });
+});
+
 // These tests fake `claude`. Pin the writer so a real agy on this machine
 // never answers; the auto writer has its own tests below.
 process.env.ATRIS_YTNOTES_ENGINE = process.env.ATRIS_YTNOTES_ENGINE || 'haiku';
@@ -30,7 +42,7 @@ function writeExec(file, body) {
 }
 
 function runBlockedCaptions(errLine, extraEnv = {}) {
-  const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'atris-ytnotes-blocked-'));
+  const tmp = tmpDir('atris-ytnotes-blocked-');
   const bin = path.join(tmp, 'bin');
   const work = path.join(tmp, 'work');
   fs.mkdirSync(bin);
@@ -73,7 +85,7 @@ test('ytnotes still says no captions when only a 429 came back', () => {
 });
 
 test('ytnotes keeps a written vtt when yt-dlp exits 429', () => {
-  const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'atris-ytnotes-429-'));
+  const tmp = tmpDir('atris-ytnotes-429-');
   const bin = path.join(tmp, 'bin');
   const work = path.join(tmp, 'work');
   fs.mkdirSync(bin);
@@ -116,7 +128,7 @@ test('ytnotes keeps a written vtt when yt-dlp exits 429', () => {
 // machine-translated "en" track returns 429, and without --ignore-errors the
 // first failure stops the run before later languages are written.
 test('ytnotes gets en-orig when the translated en track is rate limited', () => {
-  const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'atris-ytnotes-enorig-'));
+  const tmp = tmpDir('atris-ytnotes-enorig-');
   const bin = path.join(tmp, 'bin');
   const work = path.join(tmp, 'work');
   fs.mkdirSync(bin);
@@ -165,7 +177,7 @@ test('ytnotes gets en-orig when the translated en track is rate limited', () => 
 });
 
 test('ytnotes skips a leaked warning print line when choosing the video id', () => {
-  const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'atris-ytnotes-warn-id-'));
+  const tmp = tmpDir('atris-ytnotes-warn-id-');
   const bin = path.join(tmp, 'bin');
   const work = path.join(tmp, 'work');
   fs.mkdirSync(bin);
@@ -209,7 +221,7 @@ test('ytnotes skips a leaked warning print line when choosing the video id', () 
 });
 
 test('ytnotes skips a None print line when choosing the video id', () => {
-  const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'atris-ytnotes-none-id-'));
+  const tmp = tmpDir('atris-ytnotes-none-id-');
   const bin = path.join(tmp, 'bin');
   const work = path.join(tmp, 'work');
   fs.mkdirSync(bin);
@@ -253,7 +265,7 @@ test('ytnotes skips a None print line when choosing the video id', () => {
 });
 
 test('ytnotes keeps a written manual English vtt when auto captions are absent', () => {
-  const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'atris-ytnotes-manual-'));
+  const tmp = tmpDir('atris-ytnotes-manual-');
   const bin = path.join(tmp, 'bin');
   const work = path.join(tmp, 'work');
   fs.mkdirSync(bin);
@@ -299,7 +311,7 @@ test('ytnotes keeps a written manual English vtt when auto captions are absent',
 });
 
 test('ytnotes keeps a written auto English vtt when manual captions are absent', () => {
-  const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'atris-ytnotes-auto-'));
+  const tmp = tmpDir('atris-ytnotes-auto-');
   const bin = path.join(tmp, 'bin');
   const work = path.join(tmp, 'work');
   fs.mkdirSync(bin);
@@ -345,7 +357,7 @@ test('ytnotes keeps a written auto English vtt when manual captions are absent',
 });
 
 test('ytnotes keeps a written en-orig vtt when yt-dlp skips .en.vtt', () => {
-  const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'atris-ytnotes-enorig-'));
+  const tmp = tmpDir('atris-ytnotes-enorig-');
   const bin = path.join(tmp, 'bin');
   const work = path.join(tmp, 'work');
   fs.mkdirSync(bin);
@@ -385,7 +397,7 @@ test('ytnotes keeps a written en-orig vtt when yt-dlp skips .en.vtt', () => {
 });
 
 test('ytnotes keeps a written vtt when yt-dlp print is empty', () => {
-  const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'atris-ytnotes-emptyprint-'));
+  const tmp = tmpDir('atris-ytnotes-emptyprint-');
   const bin = path.join(tmp, 'bin');
   const work = path.join(tmp, 'work');
   fs.mkdirSync(bin);
@@ -424,7 +436,7 @@ test('ytnotes keeps a written vtt when yt-dlp print is empty', () => {
 });
 
 test('ytnotes keeps a leftover vtt for a copied #t= url when print is empty', () => {
-  const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'atris-ytnotes-hash-t-'));
+  const tmp = tmpDir('atris-ytnotes-hash-t-');
   const bin = path.join(tmp, 'bin');
   const work = path.join(tmp, 'work');
   const notesWork = path.join(work, 'ytnotes');
@@ -470,7 +482,7 @@ test('ytnotes keeps a leftover vtt for a copied #t= url when print is empty', ()
 });
 
 test('ytnotes keeps a leftover vtt for an /e/ url when print is empty', () => {
-  const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'atris-ytnotes-e-'));
+  const tmp = tmpDir('atris-ytnotes-e-');
   const bin = path.join(tmp, 'bin');
   const work = path.join(tmp, 'work');
   const notesWork = path.join(work, 'ytnotes');
@@ -516,7 +528,7 @@ test('ytnotes keeps a leftover vtt for an /e/ url when print is empty', () => {
 });
 
 test('ytnotes keeps a written vtt for a shorts url when print is empty', () => {
-  const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'atris-ytnotes-shorts-'));
+  const tmp = tmpDir('atris-ytnotes-shorts-');
   const bin = path.join(tmp, 'bin');
   const work = path.join(tmp, 'work');
   fs.mkdirSync(bin);
@@ -555,7 +567,7 @@ test('ytnotes keeps a written vtt for a shorts url when print is empty', () => {
 });
 
 test('ytnotes keeps a written vtt for a nocookie embed url when print is empty', () => {
-  const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'atris-ytnotes-nocookie-'));
+  const tmp = tmpDir('atris-ytnotes-nocookie-');
   const bin = path.join(tmp, 'bin');
   const work = path.join(tmp, 'work');
   fs.mkdirSync(bin);
@@ -594,7 +606,7 @@ test('ytnotes keeps a written vtt for a nocookie embed url when print is empty',
 });
 
 test('ytnotes keeps leftover clean.txt when captions are gone', () => {
-  const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'atris-ytnotes-clean-txt-'));
+  const tmp = tmpDir('atris-ytnotes-clean-txt-');
   const bin = path.join(tmp, 'bin');
   const work = path.join(tmp, 'work');
   const notesWork = path.join(work, 'ytnotes');
@@ -638,7 +650,7 @@ test('ytnotes keeps leftover clean.txt when captions are gone', () => {
 });
 
 test('ytnotes does not invent-keep another video leftover clean.txt', () => {
-  const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'atris-ytnotes-clean-other-'));
+  const tmp = tmpDir('atris-ytnotes-clean-other-');
   const bin = path.join(tmp, 'bin');
   const work = path.join(tmp, 'work');
   const notesWork = path.join(work, 'ytnotes');
@@ -682,7 +694,7 @@ test('ytnotes does not invent-keep another video leftover clean.txt', () => {
 });
 
 test('ytnotes still fails a 429 when no captions were written', () => {
-  const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'atris-ytnotes-empty429-'));
+  const tmp = tmpDir('atris-ytnotes-empty429-');
   const bin = path.join(tmp, 'bin');
   const work = path.join(tmp, 'work');
   fs.mkdirSync(bin);
@@ -720,7 +732,7 @@ test('ytnotes still fails a 429 when no captions were written', () => {
 });
 
 function runNoCaptionNotes(label, { withWhisper, whisperVtt, extraEnv = {}, audioFailures = 0, botClients = [], extraBins = {}, withClaude = true, withYtDlp = true, ytDlpVersion }) {
-  const tmp = fs.mkdtempSync(path.join(os.tmpdir(), `atris-ytnotes-${label}-`));
+  const tmp = tmpDir(`atris-ytnotes-${label}-`);
   const bin = path.join(tmp, 'bin');
   const work = path.join(tmp, 'work');
   fs.mkdirSync(bin);
@@ -978,7 +990,7 @@ test('ytnotes auto writer falls back to Haiku when Gemini fails', () => {
 });
 
 test('ytnotes auto writer sends no second Gemini request after a quota error, then skips Gemini', () => {
-  const calls = path.join(fs.mkdtempSync(path.join(os.tmpdir(), 'atris-ytnotes-quota-')), 'agy.calls');
+  const calls = path.join(tmpDir('atris-ytnotes-quota-'), 'agy.calls');
   const quotaAgy = [
     '#!/bin/sh',
     `if [ "$1" = models ]; then echo models >> "${calls}"; echo "gemini-3.8-flash-low"; exit 0; fi`,
@@ -1024,7 +1036,7 @@ test('ytnotes auto writer sends no second Gemini request after a quota error, th
 });
 
 test('ytnotes auto writer tries Gemini again once a remembered quota wall has passed', () => {
-  const tmpdir = fs.mkdtempSync(path.join(os.tmpdir(), 'atris-ytnotes-quota-old-'));
+  const tmpdir = tmpDir('atris-ytnotes-quota-old-');
   fs.mkdirSync(path.join(tmpdir, 'ytnotes'));
   fs.writeFileSync(path.join(tmpdir, 'ytnotes', 'gemini_quota_until'), `${Math.floor(Date.now() / 1000) - 60}\n`);
   const { result } = runNoCaptionNotes('auto9', {
