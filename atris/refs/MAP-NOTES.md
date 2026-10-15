@@ -2671,3 +2671,5 @@ Bulk approval scan concurrency: `test/commands.test.js:13488` overlaps the three
 Bulk approval setup connection: `test/commands.test.js:13466` opens once for all twenty seeded rows and closes in finally before the last real CLI ready at `test/commands.test.js:13484`. Claim, readiness and all scan assertions are unchanged; alternating focused runs averaged 519ms before and 500ms after.
 
 Single-row approval preview concurrency: `test/commands.test.js:13385` overlaps the JSON and text dry runs. Neither reads the shared projection file; every assertion remains, with the post-preview show still after both finish. Eight alternating focused runs passed, averaging 1833ms before and 1738ms after.
+
+Actor refusal concurrency: `test/commands.test.js:13378` runs the missing and malformed actor guards together with every status and reason assertion retained. Both return from `commands/task.js:10919` before the store opens, with confirmation set so standing-policy lookup is skipped. Two launches take one turn; all review and acceptance writes stay sequential.
