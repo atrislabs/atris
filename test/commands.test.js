@@ -10498,8 +10498,9 @@ test('task page exposes one-task goal chat stage and review actions', () => {
   try {
     fs.mkdirSync(path.join(dir, 'atris'), { recursive: true });
 
-    // Seed both parents in process; page, chat, plan, do, ready, review, and show still use the CLI.
+    // Seed both parents in process; page, chat, plan, ready, review, and show still use the CLI.
     let ref;
+    let taskId;
     const db = taskStore.open(dbPath);
     try {
       const created = addSeedTask(db, {
@@ -10508,6 +10509,7 @@ test('task page exposes one-task goal chat stage and review actions', () => {
         workspaceRoot: taskStore.workspaceRoot(dir),
       });
       assert.equal(created.inserted, true);
+      taskId = created.id;
       ref = taskStore.withTaskDisplayRefs([taskStore.getTask(db, created.id)])[0].display_id;
       assert.ok(ref);
     } finally {
@@ -10562,8 +10564,15 @@ test('task page exposes one-task goal chat stage and review actions', () => {
     assert.match(planned.stage.next_action.command, new RegExp(`atris task do ${ref}`));
     assert.equal(planned.stage.rail.find(item => item.key === 'plan').state, 'current');
 
-    const doing = runCli(['task', 'do', ref, '--as', 'codex', '--first-move', 'patch the page contract', '--json'], { cwd: dir, env });
-    assert.equal(doing.status, 0, doing.stderr);
+    // Do is one stageTask call, and the page reads the store, so stage it in
+    // process; the Do page itself still runs on the CLI.
+    const doDb = taskStore.open(dbPath);
+    try {
+      const doing = taskStore.stageTask(doDb, { id: taskId, actor: 'codex', stage: 'do', owner: 'codex', firstMove: 'patch the page contract' });
+      assert.equal(doing.staged, true, doing.reason);
+    } finally {
+      taskStore.close();
+    }
 
     const doPage = runCli(['task', 'page', ref, '--json'], { cwd: dir, env });
     assert.equal(doPage.status, 0, doPage.stderr);
