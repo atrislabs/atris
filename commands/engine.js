@@ -2440,7 +2440,7 @@ function runFixStartupCommand(args, deps) {
     return code;
   }
   const lines = [
-    ...result.changed.map(({ file, line, fix, backup }) => `changed ${file} line ${line} to: ${fix} (old file saved as ${backup})`),
+    ...result.changed.map(({ file, line, fix, fixed_line: fixedLine, backup }) => `changed ${file} line ${line} to: ${fixedLine || fix} (old file saved as ${backup})`),
     ...result.left.map(({ file, line }) => `left ${file} line ${line} as is: it does more than start an agent, so change it by hand`),
     ...result.failed.map(({ file, line, error }) => `could not change ${file} line ${line}: ${error}`),
   ];

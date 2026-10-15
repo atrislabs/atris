@@ -307,7 +307,7 @@ test('atris engine sweep names the shell startup line that starts an agent per s
   try {
     fs.writeFileSync(path.join(home, '.zshrc'), 'eval "$(ssh-agent -s)"  # Start SSH agent\n# eval "$(ssh-agent -s)"\nexport PATH\n');
     fs.writeFileSync(path.join(home, '.bashrc'), 'echo ssh-agent is handy\n');
-    assert.deepStrictEqual(findAgentStartLines({ home }), [{ file: '~/.zshrc', line: 1, fix: '[ -S "$SSH_AUTH_SOCK" ] || eval "$(ssh-agent -s)"' }]);
+    assert.deepStrictEqual(findAgentStartLines({ home }), [{ file: '~/.zshrc', line: 1, fix: '[ -S "$SSH_AUTH_SOCK" ] || eval "$(ssh-agent -s)"', fixed_line: '[ -S "$SSH_AUTH_SOCK" ] || eval "$(ssh-agent -s)"  # Start SSH agent' }]);
     assert.deepStrictEqual(findAgentStartLines({ home: path.join(home, 'missing') }), []);
 
     const sweep = (agents, json) => {
@@ -341,7 +341,7 @@ test('the sweep offers a guarded line only for a lone unguarded agent start', ()
       'if true; then eval `ssh-agent -s`; fi',
     ].join('\n'));
     assert.deepStrictEqual(findAgentStartLines({ home }), [
-      { file: '~/.zshrc', line: 1, fix: '[ -S "$SSH_AUTH_SOCK" ] || eval "$(ssh-agent -s)"' },
+      { file: '~/.zshrc', line: 1, fix: '[ -S "$SSH_AUTH_SOCK" ] || eval "$(ssh-agent -s)"', fixed_line: '[ -S "$SSH_AUTH_SOCK" ] || eval "$(ssh-agent -s)"  # Start SSH agent' },
       { file: '~/.zshrc', line: 3 },
     ]);
     const out = [];
@@ -353,7 +353,7 @@ test('the sweep offers a guarded line only for a lone unguarded agent start', ()
       console.log = original;
     }
     const text = out.join('\n');
-    assert.match(text, /likely source: ~\/\.zshrc line 1 starts a new ssh-agent in every shell that reads it, including the shells Claude and Codex start in each session that runs a command; to start one only when none is reachable, change it to: \[ -S "\$SSH_AUTH_SOCK" \] \|\| eval "\$\(ssh-agent -s\)"/);
+    assert.match(text, /likely source: ~\/\.zshrc line 1 starts a new ssh-agent in every shell that reads it, including the shells Claude and Codex start in each session that runs a command; to start one only when none is reachable, change it to: \[ -S "\$SSH_AUTH_SOCK" \] \|\| eval "\$\(ssh-agent -s\)"  # Start SSH agent\n/, 'the printed line keeps the comment the file keeps');
     assert.match(text, /likely source: ~\/\.zshrc line 3 starts a new ssh-agent in every shell that reads it, including the shells Claude and Codex start in each session that runs a command\n/);
     assert.strictEqual(agentStartLineText({ file: '~/.profile', line: 2 }), 'likely source: ~/.profile line 2 starts a new ssh-agent in every shell that reads it', 'a file neither engine was seen reading is not tied to engine sessions');
     assert.match(agentStartLineText({ file: '~/.zprofile', line: 4 }), /line 4 starts a new ssh-agent in every shell that reads it, including the shells Claude and Codex start in each session that runs a command$/, 'the login files both engines read are named too');
@@ -392,7 +392,7 @@ test('the sweep guards a lone agent start in the startup files only when asked, 
     const guarded = '  [ -S "$SSH_AUTH_SOCK" ] || eval "$(ssh-agent -s)"  # Start SSH agent';
     assert.strictEqual(fs.readFileSync(path.join(home, '.zshrc'), 'utf8'), ['export A=1', guarded, 'if true; then eval `ssh-agent -s`; fi', ''].join('\n'));
     assert.strictEqual(fs.readFileSync(path.join(home, '.zprofile'), 'utf8'), '[ -S "$SSH_AUTH_SOCK" ] || eval $(ssh-agent -c)\n');
-    assert.ok(fixed.text.includes(`changed ~/.zshrc line 2 to: [ -S "$SSH_AUTH_SOCK" ] || eval "$(ssh-agent -s)" (old file saved as ~/${backups[0]})`), fixed.text);
+    assert.ok(fixed.text.includes(`changed ~/.zshrc line 2 to: ${guarded.trim()} (old file saved as ~/${backups[0]})`), fixed.text);
     assert.match(fixed.text, /left ~\/\.zshrc line 3 as is: it does more than start an agent, so change it by hand/);
     assert.match(fixed.text, /run atris engine sweep --apply to stop the ones already leaked/);
     const again = run(['--fix-startup']);
