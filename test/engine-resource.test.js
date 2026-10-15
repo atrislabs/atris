@@ -5389,6 +5389,52 @@ test('the real cleanup preview checks the launcher only when it prints a command
   }
 });
 
+test('the landing status checks the launcher only when it prints a command', () => {
+  const { spawnSync } = require('node:child_process');
+  const root = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'autoland-lazy-launcher-')));
+  try {
+    const work = path.join(root, 'work');
+    const bin = path.join(root, 'bin');
+    const home = path.join(root, 'home');
+    for (const dir of [work, bin, home]) fs.mkdirSync(dir);
+    spawnSync('git', ['init', '-q'], { cwd: work });
+    fs.symlinkSync(path.join(__dirname, '..', 'bin', 'atris'), path.join(bin, 'atris'));
+    // Each start of this Node adds a line, so the test can count launcher checks.
+    const runs = path.join(root, 'runs');
+    fs.writeFileSync(path.join(bin, 'node'), `#!/bin/sh\necho run >> '${runs}'\nexec '${process.execPath}' "$@"\n`, { mode: 0o755 });
+    const env = { ...process.env, PATH: [bin, '/bin', '/usr/bin'].join(path.delimiter), HOME: home };
+    delete env.NODE_TEST_CONTEXT;
+    const probe = `
+      const { showStatus } = require(${JSON.stringify(path.join(__dirname, '..', 'commands', 'autoland'))});
+      const agent = { pid: 200, ppid: 1, uid: 501, age_sec: 3600, args: 'ssh-agent -s' };
+      showStatus(process.cwd(), [], { readSshAgents: () => ({ agents: [agent], referenced: new Set() }), uid: 501, home: ${JSON.stringify(home)} });
+    `;
+    for (const hourly of [false, true]) {
+      if (hourly) {
+        // A fresh receipt with a sweep result means the next hourly pass stops the agent.
+        const runsDir = path.join(work, 'atris', 'runs');
+        fs.mkdirSync(runsDir, { recursive: true });
+        fs.writeFileSync(path.join(runsDir, 'autoland-tick-now.json'), JSON.stringify({ at: new Date().toISOString(), ssh_agent_sweep: { stopped: [], failed: [], skipped: [] } }));
+      }
+      fs.rmSync(runs, { force: true });
+      const status = spawnSync(process.execPath, ['-e', probe], { cwd: work, env, encoding: 'utf8', timeout: 30000 });
+      assert.strictEqual(status.status, 0, status.stderr);
+      const checks = fs.existsSync(runs) ? fs.readFileSync(runs, 'utf8').split('\n').filter(Boolean).length : 0;
+      if (hourly) {
+        // No line names the command, so no Node starts to pick its wording.
+        assert.match(status.stdout, /leaked ssh-agents on this machine: 1; the next hourly pass stops them/);
+        assert.strictEqual(checks, 0, status.stdout);
+      } else {
+        assert.match(status.stdout, /leaked ssh-agents on this machine: 1; stop them now: atris engine sweep --apply/);
+        assert.strictEqual(checks, 1, status.stdout);
+      }
+      console.log(`real landing status with ${hourly ? 'a live' : 'no'} hourly pass: ${checks} launcher check, exit ${status.status}`);
+    }
+  } finally {
+    fs.rmSync(root, { recursive: true, force: true });
+  }
+});
+
 for (const unread of [[], ['process environments'], ['agent sockets'], ['process environments', 'agent sockets']]) {
 test(`landing repair advice survives unreadable history and ${unread.join(' and ') || 'a complete agent scan'}`, () => {
   const { showStatus } = require('../commands/autoland');

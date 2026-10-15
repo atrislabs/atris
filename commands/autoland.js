@@ -563,26 +563,28 @@ function showStatus(root, args, deps = {}) {
   const startLines = deps.home || !process.env.NODE_TEST_CONTEXT ? findAgentStartLines(deps.home ? { home: deps.home } : {}) : [];
   const unchecked = unreadAgents.length ? `could not read the ${unreadAgents.join(' or the ')}, so some ssh-agents went unchecked` : '';
   if (leakedAgents) {
-    const cli = deps.atrisCommand || atrisCommand();
+    // The launcher check starts a Node, so it runs only when a line names the command.
+    let cli;
+    const command = () => (cli ??= deps.atrisCommand || atrisCommand());
     const refusedBy = heartbeatLive ? autoland.heartbeatRefusedAgents(root) : { failed: new Set(), again: new Set() };
     const refused = leakedList.filter((a) => refusedBy.failed.has(a.pid)).length;
     const refusedAgain = leakedList.filter((a) => refusedBy.failed.has(a.pid) && refusedBy.again.has(a.pid)).length;
     const them = leakedAgents === 1 ? 'it' : 'them';
     const refusedWho = refused === leakedAgents ? them : `${refused} of them`;
     const stop = !heartbeatLive
-      ? `stop them now: ${cli} engine sweep --apply`
+      ? `stop them now: ${command()} engine sweep --apply`
       : autoland.heartbeatSweepsAgents(root)
         ? refused
-          ? `${refusedAgain === refused ? 'the last two hourly passes' : 'the last hourly pass'} could not stop ${refusedWho}${refusedAgain && refusedAgain < refused ? ` (${refusedAgain} of them twice in a row)` : ''}, so stop ${them} now: ${cli} engine sweep --apply`
+          ? `${refusedAgain === refused ? 'the last two hourly passes' : 'the last hourly pass'} could not stop ${refusedWho}${refusedAgain && refusedAgain < refused ? ` (${refusedAgain} of them twice in a row)` : ''}, so stop ${them} now: ${command()} engine sweep --apply`
           : leakedAgents > HOURLY_SSH_AGENT_STOP_LIMIT
-            ? `the next hourly pass stops only the oldest ${HOURLY_SSH_AGENT_STOP_LIMIT}, so stop the rest now: ${cli} engine sweep --apply`
+            ? `the next hourly pass stops only the oldest ${HOURLY_SSH_AGENT_STOP_LIMIT}, so stop the rest now: ${command()} engine sweep --apply`
             : 'the next hourly pass stops them'
-        : `the hourly pass runs a version without the ssh-agent cleanup, so stop them now: ${cli} engine sweep --apply`;
+        : `the hourly pass runs a version without the ssh-agent cleanup, so stop them now: ${command()} engine sweep --apply`;
     console.log(`  leaked ssh-agents on this machine: ${unchecked ? 'at least ' : ''}${leakedAgents}${leakGrowthNote(lost.first_day_leak_reading, leakedAgents)}; ${stop}${unchecked ? `; ${unchecked}` : ''}`);
     const runsText = leakedRunsText(matchLeakedToRuns(root, leakedList), { startLine: startLines.length > 0, recorded: deps.pathAtrisRecordsRuns ?? pathAtrisRecordsRuns() });
     if (runsText) console.log(`    ${runsText}`);
     for (const found of startLines) console.log(`    ${agentStartLineText(found)}`);
-    if (startLines.some((found) => found.fix)) console.log(`    ${fixStartupHint(cli)}`);
+    if (startLines.some((found) => found.fix)) console.log(`    ${fixStartupHint(command())}`);
   } else if (unchecked) {
     console.log(`  leaked ssh-agents on this machine: unknown, ${unchecked}`);
   }
