@@ -513,3 +513,9 @@ Pick the tool \u2014 that process failed.
 => Pick the tool; that process failed.
 We built the page \u2014 that users wanted.
 => We built the page, that users wanted.
+
+# "this" or "that" before a verb in "s" after an "if" clause opens a sentence
+Worth inspecting what the cases are \u2014 if they're a specific error class, that becomes a targeted experiment.
+=> Worth inspecting what the cases are; if they're a specific error class, that becomes a targeted experiment.
+Add a fallback \u2014 if the key is missing, this process fails.
+=> Add a fallback, if the key is missing, this process fails.
