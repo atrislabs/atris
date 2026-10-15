@@ -336,3 +336,7 @@ Looking at the stalls \u2014 the scorer flat at 0.9, the config stuck \u2014 the
 => Looking at the stalls (the scorer flat at 0.9, the config stuck), the loop needs new targets.
 Two picks \u2014 (1) the loop, and (2) the community \u2014 keep people.
 => Two picks, (1) the loop, and (2) the community, keep people.
+The bottleneck is the plan step \u2014 a miscalibrated DECIDE wastes every later cycle.
+=> The bottleneck is the plan step; a miscalibrated DECIDE wastes every later cycle.
+Two tools \u2014 the API keys the team uses and the bot.
+=> Two tools, the API keys the team uses and the bot.

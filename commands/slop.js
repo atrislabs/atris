@@ -385,8 +385,12 @@ const NAME_PAIR_CLAUSE_AFTER_DASH = new RegExp(`${CLAUSE_END}\\s*\\u2014\\s*(?=t
 // object as one in lowercase does: "the fake yes buys YOUR comfort".
 // A code name with an underscore is one such word too: "the business_id
 // match handles the bypass".
+// A noun in capitals after a describing word is a name, as a modifier in
+// capitals is: "a miscalibrated DECIDE wastes every cycle". Right after "the"
+// it often opens a plural pair instead, so "the API keys the team uses"
+// keeps its comma.
 const MODIFIER_WORD = '(?:[A-Z]{2,}|[a-z][a-z-]*[a-z]|[a-z][a-z0-9]*(?:_[a-z0-9]+)+)';
-const THE_OBJECT_CLAUSE_AFTER_DASH = new RegExp(`${CLAUSE_END}\\s*\\u2014\\s*(?=(?:the|a|an|this|${THAT_OPENER})\\s+(?!${NAME_PAIR}\\b)(?!(?:one|two|three|four|five|six|seven|eight|nine|ten|few|many|several|same|other|first|last|next|main|key|core|new|old|real|whole|exact|only)\\b)(?:(?![A-Za-z-]*s\\b)${MODIFIER_WORD}\\s+(?!(?:that|which|who)\\b))?(?!(?!yes\\b)[a-z]*s\\b)[a-z]{2,}\\s+(?:(?:only|now|still|already|also|never|always|often|just)\\s+)?${PLAIN_VERB_WORD}\\s+(?:the|a|an|your|our|their|its|YOUR|OUR|THEIR|ITS|all|every|each|this|these|those)\\s+[^\\s\\u2014])`, 'g');
+const THE_OBJECT_CLAUSE_AFTER_DASH = new RegExp(`${CLAUSE_END}\\s*\\u2014\\s*(?=(?:the|a|an|this|${THAT_OPENER})\\s+(?!${NAME_PAIR}\\b)(?!(?:one|two|three|four|five|six|seven|eight|nine|ten|few|many|several|same|other|first|last|next|main|key|core|new|old|real|whole|exact|only)\\b)(?:(?![A-Za-z-]*s\\b)${MODIFIER_WORD}\\s+(?!(?:that|which|who)\\b))?(?:(?!(?!yes\\b)[a-z]*s\\b)[a-z]{2,}|(?<!\\b(?:the|a|an|this|that)\\s+)[A-Z]{2,}(?![\\w-]))\\s+(?:(?:only|now|still|already|also|never|always|often|just)\\s+)?${PLAIN_VERB_WORD}\\s+(?:the|a|an|your|our|their|its|YOUR|OUR|THEIR|ITS|all|every|each|this|these|those)\\s+[^\\s\\u2014])`, 'g');
 // A plural noun as the subject, after up to two modifiers or code names,
 // then a bare verb and an object, is a clause too: "it no longer tints the
 // icon; the SVG `fill` attrs override `currentColor`". A place word, a word
