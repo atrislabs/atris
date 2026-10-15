@@ -362,6 +362,37 @@ test('only the builder stamps the work commit; the verifier and reviewers never 
   }
 });
 
+test('claim and ready in a folder outside any git repo stamp nothing and start no git', () => {
+  const taskDb = require('../lib/task-db');
+  const childProcess = require('node:child_process');
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'atris-landing-proof-plain-'));
+  const root = path.join(dir, 'project');
+  fs.mkdirSync(root);
+  const realSpawnSync = childProcess.spawnSync;
+  const gitCalls = [];
+  const previousGitDir = process.env.GIT_DIR;
+  delete process.env.GIT_DIR;
+  const db = taskDb.open(path.join(dir, 'tasks.db'));
+  try {
+    childProcess.spawnSync = (command, ...rest) => {
+      if (command === 'git') gitCalls.push(rest[0]);
+      return realSpawnSync(command, ...rest);
+    };
+    const { id } = taskDb.addTask(db, { title: 'Plain folder work', workspaceRoot: fs.realpathSync(root) });
+    assert.equal(taskDb.claimTask(db, { id, claimedBy: 'builder' }).claimed, true);
+    assert.equal(taskDb.readyTask(db, { id, actor: 'builder', proof: 'feature shipped' }).ready, true);
+    const metadata = taskDb.getTask(db, id).metadata || {};
+    assert.equal(metadata.start_commit, undefined);
+    assert.equal(metadata.work_commit, undefined);
+    assert.deepEqual(gitCalls, []);
+  } finally {
+    childProcess.spawnSync = realSpawnSync;
+    if (previousGitDir !== undefined) process.env.GIT_DIR = previousGitDir;
+    taskDb.close(db);
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
 test('auto-accept proves from the task as stored now, with the check the verifier ran', () => {
   const taskDb = require('../lib/task-db');
   const { stampAutoAcceptMetadata, landingProofVerify } = require('../commands/task');

@@ -726,7 +726,7 @@ MCP stdio request flow: `mcp/atris-mcp/index.mjs:142` reads requests while desig
 
 - **Entry point:** command routing in `bin/atris.js:1911`
 - **Handler:** `commands/task.js:13421` (`run` dispatch); default `atris task` is `cmdFirstMinute` at `commands/task.js:6555`; full desk is `cmdHome` at `commands/task.js:6574`
-- **Store:** `lib/task-db.js:409` (`addTask`), `lib/task-db.js:492` (`listTasks`), `lib/task-db.js:581` (`claimTask`), `lib/task-db.js:727` (`doneTask`)
+- **Store:** `lib/task-db.js:409` (`addTask`), `lib/task-db.js:492` (`listTasks`), `lib/task-db.js:597` (`claimTask`), `lib/task-db.js:727` (`doneTask`)
 - **TODO shim:** `lib/todo.js:19` (`dbToShimRow`) preserves imported `Verify:` metadata when `ATRIS_TASK_DB=1`
 - **How it works:**
 - `atris task` with no subcommand reuses `lib/first-minute.js` `buildFirstMinute`, the same two-line next as bare `atris`. The full desk stays on `atris task desk` and `atris task --all`; those still refresh `.atris/state/tasks.projection.json`. Desk `next:` still uses `pickNext`/`taskCommand` so certified review names `atris task accept <id>`, claimed names `atris task ready <id> --verify "git diff --check"` so keep-working is not a do loop, open names claim, and idle boards name `task next` or `task new`. Empty-folder `atris status` (`commands/status.js` `statusAtris`) reuses `speakNothingRunning` like empty-folder stop (`nothing is running`, same talk next, no mint, no init). A file already here names that file and next is `atris do`, same as bare atris, and does not mint. After `atris do` mints that file folder with no live mission, status reuses `speakKeepWorkingMinute` (same `already yours` / ready next as keep-working). After `init --yes --minimal` with no live mission, status reuses `speakFirstMinute` when next is claim (same two lines as bare `atris` / `now`). A live running mission still gets the board. Regression: `test/task-first-minute.test.js`, `test/task-desk-next.test.js`, `test/first-minute.test.js`
@@ -2354,7 +2354,7 @@ Lost-run cleanup error summary: `commands/autoland.js:895` keeps successful clos
 # Returned and interrupted jobs
 
 - `lib/member-task-pick.js:82` includes a member's own claims only when the caller opts in after checking it has no live run. `lib/member-task-pick.js:98` releases the selected claim and uses the normal atomic claim gate again.
-- `lib/task-db.js:622` accepts an optional expected update timestamp for claim release, refusing to release a changed claim.
+- `lib/task-db.js:638` accepts an optional expected update timestamp for claim release, refusing to release a changed claim.
 - `commands/member.js:567` treats an active mission with a known dead process as idle, while live and missing process records hold. `commands/member.js:10649` checks both mission and driver liveness before recovering. `commands/member.js:10842` previews recoverable claims for the supervisor, which already excludes busy members.
 - `test/task-reopen.test.js:129` runs actual task revision, member preview, and member claim confirmation against an isolated SQLite database. `test/task-reopen.test.js:152` reproduces a closed process with its running mission row still present. Live, unknown, other-member, protected, human-held, missing-check, and changed-claim cases stay held.
 
