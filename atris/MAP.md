@@ -303,6 +303,8 @@ Task serve factory fixture connections: `test/commands.test.js:16173` runs each 
 
 Task serve review lane drain fixture connection: `test/commands.test.js:15935` seeds, readies and reviews all five drain rows on one store connection, closed before the server starts. Three store opens replace twelve; every drain, act, loop and run request still hits the running server.
 
+Tag scope next and list batching: `test/commands.test.js:7747` awaits the golden show and the filtered list together after the scoped next, and the setup claim runs in the store with the seed. Six CLI launches become four sequential stages; each show that proves a next left tasks untouched still runs after that next.
+
 Certified review fallback read batching: `test/commands.test.js:12603` overlaps the two next reads after certification and before creation. Six sequential CLI stages become five; all assertions remain. Details: `atris/refs/MAP-NOTES.md`.
 
 Final fallback read batching: `test/commands.test.js:12684` awaits next and show together after follow-up creation. Both read unchanged task rows; every assertion remains. Five sequential CLI stages become four.

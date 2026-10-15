@@ -7697,7 +7697,7 @@ test('task command adds, claims, and completes workspace-scoped rows', () => {
   }
 });
 
-test('task next and list honor tag scope before mutating tasks', () => {
+test('task next and list honor tag scope before mutating tasks', async () => {
   if (!hasNodeSqlite()) return;
   const dir = makeTempDir();
   const dbPath = path.join(dir, 'tasks.db');
@@ -7705,21 +7705,21 @@ test('task next and list honor tag scope before mutating tasks', () => {
   try {
     fs.mkdirSync(path.join(dir, 'atris'), { recursive: true });
 
-    // Only creation is setup; claim, next, show, and list still use the CLI.
+    // Creation and the setup claim are one store call each in the CLI, so they
+    // run in-process on one connection; next, show, and list still use the CLI.
     const workspaceRoot = taskStore.workspaceRoot(dir);
-    const seedTask = (title, tag) => {
+    const seedTask = (title, tag, claimedBy) => {
       const db = taskStore.open(dbPath);
       try {
         const created = addSeedTask(db, { title, tag, workspaceRoot });
+        if (claimedBy) assert.equal(taskStore.claimTask(db, { id: created.id, claimedBy }).claimed, true);
         return taskStore.withTaskDisplayRefs(taskStore.listTasks(db, { workspaceRoot }))
           .find((row) => row.id === created.id);
       } finally {
         taskStore.close();
       }
     };
-    const loopTask = seedTask('Loop janitor keeps unrelated work visible to operators', 'loop');
-    const loopClaim = runCli(['task', 'claim', loopTask.display_id, '--as', 'onboarding'], { cwd: dir, env });
-    assert.equal(loopClaim.status, 0, loopClaim.stderr);
+    const loopTask = seedTask('Loop janitor keeps unrelated work visible to operators', 'loop', 'onboarding');
 
     const noMatch = runCli(['task', 'next', '--tag', 'golden-path', '--as', 'onboarding', '--json'], { cwd: dir, env });
     assert.equal(noMatch.status, 0, noMatch.stderr);
@@ -7743,9 +7743,14 @@ test('task next and list honor tag scope before mutating tasks', () => {
     assert.equal(scopedNextPayload.command, `atris task claim ${goldenTask.display_id} --as onboarding`);
     assert.equal(scopedNextPayload.task_id, goldenTask.id);
     assert.equal(scopedNextPayload.task.tag, 'golden-path');
-    assert.equal(JSON.parse(runCli(['task', 'show', goldenTask.display_id, '--json'], { cwd: dir, env }).stdout).status, 'open');
 
-    const filteredList = runCli(['task', 'list', '--tag', 'golden-path'], { cwd: dir, env });
+    // Both reads follow the scoped next and change no task state, so they run at once.
+    const [goldenShow, filteredList] = await Promise.all([
+      runCliAsync(['task', 'show', goldenTask.display_id, '--json'], { cwd: dir, env }),
+      runCliAsync(['task', 'list', '--tag', 'golden-path'], { cwd: dir, env }),
+    ]);
+    assert.equal(goldenShow.status, 0, goldenShow.stderr);
+    assert.equal(JSON.parse(goldenShow.stdout).status, 'open');
     assert.equal(filteredList.status, 0, filteredList.stderr);
     assert.match(filteredList.stdout, /#golden-path/);
     assert.match(filteredList.stdout, /Golden path work keeps first-run onboarding focused/);
