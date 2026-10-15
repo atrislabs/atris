@@ -228,6 +228,39 @@ test('a pulled task moves to review on a passing check and back to the list on a
   });
 });
 
+test('a job marked ready names the commit from the member work copy, not the main folder', () => {
+  const { memberGoFinishTask } = require('../commands/member');
+  withTaskProject(({ root, taskDb, db, add, env }) => {
+    const git = (cwd, ...args) => {
+      const out = spawnSync('git', args, { cwd, encoding: 'utf8' });
+      assert.equal(out.status, 0, out.stderr);
+      return out.stdout.trim();
+    };
+    git(root, 'init', '-q', '-b', 'master');
+    git(root, '-c', 'user.name=t', '-c', 'user.email=t@t', 'commit', '-q', '--allow-empty', '-m', 'base');
+    const mainHead = git(root, 'rev-parse', 'HEAD');
+    const copy = path.join(root, 'work-copy');
+    git(root, 'worktree', 'add', '-q', '-b', 'member-work', copy);
+    git(copy, '-c', 'user.name=t', '-c', 'user.email=t@t', 'commit', '-q', '--allow-empty', '-m', 'member work');
+    const workHead = git(copy, 'rev-parse', 'HEAD');
+    assert.notEqual(workHead, mainHead);
+
+    process.env.ATRIS_TASKS_DB = env.ATRIS_TASKS_DB;
+    try {
+      const id = add('Fix the clock test');
+      taskDb.claimTask(db, { id, claimedBy: 'executor' });
+      const done = memberGoFinishTask('executor', taskDb.getTask(db, id), {
+        started: true, mission_id: 'm-7', worktree: { path: copy },
+        mission: { status: 'complete', verifier_result: { passed: true }, worktree: { path: copy } },
+      });
+      assert.equal(done.outcome, 'review');
+      assert.equal(taskDb.getTask(db, id).metadata.work_commit, workHead);
+    } finally {
+      delete process.env.ATRIS_TASKS_DB;
+    }
+  });
+});
+
 test('member go never claims a task for a human member', () => {
   withTaskProject(({ root, taskDb, db, add, env }) => {
     const dir = path.join(root, 'atris', 'team', 'owner');
