@@ -2600,3 +2600,58 @@ test('live follow streams a line written the moment the snapshot arrives, exactl
     }
   }
 });
+
+test('live follow keeps split, replaced, new, and shortened logs written the moment the snapshot arrives', async (t) => {
+  // Each change runs in the same turn the snapshot is read, before the
+  // follower could have looked at the logs again.
+  const cases = [
+    ['a line split across two writes', (dir, stamp) => {
+      fs.appendFileSync(path.join(dir, 'ana.log'), `${stamp} m-1 finished: o`);
+      setImmediate(() => fs.appendFileSync(path.join(dir, 'ana.log'), 'k\n'));
+    }, (stamp) => [{ member: 'ana', mission: 'm-1', at: stamp, kind: 'finished', text: 'ok', ok: true }]],
+    ['a log replaced by a new file', (dir, stamp) => {
+      fs.writeFileSync(path.join(dir, 'ana.tmp'), `${stamp} m-2 started: new job\n`);
+      fs.renameSync(path.join(dir, 'ana.tmp'), path.join(dir, 'ana.log'));
+    }, (stamp) => [{ member: 'ana', mission: 'm-2', at: stamp, kind: 'started', text: 'new job' }]],
+    ['a log for a new member', (dir, stamp) => {
+      fs.writeFileSync(path.join(dir, 'bo.log'), `${stamp} m-3 started: bo job\n`);
+    }, (stamp) => [{ member: 'bo', mission: 'm-3', at: stamp, kind: 'started', text: 'bo job' }]],
+    ['a log cut shorter', (dir, stamp) => {
+      fs.writeFileSync(path.join(dir, 'ana.log'), `${stamp} m-4 started: y\n`);
+    }, (stamp) => [{ member: 'ana', mission: 'm-4', at: stamp, kind: 'started', text: 'y' }]],
+  ];
+  for (const [label, change, expected] of cases) {
+    const stamp = new Date().toISOString();
+    const dir = fakeDir({ ana: [`${stamp} m-1 started: a long first job for ana here`] });
+    const child = spawn(process.execPath, [cliPath, 'member', 'board', '--json', '--follow'], {
+      cwd: dir, env: { ...process.env, ATRIS_PROGRESS_DIR: dir },
+    });
+    child.stdout.setEncoding('utf8');
+    let out = '';
+    let stderr = '';
+    let closed = false;
+    const done = new Promise((resolve) => child.once('close', (code) => { closed = true; resolve(code); }));
+    const records = () => out.split('\n').slice(0, -1).filter(Boolean).map((line) => JSON.parse(line));
+    child.stderr.on('data', (chunk) => { stderr += chunk; });
+    child.stdout.on('data', (chunk) => {
+      const first = !out.includes('\n');
+      out += chunk;
+      if (first && out.includes('\n')) change(dir, stamp);
+    });
+    try {
+      const until = Date.now() + 15_000;
+      while (records().length < 2 && !closed && Date.now() < until) await new Promise((r) => setTimeout(r, 50));
+      await new Promise((r) => setTimeout(r, 1_200));
+      const got = records();
+      assert.equal(got[0].kind, 'snapshot', `${label}: ${out}`);
+      assert.deepEqual(got.slice(1), expected(stamp), `${label}: stdout=${out}; stderr=${stderr}`);
+      child.kill('SIGINT');
+      assert.equal(await done, 0, `${label}: ${stderr}`);
+      t.diagnostic(`${label}:\n${out}exit: 0`);
+    } finally {
+      if (!closed) child.kill('SIGINT');
+      await done;
+      fs.rmSync(dir, { recursive: true, force: true });
+    }
+  }
+});
