@@ -3059,6 +3059,21 @@ test('fix joins a "the" subject and its verb when one plural or a code name ends
   ]);
 });
 
+test('fix joins a subject and its verb when "a", a code name and a noun open the object', () => {
+  // from a heartbeat note: "a nightly job appends a `next_move` event to
+  // the ledger" spliced, since the object's first word could not be a code
+  // name. A code name inside a noun phrase with no verb keeps its comma.
+  const file = tmpFile('code-object.md', [
+    'It ships tonight \u2014 a nightly job appends a `next_move` event to the ledger.',
+    'Here it is \u2014 the docs `atris` hook event page.',
+  ].join('\n'));
+  const { changes } = applyFixes([file], RULES, { write: false });
+  assert.deepEqual(changes.map((c) => c.after), [
+    'It ships tonight; a nightly job appends a `next_move` event to the ledger.',
+    'Here it is, the docs `atris` hook event page.',
+  ]);
+});
+
 test('fix joins "the", a noun, a verb in "s" and one bare word before a stop', () => {
   // from a probe of the loop note: "the loop kicks work" spliced, since the
   // object check wanted "the" or "it" after the verb. A word that ends a
