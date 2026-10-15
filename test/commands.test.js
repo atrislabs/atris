@@ -1964,7 +1964,11 @@ test('member wake closes the nearest open task from task projection evidence', (
   const dir = makeTempDir();
   try {
     fs.mkdirSync(path.join(dir, 'atris'), { recursive: true });
-    assert.equal(runCli(['member', 'create', 'command-leader', '--description="Keep command loops controlled"'], { cwd: dir }).status, 0);
+    require('../lib/member-scaffold').ensureMemberBundle(path.join(dir, 'atris', 'team', 'command-leader'), {
+      name: 'command-leader',
+      role: 'Command Leader',
+      description: 'Keep command loops controlled',
+    });
     assert.equal(runCli(['member', 'goal-from-mission', 'command-leader', '--json'], { cwd: dir }).status, 0);
 
     fs.mkdirSync(path.join(dir, '.atris', 'state'), { recursive: true });

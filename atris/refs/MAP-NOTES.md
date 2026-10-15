@@ -2911,3 +2911,5 @@ Bookkeeping wake fixture: `test/commands.test.js:1799` uses `lib/member-scaffold
 Scoped steering wake setup: `test/commands.test.js:1862` uses `lib/member-scaffold.js:145` directly for the member fixture. Four program launches become three; both real wake calls and every steering assertion remain.
 
 Closed-reference wake setup: `test/commands.test.js:1899` uses `lib/member-scaffold.js:145` for the member fixture. Three program launches become two; the real goal and wake calls retain every assertion.
+
+Nearest-task wake setup: `test/commands.test.js:1963` uses `lib/member-scaffold.js:145` for its member fixture. Three program launches become two; real goal and wake calls retain every assertion.
