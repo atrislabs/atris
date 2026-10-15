@@ -808,3 +808,20 @@ test('reap skips a dirty pinned folder before saving its patches, even with --fo
     fs.rmSync(base, { recursive: true, force: true });
   }
 });
+
+test('fleet review cleanup keeps every store of a pinned copy and names the pin', () => {
+  const { base, repo, wt, boundary } = reviewSandbox();
+  try {
+    git(repo, ['worktree', 'lock', '--reason', 'reviewer still reading', wt]);
+    const pin = path.join(worktreeGitDir(wt), 'locked');
+    const stale = new Date(Date.now() - 3 * 60 * 60 * 1000);
+    fs.utimesSync(pin, stale, stale);
+    fs.mkdirSync(boundary.sandboxRoot);
+    const result = disposeReviewSandbox(boundary);
+    assert.deepEqual(result, { removed: false, reason: 'pinned', pinned: 'pinned by git worktree lock, 3 h old: reviewer still reading' });
+    assert.ok([wt, boundary.quarantine, boundary.sandboxRoot].every((item) => fs.existsSync(item)));
+    assert.deepEqual(removalLines(repo), []);
+  } finally {
+    fs.rmSync(base, { recursive: true, force: true });
+  }
+});
