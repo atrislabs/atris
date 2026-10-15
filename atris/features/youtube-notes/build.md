@@ -116,7 +116,7 @@ These steps name what shipped, in the order it landed on 2026-09-28. Each one is
 - The Gemini sign-in check (`agy models`, about 2s) runs in the background while yt-dlp fetches captions. Only a "Please sign in" answer counts as signed out, and the writer reuses that answer instead of checking twice.
 - When Gemini leads and the check says signed in, Gemini starts with streamed input during the caption download and gets the prompt once the transcript is ready. It never starts before the check answers, so a signed-out Mac cannot get a Google login window.
 - Haiku runs with no tools, no MCP servers, no hooks, closed input, and no nonessential traffic, which cuts Claude Code's startup.
-- Quick bench median after these changes: 10.4s over five runs, all cases passing. The caption download (about 3.4s) and the sign-in check now set the floor.
+- Quick bench median after these changes: 10.4s over five runs, all cases passing. Rechecked on 2026-10-14: 9.9s over five runs, then 9.2s and 9.4s single runs, all cases passing. The caption download (about 3.4s) and the sign-in check now set the floor.
 
 **Validation:**
 - `node --test test/ytnotes.test.js`
@@ -155,6 +155,10 @@ Two. Expect notes on screen, exit code 0, and a last line of `quotes: N kept, N 
 **Error:** The video has no captions and this is not an Apple silicon Mac with `mlx_whisper`.
 
 **Handling:** Print the paid command, `atris youtube process <url>`.
+
+**Error:** YouTube answers the caption fetch with its "confirm you're not a bot" sign-in wall (seen live on 2026-10-14 for both bench videos).
+
+**Handling:** Say YouTube is blocking caption downloads from this connection, skip the audio download (it would hit the same wall), print the paid command, and exit 2. It used to say the video had no captions. A bare 429 is not a block, since the machine-translated "en" track returns 429 on its own, so it still reads as no captions.
 
 **Error:** The writer invents a quote.
 
