@@ -71,13 +71,38 @@ test('a standing campaign may pass at start, because passing means healthy', asy
   assert.equal(view.answer.confidence, 'leaning');
 });
 
-test('start explains what is missing in plain words', async () => {
+test('start explains what is missing in plain words, and a budget is not missing', async () => {
   const store = createMemoryStore();
-  const result = await run(store, ['start', 'No judge', '--budget', '0']);
-  assert.equal(result.code, 2);
-  assert.match(result.err, /--judge "<command>"/);
-  assert.match(result.err, /--budget <dollars above 0>/);
-  assert.deepEqual(result.judged, []);
+  const noJudge = await run(store, ['start', 'No judge']);
+  assert.equal(noJudge.code, 2);
+  assert.match(noJudge.err, /--judge "<command>"/);
+  assert.doesNotMatch(noJudge.err, /--budget/);
+  const zero = await run(store, ['start', 'Zero', '--judge', 'exit 1', '--budget', '0']);
+  assert.equal(zero.code, 2);
+  assert.match(zero.err, /--budget <amount above 0>/);
+  const loneUnit = await run(store, ['start', 'Lone unit', '--judge', 'exit 1', '--unit', 'tokens']);
+  assert.equal(loneUnit.code, 2);
+  assert.match(loneUnit.err, /--budget <amount> beside --unit/);
+  assert.deepEqual([noJudge, zero, loneUnit].flatMap((r) => r.judged), []);
+});
+
+test('no budget means no dollar cap, and a token budget is recorded, not capped', async () => {
+  const store = createMemoryStore();
+  assert.equal((await run(store, ['start', 'Free', '--judge', 'exit 1', '--id', 'cmp-free'])).code, 0);
+  const free = getCampaign(store, 'cmp-free');
+  assert.equal(free.state, 'resting');
+  assert.deepEqual(free.budget, { total: null, spent: 0, reserved: 0, available: null, unit: null, amount: null });
+  assert.match((await run(store, ['show', 'cmp-free'])).out, /\$0\.00 spent · no budget/);
+  assert.match((await run(store, ['budget', 'cmp-free', '--add', '5'])).err, /no dollar budget to add to/);
+
+  assert.equal((await run(store, ['start', 'Tokens', '--judge', 'exit 1', '--budget', '2000000', '--unit', 'tokens', '--id', 'cmp-tok'])).code, 0);
+  const tokens = getCampaign(store, 'cmp-tok');
+  assert.equal(tokens.budget.unit, 'tokens');
+  assert.equal(tokens.budget.amount, 2000000);
+  assert.match((await run(store, ['show', 'cmp-tok'])).out, /2,000,000 tokens, not metered yet/);
+
+  assert.equal((await run(store, ['start', 'Dollars', '--judge', 'exit 1', '--budget', '5', '--unit', 'dollars', '--id', 'cmp-usd'])).code, 0);
+  assert.deepEqual(getCampaign(store, 'cmp-usd').budget, { total: 5, spent: 0, reserved: 0, available: 5 });
 });
 
 test('a parent with its own parent is refused (one level only)', async () => {

@@ -20,6 +20,14 @@ test('a campaign with title, judge, and budget is valid', () => {
   assert.deepEqual(result, { ok: true, errors: [] });
 });
 
+test('budget is optional, and a unit needs a budget to count', () => {
+  assert.deepEqual(validateCampaign({ title: 't', judge: 'j' }).errors, []);
+  assert.deepEqual(validateCampaign({ title: 't', judge: 'j', budget: 2000000, unit: 'tokens' }).errors, []);
+  assert.deepEqual(validateCampaign({ title: 't', judge: 'j', budget: 0 }).errors, ['bad_budget']);
+  assert.deepEqual(validateCampaign({ title: 't', judge: 'j', budget: 5, unit: 'credits' }).errors, ['bad_unit']);
+  assert.deepEqual(validateCampaign({ title: 't', judge: 'j', unit: 'tokens' }).errors, ['unit_without_budget']);
+});
+
 test('a campaign without a judge is refused', () => {
   const result = validateCampaign({ title: 'No way to know', budget: 10 });
   assert.equal(result.ok, false);
@@ -59,7 +67,8 @@ test('the schema exports the lists every surface serves', () => {
   assert.deepEqual(schema.STATES, ['running', 'needs_you', 'resting', 'queued', 'done', 'out_of_budget', 'paused']);
   assert.deepEqual(schema.STOP_REASONS, ['judge_passed', 'stopped', 'done_by_human', 'budget_spent']);
   assert.deepEqual(schema.MISSION_OUTCOMES, ['kept', 'reverted', 'failed']);
-  assert.deepEqual(Object.keys(schema.CAMPAIGN_FIELDS).filter((k) => schema.CAMPAIGN_FIELDS[k].required), ['title', 'judge', 'budget']);
+  assert.deepEqual(Object.keys(schema.CAMPAIGN_FIELDS).filter((k) => schema.CAMPAIGN_FIELDS[k].required), ['title', 'judge']);
+  assert.deepEqual(schema.BUDGET_UNITS, ['dollars', 'tokens']);
   assert.ok(schema.CAMPAIGN_ID.test('cmp-ships-across-atris'));
   assert.ok(!schema.CAMPAIGN_ID.test('ships'));
 });

@@ -20,7 +20,7 @@ const STATE_ORDER = ['needs_you', 'running', 'queued', 'paused', 'resting', 'out
 function printHelp() {
   console.log('Usage:');
   console.log('  atris campaign                         every campaign: state, money, and the next move');
-  console.log('  atris campaign start "<title>" --judge "<cmd>" --budget <dollars>');
+  console.log('  atris campaign start "<title>" --judge "<cmd>" [--budget <amount> [--unit dollars|tokens]]');
   console.log('        [--owner <member>] [--seat <member>[:<role>]]... [--bet "<bet>" [--wrong-if "<what proves it wrong>"]]');
   console.log('        [--standing] [--parent <id>] [--id cmp-<name>]');
   console.log('  atris campaign show <id>               bet, judge, answer, budget, seats, missions, asks');
@@ -50,8 +50,15 @@ function money(value) {
   return `$${Number(value).toFixed(2)}`;
 }
 
+// One line for the money: a dollar cap, a recorded token budget, or none.
+function budgetLine(budget) {
+  if (budget.total !== null) return `${money(budget.spent)} spent of ${money(budget.total)} · ${money(budget.reserved)} reserved · ${money(budget.available)} left`;
+  const cap = budget.unit === 'tokens' ? `${budget.amount.toLocaleString('en-US')} tokens, not metered yet` : 'no budget';
+  return `${money(budget.spent)} spent · ${cap}`;
+}
+
 // The flags this command understands, so positional words are what is left.
-const VALUE_FLAGS = ['--mission', '--parallel', '--max-steps', '--max-ticks', '--runner', '--count', '--judge', '--budget', '--owner', '--seat', '--bet', '--wrong-if', '--parent', '--id', '--role', '--add', '--data', '--timeout', '--as'];
+const VALUE_FLAGS = ['--mission', '--parallel', '--max-steps', '--max-ticks', '--runner', '--count', '--judge', '--budget', '--unit', '--owner', '--seat', '--bet', '--wrong-if', '--parent', '--id', '--role', '--add', '--data', '--timeout', '--as'];
 
 function positionals(args) {
   const out = [];
@@ -187,14 +194,14 @@ function requireCampaign(ctx, id) {
 
 function renderList(views) {
   if (!views.length) {
-    return 'No campaigns yet. Start one:\n  atris campaign start "<title>" --judge "<command that fails today>" --budget <dollars>';
+    return 'No campaigns yet. Start one:\n  atris campaign start "<title>" --judge "<command that fails today>" [--budget <dollars>]';
   }
   const sorted = views.slice().sort((a, b) => STATE_ORDER.indexOf(a.state) - STATE_ORDER.indexOf(b.state));
   const lines = [];
   for (const view of sorted) {
     const running = view.missions.filter((m) => m.status === 'running').length;
     lines.push(`${clip(view.title)}  (${view.id})`);
-    lines.push(`  ${view.state.replace(/_/g, ' ')} · ${money(view.budget.spent)} of ${money(view.budget.total)} · ${running} mission${running === 1 ? '' : 's'} running · answer ${view.answer.confidence}`);
+    lines.push(`  ${view.state.replace(/_/g, ' ')} · ${view.budget.total === null ? `${money(view.budget.spent)} spent` : `${money(view.budget.spent)} of ${money(view.budget.total)}`} · ${running} mission${running === 1 ? '' : 's'} running · answer ${view.answer.confidence}`);
     lines.push(`  next: ${nextMove(view).text}`);
   }
   return lines.join('\n');
@@ -208,7 +215,7 @@ function renderShow(view) {
   const last = view.last_judge;
   row('judge', `${view.judge}${last ? ` · last run ${last.passed ? 'passed' : 'failed'} at ${last.at}` : ' · never run'}${view.judge_due && last ? ' · due again' : ''}`);
   row('answer', `${view.answer.confidence}${view.answer.text ? `: ${view.answer.text}` : ''}`);
-  row('budget', `${money(view.budget.spent)} spent of ${money(view.budget.total)} · ${money(view.budget.reserved)} reserved · ${money(view.budget.available)} left`);
+  row('budget', budgetLine(view.budget));
   row('owner', view.owner + (view.standing ? ' · standing (a passing judge means healthy, not done)' : ''));
   if (view.bet) row('bet', `${view.bet.text}${view.bet.wrong_if ? ` · wrong if ${view.bet.wrong_if}` : ''}`);
   if (view.parent) row('parent', view.parent);
@@ -231,7 +238,7 @@ async function cmdStart(args, ctx) {
   const title = positionals(args)[1];
   const judge = readFlag(args, '--judge', '');
   const budgetText = readFlag(args, '--budget', '');
-  const budget = Number(budgetText);
+  const unit = readFlag(args, '--unit', '');
   const bet = readFlag(args, '--bet', '');
   const wrongIf = readFlag(args, '--wrong-if', '');
   const parent = readFlag(args, '--parent', '');
@@ -241,7 +248,7 @@ async function cmdStart(args, ctx) {
     const [member, role] = seat.split(':');
     return role ? { member, role } : member;
   });
-  const record = { title, judge, budget: budgetText ? budget : undefined };
+  const record = { title, judge, budget: budgetText ? Number(budgetText) : undefined, unit: unit || undefined };
   if (owner) record.owner = owner;
   if (seats.length) record.seats = seats;
   if (bet) record.bet = bet;
@@ -256,7 +263,7 @@ async function cmdStart(args, ctx) {
   const check = validateCampaign(record, { lookup });
   if (!check.ok) {
     const words = {
-      missing_title: 'a title in quotes', missing_judge: '--judge "<command>"', bad_budget: '--budget <dollars above 0>',
+      missing_title: 'a title in quotes', missing_judge: '--judge "<command>"', bad_budget: '--budget <amount above 0>', bad_unit: '--unit dollars or --unit tokens', unit_without_budget: '--budget <amount> beside --unit',
       nested_parent: 'a parent with no parent of its own (one level only)', unknown_parent: 'a --parent that exists', bad_seat: '--seat <member>[:<role>]',
     };
     return ctx.fail(`a campaign needs ${check.errors.map((e) => words[e] || e).join(', ')}`);
@@ -274,7 +281,9 @@ async function cmdStart(args, ctx) {
     return ctx.fail(`already done: the judge passes before any work (${reading.summary || 'exit 0'}). Write a judge that fails first.`, 1);
   }
 
-  const startData = { title, judge, budget, owner: owner || 'mission-lead', created_from: `atris campaign start by ${ctx.actor}` };
+  const startData = { title, judge, owner: owner || 'mission-lead', created_from: `atris campaign start by ${ctx.actor}` };
+  if (record.budget !== undefined) startData.budget = record.budget;
+  if (unit && unit !== 'dollars') startData.unit = unit;
   if (seats.length) startData.seats = seats;
   if (bet && !wrongIf) startData.bet = bet;
   if (standing) startData.standing = true;
@@ -341,7 +350,8 @@ const cmdBet = simpleEvent('bet_set', (args, words) => {
   return { data: wrongIf ? { bet, wrong_if: wrongIf } : { bet } };
 }, (d) => `bet set: ${d.bet}`);
 
-const cmdBudget = simpleEvent('budget_added', (args) => {
+const cmdBudget = simpleEvent('budget_added', (args, words, view) => {
+  if (view.budget.total === null) return { error: `campaign ${view.id} has no dollar budget to add to` };
   const amount = Number(readFlag(args, '--add', ''));
   if (!(amount > 0)) return { error: 'say how much to add: atris campaign budget <id> --add <dollars>' };
   return { data: { amount_usd: amount } };
