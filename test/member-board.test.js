@@ -3930,6 +3930,37 @@ test('each proof file variable a receipt names is still written by a board test'
   assert.deepEqual(stale, [], 'point each receipt at a proof variable a board test still writes');
 });
 
+// A receipt that reruns one board test names it with a test name pattern.
+// Renaming that test makes the rerun match nothing and still exit 0, so every
+// pattern a checked-in receipt aims at this file must match a test title.
+test('each test name pattern a receipt aims at the board tests still matches one', () => {
+  const titles = [];
+  for (const [, quote, raw] of fs.readFileSync(__filename, 'utf8').matchAll(/^\s*test\((['`])(.*?)\1, /gm)) {
+    let variants = [raw];
+    if (quote === '`') {
+      for (const [slot, inner] of raw.matchAll(/\$\{([^}]*)\}/g)) {
+        const options = [...inner.matchAll(/'([^']*)'/g)].map((m) => m[1]);
+        variants = variants.flatMap((v) => options.map((o) => v.replace(slot, o)));
+      }
+    }
+    titles.push(...variants);
+  }
+  const listed = spawnSync('git', ['ls-files', '-z', 'atris/receipts', 'atris/runs'], { cwd: repoRoot, encoding: 'utf8' });
+  assert.equal(listed.status, 0, listed.stderr);
+  const stale = [];
+  let aimed = 0;
+  for (const file of listed.stdout.split('\0').filter((f) => f.endsWith('.md'))) {
+    const text = fs.readFileSync(path.join(repoRoot, file), 'utf8');
+    for (const [, , pattern] of text.matchAll(/--test-name-pattern=(['"])(.*?)\1 \S*test\/member-board\.test\.js/g)) {
+      aimed += 1;
+      if (!titles.some((title) => new RegExp(pattern).test(title))) stale.push(`${file} reruns ${pattern}`);
+    }
+  }
+  assert.ok(titles.length >= 110, 'the scan expands every board test title');
+  assert.ok(aimed >= 5, 'the scan finds receipts that rerun one board test');
+  assert.deepEqual(stale, [], 'point each receipt rerun at a board test title that still exists');
+});
+
 // The board row's ref into the member command cites where it hands off to the
 // board. Other features' refs into that file are theirs to guard.
 test('the map board row ref into the member command lands on the board hand-off', () => {

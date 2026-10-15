@@ -2435,3 +2435,5 @@ Board test ref guard: `test/member-board.test.js:3862` fails when any `test/memb
 Proof file variable owners: `test/member-board.test.js:3893` fails when two board tests write the same `ATRIS_*PROOF` variable, since run together the later one overwrites a receipt's saved terminal output.
 
 Receipt proof variables: `test/member-board.test.js:3911` fails when a checked-in receipt under `atris/receipts` or `atris/runs` names an `ATRIS_*PROOF` variable no board test writes, so a rename cannot leave a receipt's rerun command saving nothing.
+
+Receipt test name patterns: `test/member-board.test.js:3936` fails when a checked-in receipt reruns one board test with a name pattern that matches no board test title. Loop titles are expanded into each of their variants first, so a renamed test cannot leave a receipt rerun that matches nothing and still exits 0.
