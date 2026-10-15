@@ -3803,3 +3803,18 @@ test('the real watch terminal recovers a late progress folder and watches later 
   assert.match(proof.stdout, /late folder recovered; later write arrived before the next timed redraw/);
   t.diagnostic(proof.stdout);
 });
+
+// The map sends readers to tests by line. A test added above a cited one
+// moves it, and nothing else notices, so check each cited line still opens
+// a test, a test loop, or the constant it names.
+test('every map line ref into this file lands on a test, a test loop, or a constant', () => {
+  const lines = fs.readFileSync(__filename, 'utf8').split('\n');
+  const bad = [];
+  for (const doc of ['atris/MAP.md', 'atris/refs/MAP-NOTES.md']) {
+    const text = fs.readFileSync(path.join(repoRoot, doc), 'utf8');
+    for (const [, n] of text.matchAll(/test\/member-board\.test\.js:(\d+)/g)) {
+      if (!/^(test\(|for \(|const |  test\()/.test(lines[n - 1] || '')) bad.push(`${doc} cites line ${n}: ${(lines[n - 1] || '(past the end)').trim().slice(0, 60)}`);
+    }
+  }
+  assert.deepEqual(bad, [], 'repoint each ref at the test it describes');
+});
