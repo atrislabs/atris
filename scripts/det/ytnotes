@@ -555,8 +555,11 @@ run_grok() {
 # the update check and telemetry calls takes startup from about 2.8s to 2.0s.
 # Low effort took Haiku from about 15.7s to 12.7s on a 21-minute video (four
 # paired runs, quotes still checked), so low is the default, like Gemini's.
+# Even on low, Haiku usually spends about 1,700 tokens thinking first. A zero
+# thinking budget made 6 of 10 runs skip it (about 6s), against 1 of 10
+# without; median 6.2s against 12.4s, ten paired runs on a 21-minute video.
 run_haiku() {
-  CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC=1 \
+  CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC=1 MAX_THINKING_TOKENS=0 \
   run_with_timeout 240 claude -p "$PROMPT" --model "${1:-claude-haiku-5-5}" \
     --effort "${2:-low}" --tools "" --strict-mcp-config --setting-sources "" \
     --no-session-persistence --disable-slash-commands </dev/null
