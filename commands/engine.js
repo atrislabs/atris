@@ -2375,6 +2375,7 @@ function runEngineSweepCommand(args, root, deps = {}) {
   const plural = (n, word) => `${n} ${word}${n === 1 ? '' : 's'}`;
   if (apply) {
     const lines = [`stopped ${plural(result.stopped.length, 'leaked ssh-agent')}`];
+    if (Number.isFinite(result.left)) lines.push(`${result.left} leaked ssh-agent${result.left === 1 ? '' : 's'} still left on this machine`);
     const replaced = (result.replaced || []).length;
     const otherSkipped = result.skipped.length - replaced;
     if (replaced) lines.push(`${replaced} skipped because ${replaced === 1 ? 'a younger ssh-agent now has' : 'younger ssh-agents now have'} the same process number`);

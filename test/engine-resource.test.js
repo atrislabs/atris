@@ -247,6 +247,7 @@ test('sweep apply rechecks right before stopping, and logs what it stopped', () 
   assert.strictEqual(code, 0);
   assert.deepStrictEqual(signals, [[200, 'SIGTERM']]);
   assert.match(text, /stopped 1 leaked ssh-agent/);
+  assert.match(text, /^0 leaked ssh-agents still left on this machine$/m);
   assert.match(text, /2 skipped because they were in use or gone on the recheck/);
   assert.deepStrictEqual(log, [{ at: '2026-10-14T12:00:00.000Z', phase: 'sweep', stopped: [200], failed: [], skipped: [201, 202], leaked_ssh_agents: 0 }]);
 });
@@ -260,6 +261,7 @@ test('sweep apply reports an agent it could not stop', () => {
   assert.strictEqual(code, 1);
   assert.match(text, /stopped 1 leaked ssh-agent/);
   assert.match(text, /could not stop pid 201: ESRCH/);
+  assert.match(text, /^1 leaked ssh-agent still left on this machine$/m, 'the agent it could not stop is still counted');
   assert.deepStrictEqual(log[0].failed, [201]);
 });
 
@@ -518,7 +520,7 @@ test('the hourly landing pass stops agents still leaked on the recheck and names
     const receipt = {};
     runSshAgentSweep(root, receipt, { read: () => reads.shift(), uid: 501, kill: (pid, signal) => signals.push([pid, signal]) });
     assert.deepStrictEqual(signals, [[200, 'SIGTERM']]);
-    assert.deepStrictEqual(receipt.ssh_agent_sweep, { stopped: [200], failed: [], skipped: [201] });
+    assert.deepStrictEqual(receipt.ssh_agent_sweep, { stopped: [200], failed: [], skipped: [201], left: 0 });
     assert.strictEqual(sshAgentSweepNote(receipt), ', stopped 1 leaked ssh-agent');
 
     const quiet = {};
@@ -546,7 +548,7 @@ test('the hourly landing pass stops at most its cap, oldest first, and names the
     const receipt = {};
     runSshAgentSweep(root, receipt, { read: () => ({ agents, referenced: new Set() }), uid: 501, limit: 2, kill: (pid, signal) => signals.push([pid, signal]) });
     assert.deepStrictEqual(signals, [[201, 'SIGTERM'], [202, 'SIGTERM']]);
-    assert.deepStrictEqual(receipt.ssh_agent_sweep, { stopped: [201, 202], failed: [], skipped: [], deferred: [200, 203] });
+    assert.deepStrictEqual(receipt.ssh_agent_sweep, { stopped: [201, 202], failed: [], skipped: [], deferred: [200, 203], left: 2 });
     assert.strictEqual(sshAgentSweepNote(receipt), ', stopped 2 leaked ssh-agents, left 2 more leaked ssh-agents for the next pass');
     const saved = JSON.parse(fs.readFileSync(path.join(root, RESOURCE_LOG), 'utf8'));
     assert.deepStrictEqual(saved.deferred, [200, 203]);
@@ -1027,7 +1029,7 @@ test('the hourly cleanup summary reports an unreadable run log instead of findin
       console.log = original;
     }
     assert.equal(code, 1);
-    assert.match(out.join('\n'), /^stopped 0 leaked ssh-agents\ncould not close lost runs, so unfinished records may remain: could not read the engine run log: EISDIR$/);
+    assert.match(out.join('\n'), /^stopped 0 leaked ssh-agents\n0 leaked ssh-agents still left on this machine\ncould not close lost runs, so unfinished records may remain: could not read the engine run log: EISDIR$/);
     console.log('real sweep with unreadable run log: ' + out.join(' / '));
   } finally {
     fs.rmSync(root, { recursive: true, force: true });
