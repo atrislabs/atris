@@ -352,7 +352,9 @@ const PLACE_CLAUSE_AFTER_DASH = new RegExp(`${CLAUSE_END}\\s*\\u2014\\s*(?=the\\
 // The same subject and verb with a bare object of two to four plain words
 // or a number before a stop or a comma is a clause too: "the post claims
 // 99% token reduction", "the scorer tracks signal quality, not order".
-const BARE_PHRASE_CLAUSE_AFTER_DASH = new RegExp(`${CLAUSE_END}\\s*\\u2014\\s*(?=the\\s+(?!${NAME_PAIR}\\b)(?!(?:one|two|three|four|five|six|seven|eight|nine|ten|few|many|several|same|other|first|last|next|main|key|core|new|old|real|whole|exact|only)\\b)(?:(?![A-Za-z-]*s\\b)(?:[A-Z]{2,}|[a-z][a-z-]*[a-z])\\s+(?!(?:that|which|who)\\b))?(?![a-z]*s\\b)[a-z]{2,}\\s+(?!${PLURAL_NOUN_WORD}\\b)${PLAIN_VERB_WORD}\\s+(?!(?:the|a|an|your|our|their|its|this|these|those|that|it|them|from|of|in|on|for|with|at|by|to|and|or|as|than|like)\\b)(?:\\d+%?|[a-z][\\w-]*)(?:\\s+(?!(?:and|or|but|that|which|who|the|a|an|in|of|on|for|with|at|by|to|from|into)\\b)[a-z][\\w-]*){1,3}[.!?;,])`, 'g');
+// A closing quote ends the object too, since the quoted clause stops there:
+// "closes the loop; the classifier reads real outcome data" is withdrawn.
+const BARE_PHRASE_CLAUSE_AFTER_DASH = new RegExp(`${CLAUSE_END}\\s*\\u2014\\s*(?=the\\s+(?!${NAME_PAIR}\\b)(?!(?:one|two|three|four|five|six|seven|eight|nine|ten|few|many|several|same|other|first|last|next|main|key|core|new|old|real|whole|exact|only)\\b)(?:(?![A-Za-z-]*s\\b)(?:[A-Z]{2,}|[a-z][a-z-]*[a-z])\\s+(?!(?:that|which|who)\\b))?(?![a-z]*s\\b)[a-z]{2,}\\s+(?!${PLURAL_NOUN_WORD}\\b)${PLAIN_VERB_WORD}\\s+(?!(?:the|a|an|your|our|their|its|this|these|those|that|it|them|from|of|in|on|for|with|at|by|to|and|or|as|than|like)\\b)(?:\\d+%?|[a-z][\\w-]*)(?:\\s+(?!(?:and|or|but|that|which|who|the|a|an|in|of|on|for|with|at|by|to|from|into)\\b)[a-z][\\w-]*){1,3}(?:[.!?;,]|["\\u201d](?=[\\s.!?;,)]|$)))`, 'g');
 // Two verbs in "s" joined by "and" are a clause when the second one shows
 // it is a verb: an object or a how tail after it, or a helper verb in its
 // place. "the app captures stdout and writes the file", "the orb reads and

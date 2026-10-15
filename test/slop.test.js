@@ -2471,6 +2471,22 @@ test('fix joins a past verb with a word in "ly" before it after a dash', () => {
   ]);
 });
 
+test('fix joins a verb and a bare object that ends at a closing quote after a dash', () => {
+  // from real repo text: "the classifier reads real outcome data" sat
+  // inside a quote and spliced, since a bare object had to end at a stop
+  // or a comma. A closing quote ends it too; a plural noun where the verb
+  // would be ("the user settings page layout") keeps the phrase.
+  const file = tmpFile('quote-bare-object.md', [
+    'The claim "closes the loop with the gate work \u2014 the classifier reads real outcome data" is withdrawn.',
+    'He wrote "start with one screen \u2014 the user settings page layout" in the doc.',
+  ].join('\n'));
+  const { changes } = applyFixes([file], RULES);
+  assert.deepEqual(changes.map((c) => c.after), [
+    'The claim "closes the loop with the gate work; the classifier reads real outcome data" is withdrawn.',
+    'He wrote "start with one screen, the user settings page layout" in the doc.',
+  ]);
+});
+
 test('fix joins a lone verb before "from" or "as" and a "their" subject after a dash', () => {
   // from real repo text: "their visible data comes from the APIs above",
   // "the wish arrives as a byproduct" and "the idea probably overlaps with

@@ -239,3 +239,9 @@ No hand-wavy guesses \u2014 the miss patterns directly pointed to each change.
 # but a number before it is a count with its own phrase
 It fixed 18 features \u2014 the 10 directly edited plus 8 that moved.
 => It fixed 18 features, the 10 directly edited plus 8 that moved.
+# a closing quote ends a bare object of two to four words
+The claim "closes the loop with the gate work \u2014 the classifier reads real outcome data" is withdrawn.
+=> The claim "closes the loop with the gate work; the classifier reads real outcome data" is withdrawn.
+# but a plural noun where the verb would be keeps the phrase
+He wrote "start with one screen \u2014 the user settings page layout" in the doc.
+=> He wrote "start with one screen, the user settings page layout" in the doc.
