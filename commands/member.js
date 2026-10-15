@@ -3570,7 +3570,10 @@ function collectAutoImproverLogSignals(root) {
       if (/\b(errors?|fail(?:ed|ures?)|blocked|timeouts?)\s*:\s*0\b/i.test(line)) continue;
       if (/\bblocked\s*(?:->|→|to)\s*ready\b/i.test(line)) continue;
       if (failureCoveredByPassLesson(line, passLessonText, passLessonLower)) continue;
-      if (unclearRegex.test(line)) {
+      // A file name is not a next step ("receipt: atris/runs/...-unknown-word-...json"),
+      // and "learned:" / "why:" lines explain the past, so neither counts as unclear.
+      const unclearText = line.replace(/[\w.@~-]*\/[\w./@~-]*\.\w{1,5}\b/g, ' ');
+      if (!/^\s*[-*]?\s*(learned|why)\s*:/i.test(line) && unclearRegex.test(unclearText)) {
         unclearNextActions += 1;
         unclearActions.push({
           path: relative,

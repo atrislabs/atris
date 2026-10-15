@@ -127,6 +127,37 @@ test('auto-improver scan skips acceptance lines and goal-file stop rules', () =>
   }
 });
 
+// On 2026-10-14 a saved-report file name ("...-a-single-unknown-word-...json")
+// and "learned:" / "why:" lines quoting "unclear" were most of the live
+// missing-next-step count, so it never reflected real open asks.
+test('auto-improver scan skips file names and look-back lines in the unclear count', () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'atris-scan-unclear-'));
+  try {
+    fs.mkdirSync(path.join(dir, 'atris'), { recursive: true });
+    assert.equal(runCli(['member', 'create', 'auto-improver', '--description="Finds problems before they grow"'], dir).status, 0);
+
+    const logs = path.join(dir, 'atris', 'team', 'builder', 'logs');
+    fs.mkdirSync(logs, { recursive: true });
+    fs.writeFileSync(path.join(logs, `${dateDaysAgo(1)}.md`), [
+      '# builder log',
+      '- receipt: atris/runs/mission-2026-10-14-a-single-unknown-word-never--8d6098be.json',
+      '- learned: never act on an unknown merge state; ask again a few seconds later.',
+      '- why: the stop rule "risk is unclear" counted as a missing next step.',
+      '- next: owner unclear for the stale lock cleanup',
+      '',
+    ].join('\n'), 'utf8');
+
+    const wake = runCli(['member', 'wake', 'auto-improver', '--json'], dir);
+    assert.equal(wake.status, 0, wake.stderr || wake.stdout);
+    const signals = JSON.parse(wake.stdout).auto_improver.scan.log_signals;
+    const texts = signals.unclear_next_actions.map((item) => item.text);
+    assert.deepEqual(texts, ['- next: owner unclear for the stale lock cleanup']);
+    assert.equal(signals.unclear_next_action_count, 1);
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
 // Mission driver logs carry no date in their name, so the 7-day window never
 // applied to them. On 2026-10-14, 4 of the 11 scan findings came from driver
 // logs last written in July and August.
