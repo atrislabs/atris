@@ -12,9 +12,11 @@ const { spawn } = require('child_process');
 const { readFlag } = require('../lib/arg-parser');
 const { CAMPAIGN_ID, isHumanActor, validateCampaign } = require('../lib/campaign-schema');
 const { decide } = require('../lib/campaign-core');
-const { getCampaign, listCampaigns, newCampaignId, openCampaignStore } = require('../lib/campaign-store');
+const { campaignDbPath, getCampaign, listCampaigns, newCampaignId, openCampaignStore } = require('../lib/campaign-store');
+const { findHoldout, moveHoldoutBack, moveHoldoutIn, scrub } = require('../lib/campaign-holdout');
 const { judgeRanData, judgeReading, outputTail } = require('../lib/campaign-reading');
 const { cloudLink, sendPersonAction, syncCampaign } = require('../lib/campaign-sync');
+const { campaignHome, changedProtected, checkoutTop, planProtect, readProtect, saveProtect } = require('../lib/campaign-protect');
 
 const JUDGE_TIMEOUT_SECONDS = 15 * 60;
 const STATE_ORDER = ['needs_you', 'running', 'queued', 'paused', 'resting', 'out_of_budget', 'done'];
@@ -24,10 +26,13 @@ function printHelp() {
   console.log('  atris campaign                         every campaign: state, money, and the next move');
   console.log('  atris campaign new "<goal>" [--budget 20] [--owner <member>] [--yes]   draft a judge that fails today, then start');
   console.log('  atris campaign start "<title>" --judge "<cmd>" --budget <dollars>');
+  console.log('        [--holdout <file>]   move held-out data out of the repo; the judge reads it from $ATRIS_CAMPAIGN_HOLDOUT');
   console.log('        [--owner <member>] [--seat <member>[:<role>]]... [--bet "<bet>" [--wrong-if "<what proves it wrong>"]]');
-  console.log('        [--standing] [--parent <id>] [--id cmp-<name>] [--cloud]');
+  console.log('        [--standing] [--parent <id>] [--id cmp-<name>] [--cloud] [--protect <path>]...');
+  console.log('        --protect saves paths agents must not touch, and the commit they start from');
   console.log('  atris campaign show <id>               bet, judge, answer, budget, seats, missions, asks');
   console.log('  atris campaign judge <id> [--timeout <seconds>]   run the judge now and record the reading');
+  console.log('  atris campaign guard <id>              exits 1 naming any protected path changed since start');
   console.log('  atris campaign set-judge <id> "<cmd>"   change the judge (owner or a person; must fail first)');
   console.log('  atris campaign seat <id> <member> [--role <role>]');
   console.log('  atris campaign bet <id> "<bet>" [--wrong-if "<what proves it wrong>"]');
@@ -59,7 +64,7 @@ function money(value) {
 }
 
 // The flags this command understands, so positional words are what is left.
-const VALUE_FLAGS = ['--work', '--break', '--rounds', '--mission', '--parallel', '--max-steps', '--max-ticks', '--runner', '--count', '--judge', '--budget', '--owner', '--seat', '--bet', '--wrong-if', '--parent', '--id', '--role', '--add', '--data', '--timeout', '--as'];
+const VALUE_FLAGS = ['--work', '--break', '--rounds', '--mission', '--parallel', '--max-steps', '--max-ticks', '--runner', '--count', '--judge', '--budget', '--owner', '--seat', '--bet', '--wrong-if', '--parent', '--id', '--role', '--add', '--data', '--timeout', '--as', '--holdout', '--protect'];
 
 function positionals(args) {
   const out = [];
@@ -137,10 +142,10 @@ function judgeSummary(output) {
 
 // Runs in its own process group so a timeout stops everything it started;
 // keeps only the last part of a huge output instead of failing on it.
-function runJudgeCommand(command, cwd, timeoutSeconds) {
+function runJudgeCommand(command, cwd, timeoutSeconds, env = process.env) {
   const started = Date.now();
   return new Promise((resolve) => {
-    const child = spawn('/bin/sh', ['-c', command], { cwd, detached: true, stdio: ['ignore', 'pipe', 'pipe'] });
+    const child = spawn('/bin/sh', ['-c', command], { cwd, env, detached: true, stdio: ['ignore', 'pipe', 'pipe'] });
     let output = '';
     let timedOut = false;
     const keep = (chunk) => {
@@ -171,7 +176,17 @@ function makeContext(args, deps) {
   const store = deps.store || openCampaignStore(process.cwd());
   const actor = readFlag(args, '--as', '') || deps.actor || defaultActor();
   const forgedHuman = readFlag(args, '--as', '').startsWith('human:');
-  const judge = deps.runJudge || ((command, timeout) => runJudgeCommand(command, process.cwd(), timeout));
+  const runJudge = deps.runJudge || ((command, timeout, env) => runJudgeCommand(command, process.cwd(), timeout, env));
+  // Held-out files live beside the campaign store, outside every checkout.
+  const holdoutRoot = deps.holdoutRoot || path.dirname(store.path || campaignDbPath());
+  // A campaign with a held-out file hands its path to the judge, and nothing
+  // the judge prints from it reaches the store.
+  const judge = async (command, timeout, campaignId) => {
+    const holdout = campaignId ? findHoldout(holdoutRoot, campaignId) : null;
+    const reading = await runJudge(command, timeout, holdout ? { ...process.env, ATRIS_CAMPAIGN_HOLDOUT: holdout } : process.env);
+    if (!holdout) return reading;
+    return { ...reading, summary: scrub(reading.summary, holdout), output_tail: scrub(reading.output_tail, holdout) };
+  };
   const out = (human, json) => {
     if (asJson) console.log(JSON.stringify(json));
     else console.log(human);
@@ -182,7 +197,7 @@ function makeContext(args, deps) {
     return code;
   };
   const append = (campaignId, type, data, as = actor) => store.append({ campaign_id: campaignId, type, actor: as, data });
-  return { asJson, store, actor, judge, out, fail, append, forgedHuman, loopDeps: deps.loopDeps, cloud: deps.cloud || {} };
+  return { asJson, store, actor, judge, holdoutRoot, out, fail, append, forgedHuman, loopDeps: deps.loopDeps, cloud: deps.cloud || {} };
 }
 
 function requireCampaign(ctx, id) {
@@ -274,11 +289,23 @@ async function cmdStart(args, ctx) {
   const id = readFlag(args, '--id', '') || newCampaignId(title);
   if (!CAMPAIGN_ID.test(id)) return ctx.fail(`--id must look like cmp-<lowercase-words>, for example cmp-ship-billing`);
   if (getCampaign(ctx.store, id)) return ctx.fail(`campaign ${id} already exists`, 1);
+  const protect = readAll(args, '--protect');
+  const protectPlan = protect.length ? planProtect(process.cwd(), protect) : null;
+  if (protectPlan && protectPlan.error) return ctx.fail(protectPlan.error);
+
+  const holdoutFlag = readFlag(args, '--holdout', '');
+  let held = null;
+  if (holdoutFlag) {
+    held = moveHoldoutIn(ctx.holdoutRoot, id, holdoutFlag);
+    if (held.error) return ctx.fail(held.error);
+    if (!ctx.asJson) console.error(`moved the held-out file out of the repo; the judge reads it from ATRIS_CAMPAIGN_HOLDOUT`);
+  }
 
   const timeout = Number(readFlag(args, '--timeout', '')) || JUDGE_TIMEOUT_SECONDS;
   if (!ctx.asJson) console.error(`running the judge first: ${judge}`);
-  const reading = await ctx.judge(judge, timeout);
+  const reading = await ctx.judge(judge, timeout, id);
   if (reading.passed && !standing) {
+    moveHoldoutBack(held);
     return ctx.fail(`already done: the judge passes before any work (${reading.summary || 'exit 0'}). Write a judge that fails first.`, 1);
   }
 
@@ -290,6 +317,7 @@ async function cmdStart(args, ctx) {
   if (bet && wrongIf) ctx.append(id, 'bet_set', { bet, wrong_if: wrongIf });
   if (parent) ctx.append(id, 'attached', { parent_id: parent });
   ctx.append(id, 'judge_ran', judgeRanData(reading), 'judge');
+  if (protectPlan) saveProtect(ctx.campaignHome, id, protectPlan);
 
   let cloud = null;
   if (args.includes('--cloud')) {
@@ -343,7 +371,7 @@ async function cmdSetJudge(args, ctx) {
   }
   const timeout = Number(readFlag(args, '--timeout', '')) || JUDGE_TIMEOUT_SECONDS;
   if (!ctx.asJson) console.error(`running the new judge first: ${judge}`);
-  const reading = await ctx.judge(judge, timeout);
+  const reading = await ctx.judge(judge, timeout, view.id);
   if (reading.passed && !view.standing) {
     return ctx.fail(`the new judge already passes (${reading.summary || 'exit 0'}). Write a judge that fails first.`, 1);
   }
@@ -359,13 +387,37 @@ async function cmdJudge(args, ctx) {
   if (error !== undefined) return error;
   const timeout = Number(readFlag(args, '--timeout', '')) || JUDGE_TIMEOUT_SECONDS;
   if (!ctx.asJson) console.error(`running the judge: ${view.judge}`);
-  const reading = await ctx.judge(view.judge, timeout);
+  const reading = await ctx.judge(view.judge, timeout, view.id);
   ctx.append(view.id, 'judge_ran', judgeRanData(reading), 'judge');
   const after = getCampaign(ctx.store, view.id);
   const verdict = reading.passed ? 'passed' : 'failed';
   ctx.out(`judge ${verdict} in ${reading.seconds}s: ${reading.summary || `exit ${reading.exit}`}\n${renderShow(after)}`,
     { ok: true, action: 'judge_ran', passed: reading.passed, reading, campaign: after, next: decide(after) });
   return reading.passed ? 0 : 1;
+}
+
+// Exit 1 when a protected path changed since start, naming each one.
+function cmdGuard(args, ctx) {
+  const { view, error } = requireCampaign(ctx, positionals(args)[1]);
+  if (error !== undefined) return error;
+  const saved = readProtect(ctx.campaignHome, view.id);
+  if (!saved) {
+    ctx.out(`${view.id} protects nothing`, { ok: true, campaign_id: view.id, paths: [], changed: [] });
+    return 0;
+  }
+  const root = checkoutTop(process.cwd());
+  if (!root) return ctx.fail('guard needs the git checkout the campaign started in');
+  const result = changedProtected(root, saved);
+  if (result.error) return ctx.fail(result.error);
+  const body = { ok: result.changed.length === 0, campaign_id: view.id, base_commit: saved.base_commit, paths: saved.paths, changed: result.changed };
+  const since = String(saved.base_commit).slice(0, 12);
+  if (result.changed.length) {
+    if (ctx.asJson) console.log(JSON.stringify(body));
+    else console.error(`protected path${result.changed.length === 1 ? '' : 's'} changed since ${since}:\n${result.changed.map((p) => `  ${p}`).join('\n')}`);
+    return 1;
+  }
+  ctx.out(`no protected path changed since ${since} (${saved.paths.join(', ')})`, body);
+  return 0;
 }
 
 // toCloud(data) names the cloud person route for events only a person's
@@ -496,7 +548,7 @@ async function cmdLoop(args, ctx, verb) {
   }, {
     store: ctx.store,
     log: ctx.asJson ? () => {} : (line) => console.log(line),
-    judge: (command) => ctx.judge(command, JUDGE_TIMEOUT_SECONDS),
+    judge: (command) => ctx.judge(command, JUDGE_TIMEOUT_SECONDS, view.id),
     lessons: (id) => require('../lib/campaign-cadence').readLessons(process.cwd(), id),
     ...(sync ? { sync } : {}),
     ...(ctx.loopDeps || {}),
@@ -536,7 +588,7 @@ async function cmdLoop(args, ctx, verb) {
 }
 
 const VERBS = {
-  start: cmdStart, show: cmdShow, judge: cmdJudge, seat: cmdSeat, bet: cmdBet, budget: cmdBudget,
+  start: cmdStart, show: cmdShow, judge: cmdJudge, guard: cmdGuard, seat: cmdSeat, bet: cmdBet, budget: cmdBudget,
   pause: cmdPause, resume: cmdResume, stop: cmdStop, event: cmdEvent,
   ask: cmdAsk, answer: cmdAnswer, 'set-judge': cmdSetJudge, sync: cmdSync,
   run: (args, ctx) => cmdLoop(args, ctx, 'run'),
@@ -555,6 +607,7 @@ function campaignCommand(args = [], deps = {}) {
     return 0;
   }
   const ctx = makeContext(args, deps);
+  ctx.campaignHome = deps.campaignHome || campaignHome(ctx.store);
   if (ctx.forgedHuman) return ctx.fail('--as cannot name a person; a person runs atris in their own terminal (or sets ATRIS_HUMAN=1)');
   if (!verb || verb === 'list') {
     const all = listCampaigns(ctx.store);
