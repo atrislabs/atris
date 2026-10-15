@@ -109,3 +109,14 @@ One place \u2014 the agent runs dashboard view.
 => One place, the agent runs dashboard view.
 One place \u2014 the team calls schedule.
 => One place, the team calls schedule.
+
+# from real repo text: before "in", "on", "to", "for", "at" or "with" only a
+# verb that is almost never a plural noun makes a clause
+A click is not enough \u2014 the canvas listens for a full pointer event chain.
+=> A click is not enough; the canvas listens for a full pointer event chain.
+The value is still empty \u2014 the field fills in only after that step finishes.
+=> The value is still empty; the field fills in only after that step finishes.
+Check one place \u2014 the open issues on GitHub.
+=> Check one place, the open issues on GitHub.
+Check one place \u2014 the GPU clusters in us-east.
+=> Check one place, the GPU clusters in us-east.

@@ -347,6 +347,13 @@ const BARE_PHRASE_CLAUSE_AFTER_DASH = new RegExp(`${CLAUSE_END}\\s*\\u2014\\s*(?
 // runs dashboard view", "the team calls schedule". Every dash clause rule
 // that could take that shape checks this first.
 const NAME_TAIL_PHRASE = new RegExp(`^\\s*\\u2014\\s*the\\s+[a-z][\\w-]*\\s+(?:[a-z][\\w-]*\\s+)?(?!(?:has|was|does)\\b)[a-z]{2,}s\\s+(?:[a-z][\\w-]*\\s+)?(?:${NAME_END_WORD}|view|schedule|dashboard|feed|queue|log|report|summary|history|board|calendar|inbox|digest|template|form)[.!?;]`);
+// "in", "on", "to", "for", "at" and "with" follow a plural noun too often
+// to mark a verb ("the open issues on GitHub"), so before them only a verb
+// that is almost never a plural noun counts: "the canvas listens for a
+// pointer event", "the field fills in only after that step finishes".
+// A subject in "as", "is", "us" or "ss" is one thing: "the canvas".
+const LONE_VERB_WORD = '(?:listens|focuses|fills|lands|relies|depends|refers|belongs|applies|waits|fails|happens|sits|comes|goes|reacts|responds|subscribes|defaults|hangs|converges|agrees|differs|compiles|scrolls|resolves|reads|writes)';
+const LONE_VERB_CLAUSE_AFTER_DASH = new RegExp(`${CLAUSE_END}\\s*\\u2014\\s*(?=the\\s+(?!${NAME_PAIR}\\b)(?!(?:one|two|three|four|five|six|seven|eight|nine|ten|few|many|several|same|other|first|last|next|main|key|core|new|old|real|whole|exact|only)\\b)(?:(?![A-Za-z-]*s\\b)(?:[A-Z]{2,}|[a-z][a-z-]*[a-z])\\s+(?!(?:that|which|who)\\b))?(?![a-z]*[^aisu]s\\b)[a-z]{2,}\\s+(?:${MANNER_WORD}\\s+)?${LONE_VERB_WORD}\\s+(?:${MANNER_WORD}\\s+)?(?:in|on|to|for|at|with)\\s+[^\\s\\u2014])`, 'g');
 const RELATIVE_OBJECT_PHRASE = /^\s*\u2014\s*the\s+[A-Za-z][\w-]*\s+(?:[a-z][\w-]*\s+)?(?!(?:proves|shows|means|ensures|confirms|says|assumes|knows|finds)\b)[a-z]+s\s+(?:the|a|an|your|our|their|its|this|these|those)\s+\S+\s+(?:\S+\s+){0,2}[a-z]+s\s*(?:[.!?;,]|$)/;
 const BARE_OBJECT_CLAUSE = new RegExp(`^\\s*\\u2014\\s*the\\s+(?!${NAME_PAIR}\\b)(?![a-z]*s\\b)[a-z]{2,}\\s+${PLAIN_VERB_WORD}\\s+(?!${NAME_END_WORD}\\b)[a-z]{2,}(?=[.!?;]|\\s+(?:into|onto|to|for|from|on|at|with|until)\\s)`);
 // A plain word, then a name, then the verb hides a "that": "a topic Atris
@@ -1035,6 +1042,10 @@ function fixEmDash(s, { endsBlock = false, startsBlock = false, spans = [], abov
     .replace(BARE_PHRASE_CLAUSE_AFTER_DASH, (m, at, whole) => {
       const left = clauseLeft(at, whole);
       return left && !NAME_TAIL_PHRASE.test(whole.slice(at)) ? clauseJoin(left) : m;
+    })
+    .replace(LONE_VERB_CLAUSE_AFTER_DASH, (m, at, whole) => {
+      const left = clauseLeft(at, whole);
+      return left ? clauseJoin(left) : m;
     })
     .replace(PLACE_CLAUSE_AFTER_DASH, (m, at, whole) => {
       const left = clauseLeft(at, whole);

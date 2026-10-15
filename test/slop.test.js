@@ -2398,6 +2398,26 @@ test('fix keeps a comma before "the", a word in s and a name word at a stop', ()
   ]);
 });
 
+test('fix joins "the", a noun and a verb that is never a plural before "in" or "for" after a dash', () => {
+  // from real repo text: "the canvas listens for a full pointer event
+  // chain" spliced, since "for" after a word in s so often follows a plural
+  // noun. A short list of verbs that are almost never plurals joins; a
+  // plural before "on" or "in" keeps the phrase.
+  const file = tmpFile('the-lone-verb-clause.md', [
+    'A click is not enough \u2014 the canvas listens for a full pointer event chain.',
+    'The value is still empty \u2014 the field fills in only after that step finishes.',
+    'Check one place \u2014 the open issues on GitHub.',
+    'Check one place \u2014 the GPU clusters in us-east.',
+  ].join('\n'));
+  const { changes } = applyFixes([file], RULES);
+  assert.deepEqual(changes.map((c) => c.after), [
+    'A click is not enough; the canvas listens for a full pointer event chain.',
+    'The value is still empty; the field fills in only after that step finishes.',
+    'Check one place, the open issues on GitHub.',
+    'Check one place, the GPU clusters in us-east.',
+  ]);
+});
+
 test('fix joins "its" or "our", a plural and a plain verb before a number or an object', () => {
   // from a probe of the edge file: "its pages score 67" spliced, since the
   // possessive rule wanted a verb in s, a helper verb or "already". A plain
