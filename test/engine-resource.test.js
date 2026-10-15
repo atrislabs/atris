@@ -3406,16 +3406,17 @@ test('atris engine sweep names the day\'s crowded time limit kills in the same w
       timeLimit(hoursAgo(1), 'C', 1),
       // Older than a day: counted in the all time line, not this one.
       timeLimit(hoursAgo(30), 'OLD', cores + 5, { busiest }),
+      ...[31, 32, 33].map((h) => timeLimit(hoursAgo(h), `OLD-${h}`, cores + 5, { busiest: [{ name: 'Xcode', cpu: 400 }] })),
       '',
     ].join('\n'));
     const crowdedText = `2 with load above the ${cores} cores and no other engine run open, so the load came from other work, mds_stores using the most CPU at 2 of them`;
     const lines = sweep();
     assert.ok(lines.includes(`time limit kills in the last day: 3 (${crowdedText})`), lines.join('\n'));
-    assert.ok(lines.includes('0 of 4 SIGKILLs ended with machine memory low, 4 at their time limit'), lines.join('\n'));
+    assert.ok(lines.includes('0 of 7 SIGKILLs ended with machine memory low, 7 at their time limit'), lines.join('\n'));
 
     const { history } = JSON.parse(sweep(['--json']).join('\n'));
-    assert.deepStrictEqual([history.time_limit_kills_day, history.time_limit_kills, history.crowded_time_limit_kills_day], [3, 4, 2], 'the older crowded kill stays out of the recent counts');
-    assert.deepStrictEqual(history.crowded_top_busiest, { name: 'mds_stores', kills: 2 }, 'the older crowded kill does not inflate the busiest program repeat count');
+    assert.deepStrictEqual([history.time_limit_kills_day, history.time_limit_kills, history.crowded_time_limit_kills_day], [3, 7, 2], 'the older crowded kills stay out of the recent counts');
+    assert.deepStrictEqual(history.crowded_top_busiest, { name: 'mds_stores', kills: 2 }, 'older kills neither inflate the recent count nor replace its leader with a more frequent old program');
     console.log(`real sweep json totals: ${JSON.stringify({ recent: history.time_limit_kills_day, overall: history.time_limit_kills, busiest: history.crowded_top_busiest })}`);
     const status = spawnSync(process.execPath, [path.join(__dirname, '..', 'bin', 'atris.js'), 'autoland', 'status'], {
       cwd: root,
