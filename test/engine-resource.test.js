@@ -898,7 +898,13 @@ test('a full resource log is cut back to its newest lines but keeps starts still
     fs.mkdirSync(path.dirname(file), { recursive: true });
     const old = (run_id, phase) => JSON.stringify({ at: '2026-10-01T00:00:00.000Z', phase, engine: 'cursor', task: 'OLD', run_id, pad: 'x'.repeat(200) });
     const lines = [old('long-run', 'start'), old('done-run', 'start'), old('done-run', 'end')];
-    while (lines.join('\n').length < MAX_LOG_BYTES) lines.push(old(`filler-${lines.length}`, 'start'), old(`filler-${lines.length}`, 'end'));
+    // A running length, since joining every line on each pass took seconds.
+    let size = lines.join('\n').length;
+    while (size < MAX_LOG_BYTES) {
+      const added = [old(`filler-${lines.length}`, 'start'), old(`filler-${lines.length}`, 'end')];
+      lines.push(...added);
+      size += added.reduce((sum, line) => sum + line.length + 1, 0);
+    }
     fs.writeFileSync(file, `${lines.join('\n')}\n`);
     const deps = { platform: 'linux', loadavg: () => [0, 0, 0], now: () => '2026-10-14T12:00:00.000Z' };
     recordEngineResource(root, { phase: 'end', engine: 'cursor', task: 'LONG', run_id: 'long-run', signal: 'SIGKILL' }, deps);
