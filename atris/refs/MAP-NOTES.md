@@ -2453,3 +2453,5 @@ Incomplete run history advice: `test/engine-resource.test.js:4857` compares real
 Combined unreadable history and agent scans: `test/engine-resource.test.js:5349` covers repair guidance with incomplete process environments and socket scans.
 
 Incomplete sweep counts: `commands/engine.js:2399` reports unknown or a lower bound when readers fail; `test/engine-resource.test.js:552` compares sweep and landing output for unreadable sockets, environments, and process lists.
+
+Incomplete cleanup recheck counts: `test/engine-resource.test.js:5387` runs the real cleanup command in text and JSON with a clean first scan and unreadable sockets on the recheck. It checks the warning, omitted remaining count, and null count in saved history.
