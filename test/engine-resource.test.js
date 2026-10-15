@@ -10,6 +10,8 @@ const {
   memoryWasLow,
   killedCauseText,
   recordEngineResource,
+  parseBusiest,
+  killLoadText,
 } = require('../lib/engine-resource');
 
 const PRESSURE_OK = 'The system has 38654705664 (2359296 pages with a page size of 16384).\nSystem-wide memory free percentage: 81%\n';
@@ -3132,6 +3134,52 @@ test('a kill sent by the run time limit names the time limit even with memory lo
   }
 });
 
+test('a kill on a machine with more work than cores names the programs using the most CPU', () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'engine-resource-busiest-'));
+  const PS = [
+    ' 120.5 /Applications/Google Chrome.app/Contents/Frameworks/Google Chrome Helper (Renderer)',
+    '  80.0 /Applications/Google Chrome.app/Contents/Frameworks/Google Chrome Helper (Renderer)',
+    ' 150.2 /usr/libexec/PerfPowerServices',
+    '  45.0 node',
+    '  10.0 git',
+    '   0.0 launchd',
+    'not a process line',
+  ].join('\n');
+  const psCalls = [];
+  const run = (cmd, args) => {
+    if (cmd === 'ps') { psCalls.push(args); return { status: 0, stdout: PS }; }
+    return fakeRun(PRESSURE_OK, SWAP_OK)(cmd);
+  };
+  try {
+    // Helpers of one app add up, paths drop to the program name, and idle
+    // programs and junk lines are skipped.
+    assert.deepStrictEqual(parseBusiest(PS), [
+      { name: 'Google Chrome Helper (Renderer)', cpu: 201 },
+      { name: 'PerfPowerServices', cpu: 150 },
+      { name: 'node', cpu: 45 },
+    ]);
+    assert.deepStrictEqual(parseBusiest(''), []);
+
+    const crowded = { platform: 'darwin', run, loadavg: () => [9, 8, 7], cores: 8 };
+    const killed = recordEngineResource(root, { phase: 'end', engine: 'codex', task: 'T', run_id: 'r1', signal: 'SIGKILL', timed_out: true }, crowded);
+    assert.deepStrictEqual(killed.busiest.map((p) => p.name), ['Google Chrome Helper (Renderer)', 'PerfPowerServices', 'node']);
+    assert.strictEqual(killLoadText(killed, 8), ', load 9 on 8 cores, busiest Google Chrome Helper (Renderer) 201%, PerfPowerServices 150%, node 45%');
+    const logged = fs.readFileSync(path.join(root, RESOURCE_LOG), 'utf8').trim().split('\n').map((line) => JSON.parse(line));
+    assert.deepStrictEqual(logged[0].busiest, killed.busiest, 'the busiest programs are written to the run log');
+
+    // At the core count, on a plain end, or with a list that cannot be read,
+    // no process list is kept.
+    const calm = recordEngineResource(root, { phase: 'end', run_id: 'r2', signal: 'SIGKILL', timed_out: true }, { ...crowded, cores: 9 });
+    const ended = recordEngineResource(root, { phase: 'end', run_id: 'r3' }, crowded);
+    const unread = recordEngineResource(root, { phase: 'end', run_id: 'r4', signal: 'SIGKILL' }, { ...crowded, run: (cmd) => (cmd === 'ps' ? { status: 1, stdout: '' } : run(cmd)) });
+    assert.strictEqual(psCalls.length, 1, 'only the crowded kill read the process list');
+    for (const entry of [calm, ended, unread]) assert.strictEqual(entry.busiest, undefined);
+    assert.strictEqual(killLoadText(calm, 9), ', load 9 on 9 cores');
+  } finally {
+    fs.rmSync(root, { recursive: true, force: true });
+  }
+});
+
 test('the landing status counts time limit kills apart and names the newest kill that was not a time limit', () => {
   const { spawnSync } = require('node:child_process');
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'autoland-status-time-limit-'));
@@ -3219,11 +3267,13 @@ test('the landing status names the most engine runs open at a crowded time limit
 
     // A crowded kill with only the killed run open means the load came from
     // other work, so running fewer engines would not help.
-    fs.writeFileSync(file, [start(hoursAgo(2), 'G'), timeLimit(hoursAgo(1), 'G', cores + 3), ''].join('\n'));
+    const busiest = [{ name: 'PerfPowerServices', cpu: 180 }, { name: 'node', cpu: 85 }];
+    fs.writeFileSync(file, [start(hoursAgo(2), 'G'), JSON.stringify({ ...JSON.parse(timeLimit(hoursAgo(1), 'G', cores + 3)), busiest }), ''].join('\n'));
     const alone = status();
     assert.strictEqual(alone.status, 0, alone.stderr);
     assert.ok(alone.stdout.includes(`all at their time limit (1 with load above the ${cores} cores and no other engine run open, so the load came from other work);`), alone.stdout);
     assert.doesNotMatch(alone.stdout, /run fewer at once/);
+    assert.ok(alone.stdout.includes(`load ${cores + 3} on ${cores} cores, busiest PerfPowerServices 180%, node 85%\n`), 'the status names what was using the CPU');
   } finally {
     fs.rmSync(root, { recursive: true, force: true });
   }
