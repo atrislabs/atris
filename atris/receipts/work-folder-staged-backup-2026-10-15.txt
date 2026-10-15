@@ -1,0 +1,34 @@
+The put-away command now backs up staged work and binary bytes before it removes a folder, so nothing it removes is lost.
+Before: a throwaway probe showed the folder removed with exit 0 while its backup held "Binary files differ" with no bytes, dropped a staged file deleted from the folder, and kept only the later edit of a staged note.
+After: the full backup carries binary bytes, and a second backup holds the staged changes alone. Replaying it onto a fresh copy brought back the staged plan, the staged note and the drawing's exact bytes.
+Files: commands/land.js, test/worktree-removal-guard.test.js, atris/MAP.md, atris/refs/MAP-NOTES.md, atris/receipts/work-folder-staged-backup-2026-10-15.txt.
+Verify: node --test test/worktree-removal-guard.test.js test/member-tidy.test.js && node bin/atris.js slop --staged
+Exit: 0. Tests: 91 passed, 0 failed, 0 skipped, 0 todo. Writing check: clean, no slop tells in 4 files.
+Wider check: node --test test/land.test.js test/autoland.test.js, exit 0, 90 passed, 0 failed.
+Red check: the new test fails on the code before this change.
+Real surface: node bin/atris.js land --reap --no-remote --base master --ttl 0, run in a disposable repository by the test, exit 0.
+Progress: one real loss path closed in the removal code; one new regression test; thirteen map line references repointed by matching line content.
+next_push: Make the put-away summary say how to restore each backup, one apply line per saved file.
+layer: capabilities
+
+Full command output:
+command: node bin/atris.js land --reap --no-remote --base master --ttl 0 (disposable repository)
+landing cleanup done: 1 pieces cleared, 1 side copies removed
+  unsaved edits saved: /private/var/folders/t1/2_4kmb5n4c71dxm26zc8dgzr0000gn/T/atris-removal-guard-Yc1CND/repo/.atris/salvage/2026-10-15/engine-wt.dirty.patch
+  staged changes saved: /private/var/folders/t1/2_4kmb5n4c71dxm26zc8dgzr0000gn/T/atris-removal-guard-Yc1CND/repo/.atris/salvage/2026-10-15/engine-wt.staged.patch
+  folders removed today: 1 (atris land --reap 1)
+  still flying (recent work, left alone): 0
+exit: 0
+✔ reap keeps a folder a run is working in, even with --force (1567.676792ms)
+✔ reap sees a real live process in the folder without being told (1776.324209ms)
+ℹ tests 91
+ℹ suites 0
+ℹ pass 91
+ℹ fail 0
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 207676.292875
+
+  ✓ clean, no slop tells in 4 files
+tests_exit=0 slop_exit=0

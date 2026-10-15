@@ -1431,3 +1431,45 @@ test('reap counts branch copies still at work and names detached and pinned ones
     fs.rmSync(base, { recursive: true, force: true });
   }
 });
+
+test('reap saves staged and binary work it removes so both replay exactly', () => {
+  const { base, repo, wt } = landedWorktree();
+  try {
+    const savedBytes = Buffer.from([0, 254, 10, 129, 0]);
+    fs.writeFileSync(path.join(wt, 'drawing.bin'), savedBytes);
+    fs.writeFileSync(path.join(wt, 'plan.md'), 'only staged copy\n');
+    fs.writeFileSync(path.join(wt, 'README.md'), '# staged edit\n');
+    git(wt, ['add', 'drawing.bin', 'plan.md', 'README.md']);
+    fs.rmSync(path.join(wt, 'plan.md'));
+    fs.writeFileSync(path.join(wt, 'README.md'), '# staged edit\nlater edit\n');
+    const aged = new Date(Date.now() - 2 * 60 * 60 * 1000);
+    fs.utimesSync(wt, aged, aged);
+    const run = spawnSync(process.execPath, [path.resolve(__dirname, '../bin/atris.js'), 'land', '--reap', '--no-remote', '--base', 'master', '--ttl', '0'], { cwd: repo, encoding: 'utf8' });
+    console.log('command: node bin/atris.js land --reap --no-remote --base master --ttl 0 (disposable repository)');
+    console.log(run.stdout.trim());
+    console.log(`exit: ${run.status}`);
+    assert.equal(run.status, 0, run.stderr);
+    assert.equal(fs.existsSync(wt), false);
+    const saved = (label) => {
+      const line = run.stdout.split('\n').find((l) => l.startsWith(`  ${label}: `));
+      assert.ok(line, run.stdout);
+      return line.slice(`  ${label}: `.length);
+    };
+    const staged = saved('staged changes saved');
+    const dirty = saved('unsaved edits saved');
+    assert.match(fs.readFileSync(dirty, 'utf8'), /GIT binary patch/);
+    const replay = path.join(base, 'replay-staged');
+    git(repo, ['worktree', 'add', '-q', '-b', 'replay-staged', replay, 'master']);
+    git(replay, ['apply', '--index', staged]);
+    assert.equal(git(replay, ['show', ':plan.md']), 'only staged copy');
+    assert.equal(git(replay, ['show', ':README.md']), '# staged edit');
+    assert.deepEqual(spawnSync('git', ['show', ':drawing.bin'], { cwd: replay }).stdout, savedBytes);
+    const later = path.join(base, 'replay-later');
+    git(repo, ['worktree', 'add', '-q', '-b', 'replay-later', later, 'master']);
+    git(later, ['apply', dirty]);
+    assert.equal(fs.readFileSync(path.join(later, 'README.md'), 'utf8'), '# staged edit\nlater edit\n');
+    assert.deepEqual(fs.readFileSync(path.join(later, 'drawing.bin')), savedBytes);
+  } finally {
+    fs.rmSync(base, { recursive: true, force: true });
+  }
+});

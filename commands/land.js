@@ -495,21 +495,32 @@ function remoteHeads(root) {
 }
 
 // Everything a force-remove would destroy: staged + unstaged tracked changes
-// (git diff HEAD) and untracked files (copied verbatim). Returns false if any
-// piece could not be saved, the caller then keeps the worktree.
+// (git diff HEAD), the staged changes alone (git diff --cached), and untracked
+// files (copied verbatim). Both diffs carry binary bytes. The staged diff keeps
+// what git diff HEAD drops: a staged version later edited again, and a staged
+// file deleted from the folder. Returns false if any piece could not be saved,
+// the caller then keeps the worktree.
 function salvageWorktree(w, dir, receipt) {
   try {
     // git writes the patch file itself: routing the diff through spawnSync
     // stdout hits Node's 1MB default maxBuffer, so any worktree more than
     // ~1MB dirty read as "salvage failed" and was kept on every reap pass.
     const patchPath = path.join(dir, `${path.basename(w.path)}.dirty.patch`);
-    const diff = runGit(['diff', 'HEAD', `--output=${patchPath}`], { cwd: w.path, check: false });
+    const diff = runGit(['diff', 'HEAD', '--binary', `--output=${patchPath}`], { cwd: w.path, check: false });
     if (diff.status !== 0) {
       fs.rmSync(patchPath, { force: true });
       return false;
     }
     if (fs.statSync(patchPath).size > 0) receipt.patches.push(patchPath);
     else fs.rmSync(patchPath, { force: true });
+    const stagedPath = path.join(dir, `${path.basename(w.path)}.staged.patch`);
+    const staged = runGit(['diff', '--cached', '--binary', `--output=${stagedPath}`], { cwd: w.path, check: false });
+    if (staged.status !== 0) {
+      fs.rmSync(stagedPath, { force: true });
+      return false;
+    }
+    if (fs.statSync(stagedPath).size > 0) receipt.stagedPatches.push(stagedPath);
+    else fs.rmSync(stagedPath, { force: true });
     const untracked = runGit(['ls-files', '--others', '--exclude-standard', '-z'], { cwd: w.path, check: false, maxBuffer: 64 * 1024 * 1024 });
     if (untracked.status !== 0) return false;
     const files = untracked.stdout.split('\0').filter(Boolean);
@@ -647,6 +658,7 @@ function reap(root, { ttlDays = DEFAULT_TTL_DAYS, staleHours = DEFAULT_STALE_HOU
     bundle: null,
     bundleError: null,
     patches: [],
+    stagedPatches: [],
     untracked: [],
     keptWorktrees: protectedWorktrees.map((w) => `${w.path} (${w.reason})`),
     keptInFlight: protectedWorktrees.filter((w) => w.inFlight).map((w) => `${w.path} (${w.reason})`),
@@ -972,6 +984,7 @@ function printReceipt(receipt, { removalsToday = '' } = {}) {
     if (receipt.bundle) console.log(`  backed up first, nothing lost: ${receipt.bundle}`);
     if (receipt.bundleError) console.log(`  backup failed: unlanded work left in place: ${receipt.bundleError}`);
     for (const p of receipt.patches) console.log(`  unsaved edits saved: ${p}`);
+    for (const p of receipt.stagedPatches || []) console.log(`  staged changes saved: ${p}`);
     for (const u of receipt.untracked || []) console.log(`  new files saved: ${u}`);
   }
   // A preview names what it would keep too, so it matches the real pass.
