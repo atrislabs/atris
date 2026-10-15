@@ -3467,6 +3467,46 @@ test('a run started over a day ago and still open at a recent crowded kill count
   }
 });
 
+test('a crowded kill whose start fell before the read part of a big log still counts itself beside other open runs', () => {
+  const { spawnSync } = require('node:child_process');
+  const { MAX_LOG_BYTES } = require('../lib/engine-resource');
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'autoland-status-cut-start-peak-'));
+  const file = path.join(root, RESOURCE_LOG);
+  const cores = os.availableParallelism ? os.availableParallelism() : os.cpus().length;
+  const hoursAgo = (h) => new Date(Date.now() - h * 3600 * 1000).toISOString();
+  const start = (at, id) => JSON.stringify({ at, phase: 'start', engine: 'codex', task: id, run_id: id });
+  const end = (at, id) => JSON.stringify({ at, phase: 'end', engine: 'codex', task: id, run_id: id, code: 0 });
+  const timeLimit = (at, id) => JSON.stringify({ at, phase: 'end', engine: 'codex', task: id, run_id: id, signal: 'SIGKILL', cause: 'killed (time limit reached)', timed_out: true, free_pct: 70, load: [cores + 2, 1, 1] });
+  const status = () => spawnSync(process.execPath, [path.join(__dirname, '..', 'bin', 'atris.js'), 'autoland', 'status'], {
+    cwd: root,
+    encoding: 'utf8',
+    env: { ...process.env, ATRIS_SKIP_UPDATE_CHECK: '1', NODE_NO_WARNINGS: '1' },
+  });
+  // A pad line the size of the read part pushes LOST's start out of it.
+  const pad = 'x'.repeat(MAX_LOG_BYTES);
+  try {
+    spawnSync('git', ['init', '-q'], { cwd: root });
+    fs.mkdirSync(path.dirname(file), { recursive: true });
+    fs.writeFileSync(file, [start(hoursAgo(6), 'LOST'), pad, start(hoursAgo(5), 'B'), timeLimit(hoursAgo(4), 'LOST'), end(hoursAgo(3), 'B'), ''].join('\n'));
+    const history = readResourceHistory(root);
+    assert.deepStrictEqual([history.crowded_time_limit_kills_day, history.crowded_peak_open_runs], [1, 2], 'B and the killed run make two even without the killed run\'s start');
+    console.log(`real cut start peak: ${JSON.stringify({ crowded: history.crowded_time_limit_kills_day, peak: history.crowded_peak_open_runs })}`);
+    const beside = status();
+    assert.strictEqual(beside.status, 0, beside.stderr);
+    assert.ok(beside.stdout.includes(`all at their time limit (1 with load above the ${cores} cores and up to 2 engine runs open, so run fewer at once);`), beside.stdout);
+
+    // Alone, the count is unknown, so the status does not claim the load
+    // came from other work.
+    fs.writeFileSync(file, [start(hoursAgo(6), 'LOST'), pad, timeLimit(hoursAgo(4), 'LOST'), ''].join('\n'));
+    assert.strictEqual(readResourceHistory(root).crowded_peak_open_runs, 0);
+    const alone = status();
+    assert.strictEqual(alone.status, 0, alone.stderr);
+    assert.ok(alone.stdout.includes(`all at their time limit (1 with load above the ${cores} cores);`), alone.stdout);
+  } finally {
+    fs.rmSync(root, { recursive: true, force: true });
+  }
+});
+
 test('the landing status counts leaked ssh-agents, says how they get stopped, and stays quiet with none or a failed read', () => {
   const { showStatus, HOURLY_SSH_AGENT_STOP_LIMIT } = require('../commands/autoland');
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'autoland-status-agents-'));
