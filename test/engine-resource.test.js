@@ -1403,8 +1403,9 @@ test('every launch of an engine program by name records its run or is named as e
 test('every engine started through a runner or profile variable records its run or is named as exempt', () => {
   // The program is a variable or a call, like a runner binary, a profile's
   // bin, or an engine invocation's command. A list or map written in the
-  // launch counts only when it is indexed there.
-  const VAR_LAUNCH = /\b(?:spawn|spawnSync|execFile|execFileSync|spawnWithOutputChunks|runInReapedProcessGroup)\s*\(\s*((?:[A-Za-z_$][\w$]*|\[[^[\]{}()]*\](?=(?:\?\.)?\[)|\{[^[\]{}()]*\}(?=(?:\?\.)?\[))(?:\??\.[\w$]+|(?:\?\.)?\[\s*(?:'[^'\\\n]*'|"[^"\\\n]*"|[A-Za-z_$][\w$]*|\d+)\s*\])*)/g;
+  // launch counts only when it is indexed there, and a program in its own
+  // parentheses starts at the opening one.
+  const VAR_LAUNCH = /\b(?:spawn|spawnSync|execFile|execFileSync|spawnWithOutputChunks|runInReapedProcessGroup)\s*\(\s*(\((?!\s*\))|(?:[A-Za-z_$][\w$]*|\[[^[\]{}()]*\](?=(?:\?\.)?\[)|\{[^[\]{}()]*\}(?=(?:\?\.)?\[))(?:\??\.[\w$]+|(?:\?\.)?\[\s*(?:'[^'\\\n]*'|"[^"\\\n]*"|[A-Za-z_$][\w$]*|\d+)\s*\])*)/g;
   // It is an engine when the call, or the variable's declaration in the same
   // function, names an engine program or an engine or runner resolver.
   const ENGINE_SOURCE = new RegExp(`['"\`](?:${ENGINE_NAMES})['"\`]|\\b[\\w$]*(?:Engine|engine|Runner|runner)[\\w$]*\\s*\\(`);
@@ -1748,11 +1749,28 @@ test('every engine started through a runner or profile variable records its run 
       }
       return pieces.slice(condition).map((piece) => piece.trim()).filter(Boolean);
     };
+    // A program in its own parentheses reads as each choice they hold, then
+    // any members after the closing one.
+    const optionsOf = (text) => {
+      if (!text.startsWith('(')) return [text];
+      let depth = 0;
+      for (const token of text.matchAll(/'(?:\\.|[^'\\])*'|"(?:\\.|[^"\\])*"|`(?:\\.|[^`\\])*`|[()]/g)) {
+        depth += token[0] === '(' ? 1 : token[0] === ')' ? -1 : 0;
+        if (depth === 0) {
+          const after = text.slice(token.index + 1).trim();
+          return choicesOf(text.slice(1, token.index)).flatMap((option) => optionsOf(option + after));
+        }
+      }
+      return [text];
+    };
     const missing = [];
     const exempted = new Set();
     for (const match of code.matchAll(VAR_LAUNCH)) {
-      const [, program] = match;
-      const rest = code.slice(match.index + match[0].length);
+      // A wrapped program is read like a call's argument list, from its
+      // opening parenthesis through any members after the closing one.
+      const wrapped = match[1] === '(';
+      const program = wrapped ? '' : match[1];
+      const rest = code.slice(match.index + match[0].length - (wrapped ? 1 : 0));
       let called = '';
       if (/^\s*\(/.test(rest)) {
         let depth = 0;
@@ -1772,11 +1790,12 @@ test('every engine started through a runner or profile variable records its run 
       // A program chosen by a condition or a fallback runs to the end of the
       // first argument.
       let choice = '';
-      if (!called && /^\s*(?:\?(?!\.)|\|\||\?\?)/.test(rest)) {
+      const tail = rest.slice(called.length);
+      if ((!called || wrapped) && /^\s*(?:\?(?!\.)|\|\||\?\?)/.test(tail)) {
         let depth = 0;
-        for (const token of rest.matchAll(/'(?:\\.|[^'\\])*'|"(?:\\.|[^"\\])*"|`(?:\\.|[^`\\])*`|[()[\]{},]/g)) {
+        for (const token of tail.matchAll(/'(?:\\.|[^'\\])*'|"(?:\\.|[^"\\])*"|`(?:\\.|[^`\\])*`|[()[\]{},]/g)) {
           if (depth === 0 && (token[0] === ',' || token[0] === ')')) {
-            choice = rest.slice(0, token.index).trimEnd();
+            choice = tail.slice(0, token.index).trimEnd();
             break;
           }
           if (/^[([{]$/.test(token[0])) depth += 1;
@@ -1793,7 +1812,7 @@ test('every engine started through a runner or profile variable records its run 
       route = 'declaration';
       const chosen = program + called + choice;
       // Any choice can be the program, and a condition only picks one.
-      const isEngine = (choice ? choicesOf(chosen) : [chosen]).some((option) => engineSourceAt(option, match.index));
+      const isEngine = (choice ? choicesOf(chosen) : [chosen]).flatMap(optionsOf).some((option) => engineSourceAt(option, match.index));
       if (!isEngine || isProbe(args)) continue;
       seen += 1;
       routes[route] = (routes[route] || 0) + 1;
@@ -1875,6 +1894,17 @@ test('every engine started through a runner or profile variable records its run 
   assert.deepStrictEqual(planted("spawnSync(fast ? 'git' : 'node', args);\n"), [], 'choices without an engine are not an engine launch');
   assert.deepStrictEqual(planted("spawnSync(name === 'claude' ? gitBin : nodeBin, args);\n"), [], 'an engine named only in the condition does not pick the program');
   assert.deepStrictEqual(planted("const runner = resolveClaudeRunnerBin();\nspawnSync(fast ? runner : 'node', args);\n"), ["commands/planted.js:2 fast ? runner : 'node'"]);
+  // A program in its own parentheses is the program they hold.
+  for (const program of ["(fast ? 'codex' : 'claude')", "('claude')", "(bin || 'claude')", "((fast) ? 'codex' : bin)", "(bin) || 'claude'"]) {
+    assert.deepStrictEqual(planted(`spawnSync(${program}, args);\n`), [`commands/planted.js:1 ${program}`]);
+    assert.deepStrictEqual(planted(`startEngineRun(root);\nspawnSync(${program}, args);\n`), []);
+    assert.deepStrictEqual(planted(`spawnSync(${program}, ['--version']);\n`), []);
+  }
+  assert.deepStrictEqual(planted("const runner = resolveClaudeRunnerBin();\nspawnSync((runner), args);\n"), ['commands/planted.js:2 (runner)']);
+  assert.deepStrictEqual(planted("const profile = resolveEngineProfile();\nspawnSync((profile).bin, args);\n"), ['commands/planted.js:2 (profile).bin']);
+  assert.deepStrictEqual(planted("const profile = resolveEngineProfile();\nspawnSync((fast ? profile : other).bin, args);\n"), ['commands/planted.js:2 (fast ? profile : other).bin']);
+  assert.deepStrictEqual(planted("spawnSync((fast ? 'git' : 'node'), args);\n"), [], 'wrapped choices without an engine are not an engine launch');
+  assert.deepStrictEqual(planted("spawnSync((runner), args);\n"), [], 'a wrapped unknown program stays unknown');
   // Spaces before resolver arguments do not change the program they select.
   for (const gap of [' ', '\t']) {
     const runner = `resolveClaudeRunnerBin${gap}()`;
