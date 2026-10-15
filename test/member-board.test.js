@@ -3266,6 +3266,71 @@ for width, height, failed, whole in cases:
   if (process.env.ATRIS_BOARD_WIDE_REASON_PROOF) fs.writeFileSync(process.env.ATRIS_BOARD_WIDE_REASON_PROOF, `${proof.stdout}proof exit: ${proof.status}\n`);
 });
 
+test('member names in wide characters trim by screen cells on narrow watch screens', { skip: process.platform === 'win32' }, () => {
+  const proof = spawnSync('python3', ['-c', String.raw`
+import datetime, fcntl, os, pathlib, pty, re, select, signal, struct, subprocess, sys, tempfile, termios, time, unicodedata
+
+def cells(line):
+    return sum(0 if unicodedata.combining(c) or unicodedata.category(c) == 'Cf'
+               else 2 if unicodedata.east_asian_width(c) in 'WF' else 1 for c in line)
+
+deploy = '\U0001F680部署小组成员'
+front = '前端开发工程师'
+# (columns, every board line in order). A two-cell character never splits:
+# at 18 columns "前..." takes five of six cells, since one more would be seven.
+cases = [
+    (18, ['member  state', 'bui...  signed out', '\U0001F680...   ok', '前...   timed out']),
+    (22, ['member      state', 'builder     signed out', '\U0001F680部署...   ok', '前端开...   timed out']),
+    (29, ['member          state', 'builder         signed out', deploy + '  ok', front + '  timed out']),
+    (36, ['member          state   last result', 'builder         failed  signed out',
+          deploy + '  ok      ok', front + '  failed  timed out']),
+]
+for width, board in cases:
+    with tempfile.TemporaryDirectory(prefix='atris-board-wide-name-') as folder:
+        root = pathlib.Path(folder)
+        progress = root / 'progress'
+        progress.mkdir()
+        at = lambda s: (datetime.datetime.now(datetime.timezone.utc) - datetime.timedelta(seconds=s)).isoformat()
+        for name, ago, result in [(front, 200, 'failed (timed out)'), (deploy, 100, 'ok'), ('builder', 50, 'failed (signed out)')]:
+            (progress / (name + '.log')).write_text(f'{at(300)} m-1 started: fix the login page\n{at(ago)} m-1 finished: {result}\n')
+        master, slave = pty.openpty()
+        height = 8
+        fcntl.ioctl(master, termios.TIOCSWINSZ, struct.pack('HHHH', height, width, 0, 0))
+        child = subprocess.Popen([sys.argv[1], sys.argv[2], 'member', 'board', '--watch'],
+            cwd=root, env={**os.environ, 'ATRIS_PROGRESS_DIR': str(progress)}, stdout=slave, stderr=slave)
+        os.close(slave)
+        try:
+            output = b''
+            deadline = time.monotonic() + 15
+            while time.monotonic() < deadline:
+                if select.select([master], [], [], 0.05)[0]:
+                    output += os.read(master, 65536)
+                elif output:
+                    break
+                assert child.poll() is None, (child.returncode, output)
+            text = re.sub(r'\x1b\[[0-9;]*[A-Za-z]', '', output.decode().replace('\r', ''))
+            lines = text.split('\n')
+            assert '�' not in text, repr(text)
+            assert len(lines) <= height, repr(text)
+            assert max(map(cells, lines)) <= width, repr(text)
+            assert lines[:len(board)] == board, repr(text)
+            print(f'command: node bin/atris.js member board --watch ({width} columns, {height} rows)')
+            print(text)
+            child.send_signal(signal.SIGINT)
+            code = child.wait(timeout=10)
+            print(f'exit: {code}')
+            assert code == 0
+        finally:
+            if child.poll() is None:
+                child.terminate()
+                child.wait(timeout=10)
+            os.close(master)
+`, process.execPath, cliPath], { encoding: 'utf8', timeout: 75_000 });
+  assert.ifError(proof.error);
+  assert.equal(proof.status, 0, `${proof.stdout}\n${proof.stderr}`);
+  if (process.env.ATRIS_BOARD_WIDE_NAME_PROOF) fs.writeFileSync(process.env.ATRIS_BOARD_WIDE_NAME_PROOF, `${proof.stdout}proof exit: ${proof.status}\n`);
+});
+
 test('a member name in wide characters fits the watch screen and matches live follow', { skip: process.platform === 'win32' }, () => {
   const proof = spawnSync('python3', ['-c', String.raw`
 import datetime, fcntl, json, os, pathlib, pty, re, select, signal, struct, subprocess, sys, tempfile, termios, time, unicodedata
@@ -3813,7 +3878,7 @@ test('every map line ref into this file lands on a test, a test loop, or a const
   for (const doc of ['atris/MAP.md', 'atris/refs/MAP-NOTES.md']) {
     const text = fs.readFileSync(path.join(repoRoot, doc), 'utf8');
     for (const [, n] of text.matchAll(/test\/member-board\.test\.js:(\d+)/g)) {
-      if (!/^(test\(|for \(|const |  test\()/.test(lines[n - 1] || '')) bad.push(`${doc} cites line ${n}: ${(lines[n - 1] || '(past the end)').trim().slice(0, 60)}`);
+      if (!/^(test\(|for \(|const |  test\()/.test(lines[n - 1] || '')) bad.push(`${doc} cites line ${n}: ${(lines[n - 1] ?? '(past the end)').trim().slice(0, 60)}`);
     }
   }
   assert.deepEqual(bad, [], 'repoint each ref at the test it describes');

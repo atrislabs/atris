@@ -159,7 +159,7 @@ Watch shutdown: `test/member-board.test.js:945` checks interrupt cancels the pen
 
 Sign-in failure, then a rerun on another engine: `test/member-board.test.js:997` drives the watch screen in-process at 60x8 and 30x6 through a split codex or claude rerun, and checks the old run keeps `signed out` without its old fix.
 
-Late progress folder watch recovery: `test/member-board.test.js:3798` runs `python3 atris/receipts/member-board-watch-recovery-proof.py` in a real 80x3 terminal, waits through a missing-folder timed retry, checks the next retry recovers, then requires a timeout write to redraw before the next timer.
+Late progress folder watch recovery: `test/member-board.test.js:3863` runs `python3 atris/receipts/member-board-watch-recovery-proof.py` in a real 80x3 terminal, waits through a missing-folder timed retry, checks the next retry recovers, then requires a timeout write to redraw before the next timer.
 
 Empty-board terminal width: `lib/member-board.js:310` keeps the full progress path in pipes, shortens it by screen cells in terminals, and uses whole shorter messages below 29 columns. `test/member-board.test.js:2105` covers tiny widths and the real resized terminal via `python3 atris/receipts/member-board-empty-width-proof.py` (30x1, 18x2, 22x3, 80x3, 240x3).
 
