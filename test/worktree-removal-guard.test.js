@@ -1136,6 +1136,45 @@ test('fleet review cleanup keeps every store of a pinned copy and names the pin'
   }
 });
 
+// The line fleet review prints when cleanup keeps a copy sits deep inside the
+// fleet run, so it is read from the source as written and filled with a real
+// cleanup result. A rewrite of that line fails here instead of going untested.
+function keptReviewLine(disposed, sandboxRoot) {
+  const source = fs.readFileSync(path.join(__dirname, '../lib/fleet.js'), 'utf8');
+  const found = source.match(/log\(`(\s*kept review sandbox for [^`]*)`\);/);
+  assert.ok(found, 'fleet review no longer prints a kept line in this form; point this check at its new home');
+  const line = new Function('entry', 'disposed', 'describeGitHold', `return \`${found[1]}\`;`);
+  return line({ taskId: 'T-1', remoteBoundary: { sandboxRoot } }, disposed, describeGitHold).trim();
+}
+
+test('fleet review names the git lock or pin when cleanup keeps a copy', () => {
+  const { base, repo, wt, boundary } = reviewSandbox();
+  try {
+    const lock = path.join(worktreeGitDir(wt), 'index.lock');
+    fs.writeFileSync(lock, '');
+    const held = disposeReviewSandbox(boundary);
+    assert.equal(held.reason, 'git_lock');
+    assert.equal(keptReviewLine(held, boundary.sandboxRoot),
+      `kept review sandbox for T-1 (git_lock: git holds ${lock}, under a minute old): ${boundary.sandboxRoot}`);
+    fs.rmSync(lock);
+    git(repo, ['worktree', 'lock', '--reason', 'reviewer still reading', wt]);
+    const pinned = disposeReviewSandbox(boundary);
+    assert.equal(keptReviewLine(pinned, boundary.sandboxRoot),
+      `kept review sandbox for T-1 (pinned: pinned by git worktree lock, under a minute old: reviewer still reading): ${boundary.sandboxRoot}`);
+  } finally {
+    fs.rmSync(base, { recursive: true, force: true });
+  }
+});
+
+// The refusal result the pending cleanup tests expect carries git's reason in
+// its detail. The kept line must print it, not "undefined". Pending on the
+// same protected review as those tests.
+test('fleet review names git\'s refusal when cleanup keeps a copy', { todo: 'fleet review still prints only a hold or a pin' }, () => {
+  const refused = { removed: false, reason: 'removal_refused', detail: 'git removal stopped by SIGTERM' };
+  assert.equal(keptReviewLine(refused, '/tmp/review'),
+    'kept review sandbox for T-1 (removal_refused: git removal stopped by SIGTERM): /tmp/review');
+});
+
 // Runs fleet review cleanup in a child whose git runs onRemove (wrapper code
 // with fs, spawnSync, args and the real git in scope) once removal starts,
 // then hands the call to the real git. Returns the child's run and the
