@@ -2885,3 +2885,5 @@ Revised outcome claim setup: `test/commands.test.js:6419` seeds and claims the r
 Member goal claim setup: `test/commands.test.js:1242` prepares the claimed row through the production store in an explicit test database, closed before real goal checks. One setup launch is removed; every goal assertion remains.
 
 Member goal row setup: `test/commands.test.js:1242` seeds and claims through the production store, then saves its task projection before real member commands. `commands/member.js:1826` reads that saved view. One setup launch is removed; every original assertion remains.
+
+Member create help batching: `test/commands.test.js:1047` runs both usage checks together. `commands/member.js:4479` rejects missing names and handles help before writes. Two sequential waits become one; every assertion remains.

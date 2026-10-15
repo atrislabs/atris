@@ -1044,16 +1044,18 @@ test('worktree ship requires a message for dirty isolated checkout', () => {
   }
 });
 
-test('member create --help prints usage without creating a --help member', () => {
+test('member create --help prints usage without creating a --help member', async () => {
   const dir = makeTempDir();
   try {
     fs.mkdirSync(path.join(dir, 'atris'), { recursive: true });
-    const help = runCli(['member', 'create', '--help'], { cwd: dir });
+    const [help, missingName] = await Promise.all([
+      runCliAsync(['member', 'create', '--help'], { cwd: dir }),
+      runCliAsync(['member', 'create', '--role=Member Trainer'], { cwd: dir }),
+    ]);
     assert.equal(help.status, 0, help.stderr || help.stdout);
     assert.match(help.stdout, /Usage: atris member create <name>/);
     assert.equal(fs.existsSync(path.join(dir, 'atris', 'team', '--help')), false);
 
-    const missingName = runCli(['member', 'create', '--role=Member Trainer'], { cwd: dir });
     assert.notEqual(missingName.status, 0);
     assert.match(missingName.stderr, /Usage: atris member create <name>/);
     assert.equal(fs.existsSync(path.join(dir, 'atris', 'team', '--role=Member Trainer')), false);
