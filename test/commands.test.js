@@ -13599,19 +13599,19 @@ test('xp status fails closed when local receipt ledger is tampered', () => {
   try {
     fs.mkdirSync(path.join(dir, 'atris'), { recursive: true });
 
-    // Seed creation only; claim, ready, accept and the tampered status read stay on the CLI.
+    // Seed creation and ownership; ready, accept and the tampered status read stay on the CLI.
     const workspaceRoot = taskStore.workspaceRoot(dir);
     const db = taskStore.open(dbPath);
     let ref;
     try {
       const created = addSeedTask(db, { title: 'Detect XP tampering', tag: 'career-xp', workspaceRoot });
       assert.equal(created.inserted, true);
+      assert.equal(taskStore.claimTask(db, { id: created.id, claimedBy: 'codex' }).claimed, true);
       ref = taskStore.taskDisplayRefMap(taskStore.listTasks(db, { workspaceRoot })).get(created.id);
       assert.ok(ref);
     } finally {
       taskStore.close();
     }
-    assert.equal(runCli(['task', 'claim', ref, '--as', 'codex'], { cwd: dir, env }).status, 0);
     assert.equal(runCli(['task', 'ready', ref, '--proof', 'tamper test passed', '--as', 'codex'], { cwd: dir, env }).status, 0);
     const accept = runCli(['task', 'accept', ref, '--reward', '1', '--as', 'keshavrao', '--json'], { cwd: dir, env });
     assert.equal(accept.status, 0, accept.stderr);
