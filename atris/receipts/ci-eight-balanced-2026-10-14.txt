@@ -1,0 +1,81 @@
+GitHub test files now use measured costs to balance eight machines. Local discovery and failure checks passed, and the frozen help check exited 0.
+
+Scope: one change to CI file assignment. No second feature or mission started.
+Plan: native discovery -> descending measured file costs -> lightest group -> real Node test runner.
+Architect verdict: proceed. Risk: omitting or duplicating tests. Safeguard: compare the union against discovery and compare eight real child runs against the native runner, including all split command cases.
+
+Files edited:
+.github/workflows/ci.yml
+scripts/ci-test-shard.js
+test/ci-file-durations.json
+test/ci-test-shard.test.js
+atris/MAP.md
+atris/refs/MAP-NOTES.md
+atris/receipts/ci-eight-balanced-2026-10-14.txt
+Local member log: atris/team/architect/logs/2026-10-14.md (excluded from git by repository policy).
+
+Baseline source: https://github.com/atrislabs/atris/actions/runs/38693452528
+Actual unit job durations, fastest to slowest: 47, 64, 69, 70, 85, 93, 105, 139 seconds.
+Measured test work was concentrated in group 7: a command-test part, mission-status tests, and first-minute tests.
+New predicted work: approximately 188 seconds per group before in-group parallel execution. These are cost estimates, not hosted wall-clock claims.
+All 597 current discovered files are assigned exactly once (596 before the regression test was added).
+Unknown new files always run with a one-second fallback cost. Stale timing data affects balance only.
+
+Commands run and artifacts produced:
+atris; atris brain activate --root . --verify; atris mission status mission-2026-10-14-github-s-eight-test-machines-c0a87fcc; atris mission goal --json; atris task list; git status --short.
+Brain activation and post-work compilation returned plan-only, exit 2, requiring --yes to regenerate adapters; no unrelated doctrine was regenerated.
+Mission attach-task refused a live launcher lock, so the existing mission was left untouched and this slice was recorded in the local task board instead.
+gh run list --workflow ci.yml --status completed --limit 3 --json databaseId,conclusion,headSha
+gh run view 38693452528 --json jobs -> /tmp/atris-eight-jobs.json
+gh api repos/atrislabs/atris/actions/jobs/<job-id>/logs -> /tmp/atris-ci-shard-1.log through /tmp/atris-ci-shard-8.log (all exit 0)
+Parsed recorded top-level test times into /tmp/atris-eight-timings.json, then summed by source file into test/ci-file-durations.json; command-test parts use their own recorded times.
+
+Rerunnable verification:
+node --test test/ci-test-shard.test.js
+Exit 0. Exact summary:
+ℹ tests 3
+ℹ suites 0
+ℹ pass 3
+ℹ fail 0
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 5320.820625
+The failure-propagation test intentionally launches one failing child and asserts its exit status; the outer suite passes.
+
+Frozen verification:
+node --test test/help-pipe-drain.test.js
+Exit 0. Exact output:
+✔ help --all prints every line even when stdout drains slowly (128.132542ms)
+ℹ tests 1
+ℹ suites 0
+ℹ pass 1
+ℹ fail 0
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 235.468084
+
+git diff --check
+Exit 0, no output.
+
+git push -u origin HEAD
+Exit 0, branch pushed.
+Review: https://github.com/atrislabs/atris/pull/1315
+Hosted full-suite proof: https://github.com/atrislabs/atris/actions/runs/38694221872
+Hosted outcome: completed, success. All eight unit groups, deck lint, and the aggregate required check passed.
+Actual command on GitHub: node scripts/ci-test-shard.js <1 through 8>/8, each exit 0.
+unit (1/8): 106 seconds, success; ℹ tests 785; ℹ pass 785; ℹ fail 0; ℹ duration_ms 90511.1268
+unit (2/8): 124 seconds, success; ℹ tests 571; ℹ pass 565; ℹ fail 0; ℹ duration_ms 117177.921265
+unit (3/8): 99 seconds, success; ℹ tests 825; ℹ pass 824; ℹ fail 0; ℹ duration_ms 93398.092502
+unit (4/8): 72 seconds, success; ℹ tests 869; ℹ pass 847; ℹ fail 0; ℹ duration_ms 66103.052887
+unit (5/8): 78 seconds, success; ℹ tests 879; ℹ pass 877; ℹ fail 0; ℹ duration_ms 66059.953448
+unit (6/8): 85 seconds, success; ℹ tests 683; ℹ pass 683; ℹ fail 0; ℹ duration_ms 76940.723612
+unit (7/8): 82 seconds, success; ℹ tests 632; ℹ pass 632; ℹ fail 0; ℹ duration_ms 72206.704385
+unit (8/8): 82 seconds, success; ℹ tests 878; ℹ pass 872; ℹ fail 0; ℹ duration_ms 71725.725321
+Progress: the fastest-to-slowest job gap fell from 92 seconds to 52 seconds (43.5% smaller). The slowest unit job fell from 139 to 124 seconds (10.8% faster). Machines do not yet finish simultaneously: one command-test part still sets the tail.
+Raw hosted logs: /tmp/atris-ci-balanced-1.log through /tmp/atris-ci-balanced-8.log, fetched through gh api, each exit 0.
+Executed readiness proof: node --test test/ci-test-shard.test.js test/help-pipe-drain.test.js, exit 0, 4 passed, fail 0, duration_ms 4751.265333. Receipt: atris/runs/2026-10-15-task-ags-1-2026-10-15T06-45-41-781Z.json. The task is in Review, not human-accepted.
+
+next_push: Split the four large command-test parts into eight parts balanced by measured test-case run times.
+layer: behaviors

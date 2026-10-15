@@ -87,6 +87,46 @@ test('auto-improver scan skips mission goal lines and empty error fields', () =>
   }
 });
 
+// Acceptance lines and goal-file stop rules state what done looks like. On
+// 2026-10-14 the auto-improver's own acceptance line ("One repeat error fixed
+// per loop") was a top repeat problem, and the executor's stop rule ("risk is
+// unclear") counted as a missing next step.
+test('auto-improver scan skips acceptance lines and goal-file stop rules', () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'atris-scan-goals-'));
+  try {
+    fs.mkdirSync(path.join(dir, 'atris'), { recursive: true });
+    assert.equal(runCli(['member', 'create', 'auto-improver', '--description="Finds problems before they grow"'], dir).status, 0);
+
+    const logs = path.join(dir, 'atris', 'team', 'builder', 'logs');
+    fs.mkdirSync(logs, { recursive: true });
+    fs.writeFileSync(path.join(logs, `${dateDaysAgo(1)}.md`), [
+      '# builder log',
+      '- acceptance: One repeat error fixed per loop with a runnable test check.',
+      '- acceptance: One repeat error fixed per loop with a runnable test check.',
+      '- note: Released by builder: the work ran but its check failed: npm run test:fast',
+      '- note: Released by builder: the work ran but its check failed: npm run test:fast',
+      '',
+    ].join('\n'), 'utf8');
+    fs.writeFileSync(path.join(dir, 'atris', 'team', 'builder', 'goals.json'), JSON.stringify({
+      goals: [{
+        title: 'Ship the handoff',
+        acceptance: 'No blocked handoff stays open past a day.',
+        stop_rule: 'Stop if proof is missing, risk is unclear, or the next move would require new authority.',
+      }],
+    }, null, 2), 'utf8');
+
+    const wake = runCli(['member', 'wake', 'auto-improver', '--json'], dir);
+    assert.equal(wake.status, 0, wake.stderr || wake.stdout);
+    const signals = JSON.parse(wake.stdout).auto_improver.scan.log_signals;
+    const patterns = signals.repeated_failures.map((failure) => failure.pattern);
+    assert.ok(patterns.some((pattern) => /check failed/.test(pattern)), `real failure was dropped: ${JSON.stringify(patterns)}`);
+    assert.ok(!patterns.some((pattern) => /^acceptance:/.test(pattern)), `acceptance line counted as failure: ${JSON.stringify(patterns)}`);
+    assert.ok(!signals.unclear_next_actions.some((item) => /stop_rule|No blocked handoff/.test(item.text)), `goal file counted as unclear: ${JSON.stringify(signals.unclear_next_actions)}`);
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
 // Mission driver logs carry no date in their name, so the 7-day window never
 // applied to them. On 2026-10-14, 4 of the 11 scan findings came from driver
 // logs last written in July and August.
