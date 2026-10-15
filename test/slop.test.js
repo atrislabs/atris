@@ -5102,6 +5102,23 @@ test('the fix and the splice list read one word list for "these" and "those"', (
   assert.equal(spliceShapes(sources, commas).length, rests.length);
 });
 
+test('the splice list leaves out a note on a field and its short value', () => {
+  // from real experiment briefs: "TARGET: `queue.py`" and a dash open a note
+  // on that file, so "the risk classification rules and thresholds" names a
+  // thing; the same words after a full sentence are still listed
+  const { spliceShapes } = require('../scripts/slop-fix-diff.js');
+  const D = String.fromCharCode(0x2014);
+  const rests = ['the risk classification rules and thresholds', 'the system prompts for each phase'];
+  const sources = [
+    `TARGET: \`queue.py\` ${D} ${rests[0]}`,
+    `**TARGET:** \`cure/\` scoring module ${D} ${rests[1]}`,
+    `We moved the logic ${D} ${rests[0]}`,
+  ];
+  const fixes = sources.map((x) => x.replace(` ${D} `, ', '));
+  assert.deepEqual(spliceShapes(sources, fixes).map((f) => f.text), [rests[0]]);
+  assert.equal(spliceShapes(sources.slice(0, 2), fixes.slice(0, 2)).length, 0);
+});
+
 test('the fix diff script lists each comma it writes before a "the" clause once', () => {
   const { spawnSync } = require('node:child_process');
   // a dash fixed into a comma before "the" and a subject and a verb is a

@@ -267,6 +267,11 @@ const DEMONSTRATIVE_SHAPE = new RegExp(`^(?:these|those|(?:the|these|those|our|t
 // Atris sits directly on top of." names the work.
 const STRANDED_SHAPE = / (?:of|to|with|for|about|from|into)$/;
 const RELATIVE_SHAPE = /^(?:the|its|our|their|your) (?:[\w`-]+ ){0,2}[a-z]+s the (?:(?!(?:the|a|an)\b)\S+ ){1,3}[a-z]+s$/;
+// A dash after a field and its short value opens a note on that value, so
+// the words after it name a thing, not a subject and its verb: "TARGET:
+// `queue.py`, the risk classification rules and thresholds", "TARGET:
+// `cure/` scoring module, the feature weights or ranking formula".
+const FIELD_VALUE_SHAPE = /(?:^|\n)[ \t]*(?:[-*+>][ \t]*)?(?:\*\*[^*\n]+:\*\*|[A-Z][\w-]*(?:[ \t]+[\w-]+){0,2}:)[ \t]+(?:`[^`\n]*`|[^\s:,`]+)(?:[ \t]+[^\s:,`]+){0,2}$/;
 function spliceShapes(sources, fixes) {
   const found = new Map();
   sources.forEach((source, i) => {
@@ -276,7 +281,7 @@ function spliceShapes(sources, fixes) {
       const rest = m[1];
       if (!source.includes(`${DASH} ${rest}`) || !(SPLICE_SHAPE.test(rest) || DEMONSTRATIVE_SHAPE.test(rest)) || RELATIVE_SHAPE.test(rest)) continue;
       if (STRANDED_SHAPE.test(rest) && /^(?:[.!?]|$)/.test(fixed.slice(m.index + m[0].length))) continue;
-      if (takesComma(fixed.slice(0, m.index))) continue;
+      if (takesComma(fixed.slice(0, m.index)) || FIELD_VALUE_SHAPE.test(fixed.slice(0, m.index))) continue;
       const key = rest.replace(/`[^`]*`/g, '``');
       if (!found.has(key)) found.set(key, { text: rest, count: 0 });
       found.get(key).count += 1;
