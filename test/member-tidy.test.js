@@ -306,7 +306,7 @@ test('tidy keeps a landed copy while git is paused mid-rebase in it, and logs wh
   }
 });
 
-for (const surface of ['tidy', 'cleanup']) {
+for (const surface of ['tidy', 'cleanup', 'reap']) {
   test(`${surface} reports a pin acquired after preflight and leaves the copy registered`, () => {
     const fx = makeFixture();
     try {
@@ -337,7 +337,9 @@ process.exit(result.status === null ? 1 : result.status);
 `, { mode: 0o755 });
       const args = surface === 'tidy'
         ? ['member', 'tidy', '--dir', fx.copies]
-        : ['worktree', 'cleanup', '--base', 'HEAD', '--apply'];
+        : surface === 'cleanup'
+          ? ['worktree', 'cleanup', '--base', 'HEAD', '--apply']
+          : ['land', '--reap', '--base', 'HEAD', '--no-remote', '--json'];
       const cli = spawnSync(process.execPath,
         [path.resolve(__dirname, '../bin/atris.js'), ...args],
         { cwd: fx.repo, encoding: 'utf8', timeout: 30000,
@@ -346,12 +348,20 @@ process.exit(result.status === null ? 1 : result.status);
       console.log(cli.stdout.trim());
       console.log(`exit: ${cli.status}`);
       assert.equal(cli.status, 0, cli.stderr);
-      assert.deepEqual(JSON.parse(fs.readFileSync(attempt, 'utf8')), ['worktree', 'remove', copy]);
+      assert.deepEqual(JSON.parse(fs.readFileSync(attempt, 'utf8')),
+        ['worktree', 'remove', ...(surface === 'reap' ? ['--force'] : []), copy]);
       const words = 'pinned by git worktree lock, under a minute old: agent started writing please wait';
-      const expected = surface === 'tidy'
-        ? `kept  landed-late-pin  landed, but git refused: ${words}\ntidy: removed 0, kept 1, of 1 copy in ${fx.copies}`
-        : `cleanup: applied base=HEAD\nremoveds: 0\ncache_pruneds: 0\nkept: 2\nrefused: ${copy} ${words}`;
-      assert.equal(cli.stdout.trim(), expected);
+      if (surface === 'reap') {
+        const receipt = JSON.parse(cli.stdout);
+        assert.deepEqual(receipt.removedWorktrees, []);
+        assert.deepEqual(receipt.deletedBranches, []);
+        assert.ok(receipt.keptWorktrees.includes(`${copy} (${words})`), cli.stdout);
+      } else {
+        const expected = surface === 'tidy'
+          ? `kept  landed-late-pin  landed, but git refused: ${words}\ntidy: removed 0, kept 1, of 1 copy in ${fx.copies}`
+          : `cleanup: applied base=HEAD\nremoveds: 0\ncache_pruneds: 0\nkept: 2\nrefused: ${copy} ${words}`;
+        assert.equal(cli.stdout.trim(), expected);
+      }
       assert.equal(fs.readFileSync(path.join(gitDir, 'locked'), 'utf8'), `${reason}\n`);
       assert.ok(fs.existsSync(path.join(copy, 'README.md')));
       assert.ok(branchExists(fx.repo, 'landed-late-pin'));
