@@ -798,6 +798,43 @@ test('green landing names who removed its scratch folder and why', () => {
   }
 });
 
+// A wrapper on PATH only times the race: the real git takes the pin, or the
+// removal is stopped by a signal, after dropScratch has done its own checks.
+for (const [label, onRemove, words] of [
+  ['a pin taken at removal', 'pin', 'pinned by git worktree lock, under a minute old: verify still writing'],
+  ['a removal stopped by a signal', 'signal', 'git removal stopped by SIGTERM'],
+]) {
+  test(`green landing keeps its scratch folder after ${label}`, () => {
+    const { base, repo, wt } = landedWorktree();
+    try {
+      const realGit = spawnSync('which', ['git'], { encoding: 'utf8' }).stdout.trim();
+      const bin = path.join(base, 'bin');
+      fs.mkdirSync(bin);
+      fs.writeFileSync(path.join(bin, 'git'), `#!${process.execPath}
+const { spawnSync } = require('node:child_process');
+const args = process.argv.slice(2);
+const git = ${JSON.stringify(realGit)};
+if (args[0] === 'worktree' && args[1] === 'remove') {
+  if (${JSON.stringify(onRemove)} === 'signal') process.kill(process.pid, 'SIGTERM');
+  spawnSync(git, ['worktree', 'lock', '--reason', 'verify still writing', ${JSON.stringify(wt)}]);
+}
+const result = spawnSync(git, args, { stdio: 'inherit' });
+process.exit(result.status === null ? 1 : result.status);
+`, { mode: 0o755 });
+      const run = spawnSync(process.execPath, ['-e',
+        `console.log(JSON.stringify(require(${JSON.stringify(path.resolve(__dirname, '../lib/land-green.js'))}).dropScratch(${JSON.stringify(repo)}, ${JSON.stringify(wt)}, { activeCwds: [] })))`,
+      ], { encoding: 'utf8', timeout: 30000, env: { ...process.env, PATH: `${bin}${path.delimiter}${process.env.PATH}` } });
+      assert.equal(run.status, 0, run.stderr);
+      assert.deepEqual(JSON.parse(run.stdout), { removed: false, reason: 'removal_refused', detail: words });
+      assert.ok(fs.existsSync(path.join(wt, 'README.md')));
+      assert.ok(git(repo, ['worktree', 'list']).includes(wt));
+      assert.deepEqual(removalLines(repo), []);
+    } finally {
+      fs.rmSync(base, { recursive: true, force: true });
+    }
+  });
+}
+
 test('worktree cleanup names the reason and age of a pinned folder it skips', () => {
   const { base, repo, wt } = landedWorktree();
   try {
