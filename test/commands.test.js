@@ -1,4 +1,4 @@
-const test = require('node:test');
+const test = require('./helpers/test-part').splitTests('1/4');
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const os = require('node:os');
