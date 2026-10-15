@@ -31,7 +31,7 @@ Everything else is computed from events. Never store a computed value.
 1. Judge = one runnable command. No campaign without one; if you cannot write it, your first mission builds it.
 2. Events are append-only with a unique id and sequence. State is a fold over events.
 3. Every mission reports usage (tokens, quota, money if any) when it ends.
-4. Anything that cannot be undone (money, messaging a real person, deploy) is an ask. Wait.
+4. Anything that cannot be undone (money, messaging a real person, deploy) is an ask. Wait. Asks are batched into the human's turn (decide, do, learn), never dripped. The human is a seat on the team, not an approver at the edge. See idea.md → The Human Is on the Team.
 5. One home decides. Other computers only append events.
 6. The core is pure. Store, runner, judge, budget, sync, and screens are adapters.
 7. Notes from one-on-ones are concrete, sourced, typed taste or fact, and load at the next shift. Fact notes expire in 7 days.

@@ -95,7 +95,7 @@ Two rules from the review:
 1. **Every mission reports its usage.** `mission_ended` carries tokens, quota, and any money from the receipt. A budget nobody can measure is slop. (Local missions today have time tiers, not dollars; only the backend's `budget_hold` tracks money.)
 2. **A judge must fail first.** A non-standing campaign whose judge already passes at start is refused: "already done, write a judge that fails first." This stops an agent from writing `true` as its judge. If no judge can be written yet, the first mission builds it.
 
-Events: `campaign_started · seat_filled · bet_set · attached · note_given · shift_ended · mission_abandoned · ask_expired · concluded · mission_proposed · mission_claimed · mission_started · step · kept · reverted · mission_ended · judge_ran · ask_opened · ask_answered · budget_reserved · budget_released · paused · resumed · stopped · home_moved · done`
+Events: `campaign_started · seat_filled · bet_set · attached · note_given · shift_ended · mission_abandoned · ask_expired · concluded · turn_opened · turn_closed · preapproved · mission_proposed · mission_claimed · mission_started · step · kept · reverted · mission_ended · judge_ran · ask_opened · ask_answered · budget_reserved · budget_released · paused · resumed · stopped · home_moved · done`
 
 Actions: `start · pause · resume · answer_ask · change_bet · add_budget · fill_seat · veto · stop`
 
@@ -342,6 +342,29 @@ A step-by-step run of a research-lab campaign ("Does the calm proof style make c
 8. **Picking a lead (v1).** The member whose job fits, with the fewest active campaigns. Ties go to the human as one tap.
 9. **Scheduler order (v1).** (a) missions that unblock a human ask, (b) the campaign the human touched most recently, (c) the oldest proposal. Smarter scoring later.
 10. **A useful refusal.** "Already done" suggests the next step: make the judge stricter, or check against data the team has not seen.
+
+---
+
+## The Human Is on the Team
+
+A campaign is a shared vision of the future, written by the human and the agents together. It is not the human telling agents to go act without them. The human holds a seat like any member, and there are times the human must be in the process.
+
+The system's job is to prepare the human's part so it happens in flow state. When the human steps in, it is one of three turns:
+
+1. **Decide.** One-tap cards, batched: approve this email batch, pick between two posts, yes or no on this hire. Everything needed to decide is on the card.
+2. **Do.** Missions only the human can do, with simple step-by-step instructions and materials ready: "Record a 30-second intro. Script is here, frame is set, hit record." "Call this candidate. Three questions below."
+3. **Learn.** A short brief when the campaign found something the human should understand before the next decision: what changed, why it matters, what it means for them.
+
+Rules:
+
+- **Asks are batched into turns, not dripped.** The Orb opens a turn when enough is waiting or something is urgent, sized for flow (a few minutes, a handful of cards).
+- **Human missions are real missions.** The human is assigned like any member; their missions have instructions, a check, and show up in the campaign's progress.
+- **Pre-approval is the human's choice, never a default.** "Post in my voice, max 2 a day" or "send from this template, max 20 a day" is an event (`preapproved { action, limits, until }`). Anything outside the limits still waits for a turn. The backend already issues capped authorizations (`agentic_commerce_router.py`, `max_amount_usd`).
+- **Agents never act in the outside world without the human knowing.** Pre-approved actions still appear in the next Learn brief.
+
+This unifies pieces that exist today: the backend's `your_turn` state, the review desk's one-tap approval cards, and the Orb's "at most 3 items" brief.
+
+Events: `turn_opened { kind: decide | do | learn, items }`, `turn_closed`, `preapproved`.
 
 ---
 
