@@ -190,8 +190,11 @@ function oddMarks(source, fixed) {
 // you run long (if you train), it will not learn". An opener carries across
 // a comma and "and" or kin while its first half has led to no subject: "If
 // you build it big, really big, and you say it must care, we might not".
+// A "based on" or "looking at" phrase is a first half too, read from the
+// fixer's own list: "Based on the picture (7 at ceiling), the daemon".
 const SPLICE = /,\s+(?:(?:it|we|they|he|she|I)(?:['\u2019](?:s|re|ll|ve|d|m))?\s+[a-z]|(?:this|that|these|those|there)(?:['\u2019]s|\s+(?:is|are|was|were|will|would|can|must|should|has|have)\b))/g;
-const OPENS_FIRST_HALF = /^(?:(?:but|and|so|yet|or|then)\s+)?(?:if|when|whenever|once|because|since|although|though|while|unless|until|after|before|as|(?:each|every|any)\s+time)\b/i;
+const { LEAD_IN } = require(path.join(ROOT, 'commands', 'slop.js'));
+const OPENS_FIRST_HALF = new RegExp(`^(?:(?:but|and|so|yet|or|then)\\s+)?(?:if|when|whenever|once|because|since|although|though|while|unless|until|after|before|as|(?:each|every|any)\\s+time|${LEAD_IN})\\b`, 'i');
 const SECOND_HALF = /,\s+(?:you|it|we|they|he|she|I)(?:['\u2019](?:s|re|ll|ve|d|m))?\s+[a-z]/;
 const SENTENCE_STOP = /[.!?;:|][*_"'\u201d\u2019)]*\s|\s*\u2014\s*|,\s+(?=(?:and|but|so|yet|or)\s)|\n(?=\s*(?:[-*+]|\d+[.)])\s)|(?<=(?:^|\n)#{1,6}\s[^\n]*)\n/;
 const THAT_OPENS_FIRST_HALF = /\bthat\s+(?:if|when|whenever|once|because|since|although|though|while|unless|until)\b/i;

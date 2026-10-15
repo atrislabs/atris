@@ -209,6 +209,9 @@ const CLAUSE_END = "(?<=[\\w)\\]\"'*_`%\\u201d\\u2019\\uE001]|\\betc\\.|\\w\\+{1
 // words it counts and the words the fix joins cannot drift apart.
 const PRESENT_PLURAL_VERB = '(?:pass|fail|run|work|break|hold|match|agree|validate|load|build|ship|land|compile|apply|need|stay|remain|exist|show|point|wait|block|return)';
 const COMMAND_VERB = '(?:append|ask|assume|automate|block|bump|burn|capture|check|close|compare|create|dump|echo|fabricate|flip|grep|handle|hardcode|hold|import|include|ingest|insert|inspect|invent|join|keep|leave|massage|measure|open|outsource|override|paraphrase|predict|read|rely|remain|render|resolve|rsync|run|say|sell|send|set|show|sign|skip|speculate|split|stay|store|sweep|tell|test|truncate|trust|use|verify|violate|wait|write)';
+// Words that open a sentence on a phrase, not its subject: "Based on the
+// picture", "Looking at the stalls". The splice list reads them too.
+const LEAD_IN = '(?:based\\s+on|given|looking\\s+(?:at|across|over)|judging\\s+(?:by|from)|going\\s+by)';
 const DEMONSTRATIVE_LEAD = '(?:still|also|never|only|just|now|already|often|usually|rarely|always|all)';
 const CLAUSE_AFTER_DASH = new RegExp(CLAUSE_END + String.raw`\s*\u2014\s*(?=(?:(?:it|we|they|you|I|he|she)(?:['\u2019](?:s|re|ll|ve|d|m))?|(?:this|that|these|those|there)(?:['\u2019]s|\s+(?:is|are|was|were|used|will|would|can|cannot|must|should|has|have))|this\s+(?:(?:no\s+longer|still|also|never|only|just|now|already|often|usually|rarely|directly|likely|silently)\s+)?(?!(?:series|species|news|lens|perhaps|unless|whereas|across|always|does)\b)(?![a-z]+(?:us|is|as)\b)[a-z]{2,}[a-rt-z]s|(?:these|those)\s+(?:${DEMONSTRATIVE_LEAD}\s+)?(?:need\b|${PRESENT_PLURAL_VERB}\b(?!\s+[a-z]+s\b))|(?:always|never)\s+${COMMAND_VERB}\b(?![-'])(?!\s+by\b))\b\s+[^\s\u2014])`, 'g');
 // A noun subject and its helping verb start a second sentence too: "is not a
@@ -1163,7 +1166,15 @@ function fixEmDash(s, { endsBlock = false, startsBlock = false, spans = [], abov
       // A lone joining word takes no comma after it: "Ship it, then wait."
       // "So" joins only before its subject ("so it ships"), and "yet" not
       // before "another", so "the fix (so small it fits) shipped" stays an aside.
-      const holdsParens = /[()]/.test(aside) && !wrappedInParens(aside);
+      // A list aside whose items hold their own parentheses would run into
+      // the sentence as commas, so those turn to brackets and it takes the
+      // parentheses: "the picture (7 at ceiling [1.0], 5 broken), the
+      // daemon", never "the picture, 7 at ceiling (1.0), 5 broken, the daemon".
+      // Numbered marks like "(1)" or "(b)" stay as they are, so a list that
+      // holds them keeps its commas, and so does an aside whose only commas
+      // sit inside its own parentheses: "its source (run, file, check)".
+      const listInParens = /,/.test(aside.replace(/\([^()]*\)/g, '')) && !/[[\]]/.test(aside) && !/\((?:\d+|[a-z]|[ivx]+)\)/i.test(aside) && /^[^()]+(?:\s\([^()]*\)[^()]*)+$/.test(aside);
+      const holdsParens = /[()]/.test(aside) && !wrappedInParens(aside) && !listInParens;
       if (/^(?:and|but|or|nor|then)\b|^so(?:$|\s+(?:it|we|they|you|I|he|she|the|a|an|this|that|these|those|there|nothing|everything)\b)|^yet\b(?!\s+(?:another|again|more)\b)/.test(aside)) {
         return `${/[.,;:!?]["'\u201d\u2019)]*$/.test(whole.slice(0, at)) ? ' ' : ', '}${aside}${!gap ? '' : /^\w+$/.test(aside) ? ' ' : ', '}`;
       }
@@ -1200,7 +1211,11 @@ function fixEmDash(s, { endsBlock = false, startsBlock = false, spans = [], abov
       const opening = /\b(?:if|when|whenever|unless|until|because|although|though|any time|every time)\b[^,;:()]*$/i.test(whole.slice(from, at))
         && /^(?:it|we|they|you|I|he|she|there|that thing|this thing|then)(?:['\u2019](?:s|re|ll|ve|d|m))?\s/.test(after);
       const remark = /^(?:which|although|whereas)\b/.test(after);
-      return ` ${wrappedInParens(aside) ? aside : `(${aside})`}${remark || (gap && opening) ? ', ' : gap ? ' ' : ''}`;
+      // An opening "based on" or "looking at" phrase ends at the closing dash
+      // too, so its comma stays: "Based on the picture (7 at ceiling), the
+      // daemon has nothing to run".
+      const leadIn = new RegExp(`^\\W*${LEAD_IN}\\s`, 'i').test(whole.slice(from, at));
+      return ` ${wrappedInParens(aside) ? aside : `(${listInParens ? aside.replace(/\(([^()]*)\)/g, '[$1]') : aside})`}${remark || (gap && (opening || leadIn)) ? ', ' : gap ? ' ' : ''}`;
     })
     // a name that closes the line after a quote with its own stop is who said
     // it, so it goes in parentheses: 'backward." (Steve Jobs)', never a bare
@@ -2442,4 +2457,4 @@ function slopCommand(argv) {
   return 0;
 }
 
-module.exports = { slopCommand, detect, scanFile, scanPaths, RULES, PAIR_RULES, loadProjectRules, addProjectRule, gitChangedLines, applyFixes, fencedLines, PRESENT_PLURAL_VERB, DEMONSTRATIVE_LEAD, S_ADVERB, installHook, findDeadCode, findOrphanedExports, listJsFiles };
+module.exports = { slopCommand, detect, scanFile, scanPaths, RULES, PAIR_RULES, loadProjectRules, addProjectRule, gitChangedLines, applyFixes, fencedLines, PRESENT_PLURAL_VERB, DEMONSTRATIVE_LEAD, S_ADVERB, LEAD_IN, installHook, findDeadCode, findOrphanedExports, listJsFiles };

@@ -330,3 +330,9 @@ We count both \u2014 a miss costs a day, a false alarm wastes an hour.
 => We count both; a miss costs a day, a false alarm wastes an hour.
 The old scorers are spent at their current design \u2014 those need redesigns, not more runs.
 => The old scorers are spent at their current design; those need redesigns, not more runs.
+Based on the full picture \u2014 7 at ceiling (1.0), 5 broken \u2014 the daemon has nothing to run.
+=> Based on the full picture (7 at ceiling [1.0], 5 broken), the daemon has nothing to run.
+Looking at the stalls \u2014 the scorer flat at 0.9, the config stuck \u2014 the loop needs new targets.
+=> Looking at the stalls (the scorer flat at 0.9, the config stuck), the loop needs new targets.
+Two picks \u2014 (1) the loop, and (2) the community \u2014 keep people.
+=> Two picks, (1) the loop, and (2) the community, keep people.

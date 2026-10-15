@@ -5152,6 +5152,13 @@ test('the fix diff splice list skips a noun after "in" or "of" and a noun with i
     selves.map((t) => `This attacks a different lever ${D} ${t}, not the weights.`),
     selves.map((t) => `This attacks a different lever, ${t}, not the weights.`),
   ).map((s) => s.text), ['the prompt rules the planner']);
+  // a "based on" or "looking at" phrase opens a first half, so the comma
+  // after its aside closes it; without one the same comma still splices
+  const leads = [['Based on the picture', 'the daemon has nothing to run'], ['The picture', 'the loop has nothing to run']];
+  assert.deepEqual(spliceShapes(
+    leads.map(([l, t]) => `${l} ${D} 7 at ceiling, 5 broken ${D} ${t}.`),
+    leads.map(([l, t]) => `${l} (7 at ceiling, 5 broken), ${t}.`),
+  ).map((s) => s.text), ['the loop has nothing to run']);
   // "these" or "those" alone, or a plural noun after them, before a plain
   // verb is a subject too, so the real "those searches return zero results"
   // and "these always wait for review" are listed; "those still open in
