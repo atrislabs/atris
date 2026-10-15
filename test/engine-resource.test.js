@@ -5430,3 +5430,45 @@ test(`the real cleanup command keeps an incomplete ${unread.join(' and ')} reche
   }
 });
 }
+
+for (const failedRead of [1, 2]) {
+test(`the real cleanup command stops safely when scan ${failedRead} throws`, () => {
+  const { spawnSync } = require('node:child_process');
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'sweep-thrown-scan-'));
+  const preload = path.join(root, 'thrown-scan.cjs');
+  const cli = path.join(__dirname, '..', 'bin', 'atris.js');
+  const signalFile = path.join(root, 'signal-attempted');
+  try {
+    fs.writeFileSync(preload, `
+      const resource = require(${JSON.stringify(require.resolve('../lib/engine-resource'))});
+      let reads = 0;
+      resource.readSshAgents = () => {
+        if (++reads === ${failedRead}) throw new Error('process scan unavailable');
+        return {
+          agents: [{ pid: 200, ppid: 1, uid: process.getuid(), age_sec: 3600, args: 'ssh-agent -s' }],
+          referenced: new Set(), unread: [],
+        };
+      };
+      process.kill = () => {
+        require('node:fs').writeFileSync(${JSON.stringify(signalFile)}, 'attempted');
+        throw new Error('a failed scan must never signal an agent');
+      };
+    `);
+    for (const json of [false, true]) {
+      const ran = spawnSync(process.execPath, ['--require', preload, cli, 'engine', 'sweep', '--apply', ...(json ? ['--json'] : [])], {
+        cwd: root, encoding: 'utf8', timeout: 30000,
+        env: { ...process.env, ATRIS_AUTO_UPDATE: 'off' },
+      });
+      assert.equal(ran.error, undefined);
+      assert.equal(ran.status, 1, ran.stderr);
+      assert.match(ran.stderr, /process scan unavailable/);
+      assert.doesNotMatch(ran.stdout, /stopped \d+ leaked ssh-agent|leaked ssh-agents? still left|"left"\s*:/);
+      assert.equal(fs.existsSync(signalFile), false);
+      assert.equal(fs.existsSync(path.join(root, RESOURCE_LOG)), false);
+      console.log(`failed cleanup scan ${failedRead}, ${json ? 'json' : 'text'}, exit ${ran.status}: ${ran.stderr.trim()}`);
+    }
+  } finally {
+    fs.rmSync(root, { recursive: true, force: true });
+  }
+});
+}
