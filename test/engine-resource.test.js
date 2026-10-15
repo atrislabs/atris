@@ -5384,7 +5384,8 @@ test(`landing repair advice survives unreadable history and ${unread.join(' and 
 });
 }
 
-test('the real cleanup command keeps an incomplete recheck count unknown in text, json, and history', () => {
+for (const unread of [['agent sockets'], ['process environments'], ['process list'], ['agent sockets', 'process environments']]) {
+test(`the real cleanup command keeps an incomplete ${unread.join(' and ')} recheck count unknown in text, json, and history`, () => {
   const { spawnSync } = require('node:child_process');
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'sweep-recheck-count-'));
   const preload = path.join(root, 'partial-recheck.cjs');
@@ -5396,7 +5397,7 @@ test('the real cleanup command keeps an incomplete recheck count unknown in text
       resource.readSshAgents = () => ({
         agents: [{ pid: 200, ppid: 1, uid: process.getuid(), age_sec: 3600, args: 'ssh-agent -s' }],
         referenced: new Set(++reads === 1 ? [] : [200]),
-        unread: reads === 1 ? [] : ['agent sockets'],
+        unread: reads === 1 ? [] : ${JSON.stringify(unread)},
       });
       process.kill = () => { throw new Error('the referenced agent must never be signalled'); };
     `);
@@ -5410,21 +5411,22 @@ test('the real cleanup command keeps an incomplete recheck count unknown in text
         const report = JSON.parse(ran.stdout);
         assert.deepStrictEqual(report.stopped, []);
         assert.deepStrictEqual(report.skipped, [200]);
-        assert.deepStrictEqual(report.unread, ['agent sockets']);
+        assert.deepStrictEqual(report.unread, unread);
         assert.ok(!Object.hasOwn(report, 'left'));
         assert.equal(report.history.last_sweep.leaked_ssh_agents, null);
       } else {
         assert.match(ran.stdout, /stopped 0 leaked ssh-agents/);
         assert.match(ran.stdout, /1 skipped because they were in use or gone on the recheck/);
-        assert.match(ran.stdout, /could not read the agent sockets/);
+        assert.ok(ran.stdout.includes(`could not read the ${unread.join(' or the ')}`));
         assert.doesNotMatch(ran.stdout, /0 leaked ssh-agents still left/);
         console.log(`partial cleanup recheck exit ${ran.status}: ${ran.stdout.trim()}`);
       }
       const saved = fs.readFileSync(path.join(root, RESOURCE_LOG), 'utf8').trim().split('\n').map(JSON.parse).at(-1);
       assert.equal(saved.leaked_ssh_agents, null);
-      assert.deepStrictEqual(saved.unread, ['agent sockets']);
+      assert.deepStrictEqual(saved.unread, unread);
     }
   } finally {
     fs.rmSync(root, { recursive: true, force: true });
   }
 });
+}

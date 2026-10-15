@@ -234,4 +234,6 @@ Combined unreadable history and agent scans: `test/engine-resource.test.js:5349`
 
 Incomplete sweep counts: `commands/engine.js:2399` reports unknown or a lower bound when readers fail; `test/engine-resource.test.js:552` compares sweep and landing output for unreadable sockets, environments, and process lists.
 
-Incomplete cleanup recheck counts: `test/engine-resource.test.js:5387` runs the real cleanup command in text and JSON with a clean first scan and unreadable sockets on the recheck. It checks the warning, omitted remaining count, and null count in saved history.
+Incomplete cleanup recheck counts: `test/engine-resource.test.js:5388` runs the real cleanup command in text and JSON with a clean first scan and unreadable sockets on the recheck. It checks the warning, omitted remaining count, and null count in saved history.
+
+Cleanup recheck reader coverage: `test/engine-resource.test.js:5388` exercises unreadable sockets, process environments, process lists, and combined socket/environment failures through the real cleanup command in text and JSON, checking unknown counts in saved history.
