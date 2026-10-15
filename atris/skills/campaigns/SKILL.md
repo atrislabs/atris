@@ -28,7 +28,7 @@ atris campaign new "<goal>"                  # drafts a judge, proves it fails t
 atris campaign run <id> --max-steps 5        # judge, propose missions, run them; stops and says why
 atris campaign show <id>                     # judge reading, money, missions, open asks, next move
 atris campaign answer <id> <ask-id> "<yes>"  # a person answers; agents cannot
-atris campaign sync <id>                     # share it with web and iOS (on branches with cloud sync)
+atris campaign sync <id>                     # share it with the Atris web app and iOS
 ```
 
 Already have a judge? Start directly: `atris campaign start "<title>" --judge "<command>" --budget 20`. Add `--json` to any verb for machine output. `atris campaign` alone lists every campaign and its next move.

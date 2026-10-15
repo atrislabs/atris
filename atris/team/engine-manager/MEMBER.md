@@ -23,5 +23,5 @@ The registry is the source of truth. When the engines skill guide and the regist
 - roster and health: `lib/engine-registry.js`, `.atris/state/engines.json`
 - command profiles: `lib/runner-command.js`
 - fleet commands: `commands/engine.js`
-- failure classifier: `engineFailureHealthStatus` (currently in `commands/mission.js`)
+- failure classifier: `engineFailureHealthStatus` (defined at `lib/engine-registry.js:124`)
 - operator guide: `~/.claude/skills/engines/SKILL.md`

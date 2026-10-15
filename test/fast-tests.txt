@@ -55,6 +55,7 @@ test/deck-video.test.js
 test/design.test.js
 test/dogfood-hours-lingo.test.js
 test/engine-dispatch.test.js
+test/engine-dispatch-fresh-repo.test.js
 test/escape-regexp.test.js
 test/file-ops-inbox.test.js
 test/fleet.test.js

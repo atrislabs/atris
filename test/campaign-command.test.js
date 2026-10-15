@@ -179,3 +179,20 @@ test('ask stops the campaign for a person; an agent cannot answer, a person can'
   assert.equal((await run(store, ['answer', 'cmp-ship', askId, 'yes, send it'])).code, 0);
   assert.deepEqual(getCampaign(store, 'cmp-ship').asks, []);
 });
+
+test('set-judge: only the owner or a person, and the new judge must fail first', async () => {
+  const store = createMemoryStore();
+  await run(store, startArgs);
+  const byAgent = await run(store, ['set-judge', 'cmp-ship', 'true', '--as', 'builder']);
+  assert.equal(byAgent.code, 2);
+  assert.match(byAgent.err, /only the owner \(mission-lead\) or a person/);
+  const passing = await run(store, ['set-judge', 'cmp-ship', 'true'], [{ passed: true, exit: 0, summary: 'ok', seconds: 0 }]);
+  assert.equal(passing.code, 1);
+  assert.match(passing.err, /already passes/);
+  const changed = await run(store, ['set-judge', 'cmp-ship', 'node scripts/campaign-live-check.js'], [{ passed: false, exit: 1, summary: '0 of 4 live', seconds: 0 }]);
+  assert.equal(changed.code, 0, changed.err);
+  const view = getCampaign(store, 'cmp-ship');
+  assert.equal(view.judge, 'node scripts/campaign-live-check.js');
+  assert.equal(view.judge_due, false);
+  assert.equal(view.answer.text, '0 of 4 live');
+});
