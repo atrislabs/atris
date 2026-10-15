@@ -408,3 +408,15 @@ We ran demos \u2014 those live demo runs.
 => We ran demos, those live demo runs.
 Check the counts \u2014 those hit rates.
 => Check the counts, those hit rates.
+
+# "The" and a noun that only names a point is a whole sentence the clause
+# spells out, so it takes a colon; a sentence with its own verb keeps the
+# semicolon
+Runs stall. The common thread \u2014 these hit local optima.
+=> Runs stall. The common thread: these hit local optima.
+The real fix \u2014 the parser drops the key.
+=> The real fix: the parser drops the key.
+The fix shipped \u2014 the parser drops the key.
+=> The fix shipped; the parser drops the key.
+We found the common thread \u2014 these hit local optima.
+=> We found the common thread; these hit local optima.

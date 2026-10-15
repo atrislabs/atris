@@ -729,7 +729,7 @@ const SUBJECTLESS_CLAUSE_AFTER_DASH = new RegExp(`(?<=[\\w)\\]%\\uE001])\\s*\\u2
 // its left words from up there, so it keeps the colon, and so does a name
 // after a semicolon: "Post-merge review: clean; one gap: web never sent".
 function clauseJoin(left, at, whole) {
-  if (whole !== undefined && topicLabel(left, at, whole)) return ': ';
+  if (whole !== undefined && (topicLabel(left, at, whole) || pointLabel(left, at, whole))) return ': ';
   const mark = openerJoin(left);
   if (mark !== ': ' || whole === undefined || /;\s/.test(left)) return mark;
   const before = whole.slice(0, at).trimEnd();
@@ -769,6 +769,18 @@ function topicLabel(left, at, whole) {
   if (/:(?:\s|$)/.test(whole.slice(at).split(/[.!?](?:\s|$)/)[0])) return false;
   const line = whole.slice(0, at).split('\n').pop().replace(/^(?:\s*(?:[-*+>#]|\d+[.)]|\*\*|__))*\s*/, '').trim();
   return line === left && left.split(/\s+/).length >= 2 && verblessLabel(left);
+}
+
+// "The" and a noun that only names a point, with up to two words before
+// it, is a whole sentence that the clause after the dash spells out, so it
+// takes a colon: "The common thread: these hit local optima", "The real
+// fix: the parser drops the key". The noun list is short on purpose: "The
+// gate held" hides a verb no word check sees, and "held" is not on it.
+const POINT_NOUN = '(?:thread|fix|catch|upshot|takeaway|lesson|twist|irony|verdict|bottom line|short version|good news|bad news|problem|point|insight|answer|reason|pattern|trick|tradeoff|trade-off)';
+function pointLabel(left, at, whole) {
+  if (lineAbove || lineMid || /[()[\]`\uE000]/.test(left)) return false;
+  if (/:(?:\s|$)/.test(whole.slice(at).split(/[.!?](?:\s|$)/)[0])) return false;
+  return new RegExp(`^The\\s+(?:[a-z][\\w-]*\\s+){0,2}?${POINT_NOUN}$`).test(left.trim());
 }
 
 // Up to three words with no verb or subject of their own. A word after the

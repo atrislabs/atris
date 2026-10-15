@@ -326,6 +326,24 @@ test('the em dash fix turns a paired aside into parentheses and a lone dash into
   ]);
 });
 
+test('the em dash fix gives "The" and a noun that names a point a colon', () => {
+  const { applyFixes } = require('../commands/slop');
+  const D = '\u2014';
+  // from real experiment notes: "The common thread" names what the clause
+  // spells out; "The fix shipped" holds its own verb and keeps a semicolon
+  const file = tmpFile('point.md', [
+    `Runs stall. The common thread ${D} these hit local optima.`,
+    '',
+    `The fix shipped ${D} the parser drops the key.`,
+  ].join('\n'));
+  applyFixes([file], RULES);
+  assert.deepEqual(fs.readFileSync(file, 'utf8').split('\n'), [
+    'Runs stall. The common thread: these hit local optima.',
+    '',
+    'The fix shipped; the parser drops the key.',
+  ]);
+});
+
 test('the em dash fix reads past a short aside between a subject and its verb', () => {
   const { applyFixes } = require('../commands/slop');
   const D = '—';
