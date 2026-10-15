@@ -15560,23 +15560,24 @@ test('task current-step rejects bookkeeping receipts for golden-path mission XP'
       },
     }, null, 2), 'utf8');
 
-    const created = runCli([
-      'task', 'new',
-      'Mission XP: Golden path zero-knowledge fresh-laptop pass',
-      '--tag', 'agent-xp',
-      '--goal-id', 'mission-golden-path',
-      '--json',
-    ], { cwd: dir, env });
-    assert.equal(created.status, 0, created.stderr);
-    const task = JSON.parse(created.stdout).task;
+    // Seed creation and ownership; both proof gates stay on the CLI.
+    const task = (() => {
+      const db = taskStore.open(dbPath);
+      try {
+        const workspaceRoot = taskStore.workspaceRoot(dir);
+        const { id } = addSeedTask(db, {
+          title: 'Mission XP: Golden path zero-knowledge fresh-laptop pass',
+          tag: 'agent-xp',
+          workspaceRoot,
+          metadata: { goal_id: 'mission-golden-path' },
+        });
+        assert.equal(taskStore.claimTask(db, { id, claimedBy: 'onboarding' }).claimed, true);
+        return { id, display_id: taskStore.taskDisplayRefMap(taskStore.listTasks(db, { workspaceRoot })).get(id) };
+      } finally {
+        taskStore.close();
+      }
+    })();
     const ref = task.display_id;
-    // Seed ownership; task creation and both proof gates stay on the CLI.
-    const db = taskStore.open(dbPath);
-    try {
-      assert.equal(taskStore.claimTask(db, { id: task.id, claimedBy: 'onboarding' }).claimed, true);
-    } finally {
-      taskStore.close();
-    }
 
     const weakProof = 'atris/runs/bookkeeping.json';
     const blocked = runCli([
