@@ -2339,6 +2339,11 @@ Younger replacement cleanup reasons: `lib/engine-resource.js:329` records younge
 Hourly cleanup replacement summary: `commands/autoland.js:869` includes younger replacements kept safe in the hourly summary, alongside stopped counts and unread scans. Regression: `test/engine-resource.test.js:567` checks singular, plural, combined outcomes, and ordinary skips.
 
 Lost-run cleanup error summary: `commands/autoland.js:895` keeps successful close counts and appends a plain warning when a saved close error exists. Regression `test/engine-resource.test.js:945` uses a real exited child and a missing timestamp file through the real cleanup, checks the unfinished record survives, and covers quiet and combined summaries. Silent log read and write failures remain a separate gap.
+# Assigned member jobs
+
+- `commands/task.js:6355` stores the named assignee. `lib/member-task-pick.js:69` reads it, `lib/member-task-pick.js:79` excludes other members, `lib/member-task-pick.js:86` lets explicit assignments override inferred job type, and `lib/member-task-pick.js:97` sorts assigned work first, oldest within each group.
+- `test/task-owner-pick.test.js:63` delegates through the real CLI, previews both members, and observes the intended member's real SQLite claim over IPC before stopping the process ahead of paid work. Verify: `node --test test/task-owner-pick.test.js`.
+
 # Returned and interrupted jobs
 
 - `lib/member-task-pick.js:82` includes a member's own claims only when the caller opts in after checking it has no live run. `lib/member-task-pick.js:98` releases the selected claim and uses the normal atomic claim gate again.
