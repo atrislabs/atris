@@ -2555,11 +2555,12 @@ test('seeded random follow: split, replaced, rewritten, resaved, and removed log
           logs.set(name, { buf, seen: 0, fresh: true });
         } else if (kind === 'resave') {
           // An editor that saves by renaming a copy keeps every old byte, so
-          // only the new file identity tells the reader to start at the top.
-          const buf = Buffer.concat([logs.get(name).buf, owed ? Buffer.alloc(0) : lines(Math.floor(rnd() * 3))]);
+          // the reader carries on where it was instead of repeating old lines.
+          const log = logs.get(name);
+          const buf = Buffer.concat([log.buf, owed ? Buffer.alloc(0) : lines(Math.floor(rnd() * 3))]);
           fs.writeFileSync(path.join(dir, 'swap.tmp'), buf);
           fs.renameSync(path.join(dir, 'swap.tmp'), file(name));
-          logs.set(name, { buf, seen: 0, fresh: true });
+          logs.set(name, { ...log, buf });
         } else if (kind === 'replace' || kind === 'rewrite') {
           const next = rnd() < 0.3 ? line() : null;
           const buf = Buffer.concat([lines(Math.floor(rnd() * 4)), next ? next.subarray(0, 4) : Buffer.alloc(0)]);
