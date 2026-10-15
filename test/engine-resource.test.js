@@ -1410,6 +1410,61 @@ test('every engine started through a runner or profile variable records its run 
       const declaration = new RegExp(`\\b(?:const|let|var)\\s+${escaped}\\b|\\b(?:const|let|var)\\s*[{[](?:[^=;]*?[,:{[])?\\s*${escaped}\\s*[,}\\]=]`, 'g');
       return [...visible.matchAll(declaration)].some((binding) => (/^var\b/.test(binding[0]) && withinDeclaringFunction(binding.index, position)) || inScope(visible.slice(binding.index)));
     };
+    // The elements of an array literal, or of a same-file array declaration
+    // never changed after it, each with the position it is read at. Anything
+    // else is unknown.
+    const arrayElements = (source, position) => {
+      let text = source;
+      let at = position;
+      if (!text.startsWith('[')) {
+        const name = /^[A-Za-z_$][\w$]*$/.exec(text)?.[0];
+        if (!name) return null;
+        const escaped = name.replace(/\$/g, '\\$');
+        if (new RegExp(`\\b${escaped}\\s*(?:\\.\\s*(?:push|pop|shift|unshift|splice|fill|copyWithin|reverse|sort)\\s*\\(|\\[[^\\]]*\\]\\s*=(?!=)|\\.\\s*length\\s*=(?!=))`).test(code)) return null;
+        const resolved = sourceAt(name, position);
+        text = resolved.source;
+        at = resolved.position;
+      }
+      if (!text.startsWith('[')) return null;
+      const elements = [''];
+      let depth = 0;
+      const tokens = /'(?:\\.|[^'\\])*'|"(?:\\.|[^"\\])*"|`(?:\\.|[^`\\])*`|[()[\]{},]|[^'"`()\[\]{},]+/g;
+      for (const token of text.slice(1).matchAll(tokens)) {
+        // The literal must end where its bracket closes, not before an index
+        // or call. An empty last element is a trailing comma or an empty array.
+        if (token[0] === ']' && depth === 0) {
+          if (token.index + 2 !== text.length) return null;
+          if (!elements[elements.length - 1].trim()) elements.pop();
+          return elements.map((element) => ({ text: element.trim(), position: at }));
+        }
+        if (token[0] === ',' && depth === 0) {
+          elements.push('');
+          continue;
+        }
+        if (/^[([{]$/.test(token[0])) depth += 1;
+        if (/^[)\]}]$/.test(token[0])) depth -= 1;
+        elements[elements.length - 1] += token[0];
+      }
+      return null;
+    };
+    // Arguments with known spreads expanded in place. An unknown spread ends
+    // the list, so the slots after it read as left to their defaults.
+    const spreadArguments = (items, depth = 0) => {
+      const values = [];
+      for (const item of items) {
+        const spread = /^\.\.\.\s*([\s\S]*)$/.exec(item.text);
+        if (!spread) {
+          values.push(item);
+          continue;
+        }
+        const elements = depth < 8 ? arrayElements(spread[1].trim(), item.position) : null;
+        if (!elements) return { values, open: true };
+        const inner = spreadArguments(elements, depth + 1);
+        values.push(...inner.values);
+        if (inner.open) return { values, open: true };
+      }
+      return { values, open: false };
+    };
     const sourceAt = (source, position) => {
       const visible = withoutHelperDefinitions(code, position);
       let declarationEnd = position;
@@ -1495,13 +1550,15 @@ test('every engine started through a runner or profile variable records its run 
             if (/^[)\]}]$/.test(token[0])) depth -= 1;
             argumentsList[argumentsList.length - 1] += token[0];
           }
-          const supplied = (argumentsList[slot] || '').trim();
+          const argument = spreadArguments(argumentsList.map((text) => ({ text: text.trim(), position: call.index }))).values[slot];
+          const supplied = argument ? argument.text : '';
+          const suppliedAt = argument ? argument.position : call.index;
           // Omitted arguments use defaults in the definition's outer scope,
           // and so does an explicit undefined unless a binding at the call
           // renames it. Any other value, including null, never falls back.
-          const omitted = !supplied || supplied === 'void 0' || (supplied === 'undefined' && !bindsAt('undefined', call.index));
+          const omitted = !supplied || supplied === 'void 0' || (supplied === 'undefined' && !bindsAt('undefined', suppliedAt));
           const hasDefault = parameters[slot].includes('=');
-          if (engineSourceAt(omitted && hasDefault ? defaultSource : supplied, omitted && hasDefault ? fnStart : call.index, next)) {
+          if (engineSourceAt(omitted && hasDefault ? defaultSource : supplied, omitted && hasDefault ? fnStart : suppliedAt, next)) {
             return true;
           }
         }
@@ -1557,7 +1614,27 @@ test('every engine started through a runner or profile variable records its run 
   assert.deepStrictEqual(withDefault("function caller() {\n  const undefined = 'git';\n  launch(prompt, undefined);\n}"), [], 'a local binding named undefined replaces the default');
   assert.deepStrictEqual(withDefault("function caller(undefined) {\n  launch(prompt, undefined);\n}"), [], 'a parameter named undefined is not evidence of the default');
   assert.deepStrictEqual(withDefault("function caller() {\n  {\n    const undefined = 'git';\n  }\n  launch(prompt, undefined);\n}"), ['commands/planted.js:2 runner'], 'a binding in a closed block does not reach the call');
-  assert.deepStrictEqual(withDefault("function other() {\n  const undefined = 'git';\n}\nlaunch(prompt, undefined);"), ['commands/planted.js:2 runner'], 'a binding inside a sibling helper does not reach the call');  // Literal and captured defaults count only when a same-file call omits them.
+  assert.deepStrictEqual(withDefault("function other() {\n  const undefined = 'git';\n}\nlaunch(prompt, undefined);"), ['commands/planted.js:2 runner'], 'a binding inside a sibling helper does not reach the call');
+  // A spread of a known array fills the slots it covers; one with unknown
+  // contents may leave the runner slot to its default.
+  const spreadOne = (call, between = '') => planted(`function launch(runner = resolveClaudeRunnerBin()) {\n  spawnSync(runner, args);\n}\n${between}${call}\n`);
+  const spreadNoDefault = (call, between = '') => planted(`function launch(runner) {\n  spawnSync(runner, args);\n}\n${between}${call}\n`);
+  assert.deepStrictEqual(spreadOne('launch(...[]);'), ['commands/planted.js:2 runner'], 'an empty spread leaves the default');
+  assert.deepStrictEqual(spreadOne("launch(...['git']);"), []);
+  assert.deepStrictEqual(spreadOne("launch(...['git',]);"), [], 'a trailing comma adds no slot');
+  assert.deepStrictEqual(spreadNoDefault("launch(...['claude']);"), ['commands/planted.js:2 runner']);
+  assert.deepStrictEqual(spreadOne('launch(...picks);', "const picks = ['git'];\n"), []);
+  assert.deepStrictEqual(spreadOne('launch(...picks);', 'const picks = [];\n'), ['commands/planted.js:2 runner']);
+  assert.deepStrictEqual(spreadNoDefault('launch(...picks);', "const picks = ['claude'];\n"), ['commands/planted.js:2 runner']);
+  assert.deepStrictEqual(spreadNoDefault('launch(...picks);', "const inner = ['claude'];\nconst picks = [...inner];\n"), ['commands/planted.js:2 runner'], 'a spread inside the array is followed');
+  assert.deepStrictEqual(spreadOne('launch(...rest);'), ['commands/planted.js:2 runner'], 'unknown contents may leave the default');
+  assert.deepStrictEqual(spreadNoDefault('launch(...rest);'), [], 'unknown contents with no default name no engine');
+  assert.deepStrictEqual(spreadOne('launch(...picks);', "const picks = ['git'];\npicks.pop();\n"), ['commands/planted.js:2 runner'], 'an array emptied after its declaration counts as unknown');
+  assert.deepStrictEqual(withDefault("launch(...[prompt], 'git');"), []);
+  assert.deepStrictEqual(withDefault('launch(...[prompt]);'), ['commands/planted.js:2 runner']);
+  assert.deepStrictEqual(withDefault("launch(...[prompt, 'git']);"), []);
+  assert.deepStrictEqual(withDefault("launch(...[prompt, undefined]);"), ['commands/planted.js:2 runner'], 'undefined inside a spread array uses the default too');
+  // Literal and captured defaults count only when a same-file call omits them.
   for (const [head, tail] of [
     ['function launch', '}'],
     ['const launch = ', '};'],
