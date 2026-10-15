@@ -116,11 +116,14 @@ function fixAll(fixer, lines, dir) {
 // marks in a row (", ," or ":." or "(,") or parentheses that no longer
 // balance the way the source did. Code spans and link targets are left out.
 // In --paragraphs mode the whole paragraph is one unit, so an aside that
-// wraps across lines balances the way it should.
+// wraps across lines balances the way it should. The period that closes a
+// short form or an initial is part of the word, so a comma after it is
+// plain English: "Cooling, Inc., Columbus", "(Alex T., via the site)".
 const DOUBLED = /[,;:]\s*[,;:.!?]|\(\s*[,;:]|[,;:]\s*\)|\.\s*,|,\s*,/g;
+const SHORT_FORM_STOP = /\b(?:etc|e\.g|i\.e|vs|cf|approx|incl|et al|Inc|Ltd|Corp|Co|Jr|Sr|[A-Z])\.(?=\s*,)/gi;
 function oddMarks(source, fixed) {
   const plain = (text) => text.replace(/`[^`]*`/g, '``').replace(/\]\([^)]*\)/g, ']');
-  const doubled = (text) => (plain(text).match(DOUBLED) || []).length;
+  const doubled = (text) => (plain(text).replace(SHORT_FORM_STOP, (word) => word.slice(0, -1)).match(DOUBLED) || []).length;
   const balance = (text) => (plain(text).match(/\(/g) || []).length - (plain(text).match(/\)/g) || []).length;
   const marks = [];
   if (doubled(fixed) > doubled(source)) marks.push('doubled punctuation');

@@ -3597,6 +3597,11 @@ test('the fix diff script marks a fix that gains doubled punctuation or loses pa
   assert.deepEqual(oddMarks(`Ship it ${D}: then check.`, 'Ship it,: then check.'), ['doubled punctuation']);
   assert.deepEqual(oddMarks(`The log (see below ${D}) is clean.`, 'The log (see below, is clean.'), ['unbalanced parentheses']);
   assert.deepEqual(oddMarks(`Use e.g., a flag ${D} not a file.`, 'Use e.g., a flag, not a file.'), []);
+  // the period of a short form or an initial belongs to its word, so a
+  // comma after it is plain English; a period after a full word is not
+  assert.deepEqual(oddMarks(`# Airfast Cooling, Inc. ${D} Columbus, OH`, '# Airfast Cooling, Inc., Columbus, OH'), []);
+  assert.deepEqual(oddMarks(`"Great work." Alex T. (via the site)`, '"Great work." (Alex T., via the site)'), []);
+  assert.deepEqual(oddMarks(`The build ended. ${D} and then it ran.`, 'The build ended., and then it ran.'), ['doubled punctuation']);
   // an aside that wraps across lines is unbalanced in the source too, and a
   // code span or link target is never read as prose
   assert.deepEqual(oddMarks(`The run (one tick ${D} a slice`, 'The run (one tick, a slice'), []);
