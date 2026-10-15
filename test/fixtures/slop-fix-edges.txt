@@ -120,3 +120,13 @@ Check one place \u2014 the open issues on GitHub.
 => Check one place, the open issues on GitHub.
 Check one place \u2014 the GPU clusters in us-east.
 => Check one place, the GPU clusters in us-east.
+
+# from real repo text: a field's short value before a dash and a "the"
+# clause joins with a semicolon, as a pronoun clause does
+Top blocker: friction_points \u2014 the known failure modes are undocumented, so the agent fails.
+=> Top blocker: friction_points; the known failure modes are undocumented, so the agent fails.
+Bottleneck: unchanged \u2014 the trust-playbook GO stays closed on all five dimensions.
+=> Bottleneck: unchanged; the trust-playbook GO stays closed on all five dimensions.
+# a value that opens on "not" takes a colon, so a second colon lands after it
+Status: not ready \u2014 the gate holds the drafts.
+~> Status: not ready; the gate holds the drafts.

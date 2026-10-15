@@ -585,6 +585,18 @@ function labelJoin(at, whole) {
   return parts.length ? '; ' : ': ';
 }
 
+// A clause after "the" and a noun joins a field's short value the way a
+// pronoun clause does: "Top blocker: friction_points; the known failure
+// modes are undocumented". The value alone is no clause, so only a label
+// past the field's own colon counts, only before "the", and only where it
+// takes a semicolon; a heading or a question after a field keeps its comma.
+function clauseOrFieldLeft(at, whole) {
+  const left = clauseLeft(at, whole);
+  if (left || !/^\s*\u2014\s*the\s/.test(whole.slice(at)) || labelJoin(at, whole) !== '; ') return left;
+  const label = whole.slice(0, at).split(/:\s/).pop().trim();
+  return clauseJoin(label) === '; ' ? label : null;
+}
+
 // A range counts up: "10-20", or "1990-95" with the shared digits left off.
 // Two numbers that count down are two things, so "line 56, 5 tabs" is never
 // glued into "56-5".
@@ -996,7 +1008,7 @@ function fixEmDash(s, { endsBlock = false, startsBlock = false, spans = [], abov
       return left ? clauseJoin(left) : m;
     })
     .replace(NOUN_CLAUSE_AFTER_DASH, (m, at, whole) => {
-      const left = clauseLeft(at, whole);
+      const left = clauseOrFieldLeft(at, whole);
       return left && !NAME_TAIL_PHRASE.test(whole.slice(at)) ? clauseJoin(left) : m;
     })
     .replace(AND_CLAUSE_AFTER_DASH, (m, at, whole) => {
@@ -1032,27 +1044,27 @@ function fixEmDash(s, { endsBlock = false, startsBlock = false, spans = [], abov
       return left ? clauseJoin(left) : m;
     })
     .replace(NAME_PAIR_CLAUSE_AFTER_DASH, (m, at, whole) => {
-      const left = clauseLeft(at, whole);
+      const left = clauseOrFieldLeft(at, whole);
       return left ? clauseJoin(left) : m;
     })
     .replace(THE_OBJECT_CLAUSE_AFTER_DASH, (m, at, whole) => {
-      const left = clauseLeft(at, whole);
+      const left = clauseOrFieldLeft(at, whole);
       return left && !RELATIVE_OBJECT_PHRASE.test(whole.slice(at)) ? clauseJoin(left) : m;
     })
     .replace(BARE_PHRASE_CLAUSE_AFTER_DASH, (m, at, whole) => {
-      const left = clauseLeft(at, whole);
+      const left = clauseOrFieldLeft(at, whole);
       return left && !NAME_TAIL_PHRASE.test(whole.slice(at)) ? clauseJoin(left) : m;
     })
     .replace(LONE_VERB_CLAUSE_AFTER_DASH, (m, at, whole) => {
-      const left = clauseLeft(at, whole);
+      const left = clauseOrFieldLeft(at, whole);
       return left ? clauseJoin(left) : m;
     })
     .replace(PLACE_CLAUSE_AFTER_DASH, (m, at, whole) => {
-      const left = clauseLeft(at, whole);
+      const left = clauseOrFieldLeft(at, whole);
       return left ? clauseJoin(left) : m;
     })
     .replace(PLAIN_CLAUSE_AFTER_DASH, (m, at, whole) => {
-      const left = clauseLeft(at, whole);
+      const left = clauseOrFieldLeft(at, whole);
       if (!left || NAME_BEFORE_PLAIN_VERB.test(whole.slice(at)) || NAME_TAIL_PHRASE.test(whole.slice(at))) return m;
       return /\b(?:not|cannot)\b/i.test(left) || PLAIN_OBJECT_CLAUSE.test(whole.slice(at)) || BARE_OBJECT_CLAUSE.test(whole.slice(at)) ? clauseJoin(left) : m;
     })

@@ -2418,6 +2418,22 @@ test('fix joins "the", a noun and a verb that is never a plural before "in" or "
   ]);
 });
 
+test('fix joins a field value and a "the" clause after a dash with a semicolon', () => {
+  // from real repo text: "Top blocker: friction_points, the known failure
+  // modes are undocumented" spliced, since one word after a colon is no
+  // clause. Past a field's own colon the value joins a "the" clause the way
+  // it joins a pronoun clause.
+  const file = tmpFile('the-field-clause.md', [
+    'Top blocker: friction_points \u2014 the known failure modes are undocumented, so the agent fails.',
+    'Bottleneck: unchanged \u2014 the trust-playbook GO stays closed on all five dimensions.',
+  ].join('\n'));
+  const { changes } = applyFixes([file], RULES);
+  assert.deepEqual(changes.map((c) => c.after), [
+    'Top blocker: friction_points; the known failure modes are undocumented, so the agent fails.',
+    'Bottleneck: unchanged; the trust-playbook GO stays closed on all five dimensions.',
+  ]);
+});
+
 test('fix joins "its" or "our", a plural and a plain verb before a number or an object', () => {
   // from a probe of the edge file: "its pages score 67" spliced, since the
   // possessive rule wanted a verb in s, a helper verb or "already". A plain
