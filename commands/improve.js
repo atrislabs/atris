@@ -1038,8 +1038,13 @@ const REVISION_WINDOW_HOURS = 72;
 // matter of routine (daily logs, now.md, run receipts), so overlap there says
 // nothing about the quality of a landing. On 2026-08-21 half the "revisions"
 // in a live reading were journal commits following journal commits. Only
-// product-file overlap counts.
+// product-file overlap counts. The same holds for shared index files: on
+// 2026-10-15 one human commit read as 14 of 17 revisions because it moved a
+// few map-note lines that nearly every landing also adds to.
 const REVISION_IGNORED_FILES = [
+  /^atris\/MAP\.md$/,
+  /^atris\/refs\/MAP-NOTES\.md$/,
+  /^test\/fast-tests\.txt$/,
   /^atris\/logs\//,
   /^atris\/runs\//,
   /^atris\/team\/[^/]+\/(?:logs|now\.md)/,
