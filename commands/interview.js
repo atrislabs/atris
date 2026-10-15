@@ -135,6 +135,7 @@ Full skill (read if present): .claude/skills/interview/SKILL.md · spec: atris/f
   const modes = {
     operator: `Mode: OPERATOR WARM START. Interview the human at the keyboard. Open with the sharpest observed behavior in their recent journal/logs, especially repeated manual actions (unextracted members) and policies their own behavior contradicts. Output: a new member, an amendment, or a policy change.`,
     member: `Mode: MEMBER RE-INTERVIEW (performance review). Subject: the team member "${subject}". Read its folder (MEMBER.md, logs/, now.md, proofs) and interview the human ABOUT it: where it failed, what it should defend, what taste is missing from its file. Honest failure → document the lesson, no penalty. A false "done" is the one unforgivable act. Output: amend atris/team/${subject}/MEMBER.md.`,
+    one_on_one: `Mode: ONE-ON-ONE. You ARE the team member "${subject}". Speak in the first person as ${subject}, in the voice of your own SOUL.md and MEMBER.md, to your operator at the keyboard. This is a conversation with them, not an interview about you. Open with one honest observation from your own logs: what you shipped, where you stalled, what you are unsure of. One point or question per turn, and let their answer steer the next. Own failures plainly; a false "done" is the one unforgivable act. End by agreeing ONE concrete next step with them, then record it yourself by running: atris member goal ${subject} "<the next step>". Read the step back in one line, then say goodbye.`,
     expert: `Mode: COLD START. Subject: a new expert called "${subject}". No system data. Opener: "when someone is stuck, what's the problem where they say 'just ask you'?" (civilian variant: "what are you the designated one for?"). Then last real instance → live method demo → quality bar → verify question. Output: create atris/team/<slug>/MEMBER.md.`,
   };
 
@@ -147,7 +148,7 @@ Full skill (read if present): .claude/skills/interview/SKILL.md · spec: atris/f
   ].join('\n\n');
 }
 
-async function interviewCommand(args = [], root = process.cwd()) {
+async function interviewCommand(args = [], root = process.cwd(), { mode: forcedMode = '' } = {}) {
   if (args.includes('--help') || args.includes('-h') || args[0] === 'help') {
     showHelp();
     return 0;
@@ -182,6 +183,16 @@ async function interviewCommand(args = [], root = process.cwd()) {
       path.join(ws, 'atris', 'now.md'),
       path.join(ws, 'atris', 'TODO.md')
     );
+  } else if (forcedMode === 'one_on_one' && fs.existsSync(memberDir)) {
+    mode = 'one_on_one';
+    contextPaths = existing(
+      path.join(memberDir, 'MEMBER.md'),
+      path.join(memberDir, 'SOUL.md'),
+      path.join(memberDir, 'MISSION.md'),
+      path.join(memberDir, 'now.md'),
+      path.join(memberDir, 'goals.md'),
+      path.join(memberDir, 'logs')
+    );
   } else if (fs.existsSync(memberDir)) {
     mode = 'member';
     contextPaths = existing(
@@ -195,10 +206,11 @@ async function interviewCommand(args = [], root = process.cwd()) {
     mode = 'expert';
   }
 
-  const prompt = composePrompt(mode, mode === 'member' ? slug : subjectRaw, contextPaths, ws);
+  const memberMode = mode === 'member' || mode === 'one_on_one';
+  const prompt = composePrompt(mode, memberMode ? slug : subjectRaw, contextPaths, ws);
 
   console.log('');
-  console.log(`◈ interview: ${mode === 'operator' ? 'you, from your logs' : mode === 'member' ? `1-on-1 about ${slug}` : `cold start: ${subjectRaw}`}`);
+  console.log(`◈ interview: ${mode === 'operator' ? 'you, from your logs' : mode === 'one_on_one' ? `1-on-1 with ${slug}` : mode === 'member' ? `1-on-1 about ${slug}` : `cold start: ${subjectRaw}`}`);
   if (contextPaths.length) console.log(`  context: ${contextPaths.length} source${contextPaths.length > 1 ? 's' : ''} loaded`);
   console.log('');
 

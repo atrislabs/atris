@@ -11058,16 +11058,56 @@ function memberSleep(target, ...args) {
   return payload;
 }
 
+// The member's active goal plus how many times it was set, so a re-agreed
+// goal with the same words still counts as the talk's next step.
+function oneOnOneGoalMark(name, paths) {
+  const goal = (loadMemberGoals(name, paths).goals || []).filter((g) => g && g.status === 'active').pop();
+  return goal ? { title: goal.title, mark: `${goal.id}:${(goal.history || []).length}` } : { title: '', mark: '' };
+}
+
+function askOneOnOneNextStep(name) {
+  const rl = require('readline').createInterface({ input: process.stdin, output: process.stdout });
+  return new Promise((resolve) => rl.question(`What is ${name}'s next step? `, (answer) => {
+    rl.close();
+    resolve(String(answer || '').trim());
+  }));
+}
+
+// A 1-on-1 is a talk with the member in its own voice, and it ends with the
+// member's next step saved as its active goal. The member records the step
+// itself during the talk; --next or a closing question fills it in otherwise.
 async function memberOneOnOne(name, ...args) {
   if (!name || name === '--help' || name === '-h' || hasFlag(args, '--help') || hasFlag(args, '-h')) {
-    console.log('Usage: atris member 1on1 <name> [--note "..."]');
-    console.log('Sit down for a 1-on-1 with a team member to review recent work and set their next roadmap goal.');
+    console.log('Usage: atris member 1on1 <name> [--next "..."]');
+    console.log('Talk with a team member in its own voice. The talk ends with its next step saved as its goal.');
     return;
   }
+  const paths = requireMemberDir(name);
+  const next = readFlag(args, '--next', '');
+  const rest = stripKnownFlags(args, ['--next'], []);
+  const before = oneOnOneGoalMark(name, paths);
   const { interviewCommand } = require('./interview');
-  const code = await interviewCommand([name, ...args]);
-  if (code) process.exitCode = code;
-  return code;
+  const code = await interviewCommand([name, ...rest], process.cwd(), { mode: 'one_on_one' });
+  if (code) {
+    process.exitCode = code;
+    return code;
+  }
+  let after = oneOnOneGoalMark(name, paths);
+  if (after.mark === before.mark) {
+    const step = next || (process.stdin.isTTY && process.stdout.isTTY ? await askOneOnOneNextStep(name) : '');
+    if (step) {
+      memberGoal(name, step);
+      after = oneOnOneGoalMark(name, paths);
+    }
+  }
+  if (after.title && after.mark !== before.mark) {
+    console.log(`${name}'s next step: ${after.title}`);
+    return 0;
+  }
+  console.log(`The 1-on-1 ended without a next step for ${name}.`);
+  console.log(`Set one: atris member goal ${name} "..."`);
+  process.exitCode = 1;
+  return 1;
 }
 
 function collectMemberHandoffs(root = process.cwd(), cards = []) {
@@ -11554,7 +11594,7 @@ async function memberCommand(subcommand, ...args) {
       console.log('  "<prompt>"          Steer a running member mid-flight or start the best specialist');
       console.log('  go [name|"..."]     Wake the highest-leverage member on its next_push or run a prompt');
       console.log('  steer [name] "..."  Steer a member mid-run or update its immediate direction');
-      console.log('  1on1 <name>         Sit down for a 1-on-1 to review recent wins and set the roadmap');
+      console.log('  1on1 <name>         Talk with a member in its own voice; ends with its next step saved');
       console.log('  sleep [name|--all]  Park active member loops so your team rests until woken');
       console.log('  room [--json]       Render the visual Team Room and desktop UI payload');
       console.log('  board [--watch]     One screen of every member: job, last step, working/quiet/done');
