@@ -559,6 +559,31 @@ test('a code-shaped name in plain parentheses after a ref binds, so fix-refs fol
   assert.match(run(root, ['--fix-refs']).stdout, /map refs: nothing to move\./);
 });
 
+test('a name before " at " a ref, or after a comma in its parentheses, binds', t => {
+  // "`cmdHome` at `commands/task.js:6574`" and "(`commands/integrations.js:591`,
+  // `gmailSend`)" never bound, and 10 of 14 such notes refs had drifted
+  const root = workspace(t);
+  write(root, 'atris/atris.md', '');
+  const code = Array.from({ length: 40 }, () => '');
+  code[19] = 'function cmdHome(args) {';
+  code[29] = 'async function gmailSend(to) {';
+  write(root, 'lib/cmds.js', code.join('\n'));
+  write(root, 'atris/MAP.md', [
+    '| area | path | note |', '| --- | --- | --- |', '| cmds | `lib/cmds.js` | code |', '',
+    '- desk: full desk is `cmdHome` at `lib/cmds.js:5`',
+    '- send: `gmail send` (`lib/cmds.js:9`, `gmailSend`): sends mail',
+    '- loose: `lib/cmds.js:12`, `gmailSend` is outside one pair of parentheses',
+  ].join('\n'));
+  const refs = JSON.parse(run(root, ['--json']).stdout).map_coverage.refs;
+  assert.deepEqual(refs.flagged.map(ref => [ref.map_line, ref.status, ref.symbol]), [[5, 'moved', 'cmdHome'], [6, 'moved', 'gmailSend']]);
+  const fix = run(root, ['--fix-refs']);
+  assert.equal(fix.status, 0, fix.stderr);
+  const fixed = fs.readFileSync(path.join(root, 'atris/MAP.md'), 'utf8');
+  assert.match(fixed, /`cmdHome` at `lib\/cmds\.js:20`/);
+  assert.match(fixed, /\(`lib\/cmds\.js:30`, `gmailSend`\)/);
+  assert.match(fixed, /`lib\/cmds\.js:12`, `gmailSend` is outside/);
+});
+
 test('a routing ref on a feature card must sit near its command, and fix-refs moves it there', t => {
   // 20 routing refs in the notes had drifted to imports and other commands and
   // still counted as right, since a ref with no name was trusted on its numbers
