@@ -14,13 +14,13 @@ Run `atris youtube notes 'https://www.youtube.com/watch?v=Am7IWP8IpEc'` and find
 
 ## 1. Environment Check
 
-- [ ] **Tests pass**
+- [x] **Tests pass**
   - Command: `node --test test/ytnotes.test.js test/ytquote-repair.test.js test/youtube.test.js`
-  - Expect: 0 failures. On 2026-09-28 this was 111 passing; on 2026-10-13, with test/ytrail-bench.test.js in place of test/ytquote-repair.test.js, 142 passing.
+  - Expect: 0 failures. On 2026-09-28 this was 111 passing; on 2026-10-13, with test/ytrail-bench.test.js in place of test/ytquote-repair.test.js, 142 passing. Rerun on 2026-10-15: exit 0, 131 passing, 0 failing.
 
-- [ ] **Tools present**
+- [x] **Tools present**
   - Command: `command -v yt-dlp agy claude mlx_whisper`
-  - Expect: yt-dlp and at least one writer. `mlx_whisper` is needed only for videos with no captions.
+  - Expect: yt-dlp and at least one writer. `mlx_whisper` is needed only for videos with no captions. Rerun on 2026-10-15: exit 0, all four found (yt-dlp, agy, claude, mlx_whisper).
 
 ---
 
