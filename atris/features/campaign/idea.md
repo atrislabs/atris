@@ -364,6 +364,32 @@ The same idea already runs in Atris memory: the `clean-memory` skill rebuilds me
 
 ---
 
+## The Member's Shift Loop
+
+What a member does every time it wakes. Flat is good; efficient is everything.
+
+```text
+WAKE      one computed briefing: my campaigns, my active mission, its tasks,
+          notes since my last shift, facts that expired ("still true?")
+WORK      finish tasks; add or remove tasks as I learn
+FINISH    mission done → send it to validation (someone else) → do not wait idle
+NEXT      propose my next mission to the lead (approve or veto)
+1:1       only when the human asks; notes load at my next shift
+SLEEP     shift_ended with reason and usage
+```
+
+Efficiency rules:
+
+- **One mission in hand per member.** Limiting work in progress is what makes a flat team fast (finish before you start).
+- **The briefing is one computed view, not a file crawl.** A wake should cost one query, not a context full of reading.
+- **Nothing changed means a one-line shift.** If the briefing is unchanged and nothing is assigned, log one line and sleep.
+- **Validation is someone else's, and asynchronous.** The builder moves on while the validator checks.
+- **Next mission is decided at the boundary,** not continuously mid-work.
+
+This extends the existing wake flow (`gm <member>`: boot, inbox, claim, one slice, verify, commit and push, proof, receipt) with the campaign briefing as its first step.
+
+---
+
 ## Shifts (agent timelines)
 
 Agents do not tire with time. They get worse as context fills, as they drift from the goal, and when they loop without progress. So a shift ends at a natural breakpoint, whichever comes first:

@@ -50,6 +50,8 @@ Everything else is computed from events. Never store a computed value.
 
 ## How to work
 
+- Each wake: read your campaign briefing, hold one mission at a time, finish tasks, send the mission to validation, propose your next mission at the boundary. See idea.md → The Member's Shift Loop.
+
 - Take one mission. Put `campaign:cmp-campaign` in its objective. Break it into tasks in your repo's task system.
 - Before code: `git status`, fetch the default branch, work in a worktree or branch, stage only your files.
 - Code goes through a PR and the merge queue so `test` runs. Spec docs may go straight to master.
