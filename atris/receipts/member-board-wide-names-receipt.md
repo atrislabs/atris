@@ -11,13 +11,13 @@ Exit code: 0. 115 tests, 115 passed, 0 failed, 0 skipped, 57460ms.
 
 Teeth: with name shortening planted to count letters instead of screen cells, the test failed at 18 columns (a name eight cells wide in a six-cell column, exit 1). Restored, it passed.
 
-Real terminal output (`ATRIS_BOARD_WIDE_NAME_PROOF=<file> node --test --test-name-pattern="member names in wide" test/member-board.test.js`, exit 0):
+Real terminal output, with the rocket emoji written as [rocket] here (`ATRIS_BOARD_WIDE_NAME_PROOF=<file> node --test --test-name-pattern="member names in wide" test/member-board.test.js`, exit 0):
 
 ```
 command: node bin/atris.js member board --watch (18 columns, 8 rows)
 member  state
 bui...  signed out
-🚀...   ok
+[rocket]...   ok
 前...   timed out
 
 ctrl-c to stop
@@ -26,7 +26,7 @@ exit: 0
 command: node bin/atris.js member board --watch (22 columns, 8 rows)
 member      state
 builder     signed out
-🚀部署...   ok
+[rocket]部署...   ok
 前端开...   timed out
 
 ctrl-c to stop
@@ -35,7 +35,7 @@ exit: 0
 command: node bin/atris.js member board --watch (29 columns, 8 rows)
 member          state
 builder         signed out
-🚀部署小组成员  ok
+[rocket]部署小组成员  ok
 前端开发工程师  timed out
 
 updates 3s, ctrl-c to stop
@@ -44,7 +44,7 @@ exit: 0
 command: node bin/atris.js member board --watch (36 columns, 8 rows)
 member          state   last result
 builder         failed  signed out
-🚀部署小组成员  ok      ok
+[rocket]部署小组成员  ok      ok
 前端开发工程师  failed  timed out
 
 redraws every 3s, ctrl-c to stop
