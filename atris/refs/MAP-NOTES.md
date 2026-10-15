@@ -2622,7 +2622,7 @@ Landing capability test setup: `test/commands.test.js:13014` seeds creation and 
 
 - Ready-work revision setup: `test/commands.test.js:13695` uses production claimTask in the setup connection, asserting ownership before closing. Seven launches become six; both initial readies, revise, show, stale accept and re-ready retain all original CLI assertions.
 
-- Accepted-task revision refusal: `test/commands.test.js:13794` seeds creation and ownership with production `claimTask`, asserts success and closes in finally; all refusal and XP assertions remain real CLI checks, reducing five launches to four.
+- Accepted-task revision refusal: `test/commands.test.js:13760` seeds creation, ownership and readiness with production `readyTask` at `test/commands.test.js:13776`, asserts success and closes in finally; acceptance, refusal and XP assertions remain real CLI checks, reducing four launches to three.
 
 - Goal display-reference status setup: `test/commands.test.js:14651` reopens the production store to claim the CLI-created child, asserts success and closes in finally. Three launches become two; CLI child-add resolution and every parent objective, lineage and stream assertion remain unchanged.
 
