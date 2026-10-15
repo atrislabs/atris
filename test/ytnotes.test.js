@@ -1002,6 +1002,8 @@ test('ytnotes auto writer sends no second Gemini request after a quota error, th
   assert.equal(result.status, 0, result.stderr || result.stdout);
   assert.match(fs.readFileSync(path.join(dir, 'yt_auto7.md'), 'utf8'), /# No Caption Talk/);
   assert.match(result.stderr, /^notes by Haiku$/m);
+  // No quota memory yet on a first run; reading it must stay silent.
+  assert.doesNotMatch(result.stderr, /No such file or directory/);
   assert.equal(fs.readFileSync(calls, 'utf8'), 'models\nwarm\n', 'only the early Gemini request ran');
   const until = Number(fs.readFileSync(path.join(dir, 'gemini_quota_until'), 'utf8'));
   const now = Date.now() / 1000;
