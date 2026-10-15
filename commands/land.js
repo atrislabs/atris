@@ -548,6 +548,16 @@ function greenScratchCovered(worktreePath) {
   return off.status === 0 && off.stdout.trim() === '0';
 }
 
+// Git refuses to remove a folder it cannot open as its own checkout (its git
+// link moved or broken), so a preview names that keep instead of promising a
+// removal the real pass will not make. A missing folder is left to git.
+function unreadableCheckout(worktreePath) {
+  if (!fs.existsSync(worktreePath)) return null;
+  const top = runGit(['rev-parse', '--show-toplevel'], { cwd: worktreePath, check: false });
+  if (top.status === 0 && canonicalPath(top.stdout.trim()) === canonicalPath(worktreePath)) return null;
+  return 'git cannot open this folder as its own checkout, so removal would be refused';
+}
+
 // Reap: salvage then delete everything landed (residue) or past TTL.
 // Salvage first, always: unlanded commits go into a git bundle, dirty
 // worktrees into patch files + untracked-file copies, so a reap is never
@@ -649,8 +659,15 @@ function reap(root, { ttlDays = DEFAULT_TTL_DAYS, staleHours = DEFAULT_STALE_HOU
     // that is itself a removal target would be gone first, so it still reads
     // as deletable here.
     const live = liveCheckouts(root, now);
-    const targetPaths = new Set(worktreeTargets.map((w) => canonicalPath(w.path)));
-    receipt.removedWorktrees = worktreeTargets.map((w) => w.path);
+    const removable = worktreeTargets.filter((w) => {
+      const refused = unreadableCheckout(w.path);
+      if (!refused) return true;
+      receipt.keptWorktrees.push(`${w.path} (${refused})`);
+      if (w.branch) targetNames.delete(w.branch);
+      return false;
+    });
+    const targetPaths = new Set(removable.map((w) => canonicalPath(w.path)));
+    receipt.removedWorktrees = removable.map((w) => w.path);
     receipt.deletedBranches = [...targetNames].filter((name) => {
       const bound = live.bound.get(name);
       if (bound && !(bound.path && targetPaths.has(canonicalPath(bound.path)))) {
@@ -952,24 +969,25 @@ function printReceipt(receipt, { removalsToday = '' } = {}) {
     if (receipt.bundleError) console.log(`  backup failed: unlanded work left in place: ${receipt.bundleError}`);
     for (const p of receipt.patches) console.log(`  unsaved edits saved: ${p}`);
     for (const u of receipt.untracked || []) console.log(`  new files saved: ${u}`);
-    // fresh-grace keeps are healthy active work, not a call to action, 
-    // "needs a human" on those trained readers to ignore the real ones.
-    for (const k of receipt.keptWorktrees || []) {
-      // The receipt keeps the raw codes; the human line speaks in sentences.
-      if (String(k).includes('(fresh_worktree_grace)')) console.log(`  in use, left alone: ${k.replace(' (fresh_worktree_grace)', '')}`);
-      else if (String(k).includes('(current_checkout)')) console.log(`  you are standing in it, left alone: ${k.replace(' (current_checkout)', '')}`);
-      else {
-        // A green landing scratch copy holds no work of its own; say so, so
-        // the operator knows it is not a member's copy.
-        const { isGreenScratch } = require('../lib/land-green');
-        const from = isGreenScratch(String(k).split(' (')[0]) ? ' (green landing scratch copy)' : '';
-        console.log(`  ✋ kept, needs a human${from}: ${k}`);
-      }
-    }
-    for (const m of receipt.keptMovedBranches || []) console.log(`  moved since scan, left alone: ${m}`);
-    if (receipt.deletedRemote.length > 0) console.log(`  also cleared on github: ${receipt.deletedRemote.length}`);
-    if (removalsToday) console.log(removalsToday);
   }
+  // A preview names what it would keep too, so it matches the real pass.
+  // fresh-grace keeps are healthy active work, not a call to action,
+  // "needs a human" on those trained readers to ignore the real ones.
+  for (const k of receipt.keptWorktrees || []) {
+    // The receipt keeps the raw codes; the human line speaks in sentences.
+    if (String(k).includes('(fresh_worktree_grace)')) console.log(`  in use, left alone: ${k.replace(' (fresh_worktree_grace)', '')}`);
+    else if (String(k).includes('(current_checkout)')) console.log(`  you are standing in it, left alone: ${k.replace(' (current_checkout)', '')}`);
+    else {
+      // A green landing scratch copy holds no work of its own; say so, so
+      // the operator knows it is not a member's copy.
+      const { isGreenScratch } = require('../lib/land-green');
+      const from = isGreenScratch(String(k).split(' (')[0]) ? ' (green landing scratch copy)' : '';
+      console.log(`  ✋ kept, needs a human${from}: ${k}`);
+    }
+  }
+  for (const m of receipt.keptMovedBranches || []) console.log(`  moved since scan, left alone: ${m}`);
+  if (receipt.deletedRemote.length > 0) console.log(`  also cleared on github: ${receipt.deletedRemote.length}`);
+  if (removalsToday) console.log(removalsToday);
   console.log(`  still flying (recent work, left alone): ${receipt.kept.length}`);
   console.log('');
 }

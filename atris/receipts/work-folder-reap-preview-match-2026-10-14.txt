@@ -1,0 +1,30 @@
+Reap preview now matches the real run for folders it keeps
+
+Files edited: commands/land.js, test/worktree-removal-guard.test.js, atris/refs/MAP-NOTES.md, atris/team/architect/logs/2026-10-14.md, this receipt.
+
+What changed:
+1. The preview asks git a read-only question for each folder it plans to remove: does this folder open as its own checkout? When it does not (a moved or broken git link), the preview keeps the folder and its branch and says why, instead of promising a removal git will refuse.
+2. The preview now prints its kept lines. Before, every kept folder, including pinned, locked and in-use ones, was silent in the preview and only showed after a real run.
+
+Throwaway repo, folder three levels deep with its git link moved away (guarded subshell, fixture removed after):
+$ atris land --reap --dry-run --no-remote --base master --ttl 0
+exit=0
+landing cleanup preview: would clear 0 pieces of work, 0 side copies:
+  ✋ kept, needs a human: $BASE/l0-nested-folder/l1-nested-folder/l2-nested-folder/deep-wt (git cannot open this folder as its own checkout, so removal would be refused)
+$ atris land --reap --no-remote --base master --ttl 0
+exit=0
+landing cleanup done: 0 pieces cleared, 0 side copies removed
+  ✋ kept, needs a human: $BASE/.../deep-wt (validation failed, cannot remove working tree: 'deep-wt/.git' does not exist)
+
+Real project, preview only (read-only; work-folder count unchanged at 109):
+$ atris land --reap --dry-run --no-remote
+exit=0
+would clear 108 pieces of work, 68 side copies; 40 kept lines now printed, for example:
+  ✋ kept, needs a human: /private/tmp/cli-release (unlanded commits: 1 never landed, oldest 1d, needs landing)
+
+$ node --test test/worktree-removal-guard.test.js test/member-tidy.test.js
+exit=0; tests 67, pass 67, fail 0, todo 0
+$ node --test test/boot-panel-counts.test.js test/fleet-stranded-worktrees.test.js test/land-green.test.js test/land.test.js
+exit=0; tests 50, pass 50, fail 0
+
+Negative trial: with the previous land code put back, the deep-folder check failed; the new file was restored afterward.

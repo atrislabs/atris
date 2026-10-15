@@ -1286,7 +1286,14 @@ test('a refusal from a deep folder keeps git\'s reason, not just its path', () =
     // The reap command prints the same words in its kept line and keeps the folder.
     const aged = new Date(Date.now() - 2 * 60 * 60 * 1000);
     fs.utimesSync(wt, aged, aged);
-    const reaped = spawnSync(process.execPath, [path.resolve(__dirname, '../bin/atris.js'), 'land', '--reap', '--no-remote', '--base', 'master', '--ttl', '0'], { cwd: repo, encoding: 'utf8' });
+    // The preview keeps it too, instead of promising a removal git refuses.
+    const reapArgs = [path.resolve(__dirname, '../bin/atris.js'), 'land', '--reap', '--no-remote', '--base', 'master', '--ttl', '0'];
+    const preview = spawnSync(process.execPath, [...reapArgs, '--dry-run'], { cwd: repo, encoding: 'utf8' });
+    assert.equal(preview.status, 0, preview.stderr);
+    assert.deepEqual(preview.stdout.split('\n').filter((line) => line.includes('deep-wt')),
+      [`  ✋ kept, needs a human: ${wt} (git cannot open this folder as its own checkout, so removal would be refused)`]);
+    assert.ok(!preview.stdout.split('\n').some((line) => line.startsWith('  would clear  deep-run')), preview.stdout);
+    const reaped = spawnSync(process.execPath, reapArgs, { cwd: repo, encoding: 'utf8' });
     assert.equal(reaped.status, 0, reaped.stderr);
     assert.deepEqual(reaped.stdout.split('\n').filter((line) => line.includes('deep-wt')), [`  ✋ kept, needs a human: ${wt} (${words})`]);
     assert.ok(fs.existsSync(path.join(wt, 'README.md')));
