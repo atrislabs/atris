@@ -2046,6 +2046,15 @@ test('the real short watch screen names the engine a hidden member signed out of
   t.diagnostic(proof.stdout);
 });
 
+test('the real short watch screen shortens a hidden earlier failure footer in order, for LF and CRLF logs', { skip: process.platform === 'win32' }, (t) => {
+  const proof = spawnSync('python3', [path.join(repoRoot, 'atris/runs/member-board-compact-earlier-proof.py'), process.execPath], {
+    encoding: 'utf8', timeout: 60_000,
+  });
+  assert.equal(proof.status, 0, `${proof.stdout}\n${proof.stderr}\n${proof.error || ''}`);
+  assert.match(proof.stdout, /hidden earlier failure footer drops "with", then the reason, for LF and CRLF logs/);
+  t.diagnostic(proof.stdout);
+});
+
 test('atris member board reads ATRIS_PROGRESS_DIR for real', async () => {
   const recent = new Date(Date.now() - 5_000).toISOString();
   const dir = fakeDir({ navigator: [`${recent} m-9 started: map the repo`, `${recent} m-9 reading atris/MAP.md`] });
