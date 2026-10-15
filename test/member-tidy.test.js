@@ -808,6 +808,60 @@ test('tidy keeps a copy whose branch disappeared, in preview and apply', () => {
   }
 });
 
+test('tidy keeps staged and unsaved notes after upstream moves backward', () => {
+  const fx = makeFixture();
+  try {
+    const clean = addCopy(fx, 'landed-clean');
+    const kept = addCopy(fx, 'upstream-rewound', { commit: true, pushToOrigin: true });
+    const tip = runGit(['rev-parse', 'HEAD'], kept);
+    runGit(['fetch', '-q', 'origin'], fx.repo);
+    assert.equal(runGit(['rev-parse', 'origin/master'], fx.repo), tip);
+    fs.writeFileSync(path.join(kept, 'draft.txt'), 'unsaved notes\n');
+    fs.appendFileSync(path.join(kept, 'README.md'), 'unsaved edits\n');
+    fs.writeFileSync(path.join(kept, 'staged.txt'), 'prepared notes\n');
+    runGit(['add', 'staged.txt'], kept);
+    fs.appendFileSync(path.join(kept, 'staged.txt'), 'later edits\n');
+    const status = runGit(['status', '--porcelain'], kept);
+    const patch = runGit(['diff', '--cached', '--binary'], kept);
+    assert.match(status, /AM staged.txt/);
+    const seed = path.join(fx.base, 'seed');
+    const base = runGit(['rev-parse', 'HEAD'], seed);
+    // Only the disposable remote is rewound. The local tracking ref still
+    // says this copy landed, so cleanup must ask the remote again.
+    runGit(['push', '-q', '--force', path.join(fx.base, 'remote.git'), 'master'], seed);
+    assert.equal(runGit(['rev-parse', 'origin/master'], fx.repo), tip);
+    assert.equal(runGit(['rev-parse', 'refs/heads/master'], path.join(fx.base, 'remote.git')), base);
+
+    for (const extra of [['--dry-run'], []]) {
+      const args = [path.resolve(__dirname, '../bin/atris.js'), 'member', 'tidy', '--dir', fx.copies, ...extra];
+      const cli = spawnSync(process.execPath, args, { cwd: fx.repo, encoding: 'utf8', timeout: 15000 });
+      console.log(`command: node bin/atris.js member tidy --dir <fixture copies>${extra.length ? ' --dry-run' : ''} (upstream moved backward)`);
+      console.log(cli.stdout.trim());
+      console.log(`exit: ${cli.status}`);
+      assert.equal(cli.status, 0, cli.stderr);
+      const lines = cli.stdout.trim().split('\n').map((line) => line.replace(/ {2,}/g, '  '));
+      assert.ok(lines.includes('left alone  1 work not landed yet'), lines.join('\n'));
+      assert.ok(lines.some((line) => line.startsWith(`${extra.length ? 'would remove' : 'removed'}  landed-clean  work landed`)));
+      assert.equal(lines.at(-1), `tidy: ${extra.length ? 'would remove' : 'removed'} 1, kept 1, of 2 copies in ${fx.copies}`);
+      assert.equal(runGit(['rev-parse', 'FETCH_HEAD'], fx.repo), base);
+      assert.equal(runGit(['rev-parse', 'HEAD'], kept), tip);
+      assert.equal(fs.readFileSync(path.join(kept, 'upstream-rewound.txt'), 'utf8'), 'work\n');
+      assert.equal(fs.readFileSync(path.join(kept, 'draft.txt'), 'utf8'), 'unsaved notes\n');
+      assert.equal(fs.readFileSync(path.join(kept, 'README.md'), 'utf8'), '# fixture\nunsaved edits\n');
+      assert.equal(fs.readFileSync(path.join(kept, 'staged.txt'), 'utf8'), 'prepared notes\nlater edits\n');
+      assert.equal(runGit(['show', ':staged.txt'], kept), 'prepared notes');
+      assert.equal(runGit(['diff', '--cached', '--binary'], kept), patch);
+      assert.equal(runGit(['status', '--porcelain'], kept), status);
+      assert.ok(branchExists(fx.repo, 'upstream-rewound'));
+      assert.ok(runGit(['worktree', 'list', '--porcelain'], fx.repo).includes(`worktree ${kept}\n`));
+      assert.deepEqual(removalLines(fx.repo).map((line) => line.path), extra.length ? [] : [clean]);
+    }
+    assert.equal(fs.existsSync(clean), false);
+  } finally {
+    fs.rmSync(fx.base, { recursive: true, force: true });
+  }
+});
+
 test('tidy keeps a landed copy whose status git cannot read, in preview and apply', () => {
   const fx = makeFixture();
   try {
