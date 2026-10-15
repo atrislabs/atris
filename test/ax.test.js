@@ -1384,6 +1384,12 @@ test('ax keeps generic approval requests pending locally across turns', () => {
   );
   assert.equal(ax.messageApprovesPendingApproval('yes send it'), true);
   assert.equal(ax.messageApprovesPendingApproval('change the channel'), false);
+  for (const yes of ['approved do it', 'Yes, go ahead.', 'ok do it now', 'approve', 'yeah send it please']) {
+    assert.equal(ax.messageApprovesPendingApproval(yes), true, yes);
+  }
+  for (const not of ['no', 'yes but change the subject', 'wait', 'do not do it', 'ok but not yet', 'yes send it to sid instead', '']) {
+    assert.equal(ax.messageApprovesPendingApproval(not), false, not);
+  }
   assert.equal(ax.messageCancelsPendingApproval('cancel it'), true);
 });
 
