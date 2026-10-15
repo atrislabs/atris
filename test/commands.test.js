@@ -18731,7 +18731,7 @@ test('now --help prints usage without update-check side effects', () => {
   }
 });
 
-test('help invocations skip background update-check cache writes', () => {
+test('help invocations skip background update-check cache writes', async () => {
   const dir = makeTempDir();
   try {
     const commands = [
@@ -18743,9 +18743,12 @@ test('help invocations skip background update-check cache writes', () => {
       ['code-review', '--help'],
     ];
 
-    for (const args of commands) {
-      const home = path.join(dir, `home-${args[0]}`);
-      const res = runCli(args, { cwd: dir, env: { HOME: home } });
+    const homes = commands.map(args => path.join(dir, `home-${args[0]}`));
+    const results = await Promise.all(commands.map((args, index) =>
+      runCliAsync(args, { cwd: dir, env: { HOME: homes[index] } })));
+    for (const [index, args] of commands.entries()) {
+      const home = homes[index];
+      const res = results[index];
       assert.equal(res.status, 0, `${args.join(' ')}: ${res.stderr || res.stdout}`);
       assert.equal(fs.existsSync(path.join(home, '.atris')), false, `${args.join(' ')} created ~/.atris`);
     }

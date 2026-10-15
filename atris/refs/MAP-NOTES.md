@@ -2751,3 +2751,5 @@ Authentication help checks: `test/commands.test.js:18814` runs login and identit
 Account and integrations help checks: `test/commands.test.js:18847` runs the four account and integrations help launches together with the existing async CLI helper, retaining every output and no-state assertion. `bin/atris.js:2427` and `bin/atris.js:3050` return help before any account handler loads. Four sequential stages become one.
 
 Activate and next help checks: `test/commands.test.js:18881` runs both help launches together with the existing async CLI helper, retaining every output and no-state assertion. `bin/atris.js:2283` returns activate help before context loads, and `commands/next.js:192` returns next help first. Two sequential stages become one.
+
+Help update-cache checks: `test/commands.test.js:18734` runs six help launches together, each with its own home folder, retaining every exit and no-cache assertion. `bin/atris.js:137` marks help requests and skips the background update check. Six sequential stages become one. Both CLI runners set the skip variable, so this test does not yet prove the help gate alone.
