@@ -1168,7 +1168,8 @@ function showAutopilotHelp() {
 
 if (command === 'help' || command === '--help' || command === '-h') {
   showHelp({ args: process.argv.slice(3) });
-  process.exit(0);
+  exitAfterStdoutDrain(0);
+  return;
 }
 
 // Core command handlers, loaded eagerly (used by interactiveEntry default path)
