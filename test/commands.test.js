@@ -15074,7 +15074,7 @@ test('task continue-work creates the certified review next task', () => {
   }
 });
 
-test('task continue-work rejects generic human-accept continuation titles', () => {
+test('task continue-work rejects generic human-accept continuation titles', async () => {
   if (!hasNodeSqlite()) return;
   const dir = makeTempDir();
   const dbPath = path.join(dir, 'tasks.db');
@@ -15125,7 +15125,10 @@ test('task continue-work rejects generic human-accept continuation titles', () =
     assert.equal(certifiedPayload.task.review.agent_certified, true);
     assert.equal(certifiedPayload.task.review.next_task, undefined);
 
-    const current = runCli(['task', 'current', '--goal-id', 'OBL-928', '--json'], { cwd: dir, env });
+    const [current, reviews] = await Promise.all([
+      runCliAsync(['task', 'current', '--goal-id', 'OBL-928', '--json'], { cwd: dir, env }),
+      runCliAsync(['task', 'reviews', '--json'], { cwd: dir, env }),
+    ]);
     assert.equal(current.status, 0, current.stderr);
     const currentPayload = JSON.parse(current.stdout);
     assert.equal(currentPayload.current.selected_task_id, parent.id);
@@ -15135,7 +15138,6 @@ test('task continue-work rejects generic human-accept continuation titles', () =
     assert.equal(currentPayload.current.next.api, null);
     assert.equal(currentPayload.selected.continue_work_command, undefined);
 
-    const reviews = runCli(['task', 'reviews', '--json'], { cwd: dir, env });
     assert.equal(reviews.status, 0, reviews.stderr);
     const reviewItem = JSON.parse(reviews.stdout).queue.items[0];
     assert.equal(reviewItem.id, parent.id);

@@ -2773,3 +2773,5 @@ Local wiki graph lookup batching: `test/commands.test.js:3136` awaits related an
 Legacy member match setup: `test/commands.test.js:2584` creates the legacy row with the production task store and saves its production task list before the real wake read. Three CLI launches become two; all existing-match assertions remain.
 
 Generic continuation rejection setup: `test/commands.test.js:15075` seeds the goal-linked row through the production task store, closed in finally. Readiness, certification, current selection, review queue and refused continuation remain real CLI checks. Six launches become five.
+
+Continuation inspection batching: `test/commands.test.js:15128` awaits current selection and the review queue together after certification and before refused continuation. Both build their output from unchanged task rows through `commands/task.js:739`; neither consumes the saved view. All assertions remain, and five launches now take four sequential stages.
