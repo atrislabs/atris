@@ -16170,51 +16170,35 @@ test('task serve exposes a local task factory API', async () => {
     // rebuilds from the store on every request, and add and claim are one
     // store call each in the CLI.
     const workspaceRoot = taskStore.workspaceRoot(dir);
-    const seedTask = (title, tag, goalId) => {
+    // Each setup phase runs on one connection, closed before the next request.
+    const withStore = (fn) => {
       const db = taskStore.open(dbPath);
       try {
-        const { id } = addSeedTask(db, { title, tag, workspaceRoot, metadata: { goal_id: goalId } });
-        return { id, display_id: taskStore.taskDisplayRefMap(taskStore.listTasks(db, { workspaceRoot })).get(id) };
+        return fn(db);
       } finally {
         taskStore.close();
       }
     };
-    const claimSeeded = (id, owner) => {
-      const db = taskStore.open(dbPath);
-      try {
-        assert.equal(taskStore.claimTask(db, { id, claimedBy: owner }).claimed, true);
-      } finally {
-        taskStore.close();
-      }
+    const seedTask = (db, title, tag, goalId) => {
+      const { id } = addSeedTask(db, { title, tag, workspaceRoot, metadata: { goal_id: goalId } });
+      return { id, display_id: taskStore.taskDisplayRefMap(taskStore.listTasks(db, { workspaceRoot })).get(id) };
+    };
+    const claimSeeded = (db, id, owner) => {
+      assert.equal(taskStore.claimTask(db, { id, claimedBy: owner }).claimed, true);
     };
     // Side tasks that only need a review state for current and queue to read
     // are readied and reviewed through the same store calls the CLI makes.
-    const readySeeded = (id, actor, proof) => {
-      const db = taskStore.open(dbPath);
-      try {
-        assert.equal(taskStore.readyTask(db, { id, actor, proof }).ready, true);
-      } finally {
-        taskStore.close();
-      }
+    const readySeeded = (db, id, actor, proof) => {
+      assert.equal(taskStore.readyTask(db, { id, actor, proof }).ready, true);
     };
-    const reviewSeeded = (id, proof, nextTask) => {
-      const db = taskStore.open(dbPath);
-      try {
-        assert.equal(taskStore.reviewTask(db, { id, actor: 'codex-review', reward: 0, proof, nextTask }).reviewed, true);
-      } finally {
-        taskStore.close();
-      }
+    const reviewSeeded = (db, id, proof, nextTask) => {
+      assert.equal(taskStore.reviewTask(db, { id, actor: 'codex-review', reward: 0, proof, nextTask }).reviewed, true);
     };
     // Owner cases only read the claim and the Plan and Do fields, which the
     // CLI plan and do commands write with one stageTask call each.
-    const stageSeeded = (id, actor, stage, fields) => {
-      const db = taskStore.open(dbPath);
-      try {
-        const staged = taskStore.stageTask(db, { id, actor, stage, owner: actor, ...fields });
-        assert.equal(staged.staged, true, staged.reason);
-      } finally {
-        taskStore.close();
-      }
+    const stageSeeded = (db, id, actor, stage, fields) => {
+      const staged = taskStore.stageTask(db, { id, actor, stage, owner: actor, ...fields });
+      assert.equal(staged.staged, true, staged.reason);
     };
 
 	    const html = await fetch(base).then(r => r.text());
@@ -16426,7 +16410,7 @@ test('task serve exposes a local task factory API', async () => {
 	    assert.equal(apiStepReviewChat.contract.schema, 'atris.task_review_chat.v1');
 	    assert.equal(apiStepReviewChat.page.task.status, 'review');
 
-	    const apiScopedTask = seedTask('Scoped API current task', 'api-scope', 'OBL-928');
+	    const apiScopedTask = withStore((db) => seedTask(db, 'Scoped API current task', 'api-scope', 'OBL-928'));
 
 	    const apiCurrent = await fetch(`${base}/api/tasks/current?owner=codex&reviewer=codex-review`).then(r => r.json());
 	    assert.equal(apiCurrent.ok, true);
@@ -16464,7 +16448,7 @@ test('task serve exposes a local task factory API', async () => {
 	    assert.ok(apiCapabilitiesCheck.checks.some(check => check.name === 'read_only_projection_semantics_declared' && check.ok));
 	    assert.ok(apiCapabilitiesCheck.checks.some(check => check.name === 'capabilities_check_surface_declared' && check.ok));
 
-	    claimSeeded(apiScopedTask.id, 'codex');
+	    withStore((db) => claimSeeded(db, apiScopedTask.id, 'codex'));
 	    const apiScopedCurrent = await fetch(`${base}/api/tasks/current?owner=codex&goal_id=OBL-928`).then(r => r.json());
 	    assert.equal(apiScopedCurrent.ok, true);
 	    assert.equal(apiScopedCurrent.current.scope.goal_id, 'OBL-928');
@@ -16539,15 +16523,18 @@ test('task serve exposes a local task factory API', async () => {
 		    assert.equal(apiNeedsAgentItem.continue_work_command, undefined);
 		    assert.equal(apiNeedsAgentItem.commands.continue_work, undefined);
 
-	    const apiContinueTask = seedTask('API certified task with continuation action', 'api-review-state', 'OBL-934');
-	    claimSeeded(apiContinueTask.id, 'codex');
-	    readySeeded(apiContinueTask.id, 'codex', 'node --check test/commands.test.js passed before API continue-work filter');
-	    reviewSeeded(apiContinueTask.id, 'node --test test/commands.test.js passed during API continue-work filter', 'Run the API continuation follow-up');
+	    const { apiContinueTask, apiWaitingTask } = withStore((db) => {
+	      const apiContinueTask = seedTask(db, 'API certified task with continuation action', 'api-review-state', 'OBL-934');
+	      claimSeeded(db, apiContinueTask.id, 'codex');
+	      readySeeded(db, apiContinueTask.id, 'codex', 'node --check test/commands.test.js passed before API continue-work filter');
+	      reviewSeeded(db, apiContinueTask.id, 'node --test test/commands.test.js passed during API continue-work filter', 'Run the API continuation follow-up');
 
-	    const apiWaitingTask = seedTask('API certified task waiting for human accept', 'api-review-state', 'OBL-934');
-	    claimSeeded(apiWaitingTask.id, 'codex');
-	    readySeeded(apiWaitingTask.id, 'codex', 'node --check test/commands.test.js passed before API human-accept filter');
-	    reviewSeeded(apiWaitingTask.id, 'node --test test/commands.test.js passed during API human-accept filter');
+	      const apiWaitingTask = seedTask(db, 'API certified task waiting for human accept', 'api-review-state', 'OBL-934');
+	      claimSeeded(db, apiWaitingTask.id, 'codex');
+	      readySeeded(db, apiWaitingTask.id, 'codex', 'node --check test/commands.test.js passed before API human-accept filter');
+	      reviewSeeded(db, apiWaitingTask.id, 'node --test test/commands.test.js passed during API human-accept filter');
+	      return { apiContinueTask, apiWaitingTask };
+	    });
 
 	    const apiContinueCommand = `atris task continue-work ${apiContinueTask.display_id} --as codex --json`;
 	    const apiContinueCurrent = await fetch(`${base}/api/tasks/current?owner=codex&goal_id=OBL-934&review_state=continue-work`).then(r => r.json());
@@ -16798,9 +16785,12 @@ test('task serve exposes a local task factory API', async () => {
 	    assert.equal(apiCurrentStepReviewChat.page.review.human_accept.enabled, true);
 	    assert.equal(apiCurrentStepReviewChat.safety.human_accept, false);
 
-	    const apiOtherReviewTask = seedTask('API other owner review stays untouched', 'api-scope', 'OBL-930');
-	    claimSeeded(apiOtherReviewTask.id, 'alice');
-	    readySeeded(apiOtherReviewTask.id, 'alice', 'node --check test/commands.test.js passed before API other owner review');
+	    const apiOtherReviewTask = withStore((db) => {
+	      const apiOtherReviewTask = seedTask(db, 'API other owner review stays untouched', 'api-scope', 'OBL-930');
+	      claimSeeded(db, apiOtherReviewTask.id, 'alice');
+	      readySeeded(db, apiOtherReviewTask.id, 'alice', 'node --check test/commands.test.js passed before API other owner review');
+	      return apiOtherReviewTask;
+	    });
 	    const apiOtherReviewStepResponse = await fetch(`${base}/api/tasks/current/step?goal_id=OBL-930`, {
 	      method: 'POST',
 	      headers: { 'content-type': 'application/json' },
@@ -16821,13 +16811,16 @@ test('task serve exposes a local task factory API', async () => {
 	    assert.equal(apiScopedDetailAfterCurrentStep.task.review.approval_status, 'pending');
 	    assert.ok(apiScopedDetailAfterCurrentStep.task.messages.some(m => m.content.includes('TASK_REVIEW_CHAT')));
 
-	    const apiOwnerQueryTask = seedTask('API owner query current-step task', 'api-owner', 'OBL-929');
-	    stageSeeded(apiOwnerQueryTask.id, 'alice', 'plan', {
-	      goal: 'API current-step honors query owner',
-	      exit: 'owner query steps the owner current task',
-	      proofNeeded: 'node --test test/commands.test.js passes API current-step owner query coverage',
+	    const apiOwnerQueryTask = withStore((db) => {
+	      const apiOwnerQueryTask = seedTask(db, 'API owner query current-step task', 'api-owner', 'OBL-929');
+	      stageSeeded(db, apiOwnerQueryTask.id, 'alice', 'plan', {
+	        goal: 'API current-step honors query owner',
+	        exit: 'owner query steps the owner current task',
+	        proofNeeded: 'node --test test/commands.test.js passes API current-step owner query coverage',
+	      });
+	      stageSeeded(db, apiOwnerQueryTask.id, 'alice', 'do', { firstMove: 'alice owns API current-step query work' });
+	      return apiOwnerQueryTask;
 	    });
-	    stageSeeded(apiOwnerQueryTask.id, 'alice', 'do', { firstMove: 'alice owns API current-step query work' });
 	    const apiOwnerQueryCurrent = await fetch(`${base}/api/tasks/current?owner=alice&goal_id=OBL-929`).then(r => r.json());
 	    assert.equal(apiOwnerQueryCurrent.ok, true);
 	    assert.equal(apiOwnerQueryCurrent.current.owner, 'alice');
@@ -16849,20 +16842,23 @@ test('task serve exposes a local task factory API', async () => {
 	    assert.equal(apiOwnerQueryStep.step.task.id, apiOwnerQueryTask.id);
 	    assert.equal(apiOwnerQueryStep.safety.human_accept, false);
 
-	    const apiOwnerPrecedenceAliceTask = seedTask('API owner precedence Alice task', 'api-owner', 'OBL-931');
-	    const apiOwnerPrecedenceCodexTask = seedTask('API owner precedence Codex task', 'api-owner', 'OBL-931');
-	    stageSeeded(apiOwnerPrecedenceAliceTask.id, 'alice', 'plan', {
-	      goal: 'Alice owns the query-selected task',
-	      exit: 'query owner cannot be overridden by body actor',
-	      proofNeeded: 'node --test test/commands.test.js passes API current-step owner precedence coverage',
+	    const { apiOwnerPrecedenceAliceTask, apiOwnerPrecedenceCodexTask } = withStore((db) => {
+	      const apiOwnerPrecedenceAliceTask = seedTask(db, 'API owner precedence Alice task', 'api-owner', 'OBL-931');
+	      const apiOwnerPrecedenceCodexTask = seedTask(db, 'API owner precedence Codex task', 'api-owner', 'OBL-931');
+	      stageSeeded(db, apiOwnerPrecedenceAliceTask.id, 'alice', 'plan', {
+	        goal: 'Alice owns the query-selected task',
+	        exit: 'query owner cannot be overridden by body actor',
+	        proofNeeded: 'node --test test/commands.test.js passes API current-step owner precedence coverage',
+	      });
+	      stageSeeded(db, apiOwnerPrecedenceAliceTask.id, 'alice', 'do', { firstMove: 'alice owns the query-selected work' });
+	      stageSeeded(db, apiOwnerPrecedenceCodexTask.id, 'codex', 'plan', {
+	        goal: 'Codex owns a different same-scope task',
+	        exit: 'query owner still selects Alice',
+	        proofNeeded: 'node --test test/commands.test.js passes API current-step owner precedence coverage',
+	      });
+	      stageSeeded(db, apiOwnerPrecedenceCodexTask.id, 'codex', 'do', { firstMove: 'codex owns separate same-scope work' });
+	      return { apiOwnerPrecedenceAliceTask, apiOwnerPrecedenceCodexTask };
 	    });
-	    stageSeeded(apiOwnerPrecedenceAliceTask.id, 'alice', 'do', { firstMove: 'alice owns the query-selected work' });
-	    stageSeeded(apiOwnerPrecedenceCodexTask.id, 'codex', 'plan', {
-	      goal: 'Codex owns a different same-scope task',
-	      exit: 'query owner still selects Alice',
-	      proofNeeded: 'node --test test/commands.test.js passes API current-step owner precedence coverage',
-	    });
-	    stageSeeded(apiOwnerPrecedenceCodexTask.id, 'codex', 'do', { firstMove: 'codex owns separate same-scope work' });
 	    const apiOwnerPrecedenceCurrent = await fetch(`${base}/api/tasks/current?owner=alice&goal_id=OBL-931`).then(r => r.json());
 	    assert.equal(apiOwnerPrecedenceCurrent.current.selected_task_id, apiOwnerPrecedenceAliceTask.id);
 	    const apiOwnerPrecedenceResponse = await fetch(`${base}/api/tasks/current/step?owner=alice&goal_id=OBL-931`, {
@@ -17282,7 +17278,7 @@ test('task serve exposes a local task factory API', async () => {
     assert.equal(clearAccept.task.review.lesson, null);
     assert.equal(clearAccept.task.review.next_task, null);
 
-    const scopedApiParent = seedTask('Scoped API create-next parent', 'factory', 'OBL-932');
+    const scopedApiParent = withStore((db) => seedTask(db, 'Scoped API create-next parent', 'factory', 'OBL-932'));
     const scopedApiReady = await fetch(`${base}/api/tasks/${scopedApiParent.id}/ready`, {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
