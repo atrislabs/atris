@@ -2396,7 +2396,9 @@ function runEngineSweepCommand(args, root, deps = {}) {
     return code;
   }
   const shown = 20;
-  const cli = deps.atrisCommand || atrisCommand();
+  // The launcher check starts a Node, so it runs only when a line names the command.
+  let cli;
+  const command = () => (cli ??= deps.atrisCommand || atrisCommand());
   const history = readResourceHistory(root);
   const refused = new Set(history.last_sweep?.failed || []);
   // A partial scan only finds a floor, as in the landing status: no count
@@ -2416,9 +2418,9 @@ function runEngineSweepCommand(args, root, deps = {}) {
   const runsText = leaked.length ? leakedRunsText(matchLeakedToRuns(root, leaked), { startLine: startLines.length > 0, recorded: deps.pathAtrisRecordsRuns ?? pathAtrisRecordsRuns() }) : '';
   if (runsText) lines.push(runsText);
   lines.push(...startLines.map(agentStartLineText));
-  if (startLines.some((found) => found.fix)) lines.push(fixStartupHint(cli));
+  if (startLines.some((found) => found.fix)) lines.push(fixStartupHint(command()));
   if (scanWarning) lines.push(scanWarning);
-  lines.push(leaked.length ? `nothing was stopped. run ${cli} engine sweep --apply to stop them.` : 'nothing was stopped.');
+  lines.push(leaked.length ? `nothing was stopped. run ${command()} engine sweep --apply to stop them.` : 'nothing was stopped.');
   lines.push('', ...resourceHistoryLines(history));
   console.log(lines.join('\n'));
   return 0;

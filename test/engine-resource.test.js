@@ -5345,6 +5345,50 @@ test('the landing status repair hint uses the checkout command when the first ex
   }
 });
 
+test('the real cleanup preview checks the launcher only when it prints a command', () => {
+  const { spawnSync } = require('node:child_process');
+  const root = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'sweep-lazy-launcher-')));
+  try {
+    const work = path.join(root, 'work');
+    const bin = path.join(root, 'bin');
+    const home = path.join(root, 'home');
+    for (const dir of [work, bin, home]) fs.mkdirSync(dir);
+    spawnSync('git', ['init', '-q'], { cwd: work });
+    fs.symlinkSync(path.join(__dirname, '..', 'bin', 'atris'), path.join(bin, 'atris'));
+    // Each start of this Node adds a line, so the test can count launcher checks.
+    const runs = path.join(root, 'runs');
+    fs.writeFileSync(path.join(bin, 'node'), `#!/bin/sh\necho run >> '${runs}'\nexec '${process.execPath}' "$@"\n`, { mode: 0o755 });
+    const env = { ...process.env, PATH: [bin, '/bin', '/usr/bin'].join(path.delimiter), HOME: home, ATRIS_AUTO_UPDATE: 'off' };
+    delete env.NODE_TEST_CONTEXT;
+    for (const leaked of [0, 1]) {
+      const preload = path.join(root, `agents-${leaked}.cjs`);
+      fs.writeFileSync(preload, `
+        const resource = require(${JSON.stringify(require.resolve('../lib/engine-resource'))});
+        resource.readSshAgents = () => ({
+          agents: ${leaked} ? [{ pid: 200, ppid: 1, uid: process.getuid(), age_sec: 3600, args: 'ssh-agent -s' }] : [],
+          referenced: new Set(),
+        });
+      `);
+      fs.rmSync(runs, { force: true });
+      const ran = spawnSync(process.execPath, ['--require', preload, path.join(__dirname, '..', 'bin', 'atris.js'), 'engine', 'sweep'], { cwd: work, env, encoding: 'utf8', timeout: 30000 });
+      assert.strictEqual(ran.status, 0, ran.stderr);
+      const checks = fs.existsSync(runs) ? fs.readFileSync(runs, 'utf8').split('\n').filter(Boolean).length : 0;
+      if (leaked) {
+        assert.strictEqual(checks, 1, ran.stdout);
+        assert.match(ran.stdout, /nothing was stopped\. run atris engine sweep --apply to stop them\./);
+      } else {
+        // Nothing leaked and no startup line to fix, so no command is printed and no Node starts.
+        assert.strictEqual(checks, 0, ran.stdout);
+        assert.match(ran.stdout, /0 look leaked/);
+        assert.match(ran.stdout, /\nnothing was stopped\.\n/);
+      }
+      console.log(`real cleanup preview with ${leaked} leaked: ${checks} launcher check, exit ${ran.status}`);
+    }
+  } finally {
+    fs.rmSync(root, { recursive: true, force: true });
+  }
+});
+
 for (const unread of [[], ['process environments'], ['agent sockets'], ['process environments', 'agent sockets']]) {
 test(`landing repair advice survives unreadable history and ${unread.join(' and ') || 'a complete agent scan'}`, () => {
   const { showStatus } = require('../commands/autoland');
