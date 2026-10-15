@@ -46,16 +46,22 @@ Check it \u2014 the error logs from CI.
 Then \u2014 the loop kicks work.
 => Then, the loop kicks work.
 
-# known gaps, from real repo text: "the", one noun, a verb in s, then an
-# object of two or more words. The same shape as "the decision helpers the
-# CLI uses", a phrase, which is why these still splice.
+# from real repo text: "the", one noun, a verb in s, then an object of two
+# or more words is a clause; "-ers" before "the", a word and a verb, a
+# "that" after the verb word, or a number before it make a phrase instead
 Never run git \u2014 the orchestrator lands your work.
-~> Never run git; the orchestrator lands your work.
+=> Never run git; the orchestrator lands your work.
 The params are client-side only \u2014 the server returns the same SSR payload.
-~> The params are client-side only; the server returns the same SSR payload.
+=> The params are client-side only; the server returns the same SSR payload.
 It ships without the strip \u2014 the test proves the fix works.
-~> It ships without the strip; the test proves the fix works.
+=> It ships without the strip; the test proves the fix works.
 Dead numbers \u2014 the machine filters all of that out.
-~> Dead numbers; the machine filters all of that out.
+=> Dead numbers; the machine filters all of that out.
 We kept the memory \u2014 the fix inlines a sync per emission.
-~> We kept the memory; the fix inlines a sync per emission.
+=> We kept the memory; the fix inlines a sync per emission.
+Smoke test \u2014 the phone calls the user.
+=> Smoke test; the phone calls the user.
+Inside the template \u2014 the system prompts that every app inherits.
+=> Inside the template, the system prompts that every app inherits.
+All closed \u2014 the three ways a first run could waste itself.
+=> All closed, the three ways a first run could waste itself.

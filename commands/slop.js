@@ -316,6 +316,18 @@ const NAME_PAIR = '(?:pull\\s+requests|merge\\s+requests|support\\s+tickets|erro
 // place word or a word that ends a longer name after the pair keeps the
 // phrase whole: "the error logs from CI", "the release notes page".
 const NAME_PAIR_CLAUSE_AFTER_DASH = new RegExp(`${CLAUSE_END}\\s*\\u2014\\s*(?=the\\s+${NAME_PAIR}\\s+(?:(?:now|still|already|also|often|always|never)\\s+)?(?!(?:from|of|in|on|for|with|at|by|to|and|or|that|which|who|like|than|as|is|are|was|were)\\b)(?!${NAME_END_WORD}\\b)[a-z]{2,}(?<!s)(?:(?<=ed)[.!?;]|\\s+(?:it|them|the|a|an|this|that|every|all|no|what|why|how|where)\\b))`, 'g');
+// "the", one noun with no "s", a verb in "s" and an object that opens on
+// "the", "a", "your", "all" and kin with more words after it is a clause:
+// "never run git; the orchestrator lands your work". An object of "the",
+// one or two words and a verb in "s" right before a stop or a comma is a
+// clause inside a phrase, so "the decision helpers the CLI uses" and "the
+// live docs the editor renders, with charts" stay; after "proves", "shows",
+// "means" and kin it is a full clause: "the test proves the fix works". A
+// "that" after the word in "s" opens a clause inside a phrase too ("the
+// system prompts that every app inherits"), and a number or a word like
+// "same" before it makes it a plural noun ("the three ways a run fails").
+const THE_OBJECT_CLAUSE_AFTER_DASH = new RegExp(`${CLAUSE_END}\\s*\\u2014\\s*(?=the\\s+(?!${NAME_PAIR}\\b)(?!(?:one|two|three|four|five|six|seven|eight|nine|ten|few|many|several|same|other|first|last|next|main|key|core|new|old|real|whole|exact|only)\\b)(?![a-z]*s\\b)[a-z]{2,}\\s+(?:(?:only|now|still|already|also|never|always|often|just)\\s+)?${PLAIN_VERB_WORD}\\s+(?:the|a|an|your|our|their|its|all|every|each|this|these|those)\\s+[^\\s\\u2014])`, 'g');
+const RELATIVE_OBJECT_PHRASE = /^\s*\u2014\s*the\s+[a-z]+\s+(?:[a-z]+\s+)?(?!(?:proves|shows|means|ensures|confirms|says|assumes|knows|finds)\b)[a-z]+s\s+(?:the|a|an|your|our|their|its|this|these|those)\s+\S+\s+(?:\S+\s+)?[a-z]+s\s*(?:[.!?;,]|$)/;
 const BARE_OBJECT_CLAUSE = new RegExp(`^\\s*\\u2014\\s*the\\s+(?!${NAME_PAIR}\\b)(?![a-z]*s\\b)[a-z]{2,}\\s+${PLAIN_VERB_WORD}\\s+(?!${NAME_END_WORD}\\b)[a-z]{2,}(?=[.!?;]|\\s+(?:into|onto|to|for|from|on|at|with|until)\\s)`);
 // A plain word, then a name, then the verb hides a "that": "a topic Atris
 // sits directly on top of" names a topic, so it keeps its comma. A run of
@@ -995,6 +1007,10 @@ function fixEmDash(s, { endsBlock = false, startsBlock = false, spans = [], abov
     .replace(NAME_PAIR_CLAUSE_AFTER_DASH, (m, at, whole) => {
       const left = clauseLeft(at, whole);
       return left ? clauseJoin(left) : m;
+    })
+    .replace(THE_OBJECT_CLAUSE_AFTER_DASH, (m, at, whole) => {
+      const left = clauseLeft(at, whole);
+      return left && !RELATIVE_OBJECT_PHRASE.test(whole.slice(at)) ? clauseJoin(left) : m;
     })
     .replace(PLAIN_CLAUSE_AFTER_DASH, (m, at, whole) => {
       const left = clauseLeft(at, whole);

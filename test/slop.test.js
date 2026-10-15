@@ -2302,6 +2302,28 @@ test('fix joins "the", a common two-word name and a plain verb as a clause after
   ]);
 });
 
+test('fix joins "the", a noun, a verb in s and a longer object as a clause after a dash', () => {
+  // from real repo text: "Never run git, the orchestrator lands your work"
+  // spliced, since the object ran past one word. A noun in "ers" before a
+  // "the" clause, a "that" after the verb word, or a number before it make
+  // a phrase, so those keep their comma.
+  const file = tmpFile('the-object-clause.md', [
+    'Never run git \u2014 the orchestrator lands your work.',
+    'Dead numbers \u2014 the machine filters all of that out.',
+    'Command tests \u2014 the decision helpers the CLI uses.',
+    'Inside the template \u2014 the system prompts that every app inherits.',
+    'All closed \u2014 the three ways a first run could waste itself.',
+  ].join('\n'));
+  const { changes } = applyFixes([file], RULES);
+  assert.deepEqual(changes.map((c) => c.after), [
+    'Never run git; the orchestrator lands your work.',
+    'Dead numbers; the machine filters all of that out.',
+    'Command tests, the decision helpers the CLI uses.',
+    'Inside the template, the system prompts that every app inherits.',
+    'All closed, the three ways a first run could waste itself.',
+  ]);
+});
+
 test('fix joins "its" or "our", a plural and a plain verb before a number or an object', () => {
   // from a probe of the edge file: "its pages score 67" spliced, since the
   // possessive rule wanted a verb in s, a helper verb or "already". A plain
@@ -4048,14 +4070,14 @@ test('the fix diff script counts known gaps with a "~> " line and never fails on
   // prints its gap line, a closed one does not, and the run still exits 0
   const script = path.join(__dirname, '..', 'scripts', 'slop-fix-diff.js');
   const file = tmpFile('gaps.txt', [
-    String.raw`Never run git \u2014 the orchestrator lands your work.`,
-    '~> Never run git; the orchestrator lands your work.',
+    String.raw`It fixes the gap \u2014 the RL policy learns this automatically.`,
+    '~> It fixes the gap; the RL policy learns this automatically.',
     String.raw`We fixed it \u2014 the loop kicks work.`,
     '~> We fixed it; the loop kicks work.',
   ].join('\n'));
   const r = spawnSync(process.execPath, [script, '--probe-file', file], { encoding: 'utf8', cwd: path.join(__dirname, '..') });
   assert.equal(r.status, 0, r.stdout);
-  assert.match(r.stdout, /^ {2}gap {3}Never run git; the orchestrator lands your work\.$/m);
+  assert.match(r.stdout, /^ {2}gap {3}It fixes the gap; the RL policy learns this automatically\.$/m);
   assert.doesNotMatch(r.stdout, /^ {2}gap {3}We fixed it/m);
   assert.match(r.stdout, /^1 of 2 known gaps still open$/m);
 });
