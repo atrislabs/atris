@@ -3419,7 +3419,7 @@ test('atris engine sweep names the day\'s crowded time limit kills in the same w
       env: { ...process.env, ATRIS_SKIP_UPDATE_CHECK: '1', NODE_NO_WARNINGS: '1' },
     });
     assert.strictEqual(status.status, 0, status.stderr);
-    assert.ok(status.stdout.includes(`all at their time limit (${crowdedText});`), status.stdout);
+    assert.ok(status.stdout.includes(`engine runs force-killed in the last day: 3, all at their time limit (${crowdedText});`), status.stdout);
   } finally {
     fs.rmSync(root, { recursive: true, force: true });
   }
