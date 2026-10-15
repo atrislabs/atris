@@ -2410,3 +2410,5 @@ New-log CRLF follow: `test/member-board.test.js:2353` proves a new log waits for
 In-place equal-size rewrite: `followBoard()` in `lib/member-board.js:831` checks up to 256 bytes behind the cursor before reading, resetting when they change without inode or size changes. Real CLI regression: `test/member-board.test.js:2405`, same inode and size, split replacement step, no stale result or duplicates, clean interrupt. Proof: `atris/runs/member-board-in-place-proof.txt`. Changes entirely outside the sampled bytes are not detected.
 
 Watch shutdown: `test/member-board.test.js:862` checks interrupt cancels the pending log redraw, periodic timer, folder watch, and resize listener. Real narrow-terminal proof: `python3 atris/receipts/member-board-watch-stop-proof.py`.
+
+Late progress folder watch recovery: `lib/member-board.js:1097` retries the folder watch on every timed redraw. `test/member-board.test.js:2977` runs the real terminal proof in `atris/receipts/member-board-watch-recovery-proof.py`, including a later write within two seconds and clean interrupt.

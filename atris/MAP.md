@@ -156,3 +156,5 @@ Split multibyte live follow: `test/member-board.test.js:1807` checks a split emo
 New-log split line endings: `test/member-board.test.js:2353` starts the real follow command with no logs, creates a partial CRLF start, completes a batched step while leaving a result partial, then checks exact events, no duplicates across polling, and clean interrupt. Saved output: `atris/runs/member-board-new-log-crlf-proof.txt`.
 
 Watch shutdown: `test/member-board.test.js:862` checks interrupt cancels the pending log redraw, periodic timer, folder watch, and resize listener. Real narrow-terminal proof: `python3 atris/receipts/member-board-watch-stop-proof.py`.
+
+Late progress folder watch recovery: `test/member-board.test.js:2977` runs `python3 atris/receipts/member-board-watch-recovery-proof.py` in a real 80x3 terminal, waits through a missing-folder timed retry, checks the next retry recovers, then requires a timeout write to redraw before the next timer.

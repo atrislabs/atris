@@ -2972,3 +2972,13 @@ for order in ('resize first', 'resize inside the redraw delay'):
   assert.equal(proof.status, 0, `${proof.stdout}\n${proof.stderr}`);
   if (process.env.ATRIS_BOARD_SHRINK_PROOF) fs.writeFileSync(process.env.ATRIS_BOARD_SHRINK_PROOF, `${proof.stdout}proof exit: ${proof.status}\n`);
 });
+
+
+test('the real watch terminal recovers a late progress folder and watches later writes', { skip: process.platform === 'win32' }, (t) => {
+  const proof = spawnSync('python3', [path.join(repoRoot, 'atris/receipts/member-board-watch-recovery-proof.py'), process.execPath], {
+    encoding: 'utf8', timeout: 20_000,
+  });
+  assert.equal(proof.status, 0, `${proof.stdout}\n${proof.stderr}\n${proof.error || ''}`);
+  assert.match(proof.stdout, /late folder recovered; later write arrived before the next timed redraw/);
+  t.diagnostic(proof.stdout);
+});

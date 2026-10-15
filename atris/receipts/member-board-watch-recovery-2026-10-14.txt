@@ -1,0 +1,23 @@
+The live board now has a real terminal recovery check; the required test command exited 0 with 91 passed, 0 failed, and 0 skipped.
+
+Files edited: test/member-board.test.js; atris/receipts/member-board-watch-recovery-proof.py; atris/MAP.md; atris/refs/MAP-NOTES.md; atris/team/builder/logs/2026-10-14.md (this entry only).
+Artifact: atris/receipts/member-board-watch-recovery-2026-10-14.txt.
+Verify: node --test test/member-board.test.js test/member-result.test.js
+Exit: 0
+Progress: one new real-terminal regression, 90 -> 91 passing tests. It waits through a missing-folder timed retry, creates the folder, verifies recovery on the next retry, and requires the later timeout within two seconds, ahead of the next three-second redraw. Clean interrupt exits 0. No runtime changes or dependencies.
+
+Real command output from the required verification:
+ℹ command: node bin/atris.js member board --watch (80 columns, 3 rows)
+no member progress yet in /tmp/atris-wr-oot2d4jd/progress
+member   state    last result  ago     job            last step
+builder  working  -            3s ago  recover board  -
+member   state        last result  ago     job            last step
+builder  done failed  timed out    3s ago  recover board  -
+exit: 0
+late folder recovered; later write arrived before the next timed redraw
+
+
+Observed next gap: the empty board prints a long progress path without fitting the terminal width. This recovery proof uses a short /tmp path to isolate folder recovery; long empty paths still need their own layout fix.
+Setup: brain activate and compile both exited 2 in plan-only mode; no generated policy files were written. Existing rendered task and member-log changes were preserved.
+next_push: Fit the empty-board progress-path message to narrow terminal widths.
+layer: behaviors
