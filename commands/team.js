@@ -607,6 +607,139 @@ function teamJsonRows(allRows, deps = {}) {
   return [...members, ...others];
 }
 
+// The first paragraph under the title of a MEMBER.md, for files written
+// without a header block. A leading "role:" label is dropped.
+function memberFileOpening(member) {
+  let text = '';
+  try { text = fs.readFileSync(member.path, 'utf8'); } catch { return ''; }
+  const body = text.replace(/^---\r?\n[\s\S]*?\r?\n---\r?\n/, '');
+  const paragraph = [];
+  for (const line of body.split(/\r?\n/)) {
+    const trimmed = line.trim();
+    if (trimmed.startsWith('#') || !trimmed) {
+      if (paragraph.length) break;
+      continue;
+    }
+    paragraph.push(trimmed);
+  }
+  return paragraph.join(' ').replace(/^role:\s*/i, '');
+}
+
+const MEMBER_DOES_MAX = 140;
+
+// What a member does, in its own words: the description, else the role,
+// else the opening of its file. Only the first sentence, so the column
+// stays one idea per member.
+function memberDoes(member) {
+  const role = String(member?.role || '').trim();
+  const candidates = [member?.description, role === '(no role)' ? '' : role, memberFileOpening(member)];
+  const name = String(member?.name || '').trim().toLowerCase();
+  for (const candidate of candidates) {
+    const sentence = String(candidate || '').trim().split(/(?<=\.)\s/)[0]
+      .replace(/[\u2013\u2014]/g, '-')
+      .replace(/\s+/g, ' ')
+      .toLowerCase()
+      .replace(/[.\s]+$/, '');
+    const text = name && sentence.startsWith(name) ? sentence.slice(name.length).replace(/^[\s:,-]+/, '') : sentence;
+    if (!text) continue;
+    if (text.length <= MEMBER_DOES_MAX) return text;
+    const cut = text.slice(0, MEMBER_DOES_MAX);
+    return `${cut.slice(0, cut.lastIndexOf(' ')).replace(/[\s,;:-]+$/, '')}…`;
+  }
+  return 'no role written yet';
+}
+
+// `atris member roster`: one line per member with the full name, working or
+// idle, the engine it really runs on, and what it does. Same facts as the
+// team table: a live run in this project means working, the lineup names
+// the engine. Parked members leave the list unless `all`.
+function memberRosterRows(members, { lineup = null, liveRuns = [], parked = new Set(), all = false } = {}) {
+  const runsByMember = new Map();
+  for (const run of Array.isArray(liveRuns) ? liveRuns : []) {
+    const key = String(run.member || '').trim().toLowerCase();
+    if (key && !runsByMember.has(key)) runsByMember.set(key, run);
+  }
+  const rows = members.map((member) => {
+    const key = String(member.name || '').trim().toLowerCase();
+    const run = runsByMember.get(key);
+    const place = memberLineup(lineup, key);
+    const isParked = parked.has(member.name) || isParkedFrontmatter(member.frontmatter);
+    return {
+      name: member.name,
+      state: run ? 'working' : isParked ? 'parked' : 'idle',
+      engine: run ? liveRunEngineText(run) : place && place.engine ? placedEngineText(place) : 'not set',
+      does: memberDoes(member),
+      parked: isParked,
+    };
+  });
+  const order = { working: 0, idle: 1, parked: 2 };
+  return rows
+    .filter((row) => all || !row.parked || row.state === 'working')
+    .sort((a, b) => order[a.state] - order[b.state] || a.name.localeCompare(b.name));
+}
+
+const MEMBER_ROSTER_COLUMNS = Object.freeze([
+  { header: 'MEMBER' },
+  { header: 'STATUS' },
+  { header: 'ENGINE' },
+  { header: 'WHAT IT DOES', wrap: true, min: 20 },
+]);
+
+function renderMemberRoster(members, deps = {}) {
+  if (!members.length) return 'no team members yet. create one with: atris member create <name> --role="..."';
+  const width = terminalWidth(deps.termWidth);
+  const rows = memberRosterRows(members, deps);
+  const lines = [renderTable(MEMBER_ROSTER_COLUMNS, rows.map((row) => [row.name, row.state, row.engine, row.does]), { width })];
+  const working = rows.filter((row) => row.state === 'working').length;
+  lines.push('', `${rows.length} ${rows.length === 1 ? 'member' : 'members'}, ${working} working now.`);
+  const shown = new Set(rows.map((row) => row.name));
+  const hidden = members.filter((member) => !shown.has(member.name)).map((member) => member.name);
+  if (hidden.length) {
+    const names = [...hidden];
+    names[0] = `parked (${hidden.length}): ${names[0]}`;
+    names[names.length - 1] = `${names[names.length - 1]} · atris member roster --all to show them`;
+    lines.push(wrapCommaNames(names, width));
+  }
+  return lines.join('\n');
+}
+
+function memberRosterCommand(args = [], deps = {}) {
+  const root = deps.root || process.cwd();
+  const members = (deps.members || collectMembers(root, deps)).filter((member) => !isTemplateMember(member));
+  const parked = new Set(members.filter((member) => isMemberParked(root, member.name)).map((member) => member.name));
+  const lineup = deps.lineup !== undefined ? deps.lineup : readLineupSafe(root, deps.lineupNow || new Date());
+  const liveRuns = Array.isArray(deps.liveRuns) ? deps.liveRuns : liveRunsInProject(listLiveEngineRuns(deps), root, deps);
+  const view = { lineup: lineup && lineup.ok ? lineup : null, liveRuns, parked, all: args.includes('--all') };
+  const write = deps.write || ((text) => process.stdout.write(text));
+  if (args.includes('--json')) {
+    const byName = new Map(memberRosterRows(members, { ...view, all: true }).map((row) => [row.name, row]));
+    write(`${JSON.stringify({
+      ok: true,
+      count: members.length,
+      members: members.map((member) => {
+        const row = byName.get(member.name);
+        return {
+          name: member.name,
+          ...(row.parked ? { parked: true } : {}),
+          state: row.state,
+          engine: row.engine,
+          does: row.does,
+          role: member.role,
+          format: member.format,
+          skills: member.format === 'directory' ? member.skillCount : null,
+          context: member.format === 'directory' ? member.contextCount : null,
+          version: member.version || null,
+        };
+      }),
+    }, null, 2)}\n`);
+    return 0;
+  }
+  const output = renderMemberRoster(members, { ...view, termWidth: deps.termWidth });
+  if (deps.lineup === undefined && lineup && !lineup.ok) write(`${output}\n\n${LINEUP_UNREADABLE}\n`);
+  else write(`${output}\n`);
+  return 0;
+}
+
 function renderTeamRosterHtml(allRows, meta = {}) {
   const rosterRows = withParkedLabels(allRows, Boolean(meta.all)).rows;
   const activeRows = rosterRows.filter((entry) => entry.active);
@@ -1005,6 +1138,9 @@ module.exports = {
   collectTeamPrune,
   recordMemberActivity,
   collectTeamRoster,
+  memberRosterCommand,
+  memberRosterRows,
+  renderMemberRoster,
   renderTeamPrune,
   renderTeamRoster,
   teamCommand,
