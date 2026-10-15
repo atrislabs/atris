@@ -2324,6 +2324,26 @@ test('fix joins "the", a noun, a verb in s and a longer object as a clause after
   ]);
 });
 
+test('fix joins "the", a two-word noun, a verb in s and a longer object as a clause after a dash', () => {
+  // from real repo text: "the RL policy learns this automatically" spliced,
+  // since the subject ran past one noun. An object of "the" and up to three
+  // words before a verb in s stays a phrase, and so does a "that" after the
+  // first word.
+  const file = tmpFile('the-two-word-subject.md', [
+    'Off now means off \u2014 the overnight loop stops the moment you flip the switch.',
+    'It reads one store \u2014 the rendering library wraps a single store.',
+    'Author block documents \u2014 the live markdown docs the Atris (obelisk) editor renders, with charts.',
+    'Quality drops \u2014 the texture that makes the analysis read well.',
+  ].join('\n'));
+  const { changes } = applyFixes([file], RULES);
+  assert.deepEqual(changes.map((c) => c.after), [
+    'Off now means off; the overnight loop stops the moment you flip the switch.',
+    'It reads one store; the rendering library wraps a single store.',
+    'Author block documents, the live markdown docs the Atris (obelisk) editor renders, with charts.',
+    'Quality drops, the texture that makes the analysis read well.',
+  ]);
+});
+
 test('fix joins "its" or "our", a plural and a plain verb before a number or an object', () => {
   // from a probe of the edge file: "its pages score 67" spliced, since the
   // possessive rule wanted a verb in s, a helper verb or "already". A plain
@@ -4070,14 +4090,14 @@ test('the fix diff script counts known gaps with a "~> " line and never fails on
   // prints its gap line, a closed one does not, and the run still exits 0
   const script = path.join(__dirname, '..', 'scripts', 'slop-fix-diff.js');
   const file = tmpFile('gaps.txt', [
-    String.raw`It fixes the gap \u2014 the RL policy learns this automatically.`,
-    '~> It fixes the gap; the RL policy learns this automatically.',
+    String.raw`Same principle \u2014 the system learns relevance instead of having it prescribed.`,
+    '~> Same principle; the system learns relevance instead of having it prescribed.',
     String.raw`We fixed it \u2014 the loop kicks work.`,
     '~> We fixed it; the loop kicks work.',
   ].join('\n'));
   const r = spawnSync(process.execPath, [script, '--probe-file', file], { encoding: 'utf8', cwd: path.join(__dirname, '..') });
   assert.equal(r.status, 0, r.stdout);
-  assert.match(r.stdout, /^ {2}gap {3}It fixes the gap; the RL policy learns this automatically\.$/m);
+  assert.match(r.stdout, /^ {2}gap {3}Same principle; the system learns relevance instead of having it prescribed\.$/m);
   assert.doesNotMatch(r.stdout, /^ {2}gap {3}We fixed it/m);
   assert.match(r.stdout, /^1 of 2 known gaps still open$/m);
 });

@@ -65,3 +65,20 @@ Inside the template \u2014 the system prompts that every app inherits.
 => Inside the template, the system prompts that every app inherits.
 All closed \u2014 the three ways a first run could waste itself.
 => All closed, the three ways a first run could waste itself.
+
+# from real repo text: a two-word subject ("the RL policy", "the rendering
+# library") reads the same as one noun; an object of "the", up to three
+# words and a verb in s after it still makes a phrase, and so does a "that"
+# after the first word
+It answers "which examples are useful" \u2014 the RL policy learns this automatically.
+=> It answers "which examples are useful"; the RL policy learns this automatically.
+Off now means off \u2014 the overnight loop stops the moment you flip the switch.
+=> Off now means off; the overnight loop stops the moment you flip the switch.
+It reads one store \u2014 the rendering library wraps a single `usePulseStream` and fans state out.
+=> It reads one store; the rendering library wraps a single `usePulseStream` and fans state out.
+The core \u2014 the block pipeline prompts the CLI uses.
+=> The core, the block pipeline prompts the CLI uses.
+Author block documents \u2014 the live markdown docs the Atris (obelisk) editor renders, with charts.
+=> Author block documents, the live markdown docs the Atris (obelisk) editor renders, with charts.
+Quality drops \u2014 the texture that makes the analysis read well needs Opus.
+~> Quality drops; the texture that makes the analysis read well needs Opus.

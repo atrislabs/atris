@@ -326,8 +326,12 @@ const NAME_PAIR_CLAUSE_AFTER_DASH = new RegExp(`${CLAUSE_END}\\s*\\u2014\\s*(?=t
 // "that" after the word in "s" opens a clause inside a phrase too ("the
 // system prompts that every app inherits"), and a number or a word like
 // "same" before it makes it a plural noun ("the three ways a run fails").
-const THE_OBJECT_CLAUSE_AFTER_DASH = new RegExp(`${CLAUSE_END}\\s*\\u2014\\s*(?=the\\s+(?!${NAME_PAIR}\\b)(?!(?:one|two|three|four|five|six|seven|eight|nine|ten|few|many|several|same|other|first|last|next|main|key|core|new|old|real|whole|exact|only)\\b)(?![a-z]*s\\b)[a-z]{2,}\\s+(?:(?:only|now|still|already|also|never|always|often|just)\\s+)?${PLAIN_VERB_WORD}\\s+(?:the|a|an|your|our|their|its|all|every|each|this|these|those)\\s+[^\\s\\u2014])`, 'g');
-const RELATIVE_OBJECT_PHRASE = /^\s*\u2014\s*the\s+[a-z]+\s+(?:[a-z]+\s+)?(?!(?:proves|shows|means|ensures|confirms|says|assumes|knows|finds)\b)[a-z]+s\s+(?:the|a|an|your|our|their|its|this|these|those)\s+\S+\s+(?:\S+\s+)?[a-z]+s\s*(?:[.!?;,]|$)/;
+// Two words with no "s" read as one noun: "the RL policy learns this", "the
+// rendering library wraps a store". A "that" or "which" as the second word
+// opens a clause inside a phrase, and the phrase object may run three words:
+// "the live markdown docs the Atris (obelisk) editor renders, with charts".
+const THE_OBJECT_CLAUSE_AFTER_DASH = new RegExp(`${CLAUSE_END}\\s*\\u2014\\s*(?=the\\s+(?!${NAME_PAIR}\\b)(?!(?:one|two|three|four|five|six|seven|eight|nine|ten|few|many|several|same|other|first|last|next|main|key|core|new|old|real|whole|exact|only)\\b)(?:(?![A-Za-z-]*s\\b)(?:[A-Z]{2,}|[a-z][a-z-]*[a-z])\\s+(?!(?:that|which|who)\\b))?(?![a-z]*s\\b)[a-z]{2,}\\s+(?:(?:only|now|still|already|also|never|always|often|just)\\s+)?${PLAIN_VERB_WORD}\\s+(?:the|a|an|your|our|their|its|all|every|each|this|these|those)\\s+[^\\s\\u2014])`, 'g');
+const RELATIVE_OBJECT_PHRASE = /^\s*\u2014\s*the\s+[A-Za-z][\w-]*\s+(?:[a-z][\w-]*\s+)?(?!(?:proves|shows|means|ensures|confirms|says|assumes|knows|finds)\b)[a-z]+s\s+(?:the|a|an|your|our|their|its|this|these|those)\s+\S+\s+(?:\S+\s+){0,2}[a-z]+s\s*(?:[.!?;,]|$)/;
 const BARE_OBJECT_CLAUSE = new RegExp(`^\\s*\\u2014\\s*the\\s+(?!${NAME_PAIR}\\b)(?![a-z]*s\\b)[a-z]{2,}\\s+${PLAIN_VERB_WORD}\\s+(?!${NAME_END_WORD}\\b)[a-z]{2,}(?=[.!?;]|\\s+(?:into|onto|to|for|from|on|at|with|until)\\s)`);
 // A plain word, then a name, then the verb hides a "that": "a topic Atris
 // sits directly on top of" names a topic, so it keeps its comma. A run of
