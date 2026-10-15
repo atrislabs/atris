@@ -1386,7 +1386,7 @@ test('every launch of an engine program by name records its run or is named as e
 test('every engine started through a runner or profile variable records its run or is named as exempt', () => {
   // The program is a variable or a call, like a runner binary, a profile's
   // bin, or an engine invocation's command.
-  const VAR_LAUNCH = /\b(?:spawn|spawnSync|execFile|execFileSync|spawnWithOutputChunks|runInReapedProcessGroup)\(\s*([A-Za-z_$][\w$]*(?:\.[\w$]+)*)(\(\))?\s*,\s*(\[[^\]]*\])?/g;
+  const VAR_LAUNCH = /\b(?:spawn|spawnSync|execFile|execFileSync|spawnWithOutputChunks|runInReapedProcessGroup)\s*\(\s*([A-Za-z_$][\w$]*(?:\.[\w$]+)*)(\(\))?\s*,\s*(\[[^\]]*\])?/g;
   // It is an engine when the call, or the variable's declaration in the same
   // function, names an engine program or an engine or runner resolver.
   const ENGINE_SOURCE = new RegExp(`['"\`](?:${ENGINE_NAMES})['"\`]|\\b[\\w$]*(?:Engine|engine|Runner|runner)[\\w$]*\\(`);
@@ -1738,6 +1738,19 @@ test('every engine started through a runner or profile variable records its run 
     return { seen, missing, routes, traced, exempted: [...exempted] };
   };
   const planted = (text) => engineLaunches('commands/planted.js', text).missing;
+  // Launch helpers accept whitespace before their own opening parenthesis.
+  for (const helper of ['spawn', 'spawnSync', 'execFile', 'execFileSync', 'spawnWithOutputChunks', 'runInReapedProcessGroup']) {
+    for (const gap of [' ', '\t', '\n']) {
+      const call = (program, args = 'args') => `${helper}${gap}(${program}, ${args});`;
+      assert.deepStrictEqual(planted(`const runner = resolveClaudeRunnerBin();\n${call('runner')}\n`), ['commands/planted.js:2 runner']);
+      assert.deepStrictEqual(planted(`const profile = resolveEngineProfile();\n${call('profile.bin')}\n`), ['commands/planted.js:2 profile.bin']);
+      assert.deepStrictEqual(planted(`${call('resolveClaudeRunnerBin()')}\n`), ['commands/planted.js:1 resolveClaudeRunnerBin()']);
+      assert.deepStrictEqual(planted(`const runner = resolveClaudeRunnerBin();\nstartEngineRun(root);\n${call('runner')}\n`), []);
+      assert.deepStrictEqual(planted(`const runner = resolveClaudeRunnerBin();\n${call('runner', "['--help']")}\n`), []);
+      assert.deepStrictEqual(planted(`const runner = 'git';\n${call('runner')}\n`), []);
+      assert.deepStrictEqual(planted(`function launch(runner) {\n  ${call('runner')}\n}\nlaunch(resolveClaudeRunnerBin());\n`), ['commands/planted.js:2 runner']);
+    }
+  }
   // Spaces and line breaks before the call parentheses do not change its arguments.
   for (const gap of [' ', '\t', '\n']) {
     const spaced = (argument, body = '  spawnSync(runner, args);') => planted(`function launch(runner) {\n${body}\n}\nlaunch${gap}(${argument});\n`);
