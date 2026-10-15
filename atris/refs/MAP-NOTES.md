@@ -2372,3 +2372,14 @@ Verify: `npm run test:fast && node --test test/ax.test.js test/runner-command.te
 verdict and real CLI evidence. `lib/member-task-pick.js:69` returns check reasons
 before job mismatch; `commands/member.js:10696` collapses selection failure into
 the generic idle message. Keep member eligibility separate from reporting.
+
+## Engine-dependent test isolation plan
+
+`atris/receipts/engine-test-isolation-review-2026-10-14.md:7` records the advisory
+verdict. `lib/runner-command.js:198` reads the inherited engine profile;
+`commands/autopilot.js:3310` uses it for horizon proposals.
+`test/lesson-gate.test.js:85` intercepts only Claude commands and line 98
+executes unmatched commands. Failing default-format cases at
+`test/runner-command.test.js:342` and `test/runner-command.test.js:388`
+bypass the existing environment helper. Isolate tests and reject unexpected
+model execution, preserving runtime engine selection.

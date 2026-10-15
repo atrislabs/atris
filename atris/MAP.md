@@ -22,6 +22,7 @@ checks the refs in both files; `atris doc-health --fix-refs` moves drifted ones.
 | task database and TODO markdown renderer | `lib/task-db.js` | SQLite task store, renderTodoMarkdown |
 | where ~/.atris state lives (test fence) | `lib/state-home.js`, `lib/task-db.js:191` | under node --test with the real home, tasks.db and other ~/.atris files go to a throwaway folder; ATRIS_TEST_REAL_HOME=1 opts back in; `test/test-state-fence.test.js` |
 | task command surface | `commands/task.js` | claim, ready, accept, render, keep, day |
+| engine-dependent test isolation plan | `atris/receipts/engine-test-isolation-review-2026-10-14.md` | inherited runner profile bypasses Claude-only test interception; advisory safeguard rejects unexpected model launches |
 | review of member-specific waiting-work explanations | `atris/receipts/assigned-work-waiting-review-2026-10-14.md` | advisory plan verdict; missing-check reasons precede job matching, so reporting must first exclude other members' work |
 | returned or interrupted jobs resume for their idle member | `lib/member-task-pick.js`, `lib/task-db.js`, `commands/member.js` | idle members can release and retake their own claimed jobs with the same check and hold gates; known dead mission processes no longer keep the member busy; missing process records still hold; `test/task-reopen.test.js` |
 | task list keeper | `lib/task-list-keeper.js` | one lookup; puts away only rows ready to leave |
