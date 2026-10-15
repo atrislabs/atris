@@ -845,15 +845,45 @@ test('pack inspect shows canonical permissions as enforced tools, not manifest d
   }
 });
 
-test('pack inspect distinguishes available, missing, invalid, and absent verifier declarations without running them', () => {
+test('pack inspect distinguishes available, missing, invalid, and absent verifier declarations without running them', async () => {
   const dir = makeTempDir();
   try {
-    const target = path.join(dir, 'verifier-pack');
-    writePackDir(target, { slug: 'verifier-pack', verifier: 'VERIFY.md' });
-    fs.mkdirSync(path.join(target, 'atris'), { recursive: true });
+    // Inspect only reads, so each verifier state gets its own copy of the pack,
+    // built with the same cumulative edits, and all six reads run at once.
+    const writeVerifierPack = (name, verifier) => {
+      const packDir = path.join(dir, name);
+      writePackDir(packDir, { slug: 'verifier-pack', verifier: 'VERIFY.md' });
+      fs.mkdirSync(path.join(packDir, 'atris'), { recursive: true });
+      if (verifier === 'VERIFY.md') return packDir;
+      const manifestPath = path.join(packDir, 'pack.json');
+      const manifest = JSON.parse(fs.readFileSync(manifestPath, 'utf8'));
+      if (verifier === undefined) delete manifest.verifier;
+      else manifest.verifier = verifier;
+      fs.writeFileSync(manifestPath, `${JSON.stringify(manifest, null, 2)}\n`, 'utf8');
+      return packDir;
+    };
+    const writeRuntimeReceipt = (packDir) => {
+      fs.mkdirSync(path.join(packDir, '.atris', 'state'), { recursive: true });
+      fs.writeFileSync(path.join(packDir, '.atris', 'state', 'receipt.md'), '# runtime state is not pack content\n', 'utf8');
+    };
+    const target = writeVerifierPack('verifier-pack', 'VERIFY.md');
     fs.writeFileSync(path.join(target, 'atris', 'VERIFY.md'), '# bounded verification instructions\n', 'utf8');
+    const missingTarget = writeVerifierPack('missing-verifier-pack', 'VERIFY.md');
+    const invalidTarget = writeVerifierPack('invalid-verifier-pack', '../outside.md');
+    const runtimeTarget = writeVerifierPack('runtime-verifier-pack', '.atris/state/receipt.md');
+    writeRuntimeReceipt(runtimeTarget);
+    const absentTarget = writeVerifierPack('absent-verifier-pack', undefined);
+    writeRuntimeReceipt(absentTarget);
 
-    const available = runCli(['pack', 'inspect', target, '--json'], { cwd: dir });
+    const inspectJson = (packDir) => runCliAsync(['pack', 'inspect', packDir, '--json'], { cwd: dir });
+    const [available, human, missingRun, invalidRun, runtimeRun, absentRun] = await Promise.all([
+      inspectJson(target),
+      runCliAsync(['pack', 'inspect', target], { cwd: dir }),
+      inspectJson(missingTarget),
+      inspectJson(invalidTarget),
+      inspectJson(runtimeTarget),
+      inspectJson(absentTarget),
+    ]);
     assert.equal(available.status, 0, `stdout:\n${available.stdout}\nstderr:\n${available.stderr}`);
     assert.deepEqual(JSON.parse(available.stdout).contract.verifier, {
       status: 'available',
@@ -862,12 +892,10 @@ test('pack inspect distinguishes available, missing, invalid, and absent verifie
       executed: false,
       reason: null,
     });
-    const human = runCli(['pack', 'inspect', target], { cwd: dir });
     assert.equal(human.status, 0);
     assert.match(human.stdout, /verifier: VERIFY.md \(resolved to atris\/VERIFY.md; not run\)/);
 
-    fs.rmSync(path.join(target, 'atris', 'VERIFY.md'));
-    const missing = JSON.parse(runCli(['pack', 'inspect', target, '--json'], { cwd: dir }).stdout);
+    const missing = JSON.parse(missingRun.stdout);
     assert.deepEqual(missing.contract.verifier, {
       status: 'missing',
       declared: 'VERIFY.md',
@@ -876,11 +904,7 @@ test('pack inspect distinguishes available, missing, invalid, and absent verifie
       reason: 'verifier file is missing: VERIFY.md',
     });
 
-    const manifestPath = path.join(target, 'pack.json');
-    const manifest = JSON.parse(fs.readFileSync(manifestPath, 'utf8'));
-    manifest.verifier = '../outside.md';
-    fs.writeFileSync(manifestPath, `${JSON.stringify(manifest, null, 2)}\n`, 'utf8');
-    const invalid = JSON.parse(runCli(['pack', 'inspect', target, '--json'], { cwd: dir }).stdout);
+    const invalid = JSON.parse(invalidRun.stdout);
     assert.deepEqual(invalid.contract.verifier, {
       status: 'invalid',
       declared: '../outside.md',
@@ -889,11 +913,7 @@ test('pack inspect distinguishes available, missing, invalid, and absent verifie
       reason: 'verifier must be one canonical relative file path',
     });
 
-    fs.mkdirSync(path.join(target, '.atris', 'state'), { recursive: true });
-    fs.writeFileSync(path.join(target, '.atris', 'state', 'receipt.md'), '# runtime state is not pack content\n', 'utf8');
-    manifest.verifier = '.atris/state/receipt.md';
-    fs.writeFileSync(manifestPath, `${JSON.stringify(manifest, null, 2)}\n`, 'utf8');
-    const runtimeState = JSON.parse(runCli(['pack', 'inspect', target, '--json'], { cwd: dir }).stdout);
+    const runtimeState = JSON.parse(runtimeRun.stdout);
     assert.deepEqual(runtimeState.contract.verifier, {
       status: 'invalid',
       declared: '.atris/state/receipt.md',
@@ -902,9 +922,7 @@ test('pack inspect distinguishes available, missing, invalid, and absent verifie
       reason: 'verifier must resolve to a regular pack content file: .atris/state/receipt.md',
     });
 
-    delete manifest.verifier;
-    fs.writeFileSync(manifestPath, `${JSON.stringify(manifest, null, 2)}\n`, 'utf8');
-    const absent = JSON.parse(runCli(['pack', 'inspect', target, '--json'], { cwd: dir }).stdout);
+    const absent = JSON.parse(absentRun.stdout);
     assert.deepEqual(absent.contract.verifier, {
       status: 'absent',
       declared: null,

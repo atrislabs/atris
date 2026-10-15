@@ -315,9 +315,11 @@ Live card history status batching: `test/commands.test.js:14797` awaits the plai
 
 Archive export and status batching: `test/commands.test.js:14848` awaits the export and json status together after the first render. Both build the same projection and differ only in its fixed-length generated time, so overlapping writes still leave a whole file. Five sequential CLI stages become four; every assertion remains.
 
-Pack inspect envelope batching: `test/pack.test.js:1079` writes every fixture first, then awaits all seven inspect reads together. Inspect only reads, and the slug scan skips broken folders, so the added fixtures change no answer. Seven sequential CLI stages become one; every assertion remains.
+Pack inspect envelope batching: `test/pack.test.js:1097` writes every fixture first, then awaits all seven inspect reads together. Inspect only reads, and the slug scan skips broken folders, so the added fixtures change no answer. Seven sequential CLI stages become one; every assertion remains.
 
-Pack doctor envelope batching: `test/pack.test.js:1512` writes both fixtures first, then awaits all six doctor reads together. Doctor only reads, through the same slug scan as inspect, so the earlier fixtures change no answer. Six sequential CLI stages become one; every assertion remains.
+Pack doctor envelope batching: `test/pack.test.js:1530` writes both fixtures first, then awaits all six doctor reads together. Doctor only reads, through the same slug scan as inspect, so the earlier fixtures change no answer. Six sequential CLI stages become one; every assertion remains.
+
+Pack verifier states batching: `test/pack.test.js:879` builds one pack folder per verifier state with the same cumulative edits the old single folder took, then awaits all six inspect reads together. Inspect reaches no file writes or child launches. Six sequential CLI stages become one; every assertion remains.
 
 Certified review fallback read batching: `test/commands.test.js:12603` overlaps the two next reads after certification and before creation. Six sequential CLI stages become five; all assertions remain. Details: `atris/refs/MAP-NOTES.md`.
 
