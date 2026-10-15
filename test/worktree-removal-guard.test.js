@@ -301,8 +301,8 @@ test('fleet review cleanup keeps a sandbox while git updates a branch in either 
 });
 
 // Paused work in one store and a lock in another: every store stays, and the
-// report names the hold in the first busy store, work folder first.
-test('fleet review cleanup keeps every store when paused work and a lock sit in different stores', () => {
+// report names both holds, work folder first, so one pass can clear them.
+test('fleet review cleanup keeps every store and names both holds when paused work and a lock sit in different stores', () => {
   for (const pausedFirst of [true, false]) {
     const { base, repo, wt, boundary } = reviewSandbox();
     try {
@@ -312,13 +312,17 @@ test('fleet review cleanup keeps every store when paused work and a lock sit in 
       const paused = pausedFirst ? path.join(worktreeGitDir(wt), 'rebase-merge') : path.join(boundary.quarantine, 'rebase-merge');
       fs.writeFileSync(lock, '');
       fs.mkdirSync(paused);
-      const { lock_age_ms: age, ...result } = disposeReviewSandbox(boundary);
+      const result = disposeReviewSandbox(boundary);
       const label = pausedFirst ? 'paused in the work folder' : 'lock in the work folder';
+      const rebase = { reason: 'git_rebase_in_progress', paused: 'a rebase is paused' };
+      const held = { reason: 'git_lock', lock, lock_age_ms: result.lock_age_ms ?? result.also?.[0]?.lock_age_ms };
+      assert.equal(typeof held.lock_age_ms, 'number', label);
       assert.deepEqual(result, pausedFirst
-        ? { removed: false, reason: 'git_rebase_in_progress', paused: 'a rebase is paused' }
-        : { removed: false, reason: 'git_lock', lock }, label);
-      assert.equal(describeGitHold(result.reason === 'git_lock' ? { ...result, lock_age_ms: age } : result),
-        pausedFirst ? 'a rebase is paused' : `git holds ${lock}, under a minute old`, label);
+        ? { removed: false, ...rebase, also: [held] }
+        : { removed: false, ...held, also: [rebase] }, label);
+      const lockWords = `git holds ${lock}, under a minute old`;
+      assert.equal(describeGitHold(result),
+        pausedFirst ? `a rebase is paused and ${lockWords}` : `${lockWords} and a rebase is paused`, label);
       assert.ok([wt, boundary.gitDir, boundary.quarantine, lock, paused].every((file) => fs.existsSync(file)), label);
       assert.deepEqual(removalLines(repo), [], label);
     } finally {

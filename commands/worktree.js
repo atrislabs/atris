@@ -1314,16 +1314,11 @@ function describePausedGitWork(reason) {
   return PAUSED_GIT_WORK[reason] ? `${PAUSED_GIT_WORK[reason]} is paused` : null;
 }
 
-// The one check every cleanup runs before it removes a folder git may be busy
-// in: tidy, reap, worktree cleanup, fleet review and the autopilot regression
-// check. Looks at the folder's own store, then any extra stores the caller
-// will also delete, and returns null when git is idle in all of them. A held
-// lock names its file and age; paused work names what to finish.
-function gitHold({ worktree = null, stores = [], now = Date.now() } = {}) {
-  const dirs = [worktree ? worktreeGitDir(worktree) : null, ...stores].filter(Boolean);
-  const reason = dirs.map(gitStoreActivity).find(Boolean);
+// What git is busy with in one store, or null when it is idle there.
+function storeGitHold(gitDir, now) {
+  const reason = gitStoreActivity(gitDir);
   if (!reason) return null;
-  const lock = reason === 'git_lock' ? dirs.map((dir) => gitStoreLock(dir, now)).find(Boolean) : null;
+  const lock = reason === 'git_lock' ? gitStoreLock(gitDir, now) : null;
   const paused = describePausedGitWork(reason);
   return {
     reason,
@@ -1332,12 +1327,28 @@ function gitHold({ worktree = null, stores = [], now = Date.now() } = {}) {
   };
 }
 
+// The one check every cleanup runs before it removes a folder git may be busy
+// in: tidy, reap, worktree cleanup, fleet review and the autopilot regression
+// check. Looks at the folder's own store, then any extra stores the caller
+// will also delete, and returns null when git is idle in all of them. A held
+// lock names its file and age; paused work names what to finish. The first
+// busy store sets the reason; holds in later stores ride along in `also`, so
+// one report can name everything to clear.
+function gitHold({ worktree = null, stores = [], now = Date.now() } = {}) {
+  const dirs = [...new Set([worktree ? worktreeGitDir(worktree) : null, ...stores].filter(Boolean))];
+  const [first, ...also] = dirs.map((dir) => storeGitHold(dir, now)).filter(Boolean);
+  if (!first) return null;
+  return also.length ? { ...first, also } : first;
+}
+
 // The same words for a git hold in every command that keeps a folder for one.
 // Anything that is not a git hold gets null, so callers can pass any kept row.
 function describeGitHold(hold) {
   if (!hold || !String(hold.reason || '').startsWith('git_')) return null;
-  if (hold.lock) return `git holds ${hold.lock}, ${describeLockAge(hold.lock_age_ms)} old`;
-  return hold.paused || describePausedGitWork(hold.reason) || 'git is in the middle of something';
+  const words = (one) => (one.lock
+    ? `git holds ${one.lock}, ${describeLockAge(one.lock_age_ms)} old`
+    : one.paused || describePausedGitWork(one.reason) || 'git is in the middle of something');
+  return [hold, ...(hold.also || [])].map(words).join(' and ');
 }
 
 // Every work-folder removal leaves one line naming who removed it and why, in
