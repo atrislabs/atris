@@ -511,6 +511,33 @@ function callText(lines, index) {
   return lines.slice(index, index + 12).join('\n');
 }
 
+// A line with its quoted text, regex text, and trailing comment emptied, so
+// a brace inside '{' or /\{\{/ never opens or closes a helper.
+function codeOnly(line) {
+  if (COMMENT_LINE.test(line)) return '';
+  return line
+    .replace(/'(?:\\.|[^'\\])*'|"(?:\\.|[^"\\])*"|`(?:\\.|[^`\\])*`/g, '""')
+    .replace(/(^|[(,=:[!&|?{};]|\breturn)(\s*)\/(?![*/])(?:\\.|\[(?:\\.|[^\]\\])*\]|[^/\\[])+\/[a-z]*/g, '$1$20')
+    .replace(/\/\/.*$/, '');
+}
+
+// The line that closes the brace a helper opens, or, for an arrow with no
+// braces, the line that ends its expression with a comma or semicolon once
+// every bracket it opened is closed.
+function helperEnd(lines, index) {
+  let depth = 0;
+  let opened = false;
+  for (let end = index; end < lines.length; end++) {
+    const code = codeOnly(lines[end]);
+    for (const ch of code) {
+      if (ch === '{') opened = true;
+      if ('{[('.includes(ch)) depth++; else if ('}])'.includes(ch)) depth--;
+    }
+    if (depth <= 0 && (opened || /[;,]\s*$/.test(code))) return end;
+  }
+  return lines.length - 1;
+}
+
 // Keywords whose line can look like a method or helper start.
 const NOT_A_HELPER = new Set(['if', 'for', 'while', 'switch', 'catch', 'function', 'return']);
 // A delete belongs to the top-level function around it: a plain function, a
@@ -531,24 +558,30 @@ function ownerStarts(lines) {
 
 function worktreeRemovalSites(file) {
   const lines = fs.readFileSync(path.join(__dirname, '..', file), 'utf8').split('\n');
-  const starts = ownerStarts(lines);
+  const starts = ownerStarts(lines).map((start) => ({ ...start, end: helperEnd(lines, start.index) }));
   const sites = [];
   lines.forEach((line, index) => {
     if (COMMENT_LINE.test(line)) return;
     const call = /\brm(?:dir)?(?:Sync)?\(|['"]rm['"]\s*,/.test(line) ? callText(lines, index) : line;
     const named = WORKTREE_REMOVAL.test(call);
     if (!named && !RECURSIVE_DELETE.test(call)) return;
-    const owner = starts.filter((start) => start.index <= index).pop();
+    // A function's lines run to its closing brace. A delete outside every
+    // function is read from the end of the last function above it, so that
+    // function's git check never counts for it.
+    const owner = starts.filter((start) => start.index <= index && index <= start.end).pop();
     const next = starts.find((start) => start.index > index);
+    const from = owner ? owner.index : starts.filter((start) => start.end < index)
+      .reduce((at, start) => Math.max(at, start.end + 1), 0);
+    const to = owner ? owner.end + 1 : next ? next.index : lines.length;
     // Comments are dropped so a note naming the check never counts as the check.
     const code = (from, to) => lines.slice(from, to)
       .filter((text) => !COMMENT_LINE.test(text))
       .map((text) => text.replace(/\s\/\/.*$/, ''))
       .join('\n');
-    const body = code(owner ? owner.index : 0, next ? next.index : lines.length);
+    const body = code(from, to);
     if (!named && !HANDLES_WORKTREES.test(body)) return;
     // The function's code above the delete, where its git check has to sit.
-    const before = code(owner ? owner.index : 0, index);
+    const before = code(from, index);
     sites.push({ key: `${file}:${owner ? owner.name : '(top level)'}`, line: index + 1, call, body, before });
   });
   return sites;
@@ -804,33 +837,6 @@ function passedInDeletes(file, text) {
     }
     return [];
   });
-}
-
-// A line with its quoted text, regex text, and trailing comment emptied, so
-// a brace inside '{' or /\{\{/ never opens or closes a helper.
-function codeOnly(line) {
-  if (COMMENT_LINE.test(line)) return '';
-  return line
-    .replace(/'(?:\\.|[^'\\])*'|"(?:\\.|[^"\\])*"|`(?:\\.|[^`\\])*`/g, '""')
-    .replace(/(^|[(,=:[!&|?{};]|\breturn)(\s*)\/(?![*/])(?:\\.|\[(?:\\.|[^\]\\])*\]|[^/\\[])+\/[a-z]*/g, '$1$20')
-    .replace(/\/\/.*$/, '');
-}
-
-// The line that closes the brace a helper opens, or, for an arrow with no
-// braces, the line that ends its expression with a comma or semicolon once
-// every bracket it opened is closed.
-function helperEnd(lines, index) {
-  let depth = 0;
-  let opened = false;
-  for (let end = index; end < lines.length; end++) {
-    const code = codeOnly(lines[end]);
-    for (const ch of code) {
-      if (ch === '{') opened = true;
-      if ('{[('.includes(ch)) depth++; else if ('}])'.includes(ch)) depth--;
-    }
-    if (depth <= 0 && (opened || /[;,]\s*$/.test(code))) return end;
-  }
-  return lines.length - 1;
 }
 
 test('a helper that deletes a folder its caller passed in is checked or reviewed', () => {
