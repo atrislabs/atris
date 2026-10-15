@@ -3900,3 +3900,24 @@ test('fix joins a subject and plain verb to a subjectless helping verb after its
     "She'd worked through it (hadn't mentioned it, hadn't stopped) and then left.",
   ]);
 });
+
+test('fix keeps a comma before which and a verb at the head of a list item', () => {
+  // from a research brief: "- Nobody is talking about this problem yet"
+  // then a dash and "which means" was read as a label, so it took a colon.
+  // "which" and a verb remarks on the sentence before it; "which" and a
+  // noun still names what a label holds.
+  const D = String.fromCharCode(0x2014);
+  const file = tmpFile('which-remark-list.md', [
+    `- Nobody is publicly talking about this problem yet ${D} which means Atris has an angle.`,
+    '',
+    `- **FsReadRestriction** ${D} which files the agent can read`,
+    '',
+    `- tools ${D} which agent tools to enable`,
+  ].join('\n'));
+  const { changes } = applyFixes([file], RULES);
+  assert.deepEqual(changes.map((c) => c.after), [
+    '- Nobody is publicly talking about this problem yet, which means Atris has an angle.',
+    '- **FsReadRestriction**: which files the agent can read',
+    '- tools: which agent tools to enable',
+  ]);
+});
