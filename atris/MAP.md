@@ -105,7 +105,7 @@ checks the refs in both files; `atris doc-health --fix-refs` moves drifted ones.
 | autoland gate | `lib/autoland.js` | certified landings |
 | autoland command | `commands/autoland.js` | atris autoland |
 | slop detector | `commands/slop.js` | prose lint |
-| slop fix diff | `scripts/slop-fix-diff.js` | paragraphs a fixer change moves (lines with --lines), and any it leaves with odd punctuation |
+| slop fix diff | `scripts/slop-fix-diff.js` | paragraphs a fixer change moves (lines with --lines), and any it leaves with odd punctuation; --audit checks every fix the fixer makes now |
 | design system commands | `commands/design.js` `lib/design-api.js` | atris design extract and check; shared with atris mcp |
 | improvement attempt ledger | `commands/rsi.js` `lib/rsi-record.js` | read and record Dream-RSI attempts |
 | workspace tree hash | `commands/tree.js` `lib/tree-hash.js` | atris tree hash over the doctrine files |

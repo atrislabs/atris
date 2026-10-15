@@ -13,10 +13,14 @@
 // A moved line whose new fix holds more doubled punctuation or a different
 // parenthesis balance than the source gets an odd mark, so a rule change
 // that writes awkward output says so without a hand-written scan.
+// With --audit no base fixer runs: every fix the working fixer makes is
+// checked against the writer's own text, so the odd marks it still writes
+// anywhere come out as one count to drive to zero.
 //
 //   node scripts/slop-fix-diff.js ~/notes ../other-repo
 //   node scripts/slop-fix-diff.js --base master --limit 50 docs/
 //   node scripts/slop-fix-diff.js --lines ~/notes
+//   node scripts/slop-fix-diff.js --audit ~/notes
 
 const fs = require('fs');
 const os = require('os');
@@ -156,19 +160,21 @@ function main(argv) {
   let base = 'HEAD';
   let limit = 25;
   let paragraphs = true;
+  let audit = false;
   const targets = [];
   for (let i = 0; i < argv.length; i += 1) {
     if (argv[i] === '--base') base = argv[++i];
     else if (argv[i] === '--limit') limit = Number(argv[++i]) || 0;
     else if (argv[i] === '--paragraphs') paragraphs = true;
     else if (argv[i] === '--lines') paragraphs = false;
+    else if (argv[i] === '--audit') audit = true;
     else if (argv[i] === '--help' || argv[i] === '-h') {
-      console.log('usage: node scripts/slop-fix-diff.js [--base <ref>] [--limit <n>] [--lines] <folder or file>...');
+      console.log('usage: node scripts/slop-fix-diff.js [--base <ref>] [--limit <n>] [--lines] [--audit] <folder or file>...');
       return 0;
     } else targets.push(argv[i]);
   }
   if (!targets.length) {
-    console.error('usage: node scripts/slop-fix-diff.js [--base <ref>] [--limit <n>] [--lines] <folder or file>...');
+    console.error('usage: node scripts/slop-fix-diff.js [--base <ref>] [--limit <n>] [--lines] [--audit] <folder or file>...');
     return 2;
   }
   const files = [];
@@ -177,7 +183,22 @@ function main(argv) {
   const unit = paragraphs ? 'dashed paragraph' : 'dashed line';
   const show = (text) => text.split('\n').join(' / ');
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'slop-fix-diff-'));
+  const counted = `${lines.length} ${unit}${lines.length === 1 ? '' : 's'} in ${files.length} file${files.length === 1 ? '' : 's'}`;
   try {
+    if (audit) {
+      const fixed = fixAll(require(path.join(ROOT, 'commands', 'slop.js')), lines, dir);
+      const changed = [];
+      lines.forEach((line, i) => { if (fixed[i] !== line) changed.push({ line, after: fixed[i], odd: oddMarks(line, fixed[i]) }); });
+      const odd = changed.filter((c) => c.odd.length);
+      for (const c of odd.slice(0, limit)) {
+        console.log(`  was  ${show(c.line)}`);
+        console.log(`  now  ${show(c.after)}`);
+        console.log(`  odd  ${c.odd.join(', ')}\n`);
+      }
+      console.log(`${counted}; ${changed.length} fixed`);
+      console.log(`${odd.length} of the fixed gained doubled punctuation, unbalanced parentheses, or a comma splice`);
+      return 0;
+    }
     const before = fixAll(loadFixerAt(base), lines, dir);
     const after = fixAll(require(path.join(ROOT, 'commands', 'slop.js')), lines, dir);
     const moved = [];
@@ -189,7 +210,7 @@ function main(argv) {
       if (m.odd.length) console.log(`  odd  ${m.odd.join(', ')}`);
       console.log('');
     }
-    console.log(`${lines.length} ${unit}${lines.length === 1 ? '' : 's'} in ${files.length} file${files.length === 1 ? '' : 's'}; ${moved.length} moved against ${base}`);
+    console.log(`${counted}; ${moved.length} moved against ${base}`);
     console.log(`${moved.filter((m) => m.odd.length).length} of the moved gained doubled punctuation, unbalanced parentheses, or a comma splice`);
   } finally {
     fs.rmSync(dir, { recursive: true, force: true });

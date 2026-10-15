@@ -3619,6 +3619,22 @@ test('the fix diff script feeds whole paragraphs by default', () => {
   assert.match(r.stdout, /^0 of the moved gained doubled punctuation, unbalanced parentheses, or a comma splice$/m);
 });
 
+test('the fix diff script audits every fix the working fixer makes with --audit', () => {
+  const { spawnSync } = require('node:child_process');
+  // no base fixer runs: each dashed paragraph the fix changes is counted,
+  // and checked against the writer's own text, with no git ref needed
+  const dir = path.dirname(tmpFile('audit.md', [
+    'The build passed — the log is clean.',
+    '',
+    'No dash in this one.',
+  ].join('\n')));
+  const script = path.join(__dirname, '..', 'scripts', 'slop-fix-diff.js');
+  const r = spawnSync(process.execPath, [script, '--audit', '--base', 'no-such-ref', dir], { encoding: 'utf8', cwd: path.join(__dirname, '..') });
+  assert.equal(r.status, 0, r.stderr);
+  assert.match(r.stdout, /^1 dashed paragraph in 1 file; 1 fixed$/m);
+  assert.match(r.stdout, /^0 of the fixed gained doubled punctuation, unbalanced parentheses, or a comma splice$/m);
+});
+
 test('the fix diff script marks a fix that gains doubled punctuation or loses paren balance', () => {
   const { oddMarks } = require('../scripts/slop-fix-diff.js');
   const D = String.fromCharCode(0x2014);
