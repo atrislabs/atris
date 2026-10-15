@@ -1437,6 +1437,11 @@ test('worktree cleanup warns and keeps drafts when origin is unavailable', () =>
     const copy = addCopy(fx, 'offline-draft');
     const draft = path.join(copy, 'draft.txt');
     fs.writeFileSync(draft, 'keep these notes\n');
+    const tracked = path.join(copy, 'README.md');
+    const committed = runGit(['show', 'HEAD:README.md'], copy);
+    runGit(['rm', 'README.md'], copy);
+    const staged = runGit(['diff', '--cached', '--binary'], copy);
+    assert.match(staged, /deleted file mode/);
     const saved = runGit(['rev-parse', 'origin/master'], fx.repo);
     const status = runGit(['status', '--porcelain'], copy);
     fs.renameSync(path.join(fx.base, 'remote.git'), path.join(fx.base, 'remote-offline.git'));
@@ -1451,6 +1456,10 @@ test('worktree cleanup warns and keeps drafts when origin is unavailable', () =>
       assert.match(lines[1], /^warning: could not refresh origin\/master \(fatal: .*remote\.git.*does not appear to be a git repository\); cleanup judged against the local copy, which may be behind$/);
       assert.ok(lines.includes(extra.length ? 'removeds: 0' : 'candidates: 0'), cli.stdout);
       assert.equal(fs.readFileSync(draft, 'utf8'), 'keep these notes\n');
+      assert.equal(fs.existsSync(tracked), false);
+      assert.equal(runGit(['show', 'HEAD:README.md'], copy), committed);
+      assert.equal(runGit(['ls-files', '--', 'README.md'], copy), '');
+      assert.equal(runGit(['diff', '--cached', '--binary'], copy), staged);
       assert.equal(runGit(['status', '--porcelain'], copy), status);
       assert.equal(runGit(['rev-parse', 'origin/master'], fx.repo), saved);
       assert.ok(branchExists(fx.repo, 'offline-draft'));

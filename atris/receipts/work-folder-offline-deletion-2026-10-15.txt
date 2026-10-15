@@ -1,0 +1,27 @@
+Cleanup preserves a staged deletion while origin is unavailable.
+
+Scope: test/member-tidy.test.js and atris/MAP.md.
+Plan: staged deletion -> real cleanup preview and apply -> unchanged index and files.
+The existing offline check now saves a tracked deletion and checks its patch,
+missing index entry, missing working file and original committed contents after
+both commands. Existing draft, branch, registration and removal-log checks remain.
+
+Verify: node --test test/worktree-removal-guard.test.js test/member-tidy.test.js && node bin/atris.js slop --staged
+next_push: prove offline cleanup preserves a staged rename and later edits.
+
+Result: frozen verify command exited 0.
+Tests: 86 passed, 0 failed, 0 skipped, 0 todo.
+Writing check: clean, no slop tells in 4 files.
+
+Real command output excerpt (disposable repository with origin moved away):
+command: node bin/atris.js worktree cleanup
+cleanup: dry-run base=origin/master
+candidates: 0
+kept: 2
+exit: 0
+command: node bin/atris.js worktree cleanup --apply
+cleanup: applied base=origin/master
+removeds: 0
+kept: 2
+exit: 0
+Both commands also reported the unavailable-origin warning.
