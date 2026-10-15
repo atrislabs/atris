@@ -3434,7 +3434,8 @@ function isAutoImproverGeneratedLogLine(line, relativePath = '') {
   if (/^##\s+\d{1,2}:\d{2}\s+·\s+Task failed$/i.test(text)) return true;
   if (/^[-*]?\s*(status|action|state|verifier)\s*:\s*(failed|blocked)\s*$/i.test(text)) return true;
   // Mission lines state a goal; their words ("leftover error text", "done failed") are not failures.
-  if (/^[-*]?\s*(title|proof|mission):\s*/i.test(text)) return true;
+  // Goal files say the same in JSON ("stop_rule": "Stop if ... risk is unclear").
+  if (/^[-*]?\s*"?(title|proof|proof_target|mission|objective|acceptance|stop_rule)"?\s*:\s*/i.test(text)) return true;
   // Driver logs print "error": null on every clean run.
   if (/^"?(error|failure)s?"?\s*:\s*(null|false|""|\[\]|\{\})\s*,?$/i.test(text)) return true;
   if (String(relativePath || '').startsWith('atris/team/auto-improver/logs/') && /^-\s*summary:\s*/i.test(text)) return true;
