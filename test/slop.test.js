@@ -4738,6 +4738,13 @@ test('the fix diff splice list skips a noun after "in" or "of" and a noun with i
     openers.map((a) => `${a} ${D} your attention has been captured.`),
     openers.map((a) => `${a}, your attention has been captured.`),
   ).map((s) => s.count), [1]);
+  // a word in "is" is a noun, never a verb, so "the structural basis for a
+  // supervisor" names a thing; a verb in "s" there still reads as a splice
+  const tails = ['the structural basis for a supervisor', 'the structural layer routes a supervisor'];
+  assert.deepEqual(spliceShapes(
+    tails.map((t) => `Agents retry ${D} ${t}.`),
+    tails.map((t) => `Agents retry, ${t}.`),
+  ).map((s) => s.text), ['the structural layer routes a supervisor']);
 });
 
 test('the fix diff script lists each comma it writes before a "the" clause once', () => {
