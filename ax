@@ -3055,28 +3055,19 @@ function latestPendingApprovalRequest(history = []) {
   return null;
 }
 
+// A yes made only of these words runs the staged action: "approved do it",
+// "yes go ahead please". Any other word ("no", "wait", "but", "change") falls
+// through to the model, so a hedged or edited reply never fires the action.
+const APPROVAL_YES_WORDS = new Set(['yes', 'y', 'yep', 'yeah', 'yup', 'sure', 'ok', 'okay', 'approve', 'approved', 'confirm', 'confirmed']);
+const APPROVAL_FILLER_WORDS = new Set(['do', 'it', 'go', 'ahead', 'please', 'pls', 'create', 'send', 'post', 'run', 'now', 'that', 'looks', 'good']);
+
 function messageApprovesPendingApproval(message) {
-  const normalized = String(message || '').trim().toLowerCase().replace(/[.!?]+$/g, '');
-  return new Set([
-    'yes',
-    'y',
-    'yep',
-    'yeah',
-    'ok',
-    'okay',
-    'approve',
-    'approved',
-    'confirm',
-    'create it',
-    'send it',
-    'post it',
-    'do it',
-    'go ahead',
-    'looks good',
-    'yes create it',
-    'yes send it',
-    'yes post it',
-  ]).has(normalized);
+  const normalized = String(message || '').trim().toLowerCase().replace(/[.!?,]+/g, ' ').replace(/\s+/g, ' ').trim();
+  if (['do it', 'go ahead', 'looks good', 'create it', 'send it', 'post it'].includes(normalized)) return true;
+  const words = normalized.split(' ').filter(Boolean);
+  if (!words.length || words.length > 6) return false;
+  if (!words.some(word => APPROVAL_YES_WORDS.has(word))) return false;
+  return words.every(word => APPROVAL_YES_WORDS.has(word) || APPROVAL_FILLER_WORDS.has(word));
 }
 
 function messageCancelsPendingApproval(message) {
