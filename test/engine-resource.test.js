@@ -5283,8 +5283,8 @@ test('the landing status repair hint stays the short command when an unusable no
   }
 });
 
-test('the landing status repair hint uses the checkout command when the first executable node rejects the launcher', () => {
-  const { spawnSync } = require('node:child_process');
+test('the landing status repair hint uses the checkout command when the first executable node rejects the launcher', async () => {
+  const { spawnSync, execFile } = require('node:child_process');
   const root = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'autoland-status-node-later-')));
   try {
     const work = path.join(root, 'work');
@@ -5324,6 +5324,8 @@ test('the landing status repair hint uses the checkout command when the first ex
       const hint = status.stdout.match(/\n {4}to make that change, run (.+) engine sweep --fix-startup; it saves the old file beside it first/);
       assert.ok(hint, `${kind}: ${status.stdout}`);
       assert.strictEqual(hint[1], `${process.execPath} ${fs.realpathSync(path.join(__dirname, '..', 'bin', 'atris.js'))}`, kind);
+      // Both shells run the printed command at once, so a hanging Node costs one wait, not one per shell.
+      const repairs = [];
       for (const shell of ['/bin/sh', ...(fs.existsSync('/bin/zsh') ? ['/bin/zsh'] : [])]) {
         const shellHome = fs.mkdtempSync(path.join(root, 'home-'));
         fs.writeFileSync(path.join(shellHome, '.zshrc'), 'eval "$(ssh-agent -s)"\n');
@@ -5334,9 +5336,11 @@ test('the landing status repair hint uses the checkout command when the first ex
         if (kind === 'chatty-launcher') assert.strictEqual(direct.stdout, 'v22.0.0\n', shell);
         if (kind === 'suffixed-launcher') assert.strictEqual(direct.stdout, 'atris v3.70.0 is not installed for this node\n', shell);
         assert.strictEqual(fs.readFileSync(path.join(shellHome, '.zshrc'), 'utf8'), 'eval "$(ssh-agent -s)"\n', `${shell}: ${kind}: direct command did not repair startup`);
-        const run = spawnSync(shell, ['-c', `${hint[1]} engine sweep --fix-startup`], { cwd: work, env: shellEnv, encoding: 'utf8' });
-        assert.strictEqual(run.status, 0, `${shell}: ${kind}: ${run.stdout}${run.stderr}`);
-        assert.match(run.stdout, /changed ~\/\.zshrc line 1 to: /, `${shell}: ${kind}`);
+        repairs.push(new Promise((resolve) => execFile(shell, ['-c', `${hint[1]} engine sweep --fix-startup`], { cwd: work, env: shellEnv, encoding: 'utf8' }, (error, stdout, stderr) => resolve({ shell, shellHome, error, stdout, stderr }))));
+      }
+      for (const { shell, shellHome, error, stdout, stderr } of await Promise.all(repairs)) {
+        assert.strictEqual(error, null, `${shell}: ${kind}: ${stdout}${stderr}`);
+        assert.match(stdout, /changed ~\/\.zshrc line 1 to: /, `${shell}: ${kind}`);
         assert.strictEqual(fs.readFileSync(path.join(shellHome, '.zshrc'), 'utf8'), '[ -S "$SSH_AUTH_SOCK" ] || eval "$(ssh-agent -s)"\n', `${shell}: ${kind}`);
       }
     }
