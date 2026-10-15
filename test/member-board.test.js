@@ -266,6 +266,31 @@ test('a job that can read whole gets its room before the last step', () => {
   }
 });
 
+test('a live run with no step yet never keeps an empty last step that cuts a job', () => {
+  const dir = fakeDir({
+    builder: [`${at(5)} m-1 started: ship the login fix`, `${at(4)} m-1 finished: ok`],
+    shipper: [`${at(5)} m-9 started: fresh ship job`],
+  });
+  try {
+    const rows = readBoard({ dir, now: NOW });
+    let read = 0;
+    for (let width = 50; width <= 90; width++) {
+      const board = renderBoard(rows, dir, 0, width);
+      assert.ok(board.split('\n').every((line) => line.length <= width), `${width}\n${board}`);
+      const [header, ...lines] = board.split('\n');
+      const step = header.indexOf('last step');
+      const row = lines.find((line) => line.startsWith('builder'));
+      const job = row.slice(header.indexOf('job'), step < 0 ? undefined : step).trim().replace(/\.\.\.$/, '');
+      assert.ok(job.length >= read, `${width} columns read less of the job than ${width - 1}:\n${board}`);
+      read = job.length;
+    }
+    assert.match(renderBoard(rows, dir, 0, 60), /^builder\s+done ok\s.*\s+ship the login fix$/m);
+    assert.match(renderBoard(rows, dir, 0, 60), /^shipper\s+working\s.*\s+fresh ship job$/m);
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
 test('a hidden last step comes back with the cheapest change that makes room', () => {
   const dir = fakeDir({
     builder: [`${at(180)} m-1 started: fix login`, `${at(60)} m-1 editing lib/auth/session.js to refresh tokens`],
