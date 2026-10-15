@@ -2791,3 +2791,5 @@ Clean review setup: `test/commands.test.js:11948` seeds creation, claim and read
 Review selection ownership setup: `test/commands.test.js:12525` seeds ownership with production claimTask in the existing creation connection, asserts success and closes in finally. Readiness, selection and both status inspections remain real CLI checks with every assertion retained. Five launches become four.
 
 Review debt readiness setup: `test/commands.test.js:12575` seeds readiness through production readyTask in the existing creation connection, asserts success and closes in finally. Selection remains a real CLI check with every assertion retained. Two launches become one.
+
+Certified review fallback readiness setup: `test/commands.test.js:12643` seeds readiness through production readyTask in the existing creation connection with the same actor and proof. The connection closes in finally before CLI certification and selection. Seven launches become six; all original assertions remain.
