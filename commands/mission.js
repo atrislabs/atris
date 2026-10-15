@@ -1467,6 +1467,8 @@ function nearestMissionCandidates(missions, ref, limit = 5) {
     .map((entry) => entry.mission);
 }
 
+const SIBLING_HINT_SCAN_MAX = 1000;
+
 function listSiblingWorkspaceMissionHints(ref, root = process.cwd(), limit = 5) {
   if (!ref) return [];
   const baseRoot = path.resolve(root);
@@ -1482,9 +1484,16 @@ function listSiblingWorkspaceMissionHints(ref, root = process.cwd(), limit = 5) 
     return [];
   }
   const hints = [];
+  // Hints are best effort. A parent like the system temp folder can hold
+  // hundreds of thousands of folders, and resolving each one took a "not
+  // found" answer from 1s to 40s. Check for a mission store first, resolve
+  // only folders that have one, and stop after SIBLING_HINT_SCAN_MAX folders.
+  let scanned = 0;
   for (const entry of entries) {
     if (!entry.isDirectory() || entry.name.startsWith('.')) continue;
+    if (++scanned > SIBLING_HINT_SCAN_MAX) break;
     const candidateRoot = path.join(parent, entry.name);
+    if (!fs.existsSync(path.join(candidateRoot, '.atris', 'state', 'missions.jsonl'))) continue;
     let candidateReal = candidateRoot;
     try {
       candidateReal = fs.realpathSync(candidateRoot);
@@ -1492,7 +1501,6 @@ function listSiblingWorkspaceMissionHints(ref, root = process.cwd(), limit = 5) 
       continue;
     }
     if (candidateReal === here) continue;
-    if (!fs.existsSync(path.join(candidateRoot, '.atris', 'state', 'missions.jsonl'))) continue;
     const mission = listMissions(candidateRoot).find((row) => missionMatchesRef(row, ref));
     if (!mission) continue;
     hints.push({
