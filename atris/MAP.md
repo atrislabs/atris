@@ -130,21 +130,13 @@ checks the refs in both files; `atris doc-health --fix-refs` moves drifted ones.
 4. `atris/wiki/index.md` if present (local), and `atris/skills/atris/SKILL.md` as needed
 5. Exact lines and search shortcuts: `atris/refs/MAP-NOTES.md`
 
-Sweep output through a pipe: `bin/atris.js:38` waits for queued stdout before exiting the engine command at `bin/atris.js:3256`; regression `test/engine-resource.test.js:583` reads more than 96 KB from the real CLI and parses the complete report.
-
-Process-list scan failure: `lib/engine-resource.js:290` returns `unread: ['process list']` on failed or thrown ps, rather than reporting a clean scan; real CLI regression `test/engine-resource.test.js:4343` blocks ps execution and checks the warning.
+Engine resource, ssh-agent sweep, and launch guard detail: `atris/refs/MAP-NOTES.md`. Entries below still differ from their notes copy or have none yet.
 
 Readiness runtime mismatch: `lib/task-proof.js:157` starts a login shell, which on this machine chooses unsupported Node 20 instead of the caller's Node 25. Full diagnosis, passing local workaround, and automatic-certification limitation: `atris/receipts/readiness-runtime-proof-2026-10-14.txt`.
 
 Partial socket scan warning: `lib/engine-resource.js:325-336` (`sockets`) names agent sockets unread when any listed agent lacks a socket reading; unread agents remain protected and readable agents can still be proven leaked. `commands/engine.js:2362` (`scanWarning`) warns that the count may be incomplete, and the sweep headline says at least or unknown instead of a bare count, as the landing status does (`test/engine-resource.test.js:552`). Regressions: `test/engine-resource.test.js:447` checks mixed readings; `test/engine-resource.test.js:459` launches two real ssh-agents, withholds only one real lsof process block, and runs the real text and JSON CLI.
 
 Cleanup scan warnings: `commands/engine.js:2358` merges unread initial and final readers into text and JSON cleanup reports. `lib/engine-resource.js:468` retains unread final readers in the sweep record and saves a null remaining leak count when that final scan is incomplete. Regressions: `test/engine-resource.test.js:4407` checks merged warnings and safe skips; `test/engine-resource.test.js:4424` runs real cleanup with process scans denied.
-
-Younger replacement agent protection: `lib/engine-resource.js:472` keeps each final agent reading, and `lib/engine-resource.js:477` skips a candidate whose age decreased. Regression: `test/engine-resource.test.js:4448` runs the real cleanup CLI against two owned agents with staged ages, verifies the unchanged one stops, and checks the replacement socket still answers. Equal-age reuse and replacement after the final scan remain outside this check.
-
-Younger replacement cleanup reasons: `lib/engine-resource.js:476` records younger replacements in `replaced` while keeping them in `skipped`; `commands/engine.js:2373` reports them separately from in-use or gone agents. The real text and JSON cleanup regression at `test/engine-resource.test.js:4448` checks the saved reason and a reachable replacement socket; mixed skips at `test/engine-resource.test.js:4513` prevent double counting.
-
-Hourly cleanup replacement summary: `commands/autoland.js:910` (`sshAgentSweepNote`) includes younger replacements kept safe in the hourly summary, alongside stopped counts and unread scans. Regression: `test/engine-resource.test.js:695` checks singular, plural, combined outcomes, and ordinary skips.
 
 Hourly cleanup failed stops: `commands/autoland.js:910` (`sshAgentSweepNote`) includes failed stop counts in the hourly summary alongside stops, replacements, and unread scans; when the newest passes could not stop an agent, landing status and the sweep listing say so and point to the manual stop. Detail and line refs: `atris/refs/MAP-NOTES.md`, Hourly cleanup failed stops; tests: `test/engine-resource.test.js`.
 
@@ -158,85 +150,15 @@ Local runner alias launch guard: `test/engine-resource.test.js:1501` follows ear
 
 Recording window boundaries: both launch guards in `test/engine-resource.test.js` stop at top-level function boundaries, including one-line definitions. A recorder inside another function cannot cover a neighboring launch; the twelve-line limit still applies within the launch function.
 
-Runner parameter aliases: `test/engine-resource.test.js:1501` retains the source of local aliases before checking same-file function arguments, catching copied runner parameters and profile members. Six regression assertions cover plain aliases, profile aliases, recorded runs, help probes, unrelated programs, and non-alias expressions.
-
-Nested helper recording boundaries: both engine launch guards blank named and assigned arrow helper definitions outside the current launch, keeping line numbers and direct parent recordings. A parent whose only recording lives in a helper is not a recording wrapper. Block bodies use balanced braces with quoted strings skipped; concise arrows require a semicolon. Regex literals, template interpolation, and unusual function syntax remain outside this text scan.
-
-Helper launch boundaries: `recordedAbove` in `test/engine-resource.test.js` starts the recording search at the innermost function holding the launch, using the spans from `definitionSpans`. A parent's recording no longer covers an unrecorded launch inside a helper it defines; the assertions sit in `test/engine-resource.test.js:1402` and `test/engine-resource.test.js:1501` and cover block helpers, block arrows, and concise arrows.
-
-Arrow runner parameters: `test/engine-resource.test.js:1501` follows same-file runner arguments into parenthesized const/let arrow functions, including indented helpers, async functions, concise bodies, and profile aliases. Eight assertions cover missing recordings, recorded launches, help probes, unrelated programs, and argument positions. Single unparenthesized parameters are also checked, including async, concise, profile alias, and shadowing cases.
-
-Shadowing helper parameters: `test/engine-resource.test.js:1501` stops local alias lookup at a matching named or arrow helper parameter while retaining captured outer runners. Fourteen assertions cover shadowed engine and profile arguments, captured runners and aliases, unrelated programs, recorded launches, and help probes. Arbitrary JavaScript scope analysis remains outside this text scan.
-
-Single-input arrow runner checks: `test/engine-resource.test.js:1501` covers arrows without parameter parentheses, with twenty-one new assertions for runner arguments, profile aliases, recording boundaries, shadowing, unrelated programs, and help probes. JavaScript destructuring and reassignment remain outside this text scan.
-
-Function-expression runner checks: `test/engine-resource.test.js:1501` follows same-file runner arguments into const, let, and var function expressions, including async and named expressions. Thirty assertions cover runner and profile aliases, argument positions, shadowed parameters, unrelated programs, help probes, and recording boundaries. Internal recursive calls are now checked within the named expression body; destructuring and reassignment remain outside this text scan.
-
-Internal-name runner checks: `test/engine-resource.test.js:1501` follows runner and profile arguments passed through a named expression's internal name only within its body. Twenty-six assertions cover async expressions, dollar-sign names, aliases, recording, probes, unrelated programs, outside calls, member calls, and assigned-variable calls. Parameters and earlier local aliases hide the internal name; arbitrary nested name shadowing remains outside this text scan.
-
-Nested internal-name parameters: `test/engine-resource.test.js:1501` excludes calls through a named expression's internal name when an enclosing nested helper has a matching parameter. Thirty-two assertions cover named helpers, parenthesized arrows, async single-input arrows, function expressions, profile arguments, dollar-sign names, captured names, and calls after helpers close. Nested declaration-name shadowing, destructuring, and reassignment remain outside this text scan.
-
-Launcher name parameters: `test/engine-resource.test.js:1501` also excludes calls through a launcher's own name, assigned or declared, when another function holding the call has a matching parameter. Twenty-one assertions cover matching assigned and internal names, async expressions, plain declarations, named helpers, block and concise arrows, captured calls, and calls after the helper closes.
-
-Launcher name aliases: `test/engine-resource.test.js:1501` also excludes calls through a launcher's own name when another function holding the call declares a local alias of that name before the call. Fifteen assertions cover function, arrow, and helper aliases, an alias inside a sibling helper that does not hide the call, and a longer name that is not an alias.
-
-Captured runner lookup: `test/engine-resource.test.js:1501` blanks closed sibling helper definitions before tracing declarations, preserving visible outer runners and profile aliases. Sixteen assertions cover three helper forms, unrelated programs, and helper-local declarations.
-
-Function-scoped runner lookup: `test/engine-resource.test.js:1501` retains plain `var` runners after conditional, loop, and try blocks close. Eighteen regression assertions cover recordings, profile aliases, whitespace, captured runners, unrelated programs, methods, and callback isolation. Destructuring, reassignment, and general JavaScript parsing remain outside this bounded text check.
-
-Second-helper runner lookup: `test/engine-resource.test.js:1501` follows runner and profile parameters through another local helper using the existing call and shadow checks. Twenty-two assertions cover four helper forms, recordings, help probes, unrelated programs, profile aliases, and circular calls. Each recursive path tracks the function and parameter already visited, so cycles terminate without hiding other callers.
-
-Captured forwarded runner parameters: `test/engine-resource.test.js:1501` finds the nearest enclosing parameter binding at the resolved alias declaration. Twenty-three assertions cover four nested helper forms, profiles, recorded launches, help probes, unrelated programs, and inner parameter shadowing.
-
-Omitted runner defaults: `test/engine-resource.test.js:1501` follows literal and outer alias defaults when same-file calls omit the argument. Thirty-eight assertions cover four helper forms, profiles, recordings, probes, supplied overrides, and definition scope. Resolver calls in defaults are covered below; explicitly supplied undefined remains outside this bounded check.
-
-Resolver calls in omitted runner defaults: `test/engine-resource.test.js:1501` reads balanced parameter boundaries for named functions, arrows, and function expressions. Forty-nine assertions cover resolver defaults, nested calls and quoted commas, profiles, omitted later inputs, supplied overrides, nested helpers, recordings, and probes. Explicit undefined and general JavaScript parsing remain outside this bounded check.
-
-Spaced helper calls: `test/engine-resource.test.js:1501` follows runner and profile arguments when the helper name and opening parenthesis are separated by spaces, tabs, or a line break. Eighteen assertions cover engine detection, recordings, help probes, and unrelated programs.
-
-Spaced runner launches: `test/engine-resource.test.js:1501` catches whitespace before each of the six launch helpers' opening parentheses. The 126 assertions cover runner and profile sources, resolver calls, forwarded inputs, recordings, help probes, and unrelated programs.
-
-Direct-name launch spacing: `test/engine-resource.test.js:1402` recognizes spaces, tabs, and line breaks before the four direct launch helpers' opening parentheses. Ninety assertions cover missing and present recordings, help/version probes, unrelated programs, comments, exemptions, and stale-exemption detection.
-
-Spaced resolver sources: `test/engine-resource.test.js:1501` recognizes whitespace before engine and runner resolver arguments. Sixteen assertions cover space and tab separators in runner declarations, profile declarations, forwarded arguments, parameter defaults, recordings, help probes, unrelated programs, and uncalled resolver references. Multiline declaration values and inline spaced resolver launches remain outside this slice.
-
-Inline spaced resolver launches: `test/engine-resource.test.js:1501` recognizes spaces, tabs, and line breaks before an inline empty resolver call. Seventy-two assertions cover six launch helpers, missing recordings, recorded launches, help probes, and unrelated programs. Resolver arguments and profile members after inline calls remain outside this slice.
-
-Inline resolver arguments: `test/engine-resource.test.js:1501` reads balanced inline runner calls before finding the launch argument separator. Ninety-two assertions cover six launch helpers, nested calls, quoted closing parentheses, multiline arguments, recordings, help/version probes, unrelated resolvers, and the unchanged exclusion for profile members after calls. Regex literals and template interpolation remain outside this text scan.
-
-Inline profile members: `test/engine-resource.test.js:1501` now includes dotted members after balanced inline resolver calls before checking recording and probes. Ninety-one added assertions cover six launch helpers, binary and command members, spaced member chains, nested arguments, quoted parentheses, multiline calls, recordings, help/version probes, and unrelated resolvers. Computed members, regex literals, and template interpolation remain outside this text scan.
-
 Startup repair command quoting: `lib/engine-resource.js:402` prints shell-safe paths for copied sweep commands, using single quotes around paths with shell punctuation and escaping embedded single quotes. `test/engine-resource.test.js:4973` runs seven path forms through real sh and zsh processes, checking the script receives the repair arguments unchanged.
 
 Executable startup repair lookup: `lib/engine-resource.js:378` skips files without execute permission, directories, and broken links on PATH, while following executable links. Real shell regression: `test/engine-resource.test.js:4996`.
 
-Empty command search entries: `lib/engine-resource.js:378` searches the current folder in PATH order. `test/engine-resource.test.js:5039` compares leading, middle, trailing, and entirely empty PATH values with real shell launches, keeping an older local install out of repair hints.
-
-Startup repair without Node on PATH: `lib/engine-resource.js:410` uses the running Node executable for checkout repair commands. `test/engine-resource.test.js:5083` runs copied commands through real sh and zsh with an empty PATH.
-
-Same-checkout repair without Node: `lib/engine-resource.js:378` shares executable lookup for atris and node; `lib/engine-resource.js:411` shortens the hint only when both can run. `test/engine-resource.test.js:5103` runs real sh and zsh commands with missing, non-executable, directory, and broken-link node entries.
-
-Landing status repair without Node: `commands/autoland.js:566` builds that same checkout command, and `commands/autoland.js:578` prints it under leaked agents. `test/engine-resource.test.js:5139` copies the printed command into real sh and zsh when the path holds only this checkout launcher, and checks the shell startup file changes.
-
-Landing status repair with an unusable Node entry: `commands/autoland.js:566` builds that same checkout command when a node entry is present but cannot run. `test/engine-resource.test.js:5183` copies the printed command into real sh and zsh for a plain file, a directory, and a broken link, and checks the shell startup file changes.
-
-Landing status repair stays short when a later node can run: `commands/autoland.js:566` keeps the short command when an unusable node entry comes before a runnable node. `test/engine-resource.test.js:5234` copies that short command into real sh and zsh for a plain file, a directory, and a broken link, and checks the shell startup file changes.
-
-Landing status repair with a failing executable Node: `lib/engine-resource.js:415` probes the first executable with the read-only version command before shortening the hint. `test/engine-resource.test.js:5286` proves a rejecting executable hides a later working Node, then runs the printed checkout command through sh and zsh to repair fixture startup files.
-
 Landing repair with a hanging Node: `test/engine-resource.test.js:5286` also checks a first executable that never answers. The landing probe times out and the printed checkout command repairs fixture startup files through sh and zsh.
-
-Silent Node repair fallback: `lib/engine-resource.js:417` requires version output before trusting the launcher. `test/engine-resource.test.js:5286` runs the displayed repair through sh and zsh when the first Node exits successfully without doing work.
-
-Incomplete run history advice: `test/engine-resource.test.js:4857` compares real landing status with the sweep listing when a run start falls outside retained history, while keeping the startup repair command visible.
 
 Missing run recording warning: `test/engine-resource.test.js:4917` checks that landing status and the sweep listing agree when the installed command records no runs, retain the startup repair command, and avoid assigning a source from incomplete counts.
 
 Combined unreadable history and agent scans: `test/engine-resource.test.js:5349` runs landing status with unreadable process environments, sockets, or both, preserving the repair hint and qualifying the leak count.
-
-Incomplete sweep counts: `commands/engine.js:2399` reports unknown or a lower bound when readers fail; `test/engine-resource.test.js:552` compares sweep and landing output for unreadable sockets, environments, and process lists.
-
-Incomplete cleanup recheck counts: `test/engine-resource.test.js:5388` runs the real cleanup command in text and JSON with a clean first scan and unreadable sockets on the recheck. It checks the warning, omitted remaining count, and null count in saved history.
 
 Cleanup recheck reader coverage: `test/engine-resource.test.js:5388` exercises unreadable sockets, process environments, process lists, and combined socket/environment failures through the real cleanup command in text and JSON, checking unknown counts in saved history.
 
