@@ -15350,7 +15350,19 @@ test('task queue filters certified review rows by continue-work and human-accept
   try {
     fs.mkdirSync(path.join(dir, 'atris'), { recursive: true });
 
-    // Seed creation through the real store; review filtering stays on the CLI.
+    // Ready and review are one store call each in the CLI, so both rows reach
+    // review in-process; queue and current filtering stay on the CLI.
+    const storeReadyReview = (task, readyProof, reviewProof, nextTask) => {
+      const db = taskStore.open(dbPath);
+      try {
+        const readied = taskStore.readyTask(db, { id: task.id, actor: 'codex', proof: readyProof, result: FIXTURE_RESULT_SENTENCE });
+        assert.equal(readied.ready, true, readied.reason);
+        const reviewed = taskStore.reviewTask(db, { id: task.id, actor: 'codex-review', reward: 0, proof: reviewProof, nextTask });
+        assert.equal(reviewed.reviewed, true, reviewed.reason);
+      } finally {
+        taskStore.close();
+      }
+    };
     const continueTask = (() => {
       const db = taskStore.open(dbPath);
       try {
@@ -15367,20 +15379,13 @@ test('task queue filters certified review rows by continue-work and human-accept
       }
     })();
     const continueRef = continueTask.display_id;
-    assert.equal(runCli([
-      'task', 'ready', continueRef,
-      '--as', 'codex',
-      '--proof', 'node --check test/commands.test.js passed before continue-work filter review',
-    ], { cwd: dir, env }).status, 0);
-    assert.equal(runCli([
-      'task', 'review', continueRef,
-      '--reward', '0',
-      '--as', 'codex-review',
-      '--proof', 'node --test test/commands.test.js passed during continue-work filter review',
-      '--next', 'Add the next queue lane filter regression',
-    ], { cwd: dir, env }).status, 0);
+    storeReadyReview(
+      continueTask,
+      'node --check test/commands.test.js passed before continue-work filter review',
+      'node --test test/commands.test.js passed during continue-work filter review',
+      'Add the next queue lane filter regression',
+    );
 
-    // Seed creation through the real store; review filtering stays on the CLI.
     const waitingTask = (() => {
       const db = taskStore.open(dbPath);
       try {
@@ -15396,18 +15401,11 @@ test('task queue filters certified review rows by continue-work and human-accept
         taskStore.close();
       }
     })();
-    const waitingRef = waitingTask.display_id;
-    assert.equal(runCli([
-      'task', 'ready', waitingRef,
-      '--as', 'codex',
-      '--proof', 'node --check test/commands.test.js passed before human-accept filter review',
-    ], { cwd: dir, env }).status, 0);
-    assert.equal(runCli([
-      'task', 'review', waitingRef,
-      '--reward', '0',
-      '--as', 'codex-review',
-      '--proof', 'node --test test/commands.test.js passed during human-accept filter review',
-    ], { cwd: dir, env }).status, 0);
+    storeReadyReview(
+      waitingTask,
+      'node --check test/commands.test.js passed before human-accept filter review',
+      'node --test test/commands.test.js passed during human-accept filter review',
+    );
 
     const continueQueue = runCli([
       'task', 'queue',
