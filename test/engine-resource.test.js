@@ -4862,13 +4862,15 @@ test('the landing status repair hint uses the checkout command when the first ex
     spawnSync('git', ['init', '-q'], { cwd: work });
     fs.symlinkSync(path.join(__dirname, '..', 'bin', 'atris'), path.join(launcher, 'atris'));
     fs.symlinkSync(process.execPath, path.join(runnable, 'node'));
-    for (const kind of ['rejecting-launcher', 'hanging-launcher', 'silent-launcher']) {
+    for (const kind of ['rejecting-launcher', 'hanging-launcher', 'silent-launcher', 'chatty-launcher']) {
       const blocked = path.join(root, kind);
       fs.mkdirSync(blocked);
       const node = path.join(blocked, 'node');
       fs.writeFileSync(node, kind === 'hanging-launcher'
         ? `#!${process.execPath}\nsetInterval(() => {}, 1000);\n`
-        : `#!/bin/sh\nexit ${kind === 'silent-launcher' ? 0 : 42}\n`, { mode: 0o755 });
+        : kind === 'chatty-launcher'
+          ? '#!/bin/sh\necho v22.0.0\nexit 0\n'
+          : `#!/bin/sh\nexit ${kind === 'silent-launcher' ? 0 : 42}\n`, { mode: 0o755 });
       const home = fs.mkdtempSync(path.join(root, 'home-'));
       fs.writeFileSync(path.join(home, '.zshrc'), 'eval "$(ssh-agent -s)"\n');
       // Shell lookup stops at this executable, even though a later Node works.
@@ -4890,7 +4892,8 @@ test('the landing status repair hint uses the checkout command when the first ex
         const shellEnv = { ...env, HOME: shellHome };
         const direct = spawnSync(shell, ['-c', 'atris engine sweep --fix-startup'], { cwd: work, env: shellEnv, encoding: 'utf8', timeout: 500 });
         if (kind === 'hanging-launcher') assert.strictEqual(direct.error?.code, 'ETIMEDOUT', shell);
-        else assert.strictEqual(direct.status, kind === 'silent-launcher' ? 0 : 42, shell);
+        else assert.strictEqual(direct.status, kind === 'rejecting-launcher' ? 42 : 0, shell);
+        if (kind === 'chatty-launcher') assert.strictEqual(direct.stdout, 'v22.0.0\n', shell);
         assert.strictEqual(fs.readFileSync(path.join(shellHome, '.zshrc'), 'utf8'), 'eval "$(ssh-agent -s)"\n', `${shell}: ${kind}: direct command did not repair startup`);
         const run = spawnSync(shell, ['-c', `${hint[1]} engine sweep --fix-startup`], { cwd: work, env: shellEnv, encoding: 'utf8' });
         assert.strictEqual(run.status, 0, `${shell}: ${kind}: ${run.stdout}${run.stderr}`);
