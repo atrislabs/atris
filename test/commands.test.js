@@ -20376,14 +20376,16 @@ test('feedback rejects unknown subcommands before submit fallback', async () => 
 // unknown command warning
 // ============================================
 
-test('casual launch words route to the durable mission loop', () => {
+test('casual launch words route to the durable mission loop', async () => {
   const dir = makeTempDir();
   try {
-    for (const args of [
+    const cases = [
       ['start', '--json', '--yes'],
       ['go', '--json', '--yes'],
-    ]) {
-      const res = runCli(args, { cwd: dir });
+    ];
+    const results = await Promise.all(cases.map((args) => runCliAsync(args, { cwd: dir })));
+    for (const [index, args] of cases.entries()) {
+      const res = results[index];
       assert.equal(res.status, 2, `${args.join(' ')}: ${res.stdout}\n${res.stderr}`);
       const payload = JSON.parse(res.stdout);
       assert.equal(payload.ok, false);

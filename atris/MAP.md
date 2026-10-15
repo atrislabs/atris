@@ -236,3 +236,5 @@ Update and sync help checks: `test/commands.test.js:18692` runs both help launch
 Clean preview read batching: `test/commands.test.js:18569` awaits both real CLI preview formats together before checking output and unchanged map contents. `commands/clean.js:48` passes the preview setting into map healing; archive and empty-section writes also honor it. Two sequential launch stages become one, with every assertion retained.
 
 Feedback rejection read batching: `test/commands.test.js:20354` runs both unsupported-command checks together, retaining every exit and output assertion. Both return before submission. Two sequential launch stages become one.
+
+Casual launch checks: `test/commands.test.js:20379` runs the two early launch refusals together; the final keep check stays ordered and every assertion remains.
