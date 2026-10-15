@@ -463,10 +463,10 @@ MCP stdio request flow: `mcp/atris-mcp/index.mjs:142` reads requests while desig
 
 **Purpose:** Updates local atris.md to latest package version. `--all` propagates across every atris project under cwd.
 
-- **Entry point (single project):** `commands/sync.js:430` (syncAtris function)
-- **Entry point (workspace):** `commands/sync.js:867` (syncAtrisAll function)
+- **Entry point (single project):** `commands/sync.js:478` (syncAtris function)
+- **Entry point (workspace):** `commands/sync.js:976` (syncAtrisAll function)
 - **Startup/help guard:** `bin/atris.js:207-212` skips global and project skill sync for every help invocation; `bin/atris.js:1765-1791` dispatches `update|sync --help` before command-specific template sync work
-- **Discovery helper:** `commands/sync.js:783` (_findAtrisProjects: walks subtree, max depth 8, skips node_modules/.git/dist/build/worktrees)
+- **Discovery helper:** `commands/sync.js:892` (_findAtrisProjects: walks subtree, max depth 8, skips node_modules/.git/dist/build/worktrees)
 - **Single-project logic:**
 - Validates atris/ folder exists
 - Compares content with package atris.md
@@ -1011,8 +1011,8 @@ MCP stdio request flow: `mcp/atris-mcp/index.mjs:142` reads requests while desig
 **Purpose:** Validate work is actually done - tests pass, MAP.md updated, changes exist
 
 - **Entry point:** `commands/verify.js:13-35` (verifyAtris function)
-- **Help:** `bin/atris.js:788-799` (showVerifyHelp) and `bin/atris.js:788-799` (showVerifyHelp short-circuit)
-- **Rubric runner:** `commands/verify.js:495-529` (verifyRubric)
+- **Help:** `bin/atris.js:942-960` (showVerifyHelp) and `bin/atris.js:2886-2891` (showVerifyHelp short-circuit)
+- **Rubric runner:** `commands/verify.js:595-629` (verifyRubric)
 - **Regression:** `test/commands.test.js:4323-4338` covers `verify --help` without verifier execution
 - **Modes:**
 - `atris verify`: Verify entire workspace health
@@ -1168,8 +1168,8 @@ rg "printRoster|registryPayload|canPersistEngineRegistry|speakFirstMinute|--glob
 
 **Purpose:** Suggest → justify → execute loop. Scans workspace for the most important thing to do, explains why, then runs plan → do → review. Reached only via `--legacy`; its exports (`writeLesson`, `runTaskOnce`, `readEndgameState`, `getVerifyCommand`) are still consumed by `commands/lesson.js`, `commands/experiments.js`, and `bin/atris.js`.
 
-- **Entry point:** `commands/autopilot.js:3246` (autopilotAtris function)
-- **From-todo mode:** `commands/autopilot.js:3874` (autopilotFromTodo function)
+- **Entry point:** `commands/autopilot.js:3422` (autopilotAtris function)
+- **From-todo mode:** `commands/autopilot.js:4049` (autopilotFromTodo function)
 - **Reward config:** `lib/reward-config.js`: frozen `REWARD_CONFIG` object + `REWARD_CHECKSUM` (SHA-256 of `JSON.stringify(REWARD_CONFIG) + computeTickReward.toString()` at ship time). The loop cannot edit its own judge.
 - **Reward computer:** `commands/autopilot.js:2239` (`computeTickReward`): computes per-tick reward score from `REWARD_CONFIG` constants (commit +1, npm test +2, verify +3, validator clean +1, halt -3) and only awards verify points when verify actually ran
 - **Tick registry writer:** `commands/autopilot.js:1194` (`recordTickCommit`): persists `{hash, verifyCmd, slug, timestamp}` to `atris/tick-registry.json` after each successful tick
@@ -1177,7 +1177,7 @@ rg "printRoster|registryPayload|canPersistEngineRegistry|speakFirstMinute|--glob
 - **Judge integrity guard:** `commands/autopilot.js:1404` (`verifyJudgeIntegrity`): SHA-256 checksums `JSON.stringify(REWARD_CONFIG) + computeTickReward.toString()` against `REWARD_CHECKSUM`; called at top of `runTaskOnce`; halts tick + writes lesson on mismatch
 - **Lesson gate tests:** `test/lesson-gate.test.js` covers unresolved/resolved lesson filtering and detector-backed lesson metadata before horizon selection.
 - **Heartbeat writer:** `commands/autopilot.js:2283` (`appendTickSummary`): appends a plain-language tick summary block to today's journal `## Notes`; includes reward score if present; idle ticks include the literal `0 tasks in 0s` so `getIdleTickCount` can still count them
-- **Suggestion engine:** `commands/autopilot.js:116` (suggestNextTask function, async)
+- **Suggestion engine:** `commands/autopilot.js:122` (suggestNextTask function, async)
   - Checks 8 signal types in priority order:
   - 0. Endgame tasks (current horizon: highest priority)
   - 1. Resume interrupted in-progress tasks
@@ -1188,13 +1188,13 @@ rg "printRoster|registryPayload|canPersistEngineRegistry|speakFirstMinute|--glob
   - 6. Unprocessed inbox items from journal
   - 7. Periodic review (MAP.md stale >7 days)
   - Imagined fallback: when no reactive signals fire, calls `proposeCandidateHorizons(cwd)`, picks the highest-confidence candidate, and returns it as `kind: 'imagined'` (priority 99). Throws → returns `null` so `"nothing to do."` still works.
-- **Prompt builder:** `commands/autopilot.js:691` (buildPrompt function; SHARED_CHECKOUT_GIT_CONTRACT at :500 injects the worktree/destructive-git rule into default + self-heal do prompts): adapts prompts per task kind, including strategy-specific benchmark runs
+- **Prompt builder:** `commands/autopilot.js:843` (buildPrompt function; SHARED_CHECKOUT_GIT_CONTRACT at :500 injects the worktree/destructive-git rule into default + self-heal do prompts): adapts prompts per task kind, including strategy-specific benchmark runs
 - **Autopilot glass log:** `commands/autopilot.js:715` (`buildAutopilotGlassLog`, `writeAutopilotGlassLog`): successful ticks write `atris/logs/autopilot/<timestamp>-<task>.md` with Plan, Plan Review, Action, Result, and Proof sections. Regression: `test/autopilot-glass-logging.test.js`
 - **Single-task runner:** `commands/autopilot.js:1985` (`runTaskOnce`): guards against missing Verify fields (halts tick), runs judge integrity check, then plan/do/review, always runs verify command (decoupled from review proxy), success requires verify ran AND passed, returns `verifyCmd`, `verifyRan`, `verifyPass`, and `glassLogPath`
 - **Verify executor helper:** `commands/autopilot.js:1264-1276` (`getVerifyCommand`): reads TODO.md across backlog/in-progress/completed tasks, extracts the verify field; returns `{ cmd, explicit }`: no default, tasks without Verify halt
 - **Lesson writer helper:** `commands/autopilot.js:1164-1188` (`writeLesson`): appends lesson line to atris/lessons.md in format `- **[YYYY-MM-DD] slug**: pass/fail: explanation`
-- **Phase executor:** `commands/autopilot.js:490` (executePhaseDetailed function): runs `buildRunnerCommand()` (default Claude-compatible `claude -p`, configurable with `ATRIS_RUNNER_*` env or runner flags)
-- **Approval gate:** `commands/autopilot.js:412` (askApproval function): enter/skip/quit
+- **Phase executor:** `commands/autopilot.js:602` (executePhaseDetailed function): runs `buildRunnerCommand()` (default Claude-compatible `claude -p`, configurable with `ATRIS_RUNNER_*` env or runner flags)
+- **Approval gate:** `commands/autopilot.js:418` (askApproval function): enter/skip/quit
 - **Human freshness check:** `commands/autopilot.js:436` (`askHuman`): interactive readline prompt "Is [task] still relevant? y/n"; returns `{ fresh: boolean }`; used in interactive mode when `isStillTrue` returns `unverified`
 - **Idle-tick helper:** `commands/autopilot.js:2571` (`getIdleTickCount`): counts consecutive `0 tasks in 0s` markers at the bottom of today's journal `## Notes`
 - **Recent-signals helper:** `commands/autopilot.js:2606` (`getRecentSignals`): pure read-only `{ recentCommits, wikiHealth, recentLessons }` from `git log -20`, `atris/wiki/STATUS.md`, last 10 lines of `atris/lessons.md`
@@ -1204,7 +1204,7 @@ rg "printRoster|registryPayload|canPersistEngineRegistry|speakFirstMinute|--glob
 - **Task age helper:** `commands/autopilot.js:3898` (`getTaskAgeDays`): computes age in days: endgame tasks use `Picked:` date, in-progress tasks parse `Claimed by:` timestamp, fallback 0.
 - **Staleness gate:** `commands/autopilot.js:3927` (`isStillTrue`): takes `{ title, age, source }` + cwd; returns `actionable` (≤7d or grep+git confirm), `unverified` (grep hits but no recent git activity), or `stale` (source missing or no grep hits). Mechanical verification only: no model calls.
 - **Model freshness check:** `commands/autopilot.js:3996` (`askModel`): called when `isStillTrue` returns `unverified`; uses the shared runner command with codebase search tools to ask "Is this task still relevant?"; parses YES/NO + reasoning from output; returns `{ fresh: boolean, reasoning: string }`; 60s timeout, conservative false on failure.
-- **Staleness wiring:** `commands/autopilot.js:116` (suggestNextTask staleness gate): after sorting suggestions, filters via `isStillTrue`; in auto mode, `unverified` items escalate to `askModel`; in interactive mode, prompts human via `askHuman`; skips stale/not-fresh into `staleSkipped` array; logs to journal `## Notes`.
+- **Staleness wiring:** `commands/autopilot.js:122` (suggestNextTask staleness gate): after sorting suggestions, filters via `isStillTrue`; in auto mode, `unverified` items escalate to `askModel`; in interactive mode, prompts human via `askHuman`; skips stale/not-fresh into `staleSkipped` array; logs to journal `## Notes`.
 - **Flags:** `--auto` (no approval), `--iterations=N`, `--verbose`, `--dry-run`, `--runner-profile NAME`, `--runner-bin PATH`, `--runner-template CMD`, `--runner-model MODEL`
 - **Value:** Always knows what to do next and why; now learns from past endgame outcomes (80/20 exploit/explore); also exposes a reusable single-run path for Endstate harnessing
 
@@ -1229,9 +1229,9 @@ rg "printRoster|registryPayload|canPersistEngineRegistry|speakFirstMinute|--glob
 - **Phase timing:** `commands/run.js:261-262,268`: collects `{plan, do, review}` ms per cycle, stored in `cycleTimings` array
 - **Summary table:** `commands/run.js:438` (cycleTimings forEach): per-cycle phase duration table
 - **Post-cycle clean:** `commands/run.js:559` (cleanAtris call): self-heal MAP.md refs
-- **Post-cycle push:** `commands/run.js:393` (execSync git push): disabled with `--no-push`
+- **Post-cycle push:** `commands/run.js:571` (execSync git push): disabled with `--no-push`
 - **Routing:** `bin/atris.js:2518` (command dispatch + flag parsing)
-- **Help text:** `bin/atris.js:501` (showHelpShort first-minute doors) · `bin/atris.js:786` (showHelp --all/--json)
+- **Help text:** `bin/atris.js:520` (showHelpShort first-minute doors) · `bin/atris.js:807` (showHelp --all/--json)
 - **Known commands:** `lib/known-commands.js:3` (knownCommands array)
 - **Constants:** `DEFAULT_MAX_CYCLES = 5`, `PHASE_TIMEOUT = 600000` (10 min per phase)
 - **Flags:**

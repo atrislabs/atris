@@ -538,6 +538,27 @@ test('a range ref whose end runs past the file is not right, and fix-refs clamps
   assert.equal(fs.readFileSync(path.join(root, 'atris/MAP.md'), 'utf8'), fixed);
 });
 
+test('a code-shaped name in plain parentheses after a ref binds, so fix-refs follows it', t => {
+  // 16 notes refs like `bin/atris.js:788-799` (showVerifyHelp) had drifted up to
+  // 200 lines and still counted as right, since only a backticked name bound
+  const root = workspace(t);
+  write(root, 'atris/atris.md', '');
+  const code = Array.from({ length: 40 }, () => '');
+  code[29] = 'function showVerifyHelp() {';
+  write(root, 'bin/cli.js', code.join('\n'));
+  write(root, 'atris/MAP.md', [
+    '| area | path | note |', '| --- | --- | --- |', '| cli | `bin/cli.js` | code |', '',
+    '- help: `bin/cli.js:5-8` (showVerifyHelp short-circuit) prints usage',
+    '- prose: `bin/cli.js:5` (see the help) binds nothing, so it stays right',
+  ].join('\n'));
+  const refs = JSON.parse(run(root, ['--json']).stdout).map_coverage.refs;
+  assert.deepEqual(refs.flagged.map(ref => [ref.map_line, ref.status, ref.symbol]), [[5, 'moved', 'showVerifyHelp']]);
+  const fix = run(root, ['--fix-refs']);
+  assert.equal(fix.status, 0, fix.stderr);
+  assert.match(fs.readFileSync(path.join(root, 'atris/MAP.md'), 'utf8'), /`bin\/cli\.js:30-33` \(showVerifyHelp short-circuit\)/);
+  assert.match(run(root, ['--fix-refs']).stdout, /map refs: nothing to move\./);
+});
+
 test('a routing ref on a feature card must sit near its command, and fix-refs moves it there', t => {
   // 20 routing refs in the notes had drifted to imports and other commands and
   // still counted as right, since a ref with no name was trusted on its numbers
