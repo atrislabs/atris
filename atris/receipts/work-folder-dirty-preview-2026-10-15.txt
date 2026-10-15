@@ -1,0 +1,38 @@
+Cleanup preview keeps dirty landed folders. Real CLI preview and cleanup retained notes; required checks exited 0.
+
+Files: lib/member-tidy.js; test/member-tidy.test.js; atris/MAP.md; atris/refs/MAP-NOTES.md; atris/TODO.md; atris/team/architect/logs/2026-10-15.md; atris/receipts/work-folder-dirty-preview-2026-10-15.txt
+
+Plan: landed folder -> read git status -> keep unsaved work or unreadable status -> otherwise offer removal. Apply still delegates to git without force.
+
+Verify command: node --test test/worktree-removal-guard.test.js test/member-tidy.test.js && node bin/atris.js slop --staged
+Exit: 0
+Progress: 74 passed; 0 failed; 0 skipped; 0 todo.
+
+Real CLI output excerpt (the required test invokes both commands in disposable real repositories):
+command: node bin/atris.js member tidy --dir <fixture copies> --dry-run (fixture cwd)
+kept  idle-ordinary  landed, but has unsaved work
+kept  idle-pinned  landed, but pinned by git worktree lock, 3 h old: writer still active keep these notes
+tidy: would remove 0, kept 2, of 2 copies in /private/var/folders/t1/2_4kmb5n4c71dxm26zc8dgzr0000gn/T/atris-member-tidy-vZSS0s/arena/.agent-worktrees/repo
+exit: 0
+command: node bin/atris.js member tidy --dir <fixture copies> (fixture cwd)
+kept  idle-ordinary  landed, but git refused: 'idle-ordinary' contains modified or untracked files, use --force to delete it
+tidy: removed 0, kept 2, of 2 copies in /private/var/folders/t1/2_4kmb5n4c71dxm26zc8dgzr0000gn/T/atris-member-tidy-vZSS0s/arena/.agent-worktrees/repo
+✔ tidy names pinned busy unfinished copies beside the ordinary ongoing count (1619.3605ms)
+
+✔ multiline pin reasons stay on one line in refusal and real cleanup reports (512.336208ms)
+✔ reap counts branch copies still at work and names detached and pinned ones (1948.532417ms)
+ℹ tests 74
+ℹ suites 0
+ℹ pass 74
+ℹ fail 0
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 30210.298167
+
+  ✓ clean, no slop tells in 6 files
+
+Setup note: brain activate and compile returned plan-only exit 2; generated adapters were left unchanged to keep this increment bounded.
+
+next_push: Prove preview retains a landed folder when git cannot read its status.
+layer: behaviors

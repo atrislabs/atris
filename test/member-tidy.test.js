@@ -746,8 +746,8 @@ test('tidy preserves staged and unsaved notes in idle landed copies', () => {
       const lines = cli.stdout.trim().split('\n');
       assert.ok(lines.some((line) => line.replace(/ {2,}/g, '  ') === `kept  idle-pinned  ${words}`));
       if (extra.length) {
-        assert.ok(lines.includes('would remove  idle-ordinary  work landed'));
-        assert.equal(lines.at(-1), `tidy: would remove 1, kept 1, of 2 copies in ${fx.copies}`);
+        assert.ok(lines.includes('kept  idle-ordinary  landed, but has unsaved work'));
+        assert.equal(lines.at(-1), `tidy: would remove 0, kept 2, of 2 copies in ${fx.copies}`);
       } else {
         assert.ok(lines.some((line) => /^kept  idle-ordinary  landed, but git refused:/.test(line)));
         assert.equal(lines.at(-1), `tidy: removed 0, kept 2, of 2 copies in ${fx.copies}`);

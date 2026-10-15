@@ -2434,4 +2434,4 @@ Busy unfinished staged notes: `test/member-tidy.test.js:571` stages a new note a
 
 Idle unfinished notes: `test/member-tidy.test.js:522` runs real preview and apply with pinned and ordinary idle unfinished copies. Both keep untracked drafts, tracked edits, staged contents, later edits, the staged patch and git status unchanged.
 
-Idle landed notes: `test/member-tidy.test.js:712` runs real preview and cleanup with pinned and ordinary dirty landed copies. It preserves staged contents, later edits, drafts, tracked changes, pin bytes, branches and registrations, with no removal record; ordinary cleanup relies on git refusal. Preview still lists the ordinary dirty copy for removal.
+Idle landed notes: `test/member-tidy.test.js:712` runs real preview and cleanup with pinned and ordinary dirty landed copies. It preserves staged contents, later edits, drafts, tracked changes, pin bytes, branches and registrations, with no removal record; ordinary cleanup relies on git refusal. Preview checks status at `lib/member-tidy.js:225` and keeps dirty copies with a plain unsaved-work reason, or names a failed status read.
