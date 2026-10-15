@@ -4688,6 +4688,14 @@ test('the fix diff splice list skips a noun after "in" or "of" and a noun with i
     answers.map((a) => `${a} ${D} the test was tolerating a fallback.`),
     answers.map((a) => `${a}, the test was tolerating a fallback.`),
   ).map((s) => s.count), [1]);
+  // a lone name that opens its line or follows an opening quote is a
+  // greeting, the same as in the odd count, so '"Christal, the referral
+  // model adds' is no splice; a name inside a sentence still is
+  const names = ['"Christal', 'Then Christal'];
+  assert.deepEqual(spliceShapes(
+    names.map((a) => `${a} ${D} the referral model adds a challenge.`),
+    names.map((a) => `${a}, the referral model adds a challenge.`),
+  ).map((s) => s.count), [1]);
 });
 
 test('the fix diff script lists each comma it writes before a "the" clause once', () => {
