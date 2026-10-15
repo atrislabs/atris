@@ -1,0 +1,28 @@
+Offline cleanup staged new file deleted before saving, 2026-10-15
+
+test: test/member-tidy.test.js:1555
+command: node --test test/worktree-removal-guard.test.js test/member-tidy.test.js
+exit: 0
+ℹ tests 89
+ℹ pass 89
+ℹ fail 0
+ℹ todo 0
+
+command: node bin/atris.js worktree cleanup (unavailable origin, staged new file deleted)
+cleanup: dry-run base=origin/master
+warning: could not refresh origin/master (fatal: '<tmp>/remote.git' does not appear to be a git repository); cleanup judged against the local copy, which may be behind
+candidates: 0
+cache_candidates: 0
+kept: 2
+left alone: primary_checkout=1
+kept: <tmp>/arena/.agent-worktrees/repo/offline-vanished branch=offline-vanished reason=dirty staged=1 unstaged=1 untracked=0
+exit: 0
+command: node bin/atris.js worktree cleanup --apply (unavailable origin, staged new file deleted)
+cleanup: applied base=origin/master
+warning: could not refresh origin/master (fatal: '<tmp>/remote.git' does not appear to be a git repository); cleanup judged against the local copy, which may be behind
+removeds: 0
+cache_pruneds: 0
+kept: 2
+left alone: primary_checkout=1
+kept: <tmp>/arena/.agent-worktrees/repo/offline-vanished branch=offline-vanished reason=dirty staged=1 unstaged=1 untracked=0
+exit: 0
