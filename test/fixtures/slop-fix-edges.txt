@@ -328,3 +328,5 @@ This reframes the goal as credit savings \u2014 a false promotion costs 3 credit
 => This reframes the goal as credit savings: a false promotion costs 3 credits, a false quick costs quality.
 We count both \u2014 a miss costs a day, a false alarm wastes an hour.
 => We count both; a miss costs a day, a false alarm wastes an hour.
+The old scorers are spent at their current design \u2014 those need redesigns, not more runs.
+=> The old scorers are spent at their current design; those need redesigns, not more runs.
