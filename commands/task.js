@@ -7933,9 +7933,13 @@ function taskDetail(taskDb, db, taskId) {
   };
 }
 
+// Printed lines get pasted into a shell. Plain words keep readable double
+// quotes; text a shell would act on ($, backticks, \, !) is single-quoted so
+// pasting it runs no command and keeps the words as written.
 function taskCommandQuote(value) {
-  const text = String(value || '').replace(/\s+/g, ' ').replace(/"/g, '\\"').trim();
-  return `"${text || '...'}"`;
+  const text = String(value || '').replace(/\s+/g, ' ').trim() || '...';
+  if (/[$`\\!]/.test(text)) return `'${text.replace(/'/g, `'\\''`)}'`;
+  return `"${text.replace(/"/g, '\\"')}"`;
 }
 
 function cleanPublicText(value, max = 500) {

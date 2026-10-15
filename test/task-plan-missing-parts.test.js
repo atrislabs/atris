@@ -89,3 +89,31 @@ test('planning a job uses its done line when no finish line is passed', () => {
     fs.rmSync(dir, { recursive: true, force: true });
   }
 });
+
+// The approve line is meant to be pasted into a shell. A first move with a
+// dollar sign or backticks used to sit inside double quotes, so pasting it
+// ran a command and changed the words before the job started.
+test('the approve line survives a real shell with quotes, dollars, and backticks intact', () => {
+  const { execFileSync } = require('node:child_process');
+  const firstMove = 'change "$PRICE" to `total` and say it\'s done!';
+  const approval = taskApprovalFor(plannedTask({
+    task_goal: 'real cost',
+    exit_condition: 'price shows',
+    verify: 'npm test',
+    first_move: firstMove,
+  }, { claimed_by: 'builder' }));
+  assert.equal(approval.approve.enabled, true);
+  const args = approval.approve.command.replace(/^atris /, '');
+  const out = execFileSync('/bin/sh', ['-c', `set -- ${args}; printf '%s\\n' "$@"`], {
+    encoding: 'utf8',
+    env: { PATH: '/usr/bin:/bin', PRICE: 'WRONG' },
+  });
+  assert.deepEqual(out.trimEnd().split('\n'), ['task', 'do', 'T1', '--as', 'builder', '--first-move', firstMove]);
+});
+
+test('a plain first move keeps its easy-to-read double quotes', () => {
+  const approval = taskApprovalFor(plannedTask({
+    task_goal: 'blue button', exit_condition: 'button is blue', verify: 'npm test', first_move: 'edit the css',
+  }, { claimed_by: 'builder' }));
+  assert.equal(approval.approve.command, 'atris task do T1 --as builder --first-move "edit the css"');
+});
