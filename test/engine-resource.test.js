@@ -3332,7 +3332,7 @@ test('the fix command names this checkout when the atris on PATH is another inst
     assert.strictEqual(atrisCommand({ pathEnv: empty, binDir: bin, home: tmp }), 'node ~/checkout/bin/atris.js', 'a path under home is shortened');
     const spaced = path.join(tmp, 'my checkout', 'bin');
     fs.mkdirSync(spaced, { recursive: true });
-    assert.strictEqual(atrisCommand({ pathEnv: empty, binDir: spaced, home: tmp }), `node ${JSON.stringify(path.join(spaced, 'atris.js'))}`, 'a path with a space is quoted in full');
+    assert.strictEqual(atrisCommand({ pathEnv: empty, binDir: spaced, home: tmp }), `node '${path.join(spaced, 'atris.js')}'`, 'a path with a space is quoted in full');
     const { pathAtrisRecordsRuns } = require('../lib/engine-resource');
     assert.strictEqual(pathAtrisRecordsRuns({ pathEnv: other }), false, 'an install with no run recording file');
     assert.strictEqual(pathAtrisRecordsRuns({ pathEnv: empty }), true, 'no atris on PATH, nothing to warn about');
@@ -4535,5 +4535,27 @@ test('the sweep listing splits leaked ssh-agents by engine runs and points to th
   } finally {
     fs.rmSync(root, { recursive: true, force: true });
     fs.rmSync(home, { recursive: true, force: true });
+  }
+});
+
+test('copied startup repair commands preserve shell punctuation in checkout paths', () => {
+  const { atrisCommand } = require('../lib/engine-resource');
+  const { spawnSync } = require('node:child_process');
+  const root = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'engine-command-shell-')));
+  try {
+    for (const name of ['my checkout', '$HOME', '`printf changed`', "a'b", 'a"b', 'a;b', 'a\nb']) {
+      const bin = path.join(root, name, 'bin');
+      fs.mkdirSync(bin, { recursive: true });
+      fs.writeFileSync(path.join(bin, 'atris.js'), 'process.stdout.write(JSON.stringify(process.argv.slice(2)))');
+      const command = `${atrisCommand({ pathEnv: root, binDir: bin, home: root })} engine sweep --fix-startup`;
+      const shells = ['/bin/sh', ...(fs.existsSync('/bin/zsh') ? ['/bin/zsh'] : [])];
+      for (const shell of shells) {
+        const run = spawnSync(shell, ['-c', command], { encoding: 'utf8' });
+        assert.strictEqual(run.status, 0, `${name}: ${run.stderr}`);
+        assert.strictEqual(run.stdout, '["engine","sweep","--fix-startup"]', `${shell}: ${name}`);
+      }
+    }
+  } finally {
+    fs.rmSync(root, { recursive: true, force: true });
   }
 });

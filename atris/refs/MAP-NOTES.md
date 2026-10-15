@@ -2426,3 +2426,5 @@ When the receipt names a different model than the one asked for, the chat prints
 `lib/runner-command.js` pins the mercury profile and `lib/engine-registry.js` keeps it roster-only.
 Regression checks live in `test/ax.test.js`, `test/runner-command.test.js`, and `test/engine-ask.test.js`.
 Verify: `npm run test:fast && node --test test/ax.test.js test/runner-command.test.js`.
+
+Startup repair command quoting: `lib/engine-resource.js:339` keeps punctuation literal in copied sweep commands. Real shell regression: `test/engine-resource.test.js:4541`, seven path forms, sh and zsh when available.
