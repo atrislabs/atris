@@ -531,6 +531,20 @@ test('tidy names pinned unfinished work beside the count of ordinary ongoing wor
     const aged = new Date(now - 3 * 60 * 60 * 1000);
     fs.utimesSync(pin, aged, aged);
     const words = 'work not landed yet, pinned by git worktree lock, 3 h old: writer still active keep these notes';
+    const before = new Map();
+    for (const copy of [pinned, ordinary]) {
+      fs.writeFileSync(path.join(copy, 'draft.txt'), `notes for ${path.basename(copy)}\n`);
+      fs.appendFileSync(path.join(copy, `${path.basename(copy)}.txt`), 'unsaved edits\n');
+      fs.writeFileSync(path.join(copy, 'staged.txt'), 'prepared notes\n');
+      runGit(['add', 'staged.txt'], copy);
+      fs.appendFileSync(path.join(copy, 'staged.txt'), 'later edits\n');
+      const status = runGit(['status', '--porcelain'], copy);
+      assert.ok(status.includes('?? draft.txt'));
+      assert.ok(status.includes(`M ${path.basename(copy)}.txt`));
+      assert.ok(status.includes('AM staged.txt'));
+      assert.equal(runGit(['show', ':staged.txt'], copy), 'prepared notes');
+      before.set(copy, { status, patch: runGit(['diff', '--cached', '--binary'], copy) });
+    }
 
     const preview = tidyMemberCopies({ repoRoot: fx.repo, now, dryRun: true });
     assert.equal(preview.aborted, null);
@@ -556,7 +570,12 @@ test('tidy names pinned unfinished work beside the count of ordinary ongoing wor
       const registered = runGit(['worktree', 'list', '--porcelain'], fx.repo);
       for (const copy of [pinned, ordinary]) {
         const name = path.basename(copy);
-        assert.equal(fs.readFileSync(path.join(copy, `${name}.txt`), 'utf8'), 'work\n');
+        assert.equal(fs.readFileSync(path.join(copy, `${name}.txt`), 'utf8'), 'work\nunsaved edits\n');
+        assert.equal(fs.readFileSync(path.join(copy, 'draft.txt'), 'utf8'), `notes for ${name}\n`);
+        assert.equal(fs.readFileSync(path.join(copy, 'staged.txt'), 'utf8'), 'prepared notes\nlater edits\n');
+        assert.equal(runGit(['show', ':staged.txt'], copy), 'prepared notes');
+        assert.equal(runGit(['diff', '--cached', '--binary'], copy), before.get(copy).patch);
+        assert.equal(runGit(['status', '--porcelain'], copy), before.get(copy).status);
         assert.ok(branchExists(fx.repo, name));
         assert.ok(registered.includes(`worktree ${copy}\n`));
       }

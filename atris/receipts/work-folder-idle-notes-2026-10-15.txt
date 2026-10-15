@@ -1,0 +1,32 @@
+Idle unfinished folders now check that cleanup keeps staged and unsaved notes, using real CLI preview and apply.
+
+Files: test/member-tidy.test.js, atris/MAP.md, atris/refs/MAP-NOTES.md, atris/TODO.md, atris/team/architect/logs/2026-10-15.md, this receipt.
+Verify: node --test test/worktree-removal-guard.test.js test/member-tidy.test.js && node bin/atris.js slop --staged
+Progress: two idle unfinished folders check staged contents, later edits, drafts, tracked changes and unchanged git state.
+next_push: Prove idle landed folders retain staged and unstaged notes during cleanup.
+
+Required command exit: 0
+Actual output excerpt:
+command: node bin/atris.js member tidy --dir <fixture copies> --dry-run (fixture cwd)
+kept  unfinished-pinned  work not landed yet, pinned by git worktree lock, 3 h old: writer still active keep these notes
+left alone  1 work not landed yet
+tidy: would remove 0, kept 2, of 2 copies in /private/var/folders/t1/2_4kmb5n4c71dxm26zc8dgzr0000gn/T/atris-member-tidy-5f309e/arena/.agent-worktrees/repo
+exit: 0
+command: node bin/atris.js member tidy --dir <fixture copies> (fixture cwd)
+kept  unfinished-pinned  work not landed yet, pinned by git worktree lock, 3 h old: writer still active keep these notes
+left alone  1 work not landed yet
+tidy: removed 0, kept 2, of 2 copies in /private/var/folders/t1/2_4kmb5n4c71dxm26zc8dgzr0000gn/T/atris-member-tidy-5f309e/arena/.agent-worktrees/repo
+exit: 0
+
+ℹ tests 73
+ℹ suites 0
+ℹ pass 73
+ℹ fail 0
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 28950.928917
+
+  ✓ clean, no slop tells in 6 files
+
+layer: behaviors

@@ -202,3 +202,5 @@ Member tidy busy unfinished pins: `test/member-tidy.test.js:571` runs real CLI p
 Busy unfinished unsaved notes: `test/member-tidy.test.js:571` adds untracked drafts and tracked edits in both pinned and ordinary busy unfinished copies. Real CLI preview and apply must preserve exact bytes and unchanged git status, alongside the existing live-child, pin and registration checks.
 
 Busy unfinished staged notes: `test/member-tidy.test.js:571` stages a new note and then edits it again in both pinned and ordinary busy unfinished copies. Real preview and apply must preserve the staged patch, staged contents, later edits, existing unsaved notes, and unchanged git status.
+
+Idle unfinished notes: `test/member-tidy.test.js:522` runs real preview and apply with pinned and ordinary idle unfinished copies. Both keep untracked drafts, tracked edits, staged contents, later edits, the staged patch and git status unchanged.
