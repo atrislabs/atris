@@ -3141,6 +3141,23 @@ test('fix joins "the", a noun, a verb in "s" and one bare word before a stop', (
   ]);
 });
 
+test('fix reads "e.g." and kin inside the left clause, not as its end', () => {
+  // from an API note: "Rate-limit hard (e.g. 5/hour), this endpoint mints
+  // credentials" spliced, since the left side stopped at "e.g." and
+  // "5/hour)" alone is no clause. A real stop still ends the left side.
+  const file = tmpFile('abbrev-left.md', [
+    'Rate-limit hard (e.g. 5/hour) \u2014 this endpoint mints credentials.',
+    'Name it (i.e. foo) \u2014 the loop picks it up.',
+    'It shipped. Done \u2014 the loop picks it up.',
+  ].join('\n'));
+  const { changes } = applyFixes([file], RULES, { write: false });
+  assert.deepEqual(changes.map((c) => c.after), [
+    'Rate-limit hard (e.g. 5/hour); this endpoint mints credentials.',
+    'Name it (i.e. foo); the loop picks it up.',
+    'It shipped. Done, the loop picks it up.',
+  ]);
+});
+
 test('fix joins a subject with "also" before its verb with a semicolon', () => {
   // from a probe of the loop note: "now", "still" and "already" before a
   // verb joined the clause, but "also" did not, so "the gate also checks

@@ -710,7 +710,9 @@ function clauseLeft(at, whole) {
   const verdict = /\S:\s+(\*\*[^*]+\*\*|__[^_]+__)\s*$/.exec(whole.slice(0, at));
   if (verdict) return verdict[1];
   const before = whole.slice(0, at).trim();
-  let left = before.split(/[.!?:]\s/).pop().trim();
+  // "e.g." and kin end no sentence: "Rate-limit hard (e.g. 5/hour); this
+  // endpoint mints credentials", never a left side of "5/hour)" alone
+  let left = before.split(/(?<!\b(?:e\.g|i\.e|vs|cf))[.!?:]\s/i).pop().trim();
   // a wrapped line goes on with the sentence from the line above, so a word
   // or two before its dash count with the words up there: "The chmod is
   // ONE-WAY / defense; it doesn't auto-revert", never "defense, it doesn't"
