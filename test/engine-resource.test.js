@@ -1360,7 +1360,7 @@ test('every engine started through a runner or profile variable records its run 
     ['commands/run.js#execPhaseCommandSync', 'recorded around the phase by executePhase'],
   ]);
   const engineLaunches = (rel, text) => {
-    if (LAUNCH_EXEMPT_FILES.has(rel)) return { seen: 0, missing: [], routes: {} };
+    if (LAUNCH_EXEMPT_FILES.has(rel)) return { seen: 0, missing: [], routes: {}, traced: [] };
     const code = stripComments(text);
     const lines = code.split('\n');
     const recorder = recordingCall(code);
@@ -1674,6 +1674,7 @@ test('every engine started through a runner or profile variable records its run 
     // own declaration, or a launcher parameter filled at a call.
     let route = '';
     const routes = {};
+    const traced = [];
     let seen = 0;
     const missing = [];
     for (const match of code.matchAll(VAR_LAUNCH)) {
@@ -1687,10 +1688,11 @@ test('every engine started through a runner or profile variable records its run 
       seen += 1;
       routes[route] = (routes[route] || 0) + 1;
       const line = before.split('\n').length;
+      traced.push({ route, at: `${rel}:${line} ${program}${called || ''}` });
       if (recordedAbove(lines, line, recorder) || EXEMPT_LAUNCHES.has(`${rel}#${fnName}`)) continue;
       missing.push(`${rel}:${line} ${program}${called || ''}`);
     }
-    return { seen, missing, routes };
+    return { seen, missing, routes, traced };
   };
   const planted = (text) => engineLaunches('commands/planted.js', text).missing;
   // Resolver defaults keep nested parentheses and commas in one parameter.
@@ -2106,6 +2108,9 @@ test('every engine started through a runner or profile variable records its run 
   const repo = path.join(__dirname, '..');
   const missing = [];
   const routes = {};
+  // Where each traced launch lives, by route, so a dropped count points at
+  // the launch it lost.
+  const tracedAt = {};
   let seen = 0;
   for (const dir of ['commands', 'lib']) {
     for (const name of fs.readdirSync(path.join(repo, dir)).filter((file) => file.endsWith('.js'))) {
@@ -2114,13 +2119,15 @@ test('every engine started through a runner or profile variable records its run 
       seen += result.seen;
       missing.push(...result.missing);
       for (const [kind, count] of Object.entries(result.routes)) routes[kind] = (routes[kind] || 0) + count;
+      for (const { route, at } of result.traced) (tracedAt[route] = tracedAt[route] || []).push(at);
     }
   }
   assert.ok(seen >= 8, `the scan should see the known runner and profile launches, saw ${seen}`);
-  assert.ok((routes.declaration || 0) >= 7 && (routes['call argument'] || 0) >= 1, `each route should still trace its known launches, saw ${JSON.stringify(routes)}`);
+  assert.ok((routes.declaration || 0) >= 7 && (routes['call argument'] || 0) >= 1, `each route should still trace its known launches, saw ${JSON.stringify(tracedAt, null, 2)}`);
   assert.deepStrictEqual(missing, [], 'record the run with startEngineRun, or add the launch to the exempt list with its reason');
   console.log(`real runner and profile launch scan: ${seen} engine launches through a variable, ${missing.length} unrecorded`);
   console.log(`real runner and profile launch routes: ${JSON.stringify(routes)}`);
+  for (const [kind, places] of Object.entries(tracedAt)) console.log(`  ${kind}: ${places.join(', ')}`);
 });
 
 test('the landing status names runs closed after their parent died in the last day, and stays quiet with none', () => {
