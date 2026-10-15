@@ -259,7 +259,7 @@ Continuation display read batching: `test/commands.test.js:15230` overlaps curre
 
 Queue filtering read batching: `test/commands.test.js:15322` runs three queue/current CLI reads together after both fixtures close. `commands/task.js:3962` derives each response from stored rows, and the saved view is not consumed by these reads. All assertions remain; three sequential launch stages become one.
 
-Clean review setup: `test/commands.test.js:11948` seeds creation, claim and readiness through the production store, asserts each result and closes before both real CLI review checks. Five launches become two; the accepted read-only check and refused mutating check retain every assertion.
+Clean review setup: `test/commands.test.js:11949` seeds creation, claim and readiness through the production store, asserts each result and closes before both real CLI review checks. Five launches become two; the accepted read-only check and refused mutating check retain every assertion.
 
 Review selection ownership setup: `test/commands.test.js:12525` seeds ownership with production claimTask in the existing creation connection, asserts success and closes in finally. Readiness, selection and both status inspections remain real CLI checks with every assertion retained. Five launches become four.
 
@@ -272,3 +272,5 @@ Uncertified review readiness setup: `test/commands.test.js:12525` seeds readines
 Duplicate-seed readiness setup: `test/commands.test.js:12776` seeds readiness through production readyTask after the real CLI claim, using the same actor and proof and closing in finally. Certification, selection and duplicate refusal retain every CLI assertion. Six launches become five.
 
 Automatic landing wording setup: `test/commands.test.js:11815` seeds all three claims with production claimTask in the creation connection, asserts success and closes in finally. Every ready invocation and wording assertion remains on the CLI. Three launches replace six.
+
+Stale landing wording setup: `test/commands.test.js:11886` seeds both claims with production claimTask in the creation connection, asserts success and closes in finally. Both readiness commands and all stale-heartbeat wording assertions remain on the CLI. Two launches replace four.
