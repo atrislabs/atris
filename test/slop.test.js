@@ -2434,6 +2434,27 @@ test('fix joins a field value and a "the" clause after a dash with a semicolon',
   ]);
 });
 
+test('fix joins "the", a noun and a verb in s with a tail that says how', () => {
+  // from real repo text: "the engine blocks regardless of context" and
+  // "the widget computes client-side" spliced, since no object follows the
+  // verb. "instead of" with an "ing" word, "regardless of" and a side word
+  // after a one-word subject say how, so the clause joins; a plural that is
+  // almost never a verb keeps the phrase.
+  const file = tmpFile('how-tail-clause.md', [
+    'Irreversible by definition \u2014 the engine blocks regardless of context.',
+    'No retries here \u2014 the runner catches instead of propagating.',
+    'The result key is empty \u2014 the widget computes client-side.',
+    'Check one place \u2014 the unit tests instead of mocking.',
+  ].join('\n'));
+  const { changes } = applyFixes([file], RULES);
+  assert.deepEqual(changes.map((c) => c.after), [
+    'Irreversible by definition; the engine blocks regardless of context.',
+    'No retries here; the runner catches instead of propagating.',
+    'The result key is empty; the widget computes client-side.',
+    'Check one place, the unit tests instead of mocking.',
+  ]);
+});
+
 test('fix gives a "not" value past a field colon a semicolon, not a second colon', () => {
   // from the edge file: a short opener led by "not" takes a colon, so
   // "Status: not ready" before a dash stacked a second colon on the field's
@@ -4196,14 +4217,14 @@ test('the fix diff script counts known gaps with a "~> " line and never fails on
   // prints its gap line, a closed one does not, and the run still exits 0
   const script = path.join(__dirname, '..', 'scripts', 'slop-fix-diff.js');
   const file = tmpFile('gaps.txt', [
-    String.raw`Same principle \u2014 the system learns relevance instead of having it prescribed.`,
-    '~> Same principle; the system learns relevance instead of having it prescribed.',
+    String.raw`No latency impact \u2014 the tracing client buffers and uploads out-of-band.`,
+    '~> No latency impact; the tracing client buffers and uploads out-of-band.',
     String.raw`We fixed it \u2014 the loop kicks work.`,
     '~> We fixed it; the loop kicks work.',
   ].join('\n'));
   const r = spawnSync(process.execPath, [script, '--probe-file', file], { encoding: 'utf8', cwd: path.join(__dirname, '..') });
   assert.equal(r.status, 0, r.stdout);
-  assert.match(r.stdout, /^ {2}gap {3}Same principle; the system learns relevance instead of having it prescribed\.$/m);
+  assert.match(r.stdout, /^ {2}gap {3}No latency impact; the tracing client buffers and uploads out-of-band\.$/m);
   assert.doesNotMatch(r.stdout, /^ {2}gap {3}We fixed it/m);
   assert.match(r.stdout, /^1 of 2 known gaps still open$/m);
 });
@@ -4217,7 +4238,7 @@ test('the fix diff script lists each comma it writes before a "the" clause once'
   const D = String.fromCharCode(0x2014);
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'splices-'));
   fs.writeFileSync(path.join(dir, 'notes.md'), [
-    `Same principle ${D} the system learns relevance instead of having it prescribed.`,
+    `No latency impact ${D} the tracing client buffers and uploads out-of-band.`,
     '',
     `Feedback ${D} the API that turns complaints into fixes.`,
     '',
@@ -4231,7 +4252,7 @@ test('the fix diff script lists each comma it writes before a "the" clause once'
   const r = spawnSync(process.execPath, [script, '--splices', dir], { encoding: 'utf8', cwd: path.join(__dirname, '..') });
   fs.rmSync(dir, { recursive: true, force: true });
   assert.equal(r.status, 0, r.stderr);
-  assert.match(r.stdout, /^ {2}, the system learns relevance instead of having it prescribed$/m);
+  assert.match(r.stdout, /^ {2}, the tracing client buffers and uploads out-of-band$/m);
   assert.match(r.stdout, /^ {2}, the gym measures `a` per task {2}\(x2\)$/m);
   assert.doesNotMatch(r.stdout, /API that turns|three ways/);
   assert.match(r.stdout, /; 2 fixes put a comma before "the"/);

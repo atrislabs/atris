@@ -131,3 +131,18 @@ Bottleneck: unchanged \u2014 the trust-playbook GO stays closed on all five dime
 # colon it takes a semicolon, so no second colon stacks on it
 Status: not ready \u2014 the gate holds the drafts.
 => Status: not ready; the gate holds the drafts.
+
+# from real repo text: a verb in s with a tail that says how, not what
+Irreversible by definition \u2014 the engine blocks regardless of context.
+=> Irreversible by definition; the engine blocks regardless of context.
+No retries here \u2014 the runner catches instead of propagating.
+=> No retries here; the runner catches instead of propagating.
+The result key is empty \u2014 the widget computes client-side.
+=> The result key is empty; the widget computes client-side.
+Check one place \u2014 the unit tests instead of mocking.
+=> Check one place, the unit tests instead of mocking.
+Check one place \u2014 the error logs instead of the console.
+=> Check one place, the error logs instead of the console.
+# a noun before a plural reads like a subject and its verb
+Two views \u2014 the admin panels server-side.
+~> Two views, the admin panels server-side.
