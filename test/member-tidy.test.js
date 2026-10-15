@@ -306,14 +306,22 @@ test('tidy keeps a landed copy while git is paused mid-rebase in it, and logs wh
   }
 });
 
-for (const surface of ['tidy', 'cleanup', 'reap']) {
+for (const surface of ['tidy', 'cleanup', 'reap', 'autopilot']) {
   test(`${surface} reports a pin acquired after preflight and leaves the copy registered`, () => {
     const fx = makeFixture();
     try {
-      const copy = addCopy(fx, 'landed-late-pin');
+      const hash = runGit(['rev-parse', 'HEAD'], fx.repo);
+      const copy = surface === 'autopilot'
+        ? path.join(fx.repo, `.regression-worktree-${hash.slice(0, 8)}`)
+        : addCopy(fx, 'landed-late-pin');
+      if (surface === 'autopilot') {
+        fs.mkdirSync(path.join(fx.repo, 'atris'));
+        fs.writeFileSync(path.join(fx.repo, 'atris', 'tick-registry.json'), JSON.stringify([
+          { hash, verifyCmd: 'true', slug: 'late-pin-proof' },
+        ]));
+      }
       const aged = new Date(Date.now() - 3 * 60 * 60 * 1000);
-      fs.utimesSync(copy, aged, aged);
-      const gitDir = runGit(['rev-parse', '--absolute-git-dir'], copy);
+      if (surface !== 'autopilot') fs.utimesSync(copy, aged, aged);
       const realGit = spawnSync('which', ['git'], { encoding: 'utf8' });
       assert.equal(realGit.status, 0, realGit.stderr);
       const bin = path.join(fx.base, 'bin');
@@ -340,18 +348,27 @@ process.exit(result.status === null ? 1 : result.status);
         : surface === 'cleanup'
           ? ['worktree', 'cleanup', '--base', 'HEAD', '--apply']
           : ['land', '--reap', '--base', 'HEAD', '--no-remote', '--json'];
-      const cli = spawnSync(process.execPath,
-        [path.resolve(__dirname, '../bin/atris.js'), ...args],
+      const invocation = surface === 'autopilot'
+        ? ['-e', `console.log(JSON.stringify(require(${JSON.stringify(path.resolve(__dirname, '../commands/autopilot.js'))}).regressionCheck(process.cwd(), { activeCwds: [] })))`]
+        : [path.resolve(__dirname, '../bin/atris.js'), ...args];
+      const cli = spawnSync(process.execPath, invocation,
         { cwd: fx.repo, encoding: 'utf8', timeout: 30000,
           env: { ...process.env, PATH: `${bin}${path.delimiter}${process.env.PATH}` } });
-      console.log(`command: node bin/atris.js ${surface === 'tidy' ? 'member tidy --dir <fixture copies>' : args.join(' ')} (late-pin git wrapper)`);
+      const command = surface === 'autopilot'
+        ? `node -e ${JSON.stringify(invocation[1])}`
+        : `node bin/atris.js ${surface === 'tidy' ? 'member tidy --dir <fixture copies>' : args.join(' ')}`;
+      console.log(`command: ${command} (late-pin git wrapper)`);
       console.log(cli.stdout.trim());
       console.log(`exit: ${cli.status}`);
       assert.equal(cli.status, 0, cli.stderr);
       assert.deepEqual(JSON.parse(fs.readFileSync(attempt, 'utf8')),
-        ['worktree', 'remove', ...(surface === 'reap' ? ['--force'] : []), copy]);
+        ['worktree', 'remove', ...(surface === 'reap' ? ['--force'] : []), copy, ...(surface === 'autopilot' ? ['--force'] : [])]);
       const words = 'pinned by git worktree lock, under a minute old: agent started writing please wait';
-      if (surface === 'reap') {
+      if (surface === 'autopilot') {
+        assert.deepEqual(JSON.parse(cli.stdout), [{
+          hash, slug: 'late-pin-proof', pass: true, kept: 'remove_failed', held: words, path: copy,
+        }]);
+      } else if (surface === 'reap') {
         const receipt = JSON.parse(cli.stdout);
         assert.deepEqual(receipt.removedWorktrees, []);
         assert.deepEqual(receipt.deletedBranches, []);
@@ -362,9 +379,11 @@ process.exit(result.status === null ? 1 : result.status);
           : `cleanup: applied base=HEAD\nremoveds: 0\ncache_pruneds: 0\nkept: 2\nrefused: ${copy} ${words}`;
         assert.equal(cli.stdout.trim(), expected);
       }
+      const gitDir = runGit(['rev-parse', '--absolute-git-dir'], copy);
       assert.equal(fs.readFileSync(path.join(gitDir, 'locked'), 'utf8'), `${reason}\n`);
       assert.ok(fs.existsSync(path.join(copy, 'README.md')));
-      assert.ok(branchExists(fx.repo, 'landed-late-pin'));
+      if (surface !== 'autopilot') assert.ok(branchExists(fx.repo, 'landed-late-pin'));
+      else assert.equal(runGit(['rev-parse', 'HEAD'], copy), hash);
       assert.ok(runGit(['worktree', 'list', '--porcelain'], fx.repo).includes(`worktree ${copy}\n`));
       assert.deepEqual(removalLines(fx.repo), []);
     } finally {

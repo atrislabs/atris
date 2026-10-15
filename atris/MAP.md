@@ -154,4 +154,4 @@ Hourly cleanup failed stops: `commands/autoland.js:869` includes failed stop cou
 
 Hourly cleanup scan failures: `commands/autoland.js:878` includes a saved scan error in the plain summary, so a thrown first read or safety recheck does not look clean. Regression: `test/engine-resource.test.js:631` runs a real missing executable in both reads and confirms no agent is stopped.
 
-Last-moment pin coverage: `test/member-tidy.test.js` runs real tidy, cleanup, and branch cleanup commands with a pin acquired at removal; saved proof is `atris/receipts/work-folder-reap-late-pin-2026-10-14.txt`.
+Last-moment pin coverage: `test/member-tidy.test.js` runs real tidy, cleanup, branch cleanup, and autopilot regression execution with a pin acquired at removal; latest proof is `atris/receipts/work-folder-autopilot-late-pin-2026-10-14.txt`.
