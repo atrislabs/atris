@@ -52,7 +52,8 @@ test('each row carries how the member last finished, even mid run', () => {
 
     const screen = renderBoard(readBoard({ dir, now: NOW }), dir);
     assert.match(screen, /^member\s+state\s+last result\s+alive\s+/m);
-    assert.match(screen, /^builder\s+working\s+failed 14m ago\s+-\s+/m);
+    // No reason was written, so the board says how long the failed run lasted.
+    assert.match(screen, /^builder\s+working\s+failed \(after 1m\) 14m ago\s+-\s+/m);
     assert.match(screen, /^shipper\s+done ok\s+ok 4m ago\s+-\s+/m);
     assert.match(screen, /^breaker\s+stopped\s+stopped 3m ago\s+-\s+/m);
     assert.match(screen, /^rookie\s+working\s+-\s+-\s+/m);
