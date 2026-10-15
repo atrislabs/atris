@@ -142,6 +142,40 @@ test('the real command starts without --budget, persists it, and refuses cloud s
   assert.deepEqual(JSON.parse(listed.stdout).campaigns.map((c) => c.id).sort(), ['cmp-json', 'cmp-local']);
 });
 
+test('a judge script outside the checkout is copied in, so deleting the original keeps it working', (t) => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'atris-campaign-judge-copy-'));
+  t.after(() => fs.rmSync(dir, { recursive: true, force: true }));
+  const checkout = path.join(dir, 'repo');
+  const outside = path.join(dir, 'elsewhere');
+  fs.mkdirSync(path.join(checkout, '.git'), { recursive: true });
+  fs.mkdirSync(outside);
+  const env = { ...process.env, ATRIS_CAMPAIGN_DB: path.join(dir, 'state', 'atris.db'), ATRIS_SKIP_UPDATE_CHECK: '1' };
+  const cli = (...args) => spawnSync(process.execPath, [CLI, 'campaign', ...args], { cwd: checkout, env, encoding: 'utf8' });
+  const script = (file, words) => {
+    fs.writeFileSync(file, `#!/bin/sh\necho ${words}\nexit 1\n`);
+    fs.chmodSync(file, 0o755);
+  };
+
+  const original = path.join(outside, 'check.sh');
+  script(original, 'still four of nine');
+  const started = cli('start', 'Judge copy', '--judge', original, '--id', 'cmp-copy');
+  assert.equal(started.status, 0, started.stderr);
+  const copy = path.join(dir, 'state', 'campaigns', 'cmp-copy', 'check.sh');
+  assert.match(started.stderr, /copied the judge script/);
+  assert.equal(JSON.parse(cli('show', 'cmp-copy', '--json').stdout).campaign.judge, copy);
+  fs.rmSync(original);
+  const judged = cli('judge', 'cmp-copy');
+  assert.equal(judged.status, 1, judged.stderr);
+  assert.match(judged.stdout, /judge failed in \d+s: still four of nine/);
+
+  const inside = path.join(checkout, 'check.sh');
+  script(inside, 'inside the checkout');
+  const kept = cli('start', 'Judge inside', '--judge', inside, '--id', 'cmp-inside');
+  assert.equal(kept.status, 0, kept.stderr);
+  assert.equal(JSON.parse(cli('show', 'cmp-inside', '--json').stdout).campaign.judge, inside);
+  assert.equal(fs.existsSync(path.join(dir, 'state', 'campaigns', 'cmp-inside')), false);
+});
+
 test('a parent with its own parent is refused (one level only)', async () => {
   const store = createMemoryStore();
   await run(store, ['start', 'Top', '--judge', 'exit 1', '--budget', '10', '--id', 'cmp-top']);

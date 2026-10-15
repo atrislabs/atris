@@ -12,7 +12,7 @@ const { spawn } = require('child_process');
 const { readFlag } = require('../lib/arg-parser');
 const { CAMPAIGN_ID, isHumanActor, validateCampaign } = require('../lib/campaign-schema');
 const { decide } = require('../lib/campaign-core');
-const { getCampaign, listCampaigns, newCampaignId, openCampaignStore } = require('../lib/campaign-store');
+const { campaignFolder, getCampaign, listCampaigns, newCampaignId, openCampaignStore } = require('../lib/campaign-store');
 const { judgeRanData, judgeReading, outputTail } = require('../lib/campaign-reading');
 const { cloudLink, sendPersonAction, syncCampaign } = require('../lib/campaign-sync');
 
@@ -172,6 +172,31 @@ function runJudgeCommand(command, cwd, timeoutSeconds) {
   });
 }
 
+function shellQuote(text) {
+  return /^[\w@%+=:,./-]+$/.test(text) ? text : `'${text.replace(/'/g, `'\\''`)}'`;
+}
+
+// A judge that is just one script file outside this checkout is copied into
+// the campaign's own folder, so deleting or editing the original never changes
+// what the campaign checks. Returns the copy as a command, or null to keep it.
+function keepJudgeScript(judge, folder) {
+  const named = judge.trim().replace(/^(['"])(.*)\1$/, '$2');
+  let file;
+  try {
+    file = fs.realpathSync(path.resolve(named));
+    if (!fs.statSync(file).isFile()) return null;
+  } catch {
+    return null;
+  }
+  const inside = path.relative(fs.realpathSync(process.cwd()), file);
+  if (inside && !inside.startsWith('..') && !path.isAbsolute(inside)) return null;
+  fs.mkdirSync(folder, { recursive: true });
+  const copy = path.join(folder, path.basename(file));
+  fs.copyFileSync(file, copy);
+  fs.chmodSync(copy, fs.statSync(file).mode & 0o777);
+  return { from: file, judge: shellQuote(copy) };
+}
+
 function makeContext(args, deps) {
   const asJson = args.includes('--json');
   const store = deps.store || openCampaignStore(process.cwd());
@@ -188,7 +213,8 @@ function makeContext(args, deps) {
     return code;
   };
   const append = (campaignId, type, data, as = actor) => store.append({ campaign_id: campaignId, type, actor: as, data });
-  return { asJson, store, actor, judge, out, fail, append, forgedHuman, loopDeps: deps.loopDeps, cloud: deps.cloud || {} };
+  const folder = deps.campaignFolder || ((id) => campaignFolder(id));
+  return { asJson, store, actor, judge, out, fail, append, forgedHuman, folder, loopDeps: deps.loopDeps, cloud: deps.cloud || {} };
 }
 
 function requireCampaign(ctx, id) {
@@ -290,7 +316,15 @@ async function cmdStart(args, ctx) {
     return ctx.fail(`already done: the judge passes before any work (${reading.summary || 'exit 0'}). Write a judge that fails first.`, 1);
   }
 
-  const startData = { title, judge, budget, owner: owner || 'mission-lead', created_from: `atris campaign start by ${ctx.actor}` };
+  let kept = null;
+  try {
+    kept = keepJudgeScript(judge, ctx.folder(id));
+  } catch (error) {
+    if (!ctx.asJson) console.error(`could not copy the judge script, keeping the original: ${error.message}`);
+  }
+  if (kept && !ctx.asJson) console.error(`copied the judge script from ${kept.from} into the campaign: ${kept.judge}`);
+
+  const startData = { title, judge: kept ? kept.judge : judge, budget, owner: owner || 'mission-lead', created_from: `atris campaign start by ${ctx.actor}` };
   if (seats.length) startData.seats = seats;
   if (bet && !wrongIf) startData.bet = bet;
   if (standing) startData.standing = true;
