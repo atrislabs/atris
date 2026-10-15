@@ -10614,6 +10614,8 @@ function memberGoFinishTask(owner, task, result, thrown = null) {
   const checked = mission.verifier_result && mission.verifier_result.passed === true
     && (!required || String(mission.verifier_result.command || '').trim() === required);
   if (!thrown && result && result.started && ['complete', 'ready'].includes(mission.status) && checked) {
+    // Its change already merged and the merge line closed the job.
+    if (taskDb.getTask(db, task.id)?.status === 'done') return { id: task.id, title: task.title, outcome: 'done', receipt: receipt || null };
     const proof = [`[verified] ${owner} ran mission ${result.mission_id} and its check passed.`,
       receipt ? `Receipt: ${receipt}` : ''].filter(Boolean).join('\n');
     const ready = taskDb.readyTask(db, { id: task.id, actor: owner, proof });
@@ -10853,6 +10855,7 @@ async function memberSteerOrDispatchWith({ pullTask = false } = {}, rawArgs = []
     ? { task, work_step: { summary: result?.work_step?.summary || null }, error: result?.error || null }
     : merged));
   else if (task.outcome === 'review') console.log(`Task "${task.title}" is ready for review.`);
+  else if (task.outcome === 'done') console.log(`Task "${task.title}" merged and closed itself.`);
   else if (task.outcome === 'needs_human' && task.held_for === 'review') console.log(`Task "${task.title}" waits for a person to review it: ${task.reason}`);
   else if (task.outcome === 'needs_human') console.log(`Task "${task.title}" failed three times in a row and now waits for a person: ${task.reason}`);
   else console.log(`Task "${task.title}" went back on the list: ${task.reason}`);

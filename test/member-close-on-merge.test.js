@@ -216,6 +216,32 @@ test('still waiting to merge, or closed without merging: the job is not touched'
   }
 });
 
+test('a job a person held while the change waited is not closed by the merge', () => {
+  withFixture((fx) => {
+    const held = job(fx, 'review');
+    const free = job(fx, 'review');
+    taskDb.tagTask(fx.db, { id: held, actor: 'keshav', add: ['needs-human'] });
+    queue(fx, [held, free]);
+    setView(fx, { state: 'MERGED' });
+    const out = requeueDroppedAutolands({ cwd: fx.main });
+    assert.equal(out.closed, 1, out.line);
+    assert.equal(statusOf(fx, held), 'review');
+    assert.equal(statusOf(fx, free), 'done');
+  });
+});
+
+test('member wrap-up reports a job the merge already closed as done', () => {
+  withFixture((fx) => {
+    const { memberGoFinishTask } = require('../commands/member');
+    const id = job(fx, 'claimed');
+    taskDb.doneTask(fx.db, { id, actor: 'autoland', allowReview: true, autoAccepted: true, action: 'merged', proof: 'merged' });
+    const result = { started: true, mission_id: 'm-3', mission: { status: 'complete', verifier_result: { passed: true } } };
+    const out = memberGoFinishTask('generalist', taskDb.getTask(fx.db, id), result);
+    assert.equal(out.outcome, 'done');
+    assert.equal(statusOf(fx, id), 'done');
+  });
+});
+
 test('a job already closed, or one that is missing, is not counted twice', () => {
   withFixture((fx) => {
     const done = job(fx, 'done');
