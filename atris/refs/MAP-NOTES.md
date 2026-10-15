@@ -2343,3 +2343,9 @@ Lost-run cleanup error summary: `commands/autoland.js:895` keeps successful clos
 - `lib/task-db.js:622` accepts an optional expected update timestamp for claim release, refusing to release a changed claim.
 - `commands/member.js:567` treats an active mission with a known dead process as idle, while live and missing process records hold. `commands/member.js:10649` checks both mission and driver liveness before recovering. `commands/member.js:10842` previews recoverable claims for the supervisor, which already excludes busy members.
 - `test/task-reopen.test.js:129` runs actual task revision, member preview, and member claim confirmation against an isolated SQLite database. `test/task-reopen.test.js:152` reproduces a closed process with its running mission row still present. Live, unknown, other-member, protected, human-held, missing-check, and changed-claim cases stay held.
+
+# Shared member maintenance
+
+- `lib/member-up.js:73` shares recovery ownership and the five-minute cadence across windows and linked folders using the main checkout's `.atris/state/member-up-maintenance.lock` and `member-up-maintenance.json`. A live pid holds even past the short grace period; a dead pid or an old incomplete lock can be recovered. The saved waiting incident prints once after two hours without an observed queued merge, and resets after a merge or no waiting work.
+- `lib/member-up.js:48` refreshes only a clean detached plain clone, rechecks after fetching, and moves forward to `origin/master` without force. Named branches, linked folders, edited copies, and detached local work stay put.
+- `commands/member.js:10939` wires the shared pass to the actual project and to the folder running the CLI. Dry runs skip the pass. `test/member-up-watch.test.js:1` covers two real CLI windows, shared cadence, dead and live owners, safe clone updates, and warning resets. Verify: `node --test test/member-up-watch.test.js`.
