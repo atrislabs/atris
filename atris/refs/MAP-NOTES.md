@@ -2328,7 +2328,7 @@ Partial socket scan warning: `lib/engine-resource.js:280` names agent sockets un
 - `lib/member-up.js:75` confirms each pending run once before printing wake/start with the claimed title; late confirmations cannot affect a newer run. Pending children still reserve capacity.
 - `commands/member.js:10648` sends `member_task_claimed` only after a real supervised claim; `commands/member.js:10850` carries it over the child IPC channel and `commands/member.js:10913` wires the callback.
 - `test/member-wake-announce-after-claim.test.js:1` exercises real CLI processes and the production spawner against an isolated real task database: a lost preview stays idle, and a replacement job is announced only after its row is claimed. Verify: `node --test test/member-wake-announce-after-claim.test.js`.
-- Bounded member progress: `lib/member-progress.js:15` scans oversized logs backwards in bounded buffers and replaces them with recent whole lines plus the latest start marker; `lib/member-progress.js:185` appends and trims. Regression: `test/member-progress-trim.test.js:1`.
+- Bounded member progress: `lib/member-progress.js:15` scans oversized logs backwards in bounded buffers and replaces them with recent whole lines plus the latest start marker; `lib/member-progress.js:201` appends and trims. Regression: `test/member-progress-trim.test.js:1`.
 
 Younger replacement agent protection: `lib/engine-resource.js:325` keeps each final agent reading, and `lib/engine-resource.js:330` skips a candidate whose age decreased. Regression: `test/engine-resource.test.js:2456` runs the real cleanup CLI against two owned agents with staged ages, verifies the unchanged one stops, and checks the replacement socket still answers. Equal-age reuse and replacement after the final scan remain outside this check.
 
@@ -2349,3 +2349,46 @@ Lost-run cleanup error summary: `commands/autoland.js:895` keeps successful clos
 - `lib/member-up.js:73` shares recovery ownership and the five-minute cadence across windows and linked folders using the main checkout's `.atris/state/member-up-maintenance.lock` and `member-up-maintenance.json`. A live pid holds even past the short grace period; a dead pid or an old incomplete lock can be recovered. The saved waiting incident prints once after two hours without an observed queued merge, and resets after a merge or no waiting work.
 - `lib/member-up.js:48` refreshes only a clean detached plain clone, rechecks after fetching, and moves forward to `origin/master` without force. Named branches, linked folders, edited copies, and detached local work stay put.
 - `commands/member.js:10939` wires the shared pass to the actual project and to the folder running the CLI. Dry runs skip the pass. `test/member-up-watch.test.js:1` covers two real CLI windows, shared cadence, dead and live owners, safe clone updates, and warning resets. Verify: `node --test test/member-up-watch.test.js`.
+
+
+- **Member board short screens:** `renderBoard()` (`lib/member-board.js:283`) counts hidden busy members with a failed earlier run separately from current failures, including quiet runs and runs finishing before sleep. The footer drops "with" from "with earlier failure" before dropping the reason, keeping "timed out" at 47 columns and the earlier failure label intact at 36 columns. Regression: `test/member-board.test.js:960`; real terminal proof: `python3 atris/runs/member-board-compact-earlier-proof.py`.
+
+- **Compact shared failure reasons:** `renderBoard()` (`lib/member-board.js:283`) drops "all" before dropping a shared reason in hidden current and earlier failure counts. Regression covers timeout, engine error, and bad exit: `test/member-board.test.js:1034`; real terminal proof: `python3 atris/runs/member-board-shared-reason-proof.py`.
+
+- **Tiny board footer counts:** `renderBoard()` (`lib/member-board.js:283`) shortens "more not shown" to "hidden" only after existing footer forms fail to fit. Failure and stopped counts stay whole at 30 columns. Regression: `test/member-board.test.js:1065`; real terminal proof: `python3 atris/runs/member-board-tiny-footer-proof.py`.
+
+- **Tiny shared failure reasons:** `renderBoard()` (`lib/member-board.js:283`) tries "hidden" with a shared reason before dropping that reason. Current and earlier failures retain timeout, engine error, and bad exit reasons eight columns sooner. Regression: `test/member-board.test.js:1034`; terminal proof: `python3 atris/runs/member-board-tiny-reason-proof.py`.
+
+- **Very short board screens:** `renderBoard()` (`lib/member-board.js:283`) omits the spacer at three lines, rows at two, and the footer at one, preserving the header within the height limit. Regression: `test/member-board.test.js:894`; terminal proof: `python3 atris/runs/member-board-short-height-proof.py`.
+
+- **Tiny watch screens:** `memberBoardCommand()` (`lib/member-board.js:943`) gives the board all rows when the terminal has one to three, omitting the hint and final newline to avoid scrolling the header. Resize restores the hint above three rows. Regression: `test/member-board.test.js:754`; terminal proof: `python3 atris/runs/member-board-watch-height-proof.py`.
+
+- **Narrow watch hint:** `memberBoardCommand()` (`lib/member-board.js:943`) picks the longest whole hint that fits, down to "ctrl-c", and omits it below six columns. Resize regression: `test/member-board.test.js:713`; real terminal proof: `python3 atris/runs/member-board-watch-width-proof.py`.
+
+- **Compact board columns:** `renderBoard()` (`lib/member-board.js:283`) falls back to member, state and last result when the normal columns still overflow a terminal at least 30 columns wide. Done states use ok/failed, long names trim, and common failure reasons stay whole. Regression: `test/member-board.test.js:447`; real terminal proof: `python3 atris/runs/member-board-compact-columns-proof.py`.
+
+- **Smallest board columns:** `renderBoard()` (`lib/member-board.js:283`) keeps member and whole state from 18 to 29 columns, shortening long names. The result column returns at 30 columns. Regression: `test/member-board.test.js:491`; real terminal proof: `python3 atris/runs/member-board-smallest-columns-proof.py`.
+
+- **Failure reasons beside finishing:** `renderBoard()` (`lib/member-board.js:283`) shortens the compact member heading to name before clipping the result, preserving engine error alongside finishing at 30 columns. Regression: `test/member-board.test.js:539`; real terminal proof: `python3 atris/runs/member-board-finishing-reason-proof.py`.
+
+- **Missing results beside finishing:** `renderBoard()` (`lib/member-board.js:283`) keeps ended, no result when four name characters and the state fit, shortening to no result only when needed. Regression: `test/member-board.test.js:563`; actual terminal proof: `python3 atris/runs/member-board-no-result-proof.py`.
+
+- **Hidden missing results:** `renderBoard()` (`lib/member-board.js:283`) shortens the missing-result tally to no result before cutting the footer, preserving counts from 22 columns. Regression: `test/member-board.test.js:1088`; terminal proof: `python3 atris/runs/member-board-hidden-no-result-proof.py`.
+
+- **Whole mixed footer counts:** `renderBoard()` (`lib/member-board.js:283`) drops whole hidden counts from the end behind an ellipsis before cutting, so the most urgent count stays whole from 24 columns: `4 hidden (2 failed, ...)`. Regression: `test/member-board.test.js:1222`; terminal proof: `python3 atris/runs/member-board-mixed-footer-proof.py`.
+
+- **Older-runs note gives way:** `renderBoard()` (`lib/member-board.js:283`) shortens the older-runs note (`2 older, --all shows them`, `2 older hidden`, `2 older`), then drops it, before dropping any hidden count from this screen; counts stay whole beside it from 30 columns. Regression: `test/member-board.test.js:1248`; terminal proof: `python3 atris/runs/member-board-older-note-proof.py`.
+
+- **Older note waits for room:** `renderBoard()` (`lib/member-board.js:283`) sizes a short screen by its current members only; the older-runs note shows in a spare row and never hides a member. Regression: `test/member-board.test.js:872`; terminal proof: `python3 atris/runs/member-board-older-room-proof.py`.
+
+- **Live members named or counted:** `renderBoard()` (`lib/member-board.js:283`) names up to three hidden working, quiet, or finishing members in the footer (`busy working, scout quiet`), all or none; when names do not fit, or four or more are hidden, it counts them (`3 running`). Either fits only by dropping "the window is too short", shortening labels, or shortening the older-runs note, so failure counts and reasons never give way. Regression: `test/member-board.test.js:831`; terminal proofs: `python3 atris/runs/member-board-live-names-proof.py`, `python3 atris/runs/member-board-running-count-proof.py`.
+
+- **Failure reasons outlast the older note:** `renderBoard()` (`lib/member-board.js:283`) shortens the older-runs note and drops it before dropping a failure reason, so `bad exit 2` stays beside older runs down to 44 columns instead of vanishing below 100. Regression: `test/member-board.test.js:1248`; terminal proof: `python3 atris/runs/member-board-reason-over-older-proof.py`.
+
+- **Every hidden reason named:** `renderBoard()` (`lib/member-board.js:283`) names two or three different hidden failure reasons when none leads and every failure wrote one (`2 failed, timed out and engine error`), with counts on a tie; without room it falls back to the bare count. Regression: `test/member-board.test.js:1286`.
+
+- **Earlier sign-in engine:** `renderBoard()` in `lib/member-board.js` names the old engine in hidden earlier sign-in failures only when the same footer fits. Regression: `test/member-board.test.js:1812`; terminal proof: `python3 atris/runs/member-board-earlier-engine-proof.py`.
+
+- **Live JSON follow check:** `test/member-board.test.js:1489` waits up to 15 seconds for complete newline-ended records and reports early child closure with captured output; cleanup awaits the close listener installed at spawn. Verify: `node --test test/member-board.test.js test/member-result.test.js`.
+
+Split timeout live follow: `test/member-board.test.js:1529` waits a polling interval before and after completing a timeout line; actual CLI output is recorded in `atris/runs/member-board-split-timeout-receipt.md`.
