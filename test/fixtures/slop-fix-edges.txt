@@ -103,9 +103,9 @@ Reverse the curve \u2014 the scorer tracks signal quality, not order or noise.
 => Reverse the curve; the scorer tracks signal quality, not order or noise.
 Same as before \u2014 the feature flags service config.
 => Same as before, the feature flags service config.
-# an older rule reads a word in s and a bare word or two before a stop as
-# a verb and its object, so made-up names like these still join
+# a word in s and at most one more word before a name word and a stop is
+# one long name, not a verb and its object
 One place \u2014 the agent runs dashboard view.
-~> One place, the agent runs dashboard view.
+=> One place, the agent runs dashboard view.
 One place \u2014 the team calls schedule.
-~> One place, the team calls schedule.
+=> One place, the team calls schedule.

@@ -342,6 +342,11 @@ const PLACE_CLAUSE_AFTER_DASH = new RegExp(`${CLAUSE_END}\\s*\\u2014\\s*(?=the\\
 // or a number before a stop or a comma is a clause too: "the post claims
 // 99% token reduction", "the scorer tracks signal quality, not order".
 const BARE_PHRASE_CLAUSE_AFTER_DASH = new RegExp(`${CLAUSE_END}\\s*\\u2014\\s*(?=the\\s+(?!${NAME_PAIR}\\b)(?!(?:one|two|three|four|five|six|seven|eight|nine|ten|few|many|several|same|other|first|last|next|main|key|core|new|old|real|whole|exact|only)\\b)(?:(?![A-Za-z-]*s\\b)(?:[A-Z]{2,}|[a-z][a-z-]*[a-z])\\s+(?!(?:that|which|who)\\b))?(?![a-z]*s\\b)[a-z]{2,}\\s+(?!${PLURAL_NOUN_WORD}\\b)${PLAIN_VERB_WORD}\\s+(?!(?:the|a|an|your|our|their|its|this|these|those|that|it|them|from|of|in|on|for|with|at|by|to|and|or|as|than|like)\\b)(?:\\d+%?|[a-z][\\w-]*)(?:\\s+(?!(?:and|or|but|that|which|who|the|a|an|in|of|on|for|with|at|by|to|from|into)\\b)[a-z][\\w-]*){1,3}[.!?;,])`, 'g');
+// A word in "s" and at most one more word before a name word and a stop
+// read as one long name, not a verb and its object: "one place, the agent
+// runs dashboard view", "the team calls schedule". Every dash clause rule
+// that could take that shape checks this first.
+const NAME_TAIL_PHRASE = new RegExp(`^\\s*\\u2014\\s*the\\s+[a-z][\\w-]*\\s+(?:[a-z][\\w-]*\\s+)?(?!(?:has|was|does)\\b)[a-z]{2,}s\\s+(?:[a-z][\\w-]*\\s+)?(?:${NAME_END_WORD}|view|schedule|dashboard|feed|queue|log|report|summary|history|board|calendar|inbox|digest|template|form)[.!?;]`);
 const RELATIVE_OBJECT_PHRASE = /^\s*\u2014\s*the\s+[A-Za-z][\w-]*\s+(?:[a-z][\w-]*\s+)?(?!(?:proves|shows|means|ensures|confirms|says|assumes|knows|finds)\b)[a-z]+s\s+(?:the|a|an|your|our|their|its|this|these|those)\s+\S+\s+(?:\S+\s+){0,2}[a-z]+s\s*(?:[.!?;,]|$)/;
 const BARE_OBJECT_CLAUSE = new RegExp(`^\\s*\\u2014\\s*the\\s+(?!${NAME_PAIR}\\b)(?![a-z]*s\\b)[a-z]{2,}\\s+${PLAIN_VERB_WORD}\\s+(?!${NAME_END_WORD}\\b)[a-z]{2,}(?=[.!?;]|\\s+(?:into|onto|to|for|from|on|at|with|until)\\s)`);
 // A plain word, then a name, then the verb hides a "that": "a topic Atris
@@ -985,7 +990,7 @@ function fixEmDash(s, { endsBlock = false, startsBlock = false, spans = [], abov
     })
     .replace(NOUN_CLAUSE_AFTER_DASH, (m, at, whole) => {
       const left = clauseLeft(at, whole);
-      return left ? clauseJoin(left) : m;
+      return left && !NAME_TAIL_PHRASE.test(whole.slice(at)) ? clauseJoin(left) : m;
     })
     .replace(AND_CLAUSE_AFTER_DASH, (m, at, whole) => {
       const left = clauseLeft(at, whole);
@@ -1029,7 +1034,7 @@ function fixEmDash(s, { endsBlock = false, startsBlock = false, spans = [], abov
     })
     .replace(BARE_PHRASE_CLAUSE_AFTER_DASH, (m, at, whole) => {
       const left = clauseLeft(at, whole);
-      return left ? clauseJoin(left) : m;
+      return left && !NAME_TAIL_PHRASE.test(whole.slice(at)) ? clauseJoin(left) : m;
     })
     .replace(PLACE_CLAUSE_AFTER_DASH, (m, at, whole) => {
       const left = clauseLeft(at, whole);
@@ -1037,7 +1042,7 @@ function fixEmDash(s, { endsBlock = false, startsBlock = false, spans = [], abov
     })
     .replace(PLAIN_CLAUSE_AFTER_DASH, (m, at, whole) => {
       const left = clauseLeft(at, whole);
-      if (!left || NAME_BEFORE_PLAIN_VERB.test(whole.slice(at))) return m;
+      if (!left || NAME_BEFORE_PLAIN_VERB.test(whole.slice(at)) || NAME_TAIL_PHRASE.test(whole.slice(at))) return m;
       return /\b(?:not|cannot)\b/i.test(left) || PLAIN_OBJECT_CLAUSE.test(whole.slice(at)) || BARE_OBJECT_CLAUSE.test(whole.slice(at)) ? clauseJoin(left) : m;
     })
     .replace(ADVERB_CLAUSE_AFTER_DASH, (m, at, whole) => {

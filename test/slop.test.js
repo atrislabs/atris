@@ -2380,6 +2380,24 @@ test('fix joins "the", a noun, a verb in s and a bare object of plain words afte
   ]);
 });
 
+test('fix keeps a comma before "the", a word in s and a name word at a stop', () => {
+  // from probing the edge file: "the agent runs dashboard view" and "the
+  // team calls schedule" are long names, but "runs" reads as a helper verb
+  // and "calls" as a verb with a bare object, so both joined. A real clause
+  // with an object that is no name word still joins.
+  const file = tmpFile('the-name-tail.md', [
+    'One place \u2014 the agent runs dashboard view.',
+    'One place \u2014 the team calls schedule.',
+    'We fixed it \u2014 the loop kicks work.',
+  ].join('\n'));
+  const { changes } = applyFixes([file], RULES);
+  assert.deepEqual(changes.map((c) => c.after), [
+    'One place, the agent runs dashboard view.',
+    'One place, the team calls schedule.',
+    'We fixed it; the loop kicks work.',
+  ]);
+});
+
 test('fix joins "its" or "our", a plural and a plain verb before a number or an object', () => {
   // from a probe of the edge file: "its pages score 67" spliced, since the
   // possessive rule wanted a verb in s, a helper verb or "already". A plain
