@@ -10,6 +10,19 @@ Add Campaign as a durable, event-sourced struct above Mission, shared by the CLI
 
 ---
 
+## Phase -1 — Fix the storage Campaign will stand on (from Astra review, 2026-10-15)
+
+A read-only review by Astra (codex `gpt-6-astra`, receipt `atris-desktop-v2/atris/runs/engine-ask-20261015082757758-9544-5527bb9c.json`) read today's mission storage and found four problems Campaign would inherit. Fix them first, or build the campaign store so it does not share them:
+
+1. **Lost writes (high).** Ledger compaction checks size, then renames a replacement file, with no lock shared with appends, so a concurrent append can be lost. `lib/mission-ledger-compact.js` (`compactMissionLedger`), `commands/mission.js` (`saveMission`). Fix: one ledger-wide lock for every append and compaction, or a transactional store.
+2. **Half-saved state (high).** A mission snapshot and its event are separate writes, so a crash between them leaves a transition with no event. `commands/mission.js` `saveMission`. Fix: one authoritative record with a durable event id, plus an idempotent reconcile path, before campaign reservations depend on it.
+3. **No event identity (medium).** Mission events carry a schema label but no unique id or sequence, and state is read from the latest snapshot, not replayed. `commands/mission.js` `loadMissionMap`, `appendEvent`. Fix: campaign events get an id, a serialized sequence number, an expected-version check on write, a replay version, and written migration rules for when a fold rule changes.
+4. **Silent drops (medium).** `readJsonLines` in `commands/mission.js` skips malformed lines, which would hide a lost claim or reservation. Fix: fail closed on corruption in the middle of a file; recover only an incomplete last line, under the lock.
+
+Also decide now: what releases a budget reservation when a mission crashes (a lease that expires, recorded as `budget_released`).
+
+Check: a concurrency test with two processes appending and compacting at once loses no lines; a crash-injection test leaves no snapshot without its event.
+
 ## Phase 0 — Schema (the contract)
 
 **Create** `lib/campaign-schema.js` (or a JSON Schema file it loads) with the struct, event types, and actions from `idea.md` → The Struct.

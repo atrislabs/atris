@@ -2,7 +2,7 @@
 
 > **Status:** planning (design settled, not built)
 > **Created:** 2026-10-15
-> **Last Updated:** 2026-10-15
+> **Last Updated:** 2026-10-15 (added delegation ladder, standard, clarification learning, subagents, storage groundwork)
 > **Decided by:** Keshav, in a design session on 2026-10-14 and 2026-10-15
 > **Build owner:** to be assigned (see `build.md`)
 
@@ -138,6 +138,65 @@ Open choice, recommended answer: **the owner vetoes rather than approves.** Appr
 ### The team loop is the scheduler
 
 The team loop (the "Team awake" button, owned by `mission-lead`) looks across all campaigns, their budgets and asks, picks which proposed missions run next, and leases engines from `atris/ROSTER.md`. It is mission-lead's own standing campaign: "what should the team do next?"
+
+---
+
+## The Delegation Ladder (why Campaign exists)
+
+Keshav calls this the Walshian Saban method: coach the standard, not the plays (Bill Walsh's Standard of Performance, Nick Saban's Process). Atris is climbing a ladder of delegation:
+
+```text
+0  Prompt      "write this function"               you think, it types
+1  Task        "fix this bug, here's the check"     you hand a step
+2  Mission     "get login under 2s, prove it"       you hand a run        (trusted today)
+3  Campaign    "find what produces hires"           you hand a goal, a judge, a budget   (this spec)
+4  Standard    "this is what I like. This is our    you hand your taste; it picks its own campaigns
+                standard."  "How are you doing?"    you check in, you don't direct
+```
+
+The endgame wish is "can you get me $5", with no further clarity. That is only safe when three things replace the clarifying questions:
+
+1. **The standard answers "how."** What you like and what you would never do.
+2. **The judge answers "done."** $5 landed is unambiguous. `atris wish --metric` already expresses it.
+3. **The no-reload line answers "is this risky."** Irreversible steps still come to a human.
+
+Every clarifying question today is a missing piece of one of those three. "What tone?" is a missing standard. "How many is enough?" is a missing judge. "Can I send this?" is the no-reload line working, and that question never goes away.
+
+### The Standard (next to the judge, not instead of it)
+
+- The **judge** checks the score: did hires go up, did the check pass.
+- The **standard** checks how the work was done: no slop, real instruments instead of markdown tables, proof before claims, plain words, nothing you would be embarrassed by.
+
+A campaign with only a judge can win ugly. Today the standard is scattered across `atris/PERSONA.md`, `atris/policies/ANTISLOP.md`, member lessons, and the review desk's taste. Treat them as one Standard that every campaign inherits (company, then member, then campaign overrides), and have the review desk check missions against it, not only the judge.
+
+"How are you doing?" is the check-in screen: one view across every campaign showing what moved, the answer now, and what needs you. At level 4 it is the only conversation the human has with the team.
+
+### Learning to ask less (RL on clarifications)
+
+Climbing the ladder is measurable. Every clarifying question is a training example:
+
+- Before asking, the system writes down its own best guess.
+- It asks, and records the human's answer.
+- If the guess matched, that class of question was unnecessary.
+
+When a class of question is guessed right enough times in a row (and the missions that used the guess were not reverted or rejected), it graduates: the system stops asking it and uses its default, still logged so a miss reopens it. The reward is fewer questions with no rise in reverts, rejections, or no-reload asks answered "no."
+
+Long campaigns make this possible: they gather context for weeks, so defaults come from evidence, not guesses. Pieces already exist: `lib/wish-audit.js` records asked questions and filled answers per wish, and `atris wish review`, `wish rewards`, `wish improve`, and `wish lessons` already score reviews and distill lessons, pruning lessons that do not move the score. Extend that loop to clarifications.
+
+Per member and per campaign, track a delegation level: the share of decisions made without asking. That number is how Keshav sees the team ascend.
+
+---
+
+## Subagents Belong to Members
+
+A member is a manager of its own subagents. When a mission is big, the assigned member can fan out to subagents (engines leased from the roster) and stays accountable for the result. Subagents never hold seats and never talk to the campaign directly. They report to their member, and the member writes the mission's events.
+
+```text
+Campaign ── seats ──▶ Member ── runs ──▶ Mission ── fans out ──▶ Subagents (leased engines)
+                                              └── writes events back to the Campaign
+```
+
+This keeps identity, memory, and accountability at the member level, however many workers run underneath.
 
 ---
 
