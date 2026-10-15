@@ -2480,3 +2480,123 @@ for width, height, failed, whole in cases:
   assert.equal(proof.status, 0, `${proof.stdout}\n${proof.stderr}`);
   if (process.env.ATRIS_BOARD_WIDE_REASON_PROOF) fs.writeFileSync(process.env.ATRIS_BOARD_WIDE_REASON_PROOF, `${proof.stdout}proof exit: ${proof.status}\n`);
 });
+
+test('a member name in wide characters fits the watch screen and matches live follow', { skip: process.platform === 'win32' }, () => {
+  const proof = spawnSync('python3', ['-c', String.raw`
+import datetime, fcntl, json, os, pathlib, pty, re, select, signal, struct, subprocess, sys, tempfile, termios, time, unicodedata
+
+def cells(line):
+    return sum(0 if unicodedata.combining(c) or unicodedata.category(c) == 'Cf'
+               else 2 if unicodedata.east_asian_width(c) in 'WF' else 1 for c in line)
+
+name = '构建者小组负责人'
+now = datetime.datetime.now(datetime.timezone.utc).isoformat()
+with tempfile.TemporaryDirectory(prefix='atris-board-wide-name-') as folder:
+    root = pathlib.Path(folder)
+    progress = root / 'progress'
+    progress.mkdir()
+    env = {**os.environ, 'ATRIS_PROGRESS_DIR': str(progress)}
+    log = progress / (name + '.log')
+    log.write_text(f'{now} m-1 started: fix the login page\n')
+    (progress / 'scout.log').write_text(f'{now} m-1 started: map the repo\n')
+
+    # The live stream names the member exactly as its log does.
+    follow = subprocess.Popen([sys.argv[1], sys.argv[2], 'member', 'board', '--json', '--follow'],
+        cwd=root, env=env, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, encoding='utf8')
+    try:
+        snapshot = json.loads(follow.stdout.readline())
+        assert name in [m['member'] for m in snapshot['members']], snapshot
+        with log.open('a') as out:
+            out.write(f'{now} m-1 finished: failed (timed out)\n')
+        event = json.loads(follow.stdout.readline())
+        assert event['member'] == name and event['kind'] == 'finished', event
+        follow.send_signal(signal.SIGINT)
+        assert follow.wait(timeout=10) == 0, follow.stderr.read()
+        print(f'command: node bin/atris.js member board --json --follow')
+        print(json.dumps(event, ensure_ascii=False))
+    finally:
+        if follow.poll() is None:
+            follow.terminate()
+            follow.wait(timeout=10)
+
+    # (columns, start of that member's row)
+    for width, row in [(80, name + '  done failed  timed out'), (24, '构建者小组...  timed out'), (18, '构建...  timed out')]:
+        master, slave = pty.openpty()
+        fcntl.ioctl(master, termios.TIOCSWINSZ, struct.pack('HHHH', 8, width, 0, 0))
+        child = subprocess.Popen([sys.argv[1], sys.argv[2], 'member', 'board', '--watch'],
+            cwd=root, env=env, stdout=slave, stderr=slave)
+        os.close(slave)
+        try:
+            output = b''
+            deadline = time.monotonic() + 15
+            while time.monotonic() < deadline:
+                if select.select([master], [], [], 0.05)[0]:
+                    output += os.read(master, 65536)
+                elif output:
+                    break
+                assert child.poll() is None, (child.returncode, output)
+            text = re.sub(r'\x1b\[[0-9;]*[A-Za-z]', '', output.decode().replace('\r', ''))
+            lines = text.split('\n')
+            assert text.startswith('member'), repr(text)
+            assert max(map(cells, lines)) <= width, repr(text)
+            assert any(line.startswith(row) for line in lines), repr(text)
+            # The state column starts at the same screen cell on every row.
+            board = [line for line in lines[:3] if line]
+            assert len({cells(re.match(r'\S+\s{2,}', line).group(0)) for line in board}) == 1, repr(text)
+            print(f'command: node bin/atris.js member board --watch ({width} columns, 8 rows)')
+            print(text)
+            child.send_signal(signal.SIGINT)
+            code = child.wait(timeout=10)
+            print(f'exit: {code}')
+            assert code == 0
+        finally:
+            if child.poll() is None:
+                child.terminate()
+                child.wait(timeout=10)
+            os.close(master)
+`, process.execPath, cliPath], { encoding: 'utf8', timeout: 75_000 });
+  assert.ifError(proof.error);
+  assert.equal(proof.status, 0, `${proof.stdout}\n${proof.stderr}`);
+  if (process.env.ATRIS_BOARD_WIDE_NAME_PROOF) fs.writeFileSync(process.env.ATRIS_BOARD_WIDE_NAME_PROOF, `${proof.stdout}proof exit: ${proof.status}\n`);
+});
+
+test('live follow streams a line written the moment the snapshot arrives, exactly once', async (t) => {
+  for (let round = 0; round < 3; round += 1) {
+    const stamp = new Date().toISOString();
+    const dir = fakeDir({ navigator: [`${stamp} m-1 started: ship it`] });
+    const log = path.join(dir, 'navigator.log');
+    const child = spawn(process.execPath, [cliPath, 'member', 'board', '--json', '--follow'], {
+      cwd: dir, env: { ...process.env, ATRIS_PROGRESS_DIR: dir },
+    });
+    child.stdout.setEncoding('utf8');
+    let out = '';
+    let stderr = '';
+    let closed = false;
+    const done = new Promise((resolve) => child.once('close', (code) => { closed = true; resolve(code); }));
+    const records = () => out.split('\n').slice(0, -1).filter(Boolean).map((line) => JSON.parse(line));
+    child.stderr.on('data', (chunk) => { stderr += chunk; });
+    // Append in the same turn the snapshot is read, before the follower
+    // could have looked at the log again.
+    child.stdout.on('data', (chunk) => {
+      const first = !out.includes('\n');
+      out += chunk;
+      if (first && out.includes('\n')) fs.appendFileSync(log, `${stamp} m-1 finished: ok\n`);
+    });
+    try {
+      const until = Date.now() + 15_000;
+      while (records().length < 2 && !closed && Date.now() < until) await new Promise((r) => setTimeout(r, 50));
+      await new Promise((r) => setTimeout(r, 1_200));
+      const got = records();
+      assert.equal(got[0].kind, 'snapshot', out);
+      assert.equal(got[0].members[0].state, 'working', 'the snapshot ends before the new line');
+      assert.deepEqual(got.slice(1), [{ member: 'navigator', mission: 'm-1', at: stamp, kind: 'finished', text: 'ok', ok: true }], `stdout=${out}; stderr=${stderr}`);
+      child.kill('SIGINT');
+      assert.equal(await done, 0, stderr);
+      if (round === 0) t.diagnostic(`actual stdout:\n${out}exit: 0`);
+    } finally {
+      if (!closed) child.kill('SIGINT');
+      await done;
+      fs.rmSync(dir, { recursive: true, force: true });
+    }
+  }
+});
