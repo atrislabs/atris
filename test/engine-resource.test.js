@@ -1500,6 +1500,18 @@ test('every engine started through a runner or profile variable records its run 
       }
       return null;
     };
+    // The object literal a same-file variable is declared with, read where
+    // it is declared, when nothing writes to its keys afterward. Anything
+    // else stays as written and reads as unknown.
+    const objectSource = (text, position) => {
+      const name = /^[A-Za-z_$][\w$]*$/.exec(text)?.[0];
+      if (!name) return { text, position };
+      const escaped = name.replace(/\$/g, '\\$');
+      if (new RegExp(`\\b${escaped}\\s*(?:\\.\\s*[\\w$]+|\\[[^\\]]*\\])\\s*(?:[-+*/%&|^]|\\*\\*|<<|>>>?|&&|\\|\\||\\?\\?)?=(?!=)|\\bdelete\\s+${escaped}\\b|\\bObject\\.(?:assign|defineProperty|defineProperties)\\(\\s*${escaped}\\b`).test(code)) return { text, position };
+      const resolved = sourceAt(name, position);
+      const literal = objectEntries(resolved.source);
+      return literal && !literal.rest.trim() ? { text: resolved.source, position: resolved.position } : { text, position };
+    };
     const sourceAt = (source, position) => {
       const visible = withoutHelperDefinitions(code, position);
       let declarationEnd = position;
@@ -1602,7 +1614,8 @@ test('every engine started through a runner or profile variable records its run 
             // may replace it, and a missing key uses the key default. Unknown
             // objects may leave the key out too, and what they hold for a
             // nested key is unknown as well.
-            const keySources = (objectText, objectAt, [{ key, fallback }, ...deeper]) => {
+            const keySources = (written, writtenAt, [{ key, fallback }, ...deeper]) => {
+              const { text: objectText, position: objectAt } = objectSource(written, writtenAt);
               if (!objectText || objectText === 'null') return [];
               const literal = objectEntries(objectText);
               const values = [];
@@ -1742,6 +1755,20 @@ test('every engine started through a runner or profile variable records its run 
   assert.deepStrictEqual(options("launch({ engine: { runner: 'git' } });", '{ engine: { runner } = { runner: resolveClaudeRunnerBin() } }'), [], 'a supplied nested object replaces its default');
   assert.deepStrictEqual(options('launch({});', '{ engine: { runner } = { runner: resolveClaudeRunnerBin() } }'), ['commands/planted.js:2 runner']);
   assert.deepStrictEqual(options('launch({ engine: { bin: resolveClaudeRunnerBin() } });', '{ engine: { bin: runner } }'), ['commands/planted.js:2 runner'], 'a renamed nested key reads its own key');
+  // Options built in a variable read like the literal it was declared with,
+  // unless something writes to its keys after the declaration.
+  const defaulted = '{ runner = resolveClaudeRunnerBin() }';
+  assert.deepStrictEqual(options('launch(opts);', defaulted, "const opts = { runner: 'git' };\n"), [], 'a known object in a variable supplies its key');
+  assert.deepStrictEqual(options('launch(opts);', defaulted, 'const opts = { prompt };\n'), ['commands/planted.js:2 runner']);
+  assert.deepStrictEqual(options('launch(opts);', '{ runner }', 'const opts = { runner: resolveClaudeRunnerBin() };\n'), ['commands/planted.js:2 runner'], 'a variable can carry the engine itself');
+  assert.deepStrictEqual(options('launch(opts);', '{ runner }', "const opts = { runner: 'git' };\n"), []);
+  assert.deepStrictEqual(options('launch(opts);', '{ runner }', 'const runner = resolveClaudeRunnerBin();\nconst opts = { runner };\n'), ['commands/planted.js:2 runner'], 'a shorthand key reads the binding at the declaration');
+  assert.deepStrictEqual(options('launch(opts);', defaulted, "const opts = { runner: 'git' };\nopts.runner = undefined;\n"), ['commands/planted.js:2 runner'], 'an object written after its declaration counts as unknown');
+  assert.deepStrictEqual(options('launch(opts);', defaulted, "const opts = { runner: 'git' };\ndelete opts.runner;\n"), ['commands/planted.js:2 runner']);
+  assert.deepStrictEqual(options('launch(opts);', defaulted, "const opts = { runner: 'git' };\nObject.assign(opts, more);\n"), ['commands/planted.js:2 runner']);
+  assert.deepStrictEqual(options('launch(opts);', defaulted, "const opts = { runner: 'git' };\nif (opts.runner === 'git') noop();\n"), [], 'a comparison is not a write');
+  assert.deepStrictEqual(options('launch({ engine: picks });', nested, "const picks = { runner: 'git' };\n"), []);
+  assert.deepStrictEqual(options('launch(opts);', '{ runner }', 'function other() {\n  const opts = { runner: resolveClaudeRunnerBin() };\n}\n'), [], 'a declaration inside another function does not reach the call');
   // Literal and captured defaults count only when a same-file call omits them.
   for (const [head, tail] of [
     ['function launch', '}'],
