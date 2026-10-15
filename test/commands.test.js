@@ -12717,7 +12717,7 @@ test('task next scoped by tag does not surface unrelated Endgame fallback', () =
       '',
     ].join('\n'), 'utf8');
 
-    // Creation and ownership are setup; certification and scoped next stay on the CLI.
+    // Creation, ownership and readiness are setup; certification and scoped next stay on the CLI.
     const workspaceRoot = taskStore.workspaceRoot(dir);
     const db = taskStore.open(dbPath);
     let ref;
@@ -12729,12 +12729,14 @@ test('task next scoped by tag does not surface unrelated Endgame fallback', () =
       });
       assert.equal(created.inserted, true);
       assert.equal(taskStore.claimTask(db, { id: created.id, claimedBy: 'onboarding' }).claimed, true);
+      assert.equal(taskStore.readyTask(db, {
+        id: created.id, actor: 'onboarding', proof: 'node --check test/commands.test.js passed',
+      }).ready, true);
       ref = taskStore.taskDisplayRefMap(taskStore.listTasks(db, { workspaceRoot })).get(created.id);
       assert.ok(ref);
     } finally {
       taskStore.close();
     }
-    assert.equal(runCli(['task', 'ready', ref, '--proof', 'node --check test/commands.test.js passed', '--as', 'onboarding'], { cwd: dir, env }).status, 0);
     assert.equal(runCli([
       'task', 'review', ref,
       '--reward', '0',
