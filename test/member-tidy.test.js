@@ -306,22 +306,24 @@ test('tidy keeps a landed copy while git is paused mid-rebase in it, and logs wh
   }
 });
 
-for (const surface of ['tidy', 'cleanup', 'reap', 'autopilot']) {
+for (const surface of ['tidy', 'cleanup', 'reap', 'autopilot', 'autopilot-failed']) {
   test(`${surface} reports a pin acquired after preflight and leaves the copy registered`, () => {
     const fx = makeFixture();
     try {
+      const automatic = surface.startsWith('autopilot');
+      const pass = surface !== 'autopilot-failed';
       const hash = runGit(['rev-parse', 'HEAD'], fx.repo);
-      const copy = surface === 'autopilot'
+      const copy = automatic
         ? path.join(fx.repo, `.regression-worktree-${hash.slice(0, 8)}`)
         : addCopy(fx, 'landed-late-pin');
-      if (surface === 'autopilot') {
+      if (automatic) {
         fs.mkdirSync(path.join(fx.repo, 'atris'));
         fs.writeFileSync(path.join(fx.repo, 'atris', 'tick-registry.json'), JSON.stringify([
-          { hash, verifyCmd: 'true', slug: 'late-pin-proof' },
+          { hash, verifyCmd: pass ? 'true' : 'exit 1', slug: 'late-pin-proof' },
         ]));
       }
       const aged = new Date(Date.now() - 3 * 60 * 60 * 1000);
-      if (surface !== 'autopilot') fs.utimesSync(copy, aged, aged);
+      if (!automatic) fs.utimesSync(copy, aged, aged);
       const realGit = spawnSync('which', ['git'], { encoding: 'utf8' });
       assert.equal(realGit.status, 0, realGit.stderr);
       const bin = path.join(fx.base, 'bin');
@@ -348,13 +350,13 @@ process.exit(result.status === null ? 1 : result.status);
         : surface === 'cleanup'
           ? ['worktree', 'cleanup', '--base', 'HEAD', '--apply']
           : ['land', '--reap', '--base', 'HEAD', '--no-remote', '--json'];
-      const invocation = surface === 'autopilot'
+      const invocation = automatic
         ? ['-e', `console.log(JSON.stringify(require(${JSON.stringify(path.resolve(__dirname, '../commands/autopilot.js'))}).regressionCheck(process.cwd(), { activeCwds: [] })))`]
         : [path.resolve(__dirname, '../bin/atris.js'), ...args];
       const cli = spawnSync(process.execPath, invocation,
         { cwd: fx.repo, encoding: 'utf8', timeout: 30000,
           env: { ...process.env, PATH: `${bin}${path.delimiter}${process.env.PATH}` } });
-      const command = surface === 'autopilot'
+      const command = automatic
         ? `node -e ${JSON.stringify(invocation[1])}`
         : `node bin/atris.js ${surface === 'tidy' ? 'member tidy --dir <fixture copies>' : args.join(' ')}`;
       console.log(`command: ${command} (late-pin git wrapper)`);
@@ -362,12 +364,20 @@ process.exit(result.status === null ? 1 : result.status);
       console.log(`exit: ${cli.status}`);
       assert.equal(cli.status, 0, cli.stderr);
       assert.deepEqual(JSON.parse(fs.readFileSync(attempt, 'utf8')),
-        ['worktree', 'remove', ...(surface === 'reap' ? ['--force'] : []), copy, ...(surface === 'autopilot' ? ['--force'] : [])]);
+        ['worktree', 'remove', ...(surface === 'reap' ? ['--force'] : []), copy, ...(automatic ? ['--force'] : [])]);
       const words = 'pinned by git worktree lock, under a minute old: agent started writing please wait';
-      if (surface === 'autopilot') {
+      if (automatic) {
         assert.deepEqual(JSON.parse(cli.stdout), [{
-          hash, slug: 'late-pin-proof', pass: true, kept: 'remove_failed', held: words, path: copy,
+          hash, slug: 'late-pin-proof', pass, kept: 'remove_failed', held: words, path: copy,
         }]);
+        const lessonPath = path.join(fx.repo, 'atris', 'lessons.md');
+        if (pass) assert.equal(fs.existsSync(lessonPath), false);
+        else {
+          const lesson = fs.readFileSync(lessonPath, 'utf8');
+          assert.ok(lesson.includes('regression-late-pin-proof** - fail -'), lesson);
+          assert.ok(lesson.includes(`verify command for tick ${hash.slice(0, 7)} (late-pin-proof) now fails`), lesson);
+          console.log(`saved failure: ${lesson.split('\n').find((line) => line.includes('regression-late-pin-proof** - fail -'))}`);
+        }
       } else if (surface === 'reap') {
         const receipt = JSON.parse(cli.stdout);
         assert.deepEqual(receipt.removedWorktrees, []);
@@ -382,7 +392,7 @@ process.exit(result.status === null ? 1 : result.status);
       const gitDir = runGit(['rev-parse', '--absolute-git-dir'], copy);
       assert.equal(fs.readFileSync(path.join(gitDir, 'locked'), 'utf8'), `${reason}\n`);
       assert.ok(fs.existsSync(path.join(copy, 'README.md')));
-      if (surface !== 'autopilot') assert.ok(branchExists(fx.repo, 'landed-late-pin'));
+      if (!automatic) assert.ok(branchExists(fx.repo, 'landed-late-pin'));
       else assert.equal(runGit(['rev-parse', 'HEAD'], copy), hash);
       assert.ok(runGit(['worktree', 'list', '--porcelain'], fx.repo).includes(`worktree ${copy}\n`));
       assert.deepEqual(removalLines(fx.repo), []);
