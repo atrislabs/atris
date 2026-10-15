@@ -326,6 +326,26 @@ test('the em dash fix turns a paired aside into parentheses and a lone dash into
   ]);
 });
 
+test('the em dash fix reads "no longer" before a verb as a clause', () => {
+  const { applyFixes } = require('../commands/slop');
+  const D = '\u2014';
+  // from a real review note that wraps: "those directories no / longer
+  // exist, so"; an adjective after "no longer" keeps the comma
+  const file = tmpFile('no-longer.md', [
+    `> The two claims were false ${D} those directories no`,
+    '> longer exist, so they are unchecked.',
+    '',
+    `We dropped it ${D} the old flags no longer valid, so skip them.`,
+  ].join('\n'));
+  applyFixes([file], RULES);
+  assert.deepEqual(fs.readFileSync(file, 'utf8').split('\n'), [
+    '> The two claims were false; those directories no',
+    '> longer exist, so they are unchecked.',
+    '',
+    'We dropped it, the old flags no longer valid, so skip them.',
+  ]);
+});
+
 test('the em dash fix gives "The" and a noun that names a point a colon', () => {
   const { applyFixes } = require('../commands/slop');
   const D = '\u2014';

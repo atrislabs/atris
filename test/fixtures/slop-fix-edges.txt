@@ -420,3 +420,15 @@ The fix shipped \u2014 the parser drops the key.
 => The fix shipped; the parser drops the key.
 We found the common thread \u2014 these hit local optima.
 => We found the common thread; these hit local optima.
+
+# "no longer" before a verb is a clause, like "never" or "still", and a
+# bare verb may sit before a comma and "so"; a word that is mostly an
+# adjective there, or no verb at all, keeps the comma
+We moved it \u2014 the computer page no longer swaps the chrome.
+=> We moved it; the computer page no longer swaps the chrome.
+The claims were false \u2014 those directories no longer exist, so they are unchecked.
+=> The claims were false; those directories no longer exist, so they are unchecked.
+We dropped it \u2014 the old flags no longer valid, so skip them.
+=> We dropped it, the old flags no longer valid, so skip them.
+We fixed it \u2014 pages no longer found.
+=> We fixed it, pages no longer found.
