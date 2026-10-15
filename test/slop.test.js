@@ -2453,6 +2453,24 @@ test('fix reads a pronoun or a code name with a place word after it as the objec
   ]);
 });
 
+test('fix joins "the", a plural subject and a common verb after a dash', () => {
+  // from real repo text: "the text title elements use obfuscated CSS module
+  // class names" and "the recognized gaming classes map onto instruments"
+  // spliced, since the plural rule leaves out "the". A word in "s" before
+  // the plural is a second noun, so "the changes users need" stays a phrase.
+  const file = tmpFile('the-plural-clause.md', [
+    'Title comes from the alt text \u2014 the text title elements use obfuscated class names.',
+    'The conclusion is to build nothing here \u2014 the recognized gaming classes map onto instruments.',
+    'Read the board \u2014 the changes users need first.',
+  ].join('\n'));
+  const { changes } = applyFixes([file], RULES);
+  assert.deepEqual(changes.map((c) => c.after), [
+    'Title comes from the alt text; the text title elements use obfuscated class names.',
+    'The conclusion is to build nothing here; the recognized gaming classes map onto instruments.',
+    'Read the board, the changes users need first.',
+  ]);
+});
+
 test('fix joins a verb and a bare plural with its own "that" clause after a dash', () => {
   // from real repo text: "the spread branch covers routes that merge in
   // extra per-call headers" spliced, since a plural with a clause on it fit

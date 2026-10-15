@@ -449,6 +449,12 @@ const ADVERB_CLAUSE_AFTER_DASH = new RegExp(`${CLAUSE_END}\\s*\\u2014\\s*(?!${NA
 // verb, and "the" is left out so "the changes users need" stays a phrase.
 const COMMON_PLAIN_VERB = '(?:need|appear|carry|say|do|seem|remain|require|reach|stay|tend|hold|lose|know|want|become|belong|depend|happen|exist|agree|refuse|include|contain)';
 const PLURAL_CLAUSE_AFTER_DASH = new RegExp(`${CLAUSE_END}\\s*\\u2014\\s*(?!${NAMING_PHRASE})(?!${TIME_OPENER})(?=(?:(?!(?:the|a|an|that|whose|this|it|its)\\b)${SUBJECT_WORD}){0,2}(?!(?:the|a|an|that|whose|this|its)\\b)[A-Za-z0-9_'-]*[a-z](?<!ss|us|is)s\\s+${COMMON_PLAIN_VERB}\\s+[^\\s\\u2014])`, 'g');
+// "The", one or two words with no "s" and a plural, then a common verb and
+// two more words, start one too: "the text title elements use obfuscated
+// class names", "the recognized gaming classes map onto instruments". A
+// word in "s" before the plural is a second noun, so "the changes users
+// need first" stays a phrase.
+const THE_PLURAL_CLAUSE_AFTER_DASH = new RegExp(`${CLAUSE_END}\\s*\\u2014\\s*(?!${NAMING_PHRASE})(?=the\\s+(?:(?![a-z0-9-]*s\\b)[a-z0-9][\\w-]*\\s+){1,2}[a-z]{3,}(?<!ss|us|is)s\\s+(?:${COMMON_PLAIN_VERB}|use|map|cluster)\\s+[a-z][^\\s\\u2014]*\\s+[^\\s\\u2014])`, 'g');
 // A "the" subject of one or two words, then a verb in "s" that is rarely a
 // noun and more words, starts one too: "keep it short; the config lives in
 // one file". A pronoun or "that" before the verb opens a clause inside a
@@ -1186,6 +1192,10 @@ function fixEmDash(s, { endsBlock = false, startsBlock = false, spans = [], abov
     .replace(PLURAL_CLAUSE_AFTER_DASH, (m, at, whole) => {
       const left = clauseLeft(at, whole);
       return left && !(/;\s/.test(left) && left.split(/;\s/).pop().split(/\s+/).length <= 3) ? clauseJoin(left, at, whole) : m;
+    })
+    .replace(THE_PLURAL_CLAUSE_AFTER_DASH, (m, at, whole) => {
+      const left = clauseLeft(at, whole);
+      return left ? clauseJoin(left, at, whole) : m;
     })
     .replace(THE_CLAUSE_AFTER_DASH, (m, at, whole) => {
       const left = clauseLeft(at, whole);

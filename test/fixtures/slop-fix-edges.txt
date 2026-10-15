@@ -223,3 +223,8 @@ Both count as satisfying \u2014 the spread branch covers routes that merge in ex
 # but a common plural noun is no verb, so the phrase keeps its comma
 Open the panel \u2014 the user settings pages that load slowly.
 => Open the panel, the user settings pages that load slowly.
+# "the", a word with no s, a plural and a common verb with more words is a clause
+Title comes from the alt text \u2014 the text title elements use obfuscated class names.
+=> Title comes from the alt text; the text title elements use obfuscated class names.
+We ranked them \u2014 the 4 candidates cluster on unrelated concerns.
+=> We ranked them; the 4 candidates cluster on unrelated concerns.
