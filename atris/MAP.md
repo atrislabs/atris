@@ -374,3 +374,5 @@ Older active goal fixture: `test/commands.test.js:1550` uses `lib/member-scaffol
 Score-derived goal fixture: `test/commands.test.js:1577` uses `lib/member-scaffold.js:145` for member setup. Six program launches become five; all goal, experiment and reuse assertions remain on real commands.
 
 Member wake fixture: `test/commands.test.js:1672` uses `lib/member-scaffold.js:145` for setup. One program launch is removed; all real wake calls and assertions remain.
+
+Terminal wake fixture: `test/commands.test.js:1769` uses `lib/member-scaffold.js:145` for member setup. Five program launches become four; all real mission, goal and wake checks remain.

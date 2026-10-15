@@ -1757,7 +1757,11 @@ test('member wake asks instead of ticking a goal pinned to a terminal mission', 
   const dir = makeTempDir();
   try {
     fs.mkdirSync(path.join(dir, 'atris'), { recursive: true });
-    assert.equal(runCli(['member', 'create', 'mission-lead', '--description="Make Missions wake up safely"'], { cwd: dir }).status, 0);
+    require('../lib/member-scaffold').ensureMemberBundle(path.join(dir, 'atris', 'team', 'mission-lead'), {
+      name: 'mission-lead',
+      role: 'Mission lead',
+      description: 'Make Missions wake up safely',
+    });
     const startedMission = runCli([
       'mission', 'start', '--no-verify', 'Make Missions wake up safely',
       '--owner', 'mission-lead',
