@@ -2729,3 +2729,5 @@ Default review fixture setup: `test/commands.test.js:20276` seeds creation, clai
 Search help checks: `test/commands.test.js:17616` runs both help spellings together with the existing async CLI helper, then checks each output and confirms neither workspace nor home state was created. `commands/search.js:420` routes both help spellings before searching or creating state. Two launches take one sequential stage.
 
 Learn help checks: `test/commands.test.js:17699` runs all three help spellings together with the existing async CLI helper, retaining every output and no-state assertion. `commands/learn.js:552` returns before workspace discovery. Three CLI launches take one sequential stage.
+
+Brain help checks: `test/commands.test.js:18802` runs both help flags together with the existing async CLI helper, retaining every output and no-state assertion. `commands/brain.js:1593` returns before workspace discovery. Two launches take one sequential stage.

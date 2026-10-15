@@ -18799,12 +18799,15 @@ test('status and analytics --help print usage without workspace state', () => {
   }
 });
 
-test('brain --help prints usage without workspace state', () => {
+test('brain --help prints usage without workspace state', async () => {
   const dir = makeTempDir();
   try {
     const home = path.join(dir, 'home');
-    for (const flag of ['--help', '-h']) {
-      const res = runCli(['brain', flag], { cwd: dir, env: { HOME: home } });
+    const flags = ['--help', '-h'];
+    const results = await Promise.all(flags.map(flag =>
+      runCliAsync(['brain', flag], { cwd: dir, env: { HOME: home } })));
+    for (const [index, flag] of flags.entries()) {
+      const res = results[index];
       assert.equal(res.status, 0, `brain ${flag}: ${res.stderr || res.stdout}`);
       assert.match(res.stdout, /Usage: atris brain compile/);
       assert.doesNotMatch(res.stderr, /atris\/ folder not found/);
