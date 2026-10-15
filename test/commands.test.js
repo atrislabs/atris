@@ -15082,15 +15082,22 @@ test('task continue-work rejects generic human-accept continuation titles', () =
   try {
     fs.mkdirSync(path.join(dir, 'atris'), { recursive: true });
 
-    const created = runCli([
-      'task', 'new', 'Certified row with generic continuation text',
-      '--tag', 'task',
-      '--goal-id', 'OBL-928',
-      '--json',
-    ], { cwd: dir, env });
-    assert.equal(created.status, 0, created.stderr);
-    const parent = JSON.parse(created.stdout).task;
-    const ref = parent.display_id;
+    // Seed the goal-linked row; continuation checks stay on the CLI.
+    const workspaceRoot = taskStore.workspaceRoot(dir);
+    const db = taskStore.open(dbPath);
+    let parent;
+    let ref;
+    try {
+      const created = addSeedTask(db, {
+        title: 'Certified row with generic continuation text', tag: 'task', workspaceRoot, metadata: { goal_id: 'OBL-928' },
+      });
+      assert.equal(created.inserted, true);
+      parent = { id: created.id };
+      ref = taskStore.taskDisplayRefMap(taskStore.listTasks(db, { workspaceRoot })).get(created.id);
+      assert.ok(ref);
+    } finally {
+      taskStore.close();
+    }
 
     const ready = runCli([
       'task', 'ready', ref,
