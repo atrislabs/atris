@@ -2365,3 +2365,10 @@ When the receipt names a different model than the one asked for, the chat prints
 `lib/runner-command.js` pins the mercury profile and `lib/engine-registry.js` keeps it roster-only.
 Regression checks live in `test/ax.test.js`, `test/runner-command.test.js`, and `test/engine-ask.test.js`.
 Verify: `npm run test:fast && node --test test/ax.test.js test/runner-command.test.js`.
+
+## Waiting-work explanation plan review
+
+`atris/receipts/assigned-work-waiting-review-2026-10-14.md:3` records the advisory
+verdict and real CLI evidence. `lib/member-task-pick.js:69` returns check reasons
+before job mismatch; `commands/member.js:10696` collapses selection failure into
+the generic idle message. Keep member eligibility separate from reporting.
