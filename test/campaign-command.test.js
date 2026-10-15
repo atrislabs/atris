@@ -273,3 +273,39 @@ test('start --protect saves paths and the start commit outside the repo; guard n
   assert.equal(cli('start', 'Q', '--judge', 'exit 1', '--budget', '5', '--id', 'cmp-q').status, 0);
   assert.match(cli('guard', 'cmp-q').stdout, /protects nothing/);
 });
+
+test('a judge that passes still reads failed once a protected file changed, at start and after', () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'atris-campaign-protect-judge-'));
+  const repo = path.join(dir, 'repo');
+  fs.mkdirSync(repo);
+  const env = { ...process.env, ATRIS_CAMPAIGN_DB: path.join(dir, 'state', 'atris.db'), ATRIS_SKIP_UPDATE_CHECK: '1' };
+  const sh = (...args) => spawnSync('git', args, { cwd: repo, encoding: 'utf8' });
+  const cli = (...args) => spawnSync(process.execPath, [CLI, 'campaign', ...args], { cwd: repo, env, encoding: 'utf8' });
+  sh('init', '-q');
+  sh('config', 'user.email', 'j@j');
+  sh('config', 'user.name', 'j');
+  fs.writeFileSync(path.join(repo, 'q.txt'), 'no\n');
+  fs.writeFileSync(path.join(repo, 'work.txt'), 'no\n');
+  sh('add', '-A');
+  sh('commit', '-qm', 'base');
+
+  assert.equal(cli('start', 'G', '--judge', 'grep -q yes work.txt', '--budget', '5', '--protect', 'q.txt', '--id', 'cmp-g').status, 0);
+  fs.writeFileSync(path.join(repo, 'work.txt'), 'yes\n');
+  fs.writeFileSync(path.join(repo, 'q.txt'), 'yes\n');
+  sh('commit', '-qam', 'edit both');
+  const judged = cli('judge', 'cmp-g', '--json');
+  assert.equal(judged.status, 1);
+  const body = JSON.parse(judged.stdout);
+  assert.equal(body.passed, false);
+  assert.equal(body.reading.summary, 'protected file changed: q.txt');
+  assert.equal(body.campaign.last_judge.passed, false);
+
+  sh('checkout', '-q', 'HEAD~1', '--', 'q.txt');
+  assert.equal(cli('judge', 'cmp-g').status, 0, 'putting the file back lets the judge count again');
+
+  // start's must-fail-first check counts a dirty protected file as a failure.
+  fs.writeFileSync(path.join(repo, 'q.txt'), 'changed\n');
+  const dirty = cli('start', 'H', '--judge', 'exit 0', '--budget', '5', '--protect', 'q.txt', '--id', 'cmp-h', '--json');
+  assert.equal(dirty.status, 0, dirty.stdout + dirty.stderr);
+  assert.match(JSON.parse(dirty.stdout).campaign.answer.text, /protected file changed: q\.txt/);
+});

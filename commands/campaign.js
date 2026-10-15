@@ -178,6 +178,20 @@ function runJudgeCommand(command, cwd, timeoutSeconds, env = process.env) {
   });
 }
 
+// A failed reading when a protected path changed since start, or when the
+// checkout cannot be compared; the judge's own verdict does not count then.
+function guardReading(reading, protect) {
+  if (!protect) return reading;
+  const root = checkoutTop(process.cwd());
+  const result = root ? changedProtected(root, protect) : { error: 'not in the git checkout the campaign started in' };
+  let summary = null;
+  if (result.error) summary = `cannot check protected files: ${result.error}`;
+  else if (result.changed.length) summary = `protected file changed: ${result.changed.join(', ')}`;
+  if (!summary) return reading;
+  const { reading: _graded, ...rest } = reading;
+  return { ...rest, passed: false, summary };
+}
+
 function makeContext(args, deps) {
   const asJson = args.includes('--json');
   const store = deps.store || openCampaignStore(process.cwd());
@@ -186,13 +200,16 @@ function makeContext(args, deps) {
   const runJudge = deps.runJudge || ((command, timeout, env) => runJudgeCommand(command, process.cwd(), timeout, env));
   // Held-out files live beside the campaign store, outside every checkout.
   const holdoutRoot = deps.holdoutRoot || path.dirname(store.path || campaignDbPath());
+  const home = deps.campaignHome || campaignHome(store);
   // A campaign with a held-out file hands its path to the judge, and nothing
-  // the judge prints from it reaches the store.
-  const judge = async (command, timeout, campaignId) => {
+  // the judge prints from it reaches the store. A campaign with protected
+  // paths fails every reading once one of them changed, whatever the judge
+  // said. Start passes its plan in, since nothing is saved yet.
+  const judge = async (command, timeout, campaignId, protect = campaignId ? readProtect(home, campaignId) : null) => {
     const holdout = campaignId ? findHoldout(holdoutRoot, campaignId) : null;
     const reading = await runJudge(command, timeout, holdout ? { ...process.env, ATRIS_CAMPAIGN_HOLDOUT: holdout } : process.env);
-    if (!holdout) return reading;
-    return { ...reading, summary: scrub(reading.summary, holdout), output_tail: scrub(reading.output_tail, holdout) };
+    const seen = holdout ? { ...reading, summary: scrub(reading.summary, holdout), output_tail: scrub(reading.output_tail, holdout) } : reading;
+    return guardReading(seen, protect);
   };
   const out = (human, json) => {
     if (asJson) console.log(JSON.stringify(json));
@@ -204,7 +221,7 @@ function makeContext(args, deps) {
     return code;
   };
   const append = (campaignId, type, data, as = actor) => store.append({ campaign_id: campaignId, type, actor: as, data });
-  return { asJson, store, actor, judge, holdoutRoot, out, fail, append, forgedHuman, loopDeps: deps.loopDeps, cloud: deps.cloud || {} };
+  return { asJson, store, actor, judge, holdoutRoot, campaignHome: home, out, fail, append, forgedHuman, loopDeps: deps.loopDeps, cloud: deps.cloud || {} };
 }
 
 function requireCampaign(ctx, id) {
@@ -315,7 +332,7 @@ async function cmdStart(args, ctx) {
 
   const timeout = Number(readFlag(args, '--timeout', '')) || JUDGE_TIMEOUT_SECONDS;
   if (!ctx.asJson) console.error(`running the judge first: ${judge}`);
-  const reading = await ctx.judge(judge, timeout, id);
+  const reading = await ctx.judge(judge, timeout, id, protectPlan);
   if (reading.passed && !standing) {
     moveHoldoutBack(held);
     return ctx.fail(`already done: the judge passes before any work (${reading.summary || 'exit 0'}). Write a judge that fails first.`, 1);
@@ -690,7 +707,6 @@ function campaignCommand(args = [], deps = {}) {
     return 0;
   }
   const ctx = makeContext(args, deps);
-  ctx.campaignHome = deps.campaignHome || campaignHome(ctx.store);
   if (ctx.forgedHuman) return ctx.fail('--as cannot name a person; a person runs atris in their own terminal (or sets ATRIS_HUMAN=1)');
   if (!verb || verb === 'list') {
     const all = listCampaigns(ctx.store);
