@@ -4249,6 +4249,28 @@ test('the fix diff script counts known gaps with a "~> " line and never fails on
   assert.match(r.stdout, /^1 of 2 known gaps still open$/m);
 });
 
+test('the fix diff splice list skips a noun after "in" or "of" and a noun with its own clause', () => {
+  // from the real list: "the live markdown docs the editor renders" and "the
+  // stubs in tests" are phrases the fixer rightly leaves with a comma, so
+  // they are no splice left. A "the" inside the stretch is an object, so the
+  // fixer's misread "the learner watches the model do the reps" stays listed.
+  const { spliceShapes } = require('../scripts/slop-fix-diff.js');
+  const D = String.fromCharCode(0x2014);
+  const rests = [
+    'the live markdown docs the Atris (obelisk) editor renders',
+    'the stubs in tests `monkeypatch` use',
+    'the topic of customers refusing to pay is relevant',
+    'the learner watches the model do the reps',
+    'the server returns the payload',
+  ];
+  const sources = rests.map((r) => `One place ${D} ${r}.`);
+  const fixes = rests.map((r) => `One place, ${r}.`);
+  assert.deepEqual(spliceShapes(sources, fixes).map((s) => s.text), [
+    'the learner watches the model do the reps',
+    'the server returns the payload',
+  ]);
+});
+
 test('the fix diff script lists each comma it writes before a "the" clause once', () => {
   const { spawnSync } = require('node:child_process');
   // a dash fixed into a comma before "the" and a subject and a verb is a
@@ -4258,7 +4280,7 @@ test('the fix diff script lists each comma it writes before a "the" clause once'
   const D = String.fromCharCode(0x2014);
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'splices-'));
   fs.writeFileSync(path.join(dir, 'notes.md'), [
-    `Author Atris block documents ${D} the live markdown docs the Atris (obelisk) editor renders, with charts.`,
+    `It mirrors what the model produces ${D} the learner watches the model do the reps.`,
     '',
     `Feedback ${D} the API that turns complaints into fixes.`,
     '',
@@ -4272,7 +4294,7 @@ test('the fix diff script lists each comma it writes before a "the" clause once'
   const r = spawnSync(process.execPath, [script, '--splices', dir], { encoding: 'utf8', cwd: path.join(__dirname, '..') });
   fs.rmSync(dir, { recursive: true, force: true });
   assert.equal(r.status, 0, r.stderr);
-  assert.match(r.stdout, /^ {2}, the live markdown docs the Atris \(obelisk\) editor renders$/m);
+  assert.match(r.stdout, /^ {2}, the learner watches the model do the reps$/m);
   assert.match(r.stdout, /^ {2}, the gym measures `a` per task {2}\(x2\)$/m);
   assert.doesNotMatch(r.stdout, /API that turns|three ways/);
   assert.match(r.stdout, /; 2 fixes put a comma before "the"/);
