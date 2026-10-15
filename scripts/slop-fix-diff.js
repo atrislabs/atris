@@ -276,8 +276,9 @@ const { PRESENT_PLURAL_VERB, DEMONSTRATIVE_LEAD, S_ADVERB } = require(path.join(
 const DEMONSTRATIVE_SHAPE = new RegExp(`^(?:these|those|(?:the|these|those|our|their|your|its) (?:[\\w\`-]+ )?(?!${S_ADVERB} )[a-z]+[^isu\\s']s) (?:${DEMONSTRATIVE_LEAD} )?${PRESENT_PLURAL_VERB} (?:[a-z\`"]|\\d)`);
 // Two nouns joined by "and its", "and the" or kin before a plural verb are
 // one subject: "the in-app browser and its file-viewing companions feel as
-// trustworthy as a real tab". The fixer has no such reading, so beside the
-// verbs it shares, this one takes a few it lacks, "feel", "look", "seem".
+// trustworthy as a real tab". Beside the verbs it shares with the fixer,
+// this one takes "feel", "look" and "seem", which the fixer reads only
+// before "as" and a word and "as".
 const TWO_NOUN_SHAPE = new RegExp(`^(?:the|its|our|their|your) (?:[\\w\`-]+ ){1,2}and (?:its|their|the|our|your) (?:[\\w\`-]+ ){1,2}(?:${PRESENT_PLURAL_VERB}|feel|look|seem) (?:[a-z\`"]|\\d)`);
 // A stretch that ends its sentence on a bare "of", "to", "with" and kin has
 // lost the object of that word to the noun it opens with, so it is a

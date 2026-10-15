@@ -339,6 +339,10 @@ test('the em dash fix reads past a short aside between a subject and its verb', 
     `Check one place ${D} the error logs (in /tmp) folder.`,
     '',
     `The HMAC path still works ${D} the refactor (hmac_key to auth_secret) preserves behavior.`,
+    '',
+    `Nobody leaves Atris while working ${D} the in-app browser and its file-viewing companions (PDF, HTML) feel as trustworthy as a real browser tab.`,
+    '',
+    `Check one place ${D} the logs and the docs folder.`,
   ].join('\n'));
   applyFixes([file], RULES);
   assert.deepEqual(fs.readFileSync(file, 'utf8').split('\n'), [
@@ -349,6 +353,10 @@ test('the em dash fix reads past a short aside between a subject and its verb', 
     'Check one place, the error logs (in /tmp) folder.',
     '',
     'The HMAC path still works; the refactor (hmac_key to auth_secret) preserves behavior.',
+    '',
+    'Nobody leaves Atris while working; the in-app browser and its file-viewing companions (PDF, HTML) feel as trustworthy as a real browser tab.',
+    '',
+    'Check one place, the logs and the docs folder.',
   ]);
 });
 

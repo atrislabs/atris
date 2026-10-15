@@ -403,7 +403,11 @@ const THE_OBJECT_CLAUSE_AFTER_DASH = new RegExp(`${CLAUSE_END}\\s*\\u2014\\s*(?=
 // icon; the SVG `fill` attrs override `currentColor`". A place word, a word
 // that ends a longer name, or no object after the verb keeps the phrase:
 // "the build steps for every repo", "the docs folder, the tests".
-const PLURAL_OBJECT_CLAUSE_AFTER_DASH = new RegExp(`${CLAUSE_END}\\s*\\u2014\\s*(?=the\\s+(?!(?:one|two|three|four|five|six|seven|eight|nine|ten|few|many|several|same|other|first|last|next|main|key|core|new|old|real|whole|exact|only)\\b)(?:(?:${MODIFIER_WORD}|\\uE000\\d+\\uE001)\\s+){0,2}(?!(?:this|his|its|was|has|does|thus|plus|always|perhaps|unless|whereas|across|yes)\\b)[a-z]{2,}[^su\\W]s\\s+(?:(?:only|now|still|already|also|never|always|often|just)\\s+)?(?!(?:from|of|in|on|for|with|at|by|to|and|or|but|so|yet|not|then|that|which|who|like|than|as|is|are|was|were|be|been|into|via|per|about|over|under|above|below|behind|across|through|within|without|between|among|around|along|near|past|since|until|inside|outside|beyond|upon|toward|towards|against|during|except|after|before|when|if|while|the|your|our|their|its|his|her|my|every|each|all|no|some|any)\\b|${NAME_END_WORD}\\b)[a-z]{3,}(?<!s)\\s+(?:the|a|an|your|our|their|its|this|these|those|it|them|\\uE000\\d+\\uE001)(?=[\\s.!?;,]|$))`, 'g');
+// Two nouns joined by "and its" or kin are one subject, a hidden aside may
+// sit before the verb, and "feel as trustworthy as a" is a verb and its
+// object: "the in-app browser and its file-viewing companions (PDF, HTML)
+// feel as trustworthy as a real browser tab".
+const PLURAL_OBJECT_CLAUSE_AFTER_DASH = new RegExp(`${CLAUSE_END}\\s*\\u2014\\s*(?=the\\s+(?!(?:one|two|three|four|five|six|seven|eight|nine|ten|few|many|several|same|other|first|last|next|main|key|core|new|old|real|whole|exact|only)\\b)(?:[a-z][\\w-]*\\s+(?:[a-z][\\w-]*\\s+)?and\\s+(?:its|their|the)\\s+)?(?:(?:${MODIFIER_WORD}|\\uE000\\d+\\uE001)\\s+){0,2}(?!(?:this|his|its|was|has|does|thus|plus|always|perhaps|unless|whereas|across|yes)\\b)[a-z]{2,}[^su\\W]s\\s+(?:\\uE000\\d+\\uE001\\s+)?(?:(?:only|now|still|already|also|never|always|often|just)\\s+)?(?!(?:from|of|in|on|for|with|at|by|to|and|or|but|so|yet|not|then|that|which|who|like|than|as|is|are|was|were|be|been|into|via|per|about|over|under|above|below|behind|across|through|within|without|between|among|around|along|near|past|since|until|inside|outside|beyond|upon|toward|towards|against|during|except|after|before|when|if|while|the|your|our|their|its|his|her|my|every|each|all|no|some|any)\\b|${NAME_END_WORD}\\b)(?:[a-z]{3,}(?<!s)\\s+(?:the|a|an|your|our|their|its|this|these|those|it|them|\\uE000\\d+\\uE001)(?=[\\s.!?;,]|$)|(?:feel|look|seem|sound)\\s+as\\s+[a-z]{2,}\\s+as\\s+(?:the|a|an|any|your|our|their)\\s))`, 'g');
 // The same subject, a verb in "s" and a place word that seldom follows a
 // plural noun ("across", "through", "into" and kin) is a clause: "the
 // protocol spreads across projects". A word in "ly" may sit on either side
@@ -1610,10 +1614,11 @@ const FILE_REF = /^(`+)[^`\s]+\.\w{1,5}:\d+(?:-\d+)?\1$/;
 // While the dash fix runs, a short aside between a subject after a dash and
 // its verb is masked too, so "\u2014 the member definition (MEMBER.md / backend
 // member schema) carries its model" reads as nouns and a verb, the way it
-// does with no aside. A second dash in the same sentence makes the stretch
-// a paired aside, so it stays open to that rule. The scan never masks it,
-// so words inside an aside are still read.
-const SUBJECT_ASIDE = /(?<=\u2014[ \t]*(?:the|a|an|this|every|each|its|our|their|your)[ \t]+(?:[\w'/.\uE000\uE001-]+[ \t]+){0,2}[\w'/.\uE000\uE001-]+[ \t])\([^()\n\u2014]{1,40}\)(?=[ \t]+[a-z])(?![^\u2014\n.!?]*\u2014)/g;
+// does with no aside, and after two nouns joined by "and its" too. A
+// second dash in the same sentence makes the stretch a paired aside, so it
+// stays open to that rule. The scan never masks it, so words inside an
+// aside are still read.
+const SUBJECT_ASIDE = /(?<=\u2014[ \t]*(?:the|a|an|this|every|each|its|our|their|your)[ \t]+(?:[\w'/.\uE000\uE001-]+[ \t]+){0,2}(?:and[ \t]+(?:its|their|the)[ \t]+(?:[\w'/.\uE000\uE001-]+[ \t]+)?)?[\w'/.\uE000\uE001-]+[ \t])\([^()\n\u2014]{1,40}\)(?=[ \t]+[a-z])(?![^\u2014\n.!?]*\u2014)/g;
 function maskInlineCode(line, { asides = false } = {}) {
   const spans = [];
   const hide = (m) => `\uE000${spans.push(m) - 1}\uE001`;

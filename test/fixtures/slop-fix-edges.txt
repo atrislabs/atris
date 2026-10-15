@@ -370,10 +370,16 @@ The gate has a test \u2014 if the format changes, the round-trip check breaks an
 ~> The gate has a test; if the format changes, the round-trip check breaks and the team reverts it.
 
 # a subject of two nouns joined by "and its" before a plural verb, from a
-# real goal repeated across one repo's logs; neither the fix nor the splice
-# list reads the pair as a subject yet
+# real goal repeated across one repo's logs, with "feel as trustworthy as"
+# for its verb; two nouns with no verb after them stay a phrase
 Nobody has to leave Atris while working \u2014 the in-app browser and its file-viewing companions (PDF, HTML) feel as trustworthy as a real browser tab.
-~> Nobody has to leave Atris while working; the in-app browser and its file-viewing companions (PDF, HTML) feel as trustworthy as a real browser tab.
+=> Nobody has to leave Atris while working; the in-app browser and its file-viewing companions (PDF, HTML) feel as trustworthy as a real browser tab.
+Nobody leaves Atris \u2014 the browser and its companions show the page.
+=> Nobody leaves Atris; the browser and its companions show the page.
+Nobody leaves Atris \u2014 the file viewers feel as safe as a tab.
+=> Nobody leaves Atris; the file viewers feel as safe as a tab.
+Check one place \u2014 the logs and the docs folder.
+=> Check one place, the logs and the docs folder.
 
 # a short aside between the subject and its verb is read past, so the
 # clause joins the way it does with no aside; a phrase with an aside keeps
