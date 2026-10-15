@@ -21205,7 +21205,7 @@ test('writeLesson creates lessons.md if it does not exist', () => {
   }
 });
 
-test('task lineage', () => {
+test('task lineage', async () => {
   if (!hasNodeSqlite()) return;
   const dir = makeTempDir();
   const dbPath = path.join(dir, 'tasks.db');
@@ -21232,7 +21232,13 @@ test('task lineage', () => {
       taskStore.close();
     }
 
-    const text = runCli(['task', 'lineage', childRef], { cwd: dir, env });
+    // All reads use the completed fixture; none consumes another command's output.
+    const noGitEnv = { ...env, HOME: dir };
+    const [text, json, noGit] = await Promise.all([
+      runCliAsync(['task', 'lineage', childRef], { cwd: dir, env }),
+      runCliAsync(['task', 'lineage', childRef, '--json'], { cwd: dir, env }),
+      runCliAsync(['task', 'lineage', childRef], { cwd: dir, env: noGitEnv }),
+    ]);
     assert.equal(text.status, 0, text.stderr);
     assert.match(text.stdout, new RegExp(parentRef));
     assert.match(text.stdout, new RegExp(childRef));
@@ -21241,7 +21247,6 @@ test('task lineage', () => {
     const childLine = text.stdout.split('\n').findIndex(l => l.includes(childRef));
     assert.ok(parentLine < childLine, 'parent appears before child in text output');
 
-    const json = runCli(['task', 'lineage', childRef, '--json'], { cwd: dir, env });
     assert.equal(json.status, 0, json.stderr);
     const payload = JSON.parse(json.stdout);
     assert.equal(payload.ok, true);
@@ -21251,8 +21256,6 @@ test('task lineage', () => {
     assert.equal(payload.chain.target.display_id, childRef);
     assert.ok(Array.isArray(payload.chain.commits), 'commits is an array');
 
-    const noGitEnv = { ...env, HOME: dir };
-    const noGit = runCli(['task', 'lineage', childRef], { cwd: dir, env: noGitEnv });
     assert.equal(noGit.status, 0, 'no crash without git');
   } finally {
     cleanupTempDir(dir);

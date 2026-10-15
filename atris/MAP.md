@@ -187,3 +187,5 @@ Bulk approval preview scans: `test/commands.test.js:13448` runs the default, all
 Single-row approval previews: `test/commands.test.js:13337` runs the JSON and text dry runs together, preserving the later unchanged-status read and all sequential review and acceptance writes. The confirmation refusal and both actor refusals run together before the previews; all three exit before opening the store, and the unchanged-status read waits for all three.
 
 Proof-only refusal concurrency: `test/commands.test.js:13250` runs done, finish and positive-review refusals together before readiness, then accept and automatic-accept refusals together after zero-reward review. All CLI assertions and later mutation order remain unchanged.
+
+Lineage read concurrency: `test/commands.test.js:21208` runs text, JSON and alternate-home lineage reads together after closing fixture setup. `commands/task.js:11796` reads the production projection and git history without writing task rows or shared output files; all original assertions remain.
