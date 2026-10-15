@@ -2527,3 +2527,5 @@ Put-away backup name: `commands/land.js:557` names each removed folder's commit 
 Restore with quoted paths: `test/worktree-removal-guard.test.js:1435` runs put-away and the saved backup list with spaces and apostrophes in both repository and removed-folder names, then executes the listed command in a real shell and checks recovered staged, binary and draft contents.
 
 Missing saved commit: `commands/land.js:1069` withholds the saved restore command when its saved commit reference is absent. `test/worktree-removal-guard.test.js:1517` removes that reference in a disposable repository and checks plain and JSON replies before restoring it.
+
+Missing saved patches: `commands/land.js:1075` checks saved patch paths before listing a restore command. `test/worktree-removal-guard.test.js:1533` removes each patch in turn and checks plain and JSON replies, including spaces and apostrophes in paths, before restoring the files and replaying recovery.

@@ -1071,9 +1071,16 @@ function savedBackups(root) {
     .map((row) => {
       const ref = row.restore.match(/refs\/atris\/salvage\/[0-9a-f]{40,64}\b/);
       const missing = ref && runGit(['cat-file', '-e', `${ref[0]}^{commit}`], { cwd: root, check: false }).status !== 0;
+      // Read only the shell words emitted by quoteArg, never execute the saved command.
+      const patches = [...row.restore.matchAll(/(?:^| && )git apply (?:--cached )?((?:[^\s'\\]+|'[^']*'|\\.)+)/g)]
+        .map((match) => match[1].replace(/'([^']*)'|\\(.)/g, (_, quoted, escaped) => quoted === undefined ? escaped : quoted));
+      const missingPatch = patches.some((file) => {
+        try { return !fs.statSync(file).isFile(); } catch { return true; }
+      });
+      const unavailable = missing ? 'saved commit is missing' : missingPatch ? 'saved patch file is missing' : '';
       return { at: row.at, path: row.path, branch: row.branch,
-        restore: missing ? null : row.restore,
-        ...(missing ? { unavailable: 'saved commit is missing' } : {}) };
+        restore: unavailable ? null : row.restore,
+        ...(unavailable ? { unavailable } : {}) };
     });
 }
 

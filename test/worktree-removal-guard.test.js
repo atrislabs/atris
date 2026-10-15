@@ -1505,6 +1505,22 @@ test(`reap saves staged and binary work and restores it exactly${quoted ? ' with
     assert.equal(JSON.parse(missingJson.stdout).backups[0].restore, null);
     assert.equal(JSON.parse(missingJson.stdout).backups[0].unavailable, 'saved commit is missing');
     git(repo, ['update-ref', `refs/atris/salvage/${folderCommit}`, folderCommit]);
+    for (const patch of [staged, dirty]) {
+      const bytes = fs.readFileSync(patch);
+      fs.unlinkSync(patch);
+      const absent = spawnSync(process.execPath, [path.resolve(__dirname, '../bin/atris.js'), 'land', '--backups'], { cwd: repo, encoding: 'utf8' });
+      console.log('command: node bin/atris.js land --backups (missing saved patch)');
+      console.log(absent.stdout.trim());
+      console.log(`exit: ${absent.status}`);
+      assert.equal(absent.status, 0, absent.stderr);
+      assert.match(absent.stdout, /cannot restore: saved patch file is missing/);
+      assert.ok(!absent.stdout.includes('to restore:'), absent.stdout);
+      const absentJson = spawnSync(process.execPath, [path.resolve(__dirname, '../bin/atris.js'), 'land', '--backups', '--json'], { cwd: repo, encoding: 'utf8' });
+      assert.equal(absentJson.status, 0, absentJson.stderr);
+      assert.equal(JSON.parse(absentJson.stdout).backups[0].restore, null);
+      assert.equal(JSON.parse(absentJson.stdout).backups[0].unavailable, 'saved patch file is missing');
+      fs.writeFileSync(patch, bytes);
+    }
     const rebuilt = spawnSync('sh', ['-c', listed], { cwd: base, encoding: 'utf8' });
     assert.equal(rebuilt.status, 0, rebuilt.stderr);
     assert.equal(git(wt, ['status', '--porcelain']), status);
