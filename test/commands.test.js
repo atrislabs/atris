@@ -15319,7 +15319,7 @@ test('task current exposes continue-work for certified review suggestions', asyn
   }
 });
 
-test('task queue filters certified review rows by continue-work and human-accept waiting state', () => {
+test('task queue filters certified review rows by continue-work and human-accept waiting state', async () => {
   if (!hasNodeSqlite()) return;
   const dir = makeTempDir();
   const dbPath = path.join(dir, 'tasks.db');
@@ -15384,12 +15384,27 @@ test('task queue filters certified review rows by continue-work and human-accept
       'node --test test/commands.test.js passed during human-accept filter review',
     );
 
-    const continueQueue = runCli([
-      'task', 'queue',
-      '--goal-id', 'OBL-928',
-      '--review-state', 'continue-work',
-      '--json',
-    ], { cwd: dir, env });
+    // These reads derive output from unchanged rows and do not consume the saved view.
+    const [continueQueue, waitingQueue, waitingCurrent] = await Promise.all([
+      runCliAsync([
+        'task', 'queue',
+        '--goal-id', 'OBL-928',
+        '--review-state', 'continue-work',
+        '--json',
+      ], { cwd: dir, env }),
+      runCliAsync([
+        'task', 'queue',
+        '--goal-id', 'OBL-928',
+        '--review-state', 'human-accept-waiting',
+        '--json',
+      ], { cwd: dir, env }),
+      runCliAsync([
+        'task', 'current',
+        '--goal-id', 'OBL-928',
+        '--review-state', 'no_next_task',
+        '--json',
+      ], { cwd: dir, env }),
+    ]);
     assert.equal(continueQueue.status, 0, continueQueue.stderr);
     const continuePayload = JSON.parse(continueQueue.stdout);
     const continueCommand = `atris task continue-work ${continueRef} --as codex --json`;
@@ -15436,12 +15451,6 @@ test('task queue filters certified review rows by continue-work and human-accept
     assert.ok(continueQueueItem.legacy_ref);
     assert.equal(continueQueueItem.continue_work_command, continueCommand);
 
-    const waitingQueue = runCli([
-      'task', 'queue',
-      '--goal-id', 'OBL-928',
-      '--review-state', 'human-accept-waiting',
-      '--json',
-    ], { cwd: dir, env });
     assert.equal(waitingQueue.status, 0, waitingQueue.stderr);
     const waitingPayload = JSON.parse(waitingQueue.stdout);
     assert.equal(waitingPayload.current.scope.review_state, 'human-accept-waiting');
@@ -15472,12 +15481,6 @@ test('task queue filters certified review rows by continue-work and human-accept
     assert.ok(waitingQueueItem.legacy_ref);
     assert.equal(waitingQueueItem.continue_work_command, undefined);
 
-    const waitingCurrent = runCli([
-      'task', 'current',
-      '--goal-id', 'OBL-928',
-      '--review-state', 'no_next_task',
-      '--json',
-    ], { cwd: dir, env });
     assert.equal(waitingCurrent.status, 0, waitingCurrent.stderr);
     const waitingCurrentPayload = JSON.parse(waitingCurrent.stdout);
     assert.equal(waitingCurrentPayload.current.scope.review_state, 'no_next_task');

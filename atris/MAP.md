@@ -256,3 +256,5 @@ Continuation debt read batching: `test/commands.test.js:15209` awaits queue insp
 Continuation display readiness setup: `test/commands.test.js:15237` seeds readiness through production readyTask in the creation connection, asserts success and closes in finally. Both reviews, current selection, queue output and cleared-suggestion checks stay on the CLI. Five launches replace six; every display assertion remains.
 
 Continuation display read batching: `test/commands.test.js:15230` overlaps current selection and review queue reads after certification, before clearing the suggestion. Both read unchanged task rows; five sequential launch stages become four, with every assertion retained.
+
+Queue filtering read batching: `test/commands.test.js:15322` runs three queue/current CLI reads together after both fixtures close. `commands/task.js:3962` derives each response from stored rows, and the saved view is not consumed by these reads. All assertions remain; three sequential launch stages become one.
