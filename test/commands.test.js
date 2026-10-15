@@ -15508,7 +15508,10 @@ test('task review lanes route stale PR proof out of human accept waiting', async
   try {
     fs.mkdirSync(path.join(dir, 'atris'), { recursive: true });
 
-    // Seed creation through the real store; stale proof routing stays on the CLI.
+    const stalePrVerify = `node --check ${path.join(repoRoot, 'commands', 'task.js')}`;
+    const stalePrProof = `Verified #1600 remains OPEN/draft/CLEAN at head be8797f. ${stalePrVerify} passed.`;
+
+    // Seed creation and readiness through the real store; routing stays on the CLI.
     const task = (() => {
       const db = taskStore.open(dbPath);
       try {
@@ -15517,23 +15520,18 @@ test('task review lanes route stale PR proof out of human accept waiting', async
           title: 'Certified stale PR proof boundary',
           tag: 'task',
           workspaceRoot,
-          metadata: { goal_id: 'OBL-928' },
+          metadata: { goal_id: 'OBL-928', verify: stalePrVerify },
         });
+        const readied = taskStore.readyTask(db, {
+          id, actor: 'codex', proof: stalePrProof, result: FIXTURE_RESULT_SENTENCE,
+        });
+        assert.equal(readied.ready, true, readied.reason);
         return { id, display_id: taskStore.taskDisplayRefMap(taskStore.listTasks(db, { workspaceRoot })).get(id) };
       } finally {
         taskStore.close();
       }
     })();
     const ref = task.display_id;
-    const stalePrVerify = `node --check ${path.join(repoRoot, 'commands', 'task.js')}`;
-    const stalePrProof = `Verified #1600 remains OPEN/draft/CLEAN at head be8797f. ${stalePrVerify} passed.`;
-
-    assert.equal(runCli([
-      'task', 'ready', ref,
-      '--as', 'codex',
-      '--proof', stalePrProof,
-      '--verify', stalePrVerify,
-    ], { cwd: dir, env }).status, 0);
     assert.equal(runCli([
       'task', 'review', ref,
       '--reward', '0',

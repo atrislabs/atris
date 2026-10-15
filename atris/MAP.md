@@ -179,7 +179,7 @@ Continuation display creation setup: `test/commands.test.js:15237` seeds the goa
 
 Review queue filter creation setup: `test/commands.test.js:15316` seeds both goal-linked tasks through the production store in their original order; readiness, reviews and filtered queue/current reads stay on the CLI. Seven launches replace nine.
 
-Stale proof routing fixture: `test/commands.test.js` seeds task creation through the production store; readiness, review, routing reads and approval refusal stay on the CLI.
+Stale proof routing fixture: `test/commands.test.js:15503` seeds creation and readiness through the production store, retaining the verification command in metadata; review, routing reads and approval refusal stay on the CLI. Eight launches replace nine.
 
 Weak proof review creation setup: `test/commands.test.js:15714` seeds creation and ownership together through the production task store; six CLI calls retain readiness, review, queue selection and both acceptance gates.
 
