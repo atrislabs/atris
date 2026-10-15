@@ -163,3 +163,5 @@ Review refusal reporting contract: the existing decision card specifies the whol
 Interrupted review removal: the existing review diagnostic also terminates a real child and propagates SIGTERM at removal, proving null status still causes deletion and a false success record. Proof: `atris/receipts/work-folder-review-interrupted-proof-2026-10-14.txt`.
 
 Cleanup proof runtime mismatch: `atris/receipts/work-folder-runner-proof-2026-10-14.txt` captures the actual `buildVerifiedProof` invocation at `lib/task-proof.js:157`: ten CLI checks stop at the Node version gate, while all 57 pass directly on supported Node. Review caller-runtime retention before changing cleanup based on this failure.
+
+Shared proof runner runtime review: `lib/task-proof.js:157` lacks the post-login caller-directory restoration already used by `lib/task-receipt.js:59`. `atris/receipts/work-folder-proof-runtime-probe.js` proves runtime identity, shell variable and glob behavior, and failed-child exit through the actual proof runner; the follow-up in `atris/receipts/work-folder-completion-runtime-plan-2026-10-14.md` names the regression required before implementation.

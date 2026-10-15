@@ -83,3 +83,33 @@ Readiness reran the exact required command through the completion runner,
 exit 0. Receipt: atris/runs/2026-10-14-task-afw-21-2026-10-14T16-33-43-304Z.json.
 Initial proof-only attempts were rejected because readiness requires its own
 execution; the final execution passed and moved the task into review.
+
+## Shared proof runner follow-up, October 14
+
+Verdict: proceed-with-changes. The receipt writer now restores the caller's
+Node directory after login startup in lib/task-receipt.js:59. Its earlier
+leading-word proposal above is historical, not the current implementation.
+The shared proof runner at lib/task-proof.js:157 still runs the command
+without that restoration.
+
+The single risk remains changing shell command meaning. Use the receipt
+writer's existing post-login PATH prefix rather than replacing the shell or
+rewriting the caller's command. Keep the original command in proof text.
+Do not change the strict certification parser or its allowlist.
+
+Flow: login profile -> caller Node directory first -> unchanged shell command.
+
+The real shared-runner probe compares baseline selection with that prefix:
+Node 20.18.0 becomes caller Node 25.6.1, a quoted variable stays one argument,
+a filename glob expands, and a child exit of 7 remains a failed proof.
+Command: node atris/receipts/work-folder-proof-runtime-probe.js, exit 0.
+This is advisory evidence, not an implementation or a portable regression.
+
+Before building, require a real-runner regression with a controlled competing
+Node on the login path, caller paths containing spaces and an apostrophe,
+non-Node commands, and the original command preserved in returned proof.
+Caller runtime wins by default; an explicit command PATH override remains
+possible. Login functions or aliases and commands that reset PATH need
+separate evidence before claiming universal retention.
+
+next_push: align the shared proof runner with the receipt writer's post-login Node directory restoration and add a controlled real-shell regression.
