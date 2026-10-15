@@ -1425,6 +1425,23 @@ test('fix joins a dash after "Inc." or "et al." with a comma, since no sentence 
   ]);
 });
 
+test('fix joins a full clause after "etc." with a semicolon, not a comma splice', () => {
+  // from a research note and a metrics note: the clause rules wanted a word
+  // right before the dash, so the period of "etc." hid the clause and it
+  // fell to a comma. A phrase after "etc." still takes its comma.
+  const file = tmpFile('etc-clause.md', [
+    'The topics are "Companies in San Francisco", etc. — these are category links, not results.',
+    '- The rows could include test agents, deleted agents, etc. — denominator is noisy.',
+    '- `image/analyze`, `pdf/analyze`, etc. — analysis only, no generation.',
+  ].join('\n'));
+  const { changes } = applyFixes([file], RULES, { write: false });
+  assert.deepEqual(changes.map((c) => c.after), [
+    'The topics are "Companies in San Francisco", etc.; these are category links, not results.',
+    '- The rows could include test agents, deleted agents, etc.; denominator is noisy.',
+    '- `image/analyze`, `pdf/analyze`, etc., analysis only, no generation.',
+  ]);
+});
+
 test('fix gives a long bold list label a colon, but a comma before a joining word', () => {
   // the "1." of a numbered list ends no sentence, but a long bold phrase after
   // it still labels what follows; before "and", "but", "or" or "so" it goes on
@@ -3233,7 +3250,7 @@ test('fix starts the next sentence after a stop that sits before a dash', () => 
     'Photo loading is fine with try? The cost of handling the error exceeds the value.',
     'The build passed. The log is clean.',
     'the build passed. the log is clean.',
-    'We kept the rest, etc., the gate holds.',
+    'We kept the rest, etc.; the gate holds.',
     'It trails off... the rest waits.',
   ]);
 });
