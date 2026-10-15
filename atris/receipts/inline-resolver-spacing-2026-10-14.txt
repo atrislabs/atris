@@ -1,0 +1,19 @@
+Inline spaced runner launches now retain recording checks, verified with 151 passing tests and exit 0.
+
+Files: test/engine-resource.test.js; atris/MAP.md; atris/refs/MAP-NOTES.md; atris/team/executor/logs/2026-10-14.md; atris/receipts/inline-resolver-spacing-2026-10-14.txt.
+Change: allow whitespace before an inline empty resolver call; add 72 assertions across six launch helpers. Existing unrelated changes were preserved and excluded from this commit.
+Verify: node --test test/engine-resource.test.js test/engine-dispatch.test.js
+Output excerpt:
+ℹ tests 151
+ℹ pass 151
+ℹ fail 0
+ℹ duration_ms 41241.067083
+Exit: 0
+Full output: /tmp/engine-tick62/verification.log
+Other commands: git diff --check (exit 0); git diff --cached --check (exit 0); atris slop detect test/engine-resource.test.js (exit 0: clean, no slop tells in 1 file).
+First test run: 150 passed, 1 failed because added test lines moved documentation references. Updated references and reran the same frozen command successfully.
+Review: independent read-only review found no concrete issues.
+Learned: the optional inline call group must include its preceding whitespace, preserving variable-only matching and help probes.
+Boundary: resolver calls with arguments and profile members following inline calls are not covered by this increment.
+next_push: Catch inline runner resolver calls with arguments.
+layer: capabilities

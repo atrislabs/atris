@@ -1403,7 +1403,7 @@ test('every launch of an engine program by name records its run or is named as e
 test('every engine started through a runner or profile variable records its run or is named as exempt', () => {
   // The program is a variable or a call, like a runner binary, a profile's
   // bin, or an engine invocation's command.
-  const VAR_LAUNCH = /\b(?:spawn|spawnSync|execFile|execFileSync|spawnWithOutputChunks|runInReapedProcessGroup)\s*\(\s*([A-Za-z_$][\w$]*(?:\.[\w$]+)*)(\(\))?\s*,\s*(\[[^\]]*\])?/g;
+  const VAR_LAUNCH = /\b(?:spawn|spawnSync|execFile|execFileSync|spawnWithOutputChunks|runInReapedProcessGroup)\s*\(\s*([A-Za-z_$][\w$]*(?:\.[\w$]+)*)(\s*\(\))?\s*,\s*(\[[^\]]*\])?/g;
   // It is an engine when the call, or the variable's declaration in the same
   // function, names an engine program or an engine or runner resolver.
   const ENGINE_SOURCE = new RegExp(`['"\`](?:${ENGINE_NAMES})['"\`]|\\b[\\w$]*(?:Engine|engine|Runner|runner)[\\w$]*\\s*\\(`);
@@ -1755,6 +1755,16 @@ test('every engine started through a runner or profile variable records its run 
     return { seen, missing, routes, traced, exempted: [...exempted] };
   };
   const planted = (text) => engineLaunches('commands/planted.js', text).missing;
+  // An inline resolver selects the same runner with whitespace before its call.
+  for (const helper of ['spawn', 'spawnSync', 'execFile', 'execFileSync', 'spawnWithOutputChunks', 'runInReapedProcessGroup']) {
+    for (const gap of [' ', '\t', '\n']) {
+      const runner = `resolveClaudeRunnerBin${gap}()`;
+      assert.deepStrictEqual(planted(`${helper}(${runner}, args);\n`), [`commands/planted.js:1 ${runner}`]);
+      assert.deepStrictEqual(planted(`startEngineRun(root);\n${helper}(${runner}, args);\n`), []);
+      assert.deepStrictEqual(planted(`${helper}(${runner}, ['--help']);\n`), []);
+      assert.deepStrictEqual(planted(`${helper}(findExecutable${gap}(), args);\n`), []);
+    }
+  }
   // Spaces before resolver arguments do not change the program they select.
   for (const gap of [' ', '\t']) {
     const runner = `resolveClaudeRunnerBin${gap}()`;
