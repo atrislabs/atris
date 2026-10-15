@@ -2511,4 +2511,4 @@ function slopCommand(argv) {
   return 0;
 }
 
-module.exports = { slopCommand, detect, scanFile, scanPaths, RULES, PAIR_RULES, loadProjectRules, addProjectRule, gitChangedLines, applyFixes, fencedLines, PRESENT_PLURAL_VERB, DEMONSTRATIVE_LEAD, S_ADVERB, LEAD_IN, installHook, findDeadCode, findOrphanedExports, listJsFiles };
+module.exports = { slopCommand, detect, scanFile, scanPaths, RULES, PAIR_RULES, loadProjectRules, addProjectRule, gitChangedLines, applyFixes, fencedLines, PRESENT_PLURAL_VERB, PAST_VERB, DEMONSTRATIVE_LEAD, S_ADVERB, LEAD_IN, installHook, findDeadCode, findOrphanedExports, listJsFiles };

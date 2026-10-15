@@ -5264,6 +5264,13 @@ test('the fix diff splice list skips a noun after "in" or "of" and a noun with i
     past.map(([t, end]) => `The run held ${D} ${t}${end}`),
     past.map(([t, end]) => `The run held, ${t}${end}`),
   ).map((s) => s.text), ['every task passed', 'each layer narrowed the space']);
+  // the past verbs the fixer reads without "ed" count too, and "set" only
+  // before "them" or kin, so "the data set a team uses" names a set
+  const irregular = ['the label hid a key gap', 'the user set them up', 'the data set a team uses'];
+  assert.deepEqual(spliceShapes(
+    irregular.map((t) => `It was never a model failure ${D} ${t}.`),
+    irregular.map((t) => `It was never a model failure, ${t}.`),
+  ).map((s) => s.text), ['the label hid a key gap', 'the user set them up']);
   // "these" or "those" alone, or a plural noun after them, before a plain
   // verb is a subject too, so the real "those searches return zero results"
   // and "these always wait for review" are listed; "those still open in

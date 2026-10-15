@@ -263,8 +263,11 @@ const SPLICE_SHAPE = new RegExp(`^(?!that (?:the|a|an|it|we|they|he|she|this|the
 // and a new subject: "every task passed", "each layer narrowed the space".
 // One right before another comma is a phrase that rides on the sentence,
 // "every piece connected, every seam intentional", and one after a pronoun
-// ends a clause on the noun: "the leads you missed".
-const PAST_SPLICE_SHAPE = new RegExp(`^(?!that (?:the|a|an|it|we|they|he|she|this|these|those|its|their|our|your)\\b)${SPLICE_OPENER} ` + /(?!(?:one|two|three|four|five|six|seven|eight|nine|ten|few|many|several|same|other|first|last|next|main|key|core|new|old|real|whole|exact|only)\b)(?:(?!(?:that|which|who|your|our|their|its|his|her|my|you|we|they|I|he|she)\b)[\w`-]+ ){1,2}[a-z]{2,}ed(?: (?:but|and) (?:nothing|none|no|it|they|we|the|this|that)\b| (?:the|a|an|it|them|every|all|each|this|no)\b|$)/.source);
+// ends a clause on the noun: "the leads you missed". The past verbs come
+// from the fixer, so "did", "hid" and the rest it reads without "ed" are
+// listed too: "the label hid a gap".
+const { PAST_VERB } = require(path.join(ROOT, 'commands', 'slop.js'));
+const PAST_SPLICE_SHAPE = new RegExp(`^(?!that (?:the|a|an|it|we|they|he|she|this|these|those|its|their|our|your)\\b)${SPLICE_OPENER} ` + /(?!(?:one|two|three|four|five|six|seven|eight|nine|ten|few|many|several|same|other|first|last|next|main|key|core|new|old|real|whole|exact|only)\b)(?:(?!(?:that|which|who|your|our|their|its|his|her|my|you|we|they|I|he|she)\b)[\w`-]+ ){1,2}/.source + PAST_VERB + /(?: (?:but|and) (?:nothing|none|no|it|they|we|the|this|that)\b| (?:the|a|an|it|them|every|all|each|this|no)\b|$)/.source);
 // "These" or "those" alone, or a plural noun after "the" and kin, before a
 // common plain verb is a subject too, whatever follows the verb: "those
 // need tests" and "those searches return zero results" are listed. The
