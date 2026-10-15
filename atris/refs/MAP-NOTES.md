@@ -2565,3 +2565,5 @@ Landing capability test setup: `test/commands.test.js:12964` seeds creation and 
 - Duplicate receipt repair setup: `test/commands.test.js:13508` uses production claimTask in the setup connection, removing one launch (four to three); the real XP status command still verifies integrity, XP, receipt count and the repaired ledger length.
 
 - Ready-work revision setup: `test/commands.test.js:13638` uses production claimTask in the setup connection, asserting ownership before closing. Seven launches become six; both initial readies, revise, show, stale accept and re-ready retain all original CLI assertions.
+
+- Accepted-task revision refusal: `test/commands.test.js:13737` seeds creation and ownership with production `claimTask`, asserts success and closes in finally; all refusal and XP assertions remain real CLI checks, reducing five launches to four.
