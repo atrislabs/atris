@@ -3499,6 +3499,27 @@ test('fix joins a direct question after a full clause with a semicolon', () => {
   ]);
 });
 
+test('fix gives a question that spells out the noun before it a colon', () => {
+  // from a research program note: "which mutated peptides will the system
+  // attack?" says what neoantigen selection is, so it explains the noun the
+  // way a colon does. A question with a helping verb asks the reader
+  // something new and keeps its semicolon.
+  const file = tmpFile('question-explains.md', [
+    'The hard part is neoantigen selection \u2014 which mutated peptides will the system attack?',
+    'The demo is ready \u2014 what do you think?',
+    'The next step is the launch \u2014 what is the date?',
+    'The hard part of the pipeline is neoantigen selection \u2014 which mutated peptides will the immune',
+    'system actually recognize and attack?',
+  ].join('\n'));
+  const { changes } = applyFixes([file], RULES);
+  assert.deepEqual(changes.map((c) => c.after), [
+    'The hard part is neoantigen selection: which mutated peptides will the system attack?',
+    'The demo is ready; what do you think?',
+    'The next step is the launch; what is the date?',
+    'The hard part of the pipeline is neoantigen selection: which mutated peptides will the immune',
+  ]);
+});
+
 test('fix joins "let\'s" after a full clause with a semicolon, like an order', () => {
   // from dream-gtm's outreach openers, which came out "Congrats on the 2023
   // Top Performer Award, let's discuss easing staffing pains"

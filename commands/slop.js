@@ -385,7 +385,11 @@ const POSSESSIVE_CLAUSE_AFTER_DASH = new RegExp(`${CLAUSE_END}\\s*\\u2014\\s*(?=
 // ("With clients on Hilton Head, Folly Beach"); a lowercase part after one
 // is a second sentence ("As an alum, congrats on the ranking; how...?").
 // After "ask" or "wonder" the question is what is asked, so it takes a
-// colon: "I have to ask: how do you manage it?"
+// colon: "I have to ask: how do you manage it?" A clause that ends on what
+// something is, followed by "which" or "what" and a noun, spells out that
+// noun, so it takes a colon too: "The hard part is neoantigen selection:
+// which peptides will the system attack?" With a helping verb after "what"
+// the question asks something new: "The demo is ready; what do you think?"
 const QUESTION_AFTER_DASH = new RegExp(`${CLAUSE_END}\\s*\\u2014\\s*(?=(?:(?:how|what|where|why|which|who)(?:['\\u2019]s)?|do|does|did|is|are|was|were|has|have|can|could|would|will|should|any)\\s+[^.!?\\u2014]*\\?)`, 'g');
 
 // An order after a full clause is a sentence of its own, so a comma there is
@@ -997,7 +1001,10 @@ function fixEmDash(s, { endsBlock = false, startsBlock = false, spans = [], abov
       const opener = left.replace(/^.*?\*\*[^*]*:\*\*\s*/, '').replace(/^[^A-Za-z]+/, '');
       if (/^(?:if|when|whenever|once|unless|until|after|before|while|because|since|as|although|though|with|given|for)\b/i.test(opener)
         && opener.split(/,\s+/).slice(1).every((part) => /^[A-Z](?![\s'\u2019])/.test(part))) return m;
-      return /\b(?:ask|asking|wonder|wondering|curious)$/i.test(left) ? ': ' : clauseJoin(left);
+      if (/\b(?:ask|asking|wonder|wondering|curious)$/i.test(left)) return ': ';
+      const spells = /\b(?:is|are|was|were)\s+(?:[\w'\u2019-]+\s+){0,3}[\w'\u2019-]+$/i.test(left)
+        && /^(?:which|what)\s+(?!(?:do|does|did|is|are|was|were|has|have|can|could|would|will|should)\b)[a-z]/i.test(whole.slice(at + m.length));
+      return spells ? ': ' : clauseJoin(left);
     })
     .replace(LEADING_CLAUSE_AFTER_DASH, (m, at, whole) => {
       const left = clauseLeft(at, whole);
