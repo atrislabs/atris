@@ -1328,18 +1328,20 @@ test('every engine started through a runner or profile variable records its run 
       return true;
     };
     const sourceAt = (source, position) => {
-      const scopeStart = Math.max(0, ...[...code.slice(0, position).matchAll(FUNCTION_START)].map((start) => start.index));
+      const visible = withoutHelperDefinitions(code, position);
       let declarationEnd = position;
       while (!ENGINE_SOURCE.test(source)) {
         const alias = /^([A-Za-z_$][\w$]*)(?:\.[\w$]+)*$/.exec(source.trim());
         if (!alias) break;
         // Captured variables remain visible until a matching parameter hides them.
-        const shadowStart = Math.max(scopeStart, ...definitionSpans(code).filter(([open, close]) => open <= declarationEnd && declarationEnd < close && parametersOf(open).includes(alias[1])).map(([open]) => open));
-        const visibleText = code.slice(shadowStart, declarationEnd);
-        const declaration = [...visibleText.matchAll(new RegExp(`\\b(?:const|let|var)\\s+${alias[1].replace(/\$/g, '\\$')}\\s*=\\s*([^;\\n]*)`, 'g'))]
+        const shadowStart = Math.max(0, ...definitionSpans(code).filter(([open, close]) => open <= declarationEnd && declarationEnd < close && parametersOf(open).includes(alias[1])).map(([open]) => open));
+        const visibleText = visible.slice(shadowStart, declarationEnd);
+        const declaration = [...visibleText.matchAll(new RegExp(`\\b(?:const|let|var)\\s+${alias[1].replace(/\$/g, '\\$')}[ \\t]*(?:=\\s*([^;\\n]*)|(?=;|\\n))`, 'g'))]
           .filter((candidate) => inScope(visibleText.slice(candidate.index))).pop();
+        const destructured = new RegExp(`\\b(?:const|let|var)\\s*[{[](?:[^=;]*?[,:{[])?\\s*${alias[1].replace(/\$/g, '\\$')}\\s*[,}\\]=]`, 'g');
+        if ([...visibleText.matchAll(destructured)].some((binding) => binding.index > (declaration?.index ?? -1) && inScope(visibleText.slice(binding.index)))) return '';
         if (!declaration) break;
-        source = declaration[1];
+        source = declaration[1] || '';
         // Only earlier declarations can supply this alias, which also makes
         // a circular alias chain terminate without a separate depth limit.
         declarationEnd = shadowStart + declaration.index;
@@ -1589,6 +1591,20 @@ test('every engine started through a runner or profile variable records its run 
     }
     assert.deepStrictEqual(planted(launcher('', 'function other() {\n  if (ready) {\n    const launch = wrap;\n    launch(resolveClaudeRunnerBin());\n  }\n}\n')), [], 'a copy hides the launcher name inside its own block');
   }
+  // Closed sibling helpers do not cut off captured runner declarations.
+  for (const helper of [
+    'function helper() { return 1; }',
+    'const helper = () => { return 1; };',
+    'const helper = function named() { return 1; };',
+  ]) {
+    const source = `const runner = resolveClaudeRunnerBin();\n${helper}\nspawnSync(runner, args);\n`;
+    assert.deepStrictEqual(planted(source), ['commands/planted.js:3 runner']);
+    assert.deepStrictEqual(planted(`const runner = resolveClaudeRunnerBin();\nfunction launch() {\n  const { runner } = tools;\n  ${helper}\n  spawnSync(runner, args);\n}\n`), [], 'a destructured local hides the outer engine');
+    assert.deepStrictEqual(planted(`const runner = resolveClaudeRunnerBin();\nfunction launch() {\n  let runner;\n  ${helper}\n  spawnSync(runner, args);\n}\n`), [], 'an uninitialized local hides the outer engine');
+    assert.deepStrictEqual(planted(`const runner = 'git';\n${helper}\nspawnSync(runner, args);\n`), []);
+    assert.deepStrictEqual(planted(`function outer() {\n  const profile = resolveEngineProfile(engine);\n  ${helper}\n  const runner = profile.bin;\n  spawnSync(runner, args);\n}\n`), ['commands/planted.js:5 runner']);
+  }
+  assert.deepStrictEqual(planted("function helper() {\n  const runner = resolveClaudeRunnerBin();\n}\nspawnSync(runner, args);\n"), [], 'a closed helper does not supply its local runner');
   // A program declared in a closed block does not supply a later launch.
   assert.deepStrictEqual(planted("function a() {\n  const program = resolveClaudeRunnerBin();\n  if (x) {\n    const program = 'git';\n  }\n  spawnSync(program, args);\n}\n"), ['commands/planted.js:6 program'], 'an inner plain program does not hide the outer engine');
   assert.deepStrictEqual(planted("function a() {\n  const program = 'git';\n  if (x) {\n    const program = resolveClaudeRunnerBin();\n  }\n  spawnSync(program, args);\n}\n"), [], 'an inner engine program does not reach a later launch');
