@@ -2433,3 +2433,5 @@ Signed out run written with CRLF: `test/member-board.test.js:2243` writes a fini
 Board test ref guard: `test/member-board.test.js:3862` fails when any `test/member-board.test.js` line ref in `atris/MAP.md` or this file stops landing on a test, a test loop, or a top-level constant, and names each drifted ref. Adding a test above a cited one means shifting the refs below it in the same change.
 
 Proof file variable owners: `test/member-board.test.js:3893` fails when two board tests write the same `ATRIS_*PROOF` variable, since run together the later one overwrites a receipt's saved terminal output.
+
+Receipt proof variables: `test/member-board.test.js:3911` fails when a checked-in receipt under `atris/receipts` or `atris/runs` names an `ATRIS_*PROOF` variable no board test writes, so a rename cannot leave a receipt's rerun command saving nothing.

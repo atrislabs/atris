@@ -3905,6 +3905,31 @@ test('each proof file variable belongs to one test', () => {
   assert.deepEqual(shared, [], 'give each test its own proof file variable');
 });
 
+// A receipt's rerun command sets a proof file variable to keep a test's
+// terminal output. Renaming the variable in a test leaves that receipt
+// writing nothing, so every name a checked-in receipt uses must still be in a test.
+test('each proof file variable a receipt names is still written by a board test', () => {
+  const written = new Set();
+  let inTest = false;
+  for (const line of fs.readFileSync(__filename, 'utf8').split('\n')) {
+    if (line.startsWith('test(')) inTest = true;
+    if (inTest) for (const [name] of line.matchAll(/\bATRIS_[A-Z0-9_]*PROOF\b/g)) written.add(name);
+  }
+  const listed = spawnSync('git', ['ls-files', '-z', 'atris/receipts', 'atris/runs'], { cwd: repoRoot, encoding: 'utf8' });
+  assert.equal(listed.status, 0, listed.stderr);
+  const receipts = listed.stdout.split('\0').filter((file) => file.endsWith('.md'));
+  const stale = [];
+  let named = 0;
+  for (const file of receipts) {
+    for (const [name] of fs.readFileSync(path.join(repoRoot, file), 'utf8').matchAll(/\bATRIS_[A-Z0-9_]*PROOF\b/g)) {
+      named += 1;
+      if (!written.has(name)) stale.push(`${file} names ${name}`);
+    }
+  }
+  assert.ok(named >= 5, 'the scan finds receipts that name proof variables');
+  assert.deepEqual(stale, [], 'point each receipt at a proof variable a board test still writes');
+});
+
 // The board row's ref into the member command cites where it hands off to the
 // board. Other features' refs into that file are theirs to guard.
 test('the map board row ref into the member command lands on the board hand-off', () => {
