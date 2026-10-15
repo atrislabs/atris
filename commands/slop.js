@@ -381,6 +381,11 @@ const LONE_VERB_CLAUSE_AFTER_DASH = new RegExp(`${CLAUSE_END}\\s*\\u2014\\s*(?=t
 // a clause: "the learner watches the model do the reps".
 const RELATIVE_OBJECT_PHRASE = /^\s*\u2014\s*the\s+[A-Za-z][\w-]*\s+(?:[a-z][\w-]*\s+)?(?!(?:proves|shows|means|ensures|confirms|says|assumes|knows|finds)\b)[a-z]+s\s+(?:the|a|an|your|our|their|its|this|these|those)\s+\S+\s+(?:(?!(?:the|a|an)\b)\S+\s+){0,2}[a-z]+s\s*(?:[.!?;,]|$)/;
 const BARE_OBJECT_CLAUSE = new RegExp(`^\\s*\\u2014\\s*the\\s+(?!${NAME_PAIR}\\b)(?![a-z]*s\\b)[a-z]{2,}\\s+${PLAIN_VERB_WORD}\\s+(?!${NAME_END_WORD}\\b)[a-z]{2,}(?=[.!?;]|\\s+(?:into|onto|to|for|from|on|at|with|until)\\s)`);
+// A bare plural with its own "that", "which" or "who" clause after the verb
+// is an object too: "the spread branch covers routes that merge in extra
+// headers". A verb that is a common plural noun, "the user settings pages
+// that load", is no verb, so that phrase keeps its comma.
+const THAT_OBJECT_CLAUSE = new RegExp(`^\\s*\\u2014\\s*(?:a|an|the)\\s+(?:${NOUN_WORD}\\s+){0,2}(?!${PLURAL_NOUN_WORD}\\b)${PLAIN_VERB_WORD}\\s+[a-z]{3,}(?<!ss|us|is)s\\s+(?:that|which|who)\\s+[a-z]{2,}`);
 // A verb in "s" with a tail that says how, not what, is a clause too: "the
 // engine blocks regardless of context", "the runner catches instead of
 // propagating". One bare object word may sit before the tail: "the system
@@ -1170,7 +1175,7 @@ function fixEmDash(s, { endsBlock = false, startsBlock = false, spans = [], abov
     .replace(PLAIN_CLAUSE_AFTER_DASH, (m, at, whole) => {
       const left = clauseOrFieldLeft(at, whole);
       if (!left || NAME_BEFORE_PLAIN_VERB.test(whole.slice(at)) || NAME_TAIL_PHRASE.test(whole.slice(at))) return m;
-      return /\b(?:not|cannot)\b/i.test(left) || PLAIN_OBJECT_CLAUSE.test(whole.slice(at)) || BARE_OBJECT_CLAUSE.test(whole.slice(at)) || HOW_TAIL_CLAUSE.test(whole.slice(at)) || WH_OBJECT_CLAUSE.test(whole.slice(at)) ? clauseJoin(left, at, whole) : m;
+      return /\b(?:not|cannot)\b/i.test(left) || PLAIN_OBJECT_CLAUSE.test(whole.slice(at)) || BARE_OBJECT_CLAUSE.test(whole.slice(at)) || THAT_OBJECT_CLAUSE.test(whole.slice(at)) || HOW_TAIL_CLAUSE.test(whole.slice(at)) || WH_OBJECT_CLAUSE.test(whole.slice(at)) ? clauseJoin(left, at, whole) : m;
     })
     .replace(ADVERB_CLAUSE_AFTER_DASH, (m, at, whole) => {
       const left = clauseLeft(at, whole);

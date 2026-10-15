@@ -217,3 +217,9 @@ It only passed that week \u2014 the card re-filtered orders against today's date
 # but "in" after the plural can still close a noun phrase
 We kept them \u2014 the auto generated files in the repo.
 => We kept them, the auto generated files in the repo.
+# a bare plural with its own "that" clause after the verb is an object
+Both count as satisfying \u2014 the spread branch covers routes that merge in extra headers.
+=> Both count as satisfying; the spread branch covers routes that merge in extra headers.
+# but a common plural noun is no verb, so the phrase keeps its comma
+Open the panel \u2014 the user settings pages that load slowly.
+=> Open the panel, the user settings pages that load slowly.

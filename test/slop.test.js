@@ -2453,6 +2453,23 @@ test('fix reads a pronoun or a code name with a place word after it as the objec
   ]);
 });
 
+test('fix joins a verb and a bare plural with its own "that" clause after a dash', () => {
+  // from real repo text: "the spread branch covers routes that merge in
+  // extra per-call headers" spliced, since a plural with a clause on it fit
+  // no object shape. A verb that is a common plural noun is no verb.
+  const file = tmpFile('that-object.md', [
+    'Both count as satisfying \u2014 the spread branch covers routes that merge in extra headers.',
+    'It held \u2014 the gate blocks drafts that skip review.',
+    'Open the panel \u2014 the user settings pages that load slowly.',
+  ].join('\n'));
+  const { changes } = applyFixes([file], RULES);
+  assert.deepEqual(changes.map((c) => c.after), [
+    'Both count as satisfying; the spread branch covers routes that merge in extra headers.',
+    'It held; the gate blocks drafts that skip review.',
+    'Open the panel, the user settings pages that load slowly.',
+  ]);
+});
+
 test('fix joins a prefixed past verb and a bare plural before a place word', () => {
   // from real repo text: "the card re-filtered orders against today's date"
   // spliced, since a past verb could not carry "re-" and a bare plural
