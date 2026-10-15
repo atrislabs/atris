@@ -23,6 +23,8 @@ Details for any task: atris task show <ID>
 
 ## Review
 
+- **[AIC-88]** Seed the setup claim in process in the headless JSON test · auto-improver
+  **Done looks like:** Developers can run the headless task command test about a tenth of a second faster, which shortens the full test wait while every command check still runs.
 - **[AIC-87]** Stage Do in process in the task page test · auto-improver
   **Done looks like:** Developers can run the task page test about a tenth of a second faster, which shortens the full test wait while every page and stage check still runs.
 - **[AIC-86]** Seed the goal-linked main row in the human accept review test · auto-improver
