@@ -34,11 +34,22 @@ function makeWorkspace() {
   return root;
 }
 
+// The engine column names tools found on this computer. Stand-ins keep the
+// test the same on a machine with none installed, like GitHub's.
+function fakeEngines(root) {
+  const bin = path.join(root, 'fake-bin');
+  fs.mkdirSync(bin, { recursive: true });
+  for (const name of ['codex', 'claude']) {
+    fs.writeFileSync(path.join(bin, name), '#!/bin/sh\necho "$0 1.0.0"\n', { mode: 0o755 });
+  }
+  return bin;
+}
+
 function runRoster(root, args = []) {
   return spawnSync(process.execPath, [CLI, 'member', 'roster', ...args], {
     cwd: root,
     encoding: 'utf8',
-    env: { ...process.env, HOME: root, ATRIS_SKIP_UPDATE_CHECK: '1' },
+    env: { ...process.env, HOME: root, ATRIS_SKIP_UPDATE_CHECK: '1', PATH: `${fakeEngines(root)}${path.delimiter}/usr/bin${path.delimiter}/bin` },
     timeout: 60000,
   });
 }
