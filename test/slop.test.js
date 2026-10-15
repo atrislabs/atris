@@ -2239,6 +2239,26 @@ test('fix joins "its" and a noun, or a noun and "already" before its verb, as a 
   ]);
 });
 
+test('fix joins "its" or "our", a plural and a plain verb before a number or an object', () => {
+  // from a probe of the edge file: "its pages score 67" spliced, since the
+  // possessive rule wanted a verb in s, a helper verb or "already". A plain
+  // verb counts when a number or "the" follows it; a word that ends a
+  // compound name is no verb, and with no object the phrase stays.
+  const file = tmpFile('possessive-plain-verb.md', [
+    'The site is not naive \u2014 its pages score 67.',
+    'We shipped it \u2014 our tests cover the gate.',
+    'One place \u2014 their docs folder the team uses.',
+    'Read the list \u2014 our users from last week.',
+  ].join('\n'));
+  const { changes } = applyFixes([file], RULES);
+  assert.deepEqual(changes.map((c) => c.after), [
+    'The site is not naive; its pages score 67.',
+    'We shipped it; our tests cover the gate.',
+    'One place, their docs folder the team uses.',
+    'Read the list, our users from last week.',
+  ]);
+});
+
 test('fix ends a paragraph-ending dash with a period, keeps a wrapping one a comma', () => {
   const file = tmpFile('line-end.md', [
     'The tool we built \u2014',

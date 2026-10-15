@@ -302,7 +302,10 @@ const PLAIN_OBJECT_CLAUSE = new RegExp(`^\\s*\\u2014\\s*(?:a|an|the|every|each|n
 // kicks work", "the gate checks drafts". A line end is no stop, since a
 // noun phrase may wrap there, and a word that ends a compound name keeps
 // the phrase whole: "one place, the error logs folder".
-const BARE_OBJECT_CLAUSE = new RegExp(`^\\s*\\u2014\\s*the\\s+(?![a-z]*s\\b)[a-z]{2,}\\s+${PLAIN_VERB_WORD}\\s+(?!(?:folder|file|page|dir|directory|list|table|view|tab|button|panel|screen|menu|field|column|row|section|card|link|path)\\b)[a-z]{2,}(?=[.!?;])`);
+// A word that ends a compound name ("the error logs folder", "your docs
+// page") names a thing, so it is never read as a verb.
+const NAME_END_WORD = '(?:folder|file|page|dir|directory|list|table|view|tab|button|panel|screen|menu|field|column|row|section|card|link|path)';
+const BARE_OBJECT_CLAUSE = new RegExp(`^\\s*\\u2014\\s*the\\s+(?![a-z]*s\\b)[a-z]{2,}\\s+${PLAIN_VERB_WORD}\\s+(?!${NAME_END_WORD}\\b)[a-z]{2,}(?=[.!?;])`);
 // A plain word, then a name, then the verb hides a "that": "a topic Atris
 // sits directly on top of" names a topic, so it keeps its comma. A run of
 // capitals is no name, so "the new CLI resolves the prefix" still joins.
@@ -394,9 +397,11 @@ const BARE_VERB_CLAUSE_AFTER_DASH = new RegExp(`${CLAUSE_END}\\s*\\u2014\\s*(?!$
 // start a second sentence too: "Saw your post on falls after rehab; our
 // scheduling AI ensures reliable care". A plain word after "already" or
 // "still" is a verb whatever its ending: "NOT a naive site; its pages
-// already score 67". With no verb it only renames what came before, so "the
-// tool, our best work so far" keeps its comma.
-const POSSESSIVE_CLAUSE_AFTER_DASH = new RegExp(`${CLAUSE_END}\\s*\\u2014\\s*(?=(?:our|your|their|my|its)\\s+(?:${NOUN_WORD}\\s+){1,3}(?:${PLAIN_VERB}[^\\s\\u2014]|${HELPING_VERB}\\s+[^\\s\\u2014]|(?:already|still)\\s+[a-z]{2,}\\s+[^\\s\\u2014]))`, 'g');
+// already score 67". A plural, then a plain word and a number or an object
+// like "the" or "it", reads as a verb with no ending: "its pages score 67",
+// "our tests cover the gate". With no verb it only renames what came before,
+// so "the tool, our best work so far" keeps its comma.
+const POSSESSIVE_CLAUSE_AFTER_DASH = new RegExp(`${CLAUSE_END}\\s*\\u2014\\s*(?=(?:our|your|their|my|its)\\s+(?:(?:${NOUN_WORD}\\s+){0,2}[a-z]{2,}(?<!ss|us|is)s\\s+(?!(?:from|of|in|on|for|with|at|by|to|and|or|that|which|who|like|than|as|is|are|was|were)\\b)(?!${NAME_END_WORD}\\b)[a-z]{2,}(?<!s)\\s+(?:\\d|(?:the|a|an|it|them|every|all|no|this|these|those)\\b)|(?:${NOUN_WORD}\\s+){1,3}(?:${PLAIN_VERB}[^\\s\\u2014]|${HELPING_VERB}\\s+[^\\s\\u2014]|(?:already|still)\\s+[a-z]{2,}\\s+[^\\s\\u2014])))`, 'g');
 
 // A direct question after a full clause is a sentence of its own, so it takes
 // a semicolon: "Congrats on the Forbes ranking; how do you handle growing
