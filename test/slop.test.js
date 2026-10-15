@@ -337,6 +337,8 @@ test('the em dash fix reads past a short aside between a subject and its verb', 
     `Not done yet ${D} the proof-gate contract (\`gate.mjs\`) bans the fake-done wording.`,
     '',
     `Check one place ${D} the error logs (in /tmp) folder.`,
+    '',
+    `The HMAC path still works ${D} the refactor (hmac_key to auth_secret) preserves behavior.`,
   ].join('\n'));
   applyFixes([file], RULES);
   assert.deepEqual(fs.readFileSync(file, 'utf8').split('\n'), [
@@ -345,6 +347,8 @@ test('the em dash fix reads past a short aside between a subject and its verb', 
     'Not done yet: the proof-gate contract (`gate.mjs`) bans the fake-done wording.',
     '',
     'Check one place, the error logs (in /tmp) folder.',
+    '',
+    'The HMAC path still works; the refactor (hmac_key to auth_secret) preserves behavior.',
   ]);
 });
 

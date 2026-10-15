@@ -386,6 +386,6 @@ Check one place \u2014 the error logs (in /tmp) folder.
 => Check one place, the error logs (in /tmp) folder.
 
 # a bare object after the verb, with an aside before it: the check for a
-# bare object reads plain words only, so the aside still blocks the join
+# bare object reads past the aside too
 The HMAC path still works \u2014 the refactor (hmac_key to auth_secret) preserves behavior.
-~> The HMAC path still works; the refactor (hmac_key to auth_secret) preserves behavior.
+=> The HMAC path still works; the refactor (hmac_key to auth_secret) preserves behavior.
