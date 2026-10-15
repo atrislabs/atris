@@ -2239,6 +2239,30 @@ test('fix joins "its" and a noun, or a noun and "already" before its verb, as a 
   ]);
 });
 
+test('fix joins "the", a noun, a verb in s and one word before a place word after a dash', () => {
+  // from the edge file: "the loop kicks work into the queue" spliced, since
+  // the one-word object had to sit right before a stop. "into", "for" and
+  // their kin end it too, across a wrap or not; a compound name still keeps
+  // its comma, and "in" does not end the object.
+  const file = tmpFile('bare-object-place.md', [
+    'We fixed it \u2014 the loop kicks work into the queue.',
+    'We fixed it \u2014 the loop kicks',
+    'work into the queue.',
+    '',
+    'We fixed it \u2014 the gate checks drafts for slop.',
+    'One place \u2014 the error logs folder for each repo.',
+    'We fixed it \u2014 the loop kicks work in the queue.',
+  ].join('\n'));
+  const { changes } = applyFixes([file], RULES);
+  assert.deepEqual(changes.map((c) => c.after), [
+    'We fixed it; the loop kicks work into the queue.',
+    'We fixed it; the loop kicks',
+    'We fixed it; the gate checks drafts for slop.',
+    'One place, the error logs folder for each repo.',
+    'We fixed it, the loop kicks work in the queue.',
+  ]);
+});
+
 test('fix joins "its" or "our", a plural and a plain verb before a number or an object', () => {
   // from a probe of the edge file: "its pages score 67" spliced, since the
   // possessive rule wanted a verb in s, a helper verb or "already". A plain

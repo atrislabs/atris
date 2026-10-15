@@ -18,6 +18,8 @@ Open the panel \u2014 the user settings\npage is gone.
 
 The site is not naive \u2014 its pages score 67.
 => The site is not naive; its pages score 67.
+We fixed it \u2014 the loop kicks\nwork into the queue.
+=> We fixed it; the loop kicks\nwork into the queue.
 
 # a phrase: a word in s that names a thing, not a verb
 Check one place \u2014 the error logs folder.
@@ -28,10 +30,13 @@ Imports at module top \u2014 the stubs in tests `monkeypatch`.
 => Imports at module top, the stubs in tests `monkeypatch`.
 One place \u2014 their docs folder the team uses.
 => One place, their docs folder the team uses.
+One place \u2014 the error logs folder for each repo.
+=> One place, the error logs folder for each repo.
 
 # one word before the dash is a label, not a sentence
 Then \u2014 the loop kicks work.
 => Then, the loop kicks work.
 
-# known gap: this still gets a comma where a semicolon belongs
-#   We fixed it \u2014 the loop kicks\nwork into the queue.
+# known limit: a plural after "the" reads as a noun and a verb, so this
+# joins where a comma belongs (no repo line has the shape yet)
+#   The backlog \u2014 the pull requests queue for review.
