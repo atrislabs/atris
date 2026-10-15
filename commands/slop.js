@@ -305,9 +305,12 @@ const PLAIN_OBJECT_CLAUSE = new RegExp(`^\\s*\\u2014\\s*(?:a|an|the|every|each|n
 // "into" or "for" after the object ends it too: "the loop kicks work into
 // the queue". "in" and "of" do not, since they so often follow a noun.
 // A word that ends a compound name ("the error logs folder", "your docs
-// page") names a thing, so it is never read as a verb.
+// page") names a thing, so it is never read as a verb. A common two-word
+// name with a plural second word is one noun too, so "the pull requests
+// queue" and "the support tickets queue" are no subject and verb.
 const NAME_END_WORD = '(?:folder|file|page|dir|directory|list|table|view|tab|button|panel|screen|menu|field|column|row|section|card|link|path)';
-const BARE_OBJECT_CLAUSE = new RegExp(`^\\s*\\u2014\\s*the\\s+(?![a-z]*s\\b)[a-z]{2,}\\s+${PLAIN_VERB_WORD}\\s+(?!${NAME_END_WORD}\\b)[a-z]{2,}(?=[.!?;]|\\s+(?:into|onto|to|for|from|on|at|with|until)\\s)`);
+const NAME_PAIR = '(?:pull\\s+requests|merge\\s+requests|support\\s+tickets|error\\s+logs|build\\s+logs|release\\s+notes|commit\\s+messages|feature\\s+flags|search\\s+results|test\\s+results|api\\s+keys|code\\s+reviews|sales\\s+calls)';
+const BARE_OBJECT_CLAUSE = new RegExp(`^\\s*\\u2014\\s*the\\s+(?!${NAME_PAIR}\\b)(?![a-z]*s\\b)[a-z]{2,}\\s+${PLAIN_VERB_WORD}\\s+(?!${NAME_END_WORD}\\b)[a-z]{2,}(?=[.!?;]|\\s+(?:into|onto|to|for|from|on|at|with|until)\\s)`);
 // A plain word, then a name, then the verb hides a "that": "a topic Atris
 // sits directly on top of" names a topic, so it keeps its comma. A run of
 // capitals is no name, so "the new CLI resolves the prefix" still joins.

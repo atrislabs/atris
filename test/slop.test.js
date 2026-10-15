@@ -2263,6 +2263,25 @@ test('fix joins "the", a noun, a verb in s and one word before a place word afte
   ]);
 });
 
+test('fix keeps a comma before a common two-word name the bare object rule would split', () => {
+  // from the edge file: "the pull requests queue for review" joined, since
+  // "requests" read as the verb. A common name with a plural second word is
+  // one noun; a pair not on the list, and a real verb after it, still join.
+  const file = tmpFile('name-pair.md', [
+    'The backlog \u2014 the pull requests queue for review.',
+    'Check it \u2014 the support tickets queue.',
+    'We fixed it \u2014 the loop kicks work into the queue.',
+    'Check it \u2014 the unit tests pass.',
+  ].join('\n'));
+  const { changes } = applyFixes([file], RULES);
+  assert.deepEqual(changes.map((c) => c.after), [
+    'The backlog, the pull requests queue for review.',
+    'Check it, the support tickets queue.',
+    'We fixed it; the loop kicks work into the queue.',
+    'Check it; the unit tests pass.',
+  ]);
+});
+
 test('fix joins "its" or "our", a plural and a plain verb before a number or an object', () => {
   // from a probe of the edge file: "its pages score 67" spliced, since the
   // possessive rule wanted a verb in s, a helper verb or "already". A plain

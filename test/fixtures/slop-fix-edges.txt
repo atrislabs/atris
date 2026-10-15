@@ -32,11 +32,15 @@ One place \u2014 their docs folder the team uses.
 => One place, their docs folder the team uses.
 One place \u2014 the error logs folder for each repo.
 => One place, the error logs folder for each repo.
+The backlog \u2014 the pull requests queue for review.
+=> The backlog, the pull requests queue for review.
+Check it \u2014 the unit tests pass.
+=> Check it; the unit tests pass.
 
 # one word before the dash is a label, not a sentence
 Then \u2014 the loop kicks work.
 => Then, the loop kicks work.
 
-# known limit: a plural after "the" reads as a noun and a verb, so this
-# joins where a comma belongs (no repo line has the shape yet)
-#   The backlog \u2014 the pull requests queue for review.
+# known gap: a two-word name as the subject, then a plain verb, is a
+# clause that still gets a comma
+#   Check it \u2014 the error logs show it.
