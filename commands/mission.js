@@ -6878,7 +6878,10 @@ function worktreeReceipt(before, after, { verifier = '', baseline = null } = {})
 const MISSION_RUN_DEFAULTS = {
   maxTicks: 4,
   maxWallSeconds: 3600,
-  claudeTimeoutMs: 10 * 60 * 1000,
+  // Sized from real runs: claude ticks that landed 10/08-10/14 ran a median
+  // 4 min, but 15 of 92 needed more than 10 and the slowest 5% took 17+.
+  // A 10 min cap killed 12 runs at exactly 10:00; 20 min fits 89 of 92.
+  claudeTimeoutMs: 20 * 60 * 1000,
   backoff: { initialMs: 30_000, maxMs: 10 * 60_000, factor: 2, jitter: 0.3 },
 };
 

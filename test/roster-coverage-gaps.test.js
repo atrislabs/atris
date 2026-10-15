@@ -360,6 +360,12 @@ test('a member job with no time given gets the roster limit plus review time, ne
     addBuilder(root);
     assert.equal(memberRunDefaultWallSeconds('builder', root), 900);
   }, { roster: '# roster\n\n## build\n- claude, max: 2 min\n' });
+  // No cap on the line: the run fits the default 20 min tick plus review time,
+  // so the wall never kills a tick the tick limit would have allowed.
+  await withRoom(async ({ root }) => {
+    addBuilder(root);
+    assert.equal(memberRunDefaultWallSeconds('builder', root), 20 * 60 + 600);
+  }, { roster: '# roster\n\n## build\n- claude\n' });
 });
 
 test('a mission that names its engine still gets the roster time limit for that engine', async () => {
@@ -372,6 +378,6 @@ test('a mission that names its engine still gets the roster time limit for that 
     // A different engine than the roster's pick keeps the default limit.
     const other = resolveMissionTickRunner({ id: 'm-2', runner: 'codex', owner: 'builder' }, root);
     assert.equal(other.mission.roster_max_seconds, undefined);
-    assert.equal(missionTickTimeoutMs(other.mission, hour), 10 * 60 * 1000);
+    assert.equal(missionTickTimeoutMs(other.mission, hour), 20 * 60 * 1000);
   }, { roster: '# roster\n\n## build\n- claude, max: 45 min\n' });
 });

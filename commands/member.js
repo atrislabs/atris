@@ -931,7 +931,10 @@ function memberRunDefaultWallSeconds(name, cwd = process.cwd()) {
     const picked = require('../lib/member-engine').memberRosterEngine(name, cwd);
     cap = Number(picked && picked.engine && picked.engine.roster_max_seconds) || 0;
   } catch {}
-  return Math.max(900, cap ? cap + 600 : 0);
+  // No roster cap means the tick runs on the default tick cap, so the run
+  // needs that much plus review time, or the wall kills it first.
+  const tickSeconds = cap || require('./mission').missionTickTimeoutMs({}, Infinity) / 1000;
+  return Math.max(900, tickSeconds + 600);
 }
 
 function pushFlagValue(out, args, name) {
