@@ -1611,7 +1611,7 @@ test('every engine started through a runner or profile variable records its run 
         const expressionName = header.internalName;
         const internalName = parameters.some((name) => name.trim() === expressionName) ? undefined : expressionName;
         const names = [...new Set([header.name, internalName].filter(Boolean))];
-        const calls = new RegExp(`\\b(${names.map((name) => name.replace(/\$/g, '\\$')).join('|')})\\(`, 'g');
+        const calls = new RegExp(`\\b(${names.map((name) => name.replace(/\$/g, '\\$')).join('|')})\\s*\\(`, 'g');
         const fnEnd = definitionSpans(code).find(([open]) => open === fnStart)?.[1] ?? code.length;
         for (const call of code.matchAll(calls)) {
           const internalOnly = call[1] === internalName && internalName !== header.name;
@@ -1738,6 +1738,16 @@ test('every engine started through a runner or profile variable records its run 
     return { seen, missing, routes, traced, exempted: [...exempted] };
   };
   const planted = (text) => engineLaunches('commands/planted.js', text).missing;
+  // Spaces and line breaks before the call parentheses do not change its arguments.
+  for (const gap of [' ', '\t', '\n']) {
+    const spaced = (argument, body = '  spawnSync(runner, args);') => planted(`function launch(runner) {\n${body}\n}\nlaunch${gap}(${argument});\n`);
+    assert.deepStrictEqual(spaced("'claude'"), ['commands/planted.js:2 runner']);
+    assert.deepStrictEqual(spaced('resolveClaudeRunnerBin()'), ['commands/planted.js:2 runner']);
+    assert.deepStrictEqual(spaced("'git'"), []);
+    assert.deepStrictEqual(spaced("'claude'", '  startEngineRun(root);\n  spawnSync(runner, args);'), []);
+    assert.deepStrictEqual(spaced("'claude'", "  spawnSync(runner, ['--help']);"), []);
+    assert.deepStrictEqual(planted(`function launch(profile) {\n  spawnSync(profile.bin, args);\n}\nlaunch${gap}(resolveEngineProfile());\n`), ['commands/planted.js:2 profile.bin']);
+  }
   // Resolver defaults keep nested parentheses and commas in one parameter.
   for (const prefix of ['function launch', 'const launch =', 'let launch = async', 'const launch = function worker']) {
     const arrow = prefix === 'const launch =' || prefix === 'let launch = async' ? ' =>' : '';
