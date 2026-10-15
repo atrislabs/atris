@@ -4941,6 +4941,14 @@ test('the fix diff splice list skips a noun after "in" or "of" and a noun with i
     openers2.map((t) => `Scores trend ${D} ${t}.`),
     openers2.map((t) => `Scores trend, ${t}.`),
   ).map((s) => s.text), ['every run appends a snapshot', 'a single run eats the disk']);
+  // a stretch that ends its sentence on a bare "of" or kin is a clause on
+  // its noun, so "a topic Atris sits directly on top of" names the work; one
+  // that goes on past that word is still a splice
+  const stranded = ['a topic Atris sits directly on top of.', 'a topic Atris sits on top of the stack.'];
+  assert.deepEqual(spliceShapes(
+    stranded.map((t) => `Nobody discusses offline work ${D} ${t}`),
+    stranded.map((t) => `Nobody discusses offline work, ${t}`),
+  ).map((s) => s.text), ['a topic Atris sits on top of the stack']);
 });
 
 test('the fix diff script lists each comma it writes before a "the" clause once', () => {

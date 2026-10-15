@@ -245,6 +245,11 @@ function splices(text) {
 // A word in "is" is a noun, never a verb: "the structural basis for".
 const SPLICE_OPENER = /(?:the|its|our|their|your|this|that|these|those|each|every|a|an)/.source;
 const SPLICE_SHAPE = new RegExp(`^(?!that (?:the|a|an|it|we|they|he|she|this|these|those|its|their|our|your)\\b)${SPLICE_OPENER} ` + /(?!(?:one|two|three|four|five|six|seven|eight|nine|ten|few|many|several|same|other|first|last|next|main|key|core|new|old|real|whole|exact|only)\b)(?:(?!(?:that|which|who|your|our|their|its|his|her|my)\b)[\w`-]+ ){1,2}(?<!\b(?:in|of) )(?!(?:this|his|its|thus|plus|always|perhaps|unless|whereas|across)\b)[a-z]+[^isu\s']s (?!(?:that|which|who)\b)(?:[a-z`"]|\d)/.source);
+// A stretch that ends its sentence on a bare "of", "to", "with" and kin has
+// lost the object of that word to the noun it opens with, so it is a
+// clause on that noun, not a subject and its verb: "offline work, a topic
+// Atris sits directly on top of." names the work.
+const STRANDED_SHAPE = / (?:of|to|with|for|about|from|into)$/;
 const RELATIVE_SHAPE = /^(?:the|its|our|their|your) (?:[\w`-]+ ){0,2}[a-z]+s the (?:(?!(?:the|a|an)\b)\S+ ){1,3}[a-z]+s$/;
 function spliceShapes(sources, fixes) {
   const found = new Map();
@@ -254,6 +259,7 @@ function spliceShapes(sources, fixes) {
     for (const m of fixed.matchAll(new RegExp(`, (${SPLICE_OPENER} [^,;.!?\\n]*)`, 'g'))) {
       const rest = m[1];
       if (!source.includes(`${DASH} ${rest}`) || !SPLICE_SHAPE.test(rest) || RELATIVE_SHAPE.test(rest)) continue;
+      if (STRANDED_SHAPE.test(rest) && /^(?:[.!?]|$)/.test(fixed.slice(m.index + m[0].length))) continue;
       if (takesComma(fixed.slice(0, m.index))) continue;
       const key = rest.replace(/`[^`]*`/g, '``');
       if (!found.has(key)) found.set(key, { text: rest, count: 0 });
