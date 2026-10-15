@@ -266,6 +266,33 @@ test('a job that can read whole gets its room before the last step', () => {
   }
 });
 
+test('a result column with nothing in it gives its room to a cut job', () => {
+  const dir = fakeDir({ builder: [`${at(60)} m-1 started: ship the pricing page`, `${at(30)} m-1 running: npm test`] });
+  try {
+    const rows = readBoard({ dir, now: NOW });
+    let read = 0;
+    for (let width = 40; width <= 90; width++) {
+      const board = renderBoard(rows, dir, 0, width);
+      assert.ok(board.split('\n').every((line) => line.length <= width), `${width}\n${board}`);
+      const [header, row] = board.split('\n');
+      const step = header.indexOf('last step');
+      // A live step may come back by splitting the job's room, so the row
+      // as a whole must read no less than one column narrower.
+      const seen = [row.slice(header.indexOf('job'), step < 0 ? undefined : step), step < 0 ? '' : row.slice(step)]
+        .reduce((n, v) => n + v.trim().replace(/\.\.\.$/, '').length, 0);
+      assert.ok(seen >= read, `${width} columns read less of the row than ${width - 1}:\n${board}`);
+      read = seen;
+    }
+    // It used to keep "last result" over a dash and cut the job and step.
+    assert.match(renderBoard(rows, dir, 0, 68), /^member\s+state\s+ago\s+job\s+last step\nbuilder\s+working\s+\S+ ago\s+ship the pricing page\s+running: npm test$/);
+    assert.match(renderBoard(rows, dir, 0, 100), /^member\s+state\s+last result\s+ago\s+job\s+last step$/m, 'with room to spare, the board keeps its usual columns');
+    const failed = readBoard({ dir: fakeDir({ builder: [`${at(60)} m-1 started: ship the pricing page`, `${at(30)} m-1 finished: failed (timed out)`] }), now: NOW });
+    assert.match(renderBoard([...rows, { ...failed[0], member: 'scout' }], dir, 0, 58), /^member\s+state\s+(last )?result\s/, 'a result that says something keeps its column');
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
 test('a live run with no step yet never keeps an empty last step that cuts a job', () => {
   const dir = fakeDir({
     builder: [`${at(5)} m-1 started: ship the login fix`, `${at(4)} m-1 finished: ok`],
