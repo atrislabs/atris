@@ -10495,7 +10495,7 @@ test('task chat refines a durable goal before plan', () => {
   }
 });
 
-test('task page exposes one-task goal chat stage and review actions', () => {
+test('task page exposes one-task goal chat stage and review actions', async () => {
   if (!hasNodeSqlite()) return;
   const dir = makeTempDir();
   const dbPath = path.join(dir, 'tasks.db');
@@ -10503,7 +10503,7 @@ test('task page exposes one-task goal chat stage and review actions', () => {
   try {
     fs.mkdirSync(path.join(dir, 'atris'), { recursive: true });
 
-    // Seed both parents in process; page, chat, plan, ready, review, and show still use the CLI.
+    // Seed both parents in process; page, plan, ready, review, and show still use the CLI.
     let ref;
     let taskId;
     const db = taskStore.open(dbPath);
@@ -10533,15 +10533,21 @@ test('task page exposes one-task goal chat stage and review actions', () => {
     assert.equal(firstPayload.page.review.human_accept.enabled, false);
     assert.notEqual(firstPayload.page.stage.next_action.key, 'accept');
 
-    const chat = runCli([
-      'task', 'chat', ref,
-      'Turn the card into a focused task page contract',
-      '--goal', 'Ship a headless task page contract',
-      '--summary', 'Need one stable packet for UI and agents',
-      '--as', 'operator',
-      '--json',
-    ], { cwd: dir, env });
-    assert.equal(chat.status, 0, chat.stderr);
+    // Chat is one chatTask call, and the page reads the store, so record it in
+    // process; the chat command keeps its own CLI test just above this one.
+    const chatDb = taskStore.open(dbPath);
+    try {
+      const chat = taskStore.chatTask(chatDb, {
+        id: taskId,
+        actor: 'operator',
+        content: 'Turn the card into a focused task page contract',
+        goal: 'Ship a headless task page contract',
+        summary: 'Need one stable packet for UI and agents',
+      });
+      assert.equal(chat.chatted, true, chat.reason);
+    } finally {
+      taskStore.close();
+    }
 
     const chatPage = runCli(['task', 'page', ref, '--json'], { cwd: dir, env });
     assert.equal(chatPage.status, 0, chatPage.stderr);
@@ -10594,7 +10600,11 @@ test('task page exposes one-task goal chat stage and review actions', () => {
     ], { cwd: dir, env });
     assert.equal(ready.status, 0, ready.stderr);
 
-    const reviewPage = runCli(['task', 'page', ref, '--json'], { cwd: dir, env });
+    // Both review pages read the same unchanged store, so they run at once.
+    const [reviewPage, customReviewerPage] = await Promise.all([
+      runCliAsync(['task', 'page', ref, '--json'], { cwd: dir, env }),
+      runCliAsync(['task', 'page', ref, '--as', 'alice-review', '--json'], { cwd: dir, env }),
+    ]);
     assert.equal(reviewPage.status, 0, reviewPage.stderr);
     const reviewContract = JSON.parse(reviewPage.stdout).page;
     assert.equal(reviewContract.stage.current, 'review');
@@ -10606,7 +10616,6 @@ test('task page exposes one-task goal chat stage and review actions', () => {
     assert.equal(reviewContract.review.human_accept.command, `atris task accept ${ref}`);
     assert.notEqual(reviewContract.stage.next_action.command, reviewContract.review.human_accept.command);
 
-    const customReviewerPage = runCli(['task', 'page', ref, '--as', 'alice-review', '--json'], { cwd: dir, env });
     assert.equal(customReviewerPage.status, 0, customReviewerPage.stderr);
     const customReviewerContract = JSON.parse(customReviewerPage.stdout).page;
     assert.equal(customReviewerContract.stage.next_action.command, `atris task review-chat ${ref} --as alice-review`);
@@ -10641,10 +10650,6 @@ test('task page exposes one-task goal chat stage and review actions', () => {
     assert.equal(certifiedReviewChatPayload.appended, true);
     assert.equal(certifiedReviewChatPayload.contract.review.agent_certified, true);
 
-    const certifiedShow = runCli(['task', 'show', ref, '--json'], { cwd: dir, env });
-    assert.equal(certifiedShow.status, 0, certifiedShow.stderr);
-    assert.equal(JSON.parse(certifiedShow.stdout).review.verification_chat, undefined);
-
     // The legacy row is seeded only after the first task is certified, matching the old order.
     // Display refs are numbered across the workspace, so compute this one from the full list.
     let legacyRef;
@@ -10674,7 +10679,15 @@ test('task page exposes one-task goal chat stage and review actions', () => {
       else process.env.ATRIS_TASKS_DB = previousTaskDb;
     }
 
-    const legacyPage = runCli(['task', 'page', legacyRef, '--json'], { cwd: dir, env });
+    // The certified show and the legacy page read different rows of a settled
+    // store, so they run at once.
+    const [certifiedShow, legacyPage] = await Promise.all([
+      runCliAsync(['task', 'show', ref, '--json'], { cwd: dir, env }),
+      runCliAsync(['task', 'page', legacyRef, '--json'], { cwd: dir, env }),
+    ]);
+    assert.equal(certifiedShow.status, 0, certifiedShow.stderr);
+    assert.equal(JSON.parse(certifiedShow.stdout).review.verification_chat, undefined);
+
     assert.equal(legacyPage.status, 0, legacyPage.stderr);
     const legacyContract = JSON.parse(legacyPage.stdout).page;
     assert.equal(legacyContract.task.status, 'done');
