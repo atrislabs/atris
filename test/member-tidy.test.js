@@ -1316,3 +1316,43 @@ test('tidy judges against the newest remote commit without moving the local reco
     fs.rmSync(fx.base, { recursive: true, force: true });
   }
 });
+
+test('worktree cleanup refreshes the local record of origin only to a real commit', () => {
+  const fx = makeFixture();
+  try {
+    const remote = path.join(fx.base, 'remote.git');
+    const copy = addCopy(fx, 'still-here');
+    fs.writeFileSync(path.join(copy, 'draft.txt'), 'unsaved notes\n');
+    const old = runGit(['rev-parse', 'origin/master'], fx.repo);
+    const other = path.join(fx.base, 'other');
+    runGit(['clone', '-q', remote, other], fx.base);
+    configure(other);
+    fs.writeFileSync(path.join(other, 'later.txt'), 'later work\n');
+    runGit(['add', 'later.txt'], other);
+    runGit(['commit', '-q', '-m', 'later work'], other);
+    runGit(['push', '-q', 'origin', 'master'], other);
+    const newer = runGit(['rev-parse', 'HEAD'], other);
+
+    // Healthy origin: starting and shipping rely on this refresh, so it still
+    // moves the local record forward.
+    cleanupWorktrees({ root: fx.repo, activeCwds: [] });
+    assert.equal(runGit(['rev-parse', 'origin/master'], fx.repo), newer);
+    assert.notEqual(newer, old);
+
+    // Damaged origin: the branch file names a plain file. The record keeps
+    // the last good commit and the copy keeps its draft.
+    const blob = spawnSync('git', ['hash-object', '-w', '--stdin'], { cwd: remote, input: 'not a commit\n', encoding: 'utf8' }).stdout.trim();
+    fs.writeFileSync(path.join(remote, 'refs', 'heads', 'master'), `${blob}\n`);
+    assert.match(runGit(['ls-remote', 'origin', 'refs/heads/master'], fx.repo), new RegExp(`^${blob}\t`));
+    for (const apply of [false, true]) {
+      const result = cleanupWorktrees({ root: fx.repo, apply, activeCwds: [] });
+      assert.deepEqual(result.removed, []);
+      assert.equal(runGit(['rev-parse', 'origin/master'], fx.repo), newer);
+      assert.equal(runGit(['cat-file', '-t', 'refs/remotes/origin/master'], fx.repo), 'commit');
+      assert.equal(fs.readFileSync(path.join(copy, 'draft.txt'), 'utf8'), 'unsaved notes\n');
+      assert.ok(runGit(['worktree', 'list', '--porcelain'], fx.repo).includes(`worktree ${copy}\n`));
+    }
+  } finally {
+    fs.rmSync(fx.base, { recursive: true, force: true });
+  }
+});

@@ -422,8 +422,14 @@ function defaultShipTarget(root) {
 function refreshRemoteRef(root, ref) {
   if (!ref.startsWith('origin/')) return;
   const remoteBranch = ref.slice('origin/'.length);
-  const fetched = runGit(['fetch', 'origin', remoteBranch], { cwd: root, check: false, timeout: 5000 });
-  return fetched.status === 0 ? '' : (gitFailureDetail(fetched) || 'fetch failed');
+  // Fetch into FETCH_HEAD only, then move the local record by hand, and only
+  // to a commit: a damaged origin must not leave it pointing at a plain file.
+  const fetched = runGit(['fetch', '--refmap=', 'origin', `refs/heads/${remoteBranch}`], { cwd: root, check: false, timeout: 5000 });
+  if (fetched.status !== 0) return gitFailureDetail(fetched) || 'fetch failed';
+  const tip = runGit(['rev-parse', '--verify', '--quiet', 'FETCH_HEAD^{commit}'], { cwd: root, check: false });
+  if (tip.status !== 0) return `origin sent ${ref} as something other than a commit`;
+  const moved = runGit(['update-ref', `refs/remotes/${ref}`, tip.stdout.trim()], { cwd: root, check: false });
+  return moved.status === 0 ? '' : (gitFailureDetail(moved) || `could not update ${ref}`);
 }
 
 function baseBranchName(ref) {

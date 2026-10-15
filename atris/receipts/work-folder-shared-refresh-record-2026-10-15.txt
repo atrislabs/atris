@@ -1,0 +1,42 @@
+The shared refresh used by start, ship and cleanup now moves the local record of the remote main branch only to a real commit. A healthy remote still refreshes it; a damaged remote leaves it on the last good commit. Required checks passed, exit 0, and 63 start, ship and cleanup tests also passed.
+
+Files edited: commands/worktree.js, test/member-tidy.test.js, atris/MAP.md, atris/refs/MAP-NOTES.md, atris/team/architect/logs/2026-10-15.md.
+Artifact: atris/receipts/work-folder-shared-refresh-record-2026-10-15.txt.
+Task state: ACW-23, claimed by architect, then marked ready with proof.
+
+Survey: the fetches in the fleet landing and conductor paths, and the remote default lookup, deliberately refresh and then read the local record; their comments cite incidents caused by a stale one. The read-only rule from member tidy does not transfer to them. The shared refresh was different: before this change a damaged remote left the local record pointing at a plain file, which every later start and ship would read.
+Change: fetch into git's fetch record only, check that what arrived is a commit, then move the local record by hand. A failure returns a plain reason, as before.
+Red check: with the old command restored, the new test fails (0 passed, 1 failed) because the local record becomes the plain file; with the change it passes.
+Map refs: 27 references to later lines in that file shifted by six to follow the inserted lines.
+
+Verify command:
+node --test test/worktree-removal-guard.test.js test/member-tidy.test.js && node bin/atris.js slop --staged
+
+Actual output excerpt:
+verifier tests exit: 0
+ℹ tests 84
+ℹ pass 84
+ℹ fail 0
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+related tests exit: 0
+ℹ tests 63
+ℹ pass 63
+ℹ fail 0
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+
+
+Related tests: test/worktree-start-base, worktree-start-retry, worktree-start-duplicate-guard, worktree-ship-detached, worktree-ship-health, worktree-cleanup-keeps-busy, worktree-cleanup-keeps-script-folder, worktree-cleanup-retention, mission-worktree-start, land.
+
+command: node bin/atris.js worktree cleanup (damaged remote, disposable repo)
+cleanup: dry-run base=origin/master
+candidates: 0
+cache_candidates: 0
+kept: 1
+left alone: primary_checkout=1
+exit: 0
+local record type: commit
+local record unchanged: yes
