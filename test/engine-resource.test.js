@@ -1402,8 +1402,9 @@ test('every launch of an engine program by name records its run or is named as e
 
 test('every engine started through a runner or profile variable records its run or is named as exempt', () => {
   // The program is a variable or a call, like a runner binary, a profile's
-  // bin, or an engine invocation's command.
-  const VAR_LAUNCH = /\b(?:spawn|spawnSync|execFile|execFileSync|spawnWithOutputChunks|runInReapedProcessGroup)\s*\(\s*([A-Za-z_$][\w$]*(?:\??\.[\w$]+|(?:\?\.)?\[\s*(?:'[^'\\\n]*'|"[^"\\\n]*"|[A-Za-z_$][\w$]*)\s*\])*)/g;
+  // bin, or an engine invocation's command. A list or map written in the
+  // launch counts only when it is indexed there.
+  const VAR_LAUNCH = /\b(?:spawn|spawnSync|execFile|execFileSync|spawnWithOutputChunks|runInReapedProcessGroup)\s*\(\s*((?:[A-Za-z_$][\w$]*|\[[^[\]{}()]*\](?=(?:\?\.)?\[)|\{[^[\]{}()]*\}(?=(?:\?\.)?\[))(?:\??\.[\w$]+|(?:\?\.)?\[\s*(?:'[^'\\\n]*'|"[^"\\\n]*"|[A-Za-z_$][\w$]*|\d+)\s*\])*)/g;
   // It is an engine when the call, or the variable's declaration in the same
   // function, names an engine program or an engine or runner resolver.
   const ENGINE_SOURCE = new RegExp(`['"\`](?:${ENGINE_NAMES})['"\`]|\\b[\\w$]*(?:Engine|engine|Runner|runner)[\\w$]*\\s*\\(`);
@@ -1588,7 +1589,7 @@ test('every engine started through a runner or profile variable records its run 
       const visible = withoutHelperDefinitions(code, position);
       let declarationEnd = position;
       while (!ENGINE_SOURCE.test(source)) {
-        const alias = /^([A-Za-z_$][\w$]*)(?:\??\.[\w$]+|(?:\?\.)?\[\s*(?:'[^'\\\n]*'|"[^"\\\n]*"|[A-Za-z_$][\w$]*)\s*\])*$/.exec(source.trim());
+        const alias = /^([A-Za-z_$][\w$]*)(?:\??\.[\w$]+|(?:\?\.)?\[\s*(?:'[^'\\\n]*'|"[^"\\\n]*"|[A-Za-z_$][\w$]*|\d+)\s*\])*$/.exec(source.trim());
         if (!alias) break;
         // Captured variables remain visible until a matching parameter hides them.
         const shadowStart = Math.max(0, ...definitionSpans(code).filter(([open, close]) => open <= declarationEnd && declarationEnd < close && parametersOf(open).includes(alias[1])).map(([open]) => open));
@@ -1608,7 +1609,7 @@ test('every engine started through a runner or profile variable records its run 
     const engineSourceAt = (program, position, following = new Set()) => {
       const resolved = sourceAt(program, position);
       if (ENGINE_SOURCE.test(resolved.source)) return true;
-      const parameter = /^([A-Za-z_$][\w$]*)(?:\??\.[\w$]+|(?:\?\.)?\[\s*(?:'[^'\\\n]*'|"[^"\\\n]*"|[A-Za-z_$][\w$]*)\s*\])*$/.exec(resolved.source)?.[1];
+      const parameter = /^([A-Za-z_$][\w$]*)(?:\??\.[\w$]+|(?:\?\.)?\[\s*(?:'[^'\\\n]*'|"[^"\\\n]*"|[A-Za-z_$][\w$]*|\d+)\s*\])*$/.exec(resolved.source)?.[1];
       // A captured parameter belongs to the nearest enclosing function that
       // binds it, at the alias declaration rather than the eventual launch.
       const owner = definitionSpans(code).filter(([open, close]) => open <= resolved.position && resolved.position < close && parametersOf(open).includes(parameter)).pop();
@@ -1820,6 +1821,16 @@ test('every engine started through a runner or profile variable records its run 
     assert.deepStrictEqual(planted(`const profile = findExecutable(topic);\nspawnSync(profile${member}, args);\n`), []);
     assert.deepStrictEqual(planted(`function launch(profile) {\n  spawnSync(profile${member}, args);\n}\nlaunch(resolveEngineProfile());\n`), [`commands/planted.js:2 profile${member}`]);
   }
+  // An engine list or map written in the launch and indexed there, or a
+  // declared one read at a number, is the same launch.
+  for (const program of ["['claude', 'codex'][i]", "{ claude: 'claude', codex: 'codex' }[name]", "['claude']?.[0]", '{ fast: "codex" }[\'fast\']']) {
+    assert.deepStrictEqual(planted(`spawnSync(${program}, args);\n`), [`commands/planted.js:1 ${program}`]);
+    assert.deepStrictEqual(planted(`startEngineRun(root);\nspawnSync(${program}, args);\n`), []);
+    assert.deepStrictEqual(planted(`spawnSync(${program}, ['--version']);\n`), []);
+  }
+  assert.deepStrictEqual(planted("spawnSync(['git', 'node'][i], args);\n"), [], 'a list without an engine name is not an engine launch');
+  assert.deepStrictEqual(planted("const engines = ['claude', 'codex'];\nspawnSync(engines[0], args);\n"), ['commands/planted.js:2 engines[0]']);
+  assert.deepStrictEqual(planted("function launch(engines) {\n  spawnSync(engines[0], args);\n}\nlaunch(['claude']);\n"), ['commands/planted.js:2 engines[0]']);
   // Spaces before resolver arguments do not change the program they select.
   for (const gap of [' ', '\t']) {
     const runner = `resolveClaudeRunnerBin${gap}()`;
