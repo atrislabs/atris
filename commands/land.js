@@ -505,7 +505,8 @@ function quoteArg(value) {
 
 // Everything a force-remove would destroy: staged + unstaged tracked changes
 // (git diff HEAD), the staged changes alone (git diff --cached), and untracked
-// files (copied verbatim). Both diffs carry binary bytes. The staged diff keeps
+// files (copied verbatim), with edited tracked files copied too so the
+// restore gives back their exact bytes. Both diffs carry binary bytes. The staged diff keeps
 // what git diff HEAD drops: a staged version later edited again, and a staged
 // file deleted from the folder. Returns false if any piece could not be saved,
 // the caller then keeps the worktree. Also leaves one restore command on the
@@ -586,7 +587,17 @@ function salvageWorktree(root, w, dir, receipt) {
     if (dirtySaved) restore.push(`git apply --whitespace=nowarn ${quoteArg(patchPath)}`);
     const untracked = runGit(['ls-files', '--others', '--exclude-standard', '-z'], { cwd: w.path, check: false, maxBuffer: 64 * 1024 * 1024 });
     if (untracked.status !== 0) return false;
-    const files = untracked.stdout.split('\0').filter(Boolean);
+    // Applying a patch rewrites line endings and expands version tags the
+    // way a checkout would, so each edited tracked file is also copied as
+    // it was and laid down last, giving back its exact bytes. Links and
+    // deleted files are left to the patches.
+    const edited = runGit(['diff', 'HEAD', '--name-only', '--no-renames', '-z'], { cwd: w.path, check: false, maxBuffer: 64 * 1024 * 1024 });
+    if (edited.status !== 0) return false;
+    const exact = edited.stdout.split('\0').filter((rel) => {
+      if (!rel) return false;
+      try { return fs.lstatSync(path.join(w.path, rel)).isFile(); } catch { return false; }
+    });
+    const files = [...untracked.stdout.split('\0').filter(Boolean), ...exact];
     if (files.length > 0) {
       const destRoot = path.join(dir, `${path.basename(w.path)}.untracked`);
       const fingerprints = {};
@@ -1057,7 +1068,7 @@ function printReceipt(receipt, { removalsToday = '' } = {}) {
     if (receipt.bundleError) console.log(`  backup failed: unlanded work left in place: ${receipt.bundleError}`);
     for (const p of receipt.patches) console.log(`  unsaved edits saved: ${p}`);
     for (const p of receipt.stagedPatches || []) console.log(`  staged changes saved: ${p}`);
-    for (const u of receipt.untracked || []) console.log(`  new files saved: ${u}`);
+    for (const u of receipt.untracked || []) console.log(`  files saved as they were: ${u}`);
     for (const r of receipt.restores || []) console.log(`  to restore ${r.path}: ${r.command}`);
   }
   // A preview names what it would keep too, so it matches the real pass.

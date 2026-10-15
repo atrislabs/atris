@@ -1537,7 +1537,7 @@ test(`reap saves staged and binary work and restores it exactly${quoted ? ' with
       }
       fs.writeFileSync(patch, bytes);
     }
-    const drafts = saved('new files saved');
+    const drafts = saved('files saved as they were');
     fs.renameSync(drafts, `${drafts}.held`);
     const absentDrafts = spawnSync(process.execPath, [path.resolve(__dirname, '../bin/atris.js'), 'land', '--backups'], { cwd: repo, encoding: 'utf8' });
     console.log('command: node bin/atris.js land --backups (missing saved drafts)');
@@ -1656,6 +1656,39 @@ for (const setting of ['error', 'fix']) {
     }
   });
 }
+
+// Applying a patch writes files the way a checkout would: under a line
+// ending setting it turned an edit's mixed endings uniform, and a version
+// tag came back filled in. Exact copies laid down last give back the bytes.
+test('reap restores edited files byte for byte under line ending and version tag settings', () => {
+  const { base, repo, wt } = landedWorktree();
+  try {
+    git(repo, ['config', 'core.autocrlf', 'true']);
+    fs.writeFileSync(path.join(repo, '.git', 'info', 'attributes'), 'tag.txt ident\n');
+    const mixed = Buffer.from('# fixture\r\nunsaved line\n');
+    fs.writeFileSync(path.join(wt, 'README.md'), mixed);
+    fs.writeFileSync(path.join(wt, 'tag.txt'), 'version $Id$\n');
+    git(wt, ['add', 'tag.txt']);
+    const status = git(wt, ['status', '--porcelain']);
+    const aged = new Date(Date.now() - 2 * 60 * 60 * 1000);
+    fs.utimesSync(wt, aged, aged);
+    const run = spawnSync(process.execPath, [path.resolve(__dirname, '../bin/atris.js'), 'land', '--reap', '--no-remote', '--base', 'master', '--ttl', '0'], { cwd: repo, encoding: 'utf8' });
+    console.log('command: node bin/atris.js land --reap --no-remote --base master --ttl 0 (line ending and version tag settings)');
+    console.log(run.stdout.trim());
+    console.log(`exit: ${run.status}`);
+    assert.equal(run.status, 0, run.stderr);
+    assert.equal(fs.existsSync(wt), false, run.stdout);
+    const line = run.stdout.split('\n').find((l) => l.startsWith(`  to restore ${wt}: `));
+    assert.ok(line, run.stdout);
+    const rebuilt = spawnSync('sh', ['-c', line.slice(`  to restore ${wt}: `.length)], { cwd: base, encoding: 'utf8' });
+    assert.equal(rebuilt.status, 0, rebuilt.stderr);
+    assert.equal(git(wt, ['status', '--porcelain']), status);
+    assert.deepEqual(fs.readFileSync(path.join(wt, 'README.md')), mixed);
+    assert.equal(fs.readFileSync(path.join(wt, 'tag.txt'), 'utf8'), 'version $Id$\n');
+  } finally {
+    fs.rmSync(base, { recursive: true, force: true });
+  }
+});
 
 // A stand-in git on PATH refuses the patch check, so the keep path stays
 // covered now that no known setting makes a plainly saved patch fail it.
