@@ -141,31 +141,31 @@ function withFakeGh(fx, fn) {
   }
 }
 
-test('a branch that only clashes in the map file is merged with both rows kept and handed to auto-merge', () => {
+test('a branch that only clashes in the map file moves its row to the map inbox and is handed to auto-merge with no clash', () => {
   const fx = fixture();
   withFakeGh(fx, () => {
     const head = git(['rev-parse', 'HEAD'], fx.worktree);
     const out = autolandMemberRun({ mission, cwd: fx.worktree, loadTask: () => null });
     assert.equal(out.auto_merge, true, out.line);
-    assert.deepEqual(out.map_merged, ['atris/MAP.md']);
-    assert.match(out.line, /map lines from both sides kept/);
+    assert.deepEqual(out.map_inboxed, ['atris/MAP.md']);
+    assert.deepEqual(out.map_merged, []);
+    assert.match(out.line, /map edits saved to the map inbox/);
 
-    // The pushed commit sits on top of the reviewed commit and the main branch.
+    // The pushed commit sits on the reviewed commit, keeps the map as the
+    // branch found it, and merges into the moved main branch cleanly.
     const pushed = git(['ls-remote', fx.origin, `refs/heads/${fx.branch}`], fx.base).split(/\s+/)[0];
     assert.equal(pushed, out.pushed);
+    assert.deepEqual(git(['rev-list', '--parents', '-n', '1', pushed], fx.origin).split(' ').slice(1), [head]);
+    assert.equal(git(['show', `${pushed}:atris/MAP.md`], fx.origin), MAP.trim());
     const masterSha = git(['rev-parse', 'master'], fx.origin);
-    assert.deepEqual(git(['rev-list', '--parents', '-n', '1', pushed], fx.origin).split(' ').slice(1), [head, masterSha]);
-
-    // Both rows survive, nothing is marked as a conflict, both sides' code is there.
-    const map = git(['show', `${pushed}:atris/MAP.md`], fx.origin);
-    assert.match(map, /\| member work \| lib\/work\.js \|/);
+    const merged = git(['merge-tree', '--write-tree', pushed, masterSha], fx.origin);
+    const map = git(['show', `${merged}:atris/MAP.md`], fx.origin);
     assert.match(map, /\| landed work \| lib\/landed\.js \|/);
-    assert.match(map, /\| board \| lib\/board\.js \|/);
     assert.doesNotMatch(map, /^(<<<<<<<|=======|>>>>>>>)/m);
+    assert.match(git(['show', `${pushed}:atris/refs/map-inbox/codex-member-work.patch`], fx.origin), /^\+\| member work \| lib\/work\.js \|$/m);
     git(['cat-file', '-e', `${pushed}:work.js`], fx.origin);
-    git(['cat-file', '-e', `${pushed}:landed.js`], fx.origin);
 
-    // Auto-merge is pinned to the pushed merge, and the member's folder is untouched.
+    // Auto-merge is pinned to the pushed commit, and the member's folder is untouched.
     const calls = ghCalls(fx);
     assert.deepEqual(calls[calls.length - 1], ['pr', 'merge', '7', '--auto', '--merge', '--match-head-commit', pushed]);
     assert.equal(git(['rev-parse', 'HEAD'], fx.worktree), head);
@@ -173,17 +173,19 @@ test('a branch that only clashes in the map file is merged with both rows kept a
   });
 });
 
-test('a branch that clashes in the map notes file and the same day\'s member log keeps both sides and lands', () => {
+test('a branch that clashes in the map notes file and the same day\'s member log inboxes the maps, keeps both log sides, and lands', () => {
   const fx = fixture({ notesAndLog: true });
   withFakeGh(fx, () => {
     const out = autolandMemberRun({ mission, cwd: fx.worktree, loadTask: () => null });
     assert.equal(out.auto_merge, true, out.line);
-    assert.deepEqual([...out.map_merged].sort(), ['atris/MAP.md', 'atris/refs/MAP-NOTES.md', LOG]);
+    assert.deepEqual([...out.map_inboxed].sort(), ['atris/MAP.md', 'atris/refs/MAP-NOTES.md']);
+    assert.deepEqual(out.map_merged, [LOG]);
 
     const notes = git(['show', `${out.pushed}:atris/refs/MAP-NOTES.md`], fx.origin);
-    assert.match(notes, /- member: lib\/member\.js:1/);
+    assert.doesNotMatch(notes, /- member: lib\/member\.js:1/);
     assert.match(notes, /- landed: lib\/landed\.js:1/);
     assert.match(notes, /- board: lib\/board\.js:1/);
+    assert.match(git(['show', `${out.pushed}:atris/refs/map-inbox/codex-member-work.patch`], fx.origin), /^\+- member: lib\/member\.js:1$/m);
     const log = git(['show', `${out.pushed}:${LOG}`], fx.origin);
     assert.match(log, /## member entry/);
     assert.match(log, /## landed entry/);
