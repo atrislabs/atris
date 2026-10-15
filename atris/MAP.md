@@ -208,3 +208,5 @@ Reward projection readiness setup: `test/commands.test.js:13094` calls productio
 Reward rejection readiness setup: `test/commands.test.js:13170` seeds production readyTask with the original actor and proof, asserts success and closes in finally. CLI zero-reward refusal and the unchanged pending-review read retain every assertion; two launches replace three.
 
 Sync preview ownership setup: `test/commands.test.js:17365` seeds creation and claim through the production store, closed before CLI message, readiness and dry-run checks. Three CLI launches replace four; all sync assertions remain.
+
+Default review ownership setup: `test/commands.test.js:20270` seeds creation and claim through the production store, asserts successful ownership, and closes before CLI readiness, certification and review screen checks. Three CLI launches replace four; every screen assertion remains.

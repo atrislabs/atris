@@ -20278,19 +20278,19 @@ test('review default mode leads with certified accept like first-minute', () => 
   try {
     fs.mkdirSync(path.join(dir, 'atris'), { recursive: true });
 
-    // Creation is setup; claim, ready, review and the review screen still use the CLI.
+    // Creation and ownership are setup; readiness, certification and the screen use the CLI.
     const workspaceRoot = taskStore.workspaceRoot(dir);
     const db = taskStore.open(dbPath);
     let ref;
     try {
       const created = addSeedTask(db, { title: 'Ship reviewed operator checkpoint', tag: 'review', workspaceRoot });
       assert.equal(created.inserted, true);
+      assert.equal(taskStore.claimTask(db, { id: created.id, claimedBy: 'codex' }).claimed, true);
       ref = taskStore.taskDisplayRefMap(taskStore.listTasks(db, { workspaceRoot })).get(created.id);
     } finally {
       taskStore.close();
     }
     assert.ok(ref);
-    assert.equal(runCli(['task', 'claim', ref, '--as', 'codex'], { cwd: dir, env }).status, 0);
     const proof = `${'context '.repeat(35)}Verifiers: node --check test/commands.test.js passed, live atris review showed certified queue`;
     assert.equal(runCli(['task', 'ready', ref, '--proof', proof, '--as', 'codex'], { cwd: dir, env }).status, 0);
     assert.equal(runCli(['task', 'review', ref, '--reward', '0', '--as', 'validator'], { cwd: dir, env }).status, 0);
