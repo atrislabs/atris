@@ -289,9 +289,14 @@ const PLAIN_CLAUSE_AFTER_DASH = new RegExp(`${CLAUSE_END}\\s*\\u2014\\s*(?!${TIM
 // A word in "ly" that says how counts the same way: "the voice
 // acknowledges instantly and the agent answers". Words like "mostly"
 // and "only" can point at the noun instead, "the tests mostly", so they don't.
+// One plural word after "the", or one code name, right before a stop is an
+// object too: "the gate checks the drafts", "the hook reads `MISSION.md`".
+// A word after either still reads as a noun phrase, so "the decision
+// helpers `atris` uses" keeps its comma, and so does a word in "s" right
+// after "in" or "of", which is a noun: "the stubs in tests `monkeypatch`".
 const OBJECT_WORD = "(?![a-z]+(?:s|ed)\\b)[A-Za-z0-9_/'-]+";
 const MANNER_WORD = '(?!(?:only|mostly|mainly|largely|partly|nearly|merely|simply|exactly|especially|particularly|probably|likely|really|actually|usually|generally|typically|certainly|clearly|apparently|basically|entirely|fully|early|daily|weekly|monthly|yearly|hourly|reply|apply|supply|family|rally)\\b)[a-z]{3,}ly';
-const PLAIN_OBJECT_CLAUSE = new RegExp(`^\\s*\\u2014\\s*(?:a|an|the|every|each|no)\\s+${NOUN_WORD}\\s+(?:${NOUN_WORD}\\s+){0,2}(?:${VERB_BEFORE_WHICH}|${PLAIN_VERB}(?:(?:it|them)(?:[.!?;,]|$|\\s+(?![a-z]+(?:s|ed)\\b))|(?:the|a|an|its|their)\\s+(?:${OBJECT_WORD}\\s+)?${OBJECT_WORD}(?:\\s+(?:red|green|fine|clean|stale|empty|safe))?(?:[.!?;,]|$|\\s+(?:on|in|at|to|into|for|from|with|by|via|when|if|before|after|until|once|while|because|instead|rather|without)\\b)|${MANNER_WORD}(?:[.!?;,]|$|\\s+(?:and|but|on|in|at|to|into|for|from|with|by|via|when|if|before|after|until|once|while|because|instead|rather|without)\\b)))`);
+const PLAIN_OBJECT_CLAUSE = new RegExp(`^\\s*\\u2014\\s*(?:a|an|the|every|each|no)\\s+${NOUN_WORD}\\s+(?:${NOUN_WORD}\\s+){0,2}(?:${VERB_BEFORE_WHICH}|${PLAIN_VERB}(?:(?:it|them)(?:[.!?;,]|$|\\s+(?![a-z]+(?:s|ed)\\b))|(?<!\\b(?:in|of|on|for|with|at|by|to|from)\\s+[a-z]{2,}s\\s+)(?:(?:the|its|their)\\s+[a-z]{2,}s|\\uE000\\d+\\uE001)(?=[.!?;,]|$)|(?:the|a|an|its|their)\\s+(?:${OBJECT_WORD}\\s+)?${OBJECT_WORD}(?:\\s+(?:red|green|fine|clean|stale|empty|safe))?(?:[.!?;,]|$|\\s+(?:on|in|at|to|into|for|from|with|by|via|when|if|before|after|until|once|while|because|instead|rather|without)\\b)|${MANNER_WORD}(?:[.!?;,]|$|\\s+(?:and|but|on|in|at|to|into|for|from|with|by|via|when|if|before|after|until|once|while|because|instead|rather|without)\\b)))`);
 // A plain word, then a name, then the verb hides a "that": "a topic Atris
 // sits directly on top of" names a topic, so it keeps its comma. A run of
 // capitals is no name, so "the new CLI resolves the prefix" still joins.

@@ -2321,6 +2321,28 @@ test('fix keeps a colon before a dash pair and stacks no comma on it', () => {
   ]);
 });
 
+test('fix joins a "the" subject and its verb when one plural or a code name ends the object', () => {
+  // from a probe of the loop note: "the gate checks the drafts" and "the
+  // hook reads `MISSION.md`" spliced, since the object check took only a
+  // word with no "s". Two words or a word after the code name still read as
+  // a clause inside a noun phrase, so those keep their comma.
+  const file = tmpFile('object-clause.md', [
+    'We fixed it \u2014 the gate checks the drafts.',
+    'We fixed it \u2014 the hook reads `MISSION.md`.',
+    'Command tests \u2014 the decision helpers the CLI uses.',
+    'Command tests \u2014 the decision helpers `atris` uses.',
+    'Imports at module top \u2014 the stubs in tests `monkeypatch`.',
+  ].join('\n'));
+  const { changes } = applyFixes([file], RULES, { write: false });
+  assert.deepEqual(changes.map((c) => c.after), [
+    'We fixed it; the gate checks the drafts.',
+    'We fixed it; the hook reads `MISSION.md`.',
+    'Command tests, the decision helpers the CLI uses.',
+    'Command tests, the decision helpers `atris` uses.',
+    'Imports at module top, the stubs in tests `monkeypatch`.',
+  ]);
+});
+
 test('fix joins a subject with "also" before its verb with a semicolon', () => {
   // from a probe of the loop note: "now", "still" and "already" before a
   // verb joined the clause, but "also" did not, so "the gate also checks
