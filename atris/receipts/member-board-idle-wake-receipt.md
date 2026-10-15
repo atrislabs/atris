@@ -33,5 +33,7 @@ Exit: 0
 
 The prior reported timeout and signed-out output also passed during the baseline run (122 passed, 0 failed, exit 0). These were expected CLI fixture lines, not assertion failures. The carried-forward branch has no commits missing from this checkout. The mission is locked by the current launcher; its state and frozen check were left alone. The initial TODO change was left unstaged. Brain activation and compile returned plan-only output; no policy files were regenerated.
 
+Review status: proof is in Review. The ready command independently reran `/opt/homebrew/Cellar/node/25.6.1/bin/node --test test/member-board.test.js test/member-result.test.js`, exit 0, with receipt `atris/runs/2026-10-15-task-bci-22-2026-10-15T07-49-13-415Z.json`. This absolute runtime avoids the known login-shell Node mismatch; automatic certification cannot rerun absolute commands, so task acceptance remains pending. No task was accepted. Code and proof were pushed to origin.
+
 next_push: check a split timeout result arriving while a one-row watch screen grows to three rows, preserving its hidden count until the newline arrives.
 layer: behaviors
