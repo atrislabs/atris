@@ -10077,14 +10077,17 @@ function memberDispatch(...args) {
 function scrubFeedJargon(text) {
   return String(text || '')
     .replace(/\bmission-\d{4}-\d{2}-\d{2}-[a-z0-9-]+\b/gi, '')
+    .replace(/\(\s*commit\s*:?\s*[`'"\s]*[0-9a-f]{7,40}[`'"\s]*\)/gi, '')
     .replace(/\b[0-9a-f]{7,40}\b/g, '')
-    .replace(/\(\s*(commit\s*)?\)/gi, '')
+    .replace(/\(\s*(commit\s*:?\s*)?[`'"\s]*\)/gi, '')
     .replace(/\s+/g, ' ')
     .trim();
 }
 
 function plainFeedStatusLabel(mission) {
   const status = String(mission?.status || '').toLowerCase();
+  if (mission?.verifier_result?.passed === false) return 'check failed';
+  if (status === 'failed') return 'work stopped';
   if (mission?.verifier_result?.passed && (status === 'complete' || status === 'ready')) return 'verified and ready';
   if (status === 'complete' || status === 'ready') return 'ready for review';
   if (status === 'running') return 'working now';
@@ -10116,6 +10119,7 @@ function isFeedFillerText(text) {
   if (/^serve the team as\b/i.test(t)) return true;
   if (/^member (wake|goal-from-mission|goal created|initialized)\b/i.test(t)) return true;
   if (/^\[?logged update\]?$/i.test(t)) return true;
+  if (/^(error|no-text)$/i.test(t)) return true;
   if (/^(next[_ ]push|verdict):/i.test(t)) return true;
   if (/^[`'"]?atris\s/i.test(t) || /\batris\s+[a-z-]+\s+[a-z-]+\s+--[a-z]/i.test(t)) return true;
   return false;
@@ -10296,31 +10300,26 @@ function listMemberUnlockedSkills(memberDir, frontmatterSkills = []) {
 }
 
 function resolveMemberEngineSeat(memberSlug, root = process.cwd()) {
-  const slug = String(memberSlug || '').trim().toLowerCase();
-  const engineRole = slug === 'navigator'
-    ? 'navigator'
-    : (slug === 'validator' || slug === 'architect')
-      ? 'validator'
-      : 'executor';
   try {
-    const { resolveEngineForRoleRanked } = require('../lib/engine-registry');
-    const picked = resolveEngineForRoleRanked(engineRole, root, { taskType: engineRole });
+    const { resolveEngineForMember } = require('../lib/member-engine');
+    const picked = resolveEngineForMember(memberSlug, root);
     if (picked && picked.engine) {
       return {
         engine_id: picked.engine.id,
         tier: picked.engine.tier || 'pro',
         models: Array.isArray(picked.engine.models) ? picked.engine.models : [],
-        role: engineRole,
-        reason: picked.reason || `${picked.engine.id} selected for ${engineRole}.`,
+        model: picked.model || null,
+        role: picked.role,
+        reason: picked.reason,
       };
     }
   } catch {}
   return {
-    engine_id: 'claude',
-    tier: 'pro',
-    models: ['claude'],
-    role: engineRole,
-    reason: 'Default engine seat.',
+    engine_id: null,
+    tier: null,
+    models: [],
+    role: null,
+    reason: 'no ready engine',
   };
 }
 
@@ -10330,11 +10329,11 @@ function buildMemberSubagentShell(owner, role, engineId, objective, root = proce
   return {
     role: `${owner} (${role || 'Team Member'})`,
     member: owner,
-    engine: engineId || 'claude',
+    engine: engineId || null,
     objective: cleanObjective,
     verify,
     prompt: `You are ${owner} (${role || 'Team Member'}). Read atris/team/${owner}/MEMBER.md, MISSION.md, goals.json, and skills/. Execute one bounded slice for: "${cleanObjective}". Run verify: ${verify}. Report 3 lines: Found, Fixed, Next push.`,
-    shell_command: `atris member run ${owner} ${JSON.stringify(cleanObjective)} --engine ${engineId || 'claude'} --ignite`,
+    shell_command: `atris member run ${owner} ${JSON.stringify(cleanObjective)}${engineId ? ` --engine ${engineId}` : ''} --ignite`,
   };
 }
 
@@ -10353,12 +10352,16 @@ function buildMemberCard(name, root = process.cwd()) {
   const northStar = extractMemberNorthStar(paths.memberDir, fm.description);
   const recentWork = collectMemberWorkFeed(root, { member: owner, limit: 3 });
   const engineSeat = resolveMemberEngineSeat(owner, root);
+  const { canonicalEngineName } = require('../lib/engine-registry');
+  const recordedEngine = canonicalEngineName(mission.runner === 'codex_goal' ? 'codex' : mission.runner);
 
   const doingNow = mission.latest
     ? {
-        summary: compactSentence(scrubFeedJargon(mission.latest.last_summary || mission.objective || mission.name || ''), 120),
+        summary: compactSentence(scrubFeedJargon(
+          !isFeedFillerText(mission.latest.last_summary) ? mission.latest.last_summary : mission.objective || mission.name || '',
+        ), 120),
         state: plainFeedStatusLabel(mission.latest),
-        engine: mission.runner || engineSeat.engine_id || null,
+        engine: recordedEngine || engineSeat.engine_id || null,
         model: mission.model || null,
         worktree_branch: mission.worktree_branch || null,
         last_tick_age: mission.last_tick_age,
@@ -10387,7 +10390,7 @@ function buildMemberCard(name, root = process.cwd()) {
   const subagentShell = buildMemberSubagentShell(
     owner,
     roleLabel,
-    engineSeat?.engine_id || 'claude',
+    engineSeat?.engine_id,
     impactChain.compounding || activeGoalTitle || northStar,
     root,
   );
@@ -11172,6 +11175,7 @@ function buildMemberRoom(root = process.cwd()) {
     .filter(isFleetMember)
     .map(memberSlugFromRecord);
   const ordered = coreOrder.filter((s) => allSlugs.includes(s));
+  ordered.push(...allSlugs.filter((s) => !ordered.includes(s)).sort());
   const cards = ordered.map((slug) => buildMemberCard(slug, root));
   const feed = collectMemberWorkFeed(root, { limit: 6 });
 
@@ -11185,7 +11189,7 @@ function buildMemberRoom(root = process.cwd()) {
       member: c.member,
       role: c.role,
       status,
-      engine: c.engine_seat?.engine_id || 'auto',
+      engine: c.roadmap.doing_now?.engine || c.engine_seat?.engine_id || null,
       skills_count: c.skills.length,
       latest_update: compactSentence(latestUpdate, 92),
       consequence: c.impact_chain.consequence,
@@ -11322,7 +11326,7 @@ async function memberRoom(...args) {
 
   const standupRows = room.standup.flatMap((s, idx) => [
     `+-----------------------------------------------------------------------+`,
-    `| ${idx + 1}. ${s.member.toUpperCase()} (${s.role}) · ${s.status} · engine:${s.engine}`,
+    `| ${idx + 1}. ${s.member.toUpperCase()} (${s.role}) · ${s.status} · engine:${s.engine || 'no ready engine'}`,
     `|    Found:   ${s.latest_update}`,
     `|    Push:    ${s.next_push}`,
     `+-----------------------------------------------------------------------+`,

@@ -1,5 +1,7 @@
 # MAP notes: the deep map with rg shortcuts and file:line refs
 
+Team briefing truth: `commands/member.js:11171` includes the rest of the discovered members after the core order; `:10302` shares the member engine resolver and reports unavailable engines honestly. `:10077` strips quoted commit labels before clipping, `:10116` skips error/no-text placeholders, and `:10087` keeps failed checks visible. The briefing uses a recorded mission runner when present, resolving auto through the roster and naming codex for native Codex goals. `bin/atris.js:3094` drains member output before exit so a larger team remains valid JSON. Regression: `test/member-room-truth.test.js`, real CLI fixtures for roster overrides, member coverage, actual mission engines, output over 64 KiB, clean summaries, failure status, and unavailable engines.
+
 Hourly cleanup scan failures: `commands/autoland.js:878` includes a saved scan error in the plain summary, so a thrown first read or safety recheck does not look clean. Regression: `test/engine-resource.test.js:631` runs a real missing executable in both reads and confirms no agent is stopped.
 
 Hourly cleanup failed stops: `commands/autoland.js:869` reads saved failure counts into the summary; `test/engine-resource.test.js:589` proves real ESRCH using a harmless signal 0 probe, saved failures, singular/plural messages, and combined outcomes.

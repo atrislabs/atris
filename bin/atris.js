@@ -3091,7 +3091,7 @@ if (command === 'guide') {
   const subcommand = process.argv[3];
   const args = process.argv.slice(4);
   Promise.resolve(require('../commands/member').memberCommand(subcommand, ...args))
-    .then(() => process.exit(process.exitCode || 0))
+    .then(() => exitAfterStdoutDrain(process.exitCode || 0))
     .catch((err) => { console.error(`✗ Error: ${err.message || err}`); process.exit(1); });
 } else if (command === 'app') {
   const subcommand = process.argv[3];
