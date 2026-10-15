@@ -46,7 +46,7 @@ function printHelp() {
   console.log('  atris campaign answer <id> <ask-id> "<answer>"     a person answers; agents cannot');
   console.log('  atris campaign pause|resume|stop <id>');
   console.log('  atris campaign event <id> <type> [--data \'<json>\']   append any event by hand');
-  console.log('  atris campaign run <id> [--parallel 3] [--max-steps 20] [--max-ticks 3] [--runner auto]');
+  console.log('  atris campaign run <id> [--parallel 3] [--max-steps 20] [--max-ticks 3] [--mission-minutes 40] [--runner auto]');
   console.log('        the campaign runs itself: proposes missions, runs them at once, judges, repeats until done, broke, or needing you');
   console.log('        add --work 50m --break 10m [--rounds N] to work in rounds; each break judges and writes lessons the next round plans from');
   console.log('  atris campaign step <id>               one step of that loop');
@@ -79,7 +79,7 @@ const NO_LIMIT_BUDGET = 1e9;
 const noLimit = (view) => view.budget.total >= NO_LIMIT_BUDGET;
 
 // The flags this command understands, so positional words are what is left.
-const VALUE_FLAGS = ['--basis', '--work', '--break', '--rounds', '--mission', '--parallel', '--max-steps', '--max-ticks', '--runner', '--count', '--judge', '--budget', '--owner', '--seat', '--bet', '--wrong-if', '--parent', '--id', '--role', '--add', '--data', '--timeout', '--as', '--holdout', '--protect'];
+const VALUE_FLAGS = ['--mission-minutes', '--basis', '--work', '--break', '--rounds', '--mission', '--parallel', '--max-steps', '--max-ticks', '--runner', '--count', '--judge', '--budget', '--owner', '--seat', '--bet', '--wrong-if', '--parent', '--id', '--role', '--add', '--data', '--timeout', '--as', '--holdout', '--protect'];
 
 function positionals(args) {
   const out = [];
@@ -666,6 +666,7 @@ async function cmdLoop(args, ctx, verb) {
   const loop = makeLoop(process.cwd(), {
     parallel: readFlag(args, '--parallel', '') || readFlag(args, '--count', ''),
     maxTicks: readFlag(args, '--max-ticks', ''),
+    missionMinutes: readFlag(args, '--mission-minutes', ''),
     runner: readFlag(args, '--runner', ''),
     actor: ctx.actor,
   }, {

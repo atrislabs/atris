@@ -111,3 +111,23 @@ test('proposals are parsed strictly: unknown members fall back to the owner, ver
   assert.deepEqual(parseProposals('no json here', view, 3), []);
   assert.match(proposalPrompt({ ...view, title: 'T', id: 'cmp-t', missions: [], last_judge: null, answer: { text: null }, bet: null, budget: { available: 2, total: 5 } }, 2), /at most 2 missions/);
 });
+
+test('every mission starts with an explicit time limit, so numbers in its objective are not read as one', async () => {
+  for (const [options, wall] of [[{}, '2400'], [{ missionMinutes: 90 }, '5400']]) {
+    const store = campaign(10);
+    const starts = [];
+    const { cli } = fakeCli(store);
+    const loop = makeLoop('/x', { parallel: 1, ...options }, {
+      store, log: () => {}, skipReconcile: true,
+      cli: async (args) => {
+        if (args[1] === 'start') starts.push(args);
+        return cli(args);
+      },
+      judge: () => ({ passed: false, summary: 'not yet' }),
+      ask: async () => ({ ok: true, text: JSON.stringify([{ objective: 'Split commands.test.js (437 tests, 475s)', member: 'builder', estimate_usd: 1 }]) }),
+    });
+    await loop.run('cmp-loop', 3);
+    assert.ok(starts.length >= 1, 'a mission started');
+    assert.equal(starts[0][starts[0].indexOf('--max-wall') + 1], wall);
+  }
+});
