@@ -207,7 +207,7 @@ const CLAUSE_END = "(?<=[\\w)\\]\"'*_`%\\u201d\\u2019\\uE001]|\\betc\\.|\\w\\+{1
 // The splice list in scripts/slop-fix-diff.js reads both word lists, so the
 // words it counts and the words the fix joins cannot drift apart.
 const PRESENT_PLURAL_VERB = '(?:pass|fail|run|work|break|hold|match|agree|validate|load|build|ship|land|compile|apply|need|stay|remain|exist|show|point|wait|block|return)';
-const COMMAND_VERB = '(?:append|ask|assume|automate|block|bump|burn|capture|check|close|compare|create|dump|echo|fabricate|flip|grep|handle|hardcode|import|include|ingest|insert|inspect|invent|join|leave|massage|measure|open|outsource|override|paraphrase|predict|read|rely|render|resolve|rsync|run|say|sell|send|set|show|sign|skip|speculate|split|store|sweep|tell|test|truncate|trust|use|verify|violate|wait|write)';
+const COMMAND_VERB = '(?:append|ask|assume|automate|block|bump|burn|capture|check|close|compare|create|dump|echo|fabricate|flip|grep|handle|hardcode|hold|import|include|ingest|insert|inspect|invent|join|keep|leave|massage|measure|open|outsource|override|paraphrase|predict|read|rely|remain|render|resolve|rsync|run|say|sell|send|set|show|sign|skip|speculate|split|stay|store|sweep|tell|test|truncate|trust|use|verify|violate|wait|write)';
 const DEMONSTRATIVE_LEAD = '(?:still|also|never|only|just|now|already|often|usually|rarely|always|all)';
 const CLAUSE_AFTER_DASH = new RegExp(CLAUSE_END + String.raw`\s*\u2014\s*(?=(?:(?:it|we|they|you|I|he|she)(?:['\u2019](?:s|re|ll|ve|d|m))?|(?:this|that|these|those|there)(?:['\u2019]s|\s+(?:is|are|was|were|used|will|would|can|cannot|must|should|has|have))|this\s+(?:(?:no\s+longer|still|also|never|only|just|now|already|often|usually|rarely)\s+)?(?!(?:series|species|news|lens|perhaps|unless|whereas|across|always|does)\b)(?![a-z]+(?:us|is|as)\b)[a-z]{2,}[a-rt-z]s|(?:these|those)\s+(?:${DEMONSTRATIVE_LEAD}\s+)?${PRESENT_PLURAL_VERB}\b(?!\s+[a-z]+s\b)|(?:always|never)\s+${COMMAND_VERB}\b(?![-'])(?!\s+by\b))\b\s+[^\s\u2014])`, 'g');
 // A noun subject and its helping verb start a second sentence too: "is not a
@@ -530,9 +530,9 @@ const ADVERB_CLAUSE_AFTER_DASH = new RegExp(`${CLAUSE_END}\\s*\\u2014\\s*(?!${NA
 // plural before a noun, "skills folder", is no verb, and "the" is left out
 // so "the changes users need" stays a phrase. An adverb in "s" is no
 // plural, so "ship it small, sometimes need a retry" keeps its comma.
-// "Always" is left off: "the big three; always include it" is a command,
-// a clause of its own, and only this rule joins it today.
-const S_ADVERB = '(?:sometimes|perhaps|besides|afterwards|towards|backwards|forwards|nowadays|sideways|anyways|outwards|upwards|downwards|inwards|overseas|whereas)';
+// "Always" is one too; a command after it, "the big three; always include
+// it", joins through the pronoun rule.
+const S_ADVERB = '(?:always|sometimes|perhaps|besides|afterwards|towards|backwards|forwards|nowadays|sideways|anyways|outwards|upwards|downwards|inwards|overseas|whereas)';
 const COMMON_PLAIN_VERB = '(?:need|appear|carry|say|do|seem|remain|require|reach|stay|tend|hold|lose|know|want|become|belong|depend|happen|exist|agree|refuse|include|contain|return)';
 const PLURAL_CLAUSE_AFTER_DASH = new RegExp(`${CLAUSE_END}\\s*\\u2014\\s*(?!${NAMING_PHRASE})(?!${TIME_OPENER})(?=(?:(?!(?:the|a|an|that|whose|this|it|its)\\b)${SUBJECT_WORD}){0,2}(?!(?:the|a|an|that|whose|this|its)\\b)(?!${S_ADVERB}\\b)[A-Za-z0-9_'-]*[a-z](?<!ss|us|is)s\\s+${COMMON_PLAIN_VERB}\\s+[^\\s\\u2014])`, 'g');
 // "The", one or two words with no "s" and a plural, then a common verb and

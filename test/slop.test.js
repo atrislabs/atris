@@ -3383,6 +3383,7 @@ test('fix joins a plural and a common verb with more words after a dash with a s
     'Keep the list \u2014 build logs, test runs and receipts.',
     'Six defects; the big one \u2014 audit rows carry no identity.',
     'Ship it small \u2014 sometimes need a retry first.',
+    'Ship it small \u2014 always need a retry first.',
   ].join('\n'));
   const { changes } = applyFixes([file], RULES);
   assert.deepEqual(changes.map((c) => c.after), [
@@ -3394,6 +3395,7 @@ test('fix joins a plural and a common verb with more words after a dash with a s
     'Keep the list, build logs, test runs and receipts.',
     'Six defects; the big one, audit rows carry no identity.',
     'Ship it small, sometimes need a retry first.',
+    'Ship it small, always need a retry first.',
   ]);
 });
 
