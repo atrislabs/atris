@@ -1025,7 +1025,7 @@ function formatImproveReport(result = {}) {
 // those trailer lines. commits with no trailer still count as human, so the
 // metric overcounts revisions; accepted on purpose.
 //
-// if a human commit touches any of the same files within 72 hours, that
+// if a human commit changes lines the landing wrote within 72 hours, that
 // landing failed the guarantee.
 //
 // renames are NOT followed: `git log --follow` is per-file and would cost one
@@ -1218,7 +1218,7 @@ function loadRevisionFilesCache(root) {
 
 function saveRevisionFilesCache(cache) {
   if (!cache.writable || !cache.dirty) return;
-  const entries = { ...cache.used };
+  const entries = Object.fromEntries(Object.entries(cache.used).filter(([, files]) => Array.isArray(files)));
   let count = Object.keys(entries).length;
   for (const [hash, files] of Object.entries(cache.entries)) {
     if (count >= REVISION_FILES_CACHE_MAX) break;
@@ -1253,8 +1253,37 @@ function mainlineArrivals(commits) {
 }
 
 /**
+ * Commits that wrote the lines a plain commit changed in one file, read with
+ * blame on its parent. A pure insertion counts the line it went in under, so
+ * adding a missing line to someone's block still touches that block. null
+ * when git cannot say (binary, new file, blame error); the caller then falls
+ * back to same-file overlap.
+ */
+function linesAuthoredBefore(cwdRoot, commit, file) {
+  const parent = commit.parents[0];
+  if (!parent) return null;
+  try {
+    const diff = gitLines(cwdRoot, [...NAME_ARGS, 'diff', '-U0', '--no-color', '--no-ext-diff', '--no-textconv', '--no-renames', parent, commit.hash, '--', file]);
+    const ranges = [];
+    for (const m of diff.matchAll(/^@@ -(\d+)(?:,(\d+))? /gm)) {
+      const start = Number(m[1]);
+      const count = m[2] === undefined ? 1 : Number(m[2]);
+      if (count > 0) ranges.push('-L', `${start},${start + count - 1}`);
+      else ranges.push('-L', `${Math.max(start, 1)},${Math.max(start, 1)}`);
+    }
+    if (!ranges.length) return null;
+    const blame = gitLines(cwdRoot, [...NAME_ARGS, 'blame', '--porcelain', ...ranges, parent, '--', file]);
+    const authors = new Set();
+    for (const m of blame.matchAll(/^([0-9a-f]{40,64}) \d+ \d+/gm)) authors.add(m[1]);
+    return [...authors];
+  } catch {
+    return null;
+  }
+}
+
+/**
  * Read the last N days of history and pair every agent landing with the
- * human commits that touched the same files within the 72-hour window.
+ * human commits that changed its lines within the 72-hour window.
  */
 function collectRevisionSignals(root, options = {}) {
   const days = Number.isFinite(options.days) && options.days > 0 ? Math.round(options.days) : DEFAULT_REVISIONS_DAYS;
@@ -1316,6 +1345,16 @@ function collectRevisionSignals(root, options = {}) {
     }
     return cache.used[commit.hash];
   };
+  // Saved beside the file lists under a key no commit hash can take.
+  const authorsOf = (commit, file) => {
+    const key = `lines:${commit.hash}:${file}`;
+    if (!(key in cache.used)) {
+      const hit = cache.entries[key];
+      cache.used[key] = Array.isArray(hit) ? hit : linesAuthoredBefore(root, commit, file);
+      if (!Array.isArray(hit) && cache.used[key]) cache.dirty = true;
+    }
+    return cache.used[key];
+  };
 
   // A commit that reached the mainline in the same merge as the landing came
   // in with it, before anything had landed for a person to fix.
@@ -1330,7 +1369,13 @@ function collectRevisionSignals(root, options = {}) {
     for (const human of humans) {
       if (human.ms <= landing.ms || human.ms > landing.ms + REVISION_WINDOW_MS) continue;
       if (landedWith && arrival.get(human.hash) === landedWith) continue;
-      const overlap = filesOf(human).filter((f) => landedFiles.has(f));
+      // Same file is not enough: the commit has to change lines that came in
+      // with the landing. Live 2026-10-15: a follow-up to one change read as
+      // a fix of four older landings that only shared its files.
+      const overlap = filesOf(human).filter((f) => landedFiles.has(f)).filter((f) => {
+        const authors = authorsOf(human, f);
+        return !authors || authors.some((h) => h === landing.hash || (landedWith && arrival.get(h) === landedWith));
+      });
       if (!overlap.length) continue;
       revisedBy.push({ hash: human.hash, subject: human.subject, at: human.at });
       overlap.forEach((f) => touched.add(f));

@@ -625,6 +625,15 @@ function createAgentWorktree({ root = repoRoot(), member = '', agent = '', task,
     }
     sleepSync(100 * (attempt + 1));
   }
+  // A resumed branch takes in what the mainline gained since, or a job that
+  // keeps resuming drifts further behind every run until it clashes
+  // (2026-10-15: five long jobs sat 103 to 129 commits behind). The clash
+  // check above proved this merge is clean; if git still refuses, the run
+  // keeps the old start instead of failing.
+  if (resumedFrom) {
+    const caughtUp = runGit(['merge', '--no-edit', '-m', `Merge ${checkoutBase} into ${branch}`, checkoutBase], { cwd: target, check: false });
+    if (caughtUp.status !== 0) runGit(['merge', '--abort'], { cwd: target, check: false });
+  }
   try {
     runGit(['config', `branch.${branch}.atris-base`, shipBase], { cwd: target });
     runGit(['config', `branch.${branch}.atris-owner`, owner], { cwd: target });
