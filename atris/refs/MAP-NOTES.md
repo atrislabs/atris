@@ -2428,24 +2428,24 @@ When the receipt names a different model than the one asked for, the chat prints
 Regression checks live in `test/ax.test.js`, `test/runner-command.test.js`, and `test/engine-ask.test.js`.
 Verify: `npm run test:fast && node --test test/ax.test.js test/runner-command.test.js`.
 
-Startup repair command quoting: `lib/engine-resource.js:402` keeps punctuation literal in copied sweep commands. Real shell regression: `test/engine-resource.test.js:4926`, seven path forms, sh and zsh when available.
+Startup repair command quoting: `lib/engine-resource.js:402` keeps punctuation literal in copied sweep commands. Real shell regression: `test/engine-resource.test.js:4937`, seven path forms, sh and zsh when available.
 
-Executable startup repair lookup: `lib/engine-resource.js:378`; real shell regression at `test/engine-resource.test.js:4949` checks skipped entries and executable links.
+Executable startup repair lookup: `lib/engine-resource.js:378`; real shell regression at `test/engine-resource.test.js:4960` checks skipped entries and executable links.
 
-Empty command search entries: `lib/engine-resource.js:378` searches the current folder in PATH order. `test/engine-resource.test.js:4992` compares leading, middle, trailing, and entirely empty PATH values with real shell launches, keeping an older local install out of repair hints.
+Empty command search entries: `lib/engine-resource.js:378` searches the current folder in PATH order. `test/engine-resource.test.js:5003` compares leading, middle, trailing, and entirely empty PATH values with real shell launches, keeping an older local install out of repair hints.
 
-Startup repair without Node on PATH: `lib/engine-resource.js:410` uses the running Node executable for checkout repair commands. `test/engine-resource.test.js:5036` runs copied commands through real sh and zsh with an empty PATH.
+Startup repair without Node on PATH: `lib/engine-resource.js:410` uses the running Node executable for checkout repair commands. `test/engine-resource.test.js:5047` runs copied commands through real sh and zsh with an empty PATH.
 
-Same-checkout repair without Node: `lib/engine-resource.js:378` shares executable lookup for atris and node; `lib/engine-resource.js:411` shortens the hint only when both can run. `test/engine-resource.test.js:5056` runs real sh and zsh commands with missing, non-executable, directory, and broken-link node entries.
+Same-checkout repair without Node: `lib/engine-resource.js:378` shares executable lookup for atris and node; `lib/engine-resource.js:411` shortens the hint only when both can run. `test/engine-resource.test.js:5067` runs real sh and zsh commands with missing, non-executable, directory, and broken-link node entries.
 
-Landing status repair without Node: `commands/autoland.js:566` builds that same checkout command, and `commands/autoland.js:578` prints it under leaked agents. `test/engine-resource.test.js:5092` copies the printed command into real sh and zsh when the path holds only this checkout launcher, and checks the shell startup file changes.
+Landing status repair without Node: `commands/autoland.js:566` builds that same checkout command, and `commands/autoland.js:578` prints it under leaked agents. `test/engine-resource.test.js:5103` copies the printed command into real sh and zsh when the path holds only this checkout launcher, and checks the shell startup file changes.
 
-Landing status repair with an unusable Node entry: `commands/autoland.js:566` builds that same checkout command when a node entry is present but cannot run. `test/engine-resource.test.js:5136` copies the printed command into real sh and zsh for a plain file, a directory, and a broken link, and checks the shell startup file changes.
+Landing status repair with an unusable Node entry: `commands/autoland.js:566` builds that same checkout command when a node entry is present but cannot run. `test/engine-resource.test.js:5147` copies the printed command into real sh and zsh for a plain file, a directory, and a broken link, and checks the shell startup file changes.
 
-Landing status repair stays short when a later node can run: `commands/autoland.js:566` keeps the short command when an unusable node entry comes before a runnable node. `test/engine-resource.test.js:5187` copies that short command into real sh and zsh for a plain file, a directory, and a broken link, and checks the shell startup file changes.
+Landing status repair stays short when a later node can run: `commands/autoland.js:566` keeps the short command when an unusable node entry comes before a runnable node. `test/engine-resource.test.js:5198` copies that short command into real sh and zsh for a plain file, a directory, and a broken link, and checks the shell startup file changes.
 
-Landing status repair with a failing executable Node: `lib/engine-resource.js:415` probes the first executable with the read-only version command before shortening the hint. `test/engine-resource.test.js:5239` proves a rejecting executable hides a later working Node, then runs the printed checkout command through sh and zsh to repair fixture startup files.
+Landing status repair with a failing executable Node: `lib/engine-resource.js:415` probes the first executable with the read-only version command before shortening the hint. `test/engine-resource.test.js:5250` proves a rejecting executable hides a later working Node, then runs the printed checkout command through sh and zsh to repair fixture startup files.
 
-Silent Node repair fallback: `lib/engine-resource.js:417` requires version output before trusting the launcher. `test/engine-resource.test.js:5239` runs the displayed repair through sh and zsh when the first Node exits successfully without doing work.
+Silent Node repair fallback: `lib/engine-resource.js:417` requires version output before trusting the launcher. `test/engine-resource.test.js:5250` runs the displayed repair through sh and zsh when the first Node exits successfully without doing work.
 
 Incomplete run history advice: `test/engine-resource.test.js:4821` compares real landing status with the sweep listing when a run start falls outside retained history, while keeping the startup repair command visible.

@@ -4905,6 +4905,17 @@ test('the sweep listing splits leaked ssh-agents by engine runs and points to th
     const outside = sweep([agent(200, 5.5), agent(201, 3), agent(202, 2)]);
     const blind = sweep([agent(200, 5.5), agent(201, 3), agent(202, 2)], { pathAtrisRecordsRuns: false });
     assert.match(blind, /2 with no engine run open; the atris on your PATH does not record engine runs, so agents from the runs it starts count as none open\nlikely source/, 'an atris that leaves no run lines makes the outside count unreliable, so no claim is made');
+    const blindStatus = capture(() => showStatus(root, [], {
+      readSshAgents: () => ({ agents: [agent(200, 5.5), agent(201, 3), agent(202, 2)], referenced: new Set() }),
+      uid: 501, home, pathAtrisRecordsRuns: false,
+    }));
+    const blindSplit = blind.split('\n').find((line) => line.includes('when the leaked ssh-agents started'));
+    const landingSplit = blindStatus.split('\n').find((line) => line.includes('when the leaked ssh-agents started'));
+    console.log(`real missing run recording landing advice: ${landingSplit && landingSplit.trim()}`);
+    assert.strictEqual(landingSplit && landingSplit.trim(), blindSplit, 'landing status repeats the sweep warning about missing run records');
+    assert.doesNotMatch(blindStatus, /the startup line below is the one to fix, not an engine/);
+    assert.match(blindStatus, /likely source: ~\/\.zshrc line 1/);
+    assert.match(blindStatus, /engine sweep --fix-startup/, 'missing run records do not hide the repair command');
     assert.match(outside, /\nwhen the leaked ssh-agents started: 1 started while an engine run was open \(claude 1\), 2 with no engine run open; most started with no engine run open, so the startup line below is the one to fix, not an engine\nlikely source: ~\/\.zshrc line 1/);
     const during = sweep([agent(200, 5.5), agent(201, 5.2), agent(202, 2)]);
     assert.match(during, /when the leaked ssh-agents started: 2 started while an engine run was open \(claude 2\), 1 with no engine run open\n/, 'mostly during runs names no single fix');
