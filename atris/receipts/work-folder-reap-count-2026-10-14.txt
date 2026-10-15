@@ -1,0 +1,37 @@
+Reap counts unlanded branch copies and still names detached copies needing attention.
+Files: commands/land.js, test/worktree-removal-guard.test.js, atris/MAP.md, atris/refs/MAP-NOTES.md, atris/team/architect/logs/2026-10-14.md, this receipt.
+Plan: inherited display change -> real preview, JSON preview and apply -> retained copies and complete saved details.
+Verify: node --test test/worktree-removal-guard.test.js test/member-tidy.test.js && node bin/atris.js slop --staged
+Real-surface proof: regression invokes node bin/atris.js land --reap --no-remote --base master with preview, JSON preview and apply in a disposable repository; command output and exits follow.
+Task attachment was busy under the existing runner, so a separately claimed workspace task tracks this bounded continuation. No mission settings changed.
+Brain activation and compilation returned plans only; no generated policy files were changed.
+next_push: add a mixed pinned and unlanded-copy regression so the count line cannot hide a pin that needs attention.
+command: node bin/atris.js land --reap --no-remote --base master --dry-run (disposable repository)
+landing cleanup preview: would clear 0 pieces of work, 0 side copies:
+  still at work, commits not landed yet, left alone: 1
+  ✋ kept, needs a human: /private/var/folders/t1/2_4kmb5n4c71dxm26zc8dgzr0000gn/T/atris-removal-guard-blIKEG/loose-wt (unlanded commits: 1 never landed, oldest 0d, needs landing)
+  still flying (recent work, left alone): 1
+exit: 0
+command: node bin/atris.js land --reap --no-remote --base master (disposable repository)
+landing cleanup done: 0 pieces cleared, 0 side copies removed
+  still at work, commits not landed yet, left alone: 1
+  ✋ kept, needs a human: /private/var/folders/t1/2_4kmb5n4c71dxm26zc8dgzr0000gn/T/atris-removal-guard-blIKEG/loose-wt (unlanded commits: 1 never landed, oldest 0d, needs landing)
+  still flying (recent work, left alone): 1
+exit: 0
+ℹ tests 69
+ℹ suites 0
+ℹ pass 69
+ℹ fail 0
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 42643.303958
+
+  ✓ clean, no slop tells in 6 files
+
+combined verify exit: 0
+metric: 69 passed, 0 failed, 0 skipped, 0 todo; 6 staged files clean.
+Task proof ready: atris/runs/2026-10-15-task-acw-1-2026-10-15T06-57-23-216Z.json; required tests and staged writing check reran successfully through the task gate, exit 0.
+The task check explicitly restores the supported caller Node directory because login startup otherwise selects an older runtime. Automatic certification cannot rerun that wrapper, so the task remains in review; no approval was claimed.
+The requested starting branch is an ancestor of HEAD (git merge-base --is-ancestor, exit 0).
+layer: behaviors

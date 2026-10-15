@@ -1367,3 +1367,50 @@ test('multiline pin reasons stay on one line in refusal and real cleanup reports
     fs.rmSync(base, { recursive: true, force: true });
   }
 });
+
+// A branch copy whose commits have not landed yet is work in progress, so
+// reap counts it on one line. A detached copy's commits ride no branch, so
+// it keeps its own line: that one needs a person.
+test('reap counts branch copies still at work and names detached ones', () => {
+  const { base, repo, wt } = landedWorktree();
+  try {
+    fs.writeFileSync(path.join(wt, 'work.txt'), 'x\n');
+    git(wt, ['add', '.']);
+    git(wt, ['commit', '-qm', 'work in progress']);
+    const loose = path.join(base, 'loose-wt');
+    git(repo, ['worktree', 'add', '-q', '--detach', loose, 'master']);
+    fs.writeFileSync(path.join(loose, 'loose.txt'), 'x\n');
+    git(loose, ['add', '.']);
+    git(loose, ['commit', '-qm', 'made on no branch']);
+    const aged = new Date(Date.now() - 2 * 60 * 60 * 1000);
+    for (const dir of [wt, loose]) fs.utimesSync(dir, aged, aged);
+    const receipt = reap(repo, { base: 'master', dryRun: true, remote: false, activeCwds: [] });
+    assert.equal(receipt.keptWorktrees.length, 2, JSON.stringify(receipt.keptWorktrees));
+    assert.deepEqual(receipt.keptInFlight.map((k) => k.split(' (')[0]), [wt]);
+    const reapArgs = [path.resolve(__dirname, '../bin/atris.js'), 'land', '--reap', '--no-remote', '--base', 'master'];
+    const json = spawnSync(process.execPath, [...reapArgs, '--dry-run', '--json'], { cwd: repo, encoding: 'utf8' });
+    assert.equal(json.status, 0, json.stderr);
+    const saved = JSON.parse(json.stdout);
+    assert.deepEqual(saved.keptWorktrees, receipt.keptWorktrees);
+    assert.deepEqual(saved.keptInFlight, receipt.keptInFlight);
+    for (const args of [[...reapArgs, '--dry-run'], reapArgs]) {
+      const run = spawnSync(process.execPath, args, { cwd: repo, encoding: 'utf8' });
+      assert.equal(run.status, 0, run.stderr);
+      const lines = run.stdout.split('\n');
+      assert.ok(lines.includes('  still at work, commits not landed yet, left alone: 1'), run.stdout);
+      assert.deepEqual(lines.filter((line) => line.includes('engine-wt')), [], run.stdout);
+      assert.deepEqual(lines.filter((line) => line.includes('loose-wt')),
+        [`  ✋ kept, needs a human: ${loose} (unlanded commits: 1 never landed, oldest 0d, needs landing)`]);
+      console.log(`command: node bin/atris.js ${args.slice(1).join(' ')} (disposable repository)`);
+      console.log(run.stdout.trim());
+      console.log(`exit: ${run.status}`);
+    }
+    assert.ok(fs.existsSync(path.join(wt, 'work.txt')));
+    assert.ok(fs.existsSync(path.join(loose, 'loose.txt')));
+    assert.ok(git(repo, ['worktree', 'list', '--porcelain']).includes(`worktree ${wt}\n`));
+    assert.ok(git(repo, ['worktree', 'list', '--porcelain']).includes(`worktree ${loose}\n`));
+    assert.deepEqual(removalLines(repo), []);
+  } finally {
+    fs.rmSync(base, { recursive: true, force: true });
+  }
+});

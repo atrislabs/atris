@@ -625,7 +625,10 @@ function reap(root, { ttlDays = DEFAULT_TTL_DAYS, staleHours = DEFAULT_STALE_HOU
     const bundleCovered = w.branch && targetNames.has(w.branch);
     if (w.unlandedCommits > 0 && !force && !bundleCovered && !w.scratchCovered) {
       const oldest = typeof w.ageDays === 'number' ? `, oldest ${w.ageDays}d` : '';
-      protectedWorktrees.push({ ...w, reason: `unlanded commits: ${w.unlandedCommits} never landed${oldest}, needs landing` });
+      // A branch copy's commits are work still on its way to landing; a
+      // detached copy's commits ride no branch, so only those need a person.
+      const inFlight = Boolean(w.branch) && w.state !== 'detached';
+      protectedWorktrees.push({ ...w, inFlight, reason: `unlanded commits: ${w.unlandedCommits} never landed${oldest}, needs landing` });
       continue;
     }
     worktreeTargets.push(w);
@@ -646,6 +649,7 @@ function reap(root, { ttlDays = DEFAULT_TTL_DAYS, staleHours = DEFAULT_STALE_HOU
     patches: [],
     untracked: [],
     keptWorktrees: protectedWorktrees.map((w) => `${w.path} (${w.reason})`),
+    keptInFlight: protectedWorktrees.filter((w) => w.inFlight).map((w) => `${w.path} (${w.reason})`),
     keptMovedBranches: [],
     removedWorktrees: [],
     deletedBranches: [],
@@ -973,7 +977,12 @@ function printReceipt(receipt, { removalsToday = '' } = {}) {
   // A preview names what it would keep too, so it matches the real pass.
   // fresh-grace keeps are healthy active work, not a call to action,
   // "needs a human" on those trained readers to ignore the real ones.
+  // Branch copies kept for unlanded commits are still at work: one count
+  // line, so the named lines below are only the ones a person must act on.
+  const inFlight = new Set(receipt.keptInFlight || []);
+  if (inFlight.size > 0) console.log(`  still at work, commits not landed yet, left alone: ${inFlight.size}`);
   for (const k of receipt.keptWorktrees || []) {
+    if (inFlight.has(k)) continue;
     // The receipt keeps the raw codes; the human line speaks in sentences.
     if (String(k).includes('(fresh_worktree_grace)')) console.log(`  in use, left alone: ${k.replace(' (fresh_worktree_grace)', '')}`);
     else if (String(k).includes('(current_checkout)')) console.log(`  you are standing in it, left alone: ${k.replace(' (current_checkout)', '')}`);
