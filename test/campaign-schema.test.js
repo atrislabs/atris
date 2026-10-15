@@ -52,3 +52,14 @@ test('every event type has data rules and a valid start event passes', () => {
   assert.ok(validateEvent(event({ campaign_id: 'Campaign 1' })).errors.includes('bad_campaign_id'));
   assert.ok(validateEvent(event({ seq: 0 })).errors.includes('bad_seq'));
 });
+
+test('the schema exports the lists every surface serves', () => {
+  const schema = require('../lib/campaign-schema');
+  assert.deepEqual(schema.CONFIDENCE, ['open', 'leaning', 'stronger', 'answered']);
+  assert.deepEqual(schema.STATES, ['running', 'needs_you', 'resting', 'queued', 'done', 'out_of_budget', 'paused']);
+  assert.deepEqual(schema.STOP_REASONS, ['judge_passed', 'stopped', 'done_by_human', 'budget_spent']);
+  assert.deepEqual(schema.MISSION_OUTCOMES, ['kept', 'reverted', 'failed']);
+  assert.deepEqual(Object.keys(schema.CAMPAIGN_FIELDS).filter((k) => schema.CAMPAIGN_FIELDS[k].required), ['title', 'judge', 'budget']);
+  assert.ok(schema.CAMPAIGN_ID.test('cmp-ships-across-atris'));
+  assert.ok(!schema.CAMPAIGN_ID.test('ships'));
+});
