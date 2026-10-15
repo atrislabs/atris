@@ -152,9 +152,21 @@ stop_agy() {
   rm -f "$WORK/agy_probe.$$" "$AGY_WARM".*
 }
 
+# A quota error from Gemini is remembered until its reset (at most 3 hours), so
+# auto mode skips the probe and the early Gemini while the quota is used up.
+GEMINI_QUOTA="$WORK/gemini_quota_until"
+gemini_quota_wall() {
+  local until
+  read -r until < "$GEMINI_QUOTA" 2>/dev/null || return 1
+  case "$until" in ''|*[!0-9]*) return 1 ;; esac
+  [ "$(date +%s)" -lt "$until" ]
+}
+
 case "$ENGINE" in
   auto|gemini|agy)
-    if agy_is_cli; then
+    if [ "$ENGINE" = auto ] && gemini_quota_wall; then
+      :
+    elif agy_is_cli; then
       run_with_timeout 10 agy models </dev/null >"$WORK/agy_probe.$$" 2>&1 &
       AGY_PROBE_PID=$!
       start_warm_gemini &
@@ -585,13 +597,18 @@ warm_gemini() {
       try { ev = JSON.parse(line); } catch { continue; }
       if (ev.event !== "result") continue;
       const r = ev.result || {};
-      if (r.status === "ERROR" && /quota/i.test(r.error || "")) process.exit(2);
+      if (r.status === "ERROR" && /quota/i.test(r.error || "")) {
+        const m = /Resets in (?:(\d+)h)?(?:(\d+)m)?(?:(\d+)s)?/.exec(r.error) || [];
+        const wait = (+m[1] || 0) * 3600 + (+m[2] || 0) * 60 + (+m[3] || 0) || 3600;
+        require("fs").writeFileSync(process.argv[2], String(Math.floor(Date.now() / 1000) + Math.min(wait, 10800)) + "\n");
+        process.exit(2);
+      }
       if (r.status === "ERROR" || !/[A-Za-z0-9]/.test(r.response || "")) process.exit(1);
       process.stdout.write(r.response);
       process.exit(0);
     }
     process.exit(1);
-  ' "$AGY_WARM.out" 2>/dev/null
+  ' "$AGY_WARM.out" "$GEMINI_QUOTA" 2>/dev/null
 }
 
 run_writer() {
@@ -609,6 +626,10 @@ run_auto() {
   for entry in $(writer_list); do
     IFS='|' read -r cmd model effort label <<< "$entry"
     command -v "$cmd" >/dev/null 2>&1 || continue
+    if [ "$cmd" = agy ] && gemini_quota_wall; then
+      echo "Gemini's quota was used up on a recent run; skipping Gemini until it resets." >&2
+      continue
+    fi
     if [ "$cmd" = agy ] && ! agy_is_cli; then continue; fi
     if [ "$cmd" = agy ] && ! agy_signed_in; then
       echo "agy is installed but not signed in; skipping Gemini. Run: agy (sign in once)." >&2

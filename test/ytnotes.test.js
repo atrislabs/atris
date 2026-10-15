@@ -977,11 +977,11 @@ test('ytnotes auto writer falls back to Haiku when Gemini fails', () => {
   assert.match(fs.readFileSync(path.join(dir, 'yt_auto2.md'), 'utf8'), /# No Caption Talk/);
 });
 
-test('ytnotes auto writer sends no second Gemini request after a quota error', () => {
+test('ytnotes auto writer sends no second Gemini request after a quota error, then skips Gemini', () => {
   const calls = path.join(fs.mkdtempSync(path.join(os.tmpdir(), 'atris-ytnotes-quota-')), 'agy.calls');
   const quotaAgy = [
     '#!/bin/sh',
-    'if [ "$1" = models ]; then echo "gemini-3.8-flash-low"; exit 0; fi',
+    `if [ "$1" = models ]; then echo models >> "${calls}"; echo "gemini-3.8-flash-low"; exit 0; fi`,
     'case " $* " in',
     `  *" stream-json "*) echo warm >> "${calls}"; read -r line`,
     `    printf '%s\\n' '{"event":"result","result":{"status":"ERROR","response":"","error":"Individual quota reached. Resets in 109h."}}'`,
@@ -1002,7 +1002,39 @@ test('ytnotes auto writer sends no second Gemini request after a quota error', (
   assert.equal(result.status, 0, result.stderr || result.stdout);
   assert.match(fs.readFileSync(path.join(dir, 'yt_auto7.md'), 'utf8'), /# No Caption Talk/);
   assert.match(result.stderr, /^notes by Haiku$/m);
-  assert.equal(fs.readFileSync(calls, 'utf8'), 'warm\n', 'only the early Gemini request ran');
+  assert.equal(fs.readFileSync(calls, 'utf8'), 'models\nwarm\n', 'only the early Gemini request ran');
+  const until = Number(fs.readFileSync(path.join(dir, 'gemini_quota_until'), 'utf8'));
+  const now = Date.now() / 1000;
+  assert.ok(until > now + 10700 && until <= now + 10800, `remembered for at most 3 hours: ${until - now}s`);
+
+  // The next run in the same folder skips Gemini: no sign-in check, no request.
+  const again = runNoCaptionNotes('auto8', {
+    withWhisper: true,
+    whisperVtt: LOCAL_VTT,
+    extraEnv: { ATRIS_YTNOTES_ENGINE: 'auto', TMPDIR: path.dirname(dir) },
+    extraBins: { agy: quotaAgy },
+  });
+  assert.equal(again.result.status, 0, again.result.stderr || again.result.stdout);
+  assert.match(again.result.stderr, /quota was used up on a recent run; skipping Gemini/);
+  assert.doesNotMatch(again.result.stderr, /did not answer/);
+  assert.match(again.result.stderr, /^notes by Haiku$/m);
+  assert.equal(fs.readFileSync(calls, 'utf8'), 'models\nwarm\n', 'the second run never called Gemini');
+});
+
+test('ytnotes auto writer tries Gemini again once a remembered quota wall has passed', () => {
+  const tmpdir = fs.mkdtempSync(path.join(os.tmpdir(), 'atris-ytnotes-quota-old-'));
+  fs.mkdirSync(path.join(tmpdir, 'ytnotes'));
+  fs.writeFileSync(path.join(tmpdir, 'ytnotes', 'gemini_quota_until'), `${Math.floor(Date.now() / 1000) - 60}\n`);
+  const { result } = runNoCaptionNotes('auto9', {
+    withWhisper: true,
+    whisperVtt: LOCAL_VTT,
+    extraEnv: { ATRIS_YTNOTES_ENGINE: 'auto', TMPDIR: tmpdir },
+    extraBins: { agy: '#!/bin/sh\nprintf "%s\\n" "# From Gemini" "" "Spoken only in audio."\n' },
+  });
+
+  assert.equal(result.status, 0, result.stderr || result.stdout);
+  assert.match(fs.readFileSync(path.join(tmpdir, 'ytnotes', 'yt_auto9.md'), 'utf8'), /# From Gemini/);
+  assert.doesNotMatch(result.stderr, /skipping Gemini/);
 });
 
 test('ytnotes auto writer skips the Antigravity editor launcher named agy', () => {
