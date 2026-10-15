@@ -2875,3 +2875,5 @@ Completed task read batching: `test/commands.test.js:7675` overlaps completed li
 Renderer lookup batching: `test/commands.test.js:7853` overlaps the stored-row lookup and repeat render after the first render. `commands/task.js:7744` reads the existing row without reading the markdown view; `commands/task.js:12116` rewrites that view without changing rows. Three CLI stages become two; every assertion remains.
 
 Stale render fixture setup: `test/commands.test.js:7931` readies the seeded row through the production store before closing it. Both real render calls and all assertions remain; three CLI launches become two.
+
+Current queue claim setup: `test/commands.test.js:11196` prepares the claimed plan row through production claimTask, closing in finally before real current and queue reads. One setup launch is removed; every assertion remains.

@@ -11193,7 +11193,13 @@ test('task current returns read-only selected page and queue lanes', async () =>
     assert.equal(reviewDetail.review.approval_status, 'pending');
     assert.equal(reviewDetail.messages.some(message => message.content.includes('TASK_REVIEW_CHAT')), false);
 
-    assert.equal(runCli(['task', 'claim', planTask.display_id, '--as', 'codex'], { cwd: dir, env }).status, 0);
+    // Prepare the claimed row directly; current and queue remain real CLI reads.
+    const claimDb = taskStore.open(dbPath);
+    try {
+      assert.equal(taskStore.claimTask(claimDb, { id: planTask.id, claimedBy: 'codex' }).claimed, true);
+    } finally {
+      taskStore.close();
+    }
     const [claimedCurrent, queue] = await Promise.all([
       runCliAsync(['task', 'current', '--as', 'codex', '--json'], { cwd: dir, env }),
       runCliAsync(['task', 'queue', '--as', 'codex', '--limit', '1', '--json'], { cwd: dir, env }),
