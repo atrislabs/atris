@@ -2572,7 +2572,7 @@ with tempfile.TemporaryDirectory(prefix='atris-board-wide-name-') as folder:
 
     # The live stream names the member exactly as its log does.
     follow = subprocess.Popen([sys.argv[1], sys.argv[2], 'member', 'board', '--json', '--follow'],
-        cwd=root, env=env, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, encoding='utf8')
+        cwd=root, env={**env, 'ATRIS_FOLLOW_POLL_MS': '100'}, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, encoding='utf8')
     try:
         snapshot = json.loads(follow.stdout.readline())
         assert name in [m['member'] for m in snapshot['members']], snapshot
@@ -2580,8 +2580,12 @@ with tempfile.TemporaryDirectory(prefix='atris-board-wide-name-') as folder:
             out.write(f'{now} m-1 finished: failed (timed out)\n')
         event = json.loads(follow.stdout.readline())
         assert event['member'] == name and event['kind'] == 'finished', event
+        # Four polls pass with no new line, so nothing may stream again.
+        time.sleep(0.4)
         follow.send_signal(signal.SIGINT)
         assert follow.wait(timeout=10) == 0, follow.stderr.read()
+        rest = follow.stdout.read()
+        assert rest == '', f'streamed again: {rest!r}'
         print(f'command: node bin/atris.js member board --json --follow')
         print(json.dumps(event, ensure_ascii=False))
     finally:
