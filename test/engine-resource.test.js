@@ -1367,17 +1367,21 @@ test('every engine started through a runner or profile variable records its run 
         // a circular alias chain terminate without a separate depth limit.
         declarationEnd = shadowStart + declaration.index;
       }
-      return source.trim();
+      return { source: source.trim(), position: declarationEnd };
     };
     const engineSourceAt = (program, position, following = new Set()) => {
-      if (ENGINE_SOURCE.test(sourceAt(program, position))) return true;
-      const fnStart = Math.max(0, ...definitionSpans(code).filter(([open, close]) => open <= position && position < close).map(([open]) => open));
+      const resolved = sourceAt(program, position);
+      if (ENGINE_SOURCE.test(resolved.source)) return true;
+      const parameter = /^([A-Za-z_$][\w$]*)(?:\.[\w$]+)*$/.exec(resolved.source)?.[1];
+      // A captured parameter belongs to the nearest enclosing function that
+      // binds it, at the alias declaration rather than the eventual launch.
+      const owner = definitionSpans(code).filter(([open, close]) => open <= resolved.position && resolved.position < close && parametersOf(open).includes(parameter)).pop();
+      if (!owner) return false;
+      const [fnStart] = owner;
       // Follow simple parameters only when a call in this file supplies a
       // known runner. An unrelated parameter name alone is not evidence.
       const header = /^(?:async\s+)?function\s+([\w$]+)\s*\(([^)]*)\)/.exec(code.slice(fnStart).trimStart())
         || /^(?:const|let|var)\s+([\w$]+)\s*=\s*(?:async\s*)?(?:function(?:\s+[\w$]+)?\s*\(([^)]*)\)|(?:\(([^)]*)\)|([\w$]+))\s*=>)/.exec(code.slice(fnStart).trimStart());
-      const source = sourceAt(program, position);
-      const parameter = /^([A-Za-z_$][\w$]*)(?:\.[\w$]+)*$/.exec(source)?.[1];
       const slot = header ? (header[2] ?? header[3] ?? header[4]).split(',').map((name) => name.trim()).indexOf(parameter) : -1;
       const binding = `${fnStart}:${parameter}`;
       if (slot >= 0 && !following.has(binding)) {
@@ -1530,6 +1534,19 @@ test('every engine started through a runner or profile variable records its run 
   }
   assert.deepStrictEqual(planted("function launch(program) {\n  spawnSync(program, args);\n}\nfunction relay(runner) {\n  launch(runner);\n  relay(runner);\n}\nrelay(git);\n"), [], 'a circular helper chain without an engine terminates');
   assert.deepStrictEqual(planted("function launch(program) {\n  spawnSync(program, args);\n}\nfunction relay(runner) {\n  launch(runner);\n  relay(runner);\n}\nrelay(resolveClaudeRunnerBin());\n"), ['commands/planted.js:2 program'], 'a circular branch does not hide another engine caller');
+  // A nested helper can capture a forwarded parameter without receiving it.
+  for (const helper of ['function nested()', 'const nested = () =>', 'const nested = async () =>', 'const nested = function worker()']) {
+    const end = helper.startsWith('function') ? '}' : '};';
+    const source = (body, argument) => `function relay(runner) {\n  ${helper} {\n${body}\n  ${end}\n  nested();\n}\nrelay(${argument});\n`;
+    assert.deepStrictEqual(planted(source('    spawnSync(runner, args);', 'resolveClaudeRunnerBin()')), ['commands/planted.js:3 runner']);
+    assert.deepStrictEqual(planted(source('    startEngineRun(root);\n    spawnSync(runner, args);', 'resolveClaudeRunnerBin()')), []);
+    assert.deepStrictEqual(planted(source("    spawnSync(runner, ['--help']);", 'resolveClaudeRunnerBin()')), []);
+    assert.deepStrictEqual(planted(source('    spawnSync(runner, args);', "findExecutable('git')")), []);
+    assert.deepStrictEqual(planted(source('    const bin = runner.bin;\n    spawnSync(bin, args);', 'resolveEngineProfile(engine)')), ['commands/planted.js:4 bin']);
+  }
+  assert.deepStrictEqual(planted("function relay(runner) {\n  const program = runner;\n  function nested(runner) {\n    spawnSync(program, args);\n  }\n  nested(git);\n}\nrelay(resolveClaudeRunnerBin());\n"), ['commands/planted.js:4 program'], 'a captured alias keeps its parameter owner when an inner parameter has the same name');
+  assert.deepStrictEqual(planted("function relay(runner) {\n  function nested(runner) {\n    spawnSync(runner, args);\n  }\n  nested(git);\n}\nrelay(resolveClaudeRunnerBin());\n"), [], 'a matching inner parameter hides the forwarded engine');
+  assert.deepStrictEqual(planted("function relay(runner) {\n  function nested(runner) {\n    spawnSync(runner, args);\n  }\n  nested(resolveClaudeRunnerBin());\n}\nrelay(git);\n"), ['commands/planted.js:3 runner'], 'an inner engine parameter is followed independently of the outer argument');
   // A helper parameter hides an outer declaration with the same name.
   for (const arrow of [false, true, 'single']) {
     const helper = arrow === 'single' ? 'const launch = runner =>' : arrow ? 'const launch = (runner) =>' : 'function launch(runner)';
