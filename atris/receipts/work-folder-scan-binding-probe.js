@@ -57,6 +57,29 @@ for (const [label, protectedPath, loggedPath, wantedReason, shape] of [
   console.log(`${label}: detected ${context.sites.length}, bypasses ${context.bypasses.length}; required 1, ${wantedBypasses}` +
     (context.reason ? `; reason: ${context.reason}` : ''));
 }
+
+// A delete outside every function, right after a guarded one, must not borrow
+// that function's git check: the function's delete stays protected and the
+// file-level delete is a gap.
+{
+  const body = `function cleanup() {
+  if (worktreeGitActivity(worktreePath)) return;
+  ${removal}
+  recordWorktreeRemoval(root, { path: worktreePath });
+}
+${removal}
+`;
+  const context = vm.createContext({
+    fs: { readFileSync: () => body },
+    path,
+    __dirname: path.join(root, 'test'),
+  });
+  vm.runInContext(scanner + '\nthis.sites = worktreeRemovalSites("lib/probe.js");' +
+    `\nthis.found = this.sites.map((site) => site.key + ' ' + (removalGap(site) || 'protected'));`, context, { timeout: 1000 });
+  const wanted = ['lib/probe.js:cleanup protected', 'lib/probe.js:(top level) no git check names worktreePath'];
+  if (JSON.stringify(context.found) !== JSON.stringify(wanted)) gaps++;
+  console.log(`file-level delete after a guarded function: ${context.found.join('; ')}; required ${wanted.join('; ')}`);
+}
 console.log(`review gaps: ${gaps}; synthetic source only, never executed`);
 // Acceptance mode makes any mismatch a failing check.
 if (process.argv.includes('--require-protection') && gaps) process.exitCode = 1;
