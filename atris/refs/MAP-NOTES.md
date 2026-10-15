@@ -2383,3 +2383,11 @@ executes unmatched commands. Failing default-format cases at
 `test/runner-command.test.js:342` and `test/runner-command.test.js:388`
 bypass the existing environment helper. Isolate tests and reject unexpected
 model execution, preserving runtime engine selection.
+
+## Asynchronous test isolation safeguard
+
+`test/runner-command.test.js:33` defines the synchronous environment helper;
+it discards callback promises and restores settings in its immediate finally.
+`atris/receipts/async-runner-isolation-proof.cjs:1` safely reproduces the command
+selection change after await. The advisory verdict is in
+`atris/receipts/async-runner-isolation-review-2026-10-14.md:7`.
