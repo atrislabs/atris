@@ -3387,11 +3387,15 @@ with tempfile.TemporaryDirectory(prefix='atris-board-cut-') as folder:
         # The screen holds what was drawn after the last clear.
         return re.sub(r'\x1b\[[0-9;]*[A-Za-z]', '', output.decode().split('\x1b[2J')[-1].replace('\r', ''))
     def read(until):
+        # A short screen hides the ctrl-c hint, so a drawn frame counts as
+        # done once the terminal has been quiet for a moment.
         output = b''
+        quiet = time.monotonic()
         while time.monotonic() < until:
             if select.select([master], [], [], 0.05)[0]:
                 output += os.read(master, 65536)
-            elif output and b'ctrl' in output.split(b'\x1b[2J')[-1]:
+                quiet = time.monotonic()
+            elif output and time.monotonic() - quiet > 0.3:
                 break
             assert child.poll() is None, (child.returncode, output)
         return output
