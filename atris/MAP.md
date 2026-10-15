@@ -252,3 +252,5 @@ Continuation inspection batching: `test/commands.test.js:15128` awaits current s
 Continuation debt readiness setup: `test/commands.test.js:15168` seeds readiness through production readyTask in the creation connection, asserts success and closes in finally. Review, queue inspection and refused continuation remain real CLI checks with every assertion retained. Four launches become three.
 
 Continuation debt read batching: `test/commands.test.js:15209` awaits queue inspection and refused continuation together after stale metadata is saved. `commands/task.js:7244` refuses the generic suggestion before task creation or derived-view writes; `commands/task.js:5747` only reports stored rows. All assertions remain; three CLI launches now take two sequential stages.
+
+Continuation display readiness setup: `test/commands.test.js:15237` seeds readiness through production readyTask in the creation connection, asserts success and closes in finally. Both reviews, current selection, queue output and cleared-suggestion checks stay on the CLI. Five launches replace six; every display assertion remains.

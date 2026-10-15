@@ -15237,7 +15237,7 @@ test('task current exposes continue-work for certified review suggestions', () =
   try {
     fs.mkdirSync(path.join(dir, 'atris'), { recursive: true });
 
-    // Seed creation through the real store; continuation display stays on the CLI.
+    // Seed creation and readiness through the real store; continuation display stays on the CLI.
     const parent = (() => {
       const db = taskStore.open(dbPath);
       try {
@@ -15248,6 +15248,11 @@ test('task current exposes continue-work for certified review suggestions', () =
           workspaceRoot,
           metadata: { goal_id: 'OBL-928' },
         });
+        assert.equal(taskStore.readyTask(db, {
+          id, actor: 'codex',
+          proof: 'node --check test/commands.test.js passed before current continue-work',
+          result: FIXTURE_RESULT_SENTENCE,
+        }).ready, true);
         return { id, display_id: taskStore.taskDisplayRefMap(taskStore.listTasks(db, { workspaceRoot })).get(id) };
       } finally {
         taskStore.close();
@@ -15255,11 +15260,6 @@ test('task current exposes continue-work for certified review suggestions', () =
     })();
     const ref = parent.display_id;
 
-    assert.equal(runCli([
-      'task', 'ready', ref,
-      '--as', 'codex',
-      '--proof', 'node --check test/commands.test.js passed before current continue-work',
-    ], { cwd: dir, env }).status, 0);
     assert.equal(runCli([
       'task', 'review', ref,
       '--reward', '0',
