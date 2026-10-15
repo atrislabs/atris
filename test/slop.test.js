@@ -2344,6 +2344,25 @@ test('fix joins "the", a two-word noun, a verb in s and a longer object as a cla
   ]);
 });
 
+test('fix joins "the", a noun, a verb in s and a place word as a clause after a dash', () => {
+  // from real repo text: "the protocol spreads across projects" spliced,
+  // since a place word after the verb fit no object shape. A plural that is
+  // almost never a verb keeps the phrase: "the test cases across repos".
+  const file = tmpFile('the-place-clause.md', [
+    'Spread out \u2014 the protocol spreads across projects.',
+    'No gradients needed \u2014 the model improves purely through experience retrieval.',
+    'Three cells \u2014 the cell silently splits into two columns.',
+    'One trick \u2014 the test cases across repos.',
+  ].join('\n'));
+  const { changes } = applyFixes([file], RULES);
+  assert.deepEqual(changes.map((c) => c.after), [
+    'Spread out; the protocol spreads across projects.',
+    'No gradients needed; the model improves purely through experience retrieval.',
+    'Three cells; the cell silently splits into two columns.',
+    'One trick, the test cases across repos.',
+  ]);
+});
+
 test('fix joins "its" or "our", a plural and a plain verb before a number or an object', () => {
   // from a probe of the edge file: "its pages score 67" spliced, since the
   // possessive rule wanted a verb in s, a helper verb or "already". A plain

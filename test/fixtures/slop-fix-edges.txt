@@ -82,3 +82,14 @@ Author block documents \u2014 the live markdown docs the Atris (obelisk) editor 
 => Author block documents, the live markdown docs the Atris (obelisk) editor renders, with charts.
 Quality drops \u2014 the texture that makes the analysis read well needs Opus.
 ~> Quality drops; the texture that makes the analysis read well needs Opus.
+
+# from real repo text: a verb in s, then "across", "through", "into" and
+# kin is a clause; a plural that is almost never a verb keeps the phrase
+Spread out \u2014 the protocol spreads across projects.
+=> Spread out; the protocol spreads across projects.
+No regex \u2014 the embedding router learns from new patterns.
+=> No regex; the embedding router learns from new patterns.
+Three cells \u2014 the cell silently splits into two columns.
+=> Three cells; the cell silently splits into two columns.
+One trick \u2014 the test cases across repos.
+=> One trick, the test cases across repos.
