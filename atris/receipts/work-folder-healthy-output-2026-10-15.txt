@@ -1,0 +1,27 @@
+Healthy cleanup now has real preview and apply proof that it stays quiet and preserves drafts.
+
+Files: test/member-tidy.test.js, atris/MAP.md, atris/refs/MAP-NOTES.md, atris/team/architect/logs/2026-10-15.md; atris/TODO.md is CLI-generated.
+Verify: node --test test/worktree-removal-guard.test.js test/member-tidy.test.js && node bin/atris.js slop --staged
+Tests: exit 0, 86 passed, 0 failed, 0 skipped, 0 todo.
+Writing check: exit 0; clean, no slop tells in 6 files.
+Other commands: atris mission status, atris task list/new/claim/note/ready, atris brain activate/compile, git diff --check, git add, git commit, git push. Brain commands reported plan only; no generated policy files were written.
+Real CLI output (disposable local repositories):
+command: node bin/atris.js worktree cleanup (healthy origin)
+cleanup: dry-run base=origin/master
+candidates: 0
+cache_candidates: 0
+kept: 2
+left alone: primary_checkout=1
+kept: /private/var/folders/t1/2_4kmb5n4c71dxm26zc8dgzr0000gn/T/atris-member-tidy-047uAT/arena/.agent-worktrees/repo/healthy-draft branch=healthy-draft reason=dirty staged=0 unstaged=0 untracked=1
+exit: 0
+command: node bin/atris.js worktree cleanup --apply (healthy origin)
+cleanup: applied base=origin/master
+removeds: 0
+cache_pruneds: 0
+kept: 2
+left alone: primary_checkout=1
+kept: /private/var/folders/t1/2_4kmb5n4c71dxm26zc8dgzr0000gn/T/atris-member-tidy-047uAT/arena/.agent-worktrees/repo/healthy-draft branch=healthy-draft reason=dirty staged=0 unstaged=0 untracked=1
+exit: 0
+
+next_push: Prove healthy cleanup refreshes an outdated local base through the real command without a warning.
+layer: behaviors

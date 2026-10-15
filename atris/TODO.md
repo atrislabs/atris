@@ -23,6 +23,8 @@ Details for any task: atris task show <ID>
 
 ## Review
 
+- **[ACW-26]** Prove healthy cleanup stays quiet and keeps drafts · architect
+  **Done looks like:** Operators can trust healthy cleanup to stay quiet and preserve their drafts, reducing the risk of losing work.
 - **[ACW-25]** Prove cleanup warns when origin is unavailable · architect
   **Done looks like:** Operators can trust the cleanup warning when the remote is unavailable, with proof that drafts stay intact.
 - **[ACW-24]** Say when shared cleanup could not refresh its base · architect

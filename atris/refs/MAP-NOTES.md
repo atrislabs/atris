@@ -2461,4 +2461,6 @@ Shared refresh record proof: `commands/worktree.js:422` fetches the start, ship 
 
 Cleanup stale base warning: `commands/worktree.js:1494` keeps the shared refresh failure on the cleanup result and `commands/worktree.js:1633` prints it under the header. `test/member-tidy.test.js:1320` checks no warning on a healthy refresh, the reason on a damaged remote in preview and apply, and the exact line from the real cleanup command.
 
-Unavailable origin warning proof: `test/member-tidy.test.js:1374` runs real cleanup preview and apply with an offline remote, checks the warning, and preserves draft bytes, status, branch, registration and local origin record with no removal log.
+Unavailable origin warning proof: `test/member-tidy.test.js:1405` runs real cleanup preview and apply with an offline remote, checks the warning, and preserves draft bytes, status, branch, registration and local origin record with no removal log.
+
+Healthy origin output proof: `test/member-tidy.test.js:1374` runs real cleanup preview and apply, requires empty stderr and no stale-base warning, and preserves draft bytes, status, branch, registration and the local origin record without removals.

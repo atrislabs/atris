@@ -1370,6 +1370,37 @@ test('worktree cleanup refreshes the local record of origin only to a real commi
 });
 
 
+test('worktree cleanup stays quiet and keeps drafts when origin is healthy', () => {
+  const fx = makeFixture();
+  try {
+    const copy = addCopy(fx, 'healthy-draft');
+    const draft = path.join(copy, 'draft.txt');
+    fs.writeFileSync(draft, 'keep these notes\n');
+    const saved = runGit(['rev-parse', 'origin/master'], fx.repo);
+    const status = runGit(['status', '--porcelain'], copy);
+    for (const extra of [[], ['--apply']]) {
+      const cli = spawnSync(process.execPath, [path.resolve(__dirname, '../bin/atris.js'), 'worktree', 'cleanup', ...extra], { cwd: fx.repo, encoding: 'utf8', timeout: 30000 });
+      console.log(`command: node bin/atris.js worktree cleanup${extra.length ? ' --apply' : ''} (healthy origin)`);
+      console.log(cli.stdout.trim());
+      console.log(`exit: ${cli.status}`);
+      assert.equal(cli.status, 0, cli.stderr);
+      assert.equal(cli.stderr, '');
+      const lines = cli.stdout.trim().split('\n');
+      assert.equal(lines[0], `cleanup: ${extra.length ? 'applied' : 'dry-run'} base=origin/master`);
+      assert.equal(lines[1], extra.length ? 'removeds: 0' : 'candidates: 0');
+      assert.doesNotMatch(cli.stdout, /warning:|could not refresh|may be behind/);
+      assert.equal(fs.readFileSync(draft, 'utf8'), 'keep these notes\n');
+      assert.equal(runGit(['status', '--porcelain'], copy), status);
+      assert.equal(runGit(['rev-parse', 'origin/master'], fx.repo), saved);
+      assert.ok(branchExists(fx.repo, 'healthy-draft'));
+      assert.ok(runGit(['worktree', 'list', '--porcelain'], fx.repo).includes(`worktree ${copy}\n`));
+      assert.equal(fs.existsSync(path.join(fx.repo, '.atris/state/worktree_removals.jsonl')), false);
+    }
+  } finally {
+    fs.rmSync(fx.base, { recursive: true, force: true });
+  }
+});
+
 test('worktree cleanup warns and keeps drafts when origin is unavailable', () => {
   const fx = makeFixture();
   try {
