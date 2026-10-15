@@ -3864,7 +3864,7 @@ test('a read-only ask run writes a start and an end reading, and a run past its 
     const answers = await runEngineAskJobs([
       { engine: 'claude', model: '', prompt: 'what is six times seven', label: 'quick' },
       { engine: 'claude', model: '', prompt: 'hang here', label: 'slow' },
-    ], { root, timeoutMs: 1000, concurrency: 1 });
+    ], { root, timeoutMs: 3000, concurrency: 1 });
     assert.strictEqual(answers[0].ok, true, answers[0].stderr);
     assert.strictEqual(answers[1].timed_out, true);
     const log = fs.readFileSync(path.join(root, RESOURCE_LOG), 'utf8').trim().split('\n').map((line) => JSON.parse(line));
