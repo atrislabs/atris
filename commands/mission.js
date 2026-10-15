@@ -6617,12 +6617,15 @@ function runVerifier(command, root = process.cwd()) {
   const { envWithNodeDir } = require('../lib/spawn-env');
   const timeoutMs = missionVerifierTimeoutMs();
   const startedAt = Date.now();
+  // The builder's engine pick is set for the whole run; the check judges the
+  // code, so it must not inherit it (runner tests failed on clean code).
+  const { ATRIS_RUNNER_PROFILE: _builderEngine, ...checkEnv } = process.env;
   const result = spawnSync(resolvedCommand, {
     cwd: root,
     shell: true,
     encoding: 'utf8',
     timeout: timeoutMs,
-    env: envWithNodeDir(process.env),
+    env: envWithNodeDir(checkEnv),
   });
   const elapsedMs = Date.now() - startedAt;
   // A verifier that blows its window is not a failing check: the code may be

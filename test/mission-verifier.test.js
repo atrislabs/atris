@@ -106,6 +106,21 @@ test('a verifier that outruns its window reports timed_out, elapsed, and window,
   }
 });
 
+test('the check never sees the engine the mission picked for the builder', () => {
+  // A codex-built tick set the runner profile for the whole run, so the check
+  // inherited it and runner tests failed on clean code (architect, 6 runs on 10/14).
+  const prev = process.env.ATRIS_RUNNER_PROFILE;
+  process.env.ATRIS_RUNNER_PROFILE = 'codex';
+  try {
+    const result = runVerifier('node -e "process.exit(process.env.ATRIS_RUNNER_PROFILE ? 1 : 0)"');
+    assert.equal(result.passed, true, result.stderr);
+    assert.equal(process.env.ATRIS_RUNNER_PROFILE, 'codex');
+  } finally {
+    if (prev === undefined) delete process.env.ATRIS_RUNNER_PROFILE;
+    else process.env.ATRIS_RUNNER_PROFILE = prev;
+  }
+});
+
 test('unverified and failed tick recap text carries a visible warning marker', () => {
   assert.match(missionVerifierCheckedText(null, {}), /^UNVERIFIED:/);
   assert.match(missionVerifierCheckedText({ passed: false, command: 'false' }, {}), /^VERIFY FAILED:/);
