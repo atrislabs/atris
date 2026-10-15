@@ -62,38 +62,42 @@ Prior art to borrow from: Temporal workflows (durable workflow, activities, sign
 
 ---
 
-## The Struct
+## The Struct (final, judged by Fable 2026-10-15)
 
-```text
-CAMPAIGN
-  id                 cmp-<short>
-  title              plain words: "Which sourcing channel actually produces hires?"
-  kind               answer   (find out what is true: research, diagnosis)
-                     outcome  (make something true: 10 hires a month, 5 demos booked)
-  standing           false for a campaign that ends; true for a member's never-ending purpose
-  owner              one member, accountable; can redirect, stop, or veto
-  seats[]            { member, role }   role = scout · builder · reviewer · skeptic · ... (the party)
-  bet                current hypothesis or plan, with what would prove it wrong
-  judge              how we know, outside the model: a metric ("hire_rate>=0.2") or a verify command
-  answer             { text, confidence: open · leaning · stronger · answered }   computed from events
-  budget             { total, spent, per_mission }   spent is computed from events
-  stop               judge passes · budget spent · human says stop
-  state              running · needs_you · resting · queued · done · out_of_budget · paused   computed
-  asks[]             open decisions only a human can make (the no-reload line)
-  missions[]         ids of finite runs; each mission carries campaign_id back
-  parent             optional, one level only (a company goal with campaigns under it)
-  created_from       the wish id or sentence that set it up
+A person or agent writes only this. Three fields are required.
 
-EVENTS (append-only, the only truth)
-  campaign_started · seat_filled · bet_set · mission_proposed · mission_claimed · mission_started
-  step · kept · reverted · mission_ended · judge_ran · answer_changed · ask_opened · ask_answered
-  budget_reserved · budget_spent · paused · resumed · stopped · done
-
-ACTIONS (what any screen can send)
-  start · pause · resume · answer_ask · change_bet · add_budget · fill_seat · stop
+```yaml
+campaign:
+  title: "Campaign works in Atris"          # plain words, the only name humans use
+  judge: "npm run validate:campaign"        # one command, exit 0 means the judge passes
+  budget: 300                               # dollars the campaign may spend in total
+  owner: mission-lead                       # optional; defaults to the starting member, then mission-lead
+  seats: [builder, validator]               # optional; role comes from each member's own job
+  bet: "Mostly wiring. Wrong if phase 10 needs a new runner."   # optional; hypothesis and what proves it wrong
+  standing: false                           # optional; true means a passing judge is health, not the end
 ```
 
-Storage: SQLite locally (`<workspace>/.atris/state/atris.db`) and Postgres in the backend, one schema for both. See "Where It Lives" below.
+Not written by hand:
+
+- `id`: generated at `campaign_started`.
+- `stop`: judge passes (unless standing), budget spent, or a `stopped` event.
+- `state`, `answer` and confidence, `spent`, `asks`, `missions`: folded from events, never stored.
+- `created_from`: payload of `campaign_started`.
+- `parent`: an `attached` event written by an action.
+- Per-mission budget: each mission writes `budget_reserved` when it starts, sized from the mission.
+- `--metric "name>=target"` is shorthand for a judge command (`lib/wish-delegate.js` turns it into `backend/scripts/metric_verify.py`).
+- Answer campaigns need no extra field: their judge is a script that checks against held-out data, and confidence folds from judge history.
+
+Two rules from the review:
+
+1. **Every mission reports its cost.** `mission_ended` carries cost from the receipt. A budget nobody can measure is slop. (Local missions today have time tiers, not dollars; only the backend's `budget_hold` tracks money.)
+2. **A judge must fail first.** A non-standing campaign whose judge already passes at start is refused: "already done, write a judge that fails first." This stops an agent from writing `true` as its judge. If no judge can be written yet, the first mission builds it.
+
+Events: `campaign_started · seat_filled · bet_set · attached · mission_proposed · mission_claimed · mission_started · step · kept · reverted · mission_ended · judge_ran · ask_opened · ask_answered · budget_reserved · budget_released · paused · resumed · stopped · home_moved · done`
+
+Actions: `start · pause · resume · answer_ask · change_bet · add_budget · fill_seat · veto · stop`
+
+Fable receipt: `atris/runs/engine-ask-20261015090013537-42685-6a0c60f0.json`.
 
 ---
 
