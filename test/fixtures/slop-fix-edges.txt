@@ -529,3 +529,11 @@ Read the notes \u2014 this data collected in March.
 => Read the notes, this data collected in March.
 Archaeological \u2014 this repo ran these once.
 ~> Archaeological: this repo ran these once.
+
+# "sailed", "interacted" and "transitioned" take no object, so a place word after one opens a clause
+The run held \u2014 the cluster transitioned from warm to cold.
+=> The run held; the cluster transitioned from warm to cold.
+Sneaker fiends, denimheads, goth ninjas \u2014 every clique interacted on a level beyond style.
+=> Sneaker fiends, denimheads, goth ninjas: every clique interacted on a level beyond style.
+Keep the logs \u2014 the cookie returned in the response.
+=> Keep the logs, the cookie returned in the response.
