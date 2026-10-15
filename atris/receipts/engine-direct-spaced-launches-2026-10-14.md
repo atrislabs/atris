@@ -23,3 +23,5 @@ Commands also run: mission status, mission goal --json, task list/new/claim/note
 
 next_push: handle whitespace between resource-recording helper names and their opening parentheses in both launch guards.
 layer: capabilities
+
+Additional check: task ready reran the same command through its wrapper and returned exit 1, 129 passed and 22 failed. Its receipt contains abbreviated output only: atris/runs/2026-10-15-task-ecm-19-2026-10-15T02-57-01-621Z.json. The direct invocation above passed; the wrapper discrepancy remains unresolved and should be investigated next.
