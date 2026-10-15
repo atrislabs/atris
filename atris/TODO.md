@@ -23,6 +23,64 @@ Details for any task: atris task show <ID>
 
 ## Review
 
+- **[AIC-82]** Read safe drain action baselines through the task store · auto-improver
+  **Done looks like:** Developers can check safe review actions with two fewer setup commands, saving startup work while keeping every behavior check.
+- **[AIC-81]** Remove baseline launch from capability safety test · auto-improver
+  **Done looks like:** Developers can check capability safety with one fewer setup command, saving startup work while retaining every behavior assertion.
+- **[AIC-80]** Remove creation launch from weak proof review lanes test · auto-improver
+  **Done looks like:** Developers can check weak proof review safety with one fewer setup command, saving startup work while retaining every acceptance assertion.
+- **[AIC-79]** Remove creation launch from weak proof mission reward test · auto-improver
+  **Done looks like:** Developers can check mission reward proof with one fewer setup command, saving startup time while retaining every safety assertion.
+- **[AIC-78]** Remove creation launch from stale proof routing test · auto-improver
+  **Done looks like:** Developers can check stale proof routing with one fewer setup command, saving startup time while retaining every routing and approval assertion.
+- **[AIC-77]** Remove creation launches from review queue filter test · auto-improver
+  **Done looks like:** Developers can check review queue filtering with two fewer setup commands, saving startup work while retaining every filtering and safety assertion.
+- **[AIC-76]** Remove creation launch from continuation display test · auto-improver
+  **Done looks like:** Developers can check continuation display with one fewer setup command, saving startup work while retaining every display and safety assertion.
+- **[AIC-75]** Remove creation launch from review hygiene test · auto-improver
+  **Done looks like:** Developers can check review cleanup with one fewer setup command, saving startup time while retaining every queue and continuation assertion.
+- **[AIC-74]** Remove metadata subprocess from review queue hygiene test · auto-improver
+  **Done looks like:** Developers can check review cleanup with one fewer setup process, saving startup work while retaining every queue and continuation assertion.
+- **[AIC-73]** Remove metadata subprocess in weak-proof review test · auto-improver
+  **Done looks like:** Developers can now check review safety with one fewer setup process, saving startup time while retaining every acceptance assertion.
+- **[AIC-72]** Reduce setup ownership launch in review lanes proof test · auto-improver
+  **Done looks like:** Developers can check weak-proof review gates with one fewer setup command, saving startup time while retaining every acceptance assertion.
+- **[AIC-71]** Reduce setup claim in mission XP weak-proof rejection test · auto-improver
+  **Done looks like:** Developers can now check proof rejection with one fewer setup command, saving startup time while retaining every safety assertion.
+- **[AIC-70]** Reduce setup claim in failed-blocker status test · auto-improver
+  **Done looks like:** Developers can check failed blockers with one fewer setup command, saving startup work while retaining every behavior assertion.
+- **[AIC-69]** Reduce setup claim in reviewed-failure status test · auto-improver
+  **Done looks like:** Developers can check failure history with one fewer setup command, saving startup work while retaining every behavior assertion.
+- **[AIC-68]** Reduce setup claim in goal display-reference status test · auto-improver
+  **Done looks like:** Developers can check goal status with one fewer setup command, saving startup time while retaining every safety check.
+- **[AIC-67]** Reduce setup claim in accepted-task revision test · auto-improver
+  **Done looks like:** Developers can check revisions with one fewer setup command, saving startup time while retaining every safety check.
+- **[AIC-66]** Reduce setup claim in ready-work revision test · auto-improver
+  **Done looks like:** Developers can check revisions with one fewer setup command, saving startup work while retaining every safety check.
+- **[AIC-65]** Reduce setup claim in receipt tampering test · auto-improver
+  **Done looks like:** Developers can check receipt tampering with one fewer setup command, saving startup work while retaining every integrity check.
+- **[AIC-64]** Finish setup claim reduction in conflicting receipt test · auto-improver
+  **Done looks like:** Developers can check conflicting receipts with one fewer setup command, saving startup time while retaining every integrity check.
+- **[AIC-63]** Reduce setup claim in duplicate receipt repair test · auto-improver
+  **Done looks like:** Developers can check duplicate receipt repair with one fewer setup command, saving startup work while retaining every repair check.
+- **[AIC-62]** Separate success and stall budgets in roster record test · auto-improver
+  **Done looks like:** Developers can now check successful reviews on busy computers without false timeout failures, saving time spent retrying checks.
+- **[AIC-61]** Reduce setup claim in duplicate reward review test · auto-improver
+  **Done looks like:** Developers can check duplicate reward prevention with one fewer setup command, saving startup work while retaining every reward check.
+- **[AIC-60]** Reduce setup claim in human confirmation test · auto-improver
+  **Done looks like:** Developers can check human confirmation with one fewer setup command, saving startup work while preserving every acceptance safeguard.
+- **[AIC-59]** Reduce setup claim in proof-only acceptance guard test · auto-improver
+  **Done looks like:** Developers can check agent acceptance safeguards with one fewer setup command, saving startup work while retaining every guard.
+- **[AIC-58]** Reduce setup claim in reward rejection test · auto-improver
+  **Done looks like:** Developers can check reward rejection with one fewer setup command, saving time while preserving every rejection check.
+- **[AIC-57]** Reduce setup claims in weak landing rejection test · auto-improver
+  **Done looks like:** Developers can check weak landing rejection with one fewer setup command, saving time while preserving every rejection check.
+- **[AIC-56]** Reduce setup claim launch in finish landing test · auto-improver
+  **Done looks like:** Developers can check landing sentences with three fewer setup commands, saving test time while keeping every result check.
+- **[AIC-55]** Reduce setup-only side claim in headless planning test · auto-improver
+  **Done looks like:** Developers can check planning with one fewer setup command, saving time while keeping every ownership check.
+- **[AIC-54]** Reduce setup launches in headless plan and do test · auto-improver
+  **Done looks like:** Developers can check headless planning with one fewer setup command, saving a process launch while preserving ownership checks.
 - **[AIC-53]** Reduce setup launches in human acceptance test · auto-improver
   **Done looks like:** Developers can check human acceptance with one fewer setup command, saving a process launch while keeping every acceptance check.
 - **[AIC-52]** Seed proof-derived review chat setup through the task store · auto-improver

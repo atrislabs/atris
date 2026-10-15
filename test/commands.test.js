@@ -8567,13 +8567,25 @@ test('task review-lane-act executes safe drain actions and refuses human accept 
   const env = { ATRIS_TASKS_DB: dbPath, NODE_NO_WARNINGS: '1', ATRIS_AGENT_ID: 'codex', ATRIS_SKIP_UPDATE_CHECK: '1' };
   try {
     fs.mkdirSync(path.join(dir, 'atris'), { recursive: true });
+    // Baselines read the same enriched projection task show prints; every
+    // after-action read still runs the CLI.
+    const { enrichTaskProjection } = require('../commands/task');
+    const showTask = (id) => {
+      const showDb = taskStore.open(dbPath);
+      try {
+        return enrichTaskProjection(taskStore.taskProjection(showDb, { taskId: id })).tasks[0];
+      } finally {
+        taskStore.close();
+      }
+    };
 
     // Seed creation only; exercise review actions and human refusal on the CLI.
     const workspaceRoot = taskStore.workspaceRoot(dir);
     const db = taskStore.open(dbPath);
+    let reviewTask;
     let reviewRef;
     try {
-      const reviewTask = addSeedTask(db, {
+      reviewTask = addSeedTask(db, {
         title: 'Review lane act starts verification chat',
         tag: 'task', workspaceRoot, metadata: { goal_id: 'OBL-931' },
       });
@@ -8587,7 +8599,7 @@ test('task review-lane-act executes safe drain actions and refuses human accept 
       '--as', 'codex',
       '--proof', 'node --check test/commands.test.js passed before review-lane-act review chat',
     ], { cwd: dir, env }).status, 0);
-    const beforeReviewChat = JSON.parse(runCli(['task', 'show', reviewRef, '--json'], { cwd: dir, env }).stdout);
+    const beforeReviewChat = showTask(reviewTask.id);
     const reviewAct = runCli(['task', 'review-lane-act', '--goal-id', 'OBL-931', '--json'], { cwd: dir, env });
     assert.equal(reviewAct.status, 0, reviewAct.stderr);
     const reviewPayload = JSON.parse(reviewAct.stdout);
@@ -8629,7 +8641,7 @@ test('task review-lane-act executes safe drain actions and refuses human accept 
       '--proof', 'node --test test/commands.test.js passed during review-lane-act continuation',
       '--next', 'Add the review lane act follow-up task',
     ], { cwd: dir, env }).status, 0);
-    const beforeDryRun = JSON.parse(runCli(['task', 'show', continueRef, '--json'], { cwd: dir, env }).stdout);
+    const beforeDryRun = showTask(continueTask.id);
     const dryRun = runCli(['task', 'review-lane-act', '--goal-id', 'OBL-932', '--dry-run', '--json'], { cwd: dir, env });
     assert.equal(dryRun.status, 0, dryRun.stderr);
     const dryPayload = JSON.parse(dryRun.stdout);
