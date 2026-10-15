@@ -113,12 +113,13 @@ function fixAll(fixer, lines, dir) {
 }
 
 // Marks a fix that the writer's own text did not have: two punctuation
-// marks in a row (", ," or ":." or "(,") or parentheses that no longer
-// balance the way the source did. Code spans and link targets are left out.
-// In --paragraphs mode the whole paragraph is one unit, so an aside that
-// wraps across lines balances the way it should. The period that closes a
-// short form or an initial is part of the word, so a comma after it is
-// plain English: "Cooling, Inc., Columbus", "(Alex T., via the site)".
+// marks in a row (", ," or ":." or "(,"), parentheses that no longer
+// balance the way the source did, or a comma splice. Code spans and link
+// targets are left out. In --paragraphs mode the whole paragraph is one
+// unit, so an aside that wraps across lines balances the way it should.
+// The period that closes a short form or an initial is part of the word,
+// so a comma after it is plain English: "Cooling, Inc., Columbus", "(Alex
+// T., via the site)".
 const DOUBLED = /[,;:]\s*[,;:.!?]|\(\s*[,;:]|[,;:]\s*\)|\.\s*,|,\s*,/g;
 const SHORT_FORM_STOP = /\b(?:etc|e\.g|i\.e|vs|cf|approx|incl|et al|Inc|Ltd|Corp|Co|Jr|Sr|[A-Z])\.(?=\s*,)/gi;
 function oddMarks(source, fixed) {
@@ -128,7 +129,25 @@ function oddMarks(source, fixed) {
   const marks = [];
   if (doubled(fixed) > doubled(source)) marks.push('doubled punctuation');
   if (balance(fixed) !== balance(source)) marks.push('unbalanced parentheses');
+  if (splices(plain(fixed)) > splices(plain(source))) marks.push('comma splice');
   return marks;
+}
+
+// A comma right before a pronoun and its verb joins two sentences: "etc.,
+// these are category links", "the gate held, it ships". A sentence that
+// opens with "if", "when" or their kin is only its first half before that
+// comma, so "But when the gate holds, it ships" is no splice. Neither is a
+// greeting or a lone answer word: "Hi Maya, this is", "No, this is".
+const SPLICE = /,\s+(?:(?:it|we|they|he|she|I)(?:['\u2019](?:s|re|ll|ve|d|m))?\s+[a-z]|(?:this|that|these|those|there)(?:['\u2019]s|\s+(?:is|are|was|were|will|would|can|must|should|has|have)\b))/g;
+const OPENS_FIRST_HALF = /^(?:(?:but|and|so|yet|or|then)\s+)?(?:if|when|whenever|once|because|since|although|though|while|unless|until|after|before|as)\b/i;
+const NO_CLAUSE = /^(?:(?:hi|hello|hey|dear)\b.*|thanks|thank you|yes|no|ok|okay|sure|well|right)$/i;
+function splices(text) {
+  let count = 0;
+  for (const m of text.matchAll(SPLICE)) {
+    const sentence = text.slice(0, m.index).split(/[.!?;:|]\s/).pop().replace(/^(?:[-*+>#|]\s*|\d+[.)]\s*|\*\*|__)*/, '').trim();
+    if (!OPENS_FIRST_HALF.test(sentence) && !NO_CLAUSE.test(sentence)) count += 1;
+  }
+  return count;
 }
 
 function main(argv) {
@@ -168,7 +187,7 @@ function main(argv) {
       console.log('');
     }
     console.log(`${lines.length} ${unit}${lines.length === 1 ? '' : 's'} in ${files.length} file${files.length === 1 ? '' : 's'}; ${moved.length} moved against ${base}`);
-    console.log(`${moved.filter((m) => m.odd.length).length} of the moved gained doubled punctuation or unbalanced parentheses`);
+    console.log(`${moved.filter((m) => m.odd.length).length} of the moved gained doubled punctuation, unbalanced parentheses, or a comma splice`);
   } finally {
     fs.rmSync(dir, { recursive: true, force: true });
   }

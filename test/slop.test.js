@@ -3586,7 +3586,7 @@ test('the fix diff script feeds whole paragraphs with --paragraphs', () => {
   const r = spawnSync(process.execPath, [script, '--paragraphs', '--base', 'HEAD', dir], { encoding: 'utf8', cwd: path.join(__dirname, '..') });
   assert.equal(r.status, 0, r.stderr);
   assert.match(r.stdout, /^1 dashed paragraph in 1 file; \d+ moved against HEAD$/m);
-  assert.match(r.stdout, /^0 of the moved gained doubled punctuation or unbalanced parentheses$/m);
+  assert.match(r.stdout, /^0 of the moved gained doubled punctuation, unbalanced parentheses, or a comma splice$/m);
 });
 
 test('the fix diff script marks a fix that gains doubled punctuation or loses paren balance', () => {
@@ -3602,6 +3602,13 @@ test('the fix diff script marks a fix that gains doubled punctuation or loses pa
   assert.deepEqual(oddMarks(`# Airfast Cooling, Inc. ${D} Columbus, OH`, '# Airfast Cooling, Inc., Columbus, OH'), []);
   assert.deepEqual(oddMarks(`"Great work." Alex T. (via the site)`, '"Great work." (Alex T., via the site)'), []);
   assert.deepEqual(oddMarks(`The build ended. ${D} and then it ran.`, 'The build ended., and then it ran.'), ['doubled punctuation']);
+  // a comma before a pronoun and its verb joins two sentences; the first
+  // half of a "when" sentence, a greeting, or a lone "no" is no splice
+  assert.deepEqual(oddMarks(`- Severity: High ${D} this is the first command.`, '- Severity: High, this is the first command.'), ['comma splice']);
+  assert.deepEqual(oddMarks(`Companies, etc. ${D} these are category links.`, 'Companies, etc., these are category links.'), ['comma splice']);
+  assert.deepEqual(oddMarks(`But when it happens early ${D} it hurts.`, 'But when it happens early, it hurts.'), []);
+  assert.deepEqual(oddMarks(`> Hi Maya ${D} this is Sunline.`, '> Hi Maya, this is Sunline.'), []);
+  assert.deepEqual(oddMarks(`| Bandwidth | No ${D} this is one person |`, '| Bandwidth | No, this is one person |'), []);
   // an aside that wraps across lines is unbalanced in the source too, and a
   // code span or link target is never read as prose
   assert.deepEqual(oddMarks(`The run (one tick ${D} a slice`, 'The run (one tick, a slice'), []);
