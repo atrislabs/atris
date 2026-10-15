@@ -95,11 +95,12 @@ def run_case(width, height, result):
                 append(f'{now} m-new finished: failed ({reason}')
                 # An event redraw and a periodic redraw must both ignore the fragment.
                 wait_for(previous, lambda frame: 'working' in frame)
-                read_for(3.2)
-                check_size()
+                after_event = len(frames())
+                # No new write: the next frame must come from the periodic redraw.
+                wait_for(after_event, lambda frame: 'working' in frame)
                 assert all('working' in frame and 'failed' not in frame and reason not in frame and 'sign in' not in frame
                     for frame in frames()[previous:]), frames()
-                say('partial failure: still working through periodic redraw')
+                say('partial failure: still working through observed periodic redraw')
                 previous = len(frames())
                 append(' out)')
                 wait_for(previous, lambda frame: 'working' in frame)
