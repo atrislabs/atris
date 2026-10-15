@@ -1541,13 +1541,22 @@ test('every engine started through a runner or profile variable records its run 
     const braces = [];
     const parentheses = [];
     let lastParameters = 0;
+    // These read only the end of the text. A pattern anchored at the end of
+    // a whole file prefix tries every start, which made each file quadratic.
+    const keywordEnd = (text) => /(?:^|\W)(?:if|for|while|switch|catch|with)$/.test(text.slice(-7));
+    const endsWithControl = (text) => {
+      const end = text.trimEnd();
+      if (keywordEnd(end)) return true;
+      const at = end.length - 5;
+      return end.endsWith('await') && /\s/.test(end[at - 1] || '') && keywordEnd(end.slice(0, at).trimEnd());
+    };
     for (const token of code.matchAll(/'(?:\\.|[^'\\])*'|"(?:\\.|[^"\\])*"|`(?:\\.|[^`\\])*`|[{}()]/g)) {
       if (token[0] === '(') parentheses.push(token.index);
       else if (token[0] === ')') lastParameters = parentheses.pop() ?? 0;
       else if (token[0] === '{') {
-        const before = code.slice(0, token.index);
-        const control = /\b(?:if|for|while|switch|catch|with|for\s+await)\s*$/.test(code.slice(0, lastParameters));
-        braces.push({ open: token.index, fn: /=>\s*$/.test(before) || (/\)\s*$/.test(before) && !control) });
+        const before = code.slice(0, token.index).trimEnd();
+        const control = endsWithControl(code.slice(0, lastParameters));
+        braces.push({ open: token.index, fn: before.endsWith('=>') || (before.endsWith(')') && !control) });
       } else if (token[0] === '}') {
         const body = braces.pop();
         if (body?.fn) functionBodies.push([body.open, token.index]);
