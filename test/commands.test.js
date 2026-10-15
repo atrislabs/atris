@@ -7850,7 +7850,7 @@ test('task display refs use semantic IDs and collision-safe legacy prefixes', ()
   assert.ok(rows[1].legacy_ref.startsWith('01KQMBKF'));
 });
 
-test('task render preserves Endgame metadata and drops markdown-only rows', () => {
+test('task render preserves Endgame metadata and drops markdown-only rows', async () => {
   if (!hasNodeSqlite()) return;
   const dir = makeTempDir();
   const dbPath = path.join(dir, 'tasks.db');
@@ -7906,11 +7906,14 @@ test('task render preserves Endgame metadata and drops markdown-only rows', () =
     assert.match(regenerated, /DB state task \[agent\]/);
     assert.match(regenerated, new RegExp(`\\*\\*\\[${createdTask.display_id}\\]\\*\\* DB state task \\[agent\\]`));
     assert.doesNotMatch(regenerated, /Technical details:/);
-    const showByRenderedRef = runCli(['task', 'show', createdTask.display_id, '--json'], { cwd: dir, env });
+    // Lookup reads stored rows while the second render rewrites only the view.
+    const [showByRenderedRef, renderAgain] = await Promise.all([
+      runCliAsync(['task', 'show', createdTask.display_id, '--json'], { cwd: dir, env }),
+      runCliAsync(['task', 'render', '--out', 'atris/TODO.md'], { cwd: dir, env }),
+    ]);
     assert.equal(showByRenderedRef.status, 0, showByRenderedRef.stderr);
     assert.equal(JSON.parse(showByRenderedRef.stdout).id, createdTask.id);
 
-    const renderAgain = runCli(['task', 'render', '--out', 'atris/TODO.md'], { cwd: dir, env });
     assert.equal(renderAgain.status, 0, renderAgain.stderr);
     const second = fs.readFileSync(todoPath, 'utf8');
     assert.equal((second.match(/## Endgame/g) || []).length, 1);
