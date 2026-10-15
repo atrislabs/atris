@@ -34,12 +34,16 @@ function writeFakeEngine(dir, name) {
 }
 
 function runCli(args, { cwd, env = {}, timeout = 6000 } = {}) {
+  // A dispatched agent runs with its engine pinned in the environment. Drop it
+  // so the smoke sees the fresh-machine default, not the caller's engine.
+  const baseEnv = { ...process.env };
+  delete baseEnv.ATRIS_RUNNER_PROFILE;
   const result = spawnSync(process.execPath, [cliPath, ...args], {
     cwd,
     encoding: 'utf8',
     timeout,
     env: {
-      ...process.env,
+      ...baseEnv,
       ATRIS_SKIP_UPDATE_CHECK: '1',
       NODE_NO_WARNINGS: '1',
       ...env,
