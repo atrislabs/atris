@@ -14731,7 +14731,7 @@ test('task status treats reviewed failures as closed task health', () => {
   }
 });
 
-test('task status keeps failed blockers out of review handoff', () => {
+test('task status keeps failed blockers out of review handoff', async () => {
   if (!hasNodeSqlite()) return;
   const dir = makeTempDir();
   fs.mkdirSync(path.join(dir, 'atris'), { recursive: true });
@@ -14752,14 +14752,18 @@ test('task status keeps failed blockers out of review handoff', () => {
     const failed = runCli(['task', 'done', id, '--failed', '--json'], { cwd: dir, env });
     assert.equal(failed.status, 0, failed.stderr);
 
-    const status = runCli(['task', 'status', '--json'], { cwd: dir, env });
+    // Both status reads follow the same failed finish and change no task state,
+    // so they run at once; each rewrites the same projection content.
+    const [status, text] = await Promise.all([
+      runCliAsync(['task', 'status', '--json'], { cwd: dir, env }),
+      runCliAsync(['task', 'status'], { cwd: dir, env }),
+    ]);
     assert.equal(status.status, 0, status.stderr);
     const payload = JSON.parse(status.stdout);
     assert.equal(payload.status.counts.review, 0);
     assert.equal(payload.status.counts.blocked, 1);
     assert.deepEqual(payload.status.needs_review, []);
 
-    const text = runCli(['task', 'status'], { cwd: dir, env });
     assert.equal(text.status, 0, text.stderr);
     assert.match(text.stdout, /review 0/);
   } finally {

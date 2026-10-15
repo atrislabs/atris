@@ -2838,6 +2838,8 @@ Display ref filtered list batching: `test/commands.test.js:8060` awaits the open
 
 Dialogue projection read batching: `test/commands.test.js:9413` awaits the text and json shows together after the first note, then the large show and the export together after the large note. Show never writes the projection file, so the export runs beside it. Seven sequential CLI stages become five; every assertion remains.
 
+Failed blocker status batching: `test/commands.test.js:14755` awaits the json and text status reads together after the failed finish. Both rewrite the same projection content, and status never parses that file. Three sequential CLI stages become two; every assertion remains.
+
 Certified review fallback read batching: `test/commands.test.js:12603` awaits both next output formats together after certification, before creating follow-up work. `commands/task.js:6948` builds next output from task rows, independent of the saved view. All assertions remain; six sequential CLI stages become five.
 
 Final fallback read batching: `test/commands.test.js:12684` awaits next and show together after follow-up creation. Both read unchanged task rows; every assertion remains. Five sequential CLI stages become four.
