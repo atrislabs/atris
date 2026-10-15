@@ -436,6 +436,11 @@ const LONE_VERB_CLAUSE_AFTER_DASH = new RegExp(`${CLAUSE_END}\\s*\\u2014\\s*(?=(
 // that clause starts an object, so the last word is a noun and the whole is
 // a clause: "the learner watches the model do the reps".
 const RELATIVE_OBJECT_PHRASE = /^\s*\u2014\s*the\s+[A-Za-z][\w-]*\s+(?:[a-z][\w-]*\s+)?(?!(?:proves|shows|means|ensures|confirms|says|assumes|knows|finds)\b)[a-z]+s\s+(?:the|a|an|your|our|their|its|this|these|those)\s+\S+\s+(?:(?!(?:the|a|an)\b)\S+\s+){0,2}[a-z]+s\s*(?:[.!?;,]|$)/;
+// two short clauses after a dash that repeat one verb, joined by a comma,
+// spell out what the words before the dash name, so they take a colon:
+// "as credit savings: a false promotion costs 3 credits, a false quick costs
+// quality". A semicolon would leave the comma between them a splice.
+const PAIRED_CLAUSES = new RegExp(`^\\s*\\u2014\\s*(?:a|an|the)\\s+(?:[\\w-]+\\s+){0,2}?(?<verb>${PLAIN_VERB_WORD})\\s+[^,.;!?\\u2014\\n]{1,40},\\s+(?:a|an|the)\\s+(?:[\\w-]+\\s+){0,2}?\\k<verb>\\s+[^,.;!?\\u2014\\n]{1,40}[.!?]`);
 // A bare object word, or words joined by a slash, before a stop or a place
 // word: "the entrypoint redirects stdout/stderr to files". Two words count
 // only before a place word, "redirects subprocess output to files", and not
@@ -1321,6 +1326,7 @@ function fixEmDash(s, { endsBlock = false, startsBlock = false, spans = [], abov
       const left = clauseOrFieldLeft(at, whole);
       const label = left ? null : labelJoin(at, whole);
       if ((!left && !label) || NAME_BEFORE_PLAIN_VERB.test(whole.slice(at)) || NAME_TAIL_PHRASE.test(whole.slice(at))) return m;
+      if (left && PAIRED_CLAUSES.test(whole.slice(at))) return ': ';
       if (!(left && /\b(?:not|cannot)\b/i.test(left)) && !PLAIN_OBJECT_CLAUSE.test(whole.slice(at)) && !BARE_OBJECT_CLAUSE.test(whole.slice(at)) && !THAT_OBJECT_CLAUSE.test(whole.slice(at)) && !HOW_TAIL_CLAUSE.test(whole.slice(at)) && !WH_OBJECT_CLAUSE.test(whole.slice(at))) return m;
       return left ? clauseJoin(left, at, whole) : label;
     })

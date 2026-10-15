@@ -323,3 +323,8 @@ It is weak \u2014 the current implementation uses simple keyword matching which 
 => It is weak; the current implementation uses simple keyword matching which has obvious gaps.
 TARGET: `target.py` \u2014 a dependency analysis function that takes a list of calls.
 => TARGET: `target.py`, a dependency analysis function that takes a list of calls.
+# two short clauses that repeat one verb spell out the words before the dash, so a colon
+This reframes the goal as credit savings \u2014 a false promotion costs 3 credits, a false quick costs quality.
+=> This reframes the goal as credit savings: a false promotion costs 3 credits, a false quick costs quality.
+We count both \u2014 a miss costs a day, a false alarm wastes an hour.
+=> We count both; a miss costs a day, a false alarm wastes an hour.
