@@ -12913,7 +12913,7 @@ test('task review summary does not treat incidental XP wording as AgentXP work',
   try {
     fs.mkdirSync(path.join(dir, 'atris'), { recursive: true });
 
-    // Seed creation only; claim, ready and show still exercise the CLI.
+    // Seed creation and the setup claim; ready and show still exercise the CLI.
     const workspaceRoot = taskStore.workspaceRoot(dir);
     const db = taskStore.open(dbPath);
     let ref;
@@ -12922,12 +12922,12 @@ test('task review summary does not treat incidental XP wording as AgentXP work',
         title: 'Clean stale claimed task queue after XP review', tag: 'hygiene', workspaceRoot,
       });
       assert.equal(created.inserted, true);
+      assert.equal(taskStore.claimTask(db, { id: created.id, claimedBy: 'codex' }).claimed, true);
       ref = taskStore.taskDisplayRefMap(taskStore.listTasks(db, { workspaceRoot })).get(created.id);
       assert.ok(ref);
     } finally {
       taskStore.close();
     }
-    assert.equal(runCli(['task', 'claim', ref, '--as', 'codex'], { cwd: dir, env }).status, 0);
 
     const ready = runCli([
       'task', 'ready', ref,
