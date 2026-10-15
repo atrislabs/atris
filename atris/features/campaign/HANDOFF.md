@@ -36,6 +36,7 @@ Everything else is computed from events. Never store a computed value.
 6. The core is pure. Store, runner, judge, budget, sync, and screens are adapters.
 7. Notes from one-on-ones are concrete, sourced, typed taste or fact, and load at the next shift. Fact notes expire in 7 days.
 8. No bloat: do not add fields, files, or steps the spec does not ask for. Ask first.
+9. Read idea.md → Simulation Findings before writing events, claims, asks, or the judge. It closes ten gaps found in a tabletop run.
 
 ## Where things are
 

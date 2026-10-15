@@ -87,14 +87,15 @@ Not written by hand:
 - Per-mission budget: each mission writes `budget_reserved` when it starts, sized from the mission.
 - No budget is the default. Work on subscription engines costs no extra money, and any real money spend becomes an ask (the no-reload line). Budget is a plug: each unit (tokens, Atris credits, dollars, subscription quota) has its own meter. Token and quota usage is logged on every mission either way, so waste is measured, not guessed.
 - `--metric "name>=target"` is shorthand for a judge command (`lib/wish-delegate.js` turns it into `backend/scripts/metric_verify.py`).
-- Answer campaigns need no extra field: their judge is a script that checks against held-out data, and confidence folds from judge history.
+- Answer campaigns need no extra field. The judge may print one JSON line `{"verdict": "yes|no|unclear", "value": <number>, "proof": "<uri>"}` (`backend/scripts/metric_verify.py` already prints JSON). Outcome campaigns use the exit code. An answer campaign is done when the same verdict (yes or no) holds 3 judge runs in a row on data the team has not seen. Confidence folds from judge history.
+- The judge runs after each mission ends and on demand, never more than once per mission end.
 
 Two rules from the review:
 
 1. **Every mission reports its usage.** `mission_ended` carries tokens, quota, and any money from the receipt. A budget nobody can measure is slop. (Local missions today have time tiers, not dollars; only the backend's `budget_hold` tracks money.)
 2. **A judge must fail first.** A non-standing campaign whose judge already passes at start is refused: "already done, write a judge that fails first." This stops an agent from writing `true` as its judge. If no judge can be written yet, the first mission builds it.
 
-Events: `campaign_started · seat_filled · bet_set · attached · note_given · shift_ended · mission_proposed · mission_claimed · mission_started · step · kept · reverted · mission_ended · judge_ran · ask_opened · ask_answered · budget_reserved · budget_released · paused · resumed · stopped · home_moved · done`
+Events: `campaign_started · seat_filled · bet_set · attached · note_given · shift_ended · mission_abandoned · ask_expired · concluded · mission_proposed · mission_claimed · mission_started · step · kept · reverted · mission_ended · judge_ran · ask_opened · ask_answered · budget_reserved · budget_released · paused · resumed · stopped · home_moved · done`
 
 Actions: `start · pause · resume · answer_ask · change_bet · add_budget · fill_seat · veto · stop`
 
@@ -324,6 +325,23 @@ Everything else (planning, missions, events, folds, screens) runs on the compute
 - Seats grant a member read access to the campaign's events and permission to propose missions, nothing more.
 - Events reference sensitive material (candidate records, emails, files) by id or path and hash, not by copying contents. Customer data stays in the business's own computer and backend tenant.
 - Screens shown to anyone other than the owner (shared links, Slack) show only what that viewer may see.
+
+---
+
+## Simulation Findings (tabletop, 2026-10-15)
+
+A step-by-step run of a research-lab campaign ("Does the calm proof style make chat answers faster to read?", judge = `atris/experiments/obelisk-ux/measure.py`) against this spec. Each rule below closes a gap the simulation found.
+
+1. **Answer campaigns can end in "no."** The judge's JSON verdict (above) lets a campaign finish when the answer is no. Exit code alone could only pass or fail forever.
+2. **Missions hold a lease.** If a mission's computer sleeps or dies past its lease, write `mission_abandoned`, release its reservation, and the lead decides whether to re-run it.
+3. **Work is pushed at every shift end.** A campaign's home may move only when all its missions' work is pushed; otherwise the new home cannot see it.
+4. **Claim the target, not the words.** A claim key is the set of files, bench, or data source a mission will touch, like a file lock. Paraphrased ideas on the same target collide.
+5. **An ask blocks only its mission.** The campaign keeps running and shows "running · 1 ask waiting." Asks expire after 3 days by default and resolve to **no** (`ask_expired`), the safe answer.
+6. **Authority order: Standard > human > lead > member.** A human note always outranks a lead's instruction.
+7. **Endings are clean.** On done or stop: cancel pending proposals, close open asks as not needed, release reservations, and write `concluded` with a short summary to `atris/wiki` and to seated members' lessons, so the company remembers the answer.
+8. **Picking a lead (v1).** The member whose job fits, with the fewest active campaigns. Ties go to the human as one tap.
+9. **Scheduler order (v1).** (a) missions that unblock a human ask, (b) the campaign the human touched most recently, (c) the oldest proposal. Smarter scoring later.
+10. **A useful refusal.** "Already done" suggests the next step: make the judge stricter, or check against data the team has not seen.
 
 ---
 

@@ -23,6 +23,11 @@ Run each in a fresh temp workspace (`atris init`), with real members, not mocks.
 13. **No budget works.** A campaign with no budget runs on subscription engines, logs token and quota usage per mission, and turns any money spend into an ask.
 14. **Notes.** A one-on-one note is saved only after the member's repeat-back is confirmed; it takes effect at the next shift, not mid-mission; a fact note older than 7 days is flagged "still true?".
 15. **Shifts.** Shifts end with a recorded reason (mission done, context, stalled, cap, quota) and the next shift starts from a fresh briefing.
+17. **A "no" answer finishes.** An answer campaign whose judge prints `{"verdict":"no"}` three runs in a row on unseen data ends as done with answer no.
+18. **Abandoned missions.** Kill a mission's process past its lease: `mission_abandoned` is written and its reservation released.
+19. **Target claims.** Two proposals with different wording that touch the same files collide; only one runs.
+20. **Asks.** An open ask blocks only its mission; after 3 days it resolves to no with `ask_expired`.
+21. **Clean ending.** On done, pending proposals are cancelled, asks closed, reservations released, and a `concluded` summary appears in atris/wiki.
 16. **Every surface.** For "Campaign ships across Atris": start, watch, coach, and finish a campaign from the CLI, desktop, web, and Terrace (iOS).
 
 ## First Real Run
