@@ -1136,6 +1136,36 @@ test('fleet review cleanup keeps every store of a pinned copy and names the pin'
   }
 });
 
+// Runs fleet review cleanup in a child whose git runs onRemove (wrapper code
+// with fs, spawnSync, args and the real git in scope) once removal starts,
+// then hands the call to the real git. Returns the child's run and the
+// removal args git was given.
+function disposeWithGitAtRemoval(base, repo, boundary, onRemove) {
+  const realGit = spawnSync('which', ['git'], { encoding: 'utf8' });
+  assert.equal(realGit.status, 0, realGit.stderr);
+  const bin = path.join(base, 'bin');
+  fs.mkdirSync(bin);
+  const attempt = path.join(base, 'remove-attempt.json');
+  fs.writeFileSync(path.join(bin, 'git'), `#!${process.execPath}
+const { spawnSync } = require('node:child_process');
+const fs = require('node:fs');
+const args = process.argv.slice(2);
+const git = ${JSON.stringify(realGit.stdout.trim())};
+if (args.includes('remove')) {
+  fs.writeFileSync(${JSON.stringify(attempt)}, JSON.stringify(args));
+  ${onRemove}
+}
+const result = spawnSync(git, args, { stdio: 'inherit' });
+process.exit(result.status === null ? 1 : result.status);
+`, { mode: 0o755 });
+  fs.mkdirSync(boundary.sandboxRoot);
+  const run = spawnSync(process.execPath, ['-e',
+    `console.log(JSON.stringify(require(${JSON.stringify(path.resolve(__dirname, '../lib/fleet.js'))}).disposeReviewSandbox(${JSON.stringify(boundary)})))`,
+  ], { cwd: repo, encoding: 'utf8', timeout: 30000, env: { ...process.env, PATH: `${bin}${path.delimiter}${process.env.PATH}` } });
+  assert.equal(run.status, 0, run.stderr);
+  return { run, removal: JSON.parse(fs.readFileSync(attempt, 'utf8')) };
+}
+
 // A pin taken after the first check makes git refuse its removal. The plain
 // deletes that follow must not finish what git would not, so the copy stays
 // and the report uses the line tidy, reap, cleanup and autopilot print.
@@ -1145,30 +1175,9 @@ test('fleet review cleanup keeps every store of a pinned copy and names the pin'
 test('fleet review cleanup keeps a copy pinned after its first check and names the refusal', { todo: 'fleet disposal still ignores the git result' }, () => {
   const { base, repo, wt, boundary } = reviewSandbox({ store: true });
   try {
-    const realGit = spawnSync('which', ['git'], { encoding: 'utf8' });
-    assert.equal(realGit.status, 0, realGit.stderr);
-    const bin = path.join(base, 'bin');
-    fs.mkdirSync(bin);
-    const attempt = path.join(base, 'remove-attempt.json');
-    fs.writeFileSync(path.join(bin, 'git'), `#!${process.execPath}
-const { spawnSync } = require('node:child_process');
-const fs = require('node:fs');
-const args = process.argv.slice(2);
-const git = ${JSON.stringify(realGit.stdout.trim())};
-if (args.includes('remove')) {
-  fs.writeFileSync(${JSON.stringify(attempt)}, JSON.stringify(args));
-  const pin = spawnSync(git, ['worktree', 'lock', '--reason', 'reviewer opened it', ${JSON.stringify(wt)}], { cwd: ${JSON.stringify(wt)}, encoding: 'utf8' });
-  if (pin.status !== 0) { process.stderr.write(pin.stderr); process.exit(1); }
-}
-const result = spawnSync(git, args, { stdio: 'inherit' });
-process.exit(result.status === null ? 1 : result.status);
-`, { mode: 0o755 });
-    fs.mkdirSync(boundary.sandboxRoot);
-    const run = spawnSync(process.execPath, ['-e',
-      `console.log(JSON.stringify(require(${JSON.stringify(path.resolve(__dirname, '../lib/fleet.js'))}).disposeReviewSandbox(${JSON.stringify(boundary)})))`,
-    ], { cwd: repo, encoding: 'utf8', timeout: 30000, env: { ...process.env, PATH: `${bin}${path.delimiter}${process.env.PATH}` } });
-    assert.equal(run.status, 0, run.stderr);
-    assert.ok(JSON.parse(fs.readFileSync(attempt, 'utf8')).includes(wt));
+    const { run, removal } = disposeWithGitAtRemoval(base, repo, boundary, `const pin = spawnSync(git, ['worktree', 'lock', '--reason', 'reviewer opened it', ${JSON.stringify(wt)}], { cwd: ${JSON.stringify(wt)}, encoding: 'utf8' });
+  if (pin.status !== 0) { process.stderr.write(pin.stderr); process.exit(1); }`);
+    assert.ok(removal.includes(wt));
     const words = 'pinned by git worktree lock, under a minute old: reviewer opened it';
     assert.deepEqual(JSON.parse(run.stdout), { removed: false, reason: 'removal_refused', detail: words });
     assert.ok([wt, path.join(wt, 'README.md'), boundary.quarantine, boundary.sandboxRoot].every((item) => fs.existsSync(item)));
@@ -1176,6 +1185,31 @@ process.exit(result.status === null ? 1 : result.status);
     assert.deepEqual(removalLines(repo), []);
   } finally {
     fs.rmSync(base, { recursive: true, force: true });
+  }
+});
+
+// Git can refuse with no pin at all, or be stopped before it answers. Both
+// keep every store and name why, so the fix reads git's result, not just
+// its pins. Pending on the same protected review as the late-pin case.
+test('fleet review cleanup keeps a copy git refused without a pin or never finished removing', { todo: 'fleet disposal still ignores the git result' }, () => {
+  const cases = [
+    // The copy's link to its store goes missing just as removal starts.
+    { label: 'refused without a pin', onRemove: (wt) => `fs.renameSync(${JSON.stringify(path.join(wt, '.git'))}, ${JSON.stringify(path.join(wt, '.git-moved'))});`, detail: /validation failed/ },
+    { label: 'stopped by a signal', onRemove: () => "process.kill(process.pid, 'SIGTERM');", detail: /^git removal stopped by SIGTERM$/ },
+  ];
+  for (const { label, onRemove, detail } of cases) {
+    const { base, repo, wt, boundary } = reviewSandbox({ store: true });
+    try {
+      const { run, removal } = disposeWithGitAtRemoval(base, repo, boundary, onRemove(wt));
+      assert.ok(removal.includes(wt), label);
+      const result = JSON.parse(run.stdout);
+      assert.deepEqual({ ...result, detail: undefined }, { removed: false, reason: 'removal_refused', detail: undefined }, label);
+      assert.match(result.detail, detail, label);
+      assert.ok([wt, path.join(wt, 'README.md'), boundary.gitDir, boundary.quarantine, boundary.sandboxRoot].every((item) => fs.existsSync(item)), label);
+      assert.deepEqual(removalLines(repo), [], label);
+    } finally {
+      fs.rmSync(base, { recursive: true, force: true });
+    }
   }
 });
 
