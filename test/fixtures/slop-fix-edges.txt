@@ -318,3 +318,8 @@ The services have no compression \u2014 this directly caps session quality.
 => The services have no compression; this directly caps session quality.
 We read the weekly digest \u2014 this weekly reports page.
 => We read the weekly digest, this weekly reports page.
+# up to three bare words before "which" or "that" and a verb end a clause; "analysis" is no verb
+It is weak \u2014 the current implementation uses simple keyword matching which has obvious gaps.
+=> It is weak; the current implementation uses simple keyword matching which has obvious gaps.
+TARGET: `target.py` \u2014 a dependency analysis function that takes a list of calls.
+=> TARGET: `target.py`, a dependency analysis function that takes a list of calls.
