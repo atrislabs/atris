@@ -112,7 +112,7 @@ checks the refs in both files; `atris doc-health --fix-refs` moves drifted ones.
 | headless plan and do setup | `test/commands.test.js:9986` | side plan and pre-plan side claim use the real task store; external post-plan claim, ownership rejection, main plan output and do contract stay on the CLI |
 | human acceptance guidance setup | `test/commands.test.js:11588` | the goal-linked main row and stale guidance reach review through the real task store; readiness output, review and acceptance assertions stay on the CLI |
 | proof-derived review-chat setup | `test/commands.test.js:12227` | title-only and path-only proofs reach review through the real task store; ready-only cases call the proof builders in process; review-chat still checks missing commands and artifact paths on the CLI |
-| reward receipt creation setup | `test/commands.test.js:13072` | creation and ownership share the real task store; readiness, acceptance and all reward receipt reads stay on the CLI |
+| reward receipt creation setup | `test/commands.test.js:13072` | creation, ownership and readiness share the real task store; acceptance and all reward receipt reads stay on the CLI |
 | run one test | `package.json` | npm test, node --test |
 | release publish script | `scripts/publish-atris-release.js` | tag-driven publish |
 | ci workflows | `.github/workflows` | test and publish gates |
@@ -202,3 +202,5 @@ Conflicting receipt readiness setup: `test/commands.test.js:13566` uses producti
 Unclaimed revision readiness: `test/commands.test.js:13724` seeds production readyTask in the creation connection, asserts success and closes in finally. Two app launches replace three; revision returning the task to open and the subsequent claim retain every real CLI assertion.
 
 Accepted revision refusal batch: `test/commands.test.js:13767` awaits refused revision and local XP status together after acceptance. `lib/task-db.js:1082` refuses done tasks before mutation, and `commands/task.js:11338` exits before projection writes. All assertions remain; three launches take two sequential stages.
+
+Reward projection readiness setup: `test/commands.test.js:13094` calls production readyTask with the original proof and actor before closing fixture setup in finally. Acceptance, collection and local status retain every CLI assertion; four launches become three. Collection and status remain sequential because both write shared XP state in `commands/xp.js:1050`.

@@ -13077,7 +13077,7 @@ test('task accept automatically projects accepted proof into durable local XP le
   try {
     fs.mkdirSync(path.join(dir, 'atris'), { recursive: true });
 
-    // Seed creation and ownership; ready, accept and the XP reads stay on the CLI.
+    // Seed review readiness; acceptance and both XP checks stay on the CLI.
     const workspaceRoot = taskStore.workspaceRoot(dir);
     const db = taskStore.open(dbPath);
     let ref;
@@ -13091,12 +13091,15 @@ test('task accept automatically projects accepted proof into durable local XP le
       assert.equal(added.metadata.goal_id, 'goal-agent-xp');
       assert.equal(added.metadata.goal_objective, 'Make XP collectible anywhere');
       assert.equal(taskStore.claimTask(db, { id: added.id, claimedBy: 'codex' }).claimed, true);
+      assert.equal(taskStore.readyTask(db, {
+        id: added.id, actor: 'codex', proof: 'xp projection test passed',
+        result: FIXTURE_RESULT_SENTENCE,
+      }).ready, true);
       ref = taskStore.taskDisplayRefMap(taskStore.listTasks(db, { workspaceRoot })).get(added.id);
       assert.ok(ref);
     } finally {
       taskStore.close();
     }
-    assert.equal(runCli(['task', 'ready', ref, '--proof', 'xp projection test passed', '--as', 'codex'], { cwd: dir, env }).status, 0);
     const accept = runCli(['task', 'accept', ref, '--reward', '2', '--as', 'keshavrao', '--json'], { cwd: dir, env });
     assert.equal(accept.status, 0, accept.stderr);
     const accepted = JSON.parse(accept.stdout);

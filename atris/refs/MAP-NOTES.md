@@ -2692,7 +2692,7 @@ Tag-scoped checkpoint ownership setup: `test/commands.test.js:12785` creates and
 
 Duplicate Endgame seed ownership: `test/commands.test.js:12858` accepts an optional owner in fixture creation and calls production claimTask before closing in finally. Existing-owner setup saves one launch; all checkpoint and duplicate-selection CLI assertions remain.
 
-Reward receipt creation setup: `test/commands.test.js:13072` creates and claims through the real task store in one connection, closed in finally. Goal metadata assertions remain; readiness, acceptance, collection and local status remain real CLI calls. Five launches become four.
+Reward receipt creation setup: `test/commands.test.js:13072` creates, claims and readies through the real task store in one connection, closed in finally. Goal metadata assertions remain; acceptance, collection and local status remain real CLI calls. Three launches remain.
 
 Strict approval review setup: `test/commands.test.js:13363` attaches the strict verification command with production reviewTask, closes the connection before CLI previews, and preserves every automatic approval and human-confirmation assertion. Eleven app launches become ten.
 
@@ -2707,3 +2707,5 @@ Unclaimed revision readiness: `test/commands.test.js:13724` seeds production rea
 Revision inspection batch: `test/commands.test.js:13703` awaits show and refused stale acceptance together before fresh readiness. `commands/task.js:7744` only reads the task; `commands/task.js:10358` refuses missing proof before acceptance writes. Six launches remain, with five sequential launch stages instead of six. All original assertions remain.
 
 Accepted revision refusal batch: `test/commands.test.js:13767` awaits refused revision and local XP status together after acceptance. `lib/task-db.js:1082` refuses done tasks before mutation, and `commands/task.js:11338` exits before projection writes. All assertions remain; three launches take two sequential stages.
+
+Reward projection readiness setup: `test/commands.test.js:13094` calls production readyTask with the original proof and actor before closing fixture setup in finally. Acceptance, collection and local status retain every CLI assertion; four launches become three. Collection and status remain sequential because both write shared XP state in `commands/xp.js:1050`.
