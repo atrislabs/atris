@@ -26,7 +26,7 @@ const ENV_KEYS = [
 const NOW = Date.parse('2026-09-27T12:00:00.000Z');
 
 async function withRoom(fn, { roster = '' } = {}) {
-  const { readEngineRegistry, setEngineHealth } = require('../lib/engine-registry');
+  const { engineRegistryFile, readEngineRegistry } = require('../lib/engine-registry');
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'atris-prep-brief-'));
   const home = fs.mkdtempSync(path.join(os.tmpdir(), 'atris-prep-brief-home-'));
   const bin = fs.mkdtempSync(path.join(os.tmpdir(), 'atris-prep-brief-bin-'));
@@ -40,8 +40,15 @@ async function withRoom(fn, { roster = '' } = {}) {
   process.env.ATRIS_MACHINE_ROSTER_PATH = path.join(home, '.atris', 'roster.json');
   process.env.ATRIS_ROUTER_EXPLAIN = '0';
   process.env.PATH = `${bin}${path.delimiter}${saved.get('PATH') || ''}`;
-  readEngineRegistry(root);
-  for (const name of ['devin', 'grok', 'cursor', 'codex', 'claude', 'haiku']) setEngineHealth(name, 'ready', root);
+  // Seed setup health together; the real launches below still record updates.
+  const registry = readEngineRegistry(root, { persist: false });
+  const ready = new Set(['devin', 'grok', 'cursor', 'codex', 'claude', 'haiku']);
+  registry.engines = registry.engines.map((engine) => ready.has(engine.id)
+    ? { ...engine, health: { status: 'ready' } }
+    : engine);
+  const registryFile = engineRegistryFile(root);
+  fs.mkdirSync(path.dirname(registryFile), { recursive: true });
+  fs.writeFileSync(registryFile, `${JSON.stringify(registry, null, 2)}\n`);
   try {
     return await fn({ root, home, bin, wt });
   } finally {
