@@ -1,0 +1,39 @@
+Multiline pin reasons now print on one report line. The required tests passed and the real cleanup command kept the pinned folder.
+
+Files edited: commands/worktree.js, test/worktree-removal-guard.test.js, atris/MAP.md, atris/refs/MAP-NOTES.md, atris/team/architect/logs/2026-10-14.md, atris/receipts/work-folder-pin-line-2026-10-14.txt. The task CLI also regenerated atris/TODO.md; its unrelated historical rendering churn is excluded from this change.
+
+Decision: proceed with one shared display change. The risk is changing removal decisions while fixing wording; the change only normalizes the pin reason read for reporting and leaves the pin file intact.
+
+Plan: real git pin -> shared reason read -> one-line report -> folder retained.
+
+Commands run: git status --short; atris mission status mission-2026-10-14-continue-work-folder-protect-cd299a9a; atris task list; atris brain activate --root . --verify (plan only, no brain files written); atris mission goal --json (no goal candidate); atris; git log -5 --oneline; git merge-base --is-ancestor origin/codex/architect-continue-work-folder-protection-acro-20261014-172101 HEAD (exit 0); atris task new/claim/note; source and notebook reads; the real cleanup fixture below; the frozen check below. No mission settings changed.
+
+Real command: node bin/atris.js worktree cleanup --base HEAD --apply
+Cwd: disposable repository with a real linked folder pinned using git worktree lock --reason containing a newline and tab.
+Output excerpt:
+cleanup: applied base=HEAD
+removeds: 0
+cache_pruneds: 0
+kept: 2
+held: <fixture>/copy pinned by git worktree lock, under a minute old: reviewer still reading leave this copy for tomorrow
+exit: 0
+folder retained: yes; reason lines: 1; original reason retained: yes
+
+Rerun: node --test test/worktree-removal-guard.test.js test/member-tidy.test.js
+Exact summary output:
+ℹ tests 42
+ℹ suites 0
+ℹ pass 42
+ℹ fail 0
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 7355.301834
+Exit: 0. The added regression invokes git removal for a real refusal, then the actual cleanup CLI, and verifies the original pin content and no removal log.
+
+Readiness limitation: the plain readiness command selected the login shell runtime and failed 1/42, exit 1; the direct frozen check above passed. Existing diagnosis: atris/receipts/readiness-runtime-proof-2026-10-14.txt. Readiness with PATH=/opt/homebrew/bin:$PATH passed, exit 0, and moved ACW-3 to Review. Final readiness receipt: atris/runs/2026-10-15-task-acw-3-2026-10-15T01-46-39-811Z.json. This local prefix cannot be automatically certified, so acceptance still needs independent review. Mission settings remain unchanged.
+
+Progress: one shared report fix; one real-runtime regression; 42 checks passing, zero failures. No dependencies or new protected-word filenames.
+Learned: git accepts multiline pin reasons, so a one-line report must normalize that text at the shared read boundary.
+next_push: prove the same multiline pin reason stays on one line in member tidy and autopilot refusal output using their real command paths.
+layer: behaviors

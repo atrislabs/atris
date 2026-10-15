@@ -1366,7 +1366,7 @@ function worktreePin(worktreePath, now = Date.now()) {
   const file = path.join(gitDir, 'locked');
   try {
     const stat = fs.statSync(file);
-    return { file, why: fs.readFileSync(file, 'utf8').trim(), ageMs: Math.max(0, now - stat.mtimeMs) };
+    return { file, why: fs.readFileSync(file, 'utf8').trim().replace(/\s+/g, ' '), ageMs: Math.max(0, now - stat.mtimeMs) };
   } catch {
     return null;
   }

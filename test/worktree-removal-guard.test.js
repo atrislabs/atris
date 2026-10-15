@@ -861,3 +861,29 @@ test('a plain delete after a git removal of the same folder must check its pin f
   assert.equal(result.status, 0, result.stderr || result.stdout);
   assert.match(result.stdout, /review gaps: 0; synthetic source only, never executed/);
 });
+
+// Git accepts line breaks in pin reasons. Every cleanup still owes the
+// operator one readable report line, while the stored reason stays intact.
+test('multiline pin reasons stay on one line in refusal and real cleanup reports', () => {
+  const { base, repo, wt } = landedWorktree();
+  try {
+    const reason = 'reviewer still reading\n  leave this copy\tfor tomorrow';
+    git(repo, ['worktree', 'lock', '--reason', reason, wt]);
+    const pin = path.join(worktreeGitDir(wt), 'locked');
+    const stale = new Date(Date.now() - 3 * 60 * 60 * 1000);
+    fs.utimesSync(pin, stale, stale);
+    const words = 'pinned by git worktree lock, 3 h old: reviewer still reading leave this copy for tomorrow';
+    const refused = spawnSync('git', ['worktree', 'remove', wt], { cwd: repo, encoding: 'utf8' });
+    assert.notEqual(refused.status, 0);
+    const { describeRefusedRemoval } = require('../commands/worktree');
+    assert.equal(describeRefusedRemoval(wt, refused.stderr), words);
+    const result = spawnSync(process.execPath, [path.resolve(__dirname, '../bin/atris.js'), 'worktree', 'cleanup', '--base', 'HEAD', '--apply'], { cwd: repo, encoding: 'utf8' });
+    assert.equal(result.status, 0, result.stderr);
+    assert.deepEqual(result.stdout.split('\n').filter((line) => line.includes('reviewer') || line.includes('tomorrow')), [`held: ${wt} ${words}`]);
+    assert.equal(fs.readFileSync(pin, 'utf8').trim(), reason);
+    assert.ok(fs.existsSync(wt));
+    assert.deepEqual(removalLines(repo), []);
+  } finally {
+    fs.rmSync(base, { recursive: true, force: true });
+  }
+});
