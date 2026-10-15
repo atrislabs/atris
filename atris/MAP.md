@@ -238,3 +238,5 @@ Clean preview read batching: `test/commands.test.js:18569` awaits both real CLI 
 Feedback rejection read batching: `test/commands.test.js:20354` runs both unsupported-command checks together, retaining every exit and output assertion. Both return before submission. Two sequential launch stages become one.
 
 Casual launch checks: `test/commands.test.js:20379` runs the two early launch refusals together; the final keep check stays ordered and every assertion remains.
+
+Wiki help checks: `test/commands.test.js:20445` runs five real help launches together with separate home folders, retaining every output and no-state assertion. Five sequential launch stages become one.

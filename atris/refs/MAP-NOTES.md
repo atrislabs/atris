@@ -971,8 +971,8 @@ MCP stdio request flow: `mcp/atris-mcp/index.mjs:142` reads requests while desig
 
 - **Entry points:** `bin/atris.js` (help text, known commands, wiki + alias routing)
 - **Handlers:** `commands/wiki.js` (ingest/query/lint/search/log), `lib/wiki.js` (scaffold + prompt builders), `commands/init.js` (wiki bootstrap), `commands/activate.js` (wiki status load)
-- **Help:** `commands/wiki.js:172-174` (`hasHelpFlag`/`printWikiHelp`) and `commands/wiki.js:408-412` short-circuit wiki help before ingest/query/lint workers can scaffold state
-- **Regression:** `test/commands.test.js:20348-20400` covers `ingest|query|lint --help`, `wiki --help`, and `wiki ingest --help` without `atris/` or `$HOME/.atris` creation
+- **Help:** `commands/wiki.js:174` (`hasHelpFlag`), `commands/wiki.js:178` (`printWikiHelp`), and `commands/wiki.js:517-521` short-circuit wiki help before ingest/query/lint workers can scaffold state
+- **Regression:** `test/commands.test.js:20445-20473` covers `ingest|query|lint --help`, `wiki --help`, and `wiki ingest --help` without `atris/` or `$HOME/.atris` creation
 - **How it works:**
 - `atris ingest <path>` scaffolds `atris/wiki/`, stages local evidence into `atris/context/_ingest/`, writes a manifest receipt, refreshes wiki STATUS/log, and prints the local ingest prompt against the staged source
 - `atris query "question"` prints a local wiki query prompt
@@ -2765,3 +2765,5 @@ Clean preview read batching: `test/commands.test.js:18569` awaits both real CLI 
 Feedback rejection read batching: `test/commands.test.js:20354` runs both unsupported-command checks together, retaining every exit and output assertion. Both return before submission. Two sequential launch stages become one.
 
 Casual launch refusal batching: `test/commands.test.js:20379` awaits both JSON launch reads at line 20387 before the final keep check. `bin/atris.js:1290` returns the JSON error before workspace entry, so the two reads share no writes. Three launches take two sequential stages instead of three.
+
+Wiki help read batching: `test/commands.test.js:20458` awaits five real CLI help launches together, each with a separate home folder. `commands/wiki.js:518` returns help before any worker runs. All output and no-state assertions remain; five sequential launch stages become one.

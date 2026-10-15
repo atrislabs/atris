@@ -20442,7 +20442,7 @@ test('unknown top-level command with --json returns JSON error', () => {
 // wiki
 // ============================================
 
-test('wiki help paths print usage without scaffolding workspace state', () => {
+test('wiki help paths print usage without scaffolding workspace state', async () => {
   const dir = makeTempDir();
   try {
     const home = path.join(dir, 'home');
@@ -20454,13 +20454,15 @@ test('wiki help paths print usage without scaffolding workspace state', () => {
       { args: ['wiki', 'ingest', '--help'], usage: /Usage: atris wiki ingest/ },
     ];
 
-    for (const item of cases) {
-      const res = runCli(item.args, { cwd: dir, env: { HOME: home } });
+    const results = await Promise.all(cases.map((item, index) =>
+      runCliAsync(item.args, { cwd: dir, env: { HOME: path.join(home, String(index)) } })));
+    for (const [index, item] of cases.entries()) {
+      const res = results[index];
       assert.equal(res.status, 0, `${item.args.join(' ')}: ${res.stderr || res.stdout}`);
       assert.match(res.stdout, item.usage);
       assert.doesNotMatch(res.stdout, /Local wiki ingest|Local wiki query|Local wiki lint|No local wiki|Target: atris\/wiki|Prompt for/);
       assert.equal(fs.existsSync(path.join(dir, 'atris')), false, `${item.args.join(' ')} created atris/`);
-      assert.equal(fs.existsSync(path.join(home, '.atris')), false, `${item.args.join(' ')} created ~/.atris`);
+      assert.equal(fs.existsSync(path.join(home, String(index), '.atris')), false, `${item.args.join(' ')} created ~/.atris`);
     }
   } finally {
     cleanupTempDir(dir);
