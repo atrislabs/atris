@@ -4,7 +4,7 @@ Decision: hold the production change for review under the mission's protected-su
 
 Evidence: `node atris/receipts/work-folder-review-late-pin-probe.js`, exit 0. In disposable real Git, a wrapper acquires a real pin only when removal starts. Git refuses with exit 128 and names the pin. The actual review disposal function ignores the refusal, returns `removed: true`, recursively deletes the copy, its Git store, the quarantine store, and the review root, then records a successful removal in the trusted project. The diagnostic's exit 0 means the defect was reproduced, not that cleanup is safe.
 
-Proposed bounded fix: capture the Git removal result in `lib/fleet.js:2502`. On any nonzero or missing status, return `removed: false` with the shared `describeRefusedRemoval` report before any recursive delete or removal log. Add a real-Git late-pin regression that asserts all stores, the pin, folder contents and registration survive, with no removal record. Retain the existing successful-disposal control. Review the isolated-store lifecycle before deciding whether any failed removal can safely fall through.
+Proposed bounded fix: capture the Git removal result in `lib/fleet.js:2502`. On any nonzero or missing status, return `removed: false` with the shared `describeRemovalResult` report before any recursive delete or removal log. Add a real-Git late-pin regression that asserts all stores, the pin, folder contents and registration survive, with no removal record. Retain the existing successful-disposal control. Review the isolated-store lifecycle before deciding whether any failed removal can safely fall through.
 
 Plan: idle preflight -> real pin at removal -> Git refusal -> shared refusal report -> preserve every store.
 
@@ -24,7 +24,7 @@ Plan: actual review setup -> idle control / late pin -> real Git result -> path 
 
 Verdict: proceed with changes to the plan, pending the existing production review. The single failure mode is losing the refusal explanation at the caller: `describeRefusedRemoval` returns text, while the current caller reads only `describeGitHold(disposed) || disposed.pinned`.
 
-At `lib/fleet.js:2502`, capture the removal result. For `status !== 0`, including null or missing status, return `{ removed: false, reason: 'removal_refused', detail }` before any recursive delete or success record. Set detail with `describeRefusedRemoval(boundary.worktreePath, result.stderr || result.stdout || result.error?.message || '')`. Add the shared helper to the existing import. Do not put this string in `pinned`, because generic refusal is not evidence of a pin.
+At `lib/fleet.js:2502`, capture the removal result. For `status !== 0`, including null or missing status, return `{ removed: false, reason: 'removal_refused', detail }` before any recursive delete or success record. Set detail with `describeRemovalResult(boundary.worktreePath, result)`. Add the shared helper to the existing import. Do not put this string in `pinned`, because generic refusal is not evidence of a pin.
 
 At `lib/fleet.js:4006`, print `disposed.detail || describeGitHold(disposed) || disposed.pinned` so existing preflight results retain their explanations. Do not change import validation or the later handoff: cleanup refusal retains the source stores without undoing a verified import.
 
@@ -57,17 +57,23 @@ next_push: add signal and process-error fallback wording to the refusal contract
 
 Verdict: proceed with changes to the refusal contract, pending the existing production review. The single failure mode is a refusal report that hides why removal stopped. Fed only empty output, the shared helper says `git would not remove it` for a removal ended by a signal, so the reader cannot tell an interrupted run from a real Git refusal.
 
-Replace the detail rule above. Pass Git's own text first, then a fallback chosen from the process result, through the unchanged shared helper so a pin or hold still wins:
+Use the existing whole-result reader, `describeRemovalResult(boundary.worktreePath, result)`, imported from `commands/worktree.js:1403`. Do not duplicate its fallback selection in fleet. The shared reader handles timeout before partial output; otherwise it uses Git text, a launch error, a signal, then missing status. It passes the chosen words through `describeRefusedRemoval`, preserving pin and hold precedence.
 
-- launch error present: `git could not run: <error message>`
-- signal present: `git removal stopped by <signal>`
-- status missing with neither: `git removal ended without an exit status`
-- otherwise: Git's first line, or the helper's existing `git would not remove it`
+The status gate stays `result.status !== 0`, before every raw delete and success record. The caller prints `disposed.detail || describeGitHold(disposed) || disposed.pinned`. A refusal must not undo the verified import or claim successful disposal.
 
-Check the launch error before the signal, because a timed-out launch carries both and the error names the timeout. The status gate stays exactly zero; the fallback only changes the words.
-
-Evidence: a real terminated child returns null status, SIGTERM, and empty output; the current rule prints the vague line and the proposed rule names the signal. A real launch of a missing binary returns null status and ENOENT; both rules name it, and the proposed one says Git could not run. Proof: `atris/receipts/work-folder-review-fallback-wording-2026-10-14.txt`.
+Earlier evidence: a real terminated child returns null status, SIGTERM, and empty output; the current rule prints the vague line and the proposed rule names the signal. A real launch of a missing binary returns null status and ENOENT; both rules name it, and the proposed one says Git could not run. Proof: `atris/receipts/work-folder-review-fallback-wording-2026-10-14.txt`.
 
 Plan: process result -> Git text or fallback -> shared helper -> pin or hold first -> one plain line.
 
 next_push: implement the two-site refusal contract with this fallback after production review, and assert the signal wording in the interrupted regression.
+
+
+## Shared reader recheck
+
+Verdict: proceed with the two-site plan after the existing protected-surface review. The single risk is duplicating fallback logic and losing the timeout explanation when partial output exists. The concrete safeguard is passing the whole result to the existing shared reader and retaining every store unless status is exactly zero.
+
+Plan: removal result -> exactly-zero gate -> shared reader on refusal -> caller prints detail -> no raw delete or success record.
+
+`node atris/receipts/work-folder-review-result-probe.js` invokes real interrupted, failed-launch and timed-out children through the shared reader. The timeout child writes partial output first; the report still names the timeout. A separately labeled synthetic missing-metadata case checks the final fallback. This proves the proposed reporting dependency only, not fleet retention or caller output. Production disposal still needs the retention and output regressions above before landing.
+
+next_push: implement the two-site refusal gate after protected review, using the whole-result reader and converting the existing disposal diagnostic to retention assertions.

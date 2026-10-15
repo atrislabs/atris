@@ -2385,4 +2385,6 @@ Lost-run cleanup error summary: `commands/autoland.js:895` keeps successful clos
 
 - Interrupted review removal: `atris/receipts/work-folder-review-late-pin-probe.js:50` terminates a real child and propagates SIGTERM through the removal wrapper, obtaining null status without stderr. Actual disposal still deletes every store and logs success. Diagnostic only; production unchanged. Proof: `atris/receipts/work-folder-review-interrupted-proof-2026-10-14.txt`.
 
-- Review refusal fallback wording: when Git leaves no text, the detail names a launch error, then a signal, then a missing status, before the shared helper at `commands/worktree.js:1385`. Contract: `atris/receipts/work-folder-review-late-pin-decision-2026-10-14.md`. Proof: `atris/receipts/work-folder-review-fallback-wording-2026-10-14.txt`.
+- Earlier review refusal wording proof: the string-only helper needed caller fallbacks for launch errors, signals and missing status. Superseded by the whole-result reader plan below, which also preserves timeout precedence. Contract: `atris/receipts/work-folder-review-late-pin-decision-2026-10-14.md`. Proof: `atris/receipts/work-folder-review-fallback-wording-2026-10-14.txt`.
+
+- Review result-reader plan: `atris/receipts/work-folder-review-result-probe.js:13` proves real interruption, failed launch and timeout after partial output through `commands/worktree.js:1403`; line 38 labels synthetic missing metadata. The decision card now requires the whole-result reader rather than duplicate fallback logic. Production disposal remains unchanged.
