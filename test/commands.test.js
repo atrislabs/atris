@@ -13156,10 +13156,17 @@ test('task accept automatically projects accepted proof into durable local XP le
       '--json',
     ], { cwd: dir, env });
     assert.equal(add.status, 0, add.stderr);
-    const ref = JSON.parse(add.stdout).task.display_id;
-    assert.equal(JSON.parse(add.stdout).task.metadata.goal_id, 'goal-agent-xp');
-    assert.equal(JSON.parse(add.stdout).task.metadata.goal_objective, 'Make XP collectible anywhere');
-    assert.equal(runCli(['task', 'claim', ref, '--as', 'codex'], { cwd: dir, env }).status, 0);
+    const added = JSON.parse(add.stdout).task;
+    const ref = added.display_id;
+    assert.equal(added.metadata.goal_id, 'goal-agent-xp');
+    assert.equal(added.metadata.goal_objective, 'Make XP collectible anywhere');
+    // Seed the setup claim in process; ready, accept and the XP reads stay on the CLI.
+    const db = taskStore.open(dbPath);
+    try {
+      assert.equal(taskStore.claimTask(db, { id: added.id, claimedBy: 'codex' }).claimed, true);
+    } finally {
+      taskStore.close();
+    }
     assert.equal(runCli(['task', 'ready', ref, '--proof', 'xp projection test passed', '--as', 'codex'], { cwd: dir, env }).status, 0);
     const accept = runCli(['task', 'accept', ref, '--reward', '2', '--as', 'keshavrao', '--json'], { cwd: dir, env });
     assert.equal(accept.status, 0, accept.stderr);
