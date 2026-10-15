@@ -556,14 +556,17 @@ run_gemini() {
     agy_is_cli || { echo "agy on PATH is the Antigravity editor launcher, which has no -p mode. Install the Antigravity CLI for Gemini notes." >&2; return 127; }
     agy_signed_in || { echo "agy is installed but not signed in. Run: agy (sign in once) for Gemini notes." >&2; return 127; }
   fi
-  warm_gemini "${ATRIS_YTNOTES_GEMINI_MODEL:-${1:-gemini-3.8-flash}}" "${2:-low}" && return 0
+  local warm=0
+  warm_gemini "${ATRIS_YTNOTES_GEMINI_MODEL:-${1:-gemini-3.8-flash}}" "${2:-low}" && return 0 || warm=$?
+  # A used-up Gemini quota refuses a second request the same way, so skip it.
+  if [ "$warm" = 2 ]; then echo "Gemini quota reached; not sending a second Gemini request." >&2; return 1; fi
   run_with_timeout 120 agy -p "$PROMPT" --model "${ATRIS_YTNOTES_GEMINI_MODEL:-${1:-gemini-3.8-flash}}" \
     --effort "${2:-low}" --print-timeout 110s </dev/null
 }
 
 # Send the prompt to the Gemini started early, if it runs the same model and
 # effort. Any miss (not started, other model, error, empty answer) returns 1
-# and run_gemini starts Gemini the normal way.
+# and run_gemini starts Gemini the normal way. A quota error returns 2.
 warm_gemini() {
   local pid model effort
   [ -n "${AGY_LAUNCHER_PID:-}" ] || return 1
@@ -582,6 +585,7 @@ warm_gemini() {
       try { ev = JSON.parse(line); } catch { continue; }
       if (ev.event !== "result") continue;
       const r = ev.result || {};
+      if (r.status === "ERROR" && /quota/i.test(r.error || "")) process.exit(2);
       if (r.status === "ERROR" || !/[A-Za-z0-9]/.test(r.response || "")) process.exit(1);
       process.stdout.write(r.response);
       process.exit(0);

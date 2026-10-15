@@ -977,6 +977,34 @@ test('ytnotes auto writer falls back to Haiku when Gemini fails', () => {
   assert.match(fs.readFileSync(path.join(dir, 'yt_auto2.md'), 'utf8'), /# No Caption Talk/);
 });
 
+test('ytnotes auto writer sends no second Gemini request after a quota error', () => {
+  const calls = path.join(fs.mkdtempSync(path.join(os.tmpdir(), 'atris-ytnotes-quota-')), 'agy.calls');
+  const quotaAgy = [
+    '#!/bin/sh',
+    'if [ "$1" = models ]; then echo "gemini-3.8-flash-low"; exit 0; fi',
+    'case " $* " in',
+    `  *" stream-json "*) echo warm >> "${calls}"; read -r line`,
+    `    printf '%s\\n' '{"event":"result","result":{"status":"ERROR","response":"","error":"Individual quota reached. Resets in 109h."}}'`,
+    '    exit 3 ;;',
+    'esac',
+    `echo cold >> "${calls}"`,
+    'echo "error: Individual quota reached." >&2',
+    'exit 3',
+    '',
+  ].join('\n');
+  const { result, dir } = runNoCaptionNotes('auto7', {
+    withWhisper: true,
+    whisperVtt: LOCAL_VTT,
+    extraEnv: { ATRIS_YTNOTES_ENGINE: 'auto' },
+    extraBins: { agy: quotaAgy },
+  });
+
+  assert.equal(result.status, 0, result.stderr || result.stdout);
+  assert.match(fs.readFileSync(path.join(dir, 'yt_auto7.md'), 'utf8'), /# No Caption Talk/);
+  assert.match(result.stderr, /^notes by Haiku$/m);
+  assert.equal(fs.readFileSync(calls, 'utf8'), 'warm\n', 'only the early Gemini request ran');
+});
+
 test('ytnotes auto writer skips the Antigravity editor launcher named agy', () => {
   const launcher = [
     '#!/usr/bin/env bash',
