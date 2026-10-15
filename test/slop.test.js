@@ -4726,6 +4726,22 @@ test('fix reads "use case" and "retry delay" after a dash as a noun, not an orde
   ]);
 });
 
+test('fix gives a "see" pointer after a full clause its own sentence', () => {
+  // from real notes: "MRR numbers below are stale, see authoritative source"
+  // left a comma splice before the pointer
+  const file = tmpFile('see-pointer.md', [
+    'The editor is owned by interface-dev, not this member \u2014 see its MISSION.md.',
+    'A discussion on agent training (partial source \u2014 see caveat below)',
+    "Don't search docs first \u2014 see what happens, then investigate.",
+  ].join('\n'));
+  const { changes } = applyFixes([file], RULES);
+  assert.deepEqual(changes.map((c) => c.after), [
+    'The editor is owned by interface-dev, not this member; see its MISSION.md.',
+    'A discussion on agent training (partial source: see caveat below)',
+    "Don't search docs first, see what happens, then investigate.",
+  ]);
+});
+
 test('fix gives a run of "ing" phrases after a dash a colon, like a list', () => {
   // from hugolearn: "extracting what was learned" read as a subject and its
   // verb, so the list after the dash got a semicolon

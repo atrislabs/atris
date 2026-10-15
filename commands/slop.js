@@ -625,12 +625,14 @@ const QUESTION_AFTER_DASH = new RegExp(`${CLAUSE_END}\\s*\\u2014\\s*(?=(?:(?:how
 // ("calendar-probe, fork of relay-probe") keeps its comma.
 // "never" stays out: "it never crashes the tick" has its subject left off.
 // "Let's" asks the reader to act too: "Congrats on the award; let's talk".
+// "See" points the reader on, an order of its own: "the numbers below are
+// stale; see the dashboard", "(partial source: see caveat below)".
 // Two orders side by side are one sentence, so the comma stays: "Kill the
 // group at timeout, spawn the phase detached", "don't impose, match it".
 // An order verb that opens a common noun pair names a thing, not an order,
 // so it keeps its comma: "Large LTL carrier, use case TBD", "`openrouter.py`,
 // retry delay parameters".
-const ORDER_VERB = `(?:don['\\u2019]t|do not|let['\\u2019]s|let us|pick|copy|reframe|judge|plug|retry|rename|propose|inspect|keep|leave|use|run|read|ask|add|check|make|move|stop|try|wait|skip|take|look|call|write|delete|remove|fix|put|say|tell|give|treat|verify|ship|commit|push|kill|mark|start|avoid|prefer|trust|drop|cut|split|merge|revert|rerun|re-run|consolidate|pin|automate|clamp|fork|spawn|adapt|halt|search)`;
+const ORDER_VERB = `(?:don['\\u2019]t|do not|let['\\u2019]s|let us|pick|copy|reframe|judge|plug|retry|rename|propose|inspect|keep|leave|use|run|read|ask|add|check|make|move|stop|try|wait|skip|take|look|call|write|delete|remove|fix|put|say|tell|give|treat|verify|ship|commit|push|kill|mark|start|avoid|prefer|trust|drop|cut|split|merge|revert|rerun|re-run|consolidate|pin|automate|clamp|fork|spawn|adapt|halt|search|see)`;
 const ORDER_NOUN_PAIR = '(?:use\\s+cases?|retry\\s+delays?)\\b';
 const ORDER_CLAUSE_AFTER_DASH = new RegExp(`${CLAUSE_END}\\s*\\u2014\\s*(?!${ORDER_NOUN_PAIR})(?=(?:${ORDER_VERB},\\s+)?(?:don['\\u2019]t|do not)\\s+[\\w\`"'(\\uE000]|${ORDER_VERB}(?:,\\s+${ORDER_VERB})?\\s+(?![a-z]+ed\\b|of\\b)[\\w\`"'(\\uE000])`, 'g');
 
