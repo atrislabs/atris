@@ -2585,3 +2585,5 @@ Landing capability test setup: `test/commands.test.js:12964` seeds creation and 
 - `test/commands.test.js:15076` checks generic continuation debt and refuses continuation. Metadata setup at `test/commands.test.js:15112` uses the production task store and closes in finally, preserving the exact field and leaving timestamps unchanged. Child launches fall from six to five; all five CLI calls and assertions remain.
 
 - Review queue hygiene creation: `test/commands.test.js:15085` seeds the same title, tag, workspace and goal with addSeedTask, resolves the display ref through the store and closes in finally. Four CLI calls replace five with every behavioral assertion retained.
+
+- Continuation display creation: `test/commands.test.js:15159` uses addSeedTask with the original title, tag, workspace and goal, resolves the display reference through the store, and closes in finally. Six CLI calls retain every continuation and waiting-state assertion.

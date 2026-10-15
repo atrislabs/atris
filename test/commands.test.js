@@ -15156,14 +15156,22 @@ test('task current exposes continue-work for certified review suggestions', () =
   try {
     fs.mkdirSync(path.join(dir, 'atris'), { recursive: true });
 
-    const created = runCli([
-      'task', 'new', 'Surface the certified continuation command',
-      '--tag', 'task',
-      '--goal-id', 'OBL-928',
-      '--json',
-    ], { cwd: dir, env });
-    assert.equal(created.status, 0, created.stderr);
-    const parent = JSON.parse(created.stdout).task;
+    // Seed creation through the real store; continuation display stays on the CLI.
+    const parent = (() => {
+      const db = taskStore.open(dbPath);
+      try {
+        const workspaceRoot = taskStore.workspaceRoot(dir);
+        const { id } = addSeedTask(db, {
+          title: 'Surface the certified continuation command',
+          tag: 'task',
+          workspaceRoot,
+          metadata: { goal_id: 'OBL-928' },
+        });
+        return { id, display_id: taskStore.taskDisplayRefMap(taskStore.listTasks(db, { workspaceRoot })).get(id) };
+      } finally {
+        taskStore.close();
+      }
+    })();
     const ref = parent.display_id;
 
     assert.equal(runCli([
