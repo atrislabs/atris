@@ -1354,10 +1354,11 @@ test('every engine started through a runner or profile variable records its run 
   // function, names an engine program or an engine or runner resolver.
   const ENGINE_SOURCE = new RegExp(`['"\`](?:${ENGINE_NAMES})['"\`]|\\b[\\w$]*(?:Engine|engine|Runner|runner)[\\w$]*\\(`);
   // Launches whose run is recorded somewhere this scan cannot see, by
-  // file and the function holding the launch.
+  // file, the function holding the launch, and its program. Each covers one
+  // launch, so another launch added to the same function is still caught.
   const EXEMPT_LAUNCHES = new Map([
-    ['lib/roster-prep.js#defaultPrepAskSync', 'recorded around the ask by startPrepReadings'],
-    ['commands/run.js#execPhaseCommandSync', 'recorded around the phase by executePhase'],
+    ['lib/roster-prep.js#defaultPrepAskSync invocation.bin', 'recorded around the ask by startPrepReadings'],
+    ['commands/run.js#execPhaseCommandSync cmd', 'recorded around the phase by executePhase'],
   ]);
   const engineLaunches = (rel, text) => {
     if (LAUNCH_EXEMPT_FILES.has(rel)) return { seen: 0, missing: [], routes: {}, traced: [] };
@@ -1677,6 +1678,7 @@ test('every engine started through a runner or profile variable records its run 
     const traced = [];
     let seen = 0;
     const missing = [];
+    const exempted = new Set();
     for (const match of code.matchAll(VAR_LAUNCH)) {
       const [, program, called, args] = match;
       const before = code.slice(0, match.index);
@@ -1688,8 +1690,13 @@ test('every engine started through a runner or profile variable records its run 
       seen += 1;
       routes[route] = (routes[route] || 0) + 1;
       const line = before.split('\n').length;
-      traced.push({ route, at: `${rel}:${line} ${program}${called || ''}`, launch: `${rel}#${fnName} ${program}${called || ''}` });
-      if (recordedAbove(lines, line, recorder) || EXEMPT_LAUNCHES.has(`${rel}#${fnName}`)) continue;
+      const launch = `${rel}#${fnName} ${program}${called || ''}`;
+      traced.push({ route, at: `${rel}:${line} ${program}${called || ''}`, launch });
+      if (recordedAbove(lines, line, recorder)) continue;
+      if (EXEMPT_LAUNCHES.has(launch) && !exempted.has(launch)) {
+        exempted.add(launch);
+        continue;
+      }
       missing.push(`${rel}:${line} ${program}${called || ''}`);
     }
     return { seen, missing, routes, traced };
@@ -2097,6 +2104,13 @@ test('every engine started through a runner or profile variable records its run 
       assert.deepStrictEqual(planted(expression(`  ${captured} {\n    ${name}(resolveClaudeRunnerBin());\n  }`)), ['commands/planted.js:5 runner'], 'a helper without a matching parameter captures the internal name');
     }
   }
+  // An exemption covers its one named launch, not every launch in the
+  // function that holds it.
+  const exemptAsk = (body) => engineLaunches('lib/roster-prep.js', `function defaultPrepAskSync({ engine, prompt }) {\n  const invocation = buildReadOnlyEngineInvocation(engine, prompt);\n${body}\n}\n`).missing;
+  assert.deepStrictEqual(exemptAsk('  spawnSync(invocation.bin, invocation.args);'), []);
+  assert.deepStrictEqual(exemptAsk('  spawnSync(invocation.bin, invocation.args);\n  spawnSync(invocation.bin, invocation.args);'), ['lib/roster-prep.js:4 invocation.bin'], 'a second launch of the same program is not exempt');
+  assert.deepStrictEqual(exemptAsk('  spawnSync(invocation.bin, invocation.args);\n  const runner = resolveClaudeRunnerBin();\n  spawnSync(runner, args);'), ['lib/roster-prep.js:5 runner'], 'a launch of another program is not exempt');
+  assert.deepStrictEqual(exemptAsk('  startEngineRun(root);\n  spawnSync(invocation.bin, invocation.args);\n  spawnSync(invocation.bin, invocation.args);'), [], 'a recorded launch leaves the exemption for the next one');
   // Each launch is counted under the route that traced it, so a reader
   // that stops working shows up as a lower count.
   const routesOf = (text) => engineLaunches('commands/planted.js', text).routes;
