@@ -18878,12 +18878,15 @@ test('setup --help prints usage without entering setup flow', () => {
   }
 });
 
-test('activate and next --help print usage without loading workflow context', () => {
+test('activate and next --help print usage without loading workflow context', async () => {
   const dir = makeTempDir();
   try {
     const home = path.join(dir, 'home');
-    for (const command of ['activate', 'next']) {
-      const res = runCli([command, '--help'], { cwd: dir, env: { HOME: home } });
+    const commands = ['activate', 'next'];
+    const results = await Promise.all(commands.map(command =>
+      runCliAsync([command, '--help'], { cwd: dir, env: { HOME: home } })));
+    for (const [index, command] of commands.entries()) {
+      const res = results[index];
       assert.equal(res.status, 0, `${command}: ${res.stderr || res.stdout}`);
       assert.match(res.stdout, new RegExp(`Usage: atris ${command}`));
       assert.doesNotMatch(res.stdout, /CONTEXT LOADED|Context Loaded|Atris Activate|Atris Plan|Completed \(preview\)/);
