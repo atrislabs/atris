@@ -3304,6 +3304,9 @@ test('fix joins "each" or "every", its noun and a verb in "s" after a dash with 
     'Billing works \u2014 a paid checkout lands in the mission room now.',
     'We pinned it \u2014 that flag downgrades to a stale model.',
     'Install it once \u2014 this skill works out of the box for all of them.',
+    // "like" counts as a place word too; a noun before "like" names a thing
+    'It was dense \u2014 every sentence feels like a reference to a larger text.',
+    'Pick one \u2014 a tool like grep.',
     'Ship it \u2014 the release notes to the team.',
     'We counted \u2014 a few tests in the folder.',
     'We counted \u2014 a lot of users in the folder.',
@@ -3331,6 +3334,8 @@ test('fix joins "each" or "every", its noun and a verb in "s" after a dash with 
     'Billing works; a paid checkout lands in the mission room now.',
     'We pinned it; that flag downgrades to a stale model.',
     'Install it once; this skill works out of the box for all of them.',
+    'It was dense; every sentence feels like a reference to a larger text.',
+    'Pick one, a tool like grep.',
     'Ship it, the release notes to the team.',
     'We counted, a few tests in the folder.',
     'We counted, a lot of users in the folder.',
