@@ -34,7 +34,7 @@ Check: `node --test test/campaign-schema.test.js` covers a valid campaign, a mis
 
 ## Phase 0.5 — Run the first campaign by hand (before Phase 1)
 
-Run "Why do 25 landings a week still need a human fix?" for one week with a plain `atris/campaigns/<id>.md` (title, owner, seats, bet, judge, budget, stop) and missions tagged `campaign:<id>` in their objective. Log every pain point in this folder as `by-hand.md`. Adjust the schema before building the store.
+Run "Campaign ships across Atris" for one week using `first-campaign.md` in this folder (title, lead, seats per repo, bet, judge) and missions tagged `campaign:cmp-campaign` in their objective. The first mission builds the judge (`npm run validate:campaign`), and it must fail today. Log every pain point in this folder as `by-hand.md`. Adjust the schema before building the store.
 
 Check: `by-hand.md` exists with at least five concrete observations, and the schema PR cites them.
 
@@ -55,7 +55,7 @@ Check: a replay test. Write events, fold, delete computed fields, fold again, an
 
 ```text
 atris campaign                         one screen: every campaign, state, current mission, what needs you
-atris campaign start "<title>" --owner <member> --judge "<metric or cmd>" --budget <n> [--kind answer|outcome] [--stop "..."] [--parent <id>]
+atris campaign start "<title>" --judge "<metric or cmd>" [--owner <member>] [--seats a,b] [--bet "..."] [--budget <amount> --unit tokens|credits|dollars|quota] [--standing]
 atris campaign show <id>               bet, judge, answer + confidence, budget, seats, missions, open asks
 atris campaign seat <id> <member> --role <role>
 atris campaign bet <id> "<bet>" --wrong-if "<what would prove it wrong>"
@@ -73,7 +73,8 @@ Check: `node --test test/campaign-command.test.js` for each verb against a temp 
 
 - `atris mission start ... --campaign <id>` writes `campaign_id` on the mission and emits `mission_started` on the campaign.
 - Mission completion emits `mission_ended` with its receipt path and outcome (kept, reverted, failed).
-- Before start, reserve `per_mission` budget (`budget_reserved`). If the tank cannot cover it, refuse with a plain reason.
+- If the campaign has a budget, reserve the mission's share before start (`budget_reserved`); if it cannot be covered, refuse with a plain reason. With no budget, skip reservation.
+- `mission_ended` carries usage from the receipt: tokens, quota, and money if any.
 - A mission with no campaign still works exactly as today.
 
 Check: existing mission tests still pass, plus a test that a linked mission shows up in `atris campaign show` and its spend is reflected after completion.
@@ -130,6 +131,16 @@ Check: a wish with `--metric` creates a campaign whose judge is that metric.
 - `atris campaign` lists them under "purposes."
 
 Check: health-sentinel's purpose appears with its check as the judge.
+
+## Phase 9.5 — One-on-ones, notes, and shifts
+
+- `atris campaign talk <member>`: a one-on-one. The member summarizes its recent work; the human gives a note; the member repeats it back as one concrete rule; the human confirms. Saves `note_given { member, scope, kind, rule, why, source, expires }`.
+- Notes load at the member's next shift start, never mid-mission. Default scope "from now on" (member lessons); `--just-this-campaign` for one-offs.
+- Kind `taste` never expires; kind `fact` expires after 7 days unless re-checked, and stores where to check it, not only the value. Expired notes surface as "still true?" in the shift briefing.
+- Shift end at: mission done, context about 60% full, no progress for several steps, or a ~50-minute cap; or quota exhausted (rest until reset). Write `shift_ended` with reason and usage. The Orb (team loop) then picks continue, hand off, or pause.
+- Cap notes per member; prune notes whose before/after review scores show no help.
+
+Check: a vague note without a confirmed repeat-back is not saved; a fact note older than 7 days appears as "still true?" at the next shift; a shift ends with reason `context` when the context threshold is hit in a test harness.
 
 ## Phase 10 — Backend mirror and renames (separate repo, separate PR)
 

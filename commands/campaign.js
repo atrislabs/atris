@@ -10,10 +10,11 @@ const os = require('os');
 const path = require('path');
 const { spawn } = require('child_process');
 const { readFlag } = require('../lib/arg-parser');
-const { CAMPAIGN_ID, validateCampaign } = require('../lib/campaign-schema');
+const { CAMPAIGN_ID, isHumanActor, validateCampaign } = require('../lib/campaign-schema');
 const { decide } = require('../lib/campaign-core');
 const { getCampaign, listCampaigns, newCampaignId, openCampaignStore } = require('../lib/campaign-store');
 const { judgeRanData, judgeReading, outputTail } = require('../lib/campaign-reading');
+const { cloudLink, sendPersonAction, syncCampaign } = require('../lib/campaign-sync');
 
 const JUDGE_TIMEOUT_SECONDS = 15 * 60;
 const STATE_ORDER = ['needs_you', 'running', 'queued', 'paused', 'resting', 'out_of_budget', 'done'];
@@ -23,7 +24,7 @@ function printHelp() {
   console.log('  atris campaign                         every campaign: state, money, and the next move');
   console.log('  atris campaign start "<title>" --judge "<cmd>" --budget <dollars>');
   console.log('        [--owner <member>] [--seat <member>[:<role>]]... [--bet "<bet>" [--wrong-if "<what proves it wrong>"]]');
-  console.log('        [--standing] [--parent <id>] [--id cmp-<name>]');
+  console.log('        [--standing] [--parent <id>] [--id cmp-<name>] [--cloud]');
   console.log('  atris campaign show <id>               bet, judge, answer, budget, seats, missions, asks');
   console.log('  atris campaign judge <id> [--timeout <seconds>]   run the judge now and record the reading');
   console.log('  atris campaign seat <id> <member> [--role <role>]');
@@ -38,6 +39,8 @@ function printHelp() {
   console.log('  atris campaign step <id>               one step of that loop');
   console.log('  atris campaign propose <id> [--count 3]   ask the owner\'s engine for the next missions');
   console.log('  atris campaign export <id> --trace [--out <file.jsonl>] [--full]   one row per mission for learning; redacted unless --full');
+  console.log('  atris campaign sync <id>               trade events with the Atris cloud so web and iOS show it');
+  console.log('        start --cloud syncs at once; run syncs before and after every step of a synced campaign');
   console.log('');
   console.log('Every verb takes --json. Writes are recorded as you (human:<login>); agents pass --as <member>.');
   console.log('A new campaign runs its judge first and is refused if it already passes: write a judge that fails first.');
@@ -176,7 +179,7 @@ function makeContext(args, deps) {
     return code;
   };
   const append = (campaignId, type, data, as = actor) => store.append({ campaign_id: campaignId, type, actor: as, data });
-  return { asJson, store, actor, judge, out, fail, append, forgedHuman, loopDeps: deps.loopDeps };
+  return { asJson, store, actor, judge, out, fail, append, forgedHuman, loopDeps: deps.loopDeps, cloud: deps.cloud || {} };
 }
 
 function requireCampaign(ctx, id) {
@@ -285,8 +288,35 @@ async function cmdStart(args, ctx) {
   if (parent) ctx.append(id, 'attached', { parent_id: parent });
   ctx.append(id, 'judge_ran', judgeRanData(reading), 'judge');
 
+  let cloud = null;
+  if (args.includes('--cloud')) {
+    cloud = await syncCampaign(ctx.store, id, ctx.cloud);
+    if (!cloud.ok && !ctx.asJson) console.error(`started here, not yet in the cloud: ${cloud.error}. Try again with: atris campaign sync ${id}`);
+  }
   const view = getCampaign(ctx.store, id);
-  ctx.out(`started ${view.title} (${id})\n${renderShow(view)}`, { ok: true, action: 'campaign_started', campaign: view, next: decide(view) });
+  const synced = cloud && cloud.ok ? `\nin the cloud: ${cloud.pushed} event${cloud.pushed === 1 ? '' : 's'} sent` : '';
+  ctx.out(`started ${view.title} (${id})${synced}\n${renderShow(view)}`, { ok: true, action: 'campaign_started', campaign: view, next: decide(view), ...(cloud ? { cloud } : {}) });
+  return 0;
+}
+
+function describeSync(result) {
+  const parts = [`sent ${result.pushed}`, `received ${result.pulled}`];
+  if (result.duplicates) parts.push(`${result.duplicates} already there`);
+  if (result.held) parts.push(`${result.held} kept here (only a person's screen sends answers, budget, and done)`);
+  return `synced with the cloud: ${parts.join(', ')}`;
+}
+
+async function cmdSync(args, ctx) {
+  const { view, error } = requireCampaign(ctx, positionals(args)[1]);
+  if (error !== undefined) return error;
+  const result = await syncCampaign(ctx.store, view.id, ctx.cloud);
+  if (!result.ok) {
+    if (ctx.asJson) console.log(JSON.stringify(result));
+    else console.error(`sync failed: ${result.error}`);
+    return 1;
+  }
+  const after = getCampaign(ctx.store, view.id);
+  ctx.out(`${describeSync(result)}\n${renderShow(after)}`, { ...result, campaign: after, next: decide(after) });
   return 0;
 }
 
@@ -311,16 +341,25 @@ async function cmdJudge(args, ctx) {
   return reading.passed ? 0 : 1;
 }
 
-function simpleEvent(type, buildData, describe) {
-  return (args, ctx) => {
+// toCloud(data) names the cloud person route for events only a person's
+// screen may send (api.md): on a synced campaign a person's answer or budget
+// goes there and comes back by pull. Offline, it is recorded here instead.
+function simpleEvent(type, buildData, describe, toCloud = null) {
+  return async (args, ctx) => {
     const words = positionals(args);
     const { view, error } = requireCampaign(ctx, words[1]);
     if (error !== undefined) return error;
     const built = buildData(args, words, view);
     if (built.error) return ctx.fail(built.error);
-    ctx.append(view.id, type, built.data);
+    let via = 'local';
+    if (toCloud && isHumanActor(ctx.actor) && cloudLink(ctx.store, view.id)) {
+      const sent = await sendPersonAction(ctx.store, view.id, toCloud(built.data), ctx.cloud);
+      if (sent.ok) via = 'cloud';
+      else if (!ctx.asJson) console.error(`recorded here only; the cloud did not take it: ${sent.error}`);
+    }
+    if (via === 'local') ctx.append(view.id, type, built.data);
     const after = getCampaign(ctx.store, view.id);
-    ctx.out(`${describe(built.data, after)}\n${renderShow(after)}`, { ok: true, action: type, campaign: after, next: decide(after) });
+    ctx.out(`${describe(built.data, after)}\n${renderShow(after)}`, { ok: true, action: type, via, campaign: after, next: decide(after) });
     return 0;
   };
 }
@@ -347,7 +386,7 @@ const cmdBudget = simpleEvent('budget_added', (args) => {
   const amount = Number(readFlag(args, '--add', ''));
   if (!(amount > 0)) return { error: 'say how much to add: atris campaign budget <id> --add <dollars>' };
   return { data: { amount_usd: amount } };
-}, (d, view) => `added ${money(d.amount_usd)}; budget is now ${money(view.budget.total)}`);
+}, (d, view) => `added ${money(d.amount_usd)}; budget is now ${money(view.budget.total)}`, (d) => ({ action: 'add_budget', amount_usd: d.amount_usd }));
 
 // The no-reload line: anything that cannot be undone waits here for a person.
 const cmdAsk = simpleEvent('ask_opened', (args, words) => {
@@ -363,7 +402,7 @@ const cmdAnswer = simpleEvent('ask_answered', (args, words) => {
   const answer = words[3];
   if (!askId || !answer) return { error: 'answer an ask: atris campaign answer <id> <ask-id> "<answer>"' };
   return { data: { ask_id: askId, answer } };
-}, (d, view) => (view.asks.some((a) => a.id === d.ask_id) ? `not closed: only a person can answer ${d.ask_id}` : `answered ${d.ask_id}: ${d.answer}`));
+}, (d, view) => (view.asks.some((a) => a.id === d.ask_id) ? `not closed: only a person can answer ${d.ask_id}` : `answered ${d.ask_id}: ${d.answer}`), (d) => ({ ask_id: d.ask_id, answer: d.answer }));
 
 const cmdPause = simpleEvent('paused', () => ({ data: {} }), () => 'paused');
 const cmdResume = simpleEvent('resumed', () => ({ data: {} }), () => 'resumed');
@@ -399,6 +438,29 @@ async function cmdLoop(args, ctx, verb) {
   const { view, error } = requireCampaign(ctx, positionals(args)[1]);
   if (error !== undefined) return error;
   const { makeLoop } = require('../lib/campaign-loop');
+  // A synced campaign trades events around every step. Failures warn and the
+  // loop runs on offline; a refusal (403, 409) stops syncing for this run
+  // instead of asking again every step.
+  const syncWarnings = [];
+  let refused = false;
+  let failing = false;
+  const sync = cloudLink(ctx.store, view.id) ? async (id) => {
+    if (refused) return 0;
+    const result = await syncCampaign(ctx.store, id, ctx.cloud);
+    if (result.ok) {
+      failing = false;
+      return result.pulled;
+    }
+    if (result.status === 403 || result.status === 409) refused = true;
+    // One warning per stretch of failures, not one per step.
+    if (!failing || refused) {
+      const warning = `sync: ${result.error}${refused ? '; not syncing again this run' : '; running on offline'}`;
+      syncWarnings.push(warning);
+      if (!ctx.asJson) console.error(warning);
+    }
+    failing = true;
+    return 0;
+  } : undefined;
   const loop = makeLoop(process.cwd(), {
     parallel: readFlag(args, '--parallel', '') || readFlag(args, '--count', ''),
     maxTicks: readFlag(args, '--max-ticks', ''),
@@ -408,6 +470,7 @@ async function cmdLoop(args, ctx, verb) {
     store: ctx.store,
     log: ctx.asJson ? () => {} : (line) => console.log(line),
     judge: (command) => ctx.judge(command, JUDGE_TIMEOUT_SECONDS),
+    ...(sync ? { sync } : {}),
     ...(ctx.loopDeps || {}),
   });
   if (verb === 'propose') {
@@ -419,19 +482,19 @@ async function cmdLoop(args, ctx, verb) {
   if (verb === 'step') {
     const result = await loop.step(view.id);
     const after = getCampaign(ctx.store, view.id);
-    ctx.out(`${result.stop ? `stopped: ${result.reason}` : `did: ${result.did}`}\n${renderShow(after)}`, { ok: true, ...result, campaign: after, next: decide(after) });
+    ctx.out(`${result.stop ? `stopped: ${result.reason}` : `did: ${result.did}`}\n${renderShow(after)}`, { ok: true, ...result, campaign: after, next: decide(after), sync_warnings: syncWarnings });
     return 0;
   }
   const maxSteps = Number(readFlag(args, '--max-steps', '')) || 20;
   const result = await loop.run(view.id, maxSteps);
-  ctx.out(`stopped after ${result.steps} step${result.steps === 1 ? '' : 's'}: ${result.reason}\n${renderShow(result.campaign)}`, { ok: true, ...result, next: decide(result.campaign) });
+  ctx.out(`stopped after ${result.steps} step${result.steps === 1 ? '' : 's'}: ${result.reason}\n${renderShow(result.campaign)}`, { ok: true, ...result, next: decide(result.campaign), sync_warnings: syncWarnings });
   return 0;
 }
 
 const VERBS = {
   start: cmdStart, show: cmdShow, judge: cmdJudge, seat: cmdSeat, bet: cmdBet, budget: cmdBudget,
   pause: cmdPause, resume: cmdResume, stop: cmdStop, event: cmdEvent,
-  ask: cmdAsk, answer: cmdAnswer,
+  ask: cmdAsk, answer: cmdAnswer, sync: cmdSync,
   run: (args, ctx) => cmdLoop(args, ctx, 'run'),
   step: (args, ctx) => cmdLoop(args, ctx, 'step'),
   propose: (args, ctx) => cmdLoop(args, ctx, 'propose'),

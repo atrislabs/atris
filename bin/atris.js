@@ -1908,12 +1908,13 @@ function showWelcomeVisualization() {
   }
 
   // The guarantee gauge, only when it has bad news: landings a human had to
-  // fix this week. Zero is the healthy state and stays silent; no git history
+  // fix this week. Coaching (role, goal, context edits) is not bad news. Zero is the healthy state and stays silent; no git history
   // (not a repo, git missing) also stays silent.
   try {
     const rev = require('../commands/improve').collectRevisionSignals(cwd, { days: 7 });
-    if (rev.revised > 0) {
-      console.log(`  ${rev.revised} landing${rev.revised === 1 ? '' : 's'} this week needed a human fix; run atris improve revisions`);
+    const fixed = Number.isFinite(rev.fixed) ? rev.fixed : rev.revised;
+    if (fixed > 0) {
+      console.log(`  ${fixed} landing${fixed === 1 ? '' : 's'} this week needed a human fix; run atris improve revisions`);
     }
   } catch {
     // Silent: the gauge never blocks boot.
