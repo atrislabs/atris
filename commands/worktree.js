@@ -1489,7 +1489,9 @@ function cleanupWorktrees({ root = repoRoot(), base: baseOverride = '', apply = 
   const current = path.resolve(root);
   const activeCwds = Array.isArray(activeCwdsOverride) ? activeCwdsOverride.map(canonicalPath) : listActiveProcessPaths();
   const base = normalizeTargetRef(root, baseOverride || defaultShipTarget(root));
-  refreshRemoteRef(root, base);
+  // Kept on the result so a failed refresh is said out loud, not silently
+  // judged against the last saved copy of the base.
+  const staleBase = refreshRemoteRef(root, base) || '';
   const candidates = [];
   const kept = [];
   const removed = [];
@@ -1608,7 +1610,7 @@ function cleanupWorktrees({ root = repoRoot(), base: baseOverride = '', apply = 
     }
   }
 
-  return { apply, base, candidates, removed, kept, cacheCandidates, cachePruned };
+  return { apply, base, staleBase, candidates, removed, kept, cacheCandidates, cachePruned };
 }
 
 // Keep reasons that need no one: work still in progress or the checkouts
@@ -1628,6 +1630,7 @@ function cleanup(args) {
   }
   const action = result.apply ? 'removed' : 'candidate';
   console.log(`cleanup: ${result.apply ? 'applied' : 'dry-run'} base=${result.base}`);
+  if (result.staleBase) console.log(`warning: could not refresh ${result.base} (${result.staleBase.split('\n')[0]}); cleanup judged against the local copy, which may be behind`);
   console.log(`${action}s: ${result.apply ? result.removed.length : result.candidates.length}`);
   for (const item of result.apply ? result.removed : result.candidates) {
     console.log(`${action}: ${item.path} branch=${item.branch} reason=${item.reason}`);

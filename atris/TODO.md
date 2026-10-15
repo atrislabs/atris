@@ -19,10 +19,34 @@ Details for any task: atris task show <ID>
 
 ## In Progress
 
-(Empty)
+- **[ACW-24]** Say when shared cleanup could not refresh its base · architect · verify: node --test test/worktree-removal-guard.
 
 ## Review
 
+- **[ACW-23]** Stop a damaged remote from breaking the local record that start and ship use · architect
+  **Done looks like:** After meeting a damaged remote, the local record still holds the last good commit, and a healthy remote still refreshes it.
+- **[ACW-22]** Prove a normal cleanup leaves the local record of the remote main branch alone · architect
+  **Done looks like:** Writers can trust a normal cleanup to remove landed work and keep their local record of the remote main branch unchanged.
+- **[ACW-21]** Keep the local record of the remote main branch safe during cleanup · architect
+  **Done looks like:** After cleanup meets a damaged remote, the local copy of its main branch still holds the last good commit.
+- **[ACW-20]** Prove cleanup keeps notes when the remote main branch is not a commit · architect
+  **Done looks like:** Writers can trust cleanup to keep every folder and all notes when the remote main branch is damaged.
+- **[ACW-19]** Prove cleanup keeps notes when the remote default cannot be fetched · architect
+  **Done looks like:** Writers can trust cleanup to keep every folder and all notes when the remote default branch cannot be fetched.
+- **[ACW-18]** Prove cleanup keeps notes when the remote disappears · architect
+  **Done looks like:** Writers can trust cleanup to keep every folder and all notes when the remote repository becomes unavailable.
+- **[ACW-17]** Prove cleanup keeps notes when remote default is missing · architect
+  **Done looks like:** Writers can trust cleanup to keep every folder and all notes when the remote default branch is missing, reducing the risk of lost work.
+- **[ACW-16]** Prove cleanup preserves notes after remote default rename · architect
+  **Done looks like:** Writers can trust cleanup to keep their notes after the main branch changes, reducing the risk of lost work.
+- **[ACW-15]** Prove cleanup keeps notes after unrelated upstream history · architect
+  **Done looks like:** Operators can trust cleanup to keep their notes after upstream history is replaced, reducing the risk of losing work.
+- **[ACW-14]** Prove cleanup keeps notes after upstream moves backward · architect
+  **Done looks like:** Cleanup preserves staged and unsaved notes when upstream history moves backward, so writers keep their work.
+- **[ACW-13]** Prove cleanup keeps folders whose branch disappeared · architect
+  **Done looks like:** Operators can trust cleanup to preserve their folders after a branch disappears, reducing the risk of losing draft notes.
+- **[ACW-12]** Prove cleanup keeps folders with unreadable Git status · architect
+  **Done looks like:** Operators can now preview cleanup with confidence because unreadable folders keep their drafts, reducing the risk of losing work.
 - **[ACW-11]** Keep dirty landed folders in cleanup preview · architect
   **Done looks like:** Cleanup preview now keeps folders with unsaved work, so people can trust its removal plan.
 - **[ACW-10]** Prove idle landed folders retain staged and unsaved notes · architect

@@ -1,0 +1,33 @@
+Cleanup now says when its view of the main branch could not be refreshed. Verified with the real cleanup command and the required behavior and writing checks, exit 0.
+
+Files: commands/worktree.js, test/member-tidy.test.js, atris/MAP.md, atris/refs/MAP-NOTES.md, atris/TODO.md, atris/team/architect/logs/2026-10-15.md, atris/receipts/work-folder-refresh-warning-2026-10-15.txt.
+
+Verify command: node --test test/worktree-removal-guard.test.js test/member-tidy.test.js && node bin/atris.js slop --staged
+Exit: 0
+Progress: 84 passed, 0 failed, 0 skipped, 0 todo. No slop tells in the four staged implementation and map files.
+
+Actual command output:
+command: node bin/atris.js worktree cleanup (damaged remote default)
+cleanup: dry-run base=origin/master
+warning: could not refresh origin/master (origin sent origin/master as something other than a commit); cleanup judged against the local copy, which may be behind
+candidates: 0
+cache_candidates: 0
+kept: 2
+left alone: primary_checkout=1
+kept: /private/var/folders/t1/2_4kmb5n4c71dxm26zc8dgzr0000gn/T/atris-member-tidy-Hyxzt8/arena/.agent-worktrees/repo/still-here branch=still-here reason=dirty staged=0 unstaged=0 untracked=1
+exit: 0
+
+Final output:
+ℹ tests 84
+ℹ suites 0
+ℹ pass 84
+ℹ fail 0
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 48537.310375
+
+  ✓ clean, no slop tells in 4 files
+
+next_push: Prove the real cleanup command prints no warning after a healthy refresh.
+layer: behaviors

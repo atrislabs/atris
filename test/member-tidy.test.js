@@ -1335,7 +1335,7 @@ test('worktree cleanup refreshes the local record of origin only to a real commi
 
     // Healthy origin: starting and shipping rely on this refresh, so it still
     // moves the local record forward.
-    cleanupWorktrees({ root: fx.repo, activeCwds: [] });
+    assert.equal(cleanupWorktrees({ root: fx.repo, activeCwds: [] }).staleBase, '');
     assert.equal(runGit(['rev-parse', 'origin/master'], fx.repo), newer);
     assert.notEqual(newer, old);
 
@@ -1347,11 +1347,23 @@ test('worktree cleanup refreshes the local record of origin only to a real commi
     for (const apply of [false, true]) {
       const result = cleanupWorktrees({ root: fx.repo, apply, activeCwds: [] });
       assert.deepEqual(result.removed, []);
+      assert.equal(result.staleBase, 'origin sent origin/master as something other than a commit');
       assert.equal(runGit(['rev-parse', 'origin/master'], fx.repo), newer);
       assert.equal(runGit(['cat-file', '-t', 'refs/remotes/origin/master'], fx.repo), 'commit');
       assert.equal(fs.readFileSync(path.join(copy, 'draft.txt'), 'utf8'), 'unsaved notes\n');
       assert.ok(runGit(['worktree', 'list', '--porcelain'], fx.repo).includes(`worktree ${copy}\n`));
     }
+    // The real command says the base could not be refreshed instead of
+    // judging against the last saved copy in silence.
+    const cli = spawnSync(process.execPath, [path.resolve(__dirname, '../bin/atris.js'), 'worktree', 'cleanup'], { cwd: fx.repo, encoding: 'utf8', timeout: 30000 });
+    console.log('command: node bin/atris.js worktree cleanup (damaged remote default)');
+    console.log(cli.stdout.trim());
+    console.log(`exit: ${cli.status}`);
+    assert.equal(cli.status, 0, cli.stderr);
+    const lines = cli.stdout.trim().split('\n');
+    assert.equal(lines[0], 'cleanup: dry-run base=origin/master');
+    assert.equal(lines[1], 'warning: could not refresh origin/master (origin sent origin/master as something other than a commit); cleanup judged against the local copy, which may be behind');
+    assert.equal(runGit(['rev-parse', 'origin/master'], fx.repo), newer);
   } finally {
     fs.rmSync(fx.base, { recursive: true, force: true });
   }
