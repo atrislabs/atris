@@ -229,7 +229,7 @@ Local remote record proof: `test/member-tidy.test.js:1279` runs real preview and
 
 Shared refresh record proof: `commands/worktree.js:422` fetches the start, ship and cleanup base into FETCH_HEAD with an empty refmap and moves the local origin record only to a verified commit. `test/member-tidy.test.js:1320` runs real worktree cleanup: a healthy origin still moves the record forward; a damaged origin leaves it on the last good commit, removes nothing, and keeps the copy and its draft; the test fails on the code before this change.
 
-Cleanup stale base warning: `commands/worktree.js:1494` keeps the shared refresh failure on the cleanup result and `commands/worktree.js:1633` prints it under the header. `test/member-tidy.test.js:1320` checks no warning on a healthy refresh, the reason on a damaged remote in preview and apply, and the exact line from the real cleanup command.
+Cleanup stale base warning: `commands/worktree.js:1497` keeps the shared refresh failure on the cleanup result and `commands/worktree.js:1636` prints it under the header. `test/member-tidy.test.js:1320` checks no warning on a healthy refresh, the reason on a damaged remote in preview and apply, and the exact line from the real cleanup command.
 
 Unavailable origin warning proof: `test/member-tidy.test.js:1405` runs real cleanup preview and apply with an offline remote, checks the warning, and preserves draft bytes, status, branch, registration and local origin record with no removal log.
 
@@ -303,3 +303,5 @@ Put-away backup keeps staged and binary work: `commands/land.js:533` saves the s
 Put-away restore line: `commands/land.js:559` builds one restore command per removed folder (recreate it at its commit, staged backup into the index only, full backup into the files, new files copied back) and `commands/land.js:1015` prints it only for folders actually removed. `test/worktree-removal-guard.test.js:1435` runs the printed command and checks the rebuilt folder matches the removed one exactly.
 
 Put-away backup name: `commands/land.js:557` names each removed folder's commit under refs/atris/salvage before removal, so the restore line still works after reap deletes the branch and git clears unreferenced commits. `test/worktree-removal-guard.test.js:1435` lands the folder's commit as an equivalent copy, clears unreferenced commits, and runs the restore; it fails on the code before this change.
+
+Put-away backup list: `commands/land.js:788` writes each removed folder's restore command into the removal log, and `atris land --backups` (`commands/land.js:1069` `savedBackups`, dispatched at `commands/land.js:1188`) lists every removed folder that held unsaved work, newest first, with that command. `test/worktree-removal-guard.test.js:1435` runs the list in a separate process after put-away, checks the listed command matches the printed one, and replays the listed command; it fails on the code before this change.

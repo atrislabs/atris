@@ -1,0 +1,42 @@
+Put-away backup list
+
+What changed: each folder put-away removes with unsaved work now keeps its restore command in the removal log, and atris land --backups lists those folders, newest first, with the command.
+
+Red check: the extended test run against the previous commit in a throwaway checkout.
+old-code exit=1, pass 0, fail 1 (the list command did not exist, so no restore line was found)
+
+Test excerpt (disposable repository):
+command: node bin/atris.js land --backups (disposable repository)
+saved backups: 1 removed folder held unsaved work, newest first
+  2026-10-15 13:22  <tmp>/engine-wt (engine-run)
+    to restore: git -C <tmp>/repo worktree add --detach <tmp>/engine-wt refs/atris/salvage/c8d84b003351cf40b9867e53d80b47eef0f1918e && cd <tmp>/engine-wt && git apply --cached <tmp>/repo/.atris/salvage/2026-10-15/engine-wt.staged.patch && git apply <tmp>/repo/.atris/salvage/2026-10-15/engine-wt.dirty.patch && cp -R <tmp>/repo/.atris/salvage/2026-10-15/engine-wt.untracked/. .
+exit: 0
+
+Real command on this repo:
+$ node bin/atris.js land --backups
+no saved backups yet: no removal has recorded a restore command.
+exit=0
+
+Frozen verifier tests: node --test test/worktree-removal-guard.test.js test/member-tidy.test.js
+ℹ tests 91
+ℹ pass 91
+ℹ fail 0
+ℹ todo 0
+exit=0
+
+Wider put-away tests: node --test test/land.test.js test/autoland.test.js test/land-green.test.js
+ℹ pass 106
+ℹ fail 0
+exit=0
+
+Recovery check, 2026-10-15:
+Finished the existing staged change after the previous run stopped.
+Command: node --test test/worktree-removal-guard.test.js test/member-tidy.test.js && node bin/atris.js slop --staged
+Exit: 0
+Output: tests 91; pass 91; fail 0; skipped 0; todo 0.
+Output: clean, no slop tells in 6 files.
+Real command: node bin/atris.js land --backups
+Exit: 0
+Output: no saved backups yet: no removal has recorded a restore command.
+next_push: Identify missing backup files or saved commits before offering a restore command.
+layer: capabilities

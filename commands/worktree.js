@@ -1433,18 +1433,21 @@ function describeRemovalResult(worktreePath, result = {}, now = Date.now()) {
 // Every work-folder removal leaves one line naming who removed it and why, in
 // the main checkout's state so the line outlives the folder it describes.
 // The log lives in the main checkout, so every linked folder writes one file.
+// A removal that saved unsaved work also keeps its restore command here, so
+// the backup can be found again after the put-away output is gone.
 function worktreeRemovalLogPath(root) {
   const common = runGit(['rev-parse', '--path-format=absolute', '--git-common-dir'], { cwd: root, check: false });
   const main = common.status === 0 ? path.dirname(common.stdout.trim()) : root;
   return path.join(main, '.atris', 'state', 'worktree_removals.jsonl');
 }
 
-function recordWorktreeRemoval(root, { path: removedPath, branch = '', by, reason }) {
+function recordWorktreeRemoval(root, { path: removedPath, branch = '', by, reason, restore }) {
   try {
     const file = worktreeRemovalLogPath(root);
     fs.mkdirSync(path.dirname(file), { recursive: true });
     fs.appendFileSync(file, `${JSON.stringify({
       at: new Date().toISOString(), path: removedPath, branch: branch || null, by, reason, pid: process.pid,
+      ...(restore ? { restore } : {}),
     })}\n`);
   } catch {}
 }

@@ -1480,7 +1480,21 @@ test('reap saves staged and binary work it removes and prints a restore that reb
     assert.equal(found.status, 0, 'the removed folder commit must survive git clearing unreferenced commits');
     assert.equal(git(repo, ['rev-parse', `refs/atris/salvage/${folderCommit}`]), folderCommit);
     assert.ok(restore.includes(staged) && restore.includes(dirty), restore);
-    const rebuilt = spawnSync('sh', ['-c', restore], { cwd: base, encoding: 'utf8' });
+    // A later, separate run lists the same restore without the put-away output.
+    const list = spawnSync(process.execPath, [path.resolve(__dirname, '../bin/atris.js'), 'land', '--backups'], { cwd: repo, encoding: 'utf8' });
+    console.log('command: node bin/atris.js land --backups (disposable repository)');
+    console.log(list.stdout.trim());
+    console.log(`exit: ${list.status}`);
+    assert.equal(list.status, 0, list.stderr);
+    const lines = list.stdout.split('\n');
+    const at = lines.findIndex((l) => l.includes(`  ${wt} (engine-run)`));
+    assert.ok(at >= 0, list.stdout);
+    assert.ok(lines[at + 1].startsWith('    to restore: '), list.stdout);
+    const listed = lines[at + 1].slice('    to restore: '.length);
+    assert.equal(listed, restore);
+    const asJson = spawnSync(process.execPath, [path.resolve(__dirname, '../bin/atris.js'), 'land', '--backups', '--json'], { cwd: repo, encoding: 'utf8' });
+    assert.deepEqual(JSON.parse(asJson.stdout).backups.map((b) => [b.path, b.restore]), [[wt, restore]]);
+    const rebuilt = spawnSync('sh', ['-c', listed], { cwd: base, encoding: 'utf8' });
     assert.equal(rebuilt.status, 0, rebuilt.stderr);
     assert.equal(git(wt, ['status', '--porcelain']), status);
     assert.equal(git(wt, ['rev-parse', 'HEAD']), folderCommit);

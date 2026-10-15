@@ -785,7 +785,7 @@ function reap(root, { ttlDays = DEFAULT_TTL_DAYS, staleHours = DEFAULT_STALE_HOU
     if (removed.status === 0) {
       receipt.removedWorktrees.push(w.path);
       if (w.restoreCommand) receipt.restores.push({ path: w.path, command: w.restoreCommand });
-      recordWorktreeRemoval(root, { path: w.path, branch: w.branch, by, reason: reapReason(w, board, ttlDays, force) });
+      recordWorktreeRemoval(root, { path: w.path, branch: w.branch, by, reason: reapReason(w, board, ttlDays, force), restore: w.restoreCommand });
     } else {
       // A locked worktree fails here and, unreported, reap re-salvages the
       // same patches every pass forever. Say what blocked it so a human can
@@ -1063,6 +1063,27 @@ function emptyLandKindFromError(err) {
   return '';
 }
 
+// Every removed folder whose unsaved work was backed up, newest first, with
+// the restore command saved at removal time. Reads the removal log, so it
+// works days later without the original put-away output.
+function savedBackups(root) {
+  return readWorktreeRemovals(root).filter((row) => row.restore).reverse()
+    .map((row) => ({ at: row.at, path: row.path, branch: row.branch, restore: row.restore }));
+}
+
+function printSavedBackups(rows) {
+  console.log('');
+  if (rows.length === 0) {
+    console.log('no saved backups yet: no removal has recorded a restore command.');
+    return;
+  }
+  console.log(`saved backups: ${rows.length} removed ${rows.length === 1 ? 'folder' : 'folders'} held unsaved work, newest first`);
+  for (const row of rows) {
+    console.log(`  ${row.at.slice(0, 16).replace('T', ' ')}  ${row.path}${row.branch ? ` (${row.branch})` : ''}`);
+    console.log(`    to restore: ${row.restore}`);
+  }
+}
+
 function printEmptyLand(kind, json) {
   const reason = EMPTY_LAND[kind] ? kind : 'no_base';
   const detail = EMPTY_LAND[reason];
@@ -1107,6 +1128,8 @@ function showHelp() {
   console.log('                                 change the check (default: npm test) or the cap');
   console.log('  atris land --requeue           put member changes github dropped from its');
   console.log('                                 merge line back in, caught up with master');
+  console.log('  atris land --backups           list removed folders whose unsaved work was');
+  console.log('                                 backed up, each with its restore command');
   console.log('  atris land --ttl <days>        change the 7-day overdue line');
   console.log('  atris land --json              machine-readable output');
   console.log('');
@@ -1160,6 +1183,13 @@ function landCommand(args = []) {
     } catch (err) {
       return finishLandError(err, json);
     }
+  }
+
+  if (args.includes('--backups')) {
+    const rows = savedBackups(root);
+    if (json) console.log(JSON.stringify({ backups: rows }, null, 2));
+    else printSavedBackups(rows);
+    return 0;
   }
 
   if (args.includes('--reap')) {
