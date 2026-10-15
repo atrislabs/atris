@@ -233,15 +233,19 @@ test('a job a person held while the change waited is not closed by the merge', (
   });
 });
 
-test('a hold written as the job\'s single tag also keeps it open', () => {
+test('a hold the job picker honors also keeps the job open at merge', () => {
   withFixture((fx) => {
     const held = job(fx, 'review');
+    const hashed = job(fx, 'review');
+    const lane = job(fx, 'review');
     fx.db.prepare('UPDATE tasks SET metadata = ? WHERE id = ?').run(JSON.stringify({ tag: 'needs-human' }), held);
-    queue(fx, [held]);
+    fx.db.prepare('UPDATE tasks SET metadata = ? WHERE id = ?').run(JSON.stringify({ tag: '#needs-human' }), hashed);
+    fx.db.prepare('UPDATE tasks SET metadata = ? WHERE id = ?').run(JSON.stringify({ body: 'Rotate the stripe refund webhook secret' }), lane);
+    queue(fx, [held, hashed, lane]);
     setView(fx, { state: 'MERGED' });
     const out = requeueDroppedAutolands({ cwd: fx.main });
     assert.equal(out.closed, 0, out.line);
-    assert.equal(statusOf(fx, held), 'review');
+    for (const id of [held, hashed, lane]) assert.equal(statusOf(fx, id), 'review');
   });
 });
 
