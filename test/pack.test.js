@@ -4,7 +4,7 @@ const fs = require('node:fs');
 const http = require('node:http');
 const os = require('node:os');
 const path = require('node:path');
-const { spawnSync } = require('node:child_process');
+const { spawn, spawnSync } = require('node:child_process');
 const { createHash } = require('node:crypto');
 const { readZipFile, writeZipFile, ZIP_LIMITS } = require('../lib/zip');
 const { version: cliVersion } = require('../package.json');
@@ -84,6 +84,24 @@ function runCli(args, { cwd, env = {} }) {
   });
   if (result.error) throw result.error;
   return result;
+}
+
+// runCli without blocking, so independent launches can overlap.
+function runCliAsync(args, { cwd, env = {} }) {
+  return new Promise((resolve, reject) => {
+    const child = spawn(process.execPath, [cliPath, ...args], {
+      cwd,
+      env: { ...process.env, ATRIS_SKIP_UPDATE_CHECK: '1', ...env },
+      stdio: ['ignore', 'pipe', 'pipe'],
+    });
+    let stdout = '';
+    let stderr = '';
+    child.stdout.setEncoding('utf8').on('data', (chunk) => { stdout += chunk; });
+    child.stderr.setEncoding('utf8').on('data', (chunk) => { stderr += chunk; });
+    const timer = setTimeout(() => child.kill('SIGTERM'), 15000);
+    child.once('error', (error) => { clearTimeout(timer); reject(error); });
+    child.once('close', (status, signal) => { clearTimeout(timer); resolve({ status, signal, stdout, stderr }); });
+  });
 }
 
 async function captureConsole(fn) {
@@ -1046,10 +1064,27 @@ test('pack inspect --json returns one local lifecycle record without prose parsi
   }
 });
 
-test('pack inspect --json returns one parseable envelope for help and failures', () => {
+test('pack inspect --json returns one parseable envelope for help and failures', async () => {
   const dir = makeTempDir();
   try {
-    const missingSource = runCli(['pack', 'inspect', '--json'], { cwd: dir });
+    // Inspect only reads, and the slug scan skips broken folders, so every
+    // fixture is written first and the seven reads run at once.
+    const target = path.join(dir, 'valid-pack');
+    writePackDir(target);
+    const invalidPack = path.join(dir, 'invalid-pack');
+    fs.mkdirSync(invalidPack);
+    fs.writeFileSync(path.join(invalidPack, 'pack.json'), '{not json}\n', 'utf8');
+    writePackDir(path.join(dir, 'first-shared'), { slug: 'shared-pack' });
+    writePackDir(path.join(dir, 'second-shared'), { slug: 'shared-pack' });
+    const [missingSource, missingPack, badArgument, invalid, ambiguous, help, human] = await Promise.all([
+      runCliAsync(['pack', 'inspect', '--json'], { cwd: dir }),
+      runCliAsync(['pack', 'inspect', 'missing-pack', '--json'], { cwd: dir }),
+      runCliAsync(['pack', 'inspect', target, '--json', '--wat'], { cwd: dir }),
+      runCliAsync(['pack', 'inspect', invalidPack, '--json'], { cwd: dir }),
+      runCliAsync(['pack', 'inspect', 'shared-pack', '--json'], { cwd: dir }),
+      runCliAsync(['pack', 'inspect', '--json', '--help'], { cwd: dir }),
+      runCliAsync(['pack', 'inspect', 'missing-pack'], { cwd: dir }),
+    ]);
     assert.equal(missingSource.status, 2);
     assert.equal(missingSource.stderr, '');
     assert.deepEqual(JSON.parse(missingSource.stdout), {
@@ -1062,7 +1097,6 @@ test('pack inspect --json returns one parseable envelope for help and failures',
       },
     });
 
-    const missingPack = runCli(['pack', 'inspect', 'missing-pack', '--json'], { cwd: dir });
     assert.equal(missingPack.status, 1);
     assert.equal(missingPack.stderr, '');
     assert.deepEqual(JSON.parse(missingPack.stdout).error, {
@@ -1070,9 +1104,6 @@ test('pack inspect --json returns one parseable envelope for help and failures',
       message: 'installed pack not found: missing-pack',
     });
 
-    const target = path.join(dir, 'valid-pack');
-    writePackDir(target);
-    const badArgument = runCli(['pack', 'inspect', target, '--json', '--wat'], { cwd: dir });
     assert.equal(badArgument.status, 2);
     assert.equal(badArgument.stderr, '');
     assert.deepEqual(JSON.parse(badArgument.stdout).error, {
@@ -1080,22 +1111,14 @@ test('pack inspect --json returns one parseable envelope for help and failures',
       message: 'unknown pack inspect argument: --wat',
     });
 
-    const invalidPack = path.join(dir, 'invalid-pack');
-    fs.mkdirSync(invalidPack);
-    fs.writeFileSync(path.join(invalidPack, 'pack.json'), '{not json}\n', 'utf8');
-    const invalid = runCli(['pack', 'inspect', invalidPack, '--json'], { cwd: dir });
     assert.equal(invalid.status, 1);
     assert.equal(invalid.stderr, '');
     assert.equal(JSON.parse(invalid.stdout).error.code, 'invalid-pack');
 
-    writePackDir(path.join(dir, 'first-shared'), { slug: 'shared-pack' });
-    writePackDir(path.join(dir, 'second-shared'), { slug: 'shared-pack' });
-    const ambiguous = runCli(['pack', 'inspect', 'shared-pack', '--json'], { cwd: dir });
     assert.equal(ambiguous.status, 1);
     assert.equal(ambiguous.stderr, '');
     assert.equal(JSON.parse(ambiguous.stdout).error.code, 'ambiguous-pack');
 
-    const help = runCli(['pack', 'inspect', '--json', '--help'], { cwd: dir });
     assert.equal(help.status, 0);
     assert.equal(help.stderr, '');
     assert.deepEqual(JSON.parse(help.stdout), {
@@ -1105,7 +1128,6 @@ test('pack inspect --json returns one parseable envelope for help and failures',
       usage: 'atris pack inspect <slug|dir> [--json]',
     });
 
-    const human = runCli(['pack', 'inspect', 'missing-pack'], { cwd: dir });
     assert.equal(human.status, 1);
     assert.equal(human.stdout, '');
     assert.match(human.stderr, /installed pack not found: missing-pack/);
