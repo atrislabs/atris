@@ -3640,17 +3640,18 @@ with tempfile.TemporaryDirectory(prefix='atris-board-random-watch-') as folder:
                 what = change()
                 time.sleep(0.05)
                 resize()
-            # The change redraws after 100ms; wait past it, then a beat more so
-            # a late frame for an old size or old logs would still show up.
-            frames = frames_of(drain(master, 0.6))
             where = f'step {step}: {what}, {order}, {width}x{height}'
-            assert frames, f'{where}: no redraw'
-            fit = [fits(f, width, height) for f in frames]
-            assert True in fit and all(fit[fit.index(True):]), (where, frames)
-            last = frames[-1]
-            short = not HINT.search(last)
             expected = fresh_board(width, height)
-            if short:
+            def problem(frames):
+                # Why these frames are not yet the settled board, or None.
+                if not frames:
+                    return 'no redraw'
+                fit = [fits(f, width, height) for f in frames]
+                if True not in fit or not all(fit[fit.index(True):]):
+                    return 'a frame for the old size came after one for the new size'
+                last = frames[-1]
+                if HINT.search(last):
+                    return None if HINT.sub('', last) == expected.rstrip('\n') else 'not the board a fresh run draws'
                 # The fresh run ignores height, and fewer rows may fit other
                 # columns, so a short frame must show some of the same members
                 # in the same order and count every one it leaves out.
@@ -3658,17 +3659,38 @@ with tempfile.TemporaryDirectory(prefix='atris-board-random-watch-') as folder:
                 rows = expected.rstrip('\n').split('\n')[1:]
                 more = re.match(r'(\d+) more not shown', lines[-1])
                 shown = lines[1:-1] if more else lines[1:]
-                assert len(shown) + (int(more.group(1)) if more else 0) == len(rows), (where, last, expected)
+                if len(shown) + (int(more.group(1)) if more else 0) != len(rows):
+                    return 'shown and hidden members do not add up'
                 if lines[0].startswith('member'):
                     names = [r.split()[0] for r in rows]
                     for row in shown:
                         name = row.split()[0].removesuffix('...')
                         while names and not names[0].startswith(name):
                             names.pop(0)
-                        assert names, (where, row, last, expected)
+                        if not names:
+                            return f'{row!r} is not in a fresh run, in order'
                         names.pop(0)
-            else:
-                assert HINT.sub('', last) == expected.rstrip('\n'), (where, last, expected)
+                return None
+            # Read until the screen is the settled board and stays so for a
+            # beat, so a late frame for an old size or old logs still shows up.
+            # The deadline is well inside the 3s timer, so only the redraw on
+            # a resize or a log change can settle a step.
+            raw = b''
+            settled = None
+            deadline = time.monotonic() + 1.0
+            while time.monotonic() < deadline:
+                raw += drain(master, 0.05)
+                if problem(frames_of(raw)) is not None:
+                    settled = None
+                elif settled is None:
+                    settled = time.monotonic()
+                elif time.monotonic() - settled >= 0.2:
+                    break
+            frames = frames_of(raw)
+            last = frames[-1] if frames else ''
+            assert problem(frames) is None, (where, problem(frames), frames, expected)
+            short = not HINT.search(last)
+            if not short:
                 matched += 1
             print(f'{where}: {len(frames)} frames, last fits{"" if short else ", same as a fresh run"}')
         print(f'settled frames equal to a fresh run: {matched} of 24, the rest were short screens')
