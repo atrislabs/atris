@@ -11,7 +11,7 @@ Exit code: 0. 115 tests, 115 passed, 0 failed, 0 skipped, 57460ms.
 
 Teeth: with name shortening planted to count letters instead of screen cells, the test failed at 18 columns (a name eight cells wide in a six-cell column, exit 1). Restored, it passed.
 
-Real terminal output, with the rocket emoji written as [rocket] here (`ATRIS_BOARD_WIDE_NAME_PROOF=<file> node --test --test-name-pattern="member names in wide" test/member-board.test.js`, exit 0):
+Real terminal output, with the rocket emoji written as [rocket] here (`ATRIS_BOARD_WIDE_NAME_TRIM_PROOF=<file> node --test --test-name-pattern="member names in wide" test/member-board.test.js`, exit 0):
 
 ```
 command: node bin/atris.js member board --watch (18 columns, 8 rows)
