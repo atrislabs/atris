@@ -1,5 +1,7 @@
 # MAP notes: the deep map with rg shortcuts and file:line refs
 
+Held-folder report precedence: `test/member-tidy.test.js:426` invokes `describeRemovalResult` at `commands/worktree.js:1403` with real Git pins and locks plus real interrupted and timed-out child results; asserts the pin reason wins, then the lock path wins after unpinning, without deleting contents or logging removal.
+
 Hourly cleanup scan failures: `commands/autoland.js:878` includes a saved scan error in the plain summary, so a thrown first read or safety recheck does not look clean. Regression: `test/engine-resource.test.js:631` runs a real missing executable in both reads and confirms no agent is stopped.
 
 Hourly cleanup failed stops: `commands/autoland.js:869` reads saved failure counts into the summary; `test/engine-resource.test.js:589` proves real ESRCH using a harmless signal 0 probe, saved failures, singular/plural messages, and combined outcomes.

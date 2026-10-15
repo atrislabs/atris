@@ -1,0 +1,34 @@
+Held-folder explanations now have a real-process regression; the required command passed with exit 0, 60 passed, 0 failed, 3 todo.
+
+Scope: one regression, no production cleanup edits. The checkout already contained an uncommitted fleet refusal gate and caller detail change. Those edits remain outside this increment and outside this commit. The existing decision card still holds production disposal for review.
+
+Plan: real Git copy -> actual terminated child and timeout with partial output -> acquire real pin and index lock -> shared reader names pin -> unlock -> shared reader names index lock -> contents and registration remain, with no removal record.
+
+Changed files: test/member-tidy.test.js, atris/MAP.md, atris/refs/MAP-NOTES.md, atris/team/architect/logs/2026-10-14.md, and this receipt. Task commands also regenerate atris/TODO.md; its pre-existing changes are excluded from the commit.
+
+Commands: atris mission status mission-2026-10-14-continue-work-folder-protect-cd299a9a; git status --short; atris task list --status open; atris mission goal --json; atris mission attach-task 33 --json; atris task new; atris task claim ACW-26 --as architect; atris task note ACW-26; git diff --check.
+Mission attachment returned lock busy, held by the active launcher. No mission settings were changed. Brain activate and compile both returned plan-only output; no generated policy was written.
+
+Rerun: node --test test/worktree-removal-guard.test.js test/member-tidy.test.js
+Real surface: that command executes the shared production reader against actual Git state and actual child results. It does not claim the Git removal process itself timed out, or prove fleet's pending change independently of the dirty checkout.
+
+Verification output excerpt (actual invocation, exit 0):
+✔ real pins and locks take precedence over interrupted removal details (3990.552334ms)
+ℹ tests 63
+ℹ suites 0
+ℹ pass 60
+ℹ fail 0
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 3
+ℹ duration_ms 262981.607667
+
+Existing real CLI output from the same required command, exit 0:
+command: node bin/atris.js member tidy --dir <fixture copies> (stopped-removal git wrapper)
+kept  landed-late-pin  landed, but git refused: git removal stopped by SIGTERM
+tidy: removed 0, kept 1, of 1 copy
+The fixture path is omitted here; the command above documents the fixture substitution used by the existing test.
+
+Metric: one new passing regression, four held-state/process-result combinations, zero production edits. Three existing todo cases pass in this dirty checkout because the held fleet change is present; their pending markers are unchanged and this receipt does not certify that change for landing.
+next_push: extract the kept-copy report into a directly testable helper in the existing review plan, then replace source-text evaluation after production review.
+layer: behaviors

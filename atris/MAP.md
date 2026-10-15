@@ -1,5 +1,7 @@
 # MAP.md: atris-cli navigation
 
+Held-folder report precedence: `test/member-tidy.test.js:426` checks the shared removal reader with real pins, locks, a terminated child and a timeout after partial output. Pins win over locks; locks win over process failure details.
+
 This repo builds the `atris` CLI (Node, zero dependencies). Entry is
 `bin/atris.js`; command handlers live in `commands/`, shared helpers in `lib/`,
 API and auth in `utils/`, tests in `test/`. Workspace truth lives in `atris/`:

@@ -423,6 +423,37 @@ test('a removal stopped at its time limit reads as a timeout, even after partial
   }
 });
 
+test('real pins and locks take precedence over interrupted removal details', () => {
+  const fx = makeFixture();
+  try {
+    const copy = addCopy(fx, 'held-copy');
+    const lock = path.join(runGit(['rev-parse', '--absolute-git-dir'], copy), 'index.lock');
+    const interrupted = spawnSync(process.execPath, ['-e', "process.kill(process.pid, 'SIGTERM')"], { encoding: 'utf8' });
+    assert.equal(interrupted.status, null);
+    assert.equal(interrupted.signal, 'SIGTERM');
+    const timedOut = spawnSync(process.execPath, ['-e', 'process.stderr.write("partial progress"); setInterval(() => {}, 1000)'], { encoding: 'utf8', timeout: 1000 });
+    assert.equal(timedOut.error?.code, 'ETIMEDOUT');
+    assert.equal(timedOut.stderr, 'partial progress');
+    runGit(['worktree', 'lock', '--reason', 'writer still active', copy], fx.repo);
+    fs.writeFileSync(lock, '');
+    const now = Date.now();
+    for (const result of [interrupted, timedOut]) {
+      assert.equal(describeRemovalResult(copy, result, now),
+        'pinned by git worktree lock, under a minute old: writer still active');
+    }
+    runGit(['worktree', 'unlock', copy], fx.repo);
+    for (const result of [interrupted, timedOut]) {
+      assert.equal(describeRemovalResult(copy, result, now), `git holds ${lock}, under a minute old`);
+    }
+    assert.ok(fs.existsSync(lock));
+    assert.equal(fs.readFileSync(path.join(copy, 'README.md'), 'utf8'), '# fixture\n');
+    assert.ok(runGit(['worktree', 'list', '--porcelain'], fx.repo).includes(`worktree ${copy}\n`));
+    assert.deepEqual(removalLines(fx.repo), []);
+  } finally {
+    fs.rmSync(fx.base, { recursive: true, force: true });
+  }
+});
+
 for (const reason of ['agent still writing', 'agent still\n  writing\tplease wait']) {
   test(`tidy, reap and the regression check flatten a pin reason: ${JSON.stringify(reason)}`, () => {
     const fx = makeFixture();
