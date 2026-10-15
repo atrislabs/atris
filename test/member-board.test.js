@@ -3834,3 +3834,13 @@ test('every map line ref into the board code lands on the function or constant i
   }
   assert.deepEqual(bad, [], 'repoint each ref at the first line of what it describes');
 });
+
+// The board row's ref into the member command cites where it hands off to the
+// board. Other features' refs into that file are theirs to guard.
+test('the map board row ref into the member command lands on the board hand-off', () => {
+  const lines = fs.readFileSync(path.join(repoRoot, 'commands/member.js'), 'utf8').split('\n');
+  const row = fs.readFileSync(path.join(repoRoot, 'atris/MAP.md'), 'utf8').split('\n').find((l) => l.startsWith('| member board '));
+  const refs = [...(row || '').matchAll(/`commands\/member\.js:(\d+)`/g)].map(([, n]) => Number(n));
+  assert.ok(refs.length, 'the board row cites the member command');
+  for (const n of refs) assert.match(lines[n - 1] ?? '(past the end)', /memberBoardCommand/, `atris/MAP.md board row cites commands/member.js:${n}`);
+});
