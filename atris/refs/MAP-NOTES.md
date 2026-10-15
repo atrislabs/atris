@@ -2685,3 +2685,5 @@ Lineage read concurrency: `test/commands.test.js:21208` runs text, JSON and alte
 Live-status ownership setup: `test/commands.test.js:14230` creates all three rows and claims through the real store, waiting past the final creation timestamp before claiming. `commands/task.js:2656` builds the history feed and sorts only by timestamp, so distinct setup times preserve the latest claim. JSON, text and history status remain sequential CLI invocations.
 
 Review-debt next-selection setup: `test/commands.test.js:12644` seeds creation and ownership through the production store in one connection; ready and next stay on the CLI, removing one setup launch.
+
+Human-only review fallback ownership setup: `test/commands.test.js:12709` creates and claims through the production task store in one connection, closed in finally. Eight CLI launches become seven; certification, both next formats, follow-up creation and final show retain every CLI assertion.
