@@ -1,0 +1,34 @@
+Cleanup now has real preview and apply proof that a remote which names its default branch but cannot send it preserves every folder and all staged and unsaved notes. Required checks passed, exit 0.
+
+Files edited: test/member-tidy.test.js, atris/MAP.md, atris/refs/MAP-NOTES.md, atris/team/architect/logs/2026-10-15.md.
+Artifact: atris/receipts/work-folder-unfetchable-default-2026-10-15.txt.
+Task state: ACW-19, claimed by architect, then marked ready with proof.
+
+Plan: another writer pushes a newer default, the disposable remote loses that commit -> real preview and apply -> no removal and unchanged files, index, branches and registrations.
+Origin still answers which branch it ships from, so the earlier question succeeds; only the fetch fails. This was the one refusal path in cleanup with no test.
+Learned: git empties its own fetch record when a fetch fails, so the test checks that cleanup leaves it empty instead of comparing it to the old tip.
+
+Verify command:
+node --test test/worktree-removal-guard.test.js test/member-tidy.test.js && node bin/atris.js slop --staged
+
+Actual output excerpt:
+ℹ tests 81
+ℹ pass 81
+ℹ fail 0
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+command: node bin/atris.js member tidy --dir <fixture copies> --dry-run (unfetchable remote default)
+tidy: could not fetch origin: fatal: git upload-pack: not our ref 03b81adbfba59075d303d90fbe235d9b037243ce, so every copy is kept
+kept  landed-clean  could not fetch origin: fatal: git upload-pack: not our ref 03b81adbfba59075d303d90fbe235d9b037243ce
+kept  unfetchable-default  could not fetch origin: fatal: git upload-pack: not our ref 03b81adbfba59075d303d90fbe235d9b037243ce
+tidy: would remove 0, kept 2, of 2 copies in /private/var/folders/t1/2_4kmb5n4c71dxm26zc8dgzr0000gn/T/atris-member-tidy-UUn1jx/arena/.agent-worktrees/repo
+exit: 1
+command: node bin/atris.js member tidy --dir <fixture copies> (unfetchable remote default)
+tidy: could not fetch origin: fatal: git upload-pack: not our ref 03b81adbfba59075d303d90fbe235d9b037243ce, so every copy is kept
+kept  landed-clean  could not fetch origin: fatal: git upload-pack: not our ref 03b81adbfba59075d303d90fbe235d9b037243ce
+kept  unfetchable-default  could not fetch origin: fatal: git upload-pack: not our ref 03b81adbfba59075d303d90fbe235d9b037243ce
+tidy: removed 0, kept 2, of 2 copies in /private/var/folders/t1/2_4kmb5n4c71dxm26zc8dgzr0000gn/T/atris-member-tidy-UUn1jx/arena/.agent-worktrees/repo
+exit: 1
+
+tests exit: 0

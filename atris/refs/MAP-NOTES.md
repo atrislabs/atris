@@ -2450,3 +2450,5 @@ Remote default rename proof: `test/member-tidy.test.js:149` runs real preview an
 Missing remote default proof: `test/member-tidy.test.js:1002` runs real preview and apply after the remote default points to an absent branch. Both copies, staged contents, later edits, drafts, branches, registrations and stale local refs survive with no removal record.
 
 Unavailable remote cleanup proof: `test/member-tidy.test.js:1065` runs real preview and apply after the disposable remote moves away. Both copies, staged notes, later edits, drafts, branches, registrations and stale local refs survive; both calls refuse cleanup and record no removals.
+
+Unfetchable remote default proof: `test/member-tidy.test.js:1131` runs real preview and apply after origin still names its default but lost the newest commit, so the fetch at `lib/member-tidy.js:85` fails. Both copies, staged notes, later edits, drafts, branches, registrations and stale local refs survive; both calls refuse cleanup and record no removals.
