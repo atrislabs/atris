@@ -2795,3 +2795,82 @@ with tempfile.TemporaryDirectory(prefix='atris-board-cut-') as folder:
   assert.equal(proof.status, 0, `${proof.stdout}\n${proof.stderr}`);
   if (process.env.ATRIS_BOARD_CUT_PROOF) fs.writeFileSync(process.env.ATRIS_BOARD_CUT_PROOF, `${proof.stdout}proof exit: ${proof.status}\n`);
 });
+
+test('a watch window that shrinks as a log changes ends on a frame for the new size', { skip: process.platform === 'win32' }, () => {
+  const proof = spawnSync('python3', ['-c', String.raw`
+import datetime, fcntl, os, pathlib, pty, re, select, signal, struct, subprocess, sys, tempfile, termios, time
+
+def frames_of(raw):
+    return [re.sub(r'\x1b\[[0-9;]*[A-Za-z]', '', f.replace('\r', '')) for f in raw.decode(errors='replace').split('\x1b[2J')[1:]]
+
+def own_terminal(fd):
+    # The shrink reaches the board as a resize signal only from its own terminal.
+    def go():
+        os.setsid()
+        fcntl.ioctl(fd, termios.TIOCSCTTY, 0)
+    return go
+
+for order in ('resize first', 'resize inside the redraw delay'):
+    with tempfile.TemporaryDirectory(prefix='atris-board-shrink-') as folder:
+        root = pathlib.Path(folder)
+        progress = root / 'progress'
+        progress.mkdir()
+        now = datetime.datetime.now(datetime.timezone.utc).isoformat()
+        log = progress / 'builder.log'
+        log.write_text(f'{now} m-1 started: ship the member board so the operator sees every member at a glance\n{now} m-1 reading lib/member-board.js\n')
+        master, slave = pty.openpty()
+        fcntl.ioctl(master, termios.TIOCSWINSZ, struct.pack('HHHH', 8, 100, 0, 0))
+        child = subprocess.Popen([sys.argv[1], sys.argv[2], 'member', 'board', '--watch'], cwd=root,
+            env={**os.environ, 'ATRIS_PROGRESS_DIR': str(progress)}, stdin=slave, stdout=slave, stderr=slave, preexec_fn=own_terminal(slave))
+        os.close(slave)
+        def read(seconds):
+            out = b''
+            end = time.monotonic() + seconds
+            while time.monotonic() < end:
+                if select.select([master], [], [], 0.02)[0]:
+                    try: out += os.read(master, 65536)
+                    except OSError: break
+            return out
+        try:
+            first = b''
+            deadline = time.monotonic() + 15
+            while b'ctrl' not in first and time.monotonic() < deadline:
+                first += read(0.2)
+            assert b'ship the' in first, first
+            shrink = lambda: fcntl.ioctl(master, termios.TIOCSWINSZ, struct.pack('HHHH', 6, 40, 0, 0))
+            def append():
+                with log.open('a') as out:
+                    out.write(f'{now} m-2 started: fix the login flow\n')
+            if order == 'resize first':
+                shrink()
+                append()
+            else:
+                append()
+                time.sleep(0.05)
+                shrink()
+            frames = frames_of(read(1.0))
+            print(f'command: node bin/atris.js member board --watch (100x8 shrunk to 40x6, {order})')
+            print(f'frames after the change: {len(frames)}, widest lines: {[max(map(len, f.split(chr(10)))) for f in frames]}')
+            assert frames, 'no redraw after the change'
+            last = frames[-1]
+            print(last)
+            # Once a frame fits the new size, no later frame goes back to the old one.
+            fit = [max(map(len, f.split('\n'))) <= 40 for f in frames]
+            assert True in fit and all(fit[fit.index(True):]), (order, frames)
+            lines = last.rstrip('\n').split('\n')
+            assert lines[0].startswith('member') and len(lines) <= 6, (order, last)
+            assert 'fix the' in last and 'ship the' not in last, (order, last)
+            child.send_signal(signal.SIGINT)
+            code = child.wait(timeout=10)
+            print(f'exit: {code}')
+            assert code == 0
+        finally:
+            if child.poll() is None:
+                child.terminate()
+                child.wait(timeout=10)
+            os.close(master)
+`, process.execPath, cliPath], { encoding: 'utf8', timeout: 45_000 });
+  assert.ifError(proof.error);
+  assert.equal(proof.status, 0, `${proof.stdout}\n${proof.stderr}`);
+  if (process.env.ATRIS_BOARD_SHRINK_PROOF) fs.writeFileSync(process.env.ATRIS_BOARD_SHRINK_PROOF, `${proof.stdout}proof exit: ${proof.status}\n`);
+});
