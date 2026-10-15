@@ -943,7 +943,13 @@ function printReceipt(receipt, { removalsToday = '' } = {}) {
       // The receipt keeps the raw codes; the human line speaks in sentences.
       if (String(k).includes('(fresh_worktree_grace)')) console.log(`  in use, left alone: ${k.replace(' (fresh_worktree_grace)', '')}`);
       else if (String(k).includes('(current_checkout)')) console.log(`  you are standing in it, left alone: ${k.replace(' (current_checkout)', '')}`);
-      else console.log(`  ✋ kept, needs a human: ${k}`);
+      else {
+        // A green landing scratch copy holds no work of its own; say so, so
+        // the operator knows it is not a member's copy.
+        const { isGreenScratch } = require('../lib/land-green');
+        const from = isGreenScratch(String(k).split(' (')[0]) ? ' (green landing scratch copy)' : '';
+        console.log(`  ✋ kept, needs a human${from}: ${k}`);
+      }
     }
     for (const m of receipt.keptMovedBranches || []) console.log(`  moved since scan, left alone: ${m}`);
     if (receipt.deletedRemote.length > 0) console.log(`  also cleared on github: ${receipt.deletedRemote.length}`);

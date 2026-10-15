@@ -7,7 +7,7 @@ const os = require('node:os');
 const path = require('node:path');
 const { spawnSync } = require('node:child_process');
 
-const { landStaleGreenBranches, failingLines, flagWhat, summaryLine } = require('../lib/land-green');
+const { landStaleGreenBranches, failingLines, flagWhat, summaryLine, isGreenScratch } = require('../lib/land-green');
 
 const THREE_DAYS_AGO = new Date(Date.now() - 3 * 24 * 3600 * 1000).toISOString();
 
@@ -358,6 +358,29 @@ test('a scratch folder kept because git is still busy in it is named in the verd
     assert.ok(fs.existsSync(scratch));
     assert.ok(fs.existsSync(kept[2]));
     assert.match(summaryLine(result), new RegExp(`member/busy scratch folder kept, ${scratch.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}: git holds `));
+  } finally {
+    if (scratch) fs.rmSync(scratch, { recursive: true, force: true });
+    fs.rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test('reap labels a kept green landing scratch folder as a landing copy, not a member copy', () => {
+  const root = makeRepo();
+  let scratch = '';
+  try {
+    branchWith(root, 'member/busy', (dir) => fs.writeFileSync(path.join(dir, 'feature.txt'), 'shipped\n'));
+    const result = landStaleGreenBranches(root, {
+      push: false,
+      verifyCommand: 'node check.js && touch "$(git rev-parse --git-dir)/index.lock"',
+      runCli: () => ({ status: 0, stdout: '' }),
+    });
+    scratch = result.verdicts[0].scratch_kept.split(': ')[0];
+    assert.ok(isGreenScratch(scratch), scratch);
+    assert.equal(isGreenScratch(root), false);
+    const reaped = spawnSync(process.execPath, [path.join(__dirname, '..', 'bin', 'atris.js'), 'land', '--reap', '--force'], { cwd: root, encoding: 'utf8', timeout: 60000 });
+    assert.equal(reaped.status, 0, reaped.stderr);
+    assert.ok(reaped.stdout.includes(`kept, needs a human (green landing scratch copy): ${fs.realpathSync(scratch)} (git_lock: git holds `), reaped.stdout);
+    assert.ok(fs.existsSync(scratch));
   } finally {
     if (scratch) fs.rmSync(scratch, { recursive: true, force: true });
     fs.rmSync(root, { recursive: true, force: true });
