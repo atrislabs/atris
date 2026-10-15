@@ -1,0 +1,44 @@
+Cleanup now has real preview and apply proof that an unavailable remote preserves every folder and all staged and unsaved notes. Required checks passed, exit 0.
+
+Files edited: test/member-tidy.test.js, atris/MAP.md, atris/refs/MAP-NOTES.md, atris/team/architect/logs/2026-10-15.md.
+Artifact: atris/receipts/work-folder-unavailable-remote-2026-10-15.txt.
+Task state: ACW-18, claimed by architect, then marked ready with proof.
+
+Plan: unavailable remote -> real preview and apply -> no removal and unchanged files, index, branches and registrations.
+The disposable remote was renamed after fetching its latest tip. Neither call may trust cached remote refs. Both correctly exit 1 and explain why every copy is kept.
+
+Verify command:
+node --test test/worktree-removal-guard.test.js test/member-tidy.test.js && node bin/atris.js slop --staged
+
+Actual output excerpt:
+command: node bin/atris.js member tidy --dir <fixture copies> --dry-run (unavailable remote)
+tidy: could not ask origin for its main branch: fatal: '/private/var/folders/t1/2_4kmb5n4c71dxm26zc8dgzr0000gn/T/atris-member-tidy-gkde4h/remote.git' does not appear to be a git repository, so every copy is kept
+kept  landed-clean  could not ask origin for its main branch: fatal: '/private/var/folders/t1/2_4kmb5n4c71dxm26zc8dgzr0000gn/T/atris-member-tidy-gkde4h/remote.git' does not appear to be a git repository
+kept  remote-unavailable  could not ask origin for its main branch: fatal: '/private/var/folders/t1/2_4kmb5n4c71dxm26zc8dgzr0000gn/T/atris-member-tidy-gkde4h/remote.git' does not appear to be a git repository
+tidy: would remove 0, kept 2, of 2 copies in /private/var/folders/t1/2_4kmb5n4c71dxm26zc8dgzr0000gn/T/atris-member-tidy-gkde4h/arena/.agent-worktrees/repo
+exit: 1
+command: node bin/atris.js member tidy --dir <fixture copies> (unavailable remote)
+tidy: could not ask origin for its main branch: fatal: '/private/var/folders/t1/2_4kmb5n4c71dxm26zc8dgzr0000gn/T/atris-member-tidy-gkde4h/remote.git' does not appear to be a git repository, so every copy is kept
+kept  landed-clean  could not ask origin for its main branch: fatal: '/private/var/folders/t1/2_4kmb5n4c71dxm26zc8dgzr0000gn/T/atris-member-tidy-gkde4h/remote.git' does not appear to be a git repository
+kept  remote-unavailable  could not ask origin for its main branch: fatal: '/private/var/folders/t1/2_4kmb5n4c71dxm26zc8dgzr0000gn/T/atris-member-tidy-gkde4h/remote.git' does not appear to be a git repository
+tidy: removed 0, kept 2, of 2 copies in /private/var/folders/t1/2_4kmb5n4c71dxm26zc8dgzr0000gn/T/atris-member-tidy-gkde4h/arena/.agent-worktrees/repo
+exit: 1
+
+ℹ tests 80
+ℹ suites 0
+ℹ pass 80
+ℹ fail 0
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 37624.796875
+
+  ✓ clean, no slop tells in 3 files
+
+exit: 0
+Progress: 80 passed, zero failed, skipped or pending; one additional real CLI regression. Production behavior unchanged.
+Administrative commands: atris mission status mission-2026-10-14-continue-work-folder-protect-6737930d; atris task new; atris task claim ACW-18 --as architect; atris task note ACW-18; atris task ready ACW-18 --proof; git diff --check; git add; git commit; git push.
+The mission attachment command found the running harness lock, so mission state was left unchanged. Brain activate and compile reported plan-only output, no generated files were written.
+
+next_push: Prove cleanup keeps staged and unsaved notes when the remote default exists but cannot be fetched.
+layer: behaviors

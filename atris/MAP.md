@@ -218,3 +218,5 @@ Idle landed notes: `test/member-tidy.test.js:712` runs real preview and cleanup 
 Upstream rewind cleanup proof: `test/member-tidy.test.js:811` runs real preview and apply after a disposable remote moves backward. It preserves staged contents, later edits, drafts, branch and registration while removing only a clean neighbor. Proof: `atris/receipts/work-folder-upstream-rewind-2026-10-15.txt`.
 
 Missing remote default proof: `test/member-tidy.test.js:1002` runs real preview and apply after the remote default points to an absent branch. Both copies, staged contents, later edits, drafts, branches, registrations and stale local refs survive with no removal record.
+
+Unavailable remote cleanup proof: `test/member-tidy.test.js:1065` runs real preview and apply after the disposable remote moves away. Both copies, staged notes, later edits, drafts, branches, registrations and stale local refs survive; both calls refuse cleanup and record no removals.
