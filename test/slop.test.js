@@ -3087,12 +3087,19 @@ test('fix joins "the", a noun, a verb in "s" and one bare word before a stop', (
     'We fixed it \u2014 the loop kicks work.',
     'We fixed it \u2014 the gate checks drafts.',
     'Check one place \u2014 the error logs folder.',
+    // "a", one describing word, and "but not" after the bare word: "a
+    // clean revert restores prompt but not the data" spliced. "of" or "her"
+    // is never the noun, so "the way her eyes moved" keeps its comma.
+    'The scores are baked in \u2014 a clean revert restores prompt but not the data.',
+    'He watched her read \u2014 the way her eyes moved.',
   ].join('\n'));
   const { changes } = applyFixes([file], RULES, { write: false });
   assert.deepEqual(changes.map((c) => c.after), [
     'We fixed it; the loop kicks work.',
     'We fixed it; the gate checks drafts.',
     'Check one place, the error logs folder.',
+    'The scores are baked in; a clean revert restores prompt but not the data.',
+    'He watched her read, the way her eyes moved.',
   ]);
 });
 
