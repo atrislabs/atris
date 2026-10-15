@@ -5,8 +5,20 @@ const os = require('node:os');
 const path = require('node:path');
 const { scanFile, detect, RULES } = require('../commands/slop');
 
+// Every temp folder this file makes is removed when the file finishes, so
+// repeated runs do not pile folders into the system temp folder.
+const madeDirs = [];
+function tmpDir(prefix) {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), prefix));
+  madeDirs.push(dir);
+  return dir;
+}
+test.after(() => {
+  for (const dir of madeDirs) fs.rmSync(dir, { recursive: true, force: true });
+});
+
 function tmpFile(name, content) {
-  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'slop-'));
+  const dir = tmpDir('slop-');
   const p = path.join(dir, name);
   fs.writeFileSync(p, content);
   return p;
@@ -152,7 +164,7 @@ test('findings carry file:line + rule id for the verification gate', () => {
 const { findDeadCode } = require('../commands/slop');
 
 function fixtureRepo() {
-  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'slop-dead-'));
+  const root = tmpDir('slop-dead-');
   const w = (rel, content) => {
     const p = path.join(root, rel);
     fs.mkdirSync(path.dirname(p), { recursive: true });
@@ -216,7 +228,7 @@ test('slop dead: clean repo reports zero dead', () => {
 });
 
 test('slop dead: empty/missing dirs do not throw', () => {
-  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'slop-dead-empty-'));
+  const root = tmpDir('slop-dead-empty-');
   const r = findDeadCode(root, { dirs: ['cmds', 'lib'] });
   assert.equal(r.candidates, 0);
   assert.deepEqual(r.dead, []);
@@ -265,7 +277,7 @@ test('slop --help and -h print usage and exit 0 instead of scanning', () => {
 });
 
 test('detect scans every path, not just the first', () => {
-  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'slop-detect-multi-'));
+  const dir = tmpDir('slop-detect-multi-');
   const clean = path.join(dir, 'clean.tsx');
   const bad = path.join(dir, 'bad.tsx');
   fs.writeFileSync(clean, '<div className="bg-stone-50 p-4">clean</div>\n');
