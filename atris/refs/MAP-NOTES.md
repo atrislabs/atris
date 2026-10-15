@@ -2502,6 +2502,8 @@ Healthy cleanup link-to-folder proof: `test/member-tidy.test.js:1439` runs real 
 
 Healthy cleanup rename-to-folder proof: `test/member-tidy.test.js:1448` runs real preview and apply after a saved rename destination becomes a folder containing a draft, preserving the original committed contents, saved destination and mode, missing source, draft bytes and full staged tree.
 
-Healthy cleanup reused rename source proof: `test/member-tidy.test.js:1451` recreates the original name with new draft bytes after a saved rename. Real preview and apply preserve the new draft, original committed bytes, saved destination, replacement folder draft and complete staged tree.
+Healthy cleanup reused rename source proof: `test/member-tidy.test.js:1453` recreates the original name with new draft bytes after a saved rename. Real preview and apply preserve the new draft, original committed bytes, saved destination, replacement folder draft and complete staged tree.
 
-Healthy cleanup linked rename source proof: `test/member-tidy.test.js:1465` turns the original name into a symbolic link after a saved rename. Real preview and apply preserve the link target, original committed bytes, saved destination and complete staged tree.
+Healthy cleanup linked rename source proof: `test/member-tidy.test.js:1466` turns the original name into a symbolic link after a saved rename. Real preview and apply preserve the link target, original committed bytes, saved destination and complete staged tree.
+
+Healthy cleanup folded rename source proof: `test/member-tidy.test.js:1474` turns the original name into a folder holding a draft after a saved rename. Real preview and apply preserve the folder draft, original committed bytes, saved destination and complete staged tree.
