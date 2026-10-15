@@ -1263,7 +1263,7 @@ function reviewRefusalLine(refusal) {
   return line.trim().slice(0, 200);
 }
 
-function memberRunWith(name, args, { quiet = false } = {}) {
+function memberRunWith(name, args, { quiet = false, closeTaskIds = [] } = {}) {
   if (!name || name === '--help' || name === '-h' || hasFlag(args, '--help') || hasFlag(args, '-h')) {
     console.log('usage: atris member run <name> ["mission text"] [--verify "<cmd>"] [--minutes N|--hours N] [--json]');
     console.log('pick for me: atris member run "fix the flaky login test" (the best member takes it and runs it)');
@@ -1416,7 +1416,7 @@ function memberRunWith(name, args, { quiet = false } = {}) {
     const summary = ticks.map((tick) => tick?.summary || tick?.claude?.summary).filter(Boolean).pop() || '';
     const workerEngine = ticks.map((tick) => tick?.engine_id).filter(Boolean).pop()
       || runnerSwap?.to || readFlag(args, '--runner', '') || '';
-    result.autoland = require('../lib/member-autoland').autolandMemberRun({ mission: finalMission, cwd, summary, workerEngine });
+    result.autoland = require('../lib/member-autoland').autolandMemberRun({ mission: finalMission, cwd, summary, workerEngine, closeTaskIds });
     if (!asJson && !quiet) console.log(result.autoland.line);
   }
   if (checkFailed) {
@@ -10618,6 +10618,8 @@ function memberGoFinishTask(owner, task, result, thrown = null) {
       receipt ? `Receipt: ${receipt}` : ''].filter(Boolean).join('\n');
     const ready = taskDb.readyTask(db, { id: task.id, actor: owner, proof });
     if (ready.ready !== false) return { id: task.id, title: task.title, outcome: 'review', receipt: receipt || null };
+    // Its change already merged and the merge line closed the job.
+    if (taskDb.getTask(db, task.id)?.status === 'done') return { id: task.id, title: task.title, outcome: 'done', receipt: receipt || null };
   }
   const ticks = Array.isArray(result && result.ticks) ? result.ticks : [];
   const lastReason = String((ticks[ticks.length - 1] || {}).reason || (ticks[ticks.length - 1] || {}).error || '');
@@ -10841,7 +10843,8 @@ async function memberSteerOrDispatchWith({ pullTask = false } = {}, rawArgs = []
   const runFlags = required ? [...stripKnownFlags(nextFlags, ['--verify'], []), '--verify', required] : nextFlags;
   let result = null;
   try {
-    result = await memberRunWith(owner, [effectivePrompt, '--ignite', ...runFlags], { quiet: asJson });
+    // The job rides to the merge line so it closes itself when its change merges.
+    result = await memberRunWith(owner, [effectivePrompt, '--ignite', ...runFlags], { quiet: asJson, closeTaskIds: [pulled.task.id] });
   } catch (error) {
     memberGoFinishTask(owner, pulled.task, null, error);
     throw error;
@@ -10852,6 +10855,7 @@ async function memberSteerOrDispatchWith({ pullTask = false } = {}, rawArgs = []
     ? { task, work_step: { summary: result?.work_step?.summary || null }, error: result?.error || null }
     : merged));
   else if (task.outcome === 'review') console.log(`Task "${task.title}" is ready for review.`);
+  else if (task.outcome === 'done') console.log(`Task "${task.title}" merged and closed itself.`);
   else if (task.outcome === 'needs_human' && task.held_for === 'review') console.log(`Task "${task.title}" waits for a person to review it: ${task.reason}`);
   else if (task.outcome === 'needs_human') console.log(`Task "${task.title}" failed three times in a row and now waits for a person: ${task.reason}`);
   else console.log(`Task "${task.title}" went back on the list: ${task.reason}`);
