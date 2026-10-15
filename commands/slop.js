@@ -1470,12 +1470,17 @@ function trailingMark(line, below, above = '') {
 // a full clause, though "it's" alone at the line end reads as none, so the
 // one-line comma would splice it. Only a semicolon or colon from the joined
 // reading replaces that comma. A dash further on the next line, past its
-// first stop, belongs to the next sentence, as in trailingMark.
+// first stop, belongs to the next sentence, as in trailingMark. A code span
+// on the next line counts as a plain word ("it" then "runs the `claude mcp
+// add` for you"); one past the first stop is not read at all.
 function wrappedClause(masked, fixed, below, fix, opts) {
   const at = masked.indexOf('\u2014');
-  if (at < 0 || masked.split('\u2014').length !== 2 || !masked.slice(at + 1).trim() || /`/.test(below)) return fixed;
+  if (at < 0 || masked.split('\u2014').length !== 2 || !masked.slice(at + 1).trim()) return fixed;
   if (!wrappedFrom(masked, below)) return fixed;
-  const words = /\u2014/.test(below) ? (/^[^\u2014]*?[.!?](?=\s)/.exec(below) || [''])[0] : below;
+  const stop = /^[^\u2014`]*?[.!?](?=\s|$)/.exec(below);
+  let words = /\u2014/.test(below) || /`/.test(below) ? (stop || [below])[0] : below;
+  if (/\u2014/.test(words) || (words.split('`').length - 1) % 2) return fixed;
+  words = words.replace(/`[^`]*`/g, 'code');
   const pre = masked.slice(0, at).trimEnd();
   if (!words.trim() || !pre || !fixed.startsWith(`${pre},`)) return fixed;
   const joined = fix(`${masked.trimEnd()} ${words.trim()}`, opts);

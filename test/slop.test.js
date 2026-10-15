@@ -2099,6 +2099,28 @@ test('fix reads a mid-line dash with the next line when its clause wraps there',
   ]);
 });
 
+test('fix reads a wrapped clause past a code span on the next line', () => {
+  // from three pack docs: a code span on the next line made the wrap reading
+  // give up, so "fix \u2014 it" then "replaces the wrapper" spliced. A span past
+  // the first stop is not read; one before it counts as a plain word.
+  const file = tmpFile('mid-line-wrap-code.md', [
+    'Do not edit `eval.jsonl` to fix failing rows \u2014 that\'s',
+    'overfitting. Add real misroutes via `bci2e` only.',
+    '',
+    'Pacing is the native, composable fix \u2014 it',
+    'replaces external wrapper scripts. **Opt-in: default mode `off`.**',
+    '',
+    'Paste it into Claude Code \u2014 it',
+    'runs the `claude mcp add` for you.',
+  ].join('\n'));
+  const { changes } = applyFixes([file], RULES);
+  assert.deepEqual(changes.map((c) => c.after), [
+    'Do not edit `eval.jsonl` to fix failing rows; that\'s',
+    'Pacing is the native, composable fix; it',
+    'Paste it into Claude Code; it',
+  ]);
+});
+
 test('fix ends a paragraph-ending dash with a period, keeps a wrapping one a comma', () => {
   const file = tmpFile('line-end.md', [
     'The tool we built \u2014',
