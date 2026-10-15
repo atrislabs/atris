@@ -1293,6 +1293,7 @@ test('fix joins a noun clause after the dash with a semicolon', () => {
     'We built the page \u2014 that users wanted.',
     // "that" before a verb in "s" after an "if" clause opens a sentence
     'Inspect the cases \u2014 if they are one error class, that becomes a targeted experiment.',
+    'Add a fallback \u2014 if the key is missing, this process fails.',
     // a title where every word is capitalized names a thing, so it never
     // joins; words in all capitals are shouting and still do
     'Inbox Triage \u2014 23 emails processed',
@@ -1406,6 +1407,7 @@ test('fix joins a noun clause after the dash with a semicolon', () => {
     'H1 missed 3 bullets; that gap closed with the regex broadening.',
     'We built the page, that users wanted.',
     'Inspect the cases; if they are one error class, that becomes a targeted experiment.',
+    'Add a fallback; if the key is missing, this process fails.',
     'Inbox Triage, 23 emails processed',
     'Release Notes, it ships Friday.',
     'Your journal tracks how ideas evolve; the navigator reads it to understand context.',
