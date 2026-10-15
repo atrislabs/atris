@@ -12530,7 +12530,7 @@ test('task next names accept for uncertified review and leaves open work unclaim
   try {
     fs.mkdirSync(path.join(dir, 'atris'), { recursive: true });
 
-    // Seed both tasks in creation order; the claim, ready, next and both shows stay on the CLI.
+    // Seed creation and ownership; ready, next and both shows stay on the CLI.
     const workspaceRoot = taskStore.workspaceRoot(dir);
     const db = taskStore.open(dbPath);
     let reviewId;
@@ -12541,6 +12541,7 @@ test('task next names accept for uncertified review and leaves open work unclaim
       const open = addSeedTask(db, { title: 'Open work must wait', tag: 'agent', workspaceRoot });
       assert.equal(review.inserted, true);
       assert.equal(open.inserted, true);
+      assert.equal(taskStore.claimTask(db, { id: review.id, claimedBy: 'codex' }).claimed, true);
       const refs = taskStore.taskDisplayRefMap(taskStore.listTasks(db, { workspaceRoot }));
       reviewId = review.id;
       reviewRef = refs.get(review.id);
@@ -12550,7 +12551,6 @@ test('task next names accept for uncertified review and leaves open work unclaim
     } finally {
       taskStore.close();
     }
-    assert.equal(runCli(['task', 'claim', reviewRef, '--as', 'codex'], { cwd: dir, env }).status, 0);
     assert.equal(runCli(['task', 'ready', reviewRef, '--proof', 'first pass validation passed', '--as', 'codex'], { cwd: dir, env }).status, 0);
 
     const next = runCli(['task', 'next', '--as', 'codex', '--json'], { cwd: dir, env });

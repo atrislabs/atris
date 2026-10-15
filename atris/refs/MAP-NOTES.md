@@ -2787,3 +2787,5 @@ Continuation display read batching: `test/commands.test.js:15271` awaits current
 Queue filtering read batching: `test/commands.test.js:15322` runs three queue/current CLI reads together after both fixtures close. `commands/task.js:3962` derives each response from stored rows, and the saved view is not consumed by these reads. All assertions remain; three sequential launch stages become one.
 
 Clean review setup: `test/commands.test.js:11948` seeds creation, claim and readiness through the production store, asserts each result and closes before both real CLI review checks. Five launches become two; the accepted read-only check and refused mutating check retain every assertion.
+
+Review selection ownership setup: `test/commands.test.js:12525` seeds ownership with production claimTask in the existing creation connection, asserts success and closes in finally. Readiness, selection and both status inspections remain real CLI checks with every assertion retained. Five launches become four.
