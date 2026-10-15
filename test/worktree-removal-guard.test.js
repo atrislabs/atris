@@ -771,3 +771,21 @@ test('green landing names who removed its scratch folder and why', () => {
     fs.rmSync(base, { recursive: true, force: true });
   }
 });
+
+test('worktree cleanup names the reason and age of a pinned folder it skips', () => {
+  const { base, repo, wt } = landedWorktree();
+  try {
+    git(repo, ['worktree', 'lock', '--reason', 'agent still writing', wt]);
+    const pin = path.join(worktreeGitDir(wt), 'locked');
+    const stale = new Date(Date.now() - 3 * 60 * 60 * 1000);
+    fs.utimesSync(pin, stale, stale);
+    const cleaned = cleanupWorktrees({ root: repo, base: 'HEAD', apply: true, activeCwds: [] });
+    const kept = cleaned.kept.find((item) => item.path === wt);
+    assert.equal(kept.reason, 'locked', JSON.stringify(cleaned.kept));
+    assert.equal(kept.pinned, 'pinned by git worktree lock, 3 h old: agent still writing');
+    assert.ok(fs.existsSync(wt));
+    assert.deepEqual(removalLines(repo), []);
+  } finally {
+    fs.rmSync(base, { recursive: true, force: true });
+  }
+});

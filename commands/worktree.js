@@ -1372,13 +1372,19 @@ function worktreePin(worktreePath, now = Date.now()) {
   }
 }
 
+// The pin's reason and age in words, or null when the folder is not pinned.
+function describePin(worktreePath, now = Date.now()) {
+  const pin = worktreePin(worktreePath, now);
+  return pin ? `pinned by git worktree lock, ${describeLockAge(pin.ageMs)} old${pin.why ? `: ${pin.why}` : ''}` : null;
+}
+
 // Why git refused to remove a folder, in the one line tidy, reap, worktree
 // cleanup and the autopilot regression check all print. A pin names its
 // reason and age, a lock or paused work taken since the first check uses the
 // shared hold words, and anything else is git's own first line.
 function describeRefusedRemoval(worktreePath, gitOutput = '', now = Date.now()) {
-  const pin = worktreePin(worktreePath, now);
-  if (pin) return `pinned by git worktree lock, ${describeLockAge(pin.ageMs)} old${pin.why ? `: ${pin.why}` : ''}`;
+  const pinned = describePin(worktreePath, now);
+  if (pinned) return pinned;
   const held = describeGitHold(gitHold({ worktree: worktreePath, now }));
   if (held) return held;
   const line = String(gitOutput || '').trim().split('\n')[0].replace(/^(fatal|error):\s*/, '').trim();
@@ -1469,7 +1475,9 @@ function cleanupWorktrees({ root = repoRoot(), base: baseOverride = '', apply = 
       continue;
     }
     if (wt.locked) {
-      kept.push({ ...item, reason: 'locked' });
+      // Skipped before trying, since git refuses a pinned folder anyway; the
+      // pin's reason and age say who to ask before unpinning it.
+      kept.push({ ...item, reason: 'locked', pinned: describePin(wtPath) || 'pinned by git worktree lock' });
       continue;
     }
     if (PROTECTED_BRANCHES.has(wt.branch)) {
@@ -1588,6 +1596,7 @@ function cleanup(args) {
     const held = describeGitHold(item);
     if (held) console.log(`held: ${item.path} ${held}`);
     if (item.refused) console.log(`refused: ${item.path} ${item.refused}`);
+    if (item.pinned) console.log(`held: ${item.path} ${item.pinned}`);
   }
   if (!result.apply && result.candidates.length) console.log('next: atris worktree cleanup --apply');
   return 0;
