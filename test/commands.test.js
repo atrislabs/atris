@@ -14351,46 +14351,39 @@ test('task status separates review continue-work from human accept waiting', () 
 
     // Ready and review are one store call each in the CLI, so the three rows
     // reach review in-process; the status read still exercises the CLI.
+    // All three rows are set up on one connection, closed before the CLI runs.
     const workspaceRoot = taskStore.workspaceRoot(dir);
-    const seedTask = (title) => {
-      const db = taskStore.open(dbPath);
-      try {
-        const created = addSeedTask(db, { title, tag: 'task', workspaceRoot });
-        return taskStore.withTaskDisplayRefs(taskStore.listTasks(db, { workspaceRoot }))
-          .find((row) => row.id === created.id);
-      } finally {
-        taskStore.close();
-      }
+    const seedTask = (db, title) => {
+      const created = addSeedTask(db, { title, tag: 'task', workspaceRoot });
+      return taskStore.withTaskDisplayRefs(taskStore.listTasks(db, { workspaceRoot }))
+        .find((row) => row.id === created.id);
     };
-    const storeReady = (task, proof) => {
-      const db = taskStore.open(dbPath);
-      try {
-        const readied = taskStore.readyTask(db, { id: task.id, actor: 'codex', proof, result: FIXTURE_RESULT_SENTENCE });
-        assert.equal(readied.ready, true, readied.reason);
-      } finally {
-        taskStore.close();
-      }
+    const storeReady = (db, task, proof) => {
+      const readied = taskStore.readyTask(db, { id: task.id, actor: 'codex', proof, result: FIXTURE_RESULT_SENTENCE });
+      assert.equal(readied.ready, true, readied.reason);
     };
-    const storeReview = (task, proof, nextTask) => {
-      const db = taskStore.open(dbPath);
-      try {
-        const reviewed = taskStore.reviewTask(db, { id: task.id, actor: 'codex-review', reward: 0, proof, nextTask });
-        assert.equal(reviewed.reviewed, true, reviewed.reason);
-      } finally {
-        taskStore.close();
-      }
+    const storeReview = (db, task, proof, nextTask) => {
+      const reviewed = taskStore.reviewTask(db, { id: task.id, actor: 'codex-review', reward: 0, proof, nextTask });
+      assert.equal(reviewed.reviewed, true, reviewed.reason);
     };
 
-    const continuationTask = seedTask('Certified row with concrete continuation');
-    storeReady(continuationTask, 'node --check test/commands.test.js passed before status continuation split');
-    storeReview(continuationTask, 'node --test test/commands.test.js passed during status continuation split', 'Build the next concrete continuation slice');
+    let continuationTask;
+    let waitingTask;
+    const db = taskStore.open(dbPath);
+    try {
+      continuationTask = seedTask(db, 'Certified row with concrete continuation');
+      storeReady(db, continuationTask, 'node --check test/commands.test.js passed before status continuation split');
+      storeReview(db, continuationTask, 'node --test test/commands.test.js passed during status continuation split', 'Build the next concrete continuation slice');
 
-    const waitingTask = seedTask('Certified row waiting on human accept');
-    storeReady(waitingTask, 'node --check test/commands.test.js passed before human accept split');
-    storeReview(waitingTask, 'node --test test/commands.test.js passed during human accept split');
+      waitingTask = seedTask(db, 'Certified row waiting on human accept');
+      storeReady(db, waitingTask, 'node --check test/commands.test.js passed before human accept split');
+      storeReview(db, waitingTask, 'node --test test/commands.test.js passed during human accept split');
 
-    const blockingTask = seedTask('Review row still needs second agent check');
-    storeReady(blockingTask, 'node --check test/commands.test.js passed before status blocking split');
+      const blockingTask = seedTask(db, 'Review row still needs second agent check');
+      storeReady(db, blockingTask, 'node --check test/commands.test.js passed before status blocking split');
+    } finally {
+      taskStore.close();
+    }
 
     const status = runCli(['task', 'status', '--json'], { cwd: dir, env });
     assert.equal(status.status, 0, status.stderr);
