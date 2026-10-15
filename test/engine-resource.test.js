@@ -3383,12 +3383,12 @@ test('atris engine sweep names the day\'s crowded time limit kills in the same w
   const start = (at, id) => JSON.stringify({ at, phase: 'start', engine: 'codex', task: id, run_id: id });
   const busiest = [{ name: 'mds_stores', cpu: 300 }, { name: 'node', cpu: 90 }];
   const timeLimit = (at, id, load, extra = {}) => JSON.stringify({ at, phase: 'end', engine: 'codex', task: id, run_id: id, free_pct: 70, signal: 'SIGKILL', timed_out: true, cause: 'killed (time limit reached)', load: [load, 1, 1], ...extra });
-  const sweep = () => {
+  const sweep = (args = []) => {
     const out = [];
     const original = console.log;
     console.log = (line) => out.push(String(line));
     try {
-      engineCommand(['sweep'], { root, engineSweep: { read: () => ({ agents: [], referenced: new Set() }), uid: 501 } });
+      engineCommand(['sweep', ...args], { root, engineSweep: { read: () => ({ agents: [], referenced: new Set() }), uid: 501 } });
     } finally {
       console.log = original;
     }
@@ -3413,6 +3413,9 @@ test('atris engine sweep names the day\'s crowded time limit kills in the same w
     assert.ok(lines.includes(`time limit kills in the last day: 3 (${crowdedText})`), lines.join('\n'));
     assert.ok(lines.includes('0 of 4 SIGKILLs ended with machine memory low, 4 at their time limit'), lines.join('\n'));
 
+    const { history } = JSON.parse(sweep(['--json']).join('\n'));
+    assert.deepStrictEqual([history.time_limit_kills_day, history.time_limit_kills], [3, 4]);
+    console.log(`real sweep json totals: ${JSON.stringify({ recent: history.time_limit_kills_day, overall: history.time_limit_kills })}`);
     const status = spawnSync(process.execPath, [path.join(__dirname, '..', 'bin', 'atris.js'), 'autoland', 'status'], {
       cwd: root,
       encoding: 'utf8',
