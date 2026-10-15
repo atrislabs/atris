@@ -1731,6 +1731,23 @@ test('every engine started through a runner or profile variable records its run 
     const routes = {};
     const traced = [];
     let seen = 0;
+    // The choices of a condition or fallback chain, without the condition.
+    const choicesOf = (text) => {
+      const pieces = [''];
+      let depth = 0;
+      let condition = 0;
+      for (const token of text.matchAll(/'(?:\\.|[^'\\])*'|"(?:\\.|[^"\\])*"|`(?:\\.|[^`\\])*`|\?\?|\|\||\?\.|[?:|()[\]{}]|[^'"`?:|()[\]{}]+/g)) {
+        if (/^[([{]$/.test(token[0])) depth += 1;
+        if (/^[)\]}]$/.test(token[0])) depth -= 1;
+        if (depth === 0 && /^(?:\?\?|\|\||\?|:)$/.test(token[0])) {
+          if (token[0] === '?' && !condition) condition = pieces.length;
+          pieces.push('');
+          continue;
+        }
+        pieces[pieces.length - 1] += token[0];
+      }
+      return pieces.slice(condition).map((piece) => piece.trim()).filter(Boolean);
+    };
     const missing = [];
     const exempted = new Set();
     for (const match of code.matchAll(VAR_LAUNCH)) {
@@ -1752,26 +1769,43 @@ test('every engine started through a runner or profile variable records its run 
         // bracketed key, quoted or held in a variable, each optionally chained.
         called += /^(?:\s*\??\.\s*[A-Za-z_$][\w$]*|\s*(?:\?\.\s*)?\[\s*(?:'[^'\\\n]*'|"[^"\\\n]*"|`[^`\\$\n]*`|[A-Za-z_$][\w$]*)\s*\])*/.exec(rest.slice(called.length))[0];
       }
-      const argumentsStart = /^\s*,\s*(\[[^\]]*\])?/.exec(rest.slice(called.length));
+      // A program chosen by a condition or a fallback runs to the end of the
+      // first argument.
+      let choice = '';
+      if (!called && /^\s*(?:\?(?!\.)|\|\||\?\?)/.test(rest)) {
+        let depth = 0;
+        for (const token of rest.matchAll(/'(?:\\.|[^'\\])*'|"(?:\\.|[^"\\])*"|`(?:\\.|[^`\\])*`|[()[\]{},]/g)) {
+          if (depth === 0 && (token[0] === ',' || token[0] === ')')) {
+            choice = rest.slice(0, token.index).trimEnd();
+            break;
+          }
+          if (/^[([{]$/.test(token[0])) depth += 1;
+          if (/^[)\]}]$/.test(token[0])) depth -= 1;
+        }
+        if (!choice) continue;
+      }
+      const argumentsStart = /^\s*,\s*(\[[^\]]*\])?/.exec(rest.slice(called.length + choice.length));
       if (!argumentsStart) continue;
       const args = argumentsStart[1];
       const before = code.slice(0, match.index);
       const fnStart = Math.max(0, ...definitionSpans(code).filter(([open, close]) => open <= match.index && match.index < close).map(([open]) => open));
       const fnName = (/^(?:async\s+)?(?:function|const|let|var)\s+([\w$]+)/.exec(code.slice(fnStart).trimStart()) || [])[1] || '';
       route = 'declaration';
-      const isEngine = engineSourceAt(program + (called || ''), match.index);
+      const chosen = program + called + choice;
+      // Any choice can be the program, and a condition only picks one.
+      const isEngine = (choice ? choicesOf(chosen) : [chosen]).some((option) => engineSourceAt(option, match.index));
       if (!isEngine || isProbe(args)) continue;
       seen += 1;
       routes[route] = (routes[route] || 0) + 1;
       const line = before.split('\n').length;
-      const launch = `${rel}#${fnName} ${program}${called || ''}`;
-      traced.push({ route, at: `${rel}:${line} ${program}${called || ''}`, launch });
+      const launch = `${rel}#${fnName} ${chosen}`;
+      traced.push({ route, at: `${rel}:${line} ${chosen}`, launch });
       if (recordedAbove(lines, line, recorder)) continue;
       if (EXEMPT_LAUNCHES.has(launch) && !exempted.has(launch)) {
         exempted.add(launch);
         continue;
       }
-      missing.push(`${rel}:${line} ${program}${called || ''}`);
+      missing.push(`${rel}:${line} ${chosen}`);
     }
     return { seen, missing, routes, traced, exempted: [...exempted] };
   };
@@ -1831,6 +1865,16 @@ test('every engine started through a runner or profile variable records its run 
   assert.deepStrictEqual(planted("spawnSync(['git', 'node'][i], args);\n"), [], 'a list without an engine name is not an engine launch');
   assert.deepStrictEqual(planted("const engines = ['claude', 'codex'];\nspawnSync(engines[0], args);\n"), ['commands/planted.js:2 engines[0]']);
   assert.deepStrictEqual(planted("function launch(engines) {\n  spawnSync(engines[0], args);\n}\nlaunch(['claude']);\n"), ['commands/planted.js:2 engines[0]']);
+  // A program chosen in the launch by a condition or a fallback is an engine
+  // launch when any choice is one; the condition alone never makes it one.
+  for (const program of ["fast ? 'codex' : 'claude'", "fast ? codexBin : 'claude'", "bin || 'claude'", "profile?.bin ?? 'codex'"]) {
+    assert.deepStrictEqual(planted(`spawnSync(${program}, args);\n`), [`commands/planted.js:1 ${program}`]);
+    assert.deepStrictEqual(planted(`startEngineRun(root);\nspawnSync(${program}, args);\n`), []);
+    assert.deepStrictEqual(planted(`spawnSync(${program}, ['--version']);\n`), []);
+  }
+  assert.deepStrictEqual(planted("spawnSync(fast ? 'git' : 'node', args);\n"), [], 'choices without an engine are not an engine launch');
+  assert.deepStrictEqual(planted("spawnSync(name === 'claude' ? gitBin : nodeBin, args);\n"), [], 'an engine named only in the condition does not pick the program');
+  assert.deepStrictEqual(planted("const runner = resolveClaudeRunnerBin();\nspawnSync(fast ? runner : 'node', args);\n"), ["commands/planted.js:2 fast ? runner : 'node'"]);
   // Spaces before resolver arguments do not change the program they select.
   for (const gap of [' ', '\t']) {
     const runner = `resolveClaudeRunnerBin${gap}()`;
