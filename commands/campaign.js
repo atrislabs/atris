@@ -22,9 +22,10 @@ const STATE_ORDER = ['needs_you', 'running', 'queued', 'paused', 'resting', 'out
 function printHelp() {
   console.log('Usage:');
   console.log('  atris campaign                         every campaign: state, money, and the next move');
-  console.log('  atris campaign start "<title>" --judge "<cmd>" --budget <dollars>');
+  console.log('  atris campaign start "<title>" --judge "<cmd>" [--budget <dollars>]');
   console.log('        [--owner <member>] [--seat <member>[:<role>]]... [--bet "<bet>" [--wrong-if "<what proves it wrong>"]]');
   console.log('        [--standing] [--parent <id>] [--id cmp-<name>] [--cloud]');
+  console.log('        no --budget means no limit; --cloud needs a --budget');
   console.log('  atris campaign show <id>               bet, judge, answer, budget, seats, missions, asks');
   console.log('  atris campaign judge <id> [--timeout <seconds>]   run the judge now and record the reading');
   console.log('  atris campaign set-judge <id> "<cmd>"   change the judge (owner or a person; must fail first)');
@@ -55,6 +56,12 @@ function clip(text, max = 80) {
 function money(value) {
   return `$${Number(value).toFixed(2)}`;
 }
+
+// A local start may leave out --budget. The schema still wants a positive
+// number, so the campaign gets a ceiling nothing real reaches, and show and
+// list leave its money lines out.
+const NO_LIMIT_BUDGET = 1e9;
+const noLimit = (view) => view.budget.total >= NO_LIMIT_BUDGET;
 
 // The flags this command understands, so positional words are what is left.
 const VALUE_FLAGS = ['--mission', '--parallel', '--max-steps', '--max-ticks', '--runner', '--count', '--judge', '--budget', '--owner', '--seat', '--bet', '--wrong-if', '--parent', '--id', '--role', '--add', '--data', '--timeout', '--as'];
@@ -200,7 +207,8 @@ function renderList(views) {
   for (const view of sorted) {
     const running = view.missions.filter((m) => m.status === 'running').length;
     lines.push(`${clip(view.title)}  (${view.id})`);
-    lines.push(`  ${view.state.replace(/_/g, ' ')} · ${money(view.budget.spent)} of ${money(view.budget.total)} · ${running} mission${running === 1 ? '' : 's'} running · answer ${view.answer.confidence}`);
+    const spend = noLimit(view) ? '' : ` · ${money(view.budget.spent)} of ${money(view.budget.total)}`;
+    lines.push(`  ${view.state.replace(/_/g, ' ')}${spend} · ${running} mission${running === 1 ? '' : 's'} running · answer ${view.answer.confidence}`);
     lines.push(`  next: ${nextMove(view).text}`);
   }
   return lines.join('\n');
@@ -214,7 +222,7 @@ function renderShow(view) {
   const last = view.last_judge;
   row('judge', `${view.judge}${last ? ` · last run ${last.passed ? 'passed' : 'failed'} at ${last.at}` : ' · never run'}${view.judge_due && last ? ' · due again' : ''}`);
   row('answer', `${view.answer.confidence}${view.answer.text ? `: ${view.answer.text}` : ''}`);
-  row('budget', `${money(view.budget.spent)} spent of ${money(view.budget.total)} · ${money(view.budget.reserved)} reserved · ${money(view.budget.available)} left`);
+  if (!noLimit(view)) row('budget', `${money(view.budget.spent)} spent of ${money(view.budget.total)} · ${money(view.budget.reserved)} reserved · ${money(view.budget.available)} left`);
   row('owner', view.owner + (view.standing ? ' · standing (a passing judge means healthy, not done)' : ''));
   if (view.bet) row('bet', `${view.bet.text}${view.bet.wrong_if ? ` · wrong if ${view.bet.wrong_if}` : ''}`);
   if (view.parent) row('parent', view.parent);
@@ -237,7 +245,8 @@ async function cmdStart(args, ctx) {
   const title = positionals(args)[1];
   const judge = readFlag(args, '--judge', '');
   const budgetText = readFlag(args, '--budget', '');
-  const budget = Number(budgetText);
+  if (!budgetText && args.includes('--cloud')) return ctx.fail('a cloud campaign needs --budget <dollars>, so the cloud knows what it may spend');
+  const budget = budgetText ? Number(budgetText) : NO_LIMIT_BUDGET;
   const bet = readFlag(args, '--bet', '');
   const wrongIf = readFlag(args, '--wrong-if', '');
   const parent = readFlag(args, '--parent', '');
@@ -247,7 +256,7 @@ async function cmdStart(args, ctx) {
     const [member, role] = seat.split(':');
     return role ? { member, role } : member;
   });
-  const record = { title, judge, budget: budgetText ? budget : undefined };
+  const record = { title, judge, budget };
   if (owner) record.owner = owner;
   if (seats.length) record.seats = seats;
   if (bet) record.bet = bet;
