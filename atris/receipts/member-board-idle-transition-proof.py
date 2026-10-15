@@ -12,13 +12,18 @@ import sys
 import tempfile
 import termios
 import time
+from concurrent.futures import ThreadPoolExecutor
 
 cli = pathlib.Path(__file__).resolve().parents[2] / 'bin/atris.js'
 marker = b'\x1b[2J\x1b[H'
 cases = [(w, h, r) for w, h in [(18, 3), (30, 3), (47, 2)]
     for r in ['ok', 'failed (timed out)', 'failed (signed out)']]
 cases.append((60, 3, 'failed (signed out)'))
-for width, height, result in cases:
+
+
+def run_case(width, height, result):
+    lines = []
+    say = lines.append
     with tempfile.TemporaryDirectory(prefix='atris-idle-transition-') as folder:
         root = pathlib.Path(folder)
         progress = root / 'progress'
@@ -34,7 +39,7 @@ for width, height, result in cases:
         output = b''
 
         def read_for(seconds):
-            global output
+            nonlocal output
             end = time.monotonic() + seconds
             while time.monotonic() < end:
                 if select.select([master], [], [], min(0.05, max(0, end - time.monotonic())))[0]:
@@ -67,9 +72,9 @@ for width, height, result in cases:
                 stream.write(text)
 
         try:
-            print(f'command: node bin/atris.js member board --watch ({width}x{height})')
+            say(f'command: node bin/atris.js member board --watch ({width}x{height})')
             idle = wait_for(0, lambda frame: 'idle' in frame or 'nobody' in frame)
-            print(f'idle: {idle}')
+            say(f'idle: {idle}')
             previous = len(frames())
             now = datetime.datetime.now(datetime.timezone.utc).isoformat()
             tag = f'[pid {os.getpid()} engine claude] ' if result == 'failed (signed out)' else ''
@@ -77,13 +82,13 @@ for width, height, result in cases:
             # Wait beyond the folder-watch delay; the partial start must stay idle.
             wait_for(previous, lambda frame: frame == idle)
             assert all(frame == idle for frame in frames()), frames()
-            print('partial start: still idle')
+            say('partial start: still idle')
             previous = len(frames())
             append('\n')
             working = wait_for(previous, lambda frame: 'working' in frame)
             assert 'builder' in working, working
             assert 'idle' not in working and 'older' not in working, working
-            print(f'working: {working!r}')
+            say(f'working: {working!r}')
             previous = len(frames())
             if result != 'ok':
                 reason = 'signed' if result == 'failed (signed out)' else 'timed'
@@ -94,13 +99,13 @@ for width, height, result in cases:
                 check_size()
                 assert all('working' in frame and 'failed' not in frame and reason not in frame and 'sign in' not in frame
                     for frame in frames()[previous:]), frames()
-                print('partial failure: still working through periodic redraw')
+                say('partial failure: still working through periodic redraw')
                 previous = len(frames())
                 append(' out)')
                 wait_for(previous, lambda frame: 'working' in frame)
                 assert all('working' in frame and reason not in frame and 'sign in' not in frame
                     for frame in frames()[previous:]), frames()
-                print('complete text without newline: still working')
+                say('complete text without newline: still working')
                 previous = len(frames())
                 append('\n')
             else:
@@ -110,20 +115,28 @@ for width, height, result in cases:
             if result == 'failed (signed out)' and width == 60:
                 assert 'sign in to claude' in done, done
             assert 'working' not in done, done
-            print(f'finished: {done!r}')
+            say(f'finished: {done!r}')
             previous = len(frames())
             log.write_text(old)
             restored = wait_for(previous, lambda frame: frame == idle)
-            print(f'idle again: {restored}')
+            say(f'idle again: {restored}')
             child.send_signal(signal.SIGINT)
             code = child.wait(timeout=5)
             assert code == 0, code
-            print(f'exit: {code}')
+            say(f'exit: {code}')
         finally:
             if child.poll() is None:
                 child.terminate()
                 child.wait(timeout=5)
             os.close(master)
+    return lines
+
+
+# Each case waits out a periodic redraw, so the cases run side by side in
+# their own terminals and print in order once all are done.
+with ThreadPoolExecutor(max_workers=len(cases)) as pool:
+    for lines in pool.map(lambda case: run_case(*case), cases):
+        print('\n'.join(lines))
 print('three small layouts keep complete states within the screen through live transitions')
 print('split failures stay working until newline, then show timed out in all three layouts')
 print('split sign-in failures wait for newline; guidance fits at 60 columns')
