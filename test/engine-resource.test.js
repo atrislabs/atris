@@ -1410,6 +1410,22 @@ test('every engine started through a runner or profile variable records its run 
       const declaration = new RegExp(`\\b(?:const|let|var)\\s+${escaped}\\b|\\b(?:const|let|var)\\s*[{[](?:[^=;]*?[,:{[])?\\s*${escaped}\\s*[,}\\]=]`, 'g');
       return [...visible.matchAll(declaration)].some((binding) => (/^var\b/.test(binding[0]) && withinDeclaringFunction(binding.index, position)) || inScope(visible.slice(binding.index)));
     };
+    // The whole array or object literal a declaration at this position holds,
+    // read across line breaks, or null when the literal is only part of the
+    // declared value.
+    const declaredLiteral = (position) => {
+      const value = /^(?:const|let|var)\s+[\w$]+\s*=\s*(?=[[{])/.exec(code.slice(position));
+      if (!value) return null;
+      const text = code.slice(position + value[0].length);
+      let depth = 0;
+      for (const token of text.matchAll(/'(?:\\.|[^'\\])*'|"(?:\\.|[^"\\])*"|`(?:\\.|[^`\\])*`|[()[\]{}]/g)) {
+        depth += /^[([{]$/.test(token[0]) ? 1 : /^[)\]}]$/.test(token[0]) ? -1 : 0;
+        if (depth > 0) continue;
+        const end = token.index + 1;
+        return /^[ \t]*(?:;|\r?\n|$)/.test(text.slice(end)) ? text.slice(0, end) : null;
+      }
+      return null;
+    };
     // The elements of an array literal, or of a same-file array declaration
     // never changed after it, each with the position it is read at. Anything
     // else is unknown.
@@ -1422,7 +1438,7 @@ test('every engine started through a runner or profile variable records its run 
         const escaped = name.replace(/\$/g, '\\$');
         if (new RegExp(`\\b${escaped}\\s*(?:\\.\\s*(?:push|pop|shift|unshift|splice|fill|copyWithin|reverse|sort)\\s*\\(|\\[[^\\]]*\\]\\s*=(?!=)|\\.\\s*length\\s*=(?!=))`).test(code)) return null;
         const resolved = sourceAt(name, position);
-        text = resolved.source;
+        text = resolved.source.startsWith('[') ? declaredLiteral(resolved.position) ?? resolved.source : resolved.source;
         at = resolved.position;
       }
       if (!text.startsWith('[')) return null;
@@ -1511,14 +1527,8 @@ test('every engine started through a runner or profile variable records its run 
       const resolved = sourceAt(name, position);
       const literal = objectEntries(resolved.source);
       if (literal && !literal.rest.trim()) return { text: resolved.source, position: resolved.position };
-      // A literal that runs past its first line is read whole from the
-      // declaration, and must be the entire value there.
-      if (!resolved.source.startsWith('{')) return { text, position };
-      const value = /^(?:const|let|var)\s+[\w$]+\s*=\s*/.exec(code.slice(resolved.position));
-      const spanning = value && objectEntries(code.slice(resolved.position + value[0].length));
-      if (!spanning || !/^[ \t]*(?:;|\r?\n|$)/.test(spanning.rest)) return { text, position };
-      const whole = code.slice(resolved.position + value[0].length, code.length - spanning.rest.length);
-      return { text: whole, position: resolved.position };
+      const whole = resolved.source.startsWith('{') && declaredLiteral(resolved.position);
+      return whole ? { text: whole, position: resolved.position } : { text, position };
     };
     const sourceAt = (source, position) => {
       const visible = withoutHelperDefinitions(code, position);
@@ -1721,6 +1731,11 @@ test('every engine started through a runner or profile variable records its run 
   assert.deepStrictEqual(spreadOne('launch(...rest);'), ['commands/planted.js:2 runner'], 'unknown contents may leave the default');
   assert.deepStrictEqual(spreadNoDefault('launch(...rest);'), [], 'unknown contents with no default name no engine');
   assert.deepStrictEqual(spreadOne('launch(...picks);', "const picks = ['git'];\npicks.pop();\n"), ['commands/planted.js:2 runner'], 'an array emptied after its declaration counts as unknown');
+  assert.deepStrictEqual(spreadOne('launch(...picks);', "const picks = [\n  'git',\n];\n"), [], 'a multi-line array fills its slots');
+  assert.deepStrictEqual(spreadOne('launch(...picks);', 'const picks = [\n];\n'), ['commands/planted.js:2 runner']);
+  assert.deepStrictEqual(spreadNoDefault('launch(...picks);', "const picks = [\n  'claude',\n  { a: [1, 2] },\n]\n"), ['commands/planted.js:2 runner'], 'a declaration without a semicolon ends at its line break');
+  assert.deepStrictEqual(spreadOne('launch(...picks);', "const picks = [\n  'git',\n].filter(Boolean);\n"), ['commands/planted.js:2 runner'], 'an array that is only part of the value reads as unknown');
+  assert.deepStrictEqual(spreadOne('launch(...picks);', "const picks = [\n  'git',\n];\npicks.pop();\n"), ['commands/planted.js:2 runner']);
   assert.deepStrictEqual(withDefault("launch(...[prompt], 'git');"), []);
   assert.deepStrictEqual(withDefault('launch(...[prompt]);'), ['commands/planted.js:2 runner']);
   assert.deepStrictEqual(withDefault("launch(...[prompt, 'git']);"), []);
