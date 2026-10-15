@@ -3143,6 +3143,10 @@ test('fix joins "the", a noun, a verb in "s" and one bare word before a stop', (
     // "per" ends two bare words as a place word does
     'We have 40 gyms \u2014 that math implies thin coverage per gym.',
     'Check one place \u2014 the error logs folder per day.',
+    // "by" ends one bare word after "remains", "stays" and kin, never after a
+    // noun that only looks like a verb, "the release notes written by"
+    'It hit the budget \u2014 that logic remains proven by the existing offline coverage.',
+    'See it \u2014 the release notes written by Keshav.',
     // a number with a unit before a stop is a bare word too; a list of
     // sizes keeps its comma
     'Agents run the full suite (3000+ tests) \u2014 a single run eats 10GB+. Two runs crash it.',
@@ -3161,6 +3165,8 @@ test('fix joins "the", a noun, a verb in "s" and one bare word before a stop', (
     'Check one place, the error logs folder or logs from CI.',
     'We have 40 gyms; that math implies thin coverage per gym.',
     'Check one place, the error logs folder per day.',
+    'It hit the budget; that logic remains proven by the existing offline coverage.',
+    'See it, the release notes written by Keshav.',
     'Agents run the full suite (3000+ tests); a single run eats 10GB+. Two runs crash it.',
     'Two files ship, the tokenizer 2MB, the model weights 16GB.',
   ]);
