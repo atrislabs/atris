@@ -24,12 +24,26 @@ out.write = function write(chunk, encoding, cb) {
   if (!timer) timer = setTimeout(flush, 20);
   return false;
 };
+// A full pipe answers EAGAIN or takes part of a chunk. Keep the rest queued
+// and try again later, the way a real slow stream would.
 function flush() {
   timer = null;
   while (queue.length) {
-    const { chunk, cb } = queue.shift();
-    fs.writeSync(1, chunk);
-    if (typeof cb === 'function') cb();
+    const item = queue[0];
+    let written;
+    try {
+      written = fs.writeSync(1, item.chunk);
+    } catch (err) {
+      if (err.code !== 'EAGAIN') throw err;
+      timer = setTimeout(flush, 5);
+      return;
+    }
+    if (written < item.chunk.length) {
+      item.chunk = item.chunk.subarray(written);
+      continue;
+    }
+    queue.shift();
+    if (typeof item.cb === 'function') item.cb();
   }
 }
 `;
