@@ -6,6 +6,9 @@
 
 const test = require('node:test');
 const assert = require('node:assert/strict');
+const fs = require('node:fs');
+const os = require('node:os');
+const path = require('node:path');
 
 const { taskApprovalFor } = require('../commands/task');
 
@@ -37,4 +40,52 @@ test('a complete plan can be approved with no blocked reason', () => {
   }));
   assert.equal(approval.approve.enabled, true);
   assert.equal(approval.approve.blocked_reason, null);
+});
+
+// A job created with its own "done looks like" line already states its
+// finish line. The same screen used to print that line and then say the plan
+// still needed a finish line.
+function doneLine(text) {
+  return {
+    done_looks_like: text,
+    explanation: { sources: { done_looks_like: 'explicit' }, done_looks_like: `${text}.` },
+  };
+}
+
+test('a job that says what done looks like is not asked for a finish line', () => {
+  const approval = taskApprovalFor(plannedTask({ verify: 'npm test', ...doneLine('The button is blue') }));
+  assert.equal(approval.approve.blocked_reason, 'The plan still needs a goal and a first move before approval.');
+});
+
+test('a derived done line does not count as a finish line', () => {
+  const approval = taskApprovalFor(plannedTask({
+    verify: 'npm test',
+    explanation: { sources: { done_looks_like: 'derived' }, done_looks_like: 'The required check passes.' },
+  }));
+  assert.match(approval.approve.blocked_reason, /a finish line/);
+});
+
+test('planning a job uses its done line when no finish line is passed', () => {
+  const taskDb = require('../lib/task-db');
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'atris-plan-done-line-'));
+  try {
+    taskDb.close();
+    const db = taskDb.open(path.join(dir, 'tasks.db'));
+    const ws = taskDb.workspaceRoot(dir);
+    const { id } = taskDb.addTask(db, {
+      title: 'Make the button blue',
+      workspaceRoot: ws,
+      metadata: { verify: 'npm test', ...doneLine('The button is blue') },
+    });
+    const planned = taskDb.stageTask(db, { id, actor: 'builder', stage: 'plan', goal: 'blue button' });
+    assert.equal(planned.staged, true, `plan refused: ${planned.reason}`);
+    assert.match(taskDb.getTask(db, id).metadata.exit_condition, /^The button is blue\.?$/);
+
+    const bare = taskDb.addTask(db, { title: 'No done line', workspaceRoot: ws, metadata: { verify: 'npm test' } });
+    const refused = taskDb.stageTask(db, { id: bare.id, actor: 'builder', stage: 'plan', goal: 'something' });
+    assert.equal(refused.reason, 'exit_required');
+  } finally {
+    taskDb.close();
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
 });

@@ -36,6 +36,7 @@ const { evaluateAcceptVerify } = require('../lib/accept-verify-gate');
 const { proveTaskLanding } = require('../lib/landing-proof');
 const {
   taskExplanation,
+  explicitDoneLooksLike,
   explanationFieldsFromInput,
   explanationLines,
   taskApprovalControls,
@@ -1667,10 +1668,11 @@ function taskApprovalFor(task, { reviewer = 'codex-review', hasExistingReviewFol
     : null;
   const planned = current === 'plan';
   // Name only the plan parts that are really missing: a job given a check
-  // should not be told it still needs one.
+  // should not be told it still needs one, and a job that says what done
+  // looks like already has its finish line.
   const planMissing = [
     !(metadata.task_goal || metadata.goal_objective || task.objective) && 'a goal',
-    !metadata.exit_condition && 'a finish line',
+    !(metadata.exit_condition || explicitDoneLooksLike(metadata)) && 'a finish line',
     !(metadata.verify || metadata.proof_needed) && 'a check',
     !metadata.first_move && 'a first move',
   ].filter(Boolean);
