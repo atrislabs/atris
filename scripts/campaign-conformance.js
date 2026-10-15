@@ -2,9 +2,13 @@
 // The judge for "Campaign ships across Atris": every surface must agree on
 // the golden campaign files in test/fixtures/campaign/.
 //
-//   node scripts/campaign-conformance.js [--json] [--only cli,backend]
+//   node scripts/campaign-conformance.js [--json] [--only cli,backend] [--merged]
 //        [--surface backend=/path/to/checkout] [--fixtures <dir>]
 //   node scripts/campaign-conformance.js --write-manifest
+//
+// --merged judges what has landed: each repo's default branch on origin, in a
+// clean temporary checkout, never anyone's uncommitted work. The campaign's
+// judge (npm run validate:campaign) uses it.
 //
 // Exit 0 only when the fixture hashes match MANIFEST.json and every surface's
 // runner reproduces every expected result. A missing runner is a failure.
@@ -30,11 +34,12 @@ const SURFACES = [
 ];
 
 function parseArgs(argv) {
-  const args = { json: false, only: null, overrides: {}, fixtures: null, writeManifest: false };
+  const args = { json: false, only: null, overrides: {}, fixtures: null, writeManifest: false, merged: false };
   for (let i = 0; i < argv.length; i++) {
     const arg = argv[i];
     if (arg === '--json') args.json = true;
     else if (arg === '--write-manifest') args.writeManifest = true;
+    else if (arg === '--merged') args.merged = true;
     else if (arg === '--only') {
       args.only = String(argv[++i] || '').split(',').filter(Boolean);
       if (!args.only.length) throw new Error('--only needs at least one surface name');
@@ -59,10 +64,39 @@ function siblingsRoot() {
   return path.dirname(mainCheckoutRoot(REPO) || REPO);
 }
 
+function mainCheckoutOf(repo) {
+  const { mainCheckoutRoot } = require('../lib/engine-registry');
+  return mainCheckoutRoot(repo);
+}
+
 function surfaceRepo(surface, overrides) {
   if (overrides[surface.name]) return overrides[surface.name];
   if (surface.name === 'cli') return REPO;
   return path.join(siblingsRoot(), surface.repo);
+}
+
+function git(repo, args) {
+  return spawnSync('git', ['-C', repo, ...args], { encoding: 'utf8', timeout: 120000 });
+}
+
+function defaultBranch(repo) {
+  const head = git(repo, ['symbolic-ref', '--short', 'refs/remotes/origin/HEAD']);
+  if (head.status === 0 && head.stdout.trim()) return head.stdout.trim().replace(/^origin\//, '');
+  const remote = git(repo, ['ls-remote', '--symref', 'origin', 'HEAD']);
+  const match = /ref: refs\/heads\/(\S+)\s+HEAD/.exec(remote.stdout || '');
+  return match ? match[1] : 'master';
+}
+
+// A clean checkout of what has landed on origin, removed after the run.
+function mergedCheckout(repo, scratch, name) {
+  if (!fs.existsSync(path.join(repo, '.git'))) return { error: `no checkout at ${repo}` };
+  const branch = defaultBranch(repo);
+  const fetched = git(repo, ['fetch', '--quiet', 'origin', branch]);
+  if (fetched.status !== 0) return { error: `could not fetch origin/${branch}: ${String(fetched.stderr).trim().split('\n').pop()}` };
+  const dir = path.join(scratch, name);
+  const added = git(repo, ['worktree', 'add', '--detach', '--quiet', dir, 'FETCH_HEAD']);
+  if (added.status !== 0) return { error: `could not check out origin/${branch}: ${String(added.stderr).trim().split('\n').pop()}` };
+  return { dir, branch, cleanup: () => git(repo, ['worktree', 'remove', '--force', dir]) };
 }
 
 function sha256(file) {
@@ -132,7 +166,9 @@ function loadGoldens(dir) {
 // Runners never see the answers. A fold runner gets each file's events and
 // each decide case's view; a view runner gets only the views to round-trip.
 function runnerInputs(goldens, decideCases) {
-  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'atris-campaign-judge-'));
+  // Real path: macOS temp folders sit behind a symlink, and runners that
+  // compare their own path with argv would otherwise stay silent.
+  const root = fs.mkdtempSync(path.join(fs.realpathSync(os.tmpdir()), 'atris-campaign-judge-'));
   const foldDir = path.join(root, 'fold');
   const viewDir = path.join(root, 'view');
   fs.mkdirSync(foldDir);
@@ -205,13 +241,23 @@ function runJudge(args) {
   if (!manifestProblems.length) {
     const inputs = runnerInputs(goldens, decideCases);
     try {
-      results = surfaces.map((s) => judgeSurface(s, surfaceRepo(s, args.overrides), inputs, goldens, decideCases));
+      results = surfaces.map((s) => {
+        const repo = surfaceRepo(s, args.overrides);
+        if (!args.merged) return judgeSurface(s, repo, inputs, goldens, decideCases);
+        const checkout = mergedCheckout(s.name === 'cli' ? (mainCheckoutOf(repo) || repo) : repo, inputs.root, `merged-${s.name}`);
+        if (checkout.error) return { surface: s.name, kind: s.kind, repo, status: 'not merged', detail: checkout.error };
+        try {
+          return { ...judgeSurface(s, checkout.dir, inputs, goldens, decideCases), repo: `${repo} @ origin/${checkout.branch}` };
+        } finally {
+          checkout.cleanup();
+        }
+      });
     } finally {
       fs.rmSync(inputs.root, { recursive: true, force: true });
     }
   }
   const passed = manifestProblems.length === 0 && results.length > 0 && results.every((r) => r.status === 'pass');
-  return { passed, only: args.only || null, fixtures: dir, golden_files: goldens.length, decide_cases: decideCases.length, manifest_problems: manifestProblems, surfaces: results };
+  return { passed, merged: args.merged, only: args.only || null, fixtures: dir, golden_files: goldens.length, decide_cases: decideCases.length, manifest_problems: manifestProblems, surfaces: results };
 }
 
 function render(report) {
