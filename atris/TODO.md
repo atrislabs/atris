@@ -19,10 +19,12 @@ Details for any task: atris task show <ID>
 
 ## In Progress
 
-- **[ACW-6]** Prove busy unfinished copies keep their pin reason · architect
+(Empty)
 
 ## Review
 
+- **[ACW-6]** Prove busy unfinished copies keep their pin reason · architect
+  **Done looks like:** Operators can now see why busy unfinished folders stay protected, reducing risk of losing work during cleanup.
 - **[ACW-5]** Prove pins stay visible from inside a landed copy · architect
   **Done looks like:** Operators can trust cleanup to show why their current folder stays, reducing the risk of losing unfinished notes.
 - **[ACW-4]** Keep pins visible on busy landed copies · architect
