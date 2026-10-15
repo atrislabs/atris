@@ -200,6 +200,31 @@ This keeps identity, memory, and accountability at the member level, however man
 
 ---
 
+## Backend and Cloud Agents (mapped 2026-10-15)
+
+A read-only scout traced `atrisos-backend` and the CLI's cloud path. The backend is already further along than the CLI on most of Campaign's parts. Campaign there is mostly wiring, not new machinery.
+
+| Campaign part | Already in the backend | Gap |
+|---|---|---|
+| Missions | Cloud missions: `POST /api/atris2/missions` (`Atris2MissionRequest`, `backend/routers/atris2_router.py:1026`) stored in `agent_tasks`, run by `MissionRunnerService` (`backend/services/mission_runner_service.py`), drained every 60s (`backend/main.py:411`) | add `campaign_id` next to `parent_mission_id` |
+| Seats | `fanout` (up to 8 role entries) per mission; members are a projection over `agents` rows (`member_projection_service.py`) | seats live on the campaign, not per mission |
+| Budget reservation | `budget_hold` held from the wallet up front, settled and refunded at the end, swept after 6h (`mission_runner_service.py:1246-1990`); business attempts have hard-cap wallets (`business_attempt_service.py`) | reserve each mission from a campaign pool |
+| Human asks | `needs` and `your_turn`, answered through `/api/mission-control/missions/{id}/answer` and `/approve` (`mission_control_router.py:246-345`); permission rule stops before send, spend, delete, share (`mission_runner_service.py:83`) | campaign-level asks view |
+| Judge | the checks step (`_check_results`) | run a metric or verify command against outside data |
+| Event log | `timeline_events`, idempotent append unique on `(run_id, event_id)` (`backend/migrations/20260810_timeline_events.sql`, `timeline_service.py`) | campaign events use this pattern; mission history today is a mutable `steps[]` array |
+| Live screens | SSE in `atris2_router`, `agent_router`, `ai_computer` | stream campaign events |
+| Business templates | six leads per template (business, lab, fund), each with a `reward` metric string that is never evaluated (`backend/services/business_templates.py`) | leads become seats; reward strings become judges |
+
+**A business attempt is almost a campaign already.** It is a funded try with a hard-cap budget and leads, and it has no judge yet (its scoreboard slice was never built). Campaign generalizes it: business attempt plus judge plus missions plus event log.
+
+**Where state lives.** Cloud agents run for days while a laptop sleeps, so the backend is the home for cloud campaigns. Local campaigns keep a local store with the same schema. Because the log is append-only with unique event ids, syncing is shipping events both ways and merging by id, which is much safer than syncing mutable files. Today `atris sync` moves files only (`commands/business-sync.js`), and local missions never reach the backend.
+
+**Identity is the real gap.** A local member and a backend agent are linked only by a case-insensitive name match. No shared id exists. Campaign seats need one member id that both sides use.
+
+**Storage recommendation.** Use SQLite locally (transactions, unique ids, sequences for free; this removes the four ledger problems in `build.md` Phase -1) and Postgres in the backend, with one event schema for both.
+
+---
+
 ## Wish Is the Constructor
 
 `atris wish` already takes one plain sentence, asks only for the gaps, and hands work to a mission. It also has `--metric` (an outside judge), `wish again <id>` (a follow-up linked by parent), and `wish board`.
