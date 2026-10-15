@@ -5752,3 +5752,60 @@ test('the real cleanup command says when the agent it could not stop was also re
     fs.rmSync(root, { recursive: true, force: true });
   }
 });
+
+test('a cleanup saves the agents the last sweep also could not stop, in its report, its saved line, and the hourly receipt', () => {
+  const { spawnSync } = require('node:child_process');
+  const { runSshAgentSweep } = require('../commands/autoland');
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'sweep-refused-again-'));
+  const preload = path.join(root, 'refused-again.cjs');
+  const cli = path.join(__dirname, '..', 'bin', 'atris.js');
+  const historyFile = path.join(root, RESOURCE_LOG);
+  const lines = () => fs.readFileSync(historyFile, 'utf8').trim().split('\n').map(JSON.parse);
+  try {
+    fs.mkdirSync(path.dirname(historyFile), { recursive: true });
+    fs.writeFileSync(preload, `
+      const resource = require(${JSON.stringify(require.resolve('../lib/engine-resource'))});
+      resource.readSshAgents = () => ({
+        agents: [{ pid: 201, ppid: 1, uid: process.getuid(), age_sec: 1800, args: 'ssh-agent -s' }],
+        referenced: new Set(), unread: [],
+      });
+      process.kill = (pid, signal) => {
+        if (pid === 201 && signal === 'SIGTERM') throw Object.assign(new Error('permission denied'), { code: 'EPERM' });
+        throw new Error('unexpected signal');
+      };
+    `);
+    const sweepAfter = (failed) => {
+      fs.writeFileSync(historyFile, JSON.stringify({ at: '2026-10-15T10:00:00.000Z', phase: 'sweep', stopped: [], failed, skipped: [], leaked_ssh_agents: 1 }) + '\n');
+      const ran = spawnSync(process.execPath, ['--require', preload, cli, 'engine', 'sweep', '--apply', '--json'], {
+        cwd: root, encoding: 'utf8', timeout: 30000,
+        env: { ...process.env, ATRIS_AUTO_UPDATE: 'off' },
+      });
+      assert.equal(ran.status, 1, ran.stderr);
+      return { report: JSON.parse(ran.stdout), saved: lines().at(-1) };
+    };
+    const stuck = sweepAfter([201]);
+    assert.deepStrictEqual(stuck.report.refused_again, [201]);
+    assert.deepStrictEqual(stuck.saved.refused_again, [201]);
+    const fresh = sweepAfter([]);
+    assert.equal(fresh.report.refused_again, undefined, 'a first refusal is not saved as a repeat');
+    assert.equal(fresh.saved.refused_again, undefined);
+    // The hourly pass carries it into its receipt, where the landing status reads.
+    fs.rmSync(historyFile);
+    const agent = { pid: 201, ppid: 1, uid: 501, age_sec: 1800, args: 'ssh-agent -s' };
+    const hourly = () => {
+      const receipt = {};
+      runSshAgentSweep(root, receipt, {
+        read: () => ({ agents: [agent], referenced: new Set(), unread: [] }),
+        uid: 501,
+        kill: () => { throw Object.assign(new Error('permission denied'), { code: 'EPERM' }); },
+      });
+      return receipt.ssh_agent_sweep;
+    };
+    assert.equal(hourly().refused_again, undefined);
+    assert.deepStrictEqual(hourly().refused_again, [201]);
+    assert.deepStrictEqual(lines().map((line) => line.refused_again || null), [null, [201]]);
+    console.log(`refused again: cli report ${JSON.stringify(stuck.report.refused_again)}, saved ${JSON.stringify(stuck.saved.refused_again)}; hourly lines ${JSON.stringify(lines().map((line) => line.refused_again || null))}`);
+  } finally {
+    fs.rmSync(root, { recursive: true, force: true });
+  }
+});
