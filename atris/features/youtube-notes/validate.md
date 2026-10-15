@@ -54,6 +54,7 @@ The fresh `TMPDIR` matters. A transcript left over from an earlier run of the sa
 
 - **Action:** `atris youtube bench --quick` (three cases) or `atris youtube bench` (all five)
 - **Expect:** One pass or fail per case, and one new line per run in `~/.atris/benchmarks/ytrail.jsonl`. The five cases are captioned-short `Z3JyAqh4ixg` (21 min), captioned-long `Am7IWP8IpEc` (85 min), no-captions `6DRlX5vIOE0`, stranger-no-downloader, and stranger-no-writer.
+- **Full bench rerun live on 2026-10-15:** exit 1 in 67 seconds, all five cases ran and five new lines landed in the log. Captioned-short passed in 15s, no-captions in 19.5s, both stranger cases passed (exit 2 and exit 3 with the install messages). Captioned-long failed on time, 28s with Haiku, because Gemini was still out of quota; its 5 quotes were all kept.
 
 ---
 
