@@ -219,3 +219,5 @@ Landing status repair without Node: `commands/autoland.js:564` builds that same 
 Landing status repair with an unusable Node entry: `commands/autoland.js:564` builds that same checkout command when a node entry is present but cannot run. `test/engine-resource.test.js:4751` copies the printed command into real sh and zsh for a plain file, a directory, and a broken link, and checks the shell startup file changes.
 
 Landing status repair stays short when a later node can run: `commands/autoland.js:564` keeps the short command when an unusable node entry comes before a runnable node. `test/engine-resource.test.js:4802` copies that short command into real sh and zsh for a plain file, a directory, and a broken link, and checks the shell startup file changes.
+
+Landing status repair with a failing executable Node: `lib/engine-resource.js:357` probes the first executable with the read-only version command before shortening the hint. `test/engine-resource.test.js:4854` proves a rejecting executable hides a later working Node, then runs the printed checkout command through sh and zsh to repair fixture startup files.

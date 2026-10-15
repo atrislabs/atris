@@ -3325,7 +3325,7 @@ test('the fix command names this checkout when the atris on PATH is another inst
     fs.writeFileSync(path.join(other, 'atris'), '', { mode: 0o755 });
     const empty = path.join(tmp, 'empty');
     fs.mkdirSync(empty);
-    const script = path.join(bin, 'atris.js');
+    const script = path.join(bin, 'atris.js'); fs.symlinkSync(path.join(__dirname, '..', 'bin', 'atris.js'), script);
     assert.strictEqual(atrisCommand({ pathEnv: [empty, linked, other, path.dirname(process.execPath)].join(path.delimiter), binDir: bin, home: '' }), 'atris', 'the atris on PATH links to this checkout');
     assert.strictEqual(atrisCommand({ pathEnv: [other, linked].join(path.delimiter), binDir: bin, home: '' }), `${process.execPath} ${script}`, 'an older install found first is not the one that has the sweep');
     assert.strictEqual(atrisCommand({ pathEnv: empty, binDir: bin, home: '' }), `${process.execPath} ${script}`, 'no atris on PATH');
@@ -4840,6 +4840,54 @@ test('the landing status repair hint stays the short command when an unusable no
         const shellHome = fs.mkdtempSync(path.join(root, 'home-'));
         fs.writeFileSync(path.join(shellHome, '.zshrc'), 'eval "$(ssh-agent -s)"\n');
         const shellEnv = { ...env, HOME: shellHome };
+        const run = spawnSync(shell, ['-c', `${hint[1]} engine sweep --fix-startup`], { cwd: work, env: shellEnv, encoding: 'utf8' });
+        assert.strictEqual(run.status, 0, `${shell}: ${kind}: ${run.stdout}${run.stderr}`);
+        assert.match(run.stdout, /changed ~\/\.zshrc line 1 to: /, `${shell}: ${kind}`);
+        assert.strictEqual(fs.readFileSync(path.join(shellHome, '.zshrc'), 'utf8'), '[ -S "$SSH_AUTH_SOCK" ] || eval "$(ssh-agent -s)"\n', `${shell}: ${kind}`);
+      }
+    }
+  } finally {
+    fs.rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test('the landing status repair hint uses the checkout command when the first executable node rejects the launcher', () => {
+  const { spawnSync } = require('node:child_process');
+  const root = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'autoland-status-node-later-')));
+  try {
+    const work = path.join(root, 'work');
+    const launcher = path.join(root, 'launcher');
+    const runnable = path.join(root, 'runnable');
+    for (const dir of [work, launcher, runnable]) fs.mkdirSync(dir);
+    spawnSync('git', ['init', '-q'], { cwd: work });
+    fs.symlinkSync(path.join(__dirname, '..', 'bin', 'atris'), path.join(launcher, 'atris'));
+    fs.symlinkSync(process.execPath, path.join(runnable, 'node'));
+    for (const kind of ['rejecting-launcher']) {
+      const blocked = path.join(root, kind);
+      fs.mkdirSync(blocked);
+      const node = path.join(blocked, 'node');
+      fs.writeFileSync(node, '#!/bin/sh\nexit 42\n', { mode: 0o755 });
+      const home = fs.mkdtempSync(path.join(root, 'home-'));
+      fs.writeFileSync(path.join(home, '.zshrc'), 'eval "$(ssh-agent -s)"\n');
+      // Shell lookup stops at this executable, even though a later Node works.
+      const env = { ...process.env, PATH: [blocked, runnable, launcher, '/bin', '/usr/bin'].join(path.delimiter), HOME: home };
+      delete env.NODE_TEST_CONTEXT;
+      const probe = `
+        const { showStatus } = require(${JSON.stringify(path.join(__dirname, '..', 'commands', 'autoland'))});
+        const agent = { pid: 200, ppid: 1, uid: 501, age_sec: 3600, args: 'ssh-agent -s' };
+        showStatus(process.cwd(), [], { readSshAgents: () => ({ agents: [agent], referenced: new Set() }), uid: 501, home: ${JSON.stringify(home)} });
+      `;
+      const status = spawnSync(process.execPath, ['-e', probe], { cwd: work, env, encoding: 'utf8' });
+      assert.strictEqual(status.status, 0, `${kind}: ${status.stderr}`);
+      const hint = status.stdout.match(/\n {4}to make that change, run (.+) engine sweep --fix-startup; it saves the old file beside it first/);
+      assert.ok(hint, `${kind}: ${status.stdout}`);
+      assert.strictEqual(hint[1], `${process.execPath} ${fs.realpathSync(path.join(__dirname, '..', 'bin', 'atris.js'))}`, kind);
+      for (const shell of ['/bin/sh', ...(fs.existsSync('/bin/zsh') ? ['/bin/zsh'] : [])]) {
+        const shellHome = fs.mkdtempSync(path.join(root, 'home-'));
+        fs.writeFileSync(path.join(shellHome, '.zshrc'), 'eval "$(ssh-agent -s)"\n');
+        const shellEnv = { ...env, HOME: shellHome };
+        const direct = spawnSync(shell, ['-c', 'atris engine sweep --fix-startup'], { cwd: work, env: shellEnv, encoding: 'utf8' });
+        assert.strictEqual(direct.status, 42, shell);
         const run = spawnSync(shell, ['-c', `${hint[1]} engine sweep --fix-startup`], { cwd: work, env: shellEnv, encoding: 'utf8' });
         assert.strictEqual(run.status, 0, `${shell}: ${kind}: ${run.stdout}${run.stderr}`);
         assert.match(run.stdout, /changed ~\/\.zshrc line 1 to: /, `${shell}: ${kind}`);
