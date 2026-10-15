@@ -323,6 +323,8 @@ Pack verifier states batching: `test/pack.test.js:879` builds one pack folder pe
 
 Pack status origin batching: `test/pack.test.js:2354` builds one pack folder per origin state with the same edits the single folder took, then awaits all three status reads together. Status only reads the folder it is pointed at. Three sequential CLI stages become one; every assertion remains.
 
+Mission inspect field batching: `test/inspect-fields.test.js:137` awaits the four single-field inspect reads and the combined json read together. A before-and-after file diff showed inspect leaves the mission file untouched and only appends a usage line. Five sequential CLI stages become one; every assertion remains.
+
 Certified review fallback read batching: `test/commands.test.js:12603` overlaps the two next reads after certification and before creation. Six sequential CLI stages become five; all assertions remain. Details: `atris/refs/MAP-NOTES.md`.
 
 Final fallback read batching: `test/commands.test.js:12684` awaits next and show together after follow-up creation. Both read unchanged task rows; every assertion remains. Five sequential CLI stages become four.

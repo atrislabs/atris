@@ -3,7 +3,7 @@ const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
 const test = require('node:test');
-const { spawnSync } = require('node:child_process');
+const { spawn, spawnSync } = require('node:child_process');
 const {
   missionInspectFieldValues,
   missionAckInspectValue,
@@ -50,6 +50,23 @@ function runCli(args, { cwd, env = {} } = {}) {
   });
   if (result.error) throw result.error;
   return result;
+}
+
+// runCli without blocking, so independent launches can overlap.
+function runCliAsync(args, { cwd, env = {} } = {}) {
+  return new Promise((resolve, reject) => {
+    const child = spawn(process.execPath, [cliPath, ...args], {
+      cwd,
+      env: { ...scrubAgentEnv(), ATRIS_SKIP_UPDATE_CHECK: '1', NODE_NO_WARNINGS: '1', ...env },
+      stdio: ['ignore', 'pipe', 'pipe'],
+    });
+    let stdout = '';
+    let stderr = '';
+    child.stdout.setEncoding('utf8').on('data', (chunk) => { stdout += chunk; });
+    child.stderr.setEncoding('utf8').on('data', (chunk) => { stderr += chunk; });
+    child.once('error', reject);
+    child.once('close', (status, signal) => resolve({ status, signal, stdout, stderr }));
+  });
 }
 
 function appendMissionState(dir, mission) {
@@ -101,7 +118,7 @@ test('mission inspect field helpers expose status, runner, ack, and ping counts'
   assert.equal(values.pings.pending, 1);
 });
 
-test('mission inspect CLI answers status, runner, ack, and pings without parsing full status', () => {
+test('mission inspect CLI answers status, runner, ack, and pings without parsing full status', async () => {
   const dir = makeTempDir();
   try {
     fs.mkdirSync(path.join(dir, 'atris'), { recursive: true });
@@ -114,30 +131,28 @@ test('mission inspect CLI answers status, runner, ack, and pings without parsing
       pings: [{ at: '2026-07-02T10:00:00.000Z', from: 'operator', text: 'go' }],
     });
 
-    const status = runCli(['mission', 'inspect', 'mission-inspect-cli', '--fields', 'status'], { cwd: dir });
+    // Inspect leaves the mission file untouched and only appends a usage line,
+    // so all five reads run at once.
+    const inspect = (fields, ...extra) => runCliAsync(['mission', 'inspect', 'mission-inspect-cli', '--fields', fields, ...extra], { cwd: dir });
+    const [status, runner, ack, pings, combined] = await Promise.all([
+      inspect('status'),
+      inspect('runner'),
+      inspect('ack'),
+      inspect('pings'),
+      inspect('status,runner,ack,pings', '--json'),
+    ]);
     assert.equal(status.status, 0, status.stderr || status.stdout);
     assert.equal(status.stdout.trim(), 'planning');
 
-    const runner = runCli(['mission', 'inspect', 'mission-inspect-cli', '--fields', 'runner'], { cwd: dir });
     assert.equal(runner.status, 0, runner.stderr || runner.stdout);
     assert.equal(runner.stdout.trim(), 'claude');
 
-    const ack = runCli(['mission', 'inspect', 'mission-inspect-cli', '--fields', 'ack'], { cwd: dir });
     assert.equal(ack.status, 0, ack.stderr || ack.stdout);
     assert.equal(ack.stdout.trim(), 'unacknowledged');
 
-    const pings = runCli(['mission', 'inspect', 'mission-inspect-cli', '--fields', 'pings'], { cwd: dir });
     assert.equal(pings.status, 0, pings.stderr || pings.stdout);
     assert.equal(pings.stdout.trim(), '1');
 
-    const combined = runCli([
-      'mission',
-      'inspect',
-      'mission-inspect-cli',
-      '--fields',
-      'status,runner,ack,pings',
-      '--json',
-    ], { cwd: dir });
     assert.equal(combined.status, 0, combined.stderr || combined.stdout);
     const payload = JSON.parse(combined.stdout);
     assert.equal(payload.action, 'mission_inspect');
