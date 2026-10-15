@@ -465,7 +465,7 @@ test('a one-lap review records each validator attempt, handed over past a credit
   await withRoom(async ({ root, wt }) => {
     const cli = (args) => {
       if (args[0] === 'task' && args[1] === 'show') return { status: 0, stdout: JSON.stringify(TASK), stderr: '' };
-      if (args[0] === 'worktree' && args[1] === 'start') return { status: 0, stdout: `next: cd ${wt}\n`, stderr: '' };
+      if (args[0] === 'worktree' && args[1] === 'start') return ownCli(wt)(args);
       return { status: 0, stdout: '', stderr: '' };
     };
     const flight = await fleet.runDispatchFlight({
@@ -473,6 +473,7 @@ test('a one-lap review records each validator attempt, handed over past a credit
       taskIds: ['CLI-900'],
       engine: 'cursor',
       reviewOnly: true,
+      checkoutBase: 'HEAD',
       verifierCommand: 'node --test test/widget.test.js',
       receiptContext: { source: 'one_lap', objective: 'Fix the widget' },
       ownCli: cli,

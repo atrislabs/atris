@@ -2738,4 +2738,6 @@ Run-record fixture health setup: `test/roster-run-record.test.js:52` reads the r
 
 Run-record dispatch land target: `test/roster-run-record.test.js:110` passes the land target the empty scratch room already resolves to, skipping two git lookups per dispatch across ten dispatches. `test/roster-run-record.test.js:170` still runs the real lookup once and asserts it returns that value, so a change in the lookup fails the test.
 
-Run-record worktree note: `test/roster-run-record.test.js:90` has the fake worktree start write the same owner, task, and base note the real worktree start writes, so the dispatch brief reads them from the file instead of several git calls per dispatch. The one-lap review case keeps its own fake without the note.
+Run-record worktree note: `test/roster-run-record.test.js:90` has the fake worktree start write the same owner, task, and base note the real worktree start writes, so the dispatch brief reads them from the file instead of several git calls per dispatch. The one-lap review case reuses that fake for worktree start at line 468.
+
+Run-record one-lap land target: `test/roster-run-record.test.js:476` passes the review-only flight the same land target the empty room resolves to, which the landed dispatch case still checks against the real lookup.
