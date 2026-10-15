@@ -19,10 +19,12 @@ Details for any task: atris task show <ID>
 
 ## In Progress
 
-- **[ACW-10]** Prove idle landed folders retain staged and unsaved notes · architect
+(Empty)
 
 ## Review
 
+- **[ACW-10]** Prove idle landed folders retain staged and unsaved notes · architect
+  **Done looks like:** Operators can trust cleanup to preserve staged and unsaved notes in idle landed folders, reducing the risk of losing work.
 - **[ACW-9]** Prove idle unfinished folders retain staged and unsaved notes · architect
   **Done looks like:** Operators can trust cleanup to preserve notes in idle unfinished folders, reducing the risk of losing work.
 - **[ACW-8]** Prove busy unfinished folders retain staged notes · architect
