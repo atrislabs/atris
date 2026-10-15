@@ -3,19 +3,27 @@ name: CI
 on:
   push:
     branches:
-      - '**'
-    tags-ignore:
-      - 'v*'
+      - master
   pull_request:
   merge_group:
 
 permissions:
   contents: read
 
+# A newer push to the same pull request replaces the older run.
+concurrency:
+  group: ci-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
 jobs:
-  test:
+  unit:
+    name: unit (${{ matrix.shard }}/4)
     runs-on: ubuntu-latest
-    timeout-minutes: 25
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [1, 2, 3, 4]
     steps:
       - uses: actions/checkout@v6
 
@@ -27,7 +35,32 @@ jobs:
       - run: npm ci
 
       - name: Unit tests
-        run: npm test
+        run: node --test --test-shard=${{ matrix.shard }}/4
+
+  decks:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v6
+
+      - uses: actions/setup-node@v6
+        with:
+          node-version: '24'
+          package-manager-cache: false
+
+      - run: npm ci
 
       - name: Lint shipped deck specs
         run: npm run lint:decks
+
+  # The required check. It passes only when every shard and the deck lint
+  # passed, so a skipped or cancelled shard can never count as green.
+  test:
+    if: always()
+    needs: [unit, decks]
+    runs-on: ubuntu-latest
+    steps:
+      - name: All checks passed
+        run: |
+          test "${{ needs.unit.result }}" = success
+          test "${{ needs.decks.result }}" = success
