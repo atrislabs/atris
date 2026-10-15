@@ -14476,7 +14476,7 @@ test('task status separates review continue-work from human accept waiting', () 
   }
 });
 
-test('task reviews gives a compact certified accept queue', () => {
+test('task reviews gives a compact certified accept queue', async () => {
   if (!hasNodeSqlite()) return;
   const dir = makeTempDir();
   const dbPath = path.join(dir, 'tasks.db');
@@ -14534,7 +14534,13 @@ test('task reviews gives a compact certified accept queue', () => {
     ], { cwd: dir, env });
     assert.equal(unsafeReady.status, 0, unsafeReady.stderr);
 
-    const queue = runCli(['task', 'reviews', '--json'], { cwd: dir, env });
+    // The four queue reads change no task state, so they run at once.
+    const [queue, text, verbose, grouped] = await Promise.all([
+      runCliAsync(['task', 'reviews', '--json'], { cwd: dir, env }),
+      runCliAsync(['task', 'reviews'], { cwd: dir, env }),
+      runCliAsync(['task', 'reviews', '--verbose'], { cwd: dir, env }),
+      runCliAsync(['task', 'reviews', '--group-by', 'tag'], { cwd: dir, env }),
+    ]);
     assert.equal(queue.status, 0, queue.stderr);
     const payload = JSON.parse(queue.stdout);
     assert.equal(payload.action, 'review_queue');
@@ -14575,7 +14581,6 @@ test('task reviews gives a compact certified accept queue', () => {
     ]);
     assert.ok(payload.queue.items[0].verification_focus.commands_to_verify.some(command => command.includes('node --check test/commands.test.js')));
 
-    const text = runCli(['task', 'reviews'], { cwd: dir, env });
     assert.equal(text.status, 0, text.stderr);
     assert.match(text.stdout, /one finished thing is waiting for your ok\. it passed both checks\./);
     assert.match(text.stdout, /two more are almost ready; second checks are still running\./);
@@ -14595,13 +14600,11 @@ test('task reviews gives a compact certified accept queue', () => {
     assert.match(text.stdout, new RegExp(`say yes: atris task accept ${certifiedTask.display_id}`));
     assert.doesNotMatch(text.stdout, new RegExp(`say yes: atris task accept ${blockingTask.display_id}`));
 
-    const verbose = runCli(['task', 'reviews', '--verbose'], { cwd: dir, env });
     assert.equal(verbose.status, 0, verbose.stderr);
     assert.ok(verbose.stdout.indexOf("   what's new:") < verbose.stdout.indexOf('   details:'), 'summary should appear before raw details');
     assert.match(verbose.stdout, /saved: Result is ready for human approval as .*?\./);
     assert.match(verbose.stdout, new RegExp(`/codex: atris task review-chat ${certifiedTask.display_id} --as codex-review`));
 
-    const grouped = runCli(['task', 'reviews', '--group-by', 'tag'], { cwd: dir, env });
     assert.equal(grouped.status, 0, grouped.stderr);
     assert.match(grouped.stdout, /one finished things are waiting, grouped by tag\./);
     assert.match(grouped.stdout, /1\. review - one task/);
