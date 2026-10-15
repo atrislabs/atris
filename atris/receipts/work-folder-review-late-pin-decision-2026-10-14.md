@@ -19,3 +19,17 @@ The strengthened probe uses the actual `prepareReviewSandbox` setup with a dispo
 Pre-build verdict: proceed with a diagnostic only. The named failure mode is losing the separate review stores and falsely logging success after refusal. Before implementation, require the refused path to retain every store and registration, emit the shared refusal explanation, and write no removal record; retain the idle control to check intended disposal.
 
 Plan: actual review setup -> idle control / late pin -> real Git result -> path and removal-record assertions.
+
+## Refusal result and caller contract
+
+Verdict: proceed with changes to the plan, pending the existing production review. The single failure mode is losing the refusal explanation at the caller: `describeRefusedRemoval` returns text, while the current caller reads only `describeGitHold(disposed) || disposed.pinned`.
+
+At `lib/fleet.js:2502`, capture the removal result. For `status !== 0`, including null or missing status, return `{ removed: false, reason: 'removal_refused', detail }` before any recursive delete or success record. Set detail with `describeRefusedRemoval(boundary.worktreePath, result.stderr || result.stdout || result.error?.message || '')`. Add the shared helper to the existing import. Do not put this string in `pinned`, because generic refusal is not evidence of a pin.
+
+At `lib/fleet.js:4006`, print `disposed.detail || describeGitHold(disposed) || disposed.pinned` so existing preflight results retain their explanations. Do not change import validation or the later handoff: cleanup refusal retains the source stores without undoing a verified import.
+
+Plan: nonzero or missing removal status -> shared explanation -> retained stores and registration -> caller prints explanation -> no success record.
+
+Required implementation proof: keep the idle real-Git control; turn the late-pin diagnostic into a retention regression; cover a refusal without a pin and a missing process status. Assert the returned detail and caller output contain the explanation without undefined text, every review store survives refusal, and no successful removal record is added. These checks are requirements for the next build, not claims of current coverage.
+
+next_push: implement the two-site refusal contract after production review, retaining idle disposal and proving late-pin retention.
