@@ -1,0 +1,16 @@
+Review checks now select the caller Node after the login profile changes PATH.
+Files: lib/task-proof.js, test/task-proof.test.js, atris/MAP.md, atris/refs/MAP-NOTES.md, atris/team/architect/logs/2026-10-15.md.
+Command: node --test test/task-proof.test.js
+Output: tests 16; pass 16; fail 0; todo 0. Exit: 0.
+Real changed surface: node -e 'const r=require("./lib/task-proof").buildVerifiedProof("node -p process.execPath"); console.log(JSON.stringify(r)); process.exit(r.ok?0:1)'
+Output: {"ok":true,"exit":0,"output":"/opt/homebrew/Cellar/node/25.6.1/bin/node"}. Exit: 0.
+The real bash regression places a competing executable first, then runs the proof script and confirms the caller executable wins.
+Command: node --test test/worktree-removal-guard.test.js test/member-tidy.test.js
+Output: tests 90; pass 90; fail 0; skipped 0; todo 0. Exit: 0.
+Rerun: node --test test/worktree-removal-guard.test.js test/member-tidy.test.js && node bin/atris.js slop --staged
+Review command: node bin/atris.js task ready ACW-34 --verify "node --test test/worktree-removal-guard.test.js test/member-tidy.test.js && node bin/atris.js slop --staged"
+Output: verified required command exited 0; ready for approval. Exit: 0.
+Receipt: atris/runs/2026-10-15-task-acw-34-2026-10-15T11-03-20-029Z.json
+The required review check now passes through the repaired runner; no task acceptance was performed.
+next_push: Prove caller Node selection from a folder containing an apostrophe.
+layer: capabilities

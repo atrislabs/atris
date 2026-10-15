@@ -177,6 +177,20 @@ test('non-strict auto-accept rejects free-text test-passed claims until proof wa
   assert.equal(accepted.policy, 'independent_reviewer');
 });
 
+test('real proof check keeps the caller Node ahead of a competing executable', () => {
+  const dir = makeTempDir();
+  try {
+    fs.writeFileSync(path.join(dir, 'node'), '#!/bin/sh\nprintf competing-node\n', { mode: 0o755 });
+    const quote = value => "'" + value.replace(/'/g, "'\\''") + "'";
+    const result = buildVerifiedProof('node -p "process.execPath"', '', (file, args, options) =>
+      spawnSync(file, ['-lc', `export PATH=${quote(dir)}:"$PATH"\n${args[1]}`], options));
+    assert.equal(result.ok, true, JSON.stringify(result));
+    assert.equal(result.output, process.execPath);
+  } finally {
+    cleanupTempDir(dir);
+  }
+});
+
 test('buildVerifiedProof turns a passing command into executed proof', () => {
   const calls = [];
   const result = buildVerifiedProof('npm test', 'fixed the parser', (cmd, args, opts) => {
@@ -195,7 +209,8 @@ test('buildVerifiedProof turns a passing command into executed proof', () => {
   assert.equal(taskProofLooksMeaningful(withReceipt), true);
   // It actually ran the command via bash.
   assert.deepEqual(calls[0][0], 'bash');
-  assert.deepEqual(calls[0][1], ['-lc', 'npm test']);
+  assert.equal(calls[0][1][0], '-lc');
+  assert.ok(calls[0][1][1].endsWith('\nnpm test'));
 });
 
 test('namedUnrunProofCommand spots npm test, node --test, and git diff --check until this process ran them', () => {

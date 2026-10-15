@@ -254,3 +254,5 @@ Healthy refresh whole-index proof: `test/member-tidy.test.js:1374` compares the 
 Healthy refresh binary proof: `test/member-tidy.test.js:1374` runs real cleanup preview and apply with distinct staged and later binary bytes, comparing both byte buffers exactly alongside the complete staged tree.
 
 Healthy cleanup saved deletion proof: `test/member-tidy.test.js:1374` runs real preview and apply with a committed outline deleted from the index and recreated with different bytes. Both calls preserve the saved deletion, replacement bytes and original committed contents.
+
+Review check runtime: `lib/task-proof.js:166` selects the caller Node after the login profile. `test/task-proof.test.js:180` runs real bash with a competing Node executable and checks the selected runtime.
