@@ -1,0 +1,21 @@
+Fleet review cleanup: pending checks now run as real passes
+
+Files edited: test/worktree-removal-guard.test.js, atris/receipts/work-folder-review-late-pin-probe.js, atris/receipts/work-folder-review-late-pin-decision-2026-10-14.md, atris/team/architect/logs/2026-10-14.md, this receipt.
+
+What changed: the fleet change that keeps a copy git refused landed in the previous commit. This slice drops the three pending marks that waited on it and turns the old diagnostic, which asserted the deleted copy, into a proof of the kept copy.
+
+$ node --test test/worktree-removal-guard.test.js test/member-tidy.test.js
+exit=0
+tests 63, pass 63, fail 0, todo 0, duration_ms 91117
+
+$ node atris/receipts/work-folder-review-late-pin-probe.js
+exit=0
+control: git removed the idle copy, cleanup cleared its stores and recorded success
+kept: git refused late-pin, every review path stayed, no removal recorded (pinned by git worktree lock, under a minute old: review still writing)
+kept: git refused invalid-link, every review path stayed, no removal recorded (validation failed, cannot remove working tree: ...)
+kept: removal ended by signal, every review path stayed, no removal recorded (git removal stopped by SIGTERM)
+
+Before this slice the same probe crashed: the fixed cleanup writes no removal record, and the probe still expected one.
+
+$ node bin/atris.js slop detect <changed files> --quiet
+clean, exit 0

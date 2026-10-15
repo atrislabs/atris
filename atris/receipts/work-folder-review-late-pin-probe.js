@@ -1,6 +1,6 @@
 'use strict';
 
-// Disposable real-Git reproduction. No user folders are passed to disposal.
+// Disposable real-Git proof. No user folders are passed to disposal.
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const os = require('node:os');
@@ -75,16 +75,28 @@ process.exit(result.status === null ? 1 : result.status);
       const remaining = Object.fromEntries(Object.entries({ copy, gitDir, quarantine, sandboxRoot })
         .map(([key, value]) => [key, fs.existsSync(value)]));
       const log = path.join(repo, '.atris', 'state', 'worktree_removals.jsonl');
-      const records = fs.readFileSync(log, 'utf8').trim().split('\n').map((line) => JSON.parse(line));
-      assert.equal(records.length, 1);
-      assert.equal(records[0].path, copy);
-      assert.equal(records[0].reason, 'review_sandbox_imported');
+      const records = fs.existsSync(log)
+        ? fs.readFileSync(log, 'utf8').trim().split('\n').map((line) => JSON.parse(line))
+        : [];
       assert.equal(run(['-C', repo, 'rev-parse', 'HEAD']), trustedHead);
       assert.equal(run(['--git-dir', origin, 'rev-parse', 'refs/heads/master']), trustedHead);
       assert.equal(fs.readFileSync(path.join(repo, 'proof.txt'), 'utf8'), 'trusted content\n');
-      // Exit 0 diagnoses current behavior. It does not certify safe cleanup.
-      assert.deepEqual(result, { removed: true });
-      assert.ok(Object.values(remaining).every((exists) => exists === false));
+      if (mode === 'idle') {
+        assert.equal(records.length, 1);
+        assert.equal(records[0].path, copy);
+        assert.equal(records[0].reason, 'review_sandbox_imported');
+        assert.deepEqual(result, { removed: true });
+        assert.ok(Object.values(remaining).every((exists) => exists === false));
+      } else {
+        // A refused or stopped removal keeps every store and records nothing.
+        assert.deepEqual(records, []);
+        assert.equal(result.removed, false);
+        assert.equal(result.reason, 'removal_refused');
+        assert.equal(typeof result.detail, 'string');
+        assert.ok(result.detail.length > 0);
+        assert.ok(Object.values(remaining).every((exists) => exists === true));
+        assert.equal(fs.readFileSync(path.join(copy, 'proof.txt'), 'utf8'), 'trusted content\n');
+      }
       if (mode === 'interrupted') {
         assert.equal(removal.status, null);
         assert.equal(removal.signal, 'SIGTERM');
@@ -104,8 +116,8 @@ process.exit(result.status === null ? 1 : result.status);
       console.log(mode === 'idle'
         ? 'control: git removed the idle copy, cleanup cleared its stores and recorded success'
         : mode === 'interrupted'
-          ? 'confirmed: removal ended by signal with no exit code, all review paths were deleted, and cleanup recorded success'
-          : `confirmed: git refused ${mode}, all review paths were deleted, and cleanup recorded success`);
+          ? `kept: removal ended by signal, every review path stayed, no removal recorded (${result.detail})`
+          : `kept: git refused ${mode}, every review path stayed, no removal recorded (${result.detail})`);
     } finally {
       if (previousPath === undefined) delete process.env.PATH;
       else process.env.PATH = previousPath;

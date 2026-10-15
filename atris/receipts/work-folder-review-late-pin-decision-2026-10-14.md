@@ -89,3 +89,7 @@ A pin-only gate was tried and rejected: it puts generic refusal text in the pin 
 Proof: `node --test test/worktree-removal-guard.test.js test/member-tidy.test.js`, exit 0, 57 passed, zero failed, one todo.
 
 next_push: after protected review, land the exactly-zero gate and caller detail line, give the review fixture a real store, and drop the todo.
+
+## Landed
+
+The two-site refusal contract above landed in fleet review cleanup. The three pending checks in `test/worktree-removal-guard.test.js` now run as real passes, and this probe now asserts the kept result: idle removal still clears every store with one record, while a late pin, a missing link, or a stopped removal keeps every store, records nothing, and names git's reason. Proof: `atris/receipts/work-folder-review-pending-cleared-2026-10-14.txt`.

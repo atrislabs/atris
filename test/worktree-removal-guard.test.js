@@ -1166,10 +1166,9 @@ test('fleet review names the git lock or pin when cleanup keeps a copy', () => {
   }
 });
 
-// The refusal result the pending cleanup tests expect carries git's reason in
-// its detail. The kept line must print it, not "undefined". Pending on the
-// same protected review as those tests.
-test('fleet review names git\'s refusal when cleanup keeps a copy', { todo: 'fleet review still prints only a hold or a pin' }, () => {
+// A refusal result carries git's reason in its detail. The kept line must
+// print it, not "undefined".
+test('fleet review names git\'s refusal when cleanup keeps a copy', () => {
   const refused = { removed: false, reason: 'removal_refused', detail: 'git removal stopped by SIGTERM' };
   assert.equal(keptReviewLine(refused, '/tmp/review'),
     'kept review sandbox for T-1 (removal_refused: git removal stopped by SIGTERM): /tmp/review');
@@ -1208,10 +1207,8 @@ process.exit(result.status === null ? 1 : result.status);
 // A pin taken after the first check makes git refuse its removal. The plain
 // deletes that follow must not finish what git would not, so the copy stays
 // and the report uses the line tidy, reap, cleanup and autopilot print.
-// Pending: the fail-closed fleet change waits on protected review
-// (atris/receipts/work-folder-review-late-pin-decision-2026-10-14.md). Drop the
-// todo when it lands; today this reproduces the deleted copy.
-test('fleet review cleanup keeps a copy pinned after its first check and names the refusal', { todo: 'fleet disposal still ignores the git result' }, () => {
+// Plan: atris/receipts/work-folder-review-late-pin-decision-2026-10-14.md.
+test('fleet review cleanup keeps a copy pinned after its first check and names the refusal', () => {
   const { base, repo, wt, boundary } = reviewSandbox({ store: true });
   try {
     const { run, removal } = disposeWithGitAtRemoval(base, repo, boundary, `const pin = spawnSync(git, ['worktree', 'lock', '--reason', 'reviewer opened it', ${JSON.stringify(wt)}], { cwd: ${JSON.stringify(wt)}, encoding: 'utf8' });
@@ -1229,8 +1226,8 @@ test('fleet review cleanup keeps a copy pinned after its first check and names t
 
 // Git can refuse with no pin at all, or be stopped before it answers. Both
 // keep every store and name why, so the fix reads git's result, not just
-// its pins. Pending on the same protected review as the late-pin case.
-test('fleet review cleanup keeps a copy git refused without a pin or never finished removing', { todo: 'fleet disposal still ignores the git result' }, () => {
+// its pins.
+test('fleet review cleanup keeps a copy git refused without a pin or never finished removing', () => {
   const cases = [
     // The copy's link to its store goes missing just as removal starts.
     { label: 'refused without a pin', onRemove: (wt) => `fs.renameSync(${JSON.stringify(path.join(wt, '.git'))}, ${JSON.stringify(path.join(wt, '.git-moved'))});`, detail: /validation failed/ },
