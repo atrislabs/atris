@@ -6629,17 +6629,29 @@ const CHECK_FEEDBACK_TRIM_MARKER = 'output trimmed';
 
 function extractCheckFeedback(verifierResult) {
   if (!verifierResult || verifierResult.passed !== false) return '';
-  const lines = [verifierResult.output, verifierResult.stdout, verifierResult.stderr]
+  // A reviewer turn-down goes first: when the tests passed, it is the only
+  // real reason the try failed, and passing test names must not crowd it out.
+  const referee = verifierResult.referee && verifierResult.referee.passed === false
+    ? verifierResult.referee
+    : null;
+  const refereeLines = referee
+    ? [referee.reason, referee.output].filter((value) => String(value || '').trim())
+    : [];
+  const lines = [...new Set([...refereeLines, verifierResult.output, verifierResult.stdout, verifierResult.stderr]
     .filter((value) => String(value || '').trim())
     .flatMap((value) => String(value).split(/\r?\n/))
     .map((line) => line.trim())
-    .filter(Boolean);
+    .filter(Boolean))];
   if (!lines.length) return '';
 
+  const refereeSet = new Set(refereeLines.flatMap((value) => String(value).split(/\r?\n/)).map((line) => line.trim()).filter(Boolean));
+  const passingLine = /^(?:✔|ℹ )/;
   const usefulPattern = /\b(?:error|fail|expected|assert)\w*\b|(?:^|\s|\()[^:\s()]+:\d+(?::\d+)?(?:\b|$)/i;
-  const useful = lines.filter((line) => usefulPattern.test(line));
-  const context = lines.filter((line) => !usefulPattern.test(line));
-  const feedback = [...useful, ...context].join('\n');
+  const rest = lines.filter((line) => !refereeSet.has(line));
+  const useful = rest.filter((line) => !passingLine.test(line) && usefulPattern.test(line));
+  const context = rest.filter((line) => !passingLine.test(line) && !usefulPattern.test(line));
+  const passing = rest.filter((line) => passingLine.test(line));
+  const feedback = [...lines.filter((line) => refereeSet.has(line)), ...useful, ...context, ...passing].join('\n');
   if (feedback.length <= CHECK_FEEDBACK_LIMIT) return feedback;
 
   const contentLimit = CHECK_FEEDBACK_LIMIT - CHECK_FEEDBACK_TRIM_MARKER.length - 1;
