@@ -830,11 +830,13 @@ function pointLabel(left, at, whole) {
 // semicolon, and so does one after a colon earlier in the sentence, a list
 // inside brackets, one of clauses ("We ran, we tested, we shipped; the
 // gate held") and one an opener leads: "If any probe fails, fix it or file
-// it; do not ship".
+// it; do not ship". An opening quote or bold mark before the list is
+// read past, as a bullet is, so a quoted "Sneaker fiends, denimheads,
+// goth ninjas" list takes the colon too.
 function listLabel(left, at, whole) {
   if (lineAbove || lineMid || /[()[\]\uE000]/.test(left)) return false;
   if (/:(?:\s|$)/.test(whole.slice(at).split(/[.!?](?:\s|$)/)[0])) return false;
-  const list = left.replace(/^(?:(?:[-*+>]|\d+[.)])\s*)+/, '').trim();
+  const list = left.replace(/^(?:(?:[-*+>]|\d+[.)])\s*|["\u201c_*]+)+/, '').trim();
   if (/:\s/.test(whole.slice(0, at).split(/[.!?]\s|\n/).pop())) return false;
   if (/^(?:if|when|whenever|once|unless|until|because|since|although|though|while|for|after|before)\b/i.test(list)) return false;
   return BARE_LIST.test(list) && !/(?:^|,\s+|\b(?:and|or)\s+)(?:I|we|they|you|he|she|it)\s/i.test(list);

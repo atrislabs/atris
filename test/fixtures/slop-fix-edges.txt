@@ -478,6 +478,8 @@ Release notes \u2014 the features shipped in v2.
 # before the clause that sums it up; a list of clauses keeps the semicolon
 Every AI company has the same models. Claude, GPT, Gemini \u2014 the intelligence layer is a commodity.
 => Every AI company has the same models. Claude, GPT, Gemini: the intelligence layer is a commodity.
+It is the proof. "Sneaker fiends, denimheads, goth ninjas \u2014 every clique interacted on a level beyond style."
+=> It is the proof. "Sneaker fiends, denimheads, goth ninjas: every clique interacted on a level beyond style."
 The models are good enough. GPT, Claude, Kimi \u2014 pick one.
 => The models are good enough. GPT, Claude, Kimi: pick one.
 We ran, we tested, we shipped \u2014 the gate held.
