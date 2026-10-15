@@ -19,10 +19,12 @@ Details for any task: atris task show <ID>
 
 ## In Progress
 
-- **[ACW-25]** Prove cleanup warns when origin is unavailable · architect
+(Empty)
 
 ## Review
 
+- **[ACW-25]** Prove cleanup warns when origin is unavailable · architect
+  **Done looks like:** Operators can trust the cleanup warning when the remote is unavailable, with proof that drafts stay intact.
 - **[ACW-24]** Say when shared cleanup could not refresh its base · architect
   **Done looks like:** When the refresh fails, the cleanup output says so and why, and a healthy refresh prints nothing extra.
 - **[ACW-23]** Stop a damaged remote from breaking the local record that start and ship use · architect
