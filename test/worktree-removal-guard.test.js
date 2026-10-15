@@ -182,6 +182,29 @@ test('worktree cleanup names the lock holding a folder and how old it is', () =>
   }
 });
 
+// A crashed rebase can leave its lock and its paused rebase in one store; the
+// report names both so clearing the lock alone does not surprise anyone.
+test('worktree cleanup names a lock and a paused rebase left in the same folder', () => {
+  const { base, repo, wt } = landedWorktree();
+  try {
+    const lock = path.join(worktreeGitDir(wt), 'index.lock');
+    fs.writeFileSync(lock, '');
+    const stale = new Date(Date.now() - 3 * 60 * 60 * 1000);
+    fs.utimesSync(lock, stale, stale);
+    fs.mkdirSync(path.join(worktreeGitDir(wt), 'rebase-merge'));
+    const result = cleanupWorktrees({ root: repo, base: 'HEAD', apply: true, activeCwds: [] });
+    const held = result.kept.find((item) => item.path === wt);
+    assert.equal(held.reason, 'git_lock', JSON.stringify(result.kept));
+    assert.deepEqual(held.also, [{ reason: 'git_rebase_in_progress', paused: 'a rebase is paused' }]);
+    assert.equal(describeGitHold(held), `git holds ${lock}, 3 h old and a rebase is paused`);
+    assert.deepEqual(result.removed, []);
+    assert.ok(fs.existsSync(wt));
+    assert.deepEqual(removalLines(repo), []);
+  } finally {
+    fs.rmSync(base, { recursive: true, force: true });
+  }
+});
+
 test('worktree cleanup keeps a clean folder paused mid-rebase', () => {
   const { base, repo, wt } = landedWorktree();
   try {

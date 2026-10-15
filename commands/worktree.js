@@ -1314,17 +1314,23 @@ function describePausedGitWork(reason) {
   return PAUSED_GIT_WORK[reason] ? `${PAUSED_GIT_WORK[reason]} is paused` : null;
 }
 
-// What git is busy with in one store, or null when it is idle there.
-function storeGitHold(gitDir, now) {
+// Everything git is busy with in one store, lock first, or [] when it is idle
+// there. A crashed rebase can leave a lock and the paused rebase together, so
+// each gets its own hold. Never less strict than the plain activity check: if
+// that says busy and nothing more is readable, its reason still holds.
+function storeGitHolds(gitDir, now) {
   const reason = gitStoreActivity(gitDir);
-  if (!reason) return null;
-  const lock = reason === 'git_lock' ? gitStoreLock(gitDir, now) : null;
+  if (!reason) return [];
+  const holds = [];
+  const lock = gitStoreLock(gitDir, now);
+  if (lock) holds.push({ reason: 'git_lock', lock: lock.file, lock_age_ms: lock.ageMs });
+  for (const [marker, markerReason] of GIT_ACTIVITY_MARKERS) {
+    if (markerReason === 'git_lock' || holds.some((hold) => hold.reason === markerReason)) continue;
+    if (fs.existsSync(path.join(gitDir, marker))) holds.push({ reason: markerReason, paused: describePausedGitWork(markerReason) });
+  }
+  if (holds.length) return holds;
   const paused = describePausedGitWork(reason);
-  return {
-    reason,
-    ...(lock ? { lock: lock.file, lock_age_ms: lock.ageMs } : {}),
-    ...(paused ? { paused } : {}),
-  };
+  return [{ reason, ...(paused ? { paused } : {}) }];
 }
 
 // The one check every cleanup runs before it removes a folder git may be busy
@@ -1336,7 +1342,7 @@ function storeGitHold(gitDir, now) {
 // one report can name everything to clear.
 function gitHold({ worktree = null, stores = [], now = Date.now() } = {}) {
   const dirs = [...new Set([worktree ? worktreeGitDir(worktree) : null, ...stores].filter(Boolean))];
-  const [first, ...also] = dirs.map((dir) => storeGitHold(dir, now)).filter(Boolean);
+  const [first, ...also] = dirs.flatMap((dir) => storeGitHolds(dir, now));
   if (!first) return null;
   return also.length ? { ...first, also } : first;
 }
