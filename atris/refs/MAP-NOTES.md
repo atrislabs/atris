@@ -1016,7 +1016,7 @@ MCP stdio request flow: `mcp/atris-mcp/index.mjs:142` reads requests while desig
 
 - **Entry point:** `commands/verify.js:13-35` (verifyAtris function)
 - **Help:** `bin/atris.js:788-799` (showVerifyHelp) and `bin/atris.js:788-799` (showVerifyHelp short-circuit)
-- **Rubric runner:** `commands/verify.js:495-529` (verifyRubric)
+- **Rubric runner:** `commands/verify.js:628-670` (verifyRubric); refuses blocks that install, remove, or link packages globally via `commands/verify.js:596-615` (findGlobalInstall), tested in `test/autopilot-verify-falsifiability.test.js`
 - **Regression:** `test/commands.test.js:4323-4338` covers `verify --help` without verifier execution
 - **Modes:**
 - `atris verify`: Verify entire workspace health

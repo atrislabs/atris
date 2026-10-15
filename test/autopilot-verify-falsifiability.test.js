@@ -354,3 +354,63 @@ exit 0
     cleanup(cwd);
   }
 });
+
+// A company-brain-sync section once ran `npm i -g atris@3.15.12` and swapped
+// the machine's CLI for every agent. Each block stubs npm/yarn as shell
+// functions so a regression touches a marker file, never the real install.
+function writeRubricBlock(cwd, body) {
+  const featureDir = path.join(cwd, 'atris', 'features', 'demo');
+  fs.mkdirSync(featureDir, { recursive: true });
+  fs.writeFileSync(path.join(featureDir, 'validate.md'),
+`# Validation
+
+## smoke
+\`\`\`bash
+npm() { touch ran.marker; }
+pnpm() { touch ran.marker; }
+yarn() { touch ran.marker; }
+${body}
+\`\`\`
+`);
+}
+
+for (const line of [
+  'npm i -g atris@3.15.12',
+  'npm install --global atris',
+  'sudo npm -g install atris',
+  'pnpm add -g atris',
+  'npm install --location=global atris',
+  'cd /tmp && npm uninstall -g atris',
+  'npm link',
+  'yarn global add atris',
+]) {
+  test(`verifyRubric refuses a block that changes global installs: ${line}`, () => {
+    const cwd = fs.mkdtempSync(path.join(os.tmpdir(), 'atris-rubric-test-'));
+    try {
+      writeRubricBlock(cwd, line);
+      const code = verifyRubric('demo', 'smoke', { cwd, silent: true });
+      assert.strictEqual(code, 2);
+      assert.strictEqual(fs.existsSync(path.join(cwd, 'ran.marker')), false, 'block must not run');
+    } finally {
+      cleanup(cwd);
+    }
+  });
+}
+
+test('verifyRubric still runs local npm commands and read-only global listings', () => {
+  const cwd = fs.mkdtempSync(path.join(os.tmpdir(), 'atris-rubric-test-'));
+  try {
+    writeRubricBlock(cwd, [
+      '# npm i -g atris is fine inside a comment',
+      'npm install',
+      'npm test',
+      'npm ls -g atris',
+      'echo "npm i -g is only text here" > /dev/null',
+    ].join('\n'));
+    const code = verifyRubric('demo', 'smoke', { cwd, silent: true });
+    assert.strictEqual(code, 0);
+    assert.strictEqual(fs.existsSync(path.join(cwd, 'ran.marker')), true, 'block must run');
+  } finally {
+    cleanup(cwd);
+  }
+});

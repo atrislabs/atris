@@ -581,6 +581,39 @@ function checkMapForFiles(atrisDir, changes) {
   return { documented: documented >= fileChanges.length / 2 };
 }
 
+const NPM_MUTATING_SUBCOMMANDS = new Set([
+  'i', 'install', 'add',
+  'un', 'uninstall', 'rm', 'r', 'remove', 'unlink',
+  'up', 'update', 'upgrade',
+]);
+const NPM_GLOBAL_FLAGS = new Set(['-g', '--global', '--location=global']);
+
+/**
+ * Return the first line of a rubric script that installs, removes, or links
+ * a package globally, or null. A rubric once ran `npm i -g atris@<old>` and
+ * swapped the CLI under every agent on the machine; proofs stay read-only.
+ */
+function findGlobalInstall(script) {
+  for (const rawLine of String(script || '').split('\n')) {
+    const line = rawLine.replace(/(^|\s)#.*$/, '').trim();
+    if (!line) continue;
+    for (const segment of line.split(/&&|\|\||[;|&]/)) {
+      const tokens = segment.trim().split(/\s+/).filter(Boolean);
+      while (tokens.length && (tokens[0] === 'sudo' || /^[A-Za-z_][A-Za-z0-9_]*=/.test(tokens[0]))) tokens.shift();
+      const tool = tokens[0];
+      if (tool === 'yarn' && tokens[1] === 'global' && tokens[2] !== 'list' && tokens[2] !== 'bin' && tokens[2] !== 'dir') {
+        return rawLine.trim();
+      }
+      if (tool !== 'npm' && tool !== 'pnpm') continue;
+      const sub = tokens.slice(1).find((token) => !token.startsWith('-'));
+      if (sub === 'link' || sub === 'ln') return rawLine.trim();
+      const isGlobal = tokens.some((token) => NPM_GLOBAL_FLAGS.has(token));
+      if (isGlobal && NPM_MUTATING_SUBCOMMANDS.has(sub)) return rawLine.trim();
+    }
+  }
+  return null;
+}
+
 /**
  * atris verify <slug> --section <name>
  *
@@ -617,6 +650,13 @@ function verifyRubric(slug, section, opts = {}) {
     return 2;
   }
   const script = match[1];
+  const globalInstall = findGlobalInstall(script);
+  if (globalInstall) {
+    console.error(`✗ Refusing to run "## ${section}": it changes globally installed packages.`);
+    console.error(`  ${globalInstall}`);
+    console.error('  Proofs must be read-only. Move install steps to prose or a non-bash fence.');
+    return 2;
+  }
   const os = require('os');
   const tmpFile = path.join(os.tmpdir(), `atris-verify-${Date.now()}-${Math.floor(Math.random() * 1e6)}.sh`);
   fs.writeFileSync(tmpFile, `#!/usr/bin/env bash\nset -e\n${script}\n`);
@@ -727,6 +767,7 @@ function verifyArtifact(target, opts = {}) {
 module.exports = {
   verifyAtris,
   verifyRubric,
+  findGlobalInstall,
   verifyArtifact,
   findTaskInContent,
   escapeRegExp,
