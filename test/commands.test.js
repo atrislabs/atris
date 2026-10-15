@@ -11408,11 +11408,19 @@ test('task backlog and clear-plan demote only planned open tasks', () => {
     const goalOnlyBacklogAfterPlan = runCli(['task', 'backlog', goalOnlyTask.id, '--as', 'codex', '--reason', 'operator cleared real plan', '--json'], { cwd: dir, env });
     assert.equal(goalOnlyBacklogAfterPlan.status, 0, goalOnlyBacklogAfterPlan.stderr);
 
-    const delegated = runCli(['task', 'delegate', 'Delegated planned row keeps owner', '--to', 'alice', '--tag', 'capture', '--json'], { cwd: dir, env });
-    assert.equal(delegated.status, 0, delegated.stderr);
-    const delegatedRef = JSON.parse(delegated.stdout).task.display_id;
+    // Delegate has its own tests; seed the owner fields it writes so backlog,
+    // which must keep them, stays the only CLI step for this row.
+    const delegated = addSeedTask(db, {
+      title: 'Delegated planned row keeps owner',
+      tag: 'capture',
+      workspaceRoot,
+      metadata: { assigned_to: 'alice', delegate_via: 'local' },
+    });
+    assert.equal(delegated.inserted, true);
+    const delegatedRef = taskDb.taskDisplayRefMap(taskDb.listTasks(db, { workspaceRoot })).get(delegated.id);
+    assert.ok(delegatedRef);
     const delegatedPlan = taskDb.stageTask(db, {
-      id: JSON.parse(delegated.stdout).task.id,
+      id: delegated.id,
       actor: 'alice',
       stage: 'plan',
       owner: 'alice',

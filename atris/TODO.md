@@ -23,6 +23,8 @@ Details for any task: atris task show <ID>
 
 ## Review
 
+- **[AIC-85]** Seed the delegated owner row in the backlog cleanup test · auto-improver
+  **Done looks like:** Developers can run the backlog cleanup test about a seventh of a second faster, which shortens the full test wait while every owner and cleanup check still run…
 - **[AIC-84]** Move ready-only proof cases in process in the review-chat extraction test · auto-improver
   **Done looks like:** Developers can run the slowest task test about two thirds of a second faster, which shortens the full test wait while every proof extraction check still runs.
 - **[AIC-83]** Read safe review drain baseline through the task store · auto-improver
