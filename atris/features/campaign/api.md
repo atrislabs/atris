@@ -26,15 +26,20 @@ Events the backend writes itself use origin `cloud` and its own seq per campaign
 
 ## Run in the cloud (the owner, from a screen or the CLI)
 
-`POST /api/campaigns/{campaign_id}/run-in-cloud` with `{ "work": "50m", "break": "10m", "max_rounds": <optional, 1 to 48> }` runs the campaign on the owner's Atris computer, so it keeps going while the laptop sleeps. Only the owner's own login may call it (agent tokens and API keys get 403), and only a campaign whose `campaign_started` says `basis: "atris_cloud"` runs there (403 otherwise). The backend finds the person's computer, wakes it if it sleeps (a computer still waking answers 503 with `Retry-After`), and starts one tracked background command on it:
+`POST /api/campaigns/{campaign_id}/run-in-cloud` with `{ "work": "50m", "break": "10m", "max_rounds": <optional, 1 to 48> }` runs the campaign on the owner's Atris computer, so it keeps going while the laptop sleeps. Only the owner's own login may call it (agent tokens, API keys, and campaign tokens get 403), and only a campaign whose `campaign_started` says `basis: "atris_cloud"` runs there (403 otherwise). The backend finds the person's computer and wakes it if it sleeps; a computer still waking answers 503 with `Retry-After`. It then checks that the computer's CLI reports the `cloud_pull` and `campaign_token_file` features (`atris campaign features --json`), claims the campaign's one runner slot, and starts one tracked background command:
 
 ```text
-atris campaign sync <id> && atris campaign run <id> --work <s>s --break <s>s [--rounds <n>]
+ATRIS_CAMPAIGN_TOKEN_FILE=.atris/campaign-runs/<id>.token atris campaign sync <id> &&
+ATRIS_CAMPAIGN_TOKEN_FILE=.atris/campaign-runs/<id>.token atris campaign run <id> --work <s>s --break <s>s [--rounds <n>];
+code=$?; rm -f .atris/campaign-runs/<id>.token; exit $code
 ```
 
-The computer's runner keeps the output in a capped log and kills the run at its deadline (the rounds plus 30 minutes, or one day without `max_rounds`). One run per campaign at a time (409 while one is running). The backend records `home_moved` with `{ "to": "computer:<agent id>", "run_id", "work", "break", "max_rounds", "deadline" }` as the person, origin `cloud`. → `{ "ok": true, "computer", "run_id", "status", "woke", "recorded", "deadline", "check" }`.
+- **The computer's login is one campaign token, not the person's.** It opens only `GET /campaigns/<id>`, `GET /campaigns/<id>/events`, and `POST /campaigns/<id>/events` for that one campaign. It expires at the run deadline and stops working once the run's claim ends. The backend writes it to a 0600 file in a 0700 folder kept out of git, never on a command line. The CLI reads the path from `ATRIS_CAMPAIGN_TOKEN_FILE`, takes it out of its environment so no mission or engine inherits it, and uses it only for that campaign's sync calls.
+- **One runner per campaign.** Each run is a claim, a `home_moved` event with the fixed id `cloudrun-<id>-<n>` written before anything starts, so two starts cannot both win. `cloudrun-<id>-<n>-run` records the run id. `cloudrun-<id>-<n>-end` ends the claim when the run finishes, fails to start, or passes its deadline (the rounds plus 30 minutes, or one day). A claim without a run record blocks new starts until its deadline.
 
-`GET /api/campaigns/{campaign_id}/cloud-run` → `{ "ok": true, "state", "home", "basis", "summary", "run": null | { "run_id", "computer", "status": "running" | "finished" | "unknown" | "computer_asleep" | "unreachable", "exit_code", "timed_out", "output_tail" } }`. It never wakes a computer.
+→ `{ "ok": true, "computer", "claim", "run_id", "status", "woke", "recorded", "deadline", "check" }`.
+
+`GET /api/campaigns/{campaign_id}/cloud-run` → `{ "ok": true, "state", "home", "basis", "summary", "run": null | { "claim", "run_id", "computer", "status": "running" | "finished" | "ended" | "unknown" | "computer_asleep" | "unreachable", "exit_code", "timed_out", "output_tail" } }`. It never wakes a computer, and a finished run's claim is ended here.
 
 ## Credits (metering only, v1)
 

@@ -31,7 +31,9 @@ function fakeCloud() {
   const lastSeq = () => events.length;
   const cloudEvent = (campaignId, type, data) => {
     state.cloudSeq += 1;
-    events.push({ id: `evt-cloud-${state.cloudSeq}`, campaign_id: campaignId, type, at: new Date().toISOString(), origin: 'cloud', seq: state.cloudSeq, actor: 'human:phone', data });
+    // A second later than now: an answer made in the same millisecond as the
+    // ask it answers sorts before it (origin cloud < laptop) and the ask stays open.
+    events.push({ id: `evt-cloud-${state.cloudSeq}`, campaign_id: campaignId, type, at: new Date(Date.now() + 1000).toISOString(), origin: 'cloud', seq: state.cloudSeq, actor: 'human:phone', data });
   };
   const server = http.createServer((req, res) => {
     let raw = '';
@@ -39,7 +41,7 @@ function fakeCloud() {
     req.on('end', () => {
       const url = new URL(req.url, 'http://x');
       requests.push({ method: req.method, path: url.pathname, auth: req.headers.authorization });
-      if (req.headers.authorization !== 'Bearer test-token') return send(res, 401, { ok: false, error: 'sign in first' });
+      if (!['Bearer test-token', 'Bearer scoped-token'].includes(req.headers.authorization)) return send(res, 401, { ok: false, error: 'sign in first' });
       if (state.refuse) return send(res, state.refuse.status, { ok: false, error: state.refuse.error });
       // The run routes (POST run-in-cloud, GET cloud-run), enough to see what the CLI sends.
       const runMatch = url.pathname.match(/^\/api\/campaigns\/([^/]+)\/(run-in-cloud|cloud-run)$/);
@@ -531,3 +533,74 @@ test('cloud-run without a login says so without calling the cloud', () => withCl
   assert.match(shown.err, /atris login/);
   assert.equal(cloud.requests.length, 0);
 }));
+
+// ---------------------------------------------------------------- the campaign token on a cloud computer
+
+function tokenFile(body) {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'campaign-token-'));
+  const file = path.join(dir, 'cmp.token');
+  fs.writeFileSync(file, typeof body === 'string' ? body : JSON.stringify(body), { mode: 0o600 });
+  return { file, done: () => fs.rmSync(dir, { recursive: true, force: true }) };
+}
+
+test('a cloud computer syncs with the campaign token from its file, never the login', () => withCloud(async (cloud) => {
+  const laptop = createMemoryStore({ origin: 'laptop' });
+  const id = waitingCampaign(laptop);
+  await syncCampaign(laptop, id, loggedIn);
+  const placed = tokenFile({ campaign_id: id, token: 'scoped-token', expires_at: 9999999999 });
+  try {
+    const env = { ATRIS_CAMPAIGN_TOKEN_FILE: placed.file, OTHER: '1' };
+    const box = createMemoryStore({ origin: 'box' });
+    const before = cloud.requests.length;
+    const shown = await command(box, ['sync', id, '--json'], { env });
+    assert.equal(shown.code, 0, shown.err);
+    assert.equal(JSON.parse(shown.out).first_pull, true);
+    assert.deepEqual(env, { OTHER: '1' }, 'the path is taken out of the environment');
+    const used = cloud.requests.slice(before).map((r) => r.auth);
+    assert.ok(used.length > 0 && used.every((auth) => auth === 'Bearer scoped-token'));
+  } finally {
+    placed.done();
+  }
+}));
+
+test('a campaign token never falls back to the login, and only serves its own campaign', () => withCloud(async (cloud) => {
+  const store = createMemoryStore({ origin: 'box' });
+  const id = waitingCampaign(store);
+  const wrong = await syncCampaign(store, id, { ...loggedIn, campaignToken: { campaign_id: 'cmp-other', token: 'scoped-token' } });
+  assert.equal(wrong.ok, false);
+  assert.match(wrong.error, /the campaign token here is for cmp-other, not cmp-sync/);
+  const broken = tokenFile('not json');
+  try {
+    const env = { ATRIS_CAMPAIGN_TOKEN_FILE: broken.file };
+    const shown = await command(store, ['sync', id], { env });
+    assert.equal(shown.code, 1);
+    assert.match(shown.err, /campaign token file .* could not be read/);
+    assert.equal(env.ATRIS_CAMPAIGN_TOKEN_FILE, undefined);
+  } finally {
+    broken.done();
+  }
+  assert.equal(cloud.requests.length, 0, 'nothing went out with the login instead');
+}));
+
+test('the token path never reaches a child process', async () => {
+  const placed = tokenFile({ campaign_id: 'cmp-sync', token: 'scoped-token' });
+  const saved = process.env.ATRIS_CAMPAIGN_TOKEN_FILE;
+  process.env.ATRIS_CAMPAIGN_TOKEN_FILE = placed.file;
+  try {
+    const shown = await command(createMemoryStore({ origin: 'box' }), ['features', '--json']);
+    assert.equal(shown.code, 0, shown.err);
+    assert.equal(process.env.ATRIS_CAMPAIGN_TOKEN_FILE, undefined);
+    const child = require('node:child_process').spawnSync(process.execPath, ['-e', 'process.stdout.write(String(process.env.ATRIS_CAMPAIGN_TOKEN_FILE))']);
+    assert.equal(child.stdout.toString(), 'undefined');
+  } finally {
+    if (saved === undefined) delete process.env.ATRIS_CAMPAIGN_TOKEN_FILE;
+    else process.env.ATRIS_CAMPAIGN_TOKEN_FILE = saved;
+    placed.done();
+  }
+});
+
+test('features says what the backend checks before a cloud run', async () => {
+  const shown = await command(createMemoryStore({ origin: 'box' }), ['features', '--json']);
+  assert.equal(shown.code, 0, shown.err);
+  assert.deepEqual(JSON.parse(shown.out), { ok: true, features: ['cloud_pull', 'campaign_token_file'] });
+});

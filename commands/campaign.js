@@ -14,7 +14,7 @@ const { CAMPAIGN_ID, isHumanActor, validateCampaign } = require('../lib/campaign
 const { decide } = require('../lib/campaign-core');
 const { getCampaign, listCampaigns, newCampaignId, openCampaignStore } = require('../lib/campaign-store');
 const { judgeRanData, judgeReading, outputTail } = require('../lib/campaign-reading');
-const { cloudLink, cloudRunStatus, runInCloud, sendPersonAction, syncCampaign } = require('../lib/campaign-sync');
+const { CLOUD_FEATURES, cloudLink, cloudRunStatus, runInCloud, sendPersonAction, syncCampaign, takeCampaignToken } = require('../lib/campaign-sync');
 
 const JUDGE_TIMEOUT_SECONDS = 15 * 60;
 // Who pays for a campaign's engines (atris/features/campaign/api.md, Credits).
@@ -50,6 +50,7 @@ function printHelp() {
   console.log('        on a computer that has never seen <id>, sync pulls the whole campaign from the cloud');
   console.log('  atris campaign cloud-run <id> [--work 50m --break 10m --rounds N]   run an atris_cloud campaign on your');
   console.log('        Atris computer, so it keeps going while this one sleeps; --status says how that run is going');
+  console.log('  atris campaign features [--json]        what this CLI can do for an Atris cloud computer (the backend checks it)');
   console.log('');
   console.log('Every verb takes --json. Writes are recorded as you (human:<login>); agents pass --as <member>.');
   console.log('A new campaign runs its judge first and is refused if it already passes: write a judge that fails first.');
@@ -620,9 +621,16 @@ const VERBS = {
   // atris campaign new "<goal>": the owner's engine drafts a judge that fails today (lib/campaign-new.js).
   new: (args, ctx) => require('../lib/campaign-new').draftAndStart(args, ctx, { start: cmdStart, goal: positionals(args)[1], ask: ctx.loopDeps && ctx.loopDeps.ask }),
   export: (args, ctx) => require('../lib/campaign-trace').exportTrace(args, ctx),
+  features: (args, ctx) => {
+    ctx.out(`this atris CLI can: ${CLOUD_FEATURES.join(', ')}`, { ok: true, features: CLOUD_FEATURES });
+    return 0;
+  },
 };
 
 function campaignCommand(args = [], deps = {}) {
+  // Taken out of the environment before anything else runs (lib/campaign-sync.js).
+  const campaignToken = takeCampaignToken(deps.env || process.env);
+  if (campaignToken) deps = { ...deps, cloud: { ...(deps.cloud || {}), campaignToken } };
   if (!deps.store) moveToCheckoutRoot(args.includes('--json'));
   const verb = positionals(args)[0];
   if (verb === 'help' || args.includes('--help') || args.includes('-h')) {
