@@ -1,0 +1,9 @@
+Landing advice for incomplete engine history now has matching real-surface coverage, verified by 175 passing tests and a clean staged writing check.
+Files: test/engine-resource.test.js, atris/MAP.md, atris/refs/MAP-NOTES.md, atris/team/executor/logs/2026-10-15.md.
+Verify: node --test test/engine-resource.test.js test/engine-dispatch.test.js && node bin/atris.js slop --staged
+Exit: 0. Output: tests 175; pass 175; fail 0; clean, no slop tells in 3 files.
+Real surface: showStatus printed: when the leaked ssh-agents started: 2 started while an engine run was open (codex 2), 1 with no engine run open.
+Progress: landing status and sweep advice agree when the retained log omits a run start; startup repair remains visible without misplaced blame.
+Learned: adding test lines requires updating the exact navigation references checked by the suite. Initial check caught these shifted links; the corrected full check passed.
+next_push: Check landing advice with incomplete history and an installed command that does not record engine runs.
+layer: behaviors

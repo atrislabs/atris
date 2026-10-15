@@ -4854,6 +4854,24 @@ test('the sweep listing does not blame the startup line for agents that started 
     console.log(`real cut start sweep blame: ${listing.split('\n').find((l) => l.includes('when the leaked ssh-agents started'))}`);
     assert.match(listing, /\nwhen the leaked ssh-agents started: 2 started while an engine run was open \(codex 2\), 1 with no engine run open\nlikely source: ~\/\.zshrc line 1/, listing);
     assert.doesNotMatch(listing, /the startup line below is the one to fix, not an engine/, 'agents during the cut-off run do not point the blame at the startup line');
+    const landing = [];
+    console.log = (line = '') => landing.push(String(line));
+    try {
+      require('../commands/autoland').showStatus(root, [], {
+        readSshAgents: () => ({ agents: [agent(400, 3), agent(401, 2.5), agent(402, 1.2)], referenced: new Set() }),
+        uid: 501, home, pathAtrisRecordsRuns: true,
+      });
+    } finally {
+      console.log = original;
+    }
+    const status = landing.join('\n');
+    const split = status.split('\n').find((line) => line.includes('when the leaked ssh-agents started'));
+    console.log(`real cut start landing advice: ${split && split.trim()}`);
+    assert.strictEqual(split && split.trim(), listing.split('\n').find((line) => line.includes('when the leaked ssh-agents started')));
+    assert.doesNotMatch(status, /the startup line below is the one to fix, not an engine/);
+    assert.match(status, /likely source: ~\/\.zshrc line 1/);
+    assert.match(status, /engine sweep --fix-startup/, 'the repair command remains available without assigning blame');
+
   } finally {
     fs.rmSync(root, { recursive: true, force: true });
     fs.rmSync(home, { recursive: true, force: true });
