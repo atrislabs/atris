@@ -23,6 +23,8 @@ Details for any task: atris task show <ID>
 
 ## Review
 
+- **[AIC-83]** Read safe review drain baseline through the task store · auto-improver
+  **Done looks like:** Developers can check safe review draining with one fewer setup command, which saves startup work while every human-gate safety check still runs.
 - **[AIC-82]** Read safe drain action baselines through the task store · auto-improver
   **Done looks like:** Developers can check safe review actions with two fewer setup commands, saving startup work while keeping every behavior check.
 - **[AIC-81]** Remove baseline launch from capability safety test · auto-improver

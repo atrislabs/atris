@@ -8427,8 +8427,17 @@ test('task review-lane-drain picks safe agent action without mutating human acce
   try {
     fs.mkdirSync(path.join(dir, 'atris'), { recursive: true });
 
-    // Creation only prepares the fixture. Keep certification, drain and
-    // human-gate nonmutation checks on the CLI.
+    // Creation and the before-drain snapshot read the store directly; keep
+    // certification, drain and the after-drain human-gate read on the CLI.
+    const { enrichTaskProjection } = require('../commands/task');
+    const showTask = (id) => {
+      const showDb = taskStore.open(dbPath);
+      try {
+        return enrichTaskProjection(taskStore.taskProjection(showDb, { taskId: id })).tasks[0];
+      } finally {
+        taskStore.close();
+      }
+    };
     const workspaceRoot = taskStore.workspaceRoot(dir);
     const db = taskStore.open(dbPath);
     let continueTask;
@@ -8457,9 +8466,10 @@ test('task review-lane-drain picks safe agent action without mutating human acce
     ], { cwd: dir, env }).status, 0);
 
     const waitingDb = taskStore.open(dbPath);
+    let waitingTask;
     let waitingRef;
     try {
-      const waitingTask = addSeedTask(waitingDb, {
+      waitingTask = addSeedTask(waitingDb, {
         title: 'Certified drain task waiting for human accept',
         tag: 'task', workspaceRoot, metadata: { goal_id: 'OBL-928' },
       });
@@ -8479,7 +8489,7 @@ test('task review-lane-drain picks safe agent action without mutating human acce
       '--as', 'codex-review',
       '--proof', 'node --test test/commands.test.js passed during review lane drain human gate',
     ], { cwd: dir, env }).status, 0);
-    const beforeWaiting = JSON.parse(runCli(['task', 'show', waitingRef, '--json'], { cwd: dir, env }).stdout);
+    const beforeWaiting = showTask(waitingTask.id);
 
     const drain = runCli(['task', 'review-lane-drain', '--goal-id', 'OBL-928', '--json'], { cwd: dir, env });
     assert.equal(drain.status, 0, drain.stderr);
