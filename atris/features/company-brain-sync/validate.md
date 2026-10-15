@@ -1,5 +1,15 @@
 # Company Brain Sync Validation
 
+## Rechecked 2026-10-14
+
+The local, no-login checks still hold. Cloud pull and push were not rerun, since they reach a live business workspace.
+
+- `node --test test/company-brain-sync.test.js`: exit 0, 9 passed.
+- `node --test --test-name-pattern 'push|business workspace|business sync|manifest records workspace root' test/commands.test.js`: exit 0, 40 passed.
+- `node -c` on the five files listed below: all parse.
+- `atris sync --status` in a fresh scratch folder with an empty home: exit 0, prints `business: not detected`, `workspace: 1 file (atris/ present)`, `conflicts: none`.
+- `atris sync --review` in the same folder: exit 0, prints `No sync conflicts need review.`
+
 ## Validated Now
 
 Focused tests pass:
