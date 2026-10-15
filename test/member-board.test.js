@@ -2150,13 +2150,17 @@ test('follow emits only new full lines, picks up new members, survives truncatio
   }
 });
 
-for (const pendingAtStartup of [false, true]) {
-  test(`atris member board --json --follow streams full events with timeout split ${pendingAtStartup ? 'before' : 'after'} startup`, async () => {
+for (const { pendingAtStartup, splitCRLF } of [
+  { pendingAtStartup: false, splitCRLF: false },
+  { pendingAtStartup: true, splitCRLF: false },
+  { pendingAtStartup: true, splitCRLF: true },
+]) {
+  test(`atris member board --json --follow streams full events with timeout ${splitCRLF ? 'CRLF ' : ''}split ${pendingAtStartup ? 'before' : 'after'} startup`, async (t) => {
     const { spawn } = require('node:child_process');
     const recent = new Date(Date.now() - 5_000).toISOString();
-    const dir = fakeDir({ navigator: [`${recent} m-9 started: map the repo`] });
+    const dir = fakeDir({ navigator: [`${recent} m-9 started: map the repo${splitCRLF ? '\r' : ''}`] });
     const timeoutAt = new Date().toISOString();
-    const timeoutStart = `${timeoutAt} m-9 finished: failed (timed`;
+    const timeoutStart = `${timeoutAt} m-9 finished: failed (timed${splitCRLF ? ' out)\r' : ''}`;
     if (pendingAtStartup) fs.appendFileSync(path.join(dir, 'navigator.log'), timeoutStart);
     const child = spawn(process.execPath, [cliPath, 'member', 'board', '--json', '--follow'], {
       ...FOLLOW_PROCESS_LIMIT, cwd: dir, env: { ...process.env, ...FOLLOW_ENV, ATRIS_PROGRESS_DIR: dir },
@@ -2189,7 +2193,7 @@ for (const pendingAtStartup of [false, true]) {
       if (!pendingAtStartup) fs.appendFileSync(path.join(dir, 'navigator.log'), timeoutStart);
       await new Promise((r) => setTimeout(r, QUIET_MS));
       assert.equal(lines().length, 1, 'an unfinished timeout must not emit an event');
-      fs.appendFileSync(path.join(dir, 'navigator.log'), ' out)\n');
+      fs.appendFileSync(path.join(dir, 'navigator.log'), splitCRLF ? '\n' : ' out)\n');
       const finished = await waitFor(2);
       assert.equal(finished.length, 2, out);
       assert.deepEqual(finished[1], { member: 'navigator', mission: 'm-9', at: timeoutAt, kind: 'finished', text: 'failed (timed out)', ok: false });
@@ -2206,6 +2210,10 @@ for (const pendingAtStartup of [false, true]) {
       assert.deepEqual(byMember.navigator, { member: 'navigator', mission: 'm-11', at: now, kind: 'step', text: 'reading atris/MAP.md' });
       assert.deepEqual(byMember.scout, { member: 'scout', mission: 'm-10', at: now, kind: 'finished', text: 'failed', ok: false });
       assert.equal(child.exitCode, null, 'still following');
+      child.kill('SIGINT');
+      assert.deepEqual(await done, { code: 0, signal: null }, stderr);
+      t.diagnostic(`actual command: ${process.execPath} ${cliPath} member board --json --follow`);
+      t.diagnostic(`actual stdout:\n${out}exit: 0`);
     } finally {
       if (!closed) child.kill('SIGINT');
       await done;
