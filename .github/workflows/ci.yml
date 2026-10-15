@@ -35,6 +35,9 @@ jobs:
       - run: npm ci
 
       - name: Unit tests
+        # Spreads commands.test.js across all four shards (test/helpers/test-part.js).
+        env:
+          ATRIS_TEST_SPLIT: '1'
         run: node --test --test-shard=${{ matrix.shard }}/4
 
   decks:
