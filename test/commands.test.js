@@ -12509,7 +12509,7 @@ test('task review-chat extracts only proof-derived verifier commands', () => {
   }
 });
 
-test('task next names accept for uncertified review and leaves open work unclaimed', () => {
+test('task next names accept for uncertified review and leaves open work unclaimed', async () => {
   if (!hasNodeSqlite()) return;
   const dir = makeTempDir();
   const dbPath = path.join(dir, 'tasks.db');
@@ -12549,11 +12549,12 @@ test('task next names accept for uncertified review and leaves open work unclaim
     assert.equal(payload.command, `atris task accept ${reviewRef}`);
     assert.equal(payload.task_id, reviewId);
 
-    const openShow = runCli(['task', 'show', openRef, '--json'], { cwd: dir, env });
+    const [openShow, reviewShow] = await Promise.all([
+      runCliAsync(['task', 'show', openRef, '--json'], { cwd: dir, env }),
+      runCliAsync(['task', 'show', reviewRef, '--json'], { cwd: dir, env }),
+    ]);
     assert.equal(openShow.status, 0, openShow.stderr);
     assert.equal(JSON.parse(openShow.stdout).status, 'open');
-
-    const reviewShow = runCli(['task', 'show', reviewRef, '--json'], { cwd: dir, env });
     assert.equal(reviewShow.status, 0, reviewShow.stderr);
     assert.equal(JSON.parse(reviewShow.stdout).status, 'review');
   } finally {

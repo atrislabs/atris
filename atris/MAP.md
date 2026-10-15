@@ -278,3 +278,5 @@ Stale landing wording setup: `test/commands.test.js:11886` seeds both claims wit
 Proof packet inspection batching: `test/commands.test.js:12115` and `test/commands.test.js:12145` await each status/show pair together after its completed review write. `commands/task.js:6064` builds status from task rows and writes the saved view; `commands/task.js:7744` reads the task rows directly for show. Neither pair depends on that saved view. Every assertion remains; nine sequential CLI stages become seven.
 
 Proof extraction fixture setup: `test/commands.test.js:12180` creates, claims and optionally readies each fixture through one production store connection, closed in finally. Title-only, path-only and bracket cases use three connections instead of six; every real CLI comparison and assertion remains.
+
+Review selection status batching: `test/commands.test.js:12525` awaits both show reads together after selection. `commands/task.js:7744` reads each existing row from the store without saving a shared view. All assertions remain; three sequential CLI stages become two.
