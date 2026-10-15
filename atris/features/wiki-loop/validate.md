@@ -11,7 +11,7 @@ sources:
   - test/commands.test.js:19715-19784 (loop stale/suggest/alias coverage)
 ---
 
-# Wiki Upkeep Loop — Validation
+# Wiki Upkeep Loop: Validation
 
 > **Status:** shipped local upkeep command; the entry point moved to `atris loop wiki`
 > **Validated:** 2026-07-25
@@ -21,7 +21,7 @@ sources:
 
 - [x] `atris loop wiki` runs against `atris/wiki/`
 - [x] `atris wiki loop` routes to the same upkeep logic
-- [ ] Bare `atris loop` runs wiki upkeep. It no longer does. `bin/atris.js:2743` now routes `loop` to `commands/loop-front.js`, the single front door to the self-improvement loop, which delegates to `run.js` and `pulse.js` and forwards only the `wiki` subcommand to `commands/loop.js`. Bare `atris loop` prints the self-improvement loop home screen. The `loop` help line at `bin/atris.js:543` still describes the old wiki behavior and is now wrong.
+- [x] Help points to the right entry. Bare `atris loop` is now the self-improvement loop front door by design, and both the top-level help and `atris loop --help` say wiki upkeep lives under `loop wiki` (rechecked 2026-10-14). The old wiki-only help line is gone.
 - [x] `--dry-run` reports without rewriting `STATUS.md` or `log.md`
 - [x] `--json` emits the same report object for tools
 - [x] `--limit=N` bounds next-ingest suggestions
@@ -32,6 +32,14 @@ sources:
 - [x] next-ingest suggestions work
 - [x] targeted tests pass
 - [ ] current repo reports a clean public wiki. It does not, as of 2026-07-25: 1 stale page and 1 orphan page. The detector working is the point of this feature; the content debt is tracked on the wiki side.
+
+## Rechecked 2026-10-14
+
+- `node --test --test-name-pattern 'wiki|loop' test/commands.test.js`: exit 0, 33 passed.
+- `node -c` on `commands/loop.js`, `commands/wiki.js`, `lib/wiki.js`, `commands/loop-front.js`: all parse.
+- `atris help --all` shows `loop - Recurring loops front door (wiki upkeep lives under: loop wiki)`; `atris loop --help` exits 0 and lists `atris loop wiki`.
+- `atris loop wiki --dry-run --json` and `atris wiki loop --dry-run` both exit 0 with the same report shape.
+- Page counts depend on the checkout: `atris/wiki/` is ignored by git, so a fresh worktree reports 0 pages and 3 sources ready to ingest, while the 26-page snapshot below is from the main checkout.
 
 ## Current Verification
 
