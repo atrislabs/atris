@@ -4836,6 +4836,20 @@ test('fix joins an object of "the" and up to three words before a stop', () => {
   ]);
 });
 
+test('fix joins a past verb and a plural object before "for"', () => {
+  // from a real experiment brief: "exhausted proposals for" kept a comma
+  // splice; "most requested" is a noun phrase, so it keeps its comma
+  const file = tmpFile('past-plural-for.md', [
+    'All are stuck at 0 improvements \u2014 the search exhausted proposals for those targets.',
+    'Our plan is set \u2014 the most requested features for Q3.',
+  ].join('\n\n'));
+  const { changes } = applyFixes([file], RULES);
+  assert.deepEqual(changes.map((c) => c.after), [
+    'All are stuck at 0 improvements; the search exhausted proposals for those targets.',
+    'Our plan is set, the most requested features for Q3.',
+  ]);
+});
+
 test('fix gives a run of "ing" phrases after a dash a colon, like a list', () => {
   // from hugolearn: "extracting what was learned" read as a subject and its
   // verb, so the list after the dash got a semicolon
