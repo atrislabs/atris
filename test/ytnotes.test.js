@@ -29,6 +29,49 @@ function writeExec(file, body) {
   fs.chmodSync(file, 0o755);
 }
 
+function runBlockedCaptions(errLine, extraEnv = {}) {
+  const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'atris-ytnotes-blocked-'));
+  const bin = path.join(tmp, 'bin');
+  const work = path.join(tmp, 'work');
+  fs.mkdirSync(bin);
+  fs.mkdirSync(work);
+  writeExec(path.join(bin, 'yt-dlp'), [
+    '#!/bin/sh',
+    answerVersion(),
+    `echo "touched" > "${tmp}/audio-tried"`,
+    `echo "${errLine}" >&2`,
+    'exit 1',
+    '',
+  ].join('\n'));
+  const result = spawnSync(YTNOTES, ['https://www.youtube.com/watch?v=ntblock1'], {
+    encoding: 'utf8',
+    timeout: 20000,
+    env: { ...process.env, PATH: `${bin}:${process.env.PATH || '/usr/bin'}`, TMPDIR: work, ...extraEnv },
+  });
+  const calls = fs.existsSync(path.join(tmp, 'audio-tried')) ? fs.readFileSync(path.join(tmp, 'audio-tried'), 'utf8').split('\n').filter(Boolean).length : 0;
+  return { result, calls, work };
+}
+
+test('ytnotes names a sign-in wall on captions as a block, not missing captions', () => {
+  const { result, calls, work } = runBlockedCaptions("ERROR: [youtube] ntblock1: Sign in to confirm you're not a bot.");
+  const out = `${result.stdout}\n${result.stderr}`;
+  assert.equal(result.status, 2, out);
+  assert.match(out, /YouTube is blocking caption downloads/);
+  assert.match(out, /atris youtube process/);
+  assert.doesNotMatch(out, /No English captions/);
+  // Only the caption fetch ran; the audio download would hit the same wall.
+  assert.equal(calls, 1);
+  assert.deepEqual(fs.readdirSync(path.join(work, 'ytnotes')).filter((f) => f.startsWith('yt_captions')), []);
+});
+
+test('ytnotes still says no captions when only a 429 came back', () => {
+  const { result } = runBlockedCaptions('ERROR: [youtube] HTTP Error 429: Too Many Requests', { ATRIS_YTNOTES_LOCAL_TRANSCRIBE: '0' });
+  const out = `${result.stdout}\n${result.stderr}`;
+  assert.equal(result.status, 2, out);
+  assert.match(out, /No English captions/);
+  assert.doesNotMatch(out, /YouTube is blocking caption downloads/);
+});
+
 test('ytnotes keeps a written vtt when yt-dlp exits 429', () => {
   const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'atris-ytnotes-429-'));
   const bin = path.join(tmp, 'bin');

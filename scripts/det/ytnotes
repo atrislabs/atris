@@ -210,7 +210,12 @@ META=$(yt-dlp --no-update --quiet --no-warnings --skip-download \
   --no-simulate \
   -o "yt_%(id)s" \
   --print "%(id)s|%(title)s|%(channel)s|%(duration_string)s" \
-  "$URL" 2>/dev/null) || true
+  "$URL" 2>"yt_captions.$$.err") || true
+# A sign-in wall on the caption fetch is a blocked connection, not a video
+# without captions. A bare 429 is not: the auto "en" track 429s on its own.
+CAPTIONS_BLOCKED=0
+grep -qiE "not a bot|sign in to confirm" "yt_captions.$$.err" 2>/dev/null && CAPTIONS_BLOCKED=1
+rm -f "yt_captions.$$.err"
 # Skip WARNING/ERROR/INFO print leaks and NA/None sentinels. Keep the last
 # id|title line so notes stay on yt_<id>.md and keep can find them after a
 # later error. Same sentinel bar as watch/search looksLikeFlatVideoId.
@@ -380,6 +385,11 @@ transcribe_locally() {
 if [ -z "$VTT" ]; then
   if [ -n "$ID" ] && [ -s "yt_${ID}.clean.txt" ]; then
     : # leftover cleaned transcript from a prior notes run
+  elif [ "$CAPTIONS_BLOCKED" = 1 ]; then
+    # The audio download would hit the same wall, so skip it.
+    echo "YouTube is blocking caption downloads from this internet connection right now (it asks to sign in). Try again in a few hours or on another network." >&2
+    echo "Paid notes, 5 credits, refunded if it fails: atris youtube process \"$URL\"" >&2
+    exit 2
   elif [ -n "$ID" ] && transcribe_locally; then
     VTT="yt_${ID}.local.vtt"
   else
