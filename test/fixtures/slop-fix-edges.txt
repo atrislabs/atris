@@ -492,3 +492,10 @@ One sentence. Whatever impulse, idea, or knowing is present \u2014 write it down
 # after it is a new sentence; no real line has this shape
 Whatever you build matters \u2014 keep it small.
 ~> Whatever you build matters; keep it small.
+
+# a subject with a past participle and its place phrase, then a main verb
+# and an object word, is a clause; a phrase with no main verb keeps its comma
+We mocked the baseline \u2014 the booking form crammed into a 340px right rail dominated the screen.
+=> We mocked the baseline; the booking form crammed into a 340px right rail dominated the screen.
+Keep notes \u2014 the files stored in folders the team owns.
+=> Keep notes, the files stored in folders the team owns.

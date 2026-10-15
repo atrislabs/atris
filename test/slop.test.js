@@ -1281,6 +1281,10 @@ test('fix joins a noun clause after the dash with a semicolon', () => {
     // first half; a lowercase one after a field's colon is the value
     'Whatever you pick \u2014 write it down.',
     '- File: wherever the harness reads it \u2014 search for the string.',
+    // a subject with a past participle and its place phrase, then a main
+    // verb and "this" or "the", is a clause; with no main verb it is a phrase
+    'It skips reward work \u2014 the article linked in the tweet covers this in detail.',
+    'Keep notes \u2014 the files stored in the shared folder.',
     // a title where every word is capitalized names a thing, so it never
     // joins; words in all capitals are shouting and still do
     'Inbox Triage \u2014 23 emails processed',
@@ -1387,6 +1391,8 @@ test('fix joins a noun clause after the dash with a semicolon', () => {
     'Read the list, the tests skipped because of flakes.',
     'Whatever you pick, write it down.',
     '- File: wherever the harness reads it; search for the string.',
+    'It skips reward work; the article linked in the tweet covers this in detail.',
+    'Keep notes, the files stored in the shared folder.',
     'Inbox Triage, 23 emails processed',
     'Release Notes, it ships Friday.',
     'Your journal tracks how ideas evolve; the navigator reads it to understand context.',
