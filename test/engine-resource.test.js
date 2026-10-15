@@ -1361,7 +1361,7 @@ test('every engine started through a runner or profile variable records its run 
     ['commands/run.js#execPhaseCommandSync cmd', 'recorded around the phase by executePhase'],
   ]);
   const engineLaunches = (rel, text) => {
-    if (LAUNCH_EXEMPT_FILES.has(rel)) return { seen: 0, missing: [], routes: {}, traced: [] };
+    if (LAUNCH_EXEMPT_FILES.has(rel)) return { seen: 0, missing: [], routes: {}, traced: [], exempted: [] };
     const code = stripComments(text);
     const lines = code.split('\n');
     const recorder = recordingCall(code);
@@ -1699,7 +1699,7 @@ test('every engine started through a runner or profile variable records its run 
       }
       missing.push(`${rel}:${line} ${program}${called || ''}`);
     }
-    return { seen, missing, routes, traced };
+    return { seen, missing, routes, traced, exempted: [...exempted] };
   };
   const planted = (text) => engineLaunches('commands/planted.js', text).missing;
   // Resolver defaults keep nested parentheses and commas in one parameter.
@@ -2111,6 +2111,14 @@ test('every engine started through a runner or profile variable records its run 
   assert.deepStrictEqual(exemptAsk('  spawnSync(invocation.bin, invocation.args);\n  spawnSync(invocation.bin, invocation.args);'), ['lib/roster-prep.js:4 invocation.bin'], 'a second launch of the same program is not exempt');
   assert.deepStrictEqual(exemptAsk('  spawnSync(invocation.bin, invocation.args);\n  const runner = resolveClaudeRunnerBin();\n  spawnSync(runner, args);'), ['lib/roster-prep.js:5 runner'], 'a launch of another program is not exempt');
   assert.deepStrictEqual(exemptAsk('  startEngineRun(root);\n  spawnSync(invocation.bin, invocation.args);\n  spawnSync(invocation.bin, invocation.args);'), [], 'a recorded launch leaves the exemption for the next one');
+  // An exemption no launch used is stale, like one left behind when its
+  // function was renamed.
+  const staleExemptions = (used) => [...EXEMPT_LAUNCHES.keys()].filter((launch) => !used.includes(launch));
+  const usedIn = (rel, text) => engineLaunches(rel, text).exempted;
+  assert.deepStrictEqual(usedIn('lib/roster-prep.js', 'function defaultPrepAskSync({ engine, prompt }) {\n  const invocation = buildReadOnlyEngineInvocation(engine, prompt);\n  spawnSync(invocation.bin, invocation.args);\n}\n'), ['lib/roster-prep.js#defaultPrepAskSync invocation.bin']);
+  const renamed = usedIn('lib/roster-prep.js', 'function prepAskSync({ engine, prompt }) {\n  const invocation = buildReadOnlyEngineInvocation(engine, prompt);\n  startEngineRun(root);\n  spawnSync(invocation.bin, invocation.args);\n}\n');
+  assert.deepStrictEqual(staleExemptions(renamed), [...EXEMPT_LAUNCHES.keys()], 'a renamed function leaves its exemption unused');
+  assert.deepStrictEqual(usedIn('lib/roster-prep.js', 'function defaultPrepAskSync({ engine, prompt }) {\n  const invocation = buildReadOnlyEngineInvocation(engine, prompt);\n  startEngineRun(root);\n  spawnSync(invocation.bin, invocation.args);\n}\n'), [], 'a recorded launch does not use its exemption');
   // Each launch is counted under the route that traced it, so a reader
   // that stops working shows up as a lower count.
   const routesOf = (text) => engineLaunches('commands/planted.js', text).routes;
@@ -2126,6 +2134,7 @@ test('every engine started through a runner or profile variable records its run 
   // the launch it lost.
   const tracedAt = {};
   const traced = [];
+  const exempted = [];
   let seen = 0;
   for (const dir of ['commands', 'lib']) {
     for (const name of fs.readdirSync(path.join(repo, dir)).filter((file) => file.endsWith('.js'))) {
@@ -2136,8 +2145,10 @@ test('every engine started through a runner or profile variable records its run 
       for (const [kind, count] of Object.entries(result.routes)) routes[kind] = (routes[kind] || 0) + count;
       for (const { route, at } of result.traced) (tracedAt[route] = tracedAt[route] || []).push(at);
       traced.push(...result.traced);
+      exempted.push(...result.exempted);
     }
   }
+  assert.deepStrictEqual(staleExemptions(exempted), [], 'an exempt launch was not found; remove its entry, or rename it to match the launch');
   // The known launches by file, function, and program, with the route that
   // traces each. Names, not line numbers, so ordinary edits keep matching
   // and a lost launch is named exactly.
