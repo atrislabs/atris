@@ -31,6 +31,7 @@ Run `atris youtube notes 'https://www.youtube.com/watch?v=Am7IWP8IpEc'` and find
 - **Action:** `time atris youtube notes 'https://www.youtube.com/watch?v=Am7IWP8IpEc'`
 - **Expect:** Exit code 0, notes on screen, and a saved copy at `$TMPDIR/ytnotes/yt_Am7IWP8IpEc.md`. A line reads `quotes: N kept, N repaired, N dropped` with kept above 0, and the whole run takes under about 20 seconds with Gemini (measured 11 to 19 seconds on 2026-09-28; 9.95s on 2026-10-13, with one 64s outlier in the same session; Haiku alone took 65, then 26.9 on 2026-10-13).
 - **Check the writer line.** It must read `notes by Gemini`. A lowercase `notes by haiku` means `ATRIS_YTNOTES_ENGINE` is set in the shell and pins a writer. Run with `env -u ATRIS_YTNOTES_ENGINE` to test the default.
+- **Rerun live on 2026-10-15:** exit 0 in 46.1 seconds, saved copy present, quotes 5 kept, 0 repaired, 0 dropped, but `notes by Haiku`: Gemini did not answer. A direct `agy -p` returned "Individual quota reached" (code 429, resets in about 110 hours), while the sign-in check still passed. So the 20-second bar fails until the Gemini quota resets; the run itself stays honest.
 
 ### Step 2: Video with no captions
 
