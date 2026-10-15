@@ -545,8 +545,10 @@ const THE_PLURAL_CLAUSE_AFTER_DASH = new RegExp(`${CLAUSE_END}\\s*\\u2014\\s*(?!
 // noun and more words, starts one too: "keep it short; the config lives in
 // one file". A pronoun or "that" before the verb opens a clause inside a
 // noun phrase, so "the file it belongs to" stays, and "of" after it marks a
-// noun, so "the private lives of founders" stays.
-const RARE_NOUN_VERB = '(?:lives|appears|belongs|depends|seems|happens|exists|sits|resides|occurs|arrives|applies)';
+// noun, so "the private lives of founders" stays. "Executes", "proceeds"
+// and "retries" come from real briefs: "fails to `{}`; the tool executes
+// with no arguments", "silent credits burned; the agent retries at pro tier".
+const RARE_NOUN_VERB = '(?:lives|appears|belongs|depends|seems|happens|exists|sits|resides|occurs|arrives|applies|executes|proceeds|retries)';
 const THE_CLAUSE_AFTER_DASH = new RegExp(`${CLAUSE_END}\\s*\\u2014\\s*(?!${TIME_OPENER})(?=(?:the|a|an|every|each|no)\\s+(?:(?!(?:the|a|an|that|whose|which|who|it|they|we|you|he|she|I|this|these|those)\\b)${NOUN_WORD}\\s+){1,2}${RARE_NOUN_VERB}\\s+(?!(?:of|and|or|that|which|who|like|than|as)\\b)[^\\s\\u2014])`, 'g');
 // A subject that holds its own "that" clause, a verb in "s" or "ed" right
 // after the "that", then a singular "is", "was" or "has", starts one too:

@@ -4760,6 +4760,23 @@ test('fix gives an order after a field and its one-word value a semicolon', () =
   ]);
 });
 
+test('fix reads "executes", "proceeds" and "retries" after a "the" subject as a verb', () => {
+  // from real experiment briefs: each kept a comma splice after the dash
+  const file = tmpFile('rare-noun-verbs.md', [
+    'The code silently fails to `{}` \u2014 the tool executes with empty args.',
+    'Failed extraction is silent \u2014 the agent proceeds with `None` or raises.',
+    'Tool call failures burn credits \u2014 the agent retries at pro tier.',
+    'Two numbers matter \u2014 the sale proceeds of the night and the cost.',
+  ].join('\n\n'));
+  const { changes } = applyFixes([file], RULES);
+  assert.deepEqual(changes.map((c) => c.after), [
+    'The code silently fails to `{}`; the tool executes with empty args.',
+    'Failed extraction is silent; the agent proceeds with `None` or raises.',
+    'Tool call failures burn credits; the agent retries at pro tier.',
+    'Two numbers matter, the sale proceeds of the night and the cost.',
+  ]);
+});
+
 test('fix gives a run of "ing" phrases after a dash a colon, like a list', () => {
   // from hugolearn: "extracting what was learned" read as a subject and its
   // verb, so the list after the dash got a semicolon
