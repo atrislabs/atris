@@ -342,3 +342,7 @@ Two tools \u2014 the API keys the team uses and the bot.
 => Two tools, the API keys the team uses and the bot.
 False alarms cost trust. Estimated baseline ~78% \u2014 the edge cases around file reads and partial sends are handled badly.
 => False alarms cost trust. Estimated baseline ~78%; the edge cases around file reads and partial sends are handled badly.
+Parse failures drop tool calls \u2014 the agent thinks it completed but nothing happened.
+=> Parse failures drop tool calls; the agent thinks it completed but nothing happened.
+Two builds \u2014 the new build signed but not shipped, and the old one.
+=> Two builds, the new build signed but not shipped, and the old one.
