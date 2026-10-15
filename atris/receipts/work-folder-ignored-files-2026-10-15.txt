@@ -52,3 +52,37 @@ for-you file because what counts as throwaway is a product call and one
 example holds a credential.
 next_push: once a reply lands, add the chosen rule with a failing-first test
 that plants an ignored notes file in a finished copy.
+
+Addendum, tick 51: the same loss reaches member tidy and land's reap.
+
+Member tidy, same fixture shape (throwaway folder under /tmp, run in a
+guarded subshell):
+
+$ git -C <copy> status --porcelain --untracked-files=all
+(empty)
+
+$ node bin/atris.js member tidy --dir <tmp>/arena/.agent-worktrees/repo --dry-run
+would remove  done-copy  work landed
+tidy: would remove 1, kept 0, of 1 copy in <tmp>/arena/.agent-worktrees/repo
+exit: 0
+
+$ node bin/atris.js member tidy --dir <tmp>/arena/.agent-worktrees/repo
+removed  done-copy  work landed, branch deleted
+tidy: removed 1, kept 0, of 1 copy in <tmp>/arena/.agent-worktrees/repo
+exit: 0
+
+$ ls <copy>/.env.local <copy>/notes/plan.md
+No such file or directory (both); the branch is deleted too
+
+Land's reap, from the code (not run): commands/land.js:747 removes with
+force, and the backup step before it (commands/land.js:500) runs only when
+the copy looks dirty and lists files with the standard ignore rules applied,
+so ignored files are never backed up and a clean-looking copy loses them.
+
+Paths that delete ignored files in a finished copy:
+- worktree cleanup: commands/worktree.js, plain git removal
+- member tidy: lib/member-tidy.js:240, plain git removal
+- land reap: commands/land.js:747, forced removal, backup skips ignored files
+
+next_push: once a reply lands, put the chosen rule in one shared check that
+all three paths call, with one failing-first test per path.
