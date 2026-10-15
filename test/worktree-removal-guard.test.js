@@ -806,17 +806,29 @@ function passedInDeletes(file, text) {
   });
 }
 
-// The line that closes the brace a helper opens, or its own line when the
-// helper is a one-line arrow.
+// A line with its quoted text, regex text, and trailing comment emptied, so
+// a brace inside '{' or /\{\{/ never opens or closes a helper.
+function codeOnly(line) {
+  if (COMMENT_LINE.test(line)) return '';
+  return line
+    .replace(/'(?:\\.|[^'\\])*'|"(?:\\.|[^"\\])*"|`(?:\\.|[^`\\])*`/g, '""')
+    .replace(/(^|[(,=:[!&|?{};]|\breturn)(\s*)\/(?![*/])(?:\\.|\[(?:\\.|[^\]\\])*\]|[^/\\[])+\/[a-z]*/g, '$1$20')
+    .replace(/\/\/.*$/, '');
+}
+
+// The line that closes the brace a helper opens, or, for an arrow with no
+// braces, the line that ends its expression with a comma or semicolon once
+// every bracket it opened is closed.
 function helperEnd(lines, index) {
   let depth = 0;
   let opened = false;
   for (let end = index; end < lines.length; end++) {
-    for (const ch of lines[end]) {
-      if (ch === '{') { depth++; opened = true; } else if (ch === '}') depth--;
+    const code = codeOnly(lines[end]);
+    for (const ch of code) {
+      if (ch === '{') opened = true;
+      if ('{[('.includes(ch)) depth++; else if ('}])'.includes(ch)) depth--;
     }
-    if (opened ? depth <= 0 : end > index && /;\s*$/.test(lines[end])) return end;
-    if (!opened && end === index && /;\s*$/.test(lines[end])) return end;
+    if (depth <= 0 && (opened || /[;,]\s*$/.test(code))) return end;
   }
   return lines.length - 1;
 }
@@ -841,6 +853,8 @@ test('a helper that deletes a folder its caller passed in is checked or reviewed
   // callback, and helpers holding small inner arrows. An inner arrow keeps
   // only its own lines, so the helper around it still owns a delete of its
   // folder, and an inner arrow that deletes its own argument owns that one.
+  // Braces in regex or quoted text neither end a helper early nor stretch it
+  // over the next one.
   const planted = [
     'function wipe(folder, opts = {}) {',
     '  const where = path.resolve(folder);',
@@ -872,6 +886,14 @@ test('a helper that deletes a folder its caller passed in is checked or reviewed
     '  const each = (item) => fs.rmSync(item, { recursive: true });',
     '}',
     'function after() { fs.rmSync(dir, { recursive: true }); }',
+    'function scrub(dir) {',
+    '  if (/\\{\\{[^}]*\\}\\}/.test(dir)) return;',
+    '  fs.rmSync(dir, { recursive: true });',
+    '}',
+    'function opener(dir) {',
+    "  if (dir === '{') return;",
+    '}',
+    'function later() { fs.rmSync(dir, { recursive: true }); }',
   ].join('\n');
   assert.ok(!WORKTREE_REMOVAL.test(planted) && !HANDLES_WORKTREES.test(planted), 'the main scan would skip this helper');
   assert.deepEqual(passedInDeletes('lib/planted.js', planted), [
@@ -882,6 +904,7 @@ test('a helper that deletes a folder its caller passed in is checked or reviewed
     { key: 'lib/planted.js:sweep', line: 21, target: 'dir' },
     { key: 'lib/planted.js:shelve', line: 26, target: 'folder' },
     { key: 'lib/planted.js:each', line: 28, target: 'item' },
+    { key: 'lib/planted.js:scrub', line: 33, target: 'dir' },
   ]);
 });
 
