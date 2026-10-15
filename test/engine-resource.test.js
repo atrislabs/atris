@@ -5432,13 +5432,20 @@ test(`the real cleanup command keeps an incomplete ${unread.join(' and ')} reche
 }
 
 for (const failedRead of [1, 2]) {
-test(`the real cleanup command stops safely when scan ${failedRead} throws`, () => {
+for (const existingHistory of [false, true]) {
+test(`the real cleanup command stops safely when scan ${failedRead} throws with ${existingHistory ? "existing" : "no"} history`, () => {
   const { spawnSync } = require('node:child_process');
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'sweep-thrown-scan-'));
   const preload = path.join(root, 'thrown-scan.cjs');
   const cli = path.join(__dirname, '..', 'bin', 'atris.js');
   const signalFile = path.join(root, 'signal-attempted');
+  const historyFile = path.join(root, RESOURCE_LOG);
+  const previousHistory = JSON.stringify({ at: '2026-10-15T10:00:00.000Z', phase: 'sweep', stopped: [123], failed: [], skipped: [], leaked_ssh_agents: 2 }) + '\n';
   try {
+    if (existingHistory) {
+      fs.mkdirSync(path.dirname(historyFile), { recursive: true });
+      fs.writeFileSync(historyFile, previousHistory);
+    }
     fs.writeFileSync(preload, `
       const resource = require(${JSON.stringify(require.resolve('../lib/engine-resource'))});
       let reads = 0;
@@ -5464,11 +5471,13 @@ test(`the real cleanup command stops safely when scan ${failedRead} throws`, () 
       assert.match(ran.stderr, /process scan unavailable/);
       assert.doesNotMatch(ran.stdout, /stopped \d+ leaked ssh-agent|leaked ssh-agents? still left|"left"\s*:/);
       assert.equal(fs.existsSync(signalFile), false);
-      assert.equal(fs.existsSync(path.join(root, RESOURCE_LOG)), false);
+      if (existingHistory) assert.equal(fs.readFileSync(historyFile, 'utf8'), previousHistory);
+      else assert.equal(fs.existsSync(historyFile), false);
       console.log(`failed cleanup scan ${failedRead}, ${json ? 'json' : 'text'}, exit ${ran.status}: ${ran.stderr.trim()}`);
     }
   } finally {
     fs.rmSync(root, { recursive: true, force: true });
   }
 });
+}
 }

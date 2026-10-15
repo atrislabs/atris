@@ -2456,4 +2456,6 @@ Incomplete sweep counts: `commands/engine.js:2399` reports unknown or a lower bo
 
 Incomplete cleanup recheck counts: `test/engine-resource.test.js:5388` runs the real cleanup command in text and JSON with a clean first scan and unreadable sockets on the recheck. It checks the warning, omitted remaining count, and null count in saved history.
 
-Thrown cleanup scans: `test/engine-resource.test.js:5435` checks real command failures on the initial scan and recheck, with no signal, remaining count, or saved sweep.
+Thrown cleanup scans: `test/engine-resource.test.js:5436` checks real command failures on the initial scan and recheck, with no signal, remaining count, or saved sweep.
+
+Preserved cleanup history: `test/engine-resource.test.js:5436` checks existing history survives initial and safety scan failures unchanged.

@@ -238,4 +238,6 @@ Incomplete cleanup recheck counts: `test/engine-resource.test.js:5388` runs the 
 
 Cleanup recheck reader coverage: `test/engine-resource.test.js:5388` exercises unreadable sockets, process environments, process lists, and combined socket/environment failures through the real cleanup command in text and JSON, checking unknown counts in saved history.
 
-Thrown cleanup scans: `test/engine-resource.test.js:5435` runs the real cleanup command with a throwing first scan or safety recheck, in text and JSON. It requires exit 1, no signal attempt, no remaining count, and no saved sweep.
+Thrown cleanup scans: `test/engine-resource.test.js:5436` runs the real cleanup command with a throwing first scan or safety recheck, in text and JSON. It requires exit 1, no signal attempt, no remaining count, and no saved sweep.
+
+Preserved history after failed scans: `test/engine-resource.test.js:5436` checks initial and safety scan failures against existing cleanup history, requiring byte-for-byte preservation in text and JSON modes.

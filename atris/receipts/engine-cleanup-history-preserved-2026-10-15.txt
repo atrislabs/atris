@@ -1,0 +1,574 @@
+
+  dispatch, 1 task -> cursor
+
+    building CLI-900 in dispatch-cli-900
+    landing CLI-900...
+    ✓ landed CLI-900
+
+  dispatch over: 1 landed, 0 paused - receipt: atris/runs/dispatch-2026-10-15T11-50-53-730-p25472-1.json
+
+
+  dispatch, 1 task -> codex
+
+    building CLI-900 in dispatch-cli-900
+    restaffed CLI-900: codex -> cursor (usage_limit)
+    landing CLI-900...
+    ✓ landed CLI-900
+
+  dispatch over: 1 landed, 0 paused - receipt: atris/runs/dispatch-2026-10-15T11-50-54-430-p25472-6.json
+
+
+  dispatch, 1 task -> codex
+
+    building CLI-900 in dispatch-cli-900
+    landing CLI-900...
+    ✓ landed CLI-900
+
+  dispatch over: 1 landed, 0 paused - receipt: atris/runs/dispatch-2026-10-15T11-50-54-667-p25472-9.json
+
+
+  dispatch, 1 task -> codex
+
+    building CLI-900 in dispatch-cli-900
+    restaffed CLI-900: codex -> cursor (usage_limit)
+    ✗ build failed CLI-900: cursor failed too, worktree kept for takeover
+
+  dispatch over: 0 landed, 1 paused - receipt: atris/runs/dispatch-2026-10-15T11-50-54-762-p25472-10.json
+
+
+  dispatch, 1 task -> codex
+
+    building CLI-900 in dispatch-cli-900
+    landing CLI-900...
+    ⏸ paused CLI-900 at verify_failed, worktree kept
+
+  dispatch over: 0 landed, 1 paused - receipt: atris/runs/dispatch-2026-10-15T11-50-55-049-p25472-13.json
+
+
+  dispatch, 1 task -> cursor
+
+    building CLI-900 in dispatch-cli-900
+    restaffed CLI-900: cursor -> devin (nonzero_exit)
+    ✗ build failed CLI-900: engine crashed, worktree kept for takeover
+
+  dispatch over: 0 landed, 1 paused - receipt: atris/runs/dispatch-2026-10-15T11-50-55-237-p25472-15.json
+
+
+  dispatch, 1 task -> cursor
+
+    ✗ CLI-DOES-NOT-EXIST not found
+
+  dispatch over: 0 landed, 1 paused - receipt: atris/runs/dispatch-2026-10-15T11-50-55-440-p25472-17.json
+
+
+  dispatch, 2 tasks -> codex
+
+    building CLI-901 in dispatch-cli-901
+    building CLI-902 in dispatch-cli-902
+    landing CLI-901...
+    ✓ landed CLI-901
+    landing CLI-902...
+    ✓ landed CLI-902
+
+  dispatch over: 2 landed, 0 paused - receipt: atris/runs/dispatch-2026-10-15T11-50-55-630-p25472-22.json
+
+
+  dispatch, 1 task -> cursor
+
+    building CLI-900 in dispatch-cli-900
+    landing CLI-900...
+    ✓ landed CLI-900
+
+  dispatch over: 1 landed, 0 paused - receipt: atris/runs/dispatch-2026-10-15T11-50-55-725-p25472-23.json
+
+✔ dispatchCheck prefers the narrow node --test extraction when present (1.220875ms)
+✔ dispatchCheck falls back to the full Check: text when it is not a node --test command (0.181583ms)
+✔ repo default verifier prefers package tests, then test directory, then diff check (1.488834ms)
+✔ fleet prompt injects the repo default when the task has no Check line (1.198916ms)
+✔ fleet prompt includes the exported atris process preamble exactly once (0.962083ms)
+✔ isSafeLane reads the canonical singular task tag (0.163292ms)
+✔ parseDispatchArgs separates positional task ids from --engine/--prompt-file values (0.73725ms)
+✔ parseDispatchArgs supports --flag=value form (0.058667ms)
+✔ engine name plus task id routes through the existing dispatch command shape (0.862333ms)
+✔ engine task shorthand rejects trailing prose and asks the user to pick one lane (0.352666ms)
+✔ buildEngineCommand pins yolo flags for codex and claude engines (1.147375ms)
+✔ buildEngineCommand enables each engine native sandbox for one-lap execution (0.280208ms)
+✔ buildEngineCommand grants commandcode writes only when sealed or yolo (0.12425ms)
+✔ runDispatchCommand refuses without a task id or engine (0.117792ms)
+✔ runDispatchCommand refuses an engine that cannot build headlessly (0.060417ms)
+✔ runDispatchCommand refuses an unknown engine name (0.039666ms)
+✔ runDispatchCommand refuses --prompt-file with more than one task id (0.056334ms)
+✔ runDispatchCommand refuses an engine whose CLI is not installed here (5.8865ms)
+✔ runDispatchFlight requires an engine and at least one task id (0.951542ms)
+✔ runDispatchFlight refuses --prompt-file with more than one task id (0.058458ms)
+✔ runDispatchFlight review-only requires an explicit allowlisted verifier (3.385666ms)
+✔ runDispatchFlight happy path: claims, builds, re-verifies for real, ships, and readies with the actual output (92.927375ms)
+✔ runDispatchFlight review-only verifies explicitly, readies the task, and leaves master untouched (88.8855ms)
+✔ runDispatchFlight one-lap requires a validator distinct from the actual executor (87.93475ms)
+✔ runDispatchFlight one-lap blocks Review when the validator mutates the worktree (86.792959ms)
+✔ runDispatchFlight review-only pauses a green no-op build before Review (90.725708ms)
+✔ runDispatchFlight review-only refuses a verifier workdir outside its worktree (0.904ms)
+✔ prepareReviewSandbox refuses a root that is not its own git top level (11.73075ms)
+✔ prepareReviewSandbox clears the git-top-level guard for a real repository (94.350375ms)
+✔ resolveDispatchLandTarget uses the workspace protected branch, honoring explicit and fallback (CLI-1298) (144.758833ms)
+✔ runDispatchFlight restaffs once when usage-limit output kills the first engine (98.020167ms)
+✔ fable handoff names an expired login, benches it, and a later build restores ready (138.543167ms)
+✔ a green build whose report mentions a dead-engine pattern never restaffs (96.082958ms)
+✔ runDispatchFlight fails the flight when the fallback engine also fails (94.109375ms)
+✔ runDispatchFlight yolo records self-landed tasks and receipt state (98.490916ms)
+✔ runDispatchFlight yolo pauses when the engine did not land its work (93.596917ms)
+✔ runDispatchFlight pauses (never ships) when the real Check: re-run fails (95.81175ms)
+✔ runDispatchFlight ship failure receipt keeps MODULE_NOT_FOUND at the head (92.305458ms)
+✔ runDispatchFlight pauses when the build itself fails, keeping the worktree (94.812292ms)
+✔ fable handoff names empty exit zero, pauses it, and never lands it (103.499417ms)
+✔ runDispatchFlight pauses a task it cannot find, without touching worktree/claim for it (45.964958ms)
+✔ runDispatchFlight never reuses a receipt path for rapid flights (77.560666ms)
+✔ runDispatchFlight stops before worktree creation when the atomic claim fails (33.74525ms)
+✔ runDispatchFlight releases the claim when worktree start refuses before the engine starts (37.876167ms)
+✔ runDispatchFlight builds multiple task ids in parallel worktrees and lands them serially (98.846ms)
+✔ runDispatchFlight ship args explicitly target HEAD when no remote mainline is known (92.207291ms)
+✔ a run killed by its own time limit names the time limit as the cause (371.835959ms)
+✔ every engine run writes a start and end machine line, and a SIGKILL names its likely cause (718.584292ms)
+✔ overlapping runs of the same engine and task keep distinct resource pairs (790.86775ms)
+▶ thrown and rejected engine runners save end resources and preserve the original error
+  ✔ thrown child process (407.37225ms)
+thrown startup failure end reading: {"at":"2026-10-15T11:50:58.843Z","phase":"end","engine":"claude","task":"CLI-900","free_pct":67,"swap_used_mb":3644.38,"swap_total_mb":5120,"load":[7.72,8.54,10.66],"run_id":"74451db1-65ae-45b1-b52b-907a5329e73e","duration_ms":1,"error":"spawnSync /var/folders/t1/2_4kmb5n4c71dxm26zc8dgzr0000gn/T/atris-missing-engine-25472 ENOENT"}
+rejected startup failure end reading: {"at":"2026-10-15T11:50:59.210Z","phase":"end","engine":"claude","task":"CLI-900","free_pct":67,"swap_used_mb":3644.38,"swap_total_mb":5120,"load":[7.72,8.54,10.66],"run_id":"5b5acfa0-c9ba-4110-9ced-f427f91f504d","duration_ms":1,"error":"spawn /var/folders/t1/2_4kmb5n4c71dxm26zc8dgzr0000gn/T/atris-missing-engine-25472 ENOENT"}
+returned startup failure end reading: {"at":"2026-10-15T11:50:59.571Z","phase":"end","engine":"claude","task":"CLI-900","free_pct":67,"swap_used_mb":3644.38,"swap_total_mb":5120,"load":[7.72,8.54,10.66],"run_id":"580556dd-5195-4ba3-97cc-93097612d5cc","duration_ms":0,"error":"spawnSync /var/folders/t1/2_4kmb5n4c71dxm26zc8dgzr0000gn/T/atris-missing-engine-25472 ENOENT"}
+real child timeout: {"at":"2026-10-15T11:51:00.026Z","phase":"end","engine":"claude","task":"CLI-900","free_pct":67,"swap_used_mb":3644.38,"swap_total_mb":5120,"load":[7.72,8.54,10.66],"run_id":"abac127d-027f-40fc-a906-d84bcbc70336","duration_ms":104,"signal":"SIGKILL","timed_out":true,"error":"spawnSync /opt/homebrew/Cellar/node/25.6.1/bin/node ETIMEDOUT","cause":"killed (time limit reached)"}
+  ✔ rejected child process (418.541ms)
+✔ thrown and rejected engine runners save end resources and preserve the original error (826.280208ms)
+▶ an engine that cannot start keeps its startup error in the end resources
+  ✔ thrown startup failure (356.948625ms)
+  ✔ rejected startup failure (366.703042ms)
+  ✔ returned startup failure (360.653ms)
+✔ an engine that cannot start keeps its startup error in the end resources (1084.65125ms)
+✔ a thrown child timeout records the known time limit cause before rethrowing (455.899625ms)
+✔ final resources measure a real child run in milliseconds (477.4055ms)
+partial live socket scan exit 0: 2675 ssh-agents running, at least 2643 look leaked (no parent, older than 10 min, not in use by any live shell)
+  pid 116    2h 18m
+  pid 124    20h 29m
+  pid 137    17h 9m
+  pid 202    2h 10m
+  pid 220    19h 15m
+  pid 224    16h 50m
+  pid 227    27m
+  pid 290    9h 35m
+  pid 291    7h 29m
+  pid 325    19h 40m
+  pid 359    8h 7m
+  pid 591    20h 12m
+  pid 666    20h 52m
+  pid 766    23h 45m
+  pid 785    9h 35m
+  pid 813    22h 13m
+  pid 828    2h 47m
+  pid 932    9h 20m
+  pid 949    2h 26m
+  pid 953    23h 38m
+  and 2623 more
+could not read the agent sockets for every process, so some ssh-agents could not be checked; the leak count may be incomplete
+nothing was stopped. run /opt/homebrew/Cellar/node/25.6.1/bin/node ~/arena/empire/.agent-worktrees/atris-cli/executor-continue-machine-memory-load-and-ssh-20261015-054013/bin/atris.js engine sweep --apply to stop them.
+
+no sweep recorded yet
+no engine run has ended in SIGKILL
+partial agent sockets: sweep "1 ssh-agent running, at least 1 looks leaked" / landing "leaked ssh-agents on this machine: at least 1; stop them now: atris engine sweep --apply; could not read the agent sockets, so some ssh-agents went unchecked"
+partial process environments: sweep "1 ssh-agent running, leak count unknown" / landing "leaked ssh-agents on this machine: unknown, could not read the process environments, so some ssh-agents went unchecked"
+partial process list: sweep "running ssh-agents could not be counted, leak count unknown" / landing "leaked ssh-agents on this machine: unknown, could not read the process list, so some ssh-agents went unchecked"
+real stop failure: could not stop 1 leaked ssh-agent
+real scan failure: could not scan ssh-agents, so leaked agents may remain
+real scan failure: could not scan ssh-agents, so leaked agents may remain
+real lost-run close failure: could not close lost engine runs, so unfinished records may remain
+real unreadable run log: could not read the engine run log: EISDIR
+real sweep with unreadable run log: stopped 0 leaked ssh-agents
+0 leaked ssh-agents still left on this machine
+could not close lost runs, so unfinished records may remain: could not read the engine run log: EISDIR
+real sweep listing with unreadable run log: 0 ssh-agents running, 0 look leaked (no parent, older than 10 min, not in use by any live shell)
+nothing was stopped.
+
+could not read the engine run log: EISDIR, so past sweeps, kills, and errors are unknown
+real landing status with unreadable run log: engine run log: could not read it (EISDIR), so lost, killed, and failed runs in the last day are unknown
+real scout time limit also stopped the engine's own child (pid 30082)
+real scout run records: exit no cause / SIGKILL killed (time limit reached) / SIGKILL killed (cause unknown)
+real voice judge records: exit no cause / SIGKILL killed (cause unknown)
+real engine launch scan: 5 launches by name, 0 unrecorded
+real runner and profile launch scan: 9 engine launches through a variable, 0 unrecorded
+real runner and profile launch routes: {"declaration":8,"call argument":1}
+  declaration: commands/autopilot.js:1587 cmd, commands/console.js:333 runnerBin, commands/dream.js:251 bin, commands/mission.js:9586 resolveClaudeRunnerBin(), commands/orb.js:314 invocation.command, commands/unknowns.js:267 cmd, commands/voice.js:135 claudePath, lib/roster-prep.js:139 invocation.bin
+  call argument: commands/run.js:90 cmd
+real runner and profile launches beyond the known list: none
+real landing status after a failed start:
+  engine runs force-killed in the last day: 1, 0 with machine memory low; newest claude on CLI-78 at 2026-10-15 11:51 UTC, killed (cause unknown)
+  engine runs that ended in an error in the last day: 1, newest cursor on CLI-77 at 2026-10-15 11:51 UTC: spawnSync /var/folders/t1/2_4kmb5n4c71dxm26zc8dgzr0000gn/T/atris-missing-engine-25473 ENOENT
+autopilot phase readings: [{"at":"2026-10-15T11:51:07.660Z","phase":"end","engine":"runner","task":"autopilot do","free_pct":67,"swap_used_mb":3644.38,"swap_total_mb":5120,"load":[7.68,8.51,10.62],"run_id":"8fb05b36-001b-4083-9064-a74a4e1ea1ca","duration_ms":7,"signal":"SIGKILL","cause":"killed (cause unknown)"},{"at":"2026-10-15T11:51:07.999Z","phase":"end","engine":"runner","task":"autopilot do","free_pct":68,"swap_used_mb":3644.38,"swap_total_mb":5120,"load":[7.68,8.51,10.62],"run_id":"d3269aa5-0bf0-4c75-b6c7-65e0b9562483","duration_ms":4,"error":"/bin/sh: /var/folders/t1/2_4kmb5n4c71dxm26zc8dgzr0000gn/T/atris-missing-engine-25473: No such file or directory\n"}]
+autopilot kill message: do phase killed by SIGKILL before the 5s wall, not a timeout; killed (cause unknown); check memory pressure or an external supervisor
+/bin/sh: /var/folders/t1/2_4kmb5n4c71dxm26zc8dgzr0000gn/T/atris-missing-engine-25473: No such file or directory
+run phase readings: [{"at":"2026-10-15T11:51:08.693Z","phase":"end","engine":"runner","task":"run do","free_pct":67,"swap_used_mb":3644.38,"swap_total_mb":5120,"load":[7.68,8.51,10.62],"run_id":"05c7cc4e-0f81-4551-a88c-a9acc56f7c5f","duration_ms":7,"signal":"SIGKILL","cause":"killed (cause unknown)"},{"at":"2026-10-15T11:51:09.024Z","phase":"end","engine":"runner","task":"run do","free_pct":67,"swap_used_mb":3644.38,"swap_total_mb":5120,"load":[7.68,8.51,10.62],"run_id":"ac4f1494-9330-4c80-812c-fed8d2db735d","duration_ms":4,"error":"/var/folders/t1/2_4kmb5n4c71dxm26zc8dgzr0000gn/T/atris-missing-engine-25473 exited with code 127"}]
+run kill message: do killed by SIGKILL before the 5s wall, killed (cause unknown)
+compile build readings: [{"at":"2026-10-15T11:51:09.708Z","phase":"end","engine":"runner","task":"compile demo","free_pct":67,"swap_used_mb":3644.38,"swap_total_mb":5120,"load":[7.68,8.51,10.62],"run_id":"1d23ab3f-5085-43e9-aecb-c7d5cfa17514","duration_ms":7,"signal":"SIGKILL","cause":"killed (cause unknown)"},{"at":"2026-10-15T11:51:10.051Z","phase":"end","engine":"runner","task":"compile demo","free_pct":68,"swap_used_mb":3644.38,"swap_total_mb":5120,"load":[7.68,8.51,10.62],"run_id":"2f311d36-9438-4702-a7da-b1a4aa6ea581","duration_ms":4,"error":"/bin/sh: /var/folders/t1/2_4kmb5n4c71dxm26zc8dgzr0000gn/T/atris-missing-engine-25473: No such file or directory\n"}]
+compile build CLI exit 1: ✗ Error: Command failed: sh -c "kill -KILL $$"; killed (cause unknown)
+unknowns readings: [{"at":"2026-10-15T11:51:11.181Z","phase":"end","engine":"runner","task":"unknowns","free_pct":67,"swap_used_mb":3644.38,"swap_total_mb":5120,"load":[7.71,8.5,10.61],"run_id":"bf081aef-896a-43db-90d3-eadb2905c869","duration_ms":8,"signal":"SIGKILL","cause":"killed (cause unknown)"},{"at":"2026-10-15T11:51:11.522Z","phase":"end","engine":"runner","task":"unknowns","free_pct":67,"swap_used_mb":3644.38,"swap_total_mb":5120,"load":[7.71,8.5,10.61],"run_id":"b59f668b-3af7-46d6-97b8-426460776cc9","duration_ms":5,"error":"/bin/sh: /var/folders/t1/2_4kmb5n4c71dxm26zc8dgzr0000gn/T/atris-missing-engine-25473: No such file or directory\n"}]
+unknowns kill reason: runner stopped by SIGKILL; killed (cause unknown)
+staleness readings: [{"at":"2026-10-15T11:51:12.190Z","phase":"end","engine":"runner","task":"staleness check","free_pct":67,"swap_used_mb":3644.38,"swap_total_mb":5120,"load":[7.71,8.5,10.61],"run_id":"b0aac9bc-a171-46f9-b395-176c18f478a3","duration_ms":8,"signal":"SIGKILL","cause":"killed (cause unknown)"},{"at":"2026-10-15T11:51:12.524Z","phase":"end","engine":"runner","task":"staleness check","free_pct":67,"swap_used_mb":3644.38,"swap_total_mb":5120,"load":[7.71,8.5,10.61],"run_id":"afc4f6c3-5290-4b7f-834b-f106f54e7525","duration_ms":4,"error":"/bin/sh: /var/folders/t1/2_4kmb5n4c71dxm26zc8dgzr0000gn/T/atris-missing-engine-25473: No such file or directory\n"}]
+staleness kill reason: Model check failed: Command failed: sh -c "kill -KILL $$"; killed (cause unknown)
+horizon readings: [{"at":"2026-10-15T11:51:13.225Z","phase":"end","engine":"runner","task":"horizon proposal","free_pct":67,"swap_used_mb":3644.38,"swap_total_mb":5120,"load":[7.71,8.5,10.61],"run_id":"ad67022a-cc18-4ad2-b595-bf721466581d","duration_ms":7,"signal":"SIGKILL","cause":"killed (cause unknown)"},{"at":"2026-10-15T11:51:13.568Z","phase":"end","engine":"runner","task":"horizon proposal","free_pct":67,"swap_used_mb":3644.38,"swap_total_mb":5120,"load":[7.71,8.5,10.61],"run_id":"e4526af3-9d6b-4b05-82c3-513d7c608d05","duration_ms":4,"error":"/bin/sh: /var/folders/t1/2_4kmb5n4c71dxm26zc8dgzr0000gn/T/atris-missing-engine-25473: No such file or directory\n"}]
+horizon kill message: horizon-proposal phase killed by SIGKILL before the 600s wall, not a timeout; killed (cause unknown)
+autopilot idle on kill: I could not ask the engine for new work: horizon-proposal phase killed by SIGKILL before the 600s wall, not a timeout; killed (cause unknown)
+plan review readings: [{"at":"2026-10-15T11:51:15.740Z","phase":"end","engine":"runner","task":"autopilot plan review","free_pct":67,"swap_used_mb":3644.38,"swap_total_mb":5120,"load":[7.71,8.5,10.61],"run_id":"e1d0fbac-a59a-4536-b5dc-b27733d09282","duration_ms":7,"signal":"SIGKILL","cause":"killed (cause unknown)"},{"at":"2026-10-15T11:51:16.079Z","phase":"end","engine":"runner","task":"autopilot plan review","free_pct":67,"swap_used_mb":3644.38,"swap_total_mb":5120,"load":[7.81,8.51,10.6],"run_id":"eed0872a-3a09-4766-8d55-b9edbcc03582","duration_ms":5,"error":"/bin/sh: /var/folders/t1/2_4kmb5n4c71dxm26zc8dgzr0000gn/T/atris-missing-engine-25473: No such file or directory\n"}]
+plan review kill message: Command failed: sh -c "kill -KILL $$"; killed (cause unknown)
+codex review readings: [{"at":"2026-10-15T11:51:17.873Z","phase":"end","engine":"codex","task":"autopilot codex review","free_pct":67,"swap_used_mb":3644.38,"swap_total_mb":5120,"load":[7.81,8.51,10.6],"run_id":"096d05a7-4c4b-470a-9a36-39310e3973e7","duration_ms":273,"signal":"SIGKILL","cause":"killed (cause unknown)"},{"at":"2026-10-15T11:51:18.558Z","phase":"end","engine":"codex","task":"autopilot codex review","free_pct":67,"swap_used_mb":3644.38,"swap_total_mb":5120,"load":[7.81,8.51,10.6],"run_id":"de866b31-759a-435a-bfa9-b865e620bc7b","duration_ms":0,"error":"spawnSync /private/var/folders/t1/2_4kmb5n4c71dxm26zc8dgzr0000gn/T/codex-review-resource-cBOyET/codex-missing ENOENT"}]
+codex review kill note: codex invocation failed: codex was stopped by SIGKILL: no output; killed (cause unknown); falling back to single signer
+engine probe readings: [{"at":"2026-10-15T11:51:19.552Z","phase":"end","engine":"claude","task":"engine probe","free_pct":67,"swap_used_mb":3644.38,"swap_total_mb":5120,"load":[7.81,8.51,10.6],"run_id":"c6b05e21-6a27-4b75-b61a-ff0a134ced85","duration_ms":8,"signal":"SIGKILL","cause":"killed (cause unknown)"},{"at":"2026-10-15T11:51:20.013Z","phase":"end","engine":"claude","task":"engine probe","free_pct":67,"swap_used_mb":3644.38,"swap_total_mb":5120,"load":[7.81,8.51,10.6],"run_id":"5bd8a75a-c98a-44d0-8d79-84d28781129f","duration_ms":5,"error":"sh: /var/folders/t1/2_4kmb5n4c71dxm26zc8dgzr0000gn/T/atris-missing-engine-25473: No such file or directory\n"}]
+engine probe kill message: did not reply OK (exit null, signal SIGKILL); killed (cause unknown)
+real sweep after a failed start:
+0 ssh-agents running, 0 look leaked (no parent, older than 10 min, not in use by any live shell)
+nothing was stopped.
+
+no sweep recorded yet
+last engine error: cursor on CLI-77 at 2026-10-15 11:51 UTC: spawnSync /var/folders/t1/2_4kmb5n4c71dxm26zc8dgzr0000gn/T/atris-missing-engine-25473 ENOENT
+last SIGKILL: claude on CLI-78 at 2026-10-15 11:51 UTC, killed (cause unknown)
+0 of 1 SIGKILL ended with machine memory low
+real sweep json totals: {"recent":3,"overall":7,"peak":1,"busiest":{"name":"mds_stores","kills":2}}
+real old open peak: {"crowded":1,"peak":2}
+real cut start peak: {"crowded":1,"peak":2}
+✔ mac snapshot reads free memory, swap, and load (1.968083ms)
+✔ mac readings and the agent scan still find their system tools when the search path is narrow (390.2545ms)
+✔ off mac, memory fields stay empty instead of guessing (0.108084ms)
+✔ a failed tool leaves its field empty (0.191917ms)
+✔ a SIGKILL names low memory only when pressure or swap was high (0.124708ms)
+✔ start and end lines append to the durable resource log (14.593334ms)
+✔ elapsed milliseconds belong only to end resources and must be finite and nonnegative (2.782875ms)
+✔ start records the sweep leak count without stopping agents or reading again at end (1.541208ms)
+✔ elapsed time reads minutes, hours, and days (0.170334ms)
+✔ only orphaned, old, unreferenced shell agents count as leaked (0.145666ms)
+✔ reading agents matches the program name and collects live references (0.364458ms)
+✔ when the socket list cannot be read, every agent counts as in use (0.071166ms)
+✔ sweep apply rechecks right before stopping, and logs what it stopped (22.118459ms)
+✔ sweep apply reports an agent it could not stop (1.326542ms)
+✔ atris engine sweep lists leaked agents and stops nothing (3.970833ms)
+✔ atris engine sweep names the shell startup line that starts an agent per shell (7.37125ms)
+✔ the sweep offers a guarded line only for a lone unguarded agent start (4.134292ms)
+✔ the sweep guards a lone agent start in the startup files only when asked, keeping the old file (159.338834ms)
+✔ when process environments cannot be read, every agent counts as in use (0.176916ms)
+✔ the agent scan names a reader it could not run, so an empty leak list is not read as clean (0.190458ms)
+✔ partial socket scans keep unreadable agents safe and name the missing reading (0.105667ms)
+✔ the real sweep warns when one live agent socket reading is withheld (905.759125ms)
+✔ atris engine sweep says when a reader could not run, in text and json (0.87ms)
+✔ sweep and landing status give the same qualified count when the agent sockets could not be read (25.160958ms)
+✔ sweep and landing status give the same qualified count when the process environments could not be read (19.054208ms)
+✔ sweep and landing status give the same qualified count when the process list could not be read (19.823041ms)
+✔ atris engine sweep json comes through a pipe whole when it is larger than the pipe buffer (455.127208ms)
+✔ the hourly landing pass stops agents still leaked on the recheck and names the count (1.294417ms)
+✔ the hourly landing pass stops at most its cap, oldest first, and names the rest (1.814958ms)
+✔ the hourly landing pass names unreadable agent scans instead of staying quiet (0.926125ms)
+✔ the hourly cleanup summary names younger replacements alongside stops and unread scans (0.763709ms)
+✔ the hourly cleanup summary reports failed stops alongside other outcomes (51.19125ms)
+✔ a failing read never breaks the hourly landing pass (0.095291ms)
+✔ the hourly cleanup summary reports thrown scans and rechecks (1.780167ms)
+✔ history reads back the latest sweep and the latest SIGKILL, skipping bad lines (1.215708ms)
+✔ atris engine sweep shows the last sweep and the last SIGKILL (1.772875ms)
+✔ a test run never writes into this checkout's own resource log (0.228958ms)
+✔ resource history survives removal of a real linked checkout (65.333084ms)
+✔ a full resource log is cut back to its newest lines but keeps starts still waiting for an end (1735.969792ms)
+✔ atris engine sweep names runs that started and never wrote an end (1.193291ms)
+✔ an unfinished run whose start sits more than a megabyte back is still counted (174.161166ms)
+✔ start lines name the process that will write the end, and sweep splits unfinished runs by whether it is alive (51.241625ms)
+✔ sweep apply writes a parent gone end for lost runs only, and a plain sweep writes nothing (52.627334ms)
+✔ the hourly landing pass closes runs whose parent is gone and names the count (53.341666ms)
+✔ a lost run close that throws never breaks the hourly landing pass (0.092625ms)
+✔ the hourly cleanup summary reports lost run close failures (52.584208ms)
+✔ the hourly cleanup summary reports an unreadable run log instead of finding no lost runs (1.103125ms)
+✔ the sweep listing and the landing status name an unreadable run log instead of showing no history (120.92875ms)
+✔ atris scout records each engine run with a time limit kill and a crash told apart (2544.654084ms)
+✔ the voice judge records its claude run, and a killed judge names the likely cause (1049.141458ms)
+✔ every launch of an engine program by name records its run or is named as exempt (101.249625ms)
+✔ every engine started through a runner or profile variable records its run or is named as exempt (4042.467042ms)
+✔ the landing status names runs closed after their parent died in the last day, and stays quiet with none (350.14775ms)
+✔ the landing status names the last day of killed runs with the low memory count and the newest cause (233.73425ms)
+✔ the landing status names the last day of engine errors with the newest reason, apart from kills (593.911125ms)
+✔ autopilot phases record paired readings on success, SIGKILL and startup failure (1029.723208ms)
+✔ run command phases record paired readings on success, SIGKILL and startup failure (1024.587958ms)
+✔ compile builds record paired readings on success, SIGKILL and startup failure (1473.893333ms)
+✔ unknowns runner launches record paired readings on success, SIGKILL and startup failure (1022.909167ms)
+✔ staleness checks record paired readings on success, SIGKILL and startup failure (1001.734666ms)
+✔ horizon proposals record paired readings on success, SIGKILL and startup failure (1045.973833ms)
+✔ autopilot names a failed horizon proposal instead of calling the workspace clean (1481.567ms)
+✔ plan reviews record paired readings on success, SIGKILL and startup failure (1030.088292ms)
+✔ codex plan review signers record paired readings on success, SIGKILL and startup failure (2479.481667ms)
+✔ engine probes record paired readings on success, SIGKILL and startup failure (1461.948875ms)
+✔ a kill sent by the run time limit names the time limit even with memory low (1.171042ms)
+✔ a kill on a machine with more work than cores names the programs using the most CPU (1.344042ms)
+✔ the landing status counts time limit kills apart and names the newest kill that was not a time limit (233.96175ms)
+✔ the landing status names the most engine runs open at a crowded time limit kill and says whether running fewer would help (448.035791ms)
+✔ atris engine sweep names the newest engine error from a real failed start, apart from kills (343.766417ms)
+✔ atris engine sweep counts time limit kills apart and still names the newest kill that was not one (0.9305ms)
+✔ atris engine sweep names the day's crowded time limit kills in the same words as the landing status (120.674208ms)
+✔ a run started over a day ago and still open at a recent crowded kill counts toward its peak (119.686917ms)
+✔ a crowded kill whose start fell before the read part of a big log still counts itself beside other open runs (236.905416ms)
+✔ the landing status counts leaked ssh-agents, says how they get stopped, and stays quiet with none or a failed read (67.224459ms)
+✔ the landing status names an unreadable agent scan instead of showing no leaks (23.896ms)
+✔ the fix command names this checkout when the atris on PATH is another install (97.943291ms)
+✔ the landing status names the startup line behind leaked ssh-agents and its fix (28.908833ms)
+✔ the landing status says how fast leaked ssh-agents grew since the oldest reading in the last day (28.2645ms)
+✔ atris engine sweep says how fast leaked ssh-agents grew, the same way the landing status does (1.659084ms)
+✔ after a sweep stops agents, the growth note counts from what that sweep left (0.735583ms)
+codex force-kill CLI exit 0: {"at":"2026-10-15T11:51:26.537Z","phase":"end","engine":"codex","task":"mission-2026-10-15-codex-killed-reading-7484e019","free_pct":67,"swap_used_mb":3628.38,"swap_total_mb":5120,"load":[7.29,8.37,10.52],"run_id":"3b3def9f-0e9a-411b-b8a1-e37ea5801f40","duration_ms":15,"signal":"SIGKILL","error":"sh: line 1: 35822 Killed: 9               codex exec \"$(cat /private/var/folders/t1/2_4kmb5n4c71dxm26zc8dgzr0000gn/T/engine-resource-mission-tick-JcaK1D/.atris/state/runner-prompts/mission-2026-10-15-codex-killed-reading-7484e019-1792065085964-d069c397-af79-477b-8d39-ba48b5946e8b.md)\"\n","cause":"killed (cause unknown)"}
+claude force-kill CLI exit 0: {"at":"2026-10-15T11:51:27.320Z","phase":"end","engine":"claude","task":"mission-2026-10-15-claude-killed-reading-cf21ede8","free_pct":67,"swap_used_mb":3628.38,"swap_total_mb":5120,"load":[7.29,8.37,10.52],"run_id":"21b5af06-7812-4488-b3ed-32961e0ca3a4","duration_ms":6,"signal":"SIGKILL","cause":"killed (cause unknown)"}
+codex startup failure CLI exit 0: {"at":"2026-10-15T11:51:28.147Z","phase":"end","engine":"codex","task":"mission-2026-10-15-codex-startup-failure-readin-368efebf","free_pct":68,"swap_used_mb":3628.38,"swap_total_mb":5120,"load":[7.29,8.37,10.52],"run_id":"186d6389-6a79-41bd-b042-98f693436624","duration_ms":11,"error":"sh: /var/folders/t1/2_4kmb5n4c71dxm26zc8dgzr0000gn/T/engine-resource-mission-tick-JcaK1D/bin/codex: /var/folders/t1/2_4kmb5n4c71dxm26zc8dgzr0000gn/T/engine-resource-mission-tick-: bad interpreter: No such file or directory\n"}
+claude startup failure CLI exit 0: {"at":"2026-10-15T11:51:28.938Z","phase":"end","engine":"claude","task":"mission-2026-10-15-claude-startup-failure-readi-fe3d1760","free_pct":67,"swap_used_mb":3628.38,"swap_total_mb":5120,"load":[7.29,8.37,10.52],"run_id":"75c2192a-c5fb-45d1-9c23-8f3af0618300","duration_ms":2,"error":"spawn claude ENOENT"}
+✔ a read-only ask run writes a start and an end reading, and a run past its time limit says so (1800.072959ms)
+✔ mission runners record paired readings on success, SIGKILL and startup failure (5479.861667ms)
+prep readings: [{"at":"2026-10-15T11:51:29.865Z","phase":"end","engine":"claude","task":"prep for build","free_pct":68,"swap_used_mb":3628.38,"swap_total_mb":5120,"load":[7.29,8.37,10.52],"run_id":"bf63f7a4-f509-4caa-9095-c912ce480207","duration_ms":4,"signal":"SIGKILL","cause":"killed (cause unknown)"},{"at":"2026-10-15T11:51:30.174Z","phase":"end","engine":"claude","task":"prep for build","free_pct":67,"swap_used_mb":3628.38,"swap_total_mb":5120,"load":[7.29,8.37,10.52],"run_id":"c48a3bcd-417e-407f-9b80-6579b6369d58","duration_ms":5,"signal":"SIGKILL","cause":"killed (cause unknown)"}]
+prep kill reasons: claude stopped by SIGKILL; killed (cause unknown) | claude stopped by SIGKILL; killed (cause unknown)
+dream readings: [{"at":"2026-10-15T11:51:31.129Z","phase":"end","engine":"claude","task":"dream","free_pct":67,"swap_used_mb":3628.38,"swap_total_mb":5120,"load":[7.19,8.33,10.5],"run_id":"a9e2bfc7-4964-4774-8b27-7fa88eb0877b","duration_ms":5,"signal":"SIGKILL","cause":"killed (cause unknown)"},{"at":"2026-10-15T11:51:31.436Z","phase":"end","engine":"claude","task":"dream","free_pct":67,"swap_used_mb":3628.38,"swap_total_mb":5120,"load":[7.19,8.33,10.5],"run_id":"6fd05d81-c243-493a-aae5-d5f7cb5c18c0","duration_ms":4,"signal":"SIGKILL","cause":"killed (cause unknown)"}]
+dream kill line: No dreams tonight: model stopped by SIGKILL; killed (cause unknown)
+✔ prep passes record paired readings and name the cause of a SIGKILL (1117.39075ms)
+✔ dream launches record paired readings and name the cause of a SIGKILL (1263.011584ms)
+link readings: {"at":"2026-10-15T11:51:32.441Z","phase":"end","engine":"claude","task":"ask link","free_pct":67,"swap_used_mb":3628.38,"swap_total_mb":5120,"load":[7.19,8.33,10.5],"run_id":"79d85a5e-bf01-4d13-90cb-bad193eb0039","duration_ms":87,"signal":"SIGKILL","cause":"killed (cause unknown)"}
+link line: link: the engine did not answer: stopped by SIGKILL; killed (cause unknown)
+ask lines: engine ask started: atris/runs/engine-ask-20261015115133206-36610-af8a8985.json
+watch: atris engine watch engine-ask-20261015115133206-36610-af8a8985
+
+claude (claude)
+failed: stopped by SIGKILL; killed (cause unknown)
+
+summary:
+  claude (claude): failed
+
+receipt: atris/runs/engine-ask-20261015115133206-36610-af8a8985.json
+write readings: {"at":"2026-10-15T11:51:34.620Z","phase":"end","engine":"claude","task":"write coach","free_pct":68,"swap_used_mb":3628.38,"swap_total_mb":5120,"load":[7.19,8.33,10.5],"run_id":"a6e7a0ae-f8a2-4117-8c0d-fbc5b89c7e26","duration_ms":4,"signal":"SIGKILL","cause":"killed (cause unknown)"}
+write fallback line:   coach · why sleds need dogs
+digest readings: {"at":"2026-10-15T11:51:35.626Z","phase":"end","engine":"claude","task":"youtube digest","free_pct":65,"swap_used_mb":3628.38,"swap_total_mb":5120,"load":[7.19,8.33,10.5],"run_id":"01542662-e562-4806-a91c-5142f336f119","duration_ms":5,"signal":"SIGKILL","cause":"killed (cause unknown)"}
+digest kill line: digest engine stopped by SIGKILL; killed (cause unknown)
+ytnotes readings: {"at":"2026-10-15T11:51:37.010Z","phase":"end","engine":"claude","task":"youtube notes","free_pct":66,"swap_used_mb":3628.38,"swap_total_mb":5120,"load":[7.01,8.28,10.47],"run_id":"5c5ff7de-0c61-4862-8052-4bcb6c855e29","duration_ms":68,"signal":"SIGKILL","cause":"killed (cause unknown)"}
+ytnotes kill line: claude stopped by SIGKILL; killed (cause unknown)
+ytnotes auto screen: claude stopped by SIGKILL; killed (cause unknown) | Haiku did not answer; writing the notes with Codex instead.
+denied process scan exit 0: {"at":"2026-10-15T11:51:39.291Z","phase":"start","engine":"probe","task":"","free_pct":67,"swap_used_mb":3628.38,"swap_total_mb":5120,"load":[7.01,8.28,10.47],"pid":37536,"leaked_ssh_agents":null}
+denied cleanup exit 0: stopped 0 leaked ssh-agents
+closed 0 runs whose parent is gone
+could not read the process list for every process, so some ssh-agents could not be checked; the leak count may be incomplete
+replacement text cleanup exit 0: stopped 0 leaked ssh-agents
+1 leaked ssh-agent still left on this machine
+1 skipped because a younger ssh-agent now has the same process number
+closed 0 runs whose parent is gone
+replacement cleanup exit 0: stopped one unchanged agent, skipped one younger replacement; replacement socket still answers
+real console print run end reading: {"at":"2026-10-15T11:51:42.093Z","phase":"end","engine":"fake-claude","task":"console print","free_pct":67,"swap_used_mb":3628.38,"swap_total_mb":5120,"load":[7.17,8.29,10.46],"run_id":"92ea5711-e234-4368-bea0-c74cb2067f82","duration_ms":7,"error":"runner exited 3"}
+real pack print run log: g-brain/.atris/state/engine-resource.jsonl, 2 readings
+real cut start leak split: when the leaked ssh-agents started: 1 started while an engine run was open (codex 1), 1 with no engine run open, 1 before the run log begins; in the last hour: 0 while an engine run was open, 1 with none open
+real cut start sweep split: when the leaked ssh-agents started: 1 started while an engine run was open (codex 1), 1 with no engine run open, 1 before the run log begins; in the last hour: 0 while an engine run was open, 1 with none open
+real cut start sweep blame: when the leaked ssh-agents started: 2 started while an engine run was open (codex 2), 1 with no engine run open
+real cut start landing advice: when the leaked ssh-agents started: 2 started while an engine run was open (codex 2), 1 with no engine run open
+real missing run recording landing advice: when the leaked ssh-agents started: 1 started while an engine run was open (claude 1), 2 with no engine run open; the atris on your PATH does not record engine runs, so agents from the runs it starts count as none open
+real unreadable history repair advice: engine run log: could not read it (EISDIR), so lost, killed, and failed runs in the last day are unknown / to make that change, run atris engine sweep --fix-startup; it saves the old file beside it first
+real unreadable history repair advice: engine run log: could not read it (EISDIR), so lost, killed, and failed runs in the last day are unknown / to make that change, run atris engine sweep --fix-startup; it saves the old file beside it first
+real unreadable history repair advice: engine run log: could not read it (EISDIR), so lost, killed, and failed runs in the last day are unknown / to make that change, run atris engine sweep --fix-startup; it saves the old file beside it first
+real unreadable history repair advice: engine run log: could not read it (EISDIR), so lost, killed, and failed runs in the last day are unknown / to make that change, run atris engine sweep --fix-startup; it saves the old file beside it first
+partial cleanup recheck exit 0: stopped 0 leaked ssh-agents
+1 skipped because they were in use or gone on the recheck
+closed 0 runs whose parent is gone
+could not read the agent sockets for every process, so some ssh-agents could not be checked; the leak count may be incomplete
+partial cleanup recheck exit 0: stopped 0 leaked ssh-agents
+1 skipped because they were in use or gone on the recheck
+closed 0 runs whose parent is gone
+could not read the process environments for every process, so some ssh-agents could not be checked; the leak count may be incomplete
+partial cleanup recheck exit 0: stopped 0 leaked ssh-agents
+1 skipped because they were in use or gone on the recheck
+closed 0 runs whose parent is gone
+could not read the process list for every process, so some ssh-agents could not be checked; the leak count may be incomplete
+partial cleanup recheck exit 0: stopped 0 leaked ssh-agents
+1 skipped because they were in use or gone on the recheck
+closed 0 runs whose parent is gone
+could not read the agent sockets or the process environments for every process, so some ssh-agents could not be checked; the leak count may be incomplete
+failed cleanup scan 1, text, exit 1: /private/var/folders/t1/2_4kmb5n4c71dxm26zc8dgzr0000gn/T/sweep-thrown-scan-iujuRp/thrown-scan.cjs:5
+        if (++reads === 1) throw new Error('process scan unavailable');
+                           ^
+
+Error: process scan unavailable
+    at resource.readSshAgents (/private/var/folders/t1/2_4kmb5n4c71dxm26zc8dgzr0000gn/T/sweep-thrown-scan-iujuRp/thrown-scan.cjs:5:34)
+    at runEngineSweepCommand (/Users/keshavrao/arena/empire/.agent-worktrees/atris-cli/executor-continue-machine-memory-load-and-ssh-20261015-054013/commands/engine.js:2348:47)
+    at Object.engineCommand (/Users/keshavrao/arena/empire/.agent-worktrees/atris-cli/executor-continue-machine-memory-load-and-ssh-20261015-054013/commands/engine.js:2508:12)
+    at Object.<anonymous> (/Users/keshavrao/arena/empire/.agent-worktrees/atris-cli/executor-continue-machine-memory-load-and-ssh-20261015-054013/bin/atris.js:3261:49)
+    at Module._compile (node:internal/modules/cjs/loader:1811:14)
+    at Module._extensions..js (node:internal/modules/cjs/loader:1942:10)
+    at Module.load (node:internal/modules/cjs/loader:1532:32)
+    at Module._load (node:internal/modules/cjs/loader:1334:12)
+    at wrapModuleLoad (node:internal/modules/cjs/loader:255:19)
+    at Module.executeUserEntryPoint [as runMain] (node:internal/modules/run_main:154:5)
+
+Node.js v25.6.1
+failed cleanup scan 1, json, exit 1: /private/var/folders/t1/2_4kmb5n4c71dxm26zc8dgzr0000gn/T/sweep-thrown-scan-iujuRp/thrown-scan.cjs:5
+        if (++reads === 1) throw new Error('process scan unavailable');
+                           ^
+
+Error: process scan unavailable
+    at resource.readSshAgents (/private/var/folders/t1/2_4kmb5n4c71dxm26zc8dgzr0000gn/T/sweep-thrown-scan-iujuRp/thrown-scan.cjs:5:34)
+    at runEngineSweepCommand (/Users/keshavrao/arena/empire/.agent-worktrees/atris-cli/executor-continue-machine-memory-load-and-ssh-20261015-054013/commands/engine.js:2348:47)
+    at Object.engineCommand (/Users/keshavrao/arena/empire/.agent-worktrees/atris-cli/executor-continue-machine-memory-load-and-ssh-20261015-054013/commands/engine.js:2508:12)
+    at Object.<anonymous> (/Users/keshavrao/arena/empire/.agent-worktrees/atris-cli/executor-continue-machine-memory-load-and-ssh-20261015-054013/bin/atris.js:3261:49)
+    at Module._compile (node:internal/modules/cjs/loader:1811:14)
+    at Module._extensions..js (node:internal/modules/cjs/loader:1942:10)
+    at Module.load (node:internal/modules/cjs/loader:1532:32)
+    at Module._load (node:internal/modules/cjs/loader:1334:12)
+    at wrapModuleLoad (node:internal/modules/cjs/loader:255:19)
+    at Module.executeUserEntryPoint [as runMain] (node:internal/modules/run_main:154:5)
+
+Node.js v25.6.1
+failed cleanup scan 1, text, exit 1: /private/var/folders/t1/2_4kmb5n4c71dxm26zc8dgzr0000gn/T/sweep-thrown-scan-dpS3xQ/thrown-scan.cjs:5
+        if (++reads === 1) throw new Error('process scan unavailable');
+                           ^
+
+Error: process scan unavailable
+    at resource.readSshAgents (/private/var/folders/t1/2_4kmb5n4c71dxm26zc8dgzr0000gn/T/sweep-thrown-scan-dpS3xQ/thrown-scan.cjs:5:34)
+    at runEngineSweepCommand (/Users/keshavrao/arena/empire/.agent-worktrees/atris-cli/executor-continue-machine-memory-load-and-ssh-20261015-054013/commands/engine.js:2348:47)
+    at Object.engineCommand (/Users/keshavrao/arena/empire/.agent-worktrees/atris-cli/executor-continue-machine-memory-load-and-ssh-20261015-054013/commands/engine.js:2508:12)
+    at Object.<anonymous> (/Users/keshavrao/arena/empire/.agent-worktrees/atris-cli/executor-continue-machine-memory-load-and-ssh-20261015-054013/bin/atris.js:3261:49)
+    at Module._compile (node:internal/modules/cjs/loader:1811:14)
+    at Module._extensions..js (node:internal/modules/cjs/loader:1942:10)
+    at Module.load (node:internal/modules/cjs/loader:1532:32)
+    at Module._load (node:internal/modules/cjs/loader:1334:12)
+    at wrapModuleLoad (node:internal/modules/cjs/loader:255:19)
+    at Module.executeUserEntryPoint [as runMain] (node:internal/modules/run_main:154:5)
+
+Node.js v25.6.1
+failed cleanup scan 1, json, exit 1: /private/var/folders/t1/2_4kmb5n4c71dxm26zc8dgzr0000gn/T/sweep-thrown-scan-dpS3xQ/thrown-scan.cjs:5
+        if (++reads === 1) throw new Error('process scan unavailable');
+                           ^
+
+Error: process scan unavailable
+    at resource.readSshAgents (/private/var/folders/t1/2_4kmb5n4c71dxm26zc8dgzr0000gn/T/sweep-thrown-scan-dpS3xQ/thrown-scan.cjs:5:34)
+    at runEngineSweepCommand (/Users/keshavrao/arena/empire/.agent-worktrees/atris-cli/executor-continue-machine-memory-load-and-ssh-20261015-054013/commands/engine.js:2348:47)
+    at Object.engineCommand (/Users/keshavrao/arena/empire/.agent-worktrees/atris-cli/executor-continue-machine-memory-load-and-ssh-20261015-054013/commands/engine.js:2508:12)
+    at Object.<anonymous> (/Users/keshavrao/arena/empire/.agent-worktrees/atris-cli/executor-continue-machine-memory-load-and-ssh-20261015-054013/bin/atris.js:3261:49)
+    at Module._compile (node:internal/modules/cjs/loader:1811:14)
+    at Module._extensions..js (node:internal/modules/cjs/loader:1942:10)
+    at Module.load (node:internal/modules/cjs/loader:1532:32)
+    at Module._load (node:internal/modules/cjs/loader:1334:12)
+    at wrapModuleLoad (node:internal/modules/cjs/loader:255:19)
+    at Module.executeUserEntryPoint [as runMain] (node:internal/modules/run_main:154:5)
+
+Node.js v25.6.1
+failed cleanup scan 2, text, exit 1: /private/var/folders/t1/2_4kmb5n4c71dxm26zc8dgzr0000gn/T/sweep-thrown-scan-fIoPwI/thrown-scan.cjs:5
+        if (++reads === 2) throw new Error('process scan unavailable');
+                           ^
+
+Error: process scan unavailable
+    at resource.readSshAgents (/private/var/folders/t1/2_4kmb5n4c71dxm26zc8dgzr0000gn/T/sweep-thrown-scan-fIoPwI/thrown-scan.cjs:5:34)
+    at stopLeakedSshAgents (/Users/keshavrao/arena/empire/.agent-worktrees/atris-cli/executor-continue-machine-memory-load-and-ssh-20261015-054013/lib/engine-resource.js:488:19)
+    at runEngineSweepCommand (/Users/keshavrao/arena/empire/.agent-worktrees/atris-cli/executor-continue-machine-memory-load-and-ssh-20261015-054013/commands/engine.js:2355:7)
+    at Object.engineCommand (/Users/keshavrao/arena/empire/.agent-worktrees/atris-cli/executor-continue-machine-memory-load-and-ssh-20261015-054013/commands/engine.js:2508:12)
+    at Object.<anonymous> (/Users/keshavrao/arena/empire/.agent-worktrees/atris-cli/executor-continue-machine-memory-load-and-ssh-20261015-054013/bin/atris.js:3261:49)
+    at Module._compile (node:internal/modules/cjs/loader:1811:14)
+    at Module._extensions..js (node:internal/modules/cjs/loader:1942:10)
+    at Module.load (node:internal/modules/cjs/loader:1532:32)
+    at Module._load (node:internal/modules/cjs/loader:1334:12)
+    at wrapModuleLoad (node:internal/modules/cjs/loader:255:19)
+
+Node.js v25.6.1
+failed cleanup scan 2, json, exit 1: /private/var/folders/t1/2_4kmb5n4c71dxm26zc8dgzr0000gn/T/sweep-thrown-scan-fIoPwI/thrown-scan.cjs:5
+        if (++reads === 2) throw new Error('process scan unavailable');
+                           ^
+
+Error: process scan unavailable
+    at resource.readSshAgents (/private/var/folders/t1/2_4kmb5n4c71dxm26zc8dgzr0000gn/T/sweep-thrown-scan-fIoPwI/thrown-scan.cjs:5:34)
+    at stopLeakedSshAgents (/Users/keshavrao/arena/empire/.agent-worktrees/atris-cli/executor-continue-machine-memory-load-and-ssh-20261015-054013/lib/engine-resource.js:488:19)
+    at runEngineSweepCommand (/Users/keshavrao/arena/empire/.agent-worktrees/atris-cli/executor-continue-machine-memory-load-and-ssh-20261015-054013/commands/engine.js:2355:7)
+    at Object.engineCommand (/Users/keshavrao/arena/empire/.agent-worktrees/atris-cli/executor-continue-machine-memory-load-and-ssh-20261015-054013/commands/engine.js:2508:12)
+    at Object.<anonymous> (/Users/keshavrao/arena/empire/.agent-worktrees/atris-cli/executor-continue-machine-memory-load-and-ssh-20261015-054013/bin/atris.js:3261:49)
+    at Module._compile (node:internal/modules/cjs/loader:1811:14)
+    at Module._extensions..js (node:internal/modules/cjs/loader:1942:10)
+    at Module.load (node:internal/modules/cjs/loader:1532:32)
+    at Module._load (node:internal/modules/cjs/loader:1334:12)
+    at wrapModuleLoad (node:internal/modules/cjs/loader:255:19)
+
+Node.js v25.6.1
+failed cleanup scan 2, text, exit 1: /private/var/folders/t1/2_4kmb5n4c71dxm26zc8dgzr0000gn/T/sweep-thrown-scan-lHmYSC/thrown-scan.cjs:5
+        if (++reads === 2) throw new Error('process scan unavailable');
+                           ^
+
+Error: process scan unavailable
+    at resource.readSshAgents (/private/var/folders/t1/2_4kmb5n4c71dxm26zc8dgzr0000gn/T/sweep-thrown-scan-lHmYSC/thrown-scan.cjs:5:34)
+    at stopLeakedSshAgents (/Users/keshavrao/arena/empire/.agent-worktrees/atris-cli/executor-continue-machine-memory-load-and-ssh-20261015-054013/lib/engine-resource.js:488:19)
+    at runEngineSweepCommand (/Users/keshavrao/arena/empire/.agent-worktrees/atris-cli/executor-continue-machine-memory-load-and-ssh-20261015-054013/commands/engine.js:2355:7)
+    at Object.engineCommand (/Users/keshavrao/arena/empire/.agent-worktrees/atris-cli/executor-continue-machine-memory-load-and-ssh-20261015-054013/commands/engine.js:2508:12)
+    at Object.<anonymous> (/Users/keshavrao/arena/empire/.agent-worktrees/atris-cli/executor-continue-machine-memory-load-and-ssh-20261015-054013/bin/atris.js:3261:49)
+    at Module._compile (node:internal/modules/cjs/loader:1811:14)
+    at Module._extensions..js (node:internal/modules/cjs/loader:1942:10)
+    at Module.load (node:internal/modules/cjs/loader:1532:32)
+    at Module._load (node:internal/modules/cjs/loader:1334:12)
+    at wrapModuleLoad (node:internal/modules/cjs/loader:255:19)
+
+Node.js v25.6.1
+failed cleanup scan 2, json, exit 1: /private/var/folders/t1/2_4kmb5n4c71dxm26zc8dgzr0000gn/T/sweep-thrown-scan-lHmYSC/thrown-scan.cjs:5
+        if (++reads === 2) throw new Error('process scan unavailable');
+                           ^
+
+Error: process scan unavailable
+    at resource.readSshAgents (/private/var/folders/t1/2_4kmb5n4c71dxm26zc8dgzr0000gn/T/sweep-thrown-scan-lHmYSC/thrown-scan.cjs:5:34)
+    at stopLeakedSshAgents (/Users/keshavrao/arena/empire/.agent-worktrees/atris-cli/executor-continue-machine-memory-load-and-ssh-20261015-054013/lib/engine-resource.js:488:19)
+    at runEngineSweepCommand (/Users/keshavrao/arena/empire/.agent-worktrees/atris-cli/executor-continue-machine-memory-load-and-ssh-20261015-054013/commands/engine.js:2355:7)
+    at Object.engineCommand (/Users/keshavrao/arena/empire/.agent-worktrees/atris-cli/executor-continue-machine-memory-load-and-ssh-20261015-054013/commands/engine.js:2508:12)
+    at Object.<anonymous> (/Users/keshavrao/arena/empire/.agent-worktrees/atris-cli/executor-continue-machine-memory-load-and-ssh-20261015-054013/bin/atris.js:3261:49)
+    at Module._compile (node:internal/modules/cjs/loader:1811:14)
+    at Module._extensions..js (node:internal/modules/cjs/loader:1942:10)
+    at Module.load (node:internal/modules/cjs/loader:1532:32)
+    at Module._load (node:internal/modules/cjs/loader:1334:12)
+    at wrapModuleLoad (node:internal/modules/cjs/loader:255:19)
+
+Node.js v25.6.1
+✔ asks with their own launcher, like link and the dispatch scout, record paired readings (1002.11075ms)
+✔ a killed ask prints the cause from its end reading in link and engine ask (1083.671458ms)
+✔ the write coach records paired readings and names the cause of a SIGKILL (1097.690542ms)
+✔ the youtube digest records paired readings and names the cause of a SIGKILL (1007.695958ms)
+✔ youtube notes record paired readings around their writer and name the cause of a SIGKILL (1396.021125ms)
+✔ youtube notes in auto mode show a killed writer's cause on screen before the fallback line (1549.384458ms)
+✔ youtube notes run outside an Atris workspace write no readings (529.48525ms)
+✔ an unreadable process list is reported instead of a clean agent count (0.233416ms)
+✔ the real sweep warns when the system cannot provide its process list (116.275625ms)
+✔ start leak readings stay unknown when any scan reader is unavailable (1.327041ms)
+✔ real start recording keeps a denied process scan unknown on disk (86.149833ms)
+✔ cleanup reports unreadable initial and final scans without saving a false zero (2.387792ms)
+✔ real cleanup reports denied process scans and saves an unknown remaining count (236.688958ms)
+✔ real cleanup skips a younger replacement pid while stopping an unchanged agent (1521.4765ms)
+✔ cleanup separates younger replacements from in-use or gone skips (1.276541ms)
+✔ every map ref to an engine resource or dispatch test lands on the line that starts the test (1.483125ms)
+✔ the console records a piped print run and keeps no reading for a session handed to the person (1022.717084ms)
+✔ a headless pack run records its print run through the real command (586.404666ms)
+✔ each sweep line counts the unguarded agent starts in the shell startup files it read (2.635417ms)
+✔ the landing status says when the sweeps first found the ssh-agent startup line guarded (44.399958ms)
+✔ the guarded startup line names how fast ssh-agents leaked in the day before and since (23.450917ms)
+✔ the landing status warns when ssh-agents keep leaking after the startup line was guarded (28.002708ms)
+✔ the landing status splits leaked ssh-agents by the engine runs open when they started (35.513875ms)
+✔ a leaked ssh-agent that started during a run whose start fell before the read part of a big log is named with that run (25.792334ms)
+✔ the sweep listing does not blame the startup line for agents that started during a run whose start was cut from a big log (28.285125ms)
+✔ the sweep listing splits leaked ssh-agents by engine runs and points to the startup line when most started outside them (28.751208ms)
+✔ copied startup repair commands preserve shell punctuation in checkout paths (814.601667ms)
+✔ startup repair command lookup skips PATH entries that the shell cannot run (594.656292ms)
+✔ startup repair lookup searches the current folder for empty PATH entries in shell order (1662.672125ms)
+✔ copied startup repair commands run without node on PATH (114.226292ms)
+✔ same-checkout startup repair commands bypass a launcher with no usable node on PATH (705.299333ms)
+✔ the landing status repair hint runs with this checkout launcher on PATH and no node (345.289375ms)
+✔ the landing status repair hint runs when a node entry is on PATH but cannot run (1013.572625ms)
+✔ the landing status repair hint stays the short command when an unusable node entry comes before a runnable node (2047.326917ms)
+✔ the landing status repair hint uses the checkout command when the first executable node rejects the launcher (10103.481166ms)
+✔ landing repair advice survives unreadable history and a complete agent scan (18.444667ms)
+✔ landing repair advice survives unreadable history and process environments (16.754458ms)
+✔ landing repair advice survives unreadable history and agent sockets (16.936ms)
+✔ landing repair advice survives unreadable history and process environments and agent sockets (16.105833ms)
+✔ the real cleanup command keeps an incomplete agent sockets recheck count unknown in text, json, and history (199.669875ms)
+✔ the real cleanup command keeps an incomplete process environments recheck count unknown in text, json, and history (205.399708ms)
+✔ the real cleanup command keeps an incomplete process list recheck count unknown in text, json, and history (206.7195ms)
+✔ the real cleanup command keeps an incomplete agent sockets and process environments recheck count unknown in text, json, and history (213.118042ms)
+✔ the real cleanup command stops safely when scan 1 throws with no history (206.132167ms)
+✔ the real cleanup command stops safely when scan 1 throws with existing history (202.412959ms)
+✔ the real cleanup command stops safely when scan 2 throws with no history (204.601833ms)
+✔ the real cleanup command stops safely when scan 2 throws with existing history (199.567667ms)
+ℹ tests 190
+ℹ suites 0
+ℹ pass 190
+ℹ fail 0
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 68449.960041
+
+  ✓ clean, no slop tells in 3 files
