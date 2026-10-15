@@ -119,6 +119,12 @@ const TIMED_HEADING_DASH = /^(\s{0,3}#{1,6}\s.*?\S)\s*\u2014\s*(\d{1,2}:\d{2}(?:
 const GREETING_DASH = /^(\s*(?:>\s*)*["\u201c]?(?:Hey|Hi|Hello|Dear)\s+[^\s\u2014.!?:;][^\u2014.!?:;]{0,40}?)\s*\u2014[ \t]*/;
 // Two to four capitalized words that open a paragraph are a title, and the
 // words after the dash describe it: "Inbox Triage: 23 emails processed".
+// One capitalized word that opens a paragraph, bold or not, then a dash and
+// "the", "a" or a possessive, is a label too: "**Fix: the loop now kicks
+// work**", never "**Fix, the loop", which addresses someone named Fix. An
+// opener word keeps its comma: "Then, the loop kicks work", and a dash
+// pair is an aside: "Everything (the deck, the thesis) routes through Sam".
+const WORD_LABEL_DASH = /^(\s*(?:>\s*)*(?:\*\*|__)?([A-Z][a-z]+))\s*\u2014\s*(?=(?:the|a|an|our|your|their|its|my)\s)(?![^\u2014]*\u2014(?!\s*(?:and|but|or|nor|so|yet|then)\b[^\u2014]*$))/;
 const TITLE_DASH = /^(\s*(?:>\s*)*[A-Z][a-z0-9'\u2019-]+(?:\s+[A-Z][a-z0-9'\u2019-]+){1,3})\s*\u2014\s*(?=\S)(?!(?:and|but|or|nor|so|yet)\b)(?![^\u2014]*\u2014(?!\s*(?:and|but|or|nor|so|yet|then)\b[^\u2014]*$))/;
 const BOLD_HEADING_DASH = /^(\s*(?:>\s*)*(?:\*\*|__)[^\u2014:*_(]*[^\s\u2014,;:.!?*_(])\s*\u2014\s*(?!(?:and|but|or|nor|so|yet)\b)(?=[^\s\u2014:](?:[^\u2014*_:]|:(?!\s))*(?:\u2014\s*(?:and|but|or|nor|so|yet|then)\b[^\u2014*_]*)?(?:\*\*|__)\s*$)/i;
 
@@ -781,7 +787,8 @@ function fixEmDash(s, { endsBlock = false, startsBlock = false, spans = [], abov
   const field = label && /^[A-Za-z][\w #()-]{0,29}:\s+(\S.*)$/.exec(label[2]);
   if (field && fixEmDash(`${field[1]} \u2014 ${rest}`).startsWith(`${field[1]}; `)) return `${label[1]}${label[2]}; ${fixEmDash(rest, { endsBlock })}`;
   if (label) return `${label[1]}${label[2]}${!quoted && /[.,;:!?][*_`"'\u201d\u2019]*$/.test(label[2]) ? '' : ':'}${s.length > label[0].length ? ' ' : ''}${fixEmDash(capitalAfterLabel(label[2], rest, s), { endsBlock })}`;
-  const term = startsBlock && (TERM_DASH.exec(s) || TITLE_DASH.exec(s));
+  const word = startsBlock && WORD_LABEL_DASH.exec(s);
+  const term = startsBlock && (TERM_DASH.exec(s) || TITLE_DASH.exec(s) || (word && !OPENER_WORD.test(word[2]) ? word : null));
   if (term) return `${term[1]}: ${fixEmDash(s.slice(term[0].length), { endsBlock })}`;
   // in a sentence with an odd run of three or more dashes, one before a
   // joining word only continues the sentence, so it takes its comma first and

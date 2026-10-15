@@ -2138,7 +2138,29 @@ test('fix reads a line-end dash before a "when" clause on the next line', () => 
     'The runner `kick()`;',
     'Each time it stalls;',
     'We ship it,',
-    '**Fix, the loop kicks work when idle:** `kick()`:',
+    '**Fix: the loop kicks work when idle:** `kick()`:',
+  ]);
+});
+
+test('fix gives one capitalized word that opens a paragraph, then a dash, a colon', () => {
+  // from a loop log: "**Fix" then a dash then "the loop now kicks work" read
+  // as "**Fix, the loop", which addresses someone named Fix. An opener word
+  // ("Then", "Yes") keeps its comma, and a dash pair stays an aside.
+  const file = tmpFile('word-label.md', [
+    '**Fix \u2014 the loop now kicks work when idle:** done.',
+    '',
+    'Update \u2014 the API is live.',
+    '',
+    'Then \u2014 the loop kicks work.',
+    '',
+    'Everything \u2014 the deck, the thesis \u2014 routes through Sam.',
+  ].join('\n'));
+  const { changes } = applyFixes([file], RULES, { write: false });
+  assert.deepEqual(changes.map((c) => c.after), [
+    '**Fix: the loop now kicks work when idle:** done.',
+    'Update: the API is live.',
+    'Then, the loop kicks work.',
+    'Everything (the deck, the thesis) routes through Sam.',
   ]);
 });
 
