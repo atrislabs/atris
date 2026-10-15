@@ -211,3 +211,5 @@ Executable startup repair lookup: `lib/engine-resource.js:320` skips files witho
 Empty command search entries: `lib/engine-resource.js:320` searches the current folder in PATH order. `test/engine-resource.test.js:4607` compares leading, middle, trailing, and entirely empty PATH values with real shell launches, keeping an older local install out of repair hints.
 
 Startup repair without Node on PATH: `lib/engine-resource.js:352` uses the running Node executable for checkout repair commands. `test/engine-resource.test.js:4651` runs copied commands through real sh and zsh with an empty PATH.
+
+Same-checkout repair without Node: `lib/engine-resource.js:320` shares executable lookup for atris and node; `lib/engine-resource.js:353` shortens the hint only when both can run. `test/engine-resource.test.js:4671` runs real sh and zsh commands with missing, non-executable, directory, and broken-link node entries.

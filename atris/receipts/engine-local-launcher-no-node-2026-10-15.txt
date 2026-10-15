@@ -1,0 +1,19 @@
+Command: PATH=<temporary folder containing only a symlink to this checkout launcher> /opt/homebrew/Cellar/node/25.6.1/bin/node bin/atris.js engine sweep
+Exit: 0
+to make that change, run /opt/homebrew/Cellar/node/25.6.1/bin/node ~/arena/empire/.agent-worktrees/atris-cli/executor-continue-machine-memory-load-and-ssh-20261015-054013/bin/atris.js engine sweep --fix-startup; it saves the old file beside it first
+nothing was stopped. run /opt/homebrew/Cellar/node/25.6.1/bin/node ~/arena/empire/.agent-worktrees/atris-cli/executor-continue-machine-memory-load-and-ssh-20261015-054013/bin/atris.js engine sweep --apply to stop them.
+
+Summary: Repair hints now run when this checkout launcher is found but Node is absent from the command search path.
+Files edited: lib/engine-resource.js; test/engine-resource.test.js; atris/MAP.md; atris/refs/MAP-NOTES.md; atris/team/executor/logs/2026-10-15.md; atris/receipts/engine-local-launcher-no-node-2026-10-15.txt.
+Plan: same checkout launcher -> executable Node lookup -> short command or running runtime plus script.
+Verify: node --test test/engine-resource.test.js test/engine-dispatch.test.js && node bin/atris.js slop --staged
+Exit: 0
+Output: tests 164; pass 164; fail 0; clean, no slop tells in 5 files.
+Additional proof: git diff --check, exit 0. Real sh and zsh runs cover missing, non-executable, directory, and broken-link Node entries, plus an executable Node link control. The direct launcher fails and the copied repair command succeeds in all eight shell cases.
+Review: independent agent found no correctness or narrow regression issues; targeted test passed.
+Correction: first full check failed only on the new map reference, 4674 instead of 4671. Corrected both notes and reran the full frozen command successfully.
+Context: carry-forward branch is an ancestor of HEAD, checked by git merge-base --is-ancestor, exit 0. Mission task attachment reported a busy lock; a separate claimed task records this slice. Brain activation and compile were plan-only, exit 2; no generated policy files changed.
+next_push: Prove the landing status repair hint through a real CLI run with the same checkout launcher present and Node absent from the command search path.
+Review recording: the bare command launched by Atris used /usr/local/bin/node v20.18.0 and hit its 120-second timeout. The frozen command had already passed under the running Node v25.6.1. The full suite also timed out through task ready with the runtime named explicitly; mission configuration unchanged.
+The focused real-shell regression passed through task ready with exit 0: /opt/homebrew/Cellar/node/25.6.1/bin/node --test --test-name-pattern='same-checkout startup repair' test/engine-resource.test.js. Receipt: atris/runs/2026-10-15-task-ecm-5-2026-10-15T07-36-19-171Z.json. Final staged writing check: clean, no slop tells in 6 files.
+layer: behaviors
