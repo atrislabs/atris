@@ -3115,6 +3115,10 @@ test('fix joins a subject and its verb when "a", a code name and a noun open the
     'It stays \u2014 the old helpers no longer.',
     'It is cold \u2014 a live request returns `503 DEPLOYMENT_SCALING_UP` and did not warm.',
     'Look here \u2014 the build logs `foo` and stats.',
+    // "up" and a verb in "ing" after the verb make the object too; a plural
+    // before "up" and no "ing" names a thing
+    'It turns into a false flag \u2014 a CSM ends up calling a happy customer.',
+    'Look here \u2014 the logs up top.',
   ].join('\n'));
   const { changes } = applyFixes([file], RULES, { write: false });
   assert.deepEqual(changes.map((c) => c.after), [
@@ -3124,6 +3128,8 @@ test('fix joins a subject and its verb when "a", a code name and a noun open the
     'It stays, the old helpers no longer.',
     'It is cold; a live request returns `503 DEPLOYMENT_SCALING_UP` and did not warm.',
     'Look here, the build logs `foo` and stats.',
+    'It turns into a false flag; a CSM ends up calling a happy customer.',
+    'Look here, the logs up top.',
   ]);
 });
 
