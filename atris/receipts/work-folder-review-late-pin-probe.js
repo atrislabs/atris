@@ -12,7 +12,7 @@ function main() {
   const realGit = spawnSync('which', ['git'], { encoding: 'utf8' });
   assert.equal(realGit.status, 0, realGit.stderr);
   const git = realGit.stdout.trim();
-  for (const latePin of [false, true]) {
+  for (const mode of ['idle', 'late-pin', 'invalid-link']) {
     const base = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'atris-review-pin-')));
     const previousPath = process.env.PATH;
     let boundary;
@@ -47,9 +47,12 @@ const fs = require('node:fs');
 const args = process.argv.slice(2);
 const git = ${JSON.stringify(git)};
 if (args.includes('worktree') && args.includes('remove')) {
-  if (${latePin}) {
+  if (${JSON.stringify(mode)} === 'late-pin') {
     const pin = spawnSync(git, ['--git-dir', ${JSON.stringify(gitDir)}, 'worktree', 'lock', '--reason', 'review still writing', ${JSON.stringify(copy)}], { encoding: 'utf8' });
     if (pin.status !== 0) { process.stderr.write(pin.stderr); process.exit(1); }
+  }
+  if (${JSON.stringify(mode)} === 'invalid-link') {
+    fs.renameSync(${JSON.stringify(path.join(copy, '.git'))}, ${JSON.stringify(path.join(copy, '.git.saved'))});
   }
   const removed = spawnSync(git, args, { encoding: 'utf8' });
   fs.writeFileSync(${JSON.stringify(attempt)}, JSON.stringify({ status: removed.status, stderr: removed.stderr }));
@@ -75,17 +78,21 @@ process.exit(result.status === null ? 1 : result.status);
       // Exit 0 diagnoses current behavior. It does not certify safe cleanup.
       assert.deepEqual(result, { removed: true });
       assert.ok(Object.values(remaining).every((exists) => exists === false));
-      if (latePin) {
+      if (mode === 'late-pin') {
         assert.notEqual(removal.status, 0);
         assert.match(removal.stderr, /locked/);
+      } else if (mode === 'invalid-link') {
+        assert.notEqual(removal.status, 0);
+        assert.match(removal.stderr, /validation failed/);
+        assert.doesNotMatch(removal.stderr, /locked/);
       } else {
         assert.equal(removal.status, 0, removal.stderr);
       }
-      console.log(JSON.stringify({ latePin, gitRemoval: removal, disposal: result, remaining,
+      console.log(JSON.stringify({ mode, gitRemoval: removal, disposal: result, remaining,
         removalRecords: records.length, trustedProjectUnchanged: true }, null, 2));
-      console.log(latePin
-        ? 'confirmed: git refused the pin, all review paths were deleted, and cleanup recorded success'
-        : 'control: git removed the idle copy, cleanup cleared its stores and recorded success');
+      console.log(mode === 'idle'
+        ? 'control: git removed the idle copy, cleanup cleared its stores and recorded success'
+        : `confirmed: git refused ${mode}, all review paths were deleted, and cleanup recorded success`);
     } finally {
       if (previousPath === undefined) delete process.env.PATH;
       else process.env.PATH = previousPath;

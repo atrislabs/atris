@@ -33,3 +33,12 @@ Plan: nonzero or missing removal status -> shared explanation -> retained stores
 Required implementation proof: keep the idle real-Git control; turn the late-pin diagnostic into a retention regression; cover a refusal without a pin and a missing process status. Assert the returned detail and caller output contain the explanation without undefined text, every review store survives refusal, and no successful removal record is added. These checks are requirements for the next build, not claims of current coverage.
 
 next_push: implement the two-site refusal contract after production review, retaining idle disposal and proving late-pin retention.
+
+
+## Refusal without a pin
+
+The disposable diagnostic now also moves the owned copy's `.git` link immediately before real Git removal. Preflight sees an intact copy; removal exits 128 with `validation failed` and no locked-folder explanation. Disposal still deletes all four review paths and writes one success record. The idle control and late-pin case remain, and all three retain trusted content and origin history.
+
+Verdict: proceed with the existing fail-closed plan after production review. The single failure mode remains treating a refused removal as success. This case proves the safeguard must inspect the process result for every refusal, rather than retaining only pinned copies. A missing process status still needs separate proof.
+
+next_push: prove missing removal status with a terminated disposable child before production implementation.
