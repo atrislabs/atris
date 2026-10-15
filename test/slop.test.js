@@ -2282,6 +2282,26 @@ test('fix keeps a comma before a common two-word name the bare object rule would
   ]);
 });
 
+test('fix joins "the", a common two-word name and a plain verb as a clause after a dash', () => {
+  // from the edge file: "the error logs show it" spliced, since no rule
+  // took a two-word name as the subject. The same list the bare object rule
+  // keeps whole is the subject here; a place word or a name end after the
+  // pair keeps the phrase.
+  const file = tmpFile('name-pair-clause.md', [
+    'Check it \u2014 the error logs show it.',
+    'Read them \u2014 the release notes cover every change.',
+    'Check it \u2014 the error logs from CI.',
+    'Check it \u2014 the release notes page.',
+  ].join('\n'));
+  const { changes } = applyFixes([file], RULES);
+  assert.deepEqual(changes.map((c) => c.after), [
+    'Check it; the error logs show it.',
+    'Read them; the release notes cover every change.',
+    'Check it, the error logs from CI.',
+    'Check it, the release notes page.',
+  ]);
+});
+
 test('fix joins "its" or "our", a plural and a plain verb before a number or an object', () => {
   // from a probe of the edge file: "its pages score 67" spliced, since the
   // possessive rule wanted a verb in s, a helper verb or "already". A plain

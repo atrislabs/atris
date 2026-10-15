@@ -20,6 +20,8 @@ The site is not naive \u2014 its pages score 67.
 => The site is not naive; its pages score 67.
 We fixed it \u2014 the loop kicks\nwork into the queue.
 => We fixed it; the loop kicks\nwork into the queue.
+Check it \u2014 the error logs show it.
+=> Check it; the error logs show it.
 
 # a phrase: a word in s that names a thing, not a verb
 Check one place \u2014 the error logs folder.
@@ -36,11 +38,9 @@ The backlog \u2014 the pull requests queue for review.
 => The backlog, the pull requests queue for review.
 Check it \u2014 the unit tests pass.
 => Check it; the unit tests pass.
+Check it \u2014 the error logs from CI.
+=> Check it, the error logs from CI.
 
 # one word before the dash is a label, not a sentence
 Then \u2014 the loop kicks work.
 => Then, the loop kicks work.
-
-# known gap: a two-word name as the subject, then a plain verb, is a
-# clause that still gets a comma
-#   Check it \u2014 the error logs show it.

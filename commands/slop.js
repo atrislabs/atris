@@ -310,6 +310,12 @@ const PLAIN_OBJECT_CLAUSE = new RegExp(`^\\s*\\u2014\\s*(?:a|an|the|every|each|n
 // queue" and "the support tickets queue" are no subject and verb.
 const NAME_END_WORD = '(?:folder|file|page|dir|directory|list|table|view|tab|button|panel|screen|menu|field|column|row|section|card|link|path)';
 const NAME_PAIR = '(?:pull\\s+requests|merge\\s+requests|support\\s+tickets|error\\s+logs|build\\s+logs|release\\s+notes|commit\\s+messages|feature\\s+flags|search\\s+results|test\\s+results|api\\s+keys|code\\s+reviews|sales\\s+calls)';
+// The same two-word name as the subject, then a plain verb and an object,
+// is a clause: "check it; the error logs show it". Before a stop only a verb
+// in "ed" counts, since "the support tickets queue." is one longer name. A
+// place word or a word that ends a longer name after the pair keeps the
+// phrase whole: "the error logs from CI", "the release notes page".
+const NAME_PAIR_CLAUSE_AFTER_DASH = new RegExp(`${CLAUSE_END}\\s*\\u2014\\s*(?=the\\s+${NAME_PAIR}\\s+(?:(?:now|still|already|also|often|always|never)\\s+)?(?!(?:from|of|in|on|for|with|at|by|to|and|or|that|which|who|like|than|as|is|are|was|were)\\b)(?!${NAME_END_WORD}\\b)[a-z]{2,}(?<!s)(?:(?<=ed)[.!?;]|\\s+(?:it|them|the|a|an|this|that|every|all|no|what|why|how|where)\\b))`, 'g');
 const BARE_OBJECT_CLAUSE = new RegExp(`^\\s*\\u2014\\s*the\\s+(?!${NAME_PAIR}\\b)(?![a-z]*s\\b)[a-z]{2,}\\s+${PLAIN_VERB_WORD}\\s+(?!${NAME_END_WORD}\\b)[a-z]{2,}(?=[.!?;]|\\s+(?:into|onto|to|for|from|on|at|with|until)\\s)`);
 // A plain word, then a name, then the verb hides a "that": "a topic Atris
 // sits directly on top of" names a topic, so it keeps its comma. A run of
@@ -983,6 +989,10 @@ function fixEmDash(s, { endsBlock = false, startsBlock = false, spans = [], abov
       return PLAIN_CLAUSE_LEFT.test(core) ? clauseJoin(left) : m;
     })
     .replace(STATUS_CLAUSE_AFTER_DASH, (m, at, whole) => {
+      const left = clauseLeft(at, whole);
+      return left ? clauseJoin(left) : m;
+    })
+    .replace(NAME_PAIR_CLAUSE_AFTER_DASH, (m, at, whole) => {
       const left = clauseLeft(at, whole);
       return left ? clauseJoin(left) : m;
     })
