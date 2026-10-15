@@ -1,0 +1,16 @@
+Cleanup now has proof that saved executable contents and a later plain file survive real preview and apply. The required checks passed with exit 0.
+Files edited: test/member-tidy.test.js; atris/MAP.md; atris/refs/MAP-NOTES.md.
+Member log appended: atris/team/architect/logs/2026-10-15.md.
+Verify: node --test test/worktree-removal-guard.test.js test/member-tidy.test.js && node bin/atris.js slop --staged
+Output: tests 90; pass 90; fail 0; skipped 0; todo 0; clean, no slop tells in 3 files.
+Exit: 0.
+Real command: node bin/atris.js worktree cleanup
+Output excerpt: cleanup: dry-run base=origin/master; candidates: 0; reason=dirty staged=8 unstaged=7 untracked=2
+Exit: 0.
+Real command: node bin/atris.js worktree cleanup --apply
+Output excerpt: cleanup: applied base=origin/master; removeds: 0; reason=dirty staged=8 unstaged=7 untracked=2
+Exit: 0.
+Progress: one real-runtime case strengthened; all 90 checks pass with zero pending. No production behavior changed.
+Learned: saved executable mode and later non-executable mode need separate assertions alongside the two sets of bytes.
+next_push: prove cleanup preserves a saved plain file replaced by an executable file.
+layer: capabilities
