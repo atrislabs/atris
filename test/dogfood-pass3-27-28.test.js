@@ -351,6 +351,102 @@ test('unbound scratch slack send refuses even with --account', () => {
   }
 });
 
+test('project folder (atris/, no business.json) allows gmail/slack reads but still refuses writes', () => {
+  const dir = makeTempDir();
+  const home = path.join(dir, 'home');
+  fs.mkdirSync(path.join(home, '.atris'), { recursive: true });
+  fs.writeFileSync(path.join(home, '.atris', 'credentials.json'), JSON.stringify({
+    token: 'fake-token',
+    email: 'dogfood@example.com',
+  }));
+  // Exactly the Desktop shape: a project with atris/ and nothing under .atris/.
+  const project = path.join(dir, 'Desktop', 'my-project');
+  fs.mkdirSync(path.join(project, 'atris'), { recursive: true });
+  assert.equal(fs.existsSync(path.join(project, '.atris', 'business.json')), false);
+  const env = {
+    HOME: home,
+    ATRIS_HOME: home,
+    ATRIS_NONINTERACTIVE: '1',
+    ATRIS_API_URL: 'http://127.0.0.1:1',
+  };
+  try {
+    for (const args of [
+      ['gmail', 'inbox'],
+      ['gmail', 'list'],
+      ['gmail', 'accounts'],
+      ['slack', 'channels'],
+      ['slack', 'dms'],
+      ['slack', 'messages', '#x'],
+      ['slack', 'search', 'hi'],
+    ]) {
+      const result = runCli(args, { cwd: project, env });
+      const out = `${result.stderr}${result.stdout}`;
+      assert.notEqual(result.status, 2, `${args.join(' ')} should pass the folder gate: ${out}`);
+      assert.doesNotMatch(out, /account-global/, `${args.join(' ')}: ${out}`);
+      // Past the gate the verb must actually try the (dead) server, so a
+      // first-minute detour or a silent no-op cannot fake this pass.
+      assert.match(out, /ECONNREFUSED|Authentication failed|Fetching|not connected/, `${args.join(' ')}: ${out}`);
+    }
+    for (const args of [
+      ['gmail', 'send', 'someone@example.com', 'hi', 'body', '--approved'],
+      ['gmail', 'archive', 'abc'],
+      ['gmail', 'connect'],
+      ['slack', 'send', '#x', 'hi', '--approved'],
+      ['slack', 'dm', 'U123', 'hi', '--approved'],
+    ]) {
+      const result = runCli(args, { cwd: project, env });
+      const out = `${result.stderr}${result.stdout}`;
+      assert.equal(result.status, 2, `${args.join(' ')} status=${result.status}: ${out}`);
+      assert.match(out, /account-global; pass --account to continue/);
+      assert.doesNotMatch(out, /Sending to |Sending DM|Archiving |sent to |open this url|ECONNREFUSED|api\.atris\.ai/);
+    }
+  } finally {
+    cleanupTempDir(dir);
+  }
+});
+
+test('bound gmail send requires --approved before anything reaches the server', () => {
+  const dir = makeTempDir();
+  const home = path.join(dir, 'home');
+  fs.mkdirSync(path.join(home, '.atris'), { recursive: true });
+  fs.writeFileSync(path.join(home, '.atris', 'credentials.json'), JSON.stringify({
+    token: 'fake-token',
+    email: 'dogfood@example.com',
+  }));
+  const bound = path.join(dir, 'bound');
+  fs.mkdirSync(path.join(bound, '.atris'), { recursive: true });
+  fs.mkdirSync(path.join(bound, 'atris'), { recursive: true });
+  fs.writeFileSync(path.join(bound, '.atris', 'business.json'), JSON.stringify({
+    business_id: 'biz_dogfood',
+    slug: 'dogfood-co',
+  }));
+  const env = {
+    HOME: home,
+    ATRIS_HOME: home,
+    ATRIS_NONINTERACTIVE: '1',
+    ATRIS_API_URL: 'http://127.0.0.1:1',
+  };
+  try {
+    const unapproved = runCli(['gmail', 'send', 'someone@example.com', 'hi', 'body'], { cwd: bound, env });
+    const out = `${unapproved.stderr}${unapproved.stdout}`;
+    assert.equal(unapproved.status, 2, out);
+    assert.match(out, /--approved/);
+    assert.doesNotMatch(out, /account-global|ECONNREFUSED|fetch failed|api\.atris\.ai|sent to |could not send gmail|not connected/);
+
+    // With --approved the send proceeds past the gate and tries the (dead) server.
+    const approved = runCli(['gmail', 'send', 'someone@example.com', 'hi', 'body', '--approved'], { cwd: bound, env });
+    const approvedOut = `${approved.stderr}${approved.stdout}`;
+    assert.notEqual(approved.status, 2, approvedOut);
+    assert.doesNotMatch(approvedOut, /Refusing to send without --approved|account-global/);
+
+    const help = runCli(['gmail'], { cwd: bound, env });
+    assert.equal(help.status, 0, help.stderr + help.stdout);
+    assert.match(help.stdout, /gmail send .*--approved/);
+  } finally {
+    cleanupTempDir(dir);
+  }
+});
+
 test('27: truth reads atris/loops only; --global unlocks machine heartbeats', () => {
   const dir = makeTempDir();
   const home = path.join(dir, 'home');

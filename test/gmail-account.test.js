@@ -403,6 +403,7 @@ test('gmail send posts the joined body from the selected connected account', asy
       'hello',
       'from',
       'atris',
+      '--approved',
       '--account',
       'personal',
     );
@@ -455,6 +456,7 @@ test('gmail send refuses an account that is not connected before the send reques
         'hello',
         '--account',
         'missing',
+        '--approved',
       ),
       /exit:1/,
     );
@@ -493,7 +495,7 @@ test('gmail send exits 2 with one lowercase usage line when arguments are missin
   }
 
   assert.deepEqual(errors, [
-    'usage: atris gmail send <to> <subject> <body...> [--body-file <path>] [--account <id>]',
+    'usage: atris gmail send <to> <subject> <body...> --approved [--body-file <path>] [--account <id>]',
   ]);
   assert.deepEqual(calls, []);
 });
