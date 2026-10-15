@@ -1,0 +1,42 @@
+
+## Repair advice with incomplete scans
+Changed: Extended the real landing-status regression to unreadable process environments, sockets, and both while engine history is unreadable. Operators retain the repair command and a qualified leak count.
+Files: test/engine-resource.test.js; atris/MAP.md; atris/refs/MAP-NOTES.md.
+Proof: node --test test/engine-resource.test.js test/engine-dispatch.test.js && node bin/atris.js slop --staged
+Exit: 0. Output: tests 179; pass 179; fail 0; clean, no slop tells in 3 files.
+Real surface: showStatus runs against a temporary git project and an unreadable history directory; the process reader supplies each incomplete scan. Output: engine run log: could not read it (EISDIR), so lost, killed, and failed runs in the last day are unknown / to make that change, run atris engine sweep --fix-startup; it saves the old file beside it first.
+Progress: Three added cases; no production changes.
+Learned: Map references must point to the test call itself, not its surrounding parameter loop. Initial check caught this; corrected references passed.
+Setup: Brain activation and compile were plan-only, exit 2, proposing broad setup changes; none were applied.
+next_push: Compare sweep and landing warnings for the same incomplete scan.
+layer: behaviors
+
+Exact check output excerpt:
+✔ the landing status repair hint runs when a node entry is on PATH but cannot run (1001.108958ms)
+✔ the landing status repair hint stays the short command when an unusable node entry comes before a runnable node (1993.341459ms)
+✔ the landing status repair hint uses the checkout command when the first executable node rejects the launcher (10074.172583ms)
+✔ landing repair advice survives unreadable history and a complete agent scan (20.586375ms)
+✔ landing repair advice survives unreadable history and process environments (19.134ms)
+✔ landing repair advice survives unreadable history and agent sockets (18.124834ms)
+✔ landing repair advice survives unreadable history and process environments and agent sockets (17.992625ms)
+ℹ tests 179
+ℹ suites 0
+ℹ pass 179
+ℹ fail 0
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 66398.663667
+
+  ✓ clean, no slop tells in 3 files
+
+Review submission: exit 0; ✓ verified: `node --test test/engine-resource.test.js test/engine-dispatch.test.js && node bin/atris.js slop --staged` exited 0 (receipt atris/runs/2026-10-15-task-ecm-9-2026-10-15T11-12-41-858Z.json)
+Advisory: add --landing with one plain sentence saying what someone can do now, in words a new teammate would get. No flags, no ids.
+ready for approval ECM-9 v4
+Result trace recorded.
+proof is ready; this verifier needs a second agent review because autoland cannot rerun it.
+note: this verify command is outside the auto-certify allowlist, so autoland cannot run the second check itself. use a test command like node --test <file> or git diff --check, or have a second agent run: atris task review-chat ECM-9 --as <reviewer>
+
+Independent review remains pending; no task acceptance performed.
+next_push: Independently review the incomplete-scan regression and its saved proof.
+layer: behaviors

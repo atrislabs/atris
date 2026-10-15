@@ -229,3 +229,5 @@ Silent Node repair fallback: `lib/engine-resource.js:417` requires version outpu
 Incomplete run history advice: `test/engine-resource.test.js:4821` compares real landing status with the sweep listing when a run start falls outside retained history, while keeping the startup repair command visible.
 
 Missing run recording warning: `test/engine-resource.test.js:4881` checks that landing status and the sweep listing agree when the installed command records no runs, retain the startup repair command, and avoid assigning a source from incomplete counts.
+
+Combined unreadable history and agent scans: `test/engine-resource.test.js:5313` runs landing status with unreadable process environments, sockets, or both, preserving the repair hint and qualifying the leak count.

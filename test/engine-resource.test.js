@@ -5309,7 +5309,8 @@ test('the landing status repair hint uses the checkout command when the first ex
   }
 });
 
-test('landing repair advice survives an unreadable engine run log without assigning blame', () => {
+for (const unread of [[], ['process environments'], ['agent sockets'], ['process environments', 'agent sockets']]) {
+test(`landing repair advice survives unreadable history and ${unread.join(' and ') || 'a complete agent scan'}`, () => {
   const { showStatus } = require('../commands/autoland');
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'landing-unread-repair-'));
   const home = fs.mkdtempSync(path.join(os.tmpdir(), 'landing-unread-home-'));
@@ -5322,7 +5323,7 @@ test('landing repair advice survives an unreadable engine run log without assign
     console.log = (line = '') => out.push(String(line));
     try {
       showStatus(root, [], {
-        readSshAgents: () => ({ agents: [{ pid: 200, ppid: 1, uid: 501, age_sec: 3600, args: 'ssh-agent -s' }], referenced: new Set() }),
+        readSshAgents: () => ({ agents: [{ pid: 200, ppid: 1, uid: 501, age_sec: 3600, args: 'ssh-agent -s' }], referenced: new Set(), unread }),
         uid: 501, home, atrisCommand: 'atris', pathAtrisRecordsRuns: true,
       });
     } finally {
@@ -5331,6 +5332,12 @@ test('landing repair advice survives an unreadable engine run log without assign
     const status = out.join('\n');
     assert.match(status, /engine run log: could not read it \(EISDIR\)/);
     assert.doesNotMatch(status, /the startup line below is the one to fix, not an engine/);
+    if (unread.length) {
+      assert.ok(status.includes(`could not read the ${unread.join(' or the ')}, so some ssh-agents went unchecked`));
+      assert.match(status, /leaked ssh-agents on this machine: at least 1/);
+    } else {
+      assert.doesNotMatch(status, /some ssh-agents went unchecked/);
+    }
     assert.match(status, /likely source: ~\/\.zshrc line 1/);
     assert.match(status, /to make that change, run atris engine sweep --fix-startup; it saves the old file beside it first/);
     console.log('real unreadable history repair advice: ' + out.filter((line) => /engine run log|to make that change/.test(line)).map((line) => line.trim()).join(' / '));
@@ -5339,4 +5346,4 @@ test('landing repair advice survives an unreadable engine run log without assign
     fs.rmSync(home, { recursive: true, force: true });
   }
 });
-
+}

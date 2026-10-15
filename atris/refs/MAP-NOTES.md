@@ -2449,3 +2449,5 @@ Landing status repair with a failing executable Node: `lib/engine-resource.js:41
 Silent Node repair fallback: `lib/engine-resource.js:417` requires version output before trusting the launcher. `test/engine-resource.test.js:5250` runs the displayed repair through sh and zsh when the first Node exits successfully without doing work.
 
 Incomplete run history advice: `test/engine-resource.test.js:4821` compares real landing status with the sweep listing when a run start falls outside retained history, while keeping the startup repair command visible.
+
+Combined unreadable history and agent scans: `test/engine-resource.test.js:5313` covers repair guidance with incomplete process environments and socket scans.
