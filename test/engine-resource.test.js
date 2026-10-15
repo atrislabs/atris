@@ -1747,6 +1747,8 @@ test('every engine started through a runner or profile variable records its run 
           }
         }
         if (!called) continue;
+        // A resolved profile can supply its binary through a dotted member.
+        called += /^(?:\s*\.\s*[A-Za-z_$][\w$]*)*/.exec(rest.slice(called.length))[0];
       }
       const argumentsStart = /^\s*,\s*(\[[^\]]*\])?/.exec(rest.slice(called.length));
       if (!argumentsStart) continue;
@@ -1795,7 +1797,19 @@ test('every engine started through a runner or profile variable records its run 
     }
   }
   assert.deepStrictEqual(planted('spawnSync(resolveRunnerBin(\n  selectTopic(topic)\n), args);\n'), ['commands/planted.js:1 resolveRunnerBin(\n  selectTopic(topic)\n)']);
-  assert.deepStrictEqual(planted('spawnSync(resolveRunnerBin(engine).bin, args);\n'), [], 'profile members after calls remain outside this slice');
+  // Inline profile members keep the same recording and probe requirements.
+  for (const helper of ['spawn', 'spawnSync', 'execFile', 'execFileSync', 'spawnWithOutputChunks', 'runInReapedProcessGroup']) {
+    for (const member of ['.bin', '.command', ' . runner . bin']) {
+      const profile = `resolveEngineProfile(select(topic, { hint: 'x),y' }))${member}`;
+      assert.deepStrictEqual(planted(`${helper}(${profile}, args);\n`), [`commands/planted.js:1 ${profile}`]);
+      assert.deepStrictEqual(planted(`startEngineRun(root);\n${helper}(${profile}, args);\n`), []);
+      for (const probe of ['--help', '--version']) {
+        assert.deepStrictEqual(planted(`${helper}(${profile}, ['${probe}']);\n`), []);
+      }
+      assert.deepStrictEqual(planted(`${helper}(findExecutable(topic)${member}, args);\n`), []);
+    }
+  }
+  assert.deepStrictEqual(planted('spawnSync(resolveEngineProfile(\n  topic\n)\n  .bin, args);\n'), ['commands/planted.js:1 resolveEngineProfile(\n  topic\n)\n  .bin']);
   // Spaces before resolver arguments do not change the program they select.
   for (const gap of [' ', '\t']) {
     const runner = `resolveClaudeRunnerBin${gap}()`;
