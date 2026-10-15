@@ -13334,7 +13334,7 @@ test('task proof-only agent env blocks acceptance verbs', () => {
   }
 });
 
-test('task auto-accept-certified requires explicit human confirmation', () => {
+test('task auto-accept-certified requires explicit human confirmation', async () => {
   if (!hasNodeSqlite()) return;
   const dir = makeTempDir();
   const dbPath = path.join(dir, 'tasks.db');
@@ -13382,7 +13382,12 @@ test('task auto-accept-certified requires explicit human confirmation', () => {
     assert.equal(flagActor.status, 2);
     assert.equal(JSON.parse(flagActor.stdout).reason, 'human_actor_required');
 
-    const preview = runCli(['task', 'auto-accept-certified', '--dry-run', '--json'], { cwd: dir, env });
+    // Both previews read the same certified row without changing it. Neither
+    // consumes the projection file the other may refresh.
+    const [preview, strictText] = await Promise.all([
+      runCliAsync(['task', 'auto-accept-certified', '--dry-run', '--json'], { cwd: dir, env }),
+      runCliAsync(['task', 'auto-accept-certified', '--dry-run'], { cwd: dir, env }),
+    ]);
     assert.equal(preview.status, 0, preview.stderr);
     const previewPayload = JSON.parse(preview.stdout);
     assert.equal(previewPayload.action, 'auto_accept_certified_dry_run');
@@ -13398,7 +13403,6 @@ test('task auto-accept-certified requires explicit human confirmation', () => {
     assert.equal(previewPayload.results[0].review_chat_command, `atris task review-chat ${ref} --as codex-review`);
     assert.equal(JSON.parse(runCli(['task', 'show', ref, '--json'], { cwd: dir, env }).stdout).status, 'review');
 
-    const strictText = runCli(['task', 'auto-accept-certified', '--dry-run'], { cwd: dir, env });
     assert.equal(strictText.status, 0, strictText.stderr);
     assert.match(strictText.stdout, /SKIPPED .*strict_verify_missing/);
     assert.match(strictText.stdout, /next_action=.*metadata\.verify/);

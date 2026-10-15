@@ -2669,3 +2669,5 @@ Review queue filter creation fixture: `test/commands.test.js:15306` seeds both g
 Bulk approval scan concurrency: `test/commands.test.js:13488` overlaps the three real CLI previews after readiness finishes. All original scan-count, eligibility and limit assertions remain; preview output files are not consumed by another scan.
 
 Bulk approval setup connection: `test/commands.test.js:13466` opens once for all twenty seeded rows and closes in finally before the last real CLI ready at `test/commands.test.js:13484`. Claim, readiness and all scan assertions are unchanged; alternating focused runs averaged 519ms before and 500ms after.
+
+Single-row approval preview concurrency: `test/commands.test.js:13385` overlaps the JSON and text dry runs. Neither reads the shared projection file; every assertion remains, with the post-preview show still after both finish. Eight alternating focused runs passed, averaging 1833ms before and 1738ms after.
