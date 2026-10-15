@@ -165,3 +165,17 @@ test('the real command: json on every verb, store from ATRIS_CAMPAIGN_DB, a real
   assert.deepEqual(JSON.parse(listed.stdout).campaigns.map((c) => c.id), ['cmp-real']);
   assert.match(cli('help').stdout, /write a judge that fails first/);
 });
+
+test('ask stops the campaign for a person; an agent cannot answer, a person can', async () => {
+  const store = createMemoryStore();
+  await run(store, startArgs);
+  const asked = await run(store, ['ask', 'cmp-ship', 'Email the customer the launch note?', '--as', 'builder']);
+  assert.equal(asked.code, 0);
+  const askId = getCampaign(store, 'cmp-ship').asks[0].id;
+  assert.match(asked.out, /next: answer 1 open ask: atris campaign answer cmp-ship a-[0-9a-f]{6}/);
+  const byAgent = await run(store, ['answer', 'cmp-ship', askId, 'yes', '--as', 'builder']);
+  assert.match(byAgent.out, /not closed: only a person can answer/);
+  assert.equal(getCampaign(store, 'cmp-ship').state, 'needs_you');
+  assert.equal((await run(store, ['answer', 'cmp-ship', askId, 'yes, send it'])).code, 0);
+  assert.deepEqual(getCampaign(store, 'cmp-ship').asks, []);
+});

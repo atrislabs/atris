@@ -28,6 +28,8 @@ function printHelp() {
   console.log('  atris campaign seat <id> <member> [--role <role>]');
   console.log('  atris campaign bet <id> "<bet>" [--wrong-if "<what proves it wrong>"]');
   console.log('  atris campaign budget <id> --add <dollars>');
+  console.log('  atris campaign ask <id> "<question>" [--mission <id>]   stop before anything that cannot be undone');
+  console.log('  atris campaign answer <id> <ask-id> "<answer>"     a person answers; agents cannot');
   console.log('  atris campaign pause|resume|stop <id>');
   console.log('  atris campaign event <id> <type> [--data \'<json>\']   append any event by hand');
   console.log('  atris campaign run <id> [--parallel 3] [--max-steps 20] [--max-ticks 3] [--runner auto]');
@@ -49,7 +51,7 @@ function money(value) {
 }
 
 // The flags this command understands, so positional words are what is left.
-const VALUE_FLAGS = ['--parallel', '--max-steps', '--max-ticks', '--runner', '--count', '--judge', '--budget', '--owner', '--seat', '--bet', '--wrong-if', '--parent', '--id', '--role', '--add', '--data', '--timeout', '--as'];
+const VALUE_FLAGS = ['--mission', '--parallel', '--max-steps', '--max-ticks', '--runner', '--count', '--judge', '--budget', '--owner', '--seat', '--bet', '--wrong-if', '--parent', '--id', '--role', '--add', '--data', '--timeout', '--as'];
 
 function positionals(args) {
   const out = [];
@@ -345,6 +347,22 @@ const cmdBudget = simpleEvent('budget_added', (args) => {
   return { data: { amount_usd: amount } };
 }, (d, view) => `added ${money(d.amount_usd)}; budget is now ${money(view.budget.total)}`);
 
+// The no-reload line: anything that cannot be undone waits here for a person.
+const cmdAsk = simpleEvent('ask_opened', (args, words) => {
+  const question = words[2];
+  if (!question) return { error: 'write the question: atris campaign ask <id> "<question>" [--mission <mission-id>]' };
+  const askId = `a-${require('crypto').randomBytes(3).toString('hex')}`;
+  const mission = readFlag(args, '--mission', '');
+  return { data: mission ? { ask_id: askId, question, mission_id: mission } : { ask_id: askId, question } };
+}, (d) => `asked ${d.ask_id}: ${d.question}`);
+
+const cmdAnswer = simpleEvent('ask_answered', (args, words) => {
+  const askId = words[2];
+  const answer = words[3];
+  if (!askId || !answer) return { error: 'answer an ask: atris campaign answer <id> <ask-id> "<answer>"' };
+  return { data: { ask_id: askId, answer } };
+}, (d, view) => (view.asks.some((a) => a.id === d.ask_id) ? `not closed: only a person can answer ${d.ask_id}` : `answered ${d.ask_id}: ${d.answer}`));
+
 const cmdPause = simpleEvent('paused', () => ({ data: {} }), () => 'paused');
 const cmdResume = simpleEvent('resumed', () => ({ data: {} }), () => 'resumed');
 const cmdStop = simpleEvent('stopped', () => ({ data: {} }), () => 'stopped');
@@ -411,6 +429,7 @@ async function cmdLoop(args, ctx, verb) {
 const VERBS = {
   start: cmdStart, show: cmdShow, judge: cmdJudge, seat: cmdSeat, bet: cmdBet, budget: cmdBudget,
   pause: cmdPause, resume: cmdResume, stop: cmdStop, event: cmdEvent,
+  ask: cmdAsk, answer: cmdAnswer,
   run: (args, ctx) => cmdLoop(args, ctx, 'run'),
   step: (args, ctx) => cmdLoop(args, ctx, 'step'),
   propose: (args, ctx) => cmdLoop(args, ctx, 'propose'),
