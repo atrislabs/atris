@@ -1218,7 +1218,7 @@ test('ytnotes auto writer follows the roster lead and passes its model through',
   assert.match(fs.readFileSync(path.join(dir, 'yt_roster1.md'), 'utf8'), /# From Claude/);
   assert.match(result.stderr, /notes by Haiku/);
   const work = path.dirname(dir);
-  assert.match(fs.readFileSync(path.join(work, 'claude.args'), 'utf8'), /--model haiku/);
+  assert.match(fs.readFileSync(path.join(work, 'claude.args'), 'utf8'), /--model haiku --effort low/);
   // Auto mode checks Gemini's sign-in while captions download; that check is
   // the only agy call allowed here. The backup never writes.
   const agyArgs = fs.existsSync(path.join(work, 'agy.args')) ? fs.readFileSync(path.join(work, 'agy.args'), 'utf8').trim() : '';
