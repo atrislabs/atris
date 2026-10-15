@@ -913,7 +913,11 @@ function sshAgentSweepNote(receipt) {
   const replaced = (receipt.ssh_agent_sweep?.replaced || []).length;
   const unread = receipt.ssh_agent_sweep?.unread || [];
   const stoppedNote = stopped ? `, stopped ${stopped} leaked ssh-agent${stopped === 1 ? '' : 's'}` : '';
-  const failedNote = failed ? `, could not stop ${failed} leaked ssh-agent${failed === 1 ? '' : 's'}` : '';
+  // Agents the pass before also could not stop are named, as the landing
+  // status does, so a stuck agent reads as stuck in the summary too.
+  const again = (receipt.ssh_agent_sweep?.refused_again || []).length;
+  const againNote = again ? (again === failed ? ' twice in a row' : ` (${again} of them twice in a row)`) : '';
+  const failedNote = failed ? `, could not stop ${failed} leaked ssh-agent${failed === 1 ? '' : 's'}${againNote}` : '';
   const deferred = (receipt.ssh_agent_sweep?.deferred || []).length;
   const replacedNote = replaced ? `, left ${replaced} younger replacement ssh-agent${replaced === 1 ? '' : 's'} alone` : '';
   const deferredNote = deferred ? `, left ${deferred} more leaked ssh-agent${deferred === 1 ? '' : 's'} for the next pass` : '';

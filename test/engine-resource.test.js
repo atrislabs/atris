@@ -5855,3 +5855,29 @@ test('the landing status says the last two hourly passes could not stop an agent
     fs.rmSync(root, { recursive: true, force: true });
   }
 });
+
+test('the hourly cleanup summary says an agent could not be stopped twice in a row, as the landing status does', () => {
+  const { runSshAgentSweep, sshAgentSweepNote } = require('../commands/autoland');
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'autoland-summary-refused-twice-'));
+  const agent = (pid) => ({ pid, ppid: 1, uid: 501, age_sec: 3600, args: 'ssh-agent -s' });
+  // One real hourly pass where every stop is refused.
+  const pass = (pids) => {
+    const receipt = {};
+    runSshAgentSweep(root, receipt, {
+      read: () => ({ agents: pids.map(agent), referenced: new Set(), unread: [] }),
+      uid: 501,
+      kill: () => { throw Object.assign(new Error('permission denied'), { code: 'EPERM' }); },
+    });
+    return sshAgentSweepNote(receipt);
+  };
+  try {
+    assert.strictEqual(pass([201]), ', could not stop 1 leaked ssh-agent');
+    const twice = pass([201]);
+    assert.strictEqual(twice, ', could not stop 1 leaked ssh-agent twice in a row');
+    const mixed = pass([201, 203]);
+    assert.strictEqual(mixed, ', could not stop 2 leaked ssh-agents (1 of them twice in a row)');
+    console.log(`hourly summary after two refused passes: ${twice.slice(2)}\nwith a new refusal beside it: ${mixed.slice(2)}`);
+  } finally {
+    fs.rmSync(root, { recursive: true, force: true });
+  }
+});
