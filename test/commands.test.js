@@ -13412,32 +13412,24 @@ test('task auto-accept-certified --all sweeps past the old 12-row cap', async ()
     fs.writeFileSync(path.join(trustState, 'career_xp_receipts.jsonl'), `${trustedCodex.join('\n')}\n`);
     fs.writeFileSync(path.join(trustState, 'scorecards.jsonl'), '');
     writePolicy(dir, { enabled: false, enabled_by: 'test' });
-    // Every row but the last is readied straight in the task store. The last
-    // still runs through the CLI, so the certified scan reads what the CLI
-    // writes, and its write lands after every row exists.
+    // Every row is readied straight in the task store. All three scan outputs
+    // matched with the last row readied through the CLI instead; the review
+    // lane mission XP test still scans a row the CLI readied.
     const workspaceRoot = taskStore.workspaceRoot(dir);
     const db = taskStore.open(dbPath);
-    let lastRef;
-    let lastProof;
     try {
       for (let i = 0; i < ROW_COUNT; i += 1) {
         const proof = `Row ${i}: node --check test/commands.test.js passed and diff inspected end to end`;
         const ref = addSeedTask(db, { title: `Row ${i} lands under --all`, tag: 'code', workspaceRoot }).id;
         assert.equal(taskStore.claimTask(db, { id: ref, claimedBy: 'codex' }).claimed, true);
-        if (i < ROW_COUNT - 1) {
-          assert.equal(taskStore.readyTask(db, { id: ref, actor: 'codex', proof, result: FIXTURE_RESULT_SENTENCE }).ready, true);
-        } else {
-          lastRef = ref;
-          lastProof = proof;
-        }
+        assert.equal(taskStore.readyTask(db, { id: ref, actor: 'codex', proof, result: FIXTURE_RESULT_SENTENCE }).ready, true);
       }
     } finally {
       taskStore.close();
     }
-    assert.equal(runCli(['task', 'ready', lastRef, '--proof', lastProof, '--as', 'codex'], { cwd: dir, env }).status, 0);
 
     // Preview scans leave the task rows unchanged and only rewrite the same
-    // projection, which none of these scans reads. Run them together after ready.
+    // projection, which none of these scans reads. Run them together.
     const [defaultScan, allScan, limitedAllScan] = await Promise.all([
       runCliAsync(['task', 'auto-accept-certified', '--dry-run', '--json'], { cwd: dir, env }),
       runCliAsync(['task', 'auto-accept-certified', '--dry-run', '--all', '--json'], { cwd: dir, env }),
