@@ -313,6 +313,38 @@ test('brief outcome stamping appends a latest outcome row', () => {
   }
 });
 
+test('a brief record asks git for author and base only when the caller left them blank', () => {
+  const dir = makeTempDir();
+  const bin = makeTempDir();
+  const log = path.join(bin, 'calls.log');
+  fs.writeFileSync(path.join(bin, 'git'), `#!/bin/sh\necho "$*" >> "${log}"\nexit 1\n`);
+  fs.chmodSync(path.join(bin, 'git'), 0o755);
+  const savedPath = process.env.PATH;
+  process.env.PATH = `${bin}${path.delimiter}${savedPath}`;
+  const gitCalls = () => (fs.existsSync(log) ? fs.readFileSync(log, 'utf8').trim().split('\n').filter(Boolean) : []);
+  try {
+    const given = appendBriefRecord(dir, {
+      author: 'orb',
+      engine: 'cursor',
+      prompt_text: 'ship it',
+      context: { worktree: dir, base_ref: 'origin/master' },
+    }, { now: new Date(NOW) });
+    assert.deepEqual([given.author, given.context.base_ref], ['orb', 'origin/master']);
+    assert.deepEqual(gitCalls(), [], 'given values never launch git');
+    const blank = appendBriefRecord(dir, {
+      engine: 'cursor',
+      prompt_text: 'ship it',
+      context: { worktree: dir },
+    }, { now: new Date(NOW) });
+    assert.deepEqual([blank.author, blank.context.base_ref], ['orb', '']);
+    assert.ok(gitCalls().includes('branch --show-current'), 'blank values still fall back to git');
+  } finally {
+    process.env.PATH = savedPath;
+    cleanup(dir);
+    cleanup(bin);
+  }
+});
+
 test('brief review groups recent briefs by outcome with computable signals', () => {
   const dir = makeTempDir();
   try {

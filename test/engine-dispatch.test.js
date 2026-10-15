@@ -374,6 +374,37 @@ test('runDispatchFlight happy path: claims, builds, re-verifies for real, ships,
   }
 });
 
+test('runDispatchFlight asks git for the remote list once when it picks the land target', async () => {
+  const { spawnSync } = require('node:child_process');
+  const tmpRoot = makeTempRoot();
+  const bin = fs.mkdtempSync(path.join(os.tmpdir(), 'engine-dispatch-gitlog-'));
+  const log = path.join(bin, 'calls.log');
+  const realGit = spawnSync('sh', ['-c', 'command -v git'], { encoding: 'utf8' }).stdout.trim();
+  fs.writeFileSync(path.join(bin, 'git'), `#!/bin/sh\necho "$*" >> "${log}"\nexec "${realGit}" "$@"\n`);
+  fs.chmodSync(path.join(bin, 'git'), 0o755);
+  const savedPath = process.env.PATH;
+  process.env.PATH = `${bin}${path.delimiter}${savedPath}`;
+  try {
+    const { cli } = ownCliFake({ tasks: { 'CLI-900': TASK }, worktreeFor: (t) => `/wt/${t}` });
+    const flight = await fleet.runDispatchFlight({
+      root: tmpRoot,
+      taskIds: ['CLI-900'],
+      engine: 'cursor',
+      ownCli: cli,
+      dispatcher: () => Promise.resolve({ exitCode: 0, report: 'agent report tail' }),
+      rebase: () => ({ ok: true, stage: 'rebased' }),
+      verifier: () => ({ status: 0, stdout: '# pass 1\n', stderr: '' }),
+    });
+    assert.deepEqual(flight.landed.map((l) => l.task), ['CLI-900']);
+    const remoteCalls = fs.readFileSync(log, 'utf8').split('\n').filter((line) => line === 'remote');
+    assert.equal(remoteCalls.length, 1, 'the land target reuses the local check instead of asking again');
+  } finally {
+    process.env.PATH = savedPath;
+    fs.rmSync(tmpRoot, { recursive: true, force: true });
+    fs.rmSync(bin, { recursive: true, force: true });
+  }
+});
+
 test('runDispatchFlight review-only verifies explicitly, readies the task, and leaves master untouched', async () => {
   const tmpRoot = makeTempRoot();
   const explicitVerifier = 'node --test test/one-lap-review.test.js';

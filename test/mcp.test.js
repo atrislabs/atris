@@ -57,9 +57,21 @@ function closeServer(server) {
 // stdio, and closes stdin once the response for `closeAfterId` lands. Resolves
 // every parsed response message. Rejects on any stdout line that is not valid
 // JSON-RPC, since a clean stream is the contract this test guards.
+// Resolves once the session prints a response with this id. A fake API can
+// hold its reply on it instead of a fixed sleep; the fallback lets a server
+// that never answers fail on message order rather than hang.
+function waitForMessageId(id, fallbackMs = 5000) {
+  let seen;
+  const promise = new Promise((resolve) => {
+    seen = resolve;
+    setTimeout(resolve, fallbackMs).unref();
+  });
+  return { promise, onMessage: (message) => { if (message.id === id) seen(); } };
+}
+
 function mcpSession(requests, {
   extraEnv = {}, closeAfterId, closeStdinAfterSend = false,
-  timeout = 20000, protocolVersion = '2025-03-26', rawLines = [],
+  timeout = 20000, protocolVersion = '2025-03-26', rawLines = [], onMessage = null,
 } = {}) {
   return new Promise((resolve, reject) => {
     const home = fs.mkdtempSync(path.join(os.tmpdir(), 'atris-mcp-'));
@@ -81,8 +93,18 @@ function mcpSession(requests, {
     const finish = () => {
       try { child.stdin.end(); } catch { /* already closed */ }
     };
+    let seenLines = 0;
     child.stdout.on('data', (chunk) => {
       stdout += chunk;
+      if (onMessage) {
+        const complete = stdout.split('\n').slice(0, -1);
+        for (const line of complete.slice(seenLines)) {
+          let message = null;
+          try { message = JSON.parse(line); } catch { /* reported on close */ }
+          if (message) onMessage(message);
+        }
+        seenLines = complete.length;
+      }
       if (stdout.split('\n').some((line) => {
         try { return JSON.parse(line).id === closeAfterId; } catch { return false; }
       })) finish();
@@ -267,9 +289,10 @@ test('atris mcp tools/call runs design_search against the mocked api', async () 
 });
 
 test('atris mcp answers ping while a design call is pending', async () => {
+  const pingAnswered = waitForMessageId(4);
   const mock = await startHttpMock(async (request) => {
     assert.equal(request.url, '/api/design/search');
-    await new Promise((resolve) => setTimeout(resolve, 1000));
+    await pingAnswered.promise;
     return { body: { results: [{ brand_name: 'Delayed' }] } };
   });
   try {
@@ -279,6 +302,7 @@ test('atris mcp answers ping while a design call is pending', async () => {
       { jsonrpc: '2.0', id: 4, method: 'ping' },
     ], {
       closeAfterId: 4,
+      onMessage: pingAnswered.onMessage,
       extraEnv: { ATRIS_API_URL: `http://127.0.0.1:${mock.port}/api` },
     });
     assert.deepEqual(messages.map((message) => message.id), [1, 4, 3]);
@@ -311,9 +335,12 @@ test('atris mcp writes a pending call response after stdin closes', async () => 
 });
 
 test('atris mcp drops a cancelled call response', async () => {
+  // The ping is sent after the cancel, so once it is answered the cancel
+  // has been read.
+  const pingAnswered = waitForMessageId(4);
   const mock = await startHttpMock(async (request) => {
     assert.equal(request.url, '/api/design/search');
-    await new Promise((resolve) => setTimeout(resolve, 200));
+    await pingAnswered.promise;
     return { body: { results: [{ brand_name: 'Cancelled' }] } };
   });
   try {
@@ -324,6 +351,7 @@ test('atris mcp drops a cancelled call response', async () => {
       { jsonrpc: '2.0', id: 4, method: 'ping' },
     ], {
       closeAfterId: 4,
+      onMessage: pingAnswered.onMessage,
       extraEnv: { ATRIS_API_URL: `http://127.0.0.1:${mock.port}/api` },
     });
     assert.deepEqual(messages.map((message) => message.id), [1, 4]);
