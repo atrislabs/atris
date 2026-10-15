@@ -747,7 +747,7 @@ const SUBJECTLESS_CLAUSE_AFTER_DASH = new RegExp(`(?<=[\\w)\\]%\\uE001])\\s*\\u2
 // its left words from up there, so it keeps the colon, and so does a name
 // after a semicolon: "Post-merge review: clean; one gap: web never sent".
 function clauseJoin(left, at, whole) {
-  if (whole !== undefined && (topicLabel(left, at, whole) || pointLabel(left, at, whole))) return ': ';
+  if (whole !== undefined && (topicLabel(left, at, whole) || pointLabel(left, at, whole) || listLabel(left, at, whole))) return ': ';
   const mark = openerJoin(left);
   if (mark !== ': ' || whole === undefined || /;\s/.test(left)) return mark;
   const before = whole.slice(0, at).trimEnd();
@@ -799,6 +799,23 @@ function pointLabel(left, at, whole) {
   if (lineAbove || lineMid || /[()[\]`\uE000]/.test(left)) return false;
   if (/:(?:\s|$)/.test(whole.slice(at).split(/[.!?](?:\s|$)/)[0])) return false;
   return new RegExp(`^The\\s+(?:[a-z][\\w-]*\\s+){0,2}?${POINT_NOUN}$`).test(left.trim());
+}
+
+// A sentence that is only a list of three or more short items names what
+// the clause after the dash sums up, so it takes a colon: "Claude, GPT,
+// Gemini: the intelligence layer is a commodity", "GPT, Claude, Kimi: pick
+// one". A colon later in the sentence would stack, so that keeps the
+// semicolon, and so does one after a colon earlier in the sentence, a list
+// inside brackets, one of clauses ("We ran, we tested, we shipped; the
+// gate held") and one an opener leads: "If any probe fails, fix it or file
+// it; do not ship".
+function listLabel(left, at, whole) {
+  if (lineAbove || lineMid || /[()[\]\uE000]/.test(left)) return false;
+  if (/:(?:\s|$)/.test(whole.slice(at).split(/[.!?](?:\s|$)/)[0])) return false;
+  const list = left.replace(/^(?:(?:[-*+>]|\d+[.)])\s*)+/, '').trim();
+  if (/:\s/.test(whole.slice(0, at).split(/[.!?]\s|\n/).pop())) return false;
+  if (/^(?:if|when|whenever|once|unless|until|because|since|although|though|while|for|after|before)\b/i.test(list)) return false;
+  return BARE_LIST.test(list) && !/(?:^|,\s+|\b(?:and|or)\s+)(?:I|we|they|you|he|she|it)\s/i.test(list);
 }
 
 // Up to three words with no verb or subject of their own. A word after the

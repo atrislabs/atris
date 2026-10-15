@@ -473,3 +473,12 @@ Check the input \u2014 the system prompt string passed to Gemini Flash.
 # real docs hold no line like it, while four real clauses need the join
 Release notes \u2014 the features shipped in v2.
 ~> Release notes, the features shipped in v2.
+
+# a sentence that is only a list of three or more items takes a colon
+# before the clause that sums it up; a list of clauses keeps the semicolon
+Every AI company has the same models. Claude, GPT, Gemini \u2014 the intelligence layer is a commodity.
+=> Every AI company has the same models. Claude, GPT, Gemini: the intelligence layer is a commodity.
+The models are good enough. GPT, Claude, Kimi \u2014 pick one.
+=> The models are good enough. GPT, Claude, Kimi: pick one.
+We ran, we tested, we shipped \u2014 the gate held.
+=> We ran, we tested, we shipped; the gate held.

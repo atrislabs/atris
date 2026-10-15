@@ -364,6 +364,32 @@ test('the em dash fix gives "The" and a noun that names a point a colon', () => 
   ]);
 });
 
+test('the em dash fix gives a sentence that is only a list a colon', () => {
+  const { applyFixes } = require('../commands/slop');
+  const D = '\u2014';
+  // from real notes: the list names what the clause sums up; a list of
+  // clauses, one an opener leads, and one past a colon keep the semicolon
+  const file = tmpFile('list-label.md', [
+    `Same models. Deliverables, invoices, label approvals ${D} the paperwork grind is real.`,
+    '',
+    `We ran, we tested, we shipped ${D} the gate held.`,
+    '',
+    `If any probe fails, fix it or file it ${D} do not ship.`,
+    '',
+    `Dropped: promos, hiring, or duplicates ${D} the search returned nothing.`,
+  ].join('\n'));
+  applyFixes([file], RULES);
+  assert.deepEqual(fs.readFileSync(file, 'utf8').split('\n'), [
+    'Same models. Deliverables, invoices, label approvals: the paperwork grind is real.',
+    '',
+    'We ran, we tested, we shipped; the gate held.',
+    '',
+    'If any probe fails, fix it or file it; do not ship.',
+    '',
+    'Dropped: promos, hiring, or duplicates; the search returned nothing.',
+  ]);
+});
+
 test('the em dash fix reads past a short aside between a subject and its verb', () => {
   const { applyFixes } = require('../commands/slop');
   const D = '—';
