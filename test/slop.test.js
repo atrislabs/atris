@@ -2343,6 +2343,23 @@ test('fix joins a "the" subject and its verb when one plural or a code name ends
   ]);
 });
 
+test('fix joins "the", a noun, a verb in "s" and one bare word before a stop', () => {
+  // from a probe of the loop note: "the loop kicks work" spliced, since the
+  // object check wanted "the" or "it" after the verb. A word that ends a
+  // compound name keeps the comma.
+  const file = tmpFile('bare-object.md', [
+    'We fixed it \u2014 the loop kicks work.',
+    'We fixed it \u2014 the gate checks drafts.',
+    'Check one place \u2014 the error logs folder.',
+  ].join('\n'));
+  const { changes } = applyFixes([file], RULES, { write: false });
+  assert.deepEqual(changes.map((c) => c.after), [
+    'We fixed it; the loop kicks work.',
+    'We fixed it; the gate checks drafts.',
+    'Check one place, the error logs folder.',
+  ]);
+});
+
 test('fix joins a subject with "also" before its verb with a semicolon', () => {
   // from a probe of the loop note: "now", "still" and "already" before a
   // verb joined the clause, but "also" did not, so "the gate also checks

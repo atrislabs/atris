@@ -297,6 +297,12 @@ const PLAIN_CLAUSE_AFTER_DASH = new RegExp(`${CLAUSE_END}\\s*\\u2014\\s*(?!${TIM
 const OBJECT_WORD = "(?![a-z]+(?:s|ed)\\b)[A-Za-z0-9_/'-]+";
 const MANNER_WORD = '(?!(?:only|mostly|mainly|largely|partly|nearly|merely|simply|exactly|especially|particularly|probably|likely|really|actually|usually|generally|typically|certainly|clearly|apparently|basically|entirely|fully|early|daily|weekly|monthly|yearly|hourly|reply|apply|supply|family|rally)\\b)[a-z]{3,}ly';
 const PLAIN_OBJECT_CLAUSE = new RegExp(`^\\s*\\u2014\\s*(?:a|an|the|every|each|no)\\s+${NOUN_WORD}\\s+(?:${NOUN_WORD}\\s+){0,2}(?:${VERB_BEFORE_WHICH}|${PLAIN_VERB}(?:(?:it|them)(?:[.!?;,]|$|\\s+(?![a-z]+(?:s|ed)\\b))|(?<!\\b(?:in|of|on|for|with|at|by|to|from)\\s+[a-z]{2,}s\\s+)(?:(?:the|its|their)\\s+[a-z]{2,}s|\\uE000\\d+\\uE001)(?=[.!?;,]|$)|(?:the|a|an|its|their)\\s+(?:${OBJECT_WORD}\\s+)?${OBJECT_WORD}(?:\\s+(?:red|green|fine|clean|stale|empty|safe))?(?:[.!?;,]|$|\\s+(?:on|in|at|to|into|for|from|with|by|via|when|if|before|after|until|once|while|because|instead|rather|without)\\b)|${MANNER_WORD}(?:[.!?;,]|$|\\s+(?:and|but|on|in|at|to|into|for|from|with|by|via|when|if|before|after|until|once|while|because|instead|rather|without)\\b)))`);
+// With no "the" before the object, "the" and one noun with no "s", then a
+// verb in "s" and one more word before a stop, is a clause too: "the loop
+// kicks work", "the gate checks drafts". A line end is no stop, since a
+// noun phrase may wrap there, and a word that ends a compound name keeps
+// the phrase whole: "one place, the error logs folder".
+const BARE_OBJECT_CLAUSE = new RegExp(`^\\s*\\u2014\\s*the\\s+(?![a-z]*s\\b)[a-z]{2,}\\s+${PLAIN_VERB_WORD}\\s+(?!(?:folder|file|page|dir|directory|list|table|view|tab|button|panel|screen|menu|field|column|row|section|card|link|path)\\b)[a-z]{2,}(?=[.!?;])`);
 // A plain word, then a name, then the verb hides a "that": "a topic Atris
 // sits directly on top of" names a topic, so it keeps its comma. A run of
 // capitals is no name, so "the new CLI resolves the prefix" still joins.
@@ -973,7 +979,7 @@ function fixEmDash(s, { endsBlock = false, startsBlock = false, spans = [], abov
     .replace(PLAIN_CLAUSE_AFTER_DASH, (m, at, whole) => {
       const left = clauseLeft(at, whole);
       if (!left || NAME_BEFORE_PLAIN_VERB.test(whole.slice(at))) return m;
-      return /\b(?:not|cannot)\b/i.test(left) || PLAIN_OBJECT_CLAUSE.test(whole.slice(at)) ? clauseJoin(left) : m;
+      return /\b(?:not|cannot)\b/i.test(left) || PLAIN_OBJECT_CLAUSE.test(whole.slice(at)) || BARE_OBJECT_CLAUSE.test(whole.slice(at)) ? clauseJoin(left) : m;
     })
     .replace(ADVERB_CLAUSE_AFTER_DASH, (m, at, whole) => {
       const left = clauseLeft(at, whole);
