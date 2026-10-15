@@ -10852,6 +10852,20 @@ function memberUpPick(root, name, taken) {
   }
 }
 
+// An empty job list: write the member's next job from its own mission.
+function memberUpWriteNextJob(root, name, { dryRun = false } = {}) {
+  const taskDb = require('../lib/task-db');
+  const { writeSelfNextJob } = require('../lib/member-self-next-job');
+  const db = taskDb.open();
+  return writeSelfNextJob(taskDb, db, {
+    root,
+    workspaceRoot: taskDb.workspaceRoot(root),
+    member: name,
+    job: memberGoJob(name, root),
+    dryRun,
+  });
+}
+
 // Every open task a member could start, with the job it needs.
 function memberUpWaiting(root) {
   try {
@@ -10912,7 +10926,8 @@ async function memberUp(...args) {
   if (hasFlag(args, '--help') || hasFlag(args, '-h')) {
     console.log('Usage: atris member up [--max N] [--only a,b] [--dry-run]');
     console.log('Keeps the team working: every minute, starts each free member that has a fitting task with a runnable check.');
-    console.log('A member with no such task stays idle; it never runs its own goal instead.');
+    console.log('A member with no such task writes its next job from its mission when the mission has a ## Check, then starts it.');
+    console.log('Without a check it stays idle. At most one self-written job is open per member, and 3 a day.');
     console.log('The longer a member stays idle, the less often it is checked: 5, 10, 20, then every 30 minutes.');
     console.log('A working member with no new step for 20 minutes is called out as stuck, once until it moves again.');
     console.log('Every 5 minutes it also puts member changes github dropped from its merge line back in, when self-landing is on.');
@@ -10932,6 +10947,7 @@ async function memberUp(...args) {
   const deps = {
     listMembers: () => memberUpTeam(root),
     pickTask: (name, taken) => memberUpPick(root, name, taken),
+    writeNextJob: (name, opts) => memberUpWriteNextJob(root, name, opts),
     spawn: (name, onExit, onClaim) => memberUpSpawn(root, name, onExit, onClaim),
     now: () => Date.now(),
     jobOf: (name) => memberGoJob(name, root),
