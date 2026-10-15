@@ -1624,21 +1624,63 @@ test('reap puts away a folder under diff settings that would spoil its saved pat
   }
 });
 
-test('reap keeps a folder whose saved edits would not apply, as a strict whitespace setting causes', () => {
+// A strict whitespace setting once refused an edit that ends a line in
+// spaces, so the folder was kept; a fixing setting passed the check, removed
+// the folder, and its restore quietly stripped those spaces.
+for (const setting of ['error', 'fix']) {
+  test(`reap puts away a folder under the ${setting} whitespace setting and the restore keeps trailing spaces`, () => {
+    const { base, repo, wt } = landedWorktree();
+    try {
+      git(repo, ['config', 'apply.whitespace', setting]);
+      fs.writeFileSync(path.join(wt, 'plan.md'), 'staged plan  \n');
+      git(wt, ['add', 'plan.md']);
+      fs.writeFileSync(path.join(wt, 'README.md'), '# fixture\nunsaved line  \n');
+      const status = git(wt, ['status', '--porcelain']);
+      const aged = new Date(Date.now() - 2 * 60 * 60 * 1000);
+      fs.utimesSync(wt, aged, aged);
+      const run = spawnSync(process.execPath, [path.resolve(__dirname, '../bin/atris.js'), 'land', '--reap', '--no-remote', '--base', 'master', '--ttl', '0'], { cwd: repo, encoding: 'utf8' });
+      console.log(`command: node bin/atris.js land --reap --no-remote --base master --ttl 0 (${setting} whitespace setting)`);
+      console.log(run.stdout.trim());
+      console.log(`exit: ${run.status}`);
+      assert.equal(run.status, 0, run.stderr);
+      assert.equal(fs.existsSync(wt), false, run.stdout);
+      const line = run.stdout.split('\n').find((l) => l.startsWith(`  to restore ${wt}: `));
+      assert.ok(line, run.stdout);
+      const rebuilt = spawnSync('sh', ['-c', line.slice(`  to restore ${wt}: `.length)], { cwd: base, encoding: 'utf8' });
+      assert.equal(rebuilt.status, 0, rebuilt.stderr);
+      assert.equal(git(wt, ['status', '--porcelain']), status);
+      assert.equal(fs.readFileSync(path.join(wt, 'README.md'), 'utf8'), '# fixture\nunsaved line  \n');
+      assert.equal(spawnSync('git', ['show', ':plan.md'], { cwd: wt, encoding: 'utf8' }).stdout, 'staged plan  \n');
+    } finally {
+      fs.rmSync(base, { recursive: true, force: true });
+    }
+  });
+}
+
+// A stand-in git on PATH refuses the patch check, so the keep path stays
+// covered now that no known setting makes a plainly saved patch fail it.
+test('reap keeps a folder whose saved edits would not apply', () => {
   const { base, repo, wt } = landedWorktree();
   try {
-    // With whitespace errors set to fail, git apply refuses an edit that
-    // ends a line in spaces, so the restore command could never work.
-    git(repo, ['config', 'apply.whitespace', 'error']);
-    fs.writeFileSync(path.join(wt, 'README.md'), '# fixture\nunsaved line  \n');
+    const realGit = spawnSync('which', ['git'], { encoding: 'utf8' }).stdout.trim();
+    const bin = path.join(base, 'bin');
+    fs.mkdirSync(bin);
+    fs.writeFileSync(path.join(bin, 'git'), `#!${process.execPath}
+const { spawnSync } = require('node:child_process');
+const args = process.argv.slice(2);
+if (args[0] === 'apply' && args.includes('--check')) process.exit(1);
+const result = spawnSync(${JSON.stringify(realGit)}, args, { stdio: 'inherit' });
+process.exit(result.status === null ? 1 : result.status);
+`, { mode: 0o755 });
+    fs.writeFileSync(path.join(wt, 'README.md'), '# fixture\nunsaved line\n');
     const aged = new Date(Date.now() - 2 * 60 * 60 * 1000);
     fs.utimesSync(wt, aged, aged);
-    const run = spawnSync(process.execPath, [path.resolve(__dirname, '../bin/atris.js'), 'land', '--reap', '--no-remote', '--base', 'master', '--ttl', '0'], { cwd: repo, encoding: 'utf8' });
-    console.log('command: node bin/atris.js land --reap --no-remote --base master --ttl 0 (strict whitespace setting)');
+    const run = spawnSync(process.execPath, [path.resolve(__dirname, '../bin/atris.js'), 'land', '--reap', '--no-remote', '--base', 'master', '--ttl', '0'], { cwd: repo, encoding: 'utf8', env: { ...process.env, PATH: `${bin}${path.delimiter}${process.env.PATH}` } });
+    console.log('command: node bin/atris.js land --reap --no-remote --base master --ttl 0 (patch check refused)');
     console.log(run.stdout.trim());
     console.log(`exit: ${run.status}`);
     assert.equal(run.status, 0, run.stderr);
-    assert.equal(fs.readFileSync(path.join(wt, 'README.md'), 'utf8'), '# fixture\nunsaved line  \n');
+    assert.equal(fs.readFileSync(path.join(wt, 'README.md'), 'utf8'), '# fixture\nunsaved line\n');
     assert.ok(git(repo, ['worktree', 'list', '--porcelain']).includes(`worktree ${wt}\n`));
     assert.ok(run.stdout.includes("saved edits would not apply to the folder's commit"), run.stdout);
     assert.ok(!run.stdout.includes(`to restore ${wt}`), run.stdout);

@@ -524,15 +524,17 @@ function savedFingerprint(file) {
 // usual a/ b/ name prefixes even under a no-prefix setting.
 const PLAIN_PATCH = ['--binary', '--no-textconv', '--no-ext-diff', '--no-color', '--src-prefix=a/', '--dst-prefix=b/'];
 
-// A saved patch is only a backup if it applies. A setting such as strict
-// whitespace checks can still refuse it, so each patch is tried against the
-// folder's commit in a throwaway index before the folder may be removed.
+// A saved patch is only a backup if it applies, so each patch is tried
+// against the folder's commit in a throwaway index before the folder may be
+// removed. The check and the restore both turn whitespace checks off: a
+// strict setting refuses an edit that ends a line in spaces, and a fixing
+// setting applies it with those spaces quietly stripped.
 function patchApplies(cwd, sha, patchFile) {
   const index = path.join(os.tmpdir(), `atris-patch-check-${process.pid}-${crypto.randomBytes(6).toString('hex')}.index`);
   try {
     const env = { GIT_INDEX_FILE: index };
     if (runGit(['read-tree', sha], { cwd, check: false, env }).status !== 0) return false;
-    return runGit(['apply', '--cached', '--check', patchFile], { cwd, check: false, env }).status === 0;
+    return runGit(['apply', '--cached', '--check', '--whitespace=nowarn', patchFile], { cwd, check: false, env }).status === 0;
   } finally {
     fs.rmSync(index, { force: true });
   }
@@ -579,9 +581,9 @@ function salvageWorktree(root, w, dir, receipt) {
     if (fs.statSync(stagedPath).size > 0) {
       receipt.stagedPatches.push(stagedPath);
       w.patchFingerprints[stagedPath] = savedFingerprint(stagedPath);
-      restore.push(`git apply --cached ${quoteArg(stagedPath)}`);
+      restore.push(`git apply --cached --whitespace=nowarn ${quoteArg(stagedPath)}`);
     } else fs.rmSync(stagedPath, { force: true });
-    if (dirtySaved) restore.push(`git apply ${quoteArg(patchPath)}`);
+    if (dirtySaved) restore.push(`git apply --whitespace=nowarn ${quoteArg(patchPath)}`);
     const untracked = runGit(['ls-files', '--others', '--exclude-standard', '-z'], { cwd: w.path, check: false, maxBuffer: 64 * 1024 * 1024 });
     if (untracked.status !== 0) return false;
     const files = untracked.stdout.split('\0').filter(Boolean);
@@ -1116,7 +1118,7 @@ function savedBackups(root) {
       const ref = row.restore.match(/refs\/atris\/salvage\/[0-9a-f]{40,64}\b/);
       const missing = ref && runGit(['cat-file', '-e', `${ref[0]}^{commit}`], { cwd: root, check: false }).status !== 0;
       // Read only the shell words emitted by quoteArg, never execute the saved command.
-      const patches = [...row.restore.matchAll(/(?:^| && )git apply (?:--cached )?((?:[^\s'\\]+|'[^']*'|\\.)+)/g)]
+      const patches = [...row.restore.matchAll(/(?:^| && )git apply (?:--cached )?(?:--whitespace=nowarn )?((?:[^\s'\\]+|'[^']*'|\\.)+)/g)]
         .map((match) => match[1].replace(/'([^']*)'|\\(.)/g, (_, quoted, escaped) => quoted === undefined ? escaped : quoted));
       const missingPatch = patches.some((file) => {
         try { return !fs.statSync(file).isFile(); } catch { return true; }
