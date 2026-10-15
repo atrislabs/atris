@@ -133,6 +133,7 @@ test/task-desk-next.test.js
 test/task-first-minute.test.js
 test/task-next-help.test.js
 test/task-next-truth.test.js
+test/task-plan-missing-parts.test.js
 test/task-proof-projection.test.js
 test/task-ready-help.test.js
 test/task-show-help.test.js
