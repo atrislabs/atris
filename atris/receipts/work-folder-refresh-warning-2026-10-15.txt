@@ -31,3 +31,6 @@ Final output:
 
 next_push: Prove the real cleanup command prints no warning after a healthy refresh.
 layer: behaviors
+
+Proof recording note: the task recorder starts a login shell, which selects /usr/local/bin/node v20.18.0 instead of /opt/homebrew/bin/node v25.6.1. Its first rerun failed (55 passed, 29 failed). The original required command passed under v25.6.1. Recording with explicit /opt/homebrew/bin/node paths preserves the tested runtime.
+Task proof rerun: /opt/homebrew/bin/node --test test/worktree-removal-guard.test.js test/member-tidy.test.js && /opt/homebrew/bin/node bin/atris.js slop --staged, exit 0. Task moved to review. This explicit runtime command needs independent review before automatic landing.

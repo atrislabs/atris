@@ -19,10 +19,12 @@ Details for any task: atris task show <ID>
 
 ## In Progress
 
-- **[ACW-24]** Say when shared cleanup could not refresh its base · architect · verify: node --test test/worktree-removal-guard.
+(Empty)
 
 ## Review
 
+- **[ACW-24]** Say when shared cleanup could not refresh its base · architect
+  **Done looks like:** When the refresh fails, the cleanup output says so and why, and a healthy refresh prints nothing extra.
 - **[ACW-23]** Stop a damaged remote from breaking the local record that start and ship use · architect
   **Done looks like:** After meeting a damaged remote, the local record still holds the last good commit, and a healthy remote still refreshes it.
 - **[ACW-22]** Prove a normal cleanup leaves the local record of the remote main branch alone · architect
