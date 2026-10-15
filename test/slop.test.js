@@ -4817,6 +4817,25 @@ test('fix joins a bare object before "when", "before" or "and" and a second verb
   ]);
 });
 
+test('fix joins an object of "the" and up to three words before a stop', () => {
+  // from real experiment briefs: each kept a comma splice after the dash; a
+  // helper verb like "could" ends no object, so "the three ways a first run
+  // could" is no clause and keeps its comma
+  const file = tmpFile('long-object.md', [
+    'Bad decisions compound \u2014 a wrong DECIDE wastes the entire EXECUTE budget.',
+    'This dispatcher is the backbone \u2014 a precision issue here degrades the whole proactive OS.',
+    'The old experiment targets the wrong level \u2014 this one targets the actual production path.',
+    'The candidates actually vary \u2014 the three ways a first run could silently waste itself, all closed.',
+  ].join('\n\n'));
+  const { changes } = applyFixes([file], RULES);
+  assert.deepEqual(changes.map((c) => c.after), [
+    'Bad decisions compound; a wrong DECIDE wastes the entire EXECUTE budget.',
+    'This dispatcher is the backbone; a precision issue here degrades the whole proactive OS.',
+    'The old experiment targets the wrong level; this one targets the actual production path.',
+    'The candidates actually vary, the three ways a first run could silently waste itself, all closed.',
+  ]);
+});
+
 test('fix gives a run of "ing" phrases after a dash a colon, like a list', () => {
   // from hugolearn: "extracting what was learned" read as a subject and its
   // verb, so the list after the dash got a semicolon
