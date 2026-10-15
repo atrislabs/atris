@@ -1388,6 +1388,8 @@ test('worktree cleanup quietly refreshes an outdated base and keeps staged notes
     runGit(['add', 'note.txt'], copy);
     fs.writeFileSync(note, 'staged notes\nlater edits\n');
     const staged = runGit(['diff', '--cached', '--binary'], copy);
+    const indexTree = runGit(['write-tree'], copy);
+    assert.notEqual(indexTree, runGit(['rev-parse', 'HEAD^{tree}'], copy));
     const saved = runGit(['rev-parse', 'origin/master'], fx.repo);
     const other = path.join(fx.base, 'other');
     runGit(['clone', '-q', path.join(fx.base, 'remote.git'), other], fx.base);
@@ -1419,6 +1421,7 @@ test('worktree cleanup quietly refreshes an outdated base and keeps staged notes
       assert.equal(fs.readFileSync(note, 'utf8'), 'staged notes\nlater edits\n');
       assert.equal(runGit(['show', ':note.txt'], copy), 'staged notes');
       assert.equal(runGit(['diff', '--cached', '--binary'], copy), staged);
+      assert.equal(runGit(['write-tree'], copy), indexTree);
       assert.equal(runGit(['status', '--porcelain'], copy), status);
       assert.equal(runGit(['rev-parse', 'origin/master'], fx.repo), newer);
       assert.equal(runGit(['rev-parse', 'FETCH_HEAD'], fx.repo), newer);
