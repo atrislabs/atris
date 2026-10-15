@@ -225,6 +225,49 @@ A read-only scout traced `atrisos-backend` and the CLI's cloud path. The backend
 
 ---
 
+## Where It Lives: Local, Cloud, or Both
+
+A campaign can be both. Its data lives on both sides, and its missions can run on both sides at once (one on the laptop's Codex, the next on a cloud computer). Only decisions have one home at a time.
+
+- **Local:** one SQLite file per workspace, `<workspace>/.atris/state/atris.db`, with `campaigns`, `missions`, `events`. Receipts stay as files in `atris/runs/`, referenced from events by path and hash. Today's JSONL files become an export.
+- **Cloud:** Postgres in `atrisos-backend`: `campaigns`, `campaign_events` (built like `timeline_events`, unique on campaign and event id), and `campaign_id` on `agent_tasks`.
+- **Both:** each side keeps the full event log and trades events by id through an outbox and inbox. Duplicates are skipped, so resending is harmless.
+
+Rules:
+
+1. **One home decides.** Only the home runs the loop (judge, next mission, stop). The other side may append events (a finished mission, an answered ask) but not decide.
+2. **Every event has a globally unique id** created where it happened. Merging is "add what I don't have."
+3. **The home can move by lease.** The home renews a lease. If the laptop sleeps past it, the cloud takes over and logs `home_moved`, so cloud agents keep working overnight.
+4. **Same fold on both sides.** The CLI (JavaScript) and backend (Python) implement the fold separately and must pass one shared set of golden event logs with expected state.
+5. **Offline works.** Local campaigns keep running and queue events until reconnect.
+
+---
+
+## Modularity (ports and adapters)
+
+The core is pure: the schema, `fold(events) → state`, and `decide(state) → next action`. No I/O, no clock, no network. Everything else plugs in behind a small interface, so any piece can be swapped without touching the core.
+
+```text
+                 ┌──────────── CORE (pure, shared) ────────────┐
+   Store  ──────▶│ schema · fold(events) · decide(state)       │◀────── Judge
+   Runner ──────▶│ rules: one home, claims, reservations,      │◀────── Sync
+   Screen ◀──────│        outside judge, no-reload line        │
+                 └─────────────────────────────────────────────┘
+```
+
+| Port | Interface | Adapters |
+|---|---|---|
+| Store | `append(event)`, `read(campaign)` | SQLite (local), Postgres (cloud), in-memory (tests) |
+| Runner | `start(mission) → events` | local engines from the roster, cloud computer (`AIComputerTool`), a human |
+| Judge | `evaluate(campaign) → reading` | metric expression, verify command, measure script, human review |
+| Sync | `push(events)`, `pull(since)` | backend HTTP, none (local only), file export |
+| Screen | `subscribe(events)` | CLI, desktop lab, GM mode, Pallet dashboard, Slack, voice |
+| Standard | `check(mission) → findings` | PERSONA, ANTISLOP, member lessons, review desk |
+
+This is the same shape Atris already uses for engines (`lib/engine-registry.js`, `atris/ROSTER.md`). Because the core is pure, the golden test logs prove every adapter combination behaves the same.
+
+---
+
 ## Wish Is the Constructor
 
 `atris wish` already takes one plain sentence, asks only for the gaps, and hands work to a mission. It also has `--metric` (an outside judge), `wish again <id>` (a follow-up linked by parent), and `wish board`.
