@@ -1,0 +1,27 @@
+Member cleanup now names pinned busy landed copies; real CLI preview and apply passed with exit 0.
+
+Files: lib/member-tidy.js, test/member-tidy.test.js, atris/MAP.md, atris/refs/MAP-NOTES.md, atris/team/architect/logs/2026-10-15.md, this receipt.
+Plan: busy landed copy -> pin read -> named keep or ordinary busy count.
+
+Focused command: node --test --test-name-pattern='tidy names pinned busy' test/member-tidy.test.js
+Output: tests 1, pass 1, fail 0, todo 0. Exit: 0.
+Actual commands invoked by that test in a disposable real repository:
+node bin/atris.js member tidy --dir <fixture copies> --dry-run
+node bin/atris.js member tidy --dir <fixture copies>
+Both exited 0. Actual output excerpt:
+kept  busy-pinned  landed, but pinned by git worktree lock, 3 h old: writer still active keep these notes
+left alone  1 something still running inside
+tidy: removed 0, kept 2, of 2 copies in <fixture copies>
+Preview printed would remove 0, kept 2.
+Both commands preserved files, branches, registrations, exact multiline pin and both live children; removal records stayed empty.
+
+Required command: node --test test/worktree-removal-guard.test.js test/member-tidy.test.js && node bin/atris.js slop --staged
+
+Required output: tests 71, pass 71, fail 0, cancelled 0, skipped 0, todo 0.
+Writing check: clean, no slop tells in 6 files. Combined exit: 0.
+
+Saved proof: atris/runs/2026-10-15-task-acw-4-2026-10-15T07-07-05-569Z.json.
+Readiness replay prepended the caller Node directory to PATH and exited 0. Task is in review; no human acceptance performed. Automatic certification cannot rerun this runtime-prefixed command.
+
+next_push: prove pin visibility when member cleanup runs from inside the pinned landed copy.
+layer: behaviors
