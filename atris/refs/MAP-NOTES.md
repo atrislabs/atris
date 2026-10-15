@@ -2691,3 +2691,5 @@ Human-only review fallback ownership setup: `test/commands.test.js:12709` create
 Tag-scoped checkpoint ownership setup: `test/commands.test.js:12785` creates and claims through the production task store in one connection, closed in finally. Six CLI launches become five; readiness, certification, both scoped selection formats and refused follow-up creation retain every CLI assertion.
 
 Duplicate Endgame seed ownership: `test/commands.test.js:12858` accepts an optional owner in fixture creation and calls production claimTask before closing in finally. Existing-owner setup saves one launch; all checkpoint and duplicate-selection CLI assertions remain.
+
+Reward receipt creation setup: `test/commands.test.js:13072` creates and claims through the real task store in one connection, closed in finally. Goal metadata assertions remain; readiness, acceptance, collection and local status remain real CLI calls. Five launches become four.

@@ -13077,22 +13077,22 @@ test('task accept automatically projects accepted proof into durable local XP le
   try {
     fs.mkdirSync(path.join(dir, 'atris'), { recursive: true });
 
-    const add = runCli([
-      'task', 'add', 'Ship local AgentXP projection',
-      '--tag', 'agent-xp',
-      '--goal-id', 'goal-agent-xp',
-      '--goal-objective', 'Make XP collectible anywhere',
-      '--json',
-    ], { cwd: dir, env });
-    assert.equal(add.status, 0, add.stderr);
-    const added = JSON.parse(add.stdout).task;
-    const ref = added.display_id;
-    assert.equal(added.metadata.goal_id, 'goal-agent-xp');
-    assert.equal(added.metadata.goal_objective, 'Make XP collectible anywhere');
-    // Seed the setup claim in process; ready, accept and the XP reads stay on the CLI.
+    // Seed creation and ownership; ready, accept and the XP reads stay on the CLI.
+    const workspaceRoot = taskStore.workspaceRoot(dir);
     const db = taskStore.open(dbPath);
+    let ref;
     try {
+      const created = addSeedTask(db, {
+        title: 'Ship local AgentXP projection', tag: 'agent-xp', workspaceRoot,
+        metadata: { goal_id: 'goal-agent-xp', goal_objective: 'Make XP collectible anywhere' },
+      });
+      assert.equal(created.inserted, true);
+      const added = taskStore.getTask(db, created.id);
+      assert.equal(added.metadata.goal_id, 'goal-agent-xp');
+      assert.equal(added.metadata.goal_objective, 'Make XP collectible anywhere');
       assert.equal(taskStore.claimTask(db, { id: added.id, claimedBy: 'codex' }).claimed, true);
+      ref = taskStore.taskDisplayRefMap(taskStore.listTasks(db, { workspaceRoot })).get(added.id);
+      assert.ok(ref);
     } finally {
       taskStore.close();
     }

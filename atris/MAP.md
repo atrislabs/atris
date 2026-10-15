@@ -112,6 +112,7 @@ checks the refs in both files; `atris doc-health --fix-refs` moves drifted ones.
 | headless plan and do setup | `test/commands.test.js:9986` | side plan and pre-plan side claim use the real task store; external post-plan claim, ownership rejection, main plan output and do contract stay on the CLI |
 | human acceptance guidance setup | `test/commands.test.js:11588` | the goal-linked main row and stale guidance reach review through the real task store; readiness output, review and acceptance assertions stay on the CLI |
 | proof-derived review-chat setup | `test/commands.test.js:12227` | title-only and path-only proofs reach review through the real task store; ready-only cases call the proof builders in process; review-chat still checks missing commands and artifact paths on the CLI |
+| reward receipt creation setup | `test/commands.test.js:13072` | creation and ownership share the real task store; readiness, acceptance and all reward receipt reads stay on the CLI |
 | run one test | `package.json` | npm test, node --test |
 | release publish script | `scripts/publish-atris-release.js` | tag-driven publish |
 | ci workflows | `.github/workflows` | test and publish gates |
