@@ -3585,18 +3585,18 @@ test('fix gives a quote that opens a block or a list item a colon after its dash
   ]);
 });
 
-test('the fix diff script counts dashed lines and moves none against the same fixer', () => {
+test('the fix diff script counts dashed lines with --lines and moves none against the same fixer', () => {
   const { spawnSync } = require('node:child_process');
   // a dashed line inside a fenced block is code the fix never touches, so it is not counted
   const dir = path.dirname(tmpFile('corpus.md', ['The build passed \u2014 the log is clean.', 'No dash here.', '```', 'people/   \u2014 one page', '```'].join('\n')));
   const script = path.join(__dirname, '..', 'scripts', 'slop-fix-diff.js');
-  const r = spawnSync(process.execPath, [script, '--base', 'HEAD', dir], { encoding: 'utf8', cwd: path.join(__dirname, '..') });
+  const r = spawnSync(process.execPath, [script, '--lines', '--base', 'HEAD', dir], { encoding: 'utf8', cwd: path.join(__dirname, '..') });
   assert.equal(r.status, 0, r.stderr);
   assert.match(r.stdout, /^1 dashed line in 1 file; \d+ moved against HEAD$/m);
   assert.equal(spawnSync(process.execPath, [script], { encoding: 'utf8' }).status, 2);
 });
 
-test('the fix diff script feeds whole paragraphs with --paragraphs', () => {
+test('the fix diff script feeds whole paragraphs by default', () => {
   const { spawnSync } = require('node:child_process');
   // a wrapped line that opens with a dash is fixed against the line above,
   // so it only shows up when both lines go in together; fenced code never does
@@ -3610,9 +3610,12 @@ test('the fix diff script feeds whole paragraphs with --paragraphs', () => {
     '```',
   ].join('\n')));
   const script = path.join(__dirname, '..', 'scripts', 'slop-fix-diff.js');
-  const r = spawnSync(process.execPath, [script, '--paragraphs', '--base', 'HEAD', dir], { encoding: 'utf8', cwd: path.join(__dirname, '..') });
+  const r = spawnSync(process.execPath, [script, '--base', 'HEAD', dir], { encoding: 'utf8', cwd: path.join(__dirname, '..') });
   assert.equal(r.status, 0, r.stderr);
   assert.match(r.stdout, /^1 dashed paragraph in 1 file; \d+ moved against HEAD$/m);
+  // the old flag still works for scripts that pass it
+  const old = spawnSync(process.execPath, [script, '--paragraphs', '--base', 'HEAD', dir], { encoding: 'utf8', cwd: path.join(__dirname, '..') });
+  assert.match(old.stdout, /^1 dashed paragraph in 1 file; \d+ moved against HEAD$/m);
   assert.match(r.stdout, /^0 of the moved gained doubled punctuation, unbalanced parentheses, or a comma splice$/m);
 });
 

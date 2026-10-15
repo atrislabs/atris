@@ -1,20 +1,22 @@
 #!/usr/bin/env node
 'use strict';
 
-// Shows which real lines a change to the slop fixer moves. Collects every
-// unique line with a dash from the markdown under the given folders, runs the
-// fixer from a git ref (default HEAD) and the fixer in the working copy over
-// them, and prints the lines where the two disagree. A fixer change that
-// should move one line and moves forty shows up here before it lands.
-// With --paragraphs it feeds whole paragraphs instead, so a change that
-// reads across lines (a dash that opens a wrapped line) is counted too.
+// Shows which real paragraphs a change to the slop fixer moves. Collects
+// every unique paragraph with a dash from the markdown under the given
+// folders, runs the fixer from a git ref (default HEAD) and the fixer in the
+// working copy over them, and prints the ones where the two disagree. A
+// fixer change that should move one line and moves forty shows up here
+// before it lands. Whole paragraphs go in because the fixer reads the line
+// above a wrapped line, as a real fix does. With --lines it feeds each
+// dashed line alone; that mode reports moves on wrapped lines that a real
+// fix never makes, so it is only for a quick look at one-line rules.
 // A moved line whose new fix holds more doubled punctuation or a different
 // parenthesis balance than the source gets an odd mark, so a rule change
 // that writes awkward output says so without a hand-written scan.
 //
 //   node scripts/slop-fix-diff.js ~/notes ../other-repo
 //   node scripts/slop-fix-diff.js --base master --limit 50 docs/
-//   node scripts/slop-fix-diff.js --paragraphs ~/notes
+//   node scripts/slop-fix-diff.js --lines ~/notes
 
 const fs = require('fs');
 const os = require('os');
@@ -115,8 +117,8 @@ function fixAll(fixer, lines, dir) {
 // Marks a fix that the writer's own text did not have: two punctuation
 // marks in a row (", ," or ":." or "(,"), parentheses that no longer
 // balance the way the source did, or a comma splice. Code spans and link
-// targets are left out. In --paragraphs mode the whole paragraph is one
-// unit, so an aside that wraps across lines balances the way it should.
+// targets are left out. By default the whole paragraph is one unit, so an
+// aside that wraps across lines balances the way it should.
 // The period that closes a short form or an initial is part of the word,
 // so a comma after it is plain English: "Cooling, Inc., Columbus", "(Alex
 // T., via the site)".
@@ -153,19 +155,20 @@ function splices(text) {
 function main(argv) {
   let base = 'HEAD';
   let limit = 25;
-  let paragraphs = false;
+  let paragraphs = true;
   const targets = [];
   for (let i = 0; i < argv.length; i += 1) {
     if (argv[i] === '--base') base = argv[++i];
     else if (argv[i] === '--limit') limit = Number(argv[++i]) || 0;
     else if (argv[i] === '--paragraphs') paragraphs = true;
+    else if (argv[i] === '--lines') paragraphs = false;
     else if (argv[i] === '--help' || argv[i] === '-h') {
-      console.log('usage: node scripts/slop-fix-diff.js [--base <ref>] [--limit <n>] [--paragraphs] <folder or file>...');
+      console.log('usage: node scripts/slop-fix-diff.js [--base <ref>] [--limit <n>] [--lines] <folder or file>...');
       return 0;
     } else targets.push(argv[i]);
   }
   if (!targets.length) {
-    console.error('usage: node scripts/slop-fix-diff.js [--base <ref>] [--limit <n>] [--paragraphs] <folder or file>...');
+    console.error('usage: node scripts/slop-fix-diff.js [--base <ref>] [--limit <n>] [--lines] <folder or file>...');
     return 2;
   }
   const files = [];
