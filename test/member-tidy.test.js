@@ -306,20 +306,23 @@ test('tidy keeps a landed copy while git is paused mid-rebase in it, and logs wh
   }
 });
 
-test('tidy reports a pin acquired after preflight and leaves the copy registered', () => {
-  const fx = makeFixture();
-  try {
-    const copy = addCopy(fx, 'landed-late-pin');
-    const gitDir = runGit(['rev-parse', '--absolute-git-dir'], copy);
-    const realGit = spawnSync('which', ['git'], { encoding: 'utf8' });
-    assert.equal(realGit.status, 0, realGit.stderr);
-    const bin = path.join(fx.base, 'bin');
-    fs.mkdirSync(bin);
-    const attempt = path.join(fx.base, 'remove-attempt.json');
-    const reason = 'agent started\n  writing\tplease wait';
-    // Only schedule the race here. The real git creates the pin and decides
-    // whether removal is allowed, after tidy has completed its own checks.
-    fs.writeFileSync(path.join(bin, 'git'), `#!${process.execPath}
+for (const surface of ['tidy', 'cleanup']) {
+  test(`${surface} reports a pin acquired after preflight and leaves the copy registered`, () => {
+    const fx = makeFixture();
+    try {
+      const copy = addCopy(fx, 'landed-late-pin');
+      const aged = new Date(Date.now() - 3 * 60 * 60 * 1000);
+      fs.utimesSync(copy, aged, aged);
+      const gitDir = runGit(['rev-parse', '--absolute-git-dir'], copy);
+      const realGit = spawnSync('which', ['git'], { encoding: 'utf8' });
+      assert.equal(realGit.status, 0, realGit.stderr);
+      const bin = path.join(fx.base, 'bin');
+      fs.mkdirSync(bin);
+      const attempt = path.join(fx.base, 'remove-attempt.json');
+      const reason = 'agent started\n  writing\tplease wait';
+      // Only schedule the race here. The real git creates the pin and decides
+      // whether removal is allowed, after the command has completed its own checks.
+      fs.writeFileSync(path.join(bin, 'git'), `#!${process.execPath}
 const { spawnSync } = require('node:child_process');
 const fs = require('node:fs');
 const args = process.argv.slice(2);
@@ -332,25 +335,33 @@ if (args[0] === 'worktree' && args[1] === 'remove') {
 const result = spawnSync(git, args, { stdio: 'inherit' });
 process.exit(result.status === null ? 1 : result.status);
 `, { mode: 0o755 });
-    const cli = spawnSync(process.execPath,
-      [path.resolve(__dirname, '../bin/atris.js'), 'member', 'tidy', '--dir', fx.copies],
-      { cwd: fx.repo, encoding: 'utf8', timeout: 30000,
-        env: { ...process.env, PATH: `${bin}${path.delimiter}${process.env.PATH}` } });
-    console.log('command: node bin/atris.js member tidy --dir <fixture copies> (late-pin git wrapper)');
-    console.log(cli.stdout.trim());
-    console.log(`exit: ${cli.status}`);
-    assert.equal(cli.status, 0, cli.stderr);
-    assert.deepEqual(JSON.parse(fs.readFileSync(attempt, 'utf8')), ['worktree', 'remove', copy]);
-    assert.equal(cli.stdout.trim(), `kept  landed-late-pin  landed, but git refused: pinned by git worktree lock, under a minute old: agent started writing please wait\ntidy: removed 0, kept 1, of 1 copy in ${fx.copies}`);
-    assert.equal(fs.readFileSync(path.join(gitDir, 'locked'), 'utf8'), `${reason}\n`);
-    assert.ok(fs.existsSync(path.join(copy, 'README.md')));
-    assert.ok(branchExists(fx.repo, 'landed-late-pin'));
-    assert.ok(runGit(['worktree', 'list', '--porcelain'], fx.repo).includes(`worktree ${copy}\n`));
-    assert.deepEqual(removalLines(fx.repo), []);
-  } finally {
-    fs.rmSync(fx.base, { recursive: true, force: true });
-  }
-});
+      const args = surface === 'tidy'
+        ? ['member', 'tidy', '--dir', fx.copies]
+        : ['worktree', 'cleanup', '--base', 'HEAD', '--apply'];
+      const cli = spawnSync(process.execPath,
+        [path.resolve(__dirname, '../bin/atris.js'), ...args],
+        { cwd: fx.repo, encoding: 'utf8', timeout: 30000,
+          env: { ...process.env, PATH: `${bin}${path.delimiter}${process.env.PATH}` } });
+      console.log(`command: node bin/atris.js ${surface === 'tidy' ? 'member tidy --dir <fixture copies>' : args.join(' ')} (late-pin git wrapper)`);
+      console.log(cli.stdout.trim());
+      console.log(`exit: ${cli.status}`);
+      assert.equal(cli.status, 0, cli.stderr);
+      assert.deepEqual(JSON.parse(fs.readFileSync(attempt, 'utf8')), ['worktree', 'remove', copy]);
+      const words = 'pinned by git worktree lock, under a minute old: agent started writing please wait';
+      const expected = surface === 'tidy'
+        ? `kept  landed-late-pin  landed, but git refused: ${words}\ntidy: removed 0, kept 1, of 1 copy in ${fx.copies}`
+        : `cleanup: applied base=HEAD\nremoveds: 0\ncache_pruneds: 0\nkept: 2\nrefused: ${copy} ${words}`;
+      assert.equal(cli.stdout.trim(), expected);
+      assert.equal(fs.readFileSync(path.join(gitDir, 'locked'), 'utf8'), `${reason}\n`);
+      assert.ok(fs.existsSync(path.join(copy, 'README.md')));
+      assert.ok(branchExists(fx.repo, 'landed-late-pin'));
+      assert.ok(runGit(['worktree', 'list', '--porcelain'], fx.repo).includes(`worktree ${copy}\n`));
+      assert.deepEqual(removalLines(fx.repo), []);
+    } finally {
+      fs.rmSync(fx.base, { recursive: true, force: true });
+    }
+  });
+}
 
 for (const reason of ['agent still writing', 'agent still\n  writing\tplease wait']) {
   test(`tidy, reap and the regression check flatten a pin reason: ${JSON.stringify(reason)}`, () => {
