@@ -14407,8 +14407,8 @@ test('task status separates review continue-work from human accept waiting', () 
   try {
     fs.mkdirSync(path.join(dir, 'atris'), { recursive: true });
 
-    // Only fixture creation stays in process; ready, review, and status
-    // still exercise the CLI and its persisted state.
+    // Ready and review are one store call each in the CLI, so the three rows
+    // reach review in-process; the status read still exercises the CLI.
     const workspaceRoot = taskStore.workspaceRoot(dir);
     const seedTask = (title) => {
       const db = taskStore.open(dbPath);
@@ -14420,40 +14420,35 @@ test('task status separates review continue-work from human accept waiting', () 
         taskStore.close();
       }
     };
+    const storeReady = (task, proof) => {
+      const db = taskStore.open(dbPath);
+      try {
+        const readied = taskStore.readyTask(db, { id: task.id, actor: 'codex', proof, result: FIXTURE_RESULT_SENTENCE });
+        assert.equal(readied.ready, true, readied.reason);
+      } finally {
+        taskStore.close();
+      }
+    };
+    const storeReview = (task, proof, nextTask) => {
+      const db = taskStore.open(dbPath);
+      try {
+        const reviewed = taskStore.reviewTask(db, { id: task.id, actor: 'codex-review', reward: 0, proof, nextTask });
+        assert.equal(reviewed.reviewed, true, reviewed.reason);
+      } finally {
+        taskStore.close();
+      }
+    };
 
     const continuationTask = seedTask('Certified row with concrete continuation');
-    assert.equal(runCli([
-      'task', 'ready', continuationTask.display_id,
-      '--as', 'codex',
-      '--proof', 'node --check test/commands.test.js passed before status continuation split',
-    ], { cwd: dir, env }).status, 0);
-    assert.equal(runCli([
-      'task', 'review', continuationTask.display_id,
-      '--reward', '0',
-      '--as', 'codex-review',
-      '--proof', 'node --test test/commands.test.js passed during status continuation split',
-      '--next', 'Build the next concrete continuation slice',
-    ], { cwd: dir, env }).status, 0);
+    storeReady(continuationTask, 'node --check test/commands.test.js passed before status continuation split');
+    storeReview(continuationTask, 'node --test test/commands.test.js passed during status continuation split', 'Build the next concrete continuation slice');
 
     const waitingTask = seedTask('Certified row waiting on human accept');
-    assert.equal(runCli([
-      'task', 'ready', waitingTask.display_id,
-      '--as', 'codex',
-      '--proof', 'node --check test/commands.test.js passed before human accept split',
-    ], { cwd: dir, env }).status, 0);
-    assert.equal(runCli([
-      'task', 'review', waitingTask.display_id,
-      '--reward', '0',
-      '--as', 'codex-review',
-      '--proof', 'node --test test/commands.test.js passed during human accept split',
-    ], { cwd: dir, env }).status, 0);
+    storeReady(waitingTask, 'node --check test/commands.test.js passed before human accept split');
+    storeReview(waitingTask, 'node --test test/commands.test.js passed during human accept split');
 
     const blockingTask = seedTask('Review row still needs second agent check');
-    assert.equal(runCli([
-      'task', 'ready', blockingTask.display_id,
-      '--as', 'codex',
-      '--proof', 'node --check test/commands.test.js passed before status blocking split',
-    ], { cwd: dir, env }).status, 0);
+    storeReady(blockingTask, 'node --check test/commands.test.js passed before status blocking split');
 
     const status = runCli(['task', 'status', '--json'], { cwd: dir, env });
     assert.equal(status.status, 0, status.stderr);
