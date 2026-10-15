@@ -1,0 +1,25 @@
+command: node bin/atris.js member board --watch (80 columns, 8 rows)
+member   state        last result                ago     job           last step
+builder  done failed  failed (timed out) 0s ago  0s ago  resize proof  -
+scout    done failed  failed (timed out) 0s ago  0s ago  resize proof  -
+shipper  done failed  failed (timed out) 0s ago  0s ago  resize proof  -
+
+redraws every 3s, ctrl-c to stop
+
+command: node bin/atris.js member board --watch (47 columns, 2 rows)
+member  state  last result  ago  job
+3 more not shown (3 failed, all timed out)
+command: node bin/atris.js member board --watch (30 columns, 3 rows)
+member   state   last result
+builder  failed  timed out
+2 hidden (2 failed, timed out)
+command: node bin/atris.js member board --watch (80 columns, 8 rows)
+member   state        last result                ago     job           last step
+builder  done failed  failed (timed out) 0s ago  0s ago  resize proof  -
+scout    done failed  failed (timed out) 0s ago  0s ago  resize proof  -
+shipper  done failed  failed (timed out) 0s ago  0s ago  resize proof  -
+
+redraws every 3s, ctrl-c to stop
+
+exit: 0
+proof exit: 0

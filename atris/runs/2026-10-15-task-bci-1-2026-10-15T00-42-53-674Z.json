@@ -1,0 +1,13 @@
+{
+  "schema": "atris.task_receipt.v1",
+  "task_id": "BCI-1",
+  "command": "node --test test/member-board.test.js test/member-result.test.js",
+  "at": "2026-10-15T00:42:53.674Z",
+  "commit": "f9983a9398da3ca5a9bdfaf0298643b6e4de78db",
+  "result": {
+    "passed": false,
+    "exit": 1,
+    "signal": null,
+    "output": "TAP version 13\n# Subtest: ago reads like a person would say it\nok 1 - ago reads like a person would say it\n  ---\n  duration_ms: 0.591917\n  ...\n# Subtest: board shows working, quiet, done ok, and done \n...\n unknown member is an error, printed as json with exit 1\n  ---\n  duration_ms: 0.574875\n  ...\n1..68\n# tests 68\n# suites 0\n# pass 63\n# fail 5\n# cancelled 0\n# skipped 0\n# todo 0\n# duration_ms 1634.925791"
+  }
+}
