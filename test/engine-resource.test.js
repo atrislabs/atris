@@ -3219,11 +3219,11 @@ test('atris engine sweep counts time limit kills apart and still names the newes
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'engine-sweep-time-limit-'));
   const file = path.join(root, RESOURCE_LOG);
   fs.mkdirSync(path.dirname(file), { recursive: true });
-  const timeLimit = (at, task) => JSON.stringify({ at, phase: 'end', engine: 'codex', task, run_id: task, free_pct: 70, signal: 'SIGKILL', timed_out: true, cause: 'killed (time limit reached)' });
+  const timeLimit = (at, task, extra = {}) => JSON.stringify({ at, phase: 'end', engine: 'codex', task, run_id: task, free_pct: 70, signal: 'SIGKILL', timed_out: true, cause: 'killed (time limit reached)', ...extra });
   fs.writeFileSync(file, [
     JSON.stringify({ at: '2026-10-14T11:30:00.000Z', phase: 'end', engine: 'claude', task: 'CLI-2', run_id: 'crash', free_pct: 9, signal: 'SIGKILL', cause: 'killed (machine memory low)' }),
     timeLimit('2026-10-14T12:10:00.000Z', 'SLOW1'),
-    timeLimit('2026-10-14T12:20:00.000Z', 'SLOW2'),
+    timeLimit('2026-10-14T12:20:00.000Z', 'SLOW2', { load: [14.25, 9, 8] }),
     '',
   ].join('\n'));
   const out = [];
@@ -3236,8 +3236,9 @@ test('atris engine sweep counts time limit kills apart and still names the newes
     fs.rmSync(root, { recursive: true, force: true });
   }
   const text = out.join('\n');
-  assert.match(text, /last SIGKILL: codex on SLOW2 at 2026-10-14 12:20 UTC, killed \(time limit reached\), 70% memory free/);
-  assert.match(text, /last SIGKILL not at a time limit: claude on CLI-2 at 2026-10-14 11:30 UTC, killed \(machine memory low\), 9% memory free/);
+  const cores = os.availableParallelism ? os.availableParallelism() : os.cpus().length;
+  assert.ok(text.split('\n').includes(`last SIGKILL: codex on SLOW2 at 2026-10-14 12:20 UTC, killed (time limit reached), 70% memory free, load 14.25 on ${cores} cores`), text);
+  assert.ok(text.split('\n').includes('last SIGKILL not at a time limit: claude on CLI-2 at 2026-10-14 11:30 UTC, killed (machine memory low), 9% memory free'), 'a kill with no load reading names no load');
   assert.match(text, /1 of 3 SIGKILLs ended with machine memory low, 2 at their time limit/);
 });
 

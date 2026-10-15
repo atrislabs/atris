@@ -9,7 +9,7 @@ const autoland = require('../lib/autoland');
 const { gateForHuman, plainLandingReason } = require('../lib/voice-gate');
 const { evaluateAutoAccept } = require('../lib/auto-accept-certified');
 const { sweepEngineAskReceipts } = require('../lib/engine-receipt-sweep');
-const { readSshAgents, findLeakedSshAgents, findAgentStartLines, agentStartLineText, atrisCommand, pathAtrisRecordsRuns, fixStartupHint, stopLeakedSshAgents, closeLostRuns, readResourceHistory, errorReason, leakGrowthNote, matchLeakedToRuns, leakedRunsText } = require('../lib/engine-resource');
+const { killLoadText, readSshAgents, findLeakedSshAgents, findAgentStartLines, agentStartLineText, atrisCommand, pathAtrisRecordsRuns, fixStartupHint, stopLeakedSshAgents, closeLostRuns, readResourceHistory, errorReason, leakGrowthNote, matchLeakedToRuns, leakedRunsText } = require('../lib/engine-resource');
 const { validateRecentAskReceipts } = require('../lib/engine-validate');
 const { operatorReady, hasAgentJargon, explainResult } = autoland;
 const MISSION_AUTO_VERIFY_STATUSES = new Set(['planning', 'paused', 'ready']);
@@ -547,10 +547,7 @@ function showStatus(root, args, deps = {}) {
     const label = timeLimit && lost.last_day_other_kill ? 'newest not at a time limit:' : 'newest';
     const when = `${String(kill.at || '').slice(0, 16).replace('T', ' ')} UTC`;
     const free = Number.isFinite(kill.free_pct) ? `, ${kill.free_pct}% memory free` : '';
-    // Load beside the core count, so a run that hit its time limit on a
-    // crowded machine reads apart from one that was slow on its own.
-    const loadNow = Array.isArray(kill.load) && Number.isFinite(kill.load[0]) ? `, load ${kill.load[0]} on ${os.availableParallelism ? os.availableParallelism() : os.cpus().length} cores` : '';
-    console.log(`  engine runs force-killed in the last day: ${lost.kills_day}, ${counts}; ${label} ${kill.engine || 'unknown engine'} on ${kill.task || 'no task'} at ${when}, ${kill.cause || 'cause unknown'}${free}${loadNow}`);
+    console.log(`  engine runs force-killed in the last day: ${lost.kills_day}, ${counts}; ${label} ${kill.engine || 'unknown engine'} on ${kill.task || 'no task'} at ${when}, ${kill.cause || 'cause unknown'}${free}${killLoadText(kill)}`);
   }
   if (lost.errors_day) {
     // Runs that failed with a message and were not killed, such as an engine

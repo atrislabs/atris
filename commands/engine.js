@@ -2443,7 +2443,7 @@ function utcMinute(at) {
 // end, the newest run that failed without being killed and why, the newest
 // SIGKILL and its likely cause, and how many SIGKILLs came with low memory.
 function resourceHistoryLines(history) {
-  const { errorReason } = require('../lib/engine-resource');
+  const { errorReason, killLoadText } = require('../lib/engine-resource');
   const lines = [];
   if (history.read_error) {
     lines.push(`could not read the engine run log: ${history.read_error}, so past sweeps, kills, and errors are unknown`);
@@ -2475,7 +2475,7 @@ function resourceHistoryLines(history) {
   }
   const killLine = (entry) => {
     const free = Number.isFinite(entry.free_pct) ? `, ${entry.free_pct}% memory free` : '';
-    return `${entry.engine || 'engine'} on ${entry.task || 'an unnamed task'} at ${utcMinute(entry.at)}, ${entry.cause}${free}`;
+    return `${entry.engine || 'engine'} on ${entry.task || 'an unnamed task'} at ${utcMinute(entry.at)}, ${entry.cause}${free}${killLoadText(entry)}`;
   };
   lines.push(`last SIGKILL: ${killLine(kill)}`);
   // Timeouts can pile up after a crash; still name the newest kill that was not one.
