@@ -1291,6 +1291,7 @@ test('fix joins a noun clause after the dash with a semicolon', () => {
     'Every customer gets the aha \u2014 their code literally improved overnight.',
     'H1 missed 3 bullets \u2014 that gap closed with the regex broadening.',
     'We built the page \u2014 that users wanted.',
+    'We kept the scripts \u2014 this repo ran these once.',
     // "that" before a verb in "s" after an "if" clause opens a sentence
     'Inspect the cases \u2014 if they are one error class, that becomes a targeted experiment.',
     'Add a fallback \u2014 if the key is missing, this process fails.',
@@ -1406,6 +1407,7 @@ test('fix joins a noun clause after the dash with a semicolon', () => {
     'Every customer gets the aha; their code literally improved overnight.',
     'H1 missed 3 bullets; that gap closed with the regex broadening.',
     'We built the page, that users wanted.',
+    'We kept the scripts; this repo ran these once.',
     'Inspect the cases; if they are one error class, that becomes a targeted experiment.',
     'Add a fallback; if the key is missing, this process fails.',
     'Inbox Triage, 23 emails processed',

@@ -519,3 +519,13 @@ Worth inspecting what the cases are \u2014 if they're a specific error class, th
 => Worth inspecting what the cases are; if they're a specific error class, that becomes a targeted experiment.
 Add a fallback \u2014 if the key is missing, this process fails.
 => Add a fallback; if the key is missing, this process fails.
+
+# "this" opens a past clause, and "these" or "those" after the verb is its object
+Collision avoided \u2014 this tick produced an actual receipt.
+=> Collision avoided; this tick produced an actual receipt.
+Keep it \u2014 this one passed.
+=> Keep it; this one passed.
+Read the notes \u2014 this data collected in March.
+=> Read the notes, this data collected in March.
+Archaeological \u2014 this repo ran these once.
+~> Archaeological: this repo ran these once.
