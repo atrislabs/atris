@@ -146,7 +146,7 @@ Younger replacement cleanup reasons: `lib/engine-resource.js:476` records younge
 
 Hourly cleanup replacement summary: `commands/autoland.js:903` includes younger replacements kept safe in the hourly summary, alongside stopped counts and unread scans. Regression: `test/engine-resource.test.js:695` checks singular, plural, combined outcomes, and ordinary skips.
 
-Hourly cleanup failed stops: `commands/autoland.js:903` includes failed stop counts in the summary alongside stops, replacements, and unread scans. Regression: `test/engine-resource.test.js:717` probes an exited child with signal 0 to reproduce real ESRCH safely, checks the saved failure, and checks singular and plural combined messages.
+Hourly cleanup failed stops: `commands/autoland.js:903` includes failed stop counts in the summary alongside stops, replacements, and unread scans. Regression: `test/engine-resource.test.js:717` probes an exited child with signal 0 to reproduce real ESRCH safely, checks the saved failure, and checks singular and plural combined messages. `test/engine-resource.test.js:5605` runs one real pass where one stop works and one is refused, and checks the summary names both and the saved line counts one left.
 
 Hourly cleanup scan failures: `commands/autoland.js:913` includes a saved scan error in the plain summary, so a thrown first read or safety recheck does not look clean. Regression: `test/engine-resource.test.js:759` runs a real missing executable in both reads and confirms no agent is stopped.
 

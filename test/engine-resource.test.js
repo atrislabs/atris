@@ -5601,3 +5601,34 @@ test('the real cleanup command keeps both outcomes when one stop works and one i
     fs.rmSync(root, { recursive: true, force: true });
   }
 });
+
+test('the hourly cleanup summary names a stop and a refused stop from one mixed pass', () => {
+  const { runSshAgentSweep, sshAgentSweepNote } = require('../commands/autoland');
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'autoland-ssh-mixed-'));
+  try {
+    const agent = (pid, age_sec) => ({ pid, ppid: 1, uid: 501, age_sec, args: 'ssh-agent -s' });
+    const agents = [agent(200, 3600), agent(201, 1800)];
+    const signals = [];
+    const receipt = {};
+    runSshAgentSweep(root, receipt, {
+      read: () => ({ agents, referenced: new Set(), unread: [] }),
+      uid: 501,
+      kill: (pid, signal) => {
+        signals.push([pid, signal]);
+        if (pid === 201) throw Object.assign(new Error('permission denied'), { code: 'EPERM' });
+      },
+    });
+    assert.deepStrictEqual(signals, [[200, 'SIGTERM'], [201, 'SIGTERM']]);
+    assert.deepStrictEqual(receipt.ssh_agent_sweep, { stopped: [200], failed: [{ pid: 201, code: 'EPERM' }], skipped: [], left: 1 });
+    assert.equal(receipt.ssh_agent_sweep_error, undefined);
+    assert.strictEqual(sshAgentSweepNote(receipt), ', stopped 1 leaked ssh-agent, could not stop 1 leaked ssh-agent');
+    const saved = fs.readFileSync(path.join(root, RESOURCE_LOG), 'utf8').trim().split('\n').map(JSON.parse);
+    assert.equal(saved.length, 1);
+    assert.deepStrictEqual(saved[0].stopped, [200]);
+    assert.deepStrictEqual(saved[0].failed, [201]);
+    assert.equal(saved[0].leaked_ssh_agents, 1);
+    console.log('mixed hourly cleanup: ' + sshAgentSweepNote(receipt).slice(2));
+  } finally {
+    fs.rmSync(root, { recursive: true, force: true });
+  }
+});
