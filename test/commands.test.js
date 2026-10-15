@@ -14615,8 +14615,13 @@ test('task status resolves goal_id display refs to parent task objectives', () =
     assert.equal(childCreated.status, 0, childCreated.stderr);
     const child = JSON.parse(childCreated.stdout).task;
 
-    const claimed = runCli(['task', 'claim', child.id, '--as', 'builder', '--json'], { cwd: dir, env });
-    assert.equal(claimed.status, 0, claimed.stderr);
+    // Seed ownership only; child creation and goal resolution stay on the CLI.
+    const claimDb = taskStore.open(dbPath);
+    try {
+      assert.equal(taskStore.claimTask(claimDb, { id: child.id, claimedBy: 'builder' }).claimed, true);
+    } finally {
+      taskStore.close();
+    }
 
     const status = runCli(['task', 'status', '--json'], { cwd: dir, env });
     assert.equal(status.status, 0, status.stderr);

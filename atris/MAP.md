@@ -130,3 +130,5 @@ Duplicate receipt repair setup: `test/commands.test.js:13508` seeds creation and
 Ready-work revision setup: `test/commands.test.js:13638` seeds creation and ownership through the real task store; both readies, revision, show, stale acceptance and re-readiness stay on the CLI.
 
 Accepted-task revision refusal setup: `test/commands.test.js:13737` seeds creation and ownership through the real task store; readiness, acceptance, refused revision and XP status remain on the CLI.
+
+Goal display-reference status setup: `test/commands.test.js:14583` keeps child creation by display ref and status on the CLI; ownership is seeded through the production store after child creation.
