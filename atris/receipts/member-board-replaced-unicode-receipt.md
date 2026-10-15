@@ -22,5 +22,9 @@ exit: 0
 
 Commands run: mission status and goal (no native goal candidate), task list/new/claim/note/ready, git status/diff/check, ancestry check (exit 0), brain activate and compile (plan-only, exit 2). Mission task attachment reported a busy lock, so a separate bounded task records this proof. No product code or dependencies changed. Existing rendered task-view edits remain unstaged.
 
+## Review handoff caveat
+
+The direct frozen command passed all 125 checks on Node 25.6.1, with full output saved above. Requesting review with an automatic rerun subsequently failed: 86 passed, 39 failed, exit 1. Its compact failure receipt is `atris/runs/2026-10-15-task-bci-25-2026-10-15T08-04-05-838Z.json`; the stored output omits individual failures. A login-shell probe resolves Node 20.18.0 rather than the direct shell's Node 25.6.1, a possible cause that has not been confirmed. No code changed between runs. The task is in Review using the direct proof, with the failed automatic run explicitly disclosed; acceptance remains pending. The builder log is locally ignored and was updated on disk.
+
 next_push: Check split Unicode recovery after an in-place log rewrite while the old character is incomplete.
 layer: behaviors
