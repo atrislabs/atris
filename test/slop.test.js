@@ -2062,6 +2062,25 @@ test('fix reads a line-end dash up to the first stop when the next line holds an
   assert.equal(changes.find((c) => c.line === 5).after, 'We tried the tool,');
 });
 
+test('fix reads a line-end dash with the line above when its sentence starts there', () => {
+  // from a backend note: the dash line opened mid-sentence on "because", so
+  // read alone it looked like the first half of a "because" sentence and
+  // kept a comma, splicing the clause on the next line
+  const file = tmpFile('line-end-above.md', [
+    'It\'s how `error_service` works',
+    'because it is already in the trust boundary \u2014',
+    'it\'s a backend service, not a file API.',
+    '',
+    'Because it is already in the trust boundary \u2014',
+    'it\'s a backend service.',
+  ].join('\n'));
+  const { changes } = applyFixes([file], RULES);
+  assert.deepEqual(changes.map((c) => c.after), [
+    'because it is already in the trust boundary;',
+    'Because it is already in the trust boundary,',
+  ]);
+});
+
 test('fix ends a paragraph-ending dash with a period, keeps a wrapping one a comma', () => {
   const file = tmpFile('line-end.md', [
     'The tool we built \u2014',

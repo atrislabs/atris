@@ -1437,16 +1437,20 @@ function splitAside(line, below) {
 // the next line, past its first stop, belongs to the next sentence, so only
 // the words up to that stop are read: "the API;" then "it isn't the
 // documented route. (New features \u2014 ...". A dash before the
-// stop may close an aside, so the dash is left to the line fix.
-function trailingMark(line, below) {
+// stop may close an aside, so the dash is left to the line fix. When the
+// dash line carries on a sentence from the line above, that line is read
+// too: "It's how it works" then "because it is in the boundary;" is no
+// sentence that opens on "because", so the clause after it is no splice.
+function trailingMark(line, below, above = '') {
   const end = /^(.*?\S)\s*\u2014\s*$/.exec(line);
   if (!end || !below.trim() || /\u2014/.test(end[1])) return null;
   const words = /\u2014/.test(below) ? (/^[^\u2014]*?[.!?](?=\s)/.exec(below) || [''])[0] : below;
   if (!words.trim() || (words.split('`').length - 1) % 2) return null;
   if (!/^\s*(?:it|this|that|we|they|you|he|she|I|there)(?:['\u2019](?:s|re|ll|ve|d|m))?\s/.test(below)) return null;
   if (/^\s{0,3}(?:#|\||```|~~~)/.test(line) || /^\s*(?:#|>|\||```|~~~|[-*+]\s|\d+[.)]\s)/.test(below)) return null;
-  const head = maskInlineCode(end[1].trim()).masked;
-  const { masked, spans } = maskInlineCode(`${end[1].trim()} \u2014 ${words.trim()}`);
+  const lead = above && !/\u2014/.test(above) && !((above.split('`').length - 1) % 2) ? `${above.trim()} ` : '';
+  const head = maskInlineCode(lead + end[1].trim()).masked;
+  const { masked, spans } = maskInlineCode(`${lead}${end[1].trim()} \u2014 ${words.trim()}`);
   if (!masked.startsWith(`${head} \u2014 `)) return null;
   const next = masked.slice(head.length + 3);
   const joined = fixEmDash(masked, { spans });
@@ -1500,7 +1504,7 @@ function applyFixes(files, rules, { write = true } = {}) {
       let pairedBelow = null;
       const pair = !script && from === 0 && i + 1 < lines.length && !skip.has(i) && !skip.has(i + 1) && !fenced.has(i) && !fenced.has(i + 1) && fixable.some((r) => r.fix === fixEmDash) ? splitAside(line, lines[i + 1]) : null;
       if (pair) { line = pair[0]; fixedCount += 2; pairedBelow = { file, line: i + 2, before: lines[i + 1], after: pair[1], kind: fixKind(lines[i + 1], pair[1]) }; lines[i + 1] = pair[1]; }
-      const tail = !script && i + 1 < lines.length && !skip.has(i) && !skip.has(i + 1) && !fenced.has(i) && !fenced.has(i + 1) && fixable.some((r) => r.fix === fixEmDash) ? trailingMark(line, lines[i + 1]) : null;
+      const tail = !script && i + 1 < lines.length && !skip.has(i) && !skip.has(i + 1) && !fenced.has(i) && !fenced.has(i + 1) && fixable.some((r) => r.fix === fixEmDash) ? trailingMark(line, lines[i + 1], i > 0 && !fenced.has(i - 1) && !skip.has(i - 1) ? wrappedFrom(lines[i - 1], line) : '') : null;
       if (tail) { line = line.replace(/\s*\u2014\s*$/, tail); fixedCount++; }
       for (const r of fixable) {
         const prose = markdown && r.proseOnly;
