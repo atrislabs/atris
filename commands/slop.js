@@ -1254,10 +1254,14 @@ function fixEmDash(s, { endsBlock = false, startsBlock = false, spans = [], abov
       const left = clauseOrFieldLeft(at, whole);
       return left ? clauseJoin(left, at, whole) : m;
     })
+    // a short label with no clause of its own takes a colon, as it does
+    // before "it": "bad: a stale claim survives forever"
     .replace(PLAIN_CLAUSE_AFTER_DASH, (m, at, whole) => {
       const left = clauseOrFieldLeft(at, whole);
-      if (!left || NAME_BEFORE_PLAIN_VERB.test(whole.slice(at)) || NAME_TAIL_PHRASE.test(whole.slice(at))) return m;
-      return /\b(?:not|cannot)\b/i.test(left) || PLAIN_OBJECT_CLAUSE.test(whole.slice(at)) || BARE_OBJECT_CLAUSE.test(whole.slice(at)) || THAT_OBJECT_CLAUSE.test(whole.slice(at)) || HOW_TAIL_CLAUSE.test(whole.slice(at)) || WH_OBJECT_CLAUSE.test(whole.slice(at)) ? clauseJoin(left, at, whole) : m;
+      const label = left ? null : labelJoin(at, whole);
+      if ((!left && !label) || NAME_BEFORE_PLAIN_VERB.test(whole.slice(at)) || NAME_TAIL_PHRASE.test(whole.slice(at))) return m;
+      if (!(left && /\b(?:not|cannot)\b/i.test(left)) && !PLAIN_OBJECT_CLAUSE.test(whole.slice(at)) && !BARE_OBJECT_CLAUSE.test(whole.slice(at)) && !THAT_OBJECT_CLAUSE.test(whole.slice(at)) && !HOW_TAIL_CLAUSE.test(whole.slice(at)) && !WH_OBJECT_CLAUSE.test(whole.slice(at))) return m;
+      return left ? clauseJoin(left, at, whole) : label;
     })
     .replace(ADVERB_CLAUSE_AFTER_DASH, (m, at, whole) => {
       const left = clauseLeft(at, whole);
@@ -1287,7 +1291,7 @@ function fixEmDash(s, { endsBlock = false, startsBlock = false, spans = [], abov
     })
     .replace(EACH_CLAUSE_AFTER_DASH, (m, at, whole) => {
       const left = clauseLeft(at, whole);
-      return left ? clauseJoin(left, at, whole) : m;
+      return left ? clauseJoin(left, at, whole) : labelJoin(at, whole) || m;
     })
     .replace(BARE_CLAUSE_AFTER_DASH, (m, at, whole) => {
       const left = clauseLeft(at, whole);

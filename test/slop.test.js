@@ -3144,7 +3144,8 @@ test('fix joins "the", a noun, a verb in "s" and one bare word before a stop', (
 test('fix reads "e.g." and kin inside the left clause, not as its end', () => {
   // from an API note: "Rate-limit hard (e.g. 5/hour), this endpoint mints
   // credentials" spliced, since the left side stopped at "e.g." and
-  // "5/hour)" alone is no clause. A real stop still ends the left side.
+  // "5/hour)" alone is no clause. A real stop still ends the left side,
+  // so "Done" there is a label and takes a colon, never a semicolon.
   const file = tmpFile('abbrev-left.md', [
     'Rate-limit hard (e.g. 5/hour) \u2014 this endpoint mints credentials.',
     'Name it (i.e. foo) \u2014 the loop picks it up.',
@@ -3154,7 +3155,23 @@ test('fix reads "e.g." and kin inside the left clause, not as its end', () => {
   assert.deepEqual(changes.map((c) => c.after), [
     'Rate-limit hard (e.g. 5/hour); this endpoint mints credentials.',
     'Name it (i.e. foo); the loop picks it up.',
-    'It shipped. Done, the loop picks it up.',
+    'It shipped. Done: the loop picks it up.',
+  ]);
+});
+
+test('fix puts a colon after a short label before an "a" or "every" clause', () => {
+  // from a design table: "high, every clone sees every claim | bad, a stale
+  // claim survives forever" spliced, since a table cell is fixed alone and
+  // one word is no clause. A label takes a colon, as it does before "it";
+  // an opener keeps its comma.
+  const file = tmpFile('label-clause.md', [
+    '| (b) tracked | high \u2014 every clone sees every claim | bad \u2014 a stale claim survives forever until someone commits a delete |',
+    'Then \u2014 a gate proves the change works.',
+  ].join('\n'));
+  const { changes } = applyFixes([file], RULES, { write: false });
+  assert.deepEqual(changes.map((c) => c.after), [
+    '| (b) tracked | high: every clone sees every claim | bad: a stale claim survives forever until someone commits a delete |',
+    'Then, a gate proves the change works.',
   ]);
 });
 
