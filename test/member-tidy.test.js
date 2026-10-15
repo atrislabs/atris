@@ -1380,7 +1380,8 @@ test('worktree cleanup quietly refreshes an outdated base and keeps staged notes
     fs.writeFileSync(path.join(copy, 'manual.txt'), 'original manual pages\n');
     fs.writeFileSync(path.join(copy, 'chapter.txt'), 'original chapter text\n');
     fs.writeFileSync(path.join(copy, 'appendix.txt'), 'original appendix text\n');
-    runGit(['add', 'outline.txt', 'guide.txt', 'manual.txt', 'chapter.txt', 'appendix.txt'], copy);
+    fs.writeFileSync(path.join(copy, 'glossary.txt'), 'original glossary terms\n');
+    runGit(['add', 'outline.txt', 'guide.txt', 'manual.txt', 'chapter.txt', 'appendix.txt', 'glossary.txt'], copy);
     runGit(['commit', '-q', '-m', 'add outline'], copy);
     runGit(['rm', 'outline.txt'], copy);
     fs.writeFileSync(replaced, 'replacement outline\n');
@@ -1487,6 +1488,14 @@ test('worktree cleanup quietly refreshes an outdated base and keeps staged notes
     const savedAppendix = runGit(['show', ':renamed-appendix'], copy);
     assert.equal(savedAppendix, appendixSource);
     assert.match(runGit(['diff', '--cached', '--summary', '--', 'appendix.txt', 'renamed-appendix'], copy), /rename appendix.txt => renamed-appendix/);
+    const linkedGlossary = path.join(copy, 'renamed-glossary');
+    const glossarySource = runGit(['show', 'HEAD:glossary.txt'], copy);
+    runGit(['mv', 'glossary.txt', 'renamed-glossary'], copy);
+    fs.unlinkSync(linkedGlossary);
+    fs.symlinkSync('later-glossary.txt', linkedGlossary);
+    const savedGlossary = runGit(['show', ':renamed-glossary'], copy);
+    assert.equal(savedGlossary, glossarySource);
+    assert.match(runGit(['diff', '--cached', '--summary', '--', 'glossary.txt', 'renamed-glossary'], copy), /rename glossary.txt => renamed-glossary/);
     const binary = path.join(copy, 'drawing.bin');
     const savedBytes = Buffer.from([0, 255, 10, 128, 13]);
     const laterBytes = Buffer.from([0, 254, 10, 129, 13, 0]);
@@ -1587,6 +1596,13 @@ test('worktree cleanup quietly refreshes an outdated base and keeps staged notes
       assert.equal(runGit(['show', ':renamed-appendix'], copy), savedAppendix);
       assert.match(runGit(['ls-files', '--stage', '--', 'renamed-appendix'], copy), /^100644 /);
       assert.equal(fs.readFileSync(movedAppendix, 'utf8'), 'original appendix text\n');
+      assert.equal(fs.lstatSync(linkedGlossary).isSymbolicLink(), true);
+      assert.equal(fs.readlinkSync(linkedGlossary), 'later-glossary.txt');
+      assert.equal(runGit(['show', 'HEAD:glossary.txt'], copy), glossarySource);
+      assert.equal(runGit(['ls-files', '--', 'glossary.txt'], copy), '');
+      assert.equal(fs.existsSync(path.join(copy, 'glossary.txt')), false);
+      assert.equal(runGit(['show', ':renamed-glossary'], copy), savedGlossary);
+      assert.match(runGit(['ls-files', '--stage', '--', 'renamed-glossary'], copy), /^100644 /);
       assert.deepEqual(fs.readFileSync(binary), laterBytes);
       const savedBinary = spawnSync('git', ['show', ':drawing.bin'], { cwd: copy });
       assert.equal(savedBinary.status, 0);
