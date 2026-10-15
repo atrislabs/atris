@@ -3802,3 +3802,24 @@ test('fix keeps a dash that stands alone as one item of a bracketed list', () =>
     'Plans (one, two), then more.',
   ]);
 });
+
+test('fix pairs an aside after a bold lead sentence like after a bold field label', () => {
+  // from a strategy note: "**One channel.** The wedge below" read as one
+  // long label, so the aside took a colon and a comma before "is". A bold
+  // lead sentence ending in a stop opens a new sentence, the same as a bold
+  // field label ending in a colon.
+  const D = String.fromCharCode(0x2014);
+  const file = tmpFile('bold-lead-aside.md', [
+    `- **One channel.** The wedge below ${D} sit down, build the skill ${D} is the plan.`,
+    '',
+    `- **It's not where you start, it's why.** The vision ${D} atoms-based computing, digitizing the world ${D} is the North Star.`,
+    '',
+    `1. **Every output is a block.** Text, code, images, video, data ${D} all blocks. If it can be an output, it's a block type.`,
+  ].join('\n'));
+  const { changes } = applyFixes([file], RULES);
+  assert.deepEqual(changes.map((c) => c.after), [
+    '- **One channel.** The wedge below (sit down, build the skill) is the plan.',
+    "- **It's not where you start, it's why.** The vision (atoms-based computing, digitizing the world) is the North Star.",
+    "1. **Every output is a block.** Text, code, images, video, data: all blocks. If it can be an output, it's a block type.",
+  ]);
+});

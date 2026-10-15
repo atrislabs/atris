@@ -686,11 +686,15 @@ function fixEmDash(s, { endsBlock = false, startsBlock = false, spans = [], abov
   // A short subject still pairs when a helping verb follows the aside, so the
   // sentence runs on through it: "**Gap closed:** the deck (what a customer
   // sees) is now current", never "the deck: what a customer sees, is now".
-  const fieldThenWords = label && /^((?:\*\*[^*]+:\*\*|__[^_]+:__)\s+)([^*_`\uE000()]*[^\s*_`\uE001()])$/.exec(label[2]);
+  // A bold lead sentence ending in a stop is read the same way: "**One
+  // channel.** The wedge below (sit down, build it) is the plan". There an
+  // aside takes two dashes, so one dash after a bold sentence keeps its
+  // colon: "**A block.** Text, code, data: all blocks".
+  const fieldThenWords = label && /^((?:\*\*[^*]+[:.!?]\*\*|__[^_]+[:.!?]__)\s+)([^*_`\uE000()]*[^\s*_`\uE001()])$/.exec(label[2]);
   if (fieldThenWords) {
     const body = fieldThenWords[2] + s.slice(label[1].length + label[2].length);
     const alt = fixEmDash(body, { endsBlock });
-    const paired = (alt.match(/\(/g) || []).length > (body.match(/\(/g) || []).length;
+    const paired = (/:(?:\*\*|__)\s*$/.test(fieldThenWords[1]) || (body.match(/\u2014/g) || []).length >= 2) && (alt.match(/\(/g) || []).length > (body.match(/\(/g) || []).length;
     const runsOn = alt.startsWith(`${fieldThenWords[2]} (`) && (alt.match(ASIDE_THEN_HELPER) || []).length > (body.match(ASIDE_THEN_HELPER) || []).length;
     if (paired && (runsOn || fieldThenWords[2].trim().split(/\s+/).length >= 4)) return `${label[1]}${fieldThenWords[1]}${alt}`;
   }
