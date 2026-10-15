@@ -2737,3 +2737,5 @@ Prep fixture health setup: `test/roster-prep-brief.test.js:44` reads the real re
 Run-record fixture health setup: `test/roster-run-record.test.js:52` reads the real registry once without persistence, sets the same five fixture engines ready, and writes once at line 60. Every real run and record assertion remains unchanged; setup previously read six times and persisted six times per room.
 
 Run-record dispatch land target: `test/roster-run-record.test.js:110` passes the land target the empty scratch room already resolves to, skipping two git lookups per dispatch across ten dispatches. `test/roster-run-record.test.js:170` still runs the real lookup once and asserts it returns that value, so a change in the lookup fails the test.
+
+Run-record worktree note: `test/roster-run-record.test.js:90` has the fake worktree start write the same owner, task, and base note the real worktree start writes, so the dispatch brief reads them from the file instead of several git calls per dispatch. The one-lap review case keeps its own fake without the note.

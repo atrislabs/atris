@@ -87,7 +87,16 @@ function fakeEngine(bin, name, { stdout = '', stderr = '', exit = 0 } = {}) {
 function ownCli(wt) {
   return (args) => {
     if (args[0] === 'task' && args[1] === 'show') return { status: 0, stdout: JSON.stringify(TASK), stderr: '' };
-    if (args[0] === 'worktree' && args[1] === 'start') return { status: 0, stdout: `next: cd ${wt}\n`, stderr: '' };
+    if (args[0] === 'worktree' && args[1] === 'start') {
+      // Write the note real worktree start leaves, so the brief reads its
+      // owner and base from the file instead of asking git.
+      const flag = (name) => args[args.indexOf(name) + 1];
+      fs.mkdirSync(path.join(wt, '.atris'), { recursive: true });
+      fs.writeFileSync(path.join(wt, '.atris', 'agent-worktree.json'), JSON.stringify({
+        agent: flag('--agent'), owner: flag('--agent'), task: flag('--task'), base: flag('--base'),
+      }));
+      return { status: 0, stdout: `next: cd ${wt}\n`, stderr: '' };
+    }
     return { status: 0, stdout: 'done: worktree shipped\n', stderr: '' };
   };
 }
