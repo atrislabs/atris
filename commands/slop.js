@@ -404,7 +404,12 @@ const LONE_VERB_CLAUSE_AFTER_DASH = new RegExp(`${CLAUSE_END}\\s*\\u2014\\s*(?=(
 // that clause starts an object, so the last word is a noun and the whole is
 // a clause: "the learner watches the model do the reps".
 const RELATIVE_OBJECT_PHRASE = /^\s*\u2014\s*the\s+[A-Za-z][\w-]*\s+(?:[a-z][\w-]*\s+)?(?!(?:proves|shows|means|ensures|confirms|says|assumes|knows|finds)\b)[a-z]+s\s+(?:the|a|an|your|our|their|its|this|these|those)\s+\S+\s+(?:(?!(?:the|a|an)\b)\S+\s+){0,2}[a-z]+s\s*(?:[.!?;,]|$)/;
-const BARE_OBJECT_CLAUSE = new RegExp(`^\\s*\\u2014\\s*the\\s+(?!${NAME_PAIR}\\b)(?![a-z]*s\\b)[a-z]{2,}\\s+${PLAIN_VERB_WORD}\\s+(?!${NAME_END_WORD}\\b)[a-z]{2,}(?=[.!?;]|\\s+(?:into|onto|to|for|from|on|at|with|until)\\s)`);
+// A bare object word, or words joined by a slash, before a stop or a place
+// word: "the entrypoint redirects stdout/stderr to files". Two words count
+// only before a place word, "redirects subprocess output to files", and not
+// after a pronoun or a place word, so "the decision helpers it uses" and
+// "the test cases across repos" stay phrases. A name end word does too.
+const BARE_OBJECT_CLAUSE = new RegExp(`^\\s*\\u2014\\s*the\\s+(?!${NAME_PAIR}\\b)(?![a-z]*s\\b)[a-z]{2,}\\s+${PLAIN_VERB_WORD}\\s+(?:(?!(?:it|them|you|we|they|he|she|this|that|these|those|which|who|across|through|within|over|under|between|among|around|along|without|in|of|on|for|with|at|by|to|from|and|or|but)\\b)(?!${NAME_END_WORD}\\b)[a-z]{2,}\\s+(?!${NAME_END_WORD}\\b)[a-z]{2,}(?:\\/[a-z]{2,})*(?=\\s+(?:into|onto|to|for|from|on|at|with|until)\\s)|(?!${NAME_END_WORD}\\b)[a-z]{2,}(?:\\/[a-z]{2,})*(?=[.!?;]|\\s+(?:into|onto|to|for|from|on|at|with|until)\\s))`);
 // A bare plural with its own "that", "which" or "who" clause after the verb
 // is an object too: "the spread branch covers routes that merge in extra
 // headers". A verb that is a common plural noun, "the user settings pages

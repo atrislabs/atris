@@ -2417,6 +2417,24 @@ test('fix joins "the", a noun, a verb in s and a bare object of plain words afte
   ]);
 });
 
+test('fix joins "the", a noun, a verb in s and a two-word or slashed object before "to" after a dash', () => {
+  // from real repo text: "captured at the deployment level, the entrypoint
+  // redirects subprocess stdout/stderr to files" spliced, since a bare
+  // object before "to" could be one plain word only. Two words, or words
+  // joined by a slash, are an object too; a name end word keeps the phrase.
+  const file = tmpFile('the-bare-object-pair.md', [
+    'Logs are captured here \u2014 the entrypoint redirects subprocess output to files.',
+    'Logs are captured here \u2014 the entrypoint redirects stdout/stderr to files.',
+    'Logs are captured here \u2014 the entrypoint redirects output folder to files.',
+  ].join('\n'));
+  const { changes } = applyFixes([file], RULES);
+  assert.deepEqual(changes.map((c) => c.after), [
+    'Logs are captured here; the entrypoint redirects subprocess output to files.',
+    'Logs are captured here; the entrypoint redirects stdout/stderr to files.',
+    'Logs are captured here, the entrypoint redirects output folder to files.',
+  ]);
+});
+
 test('fix keeps a comma before "the", a word in s and a name word at a stop', () => {
   // from probing the edge file: "the agent runs dashboard view" and "the
   // team calls schedule" are long names, but "runs" reads as a helper verb
