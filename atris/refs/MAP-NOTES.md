@@ -2803,3 +2803,5 @@ Duplicate-seed setup: `test/commands.test.js:12776` seeds both claims through pr
 Automatic landing wording setup: `test/commands.test.js:11815` seeds all three claims with production claimTask in the creation connection, asserts success and closes in finally. Every ready invocation and wording assertion remains on the CLI. Three launches replace six.
 
 Stale landing wording setup: `test/commands.test.js:11886` seeds both claims with production claimTask in the creation connection, asserts success and closes in finally. Both readiness commands and all stale-heartbeat wording assertions remain on the CLI. Two launches replace four.
+
+Proof packet inspection batching: `test/commands.test.js:12115` and `test/commands.test.js:12145` await each status/show pair together after its completed review write. `commands/task.js:6064` builds status from task rows and writes the saved view; `commands/task.js:7744` reads the task rows directly for show. Neither pair depends on that saved view. Every assertion remains; nine sequential CLI stages become seven.

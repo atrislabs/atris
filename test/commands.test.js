@@ -12003,7 +12003,7 @@ test('task review accepts clean dry-run verifier', () => {
   }
 });
 
-test('task review-chat emits proof-specific verifier packet', () => {
+test('task review-chat emits proof-specific verifier packet', async () => {
   if (!hasNodeSqlite()) return;
   const dir = makeTempDir();
   const dbPath = path.join(dir, 'tasks.db');
@@ -12112,14 +12112,16 @@ test('task review-chat emits proof-specific verifier packet', () => {
     ], { cwd: dir, env });
     assert.equal(proofReview.status, 0, proofReview.stderr);
 
-    const statusAfterProofReview = runCli(['task', 'status', '--json'], { cwd: dir, env });
+    const [statusAfterProofReview, showAfterProofReview] = await Promise.all([
+      runCliAsync(['task', 'status', '--json'], { cwd: dir, env }),
+      runCliAsync(['task', 'show', ref, '--json'], { cwd: dir, env }),
+    ]);
     assert.equal(statusAfterProofReview.status, 0, statusAfterProofReview.stderr);
     const statusReview = JSON.parse(statusAfterProofReview.stdout).status.needs_review[0].review;
     assert.match(statusReview.proof, /context context/);
     assert.equal(statusReview.agent_certified, true);
     assert.equal(statusReview.verification_chat, undefined);
 
-    const showAfterProofReview = runCli(['task', 'show', ref, '--json'], { cwd: dir, env });
     assert.equal(showAfterProofReview.status, 0, showAfterProofReview.stderr);
     const showReview = JSON.parse(showAfterProofReview.stdout).review;
     assert.equal(showReview.proof, reviewProof);
@@ -12140,13 +12142,15 @@ test('task review-chat emits proof-specific verifier packet', () => {
     ], { cwd: dir, env });
     assert.equal(certifiedProofReview.status, 0, certifiedProofReview.stderr);
 
-    const certifiedStatus = runCli(['task', 'status', '--json'], { cwd: dir, env });
+    const [certifiedStatus, certifiedShow] = await Promise.all([
+      runCliAsync(['task', 'status', '--json'], { cwd: dir, env }),
+      runCliAsync(['task', 'show', ref, '--json'], { cwd: dir, env }),
+    ]);
     assert.equal(certifiedStatus.status, 0, certifiedStatus.stderr);
     const certifiedStatusReview = JSON.parse(certifiedStatus.stdout).status.needs_review[0].review;
     assert.match(certifiedStatusReview.proof, /context context/);
     assert.equal(certifiedStatusReview.verification_chat, undefined);
 
-    const certifiedShow = runCli(['task', 'show', ref, '--json'], { cwd: dir, env });
     assert.equal(certifiedShow.status, 0, certifiedShow.stderr);
     const certifiedShowReview = JSON.parse(certifiedShow.stdout).review;
     assert.equal(certifiedShowReview.proof, certifiedReviewProof);
