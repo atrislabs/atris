@@ -3367,6 +3367,58 @@ test('atris engine sweep counts time limit kills apart and still names the newes
   assert.match(text, /1 of 3 SIGKILLs ended with machine memory low, 2 at their time limit/);
 });
 
+test('atris engine sweep names the day\'s crowded time limit kills in the same words as the landing status', () => {
+  const { spawnSync } = require('node:child_process');
+  const { engineCommand } = require('../commands/engine');
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'engine-sweep-crowded-'));
+  const file = path.join(root, RESOURCE_LOG);
+  const cores = os.availableParallelism ? os.availableParallelism() : os.cpus().length;
+  const hoursAgo = (h) => new Date(Date.now() - h * 3600 * 1000).toISOString();
+  const start = (at, id) => JSON.stringify({ at, phase: 'start', engine: 'codex', task: id, run_id: id });
+  const busiest = [{ name: 'mds_stores', cpu: 300 }, { name: 'node', cpu: 90 }];
+  const timeLimit = (at, id, load, extra = {}) => JSON.stringify({ at, phase: 'end', engine: 'codex', task: id, run_id: id, free_pct: 70, signal: 'SIGKILL', timed_out: true, cause: 'killed (time limit reached)', load: [load, 1, 1], ...extra });
+  const sweep = () => {
+    const out = [];
+    const original = console.log;
+    console.log = (line) => out.push(String(line));
+    try {
+      engineCommand(['sweep'], { root, engineSweep: { read: () => ({ agents: [], referenced: new Set() }), uid: 501 } });
+    } finally {
+      console.log = original;
+    }
+    return out.join('\n').split('\n');
+  };
+  try {
+    spawnSync('git', ['init', '-q'], { cwd: root });
+    fs.mkdirSync(path.dirname(file), { recursive: true });
+    fs.writeFileSync(file, [timeLimit(hoursAgo(3), 'CALM', 1), ''].join('\n'));
+    assert.ok(!sweep().some((line) => line.startsWith('time limit kills in the last day')), 'no crowded kill, no line');
+
+    fs.writeFileSync(file, [
+      start(hoursAgo(5), 'A'), timeLimit(hoursAgo(4), 'A', cores + 2, { busiest }),
+      start(hoursAgo(3), 'B'), timeLimit(hoursAgo(2), 'B', cores + 1, { busiest }),
+      timeLimit(hoursAgo(1), 'C', 1),
+      // Older than a day: counted in the all time line, not this one.
+      timeLimit(hoursAgo(30), 'OLD', cores + 5, { busiest }),
+      '',
+    ].join('\n'));
+    const crowdedText = `2 with load above the ${cores} cores and no other engine run open, so the load came from other work, mds_stores using the most CPU at 2 of them`;
+    const lines = sweep();
+    assert.ok(lines.includes(`time limit kills in the last day: 3 (${crowdedText})`), lines.join('\n'));
+    assert.ok(lines.includes('0 of 4 SIGKILLs ended with machine memory low, 4 at their time limit'), lines.join('\n'));
+
+    const status = spawnSync(process.execPath, [path.join(__dirname, '..', 'bin', 'atris.js'), 'autoland', 'status'], {
+      cwd: root,
+      encoding: 'utf8',
+      env: { ...process.env, ATRIS_SKIP_UPDATE_CHECK: '1', NODE_NO_WARNINGS: '1' },
+    });
+    assert.strictEqual(status.status, 0, status.stderr);
+    assert.ok(status.stdout.includes(`all at their time limit (${crowdedText});`), status.stdout);
+  } finally {
+    fs.rmSync(root, { recursive: true, force: true });
+  }
+});
+
 test('the landing status counts leaked ssh-agents, says how they get stopped, and stays quiet with none or a failed read', () => {
   const { showStatus, HOURLY_SSH_AGENT_STOP_LIMIT } = require('../commands/autoland');
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'autoland-status-agents-'));

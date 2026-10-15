@@ -2443,7 +2443,7 @@ function utcMinute(at) {
 // end, the newest run that failed without being killed and why, the newest
 // SIGKILL and its likely cause, and how many SIGKILLs came with low memory.
 function resourceHistoryLines(history) {
-  const { errorReason, killLoadText } = require('../lib/engine-resource');
+  const { errorReason, killLoadText, crowdedKillsText } = require('../lib/engine-resource');
   const lines = [];
   if (history.read_error) {
     lines.push(`could not read the engine run log: ${history.read_error}, so past sweeps, kills, and errors are unknown`);
@@ -2483,6 +2483,9 @@ function resourceHistoryLines(history) {
   if (other && other !== kill) lines.push(`last SIGKILL not at a time limit: ${killLine(other)}`);
   const timeLimit = history.time_limit_kills ? `, ${history.time_limit_kills} at their time limit` : '';
   lines.push(`${history.low_memory_kills} of ${history.kills} SIGKILL${history.kills === 1 ? '' : 's'} ended with machine memory low${timeLimit}`);
+  // The day's crowded timeouts in the same words as the landing status.
+  const crowded = crowdedKillsText(history);
+  if (crowded) lines.push(`time limit kills in the last day: ${history.time_limit_kills_day} (${crowded})`);
   return lines;
 }
 
