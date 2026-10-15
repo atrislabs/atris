@@ -160,3 +160,5 @@ Watch shutdown: `test/member-board.test.js:862` checks interrupt cancels the pen
 Late progress folder watch recovery: `test/member-board.test.js:2977` runs `python3 atris/receipts/member-board-watch-recovery-proof.py` in a real 80x3 terminal, waits through a missing-folder timed retry, checks the next retry recovers, then requires a timeout write to redraw before the next timer.
 
 Empty-board terminal width: `lib/member-board.js:311` keeps the full progress path in pipes, shortens it by screen cells in terminals, and uses whole shorter messages below 29 columns. `test/member-board.test.js:1695` covers tiny widths and the real resized terminal via `python3 atris/receipts/member-board-empty-width-proof.py` (30x1, 18x2, 22x3, 80x3, 240x3).
+
+Idle-board terminal width: `renderBoard()` (`lib/member-board.js:311`) uses whole shorter messages for idle-only boards, preserving older-run counts when they fit and retaining full detail in pipes. Width/count regression: `test/member-board.test.js:1648`; real resized command: `python3 atris/receipts/member-board-idle-width-proof.py` (18x1, 4x2, 30x3, 60x3, 120x3).

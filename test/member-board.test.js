@@ -1645,6 +1645,29 @@ test('board says nobody is working when every member is hidden', () => {
   assert.equal(renderBoard([], '/x', 3), 'nobody is working right now. 3 finished over an hour ago, hidden. --all shows them');
 });
 
+test('idle boards keep whole older-run counts within the terminal width', () => {
+  for (const count of [1, 3, 12345]) {
+    for (let width = 1; width <= 120; width++) {
+      const message = renderBoard([], '/x', count, width, 1);
+      assert.ok(message.length <= width, `${width}: ${message}`);
+      assert.ok(message === 'idle' || message === '-' || message.includes(`${count} `), message);
+      assert.ok(!message.includes('...'), message);
+    }
+  }
+  assert.equal(renderBoard([], '/x', 3, 18), 'idle. 3 older');
+  assert.equal(renderBoard([], '/x', 3, 30), 'idle. 3 older runs hidden');
+  assert.equal(renderBoard([], '/x', 3, 120), renderBoard([], '/x', 3));
+});
+
+test('the real idle board fits small terminals and restores older-run detail after resize', { skip: process.platform === 'win32' }, (t) => {
+  const proof = spawnSync('python3', [path.join(repoRoot, 'atris/receipts/member-board-idle-width-proof.py'), process.execPath], {
+    encoding: 'utf8', timeout: 20_000,
+  });
+  assert.equal(proof.status, 0, `${proof.stdout}\n${proof.stderr}\n${proof.error || ''}`);
+  assert.match(proof.stdout, /idle board fits; older-run count and full detail return after resize/);
+  t.diagnostic(proof.stdout);
+});
+
 test('atris member board reads ATRIS_PROGRESS_DIR for real', async () => {
   const recent = new Date(Date.now() - 5_000).toISOString();
   const dir = fakeDir({ navigator: [`${recent} m-9 started: map the repo`, `${recent} m-9 reading atris/MAP.md`] });
