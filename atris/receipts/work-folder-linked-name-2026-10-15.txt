@@ -1,0 +1,29 @@
+Cleanup now has proof that a symbolic link at a renamed file's old name survives preview and apply.
+Files: test/member-tidy.test.js, atris/MAP.md, atris/refs/MAP-NOTES.md, atris/team/architect/logs/2026-10-15.md.
+Verify: node --test test/worktree-removal-guard.test.js test/member-tidy.test.js && node bin/atris.js slop --staged
+Exit: 0. Tests: 90 passed, 0 failed, 0 skipped, 0 todo.
+Real surface: node bin/atris.js worktree cleanup and node bin/atris.js worktree cleanup --apply, run in disposable repositories by the test, both exit 0.
+Progress: one existing regression extended; runtime unchanged. The link and its target, the original committed bytes and the saved destination all survive alongside the earlier rename proofs.
+next_push: Prove cleanup preserves a saved rename whose original name is recreated as a folder holding a draft.
+layer: capabilities
+
+Full command output:
+command: node bin/atris.js worktree cleanup (healthy origin, local base behind)
+cleanup: dry-run base=origin/master
+candidates: 0
+cache_candidates: 0
+kept: 2
+--
+command: node bin/atris.js worktree cleanup --apply (healthy origin, local base behind)
+cleanup: applied base=origin/master
+removeds: 0
+cache_pruneds: 0
+kept: 2
+ℹ tests 90
+ℹ suites 0
+ℹ pass 90
+ℹ fail 0
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 214118.603083

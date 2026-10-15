@@ -1377,7 +1377,8 @@ test('worktree cleanup quietly refreshes an outdated base and keeps staged notes
     const replaced = path.join(copy, 'outline.txt');
     fs.writeFileSync(replaced, 'original outline\n');
     fs.writeFileSync(path.join(copy, 'guide.txt'), 'original guide\n');
-    runGit(['add', 'outline.txt', 'guide.txt'], copy);
+    fs.writeFileSync(path.join(copy, 'manual.txt'), 'original manual pages\n');
+    runGit(['add', 'outline.txt', 'guide.txt', 'manual.txt'], copy);
     runGit(['commit', '-q', '-m', 'add outline'], copy);
     runGit(['rm', 'outline.txt'], copy);
     fs.writeFileSync(replaced, 'replacement outline\n');
@@ -1457,6 +1458,14 @@ test('worktree cleanup quietly refreshes an outdated base and keeps staged notes
     fs.mkdirSync(renamed);
     const renamedDraft = path.join(renamed, 'draft.txt');
     fs.writeFileSync(renamedDraft, 'draft inside renamed destination\n');
+    const movedManual = path.join(copy, 'renamed-manual');
+    const manualSource = runGit(['show', 'HEAD:manual.txt'], copy);
+    runGit(['mv', 'manual.txt', 'renamed-manual'], copy);
+    const linkedSource = path.join(copy, 'manual.txt');
+    fs.symlinkSync('later-manual.txt', linkedSource);
+    const savedManual = runGit(['show', ':renamed-manual'], copy);
+    assert.equal(savedManual, manualSource);
+    assert.match(runGit(['diff', '--cached', '--summary', '--', 'manual.txt', 'renamed-manual'], copy), /rename manual.txt => renamed-manual/);
     const binary = path.join(copy, 'drawing.bin');
     const savedBytes = Buffer.from([0, 255, 10, 128, 13]);
     const laterBytes = Buffer.from([0, 254, 10, 129, 13, 0]);
@@ -1535,6 +1544,13 @@ test('worktree cleanup quietly refreshes an outdated base and keeps staged notes
       assert.match(runGit(['ls-files', '--stage', '--', 'renamed-guide'], copy), /^100644 /);
       assert.equal(fs.lstatSync(renamed).isDirectory(), true);
       assert.equal(fs.readFileSync(renamedDraft, 'utf8'), 'draft inside renamed destination\n');
+      assert.equal(fs.lstatSync(linkedSource).isSymbolicLink(), true);
+      assert.equal(fs.readlinkSync(linkedSource), 'later-manual.txt');
+      assert.equal(runGit(['show', 'HEAD:manual.txt'], copy), manualSource);
+      assert.equal(runGit(['ls-files', '--', 'manual.txt'], copy), '');
+      assert.equal(runGit(['show', ':renamed-manual'], copy), savedManual);
+      assert.match(runGit(['ls-files', '--stage', '--', 'renamed-manual'], copy), /^100644 /);
+      assert.equal(fs.readFileSync(movedManual, 'utf8'), 'original manual pages\n');
       assert.deepEqual(fs.readFileSync(binary), laterBytes);
       const savedBinary = spawnSync('git', ['show', ':drawing.bin'], { cwd: copy });
       assert.equal(savedBinary.status, 0);
