@@ -1747,9 +1747,9 @@ test('every engine started through a runner or profile variable records its run 
           }
         }
         if (!called) continue;
-        // A resolved profile can supply its binary through a dotted member or
-        // a bracketed key, quoted or held in a variable.
-        called += /^(?:\s*\.\s*[A-Za-z_$][\w$]*|\s*\[\s*(?:'[^'\\\n]*'|"[^"\\\n]*"|`[^`\\$\n]*`|[A-Za-z_$][\w$]*)\s*\])*/.exec(rest.slice(called.length))[0];
+        // A resolved profile can supply its binary through a dotted member or a
+        // bracketed key, quoted or held in a variable, each optionally chained.
+        called += /^(?:\s*\??\.\s*[A-Za-z_$][\w$]*|\s*(?:\?\.\s*)?\[\s*(?:'[^'\\\n]*'|"[^"\\\n]*"|`[^`\\$\n]*`|[A-Za-z_$][\w$]*)\s*\])*/.exec(rest.slice(called.length))[0];
       }
       const argumentsStart = /^\s*,\s*(\[[^\]]*\])?/.exec(rest.slice(called.length));
       if (!argumentsStart) continue;
@@ -1801,7 +1801,7 @@ test('every engine started through a runner or profile variable records its run 
   // Inline profile members, dotted or bracketed, keep the same recording and
   // probe requirements.
   for (const helper of ['spawn', 'spawnSync', 'execFile', 'execFileSync', 'spawnWithOutputChunks', 'runInReapedProcessGroup']) {
-    for (const member of ['.bin', '.command', ' . runner . bin', "['bin']", '[ "command" ]', "['runner'].bin", '[key]', '\n  [`bin`]']) {
+    for (const member of ['.bin', '.command', ' . runner . bin', "['bin']", '[ "command" ]', "['runner'].bin", '[key]', '\n  [`bin`]', '?.bin', " ?. ['bin']", '?.runner?.command']) {
       const profile = `resolveEngineProfile(select(topic, { hint: 'x),y' }))${member}`;
       assert.deepStrictEqual(planted(`${helper}(${profile}, args);\n`), [`commands/planted.js:1 ${profile}`]);
       assert.deepStrictEqual(planted(`startEngineRun(root);\n${helper}(${profile}, args);\n`), []);
