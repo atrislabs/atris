@@ -650,6 +650,44 @@ test('legacy agent_worktree.py create command maps to atris worktree start', () 
   }
 });
 
+// Six worktree cases start from the same repo: one commit on master, pushed
+// to a bare origin whose HEAD points at master. Build it with git once, then
+// copy it into each case and point the copy at its own origin.
+let smokeRepoTemplate = null;
+let smokeRepoTemplateRoot = null;
+test.after(() => {
+  if (smokeRepoTemplateRoot) cleanupTempDir(smokeRepoTemplateRoot);
+});
+function seedSmokeRepo(remote, repo) {
+  if (!smokeRepoTemplate) {
+    const base = makeTempDir();
+    smokeRepoTemplateRoot = base;
+    const templateRemote = path.join(base, 'remote.git');
+    const templateRepo = path.join(base, 'repo');
+    const runGit = (args) => {
+      const result = spawnSync('git', args, { cwd: templateRepo, encoding: 'utf8' });
+      assert.equal(result.status, 0, result.stderr || result.stdout);
+    };
+    fs.mkdirSync(templateRepo);
+    runGit(['init', '--bare', '-q', templateRemote]);
+    runGit(['init', '-q']);
+    runGit(['config', 'user.email', 'test@example.com']);
+    runGit(['config', 'user.name', 'Test User']);
+    fs.writeFileSync(path.join(templateRepo, 'README.md'), '# Smoke\n');
+    runGit(['add', '.']);
+    runGit(['commit', '-qm', 'init']);
+    runGit(['branch', '-M', 'master']);
+    runGit(['remote', 'add', 'origin', templateRemote]);
+    runGit(['push', '-u', 'origin', 'master']);
+    runGit(['symbolic-ref', 'refs/remotes/origin/HEAD', 'refs/remotes/origin/master']);
+    smokeRepoTemplate = { remote: templateRemote, repo: templateRepo };
+  }
+  fs.cpSync(smokeRepoTemplate.remote, remote, { recursive: true });
+  fs.cpSync(smokeRepoTemplate.repo, repo, { recursive: true });
+  const relinked = spawnSync('git', ['remote', 'set-url', 'origin', remote], { cwd: repo, encoding: 'utf8' });
+  assert.equal(relinked.status, 0, relinked.stderr || relinked.stdout);
+}
+
 test('worktree start defaults to upstream remote base and records ship metadata', () => {
   const dir = makeTempDir();
   let worktreePath;
@@ -661,18 +699,7 @@ test('worktree start defaults to upstream remote base and records ship metadata'
       assert.equal(result.status, 0, result.stderr || result.stdout);
       return result.stdout.trim();
     };
-    fs.mkdirSync(repo);
-    spawnSync('git', ['init', '--bare', '-q', remote], { encoding: 'utf8' });
-    runGit(['init', '-q']);
-    runGit(['config', 'user.email', 'test@example.com']);
-    runGit(['config', 'user.name', 'Test User']);
-    fs.writeFileSync(path.join(repo, 'README.md'), '# Smoke\n');
-    runGit(['add', '.']);
-    runGit(['commit', '-qm', 'init']);
-    runGit(['branch', '-M', 'master']);
-    runGit(['remote', 'add', 'origin', remote]);
-    runGit(['push', '-u', 'origin', 'master']);
-    runGit(['symbolic-ref', 'refs/remotes/origin/HEAD', 'refs/remotes/origin/master']);
+    seedSmokeRepo(remote, repo);
 
     assert.equal(defaultStartBase(repo), 'origin/master');
     assert.equal(normalizeTargetRef(repo, 'master'), 'origin/master');
@@ -710,18 +737,7 @@ test('worktree start isolates agent/member worktrees on origin/master when the l
       assert.equal(result.status, 0, result.stderr || result.stdout);
       return result.stdout.trim();
     };
-    fs.mkdirSync(repo);
-    spawnSync('git', ['init', '--bare', '-q', remote], { encoding: 'utf8' });
-    runGit(['init', '-q']);
-    runGit(['config', 'user.email', 'test@example.com']);
-    runGit(['config', 'user.name', 'Test User']);
-    fs.writeFileSync(path.join(repo, 'README.md'), '# Smoke\n');
-    runGit(['add', '.']);
-    runGit(['commit', '-qm', 'init']);
-    runGit(['branch', '-M', 'master']);
-    runGit(['remote', 'add', 'origin', remote]);
-    runGit(['push', '-u', 'origin', 'master']);
-    runGit(['symbolic-ref', 'refs/remotes/origin/HEAD', 'refs/remotes/origin/master']);
+    seedSmokeRepo(remote, repo);
 
     // The launcher checkout is on its own feature branch, tracking that
     // branch on origin: the exact live shape that false-landed two PRs.
@@ -774,18 +790,7 @@ test('worktree start honors an explicit --target for both the checkout point and
       assert.equal(result.status, 0, result.stderr || result.stdout);
       return result.stdout.trim();
     };
-    fs.mkdirSync(repo);
-    spawnSync('git', ['init', '--bare', '-q', remote], { encoding: 'utf8' });
-    runGit(['init', '-q']);
-    runGit(['config', 'user.email', 'test@example.com']);
-    runGit(['config', 'user.name', 'Test User']);
-    fs.writeFileSync(path.join(repo, 'README.md'), '# Smoke\n');
-    runGit(['add', '.']);
-    runGit(['commit', '-qm', 'init']);
-    runGit(['branch', '-M', 'master']);
-    runGit(['remote', 'add', 'origin', remote]);
-    runGit(['push', '-u', 'origin', 'master']);
-    runGit(['symbolic-ref', 'refs/remotes/origin/HEAD', 'refs/remotes/origin/master']);
+    seedSmokeRepo(remote, repo);
     runGit(['checkout', '-qb', 'release/cut']);
     runGit(['push', '-u', 'origin', 'release/cut']);
 
@@ -824,18 +829,7 @@ test('worktree ship commits verifies and pushes an isolated branch', () => {
       assert.equal(result.status, 0, result.stderr || result.stdout);
       return result.stdout.trim();
     };
-    fs.mkdirSync(repo);
-    spawnSync('git', ['init', '--bare', '-q', remote], { encoding: 'utf8' });
-    runGit(['init', '-q']);
-    runGit(['config', 'user.email', 'test@example.com']);
-    runGit(['config', 'user.name', 'Test User']);
-    fs.writeFileSync(path.join(repo, 'README.md'), '# Smoke\n');
-    runGit(['add', '.']);
-    runGit(['commit', '-qm', 'init']);
-    runGit(['branch', '-M', 'master']);
-    runGit(['remote', 'add', 'origin', remote]);
-    runGit(['push', '-u', 'origin', 'master']);
-    runGit(['symbolic-ref', 'refs/remotes/origin/HEAD', 'refs/remotes/origin/master']);
+    seedSmokeRepo(remote, repo);
 
     worktreePath = path.join(dir, 'ship-worktree');
     const start = runCli([
@@ -957,18 +951,7 @@ test('worktree ship refuses to report success when gh pr merge silently no-ops a
       assert.equal(result.status, 0, result.stderr || result.stdout);
       return result.stdout.trim();
     };
-    fs.mkdirSync(repo);
-    spawnSync('git', ['init', '--bare', '-q', remote], { encoding: 'utf8' });
-    runGit(['init', '-q']);
-    runGit(['config', 'user.email', 'test@example.com']);
-    runGit(['config', 'user.name', 'Test User']);
-    fs.writeFileSync(path.join(repo, 'README.md'), '# Smoke\n');
-    runGit(['add', '.']);
-    runGit(['commit', '-qm', 'init']);
-    runGit(['branch', '-M', 'master']);
-    runGit(['remote', 'add', 'origin', remote]);
-    runGit(['push', '-u', 'origin', 'master']);
-    runGit(['symbolic-ref', 'refs/remotes/origin/HEAD', 'refs/remotes/origin/master']);
+    seedSmokeRepo(remote, repo);
 
     worktreePath = path.join(dir, 'ship-worktree');
     const start = runCli(['worktree', 'start', '--agent', 'codex-shipper', '--task', 'Ship Smoke', '--path', worktreePath], { cwd: repo });
@@ -1026,18 +1009,7 @@ test('worktree ship requires a message for dirty isolated checkout', () => {
       assert.equal(result.status, 0, result.stderr || result.stdout);
       return result.stdout.trim();
     };
-    fs.mkdirSync(repo);
-    spawnSync('git', ['init', '--bare', '-q', remote], { encoding: 'utf8' });
-    runGit(['init', '-q']);
-    runGit(['config', 'user.email', 'test@example.com']);
-    runGit(['config', 'user.name', 'Test User']);
-    fs.writeFileSync(path.join(repo, 'README.md'), '# Smoke\n');
-    runGit(['add', '.']);
-    runGit(['commit', '-qm', 'init']);
-    runGit(['branch', '-M', 'master']);
-    runGit(['remote', 'add', 'origin', remote]);
-    runGit(['push', '-u', 'origin', 'master']);
-    runGit(['symbolic-ref', 'refs/remotes/origin/HEAD', 'refs/remotes/origin/master']);
+    seedSmokeRepo(remote, repo);
 
     worktreePath = path.join(dir, 'message-worktree');
     assert.equal(runCli([

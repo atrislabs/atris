@@ -2741,3 +2741,5 @@ Run-record dispatch land target: `test/roster-run-record.test.js:110` passes the
 Run-record worktree note: `test/roster-run-record.test.js:90` has the fake worktree start write the same owner, task, and base note the real worktree start writes, so the dispatch brief reads them from the file instead of several git calls per dispatch. The one-lap review case reuses that fake for worktree start at line 468.
 
 Run-record one-lap land target: `test/roster-run-record.test.js:476` passes the review-only flight the same land target the empty room resolves to, which the landed dispatch case still checks against the real lookup.
+
+Command repository fixture: `test/commands.test.js:658` prepares one real repository and bare remote for six start and ship cases, copies both per case, and relinks each origin. File-level cleanup removes the template after all tests, including setup failure. Setup git launches fall from 60 to 16; command assertions remain unchanged.
