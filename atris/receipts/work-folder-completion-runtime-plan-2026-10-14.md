@@ -210,3 +210,30 @@ when refusal is implemented. Generated fixtures and receipts are removed.
 
 Command: node atris/receipts/work-folder-paired-runtime-probe.js, exit 0.
 next_push: implement the reviewed colon-directory refusal in both proof runners with real-entry regressions proving no command side effects or passing receipts.
+
+## Caller refusal reporting review, October 14
+
+Verdict: proceed-with-changes. The single risk is hiding the actionable
+refusal behind a generic failure or claiming a receipt was written when none
+exists. The current callers do both with the proposed early-return shape.
+
+Flow: synthetic proposed refusal -> actual task CLI -> operator output.
+
+The real CLI diagnostic exercises ready, receipt text, and receipt JSON
+against an isolated real task database. Only writeTaskReceipt's return is
+synthetic, explicitly representing the reviewed pre-launch refusal. It does
+not prove a production guard or colon-path runtime behavior.
+
+All three calls exit 1 and omit the detail. Ready prints generic failure;
+receipt text prints "exit undefined" and "receipt written: undefined";
+receipt JSON omits reason and detail. No command sentinel or receipt appears.
+
+Before implementing the runner refusal, include commands/task.js:10091 and
+commands/task.js:10308 in the plan. Surface detail in ready and receipt text,
+preserve reason and detail in JSON, and mention exits or receipt paths only
+when present. Keep ordinary executed failures and their saved receipt output.
+A regression must assert explicit refusal wording, exit 1, absent command
+side effects and receipts, and a task that has not moved into review.
+
+Command: node atris/receipts/work-folder-refusal-caller-probe.js, exit 0.
+next_push: implement paired pre-launch runner refusal and caller explanation with real colon-directory entry checks and ordinary failure controls.

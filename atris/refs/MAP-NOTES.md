@@ -2401,3 +2401,5 @@ Colon-directory fallback decision: `atris/receipts/work-folder-completion-runtim
 
 
 Paired production-runner baseline: `atris/receipts/work-folder-paired-runtime-probe.js` launches copied Node from a colon-containing directory and runs both real proof entry points. Controlled startup adds only a competing executable, without a proposed repair. Both commands run, the shared runner returns passing proof, and the receipt writer saves a passing receipt. This baseline demonstrates missing refusal, not successful repair. Evidence: `atris/receipts/work-folder-paired-runtime-2026-10-14.txt`.
+
+Caller refusal reporting: `atris/receipts/work-folder-refusal-caller-probe.js:1` injects only the proposed refusal return into three actual task CLI calls. All exit 1, omit detail, and write no receipt; text receipt falsely prints undefined exit and path. Caller safeguards are recorded in `atris/receipts/work-folder-completion-runtime-plan-2026-10-14.md`. This is synthetic refusal evidence, not production guard proof.
