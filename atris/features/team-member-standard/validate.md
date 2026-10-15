@@ -3,7 +3,7 @@ last_compiled: 2026-07-25
 sources:
   - commands/member.js:8933-9072 (member command dispatch and help)
   - commands/mission.js:1490-1536 (renderMemberNowMarkdown, member now.md rendering)
-  - test/commands.test.js:154 (member create, goal, wake, loop, status coverage starts here)
+  - test/commands-part-1.test.js:31 (member create, goal, wake, loop, status coverage starts here)
 ---
 
 # Team Member Standard — Validation
@@ -34,7 +34,7 @@ sources:
 ## Verification
 
 ```bash
-node --test test/commands.test.js --test-name-pattern 'member'
+node --test test/commands-part-*.test.js --test-name-pattern 'member'
 node -c commands/member.js
 node -c commands/mission.js
 node -c bin/atris.js

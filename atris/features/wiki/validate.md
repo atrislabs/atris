@@ -17,8 +17,8 @@ sources:
   - commands/push.js:68 (wiki prefix normalization)
   - bin/atris.js:540-543 (top-level wiki help, the ingest/query/lint/loop lines)
   - bin/atris.js:2732-2751 (wiki, ingest, query, lint, loop routes)
-  - test/commands.test.js:19492 (wiki scaffold coverage)
-  - test/commands.test.js:19715-19784 (wiki loop stale/suggest/alias coverage)
+  - test/commands-part-5.test.js:3228 (wiki scaffold coverage)
+  - test/commands-part-5.test.js:3406-3500 (wiki loop stale/suggest/alias coverage)
   - atris/skills/wiki/SKILL.md
 ---
 
@@ -51,7 +51,7 @@ sources:
 ## Current Verification
 
 ```bash
-node --test test/commands.test.js --test-name-pattern 'wiki|loop'
+node --test test/commands-part-*.test.js --test-name-pattern 'wiki|loop'
 node -c lib/wiki.js
 node -c commands/wiki.js
 node -c commands/loop.js

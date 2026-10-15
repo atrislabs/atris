@@ -327,7 +327,7 @@ test('verify honors ATRIS_VERIFY_TIMEOUT_MS instead of a flat 120s ceiling', () 
   // never as a failed verdict. Then a generous ceiling lets it pass.
   process.env[key] = '1000';
   try {
-    const slow = runVerifyCommand('node --test test/commands.test.js', process.cwd());
+    const slow = runVerifyCommand('node --test test/commands-part-1.test.js', process.cwd());
     assert.equal(slow.ok, false);
     assert.equal(slow.reason, 'verify_unrunnable');
     assert.equal(slow.unrunnable_cause, 'verify_timed_out');

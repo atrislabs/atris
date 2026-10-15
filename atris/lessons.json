@@ -109,9 +109,9 @@
   "play-test-env-leak": {
     "scope": "atris-cli",
     "status": "resolved",
-    "detector": "node -e \"const{scrubAgentEnv}=require('./test/helpers/agent-env');const e=scrubAgentEnv({ATRIS_PROFILE:'x',ATRIS_PLAYER:'y',ATRIS_USERNAME:'z',ATRIS_AGENT_ID:'a',PATH:'p'});const leaked=['ATRIS_PROFILE','ATRIS_PLAYER','ATRIS_USERNAME','ATRIS_AGENT_ID'].filter(k=>k in e);if(leaked.length){console.error('leaked: '+leaked.join(', '));process.exit(1)}\" && grep -q scrubAgentEnv test/commands.test.js",
+    "detector": "node -e \"const{scrubAgentEnv}=require('./test/helpers/agent-env');const e=scrubAgentEnv({ATRIS_PROFILE:'x',ATRIS_PLAYER:'y',ATRIS_USERNAME:'z',ATRIS_AGENT_ID:'a',PATH:'p'});const leaked=['ATRIS_PROFILE','ATRIS_PLAYER','ATRIS_USERNAME','ATRIS_AGENT_ID'].filter(k=>k in e);if(leaked.length){console.error('leaked: '+leaked.join(', '));process.exit(1)}\" && grep -q scrubAgentEnv test/commands-part-*.test.js",
     "resolved_at": "2026-07-06",
-    "mechanism": "test/helpers/agent-env.js scrubAgentEnv removes ATRIS_PROFILE, ATRIS_PLAYER, and ATRIS_USERNAME from spawned CLI tests; test/commands.test.js play-mode coverage uses it."
+    "mechanism": "test/helpers/agent-env.js scrubAgentEnv removes ATRIS_PROFILE, ATRIS_PLAYER, and ATRIS_USERNAME from spawned CLI tests; test/commands-part-*.test.js play-mode coverage uses it."
   },
   "features-gitignored-by-default": {
     "scope": "atris-cli",

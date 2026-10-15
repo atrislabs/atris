@@ -7,8 +7,8 @@ sources:
   - lib/wiki.js:620-705 (suggested sources, STATUS, log)
   - bin/atris.js:922-940 (showLoopHelp)
   - bin/atris.js:2743-2751 (top-level loop route, now via commands/loop-front.js)
-  - test/commands.test.js:18016 (loop help coverage)
-  - test/commands.test.js:19715-19784 (loop stale/suggest/alias coverage)
+  - test/commands-part-5.test.js:3147 (loop help coverage)
+  - test/commands-part-5.test.js:3406-3500 (loop stale/suggest/alias coverage)
 ---
 
 # Wiki Upkeep Loop — Validation
@@ -36,7 +36,7 @@ sources:
 ## Current Verification
 
 ```bash
-node --test test/commands.test.js --test-name-pattern 'wiki|loop'
+node --test test/commands-part-*.test.js --test-name-pattern 'wiki|loop'
 node -c commands/loop.js
 node -c commands/wiki.js
 node -c lib/wiki.js

@@ -26,7 +26,7 @@ Ship the maintenance layer for the local wiki. The command should be determinist
 - `README.md` - document the upkeep command
 - `atris/MAP.md` - map the loop feature and search paths
 - `atris/features/README.md` - register the feature
-- `test/commands.test.js` - upkeep command tests
+- `test/commands-part-*.test.js` - upkeep command tests
 - `test/cli-smoke.test.js` - end-to-end loop smoke
 
 ---
@@ -76,7 +76,7 @@ Ship the maintenance layer for the local wiki. The command should be determinist
 
 ### Step 4: Prove it updates wiki memory
 
-**Files:** `test/commands.test.js`, `test/cli-smoke.test.js`
+**Files:** `test/commands-part-*.test.js`, `test/cli-smoke.test.js`
 
 **What to do:**
 - Keep focused command tests for stale pages, orphan pages, suggestion queue, and `wiki loop` aliasing.

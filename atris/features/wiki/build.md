@@ -26,7 +26,7 @@ Ship the first real local-first wiki slice. Canonical root is `atris/wiki/`, clo
 - `commands/pull.js` - normalize `--only wiki` to `atris/wiki/`
 - `commands/push.js` - normalize `--only wiki` to `atris/wiki/`
 - `bin/atris.js` - add `ingest`, `query`, and `lint` aliases
-- `test/commands.test.js` - wiki regression tests
+- `test/commands-part-*.test.js` - wiki regression tests
 - `test/cli-smoke.test.js` - init/activate wiki integration smoke coverage
 - `README.md` - document local-first wiki behavior
 - `atris/CLAUDE.md` - teach first-session agents to read wiki state
@@ -155,7 +155,7 @@ Ship the first real local-first wiki slice. Canonical root is `atris/wiki/`, clo
 
 - Existing cloud business chat flow in `commands/wiki.js`
 - Existing `pull` and `push` prefix filtering
-- Existing command test harness in `test/commands.test.js`
+- Existing command test harness in `test/commands-part-*.test.js`
 
 ---
 

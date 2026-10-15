@@ -5,7 +5,7 @@
 Focused tests pass:
 
 ```bash
-node --test --test-name-pattern 'push|business workspace|business sync|manifest records workspace root' test/commands.test.js
+node --test --test-name-pattern 'push|business workspace|business sync|manifest records workspace root' test/commands-part-*.test.js
 ```
 
 Company brain sync classifier tests pass:
