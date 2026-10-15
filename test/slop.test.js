@@ -3369,10 +3369,12 @@ test('fix joins a plural and a common verb with more words after a dash with a s
     'The deploy gate is disabled \u2014 master merges do NOT reach prod by themselves.',
     'The group needs no build assignment \u2014 new VALID builds appear automatically.',
     'Nobody posts about it \u2014 those searches return zero results.',
-    // a "the", a plural before a noun, or a short name after a semicolon stays
+    // a "the", a plural before a noun, an adverb in "s" with no subject, or a
+    // short name after a semicolon stays
     'Read the board \u2014 the changes users need first.',
     'Keep the list \u2014 build logs, test runs and receipts.',
     'Six defects; the big one \u2014 audit rows carry no identity.',
+    'Ship it small \u2014 sometimes need a retry first.',
   ].join('\n'));
   const { changes } = applyFixes([file], RULES);
   assert.deepEqual(changes.map((c) => c.after), [
@@ -3383,6 +3385,7 @@ test('fix joins a plural and a common verb with more words after a dash with a s
     'Read the board, the changes users need first.',
     'Keep the list, build logs, test runs and receipts.',
     'Six defects; the big one, audit rows carry no identity.',
+    'Ship it small, sometimes need a retry first.',
   ]);
 });
 

@@ -522,9 +522,13 @@ const ADVERB_CLAUSE_AFTER_DASH = new RegExp(`${CLAUSE_END}\\s*\\u2014\\s*(?!${NA
 // words after it, starts one too: "small phones overflow silently", "master
 // merges do not reach prod", "those searches return zero results". A
 // plural before a noun, "skills folder", is no verb, and "the" is left out
-// so "the changes users need" stays a phrase.
+// so "the changes users need" stays a phrase. An adverb in "s" is no
+// plural, so "ship it small, sometimes need a retry" keeps its comma.
+// "Always" is left off: "the big three; always include it" is a command,
+// a clause of its own, and only this rule joins it today.
+const S_ADVERB = '(?:sometimes|perhaps|besides|afterwards|towards|backwards|forwards|nowadays|sideways|anyways|outwards|upwards|downwards|inwards|overseas|whereas)';
 const COMMON_PLAIN_VERB = '(?:need|appear|carry|say|do|seem|remain|require|reach|stay|tend|hold|lose|know|want|become|belong|depend|happen|exist|agree|refuse|include|contain|return)';
-const PLURAL_CLAUSE_AFTER_DASH = new RegExp(`${CLAUSE_END}\\s*\\u2014\\s*(?!${NAMING_PHRASE})(?!${TIME_OPENER})(?=(?:(?!(?:the|a|an|that|whose|this|it|its)\\b)${SUBJECT_WORD}){0,2}(?!(?:the|a|an|that|whose|this|its)\\b)[A-Za-z0-9_'-]*[a-z](?<!ss|us|is)s\\s+${COMMON_PLAIN_VERB}\\s+[^\\s\\u2014])`, 'g');
+const PLURAL_CLAUSE_AFTER_DASH = new RegExp(`${CLAUSE_END}\\s*\\u2014\\s*(?!${NAMING_PHRASE})(?!${TIME_OPENER})(?=(?:(?!(?:the|a|an|that|whose|this|it|its)\\b)${SUBJECT_WORD}){0,2}(?!(?:the|a|an|that|whose|this|its)\\b)(?!${S_ADVERB}\\b)[A-Za-z0-9_'-]*[a-z](?<!ss|us|is)s\\s+${COMMON_PLAIN_VERB}\\s+[^\\s\\u2014])`, 'g');
 // "The", one or two words with no "s" and a plural, then a common verb and
 // two more words, start one too: "the text title elements use obfuscated
 // class names", "the recognized gaming classes map onto instruments". A
@@ -2404,4 +2408,4 @@ function slopCommand(argv) {
   return 0;
 }
 
-module.exports = { slopCommand, detect, scanFile, scanPaths, RULES, PAIR_RULES, loadProjectRules, addProjectRule, gitChangedLines, applyFixes, fencedLines, PRESENT_PLURAL_VERB, DEMONSTRATIVE_LEAD, installHook, findDeadCode, findOrphanedExports, listJsFiles };
+module.exports = { slopCommand, detect, scanFile, scanPaths, RULES, PAIR_RULES, loadProjectRules, addProjectRule, gitChangedLines, applyFixes, fencedLines, PRESENT_PLURAL_VERB, DEMONSTRATIVE_LEAD, S_ADVERB, installHook, findDeadCode, findOrphanedExports, listJsFiles };

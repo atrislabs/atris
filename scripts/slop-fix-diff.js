@@ -252,9 +252,10 @@ const SPLICE_SHAPE = new RegExp(`^(?!that (?:the|a|an|it|we|they|he|she|this|the
 // need tests" and "those searches return zero results" are listed. The
 // fixer keeps a comma before "those" and a verb with a word in "s" after
 // it, to spare "those work items", so the list counts what that costs.
-// The lead words and the verbs come from the fixer, so the two cannot drift.
-const { PRESENT_PLURAL_VERB, DEMONSTRATIVE_LEAD } = require(path.join(ROOT, 'commands', 'slop.js'));
-const DEMONSTRATIVE_SHAPE = new RegExp(`^(?:these|those|(?:the|these|those|our|their|your|its) (?:[\\w\`-]+ )?[a-z]+[^isu\\s']s) (?:${DEMONSTRATIVE_LEAD} )?${PRESENT_PLURAL_VERB} (?:[a-z\`"]|\\d)`);
+// The lead words and the verbs come from the fixer, so the two cannot drift,
+// and so do the adverbs in "s" that are never the plural noun.
+const { PRESENT_PLURAL_VERB, DEMONSTRATIVE_LEAD, S_ADVERB } = require(path.join(ROOT, 'commands', 'slop.js'));
+const DEMONSTRATIVE_SHAPE = new RegExp(`^(?:these|those|(?:the|these|those|our|their|your|its) (?:[\\w\`-]+ )?(?!${S_ADVERB} )[a-z]+[^isu\\s']s) (?:${DEMONSTRATIVE_LEAD} )?${PRESENT_PLURAL_VERB} (?:[a-z\`"]|\\d)`);
 // A stretch that ends its sentence on a bare "of", "to", "with" and kin has
 // lost the object of that word to the noun it opens with, so it is a
 // clause on that noun, not a subject and its verb: "offline work, a topic
