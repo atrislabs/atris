@@ -126,6 +126,11 @@ test('member score --gate and review --auto keep only a real gain', () => {
     const none = cli(dir, ['member', 'score', 'speedy', '--gate']);
     assert.equal(none.status, 2, 'no change on top of master is nothing to judge');
     assert.match(none.stderr, /nothing to compare/);
+    // With the kept score at HEAD, the message names that bar, not master.
+    const head = git(dir, 'rev-parse', 'HEAD');
+    const idle = scoring.gate({ command: 'true', runs: 1 }, dir, { base: head });
+    assert.equal(idle.ok, false);
+    assert.match(idle.error, new RegExp(`no change since the last kept score \\(${head.slice(0, 8)}\\)`));
 
     fs.writeFileSync(path.join(dir, 'value.txt'), '50');
     const gate = cli(dir, ['member', 'score', 'speedy', '--gate', '--json']);
