@@ -20,4 +20,6 @@ exit: 0
 Progress: one existing real-runtime case strengthened with distinct saved and later symbolic link destinations, exact file kind and staged-tree preservation; zero pending checks.
 Learned: a staged symbolic link and a later destination remain separate through both cleanup calls, even when both destinations are absent.
 next_push: prove cleanup preserves a staged regular file replaced by a symbolic link before cleanup.
+
+Review evidence: the installed atris command rerun failed (55 passed, 35 failed); its shortened output did not establish the cause. Running the checkout CLI with the current Node passed the exact frozen command, exit 0, and moved the task to review. Receipt: atris/runs/2026-10-15-task-acw-38-2026-10-15T11-51-19-914Z.json. No runtime fix was attempted in this increment.
 layer: capabilities
