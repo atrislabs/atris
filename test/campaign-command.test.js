@@ -80,6 +80,20 @@ test('start explains what is missing in plain words', async () => {
   assert.deepEqual(result.judged, []);
 });
 
+test('a local start may leave out the budget; a cloud start may not', async () => {
+  const store = createMemoryStore();
+  const local = await run(store, ['start', 'No limit', '--judge', 'exit 1', '--id', 'cmp-free']);
+  assert.equal(local.code, 0, local.err);
+  assert.doesNotMatch(local.out, /budget|\$/);
+  const list = await run(store, []);
+  assert.doesNotMatch(list.out, /\$/);
+  const cloud = await run(store, ['start', 'No limit', '--judge', 'exit 1', '--id', 'cmp-sky', '--cloud']);
+  assert.equal(cloud.code, 2);
+  assert.match(cloud.err, /cloud campaign needs --budget/);
+  assert.deepEqual(cloud.judged, []);
+  assert.equal(getCampaign(store, 'cmp-sky'), null);
+});
+
 test('a parent with its own parent is refused (one level only)', async () => {
   const store = createMemoryStore();
   await run(store, ['start', 'Top', '--judge', 'exit 1', '--budget', '10', '--id', 'cmp-top']);
