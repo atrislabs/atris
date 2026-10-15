@@ -417,6 +417,7 @@ const ONLY_CLAUSE_AFTER_DASH = new RegExp(`(?<=[\\w)\\]"'*_\`%\\u201d\\u2019\\uE
 // and "Limited budget, can't nag" is a note, so both keep their comma.
 // That holds when the sentence starts on the line; see the wrap check below.
 const SUBJECTLESS_HELPER = "(?:is|are|was|were|has|have|had|will|would|can|cannot|could|must|should|may|might|does|did|(?:is|was|are|were|has|have|had|does|did|can|could|would|should|wo)n['\\u2019]t)";
+const PLAIN_CLAUSE_LEFT = /^(?:(?:the|a|an|our|your|their|its|this|that|my)\s+)?(?:[A-Za-z][\w'\/-]*\s+){0,3}?(?:(?:often|always|never|now|still|already|also|just|only|really|usually|sometimes)\s+)?(?:[a-z]{2,}(?<!ss|us|is|ous)(?:s|ed)|gets|got|ran|made|took|kept|found|lost|wrote|sent|went|came)\s+\S/;
 const SUBJECTLESS_CLAUSE_AFTER_DASH = new RegExp(`(?<=[\\w)\\]%\\uE001])\\s*\\u2014\\s*(?=(${SUBJECTLESS_HELPER})\\s+(?:not\\s+|never\\s+|still\\s+|already\\s+|also\\s+|be\\s+)?[a-z][^.!?\\u2014]*(?:[.!]|$))`, 'g');
 
 // The mark that joins a full clause to the sentence before the dash. A short
@@ -897,7 +898,15 @@ function fixEmDash(s, { endsBlock = false, startsBlock = false, spans = [], abov
       const own = left.split(/;\s/).pop().replace(/\([^()]*\)/g, ' ');
       const words = own.trim().split(/\s+/);
       if (words[words.length - 1].toLowerCase() === verb.toLowerCase()) return m;
-      return new RegExp(`\\b${SUBJECTLESS_HELPER}\\b`, 'i').test(own) ? clauseJoin(left) : m;
+      if (new RegExp(`\\b${SUBJECTLESS_HELPER}\\b`, 'i').test(own)) return clauseJoin(left);
+      // a subject and a plain verb are a clause too: "Our service logs after
+      // CRITIQUE; should also log at DECIDE time". The sentence opens on the
+      // line, and the dash sits outside brackets with no dash after it, so
+      // an aside ("stuck at the ceiling, may be") keeps its comma.
+      const rest = whole.slice(at + m.length).split(/[.!?](?:\s|$)/)[0];
+      const core = own.replace(/^\s*(?:[-*+>]|\d+[.)])\s+/, '').replace(/^(?:\*\*[^*]+\*\*|__[^_]+__)\s*/, '').trim();
+      if (insideParens(whole.slice(0, at)) || /\u2014/.test(rest) || !/^(?:[A-Z]|(?:the|a|an|our|your|their|its|this|my)\s)/.test(core)) return m;
+      return PLAIN_CLAUSE_LEFT.test(core) ? clauseJoin(left) : m;
     })
     .replace(STATUS_CLAUSE_AFTER_DASH, (m, at, whole) => {
       const left = clauseLeft(at, whole);

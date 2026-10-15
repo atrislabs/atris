@@ -3876,3 +3876,27 @@ test('fix joins a full clause and a helping verb with no subject after its dash'
     'would be a large audience, was unproven in 1995.',
   ]);
 });
+
+test('fix joins a subject and plain verb to a subjectless helping verb after its dash', () => {
+  // from a build log: "Our trajectory_service logs after CRITIQUE" then a
+  // dash and "should also log" came out as a comma splice. A subject and a
+  // plain verb before the dash are a clause, so it takes a semicolon. A
+  // dash inside brackets, or one whose aside closes later, keeps its comma.
+  const D = String.fromCharCode(0x2014);
+  const file = tmpFile('plain-verb-subjectless.md', [
+    `Our trajectory_service logs after CRITIQUE ${D} should also log at DECIDE time.`,
+    '',
+    `TabView paging often gets eaten by the scroll view ${D} must feel native on device.`,
+    '',
+    `Higher score (currently stuck at 0.9 ceiling ${D} may be a triage ceiling).`,
+    '',
+    `She'd worked through it ${D} hadn't mentioned it, hadn't stopped ${D} and then left.`,
+  ].join('\n'));
+  const { changes } = applyFixes([file], RULES);
+  assert.deepEqual(changes.map((c) => c.after), [
+    'Our trajectory_service logs after CRITIQUE; should also log at DECIDE time.',
+    'TabView paging often gets eaten by the scroll view; must feel native on device.',
+    'Higher score (currently stuck at 0.9 ceiling, may be a triage ceiling).',
+    "She'd worked through it (hadn't mentioned it, hadn't stopped) and then left.",
+  ]);
+});
