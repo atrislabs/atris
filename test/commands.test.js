@@ -12530,7 +12530,7 @@ test('task next names accept for uncertified review and leaves open work unclaim
   try {
     fs.mkdirSync(path.join(dir, 'atris'), { recursive: true });
 
-    // Seed creation and ownership; ready, next and both shows stay on the CLI.
+    // Seed creation, ownership and readiness; next and both shows stay on the CLI.
     const workspaceRoot = taskStore.workspaceRoot(dir);
     const db = taskStore.open(dbPath);
     let reviewId;
@@ -12542,6 +12542,9 @@ test('task next names accept for uncertified review and leaves open work unclaim
       assert.equal(review.inserted, true);
       assert.equal(open.inserted, true);
       assert.equal(taskStore.claimTask(db, { id: review.id, claimedBy: 'codex' }).claimed, true);
+      assert.equal(taskStore.readyTask(db, {
+        id: review.id, actor: 'codex', proof: 'first pass validation passed',
+      }).ready, true);
       const refs = taskStore.taskDisplayRefMap(taskStore.listTasks(db, { workspaceRoot }));
       reviewId = review.id;
       reviewRef = refs.get(review.id);
@@ -12551,7 +12554,6 @@ test('task next names accept for uncertified review and leaves open work unclaim
     } finally {
       taskStore.close();
     }
-    assert.equal(runCli(['task', 'ready', reviewRef, '--proof', 'first pass validation passed', '--as', 'codex'], { cwd: dir, env }).status, 0);
 
     const next = runCli(['task', 'next', '--as', 'codex', '--json'], { cwd: dir, env });
     assert.equal(next.status, 0, next.stderr);

@@ -2795,3 +2795,5 @@ Review debt readiness setup: `test/commands.test.js:12575` seeds readiness throu
 Certified review fallback readiness setup: `test/commands.test.js:12643` seeds readiness through production readyTask in the existing creation connection with the same actor and proof. The connection closes in finally before CLI certification and selection. Seven launches become six; all original assertions remain.
 
 Scoped review readiness setup: `test/commands.test.js:12735` seeds readiness through production readyTask in the existing creation connection with the same actor and proof. It closes in finally before CLI certification and scoped selection. Five launches become four; all original assertions remain.
+
+Uncertified review readiness setup: `test/commands.test.js:12525` seeds readiness through production readyTask in the existing creation connection with the original actor and proof, closing in finally before CLI selection and both status reads. Four launches become three; all original assertions remain.
