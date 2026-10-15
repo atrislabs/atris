@@ -381,3 +381,15 @@ test('a mission that names its engine still gets the roster time limit for that 
     assert.equal(missionTickTimeoutMs(other.mission, hour), 20 * 60 * 1000);
   }, { roster: '# roster\n\n## build\n- claude, max: 45 min\n' });
 });
+
+test('a killed tick blames the mission clock only when the mission clock set the limit', () => {
+  const { missionTickWallBound } = require('../commands/mission');
+  const min = 60 * 1000;
+  // A 45 min roster limit with 30 min left: the mission clock cut the tick.
+  assert.equal(missionTickWallBound({ roster_max_seconds: 45 * 60 }, 30 * min), true);
+  // A 5 min roster limit with 15 min left: the tick's own limit cut it.
+  assert.equal(missionTickWallBound({ roster_max_seconds: 5 * 60 }, 15 * min), false);
+  // No roster limit: compare against the default 20 min tick limit.
+  assert.equal(missionTickWallBound({}, 15 * min), true);
+  assert.equal(missionTickWallBound({}, 40 * min), false);
+});
