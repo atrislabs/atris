@@ -1255,9 +1255,9 @@ test('tidy keeps staged and unsaved notes when the fetched remote default is not
       assert.ok(branchExists(fx.repo, 'landed-clean'));
       assert.equal(runGit(['worktree', 'list', '--porcelain'], fx.repo), registered);
       assert.equal(runGit(['symbolic-ref', 'refs/remotes/origin/HEAD'], fx.repo), 'refs/remotes/origin/master');
-      // Like a plain fetch, the check also moves the local copy of origin's
-      // branch to what origin sent; the copies and their notes stay put.
-      assert.equal(runGit(['rev-parse', 'origin/master'], fx.repo), blob);
+      // The check only reads origin: the local copy of its branch keeps the
+      // last good commit instead of following the damaged one.
+      assert.equal(runGit(['rev-parse', 'origin/master'], fx.repo), tip);
       assert.equal(runGit(['rev-parse', 'HEAD'], kept), tip);
       assert.equal(fs.readFileSync(path.join(kept, 'non-commit-default.txt'), 'utf8'), 'work\n');
       assert.equal(fs.readFileSync(path.join(kept, 'draft.txt'), 'utf8'), 'unsaved notes\n');
