@@ -1,0 +1,28 @@
+Empty-board messages now fit narrow terminals, verified by the real resized command and 93 passing checks.
+
+Files changed: lib/member-board.js; test/member-board.test.js; atris/receipts/member-board-empty-width-proof.py; atris/MAP.md; atris/refs/MAP-NOTES.md; atris/team/builder/logs/2026-10-14.md (new entry only).
+Artifacts: this receipt and atris/receipts/member-board-empty-width-tests-2026-10-14.txt.
+Commands: atris brain activate --root . --verify; atris; atris mission status mission-2026-10-14-continue-improving-atris-mem-52869ba8; atris mission goal --json; atris task list; git status --short; atris task new/claim/note/ready; git diff --check; atris brain compile --root .; git add/commit/push.
+The brain activation and compile commands exited 2 in plan-only mode; generated policy files were not changed.
+
+Real surface command: python3 atris/receipts/member-board-empty-width-proof.py
+Invoked surface: node bin/atris.js member board --watch
+Standalone exit: 0. Required tests invoked the same proof after fixing its temporary directory to /tmp.
+Required verify command: node --test test/member-board.test.js test/member-result.test.js
+Exit: 0. Output: tests 93; pass 93; fail 0; cancelled 0; skipped 0; todo 0.
+Metric: two new regression checks; five real terminal layouts, 30x1, 18x2, 22x3, 80x3, 240x3; widths 1 through 28 keep whole messages; wide characters count as two cells.
+Scope: empty boards with no progress logs. Piped output keeps the full path. Boards hiding only older runs retain their existing message.
+Review gate: proof-only submission was refused because the gate requires its own execution. The plain readiness command failed (69 passed, 24 failed), consistent with the previous recorded unsupported-runtime issue. Readiness retried with PATH=/opt/homebrew/bin:$PATH inside its verification command to select the same supported Node as the direct run. The supported-runtime readiness command passed, exit 0, receipt atris/runs/2026-10-15-task-bci-13-2026-10-15T02-49-21-594Z.json. Work is in Review; automatic certification cannot rerun the path-prefixed command and requests independent review. Mission verifier was not changed.
+Learned: empty-state messages need the same cell-width budget as populated rows; even one wrapped path can scroll a one-row screen.
+next_push: Fit the idle-only board message and older-run count to narrow, short terminals.
+
+Real surface output captured during required tests:
+ℹ 30x1: no member progress yet in /...
+18x2: no progress yet
+22x3: no member progress yet
+80x3: no member progress yet in /tmp/atris-empty-tkvycmky/進捗進捗進捗進捗進捗進捗...
+240x3: no member progress yet in /tmp/atris-empty-tkvycmky/進捗進捗進捗進捗進捗進捗進捗進捗進捗進捗進捗進捗進捗進捗進捗進捗進捗進捗進捗進捗進捗進捗進捗進捗進捗進捗進捗進捗進捗進捗
+exit: 0
+empty board fits narrow and short terminals; wide path returns after resize
+
+layer: behaviors

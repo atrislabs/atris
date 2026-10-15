@@ -158,3 +158,5 @@ New-log split line endings: `test/member-board.test.js:2353` starts the real fol
 Watch shutdown: `test/member-board.test.js:862` checks interrupt cancels the pending log redraw, periodic timer, folder watch, and resize listener. Real narrow-terminal proof: `python3 atris/receipts/member-board-watch-stop-proof.py`.
 
 Late progress folder watch recovery: `test/member-board.test.js:2977` runs `python3 atris/receipts/member-board-watch-recovery-proof.py` in a real 80x3 terminal, waits through a missing-folder timed retry, checks the next retry recovers, then requires a timeout write to redraw before the next timer.
+
+Empty-board terminal width: `lib/member-board.js:311` keeps the full progress path in pipes, shortens it by screen cells in terminals, and uses whole shorter messages below 29 columns. `test/member-board.test.js:1695` covers tiny widths and the real resized terminal via `python3 atris/receipts/member-board-empty-width-proof.py` (30x1, 18x2, 22x3, 80x3, 240x3).

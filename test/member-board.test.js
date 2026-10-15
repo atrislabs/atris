@@ -1692,6 +1692,25 @@ test('atris member board says so plainly when no member has a log', () => {
   }
 });
 
+test('the empty board keeps whole messages in tiny widths and full paths in pipes', () => {
+  const dir = '/tmp/' + '進捗'.repeat(40);
+  assert.equal(renderBoard([], dir), `no member progress yet in ${dir}`);
+  for (let width = 1; width <= 28; width++) {
+    const message = renderBoard([], dir, 0, width, 1);
+    assert.ok(message.length <= width);
+    assert.ok(['no member progress yet', 'no progress yet', 'no progress', 'empty', '-'].includes(message));
+  }
+});
+
+test('the real empty board fits narrow and short terminals through resize', { skip: process.platform === 'win32' }, (t) => {
+  const proof = spawnSync('python3', [path.join(repoRoot, 'atris/receipts/member-board-empty-width-proof.py'), process.execPath], {
+    encoding: 'utf8', timeout: 20_000,
+  });
+  assert.equal(proof.status, 0, `${proof.stdout}\n${proof.stderr}\n${proof.error || ''}`);
+  assert.match(proof.stdout, /empty board fits narrow and short terminals; wide path returns after resize/);
+  t.diagnostic(proof.stdout);
+});
+
 test('progress lines turn into stream events', () => {
   const { progressEvent } = require('../lib/member-board');
   assert.deepEqual(progressEvent('builder', '2026-10-13T12:00:00.000Z m-1 started: ship the stream'),

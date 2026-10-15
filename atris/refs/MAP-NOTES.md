@@ -2412,3 +2412,5 @@ In-place equal-size rewrite: `followBoard()` in `lib/member-board.js:831` checks
 Watch shutdown: `test/member-board.test.js:862` checks interrupt cancels the pending log redraw, periodic timer, folder watch, and resize listener. Real narrow-terminal proof: `python3 atris/receipts/member-board-watch-stop-proof.py`.
 
 Late progress folder watch recovery: `lib/member-board.js:1097` retries the folder watch on every timed redraw. `test/member-board.test.js:2977` runs the real terminal proof in `atris/receipts/member-board-watch-recovery-proof.py`, including a later write within two seconds and clean interrupt.
+
+Empty-board terminal width: `lib/member-board.js:311` keeps the full progress path in pipes, shortens it by screen cells in terminals, and uses whole shorter messages below 29 columns. `test/member-board.test.js:1695` covers tiny widths and the real resized terminal via `python3 atris/receipts/member-board-empty-width-proof.py` (30x1, 18x2, 22x3, 80x3, 240x3).

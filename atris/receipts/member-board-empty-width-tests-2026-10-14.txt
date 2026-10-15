@@ -1,0 +1,159 @@
+✔ ago reads like a person would say it (1.272375ms)
+✔ board shows working, quiet, done ok, and done failed from fake logs (5.2335ms)
+✔ a failed row says why when the finished line gives a reason (2.222625ms)
+✔ the runner writes why a run failed and the board reads it back (10.91425ms)
+✔ a narrow terminal trims job and last step so every line fits (7.73325ms)
+✔ a job that can read whole gets its room before the last step (1.022208ms)
+✔ a result column with nothing in it gives its room to a cut job (2.327917ms)
+✔ a finished row gets its last step back in the room of an empty result column, never at a job word (1.682292ms)
+✔ a live run with no step yet never keeps an empty last step that cuts a job (1.900542ms)
+✔ a hidden last step comes back with the cheapest change that makes room (1.664125ms)
+✔ the widths where a wider board shows less are known (9.876083ms)
+✔ a stopped run and one that ended with no result never make a wider board show less (13.688ms)
+✔ the full missing-result wording never cuts a step a narrower board read more of (3.103625ms)
+✔ beside a live run, a signed out fix never loses its engine one column wider (6.511791ms)
+✔ a signed out row costs a wider board only the widths it is known to (28.709334ms)
+✔ a tiny terminal keeps member states and common failure reasons within its width (1.880625ms)
+✔ below 30 columns the board keeps whole states and trims only member names (1.780708ms)
+✔ finishing members leave common failure reasons whole at 30 columns (1.498458ms)
+✔ compact rows keep missing results clear beside a finishing member (79.443334ms)
+✔ the full missing-result wording never costs a name a letter (1.34125ms)
+✔ a stopped row shrinks like a done row: how it ended, with the age left to ago (1.039167ms)
+✔ a busy row with an earlier failure shrinks its last result before it overflows (1.1275ms)
+✔ a busy row keeps its earlier failure reason at every width once one shows it (3.314667ms)
+✔ a busy row back on the engine it signed out of never shrinks to just signed out (0.408917ms)
+✔ a live run with a long name drops last step before it overflows 80 (0.967875ms)
+✔ watch mode redraws at once when the window is resized (2.859167ms)
+✔ the timed watch redraw moves ages forward with no log change (1.484083ms)
+✔ ctrl-c stops every watch redraw: the timer, the log watch, and a pending log redraw (1.105459ms)
+✔ watch mode uses the whole screen in one to three terminal rows (1.872083ms)
+✔ the real terminal keeps timeout reasons when watch shrinks and grows (692.863ms)
+✔ a short window keeps the header and the newest rows, and says how many did not fit (2.747875ms)
+✔ a short screen names up to three hidden live members, never at the cost of a failure reason (2.294875ms)
+✔ the older-runs note never pushes a current member off a short screen (0.911958ms)
+✔ one to three board lines keep the header without scrolling away failures (1.270666ms)
+✔ a short window keeps failed and stopped rows on screen ahead of newer ones (1.692875ms)
+✔ short boards distinguish a hidden busy member earlier failure from a current failure (2.132125ms)
+✔ a hidden earlier sign-in failure drops its reason once the member runs on that engine again (3.071458ms)
+✔ compact footers drop all before dropping a shared failure reason (4.19975ms)
+✔ tiny footers shorten the hidden prefix before cutting failure counts (1.090917ms)
+✔ narrow footers keep hidden missing-result counts whole (1.278917ms)
+✔ the narrowest footers say just the hidden count before cutting a word (4.04075ms)
+✔ a footer drops an earlier failure reason before the reason a run is done failed (15.317708ms)
+✔ every footer reason sits right after the count it explains (164.211208ms)
+✔ a footer list of different reasons names signed out first (0.192916ms)
+✔ hidden failures all signed out of one engine say which to sign in to (0.657375ms)
+✔ narrow footers drop whole mixed counts from the end instead of cutting one (1.701167ms)
+✔ narrow footers shorten the older-runs note before dropping hidden counts (2.53425ms)
+✔ hidden failures that share a reason say it once in the count (2.777875ms)
+✔ last step skips writes to the member own log (1.468041ms)
+✔ members that finished over an hour ago hide unless --all (308.262167ms)
+✔ board says nobody is working when every member is hidden (0.054792ms)
+✔ atris member board reads ATRIS_PROGRESS_DIR for real (3245.358209ms)
+✔ atris member board says so plainly when no member has a log (95.696458ms)
+✔ the empty board keeps whole messages in tiny widths and full paths in pipes (0.44475ms)
+✔ the real empty board fits narrow and short terminals through resize (145.017625ms)
+ℹ 30x1: no member progress yet in /...
+18x2: no progress yet
+22x3: no member progress yet
+80x3: no member progress yet in /tmp/atris-empty-tkvycmky/進捗進捗進捗進捗進捗進捗...
+240x3: no member progress yet in /tmp/atris-empty-tkvycmky/進捗進捗進捗進捗進捗進捗進捗進捗進捗進捗進捗進捗進捗進捗進捗進捗進捗進捗進捗進捗進捗進捗進捗進捗進捗進捗進捗進捗進捗進捗
+exit: 0
+empty board fits narrow and short terminals; wide path returns after resize
+
+✔ progress lines turn into stream events (0.255834ms)
+✔ follow emits only new full lines, picks up new members, survives truncation (2.576917ms)
+✔ atris member board --json --follow streams full events with timeout split after startup (1011.850292ms)
+✔ atris member board --json --follow streams full events with timeout split before startup (1012.476291ms)
+✔ live follow preserves a multibyte character split after startup (1012.137208ms)
+✔ live follow preserves a multibyte character split before startup (1009.821708ms)
+✔ live follow discards an unfinished old line when the log shrinks (1462.087292ms)
+✔ live follow starts fresh when a missing log returns with split output (1862.728875ms)
+✔ live follow detects an atomic same-size log replacement with split output (1464.95725ms)
+✔ follow finishes a line that was half written before it started (1.350458ms)
+✔ board shows a live run as alive with its engine, and a dead one as stopped (78.355583ms)
+✔ member stop ends the run and everything it started, then logs finished: stopped (159.089917ms)
+✔ member stop forces a run that ignores the polite signal (383.988458ms)
+✔ member stop says nothing running for unknown, finished, untagged, or dead runs (99.983917ms)
+✔ member stop leaves a reused pid alone when its command is no longer the engine (60.1595ms)
+✔ member stop refuses system pids, its own group, and engines it does not know (15.82125ms)
+✔ member stop leaves a same-named engine alone when it started at a different time (54.615333ms)
+✔ member stop ignores engine names that are object keys (2.02525ms)
+✔ member stop needs the run token of that member in the live command (54.028291ms)
+✔ member stop does not hard-kill a process that replaced the run during the grace wait (256.317167ms)
+✔ member stop needs the marker to open the prompt, as whole words (58.9185ms)
+✔ hidden earlier sign-in failures name their old engine only in spare room (135.446417ms)
+✔ live follow waits for split CRLF lines in a newly created log (1412.785167ms)
+ℹ actual command: /opt/homebrew/Cellar/node/25.6.1/bin/node /Users/keshavrao/arena/empire/.agent-worktrees/atris-cli/builder-continue-improving-atris-member-boar-20261015-003022/bin/atris.js member board --json --follow
+ℹ actual stdout:
+{"kind":"snapshot","at":"2026-10-15T02:47:28.435Z","dir":"/var/folders/t1/2_4kmb5n4c71dxm26zc8dgzr0000gn/T/atris-board-5aCW8q","members":[]}
+{"member":"scout","mission":"m-new","at":"2026-10-15T02:47:28.340Z","kind":"started","text":"inspect new progress"}
+{"member":"scout","mission":"m-new","at":"2026-10-15T02:47:28.340Z","kind":"step","text":"reading notes"}
+{"member":"scout","mission":"m-new","at":"2026-10-15T02:47:28.340Z","kind":"finished","text":"ok","ok":true}
+exit: 0
+✔ live follow detects an in-place same-size log rewrite with split output (1462.018583ms)
+ℹ actual command: /opt/homebrew/Cellar/node/25.6.1/bin/node /Users/keshavrao/arena/empire/.agent-worktrees/atris-cli/builder-continue-improving-atris-member-boar-20261015-003022/bin/atris.js member board --json --follow
+ℹ actual stdout:
+{"kind":"snapshot","at":"2026-10-15T02:47:29.848Z","dir":"/var/folders/t1/2_4kmb5n4c71dxm26zc8dgzr0000gn/T/atris-board-FA41SK","members":[{"member":"navigator","state":"working","last_result":"","last_result_reason":"","last_result_ran":"","last_result_engine":"","last_result_ago":"","no_result":false,"pid":null,"engine":"","alive":null,"running_for":"","job":"old job old job old job old job old job old job...","step":"","ago":"0s ago","at":1792032449753,"idle":false,"asleep":false}]}
+{"member":"navigator","mission":"m-new","at":"2026-10-15T02:47:29.753Z","kind":"started","text":"next job"}
+{"member":"navigator","mission":"m-new","at":"2026-10-15T02:47:29.753Z","kind":"step","text":"reading fresh                                                                                                                                                                                                                                                  notes"}
+{"member":"navigator","mission":"m-new","at":"2026-10-15T02:47:29.753Z","kind":"finished","text":"ok","ok":true}
+exit: 0
+✔ live follow detects an in-place log rewrite that grows past the reading position (1111.999833ms)
+ℹ actual command: /opt/homebrew/Cellar/node/25.6.1/bin/node /Users/keshavrao/arena/empire/.agent-worktrees/atris-cli/builder-continue-improving-atris-member-boar-20261015-003022/bin/atris.js member board --json --follow
+ℹ actual stdout:
+{"kind":"snapshot","at":"2026-10-15T02:47:31.323Z","dir":"/var/folders/t1/2_4kmb5n4c71dxm26zc8dgzr0000gn/T/atris-board-jkvDAX","members":[{"member":"navigator","state":"working","last_result":"","last_result_reason":"","last_result_ran":"","last_result_engine":"","last_result_ago":"","no_result":false,"pid":null,"engine":"","alive":null,"running_for":"","job":"old job","step":"","ago":"0s ago","at":1792032451215,"idle":false,"asleep":false}]}
+{"member":"navigator","mission":"m-new","at":"2026-10-15T02:47:31.215Z","kind":"started","text":"longer next job"}
+{"member":"navigator","mission":"m-new","at":"2026-10-15T02:47:31.215Z","kind":"step","text":"reading fresh fresh fresh fresh fresh fresh fresh fresh fresh fresh fresh fresh fresh fresh fresh fresh fresh fresh fresh fresh notes"}
+{"member":"navigator","mission":"m-new","at":"2026-10-15T02:47:31.215Z","kind":"finished","text":"ok","ok":true}
+exit: 0
+✔ wide characters in a job or step never push a watch row past the window (385.492167ms)
+✔ a failure reason in wide characters stays inside narrow and short watch screens (656.036833ms)
+✔ a member name in wide characters fits the watch screen and matches live follow (1012.549ms)
+✔ live follow streams a line written the moment the snapshot arrives, exactly once (1552.781875ms)
+ℹ actual stdout:
+{"kind":"snapshot","at":"2026-10-15T02:47:34.473Z","dir":"/var/folders/t1/2_4kmb5n4c71dxm26zc8dgzr0000gn/T/atris-board-LK4zes","members":[{"member":"navigator","state":"working","last_result":"","last_result_reason":"","last_result_ran":"","last_result_engine":"","last_result_ago":"","no_result":false,"pid":null,"engine":"","alive":null,"running_for":"","job":"ship it","step":"","ago":"0s ago","at":1792032454381,"idle":false,"asleep":false}]}
+{"member":"navigator","mission":"m-1","at":"2026-10-15T02:47:34.381Z","kind":"finished","text":"ok","ok":true}
+exit: 0
+✔ live follow keeps split, replaced, new, and shortened logs written the moment the snapshot arrives (2023.799834ms)
+ℹ a line split across two writes:
+{"kind":"snapshot","at":"2026-10-15T02:47:36.032Z","dir":"/var/folders/t1/2_4kmb5n4c71dxm26zc8dgzr0000gn/T/atris-board-KsvQBu","members":[{"member":"ana","state":"working","last_result":"","last_result_reason":"","last_result_ran":"","last_result_engine":"","last_result_ago":"","no_result":false,"pid":null,"engine":"","alive":null,"running_for":"","job":"a long first job for ana here","step":"","ago":"0s ago","at":1792032455934,"idle":false,"asleep":false}]}
+{"member":"ana","mission":"m-1","at":"2026-10-15T02:47:35.934Z","kind":"finished","text":"ok","ok":true}
+exit: 0
+ℹ a log replaced by a new file:
+{"kind":"snapshot","at":"2026-10-15T02:47:36.535Z","dir":"/var/folders/t1/2_4kmb5n4c71dxm26zc8dgzr0000gn/T/atris-board-rqMuwJ","members":[{"member":"ana","state":"working","last_result":"","last_result_reason":"","last_result_ran":"","last_result_engine":"","last_result_ago":"","no_result":false,"pid":null,"engine":"","alive":null,"running_for":"","job":"a long first job for ana here","step":"","ago":"0s ago","at":1792032456440,"idle":false,"asleep":false}]}
+{"member":"ana","mission":"m-2","at":"2026-10-15T02:47:36.440Z","kind":"started","text":"new job"}
+exit: 0
+ℹ a log for a new member:
+{"kind":"snapshot","at":"2026-10-15T02:47:37.040Z","dir":"/var/folders/t1/2_4kmb5n4c71dxm26zc8dgzr0000gn/T/atris-board-3sZuR2","members":[{"member":"ana","state":"working","last_result":"","last_result_reason":"","last_result_ran":"","last_result_engine":"","last_result_ago":"","no_result":false,"pid":null,"engine":"","alive":null,"running_for":"","job":"a long first job for ana here","step":"","ago":"0s ago","at":1792032456946,"idle":false,"asleep":false}]}
+{"member":"bo","mission":"m-3","at":"2026-10-15T02:47:36.946Z","kind":"started","text":"bo job"}
+exit: 0
+ℹ a log cut shorter:
+{"kind":"snapshot","at":"2026-10-15T02:47:37.550Z","dir":"/var/folders/t1/2_4kmb5n4c71dxm26zc8dgzr0000gn/T/atris-board-acBXW9","members":[{"member":"ana","state":"working","last_result":"","last_result_reason":"","last_result_ran":"","last_result_engine":"","last_result_ago":"","no_result":false,"pid":null,"engine":"","alive":null,"running_for":"","job":"a long first job for ana here","step":"","ago":"0s ago","at":1792032457452,"idle":false,"asleep":false}]}
+{"member":"ana","mission":"m-4","at":"2026-10-15T02:47:37.452Z","kind":"started","text":"y"}
+exit: 0
+✔ a short watch screen drops rows from a log cut shorter, replaced, or removed within a beat (371.224417ms)
+✔ a watch window that shrinks as a log changes ends on a frame for the new size (2579.022083ms)
+✔ the real watch terminal recovers a late progress folder and watches later writes (6257.304958ms)
+ℹ command: node bin/atris.js member board --watch (80 columns, 3 rows)
+no member progress yet in /tmp/atris-wr-3rweziy0/progress
+member   state    last result  ago     job            last step
+builder  working  -            3s ago  recover board  -
+member   state        last result  ago     job            last step
+builder  done failed  timed out    3s ago  recover board  -
+exit: 0
+late folder recovered; later write arrived before the next timed redraw
+
+✔ member result args: one member, optional iso --since, json (1.514875ms)
+✔ one obvious number: a single percent, dollar, or count; two different values means none (1.548125ms)
+✔ reads the newest run, its worktree receipt, and files made after it started (14.6535ms)
+✔ --since widens the window; a member with no runs still reads its own folder (0.984209ms)
+✔ an unknown member is an error, printed as json with exit 1 (0.515375ms)
+ℹ tests 93
+ℹ suites 0
+ℹ pass 93
+ℹ fail 0
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 34005.063583
