@@ -540,25 +540,42 @@ function helperEnd(lines, index) {
 
 // Keywords whose line can look like a method or helper start.
 const NOT_A_HELPER = new Set(['if', 'for', 'while', 'switch', 'catch', 'function', 'return']);
-// A delete belongs to the top-level function around it: a plain function, a
-// named arrow or function expression at the left margin, or a method of a
-// top-level class. An arrow nested inside a function stays part of that
-// function, so the guard above it still counts and its key does not move.
-function ownerStarts(lines) {
+// A helper can be a plain function, a named arrow (const wipe = (dir) => or
+// wipe: dir =>), or a class or object method (wipe(dir) {).
+const HELPER_START = [
+  /^(?:async\s+)?function\s+([\w$]+)\s*\(([^)]*)\)/,
+  /^\s*(?:(?:export\s+)?(?:const|let|var)\s+)?([\w$]+)\s*[=:]\s*(?:async\s+)?(?:function\s*)?\(([^()]*)\)\s*(?:=>|\{)/,
+  /^\s*(?:(?:export\s+)?(?:const|let|var)\s+)?([\w$]+)\s*[=:]\s*(?:async\s+)?([\w$]+)\s*=>/,
+  /^\s+(?:static\s+)?(?:async\s+)?([\w$]+)\s*\(([^()]*)\)\s*\{/,
+];
+
+// Every function start both scans read, with its parameters and the line that
+// ends it. A top start owns the deletes inside it in the main scan: a plain
+// function, a named arrow or function expression at the left margin, or a
+// method of a top-level class. An arrow nested inside a function stays part
+// of that function there, so the guard above it still counts and its key does
+// not move. The passed-in check reads every start, nested ones too.
+function functionStarts(lines) {
   let inClass = false;
   return lines.flatMap((line, index) => {
     if (/^(?:export\s+)?class\s/.test(line)) inClass = true;
     else if (/^}/.test(line)) inClass = false;
-    const match = line.match(/^(?:async\s+)?function\s+([\w$]+)/)
+    const top = line.match(/^(?:async\s+)?function\s+([\w$]+)/)
       || line.match(/^(?:export\s+)?(?:const|let|var)\s+([\w$]+)\s*=\s*(?:async\s+)?(?:function\b|\([^()]*\)\s*=>|[\w$]+\s*=>)/)
       || (inClass && line.match(/^ {2}(?:static\s+)?(?:async\s+)?([\w$]+)\s*\([^()]*\)\s*\{/));
-    return match && !NOT_A_HELPER.has(match[1]) ? [{ name: match[1], index }] : [];
+    const helper = HELPER_START.map((pattern) => line.match(pattern)).find(Boolean);
+    const match = top || helper;
+    if (!match || NOT_A_HELPER.has(match[1])) return [];
+    const params = (helper ? helper[2] : '').split(',')
+      .map((part) => part.trim().replace(/^\.\.\./, '').replace(/\s*=.*$/, ''))
+      .filter((part) => /^[\w$]+$/.test(part));
+    return [{ name: match[1], params, index, end: helperEnd(lines, index), top: Boolean(top) }];
   });
 }
 
 function worktreeRemovalSites(file) {
   const lines = fs.readFileSync(path.join(__dirname, '..', file), 'utf8').split('\n');
-  const starts = ownerStarts(lines).map((start) => ({ ...start, end: helperEnd(lines, start.index) }));
+  const starts = functionStarts(lines).filter((start) => start.top);
   const sites = [];
   lines.forEach((line, index) => {
     if (COMMENT_LINE.test(line)) return;
@@ -783,7 +800,7 @@ test('every work folder removal goes through the git check and the removal log',
   // A top-level arrow and a class method own their deletes; an arrow nested
   // in a function, an if inside a class, and an indented call after the
   // class closes do not.
-  const owners = ownerStarts([
+  const owners = functionStarts([
     'function guarded(wt) {',
     '  const done = (x) => x;',
     '}',
@@ -793,7 +810,7 @@ test('every work folder removal goes through the git check and the removal log',
     '  if (wt) {',
     '}',
     '  later(wt) {',
-  ]).map((start) => start.name);
+  ]).filter((start) => start.top).map((start) => start.name);
   assert.deepEqual(owners, ['guarded', 'sweep', 'empty']);
 });
 
@@ -804,25 +821,9 @@ test('every work folder removal goes through the git check and the removal log',
 const PASSED_IN_DELETES = {
 };
 
-// A helper can be a plain function, a named arrow (const wipe = (dir) => or
-// wipe: dir =>), or a class or object method (wipe(dir) {).
-const HELPER_START = [
-  /^(?:async\s+)?function\s+([\w$]+)\s*\(([^)]*)\)/,
-  /^\s*(?:(?:export\s+)?(?:const|let|var)\s+)?([\w$]+)\s*[=:]\s*(?:async\s+)?(?:function\s*)?\(([^()]*)\)\s*(?:=>|\{)/,
-  /^\s*(?:(?:export\s+)?(?:const|let|var)\s+)?([\w$]+)\s*[=:]\s*(?:async\s+)?([\w$]+)\s*=>/,
-  /^\s+(?:static\s+)?(?:async\s+)?([\w$]+)\s*\(([^()]*)\)\s*\{/,
-];
-
 function passedInDeletes(file, text) {
   const lines = text.split('\n');
-  const starts = lines.flatMap((line, index) => {
-    const match = HELPER_START.map((pattern) => line.match(pattern)).find(Boolean);
-    if (!match || NOT_A_HELPER.has(match[1])) return [];
-    const params = match[2].split(',')
-      .map((part) => part.trim().replace(/^\.\.\./, '').replace(/\s*=.*$/, ''))
-      .filter((part) => /^[\w$]+$/.test(part));
-    return [{ name: match[1], params, index, end: helperEnd(lines, index) }];
-  });
+  const starts = functionStarts(lines);
   return lines.flatMap((line, index) => {
     if (COMMENT_LINE.test(line)) return [];
     const call = /\brm(?:dir)?(?:Sync)?\(|['"]rm['"]\s*,/.test(line) ? callText(lines, index) : line;
