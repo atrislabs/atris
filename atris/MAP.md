@@ -221,3 +221,5 @@ Learn help checks: `test/commands.test.js:17699` runs all three help spellings t
 Brain help checks: `test/commands.test.js:18802` runs both help flags together with the existing async CLI helper, retaining every output and no-state assertion. `commands/brain.js:1593` returns before workspace discovery. Two launches take one sequential stage.
 
 Authentication help checks: `test/commands.test.js:18814` runs login and identity help together, retaining all output and no-state assertions. The sign-out help check stays after the saved-credential fixture. `bin/atris.js:2407` returns help before authentication handlers. Three launches take two sequential stages.
+
+Account and integrations help checks: `test/commands.test.js:18847` runs the four account and integrations help launches together with the existing async CLI helper, retaining every output and no-state assertion. `bin/atris.js:2427` and `bin/atris.js:3050` return help before any account handler loads. Four sequential stages become one.

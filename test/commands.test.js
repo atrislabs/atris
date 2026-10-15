@@ -18844,12 +18844,15 @@ test('auth --help prints usage without auth side effects', async () => {
   }
 });
 
-test('account and integrations --help print usage without session side effects', () => {
+test('account and integrations --help print usage without session side effects', async () => {
   const dir = makeTempDir();
   try {
     const home = path.join(dir, 'home');
-    for (const command of ['switch', 'use', 'accounts', 'integrations']) {
-      const res = runCli([command, '--help'], { cwd: dir, env: { HOME: home } });
+    const commands = ['switch', 'use', 'accounts', 'integrations'];
+    const results = await Promise.all(commands.map(command =>
+      runCliAsync([command, '--help'], { cwd: dir, env: { HOME: home } })));
+    for (const [index, command] of commands.entries()) {
+      const res = results[index];
       assert.equal(res.status, 0, `${command}: ${res.stderr || res.stdout}`);
       assert.match(res.stdout, new RegExp(`Usage: atris ${command}`));
       assert.doesNotMatch(res.stdout, /No saved accounts|Not signed in|Set per-terminal account|Integration Status/);
