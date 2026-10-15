@@ -2498,7 +2498,7 @@ const waitFor = async (check, ms = 3000) => {
 const killAll = (pid) => { try { process.kill(-pid, 'SIGKILL'); } catch {} };
 const isoAgo = (s) => new Date(Date.now() - s * 1000).toISOString();
 
-test('seeded random follow: split, replaced, rewritten, resaved, and removed logs stream each finished line once', () => {
+test('seeded random follow: split, replaced, rewritten, resaved, forged, and removed logs stream each finished line once', () => {
   const { followBoard } = require('../lib/member-board');
   let seed = 45;
   const rnd = () => ((seed = (seed * 1103515245 + 12345) % 2147483648) / 2147483648);
@@ -2538,7 +2538,7 @@ test('seeded random follow: split, replaced, rewritten, resaved, and removed log
     try {
       for (let step = 0; step < 60; step++) {
         const name = pick(names);
-        const kind = logs.has(name) ? pick(['line', 'line', 'split', 'finish', 'replace', 'rewrite', 'resave', 'remove']) : 'create';
+        const kind = logs.has(name) ? pick(['line', 'line', 'split', 'finish', 'replace', 'rewrite', 'resave', 'forge', 'remove']) : 'create';
         steps.push(`${kind} ${name}`);
         // A half-written line ends before anything else lands in its log.
         const owed = rest.get(name);
@@ -2561,6 +2561,16 @@ test('seeded random follow: split, replaced, rewritten, resaved, and removed log
           fs.writeFileSync(path.join(dir, 'swap.tmp'), buf);
           fs.renameSync(path.join(dir, 'swap.tmp'), file(name));
           logs.set(name, { ...log, buf });
+        } else if (kind === 'forge') {
+          // A renamed copy with one early word changed keeps the same size and
+          // the same last bytes, so only the whole history can tell it apart.
+          const log = logs.get(name);
+          const buf = Buffer.from(log.buf);
+          const word = buf.indexOf(' step ');
+          if (word >= 0) buf.write('a', word + 3);
+          fs.writeFileSync(path.join(dir, 'swap.tmp'), buf);
+          fs.renameSync(path.join(dir, 'swap.tmp'), file(name));
+          logs.set(name, { ...log, buf, fresh: log.fresh || (word >= 0 && word < log.seen) });
         } else if (kind === 'replace' || kind === 'rewrite') {
           const next = rnd() < 0.3 ? line() : null;
           const buf = Buffer.concat([lines(Math.floor(rnd() * 4)), next ? next.subarray(0, 4) : Buffer.alloc(0)]);
