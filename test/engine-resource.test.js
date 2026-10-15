@@ -769,7 +769,7 @@ test('history reads back the latest sweep and the latest SIGKILL, skipping bad l
     assert.strictEqual(history.last_kill.task, 'CLI-2');
     assert.strictEqual(history.kills, 2);
     assert.strictEqual(history.low_memory_kills, 1);
-    assert.deepStrictEqual(readResourceHistory(path.join(root, 'missing')), { last_sweep: null, last_kill: null, kills: 0, low_memory_kills: 0, time_limit_kills: 0, last_other_kill: null, kills_day: 0, low_memory_kills_day: 0, time_limit_kills_day: 0, crowded_time_limit_kills_day: 0, crowded_peak_open_runs: 0, last_day_other_kill: null, open_runs: 0, parent_gone: 0, still_running: 0, last_open: null, lost_closed: 0, lost_closed_day: 0, last_lost_closed: null, first_day_leak_reading: null, start_lines_guarded: null, last_error: null, errors_day: 0, last_day_error: null, read_error: null });
+    assert.deepStrictEqual(readResourceHistory(path.join(root, 'missing')), { last_sweep: null, last_kill: null, kills: 0, low_memory_kills: 0, time_limit_kills: 0, last_other_kill: null, kills_day: 0, low_memory_kills_day: 0, time_limit_kills_day: 0, crowded_time_limit_kills_day: 0, crowded_peak_open_runs: 0, crowded_top_busiest: null, last_day_other_kill: null, open_runs: 0, parent_gone: 0, still_running: 0, last_open: null, lost_closed: 0, lost_closed_day: 0, last_lost_closed: null, first_day_leak_reading: null, start_lines_guarded: null, last_error: null, errors_day: 0, last_day_error: null, read_error: null });
   } finally {
     fs.rmSync(root, { recursive: true, force: true });
   }
@@ -3233,7 +3233,8 @@ test('the landing status names the most engine runs open at a crowded time limit
   const hoursAgo = (h) => new Date(Date.now() - h * 3600 * 1000).toISOString();
   const start = (at, id) => JSON.stringify({ at, phase: 'start', engine: 'codex', task: id, run_id: id });
   const end = (at, id) => JSON.stringify({ at, phase: 'end', engine: 'codex', task: id, run_id: id, code: 0 });
-  const timeLimit = (at, id, load) => JSON.stringify({ at, phase: 'end', engine: 'codex', task: id, run_id: id, signal: 'SIGKILL', cause: 'killed (time limit reached)', timed_out: true, free_pct: 70, load: [load, 1, 1] });
+  const timeLimit = (at, id, load, busiest) => JSON.stringify({ at, phase: 'end', engine: 'codex', task: id, run_id: id, signal: 'SIGKILL', cause: 'killed (time limit reached)', timed_out: true, free_pct: 70, load: [load, 1, 1], ...(busiest ? { busiest } : {}) });
+  const top = (...names) => names.map((name, i) => ({ name, cpu: 300 - i * 100 }));
   const file = path.join(root, RESOURCE_LOG);
   const cores = os.availableParallelism ? os.availableParallelism() : os.cpus().length;
   try {
@@ -3243,27 +3244,29 @@ test('the landing status names the most engine runs open at a crowded time limit
     // second does; the peak is four. The calm kill had three open.
     fs.writeFileSync(file, [
       start(hoursAgo(6), 'A'), start(hoursAgo(6), 'B'), start(hoursAgo(6), 'C'), start(hoursAgo(6), 'D'),
-      timeLimit(hoursAgo(5), 'A', cores + 2),
+      timeLimit(hoursAgo(5), 'A', cores + 2, top('mds_stores', 'node')),
       end(hoursAgo(4.5), 'B'),
-      timeLimit(hoursAgo(4), 'C', cores + 1),
+      timeLimit(hoursAgo(4), 'C', cores + 1, top('mds_stores', 'WindowServer')),
       start(hoursAgo(3), 'E'), start(hoursAgo(3), 'F'),
       timeLimit(hoursAgo(2), 'E', 1),
       '',
     ].join('\n'));
     const most = status();
     assert.strictEqual(most.status, 0, most.stderr);
-    assert.ok(most.stdout.includes(`engine runs force-killed in the last day: 3, all at their time limit (2 with load above the ${cores} cores and up to 4 engine runs open, so run fewer at once);`), most.stdout);
+    assert.ok(most.stdout.includes(`engine runs force-killed in the last day: 3, all at their time limit (2 with load above the ${cores} cores and up to 4 engine runs open, so run fewer at once, mds_stores using the most CPU at 2 of them);`), most.stdout);
     const history = readResourceHistory(root);
     assert.strictEqual(history.crowded_peak_open_runs, 4);
     assert.strictEqual(readResourceHistory(root, { cores: cores + 1 }).crowded_peak_open_runs, 4, 'the kill one above a bigger core count still counts');
     assert.strictEqual(readResourceHistory(root, { cores: cores + 2 }).crowded_peak_open_runs, 0, 'no crowded kill means no peak');
+    assert.deepStrictEqual(history.crowded_top_busiest, { name: 'mds_stores', kills: 2 });
+    assert.strictEqual(readResourceHistory(root, { cores: cores + 2 }).crowded_top_busiest, null, 'no crowded kill means no top program');
 
     // Two more calm timeouts leave the crowded ones a minority: the peak is
     // still named, but the advice to run fewer is not.
     fs.appendFileSync(file, [timeLimit(hoursAgo(1), 'F', 1), timeLimit(hoursAgo(0.5), 'D', 1), ''].join('\n'));
     const few = status();
     assert.strictEqual(few.status, 0, few.stderr);
-    assert.ok(few.stdout.includes(`all at their time limit (2 with load above the ${cores} cores and up to 4 engine runs open);`), few.stdout);
+    assert.ok(few.stdout.includes(`all at their time limit (2 with load above the ${cores} cores and up to 4 engine runs open, mds_stores using the most CPU at 2 of them);`), few.stdout);
 
     // A crowded kill with only the killed run open means the load came from
     // other work, so running fewer engines would not help.
@@ -3273,6 +3276,19 @@ test('the landing status names the most engine runs open at a crowded time limit
     assert.strictEqual(alone.status, 0, alone.stderr);
     assert.ok(alone.stdout.includes(`all at their time limit (1 with load above the ${cores} cores and no other engine run open, so the load came from other work);`), alone.stdout);
     assert.doesNotMatch(alone.stdout, /run fewer at once/);
+    assert.doesNotMatch(alone.stdout, /using the most CPU at/, 'one crowded kill is not a repeat');
+
+    // Two programs on top at two kills each out of four is no majority, so
+    // neither is named; the first to reach two is still the one kept.
+    fs.writeFileSync(file, [
+      timeLimit(hoursAgo(4), 'H', cores + 1, top('Xcode')), timeLimit(hoursAgo(3), 'I', cores + 1, top('Docker')),
+      timeLimit(hoursAgo(2), 'J', cores + 1, top('Xcode')), timeLimit(hoursAgo(1), 'K', cores + 1, top('Docker')),
+      '',
+    ].join('\n'));
+    const split = status();
+    assert.strictEqual(split.status, 0, split.stderr);
+    assert.ok(split.stdout.includes(`all at their time limit (4 with load above the ${cores} cores);`), split.stdout);
+    assert.deepStrictEqual(readResourceHistory(root).crowded_top_busiest, { name: 'Xcode', kills: 2 });
     assert.ok(alone.stdout.includes(`load ${cores + 3} on ${cores} cores, busiest PerfPowerServices 180%, node 85%\n`), 'the status names what was using the CPU');
   } finally {
     fs.rmSync(root, { recursive: true, force: true });

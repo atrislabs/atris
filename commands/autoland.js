@@ -548,7 +548,11 @@ function showStatus(root, args, deps = {}) {
     let peak = '';
     if (peakRuns === 1) peak = ' and no other engine run open, so the load came from other work';
     else if (peakRuns > 1) peak = ` and up to ${peakRuns} engine runs open${crowdedKills * 2 > timeLimit ? ', so run fewer at once' : ''}`;
-    const crowded = crowdedKills ? ` (${crowdedKills} with load above the ${machineCores()} cores${peak})` : '';
+    // One program on top at most crowded kills is named once, so a repeat
+    // offender reads as one thing to stop.
+    const top = lost.crowded_top_busiest;
+    const repeat = top && top.kills >= 2 && top.kills * 2 > crowdedKills ? `, ${top.name} using the most CPU at ${top.kills} of them` : '';
+    const crowded = crowdedKills ? ` (${crowdedKills} with load above the ${machineCores()} cores${peak}${repeat})` : '';
     const counts = timeLimit === lost.kills_day
       ? `all at their time limit${crowded}`
       : `${timeLimit ? `${timeLimit} at their time limit${crowded}, ` : ''}${lost.low_memory_kills_day} with machine memory low`;
