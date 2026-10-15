@@ -10508,6 +10508,29 @@ function isKnownMemberSlug(token, root = process.cwd()) {
     || fs.existsSync(path.join(root, 'atris', 'team', `${clean}.md`));
 }
 
+const MEMBER_SUBCOMMANDS = [
+  'list', 'roster', 'create', 'install', 'activate', 'upgrade', 'push', 'pull', 'goal',
+  'chat', 'tick', 'wake', 'run', 'result', 'go', 'work', 'up', 'steer', 'sleep', 'rest',
+  'room', 'day', 'standup', 'handoff', 'dispatch', 'feed', 'board', 'stop', 'card', 'ping',
+  'loop', 'alive', 'review', 'block', 'status', 'live', 'heartbeat', 'improvements',
+  'report', 'history', 'supervisor', 'export', 'archive', 'tidy', 'help',
+];
+
+// `atris member <word>` where the word is neither a member nor a subcommand.
+// Points at the nearest name and the team, and exits 1 without running anyone.
+function memberUnknownWord(word, root = process.cwd()) {
+  const { suggestCommand } = require('../lib/known-commands');
+  let names = [];
+  try { names = findAllMembers(path.join(root, 'atris', 'team')).map((m) => m.name); } catch {}
+  const near = suggestCommand(word, [...MEMBER_SUBCOMMANDS, ...names]);
+  console.log(`No member or command named "${word}", so nothing started.`);
+  if (near) console.log(`Did you mean: atris member ${near}`);
+  if (names.length) console.log(`Your team: ${names.join(', ')}`);
+  console.log('To give a member a job: atris member run "<job in a few words>"');
+  process.exitCode = 1;
+  return { ok: false, reason: 'unknown_word', word, suggestion: near || null };
+}
+
 // The job a member does (build, review or search), read from the same team
 // roster that picks its engine.
 function memberGoJob(owner, root) {
@@ -11476,6 +11499,7 @@ async function memberCommand(subcommand, ...args) {
   switch (subcommand) {
     case 'list':
     case 'ls':
+    case 'roster':
       return memberList(...args);
     case 'create':
     case 'new':
@@ -11602,6 +11626,14 @@ async function memberCommand(subcommand, ...args) {
         if (isKnownMemberSlug(subcommand, process.cwd()) && args.filter((a) => !String(a).startsWith('-')).length === 0) {
           return memberCard(subcommand, ...args);
         }
+        // One word that is neither a member nor a subcommand is a typo far
+        // more often than a job. Starting a paid run on it costs money and
+        // does nothing useful, so name the miss and stop. Jobs keep working
+        // as more than one word, or through `atris member run "<job>"`.
+        const extraWords = args.filter((a) => !String(a).startsWith('-')).length;
+        if (!/\s/.test(subcommand.trim()) && extraWords === 0) {
+          return memberUnknownWord(subcommand);
+        }
         return memberSteerOrDispatch(subcommand, ...args);
       }
       console.log('run "<job>"          pick the right member and run it: atris member run "fix the flaky login test"');
@@ -11622,7 +11654,7 @@ async function memberCommand(subcommand, ...args) {
       console.log('  create <name>       Scaffold a new team member (MEMBER.md + dirs) [--push]');
       console.log('  install <slug> [--update]  Install missing files, or refresh template skills');
       console.log('  chat <name> "..."   Send a message to this member\'s desk in Atris Desktop');
-      console.log('  list [--json]       Show all team members');
+      console.log('  list [--json]       Show all team members (also: roster)');
       console.log('  tidy [--dry-run]    Put away member copies of the repo whose work already landed');
       console.log('  export [--dry-run]  Write each member as a subagent for Claude Code, Cursor, and Codex');
       console.log('  activate <name>     Symlink member skills, show context and permissions');
