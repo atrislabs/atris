@@ -13764,7 +13764,7 @@ test('task revise returns unclaimed ready work to open so agents can claim it', 
   }
 });
 
-test('task revise refuses accepted tasks so XP is not stale', () => {
+test('task revise refuses accepted tasks so XP is not stale', async () => {
   if (!hasNodeSqlite()) return;
   const dir = makeTempDir();
   const dbPath = path.join(dir, 'tasks.db');
@@ -13793,11 +13793,14 @@ test('task revise refuses accepted tasks so XP is not stale', () => {
     assert.equal(accept.status, 0, accept.stderr);
     assert.equal(JSON.parse(accept.stdout).xp_projection.total_xp, 1);
 
-    const revise = runCli(['task', 'revise', ref, '--note', 'needs more work', '--as', 'keshavrao', '--json'], { cwd: dir, env });
+    // Accepted-task revision returns before writes; both checks inspect accepted state.
+    const [revise, status] = await Promise.all([
+      runCliAsync(['task', 'revise', ref, '--note', 'needs more work', '--as', 'keshavrao', '--json'], { cwd: dir, env }),
+      runCliAsync(['xp', 'status', '--local', '--json'], { cwd: dir, env }),
+    ]);
     assert.equal(revise.status, 1);
     assert.match(revise.stderr, /not_reviewable_done/);
 
-    const status = runCli(['xp', 'status', '--local', '--json'], { cwd: dir, env });
     assert.equal(status.status, 0, status.stderr);
     assert.equal(JSON.parse(status.stdout).total_xp, 1);
   } finally {

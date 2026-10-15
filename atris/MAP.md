@@ -200,3 +200,5 @@ Strict approval review setup: `test/commands.test.js:13363` attaches the strict 
 Conflicting receipt readiness setup: `test/commands.test.js:13566` uses production readyTask in the fixture connection, closed in finally before CLI acceptance and fail-closed receipt status. Two app launches replace three; all integrity and readable-label assertions remain.
 
 Unclaimed revision readiness: `test/commands.test.js:13724` seeds production readyTask in the creation connection, asserts success and closes in finally. Two app launches replace three; revision returning the task to open and the subsequent claim retain every real CLI assertion.
+
+Accepted revision refusal batch: `test/commands.test.js:13767` awaits refused revision and local XP status together after acceptance. `lib/task-db.js:1082` refuses done tasks before mutation, and `commands/task.js:11338` exits before projection writes. All assertions remain; three launches take two sequential stages.

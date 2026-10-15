@@ -2705,3 +2705,5 @@ Tampered receipt readiness setup: `test/commands.test.js:13612` uses production 
 Unclaimed revision readiness: `test/commands.test.js:13724` seeds production readyTask in the creation connection, asserts success and closes in finally. Two app launches replace three; revision returning the task to open and the subsequent claim retain every real CLI assertion.
 
 Revision inspection batch: `test/commands.test.js:13703` awaits show and refused stale acceptance together before fresh readiness. `commands/task.js:7744` only reads the task; `commands/task.js:10358` refuses missing proof before acceptance writes. Six launches remain, with five sequential launch stages instead of six. All original assertions remain.
+
+Accepted revision refusal batch: `test/commands.test.js:13767` awaits refused revision and local XP status together after acceptance. `lib/task-db.js:1082` refuses done tasks before mutation, and `commands/task.js:11338` exits before projection writes. All assertions remain; three launches take two sequential stages.
