@@ -1430,13 +1430,20 @@ function splitAside(line, below) {
   return [head[1] + up + head[3], foot[1] + down + foot[3]];
 }
 
+// A code span in either line is masked while the two are read as one
+// sentence, as the line fix masks it: "The `by-time` path doesn't need to
+// change;" then "that's a different access pattern." A span that would
+// run across the seam leaves the dash to the line fix.
 function trailingMark(line, below) {
   const end = /^(.*?\S)\s*\u2014\s*$/.exec(line);
-  if (!end || !below.trim() || /\u2014|`/.test(end[1]) || /\u2014|`/.test(below)) return null;
+  if (!end || !below.trim() || /\u2014/.test(end[1]) || /\u2014/.test(below)) return null;
   if (!/^\s*(?:it|this|that|we|they|you|he|she|I|there)(?:['\u2019](?:s|re|ll|ve|d|m))?\s/.test(below)) return null;
   if (/^\s{0,3}(?:#|\||```|~~~)/.test(line) || /^\s*(?:#|>|\||```|~~~|[-*+]\s|\d+[.)]\s)/.test(below)) return null;
-  const head = end[1].trim(); const next = below.trim();
-  const joined = fixEmDash(`${head} \u2014 ${next}`);
+  const head = maskInlineCode(end[1].trim()).masked;
+  const { masked, spans } = maskInlineCode(`${end[1].trim()} \u2014 ${below.trim()}`);
+  if (!masked.startsWith(`${head} \u2014 `)) return null;
+  const next = masked.slice(head.length + 3);
+  const joined = fixEmDash(masked, { spans });
   const mark = joined.startsWith(head) && joined.endsWith(` ${next}`) ? joined.slice(head.length, joined.length - next.length - 1) : '';
   return /^[;:]$/.test(mark) ? mark : null;
 }

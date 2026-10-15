@@ -2022,6 +2022,28 @@ test('fix gives a line-end dash a semicolon when the next line opens a new claus
   ]);
 });
 
+test('fix reads a line-end dash past a code span in either line', () => {
+  // from two backend notes: a code span made the line-end rule give up, so
+  // the comma spliced the clause on the next line. A span that would run
+  // across the two lines still leaves the dash to the line fix.
+  const file = tmpFile('line-end-code.md', [
+    'The `by-time` GSI path (when `source` is set) doesn\'t need to change \u2014',
+    'that\'s a different access pattern.',
+    '',
+    'Validate against the engine (below) \u2014',
+    'it\'s the source of truth for `blocks-demo.md`.',
+    '',
+    'The `odd span \u2014',
+    'it` runs on.',
+  ].join('\n'));
+  const { changes } = applyFixes([file], RULES);
+  assert.deepEqual(changes.map((c) => c.after), [
+    'The `by-time` GSI path (when `source` is set) doesn\'t need to change;',
+    'Validate against the engine (below);',
+    'The `odd span,',
+  ]);
+});
+
 test('fix ends a paragraph-ending dash with a period, keeps a wrapping one a comma', () => {
   const file = tmpFile('line-end.md', [
     'The tool we built \u2014',
