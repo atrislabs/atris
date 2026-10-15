@@ -4396,6 +4396,13 @@ test('the fix diff splice list skips a noun after "in" or "of" and a noun with i
     'the learner watches the model do the reps',
     'the server returns the payload',
   ]);
+  // from the real list: a lone answer word takes its comma rightly, so
+  // "YES, the test was tolerating" is no splice; a clause before it still is
+  const answers = ['Q3 (flaky): YES', 'Q3 (flaky): the gate held'];
+  assert.deepEqual(spliceShapes(
+    answers.map((a) => `${a} ${D} the test was tolerating a fallback.`),
+    answers.map((a) => `${a}, the test was tolerating a fallback.`),
+  ).map((s) => s.count), [1]);
 });
 
 test('the fix diff script lists each comma it writes before a "the" clause once', () => {

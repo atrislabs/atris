@@ -200,7 +200,9 @@ function splices(text) {
 // reps" stays a splice. The list reads this on its own, not through the
 // fixer's phrase checks, since it is there to show what the fixer misreads.
 // Code spans count as one name, so a template line repeated once per app
-// is one fix, not thirty.
+// is one fix, not thirty. A lone answer word or greeting before the comma
+// takes it rightly, the same as in the odd count: "YES, the test was
+// tolerating a fallback" is no splice.
 const SPLICE_SHAPE = /^(?:the|its|our|their|your) (?!(?:one|two|three|four|five|six|seven|eight|nine|ten|few|many|several|same|other|first|last|next|main|key|core|new|old|real|whole|exact|only)\b)(?:(?!(?:that|which|who)\b)[\w`-]+ ){1,2}(?<!\b(?:in|of) )(?!(?:this|his|its|thus|plus|always|perhaps|unless|whereas|across)\b)[a-z]+[^su\s']s (?!(?:that|which|who)\b)(?:[a-z`"]|\d)/;
 const RELATIVE_SHAPE = /^(?:the|its|our|their|your) (?:[\w`-]+ ){0,2}[a-z]+s the (?:(?!(?:the|a|an)\b)\S+ ){1,3}[a-z]+s$/;
 function spliceShapes(sources, fixes) {
@@ -211,6 +213,8 @@ function spliceShapes(sources, fixes) {
     for (const m of fixed.matchAll(/, ((?:the|its|our|their|your) [^,;.!?\n]*)/g)) {
       const rest = m[1];
       if (!source.includes(`${DASH} ${rest}`) || !SPLICE_SHAPE.test(rest) || RELATIVE_SHAPE.test(rest)) continue;
+      const sentence = fixed.slice(0, m.index).split(SENTENCE_STOP).pop().replace(/^(?:[-*+>#|]\s*|\d+[.)]\s*|\*\*|__|["\u201c'(]\s*)*/, '').trim();
+      if (NO_CLAUSE.test(sentence)) continue;
       const key = rest.replace(/`[^`]*`/g, '``');
       if (!found.has(key)) found.set(key, { text: rest, count: 0 });
       found.get(key).count += 1;
