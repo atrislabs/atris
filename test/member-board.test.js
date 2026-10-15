@@ -16,6 +16,9 @@ const at = (secondsAgo) => new Date(NOW - secondsAgo * 1000).toISOString();
 // four polls where the default 1s poll needed 1.2s.
 const FOLLOW_ENV = { ATRIS_FOLLOW_POLL_MS: '100' };
 const QUIET_MS = 400;
+// Output waits are bounded, but cleanup also awaits child close. Kill a stuck
+// follower even if it never handles the normal interrupt sent by finally.
+const FOLLOW_PROCESS_LIMIT = { timeout: 30_000, killSignal: 'SIGKILL' };
 
 function fakeDir(files) {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'atris-board-'));
@@ -2156,7 +2159,7 @@ for (const pendingAtStartup of [false, true]) {
     const timeoutStart = `${timeoutAt} m-9 finished: failed (timed`;
     if (pendingAtStartup) fs.appendFileSync(path.join(dir, 'navigator.log'), timeoutStart);
     const child = spawn(process.execPath, [cliPath, 'member', 'board', '--json', '--follow'], {
-      cwd: dir, env: { ...process.env, ...FOLLOW_ENV, ATRIS_PROGRESS_DIR: dir },
+      ...FOLLOW_PROCESS_LIMIT, cwd: dir, env: { ...process.env, ...FOLLOW_ENV, ATRIS_PROGRESS_DIR: dir },
     });
     let out = '';
     let stderr = '';
@@ -2221,7 +2224,7 @@ for (const pendingAtStartup of [false, true]) {
     const split = line.indexOf(Buffer.from('🧭')) + 2;
     if (pendingAtStartup) fs.appendFileSync(log, line.subarray(0, split));
     const child = spawn(process.execPath, [cliPath, 'member', 'board', '--json', '--follow'], {
-      cwd: dir, env: { ...process.env, ...FOLLOW_ENV, ATRIS_PROGRESS_DIR: dir },
+      ...FOLLOW_PROCESS_LIMIT, cwd: dir, env: { ...process.env, ...FOLLOW_ENV, ATRIS_PROGRESS_DIR: dir },
     });
     // Decode pipe data across chunk boundaries as well as progress-file writes.
     child.stdout.setEncoding('utf8');
@@ -2268,7 +2271,7 @@ test('live follow discards an unfinished old line when the log shrinks', async (
   const dir = fakeDir({ navigator: [`${stamp} m-old started: ${'old job '.repeat(30)}`] });
   const log = path.join(dir, 'navigator.log');
   const child = spawn(process.execPath, [cliPath, 'member', 'board', '--json', '--follow'], {
-    cwd: dir, env: { ...process.env, ...FOLLOW_ENV, ATRIS_PROGRESS_DIR: dir },
+    ...FOLLOW_PROCESS_LIMIT, cwd: dir, env: { ...process.env, ...FOLLOW_ENV, ATRIS_PROGRESS_DIR: dir },
   });
   child.stdout.setEncoding('utf8');
   let out = '';
@@ -2324,7 +2327,7 @@ test('live follow starts fresh when a missing log returns with split output', as
   const dir = fakeDir({ navigator: [`${stamp} m-old started: old job`] });
   const log = path.join(dir, 'navigator.log');
   const child = spawn(process.execPath, [cliPath, 'member', 'board', '--json', '--follow'], {
-    cwd: dir, env: { ...process.env, ...FOLLOW_ENV, ATRIS_PROGRESS_DIR: dir },
+    ...FOLLOW_PROCESS_LIMIT, cwd: dir, env: { ...process.env, ...FOLLOW_ENV, ATRIS_PROGRESS_DIR: dir },
   });
   child.stdout.setEncoding('utf8');
   let out = '';
@@ -2383,7 +2386,7 @@ test('live follow detects an atomic same-size log replacement with split output'
   const dir = fakeDir({ navigator: [`${stamp} m-old started: ${'old job '.repeat(30)}`] });
   const log = path.join(dir, 'navigator.log');
   const child = spawn(process.execPath, [cliPath, 'member', 'board', '--json', '--follow'], {
-    cwd: dir, env: { ...process.env, ...FOLLOW_ENV, ATRIS_PROGRESS_DIR: dir },
+    ...FOLLOW_PROCESS_LIMIT, cwd: dir, env: { ...process.env, ...FOLLOW_ENV, ATRIS_PROGRESS_DIR: dir },
   });
   child.stdout.setEncoding('utf8');
   let out = '';
@@ -2897,7 +2900,7 @@ test('live follow waits for split CRLF lines in a newly created log', async (t) 
   const stamp = new Date().toISOString();
   const log = path.join(dir, 'scout.log');
   const child = spawn(process.execPath, [cliPath, 'member', 'board', '--json', '--follow'], {
-    cwd: dir, env: { ...process.env, ...FOLLOW_ENV, ATRIS_PROGRESS_DIR: dir },
+    ...FOLLOW_PROCESS_LIMIT, cwd: dir, env: { ...process.env, ...FOLLOW_ENV, ATRIS_PROGRESS_DIR: dir },
   });
   child.stdout.setEncoding('utf8');
   let out = '';
@@ -2949,7 +2952,7 @@ test('live follow detects an in-place same-size log rewrite with split output', 
   const dir = fakeDir({ navigator: [`${stamp} m-old started: ${'old job '.repeat(30)}`] });
   const log = path.join(dir, 'navigator.log');
   const child = spawn(process.execPath, [cliPath, 'member', 'board', '--json', '--follow'], {
-    cwd: dir, env: { ...process.env, ...FOLLOW_ENV, ATRIS_PROGRESS_DIR: dir },
+    ...FOLLOW_PROCESS_LIMIT, cwd: dir, env: { ...process.env, ...FOLLOW_ENV, ATRIS_PROGRESS_DIR: dir },
   });
   child.stdout.setEncoding('utf8');
   let out = '';
@@ -3009,7 +3012,7 @@ test('live follow detects an in-place log rewrite that grows past the reading po
   const dir = fakeDir({ navigator: [`${stamp} m-old started: old job`] });
   const log = path.join(dir, 'navigator.log');
   const child = spawn(process.execPath, [cliPath, 'member', 'board', '--json', '--follow'], {
-    cwd: dir, env: { ...process.env, ...FOLLOW_ENV, ATRIS_PROGRESS_DIR: dir },
+    ...FOLLOW_PROCESS_LIMIT, cwd: dir, env: { ...process.env, ...FOLLOW_ENV, ATRIS_PROGRESS_DIR: dir },
   });
   child.stdout.setEncoding('utf8');
   let out = '';
@@ -3272,7 +3275,7 @@ test('live follow streams a line written the moment the snapshot arrives, exactl
     const dir = fakeDir({ navigator: [`${stamp} m-1 started: ship it`] });
     const log = path.join(dir, 'navigator.log');
     const child = spawn(process.execPath, [cliPath, 'member', 'board', '--json', '--follow'], {
-      cwd: dir, env: { ...process.env, ...FOLLOW_ENV, ATRIS_PROGRESS_DIR: dir },
+      ...FOLLOW_PROCESS_LIMIT, cwd: dir, env: { ...process.env, ...FOLLOW_ENV, ATRIS_PROGRESS_DIR: dir },
     });
     child.stdout.setEncoding('utf8');
     let out = '';
@@ -3330,7 +3333,7 @@ test('live follow keeps split, replaced, new, and shortened logs written the mom
     const stamp = new Date().toISOString();
     const dir = fakeDir({ ana: [`${stamp} m-1 started: a long first job for ana here`] });
     const child = spawn(process.execPath, [cliPath, 'member', 'board', '--json', '--follow'], {
-      cwd: dir, env: { ...process.env, ...FOLLOW_ENV, ATRIS_PROGRESS_DIR: dir },
+      ...FOLLOW_PROCESS_LIMIT, cwd: dir, env: { ...process.env, ...FOLLOW_ENV, ATRIS_PROGRESS_DIR: dir },
     });
     child.stdout.setEncoding('utf8');
     let out = '';
