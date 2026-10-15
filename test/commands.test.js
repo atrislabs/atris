@@ -18757,12 +18757,15 @@ test('help invocations skip background update-check cache writes', async () => {
   }
 });
 
-test('status and analytics --help print usage without workspace state', () => {
+test('status and analytics --help print usage without workspace state', async () => {
   const dir = makeTempDir();
   try {
     const home = path.join(dir, 'home');
-    for (const command of ['status', 'analytics']) {
-      const res = runCli([command, '--help'], { cwd: dir, env: { HOME: home } });
+    const commands = ['status', 'analytics'];
+    const results = await Promise.all(commands.map(command =>
+      runCliAsync([command, '--help'], { cwd: dir, env: { HOME: home } })));
+    for (const [index, command] of commands.entries()) {
+      const res = results[index];
       assert.equal(res.status, 0, `${command}: ${res.stderr || res.stdout}`);
       assert.match(res.stdout, new RegExp(`Usage: atris ${command}`));
       assert.doesNotMatch(res.stdout, /atris\/ folder not found|Atris Analytics|Current Status/);
