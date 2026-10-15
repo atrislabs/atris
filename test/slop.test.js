@@ -5199,6 +5199,14 @@ test('the fix diff splice list skips a noun after "in" or "of" and a noun with i
     lead.map((t) => `The contract has a test ${D} ${t}.`),
     lead.map((t) => `The contract has a test, ${t}.`),
   ).map((s) => s.text), ['if the format changes, the round-trip test fails and we catch it', 'once it lands, the gate holds it']);
+  // two nouns joined by "and its" before a plural verb are one subject, as in
+  // the real goal on 622 lines; a comma inside a short aside does not cut it
+  // short, and two nouns with no verb after them stay a phrase
+  const pair = ['the in-app browser and its file-viewing companions (PDF, HTML) feel as trustworthy as a real tab', 'the browser and its file viewer settings page'];
+  assert.deepEqual(spliceShapes(
+    pair.map((t) => `Nobody leaves Atris ${D} ${t}.`),
+    pair.map((t) => `Nobody leaves Atris, ${t}.`),
+  ).map((s) => s.text), ['the in-app browser and its file-viewing companions feel as trustworthy as a real tab']);
 });
 
 test('the fix and the splice list read one word list for "these" and "those"', () => {

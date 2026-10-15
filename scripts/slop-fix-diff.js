@@ -274,6 +274,11 @@ const PAST_SPLICE_SHAPE = new RegExp(`^(?!that (?:the|a|an|it|we|they|he|she|thi
 // and so do the adverbs in "s" that are never the plural noun.
 const { PRESENT_PLURAL_VERB, DEMONSTRATIVE_LEAD, S_ADVERB } = require(path.join(ROOT, 'commands', 'slop.js'));
 const DEMONSTRATIVE_SHAPE = new RegExp(`^(?:these|those|(?:the|these|those|our|their|your|its) (?:[\\w\`-]+ )?(?!${S_ADVERB} )[a-z]+[^isu\\s']s) (?:${DEMONSTRATIVE_LEAD} )?${PRESENT_PLURAL_VERB} (?:[a-z\`"]|\\d)`);
+// Two nouns joined by "and its", "and the" or kin before a plural verb are
+// one subject: "the in-app browser and its file-viewing companions feel as
+// trustworthy as a real tab". The fixer has no such reading, so beside the
+// verbs it shares, this one takes a few it lacks, "feel", "look", "seem".
+const TWO_NOUN_SHAPE = new RegExp(`^(?:the|its|our|their|your) (?:[\\w\`-]+ ){1,2}and (?:its|their|the|our|your) (?:[\\w\`-]+ ){1,2}(?:${PRESENT_PLURAL_VERB}|feel|look|seem) (?:[a-z\`"]|\\d)`);
 // A stretch that ends its sentence on a bare "of", "to", "with" and kin has
 // lost the object of that word to the noun it opens with, so it is a
 // clause on that noun, not a subject and its verb: "offline work, a topic
@@ -290,15 +295,20 @@ const FIELD_VALUE_SHAPE = /(?:^|\n)[ \t]*(?:[-*+>][ \t]*)?(?:\*\*[^*\n]+:\*\*|[A
 // listed with the clause: "if the format changes, the round-trip test
 // fails and we catch it".
 const LEAD_CLAUSE = '(?:if|when|whenever|once|unless|until|after|before|while) [^,;.!?\\n]{1,80}?';
+// A short aside in parentheses that holds a comma is read past, so "(PDF,
+// HTML)" does not cut the stretch short. One with no comma stays, so a
+// field like "Q3 (flaky):" keeps its shape.
+const ASIDE = / \((?=[^()\n]{1,40}\))[^()\n]*,[^()\n]*\)/g;
 function spliceShapes(sources, fixes) {
   const found = new Map();
-  sources.forEach((source, i) => {
-    const fixed = fixes[i];
+  sources.forEach((raw, i) => {
+    const source = raw.replace(ASIDE, '');
+    const fixed = fixes[i].replace(ASIDE, '');
     if (fixed === source) return;
     for (const m of fixed.matchAll(new RegExp(`, ((?:${LEAD_CLAUSE}, )?(${SPLICE_OPENER} [^,;.!?\\n]*))`, 'g'))) {
       const [, rest, tail] = m;
       const past = PAST_SPLICE_SHAPE.test(tail) && !fixed.startsWith(',', m.index + m[0].length);
-      if (!source.includes(`${DASH} ${rest}`) || !(SPLICE_SHAPE.test(tail) || DEMONSTRATIVE_SHAPE.test(tail) || past) || RELATIVE_SHAPE.test(tail)) continue;
+      if (!source.includes(`${DASH} ${rest}`) || !(SPLICE_SHAPE.test(tail) || DEMONSTRATIVE_SHAPE.test(tail) || TWO_NOUN_SHAPE.test(tail) || past) || RELATIVE_SHAPE.test(tail)) continue;
       if (STRANDED_SHAPE.test(tail) && /^(?:[.!?]|$)/.test(fixed.slice(m.index + m[0].length))) continue;
       if (takesComma(fixed.slice(0, m.index)) || FIELD_VALUE_SHAPE.test(fixed.slice(0, m.index))) continue;
       const key = rest.replace(/`[^`]*`/g, '``');
