@@ -1242,6 +1242,9 @@ test('fix joins a noun clause after the dash with a semicolon', () => {
     'It was never a model failure \u2014 the label hid a key gap.',
     'They matter \u2014 the user set them up for a reason.',
     'Clean it first \u2014 the data set a team uses.',
+    // a past verb that takes no object before "to", "at" and kin is a clause
+    'A fetch ran \u2014 the source failed to load.',
+    'It never read the detector \u2014 every turn went to the cloud lane.',
     // a title where every word is capitalized names a thing, so it never
     // joins; words in all capitals are shouting and still do
     'Inbox Triage \u2014 23 emails processed',
@@ -1340,6 +1343,8 @@ test('fix joins a noun clause after the dash with a semicolon', () => {
     'It was never a model failure; the label hid a key gap.',
     'They matter; the user set them up for a reason.',
     'Clean it first, the data set a team uses.',
+    'A fetch ran; the source failed to load.',
+    'It never read the detector; every turn went to the cloud lane.',
     'Inbox Triage, 23 emails processed',
     'Release Notes, it ships Friday.',
     'Your journal tracks how ideas evolve; the navigator reads it to understand context.',

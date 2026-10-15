@@ -450,3 +450,13 @@ They are load-bearing context \u2014 the user set them up for a reason.
 => They are load-bearing context; the user set them up for a reason.
 Clean it first \u2014 the data set a team uses.
 => Clean it first, the data set a team uses.
+
+# a past verb that takes no object ("failed", "crashed", "existed", "went")
+# before "to", "at", "with" and kin is a clause; "stored" takes one, so
+# "the files stored in atris" stays a phrase
+It raised TypeError \u2014 the flow crashed at step 4 on every run.
+=> It raised TypeError; the flow crashed at step 4 on every run.
+This was the last hop \u2014 the send executor existed with no producer.
+=> This was the last hop; the send executor existed with no producer.
+Keep notes \u2014 the files stored in atris.
+=> Keep notes, the files stored in atris.
