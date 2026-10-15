@@ -2302,6 +2302,26 @@ test('fix joins "the", a common two-word name and a plain verb as a clause after
   ]);
 });
 
+test('fix joins "the", a plural noun, a bare verb and an object as a clause after a dash', () => {
+  // from real repo text: "no longer tints the icon, the SVG `fill` attrs
+  // override `currentColor`" spliced, since only a verb in "s" or a listed
+  // two-word name made a subject. A plural noun with a word after it that is
+  // no verb, or no object after the verb, keeps the phrase.
+  const file = tmpFile('plural-object-clause.md', [
+    'It no longer tints the icon \u2014 the SVG `fill` attrs override `currentColor`.',
+    'Keep the color \u2014 the attrs override the field.',
+    'Three parts \u2014 the docs folder, the tests and the map.',
+    'One place \u2014 the build steps for every repo.',
+  ].join('\n'));
+  const { changes } = applyFixes([file], RULES);
+  assert.deepEqual(changes.map((c) => c.after), [
+    'It no longer tints the icon; the SVG `fill` attrs override `currentColor`.',
+    'Keep the color; the attrs override the field.',
+    'Three parts, the docs folder, the tests and the map.',
+    'One place, the build steps for every repo.',
+  ]);
+});
+
 test('fix joins "the", a noun, a verb in s and a longer object as a clause after a dash', () => {
   // from real repo text: "Never run git, the orchestrator lands your work"
   // spliced, since the object ran past one word. A noun in "ers" before a

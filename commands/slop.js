@@ -350,6 +350,12 @@ const NAME_PAIR_CLAUSE_AFTER_DASH = new RegExp(`${CLAUSE_END}\\s*\\u2014\\s*(?=t
 // match handles the bypass".
 const MODIFIER_WORD = '(?:[A-Z]{2,}|[a-z][a-z-]*[a-z]|[a-z][a-z0-9]*(?:_[a-z0-9]+)+)';
 const THE_OBJECT_CLAUSE_AFTER_DASH = new RegExp(`${CLAUSE_END}\\s*\\u2014\\s*(?=the\\s+(?!${NAME_PAIR}\\b)(?!(?:one|two|three|four|five|six|seven|eight|nine|ten|few|many|several|same|other|first|last|next|main|key|core|new|old|real|whole|exact|only)\\b)(?:(?![A-Za-z-]*s\\b)${MODIFIER_WORD}\\s+(?!(?:that|which|who)\\b))?(?!(?!yes\\b)[a-z]*s\\b)[a-z]{2,}\\s+(?:(?:only|now|still|already|also|never|always|often|just)\\s+)?${PLAIN_VERB_WORD}\\s+(?:the|a|an|your|our|their|its|YOUR|OUR|THEIR|ITS|all|every|each|this|these|those)\\s+[^\\s\\u2014])`, 'g');
+// A plural noun as the subject, after up to two modifiers or code names,
+// then a bare verb and an object, is a clause too: "it no longer tints the
+// icon; the SVG `fill` attrs override `currentColor`". A place word, a word
+// that ends a longer name, or no object after the verb keeps the phrase:
+// "the build steps for every repo", "the docs folder, the tests".
+const PLURAL_OBJECT_CLAUSE_AFTER_DASH = new RegExp(`${CLAUSE_END}\\s*\\u2014\\s*(?=the\\s+(?!(?:one|two|three|four|five|six|seven|eight|nine|ten|few|many|several|same|other|first|last|next|main|key|core|new|old|real|whole|exact|only)\\b)(?:(?:${MODIFIER_WORD}|\\uE000\\d+\\uE001)\\s+){0,2}(?!(?:this|his|its|was|has|does|thus|plus|always|perhaps|unless|whereas|across|yes)\\b)[a-z]{2,}[^su\\W]s\\s+(?:(?:only|now|still|already|also|never|always|often|just)\\s+)?(?!(?:from|of|in|on|for|with|at|by|to|and|or|but|so|yet|not|then|that|which|who|like|than|as|is|are|was|were|be|been|into|via|per|about|over|under|above|below|behind|across|through|within|without|between|among|around|along|near|past|since|until|inside|outside|beyond|upon|toward|towards|against|during|except|after|before|when|if|while|the|your|our|their|its|his|her|my|every|each|all|no|some|any)\\b|${NAME_END_WORD}\\b)[a-z]{3,}(?<!s)\\s+(?:the|a|an|your|our|their|its|this|these|those|it|them|\\uE000\\d+\\uE001)(?=[\\s.!?;,]|$))`, 'g');
 // The same subject, a verb in "s" and a place word that seldom follows a
 // plural noun ("across", "through", "into" and kin) is a clause: "the
 // protocol spreads across projects". A word in "ly" may sit on either side
@@ -1185,6 +1191,10 @@ function fixEmDash(s, { endsBlock = false, startsBlock = false, spans = [], abov
       return left ? clauseJoin(left, at, whole) : m;
     })
     .replace(NAME_PAIR_CLAUSE_AFTER_DASH, (m, at, whole) => {
+      const left = clauseOrFieldLeft(at, whole);
+      return left ? clauseJoin(left, at, whole) : m;
+    })
+    .replace(PLURAL_OBJECT_CLAUSE_AFTER_DASH, (m, at, whole) => {
       const left = clauseOrFieldLeft(at, whole);
       return left ? clauseJoin(left, at, whole) : m;
     })
