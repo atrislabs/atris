@@ -1374,6 +1374,9 @@ test('worktree cleanup quietly refreshes an outdated base and keeps staged notes
   const fx = makeFixture();
   try {
     const copy = addCopy(fx, 'healthy-draft');
+    const tracked = path.join(copy, 'README.md');
+    const committed = runGit(['show', 'HEAD:README.md'], copy);
+    fs.writeFileSync(tracked, '# fixture\nkeep these tracked edits\n');
     const draft = path.join(copy, 'draft.txt');
     fs.writeFileSync(draft, 'keep these notes\n');
     const note = path.join(copy, 'note.txt');
@@ -1405,6 +1408,9 @@ test('worktree cleanup quietly refreshes an outdated base and keeps staged notes
       assert.equal(lines[0], `cleanup: ${extra.length ? 'applied' : 'dry-run'} base=origin/master`);
       assert.equal(lines[1], extra.length ? 'removeds: 0' : 'candidates: 0');
       assert.doesNotMatch(cli.stdout, /warning:|could not refresh|may be behind/);
+      assert.equal(fs.readFileSync(tracked, 'utf8'), '# fixture\nkeep these tracked edits\n');
+      assert.equal(runGit(['show', 'HEAD:README.md'], copy), committed);
+      assert.equal(runGit(['show', ':README.md'], copy), committed);
       assert.equal(fs.readFileSync(draft, 'utf8'), 'keep these notes\n');
       assert.equal(fs.readFileSync(note, 'utf8'), 'staged notes\nlater edits\n');
       assert.equal(runGit(['show', ':note.txt'], copy), 'staged notes');

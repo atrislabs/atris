@@ -2464,3 +2464,5 @@ Cleanup stale base warning: `commands/worktree.js:1494` keeps the shared refresh
 Unavailable origin warning proof: `test/member-tidy.test.js:1405` runs real cleanup preview and apply with an offline remote, checks the warning, and preserves draft bytes, status, branch, registration and local origin record with no removal log.
 
 Healthy origin output proof: `test/member-tidy.test.js:1374` runs real cleanup preview and apply with the local base reset behind origin before each call, requires empty stderr and no stale-base warning, verifies both fetched and tracking records advance, and preserves draft bytes, staged contents, the staged patch, later edits, status, branch and registration without removals.
+
+Healthy refresh tracked edits: `test/member-tidy.test.js:1374` also preserves exact edited README bytes and its unchanged committed and staged versions during real cleanup preview and apply.

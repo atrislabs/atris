@@ -19,7 +19,7 @@ Details for any task: atris task show <ID>
 
 ## In Progress
 
-(Empty)
+- **[ACW-27]** Prove healthy refresh preserves tracked edits · architect
 
 ## Review
 
