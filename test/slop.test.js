@@ -3100,14 +3100,20 @@ test('fix joins a subject and its verb when "a", a code name and a noun open the
   // from a heartbeat note: "a nightly job appends a `next_move` event to
   // the ledger" spliced, since the object's first word could not be a code
   // name. A code name inside a noun phrase with no verb keeps its comma.
+  // "no" opens the object like "a": "an ownership command returns no
+  // `tasks` row" spliced. "no longer" is no object, so it keeps its comma.
   const file = tmpFile('code-object.md', [
     'It ships tonight \u2014 a nightly job appends a `next_move` event to the ledger.',
     'Here it is \u2014 the docs `atris` hook event page.',
+    'It drops intent silently \u2014 an ownership command returns no `tasks` row; a status question waits.',
+    'It stays \u2014 the old helpers no longer.',
   ].join('\n'));
   const { changes } = applyFixes([file], RULES, { write: false });
   assert.deepEqual(changes.map((c) => c.after), [
     'It ships tonight; a nightly job appends a `next_move` event to the ledger.',
     'Here it is, the docs `atris` hook event page.',
+    'It drops intent silently; an ownership command returns no `tasks` row; a status question waits.',
+    'It stays, the old helpers no longer.',
   ]);
 });
 
