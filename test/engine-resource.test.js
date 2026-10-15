@@ -3858,36 +3858,45 @@ test('a read-only ask run writes a start and an end reading, and a run past its 
   }
 });
 
-test('mission runners record paired readings on success, SIGKILL and startup failure', () => {
-  const { spawnSync } = require('node:child_process');
+test('mission runners record paired readings on success, SIGKILL and startup failure', async () => {
+  const { spawn } = require('node:child_process');
   const { withMissionFullJson } = require('./helpers/mission-json');
   const { scrubAgentEnv } = require('./helpers/agent-env');
   const cli = path.join(__dirname, '..', 'bin', 'atris.js');
-  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'engine-resource-mission-tick-'));
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'engine-resource-mission-tick-'));
   const runnerEnv = ['ATRIS_RUNNER_PROFILE', 'ATRIS_RUNNER_MODEL', 'ATRIS_RUNNER_BIN', 'ATRIS_RUNNER_COMMAND_TEMPLATE', 'ATRIS_CLAUDE_MODEL', 'ATRIS_CLAUDE_BIN', 'ATRIS_CLAUDE_COMMAND_TEMPLATE', 'ATRIS_DISPATCH_DEPTH', 'ATRIS_DISPATCH_MAX_DEPTH'];
-  const home = path.join(dir, 'home');
-  const bin = path.join(dir, 'bin');
-  const run = (args) => {
-    const clean = scrubAgentEnv(process.env);
-    for (const name of runnerEnv) delete clean[name];
-    return spawnSync(process.execPath, [cli, ...withMissionFullJson(args)], {
-      cwd: dir,
-      encoding: 'utf8',
-      timeout: 60000,
-      env: {
-        ...clean,
-        ATRIS_SKIP_UPDATE_CHECK: '1',
-        HOME: home,
-        ATRIS_TASKS_DB: path.join(dir, '.atris', 'tasks.db'),
-        CODEX_HOME: path.join(home, '.codex'),
-        ATRIS_MACHINE_ROSTER_PATH: path.join(home, 'roster.json'),
-        ATRIS_MACHINE_ROSTER_MD_PATH: path.join(home, 'roster.md'),
-        ATRIS_ROSTER_SESSIONS_DIR: path.join(home, 'roster-sessions'),
-        PATH: `${bin}${path.delimiter}/usr/bin${path.delimiter}/bin`,
-      },
+  // Each runner gets its own folder, task store, run log, and stand-in tools,
+  // so the codex and claude cases run at once while each keeps its own order.
+  const checkRunner = async (runner) => {
+    const dir = path.join(root, runner);
+    const home = path.join(dir, 'home');
+    const bin = path.join(dir, 'bin');
+    const run = (args) => new Promise((resolve) => {
+      const clean = scrubAgentEnv(process.env);
+      for (const name of runnerEnv) delete clean[name];
+      const child = spawn(process.execPath, [cli, ...withMissionFullJson(args)], {
+        cwd: dir,
+        timeout: 60000,
+        env: {
+          ...clean,
+          ATRIS_SKIP_UPDATE_CHECK: '1',
+          HOME: home,
+          ATRIS_TASKS_DB: path.join(dir, '.atris', 'tasks.db'),
+          CODEX_HOME: path.join(home, '.codex'),
+          ATRIS_MACHINE_ROSTER_PATH: path.join(home, 'roster.json'),
+          ATRIS_MACHINE_ROSTER_MD_PATH: path.join(home, 'roster.md'),
+          ATRIS_ROSTER_SESSIONS_DIR: path.join(home, 'roster-sessions'),
+          PATH: `${bin}${path.delimiter}/usr/bin${path.delimiter}/bin`,
+        },
+      });
+      let stdout = '';
+      let stderr = '';
+      child.stdout.setEncoding('utf8').on('data', (chunk) => { stdout += chunk; });
+      child.stderr.setEncoding('utf8').on('data', (chunk) => { stderr += chunk; });
+      child.on('error', (error) => resolve({ error, status: null, stdout, stderr }));
+      child.on('close', (status, signal) => resolve({ error: signal ? new Error(`stopped by ${signal}`) : undefined, status, stdout, stderr }));
     });
-  };
-  try {
+    const readLog = () => fs.readFileSync(path.join(dir, RESOURCE_LOG), 'utf8').trim().split('\n').map((line) => JSON.parse(line));
     fs.mkdirSync(home, { recursive: true });
     fs.mkdirSync(bin, { recursive: true });
     for (const name of ['codex', 'claude']) {
@@ -3895,34 +3904,24 @@ test('mission runners record paired readings on success, SIGKILL and startup fai
       fs.writeFileSync(path.join(bin, name), `#!/bin/sh\nif [ "$1" = --help ]; then echo '--output-format --permission-mode --resume --session-id --include-partial-messages --verbose --model --effort'; exit 0; fi\necho ${name} tick\n`);
       fs.chmodSync(path.join(bin, name), 0o755);
     }
-    const ids = [];
-    for (const runner of ['codex', 'claude']) {
-      const started = run(['mission', 'start', `${runner} reading tick`, '--owner', 'mission-lead', '--runner', runner, '--no-verify', '--json']);
-      assert.strictEqual(started.status, 0, started.stderr || started.stdout);
-      const mission = JSON.parse(started.stdout).mission;
-      ids.push(mission.id);
-      const ran = run(['mission', 'run', mission.id, '--max-ticks', '1', '--max-wall', '60', '--no-verify', '--json']);
-      assert.strictEqual(ran.status, 0, ran.stderr || ran.stdout);
-    }
-    const log = fs.readFileSync(path.join(dir, RESOURCE_LOG), 'utf8').trim().split('\n').map((line) => JSON.parse(line));
-    assert.deepStrictEqual(log.map((e) => [e.phase, e.engine, e.task]), [
-      ['start', 'codex', ids[0]], ['end', 'codex', ids[0]],
-      ['start', 'claude', ids[1]], ['end', 'claude', ids[1]],
-    ]);
+    const started = await run(['mission', 'start', `${runner} reading tick`, '--owner', 'mission-lead', '--runner', runner, '--no-verify', '--json']);
+    assert.strictEqual(started.status, 0, started.stderr || started.stdout);
+    const id = JSON.parse(started.stdout).mission.id;
+    const ran = await run(['mission', 'run', id, '--max-ticks', '1', '--max-wall', '60', '--no-verify', '--json']);
+    assert.strictEqual(ran.status, 0, ran.stderr || ran.stdout);
+    const log = readLog();
+    assert.deepStrictEqual(log.map((e) => [e.phase, e.engine, e.task]), [['start', runner, id], ['end', runner, id]]);
     assert.strictEqual(log[0].run_id, log[1].run_id);
-    assert.strictEqual(log[2].run_id, log[3].run_id);
-    assert.notStrictEqual(log[0].run_id, log[2].run_id);
-    assert.ok(log.filter((entry) => entry.phase === 'end').every((entry) => entry.duration_ms >= 0));
-    assert.ok(Array.isArray(log[0].load) && Number.isFinite(log[1].duration_ms) && Number.isFinite(log[3].duration_ms));
-    for (const runner of ['codex', 'claude']) {
+    assert.ok(log[1].duration_ms >= 0);
+    assert.ok(Array.isArray(log[0].load) && Number.isFinite(log[1].duration_ms));
+    {
       fs.writeFileSync(path.join(bin, runner), `#!/bin/sh\nif [ "$1" = --help ]; then echo '--output-format --permission-mode --resume --session-id --include-partial-messages --verbose --model --effort'; exit 0; fi\nkill -9 $$\n`);
-      const started = run(['mission', 'start', `${runner} killed reading`, '--owner', 'mission-lead', '--runner', runner, '--no-verify', '--json']);
+      const started = await run(['mission', 'start', `${runner} killed reading`, '--owner', 'mission-lead', '--runner', runner, '--no-verify', '--json']);
       assert.strictEqual(started.status, 0, started.stderr || started.stdout);
       const mission = JSON.parse(started.stdout).mission;
-      const ran = run(['mission', 'run', mission.id, '--max-ticks', '1', '--max-wall', '60', '--no-verify', '--json']);
+      const ran = await run(['mission', 'run', mission.id, '--max-ticks', '1', '--max-wall', '60', '--no-verify', '--json']);
       assert.strictEqual(ran.error, undefined, ran.stderr || ran.stdout);
-      const killed = fs.readFileSync(path.join(dir, RESOURCE_LOG), 'utf8').trim().split('\n')
-        .map((line) => JSON.parse(line)).filter((entry) => entry.task === mission.id);
+      const killed = readLog().filter((entry) => entry.task === mission.id);
       assert.deepStrictEqual(killed.map((entry) => entry.phase), ['start', 'end']);
       assert.strictEqual(killed[0].run_id, killed[1].run_id);
       assert.strictEqual(killed[1].signal, 'SIGKILL', `${runner}: ${ran.stdout}`);
@@ -3931,16 +3930,16 @@ test('mission runners record paired readings on success, SIGKILL and startup fai
       assert.ok(Number.isFinite(killed[1].duration_ms) && killed[1].duration_ms >= 0);
       console.log(`${runner} force-kill CLI exit ${ran.status}: ${JSON.stringify(killed[1])}`);
     }
-    for (const runner of ['codex', 'claude']) {
+    {
       // Claude must pass its help probe, then disappear before the actual spawn.
       // The generic runner starts through a shell, which reports the missing interpreter.
       fs.writeFileSync(path.join(bin, runner), runner === 'claude'
         ? '#!/bin/sh\nif [ "$1" = --help ]; then echo "--output-format --permission-mode --resume --session-id --include-partial-messages"; rm -- "$0"; exit 0; fi\nexit 99\n'
         : `#!${path.join(dir, 'missing-interpreter')}\n`);
-      const started = run(['mission', 'start', `${runner} startup failure reading`, '--owner', 'mission-lead', '--runner', runner, '--no-verify', '--json']);
+      const started = await run(['mission', 'start', `${runner} startup failure reading`, '--owner', 'mission-lead', '--runner', runner, '--no-verify', '--json']);
       assert.strictEqual(started.status, 0, started.stderr || started.stdout);
       const mission = JSON.parse(started.stdout).mission;
-      const ran = run(['mission', 'run', mission.id, '--max-ticks', '1', '--max-wall', '60', '--no-verify', '--json']);
+      const ran = await run(['mission', 'run', mission.id, '--max-ticks', '1', '--max-wall', '60', '--no-verify', '--json']);
       assert.strictEqual(ran.error, undefined, ran.stderr || ran.stdout);
       assert.ok(ran.stdout.trim(), `${runner}: exit ${ran.status}, stderr ${ran.stderr}`);
       const result = JSON.parse(ran.stdout);
@@ -3951,8 +3950,7 @@ test('mission runners record paired readings on success, SIGKILL and startup fai
         assert.match(JSON.stringify(result), /not found|No such file/i, `${runner}: startup must fail`);
       }
       assert.strictEqual(fs.existsSync(path.join(bin, 'claude')), runner !== 'claude');
-      const failed = fs.readFileSync(path.join(dir, RESOURCE_LOG), 'utf8').trim().split('\n')
-        .map((line) => JSON.parse(line)).filter((entry) => entry.task === mission.id);
+      const failed = readLog().filter((entry) => entry.task === mission.id);
       assert.deepStrictEqual(failed.map((entry) => entry.phase), ['start', 'end']);
       assert.strictEqual(failed[0].run_id, failed[1].run_id);
       assert.ok(Array.isArray(failed[0].load) && Array.isArray(failed[1].load));
@@ -3965,8 +3963,13 @@ test('mission runners record paired readings on success, SIGKILL and startup fai
       assert.strictEqual(failed[1].error, startupError, `${runner}: the end reading must retain the original startup error`);
       console.log(`${runner} startup failure CLI exit ${ran.status}: ${JSON.stringify(failed[1])}`);
     }
+    return log[0].run_id;
+  };
+  try {
+    const runIds = await Promise.all(['codex', 'claude'].map(checkRunner));
+    assert.notStrictEqual(runIds[0], runIds[1]);
   } finally {
-    fs.rmSync(dir, { recursive: true, force: true });
+    fs.rmSync(root, { recursive: true, force: true });
   }
 });
 
