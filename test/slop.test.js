@@ -1277,6 +1277,10 @@ test('fix joins a noun clause after the dash with a semicolon', () => {
     'The plan was reversed \u2014 the banner shipped because detection catches more.',
     'Check the input \u2014 the system prompt string passed to the model.',
     'Read the list \u2014 the tests skipped because of flakes.',
+    // a "whatever" clause that opens its sentence before an order is its
+    // first half; a lowercase one after a field's colon is the value
+    'Whatever you pick \u2014 write it down.',
+    '- File: wherever the harness reads it \u2014 search for the string.',
     // a title where every word is capitalized names a thing, so it never
     // joins; words in all capitals are shouting and still do
     'Inbox Triage \u2014 23 emails processed',
@@ -1381,6 +1385,8 @@ test('fix joins a noun clause after the dash with a semicolon', () => {
     'The plan was reversed; the banner shipped because detection catches more.',
     'Check the input, the system prompt string passed to the model.',
     'Read the list, the tests skipped because of flakes.',
+    'Whatever you pick, write it down.',
+    '- File: wherever the harness reads it; search for the string.',
     'Inbox Triage, 23 emails processed',
     'Release Notes, it ships Friday.',
     'Your journal tracks how ideas evolve; the navigator reads it to understand context.',

@@ -1502,6 +1502,15 @@ function fixEmDash(s, { endsBlock = false, startsBlock = false, spans = [], abov
       // "Progressive disclosure (the idea: start simple)", never "(the idea;".
       const body = left.replace(/^(?:\*\*[^*]+:\*\*\s*)/, '').replace(/^\/\/+\s*(?=[A-Z])/, '');
       const named = (insideParens(left) ? words : body.split(/\s+/)).length === 2;
+      // a "whatever" clause before an order is its first half, so it takes
+      // a comma even past the commas of a list: "Whatever impulse, idea, or
+      // knowing is present, write it down". A "whatever" clause that is the
+      // subject, "Whatever you build matters", would take it too; no real
+      // line has that before an order, so it is a known gap.
+      // It must open its sentence with a capital: a lowercase one is a
+      // field's value or carries on the line above, so "File: wherever the
+      // harness reads it; search for it" keeps its mark.
+      if (/^(?:Whatever|Wherever|Whichever|However)\s/.test(body.replace(/^(?:[-*+>]|\d+[.)])\s*/, ''))) return ', ';
       // a bold phrase that closes the clause names the idea, and the order
       // spells it out: "AI is best used to **raise the floor**: automate the
       // mechanical 80%", never a semicolon that cuts the two apart
