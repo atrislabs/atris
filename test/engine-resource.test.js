@@ -767,7 +767,7 @@ test('history reads back the latest sweep and the latest SIGKILL, skipping bad l
     assert.strictEqual(history.last_kill.task, 'CLI-2');
     assert.strictEqual(history.kills, 2);
     assert.strictEqual(history.low_memory_kills, 1);
-    assert.deepStrictEqual(readResourceHistory(path.join(root, 'missing')), { last_sweep: null, last_kill: null, kills: 0, low_memory_kills: 0, time_limit_kills: 0, last_other_kill: null, kills_day: 0, low_memory_kills_day: 0, time_limit_kills_day: 0, last_day_other_kill: null, open_runs: 0, parent_gone: 0, still_running: 0, last_open: null, lost_closed: 0, lost_closed_day: 0, last_lost_closed: null, first_day_leak_reading: null, last_error: null, errors_day: 0, last_day_error: null, read_error: null });
+    assert.deepStrictEqual(readResourceHistory(path.join(root, 'missing')), { last_sweep: null, last_kill: null, kills: 0, low_memory_kills: 0, time_limit_kills: 0, last_other_kill: null, kills_day: 0, low_memory_kills_day: 0, time_limit_kills_day: 0, last_day_other_kill: null, open_runs: 0, parent_gone: 0, still_running: 0, last_open: null, lost_closed: 0, lost_closed_day: 0, last_lost_closed: null, first_day_leak_reading: null, start_lines_guarded: null, last_error: null, errors_day: 0, last_day_error: null, read_error: null });
   } finally {
     fs.rmSync(root, { recursive: true, force: true });
   }
@@ -4299,5 +4299,50 @@ test('each sweep line counts the unguarded agent starts in the shell startup fil
   } finally {
     fs.rmSync(root, { recursive: true, force: true });
     fs.rmSync(home, { recursive: true, force: true });
+  }
+});
+
+test('the landing status says when the sweeps first found the ssh-agent startup line guarded', () => {
+  const { showStatus } = require('../commands/autoland');
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'autoland-status-guarded-'));
+  const file = path.join(root, RESOURCE_LOG);
+  const hoursAgo = (h) => new Date(Date.now() - h * 3600000).toISOString();
+  const sweep = (h, count) => JSON.stringify({ at: hoursAgo(h), phase: 'sweep', stopped: [], failed: [], skipped: [], leaked_ssh_agents: 0, ...(count === undefined ? {} : { unguarded_start_lines: count }) });
+  const status = (lines, home) => {
+    fs.mkdirSync(path.dirname(file), { recursive: true });
+    fs.writeFileSync(file, `${lines.join('\n')}\n`);
+    const out = [];
+    const original = console.log;
+    console.log = (line = '') => out.push(String(line));
+    try {
+      showStatus(root, [], { readSshAgents: () => ({ agents: [], referenced: new Set() }), uid: 501, ...(home ? { home } : {}) });
+    } finally {
+      console.log = original;
+    }
+    return out.join('\n');
+  };
+  try {
+    require('node:child_process').spawnSync('git', ['init', '-q'], { cwd: root });
+    const guarded = status([sweep(5, 1), sweep(4, 1), sweep(3), sweep(2, 0), sweep(1, 0)]);
+    const at = (h) => hoursAgo(h).slice(0, 13);
+    assert.match(guarded, /ssh-agent startup line guarded: the sweep at \d{4}-\d\d-\d\d \d\d:\d\d UTC found no unguarded start, the one at \d{4}-\d\d-\d\d \d\d:\d\d UTC found 1/);
+    const named = guarded.match(/the sweep at (\S+ \d\d)/)[1].replace(' ', 'T');
+    assert.strictEqual(named, at(2), 'the first sweep at zero is named, not a later one, and a sweep that read no files does not count');
+    assert.doesNotMatch(status([sweep(3, 1), sweep(2, 0), sweep(1, 1)]), /startup line guarded/, 'a line that came back clears it');
+    assert.doesNotMatch(status([sweep(2, 0), sweep(1, 0)]), /startup line guarded/, 'zero from the start was never a fix');
+    assert.doesNotMatch(status([sweep(200, 1), sweep(199, 0)]), /startup line guarded/, 'a fix older than a week is not named');
+    const home = fs.mkdtempSync(path.join(os.tmpdir(), 'autoland-status-guarded-home-'));
+    try {
+      fs.writeFileSync(path.join(home, '.zshrc'), '[ -S "$SSH_AUTH_SOCK" ] || eval "$(ssh-agent -s)"\n');
+      assert.match(status([sweep(3, 1), sweep(2, 0)], home), /startup line guarded/, 'a guarded file read now agrees with the log');
+      fs.writeFileSync(path.join(home, '.zshrc'), 'eval "$(ssh-agent -s)"\n');
+      assert.doesNotMatch(status([sweep(3, 1), sweep(2, 0)], home), /startup line guarded/, 'a file that starts an agent again wins over the log');
+    } finally {
+      fs.rmSync(home, { recursive: true, force: true });
+    }
+    const { readResourceHistory } = require('../lib/engine-resource');
+    assert.strictEqual(readResourceHistory(root).start_lines_guarded.before, 1);
+  } finally {
+    fs.rmSync(root, { recursive: true, force: true });
   }
 });

@@ -557,6 +557,8 @@ function showStatus(root, args, deps = {}) {
     console.log(`  engine runs that ended in an error in the last day: ${lost.errors_day}, newest ${failed.engine || 'unknown engine'} on ${failed.task || 'no task'} at ${when}: ${errorReason(failed)}`);
   }
   const { leaked: leakedAgents, unread: unreadAgents } = countLeakedSshAgents(deps);
+  // A test run reads only the home it was handed, never the real one.
+  const startLines = deps.home || !process.env.NODE_TEST_CONTEXT ? findAgentStartLines(deps.home ? { home: deps.home } : {}) : [];
   const unchecked = unreadAgents.length ? `could not read the ${unreadAgents.join(' or the ')}, so some ssh-agents went unchecked` : '';
   if (leakedAgents) {
     const stop = !heartbeatLive
@@ -567,14 +569,17 @@ function showStatus(root, args, deps = {}) {
           : 'the next hourly pass stops them'
         : 'the hourly pass runs a version without the ssh-agent cleanup, so stop them now: atris engine sweep --apply';
     console.log(`  leaked ssh-agents on this machine: ${unchecked ? 'at least ' : ''}${leakedAgents}${leakGrowthNote(lost.first_day_leak_reading, leakedAgents)}; ${stop}${unchecked ? `; ${unchecked}` : ''}`);
-    // A test run reads only the home it was handed, never the real one.
-    if (deps.home || !process.env.NODE_TEST_CONTEXT) {
-      const startLines = findAgentStartLines(deps.home ? { home: deps.home } : {});
-      for (const found of startLines) console.log(`    ${agentStartLineText(found)}`);
-      if (startLines.some((found) => found.fix)) console.log(`    ${FIX_STARTUP_HINT}`);
-    }
+    for (const found of startLines) console.log(`    ${agentStartLineText(found)}`);
+    if (startLines.some((found) => found.fix)) console.log(`    ${FIX_STARTUP_HINT}`);
   } else if (unchecked) {
     console.log(`  leaked ssh-agents on this machine: unknown, ${unchecked}`);
+  }
+  // Named for a week after the fix, so the reader can match it to the
+  // growth, and never while the files read now still start an agent.
+  const guarded = lost.start_lines_guarded;
+  if (guarded && !startLines.length && Date.now() - Date.parse(guarded.at) < 7 * 24 * 3600 * 1000) {
+    const when = (at) => `${String(at || '').slice(0, 16).replace('T', ' ')} UTC`;
+    console.log(`  ssh-agent startup line guarded: the sweep at ${when(guarded.at)} found no unguarded start, the one at ${when(guarded.before_at)} found ${guarded.before}`);
   }
   console.log('');
   const humanOnly = blocked.filter((r) => String(r.reason || '').startsWith('denied_tag_'));
