@@ -3782,3 +3782,23 @@ test('fix pairs an aside after a short subject when a helping verb follows it', 
     '- **Score:** 8: Quieter scene. But the revelation ("a line") is one that stays.',
   ]);
 });
+
+test('fix keeps a dash that stands alone as one item of a bracketed list', () => {
+  // from a task list: "(2026-05-06, -)" with the dash as an empty value came
+  // out as "(2026-05-06,)", and "[a, -, c]" lost the item. A dash alone in
+  // a bracketed list names an empty value, like a dash alone in brackets.
+  const D = String.fromCharCode(0x2014);
+  const file = tmpFile('list-item-dash.md', [
+    `- OBL-156 (2026-05-06, ${D}) Use picker evidence`,
+    '',
+    `- OBL-1 (${D}, open) Ship it`,
+    '',
+    `- [a, ${D}, c] list`,
+    '',
+    `Plans (one, two) ${D} then more.`,
+  ].join('\n'));
+  const { changes } = applyFixes([file], RULES);
+  assert.deepEqual(changes.map((c) => c.after), [
+    'Plans (one, two), then more.',
+  ]);
+});
