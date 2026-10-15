@@ -358,3 +358,5 @@ Member goal claim setup: `test/commands.test.js:1242` prepares the claimed row t
 Member goal row setup: `test/commands.test.js:1242` seeds and claims through the production store, then saves its task projection before real member commands. `commands/member.js:1826` reads that saved view. One setup launch is removed; every original assertion remains.
 
 Member create help batching: `test/commands.test.js:1047` runs both usage checks together. `commands/member.js:4479` rejects missing names and handles help before writes. Two sequential waits become one; every assertion remains.
+
+Completed member goal setup: `test/commands.test.js:1389` uses `lib/member-scaffold.js:145` directly for its member fixture. One setup launch is removed; both real completed-goal checks retain every assertion.

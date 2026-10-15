@@ -1390,7 +1390,11 @@ test('member goal-from-mission stops when active mission is complete and --force
   const dir = makeTempDir();
   try {
     fs.mkdirSync(path.join(dir, 'atris'), { recursive: true });
-    assert.equal(runCli(['member', 'create', 'mission-lead', '--description="Make Missions change the world with self-generated goals"'], { cwd: dir }).status, 0);
+    require('../lib/member-scaffold').ensureMemberBundle(path.join(dir, 'atris', 'team', 'mission-lead'), {
+      name: 'mission-lead',
+      role: 'Mission lead',
+      description: 'Make Missions change the world with self-generated goals',
+    });
     assert.equal(runCli([
       'mission', 'start', '--no-verify', 'Make Missions change the world with self-generated goals',
       '--owner', 'mission-lead',
