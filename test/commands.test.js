@@ -11567,19 +11567,20 @@ test('task ready holds work in review until human accept', () => {
       return created.id;
     });
 
-    const add = runCli([
-      'task', 'add', 'Approve autonomous work before XP',
-      '--tag', 'agent',
-      '--goal-id', 'goal-agent-xp',
-      '--goal-objective', 'Make AgentXP recruitable',
-      '--json',
-    ], { cwd: dir, env });
-    assert.equal(add.status, 0, add.stderr);
-    const created = JSON.parse(add.stdout);
-    const ref = created.task.display_id;
-    assert.equal(created.task.metadata.goal_id, 'goal-agent-xp');
-    assert.equal(created.task.metadata.goal_objective, 'Make AgentXP recruitable');
-    withStore((db) => assert.equal(taskStore.claimTask(db, { id: created.task.id, claimedBy: 'codex' }).claimed, true));
+    // Seed the goal fields task add writes for its goal flags; the local XP
+    // ledger test still checks them on a real add.
+    const ref = withStore((db) => {
+      const created = addSeedTask(db, {
+        title: 'Approve autonomous work before XP',
+        tag: 'agent',
+        workspaceRoot,
+        metadata: { goal_id: 'goal-agent-xp', task_goal: 'Make AgentXP recruitable', goal_objective: 'Make AgentXP recruitable' },
+      });
+      assert.equal(created.inserted, true);
+      assert.equal(taskStore.claimTask(db, { id: created.id, claimedBy: 'codex' }).claimed, true);
+      return taskStore.taskDisplayRefMap(taskStore.listTasks(db, { workspaceRoot })).get(created.id);
+    });
+    assert.ok(ref);
 
     const ready = runCli([
       'task', 'ready', ref,
@@ -13106,6 +13107,8 @@ test('task accept automatically projects accepted proof into durable local XP le
     ], { cwd: dir, env });
     assert.equal(add.status, 0, add.stderr);
     const ref = JSON.parse(add.stdout).task.display_id;
+    assert.equal(JSON.parse(add.stdout).task.metadata.goal_id, 'goal-agent-xp');
+    assert.equal(JSON.parse(add.stdout).task.metadata.goal_objective, 'Make XP collectible anywhere');
     assert.equal(runCli(['task', 'claim', ref, '--as', 'codex'], { cwd: dir, env }).status, 0);
     assert.equal(runCli(['task', 'ready', ref, '--proof', 'xp projection test passed', '--as', 'codex'], { cwd: dir, env }).status, 0);
     const accept = runCli(['task', 'accept', ref, '--reward', '2', '--as', 'keshavrao', '--json'], { cwd: dir, env });
