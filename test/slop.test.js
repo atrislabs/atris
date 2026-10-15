@@ -3823,3 +3823,25 @@ test('fix pairs an aside after a bold lead sentence like after a bold field labe
     "1. **Every output is a block.** Text, code, images, video, data: all blocks. If it can be an output, it's a block type.",
   ]);
 });
+
+test('fix pairs an aside whose opening dash ends the line above', () => {
+  // from a design note: "every surface" and a dash end one line, "orb
+  // included", a dash and "is a view of it" open the next. Each line alone
+  // gave the dash a comma; read together the aside goes in parentheses, and
+  // the parenthesis opens the second line.
+  const D = String.fromCharCode(0x2014);
+  const file = tmpFile('split-aside-open-end.md', [
+    `1. There is one memory, it lives on the human's computer, and every surface ${D}`,
+    `   orb included ${D} is a view of it.`,
+    '',
+    `Defines DONE for each criterion. The one non-obvious step ${D}`,
+    `capture the stdout and write it as a brief file ${D} is proven offline below.`,
+  ].join('\n'));
+  const { changes } = applyFixes([file], RULES);
+  assert.deepEqual(changes.map((c) => c.after), [
+    "1. There is one memory, it lives on the human's computer, and every surface",
+    '   (orb included) is a view of it.',
+    'Defines DONE for each criterion. The one non-obvious step',
+    '(capture the stdout and write it as a brief file) is proven offline below.',
+  ]);
+});

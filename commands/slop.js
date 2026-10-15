@@ -1344,17 +1344,22 @@ function splitAside(line, below) {
   if (/^\s*(?:[-*+]|\d+[.)])\s/.test(line) && !/^\s+\S/.test(below)) return null;
   const head = /^(\s*)(.*?)(\s*)$/.exec(line); const foot = /^(\s*)(.*?)(\s*)$/.exec(below);
   const tailWords = head[2].split('\u2014')[1].trim().split(/\s+/); const headWords = foot[2].split('\u2014')[0].trim().split(/\s+/);
-  if (!tailWords[0] || !headWords[0]) return null;
-  const seam = `${tailWords[tailWords.length - 1]} ${headWords[0]}`;
+  if (!headWords[0]) return null;
+  // an opening dash that ends its line puts the parenthesis at the head of
+  // the next one: "Every HTML page" then "(search results, the homepage) is"
+  const openEnds = !tailWords[0];
+  const before = openEnds ? head[2].split('\u2014')[0].trim().split(/\s+/).pop() : tailWords[tailWords.length - 1];
+  const seam = openEnds ? `${before} (${headWords[0]}` : `${before} ${headWords[0]}`;
   const joined = fixEmDash(`${head[2]} ${foot[2]}`);
   const at = joined.indexOf(seam);
   if (at < 0 || joined.indexOf(seam, at + 1) >= 0) return null;
-  const cut = at + tailWords[tailWords.length - 1].length;
+  const cut = at + before.length;
   const up = joined.slice(0, cut); const down = joined.slice(cut + 1);
-  if (/\u2014/.test(joined) || !/\([^)]*$/.test(up) || !/^[^(]*\)/.test(down)) return null;
+  if (/\u2014/.test(joined) || !/^[^(]*\)/.test(openEnds ? down.slice(1) : down)) return null;
+  if (!openEnds && !/\([^)]*$/.test(up)) return null;
   // a semicolon between the two dashes means each dash belongs to its own
   // item: "TeamTab \u2014 click member; PulseControl \u2014 refetch"
-  if (/;/.test(up.slice(up.lastIndexOf('(')) + down.slice(0, down.indexOf(')')))) return null;
+  if (/;/.test((openEnds ? '' : up.slice(up.lastIndexOf('('))) + down.slice(0, down.indexOf(')')))) return null;
   return [head[1] + up + head[3], foot[1] + down + foot[3]];
 }
 
