@@ -2471,6 +2471,24 @@ test('fix joins a past verb with a word in "ly" before it after a dash', () => {
   ]);
 });
 
+test('fix reads "names" and one quoted name in capitals as a verb and its object after a dash', () => {
+  // from real repo text: "the verbatim quote names "Dave," not the owner"
+  // spliced, since "names" is too often a plural noun to trust before any
+  // quote. One quoted word in capitals is a name, so it joins; after
+  // "field" or "class" the words name a thing and keep their comma.
+  const file = tmpFile('names-quote.md', [
+    'Keep the whole review short \u2014 the review names "Dave" twice.',
+    'The schema is simple here \u2014 the field names "Id" and nothing else.',
+    'Look at the component file \u2014 the class names "Button" for the theme.',
+  ].join('\n'));
+  const { changes } = applyFixes([file], RULES);
+  assert.deepEqual(changes.map((c) => c.after), [
+    'Keep the whole review short; the review names "Dave" twice.',
+    'The schema is simple here, the field names "Id" and nothing else.',
+    'Look at the component file, the class names "Button" for the theme.',
+  ]);
+});
+
 test('fix reads a code name with an underscore as the subject noun after a dash', () => {
   // from real repo text: "the business_id match handles the specific bypass
   // class" spliced, since the word before the noun could hold letters and

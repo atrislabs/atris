@@ -175,9 +175,14 @@ Check one place \u2014 the field names "id" and "name".
 => Check one place, the field names "id" and "name".
 One place \u2014 the server logs "error" lines.
 => One place, the server logs "error" lines.
-# "names" is a verb here, but it is too often a noun to trust before a quote
+# "names" takes one quoted name in capitals as its object
 note: caution \u2014 the verbatim quote names "Dave," not the owner Eric.
-~> note: caution; the verbatim quote names "Dave," not the owner Eric.
+=> note: caution; the verbatim quote names "Dave," not the owner Eric.
+# but after a word that names a thing in code or a field it stays a phrase
+The schema is simple here \u2014 the field names "Id" and nothing else.
+=> The schema is simple here, the field names "Id" and nothing else.
+Look at the component file \u2014 the class names "Button" for the theme.
+=> Look at the component file, the class names "Button" for the theme.
 
 # from real repo text: a verb in s, a few words and "but" with a second
 # clause or verb; "but not" and "but the" with no verb set two things side

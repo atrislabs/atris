@@ -412,9 +412,11 @@ const HOW_TAIL_CLAUSE = new RegExp(`^\\s*\\u2014\\s*the\\s+(?!${NAME_PAIR}\\b)(?
 // object: "the business owns what its agents learn". A quote is too, after
 // a verb that is almost never a plural noun: 'the verdict reads "Human
 // decision needed"'. A verb that is often a noun keeps the phrase, since
-// 'the field names "id"' names fields; so 'the quote names "Dave"' stays.
+// 'the field names "id"' names fields. "names" still takes one quoted
+// name in capitals, 'the quote names "Dave," not the owner', unless the
+// word before it names a thing in code: 'the class names "Button"'.
 const QUOTE_VERB_WORD = '(?:reads|says|lacks|returns|prints|asks|contains|includes|warns|claims|mentions|shows|displays|emits)';
-const WH_OBJECT_CLAUSE = new RegExp(`^\\s*\\u2014\\s*the\\s+(?!${NAME_PAIR}\\b)(?:[a-z][\\w-]*\\s+){1,2}?(?:(?!${PLURAL_NOUN_WORD}\\b)${PLAIN_VERB_WORD}\\s+(?:what|how|why|whether)\\s+[a-z]|${QUOTE_VERB_WORD}\\s+["\\u201c][A-Za-z])`);
+const WH_OBJECT_CLAUSE = new RegExp(`^\\s*\\u2014\\s*the\\s+(?!${NAME_PAIR}\\b)(?:[a-z][\\w-]*\\s+){1,2}?(?:(?!${PLURAL_NOUN_WORD}\\b)${PLAIN_VERB_WORD}\\s+(?:what|how|why|whether)\\s+[a-z]|${QUOTE_VERB_WORD}\\s+["\\u201c][A-Za-z]|(?<!\\b(?:${NAME_END_WORD}|class|variable|function|method|type|key|tag|attribute|property|param|parameter|column|command|flag|option|enum|module|package)\\s+)names\\s+["\\u201c][A-Z][a-z]+[,.]?["\\u201d](?=\\s|$))`);
 // A plain word, then a name, then the verb hides a "that": "a topic Atris
 // sits directly on top of" names a topic, so it keeps its comma. A run of
 // capitals is no name, so "the new CLI resolves the prefix" still joins.
