@@ -9,7 +9,7 @@ const autoland = require('../lib/autoland');
 const { gateForHuman, plainLandingReason } = require('../lib/voice-gate');
 const { evaluateAutoAccept } = require('../lib/auto-accept-certified');
 const { sweepEngineAskReceipts } = require('../lib/engine-receipt-sweep');
-const { readSshAgents, findLeakedSshAgents, findAgentStartLines, agentStartLineText, FIX_STARTUP_HINT, stopLeakedSshAgents, closeLostRuns, readResourceHistory, errorReason, leakGrowthNote } = require('../lib/engine-resource');
+const { readSshAgents, findLeakedSshAgents, findAgentStartLines, agentStartLineText, FIX_STARTUP_HINT, stopLeakedSshAgents, closeLostRuns, readResourceHistory, errorReason, leakGrowthNote, matchLeakedToRuns, leakedRunsText } = require('../lib/engine-resource');
 const { validateRecentAskReceipts } = require('../lib/engine-validate');
 const { operatorReady, hasAgentJargon, explainResult } = autoland;
 const MISSION_AUTO_VERIFY_STATUSES = new Set(['planning', 'paused', 'ready']);
@@ -556,7 +556,7 @@ function showStatus(root, args, deps = {}) {
     const when = `${String(failed.at || '').slice(0, 16).replace('T', ' ')} UTC`;
     console.log(`  engine runs that ended in an error in the last day: ${lost.errors_day}, newest ${failed.engine || 'unknown engine'} on ${failed.task || 'no task'} at ${when}: ${errorReason(failed)}`);
   }
-  const { leaked: leakedAgents, unread: unreadAgents } = countLeakedSshAgents(deps);
+  const { leaked: leakedAgents, list: leakedList, unread: unreadAgents } = countLeakedSshAgents(deps);
   // A test run reads only the home it was handed, never the real one.
   const startLines = deps.home || !process.env.NODE_TEST_CONTEXT ? findAgentStartLines(deps.home ? { home: deps.home } : {}) : [];
   const unchecked = unreadAgents.length ? `could not read the ${unreadAgents.join(' or the ')}, so some ssh-agents went unchecked` : '';
@@ -569,6 +569,8 @@ function showStatus(root, args, deps = {}) {
           : 'the next hourly pass stops them'
         : 'the hourly pass runs a version without the ssh-agent cleanup, so stop them now: atris engine sweep --apply';
     console.log(`  leaked ssh-agents on this machine: ${unchecked ? 'at least ' : ''}${leakedAgents}${leakGrowthNote(lost.first_day_leak_reading, leakedAgents)}; ${stop}${unchecked ? `; ${unchecked}` : ''}`);
+    const runsText = leakedRunsText(matchLeakedToRuns(root, leakedList));
+    if (runsText) console.log(`    ${runsText}`);
     for (const found of startLines) console.log(`    ${agentStartLineText(found)}`);
     if (startLines.some((found) => found.fix)) console.log(`    ${FIX_STARTUP_HINT}`);
   } else if (unchecked) {
@@ -843,14 +845,15 @@ function engineReceiptSweepNote(receipt) {
 // failed, since then the count is only a floor. A test run never reads the
 // real machine, and a thrown read counts as none.
 function countLeakedSshAgents(deps = {}) {
-  const none = { leaked: 0, unread: [] };
+  const none = { leaked: 0, list: [], unread: [] };
   try {
     const read = deps.readSshAgents;
     if (!read && process.env.NODE_TEST_CONTEXT) return none;
     const uid = deps.uid !== undefined ? deps.uid : (typeof process.getuid === 'function' ? process.getuid() : null);
     if (uid === null) return none;
     const { agents, referenced, unread = [] } = (read || readSshAgents)();
-    return { leaked: findLeakedSshAgents(agents, { referenced, uid }).length, unread };
+    const list = findLeakedSshAgents(agents, { referenced, uid });
+    return { leaked: list.length, list, unread };
   } catch {
     return none;
   }

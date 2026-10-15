@@ -4412,3 +4412,46 @@ test('the landing status warns when ssh-agents keep leaking after the startup li
     fs.rmSync(root, { recursive: true, force: true });
   }
 });
+
+test('the landing status splits leaked ssh-agents by the engine runs open when they started', () => {
+  const { showStatus } = require('../commands/autoland');
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'autoland-status-leak-runs-'));
+  const file = path.join(root, RESOURCE_LOG);
+  const at = (h) => new Date(Date.now() - h * 3600000).toISOString();
+  const agent = (pid, h) => ({ pid, ppid: 1, uid: 501, age_sec: Math.round(h * 3600), args: 'ssh-agent -s' });
+  const status = (lines, agents) => {
+    fs.mkdirSync(path.dirname(file), { recursive: true });
+    fs.writeFileSync(file, `${lines.join('\n')}\n`);
+    const out = [];
+    const original = console.log;
+    console.log = (line = '') => out.push(String(line));
+    try {
+      showStatus(root, [], { readSshAgents: () => ({ agents, referenced: new Set() }), uid: 501 });
+    } finally {
+      console.log = original;
+    }
+    return out.join('\n');
+  };
+  try {
+    require('node:child_process').spawnSync('git', ['init', '-q'], { cwd: root });
+    const log = [
+      JSON.stringify({ at: at(6), phase: 'sweep', stopped: [], failed: [], skipped: [] }),
+      JSON.stringify({ at: at(5), phase: 'start', engine: 'claude', run_id: 'a' }),
+      JSON.stringify({ at: at(4.5), phase: 'start', engine: 'cursor', run_id: 'b' }),
+      JSON.stringify({ at: at(3.5), phase: 'end', engine: 'cursor', run_id: 'b' }),
+      JSON.stringify({ at: at(3), phase: 'end', engine: 'claude', run_id: 'a' }),
+      JSON.stringify({ at: at(1), phase: 'start', engine: 'codex', run_id: 'c' }),
+    ];
+    // 4h ago both claude and cursor were open, so the newer cursor run is
+    // named; 3.2h ago only claude; 2h ago nothing; 0.5h ago codex, still
+    // open; 8h ago is before the log begins.
+    const split = status(log, [agent(200, 4), agent(201, 3.2), agent(202, 2), agent(203, 0.5), agent(204, 8)]);
+    assert.match(split, /leaked ssh-agents on this machine: 5;[^\n]*\n {4}when the leaked ssh-agents started: 3 started while an engine run was open \(cursor 1, claude 1, codex 1\), 1 with no engine run open, 1 before the run log begins/);
+    const outside = status(log, [agent(202, 2)]);
+    assert.match(outside, /when the leaked ssh-agents started: 0 started while an engine run was open, 1 with no engine run open\n/);
+    assert.doesNotMatch(status(log, []), /when the leaked ssh-agents started/, 'no leak, no split');
+    assert.doesNotMatch(status(log, [agent(204, 8)]), /when the leaked ssh-agents started/, 'agents older than the whole log say nothing');
+  } finally {
+    fs.rmSync(root, { recursive: true, force: true });
+  }
+});
