@@ -2,6 +2,7 @@
 
 const fs = require('fs');
 const path = require('path');
+const os = require('os');
 const crypto = require('crypto');
 const readline = require('readline');
 const { spawn, spawnSync } = require('child_process');
@@ -1501,14 +1502,24 @@ function nearestMissionCandidates(missions, ref, limit = 5) {
     .map((entry) => entry.mission);
 }
 
-function listSiblingWorkspaceMissionHints(ref, root = process.cwd(), limit = 5) {
+// Sibling folders looked at for a hint. A missing-id error waited 26 seconds
+// on a temp folder holding 276,000 entries, so the scan is capped and never
+// walks the system temp folder.
+const SIBLING_HINT_SCAN_LIMIT = 2000;
+
+function listSiblingWorkspaceMissionHints(ref, root = process.cwd(), limit = 5, { scanLimit = SIBLING_HINT_SCAN_LIMIT, tmpRoot = os.tmpdir() } = {}) {
   if (!ref) return [];
   const baseRoot = path.resolve(root);
   const parent = path.dirname(baseRoot);
-  let here = baseRoot;
-  try {
-    here = fs.realpathSync(baseRoot);
-  } catch { /* keep raw path */ }
+  const real = (target) => {
+    try {
+      return fs.realpathSync(target);
+    } catch {
+      return target;
+    }
+  };
+  const here = real(baseRoot);
+  if (real(parent) === real(tmpRoot)) return [];
   let entries = [];
   try {
     entries = fs.readdirSync(parent, { withFileTypes: true });
@@ -1516,17 +1527,11 @@ function listSiblingWorkspaceMissionHints(ref, root = process.cwd(), limit = 5) 
     return [];
   }
   const hints = [];
-  for (const entry of entries) {
+  for (const entry of entries.slice(0, scanLimit)) {
     if (!entry.isDirectory() || entry.name.startsWith('.')) continue;
     const candidateRoot = path.join(parent, entry.name);
-    let candidateReal = candidateRoot;
-    try {
-      candidateReal = fs.realpathSync(candidateRoot);
-    } catch {
-      continue;
-    }
-    if (candidateReal === here) continue;
     if (!fs.existsSync(path.join(candidateRoot, '.atris', 'state', 'missions.jsonl'))) continue;
+    if (real(candidateRoot) === here) continue;
     const mission = listMissions(candidateRoot).find((row) => missionMatchesRef(row, ref));
     if (!mission) continue;
     hints.push({
@@ -12697,6 +12702,7 @@ function missionCommand(args) {
 }
 
 module.exports = {
+  listSiblingWorkspaceMissionHints,
   missionProtectedLaneHold,
   missionCommand,
   startMission,
