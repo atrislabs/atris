@@ -1401,6 +1401,15 @@ test('every engine started through a runner or profile variable records its run 
     }
     const withinDeclaringFunction = (declaration, launch) => functionBodies.every(([open, close]) =>
       !(open < declaration && declaration < close) || (open < launch && launch < close));
+    // A parameter of an enclosing function, or an earlier declaration still
+    // in scope, binds this name at the position.
+    const bindsAt = (name, position) => {
+      if (definitionSpans(code).some(([open, close]) => open < position && position < close && parametersOf(open).includes(name))) return true;
+      const visible = withoutHelperDefinitions(code, position).slice(0, position);
+      const escaped = name.replace(/\$/g, '\\$');
+      const declaration = new RegExp(`\\b(?:const|let|var)\\s+${escaped}\\b|\\b(?:const|let|var)\\s*[{[](?:[^=;]*?[,:{[])?\\s*${escaped}\\s*[,}\\]=]`, 'g');
+      return [...visible.matchAll(declaration)].some((binding) => (/^var\b/.test(binding[0]) && withinDeclaringFunction(binding.index, position)) || inScope(visible.slice(binding.index)));
+    };
     const sourceAt = (source, position) => {
       const visible = withoutHelperDefinitions(code, position);
       let declarationEnd = position;
@@ -1487,9 +1496,10 @@ test('every engine started through a runner or profile variable records its run 
             argumentsList[argumentsList.length - 1] += token[0];
           }
           const supplied = (argumentsList[slot] || '').trim();
-          // Omitted arguments use defaults in the definition's outer scope.
-          // A supplied value, including null, never falls back to that default.
-          const omitted = !supplied;
+          // Omitted arguments use defaults in the definition's outer scope,
+          // and so does an explicit undefined unless a binding at the call
+          // renames it. Any other value, including null, never falls back.
+          const omitted = !supplied || supplied === 'void 0' || (supplied === 'undefined' && !bindsAt('undefined', call.index));
           const hasDefault = parameters[slot].includes('=');
           if (engineSourceAt(omitted && hasDefault ? defaultSource : supplied, omitted && hasDefault ? fnStart : call.index, next)) {
             return true;
@@ -1534,7 +1544,20 @@ test('every engine started through a runner or profile variable records its run 
     assert.deepStrictEqual(planted(source('runner = resolveClaudeRunnerBin()', '  function nested() {\n    spawnSync(runner, args);\n  }\n  nested();')), ['commands/planted.js:3 runner']);
   }
   assert.deepStrictEqual(planted("function launch(runner = resolveClaudeRunnerBin()) {\n  spawnSync(runner, args);\n}\nfunction other({ run = wrap, launch }) {\n  launch();\n}\n"), [], 'a destructured binding after another default still hides the launcher');
-  // Literal and captured defaults count only when a same-file call omits them.
+  // An explicit undefined argument uses the default too, unless a visible
+  // binding named undefined holds some other value.
+  const withDefault = (call, between = '') => planted(`function launch(prompt, runner = resolveClaudeRunnerBin()) {\n  spawnSync(runner, args);\n}\n${between}${call}\n`);
+  assert.deepStrictEqual(withDefault('launch(prompt, undefined);'), ['commands/planted.js:2 runner']);
+  assert.deepStrictEqual(withDefault('launch(prompt, void 0);'), ['commands/planted.js:2 runner']);
+  assert.deepStrictEqual(withDefault('launch(prompt,  undefined  );'), ['commands/planted.js:2 runner']);
+  assert.deepStrictEqual(planted("function launch(prompt, runner = resolveClaudeRunnerBin()) {\n  startEngineRun(root);\n  spawnSync(runner, args);\n}\nlaunch(prompt, undefined);\n"), []);
+  assert.deepStrictEqual(planted("function launch(runner) {\n  spawnSync(runner, args);\n}\nlaunch(undefined);\n"), [], 'undefined with no default names no engine');
+  assert.deepStrictEqual(withDefault('launch(prompt, undefined);', "const undefined = 'git';\n"), [], 'a module binding named undefined replaces the default');
+  assert.deepStrictEqual(withDefault('launch(prompt, undefined);', "const undefined = 'claude';\n"), ['commands/planted.js:2 runner'], 'a redefined undefined is traced like any argument');
+  assert.deepStrictEqual(withDefault("function caller() {\n  const undefined = 'git';\n  launch(prompt, undefined);\n}"), [], 'a local binding named undefined replaces the default');
+  assert.deepStrictEqual(withDefault("function caller(undefined) {\n  launch(prompt, undefined);\n}"), [], 'a parameter named undefined is not evidence of the default');
+  assert.deepStrictEqual(withDefault("function caller() {\n  {\n    const undefined = 'git';\n  }\n  launch(prompt, undefined);\n}"), ['commands/planted.js:2 runner'], 'a binding in a closed block does not reach the call');
+  assert.deepStrictEqual(withDefault("function other() {\n  const undefined = 'git';\n}\nlaunch(prompt, undefined);"), ['commands/planted.js:2 runner'], 'a binding inside a sibling helper does not reach the call');  // Literal and captured defaults count only when a same-file call omits them.
   for (const [head, tail] of [
     ['function launch', '}'],
     ['const launch = ', '};'],
