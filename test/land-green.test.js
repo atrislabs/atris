@@ -424,3 +424,39 @@ test('reap removes a leftover scratch copy without force once git is idle in it,
     fs.rmSync(root, { recursive: true, force: true });
   }
 });
+
+test('an unattended autoland sweep clears an idle scratch copy too, but leaves one holding a commit on no branch', () => {
+  const root = makeRepo();
+  const scratches = [];
+  try {
+    branchWith(root, 'member/green', (dir) => fs.writeFileSync(path.join(dir, 'feature.txt'), 'shipped\n'));
+    branchWith(root, 'member/odd', (dir) => fs.writeFileSync(path.join(dir, 'odd.txt'), 'x\n'));
+    const result = landStaleGreenBranches(root, {
+      push: false,
+      limit: 2,
+      verifyCommand: 'touch "$(git rev-parse --git-dir)/index.lock"; node check.js',
+      runCli: () => ({ status: 0, stdout: '' }),
+    });
+    const byBranch = Object.fromEntries(result.verdicts.map((v) => [v.branch, v]));
+    for (const name of ['member/green', 'member/odd']) {
+      const scratch = byBranch[name].scratch_kept.split(': ')[0];
+      scratches.push(scratch);
+      fs.rmSync(path.join(git(scratch, ['rev-parse', '--git-dir']), 'index.lock'));
+    }
+    fs.writeFileSync(path.join(scratches[1], 'only-here.txt'), 'x\n');
+    commitAll(scratches[1], 'made in the scratch copy');
+    const old = new Date(Date.now() - 3 * 3600 * 1000);
+    for (const scratch of scratches) fs.utimesSync(scratch, old, old);
+    const { sweepLanding } = require('../commands/autoland');
+    const sweep = sweepLanding(root, { refresh: false });
+    assert.equal(fs.existsSync(scratches[0]), false, JSON.stringify(sweep.reaped));
+    assert.ok(fs.existsSync(scratches[1]), JSON.stringify(sweep.reaped));
+    assert.ok(sweep.human.some((line) => line.startsWith(`${fs.realpathSync(scratches[1])} (unlanded commits: `)), JSON.stringify(sweep.human));
+    const log = fs.readFileSync(path.join(root, '.atris', 'state', 'worktree_removals.jsonl'), 'utf8').trim().split('\n').map((line) => JSON.parse(line));
+    const entry = log.find((e) => e.by === 'atris autoland');
+    assert.equal(entry.reason, 'green_landing_scratch_left');
+  } finally {
+    for (const scratch of scratches) fs.rmSync(scratch, { recursive: true, force: true });
+    fs.rmSync(root, { recursive: true, force: true });
+  }
+});

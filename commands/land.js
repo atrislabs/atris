@@ -554,15 +554,19 @@ function greenScratchCovered(worktreePath) {
 // a loss of work, and when a backup cannot be written, the work stays.
 // includeDetached: detached-HEAD worktrees have no branch, so the salvage
 // bundle cannot cover their commits, unattended reaps (autoland) pass false
-// and leave them for a human reap.
+// and leave them for a human reap. A green landing scratch copy whose commits
+// all ride a branch is the one detached folder they still clear.
 function reap(root, { ttlDays = DEFAULT_TTL_DAYS, staleHours = DEFAULT_STALE_HOURS, base: baseOverride = '', dryRun = false, remote = true, includeDetached = true, protectCurrent = true, force = false, now = Date.now(), activeCwds: activeCwdsOverride, by = 'atris land --reap' } = {}) {
   const readActiveCwds = () => (Array.isArray(activeCwdsOverride) ? activeCwdsOverride : listActiveProcessPaths());
   let activeCwds;
   const board = collectBoard(root, { ttlDays, staleHours, base: baseOverride, now });
   const targets = board.branches.filter((b) => b.state === 'landed' || b.state === 'due');
   const targetNames = new Set(targets.map((b) => b.name));
+  for (const w of board.worktrees) {
+    if (!w.branch && greenScratchCovered(w.path)) w.scratchCovered = true;
+  }
   const candidateWorktrees = board.worktrees.filter(
-    (w) => targetNames.has(w.branch) || (includeDetached && w.state === 'detached') || (typeof w.ageDays === 'number' && w.ageDays > ttlDays) || w.unlandedCommits > 0
+    (w) => targetNames.has(w.branch) || (includeDetached && w.state === 'detached') || w.scratchCovered || (typeof w.ageDays === 'number' && w.ageDays > ttlDays) || w.unlandedCommits > 0
   );
   const protectedWorktrees = [];
   const worktreeTargets = [];
@@ -609,7 +613,6 @@ function reap(root, { ttlDays = DEFAULT_TTL_DAYS, staleHours = DEFAULT_STALE_HOU
     // A due/landed branch worktree still reaps normally, its commits ride the
     // branch bundle, so removal is loss-free.
     const bundleCovered = w.branch && targetNames.has(w.branch);
-    if (w.unlandedCommits > 0 && !w.branch && greenScratchCovered(w.path)) w.scratchCovered = true;
     if (w.unlandedCommits > 0 && !force && !bundleCovered && !w.scratchCovered) {
       const oldest = typeof w.ageDays === 'number' ? `, oldest ${w.ageDays}d` : '';
       protectedWorktrees.push({ ...w, reason: `unlanded commits: ${w.unlandedCommits} never landed${oldest}, needs landing` });
@@ -685,7 +688,7 @@ function reap(root, { ttlDays = DEFAULT_TTL_DAYS, staleHours = DEFAULT_STALE_HOU
   }
 
   const survivingWorktreeTargets = worktreeTargets.filter(
-    (w) => targetNames.has(w.branch) || (includeDetached && w.state === 'detached')
+    (w) => targetNames.has(w.branch) || (includeDetached && w.state === 'detached') || w.scratchCovered
   );
   const activeAtRemoval = survivingWorktreeTargets.length ? readActiveCwds() : [];
   for (const w of survivingWorktreeTargets) {
