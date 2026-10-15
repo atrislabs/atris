@@ -303,3 +303,39 @@ test('task ready --verify from an apostrophe Node folder stays blocked and cites
     cleanupTempDir(dir);
   }
 });
+
+test('task ready --verify from an apostrophe Node folder moves to review with a receipt the review check accepts', () => {
+  const dir = makeTempDir();
+  const dbPath = path.join(dir, 'tasks.db');
+  const env = { ATRIS_TASKS_DB: dbPath, ATRIS_AGENT_ID: 'codex' };
+  try {
+    const runtime = copyNodeIntoQuotedFolder(dir);
+    fs.mkdirSync(path.join(dir, 'atris'), { recursive: true });
+    const add = runCli(['task', 'add', 'Quoted runtime passing ready task', '--json'], { cwd: dir, env, node: runtime });
+    assert.equal(add.status, 0, add.stderr);
+    const ref = JSON.parse(add.stdout).task.display_id;
+
+    const command = 'node -p "process.execPath"';
+    const ready = runCli(['task', 'ready', ref, '--verify', command, '--no-falsify-check', '--json'], { cwd: dir, env, node: runtime });
+    assert.equal(ready.status, 0, ready.stdout + ready.stderr);
+    // The ready reply carries a compact card that may shorten long proof text,
+    // so read the stored task for the full proof and its receipt line.
+    const show = runCli(['task', 'show', ref, '--json'], { cwd: dir, env, node: runtime });
+    assert.equal(show.status, 0, show.stderr);
+    const task = JSON.parse(show.stdout).task || JSON.parse(show.stdout);
+    assert.equal(task.status, 'review');
+    const receiptMatch = task.review.proof.match(/Receipt: (atris\/runs\/\S+\.json)/);
+    assert.ok(receiptMatch, `proof should cite a receipt path: ${task.review.proof}`);
+    const saved = JSON.parse(fs.readFileSync(path.join(dir, receiptMatch[1]), 'utf8'));
+    assert.equal(saved.command, command);
+    assert.equal(saved.result.passed, true);
+    assert.equal(saved.result.output.trim(), fs.realpathSync(runtime));
+
+    const evidence = extractReceiptEvidence(task.review.proof, dir);
+    assert.ok(evidence, 'evidence should be extracted from the proof');
+    assert.equal(evidence.all_passing, true);
+    assert.equal(evidence.receipts[0].path, receiptMatch[1]);
+  } finally {
+    cleanupTempDir(dir);
+  }
+});

@@ -1,0 +1,14 @@
+Quoted task ready pass proof, 2026-10-15
+
+$ node --test test/task-receipt.test.js
+✔ real receipt check selects Node from a folder containing an apostrophe (729.759042ms)
+✔ real receipt check from an apostrophe folder keeps a failing exit and its output (357.66275ms)
+✔ task ready --verify from an apostrophe Node folder stays blocked and cites the failing receipt (811.31275ms)
+✔ task ready --verify from an apostrophe Node folder moves to review with a receipt the review check accepts (885.496584ms)
+ℹ tests 11
+ℹ pass 11
+ℹ fail 0
+ℹ todo 0
+exit=0
+
+Finding: the ready command's JSON reply shortens proof text past about 180 characters, cutting off the receipt line; the stored task keeps it whole.
