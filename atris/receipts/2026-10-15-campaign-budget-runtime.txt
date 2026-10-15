@@ -1,0 +1,35 @@
+$ /opt/homebrew/bin/node /private/tmp/atris-cli-campaign/bin/atris.js campaign start 'Local work' --judge 'exit 1' --id cmp-proof-local
+started Local work (cmp-proof-local)
+Local work  (cmp-proof-local)
+
+state     resting · next: plan and run the next missions: atris campaign run cmp-proof-local
+judge     exit 1 · last run failed at 2026-10-15T10:59:29.715Z
+answer    open: exit 1
+owner     mission-lead
+seats     none
+missions  none
+asks      none
+running the judge first: exit 1
+exit: 0
+
+$ /opt/homebrew/bin/node /private/tmp/atris-cli-campaign/bin/atris.js campaign show cmp-proof-local
+Local work  (cmp-proof-local)
+
+state     resting · next: plan and run the next missions: atris campaign run cmp-proof-local
+judge     exit 1 · last run failed at 2026-10-15T10:59:29.715Z
+answer    open: exit 1
+owner     mission-lead
+seats     none
+missions  none
+asks      none
+exit: 0
+
+$ /opt/homebrew/bin/node /private/tmp/atris-cli-campaign/bin/atris.js campaign
+Local work  (cmp-proof-local)
+  resting · 0 missions running · answer open
+  next: plan and run the next missions: atris campaign run cmp-proof-local
+exit: 0
+
+$ /opt/homebrew/bin/node /private/tmp/atris-cli-campaign/bin/atris.js campaign start 'Cloud work' --judge 'exit 1' --id cmp-proof-cloud --cloud
+a cloud campaign needs --budget <dollars>, so the cloud knows what it may spend
+exit: 2

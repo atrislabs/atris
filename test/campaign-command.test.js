@@ -80,18 +80,66 @@ test('start explains what is missing in plain words', async () => {
   assert.deepEqual(result.judged, []);
 });
 
-test('a local start may leave out the budget; a cloud start may not', async () => {
+test('a local start without --budget succeeds and shows no money lines', async () => {
   const store = createMemoryStore();
   const local = await run(store, ['start', 'No limit', '--judge', 'exit 1', '--id', 'cmp-free']);
   assert.equal(local.code, 0, local.err);
+  assert.deepEqual(local.judged, ['exit 1']);
+  assert.equal(getCampaign(store, 'cmp-free').state, 'resting');
   assert.doesNotMatch(local.out, /budget|\$/);
+  const shown = await run(store, ['show', 'cmp-free']);
+  assert.equal(shown.code, 0, shown.err);
+  assert.doesNotMatch(shown.out, /budget|\$/);
   const list = await run(store, []);
-  assert.doesNotMatch(list.out, /\$/);
+  assert.equal(list.code, 0, list.err);
+  assert.doesNotMatch(list.out, /budget|\$/);
+});
+
+test('a cloud start without --budget is refused before running the judge or saving', async () => {
+  const store = createMemoryStore();
   const cloud = await run(store, ['start', 'No limit', '--judge', 'exit 1', '--id', 'cmp-sky', '--cloud']);
   assert.equal(cloud.code, 2);
   assert.match(cloud.err, /cloud campaign needs --budget/);
   assert.deepEqual(cloud.judged, []);
   assert.equal(getCampaign(store, 'cmp-sky'), null);
+});
+
+test('the real command starts without --budget, persists it, and refuses cloud starts', (t) => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'atris-campaign-no-budget-'));
+  t.after(() => fs.rmSync(dir, { recursive: true, force: true }));
+  const env = { ...process.env, ATRIS_CAMPAIGN_DB: path.join(dir, 'atris.db'), ATRIS_SKIP_UPDATE_CHECK: '1' };
+  const cli = (...args) => spawnSync(process.execPath, [CLI, 'campaign', ...args], { cwd: dir, env, encoding: 'utf8' });
+
+  const started = cli('start', 'Local work', '--judge', 'exit 1', '--id', 'cmp-local');
+  assert.equal(started.status, 0, started.stderr);
+  assert.match(started.stdout, /started Local work/);
+  assert.doesNotMatch(started.stdout, /budget|\$/);
+  for (const args of [['show', 'cmp-local'], []]) {
+    const result = cli(...args);
+    assert.equal(result.status, 0, result.stderr);
+    assert.match(result.stdout, /Local work/);
+    assert.doesNotMatch(result.stdout, /budget|\$/);
+  }
+
+  const jsonStart = cli('start', 'Json work', '--judge', 'exit 1', '--id', 'cmp-json', '--json');
+  assert.equal(jsonStart.status, 0, jsonStart.stderr);
+  const body = JSON.parse(jsonStart.stdout);
+  assert.equal(body.ok, true);
+  assert.equal(body.campaign.id, 'cmp-json');
+  assert.equal(body.campaign.state, 'resting');
+  const shown = cli('show', 'cmp-json', '--json');
+  assert.equal(shown.status, 0, shown.stderr);
+  assert.deepEqual(JSON.parse(shown.stdout).campaign, body.campaign);
+
+  for (const flags of [[], ['--json']]) {
+    const refused = cli('start', 'Cloud work', '--judge', 'exit 1', '--id', 'cmp-cloud', '--cloud', ...flags);
+    assert.equal(refused.status, 2, refused.stderr);
+    const error = flags.length ? JSON.parse(refused.stdout).error : refused.stderr;
+    assert.match(error, /cloud campaign needs --budget/);
+  }
+  const listed = cli('--json');
+  assert.equal(listed.status, 0, listed.stderr);
+  assert.deepEqual(JSON.parse(listed.stdout).campaigns.map((c) => c.id).sort(), ['cmp-json', 'cmp-local']);
 });
 
 test('a parent with its own parent is refused (one level only)', async () => {
