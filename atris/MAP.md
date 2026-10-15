@@ -242,3 +242,5 @@ Casual launch checks: `test/commands.test.js:20379` runs the two early launch re
 Wiki help checks: `test/commands.test.js:20445` runs five real help launches together with separate home folders, retaining every output and no-state assertion. Five sequential launch stages become one.
 
 Local wiki graph lookup batching: `test/commands.test.js:3136` awaits related and entity reads together after graph creation, before the next page write. `commands/wiki.js:244` reads the saved graph without writes. Every output assertion remains; four sequential CLI stages become three.
+
+Legacy member match setup: `test/commands.test.js:2584` creates the legacy row with the production task store and saves its production task list before the real wake read. Three CLI launches become two; all existing-match assertions remain.

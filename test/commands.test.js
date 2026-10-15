@@ -2581,11 +2581,20 @@ test('auto-improver dry-run matches legacy recurring-pattern task title', () => 
     ].join('\n'), 'utf8');
 
     const legacyTitle = `Auto-improver: Recurring log pattern: ${pattern}`;
-    const task = runCli(['task', 'new', legacyTitle, '--tag', 'auto-improver', '--json'], { cwd: dir, env });
-    assert.equal(task.status, 0, task.stderr || task.stdout);
-    const taskPayload = JSON.parse(task.stdout);
-    const taskRef = taskPayload.task?.display_id || taskPayload.task_id;
-    assert.ok(taskRef);
+    let taskRef;
+    const db = taskStore.open(env.ATRIS_TASKS_DB);
+    try {
+      const workspaceRoot = taskStore.workspaceRoot(dir);
+      const added = taskStore.addTask(db, { title: legacyTitle, tag: 'auto-improver', workspaceRoot });
+      assert.ok(added.inserted);
+      const projection = taskStore.taskProjection(db, { workspaceRoot });
+      fs.mkdirSync(path.join(dir, '.atris', 'state'), { recursive: true });
+      fs.writeFileSync(path.join(dir, '.atris', 'state', 'tasks.projection.json'), JSON.stringify(projection));
+      taskRef = projection.tasks.find((task) => task.id === added.id)?.display_id;
+      assert.ok(taskRef);
+    } finally {
+      taskStore.close();
+    }
 
     const dryRun = runCli(['member', 'wake', 'auto-improver', '--json'], { cwd: dir, env });
     assert.equal(dryRun.status, 0, dryRun.stderr || dryRun.stdout);
