@@ -1,0 +1,29 @@
+Real reap and cleanup runs on a deep folder whose git link is broken
+
+Files edited: test/worktree-removal-guard.test.js, atris/team/architect/logs/2026-10-14.md, this receipt.
+
+What changed: the deep-folder check now also runs the real reap command and reads its kept line, so the full refusal reason is proven where the operator sees it, not only in the shared reader.
+
+Manual runs in a throwaway repo (folder six levels deep, its git link moved away, aged two hours):
+
+$ atris worktree cleanup --base HEAD --json   (inside the throwaway repo)
+exit=0
+kept reason: missing_or_unreadable. Cleanup keeps the folder before git is asked to remove it. Text mode prints only "kept: 2", with no reason.
+
+$ atris land --reap --dry-run --no-remote --base master --ttl 0
+exit=0
+  would remove $BASE/l0-nested-folder/.../deep-wt
+
+$ atris land --reap --no-remote --base master --ttl 0
+exit=0
+landing cleanup done: 0 pieces cleared, 0 side copies removed
+  ✋ kept, needs a human: $BASE/l0-nested-folder/.../deep-wt (validation failed, cannot remove working tree: 'deep-wt/.git' does not exist)
+README.md still present afterward.
+
+$ node --test test/worktree-removal-guard.test.js test/member-tidy.test.js
+exit=0
+tests 67, pass 67, fail 0, todo 0, duration_ms 74588
+
+Mistake during this tick: a stray debug line ran `atris worktree cleanup --base HEAD --apply` in the real project instead of the throwaway repo. It removed one clean, fully merged work folder, architect-finish-work-folder-protection-across-20261014-113334: 212 commits behind, branch kept locally and on origin, every commit already in this branch. The folder was put back at the same path on the same branch with git worktree add. Any git-ignored files that were inside it, such as local logs, are lost. The removal record for it stays in the main checkout's removal log as accurate history.
+
+Found, not fixed: the reap preview says it would remove a folder that the real run then keeps. Cleanup's text output hides why it kept a folder.

@@ -1283,7 +1283,14 @@ test('a refusal from a deep folder keeps git\'s reason, not just its path', () =
     assert.equal(describeRemovalResult(wt, refused), words);
     // The same folder named the way os.tmpdir() spells it on macOS.
     assert.equal(describeRemovalResult(wt.replace(/^\/private\//, '/'), refused), words);
+    // The reap command prints the same words in its kept line and keeps the folder.
+    const aged = new Date(Date.now() - 2 * 60 * 60 * 1000);
+    fs.utimesSync(wt, aged, aged);
+    const reaped = spawnSync(process.execPath, [path.resolve(__dirname, '../bin/atris.js'), 'land', '--reap', '--no-remote', '--base', 'master', '--ttl', '0'], { cwd: repo, encoding: 'utf8' });
+    assert.equal(reaped.status, 0, reaped.stderr);
+    assert.deepEqual(reaped.stdout.split('\n').filter((line) => line.includes('deep-wt')), [`  ✋ kept, needs a human: ${wt} (${words})`]);
     assert.ok(fs.existsSync(path.join(wt, 'README.md')));
+    assert.deepEqual(removalLines(repo).filter((line) => line.path === wt), []);
   } finally {
     fs.rmSync(base, { recursive: true, force: true });
   }
