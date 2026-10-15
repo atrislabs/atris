@@ -1760,6 +1760,31 @@ test('hidden failures that share a reason say it once in the count', () => {
   }
 });
 
+test('a hidden sign-in failure is named after a different lead reason when it fits', () => {
+  const failed = (secondsAgo, why, engine = '') => [`${at(secondsAgo + 10)} m-1 started: ${engine ? `[pid 1 engine ${engine}] ` : ''}job`, `${at(secondsAgo)} m-1 finished: failed (${why})`];
+  const dir = fakeDir({ ana: failed(10, 'engine error'), bo: failed(20, 'timed out'), cy: failed(30, 'timed out'), di: failed(40, 'signed out', 'claude') });
+  try {
+    const rows = readBoard({ dir, now: NOW });
+    const footer = (width, list = rows) => renderBoard(list, dir, 0, width, 3).split('\n').pop();
+    for (const [width, text] of [
+      [0, '3 more not shown (3 failed, 2 timed out, 1 signed out of claude), the window is too short'],
+      [80, '3 more not shown (3 failed, 2 timed out, 1 signed out), the window is too short'],
+      [60, '3 more not shown (3 failed, 2 timed out, 1 signed out)'],
+      [50, '3 more not shown (3 failed, 2 timed out)'],
+      [34, '3 hidden (3 failed, 2 timed out)'],
+    ]) {
+      assert.equal(footer(width), text, `${width}: the sign-in failure shows only where it moves nothing else`);
+      if (width) assert.ok(text.length <= width);
+    }
+    const untagged = rows.map((r) => (r.member === 'di' ? { ...r, engine: '' } : r));
+    assert.equal(footer(0, untagged), '3 more not shown (3 failed, 2 timed out, 1 signed out), the window is too short', 'no engine, no engine name');
+    const twoOut = rows.map((r) => (r.member === 'cy' ? { ...r, last_result_reason: 'signed out' } : r));
+    assert.equal(footer(80, twoOut), '3 more not shown (3 failed, 2 signed out), the window is too short', 'a sign-in lead already says it');
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
 test('last step skips writes to the member own log', () => {
   const dir = fakeDir({
     architect: [
