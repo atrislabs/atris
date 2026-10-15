@@ -1695,6 +1695,62 @@ for (const pendingAtStartup of [false, true]) {
   });
 }
 
+test('live follow discards an unfinished old line when the log shrinks', async () => {
+  const stamp = new Date().toISOString();
+  const dir = fakeDir({ navigator: [`${stamp} m-old started: ${'old job '.repeat(30)}`] });
+  const log = path.join(dir, 'navigator.log');
+  const child = spawn(process.execPath, [cliPath, 'member', 'board', '--json', '--follow'], {
+    cwd: dir, env: { ...process.env, ATRIS_PROGRESS_DIR: dir },
+  });
+  child.stdout.setEncoding('utf8');
+  let out = '';
+  let stderr = '';
+  let closed = false;
+  const done = new Promise((resolve) => child.once('close', (code) => { closed = true; resolve(code); }));
+  child.stdout.on('data', (chunk) => { out += chunk; });
+  child.stderr.on('data', (chunk) => { stderr += chunk; });
+  const records = () => out.split('\n').slice(0, -1).filter(Boolean).map((line) => JSON.parse(line));
+  const receive = async (count) => {
+    const until = Date.now() + 15_000;
+    while (records().length < count && !closed && Date.now() < until) await new Promise((r) => setTimeout(r, 50));
+    assert.equal(records().length, count, `stdout=${out}; stderr=${stderr}; closed=${closed}`);
+    return records();
+  };
+  try {
+    assert.equal((await receive(1))[0].kind, 'snapshot');
+    fs.appendFileSync(log, `${stamp} m-old finished: failed (timed`);
+    await new Promise((r) => setTimeout(r, 1_200));
+    assert.equal(records().length, 1, 'the old partial result waits');
+
+    // Keep the replacement shorter than the consumed opening line, so the
+    // real follower observes a shrink even while the next line is incomplete.
+    fs.writeFileSync(log, `${stamp} m-new started: next job\n${stamp} m-new reading fresh`);
+    const started = await receive(2);
+    assert.deepEqual(started[1], { member: 'navigator', mission: 'm-new', at: stamp, kind: 'started', text: 'next job' });
+    await new Promise((r) => setTimeout(r, 1_200));
+    assert.equal(records().length, 2, 'the replacement partial line also waits');
+    fs.appendFileSync(log, ' notes\n');
+    const step = await receive(3);
+    assert.deepEqual(step[2], { member: 'navigator', mission: 'm-new', at: stamp, kind: 'step', text: 'reading fresh notes' });
+    fs.appendFileSync(log, `${stamp} m-new finished: ok\n`);
+    const finished = await receive(4);
+    assert.deepEqual(finished[3], { member: 'navigator', mission: 'm-new', at: stamp, kind: 'finished', text: 'ok', ok: true });
+    await new Promise((r) => setTimeout(r, 1_200));
+    assert.equal(records().length, 4, 'watching and polling neither replay old text nor duplicate new events');
+    if (process.env.ATRIS_BOARD_SHRINK_PROOF) {
+      fs.writeFileSync(process.env.ATRIS_BOARD_SHRINK_PROOF,
+        `command: ${process.execPath} ${cliPath} member board --json --follow\n${out}`);
+    }
+    child.kill('SIGINT');
+    assert.equal(await done, 0, stderr);
+    if (process.env.ATRIS_BOARD_SHRINK_PROOF) fs.appendFileSync(process.env.ATRIS_BOARD_SHRINK_PROOF, 'exit: 0\n');
+  } finally {
+    if (!closed) child.kill('SIGINT');
+    await done;
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
 test('follow finishes a line that was half written before it started', () => {
   const { followBoard } = require('../lib/member-board');
   const dir = fakeDir({ builder: [`${at(60)} m-1 started: verify stream`] });
