@@ -3202,6 +3202,13 @@ test('fix joins "each" or "every", its noun and a verb in "s" after a dash with 
     'No id segment \u2014 each route operates on the current graph.',
     "Same list \u2014 each user's logs in the folder.",
     'Look here \u2014 every news in the feed.',
+    // "a", "this" and "that" open one noun the same way, one describing
+    // word may come first; "the" may open a plural and keeps its comma
+    'Billing works \u2014 a paid checkout lands in the mission room now.',
+    'We pinned it \u2014 that flag downgrades to a stale model.',
+    'Ship it \u2014 the release notes to the team.',
+    'We counted \u2014 a few tests in the folder.',
+    'We counted \u2014 a lot of users in the folder.',
     // no "the" or place word may sit before the verb
     'The cache warms up \u2014 each time the loop runs.',
     'The repos are split \u2014 each with its own tests folder.',
@@ -3223,6 +3230,11 @@ test('fix joins "each" or "every", its noun and a verb in "s" after a dash with 
     'No id segment; each route operates on the current graph.',
     "Same list, each user's logs in the folder.",
     'Look here, every news in the feed.',
+    'Billing works; a paid checkout lands in the mission room now.',
+    'We pinned it; that flag downgrades to a stale model.',
+    'Ship it, the release notes to the team.',
+    'We counted, a few tests in the folder.',
+    'We counted, a lot of users in the folder.',
     'The cache warms up, each time the loop runs.',
     'The repos are split, each with its own tests folder.',
     'The cache warms up, each time the loop runs it.',
