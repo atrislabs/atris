@@ -2479,4 +2479,5 @@ Caller Node during review: `lib/task-proof.js:166`; real competing executable pr
 
 Quoted runtime proof: `test/task-proof.test.js:195` copies the real Node into a folder containing an apostrophe and runs `buildVerifiedProof` through actual bash, requiring the nested Node to select that exact executable.
 
-Quoted receipt runtime proof: `test/task-receipt.test.js:94` copies Node into a folder containing an apostrophe, runs the real receipt writer through bash, and checks the saved command, passing exit and exact runtime output.
+Quoted receipt runtime proof: `test/task-receipt.test.js:109` copies Node into a folder containing an apostrophe, runs the real receipt writer through bash, and checks the saved command, passing exit and exact runtime output.
+Quoted receipt failure proof: `test/task-receipt.test.js:140` runs a failing check from the same apostrophe folder and confirms the saved receipt keeps exit 3, the runtime path and the error text.

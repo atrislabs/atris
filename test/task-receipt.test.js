@@ -91,18 +91,25 @@ test('writeTaskReceipt runs the check on the node running atris, not an older no
   }
 });
 
+// Copies the running Node into "<dir>/reader's tools/node". On macOS the copy
+// needs the installed libraries one folder up, so link them beside it.
+function copyNodeIntoQuotedFolder(dir) {
+  const runtimeDir = path.join(dir, "reader's tools");
+  fs.mkdirSync(runtimeDir);
+  const libraries = path.resolve(path.dirname(process.execPath), '../lib');
+  if (process.platform === 'darwin' && fs.existsSync(libraries)) {
+    fs.symlinkSync(libraries, path.join(dir, 'lib'), 'dir');
+  }
+  const runtime = path.join(runtimeDir, 'node');
+  fs.copyFileSync(process.execPath, runtime);
+  fs.chmodSync(runtime, 0o755);
+  return runtime;
+}
+
 test('real receipt check selects Node from a folder containing an apostrophe', () => {
   const dir = makeTempDir();
   try {
-    const runtimeDir = path.join(dir, "reader's tools");
-    fs.mkdirSync(runtimeDir);
-    const libraries = path.resolve(path.dirname(process.execPath), '../lib');
-    if (process.platform === 'darwin' && fs.existsSync(libraries)) {
-      fs.symlinkSync(libraries, path.join(dir, 'lib'), 'dir');
-    }
-    const runtime = path.join(runtimeDir, 'node');
-    fs.copyFileSync(process.execPath, runtime);
-    fs.chmodSync(runtime, 0o755);
+    const runtime = copyNodeIntoQuotedFolder(dir);
     const script = `
       const assert = require('node:assert/strict');
       const fs = require('node:fs');
@@ -125,6 +132,39 @@ test('real receipt check selects Node from a folder containing an apostrophe', (
     assert.equal(result.error, undefined);
     assert.equal(result.status, 0, result.stdout + result.stderr);
     assert.equal(result.stdout.trim(), 'quoted runtime receipt saved');
+  } finally {
+    cleanupTempDir(dir);
+  }
+});
+
+test('real receipt check from an apostrophe folder keeps a failing exit and its output', () => {
+  const dir = makeTempDir();
+  try {
+    const runtime = copyNodeIntoQuotedFolder(dir);
+    const script = `
+      const assert = require('node:assert/strict');
+      const fs = require('node:fs');
+      const { writeTaskReceipt } = require(${JSON.stringify(require.resolve('../lib/task-receipt'))});
+      const command = 'node -p "process.execPath" && echo check failed here >&2 && exit 3';
+      const result = writeTaskReceipt({ taskId: 'quoted-runtime-fail', command, root: ${JSON.stringify(dir)} });
+      assert.equal(result.ok, false, JSON.stringify(result));
+      assert.equal(result.passed, false);
+      assert.equal(result.exit, 3);
+      assert.ok(result.output.includes(process.execPath), result.output);
+      assert.match(result.output, /check failed here/);
+      const saved = JSON.parse(fs.readFileSync(result.receiptFile, 'utf8'));
+      assert.equal(saved.command, command);
+      assert.equal(saved.result.passed, false);
+      assert.equal(saved.result.exit, 3);
+      assert.equal(saved.result.output, result.output);
+      console.log('quoted runtime failure saved');
+    `;
+    const result = spawnSync(runtime, ['-e', script], {
+      encoding: 'utf8', timeout: 150000, env: scrubAgentEnv(),
+    });
+    assert.equal(result.error, undefined);
+    assert.equal(result.status, 0, result.stdout + result.stderr);
+    assert.equal(result.stdout.trim(), 'quoted runtime failure saved');
   } finally {
     cleanupTempDir(dir);
   }
