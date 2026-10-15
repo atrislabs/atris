@@ -15244,14 +15244,22 @@ test('task queue filters certified review rows by continue-work and human-accept
   try {
     fs.mkdirSync(path.join(dir, 'atris'), { recursive: true });
 
-    const continueCreated = runCli([
-      'task', 'new', 'Certified task with executable continuation',
-      '--tag', 'task',
-      '--goal-id', 'OBL-928',
-      '--json',
-    ], { cwd: dir, env });
-    assert.equal(continueCreated.status, 0, continueCreated.stderr);
-    const continueTask = JSON.parse(continueCreated.stdout).task;
+    // Seed creation through the real store; review filtering stays on the CLI.
+    const continueTask = (() => {
+      const db = taskStore.open(dbPath);
+      try {
+        const workspaceRoot = taskStore.workspaceRoot(dir);
+        const { id } = addSeedTask(db, {
+          title: 'Certified task with executable continuation',
+          tag: 'task',
+          workspaceRoot,
+          metadata: { goal_id: 'OBL-928' },
+        });
+        return { id, display_id: taskStore.taskDisplayRefMap(taskStore.listTasks(db, { workspaceRoot })).get(id) };
+      } finally {
+        taskStore.close();
+      }
+    })();
     const continueRef = continueTask.display_id;
     assert.equal(runCli([
       'task', 'ready', continueRef,
@@ -15266,14 +15274,22 @@ test('task queue filters certified review rows by continue-work and human-accept
       '--next', 'Add the next queue lane filter regression',
     ], { cwd: dir, env }).status, 0);
 
-    const waitingCreated = runCli([
-      'task', 'new', 'Certified task waiting for human accept only',
-      '--tag', 'task',
-      '--goal-id', 'OBL-928',
-      '--json',
-    ], { cwd: dir, env });
-    assert.equal(waitingCreated.status, 0, waitingCreated.stderr);
-    const waitingTask = JSON.parse(waitingCreated.stdout).task;
+    // Seed creation through the real store; review filtering stays on the CLI.
+    const waitingTask = (() => {
+      const db = taskStore.open(dbPath);
+      try {
+        const workspaceRoot = taskStore.workspaceRoot(dir);
+        const { id } = addSeedTask(db, {
+          title: 'Certified task waiting for human accept only',
+          tag: 'task',
+          workspaceRoot,
+          metadata: { goal_id: 'OBL-928' },
+        });
+        return { id, display_id: taskStore.taskDisplayRefMap(taskStore.listTasks(db, { workspaceRoot })).get(id) };
+      } finally {
+        taskStore.close();
+      }
+    })();
     const waitingRef = waitingTask.display_id;
     assert.equal(runCli([
       'task', 'ready', waitingRef,

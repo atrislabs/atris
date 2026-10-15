@@ -2587,3 +2587,5 @@ Landing capability test setup: `test/commands.test.js:12964` seeds creation and 
 - Review queue hygiene creation: `test/commands.test.js:15085` seeds the same title, tag, workspace and goal with addSeedTask, resolves the display ref through the store and closes in finally. Four CLI calls replace five with every behavioral assertion retained.
 
 - Continuation display creation: `test/commands.test.js:15159` uses addSeedTask with the original title, tag, workspace and goal, resolves the display reference through the store, and closes in finally. Six CLI calls retain every continuation and waiting-state assertion.
+
+Review queue filter creation fixture: `test/commands.test.js:15238` seeds both goal-linked task rows in process, resolving display references with the production store; all readiness, review and filtered queue/current assertions remain on the CLI.

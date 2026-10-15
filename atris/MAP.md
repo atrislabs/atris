@@ -148,3 +148,5 @@ Review queue hygiene setup: `test/commands.test.js:15112` injects stale continua
 Review queue hygiene creation fixture: `test/commands.test.js:15076` creates its goal-linked parent through the real task store, keeping readiness, review, queue inspection and continuation refusal on the CLI; four launches replace five.
 
 Continuation display creation setup: `test/commands.test.js:15159` seeds the goal-linked parent through the production store; readiness, both reviews, current and queue reads stay on the CLI. Six launches replace seven.
+
+Review queue filter creation setup: `test/commands.test.js:15238` seeds both goal-linked tasks through the production store in their original order; readiness, reviews and filtered queue/current reads stay on the CLI. Seven launches replace nine.
