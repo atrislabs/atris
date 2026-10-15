@@ -6989,18 +6989,34 @@ const CLAUDE_SESSION_CONTEXT_ROTATE_TICKS = Math.max(
 // before the tick fires. Same tag-plus-text routing the task lane uses
 // (CLI-1189). An operator override is explicit: protected_lane_ack in the
 // mission metadata, set by a human, or ATRIS_ALLOW_PROTECTED_MISSION=1.
-function missionProtectedLaneHold(mission) {
+function missionProtectedLaneHold(mission, root = process.cwd()) {
   if (process.env.ATRIS_ALLOW_PROTECTED_MISSION === '1') return null;
   if (mission?.metadata?.protected_lane_ack) return null;
   const { DENIED_TAGS } = require('../lib/fleet');
   const { declaredProtectedLane, sniffedProtectedLane } = require('../lib/auto-accept-certified');
   const lane = String(mission?.lane || '').toLowerCase();
-  if (DENIED_TAGS.includes(lane)) return { pause_reason: `protected-lane-${lane}` };
   const probe = { title: mission?.objective, objective: mission?.stop_condition, metadata: mission?.metadata || {} };
-  if (declaredProtectedLane(probe)) return { pause_reason: 'protected-lane-declared' };
-  const sniffed = sniffedProtectedLane(probe);
-  if (sniffed) return { pause_reason: `protected-lane-${sniffed.lane}` };
-  return null;
+  let hold = null;
+  if (DENIED_TAGS.includes(lane)) hold = { pause_reason: `protected-lane-${lane}`, lane };
+  else if (declaredProtectedLane(probe)) hold = { pause_reason: 'protected-lane-declared', lane: 'declared' };
+  else {
+    const sniffed = sniffedProtectedLane(probe);
+    if (sniffed) hold = { pause_reason: `protected-lane-${sniffed.lane}`, lane: sniffed.lane };
+  }
+  // Inside a campaign, a person may have allowed this lane by answering the
+  // campaign's ask. Only a person's answer closes an ask, so it counts as the ack.
+  if (hold && mission?.campaign_id && campaignApprovedLane(root, mission.campaign_id, hold.lane)) return null;
+  return hold ? { pause_reason: hold.pause_reason } : null;
+}
+
+function campaignApprovedLane(root, campaignId, lane) {
+  try {
+    const { openCampaignStore } = require('../lib/campaign-store');
+    const { approvedLanes } = require('../lib/campaign-lanes');
+    return approvedLanes(openCampaignStore(root).read(campaignId)).has(lane);
+  } catch {
+    return false;
+  }
 }
 
 function runnerUsesCallerSession(runner) {
@@ -10342,7 +10358,7 @@ async function executeMissionRunTicksPhase(context) {
       if (['complete', 'stopped', 'paused'].includes(mission.status)) { pauseReason = mission.status; break; }
       if (effectiveMissionVerifier(mission) !== storedVerifier) { pauseReason = 'verifier-mutated'; break; }
       if ((mission.lane || 'workspace') !== frozen.lane) { pauseReason = 'lane-mutated'; break; }
-      const protectedHold = missionProtectedLaneHold(mission);
+      const protectedHold = missionProtectedLaneHold(mission, cwd);
       if (protectedHold) { pauseReason = protectedHold.pause_reason; break; }
 
       const tickIdx = Number(mission.last_tick_index || 0) + 1;
