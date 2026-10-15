@@ -2446,3 +2446,5 @@ Upstream rewind cleanup proof: `test/member-tidy.test.js:811` runs real preview 
 Unrelated upstream cleanup proof: `test/member-tidy.test.js:928` runs real preview and apply after the remote switches to unrelated history. Staged notes, later edits, drafts, branch and registration survive; only a clean copy on the new history is removed.
 
 Remote default rename proof: `test/member-tidy.test.js:149` runs real preview and apply after the remote renames its default and deletes the old branch. Stale local default and tracking refs remain; staged notes, later edits, drafts, branch and registration survive while only a clean neighbor is removed.
+
+Missing remote default proof: `test/member-tidy.test.js:1002` runs real preview and apply after the remote default points to an absent branch. Both copies, staged contents, later edits, drafts, branches, registrations and stale local refs survive with no removal record.

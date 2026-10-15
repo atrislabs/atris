@@ -998,3 +998,66 @@ test('tidy keeps a landed copy whose status git cannot read, in preview and appl
     fs.rmSync(fx.base, { recursive: true, force: true });
   }
 });
+
+test('tidy keeps staged and unsaved notes when the remote default points to a missing branch', () => {
+  const fx = makeFixture();
+  try {
+    const remote = path.join(fx.base, 'remote.git');
+    const clean = addCopy(fx, 'landed-clean');
+    const cleanStatus = runGit(['status', '--porcelain'], clean);
+    const kept = addCopy(fx, 'stale-default', { commit: true, pushToOrigin: true });
+    const tip = runGit(['rev-parse', 'HEAD'], kept);
+    runGit(['fetch', '-q', 'origin'], fx.repo);
+    assert.equal(runGit(['rev-parse', 'origin/master'], fx.repo), tip);
+    fs.writeFileSync(path.join(kept, 'draft.txt'), 'unsaved notes\n');
+    fs.appendFileSync(path.join(kept, 'README.md'), 'unsaved edits\n');
+    fs.writeFileSync(path.join(kept, 'staged.txt'), 'prepared notes\n');
+    runGit(['add', 'staged.txt'], kept);
+    fs.appendFileSync(path.join(kept, 'staged.txt'), 'later edits\n');
+    const status = runGit(['status', '--porcelain'], kept);
+    const patch = runGit(['diff', '--cached', '--binary'], kept);
+    assert.match(status, /AM staged.txt/);
+    const registered = runGit(['worktree', 'list', '--porcelain'], fx.repo);
+    const fetched = runGit(['rev-parse', 'FETCH_HEAD'], fx.repo);
+    runGit(['symbolic-ref', 'HEAD', 'refs/heads/absent'], remote);
+    assert.equal(branchExists(remote, 'absent'), false);
+    const advertised = runGit(['ls-remote', '--symref', 'origin', 'HEAD'], fx.repo);
+    assert.equal(advertised, '');
+
+    for (const extra of [['--dry-run'], []]) {
+      const args = [path.resolve(__dirname, '../bin/atris.js'), 'member', 'tidy', '--dir', fx.copies, ...extra];
+      const cli = spawnSync(process.execPath, args, { cwd: fx.repo, encoding: 'utf8', timeout: 15000 });
+      console.log(`command: node bin/atris.js member tidy --dir <fixture copies>${extra.length ? ' --dry-run' : ''} (missing remote default)`);
+      console.log(cli.stdout.trim());
+      console.log(`exit: ${cli.status}`);
+      assert.equal(cli.status, 1, cli.stderr);
+      const lines = cli.stdout.trim().split('\n').map((line) => line.replace(/ {2,}/g, '  '));
+      const reason = 'could not tell which branch origin ships from';
+      assert.equal(lines[0], `tidy: ${reason}, so every copy is kept`);
+      assert.ok(lines.includes(`kept  landed-clean  ${reason}`), lines.join('\n'));
+      assert.ok(lines.includes(`kept  stale-default  ${reason}`), lines.join('\n'));
+      assert.equal(lines.at(-1), `tidy: ${extra.length ? 'would remove' : 'removed'} 0, kept 2, of 2 copies in ${fx.copies}`);
+      assert.equal(runGit(['rev-parse', 'FETCH_HEAD'], fx.repo), fetched);
+      assert.equal(fs.readFileSync(path.join(clean, 'README.md'), 'utf8'), '# fixture\n');
+      assert.equal(runGit(['status', '--porcelain'], clean), cleanStatus);
+      assert.ok(branchExists(fx.repo, 'landed-clean'));
+      assert.equal(runGit(['worktree', 'list', '--porcelain'], fx.repo), registered);
+      assert.equal(runGit(['symbolic-ref', 'refs/remotes/origin/HEAD'], fx.repo), 'refs/remotes/origin/master');
+      assert.equal(runGit(['rev-parse', 'origin/master'], fx.repo), tip);
+      assert.equal(runGit(['rev-parse', 'HEAD'], kept), tip);
+      assert.equal(fs.readFileSync(path.join(kept, 'stale-default.txt'), 'utf8'), 'work\n');
+      assert.equal(fs.readFileSync(path.join(kept, 'draft.txt'), 'utf8'), 'unsaved notes\n');
+      assert.equal(fs.readFileSync(path.join(kept, 'README.md'), 'utf8'), '# fixture\nunsaved edits\n');
+      assert.equal(fs.readFileSync(path.join(kept, 'staged.txt'), 'utf8'), 'prepared notes\nlater edits\n');
+      assert.equal(runGit(['show', ':staged.txt'], kept), 'prepared notes');
+      assert.equal(runGit(['diff', '--cached', '--binary'], kept), patch);
+      assert.equal(runGit(['status', '--porcelain'], kept), status);
+      assert.ok(branchExists(fx.repo, 'stale-default'));
+      assert.ok(runGit(['worktree', 'list', '--porcelain'], fx.repo).includes(`worktree ${kept}\n`));
+      assert.deepEqual(removalLines(fx.repo), []);
+    }
+    assert.equal(fs.existsSync(clean), true);
+  } finally {
+    fs.rmSync(fx.base, { recursive: true, force: true });
+  }
+});
