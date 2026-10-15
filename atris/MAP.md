@@ -182,4 +182,4 @@ Weak proof review creation setup: `test/commands.test.js:15704` seeds creation a
 
 Capability safety baseline: `test/commands.test.js:8327` reads the initial production-store projection in its fixture connection; both capability checks and the final CLI read remain, reducing launches from four to three.
 
-Bulk approval preview scans: `test/commands.test.js:13448` runs the default, all-row and explicit-limit dry runs together after the last ready command. Task rows stay unchanged; each scan builds its own projection from the store.
+Bulk approval preview scans: `test/commands.test.js:13448` runs the default, all-row and explicit-limit dry runs together after the last ready command. Task rows stay unchanged; each scan builds its own projection from the store. Setup shares one connection for all twenty rows, closed before the final CLI ready call.

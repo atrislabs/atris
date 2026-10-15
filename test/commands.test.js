@@ -13463,23 +13463,25 @@ test('task auto-accept-certified --all sweeps past the old 12-row cap', async ()
     // still runs through the CLI, so the certified scan reads what the CLI
     // writes, and its write lands after every row exists.
     const workspaceRoot = taskStore.workspaceRoot(dir);
-    for (let i = 0; i < ROW_COUNT; i += 1) {
-      const proof = `Row ${i}: node --check test/commands.test.js passed and diff inspected end to end`;
-      const db = taskStore.open(dbPath);
-      let ref;
-      try {
-        ref = addSeedTask(db, { title: `Row ${i} lands under --all`, tag: 'code', workspaceRoot }).id;
+    const db = taskStore.open(dbPath);
+    let lastRef;
+    let lastProof;
+    try {
+      for (let i = 0; i < ROW_COUNT; i += 1) {
+        const proof = `Row ${i}: node --check test/commands.test.js passed and diff inspected end to end`;
+        const ref = addSeedTask(db, { title: `Row ${i} lands under --all`, tag: 'code', workspaceRoot }).id;
         assert.equal(taskStore.claimTask(db, { id: ref, claimedBy: 'codex' }).claimed, true);
         if (i < ROW_COUNT - 1) {
           assert.equal(taskStore.readyTask(db, { id: ref, actor: 'codex', proof, result: FIXTURE_RESULT_SENTENCE }).ready, true);
+        } else {
+          lastRef = ref;
+          lastProof = proof;
         }
-      } finally {
-        taskStore.close();
       }
-      if (i === ROW_COUNT - 1) {
-        assert.equal(runCli(['task', 'ready', ref, '--proof', proof, '--as', 'codex'], { cwd: dir, env }).status, 0);
-      }
+    } finally {
+      taskStore.close();
     }
+    assert.equal(runCli(['task', 'ready', lastRef, '--proof', lastProof, '--as', 'codex'], { cwd: dir, env }).status, 0);
 
     // Preview scans leave the task rows unchanged and only rewrite the same
     // projection, which none of these scans reads. Run them together after ready.
