@@ -56,6 +56,26 @@ test('engine verify contract requires real execution and parses only the final v
   );
 });
 
+test('the reviewer knows its time limit, skips the check that already passed, and proves with a narrow run', () => {
+  // 11 of 57 reviewed ticks (10/11 to 10/14) were turned down only because the
+  // reviewer ran out of its five minutes, often rerunning the passed check and
+  // then a whole test file that takes 12+ minutes on a busy machine.
+  const prompt = buildEngineVerifyPrompt({ objective: 'prove the changed surface' }, 1, '', {
+    timeoutMs: 5 * 60 * 1000,
+    checkPassed: 'npm run test:fast',
+  });
+  assert.match(prompt, /You have 5 minutes/);
+  assert.match(prompt, /running out of time counts as a fail/);
+  assert.match(prompt, /`npm run test:fast` already passed on this exact code\. Do not run it again\./);
+  assert.match(prompt, /one test file or one named test/);
+  assert.match(prompt, /Do not run whole test suites or large test files/);
+  assert.match(prompt, /ACTUALLY RUN the changed surface/);
+
+  const noCheck = buildEngineVerifyPrompt({ objective: 'prove the changed surface' }, 1);
+  assert.doesNotMatch(noCheck, /already passed/);
+  assert.match(noCheck, /You have 5 minutes/);
+});
+
 test('a verifier that outruns its window reports timed_out, elapsed, and window, separate from a failing check', () => {
   const prev = process.env.ATRIS_MISSION_VERIFIER_TIMEOUT_MS;
   process.env.ATRIS_MISSION_VERIFIER_TIMEOUT_MS = '1000';

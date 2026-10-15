@@ -189,6 +189,63 @@ test('still queued on github: nothing is pushed or re-queued', () => {
   });
 });
 
+// GitHub keeps auto-merge switched on when master moves under a queued change
+// and the two clash, so the change waits forever unless the sweep notices.
+const QUEUED = { autoMergeRequest: { enabledAt: '2026-10-14T00:00:00Z' }, mergeable: 'CONFLICTING' };
+
+test('still queued but clashing in a member log only: caught up and queued again', () => {
+  const fx = fixture({ queued: false });
+  withFakeGh(fx, () => {
+    const log = 'atris/team/builder/logs/2026-10-14.md';
+    fs.mkdirSync(path.join(fx.worktree, path.dirname(log)), { recursive: true });
+    fs.writeFileSync(path.join(fx.worktree, log), '- member line\n');
+    git(['add', '.'], fx.worktree);
+    git(['commit', '-qm', 'member log'], fx.worktree);
+    fx.pushed = git(['rev-parse', 'HEAD'], fx.worktree);
+    git(['push', '-q', 'origin', BRANCH], fx.worktree);
+    writeQueue(fx, { [BRANCH]: { branch: BRANCH, base: 'master', number: 7, pushed: fx.pushed, requeues: 0 } });
+    setView(fx, QUEUED);
+    fs.mkdirSync(path.join(fx.main, path.dirname(log)), { recursive: true });
+    moveMaster(fx, log, '- master line\n');
+
+    const out = requeueDroppedAutolands({ cwd: fx.main });
+    assert.equal(out.results[0].state, 'requeued', out.results[0].line);
+    const head = remoteBranch(fx);
+    assert.notEqual(head, fx.pushed);
+    const merged = git(['show', `${head}:${log}`], fx.main);
+    assert.match(merged, /member line/);
+    assert.match(merged, /master line/);
+    assert.deepEqual(ghCalls(fx).filter((c) => c[1] === 'merge'),
+      [['pr', 'merge', '7', '--auto', '--merge', '--match-head-commit', head]]);
+    assert.equal(readQueue(fx)[BRANCH].pushed, head);
+  });
+});
+
+test('still queued but clashing in real code: left for a person instead of waiting forever', () => {
+  const fx = fixture();
+  withFakeGh(fx, () => {
+    setView(fx, QUEUED);
+    moveMaster(fx, 'work.txt', 'master wrote this instead\n');
+    const out = requeueDroppedAutolands({ cwd: fx.main });
+    assert.equal(out.results[0].state, 'clash');
+    assert.match(out.results[0].line, /clashes with the main branch in work\.txt/);
+    assert.equal(remoteBranch(fx), fx.pushed);
+    assert.equal(ghCalls(fx).filter((c) => c[1] === 'merge').length, 0);
+    assert.equal(readQueue(fx)[BRANCH], undefined);
+  });
+});
+
+test('still queued and github has not worked out a clash yet: left queued', () => {
+  const fx = fixture();
+  withFakeGh(fx, () => {
+    setView(fx, { ...QUEUED, mergeable: 'UNKNOWN' });
+    moveMaster(fx, 'work.txt', 'master wrote this instead\n');
+    const out = requeueDroppedAutolands({ cwd: fx.main });
+    assert.equal(out.results[0].state, 'queued');
+    assert.ok(readQueue(fx)[BRANCH], 'still tracked');
+  });
+});
+
 test('someone else pushed to the branch: left for a person and no longer tracked', () => {
   const fx = fixture();
   withFakeGh(fx, () => {
