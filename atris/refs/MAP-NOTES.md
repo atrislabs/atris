@@ -2693,3 +2693,5 @@ Tag-scoped checkpoint ownership setup: `test/commands.test.js:12785` creates and
 Duplicate Endgame seed ownership: `test/commands.test.js:12858` accepts an optional owner in fixture creation and calls production claimTask before closing in finally. Existing-owner setup saves one launch; all checkpoint and duplicate-selection CLI assertions remain.
 
 Reward receipt creation setup: `test/commands.test.js:13072` creates and claims through the real task store in one connection, closed in finally. Goal metadata assertions remain; readiness, acceptance, collection and local status remain real CLI calls. Five launches become four.
+
+Strict approval review setup: `test/commands.test.js:13363` attaches the strict verification command with production reviewTask, closes the connection before CLI previews, and preserves every automatic approval and human-confirmation assertion. Eleven app launches become ten.

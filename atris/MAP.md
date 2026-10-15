@@ -194,3 +194,5 @@ Lineage read concurrency: `test/commands.test.js:21208` runs text, JSON and alte
 Long-title status ownership setup: `test/commands.test.js:14318` creates and claims in the production store, keeping both status formats on the CLI in sequence because status writes a shared projection.
 
 Duplicate selection ownership setup: `test/commands.test.js:12836` seeds the existing owner through the production store; checkpoint ownership, readiness, certification and selection remain CLI checks. Seven launches become six.
+
+Strict approval review setup: `test/commands.test.js:13363` attaches the strict verification command with production reviewTask, closes the connection before CLI previews, and preserves every automatic approval and human-confirmation assertion. Eleven app launches become ten.

@@ -13283,18 +13283,20 @@ test('task auto-accept-certified requires explicit human confirmation', async ()
   try {
     fs.mkdirSync(path.join(dir, 'atris'), { recursive: true });
     writePolicy(dir, { enabled: false, enabled_by: 'test' });
-    // Seed the row straight into review; every auto-accept call, the second
-    // review and the show reads stay on the CLI. Every auto-accept output
+    // Seed both reviews through the store; every auto-accept call and
+    // the show reads stay on the CLI. Every auto-accept output
     // matched with the row readied and reviewed both ways; only the CLI's
     // result summary on the row differs, and nothing here reads it.
     const workspaceRoot = taskStore.workspaceRoot(dir);
     const db = taskStore.open(dbPath);
     let ref;
+    let taskId;
     try {
       const created = addSeedTask(db, {
         title: 'Auto accept still needs a human', tag: 'agent-xp', workspaceRoot,
       });
       assert.equal(created.inserted, true);
+      taskId = created.id;
       assert.equal(taskStore.claimTask(db, { id: created.id, claimedBy: 'codex' }).claimed, true);
       const readied = taskStore.readyTask(db, {
         id: created.id,
@@ -13358,16 +13360,20 @@ test('task auto-accept-certified requires explicit human confirmation', async ()
     assert.match(strictText.stdout, new RegExp(`review_chat=atris task review-chat ${ref} --as codex-review`));
 
     fs.writeFileSync(path.join(dir, 'verify.js'), 'const ok = true;\n', 'utf8');
-    const verifyReview = runCli([
-      'task', 'review', ref,
-      '--reward', '0',
-      '--as', 'codex-review',
-      '--proof', 'node --check verify.js passed and diff inspected',
-      '--verify', 'node --check verify.js',
-      '--json',
-    ], { cwd: dir, env });
-    assert.equal(verifyReview.status, 0, verifyReview.stderr);
-    assert.equal(JSON.parse(verifyReview.stdout).task.metadata.verify, 'node --check verify.js');
+    const reviewDb = taskStore.open(dbPath);
+    try {
+      const verifyReview = taskStore.reviewTask(reviewDb, {
+        id: taskId,
+        actor: 'codex-review',
+        reward: 0,
+        proof: 'node --check verify.js passed and diff inspected',
+        verify: 'node --check verify.js',
+      });
+      assert.equal(verifyReview.reviewed, true, verifyReview.reason);
+      assert.equal(taskStore.getTask(reviewDb, taskId).metadata.verify, 'node --check verify.js');
+    } finally {
+      taskStore.close();
+    }
 
     const strictVerifiedPreview = runCli(['task', 'auto-accept-certified', '--dry-run', '--strict-verify', '--json'], { cwd: dir, env });
     assert.equal(strictVerifiedPreview.status, 0, strictVerifiedPreview.stderr);
