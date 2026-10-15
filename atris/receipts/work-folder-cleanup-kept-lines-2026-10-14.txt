@@ -1,0 +1,21 @@
+Worktree cleanup names each folder it keeps and why
+
+Files edited: commands/worktree.js, test/worktree-removal-guard.test.js, test/member-tidy.test.js, atris/refs/MAP-NOTES.md, atris/team/architect/logs/2026-10-14.md, this receipt.
+
+What changed: cleanup's text output used to print "kept: N" and name only pinned, held or refused folders. Every kept folder now gets a line in the same shape as a removal: its path, branch and reason. A folder kept for uncommitted work also shows how many changes are staged, unstaged and untracked. The existing held and refused lines still follow.
+
+Real project, preview only (no --apply; folder count 110 before and after):
+$ atris worktree cleanup
+exit=0
+cleanup: dry-run base=origin/master
+candidates: 0
+kept: 110
+kept reasons: 90 unmerged, 14 dirty, 4 active_process, 1 primary_checkout, 1 current_checkout
+kept: .../architect-continue-work-folder-protection-acro-20261014-172101 branch=architect-help-output-not-cut-short reason=dirty staged=0 unstaged=3 untracked=0
+
+$ node --test test/worktree-removal-guard.test.js test/member-tidy.test.js
+exit=0; tests 68, pass 68, fail 0, todo 0
+$ node --test test/autoland.test.js test/worktree-cleanup-keeps-busy.test.js
+exit=0; tests 72, pass 72, fail 0
+
+Negative trial: with the previous cleanup code put back, the new check failed; the new file was restored afterward.

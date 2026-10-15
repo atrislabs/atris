@@ -1303,6 +1303,25 @@ test('a refusal from a deep folder keeps git\'s reason, not just its path', () =
   }
 });
 
+// A count alone never says why a folder is still here, so each kept folder
+// gets its own line, like a removal, with its unsaved work counted.
+test('worktree cleanup names each folder it keeps and why', () => {
+  const { base, repo, wt } = landedWorktree();
+  try {
+    fs.writeFileSync(path.join(wt, 'notes.txt'), 'not saved anywhere yet\n');
+    const result = spawnSync(process.execPath, [path.resolve(__dirname, '../bin/atris.js'), 'worktree', 'cleanup', '--base', 'HEAD'], { cwd: repo, encoding: 'utf8' });
+    assert.equal(result.status, 0, result.stderr);
+    assert.deepEqual(result.stdout.split('\n').filter((line) => line.startsWith('kept')), [
+      'kept: 2',
+      `kept: ${repo} branch=master reason=primary_checkout`,
+      `kept: ${wt} branch=engine-run reason=dirty staged=0 unstaged=0 untracked=1`,
+    ]);
+    assert.ok(fs.existsSync(path.join(wt, 'notes.txt')));
+  } finally {
+    fs.rmSync(base, { recursive: true, force: true });
+  }
+});
+
 test('a refusal line still too long keeps its start and its end', () => {
   const { describeRefusedRemoval } = require('../commands/worktree');
   const line = `could not remove ${'x'.repeat(300)} because the disk is read-only`;

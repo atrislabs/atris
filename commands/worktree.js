@@ -1629,6 +1629,10 @@ function cleanup(args) {
   }
   console.log(`kept: ${result.kept.length}`);
   for (const item of result.kept) {
+    // Each kept folder names itself and why, like a removal does, so a count
+    // is never the only answer to "why is this still here".
+    const changes = item.reason === 'dirty' ? ` staged=${item.staged} unstaged=${item.unstaged} untracked=${item.untracked}` : '';
+    console.log(`kept: ${item.path} branch=${item.branch || 'detached'} reason=${item.reason}${changes}`);
     const held = describeGitHold(item);
     if (held) console.log(`held: ${item.path} ${held}`);
     if (item.refused) console.log(`refused: ${item.path} ${item.refused}`);
