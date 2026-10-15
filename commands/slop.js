@@ -512,12 +512,13 @@ const THAT_CLAUSE_AFTER_DASH = new RegExp(`${CLAUSE_END}\\s*\\u2014\\s*(?=(?:the
 // "the backend captures runs".
 const END_VERB = '(?:remains|stays|works|survives|holds|runs|fails|breaks|helps|vanishes|persists|exists)';
 const END_CLAUSE_AFTER_DASH = new RegExp(`${CLAUSE_END}\\s*\\u2014\\s*(?=(?:the|a|an|every|each|no)\\s+(?:(?!(?:the|a|an|that|whose|which|who|it|they|we|you|he|she|I|this|these|those|one|ones)\\b)(?![A-Za-z_-]*[a-rt-z]s\\b)${NOUN_WORD}\\s+){1,2}${END_VERB}(?=[.;!?,]|$))`, 'g');
-// "Each" takes a verb in "s", so "each", up to four words and a verb in "s"
-// with more words after it start one too: "started the loop; each tick
-// re-reads the latest logs". No "the", "that" or place word may sit before
-// the verb, so "each time the loop runs" and "each with its own tests in CI"
-// keep their comma.
-const EACH_CLAUSE_AFTER_DASH = new RegExp(`${CLAUSE_END}\\s*\\u2014\\s*(?!${TIME_OPENER})(?=each\\s+(?:(?!(?:the|a|an|that|whose|of|with|in|on|for|from|at|by|to|per|and|or|but)\\b)${NOUN_WORD}\\s+){0,4}(?:[a-z]+-)?${PLAIN_VERB}[^\\s\\u2014])`, 'g');
+// "Each" and "every" take a verb in "s", so either, up to four words and a
+// verb in "s" with more words after it start one too: "started the loop;
+// each tick re-reads the latest logs", "the app auto-updates; every launch
+// checks the feed". No "the", "that" or place word may sit before the verb,
+// so "each time the loop runs" and "each with its own tests in CI" keep
+// their comma.
+const EACH_CLAUSE_AFTER_DASH = new RegExp(`${CLAUSE_END}\\s*\\u2014\\s*(?!${TIME_OPENER})(?=(?:each|every)\\s+(?:(?!(?:the|a|an|that|whose|of|with|in|on|for|from|at|by|to|per|and|or|but)\\b)${NOUN_WORD}\\s+){0,4}(?:[a-z]+-)?${PLAIN_VERB}[^\\s\\u2014])`, 'g');
 // A bare word and a plain verb start a clause too, but never a word that
 // only says when (see WHEN_WORD). A number word before a word in "s" counts
 // a plural noun, never a subject and its verb, so "shipped it, two weeks
