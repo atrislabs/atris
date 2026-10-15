@@ -1787,11 +1787,11 @@ test('every engine started through a runner or profile variable records its run 
         // bracketed key, quoted or held in a variable, each optionally chained.
         called += /^(?:\s*\??\.\s*[A-Za-z_$][\w$]*|\s*(?:\?\.\s*)?\[\s*(?:'[^'\\\n]*'|"[^"\\\n]*"|`[^`\\$\n]*`|[A-Za-z_$][\w$]*)\s*\])*/.exec(rest.slice(called.length))[0];
       }
-      // A program chosen by a condition or a fallback runs to the end of the
-      // first argument.
+      // A program chosen by a condition or a fallback, after a name, a call,
+      // or a wrapped group, runs to the end of the first argument.
       let choice = '';
       const tail = rest.slice(called.length);
-      if ((!called || wrapped) && /^\s*(?:\?(?!\.)|\|\||\?\?)/.test(tail)) {
+      if (/^\s*(?:\?(?!\.)|\|\||\?\?)/.test(tail)) {
         let depth = 0;
         for (const token of tail.matchAll(/'(?:\\.|[^'\\])*'|"(?:\\.|[^"\\])*"|`(?:\\.|[^`\\])*`|[()[\]{},]/g)) {
           if (depth === 0 && (token[0] === ',' || token[0] === ')')) {
@@ -1894,6 +1894,15 @@ test('every engine started through a runner or profile variable records its run 
   assert.deepStrictEqual(planted("spawnSync(fast ? 'git' : 'node', args);\n"), [], 'choices without an engine are not an engine launch');
   assert.deepStrictEqual(planted("spawnSync(name === 'claude' ? gitBin : nodeBin, args);\n"), [], 'an engine named only in the condition does not pick the program');
   assert.deepStrictEqual(planted("const runner = resolveClaudeRunnerBin();\nspawnSync(fast ? runner : 'node', args);\n"), ["commands/planted.js:2 fast ? runner : 'node'"]);
+  // A condition or fallback after a call chooses the same way, and a call
+  // used only as the condition does not pick the program.
+  for (const program of ["resolveClaudeRunnerBin() || 'node'", "resolveEngineProfile(topic).bin ?? 'node'", "findExecutable('git') || 'claude'", "isFast() ? 'codex' : 'claude'"]) {
+    assert.deepStrictEqual(planted(`spawnSync(${program}, args);\n`), [`commands/planted.js:1 ${program}`]);
+    assert.deepStrictEqual(planted(`startEngineRun(root);\nspawnSync(${program}, args);\n`), []);
+    assert.deepStrictEqual(planted(`spawnSync(${program}, ['--help']);\n`), []);
+  }
+  assert.deepStrictEqual(planted("spawnSync(findExecutable('git') || 'node', args);\n"), [], 'a call and fallback without an engine are not an engine launch');
+  assert.deepStrictEqual(planted("spawnSync(isEngineReady() ? 'git' : 'node', args);\n"), [], 'an engine call used only as the condition does not pick the program');
   // A program in its own parentheses is the program they hold.
   for (const program of ["(fast ? 'codex' : 'claude')", "('claude')", "(bin || 'claude')", "((fast) ? 'codex' : bin)", "(bin) || 'claude'"]) {
     assert.deepStrictEqual(planted(`spawnSync(${program}, args);\n`), [`commands/planted.js:1 ${program}`]);
