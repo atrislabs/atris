@@ -1320,6 +1320,16 @@ function collectRevisionSignals(root, options = {}) {
   // A commit that reached the mainline in the same merge as the landing came
   // in with it, before anything had landed for a person to fix.
   const arrival = mainlineArrivals(commits);
+  // A branch commit that rides in with agent-signed work is the agent's too:
+  // on 2026-10-15 one unsigned commit from an agent run (#1130) read as a
+  // person fixing five earlier landings.
+  const agentMerges = new Set(landings
+    .map((landing) => arrival.get(landing.hash))
+    .filter((merge, i) => merge && merge !== landings[i].hash));
+  const rodeWithAgent = (commit) => {
+    const merge = arrival.get(commit.hash);
+    return Boolean(merge && merge !== commit.hash && agentMerges.has(merge));
+  };
   const revisions = [];
   for (const landing of landings) {
     const landedFiles = new Set(filesOf(landing).filter(isRevisionSignalFile));
@@ -1330,6 +1340,7 @@ function collectRevisionSignals(root, options = {}) {
     for (const human of humans) {
       if (human.ms <= landing.ms || human.ms > landing.ms + REVISION_WINDOW_MS) continue;
       if (landedWith && arrival.get(human.hash) === landedWith) continue;
+      if (rodeWithAgent(human)) continue;
       const overlap = filesOf(human).filter((f) => landedFiles.has(f));
       if (!overlap.length) continue;
       revisedBy.push({ hash: human.hash, subject: human.subject, at: human.at });
