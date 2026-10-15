@@ -199,7 +199,11 @@ const CLAUSE_END = "(?<=[\\w)\\]\"'*_`%\\u201d\\u2019\\uE001]|\\betc\\.|\\w\\+{1
 // word in "s" after the verb makes it a noun, so "those work items" and
 // "these return values" keep their comma.
 // A masked code span before the dash counts as the word: "Do not use `PUT`".
-const CLAUSE_AFTER_DASH = new RegExp(CLAUSE_END + /\s*\u2014\s*(?=(?:(?:it|we|they|you|I|he|she)(?:['\u2019](?:s|re|ll|ve|d|m))?|(?:this|that|these|those|there)(?:['\u2019]s|\s+(?:is|are|was|were|used|will|would|can|cannot|must|should|has|have))|this\s+(?:(?:no\s+longer|still|also|never|only|just|now|already|often|usually|rarely)\s+)?(?!(?:series|species|news|lens|perhaps|unless|whereas|across|always|does)\b)(?![a-z]+(?:us|is|as)\b)[a-z]{2,}[a-rt-z]s|(?:these|those)\s+(?:(?:still|also|never|only|just|now|already|often|usually|rarely|always|all)\s+)?(?:pass|fail|run|work|break|hold|match|agree|validate|load|build|ship|land|compile|apply|need|stay|remain|exist|show|point|wait|block|return)\b(?!\s+[a-z]+s\b))\b\s+[^\s\u2014])/.source, 'g');
+// The splice list in scripts/slop-fix-diff.js reads both word lists, so the
+// words it counts and the words the fix joins cannot drift apart.
+const PRESENT_PLURAL_VERB = '(?:pass|fail|run|work|break|hold|match|agree|validate|load|build|ship|land|compile|apply|need|stay|remain|exist|show|point|wait|block|return)';
+const DEMONSTRATIVE_LEAD = '(?:still|also|never|only|just|now|already|often|usually|rarely|always|all)';
+const CLAUSE_AFTER_DASH = new RegExp(CLAUSE_END + String.raw`\s*\u2014\s*(?=(?:(?:it|we|they|you|I|he|she)(?:['\u2019](?:s|re|ll|ve|d|m))?|(?:this|that|these|those|there)(?:['\u2019]s|\s+(?:is|are|was|were|used|will|would|can|cannot|must|should|has|have))|this\s+(?:(?:no\s+longer|still|also|never|only|just|now|already|often|usually|rarely)\s+)?(?!(?:series|species|news|lens|perhaps|unless|whereas|across|always|does)\b)(?![a-z]+(?:us|is|as)\b)[a-z]{2,}[a-rt-z]s|(?:these|those)\s+(?:${DEMONSTRATIVE_LEAD}\s+)?${PRESENT_PLURAL_VERB}\b(?!\s+[a-z]+s\b))\b\s+[^\s\u2014])`, 'g');
 // A noun subject and its helping verb start a second sentence too: "is not a
 // twin, restart is allowed". "Did", "could", "had" and their kin count as
 // helping verbs too: "still open, receipt did not move it". So do common
@@ -254,8 +258,8 @@ const NOUN_CLAUSE_AFTER_DASH = new RegExp(`${CLAUSE_END}\\s*\\u2014\\s*(?!${NAMI
 // flaky" and "12 files touched by the sweep" keep their comma. A common verb
 // in the present counts as well: "PASS on Monday; both packs validate
 // cleanly", "done; all tests pass now". The list is short on purpose, so
-// "two weeks ago" and "three tests flaky" stay asides.
-const PRESENT_PLURAL_VERB = '(?:pass|fail|run|work|break|hold|match|agree|validate|load|build|ship|land|compile|apply|need|stay|remain|exist|show|point|wait|block|return)';
+// "two weeks ago" and "three tests flaky" stay asides. The list is defined
+// above the pronoun rule, which reads it too.
 const COUNT_WORD = '(?:one|two|three|four|five|six|seven|eight|nine|ten|eleven|twelve|all|most|some|none|half|both|many|few|\\d+)';
 const OF_QUANTITY = `${COUNT_WORD}\\s+of\\s+(?:(?:the|our|its|their|${COUNT_WORD})\\s+)?(?:[^\\s\\u2014]+\\s+){0,2}[^\\s\\u2014]*s["'\\u201d\\uE001]?\\s+(?!(?:from|of|in|on|for|with|at|by|to|and|or|but|that|which|who|like|than|as|into|per|across|today|now|here|there|too|also|only|so)\\b)(?![a-z]+ly\\b)(?:${HELPING_VERB}|[a-z]{2,})\\b`;
 const QUANTITY_CLAUSE_AFTER_DASH = new RegExp(`${CLAUSE_END}\\s*\\u2014\\s*(?=(?:(?:nothing|everything|nobody|everyone)\\s+(?:else\\s+)?${PLACE_PHRASE}[a-z]{2,}(?:ed|[a-rt-z]s)|(?:two|three|four|five|six|seven|eight|nine|ten|both|several|many|few|\\d+)\\s+(?:[a-z]+\\s+)?[a-z]+s\\s+${PLACE_PHRASE}[a-z]{2,}ed(?!\\s+(?:by|as|for|from|to|into|with|under)\\b)|(?:all|two|three|four|five|six|seven|eight|nine|ten|both|several|many|few|\\d+)\\s+(?:[a-z]+\\s+)?[a-z]+s\\s+${PRESENT_PLURAL_VERB}\\b(?![-'])|${OF_QUANTITY})(?:\\s+[^\\s\\u2014]|[.!?;,]|$))`, 'g');
@@ -2400,4 +2404,4 @@ function slopCommand(argv) {
   return 0;
 }
 
-module.exports = { slopCommand, detect, scanFile, scanPaths, RULES, PAIR_RULES, loadProjectRules, addProjectRule, gitChangedLines, applyFixes, fencedLines, installHook, findDeadCode, findOrphanedExports, listJsFiles };
+module.exports = { slopCommand, detect, scanFile, scanPaths, RULES, PAIR_RULES, loadProjectRules, addProjectRule, gitChangedLines, applyFixes, fencedLines, PRESENT_PLURAL_VERB, DEMONSTRATIVE_LEAD, installHook, findDeadCode, findOrphanedExports, listJsFiles };

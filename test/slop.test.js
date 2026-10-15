@@ -4989,6 +4989,26 @@ test('the fix diff splice list skips a noun after "in" or "of" and a noun with i
   ).map((s) => s.text), ['those searches return zero results', 'these always wait for review']);
 });
 
+test('the fix and the splice list read one word list for "these" and "those"', () => {
+  // tick 39 found "these always wait" listed but never joined, since the
+  // list had "always" and the fix did not; both now read the fix's lists,
+  // so every lead word and verb there is joined by one and listed by the other
+  const { PRESENT_PLURAL_VERB, DEMONSTRATIVE_LEAD } = require('../commands/slop');
+  const { spliceShapes } = require('../scripts/slop-fix-diff.js');
+  const words = (list) => list.slice(3, -1).split('|');
+  const rests = [];
+  for (const lead of ['', ...words(DEMONSTRATIVE_LEAD)]) {
+    for (const verb of words(PRESENT_PLURAL_VERB)) rests.push(`those ${lead ? `${lead} ` : ''}${verb} for now`);
+  }
+  const D = String.fromCharCode(0x2014);
+  const sources = rests.map((r) => `We split it ${D} ${r}.`);
+  const file = tmpFile('lead-words.md', sources.join('\n'));
+  const { changes } = applyFixes([file], RULES);
+  assert.deepEqual(changes.map((c) => c.after), rests.map((r) => `We split it; ${r}.`));
+  const commas = rests.map((r) => `We split it, ${r}.`);
+  assert.equal(spliceShapes(sources, commas).length, rests.length);
+});
+
 test('the fix diff script lists each comma it writes before a "the" clause once', () => {
   const { spawnSync } = require('node:child_process');
   // a dash fixed into a comma before "the" and a subject and a verb is a
