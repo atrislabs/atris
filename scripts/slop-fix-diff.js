@@ -125,8 +125,9 @@ function fixAll(fixer, lines, dir) {
 // aside that wraps across lines balances the way it should.
 // The period that closes a short form or an initial is part of the word,
 // so a comma after it is plain English: "Cooling, Inc., Columbus", "(Alex
-// T., via the site)".
-const DOUBLED = /[,;:]\s*[,;:.!?]|\(\s*[,;:]|[,;:]\s*\)|\.\s*,|,\s*,/g;
+// T., via the site)". A dot that opens a file name or an extension is part
+// of the name, so a colon before it is plain: "**local**: .claude/".
+const DOUBLED = /[,;:]\s*(?:[,;:!?]|\.(?![\w/]))|\(\s*[,;:]|[,;:]\s*\)|\.\s*,|,\s*,/g;
 const SHORT_FORM_STOP = /\b(?:etc|e\.g|i\.e|vs|cf|approx|incl|et al|Inc|Ltd|Corp|Co|Jr|Sr|[A-Z])\.(?=\s*,)/gi;
 function oddMarks(source, fixed) {
   const plain = (text) => text.replace(/`[^`]*`/g, '``').replace(/\]\([^)]*\)/g, ']');

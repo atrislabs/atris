@@ -3768,6 +3768,11 @@ test('the fix diff script marks a fix that gains doubled punctuation or loses pa
   assert.deepEqual(oddMarks(`# Airfast Cooling, Inc. ${D} Columbus, OH`, '# Airfast Cooling, Inc., Columbus, OH'), []);
   assert.deepEqual(oddMarks(`"Great work." Alex T. (via the site)`, '"Great work." (Alex T., via the site)'), []);
   assert.deepEqual(oddMarks(`The build ended. ${D} and then it ran.`, 'The build ended., and then it ran.'), ['doubled punctuation']);
+  // a dot that opens a file name or an extension is part of the name, so a
+  // colon before it is plain: "**local**: .claude/", "Known gap: .md files"
+  assert.deepEqual(oddMarks(`3. **local** ${D} .claude/agent-memory/ (per project)`, '3. **local**: .claude/agent-memory/ (per project)'), []);
+  assert.deepEqual(oddMarks(`## Known gap ${D} .md files do not open`, '## Known gap: .md files do not open'), []);
+  assert.deepEqual(oddMarks(`It is done ${D}. Next.`, 'It is done:. Next.'), ['doubled punctuation']);
   // a comma before a pronoun and its verb joins two sentences; the first
   // half of a "when" sentence, a greeting, or a lone "no" is no splice
   assert.deepEqual(oddMarks(`- Severity: High ${D} this is the first command.`, '- Severity: High, this is the first command.'), ['comma splice']);
