@@ -2775,3 +2775,5 @@ Legacy member match setup: `test/commands.test.js:2584` creates the legacy row w
 Generic continuation rejection setup: `test/commands.test.js:15075` seeds the goal-linked row through the production task store, closed in finally. Readiness, certification, current selection, review queue and refused continuation remain real CLI checks. Six launches become five.
 
 Continuation inspection batching: `test/commands.test.js:15128` awaits current selection and the review queue together after certification and before refused continuation. Both build their output from unchanged task rows through `commands/task.js:739`; neither consumes the saved view. All assertions remain, and five launches now take four sequential stages.
+
+Continuation debt readiness setup: `test/commands.test.js:15168` seeds readiness through production readyTask in the creation connection, asserts success and closes in finally. Review, queue inspection and refused continuation remain real CLI checks with every assertion retained. Four launches become three.

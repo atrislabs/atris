@@ -15163,7 +15163,7 @@ test('task review hygiene reports generic continuation debt without mutation', (
   try {
     fs.mkdirSync(path.join(dir, 'atris'), { recursive: true });
 
-    // Seed creation through the real store; review behavior stays on the CLI.
+    // Seed creation and readiness through the real store; review checks stay on the CLI.
     const parent = (() => {
       const db = taskStore.open(dbPath);
       try {
@@ -15174,20 +15174,17 @@ test('task review hygiene reports generic continuation debt without mutation', (
           workspaceRoot,
           metadata: { goal_id: 'OBL-928' },
         });
+        assert.equal(taskStore.readyTask(db, {
+          id, actor: 'codex',
+          proof: 'node --check test/commands.test.js passed before review hygiene',
+          result: FIXTURE_RESULT_SENTENCE,
+        }).ready, true);
         return { id, display_id: taskStore.taskDisplayRefMap(taskStore.listTasks(db, { workspaceRoot })).get(id) };
       } finally {
         taskStore.close();
       }
     })();
     const ref = parent.display_id;
-
-    const ready = runCli([
-      'task', 'ready', ref,
-      '--as', 'codex',
-      '--proof', 'node --check test/commands.test.js passed before review hygiene',
-      '--json',
-    ], { cwd: dir, env });
-    assert.equal(ready.status, 0, ready.stderr);
 
     const certified = runCli([
       'task', 'review', ref,
