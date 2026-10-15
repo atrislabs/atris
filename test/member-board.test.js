@@ -3651,7 +3651,7 @@ for order in ('resize first', 'resize inside the redraw delay'):
 `, process.execPath, cliPath], { encoding: 'utf8', timeout: 45_000 });
   assert.ifError(proof.error);
   assert.equal(proof.status, 0, `${proof.stdout}\n${proof.stderr}`);
-  if (process.env.ATRIS_BOARD_SHRINK_PROOF) fs.writeFileSync(process.env.ATRIS_BOARD_SHRINK_PROOF, `${proof.stdout}proof exit: ${proof.status}\n`);
+  if (process.env.ATRIS_BOARD_WATCH_SHRINK_PROOF) fs.writeFileSync(process.env.ATRIS_BOARD_WATCH_SHRINK_PROOF, `${proof.stdout}proof exit: ${proof.status}\n`);
 });
 
 test('seeded random watch: resizes and log changes in any order settle on the board a fresh run draws', { skip: process.platform === 'win32' }, () => {
@@ -3885,6 +3885,24 @@ test('every map line ref into the board code lands on the function or constant i
     }
   }
   assert.deepEqual(bad, [], 'repoint each ref at the first line of what it describes');
+});
+
+// A proof file variable keeps one test's terminal output for a receipt.
+// Two tests writing the same one overwrite each other when run together, so
+// a receipt that reruns the suite would keep the wrong test's output.
+test('each proof file variable belongs to one test', () => {
+  const owners = new Map();
+  let at = 0;
+  fs.readFileSync(__filename, 'utf8').split('\n').forEach((line, i) => {
+    if (line.startsWith('test(')) at = i + 1;
+    for (const [, name] of line.matchAll(/\b(ATRIS_[A-Z0-9_]*PROOF)\b/g)) {
+      if (!owners.has(name)) owners.set(name, new Set());
+      owners.get(name).add(at);
+    }
+  });
+  assert.ok(owners.size >= 10, 'the scan finds the proof variables');
+  const shared = [...owners].filter(([, tests]) => tests.size > 1).map(([name, tests]) => `${name} is written by the tests at lines ${[...tests].join(', ')}`);
+  assert.deepEqual(shared, [], 'give each test its own proof file variable');
 });
 
 // The board row's ref into the member command cites where it hands off to the

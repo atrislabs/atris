@@ -2431,3 +2431,5 @@ CRLF result pending at startup: `parseLine()` in `lib/member-board.js:49` remove
 Signed out run written with CRLF: `test/member-board.test.js:2243` writes a finished signed out run with CRLF endings and runs the real plain board, JSON board, and follow snapshot. Each keeps the engine and the sign-in fix, with no CR in output; interrupt exits 0. Proof: `atris/receipts/member-board-startup-signed-out-crlf-receipt.md`.
 
 Board test ref guard: `test/member-board.test.js:3862` fails when any `test/member-board.test.js` line ref in `atris/MAP.md` or this file stops landing on a test, a test loop, or a top-level constant, and names each drifted ref. Adding a test above a cited one means shifting the refs below it in the same change.
+
+Proof file variable owners: `test/member-board.test.js:3893` fails when two board tests write the same `ATRIS_*PROOF` variable, since run together the later one overwrites a receipt's saved terminal output.
