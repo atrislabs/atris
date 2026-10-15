@@ -1,0 +1,25 @@
+{
+  "files": {
+    "ask-lifecycle.json": "5272e615addec648cb32591b50aa12610fe95afb0659aed363b789c8ccbf7048",
+    "budget-added-recovers.json": "7f7f0bc2b1600cea2fa542a816bf9e1b676632099dff3f1a6523ada9b2380fb1",
+    "claims-vetoes-assignees.json": "bbb7a161f4d1b5547ffa2c05f90e7a2be7ce8ed277120362a1cf08879b513c4b",
+    "decide-cases.json": "91902499cb391a03ff0fae4da10df792cacd23dc6e2d58ee5d558203a8eb701d",
+    "done-agent-ignored-then-human.json": "4bac3151b73ffb389ca88e0502199261839402f19a544b897c0a8dcecb09c070",
+    "finished-stays-finished.json": "50f2d2e1cf321ef99993e0c1c69634af68fdf6b7d01277498b7a0d3022abd60b",
+    "happy-path-judge-pass.json": "a5de297f9bedcec709688f472d016a0e16b769b9da94286e372ddb10881cb840",
+    "judge-fail-hint.json": "28c5b4603803806cf681b7d9ded86984f2aa983e24d537f5e9e9c3bc8831bf07",
+    "metadata-events.json": "70404724e88f696f57fa7606af88b14a06928063de2c45b205454b413b9f9f1b",
+    "money-rounding-and-duplicate-id.json": "e6f96c425d24c888df6a6ad606e7bfcacc3cfcc92f9c80d679529d83f747a8bf",
+    "order-in-order.json": "8c5ef20a7bfe5f7bc97d1383f9546d58d69b1fb7e5a1690259fd084178c324c0",
+    "order-shuffled.json": "fbd7751a2aacf0cebb9decd8a177e60171fed22361cfbb48685e631cbc657995",
+    "out-of-budget.json": "42a08f5c8482894044868bdf51d11edc8f693b505a0497560850f001d60cef6d",
+    "refuse-invalid-event.json": "d4b3d792b97a269106e7d80922246f89a647cfe43b2a0d9aa16c2754e8f8e5fe",
+    "refuse-mixed-campaigns.json": "d295d3756cc4eec2ca1c2ffa24ad4a5e2c60b26daef12507f22c922b72c46d02",
+    "refuse-no-start.json": "e57bf01ee236f6269e47902d4cf671636720df2c581ead583d033b33294dc73d",
+    "reservations.json": "8d9cb61882b2cd5c208299127b1ff60222339855e47ad5e25211db8b04a35c44",
+    "standing-leaning.json": "65b176e1487da4b47182f0359af98efbf9e54e88cac159d19b8ba71dd58cf31f",
+    "standing-stronger.json": "cef143541f2af5ad3a8d08d0d9a73ed0429e3cc2a72339d49a0e884b43a20757",
+    "start-first-duplicate-start.json": "7b915850860406a1e6b10fa418d721db67abc4fedb3e202fa7b41c5e7c5134c4",
+    "stopped-standing.json": "3ed262c5aaa7746a81ab73982e7c2ecf1ffdfe85124eab35674b89aa1aa286d4"
+  }
+}

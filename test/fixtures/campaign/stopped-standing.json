@@ -1,0 +1,79 @@
+{
+  "name": "stopped-standing",
+  "about": "A stopped event finishes the campaign as done with stop_reason stopped; it was not finished by the judge, so one passing run on a standing campaign reads leaning, not answered.",
+  "events": [
+    {
+      "id": "evt-0001",
+      "campaign_id": "cmp-ship",
+      "type": "campaign_started",
+      "at": "2026-10-15T10:00:00Z",
+      "origin": "laptop",
+      "seq": 1,
+      "actor": "human:keshav",
+      "data": {
+        "title": "Keep the app healthy",
+        "judge": "npm run health",
+        "budget": 100,
+        "standing": true
+      }
+    },
+    {
+      "id": "evt-0002",
+      "campaign_id": "cmp-ship",
+      "type": "judge_ran",
+      "at": "2026-10-15T10:01:00Z",
+      "origin": "laptop",
+      "seq": 2,
+      "actor": "judge",
+      "data": {
+        "passed": true,
+        "reading": 1,
+        "summary": "all healthy"
+      }
+    },
+    {
+      "id": "evt-0003",
+      "campaign_id": "cmp-ship",
+      "type": "stopped",
+      "at": "2026-10-15T10:02:00Z",
+      "origin": "laptop",
+      "seq": 3,
+      "actor": "mission-lead",
+      "data": {}
+    }
+  ],
+  "expected": {
+    "id": "cmp-ship",
+    "title": "Keep the app healthy",
+    "judge": "npm run health",
+    "owner": "mission-lead",
+    "standing": true,
+    "bet": null,
+    "parent": null,
+    "home": "laptop",
+    "created_from": null,
+    "seats": [],
+    "state": "done",
+    "stop_reason": "stopped",
+    "answer": {
+      "text": "all healthy",
+      "confidence": "leaning"
+    },
+    "budget": {
+      "total": 100,
+      "spent": 0,
+      "reserved": 0,
+      "available": 100
+    },
+    "asks": [],
+    "missions": [],
+    "judge_runs": 1,
+    "judge_due": false,
+    "last_judge": {
+      "passed": true,
+      "reading": 1,
+      "at": "2026-10-15T10:01:00Z"
+    },
+    "warnings": []
+  }
+}

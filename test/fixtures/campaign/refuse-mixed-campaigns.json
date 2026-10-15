@@ -1,0 +1,36 @@
+{
+  "name": "refuse-mixed-campaigns",
+  "about": "Two valid events with different campaign ids are refused.",
+  "events": [
+    {
+      "id": "evt-0001",
+      "campaign_id": "cmp-ship",
+      "type": "campaign_started",
+      "at": "2026-10-15T10:00:00Z",
+      "origin": "laptop",
+      "seq": 1,
+      "actor": "human:keshav",
+      "data": {
+        "title": "Ship campaign core",
+        "judge": "npm run validate:campaign",
+        "budget": 100
+      }
+    },
+    {
+      "id": "evt-0002",
+      "campaign_id": "cmp-other",
+      "type": "mission_proposed",
+      "at": "2026-10-15T10:01:00Z",
+      "origin": "laptop",
+      "seq": 2,
+      "actor": "builder",
+      "data": {
+        "mission_id": "m1",
+        "member": "builder"
+      }
+    }
+  ],
+  "expected": {
+    "error": "mixed_campaigns"
+  }
+}

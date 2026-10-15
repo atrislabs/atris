@@ -1,0 +1,14 @@
+# Running the first campaign by hand
+
+Pain points from running "Campaign ships across Atris" before the store and CLI verbs existed (build.md Phase 0.5). Each one changed the schema or the build.
+
+1. **Five folds would drift.** The first plan had every surface fold events. Screens only show state, so they now decode the view instead, and only the CLI and backend fold. The bet changed to match: a screen that computes campaign state is the failure.
+2. **The contract was loose in 22 places.** The golden files were written by a member who never saw the fold code, and it logged 22 ambiguities (`test/fixtures/campaign/AMBIGUITIES.md`). One caught a real disagreement on the first run: the estimate on a mission skipped cents rounding. All 22 are now settled in the README.
+3. **The spec's event list could not express two of its own actions.** `add_budget` and `veto` had no event. `budget_added` and `mission_vetoed` were added to the schema.
+4. **Pin the golden files before sending anyone out.** Two screen members finished before `MANIFEST.json` existed, so the judge could not grade them until it was written. Next campaign: pin first, then dispatch.
+5. **Decide needed state the view did not show.** "Run the judge when a mission ended after the last judge run" depended on hidden fold order. The view now carries `judge_due`, so every surface decides from the same fields.
+6. **Cost is only known for Claude runs.** "Every mission reports its cost" holds for Claude today; Codex, Cursor, and the rest report tokens only, so their missions would spend without being counted. A price table, or a per-engine cost field in the roster run record, is needed before a campaign runs on them.
+7. **Strict screens break on new words.** Terrace and desktop reject an unknown state value, so adding a state later needs every screen updated first. Fine for now; a future schema change should ship screens before computers.
+8. **The judge must say what it did not check.** A partial run said "every surface agrees" when only two were checked. It now names the surfaces it skipped.
+9. **Two languages disagree in the corners a review finds.** A cold review found that a timestamp without a zone folded differently by machine timezone, and that sorting at millisecond precision could flip two events a microsecond apart, which Python would order differently. The contract now requires a zone on every timestamp and compares instants at full precision. Golden files alone did not catch either; an adversarial reviewer did.
+10. **A judge must not show the answers.** Runners used to receive the golden files with the expected results inside, so a runner could echo them and pass. The judge now hands runners inputs only.

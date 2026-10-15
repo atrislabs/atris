@@ -1,0 +1,113 @@
+{
+  "name": "done-agent-ignored-then-human",
+  "about": "A done from an agent is ignored with done_without_judge and the campaign keeps running; a later done from a human finishes it as done_by_human with confidence open (no judge ran).",
+  "events": [
+    {
+      "id": "evt-0001",
+      "campaign_id": "cmp-ship",
+      "type": "campaign_started",
+      "at": "2026-10-15T10:00:00Z",
+      "origin": "laptop",
+      "seq": 1,
+      "actor": "human:keshav",
+      "data": {
+        "title": "Ship campaign core",
+        "judge": "npm run validate:campaign",
+        "budget": 100
+      }
+    },
+    {
+      "id": "evt-0002",
+      "campaign_id": "cmp-ship",
+      "type": "mission_proposed",
+      "at": "2026-10-15T10:01:00Z",
+      "origin": "laptop",
+      "seq": 2,
+      "actor": "builder",
+      "data": {
+        "mission_id": "m1",
+        "member": "builder"
+      }
+    },
+    {
+      "id": "evt-0003",
+      "campaign_id": "cmp-ship",
+      "type": "mission_started",
+      "at": "2026-10-15T10:02:00Z",
+      "origin": "laptop",
+      "seq": 3,
+      "actor": "builder",
+      "data": {
+        "mission_id": "m1",
+        "member": "builder"
+      }
+    },
+    {
+      "id": "evt-0004",
+      "campaign_id": "cmp-ship",
+      "type": "done",
+      "at": "2026-10-15T10:03:00Z",
+      "origin": "laptop",
+      "seq": 4,
+      "actor": "builder",
+      "data": {}
+    },
+    {
+      "id": "evt-0005",
+      "campaign_id": "cmp-ship",
+      "type": "done",
+      "at": "2026-10-15T10:04:00Z",
+      "origin": "laptop",
+      "seq": 5,
+      "actor": "human:keshav",
+      "data": {}
+    }
+  ],
+  "expected": {
+    "id": "cmp-ship",
+    "title": "Ship campaign core",
+    "judge": "npm run validate:campaign",
+    "owner": "mission-lead",
+    "standing": false,
+    "bet": null,
+    "parent": null,
+    "home": "laptop",
+    "created_from": null,
+    "seats": [],
+    "state": "done",
+    "stop_reason": "done_by_human",
+    "answer": {
+      "text": null,
+      "confidence": "open"
+    },
+    "budget": {
+      "total": 100,
+      "spent": 0,
+      "reserved": 0,
+      "available": 100
+    },
+    "asks": [],
+    "missions": [
+      {
+        "id": "m1",
+        "member": "builder",
+        "status": "running",
+        "outcome": null,
+        "cost_usd": null,
+        "estimate_usd": null,
+        "steps": 0,
+        "kept": 0,
+        "reverted": 0
+      }
+    ],
+    "judge_runs": 0,
+    "judge_due": true,
+    "last_judge": null,
+    "warnings": [
+      {
+        "event_id": "evt-0004",
+        "code": "done_without_judge"
+      }
+    ]
+  }
+}
