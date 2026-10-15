@@ -1,0 +1,74 @@
+Late pins now have real tidy CLI coverage: the folder, branch, registration and original pin survive.
+Files: test/member-tidy.test.js, atris/MAP.md, atris/refs/MAP-NOTES.md, atris/team/architect/logs/2026-10-14.md.
+Setup: an executable wrapper invokes real Git to pin only on removal, then forwards the removal to real Git unchanged.
+Initial check: one assertion expected the wrong summary wording; corrected it to the existing CLI output.
+command: node --test test/worktree-removal-guard.test.js test/member-tidy.test.js
+command: node bin/atris.js member tidy --dir <fixture copies> (late-pin git wrapper)
+kept  landed-late-pin  landed, but git refused: pinned by git worktree lock, under a minute old: agent started writing please wait
+tidy: removed 0, kept 1, of 1 copy in /private/var/folders/t1/2_4kmb5n4c71dxm26zc8dgzr0000gn/T/atris-member-tidy-OcQFzb/arena/.agent-worktrees/repo
+exit: 0
+command: node bin/atris.js member tidy --dir <fixture copies> (fixture cwd)
+kept  landed-pinned  landed, but pinned by git worktree lock, 3 h old: agent still writing
+tidy: removed 0, kept 1, of 1 copy in /private/var/folders/t1/2_4kmb5n4c71dxm26zc8dgzr0000gn/T/atris-member-tidy-N9Tnho/arena/.agent-worktrees/repo
+exit: 0
+command: node bin/atris.js member tidy --dir <fixture copies> (fixture cwd)
+kept  landed-pinned  landed, but pinned by git worktree lock, 3 h old: agent still writing please wait
+tidy: removed 0, kept 1, of 1 copy in /private/var/folders/t1/2_4kmb5n4c71dxm26zc8dgzr0000gn/T/atris-member-tidy-V9CdbR/arena/.agent-worktrees/repo
+exit: 0
+✔ tidy removes landed clean copies and leaves everything else to git and the rules (1227.285542ms)
+✔ tidy asks origin for its current default branch instead of the stale local note (605.685166ms)
+✔ tidy keeps every copy when the running-program scan fails (374.337292ms)
+✔ tidy keeps every copy when origin cannot be fetched (425.189208ms)
+✔ tidy names the git lock file and its age when it keeps a landed copy (586.582417ms)
+✔ all five cleanup paths report paused git work in the same words and keep it (2823.316417ms)
+✔ tidy keeps a landed copy while git is paused mid-rebase in it, and logs what it removes (534.601417ms)
+✔ tidy reports a pin acquired after preflight and leaves the copy registered (1349.661375ms)
+✔ tidy, reap and the regression check flatten a pin reason: "agent still writing" (1212.774417ms)
+✔ tidy, reap and the regression check flatten a pin reason: "agent still\n  writing\tplease wait" (1248.045042ms)
+✔ reap keeps a folder a run is working in, even with --force (143.780291ms)
+✔ reap sees a real live process in the folder without being told (454.075041ms)
+✔ reap names who removed a folder and why (172.735958ms)
+✔ reap summary counts folders removed today and by whom (94.682167ms)
+✔ worktree cleanup names who removed a folder and why (136.46925ms)
+✔ reap keeps a folder while git holds its lock, even with --force (140.772584ms)
+✔ reap says which git work is paused in a folder it keeps (147.806083ms)
+✔ worktree cleanup names the lock holding a folder and how old it is (105.301875ms)
+✔ worktree cleanup names a lock and a paused rebase left in the same folder (107.730542ms)
+✔ worktree cleanup keeps a clean folder paused mid-rebase (102.379167ms)
+✔ reap, worktree cleanup and fleet review name a held lock in the same words (167.022084ms)
+✔ fleet review cleanup keeps a sandbox while git holds its lock (90.921167ms)
+✔ fleet review cleanup says which git work is paused in a copy it keeps (91.120416ms)
+✔ fleet review cleanup keeps a sandbox while git holds its quarantine store (93.280709ms)
+✔ fleet review cleanup keeps a sandbox while git updates a branch in either store (429.021333ms)
+✔ fleet review cleanup keeps every store and names both holds when paused work and a lock sit in different stores (258.319167ms)
+✔ fleet review cleanup names who removed a sandbox and why (117.197292ms)
+✔ autopilot regression check keeps its folder while git holds its lock (136.802875ms)
+✔ autopilot regression check keeps its folder while a run is inside it (174.3845ms)
+✔ autopilot regression check sees a real leftover process without being told (407.521583ms)
+✔ autopilot regression check names who removed its folder and why (139.368958ms)
+✔ autopilot regression check keeps an existing clean folder when creation fails (142.043958ms)
+✔ autopilot regression check keeps an existing dirty folder when creation fails (157.160208ms)
+✔ every work folder removal goes through the git check and the removal log (66.934959ms)
+✔ saved scanner examples reject missed removals in the required checks (66.329584ms)
+✔ a git check that comes late, names another folder, or is ignored does not count as protection (64.084625ms)
+✔ grouped sandbox cleanup exposes every recursive target to the scan (58.674917ms)
+✔ green landing keeps its scratch folder while a test is still running in it, git is busy, or it is pinned (107.690916ms)
+✔ green landing names who removed its scratch folder and why (111.276458ms)
+✔ worktree cleanup names the reason and age of a pinned folder it skips (118.0295ms)
+✔ reap skips a dirty pinned folder before saving its patches, even with --force (176.380958ms)
+✔ fleet review cleanup keeps every store of a pinned copy and names the pin (98.405ms)
+✔ a plain delete after a git removal of the same folder must check its pin first (60.928458ms)
+✔ multiline pin reasons stay on one line in refusal and real cleanup reports (483.824417ms)
+ℹ tests 44
+ℹ suites 0
+ℹ pass 44
+ℹ fail 0
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 10493.892791
+
+exit: 0
+Administrative checks: git diff --check exited 0; readiness reran the required checks with the supported Node runtime, exit 0, and moved the task to Review. Its runtime prefix cannot be auto-certified, so independent review remains required. Brain compile remained a plan-only invocation; no broad instruction files were regenerated. Task commands refreshed atris/TODO.md as a rendered local view; it is not part of this change.
+next_push: prove a last-moment pin survives worktree cleanup with the same report.
+layer: behaviors

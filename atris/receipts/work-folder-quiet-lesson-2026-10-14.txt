@@ -1,0 +1,26 @@
+A cut-off check no longer reads a disposable lesson as a real regression. The required checks passed with exit 0, 60 passed, 0 failed, 3 pending, in about 22 seconds.
+
+Scope: one printed line in the existing late-pin fixture. The lesson is still written and still asserted. The folder is still kept. No production cleanup edits. The checkout already contained an uncommitted fleet refusal gate and a rendered task view. Those edits stay outside this commit.
+
+Plan: real failing fixture -> assert the lesson on disk -> print a plain confirmation -> rerun the required checks and confirm the retroactive regression line is absent.
+
+Changed files: test/member-tidy.test.js, atris/MAP.md, atris/refs/MAP-NOTES.md, atris/team/architect/logs/2026-10-14.md, and this receipt.
+
+Rerun: node --test test/worktree-removal-guard.test.js test/member-tidy.test.js
+
+Verification (actual invocation, exit 0):
+node --test --test-reporter=spec test/worktree-removal-guard.test.js test/member-tidy.test.js
+real 22.34
+ℹ tests 63
+ℹ pass 60
+ℹ fail 0
+ℹ todo 3
+ℹ duration_ms 22285.664292
+
+Real surface excerpt from that run:
+command: node -e "...regressionCheck..." (late-pin git wrapper)
+[{"slug":"late-pin-proof","pass":false,"kept":"remove_failed","held":"pinned by git worktree lock, under a minute old: agent started writing please wait"}]
+exit: 0
+held copy preserved; disposable lesson stayed on disk
+
+Search of that output found no "saved failure" line and no "Retroactive regression" line.

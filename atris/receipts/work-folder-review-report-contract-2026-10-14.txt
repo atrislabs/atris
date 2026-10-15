@@ -1,0 +1,162 @@
+Scope: advisory contract only; production cleanup unchanged.
+Actual shared-helper probe: exit 0
+shared helper: fixture removal refused
+existing caller fallback: undefined
+proposed detail fallback: fixture removal refused
+missing diagnostic fallback: git would not remove it
+
+$ node atris/receipts/work-folder-review-late-pin-probe.js
+{
+  "latePin": false,
+  "gitRemoval": {
+    "status": 0,
+    "stderr": ""
+  },
+  "disposal": {
+    "removed": true
+  },
+  "remaining": {
+    "copy": false,
+    "gitDir": false,
+    "quarantine": false,
+    "sandboxRoot": false
+  },
+  "removalRecords": 1,
+  "trustedProjectUnchanged": true
+}
+control: git removed the idle copy, cleanup cleared its stores and recorded success
+{
+  "latePin": true,
+  "gitRemoval": {
+    "status": 128,
+    "stderr": "fatal: cannot remove a locked working tree, lock reason: review still writing\nuse 'remove -f -f' to override or unlock first\n"
+  },
+  "disposal": {
+    "removed": true
+  },
+  "remaining": {
+    "copy": false,
+    "gitDir": false,
+    "quarantine": false,
+    "sandboxRoot": false
+  },
+  "removalRecords": 1,
+  "trustedProjectUnchanged": true
+}
+confirmed: git refused the pin, all review paths were deleted, and cleanup recorded success
+
+exit: 0
+
+$ node --test test/worktree-removal-guard.test.js test/member-tidy.test.js
+command: node bin/atris.js member tidy --dir <fixture copies> (late-pin git wrapper)
+kept  landed-late-pin  landed, but git refused: pinned by git worktree lock, under a minute old: agent started writing please wait
+tidy: removed 0, kept 1, of 1 copy in /private/var/folders/t1/2_4kmb5n4c71dxm26zc8dgzr0000gn/T/atris-member-tidy-kD1xfw/arena/.agent-worktrees/repo
+exit: 0
+command: node bin/atris.js worktree cleanup --base HEAD --apply (late-pin git wrapper)
+cleanup: applied base=HEAD
+removeds: 0
+cache_pruneds: 0
+kept: 2
+refused: /private/var/folders/t1/2_4kmb5n4c71dxm26zc8dgzr0000gn/T/atris-member-tidy-49boPt/arena/.agent-worktrees/repo/landed-late-pin pinned by git worktree lock, under a minute old: agent started writing please wait
+exit: 0
+command: node bin/atris.js land --reap --base HEAD --no-remote --json (late-pin git wrapper)
+{
+  "base": "HEAD",
+  "ttlDays": 7,
+  "dryRun": false,
+  "bundle": null,
+  "bundleError": null,
+  "patches": [],
+  "untracked": [],
+  "keptWorktrees": [
+    "/private/var/folders/t1/2_4kmb5n4c71dxm26zc8dgzr0000gn/T/atris-member-tidy-50Wuzb/arena/.agent-worktrees/repo/landed-late-pin (pinned by git worktree lock, under a minute old: agent started writing please wait)"
+  ],
+  "keptMovedBranches": [],
+  "removedWorktrees": [],
+  "deletedBranches": [],
+  "deletedRemote": [],
+  "kept": []
+}
+exit: 0
+command: node -e "console.log(JSON.stringify(require(\"/Users/keshavrao/arena/empire/.agent-worktrees/atris-cli/architect-continue-work-folder-protection-acro-20261014-225030/commands/autopilot.js\").regressionCheck(process.cwd(), { activeCwds: [] })))" (late-pin git wrapper)
+[{"hash":"a86268bac746daf99dfffdcf7da6f7ce6d4bbb04","slug":"late-pin-proof","pass":true,"kept":"remove_failed","held":"pinned by git worktree lock, under a minute old: agent started writing please wait","path":"/private/var/folders/t1/2_4kmb5n4c71dxm26zc8dgzr0000gn/T/atris-member-tidy-OJtwcE/arena/repo/.regression-worktree-a86268ba"}]
+exit: 0
+command: node -e "console.log(JSON.stringify(require(\"/Users/keshavrao/arena/empire/.agent-worktrees/atris-cli/architect-continue-work-folder-protection-acro-20261014-225030/commands/autopilot.js\").regressionCheck(process.cwd(), { activeCwds: [] })))" (late-pin git wrapper)
+[{"hash":"ea3d69c94e738810d0979e2240c58b6776cd9eec","slug":"late-pin-proof","pass":false,"kept":"remove_failed","held":"pinned by git worktree lock, under a minute old: agent started writing please wait","path":"/private/var/folders/t1/2_4kmb5n4c71dxm26zc8dgzr0000gn/T/atris-member-tidy-y9LhSD/arena/repo/.regression-worktree-ea3d69c9"}]
+exit: 0
+saved failure: - **[2026-10-15] regression-late-pin-proof** - fail - Retroactive regression: verify command for tick ea3d69c (late-pin-proof) now fails. -5 retroactive penalty applied.
+command: node bin/atris.js member tidy --dir <fixture copies> (fixture cwd)
+kept  landed-pinned  landed, but pinned by git worktree lock, 3 h old: agent still writing
+tidy: removed 0, kept 1, of 1 copy in /private/var/folders/t1/2_4kmb5n4c71dxm26zc8dgzr0000gn/T/atris-member-tidy-e7uNiq/arena/.agent-worktrees/repo
+exit: 0
+command: node bin/atris.js member tidy --dir <fixture copies> (fixture cwd)
+kept  landed-pinned  landed, but pinned by git worktree lock, 3 h old: agent still writing please wait
+tidy: removed 0, kept 1, of 1 copy in /private/var/folders/t1/2_4kmb5n4c71dxm26zc8dgzr0000gn/T/atris-member-tidy-R4XQec/arena/.agent-worktrees/repo
+exit: 0
+✔ tidy removes landed clean copies and leaves everything else to git and the rules (1117.419875ms)
+✔ tidy asks origin for its current default branch instead of the stale local note (564.641916ms)
+✔ tidy keeps every copy when the running-program scan fails (382.849667ms)
+✔ tidy keeps every copy when origin cannot be fetched (409.719625ms)
+✔ tidy names the git lock file and its age when it keeps a landed copy (448.390125ms)
+✔ all five cleanup paths report paused git work in the same words and keep it (2609.091084ms)
+✔ tidy keeps a landed copy while git is paused mid-rebase in it, and logs what it removes (488.88725ms)
+✔ tidy reports a pin acquired after preflight and leaves the copy registered (1190.474708ms)
+✔ cleanup reports a pin acquired after preflight and leaves the copy registered (1221.680125ms)
+✔ reap reports a pin acquired after preflight and leaves the copy registered (1534.810417ms)
+✔ autopilot reports a pin acquired after preflight and leaves the copy registered (601.643ms)
+✔ autopilot-failed reports a pin acquired after preflight and leaves the copy registered (588.636792ms)
+✔ tidy, reap and the regression check flatten a pin reason: "agent still writing" (1187.364208ms)
+✔ tidy, reap and the regression check flatten a pin reason: "agent still\n  writing\tplease wait" (1170.710625ms)
+✔ reap keeps a folder a run is working in, even with --force (139.376083ms)
+✔ reap sees a real live process in the folder without being told (391.954375ms)
+✔ reap names who removed a folder and why (160.684375ms)
+✔ reap summary counts folders removed today and by whom (87.792584ms)
+✔ worktree cleanup names who removed a folder and why (136.789ms)
+✔ reap keeps a folder while git holds its lock, even with --force (135.378917ms)
+✔ reap says which git work is paused in a folder it keeps (138.6ms)
+✔ worktree cleanup names the lock holding a folder and how old it is (95.111791ms)
+✔ worktree cleanup names a lock and a paused rebase left in the same folder (99.32325ms)
+✔ worktree cleanup keeps a clean folder paused mid-rebase (95.834584ms)
+✔ reap, worktree cleanup and fleet review name a held lock in the same words (155.906625ms)
+✔ fleet review cleanup keeps a sandbox while git holds its lock (90.9125ms)
+✔ fleet review cleanup says which git work is paused in a copy it keeps (91.941334ms)
+✔ fleet review cleanup keeps a sandbox while git holds its quarantine store (91.087792ms)
+✔ fleet review cleanup keeps a sandbox while git updates a branch in either store (419.909791ms)
+✔ fleet review cleanup keeps every store and names both holds when paused work and a lock sit in different stores (215.000084ms)
+✔ fleet review cleanup names who removed a sandbox and why (86.669167ms)
+✔ autopilot regression check keeps its folder while git holds its lock (151.078459ms)
+✔ autopilot regression check keeps its folder while a run is inside it (120.114667ms)
+✔ autopilot regression check sees a real leftover process without being told (366.074542ms)
+✔ autopilot regression check names who removed its folder and why (128.164ms)
+✔ autopilot regression check keeps an existing clean folder when creation fails (125.795875ms)
+✔ autopilot regression check keeps an existing dirty folder when creation fails (129.087208ms)
+✔ every work folder removal goes through the git check and the removal log (63.237708ms)
+✔ saved scanner examples reject missed removals in the required checks (63.638333ms)
+✔ a git check that comes late, names another folder, or is ignored does not count as protection (60.787041ms)
+✔ grouped sandbox cleanup exposes every recursive target to the scan (56.133541ms)
+✔ green landing keeps its scratch folder while a test is still running in it, git is busy, or it is pinned (91.223208ms)
+✔ green landing names who removed its scratch folder and why (102.396ms)
+✔ worktree cleanup names the reason and age of a pinned folder it skips (104.371875ms)
+✔ reap skips a dirty pinned folder before saving its patches, even with --force (136.989667ms)
+✔ fleet review cleanup keeps every store of a pinned copy and names the pin (92.697583ms)
+✔ a plain delete after a git removal of the same folder must check its pin first (56.586125ms)
+✔ multiline pin reasons stay on one line in refusal and real cleanup reports (468.662584ms)
+ℹ tests 48
+ℹ suites 0
+ℹ pass 48
+ℹ fail 0
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 13620.274042
+
+exit: 0
+
+Files changed: atris/receipts/work-folder-review-late-pin-decision-2026-10-14.md; atris/MAP.md; atris/refs/MAP-NOTES.md; atris/team/architect/logs/2026-10-14.md; this receipt.
+Rerun: node --test test/worktree-removal-guard.test.js test/member-tidy.test.js
+Progress: one advisory contract; two production sites identified; 48 passed, zero failed; zero production edits.
+Shared-helper probe rerun:
+node -e "const g=require('./commands/worktree'); const r={reason:'removal_refused',detail:g.describeRefusedRemoval('/nonexistent-atris-report-fixture','fatal: fixture removal refused')}; console.log(r.detail); console.log(g.describeGitHold(r)||r.pinned); console.log(r.detail||g.describeGitHold(r)||r.pinned)"
+Observed: fixture removal refused; undefined; fixture removal refused. Exit 0. The asserted probe used a newly created empty temporary directory and removed it afterward.
+next_push: implement the two-site refusal contract after production review, retaining idle disposal and proving late-pin retention.
+layer: capabilities

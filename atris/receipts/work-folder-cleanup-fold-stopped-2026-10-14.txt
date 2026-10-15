@@ -1,0 +1,25 @@
+Scope: architect verdict on two plans, no behavior change.
+
+Plan 1, time limits on land, cleanup, green landing and autopilot removals: stop. Killing git partway through a removal can leave a half-deleted folder still registered, which is worse than a hang that has never been seen. Not built.
+
+Plan 2, fold worktree cleanup's two identical removal blocks into one shared step: stop. Built, then reverted. The removal scan rejected it:
+✖ every work folder removal goes through the git check and the removal log
+  'commands/worktree.js:cleanupWorktrees (line 1480): git check on wt.path only comes after the delete'
+The scan reads each function's text in order and needs the git check before every removal. A shared step defined above the loop breaks that order, so the copy stays and now carries a note saying why.
+
+$ node --test test/worktree-removal-guard.test.js test/member-tidy.test.js
+ℹ tests 57
+ℹ pass 57
+ℹ fail 0
+exit: 0
+
+$ atris worktree cleanup   (preview, removes nothing)
+cleanup: dry-run base=origin/master
+candidates: 1
+exit: 0
+
+Files changed: commands/worktree.js (comment only); atris/team/architect/logs/2026-10-14.md; this receipt.
+Rerun: node --test test/worktree-removal-guard.test.js test/member-tidy.test.js
+Progress: two plans closed with a recorded reason; removal scan unchanged and green; frozen checks 57 passed, zero failed.
+next_push: route review copy disposal through the same shared result reader once protected review clears it.
+layer: beliefs

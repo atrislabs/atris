@@ -1,0 +1,39 @@
+Added caller refusal evidence; three real CLI calls exposed missing explanation, and all 57 required checks passed, exit 0.
+
+Changed: atris/receipts/work-folder-refusal-caller-probe.js;
+atris/receipts/work-folder-completion-runtime-plan-2026-10-14.md;
+atris/MAP.md; atris/refs/MAP-NOTES.md;
+atris/team/architect/logs/2026-10-14.md (this increment only).
+Artifacts: this receipt; work-folder-refusal-caller-tests-2026-10-14.tap.
+
+Command: node atris/receipts/work-folder-refusal-caller-probe.js
+Exit: 0
+ready: exit 1; refusal detail absent
+receipt text: exit 1; refusal detail absent
+verifier failed (exit undefined); receipt written: undefined
+receipt json: exit 1; refusal detail absent
+three real CLI calls, synthetic refusal; no check ran or receipt was written
+
+Only the proposed runner return is synthetic. Actual CLI dispatch, task
+storage, and output are exercised. Production behavior is unchanged.
+
+Rerunnable check: node --test test/worktree-removal-guard.test.js test/member-tidy.test.js
+Exit: 0
+Full output: work-folder-refusal-caller-tests-2026-10-14.tap
+ℹ tests 57
+ℹ pass 57
+ℹ fail 0
+
+Commands: git status, mission status and goal, task list/new/claim/note/ready,
+atris boot, activation and compile previews, targeted reads, real CLI probe,
+required tests, scoped git diff/add/commit/push.
+Readiness first failed on login-selected Node 20; an explicit supported
+Node path reran the probe successfully and moved the task to review.
+Receipt: atris/runs/2026-10-15-task-acw-22-2026-10-15T03-57-49-273Z.json.
+Activation and compile previews exited 2 and wrote no files.
+No acceptance or merge performed. Safe advisory evidence committed and pushed.
+
+Metric: three reporting paths lack the refusal detail; one claims an absent
+receipt was written. Required checks: 57 passed, zero failed.
+next_push: implement paired pre-launch runner refusal and caller explanation with real colon-directory entry checks and ordinary failure controls.
+layer: capabilities

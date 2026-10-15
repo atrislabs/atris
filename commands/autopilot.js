@@ -1201,6 +1201,9 @@ function recordTickCommit(cwd, hash, verifyCmd, slug) {
   fs.writeFileSync(registryPath, JSON.stringify(registry, null, 2) + '\n');
 }
 
+// What the regression check records when a run is still inside its folder.
+const RUN_INSIDE_FOLDER = { reason: 'active_process' };
+
 /**
  * Retroactive regression check. Reads last 10 entries from tick-registry.json,
  * re-runs each verify command at its original commit using git worktree,
@@ -1227,7 +1230,8 @@ function regressionCheck(cwd, { activeCwds } = {}) {
     const worktreePath = path.join(cwd, '.regression-worktree-' + entry.hash.slice(0, 8));
     let created = false;
     let pass = false;
-    let kept = null;
+    let hold = null;
+    let held = null;
     try {
       // Create a worktree at the commit
       execSync(`git worktree add "${worktreePath}" ${entry.hash} --detach 2>/dev/null`, { cwd, stdio: 'pipe' });
@@ -1248,15 +1252,21 @@ function regressionCheck(cwd, { activeCwds } = {}) {
       const guard = require('./worktree');
       // Failed creation does not give us ownership of an existing folder.
       if (created && fs.existsSync(worktreePath)) {
-        kept = guard.worktreeHasActiveProcess(worktreePath, activeCwds || guard.listActiveProcessPaths())
-          ? 'active_process'
-          : guard.worktreeGitActivity(worktreePath);
+        hold = guard.worktreeHasActiveProcess(worktreePath, activeCwds || guard.listActiveProcessPaths())
+          ? RUN_INSIDE_FOLDER
+          : guard.gitHold({ worktree: worktreePath });
+        // A kept folder says why in the words reap and tidy use for the same hold.
+        held = hold && (guard.describeGitHold(hold) || 'a run is still inside it');
       }
-      if (created && fs.existsSync(worktreePath) && !kept) {
+      if (created && fs.existsSync(worktreePath) && !hold) {
         try {
-          execSync(`git worktree remove "${worktreePath}" --force 2>/dev/null`, { cwd, stdio: 'pipe' });
+          execSync(`git worktree remove "${worktreePath}" --force`, { cwd, stdio: 'pipe' });
           guard.recordWorktreeRemoval(cwd, { path: worktreePath, by: 'atris autopilot regression check', reason: 'regression_check_done' });
-        } catch {}
+        } catch (err) {
+          // A refused removal is reported like any other kept folder.
+          hold = { reason: 'remove_failed' };
+          held = guard.describeRemovalResult(worktreePath, err);
+        }
       }
     }
 
@@ -1265,7 +1275,7 @@ function regressionCheck(cwd, { activeCwds } = {}) {
         `Retroactive regression: verify command for tick ${entry.hash.slice(0, 7)} (${entry.slug}) now fails. -5 retroactive penalty applied.`);
     }
 
-    results.push({ hash: entry.hash, slug: entry.slug, pass, ...(kept ? { kept } : {}) });
+    results.push({ hash: entry.hash, slug: entry.slug, pass, ...(hold ? { kept: hold.reason, held, path: worktreePath } : {}) });
   }
 
   return results;
@@ -3778,6 +3788,11 @@ async function autopilotAtris(description, options = {}) {
             if (Array.isArray(registry) && registry.length % 10 === 0) {
               const regressionResults = regressionCheck(cwd);
               const failures = regressionResults.filter(r => !r.pass && !r.skipped);
+              if (verbose) {
+                for (const r of regressionResults.filter(row => row.kept)) {
+                  console.log(`  regression check kept ${r.path}: ${r.held}`);
+                }
+              }
               if (failures.length > 0) {
                 // Apply -5 retroactive penalty per failure via journal note
                 for (const f of failures) {

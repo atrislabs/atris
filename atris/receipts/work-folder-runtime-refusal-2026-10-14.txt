@@ -1,0 +1,79 @@
+Colon-containing Node folders now refuse proof checks before launch. Both real proof runners and three actual task CLI calls passed the refusal regression; the frozen required check passed with 57 tests, zero failures, exit 0.
+
+Edited files:
+- lib/task-proof.js
+- lib/task-receipt.js
+- test/task-proof.test.js
+- atris/receipts/work-folder-paired-runtime-probe.js
+- atris/MAP.md
+- atris/refs/MAP-NOTES.md
+- atris/team/architect/logs/2026-10-14.md
+- atris/receipts/work-folder-runtime-refusal-2026-10-14.txt
+
+Runnable review check:
+node --test test/worktree-removal-guard.test.js test/member-tidy.test.js
+
+Real-surface command:
+node atris/receipts/work-folder-paired-runtime-probe.js
+Exit: 0. Actual output excerpt:
+shared: refused before launch; explanation retained; no command side effect or receipt
+receipt: refused before launch; explanation retained; no command side effect or receipt
+ready: actual CLI exit 1; no check side effect
+could not run the check because the node folder contains a colon
+receipt text: actual CLI exit 1; no check side effect
+verifier failed
+could not run the check because the node folder contains a colon
+receipt json: actual CLI exit 1; no check side effect
+both real runners refused; three actual CLI calls explained refusal; no receipt or review transition
+
+The diagnostic uses copied real Node in a folder containing a colon, spaces,
+and an apostrophe. Runner launch counting proves neither runner starts its
+shell. Three actual CLI calls use the copied runtime and production writers,
+without injected refusal results. Both command validation checks still precede
+the new guard. Generated fixtures alone are removed.
+
+Regression command:
+node --test test/task-proof.test.js test/task-receipt.test.js test/worktree-removal-guard.test.js test/member-tidy.test.js
+Exit: 0. Actual summary:
+tests 79
+pass 79
+fail 0
+cancelled 0
+skipped 0
+todo 0
+
+Failure-preservation command:
+node atris/receipts/work-folder-refusal-caller-probe.js
+Exit: 0. Actual output excerpt:
+three synthetic refusals and three real launch failures kept their explanation; three real failed checks retained receipts
+
+Required proof recording:
+node bin/atris.js task ready ACW-25 --verify "node --test test/worktree-removal-guard.test.js test/member-tidy.test.js" --result "Operators can now see why checks cannot start, so they avoid trusting evidence from the wrong node installation." --landing "Checks from unsupported node folders stop before running and explain why."
+Exit: 0. Actual output:
+verified: `node --test test/worktree-removal-guard.test.js test/member-tidy.test.js` exited 0
+Receipt: atris/runs/2026-10-15-task-acw-25-2026-10-15T04-05-50-952Z.json
+Task is in Review; no agent acceptance was performed.
+
+An initial installed-CLI readiness call selected the old runtime and failed
+10 of 57 checks, exit 1. Its failed receipt is retained at
+atris/runs/2026-10-15-task-acw-25-2026-10-15T04-05-14-698Z.json.
+The source CLI on Node 25 reran the exact required command successfully.
+An initial diagnostic result sentence failed the existing plain-language gate
+before reaching proof execution. The fixture now uses the already accepted
+sentence from the caller diagnostic. No product output rules were changed.
+
+Other commands: atris boot; mission status and goal; task list/new/claim/note;
+git status/log/remote/diff; targeted reads; activation and compile previews;
+git diff --check; scoped commit and push. The previews exited 2 and wrote
+nothing. Existing rendered task changes and pre-existing log edits are preserved.
+
+Metric: two protected runner entry points, three actual CLI refusal paths,
+zero launched checks, zero written proof receipts, zero review transitions;
+79 targeted checks and all 57 frozen checks passed.
+
+Cost: a Node installation whose folder contains a colon cannot run any proof
+command through these runners, including non-Node commands. Use a Node folder
+without a colon. Ordinary-path shell commands remain on their previous paths.
+
+next_push: restore the caller Node directory after login in the shared proof runner, with ordinary-path production regressions for quoting, globs, explicit PATH overrides, and failed checks.
+layer: behaviors

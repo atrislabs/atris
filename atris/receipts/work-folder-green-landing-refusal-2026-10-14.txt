@@ -1,0 +1,33 @@
+Scope: green landing scratch cleanup keeps its folder when git refuses or is stopped at removal. Review copies stay unchanged pending protected review.
+
+$ node --test --test-name-pattern="after a" test/worktree-removal-guard.test.js   (old cleanup code, restored afterward)
+✖ green landing keeps its scratch folder after a pin taken at removal
+✖ green landing keeps its scratch folder after a removal stopped by a signal
+fail 2
+
+$ node --test --test-name-pattern="green landing" test/worktree-removal-guard.test.js
+✔ green landing keeps its scratch folder while a test is still running in it, git is busy, or it is pinned
+✔ green landing names who removed its scratch folder and why
+✔ green landing keeps its scratch folder after a pin taken at removal
+✔ green landing keeps its scratch folder after a removal stopped by a signal
+ℹ pass 4
+ℹ fail 0
+exit: 0
+
+$ node --test test/worktree-removal-guard.test.js test/member-tidy.test.js
+ℹ tests 50
+ℹ pass 50
+ℹ fail 0
+exit: 0
+
+$ node --test test/land-green.test.js
+ℹ tests 16
+ℹ pass 16
+ℹ fail 0
+exit: 0
+
+Files changed: lib/land-green.js; test/worktree-removal-guard.test.js; atris/refs/MAP-NOTES.md; atris/team/architect/logs/2026-10-14.md; this receipt.
+Rerun: node --test test/worktree-removal-guard.test.js test/member-tidy.test.js
+Progress: unchecked removal results down from two cleanup paths to one (review copies, held for protected review); frozen checks 50 passed, zero failed.
+next_push: build the same refusal handling for review copies once protected review clears it, reusing these two wrapper cases.
+layer: behaviors

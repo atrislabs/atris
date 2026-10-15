@@ -34,12 +34,16 @@ function writeFakeEngine(dir, name) {
 }
 
 function runCli(args, { cwd, env = {}, timeout = 6000 } = {}) {
+  // A member run sets its engine in the environment; a smoke flight must
+  // see the house default no matter which engine launched the suite.
+  const base = { ...process.env };
+  delete base.ATRIS_RUNNER_PROFILE;
   const result = spawnSync(process.execPath, [cliPath, ...args], {
     cwd,
     encoding: 'utf8',
     timeout,
     env: {
-      ...process.env,
+      ...base,
       ATRIS_SKIP_UPDATE_CHECK: '1',
       NODE_NO_WARNINGS: '1',
       ...env,

@@ -1,17 +1,17 @@
 ---
-last_compiled: 2026-07-25
+last_compiled: 2026-10-14
 sources:
   - commands/loop.js:1-114 (report builder, dry-run/json/limit, STATUS/log writes)
-  - commands/wiki.js:549-557 (wiki loop alias)
-  - lib/wiki.js:436-619 (page reads, stale checks, orphan checks)
-  - lib/wiki.js:620-705 (suggested sources, STATUS, log)
-  - bin/atris.js:922-940 (showLoopHelp)
-  - bin/atris.js:2743-2751 (top-level loop route, now via commands/loop-front.js)
-  - test/commands.test.js:18016 (loop help coverage)
-  - test/commands.test.js:19715-19784 (loop stale/suggest/alias coverage)
+  - commands/wiki.js:586-595 (wiki loop alias and cloud guidance)
+  - lib/wiki.js:443-573 (page reads, stale checks, orphan checks)
+  - lib/wiki.js:745-829 (suggested sources, STATUS, log)
+  - bin/atris.js:1101-1119 (showLoopHelp)
+  - bin/atris.js:3220-3228 (top-level loop route, now via commands/loop-front.js)
+  - test/commands.test.js:18605 (loop help coverage)
+  - test/commands.test.js:20314-20395 (loop stale/suggest/alias/cloud guidance coverage)
 ---
 
-# Wiki Upkeep Loop — Validation
+# Wiki Upkeep Loop: Validation
 
 > **Status:** shipped local upkeep command; the entry point moved to `atris loop wiki`
 > **Validated:** 2026-07-25
@@ -21,7 +21,7 @@ sources:
 
 - [x] `atris loop wiki` runs against `atris/wiki/`
 - [x] `atris wiki loop` routes to the same upkeep logic
-- [ ] Bare `atris loop` runs wiki upkeep. It no longer does. `bin/atris.js:2743` now routes `loop` to `commands/loop-front.js`, the single front door to the self-improvement loop, which delegates to `run.js` and `pulse.js` and forwards only the `wiki` subcommand to `commands/loop.js`. Bare `atris loop` prints the self-improvement loop home screen. The `loop` help line at `bin/atris.js:543` still describes the old wiki behavior and is now wrong.
+- [x] Help points to the right entry. Bare `atris loop` is now the self-improvement loop front door by design, and both the top-level help and `atris loop --help` say wiki upkeep lives under `loop wiki` (rechecked 2026-10-14). The old wiki-only help line is gone.
 - [x] `--dry-run` reports without rewriting `STATUS.md` or `log.md`
 - [x] `--json` emits the same report object for tools
 - [x] `--limit=N` bounds next-ingest suggestions
@@ -32,6 +32,14 @@ sources:
 - [x] next-ingest suggestions work
 - [x] targeted tests pass
 - [ ] current repo reports a clean public wiki. It does not, as of 2026-07-25: 1 stale page and 1 orphan page. The detector working is the point of this feature; the content debt is tracked on the wiki side.
+
+## Rechecked 2026-10-14
+
+- `node --test --test-name-pattern 'wiki|loop' test/commands.test.js`: exit 0, 33 passed.
+- `node -c` on `commands/loop.js`, `commands/wiki.js`, `lib/wiki.js`, `commands/loop-front.js`: all parse.
+- `atris help --all` shows `loop - Recurring loops front door (wiki upkeep lives under: loop wiki)`; `atris loop --help` exits 0 and lists `atris loop wiki`.
+- `atris loop wiki --dry-run --json` and `atris wiki loop --dry-run` both exit 0 with the same report shape.
+- Page counts depend on the checkout: `atris/wiki/` is ignored by git, so a fresh worktree reports 0 pages and 3 sources ready to ingest, while the 26-page snapshot below is from the main checkout.
 
 ## Current Verification
 
@@ -59,5 +67,5 @@ _Point-in-time snapshot from `node bin/atris.js loop wiki --json` on 2026-07-25 
 ## Notes
 
 - The upkeep command is local-first and does not auto-push.
-- Cloud loop is intentionally not implemented; `atris wiki loop --cloud` exits with guidance to run local upkeep first.
+- Cloud loop is intentionally not implemented; `atris wiki loop --cloud` exits 1 and names `atris loop wiki` as the local upkeep to run first (fixed 2026-10-14; it used to name bare `atris loop`, which no longer runs upkeep).
 - Scheduling belongs to the next layer; this feature just makes upkeep callable and testable.

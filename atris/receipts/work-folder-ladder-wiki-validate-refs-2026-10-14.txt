@@ -1,0 +1,33 @@
+Scope: backstop ladder, rung 2, the wiki validation page. It still pointed at July lines, so the clean preview listed it stale. Reading all nineteen sources turned up two check items the code had moved past: the help line it called wrong is fixed, and the activate item it marked half done now prints a wiki health line.
+
+$ node --test --test-name-pattern 'wiki|loop' test/commands.test.js
+tests 34, pass 34, fail 0
+exit: 0
+
+$ node -c lib/wiki.js; node -c commands/wiki.js; node -c commands/loop.js
+exit: 0 each
+
+$ atris wiki --help; atris wiki verify; atris loop wiki --json   (worktree, wiki folder empty)
+exit: 0 each; loop wiki health "wiki is stable, 3 high-value sources ready for ingest"
+
+$ atris init; plant one stale page; atris loop wiki; atris activate   (scratch folder, empty home)
+init exit 0, briefs folder created
+STATUS.md: - Health: 1 stale page need recompiling
+activate exit 0, line 4: the wiki has pages going stale; refresh them: atris loop wiki
+
+$ atris slop detect atris/features/wiki/validate.md
+clean, no slop tells in 1 file; exit 0
+
+$ atris clean --dry-run --json
+before: stale pages 2 (member standard build, wiki validate)
+after:  exit 0, stale pages 1 (member standard build)
+
+$ node --test test/worktree-removal-guard.test.js test/member-tidy.test.js
+tests 57, pass 57, fail 0
+exit: 0
+
+Files changed: atris/features/wiki/validate.md (nineteen source refs moved, now twenty with help split from dispatch; compile date; two check items closed; title dash removed; dated recheck); atris/team/architect/logs/2026-10-14.md; this receipt. No production change.
+Rerun: atris clean --dry-run --json
+Progress: stale feature pages from 2 to 1; open or half-done items on the wiki page from 2 to 0.
+next_push: recompile the member standard build page, the last stale page, reading each of its twelve refs against current code.
+layer: environment

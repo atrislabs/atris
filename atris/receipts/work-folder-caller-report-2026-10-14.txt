@@ -1,0 +1,61 @@
+# Check failure explanation
+
+Task: ACW-24. Changed commands/task.js to retain refusal detail in ready
+and receipt text, preserve reason/detail/error in receipt JSON, and mention
+exit or receipt path only when present. Ordinary executed failures keep their
+output, exit and saved receipt. The runtime guard is not implemented here.
+
+Edited: commands/task.js; atris/receipts/work-folder-refusal-caller-probe.js;
+atris/MAP.md; atris/refs/MAP-NOTES.md;
+atris/team/architect/logs/2026-10-14.md; this receipt.
+Produced: readiness receipt atris/runs/2026-10-15-task-acw-24-2026-10-15T04-02-15-745Z.json.
+
+Real surface command: node atris/receipts/work-folder-refusal-caller-probe.js
+Exit: 0. Actual output excerpts:
+
+```text
+receipt text: exit 1; refusal detail retained
+verifier failed
+could not run the check because the node folder contains a colon
+receipt text: real launch failure; CLI exit 1; error retained; no receipt
+receipt text: real child exit 7; CLI exit 1; failed receipt retained
+three synthetic refusals and three real launch failures kept their explanation; three real failed checks retained receipts
+```
+
+The proposed colon refusal is injected, explicitly synthetic. Launch failures
+use the production receipt writer and a real missing executable; failed-check
+controls run actual shell commands. All nine actual task CLI calls exit 1,
+retain the expected explanation or failed receipt, and leave the task outside
+review. This is reporting proof, not production colon-path refusal proof.
+
+Required rerun command:
+node --test test/worktree-removal-guard.test.js test/member-tidy.test.js
+Exit: 0. Actual output:
+
+```text
+ℹ tests 57
+ℹ suites 0
+ℹ pass 57
+ℹ fail 0
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 21417.127667
+```
+
+Readiness: the relative node command selected Node 20 and failed, exit 1.
+The explicit caller executable ran the same diagnostic successfully, exit 0,
+and moved ACW-24 into review. No acceptance was performed. The tool reports
+that this proof needs independent review before automatic landing.
+
+Other commands: mission status; git status/diff/log/remotes; Atris boot,
+mission goal and task list/new/claim/note/ready; targeted reads; brain activate
+and compile previews (exit 2, no files written); git diff --check; scoped
+commit and push. Initial readiness result wording was rejected, exit 2,
+before execution; revised plain cause-and-effect wording passed.
+
+Metric: three repaired caller paths; nine actual CLI cases; all 57 required
+tests passed. No dependencies added, and no removal behavior changed.
+
+next_push: implement the reviewed colon-directory refusal in both proof runners with paired real-entry regressions proving no command side effects or passing receipts.
+layer: behaviors
