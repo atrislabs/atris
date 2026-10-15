@@ -79,10 +79,30 @@ function fakeDeps(over = {}) {
   };
 }
 
-test('rsi-record: missing recorder leaves the tick untouched', async () => {
+// Point the holdout salt at a temp file and clear state/guard overrides so a
+// test never touches ~/.atris/rsi_holdout_salt or a real ledger.
+function isolatedEnv(saltDir, over = {}) {
+  const keys = ['ATRIS_RSI_STATE', 'ATRIS_RSI_HOLDOUT_SALT_FILE', rsi.GUARD_ENV];
+  const prev = Object.fromEntries(keys.map((k) => [k, process.env[k]]));
+  delete process.env.ATRIS_RSI_STATE;
+  delete process.env[rsi.GUARD_ENV];
+  process.env.ATRIS_RSI_HOLDOUT_SALT_FILE = path.join(saltDir, 'salt');
+  Object.assign(process.env, over);
+  return () => {
+    for (const k of keys) {
+      if (prev[k] === undefined) delete process.env[k]; else process.env[k] = prev[k];
+    }
+  };
+}
+
+function ledgerRows(file) {
+  return fs.readFileSync(file, 'utf8').split('\n').filter(Boolean).map((l) => JSON.parse(l));
+}
+
+test('rsi-record: no recorder falls back to the built-in writer', async () => {
   const dir = tmpdir('atris-rsi-none-');
+  const restore = isolatedEnv(dir);
   try {
-    assert.equal(rsi.beginAttempt(dir, { lane: 'improve_tick' }), null);
     const { calls, deps } = fakeDeps({
       getApiBaseUrl: () => 'http://127.0.0.1:8000',
       apiRequestJson: async (p, o) => { calls.api.push({ p, o }); return { ok: true, status: 200, data: { reward: 5, what_shipped: 'shipped X', verify_passed: true, files_written: ['x.md'], model_used: 'm' } }; },
@@ -92,12 +112,120 @@ test('rsi-record: missing recorder leaves the tick untouched', async () => {
     assert.equal(res.source, 'api');
     assert.equal(res.summary.reward, 5);
     assert.equal(calls.api.length, 1);
-    // No ledger was minted in a workspace without the recorder.
-    assert.equal(fs.existsSync(path.join(dir, '.atris', 'state', 'rsi')), false);
     assert.equal(fs.existsSync(path.join(dir, 'backend')), false);
+    assert.equal(process.env[rsi.GUARD_ENV], undefined, 'guard cleared after finish');
+
+    const rows = ledgerRows(path.join(dir, '.atris', 'state', 'rsi', 'attempts.jsonl'));
+    assert.equal(rows.length, 2);
+    const [open, fin] = rows;
+    assert.equal(open.schema, 'atris.rsi.node.v1');
+    assert.match(open.id, /^n_[0-9a-f]{12}$/);
+    assert.equal(fin.id, open.id);
+    assert.equal(open.outcome.status, 'running');
+    assert.equal(fin.outcome.status, 'shipped');
+    assert.equal(fin.outcome.verify, 'pass');
+    assert.ok(fin.outcome.files.includes('x.md'));
+    assert.equal(open.lane, 'improve_tick');
+    assert.match(open.tree_id, /^x-\d{4}-\d{2}-\d{2}$/);
+    assert.ok(['train', 'holdout'].includes(open.split));
+    assert.equal(open.opened_at, open.created_at);
+    assert.match(open.created_at, /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}[+-]\d{4}$/);
+
+    // finish preserves everything but the outcome
+    for (const k of ['tree_id', 'lane', 'parent_id', 'split', 'opened_at']) assert.equal(fin[k], open[k], k);
+    assert.deepEqual(fin.context, open.context);
+    assert.deepEqual(fin.action, open.action);
+    assert.ok(fin.recorded_at >= open.recorded_at);
+    assert.deepEqual(Object.keys(open.context).sort(), ['base_commit', 'ground', 'queue_items', 'round', 'slot']);
+
+    // nothing chose this action, so no policy gets credit for it
+    assert.equal(open.action.policy_id, 'p-0000');
+    assert.notEqual(open.action.policy_id, 'p-0001');
+
+    // the salt landed in the temp file, mode 600
+    const salt = path.join(dir, 'salt');
+    assert.match(fs.readFileSync(salt, 'utf8'), /^[0-9a-f]{32}$/);
+    assert.equal(fs.statSync(salt).mode & 0o777, 0o600);
   } finally {
+    restore();
     fs.rmSync(dir, { recursive: true, force: true });
   }
+});
+
+test('rsi-record: same-day trees reuse, split matches the salted sha1', () => {
+  const dir = tmpdir('atris-rsi-split-');
+  const restore = isolatedEnv(dir);
+  try {
+    const a = rsi.beginAttempt(dir, { lane: 'improve_tick' });
+    assert.ok(a);
+    assert.equal(rsi.beginAttempt(dir, { lane: 'improve_tick' }), null, 'nested call records nothing');
+    assert.equal(rsi.finishAttempt(dir, a, { status: 'nothing', verify: 'bogus', reason: 'idle' }), true);
+    const b = rsi.beginAttempt(dir, { lane: 'improve_tick' });
+    rsi.finishAttempt(dir, b, { status: 'failed', verify: 'fail' });
+    assert.equal(b.tree, a.tree);
+
+    const rows = ledgerRows(path.join(dir, '.atris', 'state', 'rsi', 'attempts.jsonl'));
+    assert.equal(rows.length, 4);
+    const salt = fs.readFileSync(path.join(dir, 'salt'), 'utf8').trim();
+    const hex = require('node:crypto').createHash('sha1').update(a.tree + salt).digest('hex');
+    assert.equal(rows[0].split, BigInt(`0x${hex}`) % 5n === 0n ? 'holdout' : 'train');
+    // an invalid verify value is dropped, not written
+    assert.equal(rows[1].outcome.verify, 'skipped');
+    assert.equal(rows[1].outcome.reason, 'idle');
+
+    const latest = rsi.latestNodes(dir);
+    assert.equal(latest.length, 2);
+    assert.deepEqual(latest.map((n) => n.outcome.status).sort(), ['failed', 'nothing']);
+  } finally {
+    restore();
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test('rsi-record: a worktree writes the main checkout ledger', () => {
+  const base = tmpdir('atris-rsi-wt-');
+  const main = path.join(base, 'main');
+  const wt = path.join(base, 'wt');
+  fs.mkdirSync(path.join(main, '.git', 'worktrees', 'wt'), { recursive: true });
+  fs.mkdirSync(wt, { recursive: true });
+  fs.writeFileSync(path.join(wt, '.git'), `gitdir: ${path.join(main, '.git', 'worktrees', 'wt')}\n`);
+  const restore = isolatedEnv(base);
+  try {
+    const a = rsi.beginAttempt(wt, { lane: 'improve_tick' });
+    assert.ok(a);
+    rsi.finishAttempt(wt, a, { status: 'shipped', verify: 'pass' });
+    assert.equal(rsi.attemptsPath(wt), path.join(main, '.atris', 'state', 'rsi', 'attempts.jsonl'));
+    assert.equal(ledgerRows(path.join(main, '.atris', 'state', 'rsi', 'attempts.jsonl')).length, 2);
+    assert.equal(fs.existsSync(path.join(wt, '.atris')), false);
+  } finally {
+    restore();
+    fs.rmSync(base, { recursive: true, force: true });
+  }
+});
+
+test('rsi-record: ATRIS_RSI_STATE wins over the checkout', () => {
+  const dir = tmpdir('atris-rsi-env-');
+  const state = path.join(dir, 'elsewhere');
+  const restore = isolatedEnv(dir, { ATRIS_RSI_STATE: state });
+  try {
+    const a = rsi.beginAttempt(dir, { lane: 'mission' });
+    rsi.finishAttempt(dir, a, { status: 'waiting' });
+    const rows = ledgerRows(path.join(state, 'attempts.jsonl'));
+    assert.match(rows[0].tree_id, /^ms-\d{4}-\d{2}-\d{2}$/);
+    assert.equal(rows[1].outcome.status, 'waiting');
+  } finally {
+    restore();
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test('rsi-record: campaign words map onto one outcome', () => {
+  assert.deepEqual(rsi.campaignOutcome({ result: 'kept', judge: true }), { status: 'shipped', verify: 'pass', reason: '' });
+  assert.deepEqual(rsi.campaignOutcome({ result: 'reverted', judge: false, files: [], reason: 'judge still red' }),
+    { status: 'nothing', verify: 'fail', reason: 'judge still red' });
+  assert.equal(rsi.campaignOutcome({ result: 'reverted', judge: false, files: ['a.js'] }).status, 'failed');
+  assert.equal(rsi.campaignOutcome({ result: 'kept' }).verify, 'skipped');
+  assert.throws(() => rsi.campaignOutcome({ result: 'done' }), TypeError);
 });
 
 test('rsi-record: recorder present opens and finishes a node with sane JSON', async () => {
@@ -128,7 +256,9 @@ test('rsi-record: recorder present opens and finishes a node with sane JSON', as
     // open carried a sane action + context; finish carried a real outcome.
     const openArgs = calls[2].argv;
     const action = JSON.parse(openArgs[openArgs.indexOf('--action-json') + 1]);
-    assert.equal(action.policy_id, 'p-test'); // policy id came from choose.py
+    // choose.py hinted backend/services/ but the tick targeted nothing, so the
+    // policy gets no credit: reserved p-0000, never the p-0001 default.
+    assert.equal(action.policy_id, 'p-0000');
     assert.equal(action.kind, 'open');
     assert.equal(action.engine, 'claude'); // the engine the tick used
     const ctx = JSON.parse(openArgs[openArgs.indexOf('--context-json') + 1]);
@@ -140,6 +270,12 @@ test('rsi-record: recorder present opens and finishes a node with sane JSON', as
     assert.equal(outcome.verify, 'pass');
     assert.ok(outcome.files.includes('x.md'));
     assert.equal(typeof outcome.elapsed_s, 'number');
+
+    // A tick that takes the hinted ground keeps choose's policy id.
+    const steered = rsi.beginAttempt(dir, { lane: 'improve_tick', ground: 'backend/services/' });
+    assert.equal(steered.action.policy_id, 'p-test');
+    assert.equal(steered.hint.ground, 'backend/services/');
+    rsi.finishAttempt(dir, steered, { status: 'nothing' });
   } finally {
     if (prevState === undefined) delete process.env.ATRIS_RSI_STATE; else process.env.ATRIS_RSI_STATE = prevState;
     if (prevLog === undefined) delete process.env.FAKE_RSI_LOG; else process.env.FAKE_RSI_LOG = prevLog;
