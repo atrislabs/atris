@@ -2421,3 +2421,62 @@ with tempfile.TemporaryDirectory(prefix='atris-board-wide-') as folder:
   assert.equal(proof.status, 0, `${proof.stdout}\n${proof.stderr}`);
   if (process.env.ATRIS_BOARD_WIDE_PROOF) fs.writeFileSync(process.env.ATRIS_BOARD_WIDE_PROOF, `${proof.stdout}proof exit: ${proof.status}\n`);
 });
+
+test('a failure reason in wide characters stays inside narrow and short watch screens', { skip: process.platform === 'win32' }, () => {
+  const proof = spawnSync('python3', ['-c', String.raw`
+import datetime, fcntl, os, pathlib, pty, re, select, signal, struct, subprocess, sys, tempfile, termios, time, unicodedata
+
+def cells(line):
+    return sum(0 if unicodedata.combining(c) or unicodedata.category(c) == 'Cf'
+               else 2 if unicodedata.east_asian_width(c) in 'WF' else 1 for c in line)
+
+reason = '登录超时请重新运行'
+# (columns, rows, members that failed, text that must show whole)
+cases = [(36, 8, 1, 'builder  failed   ' + reason), (30, 8, 1, 'builder  failed   登录超时...'),
+         (40, 5, 5, '6 hidden (5 failed, ' + reason + ')'), (30, 5, 5, '6 hidden (5 failed, 1 running)')]
+for width, height, failed, whole in cases:
+    with tempfile.TemporaryDirectory(prefix='atris-board-wide-reason-') as folder:
+        root = pathlib.Path(folder)
+        progress = root / 'progress'
+        progress.mkdir()
+        now = datetime.datetime.now(datetime.timezone.utc).isoformat()
+        for name in ['builder', 'ana', 'bo', 'cy', 'di'][:failed]:
+            (progress / (name + '.log')).write_text(
+                f'{now} m-1 started: fix the login page\n{now} m-1 finished: failed ({reason})\n')
+        (progress / 'scout.log').write_text(f'{now} m-1 started: map the repo\n')
+        master, slave = pty.openpty()
+        fcntl.ioctl(master, termios.TIOCSWINSZ, struct.pack('HHHH', height, width, 0, 0))
+        child = subprocess.Popen([sys.argv[1], sys.argv[2], 'member', 'board', '--watch'],
+            cwd=root, env={**os.environ, 'ATRIS_PROGRESS_DIR': str(progress)}, stdout=slave, stderr=slave)
+        os.close(slave)
+        try:
+            output = b''
+            deadline = time.monotonic() + 15
+            while time.monotonic() < deadline:
+                if select.select([master], [], [], 0.05)[0]:
+                    output += os.read(master, 65536)
+                elif output:
+                    break
+                assert child.poll() is None, (child.returncode, output)
+            text = re.sub(r'\x1b\[[0-9;]*[A-Za-z]', '', output.decode().replace('\r', ''))
+            lines = text.split('\n')
+            assert text.startswith('member'), repr(text)
+            assert len(lines) <= height, repr(text)
+            assert max(map(cells, lines)) <= width, repr(text)
+            assert any(line.startswith(whole) for line in lines), repr(text)
+            print(f'command: node bin/atris.js member board --watch ({width} columns, {height} rows)')
+            print(text)
+            child.send_signal(signal.SIGINT)
+            code = child.wait(timeout=10)
+            print(f'exit: {code}')
+            assert code == 0
+        finally:
+            if child.poll() is None:
+                child.terminate()
+                child.wait(timeout=10)
+            os.close(master)
+`, process.execPath, cliPath], { encoding: 'utf8', timeout: 75_000 });
+  assert.ifError(proof.error);
+  assert.equal(proof.status, 0, `${proof.stdout}\n${proof.stderr}`);
+  if (process.env.ATRIS_BOARD_WIDE_REASON_PROOF) fs.writeFileSync(process.env.ATRIS_BOARD_WIDE_REASON_PROOF, `${proof.stdout}proof exit: ${proof.status}\n`);
+});
