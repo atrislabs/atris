@@ -10622,7 +10622,9 @@ function memberGoFinishTask(owner, task, result, thrown = null) {
   if (!thrown && result && result.started && ['complete', 'ready'].includes(mission.status) && checked) {
     const proof = [`[verified] ${owner} ran mission ${result.mission_id} and its check passed.`,
       receipt ? `Receipt: ${receipt}` : ''].filter(Boolean).join('\n');
-    const ready = taskDb.readyTask(db, { id: task.id, actor: owner, proof });
+    // The commit comes from the member's own work copy, not the main folder.
+    const workRoot = (result.worktree && result.worktree.path) || (mission.worktree && mission.worktree.path) || undefined;
+    const ready = taskDb.readyTask(db, { id: task.id, actor: owner, proof, workRoot });
     if (ready.ready !== false) return { id: task.id, title: task.title, outcome: 'review', receipt: receipt || null };
     // Its change already merged and the merge line closed the job.
     if (taskDb.getTask(db, task.id)?.status === 'done') return { id: task.id, title: task.title, outcome: 'done', receipt: receipt || null };
