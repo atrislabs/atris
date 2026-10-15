@@ -2351,6 +2351,10 @@ function runEngineSweepCommand(args, root, deps = {}) {
   const apply = args.includes('--apply');
   // A test run reads only the home it was handed, never the real one.
   const readsHome = deps.home || !process.env.NODE_TEST_CONTEXT;
+  // Read before this sweep writes its own line, so an agent the last sweep
+  // also could not stop reads as stuck rather than new.
+  const before = apply ? readResourceHistory(root).last_sweep : null;
+  const refusedBefore = new Set(before?.failed || []);
   const result = apply
     ? stopLeakedSshAgents(root, leaked, { read, uid, ...(readsHome ? { startLines: findAgentStartLines(deps.home ? { home: deps.home } : {}) } : {}), ...(deps.kill ? { kill: deps.kill } : {}), ...(deps.now ? { now: deps.now } : {}) })
     : { stopped: [], failed: [], skipped: [] };
@@ -2384,7 +2388,7 @@ function runEngineSweepCommand(args, root, deps = {}) {
     const otherSkipped = result.skipped.length - replaced;
     if (replaced) lines.push(`${replaced} skipped because ${replaced === 1 ? 'a younger ssh-agent now has' : 'younger ssh-agents now have'} the same process number`);
     if (otherSkipped) lines.push(`${otherSkipped} skipped because they were in use or gone on the recheck`);
-    for (const { pid, code: reason } of result.failed) lines.push(`could not stop pid ${pid}: ${reason}`);
+    for (const { pid, code: reason } of result.failed) lines.push(`could not stop pid ${pid}: ${reason}${refusedBefore.has(pid) ? `; the last sweep at ${utcMinute(before.at)} could not stop it either` : ''}`);
     if (result.close_error) lines.push(`could not close lost runs, so unfinished records may remain: ${result.close_error}`);
     else lines.push(`closed ${plural(result.closed_runs.length, 'run')} whose parent is gone`);
     if (scanWarning) lines.push(scanWarning);

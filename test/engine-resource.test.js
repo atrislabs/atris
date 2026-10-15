@@ -5711,3 +5711,44 @@ test('the cleanup listing names the agent the last hourly pass could not stop, a
     fs.rmSync(root, { recursive: true, force: true });
   }
 });
+
+test('the real cleanup command says when the agent it could not stop was also refused by the last sweep', () => {
+  const { spawnSync } = require('node:child_process');
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'sweep-repeat-refusal-'));
+  const preload = path.join(root, 'repeat-refusal.cjs');
+  const cli = path.join(__dirname, '..', 'bin', 'atris.js');
+  const historyFile = path.join(root, RESOURCE_LOG);
+  try {
+    fs.mkdirSync(path.dirname(historyFile), { recursive: true });
+    fs.writeFileSync(preload, `
+      const resource = require(${JSON.stringify(require.resolve('../lib/engine-resource'))});
+      resource.readSshAgents = () => ({
+        agents: [{ pid: 201, ppid: 1, uid: process.getuid(), age_sec: 1800, args: 'ssh-agent -s' }],
+        referenced: new Set(), unread: [],
+      });
+      process.kill = (pid, signal) => {
+        if (pid === 201 && signal === 'SIGTERM') throw Object.assign(new Error('permission denied'), { code: 'EPERM' });
+        throw new Error('unexpected signal');
+      };
+    `);
+    const sweepAfter = (failed) => {
+      fs.writeFileSync(historyFile, JSON.stringify({ at: '2026-10-15T10:00:00.000Z', phase: 'sweep', stopped: [200], failed, skipped: [], leaked_ssh_agents: 1 }) + '\n');
+      const ran = spawnSync(process.execPath, ['--require', preload, cli, 'engine', 'sweep', '--apply'], {
+        cwd: root, encoding: 'utf8', timeout: 30000,
+        env: { ...process.env, ATRIS_AUTO_UPDATE: 'off' },
+      });
+      assert.equal(ran.error, undefined);
+      assert.equal(ran.status, 1, ran.stderr);
+      return ran.stdout;
+    };
+    const stuck = sweepAfter([201]);
+    assert.match(stuck, /^could not stop pid 201: EPERM; the last sweep at 2026-10-15 10:00 UTC could not stop it either$/m);
+    const fresh = sweepAfter([]);
+    assert.match(fresh, /^could not stop pid 201: EPERM$/m, 'a first refusal is not called a repeat');
+    const otherPid = sweepAfter([999]);
+    assert.match(otherPid, /^could not stop pid 201: EPERM$/m, 'a refusal of another agent is not this one');
+    console.log(`repeat refusal, exit 1:\n${stuck.trim()}`);
+  } finally {
+    fs.rmSync(root, { recursive: true, force: true });
+  }
+});
