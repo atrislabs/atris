@@ -378,3 +378,5 @@ Member wake fixture: `test/commands.test.js:1672` uses `lib/member-scaffold.js:1
 Terminal wake fixture: `test/commands.test.js:1769` uses `lib/member-scaffold.js:145` for member setup. Five program launches become four; all real mission, goal and wake checks remain.
 
 Bookkeeping wake fixture: `test/commands.test.js:1799` uses `lib/member-scaffold.js:145` directly for member setup. One program launch is removed; all real wake calls and dirty-file assertions remain.
+
+Scoped steering wake setup: `test/commands.test.js:1862` uses `lib/member-scaffold.js:145` directly for the member fixture. Four program launches become three; both real wake calls and every steering assertion remain.
