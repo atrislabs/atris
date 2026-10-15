@@ -2579,3 +2579,7 @@ Landing capability test setup: `test/commands.test.js:12964` seeds creation and 
 - Review-lanes weak-proof setup: `test/commands.test.js:15612` uses production `claimTask`, asserts success and closes in finally. Eight CLI launches become seven; readiness, review, queue/current selection and both acceptance gates keep every assertion.
 
 - Review-lanes metadata setup: `test/commands.test.js:15622` opens the production task store after CLI review, updates the same five metadata fields and timestamp, and closes in finally. Total child launches fall from eight to seven; seven CLI launches and all assertions remain.
+
+## Review queue hygiene metadata fixture
+
+- `test/commands.test.js:15076` checks generic continuation debt and refuses continuation. Metadata setup at `test/commands.test.js:15112` uses the production task store and closes in finally, preserving the exact field and leaving timestamps unchanged. Child launches fall from six to five; all five CLI calls and assertions remain.

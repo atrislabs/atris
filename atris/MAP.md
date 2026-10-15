@@ -142,3 +142,5 @@ Mission XP weak-proof rejection setup: `test/commands.test.js:15511` keeps creat
 Review-lanes weak-proof setup: `test/commands.test.js:15582` seeds ownership through the production store; readiness, review and all acceptance gates remain on the CLI, removing one launch.
 
 Review-lanes metadata setup: `test/commands.test.js:15622` updates weak proof in process after CLI review, removing one Node launch while retaining all queue and acceptance checks.
+
+Review queue hygiene setup: `test/commands.test.js:15112` injects stale continuation metadata in process, removing one Node launch while retaining queue and continuation CLI checks.

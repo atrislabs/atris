@@ -15108,22 +15108,16 @@ test('task review hygiene reports generic continuation debt without mutation', (
     ], { cwd: dir, env });
     assert.equal(certified.status, 0, certified.stderr);
 
-    const seeded = spawnSync(process.execPath, ['-e', `
-      const { DatabaseSync } = require('node:sqlite');
-      const sqlite = new DatabaseSync(process.argv[1]);
-      try {
-        const row = sqlite.prepare('SELECT metadata FROM tasks WHERE id = ?').get(process.argv[2]);
-        const metadata = JSON.parse(row.metadata || '{}');
-        metadata.latest_agent_next_task = 'Human accept remains pending for XP; next agent-actionable work can continue from OBL-1008.';
-        sqlite.prepare('UPDATE tasks SET metadata = ? WHERE id = ?').run(JSON.stringify(metadata), process.argv[2]);
-      } finally {
-        sqlite.close();
-      }
-    `, dbPath, parent.id], {
-      encoding: 'utf8',
-      env: { ...process.env, NODE_NO_WARNINGS: '1' },
-    });
-    assert.equal(seeded.status, 0, seeded.stderr);
+    // Inject stale continuation metadata; queue and continuation checks stay on the CLI.
+    const db = taskStore.open(dbPath);
+    try {
+      const row = db.prepare('SELECT metadata FROM tasks WHERE id = ?').get(parent.id);
+      const metadata = JSON.parse(row.metadata || '{}');
+      metadata.latest_agent_next_task = 'Human accept remains pending for XP; next agent-actionable work can continue from OBL-1008.';
+      db.prepare('UPDATE tasks SET metadata = ? WHERE id = ?').run(JSON.stringify(metadata), parent.id);
+    } finally {
+      taskStore.close();
+    }
 
     const reviews = runCli(['task', 'reviews', '--json'], { cwd: dir, env });
     assert.equal(reviews.status, 0, reviews.stderr);
