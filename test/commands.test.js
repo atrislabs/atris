@@ -1241,14 +1241,16 @@ test('member goal tick review compounds structured goals and logs', () => {
 
 test('member goal-from-mission creates a bounded goal without a human title', () => {
   const dir = makeTempDir();
+  const dbPath = path.join(dir, 'tasks.db');
+  const env = { ATRIS_TASKS_DB: dbPath, NODE_NO_WARNINGS: '1' };
   try {
     fs.mkdirSync(path.join(dir, 'atris'), { recursive: true });
-    assert.equal(runCli(['member', 'create', 'mission-lead', '--description="Make Missions change the world with self-generated goals"'], { cwd: dir }).status, 0);
+    assert.equal(runCli(['member', 'create', 'mission-lead', '--description="Make Missions change the world with self-generated goals"'], { cwd: dir, env }).status, 0);
     const startedMission = runCli([
       'mission', 'start', '--no-verify', 'Make Missions change the world with self-generated goals',
       '--owner', 'mission-lead',
       '--json',
-    ], { cwd: dir });
+    ], { cwd: dir, env });
     assert.equal(startedMission.status, 0, startedMission.stderr || startedMission.stdout);
     const mission = JSON.parse(startedMission.stdout).mission;
     const missionTaskAdd = runCli([
@@ -1256,13 +1258,17 @@ test('member goal-from-mission creates a bounded goal without a human title', ()
       '--tag', 'mission',
       '--goal-id', mission.id,
       '--json',
-    ], { cwd: dir });
+    ], { cwd: dir, env });
     assert.equal(missionTaskAdd.status, 0, missionTaskAdd.stderr || missionTaskAdd.stdout);
     const missionTask = JSON.parse(missionTaskAdd.stdout).task;
-    const missionTaskClaim = runCli(['task', 'claim', missionTask.display_id, '--as', 'mission-lead'], { cwd: dir });
-    assert.equal(missionTaskClaim.status, 0, missionTaskClaim.stderr || missionTaskClaim.stdout);
+    const db = taskStore.open(dbPath);
+    try {
+      assert.equal(taskStore.claimTask(db, { id: missionTask.id, claimedBy: 'mission-lead' }).claimed, true);
+    } finally {
+      taskStore.close();
+    }
 
-    const goal = runCli(['member', 'goal-from-mission', 'mission-lead', '--json'], { cwd: dir });
+    const goal = runCli(['member', 'goal-from-mission', 'mission-lead', '--json'], { cwd: dir, env });
     assert.equal(goal.status, 0, goal.stderr || goal.stdout);
     const payload = JSON.parse(goal.stdout);
     assert.equal(payload.action, 'goal_from_mission_created');
@@ -1291,7 +1297,7 @@ test('member goal-from-mission creates a bounded goal without a human title', ()
     assert.equal(state.goals[0].source, 'mission');
     assert.match(fs.readFileSync(goalsMdPath, 'utf8'), /not hand-fed by the human/);
 
-    const tick = runCli(['member', 'tick', 'mission-lead', '--goal', payload.goal.id, '--json'], { cwd: dir });
+    const tick = runCli(['member', 'tick', 'mission-lead', '--goal', payload.goal.id, '--json'], { cwd: dir, env });
     assert.equal(tick.status, 0, tick.stderr || tick.stdout);
     const tickPayload = JSON.parse(tick.stdout);
     assert.equal(tickPayload.action, 'tick');
@@ -1300,7 +1306,7 @@ test('member goal-from-mission creates a bounded goal without a human title', ()
     assert.match(tickPayload.experiment.proof_target, /MISSION\.md/);
     assert.match(tickPayload.experiment.next_step, /MISSION\.md/);
 
-    const reused = runCli(['member', 'goal-from-mission', 'mission-lead', '--json'], { cwd: dir });
+    const reused = runCli(['member', 'goal-from-mission', 'mission-lead', '--json'], { cwd: dir, env });
     assert.equal(reused.status, 0, reused.stderr || reused.stdout);
     const reusedPayload = JSON.parse(reused.stdout);
     assert.equal(reusedPayload.action, 'goal_from_mission_reused');

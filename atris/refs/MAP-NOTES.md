@@ -2881,3 +2881,5 @@ Current queue claim setup: `test/commands.test.js:11196` prepares the claimed pl
 Scorecard outcome claim setup: `test/commands.test.js:6376` seeds and claims the accepted row through one production store connection, closed before readiness. One setup launch is removed; all outcome checks remain on the CLI.
 
 Revised outcome claim setup: `test/commands.test.js:6419` seeds and claims the revised row through one production store connection, closed before readiness. One setup launch is removed; every outcome assertion and subsequent CLI check remains.
+
+Member goal claim setup: `test/commands.test.js:1242` prepares the claimed row through the production store in an explicit test database, closed before real goal checks. One setup launch is removed; every goal assertion remains.
