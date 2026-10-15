@@ -19,10 +19,12 @@ Details for any task: atris task show <ID>
 
 ## In Progress
 
-- **[ACW-8]** Prove busy unfinished folders retain staged notes · architect
+(Empty)
 
 ## Review
 
+- **[ACW-8]** Prove busy unfinished folders retain staged notes · architect
+  **Done looks like:** Operators can trust cleanup to preserve staged notes and later edits in busy unfinished folders, reducing the risk of losing work.
 - **[ACW-7]** Prove busy unfinished folders retain unsaved notes · architect
   **Done looks like:** Operators can trust cleanup to preserve unsaved notes in busy unfinished folders because real preview and cleanup now check their contents.
 - **[ACW-6]** Prove busy unfinished copies keep their pin reason · architect
