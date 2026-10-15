@@ -397,6 +397,9 @@ test('the sweep guards a lone agent start in the startup files only when asked, 
     assert.match(fixed.text, /run atris engine sweep --apply to stop the ones already leaked/);
     const again = run(['--fix-startup']);
     assert.strictEqual(again.text, 'left ~/.zshrc line 3 as is: it does more than start an agent, so change it by hand', 'a second run changes nothing');
+    fs.renameSync(path.join(home, backups[0]), path.join(home, '.zshrc'));
+    const json = JSON.parse(run(['--fix-startup', '--json']).text);
+    assert.deepStrictEqual(json.changed.map(({ file, line, fixed_line: fixedLine }) => ({ file, line, fixedLine })), [{ file: '~/.zshrc', line: 2, fixedLine: fs.readFileSync(path.join(home, '.zshrc'), 'utf8').split('\n')[1].trim() }], 'the machine-readable repair carries the whole line the file now holds');
     // The guarded line skips a new agent while a socket is reachable and
     // starts one when none is, in the shell that reads it.
     const bin = path.join(home, 'bin');
