@@ -425,11 +425,20 @@ async function missionTickPrep(root, { mission, runtimeMission, job, prompt, ask
 
 // A tick's time limit: the time left on the mission, capped by the roster
 // line's "max 20 min" when it sets one, else by the default tick cap.
-function missionTickTimeoutMs(mission, remainingMs) {
-  const cap = Number(mission && mission.roster_max_seconds) > 0
+function missionTickCapMs(mission) {
+  return Number(mission && mission.roster_max_seconds) > 0
     ? Number(mission.roster_max_seconds) * 1000
     : MISSION_RUN_DEFAULTS.claudeTimeoutMs;
-  return clampTimeoutMs(remainingMs, cap);
+}
+
+function missionTickTimeoutMs(mission, remainingMs) {
+  return clampTimeoutMs(remainingMs, missionTickCapMs(mission));
+}
+
+// True when the time left on the mission, not the tick's own cap, set the
+// tick's limit, so a kill there means the mission clock ran out.
+function missionTickWallBound(mission, remainingMs) {
+  return remainingMs <= missionTickCapMs(mission);
 }
 
 function resolveMissionTickRunner(mission, root = process.cwd(), options = {}) {
@@ -6878,7 +6887,10 @@ function worktreeReceipt(before, after, { verifier = '', baseline = null } = {})
 const MISSION_RUN_DEFAULTS = {
   maxTicks: 4,
   maxWallSeconds: 3600,
-  claudeTimeoutMs: 10 * 60 * 1000,
+  // Sized from real runs: claude ticks that landed 10/08-10/14 ran a median
+  // 4 min, but 15 of 92 needed more than 10 and the slowest 5% took 17+.
+  // A 10 min cap killed 12 runs at exactly 10:00; 20 min fits 89 of 92.
+  claudeTimeoutMs: 20 * 60 * 1000,
   backoff: { initialMs: 30_000, maxMs: 10 * 60_000, factor: 2, jitter: 0.3 },
 };
 
@@ -10515,7 +10527,7 @@ async function executeMissionRunTicksPhase(context) {
 
         if (!claudeResult.ok) {
           const deadModel = detectUnavailableModel(claudeResult.summary || claudeResult.receipt_text);
-          const wallBoundTimeout = remainingWall * 1000 <= MISSION_RUN_DEFAULTS.claudeTimeoutMs;
+          const wallBoundTimeout = missionTickWallBound(tickRuntimeMission, remainingWall * 1000);
           let reason = claudeResult.reason === 'too-deep'
             ? 'too-deep'
             : claudeResult.timedOut
@@ -12674,6 +12686,7 @@ module.exports = {
   resolveMissionTickRunner,
   resolveMissionTickRunnerModel,
   missionTickTimeoutMs,
+  missionTickWallBound,
   engineFailureHealthStatus,
   recordMissionEngineTickOutcome,
   recordMissionTickRosterRun,
