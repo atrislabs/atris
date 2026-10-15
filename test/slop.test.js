@@ -2482,15 +2482,20 @@ test('fix joins a field value and a "the" clause after a dash with a semicolon',
   // from real repo text: "Top blocker: friction_points, the known failure
   // modes are undocumented" spliced, since one word after a colon is no
   // clause. Past a field's own colon the value joins a "the" clause the way
-  // it joins a pronoun clause.
+  // it joins a pronoun clause. "a", "an", "every", "each" and "this" open
+  // one the same way; a name and a noun phrase keep their comma.
   const file = tmpFile('the-field-clause.md', [
     'Top blocker: friction_points \u2014 the known failure modes are undocumented, so the agent fails.',
     'Bottleneck: unchanged \u2014 the trust-playbook GO stays closed on all five dimensions.',
+    'Top blocker: machine_readable_entrypoint \u2014 an AI agent has no machine-readable entrypoint, so it guesses.',
+    'Owner: Shawn \u2014 a local shop owner.',
   ].join('\n'));
   const { changes } = applyFixes([file], RULES);
   assert.deepEqual(changes.map((c) => c.after), [
     'Top blocker: friction_points; the known failure modes are undocumented, so the agent fails.',
     'Bottleneck: unchanged; the trust-playbook GO stays closed on all five dimensions.',
+    'Top blocker: machine_readable_entrypoint; an AI agent has no machine-readable entrypoint, so it guesses.',
+    'Owner: Shawn, a local shop owner.',
   ]);
 });
 

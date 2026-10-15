@@ -746,12 +746,14 @@ function labelJoin(at, whole) {
 
 // A clause after "the" and a noun joins a field's short value the way a
 // pronoun clause does: "Top blocker: friction_points; the known failure
-// modes are undocumented". The value alone is no clause, so only a label
-// past the field's own colon counts, only before "the", and only where it
+// modes are undocumented". "a", "an", "every", "each" and "this" open
+// one the same way: "machine_readable_entrypoint; an AI agent has no
+// entrypoint". The value alone is no clause, so only a label
+// past the field's own colon counts, only before those, and only where it
 // takes a semicolon; a heading or a question after a field keeps its comma.
 function clauseOrFieldLeft(at, whole) {
   const left = clauseLeft(at, whole);
-  if (left || !/^\s*\u2014\s*the\s/.test(whole.slice(at)) || labelJoin(at, whole) !== '; ') return left;
+  if (left || !/^\s*\u2014\s*(?:the|a|an|every|each|this)\s/.test(whole.slice(at)) || labelJoin(at, whole) !== '; ') return left;
   const label = whole.slice(0, at).split(/:\s/).pop().trim();
   return clauseJoin(label) === '; ' ? label : null;
 }
