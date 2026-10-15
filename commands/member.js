@@ -1342,6 +1342,7 @@ function memberRunWith(name, args, { quiet = false } = {}) {
     console.log(`watch: tail -f ${progressDir}/${String(name).replace(/[^A-Za-z0-9._-]/g, '_')}.log`);
     console.log('board: atris member board --watch');
     console.log('stop: atris member stop <name>');
+    console.log(`where work goes: ${require('../lib/member-autoland').landingDestination(mission.worktree?.path || process.cwd())}`);
   }
 
   const cwd = mission.worktree?.path || process.cwd();
