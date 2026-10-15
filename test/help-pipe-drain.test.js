@@ -24,15 +24,45 @@ out.write = function write(chunk, encoding, cb) {
   if (!timer) timer = setTimeout(flush, 20);
   return false;
 };
+// A full pipe makes writeSync stop short or throw EAGAIN; keep going until
+// every byte is out.
+const nap = new Int32Array(new SharedArrayBuffer(4));
+function writeAll(chunk) {
+  let offset = 0;
+  while (offset < chunk.length) {
+    try {
+      offset += fs.writeSync(1, chunk, offset);
+    } catch (err) {
+      if (err.code !== 'EAGAIN') throw err;
+      Atomics.wait(nap, 0, 0, 5);
+    }
+  }
+}
 function flush() {
   timer = null;
   while (queue.length) {
     const { chunk, cb } = queue.shift();
-    fs.writeSync(1, chunk);
+    writeAll(chunk);
     if (typeof cb === 'function') cb();
   }
 }
 `;
+
+// The shim must deliver every byte even when the pipe is full: a full pipe
+// makes the raw write stop short (macOS) or refuse with EAGAIN (Linux CI).
+test('the slow stdout shim delivers every byte into a full pipe', () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'atris-help-drain-'));
+  try {
+    const shim = path.join(dir, 'slow-stdout.js');
+    fs.writeFileSync(shim, SLOW_STDOUT);
+    const script = `{ "${process.execPath}" --require "${shim}" -e "process.stdout.write('x'.repeat(300000))"; echo "exit=$?" >&2; } | (sleep 0.3; wc -c)`;
+    const run = spawnSync('sh', ['-c', script], { encoding: 'utf8', timeout: 30000 });
+    assert.match(run.stderr, /exit=0/, run.stderr);
+    assert.equal(run.stdout.trim(), '300000');
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
 
 test('help --all prints every line even when stdout drains slowly', () => {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'atris-help-drain-'));
