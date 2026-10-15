@@ -19,7 +19,7 @@ Details for any task: atris task show <ID>
 
 ## In Progress
 
-(Empty)
+- **[ACW-10]** Prove idle landed folders retain staged and unsaved notes · architect
 
 ## Review
 

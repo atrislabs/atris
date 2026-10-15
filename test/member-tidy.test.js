@@ -708,3 +708,66 @@ test('tidy names its own pinned landed copy from the root and a nested folder', 
     fs.rmSync(fx.base, { recursive: true, force: true });
   }
 });
+
+test('tidy preserves staged and unsaved notes in idle landed copies', () => {
+  const fx = makeFixture();
+  try {
+    const pinned = addCopy(fx, 'idle-pinned');
+    const ordinary = addCopy(fx, 'idle-ordinary');
+    const reason = 'writer still active\n  keep these notes';
+    runGit(['worktree', 'lock', '--reason', reason, pinned], fx.repo);
+    const pin = path.join(runGit(['rev-parse', '--absolute-git-dir'], pinned), 'locked');
+    const now = Date.now();
+    const aged = new Date(now - 3 * 60 * 60 * 1000);
+    fs.utimesSync(pin, aged, aged);
+    const words = 'landed, but pinned by git worktree lock, 3 h old: writer still active keep these notes';
+    const before = new Map();
+    for (const copy of [pinned, ordinary]) {
+      fs.writeFileSync(path.join(copy, 'draft.txt'), `notes for ${path.basename(copy)}\n`);
+      fs.appendFileSync(path.join(copy, 'README.md'), 'unsaved edits\n');
+      fs.writeFileSync(path.join(copy, 'staged.txt'), 'prepared notes\n');
+      runGit(['add', 'staged.txt'], copy);
+      fs.appendFileSync(path.join(copy, 'staged.txt'), 'later edits\n');
+      const status = runGit(['status', '--porcelain'], copy);
+      assert.ok(status.includes('?? draft.txt'));
+      assert.ok(status.includes('M README.md'));
+      assert.ok(status.includes('AM staged.txt'));
+      assert.equal(runGit(['show', ':staged.txt'], copy), 'prepared notes');
+      before.set(copy, { status, patch: runGit(['diff', '--cached', '--binary'], copy) });
+    }
+
+    for (const extra of [['--dry-run'], []]) {
+      const args = [path.resolve(__dirname, '../bin/atris.js'), 'member', 'tidy', '--dir', fx.copies, ...extra];
+      const cli = spawnSync(process.execPath, args, { cwd: fx.repo, encoding: 'utf8', timeout: 15000 });
+      console.log(`command: node bin/atris.js member tidy --dir <fixture copies>${extra.length ? ' --dry-run' : ''} (fixture cwd)`);
+      console.log(cli.stdout.trim());
+      console.log(`exit: ${cli.status}`);
+      assert.equal(cli.status, 0, cli.stderr);
+      const lines = cli.stdout.trim().split('\n');
+      assert.ok(lines.some((line) => line.replace(/ {2,}/g, '  ') === `kept  idle-pinned  ${words}`));
+      if (extra.length) {
+        assert.ok(lines.includes('would remove  idle-ordinary  work landed'));
+        assert.equal(lines.at(-1), `tidy: would remove 1, kept 1, of 2 copies in ${fx.copies}`);
+      } else {
+        assert.ok(lines.some((line) => /^kept  idle-ordinary  landed, but git refused:/.test(line)));
+        assert.equal(lines.at(-1), `tidy: removed 0, kept 2, of 2 copies in ${fx.copies}`);
+      }
+      assert.equal(fs.readFileSync(pin, 'utf8'), `${reason}\n`);
+      const registered = runGit(['worktree', 'list', '--porcelain'], fx.repo);
+      for (const copy of [pinned, ordinary]) {
+        const name = path.basename(copy);
+        assert.equal(fs.readFileSync(path.join(copy, 'README.md'), 'utf8'), '# fixture\nunsaved edits\n');
+        assert.equal(fs.readFileSync(path.join(copy, 'draft.txt'), 'utf8'), `notes for ${name}\n`);
+        assert.equal(fs.readFileSync(path.join(copy, 'staged.txt'), 'utf8'), 'prepared notes\nlater edits\n');
+        assert.equal(runGit(['show', ':staged.txt'], copy), 'prepared notes');
+        assert.equal(runGit(['diff', '--cached', '--binary'], copy), before.get(copy).patch);
+        assert.equal(runGit(['status', '--porcelain'], copy), before.get(copy).status);
+        assert.ok(branchExists(fx.repo, name));
+        assert.ok(registered.includes(`worktree ${copy}\n`));
+      }
+      assert.deepEqual(removalLines(fx.repo), []);
+    }
+  } finally {
+    fs.rmSync(fx.base, { recursive: true, force: true });
+  }
+});

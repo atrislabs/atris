@@ -1,0 +1,33 @@
+Idle landed folders now have real CLI checks that staged and unsaved notes survive preview and cleanup.
+
+Files: test/member-tidy.test.js, atris/MAP.md, atris/refs/MAP-NOTES.md, atris/TODO.md, atris/team/architect/logs/2026-10-15.md, this receipt.
+Verify: node --test test/worktree-removal-guard.test.js test/member-tidy.test.js && node bin/atris.js slop --staged
+Progress: two idle landed folders preserve staged contents, later edits, drafts, tracked changes and git status.
+Limitation: preview still lists the ordinary dirty folder for removal; actual cleanup is refused by git.
+next_push: Make cleanup preview retain dirty landed folders so it matches actual cleanup.
+
+Required command exit: 0
+Actual output excerpt:
+command: node bin/atris.js member tidy --dir <fixture copies> --dry-run (fixture cwd)
+would remove  idle-ordinary  work landed
+kept          idle-pinned  landed, but pinned by git worktree lock, 3 h old: writer still active keep these notes
+tidy: would remove 1, kept 1, of 2 copies in /private/var/folders/t1/2_4kmb5n4c71dxm26zc8dgzr0000gn/T/atris-member-tidy-1EjlV1/arena/.agent-worktrees/repo
+exit: 0
+command: node bin/atris.js member tidy --dir <fixture copies> (fixture cwd)
+kept  idle-ordinary  landed, but git refused: 'idle-ordinary' contains modified or untracked files, use --force to delete it
+kept  idle-pinned  landed, but pinned by git worktree lock, 3 h old: writer still active keep these notes
+tidy: removed 0, kept 2, of 2 copies in /private/var/folders/t1/2_4kmb5n4c71dxm26zc8dgzr0000gn/T/atris-member-tidy-1EjlV1/arena/.agent-worktrees/repo
+exit: 0
+
+ℹ tests 74
+ℹ suites 0
+ℹ pass 74
+ℹ fail 0
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 30548.164833
+
+  ✓ clean, no slop tells in 6 files
+
+layer: behaviors
