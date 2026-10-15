@@ -795,6 +795,81 @@ test('watch mode uses the whole screen in one to three terminal rows', async () 
   }
 });
 
+test('the real terminal keeps timeout reasons when watch shrinks and grows', { skip: process.platform === 'win32' }, () => {
+  const proof = spawnSync('python3', ['-c', String.raw`
+import datetime, fcntl, os, pathlib, pty, re, select, signal, struct, subprocess, sys, tempfile, termios, time
+
+with tempfile.TemporaryDirectory(prefix='atris-board-resize-') as folder:
+    root = pathlib.Path(folder)
+    progress = root / 'progress'
+    progress.mkdir()
+    now = datetime.datetime.now(datetime.timezone.utc)
+    for member in ['builder', 'scout', 'shipper']:
+        (root / 'atris/team' / member).mkdir(parents=True)
+        (progress / (member + '.log')).write_text(
+            f'{now.isoformat()} m-1 started: resize proof\n'
+            f'{now.isoformat()} m-1 finished: failed (timed out)\n')
+    master, slave = pty.openpty()
+    def resize(width, height):
+        fcntl.ioctl(master, termios.TIOCSWINSZ, struct.pack('HHHH', height, width, 0, 0))
+    resize(80, 8)
+    child = subprocess.Popen([sys.argv[1], sys.argv[2], 'member', 'board', '--watch'],
+        cwd=root, env={**os.environ, 'ATRIS_PROGRESS_DIR': str(progress)},
+        stdout=slave, stderr=slave)
+    os.close(slave)
+    def frame(width, height, resized=False):
+        started = time.monotonic()
+        output = b''
+        deadline = started + 15
+        while time.monotonic() < deadline:
+            if select.select([master], [], [], 0.05)[0]:
+                output += os.read(master, 65536)
+            elif output:
+                break
+            assert child.poll() is None, (child.returncode, output)
+        assert output, 'no terminal frame arrived'
+        elapsed = time.monotonic() - started
+        text = output.decode().replace('\r', '')
+        assert text.count('\x1b[2J\x1b[H') == 1, repr(text)
+        text = re.sub(r'\x1b\[[0-9;]*[A-Za-z]', '', text)
+        lines = text.split('\n')
+        assert text.startswith('member'), repr(text)
+        assert max(map(len, lines)) <= width, repr(text)
+        assert len(lines) <= height, repr(text)
+        assert 'timed out' in text, repr(text)
+        if height <= 3:
+            assert len(lines) == height, repr(text)
+            assert not text.endswith('\n'), repr(text)
+            assert 'ctrl-c' not in text, repr(text)
+            assert 'failed' in lines[-1] and 'timed out' in lines[-1], repr(text)
+        else:
+            for member in ['builder', 'scout', 'shipper']:
+                assert re.search(r'^' + member + r'\s+done failed', text, re.M), repr(text)
+            assert text.endswith('redraws every 3s, ctrl-c to stop\n'), repr(text)
+        if resized:
+            assert elapsed < 2.5, f'resize waited for periodic redraw: {elapsed}'
+        print(f'command: node bin/atris.js member board --watch ({width} columns, {height} rows)')
+        print(text)
+    try:
+        frame(80, 8)
+        for width, height in [(47, 2), (30, 3), (80, 8)]:
+            resize(width, height)
+            child.send_signal(signal.SIGWINCH)
+            frame(width, height, resized=True)
+        child.send_signal(signal.SIGINT)
+        code = child.wait(timeout=10)
+        print(f'exit: {code}')
+        assert code == 0
+    finally:
+        if child.poll() is None:
+            child.terminate()
+            child.wait(timeout=10)
+        os.close(master)
+`, process.execPath, cliPath], { encoding: 'utf8', timeout: 75_000 });
+  assert.ifError(proof.error);
+  assert.equal(proof.status, 0, `${proof.stdout}\n${proof.stderr}`);
+});
+
 test('a short window keeps the header and the newest rows, and says how many did not fit', () => {
   const logs = {};
   for (let i = 1; i <= 8; i++) logs[`m${i}`] = [`${at(i * 10)} m-${i} started: job ${i}`, `${at(i * 10 - 5)} m-${i} running: step ${i}`];
