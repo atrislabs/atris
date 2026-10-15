@@ -283,6 +283,8 @@ Review selection status batching: `test/commands.test.js:12525` awaits both show
 
 Duplicate selection fixture reuse: `test/commands.test.js:12792` seeds both tasks and readies the checkpoint through one store connection, closed in finally before real CLI checks. One store connection replaces two; all command assertions remain.
 
+Queue filter fixture connection: `test/commands.test.js:15349` seeds, readies and reviews both goal-linked tasks through one store connection, closed in finally before the CLI queue and current reads. One store connection replaces four; every assertion remains.
+
 Certified review fallback read batching: `test/commands.test.js:12603` overlaps the two next reads after certification and before creation. Six sequential CLI stages become five; all assertions remain. Details: `atris/refs/MAP-NOTES.md`.
 
 Final fallback read batching: `test/commands.test.js:12684` awaits next and show together after follow-up creation. Both read unchanged task rows; every assertion remains. Five sequential CLI stages become four.

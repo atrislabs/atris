@@ -15344,61 +15344,38 @@ test('task queue filters certified review rows by continue-work and human-accept
     fs.mkdirSync(path.join(dir, 'atris'), { recursive: true });
 
     // Ready and review are one store call each in the CLI, so both rows reach
-    // review in-process; queue and current filtering stay on the CLI.
-    const storeReadyReview = (task, readyProof, reviewProof, nextTask) => {
-      const db = taskStore.open(dbPath);
-      try {
-        const readied = taskStore.readyTask(db, { id: task.id, actor: 'codex', proof: readyProof, result: FIXTURE_RESULT_SENTENCE });
-        assert.equal(readied.ready, true, readied.reason);
-        const reviewed = taskStore.reviewTask(db, { id: task.id, actor: 'codex-review', reward: 0, proof: reviewProof, nextTask });
-        assert.equal(reviewed.reviewed, true, reviewed.reason);
-      } finally {
-        taskStore.close();
-      }
+    // review in-process through one connection; queue and current filtering stay on the CLI.
+    const workspaceRoot = taskStore.workspaceRoot(dir);
+    const seedReviewed = (db, title, readyProof, reviewProof, nextTask) => {
+      const { id } = addSeedTask(db, { title, tag: 'task', workspaceRoot, metadata: { goal_id: 'OBL-928' } });
+      const display_id = taskStore.taskDisplayRefMap(taskStore.listTasks(db, { workspaceRoot })).get(id);
+      const readied = taskStore.readyTask(db, { id, actor: 'codex', proof: readyProof, result: FIXTURE_RESULT_SENTENCE });
+      assert.equal(readied.ready, true, readied.reason);
+      const reviewed = taskStore.reviewTask(db, { id, actor: 'codex-review', reward: 0, proof: reviewProof, nextTask });
+      assert.equal(reviewed.reviewed, true, reviewed.reason);
+      return { id, display_id };
     };
-    const continueTask = (() => {
-      const db = taskStore.open(dbPath);
-      try {
-        const workspaceRoot = taskStore.workspaceRoot(dir);
-        const { id } = addSeedTask(db, {
-          title: 'Certified task with executable continuation',
-          tag: 'task',
-          workspaceRoot,
-          metadata: { goal_id: 'OBL-928' },
-        });
-        return { id, display_id: taskStore.taskDisplayRefMap(taskStore.listTasks(db, { workspaceRoot })).get(id) };
-      } finally {
-        taskStore.close();
-      }
-    })();
+    let continueTask;
+    let waitingTask;
+    const db = taskStore.open(dbPath);
+    try {
+      continueTask = seedReviewed(
+        db,
+        'Certified task with executable continuation',
+        'node --check test/commands.test.js passed before continue-work filter review',
+        'node --test test/commands.test.js passed during continue-work filter review',
+        'Add the next queue lane filter regression',
+      );
+      waitingTask = seedReviewed(
+        db,
+        'Certified task waiting for human accept only',
+        'node --check test/commands.test.js passed before human-accept filter review',
+        'node --test test/commands.test.js passed during human-accept filter review',
+      );
+    } finally {
+      taskStore.close();
+    }
     const continueRef = continueTask.display_id;
-    storeReadyReview(
-      continueTask,
-      'node --check test/commands.test.js passed before continue-work filter review',
-      'node --test test/commands.test.js passed during continue-work filter review',
-      'Add the next queue lane filter regression',
-    );
-
-    const waitingTask = (() => {
-      const db = taskStore.open(dbPath);
-      try {
-        const workspaceRoot = taskStore.workspaceRoot(dir);
-        const { id } = addSeedTask(db, {
-          title: 'Certified task waiting for human accept only',
-          tag: 'task',
-          workspaceRoot,
-          metadata: { goal_id: 'OBL-928' },
-        });
-        return { id, display_id: taskStore.taskDisplayRefMap(taskStore.listTasks(db, { workspaceRoot })).get(id) };
-      } finally {
-        taskStore.close();
-      }
-    })();
-    storeReadyReview(
-      waitingTask,
-      'node --check test/commands.test.js passed before human-accept filter review',
-      'node --test test/commands.test.js passed during human-accept filter review',
-    );
 
     // These reads derive output from unchanged rows and do not consume the saved view.
     const [continueQueue, waitingQueue, waitingCurrent] = await Promise.all([
