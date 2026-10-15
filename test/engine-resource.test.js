@@ -1064,9 +1064,25 @@ test('atris scout records each engine run with a time limit kill and a crash tol
     fake('echo "it is in lib/fleet.js:1"');
     const answered = scout(30);
     assert.strictEqual(answered.status, 0, answered.stderr);
-    fake('sleep 30');
+    // The slow engine starts its own child, which the time limit must stop too.
+    const helperPid = path.join(root, 'helper.pid');
+    fake(`sleep 30 &\necho $! > "${helperPid}"\nwait`);
+    const slowStarted = Date.now();
     const slow = scout(1);
+    const slowMs = Date.now() - slowStarted;
     assert.strictEqual(slow.status, 1);
+    assert.match(slow.stdout, /timed out after 1s/);
+    // A surviving child holds the output pipe, so the scout would hang until it ends.
+    assert.ok(slowMs < 15000, `a 1s scout time limit returned in ${slowMs} ms, not after the engine's child finished`);
+    const helper = Number(fs.readFileSync(helperPid, 'utf8').trim());
+    assert.ok(helper > 0, 'the fake engine recorded the process it started');
+    const helperAlive = () => { try { process.kill(helper, 0); return true; } catch { return false; } };
+    const stopBy = Date.now() + 3000;
+    while (helperAlive() && Date.now() < stopBy) spawnSync('sleep', ['0.05']);
+    const leftBehind = helperAlive();
+    if (leftBehind) process.kill(helper, 'SIGKILL');
+    assert.strictEqual(leftBehind, false, 'a timed out scout leaves no process the engine started');
+    console.log(`real scout time limit also stopped the engine's own child (pid ${helper})`);
     fake('kill -9 $$');
     const crashed = scout(30);
     assert.strictEqual(crashed.status, 1);
