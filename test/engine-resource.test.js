@@ -323,7 +323,7 @@ test('atris engine sweep names the shell startup line that starts an agent per s
     };
     const leaked = [{ pid: 200, ppid: 1, uid: 501, age_sec: 53414, args: 'ssh-agent -s' }];
     assert.match(sweep(leaked), /likely source: ~\/\.zshrc line 1 starts a new ssh-agent in every shell that reads it/);
-    assert.deepStrictEqual(JSON.parse(sweep(leaked, true)).agent_start_lines.map(({ file, line }) => ({ file, line })), [{ file: '~/.zshrc', line: 1 }]);
+    assert.deepStrictEqual(JSON.parse(sweep(leaked, true)).agent_start_lines, findAgentStartLines({ home }), 'the machine-readable listing carries the fix and the whole fixed line a person sees');
     assert.doesNotMatch(sweep([]), /likely source/, 'no leak, no source line');
   } finally {
     fs.rmSync(home, { recursive: true, force: true });
