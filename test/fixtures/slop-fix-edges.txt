@@ -432,3 +432,10 @@ We dropped it \u2014 the old flags no longer valid, so skip them.
 => We dropped it, the old flags no longer valid, so skip them.
 We fixed it \u2014 pages no longer found.
 => We fixed it, pages no longer found.
+
+# a noun phrase with "still" and an adjective, no verb: the plain clause
+# rule reads the plural noun as a verb ("the old flags") and joins it. A
+# count of this shape after a dash across the real docs found no line
+# like it, so it stays a known gap rather than a guard
+We dropped it \u2014 the old flags still valid for users.
+~> We dropped it, the old flags still valid for users.
