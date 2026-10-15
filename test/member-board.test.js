@@ -1494,12 +1494,22 @@ test('atris member board --json --follow streams one JSON object per line', asyn
     cwd: dir, env: { ...process.env, ATRIS_PROGRESS_DIR: dir },
   });
   let out = '';
+  let stderr = '';
+  let closed = false;
+  const done = new Promise((resolve) => child.once('close', (code, signal) => {
+    closed = true;
+    resolve({ code, signal });
+  }));
+  child.stderr.on('data', (d) => { stderr += d; });
   child.stdout.on('data', (d) => { out += d; });
-  const lines = () => out.split('\n').filter(Boolean).map((l) => JSON.parse(l));
+  // Pipe chunks can end inside a JSON object; only parse newline-ended records.
+  const lines = () => out.split('\n').slice(0, -1).filter(Boolean).map((l) => JSON.parse(l));
   const waitFor = async (n) => {
-    const until = Date.now() + 8000;
-    while (lines().length < n && Date.now() < until) await new Promise((r) => setTimeout(r, 50));
-    return lines();
+    const until = Date.now() + 15_000;
+    while (lines().length < n && !closed && Date.now() < until) await new Promise((r) => setTimeout(r, 50));
+    const got = lines();
+    assert.ok(got.length >= n, `expected ${n} JSON lines, received ${got.length}; closed=${closed}; stdout=${out}; stderr=${stderr}`);
+    return got;
   };
   try {
     const [snapshot] = await waitFor(1);
@@ -1517,8 +1527,8 @@ test('atris member board --json --follow streams one JSON object per line', asyn
     assert.deepEqual(byMember.scout, { member: 'scout', mission: 'm-10', at: now, kind: 'finished', text: 'failed', ok: false });
     assert.equal(child.exitCode, null, 'still following');
   } finally {
-    child.kill('SIGINT');
-    await new Promise((r) => child.once('exit', r));
+    if (!closed) child.kill('SIGINT');
+    await done;
     fs.rmSync(dir, { recursive: true, force: true });
   }
 });

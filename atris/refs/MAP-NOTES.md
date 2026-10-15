@@ -2330,3 +2330,5 @@ npm publish
 - **Every hidden reason named:** `renderBoard()` (`lib/member-board.js:283`) names two or three different hidden failure reasons when none leads and every failure wrote one (`2 failed, timed out and engine error`), with counts on a tie; without room it falls back to the bare count. Regression: `test/member-board.test.js:1286`.
 
 - **Earlier sign-in engine:** `renderBoard()` in `lib/member-board.js` names the old engine in hidden earlier sign-in failures only when the same footer fits. Regression: `test/member-board.test.js:1812`; terminal proof: `python3 atris/runs/member-board-earlier-engine-proof.py`.
+
+- **Live JSON follow check:** `test/member-board.test.js:1489` waits up to 15 seconds for complete newline-ended records and reports early child closure with captured output; cleanup awaits the close listener installed at spawn. Verify: `node --test test/member-board.test.js test/member-result.test.js`.
