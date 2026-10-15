@@ -33,6 +33,7 @@ checks the refs in both files; `atris doc-health --fix-refs` moves drifted ones.
 | task projection file | `commands/task.js` | writes the readable view at .atris/state/tasks.projection.json (local, gitignored) |
 | todo fallback | `lib/todo-fallback.js` | legacy TODO read |
 | mission command | `commands/mission.js` | start, run, tick, complete, error streaks |
+| campaign command and store | `commands/campaign.js:315`, `lib/campaign-core.js:63`, `lib/campaign-store.js:107`, `scripts/campaign-conformance.js` | long goals with a judge, budget, and seats; verbs append events to `.atris/state/atris.db` in the main checkout and every screen folds them; a new campaign's judge must fail first; `npm run validate:campaign` checks all five surfaces against `test/fixtures/campaign/`; `test/campaign-command.test.js` |
 | mission root resolver | `lib/mission-root.js` | workspace root resolved here |
 | engine dispatch runner command | `lib/runner-command.js`, `lib/runner-command.js:331` | builds runner argv, model precedence; each profile says whether it takes a pinned model and which effort words map to its own flag; codex and grok run only their own models, so `runnerModelFor` (`lib/runner-command.js:248`) drops a claude name for them, by profile or by bin name |
 | engine profiles defined | `lib/engine-registry.js`, `lib/runner-command.js`, `lib/engine-ask.js` | profile-name list and launch paths, including mercury 3 test model |

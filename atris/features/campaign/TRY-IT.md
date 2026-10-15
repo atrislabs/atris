@@ -4,7 +4,8 @@ Campaign is the struct for long-horizon work: a goal with a judge, a budget, and
 
 ## What exists today
 
-- **The core, in atris-cli.** A schema (`lib/campaign-schema.js`), a pure fold and decide (`lib/campaign-core.js`), and a SQLite event store (`lib/campaign-store.js`). No CLI verbs yet; that is Phase 2 in `build.md`.
+- **The core, in atris-cli.** A schema (`lib/campaign-schema.js`), a pure fold and decide (`lib/campaign-core.js`), and a SQLite event store (`lib/campaign-store.js`).
+- **`atris campaign` commands** (branch `campaign/phase2-cli-verbs`): list, start, show, judge, seat, bet, budget, pause, resume, stop, and a by-hand `event` verb, each with `--json`.
 - **One contract for every surface.** `test/fixtures/campaign/README.md` says how events become state. 20 golden files and 14 decide cases prove it, pinned by `MANIFEST.json`.
 - **A judge across five repos.** `npm run validate:campaign` checks that the CLI and backend fold events identically, and that desktop, web, and terrace decode the result identically.
 - **Five branches, one per repo:**
@@ -55,9 +56,23 @@ node scripts/campaign-conformance.js \
 
 Expect five `pass` lines and `judge passes`. Remove the try copies afterward with `git -C ../<repo> worktree remove ../.try-<repo>`.
 
-## 3. Drive a campaign by hand
+## 3. Drive a campaign from the terminal
 
-There are no `atris campaign` verbs yet, so use the library. Save this as `try-campaign.js` in the atris-cli root and run `node try-campaign.js`:
+On the `campaign/phase2-cli-verbs` branch, point the store at a scratch file so you do not touch real campaigns, then play:
+
+```bash
+export ATRIS_CAMPAIGN_DB=/tmp/try-campaign.db
+node bin/atris.js campaign start "Try it" --judge "echo two of five; exit 1" --budget 20 --id cmp-try
+node bin/atris.js campaign start "Too easy" --judge true --budget 5     # refused: write a judge that fails first
+node bin/atris.js campaign seat cmp-try validator
+node bin/atris.js campaign event cmp-try mission_started --data '{"mission_id":"m1","member":"builder"}'
+node bin/atris.js campaign event cmp-try mission_ended --data '{"mission_id":"m1","outcome":"kept","cost_usd":4.4}'
+node bin/atris.js campaign show cmp-try          # next: run the judge, because a mission ended
+node bin/atris.js campaign judge cmp-try
+node bin/atris.js campaign                       # every campaign and its next move
+```
+
+Or drive the library directly. Save this as `try-campaign.js` in the atris-cli root and run `node try-campaign.js`:
 
 ```js
 const path = require('path');
