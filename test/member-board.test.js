@@ -2357,3 +2357,67 @@ test('live follow detects an in-place log rewrite that grows past the reading po
     fs.rmSync(dir, { recursive: true, force: true });
   }
 });
+
+test('wide characters in a job or step never push a watch row past the window', { skip: process.platform === 'win32' }, () => {
+  const proof = spawnSync('python3', ['-c', String.raw`
+import datetime, fcntl, os, pathlib, pty, re, select, signal, struct, subprocess, sys, tempfile, termios, time, unicodedata
+
+def cells(line):
+    return sum(0 if unicodedata.combining(c) or unicodedata.category(c) == 'Cf'
+               else 2 if unicodedata.east_asian_width(c) in 'WF' else 1 for c in line)
+
+with tempfile.TemporaryDirectory(prefix='atris-board-wide-') as folder:
+    root = pathlib.Path(folder)
+    progress = root / 'progress'
+    progress.mkdir()
+    now = datetime.datetime.now(datetime.timezone.utc).isoformat()
+    log = progress / 'builder.log'
+    log.write_text(f'{now} m-1 started: 修复登录页面的错误并添加测试用例\n{now} m-1 reading 配置文件和路由表以及所有相关模块\n')
+    master, slave = pty.openpty()
+    width, height = 80, 6
+    fcntl.ioctl(master, termios.TIOCSWINSZ, struct.pack('HHHH', height, width, 0, 0))
+    child = subprocess.Popen([sys.argv[1], sys.argv[2], 'member', 'board', '--watch'],
+        cwd=root, env={**os.environ, 'ATRIS_PROGRESS_DIR': str(progress)}, stdout=slave, stderr=slave)
+    os.close(slave)
+    def frame():
+        output = b''
+        deadline = time.monotonic() + 15
+        while time.monotonic() < deadline:
+            if select.select([master], [], [], 0.05)[0]:
+                output += os.read(master, 65536)
+            elif output:
+                break
+            assert child.poll() is None, (child.returncode, output)
+        text = re.sub(r'\x1b\[[0-9;]*[A-Za-z]', '', output.decode().replace('\r', ''))
+        lines = text.split('\n')
+        assert text.startswith('member'), repr(text)
+        assert len(lines) <= height, repr(text)
+        assert max(map(cells, lines)) <= width, repr(text)
+        row = next(l for l in lines if l.startswith('builder'))
+        # Columns line up by screen cells, not letters.
+        assert cells(row[:row.index('修复')]) == lines[0].index('job'), repr(text)
+        step = re.search(r'reading|running', row).start()
+        assert cells(row[:step]) == lines[0].index('last step'), repr(text)
+        print(f'command: node bin/atris.js member board --watch ({width} columns, {height} rows)')
+        print(text)
+        return row
+    try:
+        assert '修复' in frame()
+        # A step streams in while the board watches: emoji and a joined emoji.
+        with log.open('a') as out:
+            out.write(f'{now} m-1 running \U0001F680 部署 \U0001F469\u200d\U0001F4BB 检查所有服务的状态和日志输出\n')
+        assert 'running \U0001F680' in frame()
+        child.send_signal(signal.SIGINT)
+        code = child.wait(timeout=10)
+        print(f'exit: {code}')
+        assert code == 0
+    finally:
+        if child.poll() is None:
+            child.terminate()
+            child.wait(timeout=10)
+        os.close(master)
+`, process.execPath, cliPath], { encoding: 'utf8', timeout: 45_000 });
+  assert.ifError(proof.error);
+  assert.equal(proof.status, 0, `${proof.stdout}\n${proof.stderr}`);
+  if (process.env.ATRIS_BOARD_WIDE_PROOF) fs.writeFileSync(process.env.ATRIS_BOARD_WIDE_PROOF, `${proof.stdout}proof exit: ${proof.status}\n`);
+});
