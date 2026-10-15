@@ -21,6 +21,7 @@ const STATE_ORDER = ['needs_you', 'running', 'queued', 'paused', 'resting', 'out
 
 function printHelp() {
   console.log('Usage:');
+  console.log('  atris campaign "<goal as a sentence>" --judge "<cmd>"   begin a campaign from one sentence; every flag below works here too');
   console.log('  atris campaign                         every campaign: state, money, and the next move');
   console.log('  atris campaign start "<title>" --judge "<cmd>" [--budget <dollars>]');
   console.log('        [--owner <member>] [--seat <member>[:<role>]]... [--bet "<bet>" [--wrong-if "<what proves it wrong>"]]');
@@ -200,7 +201,7 @@ function requireCampaign(ctx, id) {
 
 function renderList(views) {
   if (!views.length) {
-    return 'No campaigns yet. Start one:\n  atris campaign start "<title>" --judge "<command that fails today>" --budget <dollars>';
+    return 'No campaigns yet. Start one:\n  atris campaign "<goal as a sentence>" --judge "<command that fails today>"';
   }
   const sorted = views.slice().sort((a, b) => STATE_ORDER.indexOf(a.state) - STATE_ORDER.indexOf(b.state));
   const lines = [];
@@ -553,8 +554,11 @@ function campaignCommand(args = [], deps = {}) {
     return 0;
   }
   const handler = VERBS[verb];
-  if (!handler) return ctx.fail(`unknown verb ${verb}. Verbs: ${Object.keys(VERBS).join(', ')}`);
-  return handler(args, ctx);
+  if (handler) return handler(args, ctx);
+  // A sentence where the verb goes is a title: it starts a campaign with the
+  // same flags as start. One word is more likely a mistyped verb, so it is not.
+  if (/\s/.test(verb.trim())) return cmdStart(['start', ...args], ctx);
+  return ctx.fail(`unknown verb ${verb}. Verbs: ${Object.keys(VERBS).join(', ')}. To start a campaign, write the goal as a sentence: atris campaign "<goal>" --judge "<cmd>"`);
 }
 
 module.exports = { campaignCommand, renderShow, runJudgeCommand };

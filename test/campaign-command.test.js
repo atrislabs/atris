@@ -258,3 +258,21 @@ test('set-judge: only the owner or a person, and the new judge must fail first',
   assert.equal(view.judge_due, false);
   assert.equal(view.answer.text, '0 of 4 live');
 });
+
+test('a plain sentence with no verb starts a campaign; verbs stay verbs and one-word typos are refused', async () => {
+  const store = createMemoryStore();
+  const started = await run(store, ['Make the moon landing replay load fast', '--judge', 'exit 1', '--seat', 'builder', '--id', 'cmp-moon']);
+  assert.equal(started.code, 0, started.err);
+  assert.deepEqual(started.judged, ['exit 1']);
+  const view = getCampaign(store, 'cmp-moon');
+  assert.equal(view.title, 'Make the moon landing replay load fast');
+  assert.deepEqual(view.seats, [{ member: 'builder', role: null }]);
+  assert.equal((await run(store, ['A sentence with no judge'])).code, 2);
+  const shown = await run(store, ['show', 'cmp-moon']);
+  assert.equal(shown.code, 0);
+  assert.equal((await run(store, ['show', 'cmp-missing'])).code, 1);
+  const typo = await run(store, ['shwo', 'cmp-moon']);
+  assert.equal(typo.code, 2);
+  assert.match(typo.err, /unknown verb shwo/);
+  assert.equal(getCampaign(store, 'cmp-shwo'), null);
+});
