@@ -14147,13 +14147,14 @@ test('claiming an already-done task suggests the next open task from the same ta
   try {
     fs.mkdirSync(path.join(dir, 'atris'), { recursive: true });
 
-    // Seed only the three tasks; claim, finish, and every suggestion check still use the CLI.
+    // Seed the three tasks and each setup claim and finish; every suggestion check still uses the CLI.
     // Display refs are numbered across the workspace, so compute them after all inserts.
+    let ids;
     let refs;
     const db = taskStore.open(dbPath);
     try {
       const workspaceRoot = taskStore.workspaceRoot(dir);
-      const ids = [
+      ids = [
         ['Ship the widget', 'speedy'],
         ['Ship the other widget', 'speedy'],
         ['Unrelated open task', 'other'],
@@ -14170,11 +14171,20 @@ test('claiming an already-done task suggests the next open task from the same ta
       taskStore.close();
     }
     const [doneRef, sameTagRef, otherTagRef] = refs;
+    const [doneId, sameTagId, otherTagId] = ids;
+    const seedOwner = (id, finish) => {
+      const db = taskStore.open(dbPath);
+      try {
+        assert.equal(taskStore.claimTask(db, { id, claimedBy: 'codex' }).claimed, true);
+        if (finish) {
+          assert.equal(taskStore.doneTask(db, { id, status: 'done', actor: 'codex', proof: 'node --test' }).updated, true);
+        }
+      } finally {
+        taskStore.close();
+      }
+    };
 
-    assert.equal(runCli(['task', 'claim', doneRef, '--as', 'codex'], { cwd: dir, env }).status, 0);
-    const finish = runCli(['task', 'finish', doneRef, '--proof', 'node --test', '--as', 'codex', '--json'], { cwd: dir, env });
-    assert.equal(finish.status, 0, finish.stderr);
-    assert.equal(JSON.parse(finish.stdout).task.status, 'done');
+    seedOwner(doneId, true);
 
     // Stale render: an agent still holding an old atris/TODO.md tries to
     // claim the now-done task.
@@ -14192,15 +14202,13 @@ test('claiming an already-done task suggests the next open task from the same ta
     assert.match(claimHuman.stderr, new RegExp(`next claimable: ${sameTagRef} .*atris task claim ${sameTagRef} --as sonnet`));
 
     // Once the same-tag task is also gone, fall back to any open task.
-    assert.equal(runCli(['task', 'claim', sameTagRef, '--as', 'codex'], { cwd: dir, env }).status, 0);
-    const finish2 = runCli(['task', 'finish', sameTagRef, '--proof', 'node --test', '--as', 'codex', '--json'], { cwd: dir, env });
-    assert.equal(finish2.status, 0, finish2.stderr);
+    seedOwner(sameTagId, true);
     const claimFallback = runCli(['task', 'claim', doneRef, '--as', 'sonnet', '--json'], { cwd: dir, env });
     const fallbackPayload = JSON.parse(claimFallback.stdout);
     assert.equal(fallbackPayload.next_claimable.ref, otherTagRef);
 
     // Once every task is claimed/done, there is nothing left to suggest.
-    assert.equal(runCli(['task', 'claim', otherTagRef, '--as', 'codex'], { cwd: dir, env }).status, 0);
+    seedOwner(otherTagId, false);
     const claimNoneLeft = runCli(['task', 'claim', doneRef, '--as', 'sonnet', '--json'], { cwd: dir, env });
     assert.equal(JSON.parse(claimNoneLeft.stdout).next_claimable, null);
   } finally {
