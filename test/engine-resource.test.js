@@ -1330,7 +1330,14 @@ test('every launch of an engine program by name records its run or is named as e
     "spawnSync('claude', ['-p', b]);",
   ].join('\n');
   assert.deepStrictEqual(unrecorded('commands/planted.js', recordedThenBare), ['commands/planted.js:23 claude']);
+  // An exempt file must still launch an engine by name, or its entry is
+  // stale and would hide the next launch added there.
+  const launchesIn = (text) => [...stripComments(text).matchAll(ENGINE_LAUNCH)].filter((match) => !isProbe(match[2])).map((match) => match[1]);
+  assert.deepStrictEqual(launchesIn("spawnSync('codex', ['--full-auto', ...extraArgs]);\n"), ['codex']);
+  assert.deepStrictEqual(launchesIn("// spawnSync('codex', ['--full-auto']);\nspawnSync('codex', ['--version']);\n"), [], 'a comment or a probe does not keep an exemption alive');
   const repo = path.join(__dirname, '..');
+  const staleFiles = [...LAUNCH_EXEMPT_FILES.keys()].filter((rel) => !fs.existsSync(path.join(repo, rel)) || !launchesIn(fs.readFileSync(path.join(repo, rel), 'utf8')).length);
+  assert.deepStrictEqual(staleFiles, [], 'an exempt file no longer launches an engine by name; remove its entry');
   const missing = [];
   let launches = 0;
   for (const dir of ['commands', 'lib']) {
