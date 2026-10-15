@@ -1407,6 +1407,13 @@ test('worktree cleanup quietly refreshes an outdated base and keeps staged notes
     fs.symlinkSync('replacement-outline.txt', converted);
     assert.match(runGit(['ls-files', '--stage', '--', 'saved-outline.txt'], copy), /^100644 /);
     assert.match(runGit(['status', '--porcelain', '--', 'saved-outline.txt'], copy), /^AT /);
+    const restored = path.join(copy, 'saved-link');
+    fs.symlinkSync('first-outline.txt', restored);
+    runGit(['add', 'saved-link'], copy);
+    fs.unlinkSync(restored);
+    fs.writeFileSync(restored, 'later regular outline\n');
+    assert.match(runGit(['ls-files', '--stage', '--', 'saved-link'], copy), /^120000 /);
+    assert.match(runGit(['status', '--porcelain', '--', 'saved-link'], copy), /^AT /);
     const binary = path.join(copy, 'drawing.bin');
     const savedBytes = Buffer.from([0, 255, 10, 128, 13]);
     const laterBytes = Buffer.from([0, 254, 10, 129, 13, 0]);
@@ -1458,6 +1465,10 @@ test('worktree cleanup quietly refreshes an outdated base and keeps staged notes
       assert.equal(fs.readlinkSync(converted), 'replacement-outline.txt');
       assert.equal(runGit(['show', ':saved-outline.txt'], copy), 'saved regular outline');
       assert.match(runGit(['ls-files', '--stage', '--', 'saved-outline.txt'], copy), /^100644 /);
+      assert.equal(fs.lstatSync(restored).isFile(), true);
+      assert.equal(fs.readFileSync(restored, 'utf8'), 'later regular outline\n');
+      assert.equal(runGit(['show', ':saved-link'], copy), 'first-outline.txt');
+      assert.match(runGit(['ls-files', '--stage', '--', 'saved-link'], copy), /^120000 /);
       assert.deepEqual(fs.readFileSync(binary), laterBytes);
       const savedBinary = spawnSync('git', ['show', ':drawing.bin'], { cwd: copy });
       assert.equal(savedBinary.status, 0);

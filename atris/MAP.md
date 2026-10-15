@@ -269,3 +269,5 @@ Ready reply receipt link: `commands/task.js:10260` returns the saved receipt pat
 Healthy cleanup link proof: `test/member-tidy.test.js:1403` runs real preview and apply with distinct staged and later symbolic link destinations, preserving both along with the full staged tree.
 
 Healthy cleanup file-to-link proof: `test/member-tidy.test.js:1409` runs real preview and apply after a staged regular file becomes a symbolic link, preserving the saved contents and regular-file mode, replacement link, full staged tree and folder registration.
+
+Healthy cleanup link-to-file proof: `test/member-tidy.test.js:1418` runs real preview and apply after a staged link becomes a regular file, preserving the saved link target and mode, later file bytes, full staged tree and folder registration.
