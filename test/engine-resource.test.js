@@ -3248,7 +3248,7 @@ test('the landing status counts leaked ssh-agents, says how they get stopped, an
     const original = console.log;
     console.log = (line = '') => out.push(String(line));
     try {
-      showStatus(root, [], deps);
+      showStatus(root, [], deps && { atrisCommand: 'atris', ...deps });
     } finally {
       console.log = original;
     }
@@ -3258,6 +3258,8 @@ test('the landing status counts leaked ssh-agents, says how they get stopped, an
     require('node:child_process').spawnSync('git', ['init', '-q'], { cwd: root });
     const leaked = status({ readSshAgents: () => ({ agents: [agent(200), agent(201), agent(202)], referenced: new Set([202]) }), uid: 501 });
     assert.match(leaked, /leaked ssh-agents on this machine: 2; stop them now: atris engine sweep --apply/);
+    const elsewhere = status({ readSshAgents: () => ({ agents: [agent(200)], referenced: new Set() }), uid: 501, atrisCommand: 'node ~/checkout/bin/atris.js' });
+    assert.match(elsewhere, /stop them now: node ~\/checkout\/bin\/atris\.js engine sweep --apply/, 'the stop command names the checkout when the atris on PATH is another install');
     // A live hourly pass stops them only when its receipt shows a sweep ran.
     const runsDir = path.join(root, 'atris', 'runs');
     fs.mkdirSync(runsDir, { recursive: true });
@@ -3291,7 +3293,7 @@ test('the landing status names an unreadable agent scan instead of showing no le
     const original = console.log;
     console.log = (line = '') => out.push(String(line));
     try {
-      showStatus(root, [], deps);
+      showStatus(root, [], deps && { atrisCommand: 'atris', ...deps });
     } finally {
       console.log = original;
     }

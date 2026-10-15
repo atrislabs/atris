@@ -9,7 +9,7 @@ const autoland = require('../lib/autoland');
 const { gateForHuman, plainLandingReason } = require('../lib/voice-gate');
 const { evaluateAutoAccept } = require('../lib/auto-accept-certified');
 const { sweepEngineAskReceipts } = require('../lib/engine-receipt-sweep');
-const { readSshAgents, findLeakedSshAgents, findAgentStartLines, agentStartLineText, fixStartupHint, stopLeakedSshAgents, closeLostRuns, readResourceHistory, errorReason, leakGrowthNote, matchLeakedToRuns, leakedRunsText } = require('../lib/engine-resource');
+const { readSshAgents, findLeakedSshAgents, findAgentStartLines, agentStartLineText, atrisCommand, fixStartupHint, stopLeakedSshAgents, closeLostRuns, readResourceHistory, errorReason, leakGrowthNote, matchLeakedToRuns, leakedRunsText } = require('../lib/engine-resource');
 const { validateRecentAskReceipts } = require('../lib/engine-validate');
 const { operatorReady, hasAgentJargon, explainResult } = autoland;
 const MISSION_AUTO_VERIFY_STATUSES = new Set(['planning', 'paused', 'ready']);
@@ -561,18 +561,19 @@ function showStatus(root, args, deps = {}) {
   const startLines = deps.home || !process.env.NODE_TEST_CONTEXT ? findAgentStartLines(deps.home ? { home: deps.home } : {}) : [];
   const unchecked = unreadAgents.length ? `could not read the ${unreadAgents.join(' or the ')}, so some ssh-agents went unchecked` : '';
   if (leakedAgents) {
+    const cli = deps.atrisCommand || atrisCommand();
     const stop = !heartbeatLive
-      ? 'stop them now: atris engine sweep --apply'
+      ? `stop them now: ${cli} engine sweep --apply`
       : autoland.heartbeatSweepsAgents(root)
         ? leakedAgents > HOURLY_SSH_AGENT_STOP_LIMIT
-          ? `the next hourly pass stops only the oldest ${HOURLY_SSH_AGENT_STOP_LIMIT}, so stop the rest now: atris engine sweep --apply`
+          ? `the next hourly pass stops only the oldest ${HOURLY_SSH_AGENT_STOP_LIMIT}, so stop the rest now: ${cli} engine sweep --apply`
           : 'the next hourly pass stops them'
-        : 'the hourly pass runs a version without the ssh-agent cleanup, so stop them now: atris engine sweep --apply';
+        : `the hourly pass runs a version without the ssh-agent cleanup, so stop them now: ${cli} engine sweep --apply`;
     console.log(`  leaked ssh-agents on this machine: ${unchecked ? 'at least ' : ''}${leakedAgents}${leakGrowthNote(lost.first_day_leak_reading, leakedAgents)}; ${stop}${unchecked ? `; ${unchecked}` : ''}`);
     const runsText = leakedRunsText(matchLeakedToRuns(root, leakedList), { startLine: startLines.length > 0 });
     if (runsText) console.log(`    ${runsText}`);
     for (const found of startLines) console.log(`    ${agentStartLineText(found)}`);
-    if (startLines.some((found) => found.fix)) console.log(`    ${fixStartupHint(deps.atrisCommand)}`);
+    if (startLines.some((found) => found.fix)) console.log(`    ${fixStartupHint(cli)}`);
   } else if (unchecked) {
     console.log(`  leaked ssh-agents on this machine: unknown, ${unchecked}`);
   }
