@@ -11289,7 +11289,7 @@ test('task current returns read-only selected page and queue lanes', () => {
   }
 });
 
-test('task backlog and clear-plan demote only planned open tasks', () => {
+test('task backlog and clear-plan demote only planned open tasks', async () => {
   if (!hasNodeSqlite()) return;
   const dir = makeTempDir();
   const dbPath = path.join(dir, 'tasks.db');
@@ -11382,14 +11382,17 @@ test('task backlog and clear-plan demote only planned open tasks', () => {
     for (const key of ['goal', 'loop', 'cron', 'next_run_at']) {
       assert.ok(signalBacklogPayload.cleared_keys.includes(key), `${key} should be cleared`);
     }
-    const signalShow = runCli(['task', 'show', signalTask.id, '--json'], { cwd: dir, env });
+    // Show reads and the second backlog refuses before any write, so both run at once.
+    const [signalShow, signalBacklogAgain] = await Promise.all([
+      runCliAsync(['task', 'show', signalTask.id, '--json'], { cwd: dir, env }),
+      runCliAsync(['task', 'backlog', signalTask.id, '--as', 'codex', '--json'], { cwd: dir, env }),
+    ]);
     assert.equal(signalShow.status, 0, signalShow.stderr);
     const signalShowTask = JSON.parse(signalShow.stdout);
     assert.equal(signalShowTask.metadata.goal, undefined);
     assert.equal(signalShowTask.metadata.loop, undefined);
     assert.equal(signalShowTask.metadata.cron, undefined);
     assert.equal(signalShowTask.metadata.next_run_at, undefined);
-    const signalBacklogAgain = runCli(['task', 'backlog', signalTask.id, '--as', 'codex', '--json'], { cwd: dir, env });
     assert.equal(signalBacklogAgain.status, 1);
     assert.equal(JSON.parse(signalBacklogAgain.stdout).reason, 'not_planned');
 
@@ -11482,18 +11485,21 @@ test('task backlog and clear-plan demote only planned open tasks', () => {
     assert.deepEqual(clearedPayload.tasks.map(task => task.id).sort(), [bulkAId, bulkBId].sort());
     assert.ok(clearedPayload.tasks.every(task => task.tag === 'capture'));
 
-    const status = runCli(['task', 'status', '--json'], { cwd: dir, env });
+    // Every write is done; the closing reads run at once.
+    const [status, claimedShow, rawShow] = await Promise.all([
+      runCliAsync(['task', 'status', '--json'], { cwd: dir, env }),
+      runCliAsync(['task', 'show', claimedId, '--json'], { cwd: dir, env }),
+      runCliAsync(['task', 'show', rawRef, '--json'], { cwd: dir, env }),
+    ]);
     assert.equal(status.status, 0, status.stderr);
     const counts = JSON.parse(status.stdout).status.counts;
     assert.equal(counts.plan, 0);
     assert.equal(counts.do, 1);
     assert.equal(counts.backlog, 7);
 
-    const claimedShow = runCli(['task', 'show', claimedId, '--json'], { cwd: dir, env });
     assert.equal(claimedShow.status, 0, claimedShow.stderr);
     assert.equal(JSON.parse(claimedShow.stdout).status, 'claimed');
 
-    const rawShow = runCli(['task', 'show', rawRef, '--json'], { cwd: dir, env });
     assert.equal(rawShow.status, 0, rawShow.stderr);
     assert.equal(JSON.parse(rawShow.stdout).latest_event_type, 'created');
   } finally {
