@@ -19,8 +19,8 @@ function cleanupTempDir(dir) {
   fs.rmSync(dir, { recursive: true, force: true, maxRetries: 5, retryDelay: 100 });
 }
 
-function runCli(args, { cwd, env = {} } = {}) {
-  return spawnSync(process.execPath, [CLI, ...withTaskReadyResult(args)], {
+function runCli(args, { cwd, env = {}, node = process.execPath } = {}) {
+  return spawnSync(node, [CLI, ...withTaskReadyResult(args)], {
     cwd,
     env: {
       ...scrubAgentEnv(),
@@ -266,6 +266,36 @@ test('task ready --verify failure blocks ready but still writes a failing receip
 
     // Task must still be open — no receipt path can force a ready over a failed verifier.
     const show = runCli(['task', 'show', ref, '--json'], { cwd: dir, env });
+    assert.equal(show.status, 0, show.stderr);
+    const task = JSON.parse(show.stdout).task || JSON.parse(show.stdout);
+    assert.notEqual(task.status, 'review');
+  } finally {
+    cleanupTempDir(dir);
+  }
+});
+
+test('task ready --verify from an apostrophe Node folder stays blocked and cites the failing receipt', () => {
+  const dir = makeTempDir();
+  const dbPath = path.join(dir, 'tasks.db');
+  const env = { ATRIS_TASKS_DB: dbPath, ATRIS_AGENT_ID: 'codex' };
+  try {
+    const runtime = copyNodeIntoQuotedFolder(dir);
+    fs.mkdirSync(path.join(dir, 'atris'), { recursive: true });
+    const add = runCli(['task', 'add', 'Quoted runtime failing ready task', '--json'], { cwd: dir, env, node: runtime });
+    assert.equal(add.status, 0, add.stderr);
+    const ref = JSON.parse(add.stdout).task.display_id;
+
+    const ready = runCli(['task', 'ready', ref, '--verify', 'node -p "process.execPath" && exit 2'], { cwd: dir, env, node: runtime });
+    assert.equal(ready.status, 1, ready.stdout + ready.stderr);
+    assert.match(ready.stderr, /verifier failed/);
+    const receiptMatch = ready.stderr.match(/receipt: (atris\/runs\/\S+\.json)/);
+    assert.ok(receiptMatch, `stderr should name the receipt path: ${ready.stderr}`);
+    const saved = JSON.parse(fs.readFileSync(path.join(dir, receiptMatch[1]), 'utf8'));
+    assert.equal(saved.result.passed, false);
+    assert.equal(saved.result.exit, 2);
+    assert.equal(saved.result.output.trim(), fs.realpathSync(runtime));
+
+    const show = runCli(['task', 'show', ref, '--json'], { cwd: dir, env, node: runtime });
     assert.equal(show.status, 0, show.stderr);
     const task = JSON.parse(show.stdout).task || JSON.parse(show.stdout);
     assert.notEqual(task.status, 'review');

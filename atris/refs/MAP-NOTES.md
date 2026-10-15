@@ -2481,3 +2481,4 @@ Quoted runtime proof: `test/task-proof.test.js:195` copies the real Node into a 
 
 Quoted receipt runtime proof: `test/task-receipt.test.js:109` copies Node into a folder containing an apostrophe, runs the real receipt writer through bash, and checks the saved command, passing exit and exact runtime output.
 Quoted receipt failure proof: `test/task-receipt.test.js:140` runs a failing check from the same apostrophe folder and confirms the saved receipt keeps exit 3, the runtime path and the error text.
+Quoted task ready failure proof: `test/task-receipt.test.js:277` runs the CLI on Node copied into an apostrophe folder, fails the verify step, and confirms the task stays out of review while the cited receipt keeps exit 2 and that runtime path.

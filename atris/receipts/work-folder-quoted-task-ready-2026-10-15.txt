@@ -1,0 +1,11 @@
+Quoted task ready failure proof, 2026-10-15
+
+$ node --test test/task-receipt.test.js
+✔ real receipt check selects Node from a folder containing an apostrophe (482.37175ms)
+✔ real receipt check from an apostrophe folder keeps a failing exit and its output (481.58325ms)
+✔ task ready --verify from an apostrophe Node folder stays blocked and cites the failing receipt (956.113416ms)
+ℹ tests 10
+ℹ pass 10
+ℹ fail 0
+ℹ todo 0
+exit=0
