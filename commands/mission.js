@@ -425,11 +425,30 @@ async function missionTickPrep(root, { mission, runtimeMission, job, prompt, ask
 
 // A tick's time limit: the time left on the mission, capped by the roster
 // line's "max 20 min" when it sets one, else by the default tick cap.
-function missionTickTimeoutMs(mission, remainingMs) {
-  const cap = Number(mission && mission.roster_max_seconds) > 0
+function missionTickCapMs(mission) {
+  return Number(mission && mission.roster_max_seconds) > 0
     ? Number(mission.roster_max_seconds) * 1000
     : MISSION_RUN_DEFAULTS.claudeTimeoutMs;
-  return clampTimeoutMs(remainingMs, cap);
+}
+
+function missionTickTimeoutMs(mission, remainingMs) {
+  return clampTimeoutMs(remainingMs, missionTickCapMs(mission));
+}
+
+// True when the time left on the mission, not the tick's own cap, set the
+// tick's limit, so a kill there means the mission clock ran out.
+function missionTickWallBound(mission, remainingMs) {
+  return remainingMs <= missionTickCapMs(mission);
+}
+
+// The reason a member log shows for a tick. A failed engine tick names its
+// engine beside the reason, so a codex run that timed out stops counting as
+// a claude timeout in the repeat-problem scan. The reason itself is left as
+// is because engine health and backoff match on it.
+function memberLogTickReason(result) {
+  const reason = result && result.reason;
+  if (!reason || !result.engine_id || result.status !== 'errored') return reason;
+  return `${reason} (engine: ${result.engine_id})`;
 }
 
 function resolveMissionTickRunner(mission, root = process.cwd(), options = {}) {
@@ -6597,7 +6616,7 @@ function runVerifier(command, root = process.cwd()) {
   const resolvedCommand = resolveVerifierCommand(command);
   const { envWithNodeDir } = require('../lib/spawn-env');
   const timeoutMs = missionVerifierTimeoutMs();
-  const startedAt = Date.now();
+  const startedAt = process.hrtime.bigint();
   const result = spawnSync(resolvedCommand, {
     cwd: root,
     shell: true,
@@ -6605,11 +6624,15 @@ function runVerifier(command, root = process.cwd()) {
     timeout: timeoutMs,
     env: envWithNodeDir(process.env),
   });
-  const elapsedMs = Date.now() - startedAt;
   // A verifier that blows its window is not a failing check: the code may be
   // fine and the suite merely slow (or starved by a concurrent flight). Report
   // it as a distinct timed-out state so operators do not read slow as broken.
   const timedOut = result.error ? result.error.code === 'ETIMEDOUT' : false;
+  // Steady clock, not wall time: the wall clock can slew, and a kill at the
+  // window once read as 927ms of a 1000ms window. A timed-out run used the
+  // whole window by definition.
+  const measuredMs = Number((process.hrtime.bigint() - startedAt) / 1000000n);
+  const elapsedMs = timedOut ? Math.max(measuredMs, timeoutMs) : measuredMs;
   return {
     command,
     resolved_command: resolvedCommand === command ? null : resolvedCommand,
@@ -6629,17 +6652,29 @@ const CHECK_FEEDBACK_TRIM_MARKER = 'output trimmed';
 
 function extractCheckFeedback(verifierResult) {
   if (!verifierResult || verifierResult.passed !== false) return '';
-  const lines = [verifierResult.output, verifierResult.stdout, verifierResult.stderr]
+  // A reviewer turn-down goes first: when the tests passed, it is the only
+  // real reason the try failed, and passing test names must not crowd it out.
+  const referee = verifierResult.referee && verifierResult.referee.passed === false
+    ? verifierResult.referee
+    : null;
+  const refereeLines = referee
+    ? [referee.reason, referee.output].filter((value) => String(value || '').trim())
+    : [];
+  const lines = [...new Set([...refereeLines, verifierResult.output, verifierResult.stdout, verifierResult.stderr]
     .filter((value) => String(value || '').trim())
     .flatMap((value) => String(value).split(/\r?\n/))
     .map((line) => line.trim())
-    .filter(Boolean);
+    .filter(Boolean))];
   if (!lines.length) return '';
 
+  const refereeSet = new Set(refereeLines.flatMap((value) => String(value).split(/\r?\n/)).map((line) => line.trim()).filter(Boolean));
+  const passingLine = /^(?:✔|ℹ )/;
   const usefulPattern = /\b(?:error|fail|expected|assert)\w*\b|(?:^|\s|\()[^:\s()]+:\d+(?::\d+)?(?:\b|$)/i;
-  const useful = lines.filter((line) => usefulPattern.test(line));
-  const context = lines.filter((line) => !usefulPattern.test(line));
-  const feedback = [...useful, ...context].join('\n');
+  const rest = lines.filter((line) => !refereeSet.has(line));
+  const useful = rest.filter((line) => !passingLine.test(line) && usefulPattern.test(line));
+  const context = rest.filter((line) => !passingLine.test(line) && !usefulPattern.test(line));
+  const passing = rest.filter((line) => passingLine.test(line));
+  const feedback = [...lines.filter((line) => refereeSet.has(line)), ...useful, ...context, ...passing].join('\n');
   if (feedback.length <= CHECK_FEEDBACK_LIMIT) return feedback;
 
   const contentLimit = CHECK_FEEDBACK_LIMIT - CHECK_FEEDBACK_TRIM_MARKER.length - 1;
@@ -6878,7 +6913,10 @@ function worktreeReceipt(before, after, { verifier = '', baseline = null } = {})
 const MISSION_RUN_DEFAULTS = {
   maxTicks: 4,
   maxWallSeconds: 3600,
-  claudeTimeoutMs: 10 * 60 * 1000,
+  // Sized from real runs: claude ticks that landed 10/08-10/14 ran a median
+  // 4 min, but 15 of 92 needed more than 10 and the slowest 5% took 17+.
+  // A 10 min cap killed 12 runs at exactly 10:00; 20 min fits 89 of 92.
+  claudeTimeoutMs: 20 * 60 * 1000,
   backoff: { initialMs: 30_000, maxMs: 10 * 60_000, factor: 2, jitter: 0.3 },
 };
 
@@ -10515,7 +10553,7 @@ async function executeMissionRunTicksPhase(context) {
 
         if (!claudeResult.ok) {
           const deadModel = detectUnavailableModel(claudeResult.summary || claudeResult.receipt_text);
-          const wallBoundTimeout = remainingWall * 1000 <= MISSION_RUN_DEFAULTS.claudeTimeoutMs;
+          const wallBoundTimeout = missionTickWallBound(tickRuntimeMission, remainingWall * 1000);
           let reason = claudeResult.reason === 'too-deep'
             ? 'too-deep'
             : claudeResult.timedOut
@@ -10752,7 +10790,7 @@ async function executeMissionRunTicksPhase(context) {
         mission: mission.objective,
         state: mission.status,
         tick_status: result.status,
-        reason: result.reason,
+        reason: memberLogTickReason(result),
         layer: result.layer || undefined,
         verifier: verifierResult ? (verifierResult.passed ? 'passed' : 'failed') : 'not_run',
         summary: tickSummaryText ? tickSummaryText.slice(0, 240) : undefined,
@@ -12674,6 +12712,8 @@ module.exports = {
   resolveMissionTickRunner,
   resolveMissionTickRunnerModel,
   missionTickTimeoutMs,
+  missionTickWallBound,
+  memberLogTickReason,
   engineFailureHealthStatus,
   recordMissionEngineTickOutcome,
   recordMissionTickRosterRun,
