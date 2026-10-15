@@ -386,7 +386,7 @@ if (removing && ${JSON.stringify(mode)} === 'signal') {
           const lesson = fs.readFileSync(lessonPath, 'utf8');
           assert.ok(lesson.includes('regression-late-pin-proof** - fail -'), lesson);
           assert.ok(lesson.includes(`verify command for tick ${hash.slice(0, 7)} (late-pin-proof) now fails`), lesson);
-          console.log(`saved failure: ${lesson.split('\n').find((line) => line.includes('regression-late-pin-proof** - fail -'))}`);
+          console.log('held copy preserved; disposable lesson stayed on disk');
         }
       } else if (surface === 'reap') {
         const receipt = JSON.parse(cli.stdout);

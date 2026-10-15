@@ -1,5 +1,7 @@
 # MAP.md: atris-cli navigation
 
+Expected failing-check output: `test/member-tidy.test.js:389` confirms the disposable failure lesson without printing it as an operator failure; the lesson assertions remain intact.
+
 Held-folder report precedence: `test/member-tidy.test.js:426` checks the shared removal reader with real pins, locks, a terminated child and a timeout after partial output. Pins win over locks; locks win over process failure details.
 
 This repo builds the `atris` CLI (Node, zero dependencies). Entry is
