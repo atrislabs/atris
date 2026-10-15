@@ -526,9 +526,12 @@ const NAME_BEFORE_PLAIN_VERB = new RegExp(`^\\s*\\u2014\\s*(?:a|an|the|every|eac
 // that's the signal".
 // A dot before a digit is a decimal point, not a stop: "if its F1 is below
 // 0.95, that's a real gap".
+// A word in "s" before "and" and a pronoun is a verb there: "if the format
+// changes, the round-trip test fails and we catch it". Before "and the" it
+// may be a noun in a list, so "the test results and the logs go" stays.
 // With no subject after the comma, or no comma at all, the clause only adds
 // a condition, so "Ship it, if you can" and "It fails, when it is full" stay.
-const LEADING_CLAUSE_AFTER_DASH = new RegExp(`${CLAUSE_END}\\s*\\u2014\\s*(?=(?:once|when|whenever|if|unless|until|after|before|while|(?:each|every|any)\\s+time)\\s+(?:[^.;:!?\\u2014]|\\.(?=\\d)){1,80}?,\\s+(?:(?!(?:and|but|or|nor|so|yet|then|once|when|whenever|if|unless|until|after|before|while|as|since|because|though|although)\\b)[a-z]{2,}(?<!s|ed|ing)\\s+(?:it|them)\\b|(?:it|we|they|you|I|he|she)(?:['\\u2019](?:s|re|ll|ve|d|m))?\\s+[a-z]|(?:this|that|there)\\s+(?:is|are|was|were|will|would|can|must|should|has|have)\\b|(?:this|that|there|here)['\\u2019](?:s|ll|d)\\s+[a-z]|${SUBJECT_WORD}(?:(?!(?:the|a|an|that|whose)\\b)${SUBJECT_WORD}){0,3}${HELPING_VERB}\\s|(?:a|an|the|every|each|no)\\s+${NOUN_WORD}\\s+(?:${NOUN_WORD}\\s+){0,2}(?:${PLAIN_VERB}|${PLAIN_VERB_WORD}(?=[.!?;]|$))))`, 'g');
+const LEADING_CLAUSE_AFTER_DASH = new RegExp(`${CLAUSE_END}\\s*\\u2014\\s*(?=(?:once|when|whenever|if|unless|until|after|before|while|(?:each|every|any)\\s+time)\\s+(?:[^.;:!?\\u2014]|\\.(?=\\d)){1,80}?,\\s+(?:(?!(?:and|but|or|nor|so|yet|then|once|when|whenever|if|unless|until|after|before|while|as|since|because|though|although)\\b)[a-z]{2,}(?<!s|ed|ing)\\s+(?:it|them)\\b|(?:it|we|they|you|I|he|she)(?:['\\u2019](?:s|re|ll|ve|d|m))?\\s+[a-z]|(?:this|that|there)\\s+(?:is|are|was|were|will|would|can|must|should|has|have)\\b|(?:this|that|there|here)['\\u2019](?:s|ll|d)\\s+[a-z]|${SUBJECT_WORD}(?:(?!(?:the|a|an|that|whose)\\b)${SUBJECT_WORD}){0,3}${HELPING_VERB}\\s|(?:a|an|the|every|each|no)\\s+${NOUN_WORD}\\s+(?:${NOUN_WORD}\\s+){0,2}(?:${PLAIN_VERB}|${PLAIN_VERB_WORD}(?=[.!?;]|$)|${PLAIN_VERB_WORD}\\s+and\\s+(?:we|they|it|you|I|he|she)\\s)))`, 'g');
 // A "not" contraction or a word like "still" or "never" right after a
 // noun subject marks a verb, which no plain noun phrase has: "the picker
 // can't see it", "the member still owns the receipt", "a session never wakes".

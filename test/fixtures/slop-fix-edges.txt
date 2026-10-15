@@ -358,3 +358,7 @@ The scanner runs on every diff \u2014 if its F1 is below 0.95, that's a real gap
 => The scanner runs on every diff; if its F1 is below 0.95, that's a real gap.
 It ran \u2014 if the score is 0.9. Then we ship.
 => It ran, if the score is 0.9. Then we ship.
+The contract has a test on both sides \u2014 if the format changes, the round-trip test fails and we catch it.
+=> The contract has a test on both sides; if the format changes, the round-trip test fails and we catch it.
+The contract has a test on both sides \u2014 if the format changes, the test results and the logs go to S3.
+=> The contract has a test on both sides, if the format changes, the test results and the logs go to S3.
