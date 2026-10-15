@@ -1,0 +1,34 @@
+Cleanup now has real preview and apply proof that a remote whose main branch arrives as a plain file instead of a commit preserves every folder and all staged and unsaved notes. Required checks passed, exit 0.
+
+Files edited: test/member-tidy.test.js, atris/MAP.md, atris/refs/MAP-NOTES.md, atris/team/architect/logs/2026-10-15.md.
+Artifact: atris/receipts/work-folder-non-commit-default-2026-10-15.txt.
+Task state: ACW-20, claimed by architect, then marked ready with proof.
+
+Plan: damage the disposable remote's main branch file to name a plain file -> real preview and apply -> no removal and unchanged files, index, branches and registrations.
+Git refuses to make this state through its own tools, so the branch file is written directly. Origin names its default and the fetch succeeds; only the commit read fails. With this, every refusal in the step that asks origin for its main branch has a real test.
+Learned: the check moves the local copy of origin's main branch to whatever origin sent, the same as a plain fetch by hand. No notes are touched, but after a damaged remote that local copy is damaged too.
+
+Verify command:
+node --test test/worktree-removal-guard.test.js test/member-tidy.test.js && node bin/atris.js slop --staged
+
+Actual output excerpt:
+ℹ tests 82
+ℹ pass 82
+ℹ fail 0
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+command: node bin/atris.js member tidy --dir <fixture copies> --dry-run (non-commit remote default)
+tidy: could not read the fetched main branch, so every copy is kept
+kept  landed-clean  could not read the fetched main branch
+kept  non-commit-default  could not read the fetched main branch
+tidy: would remove 0, kept 2, of 2 copies in /private/var/folders/t1/2_4kmb5n4c71dxm26zc8dgzr0000gn/T/atris-member-tidy-k8AZx3/arena/.agent-worktrees/repo
+exit: 1
+command: node bin/atris.js member tidy --dir <fixture copies> (non-commit remote default)
+tidy: could not read the fetched main branch, so every copy is kept
+kept  landed-clean  could not read the fetched main branch
+kept  non-commit-default  could not read the fetched main branch
+tidy: removed 0, kept 2, of 2 copies in /private/var/folders/t1/2_4kmb5n4c71dxm26zc8dgzr0000gn/T/atris-member-tidy-k8AZx3/arena/.agent-worktrees/repo
+exit: 1
+
+tests exit: 0

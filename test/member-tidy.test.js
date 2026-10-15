@@ -1206,3 +1206,72 @@ test('tidy keeps staged and unsaved notes when the remote default exists but can
     fs.rmSync(fx.base, { recursive: true, force: true });
   }
 });
+
+test('tidy keeps staged and unsaved notes when the fetched remote default is not a commit', () => {
+  const fx = makeFixture();
+  try {
+    const remote = path.join(fx.base, 'remote.git');
+    const clean = addCopy(fx, 'landed-clean');
+    const cleanStatus = runGit(['status', '--porcelain'], clean);
+    const kept = addCopy(fx, 'non-commit-default', { commit: true, pushToOrigin: true });
+    const tip = runGit(['rev-parse', 'HEAD'], kept);
+    runGit(['fetch', '-q', 'origin'], fx.repo);
+    assert.equal(runGit(['rev-parse', 'origin/master'], fx.repo), tip);
+    fs.writeFileSync(path.join(kept, 'draft.txt'), 'unsaved notes\n');
+    fs.appendFileSync(path.join(kept, 'README.md'), 'unsaved edits\n');
+    fs.writeFileSync(path.join(kept, 'staged.txt'), 'prepared notes\n');
+    runGit(['add', 'staged.txt'], kept);
+    fs.appendFileSync(path.join(kept, 'staged.txt'), 'later edits\n');
+    const status = runGit(['status', '--porcelain'], kept);
+    const patch = runGit(['diff', '--cached', '--binary'], kept);
+    assert.match(status, /AM staged.txt/);
+    const registered = runGit(['worktree', 'list', '--porcelain'], fx.repo);
+    // git refuses to point a branch at a plain file through its own tools, so
+    // the disposable remote's branch file is damaged directly: origin names
+    // its default and sends it, but what arrives is not a commit.
+    const blob = spawnSync('git', ['hash-object', '-w', '--stdin'], { cwd: remote, input: 'not a commit\n', encoding: 'utf8' }).stdout.trim();
+    assert.match(blob, /^[0-9a-f]{40,64}$/);
+    fs.writeFileSync(path.join(remote, 'refs', 'heads', 'master'), `${blob}\n`);
+    assert.equal(runGit(['ls-remote', '--symref', 'origin', 'HEAD'], fx.repo), `ref: refs/heads/master\tHEAD\n${blob}\tHEAD`);
+    const fetchRecord = path.join(fx.repo, '.git', 'FETCH_HEAD');
+
+    for (const extra of [['--dry-run'], []]) {
+      const args = [path.resolve(__dirname, '../bin/atris.js'), 'member', 'tidy', '--dir', fx.copies, ...extra];
+      const cli = spawnSync(process.execPath, args, { cwd: fx.repo, encoding: 'utf8', timeout: 15000 });
+      console.log(`command: node bin/atris.js member tidy --dir <fixture copies>${extra.length ? ' --dry-run' : ''} (non-commit remote default)`);
+      console.log(cli.stdout.trim());
+      console.log(`exit: ${cli.status}`);
+      assert.equal(cli.status, 1, cli.stderr);
+      const lines = cli.stdout.trim().split('\n').map((line) => line.replace(/ {2,}/g, '  '));
+      const reason = 'could not read the fetched main branch';
+      assert.equal(lines[0], `tidy: ${reason}, so every copy is kept`);
+      assert.ok(lines.includes(`kept  landed-clean  ${reason}`), lines.join('\n'));
+      assert.ok(lines.includes(`kept  non-commit-default  ${reason}`), lines.join('\n'));
+      assert.equal(lines.at(-1), `tidy: ${extra.length ? 'would remove' : 'removed'} 0, kept 2, of 2 copies in ${fx.copies}`);
+      // The fetch itself worked, so git's record names the plain file.
+      assert.match(fs.readFileSync(fetchRecord, 'utf8'), new RegExp(`^${blob}\t`));
+      assert.equal(fs.readFileSync(path.join(clean, 'README.md'), 'utf8'), '# fixture\n');
+      assert.equal(runGit(['status', '--porcelain'], clean), cleanStatus);
+      assert.ok(branchExists(fx.repo, 'landed-clean'));
+      assert.equal(runGit(['worktree', 'list', '--porcelain'], fx.repo), registered);
+      assert.equal(runGit(['symbolic-ref', 'refs/remotes/origin/HEAD'], fx.repo), 'refs/remotes/origin/master');
+      // Like a plain fetch, the check also moves the local copy of origin's
+      // branch to what origin sent; the copies and their notes stay put.
+      assert.equal(runGit(['rev-parse', 'origin/master'], fx.repo), blob);
+      assert.equal(runGit(['rev-parse', 'HEAD'], kept), tip);
+      assert.equal(fs.readFileSync(path.join(kept, 'non-commit-default.txt'), 'utf8'), 'work\n');
+      assert.equal(fs.readFileSync(path.join(kept, 'draft.txt'), 'utf8'), 'unsaved notes\n');
+      assert.equal(fs.readFileSync(path.join(kept, 'README.md'), 'utf8'), '# fixture\nunsaved edits\n');
+      assert.equal(fs.readFileSync(path.join(kept, 'staged.txt'), 'utf8'), 'prepared notes\nlater edits\n');
+      assert.equal(runGit(['show', ':staged.txt'], kept), 'prepared notes');
+      assert.equal(runGit(['diff', '--cached', '--binary'], kept), patch);
+      assert.equal(runGit(['status', '--porcelain'], kept), status);
+      assert.ok(branchExists(fx.repo, 'non-commit-default'));
+      assert.ok(runGit(['worktree', 'list', '--porcelain'], fx.repo).includes(`worktree ${kept}\n`));
+      assert.deepEqual(removalLines(fx.repo), []);
+    }
+    assert.equal(fs.existsSync(clean), true);
+  } finally {
+    fs.rmSync(fx.base, { recursive: true, force: true });
+  }
+});
