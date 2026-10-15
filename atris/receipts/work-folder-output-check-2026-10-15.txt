@@ -1,0 +1,8 @@
+Cleanup output checks no longer depend on release notices. The frozen check exited 0 with 99 passes, zero failures and zero todo; staged writing check: clean, no slop tells in 3 files.
+Files: test/member-tidy.test.js; atris/MAP.md; atris/refs/MAP-NOTES.md; atris/receipts/work-folder-output-check-2026-10-15.txt; atris/team/architect/logs/2026-10-15.md.
+Command: node --test test/worktree-removal-guard.test.js test/member-tidy.test.js && node bin/atris.js slop --staged
+Real surface: tests run node bin/atris.js member tidy against disposable real repositories, preview and apply. Non-commit remote output: tidy: could not read the fetched main branch, so every copy is kept; tidy: removed 0, kept 2, of 2 copies. CLI exit 1 is expected and asserted. Missing and unfetchable defaults preserve saved and unsaved files; newest remote commit permits only landed clean work to be removed.
+Cause: cached release notice appeared after cleanup summary. Set ATRIS_SKIP_UPDATE_CHECK only in the cleanup test process, inherited by its real CLI children. Runtime cleanup behavior and all preservation assertions are unchanged.
+Progress: first full run had 18 remaining failures after three local fixes; final run has 99 passes and no failures. No unfinished tests remain.
+next_push: Isolate release notices in other CLI-output test files that still inherit the operator update cache.
+layer: capabilities

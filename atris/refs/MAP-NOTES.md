@@ -2533,3 +2533,5 @@ Missing saved patches: `commands/land.js:1184` checks saved patch paths before l
 Saved draft availability: `commands/land.js:1189` reads the quoted copy source and requires a directory before listing recovery; `test/worktree-removal-guard.test.js` exercises missing drafts with quoted paths.
 
 Saved card listing: `commands/worktree.js:1444` persists the saved card path, count and fingerprint in removal history; `commands/land.js:1194` checks that copy before listing it; `test/worktree-removal-guard.test.js:1781` invokes plain and JSON backup listings for intact, changed and missing cards.
+
+Cleanup output checks: `test/member-tidy.test.js:15` disables update notices in all real CLI children so summary assertions do not depend on the installed release or update cache. File-preservation assertions remain intact.

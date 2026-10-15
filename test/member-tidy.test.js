@@ -10,6 +10,9 @@ const os = require('node:os');
 const path = require('node:path');
 const { spawn, spawnSync } = require('node:child_process');
 
+// Release notices must not change the output of cleanup checks.
+process.env.ATRIS_SKIP_UPDATE_CHECK = '1';
+
 const { tidyMemberCopies, formatTidy } = require('../lib/member-tidy');
 const { reap } = require('../commands/land');
 const { cleanupWorktrees, describeGitHold, describeRemovalResult } = require('../commands/worktree');
