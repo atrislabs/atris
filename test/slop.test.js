@@ -4737,6 +4737,10 @@ test('the fix diff script marks a fix that gains doubled punctuation or loses pa
   // after that clause has led to a subject still counts
   assert.deepEqual(oddMarks(`That means that if you run long ${D} if you train ${D} it will not learn.`, 'That means that if you run long (if you train), it will not learn.'), []);
   assert.deepEqual(oddMarks(`It says that if it holds, you ship ${D} they got value.`, 'It says that if it holds, you ship, they got value.'), ['comma splice']);
+  // a heading ends its sentence at its line break, and a lone name before
+  // the comma is a greeting; a heading over a real splice still counts
+  assert.deepEqual(oddMarks(`## Hook\n"Bob ${D} I noticed you run two shops."`, '## Hook\n"Bob, I noticed you run two shops."'), []);
+  assert.deepEqual(oddMarks(`## Hook\nThe gate held ${D} it ships.`, '## Hook\nThe gate held, it ships.'), ['comma splice']);
   // an aside that wraps across lines is unbalanced in the source too, and a
   // code span or link target is never read as prose
   assert.deepEqual(oddMarks(`The run (one tick ${D} a slice`, 'The run (one tick, a slice'), []);
