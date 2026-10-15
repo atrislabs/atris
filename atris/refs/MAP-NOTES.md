@@ -2820,6 +2820,8 @@ Review lane act dry-run fixture connections: `test/commands.test.js:8697` seeds,
 
 Review lane loop fixture connections: `test/commands.test.js:8845` runs each setup phase on one store connection, so the continue and waiting tasks seed, review and snapshot together and the human-only task seeds and reviews together. Six store opens replace eleven; every loop check remains on the CLI.
 
+Review lane act refusal fixture connections: `test/commands.test.js:8538` runs each later setup phase on one store connection, so the continue task seeds, reviews and snapshots together and the human-only task seeds and reviews together. Four store opens replace seven; every act, dry-run and refusal check remains on the CLI.
+
 Certified review fallback read batching: `test/commands.test.js:12603` awaits both next output formats together after certification, before creating follow-up work. `commands/task.js:6948` builds next output from task rows, independent of the saved view. All assertions remain; six sequential CLI stages become five.
 
 Final fallback read batching: `test/commands.test.js:12684` awaits next and show together after follow-up creation. Both read unchanged task rows; every assertion remains. Five sequential CLI stages become four.

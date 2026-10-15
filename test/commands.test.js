@@ -8535,29 +8535,26 @@ test('task review-lane-act executes safe drain actions and refuses human accept 
     fs.mkdirSync(path.join(dir, 'atris'), { recursive: true });
     // Baselines read the same enriched projection task show prints; every
     // after-action read still runs the CLI.
-    const { enrichTaskProjection } = require('../commands/task');
-    const showTask = (id) => {
-      const showDb = taskStore.open(dbPath);
+    // Each setup phase runs on one connection, closed before the CLI runs.
+    const withStore = (fn) => {
+      const db = taskStore.open(dbPath);
       try {
-        return enrichTaskProjection(taskStore.taskProjection(showDb, { taskId: id })).tasks[0];
+        return fn(db);
       } finally {
         taskStore.close();
       }
     };
+    const { enrichTaskProjection } = require('../commands/task');
+    const readTask = (db, id) => enrichTaskProjection(taskStore.taskProjection(db, { taskId: id })).tasks[0];
 
     // The continue and human-only rows only need to sit in review, so their
     // ready and review steps go straight to the task store. The first row
     // still readies through the CLI. Act output matched both ways.
-    const seedReviewed = (id, readyProof, reviewProof, nextTask) => {
-      const seedDb = taskStore.open(dbPath);
-      try {
-        const readied = taskStore.readyTask(seedDb, { id, actor: 'codex', proof: readyProof, result: FIXTURE_RESULT_SENTENCE });
-        assert.equal(readied.ready, true, readied.reason);
-        const reviewed = taskStore.reviewTask(seedDb, { id, actor: 'codex-review', reward: 0, proof: reviewProof, ...(nextTask ? { nextTask } : {}) });
-        assert.equal(reviewed.reviewed, true, reviewed.reason);
-      } finally {
-        taskStore.close();
-      }
+    const seedReviewed = (db, id, readyProof, reviewProof, nextTask) => {
+      const readied = taskStore.readyTask(db, { id, actor: 'codex', proof: readyProof, result: FIXTURE_RESULT_SENTENCE });
+      assert.equal(readied.ready, true, readied.reason);
+      const reviewed = taskStore.reviewTask(db, { id, actor: 'codex-review', reward: 0, proof: reviewProof, ...(nextTask ? { nextTask } : {}) });
+      assert.equal(reviewed.reviewed, true, reviewed.reason);
     };
 
     // Seed creation only; exercise review actions and human refusal on the CLI.
@@ -8580,7 +8577,7 @@ test('task review-lane-act executes safe drain actions and refuses human accept 
       '--as', 'codex',
       '--proof', 'node --check test/commands.test.js passed before review-lane-act review chat',
     ], { cwd: dir, env }).status, 0);
-    const beforeReviewChat = showTask(reviewTask.id);
+    const beforeReviewChat = withStore((db) => readTask(db, reviewTask.id));
     const reviewAct = runCli(['task', 'review-lane-act', '--goal-id', 'OBL-931', '--json'], { cwd: dir, env });
     assert.equal(reviewAct.status, 0, reviewAct.stderr);
     const reviewPayload = JSON.parse(reviewAct.stdout);
@@ -8597,21 +8594,16 @@ test('task review-lane-act executes safe drain actions and refuses human accept 
     assert.equal(afterReviewChat.current_version, beforeReviewChat.current_version + 1);
     assert.ok(afterReviewChat.messages.some(message => message.content.includes('TASK_REVIEW_CHAT')));
 
-    const continueDb = taskStore.open(dbPath);
-    let continueTask;
-    let continueRef;
-    try {
-      continueTask = addSeedTask(continueDb, {
+    const { continueTask, continueRef, beforeDryRun } = withStore((continueDb) => {
+      const seeded = addSeedTask(continueDb, {
         title: 'Review lane act continues certified work',
         tag: 'task', workspaceRoot, metadata: { goal_id: 'OBL-932' },
       });
-      assert.equal(continueTask.inserted, true);
-      continueRef = taskStore.taskDisplayRefMap(taskStore.listTasks(continueDb, { workspaceRoot })).get(continueTask.id);
-    } finally {
-      taskStore.close();
-    }
-    seedReviewed(continueTask.id, 'node --check test/commands.test.js passed before review-lane-act continuation', 'node --test test/commands.test.js passed during review-lane-act continuation', 'Add the review lane act follow-up task');
-    const beforeDryRun = showTask(continueTask.id);
+      assert.equal(seeded.inserted, true);
+      const ref = taskStore.taskDisplayRefMap(taskStore.listTasks(continueDb, { workspaceRoot })).get(seeded.id);
+      seedReviewed(continueDb, seeded.id, 'node --check test/commands.test.js passed before review-lane-act continuation', 'node --test test/commands.test.js passed during review-lane-act continuation', 'Add the review lane act follow-up task');
+      return { continueTask: seeded, continueRef: ref, beforeDryRun: readTask(continueDb, seeded.id) };
+    });
     const dryRun = runCli(['task', 'review-lane-act', '--goal-id', 'OBL-932', '--dry-run', '--json'], { cwd: dir, env });
     assert.equal(dryRun.status, 0, dryRun.stderr);
     const dryPayload = JSON.parse(dryRun.stdout);
@@ -8639,20 +8631,16 @@ test('task review-lane-act executes safe drain actions and refuses human accept 
     assert.ok(continuePayload.result.next_task_id);
     assert.equal(continuePayload.result.safety.human_accept, false);
 
-    const humanOnlyDb = taskStore.open(dbPath);
-    let humanOnlyTask;
-    let humanOnlyRef;
-    try {
-      humanOnlyTask = addSeedTask(humanOnlyDb, {
+    const humanOnlyRef = withStore((humanOnlyDb) => {
+      const humanOnlyTask = addSeedTask(humanOnlyDb, {
         title: 'Review lane act must not accept human-only row',
         tag: 'task', workspaceRoot, metadata: { goal_id: 'OBL-933' },
       });
       assert.equal(humanOnlyTask.inserted, true);
-      humanOnlyRef = taskStore.taskDisplayRefMap(taskStore.listTasks(humanOnlyDb, { workspaceRoot })).get(humanOnlyTask.id);
-    } finally {
-      taskStore.close();
-    }
-    seedReviewed(humanOnlyTask.id, 'node --check test/commands.test.js passed before review-lane-act human gate', 'node --test test/commands.test.js passed during review-lane-act human gate');
+      const ref = taskStore.taskDisplayRefMap(taskStore.listTasks(humanOnlyDb, { workspaceRoot })).get(humanOnlyTask.id);
+      seedReviewed(humanOnlyDb, humanOnlyTask.id, 'node --check test/commands.test.js passed before review-lane-act human gate', 'node --test test/commands.test.js passed during review-lane-act human gate');
+      return ref;
+    });
     const blocked = runCli(['task', 'review-lane-act', '--goal-id', 'OBL-933', '--json'], { cwd: dir, env });
     assert.notEqual(blocked.status, 0);
     const blockedPayload = JSON.parse(blocked.stdout);
