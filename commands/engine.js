@@ -2343,7 +2343,7 @@ function formatAgentAge(seconds) {
 // startup files to the guarded line, keeping a copy of the old file.
 function runEngineSweepCommand(args, root, deps = {}) {
   if (args.includes('--fix-startup')) return runFixStartupCommand(args, deps);
-  const { readSshAgents, findLeakedSshAgents, findAgentStartLines, agentStartLineText, FIX_STARTUP_HINT, stopLeakedSshAgents, closeLostRuns, readResourceHistory, leakGrowthNote, matchLeakedToRuns, leakedRunsText, LEAK_MIN_AGE_SEC } = require('../lib/engine-resource');
+  const { readSshAgents, findLeakedSshAgents, findAgentStartLines, agentStartLineText, fixStartupHint, stopLeakedSshAgents, closeLostRuns, readResourceHistory, leakGrowthNote, matchLeakedToRuns, leakedRunsText, LEAK_MIN_AGE_SEC } = require('../lib/engine-resource');
   const read = deps.read || readSshAgents;
   const { agents, referenced, unread = [] } = read();
   const uid = deps.uid !== undefined ? deps.uid : process.getuid();
@@ -2402,7 +2402,7 @@ function runEngineSweepCommand(args, root, deps = {}) {
   const runsText = leaked.length ? leakedRunsText(matchLeakedToRuns(root, leaked), { startLine: startLines.length > 0 }) : '';
   if (runsText) lines.push(runsText);
   lines.push(...startLines.map(agentStartLineText));
-  if (startLines.some((found) => found.fix)) lines.push(FIX_STARTUP_HINT);
+  if (startLines.some((found) => found.fix)) lines.push(fixStartupHint(deps.atrisCommand));
   if (scanWarning) lines.push(scanWarning);
   lines.push(leaked.length ? 'nothing was stopped. run atris engine sweep --apply to stop them.' : 'nothing was stopped.');
   lines.push('', ...resourceHistoryLines(history));

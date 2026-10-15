@@ -9,7 +9,7 @@ const autoland = require('../lib/autoland');
 const { gateForHuman, plainLandingReason } = require('../lib/voice-gate');
 const { evaluateAutoAccept } = require('../lib/auto-accept-certified');
 const { sweepEngineAskReceipts } = require('../lib/engine-receipt-sweep');
-const { readSshAgents, findLeakedSshAgents, findAgentStartLines, agentStartLineText, FIX_STARTUP_HINT, stopLeakedSshAgents, closeLostRuns, readResourceHistory, errorReason, leakGrowthNote, matchLeakedToRuns, leakedRunsText } = require('../lib/engine-resource');
+const { readSshAgents, findLeakedSshAgents, findAgentStartLines, agentStartLineText, fixStartupHint, stopLeakedSshAgents, closeLostRuns, readResourceHistory, errorReason, leakGrowthNote, matchLeakedToRuns, leakedRunsText } = require('../lib/engine-resource');
 const { validateRecentAskReceipts } = require('../lib/engine-validate');
 const { operatorReady, hasAgentJargon, explainResult } = autoland;
 const MISSION_AUTO_VERIFY_STATUSES = new Set(['planning', 'paused', 'ready']);
@@ -572,7 +572,7 @@ function showStatus(root, args, deps = {}) {
     const runsText = leakedRunsText(matchLeakedToRuns(root, leakedList), { startLine: startLines.length > 0 });
     if (runsText) console.log(`    ${runsText}`);
     for (const found of startLines) console.log(`    ${agentStartLineText(found)}`);
-    if (startLines.some((found) => found.fix)) console.log(`    ${FIX_STARTUP_HINT}`);
+    if (startLines.some((found) => found.fix)) console.log(`    ${fixStartupHint(deps.atrisCommand)}`);
   } else if (unchecked) {
     console.log(`  leaked ssh-agents on this machine: unknown, ${unchecked}`);
   }

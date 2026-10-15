@@ -369,7 +369,7 @@ test('the sweep guards a lone agent start in the startup files only when asked, 
     console.log = (line) => out.push(String(line));
     let code;
     try {
-      code = engineCommand(['sweep', ...args], { engineSweep: { read: () => ({ agents: [{ pid: 200, ppid: 1, uid: 501, age_sec: 53414, args: 'ssh-agent -s' }], referenced: new Set() }), uid: 501, home } });
+      code = engineCommand(['sweep', ...args], { engineSweep: { read: () => ({ agents: [{ pid: 200, ppid: 1, uid: 501, age_sec: 53414, args: 'ssh-agent -s' }], referenced: new Set() }), uid: 501, home, atrisCommand: 'atris' } });
     } finally {
       console.log = original;
     }
@@ -3308,6 +3308,35 @@ test('the landing status names an unreadable agent scan instead of showing no le
   }
 });
 
+test('the fix command names this checkout when the atris on PATH is another install', () => {
+  const { atrisCommand, fixStartupHint } = require('../lib/engine-resource');
+  const tmp = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'engine-atris-command-')));
+  try {
+    const bin = path.join(tmp, 'checkout', 'bin');
+    fs.mkdirSync(bin, { recursive: true });
+    fs.writeFileSync(path.join(bin, 'atris'), '');
+    const linked = path.join(tmp, 'linked');
+    fs.mkdirSync(linked);
+    fs.symlinkSync(path.join(bin, 'atris'), path.join(linked, 'atris'));
+    const other = path.join(tmp, 'other');
+    fs.mkdirSync(other);
+    fs.writeFileSync(path.join(other, 'atris'), '');
+    const empty = path.join(tmp, 'empty');
+    fs.mkdirSync(empty);
+    const script = path.join(bin, 'atris.js');
+    assert.strictEqual(atrisCommand({ pathEnv: [empty, linked, other].join(path.delimiter), binDir: bin, home: '' }), 'atris', 'the atris on PATH links to this checkout');
+    assert.strictEqual(atrisCommand({ pathEnv: [other, linked].join(path.delimiter), binDir: bin, home: '' }), `node ${script}`, 'an older install found first is not the one that has the sweep');
+    assert.strictEqual(atrisCommand({ pathEnv: empty, binDir: bin, home: '' }), `node ${script}`, 'no atris on PATH');
+    assert.strictEqual(atrisCommand({ pathEnv: empty, binDir: bin, home: tmp }), 'node ~/checkout/bin/atris.js', 'a path under home is shortened');
+    const spaced = path.join(tmp, 'my checkout', 'bin');
+    fs.mkdirSync(spaced, { recursive: true });
+    assert.strictEqual(atrisCommand({ pathEnv: empty, binDir: spaced, home: tmp }), `node ${JSON.stringify(path.join(spaced, 'atris.js'))}`, 'a path with a space is quoted in full');
+    assert.strictEqual(fixStartupHint(`node ${script}`), `to make that change, run node ${script} engine sweep --fix-startup; it saves the old file beside it first`);
+  } finally {
+    fs.rmSync(tmp, { recursive: true, force: true });
+  }
+});
+
 test('the landing status names the startup line behind leaked ssh-agents and its fix', () => {
   const { showStatus } = require('../commands/autoland');
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'autoland-status-agent-source-'));
@@ -3327,7 +3356,7 @@ test('the landing status names the startup line behind leaked ssh-agents and its
   try {
     require('node:child_process').spawnSync('git', ['init', '-q'], { cwd: root });
     fs.writeFileSync(path.join(home, '.zshrc'), 'eval "$(ssh-agent -s)"\n');
-    const leaked = status({ readSshAgents: () => ({ agents: [agent(200)], referenced: new Set() }), uid: 501, home });
+    const leaked = status({ readSshAgents: () => ({ agents: [agent(200)], referenced: new Set() }), uid: 501, home, atrisCommand: 'atris' });
     assert.match(leaked, /leaked ssh-agents on this machine: 1;[^\n]*\n {4}likely source: ~\/\.zshrc line 1 starts a new ssh-agent in every shell that reads it, including the shells Claude and Codex start in each session that runs a command; to start one only when none is reachable, change it to: \[ -S "\$SSH_AUTH_SOCK" \] \|\| eval "\$\(ssh-agent -s\)"/);
     assert.match(leaked, /\n {4}to make that change, run atris engine sweep --fix-startup; it saves the old file beside it first/, 'the one-step fix is named under its line');
     const clean = status({ readSshAgents: () => ({ agents: [agent(200)], referenced: new Set([200]) }), uid: 501, home });
