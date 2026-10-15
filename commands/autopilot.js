@@ -1265,7 +1265,7 @@ function regressionCheck(cwd, { activeCwds } = {}) {
         } catch (err) {
           // A refused removal is reported like any other kept folder.
           hold = { reason: 'remove_failed' };
-          held = guard.describeRefusedRemoval(worktreePath, String(err.stderr || ''));
+          held = guard.describeRemovalResult(worktreePath, err);
         }
       }
     }

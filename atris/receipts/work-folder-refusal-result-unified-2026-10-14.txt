@@ -1,0 +1,28 @@
+Scope: tidy, reap, worktree cleanup, autopilot regression check and green landing now pass the whole git removal result through one shared report. Review copies stay unchanged pending protected review.
+
+Old code, stopped-removal cases (production files restored afterward):
+✖ tidy, cleanup, reap, autopilot, autopilot-failed: 5 failed, each printed the vague fallback instead of naming the signal
+
+$ node --test test/worktree-removal-guard.test.js test/member-tidy.test.js   (real CLI excerpts, stopped-removal git wrapper)
+kept  landed-late-pin  landed, but git refused: git removal stopped by SIGTERM
+refused: <fixture>/landed-late-pin git removal stopped by SIGTERM
+"<fixture>/landed-late-pin (git removal stopped by SIGTERM)"
+[{"hash":"2b6da6d8808d34aae3b6c17f7895ab80ea24ee09","slug":"late-pin-proof","pass":true,"kept":"remove_failed","held":"git removal stopped by SIGTERM","path":"<fixture>/.regression-worktree-2b6da6d8"}]
+autopilot "held":"git removal stopped by SIGTERM"
+autopilot "held":"git removal stopped by SIGTERM"
+ℹ tests 55
+ℹ pass 55
+ℹ fail 0
+exit: 0
+
+$ node --test test/land-green.test.js test/land.test.js test/worktree-cleanup-keeps-busy.test.js test/worktree-cleanup-keeps-script-folder.test.js test/worktree-cleanup-retention.test.js
+ℹ tests 49
+ℹ pass 49
+ℹ fail 0
+exit: 0
+
+Files changed: commands/worktree.js; commands/land.js; commands/autopilot.js; lib/member-tidy.js; lib/land-green.js; test/member-tidy.test.js; atris/MAP.md; atris/refs/MAP-NOTES.md; atris/team/architect/logs/2026-10-14.md; this receipt.
+Rerun: node --test test/worktree-removal-guard.test.js test/member-tidy.test.js
+Progress: refusal report entry points down from five hand-built inputs to one shared result reader; frozen checks 55 passed, zero failed.
+next_push: route review copy disposal through the same shared result reader once protected review clears it.
+layer: behaviors

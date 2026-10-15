@@ -1391,6 +1391,16 @@ function describeRefusedRemoval(worktreePath, gitOutput = '', now = Date.now()) 
   return line.slice(0, 160) || 'git would not remove it';
 }
 
+// The same line from a whole removal result. Git's own text wins; when git
+// left none, a launch error, a signal, or a missing status says why it stopped.
+function describeRemovalResult(worktreePath, result = {}, now = Date.now()) {
+  const output = String(result.stderr || result.stdout || '').trim();
+  const fallback = result.error ? `git could not run: ${result.error.message}`
+    : result.signal ? `git removal stopped by ${result.signal}`
+      : result.status == null ? 'git removal ended without an exit status' : '';
+  return describeRefusedRemoval(worktreePath, output || fallback, now);
+}
+
 // Every work-folder removal leaves one line naming who removed it and why, in
 // the main checkout's state so the line outlives the folder it describes.
 // The log lives in the main checkout, so every linked folder writes one file.
@@ -1542,7 +1552,7 @@ function cleanupWorktrees({ root = repoRoot(), base: baseOverride = '', apply = 
         recordWorktreeRemoval(root, { path: wt.path, branch: wt.branch, by, reason: candidate.reason });
       } else {
         const error = (removedResult.stderr || removedResult.stdout || '').trim();
-        kept.push({ ...item, reason: 'remove_failed', error, refused: describeRefusedRemoval(wt.path, error) });
+        kept.push({ ...item, reason: 'remove_failed', error, refused: describeRemovalResult(wt.path, removedResult) });
       }
       continue;
     }
@@ -1562,7 +1572,7 @@ function cleanupWorktrees({ root = repoRoot(), base: baseOverride = '', apply = 
       recordWorktreeRemoval(root, { path: wt.path, branch: wt.branch, by, reason: candidate.reason });
     } else {
       const error = (removedResult.stderr || removedResult.stdout || '').trim();
-      kept.push({ ...item, reason: 'remove_failed', error, refused: describeRefusedRemoval(wt.path, error) });
+      kept.push({ ...item, reason: 'remove_failed', error, refused: describeRemovalResult(wt.path, removedResult) });
     }
   }
 
@@ -1690,6 +1700,7 @@ module.exports = {
   gitHold,
   describeGitHold,
   describeRefusedRemoval,
+  describeRemovalResult,
   describePin,
   describeFlightAge,
   flightStampMs,
