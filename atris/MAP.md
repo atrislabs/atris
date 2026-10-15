@@ -148,9 +148,9 @@ Hourly cleanup replacement summary: `commands/autoland.js:910` (`sshAgentSweepNo
 
 Hourly cleanup failed stops: `commands/autoland.js:910` (`sshAgentSweepNote`) includes failed stop counts in the hourly summary alongside stops, replacements, and unread scans; when the newest passes could not stop an agent, landing status and the sweep listing say so and point to the manual stop. Detail and line refs: `atris/refs/MAP-NOTES.md`, Hourly cleanup failed stops; tests: `test/engine-resource.test.js`.
 
-Hourly cleanup scan failures: `commands/autoland.js:913` includes a saved scan error in the plain summary, so a thrown first read or safety recheck does not look clean. Regression: `test/engine-resource.test.js:759` runs a real missing executable in both reads and confirms no agent is stopped.
+Hourly cleanup scan failures: `commands/autoland.js:913` puts a saved scan error in the hourly summary, so a failed read does not look clean. Detail and line refs: `atris/refs/MAP-NOTES.md`, Hourly cleanup scan failures.
 
-Hourly cleanup stop cap: `commands/autoland.js:878` (`HOURLY_SSH_AGENT_STOP_LIMIT`) caps one hourly pass at 200 stops, passed to `lib/engine-resource.js:487` (`stopLeakedSshAgents`), which stops the oldest first and keeps the rest as deferred in the sweep line; the summary reads `left N more leaked ssh-agents for the next pass` (`commands/autoland.js:923` (`deferredNote`)). The manual sweep has no cap. Regression: `test/engine-resource.test.js:639`.
+Hourly cleanup stop cap: `commands/autoland.js:878` (`HOURLY_SSH_AGENT_STOP_LIMIT`) caps one hourly pass at 200 stops, oldest first; the manual sweep has no cap. Detail and line refs: `atris/refs/MAP-NOTES.md`, Hourly cleanup stop cap.
 
 Rejected cleanup stops: `lib/engine-resource.js:487` appends one sweep line after earlier history, with refused stops in `failed` and still counted as left. Regressions: `test/engine-resource.test.js:5485` runs the real cleanup with every stop refused; `test/engine-resource.test.js:5539` stops one agent and has the other refuse, checking both outcomes and one left.
 
