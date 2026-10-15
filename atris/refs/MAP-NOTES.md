@@ -2502,14 +2502,16 @@ Healthy cleanup link-to-folder proof: `test/member-tidy.test.js:1439` runs real 
 
 Healthy cleanup rename-to-folder proof: `test/member-tidy.test.js:1448` runs real preview and apply after a saved rename destination becomes a folder containing a draft, preserving the original committed contents, saved destination and mode, missing source, draft bytes and full staged tree.
 
-Healthy cleanup reused rename source proof: `test/member-tidy.test.js:1456` recreates the original name with new draft bytes after a saved rename. Real preview and apply preserve the new draft, original committed bytes, saved destination, replacement folder draft and complete staged tree.
+Healthy cleanup reused rename source proof: `test/member-tidy.test.js:1457` recreates the original name with new draft bytes after a saved rename. Real preview and apply preserve the new draft, original committed bytes, saved destination, replacement folder draft and complete staged tree.
 
-Healthy cleanup linked rename source proof: `test/member-tidy.test.js:1469` turns the original name into a symbolic link after a saved rename. Real preview and apply preserve the link target, original committed bytes, saved destination and complete staged tree.
+Healthy cleanup linked rename source proof: `test/member-tidy.test.js:1470` turns the original name into a symbolic link after a saved rename. Real preview and apply preserve the link target, original committed bytes, saved destination and complete staged tree.
 
-Healthy cleanup folded rename source proof: `test/member-tidy.test.js:1477` turns the original name into a folder holding a draft after a saved rename. Real preview and apply preserve the folder draft, original committed bytes, saved destination and complete staged tree.
+Healthy cleanup folded rename source proof: `test/member-tidy.test.js:1478` turns the original name into a folder holding a draft after a saved rename. Real preview and apply preserve the folder draft, original committed bytes, saved destination and complete staged tree.
 
-Healthy cleanup runnable rename source proof: `test/member-tidy.test.js:1487` turns the original name into an executable script after a saved rename. Real preview and apply preserve the script bytes and run bit, original committed bytes, saved destination and complete staged tree.
+Healthy cleanup runnable rename source proof: `test/member-tidy.test.js:1488` turns the original name into an executable script after a saved rename. Real preview and apply preserve the script bytes and run bit, original committed bytes, saved destination and complete staged tree.
 
-Healthy cleanup linked rename destination proof: `test/member-tidy.test.js:1496` swaps the new name for a symbolic link after a saved rename. Real preview and apply preserve the link target, original committed bytes, the absent old name, the saved destination and complete staged tree.
+Healthy cleanup linked rename destination proof: `test/member-tidy.test.js:1497` swaps the new name for a symbolic link after a saved rename. Real preview and apply preserve the link target, original committed bytes, the absent old name, the saved destination and complete staged tree.
 
-Healthy cleanup runnable rename destination proof: `test/member-tidy.test.js:1503` writes an executable script over the new name after a saved rename. Real preview and apply preserve the script bytes and run bit, original committed bytes, the absent old name, the plain saved destination and complete staged tree.
+Healthy cleanup runnable rename destination proof: `test/member-tidy.test.js:1504` writes an executable script over the new name after a saved rename. Real preview and apply preserve the script bytes and run bit, original committed bytes, the absent old name, the plain saved destination and complete staged tree.
+
+Healthy cleanup deleted rename destination proof: `test/member-tidy.test.js:1512` deletes the new name from the folder after a saved rename, so the staged copy is the only one. Real preview and apply keep that staged copy, original committed bytes, both names absent from the folder and complete staged tree.

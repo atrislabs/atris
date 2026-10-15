@@ -1382,7 +1382,8 @@ test('worktree cleanup quietly refreshes an outdated base and keeps staged notes
     fs.writeFileSync(path.join(copy, 'appendix.txt'), 'original appendix text\n');
     fs.writeFileSync(path.join(copy, 'glossary.txt'), 'original glossary terms\n');
     fs.writeFileSync(path.join(copy, 'index.txt'), 'original index entries\n');
-    runGit(['add', 'outline.txt', 'guide.txt', 'manual.txt', 'chapter.txt', 'appendix.txt', 'glossary.txt', 'index.txt'], copy);
+    fs.writeFileSync(path.join(copy, 'summary.txt'), 'original summary lines\n');
+    runGit(['add', 'outline.txt', 'guide.txt', 'manual.txt', 'chapter.txt', 'appendix.txt', 'glossary.txt', 'index.txt', 'summary.txt'], copy);
     runGit(['commit', '-q', '-m', 'add outline'], copy);
     runGit(['rm', 'outline.txt'], copy);
     fs.writeFileSync(replaced, 'replacement outline\n');
@@ -1505,6 +1506,13 @@ test('worktree cleanup quietly refreshes an outdated base and keeps staged notes
     const savedIndex = runGit(['show', ':renamed-index'], copy);
     assert.equal(savedIndex, indexSource);
     assert.match(runGit(['diff', '--cached', '--summary', '--', 'index.txt', 'renamed-index'], copy), /rename index.txt => renamed-index/);
+    const removedSummary = path.join(copy, 'renamed-summary');
+    const summarySource = runGit(['show', 'HEAD:summary.txt'], copy);
+    runGit(['mv', 'summary.txt', 'renamed-summary'], copy);
+    fs.unlinkSync(removedSummary);
+    const savedSummary = runGit(['show', ':renamed-summary'], copy);
+    assert.equal(savedSummary, summarySource);
+    assert.match(runGit(['diff', '--cached', '--summary', '--', 'summary.txt', 'renamed-summary'], copy), /rename summary.txt => renamed-summary/);
     const binary = path.join(copy, 'drawing.bin');
     const savedBytes = Buffer.from([0, 255, 10, 128, 13]);
     const laterBytes = Buffer.from([0, 254, 10, 129, 13, 0]);
@@ -1619,6 +1627,12 @@ test('worktree cleanup quietly refreshes an outdated base and keeps staged notes
       assert.equal(fs.existsSync(path.join(copy, 'index.txt')), false);
       assert.equal(runGit(['show', ':renamed-index'], copy), savedIndex);
       assert.match(runGit(['ls-files', '--stage', '--', 'renamed-index'], copy), /^100644 /);
+      assert.equal(fs.existsSync(removedSummary), false);
+      assert.equal(fs.existsSync(path.join(copy, 'summary.txt')), false);
+      assert.equal(runGit(['show', 'HEAD:summary.txt'], copy), summarySource);
+      assert.equal(runGit(['ls-files', '--', 'summary.txt'], copy), '');
+      assert.equal(runGit(['show', ':renamed-summary'], copy), savedSummary);
+      assert.match(runGit(['ls-files', '--stage', '--', 'renamed-summary'], copy), /^100644 /);
       assert.deepEqual(fs.readFileSync(binary), laterBytes);
       const savedBinary = spawnSync('git', ['show', ':drawing.bin'], { cwd: copy });
       assert.equal(savedBinary.status, 0);

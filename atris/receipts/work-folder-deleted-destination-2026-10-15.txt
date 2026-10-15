@@ -1,0 +1,37 @@
+Cleanup now has proof that a saved rename survives preview and apply after its new name is deleted from the folder, when the staged copy is the only one left.
+Files: test/member-tidy.test.js, atris/MAP.md, atris/refs/MAP-NOTES.md, atris/receipts/work-folder-deleted-destination-2026-10-15.txt.
+Verify: node --test test/worktree-removal-guard.test.js test/member-tidy.test.js && node bin/atris.js slop --staged
+Exit: 0. Tests: 90 passed, 0 failed, 0 skipped, 0 todo. Writing check: clean, no slop tells in 3 files.
+Real surface: node bin/atris.js worktree cleanup and node bin/atris.js worktree cleanup --apply, run in disposable repositories by the test, both exit 0.
+Progress: one existing regression extended; runtime unchanged. The staged copy, the original committed bytes and both absent names all survive. The kept line now counts 18 staged and 14 unstaged, up from 17 and 13. Seven drifted map line references were repointed.
+next_push: Prove cleanup preserves a saved rename that also carries a saved content edit at the new name.
+layer: capabilities
+
+Full command output:
+command: node bin/atris.js worktree cleanup (healthy origin, local base behind)
+cleanup: dry-run base=origin/master
+candidates: 0
+cache_candidates: 0
+kept: 2
+left alone: primary_checkout=1
+kept: /private/var/folders/t1/2_4kmb5n4c71dxm26zc8dgzr0000gn/T/atris-member-tidy-rH841u/arena/.agent-worktrees/repo/healthy-draft branch=healthy-draft reason=dirty staged=18 unstaged=14 untracked=9
+exit: 0
+command: node bin/atris.js worktree cleanup --apply (healthy origin, local base behind)
+cleanup: applied base=origin/master
+removeds: 0
+cache_pruneds: 0
+kept: 2
+left alone: primary_checkout=1
+kept: /private/var/folders/t1/2_4kmb5n4c71dxm26zc8dgzr0000gn/T/atris-member-tidy-rH841u/arena/.agent-worktrees/repo/healthy-draft branch=healthy-draft reason=dirty staged=18 unstaged=14 untracked=9
+exit: 0
+ℹ tests 90
+ℹ suites 0
+ℹ pass 90
+ℹ fail 0
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 201092.265125
+
+  ✓ clean, no slop tells in 3 files
+tests_exit=0 slop_exit=0
