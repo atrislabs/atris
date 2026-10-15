@@ -1382,7 +1382,9 @@ test('every engine started through a runner or profile variable records its run 
       // known runner. An unrelated parameter name alone is not evidence.
       const header = /^(?:async\s+)?function\s+([\w$]+)\s*\(([^)]*)\)/.exec(code.slice(fnStart).trimStart())
         || /^(?:const|let|var)\s+([\w$]+)\s*=\s*(?:async\s*)?(?:function(?:\s+[\w$]+)?\s*\(([^)]*)\)|(?:\(([^)]*)\)|([\w$]+))\s*=>)/.exec(code.slice(fnStart).trimStart());
-      const slot = header ? (header[2] ?? header[3] ?? header[4]).split(',').map((name) => name.trim()).indexOf(parameter) : -1;
+      const parameters = header ? (header[2] ?? header[3] ?? header[4]).split(',') : [];
+      const slot = parameters.findIndex((name) => name.split('=')[0].trim() === parameter);
+      const defaultSource = slot < 0 ? '' : parameters[slot].slice(parameters[slot].indexOf('=') + 1).trim();
       const binding = `${fnStart}:${parameter}`;
       if (slot >= 0 && !following.has(binding)) {
         const next = new Set(following).add(binding);
@@ -1432,7 +1434,12 @@ test('every engine started through a runner or profile variable records its run 
             if (/^[)\]}]$/.test(token[0])) depth -= 1;
             argumentsList[argumentsList.length - 1] += token[0];
           }
-          if (engineSourceAt((argumentsList[slot] || '').trim(), call.index, next)) {
+          const supplied = (argumentsList[slot] || '').trim();
+          // Omitted arguments use defaults in the definition's outer scope.
+          // A supplied value, including null, never falls back to that default.
+          const omitted = !supplied;
+          const hasDefault = parameters[slot].includes('=');
+          if (engineSourceAt(omitted && hasDefault ? defaultSource : supplied, omitted && hasDefault ? fnStart : call.index, next)) {
             return true;
           }
         }
@@ -1456,6 +1463,27 @@ test('every engine started through a runner or profile variable records its run 
     return { seen, missing };
   };
   const planted = (text) => engineLaunches('commands/planted.js', text).missing;
+  // Literal and captured defaults count only when a same-file call omits them.
+  for (const [head, tail] of [
+    ['function launch', '}'],
+    ['const launch = ', '};'],
+    ['const launch = function named', '};'],
+    ['let launch = async ', '};'],
+  ]) {
+    const arrow = head.endsWith(' ') ? ' =>' : '';
+    const launcher = (runner, body, call = 'launch();') => `${head}(runner = ${runner})${arrow} {\n${body}\n${tail}\n${call}\n`;
+    assert.deepStrictEqual(planted(launcher("'claude'", '  spawnSync(runner, args);')), ['commands/planted.js:2 runner']);
+    assert.deepStrictEqual(planted(launcher("'claude'", '  spawnSync(runner, args);', '')), [], 'an uncalled default is not a run');
+    assert.deepStrictEqual(planted(launcher("'claude'", '  spawnSync(runner, args);', "launch('git');")), [], 'a supplied plain program overrides the default');
+    assert.deepStrictEqual(planted(launcher("'claude'", '  spawnSync(runner, args);', 'launch(null);')), [], 'null does not select the default');
+    assert.deepStrictEqual(planted(launcher("'git'", '  spawnSync(runner, args);')), [], 'a plain default is not an engine');
+    assert.deepStrictEqual(planted(launcher("'claude'", '  startEngineRun(root);\n  spawnSync(runner, args);')), []);
+    assert.deepStrictEqual(planted(launcher("'claude'", "  spawnSync(runner, ['--help']);")), []);
+    assert.deepStrictEqual(planted('const fallback = resolveClaudeRunnerBin();\n' + launcher('fallback', '  const fallback = \'git\';\n  spawnSync(runner, args);')), ['commands/planted.js:4 runner'], 'body declarations cannot hide the default source');
+    assert.deepStrictEqual(planted('const profile = resolveEngineProfile(engine);\n' + launcher('profile', '  spawnSync(runner.bin, args);')), ['commands/planted.js:3 runner.bin']);
+  }
+  assert.deepStrictEqual(planted("function launch(prompt, runner = 'claude') {\n  spawnSync(runner, args);\n}\nlaunch('hello');\n"), ['commands/planted.js:2 runner']);
+  assert.deepStrictEqual(planted("function launch(runner = 'claude') {\n  spawnSync(runner, args);\n}\nfunction forward() {\n  launch();\n}\n"), ['commands/planted.js:2 runner']);
   assert.deepStrictEqual(planted("function a() {\n  const bin = findExecutable('claude', env);\n  return spawnSync(bin, ['-p', prompt]);\n}\n"), ['commands/planted.js:3 bin']);
   assert.deepStrictEqual(planted("function a() {\n  const inv = engineInvocation(engine, prompt);\n  spawn(inv.command, inv.args);\n}\n"), ['commands/planted.js:3 inv.command']);
   assert.deepStrictEqual(planted("function a() {\n  spawn(resolveClaudeRunnerBin(), args);\n}\n"), ['commands/planted.js:2 resolveClaudeRunnerBin()']);
