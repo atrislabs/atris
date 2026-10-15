@@ -508,12 +508,16 @@ function quoteArg(value) {
 // file deleted from the folder. Returns false if any piece could not be saved,
 // the caller then keeps the worktree. Also leaves one restore command on the
 // folder: both diffs are against the folder's commit, so the staged diff goes
-// into the index only and the full diff into the files.
+// into the index only and the full diff into the files. The commit gets a
+// backup name outside refs/heads, so it outlives the branch reap deletes and
+// git gc cannot clear it out from under the restore.
 function salvageWorktree(root, w, dir, receipt) {
   try {
     const head = runGit(['rev-parse', '--verify', 'HEAD^{commit}'], { cwd: w.path, check: false });
     if (head.status !== 0) return false;
-    const restore = [`git -C ${quoteArg(root)} worktree add --detach ${quoteArg(w.path)} ${head.stdout.trim()}`, `cd ${quoteArg(w.path)}`];
+    const sha = head.stdout.trim();
+    const keepRef = `refs/atris/salvage/${sha}`;
+    const restore = [`git -C ${quoteArg(root)} worktree add --detach ${quoteArg(w.path)} ${keepRef}`, `cd ${quoteArg(w.path)}`];
     // git writes the patch file itself: routing the diff through spawnSync
     // stdout hits Node's 1MB default maxBuffer, so any worktree more than
     // ~1MB dirty read as "salvage failed" and was kept on every reap pass.
@@ -550,6 +554,8 @@ function salvageWorktree(root, w, dir, receipt) {
       receipt.untracked.push(destRoot);
       restore.push(`cp -R ${quoteArg(destRoot)}/. .`);
     }
+    const kept = runGit(['update-ref', keepRef, sha], { cwd: root, check: false });
+    if (kept.status !== 0) return false;
     w.restoreCommand = restore.join(' && ');
     return true;
   } catch (err) {

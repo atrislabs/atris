@@ -1,0 +1,33 @@
+The put-away command now gives each removed folder's commit a backup name before removing it, so the printed restore command still works after the branch is deleted and git clears unreferenced commits.
+Before: when the folder's commit had landed on master only as an equivalent copy, deleting the branch left nothing pointing at it; after git cleared unreferenced commits it was gone and the restore could not start.
+After: the commit is named under refs/atris/salvage, outside the branch list, and the restore command starts from that name.
+Files: commands/land.js, test/worktree-removal-guard.test.js, atris/MAP.md, atris/refs/MAP-NOTES.md, atris/receipts/work-folder-backup-name-2026-10-15.txt.
+Verify: node --test test/worktree-removal-guard.test.js test/member-tidy.test.js && node bin/atris.js slop --staged
+Exit: 0. Tests: 91 passed, 0 failed, 0 skipped, 0 todo. Writing check: clean, no slop tells in 4 files.
+Wider check: node --test test/land.test.js test/autoland.test.js, exit 0, 90 passed, 0 failed.
+Red check: on the code before this change the test fails with "the removed folder commit must survive git clearing unreferenced commits".
+Real surface: node bin/atris.js land --reap --no-remote --base master --ttl 0 in a disposable repository, exit 0; the test then clears unreferenced commits, runs the printed restore, and the rebuilt folder sits on the original commit with every staged, unsaved and new file back.
+Progress: the restore command now survives git housekeeping; nineteen map line references repointed by matching line content.
+next_push: Add a way to list saved backups with their restore commands, so removed work can be found days later without the original output.
+layer: capabilities
+
+Full command output:
+command: node bin/atris.js land --reap --no-remote --base master --ttl 0 (disposable repository)
+landing cleanup done: 1 pieces cleared, 1 side copies removed
+  backed up first, nothing lost: /private/var/folders/t1/2_4kmb5n4c71dxm26zc8dgzr0000gn/T/atris-removal-guard-Qajyk5/repo/.atris/salvage/2026-10-15/reap-131712.bundle
+  unsaved edits saved: /private/var/folders/t1/2_4kmb5n4c71dxm26zc8dgzr0000gn/T/atris-removal-guard-Qajyk5/repo/.atris/salvage/2026-10-15/engine-wt.dirty.patch
+  staged changes saved: /private/var/folders/t1/2_4kmb5n4c71dxm26zc8dgzr0000gn/T/atris-removal-guard-Qajyk5/repo/.atris/salvage/2026-10-15/engine-wt.staged.patch
+  new files saved: /private/var/folders/t1/2_4kmb5n4c71dxm26zc8dgzr0000gn/T/atris-removal-guard-Qajyk5/repo/.atris/salvage/2026-10-15/engine-wt.untracked
+  to restore /private/var/folders/t1/2_4kmb5n4c71dxm26zc8dgzr0000gn/T/atris-removal-guard-Qajyk5/engine-wt: git -C /private/var/folders/t1/2_4kmb5n4c71dxm26zc8dgzr0000gn/T/atris-removal-guard-Qajyk5/repo worktree add --detach /private/var/folders/t1/2_4kmb5n4c71dxm26zc8dgzr0000gn/T/atris-removal-guard-Qajyk5/engine-wt refs/atris/salvage/e4f55e548698cd6849c5059b5c5fb5760ec017b0 && cd /private/var/f
+  folders removed today: 1 (atris land --reap 1)
+ℹ tests 91
+ℹ suites 0
+ℹ pass 91
+ℹ fail 0
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 208706.300917
+
+  ✓ clean, no slop tells in 4 files
+tests_exit=0 slop_exit=0

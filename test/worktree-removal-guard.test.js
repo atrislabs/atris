@@ -1435,6 +1435,17 @@ test('reap counts branch copies still at work and names detached and pinned ones
 test('reap saves staged and binary work it removes and prints a restore that rebuilds it exactly', () => {
   const { base, repo, wt } = landedWorktree();
   try {
+    // The folder's commit lands on master as an equivalent copy, so once reap
+    // deletes its branch only the backup name keeps the original alive.
+    fs.writeFileSync(path.join(wt, 'landed.txt'), 'landed elsewhere\n');
+    git(wt, ['add', 'landed.txt']);
+    git(wt, ['commit', '-qm', 'landed change']);
+    const folderCommit = git(wt, ['rev-parse', 'HEAD']);
+    fs.writeFileSync(path.join(repo, 'other.txt'), 'other work\n');
+    git(repo, ['add', 'other.txt']);
+    git(repo, ['commit', '-qm', 'other work']);
+    git(repo, ['cherry-pick', folderCommit]);
+    assert.notEqual(git(repo, ['rev-parse', 'HEAD']), folderCommit);
     const savedBytes = Buffer.from([0, 254, 10, 129, 0]);
     fs.writeFileSync(path.join(wt, 'drawing.bin'), savedBytes);
     fs.writeFileSync(path.join(wt, 'plan.md'), 'only staged copy\n');
@@ -1462,10 +1473,18 @@ test('reap saves staged and binary work it removes and prints a restore that reb
     const dirty = saved('unsaved edits saved');
     assert.match(fs.readFileSync(dirty, 'utf8'), /GIT binary patch/);
     const restore = saved(`to restore ${wt}`);
+    assert.ok(!git(repo, ['branch', '--list', 'engine-run']), 'reap should delete the landed branch');
+    git(repo, ['reflog', 'expire', '--expire=now', '--all']);
+    git(repo, ['gc', '--prune=now', '--quiet']);
+    const found = spawnSync('git', ['cat-file', '-e', `${folderCommit}^{commit}`], { cwd: repo });
+    assert.equal(found.status, 0, 'the removed folder commit must survive git clearing unreferenced commits');
+    assert.equal(git(repo, ['rev-parse', `refs/atris/salvage/${folderCommit}`]), folderCommit);
     assert.ok(restore.includes(staged) && restore.includes(dirty), restore);
     const rebuilt = spawnSync('sh', ['-c', restore], { cwd: base, encoding: 'utf8' });
     assert.equal(rebuilt.status, 0, rebuilt.stderr);
     assert.equal(git(wt, ['status', '--porcelain']), status);
+    assert.equal(git(wt, ['rev-parse', 'HEAD']), folderCommit);
+    assert.equal(fs.readFileSync(path.join(wt, 'landed.txt'), 'utf8'), 'landed elsewhere\n');
     assert.equal(git(wt, ['show', ':plan.md']), 'only staged copy');
     assert.equal(fs.existsSync(path.join(wt, 'plan.md')), false);
     assert.equal(git(wt, ['show', ':README.md']), '# staged edit');
