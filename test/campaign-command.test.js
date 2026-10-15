@@ -417,3 +417,34 @@ test('a judge that prints no counts saves its last line, not a bare exit code', 
   assert.equal(judgeRanData({ passed: false, exit: 3, output_tail: '', seconds: 1 }).summary, 'exit 3');
   assert.equal(judgeRanData({ passed: true, exit: 0, summary: '9 of 9', output_tail: 'x', seconds: 1 }).summary, '9 of 9');
 });
+
+test('start saves HEAD as the start commit without --protect, and every judge run reads it', () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'atris-campaign-start-commit-'));
+  const repo = path.join(dir, 'repo');
+  fs.mkdirSync(repo);
+  const seen = path.join(dir, 'seen.txt');
+  const env = { ...process.env, ATRIS_CAMPAIGN_DB: path.join(dir, 'state', 'atris.db'), ATRIS_SKIP_UPDATE_CHECK: '1' };
+  const sh = (...args) => spawnSync('git', args, { cwd: repo, encoding: 'utf8' });
+  const cli = (...args) => spawnSync(process.execPath, [CLI, 'campaign', ...args], { cwd: repo, env, encoding: 'utf8' });
+  sh('init', '-q');
+  sh('config', 'user.email', 'j@j');
+  sh('config', 'user.name', 'j');
+  fs.writeFileSync(path.join(repo, 'n.md'), 'a\n');
+  sh('add', '-A');
+  sh('commit', '-qm', 'base');
+  const base = sh('rev-parse', 'HEAD').stdout.trim();
+  const judge = `echo "$ATRIS_CAMPAIGN_START_COMMIT" >> ${JSON.stringify(seen)}; exit 1`;
+
+  assert.equal(cli('start', 'S', '--judge', judge, '--budget', '5', '--id', 'cmp-s').status, 0);
+  fs.appendFileSync(path.join(repo, 'n.md'), 'b\n');
+  sh('commit', '-qam', 'move');
+  assert.equal(cli('judge', 'cmp-s').status, 1);
+  assert.deepEqual(fs.readFileSync(seen, 'utf8').trim().split('\n'), [base, base], 'start and the later judge both see the start commit, not the new HEAD');
+
+  // Outside git there is no commit to save, so the judge gets nothing.
+  const plain = fs.mkdtempSync(path.join(os.tmpdir(), 'atris-campaign-no-git-'));
+  const none = path.join(dir, 'none.txt');
+  const out = spawnSync(process.execPath, [CLI, 'campaign', 'start', 'N', '--judge', `echo "[\${ATRIS_CAMPAIGN_START_COMMIT-unset}]" > ${JSON.stringify(none)}; exit 1`, '--budget', '5', '--id', 'cmp-n'], { cwd: plain, env, encoding: 'utf8' });
+  assert.equal(out.status, 0, out.stderr);
+  assert.equal(fs.readFileSync(none, 'utf8').trim(), '[unset]');
+});

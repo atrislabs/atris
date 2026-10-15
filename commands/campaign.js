@@ -16,7 +16,7 @@ const { campaignDbPath, getCampaign, listCampaigns, newCampaignId, openCampaignS
 const { findHoldout, moveHoldoutBack, moveHoldoutIn, scrub } = require('../lib/campaign-holdout');
 const { judgeRanData, judgeReading, outputTail } = require('../lib/campaign-reading');
 const { CLOUD_FEATURES, cloudLink, cloudRunStatus, runInCloud, sendPersonAction, syncCampaign, takeCampaignToken } = require('../lib/campaign-sync');
-const { campaignHome, changedProtected, checkoutTop, planProtect, readProtect, saveProtect } = require('../lib/campaign-protect');
+const { campaignHome, changedProtected, checkoutTop, headCommit, planProtect, readProtect, saveProtect } = require('../lib/campaign-protect');
 
 const JUDGE_TIMEOUT_SECONDS = 15 * 60;
 // Who pays for a campaign's engines (atris/features/campaign/api.md, Credits).
@@ -211,6 +211,13 @@ function keepJudgeScript(judge, folder) {
   return { from: file, judge: shellQuote(copy) };
 }
 
+// The commit saved on a campaign's start, or null when it started outside git.
+function savedStartCommit(store, campaignId) {
+  if (!campaignId) return null;
+  const start = store.read(campaignId).find((event) => event.type === 'campaign_started');
+  return (start && start.data && start.data.start_commit) || null;
+}
+
 function makeContext(args, deps) {
   const asJson = args.includes('--json');
   const store = deps.store || openCampaignStore(process.cwd());
@@ -220,10 +227,15 @@ function makeContext(args, deps) {
   // Held-out files live beside the campaign store, outside every checkout.
   const holdoutRoot = deps.holdoutRoot || path.dirname(store.path || campaignDbPath());
   // A campaign with a held-out file hands its path to the judge, and nothing
-  // the judge prints from it reaches the store.
-  const judge = async (command, timeout, campaignId) => {
+  // the judge prints from it reaches the store. A campaign started in a git
+  // checkout hands the judge the commit it started from. Start passes its
+  // commit in, since nothing is saved yet.
+  const judge = async (command, timeout, campaignId, startCommit = savedStartCommit(store, campaignId)) => {
     const holdout = campaignId ? findHoldout(holdoutRoot, campaignId) : null;
-    const reading = await runJudge(command, timeout, holdout ? { ...process.env, ATRIS_CAMPAIGN_HOLDOUT: holdout } : process.env);
+    const env = { ...process.env };
+    if (holdout) env.ATRIS_CAMPAIGN_HOLDOUT = holdout;
+    if (startCommit) env.ATRIS_CAMPAIGN_START_COMMIT = startCommit;
+    const reading = await runJudge(command, timeout, env);
     if (!holdout) return reading;
     return { ...reading, summary: scrub(reading.summary, holdout), output_tail: scrub(reading.output_tail, holdout) };
   };
@@ -352,7 +364,8 @@ async function cmdStart(args, ctx) {
 
   const timeout = Number(readFlag(args, '--timeout', '')) || JUDGE_TIMEOUT_SECONDS;
   if (!ctx.asJson) console.error(`running the judge first: ${judge}`);
-  const reading = await ctx.judge(judge, timeout, id);
+  const startCommit = headCommit(process.cwd());
+  const reading = await ctx.judge(judge, timeout, id, startCommit);
   if (reading.passed && !standing) {
     moveHoldoutBack(held);
     return ctx.fail(`already done: the judge passes before any work (${reading.summary || 'exit 0'}). Write a judge that fails first.`, 1);
@@ -371,6 +384,7 @@ async function cmdStart(args, ctx) {
   if (bet && !wrongIf) startData.bet = bet;
   if (standing) startData.standing = true;
   if (basis) startData.basis = basis;
+  if (startCommit) startData.start_commit = startCommit;
   ctx.append(id, 'campaign_started', startData);
   if (bet && wrongIf) ctx.append(id, 'bet_set', { bet, wrong_if: wrongIf });
   if (parent) ctx.append(id, 'attached', { parent_id: parent });
