@@ -4703,3 +4703,47 @@ test('same-checkout startup repair commands bypass a launcher with no usable nod
     fs.rmSync(root, { recursive: true, force: true });
   }
 });
+
+test('the landing status repair hint runs with this checkout launcher on PATH and no node', () => {
+  const { spawnSync } = require('node:child_process');
+  const root = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'autoland-status-local-no-node-')));
+  try {
+    const work = path.join(root, 'work');
+    const home = path.join(root, 'home');
+    const onlyLauncher = path.join(root, 'only-launcher');
+    for (const dir of [work, home, onlyLauncher]) fs.mkdirSync(dir);
+    spawnSync('git', ['init', '-q'], { cwd: work });
+    fs.writeFileSync(path.join(home, '.zshrc'), 'eval "$(ssh-agent -s)"\n');
+    fs.symlinkSync(path.join(__dirname, '..', 'bin', 'atris'), path.join(onlyLauncher, 'atris'));
+    // The real hint is built in a process whose PATH holds only this
+    // checkout launcher, and the copied command runs outside the test runner
+    // so it edits the fixture home.
+    const env = { ...process.env, PATH: onlyLauncher, HOME: home };
+    delete env.NODE_TEST_CONTEXT;
+    const probe = `
+      const { showStatus } = require(${JSON.stringify(path.join(__dirname, '..', 'commands', 'autoland'))});
+      const agent = { pid: 200, ppid: 1, uid: 501, age_sec: 3600, args: 'ssh-agent -s' };
+      showStatus(process.cwd(), [], { readSshAgents: () => ({ agents: [agent], referenced: new Set() }), uid: 501, home: ${JSON.stringify(home)} });
+    `;
+    const status = spawnSync(process.execPath, ['-e', probe], { cwd: work, env, encoding: 'utf8' });
+    assert.strictEqual(status.status, 0, status.stderr);
+    const hint = status.stdout.match(/\n {4}to make that change, run (.+) engine sweep --fix-startup; it saves the old file beside it first/);
+    assert.ok(hint, status.stdout);
+    assert.strictEqual(hint[1], `${process.execPath} ${fs.realpathSync(path.join(__dirname, '..', 'bin', 'atris.js'))}`);
+    for (const shell of ['/bin/sh', ...(fs.existsSync('/bin/zsh') ? ['/bin/zsh'] : [])]) {
+      // A fresh home per shell, since a second fix in the same second
+      // refuses to overwrite the first saved copy.
+      const shellHome = fs.mkdtempSync(path.join(root, 'home-'));
+      fs.writeFileSync(path.join(shellHome, '.zshrc'), 'eval "$(ssh-agent -s)"\n');
+      const shellEnv = { ...env, HOME: shellHome };
+      const direct = spawnSync(shell, ['-c', 'atris engine sweep --fix-startup'], { cwd: work, env: shellEnv, encoding: 'utf8' });
+      assert.notStrictEqual(direct.status, 0, `${shell}: the launcher alone needs node`);
+      const run = spawnSync(shell, ['-c', `${hint[1]} engine sweep --fix-startup`], { cwd: work, env: shellEnv, encoding: 'utf8' });
+      assert.strictEqual(run.status, 0, `${shell}: ${run.stdout}${run.stderr}`);
+      assert.match(run.stdout, /changed ~\/\.zshrc line 1 to: /, shell);
+      assert.strictEqual(fs.readFileSync(path.join(shellHome, '.zshrc'), 'utf8'), '[ -S "$SSH_AUTH_SOCK" ] || eval "$(ssh-agent -s)"\n', shell);
+    }
+  } finally {
+    fs.rmSync(root, { recursive: true, force: true });
+  }
+});

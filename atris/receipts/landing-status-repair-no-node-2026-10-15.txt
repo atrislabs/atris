@@ -1,0 +1,22 @@
+# Landing status repair hint runs without Node on PATH
+
+The landing status now has a real check that the printed repair command works when this checkout launcher is on PATH and Node is not. The command uses the running Node executable, and running it changes the shell startup file.
+
+Files: test/engine-resource.test.js, atris/MAP.md, atris/refs/MAP-NOTES.md, atris/receipts/landing-status-repair-no-node-2026-10-15.txt.
+
+Verify command: `node --test test/engine-resource.test.js test/engine-dispatch.test.js && node bin/atris.js slop --staged`
+Exit: 0.
+Output excerpt:
+```text
+✔ the landing status repair hint runs with this checkout launcher on PATH and no node (314.653416ms)
+ℹ tests 165
+ℹ pass 165
+ℹ fail 0
+  ✓ clean, no slop tells in 4 files
+```
+
+Real surface: the new check builds the landing status in a process whose PATH holds only this checkout launcher, copies the printed repair command, and runs it through sh and zsh. Each shell exits 0 and rewrites the fixture startup file to the guarded agent line. `git diff --cached --check` exit 0.
+
+Progress: one new regression, 164 to 165 passing tests, no dependencies added.
+next_push: Prove the landing status repair hint when a node entry is on PATH but cannot run, covering a plain file, a directory, and a broken link.
+layer: behaviors
