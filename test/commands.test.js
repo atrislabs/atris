@@ -13445,7 +13445,7 @@ test('task auto-accept-certified requires explicit human confirmation', () => {
   }
 });
 
-test('task auto-accept-certified --all sweeps past the old 12-row cap', () => {
+test('task auto-accept-certified --all sweeps past the old 12-row cap', async () => {
   if (!hasNodeSqlite()) return;
   const dir = makeTempDir();
   const dbPath = path.join(dir, 'tasks.db');
@@ -13481,15 +13481,21 @@ test('task auto-accept-certified --all sweeps past the old 12-row cap', () => {
       }
     }
 
+    // Preview scans leave the task rows unchanged and only rewrite the same
+    // projection, which none of these scans reads. Run them together after ready.
+    const [defaultScan, allScan, limitedAllScan] = await Promise.all([
+      runCliAsync(['task', 'auto-accept-certified', '--dry-run', '--json'], { cwd: dir, env }),
+      runCliAsync(['task', 'auto-accept-certified', '--dry-run', '--all', '--json'], { cwd: dir, env }),
+      runCliAsync(['task', 'auto-accept-certified', '--dry-run', '--all', '--limit', '5', '--json'], { cwd: dir, env }),
+    ]);
+
     // Without --all, the certified-only queue is unchanged: none of these
     // rows carry a second review pass, so the default path certifies none.
-    const defaultScan = runCli(['task', 'auto-accept-certified', '--dry-run', '--json'], { cwd: dir, env });
     assert.equal(defaultScan.status, 0, defaultScan.stderr);
     assert.equal(JSON.parse(defaultScan.stdout).summary.scanned, 0);
 
     // Under --all with no explicit --limit, the sweep must cover every
     // pending row, not just the first 12 — the bug this fix closes.
-    const allScan = runCli(['task', 'auto-accept-certified', '--dry-run', '--all', '--json'], { cwd: dir, env });
     assert.equal(allScan.status, 0, allScan.stderr);
     const allPayload = JSON.parse(allScan.stdout);
     assert.equal(allPayload.summary.scanned, ROW_COUNT);
@@ -13497,7 +13503,6 @@ test('task auto-accept-certified --all sweeps past the old 12-row cap', () => {
     assert.equal(allPayload.summary.undercounted, false);
 
     // An explicit --limit still wins over the --all safety cap.
-    const limitedAllScan = runCli(['task', 'auto-accept-certified', '--dry-run', '--all', '--limit', '5', '--json'], { cwd: dir, env });
     assert.equal(limitedAllScan.status, 0, limitedAllScan.stderr);
     assert.equal(JSON.parse(limitedAllScan.stdout).summary.scanned, 5);
   } finally {
