@@ -33,12 +33,16 @@
 // that differs prints its "want" line and the run exits 1, so a file of
 // known edges is one command to check after any rule change. A "~> " line
 // names a known gap instead: it prints and counts, but never fails.
+// A folder's prose files over 400 KB are left out so a run stays quick;
+// --max-kb raises the cap, since long logs and briefs hold real lines too.
+// A file named on its own always goes in.
 //
 //   node scripts/slop-fix-diff.js ~/notes ../other-repo
 //   node scripts/slop-fix-diff.js --base master --limit 50 docs/
 //   node scripts/slop-fix-diff.js --lines ~/notes
 //   node scripts/slop-fix-diff.js --audit ~/notes
 //   node scripts/slop-fix-diff.js --splices ~/notes
+//   node scripts/slop-fix-diff.js --max-kb 5000 ~/notes
 //   node scripts/slop-fix-diff.js --probe 'We fixed it \u2014 the loop kicks work.'
 //   node scripts/slop-fix-diff.js --probe-file test/fixtures/slop-fix-edges.txt
 //   node scripts/slop-fix-diff.js --which --probe 'One place \u2014 the team calls schedule.'
@@ -54,8 +58,9 @@ const SKIP_DIRS = new Set(['.git', 'node_modules', 'dist', 'coverage', '.next', 
 const PROSE_EXT = /\.(?:md|mdx|txt)$/i;
 const DASH = '\u2014';
 const CHUNK = 500;
+const MAX_BYTES = 400 * 1024;
 
-function collectFiles(target, out) {
+function collectFiles(target, out, maxBytes = MAX_BYTES) {
   let stat;
   try { stat = fs.statSync(target); } catch { return out; }
   if (stat.isFile()) { if (PROSE_EXT.test(target)) out.push(target); return out; }
@@ -63,8 +68,8 @@ function collectFiles(target, out) {
   try { entries = fs.readdirSync(target, { withFileTypes: true }); } catch { return out; }
   for (const entry of entries) {
     const full = path.join(target, entry.name);
-    if (entry.isDirectory()) { if (!SKIP_DIRS.has(entry.name)) collectFiles(full, out); }
-    else if (entry.isFile() && PROSE_EXT.test(entry.name) && fs.statSync(full).size < 400 * 1024) out.push(full);
+    if (entry.isDirectory()) { if (!SKIP_DIRS.has(entry.name)) collectFiles(full, out, maxBytes); }
+    else if (entry.isFile() && PROSE_EXT.test(entry.name) && fs.statSync(full).size < maxBytes) out.push(full);
   }
   return out;
 }
@@ -313,7 +318,7 @@ function whichLines(text, { rules, checks }) {
   return out;
 }
 
-const USAGE = 'usage: node scripts/slop-fix-diff.js [--base <ref>] [--limit <n>] [--lines] [--audit] [--splices] <folder or file>...\n' +
+const USAGE = 'usage: node scripts/slop-fix-diff.js [--base <ref>] [--limit <n>] [--lines] [--audit] [--splices] [--max-kb <n>] <folder or file>...\n' +
   '       node scripts/slop-fix-diff.js [--base <ref>] --probe "<text>" [--probe "<text>"]... [--probe-file <file>] [--which]';
 
 // Fixes each probe with the base fixer and the working one and prints every
@@ -380,6 +385,7 @@ function main(argv) {
   let audit = false;
   let spliceList = false;
   let which = false;
+  let maxBytes = MAX_BYTES;
   const probes = [];
   const wants = [];
   const gaps = [];
@@ -392,6 +398,7 @@ function main(argv) {
     else if (argv[i] === '--audit') audit = true;
     else if (argv[i] === '--splices') spliceList = true;
     else if (argv[i] === '--which') which = true;
+    else if (argv[i] === '--max-kb') maxBytes = (Number(argv[++i]) || 0) * 1024 || MAX_BYTES;
     else if (argv[i] === '--probe') probes.push(expandTyped(argv[++i] || ''));
     else if (argv[i] === '--probe-file') readProbeFile(path.resolve(argv[++i] || ''), probes, wants, gaps);
     else if (argv[i] === '--help' || argv[i] === '-h') {
@@ -405,7 +412,7 @@ function main(argv) {
     return 2;
   }
   const files = [];
-  for (const t of targets) collectFiles(path.resolve(t), files);
+  for (const t of targets) collectFiles(path.resolve(t), files, maxBytes);
   const lines = paragraphs ? dashedParagraphs(files) : dashedLines(files);
   const unit = paragraphs ? 'dashed paragraph' : 'dashed line';
   const show = (text) => text.split('\n').join(' / ');

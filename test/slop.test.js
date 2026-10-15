@@ -4880,6 +4880,17 @@ test('the fix diff script counts dashed lines with --lines and moves none agains
   assert.equal(spawnSync(process.execPath, [script], { encoding: 'utf8' }).status, 2);
 });
 
+test('the fix diff script leaves out big prose files unless --max-kb raises the cap', () => {
+  const { spawnSync } = require('node:child_process');
+  // a long log holds real lines too, so the cap must be one flag away
+  const dir = path.dirname(tmpFile('big-log.md', ['The build passed \u2014 the log is clean.', '', 'x'.repeat(3000)].join('\n')));
+  const script = path.join(__dirname, '..', 'scripts', 'slop-fix-diff.js');
+  const run = (...flags) => spawnSync(process.execPath, [script, ...flags, '--limit', '0', dir], { encoding: 'utf8', cwd: path.join(__dirname, '..') });
+  assert.match(run().stdout, /^1 dashed paragraph in 1 file;/m);
+  assert.match(run('--max-kb', '2').stdout, /^0 dashed paragraphs in 0 files;/m);
+  assert.match(run('--max-kb', '4').stdout, /^1 dashed paragraph in 1 file;/m);
+});
+
 test('the fix diff script feeds whole paragraphs by default', () => {
   const { spawnSync } = require('node:child_process');
   // a wrapped line that opens with a dash is fixed against the line above,
