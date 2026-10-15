@@ -191,8 +191,11 @@ const CLAUSE_END = "(?<=[\\w)\\]\"'*_`%\\u201d\\u2019\\uE001]|\\betc\\.|\\w\\+{1
 // A lone dash with a word before it, then a subject pronoun and its verb:
 // "it survives", "they'd pass", "that's the goal". "This" and its kin count
 // only before a verb, so "the gap, this time with tests" stays a comma.
+// "This" alone counts before a verb in "s" too, after "no longer" and kin:
+// "see the banner; this no longer applies". A noun in "us", "is" or "as", or
+// "series" and its kin, is no verb, so "this status page" keeps its comma.
 // A masked code span before the dash counts as the word: "Do not use `PUT`".
-const CLAUSE_AFTER_DASH = new RegExp(CLAUSE_END + /\s*\u2014\s*(?=(?:(?:it|we|they|you|I|he|she)(?:['\u2019](?:s|re|ll|ve|d|m))?|(?:this|that|these|those|there)(?:['\u2019]s|\s+(?:is|are|was|were|used|will|would|can|cannot|must|should|has|have))\b)\s+[^\s\u2014])/.source, 'g');
+const CLAUSE_AFTER_DASH = new RegExp(CLAUSE_END + /\s*\u2014\s*(?=(?:(?:it|we|they|you|I|he|she)(?:['\u2019](?:s|re|ll|ve|d|m))?|(?:this|that|these|those|there)(?:['\u2019]s|\s+(?:is|are|was|were|used|will|would|can|cannot|must|should|has|have))|this\s+(?:(?:no\s+longer|still|also|never|only|just|now|already|often|usually|rarely)\s+)?(?!(?:series|species|news|lens|perhaps|unless|whereas|across|always|does)\b)(?![a-z]+(?:us|is|as)\b)[a-z]{2,}[a-rt-z]s)\b\s+[^\s\u2014])/.source, 'g');
 // A noun subject and its helping verb start a second sentence too: "is not a
 // twin, restart is allowed". "Did", "could", "had" and their kin count as
 // helping verbs too: "still open, receipt did not move it". So do common

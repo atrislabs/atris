@@ -1046,6 +1046,10 @@ test('fix joins two full clauses with a semicolon, not a comma splice', () => {
     'Never animate width or height \u2014 they trigger layout.',
     "Skip the dark default \u2014 that's how it starts looking the same.",
     'We fixed the gap \u2014 this time with tests.',
+    // "this" before a verb in "s" is a subject too, after "no longer" and kin;
+    // a noun in "s" after it, "this series of fixes", is no verb
+    'See the banner \u2014 this no longer applies after T34.',
+    'We fixed the gap \u2014 this series of fixes.',
     'Then \u2014 it stops.',
     'Use `PUT` \u2014 that is for updates.',
     'Run `npm test` \u2014 then ship.',
@@ -1063,6 +1067,8 @@ test('fix joins two full clauses with a semicolon, not a comma splice', () => {
     'Never animate width or height; they trigger layout.',
     "Skip the dark default; that's how it starts looking the same.",
     'We fixed the gap, this time with tests.',
+    'See the banner; this no longer applies after T34.',
+    'We fixed the gap, this series of fixes.',
     'Then, it stops.',
     'Use `PUT`; that is for updates.',
     'Run `npm test`, then ship.',
