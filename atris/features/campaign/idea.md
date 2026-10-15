@@ -93,7 +93,7 @@ ACTIONS (what any screen can send)
   start · pause · resume · answer_ask · change_bet · add_budget · fill_seat · stop
 ```
 
-Storage suggestion for the CLI: `.atris/state/campaigns.jsonl` (records) and `.atris/state/campaign_events.jsonl` (events), next to `missions.jsonl` and `mission_events.jsonl`. The backend mirrors the same schema next to `/api/missions/schema`.
+Storage: SQLite locally (`<workspace>/.atris/state/atris.db`) and Postgres in the backend, one schema for both. See "Where It Lives" below.
 
 ---
 
@@ -265,6 +265,68 @@ The core is pure: the schema, `fold(events) → state`, and `decide(state) → n
 | Standard | `check(mission) → findings` | PERSONA, ANTISLOP, member lessons, review desk |
 
 This is the same shape Atris already uses for engines (`lib/engine-registry.js`, `atris/ROSTER.md`). Because the core is pure, the golden test logs prove every adapter combination behaves the same.
+
+---
+
+## One Harness Everywhere: the CLI Inside Business Computers
+
+Atris already gives businesses cloud computers: EC2 instances that reinstall the `atris` CLI every time they wake (`atrisos-backend/backend/services/ai_computer_ec2_service.py`, tested in `backend/tests/test_ec2_wake_cli_bootstrap.py`), for personal and business computers.
+
+So the CLI is the harness everywhere. A laptop and a business's EC2 computer run the same code, the same SQLite store, and the same campaign core. "Local" and "cloud" stop being two systems:
+
+```text
+Laptop (CLI + atris.db)      Business EC2 computer (CLI + atris.db)      ...more computers
+          \                              |                                   /
+           └──────── events by id ───────▶  Backend (Postgres hub)  ◀───────┘
+                                            identity · money · approvals · sync · screens
+```
+
+Each computer is a possible home for a campaign. The backend is the hub, not a second engine.
+
+**Trust boundary (important).** An agent controls the computer it runs on, so it could edit its own SQLite file. Anything an agent must not be able to fake lives in the backend, outside its reach:
+
+- **Money:** budget pools and reservations (`budget_hold`, business attempt wallets) are enforced by the backend. A computer asks to reserve; the backend says yes or no.
+- **No-reload approvals:** an Ask is answered and recorded in the backend. A computer cannot mark its own ask approved.
+- **The judge's ruling for done:** for cloud campaigns, the backend records `judge_ran` and `done`, or verifies the computer's reading against data the agent cannot write.
+- **Identity:** the backend issues member ids and seat grants.
+
+Everything else (planning, missions, events, folds, screens) runs on the computer.
+
+---
+
+## Scheduling and Learning
+
+- **Scoring rule for the scheduler.** The team loop needs an explicit rule for which proposed mission runs next across all campaigns: expected progress per dollar, with room to explore (a multi-armed bandit). For answer campaigns, prefer the experiment that teaches the most per dollar. Without a rule, the loudest campaign wins.
+- **Credit assignment.** Record the judge's reading before and after every mission (`judge_ran` with `mission_id`). That one number per mission powers the scheduler, lessons, member stats, and the clarification learning above.
+- **Goodhart's law.** When a metric becomes the target, agents game it. Judges check against data the agents did not see (holdouts) where possible, and the review desk checks missions against the Standard, not only the score.
+- **The loop costs money too.** The owner's decide step and seat proposals call models. Their cost is charged to the campaign budget like missions.
+- **Log growth.** Long campaigns produce many events. Keep periodic snapshots of the fold (with the event sequence they cover) so screens do not replay from zero; snapshots are a cache, never truth.
+
+---
+
+## Access and Privacy
+
+- A campaign has an owner human (who sees and approves everything) and members. Backend access follows the existing owner gate (`_mission_for_owner` in `mission_control_router.py`: agent creator, business owner, or `business_members`).
+- Seats grant a member read access to the campaign's events and permission to propose missions, nothing more.
+- Events reference sensitive material (candidate records, emails, files) by id or path and hash, not by copying contents. Customer data stays in the business's own computer and backend tenant.
+- Screens shown to anyone other than the owner (shared links, Slack) show only what that viewer may see.
+
+---
+
+## Open Decisions (Keshav)
+
+Recommended answers in brackets.
+
+1. Who builds it? [mission-lead owns; the roster's build lead builds; the review desk checks each phase]
+2. First real campaign? ["Why do 25 landings a week still need a human fix?", internal; Pallet recruiting second; "get me $5" once asks are solid]
+3. Run the first campaign by hand before building the store? [yes, this week, with a plain `campaign.md` and tagged missions]
+4. Does a member's purpose become a standing campaign? [yes, read-only first]
+5. Owner approves every proposed mission, or vetoes? [veto]
+6. Where does the Standard live? [`atris/STANDARD.md` that points to PERSONA, ANTISLOP, lessons; can be added to, never loosened]
+7. PRs or straight to master for code phases? [PRs through the merge queue; spec docs may go direct]
+8. CLI `parent_mission_id`: keep only "spawned by" (backend meaning) and drop "came after"? [yes]
+9. Can a campaign's home move between computers by lease? [yes]
+10. First campaign on cloud computers (turn a business attempt into a campaign) or local? [local this week, cloud next]
 
 ---
 

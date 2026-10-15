@@ -32,11 +32,18 @@ Check: a concurrency test with two processes appending and compacting at once lo
 
 Check: `node --test test/campaign-schema.test.js` covers a valid campaign, a missing judge, a nested parent two levels deep (rejected), and an unknown event type (rejected).
 
+## Phase 0.5 — Run the first campaign by hand (before Phase 1)
+
+Run "Why do 25 landings a week still need a human fix?" for one week with a plain `atris/campaigns/<id>.md` (title, owner, seats, bet, judge, budget, stop) and missions tagged `campaign:<id>` in their objective. Log every pain point in this folder as `by-hand.md`. Adjust the schema before building the store.
+
+Check: `by-hand.md` exists with at least five concrete observations, and the schema PR cites them.
+
 ## Phase 1 — Store and fold
 
 **Create** `lib/campaign-store.js`.
 
-- Append records to `.atris/state/campaigns.jsonl` and events to `.atris/state/campaign_events.jsonl` (same atomic-append style as `missions.jsonl` / `mission_events.jsonl`).
+- Store adapter over SQLite at `<workspace>/.atris/state/atris.db` (tables `campaigns`, `missions`, `events`; WAL mode; one transaction per append). Events carry a globally unique id, the origin computer, and a per-origin sequence. An in-memory adapter for tests.
+- Keep the core pure: `fold(events)` and `decide(state)` take no I/O. Ship golden event logs with expected folded state in `test/fixtures/campaign/`; the backend's Python fold must pass the same files.
 - `fold(events) → { state, answer, confidence, budget.spent, asks, missions }`. Computed fields are never written by hand.
 - `listCampaigns(root)`, `getCampaign(root, id)` return folded views.
 
@@ -127,10 +134,25 @@ Check: health-sentinel's purpose appears with its check as the judge.
 ## Phase 10 — Backend mirror and renames (separate repo, separate PR)
 
 - `atrisos-backend`: add `/api/campaigns/schema` and `/api/campaigns/preview` next to the mission routes, generated from the same schema.
+- Tables `campaigns` and `campaign_events` (copy the `timeline_events` idempotent-append pattern: unique on campaign and event id).
+- Add `campaign_id` to `Atris2MissionRequest` (`backend/routers/atris2_router.py:1026`) and the mission row; a child mission's `campaign_id` must equal its parent's.
+- Reserve each mission from a campaign budget pool using the existing `budget_hold` path (`backend/services/mission_runner_service.py`).
+- Extend the mission checks step into the campaign judge for cloud campaigns, and record `judge_ran` server-side.
+- Python fold passes the shared golden logs from Phase 1.
 - Rename Rainmaker and command-center cold-email "campaigns" to "sequences" in code and copy.
 - CLI: rename loose "quest" wording in `commands/xp.js` ("Next quest") and `commands/business-sync.js` ("quest gate") to plain words.
 
 Check: backend schema route returns the same field list as `lib/campaign-schema.js`.
+
+## Phase 11 — Sync, homes, and one harness everywhere
+
+- Shared member id issued by the backend; local `MEMBER.md` stores it. Replace name matching (`member_projection_service.py`).
+- Outbox and inbox: computers push new events and pull missing ones by id. Duplicates are ignored.
+- Home lease: the home renews a lease in the backend; on expiry another computer may take over and log `home_moved`.
+- Business EC2 computers already reinstall the CLI on wake (`backend/services/ai_computer_ec2_service.py`). Make the campaign store and sync part of that bootstrap so every business computer can be a home.
+- Trust boundary: money, ask approvals, done rulings for cloud campaigns, and identity are enforced by the backend, never by the computer's own SQLite.
+
+Check: a campaign started on a laptop keeps running on a business EC2 computer after the laptop's lease expires, and its folded state is identical on both and in the backend.
 
 ---
 
