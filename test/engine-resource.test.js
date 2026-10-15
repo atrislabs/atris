@@ -5535,3 +5535,69 @@ test('the real cleanup command preserves history and records rejected stop signa
     fs.rmSync(root, { recursive: true, force: true });
   }
 });
+
+test('the real cleanup command keeps both outcomes when one stop works and one is rejected', () => {
+  const { spawnSync } = require('node:child_process');
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'sweep-mixed-signal-'));
+  const preload = path.join(root, 'mixed-signal.cjs');
+  const cli = path.join(__dirname, '..', 'bin', 'atris.js');
+  const historyFile = path.join(root, RESOURCE_LOG);
+  const signalFile = path.join(root, 'signals');
+  const previousHistory = JSON.stringify({ at: '2026-10-15T10:00:00.000Z', phase: 'sweep', stopped: [123], failed: [], skipped: [], leaked_ssh_agents: 2 }) + '\n';
+  try {
+    fs.mkdirSync(path.dirname(historyFile), { recursive: true });
+    fs.writeFileSync(preload, `
+      const fs = require('node:fs');
+      const resource = require(${JSON.stringify(require.resolve('../lib/engine-resource'))});
+      resource.readSshAgents = () => ({
+        agents: [
+          { pid: 200, ppid: 1, uid: process.getuid(), age_sec: 3600, args: 'ssh-agent -s' },
+          { pid: 201, ppid: 1, uid: process.getuid(), age_sec: 1800, args: 'ssh-agent -s' },
+        ],
+        referenced: new Set(), unread: [],
+      });
+      process.kill = (pid, signal) => {
+        fs.appendFileSync(${JSON.stringify(signalFile)}, pid + ' ' + signal + '\\n');
+        if (pid === 200 && signal === 'SIGTERM') return true;
+        if (pid === 201 && signal === 'SIGTERM') throw Object.assign(new Error('permission denied'), { code: 'EPERM' });
+        throw new Error('unexpected signal');
+      };
+    `);
+    for (const json of [false, true]) {
+      fs.writeFileSync(historyFile, previousHistory);
+      fs.rmSync(signalFile, { force: true });
+      const ran = spawnSync(process.execPath, ['--require', preload, cli, 'engine', 'sweep', '--apply', ...(json ? ['--json'] : [])], {
+        cwd: root, encoding: 'utf8', timeout: 30000,
+        env: { ...process.env, ATRIS_AUTO_UPDATE: 'off' },
+      });
+      assert.equal(ran.error, undefined);
+      assert.equal(ran.status, 1, ran.stderr);
+      assert.equal(fs.readFileSync(signalFile, 'utf8'), '200 SIGTERM\n201 SIGTERM\n');
+      if (json) {
+        const report = JSON.parse(ran.stdout);
+        assert.deepStrictEqual(report.stopped, [200]);
+        assert.deepStrictEqual(report.failed, [{ pid: 201, code: 'EPERM' }]);
+        assert.equal(report.left, 1);
+        assert.deepStrictEqual(report.history.last_sweep.stopped, [200]);
+        assert.deepStrictEqual(report.history.last_sweep.failed, [201]);
+      } else {
+        assert.match(ran.stdout, /stopped 1 leaked ssh-agent\b/);
+        assert.match(ran.stdout, /could not stop pid 201: EPERM/);
+        assert.doesNotMatch(ran.stdout, /could not stop pid 200/);
+        assert.match(ran.stdout, /^1 leaked ssh-agent still left on this machine$/m);
+      }
+      const saved = fs.readFileSync(historyFile, 'utf8');
+      assert.equal(saved.slice(0, previousHistory.length), previousHistory);
+      const appended = saved.slice(previousHistory.length).trim().split('\n').map(JSON.parse);
+      assert.equal(appended.length, 1);
+      assert.equal(appended[0].phase, 'sweep');
+      assert.deepStrictEqual(appended[0].stopped, [200]);
+      assert.deepStrictEqual(appended[0].failed, [201]);
+      assert.deepStrictEqual(appended[0].skipped, []);
+      assert.equal(appended[0].leaked_ssh_agents, 1);
+      console.log(`mixed cleanup signals, ${json ? 'json' : 'text'}, exit ${ran.status}: ${ran.stdout.trim()}`);
+    }
+  } finally {
+    fs.rmSync(root, { recursive: true, force: true });
+  }
+});

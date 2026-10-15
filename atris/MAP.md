@@ -152,6 +152,8 @@ Hourly cleanup scan failures: `commands/autoland.js:913` includes a saved scan e
 
 Hourly cleanup stop cap: `commands/autoland.js:871` caps one hourly pass at 200 stops, passed to `lib/engine-resource.js:471`, which stops the oldest first and keeps the rest as deferred in the sweep line; the summary reads `left N more leaked ssh-agents for the next pass` (`commands/autoland.js:912`). The manual sweep has no cap. Regression: `test/engine-resource.test.js:639`.
 
+Rejected cleanup stops: `lib/engine-resource.js:487` appends one sweep line after earlier history, with refused stops in `failed` and still counted as left. Regressions: `test/engine-resource.test.js:5485` runs the real cleanup with every stop refused; `test/engine-resource.test.js:5539` stops one agent and has the other refuse, checking both outcomes and one left.
+
 Local runner alias launch guard: `test/engine-resource.test.js:1501` follows earlier declarations in the same function through plain aliases and profile members, so copying a resolved runner no longer hides its launch. The guard also follows simple named-function parameters from known same-file runner arguments, keeping quoted commas and multiline calls intact. Reassignments, destructuring, and imported callers remain outside this text scan.
 
 Recording window boundaries: both launch guards in `test/engine-resource.test.js` stop at top-level function boundaries, including one-line definitions. A recorder inside another function cannot cover a neighboring launch; the twelve-line limit still applies within the launch function.
