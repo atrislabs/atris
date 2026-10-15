@@ -285,3 +285,8 @@ Look at the column first \u2014 the tests YOUR team wrote.
 => Look at the column first, the tests YOUR team wrote.
 He watched her read the page \u2014 the way her eyes moved.
 => He watched her read the page, the way her eyes moved.
+# a dash pressed against a hyphenated word after a parenthesis or a space is a flag's two hyphens
+Hook alone is not enough (\u2014no-verify can bypass it); tests catch it.
+=> Hook alone is not enough (--no-verify can bypass it); tests catch it.
+Run git commit \u2014no-verify to skip the hook.
+=> Run git commit --no-verify to skip the hook.

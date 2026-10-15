@@ -2489,6 +2489,24 @@ test('fix keeps a comma before a past verb phrase with a possessive inside it af
   ]);
 });
 
+test('fix turns a dash pressed against a hyphenated word after a parenthesis into a flag', () => {
+  // from real repo text: "Hook alone isn't enough (\u2014no-verify can bypass it)"
+  // came out as "(, no-verify", doubled punctuation. The dash was a flag's two
+  // hyphens merged into one, so it takes them back; a dash between words with
+  // a hyphenated word inside stays a pair of parentheses.
+  const file = tmpFile('merged-flag.md', [
+    'Hook alone is not enough (\u2014no-verify can bypass it); tests catch it.',
+    'Run git commit \u2014no-verify to skip the hook.',
+    'He came\u2014well-known for it\u2014late.',
+  ].join('\n'));
+  const { changes } = applyFixes([file], RULES);
+  assert.deepEqual(changes.map((c) => c.after), [
+    'Hook alone is not enough (--no-verify can bypass it); tests catch it.',
+    'Run git commit --no-verify to skip the hook.',
+    'He came (well-known for it) late.',
+  ]);
+});
+
 test('fix reads "yes" as a subject noun and a possessive in capitals as an object after a dash', () => {
   // from real repo text: "the fake yes buys YOUR comfort with counterfeit
   // commitment" spliced twice over: "yes" ends in s and read as a plural,

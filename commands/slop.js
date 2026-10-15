@@ -820,6 +820,11 @@ function fixEmDash(s, { endsBlock = false, startsBlock = false, spans = [], abov
   // A fat arrow's shaft is drawn with equals signs, so a dash pressed against
   // "=>" lengthens it: "plan ===> build", never "plan, => build" or "--=>".
   s = s.replace(/\u2014+(?==>)/g, (m) => '='.repeat(m.length));
+  // a dash with a space or an opening parenthesis before it, pressed against
+  // a lowercase hyphenated word, is a flag whose two hyphens were merged into
+  // one dash, so it takes them back: "(--no-verify can bypass it)", never
+  // "(, no-verify can bypass it)". A dash with a word before it stays prose.
+  s = s.replace(/(?<=(?:^|[\s(`])[ \t]*)\u2014(?=[a-z]+(?:-[a-z]+)+(?![\w-]))/g, '--');
   s = s.replace(/\u2014+(?=>(?!=)|[\u25b6\u25b7\u25b8\u25b9\u25ba\u2190\u2192\u2194\u21a6\u21d0\u21d2\u21d4\u27f5-\u27ff\u2794-\u27be])|(?<=[<\u25c0\u25c1\u25c2\u25c3\u25c4\u2190\u2192\u2194\u21a6\u21d0\u21d2\u21d4\u27f5-\u27ff\u2794-\u27be])\u2014+/g, (m) => '-'.repeat(m.length));
   // dashes pressed together between two boxes draw the line that joins them,
   // so they turn into hyphens of the same width: "[a] --- [b]", never "[a],
