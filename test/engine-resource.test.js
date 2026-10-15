@@ -4761,6 +4761,48 @@ test('the landing status splits leaked ssh-agents by the engine runs open when t
   }
 });
 
+test('a leaked ssh-agent that started during a run whose start fell before the read part of a big log is named with that run', () => {
+  const { showStatus } = require('../commands/autoland');
+  const { MAX_LOG_BYTES } = require('../lib/engine-resource');
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'autoland-status-leak-cut-start-'));
+  const file = path.join(root, RESOURCE_LOG);
+  const at = (h) => new Date(Date.now() - h * 3600000).toISOString();
+  const agent = (pid, h) => ({ pid, ppid: 1, uid: 501, age_sec: Math.round(h * 3600), args: 'ssh-agent -s' });
+  const status = (agents) => {
+    const out = [];
+    const original = console.log;
+    console.log = (line = '') => out.push(String(line));
+    try {
+      showStatus(root, [], { readSshAgents: () => ({ agents, referenced: new Set() }), uid: 501, pathAtrisRecordsRuns: true });
+    } finally {
+      console.log = original;
+    }
+    return out.join('\n');
+  };
+  try {
+    require('node:child_process').spawnSync('git', ['init', '-q'], { cwd: root });
+    fs.mkdirSync(path.dirname(file), { recursive: true });
+    // A pad line the size of the read part pushes LOST's start out of it,
+    // so the read part begins with cursor run B 5h ago.
+    fs.writeFileSync(file, [
+      JSON.stringify({ at: at(6), phase: 'start', engine: 'codex', run_id: 'LOST' }),
+      'x'.repeat(MAX_LOG_BYTES),
+      JSON.stringify({ at: at(5), phase: 'start', engine: 'cursor', run_id: 'B' }),
+      JSON.stringify({ at: at(4.5), phase: 'end', engine: 'cursor', run_id: 'B' }),
+      JSON.stringify({ at: at(2), phase: 'end', engine: 'codex', run_id: 'LOST' }),
+      '',
+    ].join('\n'));
+    // 3h ago only LOST was open; 1h ago nothing; 5.5h ago is before the
+    // read part begins.
+    const split = status([agent(300, 3), agent(301, 1), agent(302, 5.5)]);
+    const line = split.split('\n').find((l) => l.includes('when the leaked ssh-agents started'));
+    console.log(`real cut start leak split: ${line && line.trim()}`);
+    assert.match(split, /when the leaked ssh-agents started: 1 started while an engine run was open \(codex 1\), 1 with no engine run open, 1 before the run log begins/, split);
+  } finally {
+    fs.rmSync(root, { recursive: true, force: true });
+  }
+});
+
 test('the sweep listing splits leaked ssh-agents by engine runs and points to the startup line when most started outside them', () => {
   const { engineCommand } = require('../commands/engine');
   const { showStatus } = require('../commands/autoland');
