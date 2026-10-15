@@ -1394,7 +1394,22 @@ function describeRefusedRemoval(worktreePath, gitOutput = '', now = Date.now()) 
   const held = describeGitHold(gitHold({ worktree: worktreePath, now }));
   if (held) return held;
   const line = String(gitOutput || '').trim().split('\n')[0].replace(/^(fatal|error):\s*/, '').trim();
-  return line.slice(0, 160) || 'git would not remove it';
+  return shortRefusalLine(worktreePath, line) || 'git would not remove it';
+}
+
+// Every caller prints the folder beside git's line, so git's copy of the
+// folder path shrinks to its name. A line still too long keeps its end, where
+// git says what went wrong.
+function shortRefusalLine(worktreePath, line, limit = 160) {
+  const full = path.resolve(worktreePath);
+  let real = full;
+  try { real = fs.realpathSync(full); } catch {}
+  const name = path.basename(full);
+  const spellings = [...new Set([`/private${full}`, real, full])].sort((a, b) => b.length - a.length);
+  for (const spelling of spellings) line = line.split(spelling).join(name);
+  if (line.length <= limit) return line;
+  const tail = Math.floor(limit / 3);
+  return `${line.slice(0, limit - tail - 5)} ... ${line.slice(-tail)}`;
 }
 
 // The same line from a whole removal result. A removal killed at its time

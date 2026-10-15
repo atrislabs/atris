@@ -1267,6 +1267,37 @@ test('a plain delete after a git removal of the same folder must check its pin f
   assert.match(result.stdout, /review gaps: 0; synthetic source only, never executed/);
 });
 
+// Every report prints the folder beside git's line, so a long folder path in
+// git's own text must not crowd out the words that say what went wrong.
+test('a refusal from a deep folder keeps git\'s reason, not just its path', () => {
+  const { base, repo } = landedWorktree();
+  try {
+    const wt = path.join(base, ...Array.from({ length: 8 }, (_, i) => `nested-folder-level-${i}`), 'deep-wt');
+    git(repo, ['worktree', 'add', '-q', '-b', 'deep-run', wt]);
+    fs.renameSync(path.join(wt, '.git'), path.join(wt, '.git-moved'));
+    const refused = spawnSync('git', ['worktree', 'remove', '--force', wt], { cwd: repo, encoding: 'utf8' });
+    assert.notEqual(refused.status, 0);
+    assert.ok(refused.stderr.trim().length > 160, refused.stderr);
+    const { describeRemovalResult } = require('../commands/worktree');
+    const words = "validation failed, cannot remove working tree: 'deep-wt/.git' does not exist";
+    assert.equal(describeRemovalResult(wt, refused), words);
+    // The same folder named the way os.tmpdir() spells it on macOS.
+    assert.equal(describeRemovalResult(wt.replace(/^\/private\//, '/'), refused), words);
+    assert.ok(fs.existsSync(path.join(wt, 'README.md')));
+  } finally {
+    fs.rmSync(base, { recursive: true, force: true });
+  }
+});
+
+test('a refusal line still too long keeps its start and its end', () => {
+  const { describeRefusedRemoval } = require('../commands/worktree');
+  const line = `could not remove ${'x'.repeat(300)} because the disk is read-only`;
+  const short = describeRefusedRemoval('/nowhere/at/all', `fatal: ${line}\n`);
+  assert.ok(short.length <= 160, short);
+  assert.ok(short.startsWith('could not remove xxx'), short);
+  assert.ok(short.endsWith('because the disk is read-only'), short);
+});
+
 // Git accepts line breaks in pin reasons. Every cleanup still owes the
 // operator one readable report line, while the stored reason stays intact.
 test('multiline pin reasons stay on one line in refusal and real cleanup reports', () => {

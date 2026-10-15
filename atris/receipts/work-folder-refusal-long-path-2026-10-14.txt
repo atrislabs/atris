@@ -1,0 +1,23 @@
+Refusal reasons keep git's words when the folder path is long
+
+Files edited: commands/worktree.js, test/worktree-removal-guard.test.js, atris/refs/MAP-NOTES.md, atris/team/architect/logs/2026-10-14.md, this receipt.
+
+What changed: the shared line that explains why git refused to remove a folder (printed by tidy, reap, worktree cleanup, autopilot, land and fleet review) used to cut git's message at 160 characters. Long temp folder paths ate the limit, so the words that say what went wrong were lost. Every report already prints the folder beside the reason, so git's copy of the path now shrinks to the folder's name. A line that is still too long keeps its start and its end.
+
+$ node --test test/worktree-removal-guard.test.js test/member-tidy.test.js
+exit=0
+tests 67, pass 67, fail 0, todo 0, duration_ms 80709
+
+$ node --test test/fleet-stranded-worktrees.test.js test/land.test.js   (other readers of refusal text)
+exit=0
+tests 25, pass 25, fail 0
+
+$ node atris/receipts/work-folder-review-late-pin-probe.js   (real git, real review setup)
+exit=0
+before: (removal_refused: validation failed, cannot remove working tree: '/private$TMPDIR/atris-one-lap-review-pin-probe-.../)
+after:  (removal_refused: validation failed, cannot remove working tree: 'worktree/.git' does not exist)
+
+Negative trial: with the old 160-character cut put back, both new checks failed; the file was restored from a copy afterward.
+
+$ node bin/atris.js doc-health --fix-refs
+4 shifted refs moved; 4 unrelated refs left for a human, unchanged from last tick.
