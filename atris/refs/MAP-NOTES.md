@@ -2826,6 +2826,8 @@ Current-step fixture connections: `test/commands.test.js:10729` runs each side-t
 
 Task status review split fixture connection: `test/commands.test.js:14354` sets up the continuation, human accept and blocking rows on one store connection, in the same order. One store open replaces eight; the status read remains on the CLI.
 
+Task reviews queue fixture connections: `test/commands.test.js:14425` seeds the second-reviewer row, readies it and seeds the unsafe row on one store connection, in the same order. Three store opens replace five; every ready, review and queue read on the other rows remains on the CLI.
+
 Certified review fallback read batching: `test/commands.test.js:12603` awaits both next output formats together after certification, before creating follow-up work. `commands/task.js:6948` builds next output from task rows, independent of the saved view. All assertions remain; six sequential CLI stages become five.
 
 Final fallback read batching: `test/commands.test.js:12684` awaits next and show together after follow-up creation. Both read unchanged task rows; every assertion remains. Five sequential CLI stages become four.

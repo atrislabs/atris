@@ -14422,17 +14422,21 @@ test('task reviews gives a compact certified accept queue', async () => {
     // Only creation and claiming are fixture setup. Keep ready, review, and
     // queue rendering on the CLI so the queue reads real command output.
     const workspaceRoot = taskStore.workspaceRoot(dir);
-    function seedClaimedTask(title) {
+    // Each setup phase runs on one connection, closed before the CLI runs.
+    const withStore = (fn) => {
       const db = taskStore.open(dbPath);
       try {
-        const { id } = addSeedTask(db, { title, tag: 'review', workspaceRoot });
-        assert.equal(taskStore.claimTask(db, { id, claimedBy: 'codex' }).claimed, true);
-        return { id, display_id: taskStore.taskDisplayRefMap(taskStore.listTasks(db, { workspaceRoot })).get(id) };
+        return fn(db);
       } finally {
         taskStore.close();
       }
-    }
-    const certifiedTask = seedClaimedTask('Ship certified proof packet');
+    };
+    const seedClaimedTask = (db, title) => {
+      const { id } = addSeedTask(db, { title, tag: 'review', workspaceRoot });
+      assert.equal(taskStore.claimTask(db, { id, claimedBy: 'codex' }).claimed, true);
+      return { id, display_id: taskStore.taskDisplayRefMap(taskStore.listTasks(db, { workspaceRoot })).get(id) };
+    };
+    const certifiedTask = withStore((db) => seedClaimedTask(db, 'Ship certified proof packet'));
     const certifiedProof = `Product proof: Human approval queue shows a compact certified packet without stale objective text. ${'context '.repeat(35)}Verifiers: node --check test/commands.test.js passed, focused review queue behavior checked, live atris task reviews json showing rows, git status --porcelain -- commands/task.js test/commands.test.js clean`;
     assert.equal(runCli([
       'task', 'ready', certifiedTask.display_id,
@@ -14458,17 +14462,14 @@ test('task reviews gives a compact certified accept queue', async () => {
     assert.equal(runCli(['task', 'review', certifiedTask.display_id, '--reward', '0', '--as', 'validator'], { cwd: dir, env }).status, 0);
 
     // A plain ready is one store call in the CLI, so the second-reviewer row
-    // reaches review in-process; the queue reads below still see it.
-    const blockingTask = seedClaimedTask('Needs another agent review');
-    const blockingDb = taskStore.open(dbPath);
-    try {
-      const readied = taskStore.readyTask(blockingDb, { id: blockingTask.id, actor: 'codex', proof: 'one review validation passed', result: FIXTURE_RESULT_SENTENCE });
+    // reaches review in-process; the queue reads below still see it. The
+    // unsafe row is seeded on the same connection, in the same order.
+    const { blockingTask, unsafeTask } = withStore((db) => {
+      const blocking = seedClaimedTask(db, 'Needs another agent review');
+      const readied = taskStore.readyTask(db, { id: blocking.id, actor: 'codex', proof: 'one review validation passed', result: FIXTURE_RESULT_SENTENCE });
       assert.equal(readied.ready, true, readied.reason);
-    } finally {
-      taskStore.close();
-    }
-
-    const unsafeTask = seedClaimedTask('Used a check outside the allowlist');
+      return { blockingTask: blocking, unsafeTask: seedClaimedTask(db, 'Used a check outside the allowlist') };
+    });
     const unsafeReady = runCli([
       'task', 'ready', unsafeTask.display_id,
       '--verify', 'ls atris',
