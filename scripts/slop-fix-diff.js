@@ -182,7 +182,9 @@ function oddMarks(source, fixed) {
 // quote never ends an opener's first half: 'Any time they say ("Yeah, I
 // spend hours"), they've normalized it'. An opener right after
 // "that" opens the clause the comma ends the same way: "That means that if
-// you run long (if you train), it will not learn".
+// you run long (if you train), it will not learn". An opener carries across
+// a comma and "and" or kin while its first half has led to no subject: "If
+// you build it big, really big, and you say it must care, we might not".
 const SPLICE = /,\s+(?:(?:it|we|they|he|she|I)(?:['\u2019](?:s|re|ll|ve|d|m))?\s+[a-z]|(?:this|that|these|those|there)(?:['\u2019]s|\s+(?:is|are|was|were|will|would|can|must|should|has|have)\b))/g;
 const OPENS_FIRST_HALF = /^(?:(?:but|and|so|yet|or|then)\s+)?(?:if|when|whenever|once|because|since|although|though|while|unless|until|after|before|as|(?:each|every|any)\s+time)\b/i;
 const SECOND_HALF = /,\s+(?:you|it|we|they|he|she|I)(?:['\u2019](?:s|re|ll|ve|d|m))?\s+[a-z]/;
@@ -196,11 +198,15 @@ function splices(text) {
   for (const m of text.matchAll(SPLICE)) {
     const before = text.slice(0, m.index);
     const part = before.split(SENTENCE_STOP).pop();
-    const opensLine = /(?:^|\n)$/.test(before.slice(0, before.length - part.length));
-    const sentence = part.replace(/^(?:[-*+>#|]\s*|\d+[.)]\s*|\*\*|__|["\u201c'(]\s*)*/, '').trim();
+    const earlier = before.slice(0, before.length - part.length);
+    const opensLine = /(?:^|\n)$/.test(earlier);
+    const bare = (x) => x.replace(/^(?:[-*+>#|]\s*|\d+[.)]\s*|\*\*|__|["\u201c'(]\s*)*/, '').trim();
+    const sentence = bare(part);
     const thatOpener = THAT_OPENS_FIRST_HALF.exec(sentence);
     const unquoted = (x) => x.replace(/"[^"]*"|\u201c[^\u201d]*\u201d/g, '""');
-    const firstHalf = (OPENS_FIRST_HALF.test(sentence) && !SECOND_HALF.test(unquoted(sentence))) || (thatOpener && !SECOND_HALF.test(unquoted(sentence.slice(thatOpener.index))));
+    const opens = (x) => OPENS_FIRST_HALF.test(x) && !SECOND_HALF.test(unquoted(x));
+    const carried = /,\s+$/.test(earlier) && /^(?:and|but|so|yet|or)\s/.test(part) && opens(bare(earlier.replace(/,\s+$/, '').split(SENTENCE_STOP).pop()) + ', ' + sentence);
+    const firstHalf = opens(sentence) || carried || (thatOpener && !SECOND_HALF.test(unquoted(sentence.slice(thatOpener.index))));
     const quotedName = /[\s(]["\u201c][A-Z][a-z'\u2019]+$/.test(before);
     if (!firstHalf && !NO_CLAUSE.test(sentence) && !(opensLine && LONE_NAME.test(sentence)) && !quotedName && !WAITS_FOR_CLAUSE.test(sentence)) count += 1;
   }
