@@ -156,6 +156,10 @@ Two. Expect notes on screen, exit code 0, and a last line of `quotes: N kept, N 
 
 **Handling:** Print the paid command, `atris youtube process <url>`.
 
+**Error:** YouTube answers the caption fetch with its "confirm you're not a bot" sign-in wall (seen live on 2026-10-14 for both bench videos).
+
+**Handling:** Say YouTube is blocking caption downloads from this connection, skip the audio download (it would hit the same wall), print the paid command, and exit 2. It used to say the video had no captions. A bare 429 is not a block, since the machine-translated "en" track returns 429 on its own, so it still reads as no captions.
+
 **Error:** The writer invents a quote.
 
 **Handling:** `ytquote-repair.js` drops it and counts it in the tally line.
