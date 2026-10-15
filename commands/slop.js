@@ -603,9 +603,11 @@ const THE_PLURAL_CLAUSE_AFTER_DASH = new RegExp(`${CLAUSE_END}\\s*\\u2014\\s*(?!
 // main verb and an object, starts one too: "the article linked in the tweet
 // covers this", "the booking form crammed into a right rail dominated the
 // screen". The main verb must come with "the", "this", "it" and kin after
-// it, or be a helper, so "the files stored in atris" stays a phrase.
+// it, or be a helper, so "the files stored in atris" stays a phrase. A verb
+// in "s" may take a plural or a name too: "a boost saved for Sunday
+// produces matches", "a `rate_limit` treated as `tool_crash` wastes EC2".
 const PARTICIPLE_OBJECT = '(?:the|a|an|this|that|it|them|every|all|no|its|their|our|your)';
-const PARTICIPLE_CLAUSE_AFTER_DASH = new RegExp(`${CLAUSE_END}\\s*\\u2014\\s*(?=(?:the|a|an|every|each)\\s+(?:(?!(?:the|a|an|that|which|who)\\b)${NOUN_WORD}\\s+){1,2}[a-z]{3,}ed\\s+(?:in|into|as|for|by|on|at|from|with|under|onto|to)\\s+(?:(?!(?:and|or|but|that|which|who)\\b)[^\\s\\u2014,;.!?]+\\s+){1,5}?(?:(?:has|have|had|is|are|was|were|will)\\s+[a-z]|[a-z]{3,}(?<!ss|us|is)s\\s+${PARTICIPLE_OBJECT}\\b|[a-z]{3,}ed\\s+${PARTICIPLE_OBJECT}\\b))`, 'g');
+const PARTICIPLE_CLAUSE_AFTER_DASH = new RegExp(`${CLAUSE_END}\\s*\\u2014\\s*(?=(?:the|a|an|every|each)\\s+(?:(?!(?:the|a|an|that|which|who)\\b)${NOUN_WORD}\\s+){1,2}[a-z]{3,}ed\\s+(?:in|into|as|for|by|on|at|from|with|under|onto|to)\\s+(?:(?!(?:and|or|but|that|which|who)\\b)[^\\s\\u2014,;.!?]+\\s+){1,5}?(?:(?:has|have|had|is|are|was|were|will)\\s+[a-z]|[a-z]{3,}(?<!ss|us|is)s\\s+(?:${PARTICIPLE_OBJECT}\\b|[a-z]{3,}(?<!ss|us|is)s\\b|[A-Z][\\w-]*)|[a-z]{3,}ed\\s+${PARTICIPLE_OBJECT}\\b))`, 'g');
 // A "the" subject of one or two words, then a verb in "s" that is rarely a
 // noun and more words, starts one too: "keep it short; the config lives in
 // one file". A pronoun or "that" before the verb opens a clause inside a

@@ -499,3 +499,9 @@ We mocked the baseline \u2014 the booking form crammed into a 340px right rail d
 => We mocked the baseline; the booking form crammed into a 340px right rail dominated the screen.
 Keep notes \u2014 the files stored in folders the team owns.
 => Keep notes, the files stored in folders the team owns.
+
+# a verb in "s" after a participle subject may take a plural or a name
+Errors route wrong \u2014 a `rate_limit` treated as `tool_crash` wastes EC2 sandbox time.
+=> Errors route wrong; a `rate_limit` treated as `tool_crash` wastes EC2 sandbox time.
+Keep notes \u2014 the files stored in the repo docs folder.
+=> Keep notes, the files stored in the repo docs folder.

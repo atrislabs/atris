@@ -1285,6 +1285,7 @@ test('fix joins a noun clause after the dash with a semicolon', () => {
     // verb and "this" or "the", is a clause; with no main verb it is a phrase
     'It skips reward work \u2014 the article linked in the tweet covers this in detail.',
     'Keep notes \u2014 the files stored in the shared folder.',
+    'Earliness beats peak \u2014 a boost saved for Sunday produces matches with no runway.',
     // a title where every word is capitalized names a thing, so it never
     // joins; words in all capitals are shouting and still do
     'Inbox Triage \u2014 23 emails processed',
@@ -1393,6 +1394,7 @@ test('fix joins a noun clause after the dash with a semicolon', () => {
     '- File: wherever the harness reads it; search for the string.',
     'It skips reward work; the article linked in the tweet covers this in detail.',
     'Keep notes, the files stored in the shared folder.',
+    'Earliness beats peak; a boost saved for Sunday produces matches with no runway.',
     'Inbox Triage, 23 emails processed',
     'Release Notes, it ships Friday.',
     'Your journal tracks how ideas evolve; the navigator reads it to understand context.',
