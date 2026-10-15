@@ -3569,6 +3569,21 @@ test('the fix diff script feeds whole paragraphs with --paragraphs', () => {
   const r = spawnSync(process.execPath, [script, '--paragraphs', '--base', 'HEAD', dir], { encoding: 'utf8', cwd: path.join(__dirname, '..') });
   assert.equal(r.status, 0, r.stderr);
   assert.match(r.stdout, /^1 dashed paragraph in 1 file; \d+ moved against HEAD$/m);
+  assert.match(r.stdout, /^0 of the moved gained doubled punctuation or unbalanced parentheses$/m);
+});
+
+test('the fix diff script marks a fix that gains doubled punctuation or loses paren balance', () => {
+  const { oddMarks } = require('../scripts/slop-fix-diff.js');
+  const D = String.fromCharCode(0x2014);
+  // a comma that lands next to a colon, or a dash swap that drops a closing
+  // paren, is new to the fix; marks the writer already had are not
+  assert.deepEqual(oddMarks(`Ship it ${D}: then check.`, 'Ship it,: then check.'), ['doubled punctuation']);
+  assert.deepEqual(oddMarks(`The log (see below ${D}) is clean.`, 'The log (see below, is clean.'), ['unbalanced parentheses']);
+  assert.deepEqual(oddMarks(`Use e.g., a flag ${D} not a file.`, 'Use e.g., a flag, not a file.'), []);
+  // an aside that wraps across lines is unbalanced in the source too, and a
+  // code span or link target is never read as prose
+  assert.deepEqual(oddMarks(`The run (one tick ${D} a slice`, 'The run (one tick, a slice'), []);
+  assert.deepEqual(oddMarks(`Run \`a,,b\` ${D} then [it](x:(y) ${D} ok`, 'Run `a,,b`, then [it](x:(y), ok'), []);
 });
 
 test('fix gives a quoted phrase and its verb after a dash a semicolon', () => {

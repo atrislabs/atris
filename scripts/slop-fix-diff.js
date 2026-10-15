@@ -8,6 +8,9 @@
 // should move one line and moves forty shows up here before it lands.
 // With --paragraphs it feeds whole paragraphs instead, so a change that
 // reads across lines (a dash that opens a wrapped line) is counted too.
+// A moved line whose new fix holds more doubled punctuation or a different
+// parenthesis balance than the source gets an odd mark, so a rule change
+// that writes awkward output says so without a hand-written scan.
 //
 //   node scripts/slop-fix-diff.js ~/notes ../other-repo
 //   node scripts/slop-fix-diff.js --base master --limit 50 docs/
@@ -109,6 +112,22 @@ function fixAll(fixer, lines, dir) {
   return fixed;
 }
 
+// Marks a fix that the writer's own text did not have: two punctuation
+// marks in a row (", ," or ":." or "(,") or parentheses that no longer
+// balance the way the source did. Code spans and link targets are left out.
+// In --paragraphs mode the whole paragraph is one unit, so an aside that
+// wraps across lines balances the way it should.
+const DOUBLED = /[,;:]\s*[,;:.!?]|\(\s*[,;:]|[,;:]\s*\)|\.\s*,|,\s*,/g;
+function oddMarks(source, fixed) {
+  const plain = (text) => text.replace(/`[^`]*`/g, '``').replace(/\]\([^)]*\)/g, ']');
+  const doubled = (text) => (plain(text).match(DOUBLED) || []).length;
+  const balance = (text) => (plain(text).match(/\(/g) || []).length - (plain(text).match(/\)/g) || []).length;
+  const marks = [];
+  if (doubled(fixed) > doubled(source)) marks.push('doubled punctuation');
+  if (balance(fixed) !== balance(source)) marks.push('unbalanced parentheses');
+  return marks;
+}
+
 function main(argv) {
   let base = 'HEAD';
   let limit = 25;
@@ -138,11 +157,15 @@ function main(argv) {
     const after = fixAll(require(path.join(ROOT, 'commands', 'slop.js')), lines, dir);
     const moved = [];
     lines.forEach((line, i) => { if (before[i] !== after[i]) moved.push({ line, before: before[i], after: after[i] }); });
+    for (const m of moved) m.odd = oddMarks(m.line, m.after);
     for (const m of moved.slice(0, limit)) {
       console.log(`  was  ${show(m.before)}`);
-      console.log(`  now  ${show(m.after)}\n`);
+      console.log(`  now  ${show(m.after)}`);
+      if (m.odd.length) console.log(`  odd  ${m.odd.join(', ')}`);
+      console.log('');
     }
     console.log(`${lines.length} ${unit}${lines.length === 1 ? '' : 's'} in ${files.length} file${files.length === 1 ? '' : 's'}; ${moved.length} moved against ${base}`);
+    console.log(`${moved.filter((m) => m.odd.length).length} of the moved gained doubled punctuation or unbalanced parentheses`);
   } finally {
     fs.rmSync(dir, { recursive: true, force: true });
   }
@@ -150,3 +173,5 @@ function main(argv) {
 }
 
 if (require.main === module) process.exitCode = main(process.argv.slice(2));
+
+module.exports = { oddMarks };
