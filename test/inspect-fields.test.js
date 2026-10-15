@@ -245,7 +245,7 @@ test('mission and task help document inspect commands', async () => {
   assert.match(taskHelp.stdout, /atris task inspect <id> --fields review,status,title/);
 });
 
-test('inspectMission rejects unknown fields and missing id', () => {
+test('inspectMission rejects unknown fields and missing id', async () => {
   const dir = makeTempDir();
   try {
     fs.mkdirSync(path.join(dir, 'atris'), { recursive: true });
@@ -257,11 +257,14 @@ test('inspectMission rejects unknown fields and missing id', () => {
       runner: 'manual',
     });
 
-    const unknown = runCli(['mission', 'inspect', 'mission-inspect-errors', '--fields', 'bogus'], { cwd: dir });
+    // Both requests stop at argument validation before reading mission state.
+    const [unknown, missing] = await Promise.all([
+      runCliAsync(['mission', 'inspect', 'mission-inspect-errors', '--fields', 'bogus'], { cwd: dir }),
+      runCliAsync(['mission', 'inspect', '--fields', 'status'], { cwd: dir }),
+    ]);
     assert.equal(unknown.status, 2);
     assert.match(unknown.stderr, /Unknown mission inspect field/);
 
-    const missing = runCli(['mission', 'inspect', '--fields', 'status'], { cwd: dir });
     assert.equal(missing.status, 2);
     assert.match(missing.stderr, /Usage: atris mission inspect/);
   } finally {

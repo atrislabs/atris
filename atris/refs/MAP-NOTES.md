@@ -2863,3 +2863,5 @@ Scoped fallback read batching: `test/commands.test.js:12700` runs the two scoped
 Duplicate seed read batching: `test/commands.test.js:12769` awaits both next output formats together after certification, before the refused creation. Both read unchanged task rows, independent of the saved view. Every assertion remains; four sequential CLI stages become three.
 
 Inspect help read batching: `test/inspect-fields.test.js:236` awaits the mission and task help reads together. Both commands only display help; every assertion remains. Two sequential CLI stages become one.
+
+Rejected inspect read batching: `test/inspect-fields.test.js:246` runs both rejected requests together. Both stop at argument validation in `commands/mission.js` before reading mission state. Every exit and error assertion remains.
