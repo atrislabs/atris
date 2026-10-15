@@ -282,7 +282,10 @@ const QUANTITY_CLAUSE_AFTER_DASH = new RegExp(`${CLAUSE_END}\\s*\\u2014\\s*(?=(?
 // "the slow tests timed out" joins but "the new signed build" and "the files
 // stored in atris" are noun phrases and keep their comma. Common past verbs
 // without "ed" count too, and so does "fine" or "green" after the verb: "the
-// gate let the tick through", "the file built fine". A "they" or "we" before
+// gate let the tick through", "the file built fine". "Did" and "hid" come
+// from real docs, "the architecture didn't change; the SCALE did", and so
+// does "set", but only before "it", "them" or a word like "up", since "the
+// data set a team uses" is a noun phrase. A "they" or "we" before
 // the verb opens a clause inside a noun phrase, so "the version they made"
 // and "the version they shipped" keep their comma. So does a possessive in
 // any case, which opens a new noun: "the tests YOUR team wrote". A verb
@@ -298,7 +301,7 @@ const QUANTITY_CLAUSE_AFTER_DASH = new RegExp(`${CLAUSE_END}\\s*\\u2014\\s*(?=(?
 // 5 samples", but not when a comma follows the verb, since that reads as a
 // list of short phrases: "every claim measured, not asserted".
 const MANNER_WORD = '(?!(?:only|mostly|mainly|largely|partly|nearly|merely|simply|exactly|especially|particularly|probably|likely|really|actually|usually|generally|typically|certainly|clearly|apparently|basically|entirely|fully|early|daily|weekly|monthly|yearly|hourly|reply|apply|supply|family|rally)\\b)[a-z]{3,}ly';
-const PAST_VERB = '(?:(?:re|pre|un|over|under|auto)-?[a-z]{2,}ed|[a-z]{2,}ed|built|ran|broke|took|made|gave|got|went|came|sent|kept|held|found|lost|wrote|let|caught|brought|threw|grew|knew|began|stood|told|sold|became|fell|stuck)';
+const PAST_VERB = '(?:(?:re|pre|un|over|under|auto)-?[a-z]{2,}ed|[a-z]{2,}ed|built|ran|broke|took|made|gave|got|went|came|sent|kept|held|found|lost|wrote|let|caught|brought|threw|grew|knew|began|stood|told|sold|became|fell|stuck|did|hid|set(?=\\s+(?:it|them|up|out|off|aside)\\b))';
 const PAST_CLAUSE_AFTER_DASH = new RegExp(`${CLAUSE_END}\\s*\\u2014\\s*(?!${NAMING_PHRASE})(?=(?:the|a|an|(?:every|each)(?!(?:\\s+[a-z]+){1,3},))\\s+(?:(?!(?:the|a|an|that|whose|they|we|you|he|she|I|your|our|their|its|his|her|my|YOUR|OUR|THEIR|ITS|HIS|HER|MY)\\b)${SUBJECT_WORD}){1,3}(?:(?<!\\b(?:\\d+|one|two|three|four|five|six|seven|eight|nine|ten|few|many|several|both|all)\\s+)${MANNER_WORD}\\s+${PAST_VERB}\\s+[a-z]|(?<!\\b(?:most|least|more|less|best|worst|well|ill|much|half)\\s+)${PAST_VERB}(?:[.!?;,]|$|\\s+(?:out|up|down|off|back|over|away|again|fine|green|it|them|its|their|every|all|each|the|a|an|this|no|[a-z]{2,}ing)\\b|\\s+but\\s+(?:nothing|none|no|it|they|we|the|this|that)\\s|\\s+[a-z]{3,}(?<!ss|us|is)s\\s+(?:against|from|for|into|onto|across|through|before|after|instead)\\b)))`, 'g');
 // A plain verb ending in "s" counts only after a determiner and one more word,
 // and never right before a preposition: "a stray file turns them" joins, but

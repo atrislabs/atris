@@ -439,3 +439,14 @@ We fixed it \u2014 pages no longer found.
 # like it, so it stays a known gap rather than a guard
 We dropped it \u2014 the old flags still valid for users.
 ~> We dropped it, the old flags still valid for users.
+
+# "did", "hid" and "set" are past verbs after "the" and a noun, from real
+# docs; "set" counts only before "it", "them" or a word like "up"
+The architecture didn't change \u2014 the SCALE did.
+=> The architecture didn't change; the SCALE did.
+It was never a Claude failure \u2014 the label hid a codex credential gap.
+=> It was never a Claude failure; the label hid a codex credential gap.
+They are load-bearing context \u2014 the user set them up for a reason.
+=> They are load-bearing context; the user set them up for a reason.
+Clean it first \u2014 the data set a team uses.
+=> Clean it first, the data set a team uses.

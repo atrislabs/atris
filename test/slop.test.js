@@ -1236,6 +1236,12 @@ test('fix joins a noun clause after the dash with a semicolon', () => {
     'Clearly not real \u2014 the file built fine.',
     'Read the notes \u2014 the version they made.',
     'Read the notes \u2014 the version they shipped.',
+    // "did", "hid" and "set" before "them" or kin count too; "set" before a
+    // noun phrase is the noun, so "the data set a team uses" keeps its comma
+    'The layout held \u2014 the scale did.',
+    'It was never a model failure \u2014 the label hid a key gap.',
+    'They matter \u2014 the user set them up for a reason.',
+    'Clean it first \u2014 the data set a team uses.',
     // a title where every word is capitalized names a thing, so it never
     // joins; words in all capitals are shouting and still do
     'Inbox Triage \u2014 23 emails processed',
@@ -1330,6 +1336,10 @@ test('fix joins a noun clause after the dash with a semicolon', () => {
     'Clearly not real; the file built fine.',
     'Read the notes, the version they made.',
     'Read the notes, the version they shipped.',
+    'The layout held; the scale did.',
+    'It was never a model failure; the label hid a key gap.',
+    'They matter; the user set them up for a reason.',
+    'Clean it first, the data set a team uses.',
     'Inbox Triage, 23 emails processed',
     'Release Notes, it ships Friday.',
     'Your journal tracks how ideas evolve; the navigator reads it to understand context.',
