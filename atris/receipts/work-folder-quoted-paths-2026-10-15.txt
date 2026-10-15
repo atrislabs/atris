@@ -1,0 +1,14 @@
+Restore commands recover work from names containing spaces and apostrophes.
+
+Files: test/worktree-removal-guard.test.js, atris/MAP.md, atris/refs/MAP-NOTES.md, atris/team/architect/logs/2026-10-15.md.
+Command: node --test test/worktree-removal-guard.test.js test/member-tidy.test.js
+Exit: 0
+Output: tests 92, pass 92, fail 0, skipped 0, todo 0.
+Real surfaces: node bin/atris.js land --reap --no-remote --base master --ttl 0; node bin/atris.js land --backups; the listed restore command executed with sh -c. All exit 0 in disposable repositories, including quoted paths.
+Full output: /tmp/architect-proof-93.txt
+Writing check: node bin/atris.js slop --staged
+Exit: 0
+Output: clean, no slop tells in 5 files.
+Progress: one additional passing recovery case; no unfinished tests.
+next_push: Identify missing backup files or saved commits before offering a restore command.
+layer: capabilities

@@ -23,9 +23,9 @@ function git(cwd, args) {
 }
 
 // A repo with one landed branch checked out in an aged sibling folder.
-function landedWorktree() {
+function landedWorktree(names = {}) {
   const base = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'atris-removal-guard-')));
-  const repo = path.join(base, 'repo');
+  const repo = path.join(base, names.repo || 'repo');
   fs.mkdirSync(repo);
   git(repo, ['init', '-q', '-b', 'master']);
   git(repo, ['config', 'user.email', 'test@example.com']);
@@ -35,7 +35,7 @@ function landedWorktree() {
   git(repo, ['add', '.']);
   git(repo, ['commit', '-qm', 'init']);
   git(repo, ['branch', 'engine-run']);
-  const wt = path.join(base, 'engine-wt');
+  const wt = path.join(base, names.folder || 'engine-wt');
   git(repo, ['worktree', 'add', '-q', wt, 'engine-run']);
   const aged = new Date(Date.now() - 2 * 60 * 60 * 1000);
   fs.utimesSync(wt, aged, aged);
@@ -1432,8 +1432,9 @@ test('reap counts branch copies still at work and names detached and pinned ones
   }
 });
 
-test('reap saves staged and binary work it removes and prints a restore that rebuilds it exactly', () => {
-  const { base, repo, wt } = landedWorktree();
+for (const quoted of [false, true]) {
+test(`reap saves staged and binary work and restores it exactly${quoted ? ' with spaces and apostrophes in paths' : ''}`, () => {
+  const { base, repo, wt } = landedWorktree(quoted ? { repo: "writer's repo", folder: "writer's folder" } : {});
   try {
     // The folder's commit lands on master as an equivalent copy, so once reap
     // deletes its branch only the backup name keeps the original alive.
@@ -1479,7 +1480,7 @@ test('reap saves staged and binary work it removes and prints a restore that reb
     const found = spawnSync('git', ['cat-file', '-e', `${folderCommit}^{commit}`], { cwd: repo });
     assert.equal(found.status, 0, 'the removed folder commit must survive git clearing unreferenced commits');
     assert.equal(git(repo, ['rev-parse', `refs/atris/salvage/${folderCommit}`]), folderCommit);
-    assert.ok(restore.includes(staged) && restore.includes(dirty), restore);
+    assert.ok(fs.existsSync(staged) && fs.existsSync(dirty), restore);
     // A later, separate run lists the same restore without the put-away output.
     const list = spawnSync(process.execPath, [path.resolve(__dirname, '../bin/atris.js'), 'land', '--backups'], { cwd: repo, encoding: 'utf8' });
     console.log('command: node bin/atris.js land --backups (disposable repository)');
@@ -1510,3 +1511,4 @@ test('reap saves staged and binary work it removes and prints a restore that reb
     fs.rmSync(base, { recursive: true, force: true });
   }
 });
+}
