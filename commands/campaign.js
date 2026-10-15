@@ -29,6 +29,10 @@ function printHelp() {
   console.log('  atris campaign budget <id> --add <dollars>');
   console.log('  atris campaign pause|resume|stop <id>');
   console.log('  atris campaign event <id> <type> [--data \'<json>\']   append any event by hand');
+  console.log('  atris campaign run <id> [--parallel 3] [--max-steps 20] [--max-ticks 3] [--runner auto]');
+  console.log('        the campaign runs itself: proposes missions, runs them at once, judges, repeats until done, broke, or needing you');
+  console.log('  atris campaign step <id>               one step of that loop');
+  console.log('  atris campaign propose <id> [--count 3]   ask the owner\'s engine for the next missions');
   console.log('');
   console.log('Every verb takes --json. Writes are recorded as you (human:<login>); agents pass --as <member>.');
   console.log('A new campaign runs its judge first and is refused if it already passes: write a judge that fails first.');
@@ -39,7 +43,7 @@ function money(value) {
 }
 
 // The flags this command understands, so positional words are what is left.
-const VALUE_FLAGS = ['--judge', '--budget', '--owner', '--seat', '--bet', '--wrong-if', '--parent', '--id', '--role', '--add', '--data', '--timeout', '--as'];
+const VALUE_FLAGS = ['--parallel', '--max-steps', '--max-ticks', '--runner', '--count', '--judge', '--budget', '--owner', '--seat', '--bet', '--wrong-if', '--parent', '--id', '--role', '--add', '--data', '--timeout', '--as'];
 
 function positionals(args) {
   const out = [];
@@ -110,7 +114,7 @@ function makeContext(args, deps) {
     return code;
   };
   const append = (campaignId, type, data, as = actor) => store.append({ campaign_id: campaignId, type, actor: as, data });
-  return { asJson, store, actor, judge, out, fail, append };
+  return { asJson, store, actor, judge, out, fail, append, loopDeps: deps.loopDeps };
 }
 
 function requireCampaign(ctx, id) {
@@ -309,9 +313,45 @@ const cmdEvent = (args, ctx) => {
   return 0;
 };
 
+async function cmdLoop(args, ctx, verb) {
+  const { view, error } = requireCampaign(ctx, positionals(args)[1]);
+  if (error !== undefined) return error;
+  const { makeLoop } = require('../lib/campaign-loop');
+  const loop = makeLoop(process.cwd(), {
+    parallel: readFlag(args, '--parallel', '') || readFlag(args, '--count', ''),
+    maxTicks: readFlag(args, '--max-ticks', ''),
+    runner: readFlag(args, '--runner', ''),
+    actor: ctx.actor,
+  }, {
+    store: ctx.store,
+    log: ctx.asJson ? () => {} : (line) => console.log(line),
+    judge: (command) => ctx.judge(command, JUDGE_TIMEOUT_SECONDS),
+    ...(ctx.loopDeps || {}),
+  });
+  if (verb === 'propose') {
+    const proposals = await loop.propose(view.id);
+    const after = getCampaign(ctx.store, view.id);
+    ctx.out(proposals.length ? `${proposals.length} proposed and claimed\n${renderShow(after)}` : 'nothing usable was proposed', { ok: proposals.length > 0, proposals, campaign: after, next: decide(after) });
+    return proposals.length ? 0 : 1;
+  }
+  if (verb === 'step') {
+    const result = await loop.step(view.id);
+    const after = getCampaign(ctx.store, view.id);
+    ctx.out(`${result.stop ? `stopped: ${result.reason}` : `did: ${result.did}`}\n${renderShow(after)}`, { ok: true, ...result, campaign: after, next: decide(after) });
+    return 0;
+  }
+  const maxSteps = Number(readFlag(args, '--max-steps', '')) || 20;
+  const result = await loop.run(view.id, maxSteps);
+  ctx.out(`stopped after ${result.steps} step${result.steps === 1 ? '' : 's'}: ${result.reason}\n${renderShow(result.campaign)}`, { ok: true, ...result, next: decide(result.campaign) });
+  return 0;
+}
+
 const VERBS = {
   start: cmdStart, show: cmdShow, judge: cmdJudge, seat: cmdSeat, bet: cmdBet, budget: cmdBudget,
   pause: cmdPause, resume: cmdResume, stop: cmdStop, event: cmdEvent,
+  run: (args, ctx) => cmdLoop(args, ctx, 'run'),
+  step: (args, ctx) => cmdLoop(args, ctx, 'step'),
+  propose: (args, ctx) => cmdLoop(args, ctx, 'propose'),
 };
 
 function campaignCommand(args = [], deps = {}) {

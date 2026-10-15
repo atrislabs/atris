@@ -3195,6 +3195,7 @@ function missionFromArgs(args) {
     '--ask',
     '--campaign',
     '--reserve',
+    '--mission-id',
     '--model',
     '--destination',
     '--native-goal-status',
@@ -3239,7 +3240,13 @@ function missionFromArgs(args) {
   const alwaysOn = hasFlag(args, '--always-on');
   const xpTaskEnabled = hasFlag(args, '--xp-task') || hasFlag(args, '--agent-xp');
   const businessBinding = readBusinessBinding(process.cwd());
-  const id = missionId(objective);
+  // A campaign proposes a mission under an id before it runs; --mission-id
+  // keeps that id so the campaign and the mission name the same thing.
+  const givenId = readFlag(args, '--mission-id', '');
+  if (givenId && !/^[a-z0-9][a-z0-9-]{2,120}$/.test(givenId)) {
+    exitMissionError('--mission-id takes lowercase letters, digits, and dashes', 2, wantsJson(args));
+  }
+  const id = givenId || missionId(objective);
   const mission = {
     schema: 'atris.mission.v1',
     id,

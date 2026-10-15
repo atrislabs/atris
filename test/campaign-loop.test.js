@@ -1,0 +1,113 @@
+'use strict';
+
+const test = require('node:test');
+const assert = require('node:assert/strict');
+
+const { makeLoop, parseProposals, proposalPrompt } = require('../lib/campaign-loop');
+const { createMemoryStore, getCampaign } = require('../lib/campaign-store');
+
+function campaign(budget = 10) {
+  const store = createMemoryStore({ origin: 'laptop' });
+  store.append({ campaign_id: 'cmp-loop', type: 'campaign_started', actor: 'mission-lead', data: { title: 'Loop', judge: 'npm test', budget, owner: 'mission-lead', seats: ['builder', 'validator'] } });
+  return store;
+}
+
+// Missions simulated straight into the store: start holds the reserve, run
+// records one costed tick and ends the mission the way the real hooks do.
+function fakeCli(store, { cost = 0.25, failStart = () => false } = {}) {
+  const calls = [];
+  return {
+    calls,
+    cli: async (args) => {
+      calls.push(args.slice(0, 2).join(' '));
+      const id = args.includes('--mission-id') ? args[args.indexOf('--mission-id') + 1] : args[2];
+      if (args[1] === 'start') {
+        if (failStart(id)) return { code: 2, out: '', err: 'mission start refused: campaign tank is empty' };
+        const owner = args[args.indexOf('--owner') + 1];
+        store.append({ campaign_id: 'cmp-loop', type: 'mission_started', actor: owner, data: { mission_id: id, member: owner } });
+        store.append({ campaign_id: 'cmp-loop', type: 'budget_reserved', actor: owner, data: { mission_id: id, amount_usd: Number(args[args.indexOf('--reserve') + 1]) } });
+        return { code: 0, out: '{}', err: '' };
+      }
+      if (args[1] === 'run') {
+        store.append({ campaign_id: 'cmp-loop', type: 'step', actor: 'builder', data: { mission_id: id, cost_usd: cost } });
+        store.append({ campaign_id: 'cmp-loop', type: 'mission_ended', actor: 'builder', data: { mission_id: id, outcome: 'kept', cost_usd: cost } });
+        return { code: 0, out: '', err: '' };
+      }
+      return { code: 0, out: '', err: '' };
+    },
+  };
+}
+
+const proposals = (n) => JSON.stringify(Array.from({ length: n }, (_, i) => ({ objective: `Fix part ${i + 1}`, member: i % 2 ? 'validator' : 'builder', verify: `node --test test/p${i + 1}.test.js`, estimate_usd: 1 })));
+
+test('the loop proposes, runs missions at once, judges, and stops when the judge passes', async () => {
+  const store = campaign(10);
+  const { cli, calls } = fakeCli(store);
+  const readings = [{ passed: false, summary: '1 of 3' }, { passed: true, summary: '3 of 3' }];
+  const asks = [];
+  const loop = makeLoop('/x', { parallel: 2 }, {
+    store, cli, log: () => {},
+    judge: () => readings.shift(),
+    ask: async (root, view, prompt) => { asks.push(prompt); return { ok: true, engine: 'claude', text: `Here you go:\n${proposals(2)}` }; },
+  });
+  const result = await loop.run('cmp-loop', 20);
+  assert.equal(result.reason, 'finished');
+  const view = getCampaign(store, 'cmp-loop');
+  assert.equal(view.state, 'done');
+  assert.equal(view.stop_reason, 'judge_passed');
+  const work = view.missions.filter((m) => !m.id.startsWith('plan-'));
+  assert.equal(work.length, 2, JSON.stringify(view.missions));
+  assert.ok(work.every((m) => m.status === 'ended' && m.outcome === 'kept'));
+  assert.deepEqual(work.map((m) => m.member).sort(), ['builder', 'validator']);
+  assert.equal(view.budget.spent, 0.5);
+  assert.equal(view.budget.reserved, 0);
+  assert.deepEqual(calls.slice().sort(), ['mission run', 'mission run', 'mission start', 'mission start']);
+  assert.equal(asks.length, 1);
+  assert.match(asks[0], /Judge \(the campaign is done when this command exits 0\): npm test/);
+});
+
+test('the loop stops for money, for asks, and when nothing usable is proposed', async () => {
+  const broke = campaign(0.4);
+  const loopBroke = makeLoop('/x', { parallel: 1 }, {
+    store: broke, cli: fakeCli(broke, { cost: 0.5 }).cli, log: () => {},
+    judge: () => ({ passed: false, summary: 'not yet' }),
+    ask: async () => ({ ok: true, text: JSON.stringify([{ objective: 'Spend it', member: 'builder', estimate_usd: 0.1 }]) }),
+  });
+  assert.equal((await loopBroke.run('cmp-loop', 20)).reason, 'budget spent');
+
+  const asking = campaign(10);
+  asking.append({ campaign_id: 'cmp-loop', type: 'ask_opened', actor: 'builder', data: { ask_id: 'a1', question: 'Email the customer?' } });
+  const loopAsk = makeLoop('/x', {}, { store: asking, cli: async () => ({ code: 0 }), log: () => {}, judge: () => ({ passed: false }), ask: async () => ({ ok: true, text: '[]' }) });
+  assert.equal((await loopAsk.run('cmp-loop')).reason, 'needs you: 1 open ask');
+
+  const empty = campaign(10);
+  const loopEmpty = makeLoop('/x', {}, { store: empty, cli: async () => ({ code: 0 }), log: () => {}, judge: () => ({ passed: false, summary: 'no' }), ask: async () => ({ ok: true, text: 'I am not sure.' }) });
+  assert.equal((await loopEmpty.run('cmp-loop')).reason, 'mission-lead proposed nothing usable');
+  const view = getCampaign(empty, 'cmp-loop');
+  assert.equal(view.missions[0].id.startsWith('plan-'), true);
+});
+
+test('a mission that cannot start is vetoed so the queue moves on', async () => {
+  const store = campaign(10);
+  const loop = makeLoop('/x', { parallel: 1 }, {
+    store, cli: fakeCli(store, { failStart: () => true }).cli, log: () => {},
+    judge: () => ({ passed: false, summary: 'no' }),
+    ask: async () => ({ ok: true, text: proposals(1) }),
+  });
+  assert.equal((await loop.step('cmp-loop')).did, 'judge');
+  assert.equal((await loop.step('cmp-loop')).did, 'propose');
+  const result = await loop.step('cmp-loop');
+  assert.equal(result.reason, 'no claimed mission could start');
+  assert.equal(getCampaign(store, 'cmp-loop').missions.find((m) => m.id.startsWith('m-')).status, 'vetoed');
+});
+
+test('proposals are parsed strictly: unknown members fall back to the owner, verify defaults to the judge', () => {
+  const view = { owner: 'mission-lead', seats: [{ member: 'builder' }], judge: 'npm test', budget: { available: 2 } };
+  const parsed = parseProposals('```json\n[{"objective":"A","member":"ghost","estimate_usd":9},{"objective":"  "},{"objective":"B","member":"builder","verify":"true"}]\n```', view, 3);
+  assert.deepEqual(parsed, [
+    { objective: 'A', member: 'mission-lead', verify: 'npm test', estimate_usd: 2 },
+    { objective: 'B', member: 'builder', verify: 'true', estimate_usd: null },
+  ]);
+  assert.deepEqual(parseProposals('no json here', view, 3), []);
+  assert.match(proposalPrompt({ ...view, title: 'T', id: 'cmp-t', missions: [], last_judge: null, answer: { text: null }, bet: null, budget: { available: 2, total: 5 } }, 2), /at most 2 missions/);
+});
