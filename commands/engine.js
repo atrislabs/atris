@@ -2394,6 +2394,7 @@ function runEngineSweepCommand(args, root, deps = {}) {
   const shown = 20;
   const cli = deps.atrisCommand || atrisCommand();
   const history = readResourceHistory(root);
+  const refused = new Set(history.last_sweep?.failed || []);
   // A partial scan only finds a floor, as in the landing status: no count
   // without the process list, and none found means the count is unknown.
   const running = result.unread.includes('process list') ? 'running ssh-agents could not be counted' : `${plural(agents.length, 'ssh-agent')} running`;
@@ -2403,7 +2404,9 @@ function runEngineSweepCommand(args, root, deps = {}) {
   const lines = [
     `${running}, ${leakedCount}${leakGrowthNote(history.first_day_leak_reading, leaked.length)}`
       + ` (no parent, older than ${LEAK_MIN_AGE_SEC / 60} min, not in use by any live shell)`,
-    ...leaked.slice(0, shown).map((agent) => `  pid ${String(agent.pid).padEnd(6)} ${formatAgentAge(agent.age_sec)}`),
+    // An agent the last sweep tried and failed to stop is named, as the
+    // landing status does, so nobody waits on a pass that cannot stop it.
+    ...leaked.slice(0, shown).map((agent) => `  pid ${String(agent.pid).padEnd(6)} ${formatAgentAge(agent.age_sec)}${refused.has(agent.pid) ? ', the last sweep could not stop it' : ''}`),
   ];
   if (leaked.length > shown) lines.push(`  and ${leaked.length - shown} more`);
   const runsText = leaked.length ? leakedRunsText(matchLeakedToRuns(root, leaked), { startLine: startLines.length > 0, recorded: deps.pathAtrisRecordsRuns ?? pathAtrisRecordsRuns() }) : '';
@@ -2457,7 +2460,7 @@ function resourceHistoryLines(history) {
   }
   const sweep = history.last_sweep;
   lines.push(sweep
-    ? `last sweep: ${utcMinute(sweep.at)}, stopped ${(sweep.stopped || []).length}`
+    ? `last sweep: ${utcMinute(sweep.at)}, stopped ${(sweep.stopped || []).length}${(sweep.failed || []).length ? `, could not stop ${sweep.failed.length}` : ''}`
     : 'no sweep recorded yet');
   const started = history.last_open;
   if (started) {

@@ -5678,3 +5678,36 @@ test('the landing status counts one agent left after a mixed hourly cleanup and 
     fs.rmSync(root, { recursive: true, force: true });
   }
 });
+
+test('the cleanup listing names the agent the last hourly pass could not stop, as the landing status does', () => {
+  const { runSshAgentSweep } = require('../commands/autoland');
+  const { engineCommand } = require('../commands/engine');
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'engine-sweep-refused-'));
+  const agent = (pid, age_sec) => ({ pid, ppid: 1, uid: 501, age_sec, args: 'ssh-agent -s' });
+  try {
+    runSshAgentSweep(root, {}, {
+      read: () => ({ agents: [agent(200, 3600), agent(201, 1800)], referenced: new Set(), unread: [] }),
+      uid: 501,
+      kill: (pid) => {
+        if (pid === 201) throw Object.assign(new Error('permission denied'), { code: 'EPERM' });
+      },
+    });
+    const out = [];
+    const original = console.log;
+    console.log = (line) => out.push(String(line));
+    try {
+      // The refused agent is still there, and a new one leaked since.
+      engineCommand(['sweep'], { root, engineSweep: { read: () => ({ agents: [agent(201, 1800), agent(202, 1200)], referenced: new Set() }), uid: 501, atrisCommand: 'atris' } });
+    } finally {
+      console.log = original;
+    }
+    const text = out.join('\n');
+    const row = (pid) => text.split('\n').find((line) => line.trim().startsWith(`pid ${pid} `));
+    assert.match(row(201), /, the last sweep could not stop it$/);
+    assert.doesNotMatch(row(202), /could not stop/, 'a new leak is not named as refused');
+    assert.match(text, /last sweep: \d{4}-\d\d-\d\d \d\d:\d\d UTC, stopped 1, could not stop 1/);
+    console.log(`cleanup listing after a refused hourly stop:\n${[row(201), row(202), text.split('\n').find((line) => line.startsWith('last sweep:'))].join('\n')}`);
+  } finally {
+    fs.rmSync(root, { recursive: true, force: true });
+  }
+});
