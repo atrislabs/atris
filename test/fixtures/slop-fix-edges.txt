@@ -251,3 +251,9 @@ He wrote "start with one screen \u2014 the user settings page layout" in the doc
 # but a quote one level up is no wrap
 >> Keep the whole note short \u2014 the web search focuses on\n> the delta between them.
 => >> Keep the whole note short, the web search focuses on\n> the delta between them.
+# a code name with an underscore is one word before the subject noun
+No placeholder logic here \u2014 the business_id match handles the bypass class codex flagged.
+=> No placeholder logic here; the business_id match handles the bypass class codex flagged.
+# but with no verb after it the phrase keeps its comma
+Two tables matter here \u2014 the business_id lookups and the agent rows.
+=> Two tables matter here, the business_id lookups and the agent rows.

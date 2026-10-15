@@ -2471,6 +2471,22 @@ test('fix joins a past verb with a word in "ly" before it after a dash', () => {
   ]);
 });
 
+test('fix reads a code name with an underscore as the subject noun after a dash', () => {
+  // from real repo text: "the business_id match handles the specific bypass
+  // class" spliced, since the word before the noun could hold letters and
+  // hyphens but no underscore. A code name is one word; with no verb after
+  // it ("the business_id lookups and the agent rows") the phrase stays.
+  const file = tmpFile('underscore-subject.md', [
+    'No placeholder logic here \u2014 the business_id match handles the bypass class codex flagged.',
+    'Two tables matter here \u2014 the business_id lookups and the agent rows.',
+  ].join('\n'));
+  const { changes } = applyFixes([file], RULES);
+  assert.deepEqual(changes.map((c) => c.after), [
+    'No placeholder logic here; the business_id match handles the bypass class codex flagged.',
+    'Two tables matter here, the business_id lookups and the agent rows.',
+  ]);
+});
+
 test('fix reads a wrapped clause inside a quote with the next quoted line', () => {
   // from real repo text: "the web search focuses on" then "> the delta
   // between" spliced, since a next line that opens on a quote mark never
