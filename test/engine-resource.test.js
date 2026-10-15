@@ -1319,6 +1319,7 @@ test('every engine started through a runner or profile variable records its run 
     };
     // A declaration at the start of this text still reaches its end when no
     // brace or parenthesis open before the declaration closes in between.
+    // Plain var bindings instead live throughout their containing function.
     const inScope = (text) => {
       let depth = 0;
       for (const token of text.matchAll(/'(?:\\.|[^'\\])*'|"(?:\\.|[^"\\])*"|`(?:\\.|[^`\\])*`|[{}()]/g)) {
@@ -1327,6 +1328,26 @@ test('every engine started through a runner or profile variable records its run 
       }
       return true;
     };
+    // Inline callbacks are not named helper definitions, but their var
+    // bindings still stop at the callback's closing brace.
+    const functionBodies = [];
+    const braces = [];
+    const parentheses = [];
+    let lastParameters = 0;
+    for (const token of code.matchAll(/'(?:\\.|[^'\\])*'|"(?:\\.|[^"\\])*"|`(?:\\.|[^`\\])*`|[{}()]/g)) {
+      if (token[0] === '(') parentheses.push(token.index);
+      else if (token[0] === ')') lastParameters = parentheses.pop() ?? 0;
+      else if (token[0] === '{') {
+        const before = code.slice(0, token.index);
+        const control = /\b(?:if|for|while|switch|catch|with|for\s+await)\s*$/.test(code.slice(0, lastParameters));
+        braces.push({ open: token.index, fn: /=>\s*$/.test(before) || (/\)\s*$/.test(before) && !control) });
+      } else if (token[0] === '}') {
+        const body = braces.pop();
+        if (body?.fn) functionBodies.push([body.open, token.index]);
+      }
+    }
+    const withinDeclaringFunction = (declaration, launch) => functionBodies.every(([open, close]) =>
+      !(open < declaration && declaration < close) || (open < launch && launch < close));
     const sourceAt = (source, position) => {
       const visible = withoutHelperDefinitions(code, position);
       let declarationEnd = position;
@@ -1337,7 +1358,7 @@ test('every engine started through a runner or profile variable records its run 
         const shadowStart = Math.max(0, ...definitionSpans(code).filter(([open, close]) => open <= declarationEnd && declarationEnd < close && parametersOf(open).includes(alias[1])).map(([open]) => open));
         const visibleText = visible.slice(shadowStart, declarationEnd);
         const declaration = [...visibleText.matchAll(new RegExp(`\\b(?:const|let|var)\\s+${alias[1].replace(/\$/g, '\\$')}[ \\t]*(?:=\\s*([^;\\n]*)|(?=;|\\n))`, 'g'))]
-          .filter((candidate) => inScope(visibleText.slice(candidate.index))).pop();
+          .filter((candidate) => (/^var\b/.test(candidate[0]) && withinDeclaringFunction(shadowStart + candidate.index, declarationEnd)) || inScope(visibleText.slice(candidate.index))).pop();
         const destructured = new RegExp(`\\b(?:const|let|var)\\s*[{[](?:[^=;]*?[,:{[])?\\s*${alias[1].replace(/\$/g, '\\$')}\\s*[,}\\]=]`, 'g');
         if ([...visibleText.matchAll(destructured)].some((binding) => binding.index > (declaration?.index ?? -1) && inScope(visibleText.slice(binding.index)))) return '';
         if (!declaration) break;
@@ -1605,6 +1626,30 @@ test('every engine started through a runner or profile variable records its run 
     assert.deepStrictEqual(planted(`function outer() {\n  const profile = resolveEngineProfile(engine);\n  ${helper}\n  const runner = profile.bin;\n  spawnSync(runner, args);\n}\n`), ['commands/planted.js:5 runner']);
   }
   assert.deepStrictEqual(planted("function helper() {\n  const runner = resolveClaudeRunnerBin();\n}\nspawnSync(runner, args);\n"), [], 'a closed helper does not supply its local runner');
+  // Plain var declarations belong to the function even after a block closes.
+  for (const body of [
+    'if (ready) { var runner = resolveClaudeRunnerBin(); }',
+    'if (ready) { var\trunner = resolveClaudeRunnerBin(); }',
+    'for (var runner = resolveClaudeRunnerBin(); ready; ) { break; }',
+    'try { var runner = resolveClaudeRunnerBin(); } finally { noop(); }',
+  ]) {
+    assert.deepStrictEqual(planted(`function launch() {\n  ${body}\n  spawnSync(runner, args);\n}\n`), ['commands/planted.js:3 runner']);
+    assert.deepStrictEqual(planted(`function launch() {\n  ${body}\n  startEngineRun(root);\n  spawnSync(runner, args);\n}\n`), []);
+  }
+  assert.deepStrictEqual(planted("function launch() {\n  if (ready) { var profile = resolveEngineProfile(engine); }\n  const runner = profile.bin;\n  spawnSync(runner, args);\n}\n"), ['commands/planted.js:4 runner']);
+  assert.deepStrictEqual(planted("function launch() {\n  if (ready) { var runner = 'git'; }\n  spawnSync(runner, args);\n}\n"), []);
+  assert.deepStrictEqual(planted("function helper() {\n  if (ready) { var runner = resolveClaudeRunnerBin(); }\n}\nspawnSync(runner, args);\n"), [], 'function-scoped runners do not escape a helper');
+  for (const callback of ['() =>', 'function ()']) {
+    assert.deepStrictEqual(planted(`function launch() {\n  list.forEach(${callback} {\n    var runner = resolveClaudeRunnerBin();\n  });\n  spawnSync(runner, args);\n}\n`), [], 'a var runner does not escape an inline callback');
+    assert.deepStrictEqual(planted(`function launch() {\n  list.forEach(${callback} {\n    if (ready) { var runner = resolveClaudeRunnerBin(); }\n    spawnSync(runner, args);\n  });\n}\n`), ['commands/planted.js:4 runner'], 'a var runner remains visible inside its callback');
+  }
+  assert.deepStrictEqual(planted("function outer() {\n  if (ready) { var runner = resolveClaudeRunnerBin(); }\n  function helper() {\n    spawnSync(runner, args);\n  }\n}\n"), ['commands/planted.js:4 runner'], 'nested helpers can capture a function-scoped runner');
+  for (const helper of [
+    'list.forEach(function (entry = current()) { var runner = resolveClaudeRunnerBin(); });',
+    'const helpers = { run() { var runner = resolveClaudeRunnerBin(); } };',
+  ]) {
+    assert.deepStrictEqual(planted(`function launch() {\n  ${helper}\n  spawnSync(runner, args);\n}\n`), [], 'a runner stays inside a method or callback with default parameters');
+  }
   // A program declared in a closed block does not supply a later launch.
   assert.deepStrictEqual(planted("function a() {\n  const program = resolveClaudeRunnerBin();\n  if (x) {\n    const program = 'git';\n  }\n  spawnSync(program, args);\n}\n"), ['commands/planted.js:6 program'], 'an inner plain program does not hide the outer engine');
   assert.deepStrictEqual(planted("function a() {\n  const program = 'git';\n  if (x) {\n    const program = resolveClaudeRunnerBin();\n  }\n  spawnSync(program, args);\n}\n"), [], 'an inner engine program does not reach a later launch');
