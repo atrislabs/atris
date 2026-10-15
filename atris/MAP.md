@@ -1,8 +1,10 @@
 # MAP.md: atris-cli navigation
 
+Unrelated upstream cleanup proof: `test/member-tidy.test.js:928` runs real preview and apply after the remote switches to unrelated history. Staged notes, later edits, drafts, branch and registration survive; only a clean copy on the new history is removed.
+
 Missing-branch cleanup proof: `test/member-tidy.test.js:775` runs real preview and cleanup after a branch disappears, preserving the folder, draft and registration while removing a clean neighbor.
 
-Unreadable cleanup status: `test/member-tidy.test.js:865` runs real preview and cleanup with a broken git index, preserving its draft and registration while removing a clean neighbor.
+Unreadable cleanup status: `test/member-tidy.test.js:928` runs real preview and cleanup with a broken git index, preserving its draft and registration while removing a clean neighbor.
 
 Expected failing-check output: `test/member-tidy.test.js:389` confirms the disposable failure lesson without printing it as an operator failure; the lesson assertions remain intact.
 

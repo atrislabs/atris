@@ -1,0 +1,33 @@
+Cleanup now has a real CLI regression for notes after upstream switches to unrelated history.
+Files: test/member-tidy.test.js, atris/MAP.md, atris/refs/MAP-NOTES.md, atris/team/architect/logs/2026-10-15.md, this receipt.
+Command: node --test test/worktree-removal-guard.test.js test/member-tidy.test.js && node bin/atris.js slop --staged
+The test invokes node bin/atris.js member tidy --dir <disposable copies> with and without --dry-run.
+The fixture proves the old and new tips have no common ancestor, retains a stale origin tracking ref, and checks the fetched tip, exact staged and working bytes, branch, registration and removal records.
+next_push: Prove cleanup keeps notes when the remote default branch is renamed.
+Progress: 78 passed, zero failed, skipped or pending; writing check clean in 5 files. Combined command exit: 0.
+Actual output excerpt:
+command: node bin/atris.js member tidy --dir <fixture copies> --dry-run (unrelated upstream history)
+would remove  landed-clean  work landed
+left alone  1 work not landed yet
+tidy: would remove 1, kept 1, of 2 copies in /private/var/folders/t1/2_4kmb5n4c71dxm26zc8dgzr0000gn/T/atris-member-tidy-UJ8MZp/arena/.agent-worktrees/repo
+exit: 0
+command: node bin/atris.js member tidy --dir <fixture copies> (unrelated upstream history)
+removed  landed-clean  work landed, branch kept: error: the branch 'landed-clean' is not fully merged.
+left alone  1 work not landed yet
+tidy: removed 1, kept 1, of 2 copies in /private/var/folders/t1/2_4kmb5n4c71dxm26zc8dgzr0000gn/T/atris-member-tidy-UJ8MZp/arena/.agent-worktrees/repo
+exit: 0
+✔ a refusal line still too long keeps its start and its end (0.197042ms)
+✔ multiline pin reasons stay on one line in refusal and real cleanup reports (491.638042ms)
+✔ reap counts branch copies still at work and names detached and pinned ones (1915.783875ms)
+ℹ tests 78
+ℹ suites 0
+ℹ pass 78
+ℹ fail 0
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 33173.79525
+
+  ✓ clean, no slop tells in 5 files
+Review recording: the bare command in the separate task runner exited 1 (56 passed, 22 failed). Retrying with export PATH=/opt/homebrew/bin:$PATH before the unchanged checks exited 0. Successful review receipt: atris/runs/2026-10-15-task-acw-15-2026-10-15T07-57-46-988Z.json. Work is ready for review; no acceptance was performed.
+layer: behaviors

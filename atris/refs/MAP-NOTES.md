@@ -2437,8 +2437,10 @@ Idle unfinished notes: `test/member-tidy.test.js:522` runs real preview and appl
 Idle landed notes: `test/member-tidy.test.js:712` runs real preview and cleanup with pinned and ordinary dirty landed copies. It preserves staged contents, later edits, drafts, tracked changes, pin bytes, branches and registrations, with no removal record; ordinary cleanup relies on git refusal. Preview checks status at `lib/member-tidy.js:225` and keeps dirty copies with a plain unsaved-work reason, or names a failed status read.
 # Unreadable cleanup status
 
-`test/member-tidy.test.js:865` checks real preview and apply with a broken git index and a removable clean neighbor. Proof: `atris/receipts/work-folder-unreadable-status-2026-10-15.txt`.
+`test/member-tidy.test.js:928` checks real preview and apply with a broken git index and a removable clean neighbor. Proof: `atris/receipts/work-folder-unreadable-status-2026-10-15.txt`.
 
 Missing-branch cleanup proof: `test/member-tidy.test.js:775` runs real preview and cleanup after deleting the disposable branch ref. Both retain the folder, draft, original HEAD and registration, leave the branch absent, and log only removal of a clean neighbor.
 
 Upstream rewind cleanup proof: `test/member-tidy.test.js:811` runs real preview and apply after a disposable remote moves backward. It preserves staged contents, later edits, drafts, branch and registration while removing only a clean neighbor. Proof: `atris/receipts/work-folder-upstream-rewind-2026-10-15.txt`.
+
+Unrelated upstream cleanup proof: `test/member-tidy.test.js:928` runs real preview and apply after the remote switches to unrelated history. Staged notes, later edits, drafts, branch and registration survive; only a clean copy on the new history is removed.

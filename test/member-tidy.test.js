@@ -862,6 +862,69 @@ test('tidy keeps staged and unsaved notes after upstream moves backward', () => 
   }
 });
 
+test('tidy keeps staged and unsaved notes after upstream switches to unrelated history', () => {
+  const fx = makeFixture();
+  try {
+    const kept = addCopy(fx, 'upstream-replaced', { commit: true, pushToOrigin: true });
+    const tip = runGit(['rev-parse', 'HEAD'], kept);
+    runGit(['fetch', '-q', 'origin'], fx.repo);
+    assert.equal(runGit(['rev-parse', 'origin/master'], fx.repo), tip);
+    fs.writeFileSync(path.join(kept, 'draft.txt'), 'unsaved notes\n');
+    fs.appendFileSync(path.join(kept, 'README.md'), 'unsaved edits\n');
+    fs.writeFileSync(path.join(kept, 'staged.txt'), 'prepared notes\n');
+    runGit(['add', 'staged.txt'], kept);
+    fs.appendFileSync(path.join(kept, 'staged.txt'), 'later edits\n');
+    const status = runGit(['status', '--porcelain'], kept);
+    const patch = runGit(['diff', '--cached', '--binary'], kept);
+    assert.match(status, /AM staged.txt/);
+    const seed = path.join(fx.base, 'seed');
+    // Create a new root only in the disposable seed, then replace its remote
+    // default branch. The stale tracking ref still says the old copy landed.
+    runGit(['checkout', '-q', '--orphan', 'replacement'], seed);
+    fs.writeFileSync(path.join(seed, 'README.md'), '# replacement history\n');
+    runGit(['add', 'README.md'], seed);
+    runGit(['commit', '-q', '-m', 'new root'], seed);
+    const base = runGit(['rev-parse', 'HEAD'], seed);
+    runGit(['push', '-q', '--force', path.join(fx.base, 'remote.git'), 'replacement:master'], seed);
+    runGit(['fetch', '-q', seed, 'replacement'], fx.repo);
+    const clean = path.join(fx.copies, 'landed-clean');
+    runGit(['worktree', 'add', '-q', '-b', 'landed-clean', clean, base], fx.repo);
+    assert.equal(runGit(['rev-parse', 'origin/master'], fx.repo), tip);
+    assert.equal(runGit(['rev-parse', 'refs/heads/master'], path.join(fx.base, 'remote.git')), base);
+    const ancestry = spawnSync('git', ['merge-base', tip, base], { cwd: fx.repo, encoding: 'utf8' });
+    assert.equal(ancestry.status, 1, ancestry.stderr);
+    assert.equal(ancestry.stdout, '');
+
+    for (const extra of [['--dry-run'], []]) {
+      const args = [path.resolve(__dirname, '../bin/atris.js'), 'member', 'tidy', '--dir', fx.copies, ...extra];
+      const cli = spawnSync(process.execPath, args, { cwd: fx.repo, encoding: 'utf8', timeout: 15000 });
+      console.log(`command: node bin/atris.js member tidy --dir <fixture copies>${extra.length ? ' --dry-run' : ''} (unrelated upstream history)`);
+      console.log(cli.stdout.trim());
+      console.log(`exit: ${cli.status}`);
+      assert.equal(cli.status, 0, cli.stderr);
+      const lines = cli.stdout.trim().split('\n').map((line) => line.replace(/ {2,}/g, '  '));
+      assert.ok(lines.includes('left alone  1 work not landed yet'), lines.join('\n'));
+      assert.ok(lines.some((line) => line.startsWith(`${extra.length ? 'would remove' : 'removed'}  landed-clean  work landed`)));
+      assert.equal(lines.at(-1), `tidy: ${extra.length ? 'would remove' : 'removed'} 1, kept 1, of 2 copies in ${fx.copies}`);
+      assert.equal(runGit(['rev-parse', 'FETCH_HEAD'], fx.repo), base);
+      assert.equal(runGit(['rev-parse', 'HEAD'], kept), tip);
+      assert.equal(fs.readFileSync(path.join(kept, 'upstream-replaced.txt'), 'utf8'), 'work\n');
+      assert.equal(fs.readFileSync(path.join(kept, 'draft.txt'), 'utf8'), 'unsaved notes\n');
+      assert.equal(fs.readFileSync(path.join(kept, 'README.md'), 'utf8'), '# fixture\nunsaved edits\n');
+      assert.equal(fs.readFileSync(path.join(kept, 'staged.txt'), 'utf8'), 'prepared notes\nlater edits\n');
+      assert.equal(runGit(['show', ':staged.txt'], kept), 'prepared notes');
+      assert.equal(runGit(['diff', '--cached', '--binary'], kept), patch);
+      assert.equal(runGit(['status', '--porcelain'], kept), status);
+      assert.ok(branchExists(fx.repo, 'upstream-replaced'));
+      assert.ok(runGit(['worktree', 'list', '--porcelain'], fx.repo).includes(`worktree ${kept}\n`));
+      assert.deepEqual(removalLines(fx.repo).map((line) => line.path), extra.length ? [] : [clean]);
+    }
+    assert.equal(fs.existsSync(clean), false);
+  } finally {
+    fs.rmSync(fx.base, { recursive: true, force: true });
+  }
+});
+
 test('tidy keeps a landed copy whose status git cannot read, in preview and apply', () => {
   const fx = makeFixture();
   try {
