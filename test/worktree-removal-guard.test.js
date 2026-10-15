@@ -511,12 +511,27 @@ function callText(lines, index) {
   return lines.slice(index, index + 12).join('\n');
 }
 
+// Keywords whose line can look like a method or helper start.
+const NOT_A_HELPER = new Set(['if', 'for', 'while', 'switch', 'catch', 'function', 'return']);
+// A delete belongs to the top-level function around it: a plain function, a
+// named arrow or function expression at the left margin, or a method of a
+// top-level class. An arrow nested inside a function stays part of that
+// function, so the guard above it still counts and its key does not move.
+function ownerStarts(lines) {
+  let inClass = false;
+  return lines.flatMap((line, index) => {
+    if (/^(?:export\s+)?class\s/.test(line)) inClass = true;
+    else if (/^}/.test(line)) inClass = false;
+    const match = line.match(/^(?:async\s+)?function\s+([\w$]+)/)
+      || line.match(/^(?:export\s+)?(?:const|let|var)\s+([\w$]+)\s*=\s*(?:async\s+)?(?:function\b|\([^()]*\)\s*=>|[\w$]+\s*=>)/)
+      || (inClass && line.match(/^ {2}(?:static\s+)?(?:async\s+)?([\w$]+)\s*\([^()]*\)\s*\{/));
+    return match && !NOT_A_HELPER.has(match[1]) ? [{ name: match[1], index }] : [];
+  });
+}
+
 function worktreeRemovalSites(file) {
   const lines = fs.readFileSync(path.join(__dirname, '..', file), 'utf8').split('\n');
-  const starts = lines.flatMap((line, index) => {
-    const match = line.match(/^(?:async\s+)?function\s+(\w+)/);
-    return match ? [{ name: match[1], index }] : [];
-  });
+  const starts = ownerStarts(lines);
   const sites = [];
   lines.forEach((line, index) => {
     if (COMMENT_LINE.test(line)) return;
@@ -732,6 +747,21 @@ test('every work folder removal goes through the git check and the removal log',
     .filter((site) => site.key === key)
     .every((site) => !removalGap(site)));
   assert.deepEqual(nowGuarded, [], 'guarded now: delete its line from NOT_YET_GUARDED');
+  // A top-level arrow and a class method own their deletes; an arrow nested
+  // in a function, an if inside a class, and an indented call after the
+  // class closes do not.
+  const owners = ownerStarts([
+    'function guarded(wt) {',
+    '  const done = (x) => x;',
+    '}',
+    'const sweep = async (wt) => {',
+    'class Shelf {',
+    '  static empty(wt) {',
+    '  if (wt) {',
+    '}',
+    '  later(wt) {',
+  ]).map((start) => start.name);
+  assert.deepEqual(owners, ['guarded', 'sweep', 'empty']);
 });
 
 // A helper that deletes whatever folder its caller hands it can be given a
@@ -749,7 +779,6 @@ const HELPER_START = [
   /^\s*(?:(?:export\s+)?(?:const|let|var)\s+)?([\w$]+)\s*[=:]\s*(?:async\s+)?([\w$]+)\s*=>/,
   /^\s+(?:static\s+)?(?:async\s+)?([\w$]+)\s*\(([^()]*)\)\s*\{/,
 ];
-const NOT_A_HELPER = new Set(['if', 'for', 'while', 'switch', 'catch', 'function', 'return']);
 
 function passedInDeletes(file, text) {
   const lines = text.split('\n');
