@@ -19,10 +19,15 @@ Run each in a fresh temp workspace (`atris init`), with real members, not mocks.
 9. **Wish constructor.** `atris wish "I wish I knew which channel produces hires" --metric "hire_rate>=0.2"` creates a campaign whose judge is that metric, asking at most one gap question at a time.
 10. **Purposes.** `atris campaign` lists each member's `MISSION.md` with a `## Check` as a standing purpose.
 11. **No regressions.** The existing mission, wish, fleet, and member test suites pass unchanged.
+12. **Judge must fail first.** Starting a non-standing campaign whose judge already passes is refused with "already done, write a judge that fails first."
+13. **No budget works.** A campaign with no budget runs on subscription engines, logs token and quota usage per mission, and turns any money spend into an ask.
+14. **Notes.** A one-on-one note is saved only after the member's repeat-back is confirmed; it takes effect at the next shift, not mid-mission; a fact note older than 7 days is flagged "still true?".
+15. **Shifts.** Shifts end with a recorded reason (mission done, context, stalled, cap, quota) and the next shift starts from a fresh briefing.
+16. **Every surface.** For "Campaign ships across Atris": start, watch, coach, and finish a campaign from the CLI, desktop, web, and Terrace (iOS).
 
 ## First Real Run
 
-After the checks pass, run one real campaign on Pallet recruiting with Keshav's approval:
+The first campaign, "Campaign ships across Atris" (`first-campaign.md`), is itself the proof: it is done when its judge passes. After that, run one real campaign on Pallet recruiting with Keshav's approval:
 
 - Title: "Which sourcing channel actually produces hires?"
 - Raw material: the read-only recruiting ingest (`atrisos-backend/backend/services/recruiting_intelligence_ingest.py`).

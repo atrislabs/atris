@@ -64,14 +64,14 @@ Prior art to borrow from: Temporal workflows (durable workflow, activities, sign
 
 ## The Struct (final, judged by Fable 2026-10-15)
 
-A person or agent writes only this. Three fields are required.
+A person or agent writes only this. Two fields are required: `title` and `judge`.
 
 ```yaml
 campaign:
   title: "Campaign works in Atris"          # plain words, the only name humans use
   judge: "npm run validate:campaign"        # one command, exit 0 means the judge passes
-  budget: 300                               # dollars the campaign may spend in total
-  owner: mission-lead                       # optional; defaults to the starting member, then mission-lead
+  budget: { amount: 300, unit: credits }    # optional; unit is tokens, credits, dollars, or quota; none = subscriptions only
+  owner: mission-lead                       # optional; the campaign lead; the Orb picks one if left out
   seats: [builder, validator]               # optional; role comes from each member's own job
   bet: "Mostly wiring. Wrong if phase 10 needs a new runner."   # optional; hypothesis and what proves it wrong
   standing: false                           # optional; true means a passing judge is health, not the end
@@ -85,15 +85,16 @@ Not written by hand:
 - `created_from`: payload of `campaign_started`.
 - `parent`: an `attached` event written by an action.
 - Per-mission budget: each mission writes `budget_reserved` when it starts, sized from the mission.
+- No budget is the default. Work on subscription engines costs no extra money, and any real money spend becomes an ask (the no-reload line). Budget is a plug: each unit (tokens, Atris credits, dollars, subscription quota) has its own meter. Token and quota usage is logged on every mission either way, so waste is measured, not guessed.
 - `--metric "name>=target"` is shorthand for a judge command (`lib/wish-delegate.js` turns it into `backend/scripts/metric_verify.py`).
 - Answer campaigns need no extra field: their judge is a script that checks against held-out data, and confidence folds from judge history.
 
 Two rules from the review:
 
-1. **Every mission reports its cost.** `mission_ended` carries cost from the receipt. A budget nobody can measure is slop. (Local missions today have time tiers, not dollars; only the backend's `budget_hold` tracks money.)
+1. **Every mission reports its usage.** `mission_ended` carries tokens, quota, and any money from the receipt. A budget nobody can measure is slop. (Local missions today have time tiers, not dollars; only the backend's `budget_hold` tracks money.)
 2. **A judge must fail first.** A non-standing campaign whose judge already passes at start is refused: "already done, write a judge that fails first." This stops an agent from writing `true` as its judge. If no judge can be written yet, the first mission builds it.
 
-Events: `campaign_started · seat_filled · bet_set · attached · mission_proposed · mission_claimed · mission_started · step · kept · reverted · mission_ended · judge_ran · ask_opened · ask_answered · budget_reserved · budget_released · paused · resumed · stopped · home_moved · done`
+Events: `campaign_started · seat_filled · bet_set · attached · note_given · shift_ended · mission_proposed · mission_claimed · mission_started · step · kept · reverted · mission_ended · judge_ran · ask_opened · ask_answered · budget_reserved · budget_released · paused · resumed · stopped · home_moved · done`
 
 Actions: `start · pause · resume · answer_ask · change_bet · add_budget · fill_seat · veto · stop`
 
@@ -117,11 +118,19 @@ Fable receipt: `atris/runs/engine-ask-20261015090013537-42685-6a0c60f0.json`.
 
 Members are not a level in the hierarchy. They are the other axis.
 
-- **Owner.** One per campaign. Accountable, keeps the judge and the stop rule, can veto.
+- **Campaign lead (`owner`).** One per campaign, and it can be any member whose job fits: the social media lead leads a social campaign, the sales lead leads outbound. The lead approves or vetoes proposed missions in that campaign and keeps the judge and stop rule. Screens say "lead."
+- **The Orb (orchestrator).** Sits above campaigns and sees all of them. It picks a lead when a campaign is created (a member good at long work, who knows the right team and structure), schedules across campaigns, briefs the human, and sets up one-on-ones. There can be many Orbs (one per business). The Orb is not a field; it is the team loop with a face. The human talks to the Orb. `orb` already exists as a member ("the apex filter… briefs him with at most 3 items").
 - **Seats.** A campaign has role seats (scout, builder, reviewer, skeptic, closer...). Members fill them. That is the party.
 - **Assignee.** One per mission.
 - **Purpose.** A member's lifelong purpose becomes a standing campaign (`standing: true`) with a continuous judge. Health-sentinel's "is the app okay?" is a standing campaign whose judge runs every morning. Screens should call it "purpose," not "campaign," because "standing campaign" reads stiff. Same struct underneath. This folds today's `MISSION.md` concept into the struct instead of keeping a look-alike.
 - **Many campaigns at once.** Many campaigns run in parallel, each with many members, and one member can sit in several.
+
+```text
+You ──talk to──▶ Orb             sees every campaign, picks leads, briefs you
+                  ├─ Campaign A   lead: social-media-lead   seats: writer, editor
+                  ├─ Campaign B   lead: mission-lead        seats: builder, validator
+                  └─ Campaign C   lead: sales-lead          seats: scout, closer
+```
 
 ### Many agents planning around one campaign (blackboard pattern)
 
@@ -137,7 +146,7 @@ Three rules keep it safe:
 
 Planning is spread out. Budget and stopping stay in one place.
 
-Open choice, recommended answer: **the owner vetoes rather than approves.** Approving every mission makes the owner a bottleneck. Claims and budget reservations already prevent the worst mistakes.
+Decided: **the lead can approve or veto** any proposed mission. A member may create a new mission after doing work (adaptability), but never to waste: the lead's ruling, claims, and usage tracking stop duplicate or idle work.
 
 ### The team loop is the scheduler
 
@@ -264,6 +273,7 @@ The core is pure: the schema, `fold(events) → state`, and `decide(state) → n
 | Store | `append(event)`, `read(campaign)` | SQLite (local), Postgres (cloud), in-memory (tests) |
 | Runner | `start(mission) → events` | local engines from the roster, cloud computer (`AIComputerTool`), a human |
 | Judge | `evaluate(campaign) → reading` | metric expression, verify command, measure script, human review |
+| Budget | `reserve(amount)`, `spend(amount)`, `left()` | none (subscriptions), tokens, Atris credits, dollars (backend `budget_hold`), subscription quota |
 | Sync | `push(events)`, `pull(since)` | backend HTTP, none (local only), file export |
 | Screen | `subscribe(events)` | CLI, desktop lab, GM mode, Pallet dashboard, Slack, voice |
 | Standard | `check(mission) → findings` | PERSONA, ANTISLOP, member lessons, review desk |
@@ -317,20 +327,99 @@ Everything else (planning, missions, events, folds, screens) runs on the compute
 
 ---
 
-## Open Decisions (Keshav)
+## The Flow
 
-Recommended answers in brackets.
+```text
+1 Kickoff     you (or a wish) start it; the Orb picks a lead; lead and you agree on title, judge, bet
+2 Huddle      seated members read it and each proposes a first mission; the lead approves or vetoes
+3 Work        members take missions, break them into tasks, and may propose new missions as they learn
+4 Check-in    anytime: "how are you doing?" is one screen across every campaign
+5 One-on-one  you sit with one member: it reviews its work with you; you coach; it changes next shift
+```
 
-1. Who builds it? [mission-lead owns; the roster's build lead builds; the review desk checks each phase]
-2. First real campaign? ["Why do 25 landings a week still need a human fix?", internal; Pallet recruiting second; "get me $5" once asks are solid]
-3. Run the first campaign by hand before building the store? [yes, this week, with a plain `campaign.md` and tagged missions]
-4. Does a member's purpose become a standing campaign? [yes, read-only first]
-5. Owner approves every proposed mission, or vetoes? [veto]
-6. Where does the Standard live? [`atris/STANDARD.md` that points to PERSONA, ANTISLOP, lessons; can be added to, never loosened]
-7. PRs or straight to master for code phases? [PRs through the merge queue; spec docs may go direct]
-8. CLI `parent_mission_id`: keep only "spawned by" (backend meaning) and drop "came after"? [yes]
-9. Can a campaign's home move between computers by lease? [yes]
-10. First campaign on cloud computers (turn a business attempt into a campaign) or local? [local this week, cloud next]
+A campaign can be anything with a goal, a team, and an ending: a product feature, a launch, a sales outbound push, a social media push for your own life, a hire. It gives the work a narrative people can follow. The harness shapes every story toward the business winning: the judge keeps it honest, the Standard keeps it clean, the no-reload line keeps it safe.
+
+---
+
+## One-on-Ones and Notes
+
+In a one-on-one, a member reviews its work with the human, and the human encourages a direction or forbids something. The note changes the member's next shift, not the work in flight (changing a running process mid-step gives half-old, half-new work).
+
+Vague and outdated notes are the main way a long campaign goes wrong. Every note has four parts or it is not saved:
+
+1. **A concrete rule.** The member repeats the note back as one rule; the human confirms with one tap. This also feeds learning-to-ask-less.
+2. **Why.** So a member can tell when the reason stops applying.
+3. **When and from where.** Date and source.
+4. **Kind and scope.** *Taste* ("no walls of text") lasts. *Fact* ("competitor X charges $20") expires after 7 days unless re-checked. Scope is "from now on" (default, saved to the member's lessons) or "just this campaign."
+
+Rules:
+
+- **Never store a fact, store where to check it.** Facts are re-pulled from their source at shift start. Keeping facts fresh is the Scout seat's job on long campaigns.
+- **A note can add to the Standard, never loosen it.**
+- **Contradictions go to the lead.** Newer does not win automatically.
+- **Notes earn their place.** Compare the member's review scores before and after a note; prune notes that do not help (as `atris wish lessons` already prunes lessons that do not move the score). Cap notes per member so prompts do not bloat.
+- A note is an event: `note_given { member, scope, kind, rule, why, source, expires }`.
+
+The same idea already runs in Atris memory: the `clean-memory` skill rebuilds memory as dated, verified pointers and prunes stale claims.
+
+---
+
+## Shifts (agent timelines)
+
+Agents do not tire with time. They get worse as context fills, as they drift from the goal, and when they loop without progress. So a shift ends at a natural breakpoint, whichever comes first:
+
+1. the mission ends
+2. context is about 60% full
+3. several steps pass with no progress
+4. a hard cap (about 50 minutes) as a backstop
+
+A break is **save, reflect, reset**: write state to the event log, check the work against the judge and Standard, load one-on-one notes and a fresh briefing (facts re-pulled), start a new context. Seconds, not minutes. Then the Orb decides: same member continues, another member takes over, or the work pauses (like an OS scheduler's time slice).
+
+Real waiting only happens for subscription quota: when an engine hits its usage window, the member rests until it resets. Atris already has the start of this: roster `max: 20 min` per worker and 30-minute "cooling" for stalled workers. Exact cadence is open and will be tuned from data.
+
+Event: `shift_ended { member, reason: mission_done | context | stalled | cap | quota, usage }`.
+
+---
+
+## First Campaign: "Campaign ships across Atris"
+
+The first campaign is the release of Campaign itself, run by hand first (Phase 0.5). It is a product release, not just a feature: a new schema for long-horizon work that works on every Atris surface, delegated to each project's team.
+
+```yaml
+campaign:
+  title: "Campaign ships across Atris"
+  judge: "npm run validate:campaign"     # does not exist yet: the first mission builds it, and it must fail today
+  owner: mission-lead                    # the active orchestrator in atris-cli (coordinator and supervisor are parked)
+  bet: "Mostly wiring on every surface. Wrong if any surface needs its own new runner."
+  # no budget: runs on subscriptions; any money spend is an ask
+  seats:                                 # mission-lead finalizes at kickoff
+    cli:      [builder, validator]                                     # atris-cli
+    backend:  [backend-feature-owner, backend-independent-validator]   # atrisos-backend
+    desktop:  [interface-dev, frontend-dev]                            # atris-desktop-v2
+    web:      [atris-frontend, validator]                              # atrisos-web
+    ios:      [ios-engineer, ios-quality-engineer]                     # terrace
+```
+
+Done means: a person can start, watch, coach, and finish a campaign from the CLI, the desktop app, the web app, and Terrace on iOS, and the judge passes. Each surface's team takes its missions, breaks them into tasks, and may propose new missions. No tokens wasted, docs updated, no bloat.
+
+---
+
+## Decisions (Keshav, 2026-10-15)
+
+1. **Lead.** Picked during campaign creation by the Orb: a member good at long work. Any fitting member can lead (not everyone is an orchestrator).
+2. **First campaign.** "Campaign ships across Atris," run by hand first. Pallet recruiting next; "get me $5" once asks are solid.
+3. **Budget.** Optional, default none. Unit is a plug: tokens, Atris credits, dollars, or quota.
+4. **Proposals.** The lead can approve or veto. Members may create missions after doing work, never to waste.
+5. **Who the human talks to.** The Orb. Many Orbs allowed.
+6. **One-on-ones.** Notes change the member from its next shift on, by default; "just this campaign" for one-offs. Notes must be concrete, sourced, and typed taste or fact.
+7. **Fact notes expire** after 7 days unless re-checked; taste does not expire.
+8. **Shifts** end at natural breakpoints with a ~50-minute backstop; cadence tuned later.
+9. **Purpose as a standing campaign:** yes, read-only first.
+10. **The Standard** lives in `atris/STANDARD.md`, pointing to PERSONA, ANTISLOP, lessons; can be added to, never loosened.
+11. **PRs** through the merge queue for code; spec docs may go straight to master.
+12. **`parent_mission_id`** means only "spawned by" (the backend meaning). "Came after" is the campaign's event order.
+13. **Home moves** between computers by lease.
+14. **First campaign runs locally** this week; cloud next.
 
 ---
 
@@ -387,7 +476,7 @@ From Keshav's essay "How to be more ambitious: a tutorial for humans with models
 
 ---
 
-## First Real Campaign: Pallet Recruiting
+## Next Campaign: Pallet Recruiting
 
 Pallet (`~/arena/empire/atris-customers/pallet`) has a Head of Talent hiring 10+ people a month, with Greenhouse and BrightHire data. The backend already has a read-only recruiting ingest (`atrisos-backend/backend/services/recruiting_intelligence_ingest.py`) that recently began counting prospects separately from applicants.
 
