@@ -29,6 +29,18 @@ const {
 } = require('../commands/youtube');
 const { ephemeralApplyMessage } = require('../lib/apply-gate');
 
+// Every temp folder this file makes is removed when the file finishes, so
+// repeated runs do not pile folders into the system temp folder.
+const madeDirs = [];
+function tmpDir(prefix) {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), prefix));
+  madeDirs.push(dir);
+  return dir;
+}
+test.after(() => {
+  for (const dir of madeDirs) fs.rmSync(dir, { recursive: true, force: true });
+});
+
 const REPO_ROOT = path.resolve(__dirname, '..');
 const VALIDATE_PY = path.join(REPO_ROOT, 'atris', 'experiments', 'validate.py');
 const CLI_PATH = path.join(REPO_ROOT, 'bin', 'atris.js');
@@ -52,7 +64,7 @@ const RICH_NOTES = [
 const THIN_NOTES = '# Apply Gate Video\n\nwelcome back friends this is just a chat\n';
 
 function filledApplyWorkspace(id, url) {
-  const cwd = fs.mkdtempSync(path.join(os.tmpdir(), 'atris-yt-process-'));
+  const cwd = tmpDir('atris-yt-process-');
   const applyDir = path.join(cwd, 'atris', 'wiki', 'briefs');
   fs.mkdirSync(applyDir, { recursive: true });
   fs.writeFileSync(path.join(applyDir, `youtube-${id}.apply.md`), [
@@ -370,7 +382,7 @@ test('extractLocalTranscript still fails when 429 stdout is empty', async () => 
 });
 
 test('extractLocalTranscript keeps a written vtt when 429 stdout is empty', async () => {
-  const workDir = fs.mkdtempSync(path.join(os.tmpdir(), 'atris-yt-local-emptyjson-'));
+  const workDir = tmpDir('atris-yt-local-emptyjson-');
   fs.writeFileSync(path.join(workDir, 'yt_abc123.en.vtt'), [
     'WEBVTT',
     '',
@@ -400,7 +412,7 @@ test('extractLocalTranscript keeps a written vtt when 429 stdout is empty', asyn
 });
 
 test('extractLocalTranscript keeps a written vtt for copied #t= urls when 429 stdout is empty', async () => {
-  const workDir = fs.mkdtempSync(path.join(os.tmpdir(), 'atris-yt-local-hash-t-'));
+  const workDir = tmpDir('atris-yt-local-hash-t-');
   fs.writeFileSync(path.join(workDir, 'yt_abc123.en.vtt'), [
     'WEBVTT',
     '',
@@ -434,7 +446,7 @@ test('extractLocalTranscript keeps a written vtt for copied #t= urls when 429 st
 });
 
 test('extractLocalTranscript keeps a written vtt for shorts embed live and /e/ urls when 429 stdout is empty', async () => {
-  const workDir = fs.mkdtempSync(path.join(os.tmpdir(), 'atris-yt-local-shorts-'));
+  const workDir = tmpDir('atris-yt-local-shorts-');
   fs.writeFileSync(path.join(workDir, 'yt_abc123.en.vtt'), [
     'WEBVTT',
     '',
@@ -471,7 +483,7 @@ test('extractLocalTranscript keeps a written vtt for shorts embed live and /e/ u
 });
 
 test('extractLocalTranscript keeps a written vtt when 429 json is a playlist', async () => {
-  const workDir = fs.mkdtempSync(path.join(os.tmpdir(), 'atris-yt-local-playlist-'));
+  const workDir = tmpDir('atris-yt-local-playlist-');
   fs.writeFileSync(path.join(workDir, 'yt_abc123.en.vtt'), [
     'WEBVTT',
     '',
@@ -506,7 +518,7 @@ test('extractLocalTranscript keeps a written vtt when 429 json is a playlist', a
 });
 
 test('extractLocalTranscript keeps a written vtt when caption fetch fails after 429 json', async () => {
-  const workDir = fs.mkdtempSync(path.join(os.tmpdir(), 'atris-yt-local-vtt-'));
+  const workDir = tmpDir('atris-yt-local-vtt-');
   fs.writeFileSync(path.join(workDir, 'yt_abc123.en.vtt'), [
     'WEBVTT',
     '',
@@ -541,7 +553,7 @@ test('extractLocalTranscript keeps a written vtt when caption fetch fails after 
 });
 
 test('extractLocalTranscript still fails when caption fetch fails and no vtt was written', async () => {
-  const workDir = fs.mkdtempSync(path.join(os.tmpdir(), 'atris-yt-local-novtt-'));
+  const workDir = tmpDir('atris-yt-local-novtt-');
   const result = await extractLocalTranscript('https://youtube.com/watch?v=abc123', {
     workDir,
     spawnSync: () => ({
@@ -652,8 +664,8 @@ test('youtube notes with a non-youtube arg exits 2', async () => {
 });
 
 test('fileBriefFromNotes writes a wiki brief and a claimable journal line', () => {
-  const cwd = fs.mkdtempSync(path.join(os.tmpdir(), 'atris-yt-brief-'));
-  const workDir = fs.mkdtempSync(path.join(os.tmpdir(), 'atris-yt-notes-'));
+  const cwd = tmpDir('atris-yt-brief-');
+  const workDir = tmpDir('atris-yt-notes-');
   fs.mkdirSync(path.join(cwd, 'atris', 'wiki'), { recursive: true });
   const notes = '# Some Video Title\n\nBody paragraph.\n';
   fs.writeFileSync(path.join(workDir, 'yt_abc123xyz.md'), notes);
@@ -681,10 +693,10 @@ test('fileBriefFromNotes writes a wiki brief and a claimable journal line', () =
 });
 
 test('fileBriefFromNotes files youtu.be notes and stays silent without a wiki', () => {
-  const workDir = fs.mkdtempSync(path.join(os.tmpdir(), 'atris-yt-notes-be-'));
+  const workDir = tmpDir('atris-yt-notes-be-');
   fs.writeFileSync(path.join(workDir, 'yt_shortid99.md'), '# Short Form\n\nClip notes.\n');
 
-  const withWiki = fs.mkdtempSync(path.join(os.tmpdir(), 'atris-yt-be-'));
+  const withWiki = tmpDir('atris-yt-be-');
   fs.mkdirSync(path.join(withWiki, 'atris', 'wiki'), { recursive: true });
   fileBriefFromNotes({
     cwd: withWiki,
@@ -697,7 +709,7 @@ test('fileBriefFromNotes files youtu.be notes and stays silent without a wiki', 
     /source: https:\/\/youtu\.be\/shortid99\?si=abc/,
   );
 
-  const bare = fs.mkdtempSync(path.join(os.tmpdir(), 'atris-yt-nowiki-'));
+  const bare = tmpDir('atris-yt-nowiki-');
   fileBriefFromNotes({
     cwd: bare,
     url: 'https://youtu.be/shortid99',
@@ -727,8 +739,8 @@ test('learner check is inferred from a number or named mechanism and otherwise f
 });
 
 function notesApplyWorkspace(id, notes = '# Apply Gate Video\n\nBody.\n') {
-  const cwd = fs.mkdtempSync(path.join(os.tmpdir(), 'atris-yt-apply-'));
-  const workDir = fs.mkdtempSync(path.join(os.tmpdir(), 'atris-yt-notes-'));
+  const cwd = tmpDir('atris-yt-apply-');
+  const workDir = tmpDir('atris-yt-notes-');
   fs.mkdirSync(path.join(cwd, 'atris', 'wiki'), { recursive: true });
   fs.writeFileSync(path.join(workDir, `yt_${id}.md`), notes);
   return { cwd, workDir };
@@ -920,8 +932,8 @@ test('youtube notes keeps written notes when the runner exits with a later error
 
 test('youtube notes still fails a 429 when no notes file was written', async () => {
   const url = 'https://www.youtube.com/watch?v=empty429';
-  const cwd = fs.mkdtempSync(path.join(os.tmpdir(), 'atris-yt-empty429-'));
-  const workDir = fs.mkdtempSync(path.join(os.tmpdir(), 'atris-yt-empty429-notes-'));
+  const cwd = tmpDir('atris-yt-empty429-');
+  const workDir = tmpDir('atris-yt-empty429-notes-');
   const output = [];
 
   const status = await youtubeCommand(['notes', url], {
@@ -993,8 +1005,8 @@ test('youtube notes without --save stay ephemeral even when thin', async () => {
 
 test('youtube notes failed runner prints no apply next-step', async () => {
   const url = 'https://www.youtube.com/watch?v=fail01';
-  const cwd = fs.mkdtempSync(path.join(os.tmpdir(), 'atris-yt-apply-'));
-  const workDir = fs.mkdtempSync(path.join(os.tmpdir(), 'atris-yt-notes-'));
+  const cwd = tmpDir('atris-yt-apply-');
+  const workDir = tmpDir('atris-yt-notes-');
   fs.mkdirSync(path.join(cwd, 'atris', 'wiki'), { recursive: true });
   const output = [];
 
@@ -1239,8 +1251,8 @@ test('youtube notes with an apply receipt is complete', async () => {
 });
 
 test('youtube notes --save without wiki is incomplete when apply is missing', async () => {
-  const cwd = fs.mkdtempSync(path.join(os.tmpdir(), 'atris-yt-apply-nowiki-'));
-  const workDir = fs.mkdtempSync(path.join(os.tmpdir(), 'atris-yt-notes-nowiki-'));
+  const cwd = tmpDir('atris-yt-apply-nowiki-');
+  const workDir = tmpDir('atris-yt-notes-nowiki-');
   fs.writeFileSync(path.join(workDir, 'yt_apply03.md'), RICH_NOTES);
   const output = [];
 
@@ -1322,7 +1334,7 @@ test('youtube unsave removes filed brief apply and notes pack', async () => {
 });
 
 test('youtube unsave removes leftover packs when brief and apply are already gone', async () => {
-  const cwd = fs.mkdtempSync(path.join(os.tmpdir(), 'atris-yt-unsave-packs-'));
+  const cwd = tmpDir('atris-yt-unsave-packs-');
   const notesPack = path.join(cwd, 'atris', 'experiments', 'notes-gone03');
   const teachPack = path.join(cwd, 'atris', 'experiments', 'teach-gone03-s2');
   const otherPack = path.join(cwd, 'atris', 'experiments', 'notes-other99');
@@ -1354,7 +1366,7 @@ test('youtube unsave removes leftover packs when brief and apply are already gon
 });
 
 test('youtube notes --unsave and a missing id stay quiet', async () => {
-  const cwd = fs.mkdtempSync(path.join(os.tmpdir(), 'atris-yt-unsave-'));
+  const cwd = tmpDir('atris-yt-unsave-');
   const output = [];
   const status = await youtubeCommand(['notes', '--unsave', 'gone02'], {
     cwd,
@@ -1399,7 +1411,7 @@ test('youtube unsave without a target prints usage and no next line', async () =
 });
 
 test('youtube unsave --json and multi-target print the search next-step once or not at all', async () => {
-  const cwd = fs.mkdtempSync(path.join(os.tmpdir(), 'atris-yt-unsave-json-'));
+  const cwd = tmpDir('atris-yt-unsave-json-');
   const jsonOut = [];
   const jsonStatus = await youtubeCommand(['unsave', '--json', 'gone04'], {
     cwd,
@@ -1448,7 +1460,7 @@ test('youtube help says notes stay ephemeral unless --save', async () => {
 });
 
 test('youtube process without apply exits 2 and never calls the api', async () => {
-  const cwd = fs.mkdtempSync(path.join(os.tmpdir(), 'atris-yt-process-noapply-'));
+  const cwd = tmpDir('atris-yt-process-noapply-');
   fs.mkdirSync(path.join(cwd, 'atris', 'wiki'), { recursive: true });
   const output = [];
   let apiCalls = 0;
@@ -1485,7 +1497,7 @@ test('youtube process without apply exits 2 and never calls the api', async () =
 });
 
 test('youtube process without an atris wiki names the apply file to create', async () => {
-  const cwd = fs.mkdtempSync(path.join(os.tmpdir(), 'atris-yt-process-nowiki-'));
+  const cwd = tmpDir('atris-yt-process-nowiki-');
   const output = [];
   let apiCalls = 0;
 
@@ -1508,7 +1520,7 @@ test('youtube process without an atris wiki names the apply file to create', asy
 });
 
 test('youtube process with a stub-only apply refuses without rewriting it', async () => {
-  const cwd = fs.mkdtempSync(path.join(os.tmpdir(), 'atris-yt-process-stub-'));
+  const cwd = tmpDir('atris-yt-process-stub-');
   const applyDir = path.join(cwd, 'atris', 'wiki', 'briefs');
   fs.mkdirSync(applyDir, { recursive: true });
   const applyPath = path.join(applyDir, 'youtube-proc02.apply.md');
@@ -1588,7 +1600,7 @@ test('youtube process still needs a human apply after notes --save', async () =>
 
 test('youtube process still needs a human apply when a leftover notes keep-sidecar sits on the process gate', async () => {
   const url = 'https://www.youtube.com/watch?v=oldnote1';
-  const cwd = fs.mkdtempSync(path.join(os.tmpdir(), 'atris-yt-oldnote-'));
+  const cwd = tmpDir('atris-yt-oldnote-');
   const applyDir = path.join(cwd, 'atris', 'wiki', 'briefs');
   fs.mkdirSync(applyDir, { recursive: true });
   fs.writeFileSync(path.join(applyDir, 'youtube-oldnote1.apply.md'), [
@@ -2159,7 +2171,7 @@ test('youtube process --json stays quiet on the learner check', async () => {
 });
 
 test('youtube process without apply prints no learner check', async () => {
-  const cwd = fs.mkdtempSync(path.join(os.tmpdir(), 'atris-yt-process-nocheck-'));
+  const cwd = tmpDir('atris-yt-process-nocheck-');
   fs.mkdirSync(path.join(cwd, 'atris', 'wiki'), { recursive: true });
   const output = [];
 
