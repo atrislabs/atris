@@ -1230,6 +1230,29 @@ function saveRevisionFilesCache(cache) {
 }
 
 /**
+ * Which mainline commit brought each commit onto the line HEAD follows: a
+ * mainline commit brings itself, a branch commit arrives with the oldest
+ * merge that reaches it. Built from the history already read, so no extra git
+ * calls. Commits outside the window stay unknown.
+ */
+function mainlineArrivals(commits) {
+  const byHash = new Map(commits.map((commit) => [commit.hash, commit]));
+  const mainline = [];
+  for (let c = commits[0]; c && !mainline.includes(c); c = byHash.get(c.parents[0])) mainline.push(c);
+  const arrival = new Map(mainline.map((m) => [m.hash, m.hash]));
+  for (const m of mainline.slice().reverse()) {
+    const stack = m.parents.slice(1);
+    while (stack.length) {
+      const hash = stack.pop();
+      if (arrival.has(hash) || !byHash.has(hash)) continue;
+      arrival.set(hash, m.hash);
+      stack.push(...byHash.get(hash).parents);
+    }
+  }
+  return arrival;
+}
+
+/**
  * Read the last N days of history and pair every agent landing with the
  * human commits that touched the same files within the 72-hour window.
  */
@@ -1294,14 +1317,30 @@ function collectRevisionSignals(root, options = {}) {
     return cache.used[commit.hash];
   };
 
+  // A commit that reached the mainline in the same merge as the landing came
+  // in with it, before anything had landed for a person to fix.
+  const arrival = mainlineArrivals(commits);
+  // A branch commit that rides in with agent-signed work is the agent's too:
+  // on 2026-10-15 one unsigned commit from an agent run (#1130) read as a
+  // person fixing five earlier landings.
+  const agentMerges = new Set(landings
+    .map((landing) => arrival.get(landing.hash))
+    .filter((merge, i) => merge && merge !== landings[i].hash));
+  const rodeWithAgent = (commit) => {
+    const merge = arrival.get(commit.hash);
+    return Boolean(merge && merge !== commit.hash && agentMerges.has(merge));
+  };
   const revisions = [];
   for (const landing of landings) {
     const landedFiles = new Set(filesOf(landing).filter(isRevisionSignalFile));
     if (!landedFiles.size) continue;
+    const landedWith = arrival.get(landing.hash);
     const revisedBy = [];
     const touched = new Set();
     for (const human of humans) {
       if (human.ms <= landing.ms || human.ms > landing.ms + REVISION_WINDOW_MS) continue;
+      if (landedWith && arrival.get(human.hash) === landedWith) continue;
+      if (rodeWithAgent(human)) continue;
       const overlap = filesOf(human).filter((f) => landedFiles.has(f));
       if (!overlap.length) continue;
       revisedBy.push({ hash: human.hash, subject: human.subject, at: human.at });

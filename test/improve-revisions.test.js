@@ -177,6 +177,84 @@ test('merge commits are attributed by their first-parent diff', () => {
   }
 });
 
+test('a commit merged in the same pull request as the landing is not a revision', () => {
+  // Live 2026-10-15: an agent commit and a trailer-less follow-up ten minutes
+  // later on the same branch reached master in one merge (#1130), and the
+  // gauge called the follow-up a human fix after landing. It arrived with the
+  // landing, so nothing had landed yet for a person to fix.
+  const cwd = initRepo();
+  const now = Date.now();
+  const base = now - 3 * 24 * HOUR;
+  try {
+    commitFile(cwd, 'seed.js', 'v1\n', 'seed', { atMs: base - HOUR });
+    execSync('git checkout -q -b side', { cwd, stdio: 'pipe' });
+    commitFile(cwd, 'm.js', 'v1\n', 'bot builds m on a branch', { bot: true, atMs: base });
+    commitFile(cwd, 'm.js', 'v2\n', 'follow-up on the same branch', { atMs: base + HOUR / 6 });
+    execSync('git checkout -q -', { cwd, stdio: 'pipe' });
+    const mergeDate = new Date(base + HOUR / 4).toISOString();
+    execSync('git merge -q --no-ff side -m "merge pull request"', {
+      cwd,
+      stdio: 'pipe',
+      env: { ...process.env, GIT_AUTHOR_DATE: mergeDate, GIT_COMMITTER_DATE: mergeDate },
+    });
+    let summary = collectRevisionSignals(cwd, { days: 14, now });
+    assert.strictEqual(summary.landings, 1);
+    assert.strictEqual(summary.revised, 0, JSON.stringify(summary.revisions));
+
+    // A change to the same file that reaches master afterward still counts.
+    commitFile(cwd, 'm.js', 'v3\n', 'human fixes m after it landed', { atMs: base + 2 * HOUR });
+    summary = collectRevisionSignals(cwd, { days: 14, now });
+    assert.strictEqual(summary.revised, 1);
+    assert.deepStrictEqual(summary.revisions[0].revised_by.map((r) => r.subject), ['human fixes m after it landed']);
+  } finally {
+    cleanup(cwd);
+  }
+});
+
+test('an unsigned commit on an agent pull request is the agent\'s, not a person\'s fix', () => {
+  // Live 2026-10-15: pull request #1130 brought one signed agent commit and
+  // one unsigned commit from the same agent run. The unsigned one touched
+  // files that five earlier landings had changed, so the gauge read five
+  // people stepping in. A commit that rides in with agent-signed work is
+  // agent work.
+  const cwd = initRepo();
+  const now = Date.now();
+  const base = now - 3 * 24 * HOUR;
+  try {
+    commitFile(cwd, 'seed.js', 'v1\n', 'seed', { atMs: base - HOUR });
+    commitFile(cwd, 'f.js', 'v1\n', 'bot lands f', { bot: true, atMs: base });
+    execSync('git checkout -q -b side', { cwd, stdio: 'pipe' });
+    commitFile(cwd, 'g.js', 'v1\n', 'bot works on g', { bot: true, atMs: base + HOUR });
+    commitFile(cwd, 'f.js', 'v2\n', 'unsigned commit from the same run', { atMs: base + 2 * HOUR });
+    execSync('git checkout -q -', { cwd, stdio: 'pipe' });
+    const mergeDate = new Date(base + 3 * HOUR).toISOString();
+    execSync('git merge -q --no-ff side -m "merge pull request"', {
+      cwd,
+      stdio: 'pipe',
+      env: { ...process.env, GIT_AUTHOR_DATE: mergeDate, GIT_COMMITTER_DATE: mergeDate },
+    });
+    let summary = collectRevisionSignals(cwd, { days: 14, now });
+    assert.strictEqual(summary.landings, 2);
+    assert.strictEqual(summary.revised, 0, JSON.stringify(summary.revisions));
+
+    // An unsigned pull request with no agent work in it still counts.
+    execSync('git checkout -q -b person', { cwd, stdio: 'pipe' });
+    commitFile(cwd, 'f.js', 'v3\n', 'person fixes f on their own branch', { atMs: base + 4 * HOUR });
+    execSync('git checkout -q -', { cwd, stdio: 'pipe' });
+    const laterDate = new Date(base + 5 * HOUR).toISOString();
+    execSync('git merge -q --no-ff person -m "merge person pull request"', {
+      cwd,
+      stdio: 'pipe',
+      env: { ...process.env, GIT_AUTHOR_DATE: laterDate, GIT_COMMITTER_DATE: laterDate },
+    });
+    summary = collectRevisionSignals(cwd, { days: 14, now });
+    assert.strictEqual(summary.revised, 1);
+    assert.deepStrictEqual(summary.revisions[0].revised_by.map((r) => r.subject), ['person fixes f on their own branch']);
+  } finally {
+    cleanup(cwd);
+  }
+});
+
 test('improve vitals show the guarantee gauge from git history, counts as words', () => {
   const { cwd, now } = buildFixture();
   try {
