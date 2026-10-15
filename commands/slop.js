@@ -198,12 +198,18 @@ const CLAUSE_END = "(?<=[\\w)\\]\"'*_`%\\u201d\\u2019\\uE001]|\\betc\\.|\\w\\+{1
 // those stay open questions", "outward; these always wait for review". A
 // word in "s" after the verb makes it a noun, so "those work items" and
 // "these return values" keep their comma.
+// "Always" or "never" before a plain command verb and more words opens a
+// command, a clause of its own: "the big three; always include it", "stay
+// honest; never massage results". The verbs are a closed list, so "never a
+// status" and "always present" keep their comma, and a verb before "by" is a
+// description: "the token, always set by the server".
 // A masked code span before the dash counts as the word: "Do not use `PUT`".
 // The splice list in scripts/slop-fix-diff.js reads both word lists, so the
 // words it counts and the words the fix joins cannot drift apart.
 const PRESENT_PLURAL_VERB = '(?:pass|fail|run|work|break|hold|match|agree|validate|load|build|ship|land|compile|apply|need|stay|remain|exist|show|point|wait|block|return)';
+const COMMAND_VERB = '(?:append|ask|assume|automate|block|bump|burn|capture|check|close|compare|create|dump|echo|fabricate|flip|grep|handle|hardcode|import|include|ingest|insert|inspect|invent|join|leave|massage|measure|open|outsource|override|paraphrase|predict|read|rely|render|resolve|rsync|run|say|sell|send|set|show|sign|skip|speculate|split|store|sweep|tell|test|truncate|trust|use|verify|violate|wait|write)';
 const DEMONSTRATIVE_LEAD = '(?:still|also|never|only|just|now|already|often|usually|rarely|always|all)';
-const CLAUSE_AFTER_DASH = new RegExp(CLAUSE_END + String.raw`\s*\u2014\s*(?=(?:(?:it|we|they|you|I|he|she)(?:['\u2019](?:s|re|ll|ve|d|m))?|(?:this|that|these|those|there)(?:['\u2019]s|\s+(?:is|are|was|were|used|will|would|can|cannot|must|should|has|have))|this\s+(?:(?:no\s+longer|still|also|never|only|just|now|already|often|usually|rarely)\s+)?(?!(?:series|species|news|lens|perhaps|unless|whereas|across|always|does)\b)(?![a-z]+(?:us|is|as)\b)[a-z]{2,}[a-rt-z]s|(?:these|those)\s+(?:${DEMONSTRATIVE_LEAD}\s+)?${PRESENT_PLURAL_VERB}\b(?!\s+[a-z]+s\b))\b\s+[^\s\u2014])`, 'g');
+const CLAUSE_AFTER_DASH = new RegExp(CLAUSE_END + String.raw`\s*\u2014\s*(?=(?:(?:it|we|they|you|I|he|she)(?:['\u2019](?:s|re|ll|ve|d|m))?|(?:this|that|these|those|there)(?:['\u2019]s|\s+(?:is|are|was|were|used|will|would|can|cannot|must|should|has|have))|this\s+(?:(?:no\s+longer|still|also|never|only|just|now|already|often|usually|rarely)\s+)?(?!(?:series|species|news|lens|perhaps|unless|whereas|across|always|does)\b)(?![a-z]+(?:us|is|as)\b)[a-z]{2,}[a-rt-z]s|(?:these|those)\s+(?:${DEMONSTRATIVE_LEAD}\s+)?${PRESENT_PLURAL_VERB}\b(?!\s+[a-z]+s\b)|(?:always|never)\s+${COMMAND_VERB}\b(?![-'])(?!\s+by\b))\b\s+[^\s\u2014])`, 'g');
 // A noun subject and its helping verb start a second sentence too: "is not a
 // twin, restart is allowed". "Did", "could", "had" and their kin count as
 // helping verbs too: "still open, receipt did not move it". So do common

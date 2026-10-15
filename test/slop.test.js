@@ -1054,6 +1054,11 @@ test('fix joins two full clauses with a semicolon, not a comma splice', () => {
     // word in "s" after the verb, "those work items", makes it a noun
     'It skips live streaming \u2014 those stay open questions for v2.',
     'Keep the protected lanes (money, outward \u2014 these always wait for review).',
+    // "always" or "never" and a command verb open a command; a noun after
+    // "never" or a verb before "by" does not
+    'The data has gaps for small countries \u2014 always check the field first.',
+    'The release ships every night \u2014 never a status update.',
+    'The token stays the same for the session \u2014 always set by the server.',
     'We kept two builds \u2014 those work items stay.',
     'Then \u2014 it stops.',
     'Use `PUT` \u2014 that is for updates.',
@@ -1076,6 +1081,9 @@ test('fix joins two full clauses with a semicolon, not a comma splice', () => {
     'We fixed the gap, this series of fixes.',
     'It skips live streaming; those stay open questions for v2.',
     'Keep the protected lanes (money, outward; these always wait for review).',
+    'The data has gaps for small countries; always check the field first.',
+    'The release ships every night, never a status update.',
+    'The token stays the same for the session, always set by the server.',
     'We kept two builds, those work items stay.',
     'Then, it stops.',
     'Use `PUT`; that is for updates.',
