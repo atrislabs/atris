@@ -15722,7 +15722,7 @@ test('task current-step rejects bookkeeping receipts for golden-path mission XP'
   }
 });
 
-test('task review lanes block weak golden-path mission XP proof from accept', () => {
+test('task review lanes block weak golden-path mission XP proof from accept', async () => {
   if (!hasNodeSqlite()) return;
   const dir = makeTempDir();
   const dbPath = path.join(dir, 'tasks.db');
@@ -15778,7 +15778,21 @@ test('task review lanes block weak golden-path mission XP proof from accept', ()
       taskStore.close();
     }
 
-    const reviews = runCli(['task', 'reviews', '--json'], { cwd: dir, env });
+    // Every read below, including the refused accept and the dry run, changes
+    // no task state, so all four run at once.
+    const [reviews, current, accept, dryRun] = await Promise.all([
+      runCliAsync(['task', 'reviews', '--json'], { cwd: dir, env }),
+      runCliAsync([
+        'task', 'current',
+        '--goal-id',
+        'mission-golden-path',
+        '--review-state',
+        'proof-boundary-blocked',
+        '--json',
+      ], { cwd: dir, env }),
+      runCliAsync(['task', 'accept', ref, '--as', 'keshav', '--json'], { cwd: dir, env }),
+      runCliAsync(['task', 'auto-accept-certified', '--dry-run', '--json'], { cwd: dir, env }),
+    ]);
     assert.equal(reviews.status, 0, reviews.stderr);
     const reviewItem = JSON.parse(reviews.stdout).queue.items[0];
     assert.equal(reviewItem.id, task.id);
@@ -15786,25 +15800,15 @@ test('task review lanes block weak golden-path mission XP proof from accept', ()
     assert.equal(reviewItem.accept_command, null);
     assert.equal(reviewItem.blocked_accept_reason, 'mission_xp_requires_end_to_end_receipt');
 
-    const current = runCli([
-      'task', 'current',
-      '--goal-id',
-      'mission-golden-path',
-      '--review-state',
-      'proof-boundary-blocked',
-      '--json',
-    ], { cwd: dir, env });
     assert.equal(current.status, 0, current.stderr);
     const currentPayload = JSON.parse(current.stdout);
     assert.equal(currentPayload.current.selected_task_id, task.id);
     assert.equal(currentPayload.current.next.key, 'proof_boundary_blocked');
     assert.equal(currentPayload.current.next.human_accept_command, null);
 
-    const accept = runCli(['task', 'accept', ref, '--as', 'keshav', '--json'], { cwd: dir, env });
     assert.notEqual(accept.status, 0);
     assert.equal(JSON.parse(accept.stdout).reason, 'mission_xp_requires_end_to_end_receipt');
 
-    const dryRun = runCli(['task', 'auto-accept-certified', '--dry-run', '--json'], { cwd: dir, env });
     assert.equal(dryRun.status, 0, dryRun.stderr);
     const dryRunResult = JSON.parse(dryRun.stdout).results[0];
     assert.equal(dryRunResult.action, 'skipped');
