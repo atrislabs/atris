@@ -3329,8 +3329,14 @@ test('the landing status names the startup line behind leaked ssh-agents and its
     fs.writeFileSync(path.join(home, '.zshrc'), 'eval "$(ssh-agent -s)"\n');
     const leaked = status({ readSshAgents: () => ({ agents: [agent(200)], referenced: new Set() }), uid: 501, home });
     assert.match(leaked, /leaked ssh-agents on this machine: 1;[^\n]*\n {4}likely source: ~\/\.zshrc line 1 starts a new ssh-agent in every shell that reads it, including the shells Claude and Codex start in each session that runs a command; to start one only when none is reachable, change it to: \[ -S "\$SSH_AUTH_SOCK" \] \|\| eval "\$\(ssh-agent -s\)"/);
+    assert.match(leaked, /\n {4}to make that change, run atris engine sweep --fix-startup; it saves the old file beside it first/, 'the one-step fix is named under its line');
     const clean = status({ readSshAgents: () => ({ agents: [agent(200)], referenced: new Set([200]) }), uid: 501, home });
     assert.doesNotMatch(clean, /likely source/, 'no leak, no source line');
+    assert.doesNotMatch(clean, /--fix-startup/, 'no leak, no fix command');
+    fs.writeFileSync(path.join(home, '.zshrc'), 'if true; then eval "$(ssh-agent -s)"; fi\n');
+    const handEdit = status({ readSshAgents: () => ({ agents: [agent(200)], referenced: new Set() }), uid: 501, home });
+    assert.match(handEdit, /likely source: ~\/\.zshrc line 1/);
+    assert.doesNotMatch(handEdit, /--fix-startup/, 'a line the command would leave alone does not point to it');
   } finally {
     fs.rmSync(root, { recursive: true, force: true });
     fs.rmSync(home, { recursive: true, force: true });

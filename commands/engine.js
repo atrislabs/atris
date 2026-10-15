@@ -2343,7 +2343,7 @@ function formatAgentAge(seconds) {
 // startup files to the guarded line, keeping a copy of the old file.
 function runEngineSweepCommand(args, root, deps = {}) {
   if (args.includes('--fix-startup')) return runFixStartupCommand(args, deps);
-  const { readSshAgents, findLeakedSshAgents, findAgentStartLines, agentStartLineText, stopLeakedSshAgents, closeLostRuns, readResourceHistory, leakGrowthNote, LEAK_MIN_AGE_SEC } = require('../lib/engine-resource');
+  const { readSshAgents, findLeakedSshAgents, findAgentStartLines, agentStartLineText, FIX_STARTUP_HINT, stopLeakedSshAgents, closeLostRuns, readResourceHistory, leakGrowthNote, LEAK_MIN_AGE_SEC } = require('../lib/engine-resource');
   const read = deps.read || readSshAgents;
   const { agents, referenced, unread = [] } = read();
   const uid = deps.uid !== undefined ? deps.uid : process.getuid();
@@ -2399,7 +2399,7 @@ function runEngineSweepCommand(args, root, deps = {}) {
   ];
   if (leaked.length > shown) lines.push(`  and ${leaked.length - shown} more`);
   lines.push(...startLines.map(agentStartLineText));
-  if (startLines.some((found) => found.fix)) lines.push('to make that change, run atris engine sweep --fix-startup; it saves the old file beside it first');
+  if (startLines.some((found) => found.fix)) lines.push(FIX_STARTUP_HINT);
   if (scanWarning) lines.push(scanWarning);
   lines.push(leaked.length ? 'nothing was stopped. run atris engine sweep --apply to stop them.' : 'nothing was stopped.');
   lines.push('', ...resourceHistoryLines(history));
