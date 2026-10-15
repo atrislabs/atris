@@ -3414,7 +3414,7 @@ test('atris engine sweep names the day\'s crowded time limit kills in the same w
     assert.ok(lines.includes('0 of 4 SIGKILLs ended with machine memory low, 4 at their time limit'), lines.join('\n'));
 
     const { history } = JSON.parse(sweep(['--json']).join('\n'));
-    assert.deepStrictEqual([history.time_limit_kills_day, history.time_limit_kills], [3, 4]);
+    assert.deepStrictEqual([history.time_limit_kills_day, history.time_limit_kills, history.crowded_time_limit_kills_day], [3, 4, 2], 'the older crowded kill stays out of the recent counts');
     console.log(`real sweep json totals: ${JSON.stringify({ recent: history.time_limit_kills_day, overall: history.time_limit_kills })}`);
     const status = spawnSync(process.execPath, [path.join(__dirname, '..', 'bin', 'atris.js'), 'autoland', 'status'], {
       cwd: root,
