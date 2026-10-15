@@ -515,9 +515,10 @@ const ADVERB_CLAUSE_AFTER_DASH = new RegExp(`${CLAUSE_END}\\s*\\u2014\\s*(?!${NA
 // within" keeps its comma; "speed" and "seed" are still nouns.
 // A plural with no "the", then a common verb that is rarely a noun and more
 // words after it, starts one too: "small phones overflow silently", "master
-// merges do not reach prod". A plural before a noun, "skills folder", is no
-// verb, and "the" is left out so "the changes users need" stays a phrase.
-const COMMON_PLAIN_VERB = '(?:need|appear|carry|say|do|seem|remain|require|reach|stay|tend|hold|lose|know|want|become|belong|depend|happen|exist|agree|refuse|include|contain)';
+// merges do not reach prod", "those searches return zero results". A
+// plural before a noun, "skills folder", is no verb, and "the" is left out
+// so "the changes users need" stays a phrase.
+const COMMON_PLAIN_VERB = '(?:need|appear|carry|say|do|seem|remain|require|reach|stay|tend|hold|lose|know|want|become|belong|depend|happen|exist|agree|refuse|include|contain|return)';
 const PLURAL_CLAUSE_AFTER_DASH = new RegExp(`${CLAUSE_END}\\s*\\u2014\\s*(?!${NAMING_PHRASE})(?!${TIME_OPENER})(?=(?:(?!(?:the|a|an|that|whose|this|it|its)\\b)${SUBJECT_WORD}){0,2}(?!(?:the|a|an|that|whose|this|its)\\b)[A-Za-z0-9_'-]*[a-z](?<!ss|us|is)s\\s+${COMMON_PLAIN_VERB}\\s+[^\\s\\u2014])`, 'g');
 // "The", one or two words with no "s" and a plural, then a common verb and
 // two more words, start one too: "the text title elements use obfuscated

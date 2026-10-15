@@ -3366,6 +3366,7 @@ test('fix joins a plural and a common verb with more words after a dash with a s
     'Backgrounds set mood \u2014 flat backgrounds say "I didn\'t think about this."',
     'The deploy gate is disabled \u2014 master merges do NOT reach prod by themselves.',
     'The group needs no build assignment \u2014 new VALID builds appear automatically.',
+    'Nobody posts about it \u2014 those searches return zero results.',
     // a "the", a plural before a noun, or a short name after a semicolon stays
     'Read the board \u2014 the changes users need first.',
     'Keep the list \u2014 build logs, test runs and receipts.',
@@ -3376,6 +3377,7 @@ test('fix joins a plural and a common verb with more words after a dash with a s
     'Backgrounds set mood; flat backgrounds say "I didn\'t think about this."',
     'The deploy gate is disabled; master merges do NOT reach prod by themselves.',
     'The group needs no build assignment; new VALID builds appear automatically.',
+    'Nobody posts about it; those searches return zero results.',
     'Read the board, the changes users need first.',
     'Keep the list, build logs, test runs and receipts.',
     'Six defects; the big one, audit rows carry no identity.',
