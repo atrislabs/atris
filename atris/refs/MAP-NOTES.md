@@ -2865,3 +2865,5 @@ Duplicate seed read batching: `test/commands.test.js:12769` awaits both next out
 Inspect help read batching: `test/inspect-fields.test.js:236` awaits the mission and task help reads together. Both commands only display help; every assertion remains. Two sequential CLI stages become one.
 
 Rejected inspect read batching: `test/inspect-fields.test.js:246` runs both rejected requests together. Both stop at argument validation in `commands/mission.js` before reading mission state. Every exit and error assertion remains.
+
+Review metadata read batching: `test/inspect-fields.test.js:197` awaits both output formats together after readiness completes. `commands/task.js:7701` builds inspect output from existing task rows without saving the shared view. Four sequential CLI stages become three; every assertion remains.

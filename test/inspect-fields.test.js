@@ -194,7 +194,7 @@ test('mission inspect reports acknowledged native goal ack state', () => {
   }
 });
 
-test('task inspect CLI returns review metadata without parsing show output', () => {
+test('task inspect CLI returns review metadata without parsing show output', async () => {
   const dir = makeTempDir();
   const dbPath = path.join(dir, 'tasks.db');
   const env = { ATRIS_TASKS_DB: dbPath, ATRIS_AGENT_ID: 'codex' };
@@ -217,14 +217,17 @@ test('task inspect CLI returns review metadata without parsing show output', () 
     ], { cwd: dir, env });
     assert.equal(ready.status, 0, ready.stderr || ready.stdout);
 
-    const inspect = runCli(['task', 'inspect', ref, '--fields', 'review', '--json'], { cwd: dir, env });
+    // Both output formats read the completed fixture without changing task rows.
+    const [inspect, text] = await Promise.all([
+      runCliAsync(['task', 'inspect', ref, '--fields', 'review', '--json'], { cwd: dir, env }),
+      runCliAsync(['task', 'inspect', ref, '--fields', 'review'], { cwd: dir, env }),
+    ]);
     assert.equal(inspect.status, 0, inspect.stderr || inspect.stdout);
     const payload = JSON.parse(inspect.stdout);
     assert.equal(payload.action, 'task_inspect');
     assert.equal(payload.fields.review.approval_status, 'pending');
     assert.match(payload.fields.review.proof, /node --test test\/pass\.test\.js/);
 
-    const text = runCli(['task', 'inspect', ref, '--fields', 'review'], { cwd: dir, env });
     assert.equal(text.status, 0, text.stderr || text.stdout);
     assert.match(text.stdout, /"approval_status":"pending"/);
     assert.match(text.stdout, /node --test test\/pass\.test\.js/);
