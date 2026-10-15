@@ -12766,7 +12766,7 @@ test('task next scoped by tag does not surface unrelated Endgame fallback', asyn
   }
 });
 
-test('task next does not repeat an Endgame seed that already exists', () => {
+test('task next does not repeat an Endgame seed that already exists', async () => {
   if (!hasNodeSqlite()) return;
   const dir = makeTempDir();
   const dbPath = path.join(dir, 'tasks.db');
@@ -12819,14 +12819,16 @@ test('task next does not repeat an Endgame seed that already exists', () => {
       '--proof', 'node --test test/commands.test.js passed during certification',
     ], { cwd: dir, env }).status, 0);
 
-    const next = runCli(['task', 'next', '--as', 'codex-executor', '--json'], { cwd: dir, env });
+    const [next, text] = await Promise.all([
+      runCliAsync(['task', 'next', '--as', 'codex-executor', '--json'], { cwd: dir, env }),
+      runCliAsync(['task', 'next', '--as', 'codex-executor'], { cwd: dir, env }),
+    ]);
     assert.equal(next.status, 0, next.stderr);
     const payload = JSON.parse(next.stdout);
     assert.equal(payload.action, 'accept');
     assert.equal(payload.command, `atris task accept ${ref}`);
     assert.equal(payload.task.display_id, ref);
 
-    const text = runCli(['task', 'next', '--as', 'codex-executor'], { cwd: dir, env });
     assert.equal(text.status, 0, text.stderr);
     assert.match(text.stdout, new RegExp(`^next: atris task accept ${ref}$`, 'm'));
     assert.doesNotMatch(text.stdout, /Create the next bounded task/);
