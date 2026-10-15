@@ -313,3 +313,8 @@ It has no baseline \u2014 this experiment creates one and optimizes it.
 => It has no baseline; this experiment creates one and optimizes it.
 Two screens left \u2014 the user reports page and exports tab.
 => Two screens left, the user reports page and exports tab.
+# "this" plus "directly" or "silently" plus a verb is a clause, like "this still"
+The services have no compression \u2014 this directly caps session quality.
+=> The services have no compression; this directly caps session quality.
+We read the weekly digest \u2014 this weekly reports page.
+=> We read the weekly digest, this weekly reports page.
