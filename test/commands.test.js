@@ -8427,13 +8427,25 @@ test('task review-lane-drain picks safe agent action without mutating human acce
   try {
     fs.mkdirSync(path.join(dir, 'atris'), { recursive: true });
 
-    // Creation and the before-drain snapshot read the store directly; keep
-    // certification, drain and the after-drain human-gate read on the CLI.
+    // Creation, the ready and review steps that only put rows in review, and
+    // the before-drain snapshot use the store directly; drain output matched
+    // with rows built both ways. Drain and the after-drain read stay on the CLI.
     const { enrichTaskProjection } = require('../commands/task');
     const showTask = (id) => {
       const showDb = taskStore.open(dbPath);
       try {
         return enrichTaskProjection(taskStore.taskProjection(showDb, { taskId: id })).tasks[0];
+      } finally {
+        taskStore.close();
+      }
+    };
+    const seedReviewed = (id, readyProof, reviewProof, nextTask) => {
+      const seedDb = taskStore.open(dbPath);
+      try {
+        const readied = taskStore.readyTask(seedDb, { id, actor: 'codex', proof: readyProof, result: FIXTURE_RESULT_SENTENCE });
+        assert.equal(readied.ready, true, readied.reason);
+        const reviewed = taskStore.reviewTask(seedDb, { id, actor: 'codex-review', reward: 0, proof: reviewProof, ...(nextTask ? { nextTask } : {}) });
+        assert.equal(reviewed.reviewed, true, reviewed.reason);
       } finally {
         taskStore.close();
       }
@@ -8452,18 +8464,7 @@ test('task review-lane-drain picks safe agent action without mutating human acce
     } finally {
       taskStore.close();
     }
-    assert.equal(runCli([
-      'task', 'ready', continueRef,
-      '--as', 'codex',
-      '--proof', 'node --check test/commands.test.js passed before review lane drain continuation',
-    ], { cwd: dir, env }).status, 0);
-    assert.equal(runCli([
-      'task', 'review', continueRef,
-      '--reward', '0',
-      '--as', 'codex-review',
-      '--proof', 'node --test test/commands.test.js passed during review lane drain continuation',
-      '--next', 'Add the next safe review drain follow-up',
-    ], { cwd: dir, env }).status, 0);
+    seedReviewed(continueTask.id, 'node --check test/commands.test.js passed before review lane drain continuation', 'node --test test/commands.test.js passed during review lane drain continuation', 'Add the next safe review drain follow-up');
 
     const waitingDb = taskStore.open(dbPath);
     let waitingTask;
@@ -8478,17 +8479,7 @@ test('task review-lane-drain picks safe agent action without mutating human acce
     } finally {
       taskStore.close();
     }
-    assert.equal(runCli([
-      'task', 'ready', waitingRef,
-      '--as', 'codex',
-      '--proof', 'node --check test/commands.test.js passed before review lane drain human gate',
-    ], { cwd: dir, env }).status, 0);
-    assert.equal(runCli([
-      'task', 'review', waitingRef,
-      '--reward', '0',
-      '--as', 'codex-review',
-      '--proof', 'node --test test/commands.test.js passed during review lane drain human gate',
-    ], { cwd: dir, env }).status, 0);
+    seedReviewed(waitingTask.id, 'node --check test/commands.test.js passed before review lane drain human gate', 'node --test test/commands.test.js passed during review lane drain human gate');
     const beforeWaiting = showTask(waitingTask.id);
 
     const drain = runCli(['task', 'review-lane-drain', '--goal-id', 'OBL-928', '--json'], { cwd: dir, env });
@@ -8528,28 +8519,17 @@ test('task review-lane-drain picks safe agent action without mutating human acce
     assert.equal(afterWaiting.status, beforeWaiting.status);
 
     const humanOnlyDb = taskStore.open(dbPath);
-    let humanOnlyRef;
+    let humanOnlyTask;
     try {
-      const humanOnlyTask = addSeedTask(humanOnlyDb, {
+      humanOnlyTask = addSeedTask(humanOnlyDb, {
         title: 'Only human can accept this certified task',
         tag: 'task', workspaceRoot, metadata: { goal_id: 'OBL-929' },
       });
       assert.equal(humanOnlyTask.inserted, true);
-      humanOnlyRef = taskStore.taskDisplayRefMap(taskStore.listTasks(humanOnlyDb, { workspaceRoot })).get(humanOnlyTask.id);
     } finally {
       taskStore.close();
     }
-    assert.equal(runCli([
-      'task', 'ready', humanOnlyRef,
-      '--as', 'codex',
-      '--proof', 'node --check test/commands.test.js passed before human-only review lane drain',
-    ], { cwd: dir, env }).status, 0);
-    assert.equal(runCli([
-      'task', 'review', humanOnlyRef,
-      '--reward', '0',
-      '--as', 'codex-review',
-      '--proof', 'node --test test/commands.test.js passed during human-only review lane drain',
-    ], { cwd: dir, env }).status, 0);
+    seedReviewed(humanOnlyTask.id, 'node --check test/commands.test.js passed before human-only review lane drain', 'node --test test/commands.test.js passed during human-only review lane drain');
     const humanOnlyDrain = runCli(['task', 'review-lane-drain', '--goal-id', 'OBL-929', '--json'], { cwd: dir, env });
     assert.equal(humanOnlyDrain.status, 0, humanOnlyDrain.stderr);
     const humanOnlyPayload = JSON.parse(humanOnlyDrain.stdout);
