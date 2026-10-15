@@ -1318,7 +1318,13 @@ const definitionHeader = (code, open) => {
   return { name: prefix[1] || prefix[2], internalName: prefix[1] || prefix[3], parameters, end: open + end + suffix[0].length, arrow: suffix[1] === '=>' };
 };
 // Each function definition, named or bound to a variable, as start and end offsets.
+// The scan asks again for the same text on every lookup, so recent texts
+// are read once; the list is frozen so no caller can change a shared answer.
+const DEFINITION_SPANS = new Map();
+const DEFINITION_SPANS_KEPT = 100;
 const definitionSpans = (code) => {
+  const cached = DEFINITION_SPANS.get(code);
+  if (cached) return cached;
   const definitions = /^[ \t]*(?:(?:async\s+)?function\s+[\w$]+\s*|(?:const|let|var)\s+[\w$]+\s*=)/gm;
   const spans = [];
   for (const header of code.matchAll(definitions)) {
@@ -1339,8 +1345,10 @@ const definitionSpans = (code) => {
         break;
       }
     }
-    spans.push([header.index, end]);
+    spans.push(Object.freeze([header.index, end]));
   }
+  if (DEFINITION_SPANS.size >= DEFINITION_SPANS_KEPT) DEFINITION_SPANS.clear();
+  DEFINITION_SPANS.set(code, Object.freeze(spans));
   return spans;
 };
 // Ignore helper definitions when looking for calls in their enclosing code.
