@@ -161,3 +161,5 @@ Review cleanup late-pin defect: `atris/receipts/work-folder-review-late-pin-prob
 Review refusal reporting contract: the existing decision card specifies the whole-result reader and caller detail fallback; `atris/receipts/work-folder-review-result-probe.js` proves interruption, failed launch and timeout after partial output with real children, plus explicitly synthetic missing metadata. Fleet retention and caller output proof remain required before implementation.
 
 Interrupted review removal: the existing review diagnostic also terminates a real child and propagates SIGTERM at removal, proving null status still causes deletion and a false success record. Proof: `atris/receipts/work-folder-review-interrupted-proof-2026-10-14.txt`.
+
+Cleanup proof runtime mismatch: `atris/receipts/work-folder-runner-proof-2026-10-14.txt` captures the actual `buildVerifiedProof` invocation at `lib/task-proof.js:157`: ten CLI checks stop at the Node version gate, while all 57 pass directly on supported Node. Review caller-runtime retention before changing cleanup based on this failure.

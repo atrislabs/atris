@@ -2388,3 +2388,5 @@ Lost-run cleanup error summary: `commands/autoland.js:895` keeps successful clos
 - Earlier review refusal wording proof: the string-only helper needed caller fallbacks for launch errors, signals and missing status. Superseded by the whole-result reader plan below, which also preserves timeout precedence. Contract: `atris/receipts/work-folder-review-late-pin-decision-2026-10-14.md`. Proof: `atris/receipts/work-folder-review-fallback-wording-2026-10-14.txt`.
 
 - Review result-reader plan: `atris/receipts/work-folder-review-result-probe.js:13` proves real interruption, failed launch and timeout after partial output through `commands/worktree.js:1403`; line 38 labels synthetic missing metadata. The decision card now requires the whole-result reader rather than duplicate fallback logic. Production disposal remains unchanged.
+
+Cleanup proof runtime mismatch: `atris/receipts/work-folder-runner-proof-2026-10-14.txt` captures the actual `buildVerifiedProof` invocation at `lib/task-proof.js:157`: ten CLI checks stop at the Node version gate, while all 57 pass directly on supported Node. Review caller-runtime retention before changing cleanup based on this failure.
