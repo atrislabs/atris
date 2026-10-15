@@ -7,6 +7,7 @@
 
 const fs = require('fs');
 const os = require('os');
+const readline = require('readline');
 const path = require('path');
 const { spawn } = require('child_process');
 const { readFlag } = require('../lib/arg-parser');
@@ -46,6 +47,7 @@ function printHelp() {
   console.log('        start --cloud syncs at once; run syncs before and after every step of a synced campaign');
   console.log('');
   console.log('Every verb takes --json. Writes are recorded as you (human:<login>); agents pass --as <member>.');
+  console.log('Leave out --judge and a judge is drafted from the goal and shown; it starts on a typed y, or on --yes without asking.');
   console.log('A new campaign runs its judge first and is refused if it already passes: write a judge that fails first.');
 }
 
@@ -214,7 +216,41 @@ function makeContext(args, deps) {
   };
   const append = (campaignId, type, data, as = actor) => store.append({ campaign_id: campaignId, type, actor: as, data });
   const folder = deps.campaignFolder || ((id) => campaignFolder(id));
-  return { asJson, store, actor, judge, out, fail, append, forgedHuman, folder, loopDeps: deps.loopDeps, cloud: deps.cloud || {} };
+  const draftJudge = deps.draftJudge || ((goal, owner) => require('../lib/campaign-draft-judge').draftJudge(process.cwd(), goal, { owner }));
+  const confirm = deps.confirm || askAtTerminal;
+  return { asJson, store, actor, judge, out, fail, append, forgedHuman, folder, draftJudge, confirm, loopDeps: deps.loopDeps, cloud: deps.cloud || {} };
+}
+
+// Only a person at a terminal can say yes; piped or agent runs get no.
+function askAtTerminal(question) {
+  if (!process.stdin.isTTY) return Promise.resolve(false);
+  const rl = readline.createInterface({ input: process.stdin, output: process.stderr });
+  return new Promise((resolve) => rl.question(question, (answer) => {
+    rl.close();
+    resolve(/^y(es)?$/i.test(answer.trim()));
+  }));
+}
+
+// With no --judge, draft one from the goal and show it. It is used only on
+// --yes or a typed y, and it still has to fail first like any other judge.
+async function draftedJudge(args, ctx, title, owner) {
+  const passOne = 'Pass one: --judge "<command that fails today>"';
+  let draft;
+  try {
+    draft = await ctx.draftJudge(title, owner);
+  } catch (error) {
+    draft = { ok: false, reason: error.message };
+  }
+  if (!draft || !draft.ok || !draft.judge) {
+    return { error: ctx.fail(`could not draft a judge (${(draft && draft.reason) || 'no answer'}). ${passOne}`) };
+  }
+  const shown = draft.script ? draft.script.split('\n').map((line) => `    ${line}`).join('\n') : `  ${draft.judge}`;
+  const checks = draft.explain ? `\n  it checks: ${draft.explain}` : '';
+  console.error(`no --judge given, so here is a drafted one:\n${shown}${checks}`);
+  if (!args.includes('--yes') && !(await ctx.confirm('start with this judge? [y/N] '))) {
+    return { error: ctx.fail(`not started. Accept the drafted judge with --yes, or pass your own: --judge "<command that fails today>"`, 1) };
+  }
+  return { judge: draft.judge };
 }
 
 function requireCampaign(ctx, id) {
@@ -270,7 +306,7 @@ function renderShow(view) {
 
 async function cmdStart(args, ctx) {
   const title = positionals(args)[1];
-  const judge = readFlag(args, '--judge', '');
+  let judge = readFlag(args, '--judge', '');
   const budgetText = readFlag(args, '--budget', '');
   if (!budgetText && args.includes('--cloud')) return ctx.fail('a cloud campaign needs --budget <dollars>, so the cloud knows what it may spend');
   const budget = budgetText ? Number(budgetText) : NO_LIMIT_BUDGET;
@@ -296,7 +332,8 @@ async function cmdStart(args, ctx) {
     return view && !view.error ? { parent: view.parent } : null;
   };
   const check = validateCampaign(record, { lookup });
-  if (!check.ok) {
+  const draftWanted = !check.ok && check.errors.length === 1 && check.errors[0] === 'missing_judge';
+  if (!check.ok && !draftWanted) {
     const words = {
       missing_title: 'a title in quotes', missing_judge: '--judge "<command>"', bad_budget: '--budget <dollars above 0>',
       nested_parent: 'a parent with no parent of its own (one level only)', unknown_parent: 'a --parent that exists', bad_seat: '--seat <member>[:<role>]',
@@ -308,6 +345,11 @@ async function cmdStart(args, ctx) {
   const id = readFlag(args, '--id', '') || newCampaignId(title);
   if (!CAMPAIGN_ID.test(id)) return ctx.fail(`--id must look like cmp-<lowercase-words>, for example cmp-ship-billing`);
   if (getCampaign(ctx.store, id)) return ctx.fail(`campaign ${id} already exists`, 1);
+  if (draftWanted) {
+    const drafted = await draftedJudge(args, ctx, title, owner || 'mission-lead');
+    if (drafted.error !== undefined) return drafted.error;
+    judge = drafted.judge;
+  }
 
   const timeout = Number(readFlag(args, '--timeout', '')) || JUDGE_TIMEOUT_SECONDS;
   if (!ctx.asJson) console.error(`running the judge first: ${judge}`);

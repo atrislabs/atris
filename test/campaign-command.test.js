@@ -13,7 +13,7 @@ const { createMemoryStore, getCampaign } = require('../lib/campaign-store');
 const CLI = path.resolve(__dirname, '..', 'bin', 'atris.js');
 
 // Run a verb against an in-memory store with a judge that answers from a list.
-async function run(store, args, readings = []) {
+async function run(store, args, readings = [], extra = {}) {
   const logs = [];
   const errors = [];
   const judged = [];
@@ -29,6 +29,10 @@ async function run(store, args, readings = []) {
         judged.push(command);
         return readings.shift() || { passed: false, exit: 1, summary: 'not yet', seconds: 0 };
       },
+      // Tests never reach a real engine or wait on a terminal.
+      draftJudge: () => ({ ok: false, reason: 'no engine in tests' }),
+      confirm: async () => false,
+      ...extra,
     });
   } finally {
     console.log = saved.log;
@@ -78,6 +82,51 @@ test('start explains what is missing in plain words', async () => {
   assert.match(result.err, /--judge "<command>"/);
   assert.match(result.err, /--budget <dollars above 0>/);
   assert.deepEqual(result.judged, []);
+});
+
+test('with no --judge, a drafted judge is shown and starts only on --yes or a typed y', async () => {
+  const drafted = [];
+  const draftJudge = (goal, owner) => {
+    drafted.push(`${goal} for ${owner}`);
+    return { ok: true, judge: 'node scripts/check-billing.js', script: null, explain: 'billing tests pass' };
+  };
+  const args = ['start', 'Ship billing', '--budget', '50', '--id', 'cmp-billing'];
+
+  const refused = await run(createMemoryStore(), args, [], { draftJudge, confirm: async () => false });
+  assert.equal(refused.code, 1);
+  assert.match(refused.err, /drafted one:\n  node scripts\/check-billing.js\n  it checks: billing tests pass/);
+  assert.match(refused.err, /not started.*--yes/);
+  assert.deepEqual(refused.judged, []);
+
+  const typed = createMemoryStore();
+  const yes = await run(typed, args, [], { draftJudge, confirm: async () => true });
+  assert.equal(yes.code, 0, yes.err);
+  assert.deepEqual(yes.judged, ['node scripts/check-billing.js']);
+  assert.equal(getCampaign(typed, 'cmp-billing').judge, 'node scripts/check-billing.js');
+
+  const asked = [];
+  const flagged = await run(createMemoryStore(), [...args, '--yes'], [], { draftJudge, confirm: async (q) => asked.push(q) });
+  assert.equal(flagged.code, 0, flagged.err);
+  assert.deepEqual(asked, [], '--yes never asks');
+  assert.deepEqual(drafted, Array(3).fill('Ship billing for mission-lead'));
+});
+
+test('a drafted judge must still fail first, and a failed draft says how to pass one', async () => {
+  const draftJudge = () => ({ ok: true, judge: 'true', script: null, explain: 'nothing' });
+  const passes = await run(createMemoryStore(), ['start', 'Already done', '--yes'], [{ passed: true, exit: 0, summary: 'ok', seconds: 0 }], { draftJudge });
+  assert.equal(passes.code, 1);
+  assert.match(passes.err, /already done.*fails first/);
+
+  const broken = await run(createMemoryStore(), ['start', 'Hard goal', '--yes'], [], { draftJudge: () => { throw new Error('no model'); } });
+  assert.equal(broken.code, 2);
+  assert.match(broken.err, /could not draft a judge \(no model\)\. Pass one: --judge/);
+  const empty = await run(createMemoryStore(), ['start', 'Hard goal', '--yes'], [], { draftJudge: () => ({ ok: false, reason: 'the engine did not answer with a command or script' }) });
+  assert.equal(empty.code, 2);
+  assert.match(empty.err, /could not draft a judge \(the engine did not answer/);
+  assert.deepEqual(empty.judged, []);
+
+  const other = await run(createMemoryStore(), ['start', 'No judge', '--budget', '0', '--yes'], [], { draftJudge: () => { throw new Error('should not draft'); } });
+  assert.match(other.err, /--budget <dollars above 0>/, 'other mistakes are reported before any drafting');
 });
 
 test('a local start without --budget succeeds and shows no money lines', async () => {
