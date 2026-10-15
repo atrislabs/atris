@@ -564,12 +564,17 @@ function showStatus(root, args, deps = {}) {
   const unchecked = unreadAgents.length ? `could not read the ${unreadAgents.join(' or the ')}, so some ssh-agents went unchecked` : '';
   if (leakedAgents) {
     const cli = deps.atrisCommand || atrisCommand();
+    const refusedSet = heartbeatLive ? autoland.heartbeatRefusedAgents(root) : new Set();
+    const refused = leakedList.filter((a) => refusedSet.has(a.pid)).length;
+    const them = leakedAgents === 1 ? 'it' : 'them';
     const stop = !heartbeatLive
       ? `stop them now: ${cli} engine sweep --apply`
       : autoland.heartbeatSweepsAgents(root)
-        ? leakedAgents > HOURLY_SSH_AGENT_STOP_LIMIT
-          ? `the next hourly pass stops only the oldest ${HOURLY_SSH_AGENT_STOP_LIMIT}, so stop the rest now: ${cli} engine sweep --apply`
-          : 'the next hourly pass stops them'
+        ? refused
+          ? `the last hourly pass could not stop ${refused === leakedAgents ? them : `${refused} of them`}, so stop ${them} now: ${cli} engine sweep --apply`
+          : leakedAgents > HOURLY_SSH_AGENT_STOP_LIMIT
+            ? `the next hourly pass stops only the oldest ${HOURLY_SSH_AGENT_STOP_LIMIT}, so stop the rest now: ${cli} engine sweep --apply`
+            : 'the next hourly pass stops them'
         : `the hourly pass runs a version without the ssh-agent cleanup, so stop them now: ${cli} engine sweep --apply`;
     console.log(`  leaked ssh-agents on this machine: ${unchecked ? 'at least ' : ''}${leakedAgents}${leakGrowthNote(lost.first_day_leak_reading, leakedAgents)}; ${stop}${unchecked ? `; ${unchecked}` : ''}`);
     const runsText = leakedRunsText(matchLeakedToRuns(root, leakedList), { startLine: startLines.length > 0, recorded: deps.pathAtrisRecordsRuns ?? pathAtrisRecordsRuns() });

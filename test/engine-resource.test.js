@@ -5633,7 +5633,7 @@ test('the hourly cleanup summary names a stop and a refused stop from one mixed 
   }
 });
 
-test('the landing status counts one agent left after a mixed hourly cleanup, read from the saved pass', () => {
+test('the landing status counts one agent left after a mixed hourly cleanup and says the hourly pass could not stop it', () => {
   const { runSshAgentSweep, showStatus } = require('../commands/autoland');
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'autoland-status-mixed-'));
   const agent = (pid, age_sec) => ({ pid, ppid: 1, uid: 501, age_sec, args: 'ssh-agent -s' });
@@ -5650,18 +5650,27 @@ test('the landing status counts one agent left after a mixed hourly cleanup, rea
     const runsDir = path.join(root, 'atris', 'runs');
     fs.mkdirSync(runsDir, { recursive: true });
     fs.writeFileSync(path.join(runsDir, `autoland-tick-${receipt.at.replace(/[:.]/g, '-')}.json`), JSON.stringify(receipt));
-    const out = [];
-    const original = console.log;
-    console.log = (line = '') => out.push(String(line));
-    try {
-      // The refused agent is still there; the stopped one is gone.
-      showStatus(root, [], { atrisCommand: 'atris', readSshAgents: () => ({ agents: [agent(201, 1800)], referenced: new Set() }), uid: 501 });
-    } finally {
-      console.log = original;
-    }
-    const line = out.find((text) => /leaked ssh-agents on this machine/.test(text));
+    const leakLine = (agents) => {
+      const out = [];
+      const original = console.log;
+      console.log = (line = '') => out.push(String(line));
+      try {
+        showStatus(root, [], { atrisCommand: 'atris', readSshAgents: () => ({ agents, referenced: new Set() }), uid: 501 });
+      } finally {
+        console.log = original;
+      }
+      return out.find((text) => /leaked ssh-agents on this machine/.test(text));
+    };
+    // The refused agent is still there; the stopped one is gone.
+    const line = leakLine([agent(201, 1800)]);
     assert.ok(line, 'the landing status names the agent left after the mixed pass');
     assert.match(line, /leaked ssh-agents on this machine: 1[;,\s]/);
+    assert.match(line, /the last hourly pass could not stop it, so stop it now: atris engine sweep --apply/);
+    assert.doesNotMatch(line, /the next hourly pass stops/, 'a refused agent is never promised to the next pass');
+    // A new leak since the pass is counted too, and only the refused one is named as refused.
+    assert.match(leakLine([agent(201, 1800), agent(202, 1200)]), /on this machine: 2, up from 1 left by the sweep[^;]*; the last hourly pass could not stop 1 of them, so stop them now: atris engine sweep --apply/);
+    // Once the refused agent is gone, a new leak goes back to the next pass.
+    assert.match(leakLine([agent(202, 1200)]), /on this machine: 1[^;]*; the next hourly pass stops them/);
     const saved = fs.readFileSync(path.join(root, RESOURCE_LOG), 'utf8').trim().split('\n').map(JSON.parse);
     assert.equal(saved.at(-1).leaked_ssh_agents, 1, 'the saved pass and the landing status agree on one left');
     console.log(`landing status after a mixed hourly cleanup: ${line.trim()}`);
