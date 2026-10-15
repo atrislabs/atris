@@ -335,7 +335,8 @@ const NAME_PAIR = '(?:pull\\s+requests|merge\\s+requests|support\\s+tickets|erro
 const NAME_PAIR_CLAUSE_AFTER_DASH = new RegExp(`${CLAUSE_END}\\s*\\u2014\\s*(?=the\\s+${NAME_PAIR}\\s+(?:(?:now|still|already|also|often|always|never)\\s+)?(?!(?:from|of|in|on|for|with|at|by|to|and|or|that|which|who|like|than|as|is|are|was|were)\\b)(?!${NAME_END_WORD}\\b)[a-z]{2,}(?<!s)(?:(?<=ed)[.!?;]|\\s+(?:it|them|the|a|an|this|that|every|all|no|what|why|how|where)\\b))`, 'g');
 // "the", one noun with no "s", a verb in "s" and an object that opens on
 // "the", "a", "your", "all" and kin with more words after it is a clause:
-// "never run git; the orchestrator lands your work". An object of "the",
+// "never run git; the orchestrator lands your work". "a" or "an" may open
+// the subject too: "it isn't; a gate proves the change didn't break". An object of "the",
 // one or two words and a verb in "s" right before a stop or a comma is a
 // clause inside a phrase, so "the decision helpers the CLI uses" and "the
 // live docs the editor renders, with charts" stay; after "proves", "shows",
@@ -352,7 +353,7 @@ const NAME_PAIR_CLAUSE_AFTER_DASH = new RegExp(`${CLAUSE_END}\\s*\\u2014\\s*(?=t
 // A code name with an underscore is one such word too: "the business_id
 // match handles the bypass".
 const MODIFIER_WORD = '(?:[A-Z]{2,}|[a-z][a-z-]*[a-z]|[a-z][a-z0-9]*(?:_[a-z0-9]+)+)';
-const THE_OBJECT_CLAUSE_AFTER_DASH = new RegExp(`${CLAUSE_END}\\s*\\u2014\\s*(?=the\\s+(?!${NAME_PAIR}\\b)(?!(?:one|two|three|four|five|six|seven|eight|nine|ten|few|many|several|same|other|first|last|next|main|key|core|new|old|real|whole|exact|only)\\b)(?:(?![A-Za-z-]*s\\b)${MODIFIER_WORD}\\s+(?!(?:that|which|who)\\b))?(?!(?!yes\\b)[a-z]*s\\b)[a-z]{2,}\\s+(?:(?:only|now|still|already|also|never|always|often|just)\\s+)?${PLAIN_VERB_WORD}\\s+(?:the|a|an|your|our|their|its|YOUR|OUR|THEIR|ITS|all|every|each|this|these|those)\\s+[^\\s\\u2014])`, 'g');
+const THE_OBJECT_CLAUSE_AFTER_DASH = new RegExp(`${CLAUSE_END}\\s*\\u2014\\s*(?=(?:the|a|an)\\s+(?!${NAME_PAIR}\\b)(?!(?:one|two|three|four|five|six|seven|eight|nine|ten|few|many|several|same|other|first|last|next|main|key|core|new|old|real|whole|exact|only)\\b)(?:(?![A-Za-z-]*s\\b)${MODIFIER_WORD}\\s+(?!(?:that|which|who)\\b))?(?!(?!yes\\b)[a-z]*s\\b)[a-z]{2,}\\s+(?:(?:only|now|still|already|also|never|always|often|just)\\s+)?${PLAIN_VERB_WORD}\\s+(?:the|a|an|your|our|their|its|YOUR|OUR|THEIR|ITS|all|every|each|this|these|those)\\s+[^\\s\\u2014])`, 'g');
 // A plural noun as the subject, after up to two modifiers or code names,
 // then a bare verb and an object, is a clause too: "it no longer tints the
 // icon; the SVG `fill` attrs override `currentColor`". A place word, a word

@@ -2338,9 +2338,10 @@ test('fix joins "the", a plural noun, a bare verb and an object as a clause afte
   ]);
 });
 
-test('fix joins "the", a noun, a verb in s and a longer object as a clause after a dash', () => {
+test('fix joins "the" or "a", a noun, a verb in s and a longer object as a clause after a dash', () => {
   // from real repo text: "Never run git, the orchestrator lands your work"
-  // spliced, since the object ran past one word. A noun in "ers" before a
+  // spliced, since the object ran past one word, and so did "It isn't, a
+  // gate proves the change", since only "the" opened the subject. A noun in "ers" before a
   // "the" clause, a "that" after the verb word, or a number before it make
   // a phrase, so those keep their comma.
   const file = tmpFile('the-object-clause.md', [
@@ -2349,6 +2350,8 @@ test('fix joins "the", a noun, a verb in s and a longer object as a clause after
     'Command tests \u2014 the decision helpers the CLI uses.',
     'Inside the template \u2014 the system prompts that every app inherits.',
     'All closed \u2014 the three ways a first run could waste itself.',
+    "It isn't \u2014 a gate proves the change didn't break a known invariant.",
+    'Command tests \u2014 a decision helper the CLI uses.',
   ].join('\n'));
   const { changes } = applyFixes([file], RULES);
   assert.deepEqual(changes.map((c) => c.after), [
@@ -2357,6 +2360,8 @@ test('fix joins "the", a noun, a verb in s and a longer object as a clause after
     'Command tests, the decision helpers the CLI uses.',
     'Inside the template, the system prompts that every app inherits.',
     'All closed, the three ways a first run could waste itself.',
+    "It isn't; a gate proves the change didn't break a known invariant.",
+    'Command tests, a decision helper the CLI uses.',
   ]);
 });
 
