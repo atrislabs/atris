@@ -8033,7 +8033,7 @@ test('task import preserves markdown Review rows as review tasks', () => {
   }
 });
 
-test('task display refs stay stable in filtered list views', () => {
+test('task display refs stay stable in filtered list views', async () => {
   if (!hasNodeSqlite()) return;
   const dir = makeTempDir();
   const dbPath = path.join(dir, 'tasks.db');
@@ -8057,20 +8057,24 @@ test('task display refs stay stable in filtered list views', () => {
     }
     assert.equal(runCli(['task', 'done', older.task.display_id, '--proof', 'node --test test/commands.test.js passed'], { cwd: dir, env }).status, 0);
 
-    const open = runCli(['task', 'list', '--status', 'open'], { cwd: dir, env });
+    // The three filtered lists follow the same done and change no task state,
+    // so they run at once.
+    const [open, done, openJson] = await Promise.all([
+      runCliAsync(['task', 'list', '--status', 'open'], { cwd: dir, env }),
+      runCliAsync(['task', 'list', '--status', 'done'], { cwd: dir, env }),
+      runCliAsync(['task', 'list', '--status', 'open', '--json'], { cwd: dir, env }),
+    ]);
     assert.equal(open.status, 0, open.stderr);
     assert.match(open.stdout, /^What changes: Current open task\./);
     assert.match(open.stdout, new RegExp(`open\\s+${current.task.display_id}`));
     assert.match(open.stdout, new RegExp(`Technical details: atris task show ${current.task.display_id}`));
     assert.doesNotMatch(open.stdout, new RegExp(older.task.display_id));
 
-    const done = runCli(['task', 'list', '--status', 'done'], { cwd: dir, env });
     assert.equal(done.status, 0, done.stderr);
     assert.match(done.stdout, /^What changes: Older closed task\./);
     assert.match(done.stdout, new RegExp(`done\\s+${older.task.display_id}`));
     assert.match(done.stdout, new RegExp(`Technical details: atris task show ${older.task.display_id}`));
 
-    const openJson = runCli(['task', 'list', '--status', 'open', '--json'], { cwd: dir, env });
     assert.equal(openJson.status, 0, openJson.stderr);
     assert.equal(JSON.parse(openJson.stdout).tasks[0].display_id, current.task.display_id);
   } finally {
