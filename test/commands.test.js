@@ -15229,7 +15229,7 @@ test('task review hygiene reports generic continuation debt without mutation', a
   }
 });
 
-test('task current exposes continue-work for certified review suggestions', () => {
+test('task current exposes continue-work for certified review suggestions', async () => {
   if (!hasNodeSqlite()) return;
   const dir = makeTempDir();
   const dbPath = path.join(dir, 'tasks.db');
@@ -15268,7 +15268,10 @@ test('task current exposes continue-work for certified review suggestions', () =
       '--next', 'Queue the command-backed follow-up',
     ], { cwd: dir, env }).status, 0);
 
-    const current = runCli(['task', 'current', '--goal-id', 'OBL-928', '--json'], { cwd: dir, env });
+    const [current, reviews] = await Promise.all([
+      runCliAsync(['task', 'current', '--goal-id', 'OBL-928', '--json'], { cwd: dir, env }),
+      runCliAsync(['task', 'reviews', '--json'], { cwd: dir, env }),
+    ]);
     assert.equal(current.status, 0, current.stderr);
     const currentPayload = JSON.parse(current.stdout);
     const command = `atris task continue-work ${ref} --as codex --json`;
@@ -15283,7 +15286,6 @@ test('task current exposes continue-work for certified review suggestions', () =
     assert.equal(currentPayload.selected.continue_work_command, command);
     assert.equal(currentPayload.queue.columns.find(column => column.key === 'review').items[0].continue_work_command, command);
 
-    const reviews = runCli(['task', 'reviews', '--json'], { cwd: dir, env });
     assert.equal(reviews.status, 0, reviews.stderr);
     const reviewItem = JSON.parse(reviews.stdout).queue.items[0];
     assert.equal(reviewItem.id, parent.id);
