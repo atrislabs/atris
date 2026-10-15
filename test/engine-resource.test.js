@@ -1403,7 +1403,7 @@ test('every launch of an engine program by name records its run or is named as e
 test('every engine started through a runner or profile variable records its run or is named as exempt', () => {
   // The program is a variable or a call, like a runner binary, a profile's
   // bin, or an engine invocation's command.
-  const VAR_LAUNCH = /\b(?:spawn|spawnSync|execFile|execFileSync|spawnWithOutputChunks|runInReapedProcessGroup)\s*\(\s*([A-Za-z_$][\w$]*(?:\.[\w$]+)*)(\s*\(\))?\s*,\s*(\[[^\]]*\])?/g;
+  const VAR_LAUNCH = /\b(?:spawn|spawnSync|execFile|execFileSync|spawnWithOutputChunks|runInReapedProcessGroup)\s*\(\s*([A-Za-z_$][\w$]*(?:\.[\w$]+)*)/g;
   // It is an engine when the call, or the variable's declaration in the same
   // function, names an engine program or an engine or runner resolver.
   const ENGINE_SOURCE = new RegExp(`['"\`](?:${ENGINE_NAMES})['"\`]|\\b[\\w$]*(?:Engine|engine|Runner|runner)[\\w$]*\\s*\\(`);
@@ -1733,7 +1733,24 @@ test('every engine started through a runner or profile variable records its run 
     const missing = [];
     const exempted = new Set();
     for (const match of code.matchAll(VAR_LAUNCH)) {
-      const [, program, called, args] = match;
+      const [, program] = match;
+      const rest = code.slice(match.index + match[0].length);
+      let called = '';
+      if (/^\s*\(/.test(rest)) {
+        let depth = 0;
+        for (const token of rest.matchAll(/'(?:\\.|[^'\\])*'|"(?:\\.|[^"\\])*"|`(?:\\.|[^`\\])*`|[()]/g)) {
+          if (token[0] === '(') depth += 1;
+          else if (token[0] === ')') depth -= 1;
+          if (depth === 0) {
+            called = rest.slice(0, token.index + 1);
+            break;
+          }
+        }
+        if (!called) continue;
+      }
+      const argumentsStart = /^\s*,\s*(\[[^\]]*\])?/.exec(rest.slice(called.length));
+      if (!argumentsStart) continue;
+      const args = argumentsStart[1];
       const before = code.slice(0, match.index);
       const fnStart = Math.max(0, ...definitionSpans(code).filter(([open, close]) => open <= match.index && match.index < close).map(([open]) => open));
       const fnName = (/^(?:async\s+)?(?:function|const|let|var)\s+([\w$]+)/.exec(code.slice(fnStart).trimStart()) || [])[1] || '';
@@ -1765,6 +1782,20 @@ test('every engine started through a runner or profile variable records its run 
       assert.deepStrictEqual(planted(`${helper}(findExecutable${gap}(), args);\n`), []);
     }
   }
+  // Resolver arguments can contain nested calls and quoted closing parentheses.
+  for (const helper of ['spawn', 'spawnSync', 'execFile', 'execFileSync', 'spawnWithOutputChunks', 'runInReapedProcessGroup']) {
+    for (const input of ['engine', "selectTopic(topic, { hint: 'x),y' })", 'pick(["a)", nested(topic)], `b),c`)']) {
+      const runner = `resolveRunnerBin (${input})`;
+      assert.deepStrictEqual(planted(`${helper}(${runner}, args);\n`), [`commands/planted.js:1 ${runner}`]);
+      assert.deepStrictEqual(planted(`startEngineRun(root);\n${helper}(${runner}, args);\n`), []);
+      for (const probe of ['--help', '--version']) {
+        assert.deepStrictEqual(planted(`${helper}(${runner}, ['${probe}']);\n`), []);
+      }
+      assert.deepStrictEqual(planted(`${helper}(findExecutable (${input}), args);\n`), []);
+    }
+  }
+  assert.deepStrictEqual(planted('spawnSync(resolveRunnerBin(\n  selectTopic(topic)\n), args);\n'), ['commands/planted.js:1 resolveRunnerBin(\n  selectTopic(topic)\n)']);
+  assert.deepStrictEqual(planted('spawnSync(resolveRunnerBin(engine).bin, args);\n'), [], 'profile members after calls remain outside this slice');
   // Spaces before resolver arguments do not change the program they select.
   for (const gap of [' ', '\t']) {
     const runner = `resolveClaudeRunnerBin${gap}()`;
