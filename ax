@@ -1468,13 +1468,21 @@ function attachSlashMenu(rl, output, options = {}) {
   const original = rl._ttyWrite.bind(rl);
   let visibleRows = 0;
 
+  // Move back by row count, not a saved screen position: drawing the menu at
+  // the bottom of a short window scrolls the screen, and a saved position then
+  // points into the menu, so typed text landed on a menu row (seen 2026-10-14).
+  const backToInput = (rowsBelow) => {
+    if (rowsBelow) output.write(`\x1b[${rowsBelow}A`);
+    const cols = typeof rl.getCursorPos === 'function' ? rl.getCursorPos().cols : 0;
+    output.write(`\r${cols ? `\x1b[${cols}C` : ''}`);
+  };
+
   const clear = () => {
     if (!visibleRows) return;
-    output.write('\x1b7');
     for (let index = 0; index < visibleRows; index += 1) {
       output.write('\x1b[1B\r\x1b[2K');
     }
-    output.write('\x1b8');
+    backToInput(visibleRows);
     visibleRows = 0;
   };
 
@@ -1483,10 +1491,10 @@ function attachSlashMenu(rl, output, options = {}) {
     if (typeof options.isActive === 'function' && !options.isActive()) return;
     const matches = filterChatCommands(rl.line);
     if (!matches.length) return;
-    const rows = chatMenu(output, matches).split('\n');
-    output.write('\x1b7');
+    const room = Math.max(3, (Number(output.rows) || 24) - 2);
+    const rows = chatMenu(output, matches.slice(0, room)).split('\n');
     for (const row of rows) output.write(`\r\n${row}`);
-    output.write('\x1b8');
+    backToInput(rows.length);
     visibleRows = rows.length;
   };
 
