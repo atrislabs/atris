@@ -540,10 +540,10 @@ function helperEnd(lines, index) {
 
 // Keywords whose line can look like a method or helper start.
 const NOT_A_HELPER = new Set(['if', 'for', 'while', 'switch', 'catch', 'function', 'return']);
-// A helper can be a plain function, a named arrow (const wipe = (dir) => or
-// wipe: dir =>), or a class or object method (wipe(dir) {).
+// A helper can be a plain function at any depth, a named arrow (const wipe =
+// (dir) => or wipe: dir =>), or a class or object method (wipe(dir) {).
 const HELPER_START = [
-  /^(?:async\s+)?function\s+([\w$]+)\s*\(([^)]*)\)/,
+  /^\s*(?:async\s+)?function\s+([\w$]+)\s*\(([^)]*)\)/,
   /^\s*(?:(?:export\s+)?(?:const|let|var)\s+)?([\w$]+)\s*[=:]\s*(?:async\s+)?(?:function\s*)?\(([^()]*)\)\s*(?:=>|\{)/,
   /^\s*(?:(?:export\s+)?(?:const|let|var)\s+)?([\w$]+)\s*[=:]\s*(?:async\s+)?([\w$]+)\s*=>/,
   /^\s+(?:static\s+)?(?:async\s+)?([\w$]+)\s*\(([^()]*)\)\s*\{/,
@@ -819,6 +819,7 @@ test('every work folder removal goes through the git check and the removal log',
 // Each such delete is either one the scan above already checks or one listed
 // here after review. Stale entries fail.
 const PASSED_IN_DELETES = {
+  'commands/skill.js:removeLink': 'skill remove: every caller passes an installed skill folder under .claude, .codex, or .cursor',
 };
 
 function passedInDeletes(file, text) {
@@ -861,7 +862,9 @@ test('a helper that deletes a folder its caller passed in is checked or reviewed
   // only its own lines, so the helper around it still owns a delete of its
   // folder, and an inner arrow that deletes its own argument owns that one.
   // Braces in regex or quoted text neither end a helper early nor stretch it
-  // over the next one.
+  // over the next one. A plain function declared inside a helper owns a
+  // delete of its own argument, and a delete of the outer helper's folder
+  // inside it still belongs to the outer helper.
   const planted = [
     'function wipe(folder, opts = {}) {',
     '  const where = path.resolve(folder);',
@@ -901,6 +904,13 @@ test('a helper that deletes a folder its caller passed in is checked or reviewed
     "  if (dir === '{') return;",
     '}',
     'function later() { fs.rmSync(dir, { recursive: true }); }',
+    'function prune(list, root) {',
+    '  function drop(item) {',
+    '    fs.rmSync(item, { recursive: true });',
+    '  }',
+    '  function clean() { fs.rmSync(root, { recursive: true }); }',
+    '  list.forEach(drop);',
+    '}',
   ].join('\n');
   assert.ok(!WORKTREE_REMOVAL.test(planted) && !HANDLES_WORKTREES.test(planted), 'the main scan would skip this helper');
   assert.deepEqual(passedInDeletes('lib/planted.js', planted), [
@@ -912,6 +922,8 @@ test('a helper that deletes a folder its caller passed in is checked or reviewed
     { key: 'lib/planted.js:shelve', line: 26, target: 'folder' },
     { key: 'lib/planted.js:each', line: 28, target: 'item' },
     { key: 'lib/planted.js:scrub', line: 33, target: 'dir' },
+    { key: 'lib/planted.js:drop', line: 41, target: 'item' },
+    { key: 'lib/planted.js:prune', line: 43, target: 'root' },
   ]);
 });
 
