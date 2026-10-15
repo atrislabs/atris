@@ -372,9 +372,12 @@ const NAME_TAIL_PHRASE = new RegExp(`^\\s*\\u2014\\s*the\\s+[a-z][\\w-]*\\s+(?:[
 // to mark a verb ("the open issues on GitHub"), so before them only a verb
 // that is almost never a plural noun counts: "the canvas listens for a
 // pointer event", "the field fills in only after that step finishes".
+// "from" and "as" count after such a verb, and "their", "its", "our" or
+// "your" can open the subject: "their visible data comes from the APIs",
+// "the wish arrives as a byproduct".
 // A subject in "as", "is", "us" or "ss" is one thing: "the canvas".
-const LONE_VERB_WORD = '(?:listens|focuses|fills|lands|relies|depends|refers|belongs|applies|waits|fails|happens|sits|comes|goes|reacts|responds|subscribes|defaults|hangs|converges|agrees|differs|compiles|scrolls|resolves|reads|writes)';
-const LONE_VERB_CLAUSE_AFTER_DASH = new RegExp(`${CLAUSE_END}\\s*\\u2014\\s*(?=the\\s+(?!${NAME_PAIR}\\b)(?!(?:one|two|three|four|five|six|seven|eight|nine|ten|few|many|several|same|other|first|last|next|main|key|core|new|old|real|whole|exact|only)\\b)(?:(?![A-Za-z-]*s\\b)(?:[A-Z]{2,}|[a-z][a-z-]*[a-z])\\s+(?!(?:that|which|who)\\b))?(?![a-z]*[^aisu]s\\b)[a-z]{2,}\\s+(?:${MANNER_WORD}\\s+)?${LONE_VERB_WORD}\\s+(?:${MANNER_WORD}\\s+)?(?:in|on|to|for|at|with)\\s+[^\\s\\u2014])`, 'g');
+const LONE_VERB_WORD = '(?:listens|focuses|fills|lands|relies|depends|refers|belongs|applies|waits|fails|happens|sits|comes|goes|reacts|responds|subscribes|defaults|hangs|converges|agrees|differs|compiles|scrolls|resolves|reads|writes|arrives|overlaps)';
+const LONE_VERB_CLAUSE_AFTER_DASH = new RegExp(`${CLAUSE_END}\\s*\\u2014\\s*(?=(?:the|their|its|our|your)\\s+(?!${NAME_PAIR}\\b)(?!(?:one|two|three|four|five|six|seven|eight|nine|ten|few|many|several|same|other|first|last|next|main|key|core|new|old|real|whole|exact|only)\\b)(?:(?![A-Za-z-]*s\\b)(?:[A-Z]{2,}|[a-z][a-z-]*[a-z])\\s+(?!(?:that|which|who)\\b))?(?![a-z]*[^aisu]s\\b)[a-z]{2,}\\s+(?:${MANNER_WORD}\\s+)?${LONE_VERB_WORD}\\s+(?:${MANNER_WORD}\\s+)?(?:in|on|to|for|at|with|from|as)\\s+[^\\s\\u2014])`, 'g');
 // A plural, "the" and a short clause ending on its own verb in "s" names
 // the plural: "the decision helpers the CLI uses". A "the" or "a" inside
 // that clause starts an object, so the last word is a noun and the whole is

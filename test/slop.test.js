@@ -2453,6 +2453,24 @@ test('fix reads a pronoun or a code name with a place word after it as the objec
   ]);
 });
 
+test('fix joins a lone verb before "from" or "as" and a "their" subject after a dash', () => {
+  // from real repo text: "their visible data comes from the APIs above",
+  // "the wish arrives as a byproduct" and "the idea probably overlaps with
+  // something" spliced, since a verb that is almost never a noun counted
+  // only after "the" and before "in", "on", "to", "for", "at" or "with".
+  const file = tmpFile('lone-verb-from.md', [
+    'The ideas page is a React app \u2014 their visible data comes from the APIs above.',
+    'It turns a wish into daily process \u2014 the wish arrives as a byproduct.',
+    'The repo has many features \u2014 the idea probably overlaps with something.',
+  ].join('\n'));
+  const { changes } = applyFixes([file], RULES);
+  assert.deepEqual(changes.map((c) => c.after), [
+    'The ideas page is a React app; their visible data comes from the APIs above.',
+    'It turns a wish into daily process; the wish arrives as a byproduct.',
+    'The repo has many features; the idea probably overlaps with something.',
+  ]);
+});
+
 test('fix joins "the", a plural subject and a common verb after a dash', () => {
   // from real repo text: "the text title elements use obfuscated CSS module
   // class names" and "the recognized gaming classes map onto instruments"

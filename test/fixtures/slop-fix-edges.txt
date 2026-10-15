@@ -228,3 +228,8 @@ Title comes from the alt text \u2014 the text title elements use obfuscated clas
 => Title comes from the alt text; the text title elements use obfuscated class names.
 We ranked them \u2014 the 4 candidates cluster on unrelated concerns.
 => We ranked them; the 4 candidates cluster on unrelated concerns.
+# a verb that is almost never a noun takes "from" or "as" after it, and "their" can open it
+The ideas page is a React app \u2014 their visible data comes from the APIs above.
+=> The ideas page is a React app; their visible data comes from the APIs above.
+It turns a wish into daily process \u2014 the wish arrives as a byproduct.
+=> It turns a wish into daily process; the wish arrives as a byproduct.
