@@ -2454,7 +2454,7 @@ Lost-run cleanup error summary: `commands/autoland.js:895` keeps successful clos
 
 ## Duplicate receipt repair fixture setup
 
-- `test/commands.test.js:13563` checks that the reward status read repairs an exact duplicate receipt line. Real-store creation and claim at `test/commands.test.js:13576` save two setup launches, resolve the display reference and close in finally; ready, accept and the repairing status read remain on the CLI with every behavior assertion preserved.
+- `test/commands.test.js:13520` checks that the reward status read repairs an exact duplicate receipt line. Real-store creation, claim and readiness save three setup launches, resolve the display reference and close in finally; accept and the repairing status read remain on the CLI with every behavior assertion preserved.
 
 ## Conflicting receipt fail-closed fixture setup
 
@@ -2618,7 +2618,7 @@ Landing capability test setup: `test/commands.test.js:13014` seeds creation and 
 
 - `test/roster-run-record.test.js:405` - autopilot run accounting: successful worker has a 30-second cap; roster rewrites to one second before the intentional real-process stall, and both recorded caps are asserted.
 
-- Duplicate receipt repair setup: `test/commands.test.js:13565` uses production claimTask in the setup connection, removing one launch (four to three); the real XP status command still verifies integrity, XP, receipt count and the repaired ledger length.
+- Duplicate receipt repair setup: `test/commands.test.js:13520` uses production claimTask and readyTask in the setup connection, leaving two CLI launches; the real XP status command still verifies integrity, XP, receipt count and the repaired ledger length.
 
 - Ready-work revision setup: `test/commands.test.js:13695` uses production claimTask in the setup connection, asserting ownership before closing. Seven launches become six; both initial readies, revise, show, stale accept and re-ready retain all original CLI assertions.
 

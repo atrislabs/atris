@@ -151,7 +151,7 @@ Hourly cleanup failed stops: `commands/autoland.js:869` includes failed stop cou
 
 Hourly cleanup scan failures: `commands/autoland.js:878` includes a saved scan error in the plain summary, so a thrown first read or safety recheck does not look clean. Regression: `test/engine-resource.test.js:631` runs a real missing executable in both reads and confirms no agent is stopped.
 
-Duplicate receipt repair setup: `test/commands.test.js:13565` seeds creation and ownership through the real task store; readiness, acceptance and XP receipt repair stay on the CLI.
+Duplicate receipt repair setup: `test/commands.test.js:13520` seeds creation, ownership and readiness through the real task store; acceptance and XP receipt repair stay on the CLI.
 
 Ready-work revision setup: `test/commands.test.js:13695` seeds creation and ownership through the real task store; both readies, revision, show, stale acceptance and re-readiness stay on the CLI.
 
