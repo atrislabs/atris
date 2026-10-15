@@ -3391,6 +3391,176 @@ for order in ('resize first', 'resize inside the redraw delay'):
   if (process.env.ATRIS_BOARD_SHRINK_PROOF) fs.writeFileSync(process.env.ATRIS_BOARD_SHRINK_PROOF, `${proof.stdout}proof exit: ${proof.status}\n`);
 });
 
+test('seeded random watch: resizes and log changes in any order settle on the board a fresh run draws', { skip: process.platform === 'win32' }, () => {
+  const proof = spawnSync('python3', ['-c', String.raw`
+import datetime, fcntl, os, pathlib, pty, random, re, select, signal, struct, subprocess, sys, tempfile, termios, time
+
+HINT = re.compile(r'\n\n(?:redraws every 3s, ctrl-c to stop|updates 3s, ctrl-c to stop|ctrl-c to stop|ctrl-c)?\n$')
+
+def frames_of(raw):
+    return [re.sub(r'\x1b\[[0-9;]*[A-Za-z]', '', f.replace('\r', '')) for f in raw.decode(errors='replace').split('\x1b[2J')[1:]]
+
+def own_terminal(fd):
+    def go():
+        os.setsid()
+        fcntl.ioctl(fd, termios.TIOCSCTTY, 0)
+    return go
+
+def drain(fd, seconds):
+    out = b''
+    end = time.monotonic() + seconds
+    while time.monotonic() < end:
+        if select.select([fd], [], [], 0.02)[0]:
+            try: out += os.read(fd, 65536)
+            except OSError: break
+    return out
+
+def fits(frame, width, height):
+    lines = frame.rstrip('\n').split('\n')
+    return len(lines) <= height and max(map(len, lines)) <= width
+
+rng = random.Random(44)
+with tempfile.TemporaryDirectory(prefix='atris-board-random-watch-') as folder:
+    root = pathlib.Path(folder)
+    progress = root / 'progress'
+    progress.mkdir()
+    env = {**os.environ, 'ATRIS_PROGRESS_DIR': str(progress)}
+    # Every line is 30 minutes and a second old, so ages read the same in the
+    # watch frame and the fresh run for the next 59 seconds.
+    at = (datetime.datetime.now(datetime.timezone.utc) - datetime.timedelta(minutes=30, seconds=1)).isoformat()
+    names = ['builder', 'scout', 'chat-experience-lead', 'breaker', 'shipper', 'qa']
+    run = [0]
+    def started(name, job):
+        run[0] += 1
+        return f'{at} m-{run[0]} started: {job}\n'
+    for name in names[:5]:
+        (progress / f'{name}.log').write_text(started(name, f'ship the {name} slice'))
+    def change():
+        logs = sorted(progress.glob('*.log'))
+        kind = rng.choice(['start'] * 3 + ['step', 'step', 'fail', 'fail', 'ok', 'replace', 'remove'] if logs else ['start'])
+        log = rng.choice(logs) if logs else None
+        if kind == 'start':
+            name = rng.choice(names)
+            with (progress / f'{name}.log').open('a') as out:
+                out.write(started(name, rng.choice(['fix the login flow', 'read every member log before the board draws'])))
+        elif kind == 'step':
+            with log.open('a') as out:
+                out.write(f'{at} m-{run[0]} running: {rng.choice(["npm test", "node --test test/member-board.test.js"])}\n')
+        elif kind in ('fail', 'ok'):
+            with log.open('a') as out:
+                out.write(f'{at} m-{run[0]} finished: ' + (f'failed ({rng.choice(["timed out", "signed out", "bad exit 2"])})' if kind == 'fail' else 'ok') + '\n')
+        elif kind == 'replace':
+            fresh = progress / 'swap.tmp'
+            fresh.write_text(started(log.stem, 'start over'))
+            os.replace(fresh, log)
+        else:
+            log.unlink()
+        return f'{kind} {log.stem if log and kind != "start" else ""}'.strip()
+
+    def fresh_board(width, height):
+        # The same board drawn once, in a new terminal of the same size.
+        m, s = pty.openpty()
+        fcntl.ioctl(m, termios.TIOCSWINSZ, struct.pack('HHHH', height, width, 0, 0))
+        p = subprocess.Popen([sys.argv[1], sys.argv[2], 'member', 'board'], cwd=root, env=env, stdin=s, stdout=s, stderr=s)
+        os.close(s)
+        out = b''
+        while True:
+            if select.select([m], [], [], 0.05)[0]:
+                try: chunk = os.read(m, 65536)
+                except OSError: chunk = b''
+                if chunk:
+                    out += chunk
+                    continue
+                break
+            if p.poll() is not None:
+                break
+        p.wait(timeout=10)
+        os.close(m)
+        return re.sub(r'\x1b\[[0-9;]*[A-Za-z]', '', out.decode(errors='replace').replace('\r', ''))
+
+    master, slave = pty.openpty()
+    width, height = 80, 12
+    fcntl.ioctl(master, termios.TIOCSWINSZ, struct.pack('HHHH', height, width, 0, 0))
+    child = subprocess.Popen([sys.argv[1], sys.argv[2], 'member', 'board', '--watch'], cwd=root, env=env,
+        stdin=slave, stdout=slave, stderr=slave, preexec_fn=own_terminal(slave))
+    os.close(slave)
+    try:
+        first = b''
+        deadline = time.monotonic() + 15
+        while b'ctrl' not in first and time.monotonic() < deadline:
+            first += drain(master, 0.2)
+        assert b'builder' in first, first
+        print('command: node bin/atris.js member board --watch (seed 44, 24 random steps)')
+        matched = 0
+        for step in range(24):
+            order = rng.choice(['resize first', 'change first', 'resize inside the redraw delay', 'resize only', 'change only'])
+            if order != 'change only':
+                width, height = rng.randint(6, 120), rng.randint(3, 12)
+            resize = lambda: fcntl.ioctl(master, termios.TIOCSWINSZ, struct.pack('HHHH', height, width, 0, 0))
+            what = 'no log change'
+            if order == 'resize only':
+                resize()
+            elif order == 'change only':
+                what = change()
+            elif order == 'resize first':
+                resize()
+                what = change()
+            elif order == 'change first':
+                what = change()
+                resize()
+            else:
+                what = change()
+                time.sleep(0.05)
+                resize()
+            # The change redraws after 100ms; wait past it, then a beat more so
+            # a late frame for an old size or old logs would still show up.
+            frames = frames_of(drain(master, 0.6))
+            where = f'step {step}: {what}, {order}, {width}x{height}'
+            assert frames, f'{where}: no redraw'
+            fit = [fits(f, width, height) for f in frames]
+            assert True in fit and all(fit[fit.index(True):]), (where, frames)
+            last = frames[-1]
+            short = not HINT.search(last)
+            expected = fresh_board(width, height)
+            if short:
+                # The fresh run ignores height, and fewer rows may fit other
+                # columns, so a short frame must show some of the same members
+                # in the same order and count every one it leaves out.
+                lines = last.rstrip('\n').split('\n')
+                rows = expected.rstrip('\n').split('\n')[1:]
+                more = re.match(r'(\d+) more not shown', lines[-1])
+                shown = lines[1:-1] if more else lines[1:]
+                assert len(shown) + (int(more.group(1)) if more else 0) == len(rows), (where, last, expected)
+                if lines[0].startswith('member'):
+                    names = [r.split()[0] for r in rows]
+                    for row in shown:
+                        name = row.split()[0].removesuffix('...')
+                        while names and not names[0].startswith(name):
+                            names.pop(0)
+                        assert names, (where, row, last, expected)
+                        names.pop(0)
+            else:
+                assert HINT.sub('', last) == expected.rstrip('\n'), (where, last, expected)
+                matched += 1
+            print(f'{where}: {len(frames)} frames, last fits{"" if short else ", same as a fresh run"}')
+        print(f'settled frames equal to a fresh run: {matched} of 24, the rest were short screens')
+        print(last)
+        assert 4 <= matched < 24, f'want both whole and short screens, got {matched} whole of 24'
+        child.send_signal(signal.SIGINT)
+        code = child.wait(timeout=10)
+        print(f'exit: {code}')
+        assert code == 0
+    finally:
+        if child.poll() is None:
+            child.terminate()
+            child.wait(timeout=10)
+        os.close(master)
+`, process.execPath, cliPath], { encoding: 'utf8', timeout: 60_000 });
+  assert.ifError(proof.error);
+  assert.equal(proof.status, 0, `${proof.stdout}\n${proof.stderr}`);
+  if (process.env.ATRIS_BOARD_RANDOM_WATCH_PROOF) fs.writeFileSync(process.env.ATRIS_BOARD_RANDOM_WATCH_PROOF, `${proof.stdout}proof exit: ${proof.status}\n`);
+});
+
 
 test('the real watch terminal recovers a late progress folder and watches later writes', { skip: process.platform === 'win32' }, (t) => {
   const proof = spawnSync('python3', [path.join(repoRoot, 'atris/receipts/member-board-watch-recovery-proof.py'), process.execPath], {
