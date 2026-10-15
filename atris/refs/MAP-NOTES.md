@@ -2797,3 +2797,5 @@ Certified review fallback readiness setup: `test/commands.test.js:12643` seeds r
 Scoped review readiness setup: `test/commands.test.js:12735` seeds readiness through production readyTask in the existing creation connection with the same actor and proof. It closes in finally before CLI certification and scoped selection. Five launches become four; all original assertions remain.
 
 Uncertified review readiness setup: `test/commands.test.js:12525` seeds readiness through production readyTask in the existing creation connection with the original actor and proof, closing in finally before CLI selection and both status reads. Four launches become three; all original assertions remain.
+
+Duplicate-seed readiness setup: `test/commands.test.js:12776` seeds readiness through production readyTask after the real CLI claim, using the same actor and proof and closing in finally. Certification, selection and duplicate refusal retain every CLI assertion. Six launches become five.

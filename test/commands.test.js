@@ -12793,7 +12793,7 @@ test('task next does not repeat an Endgame seed that already exists', () => {
       '',
     ].join('\n'), 'utf8');
 
-    // Seed the existing owner's claim; checkpoint claim, certification and next stay on the CLI.
+    // Seed readiness through the real store; checkpoint claim, certification and next stay on the CLI.
     const workspaceRoot = taskStore.workspaceRoot(dir);
     const seed = (title, claimedBy) => {
       const db = taskStore.open(dbPath);
@@ -12805,16 +12805,23 @@ test('task next does not repeat an Endgame seed that already exists', () => {
         }
         const ref = taskStore.taskDisplayRefMap(taskStore.listTasks(db, { workspaceRoot })).get(created.id);
         assert.ok(ref);
-        return ref;
+        return { id: created.id, ref };
       } finally {
         taskStore.close();
       }
     };
     seed('Audit and close next runner-agnostic heartbeat gap', 'auto-improver');
 
-    const ref = seed('Certified checkpoint');
+    const { id, ref } = seed('Certified checkpoint');
     assert.equal(runCli(['task', 'claim', ref, '--as', 'codex-executor'], { cwd: dir, env }).status, 0);
-    assert.equal(runCli(['task', 'ready', ref, '--proof', 'node --check test/commands.test.js passed', '--as', 'codex-executor'], { cwd: dir, env }).status, 0);
+    const db = taskStore.open(dbPath);
+    try {
+      assert.equal(taskStore.readyTask(db, {
+        id, actor: 'codex-executor', proof: 'node --check test/commands.test.js passed',
+      }).ready, true);
+    } finally {
+      taskStore.close();
+    }
     assert.equal(runCli([
       'task', 'review', ref,
       '--reward', '0',
