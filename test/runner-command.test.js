@@ -31,6 +31,10 @@ const RUNNER_ENV_KEYS = [
   'ATRIS_CLAUDE_COMMAND_TEMPLATE',
 ];
 
+// Tests expect the default runner; an engine exported in the shell (for
+// example ATRIS_RUNNER_PROFILE=codex) must not change what they see.
+for (const key of RUNNER_ENV_KEYS) delete process.env[key];
+
 function withRunnerEnv(values, fn) {
   const prev = new Map(RUNNER_ENV_KEYS.map((key) => [key, process.env[key]]));
   for (const key of RUNNER_ENV_KEYS) delete process.env[key];

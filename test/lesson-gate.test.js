@@ -8,6 +8,10 @@ const cp = require('child_process');
 // --- direct import for isLessonResolved (no mocking needed) ---
 const { isLessonResolved } = require('../commands/autopilot.js');
 
+// The horizon tests expect the default runner; an engine exported in the
+// shell (for example ATRIS_RUNNER_PROFILE=codex) must not change it.
+delete process.env.ATRIS_RUNNER_PROFILE;
+
 let tmpDir;
 
 beforeEach(() => {
