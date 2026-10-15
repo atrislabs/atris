@@ -23,6 +23,8 @@ Details for any task: atris task show <ID>
 
 ## Review
 
+- **[ACW-28]** Prove cleanup preserves staged tracked edits · architect
+  **Done looks like:** Operators can trust cleanup to preserve staged changes and later edits because real cleanup checks both saved versions.
 - **[ACW-27]** Prove healthy refresh preserves tracked edits · architect
   **Done looks like:** Operators can trust routine cleanup to preserve edits to existing files because real preview and cleanup now check their exact contents.
 - **[ACW-26]** Prove healthy cleanup stays quiet and keeps drafts · architect
