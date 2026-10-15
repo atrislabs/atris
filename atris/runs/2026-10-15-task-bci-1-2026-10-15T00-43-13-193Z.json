@@ -1,0 +1,13 @@
+{
+  "schema": "atris.task_receipt.v1",
+  "task_id": "BCI-1",
+  "command": "PATH=/opt/homebrew/bin:$PATH node --test test/member-board.test.js test/member-result.test.js",
+  "at": "2026-10-15T00:43:13.193Z",
+  "commit": "f9983a9398da3ca5a9bdfaf0298643b6e4de78db",
+  "result": {
+    "passed": true,
+    "exit": 0,
+    "signal": null,
+    "output": "✔ ago reads like a person would say it (0.959875ms)\n✔ board shows working, quiet, done ok, and done failed from fake logs (4.667958ms)\n✔ a failed row says why when the finished line gives a reason (1.\n...\n own folder (1.202083ms)\n✔ an unknown member is an error, printed as json with exit 1 (0.724667ms)\nℹ tests 68\nℹ suites 0\nℹ pass 68\nℹ fail 0\nℹ cancelled 0\nℹ skipped 0\nℹ todo 0\nℹ duration_ms 7838.755083"
+  }
+}

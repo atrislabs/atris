@@ -26,4 +26,6 @@ Other commands: atris mission status mission-2026-10-14-continue-improving-atris
 Setup notes: brain activation was plan-only and did not write files. Mission attach-task was refused by its existing driver lock; a local task was created and claimed without changing mission policy.
 Progress: one live regression strengthened; all 68 required tests green; partial and duplicate event assertions each cover a full polling interval.
 next_push: Check a timeout line already half-written when the real follower starts.
+Landing: committed and pushed to origin. Task proof is in Review, not accepted. Readiness's plain command failed 5/68 under its older login-shell runtime; the documented supported-runtime workaround passed with exit 0: PATH=/opt/homebrew/bin:$PATH node --test test/member-board.test.js test/member-result.test.js. This local command is outside automatic certification's allowlist, so acceptance still needs review. Frozen mission verifier is unchanged.
+Readiness receipts: atris/runs/2026-10-15-task-bci-1-2026-10-15T00-42-53-674Z.json (exit 1); atris/runs/2026-10-15-task-bci-1-2026-10-15T00-43-13-193Z.json (exit 0).
 layer: behaviors
