@@ -12,7 +12,7 @@ const { spawn, spawnSync } = require('node:child_process');
 
 const { tidyMemberCopies, formatTidy } = require('../lib/member-tidy');
 const { reap } = require('../commands/land');
-const { cleanupWorktrees, describeGitHold } = require('../commands/worktree');
+const { cleanupWorktrees, describeGitHold, describeRemovalResult } = require('../commands/worktree');
 const { disposeReviewSandbox } = require('../lib/fleet');
 const { regressionCheck } = require('../commands/autopilot');
 
@@ -412,6 +412,16 @@ if (removing && ${JSON.stringify(mode)} === 'signal') {
     }
   });
 }
+
+// Tidy gives git a time limit. A removal killed at that limit did run, so the
+// shared line names the timeout, not a launch failure or Node's error code.
+test('a removal stopped at its time limit reads as a timeout, even after partial output', () => {
+  for (const script of ['setTimeout(() => {}, 5000)', 'process.stderr.write("fatal: still working\\n"); setTimeout(() => {}, 5000)']) {
+    const result = spawnSync(process.execPath, ['-e', script], { encoding: 'utf8', timeout: 300 });
+    assert.equal(result.error && result.error.code, 'ETIMEDOUT');
+    assert.equal(describeRemovalResult('/nowhere', result), 'git removal timed out');
+  }
+});
 
 for (const reason of ['agent still writing', 'agent still\n  writing\tplease wait']) {
   test(`tidy, reap and the regression check flatten a pin reason: ${JSON.stringify(reason)}`, () => {

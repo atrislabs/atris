@@ -1397,9 +1397,11 @@ function describeRefusedRemoval(worktreePath, gitOutput = '', now = Date.now()) 
   return line.slice(0, 160) || 'git would not remove it';
 }
 
-// The same line from a whole removal result. Git's own text wins; when git
-// left none, a launch error, a signal, or a missing status says why it stopped.
+// The same line from a whole removal result. A removal killed at its time
+// limit says so even after partial output. Otherwise git's own text wins; when
+// git left none, a launch error, a signal, or a missing status says why.
 function describeRemovalResult(worktreePath, result = {}, now = Date.now()) {
+  if (result.error && result.error.code === 'ETIMEDOUT') return describeRefusedRemoval(worktreePath, 'git removal timed out', now);
   const output = String(result.stderr || result.stdout || '').trim();
   const fallback = result.error ? `git could not run: ${result.error.message}`
     : result.signal ? `git removal stopped by ${result.signal}`
