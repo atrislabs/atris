@@ -393,3 +393,16 @@ test('a killed tick blames the mission clock only when the mission clock set the
   assert.equal(missionTickWallBound({}, 15 * min), true);
   assert.equal(missionTickWallBound({}, 40 * min), false);
 });
+
+test('a failed engine tick names its engine in the member log reason', () => {
+  const { memberLogTickReason } = require('../commands/mission');
+  // A codex tick that timed out says so, and keeps the label other code matches on.
+  assert.equal(
+    memberLogTickReason({ status: 'errored', reason: 'claude-timeout', engine_id: 'codex' }),
+    'claude-timeout (engine: codex)',
+  );
+  // A plain claude run has no engine to name.
+  assert.equal(memberLogTickReason({ status: 'errored', reason: 'claude-timeout' }), 'claude-timeout');
+  // A tick that ran fine is left alone.
+  assert.equal(memberLogTickReason({ status: 'ran', reason: 'tick-ok', engine_id: 'codex' }), 'tick-ok');
+});

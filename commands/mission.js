@@ -441,6 +441,16 @@ function missionTickWallBound(mission, remainingMs) {
   return remainingMs <= missionTickCapMs(mission);
 }
 
+// The reason a member log shows for a tick. A failed engine tick names its
+// engine beside the reason, so a codex run that timed out stops counting as
+// a claude timeout in the repeat-problem scan. The reason itself is left as
+// is because engine health and backoff match on it.
+function memberLogTickReason(result) {
+  const reason = result && result.reason;
+  if (!reason || !result.engine_id || result.status !== 'errored') return reason;
+  return `${reason} (engine: ${result.engine_id})`;
+}
+
 function resolveMissionTickRunner(mission, root = process.cwd(), options = {}) {
   if (String(mission && mission.runner || '').trim().toLowerCase() !== MISSION_AUTO_RUNNER) {
     // A named engine still gets the roster's time limit for that engine.
@@ -10764,7 +10774,7 @@ async function executeMissionRunTicksPhase(context) {
         mission: mission.objective,
         state: mission.status,
         tick_status: result.status,
-        reason: result.reason,
+        reason: memberLogTickReason(result),
         layer: result.layer || undefined,
         verifier: verifierResult ? (verifierResult.passed ? 'passed' : 'failed') : 'not_run',
         summary: tickSummaryText ? tickSummaryText.slice(0, 240) : undefined,
@@ -12687,6 +12697,7 @@ module.exports = {
   resolveMissionTickRunnerModel,
   missionTickTimeoutMs,
   missionTickWallBound,
+  memberLogTickReason,
   engineFailureHealthStatus,
   recordMissionEngineTickOutcome,
   recordMissionTickRosterRun,
