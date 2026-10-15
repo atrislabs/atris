@@ -1,0 +1,20 @@
+Scope: backstop ladder, rung 1. The mission's unprotected removal sites are done; every remaining folder delete in the fleet code belongs to protected review copies. The fast suite had one failing check on this branch.
+
+Before, inside a member run (launching engine set in the environment):
+$ npm run -s test:fast
+ℹ tests 1878  ℹ pass 1877  ℹ fail 1
+✖ real atris binary fast smoke covers core read-only commands
+  assert.ok(payload.engines.some((engine) => engine.id === 'atris-fast'))
+Cause: the smoke test passed the launching engine setting through to the real CLI, so the house fast engine dropped from the list. Master already fixed this in e6822d53; this branch predated it.
+
+Fix: brought that one test-only commit over (cherry-pick -x, test/smoke.fast.test.js only, no production change).
+
+After, same member run environment:
+$ node --test test/smoke.fast.test.js          exit: 0, 2 passed
+$ npm run -s test:fast                         exit: 0, 1878 passed, 0 failed
+$ node --test test/worktree-removal-guard.test.js test/member-tidy.test.js   exit: 0, 57 passed, 0 failed
+
+Rerun: npm run -s test:fast
+Progress: fast suite failures on this branch from 1 to 0.
+next_push: route review copy disposal through the same shared result reader once protected review clears it.
+layer: environment
