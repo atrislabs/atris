@@ -1,0 +1,1238 @@
+command: bash -lc 'node --test test/worktree-removal-guard.test.js test/member-tidy.test.js && node bin/atris.js slop --staged'
+exit: 1
+TAP version 13
+# command: node bin/atris.js member tidy --dir <fixture copies> --dry-run (renamed remote default)
+# exit: 1
+# command: node bin/atris.js member tidy --dir <fixture copies> (late-pin git wrapper)
+# exit: 1
+# command: node bin/atris.js worktree cleanup --base HEAD --apply (late-pin git wrapper)
+# exit: 1
+# command: node bin/atris.js land --reap --base HEAD --no-remote --json (late-pin git wrapper)
+# exit: 1
+# command: node -e "console.log(JSON.stringify(require(\\"/Users/keshavrao/arena/empire/.agent-worktrees/atris-cli/architect-continue-work-folder-protection-acro-20261015-055122/commands/autopilot.js\\").regressionCheck(process.cwd(), { activeCwds: [] })))" (late-pin git wrapper)
+# [{"hash":"553fcc4ec78d28349203601ff12d5b3d5933fc52","slug":"late-pin-proof","pass":true,"kept":"remove_failed","held":"pinned by git worktree lock, under a minute old: agent started writing please wait","path":"/private/var/folders/t1/2_4kmb5n4c71dxm26zc8dgzr0000gn/T/atris-member-tidy-gCF9GE/arena/repo/.regression-worktree-553fcc4e"}]
+# exit: 0
+# command: node -e "console.log(JSON.stringify(require(\\"/Users/keshavrao/arena/empire/.agent-worktrees/atris-cli/architect-continue-work-folder-protection-acro-20261015-055122/commands/autopilot.js\\").regressionCheck(process.cwd(), { activeCwds: [] })))" (late-pin git wrapper)
+# [{"hash":"14d7e47c3cbc54a691513427ed5bd3be696c957b","slug":"late-pin-proof","pass":false,"kept":"remove_failed","held":"pinned by git worktree lock, under a minute old: agent started writing please wait","path":"/private/var/folders/t1/2_4kmb5n4c71dxm26zc8dgzr0000gn/T/atris-member-tidy-VkwIeE/arena/repo/.regression-worktree-14d7e47c"}]
+# exit: 0
+# held copy preserved; disposable lesson stayed on disk
+# command: node bin/atris.js member tidy --dir <fixture copies> (stopped-removal git wrapper)
+# exit: 1
+# command: node bin/atris.js worktree cleanup --base HEAD --apply (stopped-removal git wrapper)
+# exit: 1
+# command: node bin/atris.js land --reap --base HEAD --no-remote --json (stopped-removal git wrapper)
+# exit: 1
+# command: node -e "console.log(JSON.stringify(require(\\"/Users/keshavrao/arena/empire/.agent-worktrees/atris-cli/architect-continue-work-folder-protection-acro-20261015-055122/commands/autopilot.js\\").regressionCheck(process.cwd(), { activeCwds: [] })))" (stopped-removal git wrapper)
+# [{"hash":"9b2bb7f81b235af5add193ca060f7c47d2935e79","slug":"late-pin-proof","pass":true,"kept":"remove_failed","held":"git removal stopped by SIGTERM","path":"/private/var/folders/t1/2_4kmb5n4c71dxm26zc8dgzr0000gn/T/atris-member-tidy-3TAjNZ/arena/repo/.regression-worktree-9b2bb7f8"}]
+# exit: 0
+# command: node -e "console.log(JSON.stringify(require(\\"/Users/keshavrao/arena/empire/.agent-worktrees/atris-cli/architect-continue-work-folder-protection-acro-20261015-055122/commands/autopilot.js\\").regressionCheck(process.cwd(), { activeCwds: [] })))" (stopped-removal git wrapper)
+# [{"hash":"55884cd6b36420c3057f8e887042a4379fc0c76c","slug":"late-pin-proof","pass":false,"kept":"remove_failed","held":"git removal stopped by SIGTERM","path":"/private/var/folders/t1/2_4kmb5n4c71dxm26zc8dgzr0000gn/T/atris-member-tidy-7vbAla/arena/repo/.regression-worktree-55884cd6"}]
+# exit: 0
+# held copy preserved; disposable lesson stayed on disk
+# command: node bin/atris.js member tidy --dir <fixture copies> (fixture cwd)
+# exit: 1
+# command: node bin/atris.js member tidy --dir <fixture copies> (fixture cwd)
+# exit: 1
+# command: node bin/atris.js member tidy --dir <fixture copies> --dry-run (fixture cwd)
+# exit: 1
+# command: node bin/atris.js member tidy --dir <fixture copies> --dry-run (fixture cwd)
+# exit: 1
+# Subtest: tidy removes landed clean copies and leaves everything else to git and the rules
+ok 1 - tidy removes landed clean copies and leaves everything else to git and the rules
+  ---
+  duration_ms: 3302.356458
+  ...
+# Subtest: tidy keeps staged and unsaved notes after the remote default branch is renamed
+not ok 2 - tidy keeps staged and unsaved notes after the remote default branch is renamed
+  ---
+  duration_ms: 1376.841542
+  location: '/Users/keshavrao/arena/empire/.agent-worktrees/atris-cli/architect-continue-work-folder-protection-acro-20261015-055122/test/member-tidy.test.js:149:1'
+  failureType: 'testCodeFailure'
+  error: |-
+    atris needs Node 22.13 or newer. this is Node 20.18.0.
+    upgrade from https://nodejs.org, then run atris again.
+    
+  code: 'ERR_ASSERTION'
+  name: 'AssertionError'
+  expected: 0
+  actual: 1
+  operator: 'strictEqual'
+  stack: |-
+    TestContext.<anonymous> (/Users/keshavrao/arena/empire/.agent-worktrees/atris-cli/architect-continue-work-folder-protection-acro-20261015-055122/test/member-tidy.test.js:180:14)
+    Test.runInAsyncScope (node:async_hooks:206:9)
+    Test.run (node:internal/test_runner/test:796:25)
+    Test.processPendingSubtests (node:internal/test_runner/test:527:18)
+    Test.postRun (node:internal/test_runner/test:889:19)
+    Test.run (node:internal/test_runner/test:835:12)
+    async Test.processPendingSubtests (node:internal/test_runner/test:527:7)
+  ...
+# Subtest: tidy keeps every copy when the running-program scan fails
+ok 3 - tidy keeps every copy when the running-program scan fails
+  ---
+  duration_ms: 895.778208
+  ...
+# Subtest: tidy keeps every copy when origin cannot be fetched
+ok 4 - tidy keeps every copy when origin cannot be fetched
+  ---
+  duration_ms: 978.751833
+  ...
+# Subtest: tidy names the git lock file and its age when it keeps a landed copy
+ok 5 - tidy names the git lock file and its age when it keeps a landed copy
+  ---
+  duration_ms: 1074.039834
+  ...
+# Subtest: all five cleanup paths report paused git work in the same words and keep it
+ok 6 - all five cleanup paths report paused git work in the same words and keep it
+  ---
+  duration_ms: 6336.158375
+  ...
+# Subtest: tidy keeps a landed copy while git is paused mid-rebase in it, and logs what it removes
+ok 7 - tidy keeps a landed copy while git is paused mid-rebase in it, and logs what it removes
+  ---
+  duration_ms: 946.670458
+  ...
+# command: node bin/atris.js member tidy --dir <fixture copies> --dry-run (fixture cwd)
+# exit: 1
+# Subtest: tidy reports a pin acquired after preflight and leaves the copy registered
+not ok 8 - tidy reports a pin acquired after preflight and leaves the copy registered
+  ---
+  duration_ms: 418.379208
+  location: '/Users/keshavrao/arena/empire/.agent-worktrees/atris-cli/architect-continue-work-folder-protection-acro-20261015-055122/test/member-tidy.test.js:356:3'
+  failureType: 'testCodeFailure'
+  error: |-
+    atris needs Node 22.13 or newer. this is Node 20.18.0.
+    upgrade from https://nodejs.org, then run atris again.
+    
+  code: 'ERR_ASSERTION'
+  name: 'AssertionError'
+  expected: 0
+  actual: 1
+  operator: 'strictEqual'
+  stack: |-
+    TestContext.<anonymous> (/Users/keshavrao/arena/empire/.agent-worktrees/atris-cli/architect-continue-work-folder-protection-acro-20261015-055122/test/member-tidy.test.js:418:14)
+    Test.runInAsyncScope (node:async_hooks:206:9)
+    Test.run (node:internal/test_runner/test:796:25)
+    Test.processPendingSubtests (node:internal/test_runner/test:527:18)
+    Test.postRun (node:internal/test_runner/test:889:19)
+    Test.run (node:internal/test_runner/test:835:12)
+    async Test.processPendingSubtests (node:internal/test_runner/test:527:7)
+  ...
+# Subtest: cleanup reports a pin acquired after preflight and leaves the copy registered
+not ok 9 - cleanup reports a pin acquired after preflight and leaves the copy registered
+  ---
+  duration_ms: 469.741375
+  location: '/Users/keshavrao/arena/empire/.agent-worktrees/atris-cli/architect-continue-work-folder-protection-acro-20261015-055122/test/member-tidy.test.js:356:3'
+  failureType: 'testCodeFailure'
+  error: |-
+    atris needs Node 22.13 or newer. this is Node 20.18.0.
+    upgrade from https://nodejs.org, then run atris again.
+    
+  code: 'ERR_ASSERTION'
+  name: 'AssertionError'
+  expected: 0
+  actual: 1
+  operator: 'strictEqual'
+  stack: |-
+    TestContext.<anonymous> (/Users/keshavrao/arena/empire/.agent-worktrees/atris-cli/architect-continue-work-folder-protection-acro-20261015-055122/test/member-tidy.test.js:418:14)
+    Test.runInAsyncScope (node:async_hooks:206:9)
+    Test.run (node:internal/test_runner/test:796:25)
+    Test.processPendingSubtests (node:internal/test_runner/test:527:18)
+    Test.postRun (node:internal/test_runner/test:889:19)
+    Test.run (node:internal/test_runner/test:835:12)
+    async Test.processPendingSubtests (node:internal/test_runner/test:527:7)
+  ...
+# Subtest: reap reports a pin acquired after preflight and leaves the copy registered
+not ok 10 - reap reports a pin acquired after preflight and leaves the copy registered
+  ---
+  duration_ms: 425.296375
+  location: '/Users/keshavrao/arena/empire/.agent-worktrees/atris-cli/architect-continue-work-folder-protection-acro-20261015-055122/test/member-tidy.test.js:356:3'
+  failureType: 'testCodeFailure'
+  error: |-
+    atris needs Node 22.13 or newer. this is Node 20.18.0.
+    upgrade from https://nodejs.org, then run atris again.
+    
+  code: 'ERR_ASSERTION'
+  name: 'AssertionError'
+  expected: 0
+  actual: 1
+  operator: 'strictEqual'
+  stack: |-
+    TestContext.<anonymous> (/Users/keshavrao/arena/empire/.agent-worktrees/atris-cli/architect-continue-work-folder-protection-acro-20261015-055122/test/member-tidy.test.js:418:14)
+    Test.runInAsyncScope (node:async_hooks:206:9)
+    Test.run (node:internal/test_runner/test:796:25)
+    Test.processPendingSubtests (node:internal/test_runner/test:527:18)
+    Test.postRun (node:internal/test_runner/test:889:19)
+    Test.run (node:internal/test_runner/test:835:12)
+    async Test.processPendingSubtests (node:internal/test_runner/test:527:7)
+  ...
+# Subtest: autopilot reports a pin acquired after preflight and leaves the copy registered
+ok 11 - autopilot reports a pin acquired after preflight and leaves the copy registered
+  ---
+  duration_ms: 956.146125
+  ...
+# Subtest: autopilot-failed reports a pin acquired after preflight and leaves the copy registered
+ok 12 - autopilot-failed reports a pin acquired after preflight and leaves the copy registered
+  ---
+  duration_ms: 1185.279833
+  ...
+# Subtest: tidy reports a removal stopped by a signal and leaves the copy registered
+not ok 13 - tidy reports a removal stopped by a signal and leaves the copy registered
+  ---
+  duration_ms: 533.147667
+  location: '/Users/keshavrao/arena/empire/.agent-worktrees/atris-cli/architect-continue-work-folder-protection-acro-20261015-055122/test/member-tidy.test.js:356:3'
+  failureType: 'testCodeFailure'
+  error: |-
+    atris needs Node 22.13 or newer. this is Node 20.18.0.
+    upgrade from https://nodejs.org, then run atris again.
+    
+  code: 'ERR_ASSERTION'
+  name: 'AssertionError'
+  expected: 0
+  actual: 1
+  operator: 'strictEqual'
+  stack: |-
+    TestContext.<anonymous> (/Users/keshavrao/arena/empire/.agent-worktrees/atris-cli/architect-continue-work-folder-protection-acro-20261015-055122/test/member-tidy.test.js:418:14)
+    Test.runInAsyncScope (node:async_hooks:206:9)
+    Test.run (node:internal/test_runner/test:796:25)
+    Test.processPendingSubtests (node:internal/test_runner/test:527:18)
+    Test.postRun (node:internal/test_runner/test:889:19)
+    Test.run (node:internal/test_runner/test:835:12)
+    async Test.processPendingSubtests (node:internal/test_runner/test:527:7)
+  ...
+# command: node bin/atris.js member tidy --dir <fixture copies> --dry-run (cwd: pinned copy)
+# exit: 1
+# command: node bin/atris.js member tidy --dir <fixture copies> --dry-run (fixture cwd)
+# exit: 1
+# command: node bin/atris.js member tidy --dir <fixture copies> --dry-run (missing branch)
+# exit: 1
+# command: node bin/atris.js member tidy --dir <fixture copies> --dry-run (upstream moved backward)
+# exit: 1
+# command: node bin/atris.js member tidy --dir <fixture copies> --dry-run (unrelated upstream history)
+# exit: 1
+# command: node bin/atris.js member tidy --dir <fixture copies> --dry-run (broken index)
+# exit: 1
+# command: node bin/atris.js member tidy --dir <fixture copies> --dry-run (missing remote default)
+# exit: 1
+# command: node bin/atris.js member tidy --dir <fixture copies> --dry-run (unavailable remote)
+# exit: 1
+# command: node bin/atris.js member tidy --dir <fixture copies> --dry-run (unfetchable remote default)
+# exit: 1
+# command: node bin/atris.js member tidy --dir <fixture copies> --dry-run (non-commit remote default)
+# exit: 1
+# command: node bin/atris.js member tidy --dir <fixture copies> --dry-run (local record behind origin)
+# exit: 1
+# command: node bin/atris.js worktree cleanup (damaged remote default)
+# exit: 1
+# command: node bin/atris.js worktree cleanup (healthy origin, local base behind)
+# exit: 1
+# command: node bin/atris.js worktree cleanup (unavailable origin)
+# exit: 1
+# command: node bin/atris.js worktree cleanup (unavailable origin, staged rename)
+# exit: 1
+# command: node bin/atris.js worktree cleanup (unavailable origin, staged new file)
+# exit: 1
+# command: node bin/atris.js worktree cleanup (unavailable origin, staged new file deleted)
+# exit: 1
+# command: node bin/atris.js worktree cleanup (unavailable origin, staged mode-only change)
+# exit: 1
+# Subtest: cleanup reports a removal stopped by a signal and leaves the copy registered
+not ok 14 - cleanup reports a removal stopped by a signal and leaves the copy registered
+  ---
+  duration_ms: 577.213792
+  location: '/Users/keshavrao/arena/empire/.agent-worktrees/atris-cli/architect-continue-work-folder-protection-acro-20261015-055122/test/member-tidy.test.js:356:3'
+  failureType: 'testCodeFailure'
+  error: |-
+    atris needs Node 22.13 or newer. this is Node 20.18.0.
+    upgrade from https://nodejs.org, then run atris again.
+    
+  code: 'ERR_ASSERTION'
+  name: 'AssertionError'
+  expected: 0
+  actual: 1
+  operator: 'strictEqual'
+  stack: |-
+    TestContext.<anonymous> (/Users/keshavrao/arena/empire/.agent-worktrees/atris-cli/architect-continue-work-folder-protection-acro-20261015-055122/test/member-tidy.test.js:418:14)
+    Test.runInAsyncScope (node:async_hooks:206:9)
+    Test.run (node:internal/test_runner/test:796:25)
+    Test.processPendingSubtests (node:internal/test_runner/test:527:18)
+    Test.postRun (node:internal/test_runner/test:889:19)
+    Test.run (node:internal/test_runner/test:835:12)
+    async Test.processPendingSubtests (node:internal/test_runner/test:527:7)
+  ...
+# Subtest: reap reports a removal stopped by a signal and leaves the copy registered
+not ok 15 - reap reports a removal stopped by a signal and leaves the copy registered
+  ---
+  duration_ms: 508.090166
+  location: '/Users/keshavrao/arena/empire/.agent-worktrees/atris-cli/architect-continue-work-folder-protection-acro-20261015-055122/test/member-tidy.test.js:356:3'
+  failureType: 'testCodeFailure'
+  error: |-
+    atris needs Node 22.13 or newer. this is Node 20.18.0.
+    upgrade from https://nodejs.org, then run atris again.
+    
+  code: 'ERR_ASSERTION'
+  name: 'AssertionError'
+  expected: 0
+  actual: 1
+  operator: 'strictEqual'
+  stack: |-
+    TestContext.<anonymous> (/Users/keshavrao/arena/empire/.agent-worktrees/atris-cli/architect-continue-work-folder-protection-acro-20261015-055122/test/member-tidy.test.js:418:14)
+    Test.runInAsyncScope (node:async_hooks:206:9)
+    Test.run (node:internal/test_runner/test:796:25)
+    Test.processPendingSubtests (node:internal/test_runner/test:527:18)
+    Test.postRun (node:internal/test_runner/test:889:19)
+    Test.run (node:internal/test_runner/test:835:12)
+    async Test.processPendingSubtests (node:internal/test_runner/test:527:7)
+  ...
+# Subtest: autopilot reports a removal stopped by a signal and leaves the copy registered
+ok 16 - autopilot reports a removal stopped by a signal and leaves the copy registered
+  ---
+  duration_ms: 1288.066583
+  ...
+# Subtest: autopilot-failed reports a removal stopped by a signal and leaves the copy registered
+ok 17 - autopilot-failed reports a removal stopped by a signal and leaves the copy registered
+  ---
+  duration_ms: 1054.046417
+  ...
+# Subtest: a removal stopped at its time limit reads as a timeout, even after partial output
+ok 18 - a removal stopped at its time limit reads as a timeout, even after partial output
+  ---
+  duration_ms: 605.942166
+  ...
+# Subtest: real pins and locks take precedence over interrupted removal details
+ok 19 - real pins and locks take precedence over interrupted removal details
+  ---
+  duration_ms: 1476.383792
+  ...
+# Subtest: tidy, reap and the regression check flatten a pin reason: "agent still writing"
+not ok 20 - tidy, reap and the regression check flatten a pin reason: "agent still writing"
+  ---
+  duration_ms: 1448.560291
+  location: '/Users/keshavrao/arena/empire/.agent-worktrees/atris-cli/architect-continue-work-folder-protection-acro-20261015-055122/test/member-tidy.test.js:503:3'
+  failureType: 'testCodeFailure'
+  error: |-
+    atris needs Node 22.13 or newer. this is Node 20.18.0.
+    upgrade from https://nodejs.org, then run atris again.
+    
+  code: 'ERR_ASSERTION'
+  name: 'AssertionError'
+  expected: 0
+  actual: 1
+  operator: 'strictEqual'
+  stack: |-
+    TestContext.<anonymous> (/Users/keshavrao/arena/empire/.agent-worktrees/atris-cli/architect-continue-work-folder-protection-acro-20261015-055122/test/member-tidy.test.js:527:14)
+    Test.runInAsyncScope (node:async_hooks:206:9)
+    Test.run (node:internal/test_runner/test:796:25)
+    Test.processPendingSubtests (node:internal/test_runner/test:527:18)
+    Test.postRun (node:internal/test_runner/test:889:19)
+    Test.run (node:internal/test_runner/test:835:12)
+    async Test.processPendingSubtests (node:internal/test_runner/test:527:7)
+  ...
+# Subtest: tidy, reap and the regression check flatten a pin reason: "agent still\\n  writing\\tplease wait"
+not ok 21 - tidy, reap and the regression check flatten a pin reason: "agent still\\n  writing\\tplease wait"
+  ---
+  duration_ms: 1532.630333
+  location: '/Users/keshavrao/arena/empire/.agent-worktrees/atris-cli/architect-continue-work-folder-protection-acro-20261015-055122/test/member-tidy.test.js:503:3'
+  failureType: 'testCodeFailure'
+  error: |-
+    atris needs Node 22.13 or newer. this is Node 20.18.0.
+    upgrade from https://nodejs.org, then run atris again.
+    
+  code: 'ERR_ASSERTION'
+  name: 'AssertionError'
+  expected: 0
+  actual: 1
+  operator: 'strictEqual'
+  stack: |-
+    TestContext.<anonymous> (/Users/keshavrao/arena/empire/.agent-worktrees/atris-cli/architect-continue-work-folder-protection-acro-20261015-055122/test/member-tidy.test.js:527:14)
+    Test.runInAsyncScope (node:async_hooks:206:9)
+    Test.run (node:internal/test_runner/test:796:25)
+    Test.processPendingSubtests (node:internal/test_runner/test:527:18)
+    Test.postRun (node:internal/test_runner/test:889:19)
+    Test.run (node:internal/test_runner/test:835:12)
+    async Test.processPendingSubtests (node:internal/test_runner/test:527:7)
+  ...
+# Subtest: tidy names pinned unfinished work beside the count of ordinary ongoing work
+not ok 22 - tidy names pinned unfinished work beside the count of ordinary ongoing work
+  ---
+  duration_ms: 1349.732291
+  location: '/Users/keshavrao/arena/empire/.agent-worktrees/atris-cli/architect-continue-work-folder-protection-acro-20261015-055122/test/member-tidy.test.js:559:1'
+  failureType: 'testCodeFailure'
+  error: |-
+    atris needs Node 22.13 or newer. this is Node 20.18.0.
+    upgrade from https://nodejs.org, then run atris again.
+    
+  code: 'ERR_ASSERTION'
+  name: 'AssertionError'
+  expected: 0
+  actual: 1
+  operator: 'strictEqual'
+  stack: |-
+    TestContext.<anonymous> (/Users/keshavrao/arena/empire/.agent-worktrees/atris-cli/architect-continue-work-folder-protection-acro-20261015-055122/test/member-tidy.test.js:600:14)
+    Test.runInAsyncScope (node:async_hooks:206:9)
+    Test.run (node:internal/test_runner/test:796:25)
+    Test.processPendingSubtests (node:internal/test_runner/test:527:18)
+    Test.postRun (node:internal/test_runner/test:889:19)
+    Test.run (node:internal/test_runner/test:835:12)
+    async Test.processPendingSubtests (node:internal/test_runner/test:527:7)
+  ...
+# Subtest: tidy names pinned busy landed copies beside the ordinary ongoing count
+not ok 23 - tidy names pinned busy landed copies beside the ordinary ongoing count
+  ---
+  duration_ms: 1097.303166
+  location: '/Users/keshavrao/arena/empire/.agent-worktrees/atris-cli/architect-continue-work-folder-protection-acro-20261015-055122/test/member-tidy.test.js:628:1'
+  failureType: 'testCodeFailure'
+  error: |-
+    atris needs Node 22.13 or newer. this is Node 20.18.0.
+    upgrade from https://nodejs.org, then run atris again.
+    
+  code: 'ERR_ASSERTION'
+  name: 'AssertionError'
+  expected: 0
+  actual: 1
+  operator: 'strictEqual'
+  stack: |-
+    TestContext.<anonymous> (/Users/keshavrao/arena/empire/.agent-worktrees/atris-cli/architect-continue-work-folder-protection-acro-20261015-055122/test/member-tidy.test.js:674:14)
+    process.processTicksAndRejections (node:internal/process/task_queues:95:5)
+    async Test.run (node:internal/test_runner/test:797:9)
+    async Test.processPendingSubtests (node:internal/test_runner/test:527:7)
+  ...
+# Subtest: tidy names pinned busy unfinished copies beside the ordinary ongoing count
+not ok 24 - tidy names pinned busy unfinished copies beside the ordinary ongoing count
+  ---
+  duration_ms: 1474.817625
+  location: '/Users/keshavrao/arena/empire/.agent-worktrees/atris-cli/architect-continue-work-folder-protection-acro-20261015-055122/test/member-tidy.test.js:628:1'
+  failureType: 'testCodeFailure'
+  error: |-
+    atris needs Node 22.13 or newer. this is Node 20.18.0.
+    upgrade from https://nodejs.org, then run atris again.
+    
+  code: 'ERR_ASSERTION'
+  name: 'AssertionError'
+  expected: 0
+  actual: 1
+  operator: 'strictEqual'
+  stack: |-
+    TestContext.<anonymous> (/Users/keshavrao/arena/empire/.agent-worktrees/atris-cli/architect-continue-work-folder-protection-acro-20261015-055122/test/member-tidy.test.js:674:14)
+    process.processTicksAndRejections (node:internal/process/task_queues:95:5)
+    async Test.run (node:internal/test_runner/test:797:9)
+    async Test.processPendingSubtests (node:internal/test_runner/test:527:7)
+  ...
+# Subtest: tidy names its own pinned landed copy from the root and a nested folder
+not ok 25 - tidy names its own pinned landed copy from the root and a nested folder
+  ---
+  duration_ms: 601.618791
+  location: '/Users/keshavrao/arena/empire/.agent-worktrees/atris-cli/architect-continue-work-folder-protection-acro-20261015-055122/test/member-tidy.test.js:709:1'
+  failureType: 'testCodeFailure'
+  error: |-
+    atris needs Node 22.13 or newer. this is Node 20.18.0.
+    upgrade from https://nodejs.org, then run atris again.
+    
+  code: 'ERR_ASSERTION'
+  name: 'AssertionError'
+  expected: 0
+  actual: 1
+  operator: 'strictEqual'
+  stack: |-
+    TestContext.<anonymous> (/Users/keshavrao/arena/empire/.agent-worktrees/atris-cli/architect-continue-work-folder-protection-acro-20261015-055122/test/member-tidy.test.js:731:16)
+    Test.runInAsyncScope (node:async_hooks:206:9)
+    Test.run (node:internal/test_runner/test:796:25)
+    Test.processPendingSubtests (node:internal/test_runner/test:527:18)
+    Test.postRun (node:internal/test_runner/test:889:19)
+    Test.run (node:internal/test_runner/test:835:12)
+    process.processTicksAndRejections (node:internal/process/task_queues:95:5)
+    async Test.processPendingSubtests (node:internal/test_runner/test:527:7)
+  ...
+# Subtest: tidy preserves staged and unsaved notes in idle landed copies
+not ok 26 - tidy preserves staged and unsaved notes in idle landed copies
+  ---
+  duration_ms: 873.63025
+  location: '/Users/keshavrao/arena/empire/.agent-worktrees/atris-cli/architect-continue-work-folder-protection-acro-20261015-055122/test/member-tidy.test.js:749:1'
+  failureType: 'testCodeFailure'
+  error: |-
+    atris needs Node 22.13 or newer. this is Node 20.18.0.
+    upgrade from https://nodejs.org, then run atris again.
+    
+  code: 'ERR_ASSERTION'
+  name: 'AssertionError'
+  expected: 0
+  actual: 1
+  operator: 'strictEqual'
+  stack: |-
+    TestContext.<anonymous> (/Users/keshavrao/arena/empire/.agent-worktrees/atris-cli/architect-continue-work-folder-protection-acro-20261015-055122/test/member-tidy.test.js:782:14)
+    Test.runInAsyncScope (node:async_hooks:206:9)
+    Test.run (node:internal/test_runner/test:796:25)
+    Test.processPendingSubtests (node:internal/test_runner/test:527:18)
+    Test.postRun (node:internal/test_runner/test:889:19)
+    Test.run (node:internal/test_runner/test:835:12)
+    process.processTicksAndRejections (node:internal/process/task_queues:95:5)
+    async Test.processPendingSubtests (node:internal/test_runner/test:527:7)
+  ...
+# Subtest: tidy keeps a copy whose branch disappeared, in preview and apply
+not ok 27 - tidy keeps a copy whose branch disappeared, in preview and apply
+  ---
+  duration_ms: 694.019792
+  location: '/Users/keshavrao/arena/empire/.agent-worktrees/atris-cli/architect-continue-work-folder-protection-acro-20261015-055122/test/member-tidy.test.js:812:1'
+  failureType: 'testCodeFailure'
+  error: |-
+    atris needs Node 22.13 or newer. this is Node 20.18.0.
+    upgrade from https://nodejs.org, then run atris again.
+    
+  code: 'ERR_ASSERTION'
+  name: 'AssertionError'
+  expected: 0
+  actual: 1
+  operator: 'strictEqual'
+  stack: |-
+    TestContext.<anonymous> (/Users/keshavrao/arena/empire/.agent-worktrees/atris-cli/architect-continue-work-folder-protection-acro-20261015-055122/test/member-tidy.test.js:830:14)
+    Test.runInAsyncScope (node:async_hooks:206:9)
+    Test.run (node:internal/test_runner/test:796:25)
+    Test.processPendingSubtests (node:internal/test_runner/test:527:18)
+    Test.postRun (node:internal/test_runner/test:889:19)
+    Test.run (node:internal/test_runner/test:835:12)
+    process.processTicksAndRejections (node:internal/process/task_queues:95:5)
+    async Test.processPendingSubtests (node:internal/test_runner/test:527:7)
+  ...
+# Subtest: tidy keeps staged and unsaved notes after upstream moves backward
+not ok 28 - tidy keeps staged and unsaved notes after upstream moves backward
+  ---
+  duration_ms: 1166.327959
+  location: '/Users/keshavrao/arena/empire/.agent-worktrees/atris-cli/architect-continue-work-folder-protection-acro-20261015-055122/test/member-tidy.test.js:848:1'
+  failureType: 'testCodeFailure'
+  error: |-
+    atris needs Node 22.13 or newer. this is Node 20.18.0.
+    upgrade from https://nodejs.org, then run atris again.
+    
+  code: 'ERR_ASSERTION'
+  name: 'AssertionError'
+  expected: 0
+  actual: 1
+  operator: 'strictEqual'
+  stack: |-
+    TestContext.<anonymous> (/Users/keshavrao/arena/empire/.agent-worktrees/atris-cli/architect-continue-work-folder-protection-acro-20261015-055122/test/member-tidy.test.js:878:14)
+    Test.runInAsyncScope (node:async_hooks:206:9)
+    Test.run (node:internal/test_runner/test:796:25)
+    Test.processPendingSubtests (node:internal/test_runner/test:527:18)
+    Test.postRun (node:internal/test_runner/test:889:19)
+    Test.run (node:internal/test_runner/test:835:12)
+    process.processTicksAndRejections (node:internal/process/task_queues:95:5)
+    async Test.processPendingSubtests (node:internal/test_runner/test:527:7)
+  ...
+# Subtest: tidy keeps staged and unsaved notes after upstream switches to unrelated history
+not ok 29 - tidy keeps staged and unsaved notes after upstream switches to unrelated history
+  ---
+  duration_ms: 1375.098333
+  location: '/Users/keshavrao/arena/empire/.agent-worktrees/atris-cli/architect-continue-work-folder-protection-acro-20261015-055122/test/member-tidy.test.js:902:1'
+  failureType: 'testCodeFailure'
+  error: |-
+    atris needs Node 22.13 or newer. this is Node 20.18.0.
+    upgrade from https://nodejs.org, then run atris again.
+    
+  code: 'ERR_ASSERTION'
+  name: 'AssertionError'
+  expected: 0
+  actual: 1
+  operator: 'strictEqual'
+  stack: |-
+    TestContext.<anonymous> (/Users/keshavrao/arena/empire/.agent-worktrees/atris-cli/architect-continue-work-folder-protection-acro-20261015-055122/test/member-tidy.test.js:941:14)
+    Test.runInAsyncScope (node:async_hooks:206:9)
+    Test.run (node:internal/test_runner/test:796:25)
+    Test.processPendingSubtests (node:internal/test_runner/test:527:18)
+    Test.postRun (node:internal/test_runner/test:889:19)
+    Test.run (node:internal/test_runner/test:835:12)
+    process.processTicksAndRejections (node:internal/process/task_queues:95:5)
+    async Test.processPendingSubtests (node:internal/test_runner/test:527:7)
+  ...
+# Subtest: tidy keeps a landed copy whose status git cannot read, in preview and apply
+not ok 30 - tidy keeps a landed copy whose status git cannot read, in preview and apply
+  ---
+  duration_ms: 606.553834
+  location: '/Users/keshavrao/arena/empire/.agent-worktrees/atris-cli/architect-continue-work-folder-protection-acro-20261015-055122/test/member-tidy.test.js:965:1'
+  failureType: 'testCodeFailure'
+  error: |-
+    atris needs Node 22.13 or newer. this is Node 20.18.0.
+    upgrade from https://nodejs.org, then run atris again.
+    
+  code: 'ERR_ASSERTION'
+  name: 'AssertionError'
+  expected: 0
+  actual: 1
+  operator: 'strictEqual'
+  stack: |-
+    TestContext.<anonymous> (/Users/keshavrao/arena/empire/.agent-worktrees/atris-cli/architect-continue-work-folder-protection-acro-20261015-055122/test/member-tidy.test.js:983:14)
+    Test.runInAsyncScope (node:async_hooks:206:9)
+    Test.run (node:internal/test_runner/test:796:25)
+    Test.processPendingSubtests (node:internal/test_runner/test:527:18)
+    Test.postRun (node:internal/test_runner/test:889:19)
+    Test.run (node:internal/test_runner/test:835:12)
+    process.processTicksAndRejections (node:internal/process/task_queues:95:5)
+    async Test.processPendingSubtests (node:internal/test_runner/test:527:7)
+  ...
+# Subtest: tidy keeps staged and unsaved notes when the remote default points to a missing branch
+not ok 31 - tidy keeps staged and unsaved notes when the remote default points to a missing branch
+  ---
+  duration_ms: 1053.197
+  location: '/Users/keshavrao/arena/empire/.agent-worktrees/atris-cli/architect-continue-work-folder-protection-acro-20261015-055122/test/member-tidy.test.js:1002:1'
+  failureType: 'testCodeFailure'
+  error: |-
+    Expected values to be strictly equal:
+    + actual - expected
+    
+    + ''
+    - 'tidy: could not tell which branch origin ships from, so every copy is kept'
+  code: 'ERR_ASSERTION'
+  name: 'AssertionError'
+  expected: 'tidy: could not tell which branch origin ships from, so every copy is kept'
+  actual: ''
+  operator: 'strictEqual'
+  stack: |-
+    TestContext.<anonymous> (/Users/keshavrao/arena/empire/.agent-worktrees/atris-cli/architect-continue-work-folder-protection-acro-20261015-055122/test/member-tidy.test.js:1036:14)
+    Test.runInAsyncScope (node:async_hooks:206:9)
+    Test.run (node:internal/test_runner/test:796:25)
+    Test.processPendingSubtests (node:internal/test_runner/test:527:18)
+    Test.postRun (node:internal/test_runner/test:889:19)
+    Test.run (node:internal/test_runner/test:835:12)
+    process.processTicksAndRejections (node:internal/process/task_queues:95:5)
+    async Test.processPendingSubtests (node:internal/test_runner/test:527:7)
+  ...
+# Subtest: tidy keeps staged and unsaved notes when the remote repository becomes unavailable
+not ok 32 - tidy keeps staged and unsaved notes when the remote repository becomes unavailable
+  ---
+  duration_ms: 1052.911417
+  location: '/Users/keshavrao/arena/empire/.agent-worktrees/atris-cli/architect-continue-work-folder-protection-acro-20261015-055122/test/member-tidy.test.js:1065:1'
+  failureType: 'testCodeFailure'
+  error: |-
+    Expected values to be strictly equal:
+    + actual - expected
+    
+    + ''
+    - "tidy: could not ask origin for its main branch: fatal: '/private/var/folders/t1/2_4kmb5n4c71dxm26zc8dgzr0000gn/T/atris-member-tidy-rbfiaA/remote.git' does not appear to be a git repository, so every copy is kept"
+  code: 'ERR_ASSERTION'
+  name: 'AssertionError'
+  expected: "tidy: could not ask origin for its main branch: fatal: '/private/var/folders/t1/2_4kmb5n4c71dxm26zc8dgzr0000gn/T/atris-member-tidy-rbfiaA/remote.git' does not appear to be a git repository, so every copy is kept"
+  actual: ''
+  operator: 'strictEqual'
+  stack: |-
+    TestContext.<anonymous> (/Users/keshavrao/arena/empire/.agent-worktrees/atris-cli/architect-continue-work-folder-protection-acro-20261015-055122/test/member-tidy.test.js:1100:14)
+    Test.runInAsyncScope (node:async_hooks:206:9)
+    Test.run (node:internal/test_runner/test:796:25)
+    Test.processPendingSubtests (node:internal/test_runner/test:527:18)
+    Test.postRun (node:internal/test_runner/test:889:19)
+    Test.run (node:internal/test_runner/test:835:12)
+    process.processTicksAndRejections (node:internal/process/task_queues:95:5)
+    async Test.processPendingSubtests (node:internal/test_runner/test:527:7)
+  ...
+# Subtest: tidy keeps staged and unsaved notes when the remote default exists but cannot be fetched
+not ok 33 - tidy keeps staged and unsaved notes when the remote default exists but cannot be fetched
+  ---
+  duration_ms: 1296.192792
+  location: '/Users/keshavrao/arena/empire/.agent-worktrees/atris-cli/architect-continue-work-folder-protection-acro-20261015-055122/test/member-tidy.test.js:1131:1'
+  failureType: 'testCodeFailure'
+  error: |-
+    Expected values to be strictly equal:
+    + actual - expected
+    
+    + ''
+    - 'tidy: could not fetch origin: fatal: git upload-pack: not our ref 8d29849296ed5aadff31d3221b87d9f7ab440607, so every copy is kept'
+  code: 'ERR_ASSERTION'
+  name: 'AssertionError'
+  expected: 'tidy: could not fetch origin: fatal: git upload-pack: not our ref 8d29849296ed5aadff31d3221b87d9f7ab440607, so every copy is kept'
+  actual: ''
+  operator: 'strictEqual'
+  stack: |-
+    TestContext.<anonymous> (/Users/keshavrao/arena/empire/.agent-worktrees/atris-cli/architect-continue-work-folder-protection-acro-20261015-055122/test/member-tidy.test.js:1180:14)
+    Test.runInAsyncScope (node:async_hooks:206:9)
+    Test.run (node:internal/test_runner/test:796:25)
+    Test.processPendingSubtests (node:internal/test_runner/test:527:18)
+    Test.postRun (node:internal/test_runner/test:889:19)
+    Test.run (node:internal/test_runner/test:835:12)
+    process.processTicksAndRejections (node:internal/process/task_queues:95:5)
+    async Test.processPendingSubtests (node:internal/test_runner/test:527:7)
+  ...
+# Subtest: tidy keeps staged and unsaved notes when the fetched remote default is not a commit
+not ok 34 - tidy keeps staged and unsaved notes when the fetched remote default is not a commit
+  ---
+  duration_ms: 895.551208
+  location: '/Users/keshavrao/arena/empire/.agent-worktrees/atris-cli/architect-continue-work-folder-protection-acro-20261015-055122/test/member-tidy.test.js:1210:1'
+  failureType: 'testCodeFailure'
+  error: |-
+    Expected values to be strictly equal:
+    + actual - expected
+    
+    + ''
+    - 'tidy: could not read the fetched main branch, so every copy is kept'
+  code: 'ERR_ASSERTION'
+  name: 'AssertionError'
+  expected: 'tidy: could not read the fetched main branch, so every copy is kept'
+  actual: ''
+  operator: 'strictEqual'
+  stack: |-
+    TestContext.<anonymous> (/Users/keshavrao/arena/empire/.agent-worktrees/atris-cli/architect-continue-work-folder-protection-acro-20261015-055122/test/member-tidy.test.js:1247:14)
+    Test.runInAsyncScope (node:async_hooks:206:9)
+    Test.run (node:internal/test_runner/test:796:25)
+    Test.processPendingSubtests (node:internal/test_runner/test:527:18)
+    Test.postRun (node:internal/test_runner/test:889:19)
+    Test.run (node:internal/test_runner/test:835:12)
+    process.processTicksAndRejections (node:internal/process/task_queues:95:5)
+    async Test.processPendingSubtests (node:internal/test_runner/test:527:7)
+  ...
+# Subtest: tidy judges against the newest remote commit without moving the local record of it
+not ok 35 - tidy judges against the newest remote commit without moving the local record of it
+  ---
+  duration_ms: 846.875458
+  location: '/Users/keshavrao/arena/empire/.agent-worktrees/atris-cli/architect-continue-work-folder-protection-acro-20261015-055122/test/member-tidy.test.js:1279:1'
+  failureType: 'testCodeFailure'
+  error: |-
+    atris needs Node 22.13 or newer. this is Node 20.18.0.
+    upgrade from https://nodejs.org, then run atris again.
+    
+  code: 'ERR_ASSERTION'
+  name: 'AssertionError'
+  expected: 0
+  actual: 1
+  operator: 'strictEqual'
+  stack: |-
+    TestContext.<anonymous> (/Users/keshavrao/arena/empire/.agent-worktrees/atris-cli/architect-continue-work-folder-protection-acro-20261015-055122/test/member-tidy.test.js:1300:14)
+    Test.runInAsyncScope (node:async_hooks:206:9)
+    Test.run (node:internal/test_runner/test:796:25)
+    Test.processPendingSubtests (node:internal/test_runner/test:527:18)
+    Test.postRun (node:internal/test_runner/test:889:19)
+    Test.run (node:internal/test_runner/test:835:12)
+    process.processTicksAndRejections (node:internal/process/task_queues:95:5)
+    async Test.processPendingSubtests (node:internal/test_runner/test:527:7)
+  ...
+# Subtest: worktree cleanup refreshes the local record of origin only to a real commit
+not ok 36 - worktree cleanup refreshes the local record of origin only to a real commit
+  ---
+  duration_ms: 1821.100334
+  location: '/Users/keshavrao/arena/empire/.agent-worktrees/atris-cli/architect-continue-work-folder-protection-acro-20261015-055122/test/member-tidy.test.js:1320:1'
+  failureType: 'testCodeFailure'
+  error: |-
+    atris needs Node 22.13 or newer. this is Node 20.18.0.
+    upgrade from https://nodejs.org, then run atris again.
+    
+  code: 'ERR_ASSERTION'
+  name: 'AssertionError'
+  expected: 0
+  actual: 1
+  operator: 'strictEqual'
+  stack: |-
+    TestContext.<anonymous> (/Users/keshavrao/arena/empire/.agent-worktrees/atris-cli/architect-continue-work-folder-protection-acro-20261015-055122/test/member-tidy.test.js:1362:12)
+    Test.runInAsyncScope (node:async_hooks:206:9)
+    Test.run (node:internal/test_runner/test:796:25)
+    Test.processPendingSubtests (node:internal/test_runner/test:527:18)
+    Test.postRun (node:internal/test_runner/test:889:19)
+    Test.run (node:internal/test_runner/test:835:12)
+    process.processTicksAndRejections (node:internal/process/task_queues:95:5)
+    async Test.processPendingSubtests (node:internal/test_runner/test:527:7)
+  ...
+# Subtest: worktree cleanup quietly refreshes an outdated base and keeps staged notes and drafts
+not ok 37 - worktree cleanup quietly refreshes an outdated base and keeps staged notes and drafts
+  ---
+  duration_ms: 995.080875
+  location: '/Users/keshavrao/arena/empire/.agent-worktrees/atris-cli/architect-continue-work-folder-protection-acro-20261015-055122/test/member-tidy.test.js:1373:1'
+  failureType: 'testCodeFailure'
+  error: |-
+    atris needs Node 22.13 or newer. this is Node 20.18.0.
+    upgrade from https://nodejs.org, then run atris again.
+    
+  code: 'ERR_ASSERTION'
+  name: 'AssertionError'
+  expected: 0
+  actual: 1
+  operator: 'strictEqual'
+  stack: |-
+    TestContext.<anonymous> (/Users/keshavrao/arena/empire/.agent-worktrees/atris-cli/architect-continue-work-folder-protection-acro-20261015-055122/test/member-tidy.test.js:1418:14)
+    Test.runInAsyncScope (node:async_hooks:206:9)
+    Test.run (node:internal/test_runner/test:796:25)
+    Test.processPendingSubtests (node:internal/test_runner/test:527:18)
+    Test.postRun (node:internal/test_runner/test:889:19)
+    Test.run (node:internal/test_runner/test:835:12)
+    process.processTicksAndRejections (node:internal/process/task_queues:95:5)
+    async Test.processPendingSubtests (node:internal/test_runner/test:527:7)
+  ...
+# Subtest: worktree cleanup warns and keeps drafts when origin is unavailable
+not ok 38 - worktree cleanup warns and keeps drafts when origin is unavailable
+  ---
+  duration_ms: 518.850375
+  location: '/Users/keshavrao/arena/empire/.agent-worktrees/atris-cli/architect-continue-work-folder-protection-acro-20261015-055122/test/member-tidy.test.js:1448:1'
+  failureType: 'testCodeFailure'
+  error: |-
+    atris needs Node 22.13 or newer. this is Node 20.18.0.
+    upgrade from https://nodejs.org, then run atris again.
+    
+  code: 'ERR_ASSERTION'
+  name: 'AssertionError'
+  expected: 0
+  actual: 1
+  operator: 'strictEqual'
+  stack: |-
+    TestContext.<anonymous> (/Users/keshavrao/arena/empire/.agent-worktrees/atris-cli/architect-continue-work-folder-protection-acro-20261015-055122/test/member-tidy.test.js:1467:14)
+    Test.runInAsyncScope (node:async_hooks:206:9)
+    Test.run (node:internal/test_runner/test:796:25)
+    Test.processPendingSubtests (node:internal/test_runner/test:527:18)
+    Test.postRun (node:internal/test_runner/test:889:19)
+    Test.run (node:internal/test_runner/test:835:12)
+    process.processTicksAndRejections (node:internal/process/task_queues:95:5)
+    async Test.processPendingSubtests (node:internal/test_runner/test:527:7)
+  ...
+# Subtest: worktree cleanup keeps a staged rename and later edits when origin is unavailable
+not ok 39 - worktree cleanup keeps a staged rename and later edits when origin is unavailable
+  ---
+  duration_ms: 518.730708
+  location: '/Users/keshavrao/arena/empire/.agent-worktrees/atris-cli/architect-continue-work-folder-protection-acro-20261015-055122/test/member-tidy.test.js:1487:1'
+  failureType: 'testCodeFailure'
+  error: |-
+    atris needs Node 22.13 or newer. this is Node 20.18.0.
+    upgrade from https://nodejs.org, then run atris again.
+    
+  code: 'ERR_ASSERTION'
+  name: 'AssertionError'
+  expected: 0
+  actual: 1
+  operator: 'strictEqual'
+  stack: |-
+    TestContext.<anonymous> (/Users/keshavrao/arena/empire/.agent-worktrees/atris-cli/architect-continue-work-folder-protection-acro-20261015-055122/test/member-tidy.test.js:1507:14)
+    Test.runInAsyncScope (node:async_hooks:206:9)
+    Test.run (node:internal/test_runner/test:796:25)
+    Test.processPendingSubtests (node:internal/test_runner/test:527:18)
+    Test.postRun (node:internal/test_runner/test:889:19)
+    Test.run (node:internal/test_runner/test:835:12)
+    process.processTicksAndRejections (node:internal/process/task_queues:95:5)
+    async Test.processPendingSubtests (node:internal/test_runner/test:527:7)
+  ...
+# Subtest: worktree cleanup keeps a staged new file and later edits when origin is unavailable
+not ok 40 - worktree cleanup keeps a staged new file and later edits when origin is unavailable
+  ---
+  duration_ms: 618.914667
+  location: '/Users/keshavrao/arena/empire/.agent-worktrees/atris-cli/architect-continue-work-folder-protection-acro-20261015-055122/test/member-tidy.test.js:1528:1'
+  failureType: 'testCodeFailure'
+  error: |-
+    atris needs Node 22.13 or newer. this is Node 20.18.0.
+    upgrade from https://nodejs.org, then run atris again.
+    
+  code: 'ERR_ASSERTION'
+  name: 'AssertionError'
+  expected: 0
+  actual: 1
+  operator: 'strictEqual'
+  stack: |-
+    TestContext.<anonymous> (/Users/keshavrao/arena/empire/.agent-worktrees/atris-cli/architect-continue-work-folder-protection-acro-20261015-055122/test/member-tidy.test.js:1548:14)
+    Test.runInAsyncScope (node:async_hooks:206:9)
+    Test.run (node:internal/test_runner/test:796:25)
+    Test.processPendingSubtests (node:internal/test_runner/test:527:18)
+    Test.postRun (node:internal/test_runner/test:889:19)
+    Test.run (node:internal/test_runner/test:835:12)
+    process.processTicksAndRejections (node:internal/process/task_queues:95:5)
+    async Test.processPendingSubtests (node:internal/test_runner/test:527:7)
+  ...
+# Subtest: worktree cleanup keeps a staged new file deleted before saving when origin is unavailable
+not ok 41 - worktree cleanup keeps a staged new file deleted before saving when origin is unavailable
+  ---
+  duration_ms: 572.074167
+  location: '/Users/keshavrao/arena/empire/.agent-worktrees/atris-cli/architect-continue-work-folder-protection-acro-20261015-055122/test/member-tidy.test.js:1569:1'
+  failureType: 'testCodeFailure'
+  error: |-
+    atris needs Node 22.13 or newer. this is Node 20.18.0.
+    upgrade from https://nodejs.org, then run atris again.
+    
+  code: 'ERR_ASSERTION'
+  name: 'AssertionError'
+  expected: 0
+  actual: 1
+  operator: 'strictEqual'
+  stack: |-
+    TestContext.<anonymous> (/Users/keshavrao/arena/empire/.agent-worktrees/atris-cli/architect-continue-work-folder-protection-acro-20261015-055122/test/member-tidy.test.js:1590:14)
+    Test.runInAsyncScope (node:async_hooks:206:9)
+    Test.run (node:internal/test_runner/test:796:25)
+    Test.processPendingSubtests (node:internal/test_runner/test:527:18)
+    Test.postRun (node:internal/test_runner/test:889:19)
+    Test.run (node:internal/test_runner/test:835:12)
+    process.processTicksAndRejections (node:internal/process/task_queues:95:5)
+    async Test.processPendingSubtests (node:internal/test_runner/test:527:7)
+  ...
+# Subtest: worktree cleanup keeps a staged mode-only change when origin is unavailable
+not ok 42 - worktree cleanup keeps a staged mode-only change when origin is unavailable
+  ---
+  duration_ms: 577.037917
+  location: '/Users/keshavrao/arena/empire/.agent-worktrees/atris-cli/architect-continue-work-folder-protection-acro-20261015-055122/test/member-tidy.test.js:1611:1'
+  failureType: 'testCodeFailure'
+  error: |-
+    atris needs Node 22.13 or newer. this is Node 20.18.0.
+    upgrade from https://nodejs.org, then run atris again.
+    
+  code: 'ERR_ASSERTION'
+  name: 'AssertionError'
+  expected: 0
+  actual: 1
+  operator: 'strictEqual'
+  stack: |-
+    TestContext.<anonymous> (/Users/keshavrao/arena/empire/.agent-worktrees/atris-cli/architect-continue-work-folder-protection-acro-20261015-055122/test/member-tidy.test.js:1633:14)
+    Test.runInAsyncScope (node:async_hooks:206:9)
+    Test.run (node:internal/test_runner/test:796:25)
+    Test.processPendingSubtests (node:internal/test_runner/test:527:18)
+    Test.postRun (node:internal/test_runner/test:889:19)
+    Test.run (node:internal/test_runner/test:835:12)
+    process.processTicksAndRejections (node:internal/process/task_queues:95:5)
+    async Test.processPendingSubtests (node:internal/test_runner/test:527:7)
+  ...
+# Subtest: reap keeps a folder a run is working in, even with --force
+ok 43 - reap keeps a folder a run is working in, even with --force
+  ---
+  duration_ms: 673.692125
+  ...
+# Subtest: reap sees a real live process in the folder without being told
+ok 44 - reap sees a real live process in the folder without being told
+  ---
+  duration_ms: 1033.167416
+  ...
+# Subtest: reap names who removed a folder and why
+ok 45 - reap names who removed a folder and why
+  ---
+  duration_ms: 582.341584
+  ...
+# Subtest: reap summary counts folders removed today and by whom
+ok 46 - reap summary counts folders removed today and by whom
+  ---
+  duration_ms: 355.171417
+  ...
+# Subtest: worktree cleanup names who removed a folder and why
+ok 47 - worktree cleanup names who removed a folder and why
+  ---
+  duration_ms: 472.448
+  ...
+# Subtest: reap keeps a folder while git holds its lock, even with --force
+ok 48 - reap keeps a folder while git holds its lock, even with --force
+  ---
+  duration_ms: 610.373042
+  ...
+# Subtest: reap says which git work is paused in a folder it keeps
+ok 49 - reap says which git work is paused in a folder it keeps
+  ---
+  duration_ms: 552.575708
+  ...
+# Subtest: worktree cleanup names the lock holding a folder and how old it is
+ok 50 - worktree cleanup names the lock holding a folder and how old it is
+  ---
+  duration_ms: 375.929291
+  ...
+# Subtest: worktree cleanup names a lock and a paused rebase left in the same folder
+ok 51 - worktree cleanup names a lock and a paused rebase left in the same folder
+  ---
+  duration_ms: 427.853291
+  ...
+# Subtest: worktree cleanup keeps a clean folder paused mid-rebase
+ok 52 - worktree cleanup keeps a clean folder paused mid-rebase
+  ---
+  duration_ms: 330.694792
+  ...
+# Subtest: reap, worktree cleanup and fleet review name a held lock in the same words
+ok 53 - reap, worktree cleanup and fleet review name a held lock in the same words
+  ---
+  duration_ms: 548.44725
+  ...
+# Subtest: fleet review cleanup keeps a sandbox while git holds its lock
+ok 54 - fleet review cleanup keeps a sandbox while git holds its lock
+  ---
+  duration_ms: 277.057291
+  ...
+# Subtest: fleet review cleanup says which git work is paused in a copy it keeps
+ok 55 - fleet review cleanup says which git work is paused in a copy it keeps
+  ---
+  duration_ms: 260.47775
+  ...
+# Subtest: fleet review cleanup keeps a sandbox while git holds its quarantine store
+ok 56 - fleet review cleanup keeps a sandbox while git holds its quarantine store
+  ---
+  duration_ms: 251.041125
+  ...
+# Subtest: fleet review cleanup keeps a sandbox while git updates a branch in either store
+ok 57 - fleet review cleanup keeps a sandbox while git updates a branch in either store
+  ---
+  duration_ms: 1206.254834
+  ...
+# Subtest: fleet review cleanup keeps every store and names both holds when paused work and a lock sit in different stores
+ok 58 - fleet review cleanup keeps every store and names both holds when paused work and a lock sit in different stores
+  ---
+  duration_ms: 587.59025
+  ...
+# Subtest: fleet review cleanup names who removed a sandbox and why
+ok 59 - fleet review cleanup names who removed a sandbox and why
+  ---
+  duration_ms: 365.831292
+  ...
+# Subtest: autopilot regression check keeps its folder while git holds its lock
+ok 60 - autopilot regression check keeps its folder while git holds its lock
+  ---
+  duration_ms: 327.805625
+  ...
+# Subtest: autopilot regression check keeps its folder while a run is inside it
+ok 61 - autopilot regression check keeps its folder while a run is inside it
+  ---
+  duration_ms: 277.021542
+  ...
+# Subtest: autopilot regression check sees a real leftover process without being told
+ok 62 - autopilot regression check sees a real leftover process without being told
+  ---
+  duration_ms: 790.502625
+  ...
+# Subtest: autopilot regression check names who removed its folder and why
+ok 63 - autopilot regression check names who removed its folder and why
+  ---
+  duration_ms: 360.417417
+  ...
+# Subtest: autopilot regression check keeps an existing clean folder when creation fails
+ok 64 - autopilot regression check keeps an existing clean folder when creation fails
+  ---
+  duration_ms: 370.407167
+  ...
+# Subtest: autopilot regression check keeps an existing dirty folder when creation fails
+ok 65 - autopilot regression check keeps an existing dirty folder when creation fails
+  ---
+  duration_ms: 367.276292
+  ...
+# Subtest: every work folder removal goes through the git check and the removal log
+ok 66 - every work folder removal goes through the git check and the removal log
+  ---
+  duration_ms: 501.647875
+  ...
+# Subtest: a helper that deletes a folder its caller passed in is checked or reviewed
+ok 67 - a helper that deletes a folder its caller passed in is checked or reviewed
+  ---
+  duration_ms: 1034.053916
+  ...
+# Subtest: saved scanner examples reject missed removals in the required checks
+ok 68 - saved scanner examples reject missed removals in the required checks
+  ---
+  duration_ms: 57.493833
+  ...
+# Subtest: a git check that comes late, names another folder, or is ignored does not count as protection
+ok 69 - a git check that comes late, names another folder, or is ignored does not count as protection
+  ---
+  duration_ms: 62.607417
+  ...
+# Subtest: grouped sandbox cleanup exposes every recursive target to the scan
+ok 70 - grouped sandbox cleanup exposes every recursive target to the scan
+  ---
+  duration_ms: 40.309292
+  ...
+# Subtest: green landing keeps its scratch folder while a test is still running in it, git is busy, or it is pinned
+ok 71 - green landing keeps its scratch folder while a test is still running in it, git is busy, or it is pinned
+  ---
+  duration_ms: 305.411125
+  ...
+# Subtest: green landing names who removed its scratch folder and why
+ok 72 - green landing names who removed its scratch folder and why
+  ---
+  duration_ms: 340.333084
+  ...
+# Subtest: green landing keeps its scratch folder after a pin taken at removal
+ok 73 - green landing keeps its scratch folder after a pin taken at removal
+  ---
+  duration_ms: 961.479458
+  ...
+# Subtest: green landing keeps its scratch folder after a removal stopped by a signal
+ok 74 - green landing keeps its scratch folder after a removal stopped by a signal
+  ---
+  duration_ms: 1043.298167
+  ...
+# Subtest: a failed worktree start keeps its folder after a pin taken at removal and still shows why it failed
+not ok 75 - a failed worktree start keeps its folder after a pin taken at removal and still shows why it failed
+  ---
+  duration_ms: 234.00475
+  location: '/Users/keshavrao/arena/empire/.agent-worktrees/atris-cli/architect-continue-work-folder-protection-acro-20261015-055122/test/worktree-removal-guard.test.js:1051:1'
+  failureType: 'testCodeFailure'
+  error: |-
+    The input did not match the regular expression /metadata write failed; kept .*start-wt: pinned by git worktree lock, under a minute old: editor still open/. Input:
+    
+    'atris needs Node 22.13 or newer. this is Node 20.18.0.\n' +
+      'upgrade from https://nodejs.org, then run atris again.\n'
+    
+  code: 'ERR_ASSERTION'
+  name: 'AssertionError'
+  expected:
+  actual: |-
+    atris needs Node 22.13 or newer. this is Node 20.18.0.
+    upgrade from https://nodejs.org, then run atris again.
+    
+  operator: 'match'
+  stack: |-
+    TestContext.<anonymous> (/Users/keshavrao/arena/empire/.agent-worktrees/atris-cli/architect-continue-work-folder-protection-acro-20261015-055122/test/worktree-removal-guard.test.js:1076:12)
+    Test.runInAsyncScope (node:async_hooks:206:9)
+    Test.run (node:internal/test_runner/test:796:25)
+    Test.processPendingSubtests (node:internal/test_runner/test:527:18)
+    Test.postRun (node:internal/test_runner/test:889:19)
+    Test.run (node:internal/test_runner/test:835:12)
+    process.processTicksAndRejections (node:internal/process/task_queues:95:5)
+    async Test.processPendingSubtests (node:internal/test_runner/test:527:7)
+  ...
+# Subtest: worktree cleanup names the reason and age of a pinned folder it skips
+ok 76 - worktree cleanup names the reason and age of a pinned folder it skips
+  ---
+  duration_ms: 286.21175
+  ...
+# Subtest: reap skips a dirty pinned folder before saving its patches, even with --force
+ok 77 - reap skips a dirty pinned folder before saving its patches, even with --force
+  ---
+  duration_ms: 484.541875
+  ...
+# Subtest: fleet review cleanup keeps every store of a pinned copy and names the pin
+ok 78 - fleet review cleanup keeps every store of a pinned copy and names the pin
+  ---
+  duration_ms: 284.913333
+  ...
+# Subtest: fleet review prints its kept line through the shared helper
+ok 79 - fleet review prints its kept line through the shared helper
+  ---
+  duration_ms: 0.928375
+  ...
+# Subtest: fleet review kept line prints the reason alone when nothing explains it
+ok 80 - fleet review kept line prints the reason alone when nothing explains it
+  ---
+  duration_ms: 0.091333
+  ...
+# Subtest: fleet review names the git lock or pin when cleanup keeps a copy
+ok 81 - fleet review names the git lock or pin when cleanup keeps a copy
+  ---
+  duration_ms: 297.892916
+  ...
+# Subtest: fleet review names git's refusal when cleanup keeps a copy
+ok 82 - fleet review names git's refusal when cleanup keeps a copy
+  ---
+  duration_ms: 0.111792
+  ...
+# Subtest: fleet review cleanup keeps a copy pinned after its first check and names the refusal
+ok 83 - fleet review cleanup keeps a copy pinned after its first check and names the refusal
+  ---
+  duration_ms: 1163.11125
+  ...
+# Subtest: fleet review cleanup keeps a copy git refused without a pin or never finished removing
+ok 84 - fleet review cleanup keeps a copy git refused without a pin or never finished removing
+  ---
+  duration_ms: 1711.906167
+  ...
+# Subtest: a plain delete after a git removal of the same folder must check its pin first
+ok 85 - a plain delete after a git removal of the same folder must check its pin first
+  ---
+  duration_ms: 51.84775
+  ...
+# Subtest: a refusal from a deep folder keeps git's reason, not just its path
+not ok 86 - a refusal from a deep folder keeps git's reason, not just its path
+  ---
+  duration_ms: 400.595625
+  location: '/Users/keshavrao/arena/empire/.agent-worktrees/atris-cli/architect-continue-work-folder-protection-acro-20261015-055122/test/worktree-removal-guard.test.js:1272:1'
+  failureType: 'testCodeFailure'
+  error: |-
+    atris needs Node 22.13 or newer. this is Node 20.18.0.
+    upgrade from https://nodejs.org, then run atris again.
+    
+  code: 'ERR_ASSERTION'
+  name: 'AssertionError'
+  expected: 0
+  actual: 1
+  operator: 'strictEqual'
+  stack: |-
+    TestContext.<anonymous> (/Users/keshavrao/arena/empire/.agent-worktrees/atris-cli/architect-continue-work-folder-protection-acro-20261015-055122/test/worktree-removal-guard.test.js:1292:12)
+    Test.runInAsyncScope (node:async_hooks:206:9)
+    Test.run (node:internal/test_runner/test:796:25)
+    Test.processPendingSubtests (node:internal/test_runner/test:527:18)
+    Test.postRun (node:internal/test_runner/test:889:19)
+    Test.run (node:internal/test_runner/test:835:12)
+    process.processTicksAndRejections (node:internal/process/task_queues:95:5)
+    async Test.processPendingSubtests (node:internal/test_runner/test:527:7)
+  ...
+# Subtest: worktree cleanup names each folder that needs a person and counts the rest
+not ok 87 - worktree cleanup names each folder that needs a person and counts the rest
+  ---
+  duration_ms: 505.70025
+  location: '/Users/keshavrao/arena/empire/.agent-worktrees/atris-cli/architect-continue-work-folder-protection-acro-20261015-055122/test/worktree-removal-guard.test.js:1309:1'
+  failureType: 'testCodeFailure'
+  error: |-
+    atris needs Node 22.13 or newer. this is Node 20.18.0.
+    upgrade from https://nodejs.org, then run atris again.
+    
+  code: 'ERR_ASSERTION'
+  name: 'AssertionError'
+  expected: 0
+  actual: 1
+  operator: 'strictEqual'
+  stack: |-
+    TestContext.<anonymous> (/Users/keshavrao/arena/empire/.agent-worktrees/atris-cli/architect-continue-work-folder-protection-acro-20261015-055122/test/worktree-removal-guard.test.js:1322:12)
+    Test.runInAsyncScope (node:async_hooks:206:9)
+    Test.run (node:internal/test_runner/test:796:25)
+    Test.processPendingSubtests (node:internal/test_runner/test:527:18)
+    Test.postRun (node:internal/test_runner/test:889:19)
+    Test.run (node:internal/test_runner/test:835:12)
+    process.processTicksAndRejections (node:internal/process/task_queues:95:5)
+    async Test.processPendingSubtests (node:internal/test_runner/test:527:7)
+  ...
+# Subtest: a refusal line still too long keeps its start and its end
+ok 88 - a refusal line still too long keeps its start and its end
+  ---
+  duration_ms: 0.249834
+  ...
+# Subtest: multiline pin reasons stay on one line in refusal and real cleanup reports
+not ok 89 - multiline pin reasons stay on one line in refusal and real cleanup reports
+  ---
+  duration_ms: 370.021916
+  location: '/Users/keshavrao/arena/empire/.agent-worktrees/atris-cli/architect-continue-work-folder-protection-acro-20261015-055122/test/worktree-removal-guard.test.js:1347:1'
+  failureType: 'testCodeFailure'
+  error: |-
+    atris needs Node 22.13 or newer. this is Node 20.18.0.
+    upgrade from https://nodejs.org, then run atris again.
+    
+  code: 'ERR_ASSERTION'
+  name: 'AssertionError'
+  expected: 0
+  actual: 1
+  operator: 'strictEqual'
+  stack: |-
+    TestContext.<anonymous> (/Users/keshavrao/arena/empire/.agent-worktrees/atris-cli/architect-continue-work-folder-protection-acro-20261015-055122/test/worktree-removal-guard.test.js:1361:12)
+    Test.runInAsyncScope (node:async_hooks:206:9)
+    Test.run (node:internal/test_runner/test:796:25)
+    Test.processPendingSubtests (node:internal/test_runner/test:527:18)
+    Test.postRun (node:internal/test_runner/test:889:19)
+    Test.run (node:internal/test_runner/test:835:12)
+    process.processTicksAndRejections (node:internal/process/task_queues:95:5)
+    async Test.processPendingSubtests (node:internal/test_runner/test:527:7)
+  ...
+# Subtest: reap counts branch copies still at work and names detached and pinned ones
+not ok 90 - reap counts branch copies still at work and names detached and pinned ones
+  ---
+  duration_ms: 978.763209
+  location: '/Users/keshavrao/arena/empire/.agent-worktrees/atris-cli/architect-continue-work-folder-protection-acro-20261015-055122/test/worktree-removal-guard.test.js:1374:1'
+  failureType: 'testCodeFailure'
+  error: |-
+    atris needs Node 22.13 or newer. this is Node 20.18.0.
+    upgrade from https://nodejs.org, then run atris again.
+    
+  code: 'ERR_ASSERTION'
+  name: 'AssertionError'
+  expected: 0
+  actual: 1
+  operator: 'strictEqual'
+  stack: |-
+    TestContext.<anonymous> (/Users/keshavrao/arena/empire/.agent-worktrees/atris-cli/architect-continue-work-folder-protection-acro-20261015-055122/test/worktree-removal-guard.test.js:1402:12)
+    Test.runInAsyncScope (node:async_hooks:206:9)
+    Test.run (node:internal/test_runner/test:796:25)
+    Test.processPendingSubtests (node:internal/test_runner/test:527:18)
+    Test.postRun (node:internal/test_runner/test:889:19)
+    Test.run (node:internal/test_runner/test:835:12)
+    process.processTicksAndRejections (node:internal/process/task_queues:95:5)
+    async Test.processPendingSubtests (node:internal/test_runner/test:527:7)
+  ...
+1..90
+# tests 90
+# suites 0
+# pass 55
+# fail 35
+# cancelled 0
+# skipped 0
+# todo 0
+# duration_ms 47533.188333
+
+Finding: direct Node is v25.6.1 at /opt/homebrew/Cellar/node/25.6.1/bin/node. The login shell selects v20.18.0 at /usr/local/bin/node. The replay contains 32 explicit CLI minimum Node errors among its 35 failed tests; remaining failures include downstream assertions. lib/task-proof.js launches the unmodified command in bash -lc; lib/task-receipt.js already prepends the caller runtime after profiles load.
+Plan: direct check -> login-shell replay -> compare runtime and full errors.
+next_push: Restore caller Node selection in the shared proof runner with a real login-shell regression.
+
+Required verification: node --test test/worktree-removal-guard.test.js test/member-tidy.test.js && node bin/atris.js slop --staged
+Exit: 0. Output: tests 90; pass 90; fail 0; todo 0; clean, no slop tells in 2 files.
