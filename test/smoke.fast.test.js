@@ -33,13 +33,21 @@ function writeFakeEngine(dir, name) {
   return binDir;
 }
 
+// A member window sets the engine it runs on. Inherited here, it flips the
+// default engine, so the gate failed inside members and passed in CI.
+function parentEnv() {
+  const env = { ...process.env };
+  delete env.ATRIS_RUNNER_PROFILE;
+  return env;
+}
+
 function runCli(args, { cwd, env = {}, timeout = 6000 } = {}) {
   const result = spawnSync(process.execPath, [cliPath, ...args], {
     cwd,
     encoding: 'utf8',
     timeout,
     env: {
-      ...process.env,
+      ...parentEnv(),
       ATRIS_SKIP_UPDATE_CHECK: '1',
       NODE_NO_WARNINGS: '1',
       ...env,
