@@ -1260,9 +1260,13 @@ function regressionCheck(cwd, { activeCwds } = {}) {
       }
       if (created && fs.existsSync(worktreePath) && !hold) {
         try {
-          execSync(`git worktree remove "${worktreePath}" --force 2>/dev/null`, { cwd, stdio: 'pipe' });
+          execSync(`git worktree remove "${worktreePath}" --force`, { cwd, stdio: 'pipe' });
           guard.recordWorktreeRemoval(cwd, { path: worktreePath, by: 'atris autopilot regression check', reason: 'regression_check_done' });
-        } catch {}
+        } catch (err) {
+          // A refused removal is reported like any other kept folder.
+          hold = { reason: 'remove_failed' };
+          held = guard.describeRefusedRemoval(worktreePath, String(err.stderr || ''));
+        }
       }
     }
 

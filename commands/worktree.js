@@ -1357,6 +1357,34 @@ function describeGitHold(hold) {
   return [hold, ...(hold.also || [])].map(words).join(' and ');
 }
 
+// A folder pinned with `git worktree lock`: its reason text and how long the
+// pin has sat there, or null. Git refuses to remove a pinned folder even with
+// --force, so this is the usual cause of a refused removal.
+function worktreePin(worktreePath, now = Date.now()) {
+  const gitDir = worktreeGitDir(worktreePath);
+  if (!gitDir) return null;
+  const file = path.join(gitDir, 'locked');
+  try {
+    const stat = fs.statSync(file);
+    return { file, why: fs.readFileSync(file, 'utf8').trim(), ageMs: Math.max(0, now - stat.mtimeMs) };
+  } catch {
+    return null;
+  }
+}
+
+// Why git refused to remove a folder, in the one line tidy, reap, worktree
+// cleanup and the autopilot regression check all print. A pin names its
+// reason and age, a lock or paused work taken since the first check uses the
+// shared hold words, and anything else is git's own first line.
+function describeRefusedRemoval(worktreePath, gitOutput = '', now = Date.now()) {
+  const pin = worktreePin(worktreePath, now);
+  if (pin) return `pinned by git worktree lock, ${describeLockAge(pin.ageMs)} old${pin.why ? `: ${pin.why}` : ''}`;
+  const held = describeGitHold(gitHold({ worktree: worktreePath, now }));
+  if (held) return held;
+  const line = String(gitOutput || '').trim().split('\n')[0].replace(/^(fatal|error):\s*/, '').trim();
+  return line.slice(0, 160) || 'git would not remove it';
+}
+
 // Every work-folder removal leaves one line naming who removed it and why, in
 // the main checkout's state so the line outlives the folder it describes.
 // The log lives in the main checkout, so every linked folder writes one file.
@@ -1505,7 +1533,8 @@ function cleanupWorktrees({ root = repoRoot(), base: baseOverride = '', apply = 
         removed.push(candidate);
         recordWorktreeRemoval(root, { path: wt.path, branch: wt.branch, by, reason: candidate.reason });
       } else {
-        kept.push({ ...item, reason: 'remove_failed', error: (removedResult.stderr || removedResult.stdout || '').trim() });
+        const error = (removedResult.stderr || removedResult.stdout || '').trim();
+        kept.push({ ...item, reason: 'remove_failed', error, refused: describeRefusedRemoval(wt.path, error) });
       }
       continue;
     }
@@ -1524,7 +1553,8 @@ function cleanupWorktrees({ root = repoRoot(), base: baseOverride = '', apply = 
       removed.push(candidate);
       recordWorktreeRemoval(root, { path: wt.path, branch: wt.branch, by, reason: candidate.reason });
     } else {
-      kept.push({ ...item, reason: 'remove_failed', error: (removedResult.stderr || removedResult.stdout || '').trim() });
+      const error = (removedResult.stderr || removedResult.stdout || '').trim();
+      kept.push({ ...item, reason: 'remove_failed', error, refused: describeRefusedRemoval(wt.path, error) });
     }
   }
 
@@ -1557,6 +1587,7 @@ function cleanup(args) {
   for (const item of result.kept) {
     const held = describeGitHold(item);
     if (held) console.log(`held: ${item.path} ${held}`);
+    if (item.refused) console.log(`refused: ${item.path} ${item.refused}`);
   }
   if (!result.apply && result.candidates.length) console.log('next: atris worktree cleanup --apply');
   return 0;
@@ -1649,6 +1680,7 @@ module.exports = {
   gitStoreActivity,
   gitHold,
   describeGitHold,
+  describeRefusedRemoval,
   describeFlightAge,
   flightStampMs,
   listActiveProcessPaths,

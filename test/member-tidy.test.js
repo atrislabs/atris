@@ -305,3 +305,40 @@ test('tidy keeps a landed copy while git is paused mid-rebase in it, and logs wh
     fs.rmSync(fx.base, { recursive: true, force: true });
   }
 });
+
+test('tidy, reap and the regression check name a pinned folder in the same words after git refuses it', () => {
+  const fx = makeFixture();
+  try {
+    const copy = addCopy(fx, 'landed-pinned');
+    runGit(['worktree', 'lock', '--reason', 'agent still writing', copy], fx.repo);
+    const pin = path.join(runGit(['rev-parse', '--absolute-git-dir'], copy), 'locked');
+    const now = Date.now();
+    const aged = new Date(now - 3 * 60 * 60 * 1000);
+    fs.utimesSync(pin, aged, aged);
+    fs.utimesSync(copy, aged, aged);
+    const words = 'pinned by git worktree lock, 3 h old: agent still writing';
+
+    const tidy = tidyMemberCopies({ repoRoot: fx.repo, now });
+    assert.equal(byName(tidy, 'landed-pinned').action, 'kept');
+    assert.equal(byName(tidy, 'landed-pinned').reason, `landed, but git refused: ${words}`);
+    const landed = reap(fx.repo, { remote: false, force: true, activeCwds: [] });
+    assert.ok(landed.keptWorktrees.includes(`${copy} (${words})`), JSON.stringify(landed.keptWorktrees));
+    assert.ok(fs.existsSync(copy));
+    assert.ok(branchExists(fx.repo, 'landed-pinned'));
+
+    // The real regression command pins its own copy, and git refuses it the same way.
+    const hash = runGit(['rev-parse', 'HEAD'], fx.repo);
+    const folder = path.join(fx.repo, `.regression-worktree-${hash.slice(0, 8)}`);
+    fs.mkdirSync(path.join(fx.repo, 'atris'));
+    fs.writeFileSync(path.join(fx.repo, 'atris', 'tick-registry.json'), JSON.stringify([
+      { hash, verifyCmd: 'git worktree lock --reason "agent still writing" "$PWD"', slug: 'fixture' },
+    ]));
+    const [row] = regressionCheck(fx.repo, { activeCwds: [] });
+    assert.equal(row.kept, 'remove_failed', JSON.stringify(row));
+    assert.equal(row.held, 'pinned by git worktree lock, under a minute old: agent still writing');
+    assert.ok(fs.existsSync(folder));
+    assert.deepEqual(removalLines(fx.repo), []);
+  } finally {
+    fs.rmSync(fx.base, { recursive: true, force: true });
+  }
+});

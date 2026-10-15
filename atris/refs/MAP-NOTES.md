@@ -2351,7 +2351,8 @@ Partial socket scan warning: `lib/engine-resource.js:280` names agent sockets un
 ## Shared held-folder report
 
 - `commands/worktree.js:1343` (`gitHold`) checks the copy and any additional Git stores before cleanup; `commands/worktree.js:1352` (`describeGitHold`) gives every caller the same lock file and age or paused operation, and names every hold in every busy store in one line, including a lock and paused work left together.
-- Callers: `lib/member-tidy.js:198`, `commands/land.js:578`, `commands/land.js:679`, `commands/worktree.js:1455`, `lib/fleet.js:2496`, `commands/autopilot.js:1257`.
+- Callers: `lib/member-tidy.js:198`, `commands/land.js:578`, `commands/land.js:679`, `commands/worktree.js:1483`, `lib/fleet.js:2496`, `commands/autopilot.js:1257`.
+- `commands/worktree.js:1379` (`describeRefusedRemoval`) is the one line printed when git refuses a removal after the check: a folder pinned with `git worktree lock` names its reason and age, a hold taken since the check uses the shared hold words, and anything else is git's first line. Callers: `lib/member-tidy.js:210`, `commands/land.js:712`, `commands/worktree.js:1537`, `commands/worktree.js:1557`, `commands/autopilot.js:1268`.
 - Real CLI proof: `node atris/receipts/work-folder-report-probe.js:8` runs a cleanup preview on a temporary repository with a stale lock, then applies cleanup against both rebase markers and paused merge, cherry-pick, revert and bisect markers; checks the copy remains registered and no removal is logged.
 - Cross-path proof: `test/member-tidy.test.js:221` checks the six paused markers through actual tidy, reap, cleanup, fleet disposal and autopilot regression execution; every path uses the same words and retains the folder. Rerun: `node --test test/worktree-removal-guard.test.js test/member-tidy.test.js`.
 

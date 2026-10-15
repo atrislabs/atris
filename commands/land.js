@@ -2,7 +2,7 @@ const fs = require('fs');
 const path = require('path');
 const gitSpawn = require('../lib/git-spawn');
 const { compactErrorPayload, printCliJson } = require('../lib/cli-json');
-const { listWorktrees, statusCounts, defaultMainlineBase, listActiveProcessPaths, worktreeHasActiveProcess, gitHold, describeGitHold, recordWorktreeRemoval, readWorktreeRemovals } = require('./worktree');
+const { listWorktrees, statusCounts, defaultMainlineBase, listActiveProcessPaths, worktreeHasActiveProcess, gitHold, describeGitHold, describeRefusedRemoval, recordWorktreeRemoval, readWorktreeRemovals } = require('./worktree');
 
 const DEFAULT_TTL_DAYS = 7;
 const DEFAULT_STALE_HOURS = 48;
@@ -709,8 +709,7 @@ function reap(root, { ttlDays = DEFAULT_TTL_DAYS, staleHours = DEFAULT_STALE_HOU
       // A locked worktree fails here and, unreported, reap re-salvages the
       // same patches every pass forever. Say what blocked it so a human can
       // unlock (or a dead lock can be challenged) instead of looping.
-      const reason = String(removed.stderr || removed.stdout || 'remove failed').trim().slice(0, 160);
-      receipt.keptWorktrees.push(`${w.path} (${reason})`);
+      receipt.keptWorktrees.push(`${w.path} (${describeRefusedRemoval(w.path, removed.stderr || removed.stdout)})`);
       if (w.branch) targetNames.delete(w.branch);
     }
   }
