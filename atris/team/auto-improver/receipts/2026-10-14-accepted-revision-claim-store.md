@@ -24,7 +24,9 @@ Metric: one setup subprocess removed, five launches to four (20% fewer). No wall
 
 Lesson: Setup-only ownership can use the production store while accepted-task refusal and reward integrity remain covered through real command invocations.
 
-Setup upkeep: brain activation returned plan-only, exit 2; missing generated brain files were left alone. Pre-existing local changes are excluded from the commit.
+Review gate: bare node resolved to an older runtime without node:sqlite, exit 1. Re-running the same focused check with /opt/homebrew/bin/node passed, exit 0, and moved the work to review. Both direct checks above used that installed runtime.
+
+Setup upkeep: brain activation and compile returned plan-only, exit 2; missing generated brain files were left alone. Pre-existing local changes are excluded from the commit.
 
 next_push: Remove the setup-only claim launch from the goal display-reference status test, retaining child creation by display reference and status assertions.
 layer: capabilities
