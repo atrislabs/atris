@@ -2816,6 +2816,8 @@ Queue filter fixture connection: `test/commands.test.js:15349` seeds, readies an
 
 Review lane drain fixture connections: `test/commands.test.js:8427` seeds, readies, reviews and snapshots both goal-linked tasks through one store connection before the first drain, and the human-only task through one more. Two store connections replace seven; every CLI check remains.
 
+Review lane act dry-run fixture connections: `test/commands.test.js:8697` seeds, readies, reviews and snapshots the continue and waiting tasks through one store connection, and the human-only task through one more. Nine store opens replace sixteen; every dry-run, live and refusal check remains on the CLI.
+
 Certified review fallback read batching: `test/commands.test.js:12603` awaits both next output formats together after certification, before creating follow-up work. `commands/task.js:6948` builds next output from task rows, independent of the saved view. All assertions remain; six sequential CLI stages become five.
 
 Final fallback read batching: `test/commands.test.js:12684` awaits next and show together after follow-up creation. Both read unchanged task rows; every assertion remains. Five sequential CLI stages become four.
