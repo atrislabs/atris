@@ -74,7 +74,7 @@ exit: 0
 $ ls <copy>/.env.local <copy>/notes/plan.md
 No such file or directory (both); the branch is deleted too
 
-Land's reap, from the code (not run): commands/land.js:747 removes with
+Land's reap, initial code review (later reproduced below): commands/land.js:747 removes with
 force, and the backup step before it (commands/land.js:500) runs only when
 the copy looks dirty and lists files with the standard ignore rules applied,
 so ignored files are never backed up and a clean-looking copy loses them.
@@ -98,8 +98,56 @@ nothing of value is lost. Failed creation never removes an existing folder.
 Map across the four mission files:
 - commands/worktree.js cleanup: loses ignored files (reproduced)
 - lib/member-tidy.js: loses ignored files and the branch (reproduced)
-- commands/land.js reap: loses ignored files (read from code)
+- commands/land.js reap: loses ignored files (reproduced below)
 - commands/autopilot.js regression check: safe, removes only its own new folder
 
 next_push: once a reply lands, put the chosen rule in one shared check that
 cleanup, member tidy, and land reap call, with one failing-first test per path.
+
+Addendum, tick 55: land's reap reproduced, no longer read from code only.
+
+A throwaway repo in the temp folder, one landed branch checked out in an
+aged copy holding an ignored .env.local and an ignored notes/plan.md. The
+probe called reap directly with that repo as its root, no remote, and
+nothing running inside. Two cases, same result.
+
+case: clean-looking copy
+  status before: ""
+  ignored before: !! .env.local, !! notes/
+  preview removes: done-copy
+  removed: done-copy
+  backed up patches: 0 untracked copies: 0
+  salvage files: none
+  .env.local exists: false  notes/plan.md exists: false
+  branch deleted: true
+case: copy with one edited tracked file
+  status before: "M README.md"
+  ignored before: !! .env.local, !! notes/
+  preview removes: done-copy
+  removed: done-copy
+  backed up patches: 1 untracked copies: 0
+  salvage files: 2026-10-15/done-copy.dirty.patch
+  .env.local exists: false  notes/plan.md exists: false
+  branch deleted: true
+exit: 0
+
+So reap's backup saves the edit but not the ignored files, and a copy with
+nothing but ignored files gets no backup at all. All three removal paths
+that lose ignored files are now reproduced, none only read from code.
+
+next_push: once a reply lands, put the chosen rule in one shared check that
+cleanup, member tidy, and land reap call, with one failing-first test per path.
+
+Addendum, tick 56: reconciled the initial survey with the later reproduction.
+The two earlier reap descriptions now point to the actual reproduction below,
+so a reader does not mistake historical code review for the current proof.
+No cleanup behavior changed. The ignored-file decision remains pending.
+
+next_push: resolve the ignored-file retention decision before changing removal.
+
+Verification result, tick 56:
+command: node --test test/worktree-removal-guard.test.js test/member-tidy.test.js && node bin/atris.js slop --staged
+exit: 0
+output: tests 90; pass 90; fail 0; skipped 0; todo 0
+output: clean, no slop tells in 2 files
+Progress: two stale evidence descriptions corrected; no runtime changes.
