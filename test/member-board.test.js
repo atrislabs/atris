@@ -2655,3 +2655,77 @@ test('live follow keeps split, replaced, new, and shortened logs written the mom
     }
   }
 });
+
+test('a short watch screen drops rows from a log cut shorter, replaced, or removed within a beat', { skip: process.platform === 'win32' }, () => {
+  const proof = spawnSync('python3', ['-c', String.raw`
+import datetime, fcntl, os, pathlib, pty, re, select, signal, struct, subprocess, sys, tempfile, termios, time
+
+with tempfile.TemporaryDirectory(prefix='atris-board-cut-') as folder:
+    root = pathlib.Path(folder)
+    progress = root / 'progress'
+    progress.mkdir()
+    now = datetime.datetime.now(datetime.timezone.utc).isoformat()
+    cut = progress / 'builder.log'
+    cut.write_text(f'{now} m-1 started: ship the login fix\n{now} m-1 finished: ok\n{now} m-2 started: stale build job\n{now} m-2 reading old notes\n')
+    swap = progress / 'shipper.log'
+    swap.write_text(f'{now} m-1 started: stale ship job\n{now} m-1 finished: failed: stale reason\n')
+    gone = progress / 'breaker.log'
+    gone.write_text(f'{now} m-1 started: stale break job\n')
+    master, slave = pty.openpty()
+    width, height = 60, 6
+    fcntl.ioctl(master, termios.TIOCSWINSZ, struct.pack('HHHH', height, width, 0, 0))
+    child = subprocess.Popen([sys.argv[1], sys.argv[2], 'member', 'board', '--watch'],
+        cwd=root, env={**os.environ, 'ATRIS_PROGRESS_DIR': str(progress)}, stdout=slave, stderr=slave)
+    os.close(slave)
+    def screen(output):
+        # The screen holds what was drawn after the last clear.
+        return re.sub(r'\x1b\[[0-9;]*[A-Za-z]', '', output.decode().split('\x1b[2J')[-1].replace('\r', ''))
+    def read(until):
+        output = b''
+        while time.monotonic() < until:
+            if select.select([master], [], [], 0.05)[0]:
+                output += os.read(master, 65536)
+            elif output and b'ctrl' in output.split(b'\x1b[2J')[-1]:
+                break
+            assert child.poll() is None, (child.returncode, output)
+        return output
+    try:
+        before = screen(read(time.monotonic() + 15))
+        assert 'stale' in before, repr(before)
+        # Change the logs just after a redraw, so the 3s timer is far off.
+        cut.write_text(f'{now} m-1 started: ship the login fix\n{now} m-1 finished: ok\n')
+        fresh = progress / 'shipper.tmp'
+        fresh.write_text(f'{now} m-9 started: fresh ship job\n')
+        os.replace(fresh, swap)
+        gone.unlink()
+        changed = time.monotonic()
+        output = b''
+        while time.monotonic() < changed + 1.5 and 'fresh' not in screen(output):
+            output += read(changed + 1.5)
+        after = screen(output)
+        print(f'command: node bin/atris.js member board --watch ({width} columns, {height} rows)')
+        print(before)
+        print(f'redrew {time.monotonic() - changed:.2f}s after the logs changed:')
+        print(after)
+        assert 'fresh' in after, f'no redraw within 1.5s of the change: {after!r}'
+        for stale in ('stale', 'old notes', 'breaker'):
+            assert stale not in after, (stale, after)
+        lines = after.split('\n')
+        assert lines[0].startswith('member') and len(lines) <= height, repr(after)
+        assert max(map(len, lines)) <= width, repr(after)
+        assert re.search(r'^builder\s+done ok\b', after, re.M), repr(after)
+        assert re.search(r'^shipper\s+working\b', after, re.M), repr(after)
+        child.send_signal(signal.SIGINT)
+        code = child.wait(timeout=10)
+        print(f'exit: {code}')
+        assert code == 0
+    finally:
+        if child.poll() is None:
+            child.terminate()
+            child.wait(timeout=10)
+        os.close(master)
+`, process.execPath, cliPath], { encoding: 'utf8', timeout: 45_000 });
+  assert.ifError(proof.error);
+  assert.equal(proof.status, 0, `${proof.stdout}\n${proof.stderr}`);
+  if (process.env.ATRIS_BOARD_CUT_PROOF) fs.writeFileSync(process.env.ATRIS_BOARD_CUT_PROOF, `${proof.stdout}proof exit: ${proof.status}\n`);
+});
