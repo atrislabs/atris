@@ -4,6 +4,7 @@ const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
 const { spawnSync } = require('node:child_process');
+const { scrubAgentEnv } = require('./helpers/agent-env');
 
 const repoRoot = path.resolve(__dirname, '..');
 const cliPath = path.join(repoRoot, 'bin', 'atris.js');
@@ -39,7 +40,7 @@ function runCli(args, { cwd, env = {}, timeout = 6000 } = {}) {
     encoding: 'utf8',
     timeout,
     env: {
-      ...process.env,
+      ...scrubAgentEnv(),
       ATRIS_SKIP_UPDATE_CHECK: '1',
       NODE_NO_WARNINGS: '1',
       ...env,

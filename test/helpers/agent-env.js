@@ -17,10 +17,13 @@ const PLAYER_IDENTITY_VARS = ['ATRIS_PROFILE', 'ATRIS_PLAYER', 'ATRIS_USERNAME']
 // and driver vars leak into spawned CLIs and flip task/mission flows into
 // agent identity when a suite runs under `atris mission tick --verify`.
 // Tests that exercise agent identity set these explicitly.
+// A member run also exports its engine (ATRIS_RUNNER_PROFILE=claude), which
+// pins the engine list so the fast smoke test failed only inside member runs.
 const MISSION_DRIVER_VARS = [
   'ATRIS_AGENT_ID',
   'ATRIS_MISSION_DRIVER_DETACHED',
   'ATRIS_MISSION_DRIVER_PARENT_PID',
+  'ATRIS_RUNNER_PROFILE',
 ];
 
 // A codex session exports its thread id into every shell it runs, and member

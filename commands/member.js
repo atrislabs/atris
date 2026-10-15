@@ -3434,7 +3434,9 @@ function normalizeFailurePattern(line) {
     .trim());
 }
 
-function failureCoveredByPassLesson(line, passLessonText = '') {
+// Callers scanning many lines pass passLessonLower so the lessons file is
+// lowercased once per scan, not once per log line.
+function failureCoveredByPassLesson(line, passLessonText = '', passLessonLower = passLessonText.toLowerCase()) {
   const text = String(line || '');
   if (!text || !passLessonText) return false;
   if (/spawnSync\s+\/bin\/sh\s+ETIMEDOUT/i.test(text)) {
@@ -3450,23 +3452,59 @@ function failureCoveredByPassLesson(line, passLessonText = '') {
   const bare = pattern.replace(/^#+\s*[#:.]*\s*·\s*/, '').trim();
   for (const candidate of [pattern, bare]) {
     if (candidate && candidate.length >= 12
-      && passLessonText.toLowerCase().includes(candidate.toLowerCase())) {
+      && passLessonLower.includes(candidate.toLowerCase())) {
       return true;
     }
   }
   return false;
 }
 
+// Runtime logs the repeat-failure scan reads, listed by where they live
+// instead of one capped walk of atris/team. That folder holds hundreds of
+// skill and mission files, and a 220-file walk ran out before it reached
+// most members' logs, so this week's repeats counted as zero. Listing paths
+// is cheap; the 7-day filter below decides what actually gets read.
+function listAutoImproverRuntimeLogs(root) {
+  const listAll = (dir) => (fs.existsSync(dir) ? listFilesBounded(dir, { maxFiles: 5000 }) : []);
+  const childDirs = (dir) => {
+    try {
+      return fs.readdirSync(dir, { withFileTypes: true })
+        .filter((entry) => entry.isDirectory() && !entry.name.startsWith('.'))
+        .map((entry) => entry.name)
+        .sort();
+    } catch {
+      return [];
+    }
+  };
+  const files = [];
+  const logsRoot = path.join(root, 'atris', 'logs');
+  try {
+    for (const entry of fs.readdirSync(logsRoot, { withFileTypes: true })) {
+      if (entry.isFile()) files.push(path.join(logsRoot, entry.name));
+    }
+  } catch {}
+  for (const name of childDirs(logsRoot)) {
+    if (name !== 'archive') files.push(...listAll(path.join(logsRoot, name)));
+  }
+  const teamRoot = path.join(root, 'atris', 'team');
+  for (const member of childDirs(teamRoot)) {
+    for (const name of ['goals.md', 'goals.json']) {
+      const goalsPath = path.join(teamRoot, member, name);
+      if (fs.existsSync(goalsPath)) files.push(goalsPath);
+    }
+    files.push(...listAll(path.join(teamRoot, member, 'logs')));
+  }
+  const wikiLog = path.join(root, 'atris', 'wiki', 'log.md');
+  if (fs.existsSync(wikiLog)) files.push(wikiLog);
+  return files;
+}
+
 function collectAutoImproverLogSignals(root) {
-  const roots = [
-    path.join(root, 'atris', 'logs'),
-    path.join(root, 'atris', 'team'),
-    path.join(root, 'atris', 'wiki'),
-  ].filter((candidate) => fs.existsSync(candidate));
   const passLessonText = safeReadText(path.join(root, 'atris', 'lessons.md'), 500000)
     .split(/\r?\n/)
     .filter((line) => /\s+pass\s*[-\u2014:,]/.test(line))
     .join('\n');
+  const passLessonLower = passLessonText.toLowerCase();
   const failureRegex = /\b(error|failed|failure|blocked|timeout|regression|crash|missing proof|naraka|suffering)\b/i;
   const unclearRegex = /\b(tbd|unclear|unknown|needs user|needs owner|needs proof|no next|blocked)\b/i;
   const counts = new Map();
@@ -3474,66 +3512,64 @@ function collectAutoImproverLogSignals(root) {
   let filesScanned = 0;
   let linesScanned = 0;
   let unclearNextActions = 0;
-  for (const scanRoot of roots) {
-    for (const filePath of listFilesBounded(scanRoot)) {
-      const relative = repoRelative(root, filePath);
-      const logDate = dateFromLogPath(relative);
-      if (relative.startsWith('atris/logs/archive/')) continue;
-      const isRuntimeLog = relative.startsWith('atris/logs/')
-        || /^atris\/team\/[^/]+\/logs\//.test(relative)
-        || /^atris\/team\/[^/]+\/goals\.(md|json)$/.test(relative)
-        || relative === 'atris/wiki/log.md';
-      if (!isRuntimeLog) continue;
-      // Only scan logs from the last 7 days. Historical log lines keep
-      // triggering false-positive findings long after their root cause is
-      // fixed (e.g. "goal-from-mission blocked" from July when MISSION.md
-      // was repaired in August). Old evidence stays on disk for audits;
-      // it just stops feeding the pain score, so pain can actually drop.
-      if (logDate && isRuntimeLog) {
-        const logAgeDays = (Date.now() - new Date(logDate + 'T12:00:00').getTime()) / 864e5;
-        if (logAgeDays > 7) continue;
-      }
-      const text = safeReadText(filePath);
-      if (!text) continue;
-      filesScanned += 1;
-      const allLines = text.split(/\r?\n/);
-      const lineOffset = Math.max(0, allLines.length - 500);
-      const lines = allLines.slice(-500);
-      linesScanned += lines.length;
-      for (let index = 0; index < lines.length; index += 1) {
-        const sourceLine = lineOffset + index + 1;
-        const line = lines[index];
-        if (isAutoImproverGeneratedLogLine(line, relative)) continue;
-        // Declared verification receipts ("check: <command> ...") describe what
-        // was verified, not what broke. Wiki upkeep sweeps write one per page,
-        // so counting them as failures spawns bogus recurring-pattern tasks
-        // (CLI-199 came from 13 such lines in atris/wiki/log.md).
-        if (/^\s*[-*]?\s*check:\s/i.test(line)) continue;
-        if (/\b(errors?|fail(?:ed|ures?)|blocked|timeouts?)\s*:\s*0\b/i.test(line)) continue;
-        if (/\bblocked\s*(?:->|→|to)\s*ready\b/i.test(line)) continue;
-        if (failureCoveredByPassLesson(line, passLessonText)) continue;
-        if (unclearRegex.test(line)) {
-          unclearNextActions += 1;
-          unclearActions.push({
-            path: relative,
-            date: logDate,
-            line: sourceLine,
-            text: compactSentence(line, 180),
-          });
-        }
-        if (!failureRegex.test(line)) continue;
-        const pattern = normalizeFailurePattern(line);
-        if (!pattern) continue;
-        const existing = counts.get(pattern) || { pattern, count: 0, evidence: [] };
-        existing.count += 1;
-        existing.evidence.push({
+  for (const filePath of listAutoImproverRuntimeLogs(root)) {
+    const relative = repoRelative(root, filePath);
+    const logDate = dateFromLogPath(relative);
+    if (relative.startsWith('atris/logs/archive/')) continue;
+    const isRuntimeLog = relative.startsWith('atris/logs/')
+      || /^atris\/team\/[^/]+\/logs\//.test(relative)
+      || /^atris\/team\/[^/]+\/goals\.(md|json)$/.test(relative)
+      || relative === 'atris/wiki/log.md';
+    if (!isRuntimeLog) continue;
+    // Only scan logs from the last 7 days. Historical log lines keep
+    // triggering false-positive findings long after their root cause is
+    // fixed (e.g. "goal-from-mission blocked" from July when MISSION.md
+    // was repaired in August). Old evidence stays on disk for audits;
+    // it just stops feeding the pain score, so pain can actually drop.
+    if (logDate && isRuntimeLog) {
+      const logAgeDays = (Date.now() - new Date(logDate + 'T12:00:00').getTime()) / 864e5;
+      if (logAgeDays > 7) continue;
+    }
+    const text = safeReadText(filePath);
+    if (!text) continue;
+    filesScanned += 1;
+    const allLines = text.split(/\r?\n/);
+    const lineOffset = Math.max(0, allLines.length - 500);
+    const lines = allLines.slice(-500);
+    linesScanned += lines.length;
+    for (let index = 0; index < lines.length; index += 1) {
+      const sourceLine = lineOffset + index + 1;
+      const line = lines[index];
+      if (isAutoImproverGeneratedLogLine(line, relative)) continue;
+      // Declared verification receipts ("check: <command> ...") describe what
+      // was verified, not what broke. Wiki upkeep sweeps write one per page,
+      // so counting them as failures spawns bogus recurring-pattern tasks
+      // (CLI-199 came from 13 such lines in atris/wiki/log.md).
+      if (/^\s*[-*]?\s*check:\s/i.test(line)) continue;
+      if (/\b(errors?|fail(?:ed|ures?)|blocked|timeouts?)\s*:\s*0\b/i.test(line)) continue;
+      if (/\bblocked\s*(?:->|→|to)\s*ready\b/i.test(line)) continue;
+      if (failureCoveredByPassLesson(line, passLessonText, passLessonLower)) continue;
+      if (unclearRegex.test(line)) {
+        unclearNextActions += 1;
+        unclearActions.push({
           path: relative,
           date: logDate,
           line: sourceLine,
           text: compactSentence(line, 180),
         });
-        counts.set(pattern, existing);
       }
+      if (!failureRegex.test(line)) continue;
+      const pattern = normalizeFailurePattern(line);
+      if (!pattern) continue;
+      const existing = counts.get(pattern) || { pattern, count: 0, evidence: [] };
+      existing.count += 1;
+      existing.evidence.push({
+        path: relative,
+        date: logDate,
+        line: sourceLine,
+        text: compactSentence(line, 180),
+      });
+      counts.set(pattern, existing);
     }
   }
   const repeated = [...counts.values()]
