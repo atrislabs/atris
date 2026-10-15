@@ -114,7 +114,7 @@ checks the refs in both files; `atris doc-health --fix-refs` moves drifted ones.
 | tests | `test/commands.test.js` | node --test test/ |
 | run one test | `package.json` | npm test, node --test |
 | release publish script | `scripts/publish-atris-release.js` | tag-driven publish |
-| ci workflows | `.github/workflows`, `scripts/ci-test-shard.js`, `test/ci-file-durations.json`, `test/ci-test-shard.test.js` | test and publish gates; eight test jobs assign expensive files first using measured GitHub durations, discover new tests automatically, preserve the four command-test parts, and propagate child failure |
+| ci workflows | `.github/workflows` | test and publish gates |
 | pre-commit hook | `scripts/pre-commit` | local gate |
 | workspace protocol spec | `atris/atris.md` | operating protocol |
 | persona voice spec | `atris/PERSONA.md` | communication style |

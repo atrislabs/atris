@@ -2371,7 +2371,3 @@ When the receipt names a different model than the one asked for, the chat prints
 `lib/runner-command.js` pins the mercury profile and `lib/engine-registry.js` keeps it roster-only.
 Regression checks live in `test/ax.test.js`, `test/runner-command.test.js`, and `test/engine-ask.test.js`.
 Verify: `npm run test:fast && node --test test/ax.test.js test/runner-command.test.js`.
-
-## Balanced GitHub test groups
-
-- `scripts/ci-test-shard.js:15` discovers the Node 24 default test patterns, excluding node_modules. `scripts/ci-test-shard.js:22` assigns every discovered file once, largest measured cost first, to the lightest of eight groups. Unknown files cost one second. `test/ci-file-durations.json` records summed top-level test durations from GitHub run 38693452528, with the four command-test parts measured separately. `scripts/ci-test-shard.js:47` invokes the real Node runner, keeps command-test splitting enabled, and returns failure when the child fails. `test/ci-test-shard.test.js:22` compares eight real child runs with native discovery, including all twelve split cases, new files, helpers, nested tests, TypeScript, and excluded dependency folders.
