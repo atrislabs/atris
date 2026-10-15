@@ -18,6 +18,18 @@ const {
   searchApplyRel,
 } = require('../commands/youtube');
 
+// Every temp folder this file makes is removed when the file finishes, so
+// repeated runs do not pile folders into the system temp folder.
+const madeDirs = [];
+function tmpDir(prefix) {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), prefix));
+  madeDirs.push(dir);
+  return dir;
+}
+test.after(() => {
+  for (const dir of madeDirs) fs.rmSync(dir, { recursive: true, force: true });
+});
+
 const CACHE_HOME = '/tmp/atris-yt-search-cache-home';
 const CACHE_PATH = path.join(CACHE_HOME, '.atris', 'youtube-search-cache.json');
 const RATE_LIMIT_MESSAGE =
@@ -86,7 +98,7 @@ function findPython() {
 const pythonCmd = findPython();
 
 function searchWorkspace() {
-  const cwd = fs.mkdtempSync(path.join(os.tmpdir(), 'atris-yt-search-'));
+  const cwd = tmpDir('atris-yt-search-');
   fs.mkdirSync(path.join(cwd, 'atris', 'wiki'), { recursive: true });
   return cwd;
 }

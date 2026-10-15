@@ -18,6 +18,18 @@ const {
 } = require('../commands/youtube');
 const { ephemeralApplyMessage } = require('../lib/apply-gate');
 
+// Every temp folder this file makes is removed when the file finishes, so
+// repeated runs do not pile folders into the system temp folder.
+const madeDirs = [];
+function tmpDir(prefix) {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), prefix));
+  madeDirs.push(dir);
+  return dir;
+}
+test.after(() => {
+  for (const dir of madeDirs) fs.rmSync(dir, { recursive: true, force: true });
+});
+
 const REPO_ROOT = path.resolve(__dirname, '..');
 const VALIDATE_PY = path.join(REPO_ROOT, 'atris', 'experiments', 'validate.py');
 const CLI_PATH = path.join(REPO_ROOT, 'bin', 'atris.js');
@@ -56,8 +68,8 @@ function escapeRe(value) {
 }
 
 function notesWorkspace(id, notes) {
-  const cwd = fs.mkdtempSync(path.join(os.tmpdir(), 'atris-yt-notes-save-'));
-  const workDir = fs.mkdtempSync(path.join(os.tmpdir(), 'atris-yt-notes-work-'));
+  const cwd = tmpDir('atris-yt-notes-save-');
+  const workDir = tmpDir('atris-yt-notes-work-');
   fs.mkdirSync(path.join(cwd, 'atris', 'wiki'), { recursive: true });
   fs.writeFileSync(path.join(workDir, `yt_${id}.md`), notes);
   return { cwd, workDir };
