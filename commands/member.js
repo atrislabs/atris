@@ -3356,6 +3356,19 @@ function dateFromLogPath(relativePath) {
   return match ? match[1] : null;
 }
 
+// Mission driver logs, goals files, and the wiki log have no date in their
+// name; without one they skipped the 7-day window and months-old lines kept
+// counting as this week's pain. The last write date stands in for them.
+function logDateForScan(relativePath, filePath) {
+  const named = dateFromLogPath(relativePath);
+  if (named) return named;
+  try {
+    return fs.statSync(filePath).mtime.toISOString().slice(0, 10);
+  } catch {
+    return null;
+  }
+}
+
 function compareLogEvidenceRecentFirst(a, b) {
   const dateA = a?.date || '';
   const dateB = b?.date || '';
@@ -3521,7 +3534,7 @@ function collectAutoImproverLogSignals(root) {
   let unclearNextActions = 0;
   for (const filePath of listAutoImproverRuntimeLogs(root)) {
     const relative = repoRelative(root, filePath);
-    const logDate = dateFromLogPath(relative);
+    const logDate = logDateForScan(relative, filePath);
     if (relative.startsWith('atris/logs/archive/')) continue;
     const isRuntimeLog = relative.startsWith('atris/logs/')
       || /^atris\/team\/[^/]+\/logs\//.test(relative)
