@@ -15,6 +15,18 @@ const {
 } = require('../commands/youtube');
 const { ephemeralApplyMessage } = require('../lib/apply-gate');
 
+// Every temp folder this file makes is removed when the file finishes, so
+// repeated runs do not pile folders into the system temp folder.
+const madeDirs = [];
+function tmpDir(prefix) {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), prefix));
+  madeDirs.push(dir);
+  return dir;
+}
+test.after(() => {
+  for (const dir of madeDirs) fs.rmSync(dir, { recursive: true, force: true });
+});
+
 const REPO_ROOT = path.resolve(__dirname, '..');
 const VALIDATE_PY = path.join(REPO_ROOT, 'atris', 'experiments', 'validate.py');
 const CLI_PATH = path.join(REPO_ROOT, 'bin', 'atris.js');
@@ -48,7 +60,7 @@ const STUB_DIGEST = [
 ].join('\n');
 
 function tempCwd() {
-  return fs.mkdtempSync(path.join(os.tmpdir(), 'atris-yt-digest-'));
+  return tmpDir('atris-yt-digest-');
 }
 
 function writeBrief(cwd, name, { date, source, title, body } = {}) {

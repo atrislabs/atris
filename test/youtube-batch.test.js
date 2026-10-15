@@ -16,13 +16,25 @@ const {
 } = require('../commands/youtube');
 const { ephemeralApplyMessage } = require('../lib/apply-gate');
 
+// Every temp folder this file makes is removed when the file finishes, so
+// repeated runs do not pile folders into the system temp folder.
+const madeDirs = [];
+function tmpDir(prefix) {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), prefix));
+  madeDirs.push(dir);
+  return dir;
+}
+test.after(() => {
+  for (const dir of madeDirs) fs.rmSync(dir, { recursive: true, force: true });
+});
+
 const RICH_NOTES = '# Clip\n\nThe omakase model has 80 people.\n';
 const THIN_NOTES = '# Chat\n\nwelcome back friends this is just a chat about feelings and vibes\n';
 const LEARNER_BASELINE_INCOMPLETE = 'incomplete: check already passes. refuse invented success.';
 
 function richNotesWorkspace(ids) {
-  const cwd = fs.mkdtempSync(path.join(os.tmpdir(), 'atris-yt-batch-'));
-  const workDir = fs.mkdtempSync(path.join(os.tmpdir(), 'atris-yt-batch-notes-'));
+  const cwd = tmpDir('atris-yt-batch-');
+  const workDir = tmpDir('atris-yt-batch-notes-');
   fs.mkdirSync(path.join(cwd, 'atris', 'wiki'), { recursive: true });
   for (const id of ids) {
     fs.writeFileSync(path.join(workDir, `yt_${id}.md`), RICH_NOTES);
@@ -331,8 +343,8 @@ test('rich notes --save batch returns nonzero when the first apply already passe
 });
 
 test('thin notes --save batch stays a refuse and does not prove a learner baseline', async () => {
-  const cwd = fs.mkdtempSync(path.join(os.tmpdir(), 'atris-yt-batch-'));
-  const workDir = fs.mkdtempSync(path.join(os.tmpdir(), 'atris-yt-batch-notes-'));
+  const cwd = tmpDir('atris-yt-batch-');
+  const workDir = tmpDir('atris-yt-batch-notes-');
   fs.mkdirSync(path.join(cwd, 'atris', 'wiki'), { recursive: true });
   fs.writeFileSync(path.join(workDir, 'yt_thin01.md'), THIN_NOTES);
   fs.writeFileSync(path.join(workDir, 'yt_thin02.md'), THIN_NOTES);
@@ -562,8 +574,8 @@ test('notes batch keeps written notes when the runner exits 429', async () => {
 });
 
 test('notes batch still marks FAILED when 429 wrote no notes', async () => {
-  const cwd = fs.mkdtempSync(path.join(os.tmpdir(), 'atris-yt-batch-empty429-'));
-  const workDir = fs.mkdtempSync(path.join(os.tmpdir(), 'atris-yt-batch-empty429-notes-'));
+  const cwd = tmpDir('atris-yt-batch-empty429-');
+  const workDir = tmpDir('atris-yt-batch-empty429-notes-');
   const log = collect();
   const status = await youtubeCommand([
     'notes',
