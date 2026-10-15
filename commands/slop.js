@@ -430,9 +430,11 @@ const NAME_BEFORE_PLAIN_VERB = new RegExp(`^\\s*\\u2014\\s*(?:a|an|the|every|eac
 // The clause may hold its own commas: "when it fills, if it stalls, drain it".
 // A command with "it" or "them" after it is a sentence too: "if it breaks,
 // trace it". A joining word there is not a command, so "then it lands" stays.
+// "that's" and kin open one as "that is" does: "if variance is high,
+// that's the signal".
 // With no subject after the comma, or no comma at all, the clause only adds
 // a condition, so "Ship it, if you can" and "It fails, when it is full" stay.
-const LEADING_CLAUSE_AFTER_DASH = new RegExp(`${CLAUSE_END}\\s*\\u2014\\s*(?=(?:once|when|whenever|if|unless|until|after|before|while|(?:each|every|any)\\s+time)\\s+[^.;:!?\\u2014]{1,80}?,\\s+(?:(?!(?:and|but|or|nor|so|yet|then|once|when|whenever|if|unless|until|after|before|while|as|since|because|though|although)\\b)[a-z]{2,}(?<!s|ed|ing)\\s+(?:it|them)\\b|(?:it|we|they|you|I|he|she)(?:['\\u2019](?:s|re|ll|ve|d|m))?\\s+[a-z]|(?:this|that|there)\\s+(?:is|are|was|were|will|would|can|must|should|has|have)\\b|${SUBJECT_WORD}(?:(?!(?:the|a|an|that|whose)\\b)${SUBJECT_WORD}){0,3}${HELPING_VERB}\\s|(?:a|an|the|every|each|no)\\s+${NOUN_WORD}\\s+(?:${NOUN_WORD}\\s+){0,2}(?:${PLAIN_VERB}|${PLAIN_VERB_WORD}(?=[.!?;]|$))))`, 'g');
+const LEADING_CLAUSE_AFTER_DASH = new RegExp(`${CLAUSE_END}\\s*\\u2014\\s*(?=(?:once|when|whenever|if|unless|until|after|before|while|(?:each|every|any)\\s+time)\\s+[^.;:!?\\u2014]{1,80}?,\\s+(?:(?!(?:and|but|or|nor|so|yet|then|once|when|whenever|if|unless|until|after|before|while|as|since|because|though|although)\\b)[a-z]{2,}(?<!s|ed|ing)\\s+(?:it|them)\\b|(?:it|we|they|you|I|he|she)(?:['\\u2019](?:s|re|ll|ve|d|m))?\\s+[a-z]|(?:this|that|there)\\s+(?:is|are|was|were|will|would|can|must|should|has|have)\\b|(?:this|that|there|here)['\\u2019](?:s|ll|d)\\s+[a-z]|${SUBJECT_WORD}(?:(?!(?:the|a|an|that|whose)\\b)${SUBJECT_WORD}){0,3}${HELPING_VERB}\\s|(?:a|an|the|every|each|no)\\s+${NOUN_WORD}\\s+(?:${NOUN_WORD}\\s+){0,2}(?:${PLAIN_VERB}|${PLAIN_VERB_WORD}(?=[.!?;]|$))))`, 'g');
 // A "not" contraction or a word like "still" or "never" right after a
 // noun subject marks a verb, which no plain noun phrase has: "the picker
 // can't see it", "the member still owns the receipt", "a session never wakes".

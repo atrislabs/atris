@@ -2471,6 +2471,24 @@ test('fix joins a past verb with a word in "ly" before it after a dash', () => {
   ]);
 });
 
+test('fix joins an "if" clause with a contracted "that is" after its comma after a dash', () => {
+  // from real repo text: "Track passed/total over time, if variance is high,
+  // that's the signal" spliced, since "that is" opened a main clause after
+  // the comma but "that's" did not. With no subject after the comma the
+  // clause only adds a condition and keeps its comma.
+  const file = tmpFile('if-thats.md', [
+    'Track the pass rate over time \u2014 if variance is high, that\'s the signal.',
+    'Keep the old build around \u2014 if it fails, there\'ll be a fallback.',
+    'Ship the whole thing soon \u2014 if you can, today.',
+  ].join('\n'));
+  const { changes } = applyFixes([file], RULES);
+  assert.deepEqual(changes.map((c) => c.after), [
+    'Track the pass rate over time; if variance is high, that\'s the signal.',
+    'Keep the old build around; if it fails, there\'ll be a fallback.',
+    'Ship the whole thing soon, if you can, today.',
+  ]);
+});
+
 test('fix reads "names" and one quoted name in capitals as a verb and its object after a dash', () => {
   // from real repo text: "the verbatim quote names "Dave," not the owner"
   // spliced, since "names" is too often a plural noun to trust before any
