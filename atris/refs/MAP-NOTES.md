@@ -2745,3 +2745,5 @@ Run-record one-lap land target: `test/roster-run-record.test.js:476` passes the 
 Command repository fixture: `test/commands.test.js:658` prepares one real repository and bare remote for six start and ship cases, copies both per case, and relinks each origin. File-level cleanup removes the template after all tests, including setup failure. Setup git launches fall from 60 to 16; command assertions remain unchanged.
 
 Brainstorm help checks: `test/commands.test.js:18794` runs three help spellings together with the existing async CLI helper and keeps all output and no-state assertions. `commands/brainstorm.js:73` returns before workspace discovery or journal writes. Three sequential stages become one.
+
+Authentication help checks: `test/commands.test.js:18814` runs login and identity help together, retaining all output and no-state assertions. The sign-out help check stays after the saved-credential fixture. `bin/atris.js:2407` returns help before authentication handlers. Three launches take two sequential stages.

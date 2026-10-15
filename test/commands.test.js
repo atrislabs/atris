@@ -18811,12 +18811,15 @@ test('brainstorm help prints usage without workspace state', async () => {
   }
 });
 
-test('auth --help prints usage without auth side effects', () => {
+test('auth --help prints usage without auth side effects', async () => {
   const dir = makeTempDir();
   try {
     const home = path.join(dir, 'home');
-    for (const command of ['login', 'whoami']) {
-      const res = runCli([command, '--help'], { cwd: dir, env: { HOME: home } });
+    const commands = ['login', 'whoami'];
+    const results = await Promise.all(commands.map(command =>
+      runCliAsync([command, '--help'], { cwd: dir, env: { HOME: home } })));
+    for (const [index, command] of commands.entries()) {
+      const res = results[index];
       assert.equal(res.status, 0, res.stderr);
       assert.match(res.stdout, new RegExp(`Usage: atris ${command}`));
       assert.doesNotMatch(res.stdout, /Choose login method|Status: Not logged in|Run "atris login"/);
