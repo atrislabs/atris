@@ -4756,6 +4756,11 @@ test('the fix diff script marks a fix that gains doubled punctuation or loses pa
   // the comma is a greeting; a heading over a real splice still counts
   assert.deepEqual(oddMarks(`## Hook\n"Bob ${D} I noticed you run two shops."`, '## Hook\n"Bob, I noticed you run two shops."'), []);
   assert.deepEqual(oddMarks(`## Hook\nThe gate held ${D} it ships.`, '## Hook\nThe gate held, it ships.'), ['comma splice']);
+  // one capitalized word right after an opening quote is a greeting word;
+  // a real splice inside a quote still counts
+  assert.deepEqual(oddMarks(`Then say "Great ${D} we work alongside that."`, 'Then say "Great, we work alongside that."'), []);
+  assert.deepEqual(oddMarks(`He said "The gate held ${D} it ships."`, 'He said "The gate held, it ships."'), ['comma splice']);
+  assert.deepEqual(oddMarks(`Any time they say it ${D} "Yeah, I spend hours" ${D} they've normalized it.`, 'Any time they say it ("Yeah, I spend hours"), they\'ve normalized it.'), []);
   // an aside that wraps across lines is unbalanced in the source too, and a
   // code span or link target is never read as prose
   assert.deepEqual(oddMarks(`The run (one tick ${D} a slice`, 'The run (one tick, a slice'), []);

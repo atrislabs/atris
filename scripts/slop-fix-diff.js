@@ -176,7 +176,11 @@ function oddMarks(source, fixed) {
 // "even when, especially when, it has" is no splice. A heading ends its
 // sentence at its line break, and one capitalized word alone is a name or a
 // greeting word when it opens its line, never a clause: '## Hook\n"Bob, I
-// noticed you run two', while "Severity: High, this is" still splices. An opener right after
+// noticed you run two', while "Severity: High, this is" still splices.
+// One capitalized word right after an opening quote is the same, so 'and
+// say "Great, we work alongside that"' is no splice. A comma inside a
+// quote never ends an opener's first half: 'Any time they say ("Yeah, I
+// spend hours"), they've normalized it'. An opener right after
 // "that" opens the clause the comma ends the same way: "That means that if
 // you run long (if you train), it will not learn".
 const SPLICE = /,\s+(?:(?:it|we|they|he|she|I)(?:['\u2019](?:s|re|ll|ve|d|m))?\s+[a-z]|(?:this|that|these|those|there)(?:['\u2019]s|\s+(?:is|are|was|were|will|would|can|must|should|has|have)\b))/g;
@@ -195,8 +199,10 @@ function splices(text) {
     const opensLine = /(?:^|\n)$/.test(before.slice(0, before.length - part.length));
     const sentence = part.replace(/^(?:[-*+>#|]\s*|\d+[.)]\s*|\*\*|__|["\u201c'(]\s*)*/, '').trim();
     const thatOpener = THAT_OPENS_FIRST_HALF.exec(sentence);
-    const firstHalf = (OPENS_FIRST_HALF.test(sentence) && !SECOND_HALF.test(sentence)) || (thatOpener && !SECOND_HALF.test(sentence.slice(thatOpener.index)));
-    if (!firstHalf && !NO_CLAUSE.test(sentence) && !(opensLine && LONE_NAME.test(sentence)) && !WAITS_FOR_CLAUSE.test(sentence)) count += 1;
+    const unquoted = (x) => x.replace(/"[^"]*"|\u201c[^\u201d]*\u201d/g, '""');
+    const firstHalf = (OPENS_FIRST_HALF.test(sentence) && !SECOND_HALF.test(unquoted(sentence))) || (thatOpener && !SECOND_HALF.test(unquoted(sentence.slice(thatOpener.index))));
+    const quotedName = /[\s(]["\u201c][A-Z][a-z'\u2019]+$/.test(before);
+    if (!firstHalf && !NO_CLAUSE.test(sentence) && !(opensLine && LONE_NAME.test(sentence)) && !quotedName && !WAITS_FOR_CLAUSE.test(sentence)) count += 1;
   }
   return count;
 }
