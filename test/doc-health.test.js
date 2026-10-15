@@ -538,6 +538,36 @@ test('a range ref whose end runs past the file is not right, and fix-refs clamps
   assert.equal(fs.readFileSync(path.join(root, 'atris/MAP.md'), 'utf8'), fixed);
 });
 
+test('a routing ref on a feature card must sit near its command, and fix-refs moves it there', t => {
+  // 20 routing refs in the notes had drifted to imports and other commands and
+  // still counted as right, since a ref with no name was trusted on its numbers
+  const root = workspace(t);
+  write(root, 'atris/atris.md', '');
+  const code = Array.from({ length: 40 }, () => '');
+  code[19] = "} else if (command === 'soul') {";
+  code[29] = "} else if (command === 'learn') {";
+  code[34] = "} else if (command === 'slack') {";
+  write(root, 'bin/cli.js', code.join('\n'));
+  write(root, 'atris/MAP.md', [
+    '| area | path | note |', '| --- | --- | --- |', '| cli | `bin/cli.js` | code |', '',
+    '### Feature: Soul (`atris soul`)',
+    '- **Routing:** `bin/cli.js:5-7` routes soul, and `bin/cli.js:35` routes slack',
+    '- **Entry point:** `bin/cli.js:2` is not judged by its card',
+    '### Feature: Learn (`atris learn`)',
+    '- **Dispatch:** `bin/cli.js:30` routes learn',
+    '### Feature: Wiki (`atris wiki`)',
+    '- **Routing:** `bin/cli.js:12` is in a file that never dispatches wiki',
+  ].join('\n'));
+  const refs = JSON.parse(run(root, ['--json']).stdout).map_coverage.refs;
+  assert.deepEqual(refs.flagged.map(ref => [ref.map_line, ref.status]), [[6, 'moved']]);
+  const fix = run(root, ['--fix-refs']);
+  assert.equal(fix.status, 0, fix.stderr);
+  assert.match(fix.stdout, /MAP line 6: bin\/cli\.js:5-7 -> bin\/cli\.js:20-22 \(atris soul\)/);
+  const fixed = fs.readFileSync(path.join(root, 'atris/MAP.md'), 'utf8');
+  assert.match(fixed, /`bin\/cli\.js:20-22` routes soul, and `bin\/cli\.js:35` routes slack/);
+  assert.match(run(root, ['--fix-refs']).stdout, /map refs: nothing to move\./);
+});
+
 test('a range ref that ends before it starts is left for a human, not moved in place', t => {
   // the notes file held `bin/atris.js:470-465` `showSearchHelp`: the name sat on
   // line 470, so every fix-refs run reported it moved and wrote the same text back
