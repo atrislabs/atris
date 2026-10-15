@@ -41,7 +41,7 @@ code=$?; rm -f .atris/campaign-runs/<id>.token; exit $code
 
 `GET /api/campaigns/{campaign_id}/cloud-run` → `{ "ok": true, "state", "home", "basis", "summary", "run": null | { "claim", "run_id", "computer", "status": "running" | "finished" | "ended" | "unknown" | "computer_asleep" | "unreachable", "exit_code", "timed_out", "output_tail" } }`. It never wakes a computer, and a finished run's claim is ended here.
 
-## Credits (metering only, v1)
+## Credits
 
 Price: engine cost plus margin. `credits` on each view:
 
@@ -49,7 +49,15 @@ Price: engine cost plus margin. `credits` on each view:
 { "engine_cost_usd": 0.56, "margin": 0.30, "billable_usd": 0.73, "credits": <billable_usd converted at the platform's credit rate>, "charged": false }
 ```
 
-`engine_cost_usd` is the campaign's folded `budget.spent`. v1 meters only (`charged: false`); nothing is debited until Keshav approves charging. Local campaigns synced from a person's own machine on their own subscription are never billable (`billable_usd: 0`, `basis: "own_engines"`); `basis: "atris_cloud"` is billable.
+`engine_cost_usd` is the campaign's folded `budget.spent`. Local campaigns synced from a person's own machine on their own subscription are never charged (`basis: "own_engines"`). Campaigns with `basis: "atris_cloud"` are charged for real (approved by Keshav 2026-10-16):
+
+- When a `mission_ended` with a cost is stored, the owner pays `ceil(cost * 1.30 * 100)` credits, once per event (the ledger key `charge:campaign:<row id>:<event id>` makes resends and retries free).
+- A settle pass after every push and every person action charges anything still unpaid, so a crash between storing and charging is collected later.
+- Charges never pass the budget: the cap is the budget minus what the ledger already charged, taken under a lock on the campaign (database function `campaign_charge_capped`). The rest shows as `over_budget`.
+- A short wallet keeps the event, charges nothing, and pauses the campaign; a computer cannot resume a cloud campaign, and a person's resume is refused while credits are owed.
+- The block reports `charged`, `credits_charged`, `credits_owed`, `over_budget`, and `short`.
+
+Proven in production with a 13-credit probe ($0.10 mission): charged once, resend charged nothing.
 
 ## CLI
 
