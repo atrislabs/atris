@@ -5144,6 +5144,14 @@ test('the fix diff splice list skips a noun after "in" or "of" and a noun with i
     lists.map((t) => `The graph has the advisor layer ${D} ${t}.`),
     lists.map((t) => `The graph has the advisor layer, ${t}.`),
   ).map((s) => s.text), ['the lawyer brokers every deal']);
+  // a word in "s" before "themselves" or "ourselves" is a plural noun, since
+  // a verb in "s" never takes them, so "the prompt rules themselves" names
+  // the lever; "the prompt rules the planner" still reads as a splice
+  const selves = ['the prompt rules themselves', 'the prompt rules the planner'];
+  assert.deepEqual(spliceShapes(
+    selves.map((t) => `This attacks a different lever ${D} ${t}, not the weights.`),
+    selves.map((t) => `This attacks a different lever, ${t}, not the weights.`),
+  ).map((s) => s.text), ['the prompt rules the planner']);
   // "these" or "those" alone, or a plural noun after them, before a plain
   // verb is a subject too, so the real "those searches return zero results"
   // and "these always wait for review" are listed; "those still open in

@@ -250,8 +250,10 @@ function splices(text) {
 // line or follows an opening quote: '"Christal, the referral model adds',
 // nor an opener's first half: "If no, your attention has been captured".
 // A word in "is" is a noun, never a verb: "the structural basis for".
+// So is a word in "s" before "themselves" or "ourselves", which a verb in
+// "s" never takes: "the DECIDE prompt rules themselves" names the rules.
 const SPLICE_OPENER = /(?:the|its|our|their|your|this|that|these|those|each|every|a|an)/.source;
-const SPLICE_SHAPE = new RegExp(`^(?!that (?:the|a|an|it|we|they|he|she|this|these|those|its|their|our|your)\\b)${SPLICE_OPENER} ` + /(?!(?:one|two|three|four|five|six|seven|eight|nine|ten|few|many|several|same|other|first|last|next|main|key|core|new|old|real|whole|exact|only)\b)(?:(?!(?:that|which|who|your|our|their|its|his|her|my)\b)[\w`-]+ ){1,2}(?<!\b(?:in|of|and|or) )(?!(?:this|his|its|thus|plus|always|perhaps|unless|whereas|across)\b)[a-z]+[^isu\s']s (?!(?:that|which|who)\b)(?:[a-z`"]|\d)/.source);
+const SPLICE_SHAPE = new RegExp(`^(?!that (?:the|a|an|it|we|they|he|she|this|these|those|its|their|our|your)\\b)${SPLICE_OPENER} ` + /(?!(?:one|two|three|four|five|six|seven|eight|nine|ten|few|many|several|same|other|first|last|next|main|key|core|new|old|real|whole|exact|only)\b)(?:(?!(?:that|which|who|your|our|their|its|his|her|my)\b)[\w`-]+ ){1,2}(?<!\b(?:in|of|and|or) )(?!(?:this|his|its|thus|plus|always|perhaps|unless|whereas|across)\b)[a-z]+[^isu\s']s (?!(?:that|which|who|themselves|ourselves)\b)(?:[a-z`"]|\d)/.source);
 // "These" or "those" alone, or a plural noun after "the" and kin, before a
 // common plain verb is a subject too, whatever follows the verb: "those
 // need tests" and "those searches return zero results" are listed. The
