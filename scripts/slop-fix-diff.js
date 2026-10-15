@@ -16,11 +16,17 @@
 // With --audit no base fixer runs: every fix the working fixer makes is
 // checked against the writer's own text, so the odd marks it still writes
 // anywhere come out as one count to drive to zero.
+// With --probe the text given is the corpus: each probe is fixed by the
+// base fixer and the working one and printed in full, moved or not, so a
+// rule change can be checked on one line without a throwaway script.
+// A typed \u2014 in a probe becomes a dash and a typed \n a line break, so
+// the shell never has to carry either.
 //
 //   node scripts/slop-fix-diff.js ~/notes ../other-repo
 //   node scripts/slop-fix-diff.js --base master --limit 50 docs/
 //   node scripts/slop-fix-diff.js --lines ~/notes
 //   node scripts/slop-fix-diff.js --audit ~/notes
+//   node scripts/slop-fix-diff.js --probe 'We fixed it \u2014 the loop kicks work.'
 
 const fs = require('fs');
 const os = require('os');
@@ -165,11 +171,40 @@ function splices(text) {
   return count;
 }
 
+const USAGE = 'usage: node scripts/slop-fix-diff.js [--base <ref>] [--limit <n>] [--lines] [--audit] <folder or file>...\n' +
+  '       node scripts/slop-fix-diff.js [--base <ref>] --probe "<text>" [--probe "<text>"]...';
+
+// Fixes each probe with the base fixer and the working one and prints every
+// probe, so the answer to "what does the fixer do to this line" is one run.
+function probe(probes, base) {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'slop-fix-diff-'));
+  const show = (text) => text.split('\n').join(' / ');
+  try {
+    const before = fixAll(loadFixerAt(base), probes, dir);
+    const after = fixAll(require(path.join(ROOT, 'commands', 'slop.js')), probes, dir);
+    let moved = 0;
+    probes.forEach((text, i) => {
+      if (before[i] !== after[i]) moved += 1;
+      const odd = oddMarks(text, after[i]);
+      console.log(`  was   ${show(text)}`);
+      console.log(`  ${base === 'HEAD' ? 'head' : 'base'}  ${show(before[i])}`);
+      console.log(`  now   ${show(after[i])}${before[i] === after[i] ? '' : '  (moved)'}`);
+      if (odd.length) console.log(`  odd   ${odd.join(', ')}`);
+      console.log('');
+    });
+    console.log(`${probes.length} probe${probes.length === 1 ? '' : 's'}; ${moved} moved against ${base}`);
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+  return 0;
+}
+
 function main(argv) {
   let base = 'HEAD';
   let limit = 25;
   let paragraphs = true;
   let audit = false;
+  const probes = [];
   const targets = [];
   for (let i = 0; i < argv.length; i += 1) {
     if (argv[i] === '--base') base = argv[++i];
@@ -177,13 +212,15 @@ function main(argv) {
     else if (argv[i] === '--paragraphs') paragraphs = true;
     else if (argv[i] === '--lines') paragraphs = false;
     else if (argv[i] === '--audit') audit = true;
+    else if (argv[i] === '--probe') probes.push((argv[++i] || '').replace(/\\u2014/g, DASH).replace(/\\n/g, '\n'));
     else if (argv[i] === '--help' || argv[i] === '-h') {
-      console.log('usage: node scripts/slop-fix-diff.js [--base <ref>] [--limit <n>] [--lines] [--audit] <folder or file>...');
+      console.log(USAGE);
       return 0;
     } else targets.push(argv[i]);
   }
+  if (probes.length) return probe(probes, base);
   if (!targets.length) {
-    console.error('usage: node scripts/slop-fix-diff.js [--base <ref>] [--limit <n>] [--lines] [--audit] <folder or file>...');
+    console.error(USAGE);
     return 2;
   }
   const files = [];

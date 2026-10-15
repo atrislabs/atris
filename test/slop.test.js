@@ -3929,6 +3929,19 @@ test('the fix diff script audits every fix the working fixer makes with --audit'
   assert.match(r.stdout, /^0 of the fixed gained doubled punctuation, unbalanced parentheses, or a comma splice$/m);
 });
 
+test('the fix diff script prints what each fixer does to a probe with --probe', () => {
+  const { spawnSync } = require('node:child_process');
+  // a probe needs no folder; a typed backslash-u dash and backslash-n become
+  // the real marks, and every probe prints, moved or not
+  const script = path.join(__dirname, '..', 'scripts', 'slop-fix-diff.js');
+  const r = spawnSync(process.execPath, [script, '--probe', String.raw`We fixed it \u2014 the loop kicks work.`, '--probe', String.raw`Run the checks below\n\u2014 these are the reward.`, '--probe', 'No dash here.'], { encoding: 'utf8', cwd: path.join(__dirname, '..') });
+  assert.equal(r.status, 0, r.stderr);
+  assert.match(r.stdout, /^ {2}now {3}We fixed it; the loop kicks work\.$/m);
+  assert.match(r.stdout, /^ {2}was {3}Run the checks below \/ \u2014 these are the reward\.$/m);
+  assert.match(r.stdout, /^ {2}head {2}No dash here\.$/m);
+  assert.match(r.stdout, /^3 probes; 0 moved against HEAD$/m);
+});
+
 test('the fix diff script marks a fix that gains doubled punctuation or loses paren balance', () => {
   const { oddMarks } = require('../scripts/slop-fix-diff.js');
   const D = String.fromCharCode(0x2014);
