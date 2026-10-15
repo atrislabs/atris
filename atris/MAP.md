@@ -110,7 +110,7 @@ checks the refs in both files; `atris doc-health --fix-refs` moves drifted ones.
 | slop detector | `commands/slop.js` | prose lint |
 | design system commands | `commands/design.js` `lib/design-api.js` | atris design extract and check; shared with atris mcp |
 | improvement attempt ledger | `commands/rsi.js` `lib/rsi-record.js` | read and record Dream-RSI attempts; built-in node.v1 writer when no `record.py` |
-| sealed prediction attempt | `lib/rsi-adventure.js` | freeze a prediction from seen data, judge it on a holdout yes/no/unclear, keep or drop the claim |
+| sealed prediction attempt | `lib/sealed-prediction.js` | freeze a prediction from seen data, judge it on a holdout yes/no/unclear, keep or drop the claim |
 | workspace tree hash | `commands/tree.js` `lib/tree-hash.js` | atris tree hash over the doctrine files |
 | tests | `test/commands.test.js` | node --test test/ |
 | run one test | `package.json` | npm test, node --test |

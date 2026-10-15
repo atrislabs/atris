@@ -7,7 +7,7 @@ const os = require('node:os');
 const path = require('node:path');
 
 const rsi = require('../lib/rsi-record');
-const adv = require('../lib/rsi-adventure');
+const adv = require('../lib/sealed-prediction');
 
 function tmpdir(prefix) {
   return fs.mkdtempSync(path.join(os.tmpdir(), prefix));
@@ -19,7 +19,7 @@ function withEnv(t) {
     state: process.env.ATRIS_RSI_STATE,
     guard: process.env[rsi.GUARD_ENV],
   };
-  const root = tmpdir('atris-rsi-adv-');
+  const root = tmpdir('atris-sealed-');
   process.env.ATRIS_RSI_HOLDOUT_SALT_FILE = path.join(tmpdir('atris-rsi-salt-'), 'salt');
   delete process.env.ATRIS_RSI_STATE;
   delete process.env[rsi.GUARD_ENV];
@@ -66,7 +66,7 @@ function nextTerm(seen) {
 test('judge refuses by name before anything is frozen', (t) => {
   const root = withEnv(t);
   const { holdout, reads } = sealedHoldout(root, { expect: 1, body: [1] }, 0);
-  assert.throws(() => adv.judgeFrozen(root, holdout), (e) => e.name === 'RsiSealError' && e.code === 'ERR_RSI_NOT_FROZEN');
+  assert.throws(() => adv.judgeFrozen(root, holdout), (e) => e.name === 'SealError' && e.code === 'ERR_NOT_FROZEN');
   assert.deepEqual(reads, []);
 });
 
@@ -74,7 +74,7 @@ test('wrong prediction against an unknowable holdout ends no and keeps the claim
   const root = withEnv(t);
   const since = Date.now() - 1000;
   const { holdout } = sealedHoldout(root, { expect: 'secret-7f3a', body: { case: 'unseen' } }, since);
-  const r = await adv.runAdventure({
+  const r = await adv.runSealed({
     root,
     claim: 'the next token is guessable',
     nextClaim: 'should never land',
@@ -101,7 +101,7 @@ test('seen rule that holds on the sealed holdout ends yes and advances the claim
   const since = Date.now() - 1000;
   const { holdout, reads } = sealedHoldout(root, { expect: 10, body: { series: [2, 4, 6, 8, 10] } }, since);
   const args = [];
-  const r = await adv.runAdventure({
+  const r = await adv.runSealed({
     root,
     claim: 'arithmetic runs continue by their step',
     nextClaim: 'geometric runs continue by their ratio',
@@ -129,7 +129,7 @@ test('a predictor that reaches for the holdout is stopped by the seal', async (t
   const root = withEnv(t);
   const { holdout } = sealedHoldout(root, { expect: 10, body: [10] }, Date.now() - 1000);
   await assert.rejects(
-    adv.runAdventure({ root, claim: 'peeking is impossible', seen: {}, holdout, predict: () => holdout.expect }),
+    adv.runSealed({ root, claim: 'peeking is impossible', seen: {}, holdout, predict: () => holdout.expect }),
     /seal broken: holdout\.expect read before prediction froze/,
   );
   assert.equal(fs.existsSync(adv.predictionPath(root)), false);
@@ -141,7 +141,7 @@ test('a predictor that reaches for the holdout is stopped by the seal', async (t
 test('missing holdout body ends unclear, records skipped, keeps the claim', async (t) => {
   const root = withEnv(t);
   const { holdout } = sealedHoldout(root, { expect: 10 }, Date.now() - 1000);
-  const r = await adv.runAdventure({
+  const r = await adv.runSealed({
     root,
     claim: 'arithmetic runs continue by their step',
     nextClaim: 'should never land',
@@ -155,7 +155,7 @@ test('missing holdout body ends unclear, records skipped, keeps the claim', asyn
   assert.equal(row.outcome.status, 'nothing');
   assert.equal(row.outcome.verify, 'skipped');
 
-  const none = await adv.runAdventure({ root, seen: { series: [1, 2] }, holdout: null, predict: nextTerm });
+  const none = await adv.runSealed({ root, seen: { series: [1, 2] }, holdout: null, predict: nextTerm });
   assert.equal(none.verdict, 'unclear');
   assert.equal(none.claim, 'arithmetic runs continue by their step');
 });
