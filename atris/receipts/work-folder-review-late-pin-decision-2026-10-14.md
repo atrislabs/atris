@@ -52,3 +52,22 @@ Verdict: proceed with the existing plan after production review. The single fail
 Plan: real child terminates -> wrapper propagates signal -> null removal status -> retain all stores in the proposed fix.
 
 next_push: add signal and process-error fallback wording to the refusal contract before production review.
+
+## Fallback wording when Git leaves no text
+
+Verdict: proceed with changes to the refusal contract, pending the existing production review. The single failure mode is a refusal report that hides why removal stopped. Fed only empty output, the shared helper says `git would not remove it` for a removal ended by a signal, so the reader cannot tell an interrupted run from a real Git refusal.
+
+Replace the detail rule above. Pass Git's own text first, then a fallback chosen from the process result, through the unchanged shared helper so a pin or hold still wins:
+
+- launch error present: `git could not run: <error message>`
+- signal present: `git removal stopped by <signal>`
+- status missing with neither: `git removal ended without an exit status`
+- otherwise: Git's first line, or the helper's existing `git would not remove it`
+
+Check the launch error before the signal, because a timed-out launch carries both and the error names the timeout. The status gate stays exactly zero; the fallback only changes the words.
+
+Evidence: a real terminated child returns null status, SIGTERM, and empty output; the current rule prints the vague line and the proposed rule names the signal. A real launch of a missing binary returns null status and ENOENT; both rules name it, and the proposed one says Git could not run. Proof: `atris/receipts/work-folder-review-fallback-wording-2026-10-14.txt`.
+
+Plan: process result -> Git text or fallback -> shared helper -> pin or hold first -> one plain line.
+
+next_push: implement the two-site refusal contract with this fallback after production review, and assert the signal wording in the interrupted regression.

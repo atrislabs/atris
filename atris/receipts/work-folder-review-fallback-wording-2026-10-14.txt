@@ -1,0 +1,23 @@
+Scope: advisory contract wording only; production cleanup unchanged.
+
+$ zsh probe: real terminated child and real failed launch through the shared refusal helper
+interrupted {"status":null,"signal":"SIGTERM","error":null,"stderr":""}
+  current contract detail: git would not remove it
+  proposed detail:         git removal stopped by SIGTERM
+launchFailed {"status":null,"signal":null,"error":"ENOENT","stderr":""}
+  current contract detail: spawnSync atris-no-such-git-binary ENOENT
+  proposed detail:         git could not run: spawnSync atris-no-such-git-binary ENOENT
+temp dir removed: true
+exit: 0
+
+$ node --test test/worktree-removal-guard.test.js test/member-tidy.test.js
+ℹ tests 48
+ℹ pass 48
+ℹ fail 0
+exit: 0
+
+Files changed: atris/receipts/work-folder-review-late-pin-decision-2026-10-14.md; atris/refs/MAP-NOTES.md; atris/team/architect/logs/2026-10-14.md; this receipt.
+Rerun: node --test test/worktree-removal-guard.test.js test/member-tidy.test.js
+Progress: refusal contract now covers four process outcomes (Git text, launch error, signal, missing status); 48 passed, zero failed; zero production edits.
+next_push: implement the two-site refusal contract with this fallback after production review, and assert the signal wording in the interrupted regression.
+layer: behaviors
