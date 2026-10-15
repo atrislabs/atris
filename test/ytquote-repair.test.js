@@ -102,3 +102,30 @@ test('ytquote-repair checks quotes whose timestamp comes first', () => {
 
   fs.rmSync(dir, { recursive: true, force: true });
 });
+
+test('ytquote-repair checks quotes inside ordinary lines: unquotes the ones not said, italicizes short terms', () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'ytquote-repair-'));
+  const notesPath = path.join(dir, 'notes.md');
+  const transcriptPath = path.join(dir, 'clean.txt');
+  fs.writeFileSync(notesPath, [
+    '# Speed notes',
+    '',
+    '**Hook one.** The speaker calls it a "forest of steel" and says "proof wins every argument."',
+    'The rain is "morning rain." here, and the "perfect disguise" is the waves.',
+    '',
+    '> "The ocean is a desert with its life underground" [00:00]',
+    '',
+  ].join('\n'));
+  fs.writeFileSync(transcriptPath, TRANSCRIPT);
+
+  const result = spawnSync(process.execPath, [SCRIPT, notesPath, transcriptPath], { encoding: 'utf8' });
+  assert.equal(result.status, 0);
+  assert.match(result.stderr, /^quotes: 1 kept, 0 repaired, 0 dropped$/m);
+  assert.match(result.stderr, /^inline quotes not in the transcript: 1, quote marks removed$/m);
+  const repaired = fs.readFileSync(notesPath, 'utf8');
+  assert.match(repaired, /a "forest of steel" and says proof wins every argument\.$/m);
+  assert.match(repaired, /^The rain is \*morning rain\*\. here, and the \*perfect disguise\* is the waves\.$/m);
+  assert.match(repaired, /^> "The ocean is a desert with its life underground" \[00:00\]$/m);
+
+  fs.rmSync(dir, { recursive: true, force: true });
+});
