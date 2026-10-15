@@ -2563,3 +2563,5 @@ Landing capability test setup: `test/commands.test.js:12964` seeds creation and 
 - `test/roster-run-record.test.js:405` - autopilot run accounting: successful worker has a 30-second cap; roster rewrites to one second before the intentional real-process stall, and both recorded caps are asserted.
 
 - Duplicate receipt repair setup: `test/commands.test.js:13508` uses production claimTask in the setup connection, removing one launch (four to three); the real XP status command still verifies integrity, XP, receipt count and the repaired ledger length.
+
+- Ready-work revision setup: `test/commands.test.js:13638` uses production claimTask in the setup connection, asserting ownership before closing. Seven launches become six; both initial readies, revise, show, stale accept and re-ready retain all original CLI assertions.
