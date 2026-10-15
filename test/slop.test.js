@@ -3848,6 +3848,16 @@ test('the fix diff script marks a fix that gains doubled punctuation or loses pa
   assert.deepEqual(oddMarks(`But when it happens early ${D} it hurts.`, 'But when it happens early, it hurts.'), []);
   assert.deepEqual(oddMarks(`> Hi Maya ${D} this is Sunline.`, '> Hi Maya, this is Sunline.'), []);
   assert.deepEqual(oddMarks(`| Bandwidth | No ${D} this is one person |`, '| Bandwidth | No, this is one person |'), []);
+  // a splice the writer wrote after a dash is theirs, even when an "If"
+  // opened the sentence before the dash; a dash, a new list item, or a stop
+  // inside a bold mark ends the sentence, and a quote hides no opener
+  assert.deepEqual(oddMarks(`If they wait, you send the plan ${D} they got value, they'll come back.`, "If they wait, you send the plan; they got value, they'll come back."), []);
+  assert.deepEqual(oddMarks(`- after init, removed them\n- the file detects it ${D} the idea exists, it's not used`, "- after init, removed them\n- the file detects it: the idea exists, it's not used"), []);
+  assert.deepEqual(oddMarks(`**Body:**\nHey [Name] ${D} I run a company.`, '**Body:**\nHey [Name], I run a company.'), []);
+  assert.deepEqual(oddMarks(`"When they feel part of something ${D} a tribe ${D} they stop."`, '"When they feel part of something (a tribe), they stop."'), []);
+  assert.deepEqual(oddMarks(`Every time it meets a person ${D} in a meeting ${D} it should log it.`, 'Every time it meets a person (in a meeting), it should log it.'), []);
+  assert.deepEqual(oddMarks(`We measure it ${D} and when it fails, we say so.`, 'We measure it, and when it fails, we say so.'), []);
+  assert.deepEqual(oddMarks(`If it holds, you ship the plan ${D} they got value.`, 'If it holds, you ship the plan, they got value.'), ['comma splice']);
   // an aside that wraps across lines is unbalanced in the source too, and a
   // code span or link target is never read as prose
   assert.deepEqual(oddMarks(`The run (one tick ${D} a slice`, 'The run (one tick, a slice'), []);

@@ -145,14 +145,22 @@ function oddMarks(source, fixed) {
 // opens with "if", "when" or their kin is only its first half before that
 // comma, so "But when the gate holds, it ships" is no splice. Neither is a
 // greeting or a lone answer word: "Hi Maya, this is", "No, this is".
+// An opener covers only its own first half: once a comma has led to a
+// subject ("If it holds, you ship the plan"), a later splice still counts.
+// A dash, a comma before a joining word ("helps, and when it doesn't,
+// we tell you"), a new list item, or a stop inside a closing bold mark or quote
+// ("**Body:**") ends the sentence, so a splice the writer put after a dash
+// is theirs in the source too, and a leading quote hides no opener.
 const SPLICE = /,\s+(?:(?:it|we|they|he|she|I)(?:['\u2019](?:s|re|ll|ve|d|m))?\s+[a-z]|(?:this|that|these|those|there)(?:['\u2019]s|\s+(?:is|are|was|were|will|would|can|must|should|has|have)\b))/g;
-const OPENS_FIRST_HALF = /^(?:(?:but|and|so|yet|or|then)\s+)?(?:if|when|whenever|once|because|since|although|though|while|unless|until|after|before|as)\b/i;
+const OPENS_FIRST_HALF = /^(?:(?:but|and|so|yet|or|then)\s+)?(?:if|when|whenever|once|because|since|although|though|while|unless|until|after|before|as|(?:each|every|any)\s+time)\b/i;
+const SECOND_HALF = /,\s+(?:you|it|we|they|he|she|I)(?:['\u2019](?:s|re|ll|ve|d|m))?\s+[a-z]/;
+const SENTENCE_STOP = /[.!?;:|][*_"'\u201d\u2019)]*\s|\s*\u2014\s*|,\s+(?=(?:and|but|so|yet|or)\s)|\n(?=\s*(?:[-*+]|\d+[.)])\s)/;
 const NO_CLAUSE = /^(?:(?:hi|hello|hey|dear)\b.*|thanks|thank you|yes|no|ok|okay|sure|well|right)$/i;
 function splices(text) {
   let count = 0;
   for (const m of text.matchAll(SPLICE)) {
-    const sentence = text.slice(0, m.index).split(/[.!?;:|]\s/).pop().replace(/^(?:[-*+>#|]\s*|\d+[.)]\s*|\*\*|__)*/, '').trim();
-    if (!OPENS_FIRST_HALF.test(sentence) && !NO_CLAUSE.test(sentence)) count += 1;
+    const sentence = text.slice(0, m.index).split(SENTENCE_STOP).pop().replace(/^(?:[-*+>#|]\s*|\d+[.)]\s*|\*\*|__|["\u201c'(]\s*)*/, '').trim();
+    if (!(OPENS_FIRST_HALF.test(sentence) && !SECOND_HALF.test(sentence)) && !NO_CLAUSE.test(sentence)) count += 1;
   }
   return count;
 }
