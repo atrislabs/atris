@@ -199,6 +199,9 @@ No direct calls beyond the list \u2014 the dashboard component drives everything
 => No direct calls beyond the list; the dashboard component drives everything else.
 "Describe who you need \u2014 the orchestrator drafts it"
 => "Describe who you need; the orchestrator drafts it"
+# "yes" after a pronoun ends in s but is no second verb
+Wondering "did Hugo reply?" \u2014 the tag tells you yes/no instantly without searching.
+=> Wondering "did Hugo reply?"; the tag tells you yes/no instantly without searching.
 # a two-word label before the dash is no clause, so a colon reads better
 LLM psychosis \u2014 every AI validates you, agrees with you.
 => LLM psychosis: every AI validates you, agrees with you.

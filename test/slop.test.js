@@ -2453,6 +2453,20 @@ test('fix reads a pronoun or a code name with a place word after it as the objec
   ]);
 });
 
+test('fix reads "yes" or "this" after a pronoun object as no second verb', () => {
+  // from real repo text: "the tag tells you yes/no instantly" spliced, since
+  // any word in "s" after the pronoun read as a second verb.
+  const file = tmpFile('pronoun-yes.md', [
+    'You check at 9pm \u2014 the tag tells you yes/no instantly without searching.',
+    'We shipped it \u2014 the panel shows you this before the run.',
+  ].join('\n'));
+  const { changes } = applyFixes([file], RULES);
+  assert.deepEqual(changes.map((c) => c.after), [
+    'You check at 9pm; the tag tells you yes/no instantly without searching.',
+    'We shipped it; the panel shows you this before the run.',
+  ]);
+});
+
 test('fix gives a colon after a short verbless topic that opens its line', () => {
   // from real repo text: "LLM psychosis" before a dash names the topic the
   // clause explains, so it took a semicolon where a colon reads right. A
