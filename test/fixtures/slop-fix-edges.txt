@@ -354,3 +354,7 @@ A falsifier for "why is it silent?" \u2014 each layer narrowed the hypothesis sp
 => A falsifier for "why is it silent?"; each layer narrowed the hypothesis space.
 Built with care \u2014 every claim measured, not asserted.
 => Built with care, every claim measured, not asserted.
+The scanner runs on every diff \u2014 if its F1 is below 0.95, that's a real gap.
+=> The scanner runs on every diff; if its F1 is below 0.95, that's a real gap.
+It ran \u2014 if the score is 0.9. Then we ship.
+=> It ran, if the score is 0.9. Then we ship.
