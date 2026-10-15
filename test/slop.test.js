@@ -2489,6 +2489,21 @@ test('fix keeps a comma before a past verb phrase with a possessive inside it af
   ]);
 });
 
+test('fix reads a template slot before a dash as the end of a clause', () => {
+  // from real repo text: "Smaller on {{WEAKEST_TASK_TYPE}}, that's the next
+  // round" was a comma splice, since a closing double brace did not count
+  // as the word that ends a clause; a slot with no clause after it keeps its comma.
+  const file = tmpFile('template-slot.md', [
+    "Smaller on {{WEAKEST}} \u2014 that's the next round.",
+    'Ship {{NAME}} \u2014 the rest waits.',
+  ].join('\n'));
+  const { changes } = applyFixes([file], RULES);
+  assert.deepEqual(changes.map((c) => c.after), [
+    "Smaller on {{WEAKEST}}; that's the next round.",
+    'Ship {{NAME}}, the rest waits.',
+  ]);
+});
+
 test('fix gives commas to a short aside that ends on the word before its dash', () => {
   // from real repo text: "follow your curiosity even when, especially when,
   // it has" came out with the aside in parentheses and a comma after it. An

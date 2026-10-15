@@ -295,3 +295,6 @@ Follow your curiosity even when \u2014 especially when \u2014 it has no use.
 => Follow your curiosity even when, especially when, it has no use.
 We need the best \u2014 maybe the only \u2014 way out.
 => We need the best (maybe the only) way out.
+# a closing double brace of a template slot ends a clause like a word
+Smaller on {{WEAKEST}} \u2014 that's the next round.
+=> Smaller on {{WEAKEST}}; that's the next round.
