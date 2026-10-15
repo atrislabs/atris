@@ -788,20 +788,37 @@ function passedInDeletes(file, text) {
     const params = match[2].split(',')
       .map((part) => part.trim().replace(/^\.\.\./, '').replace(/\s*=.*$/, ''))
       .filter((part) => /^[\w$]+$/.test(part));
-    return [{ name: match[1], params, index }];
+    return [{ name: match[1], params, index, end: helperEnd(lines, index) }];
   });
   return lines.flatMap((line, index) => {
     if (COMMENT_LINE.test(line)) return [];
     const call = /\brm(?:dir)?(?:Sync)?\(|['"]rm['"]\s*,/.test(line) ? callText(lines, index) : line;
     if (!RECURSIVE_DELETE.test(call)) return [];
-    const owner = starts.filter((start) => start.index <= index).pop();
-    if (!owner || !owner.params.length) return [];
-    const next = starts.find((start) => start.index > index);
-    const body = lines.slice(owner.index, next ? next.index : lines.length).join('\n');
-    const target = sameFolder(body)(removedTarget(call, body));
-    if (!owner.params.includes(target)) return [];
-    return [{ key: `${file}:${owner.name}`, line: index + 1, target }];
+    // Every helper whose lines hold the delete, innermost first, so a small
+    // arrow defined earlier in a helper never takes the delete from it.
+    const around = starts.filter((start) => start.index <= index && index <= start.end).reverse();
+    for (const owner of around) {
+      const body = lines.slice(owner.index, owner.end + 1).join('\n');
+      const target = sameFolder(body)(removedTarget(call, body));
+      if (owner.params.includes(target)) return [{ key: `${file}:${owner.name}`, line: index + 1, target }];
+    }
+    return [];
   });
+}
+
+// The line that closes the brace a helper opens, or its own line when the
+// helper is a one-line arrow.
+function helperEnd(lines, index) {
+  let depth = 0;
+  let opened = false;
+  for (let end = index; end < lines.length; end++) {
+    for (const ch of lines[end]) {
+      if (ch === '{') { depth++; opened = true; } else if (ch === '}') depth--;
+    }
+    if (opened ? depth <= 0 : end > index && /;\s*$/.test(lines[end])) return end;
+    if (!opened && end === index && /;\s*$/.test(lines[end])) return end;
+  }
+  return lines.length - 1;
 }
 
 test('a helper that deletes a folder its caller passed in is checked or reviewed', () => {
@@ -820,8 +837,10 @@ test('a helper that deletes a folder its caller passed in is checked or reviewed
 
   // Planted helpers in a file that never mentions worktrees are still found:
   // a plain function read through a path.resolve rename and a delete split
-  // across lines, two named arrows, and a class method whose delete sits in a
-  // callback.
+  // across lines, two named arrows, a class method whose delete sits in a
+  // callback, and helpers holding small inner arrows. An inner arrow keeps
+  // only its own lines, so the helper around it still owns a delete of its
+  // folder, and an inner arrow that deletes its own argument owns that one.
   const planted = [
     'function wipe(folder, opts = {}) {',
     '  const where = path.resolve(folder);',
@@ -841,6 +860,18 @@ test('a helper that deletes a folder its caller passed in is checked or reviewed
     '  }',
     '  log(dir) { console.log(dir); }',
     '}',
+    'function sweep(dir) {',
+    '  const note = () => console.log("sweeping");',
+    '  fs.rmSync(dir, { recursive: true });',
+    '}',
+    'function shelve(folder) {',
+    '  const where = path.resolve(folder);',
+    '  const later = () => {',
+    '    fs.rmSync(where, { recursive: true });',
+    '  };',
+    '  const each = (item) => fs.rmSync(item, { recursive: true });',
+    '}',
+    'function after() { fs.rmSync(dir, { recursive: true }); }',
   ].join('\n');
   assert.ok(!WORKTREE_REMOVAL.test(planted) && !HANDLES_WORKTREES.test(planted), 'the main scan would skip this helper');
   assert.deepEqual(passedInDeletes('lib/planted.js', planted), [
@@ -848,6 +879,9 @@ test('a helper that deletes a folder its caller passed in is checked or reviewed
     { key: 'lib/planted.js:clear', line: 10, target: 'dir' },
     { key: 'lib/planted.js:drop', line: 12, target: 'dir' },
     { key: 'lib/planted.js:empty', line: 15, target: 'where' },
+    { key: 'lib/planted.js:sweep', line: 21, target: 'dir' },
+    { key: 'lib/planted.js:shelve', line: 26, target: 'folder' },
+    { key: 'lib/planted.js:each', line: 28, target: 'item' },
   ]);
 });
 
