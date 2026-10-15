@@ -289,6 +289,8 @@ Review lane drain fixture connections: `test/commands.test.js:8427` seeds, readi
 
 Review lane act dry-run fixture connections: `test/commands.test.js:8697` seeds, readies, reviews and snapshots the continue and waiting tasks through one store connection, and the human-only task through one more. Nine store opens replace sixteen; every dry-run, live and refusal check remains on the CLI.
 
+Review lane loop fixture connections: `test/commands.test.js:8845` runs each setup phase on one store connection, so the continue and waiting tasks seed, review and snapshot together and the human-only task seeds and reviews together. Six store opens replace eleven; every loop check remains on the CLI.
+
 Certified review fallback read batching: `test/commands.test.js:12603` overlaps the two next reads after certification and before creation. Six sequential CLI stages become five; all assertions remain. Details: `atris/refs/MAP-NOTES.md`.
 
 Final fallback read batching: `test/commands.test.js:12684` awaits next and show together after follow-up creation. Both read unchanged task rows; every assertion remains. Five sequential CLI stages become four.
