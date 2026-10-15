@@ -11585,7 +11585,7 @@ test('task review does not mint AgentXP before the task is done', () => {
   }
 });
 
-test('task ready holds work in review until human accept', () => {
+test('task ready holds work in review until human accept', async () => {
   if (!hasNodeSqlite()) return;
   const dir = makeTempDir();
   const dbPath = path.join(dir, 'tasks.db');
@@ -11754,7 +11754,21 @@ test('task ready holds work in review until human accept', () => {
     assert.equal(certifiedPayload.task.review.verification_chat, undefined);
     assert.equal(certifiedPayload.task.metadata.agent_certified, true);
 
-    const prematureDone = runCli(['task', 'done', ref, '--as', 'codex', '--json'], { cwd: dir, env });
+    withStore((db) => {
+      for (let i = 0; i < 10; i += 1) {
+        const note = taskStore.noteTask(db, { id: readyPayload.task.id, actor: 'codex', content: `post-ready context ${i}` });
+        assert.equal(note.noted, true, note.reason);
+      }
+    });
+
+    // The early done is refused by an update that matches no row, show only
+    // reads, and the padding notes above touch none of the lines checked here,
+    // so these three run at once.
+    const [prematureDone, certifiedShow, statusAfterCertification] = await Promise.all([
+      runCliAsync(['task', 'done', ref, '--as', 'codex', '--json'], { cwd: dir, env }),
+      runCliAsync(['task', 'show', ref], { cwd: dir, env }),
+      runCliAsync(['task', 'status', '--json'], { cwd: dir, env }),
+    ]);
     assert.equal(prematureDone.status, 1);
     assert.equal(prematureDone.stderr, '');
     const prematureDonePayload = JSON.parse(prematureDone.stdout);
@@ -11762,20 +11776,11 @@ test('task ready holds work in review until human accept', () => {
     assert.match(prematureDonePayload.detail, /not in open\|claimed/);
     assert.equal(withStore((db) => taskStore.getTask(db, readyPayload.task.id).status), 'review');
 
-    const certifiedShow = runCli(['task', 'show', ref], { cwd: dir, env });
     assert.equal(certifiedShow.status, 0, certifiedShow.stderr);
-	    assert.match(certifiedShow.stdout, /Details: typecheck passed and diff reviewed again/);
-	    assert.match(certifiedShow.stdout, /Landing: waiting on human/);
-	    assert.match(certifiedShow.stdout, /Checked: yes \(3 agent checks\)/);
+    assert.match(certifiedShow.stdout, /Details: typecheck passed and diff reviewed again/);
+    assert.match(certifiedShow.stdout, /Landing: waiting on human/);
+    assert.match(certifiedShow.stdout, /Checked: yes \(3 agent checks\)/);
 
-	    withStore((db) => {
-	      for (let i = 0; i < 10; i += 1) {
-	        const note = taskStore.noteTask(db, { id: readyPayload.task.id, actor: 'codex', content: `post-ready context ${i}` });
-	        assert.equal(note.noted, true, note.reason);
-	      }
-	    });
-
-    const statusAfterCertification = runCli(['task', 'status', '--json'], { cwd: dir, env });
     assert.equal(statusAfterCertification.status, 0, statusAfterCertification.stderr);
     const statusPayload = JSON.parse(statusAfterCertification.stdout);
     assert.equal(statusPayload.status.current, null);
