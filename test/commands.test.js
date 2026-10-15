@@ -13157,7 +13157,7 @@ test('task accept rejects non-positive rewards before marking done', () => {
   try {
     fs.mkdirSync(path.join(dir, 'atris'), { recursive: true });
 
-    // Seed claimed setup through the real store; ready and reward rejection stay on the CLI.
+    // Seed review readiness through the real store; reward rejection and show stay on the CLI.
     const workspaceRoot = taskStore.workspaceRoot(dir);
     const db = taskStore.open(dbPath);
     let ref;
@@ -13167,12 +13167,15 @@ test('task accept rejects non-positive rewards before marking done', () => {
       });
       assert.equal(created.inserted, true);
       assert.equal(taskStore.claimTask(db, { id: created.id, claimedBy: 'codex' }).claimed, true);
+      assert.equal(taskStore.readyTask(db, {
+        id: created.id, actor: 'codex', proof: 'accept validation passed',
+        result: FIXTURE_RESULT_SENTENCE,
+      }).ready, true);
       ref = taskStore.taskDisplayRefMap(taskStore.listTasks(db, { workspaceRoot })).get(created.id);
       assert.ok(ref);
     } finally {
       taskStore.close();
     }
-    assert.equal(runCli(['task', 'ready', ref, '--proof', 'accept validation passed', '--as', 'codex'], { cwd: dir, env }).status, 0);
 
     const accept = runCli(['task', 'accept', ref, '--reward', '0', '--as', 'keshavrao', '--json'], { cwd: dir, env });
     assert.equal(accept.status, 2);

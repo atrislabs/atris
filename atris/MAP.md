@@ -204,3 +204,5 @@ Unclaimed revision readiness: `test/commands.test.js:13724` seeds production rea
 Accepted revision refusal batch: `test/commands.test.js:13767` awaits refused revision and local XP status together after acceptance. `lib/task-db.js:1082` refuses done tasks before mutation, and `commands/task.js:11338` exits before projection writes. All assertions remain; three launches take two sequential stages.
 
 Reward projection readiness setup: `test/commands.test.js:13094` calls production readyTask with the original proof and actor before closing fixture setup in finally. Acceptance, collection and local status retain every CLI assertion; four launches become three. Collection and status remain sequential because both write shared XP state in `commands/xp.js:1050`.
+
+Reward rejection readiness setup: `test/commands.test.js:13170` seeds production readyTask with the original actor and proof, asserts success and closes in finally. CLI zero-reward refusal and the unchanged pending-review read retain every assertion; two launches replace three.
