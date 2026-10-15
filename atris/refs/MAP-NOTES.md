@@ -2687,3 +2687,5 @@ Live-status ownership setup: `test/commands.test.js:14230` creates all three row
 Review-debt next-selection setup: `test/commands.test.js:12644` seeds creation and ownership through the production store in one connection; ready and next stay on the CLI, removing one setup launch.
 
 Human-only review fallback ownership setup: `test/commands.test.js:12709` creates and claims through the production task store in one connection, closed in finally. Eight CLI launches become seven; certification, both next formats, follow-up creation and final show retain every CLI assertion.
+
+Tag-scoped checkpoint ownership setup: `test/commands.test.js:12785` creates and claims through the production task store in one connection, closed in finally. Six CLI launches become five; readiness, certification, both scoped selection formats and refused follow-up creation retain every CLI assertion.
