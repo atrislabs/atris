@@ -93,3 +93,19 @@ Three cells \u2014 the cell silently splits into two columns.
 => Three cells; the cell silently splits into two columns.
 One trick \u2014 the test cases across repos.
 => One trick, the test cases across repos.
+
+# from real repo text: a verb in s and a bare object of two to four plain
+# words or a number before a stop or comma is a clause; a longer name
+# with no verb keeps the phrase
+Local search first \u2014 the post claims 99% token reduction.
+=> Local search first; the post claims 99% token reduction.
+Reverse the curve \u2014 the scorer tracks signal quality, not order or noise.
+=> Reverse the curve; the scorer tracks signal quality, not order or noise.
+Same as before \u2014 the feature flags service config.
+=> Same as before, the feature flags service config.
+# an older rule reads a word in s and a bare word or two before a stop as
+# a verb and its object, so made-up names like these still join
+One place \u2014 the agent runs dashboard view.
+~> One place, the agent runs dashboard view.
+One place \u2014 the team calls schedule.
+~> One place, the team calls schedule.

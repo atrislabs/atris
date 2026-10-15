@@ -2363,6 +2363,23 @@ test('fix joins "the", a noun, a verb in s and a place word as a clause after a 
   ]);
 });
 
+test('fix joins "the", a noun, a verb in s and a bare object of plain words after a dash', () => {
+  // from real repo text: "the post claims 99% token reduction" spliced,
+  // since a bare object of more than one word fit no object shape. A
+  // longer name with no verb keeps the phrase.
+  const file = tmpFile('the-bare-phrase-clause.md', [
+    'Local search first \u2014 the post claims 99% token reduction.',
+    'Off-topic noise \u2014 the proxy flatters bad behavior most.',
+    'Same as before \u2014 the feature flags service config.',
+  ].join('\n'));
+  const { changes } = applyFixes([file], RULES);
+  assert.deepEqual(changes.map((c) => c.after), [
+    'Local search first; the post claims 99% token reduction.',
+    'Off-topic noise; the proxy flatters bad behavior most.',
+    'Same as before, the feature flags service config.',
+  ]);
+});
+
 test('fix joins "its" or "our", a plural and a plain verb before a number or an object', () => {
   // from a probe of the edge file: "its pages score 67" spliced, since the
   // possessive rule wanted a verb in s, a helper verb or "already". A plain

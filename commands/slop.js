@@ -338,6 +338,10 @@ const THE_OBJECT_CLAUSE_AFTER_DASH = new RegExp(`${CLAUSE_END}\\s*\\u2014\\s*(?=
 // is almost never a verb keeps the phrase: "the test cases across repos".
 const PLURAL_NOUN_WORD = '(?:cases|steps|paths|files|items|pages|docs|notes|tasks|rows|fields|lines|records|jobs|events|errors|results|messages|requests|scripts|folders|repos|projects|tests|tools|users|accounts|keys|values|metrics|tokens|details|options|settings|numbers|names)';
 const PLACE_CLAUSE_AFTER_DASH = new RegExp(`${CLAUSE_END}\\s*\\u2014\\s*(?=the\\s+(?!${NAME_PAIR}\\b)(?!(?:one|two|three|four|five|six|seven|eight|nine|ten|few|many|several|same|other|first|last|next|main|key|core|new|old|real|whole|exact|only)\\b)(?:(?![A-Za-z-]*s\\b)(?:[A-Z]{2,}|[a-z][a-z-]*[a-z])\\s+(?!(?:that|which|who)\\b))?(?![a-z]*s\\b)[a-z]{2,}\\s+(?:${MANNER_WORD}\\s+)?(?!${PLURAL_NOUN_WORD}\\b)${PLAIN_VERB_WORD}\\s+(?:${MANNER_WORD}\\s+)?(?:across|through|within|into|onto|over|toward|towards|via|without|from)\\s+[^\\s\\u2014])`, 'g');
+// The same subject and verb with a bare object of two to four plain words
+// or a number before a stop or a comma is a clause too: "the post claims
+// 99% token reduction", "the scorer tracks signal quality, not order".
+const BARE_PHRASE_CLAUSE_AFTER_DASH = new RegExp(`${CLAUSE_END}\\s*\\u2014\\s*(?=the\\s+(?!${NAME_PAIR}\\b)(?!(?:one|two|three|four|five|six|seven|eight|nine|ten|few|many|several|same|other|first|last|next|main|key|core|new|old|real|whole|exact|only)\\b)(?:(?![A-Za-z-]*s\\b)(?:[A-Z]{2,}|[a-z][a-z-]*[a-z])\\s+(?!(?:that|which|who)\\b))?(?![a-z]*s\\b)[a-z]{2,}\\s+(?!${PLURAL_NOUN_WORD}\\b)${PLAIN_VERB_WORD}\\s+(?!(?:the|a|an|your|our|their|its|this|these|those|that|it|them|from|of|in|on|for|with|at|by|to|and|or|as|than|like)\\b)(?:\\d+%?|[a-z][\\w-]*)(?:\\s+(?!(?:and|or|but|that|which|who|the|a|an|in|of|on|for|with|at|by|to|from|into)\\b)[a-z][\\w-]*){1,3}[.!?;,])`, 'g');
 const RELATIVE_OBJECT_PHRASE = /^\s*\u2014\s*the\s+[A-Za-z][\w-]*\s+(?:[a-z][\w-]*\s+)?(?!(?:proves|shows|means|ensures|confirms|says|assumes|knows|finds)\b)[a-z]+s\s+(?:the|a|an|your|our|their|its|this|these|those)\s+\S+\s+(?:\S+\s+){0,2}[a-z]+s\s*(?:[.!?;,]|$)/;
 const BARE_OBJECT_CLAUSE = new RegExp(`^\\s*\\u2014\\s*the\\s+(?!${NAME_PAIR}\\b)(?![a-z]*s\\b)[a-z]{2,}\\s+${PLAIN_VERB_WORD}\\s+(?!${NAME_END_WORD}\\b)[a-z]{2,}(?=[.!?;]|\\s+(?:into|onto|to|for|from|on|at|with|until)\\s)`);
 // A plain word, then a name, then the verb hides a "that": "a topic Atris
@@ -1022,6 +1026,10 @@ function fixEmDash(s, { endsBlock = false, startsBlock = false, spans = [], abov
     .replace(THE_OBJECT_CLAUSE_AFTER_DASH, (m, at, whole) => {
       const left = clauseLeft(at, whole);
       return left && !RELATIVE_OBJECT_PHRASE.test(whole.slice(at)) ? clauseJoin(left) : m;
+    })
+    .replace(BARE_PHRASE_CLAUSE_AFTER_DASH, (m, at, whole) => {
+      const left = clauseLeft(at, whole);
+      return left ? clauseJoin(left) : m;
     })
     .replace(PLACE_CLAUSE_AFTER_DASH, (m, at, whole) => {
       const left = clauseLeft(at, whole);
