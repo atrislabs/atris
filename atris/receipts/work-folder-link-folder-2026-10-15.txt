@@ -1,0 +1,20 @@
+Saved symbolic links replaced by folders now have real cleanup preservation proof.
+Files: test/member-tidy.test.js, atris/MAP.md, atris/refs/MAP-NOTES.md, atris/team/architect/logs/2026-10-15.md, atris/receipts/work-folder-link-folder-2026-10-15.txt.
+Verify: node --test test/worktree-removal-guard.test.js test/member-tidy.test.js && node bin/atris.js slop --staged
+Exit: 0.
+Output excerpt: tests 90; pass 90; fail 0; skipped 0; todo 0; clean, no slop tells in 3 files.
+Real commands exercised inside disposable repositories:
+node bin/atris.js worktree cleanup
+cleanup: dry-run base=origin/master
+candidates: 0
+reason=dirty staged=11 unstaged=10 untracked=4
+exit: 0
+node bin/atris.js worktree cleanup --apply
+cleanup: applied base=origin/master
+removeds: 0
+reason=dirty staged=11 unstaged=10 untracked=4
+exit: 0
+Progress: one additional replacement case checked in both modes; saved link target and mode, later folder and draft bytes, complete staged tree, status and folder registration preserved. Runtime behavior unchanged.
+Learned: Git retains the saved symbolic link in its index while the same path holds a directory with an untracked draft, so both representations need explicit checks.
+next_push: Prove cleanup preserves a staged rename whose destination is replaced by a folder containing a draft.
+layer: capabilities

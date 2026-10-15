@@ -277,3 +277,5 @@ Healthy cleanup saved executable proof: `test/member-tidy.test.js:1418` runs rea
 Healthy cleanup saved plain file proof: `test/member-tidy.test.js:1438` runs real preview and apply after a saved plain file is replaced by an executable. Both calls preserve saved bytes and plain mode, later bytes and executable mode, the staged tree and folder registration.
 
 Healthy cleanup file-to-folder proof: `test/member-tidy.test.js:1446` runs real preview and apply after a staged file becomes a folder containing a draft. Both calls preserve saved bytes and mode, the replacement folder and draft, the full staged tree and folder registration.
+
+Healthy cleanup link-to-folder proof: `test/member-tidy.test.js:1439` runs real preview and apply after a saved symbolic link becomes a folder containing a draft, preserving the saved target and link mode, draft bytes, staged tree and folder registration.

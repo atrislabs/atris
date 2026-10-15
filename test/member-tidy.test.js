@@ -1436,6 +1436,14 @@ test('worktree cleanup quietly refreshes an outdated base and keeps staged notes
     const nestedDraft = path.join(expanded, 'draft.txt');
     fs.writeFileSync(nestedDraft, 'later draft inside folder\n');
     assert.match(runGit(['ls-files', '--stage', '--', 'outline-folder'], copy), /^100644 /);
+    const expandedLink = path.join(copy, 'outline-link-folder');
+    fs.symlinkSync('saved-folder-outline.txt', expandedLink);
+    runGit(['add', 'outline-link-folder'], copy);
+    fs.unlinkSync(expandedLink);
+    fs.mkdirSync(expandedLink);
+    const linkedDraft = path.join(expandedLink, 'draft.txt');
+    fs.writeFileSync(linkedDraft, 'later draft after link\n');
+    assert.match(runGit(['ls-files', '--stage', '--', 'outline-link-folder'], copy), /^120000 /);
     const binary = path.join(copy, 'drawing.bin');
     const savedBytes = Buffer.from([0, 255, 10, 128, 13]);
     const laterBytes = Buffer.from([0, 254, 10, 129, 13, 0]);
@@ -1503,6 +1511,10 @@ test('worktree cleanup quietly refreshes an outdated base and keeps staged notes
       assert.equal(fs.readFileSync(nestedDraft, 'utf8'), 'later draft inside folder\n');
       assert.equal(runGit(['show', ':outline-folder'], copy), 'saved outline before folder');
       assert.match(runGit(['ls-files', '--stage', '--', 'outline-folder'], copy), /^100644 /);
+      assert.equal(fs.lstatSync(expandedLink).isDirectory(), true);
+      assert.equal(fs.readFileSync(linkedDraft, 'utf8'), 'later draft after link\n');
+      assert.equal(runGit(['show', ':outline-link-folder'], copy), 'saved-folder-outline.txt');
+      assert.match(runGit(['ls-files', '--stage', '--', 'outline-link-folder'], copy), /^120000 /);
       assert.deepEqual(fs.readFileSync(binary), laterBytes);
       const savedBinary = spawnSync('git', ['show', ':drawing.bin'], { cwd: copy });
       assert.equal(savedBinary.status, 0);
