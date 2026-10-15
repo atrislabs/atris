@@ -4520,6 +4520,10 @@ test('the sweep listing splits leaked ssh-agents by engine runs and points to th
     fs.writeFileSync(path.join(home, '.zshrc'), 'eval "$(ssh-agent -s)"\n');
     const status = capture(() => showStatus(root, [], { readSshAgents: () => ({ agents: [agent(201, 3), agent(202, 2)], referenced: new Set() }), uid: 501, home }));
     assert.match(status, /\n {4}when the leaked ssh-agents started: [^\n]*so the startup line below is the one to fix, not an engine\n {4}likely source: ~\/\.zshrc line 1/);
+    fs.appendFileSync(file, `${JSON.stringify({ at: at(0.8), phase: 'start', engine: 'codex', run_id: 'b' })}\n`);
+    const turned = sweep([agent(201, 3), agent(202, 2), agent(203, 2.5), agent(204, 0.5)]);
+    assert.match(turned, /\nwhen the leaked ssh-agents started: 1 started while an engine run was open \(codex 1\), 3 with no engine run open; in the last hour: 1 while an engine run was open, 0 with none open\nlikely source/, 'a last hour mostly inside engine runs drops the claim that the engines are not the source');
+    assert.match(sweep([agent(201, 3), agent(202, 2), agent(205, 0.9)]), /; in the last hour: 0 while an engine run was open, 1 with none open; most started with no engine run open, so the startup line below is the one to fix, not an engine\n/);
   } finally {
     fs.rmSync(root, { recursive: true, force: true });
     fs.rmSync(home, { recursive: true, force: true });
