@@ -14326,7 +14326,7 @@ test('task status gives web and Swarlo a compact live contract', async () => {
   }
 });
 
-test('task status closes long current titles at a clause', () => {
+test('task status closes long current titles at a clause', async () => {
   if (!hasNodeSqlite()) return;
   const dir = makeTempDir();
   const env = { ATRIS_TASKS_DB: path.join(dir, 'tasks.db'), NODE_NO_WARNINGS: '1' };
@@ -14343,13 +14343,16 @@ test('task status closes long current titles at a clause', () => {
     } finally {
       taskStore.close();
     }
-    const json = runCli(['task', 'status', '--json'], { cwd: dir, env });
+    // Both status reads change no task state, so they run at once.
+    const [json, text] = await Promise.all([
+      runCliAsync(['task', 'status', '--json'], { cwd: dir, env }),
+      runCliAsync(['task', 'status'], { cwd: dir, env }),
+    ]);
     assert.equal(json.status, 0, json.stderr || json.stdout);
     const currentTitle = JSON.parse(json.stdout).status.current.title;
     assert.equal(currentTitle, 'The current status sentence now explains the operator consequence in one complete clause');
     assert.doesNotMatch(currentTitle, /\.\.\.|…|second clause/);
 
-    const text = runCli(['task', 'status'], { cwd: dir, env });
     assert.equal(text.status, 0, text.stderr || text.stdout);
     assert.match(text.stdout, /current .*The current status sentence now explains the operator consequence in one complete clause$/m);
     assert.doesNotMatch(text.stdout, /\.\.\.|…|second clause/);
