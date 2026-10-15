@@ -15,10 +15,12 @@ const { decide } = require('../lib/campaign-core');
 const { campaignDbPath, getCampaign, listCampaigns, newCampaignId, openCampaignStore } = require('../lib/campaign-store');
 const { findHoldout, moveHoldoutBack, moveHoldoutIn, scrub } = require('../lib/campaign-holdout');
 const { judgeRanData, judgeReading, outputTail } = require('../lib/campaign-reading');
-const { cloudLink, sendPersonAction, syncCampaign } = require('../lib/campaign-sync');
+const { CLOUD_FEATURES, cloudLink, cloudRunStatus, runInCloud, sendPersonAction, syncCampaign, takeCampaignToken } = require('../lib/campaign-sync');
 const { campaignHome, changedProtected, checkoutTop, planProtect, readProtect, saveProtect } = require('../lib/campaign-protect');
 
 const JUDGE_TIMEOUT_SECONDS = 15 * 60;
+// Who pays for a campaign's engines (atris/features/campaign/api.md, Credits).
+const BASES = ['own_engines', 'atris_cloud'];
 const STATE_ORDER = ['needs_you', 'running', 'queued', 'paused', 'resting', 'out_of_budget', 'done'];
 
 function printHelp() {
@@ -28,8 +30,9 @@ function printHelp() {
   console.log('  atris campaign start "<title>" --judge "<cmd>" --budget <dollars>');
   console.log('        [--holdout <file>]   move held-out data out of the repo; the judge reads it from $ATRIS_CAMPAIGN_HOLDOUT');
   console.log('        [--owner <member>] [--seat <member>[:<role>]]... [--bet "<bet>" [--wrong-if "<what proves it wrong>"]]');
-  console.log('        [--standing] [--parent <id>] [--id cmp-<name>] [--cloud] [--protect <path>]...');
+  console.log('        [--standing] [--parent <id>] [--id cmp-<name>] [--cloud [--basis atris_cloud]] [--protect <path>]...');
   console.log('        --protect saves paths agents must not touch, and the commit they start from');
+  console.log('        --basis atris_cloud: Atris runs it on your Atris computer and bills its engines; the default is your own engines');
   console.log('  atris campaign show <id>               bet, judge, answer, budget, seats, missions, asks');
   console.log('  atris campaign judge <id> [--timeout <seconds>]   run the judge now and record the reading');
   console.log('  atris campaign guard <id>              exits 1 naming any protected path changed since start');
@@ -48,7 +51,11 @@ function printHelp() {
   console.log('  atris campaign propose <id> [--count 3]   ask the owner\'s engine for the next missions');
   console.log('  atris campaign export <id> --trace [--out <file.jsonl>] [--full]   one row per mission for learning; redacted unless --full');
   console.log('  atris campaign sync <id>               trade events with the Atris cloud so web and iOS show it');
-  console.log('        start --cloud syncs at once; run syncs before and after every step of a synced campaign');
+  console.log('        start --cloud syncs at once; run syncs before and after every step of a synced campaign;');
+  console.log('        on a computer that has never seen <id>, sync pulls the whole campaign from the cloud');
+  console.log('  atris campaign cloud-run <id> [--work 50m --break 10m --rounds N]   run an atris_cloud campaign on your');
+  console.log('        Atris computer, so it keeps going while this one sleeps; --status says how that run is going');
+  console.log('  atris campaign features [--json]        what this CLI can do for an Atris cloud computer (the backend checks it)');
   console.log('');
   console.log('Every verb takes --json. Writes are recorded as you (human:<login>); agents pass --as <member>.');
   console.log('A new campaign runs its judge first and is refused if it already passes: write a judge that fails first.');
@@ -64,7 +71,7 @@ function money(value) {
 }
 
 // The flags this command understands, so positional words are what is left.
-const VALUE_FLAGS = ['--work', '--break', '--rounds', '--mission', '--parallel', '--max-steps', '--max-ticks', '--runner', '--count', '--judge', '--budget', '--owner', '--seat', '--bet', '--wrong-if', '--parent', '--id', '--role', '--add', '--data', '--timeout', '--as', '--holdout', '--protect'];
+const VALUE_FLAGS = ['--basis', '--work', '--break', '--rounds', '--mission', '--parallel', '--max-steps', '--max-ticks', '--runner', '--count', '--judge', '--budget', '--owner', '--seat', '--bet', '--wrong-if', '--parent', '--id', '--role', '--add', '--data', '--timeout', '--as', '--holdout', '--protect'];
 
 function positionals(args) {
   const out = [];
@@ -285,6 +292,11 @@ async function cmdStart(args, ctx) {
     return ctx.fail(`a campaign needs ${check.errors.map((e) => words[e] || e).join(', ')}`);
   }
   if (wrongIf && !bet) return ctx.fail('--wrong-if goes with --bet');
+  const basis = readFlag(args, '--basis', '');
+  if (basis && !BASES.includes(basis)) return ctx.fail(`--basis is ${BASES.join(' or ')}`);
+  if (basis === 'atris_cloud' && !args.includes('--cloud')) {
+    return ctx.fail('--basis atris_cloud runs on your Atris computer, so it needs --cloud too');
+  }
 
   const id = readFlag(args, '--id', '') || newCampaignId(title);
   if (!CAMPAIGN_ID.test(id)) return ctx.fail(`--id must look like cmp-<lowercase-words>, for example cmp-ship-billing`);
@@ -313,6 +325,7 @@ async function cmdStart(args, ctx) {
   if (seats.length) startData.seats = seats;
   if (bet && !wrongIf) startData.bet = bet;
   if (standing) startData.standing = true;
+  if (basis) startData.basis = basis;
   ctx.append(id, 'campaign_started', startData);
   if (bet && wrongIf) ctx.append(id, 'bet_set', { bet, wrong_if: wrongIf });
   if (parent) ctx.append(id, 'attached', { parent_id: parent });
@@ -334,11 +347,16 @@ function describeSync(result) {
   const parts = [`sent ${result.pushed}`, `received ${result.pulled}`];
   if (result.duplicates) parts.push(`${result.duplicates} already there`);
   if (result.held) parts.push(`${result.held} kept here (only a person's screen sends answers, budget, and done)`);
-  return `synced with the cloud: ${parts.join(', ')}`;
+  const first = result.first_pull ? `pulled ${result.campaign_id} from the cloud, new on this computer. ` : '';
+  return `${first}synced with the cloud: ${parts.join(', ')}`;
 }
 
 async function cmdSync(args, ctx) {
-  const { view, error } = requireCampaign(ctx, positionals(args)[1]);
+  const id = positionals(args)[1];
+  // A computer that has never seen the campaign pulls it whole from the cloud.
+  const here = id && getCampaign(ctx.store, id);
+  if (id && !here && !CAMPAIGN_ID.test(id)) return ctx.fail(`campaign ids look like cmp-<lowercase-words>, not ${id}`);
+  const { view, error } = here || !id ? requireCampaign(ctx, id) : { view: { id } };
   if (error !== undefined) return error;
   const result = await syncCampaign(ctx.store, view.id, ctx.cloud);
   if (!result.ok) {
@@ -349,6 +367,64 @@ async function cmdSync(args, ctx) {
   const after = getCampaign(ctx.store, view.id);
   ctx.out(`${describeSync(result)}\n${renderShow(after)}`, { ...result, campaign: after, next: decide(after) });
   return 0;
+}
+
+// Run an atris_cloud campaign on the person's Atris computer, or say how that
+// run is going (--status). A campaign that lives here is synced first so the
+// computer pulls everything this machine knows.
+async function cmdCloudRun(args, ctx) {
+  const id = positionals(args)[1];
+  if (!id) return ctx.fail('name the campaign: atris campaign cloud-run <id> [--work 50m --break 10m --rounds N]');
+  if (!CAMPAIGN_ID.test(id)) return ctx.fail(`campaign ids look like cmp-<lowercase-words>, not ${id}`);
+  if (args.includes('--status')) {
+    const status = await cloudRunStatus(id, ctx.cloud);
+    if (!status.ok) return ctx.fail(`cloud run status failed: ${status.error}`, 1);
+    ctx.out(describeCloudRun(status.data), status.data);
+    return 0;
+  }
+  const body = {};
+  const work = readFlag(args, '--work', '');
+  const pause = readFlag(args, '--break', '');
+  const rounds = readFlag(args, '--rounds', '');
+  const { parseDuration } = require('../lib/campaign-cadence');
+  try {
+    if (work) { parseDuration(work, 0); body.work = work; }
+    if (pause) { parseDuration(pause, 0); body.break = pause; }
+  } catch (err) {
+    return ctx.fail(err.message);
+  }
+  if (rounds) {
+    if (!/^[1-9][0-9]*$/.test(rounds)) return ctx.fail('--rounds is a whole number of rounds, 1 or more');
+    body.max_rounds = Number(rounds);
+  }
+  let synced = null;
+  const local = getCampaign(ctx.store, id);
+  if (local && !local.error) {
+    synced = await syncCampaign(ctx.store, id, ctx.cloud);
+    if (!synced.ok) return ctx.fail(`not started: the cloud needs this campaign first, and sync failed: ${synced.error}`, 1);
+  }
+  const started = await runInCloud(id, body, ctx.cloud);
+  if (!started.ok) return ctx.fail(`not started in the cloud: ${started.error}`, 1);
+  const run = started.data;
+  const lines = [
+    `running ${id} on your Atris computer (${run.computer}), run ${run.run_id}`,
+    `work ${run.work} · break ${run.break} · ${run.max_rounds ? `${run.max_rounds} round${run.max_rounds === 1 ? '' : 's'}` : 'until done, out of money, or needing you'} · stops by ${run.deadline}`,
+  ];
+  if (run.woke) lines.push('your computer was asleep; it is awake now and starts in about two minutes');
+  if (run.recorded === false) lines.push('note: the run started, but the campaign did not record its new home; atris campaign sync will still show its progress');
+  lines.push(`check on it: atris campaign cloud-run ${id} --status`);
+  ctx.out(lines.join('\n'), { ...run, ...(synced ? { sync: synced } : {}) });
+  return 0;
+}
+
+function describeCloudRun(data) {
+  const run = data.run;
+  const lines = [`${data.campaign_id}  ${String(data.state || '').replace(/_/g, ' ')} · home ${data.home || 'unknown'}`, data.summary || ''];
+  if (run) {
+    lines.push(`run ${run.run_id} on ${run.computer}: ${run.status}${run.exit_code === null || run.exit_code === undefined ? '' : ` (exit ${run.exit_code})`}${run.timed_out ? ', stopped at its deadline' : ''}`);
+    if (run.output_tail) lines.push('', 'last output:', run.output_tail.trimEnd());
+  }
+  return lines.filter((line, i) => line || i > 1).join('\n');
 }
 
 function cmdShow(args, ctx) {
@@ -590,16 +666,23 @@ async function cmdLoop(args, ctx, verb) {
 const VERBS = {
   start: cmdStart, show: cmdShow, judge: cmdJudge, guard: cmdGuard, seat: cmdSeat, bet: cmdBet, budget: cmdBudget,
   pause: cmdPause, resume: cmdResume, stop: cmdStop, event: cmdEvent,
-  ask: cmdAsk, answer: cmdAnswer, 'set-judge': cmdSetJudge, sync: cmdSync,
+  ask: cmdAsk, answer: cmdAnswer, 'set-judge': cmdSetJudge, sync: cmdSync, 'cloud-run': cmdCloudRun,
   run: (args, ctx) => cmdLoop(args, ctx, 'run'),
   step: (args, ctx) => cmdLoop(args, ctx, 'step'),
   propose: (args, ctx) => cmdLoop(args, ctx, 'propose'),
   // atris campaign new "<goal>": the owner's engine drafts a judge that fails today (lib/campaign-new.js).
   new: (args, ctx) => require('../lib/campaign-new').draftAndStart(args, ctx, { start: cmdStart, goal: positionals(args)[1], ask: ctx.loopDeps && ctx.loopDeps.ask }),
   export: (args, ctx) => require('../lib/campaign-trace').exportTrace(args, ctx),
+  features: (args, ctx) => {
+    ctx.out(`this atris CLI can: ${CLOUD_FEATURES.join(', ')}`, { ok: true, features: CLOUD_FEATURES });
+    return 0;
+  },
 };
 
 function campaignCommand(args = [], deps = {}) {
+  // Taken out of the environment before anything else runs (lib/campaign-sync.js).
+  const campaignToken = takeCampaignToken(deps.env || process.env);
+  if (campaignToken) deps = { ...deps, cloud: { ...(deps.cloud || {}), campaignToken } };
   if (!deps.store) moveToCheckoutRoot(args.includes('--json'));
   const verb = positionals(args)[0];
   if (verb === 'help' || args.includes('--help') || args.includes('-h')) {
