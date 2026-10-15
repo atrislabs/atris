@@ -716,7 +716,7 @@ MCP stdio request flow: `mcp/atris-mcp/index.mjs:142` reads requests while desig
 
 **Purpose:** Provide durable local task state for agents while keeping `atris/TODO.md` as the human-readable regenerated project board.
 
-- **Entry point:** command routing in `bin/atris.js:1911`
+- **Entry point:** command routing in `bin/atris.js:2001`
 - **Handler:** `commands/task.js:13421` (`run` dispatch); default `atris task` is `cmdFirstMinute` at `commands/task.js:6555`; full desk is `cmdHome` at `commands/task.js:6574`
 - **Store:** `lib/task-db.js:409` (`addTask`), `lib/task-db.js:492` (`listTasks`), `lib/task-db.js:581` (`claimTask`), `lib/task-db.js:727` (`doneTask`)
 - **TODO shim:** `lib/todo.js:19` (`dbToShimRow`) preserves imported `Verify:` metadata when `ATRIS_TASK_DB=1`
@@ -769,7 +769,7 @@ MCP stdio request flow: `mcp/atris-mcp/index.mjs:142` reads requests while desig
 
 - **Known command:** `lib/known-commands.js:4` includes `serve`, so the explicit branch is reachable before natural-language fallback
 - **Help:** `bin/atris.js:1086-1091` (`showServeHelp`) prints usage without auth checks or bridge startup
-- **Dispatch:** `bin/atris.js:1129-1143` routes `serve --help`, `serve -h`, and `serve help` before parsing bridge options; normal runs call `serveAtris`
+- **Dispatch:** `bin/atris.js:2371-2378` routes `serve --help`, `serve -h`, and `serve help` before parsing bridge options; normal runs call `serveAtris`
 - **Handler:** `commands/serve.js:306-407` (`serveAtris`) registers the session and subscribes for operations
 - **Safety core:** `commands/serve.js:55-78` (`safePath`) and `commands/serve.js:83-176` (`applyOp`) constrain file operations
 - **Regression:** `test/commands.test.js:4293-4305` covers `serve --help` without planner fallback, bridge startup, login checks, or auth-state creation
@@ -860,7 +860,7 @@ MCP stdio request flow: `mcp/atris-mcp/index.mjs:142` reads requests while desig
 
 **Purpose:** Named explore command. Capture one idea locally, then exit.
 
-- **Entry point:** `bin/atris.js:2520` (command routing)
+- **Entry point:** `bin/atris.js:2754` (command routing)
 - **Handler:** `commands/brainstorm.js:71-101` (brainstormAtris function)
 - **Help:** `commands/brainstorm.js:11-24` short-circuits before workspace/log setup; regression: `test/commands.test.js:18028-18043`
 - **How it works:**
@@ -917,7 +917,7 @@ MCP stdio request flow: `mcp/atris-mcp/index.mjs:142` reads requests while desig
 - **Ranking:** `commands/launchpad.js:205` (`chooseNextAction`) own-claimed task > mission needing a tick > proof needing agent review > certified human-accept queue > open claim > endgame seed > brain next move > ask-for-work; `taskIsHumanGatedClaimed` skips claimed work gated on human accept; no `atris init` bootstrap
 - **Suggestions:** `commands/launchpad.js:371` (`suggestedNextMoves`) returns up to 3 plain-language moves
 - **Render:** `commands/launchpad.js:573` (`renderLaunchpad`) draws the ASCII card; `commands/launchpad.js:607` (`showLaunchpadHelp`)
-- **Help:** `bin/atris.js:580` help line; **Routing:** `bin/atris.js:2479` dispatch, `lib/known-commands.js:3` `knownCommands`
+- **Help:** `bin/atris.js:608` help line; **Routing:** `bin/atris.js:2692` dispatch, `lib/known-commands.js:3` `knownCommands`
 - **Regression:** `test/first-minute.test.js` (empty first-talk, file names the file, post-mint already yours, post-init claim); `test/dogfood-p0-safety.test.js` `26d`/`26e`/`26h`/`26i`; `test/commands.test.js:17087` (actor-claimed first), `test/commands.test.js:17161` (clean queue to endgame seed), `test/commands.test.js:17197` (verifier mission when no claimed task); `--help` smoke at `test/commands.test.js:17031`
 - **Value:** Answers "who is doing what, what needs review, what is blocked, what should start next" in one card without cloud auth
 
@@ -1051,7 +1051,7 @@ MCP stdio request flow: `mcp/atris-mcp/index.mjs:142` reads requests while desig
 
 - **Entry point:** `commands/release.js:16` (releaseAtris function)
 - **Preflight:** `commands/release.js:213` (`releasePreflight`) checks master, a clean tree, local master vs origin/master, no existing `v<version>` tag, then `npm test` with `CI=true`; git failures skip the suite
-- **Dispatch/help:** `bin/atris.js:2797` routes `release`, `bin/atris.js:2803` routes `release preflight`, `bin/atris.js:996` (`showReleaseHelp`) and `bin/atris.js:614` list the preflight command
+- **Dispatch/help:** `bin/atris.js:2922` routes `release`, `bin/atris.js:2928` routes `release preflight`, `bin/atris.js:996` (`showReleaseHelp`) and `bin/atris.js:634` list the preflight command
 - **Flags:** `--dry-run` prints the draft without mutating
 - **Steps:** git log since last tag → determine bump (minor if scorecard reward≥5, else patch) → run `npm version --no-git-tag-version` so package.json and package-lock.json move together → commit both files → tag → push → `gh release create` → print launch post
 - **Helpers:**
@@ -1230,7 +1230,7 @@ rg "printRoster|registryPayload|canPersistEngineRegistry|speakFirstMinute|--glob
 - **Summary table:** `commands/run.js:438` (cycleTimings forEach): per-cycle phase duration table
 - **Post-cycle clean:** `commands/run.js:559` (cleanAtris call): self-heal MAP.md refs
 - **Post-cycle push:** `commands/run.js:393` (execSync git push): disabled with `--no-push`
-- **Routing:** `bin/atris.js:120-138` (command dispatch + flag parsing)
+- **Routing:** `bin/atris.js:2518` (command dispatch + flag parsing)
 - **Help text:** `bin/atris.js:501` (showHelpShort first-minute doors) · `bin/atris.js:786` (showHelp --all/--json)
 - **Known commands:** `lib/known-commands.js:3` (knownCommands array)
 - **Constants:** `DEFAULT_MAX_CYCLES = 5`, `PHASE_TIMEOUT = 600000` (10 min per phase)
@@ -1331,7 +1331,7 @@ rg "printRoster|registryPayload|canPersistEngineRegistry|speakFirstMinute|--glob
 - `whoamiAtris` (lines 138-152): Show auth status via `displayAccountSummary`
 - **Auth (canonical):** `utils/auth.js` + `utils/api.js`: all auth logic consolidated, no inline duplicates
 - **Help:** `bin/atris.js:983-1012` (`showAuthHelp`) prints login/logout/whoami/switch/use/accounts usage before auth workers can prompt, create state, delete credentials, or touch session/profile dirs
-- **Dispatch:** `bin/atris.js:1205-1239` routes login/logout/whoami/switch/use/accounts `--help`, `-h`, and bare `help` before calling `commands/auth.js`
+- **Dispatch:** `bin/atris.js:2406-2447` routes login/logout/whoami/switch/use/accounts `--help`, `-h`, and bare `help` before calling `commands/auth.js`
 - **Regression:** `test/commands.test.js:4249-4294` covers auth/account help without login prompts, status output, `.atris` creation, session/profile dir creation, or credential deletion
 - JWT helpers: `decodeJwtClaims` (bin:59-74), `shouldRefreshToken` (bin:85-92)
 - **Credentials storage:** `~/.atris/credentials.json` (chmod 0o600 on save)
@@ -1361,7 +1361,7 @@ rg "printRoster|registryPayload|canPersistEngineRegistry|speakFirstMinute|--glob
 
 - **Entry point:** `commands/setup.js:6-178` (`setupAtris`)
 - **Help:** `bin/atris.js:1074-1077` (`showSetupHelp`) prints setup usage without entering setup
-- **Dispatch:** `bin/atris.js:1498-1499` routes `setup --help`, `setup -h`, and `setup help` before login, business fetch, or pull flow
+- **Dispatch:** `bin/atris.js:3380-3385` routes `setup --help`, `setup -h`, and `setup help` before login, business fetch, or pull flow
 - **Regression:** `test/commands.test.js:4279-4290` covers setup help without setup banner, login prompt, or `.atris` creation
 - **Value:** Gives first-run guidance while keeping help safe in temp homes and automation.
 
@@ -1381,7 +1381,7 @@ rg "printRoster|registryPayload|canPersistEngineRegistry|speakFirstMinute|--glob
 
 **Purpose:** Install latest Atris version from npm
 
-- **Entry point:** `bin/atris.js:2945-2990` (upgradeAtris function)
+- **Entry point:** `bin/atris.js:3478-3530` (upgradeAtris function)
 - **Dispatch/help:** `bin/atris.js:2332-2336` handles `upgrade --help` before npm checks or global installs
 - **Logic:**
 - Shows current version
@@ -1432,7 +1432,7 @@ rg "printRoster|registryPayload|canPersistEngineRegistry|speakFirstMinute|--glob
 
 **Purpose:** Real-time conversation with selected agent
 
-- **Entry point:** `bin/atris.js:3238-3319` (chatAtris function)
+- **Entry point:** `bin/atris.js:3771-3885` (chatAtris function)
 - **Requires:** Valid credentials + selected agent
 - **Modes:**
 - One-shot: `atris chat "message"`
@@ -1531,7 +1531,7 @@ rg "printRoster|registryPayload|canPersistEngineRegistry|speakFirstMinute|--glob
 - **Shared wrapper:** `lib/official-cli-integration.js:184` (`createOfficialCliCommand`)
 - **Help line:** `bin/atris.js:616` (`github cli wrapper`)
 - **Known command:** `lib/known-commands.js:7` (`github`)
-- **Routing:** `bin/atris.js:2141` (`command === 'github'`)
+- **Routing:** `bin/atris.js:2971` (`command === 'github'`)
 - **Subcommands:** `commands/github.js:12` (`pr list`), `commands/github.js:18` (`pr create`), `commands/github.js:24` (`pr checks`), `commands/github.js:30` (`pr view`)
 - **Regression:** `test/official-cli-integrations.test.js:56` (workspace-free help), `test/official-cli-integrations.test.js:71` (missing `gh` install hint), `test/official-cli-integrations.test.js:85` (auth status), `test/official-cli-integrations.test.js:102` (passthrough args)
 
@@ -1545,7 +1545,7 @@ rg "printRoster|registryPayload|canPersistEngineRegistry|speakFirstMinute|--glob
 - **Shared wrapper:** `lib/official-cli-integration.js:184` (`createOfficialCliCommand`)
 - **Help line:** `bin/atris.js:617` (`vercel cli wrapper`)
 - **Known command:** `lib/known-commands.js:7` (`vercel`)
-- **Routing:** `bin/atris.js:2144` (`command === 'vercel'`)
+- **Routing:** `bin/atris.js:2974` (`command === 'vercel'`)
 - **Subcommands:** `commands/vercel.js:12` (`deploy`), `commands/vercel.js:18` (`ls`), `commands/vercel.js:24` (`logs`), `commands/vercel.js:30` (`inspect`)
 - **Regression:** `test/official-cli-integrations.test.js:118` (workspace-free help), `test/official-cli-integrations.test.js:133` (missing `vercel` install hint), `test/official-cli-integrations.test.js:147` (auth status), `test/official-cli-integrations.test.js:164` (passthrough args)
 
@@ -1559,7 +1559,7 @@ rg "printRoster|registryPayload|canPersistEngineRegistry|speakFirstMinute|--glob
 - **Shared wrapper:** `lib/official-cli-integration.js:184` (`createOfficialCliCommand`)
 - **Help line:** `bin/atris.js:618` (`supabase cli wrapper`)
 - **Known command:** `lib/known-commands.js:7` (`supabase`)
-- **Routing:** `bin/atris.js:2147` (`command === 'supabase'`)
+- **Routing:** `bin/atris.js:2977` (`command === 'supabase'`)
 - **Subcommands:** `commands/supabase.js:13` (`status`), `commands/supabase.js:19` (`db push`), `commands/supabase.js:25` (`functions list`), `commands/supabase.js:31` (`functions deploy`)
 - **Regression:** `test/official-cli-integrations.test.js:180` (workspace-free help), `test/official-cli-integrations.test.js:195` (missing `supabase` install hint), `test/official-cli-integrations.test.js:209` (auth status), `test/official-cli-integrations.test.js:226` (status passthrough), `test/official-cli-integrations.test.js:242` (db passthrough)
 
@@ -1573,7 +1573,7 @@ rg "printRoster|registryPayload|canPersistEngineRegistry|speakFirstMinute|--glob
 - **Shared wrapper:** `lib/official-cli-integration.js:184` (`createOfficialCliCommand`)
 - **Help line:** `bin/atris.js:619` (`linear cli wrapper`)
 - **Known command:** `lib/known-commands.js:7` (`linear`)
-- **Routing:** `bin/atris.js:2150` (`command === 'linear'`)
+- **Routing:** `bin/atris.js:2980` (`command === 'linear'`)
 - **Subcommands:** `commands/linear.js:12` (`issue list`), `commands/linear.js:18` (`issue create`), `commands/linear.js:24` (`issue view`), `commands/linear.js:30` (`issue update`)
 - **Regression:** `test/official-cli-integrations.test.js:258` (workspace-free help), `test/official-cli-integrations.test.js:273` (missing `linear` install hint), `test/official-cli-integrations.test.js:287` (auth status), `test/official-cli-integrations.test.js:304` (passthrough args)
 
@@ -1587,7 +1587,7 @@ rg "printRoster|registryPayload|canPersistEngineRegistry|speakFirstMinute|--glob
 - **Shared wrapper:** `lib/official-cli-integration.js:184` (`createOfficialCliCommand`)
 - **Help line:** `bin/atris.js:620` (`stripe cli wrapper`)
 - **Known command:** `lib/known-commands.js:7` (`stripe`)
-- **Routing:** `bin/atris.js:2153` (`command === 'stripe'`)
+- **Routing:** `bin/atris.js:2983` (`command === 'stripe'`)
 - **Subcommands:** `commands/stripe.js:12` (`listen`), `commands/stripe.js:18` (`trigger`), `commands/stripe.js:24` (`products list`), `commands/stripe.js:30` (`products create`)
 - **Regression:** `test/official-cli-integrations.test.js:320` (workspace-free help), `test/official-cli-integrations.test.js:335` (missing `stripe` install hint), `test/official-cli-integrations.test.js:349` (auth status), `test/official-cli-integrations.test.js:366` (listen passthrough), `test/official-cli-integrations.test.js:382` (products passthrough)
 
@@ -1613,7 +1613,7 @@ rg "printRoster|registryPayload|canPersistEngineRegistry|speakFirstMinute|--glob
 - `atris slack [channels]` (`commands/integrations.js:1377`): Slack channel listing; unbound scratch folders refuse every slack verb via `requireAccountBound` before this runs
 - `atris integrations` (lines 298-338): Show status of all integrations
 - **Auth:** Uses `getAuthToken()` (`commands/integrations.js:298`) from `~/.atris/credentials.json`
-- **Routing:** `bin/atris.js:2744` (`command === 'gmail'`) and `bin/atris.js:2783` (`command === 'slack'`): always `requireAccountBound`; both extract `--account <id>` first and do not treat that selector as the workspace opt-in, so scratch `gmail send --account foo` and `slack send --account foo` refuse like the bare verbs; a refused gate returns before `gmailCommand` / `slackCommand` so send cannot fall through; `--help` still prints usage
+- **Routing:** `bin/atris.js:2986` (`command === 'gmail'`) and `bin/atris.js:3025` (`command === 'slack'`): always `requireAccountBound`; both extract `--account <id>` first and do not treat that selector as the workspace opt-in, so scratch `gmail send --account foo` and `slack send --account foo` refuse like the bare verbs; a refused gate returns before `gmailCommand` / `slackCommand` so send cannot fall through; `--help` still prints usage
 - **Help:** `bin/atris.js:1062` (`showIntegrationsHelp`) routes `integrations --help` before auth/session state or backend status checks; Gmail subcommand help is in `commands/integrations.js:595`
 - **Gmail regressions:** `test/gmail-triage.test.js` (rule reasons, verdict log rows, read-only Gmail calls), `test/gmail-verdicts.test.js` (legacy rows, reason passthrough, daily account summaries), `test/gmail-account.test.js:99` (connect validation), `test/gmail-account.test.js:129` (poll success), `test/gmail-account.test.js:182` (timeout), `test/gmail-account.test.js:298` (inbox mailbox header), `test/gmail-account.test.js:386` (send request), `test/gmail-account.test.js:436` (unowned send refusal), `test/gmail-account.test.js:471` (send usage), `test/gmail-account.test.js:501` (voice clear), `test/gmail-account.test.js:531` (piped voice), `test/gmail-account.test.js:564` (account roster), `test/gmail-account.test.js:610` (interactive display-name picker), `test/dogfood-pass3-27-28.test.js` (unbound scratch `gmail connect`, `gmail send --account foo`, and `slack send --account foo` exit 2 with no network, lookup, or send)
 - **Regression:** `test/commands.test.js:4279-4294` covers integrations help without login errors or `.atris` creation
