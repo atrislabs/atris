@@ -532,8 +532,9 @@ const END_CLAUSE_AFTER_DASH = new RegExp(`${CLAUSE_END}\\s*\\u2014\\s*(?=(?:the|
 // each tick re-reads the latest logs", "the app auto-updates; every launch
 // checks the feed". No "the", "that" or place word may sit before the verb,
 // so "each time the loop runs" and "each with its own tests in CI" keep
-// their comma.
-const EACH_CLAUSE_AFTER_DASH = new RegExp(`${CLAUSE_END}\\s*\\u2014\\s*(?!${TIME_OPENER})(?=(?:each|every)\\s+(?:(?!(?:the|a|an|that|whose|of|with|in|on|for|from|at|by|to|per|and|or|but)\\b)${NOUN_WORD}\\s+){0,4}(?:[a-z]+-)?${PLAIN_VERB}[^\\s\\u2014])`, 'g');
+// their comma. After "each" or "every" and one noun with no "s", the verb
+// may take a place word: "nothing invented; every row traces to a file".
+const EACH_CLAUSE_AFTER_DASH = new RegExp(`${CLAUSE_END}\\s*\\u2014\\s*(?!${TIME_OPENER})(?=(?:each|every)\\s+(?:(?!(?:the|a|an|that|whose|of|with|in|on|for|from|at|by|to|per|and|or|but)\\b)${NOUN_WORD}\\s+){0,4}(?:[a-z]+-)?${PLAIN_VERB}[^\\s\\u2014]|(?:each|every)\\s+(?![a-z-]*s\\b)[a-z][a-z-]*\\s+(?:only\\s+)?${PLAIN_VERB_WORD}(?<!ss|us|is)\\s+(?:in|on|to|into|onto|from|for|with|at|by|across|through)\\s+[^\\s\\u2014])`, 'g');
 // A bare word and a plain verb start a clause too, but never a word that
 // only says when (see WHEN_WORD). A number word before a word in "s" counts
 // a plural noun, never a subject and its verb, so "shipped it, two weeks

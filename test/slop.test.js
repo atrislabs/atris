@@ -3195,6 +3195,13 @@ test('fix joins "each" or "every", its noun and a verb in "s" after a dash with 
     'The app auto-updates \u2014 every launch checks the feed and pulls a signed update.',
     'Static defense is in good shape \u2014 every scanner returns 0.',
     'The repos are split \u2014 every one with its own tests folder.',
+    // after "every" or "each" and one singular noun, the verb may take a
+    // place word: "every row traces to a file". A plural or a possessive
+    // before it is no such noun.
+    'Nothing invented \u2014 every row traces to a file.',
+    'No id segment \u2014 each route operates on the current graph.',
+    "Same list \u2014 each user's logs in the folder.",
+    'Look here \u2014 every news in the feed.',
     // no "the" or place word may sit before the verb
     'The cache warms up \u2014 each time the loop runs.',
     'The repos are split \u2014 each with its own tests folder.',
@@ -3212,6 +3219,10 @@ test('fix joins "each" or "every", its noun and a verb in "s" after a dash with 
     'The app auto-updates; every launch checks the feed and pulls a signed update.',
     'Static defense is in good shape; every scanner returns 0.',
     'The repos are split, every one with its own tests folder.',
+    'Nothing invented; every row traces to a file.',
+    'No id segment; each route operates on the current graph.',
+    "Same list, each user's logs in the folder.",
+    'Look here, every news in the feed.',
     'The cache warms up, each time the loop runs.',
     'The repos are split, each with its own tests folder.',
     'The cache warms up, each time the loop runs it.',
