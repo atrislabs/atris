@@ -538,8 +538,9 @@ const END_CLAUSE_AFTER_DASH = new RegExp(`${CLAUSE_END}\\s*\\u2014\\s*(?=(?:the|
 // word may sit before it: "billing works; a paid checkout lands in the
 // mission room". "The" may open a plural ("the release notes to the
 // team"), so it keeps its comma, as do "a few" and "a couple".
+// "Out of" counts as a place word: "this skill works out of the box".
 const SINGLE_OPENER_NOUN = '(?![a-z-]*s\\b)(?!(?:few|couple|dozen|of|in|on|for|with|at|by|to|from|and|or|but|that|which|who|it|its|her|his|my|our|your|their)\\b)[a-z][a-z-]*\\s+';
-const EACH_CLAUSE_AFTER_DASH = new RegExp(`${CLAUSE_END}\\s*\\u2014\\s*(?!${TIME_OPENER})(?=(?:each|every)\\s+(?:(?!(?:the|a|an|that|whose|of|with|in|on|for|from|at|by|to|per|and|or|but)\\b)${NOUN_WORD}\\s+){0,4}(?:[a-z]+-)?${PLAIN_VERB}[^\\s\\u2014]|(?:each|every|a|an|this|${THAT_OPENER})\\s+${SINGLE_OPENER_NOUN}(?:${SINGLE_OPENER_NOUN})?(?:only\\s+)?${PLAIN_VERB_WORD}(?<!ss|us|is)\\s+(?:in|on|to|into|onto|from|for|with|at|by|across|through)\\s+[^\\s\\u2014])`, 'g');
+const EACH_CLAUSE_AFTER_DASH = new RegExp(`${CLAUSE_END}\\s*\\u2014\\s*(?!${TIME_OPENER})(?=(?:each|every)\\s+(?:(?!(?:the|a|an|that|whose|of|with|in|on|for|from|at|by|to|per|and|or|but)\\b)${NOUN_WORD}\\s+){0,4}(?:[a-z]+-)?${PLAIN_VERB}[^\\s\\u2014]|(?:each|every|a|an|this|${THAT_OPENER})\\s+${SINGLE_OPENER_NOUN}(?:${SINGLE_OPENER_NOUN})?(?:only\\s+)?${PLAIN_VERB_WORD}(?<!ss|us|is)\\s+(?:in|on|to|into|onto|from|for|with|at|by|across|through|out\\s+of)\\s+[^\\s\\u2014])`, 'g');
 // A bare word and a plain verb start a clause too, but never a word that
 // only says when (see WHEN_WORD). A number word before a word in "s" counts
 // a plural noun, never a subject and its verb, so "shipped it, two weeks

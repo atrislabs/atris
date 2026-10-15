@@ -3206,6 +3206,7 @@ test('fix joins "each" or "every", its noun and a verb in "s" after a dash with 
     // word may come first; "the" may open a plural and keeps its comma
     'Billing works \u2014 a paid checkout lands in the mission room now.',
     'We pinned it \u2014 that flag downgrades to a stale model.',
+    'Install it once \u2014 this skill works out of the box for all of them.',
     'Ship it \u2014 the release notes to the team.',
     'We counted \u2014 a few tests in the folder.',
     'We counted \u2014 a lot of users in the folder.',
@@ -3232,6 +3233,7 @@ test('fix joins "each" or "every", its noun and a verb in "s" after a dash with 
     'Look here, every news in the feed.',
     'Billing works; a paid checkout lands in the mission room now.',
     'We pinned it; that flag downgrades to a stale model.',
+    'Install it once; this skill works out of the box for all of them.',
     'Ship it, the release notes to the team.',
     'We counted, a few tests in the folder.',
     'We counted, a lot of users in the folder.',
