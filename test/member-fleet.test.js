@@ -28,6 +28,10 @@ function makeTeamWorkspace() {
   return root;
 }
 
+// Ignited runs spawn git worktrees and fake engines; under a loaded machine
+// they take well past 30s, so the ceiling only guards against a real hang.
+const IGNITE_TIMEOUT_MS = 90000;
+
 function runCli(args, cwd) {
   const result = spawnSync(process.execPath, [cliPath, ...args], {
     cwd,
@@ -232,7 +236,7 @@ test('member run --ignite executes in isolated worktree and member status --all 
       {
         cwd: root,
         encoding: 'utf8',
-        timeout: 30000,
+        timeout: IGNITE_TIMEOUT_MS,
         env: {
           ...process.env,
           ATRIS_SKIP_UPDATE_CHECK: '1',
@@ -240,7 +244,7 @@ test('member run --ignite executes in isolated worktree and member status --all 
         },
       }
     );
-    assert.equal(runRes.status, 0, runRes.stderr || runRes.stdout);
+    assert.equal(runRes.status, 0, runRes.error?.message || runRes.stderr || runRes.stdout);
     const runPayload = JSON.parse(runRes.stdout);
     assert.equal(runPayload.ok, true);
     assert.equal(runPayload.mission.status, 'complete');
@@ -340,7 +344,7 @@ test('member run infers test checks from goal text and runs a second-model refer
       {
         cwd: root,
         encoding: 'utf8',
-        timeout: 30000,
+        timeout: IGNITE_TIMEOUT_MS,
         env: {
           ...process.env,
           ATRIS_SKIP_UPDATE_CHECK: '1',
@@ -348,7 +352,7 @@ test('member run infers test checks from goal text and runs a second-model refer
         },
       }
     );
-    assert.equal(res.status, 0, res.stderr || res.stdout);
+    assert.equal(res.status, 0, res.error?.message || res.stderr || res.stdout);
     const payload = JSON.parse(res.stdout);
     assert.equal(payload.mission.status, 'complete');
     assert.equal(payload.ticks[0].verifier_passed, true);

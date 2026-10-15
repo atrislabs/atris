@@ -1,6 +1,6 @@
 # Campaign — Handoff
 
-> Start here. Read this file, then `first-campaign.md`, then the parts of `idea.md` and `build.md` your mission needs. Do not read everything up front.
+> Why it exists: `THESIS.md` (one page). Start here. Read this file, then `first-campaign.md`, then the parts of `idea.md` and `build.md` your mission needs. Do not read everything up front.
 
 ## What it is (one paragraph)
 

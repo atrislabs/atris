@@ -7806,3 +7806,20 @@ test('mission start/run/tick help variants print usage, exit 0, and create no st
     }
   }
 });
+
+test('a missing-id hint never walks the system temp folder and stops after its scan limit', () => {
+  const { listSiblingWorkspaceMissionHints } = require('../commands/mission');
+  const parent = makeTempDir();
+  try {
+    for (const name of ['a-workspace', 'b-workspace']) {
+      appendMissionState(path.join(parent, name), { id: 'mission-far-away', slug: 'far-away', objective: 'Far away', status: 'running', updated_at: '2026-07-02T00:00:00.000Z' });
+    }
+    const here = path.join(parent, 'here');
+    fs.mkdirSync(here);
+    assert.equal(listSiblingWorkspaceMissionHints('mission-far-away', here).length, 2);
+    assert.deepEqual(listSiblingWorkspaceMissionHints('mission-far-away', here, 5, { tmpRoot: parent }), [], 'the temp folder is never scanned');
+    assert.ok(listSiblingWorkspaceMissionHints('mission-far-away', here, 5, { scanLimit: 1 }).length <= 1, 'the scan stops at its limit');
+  } finally {
+    fs.rmSync(parent, { recursive: true, force: true });
+  }
+});

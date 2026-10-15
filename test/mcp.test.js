@@ -221,7 +221,7 @@ test('atris mcp lists the three design tools over stdio', async () => {
   assert.ok(init && init.result, `no initialize response. stderr: ${stderr}`);
   const list = messages.find((m) => m.id === 2);
   assert.ok(list && list.result && Array.isArray(list.result.tools), `no tools/list response. stderr: ${stderr}`);
-  const names = list.result.tools.map((t) => t.name).sort();
+  const names = list.result.tools.map((t) => t.name).filter((n) => n.startsWith('design_')).sort();
   assert.deepEqual(names, ['design_check', 'design_extract', 'design_search']);
   const extract = list.result.tools.find((t) => t.name === 'design_extract');
   assert.deepEqual(extract.inputSchema.required, ['url']);

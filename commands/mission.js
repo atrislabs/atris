@@ -2,6 +2,7 @@
 
 const fs = require('fs');
 const path = require('path');
+const os = require('os');
 const crypto = require('crypto');
 const readline = require('readline');
 const { spawn, spawnSync } = require('child_process');
@@ -115,6 +116,8 @@ const {
 
 const VALID_STATUSES = new Set(['planning', 'running', 'ready', 'paused', 'blocked', 'stopped', 'complete']);
 const TERMINAL_STATUSES = new Set(['stopped', 'complete']);
+// Campaign hooks load on first use, so missions without a campaign never open its store.
+const campaignMissions = () => require('../lib/campaign-missions');
 const GOAL_LOOP_STATUSES = new Set(['planning', 'running', 'ready']);
 const STATUS_ALIASES = new Set(['active']);
 const CODEX_NATIVE_GOAL_SLOT_STATUSES = new Set(['active', 'paused', 'usage_limited']);
@@ -761,6 +764,8 @@ const MISSION_RUN_VALUE_FLAGS = [
   '--engine',
   '--referee-engine',
   '--budget',
+  '--campaign',
+  '--reserve',
   '--repo',
   '--native-goal-status',
   '--native-goal-objective',
@@ -1497,14 +1502,24 @@ function nearestMissionCandidates(missions, ref, limit = 5) {
     .map((entry) => entry.mission);
 }
 
-function listSiblingWorkspaceMissionHints(ref, root = process.cwd(), limit = 5) {
+// Sibling folders looked at for a hint. A missing-id error waited 26 seconds
+// on a temp folder holding 276,000 entries, so the scan is capped and never
+// walks the system temp folder.
+const SIBLING_HINT_SCAN_LIMIT = 2000;
+
+function listSiblingWorkspaceMissionHints(ref, root = process.cwd(), limit = 5, { scanLimit = SIBLING_HINT_SCAN_LIMIT, tmpRoot = os.tmpdir() } = {}) {
   if (!ref) return [];
   const baseRoot = path.resolve(root);
   const parent = path.dirname(baseRoot);
-  let here = baseRoot;
-  try {
-    here = fs.realpathSync(baseRoot);
-  } catch { /* keep raw path */ }
+  const real = (target) => {
+    try {
+      return fs.realpathSync(target);
+    } catch {
+      return target;
+    }
+  };
+  const here = real(baseRoot);
+  if (real(parent) === real(tmpRoot)) return [];
   let entries = [];
   try {
     entries = fs.readdirSync(parent, { withFileTypes: true });
@@ -1513,17 +1528,11 @@ function listSiblingWorkspaceMissionHints(ref, root = process.cwd(), limit = 5) 
   }
   if (entries.length > 200) return [];
   const hints = [];
-  for (const entry of entries) {
+  for (const entry of entries.slice(0, scanLimit)) {
     if (!entry.isDirectory() || entry.name.startsWith('.')) continue;
     const candidateRoot = path.join(parent, entry.name);
     if (!fs.existsSync(path.join(candidateRoot, '.atris', 'state', 'missions.jsonl'))) continue;
-    let candidateReal = candidateRoot;
-    try {
-      candidateReal = fs.realpathSync(candidateRoot);
-    } catch {
-      continue;
-    }
-    if (candidateReal === here) continue;
+    if (real(candidateRoot) === here) continue;
     const mission = listMissions(candidateRoot).find((row) => missionMatchesRef(row, ref));
     if (!mission) continue;
     hints.push({
@@ -1716,6 +1725,7 @@ function saveMission(mission, root = process.cwd(), eventType = 'mission_updated
   // this file several times, so unbounded snapshot history taxes everything.
   try { compactMissionLedger(paths.missionsJsonl); } catch {}
   const event = appendEvent(eventType, next, payload, root);
+  if (next.campaign_id) campaignMissions().recordCampaignMissionEnded(root, existing, next, TERMINAL_STATUSES);
   renderMissionStatus(root);
   renderMemberMissionState(next.owner, root);
   return { mission: next, event };
@@ -3189,6 +3199,9 @@ function missionFromArgs(args) {
     '--base',
     '--task',
     '--ask',
+    '--campaign',
+    '--reserve',
+    '--mission-id',
     '--model',
     '--destination',
     '--native-goal-status',
@@ -3205,6 +3218,7 @@ function missionFromArgs(args) {
   const budgetContract = inferRunObjectiveBudgetContract(objective, args);
   const maxTicksOverride = readPositiveIntegerFlag(args, '--max-ticks', null, { json: wantsJson(args) });
   const requestedOwner = readFlag(args, '--owner', process.env.ATRIS_AGENT_ID || 'mission-lead');
+  const campaignId = readFlag(args, '--campaign', '');
   const cadence = readFlag(args, '--cadence', readFlag(args, '--loop', 'manual')) || 'manual';
   const engineFlag = readFlag(args, '--engine', '');
   const runnerSelection = engineFlag
@@ -3232,7 +3246,13 @@ function missionFromArgs(args) {
   const alwaysOn = hasFlag(args, '--always-on');
   const xpTaskEnabled = hasFlag(args, '--xp-task') || hasFlag(args, '--agent-xp');
   const businessBinding = readBusinessBinding(process.cwd());
-  const id = missionId(objective);
+  // A campaign proposes a mission under an id before it runs; --mission-id
+  // keeps that id so the campaign and the mission name the same thing.
+  const givenId = readFlag(args, '--mission-id', '');
+  if (givenId && !/^[a-z0-9][a-z0-9-]{2,120}$/.test(givenId)) {
+    exitMissionError('--mission-id takes lowercase letters, digits, and dashes', 2, wantsJson(args));
+  }
+  const id = givenId || missionId(objective);
   const mission = {
     schema: 'atris.mission.v1',
     id,
@@ -3258,6 +3278,7 @@ function missionFromArgs(args) {
     stop_condition: stopCondition,
     task_ids: taskIds,
     human_asks: humanAsks,
+    ...(campaignId ? { campaign_id: campaignId } : {}),
     ...(drive ? { drive } : {}),
     next_action: verifier ? 'run verifier with `atris mission tick <id> --verify`' : 'define verifier or run next task',
     receipt_path: null,
@@ -4424,6 +4445,7 @@ function seedMissionRunContinuation(parent, root = process.cwd(), proof = '') {
     ...mission,
     started_from: 'mission_run_continuation',
     parent_mission_id: parent.id,
+    ...(parent.campaign_id && campaignMissions().checkCampaignStart(root, parent.campaign_id, { reserveUsd: 0 }).ok ? { campaign_id: parent.campaign_id } : {}),
     parent_objective: parent.objective,
     continue_on_complete: false,
     continuation_policy: 'choose_next_mission',
@@ -4440,6 +4462,7 @@ function seedMissionRunContinuation(parent, root = process.cwd(), proof = '') {
     parent_objective: parent.objective,
     proof: proof || null,
   });
+  if (saved.campaign_id) campaignMissions().recordCampaignMissionStarted(root, saved, 0);
   const worktreeBaseline = captureMissionWorktreeBaseline(saved, root);
   const seededAt = stampIso();
   const { mission: updatedParent } = saveMission({
@@ -4525,7 +4548,7 @@ function startMission(args, options = {}) {
   const asJson = wantsJson(args);
   const firstArg = String(args[0] || '').trim().toLowerCase();
   if (args.length === 1 && (firstArg === '--help' || firstArg === '-h' || firstArg === 'help')) {
-    console.log('Usage: atris mission start "<objective>" --owner <member> --verify "..." [--destination "..."] [--no-verify] [--always-on] [--budget quick|long|deep] [--runner manual|claude|atris2|codex_goal|auto]');
+    console.log('Usage: atris mission start "<objective>" --owner <member> --verify "..." [--destination "..."] [--no-verify] [--always-on] [--budget quick|long|deep] [--runner manual|claude|atris2|codex_goal|auto] [--campaign <id> [--reserve <dollars>]]');
     console.log('Run `atris mission --help` for the full option list.');
     process.exit(0);
   }
@@ -4611,6 +4634,18 @@ function startMission(args, options = {}) {
       2,
       asJson,
     );
+  }
+  // --campaign: the campaign must be open and able to hold this mission's
+  // reserve. Checked before any state exists, so a refusal leaves nothing behind.
+  let campaignReserve = 0;
+  if (mission.campaign_id) {
+    const check = campaignMissions().checkCampaignStart(process.cwd(), mission.campaign_id, { missionId: mission.id, reserveUsd: readFlag(args, '--reserve', '') });
+    if (!check.ok) exitMissionError(`mission start refused: ${check.error}`, 2, asJson);
+    try {
+      campaignMissions().reserveCampaignMission(process.cwd(), mission.campaign_id, mission.id, check.reserve, mission.owner || 'mission-lead');
+    } catch (error) {
+      exitMissionError(`mission start refused: ${error.message}`, 2, asJson);
+    }
   }
   // --worktree: bind the mission to its own isolated checkout. We chdir before
   // any state writes so the mission record, baseline sidecar, receipts, and
@@ -4703,6 +4738,7 @@ function startMission(args, options = {}) {
   const warnings = [missingVerifierWarning(mission), missingOwnerMemberWarning(mission.owner)].filter(Boolean);
   ensureMemberMissionFile(mission.owner, process.cwd(), mission.objective);
   const { mission: saved } = saveMission(assignMissionNumber(mission, process.cwd()), process.cwd(), 'mission_started', { objective: mission.objective });
+  if (saved.campaign_id) campaignMissions().recordCampaignMissionStarted(process.cwd(), saved, campaignReserve);
   const goalSlotHandoff = hasFlag(args, '--take-goal-slot') && isCodexGoalMission(saved)
     ? takeCodexGoalSlotForMission(saved, process.cwd())
     : null;
@@ -4823,6 +4859,8 @@ async function startMissionFromRunObjective(objective, args) {
   ];
   if (verifier) startArgs.push('--verify', verifier);
   if (budgetTier) startArgs.push('--budget', budgetTier.name);
+  const campaignFlag = readFlag(args, '--campaign', '');
+  if (campaignFlag) startArgs.push('--campaign', campaignFlag);
   if (maxTicksOverride) startArgs.push('--max-ticks', String(maxTicksOverride));
   const model = readFlag(args, '--model', '');
   if (model) startArgs.push('--model', model);
@@ -4830,6 +4868,16 @@ async function startMissionFromRunObjective(objective, args) {
   if (hasFlag(args, '--xp-task') || hasFlag(args, '--agent-xp') || missionRunPreflight?.task_spine_required) startArgs.push('--xp-task');
 
   const mission = markMissionRunContinuation(missionFromArgs(startArgs));
+  let campaignReserve = 0;
+  if (mission.campaign_id) {
+    const check = campaignMissions().checkCampaignStart(process.cwd(), mission.campaign_id, { missionId: mission.id, reserveUsd: readFlag(args, '--reserve', '') });
+    if (!check.ok) exitMissionError(`mission start refused: ${check.error}`, 2, wantsJson(args));
+    try {
+      campaignMissions().reserveCampaignMission(process.cwd(), mission.campaign_id, mission.id, check.reserve, mission.owner || 'mission-lead');
+    } catch (error) {
+      exitMissionError(`mission start refused: ${error.message}`, 2, wantsJson(args));
+    }
+  }
   if (landOwnerResolution) {
     mission.owner = runOwner;
     mission.owner_resolution = landOwnerResolution.reason || mission.owner_resolution;
@@ -4913,6 +4961,7 @@ async function startMissionFromRunObjective(objective, args) {
   const warnings = [missingVerifierWarning(mission), missingOwnerMemberWarning(mission.owner)].filter(Boolean);
   ensureMemberMissionFile(mission.owner, process.cwd(), mission.objective);
   const { mission: saved } = saveMission(assignMissionNumber(mission, process.cwd()), process.cwd(), 'mission_started', { objective: mission.objective, source: 'mission_run_objective' });
+  if (saved.campaign_id) campaignMissions().recordCampaignMissionStarted(process.cwd(), saved, campaignReserve);
   if (landRun) {
     const memberState = renderMemberMissionState(saved.owner);
     const logPath = appendMemberLog(saved.owner, 'Mission landing flight dispatched', {
@@ -10329,6 +10378,9 @@ async function executeMissionRunTicksPhase(context) {
     let cycleTickLimit = effectiveMaxTicks;
     while (true) {
       while (ticks.length < cycleTickLimit) {
+        // A campaign that is done, paused, or out of money stops its missions.
+        const campaignStop = mission.campaign_id ? campaignMissions().campaignGate(cwd, mission) : null;
+        if (campaignStop) { pauseReason = campaignStop; break; }
         // Re-read before measuring the wall. Detached full-budget drivers use
         // the mission contract as their wall so process startup drift cannot
         // shorten the promised work window.
@@ -10703,6 +10755,7 @@ async function executeMissionRunTicksPhase(context) {
           prep: tickWorkerRun.prep || null,
         });
       }
+      if (mission.campaign_id && !cachedStep) campaignMissions().recordCampaignTick(cwd, mission, { ...((tickWorkerRun && tickWorkerRun.usage) || {}), ...(tickEngineId ? { engine: tickEngineId } : {}) });
       let receiptPath = cachedStep ? cachedStep.receipt_path : null;
 
       // Review-lane drain: always-on loops sweep the agent-safe review actions
@@ -12709,6 +12762,7 @@ function missionCommand(args) {
 }
 
 module.exports = {
+  listSiblingWorkspaceMissionHints,
   missionProtectedLaneHold,
   missionCommand,
   startMission,
