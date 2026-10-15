@@ -734,6 +734,65 @@ test('every work folder removal goes through the git check and the removal log',
   assert.deepEqual(nowGuarded, [], 'guarded now: delete its line from NOT_YET_GUARDED');
 });
 
+// A helper that deletes whatever folder its caller hands it can be given a
+// work folder without ever naming one, so the scan above would never see it.
+// Each such delete is either one the scan above already checks or one listed
+// here after review. Stale entries fail.
+const PASSED_IN_DELETES = {
+};
+
+function passedInDeletes(file, text) {
+  const lines = text.split('\n');
+  const starts = lines.flatMap((line, index) => {
+    const match = line.match(/^(?:async\s+)?function\s+(\w+)\s*\(([^)]*)\)/);
+    if (!match) return [];
+    const params = match[2].split(',')
+      .map((part) => part.trim().replace(/^\.\.\./, '').replace(/\s*=.*$/, ''))
+      .filter((part) => /^[\w$]+$/.test(part));
+    return [{ name: match[1], params, index }];
+  });
+  return lines.flatMap((line, index) => {
+    if (COMMENT_LINE.test(line)) return [];
+    const call = /\brm(?:dir)?(?:Sync)?\(|['"]rm['"]\s*,/.test(line) ? callText(lines, index) : line;
+    if (!RECURSIVE_DELETE.test(call)) return [];
+    const owner = starts.filter((start) => start.index <= index).pop();
+    if (!owner || !owner.params.length) return [];
+    const next = starts.find((start) => start.index > index);
+    const body = lines.slice(owner.index, next ? next.index : lines.length).join('\n');
+    const target = sameFolder(body)(removedTarget(call, body));
+    if (!owner.params.includes(target)) return [];
+    return [{ key: `${file}:${owner.name}`, line: index + 1, target }];
+  });
+}
+
+test('a helper that deletes a folder its caller passed in is checked or reviewed', () => {
+  const files = [...sourceFiles('lib'), ...sourceFiles('commands')];
+  const scanned = new Set(files.flatMap(worktreeRemovalSites).map((site) => `${site.key}:${site.line}`));
+  const found = files.flatMap((file) => passedInDeletes(file, fs.readFileSync(path.join(__dirname, '..', file), 'utf8')));
+  assert.ok(found.length >= 1, 'expected the green landing scratch cleanup to be found');
+  const unreviewed = found
+    .filter((site) => !scanned.has(`${site.key}:${site.line}`) && !PASSED_IN_DELETES[site.key])
+    .map((site) => `${site.key} (line ${site.line}): deletes ${site.target}, which its caller chooses`);
+  assert.deepEqual(unreviewed, [], 'guard this delete like a work folder removal, or review it and list it');
+  const stale = Object.keys(PASSED_IN_DELETES).filter((key) => !found.some((site) => site.key === key));
+  assert.deepEqual(stale, [], 'listed helper no longer deletes a folder its caller passed in');
+
+  // A planted helper in a file that never mentions worktrees is still found,
+  // read through a path.resolve rename and a delete split across lines.
+  const planted = [
+    'function wipe(folder, opts = {}) {',
+    '  const where = path.resolve(folder);',
+    '  fs.rmSync(',
+    '    where,',
+    '    { recursive: true, force: true },',
+    '  );',
+    '}',
+    'function tidy() { fs.rmSync(cacheDir, { recursive: true }); }',
+  ].join('\n');
+  assert.ok(!WORKTREE_REMOVAL.test(planted) && !HANDLES_WORKTREES.test(planted), 'the main scan would skip this helper');
+  assert.deepEqual(passedInDeletes('lib/planted.js', planted), [{ key: 'lib/planted.js:wipe', line: 3, target: 'folder' }]);
+});
+
 test('saved scanner examples reject missed removals in the required checks', () => {
   const result = spawnSync(process.execPath, [
     path.join(__dirname, '../atris/receipts/work-folder-scan-probe.js'),
