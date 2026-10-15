@@ -583,7 +583,15 @@ test(`tidy names pinned busy ${unfinished ? 'unfinished' : 'landed'} copies besi
     fs.utimesSync(pin, aged, aged);
     const words = `${unfinished ? 'work not landed yet,' : 'landed, but'} pinned by git worktree lock, 3 h old: writer still active keep these notes`;
     const group = unfinished ? 'work not landed yet' : 'something still running inside';
+    const unsaved = new Map();
     for (const copy of [pinned, ordinary]) {
+      if (unfinished) {
+        fs.writeFileSync(path.join(copy, 'draft.txt'), `notes for ${path.basename(copy)}\n`);
+        fs.appendFileSync(path.join(copy, `${path.basename(copy)}.txt`), 'unsaved edits\n');
+        unsaved.set(copy, runGit(['status', '--porcelain'], copy));
+        assert.ok(unsaved.get(copy).includes('?? draft.txt'));
+        assert.ok(unsaved.get(copy).includes(`M ${path.basename(copy)}.txt`));
+      }
       const child = spawn(process.execPath, ['-e', 'setInterval(() => {}, 1000)'], { cwd: copy, stdio: 'ignore' });
       children.push(child);
       await new Promise((resolve, reject) => { child.once('spawn', resolve); child.once('error', reject); });
@@ -610,7 +618,11 @@ test(`tidy names pinned busy ${unfinished ? 'unfinished' : 'landed'} copies besi
       const registered = runGit(['worktree', 'list', '--porcelain'], fx.repo);
       for (const copy of [pinned, ordinary]) {
         assert.equal(fs.readFileSync(path.join(copy, 'README.md'), 'utf8'), '# fixture\n');
-        if (unfinished) assert.equal(fs.readFileSync(path.join(copy, `${path.basename(copy)}.txt`), 'utf8'), 'work\n');
+        if (unfinished) {
+          assert.equal(fs.readFileSync(path.join(copy, `${path.basename(copy)}.txt`), 'utf8'), 'work\nunsaved edits\n');
+          assert.equal(fs.readFileSync(path.join(copy, 'draft.txt'), 'utf8'), `notes for ${path.basename(copy)}\n`);
+          assert.equal(runGit(['status', '--porcelain'], copy), unsaved.get(copy));
+        }
         assert.ok(branchExists(fx.repo, path.basename(copy)));
         assert.ok(registered.includes(`worktree ${copy}\n`));
       }

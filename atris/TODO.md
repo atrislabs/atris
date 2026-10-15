@@ -19,7 +19,7 @@ Details for any task: atris task show <ID>
 
 ## In Progress
 
-(Empty)
+- **[ACW-7]** Prove busy unfinished folders retain unsaved notes · architect
 
 ## Review
 

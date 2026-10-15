@@ -198,3 +198,5 @@ Member tidy busy pins: `lib/member-tidy.js:199` names a pin before grouping a la
 Member tidy own-copy pins: `test/member-tidy.test.js:628` runs real preview and apply from both the pinned landed copy and a nested notes folder. Each call must name the multiline pin, preserve personal notes, branch and registration, and leave the removal log empty.
 
 Member tidy busy unfinished pins: `test/member-tidy.test.js:571` runs real CLI preview and apply with two live children in unfinished copies. It keeps the pinned copy named beside the ordinary unfinished count, preserves both committed files, branches, registrations and exact multiline pin, verifies both children remain alive, and leaves the removal log empty.
+
+Busy unfinished unsaved notes: `test/member-tidy.test.js:571` adds untracked drafts and tracked edits in both pinned and ordinary busy unfinished copies. Real CLI preview and apply must preserve exact bytes and unchanged git status, alongside the existing live-child, pin and registration checks.
