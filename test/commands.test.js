@@ -20351,16 +20351,18 @@ test('review verbose mode keeps the legacy validator board', () => {
 // feedback
 // ============================================
 
-test('feedback rejects unknown subcommands before submit fallback', () => {
+test('feedback rejects unknown subcommands before submit fallback', async () => {
   const dir = makeTempDir();
   try {
-    const bogus = runCli(['feedback', 'bogus-subcommand', '--account'], { cwd: dir });
+    const [bogus, show] = await Promise.all([
+      runCliAsync(['feedback', 'bogus-subcommand', '--account'], { cwd: dir }),
+      runCliAsync(['feedback', 'show', '0e136c15', '--account'], { cwd: dir }),
+    ]);
     assert.notEqual(bogus.status, 0);
     assert.match(bogus.stderr, /Unknown feedback command: bogus-subcommand/);
     assert.match(bogus.stderr, /Usage:/);
     assert.doesNotMatch(bogus.stdout, /Feedback submitted/);
 
-    const show = runCli(['feedback', 'show', '0e136c15', '--account'], { cwd: dir });
     assert.notEqual(show.status, 0);
     assert.match(show.stderr, /Unknown feedback command: show/);
     assert.match(show.stderr, /Usage:/);
