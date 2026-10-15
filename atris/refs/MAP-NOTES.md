@@ -2717,3 +2717,7 @@ Revision initial readiness setup: `test/commands.test.js` calls production ready
 ## Natural task flow read batching
 
 - `test/commands.test.js:13852` retains creation, claim, message and completion CLI coverage; desk and next run together at `test/commands.test.js:13868` before claim. Six launches remain, with six sequential stages reduced to five; saved projection version and episode assertions still check the complete flow.
+
+## Headless task flow read batching
+
+- `test/commands.test.js:13934` awaits JSON desk and next together before setup claims the task. All 22 CLI launches and every assertion remain; eleven sequential CLI stages become ten. Final event assertions still require exactly the seven expected writes.

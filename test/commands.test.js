@@ -13928,14 +13928,17 @@ test('task headless JSON contract supports create, claim, note, finish, and even
     const id = createPayload.task_id;
     const shortId = id.slice(0, 8);
 
-    const desk = runCli(['task', '--json'], { cwd: dir, env });
+    // Both reads inspect the open task before setup claims it.
+    const [desk, next] = await Promise.all([
+      runCliAsync(['task', '--json'], { cwd: dir, env }),
+      runCliAsync(['task', 'next', '--as', 'bot', '--json'], { cwd: dir, env }),
+    ]);
     assert.equal(desk.status, 0, desk.stderr);
     const deskPayload = JSON.parse(desk.stdout);
     assert.equal(deskPayload.ok, true);
     assert.equal(deskPayload.active_count, 1);
     assert.equal(deskPayload.projection.tasks[0].id, id);
 
-    const next = runCli(['task', 'next', '--as', 'bot', '--json'], { cwd: dir, env });
     assert.equal(next.status, 0, next.stderr);
     const nextPayload = JSON.parse(next.stdout);
     assert.equal(nextPayload.action, 'claim');
