@@ -15,6 +15,7 @@ const { decide } = require('../lib/campaign-core');
 const { getCampaign, listCampaigns, newCampaignId, openCampaignStore } = require('../lib/campaign-store');
 const { judgeRanData, judgeReading, outputTail } = require('../lib/campaign-reading');
 const { cloudLink, sendPersonAction, syncCampaign } = require('../lib/campaign-sync');
+const { campaignHome, changedProtected, checkoutTop, planProtect, readProtect, saveProtect } = require('../lib/campaign-protect');
 
 const JUDGE_TIMEOUT_SECONDS = 15 * 60;
 const STATE_ORDER = ['needs_you', 'running', 'queued', 'paused', 'resting', 'out_of_budget', 'done'];
@@ -25,9 +26,11 @@ function printHelp() {
   console.log('  atris campaign new "<goal>" [--budget 20] [--owner <member>] [--yes]   draft a judge that fails today, then start');
   console.log('  atris campaign start "<title>" --judge "<cmd>" --budget <dollars>');
   console.log('        [--owner <member>] [--seat <member>[:<role>]]... [--bet "<bet>" [--wrong-if "<what proves it wrong>"]]');
-  console.log('        [--standing] [--parent <id>] [--id cmp-<name>] [--cloud]');
+  console.log('        [--standing] [--parent <id>] [--id cmp-<name>] [--cloud] [--protect <path>]...');
+  console.log('        --protect saves paths agents must not touch, and the commit they start from');
   console.log('  atris campaign show <id>               bet, judge, answer, budget, seats, missions, asks');
   console.log('  atris campaign judge <id> [--timeout <seconds>]   run the judge now and record the reading');
+  console.log('  atris campaign guard <id>              exits 1 naming any protected path changed since start');
   console.log('  atris campaign set-judge <id> "<cmd>"   change the judge (owner or a person; must fail first)');
   console.log('  atris campaign seat <id> <member> [--role <role>]');
   console.log('  atris campaign bet <id> "<bet>" [--wrong-if "<what proves it wrong>"]');
@@ -59,7 +62,7 @@ function money(value) {
 }
 
 // The flags this command understands, so positional words are what is left.
-const VALUE_FLAGS = ['--work', '--break', '--rounds', '--mission', '--parallel', '--max-steps', '--max-ticks', '--runner', '--count', '--judge', '--budget', '--owner', '--seat', '--bet', '--wrong-if', '--parent', '--id', '--role', '--add', '--data', '--timeout', '--as'];
+const VALUE_FLAGS = ['--work', '--break', '--rounds', '--mission', '--parallel', '--max-steps', '--max-ticks', '--runner', '--count', '--judge', '--budget', '--owner', '--seat', '--bet', '--wrong-if', '--parent', '--id', '--role', '--add', '--data', '--timeout', '--as', '--protect'];
 
 function positionals(args) {
   const out = [];
@@ -274,6 +277,9 @@ async function cmdStart(args, ctx) {
   const id = readFlag(args, '--id', '') || newCampaignId(title);
   if (!CAMPAIGN_ID.test(id)) return ctx.fail(`--id must look like cmp-<lowercase-words>, for example cmp-ship-billing`);
   if (getCampaign(ctx.store, id)) return ctx.fail(`campaign ${id} already exists`, 1);
+  const protect = readAll(args, '--protect');
+  const protectPlan = protect.length ? planProtect(process.cwd(), protect) : null;
+  if (protectPlan && protectPlan.error) return ctx.fail(protectPlan.error);
 
   const timeout = Number(readFlag(args, '--timeout', '')) || JUDGE_TIMEOUT_SECONDS;
   if (!ctx.asJson) console.error(`running the judge first: ${judge}`);
@@ -290,6 +296,7 @@ async function cmdStart(args, ctx) {
   if (bet && wrongIf) ctx.append(id, 'bet_set', { bet, wrong_if: wrongIf });
   if (parent) ctx.append(id, 'attached', { parent_id: parent });
   ctx.append(id, 'judge_ran', judgeRanData(reading), 'judge');
+  if (protectPlan) saveProtect(ctx.campaignHome, id, protectPlan);
 
   let cloud = null;
   if (args.includes('--cloud')) {
@@ -366,6 +373,30 @@ async function cmdJudge(args, ctx) {
   ctx.out(`judge ${verdict} in ${reading.seconds}s: ${reading.summary || `exit ${reading.exit}`}\n${renderShow(after)}`,
     { ok: true, action: 'judge_ran', passed: reading.passed, reading, campaign: after, next: decide(after) });
   return reading.passed ? 0 : 1;
+}
+
+// Exit 1 when a protected path changed since start, naming each one.
+function cmdGuard(args, ctx) {
+  const { view, error } = requireCampaign(ctx, positionals(args)[1]);
+  if (error !== undefined) return error;
+  const saved = readProtect(ctx.campaignHome, view.id);
+  if (!saved) {
+    ctx.out(`${view.id} protects nothing`, { ok: true, campaign_id: view.id, paths: [], changed: [] });
+    return 0;
+  }
+  const root = checkoutTop(process.cwd());
+  if (!root) return ctx.fail('guard needs the git checkout the campaign started in');
+  const result = changedProtected(root, saved);
+  if (result.error) return ctx.fail(result.error);
+  const body = { ok: result.changed.length === 0, campaign_id: view.id, base_commit: saved.base_commit, paths: saved.paths, changed: result.changed };
+  const since = String(saved.base_commit).slice(0, 12);
+  if (result.changed.length) {
+    if (ctx.asJson) console.log(JSON.stringify(body));
+    else console.error(`protected path${result.changed.length === 1 ? '' : 's'} changed since ${since}:\n${result.changed.map((p) => `  ${p}`).join('\n')}`);
+    return 1;
+  }
+  ctx.out(`no protected path changed since ${since} (${saved.paths.join(', ')})`, body);
+  return 0;
 }
 
 // toCloud(data) names the cloud person route for events only a person's
@@ -536,7 +567,7 @@ async function cmdLoop(args, ctx, verb) {
 }
 
 const VERBS = {
-  start: cmdStart, show: cmdShow, judge: cmdJudge, seat: cmdSeat, bet: cmdBet, budget: cmdBudget,
+  start: cmdStart, show: cmdShow, judge: cmdJudge, guard: cmdGuard, seat: cmdSeat, bet: cmdBet, budget: cmdBudget,
   pause: cmdPause, resume: cmdResume, stop: cmdStop, event: cmdEvent,
   ask: cmdAsk, answer: cmdAnswer, 'set-judge': cmdSetJudge, sync: cmdSync,
   run: (args, ctx) => cmdLoop(args, ctx, 'run'),
@@ -555,6 +586,7 @@ function campaignCommand(args = [], deps = {}) {
     return 0;
   }
   const ctx = makeContext(args, deps);
+  ctx.campaignHome = deps.campaignHome || campaignHome(ctx.store);
   if (ctx.forgedHuman) return ctx.fail('--as cannot name a person; a person runs atris in their own terminal (or sets ATRIS_HUMAN=1)');
   if (!verb || verb === 'list') {
     const all = listCampaigns(ctx.store);

@@ -196,3 +196,50 @@ test('set-judge: only the owner or a person, and the new judge must fail first',
   assert.equal(view.judge_due, false);
   assert.equal(view.answer.text, '0 of 4 live');
 });
+
+test('start --protect saves paths and the start commit outside the repo; guard names any changed since', () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'atris-campaign-protect-'));
+  const repo = path.join(dir, 'repo');
+  fs.mkdirSync(repo);
+  const env = { ...process.env, ATRIS_CAMPAIGN_DB: path.join(dir, 'state', 'atris.db'), ATRIS_SKIP_UPDATE_CHECK: '1' };
+  const sh = (...args) => spawnSync('git', args, { cwd: repo, encoding: 'utf8' });
+  const cli = (...args) => spawnSync(process.execPath, [CLI, 'campaign', ...args], { cwd: repo, env, encoding: 'utf8' });
+  sh('init', '-q');
+  sh('config', 'user.email', 'j@j');
+  sh('config', 'user.name', 'j');
+  fs.writeFileSync(path.join(repo, 'questions.txt'), 'q1\n');
+  fs.mkdirSync(path.join(repo, 'evals'));
+  fs.writeFileSync(path.join(repo, 'evals', 'a.json'), '{}\n');
+  fs.writeFileSync(path.join(repo, 'notes.md'), 'a\n');
+  sh('add', '-A');
+  sh('commit', '-qm', 'base');
+  const base = sh('rev-parse', 'HEAD').stdout.trim();
+
+  const outside = cli('start', 'P', '--judge', 'exit 1', '--budget', '5', '--protect', '../elsewhere', '--id', 'cmp-out');
+  assert.equal(outside.status, 2);
+  assert.match(outside.stderr, /not inside this checkout/);
+
+  const started = cli('start', 'P', '--judge', 'exit 1', '--budget', '5', '--protect', 'questions.txt', '--protect', 'evals', '--id', 'cmp-p');
+  assert.equal(started.status, 0, started.stderr);
+  const saved = JSON.parse(fs.readFileSync(path.join(dir, 'state', 'campaigns', 'cmp-p', 'protect.json'), 'utf8'));
+  assert.deepEqual(saved, { paths: ['questions.txt', 'evals'], base_commit: base });
+  assert.equal(fs.existsSync(path.join(repo, 'atris')), false);
+
+  fs.appendFileSync(path.join(repo, 'notes.md'), 'b\n');
+  sh('commit', '-qam', 'fine');
+  assert.equal(cli('guard', 'cmp-p').status, 0);
+
+  fs.appendFileSync(path.join(repo, 'questions.txt'), 'q2\n');
+  const dirty = cli('guard', 'cmp-p');
+  assert.equal(dirty.status, 1);
+  assert.match(dirty.stderr, /questions\.txt/);
+
+  sh('commit', '-qam', 'sneak');
+  fs.writeFileSync(path.join(repo, 'evals', 'new.json'), '{}\n');
+  const both = cli('guard', 'cmp-p', '--json');
+  assert.equal(both.status, 1);
+  assert.deepEqual(JSON.parse(both.stdout).changed, ['evals/new.json', 'questions.txt']);
+
+  assert.equal(cli('start', 'Q', '--judge', 'exit 1', '--budget', '5', '--id', 'cmp-q').status, 0);
+  assert.match(cli('guard', 'cmp-q').stdout, /protects nothing/);
+});
