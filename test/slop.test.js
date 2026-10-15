@@ -2434,6 +2434,24 @@ test('fix joins a field value and a "the" clause after a dash with a semicolon',
   ]);
 });
 
+test('fix reads a pronoun or a code name with a place word after it as the object', () => {
+  // from real repo text: "the dashboard component drives everything else"
+  // and "the subprocess restricts `__import__` to only these modules"
+  // spliced, since only "it" and "them" counted as pronoun objects and a
+  // code name counted only right before a stop.
+  const file = tmpFile('pronoun-code-object.md', [
+    'Enforced at sandbox level \u2014 the subprocess restricts `__import__` to only these modules.',
+    'No direct calls beyond the list \u2014 the dashboard component drives everything else.',
+    '"Describe who you need \u2014 the orchestrator drafts it"',
+  ].join('\n'));
+  const { changes } = applyFixes([file], RULES);
+  assert.deepEqual(changes.map((c) => c.after), [
+    'Enforced at sandbox level; the subprocess restricts `__import__` to only these modules.',
+    'No direct calls beyond the list; the dashboard component drives everything else.',
+    '"Describe who you need; the orchestrator drafts it"',
+  ]);
+});
+
 test('fix joins "the", a noun, a verb in s and "but" with a second clause after a dash', () => {
   // from real repo text: "the lead capture works but the follow-up routing
   // is broken" spliced, and "the route looks like it logs backend errors but

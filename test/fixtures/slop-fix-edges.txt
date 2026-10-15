@@ -190,3 +190,15 @@ Check one place \u2014 the error logs but not the traces.
 => Check one place, the error logs but not the traces.
 Check one place \u2014 the user stories but the epics too.
 => Check one place, the user stories but the epics too.
+
+# from real repo text: a pronoun or a code name with a place word after it
+# is the verb's object
+Enforced at sandbox level \u2014 the subprocess restricts `__import__` to only these modules.
+=> Enforced at sandbox level; the subprocess restricts `__import__` to only these modules.
+No direct calls beyond the list \u2014 the dashboard component drives everything else.
+=> No direct calls beyond the list; the dashboard component drives everything else.
+"Describe who you need \u2014 the orchestrator drafts it"
+=> "Describe who you need; the orchestrator drafts it"
+# a two-word label before the dash is no clause, so a colon reads better
+LLM psychosis \u2014 every AI validates you, agrees with you.
+~> LLM psychosis: every AI validates you, agrees with you.
