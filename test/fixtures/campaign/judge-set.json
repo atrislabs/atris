@@ -1,0 +1,96 @@
+{
+  "name": "judge-set",
+  "about": "Only the owner (or a person) can change the judge; a builder trying to swap in a judge that always passes gets judge_set_not_owner. An allowed change makes the judge due again, because the new judge has no reading yet.",
+  "events": [
+    {
+      "id": "evt-js-1",
+      "campaign_id": "cmp-ship",
+      "type": "campaign_started",
+      "at": "2026-10-15T10:00:00Z",
+      "origin": "laptop",
+      "seq": 1,
+      "actor": "mission-lead",
+      "data": {
+        "title": "Ship it",
+        "judge": "exit 1",
+        "budget": 10
+      }
+    },
+    {
+      "id": "evt-js-2",
+      "campaign_id": "cmp-ship",
+      "type": "judge_ran",
+      "at": "2026-10-15T10:01:00Z",
+      "origin": "laptop",
+      "seq": 2,
+      "actor": "judge",
+      "data": {
+        "passed": false,
+        "summary": "0 of 4 live"
+      }
+    },
+    {
+      "id": "evt-js-3",
+      "campaign_id": "cmp-ship",
+      "type": "judge_set",
+      "at": "2026-10-15T10:02:00Z",
+      "origin": "laptop",
+      "seq": 3,
+      "actor": "builder",
+      "data": {
+        "judge": "true"
+      }
+    },
+    {
+      "id": "evt-js-4",
+      "campaign_id": "cmp-ship",
+      "type": "judge_set",
+      "at": "2026-10-15T10:03:00Z",
+      "origin": "laptop",
+      "seq": 4,
+      "actor": "mission-lead",
+      "data": {
+        "judge": "node scripts/campaign-live-check.js"
+      }
+    }
+  ],
+  "expected": {
+    "id": "cmp-ship",
+    "title": "Ship it",
+    "judge": "node scripts/campaign-live-check.js",
+    "owner": "mission-lead",
+    "standing": false,
+    "bet": null,
+    "parent": null,
+    "home": "laptop",
+    "created_from": null,
+    "seats": [],
+    "state": "resting",
+    "stop_reason": null,
+    "answer": {
+      "text": "0 of 4 live",
+      "confidence": "open"
+    },
+    "budget": {
+      "total": 10,
+      "spent": 0,
+      "reserved": 0,
+      "available": 10
+    },
+    "asks": [],
+    "missions": [],
+    "judge_runs": 1,
+    "judge_due": true,
+    "last_judge": {
+      "passed": false,
+      "reading": null,
+      "at": "2026-10-15T10:01:00Z"
+    },
+    "warnings": [
+      {
+        "event_id": "evt-js-3",
+        "code": "judge_set_not_owner"
+      }
+    ]
+  }
+}

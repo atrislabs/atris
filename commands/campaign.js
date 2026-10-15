@@ -27,6 +27,7 @@ function printHelp() {
   console.log('        [--standing] [--parent <id>] [--id cmp-<name>] [--cloud]');
   console.log('  atris campaign show <id>               bet, judge, answer, budget, seats, missions, asks');
   console.log('  atris campaign judge <id> [--timeout <seconds>]   run the judge now and record the reading');
+  console.log('  atris campaign set-judge <id> "<cmd>"   change the judge (owner or a person; must fail first)');
   console.log('  atris campaign seat <id> <member> [--role <role>]');
   console.log('  atris campaign bet <id> "<bet>" [--wrong-if "<what proves it wrong>"]');
   console.log('  atris campaign budget <id> --add <dollars>');
@@ -327,6 +328,30 @@ function cmdShow(args, ctx) {
   return 0;
 }
 
+// Change the judge. Like a new campaign, the new judge must fail first
+// (unless the campaign is standing), so nobody swaps in a judge that passes.
+async function cmdSetJudge(args, ctx) {
+  const words = positionals(args);
+  const { view, error } = requireCampaign(ctx, words[1]);
+  if (error !== undefined) return error;
+  const judge = words[2];
+  if (!judge) return ctx.fail('name the new judge: atris campaign set-judge <id> "<command that fails today>"');
+  if (ctx.actor !== view.owner && !String(ctx.actor).startsWith('human:')) {
+    return ctx.fail(`only the owner (${view.owner}) or a person can change the judge`);
+  }
+  const timeout = Number(readFlag(args, '--timeout', '')) || JUDGE_TIMEOUT_SECONDS;
+  if (!ctx.asJson) console.error(`running the new judge first: ${judge}`);
+  const reading = await ctx.judge(judge, timeout);
+  if (reading.passed && !view.standing) {
+    return ctx.fail(`the new judge already passes (${reading.summary || 'exit 0'}). Write a judge that fails first.`, 1);
+  }
+  ctx.append(view.id, 'judge_set', { judge, from: view.judge });
+  ctx.append(view.id, 'judge_ran', { passed: reading.passed, summary: reading.summary || `exit ${reading.exit}`, seconds: reading.seconds }, 'judge');
+  const after = getCampaign(ctx.store, view.id);
+  ctx.out(`judge changed to: ${judge}\n${renderShow(after)}`, { ok: true, action: 'judge_set', campaign: after, next: decide(after) });
+  return 0;
+}
+
 async function cmdJudge(args, ctx) {
   const { view, error } = requireCampaign(ctx, positionals(args)[1]);
   if (error !== undefined) return error;
@@ -494,7 +519,7 @@ async function cmdLoop(args, ctx, verb) {
 const VERBS = {
   start: cmdStart, show: cmdShow, judge: cmdJudge, seat: cmdSeat, bet: cmdBet, budget: cmdBudget,
   pause: cmdPause, resume: cmdResume, stop: cmdStop, event: cmdEvent,
-  ask: cmdAsk, answer: cmdAnswer, sync: cmdSync,
+  ask: cmdAsk, answer: cmdAnswer, 'set-judge': cmdSetJudge, sync: cmdSync,
   run: (args, ctx) => cmdLoop(args, ctx, 'run'),
   step: (args, ctx) => cmdLoop(args, ctx, 'step'),
   propose: (args, ctx) => cmdLoop(args, ctx, 'propose'),
