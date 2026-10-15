@@ -300,6 +300,33 @@ test('fleet review cleanup keeps a sandbox while git updates a branch in either 
   }
 });
 
+// Paused work in one store and a lock in another: every store stays, and the
+// report names the hold in the first busy store, work folder first.
+test('fleet review cleanup keeps every store when paused work and a lock sit in different stores', () => {
+  for (const pausedFirst of [true, false]) {
+    const { base, repo, wt, boundary } = reviewSandbox();
+    try {
+      git(base, ['init', '-q', '--bare', boundary.gitDir]);
+      git(base, ['init', '-q', '--bare', boundary.quarantine]);
+      const lock = pausedFirst ? path.join(boundary.quarantine, 'HEAD.lock') : path.join(worktreeGitDir(wt), 'index.lock');
+      const paused = pausedFirst ? path.join(worktreeGitDir(wt), 'rebase-merge') : path.join(boundary.quarantine, 'rebase-merge');
+      fs.writeFileSync(lock, '');
+      fs.mkdirSync(paused);
+      const { lock_age_ms: age, ...result } = disposeReviewSandbox(boundary);
+      const label = pausedFirst ? 'paused in the work folder' : 'lock in the work folder';
+      assert.deepEqual(result, pausedFirst
+        ? { removed: false, reason: 'git_rebase_in_progress', paused: 'a rebase is paused' }
+        : { removed: false, reason: 'git_lock', lock }, label);
+      assert.equal(describeGitHold(result.reason === 'git_lock' ? { ...result, lock_age_ms: age } : result),
+        pausedFirst ? 'a rebase is paused' : `git holds ${lock}, under a minute old`, label);
+      assert.ok([wt, boundary.gitDir, boundary.quarantine, lock, paused].every((file) => fs.existsSync(file)), label);
+      assert.deepEqual(removalLines(repo), [], label);
+    } finally {
+      fs.rmSync(base, { recursive: true, force: true });
+    }
+  }
+});
+
 test('fleet review cleanup names who removed a sandbox and why', () => {
   const { base, repo, wt, boundary } = reviewSandbox();
   try {
