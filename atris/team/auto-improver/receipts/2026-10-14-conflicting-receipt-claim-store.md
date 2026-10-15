@@ -27,6 +27,8 @@ exit 0
 ```
 
 Progress: one fewer child process, four to three (25% fewer launches in this check). No wall-clock improvement claimed without a baseline.
+Readiness rerun: the task command initially resolved an older Node runtime without node:sqlite (exit 1). Use /opt/homebrew/bin/node in both commands above when rerunning through the task command. Direct proof above used Node v25.6.1. The task command then reran both checks with that absolute runtime, exit 0, and moved the work to Review. Proof artifact: atris/runs/2026-10-15-task-aic-64-2026-10-15T00-22-52-615Z.json.
+
 Lesson: finish and verify an interrupted setup optimization before starting another; use the production store only for setup whose output the test never inspects.
 next_push: Remove the setup-only claim launch in the tampered receipt ledger check, retaining real readiness, acceptance and tampered status checks.
 layer: capabilities
