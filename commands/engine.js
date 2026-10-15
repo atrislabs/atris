@@ -2343,7 +2343,7 @@ function formatAgentAge(seconds) {
 // startup files to the guarded line, keeping a copy of the old file.
 function runEngineSweepCommand(args, root, deps = {}) {
   if (args.includes('--fix-startup')) return runFixStartupCommand(args, deps);
-  const { readSshAgents, findLeakedSshAgents, findAgentStartLines, agentStartLineText, FIX_STARTUP_HINT, stopLeakedSshAgents, closeLostRuns, readResourceHistory, leakGrowthNote, LEAK_MIN_AGE_SEC } = require('../lib/engine-resource');
+  const { readSshAgents, findLeakedSshAgents, findAgentStartLines, agentStartLineText, FIX_STARTUP_HINT, stopLeakedSshAgents, closeLostRuns, readResourceHistory, leakGrowthNote, matchLeakedToRuns, leakedRunsText, LEAK_MIN_AGE_SEC } = require('../lib/engine-resource');
   const read = deps.read || readSshAgents;
   const { agents, referenced, unread = [] } = read();
   const uid = deps.uid !== undefined ? deps.uid : process.getuid();
@@ -2399,6 +2399,8 @@ function runEngineSweepCommand(args, root, deps = {}) {
     ...leaked.slice(0, shown).map((agent) => `  pid ${String(agent.pid).padEnd(6)} ${formatAgentAge(agent.age_sec)}`),
   ];
   if (leaked.length > shown) lines.push(`  and ${leaked.length - shown} more`);
+  const runsText = leaked.length ? leakedRunsText(matchLeakedToRuns(root, leaked), { startLine: startLines.length > 0 }) : '';
+  if (runsText) lines.push(runsText);
   lines.push(...startLines.map(agentStartLineText));
   if (startLines.some((found) => found.fix)) lines.push(FIX_STARTUP_HINT);
   if (scanWarning) lines.push(scanWarning);

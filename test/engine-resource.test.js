@@ -4455,3 +4455,42 @@ test('the landing status splits leaked ssh-agents by the engine runs open when t
     fs.rmSync(root, { recursive: true, force: true });
   }
 });
+
+test('the sweep listing splits leaked ssh-agents by engine runs and points to the startup line when most started outside them', () => {
+  const { engineCommand } = require('../commands/engine');
+  const { showStatus } = require('../commands/autoland');
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'engine-sweep-leak-runs-'));
+  const home = fs.mkdtempSync(path.join(os.tmpdir(), 'engine-sweep-leak-runs-home-'));
+  const file = path.join(root, RESOURCE_LOG);
+  const at = (h) => new Date(Date.now() - h * 3600000).toISOString();
+  const agent = (pid, h) => ({ pid, ppid: 1, uid: 501, age_sec: Math.round(h * 3600), args: 'ssh-agent -s' });
+  const capture = (fn) => {
+    const out = [];
+    const original = console.log;
+    console.log = (line = '') => out.push(String(line));
+    try { fn(); } finally { console.log = original; }
+    return out.join('\n');
+  };
+  const sweep = (agents) => capture(() => engineCommand(['sweep'], { root, engineSweep: { read: () => ({ agents, referenced: new Set() }), uid: 501, home } }));
+  try {
+    require('node:child_process').spawnSync('git', ['init', '-q'], { cwd: root });
+    fs.mkdirSync(path.dirname(file), { recursive: true });
+    fs.writeFileSync(file, [
+      JSON.stringify({ at: at(6), phase: 'start', engine: 'claude', run_id: 'a' }),
+      JSON.stringify({ at: at(5), phase: 'end', engine: 'claude', run_id: 'a' }),
+    ].join('\n') + '\n');
+    fs.writeFileSync(path.join(home, '.zshrc'), 'eval "$(ssh-agent -s)"\n');
+    const outside = sweep([agent(200, 5.5), agent(201, 3), agent(202, 2)]);
+    assert.match(outside, /\nwhen the leaked ssh-agents started: 1 started while an engine run was open \(claude 1\), 2 with no engine run open; most started with no engine run open, so the startup line below is the one to fix, not an engine\nlikely source: ~\/\.zshrc line 1/);
+    const during = sweep([agent(200, 5.5), agent(201, 5.2), agent(202, 2)]);
+    assert.match(during, /when the leaked ssh-agents started: 2 started while an engine run was open \(claude 2\), 1 with no engine run open\n/, 'mostly during runs names no single fix');
+    fs.writeFileSync(path.join(home, '.zshrc'), '[ -S "$SSH_AUTH_SOCK" ] || eval "$(ssh-agent -s)"\n');
+    assert.match(sweep([agent(201, 3), agent(202, 2)]), /2 with no engine run open\n/, 'no startup line found, no pointer to one');
+    fs.writeFileSync(path.join(home, '.zshrc'), 'eval "$(ssh-agent -s)"\n');
+    const status = capture(() => showStatus(root, [], { readSshAgents: () => ({ agents: [agent(201, 3), agent(202, 2)], referenced: new Set() }), uid: 501, home }));
+    assert.match(status, /\n {4}when the leaked ssh-agents started: [^\n]*so the startup line below is the one to fix, not an engine\n {4}likely source: ~\/\.zshrc line 1/);
+  } finally {
+    fs.rmSync(root, { recursive: true, force: true });
+    fs.rmSync(home, { recursive: true, force: true });
+  }
+});

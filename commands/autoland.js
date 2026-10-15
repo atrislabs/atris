@@ -569,7 +569,7 @@ function showStatus(root, args, deps = {}) {
           : 'the next hourly pass stops them'
         : 'the hourly pass runs a version without the ssh-agent cleanup, so stop them now: atris engine sweep --apply';
     console.log(`  leaked ssh-agents on this machine: ${unchecked ? 'at least ' : ''}${leakedAgents}${leakGrowthNote(lost.first_day_leak_reading, leakedAgents)}; ${stop}${unchecked ? `; ${unchecked}` : ''}`);
-    const runsText = leakedRunsText(matchLeakedToRuns(root, leakedList));
+    const runsText = leakedRunsText(matchLeakedToRuns(root, leakedList), { startLine: startLines.length > 0 });
     if (runsText) console.log(`    ${runsText}`);
     for (const found of startLines) console.log(`    ${agentStartLineText(found)}`);
     if (startLines.some((found) => found.fix)) console.log(`    ${FIX_STARTUP_HINT}`);
