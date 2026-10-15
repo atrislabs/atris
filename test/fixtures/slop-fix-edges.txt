@@ -340,3 +340,5 @@ The bottleneck is the plan step \u2014 a miscalibrated DECIDE wastes every later
 => The bottleneck is the plan step; a miscalibrated DECIDE wastes every later cycle.
 Two tools \u2014 the API keys the team uses and the bot.
 => Two tools, the API keys the team uses and the bot.
+False alarms cost trust. Estimated baseline ~78% \u2014 the edge cases around file reads and partial sends are handled badly.
+=> False alarms cost trust. Estimated baseline ~78%; the edge cases around file reads and partial sends are handled badly.

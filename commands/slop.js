@@ -225,7 +225,9 @@ const CLAUSE_AFTER_DASH = new RegExp(CLAUSE_END + String.raw`\s*\u2014\s*(?=(?:(
 // the verb, which restates what came before: "the same intersection, the
 // next thing /autopilot should ship". One short place phrase may sit between
 // the subject and its verb, with its own "the": "the counting slack at degree
-// 4 is only 2", "the oldest job in the queue is stale". A verb that reports
+// 4 is only 2", "the oldest job in the queue is stale". It may open on
+// "around" and join two short parts with "and": "the edge cases around file
+// operations and partial sends are inconsistently handled". A verb that reports
 // a fact, with its "that" left off, is no subject word: "endpoint null,
 // proves instance was stale" keeps its comma, but "settings file is stale"
 // still joins. Only past forms that never describe a noun count, so
@@ -242,7 +244,7 @@ const HELPING_VERB = '(?:is|are|was|were|will|would|can|cannot|could|must|should
 const ASIDE_THEN_HELPER = new RegExp(`\\)\\s+${HELPING_VERB}\\b`, 'g');
 const NAMING_WORD = '(?:thing|one|part|piece|kind|place|point|moment|step|move|reason|question|answer)s?';
 const NAMING_PHRASE = `(?:the|a|an)\\s+(?:(?:next|only|same|first|last|real|one)\\s+)?${NAMING_WORD}\\s+(?!(?:${HELPING_VERB}|${NAMING_WORD})\\b)`;
-const PLACE_PHRASE = `(?:(?:at|in|on|of|for|from|under|per)\\s+(?:(?:the|a|an)\\s+)?(?:(?!(?:the|a|an|that|whose)\\b)${SUBJECT_WORD}){1,2})?`;
+const PLACE_PHRASE = `(?:(?:at|in|on|of|for|from|under|per|around)\\s+(?:(?:the|a|an)\\s+)?(?:(?!(?:the|a|an|that|whose)\\b)${SUBJECT_WORD}){1,2}(?:and\\s+(?:(?!(?:the|a|an|that|whose)\\b)${SUBJECT_WORD}){1,2})?)?`;
 // "Each time" or "every time" opens a "when" clause, not a subject, so
 // "the cache warms up, each time CI runs the suite" keeps its comma.
 const TIME_OPENER = '(?:each|every|any|no)\\s+time\\b';
