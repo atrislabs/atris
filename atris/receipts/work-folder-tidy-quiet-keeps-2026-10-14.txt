@@ -1,0 +1,19 @@
+Member tidy counts copies still at work on one line
+
+Files edited: lib/member-tidy.js, test/member-tidy.test.js, atris/team/architect/logs/2026-10-14.md, this receipt.
+
+What changed: tidy gave every kept copy its own line. Copies whose work has not landed yet, and landed copies with something still running inside, now share one count line. Copies that need a person (git refused, pinned, held, unreadable, pointing outside the copies folder) and every removal keep their own line. The returned result still lists every copy with its full reason.
+
+Real project, preview only (folder count 110 before and after):
+$ atris member tidy --dry-run
+exit=0
+before this change: 102 lines, 100 of them "kept  <name>  work not landed yet, <age>"
+after:
+would remove  executor-finish-machine-memory-and-load-recor-20261014-113344  work landed
+left alone  100 work not landed yet
+tidy: would remove 1, kept 100, of 101 copies in .../.agent-worktrees/atris-cli
+
+$ node --test test/worktree-removal-guard.test.js test/member-tidy.test.js
+exit=0; tests 68, pass 68, fail 0, todo 0
+
+Negative trial: with the previous tidy code put back, the updated format check failed; the new file was restored afterward.

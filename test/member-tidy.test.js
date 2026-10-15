@@ -127,9 +127,17 @@ test('tidy removes landed clean copies and leaves everything else to git and the
     assert.match(byName(result, 'linked').reason, /outside/);
     assert.ok(fs.existsSync(path.join(outside, 'linked', 'README.md')));
 
+    // Copies still at work share one count line; only copies that need a
+    // person, or that were removed, get their own line.
     const text = formatTidy(result);
-    assert.equal(text.split('\n').length, 7);
-    assert.match(text, /tidy: removed 2, kept 4, of 6 copies/);
+    assert.deepEqual(text.split('\n').map((line) => line.split(/\s{2,}/).slice(0, 2).join(' | ')), [
+      'removed | landed-clean',
+      'kept | landed-dirty',
+      'removed | landed-pushed',
+      'kept | linked',
+      'left alone | 1 something still running inside, 1 work not landed yet',
+      `tidy: removed 2, kept 4, of 6 copies in ${result.worktreesDir}`,
+    ]);
   } finally {
     if (busyProcess) busyProcess.kill();
     fs.rmSync(fx.base, { recursive: true, force: true });
