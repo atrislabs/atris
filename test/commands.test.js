@@ -14246,7 +14246,7 @@ test('claiming a task that is only already_claimed (not already_done) never sugg
   }
 });
 
-test('task status gives web and Swarlo a compact live contract', () => {
+test('task status gives web and Swarlo a compact live contract', async () => {
   if (!hasNodeSqlite()) return;
   const dir = makeTempDir();
   const dbPath = path.join(dir, 'tasks.db');
@@ -14281,7 +14281,12 @@ test('task status gives web and Swarlo a compact live contract', () => {
       taskStore.close();
     }
 
-    const status = runCli(['task', 'status', '--json'], { cwd: dir, env });
+    // The three status reads change no task state, so they run at once.
+    const [status, text, history] = await Promise.all([
+      runCliAsync(['task', 'status', '--json'], { cwd: dir, env }),
+      runCliAsync(['task', 'status'], { cwd: dir, env }),
+      runCliAsync(['task', 'status', '--json', '--history'], { cwd: dir, env }),
+    ]);
     assert.equal(status.status, 0, status.stderr);
     const payload = JSON.parse(status.stdout);
     assert.equal(payload.ok, true);
@@ -14303,13 +14308,11 @@ test('task status gives web and Swarlo a compact live contract', () => {
     assert.equal(Object.hasOwn(payload.status, 'last_event'), false);
     assert.equal(Object.hasOwn(payload.status, 'swarlo'), false);
 
-    const text = runCli(['task', 'status'], { cwd: dir, env });
     assert.equal(text.status, 0, text.stderr);
     assert.match(text.stdout, /TASK STATUS/);
     assert.match(text.stdout, /plan 1 \/ do 1 \/ review 0 \/ backlog 1 \/ done 0/);
     assert.doesNotMatch(text.stdout, /swarlo feed/);
 
-    const history = runCli(['task', 'status', '--json', '--history'], { cwd: dir, env });
     assert.equal(history.status, 0, history.stderr);
     const historyPayload = JSON.parse(history.stdout);
     assert.equal(historyPayload.status.last_event.task.id, id);
