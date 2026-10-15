@@ -1,0 +1,32 @@
+Scope: backstop ladder, rung 2. The team member standard's validation page was last checked in July. Reran its recorded checks and recompiled the page against current code. No production change.
+
+$ node --test --test-name-pattern 'member' test/commands.test.js
+ℹ tests 65  ℹ pass 65  ℹ fail 0
+exit: 0
+
+$ node -c commands/member.js commands/mission.js bin/atris.js   (each)
+all parse
+
+$ atris member --help        exit: 0, lists goal-from-mission, goal-from-score, alive, history, archive, purge-archived, supervisor, generalist
+$ atris member list          exit: 0, prints the team table
+
+$ atris clean --dry-run --json   (before)
+"ok": false, stale pages 4: team-member-standard build and validate, wiki validate, wiki-loop validate
+Cause: member code grew from about 9,100 to 11,643 lines since July, so the page's source refs pointed at old lines.
+
+Fix: validation page sources now point at member dispatch and help (11385-11622), the member now.md renderer (1981-2021), and the first member test (187); compile date moved to 2026-10-14; title dash replaced.
+
+$ atris clean --dry-run --json   (after)
+exit: 0, stale pages 3: team-member-standard build, wiki validate, wiki-loop validate
+
+$ node --test test/worktree-removal-guard.test.js test/member-tidy.test.js
+ℹ tests 57  ℹ pass 57  ℹ fail 0
+exit: 0
+
+Correction to the previous tick: the wiki upkeep page recheck added proof but left its July source refs, so that page is still listed stale.
+
+Files changed: atris/features/team-member-standard/validate.md; atris/team/architect/logs/2026-10-14.md; this receipt.
+Rerun: atris clean --dry-run --json
+Progress: stale feature pages from 4 to 3.
+next_push: recompile the wiki upkeep validation page's source refs so last tick's recheck clears the stale list too.
+layer: environment
