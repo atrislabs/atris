@@ -263,6 +263,43 @@ test('atris member board --json --follow streams one JSON object per line', asyn
   }
 });
 
+test('follow keeps a line written while the snapshot is printing', async () => {
+  const { memberBoardCommand } = require('../lib/member-board');
+  const recent = new Date(Date.now() - 5_000).toISOString();
+  const dir = fakeDir({ navigator: [`${recent} m-9 started: map the repo`] });
+  const now = new Date().toISOString();
+  const lines = [];
+  const realWrite = process.stdout.write;
+  const prevDir = process.env.ATRIS_PROGRESS_DIR;
+  const prevCwd = process.cwd();
+  process.env.ATRIS_PROGRESS_DIR = dir;
+  process.chdir(dir);
+  // A member writes progress at the exact moment the snapshot goes out.
+  process.stdout.write = function (chunk, ...rest) {
+    if (typeof chunk !== 'string' || !chunk.startsWith('{"')) return realWrite.call(this, chunk, ...rest);
+    lines.push(JSON.parse(chunk));
+    if (lines.length === 1) fs.appendFileSync(path.join(dir, 'navigator.log'), `${now} m-9 reading atris/MAP.md\n`);
+    return true;
+  };
+  let running;
+  try {
+    running = memberBoardCommand('--json', '--follow');
+    const until = Date.now() + 3000;
+    while (lines.length < 2 && Date.now() < until) await new Promise((r) => setTimeout(r, 25));
+  } finally {
+    process.emit('SIGINT');
+    await running;
+    process.stdout.write = realWrite;
+    process.chdir(prevCwd);
+    if (prevDir === undefined) delete process.env.ATRIS_PROGRESS_DIR; else process.env.ATRIS_PROGRESS_DIR = prevDir;
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+  assert.equal(lines[0].kind, 'snapshot');
+  assert.deepEqual(lines.slice(1), [
+    { member: 'navigator', mission: 'm-9', at: now, kind: 'step', text: 'reading atris/MAP.md' },
+  ]);
+});
+
 test('follow finishes a line that was half written before it started', () => {
   const { followBoard } = require('../lib/member-board');
   const dir = fakeDir({ builder: [`${at(60)} m-1 started: verify stream`] });
