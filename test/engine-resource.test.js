@@ -360,6 +360,64 @@ test('the sweep offers a guarded line only for a lone unguarded agent start', ()
   }
 });
 
+test('the sweep guards a lone agent start in the startup files only when asked, keeping the old file', async () => {
+  const { engineCommand } = require('../commands/engine');
+  const home = fs.mkdtempSync(path.join(os.tmpdir(), 'engine-fix-startup-'));
+  const run = (args) => {
+    const out = [];
+    const original = console.log;
+    console.log = (line) => out.push(String(line));
+    let code;
+    try {
+      code = engineCommand(['sweep', ...args], { engineSweep: { read: () => ({ agents: [{ pid: 200, ppid: 1, uid: 501, age_sec: 53414, args: 'ssh-agent -s' }], referenced: new Set() }), uid: 501, home } });
+    } finally {
+      console.log = original;
+    }
+    return { code, text: out.join('\n') };
+  };
+  try {
+    const before = ['export A=1', '  eval "$(ssh-agent -s)"  # Start SSH agent', 'if true; then eval `ssh-agent -s`; fi', ''].join('\n');
+    fs.writeFileSync(path.join(home, '.zshrc'), before);
+    fs.writeFileSync(path.join(home, '.zprofile'), 'eval $(ssh-agent -c)\n');
+    const listing = run([]);
+    assert.match(listing.text, /to make that change, run atris engine sweep --fix-startup; it saves the old file beside it first/);
+    assert.strictEqual(fs.readFileSync(path.join(home, '.zshrc'), 'utf8'), before, 'the listing alone changes nothing');
+    const fixed = run(['--fix-startup']);
+    assert.strictEqual(fixed.code, 0);
+    const backups = fs.readdirSync(home).filter((name) => /^\.zshrc\.atris-\d{14}\.bak$/.test(name));
+    assert.strictEqual(backups.length, 1);
+    assert.strictEqual(fs.readFileSync(path.join(home, backups[0]), 'utf8'), before, 'the old file is kept as it was');
+    const guarded = '  [ -S "$SSH_AUTH_SOCK" ] || eval "$(ssh-agent -s)"  # Start SSH agent';
+    assert.strictEqual(fs.readFileSync(path.join(home, '.zshrc'), 'utf8'), ['export A=1', guarded, 'if true; then eval `ssh-agent -s`; fi', ''].join('\n'));
+    assert.strictEqual(fs.readFileSync(path.join(home, '.zprofile'), 'utf8'), '[ -S "$SSH_AUTH_SOCK" ] || eval $(ssh-agent -c)\n');
+    assert.ok(fixed.text.includes(`changed ~/.zshrc line 2 to: [ -S "$SSH_AUTH_SOCK" ] || eval "$(ssh-agent -s)" (old file saved as ~/${backups[0]})`), fixed.text);
+    assert.match(fixed.text, /left ~\/\.zshrc line 3 as is: it does more than start an agent, so change it by hand/);
+    assert.match(fixed.text, /run atris engine sweep --apply to stop the ones already leaked/);
+    const again = run(['--fix-startup']);
+    assert.strictEqual(again.text, 'left ~/.zshrc line 3 as is: it does more than start an agent, so change it by hand', 'a second run changes nothing');
+    // The guarded line skips a new agent while a socket is reachable and
+    // starts one when none is, in the shell that reads it.
+    const bin = path.join(home, 'bin');
+    fs.mkdirSync(bin);
+    fs.writeFileSync(path.join(bin, 'ssh-agent'), '#!/bin/sh\necho started >> "$HOME/agent-starts"\necho "SSH_AGENT_PID=1; export SSH_AGENT_PID;"\n', { mode: 0o755 });
+    const shell = fs.existsSync('/bin/zsh') ? '/bin/zsh' : '/bin/sh';
+    const runLine = (socket) => require('node:child_process').spawnSync(shell, ['-c', guarded], { env: { PATH: `${bin}:/usr/bin:/bin`, HOME: home, ...(socket ? { SSH_AUTH_SOCK: socket } : {}) } });
+    const socket = path.join(home, 'agent.sock');
+    const server = require('node:net').createServer();
+    await new Promise((resolve) => server.listen(socket, resolve));
+    try {
+      assert.strictEqual(runLine(socket).status, 0);
+      assert.ok(!fs.existsSync(path.join(home, 'agent-starts')), 'a reachable socket starts no agent');
+    } finally {
+      await new Promise((resolve) => server.close(resolve));
+    }
+    assert.strictEqual(runLine(null).status, 0);
+    assert.strictEqual(fs.readFileSync(path.join(home, 'agent-starts'), 'utf8'), 'started\n', 'no socket starts one agent');
+  } finally {
+    fs.rmSync(home, { recursive: true, force: true });
+  }
+});
+
 test('when process environments cannot be read, every agent counts as in use', () => {
   const run = (cmd, args) => {
     if (cmd === 'lsof') return { status: 0, stdout: 'p200\nf3\nn/tmp/ssh-a/agent.199' };
