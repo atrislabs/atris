@@ -2580,7 +2580,7 @@ Lost-run cleanup error summary: `commands/autoland.js:895` keeps successful clos
 
 ## Review default certified accept fixture setup
 
-- `test/commands.test.js:20192` checks that the default review screen leads with the certified accept line. Real-store creation at `test/commands.test.js:20205` preserves the title, review tag and workspace root, asserts insertion and a display reference, and closes before CLI claim. Init writes its task projection from a different store, and that task shares the seeded display reference, so the test drops the stale projection before claim; claim then resolves from the store and rewrites the projection, as task new did. Creation-only launch removed (five to four); claim, ready, review and every review screen assertion remain unchanged.
+- `test/commands.test.js:20270` checks that the default review screen leads with the certified accept line. Real-store creation, ownership and readiness at `test/commands.test.js:20287` preserve the title, tag, workspace, actor and proof, assert success, and close in finally before CLI certification and the screen. Two CLI launches remain, with every screen assertion unchanged.
 
 ## Task sync dry-run fixture setup
 
@@ -2724,4 +2724,4 @@ Revision initial readiness setup: `test/commands.test.js` calls production ready
 
 Sync preview ownership setup: `test/commands.test.js:17365` seeds creation and claim through the production store, closed before CLI message, readiness and dry-run checks. Three CLI launches replace four; all sync assertions remain.
 
-Default review ownership setup: `test/commands.test.js:20270` seeds creation and claim through the production store, asserts successful ownership, and closes before CLI readiness, certification and review screen checks. Three CLI launches replace four; every screen assertion remains.
+Default review fixture setup: `test/commands.test.js:20270` seeds creation, claim and readiness through the production store, asserts each success, and closes before CLI certification and review screen checks. Two CLI launches remain; every screen assertion remains.

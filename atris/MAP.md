@@ -209,4 +209,4 @@ Reward rejection readiness setup: `test/commands.test.js:13170` seeds production
 
 Sync preview ownership setup: `test/commands.test.js:17365` seeds creation and claim through the production store, closed before CLI message, readiness and dry-run checks. Three CLI launches replace four; all sync assertions remain.
 
-Default review ownership setup: `test/commands.test.js:20270` seeds creation and claim through the production store, asserts successful ownership, and closes before CLI readiness, certification and review screen checks. Three CLI launches replace four; every screen assertion remains.
+Default review fixture setup: `test/commands.test.js:20270` seeds creation, claim and readiness through the production store, asserts each success, and closes before CLI certification and review screen checks. Two CLI launches remain; every screen assertion remains.
