@@ -511,10 +511,10 @@ function quoteArg(value) {
 // folder: both diffs are against the folder's commit, so the staged diff goes
 // into the index only and the full diff into the files. The commit gets a
 // backup name outside refs/heads, so it outlives the branch reap deletes and
-// git gc cannot clear it out from under the restore. Each copied new file
-// leaves a content fingerprint on the folder, so the backup list can tell a
-// saved draft that was later deleted or changed from one still intact.
-function draftFingerprint(file) {
+// git gc cannot clear it out from under the restore. Each saved patch and
+// copied new file leaves a content fingerprint on the folder, so the backup
+// list can tell a backup later cut short, edited or deleted from one intact.
+function savedFingerprint(file) {
   return crypto.createHash('sha256').update(fs.readFileSync(file)).digest('hex');
 }
 
@@ -535,8 +535,11 @@ function salvageWorktree(root, w, dir, receipt) {
       return false;
     }
     const dirtySaved = fs.statSync(patchPath).size > 0;
-    if (dirtySaved) receipt.patches.push(patchPath);
-    else fs.rmSync(patchPath, { force: true });
+    w.patchFingerprints = {};
+    if (dirtySaved) {
+      receipt.patches.push(patchPath);
+      w.patchFingerprints[patchPath] = savedFingerprint(patchPath);
+    } else fs.rmSync(patchPath, { force: true });
     const stagedPath = path.join(dir, `${path.basename(w.path)}.staged.patch`);
     const staged = runGit(['diff', '--cached', '--binary', `--output=${stagedPath}`], { cwd: w.path, check: false });
     if (staged.status !== 0) {
@@ -545,6 +548,7 @@ function salvageWorktree(root, w, dir, receipt) {
     }
     if (fs.statSync(stagedPath).size > 0) {
       receipt.stagedPatches.push(stagedPath);
+      w.patchFingerprints[stagedPath] = savedFingerprint(stagedPath);
       restore.push(`git apply --cached ${quoteArg(stagedPath)}`);
     } else fs.rmSync(stagedPath, { force: true });
     if (dirtySaved) restore.push(`git apply ${quoteArg(patchPath)}`);
@@ -558,7 +562,7 @@ function salvageWorktree(root, w, dir, receipt) {
         const dest = path.join(destRoot, rel);
         fs.mkdirSync(path.dirname(dest), { recursive: true });
         fs.copyFileSync(path.join(w.path, rel), dest);
-        fingerprints[rel] = draftFingerprint(dest);
+        fingerprints[rel] = savedFingerprint(dest);
       }
       w.draftFingerprints = fingerprints;
       receipt.untracked.push(destRoot);
@@ -795,7 +799,7 @@ function reap(root, { ttlDays = DEFAULT_TTL_DAYS, staleHours = DEFAULT_STALE_HOU
     if (removed.status === 0) {
       receipt.removedWorktrees.push(w.path);
       if (w.restoreCommand) receipt.restores.push({ path: w.path, command: w.restoreCommand });
-      recordWorktreeRemoval(root, { path: w.path, branch: w.branch, by, reason: reapReason(w, board, ttlDays, force), restore: w.restoreCommand, drafts: w.draftFingerprints });
+      recordWorktreeRemoval(root, { path: w.path, branch: w.branch, by, reason: reapReason(w, board, ttlDays, force), restore: w.restoreCommand, patches: w.patchFingerprints, drafts: w.draftFingerprints });
     } else {
       // A locked worktree fails here and, unreported, reap re-salvages the
       // same patches every pass forever. Say what blocked it so a human can
@@ -1092,12 +1096,18 @@ function savedBackups(root) {
       const missingDrafts = drafts.some((folder) => {
         try { return !fs.statSync(folder).isDirectory(); } catch { return true; }
       });
-      // Removals recorded before fingerprints existed skip the content check.
+      // Removals recorded before fingerprints existed skip the content checks.
+      const changedPatch = !missingPatch && row.patches
+        && patches.find((file) => {
+          if (!row.patches[file]) return false;
+          try { return savedFingerprint(file) !== row.patches[file]; } catch { return true; }
+        });
       const changedDraft = !missingDrafts && drafts.length === 1 && row.drafts
         && Object.keys(row.drafts).find((rel) => {
-          try { return draftFingerprint(path.join(drafts[0], rel)) !== row.drafts[rel]; } catch { return true; }
+          try { return savedFingerprint(path.join(drafts[0], rel)) !== row.drafts[rel]; } catch { return true; }
         });
       const unavailable = missing ? 'saved commit is missing' : missingPatch ? 'saved patch file is missing'
+        : changedPatch ? `saved patch file was changed: ${path.basename(changedPatch)}`
         : missingDrafts ? 'saved draft folder is missing'
           : changedDraft ? `saved draft file is missing or changed: ${changedDraft}` : '';
       return { at: row.at, path: row.path, branch: row.branch,

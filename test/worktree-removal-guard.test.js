@@ -1519,6 +1519,22 @@ test(`reap saves staged and binary work and restores it exactly${quoted ? ' with
       assert.equal(absentJson.status, 0, absentJson.stderr);
       assert.equal(JSON.parse(absentJson.stdout).backups[0].restore, null);
       assert.equal(JSON.parse(absentJson.stdout).backups[0].unavailable, 'saved patch file is missing');
+      // A patch cut short or edited in place still exists, so only its
+      // fingerprint shows the listed restore would apply the wrong change.
+      for (const damaged of [bytes.subarray(0, bytes.length - 8), Buffer.concat([bytes, Buffer.from('\n')])]) {
+        fs.writeFileSync(patch, damaged);
+        const changed = spawnSync(process.execPath, [path.resolve(__dirname, '../bin/atris.js'), 'land', '--backups'], { cwd: repo, encoding: 'utf8' });
+        console.log('command: node bin/atris.js land --backups (damaged saved patch)');
+        console.log(changed.stdout.trim());
+        console.log(`exit: ${changed.status}`);
+        assert.equal(changed.status, 0, changed.stderr);
+        assert.ok(changed.stdout.includes(`cannot restore: saved patch file was changed: ${path.basename(patch)}`), changed.stdout);
+        assert.ok(!changed.stdout.includes('to restore:'), changed.stdout);
+        const changedJson = spawnSync(process.execPath, [path.resolve(__dirname, '../bin/atris.js'), 'land', '--backups', '--json'], { cwd: repo, encoding: 'utf8' });
+        assert.equal(changedJson.status, 0, changedJson.stderr);
+        assert.equal(JSON.parse(changedJson.stdout).backups[0].restore, null);
+        assert.equal(JSON.parse(changedJson.stdout).backups[0].unavailable, `saved patch file was changed: ${path.basename(patch)}`);
+      }
       fs.writeFileSync(patch, bytes);
     }
     const drafts = saved('new files saved');

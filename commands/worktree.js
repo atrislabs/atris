@@ -1441,13 +1441,14 @@ function worktreeRemovalLogPath(root) {
   return path.join(main, '.atris', 'state', 'worktree_removals.jsonl');
 }
 
-function recordWorktreeRemoval(root, { path: removedPath, branch = '', by, reason, restore, drafts }) {
+function recordWorktreeRemoval(root, { path: removedPath, branch = '', by, reason, restore, patches, drafts }) {
   try {
     const file = worktreeRemovalLogPath(root);
     fs.mkdirSync(path.dirname(file), { recursive: true });
     fs.appendFileSync(file, `${JSON.stringify({
       at: new Date().toISOString(), path: removedPath, branch: branch || null, by, reason, pid: process.pid,
       ...(restore ? { restore } : {}),
+      ...(patches && Object.keys(patches).length ? { patches } : {}),
       ...(drafts ? { drafts } : {}),
     })}\n`);
   } catch {}
