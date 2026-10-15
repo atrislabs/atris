@@ -340,3 +340,26 @@ test('with a remote, a merge that only moved the local branch is not landed', ()
     fs.rmSync(bare, { recursive: true, force: true });
   }
 });
+
+test('a scratch folder kept because git is still busy in it is named in the verdict and the summary', () => {
+  const root = makeRepo();
+  let scratch = '';
+  try {
+    branchWith(root, 'member/busy', (dir) => fs.writeFileSync(path.join(dir, 'feature.txt'), 'shipped\n'));
+    const result = landStaleGreenBranches(root, {
+      push: false,
+      verifyCommand: 'node check.js && touch "$(git rev-parse --git-dir)/index.lock"',
+      runCli: () => ({ status: 0, stdout: '' }),
+    });
+    const verdict = result.verdicts.find((v) => v.branch === 'member/busy');
+    const kept = /^(.+): git holds (.+index\.lock), under a minute old$/.exec(verdict.scratch_kept || '');
+    assert.ok(kept, JSON.stringify(verdict));
+    scratch = kept[1];
+    assert.ok(fs.existsSync(scratch));
+    assert.ok(fs.existsSync(kept[2]));
+    assert.match(summaryLine(result), new RegExp(`member/busy scratch folder kept, ${scratch.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}: git holds `));
+  } finally {
+    if (scratch) fs.rmSync(scratch, { recursive: true, force: true });
+    fs.rmSync(root, { recursive: true, force: true });
+  }
+});

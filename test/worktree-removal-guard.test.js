@@ -768,8 +768,11 @@ test('green landing keeps its scratch folder while a test is still running in it
   const { base, repo, wt } = landedWorktree();
   try {
     assert.deepEqual(dropScratch(repo, wt, { activeCwds: [path.join(wt, 'node_modules')] }), { removed: false, reason: 'active_process' });
-    fs.writeFileSync(path.join(worktreeGitDir(wt), 'index.lock'), '');
-    assert.deepEqual(dropScratch(repo, wt, { activeCwds: [] }), { removed: false, reason: 'git_lock' });
+    const lock = path.join(worktreeGitDir(wt), 'index.lock');
+    fs.writeFileSync(lock, '');
+    const { lock_age_ms: age, ...held } = dropScratch(repo, wt, { activeCwds: [] });
+    assert.deepEqual(held, { removed: false, reason: 'git_lock', lock });
+    assert.ok(age < 60000, String(age));
     fs.rmSync(path.join(worktreeGitDir(wt), 'index.lock'));
     git(repo, ['worktree', 'lock', '--reason', 'operator checking the verify', wt]);
     assert.deepEqual(dropScratch(repo, wt, { activeCwds: [] }), { removed: false, reason: 'pinned', pinned: 'pinned by git worktree lock, under a minute old: operator checking the verify' });
