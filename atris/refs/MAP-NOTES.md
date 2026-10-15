@@ -992,7 +992,7 @@ MCP stdio request flow: `mcp/atris-mcp/index.mjs:142` reads requests while desig
 - **Entry points:** `bin/atris.js` (`loop` help + routing), `commands/loop-front.js:317` (`loopFront` sends `loop wiki` to `loopAtris`), `commands/wiki.js` (`wiki loop` alias)
 - **Handlers:** `commands/loop.js` (report builder + STATUS/log refresh), `lib/wiki.js` (stale/orphan/suggestion helpers)
 - **Help:** `bin/atris.js:1100-1111` (`showLoopHelp`) prints usage without ensuring wiki scaffold or writing status/log files
-- **Dispatch:** `bin/atris.js:3095-3093` routes `loop --help`, `loop -h`, and `loop help` to `showLoopHelp` before `loopFront`
+- **Dispatch:** `bin/atris.js:3220-3226` routes `loop --help`, `loop -h`, and `loop help` to `showLoopHelp` before `loopFront`
 - **How it works:**
 - `atris loop wiki` ensures the wiki scaffold exists, analyzes current pages, then rewrites `atris/wiki/STATUS.md`
 - appends a deterministic `LOOP` entry to `atris/wiki/log.md`
@@ -1033,7 +1033,7 @@ MCP stdio request flow: `mcp/atris-mcp/index.mjs:142` reads requests while desig
 
 **Purpose:** Run the optional six-specialist review engine without confusing it with the core `atris review` workflow validator.
 
-- **Routing:** `bin/atris.js:1334-1331` routes `code-review` and `cr` to `commands/review.js`
+- **Routing:** `bin/atris.js:3206-3208` routes `code-review` and `cr` to `commands/review.js`
 - **Engine discovery:** `commands/review.js:14-30` searches for `review_engine.py`
 - **Missing-engine JSON:** `commands/review.js:32-46` returns `{ ok:false, error:"not installed" }` under `--json` and prints `not installed; atris skill install code-review` on stderr for humans, both exit 2 (no stack trace)
 - **JSON error helper:** `commands/review.js:48-55` keeps wrapper-owned setup failures parseable
@@ -1068,7 +1068,7 @@ MCP stdio request flow: `mcp/atris-mcp/index.mjs:142` reads requests while desig
 **Purpose:** Productivity insights from existing journal data
 
 - **Entry point:** `commands/analytics.js:4-147` (analyticsAtris function)
-- **Help:** `bin/atris.js:890-893` (`showAnalyticsHelp`) and `bin/atris.js:1479-1478` short-circuit `analytics --help` before workspace reads
+- **Help:** `bin/atris.js:890-893` (`showAnalyticsHelp`) and `bin/atris.js:2848-2852` short-circuit `analytics --help` before workspace reads
 - **Regression:** `test/commands.test.js:4287-4302` covers `analytics --help` without `atris/` or `$HOME/.atris`
 - **Pareto insight:** No new instrumentation - parses existing markdown
 - **Data sources:**
@@ -1382,7 +1382,7 @@ rg "printRoster|registryPayload|canPersistEngineRegistry|speakFirstMinute|--glob
 **Purpose:** Install latest Atris version from npm
 
 - **Entry point:** `bin/atris.js:2945-2990` (upgradeAtris function)
-- **Dispatch/help:** `bin/atris.js:1439-1438` handles `upgrade --help` before npm checks or global installs
+- **Dispatch/help:** `bin/atris.js:2332-2336` handles `upgrade --help` before npm checks or global installs
 - **Logic:**
 - Shows current version
 - Checks npm registry for latest
@@ -1447,7 +1447,7 @@ rg "printRoster|registryPayload|canPersistEngineRegistry|speakFirstMinute|--glob
 **Purpose:** Load Atris context - MAP.md, journal, tasks - and display system status
 
 - **Entry point:** `commands/activate.js:158-306` (activateAtris function)
-- **Routing:** `bin/atris.js:1160-1159`
+- **Routing:** `bin/atris.js:2283-2288`
 - **Help:** `bin/atris.js:917-920` (`showActivateHelp`) prints usage before context loading or journal creation
 - **Regression:** `test/commands.test.js:4310-4324` covers activate help without context panels or temp state creation; `test/activate-boot.test.js` covers the boot brief + sync-status line
 - **Logic:**
@@ -1463,8 +1463,8 @@ rg "printRoster|registryPayload|canPersistEngineRegistry|speakFirstMinute|--glob
 
 **Purpose:** Search journal history for keywords across all log files
 
-- **Entry point:** `bin/atris.js:470-465` (`showSearchHelp` + `searchJournal`)
-- **Routing:** `bin/atris.js:764`
+- **Entry point:** `commands/search.js:430` `searchCommand`, help at `bin/atris.js:470` `showSearchHelp`
+- **Routing:** `bin/atris.js:2936`
 - **Logic:**
 - `--help` and `-h` short-circuit before `atris/logs` checks; regression: `test/commands.test.js:3714-3728`
 - Recursively walks `atris/logs/` directory
@@ -1479,7 +1479,7 @@ rg "printRoster|registryPayload|canPersistEngineRegistry|speakFirstMinute|--glob
 
 **Purpose:** Store and inspect reusable project patterns, pitfalls, preferences, architecture notes, and tool lessons.
 
-- **Entry point:** `bin/atris.js:1581-1577` routes to `commands/learn.js`
+- **Entry point:** `bin/atris.js:3068-3071` routes to `commands/learn.js`
 - **Handler:** `commands/learn.js` (`learnAtris`)
 - **Help:** `showLearnHelp` short-circuits help before workspace checks
 - **Rich log mint:** `commands/learn.js` `mintRichLearn` / `saveRichLearn` / `ensureLearnApply` / `commitAddedLearning` / `commitReviewLearning` / `harvestFromJournals`. A rich `atris learn log`, `learn add`, `learn harvest`, or review insight (number-with-units or named mechanism) mints `atris/experiments/learn-<key>/` plus `atris/wiki/briefs/learn-<key>.apply.md`, prints `next: atris experiments keep learn-<key>`, then `proveSavedLearnerBaseline` prints `score: 0` only when that sidecar starts failing. Thin log/add/harvest/review stays jsonl or prose only, prints `check: fill this` through `printLearnerCheckGate`, and does not invent a question or a thin next-step. `commands/workflow.js` `appendReviewLearningToJournal` folds CRLF then writes the review note under `## Notes`, then `commitReviewLearning`. `harvestFromJournals` folds `\r\n` to `\n` before the `## Notes` match so a Windows-round-tripped journal still harvests, same bar as analytics inbox CRLF. A leftover `[claimable]` receipt line that lands under Notes (apply after a mint, or leftover watched/taught/digest/searched) is not invent-keep: `leftoverClaimableInsight` skips it so harvest stays on a real insight.
@@ -1492,7 +1492,7 @@ rg "printRoster|registryPayload|canPersistEngineRegistry|speakFirstMinute|--glob
 
 **Purpose:** Inspect, snapshot, distill, or fork workspace persona, policies, lessons, team, and knowledge context.
 
-- **Entry point:** `bin/atris.js:1644-1641` routes to `commands/soul.js`
+- **Entry point:** `bin/atris.js:3174-3178` routes to `commands/soul.js`
 - **Handler:** `commands/soul.js:310-381` (`soul`)
 - **Help:** `commands/soul.js:299-308` (`showSoulHelp`) and `commands/soul.js:316-319` short-circuit before `findAtrisDir`
 - **Regression:** `test/commands.test.js:3748-3762` covers `soul --help`, `soul -h`, and `soul help` without temp workspace state

@@ -538,6 +538,30 @@ test('a range ref whose end runs past the file is not right, and fix-refs clamps
   assert.equal(fs.readFileSync(path.join(root, 'atris/MAP.md'), 'utf8'), fixed);
 });
 
+test('a range ref that ends before it starts is left for a human, not moved in place', t => {
+  // the notes file held `bin/atris.js:470-465` `showSearchHelp`: the name sat on
+  // line 470, so every fix-refs run reported it moved and wrote the same text back
+  const root = workspace(t);
+  write(root, 'atris/atris.md', '');
+  const code = Array.from({ length: 20 }, () => '');
+  code[9] = 'function showHelp() {';
+  write(root, 'lib/help.js', code.join('\n'));
+  write(root, 'atris/MAP.md', [
+    '| area | path | note |', '| --- | --- | --- |', '| help | `lib/help.js` | code |', '',
+    '- named: `lib/help.js:10-5` `showHelp` runs backwards.',
+    '- unnamed: `lib/help.js:10-5` runs backwards too.',
+  ].join('\n'));
+  const before = fs.readFileSync(path.join(root, 'atris/MAP.md'), 'utf8');
+  const refs = JSON.parse(run(root, ['--json']).stdout).map_coverage.refs;
+  assert.deepEqual(refs.flagged.map(ref => [ref.map_line, ref.status]), [[5, 'missing'], [6, 'missing']]);
+  assert.equal(refs.moved, 0);
+  const fix = run(root, ['--fix-refs']);
+  assert.equal(fix.status, 0, fix.stderr);
+  assert.match(fix.stdout, /map refs: nothing to move\./);
+  assert.match(fix.stdout, /MAP line 5: lib\/help\.js:10-5 \(showHelp\) range ends before it starts/);
+  assert.equal(fs.readFileSync(path.join(root, 'atris/MAP.md'), 'utf8'), before);
+});
+
 test('limit: a name elsewhere in the sentence does not bind, so only the line bound is checked', t => {
   // Binding the sentence's one defined name was tried on the real map and moved
   // refs to the wrong place: "through the `fileTeachExperiment` helper (..., slug
