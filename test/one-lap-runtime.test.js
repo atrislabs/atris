@@ -738,7 +738,10 @@ test('one lap proof binding blocks a partially materialized landing from ship', 
       '--local',
     ], { cwd: payload.worktree, env: setup.env });
     assert.equal(shipped.status, 3, shipped.stderr || shipped.stdout);
-    assert.match(shipped.stderr, /one-lap index tree differs from the independently verified proof tree/);
+    // Which check catches it depends on what else is left in the folder: an
+    // untracked file the lap left, once deleted, leaves nothing to commit, so
+    // the HEAD check blocks it instead of the index check. Either way it stops.
+    assert.match(shipped.stderr, /one-lap (?:index|head) tree differs from the independently verified proof tree/);
     assertMasterUnchanged(setup);
   } finally {
     cleanupRuntime(setup);
