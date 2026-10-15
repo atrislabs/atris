@@ -189,3 +189,5 @@ Single-row approval previews: `test/commands.test.js:13337` runs the JSON and te
 Proof-only refusal concurrency: `test/commands.test.js:13250` runs done, finish and positive-review refusals together before readiness, then accept and automatic-accept refusals together after zero-reward review. All CLI assertions and later mutation order remain unchanged.
 
 Lineage read concurrency: `test/commands.test.js:21208` runs text, JSON and alternate-home lineage reads together after closing fixture setup. `commands/task.js:11796` reads the production projection and git history without writing task rows or shared output files; all original assertions remain.
+
+Long-title status ownership setup: `test/commands.test.js:14318` creates and claims in the production store, keeping both status formats on the CLI in sequence because status writes a shared projection.

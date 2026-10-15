@@ -2572,7 +2572,7 @@ Lost-run cleanup error summary: `commands/autoland.js:895` keeps successful clos
 
 ## Long-title status fixture setup
 
-- `test/commands.test.js:14282` checks that long current task titles stop at a clause. Real-store creation at `test/commands.test.js:14289` preserves the title, voice tag and creation point, asserts insertion and a display reference, and closes before CLI claim. Creation-only launch removed (four to three); claim and both JSON/text status assertions remain unchanged. Natural flow and headless JSON tests retain explicit CLI creation coverage.
+- `test/commands.test.js:14307` checks that long current task titles stop at a clause. Creation and ownership use the production store at `test/commands.test.js:14318`, assert success, and close before both real JSON/text status calls. Ownership setup removes one launch (three to two). Keep the status calls sequential because `commands/task.js:6064` writes the shared projection.
 
 ## Live status contract fixture setup
 

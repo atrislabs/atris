@@ -14311,21 +14311,16 @@ test('task status closes long current titles at a clause', () => {
   try {
     fs.mkdirSync(path.join(dir, 'atris'), { recursive: true });
     const title = 'The current status sentence now explains the operator consequence in one complete clause; this second clause is deliberately long enough that a character slice would end it in the middle of a word and append an ellipsis';
-    // Creation is setup; claim and both status formats still exercise the CLI.
+    // Creation and ownership are setup; both status formats still exercise the CLI.
     const workspaceRoot = taskStore.workspaceRoot(dir);
     const db = taskStore.open(env.ATRIS_TASKS_DB);
-    let ref;
     try {
       const created = addSeedTask(db, { title, tag: 'voice', workspaceRoot });
       assert.equal(created.inserted, true);
-      ref = taskStore.taskDisplayRefMap(taskStore.listTasks(db, { workspaceRoot })).get(created.id);
-      assert.ok(ref);
+      assert.equal(taskStore.claimTask(db, { id: created.id, claimedBy: 'linguist' }).claimed, true);
     } finally {
       taskStore.close();
     }
-    const claimed = runCli(['task', 'claim', ref, '--as', 'linguist'], { cwd: dir, env });
-    assert.equal(claimed.status, 0, claimed.stderr || claimed.stdout);
-
     const json = runCli(['task', 'status', '--json'], { cwd: dir, env });
     assert.equal(json.status, 0, json.stderr || json.stdout);
     const currentTitle = JSON.parse(json.stdout).status.current.title;
