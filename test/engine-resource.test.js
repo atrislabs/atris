@@ -1137,13 +1137,51 @@ const LAUNCH_EXEMPT_FILES = new Map([
 const stripComments = (text) => text
   .replace(/\/\*[\s\S]*?\*\//g, (block) => block.replace(/[^\n]/g, ' '))
   .replace(/(^|[^:\\'"`])\/\/.*$/gm, '$1');
+// Read parameter boundaries without treating resolver-call parentheses or
+// quoted commas as the end of a function header.
+const definitionHeader = (code, open) => {
+  const text = code.slice(open);
+  const prefix = /^[ \t]*(?:async\s+)?function\s+([\w$]+)\s*|^[ \t]*(?:const|let|var)\s+([\w$]+)\s*=\s*(?:async\s*)?(?:function(?:\s+([\w$]+))?\s*)?/.exec(text);
+  if (!prefix) return null;
+  let end = prefix[0].length;
+  const parameters = [''];
+  if (text[end] === '(') {
+    let depth = 0;
+    let closed = false;
+    const tokens = /'(?:\\.|[^'\\])*'|"(?:\\.|[^"\\])*"|`(?:\\.|[^`\\])*`|[()[\]{},]|[^'"`()\[\]{},]+/g;
+    for (const token of text.slice(end + 1).matchAll(tokens)) {
+      if (token[0] === ')' && depth === 0) {
+        end += token.index + 2;
+        closed = true;
+        break;
+      }
+      if (token[0] === ',' && depth === 0) parameters.push('');
+      else {
+        if (/^[([{]$/.test(token[0])) depth += 1;
+        if (/^[)\]}]$/.test(token[0])) depth -= 1;
+        parameters[parameters.length - 1] += token[0];
+      }
+    }
+    if (!closed) return null;
+  } else {
+    const single = /^[\w$]+/.exec(text.slice(end));
+    if (!single) return null;
+    parameters[0] = single[0];
+    end += single[0].length;
+  }
+  const suffix = /^\s*(=>|\{)/.exec(text.slice(end));
+  if (!suffix) return null;
+  return { name: prefix[1] || prefix[2], internalName: prefix[1] || prefix[3], parameters, end: open + end + suffix[0].length, arrow: suffix[1] === '=>' };
+};
 // Each function definition, named or bound to a variable, as start and end offsets.
 const definitionSpans = (code) => {
-  const definitions = /^[ \t]*(?:async\s+)?function\s+[\w$]+\s*\([^)]*\)\s*\{|^[ \t]*(?:const|let|var)\s+[\w$]+\s*=\s*(?:async\s*)?(?:function(?:\s+[\w$]+)?\s*\([^)]*\)\s*\{|(?:\([^)]*\)|[\w$]+)\s*=>)/gm;
+  const definitions = /^[ \t]*(?:(?:async\s+)?function\s+[\w$]+\s*|(?:const|let|var)\s+[\w$]+\s*=)/gm;
   const spans = [];
   for (const header of code.matchAll(definitions)) {
-    let body = header.index + header[0].length;
-    const arrow = header[0].endsWith('=>');
+    const parsed = definitionHeader(code, header.index);
+    if (!parsed) continue;
+    let body = parsed.end;
+    const arrow = parsed.arrow;
     if (arrow) while (/\s/.test(code[body] || '') && body < code.length) body += 1;
     const block = !arrow || code[body] === '{';
     const tokens = /'(?:\\.|[^'\\])*'|"(?:\\.|[^"\\])*"|`(?:\\.|[^`\\])*`|[{};]|[^'"`{};]+/g;
@@ -1312,10 +1350,9 @@ test('every engine started through a runner or profile variable records its run 
     const recorder = recordingCall(code);
     // The parameter names of the definition starting at this offset.
     const parametersOf = (open) => {
-      const header = /^(?:async\s+)?function\s+[\w$]+\s*\(([^)]*)\)|^(?:const|let|var)\s+[\w$]+\s*=\s*(?:async\s*)?(?:function(?:\s+[\w$]+)?\s*)?(?:\(([^)]*)\)|([\w$]+)\s*=>)/.exec(code.slice(open).trimStart());
-      // Keep names the parameters bind, including destructured ones, and skip
-      // renamed keys and default values.
-      return header ? [...(header[1] ?? header[2] ?? header[3]).matchAll(/(?<=^|[,{[:]|\.\.\.)\s*([A-Za-z_$][\w$]*)\s*(?=[,}\]=]|$)/g)].map((name) => name[1]) : [];
+      const header = definitionHeader(code, open);
+      // Keep names the parameters bind and skip defaults and renamed keys.
+      return header ? header.parameters.flatMap((parameter) => [...parameter.matchAll(/(?<=^|[,{[:]|\.\.\.)\s*([A-Za-z_$][\w$]*)\s*(?=[,}\]=]|$)/g)].map((name) => name[1])) : [];
     };
     // A declaration at the start of this text still reaches its end when no
     // brace or parenthesis open before the declaration closes in between.
@@ -1380,21 +1417,20 @@ test('every engine started through a runner or profile variable records its run 
       const [fnStart] = owner;
       // Follow simple parameters only when a call in this file supplies a
       // known runner. An unrelated parameter name alone is not evidence.
-      const header = /^(?:async\s+)?function\s+([\w$]+)\s*\(([^)]*)\)/.exec(code.slice(fnStart).trimStart())
-        || /^(?:const|let|var)\s+([\w$]+)\s*=\s*(?:async\s*)?(?:function(?:\s+[\w$]+)?\s*\(([^)]*)\)|(?:\(([^)]*)\)|([\w$]+))\s*=>)/.exec(code.slice(fnStart).trimStart());
-      const parameters = header ? (header[2] ?? header[3] ?? header[4]).split(',') : [];
+      const header = definitionHeader(code, fnStart);
+      const parameters = header?.parameters || [];
       const slot = parameters.findIndex((name) => name.split('=')[0].trim() === parameter);
       const defaultSource = slot < 0 ? '' : parameters[slot].slice(parameters[slot].indexOf('=') + 1).trim();
       const binding = `${fnStart}:${parameter}`;
       if (slot >= 0 && !following.has(binding)) {
         const next = new Set(following).add(binding);
-        const expressionName = /\bfunction\s+([\w$]+)\s*\(/.exec(header[0])?.[1];
-        const internalName = (header[2] ?? header[3] ?? header[4]).split(',').some((name) => name.trim() === expressionName) ? undefined : expressionName;
-        const names = [...new Set([header[1], internalName].filter(Boolean))];
+        const expressionName = header.internalName;
+        const internalName = parameters.some((name) => name.trim() === expressionName) ? undefined : expressionName;
+        const names = [...new Set([header.name, internalName].filter(Boolean))];
         const calls = new RegExp(`\\b(${names.map((name) => name.replace(/\$/g, '\\$')).join('|')})\\(`, 'g');
         const fnEnd = definitionSpans(code).find(([open]) => open === fnStart)?.[1] ?? code.length;
         for (const call of code.matchAll(calls)) {
-          const internalOnly = call[1] === internalName && internalName !== header[1];
+          const internalOnly = call[1] === internalName && internalName !== header.name;
           // An expression's internal name exists only inside its body.
           if (internalOnly && (call.index < fnStart || call.index >= fnEnd)) continue;
           // A parameter or earlier local alias of another function holding the
@@ -1463,6 +1499,25 @@ test('every engine started through a runner or profile variable records its run 
     return { seen, missing };
   };
   const planted = (text) => engineLaunches('commands/planted.js', text).missing;
+  // Resolver defaults keep nested parentheses and commas in one parameter.
+  for (const prefix of ['function launch', 'const launch =', 'let launch = async', 'const launch = function worker']) {
+    const arrow = prefix === 'const launch =' || prefix === 'let launch = async' ? ' =>' : '';
+    const end = prefix === 'function launch' ? '}' : '};';
+    const source = (parameters, body, call = 'launch();') => `${prefix}(${parameters})${arrow} {\n${body}\n${end}\n${call}\n`;
+    assert.deepStrictEqual(planted(source('runner = resolveClaudeRunnerBin()', '  spawnSync(runner, args);')), ['commands/planted.js:2 runner']);
+    assert.deepStrictEqual(planted(source('runner = resolveClaudeRunnerBin()', '  startEngineRun(root);\n  spawnSync(runner, args);')), []);
+    assert.deepStrictEqual(planted(source('runner = resolveClaudeRunnerBin()', "  spawnSync(runner, ['--help']);")), []);
+    assert.deepStrictEqual(planted(source('runner = resolveClaudeRunnerBin()', '  spawnSync(runner, args);', "launch('git');")), []);
+    assert.deepStrictEqual(planted(source('runner = resolveClaudeRunnerBin()', '  spawnSync(runner, args);', 'launch(null);')), []);
+    assert.deepStrictEqual(planted(source('runner = resolveClaudeRunnerBin()', '  spawnSync(runner, args);', '')), []);
+    assert.deepStrictEqual(planted(source("runner = findExecutable('git')", '  spawnSync(runner, args);')), []);
+    assert.deepStrictEqual(planted(source("prompt = render('a,b', { nested: [one, two] }), runner = resolveClaudeRunnerBin()", '  spawnSync(runner, args);')), ['commands/planted.js:2 runner']);
+    assert.deepStrictEqual(planted(source("prompt = render('a,b', { nested: [one, two] }), runner = resolveClaudeRunnerBin()", '  spawnSync(runner, args);', "launch(prompt, 'git');")), []);
+    assert.deepStrictEqual(planted(source("profile = resolveEngineProfile(select('a,b', [one, two]))", '  const runner = profile.bin;\n  spawnSync(runner, args);')), ['commands/planted.js:3 runner']);
+    assert.deepStrictEqual(planted(source('runner = resolveClaudeRunnerBin(), prompt = render(one, two)', '  spawnSync(runner, args);')), ['commands/planted.js:2 runner']);
+    assert.deepStrictEqual(planted(source('runner = resolveClaudeRunnerBin()', '  function nested() {\n    spawnSync(runner, args);\n  }\n  nested();')), ['commands/planted.js:3 runner']);
+  }
+  assert.deepStrictEqual(planted("function launch(runner = resolveClaudeRunnerBin()) {\n  spawnSync(runner, args);\n}\nfunction other({ run = wrap, launch }) {\n  launch();\n}\n"), [], 'a destructured binding after another default still hides the launcher');
   // Literal and captured defaults count only when a same-file call omits them.
   for (const [head, tail] of [
     ['function launch', '}'],
