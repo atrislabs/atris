@@ -2081,6 +2081,24 @@ test('fix reads a line-end dash with the line above when its sentence starts the
   ]);
 });
 
+test('fix reads a mid-line dash with the next line when its clause wraps there', () => {
+  // from a benchmark note: the line ended right after "it's", so read alone
+  // the words after the dash were no full clause and the comma spliced it.
+  // A dash whose words stay a phrase across the wrap keeps its comma.
+  const file = tmpFile('mid-line-wrap.md', [
+    'The lift isn\'t a general "retrieval works" story \u2014 it\'s',
+    'a tick-2-specific story.',
+    '',
+    'We shipped the tool \u2014 now with',
+    'a faster start.',
+  ].join('\n'));
+  const { changes } = applyFixes([file], RULES);
+  assert.deepEqual(changes.map((c) => c.after), [
+    'The lift isn\'t a general "retrieval works" story; it\'s',
+    'We shipped the tool, now with',
+  ]);
+});
+
 test('fix ends a paragraph-ending dash with a period, keeps a wrapping one a comma', () => {
   const file = tmpFile('line-end.md', [
     'The tool we built \u2014',

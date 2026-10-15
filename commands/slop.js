@@ -1458,6 +1458,24 @@ function trailingMark(line, below, above = '') {
   return /^[;:]$/.test(mark) ? mark : null;
 }
 
+// A dash in mid-line whose clause wraps onto the next line is read with
+// that line's words too: "story \u2014 it's" then "a tick-2-specific story" is
+// a full clause, though "it's" alone at the line end reads as none, so the
+// one-line comma would splice it. Only a semicolon or colon from the joined
+// reading replaces that comma. A dash further on the next line, past its
+// first stop, belongs to the next sentence, as in trailingMark.
+function wrappedClause(masked, fixed, below, fix, opts) {
+  const at = masked.indexOf('\u2014');
+  if (at < 0 || masked.split('\u2014').length !== 2 || !masked.slice(at + 1).trim() || /`/.test(below)) return fixed;
+  if (!wrappedFrom(masked, below)) return fixed;
+  const words = /\u2014/.test(below) ? (/^[^\u2014]*?[.!?](?=\s)/.exec(below) || [''])[0] : below;
+  const pre = masked.slice(0, at).trimEnd();
+  if (!words.trim() || !pre || !fixed.startsWith(`${pre},`)) return fixed;
+  const joined = fix(`${masked.trimEnd()} ${words.trim()}`, opts);
+  if (!joined.startsWith(pre) || !/^[;:]/.test(joined.slice(pre.length))) return fixed;
+  return pre + joined[pre.length] + fixed.slice(pre.length + 1);
+}
+
 // Apply every fixable rule's safe transform in place.
 // Returns { fixedCount, fixedFiles, changes }, where changes lists each edited
 // line as { file, line, before, after, kind } so the writer can review the fix.
@@ -1518,7 +1536,10 @@ function applyFixes(files, rules, { write = true } = {}) {
         if (!r.re.test(masked)) continue;
         const startsBlock = at === 0 && (i === 0 || !lines[i - 1].trim() || /^\s{0,3}#/.test(lines[i - 1]));
         const above = at === 0 && !script && !startsBlock && !fenced.has(i - 1) && !skip.has(i - 1) ? wrappedFrom(lines[i - 1], line) : '';
-        const nl = line.slice(0, at) + restore(r.fix(masked, { endsBlock: i === lines.length - 1 || !lines[i + 1].trim(), startsBlock, spans, above }));
+        const opts = { endsBlock: i === lines.length - 1 || !lines[i + 1].trim(), startsBlock, spans, above };
+        let fixed = r.fix(masked, opts);
+        if (r.fix === fixEmDash && at === 0 && !script && !opts.endsBlock && !fenced.has(i + 1) && !skip.has(i + 1)) fixed = wrappedClause(masked, fixed, lines[i + 1], r.fix, opts);
+        const nl = line.slice(0, at) + restore(fixed);
         if (nl !== line) { line = nl; fixedCount++; }
       }
       if (line !== lines[i]) { changes.push({ file, line: i + 1, before: lines[i], after: line, kind: carried || fixKind(lines[i], line) }); lines[i] = line; touched = true; }
