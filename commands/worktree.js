@@ -584,27 +584,32 @@ function createAgentWorktree({ root = repoRoot(), member = '', agent = '', task,
   if (staleBase && startCommit) {
     console.error(`warning: could not refresh ${checkoutBase} (${staleBase.split('\n')[0]}); the new worktree starts from the local copy, which may be behind`);
   }
+  // Returns the shared refusal line when git keeps the folder, so the start
+  // error still leads instead of being replaced by the removal's own failure.
   const discardFailedStart = () => {
-    if (existed || !startCommit) return;
+    if (existed || !startCommit) return '';
     const registered = listWorktrees(root).find((wt) => wt.branch === branch);
     if (registered) {
       if (!fs.existsSync(target) || fs.realpathSync(registered.path) !== fs.realpathSync(target)
-        || registered.head !== startCommit) return;
+        || registered.head !== startCommit) return '';
       const dirt = statusCounts(target, { ignoreUntracked: isConductorArtifact });
-      if (!dirt || dirt.staged || dirt.unstaged || dirt.untracked) return;
+      if (!dirt || dirt.staged || dirt.unstaged || dirt.untracked) return '';
       // No engine has started. Normal removal still refuses unexpected dirt.
-      runGit(['worktree', 'remove', target], { cwd: root });
+      const removal = runGit(['worktree', 'remove', target], { cwd: root, check: false });
+      if (removal.status !== 0) return `kept ${target}: ${describeRemovalResult(target, removal)}`;
     }
     if (!fs.existsSync(target)) runGit(['update-ref', '-d', ref, startCommit], { cwd: root });
+    return '';
   };
   for (let attempt = 0; attempt < 3; attempt += 1) {
     const added = runGit(['worktree', 'add', '-b', branch, target, startPoint], { cwd: root, check: false });
     if (added.status === 0) break;
     // Git can create the branch before failing to write its tracking config.
     // Drop only that untouched ref, never an existing branch or a checkout.
-    if (!/already exists|already used by worktree/i.test(added.stderr || '')) discardFailedStart();
+    const kept = /already exists|already used by worktree/i.test(added.stderr || '') ? '' : discardFailedStart();
     if (!configLocked(added) || attempt === 2) {
-      throw new Error(String(added.stderr || added.stdout || 'worktree start failed').trim());
+      const failed = String(added.stderr || added.stdout || 'worktree start failed').trim();
+      throw new Error(kept ? `${failed}; ${kept}` : failed);
     }
     sleepSync(100 * (attempt + 1));
   }
@@ -630,7 +635,8 @@ function createAgentWorktree({ root = repoRoot(), member = '', agent = '', task,
       'utf8'
     );
   } catch (error) {
-    discardFailedStart();
+    const kept = discardFailedStart();
+    if (kept) error.message = `${error.message}; ${kept}`;
     throw error;
   }
   return { path: target, branch, base: shipBase, checkoutBase, resumedFrom, owner, reapedBeforeStart, cachePrunedBeforeStart };

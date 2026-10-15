@@ -835,6 +835,42 @@ process.exit(result.status === null ? 1 : result.status);
   });
 }
 
+// A start that fails after its folder exists takes the folder back. When git
+// refuses that removal, the start error still leads and names the kept folder.
+test('a failed worktree start keeps its folder after a pin taken at removal and still shows why it failed', () => {
+  const { base, repo } = landedWorktree();
+  try {
+    const target = path.join(base, 'start-wt');
+    const realGit = spawnSync('which', ['git'], { encoding: 'utf8' }).stdout.trim();
+    const bin = path.join(base, 'bin');
+    fs.mkdirSync(bin);
+    fs.writeFileSync(path.join(bin, 'git'), `#!${process.execPath}
+const { spawnSync } = require('node:child_process');
+const args = process.argv.slice(2);
+const git = ${JSON.stringify(realGit)};
+if (args[0] === 'config' && String(args[1]).endsWith('.atris-base')) {
+  process.stderr.write('error: metadata write failed\\n');
+  process.exit(1);
+}
+if (args[0] === 'worktree' && args[1] === 'remove') {
+  spawnSync(git, ['worktree', 'lock', '--reason', 'editor still open', ${JSON.stringify(target)}]);
+}
+const result = spawnSync(git, args, { stdio: 'inherit' });
+process.exit(result.status === null ? 1 : result.status);
+`, { mode: 0o755 });
+    const run = spawnSync(process.execPath, [path.resolve(__dirname, '../bin/atris.js'), 'worktree', 'start',
+      '--agent', 'tester', '--task', 'failed start', '--path', target, '--base', 'HEAD',
+    ], { cwd: repo, encoding: 'utf8', timeout: 30000, env: { ...process.env, PATH: `${bin}${path.delimiter}${process.env.PATH}` } });
+    assert.notEqual(run.status, 0);
+    assert.match(run.stderr, /metadata write failed; kept .*start-wt: pinned by git worktree lock, under a minute old: editor still open/);
+    assert.ok(fs.existsSync(path.join(target, 'README.md')));
+    assert.ok(git(repo, ['worktree', 'list']).includes(target));
+    assert.deepEqual(removalLines(repo).filter((line) => line.path === target), []);
+  } finally {
+    fs.rmSync(base, { recursive: true, force: true });
+  }
+});
+
 test('worktree cleanup names the reason and age of a pinned folder it skips', () => {
   const { base, repo, wt } = landedWorktree();
   try {
