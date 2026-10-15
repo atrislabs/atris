@@ -362,3 +362,5 @@ Member create help batching: `test/commands.test.js:1047` runs both usage checks
 Completed member goal setup: `test/commands.test.js:1389` uses `lib/member-scaffold.js:145` directly for its member fixture. One setup launch is removed; both real completed-goal checks retain every assertion.
 
 Blocked member goal setup: `test/commands.test.js:1354` uses `lib/member-scaffold.js:145` directly for its member fixture. Three CLI launches become two; the real blocked-goal check and every behavior assertion remain.
+
+Repeated goal history setup: `test/commands.test.js:1327` uses `lib/member-scaffold.js:145` for the member fixture. One setup launch is removed; all real goal reuse calls and history assertions remain.

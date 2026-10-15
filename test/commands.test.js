@@ -1329,7 +1329,11 @@ test('member goal-from-mission does not append a duplicate history entry on ever
   const dir = makeTempDir();
   try {
     fs.mkdirSync(path.join(dir, 'atris'), { recursive: true });
-    assert.equal(runCli(['member', 'create', 'mission-lead', '--description="Make Missions change the world"'], { cwd: dir }).status, 0);
+    require('../lib/member-scaffold').ensureMemberBundle(path.join(dir, 'atris', 'team', 'mission-lead'), {
+      name: 'mission-lead',
+      role: 'Mission lead',
+      description: 'Make Missions change the world',
+    });
     assert.equal(runCli(['mission', 'start', '--no-verify', 'Make Missions change the world', '--owner', 'mission-lead', '--json'], { cwd: dir }).status, 0);
 
     const created = runCli(['member', 'goal-from-mission', 'mission-lead', '--json'], { cwd: dir });
