@@ -303,3 +303,8 @@ Our plan is set \u2014 the most requested features from users.
 => Our plan is set, the most requested features from users.
 We looked again \u2014 the best part comes from the tests.
 => We looked again; the best part comes from the tests.
+# a one-word object before "when" or "before" ends a clause, as before "to"
+Dedup is a prerequisite \u2014 the score function breaks down when the pool fills.
+=> Dedup is a prerequisite; the score function breaks down when the pool fills.
+One gap \u2014 the admin tools menu before login.
+=> One gap, the admin tools menu before login.
