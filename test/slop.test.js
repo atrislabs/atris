@@ -4708,6 +4708,24 @@ test('fix keeps the comma between two orders and joins a new order after a claus
   ]);
 });
 
+test('fix reads "use case" and "retry delay" after a dash as a noun, not an order', () => {
+  // from real deal notes and an experiment brief: "use case TBD" got a
+  // semicolon as if "use" opened an order
+  const file = tmpFile('order-noun-pair.md', [
+    '**Pain:** Large LTL carrier \u2014 use case TBD, deal stuck without a visit.',
+    'TARGET: `backend/clients/openrouter.py` (or `claude.py`) \u2014 retry delay parameters (initial_delay, max_retries)',
+    'Previous tick essay still visible \u2014 stop button tail persists across idle periods.',
+    'No public email \u2014 use contact form or call.',
+  ].join('\n'));
+  const { changes } = applyFixes([file], RULES);
+  assert.deepEqual(changes.map((c) => c.after), [
+    '**Pain:** Large LTL carrier, use case TBD, deal stuck without a visit.',
+    'TARGET: `backend/clients/openrouter.py` (or `claude.py`), retry delay parameters (initial_delay, max_retries)',
+    'Previous tick essay still visible; stop button tail persists across idle periods.',
+    'No public email; use contact form or call.',
+  ]);
+});
+
 test('fix gives a run of "ing" phrases after a dash a colon, like a list', () => {
   // from hugolearn: "extracting what was learned" read as a subject and its
   // verb, so the list after the dash got a semicolon
