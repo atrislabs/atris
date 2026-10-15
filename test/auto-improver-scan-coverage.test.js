@@ -86,3 +86,33 @@ test('auto-improver scan skips mission goal lines and empty error fields', () =>
     fs.rmSync(dir, { recursive: true, force: true });
   }
 });
+
+// Mission driver logs carry no date in their name, so the 7-day window never
+// applied to them. On 2026-10-14, 4 of the 11 scan findings came from driver
+// logs last written in July and August.
+test('auto-improver scan dates undated logs by when they were last written', () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'atris-scan-undated-'));
+  try {
+    fs.mkdirSync(path.join(dir, 'atris'), { recursive: true });
+    assert.equal(runCli(['member', 'create', 'auto-improver', '--description="Finds problems before they grow"'], dir).status, 0);
+
+    const logs = path.join(dir, 'atris', 'logs');
+    fs.mkdirSync(logs, { recursive: true });
+    const oldLog = path.join(logs, 'mission-0ld0ld00-driver.log');
+    fs.writeFileSync(oldLog, '"error": "review_lane_run_unparseable",\n"error": "review_lane_run_unparseable",\n', 'utf8');
+    const twoMonthsAgo = new Date(Date.now() - 60 * 864e5);
+    fs.utimesSync(oldLog, twoMonthsAgo, twoMonthsAgo);
+    fs.writeFileSync(path.join(logs, 'mission-n3wn3w00-driver.log'), '"error": "engine_exit_nonzero",\n"error": "engine_exit_nonzero",\n', 'utf8');
+
+    const wake = runCli(['member', 'wake', 'auto-improver', '--json'], dir);
+    assert.equal(wake.status, 0, wake.stderr || wake.stdout);
+    const failures = JSON.parse(wake.stdout).auto_improver.scan.log_signals.repeated_failures;
+    const patterns = failures.map((failure) => failure.pattern);
+    assert.ok(!patterns.some((pattern) => /review_lane_run_unparseable/.test(pattern)), `two-month-old log counted: ${JSON.stringify(patterns)}`);
+    const fresh = failures.find((failure) => /engine_exit_nonzero/.test(failure.pattern));
+    assert.ok(fresh, `fresh undated log was dropped: ${JSON.stringify(patterns)}`);
+    assert.equal(fresh.evidence[0].date, new Date().toISOString().slice(0, 10));
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
