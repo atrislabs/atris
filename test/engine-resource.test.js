@@ -1406,7 +1406,7 @@ test('every engine started through a runner or profile variable records its run 
   const VAR_LAUNCH = /\b(?:spawn|spawnSync|execFile|execFileSync|spawnWithOutputChunks|runInReapedProcessGroup)\s*\(\s*([A-Za-z_$][\w$]*(?:\.[\w$]+)*)(\(\))?\s*,\s*(\[[^\]]*\])?/g;
   // It is an engine when the call, or the variable's declaration in the same
   // function, names an engine program or an engine or runner resolver.
-  const ENGINE_SOURCE = new RegExp(`['"\`](?:${ENGINE_NAMES})['"\`]|\\b[\\w$]*(?:Engine|engine|Runner|runner)[\\w$]*\\(`);
+  const ENGINE_SOURCE = new RegExp(`['"\`](?:${ENGINE_NAMES})['"\`]|\\b[\\w$]*(?:Engine|engine|Runner|runner)[\\w$]*\\s*\\(`);
   // Launches whose run is recorded somewhere this scan cannot see, by
   // file, the function holding the launch, and its program. Each covers one
   // launch, so another launch added to the same function is still caught.
@@ -1755,6 +1755,19 @@ test('every engine started through a runner or profile variable records its run 
     return { seen, missing, routes, traced, exempted: [...exempted] };
   };
   const planted = (text) => engineLaunches('commands/planted.js', text).missing;
+  // Spaces before resolver arguments do not change the program they select.
+  for (const gap of [' ', '\t']) {
+    const runner = `resolveClaudeRunnerBin${gap}()`;
+    const profile = `resolveEngineProfile${gap}()`;
+    assert.deepStrictEqual(planted(`const runner = ${runner};\nspawnSync(runner, args);\n`), ['commands/planted.js:2 runner']);
+    assert.deepStrictEqual(planted(`const profile = ${profile};\nspawnSync(profile.bin, args);\n`), ['commands/planted.js:2 profile.bin']);
+    assert.deepStrictEqual(planted(`const runner = ${runner};\nstartEngineRun(root);\nspawnSync(runner, args);\n`), []);
+    assert.deepStrictEqual(planted(`const runner = ${runner};\nspawnSync(runner, ['--help']);\n`), []);
+    assert.deepStrictEqual(planted(`const runner = findExecutable${gap}('git');\nspawnSync(runner, args);\n`), []);
+    assert.deepStrictEqual(planted(`function launch(runner) {\n  spawnSync(runner, args);\n}\nlaunch(${runner});\n`), ['commands/planted.js:2 runner']);
+    assert.deepStrictEqual(planted(`function launch(profile = ${profile}) {\n  spawnSync(profile.bin, args);\n}\nlaunch();\n`), ['commands/planted.js:2 profile.bin']);
+    assert.deepStrictEqual(planted('const runner = resolveClaudeRunnerBin;\nspawnSync(runner, args);\n'), [], 'a resolver reference alone does not identify an engine program');
+  }
   // Launch helpers accept whitespace before their own opening parenthesis.
   for (const helper of ['spawn', 'spawnSync', 'execFile', 'execFileSync', 'spawnWithOutputChunks', 'runInReapedProcessGroup']) {
     for (const gap of [' ', '\t', '\n']) {
