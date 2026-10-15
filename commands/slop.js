@@ -257,8 +257,9 @@ const QUANTITY_CLAUSE_AFTER_DASH = new RegExp(`${CLAUSE_END}\\s*\\u2014\\s*(?=(?
 // without "ed" count too, and so does "fine" or "green" after the verb: "the
 // gate let the tick through", "the file built fine". A "they" or "we" before
 // the verb opens a clause inside a noun phrase, so "the version they made"
-// and "the version they shipped" keep their comma. A verb may carry a
-// prefix, "re-filtered", and a bare plural with a place word after it is an
+// and "the version they shipped" keep their comma. So does a possessive in
+// any case, which opens a new noun: "the tests YOUR team wrote". A verb
+// may carry a prefix, "re-filtered", and a bare plural with a place word after it is an
 // object: "the card re-filtered orders against today's date". A word in
 // "ly" right before the verb makes it a verb, whatever follows: "the miss
 // patterns directly pointed to each change". "only" and "mostly" can point
@@ -266,7 +267,7 @@ const QUANTITY_CLAUSE_AFTER_DASH = new RegExp(`${CLAUSE_END}\\s*\\u2014\\s*(?=(?
 // is a count with its own phrase: "the 10 directly edited plus 8".
 const MANNER_WORD = '(?!(?:only|mostly|mainly|largely|partly|nearly|merely|simply|exactly|especially|particularly|probably|likely|really|actually|usually|generally|typically|certainly|clearly|apparently|basically|entirely|fully|early|daily|weekly|monthly|yearly|hourly|reply|apply|supply|family|rally)\\b)[a-z]{3,}ly';
 const PAST_VERB = '(?:(?:re|pre|un|over|under|auto)-?[a-z]{2,}ed|[a-z]{2,}ed|built|ran|broke|took|made|gave|got|went|came|sent|kept|held|found|lost|wrote|let|caught|brought|threw|grew|knew|began|stood|told|sold|became|fell|stuck)';
-const PAST_CLAUSE_AFTER_DASH = new RegExp(`${CLAUSE_END}\\s*\\u2014\\s*(?!${NAMING_PHRASE})(?=(?:the|a|an)\\s+(?:(?!(?:the|a|an|that|whose|they|we|you|he|she|I)\\b)${SUBJECT_WORD}){1,3}(?:(?<!\\b(?:\\d+|one|two|three|four|five|six|seven|eight|nine|ten|few|many|several|both|all)\\s+)${MANNER_WORD}\\s+${PAST_VERB}\\s+[a-z]|${PAST_VERB}(?:[.!?;,]|$|\\s+(?:out|up|down|off|back|over|away|again|fine|green|it|them|its|their|every|all|each|the|a|an|this|no|[a-z]{2,}ing)\\b|\\s+[a-z]{3,}(?<!ss|us|is)s\\s+(?:against|from|into|onto|across|through|before|after|instead)\\b)))`, 'g');
+const PAST_CLAUSE_AFTER_DASH = new RegExp(`${CLAUSE_END}\\s*\\u2014\\s*(?!${NAMING_PHRASE})(?=(?:the|a|an)\\s+(?:(?!(?:the|a|an|that|whose|they|we|you|he|she|I|your|our|their|its|his|her|my|YOUR|OUR|THEIR|ITS|HIS|HER|MY)\\b)${SUBJECT_WORD}){1,3}(?:(?<!\\b(?:\\d+|one|two|three|four|five|six|seven|eight|nine|ten|few|many|several|both|all)\\s+)${MANNER_WORD}\\s+${PAST_VERB}\\s+[a-z]|${PAST_VERB}(?:[.!?;,]|$|\\s+(?:out|up|down|off|back|over|away|again|fine|green|it|them|its|their|every|all|each|the|a|an|this|no|[a-z]{2,}ing)\\b|\\s+[a-z]{3,}(?<!ss|us|is)s\\s+(?:against|from|into|onto|across|through|before|after|instead)\\b)))`, 'g');
 // A plain verb ending in "s" counts only after a determiner and one more word,
 // and never right before a preposition: "a stray file turns them" joins, but
 // "the changes from whoever" and "the old tests from CI" stay noun phrases.

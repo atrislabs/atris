@@ -2471,6 +2471,24 @@ test('fix joins a past verb with a word in "ly" before it after a dash', () => {
   ]);
 });
 
+test('fix keeps a comma before a past verb phrase with a possessive inside it after a dash', () => {
+  // the fixer read "the tests YOUR team wrote" as a subject and a past verb
+  // and put a semicolon before a phrase; in real text it did the same to
+  // "He watched her read, the way her eyes moved". A possessive opens a new
+  // noun, so the phrase keeps its comma; a real past clause still joins.
+  const file = tmpFile('possessive-past.md', [
+    'Look at the column first \u2014 the tests YOUR team wrote.',
+    'He watched her read the page \u2014 the way her eyes moved.',
+    'The run went badly today \u2014 the slow tests timed out.',
+  ].join('\n'));
+  const { changes } = applyFixes([file], RULES);
+  assert.deepEqual(changes.map((c) => c.after), [
+    'Look at the column first, the tests YOUR team wrote.',
+    'He watched her read the page, the way her eyes moved.',
+    'The run went badly today; the slow tests timed out.',
+  ]);
+});
+
 test('fix reads "yes" as a subject noun and a possessive in capitals as an object after a dash', () => {
   // from real repo text: "the fake yes buys YOUR comfort with counterfeit
   // commitment" spliced twice over: "yes" ends in s and read as a plural,
@@ -4575,6 +4593,7 @@ test('the fix diff splice list skips a noun after "in" or "of" and a noun with i
   // stubs in tests" are phrases the fixer rightly leaves with a comma, so
   // they are no splice left. A "the" inside the stretch is an object, so the
   // fixer's misread "the learner watches the model do the reps" stays listed.
+  // A possessive opens a new noun, so "the way her eyes moved" is a phrase.
   const { spliceShapes } = require('../scripts/slop-fix-diff.js');
   const D = String.fromCharCode(0x2014);
   const rests = [
@@ -4583,6 +4602,7 @@ test('the fix diff splice list skips a noun after "in" or "of" and a noun with i
     'the topic of customers refusing to pay is relevant',
     'the learner watches the model do the reps',
     'the server returns the payload',
+    'the way her eyes moved',
   ];
   const sources = rests.map((r) => `One place ${D} ${r}.`);
   const fixes = rests.map((r) => `One place, ${r}.`);

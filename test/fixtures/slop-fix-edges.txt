@@ -280,3 +280,8 @@ People-pleasing looks kind from outside \u2014 the fake yes buys YOUR comfort wi
 # but with no verb after it the phrase keeps its comma
 The vote split two ways \u2014 the yes side and the no side.
 => The vote split two ways, the yes side and the no side.
+# a possessive inside a past verb phrase opens a new noun, so the phrase keeps its comma
+Look at the column first \u2014 the tests YOUR team wrote.
+=> Look at the column first, the tests YOUR team wrote.
+He watched her read the page \u2014 the way her eyes moved.
+=> He watched her read the page, the way her eyes moved.
