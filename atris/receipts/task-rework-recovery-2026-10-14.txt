@@ -1,0 +1,206 @@
+Idle members can recover returned or interrupted jobs, verified with node --test test/task-reopen.test.js, exit 0.
+
+Change: the next-job picker includes the idle member's own stranded claim. It releases that unchanged claim and takes it through the ordinary claim gate. A mission whose recorded process is known dead no longer makes the member appear busy. Live or unknown process records, other members' claims, human holds, protected lanes, and unsuitable checks still block recovery. Revision notes remain intact.
+
+Plan: proceed. Single risk: treating a live claim as abandoned. Safeguards: confirmed process death, no live mission or driver, own-member scope, existing eligibility gates, and an expected update timestamp before release.
+
+Returned job -> idle member picks its own claim -> unchanged claim released -> normal claim gate -> work resumes
+
+Files edited: commands/member.js; lib/member-task-pick.js; lib/task-db.js; test/task-reopen.test.js; atris/MAP.md; atris/refs/MAP-NOTES.md; atris/team/architect/logs/2026-10-14.md; atris/receipts/task-rework-recovery-2026-10-14.txt.
+Rerunnable frozen check: node --test test/task-reopen.test.js
+Exact result: exit 0; tests 11; pass 11; fail 0; skipped 0.
+Related check: node --test test/member-task-pick.test.js test/member-go.test.js test/member-up.test.js
+Exact result: exit 0; tests 34; pass 34; fail 0; skipped 0.
+Real surface: the regression runs node bin/atris.js task revise <temporary task id> --note 'the clock still drifts' --json (exit 0), followed by node bin/atris.js member go executor --needs-check --dry-run --json (exit 0, task title Repair the clock). It also runs node bin/atris.js member go executor --needs-check --json with IPC and confirms the actual new claim in SQLite, then deliberately stops the owned test child with SIGTERM before any model or network work. This is a real CLI and database, not a mocked picker.
+Metric: two stranded-job paths recover; six new regression cases pass. No model work was needed for proof.
+Limit: missing process records still hold the job rather than guess whether it is idle; a claim released between recovery and retake can be won by another member through the normal gate.
+Activation/compile commands: atris brain activate --root . --verify and atris brain compile --root . both returned exit 2, plan-only; generated adapters were not rewritten.
+Commands also run: atris; atris mission status mission-2026-10-14-a-job-sent-back-for-rework-g-e1f1c426; atris mission goal --json; atris task list; atris task show CLI-1389 --json from the primary project; atris task note CLI-1389; git status --short; git diff --check. Primary-project task state was already claimed by architect; the linked checkout's task list was empty.
+next_push: show an explicit reason when an interrupted job cannot resume because its process record is missing.
+layer: behaviors
+
+Frozen check and real CLI output:
+✔ atris task reopen sends a done task back to open (674.603583ms)
+✔ real revision returns to the next idle member pick and claim (668.136125ms)
+ℹ task revise exit: 0; output: {
+  "ok": true,
+  "action": "revise",
+  "task_id": "01M4Y3EVJ306B0AHX1AS06B0AH",
+  "version": 4,
+  "approval_status": "revise",
+  "revision_count": 1,
+  "episode": {
+    "schema": "atris.task_episode.v1",
+    "tree_hash": "e0c63b5d00b452b42693a1a953520ebbbd2ede6dd46fb74eece24c070040f7e0",
+    "episode_id": "01M4Y3EVNZVBG62Y48QSVBG62Y",
+    "task_id": "01M4Y3EVJ306B0AHX1AS06B0AH",
+    "workspace_root": "/private/var/folders/p2/s2tg3j6n1v9bwsbcqrjxnvnh0000gn/T/atris-task-recovery-YdlrMc",
+    "created_at": "2026-10-14T21:00:28.223Z",
+    "state": {
+      "title": "Repair the clock",
+      "status": "claimed",
+      "tag": null,
+      "claimed_by": "executor",
+      "metadata": {
+        "verify": "node --test test/clock.test.js",
+        "explanation": {
+          "sources": {
+            "what_changes": "derived",
+            "why_it_matters": "derived",
+            "done_looks_like": "derived"
+          },
+          "what_changes": "Repair the clock.",
+          "why_it_matters": "The task does not say why this matters yet.",
+          "done_looks_like": "The required check passes, the proof is attached, and review clears the work.",
+          "authored": false,
+          "reason_recorded": false
+        },
+        "approval_status": "revise",
+        "built_by": "executor",
+        "agent_review_actors": [
+          "executor"
+        ],
+        "human_revision_count": 1,
+        "human_revision_at": "2026-10-14T21:00:28.222Z",
+        "human_revision_by": "keshavrao",
+        "human_revision_note": "the clock still drifts"
+      }
+    },
+    "action": {
+      "event_type": "revision_requested",
+      "actor": "keshavrao",
+      "version": 4
+    },
+    "reward": {
+      "value": 0,
+      "source": "task_revision"
+    },
+    "lesson": "",
+    "proof": null,
+    "next_task_suggestion": null,
+    "goal": null,
+    "review_landing": null,
+    "landing_quality": {
+      "present": [],
+      "missing": [
+        "happened",
+        "checked",
+        "tested",
+        "decision"
+      ],
+      "completeness": 0,
+      "has_decision": false
+    },
+    "human_feedback": {
+      "approval_status": "revise",
+      "human_revision_count": 1,
+      "human_revision_note": "the clock still drifts"
+    },
+    "career_xp": {
+      "eligible": false,
+      "source": "task_revision",
+      "reward": 0,
+      "proof_required": true
+    },
+    "rl": {
+      "label": "rework_requested",
+      "source": "task_revision",
+      "reward": 0,
+      "has_proof": false,
+      "has_lesson": false,
+      "has_next_task": false,
+      "landing_completeness": 0,
+      "approval_status": "revise"
+    }
+  },
+  "projection_path": "/private/var/folders/p2/s2tg3j6n1v9bwsbcqrjxnvnh0000gn/T/atris-task-recovery-YdlrMc/.atris/state/tasks.projection.json",
+  "task": {
+    "id": "01M4Y3EVJ306B0AHX1AS06B0AH",
+    "display_id": "TRY-1",
+    "legacy_ref": "01M4Y3EV",
+    "title": "Repair the clock",
+    "result": null,
+    "status": "claimed",
+    "updated_at": 1792011628222,
+    "explanation": {
+      "sources": {
+        "what_changes": "derived",
+        "why_it_matters": "derived",
+        "done_looks_like": "derived"
+      },
+      "what_changes": "Repair the clock.",
+      "why_it_matters": "The task does not say why this matters yet.",
+      "done_looks_like": "Repaired the clock.",
+      "authored": false,
+      "reason_recorded": false
+    },
+    "approval": {
+      "question": "Ask for a change before work moves forward.",
+      "approve": {
+        "label": "Approve this plan",
+        "enabled": false,
+        "command": null,
+        "human_only": true,
+        "blocked_reason": "Work is underway. Approval opens after the proof clears review."
+      },
+      "request_change": {
+        "label": "Ask for a change",
+        "enabled": true,
+        "command": "atris task note TRY-1 \"<context>\" --as executor"
+      },
+      "waiting_on": null
+    },
+    "claimed_by": "executor",
+    "assigned_to": "executor",
+    "latest_event_type": "revision_requested",
+    "review": {
+      "reward": null,
+      "landing": {
+        "happened": "Repaired the clock.",
+        "reason": "",
+        "checked": "Proof is attached below.",
+        "tested": "No verifier command recorded yet.",
+        "decision": "Rework requested. Fix the note, then send a new receipt."
+      },
+      "result": {
+        "changed": "Repaired the clock.",
+        "reason": "",
+        "checked": "Proof is attached below.",
+        "saved": "Work record saved as TRY-1.",
+        "accept": "Rework requested. Fix the note, then send a new receipt."
+      },
+      "summary": "Rework requested for repair the clock.",
+      "receipt_path": null,
+      "approval_status": "revise",
+      "human_revision_count": 1
+    },
+    "metadata": {
+      "verify": "node --test test/clock.test.js",
+      "approval_status": "revise",
+      "human_revision_count": 1,
+      "human_revision_note": "the clock still drifts"
+    }
+  }
+}; member go preview exit: 0; task: Repair the clock; member go actual claim: Repair the clock; stopped after confirmation: SIGTERM
+✔ a closed window with a known dead process lets its member recover the claim (458.852667ms)
+ℹ node bin/atris.js member go executor --needs-check --json; confirmed: Repair the clock; stopped after confirmation: SIGTERM; prior process exit: 0
+✔ recovery leaves a live run and its claim alone (176.639958ms)
+✔ recovery leaves a unknown run and its claim alone (199.345833ms)
+✔ recovery keeps other members, human holds, protected lanes, and check gates (25.935541ms)
+✔ recovery does not release a claim changed after the pick (29.605959ms)
+✔ atris task reopen lets the job be claimed again (720.153042ms)
+✔ atris task reopen refuses a task that is already open (476.307792ms)
+✔ atris task reopen requires a task id (335.558417ms)
+✔ atris task reopen sends a job that is done and waiting to merge back to open (781.482584ms)
+ℹ tests 11
+ℹ suites 0
+ℹ pass 11
+ℹ fail 0
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 4659.554583
+
+
+Landing and handoff: git commit succeeded with 5fcb73e4; git push -u origin HEAD exited 0. The task ready command from the primary project exited 0 and printed "ready for approval CLI-1389 v5". It independently reran the same test file on this checkout using the supported Node search path. Task is in Review, not accepted.
+Readiness limitation: the local path-prefixed command is outside the automatic review allowlist, so independent review must rerun the frozen command from this pushed checkout. No approval or acceptance was claimed. The frozen mission verifier stayed unchanged.

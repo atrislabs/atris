@@ -9274,6 +9274,22 @@ function tooDeepRunnerResult(depth) {
   };
 }
 
+// Machine memory and load at both ends of a tick, like a dispatch, so a
+// killed tick still says whether the machine was short on memory. The
+// returned end writes once, whichever of close or error comes first.
+function startTickResource(cwd, engine, mission) {
+  const { recordEngineResource } = require('../lib/engine-resource');
+  const resource = { engine: engine || 'runner', task: mission.task_id || mission.id || '', run_id: crypto.randomUUID() };
+  recordEngineResource(cwd, { phase: 'start', ...resource });
+  const startedAt = process.hrtime.bigint();
+  let ended = false;
+  return ({ signal = null, timedOut = false, error = '' } = {}) => {
+    if (ended) return;
+    ended = true;
+    recordEngineResource(cwd, { phase: 'end', ...resource, signal, timed_out: timedOut, error, duration_ms: Math.round(Number(process.hrtime.bigint() - startedAt) / 1e6) });
+  };
+}
+
 function spawnGenericRunnerTick(mission, opts) {
   const { sessionId, cwd, signal, timeoutMs, prompt, model, missionLock } = opts;
   const dispatchDepth = missionDispatchDepth();
@@ -9332,6 +9348,7 @@ function spawnGenericRunnerTick(mission, opts) {
     }
 
     const startedAt = Date.now();
+    const endResource = startTickResource(cwd, canonicalEngineName(mission.runner), mission);
     const progressMember = mission.owner || 'mission';
     // A codex run opens its shell script with the run marker as a no-op, so
     // member stop can prove the shell leading this group is this run. Only
@@ -9405,8 +9422,10 @@ function spawnGenericRunnerTick(mission, opts) {
     });
     proc.stderr.on('data', (chunk) => { stderr += chunk.toString(); });
 
-    proc.on('close', (code) => {
+    proc.on('close', (code, closeSignal) => {
       clearTimeout(timer);
+      // The shell returns 128 + 9 when its engine child was force-killed.
+      endResource({ signal: closeSignal || (code === 137 ? 'SIGKILL' : null), timedOut, error: code === 0 ? '' : stderr.slice(-2000) });
       if (lastMessageFile && eventBuf.trim()) readCodexEvent(eventBuf.trim());
       let finalText = String(stdout || '').trim();
       if (lastMessageFile) {
@@ -9444,6 +9463,7 @@ function spawnGenericRunnerTick(mission, opts) {
 
     proc.on('error', (e) => {
       clearTimeout(timer);
+      endResource({ timedOut, error: e.message });
       cleanupPrompt();
       gitGuard.cleanup();
       if (signal) signal.removeEventListener?.('abort', onAbort);
@@ -9528,6 +9548,7 @@ function spawnClaudeTick(mission, opts) {
     // detached: the runner spawns its own children; killing only the direct
     // child on timeout leaves them holding the session lock, and the next
     // tick's resume fails with "Session ID ... is already in use".
+    const endResource = startTickResource(cwd, 'claude', mission);
     const proc = spawn(resolveClaudeRunnerBin(), args, {
       cwd,
       stdio: ['ignore', 'pipe', 'pipe'],
@@ -9606,8 +9627,9 @@ function spawnClaudeTick(mission, opts) {
 
     proc.stderr.on('data', (c) => { stderr += c.toString(); });
 
-    proc.on('close', (code) => {
+    proc.on('close', (code, closeSignal) => {
       clearTimeout(timer);
+      endResource({ signal: closeSignal, timedOut, error: code === 0 ? '' : stderr.slice(-2000) });
       gitGuard.cleanup();
       if (signal) signal.removeEventListener?.('abort', onAbort);
       updateMissionLockOwner(missionLock, missionLock?.driverPid);
@@ -9640,6 +9662,7 @@ function spawnClaudeTick(mission, opts) {
 
     proc.on('error', (e) => {
       clearTimeout(timer);
+      endResource({ timedOut, error: e.message });
       gitGuard.cleanup();
       updateMissionLockOwner(missionLock, missionLock?.driverPid);
       resolve({ ok: false, error: e.message, sessionIds: [], aborted, timedOut, authExpired: false });
@@ -10449,6 +10472,7 @@ async function executeMissionRunTicksPhase(context) {
         tickWorkerRun = { endedMs: Date.now(), usage: (claudeResult && claudeResult.run_usage) || {}, prep: tickPrep, startedAt: workerStartedAt };
         result.claude = {
           ok: claudeResult.ok,
+          error: claudeResult.error,
           reason: claudeResult.reason,
           protected_lane_guard: claudeResult.protected_lane_guard || null,
           brief_id: claudeResult.brief_id || null,

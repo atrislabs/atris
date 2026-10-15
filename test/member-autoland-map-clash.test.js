@@ -14,12 +14,22 @@ function git(args, cwd) {
 }
 
 const MAP = ['# MAP', '', '| task | file |', '|---|---|', '| board | lib/board.js |', ''].join('\n');
+const NOTES = ['# MAP notes', '', '- board: lib/board.js:1', ''].join('\n');
+const LOG = 'atris/team/builder/logs/2026-10-14.md';
+
+// Both sides add a line to the same spot in the map notes file and each
+// creates the same day's member log with its own entry.
+function addNotesAndLog(dir, who) {
+  fs.writeFileSync(path.join(dir, 'atris', 'refs', 'MAP-NOTES.md'), NOTES.replace('- board:', `- ${who}: lib/${who}.js:1\n- board:`));
+  fs.mkdirSync(path.join(dir, 'atris', 'team', 'builder', 'logs'), { recursive: true });
+  fs.writeFileSync(path.join(dir, LOG), `# builder log\n\n## ${who} entry\n- did ${who}\n`);
+}
 
 // A main checkout and a member worktree that both add a row to the same spot
 // in atris/MAP.md, so git cannot merge them on its own. The main branch moves
 // on origin after the member branched. `alsoCode` makes both sides edit the
 // same code file too.
-function fixture({ alsoCode = false } = {}) {
+function fixture({ alsoCode = false, notesAndLog = false } = {}) {
   const base = fs.mkdtempSync(path.join(os.tmpdir(), 'atris-map-clash-'));
   const origin = path.join(base, 'origin.git');
   const main = path.join(base, 'main');
@@ -29,6 +39,8 @@ function fixture({ alsoCode = false } = {}) {
   git(['config', 'user.name', 'Test'], main);
   fs.mkdirSync(path.join(main, 'atris'));
   fs.writeFileSync(path.join(main, 'atris', 'MAP.md'), MAP);
+  fs.mkdirSync(path.join(main, 'atris', 'refs'));
+  fs.writeFileSync(path.join(main, 'atris', 'refs', 'MAP-NOTES.md'), NOTES);
   fs.writeFileSync(path.join(main, 'code.js'), 'module.exports = 1;\n');
   fs.writeFileSync(path.join(main, '.gitignore'), 'atris/runs/\natris/status/\n');
   git(['add', '.'], main);
@@ -44,6 +56,7 @@ function fixture({ alsoCode = false } = {}) {
   fs.writeFileSync(path.join(worktree, 'atris', 'MAP.md'), MAP.replace('| board |', '| member work | lib/work.js |\n| board |'));
   fs.writeFileSync(path.join(worktree, 'work.js'), 'module.exports = "work";\n');
   if (alsoCode) fs.writeFileSync(path.join(worktree, 'code.js'), 'module.exports = 2;\n');
+  if (notesAndLog) addNotesAndLog(worktree, 'member');
   git(['add', '.'], worktree);
   git(['commit', '-q', '-m', 'member work'], worktree);
 
@@ -55,6 +68,7 @@ function fixture({ alsoCode = false } = {}) {
   fs.writeFileSync(path.join(other, 'atris', 'MAP.md'), MAP.replace('| board |', '| landed work | lib/landed.js |\n| board |'));
   fs.writeFileSync(path.join(other, 'landed.js'), 'module.exports = "landed";\n');
   if (alsoCode) fs.writeFileSync(path.join(other, 'code.js'), 'module.exports = 3;\n');
+  if (notesAndLog) addNotesAndLog(other, 'landed');
   git(['add', '.'], other);
   git(['commit', '-q', '-m', 'landed elsewhere'], other);
   git(['push', '-q', 'origin', 'master'], other);
@@ -156,6 +170,24 @@ test('a branch that only clashes in the map file is merged with both rows kept a
     assert.deepEqual(calls[calls.length - 1], ['pr', 'merge', '7', '--auto', '--merge', '--match-head-commit', pushed]);
     assert.equal(git(['rev-parse', 'HEAD'], fx.worktree), head);
     assert.equal(git(['status', '--porcelain'], fx.worktree), '');
+  });
+});
+
+test('a branch that clashes in the map notes file and the same day\'s member log keeps both sides and lands', () => {
+  const fx = fixture({ notesAndLog: true });
+  withFakeGh(fx, () => {
+    const out = autolandMemberRun({ mission, cwd: fx.worktree, loadTask: () => null });
+    assert.equal(out.auto_merge, true, out.line);
+    assert.deepEqual([...out.map_merged].sort(), ['atris/MAP.md', 'atris/refs/MAP-NOTES.md', LOG]);
+
+    const notes = git(['show', `${out.pushed}:atris/refs/MAP-NOTES.md`], fx.origin);
+    assert.match(notes, /- member: lib\/member\.js:1/);
+    assert.match(notes, /- landed: lib\/landed\.js:1/);
+    assert.match(notes, /- board: lib\/board\.js:1/);
+    const log = git(['show', `${out.pushed}:${LOG}`], fx.origin);
+    assert.match(log, /## member entry/);
+    assert.match(log, /## landed entry/);
+    for (const text of [notes, log]) assert.doesNotMatch(text, /^(<<<<<<<|=======|>>>>>>>)/m);
   });
 });
 

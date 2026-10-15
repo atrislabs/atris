@@ -234,6 +234,20 @@ function dreamModels() {
 function defaultDreamRunner({ prompt, model, cwd, timeoutMs = DREAM_TIMEOUT_MS }) {
   return new Promise((resolve) => {
     const bin = (RUNNER_PROFILE_DEFS.haiku && RUNNER_PROFILE_DEFS.haiku.bin) || 'claude';
+    // Machine memory and load at both ends of the launch, so one killed with
+    // SIGKILL says whether the machine was short on memory.
+    const endResource = require('../lib/engine-resource').startEngineRun(cwd, { engine: path.basename(bin), task: 'dream' });
+    // The child does not throw, so a failure is passed in the thrown shape.
+    const finish = (result, signal = null) => {
+      const failed = !result.ok;
+      const end = endResource(failed ? {
+        code: timedOut ? 'ETIMEDOUT' : '',
+        signal,
+        stderr: result.stderr,
+        message: result.error || `model exited ${result.exitCode}`,
+      } : null);
+      resolve({ ...result, ...(signal ? { signal } : {}), ...(end && end.cause && !timedOut ? { cause: end.cause } : {}) });
+    };
     const proc = spawn(bin, ['-p', prompt, '--model', model], {
       cwd,
       stdio: ['ignore', 'pipe', 'pipe'],
@@ -247,13 +261,13 @@ function defaultDreamRunner({ prompt, model, cwd, timeoutMs = DREAM_TIMEOUT_MS }
     }, timeoutMs);
     proc.stdout.on('data', (chunk) => { stdout += chunk.toString(); });
     proc.stderr.on('data', (chunk) => { stderr += chunk.toString(); });
-    proc.on('close', (code) => {
+    proc.on('close', (code, signal) => {
       clearTimeout(timer);
-      resolve({ ok: code === 0 && !timedOut, stdout, stderr, exitCode: code, timedOut });
+      finish({ ok: code === 0 && !timedOut, stdout, stderr, exitCode: code, timedOut }, signal);
     });
     proc.on('error', (error) => {
       clearTimeout(timer);
-      resolve({ ok: false, error: error.message, stdout, stderr, timedOut });
+      finish({ ok: false, error: error.message, stdout, stderr, timedOut });
     });
   });
 }
@@ -262,6 +276,7 @@ function attemptFailureReason(result) {
   if (result && result.garbled) return 'could not read dream cards';
   if (result && result.timedOut) return 'model timed out';
   if (result && result.error) return 'model could not start';
+  if (result && result.signal) return `model stopped by ${result.signal}${result.cause ? `; ${result.cause}` : ''}`;
   if (result && result.exitCode) return 'model stopped early';
   return 'model did not answer';
 }

@@ -1,0 +1,26 @@
+The machine memory branch now merges cleanly with master, verified by 135 passing required checks, 108 landing checks, 24 run marker checks, and the real sweep and landing status on the merged code, exit 0.
+
+Why this tick: the installed atris command is linked to a checkout built from master, which has none of this mission's recording code, and every resource log across the arena held no real engine start or end line. The pull request for this branch was open but conflicting, so nothing this mission built could reach real runs.
+
+Merge commit: 72951100, pushed. Pull request 1183: mergeable MERGEABLE, state BLOCKED (waiting on review and CI), head 72951100.
+Conflicts resolved:
+- commands/autoland.js: the tick summary keeps master's accepted-not-landed note and this branch's ssh-agent and lost-run notes.
+- commands/mission.js: the generic runner keeps this branch's resource recording and master's run marker shell line.
+- atris/refs/MAP-NOTES.md: member route notes take master's text; engine resource notes keep both sides.
+Map refs: only lines this branch wrote were moved, by the merge's own line offsets; the automatic fixer was discarded because it moved one ref to an unrelated line and would have double-moved others.
+Left as master has it: a trailing blank line in test/engine-validate.test.js that git diff --check flags.
+
+Rerunnable verification: node --test test/engine-resource.test.js test/engine-dispatch.test.js
+Exit: 0. tests 135; pass 135; fail 0.
+Extra: node --test test/autoland-accept-timeout.test.js test/autoland.test.js test/engine-autoland-validation.test.js test/member-autoland-map-clash.test.js test/member-autoland.test.js, exit 0, 108 of 108.
+Extra: node --test test/member-board.test.js test/member-stop-codex.test.js, exit 0, 24 of 24.
+
+Real command: node bin/atris.js engine sweep
+Exit: 0. 1067 ssh-agents running, 1040 look leaked; likely source: ~/.zshrc line 1, with its fix.
+Real command: node bin/atris.js autoland status
+Exit: 0. leaked ssh-agents on this machine: 1040; stop them now: atris engine sweep --apply
+Both read only; nothing was stopped.
+
+Metric: pull request moved from conflicting to mergeable; 75 branch commits can now land.
+next_push: after the pull request lands and the installed command picks it up, run one real engine dispatch and confirm a start and end line appear in the main project's resource log.
+layer: environment

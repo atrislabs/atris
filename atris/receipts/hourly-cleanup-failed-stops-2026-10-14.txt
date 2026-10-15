@@ -1,0 +1,67 @@
+Hourly cleanup now reports failed agent stops, verified by a failing-first regression, a real runtime probe, and 139 required checks passing with exit 0.
+
+Files edited: commands/autoland.js; test/engine-resource.test.js; atris/MAP.md; atris/refs/MAP-NOTES.md; atris/team/executor/logs/2026-10-14.md; this receipt. Existing TODO and earlier member log changes were preserved; only this increment's log addition is staged.
+Task: EFM-25, claimed by executor. Mission unchanged.
+
+Failing-first command, exit 1:
+node --test --test-name-pattern='hourly cleanup summary reports failed stops' test/engine-resource.test.js
+Output: actual '' instead of ', could not stop 1 leaked ssh-agent'.
+After the fix the same command exited 0: tests 1, pass 1, fail 0.
+Independent gpt-6-astra review passed after replacing the regression's destructive signal with a harmless process existence probe. No unrelated process can be stopped by this new test.
+
+Rerunnable frozen command, exit 0 after that safety revision:
+node --test test/engine-resource.test.js test/engine-dispatch.test.js
+Exact ending output:
+ℹ tests 139
+ℹ suites 0
+ℹ pass 139
+ℹ fail 0
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 27659.14175
+
+Real changed surface invocation, exit 0 (staged process snapshot, actual ESRCH, no destructive signals):
+node <<'NODE'
+const { spawnSync } = require('node:child_process');
+const fs = require('node:fs');
+const os = require('node:os');
+const path = require('node:path');
+const { runSshAgentSweep, sshAgentSweepNote } = require('./commands/autoland');
+const root = fs.mkdtempSync(path.join(os.tmpdir(), 'cleanup-failure-proof-'));
+try {
+  const child = spawnSync(process.execPath, ['-e', '']);
+  const uid = process.getuid();
+  const receipt = {};
+  runSshAgentSweep(root, receipt, {
+    uid,
+    read: () => ({ agents: [{ pid: child.pid, ppid: 1, uid, age_sec: 3600, args: 'ssh-agent -s' }], referenced: new Set() }),
+    kill: (pid, signal) => {
+      if (signal !== 'SIGTERM') throw new Error('wrong signal');
+      process.kill(pid, 0);
+    },
+  });
+  if (receipt.ssh_agent_sweep.failed[0]?.code !== 'ESRCH') throw new Error('missing real stop failure');
+  console.log(sshAgentSweepNote(receipt).slice(2));
+  console.log('saved failure: ' + receipt.ssh_agent_sweep.failed[0].code);
+} finally {
+  fs.rmSync(root, { recursive: true, force: true });
+}
+NODE
+Exact output:
+could not stop 1 leaked ssh-agent
+saved failure: ESRCH
+
+Read-only CLI command, exit 0:
+node bin/atris.js engine sweep
+Output excerpt: 1134 ssh-agents running, 1111 look leaked (no parent, older than 10 min, not in use by any live shell)
+nothing was stopped. run atris engine sweep --apply to stop them.
+This listing is a live scan, not the failed-stop summary proof. The full hourly landing command was not invoked because it would also operate on unrelated tasks and missions.
+
+git diff --check: exit 0, no output.
+atris brain activate --root . --verify and atris brain compile --root .: exit 2, plan only; generated doctrine was left alone.
+Metric: one formerly silent outcome exposed; 139 required checks pass, 0 fail; singular, plural, and combined failure messages covered.
+Readiness command, exit 0: atris task ready EFM-25 --verify 'PATH=/opt/homebrew/bin:$PATH node --test test/engine-resource.test.js test/engine-dispatch.test.js' --proof '139 checks passed with exit 0; real runtime ESRCH probe printed could not stop 1 leaked ssh-agent; independent review passed; atris/receipts/hourly-cleanup-failed-stops-2026-10-14.txt' --result 'Hourly cleanup now tells you when a leaked agent could not be stopped, so failed cleanup is visible.'
+Output: ready for approval EFM-25 v4. Saved readiness receipt: atris/runs/2026-10-14-task-efm-25-2026-10-14T19-26-21-136Z.json. The supported-runtime prefix passes but remains outside automatic certification's allowlist, as recorded by earlier work. Human acceptance was not run.
+next_push: Report thrown cleanup scan errors in the hourly summary instead of keeping them only in the receipt.
+layer: capabilities

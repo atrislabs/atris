@@ -1,0 +1,34 @@
+Cleanup now names younger replacement agents separately, verified by failing-first checks, the real cleanup CLI and 137 passing required checks.
+
+Files edited: lib/engine-resource.js, commands/engine.js, test/engine-resource.test.js, atris/MAP.md, atris/refs/MAP-NOTES.md, atris/team/executor/logs/2026-10-14.md.
+Artifact: atris/receipts/engine-cleanup-reasons-2026-10-14.txt.
+Plan: initial scan -> safe final scan -> separate replacement reason -> text and saved report.
+
+Failing-first command: node --test --test-name-pattern='younger replacement|separates younger' test/engine-resource.test.js
+Exit: 1, both checks failed because the reason was missing.
+Review caught a replacement below the ten-minute cutoff. The ninety-second regression failed first, then the explanation was fixed using the full scan while the stop gate stayed unchanged. Independent review found no further bugs.
+
+Verify command: node --test test/engine-resource.test.js test/engine-dispatch.test.js
+Exit: 0. tests 137, pass 137, fail 0, skipped 0.
+Real surface: the test launches node --require <temporary age-staging preload> bin/atris.js engine sweep --apply --json, then the same real command without --json, against two real owned ssh-agents and real sockets. No unrelated agent appears in the staged process list.
+Output excerpt, exit 0:
+replacement text cleanup exit 0: stopped 0 leaked ssh-agents
+1 skipped because a younger ssh-agent now has the same process number
+closed 0 runs whose parent is gone
+replacement cleanup exit 0: stopped one unchanged agent, skipped one younger replacement; replacement socket still answers
+Saved JSON and history both carry replaced and skipped process lists.
+Mixed skip check: one replacement and two in-use or gone agents produce separate counts with no double counting in text.
+Additional command: git diff --check, exit 0, no output.
+Metric: one new regression plus extended real CLI regression, 137/137 required checks pass.
+
+Context commands: atris mission status mission-2026-10-14-finish-machine-memory-and-lo-5644339b; atris mission goal --json; atris task list; git status --short; atris task claim EFM-23 --as executor; atris task note EFM-23.
+Mission attachment could not write because the running harness holds its lock. A separate claimed task records this slice; no mission policy changed.
+Brain activate and compile both returned exit 2 with plan-only output; no generated policy files were changed.
+Residual limit: equal-age process reuse or replacement after the final scan is still outside the existing protection.
+Landing: committed and pushed the bounded change. Task is in Review, not accepted.
+Readiness proof required its own rerun. Its login shell selects unsupported Node 20 by default; the existing documented local PATH workaround ran the same checks successfully, exit 0. Initial readiness requests rejected insufficient result/landing prose; corrected wording then moved the task to Review, exit 0.
+Readiness command: atris task ready EFM-23 --verify 'PATH=/opt/homebrew/bin:$PATH node --test test/engine-resource.test.js test/engine-dispatch.test.js' with result, landing and proof prose.
+Readiness artifact: atris/runs/2026-10-14-task-efm-23-2026-10-14T19-13-20-032Z.json.
+The runtime-prefixed proof is outside automatic certification's allowlist; the direct frozen check still passed unchanged.
+next_push: Include younger replacement skips in the hourly cleanup summary.
+layer: capabilities

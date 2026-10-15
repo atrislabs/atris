@@ -34,6 +34,13 @@ function exitWhenFlushed(code) {
   setTimeout(() => process.exit(code), 3000).unref();
 }
 
+// Exit right after stdout drains: a write past the 64KB pipe buffer is async,
+// and an empty write's callback fires only once every earlier write is out.
+function exitAfterStdoutDrain(code) {
+  if (process.stdout.writableLength === 0) process.exit(code);
+  else process.stdout.write('', () => process.exit(code));
+}
+
 let CLI_VERSION = 'unknown';
 try {
   const pkgRaw = fs.readFileSync(PACKAGE_JSON_PATH, 'utf8');
@@ -3246,8 +3253,8 @@ if (command === 'guide') {
   // both (mirrors the `compile` command dispatch just above).
   const engineArgs = command === 'engines' && process.argv.length <= 3 ? [] : process.argv.slice(3);
   Promise.resolve(require('../commands/engine').engineCommand(engineArgs))
-    .then((code) => process.exit(typeof code === 'number' ? code : 0))
-    .catch((err) => { console.error(`\n✗ Error: ${err.message || err}`); process.exit(1); });
+    .then((code) => exitAfterStdoutDrain(typeof code === 'number' ? code : 0))
+    .catch((err) => { console.error(`\n✗ Error: ${err.message || err}`); exitAfterStdoutDrain(1); });
 } else if (command === 'link') {
   // Link: ask the roster's engine what two things could become together.
   Promise.resolve(require('../commands/link').linkCommand(process.argv.slice(3)))

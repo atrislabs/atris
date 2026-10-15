@@ -1,0 +1,22 @@
+guard: every engine launch by name records its run or is named exempt, 2026-10-14
+
+code review check:
+  commands/review.js:83 runs python3 review_engine.py, a local pattern scanner.
+  grep of the real script for anthropic, openai, claude, http: no model calls;
+  its one subprocess (line 232) loads the diff. Not an engine run, so exempt.
+
+guard bites (youtube digest recording removed by hand, then restored with git checkout):
+  node --test --test-name-pattern="every launch of an engine program" test/engine-resource.test.js
+  pass 0, fail 1
+  actual: [ 'commands/youtube.js:1245 claude' ]
+
+frozen check with the guard, tree restored:
+  node --test test/engine-resource.test.js test/engine-dispatch.test.js
+  tests 145, pass 145, fail 0, exit 0
+  real engine launch scan: 5 launches by name, 0 unrecorded
+
+limit: the guard sees launches whose program is written as a name; launches
+through a variable (fleet, autopilot, dream, scout) are covered by their own
+paired-reading tests, not by this scan.
+
+next_push: extend the launch guard to engines started through a variable, by flagging any file that reads a runner or engine profile binary and spawns it without recording the run.

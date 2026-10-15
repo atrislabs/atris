@@ -1,0 +1,14 @@
+# a launch whose search path is only /usr/bin:/bin, as cron gives
+$ (before, last commit) PATH=/usr/bin:/bin node -e <reading probe>
+{"free_pct":77,"swap_used_mb":null,"swap_total_mb":null,"agents":860,"not_in_use":0}
+exit 0
+$ (after) PATH=/usr/bin:/bin node -e <reading probe>
+{"free_pct":77,"swap_used_mb":1172.75,"swap_total_mb":2048,"agents":860,"not_in_use":853}
+exit 0
+
+$ PATH=/usr/bin:/bin atris engine sweep   (lists only; nothing stopped)
+860 ssh-agents running, 835 look leaked (no parent, older than 10 min, not in use by any live shell)
+  pid 124    2h 3m
+  pid 220    49m
+no engine run has ended in SIGKILL
+exit 0

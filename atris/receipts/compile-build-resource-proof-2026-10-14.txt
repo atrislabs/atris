@@ -1,0 +1,28 @@
+Compile build machine readings proof, 2026-10-14
+
+Before the change: the new regression failed because a compile build wrote no resource log at all.
+
+After the change, the real CLI in a temporary project, runner set to a child that kills itself:
+$ atris compile record demo --input '{"n":1}' --output '{"doubled":2}'
+  recorded demo run 1 -> .atris/state/processes/demo/records.jsonl
+  exit 0
+$ ATRIS_RUNNER_BIN=sh ATRIS_RUNNER_COMMAND_TEMPLATE='sh -c "kill -KILL $$"' atris compile build demo
+  compiling demo from 1 execution record
+  Error: Command failed: sh -c "kill -KILL $$"
+  exit 1
+  start: engine runner, task compile demo, free_pct 80, load [2.47,3.16,3.6]
+  end: same run_id, duration_ms 6, signal SIGKILL
+
+$ /opt/homebrew/bin/node --test test/engine-resource.test.js test/engine-dispatch.test.js
+  ℹ tests 102
+  ℹ pass 102
+  ℹ fail 0
+  exit 0
+$ /opt/homebrew/bin/node --test test/compile.test.js
+  ℹ tests 25
+  ℹ pass 25
+  ℹ fail 0
+  exit 0
+
+$ git diff --check
+  exit 0

@@ -1,0 +1,26 @@
+Lost-run cleanup now reports failures in the hourly summary, verified by a failing-first regression, real runtime proof, and all 141 required checks passing.
+
+Files edited: commands/autoland.js; test/engine-resource.test.js; atris/MAP.md; atris/refs/MAP-NOTES.md; atris/team/executor/logs/2026-10-14.md.
+Artifact: atris/receipts/hourly-lost-run-cleanup-errors-2026-10-14.txt.
+Task: EFM-27. Owner: executor. Scope: one summary change; no dependencies.
+Plan: real close failure -> saved error -> visible summary.
+Failing-first command: node --test --test-name-pattern='hourly cleanup summary reports lost run' test/engine-resource.test.js
+Before: exit 1. Actual summary empty; expected failure warning.
+Verify command: node --test test/engine-resource.test.js test/engine-dispatch.test.js
+Output: tests 141; pass 141; fail 0; cancelled 0; skipped 0; todo 0. Exit: 0.
+Real runtime proof: node heredoc invokes runLostRunSweep and lostRunSweepNote with a real exited child, real unfinished record, and now callback reading a missing-clock file.
+Output: could not close lost engine runs, so unfinished records may remain
+Output: saved close failure: ENOENT
+Output: unfinished record preserved
+Exit: 0. The regression above reruns this proof.
+Independent review: no findings; targeted test passed, exit 0.
+git diff --check: exit 0, no output.
+Progress: one previously silent failure made visible; one regression added, 140 -> 141 passing checks.
+Learned: the saved close error never reached the summary. Log scanning and appending still swallow filesystem errors, so this change covers thrown close errors only.
+Brain activation/compile: plan-only, exit 2; generated policy files left untouched.
+next_push: Make lost-run cleanup report unreadable resource logs instead of treating them as empty.
+layer: capabilities
+
+Landing: code and proof committed and pushed. Review submission reran the frozen command in its login-shell runner and failed, exit 1: tests 141, pass 123, fail 18. Its receipt truncates individual failures: atris/runs/2026-10-14-task-efm-27-2026-10-14T19-34-41-963Z.json. A second bare run passed: tests 141, pass 141, fail 0, exit 0. Task remains claimed, not in Review; no acceptance attempted. The cause of the review-run difference is unproven.
+next_push: Reproduce the review runner's 18 failures with full output before attempting review again.
+layer: capabilities
