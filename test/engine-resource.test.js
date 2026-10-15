@@ -4794,10 +4794,25 @@ test('a leaked ssh-agent that started during a run whose start fell before the r
     ].join('\n'));
     // 3h ago only LOST was open; 1h ago nothing; 5.5h ago is before the
     // read part begins.
-    const split = status([agent(300, 3), agent(301, 1), agent(302, 5.5)]);
+    const agents = [agent(300, 3), agent(301, 1), agent(302, 5.5)];
+    const split = status(agents);
     const line = split.split('\n').find((l) => l.includes('when the leaked ssh-agents started'));
     console.log(`real cut start leak split: ${line && line.trim()}`);
     assert.match(split, /when the leaked ssh-agents started: 1 started while an engine run was open \(codex 1\), 1 with no engine run open, 1 before the run log begins/, split);
+
+    // The sweep listing reads the same log and prints the same split.
+    const { engineCommand } = require('../commands/engine');
+    const out = [];
+    const original = console.log;
+    console.log = (l = '') => out.push(String(l));
+    try {
+      engineCommand(['sweep'], { root, engineSweep: { read: () => ({ agents, referenced: new Set() }), uid: 501, pathAtrisRecordsRuns: true } });
+    } finally {
+      console.log = original;
+    }
+    const sweepLine = out.join('\n').split('\n').find((l) => l.includes('when the leaked ssh-agents started'));
+    console.log(`real cut start sweep split: ${sweepLine}`);
+    assert.strictEqual(sweepLine, line.trim(), 'the sweep listing and the landing status agree');
   } finally {
     fs.rmSync(root, { recursive: true, force: true });
   }
