@@ -17,5 +17,7 @@ Metric: two sequential launch stages become one; both real CLI launches remain. 
 Workspace commands: git status --short; atris mission status mission-2026-10-14-continue-speeding-up-slow-te-d2899d4e; atris task list; atris; atris mission goal --json; atris task new/claim/note/ready; atris brain activate --root . --verify; atris brain compile --root .; git diff --check; git commit; git push.
 Brain activation and compile returned plan only, exit 2, without writing generated policy. No native goal candidate was returned. Existing TODO and log edits are preserved; only this increment's lesson is staged from the log.
 Artifacts: this receipt and the member lesson; task proof saved for review. No mission fields changed.
+Review proof retry: task ready initially ran bare node through an older PATH and exited 1 with ERR_UNKNOWN_BUILTIN_MODULE for node:sqlite. Repeating with /opt/homebrew/bin/node --test --test-name-pattern='^brain --help prints usage without workspace state$' test/commands.test.js passed, exit 0, and moved the task to Review. The explicit runtime needs a second review before automatic acceptance; no self-acceptance was performed.
+Landing: committed and pushed the change and proof; existing TODO and unrelated log changes remain unstaged.
 next_push: batch the three independent brainstorm help checks with every no-state assertion retained.
 layer: capabilities
