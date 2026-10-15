@@ -2998,32 +2998,46 @@ test('horizon proposals record paired readings on success, SIGKILL and startup f
   }
 });
 
-test('autopilot names a failed horizon proposal instead of calling the workspace clean', () => {
-  const { execFileSync, spawnSync } = require('node:child_process');
+test('autopilot names a failed horizon proposal instead of calling the workspace clean', async () => {
+  const { execFileSync, spawn } = require('node:child_process');
   const root = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'horizon-idle-')));
   const missing = path.join(os.tmpdir(), `atris-missing-engine-${process.pid}`);
-  const tick = (template) => spawnSync(process.execPath, [path.join(__dirname, '..', 'bin', 'atris.js'), 'autopilot', '--legacy', '--auto', '--dry-run', '--iterations=1'], {
-    cwd: root,
-    encoding: 'utf8',
-    timeout: 60000,
-    env: { ...process.env, ATRIS_SKIP_UPDATE_CHECK: '1', ATRIS_RUNNER_BIN: 'sh', ATRIS_RUNNER_COMMAND_TEMPLATE: template },
+  const base = path.join(root, 'base');
+  // Each run gets its own copy of the committed workspace, so the three runs
+  // go at once and none can read what another one wrote.
+  const tick = (name, template) => new Promise((resolve) => {
+    const cwd = path.join(root, name);
+    fs.cpSync(base, cwd, { recursive: true });
+    const child = spawn(process.execPath, [path.join(__dirname, '..', 'bin', 'atris.js'), 'autopilot', '--legacy', '--auto', '--dry-run', '--iterations=1'], {
+      cwd,
+      timeout: 60000,
+      env: { ...process.env, ATRIS_SKIP_UPDATE_CHECK: '1', ATRIS_RUNNER_BIN: 'sh', ATRIS_RUNNER_COMMAND_TEMPLATE: template },
+    });
+    let stdout = '';
+    let stderr = '';
+    child.stdout.setEncoding('utf8').on('data', (chunk) => { stdout += chunk; });
+    child.stderr.setEncoding('utf8').on('data', (chunk) => { stderr += chunk; });
+    child.on('error', (error) => resolve({ status: null, stdout, stderr: `${stderr}${error.message}` }));
+    child.on('close', (status) => resolve({ status, stdout, stderr }));
   });
   try {
-    fs.mkdirSync(path.join(root, 'atris'));
-    fs.writeFileSync(path.join(root, 'atris', 'TODO.md'), '# TODO\n\n## In Progress\n\n## Backlog\n\n## Completed\n');
-    execFileSync('git', ['init', '-q', root]);
-    execFileSync('git', ['-C', root, 'add', '-A']);
-    execFileSync('git', ['-C', root, '-c', 'user.name=t', '-c', 'user.email=t@t', 'commit', '-qm', 'init']);
-    const killed = tick('sh -c "kill -KILL $$"');
+    fs.mkdirSync(path.join(base, 'atris'), { recursive: true });
+    fs.writeFileSync(path.join(base, 'atris', 'TODO.md'), '# TODO\n\n## In Progress\n\n## Backlog\n\n## Completed\n');
+    execFileSync('git', ['init', '-q', base]);
+    execFileSync('git', ['-C', base, 'add', '-A']);
+    execFileSync('git', ['-C', base, '-c', 'user.name=t', '-c', 'user.email=t@t', 'commit', '-qm', 'init']);
+    const [killed, failed, empty] = await Promise.all([
+      tick('killed', 'sh -c "kill -KILL $$"'),
+      tick('failed', missing),
+      tick('empty', 'echo none'),
+    ]);
     assert.equal(killed.status, 0, killed.stderr);
     assert.match(killed.stdout, /I could not ask the engine for new work: horizon-proposal phase killed by SIGKILL .*; killed \((machine memory low|cause unknown)\)/);
     assert.doesNotMatch(killed.stdout, /looks clean/);
-    const failed = tick(missing);
     assert.equal(failed.status, 0, failed.stderr);
     assert.match(failed.stdout, /I could not ask the engine for new work: Command failed: /);
     assert.doesNotMatch(failed.stdout, /looks clean|killed \(/);
     // An engine that answers with nothing usable still reads as no work.
-    const empty = tick('echo none');
     assert.match(empty.stdout, /looks clean/);
     assert.doesNotMatch(empty.stdout, /could not ask the engine/);
     console.log(`autopilot idle on kill: ${killed.stdout.split('\n').find((line) => line.includes('could not ask')).trim()}`);
