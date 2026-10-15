@@ -209,3 +209,5 @@ Startup repair command quoting: `lib/engine-resource.js:344` prints shell-safe p
 Executable startup repair lookup: `lib/engine-resource.js:320` skips files without execute permission, directories, and broken links on PATH, while following executable links. Real shell regression: `test/engine-resource.test.js:4564`.
 
 Empty command search entries: `lib/engine-resource.js:320` searches the current folder in PATH order. `test/engine-resource.test.js:4607` compares leading, middle, trailing, and entirely empty PATH values with real shell launches, keeping an older local install out of repair hints.
+
+Startup repair without Node on PATH: `lib/engine-resource.js:352` uses the running Node executable for checkout repair commands. `test/engine-resource.test.js:4651` runs copied commands through real sh and zsh with an empty PATH.

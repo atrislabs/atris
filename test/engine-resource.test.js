@@ -3327,12 +3327,12 @@ test('the fix command names this checkout when the atris on PATH is another inst
     fs.mkdirSync(empty);
     const script = path.join(bin, 'atris.js');
     assert.strictEqual(atrisCommand({ pathEnv: [empty, linked, other].join(path.delimiter), binDir: bin, home: '' }), 'atris', 'the atris on PATH links to this checkout');
-    assert.strictEqual(atrisCommand({ pathEnv: [other, linked].join(path.delimiter), binDir: bin, home: '' }), `node ${script}`, 'an older install found first is not the one that has the sweep');
-    assert.strictEqual(atrisCommand({ pathEnv: empty, binDir: bin, home: '' }), `node ${script}`, 'no atris on PATH');
-    assert.strictEqual(atrisCommand({ pathEnv: empty, binDir: bin, home: tmp }), 'node ~/checkout/bin/atris.js', 'a path under home is shortened');
+    assert.strictEqual(atrisCommand({ pathEnv: [other, linked].join(path.delimiter), binDir: bin, home: '' }), `${process.execPath} ${script}`, 'an older install found first is not the one that has the sweep');
+    assert.strictEqual(atrisCommand({ pathEnv: empty, binDir: bin, home: '' }), `${process.execPath} ${script}`, 'no atris on PATH');
+    assert.strictEqual(atrisCommand({ pathEnv: empty, binDir: bin, home: tmp }), `${process.execPath} ~/checkout/bin/atris.js`, 'a path under home is shortened');
     const spaced = path.join(tmp, 'my checkout', 'bin');
     fs.mkdirSync(spaced, { recursive: true });
-    assert.strictEqual(atrisCommand({ pathEnv: empty, binDir: spaced, home: tmp }), `node '${path.join(spaced, 'atris.js')}'`, 'a path with a space is quoted in full');
+    assert.strictEqual(atrisCommand({ pathEnv: empty, binDir: spaced, home: tmp }), `${process.execPath} '${path.join(spaced, 'atris.js')}'`, 'a path with a space is quoted in full');
     const { pathAtrisRecordsRuns } = require('../lib/engine-resource');
     assert.strictEqual(pathAtrisRecordsRuns({ pathEnv: other }), false, 'an install with no run recording file');
     assert.strictEqual(pathAtrisRecordsRuns({ pathEnv: empty }), true, 'no atris on PATH, nothing to warn about');
@@ -4596,7 +4596,7 @@ test('startup repair command lookup skips PATH entries that the shell cannot run
       const run = spawnSync('/bin/sh', ['-c', `${command} engine sweep --fix-startup`], { env, encoding: 'utf8' });
       assert.strictEqual(run.status, 0, run.stderr);
       assert.strictEqual(run.stdout, '["engine","sweep","--fix-startup"]', kind);
-      assert.strictEqual(atrisCommand({ pathEnv: blocked, binDir: bin, home: '' }), `node ${script}`, kind);
+      assert.strictEqual(atrisCommand({ pathEnv: blocked, binDir: bin, home: '' }), `${process.execPath} ${script}`, kind);
       assert.strictEqual(pathAtrisRecordsRuns({ pathEnv: blocked }), true, kind);
     }
   } finally {
@@ -4630,7 +4630,7 @@ test('startup repair lookup searches the current folder for empty PATH entries i
       const read = spawnSync(process.execPath, ['-e', probe], { cwd: root, env, encoding: 'utf8' });
       assert.strictEqual(read.status, 0, read.stderr);
       const hint = JSON.parse(read.stdout);
-      assert.strictEqual(hint.command, currentFirst ? `node ${script}` : 'atris', env.PATH);
+      assert.strictEqual(hint.command, currentFirst ? `${process.execPath} ${script}` : 'atris', env.PATH);
       assert.strictEqual(hint.records, !currentFirst, env.PATH);
       for (const shell of ['/bin/sh', ...(fs.existsSync('/bin/zsh') ? ['/bin/zsh'] : [])]) {
         const lookup = spawnSync(shell, ['-c', 'atris'], { cwd: root, env, encoding: 'utf8' });
@@ -4642,6 +4642,25 @@ test('startup repair lookup searches the current folder for empty PATH entries i
         assert.strictEqual(run.status, 0, run.stderr);
         assert.strictEqual(run.stdout, '["engine","sweep","--fix-startup"]', `${shell}: ${env.PATH}`);
       }
+    }
+  } finally {
+    fs.rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test('copied startup repair commands run without node on PATH', () => {
+  const { atrisCommand } = require('../lib/engine-resource');
+  const { spawnSync } = require('node:child_process');
+  const root = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'engine-command-no-node-')));
+  try {
+    const bin = path.join(root, 'my checkout', 'bin');
+    fs.mkdirSync(bin, { recursive: true });
+    fs.writeFileSync(path.join(bin, 'atris.js'), 'process.stdout.write(JSON.stringify(process.argv.slice(2)))');
+    const command = `${atrisCommand({ pathEnv: '', binDir: bin, home: '' })} engine sweep --fix-startup`;
+    for (const shell of ['/bin/sh', ...(fs.existsSync('/bin/zsh') ? ['/bin/zsh'] : [])]) {
+      const run = spawnSync(shell, ['-c', command], { cwd: root, env: { ...process.env, PATH: '' }, encoding: 'utf8' });
+      assert.strictEqual(run.status, 0, run.stderr);
+      assert.strictEqual(run.stdout, '["engine","sweep","--fix-startup"]', shell);
     }
   } finally {
     fs.rmSync(root, { recursive: true, force: true });
