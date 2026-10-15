@@ -159,3 +159,36 @@ Command: node atris/receipts/work-folder-proof-runtime-controlled.js, exit 0.
 Evidence: work-folder-colon-proof-2026-10-14.txt.
 
 next_push: design a narrow colon-directory fallback before implementing shared proof runtime restoration.
+
+## Colon-directory fallback decision, October 14
+
+Verdict: proceed-with-changes. Choose explicit unsupported-path refusal rather
+than shell-command rewriting. The single risk is recording successful proof
+from the competing runtime, which the nine-child diagnostic reproduces.
+
+Proposed flow: validate command -> inspect caller runtime directory -> refuse
+if it contains a colon -> otherwise restore PATH after login -> run unchanged
+command. Apply the same decision to both proof runners. This is a proposal;
+production behavior has not changed.
+
+On refusal, return ok:false, reason:caller_runtime_path_unsupported, the
+original cmd, and the detail "could not run the check because the node folder
+contains a colon". The receipt writer must also return passed:false. Do not
+launch a shell, invent an exit status, write a passing receipt, or move the
+task into review. Keep the empty-command checks ahead of this guard. Confirm
+both callers surface the detail instead of reporting a successful check.
+
+Cost: this unusual installation cannot run even non-Node proof commands
+through these runners. Explicit PATH overrides also receive the refusal.
+The operator can rerun Atris from a Node installation whose directory has no
+colon. This keeps the shell language intact without pretending that arbitrary
+commands can be safely rewritten. The absolute-path diagnostic is evidence of
+runtime selection only, not a proposed replacement for shell parsing.
+
+Before implementation, require both real runner entry points under the copied
+colon-path Node: neither may create a command sentinel or passing receipt.
+Also assert the returned failure fields and actual caller-facing failure.
+Retain the existing ordinary-path runtime, quoting, glob, exit-code, and
+explicit-override checks against production code rather than an injected fix.
+
+next_push: add paired real-runner refusal regressions for colon-containing Node directories before implementing the shared runtime repair.
