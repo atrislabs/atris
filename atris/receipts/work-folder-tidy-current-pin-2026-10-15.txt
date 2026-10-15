@@ -1,0 +1,29 @@
+Cleanup now has proof that its own pinned landed copy stays named from the root and a nested folder; 72 tests passed, none pending, and the staged writing check exited 0.
+
+Files: test/member-tidy.test.js, atris/MAP.md, atris/refs/MAP-NOTES.md, atris/team/architect/logs/2026-10-15.md, this receipt.
+Real surface: four actual member tidy CLI calls, preview and apply from each caller folder, against disposable Git repositories and a real local origin.
+Assertions: exact named pin output, unchanged multiline pin, tracked content, untracked personal notes, branch and registration, with no removal log.
+Verify: node --test test/worktree-removal-guard.test.js test/member-tidy.test.js && node bin/atris.js slop --staged
+next_push: prove busy unfinished pinned copies keep their named pin beside ordinary unfinished work.
+layer: behaviors
+
+Observed real command output excerpt:
+command: node bin/atris.js member tidy --dir <fixture copies> --dry-run (cwd: pinned copy)
+kept  current-pinned  landed, but pinned by git worktree lock, 3 h old: writer still active keep these notes
+tidy: would remove 0, kept 1, of 1 copy in /private/var/folders/t1/2_4kmb5n4c71dxm26zc8dgzr0000gn/T/atris-member-tidy-sx3Y8N/arena/.agent-worktrees/repo
+exit: 0
+The test logs each of the four CLI calls with its actual output and exit, and asserts the exact two output lines and retained files after each call.
+
+Required check output:
+tests 72
+suites 0
+pass 72
+fail 0
+cancelled 0
+skipped 0
+todo 0
+duration_ms 26823.800875
+clean, no slop tells in 5 files
+Combined exit: 0
+Progress: one real regression added, four CLI calls, 71 to 72 passing tests, zero pending.
+Brain compile ran in preview mode and proposed generated files; no generated policy changes were needed.

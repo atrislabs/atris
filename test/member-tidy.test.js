@@ -623,3 +623,44 @@ test('tidy names pinned busy landed copies beside the ordinary busy count', asyn
     fs.rmSync(fx.base, { recursive: true, force: true });
   }
 });
+
+
+test('tidy names its own pinned landed copy from the root and a nested folder', () => {
+  const fx = makeFixture();
+  try {
+    const copy = addCopy(fx, 'current-pinned');
+    const nested = path.join(copy, 'notes');
+    fs.mkdirSync(nested);
+    const notes = path.join(nested, 'draft.txt');
+    fs.writeFileSync(notes, 'unfinished notes\n');
+    const reason = 'writer still active\n  keep these notes';
+    runGit(['worktree', 'lock', '--reason', reason, copy], fx.repo);
+    const pin = path.join(runGit(['rev-parse', '--absolute-git-dir'], copy), 'locked');
+    const aged = new Date(Date.now() - 3 * 60 * 60 * 1000);
+    fs.utimesSync(pin, aged, aged);
+    const words = 'landed, but pinned by git worktree lock, 3 h old: writer still active keep these notes';
+
+    for (const cwd of [copy, nested]) {
+      for (const extra of [['--dry-run'], []]) {
+        const args = [path.resolve(__dirname, '../bin/atris.js'), 'member', 'tidy', '--dir', fx.copies, ...extra];
+        const cli = spawnSync(process.execPath, args, { cwd, encoding: 'utf8', timeout: 15000 });
+        console.log(`command: node bin/atris.js member tidy --dir <fixture copies>${extra.length ? ' --dry-run' : ''} (cwd: ${cwd === copy ? 'pinned copy' : 'nested notes folder'})`);
+        console.log(cli.stdout.trim());
+        console.log(`exit: ${cli.status}`);
+        assert.equal(cli.status, 0, cli.stderr);
+        assert.deepEqual(cli.stdout.trim().split('\n'), [
+          `kept  current-pinned  ${words}`,
+          `tidy: ${extra.length ? 'would remove' : 'removed'} 0, kept 1, of 1 copy in ${fx.copies}`,
+        ]);
+        assert.equal(fs.readFileSync(pin, 'utf8'), `${reason}\n`);
+        assert.equal(fs.readFileSync(notes, 'utf8'), 'unfinished notes\n');
+        assert.equal(fs.readFileSync(path.join(copy, 'README.md'), 'utf8'), '# fixture\n');
+        assert.ok(branchExists(fx.repo, 'current-pinned'));
+        assert.ok(runGit(['worktree', 'list', '--porcelain'], fx.repo).includes(`worktree ${copy}\n`));
+        assert.deepEqual(removalLines(fx.repo), []);
+      }
+    }
+  } finally {
+    fs.rmSync(fx.base, { recursive: true, force: true });
+  }
+});

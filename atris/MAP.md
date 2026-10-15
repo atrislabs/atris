@@ -194,3 +194,5 @@ Reap display grouping: `commands/land.js:652` preserves every kept folder and ad
 Member tidy pinned unfinished work: `lib/member-tidy.js:183` names the pin before grouping ordinary unfinished copies. `test/member-tidy.test.js:522` runs real CLI preview and apply together with an ordinary unfinished copy, checks the exact named warning and grouped count, and proves content, branch, registration and multiline pin remain unchanged with no removal log.
 
 Member tidy busy pins: `lib/member-tidy.js:199` names a pin before grouping a landed copy with a running program. `test/member-tidy.test.js:580` runs real preview and apply with two live children, checks the named multiline pin and ordinary busy count, and preserves contents, branches, registrations, exact pin text and both children with no removal record.
+
+Member tidy own-copy pins: `test/member-tidy.test.js:628` runs real preview and apply from both the pinned landed copy and a nested notes folder. Each call must name the multiline pin, preserve personal notes, branch and registration, and leave the removal log empty.
