@@ -772,6 +772,42 @@ test('tidy preserves staged and unsaved notes in idle landed copies', () => {
   }
 });
 
+test('tidy keeps a copy whose branch disappeared, in preview and apply', () => {
+  const fx = makeFixture();
+  try {
+    const clean = addCopy(fx, 'landed-clean');
+    const kept = addCopy(fx, 'missing-branch');
+    const draft = path.join(kept, 'draft.txt');
+    fs.writeFileSync(draft, 'unsaved notes\n');
+    const gitDir = runGit(['rev-parse', '--absolute-git-dir'], kept);
+    const head = fs.readFileSync(path.join(gitDir, 'HEAD'), 'utf8');
+    runGit(['update-ref', '-d', 'refs/heads/missing-branch'], fx.repo);
+    assert.equal(branchExists(fx.repo, 'missing-branch'), false);
+
+    for (const extra of [['--dry-run'], []]) {
+      const args = [path.resolve(__dirname, '../bin/atris.js'), 'member', 'tidy', '--dir', fx.copies, ...extra];
+      const cli = spawnSync(process.execPath, args, { cwd: fx.repo, encoding: 'utf8', timeout: 15000 });
+      console.log(`command: node bin/atris.js member tidy --dir <fixture copies>${extra.length ? ' --dry-run' : ''} (missing branch)`);
+      console.log(cli.stdout.trim());
+      console.log(`exit: ${cli.status}`);
+      assert.equal(cli.status, 0, cli.stderr);
+      const lines = cli.stdout.trim().split('\n').map((line) => line.replace(/ {2,}/g, '  '));
+      assert.ok(lines.some((line) => line.startsWith('kept  missing-branch  git could not tell if it landed: ') && line.includes('refs/heads/missing-branch')), lines.join('\n'));
+      assert.ok(lines.some((line) => line.startsWith(`${extra.length ? 'would remove' : 'removed'}  landed-clean  work landed`)));
+      assert.equal(lines.at(-1), `tidy: ${extra.length ? 'would remove' : 'removed'} 1, kept 1, of 2 copies in ${fx.copies}`);
+      assert.equal(fs.readFileSync(draft, 'utf8'), 'unsaved notes\n');
+      assert.equal(fs.readFileSync(path.join(kept, 'README.md'), 'utf8'), '# fixture\n');
+      assert.equal(fs.readFileSync(path.join(gitDir, 'HEAD'), 'utf8'), head);
+      assert.equal(branchExists(fx.repo, 'missing-branch'), false);
+      assert.ok(runGit(['worktree', 'list', '--porcelain'], fx.repo).includes(`worktree ${kept}\n`));
+      assert.deepEqual(removalLines(fx.repo).map((line) => line.path), extra.length ? [] : [clean]);
+    }
+    assert.equal(fs.existsSync(clean), false);
+  } finally {
+    fs.rmSync(fx.base, { recursive: true, force: true });
+  }
+});
+
 test('tidy keeps a landed copy whose status git cannot read, in preview and apply', () => {
   const fx = makeFixture();
   try {

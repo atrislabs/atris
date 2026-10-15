@@ -1,0 +1,28 @@
+Cleanup now has regression proof that a folder and its draft survive a deleted branch. Real preview and cleanup plus the required checks passed, exit 0.
+
+Files edited: test/member-tidy.test.js; atris/MAP.md; atris/refs/MAP-NOTES.md; atris/team/architect/logs/2026-10-15.md; this receipt.
+
+Setup: delete only refs/heads/missing-branch inside a disposable test repository with git update-ref -d. Keep the original HEAD, README and draft unchanged; verify the branch stays absent and the folder stays registered. A clean neighboring folder is removed and is the only removal logged.
+
+Verify command: node --test test/worktree-removal-guard.test.js test/member-tidy.test.js && node bin/atris.js slop --staged
+Runtime: /opt/homebrew/bin first on PATH.
+Exit: 0
+Progress: 76 passed, 0 failed, 0 skipped, 0 todo, up from 75 passed.
+
+Actual CLI output:
+command: node bin/atris.js member tidy --dir <fixture copies> --dry-run (missing branch)
+would remove  landed-clean  work landed
+kept          missing-branch  git could not tell if it landed: fatal: Not a valid object name refs/heads/missing-branch
+tidy: would remove 1, kept 1, of 2 copies in /private/var/folders/t1/2_4kmb5n4c71dxm26zc8dgzr0000gn/T/atris-member-tidy-mSW0Ne/arena/.agent-worktrees/repo
+exit: 0
+command: node bin/atris.js member tidy --dir <fixture copies> (missing branch)
+removed  landed-clean  work landed, branch deleted
+kept     missing-branch  git could not tell if it landed: fatal: Not a valid object name refs/heads/missing-branch
+tidy: removed 1, kept 1, of 2 copies in /private/var/folders/t1/2_4kmb5n4c71dxm26zc8dgzr0000gn/T/atris-member-tidy-mSW0Ne/arena/.agent-worktrees/repo
+exit: 0
+
+Learning: a missing branch makes Git's ancestry check fail; cleanup already keeps the folder and names that failure. No production change was needed.
+
+Bookkeeping: mission attach-task refused its existing busy lock; no lock was removed. Dedicated task ACW-13 holds the scope and proof. Brain compile offered only a plan; generated policy files were left alone.
+next_push: Prove cleanup preserves staged notes when the upstream default branch moves backward.
+layer: behaviors
