@@ -141,6 +141,37 @@ test('queueing a member run remembers which jobs it finishes', () => {
   });
 });
 
+test('a job taken off the list rides to the merge line without gating it', () => {
+  withFixture((fx) => {
+    const dir = path.join(fx.worktree, 'atris', 'runs');
+    fs.mkdirSync(dir, { recursive: true });
+    const tree = git(['rev-parse', 'HEAD^{tree}'], fx.worktree);
+    const at = new Date().toISOString();
+    fs.writeFileSync(path.join(dir, `mission-m-2-${at.replace(/[:.]/g, '-')}.json`), JSON.stringify({
+      schema: 'atris.mission_receipt.v1', tree_hash: 'x', clean: true, git_tree: tree, mission_id: 'm-2', at,
+      result: { kind: 'mission_run_summary', tick_count: 1, ticks: [{
+        status: 'ran', tick_index: 1, engine_id: 'claude', verifier_passed: true, reviewed_git_tree: tree,
+        referee_result: { passed: true, mode: 'engine', engine: 'codex', output: 'VERDICT: PASS' },
+      }] },
+    }));
+    // The mission was started from the job's text, so it links no tasks.
+    // The job was sent back once; the rework must still land.
+    const out = autolandMemberRun({
+      mission: {
+        id: 'm-2', objective: 'Tidy the member board so finished work reads plainly',
+        runner: 'claude', lane: 'workspace', metadata: {},
+        verifier_result: { passed: true }, worktree: { branch: BRANCH },
+        last_tick_at: '2000-01-01T00:00:00.000Z', last_tick_status: 'ran', last_tick_index: 1,
+      },
+      cwd: fx.worktree,
+      closeTaskIds: ['pulled-job', ' ', 7],
+      loadTask: (id) => ({ id, title: 'Tidy the member board', status: 'claimed', metadata: { approval_status: 'revise' } }),
+    });
+    assert.equal(out.auto_merge, true, out.line);
+    assert.deepEqual(readQueue(fx)[BRANCH].task_ids, ['pulled-job']);
+  });
+});
+
 test('its own change merged: the job closes with no approval and leaves the merge line', () => {
   withFixture((fx) => {
     const a = job(fx, 'review');

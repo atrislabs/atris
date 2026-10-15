@@ -1263,7 +1263,7 @@ function reviewRefusalLine(refusal) {
   return line.trim().slice(0, 200);
 }
 
-function memberRunWith(name, args, { quiet = false } = {}) {
+function memberRunWith(name, args, { quiet = false, closeTaskIds = [] } = {}) {
   if (!name || name === '--help' || name === '-h' || hasFlag(args, '--help') || hasFlag(args, '-h')) {
     console.log('usage: atris member run <name> ["mission text"] [--verify "<cmd>"] [--minutes N|--hours N] [--json]');
     console.log('pick for me: atris member run "fix the flaky login test" (the best member takes it and runs it)');
@@ -1416,7 +1416,7 @@ function memberRunWith(name, args, { quiet = false } = {}) {
     const summary = ticks.map((tick) => tick?.summary || tick?.claude?.summary).filter(Boolean).pop() || '';
     const workerEngine = ticks.map((tick) => tick?.engine_id).filter(Boolean).pop()
       || runnerSwap?.to || readFlag(args, '--runner', '') || '';
-    result.autoland = require('../lib/member-autoland').autolandMemberRun({ mission: finalMission, cwd, summary, workerEngine });
+    result.autoland = require('../lib/member-autoland').autolandMemberRun({ mission: finalMission, cwd, summary, workerEngine, closeTaskIds });
     if (!asJson && !quiet) console.log(result.autoland.line);
   }
   if (checkFailed) {
@@ -10841,7 +10841,8 @@ async function memberSteerOrDispatchWith({ pullTask = false } = {}, rawArgs = []
   const runFlags = required ? [...stripKnownFlags(nextFlags, ['--verify'], []), '--verify', required] : nextFlags;
   let result = null;
   try {
-    result = await memberRunWith(owner, [effectivePrompt, '--ignite', ...runFlags], { quiet: asJson });
+    // The job rides to the merge line so it closes itself when its change merges.
+    result = await memberRunWith(owner, [effectivePrompt, '--ignite', ...runFlags], { quiet: asJson, closeTaskIds: [pulled.task.id] });
   } catch (error) {
     memberGoFinishTask(owner, pulled.task, null, error);
     throw error;
