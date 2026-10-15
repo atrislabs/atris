@@ -1,0 +1,23 @@
+Fleet review kept line: one named helper, tested directly
+
+Files edited: lib/fleet.js, test/worktree-removal-guard.test.js, atris/receipts/work-folder-review-late-pin-probe.js, atris/refs/MAP-NOTES.md, atris/team/architect/logs/2026-10-14.md, this receipt.
+
+What changed: the line fleet review prints when cleanup keeps a copy now comes from one small helper next to the cleanup code. Tests call it directly instead of pulling the line out of the source text and evaluating it. One check confirms the fleet run prints through the helper and that the text is not written inline again. A result with no explanation now prints its reason alone instead of "undefined".
+
+$ node --test test/worktree-removal-guard.test.js test/member-tidy.test.js
+exit=0
+tests 65, pass 65, fail 0, todo 0, duration_ms 99230
+
+$ node atris/receipts/work-folder-review-late-pin-probe.js   (real git, real review setup)
+exit=0
+control: git removed the idle copy, cleanup cleared its stores and recorded success
+fleet prints: kept review sandbox for review-pin-probe (removal_refused: pinned by git worktree lock, under a minute old: review still writing): $TMPDIR/atris-one-lap-review-pin-probe-...
+fleet prints: kept review sandbox for review-pin-probe (removal_refused: validation failed, cannot remove working tree: '/private$TMPDIR/atris-one-lap-review-pin-probe-.../): $TMPDIR/...
+fleet prints: kept review sandbox for review-pin-probe (removal_refused: git removal stopped by SIGTERM): $TMPDIR/atris-one-lap-review-pin-probe-...
+
+Negative trial: putting the old inline line back in the fleet run failed the wiring check; the file was restored from a copy afterward.
+
+Found, not fixed: the shared refusal reader cuts git's line at 160 characters. With a long temp path, the broken-link case loses "does not exist", the words that say what went wrong (git said: "... worktree/.git' does not exist").
+
+$ node bin/atris.js doc-health --fix-refs
+two drifted refs moved; the cleanup ref and the review contract note updated by hand; 4 unrelated refs left for a human.

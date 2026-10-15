@@ -12,7 +12,7 @@ const path = require('node:path');
 const { spawn, spawnSync } = require('node:child_process');
 const { reap, removalsTodayLine } = require('../commands/land');
 const { cleanupWorktrees, describeGitHold } = require('../commands/worktree');
-const { disposeReviewSandbox } = require('../lib/fleet');
+const { disposeReviewSandbox, describeKeptReview } = require('../lib/fleet');
 const { regressionCheck } = require('../commands/autopilot');
 const { dropScratch } = require('../lib/land-green');
 
@@ -1136,16 +1136,24 @@ test('fleet review cleanup keeps every store of a pinned copy and names the pin'
   }
 });
 
-// The line fleet review prints when cleanup keeps a copy sits deep inside the
-// fleet run, so it is read from the source as written and filled with a real
-// cleanup result. A rewrite of that line fails here instead of going untested.
+// The line fleet review prints when cleanup keeps a copy, filled with a real
+// cleanup result.
 function keptReviewLine(disposed, sandboxRoot) {
-  const source = fs.readFileSync(path.join(__dirname, '../lib/fleet.js'), 'utf8');
-  const found = source.match(/log\(`(\s*kept review sandbox for [^`]*)`\);/);
-  assert.ok(found, 'fleet review no longer prints a kept line in this form; point this check at its new home');
-  const line = new Function('entry', 'disposed', 'describeGitHold', `return \`${found[1]}\`;`);
-  return line({ taskId: 'T-1', remoteBoundary: { sandboxRoot } }, disposed, describeGitHold).trim();
+  return describeKeptReview('T-1', disposed, sandboxRoot);
 }
+
+test('fleet review prints its kept line through the shared helper', () => {
+  const source = fs.readFileSync(path.join(__dirname, '../lib/fleet.js'), 'utf8');
+  assert.deepEqual(source.match(/^\s*log\(.*kept review sandbox.*$/gm), null, 'kept line written inline again');
+  const kept = source.match(/^\s*log\(.*describeKeptReview\(.*$/gm) || [];
+  assert.deepEqual(kept.map((line) => line.trim()),
+    ['log(`    ${describeKeptReview(entry.taskId, disposed, entry.remoteBoundary.sandboxRoot)}`);']);
+});
+
+test('fleet review kept line prints the reason alone when nothing explains it', () => {
+  assert.equal(keptReviewLine({ removed: false, reason: 'removal_refused', detail: '' }, '/tmp/review'),
+    'kept review sandbox for T-1 (removal_refused): /tmp/review');
+});
 
 test('fleet review names the git lock or pin when cleanup keeps a copy', () => {
   const { base, repo, wt, boundary } = reviewSandbox();

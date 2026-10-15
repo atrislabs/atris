@@ -6,7 +6,7 @@ const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
 const { spawnSync } = require('node:child_process');
-const { prepareReviewSandbox, disposeReviewSandbox } = require('../../lib/fleet');
+const { prepareReviewSandbox, disposeReviewSandbox, describeKeptReview } = require('../../lib/fleet');
 
 function main() {
   const realGit = spawnSync('which', ['git'], { encoding: 'utf8' });
@@ -116,8 +116,9 @@ process.exit(result.status === null ? 1 : result.status);
       console.log(mode === 'idle'
         ? 'control: git removed the idle copy, cleanup cleared its stores and recorded success'
         : mode === 'interrupted'
-          ? `kept: removal ended by signal, every review path stayed, no removal recorded (${result.detail})`
-          : `kept: git refused ${mode}, every review path stayed, no removal recorded (${result.detail})`);
+          ? 'kept: removal ended by signal, every review path stayed, no removal recorded'
+          : `kept: git refused ${mode}, every review path stayed, no removal recorded`);
+      if (mode !== 'idle') console.log(`fleet prints: ${describeKeptReview('review-pin-probe', result, sandboxRoot)}`);
     } finally {
       if (previousPath === undefined) delete process.env.PATH;
       else process.env.PATH = previousPath;
