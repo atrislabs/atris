@@ -215,3 +215,5 @@ Startup repair without Node on PATH: `lib/engine-resource.js:352` uses the runni
 Same-checkout repair without Node: `lib/engine-resource.js:320` shares executable lookup for atris and node; `lib/engine-resource.js:353` shortens the hint only when both can run. `test/engine-resource.test.js:4671` runs real sh and zsh commands with missing, non-executable, directory, and broken-link node entries.
 
 Landing status repair without Node: `commands/autoland.js:564` builds that same checkout command, and `commands/autoland.js:576` prints it under leaked agents. `test/engine-resource.test.js:4707` copies the printed command into real sh and zsh when the path holds only this checkout launcher, and checks the shell startup file changes.
+
+Landing status repair with an unusable Node entry: `commands/autoland.js:564` builds that same checkout command when a node entry is present but cannot run. `test/engine-resource.test.js:4751` copies the printed command into real sh and zsh for a plain file, a directory, and a broken link, and checks the shell startup file changes.
