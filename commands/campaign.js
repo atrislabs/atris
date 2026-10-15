@@ -25,12 +25,14 @@ const STATE_ORDER = ['needs_you', 'running', 'queued', 'paused', 'resting', 'out
 
 function printHelp() {
   console.log('Usage:');
+  console.log('  atris campaign "<goal as a sentence>" --judge "<cmd>"   begin a campaign from one sentence; every flag below works here too');
   console.log('  atris campaign                         every campaign: state, money, and the next move');
-  console.log('  atris campaign new "<goal>" [--budget 20] [--owner <member>] [--yes]   draft a judge that fails today, then start');
-  console.log('  atris campaign start "<title>" --judge "<cmd>" --budget <dollars>');
+  console.log('  atris campaign "<goal>"                draft a judge that fails today, start on a yes; same as campaign new');
+  console.log('  atris campaign new "<goal>" [--budget 20] [--owner <member>] [--yes] [--run]   --run keeps going after the start');
+  console.log('  atris campaign start "<title>" --judge "<cmd>" [--budget <dollars>]   no --budget means no limit; --cloud needs one');
   console.log('        [--holdout <file>]   move held-out data out of the repo; the judge reads it from $ATRIS_CAMPAIGN_HOLDOUT');
   console.log('        [--owner <member>] [--seat <member>[:<role>]]... [--bet "<bet>" [--wrong-if "<what proves it wrong>"]]');
-  console.log('        [--standing] [--parent <id>] [--id cmp-<name>] [--cloud [--basis atris_cloud]] [--protect <path>]...');
+  console.log('        [--standing] [--parent <id>] [--id cmp-<name>] [--cloud [--basis atris_cloud]] [--protect <path>]... [--run]');
   console.log('        --protect saves paths agents must not touch, and the commit they start from');
   console.log('        --basis atris_cloud: Atris runs it on your Atris computer and bills its engines; the default is your own engines');
   console.log('  atris campaign show <id>               bet, judge, answer, budget, seats, missions, asks');
@@ -69,6 +71,12 @@ function clip(text, max = 80) {
 function money(value) {
   return `$${Number(value).toFixed(2)}`;
 }
+
+// A local start may leave out --budget. The schema still wants a positive
+// number, so the campaign gets a ceiling nothing real reaches, and show and
+// list leave its money lines out.
+const NO_LIMIT_BUDGET = 1e9;
+const noLimit = (view) => view.budget.total >= NO_LIMIT_BUDGET;
 
 // The flags this command understands, so positional words are what is left.
 const VALUE_FLAGS = ['--basis', '--work', '--break', '--rounds', '--mission', '--parallel', '--max-steps', '--max-ticks', '--runner', '--count', '--judge', '--budget', '--owner', '--seat', '--bet', '--wrong-if', '--parent', '--id', '--role', '--add', '--data', '--timeout', '--as', '--holdout', '--protect'];
@@ -178,6 +186,31 @@ function runJudgeCommand(command, cwd, timeoutSeconds, env = process.env) {
   });
 }
 
+function shellQuote(text) {
+  return /^[\w@%+=:,./-]+$/.test(text) ? text : `'${text.replace(/'/g, `'\\''`)}'`;
+}
+
+// A judge that is just one script file outside this checkout is copied into
+// the campaign's own folder, so deleting or editing the original never changes
+// what the campaign checks. Returns the copy as a command, or null to keep it.
+function keepJudgeScript(judge, folder) {
+  const named = judge.trim().replace(/^(['"])(.*)\1$/, '$2');
+  let file;
+  try {
+    file = fs.realpathSync(path.resolve(named));
+    if (!fs.statSync(file).isFile()) return null;
+  } catch {
+    return null;
+  }
+  const inside = path.relative(fs.realpathSync(process.cwd()), file);
+  if (inside && !inside.startsWith('..') && !path.isAbsolute(inside)) return null;
+  fs.mkdirSync(folder, { recursive: true });
+  const copy = path.join(folder, path.basename(file));
+  fs.copyFileSync(file, copy);
+  fs.chmodSync(copy, fs.statSync(file).mode & 0o777);
+  return { from: file, judge: shellQuote(copy) };
+}
+
 function makeContext(args, deps) {
   const asJson = args.includes('--json');
   const store = deps.store || openCampaignStore(process.cwd());
@@ -204,7 +237,9 @@ function makeContext(args, deps) {
     return code;
   };
   const append = (campaignId, type, data, as = actor) => store.append({ campaign_id: campaignId, type, actor: as, data });
-  return { asJson, store, actor, judge, holdoutRoot, out, fail, append, forgedHuman, loopDeps: deps.loopDeps, cloud: deps.cloud || {} };
+  // A campaign's own files (its judge copy, held-out data) live beside the store, outside the repo.
+  const folder = deps.campaignFolder || ((id) => path.join(holdoutRoot, 'campaigns', id));
+  return { asJson, store, actor, judge, holdoutRoot, out, fail, append, forgedHuman, folder, loopDeps: deps.loopDeps, cloud: deps.cloud || {} };
 }
 
 function requireCampaign(ctx, id) {
@@ -217,14 +252,15 @@ function requireCampaign(ctx, id) {
 
 function renderList(views) {
   if (!views.length) {
-    return 'No campaigns yet. Start one:\n  atris campaign start "<title>" --judge "<command that fails today>" --budget <dollars>';
+    return 'No campaigns yet. Start one:\n  atris campaign "<goal as a sentence>" --judge "<command that fails today>"';
   }
   const sorted = views.slice().sort((a, b) => STATE_ORDER.indexOf(a.state) - STATE_ORDER.indexOf(b.state));
   const lines = [];
   for (const view of sorted) {
     const running = view.missions.filter((m) => m.status === 'running').length;
     lines.push(`${clip(view.title)}  (${view.id})`);
-    lines.push(`  ${view.state.replace(/_/g, ' ')} · ${money(view.budget.spent)} of ${money(view.budget.total)} · ${running} mission${running === 1 ? '' : 's'} running · answer ${view.answer.confidence}`);
+    const spend = noLimit(view) ? '' : ` · ${money(view.budget.spent)} of ${money(view.budget.total)}`;
+    lines.push(`  ${view.state.replace(/_/g, ' ')}${spend} · ${running} mission${running === 1 ? '' : 's'} running · answer ${view.answer.confidence}`);
     lines.push(`  next: ${nextMove(view).text}`);
   }
   return lines.join('\n');
@@ -238,7 +274,7 @@ function renderShow(view) {
   const last = view.last_judge;
   row('judge', `${view.judge}${last ? ` · last run ${last.passed ? 'passed' : 'failed'} at ${last.at}` : ' · never run'}${view.judge_due && last ? ' · due again' : ''}`);
   row('answer', `${view.answer.confidence}${view.answer.text ? `: ${view.answer.text}` : ''}`);
-  row('budget', `${money(view.budget.spent)} spent of ${money(view.budget.total)} · ${money(view.budget.reserved)} reserved · ${money(view.budget.available)} left`);
+  if (!noLimit(view)) row('budget', `${money(view.budget.spent)} spent of ${money(view.budget.total)} · ${money(view.budget.reserved)} reserved · ${money(view.budget.available)} left`);
   row('owner', view.owner + (view.standing ? ' · standing (a passing judge means healthy, not done)' : ''));
   if (view.bet) row('bet', `${view.bet.text}${view.bet.wrong_if ? ` · wrong if ${view.bet.wrong_if}` : ''}`);
   if (view.parent) row('parent', view.parent);
@@ -261,7 +297,8 @@ async function cmdStart(args, ctx) {
   const title = positionals(args)[1];
   const judge = readFlag(args, '--judge', '');
   const budgetText = readFlag(args, '--budget', '');
-  const budget = Number(budgetText);
+  if (!budgetText && args.includes('--cloud')) return ctx.fail('a cloud campaign needs --budget <dollars>, so the cloud knows what it may spend');
+  const budget = budgetText ? Number(budgetText) : NO_LIMIT_BUDGET;
   const bet = readFlag(args, '--bet', '');
   const wrongIf = readFlag(args, '--wrong-if', '');
   const parent = readFlag(args, '--parent', '');
@@ -271,7 +308,7 @@ async function cmdStart(args, ctx) {
     const [member, role] = seat.split(':');
     return role ? { member, role } : member;
   });
-  const record = { title, judge, budget: budgetText ? budget : undefined };
+  const record = { title, judge, budget };
   if (owner) record.owner = owner;
   if (seats.length) record.seats = seats;
   if (bet) record.bet = bet;
@@ -321,7 +358,15 @@ async function cmdStart(args, ctx) {
     return ctx.fail(`already done: the judge passes before any work (${reading.summary || 'exit 0'}). Write a judge that fails first.`, 1);
   }
 
-  const startData = { title, judge, budget, owner: owner || 'mission-lead', created_from: `atris campaign start by ${ctx.actor}` };
+  let kept = null;
+  try {
+    kept = keepJudgeScript(judge, ctx.folder(id));
+  } catch (error) {
+    if (!ctx.asJson) console.error(`could not copy the judge script, keeping the original: ${error.message}`);
+  }
+  if (kept && !ctx.asJson) console.error(`copied the judge script from ${kept.from} into the campaign: ${kept.judge}`);
+
+  const startData = { title, judge: kept ? kept.judge : judge, budget, owner: owner || 'mission-lead', created_from: `atris campaign start by ${ctx.actor}` };
   if (seats.length) startData.seats = seats;
   if (bet && !wrongIf) startData.bet = bet;
   if (standing) startData.standing = true;
@@ -340,6 +385,8 @@ async function cmdStart(args, ctx) {
   const view = getCampaign(ctx.store, id);
   const synced = cloud && cloud.ok ? `\nin the cloud: ${cloud.pushed} event${cloud.pushed === 1 ? '' : 's'} sent` : '';
   ctx.out(`started ${view.title} (${id})${synced}\n${renderShow(view)}`, { ok: true, action: 'campaign_started', campaign: view, next: decide(view), ...(cloud ? { cloud } : {}) });
+  // --run keeps going: plan and run missions until the judge passes or a stop.
+  if (args.includes('--run')) return cmdLoop(['run', id, ...args.slice(2)], ctx, 'run');
   return 0;
 }
 
@@ -671,7 +718,7 @@ const VERBS = {
   step: (args, ctx) => cmdLoop(args, ctx, 'step'),
   propose: (args, ctx) => cmdLoop(args, ctx, 'propose'),
   // atris campaign new "<goal>": the owner's engine drafts a judge that fails today (lib/campaign-new.js).
-  new: (args, ctx) => require('../lib/campaign-new').draftAndStart(args, ctx, { start: cmdStart, goal: positionals(args)[1], ask: ctx.loopDeps && ctx.loopDeps.ask }),
+  new: (args, ctx) => require('../lib/campaign-new').draftAndStart(args, ctx, { start: cmdStart, goal: positionals(args)[1], ask: ctx.loopDeps && ctx.loopDeps.ask, confirm: ctx.loopDeps && ctx.loopDeps.confirm }),
   export: (args, ctx) => require('../lib/campaign-trace').exportTrace(args, ctx),
   features: (args, ctx) => {
     ctx.out(`this atris CLI can: ${CLOUD_FEATURES.join(', ')}`, { ok: true, features: CLOUD_FEATURES });
@@ -701,8 +748,12 @@ function campaignCommand(args = [], deps = {}) {
     return 0;
   }
   const handler = VERBS[verb];
-  if (!handler) return ctx.fail(`unknown verb ${verb}. Verbs: ${Object.keys(VERBS).join(', ')}`);
-  return handler(args, ctx);
+  if (handler) return handler(args, ctx);
+  // A sentence where the verb goes is a title: it starts a campaign with the
+  // same flags as start. One word is more likely a mistyped verb, so it is not.
+  // With no --judge, the owner's engine drafts one first, as campaign new does.
+  if (/\s/.test(verb.trim())) return args.includes('--judge') ? cmdStart(['start', ...args], ctx) : VERBS.new(['new', ...args], ctx);
+  return ctx.fail(`unknown verb ${verb}. Verbs: ${Object.keys(VERBS).join(', ')}. To start a campaign, write the goal as a sentence: atris campaign "<goal>" [--judge "<cmd>"]`);
 }
 
 module.exports = { campaignCommand, renderShow, runJudgeCommand };

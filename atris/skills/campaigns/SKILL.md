@@ -24,14 +24,14 @@ If one `atris mission start` would finish it, use a mission.
 ## The five commands
 
 ```bash
-atris campaign new "<goal>"                  # drafts a judge, proves it fails today, shows it (add --yes to start)
+atris campaign "<goal>"                      # drafts a judge, proves it fails today, starts on a yes (agents pass --yes; --run keeps going)
 atris campaign run <id> --max-steps 5        # judge, propose missions, run them; stops and says why
 atris campaign show <id>                     # judge reading, money, missions, open asks, next move
 atris campaign answer <id> <ask-id> "<yes>"  # a person answers; agents cannot
 atris campaign sync <id>                     # share it with the Atris web app and iOS
 ```
 
-Already have a judge? Start directly: `atris campaign start "<title>" --judge "<command>" --budget 20`. Add `--json` to any verb for machine output. `atris campaign` alone lists every campaign and its next move.
+`atris campaign "<goal>"` is the same as `atris campaign new "<goal>"`. Already have a judge? Start directly: `atris campaign "<goal>" --judge "<command>"`. A local campaign needs no budget; one that runs in the cloud does (`--budget 20`). Add `--json` to any verb for machine output. `atris campaign` alone lists every campaign and its next move.
 
 ## Write a good judge
 
