@@ -2681,3 +2681,5 @@ Final proof-only acceptance refusals: `test/commands.test.js:13315` overlaps acc
 Approval confirmation refusals: `test/commands.test.js:13375` overlaps the missing confirmation and two invalid actor checks before the task store opens; the unchanged review-status read waits for all three. Preview and acceptance ordering remain unchanged.
 
 Lineage read concurrency: `test/commands.test.js:21208` runs text, JSON and alternate-home lineage reads together after closing fixture setup. `commands/task.js:11796` reads the production projection and git history without writing task rows or shared output files; all original assertions remain.
+
+Live-status ownership setup: `test/commands.test.js:14230` creates all three rows and claims through the real store, waiting past the final creation timestamp before claiming. `commands/task.js:2656` builds the history feed and sorts only by timestamp, so distinct setup times preserve the latest claim. JSON, text and history status remain sequential CLI invocations.

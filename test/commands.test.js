@@ -14241,7 +14241,7 @@ test('task status gives web and Swarlo a compact live contract', () => {
       '',
     ].join('\n'), 'utf8');
 
-    // Creation is setup; claim and all three status reads still exercise the CLI.
+    // Creation and ownership are setup; all three status reads still exercise the CLI.
     const workspaceRoot = taskStore.workspaceRoot(dir);
     const db = taskStore.open(env.ATRIS_TASKS_DB);
     let id;
@@ -14255,12 +14255,12 @@ test('task status gives web and Swarlo a compact live contract', () => {
       const explicitNext = addSeedTask(db, { title: 'Shape explicit agent goal', tag: 'agent', workspaceRoot });
       assert.equal(explicitNext.inserted, true);
       explicitNextId = explicitNext.id;
+      // History sorts by timestamp, so ownership must follow every creation event.
+      while (Date.now() <= lastSeededTaskMs) { /* poll until the next millisecond */ }
+      assert.equal(taskStore.claimTask(db, { id, claimedBy: 'codex' }).claimed, true);
     } finally {
       taskStore.close();
     }
-
-    const claimed = runCli(['task', 'claim', id, '--as', 'codex', '--json'], { cwd: dir, env });
-    assert.equal(claimed.status, 0, claimed.stderr);
 
     const status = runCli(['task', 'status', '--json'], { cwd: dir, env });
     assert.equal(status.status, 0, status.stderr);
