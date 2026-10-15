@@ -460,3 +460,12 @@ test('a roster pick or mission model still saved as claude-fable-5 runs as Fable
     assert.match(buildRunnerCommand({ promptFile: '/tmp/p.tmp', model: 'claude-fable-5' }), /--model claude-fable-5-1(\s|$)/);
   });
 });
+
+test('mercury runner profile resolves to the pinned test model and ax flag', () => {
+  withRunnerEnv({ ATRIS_RUNNER_PROFILE: 'mercury' }, () => {
+    assert.equal(resolveClaudeRunnerBin(), 'ax');
+    assert.equal(resolveClaudeRunnerModel({}), 'inception:mercury-3-preview-1002');
+    assert.equal(resolveClaudeRunnerCommandTemplate(), '{bin} --mercury {prompt}');
+    assert.equal(buildRunnerCommand({ promptFile: '/tmp/p.tmp' }), 'ax --mercury "$(cat /tmp/p.tmp)"');
+  });
+});

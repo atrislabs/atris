@@ -16,6 +16,8 @@ function workspace(t, verdict = 'VERDICT: PASS') {
   const root = path.join(base, 'repo');
   const binDir = path.join(base, 'bin');
   const reviewMark = path.join(base, 'reviewed');
+  const reviewPrompt = path.join(base, 'review-prompt.txt');
+  const tasksDb = path.join(base, 'tasks.db');
   fs.mkdirSync(path.join(root, 'atris', 'team', 'executor'), { recursive: true });
   fs.mkdirSync(binDir, { recursive: true });
   fs.writeFileSync(path.join(root, 'atris', 'team', 'executor', 'MEMBER.md'), '---\nname: executor\nrole: Test Member\n---\n\n# executor\n', 'utf8');
@@ -27,7 +29,7 @@ function workspace(t, verdict = 'VERDICT: PASS') {
     'echo \'{"type":"result","is_error":false,"result":"wrote work.txt"}\'',
     '',
   ].join('\n'), 'utf8');
-  fs.writeFileSync(path.join(binDir, 'codex'), `#!/bin/sh\ntouch "${reviewMark}"\necho "${verdict}"\n`, 'utf8');
+  fs.writeFileSync(path.join(binDir, 'codex'), `#!/bin/sh\ntouch "${reviewMark}"\nprintf '%s\\n' "$@" >> "${reviewPrompt}"\necho "${verdict}"\n`, 'utf8');
   fs.chmodSync(path.join(binDir, 'claude'), 0o755);
   fs.chmodSync(path.join(binDir, 'codex'), 0o755);
   const git = (args) => {
@@ -39,6 +41,7 @@ function workspace(t, verdict = 'VERDICT: PASS') {
   git(['config', 'user.name', 'Test User']);
   git(['add', '.']);
   git(['commit', '-qm', 'baseline']);
+  const env = { ...scrubAgentEnv(), ATRIS_SKIP_UPDATE_CHECK: '1', ATRIS_TASKS_DB: tasksDb, PATH: `${binDir}${path.delimiter}${process.env.PATH || ''}` };
   const run = (extra) => spawnSync(process.execPath, [
     cliPath, 'member', 'run', 'executor', 'Write work.txt',
     '--engine', 'claude', '--referee-engine', 'codex', '--shared-checkout',
@@ -47,9 +50,9 @@ function workspace(t, verdict = 'VERDICT: PASS') {
     cwd: root,
     encoding: 'utf8',
     timeout: 60000,
-    env: { ...scrubAgentEnv(), ATRIS_SKIP_UPDATE_CHECK: '1', PATH: `${binDir}${path.delimiter}${process.env.PATH || ''}` },
+    env,
   });
-  return { run, reviewMark };
+  return { run, reviewMark, reviewPrompt, root, env };
 }
 
 test('an ignited member run gets a second-engine review without asking for one', (t) => {
@@ -112,4 +115,21 @@ test('work the reviewer turns down says so with its reason, not that the check f
   assert.equal(res.status, 1, res.stderr || res.stdout);
   const payload = JSON.parse(res.stdout);
   assert.equal(payload.error, 'turned down in review: the new file is empty on a second run');
+});
+
+test('the reviewer checks every part of done-looks-like and turns down work that does only some', (t) => {
+  const { run, root, env, reviewPrompt } = workspace(t, 'VERDICT: FAIL; missing: notes.txt lists what changed');
+  const made = spawnSync(process.execPath, [
+    cliPath, 'task', 'new', 'Write work.txt',
+    '--done-looks-like', 'work.txt says done, and notes.txt lists what changed', '--json',
+  ], { cwd: root, encoding: 'utf8', env });
+  assert.equal(made.status, 0, made.stderr || made.stdout);
+  const res = run([]);
+  assert.equal(res.status, 1, res.stderr || res.stdout);
+  const prompt = fs.readFileSync(reviewPrompt, 'utf8');
+  assert.match(prompt, /The job says done looks like: work\.txt says done, and notes\.txt lists what changed/);
+  assert.match(prompt, /Split that line into each separate thing it promises and check every one/);
+  assert.match(prompt, /Work that does only some of the parts is not done/);
+  const payload = JSON.parse(res.stdout);
+  assert.equal(payload.error, 'turned down in review: missing: notes.txt lists what changed');
 });
