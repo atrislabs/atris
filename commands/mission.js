@@ -6597,7 +6597,7 @@ function runVerifier(command, root = process.cwd()) {
   const resolvedCommand = resolveVerifierCommand(command);
   const { envWithNodeDir } = require('../lib/spawn-env');
   const timeoutMs = missionVerifierTimeoutMs();
-  const startedAt = Date.now();
+  const startedAt = process.hrtime.bigint();
   const result = spawnSync(resolvedCommand, {
     cwd: root,
     shell: true,
@@ -6605,11 +6605,15 @@ function runVerifier(command, root = process.cwd()) {
     timeout: timeoutMs,
     env: envWithNodeDir(process.env),
   });
-  const elapsedMs = Date.now() - startedAt;
   // A verifier that blows its window is not a failing check: the code may be
   // fine and the suite merely slow (or starved by a concurrent flight). Report
   // it as a distinct timed-out state so operators do not read slow as broken.
   const timedOut = result.error ? result.error.code === 'ETIMEDOUT' : false;
+  // Steady clock, not wall time: the wall clock can slew, and a kill at the
+  // window once read as 927ms of a 1000ms window. A timed-out run used the
+  // whole window by definition.
+  const measuredMs = Number((process.hrtime.bigint() - startedAt) / 1000000n);
+  const elapsedMs = timedOut ? Math.max(measuredMs, timeoutMs) : measuredMs;
   return {
     command,
     resolved_command: resolvedCommand === command ? null : resolvedCommand,
