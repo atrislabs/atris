@@ -308,3 +308,8 @@ Dedup is a prerequisite \u2014 the score function breaks down when the pool fill
 => Dedup is a prerequisite; the score function breaks down when the pool fills.
 One gap \u2014 the admin tools menu before login.
 => One gap, the admin tools menu before login.
+# a one-word object before "and" and a second verb ends a clause, as before "or"
+It has no baseline \u2014 this experiment creates one and optimizes it.
+=> It has no baseline; this experiment creates one and optimizes it.
+Two screens left \u2014 the user reports page and exports tab.
+=> Two screens left, the user reports page and exports tab.
