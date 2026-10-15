@@ -689,6 +689,47 @@ test('seeded random boards: every footer count matches the members it hides, at 
   }
 });
 
+// Wide-character names and jobs take two screen cells a letter, so a line can
+// fit by letters and still wrap. The fixtures use only CJK and Hangul for wide
+// text, so this count stays apart from the board's own width table.
+test('seeded random boards with wide names and jobs fit every size by screen cells', () => {
+  const cells = (line) => [...line].reduce((n, ch) => n + (/[぀-鿿가-힣]/.test(ch) ? 2 : 1), 0);
+  let seed = 7;
+  const rnd = () => ((seed = (seed * 1103515245 + 12345) % 2147483648) / 2147483648);
+  const pick = (list) => list[Math.floor(rnd() * list.length)];
+  const names = ['構築者', '테스터', '検査担当メンバー', 'builder', 'ana'];
+  const jobs = ['画面を直す長い仕事の説明です', '보드를 고치는 긴 작업', 'fix the board'];
+  const reasons = ['timed out', 'signed out', 'engine error', 'bad exit 2'];
+  const kinds = [
+    (t) => [`${at(t + 5)} m-1 started: ${pick(jobs)}`, `${at(t)} m-1 finished: failed (${pick(reasons)})`],
+    (t) => [`${at(t + 5)} m-1 started: ${pick(jobs)}`, `${at(t)} m-1 finished: ok`],
+    (t) => [`${at(t)} m-1 started: [pid ${process.pid} engine codex] ${pick(jobs)}`, `${at(t - 1)} m-1 running: ${pick(jobs)}`],
+    (t) => [`${at(t)} m-1 started: [pid 999999999 engine claude] ${pick(jobs)}`],
+  ];
+  let wideLines = 0;
+  for (let trial = 0; trial < 20; trial++) {
+    const count = 1 + Math.floor(rnd() * 5);
+    const dir = fakeDir(Object.fromEntries(Array.from({ length: count }, (_, i) => [`${pick(names)}${i}`, pick(kinds)(10 + i * 7)])));
+    try {
+      const rows = readBoard({ dir, now: NOW });
+      for (const hidden of [0, 3]) {
+        for (const height of [0, 2, 3, 5]) {
+          for (let width = 1; width <= 130; width++) {
+            const lines = renderBoard(rows, dir, hidden, width, height).split('\n');
+            const where = `trial ${trial}, ${width}x${height}, ${hidden} hidden: ${JSON.stringify(lines)}`;
+            if (height) assert.ok(lines.length <= height, where);
+            assert.ok(lines.every((line) => cells(line) <= width), where);
+            wideLines += lines.filter((line) => cells(line) > line.length).length;
+          }
+        }
+      }
+    } finally {
+      fs.rmSync(dir, { recursive: true, force: true });
+    }
+  }
+  assert.ok(wideLines > 1000, 'the boards draw wide characters on screen');
+});
+
 test('finishing members leave common failure reasons whole at 30 columns', () => {
   const dir = fakeDir({
     builder: [`${at(100)} m-1 started: build`, `${at(80)} m-1 finished: failed (timed out)`],
