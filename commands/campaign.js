@@ -26,7 +26,7 @@ function printHelp() {
   console.log('  atris campaign                         every campaign: state, money, and the next move');
   console.log('  atris campaign start "<title>" --judge "<cmd>" [--budget <dollars>]');
   console.log('        [--owner <member>] [--seat <member>[:<role>]]... [--bet "<bet>" [--wrong-if "<what proves it wrong>"]]');
-  console.log('        [--standing] [--parent <id>] [--id cmp-<name>] [--cloud]');
+  console.log('        [--standing] [--parent <id>] [--id cmp-<name>] [--cloud] [--run]');
   console.log('        no --budget means no limit; --cloud needs a --budget');
   console.log('  atris campaign show <id>               bet, judge, answer, budget, seats, missions, asks');
   console.log('  atris campaign judge <id> [--timeout <seconds>]   run the judge now and record the reading');
@@ -47,6 +47,7 @@ function printHelp() {
   console.log('        start --cloud syncs at once; run syncs before and after every step of a synced campaign');
   console.log('');
   console.log('Every verb takes --json. Writes are recorded as you (human:<login>); agents pass --as <member>.');
+  console.log('Add --run to start the loop right after the start; at a terminal you are asked instead.');
   console.log('Leave out --judge and a judge is drafted from the goal and shown; it starts on a typed y, or on --yes without asking.');
   console.log('A new campaign runs its judge first and is refused if it already passes: write a judge that fails first.');
 }
@@ -218,16 +219,17 @@ function makeContext(args, deps) {
   const folder = deps.campaignFolder || ((id) => campaignFolder(id));
   const draftJudge = deps.draftJudge || ((goal, owner) => require('../lib/campaign-draft-judge').draftJudge(process.cwd(), goal, { owner }));
   const confirm = deps.confirm || askAtTerminal;
-  return { asJson, store, actor, judge, out, fail, append, forgedHuman, folder, draftJudge, confirm, loopDeps: deps.loopDeps, cloud: deps.cloud || {} };
+  const interactive = deps.interactive !== undefined ? deps.interactive : Boolean(process.stdin.isTTY);
+  return { asJson, store, actor, judge, out, fail, append, forgedHuman, folder, draftJudge, confirm, interactive, loopDeps: deps.loopDeps, cloud: deps.cloud || {} };
 }
 
 // Only a person at a terminal can say yes; piped or agent runs get no.
-function askAtTerminal(question) {
+function askAtTerminal(question, defaultYes = false) {
   if (!process.stdin.isTTY) return Promise.resolve(false);
   const rl = readline.createInterface({ input: process.stdin, output: process.stderr });
   return new Promise((resolve) => rl.question(question, (answer) => {
     rl.close();
-    resolve(/^y(es)?$/i.test(answer.trim()));
+    resolve(answer.trim() ? /^y(es)?$/i.test(answer.trim()) : defaultYes);
   }));
 }
 
@@ -386,7 +388,21 @@ async function cmdStart(args, ctx) {
   const view = getCampaign(ctx.store, id);
   const synced = cloud && cloud.ok ? `\nin the cloud: ${cloud.pushed} event${cloud.pushed === 1 ? '' : 's'} sent` : '';
   ctx.out(`started ${view.title} (${id})${synced}\n${renderShow(view)}`, { ok: true, action: 'campaign_started', campaign: view, next: decide(view), ...(cloud ? { cloud } : {}) });
-  return 0;
+  return runAfterStart(args, ctx, id);
+}
+
+// --run hands a fresh campaign straight to the run loop. Without it, a person
+// at a terminal is asked; --yes, --json, and piped runs never ask.
+async function runAfterStart(args, ctx, id) {
+  let go = args.includes('--run');
+  if (!go && ctx.interactive && !ctx.asJson && !args.includes('--yes')) go = await ctx.confirm('run it now? [Y/n] ', true);
+  if (!go) return 0;
+  const loopArgs = ['run', id];
+  for (const flag of ['--parallel', '--count', '--max-steps', '--max-ticks', '--runner']) {
+    const value = readFlag(args, flag, '');
+    if (value) loopArgs.push(flag, value);
+  }
+  return cmdLoop(loopArgs, ctx, 'run');
 }
 
 function describeSync(result) {

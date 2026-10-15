@@ -111,6 +111,39 @@ test('with no --judge, a drafted judge is shown and starts only on --yes or a ty
   assert.deepEqual(drafted, Array(3).fill('Ship billing for mission-lead'));
 });
 
+test('--run hands a new campaign to the run loop; a terminal is asked instead, and --yes or a pipe never asks', async () => {
+  const quietLoop = { skipReconcile: true, ask: async () => ({ ok: true, text: '[]' }), cli: async () => ({ code: 0, out: '', err: '' }) };
+  const args = ['Ship billing now', '--judge', 'exit 1', '--id', 'cmp-run', '--max-steps', '2'];
+
+  const flagged = await run(createMemoryStore(), [...args, '--run'], [], { loopDeps: quietLoop, confirm: async () => { throw new Error('--run never asks'); } });
+  assert.equal(flagged.code, 0, flagged.err);
+  assert.match(flagged.out, /started Ship billing now \(cmp-run\)/);
+  assert.match(flagged.out, /stopped after \d+ steps?: .*proposed nothing usable/);
+
+  const asked = [];
+  const ask = (answer) => async (question, defaultYes) => { asked.push([question, defaultYes]); return answer; };
+  const yes = await run(createMemoryStore(), args, [], { loopDeps: quietLoop, interactive: true, confirm: ask(true) });
+  assert.equal(yes.code, 0, yes.err);
+  assert.match(yes.out, /stopped after/);
+  const no = await run(createMemoryStore(), args, [], { loopDeps: quietLoop, interactive: true, confirm: ask(false) });
+  assert.equal(no.code, 0, no.err);
+  assert.doesNotMatch(no.out, /stopped after/);
+  assert.deepEqual(asked, [['run it now? [Y/n] ', true], ['run it now? [Y/n] ', true]]);
+
+  for (const quiet of [[...args, '--yes'], [...args, '--json']]) {
+    const silent = await run(createMemoryStore(), quiet, [], { loopDeps: quietLoop, interactive: true, confirm: ask(true) });
+    assert.equal(silent.code, 0, silent.err);
+    assert.doesNotMatch(silent.out, /stopped after/);
+  }
+  const piped = await run(createMemoryStore(), args, [], { loopDeps: quietLoop, interactive: false, confirm: ask(true) });
+  assert.doesNotMatch(piped.out, /stopped after/);
+  assert.equal(asked.length, 2, 'only the two terminal starts were asked');
+
+  const refused = await run(createMemoryStore(), ['Ship billing later', '--run'], [], { loopDeps: quietLoop, draftJudge: () => ({ ok: true, judge: 'exit 1', script: null, explain: '' }), confirm: async () => false });
+  assert.equal(refused.code, 1);
+  assert.doesNotMatch(refused.out, /stopped after/, 'a refused drafted judge never runs');
+});
+
 test('a drafted judge must still fail first, and a failed draft says how to pass one', async () => {
   const draftJudge = () => ({ ok: true, judge: 'true', script: null, explain: 'nothing' });
   const passes = await run(createMemoryStore(), ['start', 'Already done', '--yes'], [{ passed: true, exit: 0, summary: 'ok', seconds: 0 }], { draftJudge });
