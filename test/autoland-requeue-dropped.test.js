@@ -28,6 +28,7 @@ function writeFakeGh(bin, log, config) {
     "if (a === 'pr' && b === 'merge' && cfg.mergeFails) process.exit(1);",
     "if (a === 'pr' && b === 'checks') { console.log(JSON.stringify(cfg.checks || [])); if ((cfg.checks || []).some((c) => c.bucket === 'fail')) process.exit(8); }",
     "if (a === 'run' && b === 'rerun' && cfg.rerunFails) process.exit(1);",
+    "if (a === 'api' && b === 'graphql') console.log(cfg.inQueue ? 'true' : 'false');",
   ].join('\n'), { mode: 0o755 });
 }
 
@@ -185,6 +186,20 @@ test('still queued on github: nothing is pushed or re-queued', () => {
     moveMaster(fx);
     const out = requeueDroppedAutolands({ cwd: fx.main });
     assert.equal(out.results[0].state, 'queued');
+    assert.equal(remoteBranch(fx), fx.pushed);
+    assert.equal(ghCalls(fx).filter((c) => c[1] === 'merge').length, 0);
+    assert.ok(readQueue(fx)[BRANCH], 'still tracked');
+  });
+});
+
+test('already in github\'s merge line: no catch-up push, left to the line', () => {
+  const fx = fixture();
+  withFakeGh(fx, () => {
+    setView(fx, {}, { inQueue: true });
+    moveMaster(fx);
+    const out = requeueDroppedAutolands({ cwd: fx.main });
+    assert.equal(out.results[0].state, 'queued', out.results[0].line);
+    assert.match(out.results[0].line, /in github's merge line/);
     assert.equal(remoteBranch(fx), fx.pushed);
     assert.equal(ghCalls(fx).filter((c) => c[1] === 'merge').length, 0);
     assert.ok(readQueue(fx)[BRANCH], 'still tracked');
