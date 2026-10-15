@@ -1044,7 +1044,7 @@ test('a taller watch window never shows fewer members than a shorter one', async
     await done;
     assert.equal(frames.length, 9, 'initial draw and eight resizes');
     const shown = frames.map((f) => f.split('\n').filter((l) => new RegExp(`^(${names.join('|')})\\s+done failed`).test(l)).length);
-    assert.deepEqual(shown, [0, 0, 1, 1, 2, 5, 5, 5, 5], 'members shown at heights 1 to 9');
+    assert.deepEqual(shown, [0, 0, 1, 2, 3, 5, 5, 5, 5], 'members shown at heights 1 to 9');
     for (const [i, frame] of frames.entries()) {
       const height = i + 1;
       const lines = frame.split('\n');
@@ -1164,25 +1164,24 @@ test('a short window keeps the header and the newest rows, and says how many did
     assert.equal(renderBoard(rows, dir).split('\n').length, 9, 'height 0 shows every row');
     assert.equal(renderBoard(rows, dir, 0, 0, 9), renderBoard(rows, dir), 'a tall enough window changes nothing');
 
-    const lines = renderBoard(rows, dir, 0, 0, 6).split('\n');
-    assert.equal(lines.length, 6);
+    const lines = renderBoard(rows, dir, 0, 0, 5).split('\n');
+    assert.equal(lines.length, 5);
     assert.match(lines[0], /^member\s+state/, 'the header stays');
     assert.deepEqual(lines.slice(1, 4).map((l) => l.split(/\s+/)[0]), ['m1', 'm2', 'm3'], 'the newest rows stay');
-    assert.equal(lines[4], '');
-    assert.equal(lines[5], '5 more not shown (5 running), the window is too short', 'hidden runs still going say so');
+    assert.equal(lines[4], '5 more not shown (5 running), the window is too short', 'hidden runs still going say so, right under the last member');
 
-    const both = renderBoard(rows, dir, 2, 0, 6).split('\n');
-    assert.equal(both.length, 6);
-    assert.equal(both[5], '5 more not shown (5 running), the window is too short. 2 finished over an hour ago, hidden. --all shows them');
+    const both = renderBoard(rows, dir, 2, 0, 5).split('\n');
+    assert.equal(both.length, 5);
+    assert.equal(both[4], '5 more not shown (5 running), the window is too short. 2 finished over an hour ago, hidden. --all shows them');
 
-    const at80 = renderBoard(rows, dir, 2, 80, 6).split('\n');
-    assert.equal(at80.length, 6, 'a narrow footer still takes one line');
-    assert.equal(at80[5], '5 hidden (5 running). 2 finished over an hour ago, hidden. --all shows them', 'first the why goes, and a shorter label keeps the running count');
-    const at60 = renderBoard(rows, dir, 2, 60, 6).split('\n');
-    assert.equal(at60[5], '5 hidden (5 running). 2 older runs hidden, --all shows them', 'then the hidden count shortens');
-    const at30 = renderBoard(rows, dir, 2, 30, 6).split('\n');
-    assert.equal(at30[5], '5 hidden (5 running). 2 older', 'then the older note shortens instead of being cut');
-    assert.equal(renderBoard(rows, dir, 0, 80, 6).split('\n')[5], '5 more not shown (5 running), the window is too short', 'room for the why: it stays');
+    const at80 = renderBoard(rows, dir, 2, 80, 5).split('\n');
+    assert.equal(at80.length, 5, 'a narrow footer still takes one line');
+    assert.equal(at80[4], '5 hidden (5 running). 2 finished over an hour ago, hidden. --all shows them', 'first the why goes, and a shorter label keeps the running count');
+    const at60 = renderBoard(rows, dir, 2, 60, 5).split('\n');
+    assert.equal(at60[4], '5 hidden (5 running). 2 older runs hidden, --all shows them', 'then the hidden count shortens');
+    const at30 = renderBoard(rows, dir, 2, 30, 5).split('\n');
+    assert.equal(at30[4], '5 hidden (5 running). 2 older', 'then the older note shortens instead of being cut');
+    assert.equal(renderBoard(rows, dir, 0, 80, 5).split('\n')[4], '5 more not shown (5 running), the window is too short', 'room for the why: it stays');
   } finally {
     fs.rmSync(dir, { recursive: true, force: true });
   }
@@ -1203,27 +1202,27 @@ test('a short screen names up to three hidden live members, never at the cost of
       [50, '3 more not shown (1 failed, bad exit 2, 1 stopped)'],
       [30, '3 hidden (1 failed, 1 stopped)'],
     ]) {
-      const lines = renderBoard(rows, dir, 0, width, 4).split('\n');
-      assert.equal(lines[3], footer, `${width}: the name gives way first`);
+      const lines = renderBoard(rows, dir, 0, width, 3).split('\n');
+      assert.equal(lines[2], footer, `${width}: the name gives way first`);
       assert.ok(lines.every((line) => line.length <= width));
     }
     const two = [...rows, { ...rows.find((r) => r.member === 'busy'), member: 'also' }];
-    assert.equal(renderBoard(two, dir, 0, 100, 4).split('\n')[3],
+    assert.equal(renderBoard(two, dir, 0, 100, 3).split('\n')[2],
       '4 more not shown (1 failed, bad exit 2, 1 stopped, busy working, also working)', 'two live members are both named');
     const busyRow = rows.find((r) => r.member === 'busy');
     const three = [...two, { ...busyRow, member: 'scout', state: 'quiet' }];
-    assert.equal(renderBoard(three, dir, 0, 100, 4).split('\n')[3],
+    assert.equal(renderBoard(three, dir, 0, 100, 3).split('\n')[2],
       '5 more not shown (1 failed, bad exit 2, 1 stopped, busy working, also working, scout quiet)', 'each says its own state');
-    assert.equal(renderBoard(three, dir, 0, 80, 4).split('\n')[3], '5 more not shown (1 failed, bad exit 2, 1 stopped, 3 running)',
+    assert.equal(renderBoard(three, dir, 0, 80, 3).split('\n')[2], '5 more not shown (1 failed, bad exit 2, 1 stopped, 3 running)',
       'all names or none, so no live run looks missing; a count when names do not fit');
-    assert.equal(renderBoard(three, dir, 0, 60, 4).split('\n')[3], '5 hidden (1 failed, bad exit 2, 1 stopped, 3 running)',
+    assert.equal(renderBoard(three, dir, 0, 60, 3).split('\n')[2], '5 hidden (1 failed, bad exit 2, 1 stopped, 3 running)',
       'shorter labels make room for the count, never a dropped reason');
-    assert.equal(renderBoard(three, dir, 0, 50, 4).split('\n')[3], '5 more not shown (1 failed, bad exit 2, 1 stopped)');
+    assert.equal(renderBoard(three, dir, 0, 50, 3).split('\n')[2], '5 more not shown (1 failed, bad exit 2, 1 stopped)');
     const four = [...three, { ...busyRow, member: 'extra' }];
-    assert.equal(renderBoard(four, dir, 0, 120, 4).split('\n')[3], '6 more not shown (1 failed, bad exit 2, 1 stopped, 4 running), the window is too short',
+    assert.equal(renderBoard(four, dir, 0, 120, 3).split('\n')[2], '6 more not shown (1 failed, bad exit 2, 1 stopped, 4 running), the window is too short',
       'four or more become one count');
     const finishing = rows.map((r) => r.member === 'busy' ? { ...r, state: 'asleep after this run' } : r);
-    assert.match(renderBoard(finishing, dir, 0, 80, 4).split('\n')[3], /busy finishing\)$/);
+    assert.match(renderBoard(finishing, dir, 0, 80, 3).split('\n')[2], /busy finishing\)$/);
   } finally {
     fs.rmSync(dir, { recursive: true, force: true });
   }
@@ -1286,31 +1285,31 @@ test('a short window keeps failed and stopped rows on screen ahead of newer ones
   try {
     const rows = readBoard({ dir, now: NOW });
     assert.deepEqual(rows.slice(-2).map((r) => r.member), ['broke', 'halted'], 'by recency they are last');
-    const lines = renderBoard(rows, dir, 0, 0, 7).split('\n');
-    assert.equal(lines.length, 7);
+    const lines = renderBoard(rows, dir, 0, 0, 6).split('\n');
+    assert.equal(lines.length, 6);
     assert.deepEqual(lines.slice(1, 5).map((l) => l.split(/\s+/)[0]), ['m1', 'm2', 'broke', 'halted'],
       'they stay, and rows keep board order');
     assert.match(lines[3], /^broke\s+done failed\s+failed \(engine error\) 13m ago\s/);
-    assert.equal(lines[6], '4 more not shown (4 running), the window is too short', 'no failure count when every failure is on screen');
+    assert.equal(lines[5], '4 more not shown (4 running), the window is too short', 'no failure count when every failure is on screen');
 
-    const tiny = renderBoard(rows, dir, 0, 0, 4).split('\n');
-    assert.equal(tiny.length, 4);
+    const tiny = renderBoard(rows, dir, 0, 0, 3).split('\n');
+    assert.equal(tiny.length, 3);
     assert.match(tiny[1], /^broke\s+done failed/, 'the newest failure wins the one row');
-    assert.equal(tiny[3], '7 more not shown (1 stopped, 6 running), the window is too short');
+    assert.equal(tiny[2], '7 more not shown (1 stopped, 6 running), the window is too short');
 
     const halted = rows.find((r) => r.member === 'halted');
     const withGone = [...rows, { ...halted, member: 'gone', no_result: true }];
-    const gone = renderBoard(withGone, dir, 0, 0, 4).split('\n');
-    assert.equal(gone[3], '8 more not shown (1 stopped, 1 ended with no result, 6 running), the window is too short',
+    const gone = renderBoard(withGone, dir, 0, 0, 3).split('\n');
+    assert.equal(gone[2], '8 more not shown (1 stopped, 1 ended with no result, 6 running), the window is too short',
       'a run that died silently is not counted as a stop');
 
     // A newer hand stop never takes the one row from an older failure.
     const newer = rows.map((r) => (r.member === 'halted' ? { ...r, at: NOW } : r)).sort((a, b) => b.at - a.at);
     assert.equal(newer[0].member, 'halted', 'the stop is newest');
-    const first = renderBoard(newer, dir, 0, 0, 4).split('\n');
+    const first = renderBoard(newer, dir, 0, 0, 3).split('\n');
     assert.match(first[1], /^broke\s+done failed\s+failed \(engine error\)/, 'the failure wins the one row');
-    assert.equal(first[3], '7 more not shown (1 stopped, 6 running), the window is too short');
-    const died = renderBoard([{ ...halted, member: 'gone', no_result: true, at: NOW - 1 }, { ...halted, at: NOW }], dir, 0, 0, 4).split('\n');
+    assert.equal(first[2], '7 more not shown (1 stopped, 6 running), the window is too short');
+    const died = renderBoard([{ ...halted, member: 'gone', no_result: true, at: NOW - 1 }, { ...halted, at: NOW }], dir, 0, 0, 3).split('\n');
     assert.match(died[1], /^gone\s+stopped\s+ended, no result/, 'a run that died outranks a newer stop too');
   } finally {
     fs.rmSync(dir, { recursive: true, force: true });
@@ -1331,32 +1330,32 @@ test('short boards distinguish a hidden busy member earlier failure from a curre
   });
   try {
     const rows = readBoard({ dir, now: NOW });
-    assert.equal(renderBoard(rows, dir, 0, 100, 4).split('\n')[3],
+    assert.equal(renderBoard(rows, dir, 0, 100, 3).split('\n')[2],
       '3 more not shown (1 with earlier failure, timed out), the window is too short');
-    assert.match(renderBoard(rows, dir, 0, 100, 4).split('\n')[1], /^broke\s+done failed/);
+    assert.match(renderBoard(rows, dir, 0, 100, 3).split('\n')[1], /^broke\s+done failed/);
     for (const state of ['working', 'quiet', 'asleep after this run']) {
       const changed = rows.map((r) => r.member === 'busy' ? { ...r, state } : r);
-      assert.equal(renderBoard(changed, dir, 0, 60, 4).split('\n')[3],
+      assert.equal(renderBoard(changed, dir, 0, 60, 3).split('\n')[2],
         '3 more not shown (1 with earlier failure, timed out)');
-      const tiny = renderBoard(changed, dir, 0, 47, 4).split('\n');
-      assert.equal(tiny.length, 4);
-      assert.equal(tiny[3], '3 more not shown (1 earlier failure, timed out)');
-      assert.equal(renderBoard(changed, dir, 0, 36, 4).split('\n')[3],
+      const tiny = renderBoard(changed, dir, 0, 47, 3).split('\n');
+      assert.equal(tiny.length, 3);
+      assert.equal(tiny[2], '3 more not shown (1 earlier failure, timed out)');
+      assert.equal(renderBoard(changed, dir, 0, 36, 3).split('\n')[2],
         '3 more not shown (1 earlier failure)');
       for (const width of [36, 47]) {
-        assert.ok(renderBoard(changed, dir, 0, width, 4).split('\n')[3].length <= width);
+        assert.ok(renderBoard(changed, dir, 0, width, 3).split('\n')[2].length <= width);
       }
     }
     const ok = rows.map((r) => r.member === 'busy' ? { ...r, last_result: 'ok' } : r);
-    assert.equal(renderBoard(ok, dir, 0, 100, 4).split('\n')[3], '3 more not shown (busy working), the window is too short',
+    assert.equal(renderBoard(ok, dir, 0, 100, 3).split('\n')[2], '3 more not shown (busy working), the window is too short',
       'the one live run is named, not counted silently');
     const busy = rows.find((r) => r.member === 'busy');
     const shared = [...rows, { ...busy, member: 'busy2' }];
-    assert.match(renderBoard(shared, dir, 0, 100, 4).split('\n')[3], /2 with earlier failure, all timed out/);
+    assert.match(renderBoard(shared, dir, 0, 100, 3).split('\n')[2], /2 with earlier failure, all timed out/);
     const mixed = [...rows, { ...busy, member: 'busy2', last_result_reason: 'bad exit 2' }];
-    assert.match(renderBoard(mixed, dir, 0, 100, 4).split('\n')[3], /2 with earlier failure, timed out and bad exit 2\)/);
+    assert.match(renderBoard(mixed, dir, 0, 100, 3).split('\n')[2], /2 with earlier failure, timed out and bad exit 2\)/);
     const sleeping = rows.map((r) => r.member === 'busy' ? { ...r, state: 'asleep' } : r);
-    assert.doesNotMatch(renderBoard(sleeping, dir, 0, 100, 4), /earlier failure/);
+    assert.doesNotMatch(renderBoard(sleeping, dir, 0, 100, 3), /earlier failure/);
     assert.doesNotMatch(renderBoard(rows, dir), /more not shown/);
   } finally {
     fs.rmSync(dir, { recursive: true, force: true });
@@ -1384,7 +1383,7 @@ test('a hidden earlier sign-in failure drops its reason once the member runs on 
     try {
       const rows = readBoard({ dir, now: NOW });
       assert.equal(rows.find((r) => r.member === 'busy').last_result_engine, before ? 'claude' : '');
-      assert.equal(renderBoard(rows, dir, 0, 60, 4).split('\n')[3], footer, `${before || 'untagged'} then ${now}`);
+      assert.equal(renderBoard(rows, dir, 0, 60, 3).split('\n')[2], footer, `${before || 'untagged'} then ${now}`);
     } finally {
       fs.rmSync(dir, { recursive: true, force: true });
     }
@@ -1402,19 +1401,19 @@ test('compact footers drop all before dropping a shared failure reason', () => {
     try {
       const rows = readBoard({ dir, now: NOW });
       const footer = `3 more not shown (3 failed, ${reason})`;
-      const compact = renderBoard(rows, dir, 0, footer.length, 4).split('\n');
-      assert.equal(compact.length, 4);
-      assert.equal(compact[3], footer);
-      assert.match(renderBoard(rows, dir, 0, 100, 4), new RegExp(`3 failed, all ${reason}`));
+      const compact = renderBoard(rows, dir, 0, footer.length, 3).split('\n');
+      assert.equal(compact.length, 3);
+      assert.equal(compact[2], footer);
+      assert.match(renderBoard(rows, dir, 0, 100, 3), new RegExp(`3 failed, all ${reason}`));
       const earlier = rows.map((r, i) => i ? { ...r, state: 'working' } : r);
       const earlierFooter = `3 more not shown (3 earlier failure, ${reason})`;
-      assert.equal(renderBoard(earlier, dir, 0, earlierFooter.length, 4).split('\n')[3], earlierFooter);
+      assert.equal(renderBoard(earlier, dir, 0, earlierFooter.length, 3).split('\n')[2], earlierFooter);
       for (const [board, label] of [[rows, 'failed'], [earlier, 'earlier failure']]) {
         const tiny = `3 hidden (3 ${label}, ${reason})`;
-        const output = renderBoard(board, dir, 0, tiny.length, 4).split('\n');
-        assert.equal(output.length, 4);
-        assert.equal(output[3], tiny, 'shorten the prefix before dropping the reason');
-        assert.doesNotMatch(renderBoard(board, dir, 0, tiny.length - 1, 4).split('\n')[3], new RegExp(reason));
+        const output = renderBoard(board, dir, 0, tiny.length, 3).split('\n');
+        assert.equal(output.length, 3);
+        assert.equal(output[2], tiny, 'shorten the prefix before dropping the reason');
+        assert.doesNotMatch(renderBoard(board, dir, 0, tiny.length - 1, 3).split('\n')[2], new RegExp(reason));
       }
     } finally {
       fs.rmSync(dir, { recursive: true, force: true });
@@ -1431,15 +1430,15 @@ test('tiny footers shorten the hidden prefix before cutting failure counts', () 
   });
   try {
     const rows = readBoard({ dir, now: NOW });
-    assert.equal(renderBoard(rows, dir, 0, 40, 4).split('\n')[3],
+    assert.equal(renderBoard(rows, dir, 0, 40, 3).split('\n')[2],
       '3 more not shown (2 failed, 1 stopped)');
     const footer = '3 hidden (2 failed, 1 stopped)';
-    assert.equal(renderBoard(rows, dir, 0, footer.length, 4).split('\n')[3], footer);
-    assert.equal(renderBoard(rows, dir, 0, footer.length - 1, 4).split('\n')[3],
+    assert.equal(renderBoard(rows, dir, 0, footer.length, 3).split('\n')[2], footer);
+    assert.equal(renderBoard(rows, dir, 0, footer.length - 1, 3).split('\n')[2],
       '3 hidden (2 failed, ...)', 'drop the whole last count, never half of it');
     const earlier = rows.map((r, i) => i === 1 ? { ...r, state: 'working' } : r);
     const earlierFooter = '3 hidden (1 failed, 1 stopped, 1 earlier failure)';
-    assert.equal(renderBoard(earlier, dir, 0, earlierFooter.length, 4).split('\n')[3], earlierFooter);
+    assert.equal(renderBoard(earlier, dir, 0, earlierFooter.length, 3).split('\n')[2], earlierFooter);
   } finally {
     fs.rmSync(dir, { recursive: true, force: true });
   }
@@ -1458,13 +1457,13 @@ test('narrow footers keep hidden missing-result counts whole', () => {
       [31, '3 more not shown (3 no result)'],
       [22, '3 hidden (3 no result)'],
     ]) {
-      const lines = renderBoard(rows, dir, 0, width, 4).split('\n');
-      assert.equal(lines[3], footer, `${width}: a whole count and label`);
-      assert.equal(lines.length, 4);
+      const lines = renderBoard(rows, dir, 0, width, 3).split('\n');
+      assert.equal(lines[2], footer, `${width}: a whole count and label`);
+      assert.equal(lines.length, 3);
       assert.ok(lines.every((line) => line.length <= width));
     }
     const mixed = rows.map((r, i) => i === 1 ? { ...r, no_result: false } : r);
-    assert.equal(renderBoard(mixed, dir, 0, 33, 4).split('\n')[3],
+    assert.equal(renderBoard(mixed, dir, 0, 33, 3).split('\n')[2],
       '3 hidden (1 stopped, 2 no result)');
   } finally {
     fs.rmSync(dir, { recursive: true, force: true });
@@ -1595,9 +1594,9 @@ test('narrow footers drop whole mixed counts from the end instead of cutting one
       [34, '4 hidden (1 failed, ...)'],
       [24, '4 hidden (1 failed, ...)'],
     ]) {
-      const lines = renderBoard(rows, dir, 0, width, 4).split('\n');
-      assert.equal(lines[3], footer, `${width}: every count shown is whole`);
-      assert.equal(lines.length, 4);
+      const lines = renderBoard(rows, dir, 0, width, 3).split('\n');
+      assert.equal(lines[2], footer, `${width}: every count shown is whole`);
+      assert.equal(lines.length, 3);
       assert.ok(lines.every((line) => line.length <= width));
     }
   } finally {
@@ -1622,9 +1621,9 @@ test('narrow footers shorten the older-runs note before dropping hidden counts',
       [30, '3 hidden (1 failed, 1 stopped)'],
       [24, '3 hidden (1 failed, ...)'],
     ]) {
-      const lines = renderBoard(rows, dir, 2, width, 4).split('\n');
+      const lines = renderBoard(rows, dir, 2, width, 3).split('\n');
       assert.equal(lines[lines.length - 1], footer, `${width}: counts before the older note`);
-      assert.equal(lines.length, 4);
+      assert.equal(lines.length, 3);
       assert.ok(lines.every((line) => line.length <= width));
     }
     const done = rows.filter((r) => r.member !== 'a');
@@ -1650,39 +1649,39 @@ test('hidden failures that share a reason say it once in the count', () => {
   const dir = fakeDir(logs);
   try {
     const rows = readBoard({ dir, now: NOW });
-    const lines = renderBoard(rows, dir, 0, 0, 4).split('\n');
+    const lines = renderBoard(rows, dir, 0, 0, 3).split('\n');
     assert.match(lines[1], /^f1\s+done failed\s+failed \(signed out\)/);
-    assert.equal(lines[3], '4 more not shown (3 failed, all signed out, 1 stopped), the window is too short');
-    const narrow = renderBoard(rows, dir, 0, 50, 4).split('\n')[3];
+    assert.equal(lines[2], '4 more not shown (3 failed, all signed out, 1 stopped), the window is too short');
+    const narrow = renderBoard(rows, dir, 0, 50, 3).split('\n')[2];
     assert.equal(narrow, '4 more not shown (3 failed, signed out, 1 stopped)', 'drop all to keep the shared reason');
-    assert.equal(renderBoard(rows, dir, 0, 45, 4).split('\n')[3], '4 hidden (3 failed, signed out, 1 stopped)',
+    assert.equal(renderBoard(rows, dir, 0, 45, 3).split('\n')[2], '4 hidden (3 failed, signed out, 1 stopped)',
       'the shorter prefix keeps the reason before it gives way');
-    assert.equal(renderBoard(rows, dir, 0, 60, 4).split('\n')[3], '4 more not shown (3 failed, all signed out, 1 stopped)',
+    assert.equal(renderBoard(rows, dir, 0, 60, 3).split('\n')[2], '4 more not shown (3 failed, all signed out, 1 stopped)',
       'room for it: the reason stays and only the why goes');
 
     const mixed = rows.map((r) => (r.member === 'f4' ? { ...r, last_result_reason: 'timed out' } : r));
-    assert.equal(renderBoard(mixed, dir, 0, 0, 4).split('\n')[3], '4 more not shown (3 failed, 2 signed out, 1 stopped), the window is too short',
+    assert.equal(renderBoard(mixed, dir, 0, 0, 3).split('\n')[2], '4 more not shown (3 failed, 2 signed out, 1 stopped), the window is too short',
       'mixed reasons: the one most of them share');
     const split = rows.map((r) => (r.member === 'f3' || r.member === 'f4' ? { ...r, last_result_reason: r.member === 'f3' ? 'timed out' : 'bad exit 2' } : r));
-    assert.equal(renderBoard(split, dir, 0, 0, 4).split('\n')[3], '4 more not shown (3 failed, signed out, timed out and bad exit 2, 1 stopped), the window is too short',
+    assert.equal(renderBoard(split, dir, 0, 0, 3).split('\n')[2], '4 more not shown (3 failed, signed out, timed out and bad exit 2, 1 stopped), the window is too short',
       'no reason shared by two: each one named');
-    assert.equal(renderBoard(split, dir, 0, 50, 4).split('\n')[3], '4 more not shown (3 failed, 1 stopped)',
+    assert.equal(renderBoard(split, dir, 0, 50, 3).split('\n')[2], '4 more not shown (3 failed, 1 stopped)',
       'no room for every reason: just the count');
     const tied = [...mixed, { ...mixed.find((r) => r.member === 'f4'), member: 'f5', last_result_reason: 'timed out' }];
-    assert.equal(renderBoard(tied, dir, 0, 0, 4).split('\n')[3], '5 more not shown (4 failed, 2 signed out and 2 timed out, 1 stopped), the window is too short',
+    assert.equal(renderBoard(tied, dir, 0, 0, 3).split('\n')[2], '5 more not shown (4 failed, 2 signed out and 2 timed out, 1 stopped), the window is too short',
       'two reasons tied: both named with their counts');
     const partial = split.map((r) => (r.member === 'f4' ? { ...r, last_result_reason: '' } : r));
-    assert.equal(renderBoard(partial, dir, 0, 0, 4).split('\n')[3], '4 more not shown (3 failed, 1 stopped), the window is too short',
+    assert.equal(renderBoard(partial, dir, 0, 0, 3).split('\n')[2], '4 more not shown (3 failed, 1 stopped), the window is too short',
       'a failure with no written reason: naming the rest would read as all of them');
     const unwritten = rows.map((r) => (r.member.startsWith('f') ? { ...r, last_result_reason: '' } : r));
-    assert.equal(renderBoard(unwritten, dir, 0, 0, 4).split('\n')[3], '4 more not shown (3 failed, 1 stopped), the window is too short',
+    assert.equal(renderBoard(unwritten, dir, 0, 0, 3).split('\n')[2], '4 more not shown (3 failed, 1 stopped), the window is too short',
       'no written reason: just the count');
     const one = rows.filter((r) => r.member !== 'f3' && r.member !== 'f4');
     one.push({ ...one.find((r) => r.member === 'halted'), member: 'halted2' });
-    assert.equal(renderBoard(one, dir, 0, 0, 4).split('\n')[3], '3 more not shown (1 failed, signed out, 2 stopped), the window is too short',
+    assert.equal(renderBoard(one, dir, 0, 0, 3).split('\n')[2], '3 more not shown (1 failed, signed out, 2 stopped), the window is too short',
       'one hidden failure says its own reason');
     const quiet = one.map((r) => (r.member === 'f2' ? { ...r, last_result_reason: '' } : r));
-    assert.equal(renderBoard(quiet, dir, 0, 0, 4).split('\n')[3], '3 more not shown (1 failed, 2 stopped), the window is too short',
+    assert.equal(renderBoard(quiet, dir, 0, 0, 3).split('\n')[2], '3 more not shown (1 failed, 2 stopped), the window is too short',
       'one hidden failure with no written reason: just the count');
   } finally {
     fs.rmSync(dir, { recursive: true, force: true });
@@ -2753,7 +2752,7 @@ def cells(line):
 reason = '登录超时请重新运行'
 # (columns, rows, members that failed, text that must show whole)
 cases = [(36, 8, 1, 'builder  failed   ' + reason), (30, 8, 1, 'builder  failed   登录超时...'),
-         (40, 5, 5, '4 hidden (3 failed, ' + reason + ')'), (30, 5, 5, '4 hidden (3 failed, 1 running)')]
+         (40, 5, 5, '3 hidden (2 failed, ' + reason + ')'), (30, 5, 5, '3 hidden (2 failed, 1 running)')]
 for width, height, failed, whole in cases:
     with tempfile.TemporaryDirectory(prefix='atris-board-wide-reason-') as folder:
         root = pathlib.Path(folder)
