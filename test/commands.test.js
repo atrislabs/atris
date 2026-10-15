@@ -18679,15 +18679,21 @@ test('sync command works as alias for update', () => {
   }
 });
 
-test('update and sync --help print usage without touching workspace', () => {
+test('update and sync --help print usage without touching workspace', async () => {
   const dir = makeTempDir();
   try {
-    const home = path.join(dir, 'home');
-    const skillFile = path.join(home, '.codex', 'skills', 'improve', 'SKILL.md');
-    fs.mkdirSync(path.dirname(skillFile), { recursive: true });
-    for (const command of ['update', 'sync']) {
+    const commands = ['update', 'sync'];
+    const homes = commands.map(command => path.join(dir, `home-${command}`));
+    const skillFiles = homes.map(home => path.join(home, '.codex', 'skills', 'improve', 'SKILL.md'));
+    for (const skillFile of skillFiles) {
+      fs.mkdirSync(path.dirname(skillFile), { recursive: true });
       fs.writeFileSync(skillFile, 'operator-owned skill\n', 'utf8');
-      const res = runCli([command, '--help'], { cwd: dir, env: { HOME: home } });
+    }
+    const results = await Promise.all(commands.map((command, index) =>
+      runCliAsync([command, '--help'], { cwd: dir, env: { HOME: homes[index] } })));
+    for (const [index, command] of commands.entries()) {
+      const skillFile = skillFiles[index];
+      const res = results[index];
       assert.equal(res.status, 0, res.stderr);
       assert.match(res.stdout, new RegExp(`Usage: atris ${command}`));
       assert.match(res.stdout, /--dry-run/);
