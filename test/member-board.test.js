@@ -1785,6 +1785,39 @@ test('a hidden sign-in failure is named after a different lead reason when it fi
   }
 });
 
+test('a hidden earlier sign-in failure is named after a different lead reason when it fits', () => {
+  const busy = (secondsAgo, why, before) => [
+    `${at(secondsAgo + 900)} m-1 started: ${before ? `[pid 1 engine ${before}] ` : ''}first job`,
+    `${at(secondsAgo + 800)} m-1 finished: failed (${why})`,
+    `${at(secondsAgo + 60)} m-2 started: [pid ${process.pid} engine codex] try again`,
+    `${at(secondsAgo)} m-2 running: npm test`,
+  ];
+  const dir = fakeDir({
+    ana: [`${at(20)} m-1 started: job`, `${at(10)} m-1 finished: failed (engine error)`],
+    bo: busy(20, 'timed out'), cy: busy(30, 'timed out'), di: busy(40, 'signed out', 'claude'),
+  });
+  try {
+    const rows = readBoard({ dir, now: NOW });
+    const footer = (width, list = rows) => renderBoard(list, dir, 0, width, 3).split('\n').pop();
+    for (const [width, text] of [
+      [120, '3 more not shown (3 with earlier failure, 2 timed out, 1 signed out of claude), the window is too short'],
+      [100, '3 more not shown (3 with earlier failure, 2 timed out, 1 signed out), the window is too short'],
+      [80, '3 more not shown (3 with earlier failure, 2 timed out, 1 signed out of claude)'],
+      [70, '3 more not shown (3 with earlier failure, 2 timed out, 1 signed out)'],
+      [60, '3 more not shown (3 with earlier failure, 2 timed out)'],
+      [50, '3 more not shown (3 earlier failure, 2 timed out)'],
+    ]) {
+      assert.equal(footer(width), text, `${width}: the sign-in failure gives way before the lead reason`);
+      assert.ok(text.length <= width);
+    }
+    const fixed = rows.map((r) => (r.member === 'di' ? { ...r, engine: 'claude' } : r));
+    assert.equal(footer(120, fixed), '3 more not shown (3 with earlier failure, 2 timed out), the window is too short',
+      'back on the engine it signed out of, the sign-in failure is no longer news');
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
 test('last step skips writes to the member own log', () => {
   const dir = fakeDir({
     architect: [

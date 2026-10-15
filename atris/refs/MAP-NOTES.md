@@ -2361,9 +2361,9 @@ Lost-run cleanup error summary: `commands/autoland.js:895` keeps successful clos
 
 - **Very short board screens:** `renderBoard()` (`lib/member-board.js:309`) omits the spacer at three lines, rows at two, and the footer at one, preserving the header within the height limit. Regression: `test/member-board.test.js:894`; terminal proof: `python3 atris/runs/member-board-short-height-proof.py`.
 
-- **Tiny watch screens:** `memberBoardCommand()` (`lib/member-board.js:1063`) gives the board all rows when the terminal has one to three, omitting the hint and final newline to avoid scrolling the header. Resize restores the hint above three rows. Regression: `test/member-board.test.js:754`; terminal proof: `python3 atris/runs/member-board-watch-height-proof.py`.
+- **Tiny watch screens:** `memberBoardCommand()` (`lib/member-board.js:1076`) gives the board all rows when the terminal has one to three, omitting the hint and final newline to avoid scrolling the header. Resize restores the hint above three rows. Regression: `test/member-board.test.js:754`; terminal proof: `python3 atris/runs/member-board-watch-height-proof.py`.
 
-- **Narrow watch hint:** `memberBoardCommand()` (`lib/member-board.js:1063`) picks the longest whole hint that fits, down to "ctrl-c", and omits it below six columns. Resize regression: `test/member-board.test.js:713`; real terminal proof: `python3 atris/runs/member-board-watch-width-proof.py`.
+- **Narrow watch hint:** `memberBoardCommand()` (`lib/member-board.js:1076`) picks the longest whole hint that fits, down to "ctrl-c", and omits it below six columns. Resize regression: `test/member-board.test.js:713`; real terminal proof: `python3 atris/runs/member-board-watch-width-proof.py`.
 
 - **Compact board columns:** `renderBoard()` (`lib/member-board.js:309`) falls back to member, state and last result when the normal columns still overflow a terminal at least 30 columns wide. Done states use ok/failed, long names trim, and common failure reasons stay whole. Regression: `test/member-board.test.js:447`; real terminal proof: `python3 atris/runs/member-board-compact-columns-proof.py`.
 
@@ -2395,13 +2395,13 @@ Split timeout live follow: `test/member-board.test.js:1779` waits a polling inte
 
 Startup timeout snapshot: `readTail()` (`lib/member-board.js:31`) drops an unfinished final line before building rows. Live checks (`test/member-board.test.js:1743`) cover timeout splits before and after startup, no early finish or event, one completed event, and no poll duplicate. Proof: `python3 atris/runs/member-board-startup-timeout-proof.py`.
 
-Split UTF-8 progress: `test/member-board.test.js:1807` spawns the real CLI, splits inside a four-byte character, waits across polling, checks intact text and no duplicate, then checks the next result and clean exit. Cases cover before and after startup. `followBoard()` (`lib/member-board.js:860`) already tracks byte offsets and decodes newline-ended buffers, so no runtime change was needed. Proof: `atris/runs/member-board-split-unicode-receipt.md`.
+Split UTF-8 progress: `test/member-board.test.js:1807` spawns the real CLI, splits inside a four-byte character, waits across polling, checks intact text and no duplicate, then checks the next result and clean exit. Cases cover before and after startup. `followBoard()` (`lib/member-board.js:873`) already tracks byte offsets and decodes newline-ended buffers, so no runtime change was needed. Proof: `atris/runs/member-board-split-unicode-receipt.md`.
 
 Live terminal resize: `test/member-board.test.js:1020` runs the real CLI in a Python standard-library pseudo-terminal, shrinks from 80x8 to 47x2 and 30x3, then grows back. Frames retain timeout reasons and fit both dimensions, resize arrives before the periodic redraw, and interrupt exits 0. The two-row periodic redraw also waits for a split timeout to finish, then changes two failed to three failed without losing the reason; saved output: `atris/runs/member-board-live-split-redraw-proof.txt`. Proof output: `atris/runs/member-board-live-resize-proof.txt`.
 
 Live follow log shrink: `test/member-board.test.js:1858` runs the actual JSON follow command, shortens a log with an unfinished old timeout, waits across polling with a split replacement step, and checks one new start, step, and result with clean interrupt. Saved command output: `atris/runs/member-board-live-shrink-proof.txt`.
 
-Missing-log recovery: `followBoard()` (`lib/member-board.js:860`) clears offsets for absent logs before reading new events, so larger replacements start at byte zero. Real CLI regression: `test/member-board.test.js:1914`, missing log across polling, larger replacement, split step, no old result or duplicate. Proof: `atris/runs/member-board-live-return-proof.txt`.
+Missing-log recovery: `followBoard()` (`lib/member-board.js:873`) clears offsets for absent logs before reading new events, so larger replacements start at byte zero. Real CLI regression: `test/member-board.test.js:1914`, missing log across polling, larger replacement, split step, no old result or duplicate. Proof: `atris/runs/member-board-live-return-proof.txt`.
 
 Atomic same-size log replacement: `followBoard()` in `lib/member-board.js:831` compares device and inode on the opened file before reading, resetting the cursor when replaced. Real CLI regression: `test/member-board.test.js:1973`, atomic rename with equal byte size, unfinished old timeout, split new step, no duplicate events, and clean interrupt. Proof: `atris/runs/member-board-live-replace-proof.txt`.
 
