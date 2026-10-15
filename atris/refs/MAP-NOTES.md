@@ -2478,3 +2478,5 @@ Healthy cleanup saved deletion proof: `test/member-tidy.test.js:1374` runs real 
 Caller Node during review: `lib/task-proof.js:166`; real competing executable proof: `test/task-proof.test.js:180`.
 
 Quoted runtime proof: `test/task-proof.test.js:195` copies the real Node into a folder containing an apostrophe and runs `buildVerifiedProof` through actual bash, requiring the nested Node to select that exact executable.
+
+Quoted receipt runtime proof: `test/task-receipt.test.js:94` copies Node into a folder containing an apostrophe, runs the real receipt writer through bash, and checks the saved command, passing exit and exact runtime output.

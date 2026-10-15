@@ -1,0 +1,24 @@
+Receipt writing from a folder containing an apostrophe is now covered by a real-runtime regression.
+Files edited: test/task-receipt.test.js, atris/MAP.md, atris/refs/MAP-NOTES.md, atris/team/architect/logs/2026-10-15.md.
+Artifact: atris/receipts/work-folder-quoted-receipt-2026-10-15.txt.
+Real surface: node --test test/task-receipt.test.js
+Output: real receipt check selects Node from a folder containing an apostrophe; tests 8, pass 8, fail 0, todo 0. Exit 0.
+The check copies Node, invokes the actual receipt writer through bash, and reads its saved JSON to compare the command, exit and runtime output.
+Review: installed atris command failed with the older runtime; node bin/atris.js task ready reran the same eight checks successfully and put proof in review.
+Required cleanup command: node --test test/worktree-removal-guard.test.js test/member-tidy.test.js
+al line still too long keeps its start and its end (0.233625ms)
+✔ multiline pin reasons stay on one line in refusal and real cleanup reports (642.570792ms)
+✔ reap counts branch copies still at work and names detached and pinned ones (2360.313791ms)
+ℹ tests 90
+ℹ suites 0
+ℹ pass 90
+ℹ fail 0
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 57138.9365
+
+Exit 0.
+Rerun: node --test test/worktree-removal-guard.test.js test/member-tidy.test.js && node bin/atris.js slop --staged
+next_push: Prove receipt writing preserves a failing command and its saved output from an apostrophe folder.
+layer: capabilities

@@ -91,6 +91,45 @@ test('writeTaskReceipt runs the check on the node running atris, not an older no
   }
 });
 
+test('real receipt check selects Node from a folder containing an apostrophe', () => {
+  const dir = makeTempDir();
+  try {
+    const runtimeDir = path.join(dir, "reader's tools");
+    fs.mkdirSync(runtimeDir);
+    const libraries = path.resolve(path.dirname(process.execPath), '../lib');
+    if (process.platform === 'darwin' && fs.existsSync(libraries)) {
+      fs.symlinkSync(libraries, path.join(dir, 'lib'), 'dir');
+    }
+    const runtime = path.join(runtimeDir, 'node');
+    fs.copyFileSync(process.execPath, runtime);
+    fs.chmodSync(runtime, 0o755);
+    const script = `
+      const assert = require('node:assert/strict');
+      const fs = require('node:fs');
+      const { writeTaskReceipt } = require(${JSON.stringify(require.resolve('../lib/task-receipt'))});
+      assert.equal(process.execPath, ${JSON.stringify(fs.realpathSync(runtime))});
+      const command = 'node -p "process.execPath"';
+      const result = writeTaskReceipt({ taskId: 'quoted-runtime', command, root: ${JSON.stringify(dir)} });
+      assert.equal(result.ok, true, JSON.stringify(result));
+      assert.equal(result.output, process.execPath);
+      const saved = JSON.parse(fs.readFileSync(result.receiptFile, 'utf8'));
+      assert.equal(saved.command, command);
+      assert.equal(saved.result.passed, true);
+      assert.equal(saved.result.exit, 0);
+      assert.equal(saved.result.output, process.execPath);
+      console.log('quoted runtime receipt saved');
+    `;
+    const result = spawnSync(runtime, ['-e', script], {
+      encoding: 'utf8', timeout: 150000, env: scrubAgentEnv(),
+    });
+    assert.equal(result.error, undefined);
+    assert.equal(result.status, 0, result.stdout + result.stderr);
+    assert.equal(result.stdout.trim(), 'quoted runtime receipt saved');
+  } finally {
+    cleanupTempDir(dir);
+  }
+});
+
 test('atris task receipt writes evidence without moving the task to ready', () => {
   const dir = makeTempDir();
   const dbPath = path.join(dir, 'tasks.db');
