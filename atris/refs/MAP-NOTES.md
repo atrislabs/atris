@@ -2701,3 +2701,5 @@ Duplicate reward review readiness: `test/commands.test.js:13485` readies the cla
 Conflicting receipt readiness setup: `test/commands.test.js:13566` uses production readyTask in the fixture connection, closed in finally before CLI acceptance and fail-closed receipt status. Two app launches replace three; all integrity and readable-label assertions remain.
 
 Tampered receipt readiness setup: `test/commands.test.js:13612` uses production readyTask in the fixture connection, closed in finally before CLI acceptance and tampered XP status. Two app launches replace three; every acceptance, hash mismatch, XP and eligibility assertion remains.
+
+Unclaimed revision readiness: `test/commands.test.js:13724` seeds production readyTask in the creation connection, asserts success and closes in finally. Two app launches replace three; revision returning the task to open and the subsequent claim retain every real CLI assertion.

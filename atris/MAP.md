@@ -198,3 +198,5 @@ Duplicate selection ownership setup: `test/commands.test.js:12836` seeds the exi
 Strict approval review setup: `test/commands.test.js:13363` attaches the strict verification command with production reviewTask, closes the connection before CLI previews, and preserves every automatic approval and human-confirmation assertion. Eleven app launches become ten.
 
 Conflicting receipt readiness setup: `test/commands.test.js:13566` uses production readyTask in the fixture connection, closed in finally before CLI acceptance and fail-closed receipt status. Two app launches replace three; all integrity and readable-label assertions remain.
+
+Unclaimed revision readiness: `test/commands.test.js:13724` seeds production readyTask in the creation connection, asserts success and closes in finally. Two app launches replace three; revision returning the task to open and the subsequent claim retain every real CLI assertion.
