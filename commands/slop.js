@@ -422,10 +422,12 @@ const RELATIVE_OBJECT_PHRASE = /^\s*\u2014\s*the\s+[A-Za-z][\w-]*\s+(?:[a-z][\w-
 // "a" or "an" may open the subject, one describing word may sit before
 // its noun, and "but not" or ", not" may end the bare word: "a clean
 // revert restores prompt but not the data", "a prospect wants lift, not
-// a tighter interval". A place word or a pronoun is never that noun,
+// a tighter interval". "or" and a second verb in "s" end one or two
+// bare words too: "a drift leaks paid features or locks out users".
+// A place word or a pronoun is never that noun,
 // so "the way her eyes moved" keeps its comma. A number with a size unit
 // or "%" right before a stop is a bare word too: "a single run eats 10GB+".
-const BARE_OBJECT_CLAUSE = new RegExp(`^\\s*\\u2014\\s*(?:the|a|an|this|${THAT_OPENER})\\s+(?!${NAME_PAIR}\\b)(?:(?![a-z]*s\\b)[a-z]{2,}\\s+(?=(?!(?:of|in|on|for|with|at|by|to|from|and|or|but|her|his|its|my|our|your|their|it|he|she|we|you|they|this|that)\\b)[a-z]{2,}\\s+${PLAIN_VERB_WORD}\\s))?(?![a-z]*s\\b)[a-z]{2,}\\s+${PLAIN_VERB_WORD}\\s+(?:(?!(?:it|them|you|we|they|he|she|this|that|these|those|which|who|across|through|within|over|under|between|among|around|along|without|in|of|on|for|with|at|by|to|from|and|or|but)\\b)(?!${NAME_END_WORD}\\b)[a-z]{2,}\\s+(?!${NAME_END_WORD}\\b)[a-z]{2,}(?:\\/[a-z]{2,})*(?=\\s+(?:into|onto|to|for|from|on|at|with|until)\\s)|(?!${NAME_END_WORD}\\b)[a-z]{2,}(?:\\/[a-z]{2,})*(?=[.!?;]|\\s+(?:into|onto|to|for|from|on|at|with|until)\\s|\\s+but\\s+not\\s|,\\s+not\\s)|\\d+(?:\\.\\d+)?(?:[KMGT]i?B|%)\\+?(?=[.!?;]))`);
+const BARE_OBJECT_CLAUSE = new RegExp(`^\\s*\\u2014\\s*(?:the|a|an|this|${THAT_OPENER})\\s+(?!${NAME_PAIR}\\b)(?:(?![a-z]*s\\b)[a-z]{2,}\\s+(?=(?!(?:of|in|on|for|with|at|by|to|from|and|or|but|her|his|its|my|our|your|their|it|he|she|we|you|they|this|that)\\b)[a-z]{2,}\\s+${PLAIN_VERB_WORD}\\s))?(?![a-z]*s\\b)[a-z]{2,}\\s+${PLAIN_VERB_WORD}\\s+(?:(?!(?:it|them|you|we|they|he|she|this|that|these|those|which|who|across|through|within|over|under|between|among|around|along|without|in|of|on|for|with|at|by|to|from|and|or|but)\\b)(?!${NAME_END_WORD}\\b)[a-z]{2,}\\s+(?!${NAME_END_WORD}\\b)[a-z]{2,}(?:\\/[a-z]{2,})*(?=\\s+(?:into|onto|to|for|from|on|at|with|until)\\s|\\s+or\\s+${PLAIN_VERB_WORD}\\s)|(?!${NAME_END_WORD}\\b)[a-z]{2,}(?:\\/[a-z]{2,})*(?=[.!?;]|\\s+(?:into|onto|to|for|from|on|at|with|until)\\s|\\s+but\\s+not\\s|,\\s+not\\s|\\s+or\\s+${PLAIN_VERB_WORD}\\s)|\\d+(?:\\.\\d+)?(?:[KMGT]i?B|%)\\+?(?=[.!?;]))`);
 // A bare plural with its own "that", "which" or "who" clause after the verb
 // is an object too: "the spread branch covers routes that merge in extra
 // headers". A verb that is a common plural noun, "the user settings pages

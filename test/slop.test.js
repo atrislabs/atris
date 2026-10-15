@@ -3122,6 +3122,9 @@ test('fix joins "the", a noun, a verb in "s" and one bare word before a stop', (
     // ", not" sets two things side by side the same way
     'Pick what a buyer asked for \u2014 a prospect wants lift, not a tighter interval.',
     'Ship it \u2014 the release notes page, not the blog.',
+    // "or" and a second verb in "s" end one or two bare words
+    'Pin the tier \u2014 a drift either leaks paid features or locks out paying users.',
+    'Check one place \u2014 the error logs folder or logs from CI.',
     // a number with a unit before a stop is a bare word too; a list of
     // sizes keeps its comma
     'Agents run the full suite (3000+ tests) \u2014 a single run eats 10GB+. Two runs crash it.',
@@ -3136,6 +3139,8 @@ test('fix joins "the", a noun, a verb in "s" and one bare word before a stop', (
     'He watched her read, the way her eyes moved.',
     'Pick what a buyer asked for; a prospect wants lift, not a tighter interval.',
     'Ship it, the release notes page, not the blog.',
+    'Pin the tier; a drift either leaks paid features or locks out paying users.',
+    'Check one place, the error logs folder or logs from CI.',
     'Agents run the full suite (3000+ tests); a single run eats 10GB+. Two runs crash it.',
     'Two files ship, the tokenizer 2MB, the model weights 16GB.',
   ]);
