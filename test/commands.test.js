@@ -12580,7 +12580,7 @@ test('task next surfaces review debt when no open work exists', () => {
   try {
     fs.mkdirSync(path.join(dir, 'atris'), { recursive: true });
 
-    // Creation and ownership are setup; ready and next stay on the CLI.
+    // Seed creation, ownership and readiness; next stays on the CLI.
     const workspaceRoot = taskStore.workspaceRoot(dir);
     const db = taskStore.open(dbPath);
     let reviewId;
@@ -12589,13 +12589,15 @@ test('task next surfaces review debt when no open work exists', () => {
       const review = addSeedTask(db, { title: 'Needs second review before continuing', tag: 'agent', workspaceRoot });
       assert.equal(review.inserted, true);
       assert.equal(taskStore.claimTask(db, { id: review.id, claimedBy: 'codex' }).claimed, true);
+      assert.equal(taskStore.readyTask(db, {
+        id: review.id, actor: 'codex', proof: 'first pass validation passed',
+      }).ready, true);
       reviewId = review.id;
       reviewRef = taskStore.taskDisplayRefMap(taskStore.listTasks(db, { workspaceRoot })).get(review.id);
       assert.ok(reviewRef);
     } finally {
       taskStore.close();
     }
-    assert.equal(runCli(['task', 'ready', reviewRef, '--proof', 'first pass validation passed', '--as', 'codex'], { cwd: dir, env }).status, 0);
 
     const next = runCli(['task', 'next', '--as', 'codex', '--json'], { cwd: dir, env });
     assert.equal(next.status, 0, next.stderr);

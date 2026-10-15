@@ -262,3 +262,5 @@ Queue filtering read batching: `test/commands.test.js:15322` runs three queue/cu
 Clean review setup: `test/commands.test.js:11948` seeds creation, claim and readiness through the production store, asserts each result and closes before both real CLI review checks. Five launches become two; the accepted read-only check and refused mutating check retain every assertion.
 
 Review selection ownership setup: `test/commands.test.js:12525` seeds ownership with production claimTask in the existing creation connection, asserts success and closes in finally. Readiness, selection and both status inspections remain real CLI checks with every assertion retained. Five launches become four.
+
+Review debt readiness setup: `test/commands.test.js:12575` seeds readiness through production readyTask in the existing creation connection, asserts success and closes in finally. Selection remains a real CLI check with every assertion retained. Two launches become one.
