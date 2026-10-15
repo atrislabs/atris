@@ -155,3 +155,5 @@ Hourly cleanup failed stops: `commands/autoland.js:869` includes failed stop cou
 Hourly cleanup scan failures: `commands/autoland.js:878` includes a saved scan error in the plain summary, so a thrown first read or safety recheck does not look clean. Regression: `test/engine-resource.test.js:631` runs a real missing executable in both reads and confirms no agent is stopped.
 
 Last-moment pin coverage: `test/member-tidy.test.js` runs real tidy, cleanup, branch cleanup, and autopilot regression execution with a pin acquired at removal; both successful and failed automatic checks are covered, including the saved failure lesson. Latest proof is `atris/receipts/work-folder-failed-check-late-pin-2026-10-14.txt`.
+
+Review cleanup late-pin defect: `atris/receipts/work-folder-review-late-pin-probe.js` reproduces a real Git refusal followed by raw deletion of all disposable review paths. The decision card is `atris/receipts/work-folder-review-late-pin-decision-2026-10-14.md`; production cleanup is unchanged pending protected-surface review.
