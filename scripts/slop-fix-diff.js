@@ -229,6 +229,8 @@ function splices(text) {
 // API that turns"), is a noun with a clause on it, and a number word or
 // "same" after "the" makes a plural ("the three ways a run fails").
 // A word in "s" right after "in" or "of" is a noun ("the stubs in tests"),
+// and so is one right after "and" or "or", the next item in a list of
+// nouns: "the lawyers and bankers and consultants who broker".
 // and so is a word in "s" with a clause on it that ends on its own verb:
 // "the live markdown docs the editor renders" names docs. A "the" inside
 // that stretch means an object, so "the learner watches the model do the
@@ -244,7 +246,7 @@ function splices(text) {
 // nor an opener's first half: "If no, your attention has been captured".
 // A word in "is" is a noun, never a verb: "the structural basis for".
 const SPLICE_OPENER = /(?:the|its|our|their|your|this|that|these|those|each|every|a|an)/.source;
-const SPLICE_SHAPE = new RegExp(`^(?!that (?:the|a|an|it|we|they|he|she|this|these|those|its|their|our|your)\\b)${SPLICE_OPENER} ` + /(?!(?:one|two|three|four|five|six|seven|eight|nine|ten|few|many|several|same|other|first|last|next|main|key|core|new|old|real|whole|exact|only)\b)(?:(?!(?:that|which|who|your|our|their|its|his|her|my)\b)[\w`-]+ ){1,2}(?<!\b(?:in|of) )(?!(?:this|his|its|thus|plus|always|perhaps|unless|whereas|across)\b)[a-z]+[^isu\s']s (?!(?:that|which|who)\b)(?:[a-z`"]|\d)/.source);
+const SPLICE_SHAPE = new RegExp(`^(?!that (?:the|a|an|it|we|they|he|she|this|these|those|its|their|our|your)\\b)${SPLICE_OPENER} ` + /(?!(?:one|two|three|four|five|six|seven|eight|nine|ten|few|many|several|same|other|first|last|next|main|key|core|new|old|real|whole|exact|only)\b)(?:(?!(?:that|which|who|your|our|their|its|his|her|my)\b)[\w`-]+ ){1,2}(?<!\b(?:in|of|and|or) )(?!(?:this|his|its|thus|plus|always|perhaps|unless|whereas|across)\b)[a-z]+[^isu\s']s (?!(?:that|which|who)\b)(?:[a-z`"]|\d)/.source);
 // A stretch that ends its sentence on a bare "of", "to", "with" and kin has
 // lost the object of that word to the noun it opens with, so it is a
 // clause on that noun, not a subject and its verb: "offline work, a topic

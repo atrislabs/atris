@@ -4960,6 +4960,14 @@ test('the fix diff splice list skips a noun after "in" or "of" and a noun with i
     stranded.map((t) => `Nobody discusses offline work ${D} ${t}`),
     stranded.map((t) => `Nobody discusses offline work, ${t}`),
   ).map((s) => s.text), ['a topic Atris sits on top of the stack']);
+  // a word in "s" right after "and" or "or" is the next noun in a list, so
+  // "the lawyers and bankers and consultants who broker" names the layer;
+  // a verb in "s" after one noun still reads as a splice
+  const lists = ['the lawyers and bankers and consultants who broker every deal', 'the lawyer brokers every deal'];
+  assert.deepEqual(spliceShapes(
+    lists.map((t) => `The graph has the advisor layer ${D} ${t}.`),
+    lists.map((t) => `The graph has the advisor layer, ${t}.`),
+  ).map((s) => s.text), ['the lawyer brokers every deal']);
 });
 
 test('the fix diff script lists each comma it writes before a "the" clause once', () => {
