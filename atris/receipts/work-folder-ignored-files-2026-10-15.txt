@@ -1,0 +1,54 @@
+Finished copies lose ignored files on cleanup, 2026-10-15
+
+Finding: cleanup removes a finished, merged copy with a plain git folder
+removal. Git treats ignored files as disposable, and the status check cleanup
+relies on does not list them, so the copy looks clean and its ignored files
+are deleted without a word in the preview or the apply output.
+
+Reproduction (throwaway fixture under /tmp, cleanup run in a guarded subshell
+whose folder was checked first):
+- fixture ignores .env.local and notes/
+- finished copy done-copy holds .env.local (a token line) and notes/plan.md
+- copy aged past the fresh-copy grace
+
+$ git -C <copy> status --porcelain
+(empty)
+
+$ node bin/atris.js worktree cleanup
+cleanup: dry-run base=origin/master
+candidates: 1
+candidate: <tmp>/arena/.agent-worktrees/repo/done-copy branch=done-copy reason=merged_into_base
+cache_candidates: 0
+kept: 1
+left alone: primary_checkout=1
+next: atris worktree cleanup --apply
+exit: 0
+
+$ node bin/atris.js worktree cleanup --apply
+cleanup: applied base=origin/master
+removeds: 1
+removed: <tmp>/arena/.agent-worktrees/repo/done-copy branch=done-copy reason=merged_into_base
+cache_pruneds: 0
+kept: 1
+left alone: primary_checkout=1
+exit: 0
+
+$ ls <copy>/.env.local <copy>/notes/plan.md
+No such file or directory (both)
+
+Survey of this machine's real copies (read-only, git status with ignored files):
+- 117 registered copies, 108 hold at least one ignored entry
+- 46 hold ignored entries outside journals, status, run state, and build caches
+- most common of those: atris/now.md (20), cli/__pycache__ (11),
+  atris/runs (11), member logs under atris/team (16), atris/wiki (3),
+  atris/brain (3), backup files ending .pre-overlay.bak (4)
+
+Risk of the obvious fix: keeping every copy with any ignored file would stop
+cleanup for 108 of 117 copies, so the rule needs a measured list of
+throwaway places, and the preview should name what kept a copy.
+
+Status: no code changed; filed as a decision card in the operator's
+for-you file because what counts as throwaway is a product call and one
+example holds a credential.
+next_push: once a reply lands, add the chosen rule with a failing-first test
+that plants an ignored notes file in a finished copy.
