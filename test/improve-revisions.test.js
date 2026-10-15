@@ -267,6 +267,37 @@ test('shared journal files never count as revision overlap', () => {
   }
 });
 
+// On 2026-10-15 one human commit read as 14 of 17 revisions because it moved
+// a few lines in the map notes, which nearly every landing also touches.
+// Shared index files record where things live; editing one is not a fix to
+// the landing that last added a row.
+test('shared map and test-list files never count as revision overlap', () => {
+  const cwd = initRepo();
+  const now = Date.now();
+  const base = now - 2 * 24 * HOUR;
+  try {
+    fs.mkdirSync(path.join(cwd, 'atris', 'refs'), { recursive: true });
+    fs.mkdirSync(path.join(cwd, 'test'), { recursive: true });
+    commitFile(cwd, 'atris/refs/MAP-NOTES.md', 'a\n', 'bot lands a with notes', { bot: true, atMs: base });
+    commitFile(cwd, 'atris/MAP.md', 'a\n', 'bot lands map row', { bot: true, atMs: base + HOUR });
+    commitFile(cwd, 'test/fast-tests.txt', 'a\n', 'bot lands fast test', { bot: true, atMs: base + 2 * HOUR });
+    commitFile(cwd, 'c.js', 'v1\n', 'bot lands feature c', { bot: true, atMs: base + 3 * HOUR });
+    // one human commit touches every shared index file at once
+    commitFile(cwd, 'atris/refs/MAP-NOTES.md', 'a\nb\n', 'human notes b', { atMs: base + 4 * HOUR });
+    commitFile(cwd, 'atris/MAP.md', 'a\nb\n', 'human map b', { atMs: base + 5 * HOUR });
+    commitFile(cwd, 'test/fast-tests.txt', 'a\nb\n', 'human fast test b', { atMs: base + 6 * HOUR });
+    const indexOnly = collectRevisionSignals(cwd, { days: 14, now });
+    assert.strictEqual(indexOnly.revised, 0);
+
+    commitFile(cwd, 'c.js', 'v2\n', 'human fixes feature c', { atMs: base + 7 * HOUR });
+    const productRevised = collectRevisionSignals(cwd, { days: 14, now });
+    assert.strictEqual(productRevised.revised, 1);
+    assert.deepStrictEqual(productRevised.revisions[0].files, ['c.js']);
+  } finally {
+    cleanup(cwd);
+  }
+});
+
 // Boot shows this gauge on every session start. One git process per commit
 // cost seconds on a busy repo, so the history is one git log, every plain
 // commit's files come back from one batched diff-tree, and a commit's files
