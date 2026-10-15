@@ -207,3 +207,138 @@ test('member up reads --max, --only and --dry-run', () => {
   assert.ok(parseMemberUpArgs(['--max', '0']).error);
   assert.ok(parseMemberUpArgs(['--only', '']).error);
 });
+
+test('wake with a role description matches a member, wakes it, and uses its slug in the keep hint', async (t) => {
+  const root = tempProject(t, ['architect', 'executor']);
+  const s = stubs(root);
+  s.handlers.matchMember = (word) => (word === 'file work'
+    ? { member: 'architect', role: 'Architect', reason: 'designs file layout' }
+    : null);
+  await memberWakeVerb(['file work', '--plan'], s.handlers);
+  assert.deepEqual(s.calls, [['wake', 'architect', '--plan']]);
+  assert.deepEqual(s.lines, [
+    'matched "file work" to architect (designs file layout)',
+    'to keep architect working: atris member wake architect --keep',
+  ]);
+});
+
+test('wake with a role description and --json suppresses the match and keep lines', async (t) => {
+  const root = tempProject(t, ['architect']);
+  const s = stubs(root);
+  s.handlers.matchMember = () => 'architect';
+  await memberWakeVerb(['file work', '--json'], s.handlers);
+  assert.deepEqual(s.calls, [['wake', 'architect', '--json']]);
+  assert.deepEqual(s.lines, []);
+});
+
+test('wake with role descriptions and --keep or multiple phrases deduplicates and routes to member up', async (t) => {
+  const root = tempProject(t, ['navigator', 'architect', 'executor']);
+  const s = stubs(root);
+  const lookedUp = [];
+  s.handlers.matchMember = (word) => {
+    lookedUp.push(word);
+    if (word === 'file work' || word === 'system design') return 'architect';
+    if (word === 'run tests') return { member: 'executor', reason: 'runs checks' };
+    return null;
+  };
+  await memberWakeVerb(['file work', '--keep'], s.handlers);
+  await memberWakeVerb(['file work', 'system design', '--dry-run'], s.handlers);
+  await memberWakeVerb(['navigator', 'file work', 'run tests'], s.handlers);
+  assert.deepEqual(lookedUp, ['file work', 'file work', 'system design', 'file work', 'run tests']);
+  assert.deepEqual(s.calls, [
+    ['up', '--only', 'architect'],
+    ['up', '--only', 'architect', '--dry-run'],
+    ['up', '--only', 'navigator,architect,executor'],
+  ]);
+  assert.deepEqual(s.lines, [
+    'matched "file work" to architect',
+    'matched "file work" to architect',
+    'matched "system design" to architect',
+    'matched "file work" to architect',
+    'matched "run tests" to executor (runs checks)',
+  ]);
+});
+
+test('parseMemberUpArgs parses duration flags and positional duration phrases', () => {
+  assert.deepEqual(parseMemberUpArgs(['--for', '2h']), {
+    max: undefined,
+    only: null,
+    dryRun: false,
+    durationMs: 7200000,
+    durationLabel: '2h',
+  });
+  assert.deepEqual(parseMemberUpArgs(['--duration=90m', '--dry-run']), {
+    max: undefined,
+    only: null,
+    dryRun: true,
+    durationMs: 5400000,
+    durationLabel: '1h 30m',
+  });
+  assert.deepEqual(parseMemberUpArgs(['--hours', '2']), {
+    max: undefined,
+    only: null,
+    dryRun: false,
+    durationMs: 7200000,
+    durationLabel: '2h',
+  });
+  assert.deepEqual(parseMemberUpArgs(['--minutes', '90']), {
+    max: undefined,
+    only: null,
+    dryRun: false,
+    durationMs: 5400000,
+    durationLabel: '1h 30m',
+  });
+  assert.deepEqual(parseMemberUpArgs(['serious work tonight - 1-2hours']), {
+    max: undefined,
+    only: null,
+    dryRun: false,
+    durationMs: 7200000,
+    durationLabel: '2h',
+  });
+  assert.equal(
+    parseMemberUpArgs(['--for', 'nope']).error,
+    '--for needs a duration like 2h, 90m, or 1-2hours'
+  );
+  assert.equal(
+    parseMemberUpArgs(['--hours', '0']).error,
+    '--hours/--minutes needs a number above zero.'
+  );
+  assert.equal(
+    parseMemberUpArgs(['--minutes', '-5']).error,
+    '--hours/--minutes needs a number above zero.'
+  );
+});
+
+test('wake with a duration window or multiple role descriptions keeps distinct members working for the window', async (t) => {
+  const root = tempProject(t, ['navigator', 'architect', 'executor']);
+  const s = stubs(root);
+  const candidates = ['architect', 'executor', 'navigator'];
+  const seenHistory = [];
+  s.handlers.matchMember = (_word, opts = {}) => {
+    const exclude = opts.exclude instanceof Set ? opts.exclude : new Set();
+    seenHistory.push(Array.from(exclude));
+    return candidates.find((slug) => !exclude.has(slug)) || null;
+  };
+  await memberWakeVerb(['1-2hours'], s.handlers);
+  await memberWakeVerb(['serious work tonight - 1-2hours', '--dry-run'], s.handlers);
+  await memberWakeVerb(['5', '1-2hours'], s.handlers);
+  await memberWakeVerb(['navigator', '2h'], s.handlers);
+  await memberWakeVerb(['--for', '90m', 'navigator'], s.handlers);
+  await memberWakeVerb(['cli guy', 'ux guy', 'ops guy', '1-2hours'], s.handlers);
+
+  assert.deepEqual(seenHistory, [
+    [],
+    ['architect'],
+    ['architect', 'executor'],
+  ]);
+  assert.deepEqual(s.calls, [
+    ['up', '--for', '2h'],
+    ['up', '--dry-run', '--for', '2h'],
+    ['up', '--max', '5', '--for', '2h'],
+    ['up', '--only', 'navigator', '--for', '2h'],
+    ['up', '--only', 'navigator', '--for', '90m'],
+    ['up', '--only', 'architect,executor,navigator', '--for', '2h'],
+  ]);
+});
+
+

@@ -579,3 +579,159 @@ test('member stop needs the marker to open the prompt, as whole words', async ()
     try { process.kill(-child.pid, 'SIGKILL'); } catch {}
   }
 });
+
+test('member board notes active members in other projects and --everywhere or --workspace shows all', () => {
+  const dir = fakeDir({
+    builder: [`${isoAgo(30)} m-1 started: local job`, `${isoAgo(5)} m-1 editing lib/a.js`],
+    'interface-dev': [`${isoAgo(25)} m-2 started: desktop job`, `${isoAgo(4)} m-2 editing app.tsx`],
+    'harness-engineer': [`${isoAgo(20)} m-3 started: backend job`, `${isoAgo(3)} m-3 finished: ok`],
+    'old-outsider': [`${isoAgo(7200)} m-4 started: ancient job`, `${isoAgo(5000)} m-4 finished: ok`],
+  });
+  const project = fs.mkdtempSync(path.join(os.tmpdir(), 'atris-board-proj-'));
+  fs.mkdirSync(path.join(project, 'atris', 'team', 'builder'), { recursive: true });
+  const env = { ...process.env, ATRIS_PROGRESS_DIR: dir };
+  try {
+    const local = spawnSync(process.execPath, [cliPath, 'member', 'board'], { cwd: project, env, encoding: 'utf8' });
+    assert.equal(local.status, 0, local.stderr);
+    assert.match(local.stdout, /^builder\s+working/m);
+    assert.doesNotMatch(local.stdout, /interface-dev|harness-engineer|old-outsider/);
+    assert.match(local.stdout, /^2 more in other projects, --everywhere shows all$/m);
+
+    for (const flag of ['--everywhere', '--workspace']) {
+      const allProj = spawnSync(process.execPath, [cliPath, 'member', 'board', flag], { cwd: project, env, encoding: 'utf8' });
+      assert.equal(allProj.status, 0, allProj.stderr);
+      assert.match(allProj.stdout, /^builder\s+working/m);
+      assert.match(allProj.stdout, /^interface-dev\s+working/m);
+      assert.match(allProj.stdout, /^harness-engineer\s+done ok/m);
+      assert.doesNotMatch(allProj.stdout, /more in other projects/);
+
+      const json = spawnSync(process.execPath, [cliPath, 'member', 'board', flag, '--json'], { cwd: project, env, encoding: 'utf8' });
+      assert.equal(json.status, 0, json.stderr);
+      assert.deepEqual(
+        JSON.parse(json.stdout).members.map((r) => r.member).sort(),
+        ['builder', 'harness-engineer', 'interface-dev'],
+      );
+    }
+
+    // When no active member exists outside this project, no note is printed.
+    fs.rmSync(path.join(dir, 'interface-dev.log'));
+    fs.rmSync(path.join(dir, 'harness-engineer.log'));
+    const clean = spawnSync(process.execPath, [cliPath, 'member', 'board'], { cwd: project, env, encoding: 'utf8' });
+    assert.equal(clean.status, 0, clean.stderr);
+    assert.doesNotMatch(clean.stdout, /more in other projects/);
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+    fs.rmSync(project, { recursive: true, force: true });
+  }
+});
+
+test('memberWatchCommand streams human live shells across projects and filters by member or --here', async () => {
+  const { memberWatchCommand, memberBoardCommand } = require('../lib/member-board');
+  const dir = fakeDir({
+    architect: [
+      `${isoAgo(20)} m-1 started: plan work`,
+      `${isoAgo(5)} m-1 reading MAP.md`,
+      `${isoAgo(3)} m-1 editing atris/team/architect/logs/2026-04-20.md`,
+    ],
+    'interface-dev': [
+      `${isoAgo(15)} m-2 started: desktop ui`,
+      `${isoAgo(8)} m-2 reading app.tsx`,
+      `${isoAgo(6)} m-2 editing view.tsx`,
+      `${isoAgo(4)} m-2 running: npm test`,
+    ],
+  });
+  const project = fs.mkdtempSync(path.join(os.tmpdir(), 'atris-watch-proj-'));
+  fs.mkdirSync(path.join(project, 'atris', 'team', 'architect'), { recursive: true });
+  const prevDir = process.env.ATRIS_PROGRESS_DIR;
+  const prevCwd = process.cwd();
+  process.env.ATRIS_PROGRESS_DIR = dir;
+  process.chdir(project);
+  const realWrite = process.stdout.write;
+  let out = '';
+  process.stdout.write = function (chunk, ...rest) {
+    if (
+      typeof chunk === 'string'
+      && (
+        chunk.includes('live shells (ctrl-c to stop):')
+        || /^  \S+ (?:\d\d|--):(?:\d\d|--):(?:\d\d|--)  /.test(chunk)
+        || chunk.startsWith('{"')
+      )
+    ) {
+      out += chunk;
+      return true;
+    }
+    return realWrite.call(this, chunk, ...rest);
+  };
+  try {
+    // Default memberWatchCommand shows every active member across projects even inside a repo,
+    // and replays recent current-run shell lines while skipping own-log housekeeping writes.
+    const watchingAll = memberWatchCommand();
+    assert.match(out, /^architect\s+working/m);
+    assert.match(out, /^interface-dev\s+working/m);
+    assert.match(out, /\nlive shells \(ctrl-c to stop\):\n/);
+    assert.match(out, /  architect \d\d:\d\d:\d\d  started: plan work\n/);
+    assert.match(out, /  architect \d\d:\d\d:\d\d  reading MAP\.md\n/);
+    assert.doesNotMatch(out, /atris\/team\/architect\/logs/);
+    assert.match(out, /  interface-dev \d\d:\d\d:\d\d  editing view\.tsx\n/);
+
+    const t1 = new Date('2026-10-13T14:05:09.000Z');
+    const pad = (n) => String(n).padStart(2, '0');
+    const expectedStamp = `${pad(t1.getHours())}:${pad(t1.getMinutes())}:${pad(t1.getSeconds())}`;
+    fs.appendFileSync(
+      path.join(dir, 'architect.log'),
+      `${t1.toISOString()} m-1 started: [pid 4242 engine claude] ship the feature\n`
+      + `${t1.toISOString()} m-1 running: npm test\n`
+      + `${t1.toISOString()} m-1 finished: ok\n`,
+    );
+    assert.ok(await waitFor(() => out.includes('finished: ok')));
+    assert.ok(out.includes(`  architect ${expectedStamp}  started: ship the feature\n`), out);
+    assert.ok(out.includes(`  architect ${expectedStamp}  running: npm test\n`), out);
+    assert.ok(out.includes(`  architect ${expectedStamp}  finished: ok\n`), out);
+    process.emit('SIGINT');
+    await watchingAll;
+
+    // Positional member names filter both the initial board and the live stream,
+    // --lines 2 limits the replayed lines per member without treating 2 as a member,
+    // and a named member with no log file gets an explicit "no shell log yet" line.
+    out = '';
+    const watchingNamed = memberWatchCommand('interface-dev', 'ghost', '--lines', '2');
+    assert.match(out, /^interface-dev\s+working/m);
+    assert.doesNotMatch(out, /^architect\s/m);
+    assert.doesNotMatch(out, /  interface-dev \d\d:\d\d:\d\d  started: desktop ui\n/);
+    assert.doesNotMatch(out, /  interface-dev \d\d:\d\d:\d\d  reading app\.tsx\n/);
+    assert.match(out, /  interface-dev \d\d:\d\d:\d\d  editing view\.tsx\n/);
+    assert.match(out, /  interface-dev \d\d:\d\d:\d\d  running: npm test\n/);
+    assert.match(out, /  ghost --:--:--  no shell log yet\n/);
+    assert.doesNotMatch(out, /  2 --:--:--  no shell log yet\n/);
+    fs.appendFileSync(path.join(dir, 'architect.log'), `${t1.toISOString()} m-1 hidden step\n`);
+    fs.appendFileSync(path.join(dir, 'interface-dev.log'), `${t1.toISOString()} m-2 visible step\n`);
+    assert.ok(await waitFor(() => out.includes('visible step')));
+    assert.ok(!out.includes('hidden step'), out);
+    process.emit('SIGINT');
+    await watchingNamed;
+
+    // --here filters to teamHere(), and memberBoardCommand('--shells') routes to memberWatchCommand.
+    out = '';
+    const watchingHere = memberBoardCommand('--shells', '--here');
+    assert.match(out, /^architect\s+done ok/m);
+    assert.doesNotMatch(out, /^interface-dev\s/m);
+    process.emit('SIGINT');
+    await watchingHere;
+
+    // --json delegates to memberBoardCommand(..., '--follow').
+    out = '';
+    const watchingJson = memberWatchCommand('--json', '--everywhere');
+    assert.ok(await waitFor(() => out.includes('"kind":"snapshot"')));
+    const snap = JSON.parse(out.trim().split('\n')[0]);
+    assert.equal(snap.kind, 'snapshot');
+    assert.deepEqual(snap.members.map((m) => m.member).sort(), ['architect', 'interface-dev']);
+    process.emit('SIGINT');
+    await watchingJson;
+  } finally {
+    process.stdout.write = realWrite;
+    process.chdir(prevCwd);
+    if (prevDir === undefined) delete process.env.ATRIS_PROGRESS_DIR; else process.env.ATRIS_PROGRESS_DIR = prevDir;
+    fs.rmSync(dir, { recursive: true, force: true });
+    fs.rmSync(project, { recursive: true, force: true });
+  }
+});

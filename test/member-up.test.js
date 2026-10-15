@@ -6,7 +6,18 @@ const fs = require('fs');
 const os = require('os');
 const path = require('path');
 
-const { createMemberUp, runMemberUp, memberUpResult, IDLE_CHECK_MS, IDLE_EXIT, SUMMARY_MS, CHECK_MS, STALL_MS } = require('../lib/member-up');
+const {
+  createMemberUp,
+  runMemberUp,
+  memberUpResult,
+  parseDurationWindow,
+  isDurationPhrase,
+  IDLE_CHECK_MS,
+  IDLE_EXIT,
+  SUMMARY_MS,
+  CHECK_MS,
+  STALL_MS,
+} = require('../lib/member-up');
 
 // A fake team: members, a task list per member, a clock and a spawner that
 // records starts and lets the test end a run with an exit code. Tasks written
@@ -302,3 +313,88 @@ test('checked child result supplies the change summary or the actual failure rea
   assert.deepEqual(memberUpResult(''), { ok: false, reason: 'run ended without a checked task result' });
   assert.deepEqual(memberUpResult('', '', 'SIGTERM'), { ok: false, reason: 'stopped by sigterm' });
 });
+
+test('announces already-working members once, streams their steps, and frees their slot on finished', () => {
+  const members = [
+    { name: 'busy', live: true, title: 'Fix auth retries' },
+    { name: 'waiter' },
+  ];
+  const team = fakeTeam(members, { waiter: [{ id: 't1', title: 'next job' }] });
+  const dry = createMemberUp(team.deps, { max: 1, dryRun: true });
+  dry.check();
+  assert.deepEqual(team.lines, [], 'dry run does not announce already-working members');
+
+  const up = createMemberUp(team.deps, { max: 1 });
+  up.check();
+  team.advance(CHECK_MS);
+  up.check();
+  assert.deepEqual(team.lines, ['busy is already working on: Fix auth retries']);
+  assert.deepEqual(team.spawned, []);
+  assert.equal(up.working(), 1);
+
+  const iso = '2026-10-14T12:02:00.000Z';
+  const d = new Date(iso);
+  const hhmm = `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
+  up.progress({ member: 'outsider', kind: 'step', at: iso, text: 'editing secret.js' });
+  up.progress({ member: 'busy', kind: 'step', at: iso, text: 'editing lib/auth.js' });
+  assert.deepEqual(team.lines, [
+    'busy is already working on: Fix auth retries',
+    `  busy ${hhmm}  editing lib/auth.js`,
+  ]);
+
+  up.progress({ member: 'busy', kind: 'finished', at: '2026-10-14T12:03:00.000Z', text: 'ok', ok: true });
+  assert.equal(up.working(), 0, 'finished frees the liveElsewhere slot immediately');
+  members[0].live = false;
+  up.check();
+  assert.deepEqual(team.spawned, ['waiter']);
+});
+
+test('parseDurationWindow and isDurationPhrase recognize bounded work windows', () => {
+  assert.deepEqual(parseDurationWindow('2h'), { ms: 7200000, seconds: 7200, label: '2h' });
+  assert.deepEqual(parseDurationWindow('90m'), { ms: 5400000, seconds: 5400, label: '1h 30m' });
+  assert.deepEqual(parseDurationWindow('45s'), { ms: 45000, seconds: 45, label: '45s' });
+  assert.deepEqual(parseDurationWindow('1.5h'), { ms: 5400000, seconds: 5400, label: '1h 30m' });
+  assert.deepEqual(parseDurationWindow('1h 30m'), { ms: 5400000, seconds: 5400, label: '1h 30m' });
+  assert.deepEqual(parseDurationWindow('1-2hours'), { ms: 7200000, seconds: 7200, label: '2h' });
+  assert.deepEqual(parseDurationWindow('1-2 hours'), { ms: 7200000, seconds: 7200, label: '2h' });
+  assert.deepEqual(parseDurationWindow('1 to 2 hours'), { ms: 7200000, seconds: 7200, label: '2h' });
+  assert.deepEqual(parseDurationWindow('for 2 hours'), { ms: 7200000, seconds: 7200, label: '2h' });
+  assert.deepEqual(parseDurationWindow('serious work tonight - 1-2hours'), { ms: 7200000, seconds: 7200, label: '2h' });
+  assert.deepEqual(parseDurationWindow('tonight 1-2h'), { ms: 7200000, seconds: 7200, label: '2h' });
+  assert.deepEqual(parseDurationWindow('overnight'), { ms: 28800000, seconds: 28800, label: '8h' });
+  assert.equal(parseDurationWindow(''), null);
+  assert.equal(parseDurationWindow('0h'), null);
+  assert.equal(parseDurationWindow('-2h'), null);
+  assert.equal(parseDurationWindow('file work'), null);
+
+  assert.equal(isDurationPhrase('1-2hours'), true);
+  assert.equal(isDurationPhrase('2h'), true);
+  assert.equal(isDurationPhrase('for 2 hours'), true);
+  assert.equal(isDurationPhrase('serious work tonight - 1-2hours'), true);
+  assert.equal(isDurationPhrase('overnight'), true);
+  assert.equal(isDurationPhrase('file work'), false);
+  assert.equal(isDurationPhrase('cli guy'), false);
+  assert.equal(isDurationPhrase('cli guy for 2h'), false);
+});
+
+test('runMemberUp stops cleanly when durationMs window elapses and clamps final sleep', async (t) => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'atris-up-window-'));
+  t.after(() => fs.rmSync(dir, { recursive: true, force: true }));
+  const team = fakeTeam([{ name: 'a' }], { a: [{ id: 't1', title: 'one' }] });
+  const slept = [];
+  team.deps.sleep = async (ms) => {
+    slept.push(ms);
+    team.advance(ms);
+  };
+  const loop = runMemberUp(team.deps, {
+    progressDir: dir,
+    durationMs: 90 * 1000,
+    durationLabel: '1m 30s',
+  });
+  await loop.done;
+  assert.deepEqual(slept, [60 * 1000, 30 * 1000]);
+  assert.equal(team.lines[0], 'keeping members working for 1m 30s (ctrl-c to stop early)');
+  assert.equal(team.lines.at(-1), 'finished 1m 30s work window');
+});
+
+

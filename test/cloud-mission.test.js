@@ -136,7 +136,7 @@ test('cloud mission status parses the cloud task id and prints backend status', 
 
   assert.equal(result.exitCode, 0);
   assert.deepEqual(calls, [{
-    pathname: '/atris2/missions/task%2Fwith-slash',
+    pathname: '/atris2/missions/task%2Fwith-slash?details=true',
     options: { method: 'GET', token: 'status-token' },
   }]);
   assert.deepEqual(output.stdout, [
@@ -292,4 +292,52 @@ test('mission run cloud dispatch rejects a bad lane before local mission setup',
   } finally {
     fs.rmSync(root, { recursive: true, force: true });
   }
+});
+
+
+test('explicit computer mission binds one real computer task and retry key to its agent', async () => {
+  const root = tempDir();
+  const agent = '12345678-1234-1234-1234-123456789abc';
+  const calls = [];
+  try {
+    const outcome = await runCloudMissionCommand(['inspect current onboarding', '--cloud', '--computer', '--agent', agent,
+      '--lane=pro', '--idempotency-key', 'orb-approval-123'], {
+      root, log: () => {}, error: () => {}, loadCredentials: () => ({ token: 'test-token' }),
+      apiRequestJson: async (pathname, options) => {
+        calls.push({ pathname, options });
+        return { ok: true, data: { task_id: 'durable-job', status: 'pending' } };
+      },
+    });
+    assert.equal(outcome.exitCode, 0);
+    assert.equal(calls.length, 1);
+    const body = calls[0].options.body;
+    assert.equal(body.agent_id, agent);
+    assert.equal(body.idempotency_key, 'orb-approval-123');
+    assert.deepEqual(body.fanout, [{ role: 'member', task: body.text, agent_id: agent, lane: 'pro' }]);
+    assert.equal(body.text, withReceiptVoice('inspect current onboarding'));
+    const receipt = JSON.parse(fs.readFileSync(path.join(root, '.atris', 'state', 'missions.jsonl'), 'utf8'));
+    assert.equal(receipt.computer, true);
+    assert.equal(receipt.agent_id, agent);
+    assert.equal(receipt.idempotency_key, 'orb-approval-123');
+  } finally { fs.rmSync(root, { recursive: true, force: true }); }
+});
+
+test('computer missions reject missing or invalid agents before loading credentials or enqueueing', async () => {
+  for (const flags of [[], ['--agent', 'agent-alias'], ['--agent', '']]) {
+    const outcome = await runCloudMissionCommand(['inspect files', '--cloud', '--computer', ...flags], {
+      log: () => {}, error: () => {},
+      loadCredentials: () => { throw new Error('must not load credentials'); },
+      apiRequestJson: () => { throw new Error('must not enqueue'); },
+    });
+    assert.equal(outcome.exitCode, 2);
+  }
+});
+
+test('retry keys must be present and bounded and never enter task text', () => {
+  for (const value of ['', 'x'.repeat(201)]) {
+    assert.throws(() => parseCloudRunArgs(['do work', '--cloud', '--idempotency-key', value]), /1 to 200/);
+  }
+  assert.deepEqual(parseCloudRunArgs(['do work', '--cloud', '--idempotency-key=once']), {
+    text: 'do work', lane: 'fast', asJson: false, idempotencyKey: 'once',
+  });
 });

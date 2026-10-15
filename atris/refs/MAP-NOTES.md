@@ -2372,3 +2372,7 @@ When the receipt names a different model than the one asked for, the chat prints
 `lib/runner-command.js` pins the mercury profile and `lib/engine-registry.js` keeps it roster-only.
 Regression checks live in `test/ax.test.js`, `test/runner-command.test.js`, and `test/engine-ask.test.js`.
 Verify: `npm run test:fast && node --test test/ax.test.js test/runner-command.test.js`.
+
+Cloud mission computer bridge: `lib/cloud-mission.js:38` argument validation; `lib/cloud-mission.js:155` enqueue contract; `lib/cloud-mission.js:174` status details; `test/cloud-mission.test.js` explicit computer task, stable retry key, result details and unchanged text-only tests.
+
+Member match: `lib/member-match.js:557` scores a plain phrase against MEMBER.md, the live board, and active missions; `lib/member-verbs.js:89` wakes the match; `commands/member.js:10167` does the same for shell watch. A time phrase in the mission ask is `commands/mission.js:3382`, and the keep-working window is `lib/member-up.js:502`. Regression: `test/member-match.test.js`, `test/member-verbs.test.js`, `test/mission-budget-duration.test.js`.

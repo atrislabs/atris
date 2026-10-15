@@ -9926,8 +9926,13 @@ const IDEA_ARCHETYPE_RULES = [
   },
   {
     slugs: ['architect'],
-    pattern: /\b(architect|migration|schema|api\s+design|refactor|boundary)\b/i,
+    pattern: /\b(architect|migration|schema|api\s+design|refactor|boundary|folder|worktree|file\s+work|files)\b/i,
     reason: 'judges architecture and multi-file design before code changes',
+  },
+  {
+    slugs: ['interface-dev', 'frontend-dev'],
+    pattern: /\b(interface|interaction|interactions|ui|desktop|editor|toolbar|view|screen)\b/i,
+    reason: 'owns the interface and user interactions',
   },
   {
     slugs: ['navigator', 'task-planner'],
@@ -9946,7 +9951,7 @@ const IDEA_ARCHETYPE_RULES = [
   },
   {
     slugs: ['executor', 'builder', 'codex-executor'],
-    pattern: /\b(build|implement|feature|add|wire|create|ship|code|update)\b/i,
+    pattern: /\b(build|implement|feature|add|wire|create|ship|code|update|cli|command|terminal)\b/i,
     reason: 'builds and tests concrete product changes',
   },
 ];
@@ -10004,7 +10009,7 @@ function ideaNamesMember(text, slug) {
   return new RegExp(`(^|[^a-z0-9-])${escaped}($|[^a-z0-9-])`, 'i').test(text);
 }
 
-function pickMemberForIdea(ideaText, root = process.cwd(), preferredMember = '') {
+function pickMemberForIdea(ideaText, root = process.cwd(), preferredMember = '', options = {}) {
   const teamDir = path.join(root, 'atris', 'team');
   const members = findAllMembers(teamDir).filter(isFleetMember);
   if (!members.length) return null;
@@ -10027,8 +10032,10 @@ function pickMemberForIdea(ideaText, root = process.cwd(), preferredMember = '')
   const words = text
     .toLowerCase()
     .split(/[^a-z0-9]+/)
-    .filter((w) => w.length >= 4);
+    .filter((w) => w.length >= 3);
   const jobRule = ideaJobRule(text);
+  let missionMap = null;
+  try { missionMap = memberRunMissionMap(root); } catch {}
 
   let best = null;
   for (const record of members) {
@@ -10049,7 +10056,12 @@ function pickMemberForIdea(ideaText, root = process.cwd(), preferredMember = '')
 
     const missionFile = path.join(teamDir, slug, 'MISSION.md');
     const missionText = fs.existsSync(missionFile) ? fs.readFileSync(missionFile, 'utf8') : '';
-    const corpus = `${slug} ${record.role || ''} ${record.description || ''} ${(record.skills || []).join(' ')} ${missionText}`.toLowerCase();
+    let liveObjective = '';
+    try {
+      const summary = missionMap ? memberMissionSummary(slug, missionMap, root) : null;
+      liveObjective = String(summary?.live_mission?.objective || summary?.latest?.objective || '').trim();
+    } catch {}
+    const corpus = `${slug} ${record.role || ''} ${record.description || ''} ${(record.skills || []).join(' ')} ${missionText} ${liveObjective}`.toLowerCase();
 
     let overlapCount = 0;
     for (const word of words) {
@@ -10061,6 +10073,8 @@ function pickMemberForIdea(ideaText, root = process.cwd(), preferredMember = '')
     if (named) {
       score += 40;
       matchedReason = 'named in the idea';
+    } else if (!matchedReason && overlapCount > 0 && liveObjective && words.some((w) => liveObjective.toLowerCase().includes(w))) {
+      matchedReason = compactSentence(liveObjective, 90);
     }
 
     if (!matchedReason) {
@@ -10069,18 +10083,210 @@ function pickMemberForIdea(ideaText, root = process.cwd(), preferredMember = '')
         : `fits ${record.role || slug} responsibilities`;
     }
 
+    const extraScore = typeof options.scoreBoost === 'function' ? Number(options.scoreBoost(slug) || 0) : 0;
     const candidate = {
       member: slug,
       role: record.role || 'Team Member',
-      reason: matchedReason,
-      score,
+      reason: matchedReason.replace(/\s*\u2014\s*/g, ', '),
+      score: score + extraScore,
       tier,
       fit,
+      matchedSignal: Boolean(named || fit > 0 || overlapCount > 0),
     };
     if (outranksDispatch(candidate, best)) best = candidate;
   }
 
   return best;
+}
+
+function matchMemberForWake(query, root = process.cwd(), options = {}) {
+  const { matchMember } = require('../lib/member-match');
+  return matchMember(query, {
+    root,
+    includeWorkspace: Boolean(options.includeWorkspace),
+    preferActive: options.preferActive !== false,
+    exclude: options.exclude,
+  });
+}
+
+function wakeMemberForShell(slug, root = process.cwd(), durationWindow = null) {
+  const targetRoot = memberRootFor(slug, root);
+  const wallSeconds = durationWindow && durationWindow.ms > 0
+    ? Math.max(60, Math.round(durationWindow.ms / 1000))
+    : 7200;
+  try {
+    const missionMap = memberRunMissionMap(targetRoot);
+    const latest = memberLatestMission(slug, missionMap);
+    const status = String(latest?.status || '').toLowerCase();
+    if (latest && latest.id && !['complete', 'stopped'].includes(status)) {
+      const missionCwd = latest.worktree_root && fs.existsSync(latest.worktree_root)
+        ? latest.worktree_root
+        : targetRoot;
+      const { spawn } = require('child_process');
+      const logDir = path.join(targetRoot, '.atris', 'state', 'member-up');
+      fs.mkdirSync(logDir, { recursive: true });
+      const out = fs.openSync(path.join(logDir, `${slug}.log`), 'a');
+      let child;
+      try {
+        child = spawn(
+          process.execPath,
+          [
+            path.join(__dirname, '..', 'bin', 'atris.js'),
+            'mission',
+            'run',
+            latest.id,
+            '--runner',
+            'auto',
+            '--max-ticks',
+            '36',
+            '--max-wall',
+            String(wallSeconds),
+          ],
+          {
+            cwd: missionCwd,
+            detached: true,
+            stdio: ['ignore', out, out],
+            env: process.env,
+          },
+        );
+      } finally {
+        fs.closeSync(out);
+      }
+      if (child && typeof child.unref === 'function') child.unref();
+      return child;
+    }
+  } catch {}
+  try {
+    const child = memberUpSpawn(targetRoot, slug, () => {}, () => {});
+    if (child && typeof child.unref === 'function') child.unref();
+    return child;
+  } catch {}
+  return null;
+}
+
+async function memberShellCommand(...args) {
+  const { memberWatchCommand, readBoard } = require('../lib/member-board');
+  const { isDurationPhrase, parseDurationWindow } = require('../lib/member-up');
+  const asJson = args.includes('--json');
+  const noWake = args.includes('--no-wake');
+  const wakeRequested = args.includes('--wake') || args.includes('--keep');
+  const root = process.cwd();
+  const boardRows = readBoard({ all: true });
+  const boardNames = new Set(boardRows.map((r) => r.member));
+  const valueFlags = new Set(['--lines', '--timeout-ms', '--for', '--duration', '--hours', '--minutes', '--max']);
+  const watchPassFlags = new Set(['--lines', '--timeout-ms']);
+  const resolved = [];
+  const matchedSlugs = [];
+  const seen = new Set();
+  let durationWindow = null;
+  let hasExplicitTimeout = false;
+
+  for (let i = 0; i < args.length; i += 1) {
+    const raw = args[i];
+    const word = String(raw || '').trim();
+    if (!word) continue;
+    if (word.startsWith('-')) {
+      if (word === '--wake' || word === '--keep' || word === '--no-wake') continue;
+      if (word === '--timeout-ms' || word.startsWith('--timeout-ms=')) hasExplicitTimeout = true;
+      const eqIdx = word.indexOf('=');
+      const flagName = eqIdx >= 0 ? word.slice(0, eqIdx) : word;
+      const inlineVal = eqIdx >= 0 ? word.slice(eqIdx + 1) : null;
+      if (valueFlags.has(flagName)) {
+        const val = inlineVal != null ? inlineVal : (i + 1 < args.length ? String(args[++i] || '') : '');
+        if (flagName === '--for' || flagName === '--duration') {
+          durationWindow = parseDurationWindow(val) || durationWindow;
+        } else if (flagName === '--hours') {
+          durationWindow = parseDurationWindow(`${val}h`) || durationWindow;
+        } else if (flagName === '--minutes') {
+          durationWindow = parseDurationWindow(`${val}m`) || durationWindow;
+        }
+        if (watchPassFlags.has(flagName)) {
+          resolved.push(flagName, val);
+        }
+        continue;
+      }
+      resolved.push(raw);
+      continue;
+    }
+    if (isDurationPhrase(word)) {
+      durationWindow = parseDurationWindow(word) || durationWindow;
+      continue;
+    }
+    const exact = isKnownMemberSlug(word, root) || boardNames.has(word);
+    if (exact) {
+      if (!seen.has(word)) {
+        seen.add(word);
+        resolved.push(word);
+        matchedSlugs.push(word);
+      }
+      continue;
+    }
+    const { matchMember } = require('../lib/member-match');
+    const matched = matchMember(word, {
+      root,
+      includeWorkspace: true,
+      preferActive: true,
+      boardRows,
+      exclude: seen,
+    });
+    const slug = matched && matched.member ? String(matched.member).trim() : '';
+    if (slug) {
+      if (!asJson) {
+        const reason = matched.reason || matched.role || '';
+        console.log(reason ? `matched "${word}" to ${slug} (${reason})` : `matched "${word}" to ${slug}`);
+      }
+      if (!seen.has(slug)) {
+        seen.add(slug);
+        resolved.push(slug);
+        matchedSlugs.push(slug);
+      }
+      continue;
+    }
+    resolved.push(word);
+  }
+
+  if (durationWindow && !hasExplicitTimeout) {
+    resolved.push('--timeout-ms', String(durationWindow.ms));
+  }
+  if (!noWake && !asJson && !args.includes('--dry-run')) {
+    if (durationWindow || wakeRequested) {
+      const label = durationWindow ? durationWindow.label : 'continuous';
+      console.log(`keeping ${matchedSlugs.length ? matchedSlugs.join(', ') : 'team'} working for ${label} (ctrl-c to stop early)`);
+    }
+    const targets = matchedSlugs.length
+      ? matchedSlugs
+      : ((durationWindow || wakeRequested)
+        ? boardRows.filter((r) => r.alive === true || r.state === 'working').map((r) => r.member).slice(0, 3)
+        : []);
+    const wakeStartedAt = Date.now();
+    const wokeSlugs = [];
+    for (const slug of targets) {
+      const row = boardRows.find((r) => r.member === slug);
+      if (!row || row.alive !== true) {
+        if (wakeMemberForShell(slug, root, durationWindow)) {
+          wokeSlugs.push(slug);
+        }
+      }
+    }
+    if (wokeSlugs.length > 0) {
+      if (!(durationWindow || wakeRequested)) {
+        console.log(`waking ${wokeSlugs.join(', ')}...`);
+      }
+      const rawWait = process.env.ATRIS_SHELL_WAKE_WAIT_MS;
+      const maxWaitMs = rawWait !== undefined ? Math.max(0, Number(rawWait) || 0) : 1500;
+      const deadline = Date.now() + maxWaitMs;
+      while (Date.now() < deadline) {
+        const freshRows = readBoard({ all: true, only: wokeSlugs });
+        const allReady = wokeSlugs.every((slug) => {
+          const r = freshRows.find((entry) => entry.member === slug);
+          return Boolean(r && (r.alive === true || r.at >= wakeStartedAt));
+        });
+        if (allReady) break;
+        await new Promise((resolve) => setTimeout(resolve, 60));
+      }
+    }
+  }
+  return memberWatchCommand(...resolved);
 }
 
 function memberDispatch(...args) {
@@ -10931,31 +11137,71 @@ function memberSleepingByChoice(latest) {
     && latest.sleep_target === 'member');
 }
 
-function memberUpTeam(root) {
+function memberRootFor(name, root) {
+  const clean = String(name || '').trim();
+  if (!clean) return root;
+  if (fs.existsSync(path.join(root, 'atris', 'team', clean, 'MEMBER.md'))) return root;
+  try {
+    const { matchMember } = require('../lib/member-match');
+    const matched = matchMember(clean, { root, includeWorkspace: true, preferActive: false });
+    const foundRoot = matched && matched.member === clean ? (matched.repoRoot || matched.root) : null;
+    if (foundRoot) return foundRoot;
+  } catch {}
+  return root;
+}
+
+function memberUpTeam(root, only = null) {
   const { isMemberParked } = require('../lib/member-park');
   const missionMap = memberRunMissionMap(root);
-  return findAllMembers(path.join(root, 'atris', 'team')).filter(isFleetMember).map((record) => {
+  const localRecords = findAllMembers(path.join(root, 'atris', 'team')).filter(isFleetMember);
+  const seen = new Set();
+  const team = localRecords.map((record) => {
     const name = memberSlugFromRecord(record);
+    seen.add(name);
     const summary = memberMissionSummary(name, missionMap, root);
     return {
       name,
+      root,
       parked: isMemberParked(root, name),
       human: Boolean(memberRefusalFor(name, path.join(root, 'atris', 'team', name, 'MEMBER.md'))),
       sleeping: memberSleepingByChoice(summary.latest),
       live: Boolean(summary.live_mission),
+      title: summary.live_mission ? String(summary.live?.objective || summary.objective || '').trim() : '',
     };
   });
+  if (Array.isArray(only)) {
+    for (const rawName of only) {
+      const name = String(rawName || '').trim();
+      if (!name || seen.has(name)) continue;
+      const extRoot = memberRootFor(name, root);
+      if (extRoot === root && !fs.existsSync(path.join(extRoot, 'atris', 'team', name, 'MEMBER.md'))) continue;
+      seen.add(name);
+      const extMissionMap = extRoot === root ? missionMap : memberRunMissionMap(extRoot);
+      const summary = memberMissionSummary(name, extMissionMap, extRoot);
+      team.push({
+        name,
+        root: extRoot,
+        parked: isMemberParked(extRoot, name),
+        human: Boolean(memberRefusalFor(name, path.join(extRoot, 'atris', 'team', name, 'MEMBER.md'))),
+        sleeping: memberSleepingByChoice(summary.latest),
+        live: Boolean(summary.live_mission),
+        title: summary.live_mission ? String(summary.live?.objective || summary.objective || '').trim() : '',
+      });
+    }
+  }
+  return team;
 }
 
 // The task `member go <name>` would claim, skipping ones already handed out.
 // Looks only; the child claims it.
 function memberUpPick(root, name, taken) {
+  const targetRoot = memberRootFor(name, root);
   try {
     const taskDb = require('../lib/task-db');
     const { fittingTasks } = require('../lib/member-task-pick');
     const db = taskDb.open();
-    const job = memberGoJob(name, root);
-    return fittingTasks(taskDb, db, { workspaceRoot: taskDb.workspaceRoot(root), member: name, job, requireCheck: true, recoverClaimed: true })
+    const job = memberGoJob(name, targetRoot);
+    return fittingTasks(taskDb, db, { workspaceRoot: taskDb.workspaceRoot(targetRoot), member: name, job, requireCheck: true, recoverClaimed: true })
       .find((task) => !taken.has(task.id)) || null;
   } catch {
     return null;
@@ -10964,14 +11210,15 @@ function memberUpPick(root, name, taken) {
 
 // An empty job list: write the member's next job from its own mission.
 function memberUpWriteNextJob(root, name, { dryRun = false } = {}) {
+  const targetRoot = memberRootFor(name, root);
   const taskDb = require('../lib/task-db');
   const { writeSelfNextJob } = require('../lib/member-self-next-job');
   const db = taskDb.open();
   return writeSelfNextJob(taskDb, db, {
-    root,
-    workspaceRoot: taskDb.workspaceRoot(root),
+    root: targetRoot,
+    workspaceRoot: taskDb.workspaceRoot(targetRoot),
     member: name,
-    job: memberGoJob(name, root),
+    job: memberGoJob(name, targetRoot),
     dryRun,
   });
 }
@@ -10991,8 +11238,9 @@ function memberUpWaiting(root) {
 }
 
 function memberUpSpawn(root, name, onExit, onClaim) {
+  const targetRoot = memberRootFor(name, root);
   const { spawn } = require('child_process');
-  const logDir = path.join(root, '.atris', 'state', 'member-up');
+  const logDir = path.join(targetRoot, '.atris', 'state', 'member-up');
   fs.mkdirSync(logDir, { recursive: true });
   const logFile = path.join(logDir, `${name}.log`);
   const out = fs.openSync(logFile, 'a');
@@ -11000,7 +11248,7 @@ function memberUpSpawn(root, name, onExit, onClaim) {
   let child;
   try {
     child = spawn(process.execPath, [path.join(__dirname, '..', 'bin', 'atris.js'), 'member', 'go', name, '--needs-check', '--json'], {
-      cwd: root,
+      cwd: targetRoot,
       detached: true,
       // Children keep their log handle when the foreground supervisor stops.
       stdio: ['ignore', out, out, 'ipc'],
@@ -11034,14 +11282,14 @@ function memberUpSpawn(root, name, onExit, onClaim) {
 
 async function memberUp(...args) {
   if (hasFlag(args, '--help') || hasFlag(args, '-h')) {
-    console.log('Usage: atris member up [--max N] [--only a,b] [--dry-run]');
+    console.log('Usage: atris member up [--max N] [--only a,b] [--for 2h] [--dry-run]');
     console.log('Keeps the team working: every minute, starts each free member that has a fitting task with a runnable check.');
     console.log('A member with no such task writes its next job from its mission when the mission has a ## Check, then starts it.');
     console.log('Without a check it stays idle. At most one self-written job is open per member, and 3 a day.');
     console.log('The longer a member stays idle, the less often it is checked: 5, 10, 20, then every 30 minutes.');
     console.log('A working member with no new step for 20 minutes is called out as stuck, once until it moves again.');
     console.log('Every 5 minutes it also puts member changes github dropped from its merge line back in, when self-landing is on.');
-    console.log('--only limits it to those members. Same as atris member wake 5 or atris member wake a b.');
+    console.log('--only limits it to those members. --for 2h or "1-2hours" runs for a bounded window.');
     console.log('Ctrl-C or atris member sleep --all ends it. Runs it started keep going.');
     return;
   }
@@ -11053,14 +11301,14 @@ async function memberUp(...args) {
     process.exitCode = 1;
     return;
   }
-  const { max, only } = parsed;
+  const { max, only, durationMs, durationLabel } = parsed;
   const deps = {
-    listMembers: () => memberUpTeam(root),
+    listMembers: () => memberUpTeam(root, only),
     pickTask: (name, taken) => memberUpPick(root, name, taken),
     writeNextJob: (name, opts) => memberUpWriteNextJob(root, name, opts),
     spawn: (name, onExit, onClaim) => memberUpSpawn(root, name, onExit, onClaim),
     now: () => Date.now(),
-    jobOf: (name) => memberGoJob(name, root),
+    jobOf: (name) => memberGoJob(name, memberRootFor(name, root)),
     waitingTasks: () => memberUpWaiting(root),
     requeueDropped: () => require('../lib/member-up').memberMaintenance({
       cwd: root,
@@ -11082,7 +11330,7 @@ async function memberUp(...args) {
   const pidFile = memberUpPidFile(root);
   fs.mkdirSync(path.dirname(pidFile), { recursive: true });
   fs.writeFileSync(pidFile, JSON.stringify({ pid: process.pid, started_at: new Date().toISOString() }));
-  const loop = runMemberUp(deps, { max, only });
+  const loop = runMemberUp(deps, { max, only, durationMs, durationLabel });
   const end = () => loop.stop();
   process.once('SIGINT', end);
   process.once('SIGTERM', end);
@@ -11596,6 +11844,12 @@ async function memberCommand(subcommand, ...args) {
       return memberTick(args[0], ...args.slice(1));
     case 'wake':
       return require('../lib/member-verbs').memberWakeVerb(args, {
+        root: process.cwd(),
+        matchMember: (query, opts = {}) => matchMemberForWake(query, process.cwd(), {
+          includeWorkspace: args.includes('--everywhere') || args.includes('--workspace'),
+          preferActive: true,
+          ...opts,
+        }),
         wake: memberWake,
         up: memberUp,
       });
@@ -11640,6 +11894,10 @@ async function memberCommand(subcommand, ...args) {
       return memberFeed(...args);
     case 'board':
       return require('../lib/member-board').memberBoardCommand(...args);
+    case 'watch':
+    case 'shell':
+    case 'shells':
+      return memberShellCommand(...args);
     case 'stop':
       return require('../lib/member-board').memberStopCommand(args[0]);
     case 'card':

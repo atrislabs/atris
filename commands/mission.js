@@ -1511,10 +1511,12 @@ function listSiblingWorkspaceMissionHints(ref, root = process.cwd(), limit = 5) 
   } catch {
     return [];
   }
+  if (entries.length > 200) return [];
   const hints = [];
   for (const entry of entries) {
     if (!entry.isDirectory() || entry.name.startsWith('.')) continue;
     const candidateRoot = path.join(parent, entry.name);
+    if (!fs.existsSync(path.join(candidateRoot, '.atris', 'state', 'missions.jsonl'))) continue;
     let candidateReal = candidateRoot;
     try {
       candidateReal = fs.realpathSync(candidateRoot);
@@ -1522,7 +1524,6 @@ function listSiblingWorkspaceMissionHints(ref, root = process.cwd(), limit = 5) 
       continue;
     }
     if (candidateReal === here) continue;
-    if (!fs.existsSync(path.join(candidateRoot, '.atris', 'state', 'missions.jsonl'))) continue;
     const mission = listMissions(candidateRoot).find((row) => missionMatchesRef(row, ref));
     if (!mission) continue;
     hints.push({
@@ -3328,16 +3329,66 @@ function inferRunObjectiveVerifier(objective, root = process.cwd()) {
   return missionRunSmokeVerifier();
 }
 
+const DURATION_UNIT_PATTERN = 's|sec|secs|second|seconds|m|min|mins|minute|minutes|h|hr|hrs|hour|hours|d|day|days';
+
+function durationUnitSeconds(unit) {
+  const normalized = String(unit || '').toLowerCase();
+  if (/^d/.test(normalized)) return 86400;
+  if (/^h/.test(normalized)) return 3600;
+  if (/^m(?!s)/.test(normalized)) return 60;
+  return 1;
+}
+
+function rangeDurationSecondsFromText(text) {
+  const match = String(text || '').match(
+    new RegExp(`\\b(\\d+(?:\\.\\d+)?)\\s*(?:${DURATION_UNIT_PATTERN})?\\s*(?:-|to)\\s*(\\d+(?:\\.\\d+)?)[-\\s]*(${DURATION_UNIT_PATTERN})\\b`, 'i'),
+  );
+  if (!match) return null;
+  const lower = Number(match[1]);
+  const upper = Number(match[2]);
+  if (!Number.isFinite(lower) || !Number.isFinite(upper) || upper <= 0) return null;
+  const value = Math.max(lower, upper);
+  return Math.round(value * durationUnitSeconds(match[3]));
+}
+
+function compoundDurationSecondsFromText(text) {
+  const compoundRegex = new RegExp(
+    `\\b(\\d+(?:\\.\\d+)?)[-\\s]*(${DURATION_UNIT_PATTERN})(?:\\s*(?:,\\s*)?(?:and\\s+)?(\\d+(?:\\.\\d+)?)[-\\s]*(${DURATION_UNIT_PATTERN}))+\\b`,
+    'gi',
+  );
+  const partRegex = new RegExp(`(\\d+(?:\\.\\d+)?)[-\\s]*(${DURATION_UNIT_PATTERN})`, 'gi');
+  let match;
+  while ((match = compoundRegex.exec(String(text || ''))) !== null) {
+    const parts = Array.from(match[0].matchAll(partRegex));
+    if (parts.length < 2) continue;
+    let total = 0;
+    let prevUnitSeconds = Infinity;
+    let valid = true;
+    for (const part of parts) {
+      const value = Number(part[1]);
+      const unitSec = durationUnitSeconds(part[2]);
+      if (!Number.isFinite(value) || value <= 0 || unitSec >= prevUnitSeconds) {
+        valid = false;
+        break;
+      }
+      total += value * unitSec;
+      prevUnitSeconds = unitSec;
+    }
+    if (valid && total > 0) return Math.round(total);
+  }
+  return null;
+}
+
 function durationSecondsFromText(text) {
-  const match = String(text || '').match(/\b(\d+(?:\.\d+)?)[-\s]*(s|sec|secs|second|seconds|m|min|mins|minute|minutes|h|hr|hrs|hour|hours|d|day|days)\b/i);
+  const rangeSeconds = rangeDurationSecondsFromText(text);
+  if (rangeSeconds) return rangeSeconds;
+  const compoundSeconds = compoundDurationSecondsFromText(text);
+  if (compoundSeconds) return compoundSeconds;
+  const match = String(text || '').match(new RegExp(`\\b(\\d+(?:\\.\\d+)?)[-\\s]*(${DURATION_UNIT_PATTERN})\\b`, 'i'));
   if (!match) return null;
   const value = Number(match[1]);
   if (!Number.isFinite(value) || value <= 0) return null;
-  const unit = match[2].toLowerCase();
-  if (/^d/.test(unit)) return Math.round(value * 86400);
-  if (/^h/.test(unit)) return Math.round(value * 3600);
-  if (/^m(?!s)/.test(unit)) return Math.round(value * 60);
-  return Math.round(value);
+  return Math.round(value * durationUnitSeconds(match[2]));
 }
 
 function durationLabel(seconds, fallback = 'the requested time') {
@@ -3373,11 +3424,14 @@ function wantsFullBudget(text, args = []) {
   if (hasFlag(args, '--spend-full-budget') || hasFlag(args, '--use-whole-budget')) return true;
   if (hasFlag(args, '--hours') || hasFlag(args, '--minutes')) return true;
   const compact = String(text || '').toLowerCase().replace(/\s+/g, ' ');
-  const duration = '\\d+(?:\\.\\d+)?[-\\s]*(?:s|sec|secs|second|seconds|m|min|mins|minute|minutes|h|hr|hrs|hour|hours|d|day|days)';
+  const duration = `(?:\\d+(?:\\.\\d+)?\\s*(?:-|to)\\s*)?\\d+(?:\\.\\d+)?[-\\s]*(?:${DURATION_UNIT_PATTERN})`;
   return /\b(use|spend)\s+(the\s+)?(whole|full|entire)\s+(time|budget|window)\b/.test(compact)
     || /\b(use|spend)\s+(the\s+)?(whole|full|entire)\s+\d/.test(compact)
     || new RegExp(`\\b(?:spend|use)\\s+${duration}\\b`).test(compact)
     || new RegExp(`(?:^|\\b)(?:run|work|think|research|investigate|brainstorm|plan|map|audit|explore|study|analyze|build)\\s+(?:[^.!?;]{0,80}\\s+)?for\\s+${duration}\\b`).test(compact)
+    || new RegExp(`\\b(?:for|over)\\s+(?:the\\s+next\\s+)?${duration}\\b`).test(compact)
+    || new RegExp(`\\btonight\\b[^.!?;]{0,40}${duration}\\b`).test(compact)
+    || (rangeDurationSecondsFromText(compact) || 0) >= 3600
     || new RegExp(`^\\s*for\\s+${duration}\\b`).test(compact)
     || /\bfor\s+the\s+(whole|full|entire)\s+/.test(compact)
     || /\bkeep\s+going\s+until\s+(time|the\s+time|budget|the\s+budget)\s+(is\s+)?(up|done|spent|used)\b/.test(compact)
@@ -10171,10 +10225,15 @@ async function executeMissionRunTicksPhase(context) {
     // so a fast tick's writes can't be silently overwritten by this run loop.
     mission = resolveMission(mission.id, cwd) || mission;
     if (explicitMaxWallSeconds && runBudgetContract) {
-      mission = saveMission({
+      const candidateBudgetMission = {
         ...mission,
         max_wall_seconds: explicitMaxWallSeconds,
         budget_contract: runBudgetContract,
+      };
+      const reopenExpiredBudget = missionFullBudgetRemainingSeconds(candidateBudgetMission) <= 0;
+      mission = saveMission({
+        ...candidateBudgetMission,
+        ...(reopenExpiredBudget ? { resumed_at: stampIso() } : {}),
       }, cwd, 'mission_budget_updated', {
         source: 'explicit-max-wall',
         requested_seconds: explicitMaxWallSeconds,
@@ -10541,11 +10600,12 @@ async function executeMissionRunTicksPhase(context) {
           operator_notes_read: claudeResult.operator_notes_read,
         };
         if (claudeResult.rate_limit_info) {
-          // Claude reports the five-hour window's resetsAt on every turn, even
-          // when status is "allowed". Only a non-allowed status is a cooldown;
-          // treating an allowed resetsAt as one pauses every timed run after
-          // tick 1 with rate-limit-exceeded-wall.
-          lastRateLimit = claudeResult.rate_limit_info.status === 'allowed' ? null : claudeResult.rate_limit_info;
+          // Claude reports the five-hour or seven-day window's resetsAt on every
+          // turn, even when status is "allowed" or "allowed_warning". Only a
+          // non-allowed status is a cooldown; treating an allowed resetsAt as
+          // one pauses every timed run after tick 1 with rate-limit-exceeded-wall.
+          const rlStatus = String(claudeResult.rate_limit_info.status || '').trim().toLowerCase();
+          lastRateLimit = rlStatus.startsWith('allowed') ? null : claudeResult.rate_limit_info;
           rateLimitedEngineId = lastRateLimit ? tickEngineId : null;
         }
         if (claudeResult.aborted) { pauseReason = 'aborted-during-claude'; break; }
@@ -12705,6 +12765,9 @@ module.exports = {
   engineVerifierResultFromRun,
   pickCrossEngineVerifier,
   runVerifier,
+  durationSecondsFromText,
+  wantsFullBudget,
+  inferRunObjectiveBudgetContract,
   missionFullBudgetRemainingSeconds,
   missionBudgetContinuationText,
   missionHumanStatusText,
