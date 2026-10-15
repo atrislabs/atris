@@ -10672,6 +10672,7 @@ async function executeMissionRunTicksPhase(context) {
           prep: tickWorkerRun.prep || null,
         });
       }
+      if (mission.campaign_id && !cachedStep) campaignMissions().recordCampaignTick(cwd, mission, (tickWorkerRun && tickWorkerRun.usage) || {});
       let receiptPath = cachedStep ? cachedStep.receipt_path : null;
 
       // Review-lane drain: always-on loops sweep the agent-safe review actions

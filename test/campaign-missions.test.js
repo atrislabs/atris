@@ -8,7 +8,7 @@ const path = require('node:path');
 const { spawnSync } = require('node:child_process');
 
 const {
-  checkCampaignStart, defaultReserve, missionCost, recordCampaignMissionEnded, recordCampaignMissionStarted,
+  checkCampaignStart, defaultReserve, missionCost, recordCampaignMissionEnded, recordCampaignMissionStarted, recordCampaignTick,
 } = require('../lib/campaign-missions');
 const { createMemoryStore, getCampaign } = require('../lib/campaign-store');
 
@@ -37,18 +37,27 @@ test('the default reserve follows what this campaign\'s missions have cost', () 
   assert.equal(defaultReserve({ missions: [] }), 5);
 });
 
-test('mission cost adds the runs that reported dollars and counts the ones that did not', () => {
-  const readRuns = () => [
-    { task: 'm1', cost_usd: 1.105 }, { task: 'm1', cost_usd: 0.5 }, { task: 'm1' }, { task: 'm2', cost_usd: 9 },
-  ];
-  assert.deepEqual(missionCost('/x', 'm1', { readRuns }), { cost_usd: 1.61, runs: 3, uncosted_runs: 1 });
+test('each tick records its cost in the campaign; mission cost adds them and counts ticks with no dollars', () => {
+  const store = campaign(20);
+  const deps = { store };
+  const m1 = { id: 'm1', owner: 'builder', campaign_id: 'cmp-a' };
+  recordCampaignMissionStarted('/x', m1, 0, deps);
+  recordCampaignMissionStarted('/x', { ...m1, id: 'm2' }, 0, deps);
+  recordCampaignTick('/x', m1, { cost_usd: 1.105, tokens: 900 }, deps);
+  recordCampaignTick('/x', m1, { cost_usd: 0.5 }, deps);
+  recordCampaignTick('/x', m1, { tokens: 4000 }, deps);
+  recordCampaignTick('/x', { ...m1, id: 'm2' }, { cost_usd: 9 }, deps);
+  recordCampaignTick('/x', { id: 'plain' }, { cost_usd: 1 }, deps);
+  assert.deepEqual(missionCost('/x', 'm1', deps), { cost_usd: 1.61, runs: 3, uncosted_runs: 1 });
+  assert.equal(getCampaign(store, 'cmp-a').missions[0].steps, 3);
 });
 
 test('a mission starts with its reserve and ends once, releasing it with its real cost', () => {
   const store = campaign(20);
-  const deps = { store, readRuns: () => [{ task: 'm1', cost_usd: 2.22 }] };
+  const deps = { store };
   const mission = { id: 'm1', owner: 'builder', objective: 'ship it', campaign_id: 'cmp-a', status: 'planning' };
   recordCampaignMissionStarted('/x', mission, 3, deps);
+  recordCampaignTick('/x', mission, { cost_usd: 2.22 }, deps);
   let view = getCampaign(store, 'cmp-a');
   assert.deepEqual(view.budget, { total: 20, spent: 0, reserved: 3, available: 17 });
   assert.equal(view.missions[0].status, 'running');

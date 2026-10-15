@@ -87,7 +87,9 @@ function runJudgeCommand(command, cwd, timeoutSeconds) {
   });
   const output = `${run.stdout || ''}\n${run.stderr || ''}`;
   const lines = output.split('\n').map((line) => line.trim()).filter(Boolean);
-  let summary = lines.length ? lines[lines.length - 1].slice(0, 200) : '';
+  // The last line that says something; test runners often end on a lone brace.
+  const telling = lines.filter((line) => /[a-z0-9]{2,}/i.test(line));
+  let summary = telling.length ? telling[telling.length - 1].slice(0, 200) : '';
   if (run.error && run.error.code === 'ETIMEDOUT') summary = `timed out after ${timeoutSeconds}s`;
   else if (run.error) summary = run.error.message.slice(0, 200);
   return { passed: run.status === 0 && !run.error, exit: run.status, summary, seconds: Math.round((Date.now() - started) / 1000) };
