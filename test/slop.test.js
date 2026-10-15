@@ -4042,6 +4042,24 @@ test('the fix diff script checks a file of known edges with --probe-file', () =>
   assert.match(w.stdout, /^0 of 1 match the fix they must give$/m);
 });
 
+test('the fix diff script counts known gaps with a "~> " line and never fails on them', () => {
+  const { spawnSync } = require('node:child_process');
+  // a gap names the fix the fixer should give but does not yet: an open one
+  // prints its gap line, a closed one does not, and the run still exits 0
+  const script = path.join(__dirname, '..', 'scripts', 'slop-fix-diff.js');
+  const file = tmpFile('gaps.txt', [
+    String.raw`Never run git \u2014 the orchestrator lands your work.`,
+    '~> Never run git; the orchestrator lands your work.',
+    String.raw`We fixed it \u2014 the loop kicks work.`,
+    '~> We fixed it; the loop kicks work.',
+  ].join('\n'));
+  const r = spawnSync(process.execPath, [script, '--probe-file', file], { encoding: 'utf8', cwd: path.join(__dirname, '..') });
+  assert.equal(r.status, 0, r.stdout);
+  assert.match(r.stdout, /^ {2}gap {3}Never run git; the orchestrator lands your work\.$/m);
+  assert.doesNotMatch(r.stdout, /^ {2}gap {3}We fixed it/m);
+  assert.match(r.stdout, /^1 of 2 known gaps still open$/m);
+});
+
 test('the fix diff script marks a fix that gains doubled punctuation or loses paren balance', () => {
   const { oddMarks } = require('../scripts/slop-fix-diff.js');
   const D = String.fromCharCode(0x2014);

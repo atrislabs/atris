@@ -1,6 +1,7 @@
 # Known edges for the slop fixer's dash rule: a phrase after "the" that
 # reads like a clause, and a clause that reads like a phrase. Each line is a
-# probe; the "=> " line under it is the fix it must give. A typed \u2014 is
+# probe; the "=> " line under it is the fix it must give, and a "~> " line
+# is the fix it should give but does not yet, a known gap. A typed \u2014 is
 # a dash and a typed \n a line break. Check after any rule change:
 #   node scripts/slop-fix-diff.js --probe-file test/fixtures/slop-fix-edges.txt
 
@@ -44,3 +45,17 @@ Check it \u2014 the error logs from CI.
 # one word before the dash is a label, not a sentence
 Then \u2014 the loop kicks work.
 => Then, the loop kicks work.
+
+# known gaps, from real repo text: "the", one noun, a verb in s, then an
+# object of two or more words. The same shape as "the decision helpers the
+# CLI uses", a phrase, which is why these still splice.
+Never run git \u2014 the orchestrator lands your work.
+~> Never run git; the orchestrator lands your work.
+The params are client-side only \u2014 the server returns the same SSR payload.
+~> The params are client-side only; the server returns the same SSR payload.
+It ships without the strip \u2014 the test proves the fix works.
+~> It ships without the strip; the test proves the fix works.
+Dead numbers \u2014 the machine filters all of that out.
+~> Dead numbers; the machine filters all of that out.
+We kept the memory \u2014 the fix inlines a sync per emission.
+~> We kept the memory; the fix inlines a sync per emission.

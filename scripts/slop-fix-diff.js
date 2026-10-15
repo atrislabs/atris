@@ -23,7 +23,8 @@
 // the shell never has to carry either. With --probe-file the probes come
 // from a file, each line followed by "=> " and the fix it must give; a fix
 // that differs prints its "want" line and the run exits 1, so a file of
-// known edges is one command to check after any rule change.
+// known edges is one command to check after any rule change. A "~> " line
+// names a known gap instead: it prints and counts, but never fails.
 //
 //   node scripts/slop-fix-diff.js ~/notes ../other-repo
 //   node scripts/slop-fix-diff.js --base master --limit 50 docs/
@@ -186,16 +187,20 @@ function expandTyped(text) {
 }
 
 // Reads a file of probes: a line is a probe, a "=> " line under it is the
-// fix it must give, and "#" lines and blank lines are notes.
-function readProbeFile(file, probes, wants) {
+// fix it must give, a "~> " line is the fix it should give but does not
+// yet (a known gap), and "#" lines and blank lines are notes.
+function readProbeFile(file, probes, wants, gaps) {
   for (const line of fs.readFileSync(file, 'utf8').split('\n')) {
     if (!line.trim() || line.startsWith('#')) continue;
     if (line.startsWith('=> ')) wants[probes.length - 1] = expandTyped(line.slice(3));
+    else if (line.startsWith('~> ')) gaps[probes.length - 1] = expandTyped(line.slice(3));
     else probes.push(expandTyped(line));
   }
 }
 
-function probe(probes, base, wants = []) {
+// A gap never fails the run: it counts as open until the fixer gives the
+// fix it names, so closing gaps is a number that moves.
+function probe(probes, base, wants = [], gaps = []) {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'slop-fix-diff-'));
   const show = (text) => text.split('\n').join(' / ');
   try {
@@ -203,7 +208,10 @@ function probe(probes, base, wants = []) {
     const after = fixAll(require(path.join(ROOT, 'commands', 'slop.js')), probes, dir);
     let moved = 0;
     let missed = 0;
+    let open = 0;
     probes.forEach((text, i) => {
+      const gap = gaps[i] !== undefined && gaps[i] !== after[i] ? gaps[i] : null;
+      if (gap !== null) open += 1;
       if (before[i] !== after[i]) moved += 1;
       const want = wants[i] !== undefined && wants[i] !== after[i] ? wants[i] : null;
       if (want !== null) missed += 1;
@@ -212,12 +220,15 @@ function probe(probes, base, wants = []) {
       console.log(`  ${base === 'HEAD' ? 'head' : 'base'}  ${show(before[i])}`);
       console.log(`  now   ${show(after[i])}${before[i] === after[i] ? '' : '  (moved)'}`);
       if (want !== null) console.log(`  want  ${show(want)}`);
+      if (gap !== null) console.log(`  gap   ${show(gap)}`);
       if (odd.length) console.log(`  odd   ${odd.join(', ')}`);
       console.log('');
     });
     console.log(`${probes.length} probe${probes.length === 1 ? '' : 's'}; ${moved} moved against ${base}`);
     const checked = wants.filter((w) => w !== undefined).length;
     if (checked) console.log(`${checked - missed} of ${checked} match the fix they must give`);
+    const known = gaps.filter((g) => g !== undefined).length;
+    if (known) console.log(`${open} of ${known} known gap${known === 1 ? '' : 's'} still open`);
     return missed ? 1 : 0;
   } finally {
     fs.rmSync(dir, { recursive: true, force: true });
@@ -231,6 +242,7 @@ function main(argv) {
   let audit = false;
   const probes = [];
   const wants = [];
+  const gaps = [];
   const targets = [];
   for (let i = 0; i < argv.length; i += 1) {
     if (argv[i] === '--base') base = argv[++i];
@@ -239,13 +251,13 @@ function main(argv) {
     else if (argv[i] === '--lines') paragraphs = false;
     else if (argv[i] === '--audit') audit = true;
     else if (argv[i] === '--probe') probes.push(expandTyped(argv[++i] || ''));
-    else if (argv[i] === '--probe-file') readProbeFile(path.resolve(argv[++i] || ''), probes, wants);
+    else if (argv[i] === '--probe-file') readProbeFile(path.resolve(argv[++i] || ''), probes, wants, gaps);
     else if (argv[i] === '--help' || argv[i] === '-h') {
       console.log(USAGE);
       return 0;
     } else targets.push(argv[i]);
   }
-  if (probes.length) return probe(probes, base, wants);
+  if (probes.length) return probe(probes, base, wants, gaps);
   if (!targets.length) {
     console.error(USAGE);
     return 2;
