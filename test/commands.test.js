@@ -13471,7 +13471,7 @@ test('task review after acceptance cannot mint duplicate AgentXP', () => {
   try {
     fs.mkdirSync(path.join(dir, 'atris'), { recursive: true });
 
-    // Seed creation and ownership; ready, accept, duplicate review and XP status stay on the CLI.
+    // Seed readiness through the store; accept, duplicate review and XP status stay on the CLI.
     const workspaceRoot = taskStore.workspaceRoot(dir);
     const db = taskStore.open(dbPath);
     let ref;
@@ -13481,12 +13481,16 @@ test('task review after acceptance cannot mint duplicate AgentXP', () => {
       });
       assert.equal(created.inserted, true);
       assert.equal(taskStore.claimTask(db, { id: created.id, claimedBy: 'codex' }).claimed, true);
+      const readied = taskStore.readyTask(db, {
+        id: created.id, actor: 'codex', proof: 'accepted once validation passed',
+        result: FIXTURE_RESULT_SENTENCE,
+      });
+      assert.equal(readied.ready, true, readied.reason);
       ref = taskStore.taskDisplayRefMap(taskStore.listTasks(db, { workspaceRoot })).get(created.id);
       assert.ok(ref);
     } finally {
       taskStore.close();
     }
-    assert.equal(runCli(['task', 'ready', ref, '--proof', 'accepted once validation passed', '--as', 'codex'], { cwd: dir, env }).status, 0);
 
     const accept = runCli(['task', 'accept', ref, '--as', 'keshavrao', '--json'], { cwd: dir, env });
     assert.equal(accept.status, 0, accept.stderr);
