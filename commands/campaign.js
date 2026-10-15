@@ -14,7 +14,7 @@ const { readFlag } = require('../lib/arg-parser');
 const { CAMPAIGN_ID, isHumanActor, validateCampaign } = require('../lib/campaign-schema');
 const { decide } = require('../lib/campaign-core');
 const { campaignFolder, getCampaign, listCampaigns, newCampaignId, openCampaignStore } = require('../lib/campaign-store');
-const { judgeRanData, judgeReading, outputTail } = require('../lib/campaign-reading');
+const { judgeRanData, judgeReading, judgeMessage, outputTail } = require('../lib/campaign-reading');
 const { cloudLink, sendPersonAction, syncCampaign } = require('../lib/campaign-sync');
 
 const JUDGE_TIMEOUT_SECONDS = 15 * 60;
@@ -250,7 +250,7 @@ async function draftedJudge(args, ctx, title, owner) {
   if (!args.includes('--yes') && !(await ctx.confirm('start with this judge? [y/N] '))) {
     return { error: ctx.fail(`not started. Accept the drafted judge with --yes, or pass your own: --judge "<command that fails today>"`, 1) };
   }
-  return { judge: draft.judge };
+  return { judge: draft.judge, explain: draft.explain };
 }
 
 function requireCampaign(ctx, id) {
@@ -307,6 +307,7 @@ function renderShow(view) {
 async function cmdStart(args, ctx) {
   const title = positionals(args)[1];
   let judge = readFlag(args, '--judge', '');
+  let explain = '';
   const budgetText = readFlag(args, '--budget', '');
   if (!budgetText && args.includes('--cloud')) return ctx.fail('a cloud campaign needs --budget <dollars>, so the cloud knows what it may spend');
   const budget = budgetText ? Number(budgetText) : NO_LIMIT_BUDGET;
@@ -349,6 +350,7 @@ async function cmdStart(args, ctx) {
     const drafted = await draftedJudge(args, ctx, title, owner || 'mission-lead');
     if (drafted.error !== undefined) return drafted.error;
     judge = drafted.judge;
+    explain = drafted.explain;
   }
 
   const timeout = Number(readFlag(args, '--timeout', '')) || JUDGE_TIMEOUT_SECONDS;
@@ -367,6 +369,7 @@ async function cmdStart(args, ctx) {
   if (kept && !ctx.asJson) console.error(`copied the judge script from ${kept.from} into the campaign: ${kept.judge}`);
 
   const startData = { title, judge: kept ? kept.judge : judge, budget, owner: owner || 'mission-lead', created_from: `atris campaign start by ${ctx.actor}` };
+  if (explain) startData.explain = explain;
   if (seats.length) startData.seats = seats;
   if (bet && !wrongIf) startData.bet = bet;
   if (standing) startData.standing = true;
@@ -446,8 +449,8 @@ async function cmdJudge(args, ctx) {
   const reading = await ctx.judge(view.judge, timeout);
   ctx.append(view.id, 'judge_ran', judgeRanData(reading), 'judge');
   const after = getCampaign(ctx.store, view.id);
-  const verdict = reading.passed ? 'passed' : 'failed';
-  ctx.out(`judge ${verdict} in ${reading.seconds}s: ${reading.summary || `exit ${reading.exit}`}\n${renderShow(after)}`,
+  const message = judgeMessage(reading, ctx.store.read(view.id), view.judge);
+  ctx.out(`judge ${reading.passed ? 'passed' : 'not yet'} in ${reading.seconds}s: ${message}\n${renderShow(after)}`,
     { ok: true, action: 'judge_ran', passed: reading.passed, reading, campaign: after, next: decide(after) });
   return reading.passed ? 0 : 1;
 }

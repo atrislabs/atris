@@ -215,7 +215,7 @@ test('a judge script outside the checkout is copied in, so deleting the original
   fs.rmSync(original);
   const judged = cli('judge', 'cmp-copy');
   assert.equal(judged.status, 1, judged.stderr);
-  assert.match(judged.stdout, /judge failed in \d+s: still four of nine/);
+  assert.match(judged.stdout, /judge not yet in \d+s: still four of nine/);
 
   const inside = path.join(checkout, 'check.sh');
   script(inside, 'inside the checkout');

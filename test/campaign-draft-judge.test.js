@@ -89,3 +89,75 @@ test('no goal means no engine call', async () => {
   assert.equal(draft.ok, false);
   assert.equal(calls.length, 0);
 });
+
+const { campaignCommand } = require('../commands/campaign');
+const { createMemoryStore, getCampaign } = require('../lib/campaign-store');
+
+// Exercise the command handler with real shell judges, including the copied
+// draft script path. Only drafting and terminal input are supplied by the test.
+async function runCampaign(store, args, deps = {}) {
+  const out = [];
+  const saved = { log: console.log, error: console.error };
+  console.log = (line) => out.push(String(line));
+  console.error = () => {};
+  try {
+    const code = await campaignCommand(args, {
+      store, actor: 'human:tester', interactive: false,
+      confirm: async () => false, ...deps,
+    });
+    return { code, out: out.join('\n') };
+  } finally {
+    console.log = saved.log;
+    console.error = saved.error;
+  }
+}
+
+test('a drafted explanation survives script copying and accompanies passed and not yet readings', async (t) => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'campaign-explain-'));
+  t.after(() => fs.rmSync(dir, { recursive: true, force: true }));
+  const script = path.join(dir, 'judge.sh');
+  const marker = path.join(dir, 'ready');
+  fs.writeFileSync(script, `#!/bin/sh\n[ -f '${marker}' ]\n`, { mode: 0o755 });
+  const store = createMemoryStore();
+  const explain = 'checks 3 billing cases are ready';
+  const started = await runCampaign(store, ['start', 'Ship billing', '--yes', '--id', 'cmp-explain'], {
+    draftJudge: async () => ({ ok: true, judge: script, explain }),
+    campaignFolder: () => path.join(dir, 'saved'),
+  });
+  assert.equal(started.code, 0, started.out);
+  const event = store.read('cmp-explain').find((event) => event.type === 'campaign_started');
+  assert.equal(event.data.explain, explain);
+  assert.notEqual(event.data.judge, script, 'the original script was copied');
+  const judge = () => runCampaign(store, ['judge', 'cmp-explain']);
+  const waiting = await judge();
+  assert.equal(waiting.code, 1);
+  assert.match(waiting.out, /judge not yet in \d+s: checks 3 billing cases are ready/);
+  fs.writeFileSync(marker, 'ready');
+  const passed = await judge();
+  assert.equal(passed.code, 0);
+  assert.match(passed.out, /judge passed in \d+s: checks 3 billing cases are ready/);
+  assert.equal(getCampaign(store, 'cmp-explain').answer.text, 'exit 0');
+  const readings = store.read('cmp-explain').filter((event) => event.type === 'judge_ran');
+  assert.ok(readings.every((event) => event.data.reading === undefined), 'explanation digits never become numeric readings');
+
+  const changed = await runCampaign(store, ['set-judge', 'cmp-explain', "printf '2 failed\\nreplacement needs work\\n'; exit 1"]);
+  assert.equal(changed.code, 0);
+  const replacement = await judge();
+  assert.match(replacement.out, /judge not yet in \d+s: replacement needs work/);
+  assert.doesNotMatch(replacement.out.split('\n')[0], /checks 3 billing/);
+});
+
+test('hand-written judges show the last output line, using exit only for empty output', async () => {
+  for (const [id, command, message] of [
+    ['cmp-written', "printf '2 failed\\nlast useful line\\n'; exit 1", 'last useful line'],
+    ['cmp-punctuation', "printf 'earlier words\\n!\\n'; exit 1", '!'],
+    ['cmp-empty', 'exit 7', 'exit 7'],
+  ]) {
+    const store = createMemoryStore();
+    const started = await runCampaign(store, ['start', 'Hand written judge', '--judge', command, '--id', id]);
+    assert.equal(started.code, 0);
+    const result = await runCampaign(store, ['judge', id]);
+    assert.equal(result.code, 1);
+    assert.equal(result.out.split('\n')[0], `judge not yet in 0s: ${message}`);
+  }
+});
