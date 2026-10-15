@@ -1374,6 +1374,13 @@ test('worktree cleanup quietly refreshes an outdated base and keeps staged notes
   const fx = makeFixture();
   try {
     const copy = addCopy(fx, 'healthy-draft');
+    const replaced = path.join(copy, 'outline.txt');
+    fs.writeFileSync(replaced, 'original outline\n');
+    runGit(['add', 'outline.txt'], copy);
+    runGit(['commit', '-q', '-m', 'add outline'], copy);
+    runGit(['rm', 'outline.txt'], copy);
+    fs.writeFileSync(replaced, 'replacement outline\n');
+    assert.match(runGit(['diff', '--cached', '--', 'outline.txt'], copy), /deleted file mode/);
     const tracked = path.join(copy, 'README.md');
     const committed = runGit(['show', 'HEAD:README.md'], copy);
     fs.writeFileSync(tracked, '# fixture\nstaged tracked edits\n');
@@ -1421,6 +1428,9 @@ test('worktree cleanup quietly refreshes an outdated base and keeps staged notes
       assert.equal(lines[0], `cleanup: ${extra.length ? 'applied' : 'dry-run'} base=origin/master`);
       assert.equal(lines[1], extra.length ? 'removeds: 0' : 'candidates: 0');
       assert.doesNotMatch(cli.stdout, /warning:|could not refresh|may be behind/);
+      assert.equal(fs.readFileSync(replaced, 'utf8'), 'replacement outline\n');
+      assert.equal(runGit(['show', 'HEAD:outline.txt'], copy), 'original outline');
+      assert.equal(runGit(['ls-files', '--', 'outline.txt'], copy), '');
       assert.equal(fs.readFileSync(tracked, 'utf8'), '# fixture\nstaged tracked edits\nlater tracked edits\n');
       assert.equal(runGit(['show', 'HEAD:README.md'], copy), committed);
       assert.equal(runGit(['show', ':README.md'], copy), stagedTracked);
