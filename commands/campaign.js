@@ -378,7 +378,7 @@ async function cmdStart(args, ctx) {
   ctx.append(id, 'campaign_started', startData);
   if (bet && wrongIf) ctx.append(id, 'bet_set', { bet, wrong_if: wrongIf });
   if (parent) ctx.append(id, 'attached', { parent_id: parent });
-  ctx.append(id, 'judge_ran', judgeRanData(reading), 'judge');
+  ctx.append(id, 'judge_ran', judgeRanData(reading, ctx.store.read(id), startData.judge), 'judge');
 
   let cloud = null;
   if (args.includes('--cloud')) {
@@ -451,7 +451,7 @@ async function cmdSetJudge(args, ctx) {
     return ctx.fail(`the new judge already passes (${reading.summary || 'exit 0'}). Write a judge that fails first.`, 1);
   }
   ctx.append(view.id, 'judge_set', { judge, from: view.judge });
-  ctx.append(view.id, 'judge_ran', { passed: reading.passed, summary: reading.summary || `exit ${reading.exit}`, seconds: reading.seconds }, 'judge');
+  ctx.append(view.id, 'judge_ran', judgeRanData(reading, ctx.store.read(view.id), judge), 'judge');
   const after = getCampaign(ctx.store, view.id);
   ctx.out(`judge changed to: ${judge}\n${renderShow(after)}`, { ok: true, action: 'judge_set', campaign: after, next: decide(after) });
   return 0;
@@ -463,7 +463,7 @@ async function cmdJudge(args, ctx) {
   const timeout = Number(readFlag(args, '--timeout', '')) || JUDGE_TIMEOUT_SECONDS;
   if (!ctx.asJson) console.error(`running the judge: ${view.judge}`);
   const reading = await ctx.judge(view.judge, timeout);
-  ctx.append(view.id, 'judge_ran', judgeRanData(reading), 'judge');
+  ctx.append(view.id, 'judge_ran', judgeRanData(reading, ctx.store.read(view.id), view.judge), 'judge');
   const after = getCampaign(ctx.store, view.id);
   const message = judgeMessage(reading, ctx.store.read(view.id), view.judge);
   ctx.out(`judge ${reading.passed ? 'passed' : 'not yet'} in ${reading.seconds}s: ${message}\n${renderShow(after)}`,

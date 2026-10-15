@@ -136,7 +136,7 @@ test('a drafted explanation survives script copying and accompanies passed and n
   const passed = await judge();
   assert.equal(passed.code, 0);
   assert.match(passed.out, /judge passed in \d+s: checks 3 billing cases are ready/);
-  assert.equal(getCampaign(store, 'cmp-explain').answer.text, 'exit 0');
+  assert.equal(getCampaign(store, 'cmp-explain').answer.text, explain, 'a silent judge saves the explanation, not exit 0');
   const readings = store.read('cmp-explain').filter((event) => event.type === 'judge_ran');
   assert.ok(readings.every((event) => event.data.reading === undefined), 'explanation digits never become numeric readings');
 

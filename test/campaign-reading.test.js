@@ -43,6 +43,9 @@ test('judge_ran data carries the reading and the output tail only when present',
   assert.deepEqual(judgeRanData({ passed: false, exit: 1, summary: 'pass 2, fail 1', seconds: 3, reading: 0.6667, output_tail: 'ℹ pass 2\nℹ fail 1' }),
     { passed: false, summary: 'pass 2, fail 1', seconds: 3, reading: 0.6667, output_tail: 'ℹ pass 2\nℹ fail 1' });
   assert.deepEqual(judgeRanData({ passed: true, exit: 0, summary: '', seconds: 0, reading: null, output_tail: '' }), { passed: true, summary: 'exit 0', seconds: 0 });
+  const started = [{ type: 'campaign_started', data: { judge: 'j', explain: 'checks billing is ready' } }];
+  assert.equal(judgeRanData({ passed: false, exit: 1, summary: '', seconds: 0 }, started, 'j').summary, 'checks billing is ready');
+  assert.equal(judgeRanData({ passed: false, exit: 1, summary: '', seconds: 0, output_tail: 'words\n!' }, started, 'other').summary, '!');
 });
 
 test('the output tail keeps the last 40 lines, at most 4 KB, without color', () => {
