@@ -1668,6 +1668,15 @@ test('the real idle board fits small terminals and restores older-run detail aft
   t.diagnostic(proof.stdout);
 });
 
+test('the real idle board follows split starts and returns to idle on small screens', { skip: process.platform === 'win32' }, (t) => {
+  const proof = spawnSync('python3', [path.join(repoRoot, 'atris/receipts/member-board-idle-transition-proof.py'), process.execPath], {
+    encoding: 'utf8', timeout: 45_000,
+  });
+  assert.equal(proof.status, 0, `${proof.stdout}\n${proof.stderr}\n${proof.error || ''}`);
+  assert.match(proof.stdout, /three small layouts keep complete states within the screen through live transitions/);
+  t.diagnostic(proof.stdout);
+});
+
 test('atris member board reads ATRIS_PROGRESS_DIR for real', async () => {
   const recent = new Date(Date.now() - 5_000).toISOString();
   const dir = fakeDir({ navigator: [`${recent} m-9 started: map the repo`, `${recent} m-9 reading atris/MAP.md`] });
