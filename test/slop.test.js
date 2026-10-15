@@ -3064,7 +3064,7 @@ test('fix joins a "the" subject and its verb when one plural or a code name ends
   ]);
 });
 
-test('fix joins "this", a noun and a verb in "s" after a dash with a semicolon', () => {
+test('fix joins "this" or "that", a noun and a verb in "s" after a dash with a semicolon', () => {
   // from real repo text: "simulator plays, this benchmark shows our gym's
   // reward function works" spliced, since only "the", "a" and kin opened a
   // subject. "this" before a noun with no verb, or "this time", stays.
@@ -3073,6 +3073,11 @@ test('fix joins "this", a noun and a verb in "s" after a dash with a semicolon',
     'Zero change to the doc \u2014 this tick writes known data to a scaffold.',
     'Two lines \u2014 this file and the next.',
     'Same as before \u2014 this time it works.',
+    // "that" before a plain noun opens one too; before "the", a pronoun or
+    // "everyone" it opens a reported clause and keeps its comma
+    'After one week, count the hits \u2014 that number tells us whether to expand.',
+    'One belief \u2014 that everyone wants it.',
+    'Proof of one thing \u2014 that the station was built.',
   ].join('\n'));
   const { changes } = applyFixes([file], RULES, { write: false });
   assert.deepEqual(changes.map((c) => c.after), [
@@ -3080,6 +3085,9 @@ test('fix joins "this", a noun and a verb in "s" after a dash with a semicolon',
     'Zero change to the doc; this tick writes known data to a scaffold.',
     'Two lines, this file and the next.',
     'Same as before, this time it works.',
+    'After one week, count the hits; that number tells us whether to expand.',
+    'One belief, that everyone wants it.',
+    'Proof of one thing, that the station was built.',
   ]);
 });
 

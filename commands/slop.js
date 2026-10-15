@@ -280,6 +280,11 @@ const PAST_CLAUSE_AFTER_DASH = new RegExp(`${CLAUSE_END}\\s*\\u2014\\s*(?!${NAMI
 // phrase, so "the parallel that connects the men" keeps its comma.
 // "this" opens a subject the way "the" does, here and in the object checks
 // below: "simulator plays; this benchmark shows our gym's reward works".
+// "that" opens a subject like "this" only before a plain lowercase noun:
+// "that flag downgrades to a stale model". Before "the", a pronoun or
+// "everyone" and kin it opens a reported clause, so "that everyone wants
+// it" keeps its comma.
+const THAT_OPENER = "that(?=\\s+(?!(?:the|a|an|it|its|this|these|those|they|we|you|he|she|i|our|your|their|his|her|my|everyone|everything|everybody|someone|something|somebody|anyone|anything|anybody|nobody|nothing|no|one|all|each|every|some|any|most|many|is|was|has|does)\\b)[a-z])";
 const PLAIN_VERB_WORD = '(?!(?:this|his|its|was|has|does|thus|plus|always|perhaps|unless|whereas|across)\\b)[a-z]{2,}[a-rt-z]s';
 const PLAIN_VERB = PLAIN_VERB_WORD + '\\s+(?!(?:from|of|in|on|for|with|at|by|to|and|or|that|which|who|like|than|as)\\b)';
 // A word in "s" before ", which is" is a verb, since a plural noun takes
@@ -287,7 +292,7 @@ const PLAIN_VERB = PLAIN_VERB_WORD + '\\s+(?!(?:from|of|in|on|for|with|at|by|to|
 // Nouns in "us", "is" or "ics" and their kin are one thing, so "the build
 // status, which is green" and "the metrics, which is" keep their comma.
 const VERB_BEFORE_WHICH = PLAIN_VERB_WORD + '(?<![ua]s|is|ics|news|series|species|lens|means),\\s+which\\s+(?:is|was)\\b';
-const PLAIN_CLAUSE_AFTER_DASH = new RegExp(`${CLAUSE_END}\\s*\\u2014\\s*(?!${TIME_OPENER})(?=(?:a|an|the|every|each|no|this)\\s+${NOUN_WORD}\\s+(?:(?!(?:that|which|who|whose)\\b)${NOUN_WORD}\\s+){0,2}(?:${PLAIN_VERB}[^\\s\\u2014]|${VERB_BEFORE_WHICH}))`, 'g');
+const PLAIN_CLAUSE_AFTER_DASH = new RegExp(`${CLAUSE_END}\\s*\\u2014\\s*(?!${TIME_OPENER})(?=(?:a|an|the|every|each|no|this|${THAT_OPENER})\\s+${NOUN_WORD}\\s+(?:(?!(?:that|which|who|whose)\\b)${NOUN_WORD}\\s+){0,2}(?:${PLAIN_VERB}[^\\s\\u2014]|${VERB_BEFORE_WHICH}))`, 'g');
 // Outside a "not" sentence the verb needs "it" or "them" after it with no
 // verb of their own, so "the navigator reads it" joins but "the decision
 // helpers it uses" and "the decision helpers the CLI uses" stay noun phrases.
@@ -315,7 +320,7 @@ const PLAIN_CLAUSE_AFTER_DASH = new RegExp(`${CLAUSE_END}\\s*\\u2014\\s*(?!${TIM
 // The first of an object's two words may be a code name: "a nightly job
 // appends a `next_move` event to the ledger".
 const OBJECT_WORD = "(?![a-z]+(?:s|ed)\\b)[A-Za-z0-9_/'-]+";
-const PLAIN_OBJECT_CLAUSE = new RegExp(`^\\s*\\u2014\\s*(?:a|an|the|every|each|no|this)\\s+${NOUN_WORD}\\s+(?:${NOUN_WORD}\\s+){0,2}(?:${VERB_BEFORE_WHICH}|${PLAIN_VERB}(?:(?:it|them|you|us|everything|nothing|something|anything)(?:["'\\u201d\\u2019)]*(?:[.!?;,]|$)|\\s+(?!(?!(?:yes|this|its|his)\\b)[a-z]+(?:s|ed)\\b))|(?<!\\b(?:in|of|on|for|with|at|by|to|from)\\s+[a-z]{2,}s\\s+)(?:(?:the|its|their)\\s+[a-z]{2,}s|\\uE000\\d+\\uE001)(?=\\)*(?:[.!?;,]|$))|(?<!\\b(?:in|of|on|for|with|at|by|to|from)\\s+[a-z]{2,}s\\s+)\\uE000\\d+\\uE001\\s+(?:to|into|for|from|with|via|as|when|before|after)\\s+[a-z]|(?:the|a|an|its|their)\\s+(?:(?:${OBJECT_WORD}|\\uE000\\d+\\uE001)\\s+)?${OBJECT_WORD}(?:\\s+(?:red|green|fine|clean|stale|empty|safe))?(?:[.!?;,]|$|\\s+(?:on|in|at|to|into|for|from|with|by|via|when|if|before|after|until|once|while|because|instead|rather|without)\\b)|${MANNER_WORD}(?:[.!?;,]|$|\\s+(?:and|but|on|in|at|to|into|for|from|with|by|via|when|if|before|after|until|once|while|because|instead|rather|without)\\b)))`);
+const PLAIN_OBJECT_CLAUSE = new RegExp(`^\\s*\\u2014\\s*(?:a|an|the|every|each|no|this|${THAT_OPENER})\\s+${NOUN_WORD}\\s+(?:${NOUN_WORD}\\s+){0,2}(?:${VERB_BEFORE_WHICH}|${PLAIN_VERB}(?:(?:it|them|you|us|everything|nothing|something|anything)(?:["'\\u201d\\u2019)]*(?:[.!?;,]|$)|\\s+(?!(?!(?:yes|this|its|his)\\b)[a-z]+(?:s|ed)\\b))|(?<!\\b(?:in|of|on|for|with|at|by|to|from)\\s+[a-z]{2,}s\\s+)(?:(?:the|its|their)\\s+[a-z]{2,}s|\\uE000\\d+\\uE001)(?=\\)*(?:[.!?;,]|$))|(?<!\\b(?:in|of|on|for|with|at|by|to|from)\\s+[a-z]{2,}s\\s+)\\uE000\\d+\\uE001\\s+(?:to|into|for|from|with|via|as|when|before|after)\\s+[a-z]|(?:the|a|an|its|their)\\s+(?:(?:${OBJECT_WORD}|\\uE000\\d+\\uE001)\\s+)?${OBJECT_WORD}(?:\\s+(?:red|green|fine|clean|stale|empty|safe))?(?:[.!?;,]|$|\\s+(?:on|in|at|to|into|for|from|with|by|via|when|if|before|after|until|once|while|because|instead|rather|without)\\b)|${MANNER_WORD}(?:[.!?;,]|$|\\s+(?:and|but|on|in|at|to|into|for|from|with|by|via|when|if|before|after|until|once|while|because|instead|rather|without)\\b)))`);
 // With no "the" before the object, "the" and one noun with no "s", then a
 // verb in "s" and one more word before a stop, is a clause too: "the loop
 // kicks work", "the gate checks drafts". A line end is no stop, since a
@@ -355,7 +360,7 @@ const NAME_PAIR_CLAUSE_AFTER_DASH = new RegExp(`${CLAUSE_END}\\s*\\u2014\\s*(?=t
 // A code name with an underscore is one such word too: "the business_id
 // match handles the bypass".
 const MODIFIER_WORD = '(?:[A-Z]{2,}|[a-z][a-z-]*[a-z]|[a-z][a-z0-9]*(?:_[a-z0-9]+)+)';
-const THE_OBJECT_CLAUSE_AFTER_DASH = new RegExp(`${CLAUSE_END}\\s*\\u2014\\s*(?=(?:the|a|an|this)\\s+(?!${NAME_PAIR}\\b)(?!(?:one|two|three|four|five|six|seven|eight|nine|ten|few|many|several|same|other|first|last|next|main|key|core|new|old|real|whole|exact|only)\\b)(?:(?![A-Za-z-]*s\\b)${MODIFIER_WORD}\\s+(?!(?:that|which|who)\\b))?(?!(?!yes\\b)[a-z]*s\\b)[a-z]{2,}\\s+(?:(?:only|now|still|already|also|never|always|often|just)\\s+)?${PLAIN_VERB_WORD}\\s+(?:the|a|an|your|our|their|its|YOUR|OUR|THEIR|ITS|all|every|each|this|these|those)\\s+[^\\s\\u2014])`, 'g');
+const THE_OBJECT_CLAUSE_AFTER_DASH = new RegExp(`${CLAUSE_END}\\s*\\u2014\\s*(?=(?:the|a|an|this|${THAT_OPENER})\\s+(?!${NAME_PAIR}\\b)(?!(?:one|two|three|four|five|six|seven|eight|nine|ten|few|many|several|same|other|first|last|next|main|key|core|new|old|real|whole|exact|only)\\b)(?:(?![A-Za-z-]*s\\b)${MODIFIER_WORD}\\s+(?!(?:that|which|who)\\b))?(?!(?!yes\\b)[a-z]*s\\b)[a-z]{2,}\\s+(?:(?:only|now|still|already|also|never|always|often|just)\\s+)?${PLAIN_VERB_WORD}\\s+(?:the|a|an|your|our|their|its|YOUR|OUR|THEIR|ITS|all|every|each|this|these|those)\\s+[^\\s\\u2014])`, 'g');
 // A plural noun as the subject, after up to two modifiers or code names,
 // then a bare verb and an object, is a clause too: "it no longer tints the
 // icon; the SVG `fill` attrs override `currentColor`". A place word, a word
@@ -419,7 +424,7 @@ const RELATIVE_OBJECT_PHRASE = /^\s*\u2014\s*the\s+[A-Za-z][\w-]*\s+(?:[a-z][\w-
 // prompt but not the data". A place word or a pronoun is never that noun,
 // so "the way her eyes moved" keeps its comma. A number with a size unit
 // or "%" right before a stop is a bare word too: "a single run eats 10GB+".
-const BARE_OBJECT_CLAUSE = new RegExp(`^\\s*\\u2014\\s*(?:the|a|an|this)\\s+(?!${NAME_PAIR}\\b)(?:(?![a-z]*s\\b)[a-z]{2,}\\s+(?=(?!(?:of|in|on|for|with|at|by|to|from|and|or|but|her|his|its|my|our|your|their|it|he|she|we|you|they|this|that)\\b)[a-z]{2,}\\s+${PLAIN_VERB_WORD}\\s))?(?![a-z]*s\\b)[a-z]{2,}\\s+${PLAIN_VERB_WORD}\\s+(?:(?!(?:it|them|you|we|they|he|she|this|that|these|those|which|who|across|through|within|over|under|between|among|around|along|without|in|of|on|for|with|at|by|to|from|and|or|but)\\b)(?!${NAME_END_WORD}\\b)[a-z]{2,}\\s+(?!${NAME_END_WORD}\\b)[a-z]{2,}(?:\\/[a-z]{2,})*(?=\\s+(?:into|onto|to|for|from|on|at|with|until)\\s)|(?!${NAME_END_WORD}\\b)[a-z]{2,}(?:\\/[a-z]{2,})*(?=[.!?;]|\\s+(?:into|onto|to|for|from|on|at|with|until)\\s|\\s+but\\s+not\\s)|\\d+(?:\\.\\d+)?(?:[KMGT]i?B|%)\\+?(?=[.!?;]))`);
+const BARE_OBJECT_CLAUSE = new RegExp(`^\\s*\\u2014\\s*(?:the|a|an|this|${THAT_OPENER})\\s+(?!${NAME_PAIR}\\b)(?:(?![a-z]*s\\b)[a-z]{2,}\\s+(?=(?!(?:of|in|on|for|with|at|by|to|from|and|or|but|her|his|its|my|our|your|their|it|he|she|we|you|they|this|that)\\b)[a-z]{2,}\\s+${PLAIN_VERB_WORD}\\s))?(?![a-z]*s\\b)[a-z]{2,}\\s+${PLAIN_VERB_WORD}\\s+(?:(?!(?:it|them|you|we|they|he|she|this|that|these|those|which|who|across|through|within|over|under|between|among|around|along|without|in|of|on|for|with|at|by|to|from|and|or|but)\\b)(?!${NAME_END_WORD}\\b)[a-z]{2,}\\s+(?!${NAME_END_WORD}\\b)[a-z]{2,}(?:\\/[a-z]{2,})*(?=\\s+(?:into|onto|to|for|from|on|at|with|until)\\s)|(?!${NAME_END_WORD}\\b)[a-z]{2,}(?:\\/[a-z]{2,})*(?=[.!?;]|\\s+(?:into|onto|to|for|from|on|at|with|until)\\s|\\s+but\\s+not\\s)|\\d+(?:\\.\\d+)?(?:[KMGT]i?B|%)\\+?(?=[.!?;]))`);
 // A bare plural with its own "that", "which" or "who" clause after the verb
 // is an object too: "the spread branch covers routes that merge in extra
 // headers". A verb that is a common plural noun, "the user settings pages
@@ -450,7 +455,7 @@ const WH_OBJECT_CLAUSE = new RegExp(`^\\s*\\u2014\\s*the\\s+(?!${NAME_PAIR}\\b)(
 // A plain word, then a name, then the verb hides a "that": "a topic Atris
 // sits directly on top of" names a topic, so it keeps its comma. A run of
 // capitals is no name, so "the new CLI resolves the prefix" still joins.
-const NAME_BEFORE_PLAIN_VERB = new RegExp(`^\\s*\\u2014\\s*(?:a|an|the|every|each|no|this)\\s+(?:${NOUN_WORD}\\s+){0,2}?[a-z][a-z'-]*\\s+[A-Z][a-z]+\\s+${PLAIN_VERB_WORD}\\b`);
+const NAME_BEFORE_PLAIN_VERB = new RegExp(`^\\s*\\u2014\\s*(?:a|an|the|every|each|no|this|${THAT_OPENER})\\s+(?:${NOUN_WORD}\\s+){0,2}?[a-z][a-z'-]*\\s+[A-Z][a-z]+\\s+${PLAIN_VERB_WORD}\\b`);
 // A dash before "once", "when", "if" and their kin starts a second sentence
 // when that short clause ends in a comma and a subject and verb follow it:
 // "This is the archive; once the endgame closes, future runs can read this".
