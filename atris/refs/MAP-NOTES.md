@@ -2895,3 +2895,5 @@ Blocked member goal setup: `test/commands.test.js:1354` uses `lib/member-scaffol
 Repeated goal history setup: `test/commands.test.js:1327` uses `lib/member-scaffold.js:145` for the member fixture. One setup launch is removed; all real goal reuse calls and history assertions remain.
 
 Stopped member goal setup: `test/commands.test.js:1432` uses `lib/member-scaffold.js:145` directly for its member fixture. One setup launch is removed; both real goal commands and every stale-goal assertion remain.
+
+Completed proof history fixture: `test/commands.test.js:1490` uses `lib/member-scaffold.js:145` directly to prepare its member. Four CLI launches become three; all real goal reads and history assertions remain.

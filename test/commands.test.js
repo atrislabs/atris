@@ -1488,7 +1488,11 @@ test('member goal-from-mission preserves completed same-day proof history', () =
   const dir = makeTempDir();
   try {
     fs.mkdirSync(path.join(dir, 'atris'), { recursive: true });
-    assert.equal(runCli(['member', 'create', 'mission-lead', '--description="Make Missions preserve completed proof history"'], { cwd: dir }).status, 0);
+    require('../lib/member-scaffold').ensureMemberBundle(path.join(dir, 'atris', 'team', 'mission-lead'), {
+      name: 'mission-lead',
+      role: 'Mission lead',
+      description: 'Make Missions preserve completed proof history',
+    });
     assert.equal(runCli([
       'mission', 'start', '--no-verify', 'Make Missions preserve completed proof history',
       '--owner', 'mission-lead',
