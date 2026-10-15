@@ -16,6 +16,10 @@
 // With --audit no base fixer runs: every fix the working fixer makes is
 // checked against the writer's own text, so the odd marks it still writes
 // anywhere come out as one count to drive to zero.
+// With --splices no base fixer runs either: every place the working fixer
+// turns a dash into a comma right before "the", "its", "our", "their" or
+// "your" and what reads like a subject and a verb is listed, each fix once,
+// so the splices still left are one count to drive down.
 // With --probe the text given is the corpus: each probe is fixed by the
 // base fixer and the working one and printed in full, moved or not, so a
 // rule change can be checked on one line without a throwaway script.
@@ -30,6 +34,7 @@
 //   node scripts/slop-fix-diff.js --base master --limit 50 docs/
 //   node scripts/slop-fix-diff.js --lines ~/notes
 //   node scripts/slop-fix-diff.js --audit ~/notes
+//   node scripts/slop-fix-diff.js --splices ~/notes
 //   node scripts/slop-fix-diff.js --probe 'We fixed it \u2014 the loop kicks work.'
 //   node scripts/slop-fix-diff.js --probe-file test/fixtures/slop-fix-edges.txt
 
@@ -176,7 +181,33 @@ function splices(text) {
   return count;
 }
 
-const USAGE = 'usage: node scripts/slop-fix-diff.js [--base <ref>] [--limit <n>] [--lines] [--audit] <folder or file>...\n' +
+// A comma the fix wrote before "the", "its" and kin where the source had a
+// dash, followed by one or two words, a word in "s" and a lowercase word,
+// a number or a quote: "the RL policy learns this", "the server returns
+// the payload". The fixer's own phrase reads are left out: a word in "s"
+// before "that", "which" or "who", or a "that" inside the subject ("the
+// API that turns"), is a noun with a clause on it, and a number word or
+// "same" after "the" makes a plural ("the three ways a run fails").
+// Code spans count as one name, so a template line repeated once per app
+// is one fix, not thirty.
+const SPLICE_SHAPE = /^(?:the|its|our|their|your) (?!(?:one|two|three|four|five|six|seven|eight|nine|ten|few|many|several|same|other|first|last|next|main|key|core|new|old|real|whole|exact|only)\b)(?:(?!(?:that|which|who)\b)[\w`-]+ ){1,2}(?!(?:this|his|its|thus|plus|always|perhaps|unless|whereas|across)\b)[a-z]+[^su\s']s (?!(?:that|which|who)\b)(?:[a-z`"]|\d)/;
+function spliceShapes(sources, fixes) {
+  const found = new Map();
+  sources.forEach((source, i) => {
+    const fixed = fixes[i];
+    if (fixed === source) return;
+    for (const m of fixed.matchAll(/, ((?:the|its|our|their|your) [^,;.!?\n]*)/g)) {
+      const rest = m[1];
+      if (!source.includes(`${DASH} ${rest}`) || !SPLICE_SHAPE.test(rest)) continue;
+      const key = rest.replace(/`[^`]*`/g, '``');
+      if (!found.has(key)) found.set(key, { text: rest, count: 0 });
+      found.get(key).count += 1;
+    }
+  });
+  return [...found.values()];
+}
+
+const USAGE = 'usage: node scripts/slop-fix-diff.js [--base <ref>] [--limit <n>] [--lines] [--audit] [--splices] <folder or file>...\n' +
   '       node scripts/slop-fix-diff.js [--base <ref>] --probe "<text>" [--probe "<text>"]... [--probe-file <file>]';
 
 // Fixes each probe with the base fixer and the working one and prints every
@@ -240,6 +271,7 @@ function main(argv) {
   let limit = 25;
   let paragraphs = true;
   let audit = false;
+  let spliceList = false;
   const probes = [];
   const wants = [];
   const gaps = [];
@@ -250,6 +282,7 @@ function main(argv) {
     else if (argv[i] === '--paragraphs') paragraphs = true;
     else if (argv[i] === '--lines') paragraphs = false;
     else if (argv[i] === '--audit') audit = true;
+    else if (argv[i] === '--splices') spliceList = true;
     else if (argv[i] === '--probe') probes.push(expandTyped(argv[++i] || ''));
     else if (argv[i] === '--probe-file') readProbeFile(path.resolve(argv[++i] || ''), probes, wants, gaps);
     else if (argv[i] === '--help' || argv[i] === '-h') {
@@ -270,6 +303,13 @@ function main(argv) {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'slop-fix-diff-'));
   const counted = `${lines.length} ${unit}${lines.length === 1 ? '' : 's'} in ${files.length} file${files.length === 1 ? '' : 's'}`;
   try {
+    if (spliceList) {
+      const fixed = fixAll(require(path.join(ROOT, 'commands', 'slop.js')), lines, dir);
+      const shapes = spliceShapes(lines, fixed);
+      for (const shape of shapes.slice(0, limit)) console.log(`  , ${shape.text}${shape.count > 1 ? `  (x${shape.count})` : ''}`);
+      console.log(`${counted}; ${shapes.length} fix${shapes.length === 1 ? '' : 'es'} put a comma before "the", "its" or kin and what reads like a subject and a verb`);
+      return 0;
+    }
     if (audit) {
       const fixed = fixAll(require(path.join(ROOT, 'commands', 'slop.js')), lines, dir);
       const changed = [];
@@ -305,4 +345,4 @@ function main(argv) {
 
 if (require.main === module) process.exitCode = main(process.argv.slice(2));
 
-module.exports = { oddMarks };
+module.exports = { oddMarks, spliceShapes };

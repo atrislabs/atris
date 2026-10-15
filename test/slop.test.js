@@ -4102,6 +4102,35 @@ test('the fix diff script counts known gaps with a "~> " line and never fails on
   assert.match(r.stdout, /^1 of 2 known gaps still open$/m);
 });
 
+test('the fix diff script lists each comma it writes before a "the" clause once', () => {
+  const { spawnSync } = require('node:child_process');
+  // a dash fixed into a comma before "the" and a subject and a verb is a
+  // splice still left; a phrase the fixer reads as one ("the API that
+  // turns", "the three ways") is not, and a line repeated with another code
+  // name counts once
+  const D = String.fromCharCode(0x2014);
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'splices-'));
+  fs.writeFileSync(path.join(dir, 'notes.md'), [
+    `Same principle ${D} the system learns relevance instead of having it prescribed.`,
+    '',
+    `Feedback ${D} the API that turns complaints into fixes.`,
+    '',
+    `All closed ${D} the three ways a first run could waste itself.`,
+    '',
+    `Inside \`a\` ${D} the gym measures \`a\` per task.`,
+    '',
+    `Inside \`b\` ${D} the gym measures \`b\` per task.`,
+  ].join('\n'));
+  const script = path.join(__dirname, '..', 'scripts', 'slop-fix-diff.js');
+  const r = spawnSync(process.execPath, [script, '--splices', dir], { encoding: 'utf8', cwd: path.join(__dirname, '..') });
+  fs.rmSync(dir, { recursive: true, force: true });
+  assert.equal(r.status, 0, r.stderr);
+  assert.match(r.stdout, /^ {2}, the system learns relevance instead of having it prescribed$/m);
+  assert.match(r.stdout, /^ {2}, the gym measures `a` per task {2}\(x2\)$/m);
+  assert.doesNotMatch(r.stdout, /API that turns|three ways/);
+  assert.match(r.stdout, /; 2 fixes put a comma before "the"/);
+});
+
 test('the fix diff script marks a fix that gains doubled punctuation or loses paren balance', () => {
   const { oddMarks } = require('../scripts/slop-fix-diff.js');
   const D = String.fromCharCode(0x2014);
