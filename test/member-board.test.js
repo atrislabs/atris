@@ -1650,6 +1650,45 @@ test('hidden failures all signed out of one engine say which to sign in to', () 
   assert.equal(footer([out('f1'), out('f2'), failed('f3', 'timed out'), halt], 45), '4 hidden (3 failed, 2 signed out, 1 stopped)', 'no room: the same footer as before');
 });
 
+test('hidden failures and runs that ended with no result keep both counts whole at every width', () => {
+  const done = (t, end, tag = '') => [`${at(t + 5)} m-1 started: ${tag}job`, `${at(t)} m-1 finished: ${end}`];
+  const dead = (t) => [`${at(t)} m-1 started: [pid 999999999 engine claude] job`];
+  const busy = (t, why) => [`${at(t + 900)} m-1 started: first`, `${at(t + 800)} m-1 finished: failed (${why})`, `${at(t + 60)} m-2 started: [pid ${process.pid} engine codex] again`, `${at(t)} m-2 running: npm test`];
+  const live = (t) => [`${at(t)} m-1 started: [pid ${process.pid} engine codex] job`];
+  const mixes = {
+    'failures, stops, and no result': { ana: done(10, 'failed (engine error)'), bo: done(25, 'failed (timed out)'), cy: done(35, 'failed (timed out)'), di: dead(50), ed: dead(60), fa: done(70, 'stopped') },
+    'with a sign-in failure': { ana: done(10, 'failed (engine error)'), bo: done(25, 'failed (signed out)', '[pid 1 engine claude] '), cy: done(35, 'failed (timed out)'), dd: done(36, 'failed (timed out)'), di: dead(50), ed: dead(60) },
+    'with live and earlier failures': { ana: done(10, 'failed (engine error)'), bo: done(25, 'failed (signed out)'), cy: busy(30, 'timed out'), di: dead(50), ed: done(70, 'stopped'), fa: live(5), ga: live(6) },
+  };
+  for (const [label, files] of Object.entries(mixes)) {
+    const dir = fakeDir(files);
+    try {
+      const rows = readBoard({ dir, now: NOW });
+      const hidden = rows.length - 1;
+      const failed = rows.filter((r) => r.state === 'done failed').length - 1;
+      const gone = rows.filter((r) => r.no_result).length;
+      assert.ok(failed > 0 && gone > 0, `${label}: both kinds are hidden`);
+      const seen = { failed: 0, gone: 0 };
+      for (let width = 16; width <= 130; width++) {
+        const footer = renderBoard(rows, dir, 0, width, 3).split('\n').pop();
+        const where = `${label}, ${width}: ${footer}`;
+        assert.ok(footer.length <= width, where);
+        assert.match(footer, new RegExp(`^${hidden} (hidden|more not shown)( \\(|$)`), where);
+        assert.ok(!footer.includes('...') || footer.endsWith(', ...)'), `${where}: only whole counts give way`);
+        const hasFailed = new RegExp(`\\(${failed} failed[,)]`).test(footer);
+        const hasGone = new RegExp(`[(, ]${gone} (no result|ended with no result)[,)]`).test(footer);
+        if (seen.failed) assert.ok(hasFailed, `${where}: the failure count came in at ${seen.failed} and stays`);
+        if (seen.gone) assert.ok(hasGone, `${where}: the no-result count came in at ${seen.gone} and stays`);
+        if (hasFailed && !seen.failed) seen.failed = width;
+        if (hasGone && !seen.gone) seen.gone = width;
+      }
+      assert.ok(seen.failed && seen.gone, `${label}: both counts show by 130 columns`);
+    } finally {
+      fs.rmSync(dir, { recursive: true, force: true });
+    }
+  }
+});
+
 test('narrow footers drop whole mixed counts from the end instead of cutting one', () => {
   const dir = fakeDir({
     a: [`${at(20)} m-1 started: [pid ${process.pid} engine claude] check the board`],
