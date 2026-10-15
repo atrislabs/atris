@@ -2136,6 +2136,26 @@ test('fix reads each "label: value" line of a record on its own, not as a wrap',
   assert.deepEqual(changes.map((c) => c.after), ['  diagnosis: none; it\'s the close, and it\'s buried']);
 });
 
+test('fix joins "its" and a noun, or a noun and "already" before its verb, as a clause', () => {
+  // from a review log: "NOT a naive site, its `/aeo` pages already score 67"
+  // spliced, since the possessive rule knew "our" but not "its", and a bare
+  // verb after "already" was not read as one. With no verb the phrase only
+  // renames what came before and keeps its comma.
+  const file = tmpFile('possessive-its.md', [
+    'atris.ai is NOT a naive site \u2014 its `/aeo` pages already score 67.',
+    'The site is not naive \u2014 its tool ships today.',
+    'The site is not naive \u2014 our pages still score 67.',
+    'We shipped the tool \u2014 its best part so far.',
+  ].join('\n'));
+  const { changes } = applyFixes([file], RULES);
+  assert.deepEqual(changes.map((c) => c.after), [
+    'atris.ai is NOT a naive site; its `/aeo` pages already score 67.',
+    'The site is not naive; its tool ships today.',
+    'The site is not naive; our pages still score 67.',
+    'We shipped the tool, its best part so far.',
+  ]);
+});
+
 test('fix ends a paragraph-ending dash with a period, keeps a wrapping one a comma', () => {
   const file = tmpFile('line-end.md', [
     'The tool we built \u2014',

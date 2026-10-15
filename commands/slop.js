@@ -371,11 +371,13 @@ const BARE_CLAUSE_AFTER_DASH = new RegExp(`${CLAUSE_END}\\s*\\u2014\\s*(?!${NAMI
 // atris", "manual signed builds" and "universal tools that work" stay phrases.
 const BARE_VERB_CLAUSE_AFTER_DASH = new RegExp(`${CLAUSE_END}\\s*\\u2014\\s*(?!${NAMING_PHRASE})(?!${WHEN_WORD}\\b)(?=(?!(?:and|but|or|nor|so|yet|then|not|even|when|if|unless|until|because|since|while|where|which|who|as|after|before|though|although|once|just|only|also|still|this|that|it|its|one|two|three|four|five|six|seven|eight|nine|ten|eleven|twelve|several|many|few|both|the|our|your|their|her|his|any|every|each)\\b)[a-z]{3,}(?<!s|ly|[^e]ed)\\s+(?:(?:alone|also|only|then|just|still|never|always|already|finally)\\s+)?(?:${PAST_VERB}\\s+(?!(?:by|as|for|in|on|at|to|from|with|of|into|onto|over|under|and|or|than|like|via|per)\\b)(?:(?:it|them|him|her|us|everything|nothing|something|anything|all|the|a|an|every|each|this|that|these|those|its|their|our|my|your|his)\\b|[a-z]{2,}\\s+[a-z]{2,})|[a-z]{3,}(?<!ss)s\\s+(?:it|them|him|her|us|everything|nothing|something|anything|all|the|a|an|every|each|its|their|our|my|your|his)\\b))`, 'g');
 
-// "Our", "your", "their" or "my" and one to three words, then a verb, start
-// a second sentence too: "Saw your post on falls after rehab; our scheduling
-// AI ensures reliable care". With no verb it only renames what came before,
-// so "the tool, our best work so far" keeps its comma.
-const POSSESSIVE_CLAUSE_AFTER_DASH = new RegExp(`${CLAUSE_END}\\s*\\u2014\\s*(?=(?:our|your|their|my)\\s+(?:${NOUN_WORD}\\s+){1,3}(?:${PLAIN_VERB}[^\\s\\u2014]|${HELPING_VERB}\\s+[^\\s\\u2014]))`, 'g');
+// "Our", "your", "their", "my" or "its" and one to three words, then a verb,
+// start a second sentence too: "Saw your post on falls after rehab; our
+// scheduling AI ensures reliable care". A plain word after "already" or
+// "still" is a verb whatever its ending: "NOT a naive site; its pages
+// already score 67". With no verb it only renames what came before, so "the
+// tool, our best work so far" keeps its comma.
+const POSSESSIVE_CLAUSE_AFTER_DASH = new RegExp(`${CLAUSE_END}\\s*\\u2014\\s*(?=(?:our|your|their|my|its)\\s+(?:${NOUN_WORD}\\s+){1,3}(?:${PLAIN_VERB}[^\\s\\u2014]|${HELPING_VERB}\\s+[^\\s\\u2014]|(?:already|still)\\s+[a-z]{2,}\\s+[^\\s\\u2014]))`, 'g');
 
 // A direct question after a full clause is a sentence of its own, so it takes
 // a semicolon: "Congrats on the Forbes ranking; how do you handle growing
