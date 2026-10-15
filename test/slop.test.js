@@ -4745,6 +4745,14 @@ test('the fix diff splice list skips a noun after "in" or "of" and a noun with i
     tails.map((t) => `Agents retry ${D} ${t}.`),
     tails.map((t) => `Agents retry, ${t}.`),
   ).map((s) => s.text), ['the structural layer routes a supervisor']);
+  // "every", "each", "a", "this" and kin open a subject too, so "every run
+  // appends a snapshot" is a splice; "that" before "the" or a pronoun joins
+  // a clause, so "that the station was built" is none
+  const openers2 = ['every run appends a snapshot', 'a single run eats the disk', 'that the station was built by hands'];
+  assert.deepEqual(spliceShapes(
+    openers2.map((t) => `Scores trend ${D} ${t}.`),
+    openers2.map((t) => `Scores trend, ${t}.`),
+  ).map((s) => s.text), ['every run appends a snapshot', 'a single run eats the disk']);
 });
 
 test('the fix diff script lists each comma it writes before a "the" clause once', () => {

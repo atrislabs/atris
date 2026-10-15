@@ -17,8 +17,8 @@
 // checked against the writer's own text, so the odd marks it still writes
 // anywhere come out as one count to drive to zero.
 // With --splices no base fixer runs either: every place the working fixer
-// turns a dash into a comma right before "the", "its", "our", "their" or
-// "your" and what reads like a subject and a verb is listed, each fix once,
+// turns a dash into a comma right before "the", "its", "every", "a" and
+// kin and what reads like a subject and a verb is listed, each fix once,
 // so the splices still left are one count to drive down.
 // With --which each probe also lists the dash rules that match at each of
 // its dashes, in the order the fix tries them, and the checks their
@@ -220,10 +220,11 @@ function splices(text) {
   return count;
 }
 
-// A comma the fix wrote before "the", "its" and kin where the source had a
-// dash, followed by one or two words, a word in "s" and a lowercase word,
-// a number or a quote: "the RL policy learns this", "the server returns
-// the payload". The fixer's own phrase reads are left out: a word in "s"
+// A comma the fix wrote before "the", "its", "every", "each", "a", "this",
+// "that" and kin where the source had a dash, followed by one or two words,
+// a word in "s" and a lowercase word, a number or a quote: "the RL policy
+// learns this", "every run appends a snapshot". A "that" before "the" or a
+// pronoun joins a clause, so "that the station was built" is no subject. The fixer's own phrase reads are left out: a word in "s"
 // before "that", "which" or "who", or a "that" inside the subject ("the
 // API that turns"), is a noun with a clause on it, and a number word or
 // "same" after "the" makes a plural ("the three ways a run fails").
@@ -242,14 +243,15 @@ function splices(text) {
 // line or follows an opening quote: '"Christal, the referral model adds',
 // nor an opener's first half: "If no, your attention has been captured".
 // A word in "is" is a noun, never a verb: "the structural basis for".
-const SPLICE_SHAPE = /^(?:the|its|our|their|your) (?!(?:one|two|three|four|five|six|seven|eight|nine|ten|few|many|several|same|other|first|last|next|main|key|core|new|old|real|whole|exact|only)\b)(?:(?!(?:that|which|who|your|our|their|its|his|her|my)\b)[\w`-]+ ){1,2}(?<!\b(?:in|of) )(?!(?:this|his|its|thus|plus|always|perhaps|unless|whereas|across)\b)[a-z]+[^isu\s']s (?!(?:that|which|who)\b)(?:[a-z`"]|\d)/;
+const SPLICE_OPENER = /(?:the|its|our|their|your|this|that|these|those|each|every|a|an)/.source;
+const SPLICE_SHAPE = new RegExp(`^(?!that (?:the|a|an|it|we|they|he|she|this|these|those|its|their|our|your)\\b)${SPLICE_OPENER} ` + /(?!(?:one|two|three|four|five|six|seven|eight|nine|ten|few|many|several|same|other|first|last|next|main|key|core|new|old|real|whole|exact|only)\b)(?:(?!(?:that|which|who|your|our|their|its|his|her|my)\b)[\w`-]+ ){1,2}(?<!\b(?:in|of) )(?!(?:this|his|its|thus|plus|always|perhaps|unless|whereas|across)\b)[a-z]+[^isu\s']s (?!(?:that|which|who)\b)(?:[a-z`"]|\d)/.source);
 const RELATIVE_SHAPE = /^(?:the|its|our|their|your) (?:[\w`-]+ ){0,2}[a-z]+s the (?:(?!(?:the|a|an)\b)\S+ ){1,3}[a-z]+s$/;
 function spliceShapes(sources, fixes) {
   const found = new Map();
   sources.forEach((source, i) => {
     const fixed = fixes[i];
     if (fixed === source) return;
-    for (const m of fixed.matchAll(/, ((?:the|its|our|their|your) [^,;.!?\n]*)/g)) {
+    for (const m of fixed.matchAll(new RegExp(`, (${SPLICE_OPENER} [^,;.!?\\n]*)`, 'g'))) {
       const rest = m[1];
       if (!source.includes(`${DASH} ${rest}`) || !SPLICE_SHAPE.test(rest) || RELATIVE_SHAPE.test(rest)) continue;
       if (takesComma(fixed.slice(0, m.index))) continue;
@@ -397,7 +399,7 @@ function main(argv) {
       const fixed = fixAll(require(path.join(ROOT, 'commands', 'slop.js')), lines, dir);
       const shapes = spliceShapes(lines, fixed);
       for (const shape of shapes.slice(0, limit)) console.log(`  , ${shape.text}${shape.count > 1 ? `  (x${shape.count})` : ''}`);
-      console.log(`${counted}; ${shapes.length} fix${shapes.length === 1 ? '' : 'es'} put a comma before "the", "its" or kin and what reads like a subject and a verb`);
+      console.log(`${counted}; ${shapes.length} fix${shapes.length === 1 ? '' : 'es'} put a comma before "the", "every", "a" or kin and what reads like a subject and a verb`);
       return 0;
     }
     if (audit) {
