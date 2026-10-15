@@ -1484,15 +1484,19 @@ test('every engine started through a runner or profile variable records its run 
       }
       return null;
     };
-    // The key, key default, and whole-object default of a destructured
-    // parameter that binds this name. Nested patterns are not read.
+    // The keys leading to this name in a destructured parameter, each with
+    // its default, plus the whole-object default. A nested pattern's own
+    // default is the default of the key that holds it.
     const objectPattern = (parameter, name) => {
       const object = objectEntries(parameter.trim());
       const whole = object && /^\s*(?:=\s*([\s\S]*))?$/.exec(object.rest);
       if (!whole) return null;
       for (const entry of object.entries) {
         const binding = /^([A-Za-z_$][\w$]*)\s*(?::\s*([A-Za-z_$][\w$]*))?\s*(?:=\s*([\s\S]*))?$/.exec(entry);
-        if (binding && (binding[2] || binding[1]) === name) return { key: binding[1], fallback: (binding[3] || '').trim(), whole: (whole[1] || '').trim() };
+        if (binding && (binding[2] || binding[1]) === name) return { path: [{ key: binding[1], fallback: (binding[3] || '').trim() }], whole: (whole[1] || '').trim() };
+        const nested = /^([A-Za-z_$][\w$]*)\s*:\s*(\{[\s\S]*)$/.exec(entry);
+        const inner = nested && objectPattern(nested[2], name);
+        if (inner) return { path: [{ key: nested[1], fallback: inner.whole }, ...inner.path], whole: (whole[1] || '').trim() };
       }
       return null;
     };
@@ -1592,31 +1596,34 @@ test('every engine started through a runner or profile variable records its run 
           const leftUndefined = (text, at) => !text || text === 'void 0' || (text === 'undefined' && !bindsAt('undefined', at));
           const omitted = leftUndefined(supplied, suppliedAt);
           if (pattern) {
-            // An omitted object takes the whole-object default, and with none
-            // the destructuring throws before any launch. In an object literal
+            // An omitted object takes the whole-object default, and an absent
+            // or null object throws before any launch. In an object literal
             // the last entry for the key wins, a later spread or computed key
             // may replace it, and a missing key uses the key default. Unknown
-            // objects may leave the key out too.
-            const objectText = omitted ? pattern.whole : supplied;
-            const objectAt = omitted ? fnStart : suppliedAt;
-            if (!objectText) continue;
-            const literal = objectEntries(objectText);
-            const sources = [];
-            let unset = true;
-            if (literal && !literal.rest.trim()) {
-              let value = '';
-              let open = false;
-              for (const entry of literal.entries) {
-                const property = /^(['"]?)([A-Za-z_$][\w$]*)\1\s*(?::\s*([\s\S]*))?$/.exec(entry);
-                if (property && property[2] === pattern.key) {
-                  value = property[3] === undefined ? property[2] : property[3].trim();
-                  open = false;
-                } else if (/^(?:\.\.\.|\[)/.test(entry)) open = true;
-              }
-              unset = open || leftUndefined(value, objectAt);
-              if (!leftUndefined(value, objectAt)) sources.push([value, objectAt]);
-            } else if (objectText === 'null') continue;
-            if (unset && pattern.fallback) sources.push([pattern.fallback, fnStart]);
+            // objects may leave the key out too, and what they hold for a
+            // nested key is unknown as well.
+            const keySources = (objectText, objectAt, [{ key, fallback }, ...deeper]) => {
+              if (!objectText || objectText === 'null') return [];
+              const literal = objectEntries(objectText);
+              const values = [];
+              let unset = true;
+              if (literal && !literal.rest.trim()) {
+                let value = '';
+                let open = false;
+                for (const entry of literal.entries) {
+                  const property = /^(['"]?)([A-Za-z_$][\w$]*)\1\s*(?::\s*([\s\S]*))?$/.exec(entry);
+                  if (property && property[2] === key) {
+                    value = property[3] === undefined ? property[2] : property[3].trim();
+                    open = false;
+                  } else if (/^(?:\.\.\.|\[)/.test(entry)) open = true;
+                }
+                unset = open || leftUndefined(value, objectAt);
+                if (!leftUndefined(value, objectAt)) values.push([value, objectAt]);
+              } else if (deeper.length) values.push([objectText, objectAt]);
+              if (unset && fallback) values.push([fallback, fnStart]);
+              return deeper.length ? values.flatMap(([text, at]) => keySources(text, at, deeper)) : values;
+            };
+            const sources = keySources(omitted ? pattern.whole : supplied, omitted ? fnStart : suppliedAt, pattern.path);
             if (sources.some(([source, at]) => engineSourceAt(source, at, next))) return true;
             continue;
           }
@@ -1720,6 +1727,21 @@ test('every engine started through a runner or profile variable records its run 
   assert.deepStrictEqual(options('launch({ runner: resolveClaudeRunnerBin() });', '{ bin: runner }'), [], 'the key, not the local name, picks the value');
   assert.deepStrictEqual(options('launch(prompt, {});', 'prompt, { runner = resolveClaudeRunnerBin() }'), ['commands/planted.js:2 runner']);
   assert.deepStrictEqual(planted("function launch({ runner = resolveClaudeRunnerBin() }) {\n  startEngineRun(root);\n  spawnSync(runner, args);\n}\nlaunch({});\n"), []);
+  // A nested pattern follows each key in turn, and a nested default stands
+  // in for a missing key that holds it.
+  const nested = '{ engine: { runner = resolveClaudeRunnerBin() } }';
+  assert.deepStrictEqual(options('launch({ engine: {} });', nested), ['commands/planted.js:2 runner']);
+  assert.deepStrictEqual(options("launch({ engine: { runner: 'git' } });", nested), []);
+  assert.deepStrictEqual(options('launch({});', nested), [], 'a missing nested object with no default throws before any launch');
+  assert.deepStrictEqual(options('launch({});', '{ engine: { runner = resolveClaudeRunnerBin() } = {} }'), ['commands/planted.js:2 runner']);
+  assert.deepStrictEqual(options('launch();', '{ engine: { runner = resolveClaudeRunnerBin() } = {} } = {}'), ['commands/planted.js:2 runner']);
+  assert.deepStrictEqual(options('launch({ engine: picks });', nested), ['commands/planted.js:2 runner'], 'an unknown nested object may leave the key out');
+  assert.deepStrictEqual(options('launch(opts);', nested), ['commands/planted.js:2 runner'], 'unknown options hold an unknown nested object');
+  assert.deepStrictEqual(options("launch({ engine: { runner: 'git', ...more } });", nested), ['commands/planted.js:2 runner']);
+  assert.deepStrictEqual(options('launch({ engine: { runner: resolveClaudeRunnerBin() } });', '{ engine: { runner } }'), ['commands/planted.js:2 runner']);
+  assert.deepStrictEqual(options("launch({ engine: { runner: 'git' } });", '{ engine: { runner } = { runner: resolveClaudeRunnerBin() } }'), [], 'a supplied nested object replaces its default');
+  assert.deepStrictEqual(options('launch({});', '{ engine: { runner } = { runner: resolveClaudeRunnerBin() } }'), ['commands/planted.js:2 runner']);
+  assert.deepStrictEqual(options('launch({ engine: { bin: resolveClaudeRunnerBin() } });', '{ engine: { bin: runner } }'), ['commands/planted.js:2 runner'], 'a renamed nested key reads its own key');
   // Literal and captured defaults count only when a same-file call omits them.
   for (const [head, tail] of [
     ['function launch', '}'],
