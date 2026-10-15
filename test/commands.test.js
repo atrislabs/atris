@@ -11080,7 +11080,7 @@ test('task current-step advances the scoped current task one safe action', () =>
   }
 });
 
-test('task current returns read-only selected page and queue lanes', () => {
+test('task current returns read-only selected page and queue lanes', async () => {
   if (!hasNodeSqlite()) return;
   const dir = makeTempDir();
   const dbPath = path.join(dir, 'tasks.db');
@@ -11125,7 +11125,23 @@ test('task current returns read-only selected page and queue lanes', () => {
     ]);
     assert.equal(new Set([reviewTask, planTask, scopedPlanTask, scopedParallelTask, backlogTask].map((task) => task.display_id)).size, 5);
 
-    const current = runCli(['task', 'current', '--as', 'codex', '--json'], { cwd: dir, env });
+    // Nine reads of one unchanged store run at once. Current and queue each
+    // rewrite the task list file; copies differ only in a fixed-width timestamp,
+    // none of these commands parse it, and the claim below rewrites it whole.
+    const [
+      current, capabilitiesCli, needsAgentCurrent, scopedCurrent, scopedQueue,
+      tagQueue, statusCurrent, planShow, reviewShow,
+    ] = await Promise.all([
+      runCliAsync(['task', 'current', '--as', 'codex', '--json'], { cwd: dir, env }),
+      runCliAsync(['task', 'capabilities', '--json'], { cwd: dir, env }),
+      runCliAsync(['task', 'current', '--as', 'codex', '--review-state', 'needs-agent', '--json'], { cwd: dir, env }),
+      runCliAsync(['task', 'current', '--as', 'codex', '--goal-id', 'OBL-928', '--json'], { cwd: dir, env }),
+      runCliAsync(['task', 'queue', '--as', 'codex', '--goal-id', 'OBL-928', '--limit', '1', '--json'], { cwd: dir, env }),
+      runCliAsync(['task', 'queue', '--tag', 'capture', '--json'], { cwd: dir, env }),
+      runCliAsync(['task', 'current', '--status', 'review', '--json'], { cwd: dir, env }),
+      runCliAsync(['task', 'show', planTask.display_id, '--json'], { cwd: dir, env }),
+      runCliAsync(['task', 'show', reviewTask.display_id, '--json'], { cwd: dir, env }),
+    ]);
     assert.equal(current.status, 0, current.stderr);
     const payload = JSON.parse(current.stdout);
     assert.equal(payload.action, 'current');
@@ -11169,8 +11185,7 @@ test('task current returns read-only selected page and queue lanes', () => {
 	    assert.equal(payload.queue.capabilities.current_step.lanes['human-accept-waiting'].reason, 'agent_certified_waiting_human');
 	    assert.equal(payload.queue.capabilities.current_step.lanes['human-accept-waiting'].claims_work, false);
 	    assert.equal(payload.queue.capabilities.current_step.lanes.certified.claims_work, false);
-	    const capabilitiesCli = runCli(['task', 'capabilities', '--json'], { cwd: dir, env });
-	    assert.equal(capabilitiesCli.status, 0, capabilitiesCli.stderr);
+		    assert.equal(capabilitiesCli.status, 0, capabilitiesCli.stderr);
 	    const capabilitiesPayload = JSON.parse(capabilitiesCli.stdout);
 	    assert.deepEqual(capabilitiesPayload.capabilities, payload.queue.capabilities);
 	    assert.equal(capabilitiesPayload.safety.read_only, true);
@@ -11204,8 +11219,7 @@ test('task current returns read-only selected page and queue lanes', () => {
 	    assert.ok(reviewQueueItem.legacy_ref);
 	    assert.equal(reviewQueueItem.continue_work_command, undefined);
 
-	    const needsAgentCurrent = runCli(['task', 'current', '--as', 'codex', '--review-state', 'needs-agent', '--json'], { cwd: dir, env });
-	    assert.equal(needsAgentCurrent.status, 0, needsAgentCurrent.stderr);
+		    assert.equal(needsAgentCurrent.status, 0, needsAgentCurrent.stderr);
 	    const needsAgentPayload = JSON.parse(needsAgentCurrent.stdout);
 	    assert.equal(needsAgentPayload.current.scope.review_state, 'needs-agent');
 	    assert.equal(needsAgentPayload.current.selected_task_id, reviewTask.id);
@@ -11224,7 +11238,6 @@ test('task current returns read-only selected page and queue lanes', () => {
 	    assert.deepEqual(needsAgentPayload.current.capabilities.filters.review_state.accepted, ['needs-agent', 'continue-work', 'proof-boundary-blocked', 'human-accept-waiting', 'certified']);
 	    assert.equal(needsAgentPayload.current.capabilities.current_step.lanes['needs-agent'].safe_for_agent, true);
 
-    const scopedCurrent = runCli(['task', 'current', '--as', 'codex', '--goal-id', 'OBL-928', '--json'], { cwd: dir, env });
     assert.equal(scopedCurrent.status, 0, scopedCurrent.stderr);
     const scopedPayload = JSON.parse(scopedCurrent.stdout);
     assert.equal(scopedPayload.current.scope.goal_id, 'OBL-928');
@@ -11237,21 +11250,18 @@ test('task current returns read-only selected page and queue lanes', () => {
     assert.equal(scopedPayload.queue.counts.review, 0);
     assert.equal(scopedPayload.queue.counts.plan, 2);
 
-    const scopedQueue = runCli(['task', 'queue', '--as', 'codex', '--goal-id', 'OBL-928', '--limit', '1', '--json'], { cwd: dir, env });
     assert.equal(scopedQueue.status, 0, scopedQueue.stderr);
     const scopedQueuePayload = JSON.parse(scopedQueue.stdout);
     assert.equal(scopedQueuePayload.queue.scope.goal_id, 'OBL-928');
     assert.equal(scopedQueuePayload.queue.counts.total, 2);
     assert.equal(scopedQueuePayload.queue.columns.find(column => column.key === 'plan').items[0].id, scopedParallelTask.id);
 
-    const tagQueue = runCli(['task', 'queue', '--tag', 'capture', '--json'], { cwd: dir, env });
     assert.equal(tagQueue.status, 0, tagQueue.stderr);
     const tagQueuePayload = JSON.parse(tagQueue.stdout);
     assert.equal(tagQueuePayload.queue.scope.tag, 'capture');
     assert.equal(tagQueuePayload.queue.counts.total, 1);
     assert.equal(tagQueuePayload.queue.columns.find(column => column.key === 'backlog').items[0].id, backlogTask.id);
 
-    const statusCurrent = runCli(['task', 'current', '--status', 'review', '--json'], { cwd: dir, env });
     assert.equal(statusCurrent.status, 0, statusCurrent.stderr);
     const statusPayload = JSON.parse(statusCurrent.stdout);
     assert.equal(statusPayload.current.scope.status, 'review');
@@ -11259,10 +11269,8 @@ test('task current returns read-only selected page and queue lanes', () => {
     assert.equal(statusPayload.current.selected_ref, reviewTask.display_id);
     assert.equal(statusPayload.queue.counts.total, 1);
 
-    const planShow = runCli(['task', 'show', planTask.display_id, '--json'], { cwd: dir, env });
     assert.equal(planShow.status, 0, planShow.stderr);
     assert.equal(JSON.parse(planShow.stdout).status, 'open');
-    const reviewShow = runCli(['task', 'show', reviewTask.display_id, '--json'], { cwd: dir, env });
     assert.equal(reviewShow.status, 0, reviewShow.stderr);
     const reviewDetail = JSON.parse(reviewShow.stdout);
     assert.equal(reviewDetail.status, 'review');
@@ -11270,7 +11278,10 @@ test('task current returns read-only selected page and queue lanes', () => {
     assert.equal(reviewDetail.messages.some(message => message.content.includes('TASK_REVIEW_CHAT')), false);
 
     assert.equal(runCli(['task', 'claim', planTask.display_id, '--as', 'codex'], { cwd: dir, env }).status, 0);
-    const claimedCurrent = runCli(['task', 'current', '--as', 'codex', '--json'], { cwd: dir, env });
+    const [claimedCurrent, queue] = await Promise.all([
+      runCliAsync(['task', 'current', '--as', 'codex', '--json'], { cwd: dir, env }),
+      runCliAsync(['task', 'queue', '--as', 'codex', '--limit', '1', '--json'], { cwd: dir, env }),
+    ]);
     assert.equal(claimedCurrent.status, 0, claimedCurrent.stderr);
     const claimedPayload = JSON.parse(claimedCurrent.stdout);
     assert.equal(claimedPayload.current.selected_reason, 'claimed_by_owner');
@@ -11279,7 +11290,6 @@ test('task current returns read-only selected page and queue lanes', () => {
     assert.equal(claimedPayload.page.stage.current, 'do');
     assert.match(claimedPayload.current.next.command, new RegExp(`atris task ready ${planTask.display_id}`));
 
-    const queue = runCli(['task', 'queue', '--as', 'codex', '--limit', '1', '--json'], { cwd: dir, env });
     assert.equal(queue.status, 0, queue.stderr);
     const queuePayload = JSON.parse(queue.stdout);
     assert.equal(queuePayload.action, 'queue');
