@@ -1670,11 +1670,12 @@ test('the real idle board fits small terminals and restores older-run detail aft
 
 test('the real idle board follows split starts and failures and returns to idle on small screens', { skip: process.platform === 'win32' }, (t) => {
   const proof = spawnSync('python3', [path.join(repoRoot, 'atris/receipts/member-board-idle-transition-proof.py'), process.execPath], {
-    encoding: 'utf8', timeout: 90_000,
+    encoding: 'utf8', timeout: 120_000,
   });
   assert.equal(proof.status, 0, `${proof.stdout}\n${proof.stderr}\n${proof.error || ''}`);
   assert.match(proof.stdout, /three small layouts keep complete states within the screen through live transitions/);
   assert.match(proof.stdout, /split failures stay working until newline, then show timed out in all three layouts/);
+  assert.match(proof.stdout, /split sign-in failures wait for newline; guidance fits at 60 columns/);
   t.diagnostic(proof.stdout);
 });
 
