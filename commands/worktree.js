@@ -179,6 +179,14 @@ function lastRunBranch(root, owner, task, base, skip) {
   return cherry.stdout.split('\n').some((line) => line.startsWith('+')) ? newest : null;
 }
 
+// True only when git proves the branch no longer merges cleanly with the base.
+// merge-tree --write-tree exits 1 on conflict; an error or old git keeps the
+// resume as before.
+function conflictsWithBase(root, base, branch) {
+  const result = runGit(['merge-tree', '--write-tree', '--name-only', base, branch], { cwd: root, check: false });
+  return result.status === 1;
+}
+
 function defaultWorktreePath(root, member, task, now = new Date()) {
   const name = `${slugify(member, 'member', 24)}-${slugify(task, 'task', 36)}-${stamp(now)}`;
   return path.join(path.dirname(root), '.agent-worktrees', path.basename(root), name);
@@ -572,9 +580,18 @@ function createAgentWorktree({ root = repoRoot(), member = '', agent = '', task,
   const staleBase = refreshRemoteRef(root, checkoutBase);
   // A retry of the same job starts from the last run's unlanded commits; it
   // still ships to the mainline.
-  const resumedFrom = (!pathOverride && !branchOverride)
+  let resumedFrom = (!pathOverride && !branchOverride)
     ? lastRunBranch(root, owner, task, checkoutBase, branch)
     : null;
+  // A last run that now conflicts with the mainline would hand its conflict
+  // to the retry, which then cannot land on the first try. Start fresh; the
+  // old branch keeps its commits.
+  let skippedResume = null;
+  if (resumedFrom && conflictsWithBase(root, checkoutBase, resumedFrom)) {
+    skippedResume = resumedFrom;
+    resumedFrom = null;
+    console.error(`note: the last run's branch ${skippedResume} no longer merges cleanly with ${checkoutBase}, so this run starts fresh; that branch keeps its commits`);
+  }
   const startPoint = resumedFrom || checkoutBase;
   const ref = `refs/heads/${branch}`;
   const existed = runGit(['show-ref', '--verify', '--quiet', ref], { cwd: root, check: false }).status !== 1;
@@ -624,6 +641,7 @@ function createAgentWorktree({ root = repoRoot(), member = '', agent = '', task,
         base: shipBase,
         checkout_base: checkoutBase,
         resumed_from: resumedFrom,
+        skipped_resume: skippedResume,
         workspace_root: root,
         created_at: now.toISOString(),
       }, null, 2) + '\n',
@@ -633,7 +651,7 @@ function createAgentWorktree({ root = repoRoot(), member = '', agent = '', task,
     discardFailedStart();
     throw error;
   }
-  return { path: target, branch, base: shipBase, checkoutBase, resumedFrom, owner, reapedBeforeStart, cachePrunedBeforeStart };
+  return { path: target, branch, base: shipBase, checkoutBase, resumedFrom, skippedResume, owner, reapedBeforeStart, cachePrunedBeforeStart };
 }
 
 function startWorktree(args) {
