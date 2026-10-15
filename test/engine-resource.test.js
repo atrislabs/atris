@@ -1360,7 +1360,7 @@ test('every engine started through a runner or profile variable records its run 
     ['commands/run.js#execPhaseCommandSync', 'recorded around the phase by executePhase'],
   ]);
   const engineLaunches = (rel, text) => {
-    if (LAUNCH_EXEMPT_FILES.has(rel)) return { seen: 0, missing: [] };
+    if (LAUNCH_EXEMPT_FILES.has(rel)) return { seen: 0, missing: [], routes: {} };
     const code = stripComments(text);
     const lines = code.split('\n');
     const recorder = recordingCall(code);
@@ -1655,17 +1655,25 @@ test('every engine started through a runner or profile variable records its run 
               return deeper.length ? values.flatMap(([text, at]) => keySources(text, at, deeper)) : values;
             };
             const sources = keySources(omitted ? pattern.whole : supplied, omitted ? fnStart : suppliedAt, pattern.path);
-            if (sources.some(([source, at]) => engineSourceAt(source, at, next))) return true;
+            if (sources.some(([source, at]) => engineSourceAt(source, at, next))) {
+              route = 'options key';
+              return true;
+            }
             continue;
           }
           const hasDefault = parameters[slot].includes('=');
           if (engineSourceAt(omitted && hasDefault ? defaultSource : supplied, omitted && hasDefault ? fnStart : suppliedAt, next)) {
+            route = omitted && hasDefault ? 'parameter default' : 'call argument';
             return true;
           }
         }
       }
       return false;
     };
+    // How each engine launch was traced, named by the outermost step: its
+    // own declaration, or a launcher parameter filled at a call.
+    let route = '';
+    const routes = {};
     let seen = 0;
     const missing = [];
     for (const match of code.matchAll(VAR_LAUNCH)) {
@@ -1673,14 +1681,16 @@ test('every engine started through a runner or profile variable records its run 
       const before = code.slice(0, match.index);
       const fnStart = Math.max(0, ...definitionSpans(code).filter(([open, close]) => open <= match.index && match.index < close).map(([open]) => open));
       const fnName = (/^(?:async\s+)?(?:function|const|let|var)\s+([\w$]+)/.exec(code.slice(fnStart).trimStart()) || [])[1] || '';
+      route = 'declaration';
       const isEngine = engineSourceAt(program + (called || ''), match.index);
       if (!isEngine || isProbe(args)) continue;
       seen += 1;
+      routes[route] = (routes[route] || 0) + 1;
       const line = before.split('\n').length;
       if (recordedAbove(lines, line, recorder) || EXEMPT_LAUNCHES.has(`${rel}#${fnName}`)) continue;
       missing.push(`${rel}:${line} ${program}${called || ''}`);
     }
-    return { seen, missing };
+    return { seen, missing, routes };
   };
   const planted = (text) => engineLaunches('commands/planted.js', text).missing;
   // Resolver defaults keep nested parentheses and commas in one parameter.
@@ -2085,8 +2095,17 @@ test('every engine started through a runner or profile variable records its run 
       assert.deepStrictEqual(planted(expression(`  ${captured} {\n    ${name}(resolveClaudeRunnerBin());\n  }`)), ['commands/planted.js:5 runner'], 'a helper without a matching parameter captures the internal name');
     }
   }
+  // Each launch is counted under the route that traced it, so a reader
+  // that stops working shows up as a lower count.
+  const routesOf = (text) => engineLaunches('commands/planted.js', text).routes;
+  assert.deepStrictEqual(routesOf("function a() {\n  const runner = resolveClaudeRunnerBin();\n  spawnSync(runner, args);\n}\n"), { declaration: 1 });
+  assert.deepStrictEqual(routesOf("function launch(program) {\n  spawnSync(program, args);\n}\nlaunch(resolveClaudeRunnerBin());\n"), { 'call argument': 1 });
+  assert.deepStrictEqual(routesOf("function launch(runner = resolveClaudeRunnerBin()) {\n  spawnSync(runner, args);\n}\nlaunch();\n"), { 'parameter default': 1 });
+  assert.deepStrictEqual(routesOf("function launch({ runner = resolveClaudeRunnerBin() }) {\n  spawnSync(runner, args);\n}\nlaunch({});\n"), { 'options key': 1 });
+  assert.deepStrictEqual(routesOf("function launch(runner) {\n  spawnSync(runner, ['--help']);\n}\nlaunch(resolveClaudeRunnerBin());\n"), {}, 'a help probe is not counted');
   const repo = path.join(__dirname, '..');
   const missing = [];
+  const routes = {};
   let seen = 0;
   for (const dir of ['commands', 'lib']) {
     for (const name of fs.readdirSync(path.join(repo, dir)).filter((file) => file.endsWith('.js'))) {
@@ -2094,11 +2113,14 @@ test('every engine started through a runner or profile variable records its run 
       const result = engineLaunches(rel, fs.readFileSync(path.join(repo, rel), 'utf8'));
       seen += result.seen;
       missing.push(...result.missing);
+      for (const [kind, count] of Object.entries(result.routes)) routes[kind] = (routes[kind] || 0) + count;
     }
   }
-  assert.ok(seen >= 6, `the scan should see the known runner and profile launches, saw ${seen}`);
+  assert.ok(seen >= 8, `the scan should see the known runner and profile launches, saw ${seen}`);
+  assert.ok((routes.declaration || 0) >= 7 && (routes['call argument'] || 0) >= 1, `each route should still trace its known launches, saw ${JSON.stringify(routes)}`);
   assert.deepStrictEqual(missing, [], 'record the run with startEngineRun, or add the launch to the exempt list with its reason');
   console.log(`real runner and profile launch scan: ${seen} engine launches through a variable, ${missing.length} unrecorded`);
+  console.log(`real runner and profile launch routes: ${JSON.stringify(routes)}`);
 });
 
 test('the landing status names runs closed after their parent died in the last day, and stays quiet with none', () => {
