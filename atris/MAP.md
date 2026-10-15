@@ -281,7 +281,7 @@ Proof extraction fixture setup: `test/commands.test.js:12180` creates, claims an
 
 Review selection status batching: `test/commands.test.js:12525` awaits both show reads together after selection. `commands/task.js:7744` reads each existing row from the store without saving a shared view. All assertions remain; three sequential CLI stages become two.
 
-Duplicate selection fixture reuse: `test/commands.test.js:12776` readies the checkpoint in its creation connection, closed in finally before real CLI checks. Two store connections replace three; all command assertions remain.
+Duplicate selection fixture reuse: `test/commands.test.js:12792` seeds both tasks and readies the checkpoint through one store connection, closed in finally before real CLI checks. One store connection replaces two; all command assertions remain.
 
 Certified review fallback read batching: `test/commands.test.js:12603` overlaps the two next reads after certification and before creation. Six sequential CLI stages become five; all assertions remain. Details: `atris/refs/MAP-NOTES.md`.
 
