@@ -500,6 +500,8 @@ function showStatus(root, args, deps = {}) {
   // evidence cannot be trusted to say it is healthy.
   const heartbeatInstalled = autoland.heartbeatLiveness(root, policy);
   const heartbeatLive = autoland.heartbeatIsLive(root);
+  // A test run reads only the home it was handed, never the real one.
+  const startLines = deps.home || !process.env.NODE_TEST_CONTEXT ? findAgentStartLines(deps.home ? { home: deps.home } : {}) : [];
 
   if (json) {
     console.log(JSON.stringify({
@@ -510,6 +512,7 @@ function showStatus(root, args, deps = {}) {
       ready_for_recheck: readyForRecheck,
       blocked,
       waiting_on_human: waiting,
+      agent_start_lines: startLines,
     }, null, 2));
     return 0;
   }
@@ -559,8 +562,6 @@ function showStatus(root, args, deps = {}) {
     console.log(`  engine runs that ended in an error in the last day: ${lost.errors_day}, newest ${failed.engine || 'unknown engine'} on ${failed.task || 'no task'} at ${when}: ${errorReason(failed)}`);
   }
   const { leaked: leakedAgents, list: leakedList, unread: unreadAgents } = countLeakedSshAgents(deps);
-  // A test run reads only the home it was handed, never the real one.
-  const startLines = deps.home || !process.env.NODE_TEST_CONTEXT ? findAgentStartLines(deps.home ? { home: deps.home } : {}) : [];
   const unchecked = unreadAgents.length ? `could not read the ${unreadAgents.join(' or the ')}, so some ssh-agents went unchecked` : '';
   if (leakedAgents) {
     // The launcher check starts a Node, so it runs only when a line names the command.

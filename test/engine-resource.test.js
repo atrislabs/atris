@@ -5023,9 +5023,10 @@ test('the sweep listing splits leaked ssh-agents by engine runs and points to th
     assert.match(during, /when the leaked ssh-agents started: 2 started while an engine run was open \(claude 2\), 1 with no engine run open\n/, 'mostly during runs names no single fix');
     fs.writeFileSync(path.join(home, '.zshrc'), '[ -S "$SSH_AUTH_SOCK" ] || eval "$(ssh-agent -s)"\n');
     assert.match(sweep([agent(201, 3), agent(202, 2)]), /2 with no engine run open\n/, 'no startup line found, no pointer to one');
-    fs.writeFileSync(path.join(home, '.zshrc'), 'eval "$(ssh-agent -s)"\n');
+    fs.writeFileSync(path.join(home, '.zshrc'), 'eval "$(ssh-agent -s)"  # Start SSH agent\n');
     const status = capture(() => showStatus(root, [], { readSshAgents: () => ({ agents: [agent(201, 3), agent(202, 2)], referenced: new Set() }), uid: 501, home, pathAtrisRecordsRuns: true }));
     assert.match(status, /\n {4}when the leaked ssh-agents started: [^\n]*so the startup line below is the one to fix, not an engine\n {4}likely source: ~\/\.zshrc line 1/);
+    assert.deepStrictEqual(JSON.parse(capture(() => showStatus(root, ['--json'], { home }))).agent_start_lines, [{ file: '~/.zshrc', line: 1, fix: '[ -S "$SSH_AUTH_SOCK" ] || eval "$(ssh-agent -s)"', fixed_line: '[ -S "$SSH_AUTH_SOCK" ] || eval "$(ssh-agent -s)"  # Start SSH agent' }], 'the machine-readable landing status carries the fix and the whole fixed line');
     fs.appendFileSync(file, `${JSON.stringify({ at: at(0.8), phase: 'start', engine: 'codex', run_id: 'b' })}\n`);
     const turned = sweep([agent(201, 3), agent(202, 2), agent(203, 2.5), agent(204, 0.5)]);
     assert.match(turned, /\nwhen the leaked ssh-agents started: 1 started while an engine run was open \(codex 1\), 3 with no engine run open; in the last hour: 1 while an engine run was open, 0 with none open\nlikely source/, 'a last hour mostly inside engine runs drops the claim that the engines are not the source');
