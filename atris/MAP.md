@@ -131,28 +131,28 @@ Ready-work revision setup: `test/commands.test.js:13651` seeds creation and owne
 
 Accepted-task revision refusal setup: `test/commands.test.js:13750` seeds creation and ownership through the real task store; readiness, acceptance, refused revision and XP status remain on the CLI.
 
-Goal display-reference status setup: `test/commands.test.js:14596` keeps child creation by display ref and status on the CLI; ownership is seeded through the production store after child creation.
+Goal display-reference status setup: `test/commands.test.js:14602` keeps child creation by display ref and status on the CLI; ownership is seeded through the production store after child creation.
 
-Reviewed-failure status setup: `test/commands.test.js:14650` seeds creation and ownership through the production store; failed completion and history status remain on the CLI.
+Reviewed-failure status setup: `test/commands.test.js:14656` seeds creation and ownership through the production store; failed completion and history status remain on the CLI.
 
 Failed-blocker status fixture: `test/commands.test.js` seeds creation and ownership in the real store; failed completion and JSON/text status remain on the CLI.
 
-Mission XP weak-proof rejection setup: `test/commands.test.js:15558` seeds creation and ownership through the production store at `test/commands.test.js:15576`; three CLI launches retain both weak proof refusals and strong proof success.
+Mission XP weak-proof rejection setup: `test/commands.test.js:15564` seeds creation and ownership through the production store at `test/commands.test.js:15582`; three CLI launches retain both weak proof refusals and strong proof success.
 
-Review-lanes weak-proof setup: `test/commands.test.js:15595` seeds ownership through the production store; readiness, review and all acceptance gates remain on the CLI, removing one launch.
+Review-lanes weak-proof setup: `test/commands.test.js:15601` seeds ownership through the production store; readiness, review and all acceptance gates remain on the CLI, removing one launch.
 
-Review-lanes metadata setup: `test/commands.test.js:15635` updates weak proof in process after CLI review, removing one Node launch while retaining all queue and acceptance checks.
+Review-lanes metadata setup: `test/commands.test.js:15641` updates weak proof in process after CLI review, removing one Node launch while retaining all queue and acceptance checks.
 
-Review queue hygiene setup: `test/commands.test.js:15125` injects stale continuation metadata in process, removing one Node launch while retaining queue and continuation CLI checks.
+Review queue hygiene setup: `test/commands.test.js:15131` injects stale continuation metadata in process, removing one Node launch while retaining queue and continuation CLI checks.
 
-Review queue hygiene creation fixture: `test/commands.test.js:15089` creates its goal-linked parent through the real task store, keeping readiness, review, queue inspection and continuation refusal on the CLI; four launches replace five.
+Review queue hygiene creation fixture: `test/commands.test.js:15095` creates its goal-linked parent through the real task store, keeping readiness, review, queue inspection and continuation refusal on the CLI; four launches replace five.
 
-Continuation display creation setup: `test/commands.test.js:15172` seeds the goal-linked parent through the production store; readiness, both reviews, current and queue reads stay on the CLI. Six launches replace seven.
+Continuation display creation setup: `test/commands.test.js:15178` seeds the goal-linked parent through the production store; readiness, both reviews, current and queue reads stay on the CLI. Six launches replace seven.
 
-Review queue filter creation setup: `test/commands.test.js:15251` seeds both goal-linked tasks through the production store in their original order; readiness, reviews and filtered queue/current reads stay on the CLI. Seven launches replace nine.
+Review queue filter creation setup: `test/commands.test.js:15257` seeds both goal-linked tasks through the production store in their original order; readiness, reviews and filtered queue/current reads stay on the CLI. Seven launches replace nine.
 
 Stale proof routing fixture: `test/commands.test.js` seeds task creation through the production store; readiness, review, routing reads and approval refusal stay on the CLI.
 
-Weak proof review creation setup: `test/commands.test.js:15649` seeds creation and ownership together through the production task store; six CLI calls retain readiness, review, queue selection and both acceptance gates.
+Weak proof review creation setup: `test/commands.test.js:15655` seeds creation and ownership together through the production task store; six CLI calls retain readiness, review, queue selection and both acceptance gates.
 
 Capability safety baseline: `test/commands.test.js:8327` reads the initial production-store projection in its fixture connection; both capability checks and the final CLI read remain, reducing launches from four to three.

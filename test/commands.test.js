@@ -13907,7 +13907,13 @@ test('task headless JSON contract supports create, claim, note, finish, and even
     assert.equal(nextPayload.command, `atris task claim ${createPayload.task.display_id} --as bot`);
     assert.equal(nextPayload.owner, 'bot');
     assert.equal(nextPayload.task.status, 'open');
-    assert.equal(runCli(['task', 'claim', shortId, '--as', 'bot', '--json'], { cwd: dir, env }).status, 0);
+    // Setup claim for the refusal checks; the reclaim below covers claim JSON.
+    const db = taskStore.open(dbPath);
+    try {
+      assert.equal(taskStore.claimTask(db, { id, claimedBy: 'bot' }).claimed, true);
+    } finally {
+      taskStore.close();
+    }
 
     const claimConflict = runCli(['task', 'claim', shortId, '--as', 'other', '--json'], { cwd: dir, env });
     assert.equal(claimConflict.status, 1);

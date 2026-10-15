@@ -266,7 +266,7 @@ MCP stdio request flow: `mcp/atris-mcp/index.mjs:142` reads requests while desig
 
 - **Entry point:** `lib/known-commands.js:3` (knownCommands list), `bin/atris.js:987` (dispatch check)
 - **Cold-start handler:** `bin/atris.js:1399` (`interactiveEntry`; active missions/work outrank completed history)
-- **Regression:** `test/commands.test.js:20260-20338` covers parseable JSON errors for unknown top-level commands
+- **Regression:** `test/commands.test.js:20266-20338` covers parseable JSON errors for unknown top-level commands
 - **How it works:**
 - No args → Cold start (shows context, waits for input)
 - With args → Hot start (treats input as task description)
@@ -744,7 +744,7 @@ MCP stdio request flow: `mcp/atris-mcp/index.mjs:142` reads requests while desig
 - `atris task step <id>` advances one safe headless action and never human-accepts; `test/commands.test.js:10643` seeds its parent through the real task store in process, while step, review, and show checks run the CLI
 - `atris task claim <id>` on an already-done task suggests the next open task, same tag first; `test/commands.test.js:13826` seeds its three tasks through the real task store and computes display refs over the whole workspace in process, while claim, finish, and suggestion checks run the CLI
 - `atris task current --json` returns the read-only selected page and queue lanes; `test/commands.test.js:11038` seeds its five tasks through the real task store at their original points, each insert polling the clock past the last so queue order never ties, while ready, current, queue, and selection checks run the CLI
-- `atris brain --help` and `atris brain -h` short-circuit before workspace compilation via `commands/brain.js:1071-1075`; regression: `test/commands.test.js:18657-18730`
+- `atris brain --help` and `atris brain -h` short-circuit before workspace compilation via `commands/brain.js:1071-1075`; regression: `test/commands.test.js:18663-18730`
 - `atris brain compile` refreshes generated `atris/now.md` before state collection while preserving custom front doors via `commands/brain.js:294-296` and `commands/now.js:204-256`; regressions: `test/commands.test.js:6089-6164`
 - `atris brain compile` counts `.atris/state/task_episodes.jsonl` as episode state via `commands/brain.js:499` (`collectState`) and `commands/brain.js:561-566` (`countStateRows`/`nextMove`)
 - `atris brain scorecard --verify` converts reviewed task episodes into one latest-review scorecard per task via `commands/brain.js:1214-1222` (`latestTaskEpisodes`/`recordTaskEpisodeScorecards`/`verifyTaskEpisodeScorecards`)
@@ -782,7 +782,7 @@ MCP stdio request flow: `mcp/atris-mcp/index.mjs:142` reads requests while desig
 - **Dispatch:** `bin/atris.js:1122-1143` routes `serve --help`, `serve -h`, and `serve help` before parsing bridge options; normal runs call `serveAtris`
 - **Handler:** `commands/serve.js:306-407` (`serveAtris`) registers the session and subscribes for operations
 - **Safety core:** `commands/serve.js:55-78` (`safePath`) and `commands/serve.js:83-176` (`applyOp`) constrain file operations
-- **Regression:** `test/commands.test.js:18769-18839` covers `serve --help` without planner fallback, bridge startup, login checks, or auth-state creation
+- **Regression:** `test/commands.test.js:18775-18839` covers `serve --help` without planner fallback, bridge startup, login checks, or auth-state creation
 
 **Search:** `rg "serveAtris|showServeHelp|command === 'serve'|serve --help" bin/atris.js commands/serve.js test/commands.test.js`
 
@@ -872,7 +872,7 @@ MCP stdio request flow: `mcp/atris-mcp/index.mjs:142` reads requests while desig
 
 - **Entry point:** `bin/atris.js:2513` (command routing)
 - **Handler:** `commands/brainstorm.js:71-101` (brainstormAtris function)
-- **Help:** `commands/brainstorm.js:11-24` short-circuits before workspace/log setup; regression: `test/commands.test.js:18674-18747`
+- **Help:** `commands/brainstorm.js:11-24` short-circuits before workspace/log setup; regression: `test/commands.test.js:18680-18747`
 - **How it works:**
 - Empty folder reuses `speakFirstMinute` (same two spoken lines as bare `atris`, talk command). No `atris/` or `.atris/` mint
 - After `init --minimal`, `atris brainstorm "<idea>"` writes today's inbox and exits
@@ -928,7 +928,7 @@ MCP stdio request flow: `mcp/atris-mcp/index.mjs:142` reads requests while desig
 - **Suggestions:** `commands/launchpad.js:371` (`suggestedNextMoves`) returns up to 3 plain-language moves
 - **Render:** `commands/launchpad.js:573` (`renderLaunchpad`) draws the ASCII card; `commands/launchpad.js:607` (`showLaunchpadHelp`)
 - **Help:** `bin/atris.js:573` help line; **Routing:** `bin/atris.js:2472` dispatch, `lib/known-commands.js:3` `knownCommands`
-- **Regression:** `test/first-minute.test.js` (empty first-talk, file names the file, post-mint already yours, post-init claim); `test/dogfood-p0-safety.test.js` `26d`/`26e`/`26h`/`26i`; `test/commands.test.js:17416` (actor-claimed first), `test/commands.test.js:17491` (clean queue to endgame seed), `test/commands.test.js:17527` (verifier mission when no claimed task); `--help` smoke at `test/commands.test.js:17353`
+- **Regression:** `test/first-minute.test.js` (empty first-talk, file names the file, post-mint already yours, post-init claim); `test/dogfood-p0-safety.test.js` `26d`/`26e`/`26h`/`26i`; `test/commands.test.js:17422` (actor-claimed first), `test/commands.test.js:17497` (clean queue to endgame seed), `test/commands.test.js:17533` (verifier mission when no claimed task); `--help` smoke at `test/commands.test.js:17359`
 - **Value:** Answers "who is doing what, what needs review, what is blocked, what should start next" in one card without cloud auth
 
 **Search:** `rg "launchpadCommand|collectLaunchpad|chooseNextAction|renderLaunchpad|suggestedNextMoves|speakFirstMinute|speakKeepWorkingMinute|atris.launchpad.v1" commands/launchpad.js lib/first-minute.js bin/atris.js test/commands.test.js test/first-minute.test.js test/dogfood-p0-safety.test.js`
@@ -955,7 +955,7 @@ MCP stdio request flow: `mcp/atris-mcp/index.mjs:142` reads requests while desig
 - Stale wiki page list (source newer than last_compiled)
 - Archive count, cleaned section count
 - **Flags:** `--dry-run` / `-n` to preview without changes; `--json` for automation-readable health output
-- **Regression:** `test/commands.test.js:18388-18496` covers missing-workspace JSON, help, and `clean --dry-run --json`
+- **Regression:** `test/commands.test.js:18394-18496` covers missing-workspace JSON, help, and `clean --dry-run --json`
 - **Value:** Keep workspace clean, trust in MAP.md, detect knowledge rot
 
 **Search:** `rg "showCleanHelp|command === 'clean'|cleanAtris|cleanResultPayload|findStalePages|clean --dry-run --json" bin/atris.js commands/clean.js test/commands.test.js`
@@ -967,7 +967,7 @@ MCP stdio request flow: `mcp/atris-mcp/index.mjs:142` reads requests while desig
 - **Entry points:** `bin/atris.js` (help text, known commands, wiki + alias routing)
 - **Handlers:** `commands/wiki.js` (ingest/query/lint/search/log), `lib/wiki.js` (scaffold + prompt builders), `commands/init.js` (wiki bootstrap), `commands/activate.js` (wiki status load)
 - **Help:** `commands/wiki.js:172-174` (`hasHelpFlag`/`printWikiHelp`) and `commands/wiki.js:408-412` short-circuit wiki help before ingest/query/lint workers can scaffold state
-- **Regression:** `test/commands.test.js:20283-20367` covers `ingest|query|lint --help`, `wiki --help`, and `wiki ingest --help` without `atris/` or `$HOME/.atris` creation
+- **Regression:** `test/commands.test.js:20289-20367` covers `ingest|query|lint --help`, `wiki --help`, and `wiki ingest --help` without `atris/` or `$HOME/.atris` creation
 - **How it works:**
 - `atris ingest <path>` scaffolds `atris/wiki/`, stages local evidence into `atris/context/_ingest/`, writes a manifest receipt, refreshes wiki STATUS/log, and prints the local ingest prompt against the staged source
 - `atris query "question"` prints a local wiki query prompt
@@ -1011,7 +1011,7 @@ MCP stdio request flow: `mcp/atris-mcp/index.mjs:142` reads requests while desig
 - suggests a small next-ingest queue from high-value repo files not yet represented in wiki page frontmatter
 - supports `--dry-run`, `--json`, and `--limit=N`
 - does not auto-push; the local wiki stays the source of truth until `atris push --only wiki`
-- **Regression:** `test/commands.test.js:18783-18855` covers `loop --help` without Wiki Loop output or temp `atris/`/`.atris` creation
+- **Regression:** `test/commands.test.js:18789-18855` covers `loop --help` without Wiki Loop output or temp `atris/`/`.atris` creation
 - **Value:** Turns the wiki into a maintained memory layer instead of a write-once folder
 
 **Search:** `rg "loopAtris|buildReport|showLoopHelp|loop --help|findStaleWikiPages|findWikiOrphans|findSuggestedSources" bin/atris.js commands/loop.js lib/wiki.js test/commands.test.js`
@@ -1023,7 +1023,7 @@ MCP stdio request flow: `mcp/atris-mcp/index.mjs:142` reads requests while desig
 - **Entry point:** `commands/verify.js:13-35` (verifyAtris function)
 - **Help:** `bin/atris.js:781-799` (showVerifyHelp) and `bin/atris.js:781-799` (showVerifyHelp short-circuit)
 - **Rubric runner:** `commands/verify.js:495-529` (verifyRubric)
-- **Regression:** `test/commands.test.js:18799-18872` covers `verify --help` without verifier execution
+- **Regression:** `test/commands.test.js:18805-18872` covers `verify --help` without verifier execution
 - **Modes:**
 - `atris verify`: Verify entire workspace health
 - `atris verify [task]`: Verify specific task completion
@@ -1069,7 +1069,7 @@ MCP stdio request flow: `mcp/atris-mcp/index.mjs:142` reads requests while desig
   - `bumpVersion()` → `commands/release.js:151`
   - `printLaunchPost()` → `commands/release.js:165`
   - `runFullTestSuite()` → `commands/release.js:194`
-- **Regression:** `test/commands.test.js:18816` covers `release --help` without package version changes; `test/release-preflight.test.js:1` covers help wiring, off-master refusal, dirty/tag/origin failures, CI=true suite pass, and the real suite exit code
+- **Regression:** `test/commands.test.js:18822` covers `release --help` without package version changes; `test/release-preflight.test.js:1` covers help wiring, off-master refusal, dirty/tag/origin failures, CI=true suite pass, and the real suite exit code
 
 **Search:** `rg "showReleaseHelp|releaseAtris|releasePreflight|release --help|bumpVersion" bin/atris.js commands/release.js test/commands.test.js test/release-preflight.test.js`
 
@@ -1079,7 +1079,7 @@ MCP stdio request flow: `mcp/atris-mcp/index.mjs:142` reads requests while desig
 
 - **Entry point:** `commands/analytics.js:4-147` (analyticsAtris function)
 - **Help:** `bin/atris.js:883-893` (`showAnalyticsHelp`) and `bin/atris.js:1472-1478` short-circuit `analytics --help` before workspace reads
-- **Regression:** `test/commands.test.js:18640-18713` covers `analytics --help` without `atris/` or `$HOME/.atris`
+- **Regression:** `test/commands.test.js:18646-18713` covers `analytics --help` without `atris/` or `$HOME/.atris`
 - **Pareto insight:** No new instrumentation - parses existing markdown
 - **Data sources:**
 - Completions: `- **C#: description**` pattern
@@ -1342,7 +1342,7 @@ rg "printRoster|registryPayload|canPersistEngineRegistry|speakFirstMinute|--glob
 - **Auth (canonical):** `utils/auth.js` + `utils/api.js`: all auth logic consolidated, no inline duplicates
 - **Help:** `bin/atris.js:976-1012` (`showAuthHelp`) prints login/logout/whoami/switch/use/accounts usage before auth workers can prompt, create state, delete credentials, or touch session/profile dirs
 - **Dispatch:** `bin/atris.js:1198-1239` routes login/logout/whoami/switch/use/accounts `--help`, `-h`, and bare `help` before calling `commands/auth.js`
-- **Regression:** `test/commands.test.js:18691-18794` covers auth/account help without login prompts, status output, `.atris` creation, session/profile dir creation, or credential deletion
+- **Regression:** `test/commands.test.js:18697-18794` covers auth/account help without login prompts, status output, `.atris` creation, session/profile dir creation, or credential deletion
 - JWT helpers: `decodeJwtClaims` (bin:59-74), `shouldRefreshToken` (bin:85-92)
 - **Credentials storage:** `~/.atris/credentials.json` (chmod 0o600 on save)
 - **Placed agent key:** `utils/auth.js:165-206,376-414` reads `~/.atris/agent-token.json` or `ATRIS_AGENT_TOKEN_FILE` after `ATRIS_TOKEN` and before profiles, with the narrow fresh-file override for a different stale environment token; `test/auth-placed-token.test.js` covers precedence, expiry fallback, silent ignores, and the re-mint error
@@ -1372,7 +1372,7 @@ rg "printRoster|registryPayload|canPersistEngineRegistry|speakFirstMinute|--glob
 - **Entry point:** `commands/setup.js:6-178` (`setupAtris`)
 - **Help:** `bin/atris.js:1067-1077` (`showSetupHelp`) prints setup usage without entering setup
 - **Dispatch:** `bin/atris.js:1491-1499` routes `setup --help`, `setup -h`, and `setup help` before login, business fetch, or pull flow
-- **Regression:** `test/commands.test.js:18738-18808` covers setup help without setup banner, login prompt, or `.atris` creation
+- **Regression:** `test/commands.test.js:18744-18808` covers setup help without setup banner, login prompt, or `.atris` creation
 - **Value:** Gives first-run guidance while keeping help safe in temp homes and automation.
 
 **Search:** `rg "showSetupHelp|setupAtris|setup --help" bin/atris.js commands/setup.js test/commands.test.js`
@@ -1398,7 +1398,7 @@ rg "printRoster|registryPayload|canPersistEngineRegistry|speakFirstMinute|--glob
 - Checks npm registry for latest
 - If update available, runs `npm install -g atris@latest`
 - Shows success/failure with next steps
-- **Regression:** `test/commands.test.js:18588-18658` covers `upgrade --help` without npm update checks or update-cache writes
+- **Regression:** `test/commands.test.js:18594-18658` covers `upgrade --help` without npm update checks or update-cache writes
 - **Value:** One-command upgrade without remembering npm syntax
 
 **Search:** `rg "showUpgradeHelp|upgradeAtris|upgrade --help|checkForUpdates" bin/atris.js test/commands.test.js utils/update-check.js`
@@ -1415,7 +1415,7 @@ rg "printRoster|registryPayload|canPersistEngineRegistry|speakFirstMinute|--glob
 - Compares with local version
 - Packaged installs spawn `npm install -g atris@latest` in the background; git checkout installs fall back to notification/manual `atris upgrade`
 - **Cache:** 1-hour cache for registry checks and auto-update start throttling
-- **Regression:** `test/commands.test.js:18617-18696` covers representative help commands that previously wrote only the update-check cache
+- **Regression:** `test/commands.test.js:18623-18696` covers representative help commands that previously wrote only the update-check cache
 - **Value:** Keep users up-to-date without interrupting workflow
 
 **Search:** `rg "checkForUpdates|autoUpdate|shouldAutoUpdate|helpRequested|help invocations skip" bin/atris.js utils/update-check.js test/update-check-install-state.test.js test/commands.test.js`
@@ -1459,7 +1459,7 @@ rg "printRoster|registryPayload|canPersistEngineRegistry|speakFirstMinute|--glob
 - **Entry point:** `commands/activate.js:158-306` (activateAtris function)
 - **Routing:** `bin/atris.js:1153-1159`
 - **Help:** `bin/atris.js:910-920` (`showActivateHelp`) prints usage before context loading or journal creation
-- **Regression:** `test/commands.test.js:18752-18825` covers activate help without context panels or temp state creation; `test/activate-boot.test.js` covers the boot brief + sync-status line
+- **Regression:** `test/commands.test.js:18758-18825` covers activate help without context panels or temp state creation; `test/activate-boot.test.js` covers the boot brief + sync-status line
 - **Logic:**
 - Detects workspace state via `lib/state-detection.js`
 - Loads MAP.md, TODO.md, today's journal
@@ -1476,7 +1476,7 @@ rg "printRoster|registryPayload|canPersistEngineRegistry|speakFirstMinute|--glob
 - **Entry point:** `bin/atris.js:463-465` (`showSearchHelp` + `searchJournal`)
 - **Routing:** `bin/atris.js:757`
 - **Logic:**
-- `--help` and `-h` short-circuit before `atris/logs` checks; regression: `test/commands.test.js:17480-17550`
+- `--help` and `-h` short-circuit before `atris/logs` checks; regression: `test/commands.test.js:17486-17550`
 - Recursively walks `atris/logs/` directory
 - Case-insensitive keyword search across all `.md` files
 - Shows file:line + matching content (truncated to 100 chars)
@@ -1505,7 +1505,7 @@ rg "printRoster|registryPayload|canPersistEngineRegistry|speakFirstMinute|--glob
 - **Entry point:** `bin/atris.js:1637-1641` routes to `commands/soul.js`
 - **Handler:** `commands/soul.js:310-381` (`soul`)
 - **Help:** `commands/soul.js:299-308` (`showSoulHelp`) and `commands/soul.js:316-319` short-circuit before `findAtrisDir`
-- **Regression:** `test/commands.test.js:17577-17647` covers `soul --help`, `soul -h`, and `soul help` without temp workspace state
+- **Regression:** `test/commands.test.js:17583-17647` covers `soul --help`, `soul -h`, and `soul help` without temp workspace state
 - **Value:** Agents can learn what the workspace has retained without requiring initialized state for documentation paths.
 
 **Search:** `rg "showSoulHelp|async function soul|soul help" commands/soul.js test/commands.test.js`
@@ -1514,7 +1514,7 @@ rg "printRoster|registryPayload|canPersistEngineRegistry|speakFirstMinute|--glob
 
 **Purpose:** Keep common documentation paths usable from empty directories without creating `atris/` or `$HOME/.atris`.
 
-- **Regression:** `test/commands.test.js:17332-17404` runs 42 common help invocations in fresh temp cwd/HOME pairs
+- **Regression:** `test/commands.test.js:17338-17404` runs 42 common help invocations in fresh temp cwd/HOME pairs
 - **Checks:** exit 0, non-empty help text, no workspace/auth/worker banners, no temp `atris/`, and no temp `$HOME/.atris`
 - **Value:** Prevents new dispatch/help regressions after individual command fixes.
 
@@ -1626,7 +1626,7 @@ rg "printRoster|registryPayload|canPersistEngineRegistry|speakFirstMinute|--glob
 - **Routing:** `bin/atris.js:2737` (`command === 'gmail'`) and `bin/atris.js:2776` (`command === 'slack'`): always `requireAccountBound`; both extract `--account <id>` first and do not treat that selector as the workspace opt-in, so scratch `gmail send --account foo` and `slack send --account foo` refuse like the bare verbs; a refused gate returns before `gmailCommand` / `slackCommand` so send cannot fall through; `--help` still prints usage
 - **Help:** `bin/atris.js:1055` (`showIntegrationsHelp`) routes `integrations --help` before auth/session state or backend status checks; Gmail subcommand help is in `commands/integrations.js:595`
 - **Gmail regressions:** `test/gmail-triage.test.js` (rule reasons, verdict log rows, read-only Gmail calls), `test/gmail-verdicts.test.js` (legacy rows, reason passthrough, daily account summaries), `test/gmail-account.test.js:99` (connect validation), `test/gmail-account.test.js:129` (poll success), `test/gmail-account.test.js:182` (timeout), `test/gmail-account.test.js:298` (inbox mailbox header), `test/gmail-account.test.js:386` (send request), `test/gmail-account.test.js:436` (unowned send refusal), `test/gmail-account.test.js:471` (send usage), `test/gmail-account.test.js:501` (voice clear), `test/gmail-account.test.js:531` (piped voice), `test/gmail-account.test.js:564` (account roster), `test/gmail-account.test.js:610` (interactive display-name picker), `test/dogfood-pass3-27-28.test.js` (unbound scratch `gmail connect`, `gmail send --account foo`, and `slack send --account foo` exit 2 with no network, lookup, or send)
-- **Regression:** `test/commands.test.js:18721-18794` covers integrations help without login errors or `.atris` creation
+- **Regression:** `test/commands.test.js:18727-18794` covers integrations help without login errors or `.atris` creation
 - **Value:** Manage external services without leaving the CLI
 
 **Search:** `rg "gmailInbox|gmailTriage|gmailTriageVerdict|printGmailVerdicts|gmailSend|gmailVoice|gmailConnect|gmailAccounts|gmailUse|gmailCommand|calendarCommand|twitterCommand|slackCommand|integrationsStatus|showIntegrationsHelp|integrations --help|--approved|requireAccountBound" bin/atris.js commands/integrations.js lib/account-bound.js test/gmail-triage.test.js test/gmail-verdicts.test.js test/gmail-account.test.js test/commands.test.js test/dogfood-pass3-27-28.test.js`
@@ -2309,7 +2309,7 @@ npm publish
 
 ## Continuation status test setup
 
-- `test/commands.test.js:14302` checks review continuation, human approval waiting, and blocked review separately. Its local real-store seed helper removes three setup command launches; ready, review, status, and all result assertions stay on the CLI.
+- `test/commands.test.js:14308` checks review continuation, human approval waiting, and blocked review separately. Its local real-store seed helper removes three setup command launches; ready, review, status, and all result assertions stay on the CLI.
 
 ## Board stream readiness
 
@@ -2321,7 +2321,7 @@ npm publish
 
 ## Compact approval queue test setup
 
-- `test/commands.test.js:14384` checks certified, second-review-blocked, and unsafe-check queue entries. Its local real-store helper at `test/commands.test.js:14395` creates and claims three fixtures without six setup command launches; ready, review, JSON, plain, verbose, and grouped output stay on the CLI with every queue assertion intact.
+- `test/commands.test.js:14390` checks certified, second-review-blocked, and unsafe-check queue entries. Its local real-store helper at `test/commands.test.js:14401` creates and claims three fixtures without six setup command launches; ready, review, JSON, plain, verbose, and grouped output stay on the CLI with every queue assertion intact.
 - `test/commands.test.js:12021` checks proof-specific review-chat packets. Creation and claiming use the real task store, saving two setup launches; open-task rejection, ready, review-chat, review, status, show, and all assertions still exercise the CLI. The fixture preserves both task_goal and goal_objective metadata from command creation.
 
 - `test/commands.test.js:9182` checks duplicate review-chat suppression across inner loops. Creation at `test/commands.test.js:9196` uses the real task store without a setup launch; the baseline at `test/commands.test.js:9212` reads full message history and version in process, saving another launch, and closes the store in finally. Ready still handles the unclaimed row through the CLI; both loop calls, drain, final show calls, and every version/message assertion remain, with an added identity check.
@@ -2340,7 +2340,7 @@ npm publish
 
 ## Task lineage fixture setup
 
-- `test/commands.test.js:17285` checks goal inference, completed proof, parent-child lineage and stream counts. Three ordered real-store seeds replace three setup launches; finish and export still exercise the CLI, with every assertion preserved.
+- `test/commands.test.js:17291` checks goal inference, completed proof, parent-child lineage and stream counts. Three ordered real-store seeds replace three setup launches; finish and export still exercise the CLI, with every assertion preserved.
 
 ## Task rendering fixture setup
 
@@ -2422,7 +2422,7 @@ npm publish
 
 ## Already-claimed claim fixture setup
 
-- `test/commands.test.js:14122` checks that a claim refused because another agent holds the task never suggests a next task. Real-store creation at `test/commands.test.js:14134` saves one setup launch, resolves the display reference and closes in finally; both claims and the conflict reason and empty suggestion assertions remain on the CLI.
+- `test/commands.test.js:14128` checks that a claim refused because another agent holds the task never suggests a next task. Real-store creation at `test/commands.test.js:14140` saves one setup launch, resolves the display reference and closes in finally; both claims and the conflict reason and empty suggestion assertions remain on the CLI.
 
 ## Handover prep call-order race
 
@@ -2430,35 +2430,35 @@ npm publish
 
 ## Goal display-ref status fixture setup
 
-- `test/commands.test.js:14580` checks that task status reads a parent goal's title as the current task's objective when the child was linked by display reference. Real-store parent creation at `test/commands.test.js:14599` saves one setup launch and reads id, title and display reference from the stored row; the child add that resolves the display reference, the claim and the status read remain on the CLI.
+- `test/commands.test.js:14586` checks that task status reads a parent goal's title as the current task's objective when the child was linked by display reference. Real-store parent creation at `test/commands.test.js:14605` saves one setup launch and reads id, title and display reference from the stored row; the child add that resolves the display reference, the claim and the status read remain on the CLI.
 
 ## Rendered task list accept refresh fixture setup
 
-- `test/commands.test.js:20028` checks that accepting a task refreshes an existing rendered task list file. Real-store creation at `test/commands.test.js:20052` saves one setup launch and never touches the file, so the completed entry can only come from the CLI ready and accept that remain.
+- `test/commands.test.js:20034` checks that accepting a task refreshes an existing rendered task list file. Real-store creation at `test/commands.test.js:20058` saves one setup launch and never touches the file, so the completed entry can only come from the CLI ready and accept that remain.
 
 ## Task lineage fixture setup
 
-- `test/commands.test.js:21083` checks that task lineage prints the parent before the child in text and JSON and survives a home with no git. Real-store creation at `test/commands.test.js:21091` saves two setup launches and seeds the child with the same goal link that task add stores; removing that link makes the test fail, so the seeded link is what the lineage reads check.
+- `test/commands.test.js:21089` checks that task lineage prints the parent before the child in text and JSON and survives a home with no git. Real-store creation at `test/commands.test.js:21097` saves two setup launches and seeds the child with the same goal link that task add stores; removing that link makes the test fail, so the seeded link is what the lineage reads check.
 
 ## Reviewed failure status fixture setup
 
-- `test/commands.test.js:14631` checks that task status counts a reviewed failed task as closed, with nothing active or waiting for review. Real-store creation at `test/commands.test.js:14638` saves one setup launch; task add only stores the row and redraws the task view, which the claim and failed finish redraw again, so the claim, failed finish and status read remain on the CLI.
+- `test/commands.test.js:14637` checks that task status counts a reviewed failed task as closed, with nothing active or waiting for review. Real-store creation at `test/commands.test.js:14644` saves one setup launch; task add only stores the row and redraws the task view, which the claim and failed finish redraw again, so the claim, failed finish and status read remain on the CLI.
 
 ## Failed blocker status fixture setup
 
-- `test/commands.test.js:14669` checks that a failed task without a proof counts as blocked and stays out of the review handoff in both JSON and text status. Real-store creation at `test/commands.test.js:14676` saves one setup launch; the claim, failed finish and both status reads remain on the CLI.
+- `test/commands.test.js:14675` checks that a failed task without a proof counts as blocked and stays out of the review handoff in both JSON and text status. Real-store creation at `test/commands.test.js:14682` saves one setup launch; the claim, failed finish and both status reads remain on the CLI.
 
 ## Status history fixture setup
 
-- `test/commands.test.js:14706` checks that the default task status card leaves out history while the history view shows all ten events. Setup at `test/commands.test.js:14713` writes the creation, claim and eight notes in process through the same store calls task new, claim and say make, saving ten launches; a throwaway copy seeding seven notes failed the history count, so the count still tracks the seeded events.
+- `test/commands.test.js:14712` checks that the default task status card leaves out history while the history view shows all ten events. Setup at `test/commands.test.js:14719` writes the creation, claim and eight notes in process through the same store calls task new, claim and say make, saving ten launches; a throwaway copy seeding seven notes failed the history count, so the count still tracks the seeded events.
 
 ## Review create-next goal scope fixture setup
 
-- `test/commands.test.js:14858` checks that finishing a task with create-next carries its tag and goal link to the new task, and that the goal-scoped current pick selects it. Real-store creation at `test/commands.test.js:14866` saves one setup launch and writes the same goal link task new stores; a throwaway copy without that link failed, so the goal checks still read the seeded link.
+- `test/commands.test.js:14864` checks that finishing a task with create-next carries its tag and goal link to the new task, and that the goal-scoped current pick selects it. Real-store creation at `test/commands.test.js:14872` saves one setup launch and writes the same goal link task new stores; a throwaway copy without that link failed, so the goal checks still read the seeded link.
 
 ## Continue-work certified review fixture setup
 
-- `test/commands.test.js:14914` checks that continue-work on a certified review creates one goal-scoped next task, reuses it on a second call, and leaves the parent waiting for a human. Real-store parent creation at `test/commands.test.js:14922` saves one setup launch and reads the display reference from the stored rows; a throwaway copy without the goal link failed, so the next task's goal check still reads the seeded link.
+- `test/commands.test.js:14920` checks that continue-work on a certified review creates one goal-scoped next task, reuses it on a second call, and leaves the parent waiting for a human. Real-store parent creation at `test/commands.test.js:14928` saves one setup launch and reads the display reference from the stored rows; a throwaway copy without the goal link failed, so the next task's goal check still reads the seeded link.
 
 ## Uncertified review next fixture setup
 
@@ -2516,19 +2516,19 @@ npm publish
 
 ## Long-title status fixture setup
 
-- `test/commands.test.js:14227` checks that long current task titles stop at a clause. Real-store creation at `test/commands.test.js:14234` preserves the title, voice tag and creation point, asserts insertion and a display reference, and closes before CLI claim. Creation-only launch removed (four to three); claim and both JSON/text status assertions remain unchanged. Natural flow and headless JSON tests retain explicit CLI creation coverage.
+- `test/commands.test.js:14233` checks that long current task titles stop at a clause. Real-store creation at `test/commands.test.js:14240` preserves the title, voice tag and creation point, asserts insertion and a display reference, and closes before CLI claim. Creation-only launch removed (four to three); claim and both JSON/text status assertions remain unchanged. Natural flow and headless JSON tests retain explicit CLI creation coverage.
 
 ## Live status contract fixture setup
 
-- `test/commands.test.js:14150` checks the compact live status contract for web and Swarlo. Ordered real-store creation at `test/commands.test.js:14164` preserves the three titles, the swarlo and agent tags, the untagged backlog record and creation order, asserts each insertion, and closes before CLI claim. Three creation-only launches removed (seven to four); claim, JSON status counts, current and next selection, text status and history feed assertions remain unchanged.
+- `test/commands.test.js:14156` checks the compact live status contract for web and Swarlo. Ordered real-store creation at `test/commands.test.js:14170` preserves the three titles, the swarlo and agent tags, the untagged backlog record and creation order, asserts each insertion, and closes before CLI claim. Three creation-only launches removed (seven to four); claim, JSON status counts, current and next selection, text status and history feed assertions remain unchanged.
 
 ## Review default certified accept fixture setup
 
-- `test/commands.test.js:20137` checks that the default review screen leads with the certified accept line. Real-store creation at `test/commands.test.js:20150` preserves the title, review tag and workspace root, asserts insertion and a display reference, and closes before CLI claim. Init writes its task projection from a different store, and that task shares the seeded display reference, so the test drops the stale projection before claim; claim then resolves from the store and rewrites the projection, as task new did. Creation-only launch removed (five to four); claim, ready, review and every review screen assertion remain unchanged.
+- `test/commands.test.js:20143` checks that the default review screen leads with the certified accept line. Real-store creation at `test/commands.test.js:20156` preserves the title, review tag and workspace root, asserts insertion and a display reference, and closes before CLI claim. Init writes its task projection from a different store, and that task shares the seeded display reference, so the test drops the stale projection before claim; claim then resolves from the store and rewrites the projection, as task new did. Creation-only launch removed (five to four); claim, ready, review and every review screen assertion remain unchanged.
 
 ## Task sync dry-run fixture setup
 
-- `test/commands.test.js:17227` checks that task sync dry-run maps a local task to cloud task writes. Real-store creation at `test/commands.test.js:17245` preserves the title, swarlo tag and workspace root, asserts insertion, and closes before CLI claim. No init runs, so no stale projection exists. Creation-only launch removed (five to four); claim, say, ready and every sync plan assertion remain unchanged.
+- `test/commands.test.js:17233` checks that task sync dry-run maps a local task to cloud task writes. Real-store creation at `test/commands.test.js:17251` preserves the title, swarlo tag and workspace root, asserts insertion, and closes before CLI claim. No init runs, so no stale projection exists. Creation-only launch removed (five to four); claim, say, ready and every sync plan assertion remain unchanged.
 
 ## Backlog demotion fixture setup
 
@@ -2536,15 +2536,15 @@ npm publish
 
 ## Search fixtures without init
 
-- `test/commands.test.js:17467` checks that search with no keyword prints usage; it and the three journal search tests at `test/commands.test.js:18100`, `test/commands.test.js:18126` and `test/commands.test.js:18139` now create only the workspace folder instead of running a full init. Search prints usage before reading the folder, and the journal checks read only the log each test writes. Multi-layer search over features, team, wiki and journal stays covered without init at `test/commands.test.js:17514`. A full init launch costs about 240ms whether the shared test task store is empty or holds 7,000 rows.
+- `test/commands.test.js:17473` checks that search with no keyword prints usage; it and the three journal search tests at `test/commands.test.js:18106`, `test/commands.test.js:18132` and `test/commands.test.js:18145` now create only the workspace folder instead of running a full init. Search prints usage before reading the folder, and the journal checks read only the log each test writes. Multi-layer search over features, team, wiki and journal stays covered without init at `test/commands.test.js:17520`. A full init launch costs about 240ms whether the shared test task store is empty or holds 7,000 rows.
 
 ## Analytics fixtures without init
 
-- `test/commands.test.js:18179` checks journal completion counts, and the inbox test that follows it checks inbox counts when Inbox is the last section. Both create only the workspace folder instead of running a full init, because each writes today's journal and that write replaces the one init leaves. Analytics reads only the workspace folder and the last seven daily journals. The fresh-workspace check at `test/commands.test.js:18167` keeps init on purpose: init writes today's journal with nothing counted, and that test proves it reads as zero. The completions test matches the today and weekly count lines; a bare 2 used to pass on any count because the date always holds one.
+- `test/commands.test.js:18185` checks journal completion counts, and the inbox test that follows it checks inbox counts when Inbox is the last section. Both create only the workspace folder instead of running a full init, because each writes today's journal and that write replaces the one init leaves. Analytics reads only the workspace folder and the last seven daily journals. The fresh-workspace check at `test/commands.test.js:18173` keeps init on purpose: init writes today's journal with nothing counted, and that test proves it reads as zero. The completions test matches the today and weekly count lines; a bare 2 used to pass on any count because the date always holds one.
 
 ## Visualize inbox fixtures without init
 
-- `test/commands.test.js:18293` checks that visualize exits when no journal exists; it and the two inbox tests after it create only the workspace folder instead of running a full init. Visualize without a prompt reads only today's journal through a plain path lookup. The no-journal test used to run init and then delete the journal init wrote, which left an empty logs folder, so it now creates that folder directly. The dry-run tests from `test/commands.test.js:18332` keep init, because a dry run reads workspace context from the files init writes.
+- `test/commands.test.js:18299` checks that visualize exits when no journal exists; it and the two inbox tests after it create only the workspace folder instead of running a full init. Visualize without a prompt reads only today's journal through a plain path lookup. The no-journal test used to run init and then delete the journal init wrote, which left an empty logs folder, so it now creates that folder directly. The dry-run tests from `test/commands.test.js:18338` keep init, because a dry run reads workspace context from the files init writes.
 
 - `test/commands.test.js:12188` checks proof-derived verifier extraction. Title-only and path-only readiness at `test/commands.test.js:12275` and `test/commands.test.js:12290` use readyTask; both review-chat calls and all command/path assertions remain on the CLI. The four ready-only cases (`test/commands.test.js:12335` onward) call the same command-list and tested-sentence builders ready uses, cutting CLI launches from 14 to 10; the semicolon and passing-tail cases still prove both builders match ready on the CLI.
 
@@ -2568,35 +2568,35 @@ Landing capability test setup: `test/commands.test.js:12975` seeds creation and 
 
 - Accepted-task revision refusal: `test/commands.test.js:13750` seeds creation and ownership with production `claimTask`, asserts success and closes in finally; all refusal and XP assertions remain real CLI checks, reducing five launches to four.
 
-- Goal display-reference status setup: `test/commands.test.js:14596` reopens the production store to claim the CLI-created child, asserts success and closes in finally. Three launches become two; CLI child-add resolution and every parent objective, lineage and stream assertion remain unchanged.
+- Goal display-reference status setup: `test/commands.test.js:14602` reopens the production store to claim the CLI-created child, asserts success and closes in finally. Three launches become two; CLI child-add resolution and every parent objective, lineage and stream assertion remain unchanged.
 
-- Reviewed-failure status setup: `test/commands.test.js:14650` uses production `claimTask` in the creation connection, asserts success and closes in finally. Three launches become two; failed completion, reviewed health and all history assertions remain on the CLI.
+- Reviewed-failure status setup: `test/commands.test.js:14656` uses production `claimTask` in the creation connection, asserts success and closes in finally. Three launches become two; failed completion, reviewed health and all history assertions remain on the CLI.
 
-- Failed-blocker status setup: `test/commands.test.js:14689` seeds production ownership in the creation connection and closes in finally, removing one launch (four to three); failed completion and both JSON/text status assertions retain real CLI coverage.
+- Failed-blocker status setup: `test/commands.test.js:14695` seeds production ownership in the creation connection and closes in finally, removing one launch (four to three); failed completion and both JSON/text status assertions retain real CLI coverage.
 
-- Mission XP weak-proof rejection: `test/commands.test.js:15558` seeds creation and ownership at `test/commands.test.js:15576` through the production store, preserves title, tag, workspace and goal, resolves the display ref and closes in finally. Four launches become three; both weak-proof gates and strong-proof success retain every CLI assertion.
+- Mission XP weak-proof rejection: `test/commands.test.js:15564` seeds creation and ownership at `test/commands.test.js:15582` through the production store, preserves title, tag, workspace and goal, resolves the display ref and closes in finally. Four launches become three; both weak-proof gates and strong-proof success retain every CLI assertion.
 
-- Review-lanes weak-proof setup: `test/commands.test.js:15625` uses production `claimTask`, asserts success and closes in finally. Eight CLI launches become seven; readiness, review, queue/current selection and both acceptance gates keep every assertion.
+- Review-lanes weak-proof setup: `test/commands.test.js:15631` uses production `claimTask`, asserts success and closes in finally. Eight CLI launches become seven; readiness, review, queue/current selection and both acceptance gates keep every assertion.
 
-- Review-lanes metadata setup: `test/commands.test.js:15635` opens the production task store after CLI review, updates the same five metadata fields and timestamp, and closes in finally. Total child launches fall from eight to seven; seven CLI launches and all assertions remain.
+- Review-lanes metadata setup: `test/commands.test.js:15641` opens the production task store after CLI review, updates the same five metadata fields and timestamp, and closes in finally. Total child launches fall from eight to seven; seven CLI launches and all assertions remain.
 
 ## Review queue hygiene metadata fixture
 
-- `test/commands.test.js:15089` checks generic continuation debt and refuses continuation. Metadata setup at `test/commands.test.js:15125` uses the production task store and closes in finally, preserving the exact field and leaving timestamps unchanged. Child launches fall from six to five; all five CLI calls and assertions remain.
+- `test/commands.test.js:15095` checks generic continuation debt and refuses continuation. Metadata setup at `test/commands.test.js:15131` uses the production task store and closes in finally, preserving the exact field and leaving timestamps unchanged. Child launches fall from six to five; all five CLI calls and assertions remain.
 
-- Review queue hygiene creation: `test/commands.test.js:15098` seeds the same title, tag, workspace and goal with addSeedTask, resolves the display ref through the store and closes in finally. Four CLI calls replace five with every behavioral assertion retained.
+- Review queue hygiene creation: `test/commands.test.js:15104` seeds the same title, tag, workspace and goal with addSeedTask, resolves the display ref through the store and closes in finally. Four CLI calls replace five with every behavioral assertion retained.
 
-- Continuation display creation: `test/commands.test.js:15172` uses addSeedTask with the original title, tag, workspace and goal, resolves the display reference through the store, and closes in finally. Six CLI calls retain every continuation and waiting-state assertion.
+- Continuation display creation: `test/commands.test.js:15178` uses addSeedTask with the original title, tag, workspace and goal, resolves the display reference through the store, and closes in finally. Six CLI calls retain every continuation and waiting-state assertion.
 
-Review queue filter creation fixture: `test/commands.test.js:15251` seeds both goal-linked task rows in process, resolving display references with the production store; all readiness, review and filtered queue/current assertions remain on the CLI.
+Review queue filter creation fixture: `test/commands.test.js:15257` seeds both goal-linked task rows in process, resolving display references with the production store; all readiness, review and filtered queue/current assertions remain on the CLI.
 
 ## Stale proof routing creation fixture
 
-- `test/commands.test.js:15432` seeds creation at `test/commands.test.js:15440` with the same title, tag, workspace and goal, resolves the display reference and closes in finally. CLI launches fall from ten to nine; readiness, review, status, filtered current reads, reviews, dry-run acceptance and current-step refusal retain every assertion.
+- `test/commands.test.js:15438` seeds creation at `test/commands.test.js:15446` with the same title, tag, workspace and goal, resolves the display reference and closes in finally. CLI launches fall from ten to nine; readiness, review, status, filtered current reads, reviews, dry-run acceptance and current-step refusal retain every assertion.
 
 ## Weak proof review creation fixture
 
-- `test/commands.test.js:15649` uses addSeedTask with the original title, tag, workspace and goal; production ownership and display-reference resolution share the connection, closed in finally. Seven CLI calls become six; all readiness, review, queue/current selection and acceptance assertions remain.
+- `test/commands.test.js:15655` uses addSeedTask with the original title, tag, workspace and goal; production ownership and display-reference resolution share the connection, closed in finally. Seven CLI calls become six; all readiness, review, queue/current selection and acceptance assertions remain.
 
 - Capability safety baseline: `test/commands.test.js:8327` seeds creation and reads initial version, event and status through the real task store; both capability checks and the final CLI state comparison remain live.
 
