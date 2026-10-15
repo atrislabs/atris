@@ -11536,8 +11536,10 @@ async function memberCommand(subcommand, ...args) {
   switch (subcommand) {
     case 'list':
     case 'ls':
-    case 'roster':
       return memberList(...args);
+    case 'roster':
+      // Who is on the team, working or idle, and on which engine.
+      return require('./team').memberRosterCommand(args);
     case 'create':
     case 'new':
       return memberCreate(args[0], ...args.slice(1));
@@ -11691,7 +11693,8 @@ async function memberCommand(subcommand, ...args) {
       console.log('  create <name>       Scaffold a new team member (MEMBER.md + dirs) [--push]');
       console.log('  install <slug> [--update]  Install missing files, or refresh template skills');
       console.log('  chat <name> "..."   Send a message to this member\'s desk in Atris Desktop');
-      console.log('  list [--json]       Show all team members (also: roster)');
+      console.log('  list [--json]       Show all team members with skills and version');
+      console.log('  roster [--all]      Who is on the team: what each does, working or idle, and engine');
       console.log('  tidy [--dry-run]    Put away member copies of the repo whose work already landed');
       console.log('  export [--dry-run]  Write each member as a subagent for Claude Code, Cursor, and Codex');
       console.log('  activate <name>     Symlink member skills, show context and permissions');

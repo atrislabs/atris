@@ -44,7 +44,7 @@ test('atris member roster shows the team', () => {
 
     const text = runMember(root, ['roster', '--dry-run']);
     assert.equal(text.status, 0, text.stderr);
-    assert.match(text.stdout, /Team Members/);
+    assert.match(text.stdout, /^MEMBER\s+STATUS\s+ENGINE\s+WHAT IT DOES$/m);
     assert.match(text.stdout, /navigator/);
     assert.match(text.stdout, /executor/);
   } finally {
