@@ -2414,7 +2414,7 @@ In-place equal-size rewrite: `followBoard()` in `lib/member-board.js:890` checks
 
 Watch shutdown: `test/member-board.test.js:986` checks interrupt cancels the pending log redraw, periodic timer, folder watch, and resize listener. Real narrow-terminal proof: `python3 atris/receipts/member-board-watch-stop-proof.py`.
 
-Late progress folder watch recovery: `memberBoardCommand()` (`lib/member-board.js:1113`) retries the folder watch on every timed redraw. `test/member-board.test.js:3891` runs the real terminal proof in `atris/receipts/member-board-watch-recovery-proof.py`, including a later write within two seconds and clean interrupt.
+Late progress folder watch recovery: `memberBoardCommand()` (`lib/member-board.js:1113`) retries the folder watch on every timed redraw. `test/member-board.test.js:3919` runs the real terminal proof in `atris/receipts/member-board-watch-recovery-proof.py`, including a later write within two seconds and clean interrupt.
 
 Empty-board terminal width: `lib/member-board.js:312` keeps the full progress path in pipes, shortens it by screen cells in terminals, and uses whole shorter messages below 29 columns. `test/member-board.test.js:2146` covers tiny widths and the real resized terminal via `python3 atris/receipts/member-board-empty-width-proof.py` (30x1, 18x2, 22x3, 80x3, 240x3).
 
@@ -2430,12 +2430,14 @@ CRLF result pending at startup: `parseLine()` in `lib/member-board.js:49` remove
 
 Signed out run written with CRLF: `test/member-board.test.js:2284` writes a finished signed out run with CRLF endings and runs the real plain board, JSON board, and follow snapshot. Each keeps the engine and the sign-in fix, with no CR in output; interrupt exits 0. Proof: `atris/receipts/member-board-startup-signed-out-crlf-receipt.md`.
 
-Board test ref guard: `test/member-board.test.js:3903` fails when any `test/member-board.test.js` line ref in `atris/MAP.md` or this file stops landing on a test, a test loop, or a top-level constant, and names each drifted ref. Adding a test above a cited one means shifting the refs below it in the same change.
+Board test ref guard: `test/member-board.test.js:3931` fails when any `test/member-board.test.js` line ref in `atris/MAP.md` or this file stops landing on a test, a test loop, or a top-level constant, and names each drifted ref. Adding a test above a cited one means shifting the refs below it in the same change.
 
-Proof file variable owners: `test/member-board.test.js:3934` fails when two board tests write the same `ATRIS_*PROOF` variable, since run together the later one overwrites a receipt's saved terminal output.
+Proof file variable owners: `test/member-board.test.js:3962` fails when two board tests write the same `ATRIS_*PROOF` variable, since run together the later one overwrites a receipt's saved terminal output.
 
-Receipt proof variables: `test/member-board.test.js:3952` fails when a checked-in receipt under `atris/receipts` or `atris/runs` names an `ATRIS_*PROOF` variable no board test writes, so a rename cannot leave a receipt's rerun command saving nothing.
+Receipt proof variables: `test/member-board.test.js:3980` fails when a checked-in receipt under `atris/receipts` or `atris/runs` names an `ATRIS_*PROOF` variable no board test writes, so a rename cannot leave a receipt's rerun command saving nothing.
 
-Receipt test name patterns: `test/member-board.test.js:3977` fails when a checked-in receipt reruns one board test with a name pattern that matches no board test title. Loop titles are expanded into each of their variants first, so a renamed test cannot leave a receipt rerun that matches nothing and still exits 0.
+Receipt test name patterns: `test/member-board.test.js:4005` fails when a checked-in receipt reruns one board test with a name pattern that matches no board test title. Loop titles are expanded into each of their variants first, so a renamed test cannot leave a receipt rerun that matches nothing and still exits 0.
 
 Wide random board sizes: `test/member-board.test.js:695` draws seeded random boards with wide-character member names and jobs at every width from 1 to 130, four heights, and with or without hidden older runs, and fails when a line runs past the width in screen cells. Its cell count covers only the CJK and Hangul ranges the fixtures use, so it never checks the board's width table against itself.
+
+Tiny wide watch screens: `test/member-board.test.js:3362` runs the real watch command in a pseudo-terminal at 1 to 12 columns, tall and short, with wide-character member names, and asserts every frame line: one column of states in order, only the dots that fit below 3 columns, and the hint from 6 columns on a tall screen.

@@ -3359,6 +3359,34 @@ for width, footer in cases:
 `, 'ATRIS_BOARD_WIDE_TWO_COLUMN_PROOF');
 });
 
+test('a watch screen under 13 columns keeps wide-named rows and the hint inside the window', { skip: process.platform === 'win32' }, () => {
+  watchFrameProof(String.raw`
+# (columns, rows, every line). Under 13 columns wide names cannot tell rows
+# apart, so the board keeps one column of states in order. Below 3 columns
+# a cut keeps only the dots that fit. The hint shows from 6 columns on a
+# tall screen, and a short screen gives every row to the board.
+states = ['state', 'working', 'ok', 'failed']
+cases = [
+    (1, 12, ['.', '.', '.', '.', '', '', '']),
+    (2, 12, ['..', '..', 'ok', '..', '', '', '']),
+    (3, 12, ['...', '...', 'ok', '...', '', '', '']),
+    (5, 12, ['state', 'wo...', 'ok', 'fa...', '', '', '']),
+    (6, 12, ['state', 'wor...', 'ok', 'failed', '', 'ctrl-c', '']),
+    (12, 12, states + ['', 'ctrl-c', '']),
+    (1, 4, ['.', '.', '.', '.']),
+    (2, 4, ['..', '..', 'ok', '..']),
+    (12, 4, states),
+]
+for width, height, board in cases:
+    lines = watch_frame({
+        '構築者': f'{at(400)} m-1 started: 画面を直す\n{at(390)} m-1 finished: failed (timed out)\n',
+        '테스터': f'{at(300)} m-1 started: 보드 작업\n{at(5)} m-1 reading 파일\n',
+        'builder': f'{at(300)} m-1 started: fix\n{at(8)} m-1 finished: ok\n',
+    }, width, height)
+    assert lines == board, (width, height, lines)
+`, 'ATRIS_BOARD_WIDE_TINY_PROOF');
+});
+
 test('a member name in wide characters fits the watch screen and matches live follow', { skip: process.platform === 'win32' }, () => {
   const proof = spawnSync('python3', ['-c', String.raw`
 import datetime, fcntl, json, os, pathlib, pty, re, select, signal, struct, subprocess, sys, tempfile, termios, time, unicodedata
