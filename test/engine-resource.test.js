@@ -4603,3 +4603,47 @@ test('startup repair command lookup skips PATH entries that the shell cannot run
     fs.rmSync(root, { recursive: true, force: true });
   }
 });
+
+test('startup repair lookup searches the current folder for empty PATH entries in shell order', () => {
+  const { spawnSync } = require('node:child_process');
+  const root = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'engine-command-empty-path-')));
+  try {
+    const bin = path.join(root, 'checkout', 'bin');
+    fs.mkdirSync(bin, { recursive: true });
+    const script = path.join(bin, 'atris.js');
+    fs.writeFileSync(script, `#!${process.execPath}\nprocess.stdout.write(JSON.stringify(process.argv.slice(2)))`, { mode: 0o755 });
+    fs.symlinkSync(script, path.join(bin, 'atris'));
+    fs.mkdirSync(path.join(root, 'checkout', 'lib'));
+    fs.writeFileSync(path.join(root, 'checkout', 'lib', 'engine-resource.js'), '');
+    // An older command in the current folder must not be offered as the repair.
+    fs.writeFileSync(path.join(root, 'atris'), '#!/bin/sh\nprintf old-install', { mode: 0o755 });
+    const probe = `
+      const { atrisCommand, pathAtrisRecordsRuns } = require(${JSON.stringify(path.join(__dirname, '..', 'lib', 'engine-resource'))});
+      process.stdout.write(JSON.stringify({
+        command: atrisCommand({ binDir: ${JSON.stringify(bin)}, home: '' }),
+        records: pathAtrisRecordsRuns()
+      }));
+    `;
+    for (const entries of [[], ['', bin], [path.join(root, 'missing'), '', bin], [path.join(root, 'missing'), ''], [bin, '']]) {
+      const env = { ...process.env, PATH: entries.join(path.delimiter) };
+      const currentFirst = entries[0] !== bin;
+      const read = spawnSync(process.execPath, ['-e', probe], { cwd: root, env, encoding: 'utf8' });
+      assert.strictEqual(read.status, 0, read.stderr);
+      const hint = JSON.parse(read.stdout);
+      assert.strictEqual(hint.command, currentFirst ? `node ${script}` : 'atris', env.PATH);
+      assert.strictEqual(hint.records, !currentFirst, env.PATH);
+      for (const shell of ['/bin/sh', ...(fs.existsSync('/bin/zsh') ? ['/bin/zsh'] : [])]) {
+        const lookup = spawnSync(shell, ['-c', 'atris'], { cwd: root, env, encoding: 'utf8' });
+        assert.strictEqual(lookup.status, 0, lookup.stderr);
+        assert.strictEqual(lookup.stdout, currentFirst ? 'old-install' : '[]', `${shell}: ${env.PATH}`);
+        const run = spawnSync(shell, ['-c', `${hint.command} engine sweep --fix-startup`], {
+          cwd: root, env: { ...env, PATH: `${env.PATH}${path.delimiter}${path.dirname(process.execPath)}` }, encoding: 'utf8'
+        });
+        assert.strictEqual(run.status, 0, run.stderr);
+        assert.strictEqual(run.stdout, '["engine","sweep","--fix-startup"]', `${shell}: ${env.PATH}`);
+      }
+    }
+  } finally {
+    fs.rmSync(root, { recursive: true, force: true });
+  }
+});
