@@ -23,6 +23,8 @@ Details for any task: atris task show <ID>
 
 ## Review
 
+- **[AIC-89]** Run the headless JSON test refusals at once so developers wait less for tests · auto-improver
+  **Done looks like:** Developers can run the headless task command test about four tenths of a second faster, which shortens the full test wait while every command check still runs.
 - **[AIC-88]** Seed the setup claim in process in the headless JSON test · auto-improver
   **Done looks like:** Developers can run the headless task command test about a tenth of a second faster, which shortens the full test wait while every command check still runs.
 - **[AIC-87]** Stage Do in process in the task page test · auto-improver
