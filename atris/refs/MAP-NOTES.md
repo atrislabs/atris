@@ -2537,3 +2537,5 @@ Saved card listing: `commands/worktree.js:1444` persists the saved card path, co
 Cleanup output checks: `test/member-tidy.test.js:15` disables update notices in all real CLI children so summary assertions do not depend on the installed release or update cache. File-preservation assertions remain intact.
 
 Cleanup quoted-name proof: `test/member-tidy.test.js:1530` runs real cleanup preview and apply with a newline in a staged filename, preserving both the saved version and later file bytes.
+
+Cleanup tabbed-name proof: `test/member-tidy.test.js:1537` runs real cleanup preview and apply with a tab in a staged filename, preserving both saved and later bytes plus the complete staged tree.
