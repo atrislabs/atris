@@ -252,20 +252,38 @@ test('member run defaults to a worktree only inside a git repo', () => {
   }
 });
 
+// Both member run cases start from a git repo holding one created member. Build
+// that once (init, config, member create), then copy it into each case so the
+// case only adds its own files and makes its single baseline commit.
+let memberRunRepoTemplate = null;
+test.after(() => {
+  if (memberRunRepoTemplate) cleanupTempDir(path.dirname(memberRunRepoTemplate));
+});
+function seedMemberRunRepo(dir) {
+  if (!memberRunRepoTemplate) {
+    const templateRepo = path.join(makeTempDir(), 'repo');
+    fs.mkdirSync(path.join(templateRepo, 'atris'), { recursive: true });
+    for (const args of [['init', '-q'], ['config', 'user.email', 'test@example.com'], ['config', 'user.name', 'Test User']]) {
+      const result = runGit(args, templateRepo);
+      assert.equal(result.status, 0, result.stderr || result.stdout);
+    }
+    const created = runCli(['member', 'create', 'growth'], { cwd: templateRepo });
+    assert.equal(created.status, 0, created.stderr || created.stdout);
+    memberRunRepoTemplate = templateRepo;
+  }
+  fs.cpSync(memberRunRepoTemplate, dir, { recursive: true });
+}
+
 test('member run starts a budgeted isolated mission from plain text', () => {
   const base = fs.mkdtempSync(path.join(os.tmpdir(), 'atris-member-run-test-'));
   const dir = path.join(base, 'repo');
   try {
-    fs.mkdirSync(dir, { recursive: true });
+    seedMemberRunRepo(dir);
     const git = (args, cwd = dir) => {
       const result = runGit(args, cwd);
       assert.equal(result.status, 0, result.stderr || result.stdout);
       return result.stdout.trim();
     };
-    git(['init', '-q']);
-    git(['config', 'user.email', 'test@example.com']);
-    git(['config', 'user.name', 'Test User']);
-    fs.mkdirSync(path.join(dir, 'atris'), { recursive: true });
     const today = new Date().toISOString().slice(0, 10);
     const logDir = path.join(dir, 'atris', 'logs', today.slice(0, 4));
     fs.mkdirSync(logDir, { recursive: true });
@@ -277,8 +295,6 @@ test('member run starts a budgeted isolated mission from plain text', () => {
       '- **I1:** test idea',
       '',
     ].join('\n'), 'utf8');
-    const created = runCli(['member', 'create', 'growth'], { cwd: dir });
-    assert.equal(created.status, 0, created.stderr || created.stdout);
     git(['add', '.']);
     git(['commit', '-qm', 'baseline']);
     fs.writeFileSync(path.join(dir, 'main-dirt.txt'), 'noise that must stay out of the member mission\n');
@@ -326,18 +342,12 @@ test('member run chooses useful work from params when no mission text exists', (
   const base = fs.mkdtempSync(path.join(os.tmpdir(), 'atris-member-run-auto-test-'));
   const dir = path.join(base, 'repo');
   try {
-    fs.mkdirSync(dir, { recursive: true });
+    seedMemberRunRepo(dir);
     const git = (args, cwd = dir) => {
       const result = runGit(args, cwd);
       assert.equal(result.status, 0, result.stderr || result.stdout);
       return result.stdout.trim();
     };
-    git(['init', '-q']);
-    git(['config', 'user.email', 'test@example.com']);
-    git(['config', 'user.name', 'Test User']);
-    fs.mkdirSync(path.join(dir, 'atris'), { recursive: true });
-    const created = runCli(['member', 'create', 'growth'], { cwd: dir });
-    assert.equal(created.status, 0, created.stderr || created.stdout);
     git(['add', '.']);
     git(['commit', '-qm', 'baseline']);
     const env = fakeMemberRunClaude(dir);
