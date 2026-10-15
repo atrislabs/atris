@@ -1,0 +1,36 @@
+Scope: backstop ladder, rung 2, the member standard build page, the last page the clean preview listed stale. Read all thirteen sources against current code before moving refs. The wake decision had moved into its own runner, and wake and run now go through a small shared verbs file, so the page gained two refs. The route line in its files table still named a July line and was fixed too.
+
+$ node --test --test-name-pattern 'member' test/commands.test.js
+tests 65, pass 65, fail 0
+exit: 0
+
+$ node --test test/member-context.test.js
+tests 6, pass 6, fail 0
+exit: 0
+
+$ node -c commands/member.js; node -c commands/mission.js; node -c lib/member-verbs.js; node -c bin/atris.js
+exit: 0 each
+
+$ atris member --help
+exit: 0; names all fourteen subcommands checked from the page's table
+
+$ atris member list
+exit: 0; prints the Team Members table, 37 lines
+
+$ atris slop detect atris/features/team-member-standard/build.md
+before: 1 tell (title dash), exit 1
+after:  clean, no slop tells in 1 file; exit 0
+
+$ atris clean --dry-run --json
+before: stale pages 1 (member standard build)
+after:  exit 0, stale pages 0
+
+$ node --test test/worktree-removal-guard.test.js test/member-tidy.test.js
+tests 57, pass 57, fail 0
+exit: 0
+
+Files changed: atris/features/team-member-standard/build.md (source refs moved, two added, compile date, route line, title dash, dated recheck); atris/team/architect/logs/2026-10-14.md; this receipt. No production change.
+Rerun: atris clean --dry-run --json
+Progress: stale feature pages from 1 to 0; this run of the stale-page rung is finished.
+next_push: return to the mission: route review copy disposal through the shared post-refusal lock report once protected review clears it, or take the next backstop rung if it is still held.
+layer: environment
