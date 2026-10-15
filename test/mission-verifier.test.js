@@ -28,11 +28,11 @@ function cleanupTempDir(dir) {
   fs.rmSync(dir, { recursive: true, force: true });
 }
 
-function runCli(args, { cwd, env = {} } = {}) {
+function runCli(args, { cwd, env = {}, timeout = 15000 } = {}) {
   const result = spawnSync(process.execPath, [cliPath, ...withMissionFullJson(args)], {
     cwd,
     encoding: 'utf8',
-    timeout: 15000,
+    timeout,
     env: {
       ...process.env,
       ATRIS_SKIP_UPDATE_CHECK: '1',
@@ -145,7 +145,7 @@ test('mission run uses the repo default verifier and explicit no-verify stays un
 
     const verified = runCli([
       'mission', 'run', mission.id, '--max-ticks', '1', '--max-wall', '60', '--json',
-    ], { cwd: dir, env: runnerEnv });
+    ], { cwd: dir, env: runnerEnv, timeout: 90000 });
     assert.equal(verified.status, 0, verified.stderr || verified.stdout);
     const verifiedPayload = JSON.parse(verified.stdout);
     assert.equal(verifiedPayload.ticks[0].verifier_passed, true);

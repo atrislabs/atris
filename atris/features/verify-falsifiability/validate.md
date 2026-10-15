@@ -20,9 +20,11 @@ grep -q "Verify cannot be a raw shell shortcut" atris.md
 # 3. runTaskOnce has the falsifiability gate.
 grep -q "verify-not-falsifiable" commands/autopilot.js
 
-# 4. Test suite green.
+# 4. Test suite green. The exit status catches failures; the pass line
+#    guards against a run that found zero tests. No pinned count, so new
+#    tests do not break the rubric.
 node --test test/autopilot-verify-falsifiability.test.js > /tmp/atris-verify-suite.log 2>&1
-grep -qE "(pass|ℹ pass) 8" /tmp/atris-verify-suite.log
+grep -qE "ℹ pass [1-9]" /tmp/atris-verify-suite.log
 grep -qE "(fail|ℹ fail) 0" /tmp/atris-verify-suite.log
 ```
 

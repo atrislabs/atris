@@ -27,9 +27,11 @@ grep -q "SIGNOFF" atris/team/validator/MEMBER.md
 # 5. runTaskOnce has the plan-rejected-at-review halt path.
 grep -q "plan-rejected-at-review" commands/autopilot.js
 
-# 6. Test suite green.
+# 6. Test suite green. The exit status catches failures; the pass line
+#    guards against a run that found zero tests. No pinned count, so new
+#    tests do not break the rubric.
 node --test test/autopilot-plan-review.test.js > /tmp/atris-plan-review-suite.log 2>&1
-grep -qE "(pass|ℹ pass) 13" /tmp/atris-plan-review-suite.log
+grep -qE "ℹ pass [1-9]" /tmp/atris-plan-review-suite.log
 grep -qE "(fail|ℹ fail) 0" /tmp/atris-plan-review-suite.log
 ```
 
