@@ -1494,9 +1494,13 @@ function wrappedClause(masked, fixed, below, fix, opts) {
 // With write: false it only reports what it would change (a dry run).
 // The line above when this line carries on its sentence: neither is a list
 // item, heading, table row or quote, and the line above ends without a stop.
+// Two lines that each open on a one-word field ("effect: the line I
+// remembered" then "diagnosis: none") are records of their own, not a wrap.
+const FIELD_LINE = /^\s*(?:[-*+>]\s+)?[A-Za-z][\w-]*:\s/;
 function wrappedFrom(above, line) {
   const block = /^\s*(?:[-*+>|#]|\d+[.)]\s)/;
   if (!above || !above.trim() || block.test(line) || /^\s*[|#]/.test(above)) return '';
+  if (FIELD_LINE.test(above) && FIELD_LINE.test(line)) return '';
   if (/[.!?:;]["'*_)\u201d\u2019]*\s*$/.test(above)) return '';
   return above.replace(/^\s*(?:(?:[-*+>]|\d+[.)])\s+)?/, '');
 }

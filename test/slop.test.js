@@ -2121,6 +2121,21 @@ test('fix reads a wrapped clause past a code span on the next line', () => {
   ]);
 });
 
+test('fix reads each "label: value" line of a record on its own, not as a wrap', () => {
+  // from an essay review note: "effect: the line I remembered" has no stop,
+  // so the field below it read as the rest of that sentence and kept its
+  // comma, splicing "none, it's the close". A line that opens on a field
+  // under another field is a record of its own; a plain wrap is not.
+  const file = tmpFile('record-fields.md', [
+    '> anchor: "the bottleneck moved"',
+    '  effect: the line I remembered',
+    '  diagnosis: none \u2014 it\'s the close, and it\'s buried',
+    '  question: does this want to be the last line?',
+  ].join('\n'));
+  const { changes } = applyFixes([file], RULES);
+  assert.deepEqual(changes.map((c) => c.after), ['  diagnosis: none; it\'s the close, and it\'s buried']);
+});
+
 test('fix ends a paragraph-ending dash with a period, keeps a wrapping one a comma', () => {
   const file = tmpFile('line-end.md', [
     'The tool we built \u2014',
