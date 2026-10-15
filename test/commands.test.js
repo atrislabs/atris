@@ -9228,9 +9228,10 @@ test('task review-lane-drain skips continue-work rows with existing follow-up ch
   try {
     fs.mkdirSync(path.join(dir, 'atris'), { recursive: true });
 
-    // Seed only the parents; keep ready, review, continuation and drain
-    // on the CLI so the existing-child behavior still uses the real commands.
-    const seedParent = (title) => {
+    // Seed the parents straight into review; every command after that,
+    // including both continuations, the second review and the drain, stays on
+    // the CLI. Their output matched with parents readied and reviewed both ways.
+    const seedParent = (title, readyProof, reviewProof, nextTask) => {
       const workspaceRoot = taskStore.workspaceRoot(dir);
       const db = taskStore.open(dbPath);
       try {
@@ -9241,6 +9242,10 @@ test('task review-lane-drain skips continue-work rows with existing follow-up ch
           metadata: { goal_id: 'OBL-953' },
         });
         assert.equal(added.inserted, true);
+        const readied = taskStore.readyTask(db, { id: added.id, actor: 'codex', proof: readyProof, result: FIXTURE_RESULT_SENTENCE });
+        assert.equal(readied.ready, true, readied.reason);
+        const reviewed = taskStore.reviewTask(db, { id: added.id, actor: 'codex-review', reward: 0, proof: reviewProof, nextTask });
+        assert.equal(reviewed.reviewed, true, reviewed.reason);
         const ref = taskStore.taskDisplayRefMap(taskStore.listTasks(db, { workspaceRoot })).get(added.id);
         assert.ok(ref);
         return ref;
@@ -9248,33 +9253,19 @@ test('task review-lane-drain skips continue-work rows with existing follow-up ch
         taskStore.close();
       }
     };
-    const freshRef = seedParent('Drain should eventually choose this fresh continuation');
-    assert.equal(runCli([
-      'task', 'ready', freshRef,
-      '--as', 'codex',
-      '--proof', 'node --check test/commands.test.js passed before fresh drain continuation',
-    ], { cwd: dir, env }).status, 0);
-    assert.equal(runCli([
-      'task', 'review', freshRef,
-      '--reward', '0',
-      '--as', 'codex-review',
-      '--proof', 'node --test test/commands.test.js passed during fresh drain continuation',
-      '--next', 'Add the fresh child selected by review lane drain',
-    ], { cwd: dir, env }).status, 0);
+    const freshRef = seedParent(
+      'Drain should eventually choose this fresh continuation',
+      'node --check test/commands.test.js passed before fresh drain continuation',
+      'node --test test/commands.test.js passed during fresh drain continuation',
+      'Add the fresh child selected by review lane drain',
+    );
 
-    const followedRef = seedParent('Drain should skip this already-followed continuation');
-    assert.equal(runCli([
-      'task', 'ready', followedRef,
-      '--as', 'codex',
-      '--proof', 'node --check test/commands.test.js passed before followed drain continuation',
-    ], { cwd: dir, env }).status, 0);
-    assert.equal(runCli([
-      'task', 'review', followedRef,
-      '--reward', '0',
-      '--as', 'codex-review',
-      '--proof', 'node --test test/commands.test.js passed during followed drain continuation',
-      '--next', 'Add the already-created child skipped by review lane drain',
-    ], { cwd: dir, env }).status, 0);
+    const followedRef = seedParent(
+      'Drain should skip this already-followed continuation',
+      'node --check test/commands.test.js passed before followed drain continuation',
+      'node --test test/commands.test.js passed during followed drain continuation',
+      'Add the already-created child skipped by review lane drain',
+    );
     const followedContinue = runCli(['task', 'continue-work', followedRef, '--as', 'codex', '--json'], { cwd: dir, env });
     assert.equal(followedContinue.status, 0, followedContinue.stderr);
     const followedContinuePayload = JSON.parse(followedContinue.stdout);
