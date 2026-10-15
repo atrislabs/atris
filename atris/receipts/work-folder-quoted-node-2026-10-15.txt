@@ -1,0 +1,17 @@
+Quoted-folder review check proof
+
+Changed: test/task-proof.test.js adds a real copied Node in a folder containing an apostrophe, then runs buildVerifiedProof through bash and requires the nested executable to match.
+Files: test/task-proof.test.js, atris/MAP.md, atris/refs/MAP-NOTES.md, atris/team/architect/logs/2026-10-15.md, this receipt.
+Command: node --test test/task-proof.test.js
+Output: tests 17; pass 17; fail 0; skipped 0; todo 0
+Exit: 0
+The fixture links installed libraries on macOS and compares the resolved runtime path because /var resolves to /private/var. Initial attempts exposed those fixture requirements; neither required a production change.
+next_push: Prove the receipt writer selects the caller Node from a folder containing an apostrophe.
+layer: capabilities
+
+Required cleanup command: node --test test/worktree-removal-guard.test.js test/member-tidy.test.js
+Output: tests 90; pass 90; fail 0; skipped 0; todo 0
+Exit: 0
+Staged command: node bin/atris.js slop --staged
+Output: clean, no slop tells in 5 files
+Exit: 0

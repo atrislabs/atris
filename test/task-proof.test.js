@@ -191,6 +191,38 @@ test('real proof check keeps the caller Node ahead of a competing executable', (
   }
 });
 
+test('real proof check selects Node from a folder containing an apostrophe', () => {
+  const dir = makeTempDir();
+  try {
+    const runtimeDir = path.join(dir, "reader's tools");
+    fs.mkdirSync(runtimeDir);
+    const libraries = path.resolve(path.dirname(process.execPath), '../lib');
+    if (process.platform === 'darwin' && fs.existsSync(libraries)) {
+      fs.symlinkSync(libraries, path.join(dir, 'lib'), 'dir');
+    }
+    const runtime = path.join(runtimeDir, 'node');
+    fs.copyFileSync(process.execPath, runtime);
+    fs.chmodSync(runtime, 0o755);
+    const script = `
+      const assert = require('node:assert/strict');
+      const { buildVerifiedProof } = require(${JSON.stringify(require.resolve('../lib/task-proof'))});
+      assert.equal(process.execPath, ${JSON.stringify(fs.realpathSync(runtime))});
+      const result = buildVerifiedProof('node -p "process.execPath"');
+      assert.equal(result.ok, true, JSON.stringify(result));
+      assert.equal(result.output, process.execPath);
+      console.log('quoted runtime selected');
+    `;
+    const result = spawnSync(runtime, ['-e', script], {
+      encoding: 'utf8', timeout: 150000, env: scrubAgentEnv(),
+    });
+    assert.equal(result.error, undefined);
+    assert.equal(result.status, 0, result.stdout + result.stderr);
+    assert.equal(result.stdout.trim(), 'quoted runtime selected');
+  } finally {
+    cleanupTempDir(dir);
+  }
+});
+
 test('buildVerifiedProof turns a passing command into executed proof', () => {
   const calls = [];
   const result = buildVerifiedProof('npm test', 'fixed the parser', (cmd, args, opts) => {

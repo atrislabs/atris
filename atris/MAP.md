@@ -256,3 +256,5 @@ Healthy refresh binary proof: `test/member-tidy.test.js:1374` runs real cleanup 
 Healthy cleanup saved deletion proof: `test/member-tidy.test.js:1374` runs real preview and apply with a committed outline deleted from the index and recreated with different bytes. Both calls preserve the saved deletion, replacement bytes and original committed contents.
 
 Review check runtime: `lib/task-proof.js:166` selects the caller Node after the login profile. `test/task-proof.test.js:180` runs real bash with a competing Node executable and checks the selected runtime.
+
+Quoted runtime proof: `test/task-proof.test.js:195` copies the real Node into a folder containing an apostrophe and runs `buildVerifiedProof` through actual bash, requiring the nested Node to select that exact executable.
