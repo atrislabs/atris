@@ -2777,3 +2777,5 @@ Generic continuation rejection setup: `test/commands.test.js:15075` seeds the go
 Continuation inspection batching: `test/commands.test.js:15128` awaits current selection and the review queue together after certification and before refused continuation. Both build their output from unchanged task rows through `commands/task.js:739`; neither consumes the saved view. All assertions remain, and five launches now take four sequential stages.
 
 Continuation debt readiness setup: `test/commands.test.js:15168` seeds readiness through production readyTask in the creation connection, asserts success and closes in finally. Review, queue inspection and refused continuation remain real CLI checks with every assertion retained. Four launches become three.
+
+Continuation debt read batching: `test/commands.test.js:15209` awaits queue inspection and refused continuation together after stale metadata is saved. `commands/task.js:7244` refuses the generic suggestion before task creation or derived-view writes; `commands/task.js:5747` only reports stored rows. All assertions remain; three CLI launches now take two sequential stages.

@@ -15155,7 +15155,7 @@ test('task continue-work rejects generic human-accept continuation titles', asyn
   }
 });
 
-test('task review hygiene reports generic continuation debt without mutation', () => {
+test('task review hygiene reports generic continuation debt without mutation', async () => {
   if (!hasNodeSqlite()) return;
   const dir = makeTempDir();
   const dbPath = path.join(dir, 'tasks.db');
@@ -15206,7 +15206,10 @@ test('task review hygiene reports generic continuation debt without mutation', (
       taskStore.close();
     }
 
-    const reviews = runCli(['task', 'reviews', '--json'], { cwd: dir, env });
+    const [reviews, continued] = await Promise.all([
+      runCliAsync(['task', 'reviews', '--json'], { cwd: dir, env }),
+      runCliAsync(['task', 'continue-work', ref, '--as', 'codex', '--json'], { cwd: dir, env }),
+    ]);
     assert.equal(reviews.status, 0, reviews.stderr);
     const queue = JSON.parse(reviews.stdout).queue;
     assert.equal(queue.hygiene.generic_continuation_count, 1);
@@ -15217,7 +15220,6 @@ test('task review hygiene reports generic continuation debt without mutation', (
     assert.equal(queue.items[0].continue_work_command, undefined);
     assert.equal(queue.items[0].continue_work_api, undefined);
 
-    const continued = runCli(['task', 'continue-work', ref, '--as', 'codex', '--json'], { cwd: dir, env });
     assert.notEqual(continued.status, 0);
     const continuedPayload = JSON.parse(continued.stdout);
     assert.equal(continuedPayload.ok, false);
