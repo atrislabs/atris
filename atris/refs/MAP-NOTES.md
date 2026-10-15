@@ -2799,3 +2799,5 @@ Scoped review readiness setup: `test/commands.test.js:12735` seeds readiness thr
 Uncertified review readiness setup: `test/commands.test.js:12525` seeds readiness through production readyTask in the existing creation connection with the original actor and proof, closing in finally before CLI selection and both status reads. Four launches become three; all original assertions remain.
 
 Duplicate-seed setup: `test/commands.test.js:12776` seeds both claims through production claimTask and readiness through readyTask, using the same actors and proof and closing each connection in finally. Certification, selection and duplicate refusal retain every CLI assertion. Four CLI launches remain, down from five before the checkpoint claim moved into the store.
+
+Automatic landing wording setup: `test/commands.test.js:11815` seeds all three claims with production claimTask in the creation connection, asserts success and closes in finally. Every ready invocation and wording assertion remains on the CLI. Three launches replace six.
