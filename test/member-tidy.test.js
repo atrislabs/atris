@@ -1394,6 +1394,12 @@ test('worktree cleanup quietly refreshes an outdated base and keeps staged notes
     fs.writeFileSync(note, 'staged notes\n');
     runGit(['add', 'note.txt'], copy);
     fs.writeFileSync(note, 'staged notes\nlater edits\n');
+    const link = path.join(copy, 'outline-link');
+    fs.symlinkSync('saved-outline.txt', link);
+    runGit(['add', 'outline-link'], copy);
+    fs.unlinkSync(link);
+    fs.symlinkSync('later-outline.txt', link);
+    assert.equal(runGit(['show', ':outline-link'], copy), 'saved-outline.txt');
     const binary = path.join(copy, 'drawing.bin');
     const savedBytes = Buffer.from([0, 255, 10, 128, 13]);
     const laterBytes = Buffer.from([0, 254, 10, 129, 13, 0]);
@@ -1438,6 +1444,9 @@ test('worktree cleanup quietly refreshes an outdated base and keeps staged notes
       assert.equal(fs.readFileSync(note, 'utf8'), 'staged notes\nlater edits\n');
       assert.equal(runGit(['show', ':note.txt'], copy), 'staged notes');
       assert.equal(runGit(['diff', '--cached', '--binary'], copy), staged);
+      assert.equal(fs.lstatSync(link).isSymbolicLink(), true);
+      assert.equal(fs.readlinkSync(link), 'later-outline.txt');
+      assert.equal(runGit(['show', ':outline-link'], copy), 'saved-outline.txt');
       assert.deepEqual(fs.readFileSync(binary), laterBytes);
       const savedBinary = spawnSync('git', ['show', ':drawing.bin'], { cwd: copy });
       assert.equal(savedBinary.status, 0);

@@ -1,0 +1,23 @@
+Cleanup now has real proof that saved and later link destinations survive, verified by 90 passing checks and a clean staged writing check, exit 0.
+
+Files edited: test/member-tidy.test.js, atris/MAP.md, atris/refs/MAP-NOTES.md, atris/team/architect/logs/2026-10-15.md.
+Artifact: atris/receipts/work-folder-link-proof-2026-10-15.txt.
+Verify: node --test test/worktree-removal-guard.test.js test/member-tidy.test.js && node bin/atris.js slop --staged
+Exit: 0
+Output: tests 90; pass 90; fail 0; skipped 0; todo 0; clean, no slop tells in 3 files.
+Real commands exercised: node bin/atris.js worktree cleanup; node bin/atris.js worktree cleanup --apply (disposable repository, healthy origin, local base behind).
+Output excerpt:
+cleanup: dry-run base=origin/master
+candidates: 0
+cache_candidates: 0
+kept: 2
+exit: 0
+cleanup: applied base=origin/master
+removeds: 0
+cache_pruneds: 0
+kept: 2
+exit: 0
+Progress: one existing real-runtime case strengthened with distinct saved and later symbolic link destinations, exact file kind and staged-tree preservation; zero pending checks.
+Learned: a staged symbolic link and a later destination remain separate through both cleanup calls, even when both destinations are absent.
+next_push: prove cleanup preserves a staged regular file replaced by a symbolic link before cleanup.
+layer: capabilities
