@@ -306,42 +306,58 @@ test('tidy keeps a landed copy while git is paused mid-rebase in it, and logs wh
   }
 });
 
-test('tidy, reap and the regression check name a pinned folder in the same words', () => {
-  const fx = makeFixture();
-  try {
-    const copy = addCopy(fx, 'landed-pinned');
-    runGit(['worktree', 'lock', '--reason', 'agent still writing', copy], fx.repo);
-    const pin = path.join(runGit(['rev-parse', '--absolute-git-dir'], copy), 'locked');
-    const now = Date.now();
-    const aged = new Date(now - 3 * 60 * 60 * 1000);
-    fs.utimesSync(pin, aged, aged);
-    fs.utimesSync(copy, aged, aged);
-    const words = 'pinned by git worktree lock, 3 h old: agent still writing';
+for (const reason of ['agent still writing', 'agent still\n  writing\tplease wait']) {
+  test(`tidy, reap and the regression check flatten a pin reason: ${JSON.stringify(reason)}`, () => {
+    const fx = makeFixture();
+    try {
+      const copy = addCopy(fx, 'landed-pinned');
+      runGit(['worktree', 'lock', '--reason', reason, copy], fx.repo);
+      const pin = path.join(runGit(['rev-parse', '--absolute-git-dir'], copy), 'locked');
+      const now = Date.now();
+      const aged = new Date(now - 3 * 60 * 60 * 1000);
+      fs.utimesSync(pin, aged, aged);
+      fs.utimesSync(copy, aged, aged);
+      const flatReason = reason.replace(/\s+/g, ' ').trim();
+      const words = `pinned by git worktree lock, 3 h old: ${flatReason}`;
 
-    const preview = tidyMemberCopies({ repoRoot: fx.repo, now, dryRun: true });
-    assert.equal(byName(preview, 'landed-pinned').action, 'kept');
-    assert.equal(byName(preview, 'landed-pinned').reason, `landed, but ${words}`);
-    const tidy = tidyMemberCopies({ repoRoot: fx.repo, now });
-    assert.equal(byName(tidy, 'landed-pinned').action, 'kept');
-    assert.equal(byName(tidy, 'landed-pinned').reason, `landed, but ${words}`);
-    const landed = reap(fx.repo, { remote: false, force: true, activeCwds: [] });
-    assert.ok(landed.keptWorktrees.includes(`${copy} (${words})`), JSON.stringify(landed.keptWorktrees));
-    assert.ok(fs.existsSync(copy));
-    assert.ok(branchExists(fx.repo, 'landed-pinned'));
+      const preview = tidyMemberCopies({ repoRoot: fx.repo, now, dryRun: true });
+      assert.equal(byName(preview, 'landed-pinned').action, 'kept');
+      assert.equal(byName(preview, 'landed-pinned').reason, `landed, but ${words}`);
+      const tidy = tidyMemberCopies({ repoRoot: fx.repo, now });
+      assert.equal(byName(tidy, 'landed-pinned').action, 'kept');
+      assert.equal(byName(tidy, 'landed-pinned').reason, `landed, but ${words}`);
+      const cliArgs = [path.resolve(__dirname, '../bin/atris.js'), 'member', 'tidy', '--dir', fx.copies];
+      const cli = spawnSync(process.execPath, cliArgs, { cwd: fx.repo, encoding: 'utf8', timeout: 15000 });
+      console.log('command: node bin/atris.js member tidy --dir <fixture copies> (fixture cwd)');
+      console.log(cli.stdout.trim());
+      console.log(`exit: ${cli.status}`);
+      assert.equal(cli.status, 0, cli.stderr);
+      assert.ok(cli.stdout.includes(`kept  landed-pinned  landed, but ${words}`), cli.stdout);
+      assert.equal(cli.stdout.trim().split('\n').length, 2);
+      const landed = reap(fx.repo, { remote: false, force: true, activeCwds: [] });
+      assert.ok(landed.keptWorktrees.includes(`${copy} (${words})`), JSON.stringify(landed.keptWorktrees));
+      assert.ok(fs.existsSync(copy));
+      assert.ok(branchExists(fx.repo, 'landed-pinned'));
 
-    // The real regression command pins its own copy, and git refuses it the same way.
-    const hash = runGit(['rev-parse', 'HEAD'], fx.repo);
-    const folder = path.join(fx.repo, `.regression-worktree-${hash.slice(0, 8)}`);
-    fs.mkdirSync(path.join(fx.repo, 'atris'));
-    fs.writeFileSync(path.join(fx.repo, 'atris', 'tick-registry.json'), JSON.stringify([
-      { hash, verifyCmd: 'git worktree lock --reason "agent still writing" "$PWD"', slug: 'fixture' },
-    ]));
-    const [row] = regressionCheck(fx.repo, { activeCwds: [] });
-    assert.equal(row.kept, 'remove_failed', JSON.stringify(row));
-    assert.equal(row.held, 'pinned by git worktree lock, under a minute old: agent still writing');
-    assert.ok(fs.existsSync(folder));
-    assert.deepEqual(removalLines(fx.repo), []);
-  } finally {
-    fs.rmSync(fx.base, { recursive: true, force: true });
-  }
-});
+      // The real regression command pins its own copy, and git refuses it the same way.
+      const hash = runGit(['rev-parse', 'HEAD'], fx.repo);
+      const folder = path.join(fx.repo, `.regression-worktree-${hash.slice(0, 8)}`);
+      fs.mkdirSync(path.join(fx.repo, 'atris'));
+      fs.writeFileSync(path.join(fx.repo, 'atris', 'tick-registry.json'), JSON.stringify([
+        { hash, verifyCmd: `git worktree lock --reason '${reason}' "$PWD"`, slug: 'fixture' },
+      ]));
+      const [row] = regressionCheck(fx.repo, { activeCwds: [] });
+      assert.equal(row.kept, 'remove_failed', JSON.stringify(row));
+      assert.equal(row.pass, true);
+      assert.equal(row.held, `pinned by git worktree lock, under a minute old: ${flatReason}`);
+      assert.equal(fs.readFileSync(pin, 'utf8'), `${reason}\n`);
+      const regressionPin = path.join(runGit(['rev-parse', '--absolute-git-dir'], folder), 'locked');
+      assert.equal(fs.readFileSync(regressionPin, 'utf8'), `${reason}\n`);
+      assert.ok(runGit(['worktree', 'list', '--porcelain'], fx.repo).includes(folder));
+      assert.ok(fs.existsSync(folder));
+      assert.deepEqual(removalLines(fx.repo), []);
+    } finally {
+      fs.rmSync(fx.base, { recursive: true, force: true });
+    }
+  });
+}
