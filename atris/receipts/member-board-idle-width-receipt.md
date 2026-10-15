@@ -33,7 +33,9 @@ Exit code: 0.
 
 Progress: two regression checks added; 360 width/count combinations checked; five live layouts fit. Full wording returns after widening; pipes keep the original full message. At widths too small for a whole count, the message says idle, then a dash at one to three columns.
 
-Existing TODO and earlier member-log edits were preserved. Brain activate/compile returned plan-only exit 2; no policy adapters were rewritten. Mission attach-task reported its existing lock busy, so a separate scoped task was created and claimed without changing mission state.
+Committed and pushed the focused change to origin. Existing TODO and earlier member-log edits were preserved. Brain activate/compile returned plan-only exit 2; no policy adapters were rewritten. Mission attach-task reported its existing lock busy, so a separate scoped task was created and claimed without changing mission state.
+
+Review gate: the plain node command selected the previously recorded alternate runtime and exited 1 (70 passed, 25 failed); receipt atris/runs/2026-10-15-task-bci-14-2026-10-15T02-53-03-266Z.json. The direct frozen command above passed under Node v25.6.1. Readiness passed with /opt/homebrew/bin/node explicitly, exit 0, receipt atris/runs/2026-10-15-task-bci-14-2026-10-15T02-53-47-339Z.json. Work is in Review; automatic certification cannot rerun absolute-path commands, so independent review remains.
 
 next_push: Prove the idle board switches to a current member and back when progress arrives in a narrow terminal.
 layer: behaviors
