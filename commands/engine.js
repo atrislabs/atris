@@ -2394,8 +2394,14 @@ function runEngineSweepCommand(args, root, deps = {}) {
   const shown = 20;
   const cli = deps.atrisCommand || atrisCommand();
   const history = readResourceHistory(root);
+  // A partial scan only finds a floor, as in the landing status: no count
+  // without the process list, and none found means the count is unknown.
+  const running = result.unread.includes('process list') ? 'running ssh-agents could not be counted' : `${plural(agents.length, 'ssh-agent')} running`;
+  const leakedCount = !result.unread.length
+    ? `${leaked.length} ${leaked.length === 1 ? 'looks' : 'look'} leaked`
+    : leaked.length ? `at least ${leaked.length} ${leaked.length === 1 ? 'looks' : 'look'} leaked` : 'leak count unknown';
   const lines = [
-    `${plural(agents.length, 'ssh-agent')} running, ${leaked.length} ${leaked.length === 1 ? 'looks' : 'look'} leaked${leakGrowthNote(history.first_day_leak_reading, leaked.length)}`
+    `${running}, ${leakedCount}${leakGrowthNote(history.first_day_leak_reading, leaked.length)}`
       + ` (no parent, older than ${LEAK_MIN_AGE_SEC / 60} min, not in use by any live shell)`,
     ...leaked.slice(0, shown).map((agent) => `  pid ${String(agent.pid).padEnd(6)} ${formatAgentAge(agent.age_sec)}`),
   ];

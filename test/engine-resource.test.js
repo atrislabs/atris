@@ -527,7 +527,7 @@ test('atris engine sweep says when a reader could not run, in text and json', ()
     return out.join('\n');
   };
   const text = run([]);
-  assert.match(text, /1 ssh-agent running, 0 look leaked/);
+  assert.match(text, /1 ssh-agent running, leak count unknown \(no parent/);
   assert.match(text, /^could not read the agent sockets for every process, so some ssh-agents could not be checked; the leak count may be incomplete$/m);
   assert.deepStrictEqual(JSON.parse(run(['--json'])).unread, ['agent sockets']);
   const clean = (() => {
@@ -543,6 +543,42 @@ test('atris engine sweep says when a reader could not run, in text and json', ()
   })();
   assert.doesNotMatch(clean, /could not read/);
 });
+
+for (const [unread, referenced, sweepCount, landingCount] of [
+  [['agent sockets'], [], /^1 ssh-agent running, at least 1 looks leaked \(no parent/m, /leaked ssh-agents on this machine: at least 1;/],
+  [['process environments'], [200], /^1 ssh-agent running, leak count unknown \(no parent/m, /leaked ssh-agents on this machine: unknown, /],
+  [['process list'], null, /^running ssh-agents could not be counted, leak count unknown \(no parent/m, /leaked ssh-agents on this machine: unknown, /],
+]) {
+test(`sweep and landing status give the same qualified count when the ${unread[0]} could not be read`, () => {
+  const { engineCommand } = require('../commands/engine');
+  const { showStatus } = require('../commands/autoland');
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'sweep-landing-unread-'));
+  const home = fs.mkdtempSync(path.join(os.tmpdir(), 'sweep-landing-home-'));
+  const agents = referenced ? [{ pid: 200, ppid: 1, uid: 501, age_sec: 3600, args: 'ssh-agent -s' }] : [];
+  const read = () => ({ agents, referenced: new Set(referenced || []), unread });
+  const capture = (fn) => {
+    const out = [];
+    const original = console.log;
+    console.log = (line = '') => out.push(String(line));
+    try { fn(); } finally { console.log = original; }
+    return out.join('\n');
+  };
+  try {
+    require('node:child_process').spawnSync('git', ['init', '-q'], { cwd: root });
+    const sweep = capture(() => engineCommand(['sweep'], { root, engineSweep: { read, uid: 501, home } }));
+    const landing = capture(() => showStatus(root, [], { readSshAgents: read, uid: 501, home, atrisCommand: 'atris', pathAtrisRecordsRuns: true }));
+    assert.match(sweep, sweepCount);
+    assert.match(landing, landingCount);
+    assert.ok(sweep.includes(`could not read the ${unread[0]}`));
+    assert.ok(landing.includes(`could not read the ${unread[0]}, so some ssh-agents went unchecked`));
+    assert.doesNotMatch(sweep, /^\d+ ssh-agents? running, 0 look leaked/m, 'a partial scan never reads as a clean zero');
+    console.log(`partial ${unread[0]}: sweep "${sweep.split('\n')[0].replace(/ \(no parent.*/, '')}" / landing "${landing.split('\n').find((line) => /leaked ssh-agents on this machine/.test(line)).trim()}"`);
+  } finally {
+    fs.rmSync(root, { recursive: true, force: true });
+    fs.rmSync(home, { recursive: true, force: true });
+  }
+});
+}
 
 test('atris engine sweep json comes through a pipe whole when it is larger than the pipe buffer', () => {
   const { spawnSync } = require('node:child_process');
