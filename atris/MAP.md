@@ -284,3 +284,5 @@ Review selection status batching: `test/commands.test.js:12525` awaits both show
 Duplicate selection fixture reuse: `test/commands.test.js:12776` readies the checkpoint in its creation connection, closed in finally before real CLI checks. Two store connections replace three; all command assertions remain.
 
 Certified review fallback read batching: `test/commands.test.js:12603` overlaps the two next reads after certification and before creation. Six sequential CLI stages become five; all assertions remain. Details: `atris/refs/MAP-NOTES.md`.
+
+Final fallback read batching: `test/commands.test.js:12684` awaits next and show together after follow-up creation. Both read unchanged task rows; every assertion remains. Five sequential CLI stages become four.

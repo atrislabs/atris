@@ -12671,14 +12671,16 @@ test('task next surfaces Endgame fallback for human-only certified review', asyn
     assert.match(createdPayload.task.title, /runner-agnostic heartbeat gap/);
     assert.equal(createdPayload.review_task.display_id, ref);
 
-    const after = runCli(['task', 'next', '--as', 'codex-executor', '--json'], { cwd: dir, env });
+    const [after, show] = await Promise.all([
+      runCliAsync(['task', 'next', '--as', 'codex-executor', '--json'], { cwd: dir, env }),
+      runCliAsync(['task', 'show', createdPayload.task.display_id, '--json'], { cwd: dir, env }),
+    ]);
     assert.equal(after.status, 0, after.stderr);
     const afterPayload = JSON.parse(after.stdout);
     assert.equal(afterPayload.action, 'accept');
     assert.equal(afterPayload.command, `atris task accept ${ref}`);
     assert.equal(afterPayload.task.display_id, ref);
 
-    const show = runCli(['task', 'show', createdPayload.task.display_id, '--json'], { cwd: dir, env });
     assert.equal(show.status, 0, show.stderr);
     const shown = JSON.parse(show.stdout);
     assert.match(shown.messages[0].content, /Goal: Find and close one remaining runner-agnostic heartbeat gap/);
