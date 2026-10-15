@@ -184,6 +184,6 @@ Capability safety baseline: `test/commands.test.js:8327` reads the initial produ
 
 Bulk approval preview scans: `test/commands.test.js:13448` runs the default, all-row and explicit-limit dry runs together after the last ready command. Task rows stay unchanged; each scan builds its own projection from the store. Setup shares one connection for all twenty rows, closed before the final CLI ready call.
 
-Single-row approval previews: `test/commands.test.js:13337` runs the JSON and text dry runs together, preserving the later unchanged-status read and all sequential review and acceptance writes. The missing and malformed actor refusals also run together before the previews; both exit before opening the store.
+Single-row approval previews: `test/commands.test.js:13337` runs the JSON and text dry runs together, preserving the later unchanged-status read and all sequential review and acceptance writes. The confirmation refusal and both actor refusals run together before the previews; all three exit before opening the store, and the unchanged-status read waits for all three.
 
 Proof-only refusal concurrency: `test/commands.test.js:13250` runs done, finish and positive-review refusals together before readiness, then accept and automatic-accept refusals together after zero-reward review. All CLI assertions and later mutation order remain unchanged.

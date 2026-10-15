@@ -13372,21 +13372,20 @@ test('task auto-accept-certified requires explicit human confirmation', async ()
       '--proof', 'node --test test/commands.test.js passed and diff inspected',
     ], { cwd: dir, env }).status, 0);
 
-    const unconfirmed = runCli(['task', 'auto-accept-certified', '--json'], { cwd: dir, env });
-    assert.equal(unconfirmed.status, 2);
-    assert.equal(JSON.parse(unconfirmed.stdout).reason, 'human_accept_confirmation_required');
-    assert.equal(JSON.parse(runCli(['task', 'show', ref, '--json'], { cwd: dir, env }).stdout).status, 'review');
-
-    // Both actor guards return before opening the task store or writing state.
-    const [missingActor, flagActor] = await Promise.all([
+    // All three guards return before opening the task store or writing state.
+    const [unconfirmed, missingActor, flagActor] = await Promise.all([
+      runCliAsync(['task', 'auto-accept-certified', '--json'], { cwd: dir, env }),
       runCliAsync(['task', 'auto-accept-certified', '--confirm-human-accept', '--json'], { cwd: dir, env }),
       runCliAsync(['task', 'auto-accept-certified', '--confirm-human-accept', '--as', '--json'], { cwd: dir, env }),
     ]);
+    assert.equal(unconfirmed.status, 2);
+    assert.equal(JSON.parse(unconfirmed.stdout).reason, 'human_accept_confirmation_required');
     assert.equal(missingActor.status, 2);
     assert.equal(JSON.parse(missingActor.stdout).reason, 'human_actor_required');
 
     assert.equal(flagActor.status, 2);
     assert.equal(JSON.parse(flagActor.stdout).reason, 'human_actor_required');
+    assert.equal(JSON.parse(runCli(['task', 'show', ref, '--json'], { cwd: dir, env }).stdout).status, 'review');
 
     // Both previews read the same certified row without changing it. Neither
     // consumes the projection file the other may refresh.

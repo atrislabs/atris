@@ -2677,3 +2677,5 @@ Actor refusal concurrency: `test/commands.test.js:13378` runs the missing and ma
 Proof-only acceptance guards: `test/commands.test.js:13277` overlaps three refusals with the existing async CLI helper. Done and finish read the seeded store before refusing (`commands/task.js:9543`, `commands/task.js:9625`); positive review refuses before store access (`commands/task.js:11529`). None changes task records, and readiness waits for all three. Eight focused runs passed, four before and four after.
 
 Final proof-only acceptance refusals: `test/commands.test.js:13315` overlaps accept and automatic-accept after zero-reward review. Accept resolves the task in the store before refusing at `commands/task.js:10344`; automatic-accept refuses before opening the store at `commands/task.js:10933`. The final show waits for both, retaining review and pending-approval assertions.
+
+Approval confirmation refusals: `test/commands.test.js:13375` overlaps the missing confirmation and two invalid actor checks before the task store opens; the unchanged review-status read waits for all three. Preview and acceptance ordering remain unchanged.
