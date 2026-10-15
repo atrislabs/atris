@@ -283,16 +283,21 @@ const RELATIVE_SHAPE = /^(?:the|its|our|their|your) (?:[\w`-]+ ){0,2}[a-z]+s the
 // `queue.py`, the risk classification rules and thresholds", "TARGET:
 // `cure/` scoring module, the feature weights or ranking formula".
 const FIELD_VALUE_SHAPE = /(?:^|\n)[ \t]*(?:[-*+>][ \t]*)?(?:\*\*[^*\n]+:\*\*|[A-Z][\w-]*(?:[ \t]+[\w-]+){0,2}:)[ \t]+(?:`[^`\n]*`|[^\s:,`]+)(?:[ \t]+[^\s:,`]+){0,2}$/;
+// A dash before "if", "when", "once" and kin, a short clause and its comma
+// opens a second sentence too, so a subject and a verb after that comma are
+// listed with the clause: "if the format changes, the round-trip test
+// fails and we catch it".
+const LEAD_CLAUSE = '(?:if|when|whenever|once|unless|until|after|before|while) [^,;.!?\\n]{1,80}?';
 function spliceShapes(sources, fixes) {
   const found = new Map();
   sources.forEach((source, i) => {
     const fixed = fixes[i];
     if (fixed === source) return;
-    for (const m of fixed.matchAll(new RegExp(`, (${SPLICE_OPENER} [^,;.!?\\n]*)`, 'g'))) {
-      const rest = m[1];
-      const past = PAST_SPLICE_SHAPE.test(rest) && !fixed.startsWith(',', m.index + m[0].length);
-      if (!source.includes(`${DASH} ${rest}`) || !(SPLICE_SHAPE.test(rest) || DEMONSTRATIVE_SHAPE.test(rest) || past) || RELATIVE_SHAPE.test(rest)) continue;
-      if (STRANDED_SHAPE.test(rest) && /^(?:[.!?]|$)/.test(fixed.slice(m.index + m[0].length))) continue;
+    for (const m of fixed.matchAll(new RegExp(`, ((?:${LEAD_CLAUSE}, )?(${SPLICE_OPENER} [^,;.!?\\n]*))`, 'g'))) {
+      const [, rest, tail] = m;
+      const past = PAST_SPLICE_SHAPE.test(tail) && !fixed.startsWith(',', m.index + m[0].length);
+      if (!source.includes(`${DASH} ${rest}`) || !(SPLICE_SHAPE.test(tail) || DEMONSTRATIVE_SHAPE.test(tail) || past) || RELATIVE_SHAPE.test(tail)) continue;
+      if (STRANDED_SHAPE.test(tail) && /^(?:[.!?]|$)/.test(fixed.slice(m.index + m[0].length))) continue;
       if (takesComma(fixed.slice(0, m.index)) || FIELD_VALUE_SHAPE.test(fixed.slice(0, m.index))) continue;
       const key = rest.replace(/`[^`]*`/g, '``');
       if (!found.has(key)) found.set(key, { text: rest, count: 0 });

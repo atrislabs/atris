@@ -5176,6 +5176,14 @@ test('the fix diff splice list skips a noun after "in" or "of" and a noun with i
     plain.map((t) => `Nobody asks about receipts ${D} ${t}.`),
     plain.map((t) => `Nobody asks about receipts, ${t}.`),
   ).map((s) => s.text), ['those searches return zero results', 'these always wait for review']);
+  // an "if", "when" or "once" clause and its comma before the subject still
+  // leaves a splice, as in the real "if Atris changes the format, the
+  // round-trip test fails and we catch it"; a noun after "in" stays a phrase
+  const lead = ['if the format changes, the round-trip test fails and we catch it', 'once it lands, the gate holds it', 'when needed, the stubs in tests'];
+  assert.deepEqual(spliceShapes(
+    lead.map((t) => `The contract has a test ${D} ${t}.`),
+    lead.map((t) => `The contract has a test, ${t}.`),
+  ).map((s) => s.text), ['if the format changes, the round-trip test fails and we catch it', 'once it lands, the gate holds it']);
 });
 
 test('the fix and the splice list read one word list for "these" and "those"', () => {
