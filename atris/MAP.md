@@ -340,3 +340,5 @@ Rejected inspect read batching: `test/inspect-fields.test.js:246` runs both reje
 Review metadata read batching: `test/inspect-fields.test.js:197` awaits both output formats together after readiness completes. `commands/task.js:7701` builds inspect output from existing task rows without saving the shared view. Four sequential CLI stages become three; every assertion remains.
 
 Review metadata fixture setup: `test/inspect-fields.test.js:198` creates the fixture through the production task store and closes it before readiness. Readiness and both inspect formats remain real CLI calls with every assertion retained. Three launches replace four.
+
+Completed task read batching: `test/commands.test.js:7675` overlaps completed list and event history after completion. `commands/task.js:6649` and `commands/task.js:11745` read stored rows independently. Every assertion remains; two sequential reads become one wait.

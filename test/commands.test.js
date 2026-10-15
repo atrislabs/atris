@@ -7632,7 +7632,7 @@ test('brain approval edit records approval edit without changing brain edit feed
 // task
 // ============================================
 
-test('task command adds, claims, and completes workspace-scoped rows', () => {
+test('task command adds, claims, and completes workspace-scoped rows', async () => {
   if (!hasNodeSqlite()) return;
   const dir = makeTempDir();
   const dbPath = path.join(dir, 'tasks.db');
@@ -7671,11 +7671,14 @@ test('task command adds, claims, and completes workspace-scoped rows', () => {
     assert.equal(done.status, 0, done.stderr);
     assert.match(done.stdout, new RegExp(`done ${ref}`));
 
-    const completed = runCli(['task', 'list', '--status', 'done'], { cwd: dir, env });
+    // Both reads follow completion and inspect stored rows without changing them.
+    const [completed, events] = await Promise.all([
+      runCliAsync(['task', 'list', '--status', 'done'], { cwd: dir, env }),
+      runCliAsync(['task', 'events', id], { cwd: dir, env }),
+    ]);
     assert.equal(completed.status, 0, completed.stderr);
     assert.match(completed.stdout, new RegExp(`done\\s+${ref}`));
 
-    const events = runCli(['task', 'events', id], { cwd: dir, env });
     assert.equal(events.status, 0, events.stderr);
     assert.match(events.stdout, new RegExp(`1\\tcreated\\t${ref}`));
     assert.match(events.stdout, new RegExp(`2\\tclaimed\\t${ref}`));
