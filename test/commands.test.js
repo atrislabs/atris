@@ -14522,8 +14522,16 @@ test('task reviews gives a compact certified accept queue', async () => {
     }
     assert.equal(runCli(['task', 'review', certifiedTask.display_id, '--reward', '0', '--as', 'validator'], { cwd: dir, env }).status, 0);
 
+    // A plain ready is one store call in the CLI, so the second-reviewer row
+    // reaches review in-process; the queue reads below still see it.
     const blockingTask = seedClaimedTask('Needs another agent review');
-    assert.equal(runCli(['task', 'ready', blockingTask.display_id, '--proof', 'one review validation passed', '--as', 'codex'], { cwd: dir, env }).status, 0);
+    const blockingDb = taskStore.open(dbPath);
+    try {
+      const readied = taskStore.readyTask(blockingDb, { id: blockingTask.id, actor: 'codex', proof: 'one review validation passed', result: FIXTURE_RESULT_SENTENCE });
+      assert.equal(readied.ready, true, readied.reason);
+    } finally {
+      taskStore.close();
+    }
 
     const unsafeTask = seedClaimedTask('Used a check outside the allowlist');
     const unsafeReady = runCli([
