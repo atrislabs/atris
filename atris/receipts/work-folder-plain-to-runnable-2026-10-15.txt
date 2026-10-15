@@ -1,0 +1,27 @@
+Cleanup preserves a saved plain file and its later executable replacement, verified by real preview and apply and the frozen checks.
+
+Files: test/member-tidy.test.js; atris/MAP.md; atris/refs/MAP-NOTES.md; atris/team/architect/logs/2026-10-15.md; this receipt.
+Verify: node --test test/worktree-removal-guard.test.js test/member-tidy.test.js && node bin/atris.js slop --staged
+Exit: 0
+Output: tests 90; pass 90; fail 0; skipped 0; todo 0; clean, no slop tells in 3 files.
+Progress: one additional saved-file replacement case checks bytes and modes before and after both real cleanup calls. No runtime changes.
+Real command output excerpt:
+command: node bin/atris.js worktree cleanup (healthy origin, local base behind)
+cleanup: dry-run base=origin/master
+candidates: 0
+cache_candidates: 0
+kept: 2
+left alone: primary_checkout=1
+kept: /private/var/folders/t1/2_4kmb5n4c71dxm26zc8dgzr0000gn/T/atris-member-tidy-FrM56h/arena/.agent-worktrees/repo/healthy-draft branch=healthy-draft reason=dirty staged=9 unstaged=8 untracked=2
+exit: 0
+command: node bin/atris.js worktree cleanup --apply (healthy origin, local base behind)
+cleanup: applied base=origin/master
+removeds: 0
+cache_pruneds: 0
+kept: 2
+left alone: primary_checkout=1
+kept: /private/var/folders/t1/2_4kmb5n4c71dxm26zc8dgzr0000gn/T/atris-member-tidy-FrM56h/arena/.agent-worktrees/repo/healthy-draft branch=healthy-draft reason=dirty staged=9 unstaged=8 untracked=2
+exit: 0
+
+next_push: prove cleanup preserves a staged file replaced by a directory containing a draft.
+layer: capabilities
