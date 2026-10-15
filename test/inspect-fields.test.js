@@ -14,6 +14,7 @@ const {
   TASK_INSPECT_FIELDS,
 } = require('../lib/inspect-fields');
 const { scrubAgentEnv } = require('./helpers/agent-env');
+const taskStore = require('../lib/task-db');
 
 const repoRoot = path.resolve(__dirname, '..');
 const cliPath = path.join(repoRoot, 'bin', 'atris.js');
@@ -201,9 +202,19 @@ test('task inspect CLI returns review metadata without parsing show output', asy
   try {
     fs.mkdirSync(path.join(dir, 'atris'), { recursive: true });
     writePassingTest(dir);
-    const add = runCli(['task', 'add', 'Inspect review metadata', '--json'], { cwd: dir, env });
-    assert.equal(add.status, 0, add.stderr || add.stdout);
-    const ref = JSON.parse(add.stdout).task.display_id;
+    // Only creation is setup; readiness and both reads still use the real CLI.
+    const db = taskStore.open(dbPath);
+    let ref;
+    try {
+      const created = taskStore.addTask(db, {
+        title: 'Inspect review metadata',
+        workspaceRoot: taskStore.workspaceRoot(dir),
+      });
+      assert.ok(created.id);
+      ref = created.id;
+    } finally {
+      taskStore.close();
+    }
 
     const ready = runCli([
       'task',
