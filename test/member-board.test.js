@@ -1017,6 +1017,51 @@ test('watch mode uses the whole screen in one to three terminal rows', async () 
   }
 });
 
+test('a taller watch window never shows fewer members than a shorter one', async () => {
+  const names = ['builder', 'scout', 'architect', 'validator', 'researcher'];
+  const dir = fakeDir(Object.fromEntries(names.map((m, i) => [m, [`${at(100 + i)} m-${i} started: job`, `${at(80 + i)} m-${i} finished: failed (timed out)`]])));
+  const out = process.stdout;
+  const saved = ['isTTY', 'columns', 'rows'].map((k) => [k, Object.getOwnPropertyDescriptor(out, k)]);
+  const write = out.write;
+  const env = process.env.ATRIS_PROGRESS_DIR;
+  const frames = [];
+  let done;
+  try {
+    process.env.ATRIS_PROGRESS_DIR = dir;
+    Object.defineProperty(out, 'isTTY', { value: true, configurable: true });
+    Object.defineProperty(out, 'columns', { value: 80, configurable: true });
+    Object.defineProperty(out, 'rows', { value: 1, configurable: true, writable: true });
+    out.write = (chunk) => { frames.push(String(chunk).replace(/\x1b\[[0-9;]*[A-Za-z]/g, '')); return true; };
+    done = memberBoardCommand('--watch', '--all');
+    for (let height = 2; height <= 9; height++) { out.rows = height; out.emit('resize'); }
+    process.emit('SIGINT');
+  } finally {
+    out.write = write;
+    for (const [k, d] of saved) { if (d) Object.defineProperty(out, k, d); else delete out[k]; }
+    if (env === undefined) delete process.env.ATRIS_PROGRESS_DIR; else process.env.ATRIS_PROGRESS_DIR = env;
+  }
+  try {
+    await done;
+    assert.equal(frames.length, 9, 'initial draw and eight resizes');
+    const shown = frames.map((f) => f.split('\n').filter((l) => new RegExp(`^(${names.join('|')})\\s+done failed`).test(l)).length);
+    assert.deepEqual(shown, [0, 0, 1, 1, 2, 5, 5, 5, 5], 'members shown at heights 1 to 9');
+    for (const [i, frame] of frames.entries()) {
+      const height = i + 1;
+      const lines = frame.split('\n');
+      assert.match(frame, /^member\s+state/, `height ${height}`);
+      assert.ok(lines.length <= height, `height ${height} fits: ${JSON.stringify(frame)}`);
+      if (height < 6) {
+        assert.equal(lines.length, height, `height ${height} uses every row: ${JSON.stringify(frame)}`);
+        if (height > 1) assert.match(lines.at(-1), new RegExp(`^${5 - shown[i]} more not shown \\(${5 - shown[i]} failed, all timed out\\)`), `height ${height}`);
+      }
+      if (height < 9) assert.ok(!frame.endsWith('\n') && !/ctrl-c/.test(frame), `height ${height}: the hint never takes a member's row`);
+      else assert.match(frame, /redraws every 3s, ctrl-c to stop\n$/, 'the hint returns once every member fits beside it');
+    }
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
 test('the real terminal keeps timeout reasons when watch shrinks and grows', { skip: process.platform === 'win32' }, () => {
   const proof = spawnSync('python3', ['-c', String.raw`
 import datetime, fcntl, os, pathlib, pty, re, select, signal, struct, subprocess, sys, tempfile, termios, time
@@ -2708,7 +2753,7 @@ def cells(line):
 reason = '登录超时请重新运行'
 # (columns, rows, members that failed, text that must show whole)
 cases = [(36, 8, 1, 'builder  failed   ' + reason), (30, 8, 1, 'builder  failed   登录超时...'),
-         (40, 5, 5, '6 hidden (5 failed, ' + reason + ')'), (30, 5, 5, '6 hidden (5 failed, 1 running)')]
+         (40, 5, 5, '4 hidden (3 failed, ' + reason + ')'), (30, 5, 5, '4 hidden (3 failed, 1 running)')]
 for width, height, failed, whole in cases:
     with tempfile.TemporaryDirectory(prefix='atris-board-wide-reason-') as folder:
         root = pathlib.Path(folder)
