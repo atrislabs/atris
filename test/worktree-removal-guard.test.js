@@ -651,6 +651,22 @@ function loggedPaths(body) {
   return [...body.matchAll(/recordWorktreeRemoval\([^{]*\{[^}]*?\bpath:\s*([\w$.]+)/g)].map((match) => match[1]);
 }
 
+// Git refuses to remove a pinned folder, but a plain delete of the same
+// folder after git's removal goes through anyway. A function that does both
+// has to check the pin before the delete and let that answer stop it.
+const GIT_REMOVAL = /['"]worktree['"]\s*,\s*['"]remove['"]|git worktree remove/;
+function pinGap(site, target) {
+  if (!target || GIT_REMOVAL.test(site.call)) return '';
+  const folder = sameFolder(site.body);
+  const afterGit = site.before.split('\n')
+    .some((line) => GIT_REMOVAL.test(line) && folder(removedTarget(line, site.body)) === folder(target));
+  if (!afterGit) return '';
+  const pins = [...site.before.matchAll(/describePin\(\s*([^,()]+?)\s*[,)]/g)]
+    .filter((match) => folder(match[1].replace(/\s+/g, '')) === folder(target));
+  if (!pins.length) return `plain delete of ${target} after a git removal never checks its pin`;
+  return pins.some((match) => answerStops(site.before, match.index)) ? '' : `pin check on ${target} never stops the delete`;
+}
+
 // Why a delete is not covered, in words a builder can act on, or '' when it
 // is: the scan cannot tell which folder is deleted, no git check names it, the
 // check only runs after the delete, its answer never stops the delete, the
@@ -664,6 +680,8 @@ function removalGap(site) {
       if (!written) return `group check ${check} is missing above this delete`;
       if (!answerStops(site.before, written.index)) return `group check ${check} never stops this delete`;
     }
+    const pinned = pinGap(site, removedTarget(site.call, site.body));
+    if (pinned) return pinned;
     return loggedPaths(site.body).includes(group.logs) ? '' : `group removal log does not name ${group.logs}`;
   }
   const target = removedTarget(site.call, site.body);
@@ -677,6 +695,8 @@ function removalGap(site) {
       : `no git check names ${target}`;
   }
   if (!above.some((check) => answerStops(site.before, check.index))) return `git check answer on ${target} never stops the delete`;
+  const pinned = pinGap(site, target);
+  if (pinned) return pinned;
   return loggedPaths(site.body).some((logged) => folder(logged) === folder(target)) ? '' : `removal log does not name ${target}`;
 }
 
@@ -744,12 +764,15 @@ test('grouped sandbox cleanup exposes every recursive target to the scan', () =>
   assert.match(result.stdout, /group: 4 recursive targets; 0 missing from scan; source only, no folders removed/);
 });
 
-test('green landing keeps its scratch folder while a test is still running in it', () => {
+test('green landing keeps its scratch folder while a test is still running in it, git is busy, or it is pinned', () => {
   const { base, repo, wt } = landedWorktree();
   try {
     assert.deepEqual(dropScratch(repo, wt, { activeCwds: [path.join(wt, 'node_modules')] }), { removed: false, reason: 'active_process' });
     fs.writeFileSync(path.join(worktreeGitDir(wt), 'index.lock'), '');
     assert.deepEqual(dropScratch(repo, wt, { activeCwds: [] }), { removed: false, reason: 'git_lock' });
+    fs.rmSync(path.join(worktreeGitDir(wt), 'index.lock'));
+    git(repo, ['worktree', 'lock', '--reason', 'operator checking the verify', wt]);
+    assert.deepEqual(dropScratch(repo, wt, { activeCwds: [] }), { removed: false, reason: 'pinned', pinned: 'pinned by git worktree lock, under a minute old: operator checking the verify' });
     assert.ok(fs.existsSync(wt));
     assert.deepEqual(removalLines(repo), []);
   } finally {
@@ -824,4 +847,14 @@ test('fleet review cleanup keeps every store of a pinned copy and names the pin'
   } finally {
     fs.rmSync(base, { recursive: true, force: true });
   }
+});
+
+test('a plain delete after a git removal of the same folder must check its pin first', () => {
+  const result = spawnSync(process.execPath, [
+    path.join(__dirname, '../atris/receipts/work-folder-scan-pin-probe.js'),
+    '--require-protection',
+  ], { encoding: 'utf8', timeout: 10000 });
+  assert.ifError(result.error);
+  assert.equal(result.status, 0, result.stderr || result.stdout);
+  assert.match(result.stdout, /review gaps: 0; synthetic source only, never executed/);
 });
