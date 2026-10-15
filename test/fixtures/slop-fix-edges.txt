@@ -368,3 +368,9 @@ The contract has a test on both sides \u2014 if the format changes, the test res
 # the same and is a noun list; no real line in the corpus has it yet
 The gate has a test \u2014 if the format changes, the round-trip check breaks and the team reverts it.
 ~> The gate has a test; if the format changes, the round-trip check breaks and the team reverts it.
+
+# a subject of two nouns joined by "and its" before a plural verb, from a
+# real goal repeated across one repo's logs; neither the fix nor the splice
+# list reads the pair as a subject yet
+Nobody has to leave Atris while working \u2014 the in-app browser and its file-viewing companions (PDF, HTML) feel as trustworthy as a real browser tab.
+~> Nobody has to leave Atris while working; the in-app browser and its file-viewing companions (PDF, HTML) feel as trustworthy as a real browser tab.
