@@ -2189,3 +2189,55 @@ test('hidden earlier sign-in failures name their old engine only in spare room',
   }
   assert.doesNotMatch(footer([{ ...busy, engine: 'claude' }, other], 140), /signed out/, 'a fixed sign-in stays fixed');
 });
+
+test('live follow waits for split CRLF lines in a newly created log', async (t) => {
+  const dir = fakeDir({});
+  const stamp = new Date().toISOString();
+  const log = path.join(dir, 'scout.log');
+  const child = spawn(process.execPath, [cliPath, 'member', 'board', '--json', '--follow'], {
+    cwd: dir, env: { ...process.env, ATRIS_PROGRESS_DIR: dir },
+  });
+  child.stdout.setEncoding('utf8');
+  let out = '';
+  let stderr = '';
+  let closed = false;
+  const done = new Promise((resolve) => child.once('close', (code) => { closed = true; resolve(code); }));
+  child.stdout.on('data', (chunk) => { out += chunk; });
+  child.stderr.on('data', (chunk) => { stderr += chunk; });
+  const records = () => out.split('\n').slice(0, -1).filter(Boolean).map((line) => JSON.parse(line));
+  const receive = async (count) => {
+    const until = Date.now() + 15_000;
+    while (records().length < count && !closed && Date.now() < until) await new Promise((r) => setTimeout(r, 50));
+    assert.equal(records().length, count, `stdout=${out}; stderr=${stderr}; closed=${closed}`);
+    return records();
+  };
+  try {
+    const [snapshot] = await receive(1);
+    assert.equal(snapshot.kind, 'snapshot');
+    assert.deepEqual(snapshot.members, []);
+    fs.writeFileSync(log, `${stamp} m-new started: inspect new progress\r`);
+    await new Promise((r) => setTimeout(r, 1_200));
+    assert.equal(records().length, 1, 'a new log ending with CR waits for LF');
+    fs.appendFileSync(log, `\n${stamp} m-new reading notes\r\n${stamp} m-new finished: ok\r`);
+    const batch = await receive(3);
+    assert.deepEqual(batch.slice(1), [
+      { member: 'scout', mission: 'm-new', at: stamp, kind: 'started', text: 'inspect new progress' },
+      { member: 'scout', mission: 'm-new', at: stamp, kind: 'step', text: 'reading notes' },
+    ]);
+    await new Promise((r) => setTimeout(r, 1_200));
+    assert.equal(records().length, 3, 'complete lines emit once while the partial finish waits');
+    fs.appendFileSync(log, '\n');
+    const finished = await receive(4);
+    assert.deepEqual(finished[3], { member: 'scout', mission: 'm-new', at: stamp, kind: 'finished', text: 'ok', ok: true });
+    await new Promise((r) => setTimeout(r, 1_200));
+    assert.equal(records().length, 4, 'watching and polling do not repeat new-log events');
+    child.kill('SIGINT');
+    assert.equal(await done, 0, stderr);
+    t.diagnostic(`actual command: ${process.execPath} ${cliPath} member board --json --follow`);
+    t.diagnostic(`actual stdout:\n${out}exit: 0`);
+  } finally {
+    if (!closed) child.kill('SIGINT');
+    await done;
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});

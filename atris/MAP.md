@@ -152,3 +152,5 @@ Split timeout live follow proof: `test/member-board.test.js:1489` checks incompl
 Pending timeout at startup: `readTail()` in `lib/member-board.js` ignores an unfinished final line so the opening board stays working until the timeout is complete. Live regressions: `test/member-board.test.js:1489`. Real proof: `python3 atris/runs/member-board-startup-timeout-proof.py`.
 
 Split multibyte live follow: `test/member-board.test.js:1553` checks a split emoji before and after startup; real command proof: `python3 atris/runs/member-board-split-unicode-proof.py`.
+
+New-log split line endings: `test/member-board.test.js:2193` starts the real follow command with no logs, creates a partial CRLF start, completes a batched step while leaving a result partial, then checks exact events, no duplicates across polling, and clean interrupt. Saved output: `atris/runs/member-board-new-log-crlf-proof.txt`.
