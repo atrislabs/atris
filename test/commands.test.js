@@ -15424,14 +15424,22 @@ test('task review lanes route stale PR proof out of human accept waiting', () =>
   try {
     fs.mkdirSync(path.join(dir, 'atris'), { recursive: true });
 
-    const created = runCli([
-      'task', 'new', 'Certified stale PR proof boundary',
-      '--tag', 'task',
-      '--goal-id', 'OBL-928',
-      '--json',
-    ], { cwd: dir, env });
-    assert.equal(created.status, 0, created.stderr);
-    const task = JSON.parse(created.stdout).task;
+    // Seed creation through the real store; stale proof routing stays on the CLI.
+    const task = (() => {
+      const db = taskStore.open(dbPath);
+      try {
+        const workspaceRoot = taskStore.workspaceRoot(dir);
+        const { id } = addSeedTask(db, {
+          title: 'Certified stale PR proof boundary',
+          tag: 'task',
+          workspaceRoot,
+          metadata: { goal_id: 'OBL-928' },
+        });
+        return { id, display_id: taskStore.taskDisplayRefMap(taskStore.listTasks(db, { workspaceRoot })).get(id) };
+      } finally {
+        taskStore.close();
+      }
+    })();
     const ref = task.display_id;
     const stalePrVerify = `node --check ${path.join(repoRoot, 'commands', 'task.js')}`;
     const stalePrProof = `Verified #1600 remains OPEN/draft/CLEAN at head be8797f. ${stalePrVerify} passed.`;

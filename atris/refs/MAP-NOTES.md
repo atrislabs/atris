@@ -2589,3 +2589,7 @@ Landing capability test setup: `test/commands.test.js:12964` seeds creation and 
 - Continuation display creation: `test/commands.test.js:15159` uses addSeedTask with the original title, tag, workspace and goal, resolves the display reference through the store, and closes in finally. Six CLI calls retain every continuation and waiting-state assertion.
 
 Review queue filter creation fixture: `test/commands.test.js:15238` seeds both goal-linked task rows in process, resolving display references with the production store; all readiness, review and filtered queue/current assertions remain on the CLI.
+
+## Stale proof routing creation fixture
+
+- `test/commands.test.js:15419` seeds creation at `test/commands.test.js:15427` with the same title, tag, workspace and goal, resolves the display reference and closes in finally. CLI launches fall from ten to nine; readiness, review, status, filtered current reads, reviews, dry-run acceptance and current-step refusal retain every assertion.
