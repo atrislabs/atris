@@ -643,6 +643,7 @@ function saveUnseenCards(root, w, dir, receipt) {
     if (unseen.length === 0) return true;
     const dest = path.join(dir, `${path.basename(w.path)}.for-you.md`);
     fs.writeFileSync(dest, `${unseen.map((c) => c.replace(/\n+$/, '')).join('\n\n')}\n`);
+    w.savedCards = { path: dest, count: unseen.length, fingerprint: savedFingerprint(dest) };
     receipt.cards.push({ path: dest, count: unseen.length });
     return true;
   } catch {
@@ -878,7 +879,7 @@ function reap(root, { ttlDays = DEFAULT_TTL_DAYS, staleHours = DEFAULT_STALE_HOU
     if (removed.status === 0) {
       receipt.removedWorktrees.push(w.path);
       if (w.restoreCommand) receipt.restores.push({ path: w.path, command: w.restoreCommand });
-      recordWorktreeRemoval(root, { path: w.path, branch: w.branch, by, reason: reapReason(w, board, ttlDays, force), restore: w.restoreCommand, patches: w.patchFingerprints, drafts: w.draftFingerprints });
+      recordWorktreeRemoval(root, { path: w.path, branch: w.branch, by, reason: reapReason(w, board, ttlDays, force), restore: w.restoreCommand, patches: w.patchFingerprints, drafts: w.draftFingerprints, cards: w.savedCards });
     } else {
       // A locked worktree fails here and, unreported, reap re-salvages the
       // same patches every pass forever. Say what blocked it so a human can
@@ -1161,17 +1162,17 @@ function emptyLandKindFromError(err) {
 // the restore command saved at removal time. Reads the removal log, so it
 // works days later without the original put-away output.
 function savedBackups(root) {
-  return readWorktreeRemovals(root).filter((row) => row.restore).reverse()
+  return readWorktreeRemovals(root).filter((row) => row.restore || row.cards).reverse()
     .map((row) => {
-      const ref = row.restore.match(/refs\/atris\/salvage\/[0-9a-f]{40,64}\b/);
+      const ref = (row.restore || '').match(/refs\/atris\/salvage\/[0-9a-f]{40,64}\b/);
       const missing = ref && runGit(['cat-file', '-e', `${ref[0]}^{commit}`], { cwd: root, check: false }).status !== 0;
       // Read only the shell words emitted by quoteArg, never execute the saved command.
-      const patches = [...row.restore.matchAll(/(?:^| && )git apply (?:--cached )?(?:--whitespace=nowarn )?((?:[^\s'\\]+|'[^']*'|\\.)+)/g)]
+      const patches = [...(row.restore || '').matchAll(/(?:^| && )git apply (?:--cached )?(?:--whitespace=nowarn )?((?:[^\s'\\]+|'[^']*'|\\.)+)/g)]
         .map((match) => match[1].replace(/'([^']*)'|\\(.)/g, (_, quoted, escaped) => quoted === undefined ? escaped : quoted));
       const missingPatch = patches.some((file) => {
         try { return !fs.statSync(file).isFile(); } catch { return true; }
       });
-      const drafts = [...row.restore.matchAll(/(?:^| && )cp -R ((?:[^\s'\\]+|'[^']*'|\\.)+)\/\. \./g)]
+      const drafts = [...(row.restore || '').matchAll(/(?:^| && )cp -R ((?:[^\s'\\]+|'[^']*'|\\.)+)\/\. \./g)]
         .map((match) => match[1].replace(/'([^']*)'|\\(.)/g, (_, quoted, escaped) => quoted === undefined ? escaped : quoted));
       const missingDrafts = drafts.some((folder) => {
         try { return !fs.statSync(folder).isDirectory(); } catch { return true; }
@@ -1190,7 +1191,14 @@ function savedBackups(root) {
         : changedPatch ? `saved patch file was changed: ${path.basename(changedPatch)}`
         : missingDrafts ? 'saved draft folder is missing'
           : changedDraft ? `saved draft file is missing or changed: ${changedDraft}` : '';
+      let cardsUnavailable = '';
+      if (row.cards) {
+        try {
+          if (savedFingerprint(row.cards.path) !== row.cards.fingerprint) cardsUnavailable = 'saved cards file is changed';
+        } catch { cardsUnavailable = 'saved cards file is missing'; }
+      }
       return { at: row.at, path: row.path, branch: row.branch,
+        ...(row.cards ? { cards: row.cards, ...(cardsUnavailable ? { cardsUnavailable } : {}) } : {}),
         restore: unavailable ? null : row.restore,
         ...(unavailable ? { unavailable } : {}) };
     });
@@ -1206,7 +1214,9 @@ function printSavedBackups(rows) {
   for (const row of rows) {
     console.log(`  ${row.at.slice(0, 16).replace('T', ' ')}  ${row.path}${row.branch ? ` (${row.branch})` : ''}`);
     if (row.unavailable) console.log(`    cannot restore: ${row.unavailable}`);
-    else console.log(`    to restore: ${row.restore}`);
+    else if (row.restore) console.log(`    to restore: ${row.restore}`);
+    if (row.cardsUnavailable) console.log(`    ${row.cardsUnavailable}: ${row.cards.path}`);
+    else if (row.cards) console.log(`    cards saved: ${row.cards.path} (${row.cards.count})`);
   }
 }
 

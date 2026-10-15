@@ -1777,6 +1777,27 @@ test('reap saves cards the main inbox lacks before removing a folder, and keeps 
     assert.equal(fs.existsSync(wt), false, run.stdout);
     assert.ok(run.stdout.includes(`  cards not in your inbox saved: ${blocked} (1)`), run.stdout);
     assert.equal(fs.readFileSync(blocked, 'utf8'), `${card}\n`);
+    const backups = (...args) => spawnSync(process.execPath, [path.resolve(__dirname, '../bin/atris.js'), 'land', '--backups', ...args], { cwd: repo, encoding: 'utf8' });
+    const listed = backups();
+    console.log('command: node bin/atris.js land --backups (saved cards)');
+    console.log(listed.stdout.trim());
+    console.log(`exit: ${listed.status}`);
+    assert.equal(listed.status, 0, listed.stderr);
+    assert.ok(listed.stdout.includes(`cards saved: ${blocked} (1)`), listed.stdout);
+    const json = JSON.parse(backups('--json').stdout);
+    assert.ok(JSON.stringify(json).includes(blocked));
+    for (const state of ['changed', 'missing']) {
+      if (state === 'changed') fs.appendFileSync(blocked, 'changed\n');
+      else fs.unlinkSync(blocked);
+      const unavailable = backups();
+      console.log(`command: node bin/atris.js land --backups (saved cards ${state})`);
+      console.log(unavailable.stdout.trim());
+      console.log(`exit: ${unavailable.status}`);
+      assert.equal(unavailable.status, 0, unavailable.stderr);
+      assert.ok(unavailable.stdout.includes(`saved cards file is ${state}: ${blocked}`), unavailable.stdout);
+      assert.ok(JSON.stringify(JSON.parse(backups('--json').stdout)).includes(`saved cards file is ${state}`));
+    }
+
   } finally {
     fs.rmSync(base, { recursive: true, force: true });
   }

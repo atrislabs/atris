@@ -1441,7 +1441,7 @@ function worktreeRemovalLogPath(root) {
   return path.join(main, '.atris', 'state', 'worktree_removals.jsonl');
 }
 
-function recordWorktreeRemoval(root, { path: removedPath, branch = '', by, reason, restore, patches, drafts }) {
+function recordWorktreeRemoval(root, { path: removedPath, branch = '', by, reason, restore, patches, drafts, cards }) {
   try {
     const file = worktreeRemovalLogPath(root);
     fs.mkdirSync(path.dirname(file), { recursive: true });
@@ -1450,6 +1450,7 @@ function recordWorktreeRemoval(root, { path: removedPath, branch = '', by, reaso
       ...(restore ? { restore } : {}),
       ...(patches && Object.keys(patches).length ? { patches } : {}),
       ...(drafts ? { drafts } : {}),
+      ...(cards ? { cards } : {}),
     })}\n`);
   } catch {}
 }
