@@ -127,6 +127,7 @@ Top blocker: friction_points \u2014 the known failure modes are undocumented, so
 => Top blocker: friction_points; the known failure modes are undocumented, so the agent fails.
 Bottleneck: unchanged \u2014 the trust-playbook GO stays closed on all five dimensions.
 => Bottleneck: unchanged; the trust-playbook GO stays closed on all five dimensions.
-# a value that opens on "not" takes a colon, so a second colon lands after it
+# a value that opens on "not" takes a colon alone, but past a field's own
+# colon it takes a semicolon, so no second colon stacks on it
 Status: not ready \u2014 the gate holds the drafts.
-~> Status: not ready; the gate holds the drafts.
+=> Status: not ready; the gate holds the drafts.

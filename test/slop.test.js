@@ -2434,6 +2434,22 @@ test('fix joins a field value and a "the" clause after a dash with a semicolon',
   ]);
 });
 
+test('fix gives a "not" value past a field colon a semicolon, not a second colon', () => {
+  // from the edge file: a short opener led by "not" takes a colon, so
+  // "Status: not ready" before a dash stacked a second colon on the field's
+  // own. Past that colon the clause takes a semicolon; with no field the
+  // opener keeps its colon.
+  const file = tmpFile('not-field-clause.md', [
+    'Status: not ready \u2014 the gate holds the drafts.',
+    'Not exhaustive \u2014 the frontier was not extended.',
+  ].join('\n'));
+  const { changes } = applyFixes([file], RULES);
+  assert.deepEqual(changes.map((c) => c.after), [
+    'Status: not ready; the gate holds the drafts.',
+    'Not exhaustive: the frontier was not extended.',
+  ]);
+});
+
 test('fix joins "its" or "our", a plural and a plain verb before a number or an object', () => {
   // from a probe of the edge file: "its pages score 67" spliced, since the
   // possessive rule wanted a verb in s, a helper verb or "already". A plain

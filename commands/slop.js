@@ -526,7 +526,19 @@ const SUBJECTLESS_CLAUSE_AFTER_DASH = new RegExp(`(?<=[\\w)\\]%\\uE001])\\s*\\u2
 // is only its first half, so the dash closes that half with a comma: "When
 // a lead asks about the pipeline, you answer with numbers". A comma or colon
 // already there, even inside a quote or after a bold label, closed it.
-function clauseJoin(left) {
+// Past a field's own colon a second colon would stack, so the clause takes
+// a semicolon there: "Status: not ready; the gate holds the drafts", never
+// "Status: not ready: the gate". A line that carries on the one above has
+// its left words from up there, so it keeps the colon, and so does a name
+// after a semicolon: "Post-merge review: clean; one gap: web never sent".
+function clauseJoin(left, at, whole) {
+  const mark = openerJoin(left);
+  if (mark !== ': ' || whole === undefined || /;\s/.test(left)) return mark;
+  const before = whole.slice(0, at).trimEnd();
+  return before.endsWith(left) && /:\s*$/.test(before.slice(0, before.length - left.length)) ? '; ' : mark;
+}
+
+function openerJoin(left) {
   const opener = left.replace(/^(?:(?:[-*+>]|\d+[.)]|\*\*|__)\s*)+/, '');
   if (/^(?:when|whenever|if|unless|until|once|because|since|although|though|while)\b/i.test(opener) && !/[,:]["'\u201d\u2019*_]*\s/.test(opener)) return ', ';
   if (/^not\b/i.test(opener) && opener.split(/\s+/).length <= 3) return ': ';
@@ -997,27 +1009,27 @@ function fixEmDash(s, { endsBlock = false, startsBlock = false, spans = [], abov
       const left = clauseLeft(at, whole);
       if (!left) return labelJoin(at, whole) || m;
       if (/^(?:these|those)\b/i.test(whole.slice(at + m.length)) && BARE_LIST.test(left.replace(/^(?:[-*+>]|\d+[.)])\s+/, ''))) return ': ';
-      return clauseJoin(left);
+      return clauseJoin(left, at, whole);
     })
     .replace(QUANTITY_CLAUSE_AFTER_DASH, (m, at, whole) => {
       const left = clauseLeft(at, whole);
-      return left ? clauseJoin(left) : m;
+      return left ? clauseJoin(left, at, whole) : m;
     })
     .replace(PAST_CLAUSE_AFTER_DASH, (m, at, whole) => {
       const left = clauseLeft(at, whole);
-      return left ? clauseJoin(left) : m;
+      return left ? clauseJoin(left, at, whole) : m;
     })
     .replace(NOUN_CLAUSE_AFTER_DASH, (m, at, whole) => {
       const left = clauseOrFieldLeft(at, whole);
-      return left && !NAME_TAIL_PHRASE.test(whole.slice(at)) ? clauseJoin(left) : m;
+      return left && !NAME_TAIL_PHRASE.test(whole.slice(at)) ? clauseJoin(left, at, whole) : m;
     })
     .replace(AND_CLAUSE_AFTER_DASH, (m, at, whole) => {
       const left = clauseLeft(at, whole);
-      return left ? clauseJoin(left) : m;
+      return left ? clauseJoin(left, at, whole) : m;
     })
     .replace(ONLY_CLAUSE_AFTER_DASH, (m, at, whole) => {
       const left = clauseLeft(at, whole);
-      return left ? clauseJoin(left) : m;
+      return left ? clauseJoin(left, at, whole) : m;
     })
     .replace(SUBJECTLESS_CLAUSE_AFTER_DASH, (m, verb, at, whole) => {
       const left = clauseLeft(at, whole);
@@ -1029,7 +1041,7 @@ function fixEmDash(s, { endsBlock = false, startsBlock = false, spans = [], abov
       const own = left.split(/;\s/).pop().replace(/\([^()]*\)/g, ' ');
       const words = own.trim().split(/\s+/);
       if (words[words.length - 1].toLowerCase() === verb.toLowerCase()) return m;
-      if (new RegExp(`\\b${SUBJECTLESS_HELPER}\\b`, 'i').test(own)) return clauseJoin(left);
+      if (new RegExp(`\\b${SUBJECTLESS_HELPER}\\b`, 'i').test(own)) return clauseJoin(left, at, whole);
       // a subject and a plain verb are a clause too: "Our service logs after
       // CRITIQUE; should also log at DECIDE time". The sentence opens on the
       // line, and the dash sits outside brackets with no dash after it, so
@@ -1037,74 +1049,74 @@ function fixEmDash(s, { endsBlock = false, startsBlock = false, spans = [], abov
       const rest = whole.slice(at + m.length).split(/[.!?](?:\s|$)/)[0];
       const core = own.replace(/^\s*(?:[-*+>]|\d+[.)])\s+/, '').replace(/^(?:\*\*[^*]+\*\*|__[^_]+__)\s*/, '').trim();
       if (insideParens(whole.slice(0, at)) || /\u2014/.test(rest) || !/^(?:[A-Z]|(?:the|a|an|our|your|their|its|this|my)\s)/.test(core)) return m;
-      return PLAIN_CLAUSE_LEFT.test(core) ? clauseJoin(left) : m;
+      return PLAIN_CLAUSE_LEFT.test(core) ? clauseJoin(left, at, whole) : m;
     })
     .replace(STATUS_CLAUSE_AFTER_DASH, (m, at, whole) => {
       const left = clauseLeft(at, whole);
-      return left ? clauseJoin(left) : m;
+      return left ? clauseJoin(left, at, whole) : m;
     })
     .replace(NAME_PAIR_CLAUSE_AFTER_DASH, (m, at, whole) => {
       const left = clauseOrFieldLeft(at, whole);
-      return left ? clauseJoin(left) : m;
+      return left ? clauseJoin(left, at, whole) : m;
     })
     .replace(THE_OBJECT_CLAUSE_AFTER_DASH, (m, at, whole) => {
       const left = clauseOrFieldLeft(at, whole);
-      return left && !RELATIVE_OBJECT_PHRASE.test(whole.slice(at)) ? clauseJoin(left) : m;
+      return left && !RELATIVE_OBJECT_PHRASE.test(whole.slice(at)) ? clauseJoin(left, at, whole) : m;
     })
     .replace(BARE_PHRASE_CLAUSE_AFTER_DASH, (m, at, whole) => {
       const left = clauseOrFieldLeft(at, whole);
-      return left && !NAME_TAIL_PHRASE.test(whole.slice(at)) ? clauseJoin(left) : m;
+      return left && !NAME_TAIL_PHRASE.test(whole.slice(at)) ? clauseJoin(left, at, whole) : m;
     })
     .replace(LONE_VERB_CLAUSE_AFTER_DASH, (m, at, whole) => {
       const left = clauseOrFieldLeft(at, whole);
-      return left ? clauseJoin(left) : m;
+      return left ? clauseJoin(left, at, whole) : m;
     })
     .replace(PLACE_CLAUSE_AFTER_DASH, (m, at, whole) => {
       const left = clauseOrFieldLeft(at, whole);
-      return left ? clauseJoin(left) : m;
+      return left ? clauseJoin(left, at, whole) : m;
     })
     .replace(PLAIN_CLAUSE_AFTER_DASH, (m, at, whole) => {
       const left = clauseOrFieldLeft(at, whole);
       if (!left || NAME_BEFORE_PLAIN_VERB.test(whole.slice(at)) || NAME_TAIL_PHRASE.test(whole.slice(at))) return m;
-      return /\b(?:not|cannot)\b/i.test(left) || PLAIN_OBJECT_CLAUSE.test(whole.slice(at)) || BARE_OBJECT_CLAUSE.test(whole.slice(at)) ? clauseJoin(left) : m;
+      return /\b(?:not|cannot)\b/i.test(left) || PLAIN_OBJECT_CLAUSE.test(whole.slice(at)) || BARE_OBJECT_CLAUSE.test(whole.slice(at)) ? clauseJoin(left, at, whole) : m;
     })
     .replace(ADVERB_CLAUSE_AFTER_DASH, (m, at, whole) => {
       const left = clauseLeft(at, whole);
-      return left ? clauseJoin(left) : m;
+      return left ? clauseJoin(left, at, whole) : m;
     })
     // three words or fewer after a semicolon name a thing with no verb of
     // their own, so "6 defects; the big one, audit rows carry" stays
     .replace(PLURAL_CLAUSE_AFTER_DASH, (m, at, whole) => {
       const left = clauseLeft(at, whole);
-      return left && !(/;\s/.test(left) && left.split(/;\s/).pop().split(/\s+/).length <= 3) ? clauseJoin(left) : m;
+      return left && !(/;\s/.test(left) && left.split(/;\s/).pop().split(/\s+/).length <= 3) ? clauseJoin(left, at, whole) : m;
     })
     .replace(THE_CLAUSE_AFTER_DASH, (m, at, whole) => {
       const left = clauseLeft(at, whole);
-      return left && !NAME_BEFORE_PLAIN_VERB.test(whole.slice(at)) ? clauseJoin(left) : m;
+      return left && !NAME_BEFORE_PLAIN_VERB.test(whole.slice(at)) ? clauseJoin(left, at, whole) : m;
     })
     .replace(THAT_CLAUSE_AFTER_DASH, (m, at, whole) => {
       const left = clauseLeft(at, whole);
-      return left ? clauseJoin(left) : m;
+      return left ? clauseJoin(left, at, whole) : m;
     })
     .replace(END_CLAUSE_AFTER_DASH, (m, at, whole) => {
       const left = clauseLeft(at, whole);
-      return left ? clauseJoin(left) : m;
+      return left ? clauseJoin(left, at, whole) : m;
     })
     .replace(EACH_CLAUSE_AFTER_DASH, (m, at, whole) => {
       const left = clauseLeft(at, whole);
-      return left ? clauseJoin(left) : m;
+      return left ? clauseJoin(left, at, whole) : m;
     })
     .replace(BARE_CLAUSE_AFTER_DASH, (m, at, whole) => {
       const left = clauseLeft(at, whole);
-      return left ? clauseJoin(left) : m;
+      return left ? clauseJoin(left, at, whole) : m;
     })
     .replace(BARE_VERB_CLAUSE_AFTER_DASH, (m, at, whole) => {
       const left = clauseLeft(at, whole);
-      return left ? clauseJoin(left) : m;
+      return left ? clauseJoin(left, at, whole) : m;
     })
     .replace(POSSESSIVE_CLAUSE_AFTER_DASH, (m, at, whole) => {
       const left = clauseLeft(at, whole);
-      return left ? clauseJoin(left) : m;
+      return left ? clauseJoin(left, at, whole) : m;
     })
     .replace(QUESTION_AFTER_DASH, (m, at, whole) => {
       const left = clauseLeft(at, whole);
@@ -1115,11 +1127,11 @@ function fixEmDash(s, { endsBlock = false, startsBlock = false, spans = [], abov
       if (/\b(?:ask|asking|wonder|wondering|curious)$/i.test(left)) return ': ';
       const spells = /\b(?:is|are|was|were)\s+(?:[\w'\u2019-]+\s+){0,3}[\w'\u2019-]+$/i.test(left)
         && /^(?:which|what)\s+(?!(?:do|does|did|is|are|was|were|has|have|can|could|would|will|should)\b)[a-z]/i.test(whole.slice(at + m.length));
-      return spells ? ': ' : clauseJoin(left);
+      return spells ? ': ' : clauseJoin(left, at, whole);
     })
     .replace(LEADING_CLAUSE_AFTER_DASH, (m, at, whole) => {
       const left = clauseLeft(at, whole);
-      return left ? clauseJoin(left) : m;
+      return left ? clauseJoin(left, at, whole) : m;
     })
     // one word in an open bracket, "(IMPORTANT, use this)", or a quoted
     // title, '"AI Engine Optimization, write content"', is no clause. Two
@@ -1151,7 +1163,7 @@ function fixEmDash(s, { endsBlock = false, startsBlock = false, spans = [], abov
       // spells it out: "AI is best used to **raise the floor**: automate the
       // mechanical 80%", never a semicolon that cuts the two apart
       if (/\S\s+(?:\*\*[^*]+\*\*|__[^_]+__)$/.test(left)) return ': ';
-      return named && !/^\s+[a-z]/.test(whole) ? ': ' : clauseJoin(left);
+      return named && !/^\s+[a-z]/.test(whole) ? ': ' : clauseJoin(left, at, whole);
     })
     // a stop right before the dash ended the sentence, so the lowercase word
     // after it starts the next one: "why bother? Nobody reads it", never
