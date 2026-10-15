@@ -913,6 +913,22 @@ test('fix keeps a paired aside after a plain-word label as parentheses', () => {
   ]);
 });
 
+test('fix reads a bold list label after a status emoji as a label, not a subject', () => {
+  // from a verdict note: the check mark hid the bold label, so both dashes
+  // read as one aside and the clause in parentheses kept a comma
+  const file = tmpFile('emoji-label.md', [
+    '- \u2705 **AEO auditor** \u2014 real, falsifiable (scores 67 live, homepage 46 \u2014 it discriminates).',
+    '- \u26a0\ufe0f **Telemetry** \u2014 logged \u2014 never read.',
+    '- \u2705 Retries \u2014 up to 3 \u2014 happen automatically.',
+  ].join('\n'));
+  const { changes } = applyFixes([file], RULES);
+  assert.deepEqual(changes.map((c) => c.after), [
+    '- \u2705 **AEO auditor**: real, falsifiable (scores 67 live, homepage 46; it discriminates).',
+    '- \u26a0\ufe0f **Telemetry**: logged, never read.',
+    '- \u2705 Retries (up to 3) happen automatically.',
+  ]);
+});
+
 test('fix keeps a comma when a list item dash comes before a joining word', () => {
   // from a sample README ("Redis, SQS: and more") and a math night proof note
   const file = tmpFile('list-joining.md', [

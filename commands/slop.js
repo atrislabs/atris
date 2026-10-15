@@ -751,8 +751,10 @@ function fixEmDash(s, { endsBlock = false, startsBlock = false, spans = [], abov
     const runsOn = alt.startsWith(`${fieldThenWords[2]} (`) && (alt.match(ASIDE_THEN_HELPER) || []).length > (body.match(ASIDE_THEN_HELPER) || []).length;
     if (paired && (runsOn || fieldThenWords[2].trim().split(/\s+/).length >= 4)) return `${label[1]}${fieldThenWords[1]}${alt}`;
   }
+  // a status emoji, a check mark or a warning sign, before a marked label
+  // leaves it a label, so the colon and the clause rules still apply
   const restSentence = label && s.slice(label[0].length).split(/[.!?]["'\u201d\u2019)]*\s/)[0];
-  if (label && !/^(?:\*|_|`|\uE000|"|\u201c)/.test(label[2])
+  if (label && !/^(?:\p{Extended_Pictographic}\ufe0f?\s+)?(?:\*|_|`|\uE000|"|\u201c)/u.test(label[2])
     && (restSentence.match(/\u2014/g) || []).length % 2
     && !/^[^\u2014]*\u2014\s*(?:and|but|or|nor|so|yet|then)\b/i.test(restSentence)) label = null;
   // a label that already ends in its own punctuation, "**what is it?**",
