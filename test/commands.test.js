@@ -13283,7 +13283,10 @@ test('task auto-accept-certified requires explicit human confirmation', async ()
   try {
     fs.mkdirSync(path.join(dir, 'atris'), { recursive: true });
     writePolicy(dir, { enabled: false, enabled_by: 'test' });
-    // Seed creation and ownership; certification and every auto-accept check stay on the CLI.
+    // Seed the row straight into review; every auto-accept call, the second
+    // review and the show reads stay on the CLI. Every auto-accept output
+    // matched with the row readied and reviewed both ways; only the CLI's
+    // result summary on the row differs, and nothing here reads it.
     const workspaceRoot = taskStore.workspaceRoot(dir);
     const db = taskStore.open(dbPath);
     let ref;
@@ -13293,22 +13296,25 @@ test('task auto-accept-certified requires explicit human confirmation', async ()
       });
       assert.equal(created.inserted, true);
       assert.equal(taskStore.claimTask(db, { id: created.id, claimedBy: 'codex' }).claimed, true);
+      const readied = taskStore.readyTask(db, {
+        id: created.id,
+        actor: 'codex',
+        proof: 'node --check test/commands.test.js passed and git status --porcelain passed',
+        result: FIXTURE_RESULT_SENTENCE,
+      });
+      assert.equal(readied.ready, true, readied.reason);
+      const reviewed = taskStore.reviewTask(db, {
+        id: created.id,
+        actor: 'validator',
+        reward: 0,
+        proof: 'node --test test/commands.test.js passed and diff inspected',
+      });
+      assert.equal(reviewed.reviewed, true, reviewed.reason);
       ref = taskStore.taskDisplayRefMap(taskStore.listTasks(db, { workspaceRoot })).get(created.id);
       assert.ok(ref);
     } finally {
       taskStore.close();
     }
-    assert.equal(runCli([
-      'task', 'ready', ref,
-      '--proof', 'node --check test/commands.test.js passed and git status --porcelain passed',
-      '--as', 'codex',
-    ], { cwd: dir, env }).status, 0);
-    assert.equal(runCli([
-      'task', 'review', ref,
-      '--reward', '0',
-      '--as', 'validator',
-      '--proof', 'node --test test/commands.test.js passed and diff inspected',
-    ], { cwd: dir, env }).status, 0);
 
     // All three guards return before opening the task store or writing state.
     const [unconfirmed, missingActor, flagActor] = await Promise.all([
