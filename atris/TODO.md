@@ -19,10 +19,12 @@ Details for any task: atris task show <ID>
 
 ## In Progress
 
-- **[ACW-27]** Prove healthy refresh preserves tracked edits · architect
+(Empty)
 
 ## Review
 
+- **[ACW-27]** Prove healthy refresh preserves tracked edits · architect
+  **Done looks like:** Operators can trust routine cleanup to preserve edits to existing files because real preview and cleanup now check their exact contents.
 - **[ACW-26]** Prove healthy cleanup stays quiet and keeps drafts · architect
   **Done looks like:** Operators can trust healthy cleanup to stay quiet and preserve their drafts, reducing the risk of losing work.
 - **[ACW-25]** Prove cleanup warns when origin is unavailable · architect
