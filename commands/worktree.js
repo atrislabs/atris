@@ -1571,6 +1571,9 @@ function cleanupWorktrees({ root = repoRoot(), base: baseOverride = '', apply = 
     const candidate = { ...item, reason: 'merged_into_base', artifact_only_dirty: artifactOnlyDirty };
     candidates.push(candidate);
     if (!apply) continue;
+    // Same removal as the expired branch above, kept inline on purpose: the
+    // removal scan needs the git check to come before each removal in this
+    // function's text, and a shared step defined earlier fails that order.
     const removeArgs = ['worktree', 'remove'];
     if (artifactOnlyDirty) removeArgs.push('--force');
     removeArgs.push(wt.path);
