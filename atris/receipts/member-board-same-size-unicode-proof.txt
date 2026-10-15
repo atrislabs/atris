@@ -1,0 +1,46 @@
+verify command: node --test test/member-board.test.js test/member-result.test.js
+verify exit: 0
+ℹ actual command: /opt/homebrew/Cellar/node/25.6.1/bin/node /Users/keshavrao/arena/empire/.agent-worktrees/atris-cli/builder-continue-improving-atris-member-boar-20261015-003022/bin/atris.js member board --json --follow
+ℹ character é, split after byte 1, mode same-size rewrite:
+{"kind":"snapshot","at":"2026-10-15T08:16:06.561Z","dir":"/var/folders/t1/2_4kmb5n4c71dxm26zc8dgzr0000gn/T/atris-board-oqxCY9","members":[]}
+{"member":"navigator","mission":"m-unicode","at":"2026-10-15T08:16:06.468Z","kind":"step","text":"reading é notes"}
+{"member":"navigator","mission":"m-unicode","at":"2026-10-15T08:16:06.468Z","kind":"finished","text":"ok","ok":true}
+exit: 0
+ℹ actual command: /opt/homebrew/Cellar/node/25.6.1/bin/node /Users/keshavrao/arena/empire/.agent-worktrees/atris-cli/builder-continue-improving-atris-member-boar-20261015-003022/bin/atris.js member board --json --follow
+ℹ character 界, split after byte 1, mode same-size rewrite:
+{"kind":"snapshot","at":"2026-10-15T08:16:07.573Z","dir":"/var/folders/t1/2_4kmb5n4c71dxm26zc8dgzr0000gn/T/atris-board-L9c7ZU","members":[]}
+{"member":"navigator","mission":"m-unicode","at":"2026-10-15T08:16:07.479Z","kind":"step","text":"reading 界 notes"}
+{"member":"navigator","mission":"m-unicode","at":"2026-10-15T08:16:07.479Z","kind":"finished","text":"ok","ok":true}
+exit: 0
+ℹ actual command: /opt/homebrew/Cellar/node/25.6.1/bin/node /Users/keshavrao/arena/empire/.agent-worktrees/atris-cli/builder-continue-improving-atris-member-boar-20261015-003022/bin/atris.js member board --json --follow
+ℹ character 界, split after byte 2, mode same-size rewrite:
+{"kind":"snapshot","at":"2026-10-15T08:16:08.582Z","dir":"/var/folders/t1/2_4kmb5n4c71dxm26zc8dgzr0000gn/T/atris-board-hIDW5b","members":[]}
+{"member":"navigator","mission":"m-unicode","at":"2026-10-15T08:16:08.488Z","kind":"step","text":"reading 界 notes"}
+{"member":"navigator","mission":"m-unicode","at":"2026-10-15T08:16:08.488Z","kind":"finished","text":"ok","ok":true}
+exit: 0
+ℹ actual command: /opt/homebrew/Cellar/node/25.6.1/bin/node /Users/keshavrao/arena/empire/.agent-worktrees/atris-cli/builder-continue-improving-atris-member-boar-20261015-003022/bin/atris.js member board --json --follow
+ℹ character 🧭, split after byte 1, mode same-size rewrite:
+{"kind":"snapshot","at":"2026-10-15T08:16:09.592Z","dir":"/var/folders/t1/2_4kmb5n4c71dxm26zc8dgzr0000gn/T/atris-board-Yc3O7l","members":[]}
+{"member":"navigator","mission":"m-unicode","at":"2026-10-15T08:16:09.499Z","kind":"step","text":"reading 🧭 notes"}
+{"member":"navigator","mission":"m-unicode","at":"2026-10-15T08:16:09.499Z","kind":"finished","text":"ok","ok":true}
+exit: 0
+ℹ actual command: /opt/homebrew/Cellar/node/25.6.1/bin/node /Users/keshavrao/arena/empire/.agent-worktrees/atris-cli/builder-continue-improving-atris-member-boar-20261015-003022/bin/atris.js member board --json --follow
+ℹ character 🧭, split after byte 2, mode same-size rewrite:
+{"kind":"snapshot","at":"2026-10-15T08:16:10.603Z","dir":"/var/folders/t1/2_4kmb5n4c71dxm26zc8dgzr0000gn/T/atris-board-Fmkcoc","members":[]}
+{"member":"navigator","mission":"m-unicode","at":"2026-10-15T08:16:10.509Z","kind":"step","text":"reading 🧭 notes"}
+{"member":"navigator","mission":"m-unicode","at":"2026-10-15T08:16:10.509Z","kind":"finished","text":"ok","ok":true}
+exit: 0
+ℹ actual command: /opt/homebrew/Cellar/node/25.6.1/bin/node /Users/keshavrao/arena/empire/.agent-worktrees/atris-cli/builder-continue-improving-atris-member-boar-20261015-003022/bin/atris.js member board --json --follow
+ℹ character 🧭, split after byte 3, mode same-size rewrite:
+{"kind":"snapshot","at":"2026-10-15T08:16:11.615Z","dir":"/var/folders/t1/2_4kmb5n4c71dxm26zc8dgzr0000gn/T/atris-board-KRkNbD","members":[]}
+{"member":"navigator","mission":"m-unicode","at":"2026-10-15T08:16:11.519Z","kind":"step","text":"reading 🧭 notes"}
+{"member":"navigator","mission":"m-unicode","at":"2026-10-15T08:16:11.519Z","kind":"finished","text":"ok","ok":true}
+exit: 0
+ℹ tests 127
+ℹ suites 0
+ℹ pass 127
+ℹ fail 0
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 96615.003

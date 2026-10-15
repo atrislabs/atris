@@ -2335,12 +2335,13 @@ test('a signed out run written with CRLF keeps its engine and sign-in fix when t
   }
 });
 
-for (const mode of ['before', 'after', 'new file', 'replacement', 'rewrite']) {
+for (const mode of ['before', 'after', 'new file', 'replacement', 'rewrite', 'same-size rewrite']) {
   const pendingAtStartup = mode === 'before';
   const newFile = mode === 'new file';
   const replacement = mode === 'replacement';
-  const rewrite = mode === 'rewrite';
-  test(`live follow preserves a multibyte character split ${mode === 'before' ? 'before startup' : mode === 'after' ? 'after startup' : newFile ? 'in a new file' : replacement ? 'across log replacement' : 'across an in-place log rewrite'}`, async (t) => {
+  const sameSizeRewrite = mode === 'same-size rewrite';
+  const rewrite = mode === 'rewrite' || sameSizeRewrite;
+  test(`live follow preserves a multibyte character split ${mode === 'before' ? 'before startup' : mode === 'after' ? 'after startup' : newFile ? 'in a new file' : replacement ? 'across log replacement' : sameSizeRewrite ? 'across a same-size log rewrite' : 'across an in-place log rewrite'}`, async (t) => {
     for (const [character, byte] of [['é', 1], ['界', 1], ['界', 2], ['🧭', 1], ['🧭', 2], ['🧭', 3]]) {
       const stamp = new Date().toISOString();
       const dir = fakeDir(newFile ? {} : { navigator: [`${stamp} m-unicode started: check text`] });
@@ -2351,6 +2352,14 @@ for (const mode of ['before', 'after', 'new file', 'replacement', 'rewrite']) {
       if (replacement || rewrite) {
         const abandoned = Buffer.from(`${stamp} m-old reading 🧨 abandoned text\n`);
         fs.appendFileSync(log, abandoned.subarray(0, abandoned.indexOf(Buffer.from('🧨')) + 1));
+      }
+      if (sameSizeRewrite) {
+        // Match the replacement's byte count, including an abandoned UTF-8 lead
+        // byte, so recovery cannot rely on a shrink or a changed file identity.
+        const oldPrefix = Buffer.from(`${stamp} m-old `);
+        const oldPartial = Buffer.concat([oldPrefix, Buffer.alloc(split - oldPrefix.length - 1, 32), Buffer.from([0xf0])]);
+        fs.writeFileSync(log, oldPartial);
+        assert.equal(fs.statSync(log).size, split);
       }
       if (pendingAtStartup) fs.appendFileSync(log, line.subarray(0, split));
       const child = spawn(process.execPath, [cliPath, 'member', 'board', '--json', '--follow'], {
@@ -2374,14 +2383,16 @@ for (const mode of ['before', 'after', 'new file', 'replacement', 'rewrite']) {
       try {
         const [snapshot] = await receive(1);
         assert.equal(snapshot.kind, 'snapshot');
-        if (newFile) assert.deepEqual(snapshot.members, [], 'the follower opens before the log exists');
+        if (newFile || sameSizeRewrite) assert.deepEqual(snapshot.members, [], 'no complete line is available at startup');
         else assert.equal(snapshot.members[0].step, '', 'an incomplete character stays out of the opening board');
         if (replacement) {
           fs.writeFileSync(`${log}.next`, line.subarray(0, split));
           fs.renameSync(`${log}.next`, log);
         } else if (rewrite) {
           const inode = fs.statSync(log).ino;
+          const oldSize = fs.statSync(log).size;
           fs.writeFileSync(log, line.subarray(0, split));
+          if (sameSizeRewrite) assert.equal(fs.statSync(log).size, oldSize, 'rewrite keeps the same byte count');
           assert.equal(fs.statSync(log).ino, inode, 'rewrite keeps the same file identity');
         } else if (!pendingAtStartup) fs.appendFileSync(log, line.subarray(0, split));
         await new Promise((r) => setTimeout(r, QUIET_MS));
