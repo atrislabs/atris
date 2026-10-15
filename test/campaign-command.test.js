@@ -286,4 +286,21 @@ test('start --protect saves paths and the start commit outside the repo; guard n
 
   assert.equal(cli('start', 'Q', '--judge', 'exit 1', '--budget', '5', '--id', 'cmp-q').status, 0);
   assert.match(cli('guard', 'cmp-q').stdout, /protects nothing/);
+
+test('a plain sentence with no verb starts a campaign; verbs stay verbs and one-word typos are refused', async () => {
+  const store = createMemoryStore();
+  const started = await run(store, ['Make the moon landing replay load fast', '--judge', 'exit 1', '--seat', 'builder', '--id', 'cmp-moon']);
+  assert.equal(started.code, 0, started.err);
+  assert.deepEqual(started.judged, ['exit 1']);
+  const view = getCampaign(store, 'cmp-moon');
+  assert.equal(view.title, 'Make the moon landing replay load fast');
+  assert.deepEqual(view.seats, [{ member: 'builder', role: null }]);
+  assert.equal((await run(store, ['A sentence with no judge'])).code, 2);
+  const shown = await run(store, ['show', 'cmp-moon']);
+  assert.equal(shown.code, 0);
+  assert.equal((await run(store, ['show', 'cmp-missing'])).code, 1);
+  const typo = await run(store, ['shwo', 'cmp-moon']);
+  assert.equal(typo.code, 2);
+  assert.match(typo.err, /unknown verb shwo/);
+  assert.equal(getCampaign(store, 'cmp-shwo'), null);
 });
