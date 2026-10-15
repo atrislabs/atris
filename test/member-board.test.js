@@ -821,6 +821,44 @@ test('watch mode redraws at once when the window is resized', async () => {
   }
 });
 
+test('the timed watch redraw moves ages forward with no log change', async (t) => {
+  t.mock.timers.enable({ apis: ['setInterval', 'setTimeout', 'Date'], now: NOW });
+  const dir = fakeDir({ builder: [`${at(60)} m-1 started: fix the login flow`, `${at(30)} m-1 running: npm test`] });
+  const out = process.stdout;
+  const saved = ['isTTY', 'columns', 'rows'].map((k) => [k, Object.getOwnPropertyDescriptor(out, k)]);
+  const write = out.write;
+  const env = process.env.ATRIS_PROGRESS_DIR;
+  const frames = [];
+  let done;
+  try {
+    process.env.ATRIS_PROGRESS_DIR = dir;
+    Object.defineProperty(out, 'isTTY', { value: true, configurable: true, writable: true });
+    Object.defineProperty(out, 'columns', { value: 100, configurable: true, writable: true });
+    Object.defineProperty(out, 'rows', { value: 20, configurable: true, writable: true });
+    out.write = (chunk) => { frames.push(String(chunk)); return true; };
+    done = memberBoardCommand('--watch');
+    t.mock.timers.tick(2_999);
+    assert.equal(frames.length, 1, 'no redraw before the 3s timer');
+    t.mock.timers.tick(1);
+    t.mock.timers.tick(3_000);
+    process.emit('SIGINT');
+  } finally {
+    out.write = write;
+    for (const [k, d] of saved) { if (d) Object.defineProperty(out, k, d); else delete out[k]; }
+    if (env === undefined) delete process.env.ATRIS_PROGRESS_DIR; else process.env.ATRIS_PROGRESS_DIR = env;
+  }
+  try {
+    await done;
+    const row = (f) => f.split('\n').find((l) => l.includes('builder'));
+    assert.equal(frames.length, 3, 'one frame at start, one per timed redraw');
+    assert.match(row(frames[0]), /\s30s ago\s/);
+    assert.match(row(frames[1]), /\s33s ago\s/, 'a timed redraw reads the board again, not an old frame');
+    assert.match(row(frames[2]), /\s36s ago\s/);
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
 test('watch mode uses the whole screen in one to three terminal rows', async () => {
   const dir = fakeDir({
     builder: [`${at(100)} m-1 started: job`, `${at(80)} m-1 finished: failed (timed out)`],
