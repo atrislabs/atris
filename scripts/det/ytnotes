@@ -157,7 +157,9 @@ stop_agy() {
 GEMINI_QUOTA="$WORK/gemini_quota_until"
 gemini_quota_wall() {
   local until
-  read -r until < "$GEMINI_QUOTA" 2>/dev/null || return 1
+  # Most runs have no quota memory; a missing file must not print an error.
+  [ -r "$GEMINI_QUOTA" ] || return 1
+  read -r until < "$GEMINI_QUOTA" || return 1
   case "$until" in ''|*[!0-9]*) return 1 ;; esac
   [ "$(date +%s)" -lt "$until" ]
 }

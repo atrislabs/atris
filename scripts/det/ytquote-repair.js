@@ -50,6 +50,32 @@ function probeHits(quote, flatTranscript) {
   return Boolean(probe && flatTranscript.includes(probe));
 }
 
+// Writers also quote words inside ordinary lines: A "company brain" holds...
+// Those spans are claims about what was said, so they are checked too. A span
+// whose words are not in the transcript, in order, keeps its words and loses
+// its quote marks. A one- or two-word span that is in the transcript names a
+// term rather than quoting a line, so it becomes italics: double quotes in the
+// notes then always mean a checked quote of at least three words.
+const INLINE_QUOTE = /(["\u201c])([^"\u201c\u201d]+?)(["\u201d])/g;
+const TERM_MAX_WORDS = 2;
+
+function checkInlineQuotes(line, paddedFlat) {
+  let unquoted = 0;
+  const text = line.replace(INLINE_QUOTE, (whole, open, inner) => {
+    const words = normalizeText(inner);
+    if (!words) return whole;
+    if (!paddedFlat.includes(` ${words} `)) {
+      unquoted += 1;
+      return inner;
+    }
+    if (words.split(' ').length > TERM_MAX_WORDS) return whole;
+    // Punctuation inside the marks stays outside the italics: *didn't happen*.
+    const term = inner.trim().match(/^([^A-Za-z0-9]*)(.*?[A-Za-z0-9])([^A-Za-z0-9]*)$/);
+    return term ? `${term[1]}*${term[2]}*${term[3]}` : whole;
+  });
+  return { text, unquoted };
+}
+
 function parseTranscript(text) {
   const segments = [];
   let current = null;
@@ -117,18 +143,22 @@ function repairNotes(notes, transcript) {
   const hadTrailing = /[\r\n]$/.test(raw);
   const lines = raw.replace(/\r\n/g, '\n').replace(/\n$/, '').split('\n');
   if (lines.length === 1 && lines[0] === '' && raw === '') {
-    return { text: '', kept: 0, repaired: 0, dropped: 0 };
+    return { text: '', kept: 0, repaired: 0, dropped: 0, unquoted: 0 };
   }
 
   const out = [];
   let kept = 0;
   let repaired = 0;
   let dropped = 0;
+  let unquoted = 0;
+  const paddedFlat = ` ${flat} `;
 
   for (const line of lines) {
     const match = parseQuoteLine(line);
     if (!match) {
-      out.push(line);
+      const inline = checkInlineQuotes(line, paddedFlat);
+      out.push(inline.text);
+      unquoted += inline.unquoted;
       continue;
     }
 
@@ -153,7 +183,7 @@ function repairNotes(notes, transcript) {
 
   let text = out.join(nl);
   if (hadTrailing || raw.length) text += nl;
-  return { text, kept, repaired, dropped };
+  return { text, kept, repaired, dropped, unquoted };
 }
 
 function main() {
@@ -162,6 +192,7 @@ function main() {
   let kept = 0;
   let repaired = 0;
   let dropped = 0;
+  let unquoted = 0;
 
   try {
     if (notesPath && transcriptPath && fs.existsSync(notesPath)) {
@@ -174,14 +205,17 @@ function main() {
       kept = result.kept;
       repaired = result.repaired;
       dropped = result.dropped;
+      unquoted = result.unquoted;
     }
   } catch {
     kept = 0;
     repaired = 0;
     dropped = 0;
+    unquoted = 0;
   }
 
   console.error(`quotes: ${kept} kept, ${repaired} repaired, ${dropped} dropped`);
+  if (unquoted) console.error(`inline quotes not in the transcript: ${unquoted}, quote marks removed`);
   process.exit(0);
 }
 
