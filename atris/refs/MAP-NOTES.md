@@ -2427,4 +2427,6 @@ When the receipt names a different model than the one asked for, the chat prints
 Regression checks live in `test/ax.test.js`, `test/runner-command.test.js`, and `test/engine-ask.test.js`.
 Verify: `npm run test:fast && node --test test/ax.test.js test/runner-command.test.js`.
 
-Startup repair command quoting: `lib/engine-resource.js:339` keeps punctuation literal in copied sweep commands. Real shell regression: `test/engine-resource.test.js:4541`, seven path forms, sh and zsh when available.
+Startup repair command quoting: `lib/engine-resource.js:345` keeps punctuation literal in copied sweep commands. Real shell regression: `test/engine-resource.test.js:4541`, seven path forms, sh and zsh when available.
+
+Executable startup repair lookup: `lib/engine-resource.js:320`; real shell regression at `test/engine-resource.test.js:4564` checks skipped entries and executable links.

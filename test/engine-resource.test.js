@@ -3316,13 +3316,13 @@ test('the fix command names this checkout when the atris on PATH is another inst
   try {
     const bin = path.join(tmp, 'checkout', 'bin');
     fs.mkdirSync(bin, { recursive: true });
-    fs.writeFileSync(path.join(bin, 'atris'), '');
+    fs.writeFileSync(path.join(bin, 'atris'), '', { mode: 0o755 });
     const linked = path.join(tmp, 'linked');
     fs.mkdirSync(linked);
     fs.symlinkSync(path.join(bin, 'atris'), path.join(linked, 'atris'));
     const other = path.join(tmp, 'other');
     fs.mkdirSync(other);
-    fs.writeFileSync(path.join(other, 'atris'), '');
+    fs.writeFileSync(path.join(other, 'atris'), '', { mode: 0o755 });
     const empty = path.join(tmp, 'empty');
     fs.mkdirSync(empty);
     const script = path.join(bin, 'atris.js');
@@ -4554,6 +4554,50 @@ test('copied startup repair commands preserve shell punctuation in checkout path
         assert.strictEqual(run.status, 0, `${name}: ${run.stderr}`);
         assert.strictEqual(run.stdout, '["engine","sweep","--fix-startup"]', `${shell}: ${name}`);
       }
+    }
+  } finally {
+    fs.rmSync(root, { recursive: true, force: true });
+  }
+});
+
+
+test('startup repair command lookup skips PATH entries that the shell cannot run', () => {
+  const { atrisCommand, pathAtrisRecordsRuns } = require('../lib/engine-resource');
+  const { spawnSync } = require('node:child_process');
+  const root = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'engine-command-executable-')));
+  try {
+    const bin = path.join(root, 'checkout', 'bin');
+    fs.mkdirSync(bin, { recursive: true });
+    const script = path.join(bin, 'atris.js');
+    fs.writeFileSync(script, `#!${process.execPath}\nprocess.stdout.write(JSON.stringify(process.argv.slice(2)))`, { mode: 0o755 });
+    fs.symlinkSync(script, path.join(bin, 'atris'));
+    fs.mkdirSync(path.join(root, 'checkout', 'lib'));
+    fs.writeFileSync(path.join(root, 'checkout', 'lib', 'engine-resource.js'), '');
+    for (const kind of ['file', 'directory', 'broken-link', 'non-executable-link']) {
+      const blocked = path.join(root, kind);
+      fs.mkdirSync(blocked);
+      const entry = path.join(blocked, 'atris');
+      if (kind === 'file') fs.writeFileSync(entry, '', { mode: 0o644 });
+      if (kind === 'directory') fs.mkdirSync(entry);
+      if (kind === 'broken-link') fs.symlinkSync(path.join(root, 'missing'), entry);
+      if (kind === 'non-executable-link') {
+        const target = path.join(blocked, 'target');
+        fs.writeFileSync(target, '', { mode: 0o644 });
+        fs.symlinkSync(target, entry);
+      }
+      const pathEnv = [blocked, bin, path.dirname(process.execPath)].join(path.delimiter);
+      const env = { ...process.env, PATH: pathEnv };
+      const lookup = spawnSync('/bin/sh', ['-c', 'command -v atris'], { env, encoding: 'utf8' });
+      assert.strictEqual(lookup.status, 0, lookup.stderr);
+      assert.strictEqual(lookup.stdout.trim(), path.join(bin, 'atris'), kind);
+      const command = atrisCommand({ pathEnv, binDir: bin, home: '' });
+      assert.strictEqual(command, 'atris', kind);
+      assert.strictEqual(pathAtrisRecordsRuns({ pathEnv }), true, kind);
+      const run = spawnSync('/bin/sh', ['-c', `${command} engine sweep --fix-startup`], { env, encoding: 'utf8' });
+      assert.strictEqual(run.status, 0, run.stderr);
+      assert.strictEqual(run.stdout, '["engine","sweep","--fix-startup"]', kind);
+      assert.strictEqual(atrisCommand({ pathEnv: blocked, binDir: bin, home: '' }), `node ${script}`, kind);
+      assert.strictEqual(pathAtrisRecordsRuns({ pathEnv: blocked }), true, kind);
     }
   } finally {
     fs.rmSync(root, { recursive: true, force: true });
