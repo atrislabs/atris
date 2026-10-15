@@ -1371,7 +1371,7 @@ test('multiline pin reasons stay on one line in refusal and real cleanup reports
 // A branch copy whose commits have not landed yet is work in progress, so
 // reap counts it on one line. A detached copy's commits ride no branch, so
 // it keeps its own line: that one needs a person.
-test('reap counts branch copies still at work and names detached ones', () => {
+test('reap counts branch copies still at work and names detached and pinned ones', () => {
   const { base, repo, wt } = landedWorktree();
   try {
     fs.writeFileSync(path.join(wt, 'work.txt'), 'x\n');
@@ -1382,10 +1382,20 @@ test('reap counts branch copies still at work and names detached ones', () => {
     fs.writeFileSync(path.join(loose, 'loose.txt'), 'x\n');
     git(loose, ['add', '.']);
     git(loose, ['commit', '-qm', 'made on no branch']);
+    const pinned = path.join(base, 'pinned-wt');
+    git(repo, ['worktree', 'add', '-q', '-b', 'pinned-run', pinned, 'master']);
+    fs.writeFileSync(path.join(pinned, 'pinned.txt'), 'keep this work\n');
+    git(pinned, ['add', '.']);
+    git(pinned, ['commit', '-qm', 'pinned work in progress']);
+    const reason = 'writer paused\n  please keep this copy';
+    git(repo, ['worktree', 'lock', '--reason', reason, pinned]);
+    const pin = path.join(git(pinned, ['rev-parse', '--absolute-git-dir']), 'locked');
     const aged = new Date(Date.now() - 2 * 60 * 60 * 1000);
-    for (const dir of [wt, loose]) fs.utimesSync(dir, aged, aged);
+    for (const dir of [wt, loose, pinned, pin]) fs.utimesSync(dir, aged, aged);
+    const pinnedLine = `${pinned} (pinned by git worktree lock, 2 h old: writer paused please keep this copy)`;
     const receipt = reap(repo, { base: 'master', dryRun: true, remote: false, activeCwds: [] });
-    assert.equal(receipt.keptWorktrees.length, 2, JSON.stringify(receipt.keptWorktrees));
+    assert.equal(receipt.keptWorktrees.length, 3, JSON.stringify(receipt.keptWorktrees));
+    assert.ok(receipt.keptWorktrees.includes(pinnedLine), JSON.stringify(receipt.keptWorktrees));
     assert.deepEqual(receipt.keptInFlight.map((k) => k.split(' (')[0]), [wt]);
     const reapArgs = [path.resolve(__dirname, '../bin/atris.js'), 'land', '--reap', '--no-remote', '--base', 'master'];
     const json = spawnSync(process.execPath, [...reapArgs, '--dry-run', '--json'], { cwd: repo, encoding: 'utf8' });
@@ -1401,6 +1411,13 @@ test('reap counts branch copies still at work and names detached ones', () => {
       assert.deepEqual(lines.filter((line) => line.includes('engine-wt')), [], run.stdout);
       assert.deepEqual(lines.filter((line) => line.includes('loose-wt')),
         [`  ✋ kept, needs a human: ${loose} (unlanded commits: 1 never landed, oldest 0d, needs landing)`]);
+      assert.deepEqual(lines.filter((line) => line.includes('pinned-wt')),
+        [`  ✋ kept, needs a human: ${pinnedLine}`]);
+      assert.equal(fs.readFileSync(pin, 'utf8'), `${reason}\n`);
+      assert.equal(fs.readFileSync(path.join(pinned, 'pinned.txt'), 'utf8'), 'keep this work\n');
+      assert.ok(git(repo, ['worktree', 'list', '--porcelain']).includes(`worktree ${pinned}\n`));
+      assert.equal(git(repo, ['rev-parse', 'pinned-run']), git(pinned, ['rev-parse', 'HEAD']));
+      assert.deepEqual(removalLines(repo), []);
       console.log(`command: node bin/atris.js ${args.slice(1).join(' ')} (disposable repository)`);
       console.log(run.stdout.trim());
       console.log(`exit: ${run.status}`);

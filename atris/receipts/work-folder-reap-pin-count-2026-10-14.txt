@@ -1,0 +1,28 @@
+Grouped cleanup has a real pinned-copy regression alongside ordinary branch and detached work.
+Files: test/worktree-removal-guard.test.js, atris/MAP.md, atris/refs/MAP-NOTES.md, atris/team/architect/logs/2026-10-14.md, this receipt.
+Plan: add pinned unlanded work -> real preview, JSON preview and apply -> named pin and retained content.
+Verify: node --test test/worktree-removal-guard.test.js test/member-tidy.test.js && node bin/atris.js slop --staged
+The task check restores the supported caller Node directory before running the exact required checks because login startup selects an older runtime. No mission settings changed.
+Brain activation and compilation offered plans only; no generated policy files changed.
+next_push: make member tidy name a pinned unlanded copy before grouping ordinary work still in progress.
+
+Required checks: exit 0; 69 passed, 0 failed, 0 skipped, 0 pending; staged writing check clean in 5 files.
+Task execution record: atris/runs/2026-10-15-task-acw-2-2026-10-15T06-59-46-364Z.json
+The task runner shortens saved command output, so the changed real-command regression was also run directly to retain this excerpt.
+Command: node --test --test-name-pattern='reap counts branch copies still at work' test/worktree-removal-guard.test.js
+command: node bin/atris.js land --reap --no-remote --base master --dry-run (disposable repository)
+landing cleanup preview: would clear 0 pieces of work, 0 side copies:
+  still at work, commits not landed yet, left alone: 1
+  ✋ kept, needs a human: /private/var/folders/t1/2_4kmb5n4c71dxm26zc8dgzr0000gn/T/atris-removal-guard-oFDvvn/pinned-wt (pinned by git worktree lock, 2 h old: writer paused please keep this copy)
+exit: 0
+command: node bin/atris.js land --reap --no-remote --base master (disposable repository)
+landing cleanup done: 0 pieces cleared, 0 side copies removed
+  still at work, commits not landed yet, left alone: 1
+  ✋ kept, needs a human: /private/var/folders/t1/2_4kmb5n4c71dxm26zc8dgzr0000gn/T/atris-removal-guard-oFDvvn/pinned-wt (pinned by git worktree lock, 2 h old: writer paused please keep this copy)
+exit: 0
+Direct regression exit: 0; 1 passed, 0 failed.
+Metric: one existing real-command regression expanded from two to three retained copies, including a pinned unlanded branch. No production change needed.
+Task is ready for review using the saved execution receipt; no acceptance claimed.
+The requested starting branch is an ancestor of HEAD (git merge-base --is-ancestor, exit 0).
+Member log continued after midnight in atris/team/architect/logs/2026-10-15.md.
+layer: behaviors
