@@ -186,4 +186,4 @@ Bulk approval preview scans: `test/commands.test.js:13448` runs the default, all
 
 Single-row approval previews: `test/commands.test.js:13337` runs the JSON and text dry runs together, preserving the later unchanged-status read and all sequential review and acceptance writes. The missing and malformed actor refusals also run together before the previews; both exit before opening the store.
 
-Proof-only refusal concurrency: `test/commands.test.js:13250` runs done, finish and positive-review refusals together before readiness. All CLI assertions and later mutation order remain unchanged.
+Proof-only refusal concurrency: `test/commands.test.js:13250` runs done, finish and positive-review refusals together before readiness, then accept and automatic-accept refusals together after zero-reward review. All CLI assertions and later mutation order remain unchanged.

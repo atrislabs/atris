@@ -13312,16 +13312,18 @@ test('task proof-only agent env blocks acceptance verbs', async () => {
     ], { cwd: dir, env });
     assert.equal(zeroReview.status, 0, zeroReview.stderr);
 
-    const accept = runCli(['task', 'accept', ref, '--as', 'keshavrao', '--json'], { cwd: dir, env });
+    // Both guards refuse before task writes; inspect the row only after both exit.
+    const [accept, autoAccept] = await Promise.all([
+      runCliAsync(['task', 'accept', ref, '--as', 'keshavrao', '--json'], { cwd: dir, env }),
+      runCliAsync([
+        'task', 'auto-accept-certified',
+        '--confirm-human-accept',
+        '--as', 'keshavrao',
+        '--json',
+      ], { cwd: dir, env }),
+    ]);
     assert.equal(accept.status, 2);
     assert.equal(JSON.parse(accept.stdout).reason, 'agent_proof_only_human_accept_blocked');
-
-    const autoAccept = runCli([
-      'task', 'auto-accept-certified',
-      '--confirm-human-accept',
-      '--as', 'keshavrao',
-      '--json',
-    ], { cwd: dir, env });
     assert.equal(autoAccept.status, 2);
     assert.equal(JSON.parse(autoAccept.stdout).reason, 'agent_proof_only_human_accept_blocked');
 
