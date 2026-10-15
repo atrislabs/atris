@@ -12,7 +12,7 @@ const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
 const { spawnSync } = require('node:child_process');
-const { readEngineRegistry, setEngineHealth } = require('../lib/engine-registry');
+const { engineRegistryFile, readEngineRegistry } = require('../lib/engine-registry');
 const fleet = require('../lib/fleet');
 
 const ENV_KEYS = [
@@ -49,8 +49,15 @@ async function withRoom(fn, { roster = TEAM } = {}) {
   process.env.ATRIS_MACHINE_ROSTER_PATH = path.join(home, '.atris', 'roster.json');
   process.env.ATRIS_ROUTER_EXPLAIN = '0';
   process.env.PATH = `${bin}${path.delimiter}${saved.get('PATH') || ''}`;
-  readEngineRegistry(root);
-  for (const name of ['devin', 'grok', 'cursor', 'codex', 'claude']) setEngineHealth(name, 'ready', root);
+  // Seed setup health together; the real runs below still record updates.
+  const registry = readEngineRegistry(root, { persist: false });
+  const ready = new Set(['devin', 'grok', 'cursor', 'codex', 'claude']);
+  registry.engines = registry.engines.map((engine) => ready.has(engine.id)
+    ? { ...engine, health: { status: 'ready' } }
+    : engine);
+  const registryFile = engineRegistryFile(root);
+  fs.mkdirSync(path.dirname(registryFile), { recursive: true });
+  fs.writeFileSync(registryFile, `${JSON.stringify(registry, null, 2)}\n`);
   try {
     return await fn({ root, home, bin, wt });
   } finally {
