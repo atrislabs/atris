@@ -20,6 +20,10 @@
 // turns a dash into a comma right before "the", "its", "our", "their" or
 // "your" and what reads like a subject and a verb is listed, each fix once,
 // so the splices still left are one count to drive down.
+// With --which each probe also lists the dash rules that match at each of
+// its dashes, in the order the fix tries them, and the checks their
+// callbacks run that match there, some to allow a join and some to block
+// it, so a wrong join starts from the rule that made it, not a guess.
 // With --probe the text given is the corpus: each probe is fixed by the
 // base fixer and the working one and printed in full, moved or not, so a
 // rule change can be checked on one line without a throwaway script.
@@ -37,6 +41,7 @@
 //   node scripts/slop-fix-diff.js --splices ~/notes
 //   node scripts/slop-fix-diff.js --probe 'We fixed it \u2014 the loop kicks work.'
 //   node scripts/slop-fix-diff.js --probe-file test/fixtures/slop-fix-edges.txt
+//   node scripts/slop-fix-diff.js --which --probe 'One place \u2014 the team calls schedule.'
 
 const fs = require('fs');
 const os = require('os');
@@ -207,8 +212,41 @@ function spliceShapes(sources, fixes) {
   return [...found.values()];
 }
 
+// Loads the working fixer with every pattern that reads a dash exported:
+// the ones the dash fix runs as a replace, in its order, and the ones its
+// callbacks test as a check. A replace rule matches where one of its
+// matches starts at the space before the dash; a check is tested on the
+// text from there, the way the callbacks call it.
+function dashRules() {
+  const file = path.join(ROOT, 'commands', 'slop.js');
+  const source = fs.readFileSync(file, 'utf8');
+  const names = [...source.matchAll(/^const ([A-Z][A-Z0-9_]*) = (?:new RegExp\(|\/)/gm)].map((m) => m[1]);
+  const mod = new Module(file, module);
+  mod.filename = file;
+  mod.paths = Module._nodeModulePaths(path.dirname(file));
+  mod._compile(`${source}\nmodule.exports.__dashRules = { ${names.join(', ')} };`, file);
+  const body = source.slice(source.indexOf('function fixEmDash('));
+  const order = (name) => body.indexOf(`.replace(${name},`);
+  const all = Object.entries(mod.exports.__dashRules).filter(([, re]) => re instanceof RegExp && re.source.includes('\\u2014'));
+  return {
+    rules: all.filter(([name]) => order(name) >= 0).sort((a, b) => order(a[0]) - order(b[0])),
+    checks: all.filter(([name]) => order(name) < 0 && name !== 'DASH'),
+  };
+}
+
+function whichLines(text, { rules, checks }) {
+  const out = [];
+  for (const m of text.matchAll(/\s*\u2014/g)) {
+    const at = m.index;
+    const tries = rules.filter(([, re]) => [...text.matchAll(new RegExp(re.source, re.flags.includes('g') ? re.flags : re.flags + 'g'))].some((hit) => hit.index === at)).map(([name]) => name);
+    const held = checks.filter(([, re]) => new RegExp(re.source, re.flags.replace('g', '')).test(text.slice(at))).map(([name]) => name);
+    out.push(`  tries ${tries.join(', ') || '(none)'}${held.length ? `; checks ${held.join(', ')}` : ''}`);
+  }
+  return out;
+}
+
 const USAGE = 'usage: node scripts/slop-fix-diff.js [--base <ref>] [--limit <n>] [--lines] [--audit] [--splices] <folder or file>...\n' +
-  '       node scripts/slop-fix-diff.js [--base <ref>] --probe "<text>" [--probe "<text>"]... [--probe-file <file>]';
+  '       node scripts/slop-fix-diff.js [--base <ref>] --probe "<text>" [--probe "<text>"]... [--probe-file <file>] [--which]';
 
 // Fixes each probe with the base fixer and the working one and prints every
 // probe, so the answer to "what does the fixer do to this line" is one run.
@@ -231,7 +269,7 @@ function readProbeFile(file, probes, wants, gaps) {
 
 // A gap never fails the run: it counts as open until the fixer gives the
 // fix it names, so closing gaps is a number that moves.
-function probe(probes, base, wants = [], gaps = []) {
+function probe(probes, base, wants = [], gaps = [], which = null) {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'slop-fix-diff-'));
   const show = (text) => text.split('\n').join(' / ');
   try {
@@ -253,6 +291,7 @@ function probe(probes, base, wants = [], gaps = []) {
       if (want !== null) console.log(`  want  ${show(want)}`);
       if (gap !== null) console.log(`  gap   ${show(gap)}`);
       if (odd.length) console.log(`  odd   ${odd.join(', ')}`);
+      if (which) for (const line of whichLines(text, which)) console.log(line);
       console.log('');
     });
     console.log(`${probes.length} probe${probes.length === 1 ? '' : 's'}; ${moved} moved against ${base}`);
@@ -272,6 +311,7 @@ function main(argv) {
   let paragraphs = true;
   let audit = false;
   let spliceList = false;
+  let which = false;
   const probes = [];
   const wants = [];
   const gaps = [];
@@ -283,6 +323,7 @@ function main(argv) {
     else if (argv[i] === '--lines') paragraphs = false;
     else if (argv[i] === '--audit') audit = true;
     else if (argv[i] === '--splices') spliceList = true;
+    else if (argv[i] === '--which') which = true;
     else if (argv[i] === '--probe') probes.push(expandTyped(argv[++i] || ''));
     else if (argv[i] === '--probe-file') readProbeFile(path.resolve(argv[++i] || ''), probes, wants, gaps);
     else if (argv[i] === '--help' || argv[i] === '-h') {
@@ -290,7 +331,7 @@ function main(argv) {
       return 0;
     } else targets.push(argv[i]);
   }
-  if (probes.length) return probe(probes, base, wants, gaps);
+  if (probes.length) return probe(probes, base, wants, gaps, which ? dashRules() : null);
   if (!targets.length) {
     console.error(USAGE);
     return 2;

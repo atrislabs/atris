@@ -4185,6 +4185,19 @@ test('the fix diff script lists each comma it writes before a "the" clause once'
   assert.match(r.stdout, /; 2 fixes put a comma before "the"/);
 });
 
+test('the fix diff script lists the dash rules and checks that match a probe', () => {
+  const { spawnSync } = require('node:child_process');
+  // a wrong join starts from the rule that made it: each dash in a probe
+  // lists the replace rules that match there, in the order the fix tries
+  // them, and the checks their callbacks run; a plain probe lists none
+  const script = path.join(__dirname, '..', 'scripts', 'slop-fix-diff.js');
+  const run = (...args) => spawnSync(process.execPath, [script, ...args], { encoding: 'utf8', cwd: path.join(__dirname, '..') });
+  const r = run('--which', '--probe', String.raw`One place \u2014 the agent runs dashboard view.`);
+  assert.equal(r.status, 0, r.stderr);
+  assert.match(r.stdout, /^ {2}tries NOUN_CLAUSE_AFTER_DASH, BARE_PHRASE_CLAUSE_AFTER_DASH, PLAIN_CLAUSE_AFTER_DASH; checks NAME_TAIL_PHRASE$/m);
+  assert.doesNotMatch(run('--probe', String.raw`One place \u2014 the agent runs dashboard view.`).stdout, /tries/);
+});
+
 test('the fix diff script marks a fix that gains doubled punctuation or loses paren balance', () => {
   const { oddMarks } = require('../scripts/slop-fix-diff.js');
   const D = String.fromCharCode(0x2014);
