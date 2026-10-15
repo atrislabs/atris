@@ -460,3 +460,16 @@ This was the last hop \u2014 the send executor existed with no producer.
 => This was the last hop; the send executor existed with no producer.
 Keep notes \u2014 the files stored in atris.
 => Keep notes, the files stored in atris.
+
+# "shipped", "landed", "moved" and "closed" before "in", "with" and kin
+# start a clause, since after a dash in the real docs they never trail a
+# noun; "passed" does, so it keeps the comma
+We kept the call short \u2014 the deal moved to a comp trial.
+=> We kept the call short; the deal moved to a comp trial.
+Check the input \u2014 the system prompt string passed to Gemini Flash.
+=> Check the input, the system prompt string passed to Gemini Flash.
+
+# a phrase on a noun with "shipped" and a place word joins as a clause; the
+# real docs hold no line like it, while four real clauses need the join
+Release notes \u2014 the features shipped in v2.
+~> Release notes, the features shipped in v2.
