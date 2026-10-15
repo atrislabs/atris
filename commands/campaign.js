@@ -36,6 +36,7 @@ function printHelp() {
   console.log('  atris campaign event <id> <type> [--data \'<json>\']   append any event by hand');
   console.log('  atris campaign run <id> [--parallel 3] [--max-steps 20] [--max-ticks 3] [--runner auto]');
   console.log('        the campaign runs itself: proposes missions, runs them at once, judges, repeats until done, broke, or needing you');
+  console.log('        add --work 50m --break 10m [--rounds N] to work in rounds; each break judges and writes lessons the next round plans from');
   console.log('  atris campaign step <id>               one step of that loop');
   console.log('  atris campaign propose <id> [--count 3]   ask the owner\'s engine for the next missions');
   console.log('  atris campaign sync <id>               trade events with the Atris cloud so web and iOS show it');
@@ -55,7 +56,7 @@ function money(value) {
 }
 
 // The flags this command understands, so positional words are what is left.
-const VALUE_FLAGS = ['--mission', '--parallel', '--max-steps', '--max-ticks', '--runner', '--count', '--judge', '--budget', '--owner', '--seat', '--bet', '--wrong-if', '--parent', '--id', '--role', '--add', '--data', '--timeout', '--as'];
+const VALUE_FLAGS = ['--work', '--break', '--rounds', '--mission', '--parallel', '--max-steps', '--max-ticks', '--runner', '--count', '--judge', '--budget', '--owner', '--seat', '--bet', '--wrong-if', '--parent', '--id', '--role', '--add', '--data', '--timeout', '--as'];
 
 function positionals(args) {
   const out = [];
@@ -493,6 +494,7 @@ async function cmdLoop(args, ctx, verb) {
     store: ctx.store,
     log: ctx.asJson ? () => {} : (line) => console.log(line),
     judge: (command) => ctx.judge(command, JUDGE_TIMEOUT_SECONDS),
+    lessons: (id) => require('../lib/campaign-cadence').readLessons(process.cwd(), id),
     ...(sync ? { sync } : {}),
     ...(ctx.loopDeps || {}),
   });
@@ -506,6 +508,22 @@ async function cmdLoop(args, ctx, verb) {
     const result = await loop.step(view.id);
     const after = getCampaign(ctx.store, view.id);
     ctx.out(`${result.stop ? `stopped: ${result.reason}` : `did: ${result.did}`}\n${renderShow(after)}`, { ok: true, ...result, campaign: after, next: decide(after), sync_warnings: syncWarnings });
+    return 0;
+  }
+  const work = readFlag(args, '--work', '');
+  const pause = readFlag(args, '--break', '');
+  const rounds = readFlag(args, '--rounds', '');
+  if (work || pause || rounds) {
+    const { makeCadence } = require('../lib/campaign-cadence');
+    const { askOwner } = require('../lib/campaign-loop');
+    let cadence;
+    try {
+      cadence = makeCadence(process.cwd(), loop, { work, break: pause, rounds }, { store: ctx.store, log: ctx.asJson ? () => {} : (line) => console.log(line), ask: (ctx.loopDeps && ctx.loopDeps.ask) || askOwner });
+    } catch (err) {
+      return ctx.fail(err.message);
+    }
+    const result = await cadence.run(view.id);
+    ctx.out(`stopped after ${result.rounds} round${result.rounds === 1 ? '' : 's'}: ${result.reason}\n${renderShow(result.campaign)}`, { ok: true, ...result, next: decide(result.campaign) });
     return 0;
   }
   const maxSteps = Number(readFlag(args, '--max-steps', '')) || 20;
