@@ -3064,6 +3064,25 @@ test('fix joins a "the" subject and its verb when one plural or a code name ends
   ]);
 });
 
+test('fix joins "this", a noun and a verb in "s" after a dash with a semicolon', () => {
+  // from real repo text: "simulator plays, this benchmark shows our gym's
+  // reward function works" spliced, since only "the", "a" and kin opened a
+  // subject. "this" before a noun with no verb, or "this time", stays.
+  const file = tmpFile('this-subject.md', [
+    "Those are simulator plays \u2014 this benchmark shows our gym's reward function works.",
+    'Zero change to the doc \u2014 this tick writes known data to a scaffold.',
+    'Two lines \u2014 this file and the next.',
+    'Same as before \u2014 this time it works.',
+  ].join('\n'));
+  const { changes } = applyFixes([file], RULES, { write: false });
+  assert.deepEqual(changes.map((c) => c.after), [
+    "Those are simulator plays; this benchmark shows our gym's reward function works.",
+    'Zero change to the doc; this tick writes known data to a scaffold.',
+    'Two lines, this file and the next.',
+    'Same as before, this time it works.',
+  ]);
+});
+
 test('fix joins a subject and its verb when "a", a code name and a noun open the object', () => {
   // from a heartbeat note: "a nightly job appends a `next_move` event to
   // the ledger" spliced, since the object's first word could not be a code
