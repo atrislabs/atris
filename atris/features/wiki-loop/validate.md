@@ -1,14 +1,14 @@
 ---
-last_compiled: 2026-07-25
+last_compiled: 2026-10-14
 sources:
   - commands/loop.js:1-114 (report builder, dry-run/json/limit, STATUS/log writes)
-  - commands/wiki.js:549-557 (wiki loop alias)
-  - lib/wiki.js:436-619 (page reads, stale checks, orphan checks)
-  - lib/wiki.js:620-705 (suggested sources, STATUS, log)
-  - bin/atris.js:922-940 (showLoopHelp)
-  - bin/atris.js:2743-2751 (top-level loop route, now via commands/loop-front.js)
-  - test/commands.test.js:18016 (loop help coverage)
-  - test/commands.test.js:19715-19784 (loop stale/suggest/alias coverage)
+  - commands/wiki.js:586-595 (wiki loop alias and cloud guidance)
+  - lib/wiki.js:443-573 (page reads, stale checks, orphan checks)
+  - lib/wiki.js:745-829 (suggested sources, STATUS, log)
+  - bin/atris.js:1101-1119 (showLoopHelp)
+  - bin/atris.js:3220-3228 (top-level loop route, now via commands/loop-front.js)
+  - test/commands.test.js:18605 (loop help coverage)
+  - test/commands.test.js:20314-20395 (loop stale/suggest/alias/cloud guidance coverage)
 ---
 
 # Wiki Upkeep Loop: Validation
@@ -67,5 +67,5 @@ _Point-in-time snapshot from `node bin/atris.js loop wiki --json` on 2026-07-25 
 ## Notes
 
 - The upkeep command is local-first and does not auto-push.
-- Cloud loop is intentionally not implemented; `atris wiki loop --cloud` exits with guidance to run local upkeep first.
+- Cloud loop is intentionally not implemented; `atris wiki loop --cloud` exits 1 and names `atris loop wiki` as the local upkeep to run first (fixed 2026-10-14; it used to name bare `atris loop`, which no longer runs upkeep).
 - Scheduling belongs to the next layer; this feature just makes upkeep callable and testable.

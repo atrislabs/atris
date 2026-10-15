@@ -585,7 +585,7 @@ async function wikiCommand(subcommand, ...args) {
     }
     case 'loop': {
       if (mode === 'cloud') {
-        console.error('Cloud loop is not implemented yet. Run local `atris loop` first.');
+        console.error('Cloud loop is not implemented yet. Run local `atris loop wiki` first.');
         process.exit(1);
       }
       console.log('ACTION TAKEN');
