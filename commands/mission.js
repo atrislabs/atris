@@ -9688,8 +9688,9 @@ function missionDoneLooksLike(mission, root = process.cwd()) {
   }
 }
 
-function buildEngineVerifyPrompt(mission, tickIndex, doneLooksLike = '') {
+function buildEngineVerifyPrompt(mission, tickIndex, doneLooksLike = '', { timeoutMs = ENGINE_VERIFY_TIMEOUT_MS, checkPassed = '' } = {}) {
   const doneLine = String(doneLooksLike || '').replace(/\s+/g, ' ').trim();
+  const minutes = Math.max(1, Math.round(timeoutMs / 60000));
   return [
     `# Verify Mission Tick ${tickIndex}`,
     ``,
@@ -9703,6 +9704,11 @@ function buildEngineVerifyPrompt(mission, tickIndex, doneLooksLike = '') {
     `Read the diff this tick produced. Do not edit files and do not start another work slice.`,
     `ACTUALLY RUN the changed surface on this computer using real commands and real exit codes.`,
     `Paste the commands and their real output. Do not accept a receipt claim or static inspection as execution proof.`,
+    // Reviews that outran the clock were 11 of 25 turn-downs (10/11 to 10/14).
+    `You have ${minutes} minutes. Leave time to write the verdict; running out of time counts as a fail.`,
+    ...(checkPassed ? [`The mission check \`${checkPassed}\` already passed on this exact code. Do not run it again.`] : []),
+    `Prove the change with the narrowest real run: the changed command, or one test file or one named test.`,
+    `Do not run whole test suites or large test files; on a busy machine they outlast your time.`,
     `End your reply with a final line exactly 'VERDICT: PASS' or 'VERDICT: FAIL'.`,
   ].join('\n');
 }
@@ -9764,7 +9770,10 @@ async function runEngineVerifier(mission, options = {}) {
       cwd,
       signal: options.signal,
       timeoutMs: ENGINE_VERIFY_TIMEOUT_MS,
-      prompt: buildEngineVerifyPrompt(mission, options.tickIndex || 1, missionDoneLooksLike(mission, cwd)),
+      prompt: buildEngineVerifyPrompt(mission, options.tickIndex || 1, missionDoneLooksLike(mission, cwd), {
+        timeoutMs: ENGINE_VERIFY_TIMEOUT_MS,
+        checkPassed: options.checkPassed || '',
+      }),
       model: resolveMissionTickRunnerModel(verifyMission),
     });
   } catch (error) {
@@ -10957,6 +10966,7 @@ async function verifyMissionRunTickPhase(context) {
         signal: controller.signal,
         tickIndex: currentTick.tickIdx,
         refereeEngine: context.refereeEngine,
+        checkPassed: verifierResult?.passed ? currentTick.frozen.verifier : '',
       });
       const afterReview = gitCodeState(cwd);
       const codeMoved = beforeReview.tree !== afterReview.tree
