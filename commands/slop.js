@@ -341,10 +341,12 @@ const NAME_PAIR_CLAUSE_AFTER_DASH = new RegExp(`${CLAUSE_END}\\s*\\u2014\\s*(?=t
 // rendering library wraps a store". A "that" or "which" as the second word
 // opens a clause inside a phrase, and the phrase object may run three words:
 // "the live markdown docs the Atris (obelisk) editor renders, with charts".
+// "yes" ends in "s" but is no plural, and a possessive in capitals opens an
+// object as one in lowercase does: "the fake yes buys YOUR comfort".
 // A code name with an underscore is one such word too: "the business_id
 // match handles the bypass".
 const MODIFIER_WORD = '(?:[A-Z]{2,}|[a-z][a-z-]*[a-z]|[a-z][a-z0-9]*(?:_[a-z0-9]+)+)';
-const THE_OBJECT_CLAUSE_AFTER_DASH = new RegExp(`${CLAUSE_END}\\s*\\u2014\\s*(?=the\\s+(?!${NAME_PAIR}\\b)(?!(?:one|two|three|four|five|six|seven|eight|nine|ten|few|many|several|same|other|first|last|next|main|key|core|new|old|real|whole|exact|only)\\b)(?:(?![A-Za-z-]*s\\b)${MODIFIER_WORD}\\s+(?!(?:that|which|who)\\b))?(?![a-z]*s\\b)[a-z]{2,}\\s+(?:(?:only|now|still|already|also|never|always|often|just)\\s+)?${PLAIN_VERB_WORD}\\s+(?:the|a|an|your|our|their|its|all|every|each|this|these|those)\\s+[^\\s\\u2014])`, 'g');
+const THE_OBJECT_CLAUSE_AFTER_DASH = new RegExp(`${CLAUSE_END}\\s*\\u2014\\s*(?=the\\s+(?!${NAME_PAIR}\\b)(?!(?:one|two|three|four|five|six|seven|eight|nine|ten|few|many|several|same|other|first|last|next|main|key|core|new|old|real|whole|exact|only)\\b)(?:(?![A-Za-z-]*s\\b)${MODIFIER_WORD}\\s+(?!(?:that|which|who)\\b))?(?!(?!yes\\b)[a-z]*s\\b)[a-z]{2,}\\s+(?:(?:only|now|still|already|also|never|always|often|just)\\s+)?${PLAIN_VERB_WORD}\\s+(?:the|a|an|your|our|their|its|YOUR|OUR|THEIR|ITS|all|every|each|this|these|those)\\s+[^\\s\\u2014])`, 'g');
 // The same subject, a verb in "s" and a place word that seldom follows a
 // plural noun ("across", "through", "into" and kin) is a clause: "the
 // protocol spreads across projects". A word in "ly" may sit on either side

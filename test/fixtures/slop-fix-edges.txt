@@ -274,3 +274,9 @@ Check the checklist by hand \u2014 the web UI shows exactly which item has the y
 # but "which" with a verb right after it opens a clause inside the phrase
 Skip the noise for now \u2014 the error logs which show results.
 => Skip the noise for now, the error logs which show results.
+# "yes" is no plural, and a possessive in capitals opens an object
+People-pleasing looks kind from outside \u2014 the fake yes buys YOUR comfort with counterfeit commitment.
+=> People-pleasing looks kind from outside; the fake yes buys YOUR comfort with counterfeit commitment.
+# but with no verb after it the phrase keeps its comma
+The vote split two ways \u2014 the yes side and the no side.
+=> The vote split two ways, the yes side and the no side.

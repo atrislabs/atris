@@ -2471,6 +2471,22 @@ test('fix joins a past verb with a word in "ly" before it after a dash', () => {
   ]);
 });
 
+test('fix reads "yes" as a subject noun and a possessive in capitals as an object after a dash', () => {
+  // from real repo text: "the fake yes buys YOUR comfort with counterfeit
+  // commitment" spliced twice over: "yes" ends in s and read as a plural,
+  // and only a lowercase "your" opened an object. With no verb after it
+  // ("the yes side and the no side") the phrase keeps its comma.
+  const file = tmpFile('yes-your.md', [
+    'People-pleasing looks kind from outside \u2014 the fake yes buys YOUR comfort with counterfeit commitment.',
+    'The vote split two ways \u2014 the yes side and the no side.',
+  ].join('\n'));
+  const { changes } = applyFixes([file], RULES);
+  assert.deepEqual(changes.map((c) => c.after), [
+    'People-pleasing looks kind from outside; the fake yes buys YOUR comfort with counterfeit commitment.',
+    'The vote split two ways, the yes side and the no side.',
+  ]);
+});
+
 test('fix reads "which", a noun and a helper verb as the object of a verb in s after a dash', () => {
   // from real repo text: "the web UI shows exactly which item has the yellow
   // dot" spliced, since only "what", "how", "why" and "whether" counted
