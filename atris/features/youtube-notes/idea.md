@@ -64,7 +64,7 @@ atris youtube process <url> -> POST /agent/process_youtube -> Gemini via OpenRou
 - [x] Every quote in the notes is checked, whichever of the two quote layouts the writer uses (#1067).
 - [x] A computer without the downloader or without an AI writer gets a clear message, never blank notes (#1069).
 - [x] The paid lane charges 5 credits and refunds on failure, confirmed live in the `credit_transactions` table on 2026-09-28.
-- [ ] `atris youtube bench` runs five real cases and records each run (in review).
+- [x] `atris youtube bench` runs five real cases and records each run. Live on 2026-10-15: all five ran in 67 seconds, five new lines in the log, 4/5 passing (the long video took 28 seconds with Haiku while Gemini was out of quota).
 
 ---
 
