@@ -1302,7 +1302,7 @@ const recordedAbove = (lines, line, recorder) => {
 const isProbe = (args) => /^\[\s*(?:['"`][\w-]+['"`]\s*,\s*)?['"`]--(?:version|help)['"`]\s*\]$/.test(args || '');
 
 test('every launch of an engine program by name records its run or is named as exempt', () => {
-  const ENGINE_LAUNCH = new RegExp(`\\b(?:spawn|spawnSync|execFile|execFileSync)\\(\\s*['"\`](${ENGINE_NAMES})['"\`]\\s*,\\s*(\\[[^\\]]*\\])?`, 'g');
+  const ENGINE_LAUNCH = new RegExp(`\\b(?:spawn|spawnSync|execFile|execFileSync)\\s*\\(\\s*['"\`](${ENGINE_NAMES})['"\`]\\s*,\\s*(\\[[^\\]]*\\])?`, 'g');
   const unrecorded = (rel, text) => {
     if (LAUNCH_EXEMPT_FILES.has(rel)) return [];
     const code = stripComments(text);
@@ -1319,6 +1319,19 @@ test('every launch of an engine program by name records its run or is named as e
   };
   assert.deepStrictEqual(unrecorded('commands/planted.js', "const r = spawnSync('claude', ['-p', prompt]);\n"), ['commands/planted.js:1 claude']);
   assert.deepStrictEqual(unrecorded('commands/planted.js', "spawnSync('claude', ['--version']);\n"), []);
+  for (const helper of ['spawn', 'spawnSync', 'execFile', 'execFileSync']) {
+    for (const whitespace of [' ', '\t', '\n  ']) {
+      const launch = `${helper}${whitespace}('claude', ['-p', prompt]);\n`;
+      assert.deepStrictEqual(unrecorded('commands/planted.js', launch), ['commands/planted.js:1 claude']);
+      assert.deepStrictEqual(unrecorded('commands/planted.js', `startEngineRun(root);\n${launch}`), []);
+      for (const probe of ['--help', '--version']) {
+        assert.deepStrictEqual(unrecorded('commands/planted.js', `${helper}${whitespace}('claude', ['${probe}']);\n`), []);
+      }
+      assert.deepStrictEqual(unrecorded('commands/planted.js', `${helper}${whitespace}('git', ['status']);\n`), []);
+      assert.deepStrictEqual(unrecorded('commands/planted.js', `// ${helper} ('claude', args);\n`), []);
+      assert.deepStrictEqual(unrecorded('commands/console.js', launch), []);
+    }
+  }
   // A mention in a comment, or a recorded launch elsewhere in the file, does
   // not cover this launch.
   assert.deepStrictEqual(unrecorded('commands/planted.js', "// startEngineRun is called elsewhere\nconst r = spawnSync('claude', ['-p', prompt]);\n"), ['commands/planted.js:2 claude']);
@@ -1365,6 +1378,10 @@ test('every launch of an engine program by name records its run or is named as e
   const launchesIn = (text) => [...stripComments(text).matchAll(ENGINE_LAUNCH)].filter((match) => !isProbe(match[2])).map((match) => match[1]);
   assert.deepStrictEqual(launchesIn("spawnSync('codex', ['--full-auto', ...extraArgs]);\n"), ['codex']);
   assert.deepStrictEqual(launchesIn("// spawnSync('codex', ['--full-auto']);\nspawnSync('codex', ['--version']);\n"), [], 'a comment or a probe does not keep an exemption alive');
+  for (const whitespace of [' ', '\t', '\n  ']) {
+    assert.deepStrictEqual(launchesIn(`spawnSync${whitespace}('codex', ['exec']);\n`), ['codex']);
+    assert.deepStrictEqual(launchesIn(`spawnSync${whitespace}('codex', ['--help']);\n`), []);
+  }
   const repo = path.join(__dirname, '..');
   const staleFiles = [...LAUNCH_EXEMPT_FILES.keys()].filter((rel) => !fs.existsSync(path.join(repo, rel)) || !launchesIn(fs.readFileSync(path.join(repo, rel), 'utf8')).length);
   assert.deepStrictEqual(staleFiles, [], 'an exempt file no longer launches an engine by name; remove its entry');
