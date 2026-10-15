@@ -233,3 +233,9 @@ The ideas page is a React app \u2014 their visible data comes from the APIs abov
 => The ideas page is a React app; their visible data comes from the APIs above.
 It turns a wish into daily process \u2014 the wish arrives as a byproduct.
 => It turns a wish into daily process; the wish arrives as a byproduct.
+# a word in "ly" right before a past verb makes it a verb
+No hand-wavy guesses \u2014 the miss patterns directly pointed to each change.
+=> No hand-wavy guesses; the miss patterns directly pointed to each change.
+# but a number before it is a count with its own phrase
+It fixed 18 features \u2014 the 10 directly edited plus 8 that moved.
+=> It fixed 18 features, the 10 directly edited plus 8 that moved.

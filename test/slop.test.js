@@ -2453,6 +2453,24 @@ test('fix reads a pronoun or a code name with a place word after it as the objec
   ]);
 });
 
+test('fix joins a past verb with a word in "ly" before it after a dash', () => {
+  // from real repo text: "the miss patterns directly pointed to each
+  // change" spliced, since "to" after a past verb can close a phrase. A
+  // word in "ly" before the verb makes it a verb; "mostly" and a number
+  // before it ("the 10 directly edited") keep the phrase.
+  const file = tmpFile('ly-past-verb.md', [
+    'No hand-wavy guesses \u2014 the miss patterns directly pointed to each change.',
+    'We kept them \u2014 the files mostly stored in atris.',
+    'It fixed 18 features \u2014 the 10 directly edited plus 8 that moved.',
+  ].join('\n'));
+  const { changes } = applyFixes([file], RULES);
+  assert.deepEqual(changes.map((c) => c.after), [
+    'No hand-wavy guesses; the miss patterns directly pointed to each change.',
+    'We kept them, the files mostly stored in atris.',
+    'It fixed 18 features, the 10 directly edited plus 8 that moved.',
+  ]);
+});
+
 test('fix joins a lone verb before "from" or "as" and a "their" subject after a dash', () => {
   // from real repo text: "their visible data comes from the APIs above",
   // "the wish arrives as a byproduct" and "the idea probably overlaps with
