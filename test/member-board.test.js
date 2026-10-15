@@ -1128,7 +1128,8 @@ test('watch mode uses the whole screen in one to three terminal rows', async () 
     for (let i = 0; i < 3; i++) {
       const frame = frames[i].replace(/\x1b\[[0-9;]*[A-Za-z]/g, '');
       assert.equal(frame.split('\n').length, i + 1);
-      assert.match(frame, /^member\s+state/);
+      if (i === 0) assert.match(frame, /^2 more not shown \(2 failed, all timed out\)/);
+      else assert.match(frame, /^member\s+state/);
       assert.doesNotMatch(frame, /redraws every/);
       assert.ok(!frame.endsWith('\n'), 'no newline scrolls the bottom row');
       if (i === 1) assert.match(frame, /2 more not shown \(2 failed, all timed out\)/);
@@ -1172,11 +1173,12 @@ test('a taller watch window never shows fewer members than a shorter one', async
     for (const [i, frame] of frames.entries()) {
       const height = i + 1;
       const lines = frame.split('\n');
-      assert.match(frame, /^member\s+state/, `height ${height}`);
+      // One row is all count line: who did not fit, failures first.
+      if (height > 1) assert.match(frame, /^member\s+state/, `height ${height}`);
       assert.ok(lines.length <= height, `height ${height} fits: ${JSON.stringify(frame)}`);
       if (height < 6) {
         assert.equal(lines.length, height, `height ${height} uses every row: ${JSON.stringify(frame)}`);
-        if (height > 1) assert.match(lines.at(-1), new RegExp(`^${5 - shown[i]} more not shown \\(${5 - shown[i]} failed, all timed out\\)`), `height ${height}`);
+        assert.match(lines.at(-1), new RegExp(`^${5 - shown[i]} more not shown \\(${5 - shown[i]} failed, all timed out\\)`), `height ${height}`);
       }
       if (height < 9) assert.ok(!frame.endsWith('\n') && !/ctrl-c/.test(frame), `height ${height}: the hint never takes a member's row`);
       else assert.match(frame, /redraws every 3s, ctrl-c to stop\n$/, 'the hint returns once every member fits beside it');
@@ -1446,7 +1448,7 @@ test('the older-runs note never pushes a current member off a short screen', () 
   }
 });
 
-test('one to three board lines keep the header without scrolling away failures', () => {
+test('a one-line board counts who did not fit, and two or three lines keep the header', () => {
   const dir = fakeDir({
     busy: [`${at(10)} m-1 started: job`],
     broke: [`${at(90)} m-2 started: fix`, `${at(80)} m-2 finished: failed (timed out)`],
@@ -1458,7 +1460,9 @@ test('one to three board lines keep the header without scrolling away failures',
       for (const height of [1, 2, 3]) {
         const lines = renderBoard(rows, dir, hidden, 80, height).split('\n');
         assert.equal(lines.length, height, `fits ${height} lines with ${hidden} older runs`);
-        assert.match(lines[0], /^member\s+state/, 'the header stays');
+        // One line has no room for a member under the heading, so it is the count.
+        if (height === 1) assert.match(lines[0], /^3 (?:more not shown|hidden) \(2 failed, timed out and bad exit 2, busy working\)/);
+        else assert.match(lines[0], /^member\s+state/, 'the header stays');
         assert.ok(lines.every((line) => line.length <= 80));
         if (height === 2) assert.match(lines[1], /^3 (?:more not shown|hidden) \(2 failed, timed out and bad exit 2, busy working\)/);
         if (height === 3) {
