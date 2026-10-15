@@ -5308,3 +5308,35 @@ test('the landing status repair hint uses the checkout command when the first ex
     fs.rmSync(root, { recursive: true, force: true });
   }
 });
+
+test('landing repair advice survives an unreadable engine run log without assigning blame', () => {
+  const { showStatus } = require('../commands/autoland');
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'landing-unread-repair-'));
+  const home = fs.mkdtempSync(path.join(os.tmpdir(), 'landing-unread-home-'));
+  try {
+    require('node:child_process').spawnSync('git', ['init', '-q'], { cwd: root });
+    fs.mkdirSync(path.join(root, RESOURCE_LOG), { recursive: true });
+    fs.writeFileSync(path.join(home, '.zshrc'), 'eval "$(ssh-agent -s)"\n');
+    const out = [];
+    const original = console.log;
+    console.log = (line = '') => out.push(String(line));
+    try {
+      showStatus(root, [], {
+        readSshAgents: () => ({ agents: [{ pid: 200, ppid: 1, uid: 501, age_sec: 3600, args: 'ssh-agent -s' }], referenced: new Set() }),
+        uid: 501, home, atrisCommand: 'atris', pathAtrisRecordsRuns: true,
+      });
+    } finally {
+      console.log = original;
+    }
+    const status = out.join('\n');
+    assert.match(status, /engine run log: could not read it \(EISDIR\)/);
+    assert.doesNotMatch(status, /the startup line below is the one to fix, not an engine/);
+    assert.match(status, /likely source: ~\/\.zshrc line 1/);
+    assert.match(status, /to make that change, run atris engine sweep --fix-startup; it saves the old file beside it first/);
+    console.log('real unreadable history repair advice: ' + out.filter((line) => /engine run log|to make that change/.test(line)).map((line) => line.trim()).join(' / '));
+  } finally {
+    fs.rmSync(root, { recursive: true, force: true });
+    fs.rmSync(home, { recursive: true, force: true });
+  }
+});
+
