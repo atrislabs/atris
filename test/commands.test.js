@@ -14771,7 +14771,7 @@ test('task status keeps failed blockers out of review handoff', async () => {
   }
 });
 
-test('task status keeps history out of the default live card', () => {
+test('task status keeps history out of the default live card', async () => {
   if (!hasNodeSqlite()) return;
   const dir = makeTempDir();
   const dbPath = path.join(dir, 'tasks.db');
@@ -14792,13 +14792,17 @@ test('task status keeps history out of the default live card', () => {
       taskStore.close();
     }
 
-    const status = runCli(['task', 'status', '--json'], { cwd: dir, env });
+    // Both reads change no task state, and the history flag only widens the
+    // in-memory read, so each rewrites the same projection content.
+    const [status, history] = await Promise.all([
+      runCliAsync(['task', 'status', '--json'], { cwd: dir, env }),
+      runCliAsync(['task', 'status', '--json', '--history'], { cwd: dir, env }),
+    ]);
     assert.equal(status.status, 0, status.stderr);
     const payload = JSON.parse(status.stdout);
     assert.equal(Object.hasOwn(payload.status, 'swarlo'), false);
     assert.equal(Object.hasOwn(payload.status, 'last_event'), false);
 
-    const history = runCli(['task', 'status', '--json', '--history'], { cwd: dir, env });
     assert.equal(history.status, 0, history.stderr);
     const historyPayload = JSON.parse(history.stdout);
     assert.equal(historyPayload.status.swarlo.feed.length, 10);
