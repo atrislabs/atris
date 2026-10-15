@@ -3333,6 +3333,12 @@ test('the fix command names this checkout when the atris on PATH is another inst
     const spaced = path.join(tmp, 'my checkout', 'bin');
     fs.mkdirSync(spaced, { recursive: true });
     assert.strictEqual(atrisCommand({ pathEnv: empty, binDir: spaced, home: tmp }), `node ${JSON.stringify(path.join(spaced, 'atris.js'))}`, 'a path with a space is quoted in full');
+    const { pathAtrisRecordsRuns } = require('../lib/engine-resource');
+    assert.strictEqual(pathAtrisRecordsRuns({ pathEnv: other }), false, 'an install with no run recording file');
+    assert.strictEqual(pathAtrisRecordsRuns({ pathEnv: empty }), true, 'no atris on PATH, nothing to warn about');
+    fs.mkdirSync(path.join(tmp, 'checkout', 'lib'));
+    fs.writeFileSync(path.join(tmp, 'checkout', 'lib', 'engine-resource.js'), '');
+    assert.strictEqual(pathAtrisRecordsRuns({ pathEnv: linked }), true, 'a linked checkout that records runs');
     assert.strictEqual(fixStartupHint(`node ${script}`), `to make that change, run node ${script} engine sweep --fix-startup; it saves the old file beside it first`);
   } finally {
     fs.rmSync(tmp, { recursive: true, force: true });
@@ -4457,7 +4463,7 @@ test('the landing status splits leaked ssh-agents by the engine runs open when t
     const original = console.log;
     console.log = (line = '') => out.push(String(line));
     try {
-      showStatus(root, [], { readSshAgents: () => ({ agents, referenced: new Set() }), uid: 501 });
+      showStatus(root, [], { readSshAgents: () => ({ agents, referenced: new Set() }), uid: 501, pathAtrisRecordsRuns: true });
     } finally {
       console.log = original;
     }
@@ -4502,7 +4508,7 @@ test('the sweep listing splits leaked ssh-agents by engine runs and points to th
     try { fn(); } finally { console.log = original; }
     return out.join('\n');
   };
-  const sweep = (agents) => capture(() => engineCommand(['sweep'], { root, engineSweep: { read: () => ({ agents, referenced: new Set() }), uid: 501, home } }));
+  const sweep = (agents, more = {}) => capture(() => engineCommand(['sweep'], { root, engineSweep: { read: () => ({ agents, referenced: new Set() }), uid: 501, home, pathAtrisRecordsRuns: true, ...more } }));
   try {
     require('node:child_process').spawnSync('git', ['init', '-q'], { cwd: root });
     fs.mkdirSync(path.dirname(file), { recursive: true });
@@ -4512,13 +4518,15 @@ test('the sweep listing splits leaked ssh-agents by engine runs and points to th
     ].join('\n') + '\n');
     fs.writeFileSync(path.join(home, '.zshrc'), 'eval "$(ssh-agent -s)"\n');
     const outside = sweep([agent(200, 5.5), agent(201, 3), agent(202, 2)]);
+    const blind = sweep([agent(200, 5.5), agent(201, 3), agent(202, 2)], { pathAtrisRecordsRuns: false });
+    assert.match(blind, /2 with no engine run open; the atris on your PATH does not record engine runs, so agents from the runs it starts count as none open\nlikely source/, 'an atris that leaves no run lines makes the outside count unreliable, so no claim is made');
     assert.match(outside, /\nwhen the leaked ssh-agents started: 1 started while an engine run was open \(claude 1\), 2 with no engine run open; most started with no engine run open, so the startup line below is the one to fix, not an engine\nlikely source: ~\/\.zshrc line 1/);
     const during = sweep([agent(200, 5.5), agent(201, 5.2), agent(202, 2)]);
     assert.match(during, /when the leaked ssh-agents started: 2 started while an engine run was open \(claude 2\), 1 with no engine run open\n/, 'mostly during runs names no single fix');
     fs.writeFileSync(path.join(home, '.zshrc'), '[ -S "$SSH_AUTH_SOCK" ] || eval "$(ssh-agent -s)"\n');
     assert.match(sweep([agent(201, 3), agent(202, 2)]), /2 with no engine run open\n/, 'no startup line found, no pointer to one');
     fs.writeFileSync(path.join(home, '.zshrc'), 'eval "$(ssh-agent -s)"\n');
-    const status = capture(() => showStatus(root, [], { readSshAgents: () => ({ agents: [agent(201, 3), agent(202, 2)], referenced: new Set() }), uid: 501, home }));
+    const status = capture(() => showStatus(root, [], { readSshAgents: () => ({ agents: [agent(201, 3), agent(202, 2)], referenced: new Set() }), uid: 501, home, pathAtrisRecordsRuns: true }));
     assert.match(status, /\n {4}when the leaked ssh-agents started: [^\n]*so the startup line below is the one to fix, not an engine\n {4}likely source: ~\/\.zshrc line 1/);
     fs.appendFileSync(file, `${JSON.stringify({ at: at(0.8), phase: 'start', engine: 'codex', run_id: 'b' })}\n`);
     const turned = sweep([agent(201, 3), agent(202, 2), agent(203, 2.5), agent(204, 0.5)]);

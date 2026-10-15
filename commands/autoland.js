@@ -9,7 +9,7 @@ const autoland = require('../lib/autoland');
 const { gateForHuman, plainLandingReason } = require('../lib/voice-gate');
 const { evaluateAutoAccept } = require('../lib/auto-accept-certified');
 const { sweepEngineAskReceipts } = require('../lib/engine-receipt-sweep');
-const { readSshAgents, findLeakedSshAgents, findAgentStartLines, agentStartLineText, atrisCommand, fixStartupHint, stopLeakedSshAgents, closeLostRuns, readResourceHistory, errorReason, leakGrowthNote, matchLeakedToRuns, leakedRunsText } = require('../lib/engine-resource');
+const { readSshAgents, findLeakedSshAgents, findAgentStartLines, agentStartLineText, atrisCommand, pathAtrisRecordsRuns, fixStartupHint, stopLeakedSshAgents, closeLostRuns, readResourceHistory, errorReason, leakGrowthNote, matchLeakedToRuns, leakedRunsText } = require('../lib/engine-resource');
 const { validateRecentAskReceipts } = require('../lib/engine-validate');
 const { operatorReady, hasAgentJargon, explainResult } = autoland;
 const MISSION_AUTO_VERIFY_STATUSES = new Set(['planning', 'paused', 'ready']);
@@ -570,7 +570,7 @@ function showStatus(root, args, deps = {}) {
           : 'the next hourly pass stops them'
         : `the hourly pass runs a version without the ssh-agent cleanup, so stop them now: ${cli} engine sweep --apply`;
     console.log(`  leaked ssh-agents on this machine: ${unchecked ? 'at least ' : ''}${leakedAgents}${leakGrowthNote(lost.first_day_leak_reading, leakedAgents)}; ${stop}${unchecked ? `; ${unchecked}` : ''}`);
-    const runsText = leakedRunsText(matchLeakedToRuns(root, leakedList), { startLine: startLines.length > 0 });
+    const runsText = leakedRunsText(matchLeakedToRuns(root, leakedList), { startLine: startLines.length > 0, recorded: deps.pathAtrisRecordsRuns ?? pathAtrisRecordsRuns() });
     if (runsText) console.log(`    ${runsText}`);
     for (const found of startLines) console.log(`    ${agentStartLineText(found)}`);
     if (startLines.some((found) => found.fix)) console.log(`    ${fixStartupHint(cli)}`);
