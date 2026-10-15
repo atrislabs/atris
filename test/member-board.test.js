@@ -2498,7 +2498,7 @@ const waitFor = async (check, ms = 3000) => {
 const killAll = (pid) => { try { process.kill(-pid, 'SIGKILL'); } catch {} };
 const isoAgo = (s) => new Date(Date.now() - s * 1000).toISOString();
 
-test('seeded random follow: split, replaced, rewritten, resaved, forged, and removed logs stream each finished line once', () => {
+test('seeded random follow: split, replaced, rewritten, resaved, forged, edited, and removed logs stream each finished line once', () => {
   const { followBoard } = require('../lib/member-board');
   let seed = 45;
   const rnd = () => ((seed = (seed * 1103515245 + 12345) % 2147483648) / 2147483648);
@@ -2535,10 +2535,23 @@ test('seeded random follow: split, replaced, rewritten, resaved, forged, and rem
       const log = logs.get(name) || { buf: Buffer.alloc(0), seen: 0, fresh: true };
       logs.set(name, { ...log, buf: Buffer.concat([log.buf, bytes]) });
     };
+    const read = () => {
+      steps.push('scan');
+      follower.scan();
+      for (const [member, log] of logs) {
+        const end = log.buf.lastIndexOf(0x0a) + 1;
+        const from = log.fresh ? 0 : log.seen;
+        if (end > from) for (const text of textsOf(log.buf.subarray(from, end))) expected.push(`${member}: ${text}`);
+        logs.set(member, { ...log, seen: Math.max(end, from), fresh: false });
+      }
+      const got = events.map((e) => `${e.member}: ${e.text}`);
+      const byMember = (list) => names.map((m) => list.filter((s) => s.startsWith(`${m}: `)));
+      assert.deepEqual(byMember(got), byMember(expected), `trial ${trial} after ${steps.join(', ')}`);
+    };
     try {
       for (let step = 0; step < 60; step++) {
         const name = pick(names);
-        const kind = logs.has(name) ? pick(['line', 'line', 'split', 'finish', 'replace', 'rewrite', 'resave', 'forge', 'remove']) : 'create';
+        const kind = logs.has(name) ? pick(['line', 'line', 'split', 'finish', 'replace', 'rewrite', 'resave', 'forge', 'scribble', 'remove']) : 'create';
         steps.push(`${kind} ${name}`);
         // A half-written line ends before anything else lands in its log.
         const owed = rest.get(name);
@@ -2561,6 +2574,20 @@ test('seeded random follow: split, replaced, rewritten, resaved, forged, and rem
           fs.writeFileSync(path.join(dir, 'swap.tmp'), buf);
           fs.renameSync(path.join(dir, 'swap.tmp'), file(name));
           logs.set(name, { ...log, buf });
+        } else if (kind === 'scribble') {
+          // The same one-word edit made in place: same file, same size. A
+          // log that grows between reads looks like an append, so the edit
+          // gets a read on each side; growth plus an edit is not caught.
+          read();
+          const log = logs.get(name);
+          const word = log.buf.indexOf(' step ');
+          if (word >= 0) {
+            log.buf.write('a', word + 3);
+            const fd = fs.openSync(file(name), 'r+');
+            fs.writeSync(fd, 'a', word + 3);
+            fs.closeSync(fd);
+          }
+          logs.set(name, { ...log, fresh: log.fresh || (word >= 0 && word < log.seen) });
         } else if (kind === 'forge') {
           // A renamed copy with one early word changed keeps the same size and
           // the same last bytes, so only the whole history can tell it apart.
@@ -2585,18 +2612,8 @@ test('seeded random follow: split, replaced, rewritten, resaved, forged, and rem
           logs.delete(name);
           rest.set(name, null);
         }
-        if (rnd() < 0.5) continue;
-        steps.push('scan');
-        follower.scan();
-        for (const [member, log] of logs) {
-          const end = log.buf.lastIndexOf(0x0a) + 1;
-          const from = log.fresh ? 0 : log.seen;
-          if (end > from) for (const text of textsOf(log.buf.subarray(from, end))) expected.push(`${member}: ${text}`);
-          logs.set(member, { ...log, seen: Math.max(end, from), fresh: false });
-        }
-        const got = events.map((e) => `${e.member}: ${e.text}`);
-        const byMember = (list) => names.map((m) => list.filter((s) => s.startsWith(`${m}: `)));
-        assert.deepEqual(byMember(got), byMember(expected), `trial ${trial} after ${steps.join(', ')}`);
+        if (rnd() < 0.5 && kind !== 'scribble') continue;
+        read();
       }
     } finally {
       follower.stop();

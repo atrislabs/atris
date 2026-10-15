@@ -2361,9 +2361,9 @@ Lost-run cleanup error summary: `commands/autoland.js:895` keeps successful clos
 
 - **Very short board screens:** `renderBoard()` (`lib/member-board.js:309`) omits the spacer at three lines, rows at two, and the footer at one, preserving the header within the height limit. Regression: `test/member-board.test.js:894`; terminal proof: `python3 atris/runs/member-board-short-height-proof.py`.
 
-- **Tiny watch screens:** `memberBoardCommand()` (`lib/member-board.js:1107`) gives the board all rows when the terminal has one to three, omitting the hint and final newline to avoid scrolling the header. Resize restores the hint above three rows. Regression: `test/member-board.test.js:754`; terminal proof: `python3 atris/runs/member-board-watch-height-proof.py`.
+- **Tiny watch screens:** `memberBoardCommand()` (`lib/member-board.js:1111`) gives the board all rows when the terminal has one to three, omitting the hint and final newline to avoid scrolling the header. Resize restores the hint above three rows. Regression: `test/member-board.test.js:754`; terminal proof: `python3 atris/runs/member-board-watch-height-proof.py`.
 
-- **Narrow watch hint:** `memberBoardCommand()` (`lib/member-board.js:1107`) picks the longest whole hint that fits, down to "ctrl-c", and omits it below six columns. Resize regression: `test/member-board.test.js:713`; real terminal proof: `python3 atris/runs/member-board-watch-width-proof.py`.
+- **Narrow watch hint:** `memberBoardCommand()` (`lib/member-board.js:1111`) picks the longest whole hint that fits, down to "ctrl-c", and omits it below six columns. Resize regression: `test/member-board.test.js:713`; real terminal proof: `python3 atris/runs/member-board-watch-width-proof.py`.
 
 - **Compact board columns:** `renderBoard()` (`lib/member-board.js:309`) falls back to member, state and last result when the normal columns still overflow a terminal at least 30 columns wide. Done states use ok/failed, long names trim, and common failure reasons stay whole. Regression: `test/member-board.test.js:447`; real terminal proof: `python3 atris/runs/member-board-compact-columns-proof.py`.
 
