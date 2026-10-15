@@ -9380,7 +9380,7 @@ test('task events defaults to a recent compact view', () => {
   }
 });
 
-test('task note, show, and export expose a dialogue projection for UI surfaces', () => {
+test('task note, show, and export expose a dialogue projection for UI surfaces', async () => {
   if (!hasNodeSqlite()) return;
   const dir = makeTempDir();
   const dbPath = path.join(dir, 'tasks.db');
@@ -9410,13 +9410,16 @@ test('task note, show, and export expose a dialogue projection for UI surfaces',
     assert.equal(note.status, 0, note.stderr);
     assert.match(note.stdout, new RegExp(`noted ${ref} v2`));
 
-    const show = runCli(['task', 'show', ref], { cwd: dir, env });
+    // Both shows follow the same note and change no task state, so they run at once.
+    const [show, showJson] = await Promise.all([
+      runCliAsync(['task', 'show', ref], { cwd: dir, env }),
+      runCliAsync(['task', 'show', id, '--json'], { cwd: dir, env }),
+    ]);
     assert.equal(show.status, 0, show.stderr);
     assert.match(show.stdout, new RegExp(`OPEN ${ref} v2 #ui`));
     assert.match(show.stdout, /Dialogue:/);
     assert.match(show.stdout, /codex: User wants Cursor-like task chat/);
 
-    const showJson = runCli(['task', 'show', id, '--json'], { cwd: dir, env });
     assert.equal(showJson.status, 0, showJson.stderr);
     const task = JSON.parse(showJson.stdout);
     assert.equal(task.current_version, 2);
@@ -9426,15 +9429,19 @@ test('task note, show, and export expose a dialogue projection for UI surfaces',
     const largeNote = runCli(['task', 'note', ref, largeMessage, '--as', 'codex'], { cwd: dir, env });
     assert.equal(largeNote.status, 0, largeNote.stderr);
 
-    const largeShowJson = runCli(['task', 'show', id, '--json'], { cwd: dir, env });
+    // Show and export both read after the large note; show never writes the
+    // projection file, so the export can run beside it.
+    const out = path.join(dir, '.atris', 'state', 'tasks.projection.json');
+    const [largeShowJson, exported] = await Promise.all([
+      runCliAsync(['task', 'show', id, '--json'], { cwd: dir, env }),
+      runCliAsync(['task', 'export', '--out', out], { cwd: dir, env }),
+    ]);
     assert.equal(largeShowJson.status, 0, largeShowJson.stderr);
     assert.ok(largeShowJson.stdout.length > 64 * 1024, 'large task JSON must exceed a typical pipe buffer');
     const largeTask = JSON.parse(largeShowJson.stdout);
     assert.equal(largeTask.current_version, 3);
     assert.ok(largeTask.messages.at(-1).content.startsWith('large json pipe proof\nxxxxx'));
 
-    const out = path.join(dir, '.atris', 'state', 'tasks.projection.json');
-    const exported = runCli(['task', 'export', '--out', out], { cwd: dir, env });
     assert.equal(exported.status, 0, exported.stderr);
     assert.match(exported.stdout, /exported 1 task/);
     const projection = JSON.parse(fs.readFileSync(out, 'utf8'));

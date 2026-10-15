@@ -307,6 +307,8 @@ Tag scope next and list batching: `test/commands.test.js:7747` awaits the golden
 
 Display ref filtered list batching: `test/commands.test.js:8060` awaits the open, done and open json lists together after the done. Four sequential CLI stages become two; every assertion remains.
 
+Dialogue projection read batching: `test/commands.test.js:9413` awaits the text and json shows together after the first note, then the large show and the export together after the large note. Show never writes the projection file, so the export runs beside it. Seven sequential CLI stages become five; every assertion remains.
+
 Certified review fallback read batching: `test/commands.test.js:12603` overlaps the two next reads after certification and before creation. Six sequential CLI stages become five; all assertions remain. Details: `atris/refs/MAP-NOTES.md`.
 
 Final fallback read batching: `test/commands.test.js:12684` awaits next and show together after follow-up creation. Both read unchanged task rows; every assertion remains. Five sequential CLI stages become four.
