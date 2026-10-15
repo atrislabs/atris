@@ -2318,7 +2318,7 @@ Process-list scan failure: `lib/engine-resource.js:290` returns `unread: ['proce
 
 - Readiness runtime selection: `lib/task-proof.js:157` uses `bash -lc`; a login profile can replace the caller's Node path. Reproduction and full failure evidence: `atris/receipts/readiness-runtime-proof-2026-10-14.txt`.
 
-Partial socket scan warning: `lib/engine-resource.js:338` names agent sockets unread when any listed agent lacks a socket reading; unread agents remain protected and readable agents can still be proven leaked. `commands/engine.js:2384` warns that the count may be incomplete. Regressions: `test/engine-resource.test.js:447` checks mixed readings; `test/engine-resource.test.js:459` launches two real ssh-agents, withholds only one real lsof process block, and runs the real text and JSON CLI.
+Partial socket scan warning: `lib/engine-resource.js:325-336` (`sockets`) names agent sockets unread when any listed agent lacks a socket reading; unread agents remain protected and readable agents can still be proven leaked. `commands/engine.js:2362` (`scanWarning`) warns that the count may be incomplete. Regressions: `test/engine-resource.test.js:447` checks mixed readings; `test/engine-resource.test.js:459` launches two real ssh-agents, withholds only one real lsof process block, and runs the real text and JSON CLI.
 
 - Cleanup scan warnings: `commands/engine.js:2358` merges unread initial and final readers for text and JSON; `lib/engine-resource.js:468` records unread final readers and an unknown remaining count. `test/engine-resource.test.js:4407` covers changed readers across scans; `test/engine-resource.test.js:4424` exercises the real CLI with process execution denied.
 ## One-run member outcomes
