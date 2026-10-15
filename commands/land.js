@@ -2,7 +2,7 @@ const fs = require('fs');
 const path = require('path');
 const gitSpawn = require('../lib/git-spawn');
 const { compactErrorPayload, printCliJson } = require('../lib/cli-json');
-const { listWorktrees, statusCounts, defaultMainlineBase, listActiveProcessPaths, worktreeHasActiveProcess, recordWorktreeRemoval } = require('./worktree');
+const { listWorktrees, statusCounts, defaultMainlineBase, listActiveProcessPaths, worktreeHasActiveProcess, worktreeGitActivity, describeGitActivity, recordWorktreeRemoval, readWorktreeRemovals } = require('./worktree');
 
 const DEFAULT_TTL_DAYS = 7;
 const DEFAULT_STALE_HOURS = 48;
@@ -93,7 +93,7 @@ function headRefName(headFile) {
 }
 
 // Branch checkouts straight from .git/worktrees/<id>/HEAD plus the main
-// checkout's HEAD — the live truth, not the board snapshot. A `worktree add`
+// checkout's HEAD, the live truth, not the board snapshot. A `worktree add`
 // still in flight (or a half-registered entry) can leave a branch checked out
 // in a directory the snapshot never saw, and git's own `branch -D` refusal
 // only consults registrations whose gitdir link is already written.
@@ -135,7 +135,7 @@ function liveCheckouts(root, now = Date.now()) {
       wtPath = path.dirname(fs.readFileSync(path.join(adminDir, 'gitdir'), 'utf8').trim());
     } catch {
       // gitdir unwritten or lost: cannot prove which directory is the
-      // checkout, so the branch stays claimed — fail safe, prune's job.
+      // checkout, so the branch stays claimed. Fail safe, prune's job.
     }
     if (wtPath && !fs.existsSync(wtPath)) continue;
     bound.set(name, { path: wtPath, adminDir });
@@ -145,7 +145,7 @@ function liveCheckouts(root, now = Date.now()) {
 
 // The branch's own reflog records when `worktree add -b` (or `git branch`)
 // created it. While an add is in flight a just-created target branch is very
-// likely the checkout being wired up right now — keep it for this pass.
+// likely the checkout being wired up right now, so keep it for this pass.
 function branchCreatedWithinGrace(root, name, now = Date.now()) {
   const res = runGit(['reflog', 'show', '--date=unix', name], { cwd: root, check: false });
   if (res.status !== 0) return false;
@@ -573,6 +573,13 @@ function reap(root, { ttlDays = DEFAULT_TTL_DAYS, staleHours = DEFAULT_STALE_HOU
       protectedWorktrees.push({ ...w, reason: activeCwds ? 'active_process' : 'process_scan_failed' });
       continue;
     }
+    // Git mid-operation in the folder (lock held, rebase or merge paused)
+    // also outranks --force: removal would strand the operation half done.
+    const gitActivity = worktreeGitActivity(w.path);
+    if (gitActivity) {
+      protectedWorktrees.push({ ...w, reason: describeGitActivity(w.path, gitActivity, now) });
+      continue;
+    }
     if (worktreeWithinReapGrace(w.path, now)) {
       protectedWorktrees.push({ ...w, reason: 'fresh_worktree_grace' });
       continue;
@@ -669,8 +676,14 @@ function reap(root, { ttlDays = DEFAULT_TTL_DAYS, staleHours = DEFAULT_STALE_HOU
       if (w.branch) targetNames.delete(w.branch);
       continue;
     }
+    const gitActivityAtRemoval = worktreeGitActivity(w.path);
+    if (gitActivityAtRemoval) {
+      receipt.keptWorktrees.push(`${w.path} (${describeGitActivity(w.path, gitActivityAtRemoval)})`);
+      if (w.branch) targetNames.delete(w.branch);
+      continue;
+    }
     // The grace check ran at scan time, and a bundle build can sit between it
-    // and removal — an engine that booted mid-sweep refreshes the directory
+    // and removal, and an engine that booted mid-sweep refreshes the directory
     // mtime in that gap. Stat once more at removal time, the cheapest place
     // to never be wrong about freshness.
     if (worktreeWithinReapGrace(w.path)) {
@@ -703,7 +716,7 @@ function reap(root, { ttlDays = DEFAULT_TTL_DAYS, staleHours = DEFAULT_STALE_HOU
   }
 
   // Re-scan after removals: worktrees just removed freed their branches, and
-  // anything still bound is checked out in a directory that exists — the
+  // anything still bound is checked out in a directory that exists. The
   // board snapshot may have missed it entirely (a `worktree add` mid-flight),
   // and git's own -D refusal only reads fully wired registrations.
   const live = liveCheckouts(root, now);
@@ -893,7 +906,20 @@ function printBoard(board) {
   console.log('');
 }
 
-function printReceipt(receipt) {
+// One line from the removal log so it is read, not only written: how many
+// folders were removed since local midnight, and by which command.
+function removalsTodayLine(root, now = Date.now()) {
+  const midnight = new Date(now);
+  midnight.setHours(0, 0, 0, 0);
+  const rows = readWorktreeRemovals(root, { since: midnight.getTime() });
+  if (rows.length === 0) return '';
+  const counts = new Map();
+  for (const row of rows) counts.set(row.by || 'unknown', (counts.get(row.by || 'unknown') || 0) + 1);
+  const who = [...counts].sort((a, b) => b[1] - a[1]).map(([by, n]) => `${by} ${n}`).join(', ');
+  return `  folders removed today: ${rows.length} (${who})`;
+}
+
+function printReceipt(receipt, { removalsToday = '' } = {}) {
   console.log('');
   if (receipt.dryRun) {
     console.log(`landing cleanup preview: would clear ${receipt.deletedBranches.length} pieces of work, ${receipt.removedWorktrees.length} side copies:`);
@@ -915,6 +941,7 @@ function printReceipt(receipt) {
     }
     for (const m of receipt.keptMovedBranches || []) console.log(`  moved since scan, left alone: ${m}`);
     if (receipt.deletedRemote.length > 0) console.log(`  also cleared on github: ${receipt.deletedRemote.length}`);
+    if (removalsToday) console.log(removalsToday);
   }
   console.log(`  still flying (recent work, left alone): ${receipt.kept.length}`);
   console.log('');
@@ -1045,7 +1072,7 @@ function landCommand(args = []) {
     try {
       const receipt = reap(root, { ttlDays, base, dryRun: args.includes('--dry-run'), remote: !args.includes('--no-remote'), force: args.includes('--force') });
       if (json) console.log(JSON.stringify(receipt, null, 2));
-      else printReceipt(receipt);
+      else printReceipt(receipt, { removalsToday: receipt.dryRun ? '' : removalsTodayLine(root) });
       return 0;
     } catch (err) {
       return finishLandError(err, json);
@@ -1080,6 +1107,7 @@ function landCommand(args = []) {
 }
 
 module.exports = {
+  removalsTodayLine,
   clearBoardMemo,
   collectBoard,
   countLabel,

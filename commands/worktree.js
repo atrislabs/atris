@@ -1224,18 +1224,142 @@ function worktreeHasActiveProcess(worktreePath, activeCwds) {
   });
 }
 
+// Git's own footprints for an operation still in flight in a linked worktree:
+// a write lock, or a merge/rebase/cherry-pick/revert/bisect paused mid-way.
+// A clean tree can still be mid-rebase, so the dirty check alone misses these.
+const GIT_ACTIVITY_MARKERS = [
+  ['index.lock', 'git_lock'],
+  ['HEAD.lock', 'git_lock'],
+  ['packed-refs.lock', 'git_lock'],
+  ['rebase-merge', 'git_rebase_in_progress'],
+  ['rebase-apply', 'git_rebase_in_progress'],
+  ['MERGE_HEAD', 'git_merge_in_progress'],
+  ['CHERRY_PICK_HEAD', 'git_cherry_pick_in_progress'],
+  ['REVERT_HEAD', 'git_revert_in_progress'],
+  ['BISECT_LOG', 'git_bisect_in_progress'],
+];
+
+// Returns the reason git is busy in the folder, or null. Reads the .git
+// pointer file directly so the check costs no spawn per worktree.
+function worktreeGitActivity(worktreePath) {
+  return gitStoreActivity(worktreeGitDir(worktreePath));
+}
+
+function worktreeGitDir(worktreePath) {
+  try {
+    const dotGit = path.join(worktreePath, '.git');
+    if (fs.statSync(dotGit).isDirectory()) return dotGit;
+    const match = fs.readFileSync(dotGit, 'utf8').match(/^gitdir:\s*(.+)\s*$/m);
+    return match ? path.resolve(worktreePath, match[1].trim()) : null;
+  } catch {
+    return null;
+  }
+}
+
+// Same check against a git store itself (bare repo or .git dir), for callers
+// that delete stores no worktree points at.
+function gitStoreActivity(gitDir) {
+  if (!gitDir) return null;
+  for (const [marker, reason] of GIT_ACTIVITY_MARKERS) {
+    if (fs.existsSync(path.join(gitDir, marker))) return reason;
+  }
+  return refsLockFile(path.join(gitDir, 'refs')) ? 'git_lock' : null;
+}
+
+// A branch or tag update writes refs/<name>.lock until it commits, at any depth.
+function refsLockFile(dir) {
+  let entries;
+  try { entries = fs.readdirSync(dir, { withFileTypes: true }); } catch { return null; }
+  for (const entry of entries) {
+    const file = path.join(dir, entry.name);
+    const found = entry.isDirectory() ? refsLockFile(file) : (entry.name.endsWith('.lock') ? file : null);
+    if (found) return found;
+  }
+  return null;
+}
+
+// The lock file keeping a folder and how long it has sat there, so a lock left
+// by a crashed git shows up instead of silently holding the folder.
+function worktreeGitLock(worktreePath, now = Date.now()) {
+  return gitStoreLock(worktreeGitDir(worktreePath), now);
+}
+
+// Same lookup against a git store itself, for callers that hold the store path.
+function gitStoreLock(gitDir, now = Date.now()) {
+  if (!gitDir) return null;
+  const file = GIT_ACTIVITY_MARKERS
+    .filter(([, reason]) => reason === 'git_lock')
+    .map(([marker]) => path.join(gitDir, marker))
+    .find((candidate) => fs.existsSync(candidate)) || refsLockFile(path.join(gitDir, 'refs'));
+  if (!file) return null;
+  try {
+    return { file, ageMs: Math.max(0, now - fs.statSync(file).mtimeMs) };
+  } catch {
+    return null;
+  }
+}
+
+function describeLockAge(ms) {
+  const minutes = Math.floor(ms / 60000);
+  if (minutes < 1) return 'under a minute';
+  if (minutes < 120) return `${minutes} min`;
+  return `${Math.floor(minutes / 60)} h`;
+}
+
+// Plain words for what git is partway through when it holds a folder.
+const PAUSED_GIT_WORK = {
+  git_rebase_in_progress: 'a rebase',
+  git_merge_in_progress: 'a merge',
+  git_cherry_pick_in_progress: 'a cherry-pick',
+  git_revert_in_progress: 'a revert',
+  git_bisect_in_progress: 'a bisect',
+};
+
+function describePausedGitWork(reason) {
+  return PAUSED_GIT_WORK[reason] ? `${PAUSED_GIT_WORK[reason]} is paused` : null;
+}
+
+// The kept reason as reap prints it: a git lock also names its file and age,
+// and paused work says what to finish, so the line an operator reads says
+// what to check before clearing it. The reason code stays first.
+function describeGitActivity(worktreePath, reason, now = Date.now()) {
+  const paused = describePausedGitWork(reason);
+  if (paused) return `${reason}: ${paused}`;
+  if (reason !== 'git_lock') return reason;
+  const lock = worktreeGitLock(worktreePath, now);
+  return lock ? `git_lock: ${lock.file}, ${describeLockAge(lock.ageMs)} old` : reason;
+}
+
 // Every work-folder removal leaves one line naming who removed it and why, in
 // the main checkout's state so the line outlives the folder it describes.
+// The log lives in the main checkout, so every linked folder writes one file.
+function worktreeRemovalLogPath(root) {
+  const common = runGit(['rev-parse', '--path-format=absolute', '--git-common-dir'], { cwd: root, check: false });
+  const main = common.status === 0 ? path.dirname(common.stdout.trim()) : root;
+  return path.join(main, '.atris', 'state', 'worktree_removals.jsonl');
+}
+
 function recordWorktreeRemoval(root, { path: removedPath, branch = '', by, reason }) {
   try {
-    const common = runGit(['rev-parse', '--path-format=absolute', '--git-common-dir'], { cwd: root, check: false });
-    const main = common.status === 0 ? path.dirname(common.stdout.trim()) : root;
-    const file = path.join(main, '.atris', 'state', 'worktree_removals.jsonl');
+    const file = worktreeRemovalLogPath(root);
     fs.mkdirSync(path.dirname(file), { recursive: true });
     fs.appendFileSync(file, `${JSON.stringify({
       at: new Date().toISOString(), path: removedPath, branch: branch || null, by, reason, pid: process.pid,
     })}\n`);
   } catch {}
+}
+
+// Removals logged at or after `since` (ms), oldest first. Bad lines are skipped
+// so one torn write never hides the rest.
+function readWorktreeRemovals(root, { since = 0 } = {}) {
+  let text = '';
+  try { text = fs.readFileSync(worktreeRemovalLogPath(root), 'utf8'); } catch { return []; }
+  return text.split('\n').flatMap((line) => {
+    try {
+      const row = JSON.parse(line);
+      return Date.parse(row.at) >= since ? [row] : [];
+    } catch { return []; }
+  });
 }
 
 function pruneGeneratedWorktreeCaches(worktreePath, { apply = false } = {}) {
@@ -1299,6 +1423,12 @@ function cleanupWorktrees({ root = repoRoot(), base: baseOverride = '', apply = 
     }
     if (worktreeHasActiveProcess(wtPath, activeCwds)) {
       kept.push({ ...item, reason: activeCwds ? 'active_process' : 'process_scan_failed' });
+      continue;
+    }
+    const gitActivity = worktreeGitActivity(wtPath);
+    if (gitActivity) {
+      const lock = gitActivity === 'git_lock' ? worktreeGitLock(wtPath) : null;
+      kept.push({ ...item, reason: gitActivity, ...(lock ? { lock: lock.file, lock_age_ms: lock.ageMs } : {}) });
       continue;
     }
     const rawCounts = statusCounts(wt.path);
@@ -1398,6 +1528,13 @@ function cleanup(args) {
     console.log(`${cacheAction}: ${item.path}`);
   }
   console.log(`kept: ${result.kept.length}`);
+  for (const item of result.kept.filter((kept) => kept.lock)) {
+    console.log(`held by git lock: ${item.path} lock=${item.lock} age=${describeLockAge(item.lock_age_ms)}`);
+  }
+  for (const item of result.kept) {
+    const paused = describePausedGitWork(item.reason);
+    if (paused) console.log(`held by paused git work: ${item.path} ${paused}`);
+  }
   if (!result.apply && result.candidates.length) console.log('next: atris worktree cleanup --apply');
   return 0;
 }
@@ -1486,6 +1623,12 @@ module.exports = {
   defaultStartBase,
   gitFailureDetail,
   gitNetworkEnvironment,
+  gitStoreActivity,
+  worktreeGitLock,
+  gitStoreLock,
+  describeLockAge,
+  describeGitActivity,
+  describePausedGitWork,
   describeFlightAge,
   flightStampMs,
   listActiveProcessPaths,
@@ -1495,6 +1638,7 @@ module.exports = {
   parseWorktrees,
   normalizeTargetRef,
   recordWorktreeRemoval,
+  readWorktreeRemovals,
   refreshMovedMapRefs,
   slugify,
   taskTokens,
@@ -1502,5 +1646,6 @@ module.exports = {
   swarloClaim,
   runShipHealthCheck,
   worktreeCommand,
+  worktreeGitActivity,
   worktreeHasActiveProcess,
 };

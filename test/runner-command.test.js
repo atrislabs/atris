@@ -335,13 +335,17 @@ test('buildRunnerCommand shell-quotes runner binaries with spaces', () => {
 });
 
 test('buildRunnerCommand shell-quotes model values in the default command shape', () => {
-  const cmd = buildRunnerCommand({ promptFile: '/tmp/p.tmp', model: 'nightly model' });
-  assert.match(cmd, /--model 'nightly model'/);
+  withRunnerEnv({}, () => {
+    const cmd = buildRunnerCommand({ promptFile: '/tmp/p.tmp', model: 'nightly model' });
+    assert.match(cmd, /--model 'nightly model'/);
+  });
 });
 
 test('buildRunnerCommand shell-quotes allowedTools in the default command shape', () => {
-  const cmd = buildRunnerCommand({ promptFile: '/tmp/p.tmp', allowedTools: "Bash,Read,O'Reilly" });
-  assert.match(cmd, /--allowedTools 'Bash,Read,O'\\''Reilly'/);
+  withRunnerEnv({}, () => {
+    const cmd = buildRunnerCommand({ promptFile: '/tmp/p.tmp', allowedTools: "Bash,Read,O'Reilly" });
+    assert.match(cmd, /--allowedTools 'Bash,Read,O'\\''Reilly'/);
+  });
 });
 
 test('buildRunnerCommand can replace the claude -p command shape by template', () => {
@@ -386,9 +390,11 @@ test('buildRunnerCommand template shell-quotes substituted values', () => {
 });
 
 test('buildRunnerCommand omits --allowedTools when not given', () => {
-  const cmd = buildRunnerCommand({ promptFile: '/tmp/p.tmp', model: 'sonnet' });
-  assert.match(cmd, /--model sonnet\b/);
-  assert.doesNotMatch(cmd, /--allowedTools/);
+  withRunnerEnv({}, () => {
+    const cmd = buildRunnerCommand({ promptFile: '/tmp/p.tmp', model: 'sonnet' });
+    assert.match(cmd, /--model sonnet\b/);
+    assert.doesNotMatch(cmd, /--allowedTools/);
+  });
 });
 
 test('buildRunnerCommand resolves model via the same precedence', () => {
@@ -399,8 +405,10 @@ test('buildRunnerCommand resolves model via the same precedence', () => {
 });
 
 test('buildRunnerCommand escapes single quotes in the prompt path', () => {
-  const cmd = buildRunnerCommand({ promptFile: "/tmp/it's.tmp", model: 'opus' });
-  assert.ok(cmd.includes("'\\''"), 'single quote should be shell-escaped');
+  withRunnerEnv({}, () => {
+    const cmd = buildRunnerCommand({ promptFile: "/tmp/it's.tmp", model: 'opus' });
+    assert.ok(cmd.includes("'\\''"), 'single quote should be shell-escaped');
+  });
 });
 
 test('buildRunnerCommand requires a promptFile', () => {
