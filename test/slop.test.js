@@ -3092,6 +3092,10 @@ test('fix joins "the", a noun, a verb in "s" and one bare word before a stop', (
     // is never the noun, so "the way her eyes moved" keeps its comma.
     'The scores are baked in \u2014 a clean revert restores prompt but not the data.',
     'He watched her read \u2014 the way her eyes moved.',
+    // a number with a unit before a stop is a bare word too; a list of
+    // sizes keeps its comma
+    'Agents run the full suite (3000+ tests) \u2014 a single run eats 10GB+. Two runs crash it.',
+    'Two files ship \u2014 the tokenizer 2MB, the model weights 16GB.',
   ].join('\n'));
   const { changes } = applyFixes([file], RULES, { write: false });
   assert.deepEqual(changes.map((c) => c.after), [
@@ -3100,6 +3104,8 @@ test('fix joins "the", a noun, a verb in "s" and one bare word before a stop', (
     'Check one place, the error logs folder.',
     'The scores are baked in; a clean revert restores prompt but not the data.',
     'He watched her read, the way her eyes moved.',
+    'Agents run the full suite (3000+ tests); a single run eats 10GB+. Two runs crash it.',
+    'Two files ship, the tokenizer 2MB, the model weights 16GB.',
   ]);
 });
 
