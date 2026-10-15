@@ -5809,3 +5809,49 @@ test('a cleanup saves the agents the last sweep also could not stop, in its repo
     fs.rmSync(root, { recursive: true, force: true });
   }
 });
+
+test('the landing status says the last two hourly passes could not stop an agent refused twice in a row', () => {
+  const { runSshAgentSweep, showStatus } = require('../commands/autoland');
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'autoland-status-refused-twice-'));
+  const agent = (pid) => ({ pid, ppid: 1, uid: 501, age_sec: 3600, args: 'ssh-agent -s' });
+  const runsDir = path.join(root, 'atris', 'runs');
+  let hour = 0;
+  // One real hourly pass where every stop is refused, saved as the newest receipt.
+  const pass = (pids) => {
+    const receipt = { at: new Date().toISOString() };
+    runSshAgentSweep(root, receipt, {
+      read: () => ({ agents: pids.map(agent), referenced: new Set(), unread: [] }),
+      uid: 501,
+      kill: () => { throw Object.assign(new Error('permission denied'), { code: 'EPERM' }); },
+    });
+    hour += 1;
+    fs.writeFileSync(path.join(runsDir, `autoland-tick-2026-10-15T${String(hour).padStart(2, '0')}.json`), JSON.stringify(receipt));
+  };
+  const leakLine = (pids) => {
+    const out = [];
+    const original = console.log;
+    console.log = (line = '') => out.push(String(line));
+    try {
+      showStatus(root, [], { atrisCommand: 'atris', readSshAgents: () => ({ agents: pids.map(agent), referenced: new Set() }), uid: 501 });
+    } finally {
+      console.log = original;
+    }
+    return out.find((text) => /leaked ssh-agents on this machine/.test(text));
+  };
+  try {
+    require('node:child_process').spawnSync('git', ['init', '-q'], { cwd: root });
+    fs.mkdirSync(runsDir, { recursive: true });
+    pass([201]);
+    assert.match(leakLine([201]), /; the last hourly pass could not stop it, so stop it now: atris engine sweep --apply/);
+    pass([201]);
+    const twice = leakLine([201]);
+    assert.match(twice, /; the last two hourly passes could not stop it, so stop it now: atris engine sweep --apply/);
+    // A newly refused agent beside the stuck one is counted apart.
+    pass([201, 203]);
+    const mixed = leakLine([201, 203]);
+    assert.match(mixed, /; the last hourly pass could not stop them \(1 of them twice in a row\), so stop them now: atris engine sweep --apply/);
+    console.log(`landing status after two refused hourly passes: ${twice.trim()}\nwith a new refusal beside it: ${mixed.trim()}`);
+  } finally {
+    fs.rmSync(root, { recursive: true, force: true });
+  }
+});
