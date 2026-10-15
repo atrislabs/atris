@@ -3736,3 +3736,27 @@ test('fix gives a short name after a semicolon a colon before its clause', () =>
     'Misses (WHERE 1=1; TRUNCATE TABLE audit_logs); these are destructive verbs.',
   ]);
 });
+
+test('fix pairs an aside after a bold field label that starts a list item', () => {
+  // from a research note: "- **Framework:**" then words read as one long
+  // label, so the first dash took a colon and the aside never paired. A
+  // short sub-label after the field label, or a second bold title, is
+  // still a label.
+  const D = String.fromCharCode(0x2014);
+  const file = tmpFile('field-aside.md', [
+    `- **Transferable Framework:** Applied the same three laws${D}visualize, outwork, ignore critics${D}across sports and governance.`,
+    '',
+    `- **Outcomes:** When AI completes a full job ${D} booking travel, qualifying a case ${D} operators charge for outcomes.`,
+    '',
+    `- **Next tick:** tick 31 ${D} ship it ${D} then stop.`,
+    '',
+    `- **T2:** **Ship docs** ${D} one ${D} two`,
+  ].join('\n'));
+  const { changes } = applyFixes([file], RULES);
+  assert.deepEqual(changes.map((c) => c.after), [
+    '- **Transferable Framework:** Applied the same three laws (visualize, outwork, ignore critics) across sports and governance.',
+    '- **Outcomes:** When AI completes a full job (booking travel, qualifying a case) operators charge for outcomes.',
+    '- **Next tick:** tick 31: ship it, then stop.',
+    '- **T2:** **Ship docs**: one, two',
+  ]);
+});

@@ -676,6 +676,18 @@ function fixEmDash(s, { endsBlock = false, startsBlock = false, spans = [], abov
   // label keeps its colon: "Inbox Triage: 23 emails (all read) processed".
   // A next dash before a joining word goes on with the sentence instead of
   // closing an aside, so the label stays: "1. Setup: install it, then run it".
+  // A bold field label that holds its own colon, then four plain words or
+  // more, may open a sentence whose aside pairs: "- **Framework:** Applied
+  // three laws (visualize, outwork) across sports", never "three laws:
+  // visualize, outwork, across". That reading is kept only when it gives
+  // parentheses; fewer words name a sub-label ("**Next tick:** tick 31: ship
+  // it"), and a second bold title, "**T2:** **Ship docs**", is a label too.
+  const fieldThenWords = label && /^((?:\*\*[^*]+:\*\*|__[^_]+:__)\s+)([^*_`\uE000()]*[^\s*_`\uE001()])$/.exec(label[2]);
+  if (fieldThenWords && fieldThenWords[2].trim().split(/\s+/).length >= 4) {
+    const body = fieldThenWords[2] + s.slice(label[1].length + label[2].length);
+    const alt = fixEmDash(body, { endsBlock });
+    if ((alt.match(/\(/g) || []).length > (body.match(/\(/g) || []).length) return `${label[1]}${fieldThenWords[1]}${alt}`;
+  }
   const restSentence = label && s.slice(label[0].length).split(/[.!?]["'\u201d\u2019)]*\s/)[0];
   if (label && !/^(?:\*|_|`|\uE000|"|\u201c)/.test(label[2])
     && (restSentence.match(/\u2014/g) || []).length % 2
