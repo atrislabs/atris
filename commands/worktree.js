@@ -1694,7 +1694,7 @@ function guide() {
   console.log('   atris worktree cleanup --apply');
   console.log('');
   console.log('Notes: start uses the current upstream/default remote base, not dirty local HEAD.');
-  console.log('Start reaps completed checkouts first. Cleanup preserves branches and source changes, skips live work, and prunes only ignored build caches.');
+  console.log('Start reaps completed checkouts first. Cleanup preserves branches and source changes and skips live work. In checkouts it keeps, it prunes only ignored build caches; a completed checkout it removes takes all its ignored files with it.');
   console.log('Use `atris worktree status` to see all worktrees and dirty counts.');
   return 0;
 }
