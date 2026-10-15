@@ -1077,7 +1077,12 @@ function savedBackups(root) {
       const missingPatch = patches.some((file) => {
         try { return !fs.statSync(file).isFile(); } catch { return true; }
       });
-      const unavailable = missing ? 'saved commit is missing' : missingPatch ? 'saved patch file is missing' : '';
+      const drafts = [...row.restore.matchAll(/(?:^| && )cp -R ((?:[^\s'\\]+|'[^']*'|\\.)+)\/\. \./g)]
+        .map((match) => match[1].replace(/'([^']*)'|\\(.)/g, (_, quoted, escaped) => quoted === undefined ? escaped : quoted));
+      const missingDrafts = drafts.some((folder) => {
+        try { return !fs.statSync(folder).isDirectory(); } catch { return true; }
+      });
+      const unavailable = missing ? 'saved commit is missing' : missingPatch ? 'saved patch file is missing' : missingDrafts ? 'saved draft folder is missing' : '';
       return { at: row.at, path: row.path, branch: row.branch,
         restore: unavailable ? null : row.restore,
         ...(unavailable ? { unavailable } : {}) };

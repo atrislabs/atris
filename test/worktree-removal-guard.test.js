@@ -1521,6 +1521,20 @@ test(`reap saves staged and binary work and restores it exactly${quoted ? ' with
       assert.equal(JSON.parse(absentJson.stdout).backups[0].unavailable, 'saved patch file is missing');
       fs.writeFileSync(patch, bytes);
     }
+    const drafts = saved('new files saved');
+    fs.renameSync(drafts, `${drafts}.held`);
+    const absentDrafts = spawnSync(process.execPath, [path.resolve(__dirname, '../bin/atris.js'), 'land', '--backups'], { cwd: repo, encoding: 'utf8' });
+    console.log('command: node bin/atris.js land --backups (missing saved drafts)');
+    console.log(absentDrafts.stdout.trim());
+    console.log(`exit: ${absentDrafts.status}`);
+    assert.equal(absentDrafts.status, 0, absentDrafts.stderr);
+    assert.match(absentDrafts.stdout, /cannot restore: saved draft folder is missing/);
+    assert.ok(!absentDrafts.stdout.includes('to restore:'), absentDrafts.stdout);
+    const absentDraftsJson = spawnSync(process.execPath, [path.resolve(__dirname, '../bin/atris.js'), 'land', '--backups', '--json'], { cwd: repo, encoding: 'utf8' });
+    assert.equal(absentDraftsJson.status, 0, absentDraftsJson.stderr);
+    assert.equal(JSON.parse(absentDraftsJson.stdout).backups[0].restore, null);
+    assert.equal(JSON.parse(absentDraftsJson.stdout).backups[0].unavailable, 'saved draft folder is missing');
+    fs.renameSync(`${drafts}.held`, drafts);
     const rebuilt = spawnSync('sh', ['-c', listed], { cwd: base, encoding: 'utf8' });
     assert.equal(rebuilt.status, 0, rebuilt.stderr);
     assert.equal(git(wt, ['status', '--porcelain']), status);
