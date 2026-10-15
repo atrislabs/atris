@@ -313,6 +313,8 @@ Failed blocker status batching: `test/commands.test.js:14755` awaits the json an
 
 Live card history status batching: `test/commands.test.js:14797` awaits the plain and history status reads together after the store seed. The history flag only widens the in-memory read, so both rewrite the same projection content. Two sequential CLI stages become one; every assertion remains.
 
+Archive export and status batching: `test/commands.test.js:14848` awaits the export and json status together after the first render. Both build the same projection and differ only in its fixed-length generated time, so overlapping writes still leave a whole file. Five sequential CLI stages become four; every assertion remains.
+
 Certified review fallback read batching: `test/commands.test.js:12603` overlaps the two next reads after certification and before creation. Six sequential CLI stages become five; all assertions remain. Details: `atris/refs/MAP-NOTES.md`.
 
 Final fallback read batching: `test/commands.test.js:12684` awaits next and show together after follow-up creation. Both read unchanged task rows; every assertion remains. Five sequential CLI stages become four.

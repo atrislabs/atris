@@ -14811,7 +14811,7 @@ test('task status keeps history out of the default live card', async () => {
   }
 });
 
-test('task render archives old completed records from TODO view', () => {
+test('task render archives old completed records from TODO view', async () => {
   if (!hasNodeSqlite()) return;
   const dir = makeTempDir();
   const dbPath = path.join(dir, 'tasks.db');
@@ -14842,8 +14842,13 @@ test('task render archives old completed records from TODO view', () => {
     assert.equal(completedLines.length, 8);
     assert.match(regenerated, /4 older completed tasks archived/);
 
+    // Export and status change no task state and build the same projection,
+    // differing only in its fixed-length generated time, so they run at once.
     const exportOut = path.join(dir, '.atris', 'state', 'tasks.projection.json');
-    const exported = runCli(['task', 'export', '--out', exportOut], { cwd: dir, env });
+    const [exported, status] = await Promise.all([
+      runCliAsync(['task', 'export', '--out', exportOut], { cwd: dir, env }),
+      runCliAsync(['task', 'status', '--json'], { cwd: dir, env }),
+    ]);
     assert.equal(exported.status, 0, exported.stderr);
     const projection = JSON.parse(fs.readFileSync(exportOut, 'utf8'));
     assert.equal(projection.tasks.length, 8);
@@ -14851,7 +14856,6 @@ test('task render archives old completed records from TODO view', () => {
     assert.equal(projection.surface.visible_task_count, 8);
     assert.equal(projection.surface.hidden_done_count, 4);
 
-    const status = runCli(['task', 'status', '--json'], { cwd: dir, env });
     assert.equal(status.status, 0, status.stderr);
     const statusPayload = JSON.parse(status.stdout);
     assert.equal(statusPayload.status.counts.total, 12);
