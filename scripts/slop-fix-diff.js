@@ -257,6 +257,12 @@ function splices(text) {
 // "s" never takes: "the DECIDE prompt rules themselves" names the rules.
 const SPLICE_OPENER = /(?:the|its|our|their|your|this|that|these|those|each|every|a|an)/.source;
 const SPLICE_SHAPE = new RegExp(`^(?!that (?:the|a|an|it|we|they|he|she|this|these|those|its|their|our|your)\\b)${SPLICE_OPENER} ` + /(?!(?:one|two|three|four|five|six|seven|eight|nine|ten|few|many|several|same|other|first|last|next|main|key|core|new|old|real|whole|exact|only)\b)(?:(?!(?:that|which|who|your|our|their|its|his|her|my)\b)[\w`-]+ ){1,2}(?<!\b(?:in|of|and|or) )(?!(?:this|his|its|thus|plus|always|perhaps|unless|whereas|across)\b)[a-z]+[^isu\s']s (?!(?:that|which|who|themselves|ourselves)\b)(?:[a-z`"]|\d)/.source);
+// A verb in "ed" counts too, before an object, a stop, or "but" or "and"
+// and a new subject: "every task passed", "each layer narrowed the space".
+// One right before another comma is a phrase that rides on the sentence,
+// "every piece connected, every seam intentional", and one after a pronoun
+// ends a clause on the noun: "the leads you missed".
+const PAST_SPLICE_SHAPE = new RegExp(`^(?!that (?:the|a|an|it|we|they|he|she|this|these|those|its|their|our|your)\\b)${SPLICE_OPENER} ` + /(?!(?:one|two|three|four|five|six|seven|eight|nine|ten|few|many|several|same|other|first|last|next|main|key|core|new|old|real|whole|exact|only)\b)(?:(?!(?:that|which|who|your|our|their|its|his|her|my|you|we|they|I|he|she)\b)[\w`-]+ ){1,2}[a-z]{2,}ed(?: (?:but|and) (?:nothing|none|no|it|they|we|the|this|that)\b| (?:the|a|an|it|them|every|all|each|this|no)\b|$)/.source);
 // "These" or "those" alone, or a plural noun after "the" and kin, before a
 // common plain verb is a subject too, whatever follows the verb: "those
 // need tests" and "those searches return zero results" are listed. The
@@ -284,7 +290,8 @@ function spliceShapes(sources, fixes) {
     if (fixed === source) return;
     for (const m of fixed.matchAll(new RegExp(`, (${SPLICE_OPENER} [^,;.!?\\n]*)`, 'g'))) {
       const rest = m[1];
-      if (!source.includes(`${DASH} ${rest}`) || !(SPLICE_SHAPE.test(rest) || DEMONSTRATIVE_SHAPE.test(rest)) || RELATIVE_SHAPE.test(rest)) continue;
+      const past = PAST_SPLICE_SHAPE.test(rest) && !fixed.startsWith(',', m.index + m[0].length);
+      if (!source.includes(`${DASH} ${rest}`) || !(SPLICE_SHAPE.test(rest) || DEMONSTRATIVE_SHAPE.test(rest) || past) || RELATIVE_SHAPE.test(rest)) continue;
       if (STRANDED_SHAPE.test(rest) && /^(?:[.!?]|$)/.test(fixed.slice(m.index + m[0].length))) continue;
       if (takesComma(fixed.slice(0, m.index)) || FIELD_VALUE_SHAPE.test(fixed.slice(0, m.index))) continue;
       const key = rest.replace(/`[^`]*`/g, '``');

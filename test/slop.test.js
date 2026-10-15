@@ -5159,6 +5159,14 @@ test('the fix diff splice list skips a noun after "in" or "of" and a noun with i
     leads.map(([l, t]) => `${l} ${D} 7 at ceiling, 5 broken ${D} ${t}.`),
     leads.map(([l, t]) => `${l} (7 at ceiling, 5 broken), ${t}.`),
   ).map((s) => s.text), ['the loop has nothing to run']);
+  // a verb in "ed" counts too, before an object or a stop: "every task
+  // passed"; one right before another comma rides on the sentence, and one
+  // after a pronoun ends a clause on the noun
+  const past = [['every task passed', '.'], ['each layer narrowed the space', '.'], ['every piece connected', ', every seam intentional.'], ['the leads you missed', '.']];
+  assert.deepEqual(spliceShapes(
+    past.map(([t, end]) => `The run held ${D} ${t}${end}`),
+    past.map(([t, end]) => `The run held, ${t}${end}`),
+  ).map((s) => s.text), ['every task passed', 'each layer narrowed the space']);
   // "these" or "those" alone, or a plural noun after them, before a plain
   // verb is a subject too, so the real "those searches return zero results"
   // and "these always wait for review" are listed; "those still open in
