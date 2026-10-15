@@ -1465,6 +1465,37 @@ test('every engine started through a runner or profile variable records its run 
       }
       return { values, open: false };
     };
+    // The top-level entries of a braced object and the text after its
+    // closing brace, or null when the text does not start one.
+    const objectEntries = (text) => {
+      if (!text.startsWith('{')) return null;
+      const entries = [''];
+      let depth = 0;
+      const tokens = /'(?:\\.|[^'\\])*'|"(?:\\.|[^"\\])*"|`(?:\\.|[^`\\])*`|[()[\]{},]|[^'"`()\[\]{},]+/g;
+      for (const token of text.slice(1).matchAll(tokens)) {
+        if (token[0] === '}' && depth === 0) return { entries: entries.map((entry) => entry.trim()).filter(Boolean), rest: text.slice(token.index + 2) };
+        if (token[0] === ',' && depth === 0) {
+          entries.push('');
+          continue;
+        }
+        if (/^[([{]$/.test(token[0])) depth += 1;
+        if (/^[)\]}]$/.test(token[0])) depth -= 1;
+        entries[entries.length - 1] += token[0];
+      }
+      return null;
+    };
+    // The key, key default, and whole-object default of a destructured
+    // parameter that binds this name. Nested patterns are not read.
+    const objectPattern = (parameter, name) => {
+      const object = objectEntries(parameter.trim());
+      const whole = object && /^\s*(?:=\s*([\s\S]*))?$/.exec(object.rest);
+      if (!whole) return null;
+      for (const entry of object.entries) {
+        const binding = /^([A-Za-z_$][\w$]*)\s*(?::\s*([A-Za-z_$][\w$]*))?\s*(?:=\s*([\s\S]*))?$/.exec(entry);
+        if (binding && (binding[2] || binding[1]) === name) return { key: binding[1], fallback: (binding[3] || '').trim(), whole: (whole[1] || '').trim() };
+      }
+      return null;
+    };
     const sourceAt = (source, position) => {
       const visible = withoutHelperDefinitions(code, position);
       let declarationEnd = position;
@@ -1499,7 +1530,9 @@ test('every engine started through a runner or profile variable records its run 
       // known runner. An unrelated parameter name alone is not evidence.
       const header = definitionHeader(code, fnStart);
       const parameters = header?.parameters || [];
-      const slot = parameters.findIndex((name) => name.split('=')[0].trim() === parameter);
+      let slot = parameters.findIndex((name) => name.split('=')[0].trim() === parameter);
+      let pattern = null;
+      if (slot < 0) slot = parameters.findIndex((text) => (pattern = objectPattern(text, parameter)));
       const defaultSource = slot < 0 ? '' : parameters[slot].slice(parameters[slot].indexOf('=') + 1).trim();
       const binding = `${fnStart}:${parameter}`;
       if (slot >= 0 && !following.has(binding)) {
@@ -1556,7 +1589,37 @@ test('every engine started through a runner or profile variable records its run 
           // Omitted arguments use defaults in the definition's outer scope,
           // and so does an explicit undefined unless a binding at the call
           // renames it. Any other value, including null, never falls back.
-          const omitted = !supplied || supplied === 'void 0' || (supplied === 'undefined' && !bindsAt('undefined', suppliedAt));
+          const leftUndefined = (text, at) => !text || text === 'void 0' || (text === 'undefined' && !bindsAt('undefined', at));
+          const omitted = leftUndefined(supplied, suppliedAt);
+          if (pattern) {
+            // An omitted object takes the whole-object default, and with none
+            // the destructuring throws before any launch. In an object literal
+            // the last entry for the key wins, a later spread or computed key
+            // may replace it, and a missing key uses the key default. Unknown
+            // objects may leave the key out too.
+            const objectText = omitted ? pattern.whole : supplied;
+            const objectAt = omitted ? fnStart : suppliedAt;
+            if (!objectText) continue;
+            const literal = objectEntries(objectText);
+            const sources = [];
+            let unset = true;
+            if (literal && !literal.rest.trim()) {
+              let value = '';
+              let open = false;
+              for (const entry of literal.entries) {
+                const property = /^(['"]?)([A-Za-z_$][\w$]*)\1\s*(?::\s*([\s\S]*))?$/.exec(entry);
+                if (property && property[2] === pattern.key) {
+                  value = property[3] === undefined ? property[2] : property[3].trim();
+                  open = false;
+                } else if (/^(?:\.\.\.|\[)/.test(entry)) open = true;
+              }
+              unset = open || leftUndefined(value, objectAt);
+              if (!leftUndefined(value, objectAt)) sources.push([value, objectAt]);
+            } else if (objectText === 'null') continue;
+            if (unset && pattern.fallback) sources.push([pattern.fallback, fnStart]);
+            if (sources.some(([source, at]) => engineSourceAt(source, at, next))) return true;
+            continue;
+          }
           const hasDefault = parameters[slot].includes('=');
           if (engineSourceAt(omitted && hasDefault ? defaultSource : supplied, omitted && hasDefault ? fnStart : suppliedAt, next)) {
             return true;
@@ -1634,6 +1697,29 @@ test('every engine started through a runner or profile variable records its run 
   assert.deepStrictEqual(withDefault('launch(...[prompt]);'), ['commands/planted.js:2 runner']);
   assert.deepStrictEqual(withDefault("launch(...[prompt, 'git']);"), []);
   assert.deepStrictEqual(withDefault("launch(...[prompt, undefined]);"), ['commands/planted.js:2 runner'], 'undefined inside a spread array uses the default too');
+  // A destructured options parameter reads its key from the call's object,
+  // and the key default applies when that object leaves the key unset.
+  const options = (call, parameters = '{ runner = resolveClaudeRunnerBin() }', between = '') => planted(`function launch(${parameters}) {\n  spawnSync(runner, args);\n}\n${between}${call}\n`);
+  assert.deepStrictEqual(options('launch({});'), ['commands/planted.js:2 runner']);
+  assert.deepStrictEqual(options('launch({ prompt });'), ['commands/planted.js:2 runner']);
+  assert.deepStrictEqual(options('launch({ runner: undefined });'), ['commands/planted.js:2 runner']);
+  assert.deepStrictEqual(options("launch({ runner: 'git' });"), []);
+  assert.deepStrictEqual(options("launch({ 'runner': 'git' });"), [], 'a quoted key names the same property');
+  assert.deepStrictEqual(options('launch(null);'), [], 'null throws before any launch');
+  assert.deepStrictEqual(options('launch();'), [], 'an omitted object with no default throws before any launch');
+  assert.deepStrictEqual(options('launch();', '{ runner = resolveClaudeRunnerBin() } = {}'), ['commands/planted.js:2 runner']);
+  assert.deepStrictEqual(options('launch();', '{ runner } = { runner: resolveClaudeRunnerBin() }'), ['commands/planted.js:2 runner']);
+  assert.deepStrictEqual(options('launch(opts);'), ['commands/planted.js:2 runner'], 'unknown options may leave the key out');
+  assert.deepStrictEqual(options('launch({ ...opts });'), ['commands/planted.js:2 runner']);
+  assert.deepStrictEqual(options("launch({ runner: 'git', ...opts });"), ['commands/planted.js:2 runner'], 'a later spread may unset the key');
+  assert.deepStrictEqual(options("launch({ ...opts, runner: 'git' });"), [], 'a key after the spread wins');
+  assert.deepStrictEqual(options('launch({ runner: resolveClaudeRunnerBin() });', '{ runner }'), ['commands/planted.js:2 runner']);
+  assert.deepStrictEqual(options('launch({ runner });', '{ runner }', 'const runner = resolveClaudeRunnerBin();\n'), ['commands/planted.js:2 runner'], 'a shorthand key reads the binding at the call');
+  assert.deepStrictEqual(options("launch({ runner: 'git' });", '{ runner }'), []);
+  assert.deepStrictEqual(options('launch({});', '{ bin: runner = resolveClaudeRunnerBin() }'), ['commands/planted.js:2 runner'], 'a renamed key keeps its own default');
+  assert.deepStrictEqual(options('launch({ runner: resolveClaudeRunnerBin() });', '{ bin: runner }'), [], 'the key, not the local name, picks the value');
+  assert.deepStrictEqual(options('launch(prompt, {});', 'prompt, { runner = resolveClaudeRunnerBin() }'), ['commands/planted.js:2 runner']);
+  assert.deepStrictEqual(planted("function launch({ runner = resolveClaudeRunnerBin() }) {\n  startEngineRun(root);\n  spawnSync(runner, args);\n}\nlaunch({});\n"), []);
   // Literal and captured defaults count only when a same-file call omits them.
   for (const [head, tail] of [
     ['function launch', '}'],
