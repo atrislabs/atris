@@ -1065,7 +1065,7 @@ function isRevisionSignalFile(file) {
 // A person editing a member's role, goals, context, or the team roster after a
 // landing is coaching the team, not fixing broken work. Live 2026-10-15: most
 // of 51 "revisions" in atris-desktop-v2 were goals.json and MEMBER.md edits,
-// so the boot line told Keshav he fixed work he had only steered.
+// so the boot line told the operator they fixed work they had only steered.
 const COACHING_FILES = [
   /^atris\/team\/[^/]+\/(?:MEMBER\.md|MISSION\.md|WAKE\.md|lessons\.md|goals\.(?:json|md))$/,
   /^atris\/team\/[^/]+\/(?:context|skills)\//,
@@ -1734,7 +1734,6 @@ module.exports = {
   runLoopDoctor,
   collectRevisionSignals,
   formatRevisionsReport,
-  isCoachingFile,
   isAgentCommitBody,
   runLocalFallback,
   summarizeLocalMissionRun,
