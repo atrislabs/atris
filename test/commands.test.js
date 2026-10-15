@@ -18745,7 +18745,7 @@ test('help invocations skip background update-check cache writes', async () => {
 
     const homes = commands.map(args => path.join(dir, `home-${args[0]}`));
     const results = await Promise.all(commands.map((args, index) =>
-      runCliAsync(args, { cwd: dir, env: { HOME: homes[index] } })));
+      runCliAsync(args, { cwd: dir, env: { HOME: homes[index], ATRIS_SKIP_UPDATE_CHECK: '', NO_UPDATE_NOTIFIER: '' } })));
     for (const [index, args] of commands.entries()) {
       const home = homes[index];
       const res = results[index];
