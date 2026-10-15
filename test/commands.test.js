@@ -8916,6 +8916,21 @@ test('task review-lane-loop runs bounded safe actions and stops before human acc
       }
     };
 
+    // The three later rows only need to sit in review, so their ready and
+    // review steps go straight to the task store. The first row still readies
+    // through the CLI. Rows and review lane loop output matched both ways.
+    const seedReviewed = (id, readyProof, reviewProof, nextTask) => {
+      const db = taskStore.open(dbPath);
+      try {
+        const readied = taskStore.readyTask(db, { id, actor: 'codex', proof: readyProof, result: FIXTURE_RESULT_SENTENCE });
+        assert.equal(readied.ready, true, readied.reason);
+        const reviewed = taskStore.reviewTask(db, { id, actor: 'codex-review', reward: 0, proof: reviewProof, ...(nextTask ? { nextTask } : {}) });
+        assert.equal(reviewed.reviewed, true, reviewed.reason);
+      } finally {
+        taskStore.close();
+      }
+    };
+
     const reviewTask = seedTask('Loop should start one review chat and stop on repeat', 'OBL-950');
     const reviewRef = reviewTask.display_id;
     assert.equal(runCli([
@@ -8953,33 +8968,10 @@ test('task review-lane-loop runs bounded safe actions and stops before human acc
     assert.equal(afterReviewInProcess.latest_event_type, afterReview.latest_event_type);
 
     const continueTask = seedTask('Loop should continue one certified task and stop on repeat', 'OBL-951');
-    const continueRef = continueTask.display_id;
-    assert.equal(runCli([
-      'task', 'ready', continueRef,
-      '--as', 'codex',
-      '--proof', 'node --check test/commands.test.js passed before review-lane-loop continuation',
-    ], { cwd: dir, env }).status, 0);
-    assert.equal(runCli([
-      'task', 'review', continueRef,
-      '--reward', '0',
-      '--as', 'codex-review',
-      '--proof', 'node --test test/commands.test.js passed during review-lane-loop continuation',
-      '--next', 'Add a follow-up created by review lane loop',
-    ], { cwd: dir, env }).status, 0);
+    seedReviewed(continueTask.id, 'node --check test/commands.test.js passed before review-lane-loop continuation', 'node --test test/commands.test.js passed during review-lane-loop continuation', 'Add a follow-up created by review lane loop');
 
     const waitingTask = seedTask('Loop should leave human accept waiting alone', 'OBL-951');
-    const waitingRef = waitingTask.display_id;
-    assert.equal(runCli([
-      'task', 'ready', waitingRef,
-      '--as', 'codex',
-      '--proof', 'node --check test/commands.test.js passed before review-lane-loop human gate',
-    ], { cwd: dir, env }).status, 0);
-    assert.equal(runCli([
-      'task', 'review', waitingRef,
-      '--reward', '0',
-      '--as', 'codex-review',
-      '--proof', 'node --test test/commands.test.js passed during review-lane-loop human gate',
-    ], { cwd: dir, env }).status, 0);
+    seedReviewed(waitingTask.id, 'node --check test/commands.test.js passed before review-lane-loop human gate', 'node --test test/commands.test.js passed during review-lane-loop human gate');
     const beforeWaiting = showTask(waitingTask.id);
 
     const liveContinueLoop = runCli(['task', 'review-lane-loop', '--goal-id', 'OBL-951', '--max-steps', '3', '--json'], { cwd: dir, env });
@@ -8998,18 +8990,7 @@ test('task review-lane-loop runs bounded safe actions and stops before human acc
     assert.equal(afterWaiting.current_version, beforeWaiting.current_version);
 
     const humanOnlyTask = seedTask('Loop must stop on human-only review rows', 'OBL-952');
-    const humanOnlyRef = humanOnlyTask.display_id;
-    assert.equal(runCli([
-      'task', 'ready', humanOnlyRef,
-      '--as', 'codex',
-      '--proof', 'node --check test/commands.test.js passed before review-lane-loop human only',
-    ], { cwd: dir, env }).status, 0);
-    assert.equal(runCli([
-      'task', 'review', humanOnlyRef,
-      '--reward', '0',
-      '--as', 'codex-review',
-      '--proof', 'node --test test/commands.test.js passed during review-lane-loop human only',
-    ], { cwd: dir, env }).status, 0);
+    seedReviewed(humanOnlyTask.id, 'node --check test/commands.test.js passed before review-lane-loop human only', 'node --test test/commands.test.js passed during review-lane-loop human only');
     const humanOnlyLoop = runCli(['task', 'review-lane-loop', '--goal-id', 'OBL-952', '--max-steps', '3', '--json'], { cwd: dir, env });
     assert.equal(humanOnlyLoop.status, 0, humanOnlyLoop.stderr);
     const humanOnlyPayload = JSON.parse(humanOnlyLoop.stdout);
