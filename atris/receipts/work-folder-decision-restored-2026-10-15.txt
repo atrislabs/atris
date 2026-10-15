@@ -1,0 +1,12 @@
+Restored the missing ignored-file cleanup recommendation.
+
+Files: atris/status/for-you.md; atris/team/architect/logs/2026-10-15.md; this receipt.
+Finding: the earlier evidence claimed a decision card existed, but atris/status/for-you.md was absent in this checkout.
+Action: restored a concrete recommendation, its retention cost, and the required shared check and real cleanup tests. No runtime or deletion behavior changed.
+Progress: one missing decision surface restored; the retention rule still needs an operator decision.
+Verify: node --test test/worktree-removal-guard.test.js test/member-tidy.test.js && node bin/atris.js slop --staged
+next_push: obtain the exact ignored-file retention rule before implementing the shared cleanup check.
+Result: exit 0.
+Output excerpt: tests 90; pass 90; fail 0; cancelled 0; skipped 0; todo 0.
+Output excerpt: clean, no slop tells in 3 files.
+layer: beliefs
