@@ -362,3 +362,9 @@ The contract has a test on both sides \u2014 if the format changes, the round-tr
 => The contract has a test on both sides; if the format changes, the round-trip test fails and we catch it.
 The contract has a test on both sides \u2014 if the format changes, the test results and the logs go to S3.
 => The contract has a test on both sides, if the format changes, the test results and the logs go to S3.
+
+# after an "if" clause, a verb in "s", "and the" and a second verb in "s"
+# is two clauses, but "the test results and the team logs in tests" reads
+# the same and is a noun list; no real line in the corpus has it yet
+The gate has a test \u2014 if the format changes, the round-trip check breaks and the team reverts it.
+~> The gate has a test; if the format changes, the round-trip check breaks and the team reverts it.
