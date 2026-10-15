@@ -1690,6 +1690,7 @@ module.exports = {
   gitHold,
   describeGitHold,
   describeRefusedRemoval,
+  describePin,
   describeFlightAge,
   flightStampMs,
   listActiveProcessPaths,

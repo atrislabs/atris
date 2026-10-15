@@ -2,7 +2,7 @@ const fs = require('fs');
 const path = require('path');
 const gitSpawn = require('../lib/git-spawn');
 const { compactErrorPayload, printCliJson } = require('../lib/cli-json');
-const { listWorktrees, statusCounts, defaultMainlineBase, listActiveProcessPaths, worktreeHasActiveProcess, gitHold, describeGitHold, describeRefusedRemoval, recordWorktreeRemoval, readWorktreeRemovals } = require('./worktree');
+const { listWorktrees, statusCounts, defaultMainlineBase, listActiveProcessPaths, worktreeHasActiveProcess, gitHold, describeGitHold, describeRefusedRemoval, describePin, recordWorktreeRemoval, readWorktreeRemovals } = require('./worktree');
 
 const DEFAULT_TTL_DAYS = 7;
 const DEFAULT_STALE_HOURS = 48;
@@ -578,6 +578,13 @@ function reap(root, { ttlDays = DEFAULT_TTL_DAYS, staleHours = DEFAULT_STALE_HOU
     const hold = gitHold({ worktree: w.path, now });
     if (hold) {
       protectedWorktrees.push({ ...w, reason: `${hold.reason}: ${describeGitHold(hold)}` });
+      continue;
+    }
+    // Git refuses a pinned folder even under --force, so skip it before its
+    // patches are saved again on every pass, and name the pin's reason and age.
+    const pinned = describePin(w.path, now);
+    if (pinned) {
+      protectedWorktrees.push({ ...w, reason: pinned });
       continue;
     }
     if (worktreeWithinReapGrace(w.path, now)) {

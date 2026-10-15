@@ -789,3 +789,22 @@ test('worktree cleanup names the reason and age of a pinned folder it skips', ()
     fs.rmSync(base, { recursive: true, force: true });
   }
 });
+
+test('reap skips a dirty pinned folder before saving its patches, even with --force', () => {
+  const { base, repo, wt } = landedWorktree();
+  try {
+    fs.writeFileSync(path.join(wt, 'README.md'), '# edited\n');
+    git(repo, ['worktree', 'lock', '--reason', 'agent still writing', wt]);
+    const pin = path.join(worktreeGitDir(wt), 'locked');
+    const stale = new Date(Date.now() - 3 * 60 * 60 * 1000);
+    fs.utimesSync(pin, stale, stale);
+    fs.utimesSync(wt, stale, stale);
+    const receipt = reap(repo, { remote: false, force: true, activeCwds: [] });
+    assert.ok(receipt.keptWorktrees.includes(`${wt} (pinned by git worktree lock, 3 h old: agent still writing)`), JSON.stringify(receipt.keptWorktrees));
+    assert.deepEqual(receipt.patches, []);
+    assert.equal(fs.readFileSync(path.join(wt, 'README.md'), 'utf8'), '# edited\n');
+    assert.deepEqual(removalLines(repo), []);
+  } finally {
+    fs.rmSync(base, { recursive: true, force: true });
+  }
+});
