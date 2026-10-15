@@ -5099,9 +5099,10 @@ test('startup repair command lookup skips PATH entries that the shell cannot run
   }
 });
 
-test('startup repair lookup searches the current folder for empty PATH entries in shell order', () => {
-  const { spawnSync } = require('node:child_process');
+test('startup repair lookup searches the current folder for empty PATH entries in shell order', async () => {
+  const { execFile } = require('node:child_process');
   const root = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'engine-command-empty-path-')));
+  const run = (file, args, options) => new Promise((resolve) => execFile(file, args, { cwd: root, encoding: 'utf8', ...options }, (error, stdout, stderr) => resolve({ error, stdout, stderr })));
   try {
     const bin = path.join(root, 'checkout', 'bin');
     fs.mkdirSync(bin, { recursive: true });
@@ -5119,25 +5120,26 @@ test('startup repair lookup searches the current folder for empty PATH entries i
         records: pathAtrisRecordsRuns()
       }));
     `;
-    for (const entries of [[], ['', bin], [path.join(root, 'missing'), '', bin], [path.join(root, 'missing'), ''], [bin, '']]) {
+    // Nothing here writes a file, so every PATH and shell checks at once.
+    await Promise.all([[], ['', bin], [path.join(root, 'missing'), '', bin], [path.join(root, 'missing'), ''], [bin, '']].map(async (entries) => {
       const env = { ...process.env, PATH: entries.join(path.delimiter) };
       const currentFirst = entries[0] !== bin;
-      const read = spawnSync(process.execPath, ['-e', probe], { cwd: root, env, encoding: 'utf8' });
-      assert.strictEqual(read.status, 0, read.stderr);
+      const read = await run(process.execPath, ['-e', probe], { env });
+      assert.strictEqual(read.error, null, read.stderr);
       const hint = JSON.parse(read.stdout);
       assert.strictEqual(hint.command, `${process.execPath} ${script}`, env.PATH);
       assert.strictEqual(hint.records, !currentFirst, env.PATH);
-      for (const shell of ['/bin/sh', ...(fs.existsSync('/bin/zsh') ? ['/bin/zsh'] : [])]) {
-        const lookup = spawnSync(shell, ['-c', 'atris'], { cwd: root, env, encoding: 'utf8' });
-        assert.strictEqual(lookup.status, 0, lookup.stderr);
+      await Promise.all(['/bin/sh', ...(fs.existsSync('/bin/zsh') ? ['/bin/zsh'] : [])].map(async (shell) => {
+        const lookup = await run(shell, ['-c', 'atris'], { env });
+        assert.strictEqual(lookup.error, null, lookup.stderr);
         assert.strictEqual(lookup.stdout, currentFirst ? 'old-install' : '[]', `${shell}: ${env.PATH}`);
-        const run = spawnSync(shell, ['-c', `${hint.command} engine sweep --fix-startup`], {
-          cwd: root, env: { ...env, PATH: `${env.PATH}${path.delimiter}${path.dirname(process.execPath)}` }, encoding: 'utf8'
+        const repair = await run(shell, ['-c', `${hint.command} engine sweep --fix-startup`], {
+          env: { ...env, PATH: `${env.PATH}${path.delimiter}${path.dirname(process.execPath)}` },
         });
-        assert.strictEqual(run.status, 0, run.stderr);
-        assert.strictEqual(run.stdout, '["engine","sweep","--fix-startup"]', `${shell}: ${env.PATH}`);
-      }
-    }
+        assert.strictEqual(repair.error, null, repair.stderr);
+        assert.strictEqual(repair.stdout, '["engine","sweep","--fix-startup"]', `${shell}: ${env.PATH}`);
+      }));
+    }));
   } finally {
     fs.rmSync(root, { recursive: true, force: true });
   }
