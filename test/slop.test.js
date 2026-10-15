@@ -5257,10 +5257,14 @@ test('the fix and the splice list read one word list for "these" and "those"', (
   // so every lead word and verb there is joined by one and listed by the other
   const { PRESENT_PLURAL_VERB, DEMONSTRATIVE_LEAD } = require('../commands/slop');
   const { spliceShapes } = require('../scripts/slop-fix-diff.js');
-  const words = (list) => list.slice(3, -1).split('|');
+  // a verb that is also an adjective carries the place words it needs, as
+  // "live" needs "in", "on" and kin, so it is tested before the first one:
+  // "those live in place", never "those live demo runs"
+  const words = (list) => list.slice(3, -1).match(/[a-z]+(?:\(\?=[^()]*\([^()]*\)[^()]*\))?/g);
+  const verbs = words(PRESENT_PLURAL_VERB).map((w) => w.replace(/\(\?=[^(]*\(\?:([a-z]+).*$/, ' $1 place'));
   const rests = [];
   for (const lead of ['', ...words(DEMONSTRATIVE_LEAD)]) {
-    for (const verb of words(PRESENT_PLURAL_VERB)) rests.push(`those ${lead ? `${lead} ` : ''}${verb} for now`);
+    for (const verb of verbs) rests.push(`those ${lead ? `${lead} ` : ''}${verb.includes(' ') ? verb : `${verb} for now`}`);
   }
   const D = String.fromCharCode(0x2014);
   const sources = rests.map((r) => `We split it ${D} ${r}.`);

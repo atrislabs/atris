@@ -395,3 +395,16 @@ Check one place \u2014 the error logs (in /tmp) folder.
 # bare object reads past the aside too
 The HMAC path still works \u2014 the refactor (hmac_key to auth_secret) preserves behavior.
 => The HMAC path still works; the refactor (hmac_key to auth_secret) preserves behavior.
+
+# "these" or "those" and a verb the fixer reads since the wider list found
+# them in real docs; "live" is a verb only before a place word
+Two parsers \u2014 these live in the parser.
+=> Two parsers; these live in the parser.
+Logs are risky \u2014 these often carry request bodies.
+=> Logs are risky; these often carry request bodies.
+Most runs stall \u2014 these hit local optima.
+=> Most runs stall; these hit local optima.
+We ran demos \u2014 those live demo runs.
+=> We ran demos, those live demo runs.
+Check the counts \u2014 those hit rates.
+=> Check the counts, those hit rates.

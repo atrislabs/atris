@@ -206,8 +206,10 @@ const CLAUSE_END = "(?<=[\\w)\\]\"'*_`%\\u201d\\u2019\\uE001]|\\betc\\.|\\w\\+{1
 // description: "the token, always set by the server".
 // A masked code span before the dash counts as the word: "Do not use `PUT`".
 // The splice list in scripts/slop-fix-diff.js reads both word lists, so the
-// words it counts and the words the fix joins cannot drift apart.
-const PRESENT_PLURAL_VERB = '(?:pass|fail|run|work|break|hold|match|agree|validate|load|build|ship|land|compile|apply|need|stay|remain|exist|show|point|wait|block|return)';
+// words it counts and the words the fix joins cannot drift apart. "live" is
+// a verb only before a place word: "these live in the parser", while "those
+// live demo runs" keeps its comma.
+const PRESENT_PLURAL_VERB = '(?:pass|fail|run|work|break|hold|match|agree|validate|load|build|ship|land|compile|apply|need|stay|remain|exist|show|point|wait|block|return|live(?=\\s+(?:in|on|at|under|inside|beside|alongside)\\b)|carry|hit)';
 const COMMAND_VERB = '(?:append|ask|assume|automate|block|bump|burn|capture|check|close|compare|create|dump|echo|fabricate|flip|grep|handle|hardcode|hold|import|include|ingest|insert|inspect|invent|join|keep|leave|massage|measure|open|outsource|override|paraphrase|predict|read|rely|remain|render|resolve|rsync|run|say|sell|send|set|show|sign|skip|speculate|split|stay|store|sweep|tell|test|truncate|trust|use|verify|violate|wait|write)';
 // Words that open a sentence on a phrase, not its subject: "Based on the
 // picture", "Looking at the stalls". The splice list reads them too.
