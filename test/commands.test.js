@@ -6418,18 +6418,18 @@ test('brain scorecard carries task landing quality and human outcome', () => {
     }
 	    fs.writeFileSync(episodePath, `${episodeRows.map(row => JSON.stringify(row)).join('\n')}\n`, 'utf8');
 
-    // Seed creation only; claim, ready, human feedback and scorecard stay on the CLI.
+    // Seed creation and claim; ready, human feedback and scorecard stay on the CLI.
     const revisedDb = taskStore.open(dbPath);
     let revisedRef;
     try {
       const created = addSeedTask(revisedDb, { title: 'Landing reworked task', tag: 'approval', workspaceRoot: taskStore.workspaceRoot(dir) });
       assert.equal(created.inserted, true);
+      assert.equal(taskStore.claimTask(revisedDb, { id: created.id, claimedBy: 'codex' }).claimed, true);
       revisedRef = taskStore.taskDisplayRefMap(taskStore.listTasks(revisedDb, { workspaceRoot: taskStore.workspaceRoot(dir) })).get(created.id);
       assert.ok(revisedRef);
     } finally {
       taskStore.close();
     }
-    assert.equal(runCli(['task', 'claim', revisedRef, '--as', 'codex'], { cwd: dir, env }).status, 0);
     const revisedReady = runCli([
       'task', 'ready', revisedRef,
       '--proof', 'node --check test/commands.test.js passed but receipt was vague',

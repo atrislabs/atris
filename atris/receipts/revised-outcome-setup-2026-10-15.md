@@ -1,0 +1,11 @@
+## Revised outcome setup
+- Changed: removed one setup program launch while retaining every outcome assertion.
+- Files: test/commands.test.js, atris/MAP.md, atris/refs/MAP-NOTES.md.
+- Proof: /opt/homebrew/bin/node --test --test-name-pattern='brain scorecard carries task landing quality and human outcome' test/commands.test.js
+- Output: pass 1, fail 0; exit 0.
+- Required proof: node --test test/roster-run-record.test.js && node bin/atris.js slop --staged
+- Output: pass 12, fail 0; clean, no slop tells in 3 files; exit 0.
+- Metric: one fewer program launch; single-run case time 923.6 ms before and 800.1 ms after.
+- Learned: the revised-row claim can share its seed connection while later outcome checks remain real commands.
+- next_push: replace another setup-only claim before a display check.
+- layer: capabilities

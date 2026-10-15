@@ -2879,3 +2879,5 @@ Stale render fixture setup: `test/commands.test.js:7931` readies the seeded row 
 Current queue claim setup: `test/commands.test.js:11196` prepares the claimed plan row through production claimTask, closing in finally before real current and queue reads. One setup launch is removed; every assertion remains.
 
 Scorecard outcome claim setup: `test/commands.test.js:6376` seeds and claims the accepted row through one production store connection, closed before readiness. One setup launch is removed; all outcome checks remain on the CLI.
+
+Revised outcome claim setup: `test/commands.test.js:6419` seeds and claims the revised row through one production store connection, closed before readiness. One setup launch is removed; every outcome assertion and subsequent CLI check remains.
