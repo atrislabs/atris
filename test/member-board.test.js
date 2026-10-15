@@ -293,6 +293,20 @@ test('a result column with nothing in it gives its room to a cut job', () => {
   }
 });
 
+test('a finished row gets its last step back in the room of an empty result column, never at a job word', () => {
+  const done = [{ member: 'scout', state: 'done ok', alive: null, pid: null, engine: '', running_for: '', last_result: 'ok', last_result_reason: '', last_result_ago: '4m ago', ago: '4m ago', job: 'write release notes', step: 'reading CHANGELOG.md' }];
+  // Its result gives way to "-" here. The step used to stay away until 68
+  // columns, with a column of "-" kept in its place from 57 to 67.
+  assert.match(renderBoard(done, '/progress', 0, 60), /^member\s+state\s+ago\s+job\s+last step\nscout\s+done ok\s+4m ago\s+write release notes\s+reading CHA\.\.\.$/);
+  for (let width = 40; width <= 90; width++) {
+    const board = renderBoard(done, '/progress', 0, width);
+    assert.ok(board.split('\n').every((line) => line.length <= width), `${width}\n${board}`);
+    if (width >= 55) assert.match(board, /\swrite release notes\s+readin/, `${width}: the job reads whole beside its step\n${board}`);
+  }
+  // A step that would cost the job a word still stays away.
+  assert.match(renderBoard(done, '/progress', 0, 54), /\swrite release notes$/m);
+});
+
 test('a live run with no step yet never keeps an empty last step that cuts a job', () => {
   const dir = fakeDir({
     builder: [`${at(5)} m-1 started: ship the login fix`, `${at(4)} m-1 finished: ok`],
