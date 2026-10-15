@@ -1486,62 +1486,69 @@ test('follow emits only new full lines, picks up new members, survives truncatio
   }
 });
 
-test('atris member board --json --follow streams one JSON object per line', async () => {
-  const { spawn } = require('node:child_process');
-  const recent = new Date(Date.now() - 5_000).toISOString();
-  const dir = fakeDir({ navigator: [`${recent} m-9 started: map the repo`] });
-  const child = spawn(process.execPath, [cliPath, 'member', 'board', '--json', '--follow'], {
-    cwd: dir, env: { ...process.env, ATRIS_PROGRESS_DIR: dir },
-  });
-  let out = '';
-  let stderr = '';
-  let closed = false;
-  const done = new Promise((resolve) => child.once('close', (code, signal) => {
-    closed = true;
-    resolve({ code, signal });
-  }));
-  child.stderr.on('data', (d) => { stderr += d; });
-  child.stdout.on('data', (d) => { out += d; });
-  // Pipe chunks can end inside a JSON object; only parse newline-ended records.
-  const lines = () => out.split('\n').slice(0, -1).filter(Boolean).map((l) => JSON.parse(l));
-  const waitFor = async (n) => {
-    const until = Date.now() + 15_000;
-    while (lines().length < n && !closed && Date.now() < until) await new Promise((r) => setTimeout(r, 50));
-    const got = lines();
-    assert.ok(got.length >= n, `expected ${n} JSON lines, received ${got.length}; closed=${closed}; stdout=${out}; stderr=${stderr}`);
-    return got;
-  };
-  try {
-    const [snapshot] = await waitFor(1);
-    assert.equal(snapshot.kind, 'snapshot');
-    assert.equal(snapshot.dir, dir);
-    assert.deepEqual(snapshot.members.map((m) => [m.member, m.state]), [['navigator', 'working']]);
+for (const pendingAtStartup of [false, true]) {
+  test(`atris member board --json --follow streams full events with timeout split ${pendingAtStartup ? 'before' : 'after'} startup`, async () => {
+    const { spawn } = require('node:child_process');
+    const recent = new Date(Date.now() - 5_000).toISOString();
+    const dir = fakeDir({ navigator: [`${recent} m-9 started: map the repo`] });
+    const timeoutAt = new Date().toISOString();
+    const timeoutStart = `${timeoutAt} m-9 finished: failed (timed`;
+    if (pendingAtStartup) fs.appendFileSync(path.join(dir, 'navigator.log'), timeoutStart);
+    const child = spawn(process.execPath, [cliPath, 'member', 'board', '--json', '--follow'], {
+      cwd: dir, env: { ...process.env, ATRIS_PROGRESS_DIR: dir },
+    });
+    let out = '';
+    let stderr = '';
+    let closed = false;
+    const done = new Promise((resolve) => child.once('close', (code, signal) => {
+      closed = true;
+      resolve({ code, signal });
+    }));
+    child.stderr.on('data', (d) => { stderr += d; });
+    child.stdout.on('data', (d) => { out += d; });
+    // Pipe chunks can end inside a JSON object; only parse newline-ended records.
+    const lines = () => out.split('\n').slice(0, -1).filter(Boolean).map((l) => JSON.parse(l));
+    const waitFor = async (n) => {
+      const until = Date.now() + 15_000;
+      while (lines().length < n && !closed && Date.now() < until) await new Promise((r) => setTimeout(r, 50));
+      const got = lines();
+      assert.ok(got.length >= n, `expected ${n} JSON lines, received ${got.length}; closed=${closed}; stdout=${out}; stderr=${stderr}`);
+      return got;
+    };
+    try {
+      const [snapshot] = await waitFor(1);
+      assert.equal(snapshot.kind, 'snapshot');
+      assert.equal(snapshot.dir, dir);
+      assert.deepEqual(snapshot.members.map((m) => [m.member, m.state]), [['navigator', 'working']]);
 
-    const now = new Date().toISOString();
-    fs.appendFileSync(path.join(dir, 'navigator.log'), `${now} m-9 reading atris/MAP.md\n`);
-    fs.writeFileSync(path.join(dir, 'scout.log'), `${now} m-10 finished: failed\n`);
-    const got = await waitFor(3);
-    assert.equal(got.length, 3, out);
-    const byMember = Object.fromEntries(got.slice(1).map((e) => [e.member, e]));
-    assert.deepEqual(byMember.navigator, { member: 'navigator', mission: 'm-9', at: now, kind: 'step', text: 'reading atris/MAP.md' });
-    assert.deepEqual(byMember.scout, { member: 'scout', mission: 'm-10', at: now, kind: 'finished', text: 'failed', ok: false });
-    // Let both the watcher and its one-second fallback see an incomplete finish.
-    fs.appendFileSync(path.join(dir, 'navigator.log'), `${now} m-9 finished: failed (timed`);
-    await new Promise((r) => setTimeout(r, 1_200));
-    assert.equal(lines().length, 3, 'an unfinished timeout must not emit an event');
-    fs.appendFileSync(path.join(dir, 'navigator.log'), ' out)\n');
-    const finished = await waitFor(4);
-    assert.equal(finished.length, 4, out);
-    assert.deepEqual(finished[3], { member: 'navigator', mission: 'm-9', at: now, kind: 'finished', text: 'failed (timed out)', ok: false });
-    await new Promise((r) => setTimeout(r, 1_200));
-    assert.equal(lines().length, 4, 'watch and polling must not duplicate the timeout');
-    assert.equal(child.exitCode, null, 'still following');
-  } finally {
-    if (!closed) child.kill('SIGINT');
-    await done;
-    fs.rmSync(dir, { recursive: true, force: true });
-  }
-});
+      // Let both the watcher and its one-second fallback see an incomplete finish.
+      if (!pendingAtStartup) fs.appendFileSync(path.join(dir, 'navigator.log'), timeoutStart);
+      await new Promise((r) => setTimeout(r, 1_200));
+      assert.equal(lines().length, 1, 'an unfinished timeout must not emit an event');
+      fs.appendFileSync(path.join(dir, 'navigator.log'), ' out)\n');
+      const finished = await waitFor(2);
+      assert.equal(finished.length, 2, out);
+      assert.deepEqual(finished[1], { member: 'navigator', mission: 'm-9', at: timeoutAt, kind: 'finished', text: 'failed (timed out)', ok: false });
+      await new Promise((r) => setTimeout(r, 1_200));
+      assert.equal(lines().length, 2, 'watch and polling must not duplicate the timeout');
+
+      const now = new Date().toISOString();
+      fs.appendFileSync(path.join(dir, 'navigator.log'), `${now} m-11 started: verify another job\n${now} m-11 reading atris/MAP.md\n`);
+      fs.writeFileSync(path.join(dir, 'scout.log'), `${now} m-10 finished: failed\n`);
+      const got = await waitFor(5);
+      assert.equal(got.length, 5, out);
+      const byMember = Object.fromEntries(got.slice(2).map((e) => [e.member, e]));
+      assert.deepEqual(got.find((e) => e.kind === 'started'), { member: 'navigator', mission: 'm-11', at: now, kind: 'started', text: 'verify another job' });
+      assert.deepEqual(byMember.navigator, { member: 'navigator', mission: 'm-11', at: now, kind: 'step', text: 'reading atris/MAP.md' });
+      assert.deepEqual(byMember.scout, { member: 'scout', mission: 'm-10', at: now, kind: 'finished', text: 'failed', ok: false });
+      assert.equal(child.exitCode, null, 'still following');
+    } finally {
+      if (!closed) child.kill('SIGINT');
+      await done;
+      fs.rmSync(dir, { recursive: true, force: true });
+    }
+  });
+}
 
 test('follow finishes a line that was half written before it started', () => {
   const { followBoard } = require('../lib/member-board');
