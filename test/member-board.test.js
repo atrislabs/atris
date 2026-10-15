@@ -2335,11 +2335,12 @@ test('a signed out run written with CRLF keeps its engine and sign-in fix when t
   }
 });
 
-for (const mode of ['before', 'after', 'new file', 'replacement']) {
+for (const mode of ['before', 'after', 'new file', 'replacement', 'rewrite']) {
   const pendingAtStartup = mode === 'before';
   const newFile = mode === 'new file';
   const replacement = mode === 'replacement';
-  test(`live follow preserves a multibyte character split ${mode === 'before' ? 'before startup' : mode === 'after' ? 'after startup' : newFile ? 'in a new file' : 'across log replacement'}`, async (t) => {
+  const rewrite = mode === 'rewrite';
+  test(`live follow preserves a multibyte character split ${mode === 'before' ? 'before startup' : mode === 'after' ? 'after startup' : newFile ? 'in a new file' : replacement ? 'across log replacement' : 'across an in-place log rewrite'}`, async (t) => {
     for (const [character, byte] of [['é', 1], ['界', 1], ['界', 2], ['🧭', 1], ['🧭', 2], ['🧭', 3]]) {
       const stamp = new Date().toISOString();
       const dir = fakeDir(newFile ? {} : { navigator: [`${stamp} m-unicode started: check text`] });
@@ -2347,7 +2348,7 @@ for (const mode of ['before', 'after', 'new file', 'replacement']) {
       const text = `reading ${character} notes`;
       const line = Buffer.from(`${stamp} m-unicode ${text}\n`);
       const split = line.indexOf(Buffer.from(character)) + byte;
-      if (replacement) {
+      if (replacement || rewrite) {
         const abandoned = Buffer.from(`${stamp} m-old reading 🧨 abandoned text\n`);
         fs.appendFileSync(log, abandoned.subarray(0, abandoned.indexOf(Buffer.from('🧨')) + 1));
       }
@@ -2378,6 +2379,10 @@ for (const mode of ['before', 'after', 'new file', 'replacement']) {
         if (replacement) {
           fs.writeFileSync(`${log}.next`, line.subarray(0, split));
           fs.renameSync(`${log}.next`, log);
+        } else if (rewrite) {
+          const inode = fs.statSync(log).ino;
+          fs.writeFileSync(log, line.subarray(0, split));
+          assert.equal(fs.statSync(log).ino, inode, 'rewrite keeps the same file identity');
         } else if (!pendingAtStartup) fs.appendFileSync(log, line.subarray(0, split));
         await new Promise((r) => setTimeout(r, QUIET_MS));
         assert.equal(records().length, 1, 'an incomplete character must not emit');
