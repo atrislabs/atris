@@ -2575,3 +2575,5 @@ Landing capability test setup: `test/commands.test.js:12964` seeds creation and 
 - Failed-blocker status setup: `test/commands.test.js:14676` seeds production ownership in the creation connection and closes in finally, removing one launch (four to three); failed completion and both JSON/text status assertions retain real CLI coverage.
 
 - Mission XP weak-proof rejection: `test/commands.test.js:15511` claims the CLI-created task in process using production `claimTask`, asserts success and closes in finally. Five launches become four; both weak-proof gates and strong-proof success retain real CLI assertions.
+
+- Review-lanes weak-proof setup: `test/commands.test.js:15612` uses production `claimTask`, asserts success and closes in finally. Eight CLI launches become seven; readiness, review, queue/current selection and both acceptance gates keep every assertion.

@@ -138,3 +138,5 @@ Reviewed-failure status setup: `test/commands.test.js:14637` seeds creation and 
 Failed-blocker status fixture: `test/commands.test.js` seeds creation and ownership in the real store; failed completion and JSON/text status remain on the CLI.
 
 Mission XP weak-proof rejection setup: `test/commands.test.js:15511` keeps creation and all proof gates on the CLI; ownership uses the production store, removing one launch.
+
+Review-lanes weak-proof setup: `test/commands.test.js:15582` seeds ownership through the production store; readiness, review and all acceptance gates remain on the CLI, removing one launch.

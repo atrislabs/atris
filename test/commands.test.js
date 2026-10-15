@@ -15608,7 +15608,13 @@ test('task review lanes block weak golden-path mission XP proof from accept', ()
     assert.equal(created.status, 0, created.stderr);
     const task = JSON.parse(created.stdout).task;
     const ref = task.display_id;
-    assert.equal(runCli(['task', 'claim', ref, '--as', 'onboarding', '--json'], { cwd: dir, env }).status, 0);
+    // Seed ownership; readiness, review and acceptance gates stay on the CLI.
+    const db = taskStore.open(dbPath);
+    try {
+      assert.equal(taskStore.claimTask(db, { id: task.id, claimedBy: 'onboarding' }).claimed, true);
+    } finally {
+      taskStore.close();
+    }
     assert.equal(runCli(['task', 'ready', ref, '--as', 'onboarding', '--proof', strongProof, '--json'], { cwd: dir, env }).status, 0);
     assert.equal(runCli(['task', 'review', ref, '--reward', '0', '--as', 'codex-review', '--proof', strongProof, '--json'], { cwd: dir, env }).status, 0);
 
