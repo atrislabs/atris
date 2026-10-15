@@ -19,8 +19,16 @@ function writeFileAt(file, text, mtime) {
   if (mtime) fs.utimesSync(file, mtime, mtime);
 }
 
+// Every workspace this file makes is removed when the file finishes, so
+// repeated runs do not pile folders into the system temp folder.
+const madeRoots = [];
+test.after(() => {
+  for (const root of madeRoots) fs.rmSync(root, { recursive: true, force: true });
+});
+
 function workspace() {
   const root = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'atris-member-result-')));
+  madeRoots.push(root);
   fs.mkdirSync(path.join(root, 'atris', 'team', 'film-studio'), { recursive: true });
   return root;
 }
