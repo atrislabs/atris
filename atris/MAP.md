@@ -223,3 +223,5 @@ Landing status repair stays short when a later node can run: `commands/autoland.
 Landing status repair with a failing executable Node: `lib/engine-resource.js:357` probes the first executable with the read-only version command before shortening the hint. `test/engine-resource.test.js:4854` proves a rejecting executable hides a later working Node, then runs the printed checkout command through sh and zsh to repair fixture startup files.
 
 Landing repair with a hanging Node: `test/engine-resource.test.js:4854` also checks a first executable that never answers. The landing probe times out and the printed checkout command repairs fixture startup files through sh and zsh.
+
+Silent Node repair fallback: `lib/engine-resource.js:359` requires version output before trusting the launcher. `test/engine-resource.test.js:4854` runs the displayed repair through sh and zsh when the first Node exits successfully without doing work.
