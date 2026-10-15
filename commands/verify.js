@@ -773,7 +773,6 @@ function verifyArtifact(target, opts = {}) {
 module.exports = {
   verifyAtris,
   verifyRubric,
-  findGlobalInstall,
   verifyArtifact,
   findTaskInContent,
   escapeRegExp,
