@@ -38,8 +38,12 @@ test('sealed flights keep the parent owner names with a temporary home', { skip:
   execSync('git init -q && git -c user.email=t@t -c user.name=t commit -q --allow-empty -m init && git remote add origin https://example.invalid/repo.git', { cwd: worktree });
   const keys = ['HOME', 'GIT_CONFIG_GLOBAL', 'ATRIS_OPERATOR', 'ATRIS_OWNER_NAMES'];
   const previous = Object.fromEntries(keys.map((key) => [key, process.env[key]]));
+  const previousCwd = process.cwd();
   let environment;
   try {
+    // Read the owner from the temporary home, not from a local git name set
+    // on the checkout the tests run in.
+    process.chdir(worktree);
     process.env.HOME = home;
     delete process.env.GIT_CONFIG_GLOBAL;
     delete process.env.ATRIS_OPERATOR;
@@ -53,6 +57,7 @@ test('sealed flights keep the parent owner names with a temporary home', { skip:
     assert.strictEqual(result.status, 0, result.stderr);
     assert.strictEqual(result.stdout, 'true');
   } finally {
+    process.chdir(previousCwd);
     resetOwnerIdentityCache();
     for (const [key, value] of Object.entries(previous)) {
       if (value === undefined) delete process.env[key]; else process.env[key] = value;
