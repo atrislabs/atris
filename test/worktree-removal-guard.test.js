@@ -1535,6 +1535,26 @@ test(`reap saves staged and binary work and restores it exactly${quoted ? ' with
     assert.equal(JSON.parse(absentDraftsJson.stdout).backups[0].restore, null);
     assert.equal(JSON.parse(absentDraftsJson.stdout).backups[0].unavailable, 'saved draft folder is missing');
     fs.renameSync(`${drafts}.held`, drafts);
+    // The folder still exists, but one saved draft inside it is edited, then
+    // deleted: either way the listed restore would bring back the wrong file.
+    const savedDraft = path.join(drafts, 'notes', 'draft.txt');
+    for (const damage of [() => fs.writeFileSync(savedDraft, 'overwritten\n'), () => fs.unlinkSync(savedDraft)]) {
+      damage();
+      const changed = spawnSync(process.execPath, [path.resolve(__dirname, '../bin/atris.js'), 'land', '--backups'], { cwd: repo, encoding: 'utf8' });
+      console.log('command: node bin/atris.js land --backups (damaged saved draft)');
+      console.log(changed.stdout.trim());
+      console.log(`exit: ${changed.status}`);
+      assert.equal(changed.status, 0, changed.stderr);
+      assert.match(changed.stdout, /cannot restore: saved draft file is missing or changed: notes\/draft\.txt/);
+      assert.ok(!changed.stdout.includes('to restore:'), changed.stdout);
+      const changedJson = spawnSync(process.execPath, [path.resolve(__dirname, '../bin/atris.js'), 'land', '--backups', '--json'], { cwd: repo, encoding: 'utf8' });
+      assert.equal(changedJson.status, 0, changedJson.stderr);
+      assert.equal(JSON.parse(changedJson.stdout).backups[0].restore, null);
+      assert.equal(JSON.parse(changedJson.stdout).backups[0].unavailable, 'saved draft file is missing or changed: notes/draft.txt');
+      fs.writeFileSync(savedDraft, 'new draft\n');
+    }
+    const intact = spawnSync(process.execPath, [path.resolve(__dirname, '../bin/atris.js'), 'land', '--backups'], { cwd: repo, encoding: 'utf8' });
+    assert.ok(intact.stdout.includes(`    to restore: ${listed}`), intact.stdout);
     const rebuilt = spawnSync('sh', ['-c', listed], { cwd: base, encoding: 'utf8' });
     assert.equal(rebuilt.status, 0, rebuilt.stderr);
     assert.equal(git(wt, ['status', '--porcelain']), status);

@@ -1,3 +1,4 @@
+const crypto = require('crypto');
 const fs = require('fs');
 const path = require('path');
 const gitSpawn = require('../lib/git-spawn');
@@ -510,7 +511,13 @@ function quoteArg(value) {
 // folder: both diffs are against the folder's commit, so the staged diff goes
 // into the index only and the full diff into the files. The commit gets a
 // backup name outside refs/heads, so it outlives the branch reap deletes and
-// git gc cannot clear it out from under the restore.
+// git gc cannot clear it out from under the restore. Each copied new file
+// leaves a content fingerprint on the folder, so the backup list can tell a
+// saved draft that was later deleted or changed from one still intact.
+function draftFingerprint(file) {
+  return crypto.createHash('sha256').update(fs.readFileSync(file)).digest('hex');
+}
+
 function salvageWorktree(root, w, dir, receipt) {
   try {
     const head = runGit(['rev-parse', '--verify', 'HEAD^{commit}'], { cwd: w.path, check: false });
@@ -546,11 +553,14 @@ function salvageWorktree(root, w, dir, receipt) {
     const files = untracked.stdout.split('\0').filter(Boolean);
     if (files.length > 0) {
       const destRoot = path.join(dir, `${path.basename(w.path)}.untracked`);
+      const fingerprints = {};
       for (const rel of files) {
         const dest = path.join(destRoot, rel);
         fs.mkdirSync(path.dirname(dest), { recursive: true });
         fs.copyFileSync(path.join(w.path, rel), dest);
+        fingerprints[rel] = draftFingerprint(dest);
       }
+      w.draftFingerprints = fingerprints;
       receipt.untracked.push(destRoot);
       restore.push(`cp -R ${quoteArg(destRoot)}/. .`);
     }
@@ -785,7 +795,7 @@ function reap(root, { ttlDays = DEFAULT_TTL_DAYS, staleHours = DEFAULT_STALE_HOU
     if (removed.status === 0) {
       receipt.removedWorktrees.push(w.path);
       if (w.restoreCommand) receipt.restores.push({ path: w.path, command: w.restoreCommand });
-      recordWorktreeRemoval(root, { path: w.path, branch: w.branch, by, reason: reapReason(w, board, ttlDays, force), restore: w.restoreCommand });
+      recordWorktreeRemoval(root, { path: w.path, branch: w.branch, by, reason: reapReason(w, board, ttlDays, force), restore: w.restoreCommand, drafts: w.draftFingerprints });
     } else {
       // A locked worktree fails here and, unreported, reap re-salvages the
       // same patches every pass forever. Say what blocked it so a human can
@@ -1082,7 +1092,14 @@ function savedBackups(root) {
       const missingDrafts = drafts.some((folder) => {
         try { return !fs.statSync(folder).isDirectory(); } catch { return true; }
       });
-      const unavailable = missing ? 'saved commit is missing' : missingPatch ? 'saved patch file is missing' : missingDrafts ? 'saved draft folder is missing' : '';
+      // Removals recorded before fingerprints existed skip the content check.
+      const changedDraft = !missingDrafts && drafts.length === 1 && row.drafts
+        && Object.keys(row.drafts).find((rel) => {
+          try { return draftFingerprint(path.join(drafts[0], rel)) !== row.drafts[rel]; } catch { return true; }
+        });
+      const unavailable = missing ? 'saved commit is missing' : missingPatch ? 'saved patch file is missing'
+        : missingDrafts ? 'saved draft folder is missing'
+          : changedDraft ? `saved draft file is missing or changed: ${changedDraft}` : '';
       return { at: row.at, path: row.path, branch: row.branch,
         restore: unavailable ? null : row.restore,
         ...(unavailable ? { unavailable } : {}) };
