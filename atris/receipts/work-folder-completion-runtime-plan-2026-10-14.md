@@ -136,3 +136,26 @@ must retain this coverage as an automated regression against the production
 runner without an injected candidate prefix. Preserve explicit PATH overrides.
 
 next_push: implement the reviewed caller-directory restoration in the shared proof runner with this controlled regression covering the production path.
+
+## Colon path boundary, October 14
+
+Verdict: proceed-with-changes. The candidate PATH prefix does not retain the
+caller runtime when its directory contains a colon. Shell quoting preserves
+the assignment text, but executable lookup still splits PATH at that colon.
+The controlled probe now runs nine real login-shell children, including a
+competing executable selected with exit 0 under the candidate prefix. A
+quoted absolute caller binary selects the intended runtime in the same case.
+
+Flow: quoted directory -> PATH colon split -> competing executable succeeds.
+
+The single risk is a successful proof produced by the wrong runtime. Before
+implementation, choose and document a narrow fallback or explicit unsupported
+path result for colon-containing caller directories; do not claim universal
+runtime retention from shell quoting alone. The absolute-path control proves
+a boundary, not a general shell-command rewriting solution. Production is
+unchanged, including the existing receipt writer's same limitation.
+
+Command: node atris/receipts/work-folder-proof-runtime-controlled.js, exit 0.
+Evidence: work-folder-colon-proof-2026-10-14.txt.
+
+next_push: design a narrow colon-directory fallback before implementing shared proof runtime restoration.
