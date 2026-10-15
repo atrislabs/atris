@@ -421,6 +421,16 @@ function clauseJoin(left) {
   const opener = left.replace(/^(?:(?:[-*+>]|\d+[.)]|\*\*|__)\s*)+/, '');
   if (/^(?:when|whenever|if|unless|until|once|because|since|although|though|while)\b/i.test(opener) && !/[,:]["'\u201d\u2019*_]*\s/.test(opener)) return ', ';
   if (/^not\b/i.test(opener) && opener.split(/\s+/).length <= 3) return ': ';
+  // after a semicolon, up to three words with no verb or subject of their
+  // own name what the clause says, so it takes a colon: "paused; finding:
+  // pause is advisory", "clean; one gap: web never sent a turn id". A word
+  // after the first in "ed" or "s" is a verb, so "production delivered 72"
+  // is a clause, and a bracket means the semicolon sat inside it.
+  const parts = opener.split(/;\s/);
+  if (parts.length > 1 && !/[()]/.test(parts[parts.length - 1])) {
+    const words = parts[parts.length - 1].replace(/[*_`]/g, '').trim().split(/\s+/);
+    if (words[0] && words.length <= 3 && !words.slice(1).some((w) => /(?:ed|[^s]s)$/.test(w)) && !words.some((w) => /^(?:it|this|that|these|those|we|they|you|he|she|I|there|is|are|was|were|will|would|can|could|must|should|has|have|had|does|did|do|not|no)$/i.test(w))) return ': ';
+  }
   return /^(?:"[^"]+"|\u201c[^\u201c\u201d]+\u201d)$/.test(opener) ? ': ' : '; ';
 }
 

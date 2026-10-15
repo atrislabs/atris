@@ -3708,8 +3708,31 @@ test('fix puts an aside split across two lines in parentheses', () => {
     '199/226: production changes shipped by the AI team, last 30 days',
     '93, merged while the founder slept',
     // a semicolon between the dashes means two items, so each line keeps
-    // what it gets alone
+    // what it gets alone, and a name after a semicolon takes its colon
     'Wiring for TeamTab integration, click member opens the view, a human click',
-    'opens none; PulseControl; refetch called after toggle resolves.',
+    'opens none; PulseControl: refetch called after toggle resolves.',
+  ]);
+});
+
+test('fix gives a short name after a semicolon a colon before its clause', () => {
+  // from member logs: "met; finding; pause is advisory" cut a label from the
+  // finding it names. A phrase with its own verb, or a semicolon inside
+  // brackets, keeps the semicolon.
+  const D = String.fromCharCode(0x2014);
+  const file = tmpFile('semicolon-name.md', [
+    `Paused, no resume trigger met; finding ${D} pause is advisory.`,
+    '',
+    `Post-merge review: clean; one gap ${D} web never sent a turn id.`,
+    '',
+    `Tick 141 audit predicted 77; production delivered 72 ${D} the delta is baseline drift.`,
+    '',
+    `Misses (WHERE 1=1; TRUNCATE TABLE audit_logs) ${D} these are destructive verbs.`,
+  ].join('\n'));
+  const { changes } = applyFixes([file], RULES);
+  assert.deepEqual(changes.map((c) => c.after), [
+    'Paused, no resume trigger met; finding: pause is advisory.',
+    'Post-merge review: clean; one gap: web never sent a turn id.',
+    'Tick 141 audit predicted 77; production delivered 72; the delta is baseline drift.',
+    'Misses (WHERE 1=1; TRUNCATE TABLE audit_logs); these are destructive verbs.',
   ]);
 });
