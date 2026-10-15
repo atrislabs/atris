@@ -19,10 +19,12 @@ Details for any task: atris task show <ID>
 
 ## In Progress
 
-- **[ACW-11]** Keep dirty landed folders in cleanup preview · architect
+(Empty)
 
 ## Review
 
+- **[ACW-11]** Keep dirty landed folders in cleanup preview · architect
+  **Done looks like:** Cleanup preview now keeps folders with unsaved work, so people can trust its removal plan.
 - **[ACW-10]** Prove idle landed folders retain staged and unsaved notes · architect
   **Done looks like:** Operators can trust cleanup to preserve staged and unsaved notes in idle landed folders, reducing the risk of losing work.
 - **[ACW-9]** Prove idle unfinished folders retain staged and unsaved notes · architect

@@ -34,5 +34,10 @@ tidy: removed 0, kept 2, of 2 copies in /private/var/folders/t1/2_4kmb5n4c71dxm2
 
 Setup note: brain activate and compile returned plan-only exit 2; generated adapters were left unchanged to keep this increment bounded.
 
+Review handoff: the login-shell runner chose /usr/local/bin/node v20.18.0, causing 18 CLI tests to fail because Atris requires Node 22.13 or newer. An explicit directory did not resolve it. A focused real invocation confirmed the version error. The direct successful run used /opt/homebrew/bin/node v25.6.1. Review verification now explicitly prepends /opt/homebrew/bin to PATH; no tool settings changed.
+
+Review check: export PATH=/opt/homebrew/bin:$PATH; node --test test/worktree-removal-guard.test.js test/member-tidy.test.js && node bin/atris.js slop --staged
+Review check exit: 0. Proof ready in task review. Saved runner receipt: atris/runs/2026-10-15-task-acw-11-2026-10-15T07-26-34-483Z.json. Automatic acceptance cannot rerun the runtime-prefixed command, so acceptance remains pending.
+
 next_push: Prove preview retains a landed folder when git cannot read its status.
 layer: behaviors
