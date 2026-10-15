@@ -241,3 +241,5 @@ Cleanup recheck reader coverage: `test/engine-resource.test.js:5388` exercises u
 Thrown cleanup scans: `test/engine-resource.test.js:5436` runs the real cleanup command with a throwing first scan or safety recheck, in text and JSON. It requires exit 1, no signal attempt, no remaining count, and no saved sweep.
 
 Preserved history after failed scans: `test/engine-resource.test.js:5436` checks initial and safety scan failures against existing cleanup history, requiring byte-for-byte preservation in text and JSON modes.
+
+Rejected cleanup signals: `test/engine-resource.test.js:5485` runs the real cleanup command in text and JSON, preserving prior history while recording the denied stop and remaining agent.

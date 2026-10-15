@@ -2459,3 +2459,5 @@ Incomplete cleanup recheck counts: `test/engine-resource.test.js:5388` runs the 
 Thrown cleanup scans: `test/engine-resource.test.js:5436` checks real command failures on the initial scan and recheck, with no signal, remaining count, or saved sweep.
 
 Preserved cleanup history: `test/engine-resource.test.js:5436` checks existing history survives initial and safety scan failures unchanged.
+
+Rejected cleanup signals: `test/engine-resource.test.js:5485` checks prior history bytes, the appended failure record, and the remaining count through the real CLI.

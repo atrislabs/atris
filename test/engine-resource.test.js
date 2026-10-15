@@ -5481,3 +5481,57 @@ test(`the real cleanup command stops safely when scan ${failedRead} throws with 
 });
 }
 }
+
+test('the real cleanup command preserves history and records rejected stop signals', () => {
+  const { spawnSync } = require('node:child_process');
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'sweep-rejected-signal-'));
+  const preload = path.join(root, 'rejected-signal.cjs');
+  const cli = path.join(__dirname, '..', 'bin', 'atris.js');
+  const historyFile = path.join(root, RESOURCE_LOG);
+  const previousHistory = JSON.stringify({ at: '2026-10-15T10:00:00.000Z', phase: 'sweep', stopped: [123], failed: [], skipped: [], leaked_ssh_agents: 2 }) + '\n';
+  try {
+    fs.mkdirSync(path.dirname(historyFile), { recursive: true });
+    fs.writeFileSync(preload, `
+      const resource = require(${JSON.stringify(require.resolve('../lib/engine-resource'))});
+      resource.readSshAgents = () => ({
+        agents: [{ pid: 200, ppid: 1, uid: process.getuid(), age_sec: 3600, args: 'ssh-agent -s' }],
+        referenced: new Set(), unread: [],
+      });
+      process.kill = (pid, signal) => {
+        if (pid !== 200 || signal !== 'SIGTERM') throw new Error('unexpected signal');
+        throw Object.assign(new Error('permission denied'), { code: 'EPERM' });
+      };
+    `);
+    for (const json of [false, true]) {
+      fs.writeFileSync(historyFile, previousHistory);
+      const ran = spawnSync(process.execPath, ['--require', preload, cli, 'engine', 'sweep', '--apply', ...(json ? ['--json'] : [])], {
+        cwd: root, encoding: 'utf8', timeout: 30000,
+        env: { ...process.env, ATRIS_AUTO_UPDATE: 'off' },
+      });
+      assert.equal(ran.error, undefined);
+      assert.equal(ran.status, 1, ran.stderr);
+      if (json) {
+        const report = JSON.parse(ran.stdout);
+        assert.deepStrictEqual(report.stopped, []);
+        assert.deepStrictEqual(report.failed, [{ pid: 200, code: 'EPERM' }]);
+        assert.equal(report.left, 1);
+        assert.deepStrictEqual(report.history.last_sweep.failed, [200]);
+      } else {
+        assert.match(ran.stdout, /stopped 0 leaked ssh-agents/);
+        assert.match(ran.stdout, /could not stop pid 200: EPERM/);
+        assert.match(ran.stdout, /1 leaked ssh-agent still left/);
+      }
+      const saved = fs.readFileSync(historyFile, 'utf8');
+      assert.equal(saved.slice(0, previousHistory.length), previousHistory);
+      const appended = saved.slice(previousHistory.length).trim().split('\n').map(JSON.parse);
+      assert.equal(appended.length, 1);
+      assert.equal(appended[0].phase, 'sweep');
+      assert.deepStrictEqual(appended[0].stopped, []);
+      assert.deepStrictEqual(appended[0].failed, [200]);
+      assert.equal(appended[0].leaked_ssh_agents, 1);
+      console.log(`rejected cleanup signal, ${json ? 'json' : 'text'}, exit ${ran.status}: ${ran.stdout.trim()}`);
+    }
+  } finally {
+    fs.rmSync(root, { recursive: true, force: true });
+  }
+});
