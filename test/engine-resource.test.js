@@ -4379,3 +4379,36 @@ test('the guarded startup line names how fast ssh-agents leaked in the day befor
     fs.rmSync(root, { recursive: true, force: true });
   }
 });
+
+test('the landing status warns when ssh-agents keep leaking after the startup line was guarded', () => {
+  const { showStatus } = require('../commands/autoland');
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'autoland-status-still-leaking-'));
+  const file = path.join(root, RESOURCE_LOG);
+  const at = (h) => new Date(Date.now() - h * 3600000).toISOString();
+  const start = (h, count) => JSON.stringify({ at: at(h), phase: 'start', engine: 'claude', leaked_ssh_agents: count });
+  const sweep = (h, count, lines) => JSON.stringify({ at: at(h), phase: 'sweep', stopped: [1], failed: [], skipped: [], leaked_ssh_agents: count, unguarded_start_lines: lines });
+  const status = (lines) => {
+    fs.mkdirSync(path.dirname(file), { recursive: true });
+    fs.writeFileSync(file, `${lines.join('\n')}\n`);
+    const out = [];
+    const original = console.log;
+    console.log = (line = '') => out.push(String(line));
+    try {
+      showStatus(root, [], { readSshAgents: () => ({ agents: [], referenced: new Set() }), uid: 501 });
+    } finally {
+      console.log = original;
+    }
+    return out.join('\n');
+  };
+  try {
+    require('node:child_process').spawnSync('git', ['init', '-q'], { cwd: root });
+    const leaking = status([sweep(6, 0, 1), sweep(4, 0, 0), start(2, 10), start(0, 20)]);
+    assert.match(leaking, /startup line guarded: [^\n]*since: about 5 new an hour\n {4}still leaking after the fix: about 5 new ssh-agents an hour, so something other than the shell startup line is starting them/);
+    const settled = status([sweep(6, 0, 1), sweep(4, 0, 0), start(2, 4), start(0, 8)]);
+    assert.match(settled, /since: about 2 new an hour/);
+    assert.doesNotMatch(settled, /still leaking/, 'a few stray leaks are not a second source');
+    assert.doesNotMatch(status([sweep(6, 0, 1), sweep(4, 0, 0)]), /still leaking/, 'too few readings since is no warning');
+  } finally {
+    fs.rmSync(root, { recursive: true, force: true });
+  }
+});

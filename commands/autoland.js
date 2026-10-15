@@ -581,6 +581,9 @@ function showStatus(root, args, deps = {}) {
     const when = (at) => `${String(at || '').slice(0, 16).replace('T', ' ')} UTC`;
     const rate = (n) => (n === null || n === undefined ? 'too few readings to say' : `about ${n} new an hour`);
     console.log(`  ssh-agent startup line guarded: the sweep at ${when(guarded.at)} found no unguarded start, the one at ${when(guarded.before_at)} found ${guarded.before}; leaked ssh-agents in the day before: ${rate(guarded.rate_before)}, since: ${rate(guarded.rate_since)}`);
+    // A guarded line should leave only stray leaks; a steady rise after it
+    // means another shell file, tool, or script still starts agents.
+    if (guarded.rate_since >= STILL_LEAKING_PER_HOUR) console.log(`    still leaking after the fix: about ${guarded.rate_since} new ssh-agents an hour, so something other than the shell startup line is starting them`);
   }
   console.log('');
   const humanOnly = blocked.filter((r) => String(r.reason || '').startsWith('denied_tag_'));
@@ -860,6 +863,9 @@ function countLeakedSshAgents(deps = {}) {
 // read break the pass. The cap stays well above the leak rate seen on a
 // real machine (about 64 an hour), so a backlog still shrinks each pass.
 const HOURLY_SSH_AGENT_STOP_LIMIT = 200;
+// New leaked ssh-agents an hour after the startup line was guarded that
+// still read as a live source rather than stray leaks.
+const STILL_LEAKING_PER_HOUR = 5;
 
 function runSshAgentSweep(root, receipt, deps = {}) {
   try {
