@@ -4797,6 +4797,26 @@ test('fix reads "show", "create", "mix" and "tune" after a "the" plural as a ver
   ]);
 });
 
+test('fix joins a bare object before "when", "before" or "and" and a second verb', () => {
+  // from real experiment briefs: each kept a comma splice after the dash;
+  // a hyphenated subject counts, but "status" is a noun, not a verb
+  const file = tmpFile('bare-object-ends.md', [
+    'The bottleneck is the extractor \u2014 the auto-healer generates correct patches when given the location.',
+    'The bottleneck is the prompt \u2014 the agent picks suboptimal tasks before the parameters matter.',
+    '30 flows, all manual \u2014 a learned classifier reduces maintenance burden and catches edge cases.',
+    'Here is the reframe \u2014 a false pro-promotion costs 3 credits.',
+    'Shipped `rainmaker threads` \u2014 the follow-through status report from the wish.',
+  ].join('\n\n'));
+  const { changes } = applyFixes([file], RULES);
+  assert.deepEqual(changes.map((c) => c.after), [
+    'The bottleneck is the extractor; the auto-healer generates correct patches when given the location.',
+    'The bottleneck is the prompt; the agent picks suboptimal tasks before the parameters matter.',
+    '30 flows, all manual; a learned classifier reduces maintenance burden and catches edge cases.',
+    'Here is the reframe; a false pro-promotion costs 3 credits.',
+    'Shipped `rainmaker threads`, the follow-through status report from the wish.',
+  ]);
+});
+
 test('fix gives a run of "ing" phrases after a dash a colon, like a list', () => {
   // from hugolearn: "extracting what was learned" read as a subject and its
   // verb, so the list after the dash got a semicolon
