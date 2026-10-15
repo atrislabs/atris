@@ -2597,3 +2597,5 @@ Review queue filter creation fixture: `test/commands.test.js:15238` seeds both g
 ## Weak proof review creation fixture
 
 - `test/commands.test.js:15636` uses addSeedTask with the original title, tag, workspace and goal; production ownership and display-reference resolution share the connection, closed in finally. Seven CLI calls become six; all readiness, review, queue/current selection and acceptance assertions remain.
+
+- Capability safety baseline: `test/commands.test.js:8327` seeds creation and reads initial version, event and status through the real task store; both capability checks and the final CLI state comparison remain live.

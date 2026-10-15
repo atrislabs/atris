@@ -8332,22 +8332,20 @@ test('task capabilities-check reports contract drift without mutating task truth
   try {
     fs.mkdirSync(path.join(dir, 'atris'), { recursive: true });
 
-    // Seed creation only; before/after reads and both checks stay on the CLI.
+    // Read the baseline while seeding; both checks and the final read stay on the CLI.
     const db = taskStore.open(dbPath);
     let task;
+    let beforePayload;
     try {
       const workspaceRoot = taskStore.workspaceRoot(dir);
       const created = addSeedTask(db, { title: 'Check capability conformance without mutating tasks', tag: 'agent', workspaceRoot });
       assert.equal(created.inserted, true);
       task = { display_id: taskStore.taskDisplayRefMap(taskStore.listTasks(db, { workspaceRoot })).get(created.id) };
       assert.ok(task.display_id);
+      beforePayload = taskStore.taskProjection(db, { taskId: created.id }).tasks[0];
     } finally {
       taskStore.close();
     }
-    const before = runCli(['task', 'show', task.display_id, '--json'], { cwd: dir, env });
-    assert.equal(before.status, 0, before.stderr);
-    const beforePayload = JSON.parse(before.stdout);
-
     const report = runCli(['task', 'capabilities-check', '--json'], { cwd: dir, env });
     assert.equal(report.status, 0, report.stderr);
     const payload = JSON.parse(report.stdout);
