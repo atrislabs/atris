@@ -2580,11 +2580,11 @@ Lost-run cleanup error summary: `commands/autoland.js:895` keeps successful clos
 
 ## Review default certified accept fixture setup
 
-- `test/commands.test.js:20270` checks that the default review screen leads with the certified accept line. Real-store creation, ownership and readiness at `test/commands.test.js:20287` preserve the title, tag, workspace, actor and proof, assert success, and close in finally before CLI certification and the screen. Two CLI launches remain, with every screen assertion unchanged.
+- `test/commands.test.js:20273` checks that the default review screen leads with the certified accept line. Real-store creation, ownership and readiness at `test/commands.test.js:20287` preserve the title, tag, workspace, actor and proof, assert success, and close in finally before CLI certification and the screen. Two CLI launches remain, with every screen assertion unchanged.
 
 ## Task sync dry-run fixture setup
 
-- `test/commands.test.js:17282` checks that task sync dry-run maps a local task to cloud task writes. Real-store creation at `test/commands.test.js:17300` preserves the title, swarlo tag and workspace root, asserts insertion, and closes before CLI claim. No init runs, so no stale projection exists. Creation-only launch removed (five to four); claim, say, ready and every sync plan assertion remain unchanged.
+- `test/commands.test.js:17365` checks that task sync dry-run maps a local task to cloud task writes. Real-store creation, ownership, message and readiness at `test/commands.test.js:17383` preserve the title, swarlo tag, workspace, actor, message and proof, assert success, and close in finally before CLI sync. One CLI launch replaces two; message still precedes readiness and every sync plan assertion remains unchanged.
 
 ## Backlog demotion fixture setup
 
