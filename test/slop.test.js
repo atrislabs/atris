@@ -3125,6 +3125,9 @@ test('fix joins "the", a noun, a verb in "s" and one bare word before a stop', (
     // "or" and a second verb in "s" end one or two bare words
     'Pin the tier \u2014 a drift either leaks paid features or locks out paying users.',
     'Check one place \u2014 the error logs folder or logs from CI.',
+    // "per" ends two bare words as a place word does
+    'We have 40 gyms \u2014 that math implies thin coverage per gym.',
+    'Check one place \u2014 the error logs folder per day.',
     // a number with a unit before a stop is a bare word too; a list of
     // sizes keeps its comma
     'Agents run the full suite (3000+ tests) \u2014 a single run eats 10GB+. Two runs crash it.',
@@ -3141,6 +3144,8 @@ test('fix joins "the", a noun, a verb in "s" and one bare word before a stop', (
     'Ship it, the release notes page, not the blog.',
     'Pin the tier; a drift either leaks paid features or locks out paying users.',
     'Check one place, the error logs folder or logs from CI.',
+    'We have 40 gyms; that math implies thin coverage per gym.',
+    'Check one place, the error logs folder per day.',
     'Agents run the full suite (3000+ tests); a single run eats 10GB+. Two runs crash it.',
     'Two files ship, the tokenizer 2MB, the model weights 16GB.',
   ]);
