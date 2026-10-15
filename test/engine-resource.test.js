@@ -956,7 +956,13 @@ test('an unfinished run whose start sits more than a megabyte back is still coun
     fs.mkdirSync(path.dirname(file), { recursive: true });
     const line = (run_id, phase) => JSON.stringify({ at: '2026-10-14T09:00:00.000Z', phase, engine: 'cursor', task: run_id, run_id, pad: 'x'.repeat(200) });
     const lines = [line('deep-open', 'start')];
-    while (lines.join('\n').length < 1.2 * 1024 * 1024) lines.push(line(`done-${lines.length}`, 'start'), line(`done-${lines.length}`, 'end'));
+    // A running length, as in the full log test; joining on each pass is quadratic.
+    let size = lines.join('\n').length;
+    while (size < 1.2 * 1024 * 1024) {
+      const added = [line(`done-${lines.length}`, 'start'), line(`done-${lines.length}`, 'end')];
+      lines.push(...added);
+      size += added.reduce((sum, entry) => sum + entry.length + 1, 0);
+    }
     fs.writeFileSync(file, `${lines.join('\n')}\n`);
     const history = readResourceHistory(root);
     assert.strictEqual(history.open_runs, 1);
