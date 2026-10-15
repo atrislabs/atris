@@ -627,6 +627,29 @@ function salvageWorktree(root, w, dir, receipt) {
   }
 }
 
+// The cards file is ignored by git, so neither the patches nor the copies
+// hold it, and a card filed from inside a folder is never seen in the main
+// inbox. Before removal, every card whose title the main inbox lacks is
+// saved beside the other backups. Returns false only when a save failed.
+function saveUnseenCards(root, w, dir, receipt) {
+  try {
+    const file = path.join(w.path, 'atris', 'status', 'for-you.md');
+    if (!fs.existsSync(file)) return true;
+    const inboxFile = path.join(root, 'atris', 'status', 'for-you.md');
+    const inbox = new Set(fs.existsSync(inboxFile)
+      ? fs.readFileSync(inboxFile, 'utf8').split('\n').filter((l) => l.startsWith('## ')).map((l) => l.trim()) : []);
+    const cards = fs.readFileSync(file, 'utf8').split(/\n(?=## )/).filter((c) => c.startsWith('## '));
+    const unseen = cards.filter((c) => !inbox.has(c.split('\n')[0].trim()));
+    if (unseen.length === 0) return true;
+    const dest = path.join(dir, `${path.basename(w.path)}.for-you.md`);
+    fs.writeFileSync(dest, `${unseen.map((c) => c.replace(/\n+$/, '')).join('\n\n')}\n`);
+    receipt.cards.push({ path: dest, count: unseen.length });
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 function reapReason(w, board, ttlDays, force) {
   const state = (board.branches.find((b) => b.name === w.branch) || {}).state;
   if (state === 'landed') return 'branch_landed';
@@ -749,6 +772,7 @@ function reap(root, { ttlDays = DEFAULT_TTL_DAYS, staleHours = DEFAULT_STALE_HOU
     stagedPatches: [],
     restores: [],
     untracked: [],
+    cards: [],
     keptWorktrees: protectedWorktrees.map((w) => `${w.path} (${w.reason})`),
     keptInFlight: protectedWorktrees.filter((w) => w.inFlight).map((w) => `${w.path} (${w.reason})`),
     keptMovedBranches: [],
@@ -842,6 +866,11 @@ function reap(root, { ttlDays = DEFAULT_TTL_DAYS, staleHours = DEFAULT_STALE_HOU
       // and say why: a bare path in the receipt reads as an unexplained
       // no-op (the exact silence BCK-1232 was about).
       receipt.keptWorktrees.push(`${w.path} (salvage incomplete: ${w.salvageProblem || 'patch/copy failed'}, kept to avoid losing work)`);
+      if (w.branch) targetNames.delete(w.branch);
+      continue;
+    }
+    if (!saveUnseenCards(root, w, dir, receipt)) {
+      receipt.keptWorktrees.push(`${w.path} (salvage incomplete: cards not in the main inbox could not be saved, kept to avoid losing work)`);
       if (w.branch) targetNames.delete(w.branch);
       continue;
     }
@@ -1076,6 +1105,7 @@ function printReceipt(receipt, { removalsToday = '' } = {}) {
     for (const p of receipt.patches) console.log(`  unsaved edits saved: ${p}`);
     for (const p of receipt.stagedPatches || []) console.log(`  staged changes saved: ${p}`);
     for (const u of receipt.untracked || []) console.log(`  files saved as they were: ${u}`);
+    for (const c of receipt.cards || []) console.log(`  cards not in your inbox saved: ${c.path} (${c.count})`);
     for (const r of receipt.restores || []) console.log(`  to restore ${r.path}: ${r.command}`);
   }
   // A preview names what it would keep too, so it matches the real pass.

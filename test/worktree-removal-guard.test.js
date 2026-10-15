@@ -1739,6 +1739,49 @@ test('reap saves new links as links and the restore gives them back', () => {
   }
 });
 
+// The cards file is ignored by git, so a card filed from inside a folder
+// was destroyed with it, never seen in the main inbox. On this machine 24
+// folders held about 80 such cards.
+test('reap saves cards the main inbox lacks before removing a folder, and keeps the folder when it cannot', () => {
+  const { base, repo, wt } = landedWorktree();
+  try {
+    fs.appendFileSync(path.join(repo, '.git', 'info', 'exclude'), 'atris/status/\n');
+    fs.mkdirSync(path.join(repo, 'atris', 'status'), { recursive: true });
+    fs.writeFileSync(path.join(repo, 'atris', 'status', 'for-you.md'), '# For you\n\n## Already seen\n- shipped: one\n');
+    fs.mkdirSync(path.join(wt, 'atris', 'status'), { recursive: true });
+    const card = '## Filed in the folder\n- shipped: two\n- reply: keep / revert';
+    fs.writeFileSync(path.join(wt, 'atris', 'status', 'for-you.md'), `# For you\n\n## Already seen\n- shipped: one\n\n${card}\n`);
+    assert.equal(git(wt, ['status', '--porcelain']), '');
+    const reap = () => spawnSync(process.execPath, [path.resolve(__dirname, '../bin/atris.js'), 'land', '--reap', '--no-remote', '--base', 'master', '--ttl', '0'], { cwd: repo, encoding: 'utf8' });
+    // A save that cannot be written keeps the folder and its cards.
+    const day = new Date().toISOString().slice(0, 10);
+    const blocked = path.join(repo, '.atris', 'salvage', day, 'engine-wt.for-you.md');
+    fs.mkdirSync(blocked, { recursive: true });
+    const aged = new Date(Date.now() - 2 * 60 * 60 * 1000);
+    fs.utimesSync(wt, aged, aged);
+    const kept = reap();
+    console.log('command: node bin/atris.js land --reap --no-remote --base master --ttl 0 (cards save blocked)');
+    console.log(kept.stdout.trim());
+    console.log(`exit: ${kept.status}`);
+    assert.equal(kept.status, 0, kept.stderr);
+    assert.ok(fs.existsSync(path.join(wt, 'atris', 'status', 'for-you.md')), kept.stdout);
+    assert.ok(kept.stdout.includes('cards not in the main inbox could not be saved'), kept.stdout);
+    assert.deepEqual(removalLines(repo), []);
+    fs.rmSync(blocked, { recursive: true });
+    fs.utimesSync(wt, aged, aged);
+    const run = reap();
+    console.log('command: node bin/atris.js land --reap --no-remote --base master --ttl 0 (card filed in the folder)');
+    console.log(run.stdout.trim());
+    console.log(`exit: ${run.status}`);
+    assert.equal(run.status, 0, run.stderr);
+    assert.equal(fs.existsSync(wt), false, run.stdout);
+    assert.ok(run.stdout.includes(`  cards not in your inbox saved: ${blocked} (1)`), run.stdout);
+    assert.equal(fs.readFileSync(blocked, 'utf8'), `${card}\n`);
+  } finally {
+    fs.rmSync(base, { recursive: true, force: true });
+  }
+});
+
 // A stand-in git on PATH refuses the patch check, so the keep path stays
 // covered now that no known setting makes a plainly saved patch fail it.
 test('reap keeps a folder whose saved edits would not apply', () => {
