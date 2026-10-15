@@ -14223,19 +14223,21 @@ test('claiming a task that is only already_claimed (not already_done) never sugg
   const env = { ATRIS_TASKS_DB: dbPath, NODE_NO_WARNINGS: '1', ATRIS_AGENT_ID: 'codex' };
   try {
     fs.mkdirSync(path.join(dir, 'atris'), { recursive: true });
-    // Seed creation only; both claims and the no-suggestion check stay on the CLI.
+    // Seed creation, the first claim and an open same-tag task a suggestion could name;
+    // the conflicting claim and the no-suggestion check stay on the CLI.
     const workspaceRoot = taskStore.workspaceRoot(dir);
     const db = taskStore.open(dbPath);
     let ref;
     try {
       const created = addSeedTask(db, { title: 'Ship the widget', tag: 'speedy', workspaceRoot });
       assert.equal(created.inserted, true);
+      assert.equal(addSeedTask(db, { title: 'Ship the other widget', tag: 'speedy', workspaceRoot }).inserted, true);
+      assert.equal(taskStore.claimTask(db, { id: created.id, claimedBy: 'codex' }).claimed, true);
       ref = taskStore.taskDisplayRefMap(taskStore.listTasks(db, { workspaceRoot })).get(created.id);
       assert.ok(ref);
     } finally {
       taskStore.close();
     }
-    assert.equal(runCli(['task', 'claim', ref, '--as', 'codex'], { cwd: dir, env }).status, 0);
     const conflict = runCli(['task', 'claim', ref, '--as', 'sonnet', '--json'], { cwd: dir, env });
     assert.equal(JSON.parse(conflict.stdout).reason, 'already_claimed');
     assert.equal(JSON.parse(conflict.stdout).next_claimable, null);
