@@ -539,8 +539,10 @@ const PLURAL_CLAUSE_AFTER_DASH = new RegExp(`${CLAUSE_END}\\s*\\u2014\\s*(?!${NA
 // two more words, start one too: "the text title elements use obfuscated
 // class names", "the recognized gaming classes map onto instruments". A
 // word in "s" before the plural is a second noun, so "the changes users
-// need first" stays a phrase.
-const THE_PLURAL_CLAUSE_AFTER_DASH = new RegExp(`${CLAUSE_END}\\s*\\u2014\\s*(?!${NAMING_PHRASE})(?=the\\s+(?:(?![a-z0-9-]*s\\b)[a-z0-9][\\w-]*\\s+){1,2}[a-z]{3,}(?<!ss|us|is)s\\s+(?:${COMMON_PLAIN_VERB}|use|map|cluster)\\s+[a-z][^\\s\\u2014]*\\s+[^\\s\\u2014])`, 'g');
+// need first" stays a phrase. "Show", "create", "mix" and "tune" come from
+// real briefs: "the runner logs show all four strategies have been
+// exhausted", "the current experiments tune *parameters* but never".
+const THE_PLURAL_CLAUSE_AFTER_DASH = new RegExp(`${CLAUSE_END}\\s*\\u2014\\s*(?!${NAMING_PHRASE})(?=the\\s+(?:(?![a-z0-9-]*s\\b)[a-z0-9][\\w-]*\\s+){1,2}[a-z]{3,}(?<!ss|us|is)s\\s+(?:${COMMON_PLAIN_VERB}|use|map|cluster|show|create|mix|tune)\\s+[*_]?[a-z][^\\s\\u2014]*\\s+[^\\s\\u2014])`, 'g');
 // A "the" subject of one or two words, then a verb in "s" that is rarely a
 // noun and more words, starts one too: "keep it short; the config lives in
 // one file". A pronoun or "that" before the verb opens a clause inside a

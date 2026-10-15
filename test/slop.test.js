@@ -4777,6 +4777,26 @@ test('fix reads "executes", "proceeds" and "retries" after a "the" subject as a 
   ]);
 });
 
+test('fix reads "show", "create", "mix" and "tune" after a "the" plural as a verb', () => {
+  // from real experiment briefs: each kept a comma splice after the dash;
+  // a plural after a word in "s" is still a phrase, "the changes users need"
+  const file = tmpFile('the-plural-verbs.md', [
+    'The scorer plateau is a separate problem \u2014 the runner logs show all four strategies ran.',
+    'The constructs are the bottleneck \u2014 the linker junctions create unavoidable CpG.',
+    'The search space is too wide \u2014 the target files mix algorithm and constants.',
+    'The config is stuck \u2014 the current experiments tune *parameters* but never prompts.',
+    'One list left \u2014 the changes users need first.',
+  ].join('\n\n'));
+  const { changes } = applyFixes([file], RULES);
+  assert.deepEqual(changes.map((c) => c.after), [
+    'The scorer plateau is a separate problem; the runner logs show all four strategies ran.',
+    'The constructs are the bottleneck; the linker junctions create unavoidable CpG.',
+    'The search space is too wide; the target files mix algorithm and constants.',
+    'The config is stuck; the current experiments tune *parameters* but never prompts.',
+    'One list left, the changes users need first.',
+  ]);
+});
+
 test('fix gives a run of "ing" phrases after a dash a colon, like a list', () => {
   // from hugolearn: "extracting what was learned" read as a subject and its
   // verb, so the list after the dash got a semicolon
