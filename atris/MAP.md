@@ -179,3 +179,6 @@ Caller refusal reporting: `atris/receipts/work-folder-refusal-caller-probe.js:1`
 
 
 Ordinary failed-check controls: `atris/receipts/work-folder-refusal-caller-probe.js:75` now runs three actual failed commands without injected results. Each command executes its side effect, exits 7, and saves one failed receipt with the original command and output; the CLI exits 1 and leaves the task outside review. Evidence: `atris/receipts/work-folder-failed-caller-2026-10-14.txt`. Preserve this behavior while repairing pre-launch refusal reporting.
+
+
+Current caller failure reporting: `commands/task.js:10094` shows ready refusal detail, and `commands/task.js:10292` preserves reason/detail/error in receipt JSON and omits absent exit/path claims in text. The existing caller probe now asserts the repaired behavior across three synthetic refusals, three real launch failures, and three real executed failures. Prior baseline notes above are historical. Proof: `atris/receipts/work-folder-caller-report-2026-10-14.txt`.

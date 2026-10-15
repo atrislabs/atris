@@ -10091,6 +10091,7 @@ function cmdReady(args) {
       const detail = receipt.exit != null ? ` (exit ${receipt.exit})` : (receipt.signal ? ` (signal ${receipt.signal})` : '');
       console.error(`atris task ready: verifier failed${detail}: ${verifyFlag}`);
       if (receipt.output) console.error(receipt.output);
+      if (receipt.detail) console.error(receipt.detail);
       else if (receipt.error) console.error(receipt.error);
       if (receipt.receiptPath) console.error(`receipt: ${receipt.receiptPath}`);
       process.exit(1);
@@ -10313,6 +10314,9 @@ function cmdTaskReceipt(args) {
       receipt_path: receipt.receiptPath,
       exit: receipt.exit,
       passed: receipt.passed,
+      reason: receipt.reason,
+      detail: receipt.detail,
+      error: receipt.error,
     });
     if (!receipt.passed) process.exit(1);
     return;
@@ -10321,8 +10325,12 @@ function cmdTaskReceipt(args) {
     console.log(`receipt written: ${receipt.receiptPath} (exit 0)`);
     console.log(`use: atris task ready ${taskId} --proof "Receipt: ${receipt.receiptPath}" --result "<what someone can do now and why it matters>"`);
   } else {
-    console.error(`verifier failed (exit ${receipt.exit}); receipt written: ${receipt.receiptPath}`);
+    const detail = receipt.exit != null ? ` (exit ${receipt.exit})` : (receipt.signal ? ` (signal ${receipt.signal})` : '');
+    const saved = receipt.receiptPath ? `; receipt written: ${receipt.receiptPath}` : '';
+    console.error(`verifier failed${detail}${saved}`);
     if (receipt.output) console.error(receipt.output);
+    if (receipt.detail) console.error(receipt.detail);
+    else if (receipt.error) console.error(receipt.error);
     process.exit(1);
   }
 }
