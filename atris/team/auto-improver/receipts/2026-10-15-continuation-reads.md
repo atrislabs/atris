@@ -14,3 +14,6 @@ layer: capabilities
 
 Final proof: `node --test test/roster-run-record.test.js && node bin/atris.js slop --staged` exited 0; `pass 12`, `fail 0`, `clean, no slop tells in 5 files`. Review proof saved. Brain compile returned plan-only, exit 2.
 layer: capabilities
+
+Review rerun: the short node command selected an older executable and failed on a missing built-in module. The explicit `/opt/homebrew/bin/node --test --test-name-pattern='^task continue-work rejects generic human-accept continuation titles$' test/commands.test.js` rerun passed, exit 0, and proof is ready for review. Use the explicit executable when saving this focused check.
+layer: capabilities
