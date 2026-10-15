@@ -15536,7 +15536,13 @@ test('task current-step rejects bookkeeping receipts for golden-path mission XP'
     assert.equal(created.status, 0, created.stderr);
     const task = JSON.parse(created.stdout).task;
     const ref = task.display_id;
-    assert.equal(runCli(['task', 'claim', ref, '--as', 'onboarding', '--json'], { cwd: dir, env }).status, 0);
+    // Seed ownership; task creation and both proof gates stay on the CLI.
+    const db = taskStore.open(dbPath);
+    try {
+      assert.equal(taskStore.claimTask(db, { id: task.id, claimedBy: 'onboarding' }).claimed, true);
+    } finally {
+      taskStore.close();
+    }
 
     const weakProof = 'atris/runs/bookkeeping.json';
     const blocked = runCli([
