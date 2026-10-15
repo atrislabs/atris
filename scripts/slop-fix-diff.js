@@ -20,13 +20,17 @@
 // base fixer and the working one and printed in full, moved or not, so a
 // rule change can be checked on one line without a throwaway script.
 // A typed \u2014 in a probe becomes a dash and a typed \n a line break, so
-// the shell never has to carry either.
+// the shell never has to carry either. With --probe-file the probes come
+// from a file, each line followed by "=> " and the fix it must give; a fix
+// that differs prints its "want" line and the run exits 1, so a file of
+// known edges is one command to check after any rule change.
 //
 //   node scripts/slop-fix-diff.js ~/notes ../other-repo
 //   node scripts/slop-fix-diff.js --base master --limit 50 docs/
 //   node scripts/slop-fix-diff.js --lines ~/notes
 //   node scripts/slop-fix-diff.js --audit ~/notes
 //   node scripts/slop-fix-diff.js --probe 'We fixed it \u2014 the loop kicks work.'
+//   node scripts/slop-fix-diff.js --probe-file test/fixtures/slop-fix-edges.txt
 
 const fs = require('fs');
 const os = require('os');
@@ -172,31 +176,52 @@ function splices(text) {
 }
 
 const USAGE = 'usage: node scripts/slop-fix-diff.js [--base <ref>] [--limit <n>] [--lines] [--audit] <folder or file>...\n' +
-  '       node scripts/slop-fix-diff.js [--base <ref>] --probe "<text>" [--probe "<text>"]...';
+  '       node scripts/slop-fix-diff.js [--base <ref>] --probe "<text>" [--probe "<text>"]... [--probe-file <file>]';
 
 // Fixes each probe with the base fixer and the working one and prints every
 // probe, so the answer to "what does the fixer do to this line" is one run.
-function probe(probes, base) {
+// A typed \u2014 in a probe is a dash and a typed \n a line break.
+function expandTyped(text) {
+  return text.replace(/\\u2014/g, DASH).replace(/\\n/g, '\n');
+}
+
+// Reads a file of probes: a line is a probe, a "=> " line under it is the
+// fix it must give, and "#" lines and blank lines are notes.
+function readProbeFile(file, probes, wants) {
+  for (const line of fs.readFileSync(file, 'utf8').split('\n')) {
+    if (!line.trim() || line.startsWith('#')) continue;
+    if (line.startsWith('=> ')) wants[probes.length - 1] = expandTyped(line.slice(3));
+    else probes.push(expandTyped(line));
+  }
+}
+
+function probe(probes, base, wants = []) {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'slop-fix-diff-'));
   const show = (text) => text.split('\n').join(' / ');
   try {
     const before = fixAll(loadFixerAt(base), probes, dir);
     const after = fixAll(require(path.join(ROOT, 'commands', 'slop.js')), probes, dir);
     let moved = 0;
+    let missed = 0;
     probes.forEach((text, i) => {
       if (before[i] !== after[i]) moved += 1;
+      const want = wants[i] !== undefined && wants[i] !== after[i] ? wants[i] : null;
+      if (want !== null) missed += 1;
       const odd = oddMarks(text, after[i]);
       console.log(`  was   ${show(text)}`);
       console.log(`  ${base === 'HEAD' ? 'head' : 'base'}  ${show(before[i])}`);
       console.log(`  now   ${show(after[i])}${before[i] === after[i] ? '' : '  (moved)'}`);
+      if (want !== null) console.log(`  want  ${show(want)}`);
       if (odd.length) console.log(`  odd   ${odd.join(', ')}`);
       console.log('');
     });
     console.log(`${probes.length} probe${probes.length === 1 ? '' : 's'}; ${moved} moved against ${base}`);
+    const checked = wants.filter((w) => w !== undefined).length;
+    if (checked) console.log(`${checked - missed} of ${checked} match the fix they must give`);
+    return missed ? 1 : 0;
   } finally {
     fs.rmSync(dir, { recursive: true, force: true });
   }
-  return 0;
 }
 
 function main(argv) {
@@ -205,6 +230,7 @@ function main(argv) {
   let paragraphs = true;
   let audit = false;
   const probes = [];
+  const wants = [];
   const targets = [];
   for (let i = 0; i < argv.length; i += 1) {
     if (argv[i] === '--base') base = argv[++i];
@@ -212,13 +238,14 @@ function main(argv) {
     else if (argv[i] === '--paragraphs') paragraphs = true;
     else if (argv[i] === '--lines') paragraphs = false;
     else if (argv[i] === '--audit') audit = true;
-    else if (argv[i] === '--probe') probes.push((argv[++i] || '').replace(/\\u2014/g, DASH).replace(/\\n/g, '\n'));
+    else if (argv[i] === '--probe') probes.push(expandTyped(argv[++i] || ''));
+    else if (argv[i] === '--probe-file') readProbeFile(path.resolve(argv[++i] || ''), probes, wants);
     else if (argv[i] === '--help' || argv[i] === '-h') {
       console.log(USAGE);
       return 0;
     } else targets.push(argv[i]);
   }
-  if (probes.length) return probe(probes, base);
+  if (probes.length) return probe(probes, base, wants);
   if (!targets.length) {
     console.error(USAGE);
     return 2;

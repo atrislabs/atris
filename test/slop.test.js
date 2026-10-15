@@ -3942,6 +3942,23 @@ test('the fix diff script prints what each fixer does to a probe with --probe', 
   assert.match(r.stdout, /^3 probes; 0 moved against HEAD$/m);
 });
 
+test('the fix diff script checks a file of known edges with --probe-file', () => {
+  const { spawnSync } = require('node:child_process');
+  // every edge in the shared file gives the fix it must give, and a wrong
+  // expectation prints its want line and exits 1
+  const script = path.join(__dirname, '..', 'scripts', 'slop-fix-diff.js');
+  const cwd = path.join(__dirname, '..');
+  const edges = path.join(__dirname, 'fixtures', 'slop-fix-edges.txt');
+  const r = spawnSync(process.execPath, [script, '--probe-file', edges], { encoding: 'utf8', cwd });
+  assert.equal(r.status, 0, r.stdout);
+  assert.match(r.stdout, /^(\d+) of \1 match the fix they must give$/m);
+  const bad = tmpFile('bad-edges.txt', [String.raw`We fixed it \u2014 the loop kicks work.`, '=> We fixed it, the loop kicks work.'].join('\n'));
+  const w = spawnSync(process.execPath, [script, '--probe-file', bad], { encoding: 'utf8', cwd });
+  assert.equal(w.status, 1);
+  assert.match(w.stdout, /^ {2}want {2}We fixed it, the loop kicks work\.$/m);
+  assert.match(w.stdout, /^0 of 1 match the fix they must give$/m);
+});
+
 test('the fix diff script marks a fix that gains doubled punctuation or loses paren balance', () => {
   const { oddMarks } = require('../scripts/slop-fix-diff.js');
   const D = String.fromCharCode(0x2014);

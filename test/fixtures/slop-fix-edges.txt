@@ -1,0 +1,33 @@
+# Known edges for the slop fixer's dash rule: a phrase after "the" that
+# reads like a clause, and a clause that reads like a phrase. Each line is a
+# probe; the "=> " line under it is the fix it must give. A typed \u2014 is
+# a dash and a typed \n a line break. Check after any rule change:
+#   node scripts/slop-fix-diff.js --probe-file test/fixtures/slop-fix-edges.txt
+
+# a clause: "the", a noun, a verb in s, an object
+We fixed it \u2014 the loop kicks work.
+=> We fixed it; the loop kicks work.
+We fixed it \u2014 the gate checks the drafts.
+=> We fixed it; the gate checks the drafts.
+We fixed it \u2014 the hook reads `MISSION.md`.
+=> We fixed it; the hook reads `MISSION.md`.
+We fixed it \u2014 the gate also checks drafts.
+=> We fixed it; the gate also checks drafts.
+Open the panel \u2014 the user settings\npage is gone.
+=> Open the panel; the user settings\npage is gone.
+
+# a phrase: a word in s that names a thing, not a verb
+Check one place \u2014 the error logs folder.
+=> Check one place, the error logs folder.
+Command tests \u2014 the decision helpers the CLI uses.
+=> Command tests, the decision helpers the CLI uses.
+Imports at module top \u2014 the stubs in tests `monkeypatch`.
+=> Imports at module top, the stubs in tests `monkeypatch`.
+
+# one word before the dash is a label, not a sentence
+Then \u2014 the loop kicks work.
+=> Then, the loop kicks work.
+
+# known gaps: these still get a comma where a semicolon belongs
+#   The site is not naive \u2014 its pages score 67.
+#   We fixed it \u2014 the loop kicks\nwork into the queue.
