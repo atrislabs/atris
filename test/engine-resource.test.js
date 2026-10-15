@@ -1688,7 +1688,7 @@ test('every engine started through a runner or profile variable records its run 
       seen += 1;
       routes[route] = (routes[route] || 0) + 1;
       const line = before.split('\n').length;
-      traced.push({ route, at: `${rel}:${line} ${program}${called || ''}` });
+      traced.push({ route, at: `${rel}:${line} ${program}${called || ''}`, launch: `${rel}#${fnName} ${program}${called || ''}` });
       if (recordedAbove(lines, line, recorder) || EXEMPT_LAUNCHES.has(`${rel}#${fnName}`)) continue;
       missing.push(`${rel}:${line} ${program}${called || ''}`);
     }
@@ -2111,6 +2111,7 @@ test('every engine started through a runner or profile variable records its run 
   // Where each traced launch lives, by route, so a dropped count points at
   // the launch it lost.
   const tracedAt = {};
+  const traced = [];
   let seen = 0;
   for (const dir of ['commands', 'lib']) {
     for (const name of fs.readdirSync(path.join(repo, dir)).filter((file) => file.endsWith('.js'))) {
@@ -2120,14 +2121,32 @@ test('every engine started through a runner or profile variable records its run 
       missing.push(...result.missing);
       for (const [kind, count] of Object.entries(result.routes)) routes[kind] = (routes[kind] || 0) + count;
       for (const { route, at } of result.traced) (tracedAt[route] = tracedAt[route] || []).push(at);
+      traced.push(...result.traced);
     }
   }
-  assert.ok(seen >= 8, `the scan should see the known runner and profile launches, saw ${seen}`);
-  assert.ok((routes.declaration || 0) >= 7 && (routes['call argument'] || 0) >= 1, `each route should still trace its known launches, saw ${JSON.stringify(tracedAt, null, 2)}`);
+  // The known launches by file, function, and program, with the route that
+  // traces each. Names, not line numbers, so ordinary edits keep matching
+  // and a lost launch is named exactly.
+  const KNOWN_TRACED = new Map([
+    ['commands/autopilot.js#defaultCodexExecutor cmd', 'declaration'],
+    ['commands/dream.js#defaultDreamRunner bin', 'declaration'],
+    ['commands/mission.js#spawnClaudeTick resolveClaudeRunnerBin()', 'declaration'],
+    ['commands/orb.js#dispatch invocation.command', 'declaration'],
+    ['commands/run.js#execPhaseCommandSync cmd', 'call argument'],
+    ['commands/unknowns.js#runRunnerPrompt cmd', 'declaration'],
+    ['commands/voice.js#runJudge claudePath', 'declaration'],
+    ['lib/roster-prep.js#defaultPrepAskSync invocation.bin', 'declaration'],
+  ]);
+  const tracedRoute = new Map(traced.map(({ launch, route }) => [launch, route]));
+  const lost = [...KNOWN_TRACED].filter(([launch, route]) => tracedRoute.get(launch) !== route)
+    .map(([launch, route]) => `${launch} by ${route}, now ${tracedRoute.get(launch) || 'not traced'}`);
+  assert.deepStrictEqual(lost, [], 'a known launch is no longer traced by its route; fix the reader, or update the list if the launch moved on purpose');
   assert.deepStrictEqual(missing, [], 'record the run with startEngineRun, or add the launch to the exempt list with its reason');
   console.log(`real runner and profile launch scan: ${seen} engine launches through a variable, ${missing.length} unrecorded`);
   console.log(`real runner and profile launch routes: ${JSON.stringify(routes)}`);
   for (const [kind, places] of Object.entries(tracedAt)) console.log(`  ${kind}: ${places.join(', ')}`);
+  const added = [...tracedRoute.keys()].filter((launch) => !KNOWN_TRACED.has(launch));
+  console.log(`real runner and profile launches beyond the known list: ${added.length ? added.join(', ') : 'none'}`);
 });
 
 test('the landing status names runs closed after their parent died in the last day, and stays quiet with none', () => {
