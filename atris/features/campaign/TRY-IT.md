@@ -112,6 +112,26 @@ What you should see, and why:
 - **End a mission without a cost**: `mission_ended` without `cost_usd` is refused. Every mission reports what it spent.
 - **Send a timestamp without a zone**: `2026-10-15T10:00:00` is refused, so no computer folds in its own timezone.
 
+## 5. Cloud
+
+A campaign on your laptop can sync with the Atris cloud, so web and iOS show it and an answer from your phone reaches a running loop. Sign in first with `atris login`. Point at a local backend with `ATRIS_API_URL=http://localhost:8000/api` if the routes are not deployed yet.
+
+```bash
+node bin/atris.js campaign start "Try the cloud" --judge "exit 1" --budget 5 --id cmp-try-cloud --cloud
+node bin/atris.js campaign sync cmp-try-cloud           # sends what the cloud lacks, takes in answers and actions
+node bin/atris.js campaign run cmp-try-cloud            # syncs before and after every step
+```
+
+What to expect:
+
+- `sync` says how many events it sent and received. Run it twice and the second run sends and receives nothing.
+- Answer an open ask on your phone, and the next sync (or the next step of `run`) closes it here, so the loop moves on.
+- Offline, `run` warns once and keeps going. The next sync sends what it missed.
+- A 403 or 409 from the cloud is shown as it is and not retried. `run` stops syncing for the rest of that run.
+- Answers, added budget, and `done` only come from a person. On a synced campaign, `atris campaign answer` sends your answer through the cloud.
+
+The routes are in `atris/features/campaign/api.md`. The tests run against a fake cloud: `node --test test/campaign-sync.test.js`.
+
 ## Where to read next
 
 - `atris/features/campaign/idea.md`: the design and why.
@@ -123,6 +143,6 @@ What you should see, and why:
 ## Not built yet
 
 - `atris campaign` verbs, and missions that join a campaign and reserve its budget.
-- Backend tables, routes, and live streams; the budget pool is billing and needs sign-off.
+- Backend routes for sync are being built; until they deploy, `atris campaign sync` shows the cloud's 404 as it is. The budget pool is billing and needs sign-off.
 - Screens that show campaigns. The view models exist; the pages do not.
 - Cost for engines other than Claude: their missions would spend without being counted.
