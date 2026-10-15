@@ -13670,7 +13670,7 @@ test('task revise sends ready work back to claimed with revision count', async (
   try {
     fs.mkdirSync(path.join(dir, 'atris'), { recursive: true });
 
-    // Seed creation and ownership; both readies, revise, show, the stale accept and re-ready stay on the CLI.
+    // Seed initial readiness; repeated ready, revise, show, stale accept and re-ready stay on the CLI.
     const workspaceRoot = taskStore.workspaceRoot(dir);
     const db = taskStore.open(dbPath);
     let ref;
@@ -13678,12 +13678,15 @@ test('task revise sends ready work back to claimed with revision count', async (
       const created = addSeedTask(db, { title: 'Revise autonomous work', tag: 'agent', workspaceRoot });
       assert.equal(created.inserted, true);
       assert.equal(taskStore.claimTask(db, { id: created.id, claimedBy: 'codex' }).claimed, true);
+      assert.equal(taskStore.readyTask(db, {
+        id: created.id, actor: 'codex', proof: 'smoke passed',
+        result: FIXTURE_RESULT_SENTENCE,
+      }).ready, true);
       ref = taskStore.taskDisplayRefMap(taskStore.listTasks(db, { workspaceRoot })).get(created.id);
       assert.ok(ref);
     } finally {
       taskStore.close();
     }
-    assert.equal(runCli(['task', 'ready', ref, '--proof', 'smoke passed', '--as', 'codex'], { cwd: dir, env }).status, 0);
     assert.equal(runCli(['task', 'ready', ref, '--proof', 'second smoke passed', '--as', 'codex'], { cwd: dir, env }).status, 0);
 
     const revise = runCli([

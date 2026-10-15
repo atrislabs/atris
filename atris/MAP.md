@@ -153,7 +153,7 @@ Hourly cleanup scan failures: `commands/autoland.js:878` includes a saved scan e
 
 Duplicate receipt repair setup: `test/commands.test.js:13520` seeds creation, ownership and readiness through the real task store; acceptance and XP receipt repair stay on the CLI.
 
-Ready-work revision checks: `test/commands.test.js:13660` seeds creation and ownership through the real task store; both readies, revision, show, stale acceptance and re-readiness stay on the CLI. Show and stale acceptance run together after revision and finish before fresh readiness.
+Ready-work revision checks: `test/commands.test.js:13660` seeds creation, ownership and initial readiness through the real task store; repeated readiness, revision, show, stale acceptance and re-readiness stay on the CLI. Show and stale acceptance run together after revision and finish before fresh readiness.
 
 Accepted-task revision refusal setup: `test/commands.test.js:13760` seeds creation, ownership and readiness through the real task store; acceptance, refused revision and XP status remain on the CLI, reducing four launches to three.
 

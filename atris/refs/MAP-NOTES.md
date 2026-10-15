@@ -2466,7 +2466,7 @@ Lost-run cleanup error summary: `commands/autoland.js:895` keeps successful clos
 
 ## Ready-work revise fixture setup
 
-- `test/commands.test.js:13660` checks that a human revise sends ready work back to claimed with a revision count. Real-store creation at `test/commands.test.js:13672` saves one setup launch, resolves the display reference and closes in finally; both readies, revise, show, the refused stale accept and the re-ready remain on the CLI with every behavior assertion preserved.
+- `test/commands.test.js:13660` checks that a human revise sends ready work back to claimed with a revision count. Real-store creation at `test/commands.test.js:13672` saves one setup launch, resolves the display reference and closes in finally; initial readiness also shares the store connection, while repeated ready, revise, show, the refused stale accept and the re-ready remain on the CLI with every behavior assertion preserved.
 
 ## Unclaimed ready revise fixture setup
 
@@ -2620,7 +2620,7 @@ Landing capability test setup: `test/commands.test.js:13014` seeds creation and 
 
 - Duplicate receipt repair setup: `test/commands.test.js:13520` uses production claimTask and readyTask in the setup connection, leaving two CLI launches; the real XP status command still verifies integrity, XP, receipt count and the repaired ledger length.
 
-- Ready-work revision setup: `test/commands.test.js:13695` uses production claimTask in the setup connection, asserting ownership before closing. Seven launches become six; both initial readies, revise, show, stale accept and re-ready retain all original CLI assertions.
+- Ready-work revision setup: `test/commands.test.js:13695` uses production claimTask in the setup connection, asserting ownership before closing. Together with store-seeded initial readiness, six launches become five; repeated ready, revise, show, stale accept and re-ready retain all original CLI assertions.
 
 - Accepted-task revision refusal: `test/commands.test.js:13760` seeds creation, ownership and readiness with production `readyTask` at `test/commands.test.js:13776`, asserts success and closes in finally; acceptance, refusal and XP assertions remain real CLI checks, reducing four launches to three.
 
@@ -2711,3 +2711,5 @@ Accepted revision refusal batch: `test/commands.test.js:13767` awaits refused re
 Reward projection readiness setup: `test/commands.test.js:13094` calls production readyTask with the original proof and actor before closing fixture setup in finally. Acceptance, collection and local status retain every CLI assertion; four launches become three. Collection and status remain sequential because both write shared XP state in `commands/xp.js:1050`.
 
 Reward rejection readiness setup: `test/commands.test.js:13170` seeds production readyTask with the original actor and proof, asserts success and closes in finally. CLI zero-reward refusal and the unchanged pending-review read retain every assertion; two launches replace three.
+
+Revision initial readiness setup: `test/commands.test.js` calls production readyTask with the original actor and proof, asserts success and closes in finally. Five launches replace six; repeated readiness and all revision assertions stay on the CLI.
