@@ -1690,6 +1690,55 @@ test('reap restores edited files byte for byte under line ending and version tag
   }
 });
 
+// New links were copied as what they point to: a link to a file came back
+// as a plain copy, and a link to a folder or to nothing failed the copy and
+// kept the folder for a human. Links are now saved and restored as links.
+test('reap saves new links as links and the restore gives them back', () => {
+  const { base, repo, wt } = landedWorktree();
+  try {
+    fs.writeFileSync(path.join(wt, 'target.txt'), 'pointed at\n');
+    fs.mkdirSync(path.join(wt, 'docs'));
+    fs.writeFileSync(path.join(wt, 'docs', 'page.md'), 'page\n');
+    const links = { 'to-file': 'target.txt', 'to-folder': 'docs', 'to-nothing': 'gone.txt' };
+    for (const [name, to] of Object.entries(links)) fs.symlinkSync(to, path.join(wt, name));
+    const status = git(wt, ['status', '--porcelain']);
+    const aged = new Date(Date.now() - 2 * 60 * 60 * 1000);
+    fs.utimesSync(wt, aged, aged);
+    const run = spawnSync(process.execPath, [path.resolve(__dirname, '../bin/atris.js'), 'land', '--reap', '--no-remote', '--base', 'master', '--ttl', '0'], { cwd: repo, encoding: 'utf8' });
+    console.log('command: node bin/atris.js land --reap --no-remote --base master --ttl 0 (new links)');
+    console.log(run.stdout.trim());
+    console.log(`exit: ${run.status}`);
+    assert.equal(run.status, 0, run.stderr);
+    assert.equal(fs.existsSync(wt), false, run.stdout);
+    const line = run.stdout.split('\n').find((l) => l.startsWith(`  to restore ${wt}: `));
+    assert.ok(line, run.stdout);
+    const list = spawnSync(process.execPath, [path.resolve(__dirname, '../bin/atris.js'), 'land', '--backups'], { cwd: repo, encoding: 'utf8' });
+    assert.ok(list.stdout.includes(`    to restore: ${line.slice(`  to restore ${wt}: `.length)}`), list.stdout);
+    // A saved link pointed somewhere else is caught before its restore is offered.
+    const savedFiles = run.stdout.split('\n').find((l) => l.startsWith('  files saved as they were: ')).slice('  files saved as they were: '.length);
+    fs.unlinkSync(path.join(savedFiles, 'to-file'));
+    fs.symlinkSync('docs/page.md', path.join(savedFiles, 'to-file'));
+    const moved = spawnSync(process.execPath, [path.resolve(__dirname, '../bin/atris.js'), 'land', '--backups'], { cwd: repo, encoding: 'utf8' });
+    console.log('command: node bin/atris.js land --backups (saved link pointed elsewhere)');
+    console.log(moved.stdout.trim());
+    console.log(`exit: ${moved.status}`);
+    assert.equal(moved.status, 0, moved.stderr);
+    assert.ok(moved.stdout.includes('cannot restore: saved draft file is missing or changed: to-file'), moved.stdout);
+    fs.unlinkSync(path.join(savedFiles, 'to-file'));
+    fs.symlinkSync('target.txt', path.join(savedFiles, 'to-file'));
+    const rebuilt = spawnSync('sh', ['-c', line.slice(`  to restore ${wt}: `.length)], { cwd: base, encoding: 'utf8' });
+    assert.equal(rebuilt.status, 0, rebuilt.stderr);
+    assert.equal(git(wt, ['status', '--porcelain']), status);
+    for (const [name, to] of Object.entries(links)) {
+      assert.ok(fs.lstatSync(path.join(wt, name)).isSymbolicLink(), name);
+      assert.equal(fs.readlinkSync(path.join(wt, name)), to);
+    }
+    assert.equal(fs.readFileSync(path.join(wt, 'docs', 'page.md'), 'utf8'), 'page\n');
+  } finally {
+    fs.rmSync(base, { recursive: true, force: true });
+  }
+});
+
 // A stand-in git on PATH refuses the patch check, so the keep path stays
 // covered now that no known setting makes a plainly saved patch fail it.
 test('reap keeps a folder whose saved edits would not apply', () => {

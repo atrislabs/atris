@@ -516,8 +516,11 @@ function quoteArg(value) {
 // git gc cannot clear it out from under the restore. Each saved patch and
 // copied new file leaves a content fingerprint on the folder, so the backup
 // list can tell a backup later cut short, edited or deleted from one intact.
+// A saved link is fingerprinted by where it points, never by what it reaches.
 function savedFingerprint(file) {
-  return crypto.createHash('sha256').update(fs.readFileSync(file)).digest('hex');
+  const hash = crypto.createHash('sha256');
+  if (fs.lstatSync(file).isSymbolicLink()) return hash.update(`link\0${fs.readlinkSync(file)}`).digest('hex');
+  return hash.update(fs.readFileSync(file)).digest('hex');
 }
 
 // Patches are saved as git apply reads them, whatever the folder's diff
@@ -604,7 +607,11 @@ function salvageWorktree(root, w, dir, receipt) {
       for (const rel of files) {
         const dest = path.join(destRoot, rel);
         fs.mkdirSync(path.dirname(dest), { recursive: true });
-        fs.copyFileSync(path.join(w.path, rel), dest);
+        const from = path.join(w.path, rel);
+        // A new link is saved as a link: copying it would save what it points
+        // to, and a link to a folder or to nothing would fail the copy.
+        if (fs.lstatSync(from).isSymbolicLink()) fs.symlinkSync(fs.readlinkSync(from), dest);
+        else fs.copyFileSync(from, dest);
         fingerprints[rel] = savedFingerprint(dest);
       }
       w.draftFingerprints = fingerprints;
