@@ -767,7 +767,7 @@ test('history reads back the latest sweep and the latest SIGKILL, skipping bad l
     assert.strictEqual(history.last_kill.task, 'CLI-2');
     assert.strictEqual(history.kills, 2);
     assert.strictEqual(history.low_memory_kills, 1);
-    assert.deepStrictEqual(readResourceHistory(path.join(root, 'missing')), { last_sweep: null, last_kill: null, kills: 0, low_memory_kills: 0, time_limit_kills: 0, last_other_kill: null, kills_day: 0, low_memory_kills_day: 0, time_limit_kills_day: 0, crowded_time_limit_kills_day: 0, last_day_other_kill: null, open_runs: 0, parent_gone: 0, still_running: 0, last_open: null, lost_closed: 0, lost_closed_day: 0, last_lost_closed: null, first_day_leak_reading: null, start_lines_guarded: null, last_error: null, errors_day: 0, last_day_error: null, read_error: null });
+    assert.deepStrictEqual(readResourceHistory(path.join(root, 'missing')), { last_sweep: null, last_kill: null, kills: 0, low_memory_kills: 0, time_limit_kills: 0, last_other_kill: null, kills_day: 0, low_memory_kills_day: 0, time_limit_kills_day: 0, crowded_time_limit_kills_day: 0, crowded_peak_open_runs: 0, last_day_other_kill: null, open_runs: 0, parent_gone: 0, still_running: 0, last_open: null, lost_closed: 0, lost_closed_day: 0, last_lost_closed: null, first_day_leak_reading: null, start_lines_guarded: null, last_error: null, errors_day: 0, last_day_error: null, read_error: null });
   } finally {
     fs.rmSync(root, { recursive: true, force: true });
   }
@@ -3168,6 +3168,62 @@ test('the landing status counts time limit kills apart and names the newest kill
     assert.strictEqual(history.crowded_time_limit_kills_day, 1);
     assert.strictEqual(readResourceHistory(root, { cores: cores + 1 }).crowded_time_limit_kills_day, 0, 'a bigger machine would not have been crowded');
     assert.strictEqual(history.last_day_other_kill.task, 'HEAVY');
+  } finally {
+    fs.rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test('the landing status names the most engine runs open at a crowded time limit kill and says whether running fewer would help', () => {
+  const { spawnSync } = require('node:child_process');
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'autoland-status-crowded-peak-'));
+  const cli = path.join(__dirname, '..', 'bin', 'atris.js');
+  const status = () => spawnSync(process.execPath, [cli, 'autoland', 'status'], {
+    cwd: root,
+    encoding: 'utf8',
+    env: { ...process.env, ATRIS_SKIP_UPDATE_CHECK: '1', NODE_NO_WARNINGS: '1' },
+  });
+  const hoursAgo = (h) => new Date(Date.now() - h * 3600 * 1000).toISOString();
+  const start = (at, id) => JSON.stringify({ at, phase: 'start', engine: 'codex', task: id, run_id: id });
+  const end = (at, id) => JSON.stringify({ at, phase: 'end', engine: 'codex', task: id, run_id: id, code: 0 });
+  const timeLimit = (at, id, load) => JSON.stringify({ at, phase: 'end', engine: 'codex', task: id, run_id: id, signal: 'SIGKILL', cause: 'killed (time limit reached)', timed_out: true, free_pct: 70, load: [load, 1, 1] });
+  const file = path.join(root, RESOURCE_LOG);
+  const cores = os.availableParallelism ? os.availableParallelism() : os.cpus().length;
+  try {
+    spawnSync('git', ['init', '-q'], { cwd: root });
+    fs.mkdirSync(path.dirname(file), { recursive: true });
+    // Four runs open when the first crowded kill lands, then two when the
+    // second does; the peak is four. The calm kill had three open.
+    fs.writeFileSync(file, [
+      start(hoursAgo(6), 'A'), start(hoursAgo(6), 'B'), start(hoursAgo(6), 'C'), start(hoursAgo(6), 'D'),
+      timeLimit(hoursAgo(5), 'A', cores + 2),
+      end(hoursAgo(4.5), 'B'),
+      timeLimit(hoursAgo(4), 'C', cores + 1),
+      start(hoursAgo(3), 'E'), start(hoursAgo(3), 'F'),
+      timeLimit(hoursAgo(2), 'E', 1),
+      '',
+    ].join('\n'));
+    const most = status();
+    assert.strictEqual(most.status, 0, most.stderr);
+    assert.ok(most.stdout.includes(`engine runs force-killed in the last day: 3, all at their time limit (2 with load above the ${cores} cores and up to 4 engine runs open, so run fewer at once);`), most.stdout);
+    const history = readResourceHistory(root);
+    assert.strictEqual(history.crowded_peak_open_runs, 4);
+    assert.strictEqual(readResourceHistory(root, { cores: cores + 1 }).crowded_peak_open_runs, 4, 'the kill one above a bigger core count still counts');
+    assert.strictEqual(readResourceHistory(root, { cores: cores + 2 }).crowded_peak_open_runs, 0, 'no crowded kill means no peak');
+
+    // Two more calm timeouts leave the crowded ones a minority: the peak is
+    // still named, but the advice to run fewer is not.
+    fs.appendFileSync(file, [timeLimit(hoursAgo(1), 'F', 1), timeLimit(hoursAgo(0.5), 'D', 1), ''].join('\n'));
+    const few = status();
+    assert.strictEqual(few.status, 0, few.stderr);
+    assert.ok(few.stdout.includes(`all at their time limit (2 with load above the ${cores} cores and up to 4 engine runs open);`), few.stdout);
+
+    // A crowded kill with only the killed run open means the load came from
+    // other work, so running fewer engines would not help.
+    fs.writeFileSync(file, [start(hoursAgo(2), 'G'), timeLimit(hoursAgo(1), 'G', cores + 3), ''].join('\n'));
+    const alone = status();
+    assert.strictEqual(alone.status, 0, alone.stderr);
+    assert.ok(alone.stdout.includes(`all at their time limit (1 with load above the ${cores} cores and no other engine run open, so the load came from other work);`), alone.stdout);
+    assert.doesNotMatch(alone.stdout, /run fewer at once/);
   } finally {
     fs.rmSync(root, { recursive: true, force: true });
   }

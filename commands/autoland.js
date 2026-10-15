@@ -540,7 +540,15 @@ function showStatus(root, args, deps = {}) {
     // Timeouts are counted apart, and the newest kill named is the newest one
     // that was not a timeout, so a night of timeouts cannot hide a crash.
     const timeLimit = lost.time_limit_kills_day;
-    const crowded = lost.crowded_time_limit_kills_day ? ` (${lost.crowded_time_limit_kills_day} with load above the ${machineCores()} cores)` : '';
+    // The most engine runs open at a crowded kill says where the load came
+    // from: several runs means run fewer at once when most timeouts were
+    // crowded; the killed run alone means other work loaded the machine.
+    const crowdedKills = lost.crowded_time_limit_kills_day;
+    const peakRuns = lost.crowded_peak_open_runs;
+    let peak = '';
+    if (peakRuns === 1) peak = ' and no other engine run open, so the load came from other work';
+    else if (peakRuns > 1) peak = ` and up to ${peakRuns} engine runs open${crowdedKills * 2 > timeLimit ? ', so run fewer at once' : ''}`;
+    const crowded = crowdedKills ? ` (${crowdedKills} with load above the ${machineCores()} cores${peak})` : '';
     const counts = timeLimit === lost.kills_day
       ? `all at their time limit${crowded}`
       : `${timeLimit ? `${timeLimit} at their time limit${crowded}, ` : ''}${lost.low_memory_kills_day} with machine memory low`;
