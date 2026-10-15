@@ -1485,6 +1485,23 @@ test('fix joins a full clause after "etc." with a semicolon, not a comma splice'
   ]);
 });
 
+test('fix reads a word that ends in a plus as a clause end before a dash', () => {
+  // from a design note: "to v0.42+" then a dash and "they'll ship" kept a
+  // comma, because the plus was no word, bracket or quote. A phrase after
+  // the plus still takes its comma.
+  const file = tmpFile('plus-clause.md', [
+    "Types are deferred to v0.42+ \u2014 they'll ship when a real user authors one.",
+    'We need Node 18+ \u2014 it ships with fetch.',
+    'Built in C++ \u2014 fast, small, no runtime.',
+  ].join('\n'));
+  const { changes } = applyFixes([file], RULES, { write: false });
+  assert.deepEqual(changes.map((c) => c.after), [
+    "Types are deferred to v0.42+; they'll ship when a real user authors one.",
+    'We need Node 18+; it ships with fetch.',
+    'Built in C++, fast, small, no runtime.',
+  ]);
+});
+
 test('fix gives a long bold list label a colon, but a comma before a joining word', () => {
   // the "1." of a numbered list ends no sentence, but a long bold phrase after
   // it still labels what follows; before "and", "but", "or" or "so" it goes on

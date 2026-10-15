@@ -177,7 +177,8 @@ const ING_LIST_AFTER_DASH =new RegExp(`(?<=[\\w)\\]*_\`%])\\s*\u2014\\s*(?=${ING
 // masked code span right before the dash. "etc." ends a list, not its
 // sentence, so the clause after it joins the same way: "companies, etc.;
 // these are category links", never "etc., these are", a comma splice.
-const CLAUSE_END = "(?<=[\\w)\\]\"'*_`%\\u201d\\u2019\\uE001]|\\betc\\.)";
+// A plus that closes a word, "v0.42+", "Node 18+", "C++", is part of it.
+const CLAUSE_END = "(?<=[\\w)\\]\"'*_`%\\u201d\\u2019\\uE001]|\\betc\\.|\\w\\+{1,2})";
 
 // A lone dash with a word before it, then a subject pronoun and its verb:
 // "it survives", "they'd pass", "that's the goal". "This" and its kin count
