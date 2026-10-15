@@ -21,6 +21,15 @@ const { withTaskReadyResult } = require('./helpers/task-result');
 
 const CLI = path.join(__dirname, '..', 'bin', 'atris.js');
 
+test('colon-directory runtime refuses both real proof runners and explains CLI failures', () => {
+  const result = spawnSync(process.execPath,
+    [path.join(__dirname, '../atris/receipts/work-folder-paired-runtime-probe.js')],
+    { encoding: 'utf8', timeout: 150000, env: scrubAgentEnv() });
+  assert.equal(result.error, undefined);
+  assert.equal(result.status, 0, result.stdout + result.stderr);
+  assert.match(result.stdout, /both real runners refused; three actual CLI calls explained refusal/);
+});
+
 function makeTempDir() {
   return fs.mkdtempSync(path.join(os.tmpdir(), 'atris-task-proof-'));
 }

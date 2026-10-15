@@ -2409,3 +2409,5 @@ Ordinary failed-check controls: `atris/receipts/work-folder-refusal-caller-probe
 
 
 Current caller failure reporting: `commands/task.js:10094` shows ready refusal detail, and `commands/task.js:10292` preserves reason/detail/error in receipt JSON and omits absent exit/path claims in text. The existing caller probe now asserts the repaired behavior across three synthetic refusals, three real launch failures, and three real executed failures. Prior baseline notes above are historical. Proof: `atris/receipts/work-folder-caller-report-2026-10-14.txt`.
+
+Colon-directory refusal is now implemented in `lib/task-proof.js:157` and `lib/task-receipt.js:56`. The paired runtime diagnostic at `atris/receipts/work-folder-paired-runtime-probe.js:1` now asserts both real runner refusals and three real CLI explanations, with no command side effects, receipts, or review transition. `test/task-proof.test.js:24` runs that diagnostic automatically. Earlier baseline descriptions above are historical. Ordinary-path shared-runner restoration remains pending. Evidence: `atris/receipts/work-folder-runtime-refusal-2026-10-14.txt`.
