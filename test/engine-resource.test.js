@@ -1366,7 +1366,6 @@ test('every engine started through a runner or profile variable records its run 
   const EXEMPT_LAUNCHES = new Map([
     ['lib/roster-prep.js#defaultPrepAskSync invocation.bin', 'recorded around the ask by startPrepReadings'],
     ['commands/run.js#execPhaseCommandSync cmd', 'recorded around the phase by executePhase'],
-    ['commands/console.js#launchClaude runnerBin', 'console session handed to the person; its piped print run is not recorded yet'],
   ]);
   const engineLaunches = (rel, text) => {
     const code = stripComments(text);
@@ -2119,10 +2118,10 @@ test('every engine started through a runner or profile variable records its run 
   assert.deepStrictEqual(exemptAsk('  spawnSync(invocation.bin, invocation.args);\n  const runner = resolveClaudeRunnerBin();\n  spawnSync(runner, args);'), ['lib/roster-prep.js:5 runner'], 'a launch of another program is not exempt');
   assert.deepStrictEqual(exemptAsk('  startEngineRun(root);\n  spawnSync(invocation.bin, invocation.args);\n  spawnSync(invocation.bin, invocation.args);'), [], 'a recorded launch leaves the exemption for the next one');
   // A file with interactive sessions is still scanned, so a new launch
-  // there beside its named one is caught.
-  const consoleLaunch = 'function launchClaude(systemPrompt, extraArgs) {\n  const runnerBin = resolveClaudeRunnerBin();\n  spawnSync(runnerBin, args);\n}\n';
+  // there beside its recorded one is caught.
+  const consoleLaunch = 'function launchClaude(systemPrompt, extraArgs) {\n  const runnerBin = resolveClaudeRunnerBin();\n  const endResource = startEngineRun(root);\n  spawnSync(runnerBin, args);\n}\n';
   assert.deepStrictEqual(engineLaunches('commands/console.js', consoleLaunch).missing, []);
-  assert.deepStrictEqual(engineLaunches('commands/console.js', `${consoleLaunch}function launchReview() {\n  spawnSync(resolveClaudeRunnerBin(), args);\n}\n`).missing, ['commands/console.js:6 resolveClaudeRunnerBin()']);
+  assert.deepStrictEqual(engineLaunches('commands/console.js', `${consoleLaunch}function launchReview() {\n  spawnSync(resolveClaudeRunnerBin(), args);\n}\n`).missing, ['commands/console.js:7 resolveClaudeRunnerBin()']);
   // An exemption no launch used is stale, like one left behind when its
   // function was renamed.
   const staleExemptions = (used) => [...EXEMPT_LAUNCHES.keys()].filter((launch) => !used.includes(launch));
@@ -3885,4 +3884,37 @@ test('every map ref to an engine resource or dispatch test lands on the line tha
   const stale = [];
   for (const doc of ['atris/MAP.md', 'atris/refs/MAP-NOTES.md']) stale.push(...offTest(doc, fs.readFileSync(path.join(repo, doc), 'utf8'), testFiles));
   assert.deepStrictEqual(stale, [], 'a test moved; point each ref at the line where its test now starts, and a range at the line where its last test ends');
+});
+
+test('the console records a piped print run and keeps no reading for a session handed to the person', () => {
+  const { spawnSync } = require('node:child_process');
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'atris-console-run-'));
+  try {
+    const runner = path.join(root, 'fake-claude');
+    fs.writeFileSync(runner, '#!/bin/sh\ncat >/dev/null\nexit "${FAKE_EXIT:-0}"\n', { mode: 0o755 });
+    const consolePath = path.join(__dirname, '..', 'commands', 'console.js');
+    const launch = (options, exit = '0') => spawnSync(process.execPath, ['-e', `require(${JSON.stringify(consolePath)}).launchClaude('system', [], ${JSON.stringify(options)})`], {
+      cwd: root,
+      input: '',
+      encoding: 'utf8',
+      env: { ...process.env, ATRIS_RUNNER_BIN: runner, FAKE_EXIT: exit },
+    });
+    const log = () => {
+      const file = path.join(root, '.atris', 'state', 'engine-resource.jsonl');
+      return fs.existsSync(file) ? fs.readFileSync(file, 'utf8').trim().split('\n').map((line) => JSON.parse(line)) : [];
+    };
+    assert.strictEqual(launch({ skipPermissions: false }).status, 0);
+    assert.deepStrictEqual(log(), [], 'a session handed to the person keeps no reading');
+    assert.strictEqual(launch({ skipPermissions: false, promptStdin: 'hello' }).status, 0);
+    const ok = log();
+    assert.deepStrictEqual(ok.map((entry) => [entry.phase, entry.engine, entry.task]), [['start', 'fake-claude', 'console print'], ['end', 'fake-claude', 'console print']]);
+    assert.strictEqual(ok[0].run_id, ok[1].run_id);
+    assert.strictEqual(ok[1].error, undefined, 'a clean run keeps no error');
+    assert.strictEqual(launch({ skipPermissions: false, promptStdin: 'hello' }, '3').status, 3);
+    const failed = log().at(-1);
+    assert.deepStrictEqual([failed.phase, failed.error], ['end', 'runner exited 3']);
+    console.log(`real console print run end reading: ${JSON.stringify(failed)}`);
+  } finally {
+    fs.rmSync(root, { recursive: true, force: true });
+  }
 });

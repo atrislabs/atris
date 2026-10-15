@@ -325,12 +325,20 @@ function launchClaude(systemPrompt, extraArgs, options = {}) {
     ...extraArgs,
   ];
 
+  // A piped print run is headless, so it keeps machine readings like any
+  // engine run. A session handed to the person keeps none.
+  const endResource = promptStdin === null
+    ? null
+    : require('../lib/engine-resource').startEngineRun(process.cwd(), { engine: path.basename(runnerBin), task: 'console print' });
   const child = spawnSync(runnerBin, args, {
     cwd: process.cwd(),
     stdio: promptStdin === null ? 'inherit' : ['pipe', 'inherit', 'inherit'],
     ...(promptStdin === null ? {} : { input: promptStdin }),
     env: { ...process.env, ...(options.runnerEnv || {}), CLAUDECODE: undefined },
   });
+  if (endResource) {
+    endResource(child.error || (child.signal ? { signal: child.signal } : child.status ? { message: `runner exited ${child.status}` } : null));
+  }
 
   try {
     if (typeof options.onRunnerExit === 'function') {
