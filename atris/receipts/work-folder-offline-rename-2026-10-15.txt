@@ -1,0 +1,30 @@
+Cleanup preserves a staged rename and a later edit while origin is unavailable.
+
+Scope: test/member-tidy.test.js and atris/MAP.md.
+Plan: staged rename plus later edit -> real cleanup preview and apply -> unchanged index and files.
+A new offline check renames README in the index, edits the new file again, then
+moves origin away. After both commands it checks the old name stays absent, the
+saved version under the new name matches the original, the later edit survives,
+both patches and the status line are unchanged, and the folder stays registered.
+
+Verify: node --test test/worktree-removal-guard.test.js test/member-tidy.test.js && node bin/atris.js slop --staged
+next_push: prove offline cleanup preserves a staged new file beside a later unsaved edit to it.
+
+Real command output excerpt (disposable repository with origin moved away):
+command: node bin/atris.js worktree cleanup (unavailable origin, staged rename)
+cleanup: dry-run base=origin/master
+candidates: 0
+kept: 2
+kept: .../offline-rename branch=offline-rename reason=dirty staged=1 unstaged=1 untracked=0
+exit: 0
+command: node bin/atris.js worktree cleanup --apply (unavailable origin, staged rename)
+cleanup: applied base=origin/master
+removeds: 0
+kept: 2
+kept: .../offline-rename branch=offline-rename reason=dirty staged=1 unstaged=1 untracked=0
+exit: 0
+Both commands also reported the unavailable-origin warning.
+
+Result: frozen verify command exited 0.
+Tests: 87 passed, 0 failed, 0 skipped, 0 todo.
+Writing check: clean, no slop tells in staged files.

@@ -1470,3 +1470,44 @@ test('worktree cleanup warns and keeps drafts when origin is unavailable', () =>
     fs.rmSync(fx.base, { recursive: true, force: true });
   }
 });
+test('worktree cleanup keeps a staged rename and later edits when origin is unavailable', () => {
+  const fx = makeFixture();
+  try {
+    const copy = addCopy(fx, 'offline-rename');
+    const moved = path.join(copy, 'GUIDE.md');
+    const committed = runGit(['show', 'HEAD:README.md'], copy);
+    runGit(['mv', 'README.md', 'GUIDE.md'], copy);
+    fs.writeFileSync(moved, 'later guide edits\n');
+    const staged = runGit(['diff', '--cached', '-M', '--binary'], copy);
+    assert.match(staged, /rename from README\.md\nrename to GUIDE\.md/);
+    const later = runGit(['diff', '--binary'], copy);
+    const status = runGit(['status', '--porcelain'], copy);
+    assert.equal(status, 'RM README.md -> GUIDE.md');
+    const saved = runGit(['rev-parse', 'origin/master'], fx.repo);
+    fs.renameSync(path.join(fx.base, 'remote.git'), path.join(fx.base, 'remote-offline.git'));
+    for (const extra of [[], ['--apply']]) {
+      const cli = spawnSync(process.execPath, [path.resolve(__dirname, '../bin/atris.js'), 'worktree', 'cleanup', ...extra], { cwd: fx.repo, encoding: 'utf8', timeout: 30000 });
+      console.log(`command: node bin/atris.js worktree cleanup${extra.length ? ' --apply' : ''} (unavailable origin, staged rename)`);
+      console.log(cli.stdout.trim());
+      console.log(`exit: ${cli.status}`);
+      assert.equal(cli.status, 0, cli.stderr);
+      const lines = cli.stdout.trim().split('\n');
+      assert.equal(lines[0], `cleanup: ${extra.length ? 'applied' : 'dry-run'} base=origin/master`);
+      assert.match(lines[1], /^warning: could not refresh origin\/master /);
+      assert.ok(lines.includes(extra.length ? 'removeds: 0' : 'candidates: 0'), cli.stdout);
+      assert.equal(fs.existsSync(path.join(copy, 'README.md')), false);
+      assert.equal(fs.readFileSync(moved, 'utf8'), 'later guide edits\n');
+      assert.equal(runGit(['show', ':GUIDE.md'], copy), committed);
+      assert.equal(runGit(['show', 'HEAD:README.md'], copy), committed);
+      assert.equal(runGit(['diff', '--cached', '-M', '--binary'], copy), staged);
+      assert.equal(runGit(['diff', '--binary'], copy), later);
+      assert.equal(runGit(['status', '--porcelain'], copy), status);
+      assert.equal(runGit(['rev-parse', 'origin/master'], fx.repo), saved);
+      assert.ok(branchExists(fx.repo, 'offline-rename'));
+      assert.ok(runGit(['worktree', 'list', '--porcelain'], fx.repo).includes(`worktree ${copy}\n`));
+      assert.equal(fs.existsSync(path.join(fx.repo, '.atris/state/worktree_removals.jsonl')), false);
+    }
+  } finally {
+    fs.rmSync(fx.base, { recursive: true, force: true });
+  }
+});

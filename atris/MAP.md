@@ -240,3 +240,5 @@ Healthy refresh tracked edits: `test/member-tidy.test.js:1374` also preserves ex
 Healthy refresh staged tracked edits: `test/member-tidy.test.js:1374` runs real cleanup preview and apply, preserving separate committed, staged and later README contents along with drafts and staged notes.
 
 Offline cleanup staged deletion: `test/member-tidy.test.js` runs real preview and apply with an unavailable origin and a staged README deletion. Both calls preserve the missing file, saved deletion patch, original committed contents, draft, branch and registration.
+
+Offline cleanup staged rename: `test/member-tidy.test.js:1473` runs real preview and apply with an unavailable origin after README is renamed in the index and edited again. Both calls keep the old name absent, the saved rename, the later edit, the branch and registration.
