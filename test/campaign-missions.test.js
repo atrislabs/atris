@@ -114,3 +114,18 @@ test('the real commands: atris mission start --campaign reports into the campaig
   assert.equal(JSON.parse(plain.stdout).mission.campaign_id, undefined);
   assert.equal(JSON.parse(cli('campaign', 'show', 'cmp-ship', '--json').stdout).campaign.missions.length, 1);
 });
+
+test('a campaign mission records the engine that ran it, for traces and per-engine cost', () => {
+  const store = campaign(20);
+  const deps = { store };
+  const mission = { id: 'm-e', owner: 'builder', campaign_id: 'cmp-a', runner: 'codex', model: 'gpt-6' };
+  recordCampaignMissionStarted('/x', mission, 0, deps);
+  recordCampaignTick('/x', mission, { cost_usd: 0.1, engine: 'claude' }, deps);
+  recordCampaignMissionStarted('/x', { ...mission, id: 'm-auto', runner: 'auto', model: undefined }, 0, deps);
+  const events = store.read('cmp-a');
+  const started = events.find((e) => e.type === 'mission_started' && e.data.mission_id === 'm-e').data;
+  assert.equal(started.engine, 'codex');
+  assert.equal(started.model, 'gpt-6');
+  assert.equal(events.find((e) => e.type === 'step').data.engine, 'claude');
+  assert.equal(events.find((e) => e.data.mission_id === 'm-auto').data.engine, undefined);
+});
