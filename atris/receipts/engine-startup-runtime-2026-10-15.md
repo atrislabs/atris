@@ -25,4 +25,6 @@ Lesson: checkout hints must preserve the running Node executable because service
 next_push: Handle a same-checkout launcher on PATH when its Node executable is absent from PATH.
 
 Brain activation and compile were inspected, both returned plan-only exit 2; unrelated generated adapters were left untouched. Mission task attachment reported its existing lock busy; created a dedicated task instead. Generated task-board changes were restored to avoid unrelated board churn.
+
+Handoff: the installed Atris launcher used unsupported Node 20 and its separate board checks failed. Running `node bin/atris.js task ready` with the supported runtime passed the unchanged frozen command, exit 0, and moved the task to Review. Machine receipt: atris/runs/2026-10-15-task-ecm-4-2026-10-15T07-25-46-837Z.json. Independent code review already found no issues.
 layer: behaviors
