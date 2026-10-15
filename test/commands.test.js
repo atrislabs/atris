@@ -14623,7 +14623,7 @@ test('task reviews gives a compact certified accept queue', async () => {
   }
 });
 
-test('task review groups are capped by default for human scan', () => {
+test('task review groups are capped by default for human scan', async () => {
   if (!hasNodeSqlite()) return;
   const dir = makeTempDir();
   const dbPath = path.join(dir, 'tasks.db');
@@ -14656,7 +14656,13 @@ test('task review groups are capped by default for human scan', () => {
       }
     }
 
-    const grouped = runCli(['task', 'reviews', '--group-by', 'tag'], { cwd: dir, env });
+    // The four queue reads change no task state, so they run at once.
+    const [grouped, ungrouped, limited, all] = await Promise.all([
+      runCliAsync(['task', 'reviews', '--group-by', 'tag'], { cwd: dir, env }),
+      runCliAsync(['task', 'reviews'], { cwd: dir, env }),
+      runCliAsync(['task', 'reviews', '--group-by', 'tag', '--limit', '3'], { cwd: dir, env }),
+      runCliAsync(['task', 'reviews', '--group-by', 'tag', '--all'], { cwd: dir, env }),
+    ]);
     assert.equal(grouped.status, 0, grouped.stderr);
     assert.match(grouped.stdout, /twelve finished things are waiting, grouped by tag\./);
     assert.match(grouped.stdout, /1\. tag-01/);
@@ -14664,17 +14670,14 @@ test('task review groups are capped by default for human scan', () => {
     assert.doesNotMatch(grouped.stdout, /11\. tag-11/);
     assert.match(grouped.stdout, /showing ten of twelve groups; rerun with --all for every group or --limit N to adjust\./);
 
-    const ungrouped = runCli(['task', 'reviews'], { cwd: dir, env });
     assert.equal(ungrouped.status, 0, ungrouped.stderr);
     assert.match(ungrouped.stdout, /twelve finished things are waiting for your ok\. all of them passed both checks\./);
 
-    const limited = runCli(['task', 'reviews', '--group-by', 'tag', '--limit', '3'], { cwd: dir, env });
     assert.equal(limited.status, 0, limited.stderr);
     assert.match(limited.stdout, /3\. tag-03/);
     assert.doesNotMatch(limited.stdout, /4\. tag-04/);
     assert.match(limited.stdout, /showing three of twelve groups/);
 
-    const all = runCli(['task', 'reviews', '--group-by', 'tag', '--all'], { cwd: dir, env });
     assert.equal(all.status, 0, all.stderr);
     assert.match(all.stdout, /12\. tag-12/);
     assert.doesNotMatch(all.stdout, /Showing 10\/12 groups/);
