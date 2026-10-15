@@ -15520,7 +15520,7 @@ test('task queue filters certified review rows by continue-work and human-accept
   }
 });
 
-test('task review lanes route stale PR proof out of human accept waiting', () => {
+test('task review lanes route stale PR proof out of human accept waiting', async () => {
   if (!hasNodeSqlite()) return;
   const dir = makeTempDir();
   const dbPath = path.join(dir, 'tasks.db');
@@ -15561,7 +15561,32 @@ test('task review lanes route stale PR proof out of human accept waiting', () =>
       '--proof', stalePrProof,
     ], { cwd: dir, env }).status, 0);
 
-    const status = runCli(['task', 'status', '--json'], { cwd: dir, env });
+    // Every read below, including the refused current-step and the dry run,
+    // changes no task state, so all seven run at once.
+    const [status, current, waiting, reviews, reviewText, dryRun, currentStep] = await Promise.all([
+      runCliAsync(['task', 'status', '--json'], { cwd: dir, env }),
+      runCliAsync([
+        'task', 'current',
+        '--goal-id', 'OBL-928',
+        '--review-state', 'proof-boundary-blocked',
+        '--json',
+      ], { cwd: dir, env }),
+      runCliAsync([
+        'task', 'current',
+        '--goal-id', 'OBL-928',
+        '--review-state', 'human-accept-waiting',
+        '--json',
+      ], { cwd: dir, env }),
+      runCliAsync(['task', 'reviews', '--json'], { cwd: dir, env }),
+      runCliAsync(['task', 'reviews'], { cwd: dir, env }),
+      runCliAsync(['task', 'auto-accept-certified', '--dry-run', '--json'], { cwd: dir, env }),
+      runCliAsync([
+        'task', 'current-step',
+        '--goal-id', 'OBL-928',
+        '--review-state', 'proof-boundary-blocked',
+        '--json',
+      ], { cwd: dir, env }),
+    ]);
     assert.equal(status.status, 0, status.stderr);
     const statusPayload = JSON.parse(status.stdout).status;
     assert.equal(statusPayload.counts.review, 1);
@@ -15577,12 +15602,6 @@ test('task review lanes route stale PR proof out of human accept waiting', () =>
     assert.equal(statusPayload.review_actions.human_accept_waiting.count, 0);
     assert.equal(statusPayload.review_actions.human_accept_waiting.first, null);
 
-    const current = runCli([
-      'task', 'current',
-      '--goal-id', 'OBL-928',
-      '--review-state', 'proof-boundary-blocked',
-      '--json',
-    ], { cwd: dir, env });
     assert.equal(current.status, 0, current.stderr);
     const currentPayload = JSON.parse(current.stdout);
     assert.equal(currentPayload.current.selected_task_id, task.id);
@@ -15601,18 +15620,11 @@ test('task review lanes route stale PR proof out of human accept waiting', () =>
     assert.equal(currentPayload.page.review.verification_chat.human_accept_command, null);
     assert.doesNotMatch(JSON.stringify(currentPayload.page.review.verification_chat), new RegExp(`atris task accept ${ref}`));
 
-    const waiting = runCli([
-      'task', 'current',
-      '--goal-id', 'OBL-928',
-      '--review-state', 'human-accept-waiting',
-      '--json',
-    ], { cwd: dir, env });
     assert.equal(waiting.status, 0, waiting.stderr);
     const waitingPayload = JSON.parse(waiting.stdout);
     assert.equal(waitingPayload.current.selected_task_id, null);
     assert.equal(waitingPayload.current.selected_ref, null);
 
-    const reviews = runCli(['task', 'reviews', '--json'], { cwd: dir, env });
     assert.equal(reviews.status, 0, reviews.stderr);
     const reviewItem = JSON.parse(reviews.stdout).queue.items[0];
     assert.equal(reviewItem.id, task.id);
@@ -15621,24 +15633,16 @@ test('task review lanes route stale PR proof out of human accept waiting', () =>
     assert.equal(reviewItem.blocked_accept_reason, 'proof_unmerged_or_draft_pr_boundary');
     assert.match(reviewItem.revise_command, new RegExp(`atris task revise ${ref}`));
 
-    const reviewText = runCli(['task', 'reviews'], { cwd: dir, env });
     assert.equal(reviewText.status, 0, reviewText.stderr);
     assert.match(reviewText.stdout, /approve: blocked; its proof points at an unmerged draft, merge it or prove the work another way/);
     assert.doesNotMatch(reviewText.stdout, /proof_unmerged_or_draft_pr_boundary/);
     assert.doesNotMatch(reviewText.stdout, new RegExp(`approve: atris task accept ${ref}`));
 
-    const dryRun = runCli(['task', 'auto-accept-certified', '--dry-run', '--json'], { cwd: dir, env });
     assert.equal(dryRun.status, 0, dryRun.stderr);
     const dryRunResult = JSON.parse(dryRun.stdout).results[0];
     assert.equal(dryRunResult.action, 'skipped');
     assert.equal(dryRunResult.reason, 'proof_unmerged_or_draft_pr_boundary');
 
-    const currentStep = runCli([
-      'task', 'current-step',
-      '--goal-id', 'OBL-928',
-      '--review-state', 'proof-boundary-blocked',
-      '--json',
-    ], { cwd: dir, env });
     assert.notEqual(currentStep.status, 0);
     assert.equal(JSON.parse(currentStep.stdout).reason, 'proof_boundary_blocked_requires_revision');
   } finally {
