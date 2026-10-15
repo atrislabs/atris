@@ -1239,6 +1239,20 @@ test('ytnotes auto writer follows the roster lead and passes its model through',
   assert.ok(agyArgs === '' || agyArgs === 'models', `the backup never ran: ${agyArgs}`);
 });
 
+test('ytnotes asks Claude writers for no hidden thinking', () => {
+  const thinkWriter = `#!/bin/sh\necho "budget=$MAX_THINKING_TOKENS" > "$TMPDIR/claude.think"\nprintf "%s\\n" "# From Claude" "" "Spoken only in audio."\n`;
+  const { result, dir } = runNoCaptionNotes('think0', {
+    withWhisper: true,
+    whisperVtt: LOCAL_VTT,
+    withClaude: false,
+    extraEnv: { ATRIS_YTNOTES_ENGINE: 'haiku' },
+    extraBins: { claude: thinkWriter },
+  });
+
+  assert.equal(result.status, 0, result.stderr || result.stdout);
+  assert.equal(fs.readFileSync(path.join(path.dirname(dir), 'claude.think'), 'utf8').trim(), 'budget=0');
+});
+
 test('ytnotes passes the roster effort to Gemini and keeps low as the floor', () => {
   const high = runNoCaptionNotes('roster2', {
     withWhisper: true,
