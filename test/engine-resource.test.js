@@ -767,7 +767,7 @@ test('history reads back the latest sweep and the latest SIGKILL, skipping bad l
     assert.strictEqual(history.last_kill.task, 'CLI-2');
     assert.strictEqual(history.kills, 2);
     assert.strictEqual(history.low_memory_kills, 1);
-    assert.deepStrictEqual(readResourceHistory(path.join(root, 'missing')), { last_sweep: null, last_kill: null, kills: 0, low_memory_kills: 0, time_limit_kills: 0, last_other_kill: null, kills_day: 0, low_memory_kills_day: 0, time_limit_kills_day: 0, last_day_other_kill: null, open_runs: 0, parent_gone: 0, still_running: 0, last_open: null, lost_closed: 0, lost_closed_day: 0, last_lost_closed: null, first_day_leak_reading: null, start_lines_guarded: null, last_error: null, errors_day: 0, last_day_error: null, read_error: null });
+    assert.deepStrictEqual(readResourceHistory(path.join(root, 'missing')), { last_sweep: null, last_kill: null, kills: 0, low_memory_kills: 0, time_limit_kills: 0, last_other_kill: null, kills_day: 0, low_memory_kills_day: 0, time_limit_kills_day: 0, crowded_time_limit_kills_day: 0, last_day_other_kill: null, open_runs: 0, parent_gone: 0, still_running: 0, last_open: null, lost_closed: 0, lost_closed_day: 0, last_lost_closed: null, first_day_leak_reading: null, start_lines_guarded: null, last_error: null, errors_day: 0, last_day_error: null, read_error: null });
   } finally {
     fs.rmSync(root, { recursive: true, force: true });
   }
@@ -3150,20 +3150,23 @@ test('the landing status counts time limit kills apart and names the newest kill
     spawnSync('git', ['init', '-q'], { cwd: root });
     fs.mkdirSync(path.dirname(file), { recursive: true });
     const firstTimeout = hoursAgo(4);
-    fs.writeFileSync(file, [timeLimit(hoursAgo(5), 'SLOW1'), timeLimit(firstTimeout, 'SLOW2', { load: [14.25, 9, 8] }), ''].join('\n'));
+    // Load at the core count is not crowded; just above it is.
     const cores = os.availableParallelism ? os.availableParallelism() : os.cpus().length;
+    fs.writeFileSync(file, [timeLimit(hoursAgo(5), 'SLOW1', { load: [cores, 1, 1] }), timeLimit(firstTimeout, 'SLOW2', { load: [cores + 0.25, 9, 8] }), ''].join('\n'));
     const onlyTimeouts = status();
     assert.strictEqual(onlyTimeouts.status, 0, onlyTimeouts.stderr);
-    assert.ok(onlyTimeouts.stdout.includes(`engine runs force-killed in the last day: 2, all at their time limit; newest codex on SLOW2 at ${minute(firstTimeout)}, killed (time limit reached), 70% memory free, load 14.25 on ${cores} cores`), onlyTimeouts.stdout);
+    assert.ok(onlyTimeouts.stdout.includes(`engine runs force-killed in the last day: 2, all at their time limit (1 with load above the ${cores} cores); newest codex on SLOW2 at ${minute(firstTimeout)}, killed (time limit reached), 70% memory free, load ${cores + 0.25} on ${cores} cores`), onlyTimeouts.stdout);
 
     const crash = hoursAgo(3);
     fs.appendFileSync(file, [killed(crash, 'HEAVY', 'killed (machine memory low)', 5), timeLimit(hoursAgo(1), 'SLOW3'), ''].join('\n'));
     const mixed = status();
     assert.strictEqual(mixed.status, 0, mixed.stderr);
-    assert.ok(mixed.stdout.includes(`engine runs force-killed in the last day: 4, 3 at their time limit, 1 with machine memory low; newest not at a time limit: codex on HEAVY at ${minute(crash)}, killed (machine memory low), 5% memory free`), mixed.stdout);
+    assert.ok(mixed.stdout.includes(`engine runs force-killed in the last day: 4, 3 at their time limit (1 with load above the ${cores} cores), 1 with machine memory low; newest not at a time limit: codex on HEAVY at ${minute(crash)}, killed (machine memory low), 5% memory free`), mixed.stdout);
     assert.match(mixed.stdout, /killed \(machine memory low\), 5% memory free\n/, 'a kill with no load reading names no load');
     const history = readResourceHistory(root);
     assert.strictEqual(history.time_limit_kills_day, 3);
+    assert.strictEqual(history.crowded_time_limit_kills_day, 1);
+    assert.strictEqual(readResourceHistory(root, { cores: cores + 1 }).crowded_time_limit_kills_day, 0, 'a bigger machine would not have been crowded');
     assert.strictEqual(history.last_day_other_kill.task, 'HEAVY');
   } finally {
     fs.rmSync(root, { recursive: true, force: true });

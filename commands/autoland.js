@@ -9,7 +9,7 @@ const autoland = require('../lib/autoland');
 const { gateForHuman, plainLandingReason } = require('../lib/voice-gate');
 const { evaluateAutoAccept } = require('../lib/auto-accept-certified');
 const { sweepEngineAskReceipts } = require('../lib/engine-receipt-sweep');
-const { killLoadText, readSshAgents, findLeakedSshAgents, findAgentStartLines, agentStartLineText, atrisCommand, pathAtrisRecordsRuns, fixStartupHint, stopLeakedSshAgents, closeLostRuns, readResourceHistory, errorReason, leakGrowthNote, matchLeakedToRuns, leakedRunsText } = require('../lib/engine-resource');
+const { killLoadText, machineCores, readSshAgents, findLeakedSshAgents, findAgentStartLines, agentStartLineText, atrisCommand, pathAtrisRecordsRuns, fixStartupHint, stopLeakedSshAgents, closeLostRuns, readResourceHistory, errorReason, leakGrowthNote, matchLeakedToRuns, leakedRunsText } = require('../lib/engine-resource');
 const { validateRecentAskReceipts } = require('../lib/engine-validate');
 const { operatorReady, hasAgentJargon, explainResult } = autoland;
 const MISSION_AUTO_VERIFY_STATUSES = new Set(['planning', 'paused', 'ready']);
@@ -540,9 +540,10 @@ function showStatus(root, args, deps = {}) {
     // Timeouts are counted apart, and the newest kill named is the newest one
     // that was not a timeout, so a night of timeouts cannot hide a crash.
     const timeLimit = lost.time_limit_kills_day;
+    const crowded = lost.crowded_time_limit_kills_day ? ` (${lost.crowded_time_limit_kills_day} with load above the ${machineCores()} cores)` : '';
     const counts = timeLimit === lost.kills_day
-      ? 'all at their time limit'
-      : `${timeLimit ? `${timeLimit} at their time limit, ` : ''}${lost.low_memory_kills_day} with machine memory low`;
+      ? `all at their time limit${crowded}`
+      : `${timeLimit ? `${timeLimit} at their time limit${crowded}, ` : ''}${lost.low_memory_kills_day} with machine memory low`;
     const kill = lost.last_day_other_kill || lost.last_kill;
     const label = timeLimit && lost.last_day_other_kill ? 'newest not at a time limit:' : 'newest';
     const when = `${String(kill.at || '').slice(0, 16).replace('T', ' ')} UTC`;
