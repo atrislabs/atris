@@ -16,3 +16,6 @@ layer: capabilities
 Final proof: `node --test test/roster-run-record.test.js && node bin/atris.js slop --staged` exited 0; `pass 12`, `fail 0`, `✓ clean, no slop tells in 5 files`.
 Review proof saved.
 layer: capabilities
+
+Review proof saved after rerunning with `/opt/homebrew/bin/node --test --test-name-pattern='^wiki-miner wake builds wiki graph and wiki graph queries read it$' test/commands.test.js`, exit 0. The default Node in the review runner lacked node:sqlite; using the installed Node resolved that tooling mismatch.
+layer: capabilities
