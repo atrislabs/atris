@@ -263,3 +263,5 @@ Quoted receipt runtime proof: `test/task-receipt.test.js:109` copies Node into a
 Quoted receipt failure proof: `test/task-receipt.test.js:140` runs a failing check from the same apostrophe folder and confirms the saved receipt keeps exit 3, the runtime path and the error text.
 Quoted task ready failure proof: `test/task-receipt.test.js:277` runs the CLI on Node copied into an apostrophe folder, fails the verify step, and confirms the task stays out of review while the cited receipt keeps exit 2 and that runtime path.
 Quoted task ready pass proof: `test/task-receipt.test.js:307` runs a passing verify step from the same copied Node, confirms the task reaches review, and checks the stored proof cites a receipt the review check accepts. The ready reply's compact card can shorten long proof text, so the test reads the stored task.
+
+Ready reply receipt link: `commands/task.js:10260` returns the saved receipt path directly in the ready JSON reply, including compact replies at `commands/task.js:10273`. `test/task-receipt.test.js:333` compares it with the full stored proof after a real CLI check from an apostrophe folder.

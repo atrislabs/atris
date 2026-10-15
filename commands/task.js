@@ -10081,6 +10081,9 @@ function cmdReady(args) {
     proof = proof.trim() ? `${proof.trim()} ${attested}` : attested;
   }
   const verifyAutoCertifyAllowed = !usedVerify || isAutoCertifyVerifyCommandAllowed(verifyFlag);
+  // Kept outside the verify block so the JSON reply can name the receipt as
+  // its own field; the task card there may shorten the proof text that cites it.
+  let verifyReceiptPath = null;
   if (usedVerify) {
     // Run the verifier once and write a receipt (pass or fail) so the review
     // gate in lib/receipt-evidence.js can validate the exact path named in
@@ -10096,6 +10099,7 @@ function cmdReady(args) {
       if (receipt.receiptPath) console.error(`receipt: ${receipt.receiptPath}`);
       process.exit(1);
     }
+    verifyReceiptPath = receipt.receiptPath || null;
     // Exit 0 says the check passed. It does not say the check could have
     // failed. Run it again with none of the work present: a check anchored to
     // this codebase fails there, and one that passes anywhere passes there too.
@@ -10253,6 +10257,7 @@ function cmdReady(args) {
       landing_advisory: landingAdvisory,
       ...(nextTaskInput.ignored ? { review_next_task_ignored: nextTaskInput.ignored } : {}),
       projection_path: outPath,
+      ...(verifyReceiptPath ? { receipt_path: verifyReceiptPath } : {}),
       task: taskCard,
       next_command: nextCommand,
     };
@@ -10265,6 +10270,7 @@ function cmdReady(args) {
           selected_ref: taskRef(taskCard || result.row || taskId),
           version: result.event.version,
           agent_certified: agentCertified,
+          receipt_path: verifyReceiptPath,
         },
         next_command: nextCommand,
       }),

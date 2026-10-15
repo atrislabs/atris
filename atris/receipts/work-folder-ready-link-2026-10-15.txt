@@ -1,0 +1,44 @@
+Ready replies expose the saved check receipt directly.
+
+Files: commands/task.js, test/task-receipt.test.js, atris/MAP.md, atris/refs/MAP-NOTES.md, atris/TODO.md, atris/team/architect/logs/2026-10-15.md.
+Real surface: node --test test/task-receipt.test.js
+✔ writeTaskReceipt writes a passing receipt with task id, command, exit, commit, timestamp (13.538541ms)
+✔ writeTaskReceipt still writes a receipt when the verifier fails (11.315125ms)
+✔ writeTaskReceipt runs the check on the node running atris, not an older node first on PATH (65.741ms)
+✔ real receipt check selects Node from a folder containing an apostrophe (485.934917ms)
+✔ real receipt check from an apostrophe folder keeps a failing exit and its output (347.761917ms)
+✔ atris task receipt writes evidence without moving the task to ready (365.878625ms)
+✔ atris task receipt exits non-zero and still records a failing verifier run (254.133625ms)
+✔ task ready --verify writes a receipt and the proof cites the receipt path (278.713292ms)
+✔ task ready --verify failure blocks ready but still writes a failing receipt (355.186084ms)
+✔ task ready --verify from an apostrophe Node folder stays blocked and cites the failing receipt (605.396417ms)
+✔ task ready --verify from an apostrophe Node folder moves to review with a receipt the review check accepts (602.024167ms)
+ℹ tests 11
+ℹ suites 0
+ℹ pass 11
+ℹ fail 0
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 3485.211333
+
+Required check: node --test test/worktree-removal-guard.test.js test/member-tidy.test.js && node bin/atris.js slop --staged
+Cleanup check exit: 0.
+s each folder that needs a person and counts the rest (1721.347292ms)
+✔ a refusal line still too long keeps its start and its end (0.269666ms)
+✔ multiline pin reasons stay on one line in refusal and real cleanup reports (833.87075ms)
+✔ reap counts branch copies still at work and names detached and pinned ones (3178.321958ms)
+ℹ tests 90
+ℹ suites 0
+ℹ pass 90
+ℹ fail 0
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 60742.481041
+
+Frozen command exit: 0. Output: tests 90; pass 90; fail 0; skipped 0; todo 0.
+Staged check output: clean, no slop tells in 7 files.
+Task moved to review using the actual checkout CLI; receipt check exited 0.
+next_push: Prove the full ready JSON reply exposes the same receipt path as the compact reply.
+layer: capabilities

@@ -318,14 +318,16 @@ test('task ready --verify from an apostrophe Node folder moves to review with a 
     const command = 'node -p "process.execPath"';
     const ready = runCli(['task', 'ready', ref, '--verify', command, '--no-falsify-check', '--json'], { cwd: dir, env, node: runtime });
     assert.equal(ready.status, 0, ready.stdout + ready.stderr);
+    const reply = JSON.parse(ready.stdout);
     // The ready reply carries a compact card that may shorten long proof text,
-    // so read the stored task for the full proof and its receipt line.
+    // so it names the receipt as its own field; the stored task keeps the full proof.
     const show = runCli(['task', 'show', ref, '--json'], { cwd: dir, env, node: runtime });
     assert.equal(show.status, 0, show.stderr);
     const task = JSON.parse(show.stdout).task || JSON.parse(show.stdout);
     assert.equal(task.status, 'review');
     const receiptMatch = task.review.proof.match(/Receipt: (atris\/runs\/\S+\.json)/);
     assert.ok(receiptMatch, `proof should cite a receipt path: ${task.review.proof}`);
+    assert.equal(reply.receipt_path, receiptMatch[1]);
     const saved = JSON.parse(fs.readFileSync(path.join(dir, receiptMatch[1]), 'utf8'));
     assert.equal(saved.command, command);
     assert.equal(saved.result.passed, true);

@@ -19,10 +19,24 @@ Details for any task: atris task show <ID>
 
 ## In Progress
 
-(Empty)
+- **[ACW-33]** Prove cleanup keeps a saved deletion and replacement · architect
+- **[ACW-32]** Explain cleanup review check mismatch · architect
+- **[ACW-31]** Prove healthy cleanup preserves binary edits · architect
 
 ## Review
 
+- **[ACW-37]** Expose saved check receipt in ready replies · architect
+  **Done looks like:** Operators can now find saved check evidence directly, saving time when long proof text is shortened.
+- **[ACW-36]** Prove receipt runtime from quoted folder · architect
+  **Done looks like:** Receipt writing now has proof that folders containing apostrophes keep the right Node and save accurate evidence.
+- **[ACW-35]** Prove review checks from a quoted runtime folder · architect
+  **Done looks like:** Operators can now trust review checks from folders with apostrophes because a real executable proves the folder name works.
+- **[ACW-34]** Keep review checks on the caller Node · architect
+  **Done looks like:** Operators can now trust cleanup review checks to use the caller Node, reducing risk from shell settings.
+- **[ACW-30]** Prove healthy cleanup preserves the whole saved index · architect
+  **Done looks like:** Operators can trust cleanup to preserve all staged work because real preview and cleanup now compare every saved file.
+- **[ACW-29]** Restore ignored-file cleanup decision · architect
+  **Done looks like:** Operators can now review the missing cleanup recommendation and its retention cost before personal files are put at risk.
 - **[ACW-28]** Prove cleanup preserves staged tracked edits · architect
   **Done looks like:** Operators can trust cleanup to preserve staged changes and later edits because real cleanup checks both saved versions.
 - **[ACW-27]** Prove healthy refresh preserves tracked edits · architect
