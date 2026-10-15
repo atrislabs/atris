@@ -4798,3 +4798,55 @@ test('the landing status repair hint runs when a node entry is on PATH but canno
     fs.rmSync(root, { recursive: true, force: true });
   }
 });
+
+test('the landing status repair hint stays the short command when an unusable node entry comes before a runnable node', () => {
+  const { spawnSync } = require('node:child_process');
+  const root = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'autoland-status-node-later-')));
+  try {
+    const work = path.join(root, 'work');
+    const launcher = path.join(root, 'launcher');
+    const runnable = path.join(root, 'runnable');
+    for (const dir of [work, launcher, runnable]) fs.mkdirSync(dir);
+    spawnSync('git', ['init', '-q'], { cwd: work });
+    fs.symlinkSync(path.join(__dirname, '..', 'bin', 'atris'), path.join(launcher, 'atris'));
+    fs.symlinkSync(process.execPath, path.join(runnable, 'node'));
+    for (const kind of ['file', 'directory', 'broken-link']) {
+      const blocked = path.join(root, kind);
+      fs.mkdirSync(blocked);
+      const node = path.join(blocked, 'node');
+      if (kind === 'file') fs.writeFileSync(node, '', { mode: 0o644 });
+      if (kind === 'directory') fs.mkdirSync(node);
+      if (kind === 'broken-link') fs.symlinkSync(path.join(root, 'absent'), node);
+      const home = fs.mkdtempSync(path.join(root, 'home-'));
+      fs.writeFileSync(path.join(home, '.zshrc'), 'eval "$(ssh-agent -s)"\n');
+      // The unusable node comes first, then a node that can run, then this
+      // checkout launcher. System folders stay later so the launcher script
+      // can run, without letting them hide the earlier node. The printed
+      // command stays the short name, and the copied command runs outside
+      // the test runner so it edits the fixture home.
+      const env = { ...process.env, PATH: [blocked, runnable, launcher, '/bin', '/usr/bin'].join(path.delimiter), HOME: home };
+      delete env.NODE_TEST_CONTEXT;
+      const probe = `
+        const { showStatus } = require(${JSON.stringify(path.join(__dirname, '..', 'commands', 'autoland'))});
+        const agent = { pid: 200, ppid: 1, uid: 501, age_sec: 3600, args: 'ssh-agent -s' };
+        showStatus(process.cwd(), [], { readSshAgents: () => ({ agents: [agent], referenced: new Set() }), uid: 501, home: ${JSON.stringify(home)} });
+      `;
+      const status = spawnSync(process.execPath, ['-e', probe], { cwd: work, env, encoding: 'utf8' });
+      assert.strictEqual(status.status, 0, `${kind}: ${status.stderr}`);
+      const hint = status.stdout.match(/\n {4}to make that change, run (.+) engine sweep --fix-startup; it saves the old file beside it first/);
+      assert.ok(hint, `${kind}: ${status.stdout}`);
+      assert.strictEqual(hint[1], 'atris', kind);
+      for (const shell of ['/bin/sh', ...(fs.existsSync('/bin/zsh') ? ['/bin/zsh'] : [])]) {
+        const shellHome = fs.mkdtempSync(path.join(root, 'home-'));
+        fs.writeFileSync(path.join(shellHome, '.zshrc'), 'eval "$(ssh-agent -s)"\n');
+        const shellEnv = { ...env, HOME: shellHome };
+        const run = spawnSync(shell, ['-c', `${hint[1]} engine sweep --fix-startup`], { cwd: work, env: shellEnv, encoding: 'utf8' });
+        assert.strictEqual(run.status, 0, `${shell}: ${kind}: ${run.stdout}${run.stderr}`);
+        assert.match(run.stdout, /changed ~\/\.zshrc line 1 to: /, `${shell}: ${kind}`);
+        assert.strictEqual(fs.readFileSync(path.join(shellHome, '.zshrc'), 'utf8'), '[ -S "$SSH_AUTH_SOCK" ] || eval "$(ssh-agent -s)"\n', `${shell}: ${kind}`);
+      }
+    }
+  } finally {
+    fs.rmSync(root, { recursive: true, force: true });
+  }
+});

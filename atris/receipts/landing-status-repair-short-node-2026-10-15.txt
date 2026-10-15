@@ -1,0 +1,22 @@
+# Landing status repair hint stays the short command
+
+The landing status now has a real check that the printed repair command stays the short name when an unusable node entry comes before a runnable node. A plain file, a directory, and a broken link each print the short command, and running it changes the shell startup file.
+
+Files: test/engine-resource.test.js, atris/MAP.md, atris/refs/MAP-NOTES.md, atris/receipts/landing-status-repair-short-node-2026-10-15.txt.
+
+Verify command: `node --test test/engine-resource.test.js test/engine-dispatch.test.js && node bin/atris.js slop --staged`
+Exit: 0.
+Output excerpt:
+```text
+✔ the landing status repair hint stays the short command when an unusable node entry comes before a runnable node (1357.867625ms)
+ℹ tests 167
+ℹ pass 167
+ℹ fail 0
+  ✓ clean, no slop tells in 5 files
+```
+
+Real surface: the new check builds the landing status with a plain file, a directory, and a broken link named node ahead of a runnable node and this checkout launcher. The printed command is the short name. That command exits 0 in sh and zsh and rewrites the fixture startup file to the guarded agent line.
+
+Progress: one new regression, 166 to 167 passing tests, no dependencies added.
+next_push: Prove the landing status repair hint uses the checkout command when the first runnable node entry cannot execute the launcher, and a later node can.
+layer: behaviors

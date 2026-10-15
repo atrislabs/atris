@@ -217,3 +217,5 @@ Same-checkout repair without Node: `lib/engine-resource.js:320` shares executabl
 Landing status repair without Node: `commands/autoland.js:564` builds that same checkout command, and `commands/autoland.js:576` prints it under leaked agents. `test/engine-resource.test.js:4707` copies the printed command into real sh and zsh when the path holds only this checkout launcher, and checks the shell startup file changes.
 
 Landing status repair with an unusable Node entry: `commands/autoland.js:564` builds that same checkout command when a node entry is present but cannot run. `test/engine-resource.test.js:4751` copies the printed command into real sh and zsh for a plain file, a directory, and a broken link, and checks the shell startup file changes.
+
+Landing status repair stays short when a later node can run: `commands/autoland.js:564` keeps the short command when an unusable node entry comes before a runnable node. `test/engine-resource.test.js:4802` copies that short command into real sh and zsh for a plain file, a directory, and a broken link, and checks the shell startup file changes.
