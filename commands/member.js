@@ -9898,10 +9898,26 @@ const EXPERIMENT_STATUSES = new Set(['experimental', 'one-off']);
 
 function ideaRuleFor(slug, record, text) {
   const own = IDEA_ARCHETYPE_RULES.find((rule) => rule.slugs.includes(slug));
-  if (own && own.pattern.test(text)) return own;
+  if (own && own.pattern.test(text)) return { rule: own, own: true };
   const { autoJobForMember } = require('../lib/member-engine');
   const archetype = ARCHETYPE_FOR_JOB[autoJobForMember(slug, record.role)];
-  return IDEA_ARCHETYPE_RULES.find((rule) => rule.slugs.includes(archetype)) || null;
+  const rule = IDEA_ARCHETYPE_RULES.find((r) => r.slugs.includes(archetype)) || null;
+  return { rule, own: Boolean(own && rule === own) };
+}
+
+// The request's job is the first rule it matches; the list runs from
+// specific jobs to the general build job, so "where is the code" is a
+// navigator job even though "code" is also a build word.
+function ideaJobRule(text) {
+  return IDEA_ARCHETYPE_RULES.find((rule) => rule.pattern.test(text)) || null;
+}
+
+// 3 = named in the idea, 2 = the job is the member's own, 1 = the member
+// falls back to the job, 0 = not its job. Fit outranks shared words.
+function ideaJobFit(named, memberRule, jobRule) {
+  if (named) return 3;
+  if (!jobRule || !memberRule.rule || memberRule.rule !== jobRule) return 0;
+  return memberRule.own ? 2 : 1;
 }
 
 // 0 = normal, 1 = experiment or one-off, 2 = parked, human, or odd-typed.
@@ -9913,10 +9929,12 @@ function dispatchTier(record) {
   return 0;
 }
 
-// Lower tier wins first, then higher score, then name order for a stable pick.
+// Lower tier wins first, then job fit, then higher score, then name order
+// for a stable pick.
 function outranksDispatch(candidate, best) {
   if (!best) return true;
   if (candidate.tier !== best.tier) return candidate.tier < best.tier;
+  if (candidate.fit !== best.fit) return candidate.fit > best.fit;
   if (candidate.score !== best.score) return candidate.score > best.score;
   return candidate.member.localeCompare(best.member) < 0;
 }
@@ -9950,6 +9968,7 @@ function pickMemberForIdea(ideaText, root = process.cwd(), preferredMember = '')
     .toLowerCase()
     .split(/[^a-z0-9]+/)
     .filter((w) => w.length >= 4);
+  const jobRule = ideaJobRule(text);
 
   let best = null;
   for (const record of members) {
@@ -9961,10 +9980,11 @@ function pickMemberForIdea(ideaText, root = process.cwd(), preferredMember = '')
     let score = 0;
     let matchedReason = '';
 
-    const rule = ideaRuleFor(slug, record, text);
-    if (rule && rule.pattern.test(text)) {
+    const memberRule = ideaRuleFor(slug, record, text);
+    const fit = ideaJobFit(named, memberRule, jobRule);
+    if (fit > 0 && memberRule.rule) {
       score += 30;
-      matchedReason = rule.reason;
+      matchedReason = memberRule.rule.reason;
     }
 
     const missionFile = path.join(teamDir, slug, 'MISSION.md');
@@ -9995,6 +10015,7 @@ function pickMemberForIdea(ideaText, root = process.cwd(), preferredMember = '')
       reason: matchedReason,
       score,
       tier,
+      fit,
     };
     if (outranksDispatch(candidate, best)) best = candidate;
   }
