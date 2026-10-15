@@ -1366,9 +1366,9 @@ test('every engine started through a runner or profile variable records its run 
   const EXEMPT_LAUNCHES = new Map([
     ['lib/roster-prep.js#defaultPrepAskSync invocation.bin', 'recorded around the ask by startPrepReadings'],
     ['commands/run.js#execPhaseCommandSync cmd', 'recorded around the phase by executePhase'],
+    ['commands/console.js#launchClaude runnerBin', 'console session handed to the person; its piped print run is not recorded yet'],
   ]);
   const engineLaunches = (rel, text) => {
-    if (LAUNCH_EXEMPT_FILES.has(rel)) return { seen: 0, missing: [], routes: {}, traced: [], exempted: [] };
     const code = stripComments(text);
     const lines = code.split('\n');
     const recorder = recordingCall(code);
@@ -2118,6 +2118,11 @@ test('every engine started through a runner or profile variable records its run 
   assert.deepStrictEqual(exemptAsk('  spawnSync(invocation.bin, invocation.args);\n  spawnSync(invocation.bin, invocation.args);'), ['lib/roster-prep.js:4 invocation.bin'], 'a second launch of the same program is not exempt');
   assert.deepStrictEqual(exemptAsk('  spawnSync(invocation.bin, invocation.args);\n  const runner = resolveClaudeRunnerBin();\n  spawnSync(runner, args);'), ['lib/roster-prep.js:5 runner'], 'a launch of another program is not exempt');
   assert.deepStrictEqual(exemptAsk('  startEngineRun(root);\n  spawnSync(invocation.bin, invocation.args);\n  spawnSync(invocation.bin, invocation.args);'), [], 'a recorded launch leaves the exemption for the next one');
+  // A file with interactive sessions is still scanned, so a new launch
+  // there beside its named one is caught.
+  const consoleLaunch = 'function launchClaude(systemPrompt, extraArgs) {\n  const runnerBin = resolveClaudeRunnerBin();\n  spawnSync(runnerBin, args);\n}\n';
+  assert.deepStrictEqual(engineLaunches('commands/console.js', consoleLaunch).missing, []);
+  assert.deepStrictEqual(engineLaunches('commands/console.js', `${consoleLaunch}function launchReview() {\n  spawnSync(resolveClaudeRunnerBin(), args);\n}\n`).missing, ['commands/console.js:6 resolveClaudeRunnerBin()']);
   // An exemption no launch used is stale, like one left behind when its
   // function was renamed.
   const staleExemptions = (used) => [...EXEMPT_LAUNCHES.keys()].filter((launch) => !used.includes(launch));
@@ -2163,6 +2168,7 @@ test('every engine started through a runner or profile variable records its run 
     ['commands/autopilot.js#defaultCodexExecutor cmd', 'declaration'],
     ['commands/dream.js#defaultDreamRunner bin', 'declaration'],
     ['commands/mission.js#spawnClaudeTick resolveClaudeRunnerBin()', 'declaration'],
+    ['commands/console.js#launchClaude runnerBin', 'declaration'],
     ['commands/orb.js#dispatch invocation.command', 'declaration'],
     ['commands/run.js#execPhaseCommandSync cmd', 'call argument'],
     ['commands/unknowns.js#runRunnerPrompt cmd', 'declaration'],
