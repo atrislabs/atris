@@ -2861,3 +2861,5 @@ Final fallback read batching: `test/commands.test.js:12684` awaits next and show
 Scoped fallback read batching: `test/commands.test.js:12700` runs the two scoped next reads together after certification, before the refused creation. All assertions remain; four sequential CLI stages become three.
 
 Duplicate seed read batching: `test/commands.test.js:12769` awaits both next output formats together after certification, before the refused creation. Both read unchanged task rows, independent of the saved view. Every assertion remains; four sequential CLI stages become three.
+
+Inspect help read batching: `test/inspect-fields.test.js:236` awaits the mission and task help reads together. Both commands only display help; every assertion remains. Two sequential CLI stages become one.

@@ -233,12 +233,14 @@ test('task inspect CLI returns review metadata without parsing show output', () 
   }
 });
 
-test('mission and task help document inspect commands', () => {
-  const missionHelp = runCli(['mission', 'help'], { cwd: repoRoot });
+test('mission and task help document inspect commands', async () => {
+  const [missionHelp, taskHelp] = await Promise.all([
+    runCliAsync(['mission', 'help'], { cwd: repoRoot }),
+    runCliAsync(['task', 'help'], { cwd: repoRoot }),
+  ]);
   assert.equal(missionHelp.status, 0, missionHelp.stderr || missionHelp.stdout);
   assert.match(missionHelp.stdout, /atris mission inspect <id> --fields status,runner,ack,pings/);
 
-  const taskHelp = runCli(['task', 'help'], { cwd: repoRoot });
   assert.equal(taskHelp.status, 0, taskHelp.stderr || taskHelp.stdout);
   assert.match(taskHelp.stdout, /atris task inspect <id> --fields review,status,title/);
 });
