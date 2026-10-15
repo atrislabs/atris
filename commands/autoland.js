@@ -562,7 +562,9 @@ function showStatus(root, args, deps = {}) {
     const stop = !heartbeatLive
       ? 'stop them now: atris engine sweep --apply'
       : autoland.heartbeatSweepsAgents(root)
-        ? 'the next hourly pass stops them'
+        ? leakedAgents > HOURLY_SSH_AGENT_STOP_LIMIT
+          ? `the next hourly pass stops only the oldest ${HOURLY_SSH_AGENT_STOP_LIMIT}, so stop the rest now: atris engine sweep --apply`
+          : 'the next hourly pass stops them'
         : 'the hourly pass runs a version without the ssh-agent cleanup, so stop them now: atris engine sweep --apply';
     console.log(`  leaked ssh-agents on this machine: ${unchecked ? 'at least ' : ''}${leakedAgents}${leakGrowthNote(lost.first_day_leak_reading, leakedAgents)}; ${stop}${unchecked ? `; ${unchecked}` : ''}`);
     // A test run reads only the home it was handed, never the real one.

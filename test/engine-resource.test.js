@@ -2966,7 +2966,7 @@ test('atris engine sweep counts time limit kills apart and still names the newes
 });
 
 test('the landing status counts leaked ssh-agents, says how they get stopped, and stays quiet with none or a failed read', () => {
-  const { showStatus } = require('../commands/autoland');
+  const { showStatus, HOURLY_SSH_AGENT_STOP_LIMIT } = require('../commands/autoland');
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'autoland-status-agents-'));
   const agent = (pid) => ({ pid, ppid: 1, uid: 501, age_sec: 3600, args: 'ssh-agent -s' });
   const status = (deps) => {
@@ -2995,6 +2995,8 @@ test('the landing status counts leaked ssh-agents, says how they get stopped, an
     assert.match(leakedNow(), /leaked ssh-agents on this machine: 1; the next hourly pass stops them/);
     tick('2026-10-14T03', { at: '2026-10-14T03:00:00Z', ssh_agent_sweep_error: 'ps failed' });
     assert.match(leakedNow(), /the next hourly pass stops them/, 'a pass that tried and failed still has the cleanup');
+    const pile = Array.from({ length: HOURLY_SSH_AGENT_STOP_LIMIT + 1 }, (_, i) => agent(1000 + i));
+    assert.match(status({ readSshAgents: () => ({ agents: pile, referenced: new Set() }), uid: 501 }), new RegExp(`leaked ssh-agents on this machine: ${HOURLY_SSH_AGENT_STOP_LIMIT + 1}; the next hourly pass stops only the oldest ${HOURLY_SSH_AGENT_STOP_LIMIT}, so stop the rest now: atris engine sweep --apply`));
     fs.rmSync(runsDir, { recursive: true, force: true });
     const none = status({ readSshAgents: () => ({ agents: [agent(300)], referenced: new Set([300]) }), uid: 501 });
     assert.doesNotMatch(none, /ssh-agents/);
