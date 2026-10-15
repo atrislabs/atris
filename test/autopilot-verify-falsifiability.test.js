@@ -383,6 +383,10 @@ for (const line of [
   'cd /tmp && npm uninstall -g atris',
   'npm link',
   'yarn global add atris',
+  'npm install --global=true atris',
+  'npm install --location global atris',
+  'npm_config_global=true npm install atris',
+  'npm install \\\n  -g atris',
 ]) {
   test(`verifyRubric refuses a block that changes global installs: ${line}`, () => {
     const cwd = fs.mkdtempSync(path.join(os.tmpdir(), 'atris-rubric-test-'));

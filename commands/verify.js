@@ -586,7 +586,8 @@ const NPM_MUTATING_SUBCOMMANDS = new Set([
   'un', 'uninstall', 'rm', 'r', 'remove', 'unlink',
   'up', 'update', 'upgrade',
 ]);
-const NPM_GLOBAL_FLAGS = new Set(['-g', '--global', '--location=global']);
+const NPM_GLOBAL_FLAG_RE = /^(?:-g|--global(?:=true)?|--location=global)$/;
+const NPM_GLOBAL_ENV_RE = /\bnpm_config_(?:global=(?:true|1)\b|location=global\b)/i;
 
 /**
  * Return the first line of a rubric script that installs, removes, or links
@@ -594,7 +595,10 @@ const NPM_GLOBAL_FLAGS = new Set(['-g', '--global', '--location=global']);
  * swapped the CLI under every agent on the machine; proofs stay read-only.
  */
 function findGlobalInstall(script) {
-  for (const rawLine of String(script || '').split('\n')) {
+  const text = String(script || '').replace(/\\\n/g, ' ');
+  // An exported or inline npm_config_global turns any later install global.
+  const globalEnv = NPM_GLOBAL_ENV_RE.test(text.replace(/(^|\s)#.*$/gm, ''));
+  for (const rawLine of text.split('\n')) {
     const line = rawLine.replace(/(^|\s)#.*$/, '').trim();
     if (!line) continue;
     for (const segment of line.split(/&&|\|\||[;|&]/)) {
@@ -605,9 +609,11 @@ function findGlobalInstall(script) {
         return rawLine.trim();
       }
       if (tool !== 'npm' && tool !== 'pnpm') continue;
-      const sub = tokens.slice(1).find((token) => !token.startsWith('-'));
+      const args = tokens.slice(1);
+      const sub = args.find((token, i) => !token.startsWith('-') && args[i - 1] !== '--location');
       if (sub === 'link' || sub === 'ln') return rawLine.trim();
-      const isGlobal = tokens.some((token) => NPM_GLOBAL_FLAGS.has(token));
+      const isGlobal = globalEnv || args.some((token, i) =>
+        NPM_GLOBAL_FLAG_RE.test(token) || (token === '--location' && args[i + 1] === 'global'));
       if (isGlobal && NPM_MUTATING_SUBCOMMANDS.has(sub)) return rawLine.trim();
     }
   }
