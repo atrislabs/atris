@@ -272,3 +272,46 @@ test('a job already closed, or one that is missing, is not counted twice', () =>
     assert.deepEqual(readQueue(fx), {});
   });
 });
+
+// The main branch takes a different work.txt, so the member's change clashes.
+function clashOnMaster(fx) {
+  fs.writeFileSync(path.join(fx.main, 'work.txt'), 'someone else\n');
+  git(['add', '.'], fx.main);
+  git(['commit', '-qm', 'other work'], fx.main);
+  git(['push', '-q', 'origin', 'master'], fx.main);
+}
+
+test('a change that clashes with the main branch sends its job back on the list', () => {
+  withFixture((fx) => {
+    const a = job(fx, 'review');
+    queue(fx, [a]);
+    clashOnMaster(fx);
+    const out = requeueDroppedAutolands({ cwd: fx.main });
+    assert.equal(out.results[0].state, 'clash', out.line);
+    assert.match(out.results[0].line, /clashes with the main branch in work\.txt; its job went back on the list$/);
+    const row = taskDb.getTask(fx.db, a);
+    assert.equal(row.status, 'open');
+    assert.equal(row.claimed_by, null);
+    assert.equal(row.metadata.clash_restarts, 1);
+    assert.match(row.metadata.reopen_reason, /pull request #7 could not merge: .*work\.txt; start again/);
+    assert.deepEqual(readQueue(fx), {});
+  });
+});
+
+test('a clash leaves held jobs, jobs not in review, and twice-restarted jobs for a person', () => {
+  withFixture((fx) => {
+    const held = job(fx, 'review');
+    taskDb.tagTask(fx.db, { id: held, actor: 'keshav', add: ['needs-human'] });
+    const claimed = job(fx, 'claimed');
+    const tired = job(fx, 'review');
+    fx.db.prepare('UPDATE tasks SET metadata = ? WHERE id = ?').run(JSON.stringify({ clash_restarts: 2 }), tired);
+    queue(fx, [held, claimed, tired, 'no-such-job']);
+    clashOnMaster(fx);
+    const out = requeueDroppedAutolands({ cwd: fx.main });
+    assert.equal(out.results[0].state, 'clash', out.line);
+    assert.match(out.results[0].line, /; left for you$/);
+    assert.equal(statusOf(fx, held), 'review');
+    assert.equal(statusOf(fx, claimed), 'claimed');
+    assert.equal(statusOf(fx, tired), 'review');
+  });
+});
