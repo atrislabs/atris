@@ -844,8 +844,13 @@ function countLeakedSshAgents(deps = {}) {
 }
 
 // Shell startup files that start an ssh-agent per shell leave one behind
-// for every engine shell. Each pass stops the ones a fresh recheck still
-// calls leaked, and never lets a failed read break the pass.
+// for every engine shell. Each pass stops the oldest ones a fresh recheck
+// still calls leaked, up to a cap so an unattended pass that misjudges
+// cannot stop a whole machine's agents at once, and never lets a failed
+// read break the pass. The cap stays well above the leak rate seen on a
+// real machine (about 64 an hour), so a backlog still shrinks each pass.
+const HOURLY_SSH_AGENT_STOP_LIMIT = 200;
+
 function runSshAgentSweep(root, receipt, deps = {}) {
   try {
     const read = deps.read || readSshAgents;
@@ -859,7 +864,7 @@ function runSshAgentSweep(root, receipt, deps = {}) {
     const { agents, referenced, unread = [] } = read();
     const leaked = findLeakedSshAgents(agents, { referenced, uid });
     const result = leaked.length
-      ? stopLeakedSshAgents(root, leaked, { read, uid, ...(deps.kill ? { kill: deps.kill } : {}) })
+      ? stopLeakedSshAgents(root, leaked, { read, uid, limit: deps.limit || HOURLY_SSH_AGENT_STOP_LIMIT, ...(deps.kill ? { kill: deps.kill } : {}) })
       : empty;
     // A reading that failed on either scan is kept, so the summary can say
     // some agents went unchecked instead of reading as a clean machine.
@@ -878,10 +883,12 @@ function sshAgentSweepNote(receipt) {
   const unread = receipt.ssh_agent_sweep?.unread || [];
   const stoppedNote = stopped ? `, stopped ${stopped} leaked ssh-agent${stopped === 1 ? '' : 's'}` : '';
   const failedNote = failed ? `, could not stop ${failed} leaked ssh-agent${failed === 1 ? '' : 's'}` : '';
+  const deferred = (receipt.ssh_agent_sweep?.deferred || []).length;
   const replacedNote = replaced ? `, left ${replaced} younger replacement ssh-agent${replaced === 1 ? '' : 's'} alone` : '';
+  const deferredNote = deferred ? `, left ${deferred} more leaked ssh-agent${deferred === 1 ? '' : 's'} for the next pass` : '';
   const unreadNote = unread.length ? `, could not read the ${unread.join(' or the ')}, so some ssh-agents went unchecked` : '';
   const scanErrorNote = receipt.ssh_agent_sweep_error ? ', could not scan ssh-agents, so leaked agents may remain' : '';
-  return stoppedNote + failedNote + replacedNote + unreadNote + scanErrorNote;
+  return stoppedNote + failedNote + deferredNote + replacedNote + unreadNote + scanErrorNote;
 }
 
 // An engine run whose dispatching process died never writes its own end.
@@ -1375,6 +1382,7 @@ module.exports = {
   runTickBody,
   runSshAgentSweep,
   sshAgentSweepNote,
+  HOURLY_SSH_AGENT_STOP_LIMIT,
   showStatus,
   runLostRunSweep,
   lostRunSweepNote,

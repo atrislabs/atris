@@ -536,6 +536,34 @@ test('the hourly landing pass stops agents still leaked on the recheck and names
   }
 });
 
+test('the hourly landing pass stops at most its cap, oldest first, and names the rest', () => {
+  const { runSshAgentSweep, sshAgentSweepNote, HOURLY_SSH_AGENT_STOP_LIMIT } = require('../commands/autoland');
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'autoland-ssh-cap-'));
+  try {
+    const agent = (pid, age_sec) => ({ pid, ppid: 1, uid: 501, age_sec, args: 'ssh-agent -s' });
+    const agents = [agent(200, 3600), agent(201, 7200), agent(202, 5400), agent(203, 1800)];
+    const signals = [];
+    const receipt = {};
+    runSshAgentSweep(root, receipt, { read: () => ({ agents, referenced: new Set() }), uid: 501, limit: 2, kill: (pid, signal) => signals.push([pid, signal]) });
+    assert.deepStrictEqual(signals, [[201, 'SIGTERM'], [202, 'SIGTERM']]);
+    assert.deepStrictEqual(receipt.ssh_agent_sweep, { stopped: [201, 202], failed: [], skipped: [], deferred: [200, 203] });
+    assert.strictEqual(sshAgentSweepNote(receipt), ', stopped 2 leaked ssh-agents, left 2 more leaked ssh-agents for the next pass');
+    const saved = JSON.parse(fs.readFileSync(path.join(root, RESOURCE_LOG), 'utf8'));
+    assert.deepStrictEqual(saved.deferred, [200, 203]);
+    assert.strictEqual(saved.leaked_ssh_agents, 2, 'the growth note counts from what the capped pass left');
+
+    const many = Array.from({ length: HOURLY_SSH_AGENT_STOP_LIMIT + 3 }, (_, i) => agent(1000 + i, 3600));
+    const full = {};
+    let calls = 0;
+    runSshAgentSweep(root, full, { read: () => ({ agents: many, referenced: new Set() }), uid: 501, kill: () => { calls += 1; } });
+    assert.strictEqual(calls, HOURLY_SSH_AGENT_STOP_LIMIT);
+    assert.strictEqual(full.ssh_agent_sweep.deferred.length, 3);
+    assert.strictEqual(sshAgentSweepNote({ ssh_agent_sweep: { deferred: [200] } }), ', left 1 more leaked ssh-agent for the next pass');
+  } finally {
+    fs.rmSync(root, { recursive: true, force: true });
+  }
+});
+
 test('the hourly landing pass names unreadable agent scans instead of staying quiet', () => {
   const { runSshAgentSweep, sshAgentSweepNote } = require('../commands/autoland');
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'autoland-ssh-unread-'));
