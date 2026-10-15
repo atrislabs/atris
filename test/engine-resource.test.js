@@ -4866,13 +4866,15 @@ test('the landing status repair hint uses the checkout command when the first ex
       const blocked = path.join(root, kind);
       fs.mkdirSync(blocked);
       const node = path.join(blocked, 'node');
+      // Each start of this Node adds a line, so the test can count launcher checks.
+      const runs = path.join(blocked, 'runs');
       fs.writeFileSync(node, kind === 'hanging-launcher'
-        ? `#!${process.execPath}\nsetInterval(() => {}, 1000);\n`
-        : kind === 'chatty-launcher'
-          ? '#!/bin/sh\necho v22.0.0\nexit 0\n'
+        ? `#!${process.execPath}\nrequire('fs').appendFileSync(${JSON.stringify(runs)}, 'run\\n');\nsetInterval(() => {}, 1000);\n`
+        : `#!/bin/sh\necho run >> '${runs}'\n${kind === 'chatty-launcher'
+          ? 'echo v22.0.0\nexit 0\n'
           : kind === 'suffixed-launcher'
-            ? '#!/bin/sh\necho "atris v3.70.0 is not installed for this node"\nexit 0\n'
-          : `#!/bin/sh\nexit ${kind === 'silent-launcher' ? 0 : 42}\n`, { mode: 0o755 });
+            ? 'echo "atris v3.70.0 is not installed for this node"\nexit 0\n'
+            : `exit ${kind === 'silent-launcher' ? 0 : 42}\n`}`, { mode: 0o755 });
       const home = fs.mkdtempSync(path.join(root, 'home-'));
       fs.writeFileSync(path.join(home, '.zshrc'), 'eval "$(ssh-agent -s)"\n');
       // Shell lookup stops at this executable, even though a later Node works.
@@ -4885,6 +4887,8 @@ test('the landing status repair hint uses the checkout command when the first ex
       `;
       const status = spawnSync(process.execPath, ['-e', probe], { cwd: work, env, encoding: 'utf8', timeout: 10000 });
       assert.strictEqual(status.status, 0, `${kind}: ${status.stderr}`);
+      // A hanging Node costs one bounded wait per landing status, not one per line that names the command.
+      assert.strictEqual(fs.readFileSync(runs, 'utf8'), 'run\n', `${kind}: one launcher check per landing status`);
       const hint = status.stdout.match(/\n {4}to make that change, run (.+) engine sweep --fix-startup; it saves the old file beside it first/);
       assert.ok(hint, `${kind}: ${status.stdout}`);
       assert.strictEqual(hint[1], `${process.execPath} ${fs.realpathSync(path.join(__dirname, '..', 'bin', 'atris.js'))}`, kind);
