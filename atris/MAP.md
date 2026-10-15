@@ -134,3 +134,5 @@ Accepted-task revision refusal setup: `test/commands.test.js:13737` seeds creati
 Goal display-reference status setup: `test/commands.test.js:14583` keeps child creation by display ref and status on the CLI; ownership is seeded through the production store after child creation.
 
 Reviewed-failure status setup: `test/commands.test.js:14637` seeds creation and ownership through the production store; failed completion and history status remain on the CLI.
+
+Failed-blocker status fixture: `test/commands.test.js` seeds creation and ownership in the real store; failed completion and JSON/text status remain on the CLI.

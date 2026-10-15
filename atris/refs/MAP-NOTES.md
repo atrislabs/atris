@@ -2571,3 +2571,5 @@ Landing capability test setup: `test/commands.test.js:12964` seeds creation and 
 - Goal display-reference status setup: `test/commands.test.js:14583` reopens the production store to claim the CLI-created child, asserts success and closes in finally. Three launches become two; CLI child-add resolution and every parent objective, lineage and stream assertion remain unchanged.
 
 - Reviewed-failure status setup: `test/commands.test.js:14637` uses production `claimTask` in the creation connection, asserts success and closes in finally. Three launches become two; failed completion, reviewed health and all history assertions remain on the CLI.
+
+- Failed-blocker status setup: `test/commands.test.js:14676` seeds production ownership in the creation connection and closes in finally, removing one launch (four to three); failed completion and both JSON/text status assertions retain real CLI coverage.

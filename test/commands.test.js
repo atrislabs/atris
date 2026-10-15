@@ -14680,18 +14680,17 @@ test('task status keeps failed blockers out of review handoff', () => {
   const dbPath = path.join(dir, 'tasks.db');
   const env = { ATRIS_TASKS_DB: dbPath, NODE_NO_WARNINGS: '1' };
   try {
-    // Seed creation only; the claim, failed finish and both status reads stay on the CLI.
+    // Seed creation and ownership; failed finish and both status reads stay on the CLI.
     const db = taskStore.open(dbPath);
     let id;
     try {
       const created = addSeedTask(db, { title: 'Owner-gated route decision', tag: 'business-gm', workspaceRoot: taskStore.workspaceRoot(dir) });
       assert.equal(created.inserted, true);
       id = created.id;
+      assert.equal(taskStore.claimTask(db, { id, claimedBy: 'codex' }).claimed, true);
     } finally {
       taskStore.close();
     }
-    const claimed = runCli(['task', 'claim', id, '--as', 'codex', '--json'], { cwd: dir, env });
-    assert.equal(claimed.status, 0, claimed.stderr);
     const failed = runCli(['task', 'done', id, '--failed', '--json'], { cwd: dir, env });
     assert.equal(failed.status, 0, failed.stderr);
 
