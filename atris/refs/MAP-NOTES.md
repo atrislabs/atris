@@ -2429,3 +2429,5 @@ Member tidy own-copy pins: `test/member-tidy.test.js:628` runs real preview and 
 Member tidy busy unfinished pins: `test/member-tidy.test.js:571` runs real CLI preview and apply with two live children in unfinished copies. It keeps the pinned copy named beside the ordinary unfinished count, preserves both committed files, branches, registrations and exact multiline pin, verifies both children remain alive, and leaves the removal log empty.
 
 Busy unfinished unsaved notes: `test/member-tidy.test.js:571` adds untracked drafts and tracked edits in both pinned and ordinary busy unfinished copies. Real CLI preview and apply must preserve exact bytes and unchanged git status, alongside the existing live-child, pin and registration checks.
+
+Busy unfinished staged notes: `test/member-tidy.test.js:571` stages a new note and then edits it again in both pinned and ordinary busy unfinished copies. Real preview and apply must preserve the staged patch, staged contents, later edits, existing unsaved notes, and unchanged git status.

@@ -1,0 +1,31 @@
+Busy unfinished folders now have real cleanup proof for staged notes and later edits.
+
+Files: test/member-tidy.test.js, atris/MAP.md, atris/refs/MAP-NOTES.md, atris/TODO.md, atris/team/architect/logs/2026-10-15.md, this receipt.
+Verify: node --test test/worktree-removal-guard.test.js test/member-tidy.test.js && node bin/atris.js slop --staged
+Real surface: node bin/atris.js member tidy --dir <fixture copies> --dry-run, then apply without --dry-run, launched against real disposable repositories and live children.
+Progress: both busy unfinished folders now check the staged patch and contents separately from later edits.
+next_push: Prove idle unfinished folders retain staged and unstaged notes during cleanup.
+
+Required command exit: 0
+Actual output excerpt:
+command: node bin/atris.js member tidy --dir <fixture copies> --dry-run (fixture cwd)
+kept  busy-pinned  work not landed yet, pinned by git worktree lock, 3 h old: writer still active keep these notes
+left alone  1 work not landed yet
+tidy: would remove 0, kept 2, of 2 copies in /private/var/folders/t1/2_4kmb5n4c71dxm26zc8dgzr0000gn/T/atris-member-tidy-5zh2FH/arena/.agent-worktrees/repo
+exit: 0
+command: node bin/atris.js member tidy --dir <fixture copies> (fixture cwd)
+kept  busy-pinned  work not landed yet, pinned by git worktree lock, 3 h old: writer still active keep these notes
+left alone  1 work not landed yet
+tidy: removed 0, kept 2, of 2 copies in /private/var/folders/t1/2_4kmb5n4c71dxm26zc8dgzr0000gn/T/atris-member-tidy-5zh2FH/arena/.agent-worktrees/repo
+exit: 0
+ℹ tests 73
+ℹ suites 0
+ℹ pass 73
+ℹ fail 0
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 28258.447833
+
+  ✓ clean, no slop tells in 6 files
+layer: behaviors

@@ -584,13 +584,20 @@ test(`tidy names pinned busy ${unfinished ? 'unfinished' : 'landed'} copies besi
     const words = `${unfinished ? 'work not landed yet,' : 'landed, but'} pinned by git worktree lock, 3 h old: writer still active keep these notes`;
     const group = unfinished ? 'work not landed yet' : 'something still running inside';
     const unsaved = new Map();
+    const staged = new Map();
     for (const copy of [pinned, ordinary]) {
       if (unfinished) {
         fs.writeFileSync(path.join(copy, 'draft.txt'), `notes for ${path.basename(copy)}\n`);
         fs.appendFileSync(path.join(copy, `${path.basename(copy)}.txt`), 'unsaved edits\n');
+        fs.writeFileSync(path.join(copy, 'staged.txt'), 'prepared notes\n');
+        runGit(['add', 'staged.txt'], copy);
+        fs.appendFileSync(path.join(copy, 'staged.txt'), 'later edits\n');
+        staged.set(copy, runGit(['diff', '--cached', '--binary'], copy));
+        assert.equal(runGit(['show', ':staged.txt'], copy), 'prepared notes');
         unsaved.set(copy, runGit(['status', '--porcelain'], copy));
         assert.ok(unsaved.get(copy).includes('?? draft.txt'));
         assert.ok(unsaved.get(copy).includes(`M ${path.basename(copy)}.txt`));
+        assert.ok(unsaved.get(copy).includes('AM staged.txt'));
       }
       const child = spawn(process.execPath, ['-e', 'setInterval(() => {}, 1000)'], { cwd: copy, stdio: 'ignore' });
       children.push(child);
@@ -621,6 +628,9 @@ test(`tidy names pinned busy ${unfinished ? 'unfinished' : 'landed'} copies besi
         if (unfinished) {
           assert.equal(fs.readFileSync(path.join(copy, `${path.basename(copy)}.txt`), 'utf8'), 'work\nunsaved edits\n');
           assert.equal(fs.readFileSync(path.join(copy, 'draft.txt'), 'utf8'), `notes for ${path.basename(copy)}\n`);
+          assert.equal(fs.readFileSync(path.join(copy, 'staged.txt'), 'utf8'), 'prepared notes\nlater edits\n');
+          assert.equal(runGit(['show', ':staged.txt'], copy), 'prepared notes');
+          assert.equal(runGit(['diff', '--cached', '--binary'], copy), staged.get(copy));
           assert.equal(runGit(['status', '--porcelain'], copy), unsaved.get(copy));
         }
         assert.ok(branchExists(fx.repo, path.basename(copy)));
