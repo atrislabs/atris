@@ -2401,4 +2401,6 @@ Live terminal resize: `test/member-board.test.js:798` runs the real CLI in a Pyt
 
 Live follow log shrink: `test/member-board.test.js:1698` runs the actual JSON follow command, shortens a log with an unfinished old timeout, waits across polling with a split replacement step, and checks one new start, step, and result with clean interrupt. Saved command output: `atris/runs/member-board-live-shrink-proof.txt`.
 
-Missing-log recovery: `followBoard()` (`lib/member-board.js:818`) clears offsets for absent logs before reading new events, so larger replacements start at byte zero. Real CLI regression: `test/member-board.test.js:1754`, missing log across polling, larger replacement, split step, no old result or duplicate. Proof: `atris/runs/member-board-live-return-proof.txt`.
+Missing-log recovery: `followBoard()` (`lib/member-board.js:775`) clears offsets for absent logs before reading new events, so larger replacements start at byte zero. Real CLI regression: `test/member-board.test.js:1754`, missing log across polling, larger replacement, split step, no old result or duplicate. Proof: `atris/runs/member-board-live-return-proof.txt`.
+
+Atomic same-size log replacement: `followBoard()` in `lib/member-board.js:775` compares device and inode on the opened file before reading, resetting the cursor when replaced. Real CLI regression: `test/member-board.test.js:1813`, atomic rename with equal byte size, unfinished old timeout, split new step, no duplicate events, and clean interrupt. Proof: `atris/runs/member-board-live-replace-proof.txt`.
