@@ -409,14 +409,17 @@ const THAT_OBJECT_CLAUSE = new RegExp(`^\\s*\\u2014\\s*(?:a|an|the)\\s+(?:${NOUN
 // instead of mocks".
 const HOW_TAIL_CLAUSE = new RegExp(`^\\s*\\u2014\\s*the\\s+(?!${NAME_PAIR}\\b)(?:(?:[a-z][\\w-]*\\s+){0,2}?(?!${PLURAL_NOUN_WORD}\\b)${PLAIN_VERB_WORD}\\s+(?:(?!(?:the|a|an|and|or|of|in|on|for|to)\\b)[a-z]{3,}\\s+)?(?:(?:instead\\s+of|rather\\s+than)\\s+[a-z]{2,}ing\\b|regardless\\s+of\\s)|[a-z][\\w-]*\\s+(?!${PLURAL_NOUN_WORD}\\b)${PLAIN_VERB_WORD}\\s+(?:(?:client|server|browser|edge)-side|out-of-band|in-process|in-place|per-[a-z][\\w-]*)(?=[.!?;,]|$))`);
 // A "what", "how", "why" or "whether" clause after a verb in "s" is its
-// object: "the business owns what its agents learn". A quote is too, after
-// a verb that is almost never a plural noun: 'the verdict reads "Human
-// decision needed"'. A verb that is often a noun keeps the phrase, since
-// 'the field names "id"' names fields. "names" still takes one quoted
+// object: "the business owns what its agents learn". So is "which", a noun
+// and a helper verb, with "exactly" before it or not: "the web UI shows
+// exactly which item has the dot"; "the error logs which show" names logs.
+// A run of capitals in the subject is a word too: "the web UI". A quote
+// is an object, after a verb that is almost never a plural noun: 'the
+// verdict reads "Human decision needed"'. A verb that is often a noun
+// keeps the phrase, since 'the field names "id"' names fields. "names" still takes one quoted
 // name in capitals, 'the quote names "Dave," not the owner', unless the
 // word before it names a thing in code: 'the class names "Button"'.
 const QUOTE_VERB_WORD = '(?:reads|says|lacks|returns|prints|asks|contains|includes|warns|claims|mentions|shows|displays|emits)';
-const WH_OBJECT_CLAUSE = new RegExp(`^\\s*\\u2014\\s*the\\s+(?!${NAME_PAIR}\\b)(?:[a-z][\\w-]*\\s+){1,2}?(?:(?!${PLURAL_NOUN_WORD}\\b)${PLAIN_VERB_WORD}\\s+(?:what|how|why|whether)\\s+[a-z]|${QUOTE_VERB_WORD}\\s+["\\u201c][A-Za-z]|(?<!\\b(?:${NAME_END_WORD}|class|variable|function|method|type|key|tag|attribute|property|param|parameter|column|command|flag|option|enum|module|package)\\s+)names\\s+["\\u201c][A-Z][a-z]+[,.]?["\\u201d](?=\\s|$))`);
+const WH_OBJECT_CLAUSE = new RegExp(`^\\s*\\u2014\\s*the\\s+(?!${NAME_PAIR}\\b)(?:(?:[a-z][\\w-]*|[A-Z]{2,})\\s+){1,2}?(?:(?!${PLURAL_NOUN_WORD}\\b)${PLAIN_VERB_WORD}\\s+(?:(?:exactly|precisely)\\s+)?(?:(?:what|how|why|whether)\\s+[a-z]|which\\s+[a-z]{2,}\\s+(?:is|are|was|were|has|have|had|does|did|can|will|should|must)\\b)|${QUOTE_VERB_WORD}\\s+["\\u201c][A-Za-z]|(?<!\\b(?:${NAME_END_WORD}|class|variable|function|method|type|key|tag|attribute|property|param|parameter|column|command|flag|option|enum|module|package)\\s+)names\\s+["\\u201c][A-Z][a-z]+[,.]?["\\u201d](?=\\s|$))`);
 // A plain word, then a name, then the verb hides a "that": "a topic Atris
 // sits directly on top of" names a topic, so it keeps its comma. A run of
 // capitals is no name, so "the new CLI resolves the prefix" still joins.

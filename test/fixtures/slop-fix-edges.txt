@@ -268,3 +268,9 @@ Track the pass rate over time \u2014 if variance is high, that's the signal.
 # but with no subject after the comma the clause only adds a condition
 Ship the whole thing soon \u2014 if you can, today.
 => Ship the whole thing soon, if you can, today.
+# "which", a noun and a helper verb after a verb in s is its object
+Check the checklist by hand \u2014 the web UI shows exactly which item has the yellow dot.
+=> Check the checklist by hand; the web UI shows exactly which item has the yellow dot.
+# but "which" with a verb right after it opens a clause inside the phrase
+Skip the noise for now \u2014 the error logs which show results.
+=> Skip the noise for now, the error logs which show results.

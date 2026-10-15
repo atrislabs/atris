@@ -2471,6 +2471,22 @@ test('fix joins a past verb with a word in "ly" before it after a dash', () => {
   ]);
 });
 
+test('fix reads "which", a noun and a helper verb as the object of a verb in s after a dash', () => {
+  // from real repo text: "the web UI shows exactly which item has the yellow
+  // dot" spliced, since only "what", "how", "why" and "whether" counted
+  // and a subject word had to start in lowercase. "which" with a verb of
+  // its own right after it opens a clause inside the phrase instead.
+  const file = tmpFile('which-object.md', [
+    'Check the checklist by hand \u2014 the web UI shows exactly which item has the yellow dot.',
+    'Skip the noise for now \u2014 the error logs which show results.',
+  ].join('\n'));
+  const { changes } = applyFixes([file], RULES);
+  assert.deepEqual(changes.map((c) => c.after), [
+    'Check the checklist by hand; the web UI shows exactly which item has the yellow dot.',
+    'Skip the noise for now, the error logs which show results.',
+  ]);
+});
+
 test('fix joins an "if" clause with a contracted "that is" after its comma after a dash', () => {
   // from real repo text: "Track passed/total over time, if variance is high,
   // that's the signal" spliced, since "that is" opened a main clause after
