@@ -2498,6 +2498,102 @@ const waitFor = async (check, ms = 3000) => {
 const killAll = (pid) => { try { process.kill(-pid, 'SIGKILL'); } catch {} };
 const isoAgo = (s) => new Date(Date.now() - s * 1000).toISOString();
 
+test('seeded random follow: split, replaced, rewritten, resaved, and removed logs stream each finished line once', () => {
+  const { followBoard } = require('../lib/member-board');
+  let seed = 45;
+  const rnd = () => ((seed = (seed * 1103515245 + 12345) % 2147483648) / 2147483648);
+  const pick = (list) => list[Math.floor(rnd() * list.length)];
+  const names = ['builder', 'scout', 'chat-experience-lead', 'shipper'];
+  let n = 0;
+  // Every line is unique, so a rewrite never leaves the bytes behind the
+  // reading position the same, and a repeat or a loss shows by name.
+  const line = () => Buffer.from(`${at(n % 600)} m-${++n} step ${n}${pick(['', ' é', ' 界'])}${pick(['\n', '\n', '\r\n'])}`);
+  const lines = (count) => Buffer.concat(Array.from({ length: count }, line));
+  const textsOf = (buf) => buf.toString('utf8').split('\n').slice(0, -1).map((raw) => raw.replace(/\r$/, '').split(' ').slice(2).join(' '));
+  for (let trial = 0; trial < 30; trial++) {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'atris-follow-random-'));
+    // What each log holds, how much of it the reader has already passed on,
+    // and whether it was replaced so the reader must start from the top.
+    const logs = new Map();
+    const rest = new Map();
+    const file = (name) => path.join(dir, `${name}.log`);
+    for (const name of names.slice(0, 2)) {
+      const whole = lines(2);
+      // Each log starts half way through a line, which the reader owes in full.
+      const next = line();
+      const tail = next.subarray(0, 5);
+      fs.writeFileSync(file(name), Buffer.concat([whole, tail]));
+      logs.set(name, { buf: Buffer.concat([whole, tail]), seen: whole.length, fresh: false });
+      rest.set(name, next.subarray(5));
+    }
+    const events = [];
+    const expected = [];
+    const steps = [];
+    const follower = followBoard({ dir, emit: (e) => events.push(e), pollMs: 3_600_000 });
+    const append = (name, bytes) => {
+      fs.appendFileSync(file(name), bytes);
+      const log = logs.get(name) || { buf: Buffer.alloc(0), seen: 0, fresh: true };
+      logs.set(name, { ...log, buf: Buffer.concat([log.buf, bytes]) });
+    };
+    try {
+      for (let step = 0; step < 60; step++) {
+        const name = pick(names);
+        const kind = logs.has(name) ? pick(['line', 'line', 'split', 'finish', 'replace', 'rewrite', 'resave', 'remove']) : 'create';
+        steps.push(`${kind} ${name}`);
+        // A half-written line ends before anything else lands in its log.
+        const owed = rest.get(name);
+        if (owed && ['line', 'split', 'finish'].includes(kind)) { append(name, owed); rest.set(name, null); }
+        if (kind === 'line' || kind === 'finish') append(name, lines(1 + Math.floor(rnd() * 3)));
+        else if (kind === 'split') {
+          const whole = line();
+          const cut = 1 + Math.floor(rnd() * (whole.length - 1));
+          append(name, whole.subarray(0, cut));
+          rest.set(name, whole.subarray(cut));
+        } else if (kind === 'create') {
+          const buf = lines(Math.floor(rnd() * 3));
+          fs.writeFileSync(file(name), buf);
+          logs.set(name, { buf, seen: 0, fresh: true });
+        } else if (kind === 'resave') {
+          // An editor that saves by renaming a copy keeps every old byte, so
+          // only the new file identity tells the reader to start at the top.
+          const buf = Buffer.concat([logs.get(name).buf, owed ? Buffer.alloc(0) : lines(Math.floor(rnd() * 3))]);
+          fs.writeFileSync(path.join(dir, 'swap.tmp'), buf);
+          fs.renameSync(path.join(dir, 'swap.tmp'), file(name));
+          logs.set(name, { buf, seen: 0, fresh: true });
+        } else if (kind === 'replace' || kind === 'rewrite') {
+          const next = rnd() < 0.3 ? line() : null;
+          const buf = Buffer.concat([lines(Math.floor(rnd() * 4)), next ? next.subarray(0, 4) : Buffer.alloc(0)]);
+          if (kind === 'replace') {
+            fs.writeFileSync(path.join(dir, 'swap.tmp'), buf);
+            fs.renameSync(path.join(dir, 'swap.tmp'), file(name));
+          } else fs.writeFileSync(file(name), buf);
+          logs.set(name, { buf, seen: 0, fresh: true });
+          rest.set(name, next && next.subarray(4));
+        } else {
+          fs.unlinkSync(file(name));
+          logs.delete(name);
+          rest.set(name, null);
+        }
+        if (rnd() < 0.5) continue;
+        steps.push('scan');
+        follower.scan();
+        for (const [member, log] of logs) {
+          const end = log.buf.lastIndexOf(0x0a) + 1;
+          const from = log.fresh ? 0 : log.seen;
+          if (end > from) for (const text of textsOf(log.buf.subarray(from, end))) expected.push(`${member}: ${text}`);
+          logs.set(member, { ...log, seen: Math.max(end, from), fresh: false });
+        }
+        const got = events.map((e) => `${e.member}: ${e.text}`);
+        const byMember = (list) => names.map((m) => list.filter((s) => s.startsWith(`${m}: `)));
+        assert.deepEqual(byMember(got), byMember(expected), `trial ${trial} after ${steps.join(', ')}`);
+      }
+    } finally {
+      follower.stop();
+      fs.rmSync(dir, { recursive: true, force: true });
+    }
+  }
+});
+
 test('board shows a live run as alive with its engine, and a dead one as stopped', async () => {
   const { child, ready } = spawnSleeper("console.log('up'); setInterval(() => {}, 1000)");
   await ready;
