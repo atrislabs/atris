@@ -34,6 +34,8 @@ checks the refs in both files; `atris doc-health --fix-refs` moves drifted ones.
 | todo fallback | `lib/todo-fallback.js` | legacy TODO read |
 | mission command | `commands/mission.js` | start, run, tick, complete, error streaks |
 | campaign command and store | `commands/campaign.js:315`, `lib/campaign-core.js:63`, `lib/campaign-store.js:107`, `scripts/campaign-conformance.js` | long goals with a judge, budget, and seats; verbs append events to `.atris/state/atris.db` in the main checkout and every screen folds them; a new campaign's judge must fail first; `npm run validate:campaign` checks all five surfaces against `test/fixtures/campaign/`; `test/campaign-command.test.js` |
+| campaign new (drafted judge) | `lib/campaign-new.js`, `commands/campaign.js` (`new` verb) | `atris campaign new "<goal>"`: the owner's engine drafts `atris/campaigns/<id>/judge.sh`, the CLI runs it to prove it fails today, shows the draft; `--yes` starts it ($20 default); `test/campaign-new.test.js` |
+| campaigns skill and MCP tools | `atris/skills/campaigns/SKILL.md`, `mcp/atris-mcp/index.mjs` (`CAMPAIGN_TOOLS`, `handleCampaignTool`) | how any agent runs a campaign; `atris mcp` serves campaign_list, show, new, start, run, ask, answer by calling `atris campaign ... --json`; `test/mcp-campaign.test.js` |
 | mission root resolver | `lib/mission-root.js` | workspace root resolved here |
 | engine dispatch runner command | `lib/runner-command.js`, `lib/runner-command.js:331` | builds runner argv, model precedence; each profile says whether it takes a pinned model and which effort words map to its own flag; codex and grok run only their own models, so `runnerModelFor` (`lib/runner-command.js:248`) drops a claude name for them, by profile or by bin name |
 | engine profiles defined | `lib/engine-registry.js`, `lib/runner-command.js`, `lib/engine-ask.js` | profile-name list and launch paths, including mercury 3 test model |
@@ -109,7 +111,7 @@ checks the refs in both files; `atris doc-health --fix-refs` moves drifted ones.
 | autoland gate | `lib/autoland.js` | certified landings |
 | autoland command | `commands/autoland.js` | atris autoland |
 | slop detector | `commands/slop.js` | prose lint |
-| design system commands | `commands/design.js` `lib/design-api.js` | atris design extract and check; shared with atris mcp |
+| design system commands | `commands/design.js` `lib/design-api.js` | atris design extract and check; shared with atris mcp, which also serves the campaign tools |
 | improvement attempt ledger | `commands/rsi.js` `lib/rsi-record.js` | read and record Dream-RSI attempts |
 | workspace tree hash | `commands/tree.js` `lib/tree-hash.js` | atris tree hash over the doctrine files |
 | tests | `test/commands.test.js` | node --test test/ |
