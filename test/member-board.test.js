@@ -911,6 +911,68 @@ test('ctrl-c stops every watch redraw: the timer, the log watch, and a pending l
   }
 });
 
+test('a watch screen keeps a split sign-in failure through a rerun on another engine, without the old fix', async (t) => {
+  t.mock.timers.enable({ apis: ['setInterval', 'setTimeout', 'Date'], now: NOW });
+  let listener = null;
+  t.mock.method(fs, 'watch', (target, l) => {
+    listener = l;
+    const w = new (require('node:events'))();
+    w.close = () => {};
+    return w;
+  });
+  const out = process.stdout;
+  const saved = ['isTTY', 'columns', 'rows'].map((k) => [k, Object.getOwnPropertyDescriptor(out, k)]);
+  const write = out.write;
+  const env = process.env.ATRIS_PROGRESS_DIR;
+  const plain = (f) => f.replace(/\x1b\[[0-9;]*[A-Za-z]/g, '');
+  try {
+    Object.defineProperty(out, 'isTTY', { value: true, configurable: true, writable: true });
+    for (const [width, height] of [[60, 8], [30, 6]]) {
+      for (const engine of ['codex', 'claude']) {
+        const label = `${width}x${height} then ${engine}`;
+        const dir = fakeDir({ builder: [`${at(900)} m-1 started: [pid 1 engine claude] fix the login flow`, `${at(800)} m-1 finished: failed (signed out)`] });
+        const frames = [];
+        const step = (text) => {
+          fs.appendFileSync(path.join(dir, 'builder.log'), text);
+          listener('change', 'builder.log');
+          t.mock.timers.tick(100);
+          return frames.at(-1);
+        };
+        let done;
+        try {
+          process.env.ATRIS_PROGRESS_DIR = dir;
+          Object.defineProperty(out, 'columns', { value: width, configurable: true, writable: true });
+          Object.defineProperty(out, 'rows', { value: height, configurable: true, writable: true });
+          out.write = (chunk) => { frames.push(plain(String(chunk))); return true; };
+          done = memberBoardCommand('--watch');
+          const first = frames[0];
+          assert.match(first, /^builder\s+failed\s+signed out(\s|$)/m, label);
+          if (width >= 60) assert.match(first, /sign in to claude$/m, label);
+          assert.equal(step(`${at(60)} m-2 started: [pid ${process.pid} engine ${engine}] try again`), first, `${label}: a partial start changes nothing`);
+          const earlier = engine === 'codex' ? 'signed out' : width >= 60 ? 'failed 13m' : 'failed';
+          for (const text of ['\n', `${at(5)} m-2 running: npm test\n`, `${at(1)} m-2 finished: failed (sig`]) {
+            const frame = step(text);
+            assert.match(frame, new RegExp(`^builder\\s+working\\s+${earlier}(\\s|$)`, 'm'), `${label}: ${JSON.stringify(frame)}`);
+            assert.doesNotMatch(frame, /sign in/, `${label}: a new run drops the old run's fix`);
+          }
+          const last = step('ned out)\n');
+          assert.match(last, /^builder\s+(done )?failed\s+signed out(\s|$)/m, label);
+          if (width >= 60) assert.match(last, new RegExp(`sign in to ${engine}$`, 'm'), `${label}: the fix names the engine that just signed out`);
+          assert.doesNotMatch(last, /working/, label);
+          for (const f of frames) for (const l of f.split('\n')) assert.ok(l.length <= width, `${label}: fits: ${l}`);
+          process.emit('SIGINT');
+        } finally {
+          out.write = write;
+        }
+        try { await done; } finally { fs.rmSync(dir, { recursive: true, force: true }); }
+      }
+    }
+  } finally {
+    for (const [k, d] of saved) { if (d) Object.defineProperty(out, k, d); else delete out[k]; }
+    if (env === undefined) delete process.env.ATRIS_PROGRESS_DIR; else process.env.ATRIS_PROGRESS_DIR = env;
+  }
+});
+
 test('watch mode uses the whole screen in one to three terminal rows', async () => {
   const dir = fakeDir({
     builder: [`${at(100)} m-1 started: job`, `${at(80)} m-1 finished: failed (timed out)`],
