@@ -374,3 +374,18 @@ The gate has a test \u2014 if the format changes, the round-trip check breaks an
 # list reads the pair as a subject yet
 Nobody has to leave Atris while working \u2014 the in-app browser and its file-viewing companions (PDF, HTML) feel as trustworthy as a real browser tab.
 ~> Nobody has to leave Atris while working; the in-app browser and its file-viewing companions (PDF, HTML) feel as trustworthy as a real browser tab.
+
+# a short aside between the subject and its verb is read past, so the
+# clause joins the way it does with no aside; a phrase with an aside keeps
+# its comma
+We fixed it \u2014 the member definition (MEMBER.md / backend member schema) carries its model.
+=> We fixed it; the member definition (MEMBER.md / backend member schema) carries its model.
+We fixed it \u2014 the proof-gate contract (`gate.mjs`) bans the fake-done wording.
+=> We fixed it; the proof-gate contract (`gate.mjs`) bans the fake-done wording.
+Check one place \u2014 the error logs (in /tmp) folder.
+=> Check one place, the error logs (in /tmp) folder.
+
+# a bare object after the verb, with an aside before it: the check for a
+# bare object reads plain words only, so the aside still blocks the join
+The HMAC path still works \u2014 the refactor (hmac_key to auth_secret) preserves behavior.
+~> The HMAC path still works; the refactor (hmac_key to auth_secret) preserves behavior.

@@ -326,6 +326,28 @@ test('the em dash fix turns a paired aside into parentheses and a lone dash into
   ]);
 });
 
+test('the em dash fix reads past a short aside between a subject and its verb', () => {
+  const { applyFixes } = require('../commands/slop');
+  const D = '—';
+  // from real logs: the aside sat where the noun and its verb meet, so the
+  // clause fell back to a comma; a phrase with an aside keeps its comma
+  const file = tmpFile('aside.md', [
+    `Model selection is per member ${D} the member definition (MEMBER.md / backend member schema) carries its model.`,
+    '',
+    `Not done yet ${D} the proof-gate contract (\`gate.mjs\`) bans the fake-done wording.`,
+    '',
+    `Check one place ${D} the error logs (in /tmp) folder.`,
+  ].join('\n'));
+  applyFixes([file], RULES);
+  assert.deepEqual(fs.readFileSync(file, 'utf8').split('\n'), [
+    'Model selection is per member; the member definition (MEMBER.md / backend member schema) carries its model.',
+    '',
+    'Not done yet: the proof-gate contract (`gate.mjs`) bans the fake-done wording.',
+    '',
+    'Check one place, the error logs (in /tmp) folder.',
+  ]);
+});
+
 test('the em dash fix gives a short list label a colon and leaves long list sentences alone', () => {
   const { applyFixes } = require('../commands/slop');
   const D = '\u2014';

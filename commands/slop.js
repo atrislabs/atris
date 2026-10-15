@@ -1607,10 +1607,21 @@ function fencedLines(lines) {
 // Each is masked while the fix runs.
 const LITERAL_SPAN = /(`+).+?\1|(?<=[(\["'\u201c\u2018])\u2014(?=[)\]"'\u201d\u2019])|(?<=[([][^()[\]\u2014]*,\s*)\u2014(?=\s*[,)\]])|(?<=[([]\s*)\u2014(?=\s*,[^()[\]\u2014]*[)\]])|<(kbd|code|samp|var|tt)\b[^<>]*>.*?<\/\2\s*>|\$\$.+?\$\$|\$(?=\S)[^$]+?(?<=\S)\$(?!\d)|\[\^[^\]\s]+\]|^\s{0,3}\[[^\]]+\]:\s*\S+|(?<=\])\[[^\]]+\]|(?<=\])\((?:[^()\s]|\([^()\s]*\))*(?:\s+"[^"]*")?\)?|<(?![A-Za-z][^<>="']*\s\u2014\s)[A-Za-z/!][^<>]*>/g;
 const FILE_REF = /^(`+)[^`\s]+\.\w{1,5}:\d+(?:-\d+)?\1$/;
-function maskInlineCode(line) {
+// While the dash fix runs, a short aside between a subject after a dash and
+// its verb is masked too, so "\u2014 the member definition (MEMBER.md / backend
+// member schema) carries its model" reads as nouns and a verb, the way it
+// does with no aside. A second dash in the same sentence makes the stretch
+// a paired aside, so it stays open to that rule. The scan never masks it,
+// so words inside an aside are still read.
+const SUBJECT_ASIDE = /(?<=\u2014[ \t]*(?:the|a|an|this|every|each|its|our|their|your)[ \t]+(?:[\w'/.\uE000\uE001-]+[ \t]+){0,2}[\w'/.\uE000\uE001-]+[ \t])\([^()\n\u2014]{1,40}\)(?=[ \t]+[a-z])(?![^\u2014\n.!?]*\u2014)/g;
+function maskInlineCode(line, { asides = false } = {}) {
   const spans = [];
-  const masked = line.replace(LITERAL_SPAN, (m) => `\uE000${spans.push(m) - 1}\uE001`);
-  return { masked, spans, restore: (s) => s.replace(/\uE000(\d+)\uE001/g, (m, n) => spans[n]) };
+  const hide = (m) => `\uE000${spans.push(m) - 1}\uE001`;
+  let masked = line.replace(LITERAL_SPAN, hide);
+  if (asides) masked = masked.replace(SUBJECT_ASIDE, hide);
+  const unmask = (s) => s.replace(/\uE000(\d+)\uE001/g, (m, n) => spans[n]);
+  // an aside can hold a code span, so its text is unmasked a second time
+  return { masked, spans, restore: (s) => unmask(unmask(s)) };
 }
 
 // Each rule is deterministic: a regex + a one-line why. severity drives the icon.
@@ -1976,7 +1987,7 @@ function applyFixes(files, rules, { write = true } = {}) {
         // a code span is code in any file, a script comment or a plain text
         // note too: "`selection-\u2014-member`" names a slug, and a comma in it
         // would name a different one
-        const { masked, spans, restore } = r.proseOnly ? maskInlineCode(line.slice(at)) : { masked: line.slice(at), spans: [], restore: (x) => x };
+        const { masked, spans, restore } = r.proseOnly ? maskInlineCode(line.slice(at), { asides: r.fix === fixEmDash }) : { masked: line.slice(at), spans: [], restore: (x) => x };
         if (!r.re.test(masked)) continue;
         const startsBlock = at === 0 && (i === 0 || !lines[i - 1].trim() || /^\s{0,3}#/.test(lines[i - 1]));
         const above = at === 0 && !script && !startsBlock && !fenced.has(i - 1) && !skip.has(i - 1) ? wrappedFrom(lines[i - 1], line) : '';
