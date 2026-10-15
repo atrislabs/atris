@@ -12177,11 +12177,15 @@ test('task review-chat extracts only proof-derived verifier commands', () => {
     // With only a proof given, ready writes the checked and tested sentences
     // from that proof, so landing-only cases call the same builder in-process.
     const proofLanding = (proof) => taskReviewLanding({ title: 'Proof landing', metadata: {}, workspace_root: dir }, { proof });
-    const seedClaimedTask = (title) => {
+    const seedClaimedTask = (title, proof) => {
       const db = taskStore.open(dbPath);
       try {
         const created = addSeedTask(db, { title, workspaceRoot });
         assert.equal(taskStore.claimTask(db, { id: created.id, claimedBy: 'codex' }).claimed, true);
+        if (proof !== undefined) {
+          const seeded = taskStore.readyTask(db, { id: created.id, actor: 'codex', proof });
+          assert.equal(seeded.ready, true, seeded.reason);
+        }
         return created.id;
       } finally {
         taskStore.close();
@@ -12243,30 +12247,15 @@ test('task review-chat extracts only proof-derived verifier commands', () => {
       'node --check test/json-output.test.js',
     ]);
 
-    const titleOnlyRef = seedClaimedTask('Fix git diff display');
-    // Readiness only seeds the proof here; review-chat reads it on the CLI.
-    const titleOnlyDb = taskStore.open(dbPath);
-    try {
-      const seeded = taskStore.readyTask(titleOnlyDb, { id: titleOnlyRef, actor: 'codex', proof: 'manual browser validation passed' });
-      assert.equal(seeded.ready, true, seeded.reason);
-    } finally {
-      taskStore.close();
-    }
+    // Seed creation, claim and readiness together before the real CLI read.
+    const titleOnlyRef = seedClaimedTask('Fix git diff display', 'manual browser validation passed');
     const titleOnlyChat = runCli(['task', 'review-chat', titleOnlyRef, '--json'], { cwd: dir, env });
     assert.equal(titleOnlyChat.status, 0, titleOnlyChat.stderr);
     const titleOnlyPayload = JSON.parse(titleOnlyChat.stdout);
     assert.deepEqual(titleOnlyPayload.contract.verification_focus.commands_to_verify, []);
     assert.match(titleOnlyPayload.contract.required_checks.join('\n'), /Find the concrete verifier command/);
 
-    const pathOnlyRef = seedClaimedTask('Inspect artifact path');
-    // Readiness only seeds the proof here; review-chat reads it on the CLI.
-    const pathOnlyDb = taskStore.open(dbPath);
-    try {
-      const seeded = taskStore.readyTask(pathOnlyDb, { id: pathOnlyRef, actor: 'codex', proof: 'inspected commands/git-diff.js passed' });
-      assert.equal(seeded.ready, true, seeded.reason);
-    } finally {
-      taskStore.close();
-    }
+    const pathOnlyRef = seedClaimedTask('Inspect artifact path', 'inspected commands/git-diff.js passed');
     const pathOnlyChat = runCli(['task', 'review-chat', pathOnlyRef, '--json'], { cwd: dir, env });
     assert.equal(pathOnlyChat.status, 0, pathOnlyChat.stderr);
     const pathOnlyPayload = JSON.parse(pathOnlyChat.stdout);
@@ -12281,15 +12270,8 @@ test('task review-chat extracts only proof-derived verifier commands', () => {
       'node --check test/commands.test.js',
     ]);
 
-    const bracketRef = seedClaimedTask('Bracket proof list');
     const bracketProof = 'live review-chat dry-run emitted [node --check commands/task.js, node --check test/commands.test.js, git diff --check]';
-    const bracketDb = taskStore.open(dbPath);
-    try {
-      const seeded = taskStore.readyTask(bracketDb, { id: bracketRef, actor: 'codex', proof: bracketProof });
-      assert.equal(seeded.ready, true, seeded.reason);
-    } finally {
-      taskStore.close();
-    }
+    const bracketRef = seedClaimedTask('Bracket proof list', bracketProof);
     const bracketChat = runCli(['task', 'review-chat', bracketRef, '--json'], { cwd: dir, env });
     assert.equal(bracketChat.status, 0, bracketChat.stderr);
     assert.deepEqual(JSON.parse(bracketChat.stdout).contract.verification_focus.commands_to_verify, [
