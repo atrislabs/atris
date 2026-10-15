@@ -1345,13 +1345,19 @@ const definitionSpans = (code) => {
 };
 // Ignore helper definitions when looking for calls in their enclosing code.
 // Keep functions containing the launch, and blank siblings without moving lines.
+// Nested spans overlap, so the text is rebuilt once over their merged ranges.
 const withoutHelperDefinitions = (code, launch = -1) => {
-  const spans = definitionSpans(code).filter(([start, end]) => launch < start || launch >= end);
-  let visible = code;
-  for (const [start, end] of spans.reverse()) {
-    visible = visible.slice(0, start) + visible.slice(start, end).replace(/[^\n]/g, ' ') + visible.slice(end);
+  const spans = definitionSpans(code).filter(([start, end]) => launch < start || launch >= end).sort(([a], [b]) => a - b);
+  const parts = [];
+  let kept = 0;
+  for (const [start, end] of spans) {
+    if (end <= kept) continue;
+    const from = Math.max(start, kept);
+    parts.push(code.slice(kept, from), code.slice(from, end).replace(/[^\n]/g, ' '));
+    kept = end;
   }
-  return visible;
+  parts.push(code.slice(kept));
+  return parts.join('');
 };
 // A function in the same file that records the run counts as a recording
 // call, the way the mission tick records through its own small wrapper.
