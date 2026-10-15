@@ -113,3 +113,26 @@ possible. Login functions or aliases and commands that reset PATH need
 separate evidence before claiming universal retention.
 
 next_push: align the shared proof runner with the receipt writer's post-login Node directory restoration and add a controlled real-shell regression.
+
+## Controlled runtime evidence, October 14
+
+Verdict: proceed-with-changes. Six actual login-shell children in
+work-folder-proof-runtime-controlled.js prove competing executable selection,
+caller restoration from a copied Node in a path with spaces and an apostrophe,
+quoted variables and globs, ordinary shell commands, child exit 7, and an
+explicit PATH override. Returned commands and proof retain the original text.
+
+Flow: real login shell -> controlled competing PATH -> candidate prefix -> command.
+
+The injected runner changes startup text and invokes actual bash. It does not
+fabricate process results or change production. This proves the candidate
+under a controlled post-login PATH, not every login profile. The first probe
+failed before running any candidate because copied Homebrew Node needs its
+shared libraries. A temporary link supplies them. Only generated fixtures
+are removed.
+
+The single risk remains shell compatibility. Before delivery, implementation
+must retain this coverage as an automated regression against the production
+runner without an injected candidate prefix. Preserve explicit PATH overrides.
+
+next_push: implement the reviewed caller-directory restoration in the shared proof runner with this controlled regression covering the production path.

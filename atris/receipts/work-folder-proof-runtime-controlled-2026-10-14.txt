@@ -1,0 +1,40 @@
+Added controlled runtime evidence, verified by six real shell children and all 57 required cleanup checks, exit 0.
+
+Changed: the advisory probe supplies competing-executable and unusual-caller-path evidence before the shared proof runner repair. Production unchanged.
+Verdict: proceed-with-changes. Single risk: shell compatibility. Require these checks against production without an injected candidate prefix before delivering a repair.
+
+Files edited: atris/receipts/work-folder-proof-runtime-controlled.js; atris/receipts/work-folder-completion-runtime-plan-2026-10-14.md; atris/MAP.md; atris/refs/MAP-NOTES.md; atris/team/architect/logs/2026-10-14.md; this receipt.
+Existing atris/TODO.md changes preserved. Member log updated on disk, excluded from staging under the repository hook.
+
+Real surface: node atris/receipts/work-folder-proof-runtime-controlled.js
+Exit: 0. Output:
+controlled competing executable: competing-node, exit 0
+caller path with spaces and apostrophe: <generated temporary root>/caller node's bin/node, exit 0
+quoted variable and glob: ["two words","sample-one.txt","sample-two.txt"], exit 0
+ordinary shell command: shell still works, exit 0
+failed child: expected failure, exit 7
+explicit path override: competing-node, exit 0
+six actual login-shell children checked; production unchanged
+
+Only the generated root above is abbreviated. The probe asserts the exact path.
+First attempt exited 1: copied Homebrew Node could not find libnode.141.dylib.
+The fixture now links the installed library directory; the second run passed.
+Injected startup text runs through actual bash, without fabricated results.
+
+Rerun: node --test test/worktree-removal-guard.test.js test/member-tidy.test.js
+Exit: 0. Exact summary:
+ℹ tests 57
+ℹ suites 0
+ℹ pass 57
+ℹ fail 0
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 21059.660959
+
+Commands: mission status/goal; Atris boot; task list/new/claim/note/ready; git status/log/diff/remotes; targeted reads; advisory probe; required checks; git diff --check; slop detect on the runtime plan; brain activation/compile previews; scoped commit/push.
+Slop check: clean, exit 0. Brain previews exited 2 without writes.
+Artifacts: probe, review, navigation, receipt, member log. Readiness re-ran the probe, exit 0: atris/runs/2026-10-15-task-acw-18-2026-10-15T03-47-28-418Z.json. Task is in review; automated acceptance cannot rerun this advisory command. No acceptance was attempted.
+Metric: six controlled real-shell cases, 57 required checks passed, zero production edits or dependencies.
+next_push: implement the reviewed caller-directory restoration in the shared proof runner with this controlled regression covering the production path.
+layer: capabilities
