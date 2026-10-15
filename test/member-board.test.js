@@ -859,6 +859,58 @@ test('the timed watch redraw moves ages forward with no log change', async (t) =
   }
 });
 
+test('ctrl-c stops every watch redraw: the timer, the log watch, and a pending log redraw', async (t) => {
+  t.mock.timers.enable({ apis: ['setInterval', 'setTimeout', 'Date'], now: NOW });
+  const dir = fakeDir({ builder: [`${at(60)} m-1 started: fix the login flow`, `${at(30)} m-1 running: npm test`] });
+  const watchers = [];
+  t.mock.method(fs, 'watch', (target, listener) => {
+    const w = new (require('node:events'))();
+    w.closed = false;
+    w.close = () => { w.closed = true; };
+    w.listener = listener;
+    watchers.push(w);
+    return w;
+  });
+  const out = process.stdout;
+  const saved = ['isTTY', 'columns', 'rows'].map((k) => [k, Object.getOwnPropertyDescriptor(out, k)]);
+  const write = out.write;
+  const env = process.env.ATRIS_PROGRESS_DIR;
+  const frames = [];
+  let done;
+  let after = 0;
+  try {
+    process.env.ATRIS_PROGRESS_DIR = dir;
+    Object.defineProperty(out, 'isTTY', { value: true, configurable: true, writable: true });
+    Object.defineProperty(out, 'columns', { value: 100, configurable: true, writable: true });
+    Object.defineProperty(out, 'rows', { value: 20, configurable: true, writable: true });
+    out.write = (chunk) => { frames.push(String(chunk)); return true; };
+    done = memberBoardCommand('--watch');
+    assert.equal(watchers.length, 1, 'the watch screen watches the log folder');
+    watchers[0].listener('change', 'builder.log');
+    process.emit('SIGINT');
+    const before = frames.length;
+    out.emit('resize');
+    assert.equal(frames.length, before, 'a resize after ctrl-c does not draw');
+    t.mock.timers.tick(100);
+    assert.equal(frames.length, before, 'a log redraw queued before ctrl-c does not draw after it');
+    t.mock.timers.tick(6_000);
+    after = frames.length - before;
+  } finally {
+    out.write = write;
+    for (const [k, d] of saved) { if (d) Object.defineProperty(out, k, d); else delete out[k]; }
+    if (env === undefined) delete process.env.ATRIS_PROGRESS_DIR; else process.env.ATRIS_PROGRESS_DIR = env;
+  }
+  try {
+    await done;
+    assert.equal(frames.length, 1, 'only the first frame, drawn before ctrl-c');
+    assert.equal(after, 0, 'the 3s timer stops on ctrl-c');
+    assert.ok(watchers[0].closed, 'ctrl-c closes the log folder watch');
+    assert.equal(out.listenerCount('resize'), 0, 'ctrl-c stops listening for resizes');
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
 test('watch mode uses the whole screen in one to three terminal rows', async () => {
   const dir = fakeDir({
     builder: [`${at(100)} m-1 started: job`, `${at(80)} m-1 finished: failed (timed out)`],
