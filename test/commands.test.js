@@ -1800,7 +1800,11 @@ test('member wake treats member-generated goals and logs as non-blocking bookkee
   const dir = makeTempDir();
   try {
     fs.mkdirSync(path.join(dir, 'atris'), { recursive: true });
-    assert.equal(runCli(['member', 'create', 'aeo', '--description="Own AEO proof loops"'], { cwd: dir }).status, 0);
+    require('../lib/member-scaffold').ensureMemberBundle(path.join(dir, 'atris', 'team', 'aeo'), {
+      name: 'aeo',
+      role: 'Aeo',
+      description: 'Own AEO proof loops',
+    });
     assert.equal(runCli([
       'mission', 'start', '--no-verify', 'Keep AEO moving',
       '--owner', 'aeo',
