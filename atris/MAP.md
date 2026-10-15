@@ -196,3 +196,5 @@ Long-title status ownership setup: `test/commands.test.js:14318` creates and cla
 Duplicate selection ownership setup: `test/commands.test.js:12836` seeds the existing owner through the production store; checkpoint ownership, readiness, certification and selection remain CLI checks. Seven launches become six.
 
 Strict approval review setup: `test/commands.test.js:13363` attaches the strict verification command with production reviewTask, closes the connection before CLI previews, and preserves every automatic approval and human-confirmation assertion. Eleven app launches become ten.
+
+Conflicting receipt readiness setup: `test/commands.test.js:13566` uses production readyTask in the fixture connection, closed in finally before CLI acceptance and fail-closed receipt status. Two app launches replace three; all integrity and readable-label assertions remain.

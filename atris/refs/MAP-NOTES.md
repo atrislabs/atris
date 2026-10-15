@@ -2697,3 +2697,5 @@ Reward receipt creation setup: `test/commands.test.js:13072` creates and claims 
 Strict approval review setup: `test/commands.test.js:13363` attaches the strict verification command with production reviewTask, closes the connection before CLI previews, and preserves every automatic approval and human-confirmation assertion. Eleven app launches become ten.
 
 Duplicate reward review readiness: `test/commands.test.js:13485` readies the claimed fixture through production readyTask with the original proof, actor and fixture result. The connection closes in finally before acceptance; acceptance, duplicate review and XP status keep every real CLI assertion. Four app launches become three.
+
+Conflicting receipt readiness setup: `test/commands.test.js:13566` uses production readyTask in the fixture connection, closed in finally before CLI acceptance and fail-closed receipt status. Two app launches replace three; all integrity and readable-label assertions remain.
