@@ -15650,7 +15650,7 @@ test('task review lanes route stale PR proof out of human accept waiting', async
   }
 });
 
-test('task current-step rejects bookkeeping receipts for golden-path mission XP', () => {
+test('task current-step rejects bookkeeping receipts for golden-path mission XP', async () => {
   if (!hasNodeSqlite()) return;
   const dir = makeTempDir();
   const dbPath = path.join(dir, 'tasks.db');
@@ -15688,19 +15688,23 @@ test('task current-step rejects bookkeeping receipts for golden-path mission XP'
     const ref = task.display_id;
 
     const weakProof = 'atris/runs/bookkeeping.json';
-    const blocked = runCli([
-      'task', 'current-step',
-      '--goal-id', 'mission-golden-path',
-      '--as', 'onboarding',
-      '--proof', weakProof,
-      '--json',
-    ], { cwd: dir, env });
+    // Both weak-proof steps are refused and change no task state, so they
+    // run at once; the passing step below still runs after them.
+    const [blocked, ready] = await Promise.all([
+      runCliAsync([
+        'task', 'current-step',
+        '--goal-id', 'mission-golden-path',
+        '--as', 'onboarding',
+        '--proof', weakProof,
+        '--json',
+      ], { cwd: dir, env }),
+      runCliAsync(['task', 'ready', ref, '--as', 'onboarding', '--proof', weakProof, '--json'], { cwd: dir, env }),
+    ]);
     assert.notEqual(blocked.status, 0);
     const blockedPayload = JSON.parse(blocked.stdout);
     assert.equal(blockedPayload.reason, 'mission_xp_requires_end_to_end_receipt');
     assert.match(blockedPayload.detail, /zero-papercut end-to-end fresh-laptop pass/);
 
-    const ready = runCli(['task', 'ready', ref, '--as', 'onboarding', '--proof', weakProof, '--json'], { cwd: dir, env });
     assert.notEqual(ready.status, 0);
     assert.equal(JSON.parse(ready.stdout).reason, 'mission_xp_requires_end_to_end_receipt');
 
