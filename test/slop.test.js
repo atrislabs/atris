@@ -2489,6 +2489,24 @@ test('fix keeps a comma before a past verb phrase with a possessive inside it af
   ]);
 });
 
+test('fix gives commas to a short aside that ends on the word before its dash', () => {
+  // from real repo text: "follow your curiosity even when, especially when,
+  // it has" came out with the aside in parentheses and a comma after it. An
+  // aside that says the word before it again, harder, takes commas; one that
+  // ends on another word keeps its parentheses.
+  const file = tmpFile('restated-aside.md', [
+    'Follow your curiosity even when \u2014 especially when \u2014 it has no use.',
+    'And for a moment \u2014 just a moment \u2014 neither of them spoke.',
+    'We need the best \u2014 maybe the only \u2014 way out.',
+  ].join('\n'));
+  const { changes } = applyFixes([file], RULES);
+  assert.deepEqual(changes.map((c) => c.after), [
+    'Follow your curiosity even when, especially when, it has no use.',
+    'And for a moment, just a moment, neither of them spoke.',
+    'We need the best (maybe the only) way out.',
+  ]);
+});
+
 test('fix turns a dash pressed against a hyphenated word after a parenthesis into a flag', () => {
   // from real repo text: "Hook alone isn't enough (\u2014no-verify can bypass it)"
   // came out as "(, no-verify", doubled punctuation. The dash was a flag's two
@@ -4712,6 +4730,9 @@ test('the fix diff script marks a fix that gains doubled punctuation or loses pa
   assert.deepEqual(oddMarks(`Every time it meets a person ${D} in a meeting ${D} it should log it.`, 'Every time it meets a person (in a meeting), it should log it.'), []);
   assert.deepEqual(oddMarks(`We measure it ${D} and when it fails, we say so.`, 'We measure it, and when it fails, we say so.'), []);
   assert.deepEqual(oddMarks(`If it holds, you ship the plan ${D} they got value.`, 'If it holds, you ship the plan, they got value.'), ['comma splice']);
+  // a part that ends on a bare "when" still waits for its clause
+  assert.deepEqual(oddMarks(`Go even when ${D} especially when ${D} it has no use.`, 'Go even when, especially when, it has no use.'), []);
+  assert.deepEqual(oddMarks(`The gate held when we left ${D} it ships.`, 'The gate held when we left, it ships.'), ['comma splice']);
   // an aside that wraps across lines is unbalanced in the source too, and a
   // code span or link target is never read as prose
   assert.deepEqual(oddMarks(`The run (one tick ${D} a slice`, 'The run (one tick, a slice'), []);

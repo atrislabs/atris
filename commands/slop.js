@@ -1081,7 +1081,12 @@ function fixEmDash(s, { endsBlock = false, startsBlock = false, spans = [], abov
         || /^(?:always|never|often|still|again|sometimes|usually|rarely|seldom|maybe|perhaps|probably|certainly|surely|honestly|finally|eventually)$/i.test(aside)
         || /^(?:however|though|instead|therefore|also|too|thus|meanwhile|otherwise|besides|anyway|nonetheless|nevertheless)$/i.test(aside)
         || /^(?:of course|for now|at least|at most|at best|at worst|at first|in fact|in short|in theory|in practice|for sure|so far|by far|after all|above all|as usual|once again)$/i.test(aside);
-      if (holdsParens || stressed || insideParens(whole.slice(0, at))) return `${/[,;:]$/.test(whole.slice(0, at)) ? ' ' : ', '}${aside}${gap ? ', ' : ''}`;
+      // A short aside that ends on the word before its dash says that word
+      // again, harder, so it takes commas too: "even when, especially when,
+      // it has", never "even when (especially when), it has".
+      const lastWord = /([a-z']+)[^a-z']*$/i.exec(whole.slice(0, at));
+      const restated = lastWord && aside.split(/\s+/).length <= 4 && new RegExp(`\\b${lastWord[1]}$`, 'i').test(aside) && aside.toLowerCase() !== lastWord[1].toLowerCase();
+      if (holdsParens || stressed || restated || insideParens(whole.slice(0, at))) return `${/[,;:]$/.test(whole.slice(0, at)) ? ' ' : ', '}${aside}${gap ? ', ' : ''}`;
       // the closing dash also stood in for the comma before a "which" remark:
       // "scale (model size, data), which is a bet", never "data) which is".
       const after = whole.slice(at + m.length);
