@@ -2811,3 +2811,5 @@ Proof extraction fixture setup: `test/commands.test.js:12180` creates, claims an
 Review selection status batching: `test/commands.test.js:12525` awaits both show reads together after selection. `commands/task.js:7744` reads each existing row from the store without saving a shared view. All assertions remain; three sequential CLI stages become two.
 
 Duplicate selection fixture reuse: `test/commands.test.js:12776` readies the checkpoint in its creation connection, closed in finally before real CLI checks. Two store connections replace three; all command assertions remain.
+
+Certified review fallback read batching: `test/commands.test.js:12603` awaits both next output formats together after certification, before creating follow-up work. `commands/task.js:6948` builds next output from task rows, independent of the saved view. All assertions remain; six sequential CLI stages become five.

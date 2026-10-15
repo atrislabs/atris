@@ -12600,7 +12600,7 @@ test('task next surfaces review debt when no open work exists', () => {
   }
 });
 
-test('task next surfaces Endgame fallback for human-only certified review', () => {
+test('task next surfaces Endgame fallback for human-only certified review', async () => {
   if (!hasNodeSqlite()) return;
   const dir = makeTempDir();
   const dbPath = path.join(dir, 'tasks.db');
@@ -12645,7 +12645,10 @@ test('task next surfaces Endgame fallback for human-only certified review', () =
       '--proof', 'node --test test/commands.test.js passed during certification',
     ], { cwd: dir, env }).status, 0);
 
-    const next = runCli(['task', 'next', '--as', 'codex-executor', '--json'], { cwd: dir, env });
+    const [next, text] = await Promise.all([
+      runCliAsync(['task', 'next', '--as', 'codex-executor', '--json'], { cwd: dir, env }),
+      runCliAsync(['task', 'next', '--as', 'codex-executor'], { cwd: dir, env }),
+    ]);
     assert.equal(next.status, 0, next.stderr);
     const payload = JSON.parse(next.stdout);
     assert.equal(payload.action, 'accept');
@@ -12653,7 +12656,6 @@ test('task next surfaces Endgame fallback for human-only certified review', () =
     assert.equal(payload.task.display_id, ref);
     assert.doesNotMatch(JSON.stringify(payload), /create_bounded_endgame_task|task_seed/);
 
-    const text = runCli(['task', 'next', '--as', 'codex-executor'], { cwd: dir, env });
     assert.equal(text.status, 0, text.stderr);
     assert.match(text.stdout, new RegExp(`^next: atris task accept ${ref}$`, 'm'));
     assert.doesNotMatch(text.stdout, /Create the next bounded task|Create: atris task new|Claim: atris task claim/);
