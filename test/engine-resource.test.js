@@ -330,7 +330,7 @@ test('atris engine sweep names the shell startup line that starts an agent per s
 
 test('the sweep offers a guarded line only for a lone unguarded agent start', () => {
   const { engineCommand } = require('../commands/engine');
-  const { findAgentStartLines } = require('../lib/engine-resource');
+  const { findAgentStartLines, agentStartLineText } = require('../lib/engine-resource');
   const home = fs.mkdtempSync(path.join(os.tmpdir(), 'engine-sweep-fix-'));
   try {
     fs.writeFileSync(path.join(home, '.zshrc'), [
@@ -351,8 +351,10 @@ test('the sweep offers a guarded line only for a lone unguarded agent start', ()
       console.log = original;
     }
     const text = out.join('\n');
-    assert.match(text, /likely source: ~\/\.zshrc line 1 starts a new ssh-agent in every shell that reads it; to start one only when none is reachable, change it to: \[ -S "\$SSH_AUTH_SOCK" \] \|\| eval "\$\(ssh-agent -s\)"/);
-    assert.match(text, /likely source: ~\/\.zshrc line 3 starts a new ssh-agent in every shell that reads it\n/);
+    assert.match(text, /likely source: ~\/\.zshrc line 1 starts a new ssh-agent in every shell that reads it, including the shells Claude and Codex start in each session that runs a command; to start one only when none is reachable, change it to: \[ -S "\$SSH_AUTH_SOCK" \] \|\| eval "\$\(ssh-agent -s\)"/);
+    assert.match(text, /likely source: ~\/\.zshrc line 3 starts a new ssh-agent in every shell that reads it, including the shells Claude and Codex start in each session that runs a command\n/);
+    assert.strictEqual(agentStartLineText({ file: '~/.profile', line: 2 }), 'likely source: ~/.profile line 2 starts a new ssh-agent in every shell that reads it', 'a file neither engine was seen reading is not tied to engine sessions');
+    assert.match(agentStartLineText({ file: '~/.zprofile', line: 4 }), /line 4 starts a new ssh-agent in every shell that reads it, including the shells Claude and Codex start in each session that runs a command$/, 'the login files both engines read are named too');
   } finally {
     fs.rmSync(home, { recursive: true, force: true });
   }
@@ -3268,7 +3270,7 @@ test('the landing status names the startup line behind leaked ssh-agents and its
     require('node:child_process').spawnSync('git', ['init', '-q'], { cwd: root });
     fs.writeFileSync(path.join(home, '.zshrc'), 'eval "$(ssh-agent -s)"\n');
     const leaked = status({ readSshAgents: () => ({ agents: [agent(200)], referenced: new Set() }), uid: 501, home });
-    assert.match(leaked, /leaked ssh-agents on this machine: 1;[^\n]*\n {4}likely source: ~\/\.zshrc line 1 starts a new ssh-agent in every shell that reads it; to start one only when none is reachable, change it to: \[ -S "\$SSH_AUTH_SOCK" \] \|\| eval "\$\(ssh-agent -s\)"/);
+    assert.match(leaked, /leaked ssh-agents on this machine: 1;[^\n]*\n {4}likely source: ~\/\.zshrc line 1 starts a new ssh-agent in every shell that reads it, including the shells Claude and Codex start in each session that runs a command; to start one only when none is reachable, change it to: \[ -S "\$SSH_AUTH_SOCK" \] \|\| eval "\$\(ssh-agent -s\)"/);
     const clean = status({ readSshAgents: () => ({ agents: [agent(200)], referenced: new Set([200]) }), uid: 501, home });
     assert.doesNotMatch(clean, /likely source/, 'no leak, no source line');
   } finally {

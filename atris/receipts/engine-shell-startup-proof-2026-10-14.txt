@@ -1,0 +1,50 @@
+Engine shell startup proof, 2026-10-14, macOS, login shell /bin/zsh
+Claude Code 2.1.293, codex-cli 0.162.1
+
+Question: when Claude or Codex runs, which shell startup files run? A line in
+those files that starts ssh-agent starts one more agent per engine session.
+
+Method: ZDOTDIR pointed zsh at /tmp/tick75-probe/zdot, where .zshenv,
+.zprofile, .zshrc, and .zlogin each only append one line naming the file, the
+shell pid, its parent, and its flags (l = login, i = interactive). Nothing in
+the real startup files ran under zsh's own lookup.
+
+Self-test:
+  zsh -i -c true  -> .zshenv flags=569XZi, .zshrc flags=569XZi
+  zsh -c true     -> .zshenv flags=569X
+
+1. claude -p "Reply with the single word ok." --max-turns 1
+   exit 0, reply ok, no lines written: a session that runs no command starts
+   no shell.
+
+2. claude -p "Use your Bash tool once to run: echo probe-ran. ..." --allowedTools Bash
+   exit 0, reply ok, lines written:
+     .zshenv   pid=73372 flags=569X
+     .zshenv   pid=73373 flags=569Xl
+     .zprofile pid=73373 flags=569Xl
+     .zlogin   pid=73373 flags=569Xl
+     .zshenv   pid=73414 flags=569X
+   No .zshrc line: Claude sources the rc file by its full home path, not
+   through ZDOTDIR. Its snapshot script, read from the installed binary
+   (~/.local/share/claude/versions/2.1.293):
+     function D6e(e){let n=e.includes("zsh")?".zshrc":e.includes("bash")?".bashrc":".profile";return Oke(Nke.homedir(),n)}
+     ${r?`source "${g}" < /dev/null`:"# No user config file to source"}
+   so the login snapshot shell (pid 73373) also runs ~/.zshrc, or ~/.bashrc
+   when the shell is bash.
+
+3. codex exec --skip-git-repo-check "Run the shell command: echo probe-ran. ..."
+   exit 0, ran /bin/zsh -lc 'echo probe-ran', reply ok, lines written:
+     .zshenv   pid=80360 flags=569Xl
+     .zprofile pid=80360 flags=569Xl
+     .zlogin   pid=80360 flags=569Xl
+     .zshrc    pid=80360 flags=569Xl argv0=/tmp/tick75-probe/zdot/.zshrc
+     .zshenv   pid=80378 flags=569X
+     .zshenv   pid=81274 flags=569X
+     .zshenv   pid=81274 flags=569X
+   The .zshrc line ran inside the login shell, sourced by path.
+
+Finding: neither engine opens an interactive shell. In each session that runs
+a command, both start a login zsh that reads ~/.zshenv, ~/.zprofile, and
+~/.zlogin and sources ~/.zshrc by path, and every further zsh reads ~/.zshenv.
+~/.bashrc is named from Claude's own code for bash users; bash login files and
+~/.profile were not seen and are not named.
