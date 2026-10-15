@@ -13656,7 +13656,7 @@ test('xp status fails closed when local receipt ledger is tampered', () => {
   }
 });
 
-test('task revise sends ready work back to claimed with revision count', () => {
+test('task revise sends ready work back to claimed with revision count', async () => {
   if (!hasNodeSqlite()) return;
   const dir = makeTempDir();
   const dbPath = path.join(dir, 'tasks.db');
@@ -13699,14 +13699,18 @@ test('task revise sends ready work back to claimed with revision count', () => {
     assert.equal(payload.task.review.agent_review_pass_count, undefined);
     assert.equal(payload.task.review.agent_certified, undefined);
 
-    const revisedShow = runCli(['task', 'show', ref, '--json'], { cwd: dir, env });
+    // Both inspect revised state; stale acceptance exits before any task write.
+    // Finish both before fresh readiness can change the evidence they inspect.
+    const [revisedShow, staleAccept] = await Promise.all([
+      runCliAsync(['task', 'show', ref, '--json'], { cwd: dir, env }),
+      runCliAsync(['task', 'accept', ref, '--as', 'keshavrao', '--json'], { cwd: dir, env }),
+    ]);
     assert.equal(revisedShow.status, 0, revisedShow.stderr);
     const revisedTask = JSON.parse(revisedShow.stdout);
     assert.equal(revisedTask.review.proof, null);
     assert.equal(revisedTask.review.agent_review_pass_count, null);
     assert.equal(revisedTask.review.agent_certified, false);
 
-    const staleAccept = runCli(['task', 'accept', ref, '--as', 'keshavrao', '--json'], { cwd: dir, env });
     assert.equal(staleAccept.status, 2);
     assert.match(staleAccept.stderr, /fresh proof_ready proof/);
 
