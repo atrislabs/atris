@@ -15081,14 +15081,22 @@ test('task review hygiene reports generic continuation debt without mutation', (
   try {
     fs.mkdirSync(path.join(dir, 'atris'), { recursive: true });
 
-    const created = runCli([
-      'task', 'new', 'Certified row with stale generic review-next debt',
-      '--tag', 'task',
-      '--goal-id', 'OBL-928',
-      '--json',
-    ], { cwd: dir, env });
-    assert.equal(created.status, 0, created.stderr);
-    const parent = JSON.parse(created.stdout).task;
+    // Seed creation through the real store; review behavior stays on the CLI.
+    const parent = (() => {
+      const db = taskStore.open(dbPath);
+      try {
+        const workspaceRoot = taskStore.workspaceRoot(dir);
+        const { id } = addSeedTask(db, {
+          title: 'Certified row with stale generic review-next debt',
+          tag: 'task',
+          workspaceRoot,
+          metadata: { goal_id: 'OBL-928' },
+        });
+        return { id, display_id: taskStore.taskDisplayRefMap(taskStore.listTasks(db, { workspaceRoot })).get(id) };
+      } finally {
+        taskStore.close();
+      }
+    })();
     const ref = parent.display_id;
 
     const ready = runCli([

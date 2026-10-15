@@ -144,3 +144,5 @@ Review-lanes weak-proof setup: `test/commands.test.js:15582` seeds ownership thr
 Review-lanes metadata setup: `test/commands.test.js:15622` updates weak proof in process after CLI review, removing one Node launch while retaining all queue and acceptance checks.
 
 Review queue hygiene setup: `test/commands.test.js:15112` injects stale continuation metadata in process, removing one Node launch while retaining queue and continuation CLI checks.
+
+Review queue hygiene creation fixture: `test/commands.test.js:15076` creates its goal-linked parent through the real task store, keeping readiness, review, queue inspection and continuation refusal on the CLI; four launches replace five.
