@@ -2308,54 +2308,64 @@ test('pack pull rejects registry downgrades unless explicitly allowed, then stag
   }
 });
 
-test('pack status separates remote checks from staged upstream review', () => {
+test('pack status separates remote checks from staged upstream review', async () => {
   const dir = makeTempDir();
   try {
+    // Status only reads the pack folder, so each origin state gets its own
+    // folder with the same edits the single folder took, and all three reads run at once.
     const target = path.join(dir, 'demo-pack');
     writePackDir(target, {
       slug: 'demo-pack',
       version: '0.1.0',
       origin: { type: 'file' },
     });
-
-    const neverChecked = runCli(['pack', 'status', '--dir', target], { cwd: dir });
-    assert.equal(neverChecked.status, 0, `stdout:\n${neverChecked.stdout}\nstderr:\n${neverChecked.stderr}`);
-    assert.match(neverChecked.stdout, /demo-pack installed v0\.1\.0/);
-    assert.match(neverChecked.stdout, /registry origin none/);
-    assert.match(neverChecked.stdout, /remote not checked yet/);
-    assert.doesNotMatch(neverChecked.stdout, /staged upstream review/);
-
-    writePackDir(target, {
-      slug: 'demo-pack',
-      version: '0.1.0',
-      origin: { type: 'registry', slug: 'demo-pack' },
-    });
-    const legacyRegistryInstall = runCli(['pack', 'status', '--dir', target], { cwd: dir });
-    assert.match(legacyRegistryInstall.stdout, /registry origin demo-pack/);
-    assert.match(legacyRegistryInstall.stdout, /last remote check time unknown, remote v0\.1\.0/);
-    assert.doesNotMatch(legacyRegistryInstall.stdout, /remote not checked yet/);
-
-    fs.mkdirSync(path.join(target, '.atris', 'state'), { recursive: true });
-    fs.writeFileSync(path.join(target, '.atris', 'state', 'pack.json'), `${JSON.stringify({
+    const writeRegistryPack = (name) => {
+      const packDir = path.join(dir, name);
+      writePackDir(packDir, {
+        slug: 'demo-pack',
+        version: '0.1.0',
+        origin: { type: 'registry', slug: 'demo-pack' },
+      });
+      return packDir;
+    };
+    const legacyTarget = writeRegistryPack('legacy-demo-pack');
+    const pulledTarget = writeRegistryPack('pulled-demo-pack');
+    fs.mkdirSync(path.join(pulledTarget, '.atris', 'state'), { recursive: true });
+    fs.writeFileSync(path.join(pulledTarget, '.atris', 'state', 'pack.json'), `${JSON.stringify({
       slug: 'demo-pack',
       origin: { type: 'registry', slug: 'demo-pack' },
       remoteVersion: '0.1.0',
       lastRemoteCheckAt: '2026-07-09T13:00:00.000Z',
     }, null, 2)}\n`);
 
-    fs.mkdirSync(path.join(target, '.upstream'), { recursive: true });
-    fs.writeFileSync(path.join(target, '.upstream', 'pack.json'), `${JSON.stringify(sampleManifest({
+    fs.mkdirSync(path.join(pulledTarget, '.upstream'), { recursive: true });
+    fs.writeFileSync(path.join(pulledTarget, '.upstream', 'pack.json'), `${JSON.stringify(sampleManifest({
       slug: 'demo-pack',
       version: '0.2.0',
     }), null, 2)}\n`);
-    fs.writeFileSync(path.join(target, '.upstream', 'STATE.json'), `${JSON.stringify({
+    fs.writeFileSync(path.join(pulledTarget, '.upstream', 'STATE.json'), `${JSON.stringify({
       slug: 'demo-pack',
       localVersion: '0.1.0',
       remoteVersion: '0.2.0',
       pulledAt: '2026-07-09T12:00:00.000Z',
     }, null, 2)}\n`);
 
-    const pulled = runCli(['pack', 'status', '--dir', target], { cwd: dir });
+    const statusOf = (packDir) => runCliAsync(['pack', 'status', '--dir', packDir], { cwd: dir });
+    const [neverChecked, legacyRegistryInstall, pulled] = await Promise.all([
+      statusOf(target),
+      statusOf(legacyTarget),
+      statusOf(pulledTarget),
+    ]);
+    assert.equal(neverChecked.status, 0, `stdout:\n${neverChecked.stdout}\nstderr:\n${neverChecked.stderr}`);
+    assert.match(neverChecked.stdout, /demo-pack installed v0\.1\.0/);
+    assert.match(neverChecked.stdout, /registry origin none/);
+    assert.match(neverChecked.stdout, /remote not checked yet/);
+    assert.doesNotMatch(neverChecked.stdout, /staged upstream review/);
+
+    assert.match(legacyRegistryInstall.stdout, /registry origin demo-pack/);
+    assert.match(legacyRegistryInstall.stdout, /last remote check time unknown, remote v0\.1\.0/);
+    assert.doesNotMatch(legacyRegistryInstall.stdout, /remote not checked yet/);
+
     assert.equal(pulled.status, 0, `stdout:\n${pulled.stdout}\nstderr:\n${pulled.stderr}`);
     assert.match(pulled.stdout, /last remote check 2026-07-09T13:00:00\.000Z, remote v0\.1\.0/);
     assert.match(pulled.stdout, /staged upstream review remote v0\.2\.0 at 2026-07-09T12:00:00\.000Z/);
