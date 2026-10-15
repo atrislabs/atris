@@ -35,7 +35,7 @@ Run `atris youtube notes 'https://www.youtube.com/watch?v=Am7IWP8IpEc'` and find
 ### Step 2: Video with no captions
 
 - **Action:** `time atris youtube notes 'https://www.youtube.com/watch?v=6DRlX5vIOE0'` on an Apple silicon Mac with `mlx_whisper`
-- **Expect:** A line saying it is transcribing on this computer, then notes and a quote tally. Measured at 59 seconds.
+- **Expect:** A line saying it is transcribing on this computer, then notes and a quote tally. Measured at 59 seconds. Rerun live on 2026-10-15: exit 0 in 49 seconds. Gemini did not answer, so the notes said so and switched to Haiku; quotes 5 kept, 0 repaired, 0 dropped.
 
 ### Step 3: Stranger with no downloader
 
