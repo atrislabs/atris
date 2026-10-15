@@ -2302,6 +2302,22 @@ test('fix joins "the", a common two-word name and a plain verb as a clause after
   ]);
 });
 
+test('fix joins a clause whose code object closes a parenthesis after a dash', () => {
+  // from real repo text: "(no slug, no colon, the parser only matches
+  // `\[(\w+)\]`)" spliced, since a code object only counted as the end of
+  // the clause right before a stop, and here a closing parenthesis sits
+  // between them. A phrase after the dash still keeps its comma.
+  const file = tmpFile('paren-code-object.md', [
+    'The tag must be exact (no slug, no colon \u2014 the parser only matches `[x]`). The slug lives here.',
+    'The tag must be exact (no slug, no colon \u2014 the parser in `lib`). The slug lives here.',
+  ].join('\n'));
+  const { changes } = applyFixes([file], RULES);
+  assert.deepEqual(changes.map((c) => c.after), [
+    'The tag must be exact (no slug, no colon; the parser only matches `[x]`). The slug lives here.',
+    'The tag must be exact (no slug, no colon, the parser in `lib`). The slug lives here.',
+  ]);
+});
+
 test('fix joins "the", a plural noun, a bare verb and an object as a clause after a dash', () => {
   // from real repo text: "no longer tints the icon, the SVG `fill` attrs
   // override `currentColor`" spliced, since only a verb in "s" or a listed

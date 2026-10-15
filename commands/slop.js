@@ -301,7 +301,8 @@ const PLAIN_CLAUSE_AFTER_DASH = new RegExp(`${CLAUSE_END}\\s*\\u2014\\s*(?!${TIM
 // and "only" can point at the noun instead, "the tests mostly", so they don't.
 // One plural word after "the", or one code name, right before a stop is an
 // object too: "the gate checks the drafts", "the hook reads `MISSION.md`".
-// A word after either still reads as a noun phrase, so "the decision
+// A closing parenthesis may sit between them: "(no colon; the parser only
+// matches `[x]`)". A word after either still reads as a noun phrase, so "the decision
 // helpers `atris` uses" keeps its comma, and so does a word in "s" right
 // after "in" or "of", which is a noun: "the stubs in tests `monkeypatch`".
 // A pronoun as the object counts like "it", even before a closing quote:
@@ -310,7 +311,7 @@ const PLAIN_CLAUSE_AFTER_DASH = new RegExp(`${CLAUSE_END}\\s*\\u2014\\s*(?!${TIM
 // none: "the tag tells you yes/no instantly". A code name with a
 // place word after it is an object too: "the BFF reads `exp` to time it".
 const OBJECT_WORD = "(?![a-z]+(?:s|ed)\\b)[A-Za-z0-9_/'-]+";
-const PLAIN_OBJECT_CLAUSE = new RegExp(`^\\s*\\u2014\\s*(?:a|an|the|every|each|no)\\s+${NOUN_WORD}\\s+(?:${NOUN_WORD}\\s+){0,2}(?:${VERB_BEFORE_WHICH}|${PLAIN_VERB}(?:(?:it|them|you|us|everything|nothing|something|anything)(?:["'\\u201d\\u2019)]*(?:[.!?;,]|$)|\\s+(?!(?!(?:yes|this|its|his)\\b)[a-z]+(?:s|ed)\\b))|(?<!\\b(?:in|of|on|for|with|at|by|to|from)\\s+[a-z]{2,}s\\s+)(?:(?:the|its|their)\\s+[a-z]{2,}s|\\uE000\\d+\\uE001)(?=[.!?;,]|$)|(?<!\\b(?:in|of|on|for|with|at|by|to|from)\\s+[a-z]{2,}s\\s+)\\uE000\\d+\\uE001\\s+(?:to|into|for|from|with|via|as|when|before|after)\\s+[a-z]|(?:the|a|an|its|their)\\s+(?:${OBJECT_WORD}\\s+)?${OBJECT_WORD}(?:\\s+(?:red|green|fine|clean|stale|empty|safe))?(?:[.!?;,]|$|\\s+(?:on|in|at|to|into|for|from|with|by|via|when|if|before|after|until|once|while|because|instead|rather|without)\\b)|${MANNER_WORD}(?:[.!?;,]|$|\\s+(?:and|but|on|in|at|to|into|for|from|with|by|via|when|if|before|after|until|once|while|because|instead|rather|without)\\b)))`);
+const PLAIN_OBJECT_CLAUSE = new RegExp(`^\\s*\\u2014\\s*(?:a|an|the|every|each|no)\\s+${NOUN_WORD}\\s+(?:${NOUN_WORD}\\s+){0,2}(?:${VERB_BEFORE_WHICH}|${PLAIN_VERB}(?:(?:it|them|you|us|everything|nothing|something|anything)(?:["'\\u201d\\u2019)]*(?:[.!?;,]|$)|\\s+(?!(?!(?:yes|this|its|his)\\b)[a-z]+(?:s|ed)\\b))|(?<!\\b(?:in|of|on|for|with|at|by|to|from)\\s+[a-z]{2,}s\\s+)(?:(?:the|its|their)\\s+[a-z]{2,}s|\\uE000\\d+\\uE001)(?=\\)*(?:[.!?;,]|$))|(?<!\\b(?:in|of|on|for|with|at|by|to|from)\\s+[a-z]{2,}s\\s+)\\uE000\\d+\\uE001\\s+(?:to|into|for|from|with|via|as|when|before|after)\\s+[a-z]|(?:the|a|an|its|their)\\s+(?:${OBJECT_WORD}\\s+)?${OBJECT_WORD}(?:\\s+(?:red|green|fine|clean|stale|empty|safe))?(?:[.!?;,]|$|\\s+(?:on|in|at|to|into|for|from|with|by|via|when|if|before|after|until|once|while|because|instead|rather|without)\\b)|${MANNER_WORD}(?:[.!?;,]|$|\\s+(?:and|but|on|in|at|to|into|for|from|with|by|via|when|if|before|after|until|once|while|because|instead|rather|without)\\b)))`);
 // With no "the" before the object, "the" and one noun with no "s", then a
 // verb in "s" and one more word before a stop, is a clause too: "the loop
 // kicks work", "the gate checks drafts". A line end is no stop, since a
