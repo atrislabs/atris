@@ -1510,7 +1510,15 @@ test('every engine started through a runner or profile variable records its run 
       if (new RegExp(`\\b${escaped}\\s*(?:\\.\\s*[\\w$]+|\\[[^\\]]*\\])\\s*(?:[-+*/%&|^]|\\*\\*|<<|>>>?|&&|\\|\\||\\?\\?)?=(?!=)|\\bdelete\\s+${escaped}\\b|\\bObject\\.(?:assign|defineProperty|defineProperties)\\(\\s*${escaped}\\b`).test(code)) return { text, position };
       const resolved = sourceAt(name, position);
       const literal = objectEntries(resolved.source);
-      return literal && !literal.rest.trim() ? { text: resolved.source, position: resolved.position } : { text, position };
+      if (literal && !literal.rest.trim()) return { text: resolved.source, position: resolved.position };
+      // A literal that runs past its first line is read whole from the
+      // declaration, and must be the entire value there.
+      if (!resolved.source.startsWith('{')) return { text, position };
+      const value = /^(?:const|let|var)\s+[\w$]+\s*=\s*/.exec(code.slice(resolved.position));
+      const spanning = value && objectEntries(code.slice(resolved.position + value[0].length));
+      if (!spanning || !/^[ \t]*(?:;|\r?\n|$)/.test(spanning.rest)) return { text, position };
+      const whole = code.slice(resolved.position + value[0].length, code.length - spanning.rest.length);
+      return { text: whole, position: resolved.position };
     };
     const sourceAt = (source, position) => {
       const visible = withoutHelperDefinitions(code, position);
@@ -1769,6 +1777,15 @@ test('every engine started through a runner or profile variable records its run 
   assert.deepStrictEqual(options('launch(opts);', defaulted, "const opts = { runner: 'git' };\nif (opts.runner === 'git') noop();\n"), [], 'a comparison is not a write');
   assert.deepStrictEqual(options('launch({ engine: picks });', nested, "const picks = { runner: 'git' };\n"), []);
   assert.deepStrictEqual(options('launch(opts);', '{ runner }', 'function other() {\n  const opts = { runner: resolveClaudeRunnerBin() };\n}\n'), [], 'a declaration inside another function does not reach the call');
+  // A literal written across several lines reads the same as one on a
+  // single line, when it is the whole declared value.
+  assert.deepStrictEqual(options('launch(opts);', defaulted, "const opts = {\n  prompt,\n  runner: 'git',\n};\n"), [], 'a multi-line object supplies its key');
+  assert.deepStrictEqual(options('launch(opts);', defaulted, 'const opts = {\n  prompt,\n  timeout: 5,\n};\n'), ['commands/planted.js:2 runner']);
+  assert.deepStrictEqual(options('launch(opts);', '{ runner }', 'const opts = {\n  prompt,\n  runner: resolveClaudeRunnerBin(),\n};\n'), ['commands/planted.js:2 runner']);
+  assert.deepStrictEqual(options('launch(opts);', defaulted, "const opts = {\n  runner: 'git',\n  nested: { a: [1, 2] },\n}\n"), [], 'a declaration without a semicolon ends at its line break');
+  assert.deepStrictEqual(options('launch(opts);', defaulted, "const opts = {\n  runner: 'git',\n} || fallback;\n"), ['commands/planted.js:2 runner'], 'a literal that is only part of the value reads as unknown');
+  assert.deepStrictEqual(options('launch(opts);', defaulted, "const opts = {\n  runner: 'git',\n};\nopts.runner = undefined;\n"), ['commands/planted.js:2 runner']);
+  assert.deepStrictEqual(options('launch({ engine: picks });', nested, "const picks = {\n  runner: 'git',\n};\n"), []);
   // Literal and captured defaults count only when a same-file call omits them.
   for (const [head, tail] of [
     ['function launch', '}'],
