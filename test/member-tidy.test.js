@@ -1525,6 +1525,13 @@ test('worktree cleanup quietly refreshes an outdated base and keeps staged notes
     const savedPreface = runGit(['show', ':renamed-preface'], copy);
     assert.notEqual(savedPreface, prefaceSource);
     assert.match(runGit(['diff', '--cached', '--summary', '--', 'preface.txt', 'renamed-preface'], copy), /rename preface.txt => renamed-preface \(\d+%\)/);
+    // Git quotes newlines in status output. Neither cleanup pass may split
+    // that name or lose the different saved and later versions.
+    const unusualName = 'chapter\nnotes.txt';
+    const unusualFile = path.join(copy, unusualName);
+    fs.writeFileSync(unusualFile, 'saved chapter notes\n');
+    runGit(['add', '--', unusualName], copy);
+    fs.writeFileSync(unusualFile, 'later chapter notes\n');
     const binary = path.join(copy, 'drawing.bin');
     const savedBytes = Buffer.from([0, 255, 10, 128, 13]);
     const laterBytes = Buffer.from([0, 254, 10, 129, 13, 0]);
@@ -1559,6 +1566,8 @@ test('worktree cleanup quietly refreshes an outdated base and keeps staged notes
       assert.equal(lines[0], `cleanup: ${extra.length ? 'applied' : 'dry-run'} base=origin/master`);
       assert.equal(lines[1], extra.length ? 'removeds: 0' : 'candidates: 0');
       assert.doesNotMatch(cli.stdout, /warning:|could not refresh|may be behind/);
+      assert.equal(fs.readFileSync(unusualFile, 'utf8'), 'later chapter notes\n');
+      assert.equal(runGit(['show', `:${unusualName}`], copy), 'saved chapter notes');
       assert.equal(fs.readFileSync(replaced, 'utf8'), 'replacement outline\n');
       assert.equal(runGit(['show', 'HEAD:outline.txt'], copy), 'original outline');
       assert.equal(runGit(['ls-files', '--', 'outline.txt'], copy), '');

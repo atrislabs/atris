@@ -1,0 +1,29 @@
+Cleanup now has real proof that newline file names preserve both saved and later contents; the required behavior checks exited 0 with 99 passes and no unfinished tests.
+
+Files edited: test/member-tidy.test.js, atris/MAP.md, atris/refs/MAP-NOTES.md, atris/team/architect/logs/2026-10-15.md.
+Artifact: atris/receipts/folder-name-proof-108.txt.
+Commands: atris mission status mission-2026-10-14-continue-work-folder-protect-6737930d; git status --short; atris task list --status open; atris task new; atris task claim; atris task note; git diff --check.
+Rerun: node --test test/worktree-removal-guard.test.js test/member-tidy.test.js && node bin/atris.js slop --staged
+Behavior checks: exit 0.
+Exact summary:
+ℹ tests 99
+ℹ suites 0
+ℹ pass 99
+ℹ fail 0
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+Real surface commands invoked by the test:
+node bin/atris.js worktree cleanup
+cleanup: dry-run base=origin/master
+candidates: 0
+exit: 0
+node bin/atris.js worktree cleanup --apply
+cleanup: applied base=origin/master
+removeds: 0
+exit: 0
+Writing check: node bin/atris.js slop --staged, exit 0, clean.
+Progress: one additional filename edge case, two cleanup modes, both saved and later bytes preserved. No runtime change or new dependency.
+The mission task attachment was busy; a dedicated task was created and claimed instead. Existing notebook edits were preserved and excluded from this commit.
+next_push: Prove cleanup keeps saved and later bytes for filenames containing a tab.
+layer: capabilities

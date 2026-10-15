@@ -323,3 +323,5 @@ Saved patches tried before removal: `commands/land.js:536` tries each saved patc
 Saved card listing: `commands/worktree.js:1444` persists the saved card path, count and fingerprint in removal history; `commands/land.js:1194` checks that copy before listing it; `test/worktree-removal-guard.test.js:1781` invokes plain and JSON backup listings for intact, changed and missing cards.
 
 Cleanup output checks: `test/member-tidy.test.js:15` disables update notices in all real CLI children so summary assertions do not depend on the installed release or update cache. File-preservation assertions remain intact.
+
+Cleanup quoted-name proof: `test/member-tidy.test.js:1530` runs real cleanup preview and apply with a newline in a staged filename, preserving both the saved version and later file bytes.
