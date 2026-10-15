@@ -1,0 +1,32 @@
+Cleanup now has real preview and apply proof that a normal run judges against the newest remote commit, removes the copy that landed elsewhere, and leaves the local record of the remote main branch where it was. Required checks passed, exit 0.
+
+Files edited: test/member-tidy.test.js, atris/MAP.md, atris/refs/MAP-NOTES.md, atris/team/architect/logs/2026-10-15.md.
+Artifact: atris/receipts/work-folder-local-record-normal-run-2026-10-15.txt.
+Task state: ACW-22, claimed by architect, then marked ready with proof.
+
+Plan: land a copy on the remote, put the local record back behind it -> real preview and apply -> the landed copy goes, the unfinished copy and its draft stay, the local record does not move.
+Red check: with the library from before the last change, this test fails (0 passed, 1 failed) because the local record jumps to the newest commit; with the current library it passes.
+Git keeps the landed copy's branch because local master is also behind; that is git's own refusal and the test asserts it.
+
+Verify command:
+node --test test/worktree-removal-guard.test.js test/member-tidy.test.js && node bin/atris.js slop --staged
+
+Actual output excerpt:
+ℹ tests 83
+ℹ pass 83
+ℹ fail 0
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+command: node bin/atris.js member tidy --dir <fixture copies> --dry-run (local record behind origin)
+would remove  landed-elsewhere  work landed
+left alone  1 work not landed yet
+tidy: would remove 1, kept 1, of 2 copies in /private/var/folders/t1/2_4kmb5n4c71dxm26zc8dgzr0000gn/T/atris-member-tidy-LDWvBW/arena/.agent-worktrees/repo
+exit: 0
+command: node bin/atris.js member tidy --dir <fixture copies> (local record behind origin)
+removed  landed-elsewhere  work landed, branch kept: error: the branch 'landed-elsewhere' is not fully merged.
+left alone  1 work not landed yet
+tidy: removed 1, kept 1, of 2 copies in /private/var/folders/t1/2_4kmb5n4c71dxm26zc8dgzr0000gn/T/atris-member-tidy-LDWvBW/arena/.agent-worktrees/repo
+exit: 0
+
+tests exit: 0

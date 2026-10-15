@@ -1275,3 +1275,44 @@ test('tidy keeps staged and unsaved notes when the fetched remote default is not
     fs.rmSync(fx.base, { recursive: true, force: true });
   }
 });
+
+test('tidy judges against the newest remote commit without moving the local record of it', () => {
+  const fx = makeFixture();
+  try {
+    const base = runGit(['rev-parse', 'origin/master'], fx.repo);
+    const landed = addCopy(fx, 'landed-elsewhere', { commit: true, pushToOrigin: true });
+    const tip = runGit(['rev-parse', 'HEAD'], landed);
+    assert.notEqual(tip, base);
+    // The push moved the local record; put it back so it lags origin, the
+    // way it does when someone else lands the work.
+    runGit(['update-ref', 'refs/remotes/origin/master', base], fx.repo);
+    const open = addCopy(fx, 'not-landed', { commit: true });
+    fs.writeFileSync(path.join(open, 'draft.txt'), 'unsaved notes\n');
+    const openStatus = runGit(['status', '--porcelain'], open);
+    const openTip = runGit(['rev-parse', 'HEAD'], open);
+
+    for (const extra of [['--dry-run'], []]) {
+      const args = [path.resolve(__dirname, '../bin/atris.js'), 'member', 'tidy', '--dir', fx.copies, ...extra];
+      const cli = spawnSync(process.execPath, args, { cwd: fx.repo, encoding: 'utf8', timeout: 15000 });
+      console.log(`command: node bin/atris.js member tidy --dir <fixture copies>${extra.length ? ' --dry-run' : ''} (local record behind origin)`);
+      console.log(cli.stdout.trim());
+      console.log(`exit: ${cli.status}`);
+      assert.equal(cli.status, 0, cli.stderr);
+      const lines = cli.stdout.trim().split('\n').map((line) => line.replace(/ {2,}/g, '  '));
+      assert.ok(lines.some((line) => line.startsWith(`${extra.length ? 'would remove' : 'removed'}  landed-elsewhere  work landed`)), lines.join('\n'));
+      assert.ok(lines.includes('left alone  1 work not landed yet'), lines.join('\n'));
+      assert.equal(lines.at(-1), `tidy: ${extra.length ? 'would remove' : 'removed'} 1, kept 1, of 2 copies in ${fx.copies}`);
+      assert.equal(runGit(['rev-parse', 'FETCH_HEAD'], fx.repo), tip);
+      assert.equal(runGit(['rev-parse', 'origin/master'], fx.repo), base);
+      assert.equal(fs.existsSync(landed), extra.length > 0);
+      // Local master is behind too, so git keeps the branch itself.
+      assert.ok(branchExists(fx.repo, 'landed-elsewhere'));
+      assert.equal(runGit(['rev-parse', 'HEAD'], open), openTip);
+      assert.equal(fs.readFileSync(path.join(open, 'draft.txt'), 'utf8'), 'unsaved notes\n');
+      assert.equal(runGit(['status', '--porcelain'], open), openStatus);
+      assert.deepEqual(removalLines(fx.repo).map((line) => line.path), extra.length ? [] : [landed]);
+    }
+  } finally {
+    fs.rmSync(fx.base, { recursive: true, force: true });
+  }
+});
