@@ -3207,94 +3207,27 @@ with tempfile.TemporaryDirectory(prefix='atris-board-wide-') as folder:
   if (process.env.ATRIS_BOARD_WIDE_PROOF) fs.writeFileSync(process.env.ATRIS_BOARD_WIDE_PROOF, `${proof.stdout}proof exit: ${proof.status}\n`);
 });
 
-test('a failure reason in wide characters stays inside narrow and short watch screens', { skip: process.platform === 'win32' }, () => {
-  const proof = spawnSync('python3', ['-c', String.raw`
+// The real watch command in a pseudo-terminal of a set size: writes the
+// given progress logs, returns the first frame without escapes, and checks it
+// fits the window in screen cells and that ctrl-c exits 0.
+const WATCH_FRAME_PY = String.raw`
 import datetime, fcntl, os, pathlib, pty, re, select, signal, struct, subprocess, sys, tempfile, termios, time, unicodedata
 
 def cells(line):
     return sum(0 if unicodedata.combining(c) or unicodedata.category(c) == 'Cf'
                else 2 if unicodedata.east_asian_width(c) in 'WF' else 1 for c in line)
 
-reason = '登录超时请重新运行'
-# (columns, rows, members that failed, text that must show whole)
-cases = [(36, 8, 1, 'builder  failed   ' + reason), (30, 8, 1, 'builder  failed   登录超时...'),
-         (40, 5, 5, '3 hidden (2 failed, ' + reason + ')'), (30, 5, 5, '3 hidden (2 failed, 1 running)')]
-for width, height, failed, whole in cases:
-    with tempfile.TemporaryDirectory(prefix='atris-board-wide-reason-') as folder:
+def at(seconds):
+    return (datetime.datetime.now(datetime.timezone.utc) - datetime.timedelta(seconds=seconds)).isoformat()
+
+def watch_frame(logs, width, height):
+    with tempfile.TemporaryDirectory(prefix='atris-board-watch-') as folder:
         root = pathlib.Path(folder)
         progress = root / 'progress'
         progress.mkdir()
-        now = datetime.datetime.now(datetime.timezone.utc).isoformat()
-        for name in ['builder', 'ana', 'bo', 'cy', 'di'][:failed]:
-            (progress / (name + '.log')).write_text(
-                f'{now} m-1 started: fix the login page\n{now} m-1 finished: failed ({reason})\n')
-        (progress / 'scout.log').write_text(f'{now} m-1 started: map the repo\n')
+        for name, text in logs.items():
+            (progress / (name + '.log')).write_text(text)
         master, slave = pty.openpty()
-        fcntl.ioctl(master, termios.TIOCSWINSZ, struct.pack('HHHH', height, width, 0, 0))
-        child = subprocess.Popen([sys.argv[1], sys.argv[2], 'member', 'board', '--watch'],
-            cwd=root, env={**os.environ, 'ATRIS_PROGRESS_DIR': str(progress)}, stdout=slave, stderr=slave)
-        os.close(slave)
-        try:
-            output = b''
-            deadline = time.monotonic() + 15
-            while time.monotonic() < deadline:
-                if select.select([master], [], [], 0.05)[0]:
-                    output += os.read(master, 65536)
-                elif output:
-                    break
-                assert child.poll() is None, (child.returncode, output)
-            text = re.sub(r'\x1b\[[0-9;]*[A-Za-z]', '', output.decode().replace('\r', ''))
-            lines = text.split('\n')
-            assert text.startswith('member'), repr(text)
-            assert len(lines) <= height, repr(text)
-            assert max(map(cells, lines)) <= width, repr(text)
-            assert any(line.startswith(whole) for line in lines), repr(text)
-            print(f'command: node bin/atris.js member board --watch ({width} columns, {height} rows)')
-            print(text)
-            child.send_signal(signal.SIGINT)
-            code = child.wait(timeout=10)
-            print(f'exit: {code}')
-            assert code == 0
-        finally:
-            if child.poll() is None:
-                child.terminate()
-                child.wait(timeout=10)
-            os.close(master)
-`, process.execPath, cliPath], { encoding: 'utf8', timeout: 75_000 });
-  assert.ifError(proof.error);
-  assert.equal(proof.status, 0, `${proof.stdout}\n${proof.stderr}`);
-  if (process.env.ATRIS_BOARD_WIDE_REASON_PROOF) fs.writeFileSync(process.env.ATRIS_BOARD_WIDE_REASON_PROOF, `${proof.stdout}proof exit: ${proof.status}\n`);
-});
-
-test('member names in wide characters trim by screen cells on narrow watch screens', { skip: process.platform === 'win32' }, () => {
-  const proof = spawnSync('python3', ['-c', String.raw`
-import datetime, fcntl, os, pathlib, pty, re, select, signal, struct, subprocess, sys, tempfile, termios, time, unicodedata
-
-def cells(line):
-    return sum(0 if unicodedata.combining(c) or unicodedata.category(c) == 'Cf'
-               else 2 if unicodedata.east_asian_width(c) in 'WF' else 1 for c in line)
-
-deploy = '\U0001F680部署小组成员'
-front = '前端开发工程师'
-# (columns, every board line in order). A two-cell character never splits:
-# at 18 columns "前..." takes five of six cells, since one more would be seven.
-cases = [
-    (18, ['member  state', 'bui...  signed out', '\U0001F680...   ok', '前...   timed out']),
-    (22, ['member      state', 'builder     signed out', '\U0001F680部署...   ok', '前端开...   timed out']),
-    (29, ['member          state', 'builder         signed out', deploy + '  ok', front + '  timed out']),
-    (36, ['member          state   last result', 'builder         failed  signed out',
-          deploy + '  ok      ok', front + '  failed  timed out']),
-]
-for width, board in cases:
-    with tempfile.TemporaryDirectory(prefix='atris-board-wide-name-') as folder:
-        root = pathlib.Path(folder)
-        progress = root / 'progress'
-        progress.mkdir()
-        at = lambda s: (datetime.datetime.now(datetime.timezone.utc) - datetime.timedelta(seconds=s)).isoformat()
-        for name, ago, result in [(front, 200, 'failed (timed out)'), (deploy, 100, 'ok'), ('builder', 50, 'failed (signed out)')]:
-            (progress / (name + '.log')).write_text(f'{at(300)} m-1 started: fix the login page\n{at(ago)} m-1 finished: {result}\n')
-        master, slave = pty.openpty()
-        height = 8
         fcntl.ioctl(master, termios.TIOCSWINSZ, struct.pack('HHHH', height, width, 0, 0))
         child = subprocess.Popen([sys.argv[1], sys.argv[2], 'member', 'board', '--watch'],
             cwd=root, env={**os.environ, 'ATRIS_PROGRESS_DIR': str(progress)}, stdout=slave, stderr=slave)
@@ -3313,32 +3246,68 @@ for width, board in cases:
             assert '�' not in text, repr(text)
             assert len(lines) <= height, repr(text)
             assert max(map(cells, lines)) <= width, repr(text)
-            assert lines[:len(board)] == board, repr(text)
             print(f'command: node bin/atris.js member board --watch ({width} columns, {height} rows)')
             print(text)
             child.send_signal(signal.SIGINT)
             code = child.wait(timeout=10)
             print(f'exit: {code}')
             assert code == 0
+            return lines
         finally:
             if child.poll() is None:
                 child.terminate()
                 child.wait(timeout=10)
             os.close(master)
-`, process.execPath, cliPath], { encoding: 'utf8', timeout: 75_000 });
+`;
+
+// Runs cases written against watch_frame and keeps the terminal output in
+// the file the named environment variable gives, for receipts.
+function watchFrameProof(cases, proofVar) {
+  const proof = spawnSync('python3', ['-c', `${WATCH_FRAME_PY}\n${cases}`, process.execPath, cliPath], { encoding: 'utf8', timeout: 75_000 });
   assert.ifError(proof.error);
   assert.equal(proof.status, 0, `${proof.stdout}\n${proof.stderr}`);
-  if (process.env.ATRIS_BOARD_WIDE_NAME_PROOF) fs.writeFileSync(process.env.ATRIS_BOARD_WIDE_NAME_PROOF, `${proof.stdout}proof exit: ${proof.status}\n`);
+  if (process.env[proofVar]) fs.writeFileSync(process.env[proofVar], `${proof.stdout}proof exit: ${proof.status}\n`);
+}
+
+test('a failure reason in wide characters stays inside narrow and short watch screens', { skip: process.platform === 'win32' }, () => {
+  watchFrameProof(String.raw`
+reason = '登录超时请重新运行'
+# (columns, rows, members that failed, text that must show whole)
+cases = [(36, 8, 1, 'builder  failed   ' + reason), (30, 8, 1, 'builder  failed   登录超时...'),
+         (40, 5, 5, '3 hidden (2 failed, ' + reason + ')'), (30, 5, 5, '3 hidden (2 failed, 1 running)')]
+for width, height, failed, whole in cases:
+    logs = {name: f'{at(0)} m-1 started: fix the login page\n{at(0)} m-1 finished: failed ({reason})\n'
+            for name in ['builder', 'ana', 'bo', 'cy', 'di'][:failed]}
+    logs['scout'] = f'{at(0)} m-1 started: map the repo\n'
+    lines = watch_frame(logs, width, height)
+    assert lines[0].startswith('member'), lines
+    assert any(line.startswith(whole) for line in lines), lines
+`, 'ATRIS_BOARD_WIDE_REASON_PROOF');
+});
+
+test('member names in wide characters trim by screen cells on narrow watch screens', { skip: process.platform === 'win32' }, () => {
+  watchFrameProof(String.raw`
+deploy = '\U0001F680部署小组成员'
+front = '前端开发工程师'
+# (columns, every board line in order). A two-cell character never splits:
+# at 18 columns "前..." takes five of six cells, since one more would be seven.
+cases = [
+    (18, ['member  state', 'bui...  signed out', '\U0001F680...   ok', '前...   timed out']),
+    (22, ['member      state', 'builder     signed out', '\U0001F680部署...   ok', '前端开...   timed out']),
+    (29, ['member          state', 'builder         signed out', deploy + '  ok', front + '  timed out']),
+    (36, ['member          state   last result', 'builder         failed  signed out',
+          deploy + '  ok      ok', front + '  failed  timed out']),
+]
+for width, board in cases:
+    logs = {name: f'{at(300)} m-1 started: fix the login page\n{at(ago)} m-1 finished: {result}\n'
+            for name, ago, result in [(front, 200, 'failed (timed out)'), (deploy, 100, 'ok'), ('builder', 50, 'failed (signed out)')]}
+    lines = watch_frame(logs, width, 8)
+    assert lines[:len(board)] == board, lines
+`, 'ATRIS_BOARD_WIDE_NAME_PROOF');
 });
 
 test('hidden live member names in wide characters fit the short-screen footer by screen cells', { skip: process.platform === 'win32' }, () => {
-  const proof = spawnSync('python3', ['-c', String.raw`
-import datetime, fcntl, os, pathlib, pty, re, select, signal, struct, subprocess, sys, tempfile, termios, time, unicodedata
-
-def cells(line):
-    return sum(0 if unicodedata.combining(c) or unicodedata.category(c) == 'Cf'
-               else 2 if unicodedata.east_asian_width(c) in 'WF' else 1 for c in line)
-
+  watchFrameProof(String.raw`
 deploy = '\U0001F680部署'
 # (columns, rows, footer). Each named footer is exactly as wide as its
 # window in screen cells, though 12 and 10 letters shorter, so one column
@@ -3350,60 +3319,19 @@ cases = [
     (46, 4, '2 more not shown (2 running)'),
 ]
 for width, height, footer in cases:
-    with tempfile.TemporaryDirectory(prefix='atris-board-wide-footer-') as folder:
-        root = pathlib.Path(folder)
-        progress = root / 'progress'
-        progress.mkdir()
-        at = lambda s: (datetime.datetime.now(datetime.timezone.utc) - datetime.timedelta(seconds=s)).isoformat()
-        (progress / 'builder.log').write_text(f'{at(400)} m-1 started: fix\n{at(390)} m-1 finished: failed (timed out)\n')
-        (progress / '后端.log').write_text(f'{at(300)} m-1 started: api\n{at(5)} m-1 reading 文件\n')
-        (progress / (deploy + '.log')).write_text(f'{at(300)} m-1 started: deploy\n{at(8)} m-1 running checks\n')
-        (progress / '前端开发工程师.log').write_text(f'{at(300)} m-1 started: ui\n{at(200)} m-1 step\n')
-        master, slave = pty.openpty()
-        fcntl.ioctl(master, termios.TIOCSWINSZ, struct.pack('HHHH', height, width, 0, 0))
-        child = subprocess.Popen([sys.argv[1], sys.argv[2], 'member', 'board', '--watch'],
-            cwd=root, env={**os.environ, 'ATRIS_PROGRESS_DIR': str(progress)}, stdout=slave, stderr=slave)
-        os.close(slave)
-        try:
-            output = b''
-            deadline = time.monotonic() + 15
-            while time.monotonic() < deadline:
-                if select.select([master], [], [], 0.05)[0]:
-                    output += os.read(master, 65536)
-                elif output:
-                    break
-                assert child.poll() is None, (child.returncode, output)
-            text = re.sub(r'\x1b\[[0-9;]*[A-Za-z]', '', output.decode().replace('\r', ''))
-            lines = text.split('\n')
-            assert text.startswith('member'), repr(text)
-            assert len(lines) <= height, repr(text)
-            assert max(map(cells, lines)) <= width, repr(text)
-            assert lines[-1] == footer, repr(text)
-            print(f'command: node bin/atris.js member board --watch ({width} columns, {height} rows)')
-            print(text)
-            child.send_signal(signal.SIGINT)
-            code = child.wait(timeout=10)
-            print(f'exit: {code}')
-            assert code == 0
-        finally:
-            if child.poll() is None:
-                child.terminate()
-                child.wait(timeout=10)
-            os.close(master)
-`, process.execPath, cliPath], { encoding: 'utf8', timeout: 75_000 });
-  assert.ifError(proof.error);
-  assert.equal(proof.status, 0, `${proof.stdout}\n${proof.stderr}`);
-  if (process.env.ATRIS_BOARD_WIDE_FOOTER_PROOF) fs.writeFileSync(process.env.ATRIS_BOARD_WIDE_FOOTER_PROOF, `${proof.stdout}proof exit: ${proof.status}\n`);
+    lines = watch_frame({
+        'builder': f'{at(400)} m-1 started: fix\n{at(390)} m-1 finished: failed (timed out)\n',
+        '后端': f'{at(300)} m-1 started: api\n{at(5)} m-1 reading 文件\n',
+        deploy: f'{at(300)} m-1 started: deploy\n{at(8)} m-1 running checks\n',
+        '前端开发工程师': f'{at(300)} m-1 started: ui\n{at(200)} m-1 step\n',
+    }, width, height)
+    assert lines[0].startswith('member'), lines
+    assert lines[-1] == footer, lines
+`, 'ATRIS_BOARD_WIDE_FOOTER_PROOF');
 });
 
 test('a wide hidden member name fits the two-column footer by screen cells on a 3-row screen', { skip: process.platform === 'win32' }, () => {
-  const proof = spawnSync('python3', ['-c', String.raw`
-import datetime, fcntl, os, pathlib, pty, re, select, signal, struct, subprocess, sys, tempfile, termios, time, unicodedata
-
-def cells(line):
-    return sum(0 if unicodedata.combining(c) or unicodedata.category(c) == 'Cf'
-               else 2 if unicodedata.east_asian_width(c) in 'WF' else 1 for c in line)
-
+  watchFrameProof(String.raw`
 # (columns, footer). Below 30 columns the board keeps member and state. The
 # name shows from 21 columns and the longer wording from 29, where each
 # footer fills the window in screen cells though two letters short of it.
@@ -3413,48 +3341,14 @@ cases = [
     (28, '2 hidden (后端 quiet)'),
     (29, '2 more not shown (后端 quiet)'),
 ]
-height = 3
 for width, footer in cases:
-    with tempfile.TemporaryDirectory(prefix='atris-board-wide-two-column-') as folder:
-        root = pathlib.Path(folder)
-        progress = root / 'progress'
-        progress.mkdir()
-        at = lambda s: (datetime.datetime.now(datetime.timezone.utc) - datetime.timedelta(seconds=s)).isoformat()
-        (progress / 'builder.log').write_text(f'{at(400)} m-1 started: fix\n{at(390)} m-1 finished: failed (timed out)\n')
-        (progress / '后端.log').write_text(f'{at(600)} m-1 started: api\n{at(500)} m-1 reading 文件\n')
-        (progress / 'scout.log').write_text(f'{at(300)} m-1 started: map\n{at(5)} m-1 finished: ok\n')
-        master, slave = pty.openpty()
-        fcntl.ioctl(master, termios.TIOCSWINSZ, struct.pack('HHHH', height, width, 0, 0))
-        child = subprocess.Popen([sys.argv[1], sys.argv[2], 'member', 'board', '--watch'],
-            cwd=root, env={**os.environ, 'ATRIS_PROGRESS_DIR': str(progress)}, stdout=slave, stderr=slave)
-        os.close(slave)
-        try:
-            output = b''
-            deadline = time.monotonic() + 15
-            while time.monotonic() < deadline:
-                if select.select([master], [], [], 0.05)[0]:
-                    output += os.read(master, 65536)
-                elif output:
-                    break
-                assert child.poll() is None, (child.returncode, output)
-            text = re.sub(r'\x1b\[[0-9;]*[A-Za-z]', '', output.decode().replace('\r', ''))
-            assert max(map(cells, text.split('\n'))) <= width, repr(text)
-            assert text.split('\n') == ['member   state', 'builder  timed out', footer], repr(text)
-            print(f'command: node bin/atris.js member board --watch ({width} columns, {height} rows)')
-            print(text)
-            child.send_signal(signal.SIGINT)
-            code = child.wait(timeout=10)
-            print(f'exit: {code}')
-            assert code == 0
-        finally:
-            if child.poll() is None:
-                child.terminate()
-                child.wait(timeout=10)
-            os.close(master)
-`, process.execPath, cliPath], { encoding: 'utf8', timeout: 75_000 });
-  assert.ifError(proof.error);
-  assert.equal(proof.status, 0, `${proof.stdout}\n${proof.stderr}`);
-  if (process.env.ATRIS_BOARD_WIDE_TWO_COLUMN_PROOF) fs.writeFileSync(process.env.ATRIS_BOARD_WIDE_TWO_COLUMN_PROOF, `${proof.stdout}proof exit: ${proof.status}\n`);
+    lines = watch_frame({
+        'builder': f'{at(400)} m-1 started: fix\n{at(390)} m-1 finished: failed (timed out)\n',
+        '后端': f'{at(600)} m-1 started: api\n{at(500)} m-1 reading 文件\n',
+        'scout': f'{at(300)} m-1 started: map\n{at(5)} m-1 finished: ok\n',
+    }, width, 3)
+    assert lines == ['member   state', 'builder  timed out', footer], lines
+`, 'ATRIS_BOARD_WIDE_TWO_COLUMN_PROOF');
 });
 
 test('a member name in wide characters fits the watch screen and matches live follow', { skip: process.platform === 'win32' }, () => {

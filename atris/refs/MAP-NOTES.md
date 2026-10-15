@@ -2368,8 +2368,9 @@ Lost-run cleanup error summary: `commands/autoland.js:895` keeps successful clos
 - **Compact board columns:** `renderBoard()` (`lib/member-board.js:310`) falls back to member, state and last result when the normal columns still overflow a terminal at least 30 columns wide. Done states use ok/failed, long names trim, and common failure reasons stay whole. Regression: `test/member-board.test.js:520`; real terminal proof: `python3 atris/runs/member-board-compact-columns-proof.py`.
 
 - **Smallest board columns:** `renderBoard()` (`lib/member-board.js:310`) keeps member and whole state from 18 to 29 columns, shortening long names. The result column returns at 30 columns. Regression: `test/member-board.test.js:564`; real terminal proof: `python3 atris/runs/member-board-smallest-columns-proof.py`.
-- **Wide member names:** member names in Chinese or with emoji shorten by screen cells, never splitting a two-cell character. `test/member-board.test.js:3269` runs the real watch command at 18, 22, 29, and 36 columns and checks every board line.
-- **Wide names in the short-screen footer:** hidden live member names in Chinese or with emoji fit the footer by screen cells; one column narrower, a count takes their place. `test/member-board.test.js:3334` runs the real watch command at 61x3, 60x3, 47x4, and 46x4. Below 30 columns, `test/member-board.test.js:3399` does the same for the member and state view at 20, 21, 28, and 29 columns on a 3-row screen.
+- **Wide member names:** member names in Chinese or with emoji shorten by screen cells, never splitting a two-cell character. `test/member-board.test.js:3288` runs the real watch command at 18, 22, 29, and 36 columns and checks every board line.
+- **Wide names in the short-screen footer:** hidden live member names in Chinese or with emoji fit the footer by screen cells; one column narrower, a count takes their place. `test/member-board.test.js:3309` runs the real watch command at 61x3, 60x3, 47x4, and 46x4. Below 30 columns, `test/member-board.test.js:3333` does the same for the member and state view at 20, 21, 28, and 29 columns on a 3-row screen.
+- **Watch frame helper:** `test/member-board.test.js:3213` runs the real watch command in a pseudo-terminal of a set size with given progress logs, returns the first frame, and checks it fits in screen cells and exits 0 on ctrl-c. The four wide-character watch tests after it each pass only their cases; add the next case there.
 
 - **Failure reasons beside finishing:** `renderBoard()` (`lib/member-board.js:310`) shortens the compact member heading to name before clipping the result, preserving engine error alongside finishing at 30 columns. Regression: `test/member-board.test.js:692`; real terminal proof: `python3 atris/runs/member-board-finishing-reason-proof.py`.
 
@@ -2413,7 +2414,7 @@ In-place equal-size rewrite: `followBoard()` in `lib/member-board.js:888` checks
 
 Watch shutdown: `test/member-board.test.js:945` checks interrupt cancels the pending log redraw, periodic timer, folder watch, and resize listener. Real narrow-terminal proof: `python3 atris/receipts/member-board-watch-stop-proof.py`.
 
-Late progress folder watch recovery: `memberBoardCommand()` (`lib/member-board.js:1111`) retries the folder watch on every timed redraw. `test/member-board.test.js:3989` runs the real terminal proof in `atris/receipts/member-board-watch-recovery-proof.py`, including a later write within two seconds and clean interrupt.
+Late progress folder watch recovery: `memberBoardCommand()` (`lib/member-board.js:1111`) retries the folder watch on every timed redraw. `test/member-board.test.js:3883` runs the real terminal proof in `atris/receipts/member-board-watch-recovery-proof.py`, including a later write within two seconds and clean interrupt.
 
 Empty-board terminal width: `lib/member-board.js:310` keeps the full progress path in pipes, shortens it by screen cells in terminals, and uses whole shorter messages below 29 columns. `test/member-board.test.js:2105` covers tiny widths and the real resized terminal via `python3 atris/receipts/member-board-empty-width-proof.py` (30x1, 18x2, 22x3, 80x3, 240x3).
 
@@ -2429,4 +2430,4 @@ CRLF result pending at startup: `parseLine()` in `lib/member-board.js:49` remove
 
 Signed out run written with CRLF: `test/member-board.test.js:2243` writes a finished signed out run with CRLF endings and runs the real plain board, JSON board, and follow snapshot. Each keeps the engine and the sign-in fix, with no CR in output; interrupt exits 0. Proof: `atris/receipts/member-board-startup-signed-out-crlf-receipt.md`.
 
-Board test ref guard: `test/member-board.test.js:4001` fails when any `test/member-board.test.js` line ref in `atris/MAP.md` or this file stops landing on a test, a test loop, or a top-level constant, and names each drifted ref. Adding a test above a cited one means shifting the refs below it in the same change.
+Board test ref guard: `test/member-board.test.js:3895` fails when any `test/member-board.test.js` line ref in `atris/MAP.md` or this file stops landing on a test, a test loop, or a top-level constant, and names each drifted ref. Adding a test above a cited one means shifting the refs below it in the same change.
