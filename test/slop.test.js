@@ -1425,6 +1425,33 @@ test('fix joins a dash after "Inc." or "et al." with a comma, since no sentence 
   ]);
 });
 
+test('fix gives a short label before a pronoun clause a colon, not a comma splice', () => {
+  // from the six-folder dry run: one word, a title or a code span before the
+  // dash is no clause, so it kept a comma and spliced the sentence after it.
+  // Past a field's own colon the label takes a semicolon; an opener, a
+  // greeting or an answer word keeps its comma.
+  const D = String.fromCharCode(0x2014);
+  const file = tmpFile('label-clause.md', [
+    `Model-agnostic ${D} we run Claude, GPT, Gemini.`,
+    `**HIGH ${D} we are vulnerable to this.**`,
+    `| \`profile.php?id={id}\` | neither ${D} that's a personal profile |`,
+    `- RECOMMEND: \`rm -rf backend/.atris\` ${D} it is git-ignored.`,
+    `- Severity: High ${D} this is the first command a new operator runs.`,
+    `Then ${D} it runs again.`,
+    `> Hi Maya ${D} this is Sunline Heating.`,
+  ].join('\n\n'));
+  const { changes } = applyFixes([file], RULES, { write: false });
+  assert.deepEqual(changes.map((c) => c.after), [
+    'Model-agnostic: we run Claude, GPT, Gemini.',
+    '**HIGH: we are vulnerable to this.**',
+    "| `profile.php?id={id}` | neither: that's a personal profile |",
+    '- RECOMMEND: `rm -rf backend/.atris`; it is git-ignored.',
+    '- Severity: High; this is the first command a new operator runs.',
+    'Then, it runs again.',
+    '> Hi Maya, this is Sunline Heating.',
+  ]);
+});
+
 test('fix joins a full clause after "etc." with a semicolon, not a comma splice', () => {
   // from a research note and a metrics note: the clause rules wanted a word
   // right before the dash, so the period of "etc." hid the clause and it
@@ -3686,7 +3713,8 @@ test('fix treats a percent before a dash like the number it ends', () => {
 test('fix counts the line above when a wrapped line holds one word before its dash', () => {
   // from rl-exp2 and the orb onboarding notes: the clause starts on the line
   // above, so "defense" alone before the dash still ends one; a line above
-  // that ends in a stop, or a list item, starts fresh
+  // that ends in a stop, or a list item, starts fresh, where one word is a
+  // label and takes a colon
   const D = String.fromCharCode(0x2014);
   const file = tmpFile('wrapped-clause.md', [
     'Run `chmod 644 <file>` first. The chmod is ONE-WAY',
@@ -3705,7 +3733,7 @@ test('fix counts the line above when a wrapped line holds one word before its da
   assert.deepEqual(changes.map((c) => c.after), [
     "defense; it doesn't auto-revert.",
     'screen; it just did real work, so the ask lands.',
-    'Done, it shipped.',
+    'Done: it shipped.',
     "no, it doesn't ship.",
   ]);
 });

@@ -487,6 +487,24 @@ function clauseLeft(at, whole) {
   return words.length >= 2 && !words.every((w) => /^[A-Z][a-z0-9'\u2019-]+$/.test(w)) ? left : null;
 }
 
+// A short label before the dash, with a pronoun and its verb after it, is
+// no clause, but a comma there still splices it to the sentence that
+// follows. One to three words or a code span name the thing the sentence
+// explains, so it takes a colon: "`rm -rf .atris`: it is git-ignored",
+// "neither: that's a personal profile". Past a field's own colon it takes a
+// semicolon instead: "Severity: High; this is the first command". An
+// opener ("Then"), a greeting ("Hi Maya"), an answer word ("No") and a line
+// that carries on the one above keep their comma.
+const OPENER_WORD = /^(?:then|also|and|but|so|or|yet|nor|now|plus|again|still|here|well|oh|hi|hello|hey|dear|thanks|thank you|yes|no|ok|okay|sure|right|if|when|whenever|once|because|since|while|though|although|unless|until|after|before|as|otherwise|instead|anyway|honestly|basically|actually|today|tomorrow|tonight|later|first|second|third|finally|meanwhile|sometimes|maybe|perhaps)\b/i;
+function labelJoin(at, whole) {
+  const before = whole.slice(0, at);
+  if (lineAbove || /[.!?,;:][*_"'\u201d\u2019)]*\s*$/.test(before)) return null;
+  const parts = before.split(/[.!?]\s|\s\|\s/).pop().split(/:\s/);
+  const label = parts.pop().replace(/^(?:\s*(?:[-*+>#|]|\d+[.)]|\*\*|__))*\s*/, '').replace(/[*_]+$/, '').trim();
+  if (!label || label.split(/\s+/).length > 3 || OPENER_WORD.test(label)) return null;
+  return parts.length ? '; ' : ': ';
+}
+
 // A range counts up: "10-20", or "1990-95" with the shared digits left off.
 // Two numbers that count down are two things, so "line 56, 5 tabs" is never
 // glued into "56-5".
@@ -882,7 +900,7 @@ function fixEmDash(s, { endsBlock = false, startsBlock = false, spans = [], abov
     // gravity wells', never a semicolon after words that are no clause
     .replace(CLAUSE_AFTER_DASH, (m, at, whole) => {
       const left = clauseLeft(at, whole);
-      if (!left) return m;
+      if (!left) return labelJoin(at, whole) || m;
       if (/^(?:these|those)\b/i.test(whole.slice(at + m.length)) && BARE_LIST.test(left.replace(/^(?:[-*+>]|\d+[.)])\s+/, ''))) return ': ';
       return clauseJoin(left);
     })
