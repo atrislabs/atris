@@ -192,3 +192,22 @@ test("the store path is the same from any folder inside a checkout", () => {
     else process.env.ATRIS_CAMPAIGN_DB = saved;
   }
 });
+
+test('openCampaignStore keeps one handle per file until closeCampaignStores', () => {
+  const { openCampaignStore, closeCampaignStores } = require('../lib/campaign-store');
+  const saved = process.env.ATRIS_CAMPAIGN_DB;
+  try {
+    process.env.ATRIS_CAMPAIGN_DB = path.join(tempDir(), 'atris.db');
+    const first = openCampaignStore(tempDir());
+    assert.equal(openCampaignStore(tempDir()), first);
+    first.append(start('cmp-ship'));
+    closeCampaignStores();
+    const reopened = openCampaignStore(tempDir());
+    assert.notEqual(reopened, first);
+    assert.equal(reopened.version('cmp-ship'), 1);
+    closeCampaignStores();
+  } finally {
+    if (saved === undefined) delete process.env.ATRIS_CAMPAIGN_DB;
+    else process.env.ATRIS_CAMPAIGN_DB = saved;
+  }
+});
