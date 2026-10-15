@@ -191,3 +191,5 @@ Proof-only refusal concurrency: `test/commands.test.js:13250` runs done, finish 
 Lineage read concurrency: `test/commands.test.js:21208` runs text, JSON and alternate-home lineage reads together after closing fixture setup. `commands/task.js:11796` reads the production projection and git history without writing task rows or shared output files; all original assertions remain.
 
 Long-title status ownership setup: `test/commands.test.js:14318` creates and claims in the production store, keeping both status formats on the CLI in sequence because status writes a shared projection.
+
+Duplicate selection ownership setup: `test/commands.test.js:12836` seeds the existing owner through the production store; checkpoint ownership, readiness, certification and selection remain CLI checks. Seven launches become six.

@@ -2689,3 +2689,5 @@ Review-debt next-selection setup: `test/commands.test.js:12644` seeds creation a
 Human-only review fallback ownership setup: `test/commands.test.js:12709` creates and claims through the production task store in one connection, closed in finally. Eight CLI launches become seven; certification, both next formats, follow-up creation and final show retain every CLI assertion.
 
 Tag-scoped checkpoint ownership setup: `test/commands.test.js:12785` creates and claims through the production task store in one connection, closed in finally. Six CLI launches become five; readiness, certification, both scoped selection formats and refused follow-up creation retain every CLI assertion.
+
+Duplicate Endgame seed ownership: `test/commands.test.js:12858` accepts an optional owner in fixture creation and calls production claimTask before closing in finally. Existing-owner setup saves one launch; all checkpoint and duplicate-selection CLI assertions remain.
