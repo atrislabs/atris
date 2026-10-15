@@ -3918,3 +3918,33 @@ test('the console records a piped print run and keeps no reading for a session h
     fs.rmSync(root, { recursive: true, force: true });
   }
 });
+
+test('a headless pack run records its print run through the real command', () => {
+  const { spawnSync } = require('node:child_process');
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'atris-pack-print-'));
+  try {
+    const packDir = path.join(dir, 'g-brain');
+    fs.mkdirSync(packDir);
+    fs.writeFileSync(path.join(packDir, 'pack.json'), `${JSON.stringify({ slug: 'g-brain', title: 'G Brain', version: '0.1.0' })}\n`);
+    fs.writeFileSync(path.join(packDir, 'README.md'), '# G Brain\n');
+    const runner = path.join(dir, 'fake-runner.sh');
+    fs.writeFileSync(runner, '#!/bin/sh\ncat >/dev/null\n', { mode: 0o755 });
+    const result = spawnSync(process.execPath, [path.join(__dirname, '..', 'bin', 'atris.js'), 'pack', 'run', 'g-brain'], {
+      cwd: dir,
+      input: '',
+      encoding: 'utf8',
+      timeout: 30000,
+      env: { ...process.env, ATRIS_SKIP_UPDATE_CHECK: '1', ATRIS_RUNNER_BIN: runner },
+    });
+    assert.strictEqual(result.status, 0, `${result.stdout}${result.stderr}`);
+    // The run log sits under whichever folder the launch ran in.
+    const logs = [dir, packDir].map((root) => path.join(root, '.atris', 'state', 'engine-resource.jsonl')).filter((file) => fs.existsSync(file));
+    assert.strictEqual(logs.length, 1, 'one run log is written');
+    const entries = fs.readFileSync(logs[0], 'utf8').trim().split('\n').map((line) => JSON.parse(line));
+    assert.deepStrictEqual(entries.map((entry) => [entry.phase, entry.engine, entry.task]), [['start', 'fake-runner.sh', 'console print'], ['end', 'fake-runner.sh', 'console print']]);
+    assert.strictEqual(entries[0].run_id, entries[1].run_id);
+    console.log(`real pack print run log: ${path.relative(dir, logs[0])}, ${entries.length} readings`);
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
