@@ -2901,3 +2901,5 @@ Completed proof history fixture: `test/commands.test.js:1490` uses `lib/member-s
 Older active goal fixture: `test/commands.test.js:1550` uses `lib/member-scaffold.js:145` directly for member setup. Five CLI launches become four; every goal ordering assertion remains.
 
 Score-derived goal fixture: `test/commands.test.js:1577` uses `lib/member-scaffold.js:145` for member setup. Six program launches become five; all goal, experiment and reuse assertions remain on real commands.
+
+Member wake fixture: `test/commands.test.js:1672` uses `lib/member-scaffold.js:145` for setup. One program launch is removed; all real wake calls and assertions remain.

@@ -1676,7 +1676,11 @@ test('member wake returns one finite decision and refuses to pile onto open work
   const dir = makeTempDir();
   try {
     fs.mkdirSync(path.join(dir, 'atris'), { recursive: true });
-    assert.equal(runCli(['member', 'create', 'mission-lead', '--description="Make Missions wake up safely"'], { cwd: dir }).status, 0);
+    require('../lib/member-scaffold').ensureMemberBundle(path.join(dir, 'atris', 'team', 'mission-lead'), {
+      name: 'mission-lead',
+      role: 'Mission lead',
+      description: 'Make Missions wake up safely',
+    });
     assert.equal(runCli([
       'mission', 'start', '--no-verify', 'Make Missions wake up safely',
       '--owner', 'mission-lead',
