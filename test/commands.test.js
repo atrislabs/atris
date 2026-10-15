@@ -13915,7 +13915,12 @@ test('task headless JSON contract supports create, claim, note, finish, and even
       taskStore.close();
     }
 
-    const claimConflict = runCli(['task', 'claim', shortId, '--as', 'other', '--json'], { cwd: dir, env });
+    // These refusals change nothing, so they run at once.
+    const [claimConflict, humanClaimConflict, releaseOther] = await Promise.all([
+      runCliAsync(['task', 'claim', shortId, '--as', 'other', '--json'], { cwd: dir, env }),
+      runCliAsync(['task', 'claim', shortId, '--as', 'other'], { cwd: dir, env }),
+      runCliAsync(['task', 'release', shortId, '--as', 'other', '--json'], { cwd: dir, env }),
+    ]);
     assert.equal(claimConflict.status, 1);
     assert.equal(claimConflict.stderr, '');
     const claimConflictPayload = JSON.parse(claimConflict.stdout);
@@ -13925,13 +13930,11 @@ test('task headless JSON contract supports create, claim, note, finish, and even
     assert.equal(claimConflictPayload.claimed_by, 'bot');
     assert.equal(claimConflictPayload.recovery_command, `atris task release ${shortId} --as bot`);
 
-    const humanClaimConflict = runCli(['task', 'claim', shortId, '--as', 'other'], { cwd: dir, env });
     assert.equal(humanClaimConflict.status, 1);
     assert.equal(humanClaimConflict.stdout, '');
     assert.match(humanClaimConflict.stderr, /claim failed: already_claimed \(held by bot\)/);
     assert.match(humanClaimConflict.stderr, new RegExp(`Recovery: atris task release ${shortId} --as bot`));
 
-    const releaseOther = runCli(['task', 'release', shortId, '--as', 'other', '--json'], { cwd: dir, env });
     assert.equal(releaseOther.status, 1);
     assert.equal(releaseOther.stderr, '');
     const releaseOtherPayload = JSON.parse(releaseOther.stdout);
@@ -13980,7 +13983,11 @@ test('task headless JSON contract supports create, claim, note, finish, and even
     assert.equal(finishPayload.task.status, 'done');
     assert.equal(finishPayload.episode.action.actor, 'bot');
 
-    const doneConflict = runCli(['task', 'done', shortId, '--json'], { cwd: dir, env });
+    const [doneConflict, finishConflict, humanFinishConflict] = await Promise.all([
+      runCliAsync(['task', 'done', shortId, '--json'], { cwd: dir, env }),
+      runCliAsync(['task', 'finish', shortId, '--json'], { cwd: dir, env }),
+      runCliAsync(['task', 'finish', shortId], { cwd: dir, env }),
+    ]);
     assert.equal(doneConflict.status, 1);
     assert.equal(doneConflict.stderr, '');
     const doneConflictPayload = JSON.parse(doneConflict.stdout);
@@ -13989,7 +13996,6 @@ test('task headless JSON contract supports create, claim, note, finish, and even
     assert.equal(doneConflictPayload.reason, 'not_open_or_claimed');
     assert.equal(doneConflictPayload.task_id, id);
 
-    const finishConflict = runCli(['task', 'finish', shortId, '--json'], { cwd: dir, env });
     assert.equal(finishConflict.status, 1);
     assert.equal(finishConflict.stderr, '');
     const finishConflictPayload = JSON.parse(finishConflict.stdout);
@@ -13998,7 +14004,6 @@ test('task headless JSON contract supports create, claim, note, finish, and even
     assert.equal(finishConflictPayload.reason, 'not_open_or_claimed');
     assert.equal(finishConflictPayload.task_id, id);
 
-    const humanFinishConflict = runCli(['task', 'finish', shortId], { cwd: dir, env });
     assert.equal(humanFinishConflict.status, 1);
     assert.equal(humanFinishConflict.stdout, '');
     assert.match(humanFinishConflict.stderr, /finish failed: .* not in open\|claimed/);
