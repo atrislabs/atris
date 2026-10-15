@@ -1,0 +1,21 @@
+Worktree cleanup counts healthy keeps on one line and names the rest
+
+Files edited: commands/worktree.js, test/worktree-removal-guard.test.js, test/member-tidy.test.js, atris/team/architect/logs/2026-10-14.md, this receipt.
+
+What changed: kept folders that need no one (work still in progress, in use by a running process, the main and current checkouts, protected branches, fresh copies) now share one count line. Folders that need a person (uncommitted work, pins, refusals, git holds, unreadable folders) keep their own named line. Any keep reason not on the healthy list prints by name, so a new reason can never be hidden. The JSON output still lists every kept folder.
+
+Real project, preview only (no --apply; folder count 110 before and after):
+$ atris worktree cleanup
+exit=0
+cleanup: dry-run base=origin/master
+kept: 110
+left alone: unmerged=90 active_process=4 current_checkout=1 primary_checkout=1
+kept: .../architect-continue-work-folder-protection-acro-20261014-172101 branch=architect-help-output-not-cut-short reason=dirty staged=0 unstaged=3 untracked=0
+... 14 named lines in all, every one a folder with uncommitted work. Output went from 115 lines to 19.
+
+$ node --test test/worktree-removal-guard.test.js test/member-tidy.test.js
+exit=0; tests 68, pass 68, fail 0, todo 0
+$ node --test test/autoland.test.js test/worktree-cleanup-keeps-busy.test.js
+exit=0; tests 72, pass 72, fail 0
+
+Negative trial: with the previous cleanup code put back, the new check failed; the new file was restored afterward.

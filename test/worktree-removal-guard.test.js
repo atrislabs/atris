@@ -1303,19 +1303,30 @@ test('a refusal from a deep folder keeps git\'s reason, not just its path', () =
   }
 });
 
-// A count alone never says why a folder is still here, so each kept folder
-// gets its own line, like a removal, with its unsaved work counted.
-test('worktree cleanup names each folder it keeps and why', () => {
+// A count alone never says why a folder is still here. Folders that need a
+// person get their own line, like a removal, with unsaved work counted;
+// healthy keeps share one count line.
+test('worktree cleanup names each folder that needs a person and counts the rest', () => {
   const { base, repo, wt } = landedWorktree();
   try {
     fs.writeFileSync(path.join(wt, 'notes.txt'), 'not saved anywhere yet\n');
-    const result = spawnSync(process.execPath, [path.resolve(__dirname, '../bin/atris.js'), 'worktree', 'cleanup', '--base', 'HEAD'], { cwd: repo, encoding: 'utf8' });
+    git(repo, ['checkout', '-q', '-b', 'still-going']);
+    fs.writeFileSync(path.join(repo, 'more.txt'), 'more\n');
+    git(repo, ['add', 'more.txt']);
+    git(repo, ['commit', '-qm', 'more']);
+    git(repo, ['checkout', '-q', 'master']);
+    const going = path.join(base, 'going-wt');
+    git(repo, ['worktree', 'add', '-q', going, 'still-going']);
+    const cli = (...args) => spawnSync(process.execPath, [path.resolve(__dirname, '../bin/atris.js'), 'worktree', 'cleanup', '--base', 'HEAD', ...args], { cwd: repo, encoding: 'utf8' });
+    const result = cli();
     assert.equal(result.status, 0, result.stderr);
-    assert.deepEqual(result.stdout.split('\n').filter((line) => line.startsWith('kept')), [
-      'kept: 2',
-      `kept: ${repo} branch=master reason=primary_checkout`,
+    assert.deepEqual(result.stdout.split('\n').filter((line) => /^(kept|left alone)/.test(line)), [
+      'kept: 3',
+      'left alone: primary_checkout=1 unmerged=1',
       `kept: ${wt} branch=engine-run reason=dirty staged=0 unstaged=0 untracked=1`,
     ]);
+    const listed = JSON.parse(cli('--json').stdout).kept.map((item) => item.reason).sort();
+    assert.deepEqual(listed, ['dirty', 'primary_checkout', 'unmerged']);
     assert.ok(fs.existsSync(path.join(wt, 'notes.txt')));
   } finally {
     fs.rmSync(base, { recursive: true, force: true });

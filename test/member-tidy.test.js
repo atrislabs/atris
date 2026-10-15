@@ -396,7 +396,7 @@ if (removing && ${JSON.stringify(mode)} === 'signal') {
       } else {
         const expected = surface === 'tidy'
           ? `kept  landed-late-pin  landed, but git refused: ${words}\ntidy: removed 0, kept 1, of 1 copy in ${fx.copies}`
-          : `cleanup: applied base=HEAD\nremoveds: 0\ncache_pruneds: 0\nkept: 2\nkept: ${fx.repo} branch=master reason=primary_checkout\nkept: ${copy} branch=landed-late-pin reason=remove_failed\nrefused: ${copy} ${words}`;
+          : `cleanup: applied base=HEAD\nremoveds: 0\ncache_pruneds: 0\nkept: 2\nleft alone: primary_checkout=1\nkept: ${copy} branch=landed-late-pin reason=remove_failed\nrefused: ${copy} ${words}`;
         assert.equal(cli.stdout.trim(), expected);
       }
       const gitDir = runGit(['rev-parse', '--absolute-git-dir'], copy);

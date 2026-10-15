@@ -1605,6 +1605,10 @@ function cleanupWorktrees({ root = repoRoot(), base: baseOverride = '', apply = 
   return { apply, base, candidates, removed, kept, cacheCandidates, cachePruned };
 }
 
+// Keep reasons that need no one: work still in progress or the checkouts
+// themselves. Any other reason, including one added later, prints by name.
+const QUIET_KEEP_REASONS = new Set(['unmerged', 'completed_unmerged_retention', 'active_process', 'fresh_worktree_grace', 'primary_checkout', 'current_checkout', 'protected_branch']);
+
 function cleanup(args) {
   const asJson = hasFlag(args, '--json');
   const result = cleanupWorktrees({
@@ -1628,9 +1632,18 @@ function cleanup(args) {
     console.log(`${cacheAction}: ${item.path}`);
   }
   console.log(`kept: ${result.kept.length}`);
+  // Healthy keeps (work still going, the checkouts themselves) are counted on
+  // one line; JSON still lists each of them.
+  const quiet = {};
   for (const item of result.kept) {
-    // Each kept folder names itself and why, like a removal does, so a count
-    // is never the only answer to "why is this still here".
+    if (QUIET_KEEP_REASONS.has(item.reason)) quiet[item.reason] = (quiet[item.reason] || 0) + 1;
+  }
+  const quietCounts = Object.entries(quiet).sort((x, y) => y[1] - x[1] || x[0].localeCompare(y[0]));
+  if (quietCounts.length) console.log(`left alone: ${quietCounts.map(([reason, count]) => `${reason}=${count}`).join(' ')}`);
+  for (const item of result.kept) {
+    if (QUIET_KEEP_REASONS.has(item.reason)) continue;
+    // Every other kept folder names itself and why, like a removal does, so a
+    // count is never the only answer to "why is this still here".
     const changes = item.reason === 'dirty' ? ` staged=${item.staged} unstaged=${item.unstaged} untracked=${item.untracked}` : '';
     console.log(`kept: ${item.path} branch=${item.branch || 'detached'} reason=${item.reason}${changes}`);
     const held = describeGitHold(item);
