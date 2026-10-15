@@ -1,0 +1,41 @@
+Pinned unfinished copies now keep their named warning; real CLI preview and apply passed, and all 70 required tests passed with no pending checks.
+
+Files edited:
+- lib/member-tidy.js: read the pin before grouping unfinished work.
+- test/member-tidy.test.js: mixed pinned and ordinary unfinished copies through actual preview and apply.
+- atris/MAP.md and atris/refs/MAP-NOTES.md: navigation for the changed path and regression.
+- atris/team/architect/logs/2026-10-15.md: work, lesson and next move.
+- atris/receipts/work-folder-tidy-pin-2026-10-15.txt: this receipt.
+
+Plan: unfinished branch -> read pin -> named warning or ordinary count.
+Safeguard: landed-copy behavior stays covered by existing real-runtime tests.
+Carry-forward: git merge-base --is-ancestor origin/codex/architect-continue-work-folder-protection-acro-20261014-225030 HEAD exited 0.
+
+Rerun:
+node --test test/worktree-removal-guard.test.js test/member-tidy.test.js && node bin/atris.js slop --staged
+exit: 0
+Actual output excerpt:
+command: node bin/atris.js member tidy --dir <fixture copies> --dry-run (fixture cwd)
+kept  unfinished-pinned  work not landed yet, pinned by git worktree lock, 3 h old: writer still active keep these notes
+left alone  1 work not landed yet
+tidy: would remove 0, kept 2, of 2 copies in /private/var/folders/t1/2_4kmb5n4c71dxm26zc8dgzr0000gn/T/atris-member-tidy-EgGoNR/arena/.agent-worktrees/repo
+exit: 0
+command: node bin/atris.js member tidy --dir <fixture copies> (fixture cwd)
+kept  unfinished-pinned  work not landed yet, pinned by git worktree lock, 3 h old: writer still active keep these notes
+left alone  1 work not landed yet
+tidy: removed 0, kept 2, of 2 copies in /private/var/folders/t1/2_4kmb5n4c71dxm26zc8dgzr0000gn/T/atris-member-tidy-EgGoNR/arena/.agent-worktrees/repo
+exit: 0
+
+Tests: 70; pass: 70; fail: 0; cancelled: 0; skipped: 0; todo: 0.
+Writing check: clean, no slop tells in 4 files.
+
+Real-surface preservation: both CLI invocations retained file contents, both branches, both registrations and the exact multiline pin; no removals were logged. Ordinary unfinished work still shares one count line.
+Progress: one hidden-warning path repaired, one real-runtime regression added; all three original pending tests remain real passes.
+Saved-proof runner: the first task-ready replay selected a different login-shell runtime and failed 14 CLI checks (56 passed). Its failed receipt is atris/runs/2026-10-15-task-acw-3-2026-10-15T07-03-23-002Z.json. The direct frozen command above passed on /opt/homebrew/Cellar/node/25.6.1/bin/node. Saved proof passed with exit 0 using the command below; no production runner changes are included. The task is in review, without agent acceptance.
+export PATH=/opt/homebrew/Cellar/node/25.6.1/bin:$PATH; node --test test/worktree-removal-guard.test.js test/member-tidy.test.js && node bin/atris.js slop --staged
+Saved passing receipt: atris/runs/2026-10-15-task-acw-3-2026-10-15T07-04-04-463Z.json. The command is outside the automatic review allowlist, so review remains pending.
+
+Setup: brain activate and compile both returned plan-only (exit 2); no generated policy files were rewritten. Mission task attachment returned lock busy; the bounded task was recorded separately without changing the mission.
+
+next_push: make member tidy name pins on landed copies that also have a running process, before grouping ordinary busy copies.
+layer: behaviors
