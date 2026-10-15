@@ -306,7 +306,7 @@ test('tidy keeps a landed copy while git is paused mid-rebase in it, and logs wh
   }
 });
 
-test('tidy, reap and the regression check name a pinned folder in the same words after git refuses it', () => {
+test('tidy, reap and the regression check name a pinned folder in the same words', () => {
   const fx = makeFixture();
   try {
     const copy = addCopy(fx, 'landed-pinned');
@@ -318,9 +318,12 @@ test('tidy, reap and the regression check name a pinned folder in the same words
     fs.utimesSync(copy, aged, aged);
     const words = 'pinned by git worktree lock, 3 h old: agent still writing';
 
+    const preview = tidyMemberCopies({ repoRoot: fx.repo, now, dryRun: true });
+    assert.equal(byName(preview, 'landed-pinned').action, 'kept');
+    assert.equal(byName(preview, 'landed-pinned').reason, `landed, but ${words}`);
     const tidy = tidyMemberCopies({ repoRoot: fx.repo, now });
     assert.equal(byName(tidy, 'landed-pinned').action, 'kept');
-    assert.equal(byName(tidy, 'landed-pinned').reason, `landed, but git refused: ${words}`);
+    assert.equal(byName(tidy, 'landed-pinned').reason, `landed, but ${words}`);
     const landed = reap(fx.repo, { remote: false, force: true, activeCwds: [] });
     assert.ok(landed.keptWorktrees.includes(`${copy} (${words})`), JSON.stringify(landed.keptWorktrees));
     assert.ok(fs.existsSync(copy));
