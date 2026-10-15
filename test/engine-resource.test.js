@@ -3404,7 +3404,8 @@ test('atris engine sweep names the day\'s crowded time limit kills in the same w
       start(hoursAgo(5), 'A'), timeLimit(hoursAgo(4), 'A', cores + 2, { busiest }),
       start(hoursAgo(3), 'B'), timeLimit(hoursAgo(2), 'B', cores + 1, { busiest }),
       timeLimit(hoursAgo(1), 'C', 1),
-      // Older than a day: counted in the all time line, not this one.
+      // Four old runs overlap, but their crowded kills cannot raise today's peak.
+      ...['OLD', 'OLD-31', 'OLD-32', 'OLD-33'].map((id) => start(hoursAgo(36), id)),
       timeLimit(hoursAgo(30), 'OLD', cores + 5, { busiest }),
       ...[31, 32, 33].map((h) => timeLimit(hoursAgo(h), `OLD-${h}`, cores + 5, { busiest: [{ name: 'Xcode', cpu: 400 }] })),
       '',
@@ -3416,8 +3417,9 @@ test('atris engine sweep names the day\'s crowded time limit kills in the same w
 
     const { history } = JSON.parse(sweep(['--json']).join('\n'));
     assert.deepStrictEqual([history.time_limit_kills_day, history.time_limit_kills, history.crowded_time_limit_kills_day], [3, 7, 2], 'the older crowded kills stay out of the recent counts');
+    assert.strictEqual(history.crowded_peak_open_runs, 1, 'older overlapping crowded kills do not inflate the recent peak');
     assert.deepStrictEqual(history.crowded_top_busiest, { name: 'mds_stores', kills: 2 }, 'older kills neither inflate the recent count nor replace its leader with a more frequent old program');
-    console.log(`real sweep json totals: ${JSON.stringify({ recent: history.time_limit_kills_day, overall: history.time_limit_kills, busiest: history.crowded_top_busiest })}`);
+    console.log(`real sweep json totals: ${JSON.stringify({ recent: history.time_limit_kills_day, overall: history.time_limit_kills, peak: history.crowded_peak_open_runs, busiest: history.crowded_top_busiest })}`);
     const status = spawnSync(process.execPath, [path.join(__dirname, '..', 'bin', 'atris.js'), 'autoland', 'status'], {
       cwd: root,
       encoding: 'utf8',
