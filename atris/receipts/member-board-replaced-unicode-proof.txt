@@ -1,0 +1,589 @@
+✔ ago reads like a person would say it (1.1125ms)
+✔ board shows working, quiet, done ok, and done failed from fake logs (5.42175ms)
+✔ a failed row says why when the finished line gives a reason (3.618417ms)
+✔ the runner writes why a run failed and the board reads it back (10.503333ms)
+✔ a narrow terminal trims job and last step so every line fits (7.745792ms)
+✔ a job that can read whole gets its room before the last step (1.36675ms)
+✔ a result column with nothing in it gives its room to a cut job (2.740875ms)
+✔ a finished row gets its last step back in the room of an empty result column, never at a job word (1.562542ms)
+✔ a live run with no step yet never keeps an empty last step that cuts a job (2.286042ms)
+✔ a hidden last step comes back with the cheapest change that makes room (1.301375ms)
+✔ the widths where a wider board shows less are known (9.686417ms)
+✔ a stopped run and one that ended with no result never make a wider board show less (13.242208ms)
+✔ the full missing-result wording never cuts a step a narrower board read more of (2.749583ms)
+✔ beside a live run, a signed out fix never loses its engine one column wider (6.153583ms)
+✔ a signed out row costs a wider board only the widths it is known to (28.783875ms)
+✔ a tiny terminal keeps member states and common failure reasons within its width (1.92275ms)
+✔ below 30 columns the board keeps whole states and trims only member names (1.755375ms)
+✔ below 18 columns the board keeps shrinking: names while they read, then a column of states (0.897625ms)
+✔ seeded random boards: every footer count matches the members it hides, at every size (1190.944542ms)
+✔ seeded random boards with wide names and jobs fit every size by screen cells (1482.5705ms)
+✔ finishing members leave common failure reasons whole at 30 columns (2.671916ms)
+✔ compact rows keep missing results clear beside a finishing member (82.65ms)
+✔ the full missing-result wording never costs a name a letter (1.447625ms)
+✔ a stopped row shrinks like a done row: how it ended, with the age left to ago (0.9305ms)
+✔ a busy row with an earlier failure shrinks its last result before it overflows (1.040917ms)
+✔ a busy row keeps its earlier failure reason at every width once one shows it (3.118959ms)
+✔ a busy row back on the engine it signed out of never shrinks to just signed out (0.417375ms)
+✔ a live run with a long name drops last step before it overflows 80 (1.060041ms)
+✔ watch mode redraws at once when the window is resized (3.205709ms)
+✔ the timed watch redraw moves ages forward with no log change (1.467791ms)
+✔ ctrl-c stops every watch redraw: the timer, the log watch, and a pending log redraw (0.935625ms)
+✔ a watch screen keeps a split sign-in failure through a rerun on another engine, without the old fix (5.611208ms)
+✔ watch mode uses the whole screen in one to three terminal rows (1.761958ms)
+✔ a taller watch window never shows fewer members than a shorter one (4.611334ms)
+✔ a cut watch board holds back a half-written failure while the window shrinks (4.018333ms)
+✔ the real terminal keeps timeout reasons when watch shrinks and grows (685.007667ms)
+✔ a short window keeps the header and the newest rows, and says how many did not fit (2.362875ms)
+✔ a short screen names up to three hidden live members, never at the cost of a failure reason (2.0425ms)
+✔ the older-runs note never pushes a current member off a short screen (0.965625ms)
+✔ a one-line board counts who did not fit, and two or three lines keep the header (1.672667ms)
+✔ a short window keeps failed and stopped rows on screen ahead of newer ones (1.830834ms)
+✔ short boards distinguish a hidden busy member earlier failure from a current failure (1.765709ms)
+✔ a hidden earlier sign-in failure drops its reason once the member runs on that engine again (2.826792ms)
+✔ compact footers drop all before dropping a shared failure reason (3.736208ms)
+✔ tiny footers shorten the hidden prefix before cutting failure counts (1.114667ms)
+✔ narrow footers keep hidden missing-result counts whole (1.04225ms)
+✔ the narrowest footers say just the hidden count before cutting a word (3.577458ms)
+✔ a footer drops an earlier failure reason before the reason a run is done failed (13.55375ms)
+✔ every footer reason sits right after the count it explains (157.459125ms)
+✔ a footer list of different reasons names signed out first (0.36975ms)
+✔ hidden failures all signed out of one engine say which to sign in to (0.532541ms)
+✔ hidden failures and runs that ended with no result keep both counts whole at every width (31.907375ms)
+✔ narrow footers drop whole mixed counts from the end instead of cutting one (1.704542ms)
+✔ narrow footers shorten the older-runs note before dropping hidden counts (2.19975ms)
+✔ hidden failures that share a reason say it once in the count (1.718125ms)
+✔ a hidden sign-in failure is named after a different lead reason when it fits (1.641666ms)
+✔ a hidden earlier sign-in failure is named after a different lead reason when it fits (1.381125ms)
+✔ last step skips writes to the member own log (0.727625ms)
+✔ members that finished over an hour ago hide unless --all (287.005625ms)
+✔ board says nobody is working when every member is hidden (0.063166ms)
+✔ idle boards keep whole older-run counts within the terminal width (0.233958ms)
+✔ the real idle board fits small terminals and restores older-run detail after resize (140.537458ms)
+ℹ 18x1: idle. 3 older
+4x2: idle
+30x3: idle. 3 older runs hidden
+60x3: nobody is working. 3 older runs hidden. --all shows them
+120x3: nobody is working right now. 3 finished over an hour ago, hidden. --all shows them
+exit: 0
+idle board fits; older-run count and full detail return after resize
+
+✔ the real idle board follows split starts and failures and returns to idle on small screens (4131.395958ms)
+ℹ command: node bin/atris.js member board --watch (18x3)
+idle: idle. 1 older
+partial start: still idle
+working: 'member   state\nbuilder  working'
+finished: 'member   state\nbuilder  ok'
+idle again: idle. 1 older
+exit: 0
+command: node bin/atris.js member board --watch (18x3)
+idle: idle. 1 older
+partial start: still idle
+working: 'member   state\nbuilder  working'
+partial failure: still working through observed periodic redraw
+complete text without newline: still working
+finished: 'member   state\nbuilder  timed out'
+idle again: idle. 1 older
+exit: 0
+command: node bin/atris.js member board --watch (18x3)
+idle: idle. 1 older
+partial start: still idle
+working: 'member   state\nbuilder  working'
+partial failure: still working through observed periodic redraw
+complete text without newline: still working
+finished: 'member  state\nbui...  signed out'
+idle again: idle. 1 older
+exit: 0
+command: node bin/atris.js member board --watch (30x3)
+idle: idle. 1 older runs hidden
+partial start: still idle
+working: 'member   state    last result\nbuilder  working  ok'
+finished: 'member   state  last result\nbuilder  ok     ok'
+idle again: idle. 1 older runs hidden
+exit: 0
+command: node bin/atris.js member board --watch (30x3)
+idle: idle. 1 older runs hidden
+partial start: still idle
+working: 'member   state    last result\nbuilder  working  ok'
+partial failure: still working through observed periodic redraw
+complete text without newline: still working
+finished: 'member   state   last result\nbuilder  failed  timed out'
+idle again: idle. 1 older runs hidden
+exit: 0
+command: node bin/atris.js member board --watch (30x3)
+idle: idle. 1 older runs hidden
+partial start: still idle
+working: 'member   state    last result\nbuilder  working  ok'
+partial failure: still working through observed periodic redraw
+complete text without newline: still working
+finished: 'member   state   last result\nbuilder  failed  signed out'
+idle again: idle. 1 older runs hidden
+exit: 0
+command: node bin/atris.js member board --watch (47x2)
+idle: nobody is working. 1 older runs hidden
+partial start: still idle
+working: 'member   state    last result\nbuilder  working  ok'
+finished: 'member   state    ago     job\nbuilder  done ok  0s ago  keep the board rea...'
+idle again: nobody is working. 1 older runs hidden
+exit: 0
+command: node bin/atris.js member board --watch (47x2)
+idle: nobody is working. 1 older runs hidden
+partial start: still idle
+working: 'member   state    last result\nbuilder  working  ok'
+partial failure: still working through observed periodic redraw
+complete text without newline: still working
+finished: 'member   state   last result\nbuilder  failed  timed out'
+idle again: nobody is working. 1 older runs hidden
+exit: 0
+command: node bin/atris.js member board --watch (47x2)
+idle: nobody is working. 1 older runs hidden
+partial start: still idle
+working: 'member   state    last result\nbuilder  working  ok'
+partial failure: still working through observed periodic redraw
+complete text without newline: still working
+finished: 'member   state   last result\nbuilder  failed  signed out'
+idle again: nobody is working. 1 older runs hidden
+exit: 0
+command: node bin/atris.js member board --watch (60x3)
+idle: nobody is working. 1 older runs hidden. --all shows them
+partial start: still idle
+working: 'member   state    last result  run        ago     job\nbuilder  working  ok 9784d     claude 0s  0s ago  keep th...'
+partial failure: still working through observed periodic redraw
+complete text without newline: still working
+finished: 'member   state        last result  ago     job\nbuilder  done failed  signed out   3s ago  sign in to claude'
+idle again: nobody is working. 1 older runs hidden. --all shows them
+exit: 0
+three small layouts keep complete states within the screen through live transitions
+split failures stay working until newline, then show timed out in all three layouts
+split sign-in failures wait for newline; guidance fits at 60 columns
+
+✔ the real short watch screen names the engine a hidden member signed out of, for LF and CRLF logs (2073.565125ms)
+ℹ command: /opt/homebrew/Cellar/node/25.6.1/bin/node bin/atris.js member board --watch (LF logs, 80 columns, 5 rows)
+member  state    last result  run       ago      job          last step
+scout   working  -            codex 5s  5s ago   another job  -
+ok1     done ok  -            -         16s ago  -            -
+ok2     done ok  -            -         17s ago  -            -
+3 more not shown (1 with earlier failure, signed out of claude)
+exit: 0
+command: /opt/homebrew/Cellar/node/25.6.1/bin/node bin/atris.js member board --watch (LF logs, 70 columns, 5 rows)
+member  state    last result  run       ago      job
+scout   working  -            codex 5s  5s ago   another job
+ok1     done ok  -            -         16s ago  -
+ok2     done ok  -            -         17s ago  -
+3 more not shown (1 with earlier failure, signed out of claude)
+exit: 0
+command: /opt/homebrew/Cellar/node/25.6.1/bin/node bin/atris.js member board --watch (LF logs, 40 columns, 5 rows)
+member  state    last result
+scout   working  -
+ok1     ok       ok
+ok2     ok       ok
+3 hidden (1 earlier failure, signed out)
+exit: 0
+command: /opt/homebrew/Cellar/node/25.6.1/bin/node bin/atris.js member board --watch (LF logs, 18 columns, 5 rows)
+member  state
+scout   working
+ok1     ok
+ok2     ok
+3 hidden
+exit: 0
+command: /opt/homebrew/Cellar/node/25.6.1/bin/node bin/atris.js member board --watch (CRLF logs, 80 columns, 5 rows)
+member  state    last result  run       ago      job          last step
+scout   working  -            codex 5s  5s ago   another job  -
+ok1     done ok  -            -         16s ago  -            -
+ok2     done ok  -            -         17s ago  -            -
+3 more not shown (1 with earlier failure, signed out of claude)
+exit: 0
+command: /opt/homebrew/Cellar/node/25.6.1/bin/node bin/atris.js member board --watch (CRLF logs, 70 columns, 5 rows)
+member  state    last result  run       ago      job
+scout   working  -            codex 5s  5s ago   another job
+ok1     done ok  -            -         16s ago  -
+ok2     done ok  -            -         17s ago  -
+3 more not shown (1 with earlier failure, signed out of claude)
+exit: 0
+command: /opt/homebrew/Cellar/node/25.6.1/bin/node bin/atris.js member board --watch (CRLF logs, 40 columns, 5 rows)
+member  state    last result
+scout   working  -
+ok1     ok       ok
+ok2     ok       ok
+3 hidden (1 earlier failure, signed out)
+exit: 0
+command: /opt/homebrew/Cellar/node/25.6.1/bin/node bin/atris.js member board --watch (CRLF logs, 18 columns, 5 rows)
+member  state
+scout   working
+ok1     ok
+ok2     ok
+3 hidden
+exit: 0
+hidden sign-in failure names its old engine where it fits, for LF and CRLF logs
+
+✔ the real short watch screen shortens a hidden earlier failure footer in order, for LF and CRLF logs (1576.546875ms)
+ℹ command: /opt/homebrew/Cellar/node/25.6.1/bin/node bin/atris.js member board --watch (LF logs, 52 columns, 7 rows)
+member  state        last result   ago     job
+ok1     done ok      -             1s ago  -
+ok2     done ok      -             2s ago  -
+ok3     done ok      -             3s ago  -
+ok4     done ok      -             4s ago  -
+broke   done failed  engine error  1m ago  other job
+3 more not shown (1 with earlier failure, timed out)
+exit: 0
+command: /opt/homebrew/Cellar/node/25.6.1/bin/node bin/atris.js member board --watch (LF logs, 47 columns, 7 rows)
+member  state   last result
+ok1     ok      ok
+ok2     ok      ok
+ok3     ok      ok
+ok4     ok      ok
+broke   failed  engine error
+3 more not shown (1 earlier failure, timed out)
+exit: 0
+command: /opt/homebrew/Cellar/node/25.6.1/bin/node bin/atris.js member board --watch (LF logs, 36 columns, 7 rows)
+member  state   last result
+ok1     ok      ok
+ok2     ok      ok
+ok3     ok      ok
+ok4     ok      ok
+broke   failed  engine error
+3 more not shown (1 earlier failure)
+exit: 0
+command: /opt/homebrew/Cellar/node/25.6.1/bin/node bin/atris.js member board --watch (CRLF logs, 52 columns, 7 rows)
+member  state        last result   ago     job
+ok1     done ok      -             1s ago  -
+ok2     done ok      -             2s ago  -
+ok3     done ok      -             3s ago  -
+ok4     done ok      -             4s ago  -
+broke   done failed  engine error  1m ago  other job
+3 more not shown (1 with earlier failure, timed out)
+exit: 0
+command: /opt/homebrew/Cellar/node/25.6.1/bin/node bin/atris.js member board --watch (CRLF logs, 47 columns, 7 rows)
+member  state   last result
+ok1     ok      ok
+ok2     ok      ok
+ok3     ok      ok
+ok4     ok      ok
+broke   failed  engine error
+3 more not shown (1 earlier failure, timed out)
+exit: 0
+command: /opt/homebrew/Cellar/node/25.6.1/bin/node bin/atris.js member board --watch (CRLF logs, 36 columns, 7 rows)
+member  state   last result
+ok1     ok      ok
+ok2     ok      ok
+ok3     ok      ok
+ok4     ok      ok
+broke   failed  engine error
+3 more not shown (1 earlier failure)
+exit: 0
+hidden earlier failure footer drops "with", then the reason, for LF and CRLF logs
+
+✔ atris member board reads ATRIS_PROGRESS_DIR for real (3199.678834ms)
+✔ atris member board says so plainly when no member has a log (112.142959ms)
+✔ the empty board keeps whole messages in tiny widths and full paths in pipes (0.256625ms)
+✔ the real empty board fits narrow and short terminals through resize (129.389375ms)
+ℹ 30x1: no member progress yet in /...
+18x2: no progress yet
+22x3: no member progress yet
+80x3: no member progress yet in /tmp/atris-empty-pmlkt4xk/進捗進捗進捗進捗進捗進捗...
+240x3: no member progress yet in /tmp/atris-empty-pmlkt4xk/進捗進捗進捗進捗進捗進捗進捗進捗進捗進捗進捗進捗進捗進捗進捗進捗進捗進捗進捗進捗進捗進捗進捗進捗進捗進捗進捗進捗進捗進捗
+exit: 0
+empty board fits narrow and short terminals; wide path returns after resize
+
+✔ progress lines turn into stream events (0.289333ms)
+✔ follow emits only new full lines, picks up new members, survives truncation (2.246458ms)
+✔ atris member board --json --follow streams full events with timeout split after startup (1009.270875ms)
+ℹ actual command: /opt/homebrew/Cellar/node/25.6.1/bin/node /Users/keshavrao/arena/empire/.agent-worktrees/atris-cli/builder-continue-improving-atris-member-boar-20261015-003022/bin/atris.js member board --json --follow
+ℹ actual stdout:
+{"kind":"snapshot","at":"2026-10-15T08:01:28.577Z","dir":"/var/folders/t1/2_4kmb5n4c71dxm26zc8dgzr0000gn/T/atris-board-YiLff1","members":[{"member":"navigator","state":"working","last_result":"","last_result_reason":"","last_result_ran":"","last_result_engine":"","last_result_ago":"","no_result":false,"pid":null,"engine":"","alive":null,"running_for":"","job":"map the repo","step":"","ago":"5s ago","at":1792051283485,"idle":false,"asleep":false}]}
+{"member":"navigator","mission":"m-9","at":"2026-10-15T08:01:28.486Z","kind":"finished","text":"failed (timed out)","ok":false}
+{"member":"navigator","mission":"m-11","at":"2026-10-15T08:01:29.440Z","kind":"started","text":"verify another job"}
+{"member":"navigator","mission":"m-11","at":"2026-10-15T08:01:29.440Z","kind":"step","text":"reading atris/MAP.md"}
+{"member":"scout","mission":"m-10","at":"2026-10-15T08:01:29.440Z","kind":"finished","text":"failed","ok":false}
+exit: 0
+✔ atris member board --json --follow streams full events with timeout split before startup (1009.572ms)
+ℹ actual command: /opt/homebrew/Cellar/node/25.6.1/bin/node /Users/keshavrao/arena/empire/.agent-worktrees/atris-cli/builder-continue-improving-atris-member-boar-20261015-003022/bin/atris.js member board --json --follow
+ℹ actual stdout:
+{"kind":"snapshot","at":"2026-10-15T08:01:29.583Z","dir":"/var/folders/t1/2_4kmb5n4c71dxm26zc8dgzr0000gn/T/atris-board-N7744k","members":[{"member":"navigator","state":"working","last_result":"","last_result_reason":"","last_result_ran":"","last_result_engine":"","last_result_ago":"","no_result":false,"pid":null,"engine":"","alive":null,"running_for":"","job":"map the repo","step":"","ago":"5s ago","at":1792051284494,"idle":false,"asleep":false}]}
+{"member":"navigator","mission":"m-9","at":"2026-10-15T08:01:29.495Z","kind":"finished","text":"failed (timed out)","ok":false}
+{"member":"navigator","mission":"m-11","at":"2026-10-15T08:01:30.450Z","kind":"started","text":"verify another job"}
+{"member":"navigator","mission":"m-11","at":"2026-10-15T08:01:30.450Z","kind":"step","text":"reading atris/MAP.md"}
+{"member":"scout","mission":"m-10","at":"2026-10-15T08:01:30.450Z","kind":"finished","text":"failed","ok":false}
+exit: 0
+✔ atris member board --json --follow streams full events with timeout CRLF split before startup (1010.830792ms)
+ℹ actual command: /opt/homebrew/Cellar/node/25.6.1/bin/node /Users/keshavrao/arena/empire/.agent-worktrees/atris-cli/builder-continue-improving-atris-member-boar-20261015-003022/bin/atris.js member board --json --follow
+ℹ actual stdout:
+{"kind":"snapshot","at":"2026-10-15T08:01:30.596Z","dir":"/var/folders/t1/2_4kmb5n4c71dxm26zc8dgzr0000gn/T/atris-board-IWooxE","members":[{"member":"navigator","state":"working","last_result":"","last_result_reason":"","last_result_ran":"","last_result_engine":"","last_result_ago":"","no_result":false,"pid":null,"engine":"","alive":null,"running_for":"","job":"map the repo","step":"","ago":"5s ago","at":1792051285504,"idle":false,"asleep":false}]}
+{"member":"navigator","mission":"m-9","at":"2026-10-15T08:01:30.505Z","kind":"finished","text":"failed (timed out)","ok":false}
+{"member":"navigator","mission":"m-11","at":"2026-10-15T08:01:31.461Z","kind":"started","text":"verify another job"}
+{"member":"navigator","mission":"m-11","at":"2026-10-15T08:01:31.461Z","kind":"step","text":"reading atris/MAP.md"}
+{"member":"scout","mission":"m-10","at":"2026-10-15T08:01:31.461Z","kind":"finished","text":"failed","ok":false}
+exit: 0
+✔ a signed out run written with CRLF keeps its engine and sign-in fix when the board opens (294.2455ms)
+ℹ actual command: /opt/homebrew/Cellar/node/25.6.1/bin/node /Users/keshavrao/arena/empire/.agent-worktrees/atris-cli/builder-continue-improving-atris-member-boar-20261015-003022/bin/atris.js member board
+ℹ actual stdout:
+member  state        last result                 alive  engine  running for  ago     job                    last step
+locked  done failed  failed (signed out) 1m ago  no     claude  -            1m ago  ship the pricing page  sign in to claude, then run it again
+exit: 0
+✔ live follow preserves a multibyte character split before startup (6188.871625ms)
+ℹ actual command: /opt/homebrew/Cellar/node/25.6.1/bin/node /Users/keshavrao/arena/empire/.agent-worktrees/atris-cli/builder-continue-improving-atris-member-boar-20261015-003022/bin/atris.js member board --json --follow
+ℹ character é, split after byte 1, mode before:
+{"kind":"snapshot","at":"2026-10-15T08:01:31.900Z","dir":"/var/folders/t1/2_4kmb5n4c71dxm26zc8dgzr0000gn/T/atris-board-qJozY6","members":[{"member":"navigator","state":"working","last_result":"","last_result_reason":"","last_result_ran":"","last_result_engine":"","last_result_ago":"","no_result":false,"pid":null,"engine":"","alive":null,"running_for":"","job":"check text","step":"","ago":"0s ago","at":1792051291809,"idle":false,"asleep":false}]}
+{"member":"navigator","mission":"m-unicode","at":"2026-10-15T08:01:31.809Z","kind":"step","text":"reading é notes"}
+{"member":"navigator","mission":"m-unicode","at":"2026-10-15T08:01:31.809Z","kind":"finished","text":"ok","ok":true}
+exit: 0
+ℹ actual command: /opt/homebrew/Cellar/node/25.6.1/bin/node /Users/keshavrao/arena/empire/.agent-worktrees/atris-cli/builder-continue-improving-atris-member-boar-20261015-003022/bin/atris.js member board --json --follow
+ℹ character 界, split after byte 1, mode before:
+{"kind":"snapshot","at":"2026-10-15T08:01:32.913Z","dir":"/var/folders/t1/2_4kmb5n4c71dxm26zc8dgzr0000gn/T/atris-board-0juecZ","members":[{"member":"navigator","state":"working","last_result":"","last_result_reason":"","last_result_ran":"","last_result_engine":"","last_result_ago":"","no_result":false,"pid":null,"engine":"","alive":null,"running_for":"","job":"check text","step":"","ago":"0s ago","at":1792051292822,"idle":false,"asleep":false}]}
+{"member":"navigator","mission":"m-unicode","at":"2026-10-15T08:01:32.822Z","kind":"step","text":"reading 界 notes"}
+{"member":"navigator","mission":"m-unicode","at":"2026-10-15T08:01:32.822Z","kind":"finished","text":"ok","ok":true}
+exit: 0
+ℹ actual command: /opt/homebrew/Cellar/node/25.6.1/bin/node /Users/keshavrao/arena/empire/.agent-worktrees/atris-cli/builder-continue-improving-atris-member-boar-20261015-003022/bin/atris.js member board --json --follow
+ℹ character 界, split after byte 2, mode before:
+{"kind":"snapshot","at":"2026-10-15T08:01:33.949Z","dir":"/var/folders/t1/2_4kmb5n4c71dxm26zc8dgzr0000gn/T/atris-board-gHS847","members":[{"member":"navigator","state":"working","last_result":"","last_result_reason":"","last_result_ran":"","last_result_engine":"","last_result_ago":"","no_result":false,"pid":null,"engine":"","alive":null,"running_for":"","job":"check text","step":"","ago":"0s ago","at":1792051293839,"idle":false,"asleep":false}]}
+{"member":"navigator","mission":"m-unicode","at":"2026-10-15T08:01:33.839Z","kind":"step","text":"reading 界 notes"}
+{"member":"navigator","mission":"m-unicode","at":"2026-10-15T08:01:33.839Z","kind":"finished","text":"ok","ok":true}
+exit: 0
+ℹ actual command: /opt/homebrew/Cellar/node/25.6.1/bin/node /Users/keshavrao/arena/empire/.agent-worktrees/atris-cli/builder-continue-improving-atris-member-boar-20261015-003022/bin/atris.js member board --json --follow
+ℹ character 🧭, split after byte 1, mode before:
+{"kind":"snapshot","at":"2026-10-15T08:01:35.013Z","dir":"/var/folders/t1/2_4kmb5n4c71dxm26zc8dgzr0000gn/T/atris-board-jZJW43","members":[{"member":"navigator","state":"working","last_result":"","last_result_reason":"","last_result_ran":"","last_result_engine":"","last_result_ago":"","no_result":false,"pid":null,"engine":"","alive":null,"running_for":"","job":"check text","step":"","ago":"0s ago","at":1792051294908,"idle":false,"asleep":false}]}
+{"member":"navigator","mission":"m-unicode","at":"2026-10-15T08:01:34.908Z","kind":"step","text":"reading 🧭 notes"}
+{"member":"navigator","mission":"m-unicode","at":"2026-10-15T08:01:34.908Z","kind":"finished","text":"ok","ok":true}
+exit: 0
+ℹ actual command: /opt/homebrew/Cellar/node/25.6.1/bin/node /Users/keshavrao/arena/empire/.agent-worktrees/atris-cli/builder-continue-improving-atris-member-boar-20261015-003022/bin/atris.js member board --json --follow
+ℹ character 🧭, split after byte 2, mode before:
+{"kind":"snapshot","at":"2026-10-15T08:01:36.060Z","dir":"/var/folders/t1/2_4kmb5n4c71dxm26zc8dgzr0000gn/T/atris-board-ETpK4j","members":[{"member":"navigator","state":"working","last_result":"","last_result_reason":"","last_result_ran":"","last_result_engine":"","last_result_ago":"","no_result":false,"pid":null,"engine":"","alive":null,"running_for":"","job":"check text","step":"","ago":"0s ago","at":1792051295970,"idle":false,"asleep":false}]}
+{"member":"navigator","mission":"m-unicode","at":"2026-10-15T08:01:35.970Z","kind":"step","text":"reading 🧭 notes"}
+{"member":"navigator","mission":"m-unicode","at":"2026-10-15T08:01:35.970Z","kind":"finished","text":"ok","ok":true}
+exit: 0
+ℹ actual command: /opt/homebrew/Cellar/node/25.6.1/bin/node /Users/keshavrao/arena/empire/.agent-worktrees/atris-cli/builder-continue-improving-atris-member-boar-20261015-003022/bin/atris.js member board --json --follow
+ℹ character 🧭, split after byte 3, mode before:
+{"kind":"snapshot","at":"2026-10-15T08:01:37.076Z","dir":"/var/folders/t1/2_4kmb5n4c71dxm26zc8dgzr0000gn/T/atris-board-VtX3Mr","members":[{"member":"navigator","state":"working","last_result":"","last_result_reason":"","last_result_ran":"","last_result_engine":"","last_result_ago":"","no_result":false,"pid":null,"engine":"","alive":null,"running_for":"","job":"check text","step":"","ago":"0s ago","at":1792051296981,"idle":false,"asleep":false}]}
+{"member":"navigator","mission":"m-unicode","at":"2026-10-15T08:01:36.981Z","kind":"step","text":"reading 🧭 notes"}
+{"member":"navigator","mission":"m-unicode","at":"2026-10-15T08:01:36.981Z","kind":"finished","text":"ok","ok":true}
+exit: 0
+✔ live follow preserves a multibyte character split after startup (6112.61375ms)
+ℹ actual command: /opt/homebrew/Cellar/node/25.6.1/bin/node /Users/keshavrao/arena/empire/.agent-worktrees/atris-cli/builder-continue-improving-atris-member-boar-20261015-003022/bin/atris.js member board --json --follow
+ℹ character é, split after byte 1, mode after:
+{"kind":"snapshot","at":"2026-10-15T08:01:38.103Z","dir":"/var/folders/t1/2_4kmb5n4c71dxm26zc8dgzr0000gn/T/atris-board-cqdbkr","members":[{"member":"navigator","state":"working","last_result":"","last_result_reason":"","last_result_ran":"","last_result_engine":"","last_result_ago":"","no_result":false,"pid":null,"engine":"","alive":null,"running_for":"","job":"check text","step":"","ago":"0s ago","at":1792051297998,"idle":false,"asleep":false}]}
+{"member":"navigator","mission":"m-unicode","at":"2026-10-15T08:01:37.998Z","kind":"step","text":"reading é notes"}
+{"member":"navigator","mission":"m-unicode","at":"2026-10-15T08:01:37.998Z","kind":"finished","text":"ok","ok":true}
+exit: 0
+ℹ actual command: /opt/homebrew/Cellar/node/25.6.1/bin/node /Users/keshavrao/arena/empire/.agent-worktrees/atris-cli/builder-continue-improving-atris-member-boar-20261015-003022/bin/atris.js member board --json --follow
+ℹ character 界, split after byte 1, mode after:
+{"kind":"snapshot","at":"2026-10-15T08:01:39.149Z","dir":"/var/folders/t1/2_4kmb5n4c71dxm26zc8dgzr0000gn/T/atris-board-T64IQk","members":[{"member":"navigator","state":"working","last_result":"","last_result_reason":"","last_result_ran":"","last_result_engine":"","last_result_ago":"","no_result":false,"pid":null,"engine":"","alive":null,"running_for":"","job":"check text","step":"","ago":"0s ago","at":1792051299060,"idle":false,"asleep":false}]}
+{"member":"navigator","mission":"m-unicode","at":"2026-10-15T08:01:39.060Z","kind":"step","text":"reading 界 notes"}
+{"member":"navigator","mission":"m-unicode","at":"2026-10-15T08:01:39.060Z","kind":"finished","text":"ok","ok":true}
+exit: 0
+ℹ actual command: /opt/homebrew/Cellar/node/25.6.1/bin/node /Users/keshavrao/arena/empire/.agent-worktrees/atris-cli/builder-continue-improving-atris-member-boar-20261015-003022/bin/atris.js member board --json --follow
+ℹ character 界, split after byte 2, mode after:
+{"kind":"snapshot","at":"2026-10-15T08:01:40.160Z","dir":"/var/folders/t1/2_4kmb5n4c71dxm26zc8dgzr0000gn/T/atris-board-wTWUwK","members":[{"member":"navigator","state":"working","last_result":"","last_result_reason":"","last_result_ran":"","last_result_engine":"","last_result_ago":"","no_result":false,"pid":null,"engine":"","alive":null,"running_for":"","job":"check text","step":"","ago":"0s ago","at":1792051300069,"idle":false,"asleep":false}]}
+{"member":"navigator","mission":"m-unicode","at":"2026-10-15T08:01:40.069Z","kind":"step","text":"reading 界 notes"}
+{"member":"navigator","mission":"m-unicode","at":"2026-10-15T08:01:40.069Z","kind":"finished","text":"ok","ok":true}
+exit: 0
+ℹ actual command: /opt/homebrew/Cellar/node/25.6.1/bin/node /Users/keshavrao/arena/empire/.agent-worktrees/atris-cli/builder-continue-improving-atris-member-boar-20261015-003022/bin/atris.js member board --json --follow
+ℹ character 🧭, split after byte 1, mode after:
+{"kind":"snapshot","at":"2026-10-15T08:01:41.171Z","dir":"/var/folders/t1/2_4kmb5n4c71dxm26zc8dgzr0000gn/T/atris-board-HilYkH","members":[{"member":"navigator","state":"working","last_result":"","last_result_reason":"","last_result_ran":"","last_result_engine":"","last_result_ago":"","no_result":false,"pid":null,"engine":"","alive":null,"running_for":"","job":"check text","step":"","ago":"0s ago","at":1792051301080,"idle":false,"asleep":false}]}
+{"member":"navigator","mission":"m-unicode","at":"2026-10-15T08:01:41.080Z","kind":"step","text":"reading 🧭 notes"}
+{"member":"navigator","mission":"m-unicode","at":"2026-10-15T08:01:41.080Z","kind":"finished","text":"ok","ok":true}
+exit: 0
+ℹ actual command: /opt/homebrew/Cellar/node/25.6.1/bin/node /Users/keshavrao/arena/empire/.agent-worktrees/atris-cli/builder-continue-improving-atris-member-boar-20261015-003022/bin/atris.js member board --json --follow
+ℹ character 🧭, split after byte 2, mode after:
+{"kind":"snapshot","at":"2026-10-15T08:01:42.182Z","dir":"/var/folders/t1/2_4kmb5n4c71dxm26zc8dgzr0000gn/T/atris-board-a4qs5T","members":[{"member":"navigator","state":"working","last_result":"","last_result_reason":"","last_result_ran":"","last_result_engine":"","last_result_ago":"","no_result":false,"pid":null,"engine":"","alive":null,"running_for":"","job":"check text","step":"","ago":"0s ago","at":1792051302091,"idle":false,"asleep":false}]}
+{"member":"navigator","mission":"m-unicode","at":"2026-10-15T08:01:42.091Z","kind":"step","text":"reading 🧭 notes"}
+{"member":"navigator","mission":"m-unicode","at":"2026-10-15T08:01:42.091Z","kind":"finished","text":"ok","ok":true}
+exit: 0
+ℹ actual command: /opt/homebrew/Cellar/node/25.6.1/bin/node /Users/keshavrao/arena/empire/.agent-worktrees/atris-cli/builder-continue-improving-atris-member-boar-20261015-003022/bin/atris.js member board --json --follow
+ℹ character 🧭, split after byte 3, mode after:
+{"kind":"snapshot","at":"2026-10-15T08:01:43.193Z","dir":"/var/folders/t1/2_4kmb5n4c71dxm26zc8dgzr0000gn/T/atris-board-6xMERr","members":[{"member":"navigator","state":"working","last_result":"","last_result_reason":"","last_result_ran":"","last_result_engine":"","last_result_ago":"","no_result":false,"pid":null,"engine":"","alive":null,"running_for":"","job":"check text","step":"","ago":"0s ago","at":1792051303101,"idle":false,"asleep":false}]}
+{"member":"navigator","mission":"m-unicode","at":"2026-10-15T08:01:43.101Z","kind":"step","text":"reading 🧭 notes"}
+{"member":"navigator","mission":"m-unicode","at":"2026-10-15T08:01:43.101Z","kind":"finished","text":"ok","ok":true}
+exit: 0
+✔ live follow preserves a multibyte character split in a new file (6063.604792ms)
+ℹ actual command: /opt/homebrew/Cellar/node/25.6.1/bin/node /Users/keshavrao/arena/empire/.agent-worktrees/atris-cli/builder-continue-improving-atris-member-boar-20261015-003022/bin/atris.js member board --json --follow
+ℹ character é, split after byte 1, mode new file:
+{"kind":"snapshot","at":"2026-10-15T08:01:44.202Z","dir":"/var/folders/t1/2_4kmb5n4c71dxm26zc8dgzr0000gn/T/atris-board-iz36Ez","members":[]}
+{"member":"navigator","mission":"m-unicode","at":"2026-10-15T08:01:44.111Z","kind":"step","text":"reading é notes"}
+{"member":"navigator","mission":"m-unicode","at":"2026-10-15T08:01:44.111Z","kind":"finished","text":"ok","ok":true}
+exit: 0
+ℹ actual command: /opt/homebrew/Cellar/node/25.6.1/bin/node /Users/keshavrao/arena/empire/.agent-worktrees/atris-cli/builder-continue-improving-atris-member-boar-20261015-003022/bin/atris.js member board --json --follow
+ℹ character 界, split after byte 1, mode new file:
+{"kind":"snapshot","at":"2026-10-15T08:01:45.212Z","dir":"/var/folders/t1/2_4kmb5n4c71dxm26zc8dgzr0000gn/T/atris-board-PBh3I9","members":[]}
+{"member":"navigator","mission":"m-unicode","at":"2026-10-15T08:01:45.120Z","kind":"step","text":"reading 界 notes"}
+{"member":"navigator","mission":"m-unicode","at":"2026-10-15T08:01:45.120Z","kind":"finished","text":"ok","ok":true}
+exit: 0
+ℹ actual command: /opt/homebrew/Cellar/node/25.6.1/bin/node /Users/keshavrao/arena/empire/.agent-worktrees/atris-cli/builder-continue-improving-atris-member-boar-20261015-003022/bin/atris.js member board --json --follow
+ℹ character 界, split after byte 2, mode new file:
+{"kind":"snapshot","at":"2026-10-15T08:01:46.223Z","dir":"/var/folders/t1/2_4kmb5n4c71dxm26zc8dgzr0000gn/T/atris-board-5dfq2J","members":[]}
+{"member":"navigator","mission":"m-unicode","at":"2026-10-15T08:01:46.132Z","kind":"step","text":"reading 界 notes"}
+{"member":"navigator","mission":"m-unicode","at":"2026-10-15T08:01:46.132Z","kind":"finished","text":"ok","ok":true}
+exit: 0
+ℹ actual command: /opt/homebrew/Cellar/node/25.6.1/bin/node /Users/keshavrao/arena/empire/.agent-worktrees/atris-cli/builder-continue-improving-atris-member-boar-20261015-003022/bin/atris.js member board --json --follow
+ℹ character 🧭, split after byte 1, mode new file:
+{"kind":"snapshot","at":"2026-10-15T08:01:47.233Z","dir":"/var/folders/t1/2_4kmb5n4c71dxm26zc8dgzr0000gn/T/atris-board-dSJZ3M","members":[]}
+{"member":"navigator","mission":"m-unicode","at":"2026-10-15T08:01:47.142Z","kind":"step","text":"reading 🧭 notes"}
+{"member":"navigator","mission":"m-unicode","at":"2026-10-15T08:01:47.142Z","kind":"finished","text":"ok","ok":true}
+exit: 0
+ℹ actual command: /opt/homebrew/Cellar/node/25.6.1/bin/node /Users/keshavrao/arena/empire/.agent-worktrees/atris-cli/builder-continue-improving-atris-member-boar-20261015-003022/bin/atris.js member board --json --follow
+ℹ character 🧭, split after byte 2, mode new file:
+{"kind":"snapshot","at":"2026-10-15T08:01:48.244Z","dir":"/var/folders/t1/2_4kmb5n4c71dxm26zc8dgzr0000gn/T/atris-board-Uw4TdU","members":[]}
+{"member":"navigator","mission":"m-unicode","at":"2026-10-15T08:01:48.154Z","kind":"step","text":"reading 🧭 notes"}
+{"member":"navigator","mission":"m-unicode","at":"2026-10-15T08:01:48.154Z","kind":"finished","text":"ok","ok":true}
+exit: 0
+ℹ actual command: /opt/homebrew/Cellar/node/25.6.1/bin/node /Users/keshavrao/arena/empire/.agent-worktrees/atris-cli/builder-continue-improving-atris-member-boar-20261015-003022/bin/atris.js member board --json --follow
+ℹ character 🧭, split after byte 3, mode new file:
+{"kind":"snapshot","at":"2026-10-15T08:01:49.258Z","dir":"/var/folders/t1/2_4kmb5n4c71dxm26zc8dgzr0000gn/T/atris-board-I9jkup","members":[]}
+{"member":"navigator","mission":"m-unicode","at":"2026-10-15T08:01:49.165Z","kind":"step","text":"reading 🧭 notes"}
+{"member":"navigator","mission":"m-unicode","at":"2026-10-15T08:01:49.165Z","kind":"finished","text":"ok","ok":true}
+exit: 0
+✔ live follow preserves a multibyte character split across log replacement (6063.42625ms)
+ℹ actual command: /opt/homebrew/Cellar/node/25.6.1/bin/node /Users/keshavrao/arena/empire/.agent-worktrees/atris-cli/builder-continue-improving-atris-member-boar-20261015-003022/bin/atris.js member board --json --follow
+ℹ character é, split after byte 1, mode replacement:
+{"kind":"snapshot","at":"2026-10-15T08:01:50.268Z","dir":"/var/folders/t1/2_4kmb5n4c71dxm26zc8dgzr0000gn/T/atris-board-5aasVG","members":[{"member":"navigator","state":"working","last_result":"","last_result_reason":"","last_result_ran":"","last_result_engine":"","last_result_ago":"","no_result":false,"pid":null,"engine":"","alive":null,"running_for":"","job":"check text","step":"","ago":"0s ago","at":1792051310175,"idle":false,"asleep":false}]}
+{"member":"navigator","mission":"m-unicode","at":"2026-10-15T08:01:50.175Z","kind":"step","text":"reading é notes"}
+{"member":"navigator","mission":"m-unicode","at":"2026-10-15T08:01:50.175Z","kind":"finished","text":"ok","ok":true}
+exit: 0
+ℹ actual command: /opt/homebrew/Cellar/node/25.6.1/bin/node /Users/keshavrao/arena/empire/.agent-worktrees/atris-cli/builder-continue-improving-atris-member-boar-20261015-003022/bin/atris.js member board --json --follow
+ℹ character 界, split after byte 1, mode replacement:
+{"kind":"snapshot","at":"2026-10-15T08:01:51.276Z","dir":"/var/folders/t1/2_4kmb5n4c71dxm26zc8dgzr0000gn/T/atris-board-9LB2Mf","members":[{"member":"navigator","state":"working","last_result":"","last_result_reason":"","last_result_ran":"","last_result_engine":"","last_result_ago":"","no_result":false,"pid":null,"engine":"","alive":null,"running_for":"","job":"check text","step":"","ago":"0s ago","at":1792051311185,"idle":false,"asleep":false}]}
+{"member":"navigator","mission":"m-unicode","at":"2026-10-15T08:01:51.185Z","kind":"step","text":"reading 界 notes"}
+{"member":"navigator","mission":"m-unicode","at":"2026-10-15T08:01:51.185Z","kind":"finished","text":"ok","ok":true}
+exit: 0
+ℹ actual command: /opt/homebrew/Cellar/node/25.6.1/bin/node /Users/keshavrao/arena/empire/.agent-worktrees/atris-cli/builder-continue-improving-atris-member-boar-20261015-003022/bin/atris.js member board --json --follow
+ℹ character 界, split after byte 2, mode replacement:
+{"kind":"snapshot","at":"2026-10-15T08:01:52.288Z","dir":"/var/folders/t1/2_4kmb5n4c71dxm26zc8dgzr0000gn/T/atris-board-PdNmGQ","members":[{"member":"navigator","state":"working","last_result":"","last_result_reason":"","last_result_ran":"","last_result_engine":"","last_result_ago":"","no_result":false,"pid":null,"engine":"","alive":null,"running_for":"","job":"check text","step":"","ago":"0s ago","at":1792051312196,"idle":false,"asleep":false}]}
+{"member":"navigator","mission":"m-unicode","at":"2026-10-15T08:01:52.196Z","kind":"step","text":"reading 界 notes"}
+{"member":"navigator","mission":"m-unicode","at":"2026-10-15T08:01:52.196Z","kind":"finished","text":"ok","ok":true}
+exit: 0
+ℹ actual command: /opt/homebrew/Cellar/node/25.6.1/bin/node /Users/keshavrao/arena/empire/.agent-worktrees/atris-cli/builder-continue-improving-atris-member-boar-20261015-003022/bin/atris.js member board --json --follow
+ℹ character 🧭, split after byte 1, mode replacement:
+{"kind":"snapshot","at":"2026-10-15T08:01:53.301Z","dir":"/var/folders/t1/2_4kmb5n4c71dxm26zc8dgzr0000gn/T/atris-board-4dsbJd","members":[{"member":"navigator","state":"working","last_result":"","last_result_reason":"","last_result_ran":"","last_result_engine":"","last_result_ago":"","no_result":false,"pid":null,"engine":"","alive":null,"running_for":"","job":"check text","step":"","ago":"0s ago","at":1792051313208,"idle":false,"asleep":false}]}
+{"member":"navigator","mission":"m-unicode","at":"2026-10-15T08:01:53.208Z","kind":"step","text":"reading 🧭 notes"}
+{"member":"navigator","mission":"m-unicode","at":"2026-10-15T08:01:53.208Z","kind":"finished","text":"ok","ok":true}
+exit: 0
+ℹ actual command: /opt/homebrew/Cellar/node/25.6.1/bin/node /Users/keshavrao/arena/empire/.agent-worktrees/atris-cli/builder-continue-improving-atris-member-boar-20261015-003022/bin/atris.js member board --json --follow
+ℹ character 🧭, split after byte 2, mode replacement:
+{"kind":"snapshot","at":"2026-10-15T08:01:54.309Z","dir":"/var/folders/t1/2_4kmb5n4c71dxm26zc8dgzr0000gn/T/atris-board-HJJXtu","members":[{"member":"navigator","state":"working","last_result":"","last_result_reason":"","last_result_ran":"","last_result_engine":"","last_result_ago":"","no_result":false,"pid":null,"engine":"","alive":null,"running_for":"","job":"check text","step":"","ago":"0s ago","at":1792051314218,"idle":false,"asleep":false}]}
+{"member":"navigator","mission":"m-unicode","at":"2026-10-15T08:01:54.218Z","kind":"step","text":"reading 🧭 notes"}
+{"member":"navigator","mission":"m-unicode","at":"2026-10-15T08:01:54.218Z","kind":"finished","text":"ok","ok":true}
+exit: 0
+ℹ actual command: /opt/homebrew/Cellar/node/25.6.1/bin/node /Users/keshavrao/arena/empire/.agent-worktrees/atris-cli/builder-continue-improving-atris-member-boar-20261015-003022/bin/atris.js member board --json --follow
+ℹ character 🧭, split after byte 3, mode replacement:
+{"kind":"snapshot","at":"2026-10-15T08:01:55.321Z","dir":"/var/folders/t1/2_4kmb5n4c71dxm26zc8dgzr0000gn/T/atris-board-3vxguo","members":[{"member":"navigator","state":"working","last_result":"","last_result_reason":"","last_result_ran":"","last_result_engine":"","last_result_ago":"","no_result":false,"pid":null,"engine":"","alive":null,"running_for":"","job":"check text","step":"","ago":"0s ago","at":1792051315228,"idle":false,"asleep":false}]}
+{"member":"navigator","mission":"m-unicode","at":"2026-10-15T08:01:55.228Z","kind":"step","text":"reading 🧭 notes"}
+{"member":"navigator","mission":"m-unicode","at":"2026-10-15T08:01:55.228Z","kind":"finished","text":"ok","ok":true}
+exit: 0
+✔ live follow discards an unfinished old line when the log shrinks (1461.728334ms)
+✔ live follow starts fresh when a missing log returns with split output (1865.112708ms)
+✔ live follow detects an atomic same-size log replacement with split output (1463.59925ms)
+✔ follow finishes a line that was half written before it started (1.685958ms)
+✔ seeded random follow: split, replaced, rewritten, resaved, forged, edited, and removed logs stream each finished line once (311.005958ms)
+✔ board shows a live run as alive with its engine, and a dead one as stopped (85.231542ms)
+✔ member stop ends the run and everything it started, then logs finished: stopped (160.257125ms)
+✔ member stop forces a run that ignores the polite signal (380.83275ms)
+✔ member stop says nothing running for unknown, finished, untagged, or dead runs (97.579042ms)
+✔ member stop leaves a reused pid alone when its command is no longer the engine (50.424167ms)
+✔ member stop refuses system pids, its own group, and engines it does not know (9.8665ms)
+✔ member stop leaves a same-named engine alone when it started at a different time (50.949042ms)
+✔ member stop ignores engine names that are object keys (2.064125ms)
+✔ member stop needs the run token of that member in the live command (52.948292ms)
+✔ member stop does not hard-kill a process that replaced the run during the grace wait (253.085416ms)
+✔ member stop needs the marker to open the prompt, as whole words (54.606625ms)
+✔ hidden earlier sign-in failures name their old engine only in spare room (108.604ms)
+✔ live follow waits for split CRLF lines after startup (1411.653417ms)
+ℹ actual command: /opt/homebrew/Cellar/node/25.6.1/bin/node /Users/keshavrao/arena/empire/.agent-worktrees/atris-cli/builder-continue-improving-atris-member-boar-20261015-003022/bin/atris.js member board --json --follow
+ℹ actual stdout:
+{"kind":"snapshot","at":"2026-10-15T08:02:02.744Z","dir":"/var/folders/t1/2_4kmb5n4c71dxm26zc8dgzr0000gn/T/atris-board-dRJJjx","members":[]}
+{"member":"scout","mission":"m-new","at":"2026-10-15T08:02:02.649Z","kind":"started","text":"inspect new progress"}
+{"member":"scout","mission":"m-new","at":"2026-10-15T08:02:02.649Z","kind":"step","text":"reading notes"}
+{"member":"scout","mission":"m-new","at":"2026-10-15T08:02:02.649Z","kind":"finished","text":"ok","ok":true}
+exit: 0
+✔ live follow waits for split CRLF lines before startup (1409.911542ms)
+ℹ actual command: /opt/homebrew/Cellar/node/25.6.1/bin/node /Users/keshavrao/arena/empire/.agent-worktrees/atris-cli/builder-continue-improving-atris-member-boar-20261015-003022/bin/atris.js member board --json --follow
+ℹ actual stdout:
+{"kind":"snapshot","at":"2026-10-15T08:02:04.158Z","dir":"/var/folders/t1/2_4kmb5n4c71dxm26zc8dgzr0000gn/T/atris-board-QMWudn","members":[]}
+{"member":"scout","mission":"m-new","at":"2026-10-15T08:02:04.060Z","kind":"started","text":"inspect new progress"}
+{"member":"scout","mission":"m-new","at":"2026-10-15T08:02:04.060Z","kind":"step","text":"reading notes"}
+{"member":"scout","mission":"m-new","at":"2026-10-15T08:02:04.060Z","kind":"finished","text":"ok","ok":true}
+exit: 0
+✔ live follow detects an in-place same-size log rewrite with split output (1461.721292ms)
+ℹ actual command: /opt/homebrew/Cellar/node/25.6.1/bin/node /Users/keshavrao/arena/empire/.agent-worktrees/atris-cli/builder-continue-improving-atris-member-boar-20261015-003022/bin/atris.js member board --json --follow
+ℹ actual stdout:
+{"kind":"snapshot","at":"2026-10-15T08:02:05.561Z","dir":"/var/folders/t1/2_4kmb5n4c71dxm26zc8dgzr0000gn/T/atris-board-GD1mBl","members":[{"member":"navigator","state":"working","last_result":"","last_result_reason":"","last_result_ran":"","last_result_engine":"","last_result_ago":"","no_result":false,"pid":null,"engine":"","alive":null,"running_for":"","job":"old job old job old job old job old job old job...","step":"","ago":"0s ago","at":1792051325470,"idle":false,"asleep":false}]}
+{"member":"navigator","mission":"m-new","at":"2026-10-15T08:02:05.470Z","kind":"started","text":"next job"}
+{"member":"navigator","mission":"m-new","at":"2026-10-15T08:02:05.470Z","kind":"step","text":"reading fresh                                                                                                                                                                                                                                                  notes"}
+{"member":"navigator","mission":"m-new","at":"2026-10-15T08:02:05.470Z","kind":"finished","text":"ok","ok":true}
+exit: 0
+✔ live follow detects an in-place log rewrite that grows past the reading position (1061.641792ms)
+ℹ actual command: /opt/homebrew/Cellar/node/25.6.1/bin/node /Users/keshavrao/arena/empire/.agent-worktrees/atris-cli/builder-continue-improving-atris-member-boar-20261015-003022/bin/atris.js member board --json --follow
+ℹ actual stdout:
+{"kind":"snapshot","at":"2026-10-15T08:02:07.022Z","dir":"/var/folders/t1/2_4kmb5n4c71dxm26zc8dgzr0000gn/T/atris-board-SEzTJ4","members":[{"member":"navigator","state":"working","last_result":"","last_result_reason":"","last_result_ran":"","last_result_engine":"","last_result_ago":"","no_result":false,"pid":null,"engine":"","alive":null,"running_for":"","job":"old job","step":"","ago":"0s ago","at":1792051326932,"idle":false,"asleep":false}]}
+{"member":"navigator","mission":"m-new","at":"2026-10-15T08:02:06.932Z","kind":"started","text":"longer next job"}
+{"member":"navigator","mission":"m-new","at":"2026-10-15T08:02:06.932Z","kind":"step","text":"reading fresh fresh fresh fresh fresh fresh fresh fresh fresh fresh fresh fresh fresh fresh fresh fresh fresh fresh fresh fresh notes"}
+{"member":"navigator","mission":"m-new","at":"2026-10-15T08:02:06.932Z","kind":"finished","text":"ok","ok":true}
+exit: 0
+✔ wide characters in a job or step never push a watch row past the window (384.981583ms)
+✔ a failure reason in wide characters stays inside narrow and short watch screens (670.567709ms)
+✔ member names in wide characters trim by screen cells on narrow watch screens (662.331291ms)
+✔ hidden live member names in wide characters fit the short-screen footer by screen cells (660.974458ms)
+✔ a wide hidden member name fits the two-column footer by screen cells on a 3-row screen (658.774125ms)
+✔ a watch screen under 13 columns keeps wide-named rows and the hint inside the window (1439.307083ms)
+✔ a member name in wide characters fits the watch screen and matches live follow (1003.216958ms)
+✔ live follow streams a line written the moment the snapshot arrives, exactly once (1519.019958ms)
+ℹ actual stdout:
+{"kind":"snapshot","at":"2026-10-15T08:02:13.565Z","dir":"/var/folders/t1/2_4kmb5n4c71dxm26zc8dgzr0000gn/T/atris-board-jd8aPd","members":[{"member":"navigator","state":"working","last_result":"","last_result_reason":"","last_result_ran":"","last_result_engine":"","last_result_ago":"","no_result":false,"pid":null,"engine":"","alive":null,"running_for":"","job":"ship it","step":"","ago":"0s ago","at":1792051333474,"idle":false,"asleep":false}]}
+{"member":"navigator","mission":"m-1","at":"2026-10-15T08:02:13.474Z","kind":"finished","text":"ok","ok":true}
+exit: 0
+✔ live follow keeps split, replaced, new, and shortened logs written the moment the snapshot arrives (2027.995ms)
+ℹ a line split across two writes:
+{"kind":"snapshot","at":"2026-10-15T08:02:15.088Z","dir":"/var/folders/t1/2_4kmb5n4c71dxm26zc8dgzr0000gn/T/atris-board-3dG3AO","members":[{"member":"ana","state":"working","last_result":"","last_result_reason":"","last_result_ran":"","last_result_engine":"","last_result_ago":"","no_result":false,"pid":null,"engine":"","alive":null,"running_for":"","job":"a long first job for ana here","step":"","ago":"0s ago","at":1792051334993,"idle":false,"asleep":false}]}
+{"member":"ana","mission":"m-1","at":"2026-10-15T08:02:14.993Z","kind":"finished","text":"ok","ok":true}
+exit: 0
+ℹ a log replaced by a new file:
+{"kind":"snapshot","at":"2026-10-15T08:02:15.600Z","dir":"/var/folders/t1/2_4kmb5n4c71dxm26zc8dgzr0000gn/T/atris-board-IAqQb7","members":[{"member":"ana","state":"working","last_result":"","last_result_reason":"","last_result_ran":"","last_result_engine":"","last_result_ago":"","no_result":false,"pid":null,"engine":"","alive":null,"running_for":"","job":"a long first job for ana here","step":"","ago":"0s ago","at":1792051335500,"idle":false,"asleep":false}]}
+{"member":"ana","mission":"m-2","at":"2026-10-15T08:02:15.500Z","kind":"started","text":"new job"}
+exit: 0
+ℹ a log for a new member:
+{"kind":"snapshot","at":"2026-10-15T08:02:16.098Z","dir":"/var/folders/t1/2_4kmb5n4c71dxm26zc8dgzr0000gn/T/atris-board-YvXsKy","members":[{"member":"ana","state":"working","last_result":"","last_result_reason":"","last_result_ran":"","last_result_engine":"","last_result_ago":"","no_result":false,"pid":null,"engine":"","alive":null,"running_for":"","job":"a long first job for ana here","step":"","ago":"0s ago","at":1792051336007,"idle":false,"asleep":false}]}
+{"member":"bo","mission":"m-3","at":"2026-10-15T08:02:16.007Z","kind":"started","text":"bo job"}
+exit: 0
+ℹ a log cut shorter:
+{"kind":"snapshot","at":"2026-10-15T08:02:16.608Z","dir":"/var/folders/t1/2_4kmb5n4c71dxm26zc8dgzr0000gn/T/atris-board-oi51gu","members":[{"member":"ana","state":"working","last_result":"","last_result_reason":"","last_result_ran":"","last_result_engine":"","last_result_ago":"","no_result":false,"pid":null,"engine":"","alive":null,"running_for":"","job":"a long first job for ana here","step":"","ago":"0s ago","at":1792051336514,"idle":false,"asleep":false}]}
+{"member":"ana","mission":"m-4","at":"2026-10-15T08:02:16.514Z","kind":"started","text":"y"}
+exit: 0
+✔ a short watch screen drops rows from a log cut shorter, replaced, or removed within a beat (895.434334ms)
+✔ a watch window that shrinks as a log changes ends on a frame for the new size (2589.853292ms)
+✔ seeded random watch: resizes and log changes in any order settle on the board a fresh run draws (10725.692292ms)
+✔ the real watch terminal recovers a late progress folder and watches later writes (6286.003708ms)
+ℹ command: node bin/atris.js member board --watch (80 columns, 3 rows)
+no member progress yet in /tmp/atris-wr-23jk_xon/progress
+member   state    last result  ago     job            last step
+builder  working  -            3s ago  recover board  -
+member   state        last result  ago     job            last step
+builder  done failed  timed out    3s ago  recover board  -
+exit: 0
+late folder recovered; later write arrived before the next timed redraw
+
+✔ every map line ref into this file lands on a test, a test loop, or a constant (8.586417ms)
+✔ every map line ref into the board code lands on the function or constant it names (2.367209ms)
+✔ each proof file variable belongs to one test (2.517666ms)
+✔ each proof file variable a receipt names is still written by a board test (34.600583ms)
+✔ each test name pattern a receipt aims at the board tests still matches one (9.285458ms)
+✔ the map board row ref into the member command lands on the board hand-off (1.406708ms)
+✔ a one-row idle watch wakes and restores member headings after resize (253.030042ms)
+ℹ command: /opt/homebrew/Cellar/node/25.6.1/bin/node /Users/keshavrao/arena/empire/.agent-worktrees/atris-cli/builder-continue-improving-atris-member-boar-20261015-003022/bin/atris.js member board --watch
+18x1 idle: idle. 3 older
+18x1 working: 1 hidden. 2 older
+18x3 working: member   state | builder  working | 2 older hidden
+18x1 working again: 1 hidden. 2 older
+exit: 0
+one-row idle board wakes; headings return after resize
+
+✔ member result args: one member, optional iso --since, json (1.557875ms)
+✔ one obvious number: a single percent, dollar, or count; two different values means none (1.5475ms)
+✔ reads the newest run, its worktree receipt, and files made after it started (12.979541ms)
+✔ --since widens the window; a member with no runs still reads its own folder (1.090333ms)
+✔ an unknown member is an error, printed as json with exit 1 (0.66925ms)
+ℹ tests 125
+ℹ suites 0
+ℹ pass 125
+ℹ fail 0
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 84895.662666

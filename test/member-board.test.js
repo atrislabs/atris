@@ -2335,10 +2335,11 @@ test('a signed out run written with CRLF keeps its engine and sign-in fix when t
   }
 });
 
-for (const mode of ['before', 'after', 'new file']) {
+for (const mode of ['before', 'after', 'new file', 'replacement']) {
   const pendingAtStartup = mode === 'before';
   const newFile = mode === 'new file';
-  test(`live follow preserves a multibyte character split ${mode === 'before' ? 'before startup' : mode === 'after' ? 'after startup' : 'in a new file'}`, async (t) => {
+  const replacement = mode === 'replacement';
+  test(`live follow preserves a multibyte character split ${mode === 'before' ? 'before startup' : mode === 'after' ? 'after startup' : newFile ? 'in a new file' : 'across log replacement'}`, async (t) => {
     for (const [character, byte] of [['é', 1], ['界', 1], ['界', 2], ['🧭', 1], ['🧭', 2], ['🧭', 3]]) {
       const stamp = new Date().toISOString();
       const dir = fakeDir(newFile ? {} : { navigator: [`${stamp} m-unicode started: check text`] });
@@ -2346,6 +2347,10 @@ for (const mode of ['before', 'after', 'new file']) {
       const text = `reading ${character} notes`;
       const line = Buffer.from(`${stamp} m-unicode ${text}\n`);
       const split = line.indexOf(Buffer.from(character)) + byte;
+      if (replacement) {
+        const abandoned = Buffer.from(`${stamp} m-old reading 🧨 abandoned text\n`);
+        fs.appendFileSync(log, abandoned.subarray(0, abandoned.indexOf(Buffer.from('🧨')) + 1));
+      }
       if (pendingAtStartup) fs.appendFileSync(log, line.subarray(0, split));
       const child = spawn(process.execPath, [cliPath, 'member', 'board', '--json', '--follow'], {
         ...FOLLOW_PROCESS_LIMIT, cwd: dir, env: { ...process.env, ...FOLLOW_ENV, ATRIS_PROGRESS_DIR: dir },
@@ -2370,7 +2375,10 @@ for (const mode of ['before', 'after', 'new file']) {
         assert.equal(snapshot.kind, 'snapshot');
         if (newFile) assert.deepEqual(snapshot.members, [], 'the follower opens before the log exists');
         else assert.equal(snapshot.members[0].step, '', 'an incomplete character stays out of the opening board');
-        if (!pendingAtStartup) fs.appendFileSync(log, line.subarray(0, split));
+        if (replacement) {
+          fs.writeFileSync(`${log}.next`, line.subarray(0, split));
+          fs.renameSync(`${log}.next`, log);
+        } else if (!pendingAtStartup) fs.appendFileSync(log, line.subarray(0, split));
         await new Promise((r) => setTimeout(r, QUIET_MS));
         assert.equal(records().length, 1, 'an incomplete character must not emit');
         fs.appendFileSync(log, line.subarray(split));
