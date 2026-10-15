@@ -44,12 +44,14 @@ const SKIP_DIRS = new Set(['node_modules', '.git', 'dist', 'build', '.next', '.a
 // sentence, so a list item like that is not a label and keeps a comma.
 // So does "which" and a verb, a remark on the sentence before it: "- Nobody
 // talks about it yet, which means", while "- **Fs** \u2014 which files" names one.
+// So do "including" and "especially": "- Read all policy files, especially
+// boundaries.md", never "files: especially".
 // A list item inside a quote ("> - item") is a label the same way.
 // An item that already holds a colon and a short value of four words or
 // fewer is a field, so the dash goes on with the value instead of stacking
 // a second colon: "risk: none, verification only", never "risk: none:
 // verification only". A longer value is a sentence its dash explains.
-const LIST_LABEL_DASH = /^(\s*(?:>\s*)*(?:[-*+]|\d+[.)])\s+)((?![^\u2014]*:\s+(?:[^\s\u2014]+\s+){0,3}[^\s\u2014]+\s*\u2014)[^\u2014]{0,59}[^\s\u2014,;:.])\s*\u2014\s*(?!\s|(?:and|but|or|nor|so|yet)\b|which\s+(?:is|was|are|were|means|meant|makes|made|explains|would|could|will|has|had)\b)/i;
+const LIST_LABEL_DASH = /^(\s*(?:>\s*)*(?:[-*+]|\d+[.)])\s+)((?![^\u2014]*:\s+(?:[^\s\u2014]+\s+){0,3}[^\s\u2014]+\s*\u2014)[^\u2014]{0,59}[^\s\u2014,;:.])\s*\u2014\s*(?!\s|(?:and|but|or|nor|so|yet|including|especially|particularly|excluding)\b|which\s+(?:is|was|are|were|means|meant|makes|made|explains|would|could|will|has|had)\b)/i;
 // A bold or italic label or a code span that opens a line or a quote, not a
 // list item, gets the same colon: "`npm test` then a dash then 9 tests",
 // "_Note_: requires Node 18". An italic mark must touch its word, so a "* "
@@ -137,10 +139,12 @@ function wrappedInParens(s) {
 // bracket the dash sits inside: "(the mechanical 80%: scaffolding, grids,
 // state matrices)", so the number is not read as one of the items. Items that
 // open with "when" or "if" are clauses, not a list: "when it fills, if it
-// stalls, drain it". A dot inside a word is a site or file name, so
+// stalls, drain it". Nor do items after "including" or "especially", which
+// go on with the sentence: "studies anything, including purple, caps, gradient".
+// A dot inside a word is a site or file name, so
 // "steal from places you like: linear.app, vercel.com, arc browser".
 const LIST_ITEM = "[A-Za-z0-9][\\w'/-]*(?:\\.\\w[\\w'/-]*)*(?: [A-Za-z0-9][\\w'/-]*(?:\\.\\w[\\w'/-]*)*){0,3}";
-const LIST_AFTER_DASH = new RegExp(`(?<=[\\w)\\]*_\`%])\\s*\u2014\\s*(?!(?:and|but|or|nor|so|yet|then|once|when|whenever|if|unless|until|after|before|while) )(?=${LIST_ITEM}(?:, ${LIST_ITEM}){1,}, (?:and |or )?${LIST_ITEM}(?:[.!?](?:\\s|$)|$|(\\))))`, 'g');
+const LIST_AFTER_DASH = new RegExp(`(?<=[\\w)\\]*_\`%])\\s*\u2014\\s*(?!(?:and|but|or|nor|so|yet|then|once|when|whenever|if|unless|until|after|before|while|including|especially|particularly|excluding) )(?=${LIST_ITEM}(?:, ${LIST_ITEM}){1,}, (?:and |or )?${LIST_ITEM}(?:[.!?](?:\\s|$)|$|(\\))))`, 'g');
 // A sentence so far that is only a list of three or more short or quoted
 // items, with "and" or "or" before the last one or not.
 const BARE_ITEM = `(?:${LIST_ITEM}|"[^"]+"|\u201c[^\u201d]+\u201d)`;

@@ -3921,3 +3921,24 @@ test('fix keeps a comma before which and a verb at the head of a list item', () 
     '- tools: which agent tools to enable',
   ]);
 });
+
+test('fix keeps a comma before including or especially after a dash', () => {
+  // from a policy checklist: "3. Read ALL policy files" then a dash and
+  // "especially boundaries.md" was read as a label and took a colon, and
+  // "anything" then "including purple, caps, gradient" was read as a list
+  // the dash introduces. Both words go on with the sentence before them.
+  const D = String.fromCharCode(0x2014);
+  const file = tmpFile('including-especially.md', [
+    `3. Read ALL policy files ${D} especially boundaries.md`,
+    '',
+    `The lab studies anything ${D} including purple, caps-heavy, gradient`,
+    '',
+    `- **Low-Medium** ${D} mostly unification of existing tables`,
+  ].join('\n'));
+  const { changes } = applyFixes([file], RULES);
+  assert.deepEqual(changes.map((c) => c.after), [
+    '3. Read ALL policy files, especially boundaries.md',
+    'The lab studies anything, including purple, caps-heavy, gradient',
+    '- **Low-Medium**: mostly unification of existing tables',
+  ]);
+});
