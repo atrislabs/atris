@@ -4818,6 +4818,48 @@ test('a leaked ssh-agent that started during a run whose start fell before the r
   }
 });
 
+test('the sweep listing does not blame the startup line for agents that started during a run whose start was cut from a big log', () => {
+  const { engineCommand } = require('../commands/engine');
+  const { MAX_LOG_BYTES } = require('../lib/engine-resource');
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'engine-sweep-cut-start-blame-'));
+  const home = fs.mkdtempSync(path.join(os.tmpdir(), 'engine-sweep-cut-start-blame-home-'));
+  const file = path.join(root, RESOURCE_LOG);
+  const at = (h) => new Date(Date.now() - h * 3600000).toISOString();
+  const agent = (pid, h) => ({ pid, ppid: 1, uid: 501, age_sec: Math.round(h * 3600), args: 'ssh-agent -s' });
+  try {
+    require('node:child_process').spawnSync('git', ['init', '-q'], { cwd: root });
+    fs.mkdirSync(path.dirname(file), { recursive: true });
+    fs.writeFileSync(path.join(home, '.zshrc'), 'eval "$(ssh-agent -s)"\n');
+    // LOST's start falls before the read part, which begins with cursor run
+    // B 5h ago; LOST ends 1.5h ago.
+    fs.writeFileSync(file, [
+      JSON.stringify({ at: at(6), phase: 'start', engine: 'codex', run_id: 'LOST' }),
+      'x'.repeat(MAX_LOG_BYTES),
+      JSON.stringify({ at: at(5), phase: 'start', engine: 'cursor', run_id: 'B' }),
+      JSON.stringify({ at: at(4.8), phase: 'end', engine: 'cursor', run_id: 'B' }),
+      JSON.stringify({ at: at(1.5), phase: 'end', engine: 'codex', run_id: 'LOST' }),
+      '',
+    ].join('\n'));
+    // Two agents start while LOST is open and one after it ends, none in
+    // the last hour, so most started during an engine run.
+    const out = [];
+    const original = console.log;
+    console.log = (l = '') => out.push(String(l));
+    try {
+      engineCommand(['sweep'], { root, engineSweep: { read: () => ({ agents: [agent(400, 3), agent(401, 2.5), agent(402, 1.2)], referenced: new Set() }), uid: 501, home, pathAtrisRecordsRuns: true } });
+    } finally {
+      console.log = original;
+    }
+    const listing = out.join('\n');
+    console.log(`real cut start sweep blame: ${listing.split('\n').find((l) => l.includes('when the leaked ssh-agents started'))}`);
+    assert.match(listing, /\nwhen the leaked ssh-agents started: 2 started while an engine run was open \(codex 2\), 1 with no engine run open\nlikely source: ~\/\.zshrc line 1/, listing);
+    assert.doesNotMatch(listing, /the startup line below is the one to fix, not an engine/, 'agents during the cut-off run do not point the blame at the startup line');
+  } finally {
+    fs.rmSync(root, { recursive: true, force: true });
+    fs.rmSync(home, { recursive: true, force: true });
+  }
+});
+
 test('the sweep listing splits leaked ssh-agents by engine runs and points to the startup line when most started outside them', () => {
   const { engineCommand } = require('../commands/engine');
   const { showStatus } = require('../commands/autoland');
