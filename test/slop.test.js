@@ -1286,6 +1286,11 @@ test('fix joins a noun clause after the dash with a semicolon', () => {
     'It skips reward work \u2014 the article linked in the tweet covers this in detail.',
     'Keep notes \u2014 the files stored in the shared folder.',
     'Earliness beats peak \u2014 a boost saved for Sunday produces matches with no runway.',
+    // "their", "its" and "that" open a past clause; a plural after "that"
+    // makes it a relative word
+    'Every customer gets the aha \u2014 their code literally improved overnight.',
+    'H1 missed 3 bullets \u2014 that gap closed with the regex broadening.',
+    'We built the page \u2014 that users wanted.',
     // a title where every word is capitalized names a thing, so it never
     // joins; words in all capitals are shouting and still do
     'Inbox Triage \u2014 23 emails processed',
@@ -1395,6 +1400,9 @@ test('fix joins a noun clause after the dash with a semicolon', () => {
     'It skips reward work; the article linked in the tweet covers this in detail.',
     'Keep notes, the files stored in the shared folder.',
     'Earliness beats peak; a boost saved for Sunday produces matches with no runway.',
+    'Every customer gets the aha; their code literally improved overnight.',
+    'H1 missed 3 bullets; that gap closed with the regex broadening.',
+    'We built the page, that users wanted.',
     'Inbox Triage, 23 emails processed',
     'Release Notes, it ships Friday.',
     'Your journal tracks how ideas evolve; the navigator reads it to understand context.',

@@ -505,3 +505,11 @@ Errors route wrong \u2014 a `rate_limit` treated as `tool_crash` wastes EC2 sand
 => Errors route wrong; a `rate_limit` treated as `tool_crash` wastes EC2 sandbox time.
 Keep notes \u2014 the files stored in the repo docs folder.
 => Keep notes, the files stored in the repo docs folder.
+
+# "their", "its" and "that" open a past clause; a plural after "that" is a relative word
+It runs clean \u2014 its tests passed.
+=> It runs clean; its tests passed.
+Pick the tool \u2014 that process failed.
+=> Pick the tool; that process failed.
+We built the page \u2014 that users wanted.
+=> We built the page, that users wanted.

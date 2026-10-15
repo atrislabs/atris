@@ -313,7 +313,16 @@ const LONE_PAST_VERB = '(?:failed|crashed|existed|went|happened|stalled|succeede
 // a clause, but not before "because of": "the banner shipped because".
 const SETTLED_PAST_VERB = '(?:shipped|landed|moved|closed)';
 const PAST_VERB = '(?:(?:re|pre|un|over|under|auto)-?[a-z]{2,}ed|[a-z]{2,}ed|built|ran|broke|took|made|gave|got|went|came|sent|kept|held|found|lost|wrote|let|caught|brought|threw|grew|knew|began|stood|told|sold|became|fell|stuck|did|hid|set(?=\\s+(?:it|them|up|out|off|aside)\\b))';
-const PAST_CLAUSE_AFTER_DASH = new RegExp(`${CLAUSE_END}\\s*\\u2014\\s*(?!${NAMING_PHRASE})(?=(?:the|a|an|(?:every|each)(?!(?:\\s+[a-z]+){1,3},))\\s+(?:(?!(?:the|a|an|that|whose|they|we|you|he|she|I|your|our|their|its|his|her|my|YOUR|OUR|THEIR|ITS|HIS|HER|MY)\\b)${SUBJECT_WORD}){1,3}(?:(?<!\\b(?:\\d+|one|two|three|four|five|six|seven|eight|nine|ten|few|many|several|both|all)\\s+)${MANNER_WORD}\\s+${PAST_VERB}\\s+[a-z]|(?<!\\b(?:most|least|more|less|best|worst|well|ill|much|half)\\s+)${PAST_VERB}(?:[.!?;,]|$|\\s+(?:out|up|down|off|back|over|away|again|fine|green|it|them|its|their|every|all|each|the|a|an|this|no|[a-z]{2,}ing)\\b|\\s+but\\s+(?:nothing|none|no|it|they|we|the|this|that)\\s|\\s+[a-z]{3,}(?<!ss|us|is)s\\s+(?:against|from|for|into|onto|across|through|before|after|instead)\\b)|(?:${LONE_PAST_VERB}|${SETTLED_PAST_VERB})\\s+(?:to|at|with|in|on|for|from|into|after|before|during|because|without)\\b|${PAST_VERB}\\s+because\\s+(?!of\\b)))`, 'g');
+// "that" opens a subject like "this" only before a plain lowercase noun:
+// "that flag downgrades to a stale model". Before "the", a pronoun or
+// "everyone" and kin it opens a reported clause, so "that everyone wants
+// it" keeps its comma.
+const THAT_OPENER = "that(?=\\s+(?!(?:the|a|an|it|its|this|these|those|they|we|you|he|she|i|our|your|their|his|her|my|everyone|everything|everybody|someone|something|somebody|anyone|anything|anybody|nobody|nothing|no|one|all|each|every|some|any|most|many|is|was|has|does)\\b)[a-z])";
+// "Their", "its" and "that" open a past clause too: "their code literally
+// improved overnight", "that gap closed with the regex fix". A plural after
+// "that" makes it a relative word, never "this", so "that users wanted"
+// keeps its comma.
+const PAST_CLAUSE_AFTER_DASH = new RegExp(`${CLAUSE_END}\\s*\\u2014\\s*(?!${NAMING_PHRASE})(?=(?:the|a|an|their|its|${THAT_OPENER}(?!\\s+[a-z]+s(?<!ss|us|is)\\b)|(?:every|each)(?!(?:\\s+[a-z]+){1,3},))\\s+(?:(?!(?:the|a|an|that|whose|they|we|you|he|she|I|your|our|their|its|his|her|my|YOUR|OUR|THEIR|ITS|HIS|HER|MY)\\b)${SUBJECT_WORD}){1,3}(?:(?<!\\b(?:\\d+|one|two|three|four|five|six|seven|eight|nine|ten|few|many|several|both|all)\\s+)${MANNER_WORD}\\s+${PAST_VERB}\\s+[a-z]|(?<!\\b(?:most|least|more|less|best|worst|well|ill|much|half)\\s+)${PAST_VERB}(?:[.!?;,]|$|\\s+(?:out|up|down|off|back|over|away|again|fine|green|it|them|its|their|every|all|each|the|a|an|this|no|[a-z]{2,}ing)\\b|\\s+but\\s+(?:nothing|none|no|it|they|we|the|this|that)\\s|\\s+[a-z]{3,}(?<!ss|us|is)s\\s+(?:against|from|for|into|onto|across|through|before|after|instead)\\b)|(?:${LONE_PAST_VERB}|${SETTLED_PAST_VERB})\\s+(?:to|at|with|in|on|for|from|into|after|before|during|because|without)\\b|${PAST_VERB}\\s+because\\s+(?!of\\b)))`, 'g');
 // A plain verb ending in "s" counts only after a determiner and one more word,
 // and never right before a preposition: "a stray file turns them" joins, but
 // "the changes from whoever" and "the old tests from CI" stay noun phrases.
@@ -324,11 +333,6 @@ const PAST_CLAUSE_AFTER_DASH = new RegExp(`${CLAUSE_END}\\s*\\u2014\\s*(?!${NAMI
 // phrase, so "the parallel that connects the men" keeps its comma.
 // "this" opens a subject the way "the" does, here and in the object checks
 // below: "simulator plays; this benchmark shows our gym's reward works".
-// "that" opens a subject like "this" only before a plain lowercase noun:
-// "that flag downgrades to a stale model". Before "the", a pronoun or
-// "everyone" and kin it opens a reported clause, so "that everyone wants
-// it" keeps its comma.
-const THAT_OPENER = "that(?=\\s+(?!(?:the|a|an|it|its|this|these|those|they|we|you|he|she|i|our|your|their|his|her|my|everyone|everything|everybody|someone|something|somebody|anyone|anything|anybody|nobody|nothing|no|one|all|each|every|some|any|most|many|is|was|has|does)\\b)[a-z])";
 const PLAIN_VERB_WORD = '(?!(?:this|his|its|was|has|does|thus|plus|always|perhaps|unless|whereas|across)\\b)[a-z]{2,}[a-rt-z]s';
 const PLAIN_VERB = PLAIN_VERB_WORD + '\\s+(?!(?:from|of|in|on|for|with|at|by|to|and|or|that|which|who|like|than|as)\\b)';
 // A word in "s" before ", which is" is a verb, since a plural noun takes
