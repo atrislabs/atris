@@ -808,7 +808,7 @@ with tempfile.TemporaryDirectory(prefix='atris-board-resize-') as folder:
         (root / 'atris/team' / member).mkdir(parents=True)
         (progress / (member + '.log')).write_text(
             f'{now.isoformat()} m-1 started: resize proof\n'
-            f'{now.isoformat()} m-1 finished: failed (timed out)\n')
+            + (f'{now.isoformat()} m-1 finished: failed (timed out)\n' if member != 'scout' else ''))
     master, slave = pty.openpty()
     def resize(width, height):
         fcntl.ioctl(master, termios.TIOCSWINSZ, struct.pack('HHHH', height, width, 0, 0))
@@ -817,7 +817,7 @@ with tempfile.TemporaryDirectory(prefix='atris-board-resize-') as folder:
         cwd=root, env={**os.environ, 'ATRIS_PROGRESS_DIR': str(progress)},
         stdout=slave, stderr=slave)
     os.close(slave)
-    def frame(width, height, resized=False):
+    def frame(width, height, resized=False, pending=False):
         started = time.monotonic()
         output = b''
         deadline = started + 15
@@ -844,15 +844,30 @@ with tempfile.TemporaryDirectory(prefix='atris-board-resize-') as folder:
             assert 'failed' in lines[-1] and 'timed out' in lines[-1], repr(text)
         else:
             for member in ['builder', 'scout', 'shipper']:
-                assert re.search(r'^' + member + r'\s+done failed', text, re.M), repr(text)
+                state = 'working' if pending and member == 'scout' else 'done failed'
+                assert re.search(r'^' + member + r'\s+' + state, text, re.M), repr(text)
             assert text.endswith('redraws every 3s, ctrl-c to stop\n'), repr(text)
         if resized:
             assert elapsed < 2.5, f'resize waited for periodic redraw: {elapsed}'
         print(f'command: node bin/atris.js member board --watch ({width} columns, {height} rows)')
         print(text)
+        return text
     try:
-        frame(80, 8)
-        for width, height in [(47, 2), (30, 3), (80, 8)]:
+        frame(80, 8, pending=True)
+        resize(47, 2)
+        child.send_signal(signal.SIGWINCH)
+        before = frame(47, 2, resized=True)
+        assert '2 failed' in before and '3 failed' not in before, repr(before)
+        with (progress / 'scout.log').open('a') as log:
+            log.write(f'{now.isoformat()} m-1 finished: failed (timed')
+        # Wait for the actual periodic redraw, with no resize signal to force it.
+        incomplete = frame(47, 2)
+        assert '2 failed' in incomplete and '3 failed' not in incomplete, repr(incomplete)
+        with (progress / 'scout.log').open('a') as log:
+            log.write(' out)\n')
+        complete = frame(47, 2)
+        assert '3 failed, all timed out' in complete, repr(complete)
+        for width, height in [(30, 3), (80, 8)]:
             resize(width, height)
             child.send_signal(signal.SIGWINCH)
             frame(width, height, resized=True)
@@ -868,6 +883,9 @@ with tempfile.TemporaryDirectory(prefix='atris-board-resize-') as folder:
 `, process.execPath, cliPath], { encoding: 'utf8', timeout: 75_000 });
   assert.ifError(proof.error);
   assert.equal(proof.status, 0, `${proof.stdout}\n${proof.stderr}`);
+  if (process.env.ATRIS_BOARD_TERMINAL_PROOF) {
+    fs.writeFileSync(process.env.ATRIS_BOARD_TERMINAL_PROOF, `${proof.stdout}proof exit: ${proof.status}\n`);
+  }
 });
 
 test('a short window keeps the header and the newest rows, and says how many did not fit', () => {
