@@ -12,6 +12,15 @@ const {
 } = require('../lib/member-switches');
 
 /**
+ * True when the user asked for help. Checked before anything else so
+ * `atris sleep --help` inside a bound folder never sleeps that business.
+ * @returns {boolean}
+ */
+function wantsHelp() {
+  return process.argv.slice(3).some((a) => a === '--help' || a === '-h' || a === 'help');
+}
+
+/**
  * Resolve business slug from CLI arg or local .atris/business.json.
  * @returns {string|null} The resolved slug, or null if not found.
  */
@@ -121,11 +130,12 @@ async function waitForBusinessComputer(token, business, maxWait = 90000) {
  * @returns {Promise<void>}
  */
 async function sleepAtris() {
-  if (handleMemberSwitch(false)) return;
+  const help = wantsHelp();
+  if (!help && handleMemberSwitch(false)) return;
 
-  const slug = resolveSlug();
+  const slug = help ? null : resolveSlug();
 
-  if (!slug || slug === '--help' || slug === '-h' || slug === 'help') {
+  if (!slug) {
     console.log('Usage: atris sleep [business|member] [--loop <loop-id>]');
     console.log('');
     console.log('  Pause a workspace to save compute. Storage only.');
@@ -172,11 +182,12 @@ async function sleepAtris() {
  * @returns {Promise<void>}
  */
 async function wakeAtris() {
-  if (handleMemberSwitch(true)) return;
+  const help = wantsHelp();
+  if (!help && handleMemberSwitch(true)) return;
 
-  const slug = resolveSlug();
+  const slug = help ? null : resolveSlug();
 
-  if (!slug || slug === '--help' || slug === '-h' || slug === 'help') {
+  if (!slug) {
     console.log('Usage: atris wake [business|member] [--loop <loop-id>]');
     console.log('');
     console.log('  Wake a sleeping workspace. Wake signal sent; loops pick it up on their next pass.');
