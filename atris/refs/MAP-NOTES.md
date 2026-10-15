@@ -2725,3 +2725,5 @@ Revision initial readiness setup: `test/commands.test.js` calls production ready
 Sync preview fixture setup: `test/commands.test.js:17365` seeds creation and claim through the production store, then runs the CLI message before reopening the store for readiness at `test/commands.test.js:17394`. The setup connection closes in finally before the CLI dry-run. Two CLI launches replace three; all sync assertions remain.
 
 Default review fixture setup: `test/commands.test.js:20276` seeds creation, claim and readiness through the production store, asserts each success, and closes before CLI certification and review screen checks. Two CLI launches remain; every screen assertion remains.
+
+Search help checks: `test/commands.test.js:17616` runs both help spellings together with the existing async CLI helper, then checks each output and confirms neither workspace nor home state was created. `commands/search.js:420` routes both help spellings before searching or creating state. Two launches take one sequential stage.

@@ -17613,12 +17613,15 @@ test('search with no keyword prints usage', () => {
   }
 });
 
-test('search help flags print usage without workspace state', () => {
+test('search help flags print usage without workspace state', async () => {
   const dir = makeTempDir();
   try {
     const home = path.join(dir, 'home');
-    for (const flag of ['--help', '-h']) {
-      const res = runCli(['search', flag], { cwd: dir, env: { HOME: home } });
+    const flags = ['--help', '-h'];
+    const results = await Promise.all(flags.map(flag =>
+      runCliAsync(['search', flag], { cwd: dir, env: { HOME: home } })));
+    for (const [index, flag] of flags.entries()) {
+      const res = results[index];
       assert.equal(res.status, 0, `search ${flag}: ${res.stderr || res.stdout}`);
       assert.match(res.stdout, /Usage: atris search <keyword>/);
       assert.doesNotMatch(res.stdout, /No atris\/logs\/ directory found/);
