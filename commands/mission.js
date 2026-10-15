@@ -4386,7 +4386,7 @@ function seedMissionRunContinuation(parent, root = process.cwd(), proof = '') {
     ...mission,
     started_from: 'mission_run_continuation',
     parent_mission_id: parent.id,
-    ...(parent.campaign_id ? { campaign_id: parent.campaign_id } : {}),
+    ...(parent.campaign_id && campaignMissions().checkCampaignStart(root, parent.campaign_id, { reserveUsd: 0 }).ok ? { campaign_id: parent.campaign_id } : {}),
     parent_objective: parent.objective,
     continue_on_complete: false,
     continuation_policy: 'choose_next_mission',
@@ -4582,7 +4582,11 @@ function startMission(args, options = {}) {
   if (mission.campaign_id) {
     const check = campaignMissions().checkCampaignStart(process.cwd(), mission.campaign_id, { missionId: mission.id, reserveUsd: readFlag(args, '--reserve', '') });
     if (!check.ok) exitMissionError(`mission start refused: ${check.error}`, 2, asJson);
-    campaignReserve = check.reserve;
+    try {
+      campaignMissions().reserveCampaignMission(process.cwd(), mission.campaign_id, mission.id, check.reserve, mission.owner || 'mission-lead');
+    } catch (error) {
+      exitMissionError(`mission start refused: ${error.message}`, 2, asJson);
+    }
   }
   // --worktree: bind the mission to its own isolated checkout. We chdir before
   // any state writes so the mission record, baseline sidecar, receipts, and
@@ -4809,7 +4813,11 @@ async function startMissionFromRunObjective(objective, args) {
   if (mission.campaign_id) {
     const check = campaignMissions().checkCampaignStart(process.cwd(), mission.campaign_id, { missionId: mission.id, reserveUsd: readFlag(args, '--reserve', '') });
     if (!check.ok) exitMissionError(`mission start refused: ${check.error}`, 2, wantsJson(args));
-    campaignReserve = check.reserve;
+    try {
+      campaignMissions().reserveCampaignMission(process.cwd(), mission.campaign_id, mission.id, check.reserve, mission.owner || 'mission-lead');
+    } catch (error) {
+      exitMissionError(`mission start refused: ${error.message}`, 2, wantsJson(args));
+    }
   }
   if (landOwnerResolution) {
     mission.owner = runOwner;
@@ -10306,6 +10314,9 @@ async function executeMissionRunTicksPhase(context) {
     let cycleTickLimit = effectiveMaxTicks;
     while (true) {
       while (ticks.length < cycleTickLimit) {
+        // A campaign that is done, paused, or out of money stops its missions.
+        const campaignStop = mission.campaign_id ? campaignMissions().campaignGate(cwd, mission) : null;
+        if (campaignStop) { pauseReason = campaignStop; break; }
         // Re-read before measuring the wall. Detached full-budget drivers use
         // the mission contract as their wall so process startup drift cannot
         // shorten the promised work window.

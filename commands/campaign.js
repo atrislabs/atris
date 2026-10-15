@@ -5,11 +5,12 @@
 
 'use strict';
 
+const fs = require('fs');
 const os = require('os');
-const { spawnSync } = require('child_process');
+const path = require('path');
+const { spawn } = require('child_process');
 const { readFlag } = require('../lib/arg-parser');
-const { redirectToWorkspaceRoot } = require('../lib/mission-root');
-const { validateCampaign } = require('../lib/campaign-schema');
+const { CAMPAIGN_ID, validateCampaign } = require('../lib/campaign-schema');
 const { decide } = require('../lib/campaign-core');
 const { getCampaign, listCampaigns, newCampaignId, openCampaignStore } = require('../lib/campaign-store');
 
@@ -36,6 +37,11 @@ function printHelp() {
   console.log('');
   console.log('Every verb takes --json. Writes are recorded as you (human:<login>); agents pass --as <member>.');
   console.log('A new campaign runs its judge first and is refused if it already passes: write a judge that fails first.');
+}
+
+function clip(text, max = 80) {
+  const value = String(text);
+  return value.length > max ? `${value.slice(0, max - 3)}...` : value;
 }
 
 function money(value) {
@@ -65,7 +71,13 @@ function readAll(args, name) {
   return values;
 }
 
-function defaultActor() {
+// Agents run in shells that say so; their writes are never recorded as a
+// person. ATRIS_HUMAN=1 is how a person typing inside an agent session says
+// it is really them.
+const AGENT_ENV = ['ATRIS_AGENT_ID', 'CLAUDECODE', 'CLAUDE_CODE_ENTRYPOINT', 'CODEX_SANDBOX', 'CURSOR_AGENT'];
+
+function defaultActor(env = process.env) {
+  if (env.ATRIS_HUMAN !== '1' && AGENT_ENV.some((name) => env[name])) return env.ATRIS_AGENT_ID || 'agent';
   try {
     return `human:${os.userInfo().username}`;
   } catch {
@@ -73,36 +85,82 @@ function defaultActor() {
   }
 }
 
+// The campaign store and the judge belong to the nearest checkout.
+function moveToCheckoutRoot(asJson) {
+  let dir = process.cwd();
+  for (;;) {
+    if (fs.existsSync(path.join(dir, '.git'))) break;
+    const parent = path.dirname(dir);
+    if (parent === dir) return;
+    dir = parent;
+  }
+  if (dir !== process.cwd()) {
+    if (!asJson) console.error(`campaign: working in ${dir}`);
+    process.chdir(dir);
+  }
+}
+
 function nextMove(view) {
   const move = decide(view);
   switch (move.action) {
     case 'run_judge': return { move, text: `run the judge: atris campaign judge ${view.id}` };
-    case 'start_mission': return { move, text: `start mission ${move.mission_id}` };
-    case 'wait': return { move, text: move.reason === 'open asks' ? `answer ${move.asks.length} open ask${move.asks.length === 1 ? '' : 's'}` : `wait: ${move.reason}` };
-    case 'propose': return { move, text: 'propose the next mission' };
+    case 'start_mission': return { move, text: `start mission ${move.mission_id}: atris campaign run ${view.id}` };
+    case 'wait': return { move, text: move.reason === 'open asks' ? `answer ${move.asks.length} open ask${move.asks.length === 1 ? '' : 's'}: atris campaign answer ${view.id} ${move.asks[0]} "<answer>"` : `wait: ${move.reason} (atris campaign show ${view.id})` };
+    case 'propose': return { move, text: `plan and run the next missions: atris campaign run ${view.id}` };
     default: return { move, text: `nothing to do: ${move.reason}` };
   }
 }
 
+const JUDGE_OUTPUT_LIMIT = 256 * 1024;
+
+// The summary is the line that says how it went: pass and fail counts when the
+// output has them, else the last line with real words in it.
+function judgeSummary(output) {
+  const lines = output.split('\n').map((line) => line.trim()).filter(Boolean);
+  const counts = lines.filter((line) => /^(ℹ|#)\s*(pass|fail)\s+\d+$/i.test(line)).map((line) => line.replace(/^(ℹ|#)\s*/, ''));
+  if (counts.length) return counts.slice(-2).join(', ');
+  const tally = lines.filter((line) => /\d+\s+(passed|failed|passing|failing)\b|\b(passed|failed|passing|failing)\b.*\d+/i.test(line));
+  if (tally.length) return tally[tally.length - 1].slice(0, 200);
+  const telling = lines.filter((line) => /[a-z0-9]{2,}/i.test(line));
+  return telling.length ? telling[telling.length - 1].slice(0, 200) : '';
+}
+
+// Runs in its own process group so a timeout stops everything it started;
+// keeps only the last part of a huge output instead of failing on it.
 function runJudgeCommand(command, cwd, timeoutSeconds) {
   const started = Date.now();
-  const run = spawnSync('/bin/sh', ['-c', command], {
-    cwd, encoding: 'utf8', timeout: timeoutSeconds * 1000, maxBuffer: 32 * 1024 * 1024,
+  return new Promise((resolve) => {
+    const child = spawn('/bin/sh', ['-c', command], { cwd, detached: true, stdio: ['ignore', 'pipe', 'pipe'] });
+    let output = '';
+    let timedOut = false;
+    const keep = (chunk) => {
+      output += chunk;
+      if (output.length > JUDGE_OUTPUT_LIMIT * 2) output = output.slice(-JUDGE_OUTPUT_LIMIT);
+    };
+    child.stdout.on('data', keep);
+    child.stderr.on('data', keep);
+    const timer = setTimeout(() => {
+      timedOut = true;
+      try { process.kill(-child.pid, 'SIGKILL'); } catch {}
+    }, timeoutSeconds * 1000);
+    child.on('error', (error) => {
+      clearTimeout(timer);
+      resolve({ passed: false, exit: null, summary: error.message.slice(0, 200), seconds: Math.round((Date.now() - started) / 1000) });
+    });
+    child.on('close', (code) => {
+      clearTimeout(timer);
+      const seconds = Math.round((Date.now() - started) / 1000);
+      if (timedOut) return resolve({ passed: false, exit: null, summary: `timed out after ${timeoutSeconds}s`, seconds });
+      resolve({ passed: code === 0, exit: code, summary: judgeSummary(output), seconds });
+    });
   });
-  const output = `${run.stdout || ''}\n${run.stderr || ''}`;
-  const lines = output.split('\n').map((line) => line.trim()).filter(Boolean);
-  // The last line that says something; test runners often end on a lone brace.
-  const telling = lines.filter((line) => /[a-z0-9]{2,}/i.test(line));
-  let summary = telling.length ? telling[telling.length - 1].slice(0, 200) : '';
-  if (run.error && run.error.code === 'ETIMEDOUT') summary = `timed out after ${timeoutSeconds}s`;
-  else if (run.error) summary = run.error.message.slice(0, 200);
-  return { passed: run.status === 0 && !run.error, exit: run.status, summary, seconds: Math.round((Date.now() - started) / 1000) };
 }
 
 function makeContext(args, deps) {
   const asJson = args.includes('--json');
   const store = deps.store || openCampaignStore(process.cwd());
   const actor = readFlag(args, '--as', '') || deps.actor || defaultActor();
+  const forgedHuman = readFlag(args, '--as', '').startsWith('human:');
   const judge = deps.runJudge || ((command, timeout) => runJudgeCommand(command, process.cwd(), timeout));
   const out = (human, json) => {
     if (asJson) console.log(JSON.stringify(json));
@@ -114,7 +172,7 @@ function makeContext(args, deps) {
     return code;
   };
   const append = (campaignId, type, data, as = actor) => store.append({ campaign_id: campaignId, type, actor: as, data });
-  return { asJson, store, actor, judge, out, fail, append, loopDeps: deps.loopDeps };
+  return { asJson, store, actor, judge, out, fail, append, forgedHuman, loopDeps: deps.loopDeps };
 }
 
 function requireCampaign(ctx, id) {
@@ -133,7 +191,7 @@ function renderList(views) {
   const lines = [];
   for (const view of sorted) {
     const running = view.missions.filter((m) => m.status === 'running').length;
-    lines.push(`${view.title}  (${view.id})`);
+    lines.push(`${clip(view.title)}  (${view.id})`);
     lines.push(`  ${view.state.replace(/_/g, ' ')} · ${money(view.budget.spent)} of ${money(view.budget.total)} · ${running} mission${running === 1 ? '' : 's'} running · answer ${view.answer.confidence}`);
     lines.push(`  next: ${nextMove(view).text}`);
   }
@@ -142,7 +200,7 @@ function renderList(views) {
 
 function renderShow(view) {
   const next = nextMove(view).text;
-  const lines = [`${view.title}  (${view.id})`, ''];
+  const lines = [`${clip(view.title)}  (${view.id})`, ''];
   const row = (label, value) => lines.push(`${label.padEnd(9)} ${value}`);
   row('state', `${view.state.replace(/_/g, ' ')}${view.stop_reason ? ` (${view.stop_reason.replace(/_/g, ' ')})` : ''} · next: ${next}`);
   const last = view.last_judge;
@@ -167,7 +225,7 @@ function renderShow(view) {
   return lines.join('\n');
 }
 
-function cmdStart(args, ctx) {
+async function cmdStart(args, ctx) {
   const title = positionals(args)[1];
   const judge = readFlag(args, '--judge', '');
   const budgetText = readFlag(args, '--budget', '');
@@ -204,11 +262,12 @@ function cmdStart(args, ctx) {
   if (wrongIf && !bet) return ctx.fail('--wrong-if goes with --bet');
 
   const id = readFlag(args, '--id', '') || newCampaignId(title);
+  if (!CAMPAIGN_ID.test(id)) return ctx.fail(`--id must look like cmp-<lowercase-words>, for example cmp-ship-billing`);
   if (getCampaign(ctx.store, id)) return ctx.fail(`campaign ${id} already exists`, 1);
 
   const timeout = Number(readFlag(args, '--timeout', '')) || JUDGE_TIMEOUT_SECONDS;
   if (!ctx.asJson) console.error(`running the judge first: ${judge}`);
-  const reading = ctx.judge(judge, timeout);
+  const reading = await ctx.judge(judge, timeout);
   if (reading.passed && !standing) {
     return ctx.fail(`already done: the judge passes before any work (${reading.summary || 'exit 0'}). Write a judge that fails first.`, 1);
   }
@@ -234,18 +293,18 @@ function cmdShow(args, ctx) {
   return 0;
 }
 
-function cmdJudge(args, ctx) {
+async function cmdJudge(args, ctx) {
   const { view, error } = requireCampaign(ctx, positionals(args)[1]);
   if (error !== undefined) return error;
   const timeout = Number(readFlag(args, '--timeout', '')) || JUDGE_TIMEOUT_SECONDS;
   if (!ctx.asJson) console.error(`running the judge: ${view.judge}`);
-  const reading = ctx.judge(view.judge, timeout);
+  const reading = await ctx.judge(view.judge, timeout);
   ctx.append(view.id, 'judge_ran', { passed: reading.passed, summary: reading.summary || `exit ${reading.exit}`, seconds: reading.seconds }, 'judge');
   const after = getCampaign(ctx.store, view.id);
   const verdict = reading.passed ? 'passed' : 'failed';
   ctx.out(`judge ${verdict} in ${reading.seconds}s: ${reading.summary || `exit ${reading.exit}`}\n${renderShow(after)}`,
     { ok: true, action: 'judge_ran', passed: reading.passed, reading, campaign: after, next: decide(after) });
-  return 0;
+  return reading.passed ? 0 : 1;
 }
 
 function simpleEvent(type, buildData, describe) {
@@ -296,6 +355,9 @@ const cmdEvent = (args, ctx) => {
   if (error !== undefined) return error;
   const type = words[2];
   if (!type) return ctx.fail('name the event type: atris campaign event <id> <type> [--data \'<json>\']');
+  // Events that only the judge or a person may write have their own verbs.
+  const guarded = { judge_ran: 'atris campaign judge', ask_answered: 'atris campaign answer', done: 'atris campaign stop, or a passing judge', budget_added: 'atris campaign budget --add', campaign_started: 'atris campaign start' };
+  if (guarded[type]) return ctx.fail(`${type} cannot be written by hand; use ${guarded[type]}`);
   let data;
   try {
     data = JSON.parse(readFlag(args, '--data', '') || '{}');
@@ -355,16 +417,20 @@ const VERBS = {
 };
 
 function campaignCommand(args = [], deps = {}) {
-  if (!deps.store) redirectToWorkspaceRoot();
+  if (!deps.store) moveToCheckoutRoot(args.includes('--json'));
   const verb = positionals(args)[0];
   if (verb === 'help' || args.includes('--help') || args.includes('-h')) {
     printHelp();
     return 0;
   }
   const ctx = makeContext(args, deps);
+  if (ctx.forgedHuman) return ctx.fail('--as cannot name a person; a person runs atris in their own terminal (or sets ATRIS_HUMAN=1)');
   if (!verb || verb === 'list') {
-    const views = listCampaigns(ctx.store).filter((view) => !view.error);
-    ctx.out(renderList(views), { ok: true, campaigns: views.map((view) => ({ ...view, next: decide(view) })) });
+    const all = listCampaigns(ctx.store);
+    const views = all.filter((view) => !view.error);
+    const unreadable = all.filter((view) => view.error);
+    const notes = unreadable.map((view) => `${view.id}  cannot be read (${view.error})`);
+    ctx.out([renderList(views), ...notes].filter(Boolean).join('\n'), { ok: true, campaigns: views.map((view) => ({ ...view, next: decide(view) })), unreadable });
     return 0;
   }
   const handler = VERBS[verb];

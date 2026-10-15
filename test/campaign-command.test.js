@@ -13,7 +13,7 @@ const { createMemoryStore, getCampaign } = require('../lib/campaign-store');
 const CLI = path.resolve(__dirname, '..', 'bin', 'atris.js');
 
 // Run a verb against an in-memory store with a judge that answers from a list.
-function run(store, args, readings = []) {
+async function run(store, args, readings = []) {
   const logs = [];
   const errors = [];
   const judged = [];
@@ -22,7 +22,7 @@ function run(store, args, readings = []) {
   console.error = (line) => errors.push(String(line));
   let code;
   try {
-    code = campaignCommand(args, {
+    code = await campaignCommand(args, {
       store,
       actor: 'human:keshav',
       runJudge: (command) => {
@@ -39,9 +39,9 @@ function run(store, args, readings = []) {
 
 const startArgs = ['start', 'Ship campaigns', '--judge', 'npm run validate:campaign', '--budget', '500', '--id', 'cmp-ship'];
 
-test('start runs the judge first and records the failing reading', () => {
+test('start runs the judge first and records the failing reading', async () => {
   const store = createMemoryStore({ origin: 'laptop' });
-  const result = run(store, [...startArgs, '--owner', 'mission-lead', '--seat', 'builder', '--seat', 'validator:reviewer', '--bet', 'mostly wiring']);
+  const result = await run(store, [...startArgs, '--owner', 'mission-lead', '--seat', 'builder', '--seat', 'validator:reviewer', '--bet', 'mostly wiring']);
   assert.equal(result.code, 0, result.err);
   assert.deepEqual(result.judged, ['npm run validate:campaign']);
   const view = getCampaign(store, 'cmp-ship');
@@ -50,20 +50,20 @@ test('start runs the judge first and records the failing reading', () => {
   assert.equal(view.judge_due, false);
   assert.deepEqual(view.seats, [{ member: 'builder', role: null }, { member: 'validator', role: 'reviewer' }]);
   assert.deepEqual(view.bet, { text: 'mostly wiring', wrong_if: null });
-  assert.match(result.out, /next: propose the next mission/);
+  assert.match(result.out, /next: plan and run the next missions: atris campaign run cmp-ship/);
 });
 
-test('a judge that already passes is refused: write a judge that fails first', () => {
+test('a judge that already passes is refused: write a judge that fails first', async () => {
   const store = createMemoryStore();
-  const result = run(store, startArgs, [{ passed: true, exit: 0, summary: 'ok', seconds: 0 }]);
+  const result = await run(store, startArgs, [{ passed: true, exit: 0, summary: 'ok', seconds: 0 }]);
   assert.equal(result.code, 1);
   assert.match(result.err, /already done.*fails first/);
   assert.equal(getCampaign(store, 'cmp-ship'), null);
 });
 
-test('a standing campaign may pass at start, because passing means healthy', () => {
+test('a standing campaign may pass at start, because passing means healthy', async () => {
   const store = createMemoryStore();
-  const result = run(store, [...startArgs, '--standing'], [{ passed: true, exit: 0, summary: 'healthy', seconds: 0 }]);
+  const result = await run(store, [...startArgs, '--standing'], [{ passed: true, exit: 0, summary: 'healthy', seconds: 0 }]);
   assert.equal(result.code, 0, result.err);
   const view = getCampaign(store, 'cmp-ship');
   assert.equal(view.standing, true);
@@ -71,45 +71,45 @@ test('a standing campaign may pass at start, because passing means healthy', () 
   assert.equal(view.answer.confidence, 'leaning');
 });
 
-test('start explains what is missing in plain words', () => {
+test('start explains what is missing in plain words', async () => {
   const store = createMemoryStore();
-  const result = run(store, ['start', 'No judge', '--budget', '0']);
+  const result = await run(store, ['start', 'No judge', '--budget', '0']);
   assert.equal(result.code, 2);
   assert.match(result.err, /--judge "<command>"/);
   assert.match(result.err, /--budget <dollars above 0>/);
   assert.deepEqual(result.judged, []);
 });
 
-test('a parent with its own parent is refused (one level only)', () => {
+test('a parent with its own parent is refused (one level only)', async () => {
   const store = createMemoryStore();
-  run(store, ['start', 'Top', '--judge', 'exit 1', '--budget', '10', '--id', 'cmp-top']);
-  run(store, ['start', 'Mid', '--judge', 'exit 1', '--budget', '10', '--id', 'cmp-mid', '--parent', 'cmp-top']);
+  await run(store, ['start', 'Top', '--judge', 'exit 1', '--budget', '10', '--id', 'cmp-top']);
+  await run(store, ['start', 'Mid', '--judge', 'exit 1', '--budget', '10', '--id', 'cmp-mid', '--parent', 'cmp-top']);
   assert.equal(getCampaign(store, 'cmp-mid').parent, 'cmp-top');
-  const result = run(store, ['start', 'Low', '--judge', 'exit 1', '--budget', '10', '--parent', 'cmp-mid']);
+  const result = await run(store, ['start', 'Low', '--judge', 'exit 1', '--budget', '10', '--parent', 'cmp-mid']);
   assert.equal(result.code, 2);
   assert.match(result.err, /one level only/);
 });
 
-test('bet with wrong-if, seat with the member job as its role, and added budget', () => {
+test('bet with wrong-if, seat with the member job as its role, and added budget', async () => {
   const store = createMemoryStore();
-  run(store, startArgs);
-  assert.equal(run(store, ['bet', 'cmp-ship', 'screens only decode', '--wrong-if', 'a screen folds']).code, 0);
-  assert.equal(run(store, ['seat', 'cmp-ship', 'scout']).code, 0);
-  assert.equal(run(store, ['seat', 'cmp-ship', 'ios-engineer', '--role', 'builder']).code, 0);
-  assert.equal(run(store, ['budget', 'cmp-ship', '--add', '250']).code, 0);
+  await run(store, startArgs);
+  assert.equal((await run(store, ['bet', 'cmp-ship', 'screens only decode', '--wrong-if', 'a screen folds'])).code, 0);
+  assert.equal((await run(store, ['seat', 'cmp-ship', 'scout'])).code, 0);
+  assert.equal((await run(store, ['seat', 'cmp-ship', 'ios-engineer', '--role', 'builder'])).code, 0);
+  assert.equal((await run(store, ['budget', 'cmp-ship', '--add', '250'])).code, 0);
   const view = getCampaign(store, 'cmp-ship');
   assert.deepEqual(view.bet, { text: 'screens only decode', wrong_if: 'a screen folds' });
   assert.deepEqual(view.seats, [{ member: 'scout', role: 'search' }, { member: 'ios-engineer', role: 'builder' }]);
   assert.equal(view.budget.total, 750);
 });
 
-test('the judge verb records each reading; a pass finishes the campaign', () => {
+test('the judge verb records each reading; a pass finishes the campaign', async () => {
   const store = createMemoryStore();
-  run(store, startArgs);
-  run(store, ['event', 'cmp-ship', 'mission_started', '--data', '{"mission_id":"m1","member":"builder"}']);
-  run(store, ['event', 'cmp-ship', 'mission_ended', '--data', '{"mission_id":"m1","outcome":"kept","cost_usd":2.22}']);
+  await run(store, startArgs);
+  await run(store, ['event', 'cmp-ship', 'mission_started', '--data', '{"mission_id":"m1","member":"builder"}']);
+  await run(store, ['event', 'cmp-ship', 'mission_ended', '--data', '{"mission_id":"m1","outcome":"kept","cost_usd":2.22}']);
   assert.equal(getCampaign(store, 'cmp-ship').judge_due, true);
-  const result = run(store, ['judge', 'cmp-ship'], [{ passed: true, exit: 0, summary: 'judge passes: every surface agrees', seconds: 3 }]);
+  const result = await run(store, ['judge', 'cmp-ship'], [{ passed: true, exit: 0, summary: 'judge passes: every surface agrees', seconds: 3 }]);
   assert.equal(result.code, 0);
   assert.match(result.out, /judge passed in 3s/);
   const view = getCampaign(store, 'cmp-ship');
@@ -119,32 +119,32 @@ test('the judge verb records each reading; a pass finishes the campaign', () => 
   assert.equal(view.budget.spent, 2.22);
 });
 
-test('pause, resume, and stop; the list puts what needs you first', () => {
+test('pause, resume, and stop; the list puts what needs you first', async () => {
   const store = createMemoryStore();
-  run(store, startArgs);
-  run(store, ['start', 'Second', '--judge', 'exit 1', '--budget', '5', '--id', 'cmp-two']);
-  run(store, ['event', 'cmp-two', 'ask_opened', '--data', '{"ask_id":"a1","question":"Spend $40?"}']);
-  run(store, ['pause', 'cmp-ship']);
+  await run(store, startArgs);
+  await run(store, ['start', 'Second', '--judge', 'exit 1', '--budget', '5', '--id', 'cmp-two']);
+  await run(store, ['event', 'cmp-two', 'ask_opened', '--data', '{"ask_id":"a1","question":"Spend $40?"}']);
+  await run(store, ['pause', 'cmp-ship']);
   assert.equal(getCampaign(store, 'cmp-ship').state, 'paused');
-  run(store, ['resume', 'cmp-ship']);
-  const list = run(store, []);
+  await run(store, ['resume', 'cmp-ship']);
+  const list = await run(store, []);
   assert.ok(list.out.indexOf('Second') < list.out.indexOf('Ship campaigns'), list.out);
   assert.match(list.out, /next: answer 1 open ask/);
-  run(store, ['stop', 'cmp-ship']);
+  await run(store, ['stop', 'cmp-ship']);
   assert.equal(getCampaign(store, 'cmp-ship').stop_reason, 'stopped');
 });
 
-test('the event verb refuses events that break the schema', () => {
+test('the event verb refuses events that break the schema', async () => {
   const store = createMemoryStore();
-  run(store, startArgs);
-  const result = run(store, ['event', 'cmp-ship', 'mission_ended', '--data', '{"mission_id":"m1","outcome":"kept"}']);
+  await run(store, startArgs);
+  const result = await run(store, ['event', 'cmp-ship', 'mission_ended', '--data', '{"mission_id":"m1","outcome":"kept"}']);
   assert.equal(result.code, 2);
   assert.match(result.err, /missing_cost/);
-  assert.equal(run(store, ['event', 'cmp-ship', 'step', '--data', 'not json']).code, 2);
-  assert.equal(run(store, ['show', 'cmp-nope']).code, 1);
+  assert.equal((await run(store, ['event', 'cmp-ship', 'step', '--data', 'not json'])).code, 2);
+  assert.equal((await run(store, ['show', 'cmp-nope'])).code, 1);
 });
 
-test('the real command: json on every verb, store from ATRIS_CAMPAIGN_DB, a real judge command', () => {
+test('the real command: json on every verb, store from ATRIS_CAMPAIGN_DB, a real judge command', async () => {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'atris-campaign-cli-'));
   const env = { ...process.env, ATRIS_CAMPAIGN_DB: path.join(dir, 'atris.db') };
   const cli = (...args) => spawnSync(process.execPath, [CLI, 'campaign', ...args], { cwd: dir, env, encoding: 'utf8' });

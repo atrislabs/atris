@@ -46,7 +46,7 @@ test('the loop proposes, runs missions at once, judges, and stops when the judge
   const readings = [{ passed: false, summary: '1 of 3' }, { passed: true, summary: '3 of 3' }];
   const asks = [];
   const loop = makeLoop('/x', { parallel: 2 }, {
-    store, cli, log: () => {},
+    store, cli, log: () => {}, skipReconcile: true,
     judge: () => readings.shift(),
     ask: async (root, view, prompt) => { asks.push(prompt); return { ok: true, engine: 'claude', text: `Here you go:\n${proposals(2)}` }; },
   });
@@ -69,7 +69,7 @@ test('the loop proposes, runs missions at once, judges, and stops when the judge
 test('the loop stops for money, for asks, and when nothing usable is proposed', async () => {
   const broke = campaign(0.4);
   const loopBroke = makeLoop('/x', { parallel: 1 }, {
-    store: broke, cli: fakeCli(broke, { cost: 0.5 }).cli, log: () => {},
+    store: broke, cli: fakeCli(broke, { cost: 0.5 }).cli, log: () => {}, skipReconcile: true,
     judge: () => ({ passed: false, summary: 'not yet' }),
     ask: async () => ({ ok: true, text: JSON.stringify([{ objective: 'Spend it', member: 'builder', estimate_usd: 0.1 }]) }),
   });
@@ -77,11 +77,11 @@ test('the loop stops for money, for asks, and when nothing usable is proposed', 
 
   const asking = campaign(10);
   asking.append({ campaign_id: 'cmp-loop', type: 'ask_opened', actor: 'builder', data: { ask_id: 'a1', question: 'Email the customer?' } });
-  const loopAsk = makeLoop('/x', {}, { store: asking, cli: async () => ({ code: 0 }), log: () => {}, judge: () => ({ passed: false }), ask: async () => ({ ok: true, text: '[]' }) });
+  const loopAsk = makeLoop('/x', {}, { store: asking, cli: async () => ({ code: 0 }), log: () => {}, skipReconcile: true, judge: () => ({ passed: false }), ask: async () => ({ ok: true, text: '[]' }) });
   assert.equal((await loopAsk.run('cmp-loop')).reason, 'needs you: 1 open ask');
 
   const empty = campaign(10);
-  const loopEmpty = makeLoop('/x', {}, { store: empty, cli: async () => ({ code: 0 }), log: () => {}, judge: () => ({ passed: false, summary: 'no' }), ask: async () => ({ ok: true, text: 'I am not sure.' }) });
+  const loopEmpty = makeLoop('/x', {}, { store: empty, cli: async () => ({ code: 0 }), log: () => {}, skipReconcile: true, judge: () => ({ passed: false, summary: 'no' }), ask: async () => ({ ok: true, text: 'I am not sure.' }) });
   assert.equal((await loopEmpty.run('cmp-loop')).reason, 'mission-lead proposed nothing usable');
   const view = getCampaign(empty, 'cmp-loop');
   assert.equal(view.missions[0].id.startsWith('plan-'), true);
@@ -90,7 +90,7 @@ test('the loop stops for money, for asks, and when nothing usable is proposed', 
 test('a mission that cannot start is vetoed so the queue moves on', async () => {
   const store = campaign(10);
   const loop = makeLoop('/x', { parallel: 1 }, {
-    store, cli: fakeCli(store, { failStart: () => true }).cli, log: () => {},
+    store, cli: fakeCli(store, { failStart: () => true }).cli, log: () => {}, skipReconcile: true,
     judge: () => ({ passed: false, summary: 'no' }),
     ask: async () => ({ ok: true, text: proposals(1) }),
   });
