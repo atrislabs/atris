@@ -1550,6 +1550,58 @@ for (const pendingAtStartup of [false, true]) {
   });
 }
 
+for (const pendingAtStartup of [false, true]) {
+  test(`live follow preserves a multibyte character split ${pendingAtStartup ? 'before' : 'after'} startup`, async () => {
+    const stamp = new Date().toISOString();
+    const dir = fakeDir({ navigator: [`${stamp} m-unicode started: check text`] });
+    const log = path.join(dir, 'navigator.log');
+    const text = 'reading café 🧭 notes';
+    const line = Buffer.from(`${stamp} m-unicode ${text}\n`);
+    const split = line.indexOf(Buffer.from('🧭')) + 2;
+    if (pendingAtStartup) fs.appendFileSync(log, line.subarray(0, split));
+    const child = spawn(process.execPath, [cliPath, 'member', 'board', '--json', '--follow'], {
+      cwd: dir, env: { ...process.env, ATRIS_PROGRESS_DIR: dir },
+    });
+    // Decode pipe data across chunk boundaries as well as progress-file writes.
+    child.stdout.setEncoding('utf8');
+    let out = '';
+    let stderr = '';
+    let closed = false;
+    const done = new Promise((resolve) => child.once('close', (code) => { closed = true; resolve(code); }));
+    child.stdout.on('data', (chunk) => { out += chunk; });
+    child.stderr.on('data', (chunk) => { stderr += chunk; });
+    const records = () => out.split('\n').slice(0, -1).filter(Boolean).map((line) => JSON.parse(line));
+    const receive = async (count) => {
+      const until = Date.now() + 15_000;
+      while (records().length < count && !closed && Date.now() < until) await new Promise((r) => setTimeout(r, 50));
+      assert.equal(records().length, count, `stdout=${out}; stderr=${stderr}; closed=${closed}`);
+      return records();
+    };
+    try {
+      const [snapshot] = await receive(1);
+      assert.equal(snapshot.kind, 'snapshot');
+      assert.equal(snapshot.members[0].step, '', 'an incomplete character stays out of the opening board');
+      if (!pendingAtStartup) fs.appendFileSync(log, line.subarray(0, split));
+      await new Promise((r) => setTimeout(r, 1_200));
+      assert.equal(records().length, 1, 'an incomplete character must not emit');
+      fs.appendFileSync(log, line.subarray(split));
+      const events = await receive(2);
+      assert.deepEqual(events[1], { member: 'navigator', mission: 'm-unicode', at: stamp, kind: 'step', text });
+      await new Promise((r) => setTimeout(r, 1_200));
+      assert.equal(records().length, 2, 'watching and polling emit the completed text only once');
+      fs.appendFileSync(log, `${stamp} m-unicode finished: ok\n`);
+      const finished = await receive(3);
+      assert.deepEqual(finished[2], { member: 'navigator', mission: 'm-unicode', at: stamp, kind: 'finished', text: 'ok', ok: true });
+      child.kill('SIGINT');
+      assert.equal(await done, 0, stderr);
+    } finally {
+      if (!closed) child.kill('SIGINT');
+      await done;
+      fs.rmSync(dir, { recursive: true, force: true });
+    }
+  });
+}
+
 test('follow finishes a line that was half written before it started', () => {
   const { followBoard } = require('../lib/member-board');
   const dir = fakeDir({ builder: [`${at(60)} m-1 started: verify stream`] });

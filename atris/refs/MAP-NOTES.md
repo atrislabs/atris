@@ -2394,3 +2394,5 @@ Lost-run cleanup error summary: `commands/autoland.js:895` keeps successful clos
 Split timeout live follow: `test/member-board.test.js:1525` waits a polling interval before and after completing a timeout line; actual CLI output is recorded in `atris/runs/member-board-split-timeout-receipt.md`.
 
 Startup timeout snapshot: `readTail()` (`lib/member-board.js:29`) drops an unfinished final line before building rows. Live checks (`test/member-board.test.js:1489`) cover timeout splits before and after startup, no early finish or event, one completed event, and no poll duplicate. Proof: `python3 atris/runs/member-board-startup-timeout-proof.py`.
+
+Split UTF-8 progress: `test/member-board.test.js:1553` spawns the real CLI, splits inside a four-byte character, waits across polling, checks intact text and no duplicate, then checks the next result and clean exit. Cases cover before and after startup. `followBoard()` (`lib/member-board.js:775`) already tracks byte offsets and decodes newline-ended buffers, so no runtime change was needed. Proof: `atris/runs/member-board-split-unicode-receipt.md`.
