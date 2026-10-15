@@ -2713,3 +2713,7 @@ Reward projection readiness setup: `test/commands.test.js:13094` calls productio
 Reward rejection readiness setup: `test/commands.test.js:13170` seeds production readyTask with the original actor and proof, asserts success and closes in finally. CLI zero-reward refusal and the unchanged pending-review read retain every assertion; two launches replace three.
 
 Revision initial readiness setup: `test/commands.test.js` calls production readyTask with the original actor and proof, asserts success and closes in finally. Five launches replace six; repeated readiness and all revision assertions stay on the CLI.
+
+## Natural task flow read batching
+
+- `test/commands.test.js:13852` retains creation, claim, message and completion CLI coverage; desk and next run together at `test/commands.test.js:13868` before claim. Six launches remain, with six sequential stages reduced to five; saved projection version and episode assertions still check the complete flow.

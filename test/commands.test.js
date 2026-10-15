@@ -13849,7 +13849,7 @@ test('task setup initializes projection and can import TODO view', () => {
   }
 });
 
-test('task natural flow creates, picks, talks, finishes, and refreshes projection', () => {
+test('task natural flow creates, picks, talks, finishes, and refreshes projection', async () => {
   if (!hasNodeSqlite()) return;
   const dir = makeTempDir();
   const dbPath = path.join(dir, 'tasks.db');
@@ -13864,13 +13864,16 @@ test('task natural flow creates, picks, talks, finishes, and refreshes projectio
     const ref = createdPayload.task.display_id;
     const legacyRef = id.slice(0, 8);
 
-    const desk = runCli(['task', 'desk'], { cwd: dir, env });
+    // Both reads inspect the same open task before the claim changes it.
+    const [desk, next] = await Promise.all([
+      runCliAsync(['task', 'desk'], { cwd: dir, env }),
+      runCliAsync(['task', 'next', '--as', 'codex'], { cwd: dir, env }),
+    ]);
     assert.equal(desk.status, 0, desk.stderr);
     assert.match(desk.stdout, /TASK DESK/);
     assert.match(desk.stdout, new RegExp(`open\\s+${ref}`));
     assert.match(desk.stdout, new RegExp(`^next: atris task claim ${ref} --as `, 'm'));
 
-    const next = runCli(['task', 'next', '--as', 'codex'], { cwd: dir, env });
     assert.equal(next.status, 0, next.stderr);
     assert.match(next.stdout, new RegExp(`^next: atris task claim ${ref} --as codex$`, 'm'));
     assert.equal(runCli(['task', 'claim', ref, '--as', 'codex'], { cwd: dir, env }).status, 0);
