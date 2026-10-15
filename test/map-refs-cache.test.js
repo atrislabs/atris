@@ -119,7 +119,7 @@ test('a corrupt cache file is ignored and rewritten', (t) => {
   fs.mkdirSync(path.dirname(path.join(root, CACHE)), { recursive: true });
   fs.writeFileSync(path.join(root, CACHE), '{not json');
   assert.equal(checkMapDocs(root).refs[0].status, 'ok');
-  assert.equal(JSON.parse(fs.readFileSync(path.join(root, CACHE), 'utf8')).version, 2);
+  assert.equal(JSON.parse(fs.readFileSync(path.join(root, CACHE), 'utf8')).version, 3);
 });
 
 test('a folder without .atris gets no cache file', (t) => {
