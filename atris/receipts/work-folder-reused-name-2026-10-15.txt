@@ -1,0 +1,491 @@
+Cleanup now has proof that a new draft at a renamed file's old name survives preview and apply.
+Files: test/member-tidy.test.js, atris/MAP.md, atris/refs/MAP-NOTES.md, atris/team/architect/logs/2026-10-15.md.
+Verify: node --test test/worktree-removal-guard.test.js test/member-tidy.test.js && node bin/atris.js slop --staged
+Exit: 0. Tests: 90 passed, 0 failed, 0 skipped, 0 todo. Writing check: clean, no slop tells in 3 files.
+Real surface: node bin/atris.js worktree cleanup and node bin/atris.js worktree cleanup --apply, run in disposable repositories by the test, both exit 0.
+Progress: one existing regression extended; runtime unchanged. Both original committed bytes and new draft bytes survive alongside the saved rename and destination folder draft.
+next_push: Prove cleanup preserves a saved rename when its original name is recreated as a symbolic link.
+layer: capabilities
+
+Full command output:
+command: node bin/atris.js member tidy --dir <fixture copies> --dry-run (renamed remote default)
+would remove  landed-clean  work landed
+left alone  1 work not landed yet
+tidy: would remove 1, kept 1, of 2 copies in /private/var/folders/t1/2_4kmb5n4c71dxm26zc8dgzr0000gn/T/atris-member-tidy-PcSq90/arena/.agent-worktrees/repo
+exit: 0
+command: node bin/atris.js member tidy --dir <fixture copies> (renamed remote default)
+removed  landed-clean  work landed, branch deleted
+left alone  1 work not landed yet
+tidy: removed 1, kept 1, of 2 copies in /private/var/folders/t1/2_4kmb5n4c71dxm26zc8dgzr0000gn/T/atris-member-tidy-PcSq90/arena/.agent-worktrees/repo
+exit: 0
+command: node bin/atris.js member tidy --dir <fixture copies> (late-pin git wrapper)
+kept  landed-late-pin  landed, but git refused: pinned by git worktree lock, under a minute old: agent started writing please wait
+tidy: removed 0, kept 1, of 1 copy in /private/var/folders/t1/2_4kmb5n4c71dxm26zc8dgzr0000gn/T/atris-member-tidy-pBGE8E/arena/.agent-worktrees/repo
+exit: 0
+command: node bin/atris.js worktree cleanup --base HEAD --apply (late-pin git wrapper)
+cleanup: applied base=HEAD
+removeds: 0
+cache_pruneds: 0
+kept: 2
+left alone: primary_checkout=1
+kept: /private/var/folders/t1/2_4kmb5n4c71dxm26zc8dgzr0000gn/T/atris-member-tidy-JOssfA/arena/.agent-worktrees/repo/landed-late-pin branch=landed-late-pin reason=remove_failed
+refused: /private/var/folders/t1/2_4kmb5n4c71dxm26zc8dgzr0000gn/T/atris-member-tidy-JOssfA/arena/.agent-worktrees/repo/landed-late-pin pinned by git worktree lock, under a minute old: agent started writing please wait
+exit: 0
+command: node bin/atris.js land --reap --base HEAD --no-remote --json (late-pin git wrapper)
+{
+  "base": "HEAD",
+  "ttlDays": 7,
+  "dryRun": false,
+  "bundle": null,
+  "bundleError": null,
+  "patches": [],
+  "untracked": [],
+  "keptWorktrees": [
+    "/private/var/folders/t1/2_4kmb5n4c71dxm26zc8dgzr0000gn/T/atris-member-tidy-esUlc9/arena/.agent-worktrees/repo/landed-late-pin (pinned by git worktree lock, under a minute old: agent started writing please wait)"
+  ],
+  "keptInFlight": [],
+  "keptMovedBranches": [],
+  "removedWorktrees": [],
+  "deletedBranches": [],
+  "deletedRemote": [],
+  "kept": []
+}
+exit: 0
+command: node -e "console.log(JSON.stringify(require(\"/Users/keshavrao/arena/empire/.agent-worktrees/atris-cli/architect-continue-work-folder-protection-acro-20261015-055122/commands/autopilot.js\").regressionCheck(process.cwd(), { activeCwds: [] })))" (late-pin git wrapper)
+[{"hash":"81982d5b132c49747d45aa6e93a1adb3fcf3154b","slug":"late-pin-proof","pass":true,"kept":"remove_failed","held":"pinned by git worktree lock, under a minute old: agent started writing please wait","path":"/private/var/folders/t1/2_4kmb5n4c71dxm26zc8dgzr0000gn/T/atris-member-tidy-0Z96pl/arena/repo/.regression-worktree-81982d5b"}]
+exit: 0
+command: node -e "console.log(JSON.stringify(require(\"/Users/keshavrao/arena/empire/.agent-worktrees/atris-cli/architect-continue-work-folder-protection-acro-20261015-055122/commands/autopilot.js\").regressionCheck(process.cwd(), { activeCwds: [] })))" (late-pin git wrapper)
+[{"hash":"81982d5b132c49747d45aa6e93a1adb3fcf3154b","slug":"late-pin-proof","pass":false,"kept":"remove_failed","held":"pinned by git worktree lock, under a minute old: agent started writing please wait","path":"/private/var/folders/t1/2_4kmb5n4c71dxm26zc8dgzr0000gn/T/atris-member-tidy-UOieul/arena/repo/.regression-worktree-81982d5b"}]
+exit: 0
+held copy preserved; disposable lesson stayed on disk
+command: node bin/atris.js member tidy --dir <fixture copies> (stopped-removal git wrapper)
+kept  landed-late-pin  landed, but git refused: git removal stopped by SIGTERM
+tidy: removed 0, kept 1, of 1 copy in /private/var/folders/t1/2_4kmb5n4c71dxm26zc8dgzr0000gn/T/atris-member-tidy-wJsjWS/arena/.agent-worktrees/repo
+exit: 0
+command: node bin/atris.js worktree cleanup --base HEAD --apply (stopped-removal git wrapper)
+cleanup: applied base=HEAD
+removeds: 0
+cache_pruneds: 0
+kept: 2
+left alone: primary_checkout=1
+kept: /private/var/folders/t1/2_4kmb5n4c71dxm26zc8dgzr0000gn/T/atris-member-tidy-YxccMS/arena/.agent-worktrees/repo/landed-late-pin branch=landed-late-pin reason=remove_failed
+refused: /private/var/folders/t1/2_4kmb5n4c71dxm26zc8dgzr0000gn/T/atris-member-tidy-YxccMS/arena/.agent-worktrees/repo/landed-late-pin git removal stopped by SIGTERM
+exit: 0
+command: node bin/atris.js land --reap --base HEAD --no-remote --json (stopped-removal git wrapper)
+{
+  "base": "HEAD",
+  "ttlDays": 7,
+  "dryRun": false,
+  "bundle": null,
+  "bundleError": null,
+  "patches": [],
+  "untracked": [],
+  "keptWorktrees": [
+    "/private/var/folders/t1/2_4kmb5n4c71dxm26zc8dgzr0000gn/T/atris-member-tidy-AdN4hN/arena/.agent-worktrees/repo/landed-late-pin (git removal stopped by SIGTERM)"
+  ],
+  "keptInFlight": [],
+  "keptMovedBranches": [],
+  "removedWorktrees": [],
+  "deletedBranches": [],
+  "deletedRemote": [],
+  "kept": []
+}
+exit: 0
+command: node -e "console.log(JSON.stringify(require(\"/Users/keshavrao/arena/empire/.agent-worktrees/atris-cli/architect-continue-work-folder-protection-acro-20261015-055122/commands/autopilot.js\").regressionCheck(process.cwd(), { activeCwds: [] })))" (stopped-removal git wrapper)
+[{"hash":"eb4abe2ee16eb2c35c23544e13ea5fd662ef28a6","slug":"late-pin-proof","pass":true,"kept":"remove_failed","held":"git removal stopped by SIGTERM","path":"/private/var/folders/t1/2_4kmb5n4c71dxm26zc8dgzr0000gn/T/atris-member-tidy-0aNoS9/arena/repo/.regression-worktree-eb4abe2e"}]
+exit: 0
+command: node -e "console.log(JSON.stringify(require(\"/Users/keshavrao/arena/empire/.agent-worktrees/atris-cli/architect-continue-work-folder-protection-acro-20261015-055122/commands/autopilot.js\").regressionCheck(process.cwd(), { activeCwds: [] })))" (stopped-removal git wrapper)
+[{"hash":"eb4abe2ee16eb2c35c23544e13ea5fd662ef28a6","slug":"late-pin-proof","pass":false,"kept":"remove_failed","held":"git removal stopped by SIGTERM","path":"/private/var/folders/t1/2_4kmb5n4c71dxm26zc8dgzr0000gn/T/atris-member-tidy-jeTg9P/arena/repo/.regression-worktree-eb4abe2e"}]
+exit: 0
+held copy preserved; disposable lesson stayed on disk
+command: node bin/atris.js member tidy --dir <fixture copies> (fixture cwd)
+kept  landed-pinned  landed, but pinned by git worktree lock, 3 h old: agent still writing
+tidy: removed 0, kept 1, of 1 copy in /private/var/folders/t1/2_4kmb5n4c71dxm26zc8dgzr0000gn/T/atris-member-tidy-FnKysB/arena/.agent-worktrees/repo
+exit: 0
+command: node bin/atris.js member tidy --dir <fixture copies> (fixture cwd)
+kept  landed-pinned  landed, but pinned by git worktree lock, 3 h old: agent still writing please wait
+tidy: removed 0, kept 1, of 1 copy in /private/var/folders/t1/2_4kmb5n4c71dxm26zc8dgzr0000gn/T/atris-member-tidy-oAJDu4/arena/.agent-worktrees/repo
+exit: 0
+command: node bin/atris.js member tidy --dir <fixture copies> --dry-run (fixture cwd)
+kept  unfinished-pinned  work not landed yet, pinned by git worktree lock, 3 h old: writer still active keep these notes
+left alone  1 work not landed yet
+tidy: would remove 0, kept 2, of 2 copies in /private/var/folders/t1/2_4kmb5n4c71dxm26zc8dgzr0000gn/T/atris-member-tidy-NKQwxu/arena/.agent-worktrees/repo
+exit: 0
+command: node bin/atris.js member tidy --dir <fixture copies> (fixture cwd)
+kept  unfinished-pinned  work not landed yet, pinned by git worktree lock, 3 h old: writer still active keep these notes
+left alone  1 work not landed yet
+tidy: removed 0, kept 2, of 2 copies in /private/var/folders/t1/2_4kmb5n4c71dxm26zc8dgzr0000gn/T/atris-member-tidy-NKQwxu/arena/.agent-worktrees/repo
+exit: 0
+command: node bin/atris.js member tidy --dir <fixture copies> --dry-run (fixture cwd)
+kept  busy-pinned  landed, but pinned by git worktree lock, 3 h old: writer still active keep these notes
+left alone  1 something still running inside
+tidy: would remove 0, kept 2, of 2 copies in /private/var/folders/t1/2_4kmb5n4c71dxm26zc8dgzr0000gn/T/atris-member-tidy-QnuWjh/arena/.agent-worktrees/repo
+exit: 0
+command: node bin/atris.js member tidy --dir <fixture copies> (fixture cwd)
+kept  busy-pinned  landed, but pinned by git worktree lock, 3 h old: writer still active keep these notes
+left alone  1 something still running inside
+tidy: removed 0, kept 2, of 2 copies in /private/var/folders/t1/2_4kmb5n4c71dxm26zc8dgzr0000gn/T/atris-member-tidy-QnuWjh/arena/.agent-worktrees/repo
+exit: 0
+✔ tidy removes landed clean copies and leaves everything else to git and the rules (1079.547334ms)
+✔ tidy keeps staged and unsaved notes after the remote default branch is renamed (1302.793667ms)
+✔ tidy keeps every copy when the running-program scan fails (349.380791ms)
+✔ tidy keeps every copy when origin cannot be fetched (394.396167ms)
+✔ tidy names the git lock file and its age when it keeps a landed copy (425.772042ms)
+✔ all five cleanup paths report paused git work in the same words and keep it (2502.991167ms)
+✔ tidy keeps a landed copy while git is paused mid-rebase in it, and logs what it removes (482.34875ms)
+✔ tidy reports a pin acquired after preflight and leaves the copy registered (1150.515208ms)
+✔ cleanup reports a pin acquired after preflight and leaves the copy registered (1199.477125ms)
+✔ reap reports a pin acquired after preflight and leaves the copy registered (1475.351042ms)
+✔ autopilot reports a pin acquired after preflight and leaves the copy registered (595.744709ms)
+✔ autopilot-failed reports a pin acquired after preflight and leaves the copy registered (580.618083ms)
+✔ tidy reports a removal stopped by a signal and leaves the copy registered (1265.047209ms)
+✔ cleanup reports a removal stopped by a signal and leaves the copy registered (1189.205167ms)
+✔ reap reports a removal stopped by a signal and leaves the copy registered (1452.651125ms)
+✔ autopilot reports a removal stopped by a signal and leaves the copy registered (584.321125ms)
+✔ autopilot-failed reports a removal stopped by a signal and leaves the copy registered (555.732708ms)
+✔ a removal stopped at its time limit reads as a timeout, even after partial output (607.604ms)
+✔ real pins and locks take precedence over interrupted removal details (1222.965292ms)
+✔ tidy, reap and the regression check flatten a pin reason: "agent still writing" (1115.60175ms)
+✔ tidy, reap and the regression check flatten a pin reason: "agent still\n  writing\tplease wait" (1149.469708ms)
+✔ tidy names pinned unfinished work beside the count of ordinary ongoing work (1345.645208ms)
+command: node bin/atris.js member tidy --dir <fixture copies> --dry-run (fixture cwd)
+kept  busy-pinned  work not landed yet, pinned by git worktree lock, 3 h old: writer still active keep these notes
+left alone  1 work not landed yet
+tidy: would remove 0, kept 2, of 2 copies in /private/var/folders/t1/2_4kmb5n4c71dxm26zc8dgzr0000gn/T/atris-member-tidy-uWENZa/arena/.agent-worktrees/repo
+exit: 0
+command: node bin/atris.js member tidy --dir <fixture copies> (fixture cwd)
+kept  busy-pinned  work not landed yet, pinned by git worktree lock, 3 h old: writer still active keep these notes
+left alone  1 work not landed yet
+tidy: removed 0, kept 2, of 2 copies in /private/var/folders/t1/2_4kmb5n4c71dxm26zc8dgzr0000gn/T/atris-member-tidy-uWENZa/arena/.agent-worktrees/repo
+exit: 0
+✔ tidy names pinned busy landed copies beside the ordinary ongoing count (1188.877125ms)
+command: node bin/atris.js member tidy --dir <fixture copies> --dry-run (cwd: pinned copy)
+kept  current-pinned  landed, but pinned by git worktree lock, 3 h old: writer still active keep these notes
+tidy: would remove 0, kept 1, of 1 copy in /private/var/folders/t1/2_4kmb5n4c71dxm26zc8dgzr0000gn/T/atris-member-tidy-cX7Bf8/arena/.agent-worktrees/repo
+exit: 0
+command: node bin/atris.js member tidy --dir <fixture copies> (cwd: pinned copy)
+kept  current-pinned  landed, but pinned by git worktree lock, 3 h old: writer still active keep these notes
+tidy: removed 0, kept 1, of 1 copy in /private/var/folders/t1/2_4kmb5n4c71dxm26zc8dgzr0000gn/T/atris-member-tidy-cX7Bf8/arena/.agent-worktrees/repo
+exit: 0
+command: node bin/atris.js member tidy --dir <fixture copies> --dry-run (cwd: nested notes folder)
+kept  current-pinned  landed, but pinned by git worktree lock, 3 h old: writer still active keep these notes
+tidy: would remove 0, kept 1, of 1 copy in /private/var/folders/t1/2_4kmb5n4c71dxm26zc8dgzr0000gn/T/atris-member-tidy-cX7Bf8/arena/.agent-worktrees/repo
+exit: 0
+command: node bin/atris.js member tidy --dir <fixture copies> (cwd: nested notes folder)
+kept  current-pinned  landed, but pinned by git worktree lock, 3 h old: writer still active keep these notes
+tidy: removed 0, kept 1, of 1 copy in /private/var/folders/t1/2_4kmb5n4c71dxm26zc8dgzr0000gn/T/atris-member-tidy-cX7Bf8/arena/.agent-worktrees/repo
+exit: 0
+command: node bin/atris.js member tidy --dir <fixture copies> --dry-run (fixture cwd)
+kept  idle-ordinary  landed, but has unsaved work
+kept  idle-pinned  landed, but pinned by git worktree lock, 3 h old: writer still active keep these notes
+tidy: would remove 0, kept 2, of 2 copies in /private/var/folders/t1/2_4kmb5n4c71dxm26zc8dgzr0000gn/T/atris-member-tidy-eHFqrY/arena/.agent-worktrees/repo
+exit: 0
+command: node bin/atris.js member tidy --dir <fixture copies> (fixture cwd)
+kept  idle-ordinary  landed, but git refused: 'idle-ordinary' contains modified or untracked files, use --force to delete it
+kept  idle-pinned  landed, but pinned by git worktree lock, 3 h old: writer still active keep these notes
+tidy: removed 0, kept 2, of 2 copies in /private/var/folders/t1/2_4kmb5n4c71dxm26zc8dgzr0000gn/T/atris-member-tidy-eHFqrY/arena/.agent-worktrees/repo
+exit: 0
+command: node bin/atris.js member tidy --dir <fixture copies> --dry-run (missing branch)
+would remove  landed-clean  work landed
+kept          missing-branch  git could not tell if it landed: fatal: Not a valid object name refs/heads/missing-branch
+tidy: would remove 1, kept 1, of 2 copies in /private/var/folders/t1/2_4kmb5n4c71dxm26zc8dgzr0000gn/T/atris-member-tidy-YaPobC/arena/.agent-worktrees/repo
+exit: 0
+command: node bin/atris.js member tidy --dir <fixture copies> (missing branch)
+removed  landed-clean  work landed, branch deleted
+kept     missing-branch  git could not tell if it landed: fatal: Not a valid object name refs/heads/missing-branch
+tidy: removed 1, kept 1, of 2 copies in /private/var/folders/t1/2_4kmb5n4c71dxm26zc8dgzr0000gn/T/atris-member-tidy-YaPobC/arena/.agent-worktrees/repo
+exit: 0
+command: node bin/atris.js member tidy --dir <fixture copies> --dry-run (upstream moved backward)
+would remove  landed-clean  work landed
+left alone  1 work not landed yet
+tidy: would remove 1, kept 1, of 2 copies in /private/var/folders/t1/2_4kmb5n4c71dxm26zc8dgzr0000gn/T/atris-member-tidy-edG1q5/arena/.agent-worktrees/repo
+exit: 0
+command: node bin/atris.js member tidy --dir <fixture copies> (upstream moved backward)
+removed  landed-clean  work landed, branch deleted
+left alone  1 work not landed yet
+tidy: removed 1, kept 1, of 2 copies in /private/var/folders/t1/2_4kmb5n4c71dxm26zc8dgzr0000gn/T/atris-member-tidy-edG1q5/arena/.agent-worktrees/repo
+exit: 0
+command: node bin/atris.js member tidy --dir <fixture copies> --dry-run (unrelated upstream history)
+would remove  landed-clean  work landed
+left alone  1 work not landed yet
+tidy: would remove 1, kept 1, of 2 copies in /private/var/folders/t1/2_4kmb5n4c71dxm26zc8dgzr0000gn/T/atris-member-tidy-tR4ZxJ/arena/.agent-worktrees/repo
+exit: 0
+command: node bin/atris.js member tidy --dir <fixture copies> (unrelated upstream history)
+removed  landed-clean  work landed, branch kept: error: the branch 'landed-clean' is not fully merged.
+left alone  1 work not landed yet
+tidy: removed 1, kept 1, of 2 copies in /private/var/folders/t1/2_4kmb5n4c71dxm26zc8dgzr0000gn/T/atris-member-tidy-tR4ZxJ/arena/.agent-worktrees/repo
+exit: 0
+command: node bin/atris.js member tidy --dir <fixture copies> --dry-run (broken index)
+would remove  landed-clean  work landed
+kept          unreadable-status  landed, but git could not check for unsaved work: fatal: /private/var/folders/t1/2_4kmb5n4c71dxm26zc8dgzr0000gn/T/atris-member-tidy-MLyqIZ/arena/repo/.git/worktrees/unreadable-status/index: index file smaller than expected
+tidy: would remove 1, kept 1, of 2 copies in /private/var/folders/t1/2_4kmb5n4c71dxm26zc8dgzr0000gn/T/atris-member-tidy-MLyqIZ/arena/.agent-worktrees/repo
+exit: 0
+command: node bin/atris.js member tidy --dir <fixture copies> (broken index)
+removed  landed-clean  work landed, branch deleted
+kept     unreadable-status  landed, but git refused: .git/worktrees/unreadable-status/index: index file smaller than expected
+tidy: removed 1, kept 1, of 2 copies in /private/var/folders/t1/2_4kmb5n4c71dxm26zc8dgzr0000gn/T/atris-member-tidy-MLyqIZ/arena/.agent-worktrees/repo
+exit: 0
+command: node bin/atris.js member tidy --dir <fixture copies> --dry-run (missing remote default)
+tidy: could not tell which branch origin ships from, so every copy is kept
+kept  landed-clean  could not tell which branch origin ships from
+kept  stale-default  could not tell which branch origin ships from
+tidy: would remove 0, kept 2, of 2 copies in /private/var/folders/t1/2_4kmb5n4c71dxm26zc8dgzr0000gn/T/atris-member-tidy-UZcfEW/arena/.agent-worktrees/repo
+exit: 1
+command: node bin/atris.js member tidy --dir <fixture copies> (missing remote default)
+tidy: could not tell which branch origin ships from, so every copy is kept
+kept  landed-clean  could not tell which branch origin ships from
+kept  stale-default  could not tell which branch origin ships from
+tidy: removed 0, kept 2, of 2 copies in /private/var/folders/t1/2_4kmb5n4c71dxm26zc8dgzr0000gn/T/atris-member-tidy-UZcfEW/arena/.agent-worktrees/repo
+exit: 1
+command: node bin/atris.js member tidy --dir <fixture copies> --dry-run (unavailable remote)
+tidy: could not ask origin for its main branch: fatal: '/private/var/folders/t1/2_4kmb5n4c71dxm26zc8dgzr0000gn/T/atris-member-tidy-EYSzVH/remote.git' does not appear to be a git repository, so every copy is kept
+kept  landed-clean  could not ask origin for its main branch: fatal: '/private/var/folders/t1/2_4kmb5n4c71dxm26zc8dgzr0000gn/T/atris-member-tidy-EYSzVH/remote.git' does not appear to be a git repository
+kept  remote-unavailable  could not ask origin for its main branch: fatal: '/private/var/folders/t1/2_4kmb5n4c71dxm26zc8dgzr0000gn/T/atris-member-tidy-EYSzVH/remote.git' does not appear to be a git repository
+tidy: would remove 0, kept 2, of 2 copies in /private/var/folders/t1/2_4kmb5n4c71dxm26zc8dgzr0000gn/T/atris-member-tidy-EYSzVH/arena/.agent-worktrees/repo
+exit: 1
+command: node bin/atris.js member tidy --dir <fixture copies> (unavailable remote)
+tidy: could not ask origin for its main branch: fatal: '/private/var/folders/t1/2_4kmb5n4c71dxm26zc8dgzr0000gn/T/atris-member-tidy-EYSzVH/remote.git' does not appear to be a git repository, so every copy is kept
+kept  landed-clean  could not ask origin for its main branch: fatal: '/private/var/folders/t1/2_4kmb5n4c71dxm26zc8dgzr0000gn/T/atris-member-tidy-EYSzVH/remote.git' does not appear to be a git repository
+kept  remote-unavailable  could not ask origin for its main branch: fatal: '/private/var/folders/t1/2_4kmb5n4c71dxm26zc8dgzr0000gn/T/atris-member-tidy-EYSzVH/remote.git' does not appear to be a git repository
+tidy: removed 0, kept 2, of 2 copies in /private/var/folders/t1/2_4kmb5n4c71dxm26zc8dgzr0000gn/T/atris-member-tidy-EYSzVH/arena/.agent-worktrees/repo
+exit: 1
+command: node bin/atris.js member tidy --dir <fixture copies> --dry-run (unfetchable remote default)
+tidy: could not fetch origin: fatal: git upload-pack: not our ref 75489a2fc736b511a5bf08cf4c81d436505d8c7d, so every copy is kept
+kept  landed-clean  could not fetch origin: fatal: git upload-pack: not our ref 75489a2fc736b511a5bf08cf4c81d436505d8c7d
+kept  unfetchable-default  could not fetch origin: fatal: git upload-pack: not our ref 75489a2fc736b511a5bf08cf4c81d436505d8c7d
+tidy: would remove 0, kept 2, of 2 copies in /private/var/folders/t1/2_4kmb5n4c71dxm26zc8dgzr0000gn/T/atris-member-tidy-n0DHv5/arena/.agent-worktrees/repo
+exit: 1
+command: node bin/atris.js member tidy --dir <fixture copies> (unfetchable remote default)
+tidy: could not fetch origin: fatal: git upload-pack: not our ref 75489a2fc736b511a5bf08cf4c81d436505d8c7d, so every copy is kept
+kept  landed-clean  could not fetch origin: fatal: git upload-pack: not our ref 75489a2fc736b511a5bf08cf4c81d436505d8c7d
+kept  unfetchable-default  could not fetch origin: fatal: git upload-pack: not our ref 75489a2fc736b511a5bf08cf4c81d436505d8c7d
+tidy: removed 0, kept 2, of 2 copies in /private/var/folders/t1/2_4kmb5n4c71dxm26zc8dgzr0000gn/T/atris-member-tidy-n0DHv5/arena/.agent-worktrees/repo
+exit: 1
+command: node bin/atris.js member tidy --dir <fixture copies> --dry-run (non-commit remote default)
+tidy: could not read the fetched main branch, so every copy is kept
+kept  landed-clean  could not read the fetched main branch
+kept  non-commit-default  could not read the fetched main branch
+tidy: would remove 0, kept 2, of 2 copies in /private/var/folders/t1/2_4kmb5n4c71dxm26zc8dgzr0000gn/T/atris-member-tidy-M499Av/arena/.agent-worktrees/repo
+exit: 1
+command: node bin/atris.js member tidy --dir <fixture copies> (non-commit remote default)
+tidy: could not read the fetched main branch, so every copy is kept
+kept  landed-clean  could not read the fetched main branch
+kept  non-commit-default  could not read the fetched main branch
+tidy: removed 0, kept 2, of 2 copies in /private/var/folders/t1/2_4kmb5n4c71dxm26zc8dgzr0000gn/T/atris-member-tidy-M499Av/arena/.agent-worktrees/repo
+exit: 1
+command: node bin/atris.js member tidy --dir <fixture copies> --dry-run (local record behind origin)
+would remove  landed-elsewhere  work landed
+left alone  1 work not landed yet
+tidy: would remove 1, kept 1, of 2 copies in /private/var/folders/t1/2_4kmb5n4c71dxm26zc8dgzr0000gn/T/atris-member-tidy-OxgMSN/arena/.agent-worktrees/repo
+exit: 0
+command: node bin/atris.js member tidy --dir <fixture copies> (local record behind origin)
+removed  landed-elsewhere  work landed, branch kept: error: the branch 'landed-elsewhere' is not fully merged.
+left alone  1 work not landed yet
+tidy: removed 1, kept 1, of 2 copies in /private/var/folders/t1/2_4kmb5n4c71dxm26zc8dgzr0000gn/T/atris-member-tidy-OxgMSN/arena/.agent-worktrees/repo
+exit: 0
+command: node bin/atris.js worktree cleanup (damaged remote default)
+cleanup: dry-run base=origin/master
+warning: could not refresh origin/master (origin sent origin/master as something other than a commit); cleanup judged against the local copy, which may be behind
+candidates: 0
+cache_candidates: 0
+kept: 2
+left alone: primary_checkout=1
+kept: /private/var/folders/t1/2_4kmb5n4c71dxm26zc8dgzr0000gn/T/atris-member-tidy-G5CvLt/arena/.agent-worktrees/repo/still-here branch=still-here reason=dirty staged=0 unstaged=0 untracked=1
+exit: 0
+command: node bin/atris.js worktree cleanup (healthy origin, local base behind)
+cleanup: dry-run base=origin/master
+candidates: 0
+cache_candidates: 0
+kept: 2
+left alone: primary_checkout=1
+kept: /private/var/folders/t1/2_4kmb5n4c71dxm26zc8dgzr0000gn/T/atris-member-tidy-08A8MV/arena/.agent-worktrees/repo/healthy-draft branch=healthy-draft reason=dirty staged=12 unstaged=11 untracked=6
+exit: 0
+command: node bin/atris.js worktree cleanup --apply (healthy origin, local base behind)
+cleanup: applied base=origin/master
+removeds: 0
+cache_pruneds: 0
+kept: 2
+left alone: primary_checkout=1
+kept: /private/var/folders/t1/2_4kmb5n4c71dxm26zc8dgzr0000gn/T/atris-member-tidy-08A8MV/arena/.agent-worktrees/repo/healthy-draft branch=healthy-draft reason=dirty staged=12 unstaged=11 untracked=6
+exit: 0
+command: node bin/atris.js worktree cleanup (unavailable origin)
+cleanup: dry-run base=origin/master
+warning: could not refresh origin/master (fatal: '/private/var/folders/t1/2_4kmb5n4c71dxm26zc8dgzr0000gn/T/atris-member-tidy-01GeTe/remote.git' does not appear to be a git repository); cleanup judged against the local copy, which may be behind
+candidates: 0
+cache_candidates: 0
+kept: 2
+left alone: primary_checkout=1
+kept: /private/var/folders/t1/2_4kmb5n4c71dxm26zc8dgzr0000gn/T/atris-member-tidy-01GeTe/arena/.agent-worktrees/repo/offline-draft branch=offline-draft reason=dirty staged=1 unstaged=0 untracked=1
+exit: 0
+command: node bin/atris.js worktree cleanup --apply (unavailable origin)
+cleanup: applied base=origin/master
+warning: could not refresh origin/master (fatal: '/private/var/folders/t1/2_4kmb5n4c71dxm26zc8dgzr0000gn/T/atris-member-tidy-01GeTe/remote.git' does not appear to be a git repository); cleanup judged against the local copy, which may be behind
+removeds: 0
+cache_pruneds: 0
+kept: 2
+left alone: primary_checkout=1
+kept: /private/var/folders/t1/2_4kmb5n4c71dxm26zc8dgzr0000gn/T/atris-member-tidy-01GeTe/arena/.agent-worktrees/repo/offline-draft branch=offline-draft reason=dirty staged=1 unstaged=0 untracked=1
+exit: 0
+command: node bin/atris.js worktree cleanup (unavailable origin, staged rename)
+cleanup: dry-run base=origin/master
+warning: could not refresh origin/master (fatal: '/private/var/folders/t1/2_4kmb5n4c71dxm26zc8dgzr0000gn/T/atris-member-tidy-CT4anp/remote.git' does not appear to be a git repository); cleanup judged against the local copy, which may be behind
+candidates: 0
+cache_candidates: 0
+kept: 2
+left alone: primary_checkout=1
+kept: /private/var/folders/t1/2_4kmb5n4c71dxm26zc8dgzr0000gn/T/atris-member-tidy-CT4anp/arena/.agent-worktrees/repo/offline-rename branch=offline-rename reason=dirty staged=1 unstaged=1 untracked=0
+exit: 0
+command: node bin/atris.js worktree cleanup --apply (unavailable origin, staged rename)
+cleanup: applied base=origin/master
+warning: could not refresh origin/master (fatal: '/private/var/folders/t1/2_4kmb5n4c71dxm26zc8dgzr0000gn/T/atris-member-tidy-CT4anp/remote.git' does not appear to be a git repository); cleanup judged against the local copy, which may be behind
+removeds: 0
+cache_pruneds: 0
+kept: 2
+left alone: primary_checkout=1
+kept: /private/var/folders/t1/2_4kmb5n4c71dxm26zc8dgzr0000gn/T/atris-member-tidy-CT4anp/arena/.agent-worktrees/repo/offline-rename branch=offline-rename reason=dirty staged=1 unstaged=1 untracked=0
+exit: 0
+command: node bin/atris.js worktree cleanup (unavailable origin, staged new file)
+cleanup: dry-run base=origin/master
+warning: could not refresh origin/master (fatal: '/private/var/folders/t1/2_4kmb5n4c71dxm26zc8dgzr0000gn/T/atris-member-tidy-lo8dZ2/remote.git' does not appear to be a git repository); cleanup judged against the local copy, which may be behind
+candidates: 0
+cache_candidates: 0
+kept: 2
+left alone: primary_checkout=1
+kept: /private/var/folders/t1/2_4kmb5n4c71dxm26zc8dgzr0000gn/T/atris-member-tidy-lo8dZ2/arena/.agent-worktrees/repo/offline-added branch=offline-added reason=dirty staged=1 unstaged=1 untracked=0
+exit: 0
+command: node bin/atris.js worktree cleanup --apply (unavailable origin, staged new file)
+cleanup: applied base=origin/master
+warning: could not refresh origin/master (fatal: '/private/var/folders/t1/2_4kmb5n4c71dxm26zc8dgzr0000gn/T/atris-member-tidy-lo8dZ2/remote.git' does not appear to be a git repository); cleanup judged against the local copy, which may be behind
+removeds: 0
+cache_pruneds: 0
+kept: 2
+left alone: primary_checkout=1
+kept: /private/var/folders/t1/2_4kmb5n4c71dxm26zc8dgzr0000gn/T/atris-member-tidy-lo8dZ2/arena/.agent-worktrees/repo/offline-added branch=offline-added reason=dirty staged=1 unstaged=1 untracked=0
+exit: 0
+command: node bin/atris.js worktree cleanup (unavailable origin, staged new file deleted)
+cleanup: dry-run base=origin/master
+warning: could not refresh origin/master (fatal: '/private/var/folders/t1/2_4kmb5n4c71dxm26zc8dgzr0000gn/T/atris-member-tidy-IUDrgZ/remote.git' does not appear to be a git repository); cleanup judged against the local copy, which may be behind
+candidates: 0
+cache_candidates: 0
+kept: 2
+left alone: primary_checkout=1
+kept: /private/var/folders/t1/2_4kmb5n4c71dxm26zc8dgzr0000gn/T/atris-member-tidy-IUDrgZ/arena/.agent-worktrees/repo/offline-vanished branch=offline-vanished reason=dirty staged=1 unstaged=1 untracked=0
+exit: 0
+command: node bin/atris.js worktree cleanup --apply (unavailable origin, staged new file deleted)
+cleanup: applied base=origin/master
+warning: could not refresh origin/master (fatal: '/private/var/folders/t1/2_4kmb5n4c71dxm26zc8dgzr0000gn/T/atris-member-tidy-IUDrgZ/remote.git' does not appear to be a git repository); cleanup judged against the local copy, which may be behind
+removeds: 0
+cache_pruneds: 0
+kept: 2
+left alone: primary_checkout=1
+kept: /private/var/folders/t1/2_4kmb5n4c71dxm26zc8dgzr0000gn/T/atris-member-tidy-IUDrgZ/arena/.agent-worktrees/repo/offline-vanished branch=offline-vanished reason=dirty staged=1 unstaged=1 untracked=0
+exit: 0
+command: node bin/atris.js worktree cleanup (unavailable origin, staged mode-only change)
+cleanup: dry-run base=origin/master
+warning: could not refresh origin/master (fatal: '/private/var/folders/t1/2_4kmb5n4c71dxm26zc8dgzr0000gn/T/atris-member-tidy-E6iiDJ/remote.git' does not appear to be a git repository); cleanup judged against the local copy, which may be behind
+candidates: 0
+cache_candidates: 0
+kept: 2
+left alone: primary_checkout=1
+kept: /private/var/folders/t1/2_4kmb5n4c71dxm26zc8dgzr0000gn/T/atris-member-tidy-E6iiDJ/arena/.agent-worktrees/repo/offline-mode branch=offline-mode reason=dirty staged=1 unstaged=0 untracked=0
+exit: 0
+command: node bin/atris.js worktree cleanup --apply (unavailable origin, staged mode-only change)
+cleanup: applied base=origin/master
+warning: could not refresh origin/master (fatal: '/private/var/folders/t1/2_4kmb5n4c71dxm26zc8dgzr0000gn/T/atris-member-tidy-E6iiDJ/remote.git' does not appear to be a git repository); cleanup judged against the local copy, which may be behind
+removeds: 0
+cache_pruneds: 0
+kept: 2
+left alone: primary_checkout=1
+kept: /private/var/folders/t1/2_4kmb5n4c71dxm26zc8dgzr0000gn/T/atris-member-tidy-E6iiDJ/arena/.agent-worktrees/repo/offline-mode branch=offline-mode reason=dirty staged=1 unstaged=0 untracked=0
+exit: 0
+✔ tidy names pinned busy unfinished copies beside the ordinary ongoing count (1332.488584ms)
+✔ tidy names its own pinned landed copy from the root and a nested folder (1595.095375ms)
+✔ tidy preserves staged and unsaved notes in idle landed copies (1061.682792ms)
+✔ tidy keeps a copy whose branch disappeared, in preview and apply (952.471166ms)
+✔ tidy keeps staged and unsaved notes after upstream moves backward (1166.740166ms)
+✔ tidy keeps staged and unsaved notes after upstream switches to unrelated history (1228.561583ms)
+✔ tidy keeps a landed copy whose status git cannot read, in preview and apply (994.20575ms)
+✔ tidy keeps staged and unsaved notes when the remote default points to a missing branch (1078.860708ms)
+✔ tidy keeps staged and unsaved notes when the remote repository becomes unavailable (1081.444042ms)
+✔ tidy keeps staged and unsaved notes when the remote default exists but cannot be fetched (1219.84975ms)
+✔ tidy keeps staged and unsaved notes when the fetched remote default is not a commit (1157.777292ms)
+✔ tidy judges against the newest remote commit without moving the local record of it (1134.875916ms)
+✔ worktree cleanup refreshes the local record of origin only to a real commit (1108.58125ms)
+✔ worktree cleanup quietly refreshes an outdated base and keeps staged notes and drafts (1715.814708ms)
+✔ worktree cleanup warns and keeps drafts when origin is unavailable (1101.175833ms)
+✔ worktree cleanup keeps a staged rename and later edits when origin is unavailable (1114.298916ms)
+✔ worktree cleanup keeps a staged new file and later edits when origin is unavailable (1103.19075ms)
+✔ worktree cleanup keeps a staged new file deleted before saving when origin is unavailable (1105.8635ms)
+✔ worktree cleanup keeps a staged mode-only change when origin is unavailable (1106.7575ms)
+command: node bin/atris.js land --reap --no-remote --base master --dry-run (disposable repository)
+landing cleanup preview: would clear 0 pieces of work, 0 side copies:
+  still at work, commits not landed yet, left alone: 1
+  ✋ kept, needs a human: /private/var/folders/t1/2_4kmb5n4c71dxm26zc8dgzr0000gn/T/atris-removal-guard-bW71Y2/loose-wt (unlanded commits: 1 never landed, oldest 0d, needs landing)
+  ✋ kept, needs a human: /private/var/folders/t1/2_4kmb5n4c71dxm26zc8dgzr0000gn/T/atris-removal-guard-bW71Y2/pinned-wt (pinned by git worktree lock, 2 h old: writer paused please keep this copy)
+  still flying (recent work, left alone): 2
+exit: 0
+command: node bin/atris.js land --reap --no-remote --base master (disposable repository)
+landing cleanup done: 0 pieces cleared, 0 side copies removed
+  still at work, commits not landed yet, left alone: 1
+  ✋ kept, needs a human: /private/var/folders/t1/2_4kmb5n4c71dxm26zc8dgzr0000gn/T/atris-removal-guard-bW71Y2/loose-wt (unlanded commits: 1 never landed, oldest 0d, needs landing)
+  ✋ kept, needs a human: /private/var/folders/t1/2_4kmb5n4c71dxm26zc8dgzr0000gn/T/atris-removal-guard-bW71Y2/pinned-wt (pinned by git worktree lock, 2 h old: writer paused please keep this copy)
+  still flying (recent work, left alone): 2
+exit: 0
+✔ reap keeps a folder a run is working in, even with --force (131.40425ms)
+✔ reap sees a real live process in the folder without being told (346.936917ms)
+✔ reap names who removed a folder and why (151.894083ms)
+✔ reap summary counts folders removed today and by whom (81.704125ms)
+✔ worktree cleanup names who removed a folder and why (120.300416ms)
+✔ reap keeps a folder while git holds its lock, even with --force (129.570042ms)
+✔ reap says which git work is paused in a folder it keeps (131.331083ms)
+✔ worktree cleanup names the lock holding a folder and how old it is (96.875042ms)
+✔ worktree cleanup names a lock and a paused rebase left in the same folder (98.818709ms)
+✔ worktree cleanup keeps a clean folder paused mid-rebase (95.479166ms)
+✔ reap, worktree cleanup and fleet review name a held lock in the same words (149.380625ms)
+✔ fleet review cleanup keeps a sandbox while git holds its lock (82.879625ms)
+✔ fleet review cleanup says which git work is paused in a copy it keeps (86.33375ms)
+✔ fleet review cleanup keeps a sandbox while git holds its quarantine store (86.730417ms)
+✔ fleet review cleanup keeps a sandbox while git updates a branch in either store (383.473709ms)
+✔ fleet review cleanup keeps every store and names both holds when paused work and a lock sit in different stores (193.325333ms)
+✔ fleet review cleanup names who removed a sandbox and why (129.66025ms)
+✔ autopilot regression check keeps its folder while git holds its lock (110.85025ms)
+✔ autopilot regression check keeps its folder while a run is inside it (105.460333ms)
+✔ autopilot regression check sees a real leftover process without being told (324.809459ms)
+✔ autopilot regression check names who removed its folder and why (121.096625ms)
+✔ autopilot regression check keeps an existing clean folder when creation fails (122.582542ms)
+✔ autopilot regression check keeps an existing dirty folder when creation fails (117.58875ms)
+✔ every work folder removal goes through the git check and the removal log (317.454958ms)
+✔ a helper that deletes a folder its caller passed in is checked or reviewed (630.743ms)
+✔ saved scanner examples reject missed removals in the required checks (63.295ms)
+✔ a git check that comes late, names another folder, or is ignored does not count as protection (61.107917ms)
+✔ grouped sandbox cleanup exposes every recursive target to the scan (56.970167ms)
+✔ green landing keeps its scratch folder while a test is still running in it, git is busy, or it is pinned (88.058875ms)
+✔ green landing names who removed its scratch folder and why (90.186292ms)
+✔ green landing keeps its scratch folder after a pin taken at removal (428.257375ms)
+✔ green landing keeps its scratch folder after a removal stopped by a signal (411.003625ms)
+✔ a failed worktree start keeps its folder after a pin taken at removal and still shows why it failed (1995.574667ms)
+✔ worktree cleanup names the reason and age of a pinned folder it skips (115.175041ms)
+✔ reap skips a dirty pinned folder before saving its patches, even with --force (137.395084ms)
+✔ fleet review cleanup keeps every store of a pinned copy and names the pin (83.780208ms)
+✔ fleet review prints its kept line through the shared helper (0.773042ms)
+✔ fleet review kept line prints the reason alone when nothing explains it (0.056334ms)
+✔ fleet review names the git lock or pin when cleanup keeps a copy (85.9305ms)
+✔ fleet review names git's refusal when cleanup keeps a copy (0.106875ms)
+✔ fleet review cleanup keeps a copy pinned after its first check and names the refusal (564.036167ms)
+✔ fleet review cleanup keeps a copy git refused without a pin or never finished removing (1094.175917ms)
+✔ a plain delete after a git removal of the same folder must check its pin first (57.671ms)
+✔ a refusal from a deep folder keeps git's reason, not just its path (1223.863458ms)
+✔ worktree cleanup names each folder that needs a person and counts the rest (951.138709ms)
+✔ a refusal line still too long keeps its start and its end (0.165458ms)
+✔ multiline pin reasons stay on one line in refusal and real cleanup reports (419.013541ms)
+✔ reap counts branch copies still at work and names detached and pinned ones (1763.166708ms)
+ℹ tests 90
+ℹ suites 0
+ℹ pass 90
+ℹ fail 0
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 45676.797208
+
+  ✓ clean, no slop tells in 3 files

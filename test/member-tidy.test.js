@@ -1448,6 +1448,8 @@ test('worktree cleanup quietly refreshes an outdated base and keeps staged notes
     const renamed = path.join(copy, 'renamed-guide');
     const renameSource = runGit(['show', 'HEAD:guide.txt'], copy);
     runGit(['mv', 'guide.txt', 'renamed-guide'], copy);
+    const recreatedSource = path.join(copy, 'guide.txt');
+    fs.writeFileSync(recreatedSource, 'new draft at original name\n');
     const savedRename = runGit(['show', ':renamed-guide'], copy);
     assert.equal(savedRename, renameSource);
     assert.match(runGit(['diff', '--cached', '--summary', '--', 'guide.txt', 'renamed-guide'], copy), /rename guide.txt => renamed-guide/);
@@ -1526,7 +1528,7 @@ test('worktree cleanup quietly refreshes an outdated base and keeps staged notes
       assert.equal(fs.readFileSync(linkedDraft, 'utf8'), 'later draft after link\n');
       assert.equal(runGit(['show', ':outline-link-folder'], copy), 'saved-folder-outline.txt');
       assert.match(runGit(['ls-files', '--stage', '--', 'outline-link-folder'], copy), /^120000 /);
-      assert.equal(fs.existsSync(path.join(copy, 'guide.txt')), false);
+      assert.equal(fs.readFileSync(recreatedSource, 'utf8'), 'new draft at original name\n');
       assert.equal(runGit(['show', 'HEAD:guide.txt'], copy), renameSource);
       assert.equal(runGit(['ls-files', '--', 'guide.txt'], copy), '');
       assert.equal(runGit(['show', ':renamed-guide'], copy), savedRename);
