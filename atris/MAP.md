@@ -246,3 +246,5 @@ Offline cleanup staged rename: `test/member-tidy.test.js:1473` runs real preview
 Offline cleanup staged new file: `test/member-tidy.test.js:1514` runs real preview and apply with an unavailable origin after a new file is staged and edited again. Both calls keep the saved first version, the later edit, the branch and registration, and name the copy as kept with one staged and one unsaved change.
 
 Offline cleanup staged file deleted before saving: `test/member-tidy.test.js:1555` runs real preview and apply with an unavailable origin after a new file is staged and then removed from the folder, so the staged copy is the only one. Both calls keep that staged copy, the branch and registration, and name the copy as kept with one staged and one unsaved change.
+
+Offline cleanup staged mode-only change: `test/member-tidy.test.js:1597` runs real preview and apply with an unavailable origin after README is made runnable and staged with no text change. Both calls keep the runnable bit, the saved change, the branch and registration, and name the copy as kept with one staged change.
