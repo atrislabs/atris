@@ -231,7 +231,7 @@ function splices(text) {
 // A word in "s" right after "in" or "of" is a noun ("the stubs in tests"),
 // and so is one right after "and" or "or", the next item in a list of
 // nouns: "the lawyers and bankers and consultants who broker".
-// and so is a word in "s" with a clause on it that ends on its own verb:
+// So is a word in "s" with a clause on it that ends on its own verb:
 // "the live markdown docs the editor renders" names docs. A "the" inside
 // that stretch means an object, so "the learner watches the model do the
 // reps" stays a splice. The list reads this on its own, not through the
@@ -247,6 +247,12 @@ function splices(text) {
 // A word in "is" is a noun, never a verb: "the structural basis for".
 const SPLICE_OPENER = /(?:the|its|our|their|your|this|that|these|those|each|every|a|an)/.source;
 const SPLICE_SHAPE = new RegExp(`^(?!that (?:the|a|an|it|we|they|he|she|this|these|those|its|their|our|your)\\b)${SPLICE_OPENER} ` + /(?!(?:one|two|three|four|five|six|seven|eight|nine|ten|few|many|several|same|other|first|last|next|main|key|core|new|old|real|whole|exact|only)\b)(?:(?!(?:that|which|who|your|our|their|its|his|her|my)\b)[\w`-]+ ){1,2}(?<!\b(?:in|of|and|or) )(?!(?:this|his|its|thus|plus|always|perhaps|unless|whereas|across)\b)[a-z]+[^isu\s']s (?!(?:that|which|who)\b)(?:[a-z`"]|\d)/.source);
+// "These" or "those" alone, or a plural noun after "the" and kin, before a
+// common plain verb is a subject too, whatever follows the verb: "those
+// need tests" and "those searches return zero results" are listed. The
+// fixer keeps a comma before "those" and a verb with a word in "s" after
+// it, to spare "those work items", so the list counts what that costs.
+const DEMONSTRATIVE_SHAPE = /^(?:these|those|(?:the|these|those|our|their|your|its) (?:[\w`-]+ )?[a-z]+[^isu\s']s) (?:(?:still|also|never|only|just|now|already|often|usually|rarely|always|all) )?(?:pass|fail|run|work|break|hold|match|agree|validate|load|build|ship|land|compile|apply|need|stay|remain|exist|show|point|wait|block|return) (?:[a-z`"]|\d)/;
 // A stretch that ends its sentence on a bare "of", "to", "with" and kin has
 // lost the object of that word to the noun it opens with, so it is a
 // clause on that noun, not a subject and its verb: "offline work, a topic
@@ -260,7 +266,7 @@ function spliceShapes(sources, fixes) {
     if (fixed === source) return;
     for (const m of fixed.matchAll(new RegExp(`, (${SPLICE_OPENER} [^,;.!?\\n]*)`, 'g'))) {
       const rest = m[1];
-      if (!source.includes(`${DASH} ${rest}`) || !SPLICE_SHAPE.test(rest) || RELATIVE_SHAPE.test(rest)) continue;
+      if (!source.includes(`${DASH} ${rest}`) || !(SPLICE_SHAPE.test(rest) || DEMONSTRATIVE_SHAPE.test(rest)) || RELATIVE_SHAPE.test(rest)) continue;
       if (STRANDED_SHAPE.test(rest) && /^(?:[.!?]|$)/.test(fixed.slice(m.index + m[0].length))) continue;
       if (takesComma(fixed.slice(0, m.index))) continue;
       const key = rest.replace(/`[^`]*`/g, '``');

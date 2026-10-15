@@ -4974,6 +4974,15 @@ test('the fix diff splice list skips a noun after "in" or "of" and a noun with i
     lists.map((t) => `The graph has the advisor layer ${D} ${t}.`),
     lists.map((t) => `The graph has the advisor layer, ${t}.`),
   ).map((s) => s.text), ['the lawyer brokers every deal']);
+  // "these" or "those" alone, or a plural noun after them, before a plain
+  // verb is a subject too, so the real "those searches return zero results"
+  // and "these always wait for review" are listed; "those still open in
+  // review" has no verb
+  const plain = ['those searches return zero results', 'these always wait for review', 'those still open in review'];
+  assert.deepEqual(spliceShapes(
+    plain.map((t) => `Nobody asks about receipts ${D} ${t}.`),
+    plain.map((t) => `Nobody asks about receipts, ${t}.`),
+  ).map((s) => s.text), ['those searches return zero results', 'these always wait for review']);
 });
 
 test('the fix diff script lists each comma it writes before a "the" clause once', () => {
