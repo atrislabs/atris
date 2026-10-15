@@ -376,6 +376,13 @@ const BARE_OBJECT_CLAUSE = new RegExp(`^\\s*\\u2014\\s*the\\s+(?!${NAME_PAIR}\\b
 // A plural that is almost never a verb keeps the phrase: "the unit tests
 // instead of mocks".
 const HOW_TAIL_CLAUSE = new RegExp(`^\\s*\\u2014\\s*the\\s+(?!${NAME_PAIR}\\b)(?:(?:[a-z][\\w-]*\\s+){0,2}?(?!${PLURAL_NOUN_WORD}\\b)${PLAIN_VERB_WORD}\\s+(?:(?!(?:the|a|an|and|or|of|in|on|for|to)\\b)[a-z]{3,}\\s+)?(?:(?:instead\\s+of|rather\\s+than)\\s+[a-z]{2,}ing\\b|regardless\\s+of\\s)|[a-z][\\w-]*\\s+(?!${PLURAL_NOUN_WORD}\\b)${PLAIN_VERB_WORD}\\s+(?:(?:client|server|browser|edge)-side|out-of-band|in-process|in-place|per-[a-z][\\w-]*)(?=[.!?;,]|$))`);
+// A "what", "how", "why" or "whether" clause after a verb in "s" is its
+// object: "the business owns what its agents learn". A quote is too, after
+// a verb that is almost never a plural noun: 'the verdict reads "Human
+// decision needed"'. A verb that is often a noun keeps the phrase, since
+// 'the field names "id"' names fields; so 'the quote names "Dave"' stays.
+const QUOTE_VERB_WORD = '(?:reads|says|lacks|returns|prints|asks|contains|includes|warns|claims|mentions|shows|displays|emits)';
+const WH_OBJECT_CLAUSE = new RegExp(`^\\s*\\u2014\\s*the\\s+(?!${NAME_PAIR}\\b)(?:[a-z][\\w-]*\\s+){1,2}?(?:(?!${PLURAL_NOUN_WORD}\\b)${PLAIN_VERB_WORD}\\s+(?:what|how|why|whether)\\s+[a-z]|${QUOTE_VERB_WORD}\\s+["\\u201c][A-Za-z])`);
 // A plain word, then a name, then the verb hides a "that": "a topic Atris
 // sits directly on top of" names a topic, so it keeps its comma. A run of
 // capitals is no name, so "the new CLI resolves the prefix" still joins.
@@ -1102,7 +1109,7 @@ function fixEmDash(s, { endsBlock = false, startsBlock = false, spans = [], abov
     .replace(PLAIN_CLAUSE_AFTER_DASH, (m, at, whole) => {
       const left = clauseOrFieldLeft(at, whole);
       if (!left || NAME_BEFORE_PLAIN_VERB.test(whole.slice(at)) || NAME_TAIL_PHRASE.test(whole.slice(at))) return m;
-      return /\b(?:not|cannot)\b/i.test(left) || PLAIN_OBJECT_CLAUSE.test(whole.slice(at)) || BARE_OBJECT_CLAUSE.test(whole.slice(at)) || HOW_TAIL_CLAUSE.test(whole.slice(at)) ? clauseJoin(left, at, whole) : m;
+      return /\b(?:not|cannot)\b/i.test(left) || PLAIN_OBJECT_CLAUSE.test(whole.slice(at)) || BARE_OBJECT_CLAUSE.test(whole.slice(at)) || HOW_TAIL_CLAUSE.test(whole.slice(at)) || WH_OBJECT_CLAUSE.test(whole.slice(at)) ? clauseJoin(left, at, whole) : m;
     })
     .replace(ADVERB_CLAUSE_AFTER_DASH, (m, at, whole) => {
       const left = clauseLeft(at, whole);

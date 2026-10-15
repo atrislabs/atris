@@ -164,3 +164,17 @@ It mirrors what the model produces \u2014 the learner watches the model do the r
 => It mirrors what the model produces; the learner watches the model do the reps.
 One place \u2014 the live markdown docs the Atris editor renders.
 => One place, the live markdown docs the Atris editor renders.
+
+# from real repo text: a "what" clause or a quote after a verb in s is its
+# object; a verb that is often a noun keeps the phrase before a quote
+It is local for business \u2014 the business owns what its agents learn, not the lab.
+=> It is local for business; the business owns what its agents learn, not the lab.
+All tests pass \u2014 the verdict reads "Human decision needed."
+=> All tests pass; the verdict reads "Human decision needed."
+Check one place \u2014 the field names "id" and "name".
+=> Check one place, the field names "id" and "name".
+One place \u2014 the server logs "error" lines.
+=> One place, the server logs "error" lines.
+# "names" is a verb here, but it is too often a noun to trust before a quote
+note: caution \u2014 the verbatim quote names "Dave," not the owner Eric.
+~> note: caution; the verbatim quote names "Dave," not the owner Eric.

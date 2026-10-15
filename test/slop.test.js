@@ -2434,6 +2434,24 @@ test('fix joins a field value and a "the" clause after a dash with a semicolon',
   ]);
 });
 
+test('fix joins "the", a noun and a verb in s with a "what" clause or a quote after a dash', () => {
+  // from real repo text: "the business owns what its agents learn" and 'the
+  // verdict reads "Human decision needed."' spliced, since neither object
+  // fit a known shape. A verb that is often a noun keeps the phrase before
+  // a quote: 'the field names "id"' names fields.
+  const file = tmpFile('wh-object-clause.md', [
+    'It is local for business \u2014 the business owns what its agents learn, not the lab.',
+    'All tests pass \u2014 the verdict reads "Human decision needed."',
+    'Check one place \u2014 the field names "id" and "name".',
+  ].join('\n'));
+  const { changes } = applyFixes([file], RULES);
+  assert.deepEqual(changes.map((c) => c.after), [
+    'It is local for business; the business owns what its agents learn, not the lab.',
+    'All tests pass; the verdict reads "Human decision needed."',
+    'Check one place, the field names "id" and "name".',
+  ]);
+});
+
 test('fix reads a "the" inside the clause after a plural as an object, so the clause joins', () => {
   // from real repo text: "the learner watches the model do the reps" kept a
   // comma, since "watches the model do the reps" read as a plural with a
