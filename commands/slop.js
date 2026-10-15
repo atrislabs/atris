@@ -192,6 +192,7 @@ const NOUN_WORD = "(?:[A-Za-z0-9_/'-]+(?:\\.[A-Za-z0-9_]+)*(?:=[A-Za-z0-9_'-]+(?
 const WHEN_WORD = '(?:now|already|never|always|finally|soon|often|usually|really|actually)';
 const SUBJECT_WORD = `(?:(?!(?:and|but|or|nor|so|yet|then|not|even|when|if|unless|until|because|since|while|where|which|who|as|after|before|though|although|once|just|only)\\b)${NOUN_WORD}\\s+)`;
 const HELPING_VERB = '(?:is|are|was|were|will|would|can|cannot|could|must|should|may|might|has|have|had|does|did|exists|gets|got|needs|keeps|makes|runs|takes|goes|stays|means)';
+const ASIDE_THEN_HELPER = new RegExp(`\\)\\s+${HELPING_VERB}\\b`, 'g');
 const NAMING_WORD = '(?:thing|one|part|piece|kind|place|point|moment|step|move|reason|question|answer)s?';
 const NAMING_PHRASE = `(?:the|a|an)\\s+(?:(?:next|only|same|first|last|real|one)\\s+)?${NAMING_WORD}\\s+(?!(?:${HELPING_VERB}|${NAMING_WORD})\\b)`;
 const PLACE_PHRASE = `(?:(?:at|in|on|of|for|from|under|per)\\s+(?:(?:the|a|an)\\s+)?(?:(?!(?:the|a|an|that|whose)\\b)${SUBJECT_WORD}){1,2})?`;
@@ -682,11 +683,16 @@ function fixEmDash(s, { endsBlock = false, startsBlock = false, spans = [], abov
   // visualize, outwork, across". That reading is kept only when it gives
   // parentheses; fewer words name a sub-label ("**Next tick:** tick 31: ship
   // it"), and a second bold title, "**T2:** **Ship docs**", is a label too.
+  // A short subject still pairs when a helping verb follows the aside, so the
+  // sentence runs on through it: "**Gap closed:** the deck (what a customer
+  // sees) is now current", never "the deck: what a customer sees, is now".
   const fieldThenWords = label && /^((?:\*\*[^*]+:\*\*|__[^_]+:__)\s+)([^*_`\uE000()]*[^\s*_`\uE001()])$/.exec(label[2]);
-  if (fieldThenWords && fieldThenWords[2].trim().split(/\s+/).length >= 4) {
+  if (fieldThenWords) {
     const body = fieldThenWords[2] + s.slice(label[1].length + label[2].length);
     const alt = fixEmDash(body, { endsBlock });
-    if ((alt.match(/\(/g) || []).length > (body.match(/\(/g) || []).length) return `${label[1]}${fieldThenWords[1]}${alt}`;
+    const paired = (alt.match(/\(/g) || []).length > (body.match(/\(/g) || []).length;
+    const runsOn = alt.startsWith(`${fieldThenWords[2]} (`) && (alt.match(ASIDE_THEN_HELPER) || []).length > (body.match(ASIDE_THEN_HELPER) || []).length;
+    if (paired && (runsOn || fieldThenWords[2].trim().split(/\s+/).length >= 4)) return `${label[1]}${fieldThenWords[1]}${alt}`;
   }
   const restSentence = label && s.slice(label[0].length).split(/[.!?]["'\u201d\u2019)]*\s/)[0];
   if (label && !/^(?:\*|_|`|\uE000|"|\u201c)/.test(label[2])

@@ -3760,3 +3760,25 @@ test('fix pairs an aside after a bold field label that starts a list item', () =
     '- **T2:** **Ship docs**: one, two',
   ]);
 });
+
+test('fix pairs an aside after a short subject when a helping verb follows it', () => {
+  // from a sprint log: "**Gap closed:** the deck" then an aside, then "is".
+  // Two words were read as a sub-label, so the aside took a colon and a
+  // comma. A helping verb after the closing dash shows the sentence runs on.
+  // A short title with no verb after it keeps its colon, and an aside later
+  // in the line does not pull the first dash into a comma.
+  const D = String.fromCharCode(0x2014);
+  const file = tmpFile('field-short-aside.md', [
+    `- **Gap closed:** the deck ${D} what a customer actually sees ${D} is now current.`,
+    '',
+    `- **C2:** Content Feedback ${D} Drafts History ${D} save drafts with metadata`,
+    '',
+    `- **Score:** 8 ${D} Quieter scene. But the revelation ${D} "a line" ${D} is one that stays.`,
+  ].join('\n'));
+  const { changes } = applyFixes([file], RULES);
+  assert.deepEqual(changes.map((c) => c.after), [
+    '- **Gap closed:** the deck (what a customer actually sees) is now current.',
+    '- **C2:** Content Feedback: Drafts History, save drafts with metadata',
+    '- **Score:** 8: Quieter scene. But the revelation ("a line") is one that stays.',
+  ]);
+});
