@@ -8,6 +8,7 @@
     "finished-stays-finished.json": "50f2d2e1cf321ef99993e0c1c69634af68fdf6b7d01277498b7a0d3022abd60b",
     "happy-path-judge-pass.json": "a5de297f9bedcec709688f472d016a0e16b769b9da94286e372ddb10881cb840",
     "judge-fail-hint.json": "28c5b4603803806cf681b7d9ded86984f2aa983e24d537f5e9e9c3bc8831bf07",
+    "judge-set.json": "3c4f57f894b97bf4c90647ba8b751fe6b122b18db4433b00d3f36ae315335f8a",
     "metadata-events.json": "70404724e88f696f57fa7606af88b14a06928063de2c45b205454b413b9f9f1b",
     "money-rounding-and-duplicate-id.json": "e6f96c425d24c888df6a6ad606e7bfcacc3cfcc92f9c80d679529d83f747a8bf",
     "order-in-order.json": "8c5ef20a7bfe5f7bc97d1383f9546d58d69b1fb7e5a1690259fd084178c324c0",

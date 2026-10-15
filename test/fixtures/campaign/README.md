@@ -64,6 +64,7 @@ Every dollar amount becomes integer cents on the way in: `floor(amount * 100 + 0
 | `campaign_started` | sets `title`, `judge`, `budget.total`, `owner` (data.owner, else `mission-lead`), `standing` (default false), `bet` (data.bet as `{ "text": bet, "wrong_if": null }`, else null), `seats` from data.seats (a string seat is `{ "member": s, "role": null }`), `home` = this event's origin, `created_from` = data.created_from or null |
 | `seat_filled` | adds `{member, role}`; an identical pair already seated is ignored silently |
 | `bet_set` | `bet = { text: data.bet, wrong_if: data.wrong_if or null }` |
+| `judge_set` | only the owner or a `human:` actor: `judge = data.judge`, and the judge becomes due. Anyone else gets warning `judge_set_not_owner` and nothing changes |
 | `attached` | `parent = data.parent_id` |
 | `mission_proposed` | creates the mission if new, status `proposed`, member = data.member or null, estimate_usd = data.estimate_usd or null |
 | `mission_claimed` | if another mission already holds `claim_key`: warning `duplicate_claim`, this mission's status becomes `dropped`. Otherwise this mission holds the key and becomes `claimed` (created if new) |
@@ -164,7 +165,7 @@ Exact keys, in this shape. Lists keep the order their first event was applied.
 ```
 
 - A mission's `outcome` and `cost_usd` are null until it ends.
-- `judge_due` is true when the judge has never run, or when a `mission_ended` was applied after the latest `judge_ran` (fold order).
+- `judge_due` is true when the judge has never run, or when a `mission_ended` or an allowed `judge_set` was applied after the latest `judge_ran` (fold order).
 - `last_judge` is `{ "passed": bool, "reading": number or null, "at": "<the event's at>" }` for the latest run.
 - `warnings` keeps the order the events were applied.
 - Screens treat `warnings[].code` as an open string: a new code must never stop a view from decoding. Every other enum (`state`, `stop_reason`, `confidence`, mission `status` and `outcome`) is closed, so a new value there ships to screens before computers send it.
