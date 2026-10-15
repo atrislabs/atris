@@ -19,5 +19,10 @@ late folder recovered; later write arrived before the next timed redraw
 
 Observed next gap: the empty board prints a long progress path without fitting the terminal width. This recovery proof uses a short /tmp path to isolate folder recovery; long empty paths still need their own layout fix.
 Setup: brain activate and compile both exited 2 in plan-only mode; no generated policy files were written. Existing rendered task and member-log changes were preserved.
+Review bookkeeping: the plain readiness command exited 1 because its login shell selected unsupported Node 20 (68 passed, 23 failed). The supported-runtime readiness command below exited 0 and moved the task to Review, without human acceptance. Its prefix is outside automatic certification's allowlist, so automatic acceptance remains unavailable.
+Command: atris task ready BCI-12 --verify 'PATH=/opt/homebrew/bin:$PATH node --test test/member-board.test.js test/member-result.test.js' --result "Operators can trust the live board to recover when progress appears after startup, reducing the risk of missing a later result."
+Output: verified command exited 0; ready for approval BCI-12 v4.
+Artifact: atris/runs/2026-10-15-task-bci-12-2026-10-15T02-45-01-752Z.json (local generated receipt).
+
 next_push: Fit the empty-board progress-path message to narrow terminal widths.
 layer: behaviors
