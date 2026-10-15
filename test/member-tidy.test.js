@@ -1370,12 +1370,17 @@ test('worktree cleanup refreshes the local record of origin only to a real commi
 });
 
 
-test('worktree cleanup quietly refreshes an outdated base and keeps drafts', () => {
+test('worktree cleanup quietly refreshes an outdated base and keeps staged notes and drafts', () => {
   const fx = makeFixture();
   try {
     const copy = addCopy(fx, 'healthy-draft');
     const draft = path.join(copy, 'draft.txt');
     fs.writeFileSync(draft, 'keep these notes\n');
+    const note = path.join(copy, 'note.txt');
+    fs.writeFileSync(note, 'staged notes\n');
+    runGit(['add', 'note.txt'], copy);
+    fs.writeFileSync(note, 'staged notes\nlater edits\n');
+    const staged = runGit(['diff', '--cached', '--binary'], copy);
     const saved = runGit(['rev-parse', 'origin/master'], fx.repo);
     const other = path.join(fx.base, 'other');
     runGit(['clone', '-q', path.join(fx.base, 'remote.git'), other], fx.base);
@@ -1401,6 +1406,9 @@ test('worktree cleanup quietly refreshes an outdated base and keeps drafts', () 
       assert.equal(lines[1], extra.length ? 'removeds: 0' : 'candidates: 0');
       assert.doesNotMatch(cli.stdout, /warning:|could not refresh|may be behind/);
       assert.equal(fs.readFileSync(draft, 'utf8'), 'keep these notes\n');
+      assert.equal(fs.readFileSync(note, 'utf8'), 'staged notes\nlater edits\n');
+      assert.equal(runGit(['show', ':note.txt'], copy), 'staged notes');
+      assert.equal(runGit(['diff', '--cached', '--binary'], copy), staged);
       assert.equal(runGit(['status', '--porcelain'], copy), status);
       assert.equal(runGit(['rev-parse', 'origin/master'], fx.repo), newer);
       assert.equal(runGit(['rev-parse', 'FETCH_HEAD'], fx.repo), newer);

@@ -1,0 +1,17 @@
+Cleanup refresh preserves staged notes and later edits beside drafts.
+Changed: test/member-tidy.test.js, atris/MAP.md, atris/refs/MAP-NOTES.md, atris/team/architect/logs/2026-10-15.md, and this receipt.
+Verify: node --test test/worktree-removal-guard.test.js test/member-tidy.test.js && node bin/atris.js slop --staged
+Writing check exit: 0. Output: clean, no slop tells in 5 files.
+Test exit: 0. Output: tests 86, pass 86, fail 0, skipped 0, todo 0.
+Real commands invoked by the test on disposable repositories:
+node bin/atris.js worktree cleanup
+cleanup: dry-run base=origin/master
+candidates: 0
+node bin/atris.js worktree cleanup --apply
+cleanup: applied base=origin/master
+removeds: 0
+Both exited 0, with empty stderr. Both reported dirty staged=1 unstaged=1 untracked=1.
+Assertions preserve staged contents, staged patch, later edits, drafts, status, branch and registration while the outdated base refreshes.
+Progress: one existing real-command check strengthened; no new pending tests or runtime changes.
+next_push: Prove healthy refresh preserves edits to an already tracked file alongside staged notes and drafts.
+layer: behaviors
