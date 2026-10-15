@@ -1578,7 +1578,11 @@ test('member goal-from-score creates the active self-improvement goal from Team 
   const dir = makeTempDir();
   try {
     fs.mkdirSync(path.join(dir, 'atris'), { recursive: true });
-    assert.equal(runCli(['member', 'create', 'mission-lead', '--description="Make Missions turn proof into self-generated goals"'], { cwd: dir }).status, 0);
+    require('../lib/member-scaffold').ensureMemberBundle(path.join(dir, 'atris', 'team', 'mission-lead'), {
+      name: 'mission-lead',
+      role: 'Mission lead',
+      description: 'Make Missions turn proof into self-generated goals',
+    });
     const oldGoal = runCli(['member', 'goal', 'mission-lead', 'Old broad mission goal', '--json'], { cwd: dir });
     assert.equal(oldGoal.status, 0, oldGoal.stderr || oldGoal.stdout);
     const oldGoalPayload = JSON.parse(oldGoal.stdout);
