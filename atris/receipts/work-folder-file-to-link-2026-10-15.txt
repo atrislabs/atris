@@ -1,0 +1,14 @@
+Cleanup now has real proof that a saved regular file and its later replacement link both survive preview and apply.
+Files: test/member-tidy.test.js; atris/MAP.md; atris/refs/MAP-NOTES.md; atris/team/architect/logs/2026-10-15.md; atris/receipts/work-folder-file-to-link-2026-10-15.txt.
+Verify: node --test test/worktree-removal-guard.test.js test/member-tidy.test.js && node bin/atris.js slop --staged
+Test exit: 0. Output: tests 90; pass 90; fail 0; skipped 0; todo 0.
+Real command: node bin/atris.js worktree cleanup
+Output: cleanup: dry-run base=origin/master; candidates: 0; reason=dirty staged=6 unstaged=5 untracked=2
+Exit: 0.
+Real command: node bin/atris.js worktree cleanup --apply
+Output: cleanup: applied base=origin/master; removeds: 0; reason=dirty staged=6 unstaged=5 untracked=2
+Exit: 0.
+Progress: one existing real-runtime case strengthened; two cleanup modes preserve staged regular-file contents and mode, replacement link destination, saved tree, branch and registration.
+Learned: the saved file kind must be checked separately from the later link kind.
+next_push: prove cleanup preserves a saved symbolic link replaced by a regular file.
+layer: capabilities

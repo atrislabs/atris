@@ -2487,3 +2487,5 @@ Quoted task ready pass proof: `test/task-receipt.test.js:307` runs a passing ver
 Ready reply receipt link: `commands/task.js:10260` returns the saved receipt path directly in the ready JSON reply, including compact replies at `commands/task.js:10273`. `test/task-receipt.test.js:333` compares it with the full stored proof after a real CLI check from an apostrophe folder.
 
 Healthy cleanup link proof: `test/member-tidy.test.js:1403` runs real preview and apply with distinct staged and later symbolic link destinations, preserving both along with the full staged tree.
+
+Healthy cleanup file-to-link proof: `test/member-tidy.test.js:1409` runs real preview and apply after a staged regular file becomes a symbolic link, preserving the saved contents and regular-file mode, replacement link, full staged tree and folder registration.
