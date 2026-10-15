@@ -2743,3 +2743,5 @@ Run-record worktree note: `test/roster-run-record.test.js:90` has the fake workt
 Run-record one-lap land target: `test/roster-run-record.test.js:476` passes the review-only flight the same land target the empty room resolves to, which the landed dispatch case still checks against the real lookup.
 
 Command repository fixture: `test/commands.test.js:658` prepares one real repository and bare remote for six start and ship cases, copies both per case, and relinks each origin. File-level cleanup removes the template after all tests, including setup failure. Setup git launches fall from 60 to 16; command assertions remain unchanged.
+
+Brainstorm help checks: `test/commands.test.js:18794` runs three help spellings together with the existing async CLI helper and keeps all output and no-state assertions. `commands/brainstorm.js:73` returns before workspace discovery or journal writes. Three sequential stages become one.

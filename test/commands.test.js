@@ -18791,12 +18791,15 @@ test('brain --help prints usage without workspace state', async () => {
   }
 });
 
-test('brainstorm help prints usage without workspace state', () => {
+test('brainstorm help prints usage without workspace state', async () => {
   const dir = makeTempDir();
   try {
     const home = path.join(dir, 'home');
-    for (const helpArg of ['--help', '-h', 'help']) {
-      const res = runCli(['brainstorm', helpArg], { cwd: dir, env: { HOME: home } });
+    const helpArgs = ['--help', '-h', 'help'];
+    const results = await Promise.all(helpArgs.map(helpArg =>
+      runCliAsync(['brainstorm', helpArg], { cwd: dir, env: { HOME: home } })));
+    for (const [index, helpArg] of helpArgs.entries()) {
+      const res = results[index];
       assert.equal(res.status, 0, `brainstorm ${helpArg}: ${res.stderr || res.stdout}`);
       assert.match(res.stdout, /Usage: atris brainstorm/);
       assert.doesNotMatch(res.stderr, /atris\/ folder not found/);
