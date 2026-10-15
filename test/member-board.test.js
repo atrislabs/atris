@@ -1062,6 +1062,78 @@ test('a taller watch window never shows fewer members than a shorter one', async
   }
 });
 
+test('a cut watch board holds back a half-written failure while the window shrinks', async (t) => {
+  t.mock.timers.enable({ apis: ['setInterval', 'setTimeout', 'Date'], now: NOW });
+  let listener = null;
+  t.mock.method(fs, 'watch', (target, l) => {
+    listener = l;
+    const w = new (require('node:events'))();
+    w.close = () => {};
+    return w;
+  });
+  const older = ['scout', 'architect', 'validator', 'researcher'];
+  const dir = fakeDir({
+    builder: [`${at(30)} m-9 started: fix the login flow`, `${at(10)} m-9 running: npm test`],
+    ...Object.fromEntries(older.map((m, i) => [m, [`${at(300 + i)} m-${i} started: job`, `${at(200 + i)} m-${i} finished: failed (timed out)`]])),
+  });
+  const out = process.stdout;
+  const saved = ['isTTY', 'columns', 'rows'].map((k) => [k, Object.getOwnPropertyDescriptor(out, k)]);
+  const write = out.write;
+  const env = process.env.ATRIS_PROGRESS_DIR;
+  const frames = [];
+  const sizes = [];
+  let done;
+  let split;
+  try {
+    process.env.ATRIS_PROGRESS_DIR = dir;
+    Object.defineProperty(out, 'isTTY', { value: true, configurable: true });
+    Object.defineProperty(out, 'columns', { value: 60, configurable: true });
+    Object.defineProperty(out, 'rows', { value: 8, configurable: true, writable: true });
+    out.write = (chunk) => { frames.push(String(chunk).replace(/\x1b\[[0-9;]*[A-Za-z]/g, '')); sizes.push(out.rows); return true; };
+    const append = (text) => {
+      fs.appendFileSync(path.join(dir, 'builder.log'), text);
+      listener('change', 'builder.log');
+      t.mock.timers.tick(100);
+    };
+    const resize = (height) => { out.rows = height; out.emit('resize'); };
+    done = memberBoardCommand('--watch');
+    append(`${at(2)} m-9 finished: failed (sig`);
+    resize(5);
+    resize(4);
+    split = frames.length;
+    append('ned out)\n');
+    resize(3);
+    process.emit('SIGINT');
+  } finally {
+    out.write = write;
+    for (const [k, d] of saved) { if (d) Object.defineProperty(out, k, d); else delete out[k]; }
+    if (env === undefined) delete process.env.ATRIS_PROGRESS_DIR; else process.env.ATRIS_PROGRESS_DIR = env;
+  }
+  try {
+    await done;
+    assert.equal(frames.length, 6, 'first draw, half a line, two shrinks, the rest of the line, one more shrink');
+    assert.deepEqual(sizes, [8, 8, 5, 4, 4, 3]);
+    for (const [i, frame] of frames.entries()) {
+      const lines = frame.split('\n');
+      assert.match(frame, /^member\s+state/, `${sizes[i]} rows`);
+      assert.ok(lines.length <= sizes[i], `${sizes[i]} rows fits: ${JSON.stringify(frame)}`);
+      for (const line of lines) assert.ok(line.length <= 60, `${sizes[i]} rows: ${line}`);
+      if (i >= split) continue;
+      assert.doesNotMatch(frame, /\(sig|sign(ed)? (out|in)/, `${sizes[i]} rows: half a line never shows: ${JSON.stringify(frame)}`);
+      assert.match(frame, /^builder\s+working|builder working\)$/m, `${sizes[i]} rows: builder still works until the newline`);
+    }
+    assert.match(frames[3], /^3 more not shown \(2 failed, all timed out, builder working\)$/m, 'the cut board names the run still going');
+    const [whole, smaller] = frames.slice(split).map((f) => f.split('\n'));
+    assert.match(whole[1], /^builder\s+failed\s+signed out\s/, 'the finished failure is news, so it takes the top row');
+    assert.equal(whole.at(-1), '3 more not shown (3 failed, all timed out)');
+    assert.doesNotMatch(frames[split], /working/);
+    assert.match(smaller[1], /^builder\s+failed\s+signed out\s/, 'a further shrink keeps it');
+    assert.equal(smaller.at(-1), '4 more not shown (4 failed, all timed out)');
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
 test('the real terminal keeps timeout reasons when watch shrinks and grows', { skip: process.platform === 'win32' }, () => {
   const proof = spawnSync('python3', ['-c', String.raw`
 import datetime, fcntl, os, pathlib, pty, re, select, signal, struct, subprocess, sys, tempfile, termios, time
