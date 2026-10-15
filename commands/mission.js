@@ -425,11 +425,30 @@ async function missionTickPrep(root, { mission, runtimeMission, job, prompt, ask
 
 // A tick's time limit: the time left on the mission, capped by the roster
 // line's "max 20 min" when it sets one, else by the default tick cap.
-function missionTickTimeoutMs(mission, remainingMs) {
-  const cap = Number(mission && mission.roster_max_seconds) > 0
+function missionTickCapMs(mission) {
+  return Number(mission && mission.roster_max_seconds) > 0
     ? Number(mission.roster_max_seconds) * 1000
     : MISSION_RUN_DEFAULTS.claudeTimeoutMs;
-  return clampTimeoutMs(remainingMs, cap);
+}
+
+function missionTickTimeoutMs(mission, remainingMs) {
+  return clampTimeoutMs(remainingMs, missionTickCapMs(mission));
+}
+
+// True when the time left on the mission, not the tick's own cap, set the
+// tick's limit, so a kill there means the mission clock ran out.
+function missionTickWallBound(mission, remainingMs) {
+  return remainingMs <= missionTickCapMs(mission);
+}
+
+// The reason a member log shows for a tick. A failed engine tick names its
+// engine beside the reason, so a codex run that timed out stops counting as
+// a claude timeout in the repeat-problem scan. The reason itself is left as
+// is because engine health and backoff match on it.
+function memberLogTickReason(result) {
+  const reason = result && result.reason;
+  if (!reason || !result.engine_id || result.status !== 'errored') return reason;
+  return `${reason} (engine: ${result.engine_id})`;
 }
 
 function resolveMissionTickRunner(mission, root = process.cwd(), options = {}) {
@@ -6629,17 +6648,29 @@ const CHECK_FEEDBACK_TRIM_MARKER = 'output trimmed';
 
 function extractCheckFeedback(verifierResult) {
   if (!verifierResult || verifierResult.passed !== false) return '';
-  const lines = [verifierResult.output, verifierResult.stdout, verifierResult.stderr]
+  // A reviewer turn-down goes first: when the tests passed, it is the only
+  // real reason the try failed, and passing test names must not crowd it out.
+  const referee = verifierResult.referee && verifierResult.referee.passed === false
+    ? verifierResult.referee
+    : null;
+  const refereeLines = referee
+    ? [referee.reason, referee.output].filter((value) => String(value || '').trim())
+    : [];
+  const lines = [...new Set([...refereeLines, verifierResult.output, verifierResult.stdout, verifierResult.stderr]
     .filter((value) => String(value || '').trim())
     .flatMap((value) => String(value).split(/\r?\n/))
     .map((line) => line.trim())
-    .filter(Boolean);
+    .filter(Boolean))];
   if (!lines.length) return '';
 
+  const refereeSet = new Set(refereeLines.flatMap((value) => String(value).split(/\r?\n/)).map((line) => line.trim()).filter(Boolean));
+  const passingLine = /^(?:✔|ℹ )/;
   const usefulPattern = /\b(?:error|fail|expected|assert)\w*\b|(?:^|\s|\()[^:\s()]+:\d+(?::\d+)?(?:\b|$)/i;
-  const useful = lines.filter((line) => usefulPattern.test(line));
-  const context = lines.filter((line) => !usefulPattern.test(line));
-  const feedback = [...useful, ...context].join('\n');
+  const rest = lines.filter((line) => !refereeSet.has(line));
+  const useful = rest.filter((line) => !passingLine.test(line) && usefulPattern.test(line));
+  const context = rest.filter((line) => !passingLine.test(line) && !usefulPattern.test(line));
+  const passing = rest.filter((line) => passingLine.test(line));
+  const feedback = [...lines.filter((line) => refereeSet.has(line)), ...useful, ...context, ...passing].join('\n');
   if (feedback.length <= CHECK_FEEDBACK_LIMIT) return feedback;
 
   const contentLimit = CHECK_FEEDBACK_LIMIT - CHECK_FEEDBACK_TRIM_MARKER.length - 1;
@@ -6878,7 +6909,10 @@ function worktreeReceipt(before, after, { verifier = '', baseline = null } = {})
 const MISSION_RUN_DEFAULTS = {
   maxTicks: 4,
   maxWallSeconds: 3600,
-  claudeTimeoutMs: 10 * 60 * 1000,
+  // Sized from real runs: claude ticks that landed 10/08-10/14 ran a median
+  // 4 min, but 15 of 92 needed more than 10 and the slowest 5% took 17+.
+  // A 10 min cap killed 12 runs at exactly 10:00; 20 min fits 89 of 92.
+  claudeTimeoutMs: 20 * 60 * 1000,
   backoff: { initialMs: 30_000, maxMs: 10 * 60_000, factor: 2, jitter: 0.3 },
 };
 
@@ -9688,8 +9722,9 @@ function missionDoneLooksLike(mission, root = process.cwd()) {
   }
 }
 
-function buildEngineVerifyPrompt(mission, tickIndex, doneLooksLike = '') {
+function buildEngineVerifyPrompt(mission, tickIndex, doneLooksLike = '', { timeoutMs = ENGINE_VERIFY_TIMEOUT_MS, checkPassed = '' } = {}) {
   const doneLine = String(doneLooksLike || '').replace(/\s+/g, ' ').trim();
+  const minutes = Math.max(1, Math.round(timeoutMs / 60000));
   return [
     `# Verify Mission Tick ${tickIndex}`,
     ``,
@@ -9697,10 +9732,17 @@ function buildEngineVerifyPrompt(mission, tickIndex, doneLooksLike = '') {
     ...(doneLine ? [
       `The job says done looks like: ${doneLine}`,
       `Compare the work against that line. If the work does not show it, the verdict is FAIL even when the checks pass.`,
+      `Split that line into each separate thing it promises and check every one. List each part as met or missing.`,
+      `Work that does only some of the parts is not done. If any part is missing, end with 'VERDICT: FAIL; missing: <that part>'.`,
     ] : []),
     `Read the diff this tick produced. Do not edit files and do not start another work slice.`,
     `ACTUALLY RUN the changed surface on this computer using real commands and real exit codes.`,
     `Paste the commands and their real output. Do not accept a receipt claim or static inspection as execution proof.`,
+    // Reviews that outran the clock were 11 of 25 turn-downs (10/11 to 10/14).
+    `You have ${minutes} minutes. Leave time to write the verdict; running out of time counts as a fail.`,
+    ...(checkPassed ? [`The mission check \`${checkPassed}\` already passed on this exact code. Do not run it again.`] : []),
+    `Prove the change with the narrowest real run: the changed command, or one test file or one named test.`,
+    `Do not run whole test suites or large test files; on a busy machine they outlast your time.`,
     `End your reply with a final line exactly 'VERDICT: PASS' or 'VERDICT: FAIL'.`,
   ].join('\n');
 }
@@ -9762,7 +9804,10 @@ async function runEngineVerifier(mission, options = {}) {
       cwd,
       signal: options.signal,
       timeoutMs: ENGINE_VERIFY_TIMEOUT_MS,
-      prompt: buildEngineVerifyPrompt(mission, options.tickIndex || 1, missionDoneLooksLike(mission, cwd)),
+      prompt: buildEngineVerifyPrompt(mission, options.tickIndex || 1, missionDoneLooksLike(mission, cwd), {
+        timeoutMs: ENGINE_VERIFY_TIMEOUT_MS,
+        checkPassed: options.checkPassed || '',
+      }),
       model: resolveMissionTickRunnerModel(verifyMission),
     });
   } catch (error) {
@@ -10504,7 +10549,7 @@ async function executeMissionRunTicksPhase(context) {
 
         if (!claudeResult.ok) {
           const deadModel = detectUnavailableModel(claudeResult.summary || claudeResult.receipt_text);
-          const wallBoundTimeout = remainingWall * 1000 <= MISSION_RUN_DEFAULTS.claudeTimeoutMs;
+          const wallBoundTimeout = missionTickWallBound(tickRuntimeMission, remainingWall * 1000);
           let reason = claudeResult.reason === 'too-deep'
             ? 'too-deep'
             : claudeResult.timedOut
@@ -10741,7 +10786,7 @@ async function executeMissionRunTicksPhase(context) {
         mission: mission.objective,
         state: mission.status,
         tick_status: result.status,
-        reason: result.reason,
+        reason: memberLogTickReason(result),
         layer: result.layer || undefined,
         verifier: verifierResult ? (verifierResult.passed ? 'passed' : 'failed') : 'not_run',
         summary: tickSummaryText ? tickSummaryText.slice(0, 240) : undefined,
@@ -10955,6 +11000,7 @@ async function verifyMissionRunTickPhase(context) {
         signal: controller.signal,
         tickIndex: currentTick.tickIdx,
         refereeEngine: context.refereeEngine,
+        checkPassed: verifierResult?.passed ? currentTick.frozen.verifier : '',
       });
       const afterReview = gitCodeState(cwd);
       const codeMoved = beforeReview.tree !== afterReview.tree
@@ -12662,6 +12708,8 @@ module.exports = {
   resolveMissionTickRunner,
   resolveMissionTickRunnerModel,
   missionTickTimeoutMs,
+  missionTickWallBound,
+  memberLogTickReason,
   engineFailureHealthStatus,
   recordMissionEngineTickOutcome,
   recordMissionTickRosterRun,

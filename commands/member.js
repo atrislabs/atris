@@ -566,7 +566,16 @@ function memberLatestMission(name, missionMap = memberRunMissionMap()) {
 
 function memberLiveMission(name, missionMap = memberRunMissionMap()) {
   return memberOwnedMissions(name, missionMap)
-    .find((mission) => MEMBER_LIVE_MISSION_STATUSES.has(String(mission?.status || '').toLowerCase())) || null;
+    .find((mission) => {
+      if (!MEMBER_LIVE_MISSION_STATUSES.has(String(mission?.status || '').toLowerCase())) return false;
+      // A closed window can leave a running row behind. Only a known dead
+      // process proves it is free; missing process records still hold it.
+      try {
+        const root = mission.worktree_root || mission.worktree?.path || process.cwd();
+        const health = require('./mission').missionDriverHealth(mission, root);
+        return !health.pid || health.alive;
+      } catch { return true; }
+    }) || null;
 }
 
 function missionShortName(mission, max = 36) {
@@ -922,7 +931,10 @@ function memberRunDefaultWallSeconds(name, cwd = process.cwd()) {
     const picked = require('../lib/member-engine').memberRosterEngine(name, cwd);
     cap = Number(picked && picked.engine && picked.engine.roster_max_seconds) || 0;
   } catch {}
-  return Math.max(900, cap ? cap + 600 : 0);
+  // No roster cap means the tick runs on the default tick cap, so the run
+  // needs that much plus review time, or the wall kills it first.
+  const tickSeconds = cap || require('./mission').missionTickTimeoutMs({}, Infinity) / 1000;
+  return Math.max(900, tickSeconds + 600);
 }
 
 function pushFlagValue(out, args, name) {
@@ -1254,7 +1266,7 @@ function reviewRefusalLine(refusal) {
   return line.trim().slice(0, 200);
 }
 
-function memberRunWith(name, args, { quiet = false } = {}) {
+function memberRunWith(name, args, { quiet = false, closeTaskIds = [] } = {}) {
   if (!name || name === '--help' || name === '-h' || hasFlag(args, '--help') || hasFlag(args, '-h')) {
     console.log('usage: atris member run <name> ["mission text"] [--verify "<cmd>"] [--minutes N|--hours N] [--json]');
     console.log('pick for me: atris member run "fix the flaky login test" (the best member takes it and runs it)');
@@ -1333,6 +1345,7 @@ function memberRunWith(name, args, { quiet = false } = {}) {
     console.log(`watch: tail -f ${progressDir}/${String(name).replace(/[^A-Za-z0-9._-]/g, '_')}.log`);
     console.log('board: atris member board --watch');
     console.log('stop: atris member stop <name>');
+    console.log(`where work goes: ${require('../lib/member-autoland').landingDestination(mission.worktree?.path || process.cwd())}`);
   }
 
   const cwd = mission.worktree?.path || process.cwd();
@@ -1406,7 +1419,7 @@ function memberRunWith(name, args, { quiet = false } = {}) {
     const summary = ticks.map((tick) => tick?.summary || tick?.claude?.summary).filter(Boolean).pop() || '';
     const workerEngine = ticks.map((tick) => tick?.engine_id).filter(Boolean).pop()
       || runnerSwap?.to || readFlag(args, '--runner', '') || '';
-    result.autoland = require('../lib/member-autoland').autolandMemberRun({ mission: finalMission, cwd, summary, workerEngine });
+    result.autoland = require('../lib/member-autoland').autolandMemberRun({ mission: finalMission, cwd, summary, workerEngine, closeTaskIds });
     if (!asJson && !quiet) console.log(result.autoland.line);
   }
   if (checkFailed) {
@@ -3407,7 +3420,10 @@ function isAutoImproverGeneratedLogLine(line, relativePath = '') {
   if (/^[-*]?\s*Next tick will verify failed, halting\.?$/i.test(text)) return true;
   if (/^##\s+\d{1,2}:\d{2}\s+·\s+Task failed$/i.test(text)) return true;
   if (/^[-*]?\s*(status|action|state|verifier)\s*:\s*(failed|blocked)\s*$/i.test(text)) return true;
-  if (/^[-*]?\s*(title|proof):\s*/i.test(text)) return true;
+  // Mission lines state a goal; their words ("leftover error text", "done failed") are not failures.
+  if (/^[-*]?\s*(title|proof|mission):\s*/i.test(text)) return true;
+  // Driver logs print "error": null on every clean run.
+  if (/^"?(error|failure)s?"?\s*:\s*(null|false|""|\[\]|\{\})\s*,?$/i.test(text)) return true;
   if (String(relativePath || '').startsWith('atris/team/auto-improver/logs/') && /^-\s*summary:\s*/i.test(text)) return true;
   if (/\bauto[- ]improver\b/i.test(text) && /\b(dogfood|receipt|prevented|pain_)\b/i.test(text)) return true;
   if (/\bauto_improver\b/i.test(text)) return true;
@@ -3425,7 +3441,9 @@ function normalizeFailurePattern(line) {
     .trim());
 }
 
-function failureCoveredByPassLesson(line, passLessonText = '') {
+// Callers scanning many lines pass passLessonLower so the lessons file is
+// lowercased once per scan, not once per log line.
+function failureCoveredByPassLesson(line, passLessonText = '', passLessonLower = passLessonText.toLowerCase()) {
   const text = String(line || '');
   if (!text || !passLessonText) return false;
   if (/spawnSync\s+\/bin\/sh\s+ETIMEDOUT/i.test(text)) {
@@ -3441,23 +3459,59 @@ function failureCoveredByPassLesson(line, passLessonText = '') {
   const bare = pattern.replace(/^#+\s*[#:.]*\s*·\s*/, '').trim();
   for (const candidate of [pattern, bare]) {
     if (candidate && candidate.length >= 12
-      && passLessonText.toLowerCase().includes(candidate.toLowerCase())) {
+      && passLessonLower.includes(candidate.toLowerCase())) {
       return true;
     }
   }
   return false;
 }
 
+// Runtime logs the repeat-failure scan reads, listed by where they live
+// instead of one capped walk of atris/team. That folder holds hundreds of
+// skill and mission files, and a 220-file walk ran out before it reached
+// most members' logs, so this week's repeats counted as zero. Listing paths
+// is cheap; the 7-day filter below decides what actually gets read.
+function listAutoImproverRuntimeLogs(root) {
+  const listAll = (dir) => (fs.existsSync(dir) ? listFilesBounded(dir, { maxFiles: 5000 }) : []);
+  const childDirs = (dir) => {
+    try {
+      return fs.readdirSync(dir, { withFileTypes: true })
+        .filter((entry) => entry.isDirectory() && !entry.name.startsWith('.'))
+        .map((entry) => entry.name)
+        .sort();
+    } catch {
+      return [];
+    }
+  };
+  const files = [];
+  const logsRoot = path.join(root, 'atris', 'logs');
+  try {
+    for (const entry of fs.readdirSync(logsRoot, { withFileTypes: true })) {
+      if (entry.isFile()) files.push(path.join(logsRoot, entry.name));
+    }
+  } catch {}
+  for (const name of childDirs(logsRoot)) {
+    if (name !== 'archive') files.push(...listAll(path.join(logsRoot, name)));
+  }
+  const teamRoot = path.join(root, 'atris', 'team');
+  for (const member of childDirs(teamRoot)) {
+    for (const name of ['goals.md', 'goals.json']) {
+      const goalsPath = path.join(teamRoot, member, name);
+      if (fs.existsSync(goalsPath)) files.push(goalsPath);
+    }
+    files.push(...listAll(path.join(teamRoot, member, 'logs')));
+  }
+  const wikiLog = path.join(root, 'atris', 'wiki', 'log.md');
+  if (fs.existsSync(wikiLog)) files.push(wikiLog);
+  return files;
+}
+
 function collectAutoImproverLogSignals(root) {
-  const roots = [
-    path.join(root, 'atris', 'logs'),
-    path.join(root, 'atris', 'team'),
-    path.join(root, 'atris', 'wiki'),
-  ].filter((candidate) => fs.existsSync(candidate));
   const passLessonText = safeReadText(path.join(root, 'atris', 'lessons.md'), 500000)
     .split(/\r?\n/)
     .filter((line) => /\s+pass\s*[-\u2014:,]/.test(line))
     .join('\n');
+  const passLessonLower = passLessonText.toLowerCase();
   const failureRegex = /\b(error|failed|failure|blocked|timeout|regression|crash|missing proof|naraka|suffering)\b/i;
   const unclearRegex = /\b(tbd|unclear|unknown|needs user|needs owner|needs proof|no next|blocked)\b/i;
   const counts = new Map();
@@ -3465,66 +3519,64 @@ function collectAutoImproverLogSignals(root) {
   let filesScanned = 0;
   let linesScanned = 0;
   let unclearNextActions = 0;
-  for (const scanRoot of roots) {
-    for (const filePath of listFilesBounded(scanRoot)) {
-      const relative = repoRelative(root, filePath);
-      const logDate = dateFromLogPath(relative);
-      if (relative.startsWith('atris/logs/archive/')) continue;
-      const isRuntimeLog = relative.startsWith('atris/logs/')
-        || /^atris\/team\/[^/]+\/logs\//.test(relative)
-        || /^atris\/team\/[^/]+\/goals\.(md|json)$/.test(relative)
-        || relative === 'atris/wiki/log.md';
-      if (!isRuntimeLog) continue;
-      // Only scan logs from the last 7 days. Historical log lines keep
-      // triggering false-positive findings long after their root cause is
-      // fixed (e.g. "goal-from-mission blocked" from July when MISSION.md
-      // was repaired in August). Old evidence stays on disk for audits;
-      // it just stops feeding the pain score, so pain can actually drop.
-      if (logDate && isRuntimeLog) {
-        const logAgeDays = (Date.now() - new Date(logDate + 'T12:00:00').getTime()) / 864e5;
-        if (logAgeDays > 7) continue;
-      }
-      const text = safeReadText(filePath);
-      if (!text) continue;
-      filesScanned += 1;
-      const allLines = text.split(/\r?\n/);
-      const lineOffset = Math.max(0, allLines.length - 500);
-      const lines = allLines.slice(-500);
-      linesScanned += lines.length;
-      for (let index = 0; index < lines.length; index += 1) {
-        const sourceLine = lineOffset + index + 1;
-        const line = lines[index];
-        if (isAutoImproverGeneratedLogLine(line, relative)) continue;
-        // Declared verification receipts ("check: <command> ...") describe what
-        // was verified, not what broke. Wiki upkeep sweeps write one per page,
-        // so counting them as failures spawns bogus recurring-pattern tasks
-        // (CLI-199 came from 13 such lines in atris/wiki/log.md).
-        if (/^\s*[-*]?\s*check:\s/i.test(line)) continue;
-        if (/\b(errors?|fail(?:ed|ures?)|blocked|timeouts?)\s*:\s*0\b/i.test(line)) continue;
-        if (/\bblocked\s*(?:->|→|to)\s*ready\b/i.test(line)) continue;
-        if (failureCoveredByPassLesson(line, passLessonText)) continue;
-        if (unclearRegex.test(line)) {
-          unclearNextActions += 1;
-          unclearActions.push({
-            path: relative,
-            date: logDate,
-            line: sourceLine,
-            text: compactSentence(line, 180),
-          });
-        }
-        if (!failureRegex.test(line)) continue;
-        const pattern = normalizeFailurePattern(line);
-        if (!pattern) continue;
-        const existing = counts.get(pattern) || { pattern, count: 0, evidence: [] };
-        existing.count += 1;
-        existing.evidence.push({
+  for (const filePath of listAutoImproverRuntimeLogs(root)) {
+    const relative = repoRelative(root, filePath);
+    const logDate = dateFromLogPath(relative);
+    if (relative.startsWith('atris/logs/archive/')) continue;
+    const isRuntimeLog = relative.startsWith('atris/logs/')
+      || /^atris\/team\/[^/]+\/logs\//.test(relative)
+      || /^atris\/team\/[^/]+\/goals\.(md|json)$/.test(relative)
+      || relative === 'atris/wiki/log.md';
+    if (!isRuntimeLog) continue;
+    // Only scan logs from the last 7 days. Historical log lines keep
+    // triggering false-positive findings long after their root cause is
+    // fixed (e.g. "goal-from-mission blocked" from July when MISSION.md
+    // was repaired in August). Old evidence stays on disk for audits;
+    // it just stops feeding the pain score, so pain can actually drop.
+    if (logDate && isRuntimeLog) {
+      const logAgeDays = (Date.now() - new Date(logDate + 'T12:00:00').getTime()) / 864e5;
+      if (logAgeDays > 7) continue;
+    }
+    const text = safeReadText(filePath);
+    if (!text) continue;
+    filesScanned += 1;
+    const allLines = text.split(/\r?\n/);
+    const lineOffset = Math.max(0, allLines.length - 500);
+    const lines = allLines.slice(-500);
+    linesScanned += lines.length;
+    for (let index = 0; index < lines.length; index += 1) {
+      const sourceLine = lineOffset + index + 1;
+      const line = lines[index];
+      if (isAutoImproverGeneratedLogLine(line, relative)) continue;
+      // Declared verification receipts ("check: <command> ...") describe what
+      // was verified, not what broke. Wiki upkeep sweeps write one per page,
+      // so counting them as failures spawns bogus recurring-pattern tasks
+      // (CLI-199 came from 13 such lines in atris/wiki/log.md).
+      if (/^\s*[-*]?\s*check:\s/i.test(line)) continue;
+      if (/\b(errors?|fail(?:ed|ures?)|blocked|timeouts?)\s*:\s*0\b/i.test(line)) continue;
+      if (/\bblocked\s*(?:->|→|to)\s*ready\b/i.test(line)) continue;
+      if (failureCoveredByPassLesson(line, passLessonText, passLessonLower)) continue;
+      if (unclearRegex.test(line)) {
+        unclearNextActions += 1;
+        unclearActions.push({
           path: relative,
           date: logDate,
           line: sourceLine,
           text: compactSentence(line, 180),
         });
-        counts.set(pattern, existing);
       }
+      if (!failureRegex.test(line)) continue;
+      const pattern = normalizeFailurePattern(line);
+      if (!pattern) continue;
+      const existing = counts.get(pattern) || { pattern, count: 0, evidence: [] };
+      existing.count += 1;
+      existing.evidence.push({
+        path: relative,
+        date: logDate,
+        line: sourceLine,
+        text: compactSentence(line, 180),
+      });
+      counts.set(pattern, existing);
     }
   }
   const repeated = [...counts.values()]
@@ -9889,10 +9941,26 @@ const EXPERIMENT_STATUSES = new Set(['experimental', 'one-off']);
 
 function ideaRuleFor(slug, record, text) {
   const own = IDEA_ARCHETYPE_RULES.find((rule) => rule.slugs.includes(slug));
-  if (own && own.pattern.test(text)) return own;
+  if (own && own.pattern.test(text)) return { rule: own, own: true };
   const { autoJobForMember } = require('../lib/member-engine');
   const archetype = ARCHETYPE_FOR_JOB[autoJobForMember(slug, record.role)];
-  return IDEA_ARCHETYPE_RULES.find((rule) => rule.slugs.includes(archetype)) || null;
+  const rule = IDEA_ARCHETYPE_RULES.find((r) => r.slugs.includes(archetype)) || null;
+  return { rule, own: Boolean(own && rule === own) };
+}
+
+// The request's job is the first rule it matches; the list runs from
+// specific jobs to the general build job, so "where is the code" is a
+// navigator job even though "code" is also a build word.
+function ideaJobRule(text) {
+  return IDEA_ARCHETYPE_RULES.find((rule) => rule.pattern.test(text)) || null;
+}
+
+// 3 = named in the idea, 2 = the job is the member's own, 1 = the member
+// falls back to the job, 0 = not its job. Fit outranks shared words.
+function ideaJobFit(named, memberRule, jobRule) {
+  if (named) return 3;
+  if (!jobRule || !memberRule.rule || memberRule.rule !== jobRule) return 0;
+  return memberRule.own ? 2 : 1;
 }
 
 // 0 = normal, 1 = experiment or one-off, 2 = parked, human, or odd-typed.
@@ -9904,10 +9972,12 @@ function dispatchTier(record) {
   return 0;
 }
 
-// Lower tier wins first, then higher score, then name order for a stable pick.
+// Lower tier wins first, then job fit, then higher score, then name order
+// for a stable pick.
 function outranksDispatch(candidate, best) {
   if (!best) return true;
   if (candidate.tier !== best.tier) return candidate.tier < best.tier;
+  if (candidate.fit !== best.fit) return candidate.fit > best.fit;
   if (candidate.score !== best.score) return candidate.score > best.score;
   return candidate.member.localeCompare(best.member) < 0;
 }
@@ -9941,6 +10011,7 @@ function pickMemberForIdea(ideaText, root = process.cwd(), preferredMember = '')
     .toLowerCase()
     .split(/[^a-z0-9]+/)
     .filter((w) => w.length >= 4);
+  const jobRule = ideaJobRule(text);
 
   let best = null;
   for (const record of members) {
@@ -9952,10 +10023,11 @@ function pickMemberForIdea(ideaText, root = process.cwd(), preferredMember = '')
     let score = 0;
     let matchedReason = '';
 
-    const rule = ideaRuleFor(slug, record, text);
-    if (rule && rule.pattern.test(text)) {
+    const memberRule = ideaRuleFor(slug, record, text);
+    const fit = ideaJobFit(named, memberRule, jobRule);
+    if (fit > 0 && memberRule.rule) {
       score += 30;
-      matchedReason = rule.reason;
+      matchedReason = memberRule.rule.reason;
     }
 
     const missionFile = path.join(teamDir, slug, 'MISSION.md');
@@ -9986,6 +10058,7 @@ function pickMemberForIdea(ideaText, root = process.cwd(), preferredMember = '')
       reason: matchedReason,
       score,
       tier,
+      fit,
     };
     if (outranksDispatch(candidate, best)) best = candidate;
   }
@@ -10478,6 +10551,29 @@ function isKnownMemberSlug(token, root = process.cwd()) {
     || fs.existsSync(path.join(root, 'atris', 'team', `${clean}.md`));
 }
 
+const MEMBER_SUBCOMMANDS = [
+  'list', 'roster', 'create', 'install', 'activate', 'upgrade', 'push', 'pull', 'goal',
+  'chat', 'tick', 'wake', 'run', 'result', 'go', 'work', 'up', 'steer', 'sleep', 'rest',
+  'room', 'day', 'standup', 'handoff', 'dispatch', 'feed', 'board', 'stop', 'card', 'ping',
+  'loop', 'alive', 'review', 'block', 'status', 'live', 'heartbeat', 'improvements',
+  'report', 'history', 'supervisor', 'export', 'archive', 'tidy', 'help',
+];
+
+// `atris member <word>` where the word is neither a member nor a subcommand.
+// Points at the nearest name and the team, and exits 1 without running anyone.
+function memberUnknownWord(word, root = process.cwd()) {
+  const { suggestCommand } = require('../lib/known-commands');
+  let names = [];
+  try { names = findAllMembers(path.join(root, 'atris', 'team')).map((m) => m.name); } catch {}
+  const near = suggestCommand(word, [...MEMBER_SUBCOMMANDS, ...names]);
+  console.log(`No member or command named "${word}", so nothing started.`);
+  if (near) console.log(`Did you mean: atris member ${near}`);
+  if (names.length) console.log(`Your team: ${names.join(', ')}`);
+  console.log('To give a member a job: atris member run "<job in a few words>"');
+  process.exitCode = 1;
+  return { ok: false, reason: 'unknown_word', word, suggestion: near || null };
+}
+
 // The job a member does (build, review or search), read from the same team
 // roster that picks its engine.
 function memberGoJob(owner, root) {
@@ -10501,10 +10597,10 @@ function memberGoTask(owner, root, { claim, requireCheck = false }) {
     const job = memberGoJob(owner, root);
     const workspaceRoot = taskDb.workspaceRoot(root);
     if (claim) {
-      const got = picker.claimTaskForMember(taskDb, db, { workspaceRoot, member: owner, job, requireCheck });
+      const got = picker.claimTaskForMember(taskDb, db, { workspaceRoot, member: owner, job, requireCheck, recoverClaimed: true });
       return got ? { ...got, job } : null;
     }
-    const task = picker.pickTaskForMember(taskDb, db, { workspaceRoot, job, requireCheck });
+    const task = picker.pickTaskForMember(taskDb, db, { workspaceRoot, member: owner, job, requireCheck, recoverClaimed: true });
     return task ? { task, objective: picker.taskObjective(task), job } : null;
   } catch (error) {
     console.error(`could not take a task from the list: ${String(error && error.message || error).split('\n')[0]}`);
@@ -10528,6 +10624,8 @@ function memberGoFinishTask(owner, task, result, thrown = null) {
       receipt ? `Receipt: ${receipt}` : ''].filter(Boolean).join('\n');
     const ready = taskDb.readyTask(db, { id: task.id, actor: owner, proof });
     if (ready.ready !== false) return { id: task.id, title: task.title, outcome: 'review', receipt: receipt || null };
+    // Its change already merged and the merge line closed the job.
+    if (taskDb.getTask(db, task.id)?.status === 'done') return { id: task.id, title: task.title, outcome: 'done', receipt: receipt || null };
   }
   const ticks = Array.isArray(result && result.ticks) ? result.ticks : [];
   const lastReason = String((ticks[ticks.length - 1] || {}).reason || (ticks[ticks.length - 1] || {}).error || '');
@@ -10637,7 +10735,7 @@ async function memberSteerOrDispatchWith({ pullTask = false } = {}, rawArgs = []
   const missionSummary = memberMissionSummary(owner, missionMap, root);
   // A human or odd-typed member never takes a task: it would be claimed and
   // then stranded when the run refuses the member.
-  const pulled = pullTask && !prompt && !missionSummary.live && !memberRefusalFor(targetMember, paths.memberFile)
+  const pulled = pullTask && !prompt && !missionSummary.live_mission && !memberRefusalFor(targetMember, paths.memberFile)
     ? memberGoTask(owner, root, { claim: !dryRun, requireCheck: needsCheck })
     : null;
   if (needsCheck && !pulled) {
@@ -10751,7 +10849,8 @@ async function memberSteerOrDispatchWith({ pullTask = false } = {}, rawArgs = []
   const runFlags = required ? [...stripKnownFlags(nextFlags, ['--verify'], []), '--verify', required] : nextFlags;
   let result = null;
   try {
-    result = await memberRunWith(owner, [effectivePrompt, '--ignite', ...runFlags], { quiet: asJson });
+    // The job rides to the merge line so it closes itself when its change merges.
+    result = await memberRunWith(owner, [effectivePrompt, '--ignite', ...runFlags], { quiet: asJson, closeTaskIds: [pulled.task.id] });
   } catch (error) {
     memberGoFinishTask(owner, pulled.task, null, error);
     throw error;
@@ -10762,6 +10861,7 @@ async function memberSteerOrDispatchWith({ pullTask = false } = {}, rawArgs = []
     ? { task, work_step: { summary: result?.work_step?.summary || null }, error: result?.error || null }
     : merged));
   else if (task.outcome === 'review') console.log(`Task "${task.title}" is ready for review.`);
+  else if (task.outcome === 'done') console.log(`Task "${task.title}" merged and closed itself.`);
   else if (task.outcome === 'needs_human' && task.held_for === 'review') console.log(`Task "${task.title}" waits for a person to review it: ${task.reason}`);
   else if (task.outcome === 'needs_human') console.log(`Task "${task.title}" failed three times in a row and now waits for a person: ${task.reason}`);
   else console.log(`Task "${task.title}" went back on the list: ${task.reason}`);
@@ -10836,11 +10936,25 @@ function memberUpPick(root, name, taken) {
     const { fittingTasks } = require('../lib/member-task-pick');
     const db = taskDb.open();
     const job = memberGoJob(name, root);
-    return fittingTasks(taskDb, db, { workspaceRoot: taskDb.workspaceRoot(root), job, requireCheck: true })
+    return fittingTasks(taskDb, db, { workspaceRoot: taskDb.workspaceRoot(root), member: name, job, requireCheck: true, recoverClaimed: true })
       .find((task) => !taken.has(task.id)) || null;
   } catch {
     return null;
   }
+}
+
+// An empty job list: write the member's next job from its own mission.
+function memberUpWriteNextJob(root, name, { dryRun = false } = {}) {
+  const taskDb = require('../lib/task-db');
+  const { writeSelfNextJob } = require('../lib/member-self-next-job');
+  const db = taskDb.open();
+  return writeSelfNextJob(taskDb, db, {
+    root,
+    workspaceRoot: taskDb.workspaceRoot(root),
+    member: name,
+    job: memberGoJob(name, root),
+    dryRun,
+  });
 }
 
 // Every open task a member could start, with the job it needs.
@@ -10903,8 +11017,11 @@ async function memberUp(...args) {
   if (hasFlag(args, '--help') || hasFlag(args, '-h')) {
     console.log('Usage: atris member up [--max N] [--only a,b] [--dry-run]');
     console.log('Keeps the team working: every minute, starts each free member that has a fitting task with a runnable check.');
-    console.log('A member with no such task stays idle; it never runs its own goal instead.');
+    console.log('A member with no such task writes its next job from its mission when the mission has a ## Check, then starts it.');
+    console.log('Without a check it stays idle. At most one self-written job is open per member, and 3 a day.');
     console.log('The longer a member stays idle, the less often it is checked: 5, 10, 20, then every 30 minutes.');
+    console.log('A working member with no new step for 20 minutes is called out as stuck, once until it moves again.');
+    console.log('Every 5 minutes it also puts member changes github dropped from its merge line back in, when self-landing is on.');
     console.log('--only limits it to those members. Same as atris member wake 5 or atris member wake a b.');
     console.log('Ctrl-C or atris member sleep --all ends it. Runs it started keep going.');
     return;
@@ -10921,10 +11038,17 @@ async function memberUp(...args) {
   const deps = {
     listMembers: () => memberUpTeam(root),
     pickTask: (name, taken) => memberUpPick(root, name, taken),
+    writeNextJob: (name, opts) => memberUpWriteNextJob(root, name, opts),
     spawn: (name, onExit, onClaim) => memberUpSpawn(root, name, onExit, onClaim),
     now: () => Date.now(),
     jobOf: (name) => memberGoJob(name, root),
     waitingTasks: () => memberUpWaiting(root),
+    requeueDropped: () => require('../lib/member-up').memberMaintenance({
+      cwd: root,
+      codeRoot: path.resolve(__dirname, '..'),
+      requeueDropped: () => require('../lib/member-autoland').requeueDroppedAutolands({ cwd: root }),
+      waitingTasks: () => memberUpWaiting(root),
+    }),
   };
   if (parsed.dryRun) {
     const up = createMemberUp(deps, { max, only, dryRun: true });
@@ -11025,16 +11149,56 @@ function memberSleep(target, ...args) {
   return payload;
 }
 
+// The member's active goal plus how many times it was set, so a re-agreed
+// goal with the same words still counts as the talk's next step.
+function oneOnOneGoalMark(name, paths) {
+  const goal = (loadMemberGoals(name, paths).goals || []).filter((g) => g && g.status === 'active').pop();
+  return goal ? { title: goal.title, mark: `${goal.id}:${(goal.history || []).length}` } : { title: '', mark: '' };
+}
+
+function askOneOnOneNextStep(name) {
+  const rl = require('readline').createInterface({ input: process.stdin, output: process.stdout });
+  return new Promise((resolve) => rl.question(`What is ${name}'s next step? `, (answer) => {
+    rl.close();
+    resolve(String(answer || '').trim());
+  }));
+}
+
+// A 1-on-1 is a talk with the member in its own voice, and it ends with the
+// member's next step saved as its active goal. The member records the step
+// itself during the talk; --next or a closing question fills it in otherwise.
 async function memberOneOnOne(name, ...args) {
   if (!name || name === '--help' || name === '-h' || hasFlag(args, '--help') || hasFlag(args, '-h')) {
-    console.log('Usage: atris member 1on1 <name> [--note "..."]');
-    console.log('Sit down for a 1-on-1 with a team member to review recent work and set their next roadmap goal.');
+    console.log('Usage: atris member 1on1 <name> [--next "..."]');
+    console.log('Talk with a team member in its own voice. The talk ends with its next step saved as its goal.');
     return;
   }
+  const paths = requireMemberDir(name);
+  const next = readFlag(args, '--next', '');
+  const rest = stripKnownFlags(args, ['--next'], []);
+  const before = oneOnOneGoalMark(name, paths);
   const { interviewCommand } = require('./interview');
-  const code = await interviewCommand([name, ...args]);
-  if (code) process.exitCode = code;
-  return code;
+  const code = await interviewCommand([name, ...rest], process.cwd(), { mode: 'one_on_one' });
+  if (code) {
+    process.exitCode = code;
+    return code;
+  }
+  let after = oneOnOneGoalMark(name, paths);
+  if (after.mark === before.mark) {
+    const step = next || (process.stdin.isTTY && process.stdout.isTTY ? await askOneOnOneNextStep(name) : '');
+    if (step) {
+      memberGoal(name, step);
+      after = oneOnOneGoalMark(name, paths);
+    }
+  }
+  if (after.title && after.mark !== before.mark) {
+    console.log(`${name}'s next step: ${after.title}`);
+    return 0;
+  }
+  console.log(`The 1-on-1 ended without a next step for ${name}.`);
+  console.log(`Set one: atris member goal ${name} "..."`);
+  process.exitCode = 1;
+  return 1;
 }
 
 function collectMemberHandoffs(root = process.cwd(), cards = []) {
@@ -11383,6 +11547,9 @@ async function memberCommand(subcommand, ...args) {
     case 'list':
     case 'ls':
       return memberList(...args);
+    case 'roster':
+      // Who is on the team, working or idle, and on which engine.
+      return require('./team').memberRosterCommand(args);
     case 'create':
     case 'new':
       return memberCreate(args[0], ...args.slice(1));
@@ -11508,6 +11675,14 @@ async function memberCommand(subcommand, ...args) {
         if (isKnownMemberSlug(subcommand, process.cwd()) && args.filter((a) => !String(a).startsWith('-')).length === 0) {
           return memberCard(subcommand, ...args);
         }
+        // One word that is neither a member nor a subcommand is a typo far
+        // more often than a job. Starting a paid run on it costs money and
+        // does nothing useful, so name the miss and stop. Jobs keep working
+        // as more than one word, or through `atris member run "<job>"`.
+        const extraWords = args.filter((a) => !String(a).startsWith('-')).length;
+        if (!/\s/.test(subcommand.trim()) && extraWords === 0) {
+          return memberUnknownWord(subcommand);
+        }
         return memberSteerOrDispatch(subcommand, ...args);
       }
       console.log('run "<job>"          pick the right member and run it: atris member run "fix the flaky login test"');
@@ -11521,14 +11696,15 @@ async function memberCommand(subcommand, ...args) {
       console.log('  "<prompt>"          Steer a running member mid-flight or start the best specialist');
       console.log('  go [name|"..."]     Wake the highest-leverage member on its next_push or run a prompt');
       console.log('  steer [name] "..."  Steer a member mid-run or update its immediate direction');
-      console.log('  1on1 <name>         Sit down for a 1-on-1 to review recent wins and set the roadmap');
+      console.log('  1on1 <name>         Talk with a member in its own voice; ends with its next step saved');
       console.log('  sleep [name|--all]  Park active member loops so your team rests until woken');
       console.log('  room [--json]       Render the visual Team Room and desktop UI payload');
       console.log('  board [--watch]     One screen of every member: job, last step, working/quiet/done');
       console.log('  create <name>       Scaffold a new team member (MEMBER.md + dirs) [--push]');
       console.log('  install <slug> [--update]  Install missing files, or refresh template skills');
       console.log('  chat <name> "..."   Send a message to this member\'s desk in Atris Desktop');
-      console.log('  list [--json]       Show all team members');
+      console.log('  list [--json]       Show all team members with skills and version');
+      console.log('  roster [--all]      Who is on the team: what each does, working or idle, and engine');
       console.log('  tidy [--dry-run]    Put away member copies of the repo whose work already landed');
       console.log('  export [--dry-run]  Write each member as a subagent for Claude Code, Cursor, and Codex');
       console.log('  activate <name>     Symlink member skills, show context and permissions');

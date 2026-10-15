@@ -97,3 +97,32 @@ test('a different job never inherits another job\'s unfinished work', (t) => {
   const stranger = createAgentWorktree({ root: setup.root, member: 'reviewer', task: 'fix the login page', base: 'origin/main', now: new Date('2026-10-14T11:00:01Z') });
   assert.equal(stranger.resumedFrom, null);
 });
+
+test('a retry starts fresh when the last run no longer merges cleanly with the main line', (t) => {
+  const setup = room(t);
+  const first = firstRun(setup, 'fix the login page', 'notes.txt');
+  // The main line changes the same line the last run changed.
+  fs.writeFileSync(path.join(setup.root, 'notes.txt'), 'someone else\n');
+  setup.git(['commit', '-qam', 'main moves on']);
+  setup.git(['push', '-q', 'origin', 'main']);
+  const retry = createAgentWorktree({ root: setup.root, member: 'builder', task: 'fix the login page', base: 'origin/main', now: new Date('2026-10-14T11:00:00Z') });
+  assert.equal(retry.resumedFrom, null);
+  assert.equal(retry.skippedResume, first.branch);
+  assert.equal(fs.readFileSync(path.join(retry.path, 'notes.txt'), 'utf8'), 'someone else\n');
+  const sidecar = JSON.parse(fs.readFileSync(path.join(retry.path, '.atris', 'agent-worktree.json'), 'utf8'));
+  assert.equal(sidecar.skipped_resume, first.branch);
+  // The old run's commits are still on its branch.
+  assert.equal(setup.git(['show', `${first.branch}:notes.txt`]), 'half done');
+});
+
+test('a retry still resumes when the main line moved without touching the same lines', (t) => {
+  const setup = room(t);
+  const first = firstRun(setup, 'fix the login page', 'progress.txt');
+  fs.writeFileSync(path.join(setup.root, 'other.txt'), 'unrelated\n');
+  setup.git(['add', 'other.txt']);
+  setup.git(['commit', '-qm', 'main moves on']);
+  setup.git(['push', '-q', 'origin', 'main']);
+  const retry = createAgentWorktree({ root: setup.root, member: 'builder', task: 'fix the login page', base: 'origin/main', now: new Date('2026-10-14T11:00:00Z') });
+  assert.equal(retry.resumedFrom, first.branch);
+  assert.equal(retry.skippedResume, null);
+});

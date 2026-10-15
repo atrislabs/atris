@@ -175,6 +175,19 @@ function memberIsActive({ awake, activity }) {
 
 const ACTIVITY_WINDOW_MS = IDLE_AFTER_DAYS * 24 * 60 * 60 * 1000;
 
+// A log whose only entry is the note setup writes ("Member initialized") is
+// not work: a fresh project's members have never run.
+const SEED_LOG_MAX_BYTES = 1024;
+function isSeedOnlyLog(file) {
+  try {
+    if (fs.statSync(file).size > SEED_LOG_MAX_BYTES) return false;
+    const headings = fs.readFileSync(file, 'utf8').split(/\r?\n/).filter((line) => line.startsWith('## '));
+    return headings.length > 0 && headings.every((line) => /·\s*Member initialized\s*$/.test(line));
+  } catch {
+    return false;
+  }
+}
+
 // Dated file names under the member's logs/ folder and one level below it
 // (logs/2026/2026-09-28.md). The date in the name, never the file time: a
 // fresh checkout stamps every file with today.
@@ -191,12 +204,12 @@ function memberLogDays(member, root) {
       try { inner = fs.readdirSync(path.join(dir, entry.name)); } catch { inner = []; }
       for (const name of inner) {
         const day = logFileDay(name);
-        if (day) days.push(day);
+        if (day && !isSeedOnlyLog(path.join(dir, entry.name, name))) days.push(day);
       }
       continue;
     }
     const day = logFileDay(entry.name);
-    if (day) days.push(day);
+    if (day && !isSeedOnlyLog(path.join(dir, entry.name))) days.push(day);
   }
   return days;
 }
@@ -432,6 +445,63 @@ function liveRunJson(run) {
   };
 }
 
+function realFolder(folder) {
+  try { return fs.realpathSync(folder); } catch { return path.resolve(folder); }
+}
+
+// Each run's working folder in one lookup: /proc on Linux, lsof elsewhere.
+// A folder that cannot be read stays unknown.
+function liveRunFolders(pids, deps = {}) {
+  if (typeof deps.runFolders === 'function') return deps.runFolders(pids);
+  const folders = new Map();
+  if (!pids.length) return folders;
+  if (process.platform === 'linux') {
+    for (const pid of pids) {
+      try { folders.set(pid, fs.readlinkSync(`/proc/${pid}/cwd`)); } catch { /* unknown */ }
+    }
+    return folders;
+  }
+  let result;
+  try {
+    result = spawnSync('lsof', ['-a', '-p', pids.join(','), '-d', 'cwd', '-Fpn'], { encoding: 'utf8', timeout: 3000 });
+  } catch {
+    return folders;
+  }
+  let pid = null;
+  for (const line of String(result?.stdout || '').split(/\r?\n/)) {
+    if (line.startsWith('p')) pid = Number(line.slice(1));
+    else if (line.startsWith('n') && pid) folders.set(pid, line.slice(1));
+  }
+  return folders;
+}
+
+// This project's folders: the checkout and every work copy git knows for it.
+function projectFolders(root, deps = {}) {
+  if (Array.isArray(deps.projectFolders)) return deps.projectFolders.map(realFolder);
+  const folders = [realFolder(root)];
+  const result = spawnSync('git', ['worktree', 'list', '--porcelain'], { cwd: root, encoding: 'utf8', timeout: 3000 });
+  if (result && result.status === 0) {
+    for (const line of String(result.stdout || '').split(/\r?\n/)) {
+      if (line.startsWith('worktree ')) folders.push(realFolder(line.slice('worktree '.length)));
+    }
+  }
+  return [...new Set(folders)];
+}
+
+// Live runs on this machine that work in this project. A run in another
+// project is not this team working; a run whose folder cannot be read stays.
+function liveRunsInProject(runs, root, deps = {}) {
+  if (!runs.length) return runs;
+  const folders = projectFolders(root, deps);
+  const where = liveRunFolders(runs.map((run) => run.pid), deps);
+  return runs.filter((run) => {
+    const folder = where.get(run.pid);
+    if (!folder) return true;
+    const real = realFolder(folder);
+    return folders.some((base) => real === base || real.startsWith(base + path.sep));
+  });
+}
+
 // The table's rows, in order, for text and json alike. Parked members are
 // left out unless `all` (or unless they are working right now).
 function teamTableRows(rosterRows, { lineup = null, liveRuns = [], all = false } = {}) {
@@ -535,6 +605,139 @@ function teamJsonRows(allRows, deps = {}) {
   const members = allRows.map((entry) => ({ ...entry, lineup: memberLineup(deps.lineup, entry.name), ...table(byEntry.get(entry)) }));
   const others = rows.filter((row) => !row.entry).map((row) => ({ name: row.member, member: row.member !== '(no member)', lineup: null, ...table(row) }));
   return [...members, ...others];
+}
+
+// The first paragraph under the title of a MEMBER.md, for files written
+// without a header block. A leading "role:" label is dropped.
+function memberFileOpening(member) {
+  let text = '';
+  try { text = fs.readFileSync(member.path, 'utf8'); } catch { return ''; }
+  const body = text.replace(/^---\r?\n[\s\S]*?\r?\n---\r?\n/, '');
+  const paragraph = [];
+  for (const line of body.split(/\r?\n/)) {
+    const trimmed = line.trim();
+    if (trimmed.startsWith('#') || !trimmed) {
+      if (paragraph.length) break;
+      continue;
+    }
+    paragraph.push(trimmed);
+  }
+  return paragraph.join(' ').replace(/^role:\s*/i, '');
+}
+
+const MEMBER_DOES_MAX = 140;
+
+// What a member does, in its own words: the description, else the role,
+// else the opening of its file. Only the first sentence, so the column
+// stays one idea per member.
+function memberDoes(member) {
+  const role = String(member?.role || '').trim();
+  const candidates = [member?.description, role === '(no role)' ? '' : role, memberFileOpening(member)];
+  const name = String(member?.name || '').trim().toLowerCase();
+  for (const candidate of candidates) {
+    const sentence = String(candidate || '').trim().split(/(?<=\.)\s/)[0]
+      .replace(/[\u2013\u2014]/g, '-')
+      .replace(/\s+/g, ' ')
+      .toLowerCase()
+      .replace(/[.\s]+$/, '');
+    const text = name && sentence.startsWith(name) ? sentence.slice(name.length).replace(/^[\s:,-]+/, '') : sentence;
+    if (!text) continue;
+    if (text.length <= MEMBER_DOES_MAX) return text;
+    const cut = text.slice(0, MEMBER_DOES_MAX);
+    return `${cut.slice(0, cut.lastIndexOf(' ')).replace(/[\s,;:-]+$/, '')}…`;
+  }
+  return 'no role written yet';
+}
+
+// `atris member roster`: one line per member with the full name, working or
+// idle, the engine it really runs on, and what it does. Same facts as the
+// team table: a live run in this project means working, the lineup names
+// the engine. Parked members leave the list unless `all`.
+function memberRosterRows(members, { lineup = null, liveRuns = [], parked = new Set(), all = false } = {}) {
+  const runsByMember = new Map();
+  for (const run of Array.isArray(liveRuns) ? liveRuns : []) {
+    const key = String(run.member || '').trim().toLowerCase();
+    if (key && !runsByMember.has(key)) runsByMember.set(key, run);
+  }
+  const rows = members.map((member) => {
+    const key = String(member.name || '').trim().toLowerCase();
+    const run = runsByMember.get(key);
+    const place = memberLineup(lineup, key);
+    const isParked = parked.has(member.name) || isParkedFrontmatter(member.frontmatter);
+    return {
+      name: member.name,
+      state: run ? 'working' : isParked ? 'parked' : 'idle',
+      engine: run ? liveRunEngineText(run) : place && place.engine ? placedEngineText(place) : 'not set',
+      does: memberDoes(member),
+      parked: isParked,
+    };
+  });
+  const order = { working: 0, idle: 1, parked: 2 };
+  return rows
+    .filter((row) => all || !row.parked || row.state === 'working')
+    .sort((a, b) => order[a.state] - order[b.state] || a.name.localeCompare(b.name));
+}
+
+const MEMBER_ROSTER_COLUMNS = Object.freeze([
+  { header: 'MEMBER' },
+  { header: 'STATUS' },
+  { header: 'ENGINE' },
+  { header: 'WHAT IT DOES', wrap: true, min: 20 },
+]);
+
+function renderMemberRoster(members, deps = {}) {
+  if (!members.length) return 'no team members yet. create one with: atris member create <name> --role="..."';
+  const width = terminalWidth(deps.termWidth);
+  const rows = memberRosterRows(members, deps);
+  const lines = [renderTable(MEMBER_ROSTER_COLUMNS, rows.map((row) => [row.name, row.state, row.engine, row.does]), { width })];
+  const working = rows.filter((row) => row.state === 'working').length;
+  lines.push('', `${rows.length} ${rows.length === 1 ? 'member' : 'members'}, ${working} working now.`);
+  const shown = new Set(rows.map((row) => row.name));
+  const hidden = members.filter((member) => !shown.has(member.name)).map((member) => member.name);
+  if (hidden.length) {
+    const names = [...hidden];
+    names[0] = `parked (${hidden.length}): ${names[0]}`;
+    names[names.length - 1] = `${names[names.length - 1]} · atris member roster --all to show them`;
+    lines.push(wrapCommaNames(names, width));
+  }
+  return lines.join('\n');
+}
+
+function memberRosterCommand(args = [], deps = {}) {
+  const root = deps.root || process.cwd();
+  const members = (deps.members || collectMembers(root, deps)).filter((member) => !isTemplateMember(member));
+  const parked = new Set(members.filter((member) => isMemberParked(root, member.name)).map((member) => member.name));
+  const lineup = deps.lineup !== undefined ? deps.lineup : readLineupSafe(root, deps.lineupNow || new Date());
+  const liveRuns = Array.isArray(deps.liveRuns) ? deps.liveRuns : liveRunsInProject(listLiveEngineRuns(deps), root, deps);
+  const view = { lineup: lineup && lineup.ok ? lineup : null, liveRuns, parked, all: args.includes('--all') };
+  const write = deps.write || ((text) => process.stdout.write(text));
+  if (args.includes('--json')) {
+    const byName = new Map(memberRosterRows(members, { ...view, all: true }).map((row) => [row.name, row]));
+    write(`${JSON.stringify({
+      ok: true,
+      count: members.length,
+      members: members.map((member) => {
+        const row = byName.get(member.name);
+        return {
+          name: member.name,
+          ...(row.parked ? { parked: true } : {}),
+          state: row.state,
+          engine: row.engine,
+          does: row.does,
+          role: member.role,
+          format: member.format,
+          skills: member.format === 'directory' ? member.skillCount : null,
+          context: member.format === 'directory' ? member.contextCount : null,
+          version: member.version || null,
+        };
+      }),
+    }, null, 2)}\n`);
+    return 0;
+  }
+  const output = renderMemberRoster(members, { ...view, termWidth: deps.termWidth });
+  if (deps.lineup === undefined && lineup && !lineup.ok) write(`${output}\n\n${LINEUP_UNREADABLE}\n`);
+  else write(`${output}\n`);
+  return 0;
 }
 
 function renderTeamRosterHtml(allRows, meta = {}) {
@@ -907,8 +1110,10 @@ function teamCommand(args = [], deps = {}) {
     const lineup = deps.lineup !== undefined
       ? deps.lineup
       : readLineupSafe(deps.root || repoRoot(deps.cwd || process.cwd()), deps.lineupNow || new Date());
-    // Who is working this minute: live engine runs on this machine.
-    const liveRuns = Array.isArray(deps.liveRuns) ? deps.liveRuns : listLiveEngineRuns(deps);
+    // Who is working this minute: live engine runs in this project.
+    const liveRuns = Array.isArray(deps.liveRuns)
+      ? deps.liveRuns
+      : liveRunsInProject(listLiveEngineRuns(deps), deps.root || repoRoot(deps.cwd || process.cwd()), deps);
     const output = json
       ? JSON.stringify(teamJsonRows(roster, { lineup, liveRuns }), null, 2)
       : renderTeamRoster(roster, { ...deps, lineup, liveRuns, all });
@@ -933,6 +1138,9 @@ module.exports = {
   collectTeamPrune,
   recordMemberActivity,
   collectTeamRoster,
+  memberRosterCommand,
+  memberRosterRows,
+  renderMemberRoster,
   renderTeamPrune,
   renderTeamRoster,
   teamCommand,

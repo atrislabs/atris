@@ -36,6 +36,7 @@ const { evaluateAcceptVerify } = require('../lib/accept-verify-gate');
 const { proveTaskLanding } = require('../lib/landing-proof');
 const {
   taskExplanation,
+  explicitDoneLooksLike,
   explanationFieldsFromInput,
   explanationLines,
   taskApprovalControls,
@@ -1639,6 +1640,11 @@ function buildTaskStreams(tasks, goals) {
 // work, one clear way to ask for a change. Every enabled/blocked answer comes
 // from the existing review handoff, so this relabels what the certification
 // rules already allow and can never widen it.
+function joinPlainList(items) {
+  if (items.length <= 2) return items.join(' and ');
+  return `${items.slice(0, -1).join(', ')}, and ${items[items.length - 1]}`;
+}
+
 function taskApprovalFor(task, { reviewer = 'codex-review', hasExistingReviewFollowUp = null } = {}) {
   const metadata = task && task.metadata || {};
   const approvalStatus = (task && task.review && task.review.approval_status) || metadata.approval_status || null;
@@ -1661,12 +1667,16 @@ function taskApprovalFor(task, { reviewer = 'codex-review', hasExistingReviewFol
     ? reviewHandoffForTask(task, { suppressExistingFollowUp: true, hasExistingReviewFollowUp })
     : null;
   const planned = current === 'plan';
-  const planReady = planned && Boolean(
-    (metadata.task_goal || metadata.goal_objective || task.objective)
-    && metadata.exit_condition
-    && (metadata.verify || metadata.proof_needed)
-    && metadata.first_move
-  );
+  // Name only the plan parts that are really missing: a job given a check
+  // should not be told it still needs one, and a job that says what done
+  // looks like already has its finish line.
+  const planMissing = [
+    !(metadata.task_goal || metadata.goal_objective || task.objective) && 'a goal',
+    !(metadata.exit_condition || explicitDoneLooksLike(metadata)) && 'a finish line',
+    !(metadata.verify || metadata.proof_needed) && 'a check',
+    !metadata.first_move && 'a first move',
+  ].filter(Boolean);
+  const planReady = planned && planMissing.length === 0;
   const acceptEnabled = inReview ? handoffAllowsHumanAccept(handoff) : planReady;
   const planOwner = task && (task.claimed_by || taskAssignee(task)) || DEFAULT_OWNER;
   const acceptCommand = inReview
@@ -1685,7 +1695,7 @@ function taskApprovalFor(task, { reviewer = 'codex-review', hasExistingReviewFol
       ? 'The proof points at unfinished or unsafe work. Ask for a change before approval.'
       : 'The proof still needs its required checks before a person can approve it.'
     : planned
-      ? 'The plan still needs a goal, finish line, check, and first move before approval.'
+      ? `The plan still needs ${joinPlainList(planMissing)} before approval.`
       : current === 'backlog'
         ? 'This task still needs a complete plan before approval.'
         : current === 'do'
@@ -7923,9 +7933,13 @@ function taskDetail(taskDb, db, taskId) {
   };
 }
 
+// Printed lines get pasted into a shell. Plain words keep readable double
+// quotes; text a shell would act on ($, backticks, \, !) is single-quoted so
+// pasting it runs no command and keeps the words as written.
 function taskCommandQuote(value) {
-  const text = String(value || '').replace(/\s+/g, ' ').replace(/"/g, '\\"').trim();
-  return `"${text || '...'}"`;
+  const text = String(value || '').replace(/\s+/g, ' ').trim() || '...';
+  if (/[$`\\!]/.test(text)) return `'${text.replace(/'/g, `'\\''`)}'`;
+  return `"${text.replace(/"/g, '\\"')}"`;
 }
 
 function cleanPublicText(value, max = 500) {

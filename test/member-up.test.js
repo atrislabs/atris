@@ -6,7 +6,7 @@ const fs = require('fs');
 const os = require('os');
 const path = require('path');
 
-const { createMemberUp, runMemberUp, memberUpResult, IDLE_CHECK_MS, IDLE_EXIT, SUMMARY_MS, CHECK_MS } = require('../lib/member-up');
+const { createMemberUp, runMemberUp, memberUpResult, IDLE_CHECK_MS, IDLE_EXIT, SUMMARY_MS, CHECK_MS, STALL_MS } = require('../lib/member-up');
 
 // A fake team: members, a task list per member, a clock and a spawner that
 // records starts and lets the test end a run with an exit code. Tasks written
@@ -199,6 +199,34 @@ test('a run that finds no task with a check to claim ends idle, not done', () =>
   assert.equal(up.summary(), 'working 0, idle 1, done today 0');
 });
 
+test('a run with no progress for 20 minutes is called out once, and again only after it moves', () => {
+  const team = fakeTeam([{ name: 'a' }], { a: [{ id: 't1', title: 'Fix retries' }] });
+  const up = createMemberUp(team.deps, {});
+  const start = team.deps.now();
+  const stuck = (line) => line.startsWith('a looks stuck');
+  up.check();
+  team.advance(STALL_MS - CHECK_MS);
+  up.check();
+  assert.equal(team.lines.filter(stuck).length, 0, 'quiet under 20 minutes is fine');
+  up.progress({ member: 'a', kind: 'step', at: new Date(start + 10 * 60 * 1000).toISOString(), text: 'editing lib/retry.js' });
+  team.advance(2 * CHECK_MS);
+  up.check();
+  assert.equal(team.lines.filter(stuck).length, 0, 'a step resets the quiet clock');
+  team.advance(10 * 60 * 1000);
+  up.check();
+  team.advance(CHECK_MS);
+  up.check();
+  assert.deepEqual(team.lines.filter(stuck),
+    ['a looks stuck: no progress for 21 minutes on Fix retries. last step: editing lib/retry.js'], 'said once');
+  up.progress({ member: 'a', kind: 'step', at: new Date(team.deps.now()).toISOString(), text: 'running the check' });
+  team.advance(STALL_MS);
+  up.check();
+  assert.equal(team.lines.filter(stuck).length, 2, 'moving again lets a later stall be called out');
+  team.exit('a', 0);
+  team.advance(STALL_MS);
+  up.check();
+  assert.equal(team.lines.filter(stuck).length, 2, 'a finished run is never stuck');
+});
 
 test('two live member logs stream in time order, wait for full lines, and finish once with results', async (t) => {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'atris-up-progress-'));

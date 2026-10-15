@@ -177,6 +177,40 @@ test('merge commits are attributed by their first-parent diff', () => {
   }
 });
 
+test('a commit merged in the same pull request as the landing is not a revision', () => {
+  // Live 2026-10-15: an agent commit and a trailer-less follow-up ten minutes
+  // later on the same branch reached master in one merge (#1130), and the
+  // gauge called the follow-up a human fix after landing. It arrived with the
+  // landing, so nothing had landed yet for a person to fix.
+  const cwd = initRepo();
+  const now = Date.now();
+  const base = now - 3 * 24 * HOUR;
+  try {
+    commitFile(cwd, 'seed.js', 'v1\n', 'seed', { atMs: base - HOUR });
+    execSync('git checkout -q -b side', { cwd, stdio: 'pipe' });
+    commitFile(cwd, 'm.js', 'v1\n', 'bot builds m on a branch', { bot: true, atMs: base });
+    commitFile(cwd, 'm.js', 'v2\n', 'follow-up on the same branch', { atMs: base + HOUR / 6 });
+    execSync('git checkout -q -', { cwd, stdio: 'pipe' });
+    const mergeDate = new Date(base + HOUR / 4).toISOString();
+    execSync('git merge -q --no-ff side -m "merge pull request"', {
+      cwd,
+      stdio: 'pipe',
+      env: { ...process.env, GIT_AUTHOR_DATE: mergeDate, GIT_COMMITTER_DATE: mergeDate },
+    });
+    let summary = collectRevisionSignals(cwd, { days: 14, now });
+    assert.strictEqual(summary.landings, 1);
+    assert.strictEqual(summary.revised, 0, JSON.stringify(summary.revisions));
+
+    // A change to the same file that reaches master afterward still counts.
+    commitFile(cwd, 'm.js', 'v3\n', 'human fixes m after it landed', { atMs: base + 2 * HOUR });
+    summary = collectRevisionSignals(cwd, { days: 14, now });
+    assert.strictEqual(summary.revised, 1);
+    assert.deepStrictEqual(summary.revisions[0].revised_by.map((r) => r.subject), ['human fixes m after it landed']);
+  } finally {
+    cleanup(cwd);
+  }
+});
+
 test('improve vitals show the guarantee gauge from git history, counts as words', () => {
   const { cwd, now } = buildFixture();
   try {
@@ -262,6 +296,37 @@ test('shared journal files never count as revision overlap', () => {
     commitFile(cwd, 'b.js', 'v2\n', 'human fixes feature b', { atMs: base + 4 * HOUR });
     const productRevised = collectRevisionSignals(cwd, { days: 14, now });
     assert.strictEqual(productRevised.revised, 1);
+  } finally {
+    cleanup(cwd);
+  }
+});
+
+// On 2026-10-15 one human commit read as 14 of 17 revisions because it moved
+// a few lines in the map notes, which nearly every landing also touches.
+// Shared index files record where things live; editing one is not a fix to
+// the landing that last added a row.
+test('shared map and test-list files never count as revision overlap', () => {
+  const cwd = initRepo();
+  const now = Date.now();
+  const base = now - 2 * 24 * HOUR;
+  try {
+    fs.mkdirSync(path.join(cwd, 'atris', 'refs'), { recursive: true });
+    fs.mkdirSync(path.join(cwd, 'test'), { recursive: true });
+    commitFile(cwd, 'atris/refs/MAP-NOTES.md', 'a\n', 'bot lands a with notes', { bot: true, atMs: base });
+    commitFile(cwd, 'atris/MAP.md', 'a\n', 'bot lands map row', { bot: true, atMs: base + HOUR });
+    commitFile(cwd, 'test/fast-tests.txt', 'a\n', 'bot lands fast test', { bot: true, atMs: base + 2 * HOUR });
+    commitFile(cwd, 'c.js', 'v1\n', 'bot lands feature c', { bot: true, atMs: base + 3 * HOUR });
+    // one human commit touches every shared index file at once
+    commitFile(cwd, 'atris/refs/MAP-NOTES.md', 'a\nb\n', 'human notes b', { atMs: base + 4 * HOUR });
+    commitFile(cwd, 'atris/MAP.md', 'a\nb\n', 'human map b', { atMs: base + 5 * HOUR });
+    commitFile(cwd, 'test/fast-tests.txt', 'a\nb\n', 'human fast test b', { atMs: base + 6 * HOUR });
+    const indexOnly = collectRevisionSignals(cwd, { days: 14, now });
+    assert.strictEqual(indexOnly.revised, 0);
+
+    commitFile(cwd, 'c.js', 'v2\n', 'human fixes feature c', { atMs: base + 7 * HOUR });
+    const productRevised = collectRevisionSignals(cwd, { days: 14, now });
+    assert.strictEqual(productRevised.revised, 1);
+    assert.deepStrictEqual(productRevised.revisions[0].files, ['c.js']);
   } finally {
     cleanup(cwd);
   }

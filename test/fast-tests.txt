@@ -3,6 +3,7 @@ test/agent-spawn.test.js
 test/analytics-productivity.test.js
 test/api-stream.test.js
 test/apps.test.js
+test/auto-improver-scan-coverage.test.js
 test/auth-agent-token.test.js
 test/auth-profile-refresh.test.js
 test/attempted-ledger.test.js
@@ -59,6 +60,7 @@ test/file-ops-inbox.test.js
 test/fleet.test.js
 test/front-doors.test.js
 test/golden-path-help.test.js
+test/help-pipe-drain.test.js
 test/html-render.test.js
 test/host.test.js
 test/import-integrity.test.js
@@ -133,6 +135,7 @@ test/task-desk-next.test.js
 test/task-first-minute.test.js
 test/task-next-help.test.js
 test/task-next-truth.test.js
+test/task-plan-missing-parts.test.js
 test/task-proof-projection.test.js
 test/task-ready-help.test.js
 test/task-show-help.test.js

@@ -1,0 +1,25 @@
+diff --git a/atris/MAP.md b/atris/MAP.md
+index f9a8a10a..103614ff 100644
+--- a/atris/MAP.md
++++ b/atris/MAP.md
+@@ -18,7 +18,7 @@ checks the refs in both files; `atris doc-health --fix-refs` moves drifted ones.
+ | known commands list | `lib/known-commands.js` | command names and typo suggestions; the plain and JSON unknown-command errors both use suggestCommands |
+ | Host member install, introductions, and Slack delivery | `templates/members/host/`, `commands/member.js`, `lib/member-scaffold.js`, `commands/host.js`, `lib/host.js` | packaged member copy and `member install host --update` for template skills, group or personal room setup, private records, bulk people and link import, published cards, late replies during timed rest, reply routing by outbox id or provider ref, introduction roster, followups, room coverage, draft outbox, Slack delivery through the shared API client, and daily archival of old sent messages; `test/host.test.js` |
+ | plain english to a command | `lib/intents.js` `commands/guide.js`, `lib/intents.js:100`, `lib/intents.js:107` | atris guide; agents translate, users never learn verbs; "who does what" goes to `atris engine roster`, "change the builder" to `atris engine assign` and asks first |
+-| project initialization | `commands/init.js`, `commands/sync.js`, `lib/gitignore.js` | init and update scaffold user projects; both pin `atris/runs/` + `atris/status/` in the project .gitignore (git repos only, append-only) |
++| project initialization | `commands/init.js`, `commands/sync.js`, `lib/gitignore.js`, `lib/init-commit.js` | init and update scaffold user projects; both pin `atris/runs/` + `atris/status/` in the project .gitignore (git repos only, append-only); in a git repo with no commits yet init commits only the files it created so member copies start with them; repos with history get a commit hint instead (`--no-commit` opts out) |
+ | task database and TODO markdown renderer | `lib/task-db.js` | SQLite task store, renderTodoMarkdown |
+ | where ~/.atris state lives (test fence) | `lib/state-home.js`, `lib/task-db.js:191` | under node --test with the real home, tasks.db and other ~/.atris files go to a throwaway folder; ATRIS_TEST_REAL_HOME=1 opts back in; `test/test-state-fence.test.js` |
+ | task command surface | `commands/task.js` | claim, ready, accept, render, keep, day |
+diff --git a/atris/refs/MAP-NOTES.md b/atris/refs/MAP-NOTES.md
+index dd62fcc9..c50ea151 100644
+--- a/atris/refs/MAP-NOTES.md
++++ b/atris/refs/MAP-NOTES.md
+@@ -89,6 +89,7 @@ rg "hasFlag|readFlag|readIntFlag|readNumberFlag" lib/arg-parser.js commands test
+ - **Plain-English concierge:** `lib/intents.js:3` owns the intent map and `lib/intents.js:151` scores normalized token overlap; `commands/guide.js:16` prints the list, match, and JSON forms; `bin/atris.js:504` exposes help, `bin/atris.js:1831` adds the empty-project suggestion, and `bin/atris.js:1860` dispatches the command; `commands/init.js:15` renders the shared table and `commands/init.js:662` adds the generated `## You translate` rules.
+   **Search:** `rg "INTENTS|matchIntent|guideCommand|## You translate|your agent translates" lib/intents.js commands/guide.js commands/init.js bin/atris.js test/guide.test.js test/init-for-agents.test.js`
+ 
++rg "snapshotBeforeInit|commitInitFiles|hasCommits|setup saved to git|--no-commit" commands/init.js lib/init-commit.js test/init-commits-for-members.test.js  # Init setup commit (brand new repos only): `lib/init-commit.js:48` snapshots already-dirty paths before init writes, `lib/init-commit.js:56` commits only the new paths (skips *.local.* config, falls back to the Atris identity when git has none); member copies cut from history then carry the team, map, and task list
+ rg "initAtris|upsertAtrisClaudeBootBlock|upsertClaudeVoiceHook|upsertCursorVoiceCard|upsertAgentVoiceCard|--minimal|--with-adapters|--with-skills" commands/init.js lib/claude-boot-block.js lib/voice-card.js test/claude-boot-block.test.js test/voice-card.test.js test/dogfood-papercuts.test.js test/init-non-interactive.test.js  # Init command, voice-card doors, and --minimal/--with-adapters/--with-skills gates; --minimal writes lessons.md and does not create INTUITION.md
+ rg "syncAtris|upsertAtrisClaudeBootBlock|upsertClaudeVoiceHook|upsertCursorVoiceCard|upsertAgentVoiceCard" commands/sync.js lib/claude-boot-block.js lib/voice-card.js test/claude-boot-block.test.js test/voice-card.test.js  # Update/sync command, shared root CLAUDE.md block updater, and idempotent voice-card refresh that preserves user settings and marker-external text
+ rg "compactErrorPayload|printCliJson|wantsFull|cli-json|withMissionFullJson|stripKnownFlags" lib/cli-json.js commands/mission.js commands/member.js test/helpers/mission-json.js test/dogfood-pass2.test.js  # Compact --json errors/success for current-step/tick/ready; --full dumps the rest and is never a mission id

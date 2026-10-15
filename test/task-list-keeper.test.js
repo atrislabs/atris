@@ -124,6 +124,51 @@ test('keepTaskList puts away finished and still work and leaves fresh work', () 
   }
 });
 
+test('keepTaskList never puts away work held for a person, however long it waits', () => {
+  if (!hasNodeSqlite()) return;
+  const root = makeWorkspace();
+  const now = Date.now();
+  try {
+    const db = taskStore.open(path.join(root, 'tasks.db'));
+    const byTag = taskStore.addTask(db, { title: 'Pick a price', workspaceRoot: root, tag: 'needs-human' }).id;
+    const byDecision = taskStore.addTask(db, { title: 'Choose a name', workspaceRoot: root, tag: 'decision' }).id;
+    const byTitle = taskStore.addTask(db, { title: 'Approve the copy #needs-human', workspaceRoot: root }).id;
+    const byLaterFlag = taskStore.addTask(db, { title: 'Flagged after it was made', workspaceRoot: root }).id;
+    assert.equal(taskStore.tagTask(db, { id: byLaterFlag, actor: 'tester', add: ['needs-human'] }).tagged, true);
+    const heldClaim = taskStore.addTask(db, {
+      title: 'Claimed then held',
+      workspaceRoot: root,
+      status: 'claimed',
+      claimedBy: 'worker',
+      tag: 'needs-human',
+    }).id;
+    const heldReview = taskStore.addTask(db, {
+      title: 'Review held for a person',
+      workspaceRoot: root,
+      status: 'review',
+      claimedBy: 'worker',
+      tag: 'decision',
+    }).id;
+    const plainOld = taskStore.addTask(db, { title: 'Nobody waits on this', workspaceRoot: root }).id;
+    const heldDone = taskStore.addTask(db, { title: 'Decided and done', workspaceRoot: root, tag: 'needs-human' }).id;
+    assert.equal(taskStore.doneTask(db, { id: heldDone, status: 'done', actor: 'tester', proof: 'decided' }).updated, true);
+
+    const held = [byTag, byDecision, byTitle, byLaterFlag, heldClaim, heldReview];
+    for (const id of [...held, plainOld]) age(db, id, now - (90 * DAY_MS));
+
+    const result = keepTaskList(db, { workspaceRoot: root, actor: 'tester', now, missions: [] });
+    const gone = new Set(result.put_away.map(row => row.id));
+    for (const id of held) {
+      assert.equal(gone.has(id), false, id);
+      assert.notEqual(taskStore.getTask(db, id).status, 'archived', id);
+    }
+    assert.equal(gone.has(plainOld), true);
+    assert.equal(gone.has(heldDone), true);
+  } finally {
+    cleanupWorkspace(root);
+  }
+});
+
 test('keepTaskList ignores archived history and a live blocker with no stopped mission', () => {
   if (!hasNodeSqlite()) return;
   const root = makeWorkspace();

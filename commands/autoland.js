@@ -1216,6 +1216,22 @@ async function runTickBody(root, { json, policy, receipt, engineValidationDeps =
     receipt.wish_dispatch_error = String((err && err.message) || err).slice(0, 200);
   }
 
+  // 3e. map fold, once an hour: map notes member changes saved as their own
+  // files under atris/refs/map-notes.d/ are folded into the shared map notes
+  // on main and removed, in one pushed commit. Off by policy: map_fold:false.
+  if (policy.map_fold !== false) {
+    try {
+      const { foldDue, foldMapNotesOnMain } = require('../lib/member-map-fold');
+      if (foldDue(state.last_map_fold_at)) {
+        const fold = foldMapNotesOnMain(root);
+        receipt.map_fold = { folded: fold.folded, added: fold.added || 0, reason: fold.reason || null };
+        if (fold.reason !== 'main_unreadable') state.last_map_fold_at = new Date().toISOString();
+      }
+    } catch (err) {
+      receipt.map_fold_error = String((err && err.message) || err).slice(0, 200);
+    }
+  }
+
   // 4. daily digest at the configured hour
   const today = new Date().toISOString().slice(0, 10);
   const digestHour = Number(policy.digest_hour ?? autoland.DEFAULT_DIGEST_HOUR);
