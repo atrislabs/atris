@@ -17375,7 +17375,7 @@ test('task sync dry-run maps local tasks to canonical cloud task writes', () => 
       slug: 'task-sync-lab',
     }), 'utf8');
 
-    // Creation and ownership are setup; say, ready and the sync plan still use the CLI.
+    // Creation, ownership and readiness are setup; say and the sync plan use the CLI.
     const workspaceRoot = taskStore.workspaceRoot(dir);
     const db = taskStore.open(dbPath);
     let id;
@@ -17391,8 +17391,14 @@ test('task sync dry-run maps local tasks to canonical cloud task writes', () => 
     const noted = runCli(['task', 'say', id, 'Use dry-run before cloud writes', '--as', 'codex', '--json'], { cwd: dir, env });
     assert.equal(noted.status, 0, noted.stderr);
 
-    const ready = runCli(['task', 'ready', id, '--proof', 'dry-run sync validation passed', '--as', 'codex', '--json'], { cwd: dir, env });
-    assert.equal(ready.status, 0, ready.stderr);
+    const readyDb = taskStore.open(dbPath);
+    try {
+      assert.equal(taskStore.readyTask(readyDb, {
+        id, actor: 'codex', proof: 'dry-run sync validation passed', result: FIXTURE_RESULT_SENTENCE,
+      }).ready, true);
+    } finally {
+      taskStore.close();
+    }
 
     const sync = runCli(['task', 'sync', '--dry-run', '--json'], { cwd: dir, env });
     assert.equal(sync.status, 0, sync.stderr);

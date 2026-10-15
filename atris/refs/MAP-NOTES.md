@@ -2722,6 +2722,6 @@ Revision initial readiness setup: `test/commands.test.js` calls production ready
 
 - `test/commands.test.js:13934` awaits JSON desk and next together before setup claims the task. All 22 CLI launches and every assertion remain; eleven sequential CLI stages become ten. Final event assertions still require exactly the seven expected writes.
 
-Sync preview ownership setup: `test/commands.test.js:17365` seeds creation and claim through the production store, closed before CLI message, readiness and dry-run checks. Three CLI launches replace four; all sync assertions remain.
+Sync preview fixture setup: `test/commands.test.js:17365` seeds creation and claim through the production store, then runs the CLI message before reopening the store for readiness at `test/commands.test.js:17394`. The setup connection closes in finally before the CLI dry-run. Two CLI launches replace three; all sync assertions remain.
 
-Default review fixture setup: `test/commands.test.js:20270` seeds creation, claim and readiness through the production store, asserts each success, and closes before CLI certification and review screen checks. Two CLI launches remain; every screen assertion remains.
+Default review fixture setup: `test/commands.test.js:20276` seeds creation, claim and readiness through the production store, asserts each success, and closes before CLI certification and review screen checks. Two CLI launches remain; every screen assertion remains.
