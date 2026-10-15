@@ -1453,12 +1453,23 @@ function splitAside(line, below) {
 // dash line carries on a sentence from the line above, that line is read
 // too: "It's how it works" then "because it is in the boundary;" is no
 // sentence that opens on "because", so the clause after it is no splice.
+// A "when" or "once" clause on the next line is read the same way, so
+// "kick()" then "when a tick has no work, it spawns" is no comma splice.
+// An earlier dash on the dash line is left to the line fix when a stop
+// ends its sentence first, so only the words after that stop are read:
+// "**Fix \u2014 it kicks work:** `kick()`" then "when a tick has no work".
 function trailingMark(line, below, above = '') {
   const end = /^(.*?\S)\s*\u2014\s*$/.exec(line);
-  if (!end || !below.trim() || /\u2014/.test(end[1])) return null;
+  if (!end || !below.trim()) return null;
+  if (/\u2014/.test(end[1])) {
+    const stop = [...end[1].matchAll(/[.!?:;][*_"')\u201d\u2019]*\s+/g)].pop();
+    end[1] = stop ? end[1].slice(stop.index + stop[0].length) : '';
+    if (!end[1].trim() || /\u2014/.test(end[1])) return null;
+    above = '';
+  }
   const words = /\u2014/.test(below) ? (/^[^\u2014]*?[.!?](?=\s)/.exec(below) || [''])[0] : below;
   if (!words.trim() || (words.split('`').length - 1) % 2) return null;
-  if (!/^\s*(?:it|this|that|we|they|you|he|she|I|there)(?:['\u2019](?:s|re|ll|ve|d|m))?\s/.test(below)) return null;
+  if (!/^\s*(?:(?:it|this|that|we|they|you|he|she|I|there)(?:['\u2019](?:s|re|ll|ve|d|m))?|when|whenever|once|if|unless|until|after|before|while|(?:each|every|any)\s+time)\s/.test(below)) return null;
   if (/^\s{0,3}(?:#|\||```|~~~)/.test(line) || /^\s*(?:#|>|\||```|~~~|[-*+]\s|\d+[.)]\s)/.test(below)) return null;
   const lead = above && !/\u2014/.test(above) && !((above.split('`').length - 1) % 2) ? `${above.trim()} ` : '';
   const head = maskInlineCode(lead + end[1].trim()).masked;

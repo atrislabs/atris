@@ -2114,6 +2114,34 @@ test('fix reads a line-end dash with the line above when its sentence starts the
   ]);
 });
 
+test('fix reads a line-end dash before a "when" clause on the next line', () => {
+  // from a loop note: the next line opened on "when ..., it spawns", and
+  // only a pronoun let the line-end rule read on, so the comma spliced it.
+  // A "when" phrase with no clause after its comma keeps the comma.
+  const file = tmpFile('line-end-when.md', [
+    'The runner `kick()` \u2014',
+    'when a tick has no `run_now` work, it spawns a batch.',
+    '',
+    'Each time it stalls \u2014',
+    'once the queue is empty, we restart it.',
+    '',
+    'We ship it \u2014',
+    'when it is ready.',
+    '',
+    // an earlier dash on the line, before a stop, is the line fix's own;
+    // after a label, the clause explains the code name, so it takes a colon
+    '**Fix \u2014 the loop kicks work when idle:** `kick()` \u2014',
+    'when a tick has no work, it spawns a batch.',
+  ].join('\n'));
+  const { changes } = applyFixes([file], RULES);
+  assert.deepEqual(changes.map((c) => c.after), [
+    'The runner `kick()`;',
+    'Each time it stalls;',
+    'We ship it,',
+    '**Fix, the loop kicks work when idle:** `kick()`:',
+  ]);
+});
+
 test('fix reads a mid-line dash with the next line when its clause wraps there', () => {
   // from a benchmark note: the line ended right after "it's", so read alone
   // the words after the dash were no full clause and the comma spliced it.
