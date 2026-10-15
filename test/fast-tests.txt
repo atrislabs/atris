@@ -32,6 +32,7 @@ test/business-create-validation.test.js
 test/calendar-search.test.js
 test/card.test.js
 test/check-command-regression.test.js
+test/ci-shard.test.js
 test/clean-heal.test.js
 test/code-review.test.js
 test/codex-goal.test.js

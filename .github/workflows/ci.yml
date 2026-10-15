@@ -34,10 +34,11 @@ jobs:
       - run: npm ci
 
       - name: Unit tests
-        # Spreads commands.test.js across the shards (test/helpers/test-part.js).
+        # Spreads commands.test.js across the shards (test/helpers/test-part.js)
+        # and splits files by measured time, not file order (scripts/ci-shard.js).
         env:
           ATRIS_TEST_SPLIT: '1'
-        run: node --test --test-shard=${{ matrix.shard }}/8
+        run: node scripts/ci-shard.js ${{ matrix.shard }}/8
 
   decks:
     runs-on: ubuntu-latest
