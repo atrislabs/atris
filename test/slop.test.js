@@ -5207,6 +5207,14 @@ test('the fix diff splice list skips a noun after "in" or "of" and a noun with i
     pair.map((t) => `Nobody leaves Atris ${D} ${t}.`),
     pair.map((t) => `Nobody leaves Atris, ${t}.`),
   ).map((s) => s.text), ['the in-app browser and its file-viewing companions feel as trustworthy as a real tab']);
+  // an aside with no comma between a subject and its verb is read past too,
+  // as in the real "the refactor (hmac_key to auth_secret) preserves
+  // behavior"; the "Q3 (flaky):" field above keeps its aside
+  const aside = ['the refactor (hmac_key to auth_secret) preserves behavior', 'the SMTP variables (if used) are read from the runtime'];
+  assert.deepEqual(spliceShapes(
+    aside.map((t) => `The HMAC path still works ${D} ${t}.`),
+    aside.map((t) => `The HMAC path still works, ${t}.`),
+  ).map((s) => s.text), ['the refactor preserves behavior', 'the SMTP variables are read from the runtime']);
 });
 
 test('the fix and the splice list read one word list for "these" and "those"', () => {

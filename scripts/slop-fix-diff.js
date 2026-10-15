@@ -295,10 +295,11 @@ const FIELD_VALUE_SHAPE = /(?:^|\n)[ \t]*(?:[-*+>][ \t]*)?(?:\*\*[^*\n]+:\*\*|[A
 // listed with the clause: "if the format changes, the round-trip test
 // fails and we catch it".
 const LEAD_CLAUSE = '(?:if|when|whenever|once|unless|until|after|before|while) [^,;.!?\\n]{1,80}?';
-// A short aside in parentheses that holds a comma is read past, so "(PDF,
-// HTML)" does not cut the stretch short. One with no comma stays, so a
-// field like "Q3 (flaky):" keeps its shape.
-const ASIDE = / \((?=[^()\n]{1,40}\))[^()\n]*,[^()\n]*\)/g;
+// A short aside in parentheses is read past, so "(PDF, HTML)" does not cut
+// the stretch short and "the refactor (hmac_key to auth_secret) preserves"
+// reads as a subject and its verb. One a colon follows stays, so a field
+// like "Q3 (flaky):" keeps its shape.
+const ASIDE = / \([^()\n]{1,40}\)(?![:*])/g;
 function spliceShapes(sources, fixes) {
   const found = new Map();
   sources.forEach((raw, i) => {
