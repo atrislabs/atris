@@ -152,12 +152,12 @@ test('one corrupt campaign never hides the others, and a read-only store still l
   db.close();
   const reopened = createSqliteStore(file);
   const listed = listCampaigns(reopened);
-  assert.deepEqual(listed.map((c) => [c.id, Boolean(c.error)]), [['cmp-good', false], ['cmp-bad', true]]);
+  assert.deepEqual(listed.map((c) => [c.id, Boolean(c.error)]).sort(), [['cmp-bad', true], ['cmp-good', false]]);
   reopened.close();
   for (const f of [file, `${file}-wal`, `${file}-shm`]) if (fs.existsSync(f)) fs.chmodSync(f, 0o444);
   const readOnly = createSqliteStore(file);
   assert.equal(readOnly.readOnly, true);
-  assert.equal(listCampaigns(readOnly)[0].title, 'Good');
+  assert.equal(listCampaigns(readOnly).find((c) => c.id === 'cmp-good').title, 'Good');
   assert.throws(() => readOnly.append({ campaign_id: 'cmp-good', type: 'paused', actor: 'h', data: {} }), { code: 'read_only' });
   readOnly.close();
 });
