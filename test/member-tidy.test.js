@@ -771,3 +771,40 @@ test('tidy preserves staged and unsaved notes in idle landed copies', () => {
     fs.rmSync(fx.base, { recursive: true, force: true });
   }
 });
+
+test('tidy keeps a landed copy whose status git cannot read, in preview and apply', () => {
+  const fx = makeFixture();
+  try {
+    const clean = addCopy(fx, 'landed-clean');
+    const broken = addCopy(fx, 'unreadable-status');
+    fs.writeFileSync(path.join(broken, 'draft.txt'), 'unsaved notes\n');
+    const index = path.join(runGit(['rev-parse', '--absolute-git-dir'], broken), 'index');
+    fs.writeFileSync(index, 'not an index');
+    const failed = spawnSync('git', ['status', '--porcelain'], { cwd: broken, encoding: 'utf8' });
+    assert.notEqual(failed.status, 0);
+    assert.match(failed.stderr, /index file/);
+
+    for (const extra of [['--dry-run'], []]) {
+      const args = [path.resolve(__dirname, '../bin/atris.js'), 'member', 'tidy', '--dir', fx.copies, ...extra];
+      const cli = spawnSync(process.execPath, args, { cwd: fx.repo, encoding: 'utf8', timeout: 15000 });
+      console.log(`command: node bin/atris.js member tidy --dir <fixture copies>${extra.length ? ' --dry-run' : ''} (broken index)`);
+      console.log(cli.stdout.trim());
+      console.log(`exit: ${cli.status}`);
+      assert.equal(cli.status, 0, cli.stderr);
+      const lines = cli.stdout.trim().split('\n').map((line) => line.replace(/ {2,}/g, '  '));
+      const words = extra.length ? 'landed, but git could not check for unsaved work: ' : 'landed, but git refused: ';
+      assert.ok(lines.some((line) => line.startsWith(`kept  unreadable-status  ${words}`) && /index file/.test(line)), lines.join('\n'));
+      assert.ok(lines.some((line) => line.startsWith(`${extra.length ? 'would remove' : 'removed'}  landed-clean  work landed`)));
+      assert.equal(lines.at(-1), `tidy: ${extra.length ? 'would remove' : 'removed'} 1, kept 1, of 2 copies in ${fx.copies}`);
+      assert.equal(fs.readFileSync(index, 'utf8'), 'not an index');
+      assert.equal(fs.readFileSync(path.join(broken, 'draft.txt'), 'utf8'), 'unsaved notes\n');
+      assert.equal(fs.readFileSync(path.join(broken, 'README.md'), 'utf8'), '# fixture\n');
+      assert.ok(branchExists(fx.repo, 'unreadable-status'));
+      assert.ok(runGit(['worktree', 'list', '--porcelain'], fx.repo).includes(`worktree ${broken}\n`));
+      assert.deepEqual(removalLines(fx.repo).map((line) => line.path), extra.length ? [] : [clean]);
+    }
+    assert.equal(fs.existsSync(clean), false);
+  } finally {
+    fs.rmSync(fx.base, { recursive: true, force: true });
+  }
+});

@@ -2435,3 +2435,6 @@ Busy unfinished staged notes: `test/member-tidy.test.js:571` stages a new note a
 Idle unfinished notes: `test/member-tidy.test.js:522` runs real preview and apply with pinned and ordinary idle unfinished copies. Both keep untracked drafts, tracked edits, staged contents, later edits, the staged patch and git status unchanged.
 
 Idle landed notes: `test/member-tidy.test.js:712` runs real preview and cleanup with pinned and ordinary dirty landed copies. It preserves staged contents, later edits, drafts, tracked changes, pin bytes, branches and registrations, with no removal record; ordinary cleanup relies on git refusal. Preview checks status at `lib/member-tidy.js:225` and keeps dirty copies with a plain unsaved-work reason, or names a failed status read.
+# Unreadable cleanup status
+
+`test/member-tidy.test.js:775` checks real preview and apply with a broken git index and a removable clean neighbor. Proof: `atris/receipts/work-folder-unreadable-status-2026-10-15.txt`.

@@ -1,0 +1,24 @@
+Cleanup preview keeps a landed folder when git cannot read its status. Real CLI preview and cleanup both kept it; required checks exited 0.
+
+Files: test/member-tidy.test.js; atris/team/architect/logs/2026-10-15.md; atris/receipts/work-folder-unreadable-status-2026-10-15.txt
+
+Setup: one clean landed folder and one landed folder with a draft note and a broken git index, so git status exits 128. Both preview and cleanup run through the real CLI in a disposable repo.
+
+Verify command: node --test test/worktree-removal-guard.test.js test/member-tidy.test.js && node bin/atris.js slop --staged
+Exit: 0
+Progress: 75 passed; 0 failed; 0 skipped; 0 todo (was 74).
+
+Mutation check: with the preview status guard disabled, the new test exits 1 and preview offers to remove unreadable-status. Source restored, no diff in lib/.
+
+Real CLI output excerpt (fixture temp path shortened to <tmp>):
+command: node bin/atris.js member tidy --dir <fixture copies> --dry-run (broken index)
+would remove  landed-clean  work landed
+kept          unreadable-status  landed, but git could not check for unsaved work: fatal: <tmp>/arena/repo/.git/worktrees/unreadable-status/index: index file smaller than expected
+tidy: would remove 1, kept 1, of 2 copies in <tmp>/arena/.agent-worktrees/repo
+exit: 0
+next_push: Prove cleanup keeps a landed folder whose branch was deleted out from under it.
+command: node bin/atris.js member tidy --dir <fixture copies> (broken index)
+removed  landed-clean  work landed, branch deleted
+kept     unreadable-status  landed, but git refused: .git/worktrees/unreadable-status/index: index file smaller than expected
+tidy: removed 1, kept 1, of 2 copies in <tmp>/arena/.agent-worktrees/repo
+exit: 0
