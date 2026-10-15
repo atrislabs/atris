@@ -40,5 +40,7 @@ Exit code: 0.
 
 Additional checks: `git diff --check` passed, exit 0. Brain activation and compilation returned exit 2, plan only; missing compiled inputs were not regenerated as unrelated policy changes.
 
+Review handoff: readiness reran the focused test with `/opt/homebrew/bin/node`, exit 0, and placed the task in review. Automatic second review cannot rerun this absolute-path command; independent review remains pending. The initial landing sentence was rejected, then a clearer sentence passed. No acceptance or merge was run. The change was committed and pushed.
+
 next_push: batch the missing-actor and malformed-actor refusal checks in the same approval test after proving both return before database writes.
 layer: capabilities
