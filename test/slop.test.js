@@ -4730,6 +4730,14 @@ test('the fix diff splice list skips a noun after "in" or "of" and a noun with i
     names.map((a) => `${a} ${D} the referral model adds a challenge.`),
     names.map((a) => `${a}, the referral model adds a challenge.`),
   ).map((s) => s.count), [1]);
+  // an "if" opener is only the first half, so "If no, your attention has
+  // been captured" is no splice, the same as in the odd count; a clause
+  // before the comma still is
+  const openers = ['If no', 'It said no'];
+  assert.deepEqual(spliceShapes(
+    openers.map((a) => `${a} ${D} your attention has been captured.`),
+    openers.map((a) => `${a}, your attention has been captured.`),
+  ).map((s) => s.count), [1]);
 });
 
 test('the fix diff script lists each comma it writes before a "the" clause once', () => {

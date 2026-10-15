@@ -200,20 +200,23 @@ function greets(before) {
   const opensLine = /(?:^|\n)$/.test(before.slice(0, before.length - part.length));
   return NO_CLAUSE.test(sentence) || (opensLine && LONE_NAME.test(sentence)) || /[\s(]["\u201c][A-Z][a-z'\u2019]+$/.test(before);
 }
+// Whether a comma right after this text is rightly placed: it closes an
+// opener's first half, follows a greeting or answer word, or ends a part
+// that still waits for its clause.
+function takesComma(before) {
+  const part = before.split(SENTENCE_STOP).pop();
+  const earlier = before.slice(0, before.length - part.length);
+  const sentence = bare(part);
+  const thatOpener = THAT_OPENS_FIRST_HALF.exec(sentence);
+  const unquoted = (x) => x.replace(/"[^"]*"|\u201c[^\u201d]*\u201d/g, '""');
+  const opens = (x) => OPENS_FIRST_HALF.test(x) && !SECOND_HALF.test(unquoted(x));
+  const carried = /,\s+$/.test(earlier) && /^(?:and|but|so|yet|or)\s/.test(part) && opens(bare(earlier.replace(/,\s+$/, '').split(SENTENCE_STOP).pop()) + ', ' + sentence);
+  const firstHalf = opens(sentence) || carried || (thatOpener && !SECOND_HALF.test(unquoted(sentence.slice(thatOpener.index))));
+  return firstHalf || greets(before) || WAITS_FOR_CLAUSE.test(sentence);
+}
 function splices(text) {
   let count = 0;
-  for (const m of text.matchAll(SPLICE)) {
-    const before = text.slice(0, m.index);
-    const part = before.split(SENTENCE_STOP).pop();
-    const earlier = before.slice(0, before.length - part.length);
-    const sentence = bare(part);
-    const thatOpener = THAT_OPENS_FIRST_HALF.exec(sentence);
-    const unquoted = (x) => x.replace(/"[^"]*"|\u201c[^\u201d]*\u201d/g, '""');
-    const opens = (x) => OPENS_FIRST_HALF.test(x) && !SECOND_HALF.test(unquoted(x));
-    const carried = /,\s+$/.test(earlier) && /^(?:and|but|so|yet|or)\s/.test(part) && opens(bare(earlier.replace(/,\s+$/, '').split(SENTENCE_STOP).pop()) + ', ' + sentence);
-    const firstHalf = opens(sentence) || carried || (thatOpener && !SECOND_HALF.test(unquoted(sentence.slice(thatOpener.index))));
-    if (!firstHalf && !greets(before) && !WAITS_FOR_CLAUSE.test(sentence)) count += 1;
-  }
+  for (const m of text.matchAll(SPLICE)) if (!takesComma(text.slice(0, m.index))) count += 1;
   return count;
 }
 
@@ -236,7 +239,8 @@ function splices(text) {
 // is one fix, not thirty. A lone answer word or greeting before the comma
 // takes it rightly, the same as in the odd count: "YES, the test was
 // tolerating a fallback" is no splice, and neither is a name that opens its
-// line or follows an opening quote: '"Christal, the referral model adds'.
+// line or follows an opening quote: '"Christal, the referral model adds',
+// nor an opener's first half: "If no, your attention has been captured".
 const SPLICE_SHAPE = /^(?:the|its|our|their|your) (?!(?:one|two|three|four|five|six|seven|eight|nine|ten|few|many|several|same|other|first|last|next|main|key|core|new|old|real|whole|exact|only)\b)(?:(?!(?:that|which|who|your|our|their|its|his|her|my)\b)[\w`-]+ ){1,2}(?<!\b(?:in|of) )(?!(?:this|his|its|thus|plus|always|perhaps|unless|whereas|across)\b)[a-z]+[^su\s']s (?!(?:that|which|who)\b)(?:[a-z`"]|\d)/;
 const RELATIVE_SHAPE = /^(?:the|its|our|their|your) (?:[\w`-]+ ){0,2}[a-z]+s the (?:(?!(?:the|a|an)\b)\S+ ){1,3}[a-z]+s$/;
 function spliceShapes(sources, fixes) {
@@ -247,7 +251,7 @@ function spliceShapes(sources, fixes) {
     for (const m of fixed.matchAll(/, ((?:the|its|our|their|your) [^,;.!?\n]*)/g)) {
       const rest = m[1];
       if (!source.includes(`${DASH} ${rest}`) || !SPLICE_SHAPE.test(rest) || RELATIVE_SHAPE.test(rest)) continue;
-      if (greets(fixed.slice(0, m.index))) continue;
+      if (takesComma(fixed.slice(0, m.index))) continue;
       const key = rest.replace(/`[^`]*`/g, '``');
       if (!found.has(key)) found.set(key, { text: rest, count: 0 });
       found.get(key).count += 1;
