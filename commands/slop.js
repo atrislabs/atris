@@ -409,6 +409,16 @@ const STATUS_CLAUSE_AFTER_DASH = new RegExp(`(?<=[\\w)\\]"'*_\`%\\u201d\\u2019\\
 // live" and "only the wallet index and public address" keep their comma.
 const ONLY_CLAUSE_AFTER_DASH = new RegExp(`(?<=[\\w)\\]"'*_\`%\\u201d\\u2019\\uE001])\\s*\\u2014\\s*(?=only\\s+(?!${ORDER_VERB}\\s)${AND_PART}(?:and\\s+${AND_PART})?(?:${HELPING_VERB}\\s+[^\\s\\u2014]|exists?\\b|${OPEN_HELPER}$|[a-z]{3,}ed\\s+(?!(?:by|as|for|in|on|at|to|from|with|of|into|and|or)\\b)[\\w\\uE000]))`, 'g');
 
+// A helping verb with no subject after the dash goes on from a full clause
+// before it, so the two are joined like two clauses: "The Angi negatives are
+// UNVERIFIED; must not appear", "Current logic is rule-based; has no memory".
+// The words before the dash need a helping verb of their own, outside any
+// brackets: "orb included, is a view of it" splits a subject from its verb,
+// and "Limited budget, can't nag" is a note, so both keep their comma.
+// That holds when the sentence starts on the line; see the wrap check below.
+const SUBJECTLESS_HELPER = "(?:is|are|was|were|has|have|had|will|would|can|cannot|could|must|should|may|might|does|did|(?:is|was|are|were|has|have|had|does|did|can|could|would|should|wo)n['\\u2019]t)";
+const SUBJECTLESS_CLAUSE_AFTER_DASH = new RegExp(`(?<=[\\w)\\]%\\uE001])\\s*\\u2014\\s*(?=(${SUBJECTLESS_HELPER})\\s+(?:not\\s+|never\\s+|still\\s+|already\\s+|also\\s+|be\\s+)?[a-z][^.!?\\u2014]*(?:[.!]|$))`, 'g');
+
 // The mark that joins a full clause to the sentence before the dash. A short
 // opener led by "not" has no verb of its own, so the clause explains it and
 // takes a colon: "Not exhaustive: the frontier was not extended". A quoted
@@ -876,6 +886,18 @@ function fixEmDash(s, { endsBlock = false, startsBlock = false, spans = [], abov
     .replace(ONLY_CLAUSE_AFTER_DASH, (m, at, whole) => {
       const left = clauseLeft(at, whole);
       return left ? clauseJoin(left) : m;
+    })
+    .replace(SUBJECTLESS_CLAUSE_AFTER_DASH, (m, verb, at, whole) => {
+      const left = clauseLeft(at, whole);
+      if (!left || /\u2014/.test(left)) return m;
+      // a wrapped line that opens in lowercase may hold the end of a subject
+      // whose start is on the line above: "would be a large audience, / was
+      // unproven in 1995", so it is left alone until a sentence starts here
+      if (/^\s*[a-z]/.test(whole) && whole.slice(0, at).trim() === left) return m;
+      const own = left.split(/;\s/).pop().replace(/\([^()]*\)/g, ' ');
+      const words = own.trim().split(/\s+/);
+      if (words[words.length - 1].toLowerCase() === verb.toLowerCase()) return m;
+      return new RegExp(`\\b${SUBJECTLESS_HELPER}\\b`, 'i').test(own) ? clauseJoin(left) : m;
     })
     .replace(STATUS_CLAUSE_AFTER_DASH, (m, at, whole) => {
       const left = clauseLeft(at, whole);

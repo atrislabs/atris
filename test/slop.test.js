@@ -3845,3 +3845,34 @@ test('fix pairs an aside whose opening dash ends the line above', () => {
     '(capture the stdout and write it as a brief file) is proven offline below.',
   ]);
 });
+
+test('fix joins a full clause and a helping verb with no subject after its dash', () => {
+  // from a sales brief: "The Angi negatives are UNVERIFIED" then a dash and
+  // "must not appear" came out as a comma splice. A clause with its own
+  // helping verb before the dash takes a semicolon. A note with no verb, a
+  // subject split from its verb, a stutter, and a wrapped line whose
+  // subject starts above all keep their comma.
+  const D = String.fromCharCode(0x2014);
+  const file = tmpFile('subjectless-clause.md', [
+    `The Angi negatives are UNVERIFIED ${D} must not appear in the email.`,
+    '',
+    `Nate has 3 other calls this week ${D} may not have bandwidth.`,
+    '',
+    `Limited budget ${D} can't nag.`,
+    '',
+    `The dataset (usable for evals) ${D} does not exist as one dataset.`,
+    '',
+    `I think the art of it is ${D} is knowing when to stop.`,
+    '',
+    `would be a large audience ${D} was unproven in 1995.`,
+  ].join('\n'));
+  const { changes } = applyFixes([file], RULES);
+  assert.deepEqual(changes.map((c) => c.after), [
+    'The Angi negatives are UNVERIFIED; must not appear in the email.',
+    'Nate has 3 other calls this week; may not have bandwidth.',
+    "Limited budget, can't nag.",
+    'The dataset (usable for evals), does not exist as one dataset.',
+    'I think the art of it is, is knowing when to stop.',
+    'would be a large audience, was unproven in 1995.',
+  ]);
+});
