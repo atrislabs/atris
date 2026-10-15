@@ -171,3 +171,6 @@ Controlled runtime evidence: `atris/receipts/work-folder-proof-runtime-controlle
 Caller directory colon boundary: `atris/receipts/work-folder-proof-runtime-controlled.js:38` reproduces a competing executable selected despite the quoted PATH prefix; an absolute caller control succeeds. Nine real shell children cover the prior six cases plus three colon controls. Review and required safeguard: `atris/receipts/work-folder-completion-runtime-plan-2026-10-14.md`.
 
 Colon-directory fallback decision: `atris/receipts/work-folder-completion-runtime-plan-2026-10-14.md` selects pre-launch refusal in both proof runners, with explicit operator cost and paired real-runner regressions required before implementation. Evidence: `atris/receipts/work-folder-colon-decision-2026-10-14.txt`; production unchanged.
+
+
+Paired production-runner baseline: `atris/receipts/work-folder-paired-runtime-probe.js` launches copied Node from a colon-containing directory and runs both real proof entry points. Controlled startup adds only a competing executable, without a proposed repair. Both commands run, the shared runner returns passing proof, and the receipt writer saves a passing receipt. This baseline demonstrates missing refusal, not successful repair. Evidence: `atris/receipts/work-folder-paired-runtime-2026-10-14.txt`.

@@ -1,0 +1,57 @@
+Added paired proof-runner baseline evidence; two real shell calls reproduced the defect and all 57 required checks passed, exit 0.
+
+Scope: advisory evidence only. Production behavior is unchanged. Both real
+entry points accept a colon-containing caller Node directory and execute the
+command through a controlled competing executable. This is not a passing
+refusal regression. The diagnostic expects today's defect.
+
+Changed files:
+atris/receipts/work-folder-paired-runtime-probe.js
+atris/receipts/work-folder-paired-runtime-2026-10-14.txt
+atris/receipts/work-folder-paired-runtime-tests-2026-10-14.tap
+atris/receipts/work-folder-completion-runtime-plan-2026-10-14.md
+atris/MAP.md
+atris/refs/MAP-NOTES.md
+atris/team/architect/logs/2026-10-14.md (this increment only)
+
+Command: node atris/receipts/work-folder-paired-runtime-probe.js
+Exit: 0
+shared: ok true, exit 0, output competing-node, command ran
+shared: passing proof returned; colon-path refusal absent
+receipt: ok true, exit 0, output competing-node, command ran
+receipt: passing receipt written; colon-path refusal absent
+two real runner calls reproduced the baseline; production unchanged
+
+Rerunnable required check:
+node --test test/worktree-removal-guard.test.js test/member-tidy.test.js
+Exit: 0
+ℹ tests 57
+ℹ suites 0
+ℹ pass 57
+ℹ fail 0
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+Full output: work-folder-paired-runtime-tests-2026-10-14.tap.
+
+Other commands: pwd; git status --short; git log -3 --oneline;
+git remote -v; git branch --show-current; targeted cat/sed/rg reads;
+atris mission status mission-2026-10-14-continue-work-folder-protect-cd299a9a;
+atris mission goal --json; atris; atris task list --status open;
+atris brain activate --root . --verify; atris brain compile --root .;
+atris task new/claim/note/ready; scoped git diff/add/commit/push.
+Brain activation and compilation were previews, exit 2, and wrote nothing.
+The first readiness attempt rejected the result wording without running the
+probe. The revised attempt ran the diagnostic, exit 0, and moved the task to
+review. Automatic certification cannot rerun this diagnostic, so acceptance
+remains pending. No acceptance or merge was performed.
+Generated receipts and sentinel files exist only in this probe's own temporary
+fixture and are removed with it. Real-readiness receipt:
+atris/runs/2026-10-15-task-acw-21-2026-10-15T03-54-53-027Z.json.
+
+Metric: two production runner entry points reproduce wrong-runtime success,
+including executed command sentinels, unchanged command text, passing proof,
+and a passing saved receipt. Required checks: 57 passed, zero failed.
+
+next_push: implement the reviewed colon-directory refusal in both proof runners with real-entry regressions proving no command side effects or passing receipts.
+layer: capabilities

@@ -192,3 +192,21 @@ Retain the existing ordinary-path runtime, quoting, glob, exit-code, and
 explicit-override checks against production code rather than an injected fix.
 
 next_push: add paired real-runner refusal regressions for colon-containing Node directories before implementing the shared runtime repair.
+
+
+## Paired baseline, October 14
+
+Both real runner entry points now reproduce the missing refusal under a copied
+colon-directory Node. The diagnostic controls post-login PATH only; it inserts
+no candidate repair. Each runner runs a sentinel command and selects the
+competing executable with exit 0. The receipt writer writes a passing receipt;
+the shared runner returns passing proof. Original command text is preserved.
+
+This is baseline evidence, not an automated refusal regression or a repair.
+The next implementation must reverse these observations: no sentinel, no
+passing receipt, explicit failure fields, and a visible caller explanation.
+The diagnostic currently expects the defect and must be updated or replaced
+when refusal is implemented. Generated fixtures and receipts are removed.
+
+Command: node atris/receipts/work-folder-paired-runtime-probe.js, exit 0.
+next_push: implement the reviewed colon-directory refusal in both proof runners with real-entry regressions proving no command side effects or passing receipts.
