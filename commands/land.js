@@ -1068,7 +1068,13 @@ function emptyLandKindFromError(err) {
 // works days later without the original put-away output.
 function savedBackups(root) {
   return readWorktreeRemovals(root).filter((row) => row.restore).reverse()
-    .map((row) => ({ at: row.at, path: row.path, branch: row.branch, restore: row.restore }));
+    .map((row) => {
+      const ref = row.restore.match(/refs\/atris\/salvage\/[0-9a-f]{40,64}\b/);
+      const missing = ref && runGit(['cat-file', '-e', `${ref[0]}^{commit}`], { cwd: root, check: false }).status !== 0;
+      return { at: row.at, path: row.path, branch: row.branch,
+        restore: missing ? null : row.restore,
+        ...(missing ? { unavailable: 'saved commit is missing' } : {}) };
+    });
 }
 
 function printSavedBackups(rows) {
@@ -1080,7 +1086,8 @@ function printSavedBackups(rows) {
   console.log(`saved backups: ${rows.length} removed ${rows.length === 1 ? 'folder' : 'folders'} held unsaved work, newest first`);
   for (const row of rows) {
     console.log(`  ${row.at.slice(0, 16).replace('T', ' ')}  ${row.path}${row.branch ? ` (${row.branch})` : ''}`);
-    console.log(`    to restore: ${row.restore}`);
+    if (row.unavailable) console.log(`    cannot restore: ${row.unavailable}`);
+    else console.log(`    to restore: ${row.restore}`);
   }
 }
 

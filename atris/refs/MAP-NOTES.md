@@ -2525,3 +2525,5 @@ Put-away restore line: `commands/land.js:559` builds one restore command per rem
 Put-away backup name: `commands/land.js:557` names each removed folder's commit under refs/atris/salvage before removal, so the restore line still works after reap deletes the branch and git clears unreferenced commits. `test/worktree-removal-guard.test.js:1435` lands the folder's commit as an equivalent copy, clears unreferenced commits, and runs the restore; it fails on the code before this change.
 
 Restore with quoted paths: `test/worktree-removal-guard.test.js:1435` runs put-away and the saved backup list with spaces and apostrophes in both repository and removed-folder names, then executes the listed command in a real shell and checks recovered staged, binary and draft contents.
+
+Missing saved commit: `commands/land.js:1069` withholds the saved restore command when its saved commit reference is absent. `test/worktree-removal-guard.test.js:1517` removes that reference in a disposable repository and checks plain and JSON replies before restoring it.

@@ -307,3 +307,5 @@ Put-away backup name: `commands/land.js:557` names each removed folder's commit 
 Put-away backup list: `commands/land.js:788` writes each removed folder's restore command into the removal log, and `atris land --backups` (`commands/land.js:1069` `savedBackups`, dispatched at `commands/land.js:1188`) lists every removed folder that held unsaved work, newest first, with that command. `test/worktree-removal-guard.test.js:1435` runs the list in a separate process after put-away, checks the listed command matches the printed one, and replays the listed command; it fails on the code before this change.
 
 Restore with quoted paths: `test/worktree-removal-guard.test.js:1435` runs put-away and the saved backup list with spaces and apostrophes in both repository and removed-folder names, then executes the listed command in a real shell and checks recovered staged, binary and draft contents.
+
+Missing saved commit: `commands/land.js:1069` withholds the saved restore command when its saved commit reference is absent. `test/worktree-removal-guard.test.js:1517` removes that reference in a disposable repository and checks plain and JSON replies before restoring it.

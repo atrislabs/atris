@@ -1495,6 +1495,16 @@ test(`reap saves staged and binary work and restores it exactly${quoted ? ' with
     assert.equal(listed, restore);
     const asJson = spawnSync(process.execPath, [path.resolve(__dirname, '../bin/atris.js'), 'land', '--backups', '--json'], { cwd: repo, encoding: 'utf8' });
     assert.deepEqual(JSON.parse(asJson.stdout).backups.map((b) => [b.path, b.restore]), [[wt, restore]]);
+    git(repo, ['update-ref', '-d', `refs/atris/salvage/${folderCommit}`]);
+    const missing = spawnSync(process.execPath, [path.resolve(__dirname, '../bin/atris.js'), 'land', '--backups'], { cwd: repo, encoding: 'utf8' });
+    assert.equal(missing.status, 0, missing.stderr);
+    assert.match(missing.stdout, /cannot restore: saved commit is missing/);
+    assert.ok(!missing.stdout.includes('to restore:'), missing.stdout);
+    const missingJson = spawnSync(process.execPath, [path.resolve(__dirname, '../bin/atris.js'), 'land', '--backups', '--json'], { cwd: repo, encoding: 'utf8' });
+    assert.equal(missingJson.status, 0, missingJson.stderr);
+    assert.equal(JSON.parse(missingJson.stdout).backups[0].restore, null);
+    assert.equal(JSON.parse(missingJson.stdout).backups[0].unavailable, 'saved commit is missing');
+    git(repo, ['update-ref', `refs/atris/salvage/${folderCommit}`, folderCommit]);
     const rebuilt = spawnSync('sh', ['-c', listed], { cwd: base, encoding: 'utf8' });
     assert.equal(rebuilt.status, 0, rebuilt.stderr);
     assert.equal(git(wt, ['status', '--porcelain']), status);
