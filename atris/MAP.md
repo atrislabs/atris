@@ -250,3 +250,5 @@ Offline cleanup staged file deleted before saving: `test/member-tidy.test.js:155
 Offline cleanup staged mode-only change: `test/member-tidy.test.js:1597` runs real preview and apply with an unavailable origin after README is made runnable and staged with no text change. Both calls keep the runnable bit, the saved change, the branch and registration, and name the copy as kept with one staged change.
 
 Healthy refresh whole-index proof: `test/member-tidy.test.js:1374` compares the complete staged tree before and after real cleanup preview and apply, with a control proving the staged tree differs from the committed tree.
+
+Healthy refresh binary proof: `test/member-tidy.test.js:1374` runs real cleanup preview and apply with distinct staged and later binary bytes, comparing both byte buffers exactly alongside the complete staged tree.

@@ -1387,6 +1387,13 @@ test('worktree cleanup quietly refreshes an outdated base and keeps staged notes
     fs.writeFileSync(note, 'staged notes\n');
     runGit(['add', 'note.txt'], copy);
     fs.writeFileSync(note, 'staged notes\nlater edits\n');
+    const binary = path.join(copy, 'drawing.bin');
+    const savedBytes = Buffer.from([0, 255, 10, 128, 13]);
+    const laterBytes = Buffer.from([0, 254, 10, 129, 13, 0]);
+    fs.writeFileSync(binary, savedBytes);
+    runGit(['add', 'drawing.bin'], copy);
+    fs.writeFileSync(binary, laterBytes);
+    assert.notDeepEqual(savedBytes, laterBytes);
     const staged = runGit(['diff', '--cached', '--binary'], copy);
     const indexTree = runGit(['write-tree'], copy);
     assert.notEqual(indexTree, runGit(['rev-parse', 'HEAD^{tree}'], copy));
@@ -1421,6 +1428,10 @@ test('worktree cleanup quietly refreshes an outdated base and keeps staged notes
       assert.equal(fs.readFileSync(note, 'utf8'), 'staged notes\nlater edits\n');
       assert.equal(runGit(['show', ':note.txt'], copy), 'staged notes');
       assert.equal(runGit(['diff', '--cached', '--binary'], copy), staged);
+      assert.deepEqual(fs.readFileSync(binary), laterBytes);
+      const savedBinary = spawnSync('git', ['show', ':drawing.bin'], { cwd: copy });
+      assert.equal(savedBinary.status, 0);
+      assert.deepEqual(savedBinary.stdout, savedBytes);
       assert.equal(runGit(['write-tree'], copy), indexTree);
       assert.equal(runGit(['status', '--porcelain'], copy), status);
       assert.equal(runGit(['rev-parse', 'origin/master'], fx.repo), newer);

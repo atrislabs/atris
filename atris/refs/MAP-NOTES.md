@@ -2470,3 +2470,5 @@ Healthy refresh tracked edits: `test/member-tidy.test.js:1374` also preserves ex
 Healthy refresh staged tracked edits: `test/member-tidy.test.js:1374` runs real cleanup preview and apply, preserving separate committed, staged and later README contents along with drafts and staged notes.
 
 Healthy refresh whole-index proof: `test/member-tidy.test.js:1374` compares the complete staged tree before and after real cleanup preview and apply, with a control proving the staged tree differs from the committed tree.
+
+Healthy refresh binary proof: `test/member-tidy.test.js:1374` runs real cleanup preview and apply with distinct staged and later binary bytes, comparing both byte buffers exactly alongside the complete staged tree.
