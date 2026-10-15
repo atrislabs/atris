@@ -2387,7 +2387,7 @@ Lost-run cleanup error summary: `commands/autoland.js:895` keeps successful clos
 
 - **Every hidden reason named:** `renderBoard()` (`lib/member-board.js:309`) names two or three different hidden failure reasons when none leads and every failure wrote one (`2 failed, timed out and engine error`), with counts on a tie; without room it falls back to the bare count. Regression: `test/member-board.test.js:1286`.
 
-- **Earlier sign-in engine:** `renderBoard()` in `lib/member-board.js` names the old engine in hidden earlier sign-in failures only when the same footer fits. Regression: `test/member-board.test.js:2323`; terminal proof: `python3 atris/runs/member-board-earlier-engine-proof.py`.
+- **Earlier sign-in engine:** `renderBoard()` in `lib/member-board.js` names the old engine in hidden earlier sign-in failures only when the same footer fits. Regression: `test/member-board.test.js:2916`; terminal proof: `python3 atris/runs/member-board-earlier-engine-proof.py`.
 
 - **Live JSON follow check:** `test/member-board.test.js:1743` waits up to 15 seconds for complete newline-ended records and reports early child closure with captured output; cleanup awaits the close listener installed at spawn. Verify: `node --test test/member-board.test.js test/member-result.test.js`.
 
@@ -2405,13 +2405,13 @@ Missing-log recovery: `followBoard()` (`lib/member-board.js:887`) clears offsets
 
 Atomic same-size log replacement: `followBoard()` in `lib/member-board.js:831` compares device and inode on the opened file before reading, resetting the cursor when replaced. Real CLI regression: `test/member-board.test.js:1973`, atomic rename with equal byte size, unfinished old timeout, split new step, no duplicate events, and clean interrupt. Proof: `atris/runs/member-board-live-replace-proof.txt`.
 
-New-log CRLF follow: `test/member-board.test.js:2353` proves a new log waits for LF after CR, delivers batched start and step events once, keeps a partial result pending, and exits cleanly after the final result. Proof: `atris/runs/member-board-new-log-crlf-proof.txt`.
+New-log CRLF follow: `test/member-board.test.js:2957` proves a new log waits for LF after CR, delivers batched start and step events once, keeps a partial result pending, and exits cleanly after the final result. Proof: `atris/runs/member-board-new-log-crlf-proof.txt`.
 
-In-place equal-size rewrite: `followBoard()` in `lib/member-board.js:831` checks up to 256 bytes behind the cursor before reading, resetting when they change without inode or size changes. Real CLI regression: `test/member-board.test.js:2405`, same inode and size, split replacement step, no stale result or duplicates, clean interrupt. Proof: `atris/runs/member-board-in-place-proof.txt`. Changes entirely outside the sampled bytes are not detected.
+In-place equal-size rewrite: `followBoard()` in `lib/member-board.js:831` checks up to 256 bytes behind the cursor before reading, resetting when they change without inode or size changes. Real CLI regression: `test/member-board.test.js:3012`, same inode and size, split replacement step, no stale result or duplicates, clean interrupt. Proof: `atris/runs/member-board-in-place-proof.txt`. Changes entirely outside the sampled bytes are not detected.
 
 Watch shutdown: `test/member-board.test.js:862` checks interrupt cancels the pending log redraw, periodic timer, folder watch, and resize listener. Real narrow-terminal proof: `python3 atris/receipts/member-board-watch-stop-proof.py`.
 
-Late progress folder watch recovery: `lib/member-board.js:1097` retries the folder watch on every timed redraw. `test/member-board.test.js:2977` runs the real terminal proof in `atris/receipts/member-board-watch-recovery-proof.py`, including a later write within two seconds and clean interrupt.
+Late progress folder watch recovery: `lib/member-board.js:1097` retries the folder watch on every timed redraw. `test/member-board.test.js:3780` runs the real terminal proof in `atris/receipts/member-board-watch-recovery-proof.py`, including a later write within two seconds and clean interrupt.
 
 Empty-board terminal width: `lib/member-board.js:311` keeps the full progress path in pipes, shortens it by screen cells in terminals, and uses whole shorter messages below 29 columns. `test/member-board.test.js:1695` covers tiny widths and the real resized terminal via `python3 atris/receipts/member-board-empty-width-proof.py` (30x1, 18x2, 22x3, 80x3, 240x3).
 
@@ -2421,6 +2421,8 @@ Idle-to-working terminal transitions: `test/member-board.test.js:2026` runs `atr
 
 Live follow check lifetime: `test/member-board.test.js:21` sets a 30-second SIGKILL deadline for every asynchronous real follow child, bounding cleanup even if interrupt is never handled. Real suspended-child proof: `node atris/receipts/member-board-follow-deadline-proof.cjs`.
 
-Split line endings at startup: `test/member-board.test.js:2898` runs the real follow command with a start ending in CR already present or created after startup. Both opening snapshots exclude the unfinished start; LF releases exact start and step events, a split result waits for LF, polling never duplicates events, and interrupt exits 0. Verify: `node --test test/member-board.test.js test/member-result.test.js`.
+Split line endings at startup: `test/member-board.test.js:2957` runs the real follow command with a start ending in CR already present or created after startup. Both opening snapshots exclude the unfinished start; LF releases exact start and step events, a split result waits for LF, polling never duplicates events, and interrupt exits 0. Verify: `node --test test/member-board.test.js test/member-result.test.js`.
 
 CRLF result pending at startup: `parseLine()` in `lib/member-board.js:49` removes the trailing CR from complete lines, matching live updates. `test/member-board.test.js:2153` starts the real follow command after a completed CRLF start and a timeout result ending in CR. The snapshot stays working; LF emits the result once, later start and step events remain intact, and interrupt exits 0. Proof: `atris/receipts/member-board-startup-result-crlf-receipt.md`.
+
+Signed out run written with CRLF: `test/member-board.test.js:2225` writes a finished signed out run with CRLF endings and runs the real plain board, JSON board, and follow snapshot. Each keeps the engine and the sign-in fix, with no CR in output; interrupt exits 0. Proof: `atris/receipts/member-board-startup-signed-out-crlf-receipt.md`.

@@ -2222,6 +2222,56 @@ for (const { pendingAtStartup, splitCRLF } of [
   });
 }
 
+test('a signed out run written with CRLF keeps its engine and sign-in fix when the board opens', async (t) => {
+  const stamp = (s) => new Date(Date.now() - s * 1000).toISOString();
+  // A pid no system hands out, so the finished run reads as over.
+  const lines = [
+    `${stamp(90)} m-4 started: [pid 2147483646 engine claude] ship the pricing page`,
+    `${stamp(80)} m-4 reading pages/pricing.md`,
+    `${stamp(60)} m-4 finished: failed (signed out)`,
+  ];
+  const dir = fakeDir({});
+  fs.writeFileSync(path.join(dir, 'locked.log'), lines.map((l) => `${l}\r\n`).join(''));
+  const env = { ...process.env, ...FOLLOW_ENV, ATRIS_PROGRESS_DIR: dir };
+  const want = {
+    state: 'done failed', last_result: 'failed', last_result_reason: 'signed out', last_result_engine: 'claude', engine: 'claude', alive: false,
+    job: 'ship the pricing page', step: 'reading pages/pricing.md',
+  };
+  const pick = (row) => Object.fromEntries(Object.keys(want).map((k) => [k, row[k]]));
+  let child;
+  let done = Promise.resolve();
+  try {
+    const board = spawnSync(process.execPath, [cliPath, 'member', 'board'], { cwd: dir, env, encoding: 'utf8' });
+    assert.equal(board.status, 0, board.stderr);
+    assert.doesNotMatch(board.stdout, /\r/, 'no carriage return reaches the screen');
+    assert.match(board.stdout, /^locked\s+done failed\s+failed \(signed out\) 1m ago\s+no\s+claude\s.*\s{2}sign in to claude, then run it again$/m, board.stdout);
+
+    const json = spawnSync(process.execPath, [cliPath, 'member', 'board', '--json'], { cwd: dir, env, encoding: 'utf8' });
+    assert.equal(json.status, 0, json.stderr);
+    assert.deepEqual(JSON.parse(json.stdout).members.map(pick), [want]);
+
+    child = spawn(process.execPath, [cliPath, 'member', 'board', '--json', '--follow'], { ...FOLLOW_PROCESS_LIMIT, cwd: dir, env });
+    let out = '';
+    let stderr = '';
+    done = new Promise((resolve) => child.once('close', (code, signal) => resolve({ code, signal })));
+    child.stderr.on('data', (d) => { stderr += d; });
+    child.stdout.on('data', (d) => { out += d; });
+    const until = Date.now() + 15_000;
+    while (!out.includes('\n') && child.exitCode === null && Date.now() < until) await new Promise((r) => setTimeout(r, 50));
+    const snapshot = JSON.parse(out.slice(0, out.indexOf('\n')));
+    assert.equal(snapshot.kind, 'snapshot', out);
+    assert.deepEqual(snapshot.members.map(pick), [want], 'the opening snapshot matches the one-shot board');
+    child.kill('SIGINT');
+    assert.deepEqual(await done, { code: 0, signal: null }, stderr);
+    t.diagnostic(`actual command: ${process.execPath} ${cliPath} member board`);
+    t.diagnostic(`actual stdout:\n${board.stdout}exit: ${board.status}`);
+  } finally {
+    if (child && child.exitCode === null) child.kill('SIGINT');
+    await done;
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
 for (const pendingAtStartup of [false, true]) {
   test(`live follow preserves a multibyte character split ${pendingAtStartup ? 'before' : 'after'} startup`, async () => {
     const stamp = new Date().toISOString();
