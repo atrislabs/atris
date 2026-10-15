@@ -1403,7 +1403,7 @@ test('every launch of an engine program by name records its run or is named as e
 test('every engine started through a runner or profile variable records its run or is named as exempt', () => {
   // The program is a variable or a call, like a runner binary, a profile's
   // bin, or an engine invocation's command.
-  const VAR_LAUNCH = /\b(?:spawn|spawnSync|execFile|execFileSync|spawnWithOutputChunks|runInReapedProcessGroup)\s*\(\s*([A-Za-z_$][\w$]*(?:\??\.[\w$]+)*)/g;
+  const VAR_LAUNCH = /\b(?:spawn|spawnSync|execFile|execFileSync|spawnWithOutputChunks|runInReapedProcessGroup)\s*\(\s*([A-Za-z_$][\w$]*(?:\??\.[\w$]+|(?:\?\.)?\[\s*(?:'[^'\\\n]*'|"[^"\\\n]*"|[A-Za-z_$][\w$]*)\s*\])*)/g;
   // It is an engine when the call, or the variable's declaration in the same
   // function, names an engine program or an engine or runner resolver.
   const ENGINE_SOURCE = new RegExp(`['"\`](?:${ENGINE_NAMES})['"\`]|\\b[\\w$]*(?:Engine|engine|Runner|runner)[\\w$]*\\s*\\(`);
@@ -1588,7 +1588,7 @@ test('every engine started through a runner or profile variable records its run 
       const visible = withoutHelperDefinitions(code, position);
       let declarationEnd = position;
       while (!ENGINE_SOURCE.test(source)) {
-        const alias = /^([A-Za-z_$][\w$]*)(?:\??\.[\w$]+)*$/.exec(source.trim());
+        const alias = /^([A-Za-z_$][\w$]*)(?:\??\.[\w$]+|(?:\?\.)?\[\s*(?:'[^'\\\n]*'|"[^"\\\n]*"|[A-Za-z_$][\w$]*)\s*\])*$/.exec(source.trim());
         if (!alias) break;
         // Captured variables remain visible until a matching parameter hides them.
         const shadowStart = Math.max(0, ...definitionSpans(code).filter(([open, close]) => open <= declarationEnd && declarationEnd < close && parametersOf(open).includes(alias[1])).map(([open]) => open));
@@ -1608,7 +1608,7 @@ test('every engine started through a runner or profile variable records its run 
     const engineSourceAt = (program, position, following = new Set()) => {
       const resolved = sourceAt(program, position);
       if (ENGINE_SOURCE.test(resolved.source)) return true;
-      const parameter = /^([A-Za-z_$][\w$]*)(?:\??\.[\w$]+)*$/.exec(resolved.source)?.[1];
+      const parameter = /^([A-Za-z_$][\w$]*)(?:\??\.[\w$]+|(?:\?\.)?\[\s*(?:'[^'\\\n]*'|"[^"\\\n]*"|[A-Za-z_$][\w$]*)\s*\])*$/.exec(resolved.source)?.[1];
       // A captured parameter belongs to the nearest enclosing function that
       // binds it, at the alias declaration rather than the eventual launch.
       const owner = definitionSpans(code).filter(([open, close]) => open <= resolved.position && resolved.position < close && parametersOf(open).includes(parameter)).pop();
@@ -1812,8 +1812,8 @@ test('every engine started through a runner or profile variable records its run 
     }
   }
   assert.deepStrictEqual(planted('spawnSync(resolveEngineProfile(\n  topic\n)\n  .bin, args);\n'), ['commands/planted.js:1 resolveEngineProfile(\n  topic\n)\n  .bin']);
-  // A declared or passed profile read with optional chaining is the same launch.
-  for (const member of ['?.bin', '?.runner?.command', '.runner?.bin']) {
+  // A declared or passed profile read through optional or bracketed members is the same launch.
+  for (const member of ['?.bin', '?.runner?.command', '.runner?.bin', "['bin']", '?.[ "command" ]', "['runner'].bin", '[key]']) {
     assert.deepStrictEqual(planted(`const profile = resolveEngineProfile(topic);\nspawnSync(profile${member}, args);\n`), [`commands/planted.js:2 profile${member}`]);
     assert.deepStrictEqual(planted(`const profile = resolveEngineProfile(topic);\nstartEngineRun(root);\nspawnSync(profile${member}, args);\n`), []);
     assert.deepStrictEqual(planted(`const profile = resolveEngineProfile(topic);\nspawnSync(profile${member}, ['--version']);\n`), []);
