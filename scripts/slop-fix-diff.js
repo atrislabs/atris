@@ -173,18 +173,23 @@ function oddMarks(source, fixed) {
 // ("**Body:**") ends the sentence, so a splice the writer put after a dash
 // is theirs in the source too, and a leading quote hides no opener.
 // A part that ends on a bare "when" or "if" still waits for its clause, so
-// "even when, especially when, it has" is no splice.
+// "even when, especially when, it has" is no splice. An opener right after
+// "that" opens the clause the comma ends the same way: "That means that if
+// you run long (if you train), it will not learn".
 const SPLICE = /,\s+(?:(?:it|we|they|he|she|I)(?:['\u2019](?:s|re|ll|ve|d|m))?\s+[a-z]|(?:this|that|these|those|there)(?:['\u2019]s|\s+(?:is|are|was|were|will|would|can|must|should|has|have)\b))/g;
 const OPENS_FIRST_HALF = /^(?:(?:but|and|so|yet|or|then)\s+)?(?:if|when|whenever|once|because|since|although|though|while|unless|until|after|before|as|(?:each|every|any)\s+time)\b/i;
 const SECOND_HALF = /,\s+(?:you|it|we|they|he|she|I)(?:['\u2019](?:s|re|ll|ve|d|m))?\s+[a-z]/;
 const SENTENCE_STOP = /[.!?;:|][*_"'\u201d\u2019)]*\s|\s*\u2014\s*|,\s+(?=(?:and|but|so|yet|or)\s)|\n(?=\s*(?:[-*+]|\d+[.)])\s)/;
+const THAT_OPENS_FIRST_HALF = /\bthat\s+(?:if|when|whenever|once|because|since|although|though|while|unless|until)\b/i;
 const WAITS_FOR_CLAUSE = /\b(?:if|when|whenever|once|because|since|although|though|while|unless|until)$/i;
 const NO_CLAUSE = /^(?:(?:hi|hello|hey|dear)\b.*|thanks|thank you|yes|no|ok|okay|sure|well|right)$/i;
 function splices(text) {
   let count = 0;
   for (const m of text.matchAll(SPLICE)) {
     const sentence = text.slice(0, m.index).split(SENTENCE_STOP).pop().replace(/^(?:[-*+>#|]\s*|\d+[.)]\s*|\*\*|__|["\u201c'(]\s*)*/, '').trim();
-    if (!(OPENS_FIRST_HALF.test(sentence) && !SECOND_HALF.test(sentence)) && !NO_CLAUSE.test(sentence) && !WAITS_FOR_CLAUSE.test(sentence)) count += 1;
+    const thatOpener = THAT_OPENS_FIRST_HALF.exec(sentence);
+    const firstHalf = (OPENS_FIRST_HALF.test(sentence) && !SECOND_HALF.test(sentence)) || (thatOpener && !SECOND_HALF.test(sentence.slice(thatOpener.index)));
+    if (!firstHalf && !NO_CLAUSE.test(sentence) && !WAITS_FOR_CLAUSE.test(sentence)) count += 1;
   }
   return count;
 }
