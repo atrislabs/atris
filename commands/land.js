@@ -532,9 +532,20 @@ function reapReason(w, board, ttlDays, force) {
   const state = (board.branches.find((b) => b.name === w.branch) || {}).state;
   if (state === 'landed') return 'branch_landed';
   if (state === 'due') return 'branch_past_ttl';
+  if (w.scratchCovered) return 'green_landing_scratch_left';
   if (w.state === 'detached') return 'detached_head';
   if (typeof w.ageDays === 'number' && w.ageDays > ttlDays) return 'worktree_past_ttl';
   return force ? 'forced' : 'unlanded_commits';
+}
+
+// A green landing scratch copy only ever holds a merge of the branch being
+// checked, so its own commits ride that branch. True when every commit it
+// holds, merges aside, is on a branch; any doubt keeps the copy.
+function greenScratchCovered(worktreePath) {
+  const { isGreenScratch } = require('../lib/land-green');
+  if (!isGreenScratch(worktreePath)) return false;
+  const off = runGit(['rev-list', '--no-merges', '--count', 'HEAD', '--not', '--branches'], { cwd: worktreePath, check: false });
+  return off.status === 0 && off.stdout.trim() === '0';
 }
 
 // Reap: salvage then delete everything landed (residue) or past TTL.
@@ -598,7 +609,8 @@ function reap(root, { ttlDays = DEFAULT_TTL_DAYS, staleHours = DEFAULT_STALE_HOU
     // A due/landed branch worktree still reaps normally, its commits ride the
     // branch bundle, so removal is loss-free.
     const bundleCovered = w.branch && targetNames.has(w.branch);
-    if (w.unlandedCommits > 0 && !force && !bundleCovered) {
+    if (w.unlandedCommits > 0 && !w.branch && greenScratchCovered(w.path)) w.scratchCovered = true;
+    if (w.unlandedCommits > 0 && !force && !bundleCovered && !w.scratchCovered) {
       const oldest = typeof w.ageDays === 'number' ? `, oldest ${w.ageDays}d` : '';
       protectedWorktrees.push({ ...w, reason: `unlanded commits: ${w.unlandedCommits} never landed${oldest}, needs landing` });
       continue;
