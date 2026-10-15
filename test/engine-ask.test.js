@@ -300,7 +300,7 @@ test('model-capable engines receive exact model flags without weakening read-onl
   assert.deepEqual(opencode.args.slice(0, 3), ['run', '--agent', 'plan'], 'OpenCode must enter headless run mode; otherwise the prompt is interpreted as a project path');
   assert.deepEqual(opencode.args.slice(3, 5), ['-m', 'opencode/big-pickle']);
 
-  for (const engine of ['atris-fast', 'claude', 'codex', 'cursor', 'fable', 'composer', 'haiku', 'devin', 'grok', 'agy', 'opencode']) {
+  for (const engine of ['atris-fast', 'mercury', 'claude', 'codex', 'cursor', 'fable', 'composer', 'haiku', 'devin', 'grok', 'agy', 'opencode']) {
     const invocation = buildReadOnlyEngineInvocation(engine, 'read only');
     assert.doesNotMatch(invocation.args.join(' '), /(?:^|\s)--worktree(?:\s|$)/);
     assert.match(invocation.args.join(' '), /Do not modify files/);
@@ -731,4 +731,11 @@ test('unsupported shorthand model fails before ask and names known-good examples
     console.error = originalError;
     fs.rmSync(root, { recursive: true, force: true });
   }
+});
+
+test('mercury engine ask launches the test model through ax', () => {
+  const invocation = buildReadOnlyEngineInvocation('mercury', 'hello');
+  assert.equal(invocation.bin, 'ax');
+  assert.deepEqual(invocation.args.slice(0, 3), ['--mercury', '--cloud', '--print']);
+  assert.match(invocation.args[3], /hello/);
 });

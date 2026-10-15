@@ -2349,3 +2349,17 @@ Lost-run cleanup error summary: `commands/autoland.js:895` keeps successful clos
 - `lib/member-up.js:73` shares recovery ownership and the five-minute cadence across windows and linked folders using the main checkout's `.atris/state/member-up-maintenance.lock` and `member-up-maintenance.json`. A live pid holds even past the short grace period; a dead pid or an old incomplete lock can be recovered. The saved waiting incident prints once after two hours without an observed queued merge, and resets after a merge or no waiting work.
 - `lib/member-up.js:48` refreshes only a clean detached plain clone, rechecks after fetching, and moves forward to `origin/master` without force. Named branches, linked folders, edited copies, and detached local work stay put.
 - `commands/member.js:10939` wires the shared pass to the actual project and to the folder running the CLI. Dry runs skip the pass. `test/member-up-watch.test.js:1` covers two real CLI windows, shared cadence, dead and live owners, safe clone updates, and warning resets. Verify: `node --test test/member-up-watch.test.js`.
+
+## Mercury 3 test model and the model picker
+
+`ax --mercury [--diffuse] "<prompt>"` follows `flags -> request -> snapshots replace -> final text -> stderr timing`.
+In `ax`: `modelForMode` maps the pinned model, `normalizeMode` keeps `model:<spec>` modes,
+`buildPayload` sends plain chat when diffusing, `renderTextSnapshot` draws a dim draft that wraps
+to the terminal width (capped at its height), and `clearTextSnapshot` clears it before the final text.
+Snapshots never enter the final output buffer; piped output ignores drafts.
+`/model` lists `MODEL_CHOICES` (numbered, current one marked); `modeForModelName` picks by number,
+unique name fragment, or full `provider:model`. `--model <name>` does the same from the command line.
+When the receipt names a different model than the one asked for, the chat prints a fell-back line.
+`lib/runner-command.js` pins the mercury profile and `lib/engine-registry.js` keeps it roster-only.
+Regression checks live in `test/ax.test.js`, `test/runner-command.test.js`, and `test/engine-ask.test.js`.
+Verify: `npm run test:fast && node --test test/ax.test.js test/runner-command.test.js`.
