@@ -12,6 +12,10 @@ const cliPath = path.join(repoRoot, 'bin', 'atris.js');
 
 const NOW = Date.parse('2026-10-13T12:00:00.000Z');
 const at = (secondsAgo) => new Date(NOW - secondsAgo * 1000).toISOString();
+// Live follow polls every 100ms under test, so a 400ms quiet wait spans
+// four polls where the default 1s poll needed 1.2s.
+const FOLLOW_ENV = { ATRIS_FOLLOW_POLL_MS: '100' };
+const QUIET_MS = 400;
 
 function fakeDir(files) {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'atris-board-'));
@@ -1654,7 +1658,7 @@ for (const pendingAtStartup of [false, true]) {
     const timeoutStart = `${timeoutAt} m-9 finished: failed (timed`;
     if (pendingAtStartup) fs.appendFileSync(path.join(dir, 'navigator.log'), timeoutStart);
     const child = spawn(process.execPath, [cliPath, 'member', 'board', '--json', '--follow'], {
-      cwd: dir, env: { ...process.env, ATRIS_PROGRESS_DIR: dir },
+      cwd: dir, env: { ...process.env, ...FOLLOW_ENV, ATRIS_PROGRESS_DIR: dir },
     });
     let out = '';
     let stderr = '';
@@ -1682,13 +1686,13 @@ for (const pendingAtStartup of [false, true]) {
 
       // Let both the watcher and its one-second fallback see an incomplete finish.
       if (!pendingAtStartup) fs.appendFileSync(path.join(dir, 'navigator.log'), timeoutStart);
-      await new Promise((r) => setTimeout(r, 1_200));
+      await new Promise((r) => setTimeout(r, QUIET_MS));
       assert.equal(lines().length, 1, 'an unfinished timeout must not emit an event');
       fs.appendFileSync(path.join(dir, 'navigator.log'), ' out)\n');
       const finished = await waitFor(2);
       assert.equal(finished.length, 2, out);
       assert.deepEqual(finished[1], { member: 'navigator', mission: 'm-9', at: timeoutAt, kind: 'finished', text: 'failed (timed out)', ok: false });
-      await new Promise((r) => setTimeout(r, 1_200));
+      await new Promise((r) => setTimeout(r, QUIET_MS));
       assert.equal(lines().length, 2, 'watch and polling must not duplicate the timeout');
 
       const now = new Date().toISOString();
@@ -1719,7 +1723,7 @@ for (const pendingAtStartup of [false, true]) {
     const split = line.indexOf(Buffer.from('🧭')) + 2;
     if (pendingAtStartup) fs.appendFileSync(log, line.subarray(0, split));
     const child = spawn(process.execPath, [cliPath, 'member', 'board', '--json', '--follow'], {
-      cwd: dir, env: { ...process.env, ATRIS_PROGRESS_DIR: dir },
+      cwd: dir, env: { ...process.env, ...FOLLOW_ENV, ATRIS_PROGRESS_DIR: dir },
     });
     // Decode pipe data across chunk boundaries as well as progress-file writes.
     child.stdout.setEncoding('utf8');
@@ -1741,12 +1745,12 @@ for (const pendingAtStartup of [false, true]) {
       assert.equal(snapshot.kind, 'snapshot');
       assert.equal(snapshot.members[0].step, '', 'an incomplete character stays out of the opening board');
       if (!pendingAtStartup) fs.appendFileSync(log, line.subarray(0, split));
-      await new Promise((r) => setTimeout(r, 1_200));
+      await new Promise((r) => setTimeout(r, QUIET_MS));
       assert.equal(records().length, 1, 'an incomplete character must not emit');
       fs.appendFileSync(log, line.subarray(split));
       const events = await receive(2);
       assert.deepEqual(events[1], { member: 'navigator', mission: 'm-unicode', at: stamp, kind: 'step', text });
-      await new Promise((r) => setTimeout(r, 1_200));
+      await new Promise((r) => setTimeout(r, QUIET_MS));
       assert.equal(records().length, 2, 'watching and polling emit the completed text only once');
       fs.appendFileSync(log, `${stamp} m-unicode finished: ok\n`);
       const finished = await receive(3);
@@ -1766,7 +1770,7 @@ test('live follow discards an unfinished old line when the log shrinks', async (
   const dir = fakeDir({ navigator: [`${stamp} m-old started: ${'old job '.repeat(30)}`] });
   const log = path.join(dir, 'navigator.log');
   const child = spawn(process.execPath, [cliPath, 'member', 'board', '--json', '--follow'], {
-    cwd: dir, env: { ...process.env, ATRIS_PROGRESS_DIR: dir },
+    cwd: dir, env: { ...process.env, ...FOLLOW_ENV, ATRIS_PROGRESS_DIR: dir },
   });
   child.stdout.setEncoding('utf8');
   let out = '';
@@ -1785,7 +1789,7 @@ test('live follow discards an unfinished old line when the log shrinks', async (
   try {
     assert.equal((await receive(1))[0].kind, 'snapshot');
     fs.appendFileSync(log, `${stamp} m-old finished: failed (timed`);
-    await new Promise((r) => setTimeout(r, 1_200));
+    await new Promise((r) => setTimeout(r, QUIET_MS));
     assert.equal(records().length, 1, 'the old partial result waits');
 
     // Keep the replacement shorter than the consumed opening line, so the
@@ -1793,7 +1797,7 @@ test('live follow discards an unfinished old line when the log shrinks', async (
     fs.writeFileSync(log, `${stamp} m-new started: next job\n${stamp} m-new reading fresh`);
     const started = await receive(2);
     assert.deepEqual(started[1], { member: 'navigator', mission: 'm-new', at: stamp, kind: 'started', text: 'next job' });
-    await new Promise((r) => setTimeout(r, 1_200));
+    await new Promise((r) => setTimeout(r, QUIET_MS));
     assert.equal(records().length, 2, 'the replacement partial line also waits');
     fs.appendFileSync(log, ' notes\n');
     const step = await receive(3);
@@ -1801,7 +1805,7 @@ test('live follow discards an unfinished old line when the log shrinks', async (
     fs.appendFileSync(log, `${stamp} m-new finished: ok\n`);
     const finished = await receive(4);
     assert.deepEqual(finished[3], { member: 'navigator', mission: 'm-new', at: stamp, kind: 'finished', text: 'ok', ok: true });
-    await new Promise((r) => setTimeout(r, 1_200));
+    await new Promise((r) => setTimeout(r, QUIET_MS));
     assert.equal(records().length, 4, 'watching and polling neither replay old text nor duplicate new events');
     if (process.env.ATRIS_BOARD_SHRINK_PROOF) {
       fs.writeFileSync(process.env.ATRIS_BOARD_SHRINK_PROOF,
@@ -1822,7 +1826,7 @@ test('live follow starts fresh when a missing log returns with split output', as
   const dir = fakeDir({ navigator: [`${stamp} m-old started: old job`] });
   const log = path.join(dir, 'navigator.log');
   const child = spawn(process.execPath, [cliPath, 'member', 'board', '--json', '--follow'], {
-    cwd: dir, env: { ...process.env, ATRIS_PROGRESS_DIR: dir },
+    cwd: dir, env: { ...process.env, ...FOLLOW_ENV, ATRIS_PROGRESS_DIR: dir },
   });
   child.stdout.setEncoding('utf8');
   let out = '';
@@ -1841,18 +1845,18 @@ test('live follow starts fresh when a missing log returns with split output', as
   try {
     assert.equal((await receive(1))[0].kind, 'snapshot');
     fs.appendFileSync(log, `${stamp} m-old finished: failed (timed`);
-    await new Promise((r) => setTimeout(r, 1_200));
+    await new Promise((r) => setTimeout(r, QUIET_MS));
     assert.equal(records().length, 1, 'the old partial result waits');
 
     fs.unlinkSync(log);
-    await new Promise((r) => setTimeout(r, 1_200));
+    await new Promise((r) => setTimeout(r, QUIET_MS));
     assert.equal(records().length, 1, 'a missing log emits no old partial result');
 
     // Exceed the old offset so recovery cannot depend on detecting a shrink.
     fs.writeFileSync(log, `${stamp} m-new started: ${'next job '.repeat(30).trim()}\n${stamp} m-new reading fresh`);
     const started = await receive(2);
     assert.deepEqual(started[1], { member: 'navigator', mission: 'm-new', at: stamp, kind: 'started', text: 'next job '.repeat(30).trim() });
-    await new Promise((r) => setTimeout(r, 1_200));
+    await new Promise((r) => setTimeout(r, QUIET_MS));
     assert.equal(records().length, 2, 'the replacement partial line also waits');
     fs.appendFileSync(log, ' notes\n');
     const step = await receive(3);
@@ -1860,7 +1864,7 @@ test('live follow starts fresh when a missing log returns with split output', as
     fs.appendFileSync(log, `${stamp} m-new finished: ok\n`);
     const finished = await receive(4);
     assert.deepEqual(finished[3], { member: 'navigator', mission: 'm-new', at: stamp, kind: 'finished', text: 'ok', ok: true });
-    await new Promise((r) => setTimeout(r, 1_200));
+    await new Promise((r) => setTimeout(r, QUIET_MS));
     assert.equal(records().length, 4, 'watching and polling neither replay old text nor duplicate new events');
     if (process.env.ATRIS_BOARD_RETURN_PROOF) {
       fs.writeFileSync(process.env.ATRIS_BOARD_RETURN_PROOF,
@@ -1881,7 +1885,7 @@ test('live follow detects an atomic same-size log replacement with split output'
   const dir = fakeDir({ navigator: [`${stamp} m-old started: ${'old job '.repeat(30)}`] });
   const log = path.join(dir, 'navigator.log');
   const child = spawn(process.execPath, [cliPath, 'member', 'board', '--json', '--follow'], {
-    cwd: dir, env: { ...process.env, ATRIS_PROGRESS_DIR: dir },
+    cwd: dir, env: { ...process.env, ...FOLLOW_ENV, ATRIS_PROGRESS_DIR: dir },
   });
   child.stdout.setEncoding('utf8');
   let out = '';
@@ -1900,7 +1904,7 @@ test('live follow detects an atomic same-size log replacement with split output'
   try {
     assert.equal((await receive(1))[0].kind, 'snapshot');
     fs.appendFileSync(log, `${stamp} m-old finished: failed (timed`);
-    await new Promise((r) => setTimeout(r, 1_200));
+    await new Promise((r) => setTimeout(r, QUIET_MS));
     assert.equal(records().length, 1, 'the old partial result waits');
 
     // Rename never leaves the path absent, and equal size cannot trip shrink
@@ -1916,7 +1920,7 @@ test('live follow detects an atomic same-size log replacement with split output'
     fs.renameSync(replacement, log);
     const started = await receive(2);
     assert.deepEqual(started[1], { member: 'navigator', mission: 'm-new', at: stamp, kind: 'started', text: job });
-    await new Promise((r) => setTimeout(r, 1_200));
+    await new Promise((r) => setTimeout(r, QUIET_MS));
     assert.equal(records().length, 2, 'the replacement partial line also waits');
     fs.appendFileSync(log, 'notes\n');
     const step = await receive(3);
@@ -1924,7 +1928,7 @@ test('live follow detects an atomic same-size log replacement with split output'
     fs.appendFileSync(log, `${stamp} m-new finished: ok\n`);
     const finished = await receive(4);
     assert.deepEqual(finished[3], { member: 'navigator', mission: 'm-new', at: stamp, kind: 'finished', text: 'ok', ok: true });
-    await new Promise((r) => setTimeout(r, 1_200));
+    await new Promise((r) => setTimeout(r, QUIET_MS));
     assert.equal(records().length, 4, 'watching and polling neither replay old text nor duplicate new events');
     if (process.env.ATRIS_BOARD_REPLACE_PROOF) {
       fs.writeFileSync(process.env.ATRIS_BOARD_REPLACE_PROOF,
@@ -2261,7 +2265,7 @@ test('live follow waits for split CRLF lines in a newly created log', async (t) 
   const stamp = new Date().toISOString();
   const log = path.join(dir, 'scout.log');
   const child = spawn(process.execPath, [cliPath, 'member', 'board', '--json', '--follow'], {
-    cwd: dir, env: { ...process.env, ATRIS_PROGRESS_DIR: dir },
+    cwd: dir, env: { ...process.env, ...FOLLOW_ENV, ATRIS_PROGRESS_DIR: dir },
   });
   child.stdout.setEncoding('utf8');
   let out = '';
@@ -2282,7 +2286,7 @@ test('live follow waits for split CRLF lines in a newly created log', async (t) 
     assert.equal(snapshot.kind, 'snapshot');
     assert.deepEqual(snapshot.members, []);
     fs.writeFileSync(log, `${stamp} m-new started: inspect new progress\r`);
-    await new Promise((r) => setTimeout(r, 1_200));
+    await new Promise((r) => setTimeout(r, QUIET_MS));
     assert.equal(records().length, 1, 'a new log ending with CR waits for LF');
     fs.appendFileSync(log, `\n${stamp} m-new reading notes\r\n${stamp} m-new finished: ok\r`);
     const batch = await receive(3);
@@ -2290,12 +2294,12 @@ test('live follow waits for split CRLF lines in a newly created log', async (t) 
       { member: 'scout', mission: 'm-new', at: stamp, kind: 'started', text: 'inspect new progress' },
       { member: 'scout', mission: 'm-new', at: stamp, kind: 'step', text: 'reading notes' },
     ]);
-    await new Promise((r) => setTimeout(r, 1_200));
+    await new Promise((r) => setTimeout(r, QUIET_MS));
     assert.equal(records().length, 3, 'complete lines emit once while the partial finish waits');
     fs.appendFileSync(log, '\n');
     const finished = await receive(4);
     assert.deepEqual(finished[3], { member: 'scout', mission: 'm-new', at: stamp, kind: 'finished', text: 'ok', ok: true });
-    await new Promise((r) => setTimeout(r, 1_200));
+    await new Promise((r) => setTimeout(r, QUIET_MS));
     assert.equal(records().length, 4, 'watching and polling do not repeat new-log events');
     child.kill('SIGINT');
     assert.equal(await done, 0, stderr);
@@ -2313,7 +2317,7 @@ test('live follow detects an in-place same-size log rewrite with split output', 
   const dir = fakeDir({ navigator: [`${stamp} m-old started: ${'old job '.repeat(30)}`] });
   const log = path.join(dir, 'navigator.log');
   const child = spawn(process.execPath, [cliPath, 'member', 'board', '--json', '--follow'], {
-    cwd: dir, env: { ...process.env, ATRIS_PROGRESS_DIR: dir },
+    cwd: dir, env: { ...process.env, ...FOLLOW_ENV, ATRIS_PROGRESS_DIR: dir },
   });
   child.stdout.setEncoding('utf8');
   let out = '';
@@ -2332,7 +2336,7 @@ test('live follow detects an in-place same-size log rewrite with split output', 
   try {
     assert.equal((await receive(1))[0].kind, 'snapshot');
     fs.appendFileSync(log, `${stamp} m-old finished: failed (timed`);
-    await new Promise((r) => setTimeout(r, 1_200));
+    await new Promise((r) => setTimeout(r, QUIET_MS));
     assert.equal(records().length, 1, 'the old partial result waits');
 
     // Keep both file identity and length, so neither rotation nor shrink
@@ -2347,7 +2351,7 @@ test('live follow detects an in-place same-size log rewrite with split output', 
     assert.equal(fs.statSync(log).ino, before.ino);
     const started = await receive(2);
     assert.deepEqual(started[1], { member: 'navigator', mission: 'm-new', at: stamp, kind: 'started', text: job });
-    await new Promise((r) => setTimeout(r, 1_200));
+    await new Promise((r) => setTimeout(r, QUIET_MS));
     assert.equal(records().length, 2, 'the replacement partial line also waits');
     fs.appendFileSync(log, 'notes\n');
     const step = await receive(3);
@@ -2355,7 +2359,7 @@ test('live follow detects an in-place same-size log rewrite with split output', 
     fs.appendFileSync(log, `${stamp} m-new finished: ok\n`);
     const finished = await receive(4);
     assert.deepEqual(finished[3], { member: 'navigator', mission: 'm-new', at: stamp, kind: 'finished', text: 'ok', ok: true });
-    await new Promise((r) => setTimeout(r, 1_200));
+    await new Promise((r) => setTimeout(r, QUIET_MS));
     assert.equal(records().length, 4, 'watching and polling neither replay old text nor duplicate new events');
     child.kill('SIGINT');
     assert.equal(await done, 0, stderr);
@@ -2373,7 +2377,7 @@ test('live follow detects an in-place log rewrite that grows past the reading po
   const dir = fakeDir({ navigator: [`${stamp} m-old started: old job`] });
   const log = path.join(dir, 'navigator.log');
   const child = spawn(process.execPath, [cliPath, 'member', 'board', '--json', '--follow'], {
-    cwd: dir, env: { ...process.env, ATRIS_PROGRESS_DIR: dir },
+    cwd: dir, env: { ...process.env, ...FOLLOW_ENV, ATRIS_PROGRESS_DIR: dir },
   });
   child.stdout.setEncoding('utf8');
   let out = '';
@@ -2403,7 +2407,7 @@ test('live follow detects an in-place log rewrite that grows past the reading po
     assert.equal(fs.statSync(log).ino, before.ino);
     const started = await receive(2);
     assert.deepEqual(started[1], { member: 'navigator', mission: 'm-new', at: stamp, kind: 'started', text: job });
-    await new Promise((r) => setTimeout(r, 1_200));
+    await new Promise((r) => setTimeout(r, QUIET_MS));
     assert.equal(records().length, 2, 'the grown partial line waits');
     fs.appendFileSync(log, 'notes\r\n');
     const step = await receive(3);
@@ -2411,7 +2415,7 @@ test('live follow detects an in-place log rewrite that grows past the reading po
     fs.appendFileSync(log, `${stamp} m-new finished: ok\n`);
     const finished = await receive(4);
     assert.deepEqual(finished[3], { member: 'navigator', mission: 'm-new', at: stamp, kind: 'finished', text: 'ok', ok: true });
-    await new Promise((r) => setTimeout(r, 1_200));
+    await new Promise((r) => setTimeout(r, QUIET_MS));
     assert.equal(records().length, 4, 'watching and polling neither replay old text nor duplicate new events');
     child.kill('SIGINT');
     assert.equal(await done, 0, stderr);
@@ -2632,7 +2636,7 @@ test('live follow streams a line written the moment the snapshot arrives, exactl
     const dir = fakeDir({ navigator: [`${stamp} m-1 started: ship it`] });
     const log = path.join(dir, 'navigator.log');
     const child = spawn(process.execPath, [cliPath, 'member', 'board', '--json', '--follow'], {
-      cwd: dir, env: { ...process.env, ATRIS_PROGRESS_DIR: dir },
+      cwd: dir, env: { ...process.env, ...FOLLOW_ENV, ATRIS_PROGRESS_DIR: dir },
     });
     child.stdout.setEncoding('utf8');
     let out = '';
@@ -2651,7 +2655,7 @@ test('live follow streams a line written the moment the snapshot arrives, exactl
     try {
       const until = Date.now() + 15_000;
       while (records().length < 2 && !closed && Date.now() < until) await new Promise((r) => setTimeout(r, 50));
-      await new Promise((r) => setTimeout(r, 1_200));
+      await new Promise((r) => setTimeout(r, QUIET_MS));
       const got = records();
       assert.equal(got[0].kind, 'snapshot', out);
       assert.equal(got[0].members[0].state, 'working', 'the snapshot ends before the new line');
@@ -2690,7 +2694,7 @@ test('live follow keeps split, replaced, new, and shortened logs written the mom
     const stamp = new Date().toISOString();
     const dir = fakeDir({ ana: [`${stamp} m-1 started: a long first job for ana here`] });
     const child = spawn(process.execPath, [cliPath, 'member', 'board', '--json', '--follow'], {
-      cwd: dir, env: { ...process.env, ATRIS_PROGRESS_DIR: dir },
+      cwd: dir, env: { ...process.env, ...FOLLOW_ENV, ATRIS_PROGRESS_DIR: dir },
     });
     child.stdout.setEncoding('utf8');
     let out = '';
@@ -2707,7 +2711,7 @@ test('live follow keeps split, replaced, new, and shortened logs written the mom
     try {
       const until = Date.now() + 15_000;
       while (records().length < 2 && !closed && Date.now() < until) await new Promise((r) => setTimeout(r, 50));
-      await new Promise((r) => setTimeout(r, 1_200));
+      await new Promise((r) => setTimeout(r, QUIET_MS));
       const got = records();
       assert.equal(got[0].kind, 'snapshot', `${label}: ${out}`);
       assert.deepEqual(got.slice(1), expected(stamp), `${label}: stdout=${out}; stderr=${stderr}`);
