@@ -298,3 +298,8 @@ We need the best \u2014 maybe the only \u2014 way out.
 # a closing double brace of a template slot ends a clause like a word
 Smaller on {{WEAKEST}} \u2014 that's the next round.
 => Smaller on {{WEAKEST}}; that's the next round.
+# "most" or "least" before an "ed" word starts a noun phrase, not a clause
+Our plan is set \u2014 the most requested features from users.
+=> Our plan is set, the most requested features from users.
+We looked again \u2014 the best part comes from the tests.
+=> We looked again; the best part comes from the tests.
