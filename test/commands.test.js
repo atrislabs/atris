@@ -15633,23 +15633,24 @@ test('task review lanes block weak golden-path mission XP proof from accept', ()
     }, null, 2), 'utf8');
 
     const strongProof = 'zero-papercut end-to-end fresh install -> init -> first mission -> first self-landed task receipt: atris/runs/bookkeeping.json';
-    const created = runCli([
-      'task', 'new',
-      'Mission XP: Golden path zero-knowledge fresh-laptop pass',
-      '--tag', 'agent-xp',
-      '--goal-id', 'mission-golden-path',
-      '--json',
-    ], { cwd: dir, env });
-    assert.equal(created.status, 0, created.stderr);
-    const task = JSON.parse(created.stdout).task;
+    // Seed creation and ownership; readiness, review and acceptance gates stay on the CLI.
+    const task = (() => {
+      const db = taskStore.open(dbPath);
+      try {
+        const workspaceRoot = taskStore.workspaceRoot(dir);
+        const { id } = addSeedTask(db, {
+          title: 'Mission XP: Golden path zero-knowledge fresh-laptop pass',
+          tag: 'agent-xp',
+          workspaceRoot,
+          metadata: { goal_id: 'mission-golden-path' },
+        });
+        assert.equal(taskStore.claimTask(db, { id, claimedBy: 'onboarding' }).claimed, true);
+        return { id, display_id: taskStore.taskDisplayRefMap(taskStore.listTasks(db, { workspaceRoot })).get(id) };
+      } finally {
+        taskStore.close();
+      }
+    })();
     const ref = task.display_id;
-    // Seed ownership; readiness, review and acceptance gates stay on the CLI.
-    const db = taskStore.open(dbPath);
-    try {
-      assert.equal(taskStore.claimTask(db, { id: task.id, claimedBy: 'onboarding' }).claimed, true);
-    } finally {
-      taskStore.close();
-    }
     assert.equal(runCli(['task', 'ready', ref, '--as', 'onboarding', '--proof', strongProof, '--json'], { cwd: dir, env }).status, 0);
     assert.equal(runCli(['task', 'review', ref, '--reward', '0', '--as', 'codex-review', '--proof', strongProof, '--json'], { cwd: dir, env }).status, 0);
 

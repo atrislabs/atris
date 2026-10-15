@@ -2593,3 +2593,7 @@ Review queue filter creation fixture: `test/commands.test.js:15238` seeds both g
 ## Stale proof routing creation fixture
 
 - `test/commands.test.js:15419` seeds creation at `test/commands.test.js:15427` with the same title, tag, workspace and goal, resolves the display reference and closes in finally. CLI launches fall from ten to nine; readiness, review, status, filtered current reads, reviews, dry-run acceptance and current-step refusal retain every assertion.
+
+## Weak proof review creation fixture
+
+- `test/commands.test.js:15636` uses addSeedTask with the original title, tag, workspace and goal; production ownership and display-reference resolution share the connection, closed in finally. Seven CLI calls become six; all readiness, review, queue/current selection and acceptance assertions remain.
