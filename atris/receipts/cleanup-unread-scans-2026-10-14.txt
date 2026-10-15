@@ -1,0 +1,27 @@
+Cleanup now reports unreadable scans through its final safety check, verified by 130 passing checks and a real denied-process cleanup command, exit 0.
+
+Files edited: lib/engine-resource.js, commands/engine.js, test/engine-resource.test.js, atris/MAP.md, atris/refs/MAP-NOTES.md, atris/team/executor/logs/2026-10-14.md, this receipt. Existing atris/TODO.md changes are not staged.
+Plan: initial scan -> final safety scan -> report both missing readers; incomplete final scan -> unknown remaining count.
+
+Failing-first command: node --test --test-name-pattern='cleanup reports' test/engine-resource.test.js
+Exit: 1. Both new tests failed because cleanup output omitted the warning.
+
+Rerunnable verification: node --test test/engine-resource.test.js test/engine-dispatch.test.js
+Exit: 0. tests 130; pass 130; fail 0; skipped 0.
+An intermediate full run exposed the existing clean-result shape contract; keeping unread absent from clean helper returns fixed it.
+
+Real command: /usr/bin/sandbox-exec -p '(version 1)(allow default)(deny process-exec (literal "/bin/ps"))' node bin/atris.js engine sweep --apply
+Exit: 0.
+Output:
+stopped 0 leaked ssh-agents
+closed 0 runs whose parent is gone
+could not read the process list for every process, so some ssh-agents could not be checked; the leak count may be incomplete
+
+Real CLI regression also checks JSON and saved history: unread names process list, remaining leak count is null, no agents stopped.
+Read-only second-agent review approved the code and tests. git diff --check passed, exit 0.
+Brain activation and compile were invoked; installed CLI returned plan-only, exit 2, without writing generated policy files.
+Metric: two failing-first regressions added, 130 checks passed, initial and final scan warnings preserved, unknown final counts remain unknown.
+next_push: show unreadable agent scans in the hourly cleanup summary instead of staying quiet when nothing could be checked.
+layer: capabilities
+
+Readiness: proof-only submission was rejected because readiness requires its own command invocation. Re-ran through readiness using PATH=/opt/homebrew/bin:$PATH node --test test/engine-resource.test.js test/engine-dispatch.test.js, exit 0; proof is in Review. The path prefix avoids the known unsupported login-shell Node 20 runtime. Automatic certification cannot rerun this prefixed command; independent read-only review approved the source. No human acceptance performed.

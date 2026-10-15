@@ -1,0 +1,29 @@
+Unreadable engine run log proof, 2026-10-14
+
+Before: a run log that existed but could not be read looked the same as an
+empty one, so lost-run cleanup reported nothing to close.
+After: a missing log still means no runs. A log that exists and cannot be read
+stops the close; the hourly summary warns, and the engine sweep prints the
+read error beside the agents it stopped and exits 1.
+
+Failing-first command:
+node --test --test-name-pattern='unreadable run log' test/engine-resource.test.js
+Before, hourly part: exit 1, actual undefined, expected the read error.
+Before, sweep part: exit 1, Error: could not read the engine run log: EISDIR (the sweep crashed).
+After: exit 0, pass 1.
+
+Real CLI, temp project whose run log is a folder; a preload empties only the
+ssh-agent process list so no real agent is stopped:
+node --require no-agents.cjs bin/atris.js engine sweep --apply
+Output: stopped 0 leaked ssh-agents
+Output: could not close lost runs, so unfinished records may remain: could not read the engine run log: EISDIR
+Exit: 1.
+Same with --json: close_error: could not read the engine run log: EISDIR, closed_runs: 0. Exit: 1.
+
+Frozen check: node --test test/engine-resource.test.js test/engine-dispatch.test.js
+Output: tests 142; pass 142; fail 0. Exit: 0.
+git diff --check: exit 0, no output.
+Slop scan of changed code and map files: clean.
+
+Not changed: the landing status and the sweep listing still read history
+through the same scanner and show an unreadable log as no history.

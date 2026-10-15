@@ -1,0 +1,24 @@
+# scratch workspace; roster build worker is claude; a stand-in claude on the path kills itself
+$ atris link "a sled" "a dog"
+link: the engine did not answer: stopped by SIGKILL; killed (cause unknown)
+exit 1
+
+$ atris engine ask --engine claude "say hi"
+engine ask started: atris/runs/engine-ask-20261014165529726-5910-48826c27.json
+watch: atris engine watch engine-ask-20261014165529726-5910-48826c27
+
+claude (claude)
+failed: stopped by SIGKILL; killed (cause unknown)
+
+summary:
+  claude (claude): failed
+
+receipt: atris/runs/engine-ask-20261014165529726-5910-48826c27.json
+
+exit 1
+
+$ atris engine roster --runs
+recent runs, newest first
+oct 14 09:55  ask claude: claude claude-opus-5-5 (0s, cap 2 min), failed, stopped by SIGKILL; killed (cause unknown)
+oct 14 09:55  ask link: claude (0s, cap 3 min), failed, stopped by SIGKILL; killed (cause unknown)
+exit 0

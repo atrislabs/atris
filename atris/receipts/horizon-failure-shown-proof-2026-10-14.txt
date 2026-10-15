@@ -1,0 +1,17 @@
+# scratch workspace: empty TODO, one commit, runner that kills itself
+$ ATRIS_RUNNER_BIN=sh ATRIS_RUNNER_COMMAND_TEMPLATE='sh -c "kill -KILL $$"' atris autopilot --legacy --auto --dry-run --iterations=1
+  9:10 am
+  I am starting an autopilot tick in autonomous mode. Limit: 1 task.
+  Horizon: (no endgame active, feed inbox or /endgame).
+  No tagged endgame steps are queued right now.
+  Next I will scan the workspace and choose one task.
+
+  I found no work this tick.
+  I could not ask the engine for new work: horizon-proposal phase killed by SIGKILL before the 600s wall, not a timeout; killed (cause unknown)
+
+  Next I will stop until a new signal appears.
+
+  Autopilot finished.
+  It completed 0 tasks in 0s.
+
+exit 0

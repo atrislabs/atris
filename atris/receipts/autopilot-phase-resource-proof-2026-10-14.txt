@@ -1,0 +1,24 @@
+Autopilot phase machine readings proof, 2026-10-14
+
+Before the change: the new regression failed because an autopilot phase wrote no resource log at all.
+
+After the change, a plain node process outside the test runner, in a temporary project:
+  thrown: do phase killed by SIGKILL before the 5s wall, not a timeout; killed (cause unknown); check memory pressure or an external supervisor
+  start: engine runner, task autopilot do, free_pct 80, load [2.78,3.58,4.12], leaked_ssh_agents 549
+  end: same run_id, duration_ms 7, signal SIGKILL, cause killed (cause unknown)
+  exit 0
+
+$ /opt/homebrew/bin/node --test test/engine-resource.test.js test/engine-dispatch.test.js
+  ℹ tests 100
+  ℹ pass 100
+  ℹ fail 0
+  exit 0
+$ /opt/homebrew/bin/node --test test/autopilot*.test.js
+  ℹ tests 120
+  ℹ pass 120
+  ℹ fail 0
+  exit 0
+The real project resource log gained no test lines.
+
+$ git diff --check
+  exit 0

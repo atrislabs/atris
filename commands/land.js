@@ -1011,6 +1011,8 @@ function showHelp() {
   console.log('  atris land --auto --dry-run    show which branch would be tried and why');
   console.log('  atris land --auto --verify "<cmd>" --limit <n>');
   console.log('                                 change the check (default: npm test) or the cap');
+  console.log('  atris land --requeue           put member changes github dropped from its');
+  console.log('                                 merge line back in, caught up with master');
   console.log('  atris land --ttl <days>        change the 7-day overdue line');
   console.log('  atris land --json              machine-readable output');
   console.log('');
@@ -1046,6 +1048,20 @@ function landCommand(args = []) {
       });
       if (json) console.log(JSON.stringify(result, null, 2));
       else console.log(`green landing: ${summaryLine(result)}`);
+      return 0;
+    } catch (err) {
+      return finishLandError(err, json);
+    }
+  }
+
+  if (args.includes('--requeue')) {
+    try {
+      const result = require('../lib/member-autoland').requeueDroppedAutolands({ cwd: root });
+      if (json) console.log(JSON.stringify(result, null, 2));
+      else {
+        console.log(`merge line: ${result.line}`);
+        for (const r of result.results) console.log(`  ${r.line}`);
+      }
       return 0;
     } catch (err) {
       return finishLandError(err, json);

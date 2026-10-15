@@ -1290,3 +1290,287 @@ test('runDispatchFlight ship args explicitly target HEAD when no remote mainline
     fs.rmSync(tmpRoot, { recursive: true, force: true });
   }
 });
+
+test('a run killed by its own time limit names the time limit as the cause', () => {
+  const root = makeTempRoot();
+  require('node:child_process').spawnSync('git', ['init', '-q', root], { encoding: 'utf8' });
+  const worktree = fs.mkdtempSync(path.join(os.tmpdir(), 'engine-dispatch-wt-'));
+  try {
+    const timedOut = fleet.dispatchToEngine({
+      task: TASK,
+      engine: 'claude',
+      worktreePath: worktree,
+      root,
+      skipBriefCapture: true,
+      runner: () => ({ status: null, signal: 'SIGKILL', stdout: '', stderr: '', error: Object.assign(new Error('spawn ETIMEDOUT'), { code: 'ETIMEDOUT' }) }),
+    });
+    const [, end] = fs.readFileSync(path.join(root, '.atris', 'state', 'engine-resource.jsonl'), 'utf8').trim().split('\n').map(JSON.parse);
+    assert.equal(end.signal, 'SIGKILL');
+    assert.equal(end.timed_out, true);
+    assert.equal(end.cause, 'killed (time limit reached)');
+    assert.equal(timedOut.timed_out, true);
+    assert.equal(timedOut.kill_cause, 'killed (time limit reached)');
+  } finally {
+    fs.rmSync(root, { recursive: true, force: true });
+    fs.rmSync(worktree, { recursive: true, force: true });
+  }
+});
+
+test('every engine run writes a start and end machine line, and a SIGKILL names its likely cause', () => {
+  const root = makeTempRoot();
+  require('node:child_process').spawnSync('git', ['init', '-q', root], { encoding: 'utf8' });
+  const worktree = fs.mkdtempSync(path.join(os.tmpdir(), 'engine-dispatch-wt-'));
+  const log =path.join(root, '.atris', 'state', 'engine-resource.jsonl');
+  const readLines = () => fs.readFileSync(log, 'utf8').trim().split('\n').map((line) => JSON.parse(line));
+  try {
+    let linesWhileRunning = [];
+    const killed = fleet.dispatchToEngine({
+      task: TASK,
+      engine: 'claude',
+      worktreePath: worktree,
+      root,
+      skipBriefCapture: true,
+      runner: () => {
+        linesWhileRunning = readLines();
+        return { status: 137, stdout: '', stderr: '' };
+      },
+    });
+    assert.deepEqual(linesWhileRunning.map((line) => line.phase), ['start']);
+    const [start, end] = readLines();
+    assert.match(start.run_id, /^[0-9a-f-]{36}$/);
+    assert.equal(end.run_id, start.run_id);
+    assert.equal(start.engine, 'claude');
+    assert.equal(start.task, 'CLI-900');
+    assert.ok(Array.isArray(start.load));
+    // Process environments come from ps -E, which only macOS has, so
+    // elsewhere the count stays unknown rather than a guess.
+    if (process.platform === 'darwin') assert.ok(Number.isInteger(start.leaked_ssh_agents) && start.leaked_ssh_agents >= 0);
+    else assert.ok(start.leaked_ssh_agents === null || (Number.isInteger(start.leaked_ssh_agents) && start.leaked_ssh_agents >= 0));
+    assert.equal(end.phase, 'end');
+    assert.equal(end.signal, 'SIGKILL');
+    assert.match(end.cause, /^killed \((machine memory low|cause unknown)\)$/);
+    assert.equal(killed.kill_cause, end.cause);
+
+    const clean = fleet.dispatchToEngine({
+      task: TASK,
+      engine: 'claude',
+      worktreePath: worktree,
+      root,
+      skipBriefCapture: true,
+      runner: () => ({ status: 0, stdout: 'done', stderr: '' }),
+    });
+    const lines = readLines();
+    assert.equal(lines.length, 4);
+    assert.equal(lines[3].phase, 'end');
+    assert.notEqual(lines[2].run_id, start.run_id);
+    assert.equal(lines[3].run_id, lines[2].run_id);
+    assert.equal(lines[3].signal, undefined);
+    assert.equal(lines[3].cause, undefined);
+    assert.equal(clean.kill_cause, undefined);
+  } finally {
+    fs.rmSync(root, { recursive: true, force: true });
+    fs.rmSync(worktree, { recursive: true, force: true });
+  }
+});
+
+test('overlapping runs of the same engine and task keep distinct resource pairs', async () => {
+  const { execFile, execFileSync } = require('node:child_process');
+  const root = makeTempRoot();
+  execFileSync('git', ['init', '-q', root]);
+  const worktree = fs.mkdtempSync(path.join(os.tmpdir(), 'engine-dispatch-wt-'));
+  let firstChild;
+  let firstRun;
+  try {
+    const options = { task: TASK, engine: 'claude', root, worktreePath: worktree, skipBriefCapture: true };
+    firstRun = fleet.dispatchToEngine({ ...options, runner: () => new Promise((resolve, reject) => {
+      firstChild = execFile(process.execPath, ['-e', 'process.stdin.resume(); process.stdin.on("end", () => process.exit(0))'], (error, stdout, stderr) => {
+        if (error) reject(error);
+        else resolve({ status: 0, stdout, stderr });
+      });
+    }) });
+    fleet.dispatchToEngine({ ...options, runner: () => ({
+      status: 0, stdout: execFileSync(process.execPath, ['-e', 'console.log("done")'], { encoding: 'utf8' }), stderr: '',
+    }) });
+    firstChild.stdin.end();
+    await firstRun;
+    const lines = fs.readFileSync(path.join(root, '.atris/state/engine-resource.jsonl'), 'utf8')
+      .trim().split('\n').map(JSON.parse);
+    assert.deepEqual(lines.map((line) => line.phase), ['start', 'start', 'end', 'end']);
+    assert.match(lines[0].run_id, /^[0-9a-f-]{36}$/);
+    assert.match(lines[1].run_id, /^[0-9a-f-]{36}$/);
+    assert.notEqual(lines[0].run_id, lines[1].run_id);
+    assert.equal(lines[2].run_id, lines[1].run_id);
+    assert.equal(lines[3].run_id, lines[0].run_id);
+  } finally {
+    if (firstChild) firstChild.stdin.end();
+    if (firstRun) await firstRun;
+    fs.rmSync(root, { recursive: true, force: true });
+    fs.rmSync(worktree, { recursive: true, force: true });
+  }
+});
+
+test('thrown and rejected engine runners save end resources and preserve the original error', async (t) => {
+  const { execFile, execFileSync } = require('node:child_process');
+  const execFileAsync = require('node:util').promisify(execFile);
+  for (const asynchronous of [false, true]) {
+    await t.test(asynchronous ? 'rejected child process' : 'thrown child process', async () => {
+      const root = makeTempRoot();
+      execFileSync('git', ['init', '-q', root]);
+      const worktree = fs.mkdtempSync(path.join(os.tmpdir(), 'engine-dispatch-wt-'));
+      let originalError;
+      try {
+        const invoke = () => fleet.dispatchToEngine({
+          task: TASK, engine: 'claude', worktreePath: worktree, root, skipBriefCapture: true,
+          runner: () => {
+            const args = ['-e', 'process.kill(process.pid, "SIGKILL")'];
+            if (asynchronous) {
+              return execFileAsync(process.execPath, args).catch((error) => {
+                originalError = error;
+                throw error;
+              });
+            }
+            try {
+              return execFileSync(process.execPath, args, { stdio: 'pipe' });
+            } catch (error) {
+              originalError = error;
+              throw error;
+            }
+          },
+        });
+        if (asynchronous) await assert.rejects(invoke, (error) => error === originalError);
+        else assert.throws(invoke, (error) => error === originalError);
+        const lines = fs.readFileSync(path.join(root, '.atris/state/engine-resource.jsonl'), 'utf8')
+          .trim().split('\n').map(JSON.parse);
+        assert.deepEqual(lines.map((line) => line.phase), ['start', 'end']);
+        assert.match(lines[0].run_id, /^[0-9a-f-]{36}$/);
+        assert.equal(lines[1].run_id, lines[0].run_id);
+        const end = lines[1];
+        assert.strictEqual(lines[0].duration_ms, undefined);
+        assert.ok(Number.isInteger(end.duration_ms) && end.duration_ms >= 0);
+        assert.equal(end.engine, 'claude');
+        assert.equal(end.task, TASK.display_id);
+        assert.ok(Array.isArray(end.load));
+        assert.equal(end.signal, 'SIGKILL');
+        assert.match(end.cause, /^killed \((machine memory low|cause unknown)\)$/);
+      } finally {
+        fs.rmSync(root, { recursive: true, force: true });
+        fs.rmSync(worktree, { recursive: true, force: true });
+      }
+    });
+  }
+});
+
+test('an engine that cannot start keeps its startup error in the end resources', async (t) => {
+  const { execFile, execFileSync, spawnSync } = require('node:child_process');
+  const missing = path.join(os.tmpdir(), `atris-missing-engine-${process.pid}`);
+  const shapes = {
+    thrown: () => execFileSync(missing, [], { stdio: 'pipe' }),
+    rejected: () => require('node:util').promisify(execFile)(missing, []),
+    returned: () => spawnSync(missing, [], { encoding: 'utf8' }),
+  };
+  for (const [shape, start] of Object.entries(shapes)) {
+    await t.test(`${shape} startup failure`, async () => {
+      const root = makeTempRoot();
+      execFileSync('git', ['init', '-q', root]);
+      const worktree = fs.mkdtempSync(path.join(os.tmpdir(), 'engine-dispatch-startup-'));
+      let original;
+      try {
+        try {
+          const run = await fleet.dispatchToEngine({
+            task: TASK, engine: 'claude', worktreePath: worktree, root, skipBriefCapture: true,
+            runner: () => {
+              try {
+                const result = start();
+                if (result && typeof result.then === 'function') return result.catch((error) => { original = error; throw error; });
+                original = result.error;
+                return result;
+              } catch (error) {
+                original = error;
+                throw error;
+              }
+            },
+          });
+          assert.equal(shape, 'returned', `${shape}: dispatch must surface the failure`);
+          assert.equal(run.exitCode, null);
+        } catch (error) {
+          assert.strictEqual(error, original, `${shape}: the original error must be rethrown`);
+        }
+        assert.equal(original && original.code, 'ENOENT', `${shape}: the engine must really fail to start`);
+        const lines = fs.readFileSync(path.join(root, '.atris/state/engine-resource.jsonl'), 'utf8')
+          .trim().split('\n').map(JSON.parse);
+        assert.deepEqual(lines.map((line) => line.phase), ['start', 'end']);
+        const [first, end] = lines;
+        assert.equal(end.run_id, first.run_id);
+        assert.strictEqual(first.error, undefined);
+        assert.strictEqual(end.error, original.message, `${shape}: the end reading must keep the startup error`);
+        assert.ok(Array.isArray(end.load));
+        console.log(`${shape} startup failure end reading: ${JSON.stringify(end)}`);
+      } finally {
+        fs.rmSync(root, { recursive: true, force: true });
+        fs.rmSync(worktree, { recursive: true, force: true });
+      }
+    });
+  }
+});
+
+test('a thrown child timeout records the known time limit cause before rethrowing', () => {
+  const { execFileSync } = require('node:child_process');
+  const root = makeTempRoot();
+  execFileSync('git', ['init', '-q', root]);
+  const worktree = fs.mkdtempSync(path.join(os.tmpdir(), 'engine-dispatch-timeout-'));
+  let originalError;
+  try {
+    assert.throws(() => fleet.dispatchToEngine({
+      task: TASK, engine: 'claude', worktreePath: worktree, root, skipBriefCapture: true,
+      runner: () => {
+        try {
+          return execFileSync(process.execPath, ['-e', 'setInterval(() => {}, 1000)'], {
+            timeout: 100, killSignal: 'SIGKILL', stdio: 'pipe',
+          });
+        } catch (error) {
+          originalError = error;
+          throw error;
+        }
+      },
+    }), (error) => error === originalError && error.code === 'ETIMEDOUT');
+    const lines = fs.readFileSync(path.join(root, '.atris/state/engine-resource.jsonl'), 'utf8')
+      .trim().split('\n').map(JSON.parse);
+    assert.deepEqual(lines.map((line) => line.phase), ['start', 'end']);
+    const [start, end] = lines;
+    assert.equal(end.run_id, start.run_id);
+    assert.equal(end.signal, 'SIGKILL');
+    assert.equal(end.timed_out, true);
+    assert.equal(end.cause, 'killed (time limit reached)');
+    assert.ok(Array.isArray(end.load));
+    assert.ok(end.duration_ms >= 100);
+    console.log(`real child timeout: ${JSON.stringify(end)}`);
+  } finally {
+    fs.rmSync(root, { recursive: true, force: true });
+    fs.rmSync(worktree, { recursive: true, force: true });
+  }
+});
+
+test('final resources measure a real child run in milliseconds', async () => {
+  const { execFile, execFileSync } = require('node:child_process');
+  const root = makeTempRoot();
+  execFileSync('git', ['init', '-q', root]);
+  const worktree = fs.mkdtempSync(path.join(os.tmpdir(), 'engine-dispatch-duration-'));
+  try {
+    await fleet.dispatchToEngine({
+      task: TASK, engine: 'claude', worktreePath: worktree, root, skipBriefCapture: true,
+      runner: () => new Promise((resolve, reject) => {
+        execFile(process.execPath, ['-e', 'setTimeout(() => console.log("done"), 50)'], (error, stdout, stderr) => {
+          if (error) reject(error);
+          else resolve({ status: 0, stdout, stderr });
+        });
+      }),
+    });
+    const [start, end] = fs.readFileSync(path.join(root, '.atris/state/engine-resource.jsonl'), 'utf8').trim().split('\n').map(JSON.parse);
+    assert.strictEqual(start.duration_ms, undefined);
+    assert.ok(Number.isInteger(end.duration_ms) && end.duration_ms >= 50);
+    assert.strictEqual(end.run_id, start.run_id);
+  } finally {
+    fs.rmSync(root, { recursive: true, force: true });
+    fs.rmSync(worktree, { recursive: true, force: true });
+  }
+});
