@@ -22,6 +22,7 @@ const STATE_ORDER = ['needs_you', 'running', 'queued', 'paused', 'resting', 'out
 function printHelp() {
   console.log('Usage:');
   console.log('  atris campaign                         every campaign: state, money, and the next move');
+  console.log('  atris campaign new "<goal>" [--budget 20] [--owner <member>] [--yes]   draft a judge that fails today, then start');
   console.log('  atris campaign start "<title>" --judge "<cmd>" --budget <dollars>');
   console.log('        [--owner <member>] [--seat <member>[:<role>]]... [--bet "<bet>" [--wrong-if "<what proves it wrong>"]]');
   console.log('        [--standing] [--parent <id>] [--id cmp-<name>] [--cloud]');
@@ -541,6 +542,8 @@ const VERBS = {
   run: (args, ctx) => cmdLoop(args, ctx, 'run'),
   step: (args, ctx) => cmdLoop(args, ctx, 'step'),
   propose: (args, ctx) => cmdLoop(args, ctx, 'propose'),
+  // atris campaign new "<goal>": the owner's engine drafts a judge that fails today (lib/campaign-new.js).
+  new: (args, ctx) => require('../lib/campaign-new').draftAndStart(args, ctx, { start: cmdStart, goal: positionals(args)[1], ask: ctx.loopDeps && ctx.loopDeps.ask }),
   export: (args, ctx) => require('../lib/campaign-trace').exportTrace(args, ctx),
 };
 
