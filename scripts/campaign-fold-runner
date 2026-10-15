@@ -1,0 +1,27 @@
+#!/usr/bin/env node
+// The CLI's campaign conformance runner (computer, kind "fold").
+// Protocol: test/fixtures/campaign/README.md "Surfaces and the judge".
+'use strict';
+
+const fs = require('fs');
+const path = require('path');
+const { fold, decide } = require('../lib/campaign-core');
+
+const dir = process.argv[2];
+if (!dir) {
+  process.stderr.write('usage: scripts/campaign-fold-runner <fixtures-dir>\n');
+  process.exit(2);
+}
+
+const results = {};
+let decideOut = [];
+for (const file of fs.readdirSync(dir).filter((f) => f.endsWith('.json')).sort()) {
+  if (file === 'MANIFEST.json') continue;
+  const golden = JSON.parse(fs.readFileSync(path.join(dir, file), 'utf8'));
+  if (file === 'decide-cases.json') {
+    decideOut = golden.cases.map((c) => decide(c.view));
+    continue;
+  }
+  results[golden.name] = fold(golden.events);
+}
+process.stdout.write(JSON.stringify({ surface: 'cli', kind: 'fold', results, decide: decideOut }) + '\n');

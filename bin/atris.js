@@ -546,6 +546,7 @@ function helpCatalog() {
     { name: 'review', summary: 'validate work and capture learnings', json: false, interactive_risk: 'low' },
     { name: 'recap', summary: 'spoken recap of what your team did', json: true, interactive_risk: 'low' },
     { name: 'mission', summary: 'durable goal + owner + verifier + tick', json: true, interactive_risk: 'medium' },
+    { name: 'campaign', summary: 'long goal + judge + budget + seats, made of missions', json: true, interactive_risk: 'low' },
     { name: 'log', summary: 'append an idea to today inbox (or --repl)', json: true, interactive_risk: 'low' },
     { name: 'wish', summary: 'headless inbox / mission intake', json: true, interactive_risk: 'low' },
     { name: 'learn', summary: 'structured project learnings', json: false, interactive_risk: 'low' },
@@ -636,6 +637,7 @@ function showHelpAll() {
   console.log('    atris autoland tick   # second check runs, task lands');
   console.log('  mission    - Goal + loop + member owner + verifier + receipt; --budget quick|long|deep sets bounded tiers');
   console.log('  decide     - Answer open mission asks and send the decision to the next tick');
+  console.log('  campaign   - Long-running goals with a judge, a budget, and members in seats');
   console.log('  release    - Tag release, bump version, create GitHub release, draft /launch; atris release preflight before a v* tag');
   console.log('  learn      - Project learnings (patterns, pitfalls, preferences)');
   console.log('  study      - On-demand learning feed: ingest topic, start server, open browser');
@@ -2012,6 +2014,10 @@ if (command === 'guide') {
     .catch((err) => { console.error(`\n✗ Error: ${err.message || err}`); process.exit(1); });
 } else if (command === 'team') {
   Promise.resolve(require('../commands/team').teamCommand(process.argv.slice(3)))
+    .then((code) => process.exit(code || 0))
+    .catch((err) => { console.error(`\nerror: ${err.message || err}`); process.exit(1); });
+} else if (command === 'campaign') {
+  Promise.resolve(require('../commands/campaign').campaignCommand(process.argv.slice(3)))
     .then((code) => process.exit(code || 0))
     .catch((err) => { console.error(`\nerror: ${err.message || err}`); process.exit(1); });
 } else if (command === 'who') {

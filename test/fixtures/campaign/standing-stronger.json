@@ -1,0 +1,111 @@
+{
+  "name": "standing-stronger",
+  "about": "A standing campaign with three passes in a row after a fail has confidence stronger and stays resting, never done.",
+  "events": [
+    {
+      "id": "evt-0001",
+      "campaign_id": "cmp-ship",
+      "type": "campaign_started",
+      "at": "2026-10-15T10:00:00Z",
+      "origin": "laptop",
+      "seq": 1,
+      "actor": "human:keshav",
+      "data": {
+        "title": "Keep the app healthy",
+        "judge": "npm run health",
+        "budget": 100,
+        "standing": true
+      }
+    },
+    {
+      "id": "evt-0002",
+      "campaign_id": "cmp-ship",
+      "type": "judge_ran",
+      "at": "2026-10-15T10:01:00Z",
+      "origin": "laptop",
+      "seq": 2,
+      "actor": "judge",
+      "data": {
+        "passed": false,
+        "summary": "health 30%",
+        "reading": 0.3
+      }
+    },
+    {
+      "id": "evt-0003",
+      "campaign_id": "cmp-ship",
+      "type": "judge_ran",
+      "at": "2026-10-15T10:02:00Z",
+      "origin": "laptop",
+      "seq": 3,
+      "actor": "judge",
+      "data": {
+        "passed": true,
+        "summary": "health 80%",
+        "reading": 0.8
+      }
+    },
+    {
+      "id": "evt-0004",
+      "campaign_id": "cmp-ship",
+      "type": "judge_ran",
+      "at": "2026-10-15T10:03:00Z",
+      "origin": "laptop",
+      "seq": 4,
+      "actor": "judge",
+      "data": {
+        "passed": true,
+        "summary": "health 85%",
+        "reading": 0.85
+      }
+    },
+    {
+      "id": "evt-0005",
+      "campaign_id": "cmp-ship",
+      "type": "judge_ran",
+      "at": "2026-10-15T10:04:00Z",
+      "origin": "laptop",
+      "seq": 5,
+      "actor": "judge",
+      "data": {
+        "passed": true,
+        "summary": "health 90%",
+        "reading": 0.9
+      }
+    }
+  ],
+  "expected": {
+    "id": "cmp-ship",
+    "title": "Keep the app healthy",
+    "judge": "npm run health",
+    "owner": "mission-lead",
+    "standing": true,
+    "bet": null,
+    "parent": null,
+    "home": "laptop",
+    "created_from": null,
+    "seats": [],
+    "state": "resting",
+    "stop_reason": null,
+    "answer": {
+      "text": "health 90%",
+      "confidence": "stronger"
+    },
+    "budget": {
+      "total": 100,
+      "spent": 0,
+      "reserved": 0,
+      "available": 100
+    },
+    "asks": [],
+    "missions": [],
+    "judge_runs": 4,
+    "judge_due": false,
+    "last_judge": {
+      "passed": true,
+      "reading": 0.9,
+      "at": "2026-10-15T10:04:00Z"
+    },
+    "warnings": []
+  }
+}

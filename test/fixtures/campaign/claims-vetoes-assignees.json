@@ -1,0 +1,295 @@
+{
+  "name": "claims-vetoes-assignees",
+  "about": "Duplicate claim key drops the second mission; a non-owner veto only warns while the owner and a human veto work; a different member starting an assigned mission warns second_assignee and keeps the member; starting a memberless mission sets its member.",
+  "events": [
+    {
+      "id": "evt-0001",
+      "campaign_id": "cmp-ship",
+      "type": "campaign_started",
+      "at": "2026-10-15T10:00:00Z",
+      "origin": "laptop",
+      "seq": 1,
+      "actor": "human:keshav",
+      "data": {
+        "title": "Ship campaign core",
+        "judge": "npm run validate:campaign",
+        "budget": 100,
+        "owner": "lead"
+      }
+    },
+    {
+      "id": "evt-0002",
+      "campaign_id": "cmp-ship",
+      "type": "mission_proposed",
+      "at": "2026-10-15T10:01:00Z",
+      "origin": "laptop",
+      "seq": 2,
+      "actor": "builder",
+      "data": {
+        "mission_id": "m1",
+        "member": "builder"
+      }
+    },
+    {
+      "id": "evt-0003",
+      "campaign_id": "cmp-ship",
+      "type": "mission_proposed",
+      "at": "2026-10-15T10:02:00Z",
+      "origin": "laptop",
+      "seq": 3,
+      "actor": "validator",
+      "data": {
+        "mission_id": "m2",
+        "member": "validator"
+      }
+    },
+    {
+      "id": "evt-0004",
+      "campaign_id": "cmp-ship",
+      "type": "mission_proposed",
+      "at": "2026-10-15T10:03:00Z",
+      "origin": "laptop",
+      "seq": 4,
+      "actor": "builder",
+      "data": {
+        "mission_id": "m3",
+        "member": "builder"
+      }
+    },
+    {
+      "id": "evt-0005",
+      "campaign_id": "cmp-ship",
+      "type": "mission_proposed",
+      "at": "2026-10-15T10:04:00Z",
+      "origin": "laptop",
+      "seq": 5,
+      "actor": "scout",
+      "data": {
+        "mission_id": "m5"
+      }
+    },
+    {
+      "id": "evt-0006",
+      "campaign_id": "cmp-ship",
+      "type": "mission_proposed",
+      "at": "2026-10-15T10:05:00Z",
+      "origin": "laptop",
+      "seq": 6,
+      "actor": "scout",
+      "data": {
+        "mission_id": "m6"
+      }
+    },
+    {
+      "id": "evt-0007",
+      "campaign_id": "cmp-ship",
+      "type": "mission_claimed",
+      "at": "2026-10-15T10:06:00Z",
+      "origin": "laptop",
+      "seq": 7,
+      "actor": "builder",
+      "data": {
+        "mission_id": "m1",
+        "claim_key": "k-wire"
+      }
+    },
+    {
+      "id": "evt-0008",
+      "campaign_id": "cmp-ship",
+      "type": "mission_claimed",
+      "at": "2026-10-15T10:07:00Z",
+      "origin": "laptop",
+      "seq": 8,
+      "actor": "validator",
+      "data": {
+        "mission_id": "m2",
+        "claim_key": "k-wire"
+      }
+    },
+    {
+      "id": "evt-0009",
+      "campaign_id": "cmp-ship",
+      "type": "mission_claimed",
+      "at": "2026-10-15T10:08:00Z",
+      "origin": "laptop",
+      "seq": 9,
+      "actor": "scout",
+      "data": {
+        "mission_id": "m4",
+        "claim_key": "k-fresh"
+      }
+    },
+    {
+      "id": "evt-0010",
+      "campaign_id": "cmp-ship",
+      "type": "mission_vetoed",
+      "at": "2026-10-15T10:09:00Z",
+      "origin": "laptop",
+      "seq": 10,
+      "actor": "builder",
+      "data": {
+        "mission_id": "m3"
+      }
+    },
+    {
+      "id": "evt-0011",
+      "campaign_id": "cmp-ship",
+      "type": "mission_vetoed",
+      "at": "2026-10-15T10:10:00Z",
+      "origin": "laptop",
+      "seq": 11,
+      "actor": "lead",
+      "data": {
+        "mission_id": "m3"
+      }
+    },
+    {
+      "id": "evt-0012",
+      "campaign_id": "cmp-ship",
+      "type": "mission_vetoed",
+      "at": "2026-10-15T10:11:00Z",
+      "origin": "laptop",
+      "seq": 12,
+      "actor": "human:keshav",
+      "data": {
+        "mission_id": "m5"
+      }
+    },
+    {
+      "id": "evt-0013",
+      "campaign_id": "cmp-ship",
+      "type": "mission_started",
+      "at": "2026-10-15T10:12:00Z",
+      "origin": "laptop",
+      "seq": 13,
+      "actor": "validator",
+      "data": {
+        "mission_id": "m1",
+        "member": "validator"
+      }
+    },
+    {
+      "id": "evt-0014",
+      "campaign_id": "cmp-ship",
+      "type": "mission_started",
+      "at": "2026-10-15T10:13:00Z",
+      "origin": "laptop",
+      "seq": 14,
+      "actor": "scout",
+      "data": {
+        "mission_id": "m6",
+        "member": "scout"
+      }
+    }
+  ],
+  "expected": {
+    "id": "cmp-ship",
+    "title": "Ship campaign core",
+    "judge": "npm run validate:campaign",
+    "owner": "lead",
+    "standing": false,
+    "bet": null,
+    "parent": null,
+    "home": "laptop",
+    "created_from": null,
+    "seats": [],
+    "state": "running",
+    "stop_reason": null,
+    "answer": {
+      "text": null,
+      "confidence": "open"
+    },
+    "budget": {
+      "total": 100,
+      "spent": 0,
+      "reserved": 0,
+      "available": 100
+    },
+    "asks": [],
+    "missions": [
+      {
+        "id": "m1",
+        "member": "builder",
+        "status": "running",
+        "outcome": null,
+        "cost_usd": null,
+        "estimate_usd": null,
+        "steps": 0,
+        "kept": 0,
+        "reverted": 0
+      },
+      {
+        "id": "m2",
+        "member": "validator",
+        "status": "dropped",
+        "outcome": null,
+        "cost_usd": null,
+        "estimate_usd": null,
+        "steps": 0,
+        "kept": 0,
+        "reverted": 0
+      },
+      {
+        "id": "m3",
+        "member": "builder",
+        "status": "vetoed",
+        "outcome": null,
+        "cost_usd": null,
+        "estimate_usd": null,
+        "steps": 0,
+        "kept": 0,
+        "reverted": 0
+      },
+      {
+        "id": "m5",
+        "member": null,
+        "status": "vetoed",
+        "outcome": null,
+        "cost_usd": null,
+        "estimate_usd": null,
+        "steps": 0,
+        "kept": 0,
+        "reverted": 0
+      },
+      {
+        "id": "m6",
+        "member": "scout",
+        "status": "running",
+        "outcome": null,
+        "cost_usd": null,
+        "estimate_usd": null,
+        "steps": 0,
+        "kept": 0,
+        "reverted": 0
+      },
+      {
+        "id": "m4",
+        "member": null,
+        "status": "claimed",
+        "outcome": null,
+        "cost_usd": null,
+        "estimate_usd": null,
+        "steps": 0,
+        "kept": 0,
+        "reverted": 0
+      }
+    ],
+    "judge_runs": 0,
+    "judge_due": true,
+    "last_judge": null,
+    "warnings": [
+      {
+        "event_id": "evt-0008",
+        "code": "duplicate_claim"
+      },
+      {
+        "event_id": "evt-0010",
+        "code": "veto_not_owner"
+      },
+      {
+        "event_id": "evt-0013",
+        "code": "second_assignee"
+      }
+    ]
+  }
+}

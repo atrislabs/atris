@@ -1,0 +1,759 @@
+{
+  "cases": [
+    {
+      "about": "finished campaign: nothing to do, even with an open ask and a due judge",
+      "view": {
+        "id": "cmp-ship",
+        "title": "Ship campaign core",
+        "judge": "npm run validate:campaign",
+        "owner": "mission-lead",
+        "standing": false,
+        "bet": null,
+        "parent": null,
+        "home": "laptop",
+        "created_from": null,
+        "seats": [],
+        "state": "done",
+        "stop_reason": "judge_passed",
+        "answer": {
+          "text": null,
+          "confidence": "open"
+        },
+        "budget": {
+          "total": 100,
+          "spent": 10,
+          "reserved": 0,
+          "available": 90
+        },
+        "asks": [
+          {
+            "id": "a1",
+            "question": "q",
+            "mission_id": null
+          }
+        ],
+        "missions": [],
+        "judge_runs": 0,
+        "judge_due": true,
+        "last_judge": null,
+        "warnings": []
+      },
+      "expected": {
+        "action": "none",
+        "reason": "finished"
+      }
+    },
+    {
+      "about": "out of budget",
+      "view": {
+        "id": "cmp-ship",
+        "title": "Ship campaign core",
+        "judge": "npm run validate:campaign",
+        "owner": "mission-lead",
+        "standing": false,
+        "bet": null,
+        "parent": null,
+        "home": "laptop",
+        "created_from": null,
+        "seats": [],
+        "state": "out_of_budget",
+        "stop_reason": "budget_spent",
+        "answer": {
+          "text": null,
+          "confidence": "open"
+        },
+        "budget": {
+          "total": 10,
+          "spent": 10,
+          "reserved": 0,
+          "available": 0
+        },
+        "asks": [],
+        "missions": [],
+        "judge_runs": 0,
+        "judge_due": true,
+        "last_judge": null,
+        "warnings": []
+      },
+      "expected": {
+        "action": "none",
+        "reason": "budget spent"
+      }
+    },
+    {
+      "about": "paused",
+      "view": {
+        "id": "cmp-ship",
+        "title": "Ship campaign core",
+        "judge": "npm run validate:campaign",
+        "owner": "mission-lead",
+        "standing": false,
+        "bet": null,
+        "parent": null,
+        "home": "laptop",
+        "created_from": null,
+        "seats": [],
+        "state": "paused",
+        "stop_reason": null,
+        "answer": {
+          "text": null,
+          "confidence": "open"
+        },
+        "budget": {
+          "total": 100,
+          "spent": 0,
+          "reserved": 0,
+          "available": 100
+        },
+        "asks": [],
+        "missions": [],
+        "judge_runs": 0,
+        "judge_due": true,
+        "last_judge": null,
+        "warnings": []
+      },
+      "expected": {
+        "action": "none",
+        "reason": "paused"
+      }
+    },
+    {
+      "about": "open asks come before a due judge, ask ids in view order",
+      "view": {
+        "id": "cmp-ship",
+        "title": "Ship campaign core",
+        "judge": "npm run validate:campaign",
+        "owner": "mission-lead",
+        "standing": false,
+        "bet": null,
+        "parent": null,
+        "home": "laptop",
+        "created_from": null,
+        "seats": [],
+        "state": "needs_you",
+        "stop_reason": null,
+        "answer": {
+          "text": null,
+          "confidence": "open"
+        },
+        "budget": {
+          "total": 100,
+          "spent": 0,
+          "reserved": 0,
+          "available": 100
+        },
+        "asks": [
+          {
+            "id": "a1",
+            "question": "q1",
+            "mission_id": null
+          },
+          {
+            "id": "a2",
+            "question": "q2",
+            "mission_id": "m1"
+          }
+        ],
+        "missions": [
+          {
+            "id": "m1",
+            "member": "builder",
+            "status": "claimed",
+            "outcome": null,
+            "cost_usd": null,
+            "estimate_usd": 1,
+            "steps": 0,
+            "kept": 0,
+            "reverted": 0
+          }
+        ],
+        "judge_runs": 0,
+        "judge_due": true,
+        "last_judge": null,
+        "warnings": []
+      },
+      "expected": {
+        "action": "wait",
+        "reason": "open asks",
+        "asks": [
+          "a1",
+          "a2"
+        ]
+      }
+    },
+    {
+      "about": "judge due beats a claimed mission that would fit",
+      "view": {
+        "id": "cmp-ship",
+        "title": "Ship campaign core",
+        "judge": "npm run validate:campaign",
+        "owner": "mission-lead",
+        "standing": false,
+        "bet": null,
+        "parent": null,
+        "home": "laptop",
+        "created_from": null,
+        "seats": [],
+        "state": "queued",
+        "stop_reason": null,
+        "answer": {
+          "text": null,
+          "confidence": "open"
+        },
+        "budget": {
+          "total": 100,
+          "spent": 0,
+          "reserved": 0,
+          "available": 100
+        },
+        "asks": [],
+        "missions": [
+          {
+            "id": "m1",
+            "member": "builder",
+            "status": "claimed",
+            "outcome": null,
+            "cost_usd": null,
+            "estimate_usd": 1,
+            "steps": 0,
+            "kept": 0,
+            "reverted": 0
+          }
+        ],
+        "judge_runs": 0,
+        "judge_due": true,
+        "last_judge": null,
+        "warnings": []
+      },
+      "expected": {
+        "action": "run_judge"
+      }
+    },
+    {
+      "about": "judge due beats a running mission",
+      "view": {
+        "id": "cmp-ship",
+        "title": "Ship campaign core",
+        "judge": "npm run validate:campaign",
+        "owner": "mission-lead",
+        "standing": false,
+        "bet": null,
+        "parent": null,
+        "home": "laptop",
+        "created_from": null,
+        "seats": [],
+        "state": "running",
+        "stop_reason": null,
+        "answer": {
+          "text": null,
+          "confidence": "open"
+        },
+        "budget": {
+          "total": 100,
+          "spent": 5,
+          "reserved": 0,
+          "available": 95
+        },
+        "asks": [],
+        "missions": [
+          {
+            "id": "m1",
+            "member": "builder",
+            "status": "running",
+            "outcome": null,
+            "cost_usd": null,
+            "estimate_usd": null,
+            "steps": 0,
+            "kept": 0,
+            "reverted": 0
+          }
+        ],
+        "judge_runs": 0,
+        "judge_due": true,
+        "last_judge": null,
+        "warnings": []
+      },
+      "expected": {
+        "action": "run_judge"
+      }
+    },
+    {
+      "about": "first claimed mission whose estimate fits: m1 (20) does not fit 10 available, m2 (null = 0) does; a proposed mission is skipped",
+      "view": {
+        "id": "cmp-ship",
+        "title": "Ship campaign core",
+        "judge": "npm run validate:campaign",
+        "owner": "mission-lead",
+        "standing": false,
+        "bet": null,
+        "parent": null,
+        "home": "laptop",
+        "created_from": null,
+        "seats": [],
+        "state": "queued",
+        "stop_reason": null,
+        "answer": {
+          "text": null,
+          "confidence": "open"
+        },
+        "budget": {
+          "total": 100,
+          "spent": 80,
+          "reserved": 10,
+          "available": 10
+        },
+        "asks": [],
+        "missions": [
+          {
+            "id": "m0",
+            "member": "builder",
+            "status": "proposed",
+            "outcome": null,
+            "cost_usd": null,
+            "estimate_usd": 1,
+            "steps": 0,
+            "kept": 0,
+            "reverted": 0
+          },
+          {
+            "id": "m1",
+            "member": "builder",
+            "status": "claimed",
+            "outcome": null,
+            "cost_usd": null,
+            "estimate_usd": 20,
+            "steps": 0,
+            "kept": 0,
+            "reverted": 0
+          },
+          {
+            "id": "m2",
+            "member": "builder",
+            "status": "claimed",
+            "outcome": null,
+            "cost_usd": null,
+            "estimate_usd": null,
+            "steps": 0,
+            "kept": 0,
+            "reverted": 0
+          },
+          {
+            "id": "m3",
+            "member": "builder",
+            "status": "claimed",
+            "outcome": null,
+            "cost_usd": null,
+            "estimate_usd": 5,
+            "steps": 0,
+            "kept": 0,
+            "reverted": 0
+          }
+        ],
+        "judge_runs": 1,
+        "judge_due": false,
+        "last_judge": {
+          "passed": false,
+          "reading": 0.1,
+          "at": "2026-10-15T10:01:00Z"
+        },
+        "warnings": []
+      },
+      "expected": {
+        "action": "start_mission",
+        "mission_id": "m2"
+      }
+    },
+    {
+      "about": "estimate equal to available fits",
+      "view": {
+        "id": "cmp-ship",
+        "title": "Ship campaign core",
+        "judge": "npm run validate:campaign",
+        "owner": "mission-lead",
+        "standing": false,
+        "bet": null,
+        "parent": null,
+        "home": "laptop",
+        "created_from": null,
+        "seats": [],
+        "state": "queued",
+        "stop_reason": null,
+        "answer": {
+          "text": null,
+          "confidence": "open"
+        },
+        "budget": {
+          "total": 100,
+          "spent": 90,
+          "reserved": 0,
+          "available": 10
+        },
+        "asks": [],
+        "missions": [
+          {
+            "id": "m1",
+            "member": "builder",
+            "status": "claimed",
+            "outcome": null,
+            "cost_usd": null,
+            "estimate_usd": 10,
+            "steps": 0,
+            "kept": 0,
+            "reverted": 0
+          }
+        ],
+        "judge_runs": 1,
+        "judge_due": false,
+        "last_judge": {
+          "passed": false,
+          "reading": 0.1,
+          "at": "2026-10-15T10:01:00Z"
+        },
+        "warnings": []
+      },
+      "expected": {
+        "action": "start_mission",
+        "mission_id": "m1"
+      }
+    },
+    {
+      "about": "claimed missions exist but none fits",
+      "view": {
+        "id": "cmp-ship",
+        "title": "Ship campaign core",
+        "judge": "npm run validate:campaign",
+        "owner": "mission-lead",
+        "standing": false,
+        "bet": null,
+        "parent": null,
+        "home": "laptop",
+        "created_from": null,
+        "seats": [],
+        "state": "queued",
+        "stop_reason": null,
+        "answer": {
+          "text": null,
+          "confidence": "open"
+        },
+        "budget": {
+          "total": 100,
+          "spent": 80,
+          "reserved": 10,
+          "available": 10
+        },
+        "asks": [],
+        "missions": [
+          {
+            "id": "m1",
+            "member": "builder",
+            "status": "claimed",
+            "outcome": null,
+            "cost_usd": null,
+            "estimate_usd": 50,
+            "steps": 0,
+            "kept": 0,
+            "reverted": 0
+          },
+          {
+            "id": "m2",
+            "member": "builder",
+            "status": "claimed",
+            "outcome": null,
+            "cost_usd": null,
+            "estimate_usd": 11,
+            "steps": 0,
+            "kept": 0,
+            "reverted": 0
+          }
+        ],
+        "judge_runs": 1,
+        "judge_due": false,
+        "last_judge": {
+          "passed": false,
+          "reading": 0.1,
+          "at": "2026-10-15T10:01:00Z"
+        },
+        "warnings": []
+      },
+      "expected": {
+        "action": "wait",
+        "reason": "budget"
+      }
+    },
+    {
+      "about": "null estimate counts as 0 and does not fit negative available",
+      "view": {
+        "id": "cmp-ship",
+        "title": "Ship campaign core",
+        "judge": "npm run validate:campaign",
+        "owner": "mission-lead",
+        "standing": false,
+        "bet": null,
+        "parent": null,
+        "home": "laptop",
+        "created_from": null,
+        "seats": [],
+        "state": "queued",
+        "stop_reason": null,
+        "answer": {
+          "text": null,
+          "confidence": "open"
+        },
+        "budget": {
+          "total": 10,
+          "spent": 0,
+          "reserved": 13,
+          "available": -3
+        },
+        "asks": [],
+        "missions": [
+          {
+            "id": "m1",
+            "member": "builder",
+            "status": "claimed",
+            "outcome": null,
+            "cost_usd": null,
+            "estimate_usd": null,
+            "steps": 0,
+            "kept": 0,
+            "reverted": 0
+          }
+        ],
+        "judge_runs": 1,
+        "judge_due": false,
+        "last_judge": {
+          "passed": false,
+          "reading": 0.1,
+          "at": "2026-10-15T10:01:00Z"
+        },
+        "warnings": []
+      },
+      "expected": {
+        "action": "wait",
+        "reason": "budget"
+      }
+    },
+    {
+      "about": "claimed missions that do not fit wait on budget even while another mission runs",
+      "view": {
+        "id": "cmp-ship",
+        "title": "Ship campaign core",
+        "judge": "npm run validate:campaign",
+        "owner": "mission-lead",
+        "standing": false,
+        "bet": null,
+        "parent": null,
+        "home": "laptop",
+        "created_from": null,
+        "seats": [],
+        "state": "running",
+        "stop_reason": null,
+        "answer": {
+          "text": null,
+          "confidence": "open"
+        },
+        "budget": {
+          "total": 100,
+          "spent": 95,
+          "reserved": 0,
+          "available": 5
+        },
+        "asks": [],
+        "missions": [
+          {
+            "id": "m1",
+            "member": "builder",
+            "status": "running",
+            "outcome": null,
+            "cost_usd": null,
+            "estimate_usd": null,
+            "steps": 0,
+            "kept": 0,
+            "reverted": 0
+          },
+          {
+            "id": "m2",
+            "member": "builder",
+            "status": "claimed",
+            "outcome": null,
+            "cost_usd": null,
+            "estimate_usd": 30,
+            "steps": 0,
+            "kept": 0,
+            "reverted": 0
+          }
+        ],
+        "judge_runs": 1,
+        "judge_due": false,
+        "last_judge": {
+          "passed": false,
+          "reading": 0.1,
+          "at": "2026-10-15T10:01:00Z"
+        },
+        "warnings": []
+      },
+      "expected": {
+        "action": "wait",
+        "reason": "budget"
+      }
+    },
+    {
+      "about": "a mission is running and nothing is claimed",
+      "view": {
+        "id": "cmp-ship",
+        "title": "Ship campaign core",
+        "judge": "npm run validate:campaign",
+        "owner": "mission-lead",
+        "standing": false,
+        "bet": null,
+        "parent": null,
+        "home": "laptop",
+        "created_from": null,
+        "seats": [],
+        "state": "running",
+        "stop_reason": null,
+        "answer": {
+          "text": null,
+          "confidence": "open"
+        },
+        "budget": {
+          "total": 100,
+          "spent": 5,
+          "reserved": 0,
+          "available": 95
+        },
+        "asks": [],
+        "missions": [
+          {
+            "id": "m1",
+            "member": "builder",
+            "status": "running",
+            "outcome": null,
+            "cost_usd": null,
+            "estimate_usd": null,
+            "steps": 0,
+            "kept": 0,
+            "reverted": 0
+          },
+          {
+            "id": "m2",
+            "member": "builder",
+            "status": "proposed",
+            "outcome": null,
+            "cost_usd": null,
+            "estimate_usd": 2,
+            "steps": 0,
+            "kept": 0,
+            "reverted": 0
+          }
+        ],
+        "judge_runs": 1,
+        "judge_due": false,
+        "last_judge": {
+          "passed": false,
+          "reading": 0.1,
+          "at": "2026-10-15T10:01:00Z"
+        },
+        "warnings": []
+      },
+      "expected": {
+        "action": "wait",
+        "reason": "missions running"
+      }
+    },
+    {
+      "about": "only proposed missions: propose",
+      "view": {
+        "id": "cmp-ship",
+        "title": "Ship campaign core",
+        "judge": "npm run validate:campaign",
+        "owner": "mission-lead",
+        "standing": false,
+        "bet": null,
+        "parent": null,
+        "home": "laptop",
+        "created_from": null,
+        "seats": [],
+        "state": "queued",
+        "stop_reason": null,
+        "answer": {
+          "text": null,
+          "confidence": "open"
+        },
+        "budget": {
+          "total": 100,
+          "spent": 5,
+          "reserved": 0,
+          "available": 95
+        },
+        "asks": [],
+        "missions": [
+          {
+            "id": "m1",
+            "member": "builder",
+            "status": "proposed",
+            "outcome": null,
+            "cost_usd": null,
+            "estimate_usd": 2,
+            "steps": 0,
+            "kept": 0,
+            "reverted": 0
+          }
+        ],
+        "judge_runs": 1,
+        "judge_due": false,
+        "last_judge": {
+          "passed": false,
+          "reading": 0.1,
+          "at": "2026-10-15T10:01:00Z"
+        },
+        "warnings": []
+      },
+      "expected": {
+        "action": "propose",
+        "reason": "no missions queued"
+      }
+    },
+    {
+      "about": "nothing at all and the judge is current: propose",
+      "view": {
+        "id": "cmp-ship",
+        "title": "Ship campaign core",
+        "judge": "npm run validate:campaign",
+        "owner": "mission-lead",
+        "standing": false,
+        "bet": null,
+        "parent": null,
+        "home": "laptop",
+        "created_from": null,
+        "seats": [],
+        "state": "resting",
+        "stop_reason": null,
+        "answer": {
+          "text": null,
+          "confidence": "open"
+        },
+        "budget": {
+          "total": 100,
+          "spent": 0,
+          "reserved": 0,
+          "available": 100
+        },
+        "asks": [],
+        "missions": [],
+        "judge_runs": 1,
+        "judge_due": false,
+        "last_judge": {
+          "passed": false,
+          "reading": 0.1,
+          "at": "2026-10-15T10:01:00Z"
+        },
+        "warnings": []
+      },
+      "expected": {
+        "action": "propose",
+        "reason": "no missions queued"
+      }
+    }
+  ]
+}

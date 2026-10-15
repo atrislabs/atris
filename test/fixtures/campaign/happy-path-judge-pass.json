@@ -1,0 +1,234 @@
+{
+  "name": "happy-path-judge-pass",
+  "about": "A non-standing campaign runs two missions, the judge fails once, then passes, and the campaign finishes as done with judge_passed and answered.",
+  "events": [
+    {
+      "id": "evt-0001",
+      "campaign_id": "cmp-ship",
+      "type": "campaign_started",
+      "at": "2026-10-15T10:00:00Z",
+      "origin": "laptop",
+      "seq": 1,
+      "actor": "human:keshav",
+      "data": {
+        "title": "Ship campaign core",
+        "judge": "npm run validate:campaign",
+        "budget": 500,
+        "seats": [
+          "builder",
+          {
+            "member": "validator",
+            "role": "checker"
+          }
+        ],
+        "bet": "Mostly wiring. Wrong if phase 10 needs a new runner.",
+        "created_from": "wish-12"
+      }
+    },
+    {
+      "id": "evt-0002",
+      "campaign_id": "cmp-ship",
+      "type": "mission_proposed",
+      "at": "2026-10-15T10:01:00Z",
+      "origin": "laptop",
+      "seq": 2,
+      "actor": "builder",
+      "data": {
+        "mission_id": "m1",
+        "member": "builder",
+        "estimate_usd": 3
+      }
+    },
+    {
+      "id": "evt-0003",
+      "campaign_id": "cmp-ship",
+      "type": "mission_claimed",
+      "at": "2026-10-15T10:02:00Z",
+      "origin": "laptop",
+      "seq": 3,
+      "actor": "builder",
+      "data": {
+        "mission_id": "m1",
+        "claim_key": "wire-store"
+      }
+    },
+    {
+      "id": "evt-0004",
+      "campaign_id": "cmp-ship",
+      "type": "mission_started",
+      "at": "2026-10-15T10:03:00Z",
+      "origin": "laptop",
+      "seq": 4,
+      "actor": "builder",
+      "data": {
+        "mission_id": "m1",
+        "member": "builder"
+      }
+    },
+    {
+      "id": "evt-0005",
+      "campaign_id": "cmp-ship",
+      "type": "mission_ended",
+      "at": "2026-10-15T10:10:00Z",
+      "origin": "laptop",
+      "seq": 5,
+      "actor": "builder",
+      "data": {
+        "mission_id": "m1",
+        "outcome": "kept",
+        "cost_usd": 2.25
+      }
+    },
+    {
+      "id": "evt-0006",
+      "campaign_id": "cmp-ship",
+      "type": "judge_ran",
+      "at": "2026-10-15T10:11:00Z",
+      "origin": "laptop",
+      "seq": 6,
+      "actor": "judge",
+      "data": {
+        "passed": false,
+        "reading": 0.4,
+        "summary": "3 of 8 checks pass"
+      }
+    },
+    {
+      "id": "evt-0007",
+      "campaign_id": "cmp-ship",
+      "type": "mission_proposed",
+      "at": "2026-10-15T10:12:00Z",
+      "origin": "laptop",
+      "seq": 7,
+      "actor": "builder",
+      "data": {
+        "mission_id": "m2",
+        "member": "builder",
+        "estimate_usd": 2
+      }
+    },
+    {
+      "id": "evt-0008",
+      "campaign_id": "cmp-ship",
+      "type": "mission_claimed",
+      "at": "2026-10-15T10:13:00Z",
+      "origin": "laptop",
+      "seq": 8,
+      "actor": "builder",
+      "data": {
+        "mission_id": "m2",
+        "claim_key": "fix-checks"
+      }
+    },
+    {
+      "id": "evt-0009",
+      "campaign_id": "cmp-ship",
+      "type": "mission_started",
+      "at": "2026-10-15T10:14:00Z",
+      "origin": "laptop",
+      "seq": 9,
+      "actor": "builder",
+      "data": {
+        "mission_id": "m2",
+        "member": "builder"
+      }
+    },
+    {
+      "id": "evt-0010",
+      "campaign_id": "cmp-ship",
+      "type": "mission_ended",
+      "at": "2026-10-15T10:30:00Z",
+      "origin": "laptop",
+      "seq": 10,
+      "actor": "builder",
+      "data": {
+        "mission_id": "m2",
+        "outcome": "kept",
+        "cost_usd": 1.5
+      }
+    },
+    {
+      "id": "evt-0011",
+      "campaign_id": "cmp-ship",
+      "type": "judge_ran",
+      "at": "2026-10-15T10:31:00Z",
+      "origin": "laptop",
+      "seq": 11,
+      "actor": "judge",
+      "data": {
+        "passed": true,
+        "reading": 1,
+        "summary": "8 of 8 checks pass"
+      }
+    }
+  ],
+  "expected": {
+    "id": "cmp-ship",
+    "title": "Ship campaign core",
+    "judge": "npm run validate:campaign",
+    "owner": "mission-lead",
+    "standing": false,
+    "bet": {
+      "text": "Mostly wiring. Wrong if phase 10 needs a new runner.",
+      "wrong_if": null
+    },
+    "parent": null,
+    "home": "laptop",
+    "created_from": "wish-12",
+    "seats": [
+      {
+        "member": "builder",
+        "role": null
+      },
+      {
+        "member": "validator",
+        "role": "checker"
+      }
+    ],
+    "state": "done",
+    "stop_reason": "judge_passed",
+    "answer": {
+      "text": "8 of 8 checks pass",
+      "confidence": "answered"
+    },
+    "budget": {
+      "total": 500,
+      "spent": 3.75,
+      "reserved": 0,
+      "available": 496.25
+    },
+    "asks": [],
+    "missions": [
+      {
+        "id": "m1",
+        "member": "builder",
+        "status": "ended",
+        "outcome": "kept",
+        "cost_usd": 2.25,
+        "estimate_usd": 3,
+        "steps": 0,
+        "kept": 0,
+        "reverted": 0
+      },
+      {
+        "id": "m2",
+        "member": "builder",
+        "status": "ended",
+        "outcome": "kept",
+        "cost_usd": 1.5,
+        "estimate_usd": 2,
+        "steps": 0,
+        "kept": 0,
+        "reverted": 0
+      }
+    ],
+    "judge_runs": 2,
+    "judge_due": false,
+    "last_judge": {
+      "passed": true,
+      "reading": 1,
+      "at": "2026-10-15T10:31:00Z"
+    },
+    "warnings": []
+  }
+}
