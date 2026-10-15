@@ -246,12 +246,27 @@ test('reap, worktree cleanup and fleet review name a held lock in the same words
 });
 
 // Shaped like the fleet review sandbox. Its own git dir points at a throwaway
-// path so disposal never deletes the fixture repo's .git.
-function reviewSandbox() {
-  const { base, repo, wt } = landedWorktree();
+// path so disposal never deletes the fixture repo's .git. With a store, the
+// copy is checked out from its own clone at that path, as fleet review makes
+// it, so git's removal there can succeed or refuse for real.
+function reviewSandbox({ store = false } = {}) {
+  const { base, repo, wt: repoCopy } = landedWorktree();
   const quarantine = path.join(base, 'quarantine.git');
   fs.mkdirSync(quarantine);
-  return { base, repo, wt, boundary: { trustedRoot: repo, sandboxRoot: path.join(base, 'sandbox'), worktreePath: wt, gitDir: path.join(base, 'sandbox.git'), quarantine } };
+  const gitDir = path.join(base, 'sandbox.git');
+  let wt = repoCopy;
+  if (store) {
+    git(base, ['clone', '-q', '--bare', repo, gitDir]);
+    wt = path.join(base, 'review-wt');
+    git(base, ['--git-dir', gitDir, 'worktree', 'add', '-q', wt, 'engine-run']);
+  }
+  return { base, repo, wt, boundary: { trustedRoot: repo, sandboxRoot: path.join(base, 'sandbox'), worktreePath: wt, gitDir, quarantine } };
+}
+
+// The store a review copy is registered in, read from git itself.
+function registeredIn(gitDir, wt) {
+  return git(gitDir, ['--git-dir', gitDir, 'worktree', 'list', '--porcelain'])
+    .split('\n').includes(`worktree ${wt}`);
 }
 
 test('fleet review cleanup keeps a sandbox while git holds its lock', () => {
@@ -355,8 +370,11 @@ test('fleet review cleanup keeps every store and names both holds when paused wo
 });
 
 test('fleet review cleanup names who removed a sandbox and why', () => {
-  const { base, repo, wt, boundary } = reviewSandbox();
+  const { base, repo, wt, boundary } = reviewSandbox({ store: true });
   try {
+    // The copy belongs to the review store, so git's own removal succeeds
+    // here and this control does not rest on a refusal being ignored.
+    assert.ok(registeredIn(boundary.gitDir, wt), 'review copy is registered in its own store');
     const result = disposeReviewSandbox(boundary);
     assert.deepEqual(result, { removed: true });
     assert.equal(fs.existsSync(wt), false);
@@ -1125,7 +1143,7 @@ test('fleet review cleanup keeps every store of a pinned copy and names the pin'
 // (atris/receipts/work-folder-review-late-pin-decision-2026-10-14.md). Drop the
 // todo when it lands; today this reproduces the deleted copy.
 test('fleet review cleanup keeps a copy pinned after its first check and names the refusal', { todo: 'fleet disposal still ignores the git result' }, () => {
-  const { base, repo, wt, boundary } = reviewSandbox();
+  const { base, repo, wt, boundary } = reviewSandbox({ store: true });
   try {
     const realGit = spawnSync('which', ['git'], { encoding: 'utf8' });
     assert.equal(realGit.status, 0, realGit.stderr);
@@ -1139,7 +1157,7 @@ const args = process.argv.slice(2);
 const git = ${JSON.stringify(realGit.stdout.trim())};
 if (args.includes('remove')) {
   fs.writeFileSync(${JSON.stringify(attempt)}, JSON.stringify(args));
-  const pin = spawnSync(git, ['worktree', 'lock', '--reason', 'reviewer opened it', ${JSON.stringify(wt)}], { cwd: ${JSON.stringify(repo)}, encoding: 'utf8' });
+  const pin = spawnSync(git, ['worktree', 'lock', '--reason', 'reviewer opened it', ${JSON.stringify(wt)}], { cwd: ${JSON.stringify(wt)}, encoding: 'utf8' });
   if (pin.status !== 0) { process.stderr.write(pin.stderr); process.exit(1); }
 }
 const result = spawnSync(git, args, { stdio: 'inherit' });
