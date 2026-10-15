@@ -1432,7 +1432,7 @@ test('reap counts branch copies still at work and names detached and pinned ones
   }
 });
 
-test('reap saves staged and binary work it removes so both replay exactly', () => {
+test('reap saves staged and binary work it removes and prints a restore that rebuilds it exactly', () => {
   const { base, repo, wt } = landedWorktree();
   try {
     const savedBytes = Buffer.from([0, 254, 10, 129, 0]);
@@ -1442,6 +1442,9 @@ test('reap saves staged and binary work it removes so both replay exactly', () =
     git(wt, ['add', 'drawing.bin', 'plan.md', 'README.md']);
     fs.rmSync(path.join(wt, 'plan.md'));
     fs.writeFileSync(path.join(wt, 'README.md'), '# staged edit\nlater edit\n');
+    fs.mkdirSync(path.join(wt, 'notes'));
+    fs.writeFileSync(path.join(wt, 'notes', 'draft.txt'), 'new draft\n');
+    const status = git(wt, ['status', '--porcelain']);
     const aged = new Date(Date.now() - 2 * 60 * 60 * 1000);
     fs.utimesSync(wt, aged, aged);
     const run = spawnSync(process.execPath, [path.resolve(__dirname, '../bin/atris.js'), 'land', '--reap', '--no-remote', '--base', 'master', '--ttl', '0'], { cwd: repo, encoding: 'utf8' });
@@ -1458,17 +1461,18 @@ test('reap saves staged and binary work it removes so both replay exactly', () =
     const staged = saved('staged changes saved');
     const dirty = saved('unsaved edits saved');
     assert.match(fs.readFileSync(dirty, 'utf8'), /GIT binary patch/);
-    const replay = path.join(base, 'replay-staged');
-    git(repo, ['worktree', 'add', '-q', '-b', 'replay-staged', replay, 'master']);
-    git(replay, ['apply', '--index', staged]);
-    assert.equal(git(replay, ['show', ':plan.md']), 'only staged copy');
-    assert.equal(git(replay, ['show', ':README.md']), '# staged edit');
-    assert.deepEqual(spawnSync('git', ['show', ':drawing.bin'], { cwd: replay }).stdout, savedBytes);
-    const later = path.join(base, 'replay-later');
-    git(repo, ['worktree', 'add', '-q', '-b', 'replay-later', later, 'master']);
-    git(later, ['apply', dirty]);
-    assert.equal(fs.readFileSync(path.join(later, 'README.md'), 'utf8'), '# staged edit\nlater edit\n');
-    assert.deepEqual(fs.readFileSync(path.join(later, 'drawing.bin')), savedBytes);
+    const restore = saved(`to restore ${wt}`);
+    assert.ok(restore.includes(staged) && restore.includes(dirty), restore);
+    const rebuilt = spawnSync('sh', ['-c', restore], { cwd: base, encoding: 'utf8' });
+    assert.equal(rebuilt.status, 0, rebuilt.stderr);
+    assert.equal(git(wt, ['status', '--porcelain']), status);
+    assert.equal(git(wt, ['show', ':plan.md']), 'only staged copy');
+    assert.equal(fs.existsSync(path.join(wt, 'plan.md')), false);
+    assert.equal(git(wt, ['show', ':README.md']), '# staged edit');
+    assert.equal(fs.readFileSync(path.join(wt, 'README.md'), 'utf8'), '# staged edit\nlater edit\n');
+    assert.deepEqual(spawnSync('git', ['show', ':drawing.bin'], { cwd: wt }).stdout, savedBytes);
+    assert.deepEqual(fs.readFileSync(path.join(wt, 'drawing.bin')), savedBytes);
+    assert.equal(fs.readFileSync(path.join(wt, 'notes', 'draft.txt'), 'utf8'), 'new draft\n');
   } finally {
     fs.rmSync(base, { recursive: true, force: true });
   }

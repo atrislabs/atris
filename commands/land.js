@@ -494,14 +494,26 @@ function remoteHeads(root) {
   return heads;
 }
 
+// One shell word: plain paths stay bare, anything else is single-quoted.
+function quoteArg(value) {
+  const text = String(value);
+  if (/^[A-Za-z0-9_./:=@+-]+$/.test(text)) return text;
+  return `'${text.replace(/'/g, `'\\''`)}'`;
+}
+
 // Everything a force-remove would destroy: staged + unstaged tracked changes
 // (git diff HEAD), the staged changes alone (git diff --cached), and untracked
 // files (copied verbatim). Both diffs carry binary bytes. The staged diff keeps
 // what git diff HEAD drops: a staged version later edited again, and a staged
 // file deleted from the folder. Returns false if any piece could not be saved,
-// the caller then keeps the worktree.
-function salvageWorktree(w, dir, receipt) {
+// the caller then keeps the worktree. Also leaves one restore command on the
+// folder: both diffs are against the folder's commit, so the staged diff goes
+// into the index only and the full diff into the files.
+function salvageWorktree(root, w, dir, receipt) {
   try {
+    const head = runGit(['rev-parse', '--verify', 'HEAD^{commit}'], { cwd: w.path, check: false });
+    if (head.status !== 0) return false;
+    const restore = [`git -C ${quoteArg(root)} worktree add --detach ${quoteArg(w.path)} ${head.stdout.trim()}`, `cd ${quoteArg(w.path)}`];
     // git writes the patch file itself: routing the diff through spawnSync
     // stdout hits Node's 1MB default maxBuffer, so any worktree more than
     // ~1MB dirty read as "salvage failed" and was kept on every reap pass.
@@ -511,7 +523,8 @@ function salvageWorktree(w, dir, receipt) {
       fs.rmSync(patchPath, { force: true });
       return false;
     }
-    if (fs.statSync(patchPath).size > 0) receipt.patches.push(patchPath);
+    const dirtySaved = fs.statSync(patchPath).size > 0;
+    if (dirtySaved) receipt.patches.push(patchPath);
     else fs.rmSync(patchPath, { force: true });
     const stagedPath = path.join(dir, `${path.basename(w.path)}.staged.patch`);
     const staged = runGit(['diff', '--cached', '--binary', `--output=${stagedPath}`], { cwd: w.path, check: false });
@@ -519,8 +532,11 @@ function salvageWorktree(w, dir, receipt) {
       fs.rmSync(stagedPath, { force: true });
       return false;
     }
-    if (fs.statSync(stagedPath).size > 0) receipt.stagedPatches.push(stagedPath);
-    else fs.rmSync(stagedPath, { force: true });
+    if (fs.statSync(stagedPath).size > 0) {
+      receipt.stagedPatches.push(stagedPath);
+      restore.push(`git apply --cached ${quoteArg(stagedPath)}`);
+    } else fs.rmSync(stagedPath, { force: true });
+    if (dirtySaved) restore.push(`git apply ${quoteArg(patchPath)}`);
     const untracked = runGit(['ls-files', '--others', '--exclude-standard', '-z'], { cwd: w.path, check: false, maxBuffer: 64 * 1024 * 1024 });
     if (untracked.status !== 0) return false;
     const files = untracked.stdout.split('\0').filter(Boolean);
@@ -532,7 +548,9 @@ function salvageWorktree(w, dir, receipt) {
         fs.copyFileSync(path.join(w.path, rel), dest);
       }
       receipt.untracked.push(destRoot);
+      restore.push(`cp -R ${quoteArg(destRoot)}/. .`);
     }
+    w.restoreCommand = restore.join(' && ');
     return true;
   } catch (err) {
     return false;
@@ -659,6 +677,7 @@ function reap(root, { ttlDays = DEFAULT_TTL_DAYS, staleHours = DEFAULT_STALE_HOU
     bundleError: null,
     patches: [],
     stagedPatches: [],
+    restores: [],
     untracked: [],
     keptWorktrees: protectedWorktrees.map((w) => `${w.path} (${w.reason})`),
     keptInFlight: protectedWorktrees.filter((w) => w.inFlight).map((w) => `${w.path} (${w.reason})`),
@@ -748,7 +767,7 @@ function reap(root, { ttlDays = DEFAULT_TTL_DAYS, staleHours = DEFAULT_STALE_HOU
     }
     // Salvage-then-remove, never keep-because-dirty: patches + untracked
     // copies bank everything force-remove would destroy.
-    if (w.dirty > 0 && !salvageWorktree(w, dir, receipt)) {
+    if (w.dirty > 0 && !salvageWorktree(root, w, dir, receipt)) {
       // could not fully back up what force-remove would destroy, keep it,
       // and say why: a bare path in the receipt reads as an unexplained
       // no-op (the exact silence BCK-1232 was about).
@@ -759,6 +778,7 @@ function reap(root, { ttlDays = DEFAULT_TTL_DAYS, staleHours = DEFAULT_STALE_HOU
     const removed = runGit(['worktree', 'remove', '--force', w.path], { cwd: root, check: false });
     if (removed.status === 0) {
       receipt.removedWorktrees.push(w.path);
+      if (w.restoreCommand) receipt.restores.push({ path: w.path, command: w.restoreCommand });
       recordWorktreeRemoval(root, { path: w.path, branch: w.branch, by, reason: reapReason(w, board, ttlDays, force) });
     } else {
       // A locked worktree fails here and, unreported, reap re-salvages the
@@ -986,6 +1006,7 @@ function printReceipt(receipt, { removalsToday = '' } = {}) {
     for (const p of receipt.patches) console.log(`  unsaved edits saved: ${p}`);
     for (const p of receipt.stagedPatches || []) console.log(`  staged changes saved: ${p}`);
     for (const u of receipt.untracked || []) console.log(`  new files saved: ${u}`);
+    for (const r of receipt.restores || []) console.log(`  to restore ${r.path}: ${r.command}`);
   }
   // A preview names what it would keep too, so it matches the real pass.
   // fresh-grace keeps are healthy active work, not a call to action,
