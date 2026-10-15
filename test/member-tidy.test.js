@@ -1381,7 +1381,8 @@ test('worktree cleanup quietly refreshes an outdated base and keeps staged notes
     fs.writeFileSync(path.join(copy, 'chapter.txt'), 'original chapter text\n');
     fs.writeFileSync(path.join(copy, 'appendix.txt'), 'original appendix text\n');
     fs.writeFileSync(path.join(copy, 'glossary.txt'), 'original glossary terms\n');
-    runGit(['add', 'outline.txt', 'guide.txt', 'manual.txt', 'chapter.txt', 'appendix.txt', 'glossary.txt'], copy);
+    fs.writeFileSync(path.join(copy, 'index.txt'), 'original index entries\n');
+    runGit(['add', 'outline.txt', 'guide.txt', 'manual.txt', 'chapter.txt', 'appendix.txt', 'glossary.txt', 'index.txt'], copy);
     runGit(['commit', '-q', '-m', 'add outline'], copy);
     runGit(['rm', 'outline.txt'], copy);
     fs.writeFileSync(replaced, 'replacement outline\n');
@@ -1496,6 +1497,14 @@ test('worktree cleanup quietly refreshes an outdated base and keeps staged notes
     const savedGlossary = runGit(['show', ':renamed-glossary'], copy);
     assert.equal(savedGlossary, glossarySource);
     assert.match(runGit(['diff', '--cached', '--summary', '--', 'glossary.txt', 'renamed-glossary'], copy), /rename glossary.txt => renamed-glossary/);
+    const runnableIndex = path.join(copy, 'renamed-index');
+    const indexSource = runGit(['show', 'HEAD:index.txt'], copy);
+    runGit(['mv', 'index.txt', 'renamed-index'], copy);
+    fs.writeFileSync(runnableIndex, '#!/bin/sh\necho later index script\n');
+    fs.chmodSync(runnableIndex, 0o755);
+    const savedIndex = runGit(['show', ':renamed-index'], copy);
+    assert.equal(savedIndex, indexSource);
+    assert.match(runGit(['diff', '--cached', '--summary', '--', 'index.txt', 'renamed-index'], copy), /rename index.txt => renamed-index/);
     const binary = path.join(copy, 'drawing.bin');
     const savedBytes = Buffer.from([0, 255, 10, 128, 13]);
     const laterBytes = Buffer.from([0, 254, 10, 129, 13, 0]);
@@ -1603,6 +1612,13 @@ test('worktree cleanup quietly refreshes an outdated base and keeps staged notes
       assert.equal(fs.existsSync(path.join(copy, 'glossary.txt')), false);
       assert.equal(runGit(['show', ':renamed-glossary'], copy), savedGlossary);
       assert.match(runGit(['ls-files', '--stage', '--', 'renamed-glossary'], copy), /^100644 /);
+      assert.equal(fs.readFileSync(runnableIndex, 'utf8'), '#!/bin/sh\necho later index script\n');
+      assert.equal(fs.statSync(runnableIndex).mode & 0o111, 0o111);
+      assert.equal(runGit(['show', 'HEAD:index.txt'], copy), indexSource);
+      assert.equal(runGit(['ls-files', '--', 'index.txt'], copy), '');
+      assert.equal(fs.existsSync(path.join(copy, 'index.txt')), false);
+      assert.equal(runGit(['show', ':renamed-index'], copy), savedIndex);
+      assert.match(runGit(['ls-files', '--stage', '--', 'renamed-index'], copy), /^100644 /);
       assert.deepEqual(fs.readFileSync(binary), laterBytes);
       const savedBinary = spawnSync('git', ['show', ':drawing.bin'], { cwd: copy });
       assert.equal(savedBinary.status, 0);
