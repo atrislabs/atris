@@ -929,7 +929,62 @@ test('runDispatchFlight yolo records self-landed tasks and receipt state', async
   }
 });
 
-test('runDispatchFlight yolo pauses when the engine did not land its work', async () => {
+test('runDispatchFlight yolo lands committed work the engine left unlanded', async () => {
+  const tmpRoot = makeTempRoot();
+  try {    const { cli } = ownCliFake({
+      tasks: { 'CLI-900': TASK },
+      worktreeFor: (t) => `/wt/${t}`,
+    });
+    const landedBy = [];
+    const flight = await fleet.runDispatchFlight({
+      root: tmpRoot,
+      taskIds: ['CLI-900'],
+      engine: 'codex',
+      yolo: true,
+      ownCli: cli,
+      log: () => {},
+      dispatcher: () => Promise.resolve({ exitCode: 0, report: 'committed, did not run ship' }),
+      lander: ({ entry }) => { landedBy.push(entry.taskId); return { ok: true, stage: 'shipped', check: 'git diff --check', verifyOutput: '' }; },
+      selfLandCheck: () => ({ ok: false, stage: 'self_land_missing', target: fleet.DISPATCH_SELF_LAND_TARGET, detail: 'not merged' }),
+    });
+
+    assert.deepEqual(landedBy, ['CLI-900'], 'the conductor lands the commit itself');
+    assert.equal(flight.paused.length, 0);
+    assert.equal(flight.landed.length, 1);
+  } finally {
+    fs.rmSync(tmpRoot, { recursive: true, force: true });
+  }
+});
+
+test('runDispatchFlight yolo still pauses when landing the unlanded commit fails', async () => {
+  const tmpRoot = makeTempRoot();
+  try {    const { cli } = ownCliFake({
+      tasks: { 'CLI-900': TASK },
+      worktreeFor: (t) => `/wt/${t}`,
+    });
+    const flight = await fleet.runDispatchFlight({
+      root: tmpRoot,
+      taskIds: ['CLI-900'],
+      engine: 'codex',
+      yolo: true,
+      ownCli: cli,
+      log: () => {},
+      dispatcher: () => Promise.resolve({ exitCode: 0, report: 'committed' }),
+      lander: () => ({ ok: false, stage: 'rebase_conflict', detail: 'README.md' }),
+      selfLandCheck: () => ({ ok: false, stage: 'self_land_missing', target: fleet.DISPATCH_SELF_LAND_TARGET, detail: 'not merged' }),
+    });
+
+    assert.equal(flight.landed.length, 0);
+    assert.equal(flight.paused.length, 1);
+    assert.equal(flight.paused[0].stage, 'rebase_conflict');
+    const receipt = JSON.parse(fs.readFileSync(flight.receipt, 'utf8'));
+    assert.equal(receipt.yolo, true);
+  } finally {
+    fs.rmSync(tmpRoot, { recursive: true, force: true });
+  }
+});
+
+test('runDispatchFlight yolo pauses without landing when the engine made no commit', async () => {
   const tmpRoot = makeTempRoot();
   try {    const { cli, calls } = ownCliFake({
       tasks: { 'CLI-900': TASK },
@@ -942,21 +997,13 @@ test('runDispatchFlight yolo pauses when the engine did not land its work', asyn
       yolo: true,
       ownCli: cli,
       log: () => {},
-      dispatcher: () => Promise.resolve({ exitCode: 0, report: 'done but not merged' }),
-      lander: () => { throw new Error('lander should not run in yolo mode'); },
-      verifier: () => { throw new Error('verifier should not run in yolo mode'); },
-      selfLandCheck: () => ({ ok: false, stage: 'self_land_missing', target: fleet.DISPATCH_SELF_LAND_TARGET, detail: 'not merged' }),
+      dispatcher: () => Promise.resolve({ exitCode: 0, report: 'guard failed, stopped' }),
+      lander: () => { throw new Error('nothing to land'); },
+      selfLandCheck: () => ({ ok: false, stage: 'no_work_landed', target: fleet.DISPATCH_SELF_LAND_TARGET, detail: 'no commit' }),
     });
 
-    assert.equal(flight.landed.length, 0);
-    assert.equal(flight.paused.length, 1);
-    assert.equal(flight.paused[0].stage, 'self_land_missing');
-    assert.equal(flight.paused[0].target, fleet.DISPATCH_SELF_LAND_TARGET);
-    assert.ok(!calls.some((c) => c.startsWith('worktree ship')), 'outer dispatch must not ship in yolo mode');
-
-    const receipt = JSON.parse(fs.readFileSync(flight.receipt, 'utf8'));
-    assert.equal(receipt.yolo, true);
-    assert.equal(receipt.paused[0].stage, 'self_land_missing');
+    assert.equal(flight.paused[0].stage, 'no_work_landed');
+    assert.ok(!calls.some((c) => c.startsWith('worktree ship')), 'nothing to ship');
   } finally {
     fs.rmSync(tmpRoot, { recursive: true, force: true });
   }
@@ -1047,7 +1094,10 @@ test('runDispatchFlight pauses when the build itself fails, keeping the worktree
     assert.equal(flight.paused[0].stage, 'build');
     assert.equal(flight.results[0].verified_passed, null);
     assert.ok(!calls.some((c) => c.startsWith('task ready')));
-    assert.ok(!calls.some((c) => c.startsWith('task release')), 'must not release a claim after the engine has started');
+    // The flight is over, so nothing works the task any more: the claim goes,
+    // or a retry would stop at "claim failed". The worktree stays.
+    assert.ok(calls.some((c) => c.startsWith('task release CLI-900')), 'a finished dispatch releases its paused claim');
+    assert.equal(flight.paused[0].worktree, '/wt/dispatch-cli-900');
   } finally {
     fs.rmSync(tmpRoot, { recursive: true, force: true });
   }
