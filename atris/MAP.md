@@ -130,40 +130,4 @@ checks the refs in both files; `atris doc-health --fix-refs` moves drifted ones.
 4. `atris/wiki/index.md` if present (local), and `atris/skills/atris/SKILL.md` as needed
 5. Exact lines and search shortcuts: `atris/refs/MAP-NOTES.md`
 
-Engine resource, ssh-agent sweep, and launch guard detail: `atris/refs/MAP-NOTES.md`. Entries below still differ from their notes copy or have none yet.
-
-Readiness runtime mismatch: `lib/task-proof.js:157` starts a login shell, which on this machine chooses unsupported Node 20 instead of the caller's Node 25. Full diagnosis, passing local workaround, and automatic-certification limitation: `atris/receipts/readiness-runtime-proof-2026-10-14.txt`.
-
-Partial socket scan warning: `lib/engine-resource.js:325-336` (`sockets`) names agent sockets unread when any listed agent lacks a socket reading; unread agents remain protected and readable agents can still be proven leaked. `commands/engine.js:2362` (`scanWarning`) warns that the count may be incomplete, and the sweep headline says at least or unknown instead of a bare count, as the landing status does (`test/engine-resource.test.js:552`). Regressions: `test/engine-resource.test.js:447` checks mixed readings; `test/engine-resource.test.js:459` launches two real ssh-agents, withholds only one real lsof process block, and runs the real text and JSON CLI.
-
-Cleanup scan warnings: `commands/engine.js:2358` merges unread initial and final readers into text and JSON cleanup reports. `lib/engine-resource.js:468` retains unread final readers in the sweep record and saves a null remaining leak count when that final scan is incomplete. Regressions: `test/engine-resource.test.js:4407` checks merged warnings and safe skips; `test/engine-resource.test.js:4424` runs real cleanup with process scans denied.
-
-Hourly cleanup failed stops: `commands/autoland.js:910` (`sshAgentSweepNote`) includes failed stop counts in the hourly summary alongside stops, replacements, and unread scans; when the newest passes could not stop an agent, landing status and the sweep listing say so and point to the manual stop. Detail and line refs: `atris/refs/MAP-NOTES.md`, Hourly cleanup failed stops; tests: `test/engine-resource.test.js`.
-
-Hourly cleanup scan failures: `commands/autoland.js:913` puts a saved scan error in the hourly summary, so a failed read does not look clean. Detail and line refs: `atris/refs/MAP-NOTES.md`, Hourly cleanup scan failures.
-
-Hourly cleanup stop cap: `commands/autoland.js:878` (`HOURLY_SSH_AGENT_STOP_LIMIT`) caps one hourly pass at 200 stops, oldest first; the manual sweep has no cap. Detail and line refs: `atris/refs/MAP-NOTES.md`, Hourly cleanup stop cap.
-
-Rejected cleanup stops: `lib/engine-resource.js:487` appends one sweep line after earlier history, with refused stops in `failed` and still counted as left. Regressions: `test/engine-resource.test.js:5485` runs the real cleanup with every stop refused; `test/engine-resource.test.js:5539` stops one agent and has the other refuse, checking both outcomes and one left.
-
-Local runner alias launch guard: `test/engine-resource.test.js:1501` follows earlier declarations in the same function through plain aliases and profile members, so copying a resolved runner no longer hides its launch. The guard also follows simple named-function parameters from known same-file runner arguments, keeping quoted commas and multiline calls intact. Reassignments, destructuring, and imported callers remain outside this text scan.
-
-Recording window boundaries: both launch guards in `test/engine-resource.test.js` stop at top-level function boundaries, including one-line definitions. A recorder inside another function cannot cover a neighboring launch; the twelve-line limit still applies within the launch function.
-
-Startup repair command quoting: `lib/engine-resource.js:402` prints shell-safe paths for copied sweep commands, using single quotes around paths with shell punctuation and escaping embedded single quotes. `test/engine-resource.test.js:4973` runs seven path forms through real sh and zsh processes, checking the script receives the repair arguments unchanged.
-
-Executable startup repair lookup: `lib/engine-resource.js:378` skips files without execute permission, directories, and broken links on PATH, while following executable links. Real shell regression: `test/engine-resource.test.js:4996`.
-
-Landing repair with a hanging Node: `test/engine-resource.test.js:5286` also checks a first executable that never answers. The landing probe times out and the printed checkout command repairs fixture startup files through sh and zsh.
-
-Missing run recording warning: `test/engine-resource.test.js:4917` checks that landing status and the sweep listing agree when the installed command records no runs, retain the startup repair command, and avoid assigning a source from incomplete counts.
-
-Combined unreadable history and agent scans: `test/engine-resource.test.js:5349` runs landing status with unreadable process environments, sockets, or both, preserving the repair hint and qualifying the leak count.
-
-Cleanup recheck reader coverage: `test/engine-resource.test.js:5388` exercises unreadable sockets, process environments, process lists, and combined socket/environment failures through the real cleanup command in text and JSON, checking unknown counts in saved history.
-
-Thrown cleanup scans: `test/engine-resource.test.js:5436` runs the real cleanup command with a throwing first scan or safety recheck, in text and JSON. It requires exit 1, no signal attempt, no remaining count, and no saved sweep.
-
-Preserved history after failed scans: `test/engine-resource.test.js:5436` checks initial and safety scan failures against existing cleanup history, requiring byte-for-byte preservation in text and JSON modes.
-
-Rejected cleanup signals: `test/engine-resource.test.js:5485` runs the real cleanup command in text and JSON, preserving prior history while recording the denied stop and remaining agent.
+Engine resource, ssh-agent sweep, launch guard, and readiness runtime detail: `atris/refs/MAP-NOTES.md`.
