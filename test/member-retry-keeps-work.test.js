@@ -126,3 +126,19 @@ test('a retry still resumes when the main line moved without touching the same l
   assert.equal(retry.resumedFrom, first.branch);
   assert.equal(retry.skippedResume, null);
 });
+
+test('a resumed retry also starts with everything the main line gained since', (t) => {
+  // 2026-10-15: five long jobs kept resuming their own last branch and fell
+  // 103 to 129 commits behind the main line until every one clashed.
+  const setup = room(t);
+  const first = firstRun(setup, 'fix the login page', 'progress.txt');
+  fs.writeFileSync(path.join(setup.root, 'other.txt'), 'unrelated\n');
+  setup.git(['add', 'other.txt']);
+  setup.git(['commit', '-qm', 'main moves on']);
+  setup.git(['push', '-q', 'origin', 'main']);
+  const retry = createAgentWorktree({ root: setup.root, member: 'builder', task: 'fix the login page', base: 'origin/main', now: new Date('2026-10-14T11:00:00Z') });
+  assert.equal(retry.resumedFrom, first.branch);
+  assert.equal(fs.readFileSync(path.join(retry.path, 'progress.txt'), 'utf8'), 'half done\n');
+  assert.equal(fs.readFileSync(path.join(retry.path, 'other.txt'), 'utf8'), 'unrelated\n');
+  assert.equal(setup.git(['rev-list', '--count', 'HEAD..origin/main'], retry.path), '0');
+});
