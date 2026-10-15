@@ -650,7 +650,7 @@ test('seeded random boards: every footer count matches the members it hides, at 
     try {
       const rows = readBoard({ dir, now: NOW });
       for (const height of [2, 3, 4, 5]) {
-        for (let width = 3; width <= 130; width++) {
+        for (let width = 1; width <= 130; width++) {
           const lines = renderBoard(rows, dir, 0, width, height).split('\n');
           const where = `trial ${trial}, ${width}x${height}: ${JSON.stringify(lines)}`;
           assert.ok(lines.length <= height, where);
