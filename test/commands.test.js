@@ -9981,7 +9981,7 @@ test('task done with proof writes a reviewed proof event', () => {
   }
 });
 
-test('task plan and do record an explicit headless stage contract', () => {
+test('task plan and do record an explicit headless stage contract', async () => {
   if (!hasNodeSqlite()) return;
   const dir = makeTempDir();
   const dbPath = path.join(dir, 'tasks.db');
@@ -10015,43 +10015,49 @@ test('task plan and do record an explicit headless stage contract', () => {
     }
     const [ref, inlineDoRef, ownedRef, claimedAfterPlanRef] = refs;
 
-    const unplannedDo = runCli(['task', 'do', ref, '--as', 'codex', '--first-move', 'patch the CLI', '--json'], { cwd: dir, env });
+    // These five refusals return before any write, so they run at once.
+    const [unplannedDo, inlineDo, otherOwnerPlan, otherOwnerPlanWithAssignee, missingExit] = await Promise.all([
+      runCliAsync(['task', 'do', ref, '--as', 'codex', '--first-move', 'patch the CLI', '--json'], { cwd: dir, env }),
+      runCliAsync([
+        'task', 'do', inlineDoRef,
+        '--as', 'codex',
+        '--goal', 'Try to skip the plan',
+        '--proof-needed', 'node --test should not run yet',
+        '--first-move', 'start too early',
+        '--json',
+      ], { cwd: dir, env }),
+      runCliAsync([
+        'task', 'plan', ownedRef,
+        '--as', 'codex',
+        '--goal', 'Change someone else task',
+        '--exit', 'should be rejected',
+        '--proof-needed', 'should be rejected',
+        '--json',
+      ], { cwd: dir, env }),
+      runCliAsync([
+        'task', 'plan', ownedRef,
+        '--as', 'codex',
+        '--owner', 'alice',
+        '--goal', 'Rewrite by naming the claimant',
+        '--exit', 'should be rejected',
+        '--proof-needed', 'should be rejected',
+        '--json',
+      ], { cwd: dir, env }),
+      runCliAsync(['task', 'plan', ref, '--goal', 'Ship task stage CLI', '--proof-needed', 'node --test commands passed', '--json'], { cwd: dir, env }),
+    ]);
     assert.equal(unplannedDo.status, 1);
     assert.equal(JSON.parse(unplannedDo.stdout).reason, 'goal_required');
 
-    const inlineDo = runCli([
-      'task', 'do', inlineDoRef,
-      '--as', 'codex',
-      '--goal', 'Try to skip the plan',
-      '--proof-needed', 'node --test should not run yet',
-      '--first-move', 'start too early',
-      '--json',
-    ], { cwd: dir, env });
     assert.equal(inlineDo.status, 1);
     assert.equal(JSON.parse(inlineDo.stdout).reason, 'plan_required');
 
-    const otherOwnerPlan = runCli([
-      'task', 'plan', ownedRef,
-      '--as', 'codex',
-      '--goal', 'Change someone else task',
-      '--exit', 'should be rejected',
-      '--proof-needed', 'should be rejected',
-      '--json',
-    ], { cwd: dir, env });
     assert.equal(otherOwnerPlan.status, 1);
     assert.equal(JSON.parse(otherOwnerPlan.stdout).reason, 'claimed_by_other');
 
-    const otherOwnerPlanWithAssignee = runCli([
-      'task', 'plan', ownedRef,
-      '--as', 'codex',
-      '--owner', 'alice',
-      '--goal', 'Rewrite by naming the claimant',
-      '--exit', 'should be rejected',
-      '--proof-needed', 'should be rejected',
-      '--json',
-    ], { cwd: dir, env });
     assert.equal(otherOwnerPlanWithAssignee.status, 1);
     assert.equal(JSON.parse(otherOwnerPlanWithAssignee.stdout).reason, 'claimed_by_other');
+    assert.equal(missingExit.status, 1);
+    assert.equal(JSON.parse(missingExit.stdout).reason, 'exit_required');
 
     // Only prepare the side plan here; the external claim and rejected do stay on the CLI.
     const planDb = taskStore.open(dbPath);
@@ -10075,18 +10081,6 @@ test('task plan and do record an explicit headless stage contract', () => {
       taskStore.close();
     }
     assert.equal(runCli(['task', 'claim', claimedAfterPlanRef, '--as', 'alice'], { cwd: dir, env }).status, 0);
-    const claimedConflictDo = runCli([
-      'task', 'do', claimedAfterPlanRef,
-      '--as', 'codex',
-      '--first-move', 'start despite external claim',
-      '--json',
-    ], { cwd: dir, env });
-    assert.equal(claimedConflictDo.status, 1);
-    assert.equal(JSON.parse(claimedConflictDo.stdout).reason, 'claimed_by_other');
-
-    const missingExit = runCli(['task', 'plan', ref, '--goal', 'Ship task stage CLI', '--proof-needed', 'node --test commands passed', '--json'], { cwd: dir, env });
-    assert.equal(missingExit.status, 1);
-    assert.equal(JSON.parse(missingExit.stdout).reason, 'exit_required');
 
     const planned = runCli([
       'task', 'plan', ref,
@@ -10112,37 +10106,49 @@ test('task plan and do record an explicit headless stage contract', () => {
     assert.match(plannedPayload.stage_packet, /goal: Ship task stage CLI/);
     assert.match(plannedPayload.stage_packet, /proof_needed: node --test test\/commands\.test\.js passes for task stage commands/);
 
-    const wrongOwnerDo = runCli([
-      'task', 'do', ref,
-      '--as', 'bob',
-      '--first-move', 'take over another owner plan',
-      '--json',
-    ], { cwd: dir, env });
+    // Four refusals and two reads; none of them writes, so they run at once.
+    const [claimedConflictDo, wrongOwnerDo, rewritePlanDo, exitMismatchDo, showPlanned, statusAfterPlan] = await Promise.all([
+      runCliAsync([
+        'task', 'do', claimedAfterPlanRef,
+        '--as', 'codex',
+        '--first-move', 'start despite external claim',
+        '--json',
+      ], { cwd: dir, env }),
+      runCliAsync([
+        'task', 'do', ref,
+        '--as', 'bob',
+        '--first-move', 'take over another owner plan',
+        '--json',
+      ], { cwd: dir, env }),
+      runCliAsync([
+        'task', 'do', ref,
+        '--as', 'codex',
+        '--goal', 'Rewrite the recorded plan',
+        '--proof-needed', 'weaker proof',
+        '--first-move', 'start from rewritten text',
+        '--json',
+      ], { cwd: dir, env }),
+      runCliAsync([
+        'task', 'do', ref,
+        '--as', 'codex',
+        '--exit', 'different review boundary',
+        '--first-move', 'start with changed exit',
+        '--json',
+      ], { cwd: dir, env }),
+      runCliAsync(['task', 'show', ref, '--json'], { cwd: dir, env }),
+      runCliAsync(['task', 'status', '--json'], { cwd: dir, env }),
+    ]);
+    assert.equal(claimedConflictDo.status, 1);
+    assert.equal(JSON.parse(claimedConflictDo.stdout).reason, 'claimed_by_other');
     assert.equal(wrongOwnerDo.status, 1);
     assert.equal(JSON.parse(wrongOwnerDo.stdout).reason, 'claimed_by_other');
 
-    const rewritePlanDo = runCli([
-      'task', 'do', ref,
-      '--as', 'codex',
-      '--goal', 'Rewrite the recorded plan',
-      '--proof-needed', 'weaker proof',
-      '--first-move', 'start from rewritten text',
-      '--json',
-    ], { cwd: dir, env });
     assert.equal(rewritePlanDo.status, 1);
     assert.equal(JSON.parse(rewritePlanDo.stdout).reason, 'plan_goal_mismatch');
 
-    const exitMismatchDo = runCli([
-      'task', 'do', ref,
-      '--as', 'codex',
-      '--exit', 'different review boundary',
-      '--first-move', 'start with changed exit',
-      '--json',
-    ], { cwd: dir, env });
     assert.equal(exitMismatchDo.status, 1);
     assert.equal(JSON.parse(exitMismatchDo.stdout).reason, 'plan_exit_mismatch');
 
-    const showPlanned = runCli(['task', 'show', ref, '--json'], { cwd: dir, env });
     assert.equal(showPlanned.status, 0, showPlanned.stderr);
     const plannedTask = JSON.parse(showPlanned.stdout);
     assert.equal(plannedTask.latest_event_type, 'task_planned');
@@ -10150,7 +10156,6 @@ test('task plan and do record an explicit headless stage contract', () => {
     assert.match(plannedTask.messages[0].content, /TASK_STAGE_UPDATE/);
     assert.match(plannedTask.messages[0].content, /exit: task can enter Review with command-backed proof/);
 
-    const statusAfterPlan = runCli(['task', 'status', '--json'], { cwd: dir, env });
     assert.equal(statusAfterPlan.status, 0, statusAfterPlan.stderr);
     assert.equal(JSON.parse(statusAfterPlan.stdout).status.counts.plan, 1);
 
