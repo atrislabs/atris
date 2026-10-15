@@ -2956,6 +2956,18 @@ test('the landing status counts leaked ssh-agents, says how they get stopped, an
     require('node:child_process').spawnSync('git', ['init', '-q'], { cwd: root });
     const leaked = status({ readSshAgents: () => ({ agents: [agent(200), agent(201), agent(202)], referenced: new Set([202]) }), uid: 501 });
     assert.match(leaked, /leaked ssh-agents on this machine: 2; stop them now: atris engine sweep --apply/);
+    // A live hourly pass stops them only when its receipt shows a sweep ran.
+    const runsDir = path.join(root, 'atris', 'runs');
+    fs.mkdirSync(runsDir, { recursive: true });
+    const tick = (name, receipt) => fs.writeFileSync(path.join(runsDir, `autoland-tick-${name}.json`), JSON.stringify(receipt));
+    const leakedNow = () => status({ readSshAgents: () => ({ agents: [agent(200)], referenced: new Set() }), uid: 501 });
+    tick('2026-10-14T01', { at: '2026-10-14T01:00:00Z' });
+    assert.match(leakedNow(), /leaked ssh-agents on this machine: 1; the hourly pass runs a version without the ssh-agent cleanup, so stop them now: atris engine sweep --apply/);
+    tick('2026-10-14T02', { at: '2026-10-14T02:00:00Z', ssh_agent_sweep: { stopped: [], failed: [], skipped: [] } });
+    assert.match(leakedNow(), /leaked ssh-agents on this machine: 1; the next hourly pass stops them/);
+    tick('2026-10-14T03', { at: '2026-10-14T03:00:00Z', ssh_agent_sweep_error: 'ps failed' });
+    assert.match(leakedNow(), /the next hourly pass stops them/, 'a pass that tried and failed still has the cleanup');
+    fs.rmSync(runsDir, { recursive: true, force: true });
     const none = status({ readSshAgents: () => ({ agents: [agent(300)], referenced: new Set([300]) }), uid: 501 });
     assert.doesNotMatch(none, /ssh-agents/);
     const broken = status({ readSshAgents: () => { throw new Error('ps missing'); }, uid: 501 });

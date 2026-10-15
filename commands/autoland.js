@@ -559,7 +559,11 @@ function showStatus(root, args, deps = {}) {
   const { leaked: leakedAgents, unread: unreadAgents } = countLeakedSshAgents(deps);
   const unchecked = unreadAgents.length ? `could not read the ${unreadAgents.join(' or the ')}, so some ssh-agents went unchecked` : '';
   if (leakedAgents) {
-    const stop = heartbeatLive ? 'the next hourly pass stops them' : 'stop them now: atris engine sweep --apply';
+    const stop = !heartbeatLive
+      ? 'stop them now: atris engine sweep --apply'
+      : autoland.heartbeatSweepsAgents(root)
+        ? 'the next hourly pass stops them'
+        : 'the hourly pass runs a version without the ssh-agent cleanup, so stop them now: atris engine sweep --apply';
     console.log(`  leaked ssh-agents on this machine: ${unchecked ? 'at least ' : ''}${leakedAgents}${leakGrowthNote(lost.first_day_leak_reading, leakedAgents)}; ${stop}${unchecked ? `; ${unchecked}` : ''}`);
     // A test run reads only the home it was handed, never the real one.
     if (deps.home || !process.env.NODE_TEST_CONTEXT) {
