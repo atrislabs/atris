@@ -4346,3 +4346,36 @@ test('the landing status says when the sweeps first found the ssh-agent startup 
     fs.rmSync(root, { recursive: true, force: true });
   }
 });
+
+test('the guarded startup line names how fast ssh-agents leaked in the day before and since', () => {
+  const { showStatus } = require('../commands/autoland');
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'autoland-status-guard-rate-'));
+  const file = path.join(root, RESOURCE_LOG);
+  const at = (h) => new Date(Date.now() - h * 3600000).toISOString();
+  const start = (h, count) => JSON.stringify({ at: at(h), phase: 'start', engine: 'claude', leaked_ssh_agents: count });
+  const sweep = (h, count, lines) => JSON.stringify({ at: at(h), phase: 'sweep', stopped: [1], failed: [], skipped: [], leaked_ssh_agents: count, unguarded_start_lines: lines });
+  const status = (lines) => {
+    fs.mkdirSync(path.dirname(file), { recursive: true });
+    fs.writeFileSync(file, `${lines.join('\n')}\n`);
+    const out = [];
+    const original = console.log;
+    console.log = (line = '') => out.push(String(line));
+    try {
+      showStatus(root, [], { readSshAgents: () => ({ agents: [], referenced: new Set() }), uid: 501 });
+    } finally {
+      console.log = original;
+    }
+    return out.join('\n');
+  };
+  try {
+    require('node:child_process').spawnSync('git', ['init', '-q'], { cwd: root });
+    // Before: rises of 40 and 80 over the 6 hours up to the fix, and the
+    // sweep in between adds nothing. Since: rises of 4 and 3 over 3.5 hours.
+    const slowed = status([start(30, 5000), start(10, 100), start(8, 140), sweep(6, 0, 1), start(5, 80), sweep(4, 0, 0), start(2, 4), start(0.5, 7)]);
+    assert.match(slowed, /startup line guarded: [^\n]*found 1; leaked ssh-agents in the day before: about 20 new an hour, since: about 2 new an hour/, 'a reading older than a day before the fix is left out');
+    const early = status([sweep(3, 0, 1), sweep(2, 0, 0)]);
+    assert.match(early, /in the day before: about 0 new an hour, since: too few readings to say/);
+  } finally {
+    fs.rmSync(root, { recursive: true, force: true });
+  }
+});
