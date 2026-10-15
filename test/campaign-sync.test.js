@@ -23,7 +23,7 @@ const loggedIn = { loadCredentials: () => ({ token: 'test-token' }) };
 function fakeCloud() {
   const events = [];
   const requests = [];
-  const state = { refuse: null, cloudSeq: 0 };
+  const state = { refuse: null, cloudSeq: 0, runs: [] };
   const send = (res, status, body) => {
     res.writeHead(status, { 'Content-Type': 'application/json' });
     res.end(JSON.stringify(body));
@@ -41,12 +41,26 @@ function fakeCloud() {
       requests.push({ method: req.method, path: url.pathname, auth: req.headers.authorization });
       if (req.headers.authorization !== 'Bearer test-token') return send(res, 401, { ok: false, error: 'sign in first' });
       if (state.refuse) return send(res, state.refuse.status, { ok: false, error: state.refuse.error });
+      // The run routes (POST run-in-cloud, GET cloud-run), enough to see what the CLI sends.
+      const runMatch = url.pathname.match(/^\/api\/campaigns\/([^/]+)\/(run-in-cloud|cloud-run)$/);
+      if (runMatch) {
+        const runFor = decodeURIComponent(runMatch[1]);
+        if (!events.some((e) => e.campaign_id === runFor)) return send(res, 404, { ok: false, error: `No campaign ${runFor} here.` });
+        if (runMatch[2] === 'run-in-cloud' && req.method === 'POST') {
+          const body = raw ? JSON.parse(raw) : {};
+          state.runs.push(body);
+          return send(res, 200, { ok: true, campaign_id: runFor, computer: 'computer:agent-1', run_id: 'a'.repeat(32), status: 'running', woke: false, recorded: true, work: '3000s', break: '600s', max_rounds: body.max_rounds || null, deadline: '2026-10-16T10:00:00Z', check: `/api/campaigns/${runFor}/cloud-run` });
+        }
+        return send(res, 200, { ok: true, campaign_id: runFor, state: 'running', home: 'computer:agent-1', basis: 'atris_cloud', summary: 'Running on your computer.', run: { run_id: 'a'.repeat(32), computer: 'computer:agent-1', status: 'running', exit_code: null, timed_out: false, output_tail: 'judge failed: 1 of 3\n' } });
+      }
       const match = url.pathname.match(/^\/api\/campaigns\/([^/]+)\/(events|asks\/([^/]+)\/answer|actions)$/);
       if (!match) return send(res, 404, { ok: false, error: 'no such route' });
       const campaignId = decodeURIComponent(match[1]);
       const body = raw ? JSON.parse(raw) : {};
       const mine = () => events.filter((e) => e.campaign_id === campaignId);
       if (match[2] === 'events' && req.method === 'GET') {
+        // Like the backend: a campaign this login never pushed is not here.
+        if (!mine().length) return send(res, 404, { ok: false, error: `No campaign ${campaignId} here.` });
         const after = Number(url.searchParams.get('after')) || 0;
         const limit = Number(url.searchParams.get('limit')) || 500;
         const page = events.map((e, i) => ({ e, seq: i + 1 })).filter((x) => x.e.campaign_id === campaignId && x.seq > after).slice(0, limit);
@@ -326,5 +340,194 @@ test('a campaign never synced runs without touching the cloud', () => withCloud(
   const ran = await command(store, ['run', id, '--json'], { loopDeps: quietLoop });
   assert.equal(ran.code, 0, ran.err);
   assert.match(JSON.parse(ran.out).reason, /needs you/);
+  assert.equal(cloud.requests.length, 0);
+}));
+
+// ---------------------------------------------------------------- a computer that never saw it
+
+test('a computer that never saw the campaign pulls it whole, campaign_started first, and stays linked', () => withCloud(async (cloud) => {
+  const laptop = createMemoryStore({ origin: 'laptop' });
+  const id = waitingCampaign(laptop);
+  assert.equal((await syncCampaign(laptop, id, loggedIn)).ok, true);
+  cloud.answer(id, 'a-ship', 'yes');
+  // The cloud may hold campaign_started anywhere in its log; it must go in first.
+  cloud.events.unshift(cloud.events.splice(1, 1)[0]);
+  assert.equal(cloud.events[0].type, 'judge_ran');
+
+  const box = createMemoryStore({ origin: 'box' });
+  const first = await syncCampaign(box, id, loggedIn);
+  assert.equal(first.ok, true, first.error);
+  assert.equal(first.first_pull, true);
+  assert.deepEqual([first.pulled, first.pushed, first.duplicates], [4, 0, 0]);
+  assert.equal(box.read(id)[0].type, 'campaign_started');
+  assert.deepEqual(getCampaign(box, id).asks, []);
+  assert.equal(getCampaign(box, id).title, 'Sync it');
+  assert.ok(cloudLink(box, id), 'linked, so atris campaign run syncs every step');
+  assert.equal(cloudLink(box, id).pushed, 4);
+
+  const again = await syncCampaign(box, id, loggedIn);
+  assert.deepEqual([again.ok, again.first_pull, again.pulled, again.pushed], [true, undefined, 0, 0]);
+  box.append({ campaign_id: id, type: 'paused', actor: 'mission-lead', data: {} });
+  const pushed = await syncCampaign(box, id, loggedIn);
+  assert.deepEqual([pushed.ok, pushed.pushed], [true, 1]);
+  assert.equal(cloud.events[cloud.events.length - 1].origin, 'box');
+}));
+
+test('a first pull into the sqlite store lists the campaign and folds it', () => withCloud(async () => {
+  const laptop = createMemoryStore({ origin: 'laptop' });
+  const id = waitingCampaign(laptop);
+  await syncCampaign(laptop, id, loggedIn);
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'campaign-first-pull-'));
+  try {
+    const box = createSqliteStore(path.join(dir, 'atris.db'), { origin: 'box' });
+    const result = await syncCampaign(box, id, loggedIn);
+    assert.equal(result.ok, true, result.error);
+    assert.deepEqual(box.campaignIds(), [id]);
+    assert.deepEqual(getCampaign(box, id), getCampaign(laptop, id));
+    box.close();
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+}));
+
+test('sync of a campaign the cloud does not have says so and leaves nothing behind', () => withCloud(async (cloud) => {
+  const box = createMemoryStore({ origin: 'box' });
+  const shown = await command(box, ['sync', 'cmp-nope']);
+  assert.equal(shown.code, 1);
+  assert.match(shown.err, /sync failed: the Atris cloud has no campaign cmp-nope for this login, so there is nothing to pull/);
+  assert.equal(cloudLink(box, 'cmp-nope'), null);
+  assert.deepEqual(box.read('cmp-nope'), []);
+  assert.equal(cloud.requests.length, 1);
+
+  const bad = await command(box, ['sync', 'Not An Id']);
+  assert.equal(bad.code, 2);
+  assert.match(bad.err, /campaign ids look like cmp-/);
+  assert.equal(cloud.requests.length, 1);
+}));
+
+test('sync --json on a new computer prints the pulled campaign', () => withCloud(async () => {
+  const laptop = createMemoryStore({ origin: 'laptop' });
+  const id = waitingCampaign(laptop);
+  await syncCampaign(laptop, id, loggedIn);
+  const box = createMemoryStore({ origin: 'box' });
+  const synced = await command(box, ['sync', id, '--json']);
+  assert.equal(synced.code, 0, synced.err);
+  const out = JSON.parse(synced.out);
+  assert.deepEqual([out.ok, out.first_pull, out.pulled], [true, true, 3]);
+  assert.equal(out.campaign.id, id);
+  assert.equal(out.next.reason, 'open asks');
+}));
+
+test('start --cloud --basis atris_cloud records who pays; the basis needs --cloud and a known value', () => withCloud(async (cloud) => {
+  const store = createMemoryStore({ origin: 'laptop' });
+  const started = await command(store, ['start', 'Cloud paid', '--judge', 'npm test', '--budget', '5', '--id', 'cmp-paid', '--cloud', '--basis', 'atris_cloud', '--json']);
+  assert.equal(started.code, 0, started.err);
+  assert.equal(store.read('cmp-paid')[0].data.basis, 'atris_cloud');
+  assert.equal(cloud.events[0].data.basis, 'atris_cloud');
+
+  const local = await command(store, ['start', 'Not here', '--judge', 'npm test', '--budget', '5', '--id', 'cmp-local', '--basis', 'atris_cloud']);
+  assert.equal(local.code, 2);
+  assert.match(local.err, /needs --cloud too/);
+  const odd = await command(store, ['start', 'Odd', '--judge', 'npm test', '--budget', '5', '--id', 'cmp-odd', '--cloud', '--basis', 'free']);
+  assert.equal(odd.code, 2);
+  assert.match(odd.err, /--basis is own_engines or atris_cloud/);
+  assert.deepEqual(store.read('cmp-local'), []);
+  const plain = await command(store, ['start', 'Mine', '--judge', 'npm test', '--budget', '5', '--id', 'cmp-mine']);
+  assert.equal(plain.code, 0, plain.err);
+  assert.equal(store.read('cmp-mine')[0].data.basis, undefined);
+}));
+
+// ---------------------------------------------------------------- cloud-run
+
+test('cloud-run syncs first, asks the cloud to run it, and --status reports the run', () => withCloud(async (cloud) => {
+  const store = createMemoryStore({ origin: 'laptop' });
+  const started = await command(store, ['start', 'Overnight', '--judge', 'npm test', '--budget', '5', '--id', 'cmp-night', '--basis', 'atris_cloud', '--cloud']);
+  assert.equal(started.code, 0, started.err);
+  store.append({ campaign_id: 'cmp-night', type: 'bet_set', actor: 'human:keshav', data: { bet: 'tests first' } });
+
+  const ran = await command(store, ['cloud-run', 'cmp-night', '--work', '50m', '--break', '10m', '--rounds', '3']);
+  assert.equal(ran.code, 0, ran.err);
+  assert.match(ran.out, /running cmp-night on your Atris computer \(computer:agent-1\), run a{32}/);
+  assert.match(ran.out, /3 rounds/);
+  assert.match(ran.out, /atris campaign cloud-run cmp-night --status/);
+  assert.deepEqual(cloud.state.runs, [{ work: '50m', break: '10m', max_rounds: 3 }]);
+  assert.ok(cloud.events.some((e) => e.type === 'bet_set'), 'the newest local event reached the cloud before the run');
+  const order = cloud.requests.map((r) => `${r.method} ${r.path}`);
+  assert.ok(order.indexOf('POST /api/campaigns/cmp-night/run-in-cloud') > order.lastIndexOf('POST /api/campaigns/cmp-night/events'));
+
+  const status = await command(store, ['cloud-run', 'cmp-night', '--status', '--json']);
+  assert.equal(status.code, 0, status.err);
+  const out = JSON.parse(status.out);
+  assert.deepEqual([out.run.status, out.home], ['running', 'computer:agent-1']);
+  const human = await command(store, ['cloud-run', 'cmp-night', '--status']);
+  assert.match(human.out, /run a{32} on computer:agent-1: running/);
+  assert.match(human.out, /last output:\njudge failed: 1 of 3/);
+}));
+
+test('cloud-run works for a campaign that lives only in the cloud', () => withCloud(async (cloud) => {
+  const laptop = createMemoryStore({ origin: 'laptop' });
+  const id = waitingCampaign(laptop);
+  await syncCampaign(laptop, id, loggedIn);
+  const phone = createMemoryStore({ origin: 'other' });
+  const ran = await command(phone, ['cloud-run', id, '--json']);
+  assert.equal(ran.code, 0, ran.err);
+  assert.equal(JSON.parse(ran.out).run_id, 'a'.repeat(32));
+  assert.deepEqual(cloud.state.runs, [{}]);
+  assert.deepEqual(phone.read(id), []);
+}));
+
+test('cloud-run checks its flags before calling the cloud', () => withCloud(async (cloud) => {
+  const store = createMemoryStore({ origin: 'laptop' });
+  for (const [args, words] of [
+    [['--work', 'fast'], /durations look like 50m/],
+    [['--break', '10 minutes'], /durations look like 50m/],
+    [['--rounds', '0'], /--rounds is a whole number/],
+    [['--rounds', '2.5'], /--rounds is a whole number/],
+  ]) {
+    const shown = await command(store, ['cloud-run', 'cmp-x', ...args]);
+    assert.equal(shown.code, 2, shown.out);
+    assert.match(shown.err, words);
+  }
+  assert.equal((await command(store, ['cloud-run'])).code, 2);
+  assert.equal(cloud.requests.length, 0);
+}));
+
+test('cloud-run passes the cloud refusal on in its own words', () => withCloud(async (cloud) => {
+  const store = createMemoryStore({ origin: 'laptop' });
+  const missing = await command(store, ['cloud-run', 'cmp-ghost']);
+  assert.equal(missing.code, 1);
+  assert.match(missing.err, /not started in the cloud: No campaign cmp-ghost here\./);
+
+  const id = waitingCampaign(store);
+  await syncCampaign(store, id, loggedIn);
+  cloud.state.refuse = { status: 403, error: `Campaign ${id} runs on your own engines, so it stays on your machines.` };
+  const refused = await command(store, ['cloud-run', id]);
+  assert.equal(refused.code, 1);
+  assert.match(refused.err, /sync failed: the Atris cloud refused this \(403\)/);
+
+  cloud.state.refuse = null;
+  const runRefusal = { status: 403, error: 'Only a campaign started with --basis atris_cloud runs on your Atris computer.' };
+  const send = await runInCloudOnly(store, id, runRefusal);
+  assert.match(send.error, /Only a campaign started with --basis atris_cloud/);
+  assert.equal(send.status, 403);
+
+  const old = await runInCloudOnly(store, id, { status: 404 });
+  assert.match(old.error, /does not run campaigns on computers yet \(404\)/);
+}));
+
+// runInCloud against a fixed answer, for the refusal wording.
+async function runInCloudOnly(store, id, answer) {
+  const { runInCloud } = require('../lib/campaign-sync');
+  return runInCloud(id, {}, {
+    loadCredentials: () => ({ token: 'test-token' }),
+    apiRequestJson: async () => ({ ok: false, status: answer.status, data: answer.error ? { ok: false, error: answer.error } : { detail: 'Not Found' }, error: answer.error || 'Not Found' }),
+  });
+}
+
+test('cloud-run without a login says so without calling the cloud', () => withCloud(async (cloud) => {
+  const store = createMemoryStore({ origin: 'laptop' });
+  const shown = await command(store, ['cloud-run', 'cmp-x'], { cloud: { loadCredentials: () => null } });
+  assert.equal(shown.code, 1);
+  assert.match(shown.err, /atris login/);
   assert.equal(cloud.requests.length, 0);
 }));

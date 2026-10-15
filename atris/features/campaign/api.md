@@ -24,6 +24,18 @@ All routes are under `/api/campaigns`, need the signed-in user (the same auth th
 
 Events the backend writes itself use origin `cloud` and its own seq per campaign.
 
+## Run in the cloud (the owner, from a screen or the CLI)
+
+`POST /api/campaigns/{campaign_id}/run-in-cloud` with `{ "work": "50m", "break": "10m", "max_rounds": <optional, 1 to 48> }` runs the campaign on the owner's Atris computer, so it keeps going while the laptop sleeps. Only the owner's own login may call it (agent tokens and API keys get 403), and only a campaign whose `campaign_started` says `basis: "atris_cloud"` runs there (403 otherwise). The backend finds the person's computer, wakes it if it sleeps (a computer still waking answers 503 with `Retry-After`), and starts one tracked background command on it:
+
+```text
+atris campaign sync <id> && atris campaign run <id> --work <s>s --break <s>s [--rounds <n>]
+```
+
+The computer's runner keeps the output in a capped log and kills the run at its deadline (the rounds plus 30 minutes, or one day without `max_rounds`). One run per campaign at a time (409 while one is running). The backend records `home_moved` with `{ "to": "computer:<agent id>", "run_id", "work", "break", "max_rounds", "deadline" }` as the person, origin `cloud`. → `{ "ok": true, "computer", "run_id", "status", "woke", "recorded", "deadline", "check" }`.
+
+`GET /api/campaigns/{campaign_id}/cloud-run` → `{ "ok": true, "state", "home", "basis", "summary", "run": null | { "run_id", "computer", "status": "running" | "finished" | "unknown" | "computer_asleep" | "unreachable", "exit_code", "timed_out", "output_tail" } }`. It never wakes a computer.
+
 ## Credits (metering only, v1)
 
 Price: engine cost plus margin. `credits` on each view:
@@ -36,7 +48,7 @@ Price: engine cost plus margin. `credits` on each view:
 
 ## CLI
 
-`atris campaign sync <id>` pushes events the cloud lacks and pulls the ones the computer lacks (answers, actions from screens), by event id. `atris campaign start ... --cloud` starts it locally and syncs at once; `atris campaign run` on a synced campaign syncs before and after every step, so a phone answer reaches a running loop.
+`atris campaign sync <id>` pushes events the cloud lacks and pulls the ones the computer lacks (answers, actions from screens), by event id. On a computer that has never seen the campaign it pulls the whole log first, `campaign_started` before anything else, and says plainly when the cloud has no such campaign for this login. `atris campaign start ... --cloud` starts it locally and syncs at once (`--basis atris_cloud` marks it as run and billed on Atris engines; it needs `--cloud`); `atris campaign cloud-run <id> [--work 50m --break 10m --rounds N]` syncs, then calls run-in-cloud, and `--status` reads cloud-run; `atris campaign run` on a synced campaign syncs before and after every step, so a phone answer reaches a running loop.
 
 The CLI keeps the trust rule: it never pushes `ask_answered`, `budget_added`, or `done`. On a synced campaign, a person's `atris campaign answer` and `atris campaign budget --add` go through the person routes above and come back by pull; offline they are recorded on the computer only. The CLI keeps each campaign's cloud link and the last pulled `last_event_seq` in the store's `meta` table (`lib/campaign-sync.js`).
 
