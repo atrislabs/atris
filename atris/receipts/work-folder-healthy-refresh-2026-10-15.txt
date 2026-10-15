@@ -1,0 +1,28 @@
+Cleanup refreshes an outdated local base quietly and preserves drafts.
+
+Files: test/member-tidy.test.js, atris/MAP.md, atris/refs/MAP-NOTES.md, atris/team/architect/logs/2026-10-15.md, atris/receipts/work-folder-healthy-refresh-2026-10-15.txt
+Verify: node --test test/worktree-removal-guard.test.js test/member-tidy.test.js && node bin/atris.js slop --staged
+Tests: exit 0; 86 passed, 0 failed, 0 skipped, 0 todo.
+Writing check: node bin/atris.js slop --staged, exit 0; clean, no slop tells in 5 files.
+Real CLI output:
+command: node bin/atris.js worktree cleanup (healthy origin, local base behind)
+cleanup: dry-run base=origin/master
+candidates: 0
+cache_candidates: 0
+kept: 2
+left alone: primary_checkout=1
+kept: /private/var/folders/t1/2_4kmb5n4c71dxm26zc8dgzr0000gn/T/atris-member-tidy-7UQAhG/arena/.agent-worktrees/repo/healthy-draft branch=healthy-draft reason=dirty staged=0 unstaged=0 untracked=1
+exit: 0
+command: node bin/atris.js worktree cleanup --apply (healthy origin, local base behind)
+cleanup: applied base=origin/master
+removeds: 0
+cache_pruneds: 0
+kept: 2
+left alone: primary_checkout=1
+kept: /private/var/folders/t1/2_4kmb5n4c71dxm26zc8dgzr0000gn/T/atris-member-tidy-7UQAhG/arena/.agent-worktrees/repo/healthy-draft branch=healthy-draft reason=dirty staged=0 unstaged=0 untracked=1
+exit: 0
+
+Progress: both preview and apply independently advance an outdated tracking record and FETCH_HEAD to the newest remote commit while preserving the draft, status, branch and registration; no warnings or removals.
+Task attachment: command refused because the mission task lock is held; existing state was preserved.
+next_push: Prove a healthy refresh preserves staged notes and later edits alongside drafts.
+layer: behaviors

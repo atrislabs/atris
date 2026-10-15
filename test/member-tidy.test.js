@@ -1370,17 +1370,28 @@ test('worktree cleanup refreshes the local record of origin only to a real commi
 });
 
 
-test('worktree cleanup stays quiet and keeps drafts when origin is healthy', () => {
+test('worktree cleanup quietly refreshes an outdated base and keeps drafts', () => {
   const fx = makeFixture();
   try {
     const copy = addCopy(fx, 'healthy-draft');
     const draft = path.join(copy, 'draft.txt');
     fs.writeFileSync(draft, 'keep these notes\n');
     const saved = runGit(['rev-parse', 'origin/master'], fx.repo);
+    const other = path.join(fx.base, 'other');
+    runGit(['clone', '-q', path.join(fx.base, 'remote.git'), other], fx.base);
+    configure(other);
+    fs.writeFileSync(path.join(other, 'later.txt'), 'later work\n');
+    runGit(['add', 'later.txt'], other);
+    runGit(['commit', '-q', '-m', 'later work'], other);
+    runGit(['push', '-q', 'origin', 'master'], other);
+    const newer = runGit(['rev-parse', 'HEAD'], other);
+    assert.notEqual(newer, saved);
     const status = runGit(['status', '--porcelain'], copy);
     for (const extra of [[], ['--apply']]) {
+      runGit(['update-ref', 'refs/remotes/origin/master', saved], fx.repo);
+      assert.equal(runGit(['rev-parse', 'origin/master'], fx.repo), saved);
       const cli = spawnSync(process.execPath, [path.resolve(__dirname, '../bin/atris.js'), 'worktree', 'cleanup', ...extra], { cwd: fx.repo, encoding: 'utf8', timeout: 30000 });
-      console.log(`command: node bin/atris.js worktree cleanup${extra.length ? ' --apply' : ''} (healthy origin)`);
+      console.log(`command: node bin/atris.js worktree cleanup${extra.length ? ' --apply' : ''} (healthy origin, local base behind)`);
       console.log(cli.stdout.trim());
       console.log(`exit: ${cli.status}`);
       assert.equal(cli.status, 0, cli.stderr);
@@ -1391,7 +1402,8 @@ test('worktree cleanup stays quiet and keeps drafts when origin is healthy', () 
       assert.doesNotMatch(cli.stdout, /warning:|could not refresh|may be behind/);
       assert.equal(fs.readFileSync(draft, 'utf8'), 'keep these notes\n');
       assert.equal(runGit(['status', '--porcelain'], copy), status);
-      assert.equal(runGit(['rev-parse', 'origin/master'], fx.repo), saved);
+      assert.equal(runGit(['rev-parse', 'origin/master'], fx.repo), newer);
+      assert.equal(runGit(['rev-parse', 'FETCH_HEAD'], fx.repo), newer);
       assert.ok(branchExists(fx.repo, 'healthy-draft'));
       assert.ok(runGit(['worktree', 'list', '--porcelain'], fx.repo).includes(`worktree ${copy}\n`));
       assert.equal(fs.existsSync(path.join(fx.repo, '.atris/state/worktree_removals.jsonl')), false);
