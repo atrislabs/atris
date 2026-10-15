@@ -5632,3 +5632,40 @@ test('the hourly cleanup summary names a stop and a refused stop from one mixed 
     fs.rmSync(root, { recursive: true, force: true });
   }
 });
+
+test('the landing status counts one agent left after a mixed hourly cleanup, read from the saved pass', () => {
+  const { runSshAgentSweep, showStatus } = require('../commands/autoland');
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'autoland-status-mixed-'));
+  const agent = (pid, age_sec) => ({ pid, ppid: 1, uid: 501, age_sec, args: 'ssh-agent -s' });
+  try {
+    require('node:child_process').spawnSync('git', ['init', '-q'], { cwd: root });
+    const receipt = { at: new Date().toISOString() };
+    runSshAgentSweep(root, receipt, {
+      read: () => ({ agents: [agent(200, 3600), agent(201, 1800)], referenced: new Set(), unread: [] }),
+      uid: 501,
+      kill: (pid) => {
+        if (pid === 201) throw Object.assign(new Error('permission denied'), { code: 'EPERM' });
+      },
+    });
+    const runsDir = path.join(root, 'atris', 'runs');
+    fs.mkdirSync(runsDir, { recursive: true });
+    fs.writeFileSync(path.join(runsDir, `autoland-tick-${receipt.at.replace(/[:.]/g, '-')}.json`), JSON.stringify(receipt));
+    const out = [];
+    const original = console.log;
+    console.log = (line = '') => out.push(String(line));
+    try {
+      // The refused agent is still there; the stopped one is gone.
+      showStatus(root, [], { atrisCommand: 'atris', readSshAgents: () => ({ agents: [agent(201, 1800)], referenced: new Set() }), uid: 501 });
+    } finally {
+      console.log = original;
+    }
+    const line = out.find((text) => /leaked ssh-agents on this machine/.test(text));
+    assert.ok(line, 'the landing status names the agent left after the mixed pass');
+    assert.match(line, /leaked ssh-agents on this machine: 1[;,\s]/);
+    const saved = fs.readFileSync(path.join(root, RESOURCE_LOG), 'utf8').trim().split('\n').map(JSON.parse);
+    assert.equal(saved.at(-1).leaked_ssh_agents, 1, 'the saved pass and the landing status agree on one left');
+    console.log(`landing status after a mixed hourly cleanup: ${line.trim()}`);
+  } finally {
+    fs.rmSync(root, { recursive: true, force: true });
+  }
+});
