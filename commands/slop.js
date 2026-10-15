@@ -631,9 +631,10 @@ const QUESTION_AFTER_DASH = new RegExp(`${CLAUSE_END}\\s*\\u2014\\s*(?=(?:(?:how
 // group at timeout, spawn the phase detached", "don't impose, match it".
 // An order verb that opens a common noun pair names a thing, not an order,
 // so it keeps its comma: "Large LTL carrier, use case TBD", "`openrouter.py`,
-// retry delay parameters".
+// retry delay parameters", "`optimizer.py`, search strategy".
 const ORDER_VERB = `(?:don['\\u2019]t|do not|let['\\u2019]s|let us|pick|copy|reframe|judge|plug|retry|rename|propose|inspect|keep|leave|use|run|read|ask|add|check|make|move|stop|try|wait|skip|take|look|call|write|delete|remove|fix|put|say|tell|give|treat|verify|ship|commit|push|kill|mark|start|avoid|prefer|trust|drop|cut|split|merge|revert|rerun|re-run|consolidate|pin|automate|clamp|fork|spawn|adapt|halt|search|see)`;
-const ORDER_NOUN_PAIR = '(?:use\\s+cases?|retry\\s+delays?)\\b';
+const FIELD_VALUE = /(?:^|\n)[ \t]*(?:[-*+>][ \t]*)?[A-Z][\w-]*(?:[ \t]+[\w-]+){0,2}:[ \t]+(?:\uE000\d+\uE001|[^\s:]+)[ \t]*$/;
+const ORDER_NOUN_PAIR = '(?:use\\s+cases?|retry\\s+(?:delays?|strateg(?:y|ies))|search\\s+(?:scoring|strateg(?:y|ies)|results?))\\b';
 const ORDER_CLAUSE_AFTER_DASH = new RegExp(`${CLAUSE_END}\\s*\\u2014\\s*(?!${ORDER_NOUN_PAIR})(?=(?:${ORDER_VERB},\\s+)?(?:don['\\u2019]t|do not)\\s+[\\w\`"'(\\uE000]|${ORDER_VERB}(?:,\\s+${ORDER_VERB})?\\s+(?![a-z]+ed\\b|of\\b)[\\w\`"'(\\uE000])`, 'g');
 
 // Two short subjects joined by "and", then a helper that takes them both,
@@ -1377,7 +1378,10 @@ function fixEmDash(s, { endsBlock = false, startsBlock = false, spans = [], abov
     // wrapped sentence is no name, so it keeps its semicolon.
     .replace(ORDER_CLAUSE_AFTER_DASH, (m, at, whole) => {
       const left = clauseLeft(at, whole);
-      if (!left) return m;
+      // one word or code span after a field's own colon is the field's value,
+      // so the order after it is a sentence of its own, as it is after a bold
+      // field: "TARGET: `agent.py`; add a cache", like "**TARGET:** `agent.py`;"
+      if (!left) return FIELD_VALUE.test(whole.slice(0, at)) ? '; ' : m;
       const inner = left.split('(').pop();
       const words = (left.includes('(') && !inner.includes(')') ? inner : left).replace(/^[\s"'*_]+/, '').split(/\s+/);
       if (words.length < 2 || words.every((w) => /^[A-Z][A-Za-z0-9'-]*$/.test(w))) return m;

@@ -4742,6 +4742,24 @@ test('fix gives a "see" pointer after a full clause its own sentence', () => {
   ]);
 });
 
+test('fix gives an order after a field and its one-word value a semicolon', () => {
+  // from real experiment briefs: "TARGET: `agent.py`, add a cache" spliced,
+  // while the same line with a bold field already took a semicolon
+  const file = tmpFile('field-value-order.md', [
+    'TARGET: `backend/agent.py` \u2014 add idempotency layer to tool dispatch',
+    '- Live signal engine: `features/crm/` \u2014 run `--once` anytime',
+    'TARGET: `experiments/optimizer.py` \u2014 search strategy (swap hill-climbing)',
+    'Done \u2014 ship it.',
+  ].join('\n\n'));
+  const { changes } = applyFixes([file], RULES);
+  assert.deepEqual(changes.map((c) => c.after), [
+    'TARGET: `backend/agent.py`; add idempotency layer to tool dispatch',
+    '- Live signal engine: `features/crm/`; run `--once` anytime',
+    'TARGET: `experiments/optimizer.py`, search strategy (swap hill-climbing)',
+    'Done, ship it.',
+  ]);
+});
+
 test('fix gives a run of "ing" phrases after a dash a colon, like a list', () => {
   // from hugolearn: "extracting what was learned" read as a subject and its
   // verb, so the list after the dash got a semicolon
