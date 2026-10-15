@@ -1808,3 +1808,33 @@ test('member stop needs the marker to open the prompt, as whole words', async ()
     try { process.kill(-child.pid, 'SIGKILL'); } catch {}
   }
 });
+
+test('hidden earlier sign-in failures name their old engine only in spare room', () => {
+  const base = { state: 'working', alive: true, engine: 'codex', last_result: 'failed', last_result_reason: 'signed out', last_result_engine: 'claude', last_result_ago: '1m ago', ago: '1s ago' };
+  const busy = { ...base, member: 'busy' };
+  const other = { ...base, member: 'other', last_result: 'ok', last_result_reason: '' };
+  const footer = (rows, width, height = 2) => renderBoard(rows, '/progress', 0, width, height).split('\n').pop();
+  assert.equal(footer([busy, other], 80), '2 more not shown (1 with earlier failure, signed out of claude, other working)');
+  assert.equal(footer([busy, other], 70), '2 more not shown (1 with earlier failure, signed out, other working)');
+  for (const rows of [
+    [busy, other],
+    [busy, { ...busy, member: 'second' }, other],
+    [busy, { ...busy, member: 'second', last_result_reason: 'timed out' }, other],
+    [busy, { ...busy, member: 'second', engine: 'claude', last_result_engine: 'claude' }, other],
+  ]) {
+    const unnamed = rows.map((r) => r.last_result_engine === r.engine ? r : { ...r, last_result_engine: '' });
+    for (let width = 18; width <= 140; width++) {
+      for (const height of [2, 3]) {
+        const plain = footer(unnamed, width, height);
+        const named = footer(rows, width, height);
+        assert.equal(named.replaceAll('signed out of claude', 'signed out'), plain, `${width}x${height}: engine names never displace other information`);
+        assert.ok(named.length <= width, `${width}x${height}: fits the window`);
+      }
+    }
+  }
+  for (const engine of ['', 'gemini']) {
+    const rows = [busy, { ...busy, member: 'second', last_result_engine: engine }, other];
+    assert.doesNotMatch(footer(rows, 140), /signed out of/, 'unknown or mixed engines have no single engine to name');
+  }
+  assert.doesNotMatch(footer([{ ...busy, engine: 'claude' }, other], 140), /signed out/, 'a fixed sign-in stays fixed');
+});
