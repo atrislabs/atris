@@ -2913,3 +2913,5 @@ Scoped steering wake setup: `test/commands.test.js:1862` uses `lib/member-scaffo
 Closed-reference wake setup: `test/commands.test.js:1899` uses `lib/member-scaffold.js:145` for the member fixture. Three program launches become two; the real goal and wake calls retain every assertion.
 
 Nearest-task wake setup: `test/commands.test.js:1963` uses `lib/member-scaffold.js:145` for its member fixture. Three program launches become two; real goal and wake calls retain every assertion.
+
+Completed-task proof wake setup: `test/commands.test.js:2009` uses `lib/member-scaffold.js:145` for its member fixture. Three program launches become two; real goal and wake calls retain every assertion.
