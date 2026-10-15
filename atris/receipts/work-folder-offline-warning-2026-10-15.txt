@@ -1,0 +1,27 @@
+Cleanup warning for an unavailable remote is now proved by real preview and apply, with 85 passing checks and zero pending checks.
+
+Files: test/member-tidy.test.js, atris/MAP.md, atris/refs/MAP-NOTES.md, atris/team/architect/logs/2026-10-15.md, this receipt, and generated atris/TODO.md.
+Plan: unavailable origin -> real cleanup preview/apply -> named warning and retained draft.
+Verify: node --test test/worktree-removal-guard.test.js test/member-tidy.test.js && node bin/atris.js slop --staged
+Exit: 0
+Output excerpt:
+ℹ tests 85
+ℹ pass 85
+ℹ fail 0
+ℹ skipped 0
+ℹ todo 0
+clean, no slop tells in 4 files
+
+Real surface commands run inside the regression check:
+node bin/atris.js worktree cleanup
+node bin/atris.js worktree cleanup --apply
+Both exited 0. Output excerpt (temporary path shortened):
+cleanup: applied base=origin/master
+warning: could not refresh origin/master (fatal: '<fixture>/remote.git' does not appear to be a git repository); cleanup judged against the local copy, which may be behind
+removeds: 0
+kept: 2
+Draft bytes, git status, branch, registration and local origin record remained unchanged; no removal log appeared.
+
+Progress: one added real-runtime case, from 84 to 85 passing checks; no runtime code changed.
+next_push: Prove the real cleanup command prints no warning after a healthy refresh.
+layer: behaviors

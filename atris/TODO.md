@@ -19,7 +19,7 @@ Details for any task: atris task show <ID>
 
 ## In Progress
 
-(Empty)
+- **[ACW-25]** Prove cleanup warns when origin is unavailable · architect
 
 ## Review
 

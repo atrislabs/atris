@@ -230,3 +230,5 @@ Local remote record proof: `test/member-tidy.test.js:1279` runs real preview and
 Shared refresh record proof: `commands/worktree.js:422` fetches the start, ship and cleanup base into FETCH_HEAD with an empty refmap and moves the local origin record only to a verified commit. `test/member-tidy.test.js:1320` runs real worktree cleanup: a healthy origin still moves the record forward; a damaged origin leaves it on the last good commit, removes nothing, and keeps the copy and its draft; the test fails on the code before this change.
 
 Cleanup stale base warning: `commands/worktree.js:1494` keeps the shared refresh failure on the cleanup result and `commands/worktree.js:1633` prints it under the header. `test/member-tidy.test.js:1320` checks no warning on a healthy refresh, the reason on a damaged remote in preview and apply, and the exact line from the real cleanup command.
+
+Unavailable origin warning proof: `test/member-tidy.test.js:1374` runs real cleanup preview and apply with an offline remote, checks the warning, and preserves draft bytes, status, branch, registration and local origin record with no removal log.
