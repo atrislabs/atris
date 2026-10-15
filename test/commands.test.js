@@ -12311,31 +12311,19 @@ test('task review-chat extracts only proof-derived verifier commands', () => {
 
     assert.deepEqual(proofCommands('validation passed: typechecks passed, git checks passed; run_id=123456789'), []);
 
-    const atrisSlugRef = seedClaimedTask('Reject Atris slug prose pseudo command');
-    const atrisSlugReady = runCli([
-      'task', 'ready', atrisSlugRef,
-      '--as', 'codex',
-      '--proof', 'Second-pass review: recruiting shortcut fallback is scoped to the built-in atris-labs shortcut, keeps generic business lookup strict, and full typecheck passed 1635/1635; run_id=123456789.',
-      '--json',
-    ], { cwd: dir, env });
-    assert.equal(atrisSlugReady.status, 0, atrisSlugReady.stderr);
-    const atrisSlugReadyPayload = JSON.parse(atrisSlugReady.stdout);
-    assert.equal(atrisSlugReadyPayload.task.review.landing.tested, 'I attached the proof below.');
-    assert.deepEqual(JSON.parse(atrisSlugReady.stdout).handoff.verification_focus.commands_to_verify, []);
+    // Ready-only cases read the command list and tested sentence that ready
+    // builds from the proof alone; the semicolon and passing-tail cases keep
+    // the CLI parity checks for both builders.
+    const atrisSlugProof = 'Second-pass review: recruiting shortcut fallback is scoped to the built-in atris-labs shortcut, keeps generic business lookup strict, and full typecheck passed 1635/1635; run_id=123456789.';
+    assert.equal(proofLanding(atrisSlugProof).tested, 'I attached the proof below.');
+    assert.deepEqual(proofCommands(atrisSlugProof), []);
 
-    const atrisWildcardRef = seedClaimedTask('Reject Atris wildcard prose pseudo command');
-    const atrisWildcardReady = runCli([
-      'task', 'ready', atrisWildcardRef,
-      '--as', 'codex',
-      '--proof', 'Second-pass review: extractor now rejects atris-* slug prose before command token matching; live review queue shows CLI-640 Commands: typecheck only; node --check test/commands.test.js passed 381/381.',
-      '--json',
-    ], { cwd: dir, env });
-    assert.equal(atrisWildcardReady.status, 0, atrisWildcardReady.stderr);
-    const atrisWildcardReadyPayload = JSON.parse(atrisWildcardReady.stdout);
-    assert.equal(atrisWildcardReadyPayload.task.review.landing.tested, 'I ran the listed check for this result.');
-    assert.doesNotMatch(atrisWildcardReadyPayload.task.review.landing.tested, /atris-\*/);
-    assert.doesNotMatch(atrisWildcardReadyPayload.task.review.landing.tested, /npm test only/);
-    assert.deepEqual(JSON.parse(atrisWildcardReady.stdout).handoff.verification_focus.commands_to_verify, [
+    const atrisWildcardProof = 'Second-pass review: extractor now rejects atris-* slug prose before command token matching; live review queue shows CLI-640 Commands: typecheck only; node --check test/commands.test.js passed 381/381.';
+    const atrisWildcardTested = proofLanding(atrisWildcardProof).tested;
+    assert.equal(atrisWildcardTested, 'I ran the listed check for this result.');
+    assert.doesNotMatch(atrisWildcardTested, /atris-\*/);
+    assert.doesNotMatch(atrisWildcardTested, /npm test only/);
+    assert.deepEqual(proofCommands(atrisWildcardProof), [
       'node --check test/commands.test.js',
     ]);
 
@@ -12454,20 +12442,12 @@ test('task review-chat extracts only proof-derived verifier commands', () => {
     assert.doesNotMatch(quotedPipePayload.contract.codex_prompt, /health' \| git status --porcelain/);
     assert.doesNotMatch(quotedPipePayload.contract.required_checks.join('\n'), /health' \| git status --porcelain/);
 
-    const quotedListRef = seedClaimedTask('Quoted command-list examples');
-    const quotedListReady = runCli([
-      'task', 'ready', quotedListRef,
-      '--as', 'codex',
-      '--proof', "Product proof says 'Commands: command 1: <pipe-containing test command>; command 2: git status --porcelain'. Checks passed: node -c commands/task.js; git status --porcelain.",
-      '--json',
-    ], { cwd: dir, env });
-    assert.equal(quotedListReady.status, 0, quotedListReady.stderr);
-    const quotedListPayload = JSON.parse(quotedListReady.stdout);
-    assert.deepEqual(quotedListPayload.handoff.verification_focus.commands_to_verify, [
+    const quotedListProof = "Product proof says 'Commands: command 1: <pipe-containing test command>; command 2: git status --porcelain'. Checks passed: node -c commands/task.js; git status --porcelain.";
+    assert.deepEqual(proofCommands(quotedListProof), [
       'node -c commands/task.js',
       'git status --porcelain',
     ]);
-    assert.equal(quotedListPayload.task.review.landing.tested, 'I ran the listed checks for this result.');
+    assert.equal(proofLanding(quotedListProof).tested, 'I ran the listed checks for this result.');
 
     assert.deepEqual(proofCommands("Product proof: live Mission Report plain text now ends with 'Next: atris mission run mission-2026-06-30-work-overnight-and-see-where-1858e505' instead of 'Next: next move: run ...'. JSON still keeps operator_next raw for machines. Checks: node -c commands/mission.js; node --check test/mission-status.test.js --test-name-pattern 'mission report' (60 pass); git status --porcelain."), [
       'node -c commands/mission.js',
@@ -12475,16 +12455,7 @@ test('task review-chat extracts only proof-derived verifier commands', () => {
       'git status --porcelain',
     ]);
 
-    const optionBeforeFileRef = seedClaimedTask('Quoted option-before-file verifier');
-    const optionBeforeFileReady = runCli([
-      'task', 'ready', optionBeforeFileRef,
-      '--as', 'codex',
-      '--proof', "Receipt saved at atris/runs/proof.json. Product proof: the review handoff preserves the full verifier command, including node --check --test-name-pattern with quoted test names containing 'and'. Checks: node --check test/mission-xp.test.js; node --check --test-name-pattern 'mission run blocks Codex-goal work until native goal ack|mission goal-loop attaches task spine before due mission work|mission goal-loop runs due mission work once and refreshes final state' test/mission-status.test.js; git status --porcelain; atris clean --dry-run --json; atris brain compile --root . --verify.",
-      '--json',
-    ], { cwd: dir, env });
-    assert.equal(optionBeforeFileReady.status, 0, optionBeforeFileReady.stderr);
-    const optionBeforeFilePayload = JSON.parse(optionBeforeFileReady.stdout);
-    assert.deepEqual(optionBeforeFilePayload.handoff.verification_focus.commands_to_verify, [
+    assert.deepEqual(proofCommands("Receipt saved at atris/runs/proof.json. Product proof: the review handoff preserves the full verifier command, including node --check --test-name-pattern with quoted test names containing 'and'. Checks: node --check test/mission-xp.test.js; node --check --test-name-pattern 'mission run blocks Codex-goal work until native goal ack|mission goal-loop attaches task spine before due mission work|mission goal-loop runs due mission work once and refreshes final state' test/mission-status.test.js; git status --porcelain; atris clean --dry-run --json; atris brain compile --root . --verify."), [
       'node --check test/mission-xp.test.js',
       "node --check --test-name-pattern 'mission run blocks Codex-goal work until native goal ack|mission goal-loop attaches task spine before due mission work|mission goal-loop runs due mission work once and refreshes final state' test/mission-status.test.js",
       'git status --porcelain',

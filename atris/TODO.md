@@ -23,6 +23,8 @@ Details for any task: atris task show <ID>
 
 ## Review
 
+- **[AIC-84]** Move ready-only proof cases in process in the review-chat extraction test · auto-improver
+  **Done looks like:** Developers can run the slowest task test about two thirds of a second faster, which shortens the full test wait while every proof extraction check still runs.
 - **[AIC-83]** Read safe review drain baseline through the task store · auto-improver
   **Done looks like:** Developers can check safe review draining with one fewer setup command, which saves startup work while every human-gate safety check still runs.
 - **[AIC-82]** Read safe drain action baselines through the task store · auto-improver
