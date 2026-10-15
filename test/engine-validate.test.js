@@ -387,14 +387,21 @@ test('failed referee runs record timeout, exit code, empty output, and spawn err
   const root = tempRoot();
   try {
     writeAskReceipt(root, 'engine-ask-timeout.json', { at: '2026-08-12T20:00:00.000Z' });
+    // A recorded timeout, not a live child: racing a fresh process against a
+    // tiny timeout lost on slow CI runners and dropped the stderr tail.
     const code = await runEngineValidateCommand(['latest'], root, {
       log: () => {},
-      executeAskJob: () => runAskProcess({
-        bin: process.execPath,
-        args: ['-e', 'process.stderr.write("stuck thinking\\n"); setTimeout(() => {}, 5000);'],
-      }, {
-        cwd: root,
-        timeoutMs: 80,
+      executeAskJob: async () => ({
+        ok: false,
+        reason: 'timeout',
+        exit_code: null,
+        signal: 'SIGTERM',
+        timed_out: true,
+        cancelled: false,
+        stdout: '',
+        stderr: 'stuck thinking\n',
+        output_truncated: false,
+        duration_ms: 101,
       }),
     });
     assert.equal(code, 0);
