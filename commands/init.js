@@ -5,6 +5,7 @@ const { ensureExperimentsFramework } = require('./experiments');
 const { ensureWorkspaceBrain } = require('../lib/workspace-scaffold');
 const { upsertAtrisClaudeBootBlock } = require('../lib/claude-boot-block');
 const { ensureRunIgnore } = require('../lib/gitignore');
+const { snapshotBeforeInit, commitInitFiles } = require('../lib/init-commit');
 const { INTENTS } = require('../lib/intents');
 const {
   upsertAgentVoiceCard,
@@ -307,7 +308,7 @@ function initAtris() {
   // shouldn't have file-system side effects.
   const args = process.argv.slice(3);
   if (args[0] === '-h' || args[0] === '--help' || args[0] === 'help') {
-    console.log('Usage: atris init [--force] [--yes|-y] [--verbose] [--minimal] [--full] [--with-adapters] [--with-skills]');
+    console.log('Usage: atris init [--force] [--yes|-y] [--verbose] [--minimal] [--full] [--with-adapters] [--with-skills] [--no-commit]');
     console.log('');
     console.log('  Scaffold the atris/ workspace in the current directory.');
     console.log('  Refuses to run inside an existing atris/ folder unless --force is passed.');
@@ -315,6 +316,8 @@ function initAtris() {
     console.log('  Use --verbose to list every file installed.');
     console.log('  Use --minimal for atris.md + MAP + TODO + today journal + .atris/state (no IDE farm).');
     console.log('  Use --with-adapters / --with-skills with --minimal, or --full for the default full scaffold.');
+    console.log('  In a git repo, init commits the files it creates so every member copy starts with them.');
+    console.log('  Use --no-commit to leave them uncommitted.');
     return;
   }
   const verbose = args.includes('--verbose');
@@ -391,6 +394,9 @@ function initAtris() {
     if (parent === walker) break;
     walker = parent;
   }
+
+  // Snapshot what was already uncommitted so the setup commit only carries init's own files.
+  const gitSnapshot = args.includes('--no-commit') ? null : snapshotBeforeInit(cwd);
 
   const targetDir = path.join(cwd, 'atris');
   const teamDir = path.join(targetDir, 'team');
@@ -1122,6 +1128,15 @@ Read atris/MAP.md. Begin iteration 1.`;
     fs.copyFileSync(sourceFile, targetFile);
     markReady('workspace', 'atris.md', '✓ Copied atris.md to atris/ folder');
     printReadyCounts();
+    if (gitSnapshot) {
+      const saved = commitInitFiles(gitSnapshot);
+      if (saved.committed) {
+        console.log('setup saved to git, so every member starts with it');
+      } else if (saved.reason === 'add_failed' || saved.reason === 'commit_failed') {
+        console.log('setup files are not committed yet. members only see them after you commit.');
+        if (saved.detail) console.log(`  git said: ${saved.detail.split('\n')[0]}`);
+      }
+    }
     console.log('\natris initialized.');
     console.log('no commands to learn. tell your agent what you want in plain words.');
   } else {
