@@ -15619,26 +15619,20 @@ test('task review lanes block weak golden-path mission XP proof from accept', ()
     assert.equal(runCli(['task', 'review', ref, '--reward', '0', '--as', 'codex-review', '--proof', strongProof, '--json'], { cwd: dir, env }).status, 0);
 
     const weakProof = 'atris/runs/bookkeeping.json';
-    const seeded = spawnSync(process.execPath, ['-e', `
-      const { DatabaseSync } = require('node:sqlite');
-      const sqlite = new DatabaseSync(process.argv[1]);
-      try {
-        const row = sqlite.prepare('SELECT metadata FROM tasks WHERE id = ?').get(process.argv[2]);
-        const metadata = JSON.parse(row.metadata || '{}');
-        metadata.latest_agent_proof = process.argv[3];
-        metadata.agent_certified = true;
-        metadata.approval_status = 'pending';
-        metadata.agent_review_pass_count = 2;
-        metadata.stop_condition = 'a full fresh-environment pass completes with zero new papercuts';
-        sqlite.prepare('UPDATE tasks SET metadata = ?, updated_at = ? WHERE id = ?').run(JSON.stringify(metadata), Date.now(), process.argv[2]);
-      } finally {
-        sqlite.close();
-      }
-    `, dbPath, task.id, weakProof], {
-      encoding: 'utf8',
-      env: { ...process.env, NODE_NO_WARNINGS: '1' },
-    });
-    assert.equal(seeded.status, 0, seeded.stderr);
+    // Inject weak proof after review; queue and acceptance checks use the CLI.
+    const reviewDb = taskStore.open(dbPath);
+    try {
+      const row = reviewDb.prepare('SELECT metadata FROM tasks WHERE id = ?').get(task.id);
+      const metadata = JSON.parse(row.metadata || '{}');
+      metadata.latest_agent_proof = weakProof;
+      metadata.agent_certified = true;
+      metadata.approval_status = 'pending';
+      metadata.agent_review_pass_count = 2;
+      metadata.stop_condition = 'a full fresh-environment pass completes with zero new papercuts';
+      reviewDb.prepare('UPDATE tasks SET metadata = ?, updated_at = ? WHERE id = ?').run(JSON.stringify(metadata), Date.now(), task.id);
+    } finally {
+      taskStore.close();
+    }
 
     const reviews = runCli(['task', 'reviews', '--json'], { cwd: dir, env });
     assert.equal(reviews.status, 0, reviews.stderr);

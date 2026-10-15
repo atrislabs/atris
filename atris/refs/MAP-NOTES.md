@@ -2577,3 +2577,5 @@ Landing capability test setup: `test/commands.test.js:12964` seeds creation and 
 - Mission XP weak-proof rejection: `test/commands.test.js:15511` claims the CLI-created task in process using production `claimTask`, asserts success and closes in finally. Five launches become four; both weak-proof gates and strong-proof success retain real CLI assertions.
 
 - Review-lanes weak-proof setup: `test/commands.test.js:15612` uses production `claimTask`, asserts success and closes in finally. Eight CLI launches become seven; readiness, review, queue/current selection and both acceptance gates keep every assertion.
+
+- Review-lanes metadata setup: `test/commands.test.js:15622` opens the production task store after CLI review, updates the same five metadata fields and timestamp, and closes in finally. Total child launches fall from eight to seven; seven CLI launches and all assertions remain.
