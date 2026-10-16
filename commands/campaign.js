@@ -50,7 +50,7 @@ function printHelp() {
   console.log('        the campaign runs itself: proposes missions, runs them at once, judges, repeats until done, broke, or needing you');
   console.log('        add --work 50m --break 10m [--rounds N] to work in rounds; each break judges and writes lessons the next round plans from');
   console.log('  atris campaign step <id>               one step of that loop');
-  console.log('  atris campaign tick [--max-steps 4]     push the next campaign here that has work (the overnight heartbeat runs this)');
+  console.log('  atris campaign tick [--max-steps 4] [--parallel 1]   push the next campaign here that has work, one mission at a time (the overnight heartbeat runs this)');
   console.log('  atris campaign propose <id> [--count 3]   ask the owner\'s engine for the next missions');
   console.log('  atris campaign export <id> --trace [--out <file.jsonl>] [--full]   one row per mission for learning; redacted unless --full');
   console.log('  atris campaign rsi [id] [--no-write]   distill trace rewards and lessons across campaigns');
@@ -854,8 +854,10 @@ async function cmdTick(args, ctx) {
     return 0;
   }
   if (!ctx.asJson) console.log(`advancing ${pick.id} (up to ${maxSteps} steps)${skipped.length ? `; skipped ${skipped.map((s) => s.id).join(', ')}` : ''}`);
-  const passthrough = [];
-  for (const flag of ['--runner', '--parallel', '--max-ticks', '--mission-minutes']) {
+  // One mission at a time unless asked: nobody is watching overnight, and missions
+  // in one folder can write the same files.
+  const passthrough = ['--parallel', readFlag(args, '--parallel', '') || '1'];
+  for (const flag of ['--runner', '--max-ticks', '--mission-minutes']) {
     const value = readFlag(args, flag, '');
     if (value) passthrough.push(flag, value);
   }
