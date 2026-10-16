@@ -17,41 +17,36 @@ Frontend work lives in web/src/components/.
 
 // The map names backend/services without a slash, so the repo decides it is a directory.
 const isDirectory = (p) => p === 'backend/services' || p === 'web/src/components';
+const compactCoverage = mapCoverage(COMPACT_MAP, isDirectory);
 
 test('exact file paths in the map count as documented', () => {
-  const coverage = mapCoverage(COMPACT_MAP, isDirectory);
-  assert.equal(isPathCovered('backend/main.py', coverage), true);
+  assert.equal(isPathCovered('backend/main.py', compactCoverage), true);
 });
 
 test('a directory named in the map covers the files under it', () => {
-  const coverage = mapCoverage(COMPACT_MAP, isDirectory);
-  assert.equal(isPathCovered('backend/routers/event_tickets_router.py', coverage), true);
+  assert.equal(isPathCovered('backend/routers/event_tickets_router.py', compactCoverage), true);
 });
 
 test('coverage reaches nested subdirectories too', () => {
-  const coverage = mapCoverage(COMPACT_MAP, isDirectory);
-  assert.equal(isPathCovered('backend/routers/admin/billing_router.py', coverage), true);
+  assert.equal(isPathCovered('backend/routers/admin/billing_router.py', compactCoverage), true);
 });
 
 test('files in an unmapped area are still flagged', () => {
-  const coverage = mapCoverage(COMPACT_MAP, isDirectory);
-  assert.equal(isPathCovered('workers/queue_drain.py', coverage), false);
-  assert.equal(isPathCovered('backend_extras/thing.py', coverage), false);
+  assert.equal(isPathCovered('workers/queue_drain.py', compactCoverage), false);
+  assert.equal(isPathCovered('backend_extras/thing.py', compactCoverage), false);
 });
 
 test('directory entries work with or without a trailing slash', () => {
-  const coverage = mapCoverage(COMPACT_MAP, isDirectory);
   // backend/routers/ carries the slash; backend/services relies on the repo check.
-  assert.equal(isPathCovered('backend/routers/tickets.py', coverage), true);
-  assert.equal(isPathCovered('backend/services/billing.py', coverage), true);
+  assert.equal(isPathCovered('backend/routers/tickets.py', compactCoverage), true);
+  assert.equal(isPathCovered('backend/services/billing.py', compactCoverage), true);
   // Plain prose paths are picked up as well.
-  assert.equal(isPathCovered('web/src/components/Button.tsx', coverage), true);
+  assert.equal(isPathCovered('web/src/components/Button.tsx', compactCoverage), true);
 });
 
 test('a mapped file never acts as a directory prefix', () => {
-  const coverage = mapCoverage(COMPACT_MAP, isDirectory);
-  assert.equal(isPathCovered('backend/main_extra.py', coverage), false);
-  assert.equal(isPathCovered('backend/main.pyc', coverage), false);
+  assert.equal(isPathCovered('backend/main_extra.py', compactCoverage), false);
+  assert.equal(isPathCovered('backend/main.pyc', compactCoverage), false);
 });
 
 test('a directory only covers what is beneath it, not itself as a file', () => {
