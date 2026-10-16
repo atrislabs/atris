@@ -647,34 +647,36 @@ stop_writer() { pkill -P "$1" 2>/dev/null || true; kill "$1" 2>/dev/null || true
 # Gemini failed before the backup started, or with RACE_FAILED set when both failed.
 HEDGE_SECS="${ATRIS_YTNOTES_HEDGE_SECS:-1}"
 race_writers() {
-  local a="$WORK/race.$$.a" b="$WORK/race.$$.b" apid bpid="" blabel="${2##*|}" n=0 ticks
-  ticks=$(awk -v s="$HEDGE_SECS" 'BEGIN { printf "%d", s * 20 }')
-  rm -f "$a" "$a.rc" "$b" "$b.rc"
+  local a="$WORK/race.$$.a" b="$WORK/race.$$.b" apid bpid="" tpid blabel="${2##*|}" win=""
+  rm -f "$a" "$a.rc" "$b" "$b.rc" "$b.go"
   start_writer "$1" "$a"; apid=$WRITER_PID
-  while :; do
+  # A real timer: counting 0.05s polls stretched a 1s head start to about 2s.
+  { sleep "$HEDGE_SECS"; : > "$b.go"; } </dev/null >/dev/null 2>&1 &
+  tpid=$!
+  while [ -z "$win" ]; do
     if [ -e "$a.rc" ]; then
-      if writer_ok "$a"; then
-        [ -z "$bpid" ] || stop_writer "$bpid"
-        cat "$a"; echo "notes by ${1##*|}" >&2; return 0
-      fi
+      if writer_ok "$a"; then win=a; break; fi
       if [ "$(cat "$a.rc")" = 99 ]; then
         echo "agy is installed but not signed in; skipping Gemini. Run: agy (sign in once)." >&2
         RACE_SIGNED_OUT=1
       fi
-      [ -n "$bpid" ] || return 1
+      if [ -z "$bpid" ]; then win=none; break; fi
       [ -n "${RACE_SIGNED_OUT:-}" ] || echo "${1##*|} did not answer; writing the notes with $blabel instead." >&2
       while [ ! -e "$b.rc" ]; do sleep 0.05; done
-      if writer_ok "$b"; then cat "$b"; echo "notes by $blabel" >&2; return 0; fi
-      RACE_FAILED="${2%%|*}"; return 1
+      if writer_ok "$b"; then win=b; else win=none; RACE_FAILED="${2%%|*}"; fi
+      break
     fi
-    if [ -n "$bpid" ] && writer_ok "$b"; then
-      stop_writer "$apid"
-      cat "$b"; echo "notes by $blabel" >&2; return 0
-    fi
-    n=$((n + 1))
-    if [ -z "$bpid" ] && [ "$n" -ge "$ticks" ]; then start_writer "$2" "$b"; bpid=$WRITER_PID; fi
+    if [ -n "$bpid" ] && writer_ok "$b"; then stop_writer "$apid"; win=b; break; fi
+    if [ -z "$bpid" ] && [ -e "$b.go" ]; then start_writer "$2" "$b"; bpid=$WRITER_PID; fi
     sleep 0.05
   done
+  kill "$tpid" 2>/dev/null || true
+  case "$win" in
+    a) [ -z "$bpid" ] || stop_writer "$bpid"; cat "$a"; echo "notes by ${1##*|}" >&2 ;;
+    b) cat "$b"; echo "notes by $blabel" >&2 ;;
+  esac
+  rm -f "$a" "$a.rc" "$b" "$b.rc" "$b.go"
+  [ "$win" != none ]
 }
 
 run_auto() {
