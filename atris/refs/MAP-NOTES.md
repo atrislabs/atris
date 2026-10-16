@@ -2384,3 +2384,7 @@ rg "foldMapNotesOnMain|foldNotesText|foldDue|map-notes.d|map_fold|last_map_fold_
 ### overnight campaign execution and complete learning reports
 
 `commands/campaign.js:564` wires the real locked campaign step; `lib/campaign-rsi.js:545` awaits it, rotates campaigns, and records failed starts. `lib/campaign-rsi.js:103` leaves members without measured judge gains unproven. `bin/atris.js:2019` drains large reports before exit. Real runtime checks: `test/campaign-overnight-runtime.test.js`, `test/campaign-json-output.test.js`, `test/campaign-rsi-evidence.test.js`, and `test/campaign-rsi-recorder.test.js`.
+
+### preserve source branches for queued merges
+
+`commands/worktree.js:1123` reads GitHub merge state before deleting a source branch; pending work omits the completed-ship marker. Regression: `test/worktree-ship-queued-merge.test.js` runs the actual CLI and git remote for pending, closed, unreadable, malformed, and confirmed-merged results.

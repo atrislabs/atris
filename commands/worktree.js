@@ -1118,6 +1118,23 @@ function shipWorktree(args) {
         if (/already merged/i.test(`${merged.stdout}${merged.stderr}`)) {
           throw new Error(`gh pr merge reported the PR was already merged (stale PR reused): ${(merged.stdout || merged.stderr).trim()}`);
         }
+        // A merge queue accepts the request before merging. Deleting its head
+        // here closes the PR and cancels that request, so confirm the outcome.
+        const confirmation = spawnSync('gh', ['pr', 'view', mergeRef, '--json', 'state,mergedAt'], { cwd: root, encoding: 'utf8' });
+        if (confirmation.status !== 0) {
+          throw new Error('could not confirm the merge; the source branch was kept');
+        }
+        let state;
+        try { state = JSON.parse(confirmation.stdout); } catch {
+          throw new Error('could not read the merge result; the source branch was kept');
+        }
+        if (state.state === 'OPEN' && !state.mergedAt) {
+          console.log('merge: pending; kept the source branch while required checks finish');
+          return 0;
+        }
+        if (state.state !== 'MERGED' || !state.mergedAt) {
+          throw new Error('the change was not merged; the source branch was kept');
+        }
         console.log('merge: merged');
         const deleted = runGit(['push', 'origin', '--delete', branch], { cwd: root, check: false });
         if (deleted.status === 0) {
