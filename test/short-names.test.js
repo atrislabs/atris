@@ -4,6 +4,7 @@ const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
 const { spawnSync } = require('node:child_process');
+const { readJsonl } = require('./helpers/wish-fixture');
 const {
   nextRecordNumber,
   shortRecordLabel,
@@ -45,14 +46,6 @@ function runCli(args, { cwd, env = {} } = {}) {
 function appendJsonl(file, record) {
   fs.mkdirSync(path.dirname(file), { recursive: true });
   fs.appendFileSync(file, `${JSON.stringify(record)}\n`, 'utf8');
-}
-
-function readJsonl(file) {
-  return fs.readFileSync(file, 'utf8')
-    .split(/\r?\n/)
-    .map((line) => line.trim())
-    .filter(Boolean)
-    .map((line) => JSON.parse(line));
 }
 
 function wishesPath(dir) {
