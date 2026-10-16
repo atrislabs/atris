@@ -2432,3 +2432,5 @@ Task administration CLI tests: `test/helpers/task-admin-cli.js:8` runs the actua
 Scratch CLI test runner: `test/helpers/scratch-cli.js:10` supplies the identical real child, environment order and error behavior with each scratch, hours and mission suite's existing default time limit; explicit caller limits and all cases remain local.
 
 Fifteen-second CLI test runner: `test/helpers/cli-command.js:9` retains the exact synchronous child options, scrubbed environment and caller overrides for brain, local official-command and member-ping tests; each private fixture and behavioral assertion remains local.
+
+Headless safety test runner: `test/helpers/dogfood-headless-cli.js:10` defines `createDogfoodCli`; its returned `runCli` at `test/helpers/dogfood-headless-cli.js:11` keeps each suite's twelve- or twenty-second default, explicit overrides, implicit stdio, per-call scrubbed environment and original timeout failure text. The thirty-six original cases remain in `test/dogfood-p0-safety.test.js`, `test/dogfood-pass4.test.js` and `test/dogfood-unbound-live-writes.test.js`.

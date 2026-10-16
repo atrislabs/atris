@@ -5,11 +5,8 @@ const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
-const { spawnSync } = require('node:child_process');
-const { scrubAgentEnv } = require('./helpers/agent-env');
+const { createDogfoodCli } = require('./helpers/dogfood-headless-cli');
 
-const repoRoot = path.resolve(__dirname, '..');
-const cliPath = path.join(repoRoot, 'bin', 'atris.js');
 const TIMEOUT_MS = 12000;
 
 function makeTempDir(prefix = 'atris-dogfood-p0-safety-') {
@@ -20,25 +17,7 @@ function cleanupTempDir(dir) {
   fs.rmSync(dir, { recursive: true, force: true });
 }
 
-function runCli(args, { cwd, env, timeout = TIMEOUT_MS } = {}) {
-  const result = spawnSync(process.execPath, [cliPath, ...args], {
-    cwd,
-    encoding: 'utf8',
-    timeout,
-    env: {
-      ...scrubAgentEnv(),
-      ATRIS_SKIP_UPDATE_CHECK: '1',
-      ATRIS_NO_INTERACTIVE: '1',
-      ATRIS_NONINTERACTIVE: '1',
-      ...(env || {}),
-    },
-  });
-  if (result.error && result.error.code === 'ETIMEDOUT') {
-    assert.fail(`cli hung past ${timeout}ms (args: ${args.join(' ')})`);
-  }
-  if (result.error) throw result.error;
-  return result;
-}
+const runCli = createDogfoodCli(TIMEOUT_MS);
 
 function assertNoMissionSpawn(dir) {
   const missions = path.join(dir, '.atris', 'state', 'missions.jsonl');
