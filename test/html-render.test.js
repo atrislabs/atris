@@ -7,6 +7,12 @@ const { renderHtml, renderBlock, THEMES } = require('../lib/html-render');
 const { parseMarkdownToSpec } = require('../lib/deck-from-md');
 const { scanFile } = require('../commands/slop');
 
+function tempDir(t, prefix) {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), prefix));
+  t.after(() => fs.rmSync(dir, { recursive: true, force: true }));
+  return dir;
+}
+
 const SPEC = {
   theme: 'atris', brand: { name: 'Aurora', accent: '.' },
   slides: [
@@ -55,8 +61,8 @@ test('renderBlock emits the AppBlock html shape for embedding in an app', () => 
   assert.equal(block.title, 'Aurora deck');
 });
 
-test('generated HTML passes the slop gate (anti-slop by construction)', () => {
-  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'html-'));
+test('generated HTML passes the slop gate (anti-slop by construction)', (t) => {
+  const dir = tempDir(t, 'html-');
   for (const theme of ['atris', 'terminal', 'paper']) {
     const file = path.join(dir, `page-${theme}.html`);
     fs.writeFileSync(file, renderHtml({ ...SPEC, theme }));
