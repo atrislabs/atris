@@ -32,6 +32,103 @@ function runCli(args, { cwd, env = {} } = {}) {
   });
 }
 
+function withVerifyBudget(value, run) {
+  const saved = process.env.ATRIS_VERIFY_TIMEOUT_MS;
+  try {
+    if (value === undefined) delete process.env.ATRIS_VERIFY_TIMEOUT_MS;
+    else process.env.ATRIS_VERIFY_TIMEOUT_MS = value;
+    return run();
+  } finally {
+    if (saved === undefined) delete process.env.ATRIS_VERIFY_TIMEOUT_MS;
+    else process.env.ATRIS_VERIFY_TIMEOUT_MS = saved;
+  }
+}
+
+test('task receipts use the bounded verification budget already used by landing checks', () => {
+  const dir = makeTempDir();
+  try {
+    for (const [configured, expected] of [[undefined, 600000], ['350', 350], ['9000000', 3600000],
+      ['0', 600000], ['-1', 600000], ['invalid', 600000], ['Infinity', 600000], ['0.2', 1]]) {
+      withVerifyBudget(configured, () => {
+        const receipt = writeTaskReceipt({ taskId: 'budget-check', command: 'true', root: dir,
+          runner: (_file, _args, options) => {
+            assert.equal(options.timeout, expected);
+            return { status: 0, stdout: '', stderr: '' };
+          } });
+        assert.equal(receipt.passed, true);
+      });
+    }
+  } finally {
+    cleanupTempDir(dir);
+  }
+});
+
+test('a real configured timeout writes nonpassing evidence with its reason', () => {
+  const dir = makeTempDir();
+  try {
+    fs.writeFileSync(path.join(dir, 'slow.js'), 'setTimeout(() => process.stdout.write("finished"), 2000);\n');
+    const receipt = withVerifyBudget('100', () => writeTaskReceipt({
+      taskId: 'slow-check', command: 'node slow.js', root: dir,
+    }));
+    assert.equal(receipt.passed, false);
+    assert.notEqual(receipt.exit, 0);
+    assert.ok(receipt.receiptPath);
+    const saved = JSON.parse(fs.readFileSync(path.join(dir, receipt.receiptPath), 'utf8'));
+    assert.equal(saved.result.passed, false);
+    assert.equal(saved.result.error_code, 'ETIMEDOUT');
+    assert.equal(saved.result.timeout_ms, 100);
+    assert.match(saved.result.error, /ETIMEDOUT/);
+    assert.match(saved.result.output, /verification timed out/);
+    const evidence = extractReceiptEvidence(`Receipt: ${receipt.receiptPath}`, dir);
+    assert.equal(evidence.all_passing, false);
+  } finally {
+    cleanupTempDir(dir);
+  }
+});
+
+test('a real launch error also leaves a nonpassing receipt', () => {
+  const dir = makeTempDir();
+  try {
+    const absentRoot = path.join(dir, 'not-created');
+    const receipt = writeTaskReceipt({ taskId: 'missing-workspace', command: 'true', root: absentRoot });
+    assert.equal(receipt.passed, false);
+    assert.equal(receipt.reason, 'verifier_spawn_failed');
+    assert.ok(receipt.receiptPath);
+    const saved = JSON.parse(fs.readFileSync(path.join(absentRoot, receipt.receiptPath), 'utf8'));
+    assert.equal(saved.result.passed, false);
+    assert.equal(saved.result.error_code, 'ENOENT');
+  } finally {
+    cleanupTempDir(dir);
+  }
+});
+
+test('real task readiness keeps a timed-out check out of review and names its failure receipt', () => {
+  const dir = makeTempDir();
+  const env = { ATRIS_TASKS_DB: path.join(dir, 'tasks.db'), ATRIS_AGENT_ID: 'codex',
+    ATRIS_VERIFY_TIMEOUT_MS: '100', NODE_TEST_CONTEXT: undefined,
+    ATRIS_TEST_STATE_DIR: path.join(dir, 'state-home') };
+  try {
+    fs.mkdirSync(path.join(dir, 'atris'), { recursive: true });
+    fs.writeFileSync(path.join(dir, 'slow.test.js'), 'const test = require("node:test"); test("slow", () => new Promise(resolve => setTimeout(resolve, 2000)));\n');
+    const added = runCli(['task', 'add', 'Timed check preserves its evidence', '--json'], { cwd: dir, env });
+    assert.equal(added.status, 0, added.stderr);
+    const ref = JSON.parse(added.stdout).task.display_id;
+    const ready = runCli(['task', 'ready', ref, '--verify', 'node --test slow.test.js'], { cwd: dir, env });
+    assert.equal(ready.status, 1, ready.stdout || ready.stderr);
+    const match = ready.stderr.match(/receipt: (atris\/runs\/\S+\.json)/);
+    assert.ok(match, ready.stderr);
+    const saved = JSON.parse(fs.readFileSync(path.join(dir, match[1]), 'utf8'));
+    assert.equal(saved.result.passed, false);
+    assert.equal(saved.result.error_code, 'ETIMEDOUT');
+    const shown = runCli(['task', 'show', ref, '--json'], { cwd: dir, env });
+    assert.equal(shown.status, 0, shown.stderr);
+    const value = JSON.parse(shown.stdout);
+    assert.notEqual((value.task || value).status, 'review');
+  } finally {
+    cleanupTempDir(dir);
+  }
+});
+
 test('writeTaskReceipt writes a passing receipt with task id, command, exit, commit, timestamp', () => {
   const dir = makeTempDir();
   try {
