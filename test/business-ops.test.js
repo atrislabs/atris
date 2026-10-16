@@ -4,7 +4,7 @@ const fs = require('node:fs');
 const http = require('node:http');
 const os = require('node:os');
 const path = require('node:path');
-const { spawn } = require('node:child_process');
+const { runCli } = require('./helpers/business-cli');
 
 const {
   normalizeOrdersPayload,
@@ -12,35 +12,6 @@ const {
   readStorefront,
   readWalletNet,
 } = require('../commands/business');
-
-const repoRoot = path.resolve(__dirname, '..');
-const cliPath = path.join(repoRoot, 'bin', 'atris.js');
-
-function runCli(args, options) {
-  return new Promise((resolve, reject) => {
-    const child = spawn(process.execPath, [cliPath, ...args], {
-      cwd: options.cwd,
-      env: options.env,
-      stdio: ['ignore', 'pipe', 'pipe'],
-    });
-    let stdout = '';
-    let stderr = '';
-    const timer = setTimeout(() => {
-      child.kill('SIGTERM');
-      reject(new Error(`CLI timed out\nstdout:\n${stdout}\nstderr:\n${stderr}`));
-    }, 15000);
-    child.stdout.on('data', chunk => { stdout += chunk.toString(); });
-    child.stderr.on('data', chunk => { stderr += chunk.toString(); });
-    child.on('error', error => {
-      clearTimeout(timer);
-      reject(error);
-    });
-    child.on('close', status => {
-      clearTimeout(timer);
-      resolve({ status, stdout, stderr });
-    });
-  });
-}
 
 function writeCliState(home) {
   const atrisDir = path.join(home, '.atris');
