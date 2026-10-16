@@ -22,6 +22,7 @@ checks the refs in both files; `atris doc-health --fix-refs` moves drifted ones.
 | task database and TODO markdown renderer | `lib/task-db.js` | SQLite task store, renderTodoMarkdown |
 | where ~/.atris state lives (test fence) | `lib/state-home.js`, `lib/task-db.js:191` | under node --test with the real home, tasks.db and other ~/.atris files go to a throwaway folder; ATRIS_TEST_REAL_HOME=1 opts back in; `test/test-state-fence.test.js` |
 | task command surface | `commands/task.js` | claim, ready, accept, render, keep, day |
+| task verification receipts | `lib/task-receipt.js`, `test/task-receipt.test.js` | Readiness uses the bounded verification budget; timeout and launch failures leave nonpassing evidence. |
 | assigned jobs reach their named member | `lib/member-task-pick.js`, `commands/task.js`, `test/task-owner-pick.test.js` | task delegate saves assigned_to; idle members take their assignments before unassigned matching jobs, even across inferred job types; other members skip assignments; human, protected lane, check, and existing claim holds still apply |
 | returned or interrupted jobs resume for their idle member | `lib/member-task-pick.js`, `lib/task-db.js`, `commands/member.js` | idle members can release and retake their own claimed jobs with the same check and hold gates; known dead mission processes no longer keep the member busy; missing process records still hold; `test/task-reopen.test.js` |
 | task list keeper | `lib/task-list-keeper.js` | one lookup; puts away only rows ready to leave |

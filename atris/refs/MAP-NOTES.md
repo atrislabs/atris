@@ -2396,3 +2396,5 @@ Complete source evidence: `lib/mission-code-provenance.js:81` captures a clean G
 ### Revision reports across out-of-order commit dates
 
 `commands/improve.js:1309` filters the existing lookback with `--since-as-filter`, so an old-dated descendant cannot prune a real landing or correction. `test/improve-revisions.test.js:64` compares matching landing/correction commits and final trees through the real API and CLI, including agent and outside-window controls. Verify: `node --test test/improve-revisions.test.js`.
+
+Task verification receipts: `lib/task-receipt.js:46` resolves the bounded `ATRIS_VERIFY_TIMEOUT_MS` budget with the existing ten-minute default and one-hour ceiling; `lib/task-receipt.js:57` keeps actual timeout and launch-error results in nonpassing receipts. The caller Node selection and nonzero-exit checks remain intact. Real runtime and CLI regressions live in `test/task-receipt.test.js`; evidence rejection remains covered by `test/task-receipt-evidence.test.js`.
