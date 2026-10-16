@@ -14,7 +14,7 @@ function campaign(budget = 10) {
 
 // Missions simulated straight into the store: start holds the reserve, run
 // records one costed tick and ends the mission the way the real hooks do.
-function fakeCli(store, { cost = 0.25, failStart = () => false, neverRuns = null } = {}) {
+function fakeCli(store, { cost = 0.25, failStart = () => false, neverRuns = null, stopsShort = false } = {}) {
   const calls = [];
   return {
     calls,
@@ -29,6 +29,14 @@ function fakeCli(store, { cost = 0.25, failStart = () => false, neverRuns = null
         return { code: 0, out: '{}', err: '' };
       }
       if (args[1] === 'run' && neverRuns) return { code: 1, out: '', err: neverRuns };
+      if (args[1] === 'run' && stopsShort) {
+        store.append({ campaign_id: 'cmp-loop', type: 'step', actor: 'builder', data: { mission_id: id, cost_usd: cost } });
+        return { code: 0, out: '', err: 'stopped: tick cap reached' };
+      }
+      if (args[1] === 'stop' && stopsShort) {
+        store.append({ campaign_id: 'cmp-loop', type: 'mission_ended', actor: 'builder', data: { mission_id: id, outcome: 'failed', cost_usd: cost } });
+        return { code: 0, out: '', err: '' };
+      }
       if (args[1] === 'run') {
         store.append({ campaign_id: 'cmp-loop', type: 'step', actor: 'builder', data: { mission_id: id, cost_usd: cost } });
         store.append({ campaign_id: 'cmp-loop', type: 'mission_ended', actor: 'builder', data: { mission_id: id, outcome: 'kept', cost_usd: cost } });
@@ -122,6 +130,23 @@ test('a job that never ran ends as a fault with its reason, not as failed work',
   assert.equal(m.reason, 'error: engine codex not found on PATH');
   assert.ok(calls.includes('mission stop'), 'the mission record is still closed');
 });
+
+for (const [passes, credited] of [[true, true], [false, undefined]]) {
+  test(`a job that worked but stopped short is ${credited ? 'credited when the next check passes' : 'not credited when the next check fails'}`, async () => {
+    const store = campaign(10);
+    const { cli } = fakeCli(store, { stopsShort: true });
+    let ran = false;
+    const loop = makeLoop('/x', { parallel: 1 }, {
+      store, cli: async (args) => { if (args[1] === 'run') ran = true; return cli(args); }, log: () => {}, skipReconcile: true,
+      judge: () => (ran && passes ? { passed: true, summary: 'yes' } : { passed: false, summary: 'no' }),
+      ask: async () => ({ ok: true, text: proposals(1) }),
+    });
+    for (let i = 0; i < 4; i++) await loop.step('cmp-loop');
+    const m = getCampaign(store, 'cmp-loop').missions.find((x) => x.id.startsWith('m-'));
+    assert.equal(m.outcome, 'failed', 'the mission keeps its own outcome');
+    assert.equal(m.credited, credited);
+  });
+}
 
 test('proposals are parsed strictly: unknown members fall back to the owner, verify defaults to the judge', () => {
   const view = { owner: 'mission-lead', seats: [{ member: 'builder' }], judge: 'npm test', budget: { available: 2 } };

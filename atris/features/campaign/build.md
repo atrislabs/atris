@@ -73,6 +73,7 @@ Check: `node --test test/campaign-command.test.js` for each verb against a temp 
 
 - `atris mission start ... --campaign <id>` writes `campaign_id` on the mission and emits `mission_started` on the campaign.
 - Mission completion emits `mission_ended` with its receipt path and outcome (kept, reverted, failed, or fault when the job never ran).
+- A job that did real work but stopped short keeps its own outcome, and the view marks it `credited: true` when the very next judge reading passes. Credited jobs do not count toward a member's losing streak.
 - If the campaign has a budget, reserve the mission's share before start (`budget_reserved`); if it cannot be covered, refuse with a plain reason. With no budget, skip reservation.
 - `mission_ended` carries usage from the receipt: tokens, quota, and money if any.
 - A mission with no campaign still works exactly as today.
