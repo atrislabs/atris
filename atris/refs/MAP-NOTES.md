@@ -2430,3 +2430,5 @@ Member CLI test runner: `test/helpers/member-cli.js:9` keeps the actual synchron
 Task administration CLI tests: `test/helpers/task-admin-cli.js:8` runs the actual CLI with required options, the original thirty-second limit, override-last environment and unchanged launch-error/nonzero-status behavior. Task audit, hygiene and retitle retain their independent workspace, database and SQLite checks and every original case. Check: `node --test test/task-audit.test.js test/task-hygiene.test.js test/task-retitle.test.js`.
 
 Scratch CLI test runner: `test/helpers/scratch-cli.js:10` supplies the identical real child, environment order and error behavior with each scratch, hours and mission suite's existing default time limit; explicit caller limits and all cases remain local.
+
+Fifteen-second CLI test runner: `test/helpers/cli-command.js:9` retains the exact synchronous child options, scrubbed environment and caller overrides for brain, local official-command and member-ping tests; each private fixture and behavioral assertion remains local.
