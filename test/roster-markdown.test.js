@@ -43,8 +43,10 @@ function withRoom(fn) {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'atris-roster-md-'));
   const home = fs.mkdtempSync(path.join(os.tmpdir(), 'atris-roster-md-home-'));
   fs.mkdirSync(path.join(root, 'atris'));
-  const saved = new Map(['ATRIS_MACHINE_ROSTER_PATH', 'ATRIS_MACHINE_ROSTER_MD_PATH', 'ATRIS_ROUTER_EXPLAIN', ...RUNNER_ENV].map((key) => [key, process.env[key]]));
+  const saved = new Map(['ATRIS_MACHINE_ROSTER_PATH', 'ATRIS_MACHINE_ROSTER_MD_PATH', 'ATRIS_ROUTER_EXPLAIN', 'ATRIS_CALLER_RUNTIME', ...RUNNER_ENV].map((key) => [key, process.env[key]]));
   for (const key of RUNNER_ENV) delete process.env[key];
+  // These roster defaults describe a terminal, not the agent running tests.
+  process.env.ATRIS_CALLER_RUNTIME = 'terminal';
   delete process.env.ATRIS_MACHINE_ROSTER_MD_PATH;
   process.env.ATRIS_MACHINE_ROSTER_PATH = path.join(home, '.atris', 'roster.json');
   process.env.ATRIS_ROUTER_EXPLAIN = '0';
