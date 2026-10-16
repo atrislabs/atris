@@ -3003,7 +3003,12 @@ if (command === 'guide') {
     const mailbox = extractGmailMailboxAccount(raw);
     // Mailbox --account <id> is a selector, not the workspace opt-in.
     // Scratch folders refuse every gmail verb the same way as slack/inbox.
-    const gate = requireAccountBound(mailbox.args.filter((arg) => arg !== '--account'));
+    // Read verbs also run from a project folder (atris/, no business.json).
+    const GMAIL_READ_VERBS = new Set(['inbox', 'list', 'read', 'triage', 'verdicts', 'accounts']);
+    const gate = requireAccountBound(
+      mailbox.args.filter((arg) => arg !== '--account'),
+      { read: GMAIL_READ_VERBS.has(mailbox.args[0]) },
+    );
     if (!gate.ok) {
       process.exit(refuseAccountGlobal());
       return;
@@ -3042,7 +3047,12 @@ if (command === 'guide') {
     const account = extractGmailMailboxAccount(raw);
     // Account --account <id> is a selector, not the workspace opt-in.
     // Scratch folders refuse every slack verb the same way as gmail/inbox.
-    const gate = requireAccountBound(account.args.filter((arg) => arg !== '--account'));
+    // Read verbs also run from a project folder (atris/, no business.json).
+    const SLACK_READ_VERBS = new Set(['channels', 'list', 'dms', 'messages', 'read', 'search']);
+    const gate = requireAccountBound(
+      account.args.filter((arg) => arg !== '--account'),
+      { read: SLACK_READ_VERBS.has(account.args[0]) },
+    );
     if (!gate.ok) {
       process.exit(refuseAccountGlobal());
       return;
