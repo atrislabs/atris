@@ -2380,3 +2380,7 @@ Verify: `npm run test:fast && node --test test/ax.test.js test/runner-command.te
 
 ## Hourly map note fold
 rg "foldMapNotesOnMain|foldNotesText|foldDue|map-notes.d|map_fold|last_map_fold_at" lib/member-map-fold.js commands/autoland.js test/member-map-fold.test.js # Member changes save map notes as their own file under atris/refs/map-notes.d/ (open with a "## " heading to join that section) instead of editing this file; once an hour the autoland tick folds them into MAP-NOTES.md on main and removes them in one pushed commit, no checkout touched. Off switch: policy map_fold:false. Regression: test/member-map-fold.test.js
+
+### overnight campaign execution and complete learning reports
+
+`commands/campaign.js:564` wires the real locked campaign step; `lib/campaign-rsi.js:545` awaits it, rotates campaigns, and records failed starts. `lib/campaign-rsi.js:103` leaves members without measured judge gains unproven. `bin/atris.js:2019` drains large reports before exit. Real runtime checks: `test/campaign-overnight-runtime.test.js`, `test/campaign-json-output.test.js`, `test/campaign-rsi-evidence.test.js`, and `test/campaign-rsi-recorder.test.js`.

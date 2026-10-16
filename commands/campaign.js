@@ -52,6 +52,9 @@ function printHelp() {
   console.log('  atris campaign step <id>               one step of that loop');
   console.log('  atris campaign propose <id> [--count 3]   ask the owner\'s engine for the next missions');
   console.log('  atris campaign export <id> --trace [--out <file.jsonl>] [--full]   one row per mission for learning; redacted unless --full');
+  console.log('  atris campaign rsi [id] [--no-write]   distill trace rewards and lessons across campaigns');
+  console.log('        --loop [--rounds N] runs one real campaign step per cycle, rotating through open campaigns');
+  console.log('        --dry-run previews the cycles without running campaign work');
   console.log('  atris campaign sync <id>               trade events with the Atris cloud so web and iOS show it');
   console.log('        start --cloud syncs at once; run syncs before and after every step of a synced campaign;');
   console.log('        on a computer that has never seen <id>, sync pulls the whole campaign from the cloud');
@@ -301,7 +304,21 @@ function renderShow(view) {
   row('owner', view.owner + (view.standing ? ' · standing (a passing judge means healthy, not done)' : ''));
   if (view.bet) row('bet', `${view.bet.text}${view.bet.wrong_if ? ` · wrong if ${view.bet.wrong_if}` : ''}`);
   if (view.parent) row('parent', view.parent);
-  row('seats', view.seats.length ? view.seats.map((s) => (s.role ? `${s.member} (${s.role})` : s.member)).join(', ') : 'none');
+  let ovrByMember = new Map();
+  try {
+    const { openCampaignStore: openStore } = require('../lib/campaign-store');
+    const { summarizeStoreRsi } = require('../lib/campaign-rsi');
+    const summary = summarizeStoreRsi(openStore(process.cwd()));
+    for (const m of summary.members || []) {
+      if (m && m.member && typeof m.overall === 'number') ovrByMember.set(m.member, m.overall);
+    }
+  } catch {}
+  const formatSeat = (s) => {
+    const ovr = ovrByMember.has(s.member) ? `${ovrByMember.get(s.member)} ovr` : '';
+    const detail = [s.role, ovr].filter(Boolean).join(' · ');
+    return detail ? `${s.member} (${detail})` : s.member;
+  };
+  row('seats', view.seats.length ? view.seats.map(formatSeat).join(', ') : 'none');
   row('missions', view.missions.length ? '' : 'none');
   for (const m of view.missions) {
     const cost = m.cost_usd === null || !paysDollars(view) ? '' : ` · ${money(m.cost_usd)}`;
@@ -544,6 +561,56 @@ async function cmdJudge(args, ctx) {
   return reading.passed ? 0 : 1;
 }
 
+async function cmdRsi(args, ctx) {
+  const id = positionals(args)[1] || null;
+  if (id) {
+    const { error } = requireCampaign(ctx, id);
+    if (error !== undefined) return error;
+  }
+  const {
+    formatNextCampaigns,
+    formatOvernightRsi,
+    formatRsiReport,
+    runOvernightRsi,
+    selectNextCampaigns,
+    summarizeStoreRsi,
+    writeRsiSnapshot,
+  } = require('../lib/campaign-rsi');
+  if (args.includes('--loop')) {
+    const rounds = Number(readFlag(args, '--rounds', '1'));
+    if (!Number.isSafeInteger(rounds) || rounds < 1) return ctx.fail('--rounds must be a positive whole number');
+    const res = await runOvernightRsi(process.cwd(), {
+      store: ctx.store,
+      rounds,
+      campaignId: id,
+      dryRun: args.includes('--dry-run'),
+      stepCampaign: async (campaignId, selected, prepare) => {
+        let step = null;
+        const code = await cmdLoop(['step', campaignId, ...args.slice(1)], {
+          ...ctx,
+          out: (text, data) => { step = data; },
+          fail: (error, code = 2) => { step = { ok: false, error }; return code; },
+        }, 'step', prepare);
+        // Keep receipts small: campaign state is captured by the after reading.
+        const { campaign, next, ...result } = step || {};
+        return { ...result, ok: code === 0 && result.ok !== false };
+      },
+    });
+    ctx.out(formatOvernightRsi(res), { ok: true, action: 'campaign_rsi_loop', ...res });
+    return res.ok ? 0 : 1;
+  }
+  const rsi = args.includes('--no-write')
+    ? summarizeStoreRsi(ctx.store, id)
+    : writeRsiSnapshot(process.cwd(), ctx.store, id);
+  if (args.includes('--next')) {
+    const nextList = selectNextCampaigns(ctx.store, rsi);
+    ctx.out(formatNextCampaigns(nextList), { ok: true, action: 'campaign_rsi_next', next_campaigns: nextList, rsi });
+    return 0;
+  }
+  ctx.out(formatRsiReport(rsi), { ok: true, action: 'campaign_rsi', rsi });
+  return 0;
+}
+
 // Exit 1 when a protected path changed since start, naming each one.
 function cmdGuard(args, ctx) {
   const { view, error } = requireCampaign(ctx, positionals(args)[1]);
@@ -661,7 +728,7 @@ const cmdEvent = (args, ctx) => {
   return 0;
 };
 
-async function cmdLoop(args, ctx, verb) {
+async function cmdLoop(args, ctx, verb, prepare = null) {
   const { view, error } = requireCampaign(ctx, positionals(args)[1]);
   if (error !== undefined) return error;
   // One driver per campaign: a second loop would plan and start missions
@@ -676,9 +743,13 @@ async function cmdLoop(args, ctx, verb) {
     process.once('exit', lock.release);
   }
   try {
+    if (prepare) prepare();
     return await driveLoop(args, ctx, verb, view);
   } finally {
-    if (lock) lock.release();
+    if (lock) {
+      process.removeListener('exit', lock.release);
+      lock.release();
+    }
   }
 }
 
@@ -731,7 +802,7 @@ async function driveLoop(args, ctx, verb, view) {
     const result = await loop.step(view.id);
     const after = getCampaign(ctx.store, view.id);
     ctx.out(`${result.stop ? `stopped: ${result.reason}` : `did: ${result.did}`}\n${renderShow(after)}`, { ok: true, ...result, campaign: after, next: decide(after), sync_warnings: syncWarnings });
-    return 0;
+    return result.ok === false ? 1 : 0;
   }
   const work = readFlag(args, '--work', '');
   const pause = readFlag(args, '--break', '');
@@ -759,6 +830,7 @@ const VERBS = {
   start: cmdStart, show: cmdShow, judge: cmdJudge, guard: cmdGuard, seat: cmdSeat, bet: cmdBet, budget: cmdBudget,
   pause: cmdPause, resume: cmdResume, stop: cmdStop, event: cmdEvent,
   ask: cmdAsk, answer: cmdAnswer, 'set-judge': cmdSetJudge, sync: cmdSync, 'cloud-run': cmdCloudRun,
+  rsi: cmdRsi, learn: cmdRsi,
   run: (args, ctx) => cmdLoop(args, ctx, 'run'),
   step: (args, ctx) => cmdLoop(args, ctx, 'step'),
   propose: (args, ctx) => cmdLoop(args, ctx, 'propose'),
