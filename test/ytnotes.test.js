@@ -627,6 +627,7 @@ test('ytnotes does not invent-keep another video leftover clean.txt', () => {
     timeout: 20000,
     env: {
       ...process.env,
+      ATRIS_YTNOTES_LOCAL_TRANSCRIBE: '0',
       PATH: `${bin}:${process.env.PATH || '/usr/bin'}`,
       TMPDIR: work,
     },
@@ -664,6 +665,7 @@ test('ytnotes still fails a 429 when no captions were written', () => {
     timeout: 20000,
     env: {
       ...process.env,
+      ATRIS_YTNOTES_LOCAL_TRANSCRIBE: '0',
       PATH: `${bin}:${process.env.PATH || '/usr/bin'}`,
       TMPDIR: work,
     },
