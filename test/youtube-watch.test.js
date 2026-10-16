@@ -21,6 +21,17 @@ const REPO_ROOT = path.resolve(__dirname, '..');
 const VALIDATE_PY = path.join(REPO_ROOT, 'atris', 'experiments', 'validate.py');
 const CLI_PATH = path.join(REPO_ROOT, 'bin', 'atris.js');
 
+// Every temp folder this file makes, removed once all tests finish.
+const scratch = [];
+const tempDir = (prefix) => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), prefix));
+  scratch.push(dir);
+  return dir;
+};
+test.after(() => {
+  for (const dir of scratch) fs.rmSync(dir, { recursive: true, force: true });
+});
+
 function findPython() {
   for (const candidate of ['python3', 'python']) {
     const result = spawnSync(candidate, ['--version'], { encoding: 'utf8' });
@@ -32,7 +43,7 @@ function findPython() {
 const pythonCmd = findPython();
 
 function tempCwd() {
-  return fs.mkdtempSync(path.join(os.tmpdir(), 'atris-yt-watch-'));
+  return tempDir('atris-yt-watch-');
 }
 
 function statePathFor(cwd) {
@@ -177,7 +188,7 @@ test('watch add/list/remove round-trip', async () => {
 
 test('tick briefs only unseen videos', async () => {
   const cwd = tempCwd();
-  const workDir = fs.mkdtempSync(path.join(os.tmpdir(), 'atris-yt-watch-notes-'));
+  const workDir = tempDir('atris-yt-watch-notes-');
   const now = '2026-08-15T19:10:00.000Z';
   await youtubeCommand(['watch', 'add', '@veritasium'], { cwd, now, output: () => {} });
 
@@ -255,7 +266,7 @@ test('tick briefs only unseen videos', async () => {
 
 test('fresh-channel seeding briefs only newest', async () => {
   const cwd = tempCwd();
-  const workDir = fs.mkdtempSync(path.join(os.tmpdir(), 'atris-yt-watch-notes-'));
+  const workDir = tempDir('atris-yt-watch-notes-');
   const now = '2026-08-15T19:20:00.000Z';
   await youtubeCommand(['watch', 'add', 'https://www.youtube.com/@mkbhd'], {
     cwd,
@@ -315,7 +326,7 @@ test('fresh-channel seeding briefs only newest', async () => {
 
 test('watch tick keeps printed videos when yt-dlp exits 429', async () => {
   const cwd = tempCwd();
-  const workDir = fs.mkdtempSync(path.join(os.tmpdir(), 'atris-yt-watch-notes-'));
+  const workDir = tempDir('atris-yt-watch-notes-');
   const now = '2026-08-15T19:30:00.000Z';
   await youtubeCommand(['watch', 'add', '@mkbhd'], { cwd, now, output: () => {} });
 
@@ -354,7 +365,7 @@ test('watch tick keeps printed videos when yt-dlp exits 429', async () => {
 
 test('failed fetch skips channel and continues', async () => {
   const cwd = tempCwd();
-  const workDir = fs.mkdtempSync(path.join(os.tmpdir(), 'atris-yt-watch-notes-'));
+  const workDir = tempDir('atris-yt-watch-notes-');
   const now = '2026-08-15T19:30:00.000Z';
   await youtubeCommand(['watch', 'add', '@broken'], { cwd, now, output: () => {} });
   await youtubeCommand(['watch', 'add', '@ok'], { cwd, now, output: () => {} });
@@ -399,7 +410,7 @@ test('failed fetch skips channel and continues', async () => {
 
 test('tick that briefed a rich lesson prints apply check then teach next', async () => {
   const cwd = tempCwd();
-  const workDir = fs.mkdtempSync(path.join(os.tmpdir(), 'atris-yt-watch-notes-'));
+  const workDir = tempDir('atris-yt-watch-notes-');
   const now = '2026-08-15T19:32:00.000Z';
   await youtubeCommand(['watch', 'add', '@veritasium'], { cwd, now, output: () => {} });
   fs.writeFileSync(path.join(workDir, 'yt_new1.md'), 'TSMC prints at 2nm\n');
@@ -434,7 +445,7 @@ test('tick that briefed a rich lesson prints apply check then teach next', async
 
 test('tick that briefed a thin lesson prints fill-this then teach next', async () => {
   const cwd = tempCwd();
-  const workDir = fs.mkdtempSync(path.join(os.tmpdir(), 'atris-yt-watch-notes-'));
+  const workDir = tempDir('atris-yt-watch-notes-');
   const now = '2026-08-15T19:33:00.000Z';
   await youtubeCommand(['watch', 'add', '@veritasium'], { cwd, now, output: () => {} });
   fs.writeFileSync(path.join(workDir, 'yt_thin1.md'), '# Chat\n\nwelcome back friends this is just a chat\n');
@@ -469,7 +480,7 @@ test('tick that briefed a thin lesson prints fill-this then teach next', async (
 });
 
 test('firstRichWatchLesson skips a thin brief and keeps the first rich url', () => {
-  const workDir = fs.mkdtempSync(path.join(os.tmpdir(), 'atris-yt-watch-rich-pick-'));
+  const workDir = tempDir('atris-yt-watch-rich-pick-');
   fs.writeFileSync(path.join(workDir, 'yt_thin1.md'), '# Chat\n\nwelcome back friends this is just a chat\n');
   fs.writeFileSync(path.join(workDir, 'yt_rich1.md'), 'TSMC prints at 2nm\n');
   fs.writeFileSync(path.join(workDir, 'yt_rich2.md'), 'The omakase model has 80 people.\n');
@@ -489,7 +500,7 @@ test('firstRichWatchLesson skips a thin brief and keeps the first rich url', () 
 
 test('tick that briefs thin then rich mints apply from the rich video', async () => {
   const cwd = tempCwd();
-  const workDir = fs.mkdtempSync(path.join(os.tmpdir(), 'atris-yt-watch-notes-'));
+  const workDir = tempDir('atris-yt-watch-notes-');
   const now = '2026-08-15T19:40:00.000Z';
   await youtubeCommand(['watch', 'add', '@veritasium'], { cwd, now, output: () => {} });
   await youtubeCommand(['watch', 'tick'], {
@@ -537,7 +548,7 @@ test('tick that briefs thin then rich mints apply from the rich video', async ()
 
 test('tick that briefs two thin videos stays on the first teach next', async () => {
   const cwd = tempCwd();
-  const workDir = fs.mkdtempSync(path.join(os.tmpdir(), 'atris-yt-watch-notes-'));
+  const workDir = tempDir('atris-yt-watch-notes-');
   const now = '2026-08-15T19:41:00.000Z';
   await youtubeCommand(['watch', 'add', '@veritasium'], { cwd, now, output: () => {} });
   await youtubeCommand(['watch', 'tick'], {
@@ -588,7 +599,7 @@ test('watchExperimentSlug uses the first briefed video id', () => {
 test('rich watch tick mints a measure.py that validate.py accepts and scores 0 or 1 honestly', async () => {
   assert.ok(pythonCmd, 'python3 is required to score the minted pack');
   const cwd = tempCwd();
-  const workDir = fs.mkdtempSync(path.join(os.tmpdir(), 'atris-yt-watch-notes-'));
+  const workDir = tempDir('atris-yt-watch-notes-');
   const now = '2026-08-15T19:32:00.000Z';
   await youtubeCommand(['watch', 'add', '@veritasium'], { cwd, now, output: () => {} });
   fs.writeFileSync(path.join(workDir, 'yt_new1.md'), 'TSMC prints at 2nm\n');
@@ -656,7 +667,7 @@ test('rich watch tick mints a measure.py that validate.py accepts and scores 0 o
 test('experiments keep refuses a minted watch pack at 0 and keeps after check tokens', async () => {
   assert.ok(pythonCmd, 'python3 is required to score the minted pack');
   const cwd = tempCwd();
-  const workDir = fs.mkdtempSync(path.join(os.tmpdir(), 'atris-yt-watch-notes-'));
+  const workDir = tempDir('atris-yt-watch-notes-');
   const now = '2026-08-15T19:32:00.000Z';
   await youtubeCommand(['watch', 'add', '@veritasium'], { cwd, now, output: () => {} });
   fs.writeFileSync(path.join(workDir, 'yt_new1.md'), 'TSMC prints at 2nm\n');
