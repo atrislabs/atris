@@ -20,14 +20,17 @@ function fakes() {
   return { spawnSync, installed: () => launchd };
 }
 
-function workspace() {
+function workspace(t) {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'pulse-night-'));
+  t.after(() => fs.rmSync(root, { recursive: true, force: true }));
   fs.mkdirSync(path.join(root, '.atris', 'state'), { recursive: true });
-  return { root, home: fs.mkdtempSync(path.join(os.tmpdir(), 'pulse-night-home-')) };
+  const home = fs.mkdtempSync(path.join(os.tmpdir(), 'pulse-night-home-'));
+  t.after(() => fs.rmSync(home, { recursive: true, force: true }));
+  return { root, home };
 }
 
-test('an overnight install holds the Mac awake for exactly its window, and uninstall lets go', { skip: process.platform !== 'darwin' }, () => {
-  const { root, home } = workspace();
+test('an overnight install holds the Mac awake for exactly its window, and uninstall lets go', { skip: process.platform !== 'darwin' }, (t) => {
+  const { root, home } = workspace(t);
   const f = fakes();
   const held = [];
   const out = installCommand(['--hours', '6'], root, { homeDir: home, spawnSync: f.spawnSync, writeOutput: () => {}, holdKeepAwake: (stateHome, seconds) => { held.push(seconds); return { pid: 4242, seconds }; } });
@@ -40,8 +43,8 @@ test('an overnight install holds the Mac awake for exactly its window, and unins
   assert.equal(released.length, 1);
 });
 
-test('--no-keep-awake installs without holding the Mac awake', () => {
-  const { root, home } = workspace();
+test('--no-keep-awake installs without holding the Mac awake', (t) => {
+  const { root, home } = workspace(t);
   const f = fakes();
   let held = false;
   const out = installCommand(['--hours', '2', '--no-keep-awake'], root, { homeDir: home, spawnSync: f.spawnSync, writeOutput: () => {}, holdKeepAwake: () => { held = true; return { pid: 1, seconds: 1 }; } });
@@ -50,15 +53,15 @@ test('--no-keep-awake installs without holding the Mac awake', () => {
   assert.equal(out.keep_awake, null);
 });
 
-test('tests that bring their own spawnSync never start a real caffeinate', () => {
-  const { root, home } = workspace();
+test('tests that bring their own spawnSync never start a real caffeinate', (t) => {
+  const { root, home } = workspace(t);
   const out = installCommand(['--hours', '1'], root, { homeDir: home, spawnSync: fakes().spawnSync, writeOutput: () => {} });
   assert.equal(out.ok, true);
   assert.equal(out.keep_awake, null);
 });
 
-test('install --no-autopilot bakes it into every tick of the heartbeat script', () => {
-  const { root, home } = workspace();
+test('install --no-autopilot bakes it into every tick of the heartbeat script', (t) => {
+  const { root, home } = workspace(t);
   const out = installCommand(['--hours', '1', '--no-autopilot'], root, { homeDir: home, spawnSync: fakes().spawnSync, writeOutput: () => {} });
   assert.equal(out.ok, true);
   const script = fs.readFileSync(out.script_path, 'utf8');

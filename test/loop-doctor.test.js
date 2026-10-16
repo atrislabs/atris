@@ -11,8 +11,9 @@ const { scanLoopReceipts, nonPositiveRewardPressure, FINDING_PRIORITY } = requir
 
 const NOW = '2026-07-10T12:00:00.000Z';
 
-function workspace() {
+function workspace(t) {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'atris-loop-doctor-'));
+  t.after(() => fs.rmSync(root, { recursive: true, force: true }));
   fs.mkdirSync(path.join(root, 'atris', 'runs'), { recursive: true });
   fs.mkdirSync(path.join(root, '.atris', 'state'), { recursive: true });
   return root;
@@ -50,8 +51,8 @@ function findingKinds(root) {
   return scanLoopReceipts({ root, now: NOW }).map((finding) => finding.kind);
 }
 
-test('detects repeated pause reasons and repeated errored ticks', () => {
-  const root = workspace();
+test('detects repeated pause reasons and repeated errored ticks', (t) => {
+  const root = workspace(t);
   seedHealthyState(root);
   writeJson(root, 'atris/runs/mission-001.json', {
     ts: '2026-07-09T09:00:00.000Z',
@@ -72,8 +73,8 @@ test('detects repeated pause reasons and repeated errored ticks', () => {
   assert.equal(findings[1].suggested_mission.verifier, 'atris improve doctor --check repeated_pause_reason');
 });
 
-test('detects a seven-day reward flatline and stays quiet after positive reward', () => {
-  const root = workspace();
+test('detects a seven-day reward flatline and stays quiet after positive reward', (t) => {
+  const root = workspace(t);
   seedHealthyState(root);
   writeJsonl(root, '.atris/state/scorecards.jsonl', [
     { ts: '2026-07-04T12:00:00.000Z', reward: 0 },
@@ -91,8 +92,8 @@ test('detects a seven-day reward flatline and stays quiet after positive reward'
   assert.deepEqual(findingKinds(root), []);
 });
 
-test('detects zero due-capable missions and accepts a headless always-on cadence', () => {
-  const root = workspace();
+test('detects zero due-capable missions and accepts a headless always-on cadence', (t) => {
+  const root = workspace(t);
   seedHealthyState(root);
   writeJsonl(root, '.atris/state/missions.jsonl', [
     { id: 'manual-1', status: 'ready', cadence: 'manual', runner: 'claude', always_on: true, created_at: NOW },
@@ -113,8 +114,8 @@ test('detects zero due-capable missions and accepts a headless always-on cadence
   assert.deepEqual(findingKinds(root), []);
 });
 
-test('detects repeated auth failure strings', () => {
-  const root = workspace();
+test('detects repeated auth failure strings', (t) => {
+  const root = workspace(t);
   seedHealthyState(root);
   writeJson(root, 'atris/runs/mission-auth-1.json', {
     ts: '2026-07-09T09:00:00.000Z', ticks: [{ status: 'paused', message: 'request returned 401' }],
@@ -129,8 +130,8 @@ test('detects repeated auth failure strings', () => {
     'atris improve doctor --check repeated_auth_failure');
 });
 
-test('repeated failures require fresh evidence but keep unknown-age evidence visible', () => {
-  const stale = workspace();
+test('repeated failures require fresh evidence but keep unknown-age evidence visible', (t) => {
+  const stale = workspace(t);
   seedHealthyState(stale);
   writeJson(stale, 'atris/runs/mission-stale-1.json', {
     ts: '2026-07-10T06:00:00.000Z', auth: 'Token expired',
@@ -148,7 +149,7 @@ test('repeated failures require fresh evidence but keep unknown-age evidence vis
   assert.deepEqual(scanLoopReceipts({ root: stale, now: NOW }).map((finding) => finding.kind),
     ['repeated_tick_error']);
 
-  const unknown = workspace();
+  const unknown = workspace(t);
   seedHealthyState(unknown);
   writeJson(unknown, 'atris/runs/mission-unknown-1.json', {
     ticks: [{ status: 'errored', error: 'timestamp unavailable' }],
@@ -161,8 +162,8 @@ test('repeated failures require fresh evidence but keep unknown-age evidence vis
   assert.equal(findings[0].last_seen, null);
 });
 
-test('mission receipts dated only by their at field are gated as stale, not unknown-age', () => {
-  const root = workspace();
+test('mission receipts dated only by their at field are gated as stale, not unknown-age', (t) => {
+  const root = workspace(t);
   seedHealthyState(root);
   writeJson(root, 'atris/runs/mission-at-1.json', {
     at: '2026-07-10T06:00:00.000Z', ticks: [{ status: 'errored', error: 'engine outage' }],
@@ -173,8 +174,8 @@ test('mission receipts dated only by their at field are gated as stale, not unkn
   assert.deepEqual(scanLoopReceipts({ root, now: NOW, freshnessMs: 2 * 60 * 60 * 1000 }), []);
 });
 
-test('a running receipt re-stamped fresh does not resurrect its old errored ticks', () => {
-  const root = workspace();
+test('a running receipt re-stamped fresh does not resurrect its old errored ticks', (t) => {
+  const root = workspace(t);
   seedHealthyState(root);
   // A long-running mission rewrites one receipt every tick, so its top-level
   // time is fresh, but the failing ticks inside carry their own old timestamps
@@ -198,8 +199,8 @@ test('a running receipt re-stamped fresh does not resurrect its old errored tick
   assert.deepEqual(scanLoopReceipts({ root, now: NOW }).map((f) => f.kind), ['repeated_tick_error']);
 });
 
-test('clean receipt data produces no findings', () => {
-  const root = workspace();
+test('clean receipt data produces no findings', (t) => {
+  const root = workspace(t);
   seedHealthyState(root);
   writeJson(root, 'atris/runs/mission-clean-1.json', {
     ts: '2026-07-10T09:00:00.000Z', ticks: [{ status: 'ran', verifier_passed: true }],
@@ -207,8 +208,8 @@ test('clean receipt data produces no findings', () => {
   assert.deepEqual(scanLoopReceipts({ root, now: NOW }), []);
 });
 
-test('detects dead and unparseable mission locks but ignores a live pid', () => {
-  const root = workspace();
+test('detects dead and unparseable mission locks but ignores a live pid', (t) => {
+  const root = workspace(t);
   seedHealthyState(root);
   writeJson(root, '.atris/state/mission-dead.lock', { pid: 2147483647 });
   writeJson(root, '.atris/state/mission-live.lock', { pid: process.pid });
@@ -231,8 +232,8 @@ test('detects dead and unparseable mission locks but ignores a live pid', () => 
   });
 });
 
-test('orders the blocking auth defect before downstream loop symptoms', () => {
-  const root = workspace();
+test('orders the blocking auth defect before downstream loop symptoms', (t) => {
+  const root = workspace(t);
   writeJsonl(root, '.atris/state/scorecards.jsonl', [
     { ts: '2026-07-08T12:00:00.000Z', reward: 0 },
     { ts: '2026-07-10T10:00:00.000Z', reward: 0 },
@@ -255,8 +256,8 @@ test('orders the blocking auth defect before downstream loop symptoms', () => {
   ]);
 });
 
-test('reward_pressure boosts effective priority and re-sorts findings above their static rank', () => {
-  const root = workspace();
+test('reward_pressure boosts effective priority and re-sorts findings above their static rank', (t) => {
+  const root = workspace(t);
   // Two non-positive scorecard rows in the last 24h: a repeated_pause_reason
   // finding (static priority 300) should now outrank zero_due_capable_missions
   // (static priority 200) either way, but with enough pressure it should also
@@ -284,8 +285,8 @@ test('reward_pressure boosts effective priority and re-sorts findings above thei
   assert.equal(zeroDue.effective_priority, FINDING_PRIORITY.zero_due_capable_missions + 20);
 });
 
-test('reward_pressure caps at 100 and every finding gets the field even at zero pressure', () => {
-  const root = workspace();
+test('reward_pressure caps at 100 and every finding gets the field even at zero pressure', (t) => {
+  const root = workspace(t);
   const rows = [];
   for (let i = 0; i < 15; i++) {
     rows.push({ ts: '2026-07-10T11:00:00.000Z', reward: 0 });
@@ -299,7 +300,7 @@ test('reward_pressure caps at 100 and every finding gets the field even at zero 
   assert.equal(zeroDue.reward_pressure, 15);
   assert.equal(zeroDue.effective_priority, FINDING_PRIORITY.zero_due_capable_missions + 100);
 
-  const clean = workspace();
+  const clean = workspace(t);
   seedHealthyState(clean);
   writeJsonl(clean, '.atris/state/scorecards.jsonl', [{ ts: '2026-07-10T10:00:00.000Z', reward: 1 }]);
   writeJson(clean, 'atris/runs/mission-auth-1.json', { ts: '2026-07-09T09:00:00.000Z', error: 'Signature verification failed' });
@@ -309,8 +310,8 @@ test('reward_pressure caps at 100 and every finding gets the field even at zero 
   assert.equal(zeroPressure[0].effective_priority, FINDING_PRIORITY[zeroPressure[0].kind]);
 });
 
-test('doctor --fix files at most one mission and dedupes the second run', () => {
-  const root = workspace();
+test('doctor --fix files at most one mission and dedupes the second run', (t) => {
+  const root = workspace(t);
   seedHealthyState(root);
   const freshTs = new Date().toISOString();
   writeJson(root, 'atris/runs/mission-auth-1.json', { ts: freshTs, error: 'Signature verification failed' });
