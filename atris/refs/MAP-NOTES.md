@@ -1,5 +1,7 @@
 # MAP notes: the deep map with rg shortcuts and file:line refs
 
+Campaign ask wait checks: `test/campaign-ask-wait.test.js:38` rejects handwritten agent defaults; `:50` checks answer and person impersonation; `:65` checks parked asks in show text and JSON; `:80` checks late human answers. The fourth mission requirement is truncated and remains unspecified.
+
 Hourly cleanup scan failures: `commands/autoland.js:878` includes a saved scan error in the plain summary, so a thrown first read or safety recheck does not look clean. Regression: `test/engine-resource.test.js:631` runs a real missing executable in both reads and confirms no agent is stopped.
 
 Hourly cleanup failed stops: `commands/autoland.js:869` reads saved failure counts into the summary; `test/engine-resource.test.js:589` proves real ESRCH using a harmless signal 0 probe, saved failures, singular/plural messages, and combined outcomes.

@@ -12,6 +12,8 @@ checks the refs in both files; `atris doc-health --fix-refs` moves drifted ones.
 
 ## Routing
 
+Campaign ask wait regressions: `test/campaign-ask-wait.test.js` exercises agent identity, handwritten default rejection, parked ask visibility, and late human answers through the real command handler and memory store. Run `node --test test/campaign-ask-wait.test.js`; current failures identify missing implementation.
+
 | Task | Primary path | Notes |
 |------|--------------|-------|
 | cli entrypoint and command router | `bin/atris.js` | dispatch chain, knownCommands, help |
