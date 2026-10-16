@@ -639,6 +639,25 @@ const cmdEvent = (args, ctx) => {
 async function cmdLoop(args, ctx, verb) {
   const { view, error } = requireCampaign(ctx, positionals(args)[1]);
   if (error !== undefined) return error;
+  // One driver per campaign: a second loop would plan and start missions
+  // against the same budget and files (lib/campaign-run-lock.js).
+  let lock = null;
+  if (ctx.store.path && ctx.campaignHome) {
+    lock = require('../lib/campaign-run-lock').acquireRunLock(ctx.campaignHome, view.id);
+    if (!lock.ok) {
+      const holder = lock.holder || {};
+      return ctx.fail(`another run is driving ${view.id} (pid ${holder.pid || '?'} in ${holder.cwd || '?'} since ${holder.started_at || '?'}); wait for it to stop or stop that process`, 1);
+    }
+    process.once('exit', lock.release);
+  }
+  try {
+    return await driveLoop(args, ctx, verb, view);
+  } finally {
+    if (lock) lock.release();
+  }
+}
+
+async function driveLoop(args, ctx, verb, view) {
   const { makeLoop } = require('../lib/campaign-loop');
   // A synced campaign trades events around every step. Failures warn and the
   // loop runs on offline; a refusal (403, 409) stops syncing for this run
