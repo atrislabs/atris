@@ -98,6 +98,7 @@
       "available": 100
     },
     "asks": [],
+    "defaulted": [],
     "missions": [],
     "judge_runs": 4,
     "judge_due": false,

@@ -92,5 +92,34 @@ test('a person may answer after the default without becoming an unknown ask', as
     'the late human answer must replace the default, not be discarded');
 });
 
+test('campaign ask stores its default and wait, with a two hour wait when left out', async () => {
+  const store = createMemoryStore({ origin: 'ask-wait-test', now: () => OPENED });
+  store.append({ campaign_id: ID, type: 'campaign_started', actor: 'human:tester',
+    data: { title: 'Ask wait', judge: 'exit 1', budget: 10 } });
+  const opened = () => store.read(ID).filter((event) => event.type === 'ask_opened').at(-1).data;
+
+  const timed = await command(store, ['ask', ID, '--default', 'Citewise', '--after', '1s', 'Which name?', '--as', 'builder']);
+  assert.equal(timed.code, 0, timed.out);
+  assert.equal(opened().question, 'Which name?');
+  assert.equal(opened().default, 'Citewise');
+  assert.equal(opened().after_ms, 1000);
+
+  for (const [text, ms] of [['30m', 1800000], ['2h', 7200000]]) {
+    await command(store, ['ask', ID, 'Q?', '--after', text, '--as', 'builder']);
+    assert.equal(opened().after_ms, ms, text);
+    assert.equal('default' in opened(), false);
+  }
+
+  await command(store, ['ask', ID, 'No wait given?', '--as', 'builder']);
+  assert.equal(opened().after_ms, 7200000);
+
+  const before = store.read(ID);
+  for (const bad of ['soon', '0s']) {
+    const refused = await command(store, ['ask', ID, 'Q?', '--after', bad, '--as', 'builder']);
+    assert.notEqual(refused.code, 0, refused.out);
+  }
+  assert.deepEqual(store.read(ID), before, 'a bad wait must not open an ask');
+});
+
 // Requirement four is truncated after "a fresh as" in the mission brief.
 // Do not invent its acceptance condition or silently mark it covered.

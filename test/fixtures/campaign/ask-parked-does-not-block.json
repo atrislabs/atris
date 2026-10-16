@@ -79,6 +79,7 @@
         "parked": true
       }
     ],
+    "defaulted": [],
     "missions": [
       {
         "id": "m1",

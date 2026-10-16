@@ -286,8 +286,9 @@ function renderShow(view) {
     const cost = m.cost_usd === null ? '' : ` · ${money(m.cost_usd)}`;
     lines.push(`  ${m.id.padEnd(22)} ${m.status.padEnd(8)} ${m.member || '-'}${m.outcome ? ` · ${m.outcome}` : ''}${cost}`);
   }
-  row('asks', view.asks.length ? '' : 'none');
+  row('asks', view.asks.length || (view.defaulted || []).length ? '' : 'none');
   for (const ask of view.asks) lines.push(`  ${ask.id}: ${ask.question}`);
+  for (const ask of view.defaulted || []) lines.push(`  ${ask.id}: ${ask.question} · went with the default: ${ask.answer}, a person can still change it`);
   if (view.warnings.length) {
     row('warnings', '');
     for (const w of view.warnings) lines.push(`  ${w.code.replace(/_/g, ' ')} (${w.event_id})`);

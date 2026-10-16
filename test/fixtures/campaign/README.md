@@ -81,8 +81,8 @@ Every dollar amount becomes integer cents on the way in: `floor(amount * 100 + 0
 | `budget_added` | `budget.total += amount_usd` |
 | `judge_ran` | adds a judge run. A passing run on a campaign that is not standing finishes it: `done`, stop_reason `judge_passed` |
 | `ask_opened` | adds an open ask `{id: ask_id, question, mission_id or null, default: data.default or null, due_at, parked: false}`. `due_at` is null without `data.after_ms` (a positive whole number of milliseconds), else this event's `at` plus `after_ms` (see "Time and asks") |
-| `ask_answered` | removes that open ask, but only when the actor is `human:`. An agent answering gets warning `ask_answered_by_agent` and the ask stays open. Answering an unknown or closed ask gets warning `unknown_ask` |
-| `ask_defaulted` | removes that open ask when it has a default, `data.answer` equals that default, and this event's `at` is at or after its `due_at`. Only the owner, `system`, or a `human:` actor may write it; anyone else gets warning `ask_defaulted_not_owner` and nothing changes. On an ask a person already answered it is ignored silently, so a person's answer wins whichever computer wrote first. Otherwise an unknown or closed ask gets warning `unknown_ask`, and an ask without that default or not yet due gets warning `ask_not_defaultable` and stays open |
+| `ask_answered` | removes that open ask, or that ask from `defaulted`, but only when the actor is `human:`. An agent answering gets warning `ask_answered_by_agent` and the ask stays open. Answering an unknown or closed ask gets warning `unknown_ask` |
+| `ask_defaulted` | removes that open ask when it has a default, `data.answer` equals that default, and this event's `at` is at or after its `due_at`, and moves it to `defaulted`. Only the owner, `system`, or a `human:` actor may write it; anyone else gets warning `ask_defaulted_not_owner` and nothing changes. On an ask a person already answered it is ignored silently, so a person's answer wins whichever computer wrote first. Otherwise an unknown or closed ask gets warning `unknown_ask`, and an ask without that default or not yet due gets warning `ask_not_defaultable` and stays open |
 | `paused` / `resumed` | sets or clears paused |
 | `stopped` | finishes: `done`, stop_reason `stopped` |
 | `home_moved` | `home = data.to` |
@@ -125,7 +125,7 @@ First match wins:
 
 An unanswered question never stalls a campaign. When `now` is given, after every event is applied, each open ask whose `due_at` is at or before `now` (compared as instants) is:
 
-- closed, when it has a default (the same as an on-time `ask_defaulted`)
+- closed and moved to `defaulted`, when it has a default (the same as an on-time `ask_defaulted`)
 - parked otherwise: it stays in `asks` with `parked: true` and no longer makes the campaign `needs_you`
 
 Without `now`, no ask times out. An ask without `due_at` never times out.
@@ -169,6 +169,7 @@ Exact keys, in this shape. Lists keep the order their first event was applied.
   "answer": { "text": null, "confidence": "open" },
   "budget": { "total": 500, "spent": 2.25, "reserved": 0, "available": 497.75 },
   "asks": [{ "id": "a1", "question": "...", "mission_id": null, "default": null, "due_at": null, "parked": false }],
+  "defaulted": [{ "id": "a2", "question": "...", "answer": "..." }],
   "missions": [
     { "id": "m1", "member": "builder", "status": "ended", "outcome": "kept", "cost_usd": 2.25,
       "estimate_usd": null, "steps": 0, "kept": 0, "reverted": 0 }
@@ -181,6 +182,7 @@ Exact keys, in this shape. Lists keep the order their first event was applied.
 ```
 
 - A mission's `outcome` and `cost_usd` are null until it ends.
+- `defaulted` lists every ask closed with its default, `{ id, question, answer }`, in the order they closed. A person's later answer removes it from the list.
 - `judge_due` is true when the judge has never run, or when a `mission_ended` or an allowed `judge_set` was applied after the latest `judge_ran` (fold order).
 - `last_judge` is `{ "passed": bool, "reading": number or null, "at": "<the event's at>" }` for the latest run.
 - `warnings` keeps the order the events were applied.

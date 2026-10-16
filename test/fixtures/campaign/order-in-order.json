@@ -122,6 +122,7 @@
       "available": 99
     },
     "asks": [],
+    "defaulted": [],
     "missions": [
       {
         "id": "m1",

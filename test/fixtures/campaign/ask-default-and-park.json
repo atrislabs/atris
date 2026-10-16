@@ -303,6 +303,13 @@
         "parked": false
       }
     ],
+    "defaulted": [
+      {
+        "id": "a1",
+        "question": "Which brand name?",
+        "answer": "Citewise"
+      }
+    ],
     "missions": [
       {
         "id": "m1",
