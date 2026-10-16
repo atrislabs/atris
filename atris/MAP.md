@@ -125,6 +125,8 @@ checks the refs in both files; `atris doc-health --fix-refs` moves drifted ones.
 | improvement attempt ledger | `commands/rsi.js` `lib/rsi-record.js` | read and record Dream-RSI attempts |
 | human revision report | `commands/improve.js:1309` `test/improve-revisions.test.js:64` | `atris improve revisions` keeps the same lookback and correction window while traversing ancestors behind out-of-order commit dates |
 | workspace tree hash | `commands/tree.js` `lib/tree-hash.js` | atris tree hash over the doctrine files |
+| shared task help test setup | `test/helpers/task-help-fixture.js`, `test/task-show-help.test.js` | Shared isolated CLI/temp setup for five task-help suites; verb-specific behavior and no-mutation assertions stay in their test files. |
+| cached test SQLite capability probe | `test/helpers/node-sqlite.js`, `test/task-archive-status.test.js`, `test/task-tag.test.js`, `test/mission-task-gate.test.js` | Reuse completed real Node probes per executable, directory and effective environment; launch errors and signals retry. |
 | tests | `test/commands-1.test.js` to `test/commands-8.test.js`, shared setup in `test/helpers/commands-fixtures.js` | node --test test/ |
 | run one test | `package.json` | npm test, node --test |
 | release publish script | `scripts/publish-atris-release.js` | tag-driven publish |
