@@ -22,7 +22,7 @@ function mkWorkspace(t, lessonsMd, learningsJsonl) {
 }
 
 test('parseLessons reads the lessons.md line format (date, id, status, text)', () => {
-  const ls = parseLessons('- **[2026-06-18] git-first-check** — pass — verify with git diff before git log.\nnoise\n');
+  const ls = parseLessons('- **[2026-06-18] git-first-check** \u2014 pass \u2014 verify with git diff before git log.\nnoise\n');
   assert.equal(ls.length, 1);
   assert.equal(ls[0].date, '2026-06-18');
   assert.equal(ls[0].id, 'git-first-check');
@@ -38,7 +38,7 @@ test('parseLearnings reads JSONL notes', () => {
 
 test('buildMemorySpec turns memory into a renderable, slop-clean page', (t) => {
   const lessons = Array.from({ length: 5 }, (_, i) =>
-    `- **[2026-06-1${i}] lesson-${i}-thing** — ${i % 2 ? 'fail' : 'pass'} — something we learned number ${i} about the loop.`).join('\n');
+    `- **[2026-06-1${i}] lesson-${i}-thing** \u2014 ${i % 2 ? 'fail' : 'pass'} \u2014 something we learned number ${i} about the loop.`).join('\n');
   const dir = mkWorkspace(t, lessons + '\n', '{"ts":"t","type":"note","key":"k","insight":"a field note"}\n');
   const spec = buildMemorySpec(dir);
   assert.equal(spec.theme, 'atris');
@@ -51,9 +51,9 @@ test('buildMemorySpec turns memory into a renderable, slop-clean page', (t) => {
 });
 
 test('em dashes in the raw lessons file never reach the rendered page', (t) => {
-  const dir = mkWorkspace(t, '- **[2026-06-18] x-thing** — pass — a — b — c with dashes everywhere.\n');
+  const dir = mkWorkspace(t, '- **[2026-06-18] x-thing** \u2014 pass \u2014 a \u2014 b \u2014 c with dashes everywhere.\n');
   const html = renderHtml(buildMemorySpec(dir));
-  assert.ok(!html.includes('—'), 'renderer sanitizes the source');
+  assert.ok(!html.includes('\u2014'), 'renderer sanitizes the source');
 });
 
 test('missing/empty memory still yields a usable spec', (t) => {
