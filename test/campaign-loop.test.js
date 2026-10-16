@@ -76,7 +76,9 @@ test('the loop stops for money, for asks, and when nothing usable is proposed', 
   assert.equal((await loopBroke.run('cmp-loop', 20)).reason, 'budget spent');
 
   const asking = campaign(10);
-  asking.append({ campaign_id: 'cmp-loop', type: 'ask_opened', actor: 'builder', data: { ask_id: 'a1', question: 'Email the customer?' } });
+  asking.append({ campaign_id: 'cmp-loop', type: 'mission_proposed', actor: 'builder', data: { mission_id: 'm-email', member: 'builder', objective: 'Email the customer' } });
+  asking.append({ campaign_id: 'cmp-loop', type: 'mission_claimed', actor: 'builder', data: { mission_id: 'm-email', claim_key: 'email the customer' } });
+  asking.append({ campaign_id: 'cmp-loop', type: 'ask_opened', actor: 'builder', data: { ask_id: 'a1', question: 'Email the customer?', mission_id: 'm-email' } });
   const loopAsk = makeLoop('/x', {}, { store: asking, cli: async () => ({ code: 0 }), log: () => {}, skipReconcile: true, judge: () => ({ passed: false }), ask: async () => ({ ok: true, text: '[]' }) });
   assert.equal((await loopAsk.run('cmp-loop')).reason, 'needs you: 1 open ask');
 

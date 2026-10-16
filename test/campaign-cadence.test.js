@@ -69,7 +69,9 @@ test('rounds work, then review: lessons are written and the next plan reads them
 
 test('a campaign that needs a person ends the rounds instead of sleeping', async () => {
   const { root, store } = setup();
-  store.append({ campaign_id: 'cmp-c', type: 'ask_opened', actor: 'builder', data: { ask_id: 'a1', question: 'Deploy?' } });
+  store.append({ campaign_id: 'cmp-c', type: 'mission_proposed', actor: 'builder', data: { mission_id: 'm-deploy', member: 'builder', objective: 'Deploy it' } });
+  store.append({ campaign_id: 'cmp-c', type: 'mission_claimed', actor: 'builder', data: { mission_id: 'm-deploy', claim_key: 'deploy it' } });
+  store.append({ campaign_id: 'cmp-c', type: 'ask_opened', actor: 'builder', data: { ask_id: 'a1', question: 'Deploy?', mission_id: 'm-deploy' } });
   let slept = 0;
   const loop = makeLoop(root, {}, { store, cli: fakeCli(store), log: () => {}, skipReconcile: true, judge: async () => ({ passed: false }), ask: async () => ({ ok: true, text: '[]' }) });
   const cadence = makeCadence(root, loop, { work: '50m', break: '10m' }, { store, log: () => {}, now: () => 0, sleep: async () => { slept++; } });

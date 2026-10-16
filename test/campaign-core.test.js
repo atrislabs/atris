@@ -99,6 +99,25 @@ test('asks: agent check comes first, reopening an open ask is ignored', () => {
   assert.deepEqual(view.warnings.map((w) => w.code), ['ask_answered_by_agent']);
 });
 
+test('an open ask holds only the mission it names', () => {
+  const base = [
+    started(),
+    ev('judge_ran', { passed: false, summary: '0 of 1' }),
+    ev('mission_proposed', { mission_id: 'm1', member: 'builder', estimate_usd: 1 }),
+    ev('mission_claimed', { mission_id: 'm1', claim_key: 'one' }),
+  ];
+  const unrelated = fold([started(), ev('judge_ran', { passed: false, summary: '0 of 1' }), ev('ask_opened', { ask_id: 'a1', question: 'Pick a brand name?' })]);
+  assert.equal(unrelated.state, 'needs_you');
+  assert.deepEqual(decide(unrelated), { action: 'propose', reason: 'no missions queued' });
+  assert.deepEqual(decide(fold([...base, ev('ask_opened', { ask_id: 'a1', question: 'Pick a name?' })])), { action: 'start_mission', mission_id: 'm1' });
+  assert.deepEqual(decide(fold([...base, ev('ask_opened', { ask_id: 'a1', question: 'Spend it?', mission_id: 'm1' })])), { action: 'wait', reason: 'open asks', asks: ['a1'] });
+  const two = fold([...base,
+    ev('mission_proposed', { mission_id: 'm2', member: 'builder', estimate_usd: 1 }),
+    ev('mission_claimed', { mission_id: 'm2', claim_key: 'two' }),
+    ev('ask_opened', { ask_id: 'a1', question: 'Spend it?', mission_id: 'm1' })]);
+  assert.deepEqual(decide(two), { action: 'start_mission', mission_id: 'm2' });
+});
+
 test('a reservation for an ended mission is ignored, and agent done always warns', () => {
   const view = fold([
     started(),

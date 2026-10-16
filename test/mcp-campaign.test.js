@@ -5,7 +5,7 @@ const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
-const { spawn } = require('node:child_process');
+const { spawn, spawnSync } = require('node:child_process');
 
 const repoRoot = path.resolve(__dirname, '..');
 const cliPath = path.join(repoRoot, 'bin', 'atris.js');
@@ -53,7 +53,11 @@ test('an agent starts, asks, runs to the stop, and cannot answer for the person'
     assert.equal(started.result.isError, undefined, JSON.stringify(started.data));
     assert.equal(started.data.campaign.answer.text, 'pass 1, fail 2');
 
-    const asked = await call('campaign_ask', { id: 'cmp-try', question: 'deploy to production?', cwd: dir }, db);
+    // An ask holds only the mission it names, so queue one for it to hold.
+    const event = (type, data) => spawnSync(process.execPath, [cliPath, 'campaign', 'event', 'cmp-try', type, '--data', JSON.stringify(data)], { cwd: dir, env: { ...process.env, ATRIS_CAMPAIGN_DB: db, ATRIS_SKIP_UPDATE_CHECK: '1' }, encoding: 'utf8' });
+    assert.equal(event('mission_proposed', { mission_id: 'm-deploy', member: 'mission-lead', objective: 'Deploy to production' }).status, 0);
+    assert.equal(event('mission_claimed', { mission_id: 'm-deploy', claim_key: 'deploy to production' }).status, 0);
+    const asked = await call('campaign_ask', { id: 'cmp-try', question: 'deploy to production?', mission: 'm-deploy', cwd: dir }, db);
     const askId = asked.data.campaign.asks[0].id;
 
     const ran = await call('campaign_run', { id: 'cmp-try', max_steps: 2, cwd: dir }, db);

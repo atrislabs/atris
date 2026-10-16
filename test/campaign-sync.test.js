@@ -155,11 +155,11 @@ test('push sends every local event, campaign_started first, and remembers the li
   assert.equal(link.pushed, 3);
 }));
 
-test('a phone answer pulled from the cloud unblocks decide', () => withCloud(async (cloud) => {
+test('a phone answer pulled from the cloud closes the ask', () => withCloud(async (cloud) => {
   const store = createMemoryStore({ origin: 'laptop' });
   const id = waitingCampaign(store);
   await syncCampaign(store, id, loggedIn);
-  assert.equal(decide(getCampaign(store, id)).reason, 'open asks');
+  assert.equal(getCampaign(store, id).state, 'needs_you');
   cloud.answer(id, 'a-ship', 'yes, ship it');
   const result = await syncCampaign(store, id, loggedIn);
   assert.equal(result.ok, true, result.error);
@@ -341,7 +341,7 @@ test('a campaign never synced runs without touching the cloud', () => withCloud(
   const id = waitingCampaign(store);
   const ran = await command(store, ['run', id, '--json'], { loopDeps: quietLoop });
   assert.equal(ran.code, 0, ran.err);
-  assert.match(JSON.parse(ran.out).reason, /needs you/);
+  assert.match(JSON.parse(ran.out).reason, /proposed nothing usable/);
   assert.equal(cloud.requests.length, 0);
 }));
 
@@ -417,7 +417,7 @@ test('sync --json on a new computer prints the pulled campaign', () => withCloud
   const out = JSON.parse(synced.out);
   assert.deepEqual([out.ok, out.first_pull, out.pulled], [true, true, 3]);
   assert.equal(out.campaign.id, id);
-  assert.equal(out.next.reason, 'open asks');
+  assert.deepEqual(out.campaign.asks.map((a) => a.id), ['a-ship']);
 }));
 
 test('start --cloud --basis atris_cloud records who pays; the basis needs --cloud and a known value', () => withCloud(async (cloud) => {
