@@ -14,8 +14,9 @@ const { memberMarkdown } = require('../lib/member-scaffold');
 
 const CLI = path.join(__dirname, '..', 'bin', 'atris.js');
 
-function workspace(members) {
+function workspace(t, members) {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'atris-member-type-'));
+  t.after(() => fs.rmSync(root, { recursive: true, force: true }));
   for (const [name, lines] of Object.entries(members)) {
     const dir = path.join(root, 'atris', 'team', name);
     fs.mkdirSync(dir, { recursive: true });
@@ -25,7 +26,7 @@ function workspace(members) {
 }
 
 function atris(root, ...args) {
-  return spawnSync(process.execPath, [CLI, ...args], { cwd: root, encoding: 'utf8', env: { ...process.env, NO_COLOR: '1' } });
+  return spawnSync(process.execPath, [CLI, ...args], { cwd: root, encoding: 'utf8', env: { ...process.env, NO_COLOR: '1', ATRIS_SKIP_UPDATE_CHECK: '1' } });
 }
 
 test('missing type means ai, agent is an alias, human and odd values are not runnable', () => {
@@ -38,23 +39,23 @@ test('missing type means ai, agent is an alias, human and odd values are not run
   assert.equal(memberTypeOf({ type: 'robot' }).type, 'other');
 });
 
-test('both frontmatter readers expose the type with the same rules', () => {
-  const root = workspace({ plain: '', agent: 'type: agent\n', bob: 'type: human\n', odd: 'type: robot\n' });
+test('both frontmatter readers expose the type with the same rules', (t) => {
+  const root = workspace(t, { plain: '', agent: 'type: agent\n', bob: 'type: human\n', odd: 'type: robot\n' });
   const types = Object.fromEntries(readTeamMembers(root).map((m) => [m.slug, m.type]));
   assert.deepEqual(types, { plain: 'ai', agent: 'ai', bob: 'human', odd: 'other' });
   const text = fs.readFileSync(path.join(root, 'atris', 'team', 'bob', 'MEMBER.md'), 'utf8');
   assert.equal(memberTypeOf(parseFrontmatter(text)).type, 'human');
 });
 
-test('wake refuses a human member with the reason and a non-zero exit', () => {
-  const root = workspace({ bob: 'type: human\n' });
+test('wake refuses a human member with the reason and a non-zero exit', (t) => {
+  const root = workspace(t, { bob: 'type: human\n' });
   const res = atris(root, 'member', 'wake', 'bob');
   assert.notEqual(res.status, 0);
   assert.match(res.stderr, /bob is a person, not an AI teammate; Atris can prepare work for them but cannot act as them/);
 });
 
-test('wake, tick, loop, and run refuse an odd-typed member', () => {
-  const root = workspace({ ann: 'type: robot\n' });
+test('wake, tick, loop, and run refuse an odd-typed member', (t) => {
+  const root = workspace(t, { ann: 'type: robot\n' });
   for (const cmd of ['wake', 'tick', 'loop', 'run']) {
     const res = atris(root, 'member', cmd, 'ann');
     assert.notEqual(res.status, 0, cmd);
@@ -62,25 +63,25 @@ test('wake, tick, loop, and run refuse an odd-typed member', () => {
   }
 });
 
-test('an ai member is not refused for its type', () => {
-  const root = workspace({ ann: 'type: agent\n' });
+test('an ai member is not refused for its type', (t) => {
+  const root = workspace(t, { ann: 'type: agent\n' });
   const res = atris(root, 'member', 'wake', 'ann');
   assert.doesNotMatch(res.stderr, /neither ai nor human|is a person/);
 });
 
-test('task routing skips human and odd members but honors a named owner', () => {
-  const root = workspace({ bob: 'type: human\n', ann: 'type: robot\n' });
+test('task routing skips human and odd members but honors a named owner', (t) => {
+  const root = workspace(t, { bob: 'type: human\n', ann: 'type: robot\n' });
   const auto = chooseTaskOwner({ purpose: 'outbound sales outreach', root });
   assert.equal(auto.source, 'fallback');
   const named = chooseTaskOwner({ purpose: 'anything', requestedOwner: 'bob', root });
   assert.equal(named.owner, 'bob');
   assert.equal(named.source, 'requested');
-  const withAi = workspace({ bob: 'type: human\n', zed: '' });
+  const withAi = workspace(t, { bob: 'type: human\n', zed: '' });
   assert.equal(chooseTaskOwner({ purpose: 'outbound sales outreach', root: withAi }).owner, 'zed');
 });
 
-test('engine roster leaves out a human member and never picks an engine for one', () => {
-  const root = workspace({ bob: 'type: human\n', zed: '' });
+test('engine roster leaves out a human member and never picks an engine for one', (t) => {
+  const root = workspace(t, { bob: 'type: human\n', zed: '' });
   const names = teamRosterView(root).rows.map((r) => r.member);
   assert.ok(names.includes('zed'));
   assert.ok(!names.includes('bob'));
