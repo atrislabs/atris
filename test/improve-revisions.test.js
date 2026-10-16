@@ -10,7 +10,7 @@ const assert = require('node:assert');
 const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
-const { execSync } = require('node:child_process');
+const { execSync, execFileSync, spawnSync } = require('node:child_process');
 
 const {
   run,
@@ -43,14 +43,14 @@ function initRepo() {
   return cwd;
 }
 
-function commitFile(cwd, file, content, subject, { bot = false, atMs } = {}) {
+function commitFile(cwd, file, content, subject, { bot = false, atMs, committedAtMs = atMs } = {}) {
   fs.writeFileSync(path.join(cwd, file), content, 'utf8');
   fs.writeFileSync(path.join(cwd, '.git', 'COMMIT_MSG_FIXTURE'), bot ? `${subject}\n\n${BOT_TRAILER}\n` : `${subject}\n`, 'utf8');
   const date = new Date(atMs).toISOString();
   execSync('git add -A && git commit -q -F .git/COMMIT_MSG_FIXTURE', {
     cwd,
     stdio: 'pipe',
-    env: { ...process.env, GIT_AUTHOR_DATE: date, GIT_COMMITTER_DATE: date },
+    env: { ...process.env, GIT_AUTHOR_DATE: date, GIT_COMMITTER_DATE: new Date(committedAtMs).toISOString() },
   });
 }
 
@@ -59,6 +59,68 @@ function cleanup(cwd) {
 }
 
 const HOUR = 60 * 60 * 1000;
+
+for (const control of ['human-in-window', 'human-outside-window', 'agent-in-window']) {
+  test(`real revision reports preserve ${control} across out-of-order descendant dates`, () => {
+    const cwd = initRepo();
+    const now = Math.floor(Date.now() / 1000) * 1000;
+    const landed = now - 100 * HOUR;
+    const git = (...args) => execFileSync('git', args, { cwd, encoding: 'utf8', stdio: 'pipe' }).trim();
+    try {
+      commitFile(cwd, 'product.js', 'const result = "base";\n', 'initial product', { atMs: landed - HOUR });
+      commitFile(cwd, 'product.js', 'const result = "agent";\n', 'agent landing', { bot: true, atMs: landed });
+      const landing = git('rev-parse', 'HEAD');
+      const correctionAt = landed + (control === 'human-outside-window' ? 74 : 1) * HOUR;
+      commitFile(cwd, 'product.js', 'const result = "corrected";\n', 'correction', {
+        bot: control === 'agent-in-window', atMs: correctionAt,
+      });
+      const correction = git('rev-parse', 'HEAD');
+      const expectedRevised = control === 'human-in-window' ? 1 : 0;
+      const expectedLandings = control === 'agent-in-window' ? 3 : 2;
+      let finalTree;
+      for (const skewed of [false, true]) {
+        git('checkout', '-qb', skewed ? 'skewed' : 'monotonic', correction);
+        commitFile(cwd, 'unrelated.js', 'const unrelated = 1;\n', 'unrelated descendant', {
+          atMs: correctionAt + HOUR,
+          committedAtMs: skewed ? now - 14 * 24 * HOUR - HOUR : correctionAt + HOUR,
+        });
+        commitFile(cwd, 'recent.js', 'const recent = 1;\n', 'recent unrelated landing', {
+          bot: true, atMs: now - HOUR,
+        });
+        assert.strictEqual(git('rev-parse', '--is-shallow-repository'), 'false');
+        git('merge-base', '--is-ancestor', landing, 'HEAD');
+        git('merge-base', '--is-ancestor', correction, 'HEAD');
+        const tree = git('rev-parse', 'HEAD^{tree}');
+        if (finalTree) assert.strictEqual(tree, finalTree, 'only commit metadata differs');
+        finalTree = tree;
+
+        const api = collectRevisionSignals(cwd, { days: 14, now });
+        const actual = spawnSync(process.execPath, [path.resolve(__dirname, '../bin/atris.js'),
+          'improve', 'revisions', '--days', '14', '--json'], {
+          cwd, encoding: 'utf8', timeout: 30000,
+          env: { ...process.env, ATRIS_SKIP_UPDATE_CHECK: '1', NO_UPDATE_NOTIFIER: '1' },
+        });
+        assert.strictEqual(actual.status, 0, actual.stderr);
+        const cli = JSON.parse(actual.stdout);
+        const metric = (summary) => ({ landings: summary.landings, revised: summary.revised,
+          rate: summary.rate, window_hours: summary.window_hours });
+        const expected = { landings: expectedLandings, revised: expectedRevised,
+          rate: expectedRevised / expectedLandings, window_hours: 72 };
+        assert.deepStrictEqual({ api: metric(api), cli: metric(cli) }, { api: expected, cli: expected },
+          skewed ? 'old unrelated date must not hide real ancestors' : 'monotonic control');
+        if (expectedRevised) {
+          for (const summary of [api, cli]) {
+            assert.strictEqual(summary.revisions[0].landing.hash, landing);
+            assert.deepStrictEqual(summary.revisions[0].revised_by.map((c) => c.hash), [correction]);
+            assert.deepStrictEqual(summary.revisions[0].files, ['product.js']);
+          }
+        }
+      }
+    } finally {
+      cleanup(cwd);
+    }
+  });
+}
 
 function buildFixture() {
   const cwd = initRepo();

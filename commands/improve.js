@@ -528,7 +528,7 @@ function collectImproveVitals(options = {}, deps = {}) {
   };
 
   // The guarantee gauge: agent landings vs human fixes over the last 14 days.
-  // Collection is bounded by --since so a huge repo only walks a fortnight.
+  // The lookback filters results while traversal can visit older ancestors.
   // No git history (not a repo, git missing) means the line is omitted silently.
   let guarantee = null;
   try {
@@ -1313,7 +1313,8 @@ function collectRevisionSignals(root, options = {}) {
 
   let raw = '';
   try {
-    raw = gitLines(root, ['log', `--since=${sinceIso}`, '--date=iso-strict', '--pretty=format:%H%x1f%P%x1f%aI%x1f%s%x1f%B%x1e']);
+    // Filter dates without pruning ancestors behind an older-dated descendant.
+    raw = gitLines(root, ['log', `--since-as-filter=${sinceIso}`, '--date=iso-strict', '--pretty=format:%H%x1f%P%x1f%aI%x1f%s%x1f%B%x1e']);
   } catch (e) {
     // a repo with no commits yet exits non-zero on `git log`; that is the
     // empty-history case, not an error. anything else (not a repo) rethrows.
