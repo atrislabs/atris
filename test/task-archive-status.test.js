@@ -1,8 +1,8 @@
 'use strict';
 
 // OBL-1622: bulk sweeps (duplicates, off-roadmap cleanup) must write a distinct
-// 'archived' status, never 'failed' — 'failed' is a reward signal and mislabeling
-// good work as failed corrupts it (see atris/reports/failed-tasks-analysis-2026-07-03.md).
+// 'archived' status, never 'failed'. The 'failed' status is a reward signal, and
+// mislabeling good work as failed corrupts it (see atris/reports/failed-tasks-analysis-2026-07-03.md).
 // This also covers the one-time `atris task relabel-archived` migration that fixes
 // the 125 rows the 2026-06-10 backlog reset mislabeled as failed.
 
