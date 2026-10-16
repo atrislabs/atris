@@ -625,16 +625,81 @@ run_writer() {
   esac
 }
 
+# Start a writer in the background: its answer lands in $2, its exit code in $2.rc.
+start_writer() {
+  local cmd model effort
+  IFS='|' read -r cmd model effort _ <<< "$1"
+  # Gemini's sign-in probe is read here, so waiting on it overlaps the head start.
+  { rc=0
+    if [ "$cmd" = agy ] && ! agy_signed_in; then rc=99; else run_writer "$cmd" "$model" "$effort" || rc=$?; fi
+    echo "$rc" > "$2.rc.tmp"; mv "$2.rc.tmp" "$2.rc"; } >"$2" 2>>"$WORK/yt_${ID}.engine.err" </dev/null &
+  WRITER_PID=$!
+}
+
+writer_ok() { [ "$(cat "$1.rc" 2>/dev/null)" = 0 ] && grep -q '[[:alnum:]]' "$1"; }
+
+stop_writer() { pkill -P "$1" 2>/dev/null || true; kill "$1" 2>/dev/null || true; }
+
+# A used-up Gemini quota answers about 3s after the captions are ready, and the
+# backup only started after that. Now Gemini gets a head start (1s), then the
+# backup starts too and the first good answer wins; Gemini wins a tie.
+# ATRIS_YTNOTES_HEDGE_SECS=off waits for Gemini first, as before. Returns 1 when
+# Gemini failed before the backup started, or with RACE_FAILED set when both failed.
+HEDGE_SECS="${ATRIS_YTNOTES_HEDGE_SECS:-1}"
+race_writers() {
+  local a="$WORK/race.$$.a" b="$WORK/race.$$.b" apid bpid="" blabel="${2##*|}" n=0 ticks
+  ticks=$(awk -v s="$HEDGE_SECS" 'BEGIN { printf "%d", s * 20 }')
+  rm -f "$a" "$a.rc" "$b" "$b.rc"
+  start_writer "$1" "$a"; apid=$WRITER_PID
+  while :; do
+    if [ -e "$a.rc" ]; then
+      if writer_ok "$a"; then
+        [ -z "$bpid" ] || stop_writer "$bpid"
+        cat "$a"; echo "notes by ${1##*|}" >&2; return 0
+      fi
+      if [ "$(cat "$a.rc")" = 99 ]; then
+        echo "agy is installed but not signed in; skipping Gemini. Run: agy (sign in once)." >&2
+        RACE_SIGNED_OUT=1
+      fi
+      [ -n "$bpid" ] || return 1
+      [ -n "${RACE_SIGNED_OUT:-}" ] || echo "${1##*|} did not answer; writing the notes with $blabel instead." >&2
+      while [ ! -e "$b.rc" ]; do sleep 0.05; done
+      if writer_ok "$b"; then cat "$b"; echo "notes by $blabel" >&2; return 0; fi
+      RACE_FAILED="${2%%|*}"; return 1
+    fi
+    if [ -n "$bpid" ] && writer_ok "$b"; then
+      stop_writer "$apid"
+      cat "$b"; echo "notes by $blabel" >&2; return 0
+    fi
+    n=$((n + 1))
+    if [ -z "$bpid" ] && [ "$n" -ge "$ticks" ]; then start_writer "$2" "$b"; bpid=$WRITER_PID; fi
+    sleep 0.05
+  done
+}
+
 run_auto() {
-  local entry cmd model effort label out tried=""
-  for entry in $(writer_list); do
+  local entry cmd model effort label out tried="" list backup="" skip=" "
+  list=$(writer_list)
+  for entry in $list; do
+    case "$entry" in agy\|*) continue ;; esac
+    command -v "${entry%%|*}" >/dev/null 2>&1 && { backup="$entry"; break; }
+  done
+  for entry in $list; do
     IFS='|' read -r cmd model effort label <<< "$entry"
+    case "$skip" in *" $cmd "*) continue ;; esac
     command -v "$cmd" >/dev/null 2>&1 || continue
     if [ "$cmd" = agy ] && gemini_quota_wall; then
       echo "Gemini's quota was used up on a recent run; skipping Gemini until it resets." >&2
       continue
     fi
     if [ "$cmd" = agy ] && ! agy_is_cli; then continue; fi
+    if [ "$cmd" = agy ] && [ -z "$tried" ] && [ -n "$backup" ] && [ "$HEDGE_SECS" != off ]; then
+      RACE_FAILED=""; RACE_SIGNED_OUT=""
+      race_writers "$entry" "$backup" && return 0
+      [ -n "$RACE_SIGNED_OUT" ] || tried="$label"
+      if [ -n "$RACE_FAILED" ]; then skip="$skip$RACE_FAILED "; tried="${backup##*|}"; fi
+      continue
+    fi
     if [ "$cmd" = agy ] && ! agy_signed_in; then
       echo "agy is installed but not signed in; skipping Gemini. Run: agy (sign in once)." >&2
       continue
