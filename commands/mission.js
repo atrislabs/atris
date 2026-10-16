@@ -11696,7 +11696,17 @@ function completeMission(args) {
   if (!mission) {
     exitMissingMission(ref, 1, asJson);
   }
-  const gate = missionCompletionGate(mission, proof, root);
+  let gate = missionCompletionGate(mission, proof, root);
+  if (!gate.ok && !force && gate.source === 'mission_state' && effectiveMissionVerifier(mission) && !readReceiptProof(proof, root)) {
+    const verifierResult = runVerifier(effectiveMissionVerifier(mission), root);
+    if (!verifierResult.passed) {
+      const what = verifierResult.timed_out ? 'the check timed out' : 'the check failed';
+      const also = gate.linked_task_note ? ` ${gate.linked_task_note}.` : '';
+      exitMissionError(`[mission complete] ${what}, so the mission stays open.${also} (or override as operator with --force)`, 2, asJson);
+    }
+    mission.verifier_result = verifierResult;
+    gate = missionCompletionGate(mission, proof, root);
+  }
   if (!gate.ok && !force) {
     const fix = gate.source === 'linked_task'
       ? (gate.accept_command

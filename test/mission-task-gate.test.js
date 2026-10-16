@@ -234,10 +234,25 @@ test('mission complete with an unpassed check still names the linked task that i
     const refused = runCli(dir, ['mission', 'complete', mission.id, '--proof', 'free text proof']);
     assert.equal(refused.status, 2, errorText(refused));
     const text = errorText(refused);
-    assert.match(text, /verifier has not passed/);
+    assert.match(text, /the check failed/);
+    assert.ok(!/mission tick/.test(text), `does not send the person to tick: ${text}`);
     assert.ok(text.includes(`linked task ${short} is`), `mentions the linked task: ${text}`);
     assert.match(text, new RegExp(`atris task accept ${short}`));
     assert.ok(!text.includes(mission.xp_task.task_id), 'no long internal id');
+  } finally {
+    cleanup(dir);
+  }
+});
+
+test('mission complete runs a passing check itself, no tick first', { skip: !hasNodeSqlite() }, () => {
+  const dir = makeWorkspace();
+  try {
+    const mission = startMission(dir, 'Ship one self-checked thing', ['--verify', PASSING_VERIFIER, '--runner', 'manual']);
+    const done = runCli(dir, ['mission', 'complete', mission.id, '--proof', 'human says done', '--json']);
+    assert.equal(done.status, 0, errorText(done));
+    const finished = missionFromList(dir, mission.id);
+    assert.equal(finished.status, 'complete');
+    assert.equal(finished.verifier_result.passed, true);
   } finally {
     cleanup(dir);
   }
