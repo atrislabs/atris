@@ -7,8 +7,14 @@ const os = require('node:os');
 const path = require('node:path');
 const { computeTrustTier } = require('../lib/trust-tiers');
 
-function historyRoot(receipts, scorecards = []) {
-  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'atris-trust-tiers-'));
+function makeTempDir(t, prefix) {
+  const tmp = fs.mkdtempSync(path.join(os.tmpdir(), prefix));
+  t.after(() => fs.rmSync(tmp, { recursive: true, force: true }));
+  return tmp;
+}
+
+function historyRoot(t, receipts, scorecards = []) {
+  const root = makeTempDir(t, 'atris-trust-tiers-');
   const state = path.join(root, '.atris', 'state');
   fs.mkdirSync(state, { recursive: true });
   fs.writeFileSync(path.join(state, 'career_xp_receipts.jsonl'), `${receipts.map(JSON.stringify).join('\n')}${receipts.length ? '\n' : ''}`);
@@ -23,26 +29,26 @@ function receipts(actor, passes, failures) {
   ];
 }
 
-test('computeTrustTier applies outcome count and pass-rate boundaries', () => {
-  assert.equal(computeTrustTier('member', historyRoot(receipts('member', 4, 0))), 'probation');
-  assert.equal(computeTrustTier('member', historyRoot(receipts('member', 4, 1))), 'standard');
-  assert.equal(computeTrustTier('member', historyRoot(receipts('member', 7, 3))), 'standard');
-  assert.equal(computeTrustTier('member', historyRoot(receipts('member', 9, 1))), 'trusted');
+test('computeTrustTier applies outcome count and pass-rate boundaries', (t) => {
+  assert.equal(computeTrustTier('member', historyRoot(t, receipts('member', 4, 0))), 'probation');
+  assert.equal(computeTrustTier('member', historyRoot(t, receipts('member', 4, 1))), 'standard');
+  assert.equal(computeTrustTier('member', historyRoot(t, receipts('member', 7, 3))), 'standard');
+  assert.equal(computeTrustTier('member', historyRoot(t, receipts('member', 9, 1))), 'trusted');
 });
 
-test('computeTrustTier groups scorecard engine outcomes and uses only the last 20', () => {
+test('computeTrustTier groups scorecard engine outcomes and uses only the last 20', (t) => {
   const olderFailures = Array.from({ length: 5 }, () => ({ metadata: { executed_by: 'codex' }, verify_passed: false }));
   const latestPasses = Array.from({ length: 20 }, () => ({ metadata: { executed_by: 'codex' }, verify_passed: true }));
-  const root = historyRoot([], [...olderFailures, ...latestPasses]);
+  const root = historyRoot(t, [], [...olderFailures, ...latestPasses]);
   assert.equal(computeTrustTier('CODEX', root), 'trusted');
   assert.equal(computeTrustTier('unknown', root), 'probation');
 });
 
-test('computeTrustTier falls back to probation for missing or corrupt history', () => {
-  const missing = fs.mkdtempSync(path.join(os.tmpdir(), 'atris-trust-tiers-missing-'));
+test('computeTrustTier falls back to probation for missing or corrupt history', (t) => {
+  const missing = makeTempDir(t, 'atris-trust-tiers-missing-');
   assert.equal(computeTrustTier('member', missing), 'probation');
 
-  const corrupt = historyRoot(receipts('member', 10, 0));
+  const corrupt = historyRoot(t, receipts('member', 10, 0));
   fs.appendFileSync(path.join(corrupt, '.atris', 'state', 'scorecards.jsonl'), '{broken\n');
   assert.equal(computeTrustTier('member', corrupt), 'probation');
 });
@@ -50,8 +56,8 @@ test('computeTrustTier falls back to probation for missing or corrupt history', 
 // Real history rows name the APPROVER in `actor` and the work only by task
 // id. Trust must follow the builder of that task, found through the episode
 // log, or every builder stays "still earning trust" forever.
-function approvedHistoryRoot({ builder, approver, passes, failures = 0 }) {
-  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'atris-trust-builder-'));
+function approvedHistoryRoot(t, { builder, approver, passes, failures = 0 }) {
+  const root = makeTempDir(t, 'atris-trust-builder-');
   const state = path.join(root, '.atris', 'state');
   fs.mkdirSync(state, { recursive: true });
   const episodes = [];
@@ -73,23 +79,23 @@ function approvedHistoryRoot({ builder, approver, passes, failures = 0 }) {
   return root;
 }
 
-test('trust is keyed by the builder of the approved work, never the approver', () => {
-  const root = approvedHistoryRoot({ builder: 'alpha-scout', approver: 'keshavrao', passes: 12 });
+test('trust is keyed by the builder of the approved work, never the approver', (t) => {
+  const root = approvedHistoryRoot(t, { builder: 'alpha-scout', approver: 'keshavrao', passes: 12 });
   assert.equal(computeTrustTier('alpha-scout', root), 'trusted');
   // The approver did not build anything here; approving earns no trust.
   assert.equal(computeTrustTier('keshavrao', root), 'probation');
 });
 
-test('a stamped builder on a history row wins over the task lookup', () => {
-  const root = approvedHistoryRoot({ builder: 'someone-else', approver: 'keshavrao', passes: 0 });
+test('a stamped builder on a history row wins over the task lookup', (t) => {
+  const root = approvedHistoryRoot(t, { builder: 'someone-else', approver: 'keshavrao', passes: 0 });
   const state = path.join(root, '.atris', 'state');
   const rows = Array.from({ length: 6 }, (_, i) => ({ builder: 'wiki-miner', actor: 'keshavrao', outcome: 'accepted', source_episode_id: `s-${i}` }));
   fs.writeFileSync(path.join(state, 'career_xp_receipts.jsonl'), `${rows.map(JSON.stringify).join('\n')}\n`);
   assert.equal(computeTrustTier('wiki-miner', root), 'standard');
 });
 
-test('a receipt and a scorecard for the same review episode count once', () => {
-  const root = approvedHistoryRoot({ builder: 'executor', approver: 'keshavrao', passes: 9 });
+test('a receipt and a scorecard for the same review episode count once', (t) => {
+  const root = approvedHistoryRoot(t, { builder: 'executor', approver: 'keshavrao', passes: 9 });
   const state = path.join(root, '.atris', 'state');
   // Nine receipts plus nine scorecards for the same nine episodes is still 9 outcomes, not 18.
   const scorecards = Array.from({ length: 9 }, (_, i) => ({ task_id: `task-${i}`, source_episode_id: `ep-${i}`, actor: 'keshavrao', rl_label: 'accepted' }));
@@ -97,9 +103,9 @@ test('a receipt and a scorecard for the same review episode count once', () => {
   assert.equal(computeTrustTier('executor', root), 'standard');
 });
 
-test('the landing gate asks about the builder (metadata.built_by), not the approver', () => {
+test('the landing gate asks about the builder (metadata.built_by), not the approver', (t) => {
   const { evaluateAutoAccept } = require('../lib/auto-accept-certified');
-  const root = approvedHistoryRoot({ builder: 'alpha-scout', approver: 'keshavrao', passes: 12 });
+  const root = approvedHistoryRoot(t, { builder: 'alpha-scout', approver: 'keshavrao', passes: 12 });
   fs.mkdirSync(path.join(root, 'lib'), { recursive: true });
   fs.writeFileSync(path.join(root, 'lib', 'x.js'), 'module.exports = {};\n');
   const task = {

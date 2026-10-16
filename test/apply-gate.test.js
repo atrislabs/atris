@@ -13,6 +13,12 @@ const {
   isLearnerKeepApply,
 } = require('../lib/apply-gate');
 
+function makeTempDir(t, prefix) {
+  const tmp = fs.mkdtempSync(path.join(os.tmpdir(), prefix));
+  t.after(() => fs.rmSync(tmp, { recursive: true, force: true }));
+  return tmp;
+}
+
 test('ephemeralApplyMessage names the surface', () => {
   assert.equal(
     ephemeralApplyMessage('notes'),
@@ -28,8 +34,8 @@ test('ephemeralApplyMessage names the surface', () => {
   );
 });
 
-test('hintEphemeralApply prints once and writes no files', () => {
-  const cwd = fs.mkdtempSync(path.join(os.tmpdir(), 'atris-apply-hint-'));
+test('hintEphemeralApply prints once and writes no files', (t) => {
+  const cwd = makeTempDir(t, 'atris-apply-hint-');
   const output = [];
   const status = hintEphemeralApply((line) => output.push(line), 'notes');
   assert.equal(status, 0);
@@ -37,8 +43,8 @@ test('hintEphemeralApply prints once and writes no files', () => {
   assert.equal(fs.existsSync(path.join(cwd, 'atris')), false);
 });
 
-test('ensureApply still files a sidecar when asked', () => {
-  const cwd = fs.mkdtempSync(path.join(os.tmpdir(), 'atris-apply-save-'));
+test('ensureApply still files a sidecar when asked', (t) => {
+  const cwd = makeTempDir(t, 'atris-apply-save-');
   fs.mkdirSync(path.join(cwd, 'atris', 'wiki', 'briefs'), { recursive: true });
   const output = [];
   const rel = 'atris/wiki/briefs/youtube-hint01.apply.md';
@@ -59,8 +65,8 @@ test('ensureApply still files a sidecar when asked', () => {
   assert.equal(output.includes(ephemeralApplyMessage('notes')), false);
 });
 
-test('ensureApply human gate refuses a leftover notes keep-sidecar', () => {
-  const cwd = fs.mkdtempSync(path.join(os.tmpdir(), 'atris-apply-human-'));
+test('ensureApply human gate refuses a leftover notes keep-sidecar', (t) => {
+  const cwd = makeTempDir(t, 'atris-apply-human-');
   const applyDir = path.join(cwd, 'atris', 'wiki', 'briefs');
   fs.mkdirSync(applyDir, { recursive: true });
   const rel = 'atris/wiki/briefs/youtube-oldnote1.apply.md';
@@ -89,8 +95,8 @@ test('ensureApply human gate refuses a leftover notes keep-sidecar', () => {
   assert.doesNotMatch(stub, /notes-oldnote1|keep only if measure\.py/);
 });
 
-test('ensureApply human gate still accepts a real change and receipt', () => {
-  const cwd = fs.mkdtempSync(path.join(os.tmpdir(), 'atris-apply-human-ok-'));
+test('ensureApply human gate still accepts a real change and receipt', (t) => {
+  const cwd = makeTempDir(t, 'atris-apply-human-ok-');
   const applyDir = path.join(cwd, 'atris', 'wiki', 'briefs');
   fs.mkdirSync(applyDir, { recursive: true });
   const rel = 'atris/wiki/briefs/youtube-human01.apply.md';
