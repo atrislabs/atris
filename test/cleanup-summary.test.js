@@ -7,12 +7,6 @@ const os = require('node:os');
 const path = require('node:path');
 const { appendOvernightNote, latestCleanupLine, tickSummaryLine } = require('../lib/cleanup-summary');
 
-function project(name = 'project-demo') {
-  const root = path.join(fs.mkdtempSync(path.join(os.tmpdir(), 'atris-cleanup-summary-')), name);
-  fs.mkdirSync(path.join(root, 'atris'), { recursive: true });
-  return root;
-}
-
 test('the tick line is plain, counts what happened, and is silent when nothing did', () => {
   assert.equal(tickSummaryLine({}), null);
   assert.equal(tickSummaryLine({ needYou: 6 }), null);
@@ -22,7 +16,15 @@ test('the tick line is plain, counts what happened, and is silent when nothing d
   );
 });
 
-test('notes land in the project overnight section once, and boot reads the newest one back', () => {
+test('notes land in the project overnight section once, and boot reads the newest one back', (t) => {
+  function project(name = 'project-demo') {
+    const parent = fs.mkdtempSync(path.join(os.tmpdir(), 'atris-cleanup-summary-'));
+    t.after(() => fs.rmSync(parent, { recursive: true, force: true }));
+    const root = path.join(parent, name);
+    fs.mkdirSync(path.join(root, 'atris'), { recursive: true });
+    return root;
+  }
+
   const root = project();
   const now = new Date(2026, 9, 6, 9);
   assert.equal(appendOvernightNote(root, 'Review sweep: Closed 3 duplicates.', now), true);
