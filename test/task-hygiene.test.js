@@ -5,34 +5,16 @@ const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
-const { spawnSync } = require('node:child_process');
 
 const taskStore = require('../lib/task-db');
 
-const repoRoot = path.resolve(__dirname, '..');
-const cliPath = path.join(repoRoot, 'bin', 'atris.js');
+const { runCli } = require('./helpers/task-admin-cli');
 
 function makeWorkspace() {
   const root = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'atris-task-hygiene-')));
   fs.mkdirSync(path.join(root, 'atris'), { recursive: true });
   fs.mkdirSync(path.join(root, '.atris', 'state'), { recursive: true });
   return root;
-}
-
-function runCli(args, { cwd, env }) {
-  const result = spawnSync(process.execPath, [cliPath, ...args], {
-    cwd,
-    encoding: 'utf8',
-    timeout: 30000,
-    env: {
-      ...process.env,
-      ATRIS_SKIP_UPDATE_CHECK: '1',
-      NODE_NO_WARNINGS: '1',
-      ...env,
-    },
-  });
-  if (result.error) throw result.error;
-  return result;
 }
 
 function addBlocker(db, root, { missionId, status = 'open', blockerClass = 'runner-failed', tag = 'mission-blocker' }) {
