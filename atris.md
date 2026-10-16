@@ -131,6 +131,7 @@ Six primitives, one sentence each:
 - **The Mission** (MISSION.md): the enduring purpose. Never ends. Sits at the top and helps members pick goals.
 - **Goals** (endgame, member goals): direction derived from the Mission. A goal points; it does not commit.
 - **A mission run** (`atris mission`): a goal that signed a contract: objective + owner + verifier + stop condition. Ends in hours or days. Any engine can tick it.
+- **A campaign** (`atris campaign`): a measurable goal with a judge that fails today, worked by many mission runs until it passes. Hours to days.
 - **Tasks** (`atris task`): the smallest provable units. Receipts, then human accept.
 - **Members** (`atris member`): the WHO. A role with memory and judgment doing one bounded, proven slice at a time.
 - **Loops** (`atris loops`): the WHEN. Clocks that never finish, only fire. Health is exit 0 on cadence.
@@ -235,6 +236,14 @@ Verify cannot be a raw shell shortcut; it must call a rubric or test that can fa
 Before picking up work, decide scope:
 - single project → route to that project's `atris/team/` and `atris task` queue
 - crosses projects → route to `atris/team/cross-project-architect/` and plan the dependency order first
+
+Then size it, before any tool runs. Ask one question: do I already know the steps?
+- **Quick fix** (minutes): you know the file and the fix. Do it, run the tests that cover it, ship. No mission, no judge.
+- **Mission** (an hour or a few): you know what done looks like and roughly how. One mission run, or a few across members (builder builds, validator checks).
+- **Campaign** (hours to days): done is clear and measurable, the path is not, and it takes many tries. `atris campaign` with a judge that fails today; its missions do the work.
+- **Purpose** (months to years): a standing campaign under the Mission. Its judge runs on a schedule, campaigns run under it, and each one's lessons and scored record feed the next. This is the self-improving loop.
+
+Never size up for show. A fix run as a campaign wastes time and inference and leaves bad data (2026-10-16: a 50-line fix run as a campaign took six jobs and 29 minutes). Sizing is judgment, not a command: `atris wish` is for imagining, not for sizing.
 
 The human is the constructor. You multiply. Handoff fidelity lives in the files, not in context.
 
