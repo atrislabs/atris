@@ -77,6 +77,64 @@ test('campaign learning waits for its judge, finishes the recorder, and does not
   assert.equal(fs.readFileSync(recorder.attemptsPath(root), 'utf8').trim().split('\n').length, 2, 'one open and one finish only');
 });
 
+test('later judge evidence finishes a legacy skipped result on its original node only once', (t) => {
+  const root = recorderWorkspace(t);
+  const store = createMemoryStore();
+  const append = (type, data) => store.append({ campaign_id: 'cmp-legacy-gain', type, actor: 'builder', data });
+  append('campaign_started', { title: 'Recover late judge evidence', owner: 'builder', judge: 'false', budget: 10 });
+  append('judge_ran', { passed: false, reading: 0 });
+  append('mission_started', { mission_id: 'm-legacy-gain', member: 'builder', engine: 'codex' });
+  append('mission_ended', { mission_id: 'm-legacy-gain', outcome: 'kept', cost_usd: 0 });
+  const attempt = recorder.beginAttempt(root, { lane: 'campaign', ground: 'cmp-legacy-gain/m-legacy-gain', engine: 'codex' });
+  assert.ok(attempt);
+  assert.equal(recorder.finishAttempt(root, attempt, { status: 'shipped', verify: 'skipped', reason: 'the judge had not run yet' }), true);
+  const original = recorder.latestNodes(root)[0];
+  const originalRows = fs.readFileSync(recorder.attemptsPath(root), 'utf8').trim().split('\n').length;
+
+  append('judge_ran', { passed: false, reading: 0.5 });
+  writeRsiSnapshot(root, store);
+  const nodes = recorder.latestNodes(root);
+  assert.equal(nodes.length, 1, 'late proof must not open another attempt');
+  assert.equal(nodes[0].id, original.id);
+  assert.equal(nodes[0].tree_id, original.tree_id);
+  assert.deepEqual(nodes[0].context, original.context);
+  assert.deepEqual(nodes[0].action, original.action);
+  assert.equal(nodes[0].outcome.status, 'shipped');
+  assert.equal(nodes[0].outcome.verify, 'pass');
+  const refreshed = fs.readFileSync(recorder.attemptsPath(root), 'utf8');
+  assert.equal(refreshed.trim().split('\n').length, originalRows + 1, 'append only the corrected finish');
+  assert.equal(process.env[recorder.GUARD_ENV], undefined);
+
+  writeRsiSnapshot(root, store);
+  assert.equal(fs.readFileSync(recorder.attemptsPath(root), 'utf8'), refreshed, 'unchanged proof must not append another finish');
+});
+
+test('legacy skipped results stay unchanged without judge evidence or reading gain', (t) => {
+  const root = recorderWorkspace(t);
+  const store = createMemoryStore();
+  for (const campaignId of ['cmp-legacy-unjudged', 'cmp-legacy-neutral']) {
+    const append = (type, data) => store.append({ campaign_id: campaignId, type, actor: 'builder', data });
+    const missionId = `${campaignId}-mission`;
+    append('campaign_started', { title: 'Keep unproven results unproven', owner: 'builder', judge: 'false', budget: 10 });
+    append('judge_ran', { passed: false, reading: 0 });
+    append('mission_started', { mission_id: missionId, member: 'builder' });
+    append('mission_ended', { mission_id: missionId, outcome: 'kept', cost_usd: 0 });
+    const attempt = recorder.beginAttempt(root, { lane: 'campaign', ground: `${campaignId}/${missionId}`, engine: 'codex' });
+    assert.ok(attempt);
+    assert.equal(recorder.finishAttempt(root, attempt, { status: 'shipped', verify: 'skipped', reason: 'the judge had not run yet' }), true);
+    if (campaignId === 'cmp-legacy-neutral') append('judge_ran', { passed: false, reading: 0 });
+  }
+  const original = fs.readFileSync(recorder.attemptsPath(root), 'utf8');
+  const nodes = recorder.latestNodes(root);
+  assert.equal(nodes.length, 2);
+  assert.equal(new Set(nodes.map((node) => node.id)).size, 2, 'the recorder fixture must keep distinct identities');
+
+  writeRsiSnapshot(root, store);
+  writeRsiSnapshot(root, store);
+  assert.equal(fs.readFileSync(recorder.attemptsPath(root), 'utf8'), original);
+  assert.ok(recorder.latestNodes(root).every((node) => node.outcome.verify === 'skipped'));
+});
+
 
 test('a failed recorder finish can be retried on the next snapshot', (t) => {
   const root = recorderWorkspace(t);

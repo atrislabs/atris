@@ -2383,7 +2383,9 @@ rg "foldMapNotesOnMain|foldNotesText|foldDue|map-notes.d|map_fold|last_map_fold_
 
 ### overnight campaign execution and complete learning reports
 
-`commands/campaign.js:564` wires the real locked campaign step; `lib/campaign-rsi.js:545` awaits it, rotates campaigns, and records failed starts. `lib/campaign-rsi.js:103` leaves members without measured judge gains unproven. `bin/atris.js:2019` drains large reports before exit. Real runtime checks: `test/campaign-overnight-runtime.test.js`, `test/campaign-json-output.test.js`, `test/campaign-rsi-evidence.test.js`, and `test/campaign-rsi-recorder.test.js`.
+`commands/campaign.js:564` wires the real locked campaign step; `lib/campaign-rsi.js:548` awaits it, rotates campaigns, and records failed starts. `lib/campaign-rsi.js:103` leaves members without measured judge gains unproven. `bin/atris.js:2019` drains large reports before exit. Real runtime checks: `test/campaign-overnight-runtime.test.js`, `test/campaign-json-output.test.js`, `test/campaign-rsi-evidence.test.js`, and `test/campaign-rsi-recorder.test.js`.
+
+Legacy skipped proof refresh: the recorder regression also checks that later judge evidence updates the original node once, with identity and unknown/neutral results preserved.
 
 ### preserve source branches for queued merges
 
