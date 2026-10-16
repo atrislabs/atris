@@ -1,0 +1,101 @@
+{
+  "name": "ask-parked-does-not-block",
+  "about": "an ask with no default is parked once its wait is up (opened at 10:01 UTC written with a -01:00 offset, due_at 11:01 UTC, read at exactly 11:01): it stays listed but no longer holds the campaign, so state is running, not needs_you.",
+  "now": "2026-10-15T11:01:00Z",
+  "events": [
+    {
+      "id": "evt-0001",
+      "campaign_id": "cmp-ship",
+      "type": "campaign_started",
+      "at": "2026-10-15T10:00:00Z",
+      "origin": "laptop",
+      "seq": 1,
+      "actor": "human:keshav",
+      "data": {
+        "title": "Ship campaign core",
+        "judge": "npm run validate:campaign",
+        "budget": 100
+      }
+    },
+    {
+      "id": "evt-0002",
+      "campaign_id": "cmp-ship",
+      "type": "mission_started",
+      "at": "2026-10-15T10:00:30Z",
+      "origin": "laptop",
+      "seq": 2,
+      "actor": "builder",
+      "data": {
+        "mission_id": "m1",
+        "member": "builder"
+      }
+    },
+    {
+      "id": "evt-0003",
+      "campaign_id": "cmp-ship",
+      "type": "ask_opened",
+      "at": "2026-10-15T09:01:00-01:00",
+      "origin": "laptop",
+      "seq": 3,
+      "actor": "mission-lead",
+      "data": {
+        "ask_id": "a1",
+        "question": "Create the payment account?",
+        "mission_id": "m1",
+        "after_ms": 3600000
+      }
+    }
+  ],
+  "expected": {
+    "id": "cmp-ship",
+    "title": "Ship campaign core",
+    "judge": "npm run validate:campaign",
+    "owner": "mission-lead",
+    "standing": false,
+    "bet": null,
+    "parent": null,
+    "home": "laptop",
+    "created_from": null,
+    "seats": [],
+    "state": "running",
+    "stop_reason": null,
+    "answer": {
+      "text": null,
+      "confidence": "open"
+    },
+    "budget": {
+      "total": 100,
+      "spent": 0,
+      "reserved": 0,
+      "available": 100
+    },
+    "asks": [
+      {
+        "id": "a1",
+        "question": "Create the payment account?",
+        "mission_id": "m1",
+        "default": null,
+        "due_at": "2026-10-15T11:01:00Z",
+        "parked": true
+      }
+    ],
+    "defaulted": [],
+    "missions": [
+      {
+        "id": "m1",
+        "member": "builder",
+        "status": "running",
+        "outcome": null,
+        "cost_usd": null,
+        "estimate_usd": null,
+        "steps": 0,
+        "kept": 0,
+        "reverted": 0
+      }
+    ],
+    "judge_runs": 0,
+    "judge_due": true,
+    "last_judge": null,
+    "warnings": []
+  }
+}

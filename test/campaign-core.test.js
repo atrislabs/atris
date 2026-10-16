@@ -15,13 +15,13 @@ const decideCases = JSON.parse(fs.readFileSync(path.join(DIR, 'decide-cases.json
 
 for (const golden of goldens) {
   test(`golden: ${golden.name}`, () => {
-    assert.deepEqual(fold(golden.events), golden.expected);
+    assert.deepEqual(fold(golden.events, golden.now), golden.expected);
   });
 }
 
 decideCases.forEach((c, i) => {
   test(`decide ${i}: ${c.about}`, () => {
-    assert.deepEqual(decide(c.view), c.expected);
+    assert.deepEqual(decide(c.view, c.now), c.expected);
   });
 });
 
@@ -43,7 +43,7 @@ test('every golden folds the same in any arrival order', () => {
     const ids = new Set();
     const unique = golden.events.filter((e) => (ids.has(e.id) ? false : ids.add(e.id)));
     for (const seed of [1, 7, 42]) {
-      assert.deepEqual(fold(shuffled(unique, seed)), golden.expected, `${golden.name} seed ${seed}`);
+      assert.deepEqual(fold(shuffled(unique, seed), golden.now), golden.expected, `${golden.name} seed ${seed}`);
     }
   }
 });
@@ -95,8 +95,30 @@ test('asks: agent check comes first, reopening an open ask is ignored', () => {
     ev('ask_opened', { ask_id: 'a1', question: 'Changed wording' }),
     ev('ask_answered', { ask_id: 'nope', answer: 'yes' }),
   ]);
-  assert.deepEqual(view.asks, [{ id: 'a1', question: 'Spend $40 on ads?', mission_id: null }]);
+  assert.deepEqual(view.asks, [{ id: 'a1', question: 'Spend $40 on ads?', mission_id: null, default: null, due_at: null, parked: false }]);
   assert.deepEqual(view.warnings.map((w) => w.code), ['ask_answered_by_agent']);
+});
+
+test('a view folded without now catches up in decide: the due default is recorded, then work continues', () => {
+  const events = [
+    started(),
+    ev('ask_opened', { ask_id: 'a1', question: 'Which brand name?', default: 'Citewise', after_ms: 1000 }, 'mission-lead'),
+    ev('ask_opened', { ask_id: 'a2', question: 'Create the payment account?', after_ms: 1000 }, 'mission-lead'),
+  ];
+  const later = '2026-10-15T11:00:00Z';
+  const recorded = fold(events);
+  assert.equal(recorded.state, 'needs_you');
+  assert.deepEqual(decide(recorded, later), { action: 'default_asks', asks: [{ id: 'a1', answer: 'Citewise' }] });
+  const after = fold([...events, { ...ev('ask_defaulted', { ask_id: 'a1', answer: 'Citewise' }, 'mission-lead'), at: later }]);
+  assert.deepEqual(after.asks.map((a) => a.id), ['a2']);
+  assert.deepEqual(decide(after, later), { action: 'run_judge' });
+  assert.deepEqual(fold(events, later).asks.map((a) => [a.id, a.parked]), [['a2', true]]);
+});
+
+test('a bad now or a bad wait is refused, never guessed', () => {
+  assert.deepEqual(fold([started()], '2026-10-15T11:00:00'), { error: 'invalid_now' });
+  assert.deepEqual(fold([started(), ev('ask_opened', { ask_id: 'a1', question: 'q', after_ms: 0 })]), { error: 'invalid_event' });
+  assert.deepEqual(fold([started(), ev('ask_opened', { ask_id: 'a1', question: 'q', default: '' })]), { error: 'invalid_event' });
 });
 
 test('a reservation for an ended mission is ignored, and agent done always warns', () => {

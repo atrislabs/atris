@@ -79,7 +79,7 @@ const NO_LIMIT_BUDGET = 1e9;
 const noLimit = (view) => view.budget.total >= NO_LIMIT_BUDGET;
 
 // The flags this command understands, so positional words are what is left.
-const VALUE_FLAGS = ['--mission-minutes', '--basis', '--work', '--break', '--rounds', '--mission', '--parallel', '--max-steps', '--max-ticks', '--runner', '--count', '--judge', '--budget', '--owner', '--seat', '--bet', '--wrong-if', '--parent', '--id', '--role', '--add', '--data', '--timeout', '--as', '--holdout', '--protect'];
+const VALUE_FLAGS = ['--mission-minutes', '--basis', '--work', '--break', '--rounds', '--mission', '--parallel', '--max-steps', '--max-ticks', '--runner', '--count', '--judge', '--budget', '--owner', '--seat', '--bet', '--wrong-if', '--parent', '--id', '--role', '--add', '--data', '--timeout', '--as', '--holdout', '--protect', '--default', '--after'];
 
 function positionals(args) {
   const out = [];
@@ -236,15 +236,17 @@ function makeContext(args, deps) {
     else console.error(message);
     return code;
   };
+  // Every printed campaign is read at this time, so overdue questions stop holding it.
+  const now = deps.now || (() => new Date().toISOString());
   const append = (campaignId, type, data, as = actor) => store.append({ campaign_id: campaignId, type, actor: as, data });
   // A campaign's own files (its judge copy, held-out data) live beside the store, outside the repo.
   const folder = deps.campaignFolder || ((id) => path.join(holdoutRoot, 'campaigns', id));
-  return { asJson, store, actor, judge, holdoutRoot, out, fail, append, forgedHuman, folder, loopDeps: deps.loopDeps, cloud: deps.cloud || {} };
+  return { asJson, store, actor, judge, holdoutRoot, out, fail, append, forgedHuman, now, folder, loopDeps: deps.loopDeps, cloud: deps.cloud || {} };
 }
 
 function requireCampaign(ctx, id) {
   if (!id) return { error: ctx.fail('name the campaign: atris campaign <verb> <id>') };
-  const view = getCampaign(ctx.store, id);
+  const view = getCampaign(ctx.store, id, ctx.now());
   if (!view) return { error: ctx.fail(`no campaign ${id}. See them all with: atris campaign`, 1) };
   if (view.error) return { error: ctx.fail(`campaign ${id} cannot be read: ${view.error}`, 1) };
   return { view };
@@ -284,8 +286,9 @@ function renderShow(view) {
     const cost = m.cost_usd === null ? '' : ` · ${money(m.cost_usd)}`;
     lines.push(`  ${m.id.padEnd(22)} ${m.status.padEnd(8)} ${m.member || '-'}${m.outcome ? ` · ${m.outcome}` : ''}${cost}`);
   }
-  row('asks', view.asks.length ? '' : 'none');
+  row('asks', view.asks.length || (view.defaulted || []).length ? '' : 'none');
   for (const ask of view.asks) lines.push(`  ${ask.id}: ${ask.question}`);
+  for (const ask of view.defaulted || []) lines.push(`  ${ask.id}: ${ask.question} · went with the default: ${ask.answer}, a person can still change it`);
   if (view.warnings.length) {
     row('warnings', '');
     for (const w of view.warnings) lines.push(`  ${w.code.replace(/_/g, ' ')} (${w.event_id})`);
@@ -317,7 +320,7 @@ async function cmdStart(args, ctx) {
   for (const key of Object.keys(record)) if (record[key] === undefined) delete record[key];
 
   const lookup = (id) => {
-    const view = getCampaign(ctx.store, id);
+    const view = getCampaign(ctx.store, id, ctx.now());
     return view && !view.error ? { parent: view.parent } : null;
   };
   const check = validateCampaign(record, { lookup });
@@ -337,7 +340,7 @@ async function cmdStart(args, ctx) {
 
   const id = readFlag(args, '--id', '') || newCampaignId(title);
   if (!CAMPAIGN_ID.test(id)) return ctx.fail(`--id must look like cmp-<lowercase-words>, for example cmp-ship-billing`);
-  if (getCampaign(ctx.store, id)) return ctx.fail(`campaign ${id} already exists`, 1);
+  if (getCampaign(ctx.store, id, ctx.now())) return ctx.fail(`campaign ${id} already exists`, 1);
   const protect = readAll(args, '--protect');
   const protectPlan = protect.length ? planProtect(process.cwd(), protect) : null;
   if (protectPlan && protectPlan.error) return ctx.fail(protectPlan.error);
@@ -382,9 +385,9 @@ async function cmdStart(args, ctx) {
     cloud = await syncCampaign(ctx.store, id, ctx.cloud);
     if (!cloud.ok && !ctx.asJson) console.error(`started here, not yet in the cloud: ${cloud.error}. Try again with: atris campaign sync ${id}`);
   }
-  const view = getCampaign(ctx.store, id);
+  const view = getCampaign(ctx.store, id, ctx.now());
   const synced = cloud && cloud.ok ? `\nin the cloud: ${cloud.pushed} event${cloud.pushed === 1 ? '' : 's'} sent` : '';
-  ctx.out(`started ${view.title} (${id})${synced}\n${renderShow(view)}`, { ok: true, action: 'campaign_started', campaign: view, next: decide(view), ...(cloud ? { cloud } : {}) });
+  ctx.out(`started ${view.title} (${id})${synced}\n${renderShow(view)}`, { ok: true, action: 'campaign_started', campaign: view, next: decide(view, ctx.now()), ...(cloud ? { cloud } : {}) });
   // --run keeps going: plan and run missions until the judge passes or a stop.
   if (args.includes('--run')) return cmdLoop(['run', id, ...args.slice(2)], ctx, 'run');
   return 0;
@@ -401,7 +404,7 @@ function describeSync(result) {
 async function cmdSync(args, ctx) {
   const id = positionals(args)[1];
   // A computer that has never seen the campaign pulls it whole from the cloud.
-  const here = id && getCampaign(ctx.store, id);
+  const here = id && getCampaign(ctx.store, id, ctx.now());
   if (id && !here && !CAMPAIGN_ID.test(id)) return ctx.fail(`campaign ids look like cmp-<lowercase-words>, not ${id}`);
   const { view, error } = here || !id ? requireCampaign(ctx, id) : { view: { id } };
   if (error !== undefined) return error;
@@ -411,8 +414,8 @@ async function cmdSync(args, ctx) {
     else console.error(`sync failed: ${result.error}`);
     return 1;
   }
-  const after = getCampaign(ctx.store, view.id);
-  ctx.out(`${describeSync(result)}\n${renderShow(after)}`, { ...result, campaign: after, next: decide(after) });
+  const after = getCampaign(ctx.store, view.id, ctx.now());
+  ctx.out(`${describeSync(result)}\n${renderShow(after)}`, { ...result, campaign: after, next: decide(after, ctx.now()) });
   return 0;
 }
 
@@ -445,7 +448,7 @@ async function cmdCloudRun(args, ctx) {
     body.max_rounds = Number(rounds);
   }
   let synced = null;
-  const local = getCampaign(ctx.store, id);
+  const local = getCampaign(ctx.store, id, ctx.now());
   if (local && !local.error) {
     synced = await syncCampaign(ctx.store, id, ctx.cloud);
     if (!synced.ok) return ctx.fail(`not started: the cloud needs this campaign first, and sync failed: ${synced.error}`, 1);
@@ -477,7 +480,7 @@ function describeCloudRun(data) {
 function cmdShow(args, ctx) {
   const { view, error } = requireCampaign(ctx, positionals(args)[1]);
   if (error !== undefined) return error;
-  ctx.out(renderShow(view), { ok: true, campaign: view, next: decide(view) });
+  ctx.out(renderShow(view), { ok: true, campaign: view, next: decide(view, ctx.now()) });
   return 0;
 }
 
@@ -500,8 +503,8 @@ async function cmdSetJudge(args, ctx) {
   }
   ctx.append(view.id, 'judge_set', { judge, from: view.judge });
   ctx.append(view.id, 'judge_ran', { passed: reading.passed, summary: reading.summary || `exit ${reading.exit}`, seconds: reading.seconds }, 'judge');
-  const after = getCampaign(ctx.store, view.id);
-  ctx.out(`judge changed to: ${judge}\n${renderShow(after)}`, { ok: true, action: 'judge_set', campaign: after, next: decide(after) });
+  const after = getCampaign(ctx.store, view.id, ctx.now());
+  ctx.out(`judge changed to: ${judge}\n${renderShow(after)}`, { ok: true, action: 'judge_set', campaign: after, next: decide(after, ctx.now()) });
   return 0;
 }
 
@@ -512,10 +515,10 @@ async function cmdJudge(args, ctx) {
   if (!ctx.asJson) console.error(`running the judge: ${view.judge}`);
   const reading = await ctx.judge(view.judge, timeout, view.id);
   ctx.append(view.id, 'judge_ran', judgeRanData(reading), 'judge');
-  const after = getCampaign(ctx.store, view.id);
+  const after = getCampaign(ctx.store, view.id, ctx.now());
   const verdict = reading.passed ? 'passed' : 'failed';
   ctx.out(`judge ${verdict} in ${reading.seconds}s: ${reading.summary || `exit ${reading.exit}`}\n${renderShow(after)}`,
-    { ok: true, action: 'judge_ran', passed: reading.passed, reading, campaign: after, next: decide(after) });
+    { ok: true, action: 'judge_ran', passed: reading.passed, reading, campaign: after, next: decide(after, ctx.now()) });
   return reading.passed ? 0 : 1;
 }
 
@@ -560,8 +563,8 @@ function simpleEvent(type, buildData, describe, toCloud = null) {
       else if (!ctx.asJson) console.error(`recorded here only; the cloud did not take it: ${sent.error}`);
     }
     if (via === 'local') ctx.append(view.id, type, built.data);
-    const after = getCampaign(ctx.store, view.id);
-    ctx.out(`${describe(built.data, after)}\n${renderShow(after)}`, { ok: true, action: type, via, campaign: after, next: decide(after) });
+    const after = getCampaign(ctx.store, view.id, ctx.now());
+    ctx.out(`${describe(built.data, after, ctx)}\n${renderShow(after)}`, { ok: true, action: type, via, campaign: after, next: decide(after, ctx.now()) });
     return 0;
   };
 }
@@ -593,10 +596,23 @@ const cmdBudget = simpleEvent('budget_added', (args) => {
 // The no-reload line: anything that cannot be undone waits here for a person.
 const cmdAsk = simpleEvent('ask_opened', (args, words) => {
   const question = words[2];
-  if (!question) return { error: 'write the question: atris campaign ask <id> "<question>" [--mission <mission-id>]' };
+  if (!question) return { error: 'write the question: atris campaign ask <id> "<question>" [--mission <mission-id>] [--default "<answer>"] [--after 2h]' };
+  // An ask past its wait closes with its default, or parks when it has none.
+  const { parseDuration } = require('../lib/campaign-cadence');
+  let afterMs;
+  try {
+    afterMs = parseDuration(readFlag(args, '--after', ''), 2 * 3600000);
+  } catch (err) {
+    return { error: `--after: ${err.message}` };
+  }
+  if (!(afterMs > 0)) return { error: '--after is a wait longer than zero, like 30m or 2h' };
   const askId = `a-${require('crypto').randomBytes(3).toString('hex')}`;
   const mission = readFlag(args, '--mission', '');
-  return { data: mission ? { ask_id: askId, question, mission_id: mission } : { ask_id: askId, question } };
+  const fallback = readFlag(args, '--default', '');
+  const data = { ask_id: askId, question, after_ms: afterMs };
+  if (fallback) data.default = fallback;
+  if (mission) data.mission_id = mission;
+  return { data };
 }, (d) => `asked ${d.ask_id}: ${d.question}`);
 
 const cmdAnswer = simpleEvent('ask_answered', (args, words) => {
@@ -604,7 +620,9 @@ const cmdAnswer = simpleEvent('ask_answered', (args, words) => {
   const answer = words[3];
   if (!askId || !answer) return { error: 'answer an ask: atris campaign answer <id> <ask-id> "<answer>"' };
   return { data: { ask_id: askId, answer } };
-}, (d, view) => (view.asks.some((a) => a.id === d.ask_id) ? `not closed: only a person can answer ${d.ask_id}` : `answered ${d.ask_id}: ${d.answer}`), (d) => ({ ask_id: d.ask_id, answer: d.answer }));
+// Who answered decides it, not whether the ask is still listed: an ask past its
+// wait may have closed with its default whoever answers.
+}, (d, view, ctx) => (isHumanActor(ctx.actor) ? `answered ${d.ask_id}: ${d.answer}` : `not closed: only a person can answer ${d.ask_id}`), (d) => ({ ask_id: d.ask_id, answer: d.answer }));
 
 const cmdPause = simpleEvent('paused', () => ({ data: {} }), () => 'paused');
 const cmdResume = simpleEvent('resumed', () => ({ data: {} }), () => 'resumed');
@@ -617,7 +635,7 @@ const cmdEvent = (args, ctx) => {
   const type = words[2];
   if (!type) return ctx.fail('name the event type: atris campaign event <id> <type> [--data \'<json>\']');
   // Events that only the judge or a person may write have their own verbs.
-  const guarded = { judge_ran: 'atris campaign judge', ask_answered: 'atris campaign answer', done: 'atris campaign stop, or a passing judge', budget_added: 'atris campaign budget --add', campaign_started: 'atris campaign start' };
+  const guarded = { judge_ran: 'atris campaign judge', ask_answered: 'atris campaign answer', ask_defaulted: 'atris campaign ask --default, which closes on its own once the wait is up', done: 'atris campaign stop, or a passing judge', budget_added: 'atris campaign budget --add', campaign_started: 'atris campaign start' };
   if (guarded[type]) return ctx.fail(`${type} cannot be written by hand; use ${guarded[type]}`);
   let data;
   try {
@@ -631,8 +649,8 @@ const cmdEvent = (args, ctx) => {
     if (err.code === 'invalid_event' || err.code === 'mission_in_other_campaign') return ctx.fail(err.message);
     throw err;
   }
-  const after = getCampaign(ctx.store, view.id);
-  ctx.out(`recorded ${type}\n${renderShow(after)}`, { ok: true, action: type, campaign: after, next: decide(after) });
+  const after = getCampaign(ctx.store, view.id, ctx.now());
+  ctx.out(`recorded ${type}\n${renderShow(after)}`, { ok: true, action: type, campaign: after, next: decide(after, ctx.now()) });
   return 0;
 };
 
@@ -698,14 +716,14 @@ async function driveLoop(args, ctx, verb, view) {
   });
   if (verb === 'propose') {
     const proposals = await loop.propose(view.id);
-    const after = getCampaign(ctx.store, view.id);
-    ctx.out(proposals.length ? `${proposals.length} proposed and claimed\n${renderShow(after)}` : 'nothing usable was proposed', { ok: proposals.length > 0, proposals, campaign: after, next: decide(after) });
+    const after = getCampaign(ctx.store, view.id, ctx.now());
+    ctx.out(proposals.length ? `${proposals.length} proposed and claimed\n${renderShow(after)}` : 'nothing usable was proposed', { ok: proposals.length > 0, proposals, campaign: after, next: decide(after, ctx.now()) });
     return proposals.length ? 0 : 1;
   }
   if (verb === 'step') {
     const result = await loop.step(view.id);
-    const after = getCampaign(ctx.store, view.id);
-    ctx.out(`${result.stop ? `stopped: ${result.reason}` : `did: ${result.did}`}\n${renderShow(after)}`, { ok: true, ...result, campaign: after, next: decide(after), sync_warnings: syncWarnings });
+    const after = getCampaign(ctx.store, view.id, ctx.now());
+    ctx.out(`${result.stop ? `stopped: ${result.reason}` : `did: ${result.did}`}\n${renderShow(after)}`, { ok: true, ...result, campaign: after, next: decide(after, ctx.now()), sync_warnings: syncWarnings });
     return 0;
   }
   const work = readFlag(args, '--work', '');
@@ -721,12 +739,12 @@ async function driveLoop(args, ctx, verb, view) {
       return ctx.fail(err.message);
     }
     const result = await cadence.run(view.id);
-    ctx.out(`stopped after ${result.rounds} round${result.rounds === 1 ? '' : 's'}: ${result.reason}\n${renderShow(result.campaign)}`, { ok: true, ...result, next: decide(result.campaign) });
+    ctx.out(`stopped after ${result.rounds} round${result.rounds === 1 ? '' : 's'}: ${result.reason}\n${renderShow(result.campaign)}`, { ok: true, ...result, next: decide(result.campaign, ctx.now()) });
     return 0;
   }
   const maxSteps = Number(readFlag(args, '--max-steps', '')) || 20;
   const result = await loop.run(view.id, maxSteps);
-  ctx.out(`stopped after ${result.steps} step${result.steps === 1 ? '' : 's'}: ${result.reason}\n${renderShow(result.campaign)}`, { ok: true, ...result, next: decide(result.campaign), sync_warnings: syncWarnings });
+  ctx.out(`stopped after ${result.steps} step${result.steps === 1 ? '' : 's'}: ${result.reason}\n${renderShow(result.campaign)}`, { ok: true, ...result, next: decide(result.campaign, ctx.now()), sync_warnings: syncWarnings });
   return 0;
 }
 
@@ -760,11 +778,11 @@ function campaignCommand(args = [], deps = {}) {
   ctx.campaignHome = deps.campaignHome || campaignHome(ctx.store);
   if (ctx.forgedHuman) return ctx.fail('--as cannot name a person; a person runs atris in their own terminal (or sets ATRIS_HUMAN=1)');
   if (!verb || verb === 'list') {
-    const all = listCampaigns(ctx.store);
+    const all = listCampaigns(ctx.store, ctx.now());
     const views = all.filter((view) => !view.error);
     const unreadable = all.filter((view) => view.error);
     const notes = unreadable.map((view) => `${view.id}  cannot be read (${view.error})`);
-    ctx.out([renderList(views), ...notes].filter(Boolean).join('\n'), { ok: true, campaigns: views.map((view) => ({ ...view, next: decide(view) })), unreadable });
+    ctx.out([renderList(views), ...notes].filter(Boolean).join('\n'), { ok: true, campaigns: views.map((view) => ({ ...view, next: decide(view, ctx.now()) })), unreadable });
     return 0;
   }
   const handler = VERBS[verb];

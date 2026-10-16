@@ -192,9 +192,13 @@
       {
         "id": "a1",
         "question": "Anything left?",
-        "mission_id": null
+        "mission_id": null,
+        "default": null,
+        "due_at": null,
+        "parked": false
       }
     ],
+    "defaulted": [],
     "missions": [
       {
         "id": "m1",

@@ -98,6 +98,7 @@
       "available": 48.9
     },
     "asks": [],
+    "defaulted": [],
     "missions": [
       {
         "id": "m1",

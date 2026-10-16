@@ -12,10 +12,13 @@ Spec: `atris/features/campaign/idea.md`. Event types and field checks: `lib/camp
 {
   "name": "judge-pass-finishes",
   "about": "one plain sentence on what this file proves",
+  "now": "2026-10-15T10:05:00Z",
   "events": [ ...events... ],
   "expected": { ...folded view... }
 }
 ```
+
+`now` is optional. When present, fold the events as read at that time (see "Time and asks").
 
 When the events must be refused, `expected` is `{ "error": "<code>" }` instead of a view.
 
@@ -46,6 +49,7 @@ Return `{ "error": code }` and no view when:
 - `invalid_event`: any event fails `validateEvent` (unknown type, missing field, bad id, missing cost on `mission_ended`, and so on).
 - `mixed_campaigns`: events carry more than one `campaign_id`.
 - `no_start`: no `campaign_started` event.
+- `invalid_now`: `now` is given but is not an RFC 3339 timestamp with a zone.
 
 ## Order and duplicates
 
@@ -76,8 +80,9 @@ Every dollar amount becomes integer cents on the way in: `floor(amount * 100 + 0
 | `budget_released` | the mission's open reservation is removed |
 | `budget_added` | `budget.total += amount_usd` |
 | `judge_ran` | adds a judge run. A passing run on a campaign that is not standing finishes it: `done`, stop_reason `judge_passed` |
-| `ask_opened` | adds an open ask `{id: ask_id, question, mission_id or null}` |
-| `ask_answered` | removes that open ask, but only when the actor is `human:`. An agent answering gets warning `ask_answered_by_agent` and the ask stays open. Answering an unknown or closed ask gets warning `unknown_ask` |
+| `ask_opened` | adds an open ask `{id: ask_id, question, mission_id or null, default: data.default or null, due_at, parked: false}`. `due_at` is null without `data.after_ms` (a positive whole number of milliseconds), else this event's `at` plus `after_ms` (see "Time and asks") |
+| `ask_answered` | removes that open ask, or that ask from `defaulted`, but only when the actor is `human:`. An agent answering gets warning `ask_answered_by_agent` and the ask stays open. Answering an unknown or closed ask gets warning `unknown_ask` |
+| `ask_defaulted` | removes that open ask when it has a default, `data.answer` equals that default, and this event's `at` is at or after its `due_at`, and moves it to `defaulted`. Only the owner, `system`, or a `human:` actor may write it; anyone else gets warning `ask_defaulted_not_owner` and nothing changes. On an ask a person already answered it is ignored silently, so a person's answer wins whichever computer wrote first. Otherwise an unknown or closed ask gets warning `unknown_ask`, and an ask without that default or not yet due gets warning `ask_not_defaultable` and stays open |
 | `paused` / `resumed` | sets or clears paused |
 | `stopped` | finishes: `done`, stop_reason `stopped` |
 | `home_moved` | `home = data.to` |
@@ -94,7 +99,7 @@ These close every ambiguity found while writing the goldens (`AMBIGUITIES.md`).
 - **Statuses only move forward.** Rank: `proposed` < `claimed` < `running` < `ended`. `dropped` and `vetoed` are final. An event that would move a status backward, or out of a final status, leaves the status unchanged with no warning. Exceptions: `mission_ended` always sets `ended` and always counts its cost, because money spent is real even on a vetoed mission.
 - **Claims.** The holder claiming its own key again is a no-op. A duplicate claim always warns `duplicate_claim`; the mission becomes `dropped` only when its status was `proposed`.
 - **Vetoes.** An allowed veto changes only a `proposed` or `claimed` mission. `veto_not_owner` is checked first.
-- **Asks.** `ask_answered_by_agent` is checked before `unknown_ask`. `ask_opened` with an id that is already open is ignored.
+- **Asks.** `ask_answered_by_agent` is checked before `unknown_ask`. `ask_opened` with an id that is already open is ignored. A person can still answer a parked ask, which closes it. A person answering an ask that `ask_defaulted` closed replaces the default with no warning (once; a second answer is `unknown_ask`).
 - **Reservations.** `budget_reserved` for a mission whose status is `ended` is ignored.
 - **Seats.** Seats inside `campaign_started` are deduplicated like `seat_filled`. A seat object without a role gets role null.
 - **After finishing.** A `done` from a non-human actor always warns `done_without_judge`, finished or not. A second `stopped`, a human `done`, or a passing `judge_ran` after finishing is silent.
@@ -109,12 +114,23 @@ First match wins:
 1. finished: `done`
 2. `budget.spent >= budget.total`: `out_of_budget`, stop_reason `budget_spent`
 3. paused: `paused`
-4. any open ask: `needs_you`
+4. any open ask that is not parked: `needs_you`
 5. any mission `running`: `running`
 6. any mission `proposed` or `claimed`: `queued`
 7. otherwise `resting`
 
 `stop_reason` is null unless rule 1 or 2 set it.
+
+## Time and asks
+
+An unanswered question never stalls a campaign. When `now` is given, after every event is applied, each open ask whose `due_at` is at or before `now` (compared as instants) is:
+
+- closed and moved to `defaulted`, when it has a default (the same as an on-time `ask_defaulted`)
+- parked otherwise: it stays in `asks` with `parked: true` and no longer makes the campaign `needs_you`
+
+Without `now`, no ask times out. An ask without `due_at` never times out.
+
+`due_at` is written in UTC as `YYYY-MM-DDTHH:MM:SS`, then `.` and the fraction with trailing zeros removed (nothing when it is whole seconds), then `Z`. It keeps every nanosecond of the opening `at`: `2026-10-15T10:01:00.0000005Z` plus 1500 ms is `2026-10-15T10:01:01.5000005Z`.
 
 ## Answer and confidence
 
@@ -152,7 +168,8 @@ Exact keys, in this shape. Lists keep the order their first event was applied.
   "stop_reason": null,
   "answer": { "text": null, "confidence": "open" },
   "budget": { "total": 500, "spent": 2.25, "reserved": 0, "available": 497.75 },
-  "asks": [{ "id": "a1", "question": "...", "mission_id": null }],
+  "asks": [{ "id": "a1", "question": "...", "mission_id": null, "default": null, "due_at": null, "parked": false }],
+  "defaulted": [{ "id": "a2", "question": "...", "answer": "..." }],
   "missions": [
     { "id": "m1", "member": "builder", "status": "ended", "outcome": "kept", "cost_usd": 2.25,
       "estimate_usd": null, "steps": 0, "kept": 0, "reverted": 0 }
@@ -165,6 +182,7 @@ Exact keys, in this shape. Lists keep the order their first event was applied.
 ```
 
 - A mission's `outcome` and `cost_usd` are null until it ends.
+- `defaulted` lists every ask closed with its default, `{ id, question, answer }`, in the order they closed. A person's later answer removes it from the list.
 - `judge_due` is true when the judge has never run, or when a `mission_ended` or an allowed `judge_set` was applied after the latest `judge_ran` (fold order).
 - `last_judge` is `{ "passed": bool, "reading": number or null, "at": "<the event's at>" }` for the latest run.
 - `warnings` keeps the order the events were applied.
@@ -172,12 +190,13 @@ Exact keys, in this shape. Lists keep the order their first event was applied.
 
 ## Decide (next move, pure)
 
-`decide(view)` returns one of:
+`decide(view, now)` returns one of the following. `now` is optional (decide cases carry it beside `view`). An ask is due when `now` is given and its `due_at` is at or before it. Parked asks are skipped.
 
 - `{ "action": "none", "reason": "finished" }` when done
 - `{ "action": "none", "reason": "budget spent" }` when out of budget
 - `{ "action": "none", "reason": "paused" }` when paused
-- `{ "action": "wait", "reason": "open asks", "asks": [ids] }` when an ask is open
+- `{ "action": "default_asks", "asks": [{ "id", "answer" }] }` for every due ask with a default, in view order; the computer records an `ask_defaulted` for each
+- `{ "action": "wait", "reason": "open asks", "asks": [ids] }` when an ask is open and not due
 - `{ "action": "run_judge" }` when `judge_due`
 - `{ "action": "start_mission", "mission_id": id }` for the first `claimed` mission whose estimate (0 when null) fits in `available`
 - `{ "action": "wait", "reason": "budget" }` when claimed missions exist but none fits

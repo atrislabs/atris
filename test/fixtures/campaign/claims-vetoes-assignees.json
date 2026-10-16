@@ -206,6 +206,7 @@
       "available": 100
     },
     "asks": [],
+    "defaulted": [],
     "missions": [
       {
         "id": "m1",

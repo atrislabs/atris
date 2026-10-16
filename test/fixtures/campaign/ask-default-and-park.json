@@ -1,0 +1,356 @@
+{
+  "name": "ask-default-and-park",
+  "about": "read at now 10:05: a1 is past its wait with a default, so it closes with Citewise; a2 is past its wait with no default, so it is parked and stays listed (due_at keeps the nanosecond); a3 closes by ask_defaulted only on the record from the owner that is on time and names its default (an agent, too early, a wrong answer, and after close all warn); defaulting a2, which has no default, warns; a person answering a3 after its default replaces it silently once, then a second answer is unknown; a human answers a4; a6 is answered by a person before its default is recorded, so the late default is ignored silently; a5 is still inside its two hour wait, so the campaign needs you.",
+  "now": "2026-10-15T10:05:00Z",
+  "events": [
+    {
+      "id": "evt-0001",
+      "campaign_id": "cmp-ship",
+      "type": "campaign_started",
+      "at": "2026-10-15T10:00:00Z",
+      "origin": "laptop",
+      "seq": 1,
+      "actor": "human:keshav",
+      "data": {
+        "title": "Ship campaign core",
+        "judge": "npm run validate:campaign",
+        "budget": 100
+      }
+    },
+    {
+      "id": "evt-0002",
+      "campaign_id": "cmp-ship",
+      "type": "mission_started",
+      "at": "2026-10-15T10:00:30Z",
+      "origin": "laptop",
+      "seq": 2,
+      "actor": "builder",
+      "data": {
+        "mission_id": "m1",
+        "member": "builder"
+      }
+    },
+    {
+      "id": "evt-0003",
+      "campaign_id": "cmp-ship",
+      "type": "ask_opened",
+      "at": "2026-10-15T10:01:00Z",
+      "origin": "laptop",
+      "seq": 3,
+      "actor": "mission-lead",
+      "data": {
+        "ask_id": "a1",
+        "question": "Which brand name?",
+        "default": "Citewise",
+        "after_ms": 60000
+      }
+    },
+    {
+      "id": "evt-0004",
+      "campaign_id": "cmp-ship",
+      "type": "ask_opened",
+      "at": "2026-10-15T10:01:00.0000005Z",
+      "origin": "laptop",
+      "seq": 4,
+      "actor": "mission-lead",
+      "data": {
+        "ask_id": "a2",
+        "question": "Create the payment account?",
+        "after_ms": 1500
+      }
+    },
+    {
+      "id": "evt-0005",
+      "campaign_id": "cmp-ship",
+      "type": "ask_opened",
+      "at": "2026-10-15T10:01:00Z",
+      "origin": "laptop",
+      "seq": 5,
+      "actor": "mission-lead",
+      "data": {
+        "ask_id": "a3",
+        "question": "Use the blue logo?",
+        "default": "yes",
+        "after_ms": 1000
+      }
+    },
+    {
+      "id": "evt-0014",
+      "campaign_id": "cmp-ship",
+      "type": "ask_defaulted",
+      "at": "2026-10-15T10:01:01Z",
+      "origin": "cloud",
+      "seq": 1,
+      "actor": "builder",
+      "data": {
+        "ask_id": "a3",
+        "answer": "yes"
+      }
+    },
+    {
+      "id": "evt-0006",
+      "campaign_id": "cmp-ship",
+      "type": "ask_defaulted",
+      "at": "2026-10-15T10:01:00.5Z",
+      "origin": "laptop",
+      "seq": 6,
+      "actor": "mission-lead",
+      "data": {
+        "ask_id": "a3",
+        "answer": "yes"
+      }
+    },
+    {
+      "id": "evt-0007",
+      "campaign_id": "cmp-ship",
+      "type": "ask_defaulted",
+      "at": "2026-10-15T10:01:01Z",
+      "origin": "laptop",
+      "seq": 7,
+      "actor": "mission-lead",
+      "data": {
+        "ask_id": "a3",
+        "answer": "no"
+      }
+    },
+    {
+      "id": "evt-0008",
+      "campaign_id": "cmp-ship",
+      "type": "ask_defaulted",
+      "at": "2026-10-15T10:01:01Z",
+      "origin": "laptop",
+      "seq": 8,
+      "actor": "mission-lead",
+      "data": {
+        "ask_id": "a3",
+        "answer": "yes"
+      }
+    },
+    {
+      "id": "evt-0009",
+      "campaign_id": "cmp-ship",
+      "type": "ask_defaulted",
+      "at": "2026-10-15T10:01:02Z",
+      "origin": "laptop",
+      "seq": 9,
+      "actor": "mission-lead",
+      "data": {
+        "ask_id": "a2",
+        "answer": "yes"
+      }
+    },
+    {
+      "id": "evt-0010",
+      "campaign_id": "cmp-ship",
+      "type": "ask_defaulted",
+      "at": "2026-10-15T10:01:03Z",
+      "origin": "laptop",
+      "seq": 10,
+      "actor": "mission-lead",
+      "data": {
+        "ask_id": "a3",
+        "answer": "yes"
+      }
+    },
+    {
+      "id": "evt-0011",
+      "campaign_id": "cmp-ship",
+      "type": "ask_opened",
+      "at": "2026-10-15T10:02:00Z",
+      "origin": "laptop",
+      "seq": 11,
+      "actor": "builder",
+      "data": {
+        "ask_id": "a4",
+        "question": "Hire a designer?",
+        "after_ms": 60000
+      }
+    },
+    {
+      "id": "evt-0012",
+      "campaign_id": "cmp-ship",
+      "type": "ask_answered",
+      "at": "2026-10-15T10:04:00Z",
+      "origin": "laptop",
+      "seq": 12,
+      "actor": "human:keshav",
+      "data": {
+        "ask_id": "a4",
+        "answer": "not yet"
+      }
+    },
+    {
+      "id": "evt-0013",
+      "campaign_id": "cmp-ship",
+      "type": "ask_opened",
+      "at": "2026-10-15T10:03:00Z",
+      "origin": "laptop",
+      "seq": 13,
+      "actor": "mission-lead",
+      "data": {
+        "ask_id": "a5",
+        "question": "Post the launch thread?",
+        "default": "no",
+        "after_ms": 7200000
+      }
+    },
+    {
+      "id": "evt-0015",
+      "campaign_id": "cmp-ship",
+      "type": "ask_answered",
+      "at": "2026-10-15T10:04:30Z",
+      "origin": "laptop",
+      "seq": 15,
+      "actor": "human:keshav",
+      "data": {
+        "ask_id": "a3",
+        "answer": "no, use the green one"
+      }
+    },
+    {
+      "id": "evt-0016",
+      "campaign_id": "cmp-ship",
+      "type": "ask_answered",
+      "at": "2026-10-15T10:04:40Z",
+      "origin": "laptop",
+      "seq": 16,
+      "actor": "human:keshav",
+      "data": {
+        "ask_id": "a3",
+        "answer": "green, final"
+      }
+    },
+    {
+      "id": "evt-0017",
+      "campaign_id": "cmp-ship",
+      "type": "ask_opened",
+      "at": "2026-10-15T10:01:00Z",
+      "origin": "laptop",
+      "seq": 17,
+      "actor": "mission-lead",
+      "data": {
+        "ask_id": "a6",
+        "question": "Ship on Friday?",
+        "default": "yes",
+        "after_ms": 60000
+      }
+    },
+    {
+      "id": "evt-0018",
+      "campaign_id": "cmp-ship",
+      "type": "ask_answered",
+      "at": "2026-10-15T10:02:30Z",
+      "origin": "laptop",
+      "seq": 18,
+      "actor": "human:keshav",
+      "data": {
+        "ask_id": "a6",
+        "answer": "wait for Monday"
+      }
+    },
+    {
+      "id": "evt-0019",
+      "campaign_id": "cmp-ship",
+      "type": "ask_defaulted",
+      "at": "2026-10-15T10:02:40Z",
+      "origin": "laptop",
+      "seq": 19,
+      "actor": "mission-lead",
+      "data": {
+        "ask_id": "a6",
+        "answer": "yes"
+      }
+    }
+  ],
+  "expected": {
+    "id": "cmp-ship",
+    "title": "Ship campaign core",
+    "judge": "npm run validate:campaign",
+    "owner": "mission-lead",
+    "standing": false,
+    "bet": null,
+    "parent": null,
+    "home": "laptop",
+    "created_from": null,
+    "seats": [],
+    "state": "needs_you",
+    "stop_reason": null,
+    "answer": {
+      "text": null,
+      "confidence": "open"
+    },
+    "budget": {
+      "total": 100,
+      "spent": 0,
+      "reserved": 0,
+      "available": 100
+    },
+    "asks": [
+      {
+        "id": "a2",
+        "question": "Create the payment account?",
+        "mission_id": null,
+        "default": null,
+        "due_at": "2026-10-15T10:01:01.5000005Z",
+        "parked": true
+      },
+      {
+        "id": "a5",
+        "question": "Post the launch thread?",
+        "mission_id": null,
+        "default": "no",
+        "due_at": "2026-10-15T12:03:00Z",
+        "parked": false
+      }
+    ],
+    "defaulted": [
+      {
+        "id": "a1",
+        "question": "Which brand name?",
+        "answer": "Citewise"
+      }
+    ],
+    "missions": [
+      {
+        "id": "m1",
+        "member": "builder",
+        "status": "running",
+        "outcome": null,
+        "cost_usd": null,
+        "estimate_usd": null,
+        "steps": 0,
+        "kept": 0,
+        "reverted": 0
+      }
+    ],
+    "judge_runs": 0,
+    "judge_due": true,
+    "last_judge": null,
+    "warnings": [
+      {
+        "event_id": "evt-0006",
+        "code": "ask_not_defaultable"
+      },
+      {
+        "event_id": "evt-0014",
+        "code": "ask_defaulted_not_owner"
+      },
+      {
+        "event_id": "evt-0007",
+        "code": "ask_not_defaultable"
+      },
+      {
+        "event_id": "evt-0009",
+        "code": "ask_not_defaultable"
+      },
+      {
+        "event_id": "evt-0010",
+        "code": "unknown_ask"
+      },
+      {
+        "event_id": "evt-0016",
+        "code": "unknown_ask"
+      }
+    ]
+  }
+}
