@@ -43,12 +43,21 @@ async function start(store, id) {
   assert.equal(r.code, 0, r.out);
 }
 
+// Waiting on you: the campaign's only queued job is held by a question that names it.
+// A question that names no job holds nothing (atris/features/campaign/promise.md).
+function holdOnYou(store, id, question) {
+  const mission = `m-${id}`;
+  store.append({ campaign_id: id, type: 'mission_proposed', actor: 'builder', data: { mission_id: mission, member: 'builder', objective: question } });
+  store.append({ campaign_id: id, type: 'mission_claimed', actor: 'builder', data: { mission_id: mission, claim_key: question.toLowerCase() } });
+  store.append({ campaign_id: id, type: 'ask_opened', actor: 'mission-lead', data: { ask_id: `a-${id}`, question, mission_id: mission } });
+}
+
 test('tick pushes the first campaign with work and skips done, paused, and waiting-on-you ones', async () => {
   const store = createMemoryStore({ origin: 'laptop' });
   for (const id of ['cmp-done', 'cmp-paused', 'cmp-asking', 'cmp-next', 'cmp-later']) await start(store, id);
   await run(store, ['stop', 'cmp-done']);
   await run(store, ['pause', 'cmp-paused']);
-  await run(store, ['ask', 'cmp-asking', 'Deploy it?']);
+  holdOnYou(store, 'cmp-asking', 'Deploy it?');
   const asks = [];
   const r = await run(store, ['tick', '--max-steps', '1'], quiet(asks));
   assert.equal(r.code, 0, r.out);
@@ -63,7 +72,7 @@ test('tick pushes the first campaign with work and skips done, paused, and waiti
 test('tick says plainly when nothing here has work, and moves nothing', async () => {
   const store = createMemoryStore({ origin: 'laptop' });
   await start(store, 'cmp-one');
-  await run(store, ['ask', 'cmp-one', 'Spend money?']);
+  holdOnYou(store, 'cmp-one', 'Spend money?');
   const logs = [];
   const saved = console.log;
   console.log = (line) => logs.push(String(line));
