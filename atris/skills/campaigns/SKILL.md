@@ -1,6 +1,6 @@
 ---
 name: campaigns
-description: "Run an Atris campaign: a long goal with a judge that fails today, a budget, and members in seats, worked by missions until the judge passes. Use when the goal takes many runs, needs several members, or must spend under a cap. Triggers on: run a campaign, long goal, big goal, keep going until it passes, campaign, judge, budget, atris campaign."
+description: "Run an Atris campaign: a long goal (hours to days) with a judge that fails today and members in seats, worked by missions until the judge passes. Use only when the path is unknown and takes many tries; a quick fix or a single mission is not a campaign. Triggers on: run a campaign, long goal, big goal, keep going until it passes, campaign, judge, budget, atris campaign."
 version: 1.0.0
 tags:
   - campaign
@@ -12,14 +12,18 @@ tags:
 
 # Campaigns
 
-A campaign is a goal plus a judge. The judge is a command that exits 0 only when the goal is met. The campaign runs missions under a budget until the judge passes, the money runs out, or a person has to decide something.
+A campaign is a goal plus a judge. The judge is a command that exits 0 only when the goal is met. The campaign runs missions until the judge passes, a budget (cloud only) runs out, or a person has to decide something.
 
-## Campaign or mission
+## Size it first
 
-- **Mission**: one member, one objective, one check. Done in a run or a few ticks.
-- **Campaign**: the goal needs many missions, more than one member, or a spending cap. A campaign decides what to do next; its missions do the work.
+Ask one question: do you already know the steps?
 
-If one `atris mission start` would finish it, use a mission.
+- **Quick fix** (minutes): you know the file and the fix. Edit it, run the tests that cover it, ship. No mission, no judge.
+- **Mission** (an hour or a few): you know what done looks like and roughly how. One `atris mission start`, or a few across members.
+- **Campaign** (hours to days): done is clear and measurable, the path is not, and it takes many tries. A campaign decides what to do next; its missions do the work.
+- **Purpose** (months to years): a standing campaign (`--standing`). Campaigns run under it (`--parent`), and each one's lessons feed the next.
+
+A campaign is a vision, not a fix. If one mission would finish it, use a mission; if you could write the diff in ten minutes, write it. Measured 2026-10-16: a 50-line fix run as a campaign took six jobs and 29 minutes.
 
 ## The five commands
 
