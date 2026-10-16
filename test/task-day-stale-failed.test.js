@@ -16,13 +16,8 @@ const { taskDayGroups, taskDayTextGroups, taskDayTitle } = require('../commands/
 
 const DAY_MS = 24 * 60 * 60 * 1000;
 
-function hasNodeSqlite() {
-  const result = spawnSync(process.execPath, ['-e', 'require("node:sqlite")'], {
-    encoding: 'utf8',
-    env: { ...process.env, NODE_NO_WARNINGS: '1' },
-  });
-  return result.status === 0;
-}
+const { hasNodeSqlite: probeNodeSqlite } = require('./helpers/node-sqlite');
+const hasNodeSqlite = () => probeNodeSqlite({ NODE_NO_WARNINGS: '1' });
 
 function makeTempDir() {
   return fs.mkdtempSync(path.join(os.tmpdir(), 'atris-task-day-stale-test-'));
