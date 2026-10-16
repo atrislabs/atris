@@ -1543,7 +1543,7 @@ rg "printRoster|registryPayload|canPersistEngineRegistry|speakFirstMinute|--glob
 - **Known command:** `lib/known-commands.js:7` (`github`)
 - **Routing:** `bin/atris.js:2141` (`command === 'github'`)
 - **Subcommands:** `commands/github.js:12` (`pr list`), `commands/github.js:18` (`pr create`), `commands/github.js:24` (`pr checks`), `commands/github.js:30` (`pr view`)
-- **Regression:** `test/official-cli-integrations.test.js:56` (workspace-free help), `test/official-cli-integrations.test.js:71` (missing `gh` install hint), `test/official-cli-integrations.test.js:85` (auth status), `test/official-cli-integrations.test.js:102` (passthrough args)
+- **Regression:** `test/official-cli-integrations.test.js:38` (workspace-free help), `test/official-cli-integrations.test.js:53` (missing `gh` install hint), `test/official-cli-integrations.test.js:67` (auth status), `test/official-cli-integrations.test.js:84` (passthrough args)
 
 **Search:** `rg "githubCommand|github cli wrapper|github help is workspace-free" bin/atris.js commands/github.js test/official-cli-integrations.test.js`
 
@@ -1557,7 +1557,7 @@ rg "printRoster|registryPayload|canPersistEngineRegistry|speakFirstMinute|--glob
 - **Known command:** `lib/known-commands.js:7` (`vercel`)
 - **Routing:** `bin/atris.js:2144` (`command === 'vercel'`)
 - **Subcommands:** `commands/vercel.js:12` (`deploy`), `commands/vercel.js:18` (`ls`), `commands/vercel.js:24` (`logs`), `commands/vercel.js:30` (`inspect`)
-- **Regression:** `test/official-cli-integrations.test.js:118` (workspace-free help), `test/official-cli-integrations.test.js:133` (missing `vercel` install hint), `test/official-cli-integrations.test.js:147` (auth status), `test/official-cli-integrations.test.js:164` (passthrough args)
+- **Regression:** `test/official-cli-integrations.test.js:100` (workspace-free help), `test/official-cli-integrations.test.js:115` (missing `vercel` install hint), `test/official-cli-integrations.test.js:129` (auth status), `test/official-cli-integrations.test.js:146` (passthrough args)
 
 **Search:** `rg "vercelCommand|vercel cli wrapper|vercel help is workspace-free" bin/atris.js commands/vercel.js test/official-cli-integrations.test.js`
 
@@ -1571,7 +1571,7 @@ rg "printRoster|registryPayload|canPersistEngineRegistry|speakFirstMinute|--glob
 - **Known command:** `lib/known-commands.js:7` (`supabase`)
 - **Routing:** `bin/atris.js:2147` (`command === 'supabase'`)
 - **Subcommands:** `commands/supabase.js:13` (`status`), `commands/supabase.js:19` (`db push`), `commands/supabase.js:25` (`functions list`), `commands/supabase.js:31` (`functions deploy`)
-- **Regression:** `test/official-cli-integrations.test.js:180` (workspace-free help), `test/official-cli-integrations.test.js:195` (missing `supabase` install hint), `test/official-cli-integrations.test.js:209` (auth status), `test/official-cli-integrations.test.js:226` (status passthrough), `test/official-cli-integrations.test.js:242` (db passthrough)
+- **Regression:** `test/official-cli-integrations.test.js:226` (workspace-free help), `test/official-cli-integrations.test.js:241` (missing `supabase` install hint), `test/official-cli-integrations.test.js:255` (auth status), `test/official-cli-integrations.test.js:272` (status passthrough), `test/official-cli-integrations.test.js:288` (db passthrough)
 
 **Search:** `rg "supabaseCommand|supabase cli wrapper|supabase help is workspace-free" bin/atris.js commands/supabase.js test/official-cli-integrations.test.js`
 
@@ -1585,7 +1585,7 @@ rg "printRoster|registryPayload|canPersistEngineRegistry|speakFirstMinute|--glob
 - **Known command:** `lib/known-commands.js:7` (`linear`)
 - **Routing:** `bin/atris.js:2150` (`command === 'linear'`)
 - **Subcommands:** `commands/linear.js:12` (`issue list`), `commands/linear.js:18` (`issue create`), `commands/linear.js:24` (`issue view`), `commands/linear.js:30` (`issue update`)
-- **Regression:** `test/official-cli-integrations.test.js:258` (workspace-free help), `test/official-cli-integrations.test.js:273` (missing `linear` install hint), `test/official-cli-integrations.test.js:287` (auth status), `test/official-cli-integrations.test.js:304` (passthrough args)
+- **Regression:** `test/official-cli-integrations.test.js:304` (workspace-free help), `test/official-cli-integrations.test.js:319` (missing `linear` install hint), `test/official-cli-integrations.test.js:333` (auth status), `test/official-cli-integrations.test.js:350` (passthrough args)
 
 **Search:** `rg "linearCommand|linear cli wrapper|linear help is workspace-free" bin/atris.js commands/linear.js test/official-cli-integrations.test.js`
 
@@ -1599,7 +1599,7 @@ rg "printRoster|registryPayload|canPersistEngineRegistry|speakFirstMinute|--glob
 - **Known command:** `lib/known-commands.js:7` (`stripe`)
 - **Routing:** `bin/atris.js:2153` (`command === 'stripe'`)
 - **Subcommands:** `commands/stripe.js:12` (`listen`), `commands/stripe.js:18` (`trigger`), `commands/stripe.js:24` (`products list`), `commands/stripe.js:30` (`products create`)
-- **Regression:** `test/official-cli-integrations.test.js:320` (workspace-free help), `test/official-cli-integrations.test.js:335` (missing `stripe` install hint), `test/official-cli-integrations.test.js:349` (auth status), `test/official-cli-integrations.test.js:366` (listen passthrough), `test/official-cli-integrations.test.js:382` (products passthrough)
+- **Regression:** `test/official-cli-integrations.test.js:366` (workspace-free help), `test/official-cli-integrations.test.js:381` (missing `stripe` install hint), `test/official-cli-integrations.test.js:395` (auth status), `test/official-cli-integrations.test.js:412` (listen passthrough), `test/official-cli-integrations.test.js:428` (products passthrough)
 
 **Search:** `rg "stripeCommand|stripe cli wrapper|stripe help is workspace-free" bin/atris.js commands/stripe.js test/official-cli-integrations.test.js`
 
