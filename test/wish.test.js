@@ -5,6 +5,7 @@ const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
 const { spawnSync } = require('node:child_process');
+const { hasNodeSqlite: checkNodeSqlite } = require('./helpers/node-sqlite');
 const {
   REVIEW_WORD_SCORES,
   inferBudgetTier,
@@ -26,11 +27,7 @@ function cleanupTempDir(dir) {
 }
 
 function hasNodeSqlite() {
-  const result = spawnSync(process.execPath, ['-e', 'require("node:sqlite")'], {
-    encoding: 'utf8',
-    env: { ...process.env, NODE_NO_WARNINGS: '1' },
-  });
-  return result.status === 0;
+  return checkNodeSqlite({ NODE_NO_WARNINGS: '1' });
 }
 
 function prepareWorkspace(dir) {
