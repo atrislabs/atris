@@ -159,3 +159,12 @@ test('a mission run passes its live engine steps through to the campaign output'
   assert.ok(logs.includes('    builder 06:48  running: node --test'));
   assert.ok(!logs.some((l) => l.includes('[tick 1]')), 'only engine steps pass through');
 });
+
+test('the command runner hands over lines from stderr too, where live engine steps are printed', async () => {
+  const { runCli } = require('../lib/campaign-loop');
+  const lines = [];
+  const result = await runCli(['campaign', 'show', 'cmp-does-not-exist'], { cwd: require('os').tmpdir(), onLine: (line) => lines.push(line) });
+  assert.notEqual(result.code, 0);
+  assert.ok(result.err.length > 0, 'the message went to stderr');
+  assert.ok(lines.some((line) => /no campaign cmp-does-not-exist/.test(line)), lines.join('\n'));
+});
