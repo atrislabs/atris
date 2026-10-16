@@ -14,8 +14,10 @@ const { rewriteWorktreeVerify } = require('../lib/verify-worktree-rewrite');
 const { evaluateAutoAccept } = require('../lib/auto-accept-certified');
 const { plainLandingReason } = require('../lib/voice-gate');
 
-function arenaWithProject() {
-  const arena = path.join(fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'atris-rewrite-'))), 'arena');
+function arenaWithProject(t) {
+  const outer = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'atris-rewrite-')));
+  t.after(() => fs.rmSync(outer, { recursive: true, force: true }));
+  const arena = path.join(outer, 'arena');
   const root = path.join(arena, 'demo-project');
   fs.mkdirSync(path.join(root, 'scripts'), { recursive: true });
   fs.writeFileSync(path.join(root, 'scripts', 'test-ok.mjs'), 'process.exit(0);\n');
@@ -23,8 +25,8 @@ function arenaWithProject() {
   return { arena, root, copy: path.join(arena, '.agent-worktrees', 'demo-project', 'builder-operate') };
 }
 
-test('worktree checks are rewritten to run from the main checkout', () => {
-  const { arena, root, copy } = arenaWithProject();
+test('worktree checks are rewritten to run from the main checkout', (t) => {
+  const { arena, root, copy } = arenaWithProject(t);
   const cases = [
     [`cd ${copy} && node scripts/test-ok.mjs`, 'node scripts/test-ok.mjs'],
     [`(cd ${copy} && node scripts/test-ok.mjs)`, 'node scripts/test-ok.mjs'],
@@ -42,8 +44,8 @@ test('worktree checks are rewritten to run from the main checkout', () => {
   }
 });
 
-test('checks that never named a copy, or name another project, are left alone', () => {
-  const { arena, root } = arenaWithProject();
+test('checks that never named a copy, or name another project, are left alone', (t) => {
+  const { arena, root } = arenaWithProject(t);
   assert.deepEqual(rewriteWorktreeVerify('npm test', root), { command: 'npm test', rewritten: false, from: null });
   const other = `node ${arena}/.agent-worktrees/other-project/x/scripts/t.mjs`;
   assert.equal(rewriteWorktreeVerify(other, root).rewritten, false);
@@ -65,8 +67,8 @@ function reviewTask(root, verify) {
   };
 }
 
-test('the landing pass reruns a worktree check from main instead of refusing it', () => {
-  const { root, copy } = arenaWithProject();
+test('the landing pass reruns a worktree check from main instead of refusing it', (t) => {
+  const { root, copy } = arenaWithProject(t);
   const task = reviewTask(root, `cd ${copy} && node scripts/test-ok.mjs`);
   const status = evaluateAutoAccept(task, { acceptAll: true, executeVerify: false });
   assert.notEqual(status.reason, 'verify_command_not_allowed');
@@ -77,16 +79,16 @@ test('the landing pass reruns a worktree check from main instead of refusing it'
   assert.notEqual(ran.reason, 'verify_workdir_missing');
 });
 
-test('a worktree check that fails from main says the work is likely still on the agent branch', () => {
-  const { root, copy } = arenaWithProject();
+test('a worktree check that fails from main says the work is likely still on the agent branch', (t) => {
+  const { root, copy } = arenaWithProject(t);
   const result = evaluateAutoAccept(reviewTask(root, `cd ${copy} && node scripts/test-red.mjs`), { acceptAll: true, executeVerify: true });
   assert.equal(result.eligible, false);
   assert.equal(result.reason, 'verify_failed_on_main');
   assert.match(plainLandingReason(result.reason), /agent branch/);
 });
 
-test('a check whose file only exists on the agent branch is refused in plain words, not silently', () => {
-  const { root, copy } = arenaWithProject();
+test('a check whose file only exists on the agent branch is refused in plain words, not silently', (t) => {
+  const { root, copy } = arenaWithProject(t);
   const result = evaluateAutoAccept(reviewTask(root, `node ${copy}/scripts/test-only-on-branch.mjs`), { acceptAll: true, executeVerify: false });
   assert.equal(result.eligible, false);
   assert.equal(result.reason, 'verify_only_on_agent_branch');
