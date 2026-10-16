@@ -10,8 +10,20 @@ const { findAppsPackRoot, listAppManifests } = require('../commands/apps');
 
 const cliPath = path.join(__dirname, '..', 'bin', 'atris.js');
 
+// Every temp folder this file makes is removed when the file finishes, so
+// repeated runs do not pile folders into the system temp folder.
+const madeDirs = [];
+function tmpDir(prefix) {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), prefix));
+  madeDirs.push(dir);
+  return dir;
+}
+test.after(() => {
+  for (const dir of madeDirs) fs.rmSync(dir, { recursive: true, force: true });
+});
+
 function makePack() {
-  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'atris-apps-test-'));
+  const root = tmpDir('atris-apps-test-');
   const pack = path.join(root, 'atris', 'apps-pack');
   const app = path.join(pack, 'apps', 'demo-app');
   fs.mkdirSync(path.join(pack, 'scripts'), { recursive: true });
@@ -48,7 +60,7 @@ function writeArgvScript(pack, name) {
 }
 
 function makeHomeWithCredentials(token = 'test-token') {
-  const home = fs.mkdtempSync(path.join(os.tmpdir(), 'atris-apps-home-'));
+  const home = tmpDir('atris-apps-home-');
   fs.mkdirSync(path.join(home, '.atris'), { recursive: true });
   fs.writeFileSync(path.join(home, '.atris', 'credentials.json'), JSON.stringify({
     token,
@@ -139,7 +151,7 @@ test('atris apps --json is a machine-readable list shorthand', () => {
 });
 
 test('atris apps --json missing pack returns JSON error', () => {
-  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'atris-apps-test-'));
+  const root = tmpDir('atris-apps-test-');
   const result = spawnSync(process.execPath, [cliPath, 'apps', '--json'], {
     cwd: root,
     encoding: 'utf8',
@@ -155,7 +167,7 @@ test('atris apps --json missing pack returns JSON error', () => {
 });
 
 test('atris apps load --json fetches owned cloud apps without a local pack', async () => {
-  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'atris-apps-test-'));
+  const root = tmpDir('atris-apps-test-');
   const home = makeHomeWithCredentials();
   const requests = [];
   const { server, port } = await startJsonServer((req, res) => {
@@ -224,8 +236,8 @@ test('atris apps load --json fetches owned cloud apps without a local pack', asy
 });
 
 test('atris apps load --json returns login guidance without credentials', () => {
-  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'atris-apps-test-'));
-  const home = fs.mkdtempSync(path.join(os.tmpdir(), 'atris-apps-home-'));
+  const root = tmpDir('atris-apps-test-');
+  const home = tmpDir('atris-apps-home-');
   const result = spawnSync(process.execPath, [cliPath, 'apps', 'load', '--json'], {
     cwd: root,
     encoding: 'utf8',
