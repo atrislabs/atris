@@ -54,8 +54,9 @@ function escapeRe(value) {
   return String(value).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 }
 
-function saveWorkspace() {
+function saveWorkspace(t) {
   const cwd = fs.mkdtempSync(path.join(os.tmpdir(), 'atris-x-search-save-'));
+  t.after(() => fs.rmSync(cwd, { recursive: true, force: true }));
   fs.mkdirSync(path.join(cwd, 'atris', 'wiki'), { recursive: true });
   return cwd;
 }
@@ -118,14 +119,14 @@ test('xSearchExperimentSlug prefixes the query slug', () => {
   assert.equal(xSearchExperimentSlug('Leah Bonvissuto'), 'x-search-leah-bonvissuto');
 });
 
-test('x-search --save refuses a thin brief and writes no atris files', async () => {
+test('x-search --save refuses a thin brief and writes no atris files', async (t) => {
   const numbers = extractTeachNumbers(THIN_TEXT);
   const mechanisms = extractTeachMechanisms(THIN_TEXT);
   assert.deepEqual(numbers, []);
   assert.deepEqual(mechanisms, []);
   assert.equal(isThinTeachLesson({ numbers, mechanisms }), true);
 
-  const cwd = saveWorkspace();
+  const cwd = saveWorkspace(t);
   const out = collect();
   const status = await runSearch('quiet chat', {
     cwd,
@@ -146,8 +147,8 @@ test('x-search --save refuses a thin brief and writes no atris files', async () 
   assert.equal(fs.existsSync(path.join(cwd, 'atris', 'experiments')), false);
 });
 
-test('x-search without --save stays stdout only', async () => {
-  const cwd = saveWorkspace();
+test('x-search without --save stays stdout only', async (t) => {
+  const cwd = saveWorkspace(t);
   const out = collect();
   const status = await runSearch('MCP agents', {
     cwd,
@@ -169,9 +170,9 @@ test('x-search without --save stays stdout only', async () => {
   assert.equal(fs.existsSync(path.join(cwd, 'atris', 'experiments')), false);
 });
 
-test('x-search rich --save mints a measure.py that validate.py accepts', async () => {
+test('x-search rich --save mints a measure.py that validate.py accepts', async (t) => {
   assert.ok(pythonCmd, 'python3 is required to score the minted pack');
-  const cwd = saveWorkspace();
+  const cwd = saveWorkspace(t);
   const out = collect();
   const status = await runSearch('MCP agents', {
     cwd,
@@ -236,8 +237,9 @@ test('x-search rich --save mints a measure.py that validate.py accepts', async (
   assert.equal(fs.existsSync(path.join(cwd, 'atris', 'wiki', 'briefs', 'x-search-mcp-agents.md')), true);
 });
 
-test('x-search --save without wiki is incomplete when apply is missing', async () => {
+test('x-search --save without wiki is incomplete when apply is missing', async (t) => {
   const cwd = fs.mkdtempSync(path.join(os.tmpdir(), 'atris-x-search-nowiki-'));
+  t.after(() => fs.rmSync(cwd, { recursive: true, force: true }));
   const out = collect();
   const status = await runSearch('MCP agents', {
     cwd,
@@ -254,8 +256,8 @@ test('x-search --save without wiki is incomplete when apply is missing', async (
   assert.equal(fs.existsSync(path.join(cwd, 'atris', 'logs')), false);
 });
 
-test('x-search --save refuses when the apply fixture already passes', async () => {
-  const cwd = saveWorkspace();
+test('x-search --save refuses when the apply fixture already passes', async (t) => {
+  const cwd = saveWorkspace(t);
   const applyRel = xSearchApplyRel('MCP agents');
   fs.mkdirSync(path.dirname(path.join(cwd, applyRel)), { recursive: true });
   fs.writeFileSync(path.join(cwd, applyRel), [
@@ -278,9 +280,9 @@ test('x-search --save refuses when the apply fixture already passes', async () =
   assert.doesNotMatch(out.text(), /score: 0/);
 });
 
-test('experiments keep refuses a minted x-search pack at 0 and keeps after check tokens', async () => {
+test('experiments keep refuses a minted x-search pack at 0 and keeps after check tokens', async (t) => {
   assert.ok(pythonCmd, 'python3 is required to score the minted pack');
-  const cwd = saveWorkspace();
+  const cwd = saveWorkspace(t);
   const status = await runSearch('MCP agents', {
     cwd,
     output: () => {},
@@ -308,8 +310,8 @@ test('experiments keep refuses a minted x-search pack at 0 and keeps after check
   );
 });
 
-test('x-search person rich --save mints the same keep/revert pack', async () => {
-  const cwd = saveWorkspace();
+test('x-search person rich --save mints the same keep/revert pack', async (t) => {
+  const cwd = saveWorkspace(t);
   const out = collect();
   const status = await xSearchCommand([
     'person',
@@ -335,8 +337,8 @@ test('x-search person rich --save mints the same keep/revert pack', async () => 
   });
 });
 
-test('x-search unsave after rich --save removes brief apply and pack', async () => {
-  const cwd = saveWorkspace();
+test('x-search unsave after rich --save removes brief apply and pack', async (t) => {
+  const cwd = saveWorkspace(t);
   const saveStatus = await runSearch('MCP agents', {
     cwd,
     output: () => {},
@@ -370,8 +372,8 @@ test('x-search unsave after rich --save removes brief apply and pack', async () 
   assert.equal(fs.existsSync(path.join(cwd, xSearchExperimentRel('MCP agents'))), false);
 });
 
-test('x-search unsave removes leftover pack when brief and apply are already gone', async () => {
-  const cwd = saveWorkspace();
+test('x-search unsave removes leftover pack when brief and apply are already gone', async (t) => {
+  const cwd = saveWorkspace(t);
   const packRel = xSearchExperimentRel('MCP agents');
   const packDir = path.join(cwd, packRel);
   const otherDir = path.join(cwd, xSearchExperimentRel('other query'));
@@ -402,8 +404,9 @@ test('x-search unsave removes leftover pack when brief and apply are already gon
   assert.equal(fs.existsSync(path.join(otherDir, 'stay.txt')), true);
 });
 
-test('x-search unsave of a missing source stays quiet', async () => {
+test('x-search unsave of a missing source stays quiet', async (t) => {
   const cwd = fs.mkdtempSync(path.join(os.tmpdir(), 'atris-x-search-unsave-'));
+  t.after(() => fs.rmSync(cwd, { recursive: true, force: true }));
   let apiCalls = 0;
   const out = collect();
   const status = await xSearchCommand(['unsave', 'gone query'], {
@@ -425,8 +428,8 @@ test('x-search unsave of a missing source stays quiet', async () => {
   assert.equal(unsaveXSearch('gone query', { cwd, output: () => {} }), 0);
 });
 
-test('x-search person rich --save then unsave removes the minted pack', async () => {
-  const cwd = saveWorkspace();
+test('x-search person rich --save then unsave removes the minted pack', async (t) => {
+  const cwd = saveWorkspace(t);
   const saveStatus = await xSearchCommand([
     'person',
     '--name',

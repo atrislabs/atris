@@ -21,8 +21,9 @@ function membersSection() {
   return next >= 0 ? rest.slice(0, next) : rest;
 }
 
-function teamRoot(names) {
+function teamRoot(t, names) {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'readme-members-jobs-'));
+  t.after(() => fs.rmSync(root, { recursive: true, force: true }));
   for (const name of names) {
     fs.mkdirSync(path.join(root, 'atris', 'team', name), { recursive: true });
     fs.writeFileSync(path.join(root, 'atris', 'team', name, 'MEMBER.md'), `# ${name}\n`);
@@ -40,9 +41,9 @@ function recorder() {
   };
 }
 
-test('README gives a member a job with run, and run hands an unnamed job to the picker', () => {
+test('README gives a member a job with run, and run hands an unnamed job to the picker', (t) => {
   assert.match(membersSection(), /atris member run "fix one failing test"/);
-  const root = teamRoot(['executor']);
+  const root = teamRoot(t, ['executor']);
   const calls = [];
   memberRunVerb(['fix one failing test'], {
     root,

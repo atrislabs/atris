@@ -3,11 +3,8 @@ const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
-const { spawnSync } = require('node:child_process');
-const { scrubAgentEnv } = require('./helpers/agent-env');
+const { runCli } = require('./helpers/cli-command');
 
-const repoRoot = path.resolve(__dirname, '..');
-const cliPath = path.join(repoRoot, 'bin', 'atris.js');
 
 function makeTempDir() {
   return fs.mkdtempSync(path.join(os.tmpdir(), 'atris-ping-dialogue-'));
@@ -15,21 +12,6 @@ function makeTempDir() {
 
 function cleanupTempDir(dir) {
   fs.rmSync(dir, { recursive: true, force: true });
-}
-
-function runCli(args, { cwd, env } = {}) {
-  const result = spawnSync(process.execPath, [cliPath, ...args], {
-    cwd,
-    encoding: 'utf8',
-    timeout: 15000,
-    env: {
-      ...scrubAgentEnv(),
-      ATRIS_SKIP_UPDATE_CHECK: '1',
-      ...(env || {}),
-    },
-  });
-  if (result.error) throw result.error;
-  return result;
 }
 
 function baseEnv(dir) {

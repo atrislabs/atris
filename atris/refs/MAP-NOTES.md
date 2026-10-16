@@ -1543,7 +1543,7 @@ rg "printRoster|registryPayload|canPersistEngineRegistry|speakFirstMinute|--glob
 - **Known command:** `lib/known-commands.js:7` (`github`)
 - **Routing:** `bin/atris.js:2141` (`command === 'github'`)
 - **Subcommands:** `commands/github.js:12` (`pr list`), `commands/github.js:18` (`pr create`), `commands/github.js:24` (`pr checks`), `commands/github.js:30` (`pr view`)
-- **Regression:** `test/official-cli-integrations.test.js:56` (workspace-free help), `test/official-cli-integrations.test.js:71` (missing `gh` install hint), `test/official-cli-integrations.test.js:85` (auth status), `test/official-cli-integrations.test.js:102` (passthrough args)
+- **Regression:** `test/official-cli-integrations.test.js:38` (workspace-free help), `test/official-cli-integrations.test.js:53` (missing `gh` install hint), `test/official-cli-integrations.test.js:67` (auth status), `test/official-cli-integrations.test.js:84` (passthrough args)
 
 **Search:** `rg "githubCommand|github cli wrapper|github help is workspace-free" bin/atris.js commands/github.js test/official-cli-integrations.test.js`
 
@@ -1557,7 +1557,7 @@ rg "printRoster|registryPayload|canPersistEngineRegistry|speakFirstMinute|--glob
 - **Known command:** `lib/known-commands.js:7` (`vercel`)
 - **Routing:** `bin/atris.js:2144` (`command === 'vercel'`)
 - **Subcommands:** `commands/vercel.js:12` (`deploy`), `commands/vercel.js:18` (`ls`), `commands/vercel.js:24` (`logs`), `commands/vercel.js:30` (`inspect`)
-- **Regression:** `test/official-cli-integrations.test.js:118` (workspace-free help), `test/official-cli-integrations.test.js:133` (missing `vercel` install hint), `test/official-cli-integrations.test.js:147` (auth status), `test/official-cli-integrations.test.js:164` (passthrough args)
+- **Regression:** `test/official-cli-integrations.test.js:100` (workspace-free help), `test/official-cli-integrations.test.js:115` (missing `vercel` install hint), `test/official-cli-integrations.test.js:129` (auth status), `test/official-cli-integrations.test.js:146` (passthrough args)
 
 **Search:** `rg "vercelCommand|vercel cli wrapper|vercel help is workspace-free" bin/atris.js commands/vercel.js test/official-cli-integrations.test.js`
 
@@ -1571,7 +1571,7 @@ rg "printRoster|registryPayload|canPersistEngineRegistry|speakFirstMinute|--glob
 - **Known command:** `lib/known-commands.js:7` (`supabase`)
 - **Routing:** `bin/atris.js:2147` (`command === 'supabase'`)
 - **Subcommands:** `commands/supabase.js:13` (`status`), `commands/supabase.js:19` (`db push`), `commands/supabase.js:25` (`functions list`), `commands/supabase.js:31` (`functions deploy`)
-- **Regression:** `test/official-cli-integrations.test.js:180` (workspace-free help), `test/official-cli-integrations.test.js:195` (missing `supabase` install hint), `test/official-cli-integrations.test.js:209` (auth status), `test/official-cli-integrations.test.js:226` (status passthrough), `test/official-cli-integrations.test.js:242` (db passthrough)
+- **Regression:** `test/official-cli-integrations.test.js:226` (workspace-free help), `test/official-cli-integrations.test.js:241` (missing `supabase` install hint), `test/official-cli-integrations.test.js:255` (auth status), `test/official-cli-integrations.test.js:272` (status passthrough), `test/official-cli-integrations.test.js:288` (db passthrough)
 
 **Search:** `rg "supabaseCommand|supabase cli wrapper|supabase help is workspace-free" bin/atris.js commands/supabase.js test/official-cli-integrations.test.js`
 
@@ -1585,7 +1585,7 @@ rg "printRoster|registryPayload|canPersistEngineRegistry|speakFirstMinute|--glob
 - **Known command:** `lib/known-commands.js:7` (`linear`)
 - **Routing:** `bin/atris.js:2150` (`command === 'linear'`)
 - **Subcommands:** `commands/linear.js:12` (`issue list`), `commands/linear.js:18` (`issue create`), `commands/linear.js:24` (`issue view`), `commands/linear.js:30` (`issue update`)
-- **Regression:** `test/official-cli-integrations.test.js:258` (workspace-free help), `test/official-cli-integrations.test.js:273` (missing `linear` install hint), `test/official-cli-integrations.test.js:287` (auth status), `test/official-cli-integrations.test.js:304` (passthrough args)
+- **Regression:** `test/official-cli-integrations.test.js:304` (workspace-free help), `test/official-cli-integrations.test.js:319` (missing `linear` install hint), `test/official-cli-integrations.test.js:333` (auth status), `test/official-cli-integrations.test.js:350` (passthrough args)
 
 **Search:** `rg "linearCommand|linear cli wrapper|linear help is workspace-free" bin/atris.js commands/linear.js test/official-cli-integrations.test.js`
 
@@ -1599,7 +1599,7 @@ rg "printRoster|registryPayload|canPersistEngineRegistry|speakFirstMinute|--glob
 - **Known command:** `lib/known-commands.js:7` (`stripe`)
 - **Routing:** `bin/atris.js:2153` (`command === 'stripe'`)
 - **Subcommands:** `commands/stripe.js:12` (`listen`), `commands/stripe.js:18` (`trigger`), `commands/stripe.js:24` (`products list`), `commands/stripe.js:30` (`products create`)
-- **Regression:** `test/official-cli-integrations.test.js:320` (workspace-free help), `test/official-cli-integrations.test.js:335` (missing `stripe` install hint), `test/official-cli-integrations.test.js:349` (auth status), `test/official-cli-integrations.test.js:366` (listen passthrough), `test/official-cli-integrations.test.js:382` (products passthrough)
+- **Regression:** `test/official-cli-integrations.test.js:366` (workspace-free help), `test/official-cli-integrations.test.js:381` (missing `stripe` install hint), `test/official-cli-integrations.test.js:395` (auth status), `test/official-cli-integrations.test.js:412` (listen passthrough), `test/official-cli-integrations.test.js:428` (products passthrough)
 
 **Search:** `rg "stripeCommand|stripe cli wrapper|stripe help is workspace-free" bin/atris.js commands/stripe.js test/official-cli-integrations.test.js`
 
@@ -2428,3 +2428,11 @@ Business CLI test runner: `test/helpers/business-cli.js:8` keeps the actual asyn
 Member CLI test runner: `test/helpers/member-cli.js:9` keeps the actual synchronous child, scrubbed environment, caller overrides last, twenty-second limit and original error/status behavior. Member greeting, switches, status and supervisor tests retain their private fixtures and every original case. Check: `node --test test/gm-wake.test.js test/member-switches.test.js test/member.test.js test/supervisor-tick-skip.test.js`.
 
 Task administration CLI tests: `test/helpers/task-admin-cli.js:8` runs the actual CLI with required options, the original thirty-second limit, override-last environment and unchanged launch-error/nonzero-status behavior. Task audit, hygiene and retitle retain their independent workspace, database and SQLite checks and every original case. Check: `node --test test/task-audit.test.js test/task-hygiene.test.js test/task-retitle.test.js`.
+
+Scratch CLI test runner: `test/helpers/scratch-cli.js:10` supplies the identical real child, environment order and error behavior with each scratch, hours and mission suite's existing default time limit; explicit caller limits and all cases remain local.
+
+Fifteen-second CLI test runner: `test/helpers/cli-command.js:9` retains the exact synchronous child options, scrubbed environment and caller overrides for brain, local official-command and member-ping tests; each private fixture and behavioral assertion remains local.
+
+Headless safety test runner: `test/helpers/dogfood-headless-cli.js:10` defines `createDogfoodCli`; its returned `runCli` at `test/helpers/dogfood-headless-cli.js:11` keeps each suite's twelve- or twenty-second default, explicit overrides, implicit stdio, per-call scrubbed environment and original timeout failure text. The thirty-six original cases remain in `test/dogfood-p0-safety.test.js`, `test/dogfood-pass4.test.js` and `test/dogfood-unbound-live-writes.test.js`.
+
+Dogfood CLI tests: `test/helpers/dogfood-cli.js:10` runs the actual CLI with the original scrubbed environment, caller overrides last, twenty-second default and exact timeout/launch errors. The two explicit search deadlines, real local connection refusals, approval and privacy checks remain in their original cases. Check: `node --test test/dogfood-t6-t10.test.js test/dogfood-pass3-27-28.test.js test/dogfood-pass2-t1-t5.test.js`.

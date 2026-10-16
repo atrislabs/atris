@@ -19,8 +19,9 @@ function writeFileAt(file, text, mtime) {
   if (mtime) fs.utimesSync(file, mtime, mtime);
 }
 
-function workspace() {
+function workspace(t) {
   const root = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'atris-member-result-')));
+  t.after(() => fs.rmSync(root, { recursive: true, force: true }));
   fs.mkdirSync(path.join(root, 'atris', 'team', 'film-studio'), { recursive: true });
   return root;
 }
@@ -50,9 +51,9 @@ test('one obvious number: a single percent, dollar, or count; two different valu
   assert.equal(obviousNumber(''), null);
 });
 
-test('reads the newest run, its worktree receipt, and files made after it started', () => {
-  const root = workspace();
-  const worktree = workspace();
+test('reads the newest run, its worktree receipt, and files made after it started', (t) => {
+  const root = workspace(t);
+  const worktree = workspace(t);
   writeRuns(root, [
     { at: '2026-10-01T10:00:00.000Z', job: 'build', engine: 'claude', outcome: 'failed', member: 'film-studio', task: 'mission-old', source: 'mission', seconds: 30 },
     { at: STARTED, job: 'build', engine: 'claude', outcome: 'landed', member: 'film-studio', model: 'claude-opus-5-5', task: 'mission-new', source: 'mission', seconds: 173 },
@@ -95,8 +96,8 @@ test('reads the newest run, its worktree receipt, and files made after it starte
   assert.equal(value.number_text, '7 shots');
 });
 
-test('--since widens the window; a member with no runs still reads its own folder', () => {
-  const root = workspace();
+test('--since widens the window; a member with no runs still reads its own folder', (t) => {
+  const root = workspace(t);
   writeFileAt(path.join(root, 'atris', 'team', 'film-studio', 'logs', '2026-10-01.md'), 'saved $794 this week', new Date('2026-10-02T12:00:00Z'));
   const value = memberResult(root, 'film-studio', { since: '2026-10-02T00:00:00Z' }).value;
   assert.equal(value.run, null);
@@ -106,8 +107,8 @@ test('--since widens the window; a member with no runs still reads its own folde
   assert.deepEqual(value.artifacts, []);
 });
 
-test('an unknown member is an error, printed as json with exit 1', () => {
-  const root = workspace();
+test('an unknown member is an error, printed as json with exit 1', (t) => {
+  const root = workspace(t);
   const out = [];
   const log = console.log;
   console.log = (...args) => out.push(args.join(' '));
