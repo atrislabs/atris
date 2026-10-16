@@ -17,6 +17,7 @@ const { findHoldout, moveHoldoutBack, moveHoldoutIn, scrub } = require('../lib/c
 const { judgeRanData, judgeReading, outputTail } = require('../lib/campaign-reading');
 const { CLOUD_FEATURES, cloudLink, cloudRunStatus, runInCloud, sendPersonAction, syncCampaign, takeCampaignToken } = require('../lib/campaign-sync');
 const { campaignHome, changedProtected, checkoutTop, headCommit, planProtect, readProtect, saveProtect } = require('../lib/campaign-protect');
+const schedules = require('../lib/campaign-schedule');
 
 const JUDGE_TIMEOUT_SECONDS = 15 * 60;
 // Who pays for a campaign's engines (atris/features/campaign/api.md, Credits).
@@ -53,6 +54,9 @@ function printHelp() {
   console.log('  atris campaign tick [--max-steps 4] [--parallel 1]   push the next campaign here that has work, one mission at a time (the overnight heartbeat runs this)');
   console.log('  atris campaign wake                    one step for every due campaign; a wait not yet due is skipped');
   console.log('  atris campaign keep --install|--remove [--dry-run]   a one-minute timer that runs wake (launchd or cron)');
+  console.log('  atris campaign schedule <id> --every "weekdays 09:00" [--steps 4]   a person says yes once; wake and tick');
+  console.log('        start the campaign at those times until its budget is spent. --every also takes "daily 18:30",');
+  console.log('        "mon,thu 07:00", or "30m". atris campaign schedule <id> --off removes it; no id lists every schedule');
   console.log('  atris campaign propose <id> [--count 3]   ask the owner\'s engine for the next missions');
   console.log('  atris campaign export <id> --trace [--out <file.jsonl>] [--full]   one row per mission for learning; redacted unless --full');
   console.log('  atris campaign rsi [id] [--no-write]   distill trace rewards and lessons across campaigns');
@@ -85,7 +89,7 @@ const NO_LIMIT_BUDGET = 1e9;
 const noLimit = (view) => view.budget.total >= NO_LIMIT_BUDGET;
 
 // The flags this command understands, so positional words are what is left.
-const VALUE_FLAGS = ['--mission-minutes', '--basis', '--work', '--break', '--rounds', '--mission', '--parallel', '--max-steps', '--max-ticks', '--runner', '--count', '--judge', '--budget', '--owner', '--seat', '--bet', '--wrong-if', '--parent', '--id', '--role', '--add', '--data', '--timeout', '--as', '--holdout', '--protect'];
+const VALUE_FLAGS = ['--mission-minutes', '--basis', '--work', '--break', '--rounds', '--mission', '--parallel', '--max-steps', '--max-ticks', '--runner', '--count', '--judge', '--budget', '--owner', '--seat', '--bet', '--wrong-if', '--parent', '--id', '--role', '--add', '--data', '--timeout', '--as', '--holdout', '--protect', '--every', '--steps'];
 
 function positionals(args) {
   const out = [];
@@ -522,7 +526,9 @@ function describeCloudRun(data) {
 function cmdShow(args, ctx) {
   const { view, error } = requireCampaign(ctx, positionals(args)[1]);
   if (error !== undefined) return error;
-  ctx.out(renderShow(view), { ok: true, campaign: view, next: decide(view) });
+  const schedule = schedules.readSchedule(ctx.campaignHome, view.id);
+  const text = schedule ? `${renderShow(view)}\nschedule  ${schedules.describe(schedule)}` : renderShow(view);
+  ctx.out(text, { ok: true, campaign: view, next: decide(view), schedule });
   return 0;
 }
 
@@ -836,19 +842,27 @@ async function driveLoop(args, ctx, verb, view) {
 async function cmdTick(args, ctx) {
   const { listCampaigns } = require('../lib/campaign-store');
   const { liveHolder } = require('../lib/campaign-run-lock');
-  const maxSteps = Math.max(1, Number(readFlag(args, '--max-steps', '')) || 4);
+  const now = (ctx.loopDeps && ctx.loopDeps.now) || Date.now;
+  let maxSteps = Math.max(1, Number(readFlag(args, '--max-steps', '')) || 4);
   const skipped = [];
   let pick = null;
   for (const view of listCampaigns(ctx.store)) {
     if (view.error) { skipped.push({ id: view.id, why: `unreadable: ${view.error}` }); continue; }
     const move = decide(view);
     if (move.action === 'none') continue;
+    // A scheduled campaign moves only when its time comes (lib/campaign-schedule.js).
+    const schedule = schedules.readSchedule(ctx.campaignHome, view.id);
+    if (schedule && !schedules.isDue(schedule, now())) { skipped.push({ id: view.id, why: `scheduled: next run ${schedules.whenText(schedule.next_at)}` }); continue; }
     if (move.action === 'wait' && move.reason === 'open asks') { skipped.push({ id: view.id, why: `needs you: ${move.asks.length} open ask${move.asks.length === 1 ? '' : 's'}` }); continue; }
     if (move.action === 'wait' && move.reason === 'budget') { skipped.push({ id: view.id, why: 'waiting for budget' }); continue; }
     // A campaign sleeping until its next check is skipped, so the next one with work gets the push.
     if (view.next_move && view.next_move.action === 'wait' && Date.now() < view.next_move.wake_at) { skipped.push({ id: view.id, why: `next check at ${new Date(view.next_move.wake_at).toISOString()}` }); continue; }
     const holder = ctx.campaignHome ? liveHolder(ctx.campaignHome, view.id) : null;
     if (holder) { skipped.push({ id: view.id, why: `another run drives it (pid ${holder.pid})` }); continue; }
+    if (schedule) {
+      schedules.markFired(ctx.campaignHome, view.id, schedule, now());
+      if (!readFlag(args, '--max-steps', '')) maxSteps = schedule.steps;
+    }
     pick = view;
     break;
   }
@@ -881,32 +895,89 @@ async function cmdWake(args, ctx) {
     if (view.error) { skipped.push({ campaign_id: view.id, reason: `cannot be read: ${view.error}` }); continue; }
     const move = decide(view);
     if (move.action === 'none') { skipped.push({ campaign_id: view.id, reason: move.reason }); continue; }
+    // A scheduled campaign waits for its time, then gets a whole bounded run,
+    // one mission at a time, instead of one step a minute.
+    const schedule = schedules.readSchedule(ctx.campaignHome, view.id);
+    if (schedule && !schedules.isDue(schedule, now())) {
+      skipped.push({ campaign_id: view.id, reason: `scheduled: next run ${schedules.whenText(schedule.next_at)}` });
+      continue;
+    }
     const saved = view.next_move;
-    if (saved && saved.action === 'wait' && now() < saved.wake_at) {
+    if (!schedule && saved && saved.action === 'wait' && now() < saved.wake_at) {
       skipped.push({ campaign_id: view.id, reason: `next check at ${new Date(saved.wake_at).toISOString()}` });
       continue;
     }
+    if (schedule) schedules.markFired(ctx.campaignHome, view.id, schedule, now());
+    const loopArgs = schedule
+      ? ['run', view.id, '--max-steps', String(schedule.steps), '--parallel', '1', ...flags]
+      : ['step', view.id, ...flags];
     let step = null;
     let code;
     try {
-      code = await cmdLoop(['step', view.id, ...flags], {
+      code = await cmdLoop(loopArgs, {
         ...ctx,
         out: (text, data) => { step = data; },
         fail: (error, failCode = 2) => { step = { ok: false, error }; return failCode; },
-      }, 'step');
+      }, schedule ? 'run' : 'step');
     } catch (err) {
       code = 1;
       step = { ok: false, error: err.message };
     }
     const { campaign, next, ...result } = step || {};
-    woke.push({ campaign_id: view.id, ...result, ok: code === 0 && result.ok !== false });
+    woke.push({ campaign_id: view.id, ...result, ...(schedule ? { scheduled: true } : {}), ok: code === 0 && result.ok !== false });
   }
+  const said = (w) => {
+    if (!w.ok) return `failed: ${w.error || w.reason}`;
+    if (w.scheduled) return `ran on schedule, ${w.steps} step${w.steps === 1 ? '' : 's'}: ${w.reason}`;
+    return w.stop ? `stopped: ${w.reason}` : `did: ${w.did}`;
+  };
   const lines = [
-    ...woke.map((w) => `${w.campaign_id}  ${w.ok ? (w.stop ? `stopped: ${w.reason}` : `did: ${w.did}`) : `failed: ${w.error || w.reason}`}`),
+    ...woke.map((w) => `${w.campaign_id}  ${said(w)}`),
     ...skipped.map((s) => `${s.campaign_id}  skipped: ${s.reason}`),
   ];
   const head = `woke ${woke.length} campaign${woke.length === 1 ? '' : 's'}, skipped ${skipped.length}`;
   ctx.out([head, ...lines].join('\n'), { ok: true, action: 'campaign_wake', at: new Date(now()).toISOString(), woke, skipped });
+  return 0;
+}
+
+// A person's standing yes: the campaign starts on its own at set times until
+// its budget is spent. Agents may remove a schedule but never set one.
+function cmdSchedule(args, ctx) {
+  const now = (ctx.loopDeps && ctx.loopDeps.now) || Date.now;
+  const id = positionals(args)[1];
+  if (!id) {
+    const rows = listCampaigns(ctx.store).filter((view) => !view.error)
+      .map((view) => ({ view, schedule: schedules.readSchedule(ctx.campaignHome, view.id) }))
+      .filter((row) => row.schedule);
+    const text = rows.length ? rows.map((row) => `${row.view.id}  ${schedules.describe(row.schedule)}`).join('\n') : 'no campaign here has a schedule';
+    ctx.out(text, { ok: true, schedules: rows.map((row) => row.schedule) });
+    return 0;
+  }
+  const { view, error } = requireCampaign(ctx, id);
+  if (error !== undefined) return error;
+  if (args.includes('--off')) {
+    const removed = schedules.removeSchedule(ctx.campaignHome, view.id);
+    ctx.out(removed ? `${view.id} no longer runs on a schedule` : `${view.id} had no schedule`, { ok: true, removed });
+    return 0;
+  }
+  const every = readFlag(args, '--every', '');
+  if (!every) {
+    const schedule = schedules.readSchedule(ctx.campaignHome, view.id);
+    ctx.out(schedule ? `${view.id}  ${schedules.describe(schedule)}` : `${view.id} has no schedule. Set one: atris campaign schedule ${view.id} --every "weekdays 09:00"`, { ok: true, schedule });
+    return 0;
+  }
+  if (!isHumanActor(ctx.actor)) return ctx.fail('a schedule starts work with nobody watching, so only a person can set one. Ask them: atris campaign ask <id> "Run this every ...?"');
+  if (view.state === 'done') return ctx.fail(`${view.id} is done; a schedule would never run`);
+  if (noLimit(view)) return ctx.fail(`${view.id} has no budget, and a schedule runs with nobody watching. Start it with --budget, then schedule it`);
+  const parsed = schedules.parseEvery(every);
+  if (parsed.error) return ctx.fail(parsed.error);
+  const stepsFlag = readFlag(args, '--steps', '');
+  const steps = stepsFlag ? Math.floor(Number(stepsFlag)) : schedules.DEFAULT_STEPS;
+  if (!(steps >= 1)) return ctx.fail('--steps must be a whole number, 1 or more');
+  const schedule = schedules.saveSchedule(ctx.campaignHome, view.id, { every: parsed.every, rule: parsed.rule, steps, by: ctx.actor, now: now() });
+  const left = `stops on its own when the ${money(view.budget.available)} left is spent`;
+  const fires = 'atris campaign keep --install starts it on time here; the overnight heartbeat (atris pulse) also fires it';
+  ctx.out(`${view.id} runs ${schedules.describe(schedule)}. It ${left}.\n${fires}`, { ok: true, schedule });
   return 0;
 }
 
@@ -932,7 +1003,7 @@ function cmdKeep(args, ctx) {
 }
 
 const VERBS = {
-  wake: cmdWake, keep: cmdKeep,
+  wake: cmdWake, keep: cmdKeep, schedule: cmdSchedule,
   start: cmdStart, show: cmdShow, judge: cmdJudge, guard: cmdGuard, seat: cmdSeat, bet: cmdBet, budget: cmdBudget,
   pause: cmdPause, resume: cmdResume, stop: cmdStop, event: cmdEvent,
   ask: cmdAsk, answer: cmdAnswer, 'set-judge': cmdSetJudge, sync: cmdSync, 'cloud-run': cmdCloudRun,
