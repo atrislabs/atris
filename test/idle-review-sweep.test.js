@@ -9,7 +9,7 @@ const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
-const { spawnSync } = require('node:child_process');
+const { hasNodeSqlite } = require('./helpers/node-sqlite');
 
 const { idleDecision, lastActivityAt, sweepIdleReviews } = require('../lib/idle-review-sweep');
 const taskStore = require('../lib/task-db');
@@ -104,10 +104,6 @@ test('a live verdict from this tick (fails on main) closes it after the grace pe
   assert.equal(decision.action, 'close');
   assert.equal(decision.reason, 'verify_failed_on_main');
 });
-
-function hasNodeSqlite() {
-  return spawnSync(process.execPath, ['-e', 'require("node:sqlite")'], { encoding: 'utf8' }).status === 0;
-}
 
 test('the idle keeper never puts away protected-lane work', () => {
   if (!hasNodeSqlite()) return;
