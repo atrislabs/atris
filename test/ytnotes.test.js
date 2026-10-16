@@ -29,8 +29,14 @@ function writeExec(file, body) {
   fs.chmodSync(file, 0o755);
 }
 
-test('ytnotes keeps a written vtt when yt-dlp exits 429', () => {
-  const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'atris-ytnotes-429-'));
+function makeTempDir(t, prefix) {
+  const tmp = fs.mkdtempSync(path.join(os.tmpdir(), prefix));
+  t.after(() => fs.rmSync(tmp, { recursive: true, force: true }));
+  return tmp;
+}
+
+test('ytnotes keeps a written vtt when yt-dlp exits 429', (t) => {
+  const tmp = makeTempDir(t, 'atris-ytnotes-429-');
   const bin = path.join(tmp, 'bin');
   const work = path.join(tmp, 'work');
   fs.mkdirSync(bin);
@@ -72,8 +78,8 @@ test('ytnotes keeps a written vtt when yt-dlp exits 429', () => {
 // Mimics real yt-dlp: subtitle languages download in the order asked, the
 // machine-translated "en" track returns 429, and without --ignore-errors the
 // first failure stops the run before later languages are written.
-test('ytnotes gets en-orig when the translated en track is rate limited', () => {
-  const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'atris-ytnotes-enorig-'));
+test('ytnotes gets en-orig when the translated en track is rate limited', (t) => {
+  const tmp = makeTempDir(t, 'atris-ytnotes-enorig-');
   const bin = path.join(tmp, 'bin');
   const work = path.join(tmp, 'work');
   fs.mkdirSync(bin);
@@ -121,8 +127,8 @@ test('ytnotes gets en-orig when the translated en track is rate limited', () => 
   assert.doesNotMatch(`${result.stdout}\n${result.stderr}`, /No English captions/);
 });
 
-test('ytnotes skips a leaked warning print line when choosing the video id', () => {
-  const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'atris-ytnotes-warn-id-'));
+test('ytnotes skips a leaked warning print line when choosing the video id', (t) => {
+  const tmp = makeTempDir(t, 'atris-ytnotes-warn-id-');
   const bin = path.join(tmp, 'bin');
   const work = path.join(tmp, 'work');
   fs.mkdirSync(bin);
@@ -165,8 +171,8 @@ test('ytnotes skips a leaked warning print line when choosing the video id', () 
   assert.doesNotMatch(`${result.stdout}\n${result.stderr}`, /No English captions/);
 });
 
-test('ytnotes skips a None print line when choosing the video id', () => {
-  const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'atris-ytnotes-none-id-'));
+test('ytnotes skips a None print line when choosing the video id', (t) => {
+  const tmp = makeTempDir(t, 'atris-ytnotes-none-id-');
   const bin = path.join(tmp, 'bin');
   const work = path.join(tmp, 'work');
   fs.mkdirSync(bin);
@@ -209,8 +215,8 @@ test('ytnotes skips a None print line when choosing the video id', () => {
   assert.doesNotMatch(`${result.stdout}\n${result.stderr}`, /No English captions/);
 });
 
-test('ytnotes keeps a written manual English vtt when auto captions are absent', () => {
-  const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'atris-ytnotes-manual-'));
+test('ytnotes keeps a written manual English vtt when auto captions are absent', (t) => {
+  const tmp = makeTempDir(t, 'atris-ytnotes-manual-');
   const bin = path.join(tmp, 'bin');
   const work = path.join(tmp, 'work');
   fs.mkdirSync(bin);
@@ -255,8 +261,8 @@ test('ytnotes keeps a written manual English vtt when auto captions are absent',
   assert.doesNotMatch(`${result.stdout}\n${result.stderr}`, /No English captions/);
 });
 
-test('ytnotes keeps a written auto English vtt when manual captions are absent', () => {
-  const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'atris-ytnotes-auto-'));
+test('ytnotes keeps a written auto English vtt when manual captions are absent', (t) => {
+  const tmp = makeTempDir(t, 'atris-ytnotes-auto-');
   const bin = path.join(tmp, 'bin');
   const work = path.join(tmp, 'work');
   fs.mkdirSync(bin);
@@ -301,8 +307,8 @@ test('ytnotes keeps a written auto English vtt when manual captions are absent',
   assert.doesNotMatch(`${result.stdout}\n${result.stderr}`, /No English captions/);
 });
 
-test('ytnotes keeps a written en-orig vtt when yt-dlp skips .en.vtt', () => {
-  const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'atris-ytnotes-enorig-'));
+test('ytnotes keeps a written en-orig vtt when yt-dlp skips .en.vtt', (t) => {
+  const tmp = makeTempDir(t, 'atris-ytnotes-enorig-');
   const bin = path.join(tmp, 'bin');
   const work = path.join(tmp, 'work');
   fs.mkdirSync(bin);
@@ -341,8 +347,8 @@ test('ytnotes keeps a written en-orig vtt when yt-dlp skips .en.vtt', () => {
   assert.doesNotMatch(`${result.stdout}\n${result.stderr}`, /No English captions/);
 });
 
-test('ytnotes keeps a written vtt when yt-dlp print is empty', () => {
-  const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'atris-ytnotes-emptyprint-'));
+test('ytnotes keeps a written vtt when yt-dlp print is empty', (t) => {
+  const tmp = makeTempDir(t, 'atris-ytnotes-emptyprint-');
   const bin = path.join(tmp, 'bin');
   const work = path.join(tmp, 'work');
   fs.mkdirSync(bin);
@@ -380,8 +386,8 @@ test('ytnotes keeps a written vtt when yt-dlp print is empty', () => {
   assert.doesNotMatch(`${result.stdout}\n${result.stderr}`, /No English captions/);
 });
 
-test('ytnotes keeps a leftover vtt for a copied #t= url when print is empty', () => {
-  const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'atris-ytnotes-hash-t-'));
+test('ytnotes keeps a leftover vtt for a copied #t= url when print is empty', (t) => {
+  const tmp = makeTempDir(t, 'atris-ytnotes-hash-t-');
   const bin = path.join(tmp, 'bin');
   const work = path.join(tmp, 'work');
   const notesWork = path.join(work, 'ytnotes');
@@ -426,8 +432,8 @@ test('ytnotes keeps a leftover vtt for a copied #t= url when print is empty', ()
   assert.doesNotMatch(`${result.stdout}\n${result.stderr}`, /No English captions/);
 });
 
-test('ytnotes keeps a leftover vtt for an /e/ url when print is empty', () => {
-  const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'atris-ytnotes-e-'));
+test('ytnotes keeps a leftover vtt for an /e/ url when print is empty', (t) => {
+  const tmp = makeTempDir(t, 'atris-ytnotes-e-');
   const bin = path.join(tmp, 'bin');
   const work = path.join(tmp, 'work');
   const notesWork = path.join(work, 'ytnotes');
@@ -472,8 +478,8 @@ test('ytnotes keeps a leftover vtt for an /e/ url when print is empty', () => {
   assert.doesNotMatch(`${result.stdout}\n${result.stderr}`, /No English captions/);
 });
 
-test('ytnotes keeps a written vtt for a shorts url when print is empty', () => {
-  const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'atris-ytnotes-shorts-'));
+test('ytnotes keeps a written vtt for a shorts url when print is empty', (t) => {
+  const tmp = makeTempDir(t, 'atris-ytnotes-shorts-');
   const bin = path.join(tmp, 'bin');
   const work = path.join(tmp, 'work');
   fs.mkdirSync(bin);
@@ -511,8 +517,8 @@ test('ytnotes keeps a written vtt for a shorts url when print is empty', () => {
   assert.doesNotMatch(`${result.stdout}\n${result.stderr}`, /No English captions/);
 });
 
-test('ytnotes keeps a written vtt for a nocookie embed url when print is empty', () => {
-  const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'atris-ytnotes-nocookie-'));
+test('ytnotes keeps a written vtt for a nocookie embed url when print is empty', (t) => {
+  const tmp = makeTempDir(t, 'atris-ytnotes-nocookie-');
   const bin = path.join(tmp, 'bin');
   const work = path.join(tmp, 'work');
   fs.mkdirSync(bin);
@@ -550,8 +556,8 @@ test('ytnotes keeps a written vtt for a nocookie embed url when print is empty',
   assert.doesNotMatch(`${result.stdout}\n${result.stderr}`, /No English captions/);
 });
 
-test('ytnotes keeps leftover clean.txt when captions are gone', () => {
-  const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'atris-ytnotes-clean-txt-'));
+test('ytnotes keeps leftover clean.txt when captions are gone', (t) => {
+  const tmp = makeTempDir(t, 'atris-ytnotes-clean-txt-');
   const bin = path.join(tmp, 'bin');
   const work = path.join(tmp, 'work');
   const notesWork = path.join(work, 'ytnotes');
@@ -594,8 +600,8 @@ test('ytnotes keeps leftover clean.txt when captions are gone', () => {
   assert.doesNotMatch(`${result.stdout}\n${result.stderr}`, /No English captions/);
 });
 
-test('ytnotes does not invent-keep another video leftover clean.txt', () => {
-  const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'atris-ytnotes-clean-other-'));
+test('ytnotes does not invent-keep another video leftover clean.txt', (t) => {
+  const tmp = makeTempDir(t, 'atris-ytnotes-clean-other-');
   const bin = path.join(tmp, 'bin');
   const work = path.join(tmp, 'work');
   const notesWork = path.join(work, 'ytnotes');
@@ -638,8 +644,8 @@ test('ytnotes does not invent-keep another video leftover clean.txt', () => {
   assert.equal(fs.existsSync(path.join(work, 'ytnotes', 'yt_ntclean2.md')), false);
 });
 
-test('ytnotes still fails a 429 when no captions were written', () => {
-  const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'atris-ytnotes-empty429-'));
+test('ytnotes still fails a 429 when no captions were written', (t) => {
+  const tmp = makeTempDir(t, 'atris-ytnotes-empty429-');
   const bin = path.join(tmp, 'bin');
   const work = path.join(tmp, 'work');
   fs.mkdirSync(bin);
@@ -676,8 +682,8 @@ test('ytnotes still fails a 429 when no captions were written', () => {
   assert.equal(fs.existsSync(path.join(work, 'ytnotes', 'yt_empty429.md')), false);
 });
 
-function runNoCaptionNotes(label, { withWhisper, whisperVtt, extraEnv = {}, audioFailures = 0, botClients = [], extraBins = {}, withClaude = true, withYtDlp = true, ytDlpVersion }) {
-  const tmp = fs.mkdtempSync(path.join(os.tmpdir(), `atris-ytnotes-${label}-`));
+function runNoCaptionNotes(t, label, { withWhisper, whisperVtt, extraEnv = {}, audioFailures = 0, botClients = [], extraBins = {}, withClaude = true, withYtDlp = true, ytDlpVersion }) {
+  const tmp = makeTempDir(t, `atris-ytnotes-${label}-`);
   const bin = path.join(tmp, 'bin');
   const work = path.join(tmp, 'work');
   fs.mkdirSync(bin);
@@ -751,8 +757,8 @@ const LOCAL_VTT = [
   '01:01:40.000 --> 01:01:42.000', 'Last words after an hour.', '',
 ];
 
-test('ytnotes transcribes the audio locally when a video has no captions', () => {
-  const { result, dir } = runNoCaptionNotes('nocap1', { withWhisper: true, whisperVtt: LOCAL_VTT });
+test('ytnotes transcribes the audio locally when a video has no captions', (t) => {
+  const { result, dir } = runNoCaptionNotes(t, 'nocap1', { withWhisper: true, whisperVtt: LOCAL_VTT });
 
   assert.equal(result.status, 0, result.stderr || result.stdout);
   assert.match(result.stderr, /Transcribing the audio on this computer/);
@@ -763,8 +769,8 @@ test('ytnotes transcribes the audio locally when a video has no captions', () =>
   assert.equal(fs.readdirSync(dir).some((f) => f.includes('.audio.')), false, 'audio is deleted');
 });
 
-test('ytnotes without a local speech model prints the paid command', () => {
-  const { result, dir } = runNoCaptionNotes('nocap2', { withWhisper: false });
+test('ytnotes without a local speech model prints the paid command', (t) => {
+  const { result, dir } = runNoCaptionNotes(t, 'nocap2', { withWhisper: false });
 
   assert.equal(result.status, 2);
   assert.match(result.stderr, /No English captions found/);
@@ -773,8 +779,8 @@ test('ytnotes without a local speech model prints the paid command', () => {
   assert.equal(fs.existsSync(path.join(dir, 'yt_nocap2.md')), false);
 });
 
-test('ytnotes local transcription can be turned off', () => {
-  const { result } = runNoCaptionNotes('nocap3', {
+test('ytnotes local transcription can be turned off', (t) => {
+  const { result } = runNoCaptionNotes(t, 'nocap3', {
     withWhisper: true,
     whisperVtt: LOCAL_VTT,
     extraEnv: { ATRIS_YTNOTES_LOCAL_TRANSCRIBE: '0' },
@@ -785,8 +791,8 @@ test('ytnotes local transcription can be turned off', () => {
   assert.match(result.stderr, /atris youtube process/);
 });
 
-test('ytnotes retries a refused audio download', () => {
-  const { result, dir } = runNoCaptionNotes('nocap4', {
+test('ytnotes retries a refused audio download', (t) => {
+  const { result, dir } = runNoCaptionNotes(t, 'nocap4', {
     withWhisper: true,
     whisperVtt: LOCAL_VTT,
     audioFailures: 2,
@@ -803,8 +809,8 @@ function audioCalls(dir) {
   return fs.existsSync(file) ? fs.readFileSync(file, 'utf8').trim().split('\n') : [];
 }
 
-test('ytnotes gives up after three refused audio downloads per client', () => {
-  const { result, dir } = runNoCaptionNotes('nocap5', {
+test('ytnotes gives up after three refused audio downloads per client', (t) => {
+  const { result, dir } = runNoCaptionNotes(t, 'nocap5', {
     withWhisper: true,
     whisperVtt: LOCAL_VTT,
     // Three tries for each of the two default clients.
@@ -819,8 +825,8 @@ test('ytnotes gives up after three refused audio downloads per client', () => {
   assert.match(result.stderr, /atris youtube process/);
 });
 
-test('ytnotes tries the embedded player first for audio', () => {
-  const { result, dir } = runNoCaptionNotes('nocapbot0', { withWhisper: true, whisperVtt: LOCAL_VTT });
+test('ytnotes tries the embedded player first for audio', (t) => {
+  const { result, dir } = runNoCaptionNotes(t, 'nocapbot0', { withWhisper: true, whisperVtt: LOCAL_VTT });
 
   assert.equal(result.status, 0, result.stderr || result.stdout);
   const calls = audioCalls(dir);
@@ -829,8 +835,8 @@ test('ytnotes tries the embedded player first for audio', () => {
   assert.doesNotMatch(calls[0], /--cookies-from-browser/, 'cookies stay off by default');
 });
 
-test('ytnotes moves to the next client at once on a bot wall', () => {
-  const { result, dir } = runNoCaptionNotes('nocapbot1', {
+test('ytnotes moves to the next client at once on a bot wall', (t) => {
+  const { result, dir } = runNoCaptionNotes(t, 'nocapbot1', {
     withWhisper: true,
     whisperVtt: LOCAL_VTT,
     botClients: ['web_embedded'],
@@ -845,8 +851,8 @@ test('ytnotes moves to the next client at once on a bot wall', () => {
   assert.match(fs.readFileSync(path.join(dir, 'yt_nocapbot1.clean.txt'), 'utf8'), /Spoken only in audio/);
 });
 
-test('ytnotes keeps three tries per client for a refused (403) download', () => {
-  const { result, dir } = runNoCaptionNotes('nocapbot2', {
+test('ytnotes keeps three tries per client for a refused (403) download', (t) => {
+  const { result, dir } = runNoCaptionNotes(t, 'nocapbot2', {
     withWhisper: true,
     whisperVtt: LOCAL_VTT,
     // web_embedded is refused three times, default once, then default works.
@@ -860,8 +866,8 @@ test('ytnotes keeps three tries per client for a refused (403) download', () => 
     ['web_embedded', 'web_embedded', 'web_embedded', 'default', 'default'], calls.join('\n'));
 });
 
-test('ytnotes says plainly when YouTube blocks every audio client, before the paid hint', () => {
-  const { result, dir } = runNoCaptionNotes('nocapbot3', {
+test('ytnotes says plainly when YouTube blocks every audio client, before the paid hint', (t) => {
+  const { result, dir } = runNoCaptionNotes(t, 'nocapbot3', {
     withWhisper: true,
     whisperVtt: LOCAL_VTT,
     botClients: ['web_embedded', 'default'],
@@ -879,8 +885,8 @@ test('ytnotes says plainly when YouTube blocks every audio client, before the pa
   assert.equal(fs.existsSync(path.join(dir, 'yt_nocapbot3.md')), false);
 });
 
-test('ytnotes passes browser cookies to yt-dlp only when opted in', () => {
-  const { result, dir } = runNoCaptionNotes('nocapbot4', {
+test('ytnotes passes browser cookies to yt-dlp only when opted in', (t) => {
+  const { result, dir } = runNoCaptionNotes(t, 'nocapbot4', {
     withWhisper: true,
     whisperVtt: LOCAL_VTT,
     botClients: ['web_embedded'],
@@ -893,8 +899,8 @@ test('ytnotes passes browser cookies to yt-dlp only when opted in', () => {
   for (const call of calls) assert.match(call, /--cookies-from-browser safari/);
 });
 
-test('ytnotes ATRIS_YTNOTES_AUDIO_CLIENTS sets the client order', () => {
-  const { result, dir } = runNoCaptionNotes('nocapbot5', {
+test('ytnotes ATRIS_YTNOTES_AUDIO_CLIENTS sets the client order', (t) => {
+  const { result, dir } = runNoCaptionNotes(t, 'nocapbot5', {
     withWhisper: true,
     whisperVtt: LOCAL_VTT,
     botClients: ['mweb'],
@@ -908,8 +914,8 @@ test('ytnotes ATRIS_YTNOTES_AUDIO_CLIENTS sets the client order', () => {
   assert.doesNotMatch(calls.join('\n'), /web_embedded/);
 });
 
-test('ytnotes auto writer uses Gemini through agy when it answers', () => {
-  const { result, dir } = runNoCaptionNotes('auto1', {
+test('ytnotes auto writer uses Gemini through agy when it answers', (t) => {
+  const { result, dir } = runNoCaptionNotes(t, 'auto1', {
     withWhisper: true,
     whisperVtt: LOCAL_VTT,
     extraEnv: { ATRIS_YTNOTES_ENGINE: 'auto' },
@@ -921,8 +927,8 @@ test('ytnotes auto writer uses Gemini through agy when it answers', () => {
   assert.doesNotMatch(result.stderr, /Haiku instead/);
 });
 
-test('ytnotes auto writer falls back to Haiku when Gemini fails', () => {
-  const { result, dir } = runNoCaptionNotes('auto2', {
+test('ytnotes auto writer falls back to Haiku when Gemini fails', (t) => {
+  const { result, dir } = runNoCaptionNotes(t, 'auto2', {
     withWhisper: true,
     whisperVtt: LOCAL_VTT,
     extraEnv: { ATRIS_YTNOTES_ENGINE: 'auto' },
@@ -934,7 +940,7 @@ test('ytnotes auto writer falls back to Haiku when Gemini fails', () => {
   assert.match(fs.readFileSync(path.join(dir, 'yt_auto2.md'), 'utf8'), /# No Caption Talk/);
 });
 
-test('ytnotes auto writer skips the Antigravity editor launcher named agy', () => {
+test('ytnotes auto writer skips the Antigravity editor launcher named agy', (t) => {
   const launcher = [
     '#!/usr/bin/env bash',
     '# when run in remote terminal, use the remote cli',
@@ -942,7 +948,7 @@ test('ytnotes auto writer skips the Antigravity editor launcher named agy', () =
     'echo "Warning: \'p\' is not in the list of known options" >&2',
     '',
   ].join('\n');
-  const { result, dir } = runNoCaptionNotes('auto5', {
+  const { result, dir } = runNoCaptionNotes(t, 'auto5', {
     withWhisper: true,
     whisperVtt: LOCAL_VTT,
     extraEnv: { ATRIS_YTNOTES_ENGINE: 'auto' },
@@ -955,7 +961,7 @@ test('ytnotes auto writer skips the Antigravity editor launcher named agy', () =
   assert.match(result.stderr, /^notes by Haiku$/m);
 });
 
-test('ytnotes auto writer skips a signed-out agy without running it', () => {
+test('ytnotes auto writer skips a signed-out agy without running it', (t) => {
   const signedOut = [
     '#!/bin/sh',
     'if [ "$1" = models ]; then echo "Error: Please sign in to view available models." >&2; exit 1; fi',
@@ -963,7 +969,7 @@ test('ytnotes auto writer skips a signed-out agy without running it', () => {
     'echo "# From Gemini"',
     '',
   ].join('\n');
-  const { result, dir } = runNoCaptionNotes('auto6', {
+  const { result, dir } = runNoCaptionNotes(t, 'auto6', {
     withWhisper: true,
     whisperVtt: LOCAL_VTT,
     extraEnv: { ATRIS_YTNOTES_ENGINE: 'auto' },
@@ -977,8 +983,8 @@ test('ytnotes auto writer skips a signed-out agy without running it', () => {
   assert.equal(fs.existsSync(path.join(dir, 'agy.ran')) || fs.existsSync(path.join(path.dirname(dir), 'agy.ran')), false, 'the signed-out agy never ran a prompt');
 });
 
-test('ytnotes auto writer falls back to Haiku when agy is not installed', () => {
-  const { result, dir } = runNoCaptionNotes('auto3', {
+test('ytnotes auto writer falls back to Haiku when agy is not installed', (t) => {
+  const { result, dir } = runNoCaptionNotes(t, 'auto3', {
     withWhisper: true,
     whisperVtt: LOCAL_VTT,
     extraEnv: { ATRIS_YTNOTES_ENGINE: 'auto' },
@@ -988,8 +994,8 @@ test('ytnotes auto writer falls back to Haiku when agy is not installed', () => 
   assert.match(fs.readFileSync(path.join(dir, 'yt_auto3.md'), 'utf8'), /# No Caption Talk/);
 });
 
-test('ytnotes auto writer uses Codex when neither Gemini nor Claude is installed', () => {
-  const { result, dir } = runNoCaptionNotes('auto4', {
+test('ytnotes auto writer uses Codex when neither Gemini nor Claude is installed', (t) => {
+  const { result, dir } = runNoCaptionNotes(t, 'auto4', {
     withWhisper: true,
     whisperVtt: LOCAL_VTT,
     withClaude: false,
@@ -1001,8 +1007,8 @@ test('ytnotes auto writer uses Codex when neither Gemini nor Claude is installed
   assert.match(fs.readFileSync(path.join(dir, 'yt_auto4.md'), 'utf8'), /# From Codex/);
 });
 
-test('ytnotes with no AI writer says what to install and leaves no empty notes', () => {
-  const { result, dir } = runNoCaptionNotes('auto5', {
+test('ytnotes with no AI writer says what to install and leaves no empty notes', (t) => {
+  const { result, dir } = runNoCaptionNotes(t, 'auto5', {
     withWhisper: true,
     whisperVtt: LOCAL_VTT,
     withClaude: false,
@@ -1017,8 +1023,8 @@ test('ytnotes with no AI writer says what to install and leaves no empty notes',
   assert.equal(fs.existsSync(path.join(dir, 'yt_auto5.clean.txt')), true);
 });
 
-test('ytnotes with a pinned writer that is missing fails instead of printing nothing', () => {
-  const { result, dir } = runNoCaptionNotes('auto6', {
+test('ytnotes with a pinned writer that is missing fails instead of printing nothing', (t) => {
+  const { result, dir } = runNoCaptionNotes(t, 'auto6', {
     withWhisper: true,
     whisperVtt: LOCAL_VTT,
     withClaude: false,
@@ -1031,8 +1037,8 @@ test('ytnotes with a pinned writer that is missing fails instead of printing not
   assert.equal(fs.existsSync(path.join(dir, 'yt_auto6.md')), false);
 });
 
-test('ytnotes without yt-dlp says to install it instead of blaming captions', () => {
-  const { result } = runNoCaptionNotes('noytdlp', { withWhisper: false, withYtDlp: false });
+test('ytnotes without yt-dlp says to install it instead of blaming captions', (t) => {
+  const { result } = runNoCaptionNotes(t, 'noytdlp', { withWhisper: false, withYtDlp: false });
 
   assert.equal(result.status, 2);
   assert.match(result.stderr, /missing yt-dlp/);
@@ -1040,8 +1046,8 @@ test('ytnotes without yt-dlp says to install it instead of blaming captions', ()
   assert.doesNotMatch(result.stderr, /No English captions/);
 });
 
-test('ytnotes warns when yt-dlp is old and still writes the notes', () => {
-  const { result, dir } = runNoCaptionNotes('stale1', {
+test('ytnotes warns when yt-dlp is old and still writes the notes', (t) => {
+  const { result, dir } = runNoCaptionNotes(t, 'stale1', {
     withWhisper: true,
     whisperVtt: LOCAL_VTT,
     ytDlpVersion: '2025.01.01',
@@ -1052,15 +1058,15 @@ test('ytnotes warns when yt-dlp is old and still writes the notes', () => {
   assert.match(fs.readFileSync(path.join(dir, 'yt_stale1.md'), 'utf8'), /# No Caption Talk/);
 });
 
-test('ytnotes says nothing about a yt-dlp released today', () => {
-  const { result } = runNoCaptionNotes('fresh1', { withWhisper: true, whisperVtt: LOCAL_VTT });
+test('ytnotes says nothing about a yt-dlp released today', (t) => {
+  const { result } = runNoCaptionNotes(t, 'fresh1', { withWhisper: true, whisperVtt: LOCAL_VTT });
 
   assert.equal(result.status, 0, result.stderr || result.stdout);
   assert.doesNotMatch(result.stderr, /yt-dlp is/);
 });
 
-test('ytnotes says nothing when the yt-dlp version does not parse', () => {
-  const { result } = runNoCaptionNotes('oddver1', {
+test('ytnotes says nothing when the yt-dlp version does not parse', (t) => {
+  const { result } = runNoCaptionNotes(t, 'oddver1', {
     withWhisper: true,
     whisperVtt: LOCAL_VTT,
     ytDlpVersion: 'nightly',
@@ -1070,8 +1076,8 @@ test('ytnotes says nothing when the yt-dlp version does not parse', () => {
   assert.doesNotMatch(result.stderr, /yt-dlp is/);
 });
 
-test('ytnotes auto names the writer that wrote the notes', () => {
-  const { result } = runNoCaptionNotes('byline1', {
+test('ytnotes auto names the writer that wrote the notes', (t) => {
+  const { result } = runNoCaptionNotes(t, 'byline1', {
     withWhisper: true,
     whisperVtt: LOCAL_VTT,
     extraEnv: { ATRIS_YTNOTES_ENGINE: 'auto' },
@@ -1082,8 +1088,8 @@ test('ytnotes auto names the writer that wrote the notes', () => {
   assert.match(result.stderr, /^notes by Gemini$/m);
 });
 
-test('ytnotes names a pinned writer once the notes are written', () => {
-  const { result } = runNoCaptionNotes('byline2', { withWhisper: true, whisperVtt: LOCAL_VTT });
+test('ytnotes names a pinned writer once the notes are written', (t) => {
+  const { result } = runNoCaptionNotes(t, 'byline2', { withWhisper: true, whisperVtt: LOCAL_VTT });
 
   assert.equal(result.status, 0, result.stderr || result.stdout);
   assert.match(result.stderr, /^notes by haiku$/m);
@@ -1098,8 +1104,8 @@ function resolveCmd(json) {
   return `printf '%s' '${JSON.stringify(json)}'`;
 }
 
-test('ytnotes auto writer follows the roster lead and passes its model through', () => {
-  const { result, dir } = runNoCaptionNotes('roster1', {
+test('ytnotes auto writer follows the roster lead and passes its model through', (t) => {
+  const { result, dir } = runNoCaptionNotes(t, 'roster1', {
     withWhisper: true,
     whisperVtt: LOCAL_VTT,
     withClaude: false,
@@ -1119,8 +1125,8 @@ test('ytnotes auto writer follows the roster lead and passes its model through',
   assert.equal(fs.existsSync(path.join(work, 'agy.args')), false, 'the backup never ran');
 });
 
-test('ytnotes passes the roster effort to Gemini and keeps low as the floor', () => {
-  const high = runNoCaptionNotes('roster2', {
+test('ytnotes passes the roster effort to Gemini and keeps low as the floor', (t) => {
+  const high = runNoCaptionNotes(t, 'roster2', {
     withWhisper: true,
     whisperVtt: LOCAL_VTT,
     extraEnv: {
@@ -1133,7 +1139,7 @@ test('ytnotes passes the roster effort to Gemini and keeps low as the floor', ()
   assert.equal(high.result.status, 0, high.result.stderr);
   assert.match(fs.readFileSync(path.join(path.dirname(high.dir), 'agy.args'), 'utf8'), /--model gemini-3\.8-flash --effort high/);
 
-  const unset = runNoCaptionNotes('roster3', {
+  const unset = runNoCaptionNotes(t, 'roster3', {
     withWhisper: true,
     whisperVtt: LOCAL_VTT,
     extraEnv: {
@@ -1147,7 +1153,7 @@ test('ytnotes passes the roster effort to Gemini and keeps low as the floor', ()
   assert.match(fs.readFileSync(path.join(path.dirname(unset.dir), 'agy.args'), 'utf8'), /--effort low/);
 });
 
-test('ytnotes falls back to the built-in order when the roster lookup fails, is slow, or names a missing writer', () => {
+test('ytnotes falls back to the built-in order when the roster lookup fails, is slow, or names a missing writer', (t) => {
   const cases = [
     ['roster4', 'exit 1'],
     ['roster5', 'sleep 5'],
@@ -1156,7 +1162,7 @@ test('ytnotes falls back to the built-in order when the roster lookup fails, is 
   ];
   for (const [label, cmd] of cases) {
     const started = Date.now();
-    const { result, dir } = runNoCaptionNotes(label, {
+    const { result, dir } = runNoCaptionNotes(t, label, {
       withWhisper: true,
       whisperVtt: LOCAL_VTT,
       extraEnv: { ATRIS_YTNOTES_ENGINE: 'auto', ATRIS_YTNOTES_ROSTER: '1', ATRIS_YTNOTES_RESOLVE_CMD: cmd },
@@ -1168,8 +1174,8 @@ test('ytnotes falls back to the built-in order when the roster lookup fails, is 
   }
 });
 
-test('ytnotes with ATRIS_YTNOTES_ROSTER=0 never asks the roster', () => {
-  const { result, dir } = runNoCaptionNotes('roster8', {
+test('ytnotes with ATRIS_YTNOTES_ROSTER=0 never asks the roster', (t) => {
+  const { result, dir } = runNoCaptionNotes(t, 'roster8', {
     withWhisper: true,
     whisperVtt: LOCAL_VTT,
     extraEnv: { ATRIS_YTNOTES_ENGINE: 'auto', ATRIS_YTNOTES_ROSTER: '0', ATRIS_YTNOTES_RESOLVE_CMD: 'touch "$TMPDIR/asked"' },
