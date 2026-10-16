@@ -2018,7 +2018,7 @@ if (command === 'guide') {
     .catch((err) => { console.error(`\nerror: ${err.message || err}`); process.exit(1); });
 } else if (command === 'campaign') {
   Promise.resolve(require('../commands/campaign').campaignCommand(process.argv.slice(3)))
-    .then((code) => process.exit(code || 0))
+    .then((code) => exitAfterStdoutDrain(code || 0))
     .catch((err) => { console.error(`\nerror: ${err.message || err}`); process.exit(1); });
 } else if (command === 'who') {
   Promise.resolve(require('../commands/who').whoCommand(process.argv.slice(3)))
