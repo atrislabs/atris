@@ -634,7 +634,7 @@ const cmdEvent = (args, ctx) => {
   const type = words[2];
   if (!type) return ctx.fail('name the event type: atris campaign event <id> <type> [--data \'<json>\']');
   // Events that only the judge or a person may write have their own verbs.
-  const guarded = { judge_ran: 'atris campaign judge', ask_answered: 'atris campaign answer', done: 'atris campaign stop, or a passing judge', budget_added: 'atris campaign budget --add', campaign_started: 'atris campaign start' };
+  const guarded = { judge_ran: 'atris campaign judge', ask_answered: 'atris campaign answer', ask_defaulted: 'atris campaign ask --default, which closes on its own once the wait is up', done: 'atris campaign stop, or a passing judge', budget_added: 'atris campaign budget --add', campaign_started: 'atris campaign start' };
   if (guarded[type]) return ctx.fail(`${type} cannot be written by hand; use ${guarded[type]}`);
   let data;
   try {
