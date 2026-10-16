@@ -249,7 +249,7 @@ rg "outbound artifact gate|raw-html-in-plain-body|render-proof-missing|coach-sur
 
 ## By-Feature Map
 
-Design/MCP test isolation: `test/mcp.test.js:65` starts the CLI from its disposable directory. `commands/design.js:360` and `lib/design-api.js:124` export only consumed entry points; `test/repo-hygiene.test.js` guards both boundaries.
+Design/MCP test isolation: `test/mcp.test.js:66` starts the CLI from its disposable directory. `commands/design.js:360` and `lib/design-api.js:124` export only consumed entry points; `test/repo-hygiene.test.js` guards both boundaries.
 MCP stdio request flow: `mcp/atris-mcp/index.mjs:142` reads requests while design calls run, tracks cancellations, and waits for pending replies on stdin close. `test/mcp.test.js` checks ping order, blank lines, cancellations, and stdin close.
 
 - **atris developer api:** `commands/balance.js:21` GET `/credits/balance` and prints dollars first; `commands/usage.js:44` GET `/developer/usage`; `commands/api-key.js:87` create/list/rotate/revoke; `commands/topup.js:22` POST `/credits/purchase` and prints the Stripe checkout url. Shared helpers: `lib/developer-api.js:65`. Help: `bin/atris.js:657`. Dispatch: `bin/atris.js:2219`. Registry: `lib/known-commands.js:6`. 404 on `/developer/*` prints `backend rolling out, try again shortly`. Tests: `test/developer-api.test.js:1`.
