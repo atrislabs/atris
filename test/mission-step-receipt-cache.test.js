@@ -3,32 +3,16 @@ const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
-const { spawnSync } = require('node:child_process');
 const { findCachedMissionStepReceipt } = require('../lib/receipt-evidence');
 
 // Resume after interrupt: a completed tick receipt already on disk for the next
 // tick_index must be reused. Without the cache, mission tick re-derives that
 // step and writes a second receipt.
 
-const repoRoot = path.resolve(__dirname, '..');
-const cliPath = path.join(repoRoot, 'bin', 'atris.js');
-const { withMissionFullJson } = require('./helpers/mission-json');
+const { runMissionCli, runMissionGit: runGit } = require('./helpers/mission-json');
 
 function runCli(args, cwd) {
-  const result = spawnSync(process.execPath, [cliPath, ...withMissionFullJson(args)], {
-    cwd,
-    encoding: 'utf8',
-    timeout: 20000,
-    env: { ...process.env, ATRIS_SKIP_UPDATE_CHECK: '1' },
-  });
-  if (result.error) throw result.error;
-  return result;
-}
-
-function runGit(args, cwd) {
-  const result = spawnSync('git', args, { cwd, encoding: 'utf8', timeout: 15000 });
-  assert.equal(result.status, 0, result.stderr || result.stdout);
-  return result;
+  return runMissionCli(args, { cwd });
 }
 
 function initWorkspace(dir) {
