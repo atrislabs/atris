@@ -5,12 +5,9 @@ const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
-const { spawnSync } = require('node:child_process');
-const { scrubAgentEnv } = require('./helpers/agent-env');
+const { createScratchCli } = require('./helpers/scratch-cli');
 const { spokenLineCount } = require('../lib/first-minute');
 
-const repoRoot = path.resolve(__dirname, '..');
-const cliPath = path.join(repoRoot, 'bin', 'atris.js');
 const TIMEOUT_MS = 12000;
 const FACTORY = /durable goal|Autonomy recipe|Backend\/web agents|missions\.jsonl|codex_goal|native-goal|always-on|attach-task --json|UNVERIFIED|Run the next proof step/i;
 const MACHINERY = /always-on|tick|proof|runtime|session|receipt|orchestration|process|stage|pipeline|mission-80|mission-done/i;
@@ -36,27 +33,7 @@ function isolatedEnv(dir, extra = {}) {
   };
 }
 
-function runCli(args, { cwd, env, timeout = TIMEOUT_MS } = {}) {
-  const result = spawnSync(process.execPath, [cliPath, ...args], {
-    cwd,
-    encoding: 'utf8',
-    timeout,
-    stdio: ['ignore', 'pipe', 'pipe'],
-    env: {
-      ...scrubAgentEnv(),
-      ATRIS_SKIP_UPDATE_CHECK: '1',
-      ATRIS_NO_INTERACTIVE: '1',
-      ATRIS_NONINTERACTIVE: '1',
-      NODE_NO_WARNINGS: '1',
-      ...(env || {}),
-    },
-  });
-  if (result.error && result.error.code === 'ETIMEDOUT') {
-    assert.fail(`cli hung past ${timeout}ms (args: ${args.join(' ') || '(none)'})`);
-  }
-  if (result.error) throw result.error;
-  return result;
-}
+const runCli = createScratchCli(TIMEOUT_MS);
 
 function combined(result) {
   return `${result.stdout || ''}\n${result.stderr || ''}`;
