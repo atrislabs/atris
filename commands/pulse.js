@@ -54,6 +54,7 @@ Options:
   --days <n>             Auto-expire installed heartbeat after n days
   --hours <n>            Auto-expire installed heartbeat after n hours
   --no-keep-awake        Install without holding the Mac awake for the window (macOS)
+  --no-autopilot         install/tick: never fall back to autopilot (only campaigns and due missions)
   --no-campaigns         tick: skip pushing campaigns (atris campaign tick)
   --model <id>           Runner model alias/id for installed heartbeat
   --runner-profile <n>   Runner profile for installed heartbeat (e.g. atris-fast)
@@ -715,6 +716,8 @@ function installCommand(args, root = process.cwd(), options = {}) {
     pathDirs,
     launchLabel: label,
     launchPlistPath: plistPath,
+    // Baked into every tick: a night of campaigns only, no invented goals.
+    tickFlags: ['--no-autopilot', '--no-campaigns'].filter((flag) => hasFlag(args, flag)),
   });
   fs.writeFileSync(scriptPath, script, { mode: 0o755 });
 

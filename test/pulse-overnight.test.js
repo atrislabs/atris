@@ -56,3 +56,11 @@ test('tests that bring their own spawnSync never start a real caffeinate', () =>
   assert.equal(out.ok, true);
   assert.equal(out.keep_awake, null);
 });
+
+test('install --no-autopilot bakes it into every tick of the heartbeat script', () => {
+  const { root, home } = workspace();
+  const out = installCommand(['--hours', '1', '--no-autopilot'], root, { homeDir: home, spawnSync: fakes().spawnSync, writeOutput: () => {} });
+  assert.equal(out.ok, true);
+  const script = fs.readFileSync(out.script_path, 'utf8');
+  assert.match(script, /pulse tick --json --no-autopilot/);
+});
