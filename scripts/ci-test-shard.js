@@ -5,10 +5,11 @@
 const fs = require('node:fs');
 const path = require('node:path');
 const { spawnSync } = require('node:child_process');
-// Baseline: GitHub Actions run 38693452528, summed top-level test times
-// per file (commands parts retain their own measured cost). Refresh from
-// complete unit-job logs when the suite changes substantially. Stale weights
-// only affect balance, never which tests are discovered.
+// Baseline: GitHub Actions run 38953243962, summed top-level test-body
+// times per file from all eight unit logs, excluding nested diagnostics.
+// Weights model body load, not file startup or shard wall time. Refresh from
+// complete logs when the suite changes substantially. Stale weights affect
+// balance only, never which tests are discovered.
 const durations = require('../test/ci-file-durations.json');
 const pattern = '**/{test,test/**/*,test-*,*[._-]test}.{js,mjs,cjs,ts,mts,cts}';
 
