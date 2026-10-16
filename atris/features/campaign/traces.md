@@ -51,10 +51,10 @@ The header row gives the schema name and version, the judge's runner (for exampl
 
 ## How reward is computed
 
-Missions are grouped by the judge runs on either side of where they ended. Missions that ended between the same two runs form a batch.
+Missions are grouped by the judge runs on either side of where they ended. Missions that ended between the same two runs form a batch. The batch keeps every ended mission for diagnosis. An explicit `fault` means the job never ran: its reward is null, its real costs and judge fields stay visible, and it takes no share of the measured change. The other missions divide the full change, positive or negative. A failed or reverted job can still be real work, and legacy manual work with no recorded steps keeps its existing eligibility. Eligibility follows the same effective outcome that the trace already renders.
 
 ```text
-reward = (reading_after - reading_before) / batch size
+reward = (reading_after - reading_before) / eligible missions in the batch
 ```
 
 `reading_before` is the last judge run before the mission ended, `reading_after` is the first one after. A reading is the stored graded number, else the counts in the stored summary, else 1 for a pass and 0 for a fail (`reading_source` says which). A mission with no judge run after it yet has `reward: null` and a `credit_note` saying why.
@@ -63,7 +63,7 @@ An accepted `set-judge` between those two runs starts a fresh comparison, even w
 
 This boundary follows recorded resets. It does not detect silent edits to a judge file without `set-judge`, or retract lessons and observed attempts already written by an earlier version. Real command/store/export/planner controls: `node --test test/campaign-judge-boundary.test.js`.
 
-Splitting a batch equally is honest about what we know: the judge saw the batch land together, not each mission alone. A campaign that wants sharper credit runs the judge after each mission (the loop does this when missions run one at a time).
+Splitting eligible work equally is honest about what we know: the judge saw the batch land together, not each mission alone. A campaign that wants sharper credit runs the judge after each mission (the loop does this when missions run one at a time).
 
 ## The Goodhart guard
 
