@@ -91,3 +91,12 @@ test('a campaign another live run drives is seen as taken; a dead holder is not'
   fs.writeFileSync(lockPath(home, 'cmp-gone'), JSON.stringify({ pid: 999999, host: os.hostname() }));
   assert.equal(liveHolder(home, 'cmp-gone', { isAlive: () => false }), null);
 });
+
+test('tick runs one mission at a time unless asked for more', async () => {
+  const store = createMemoryStore({ origin: 'laptop' });
+  await start(store, 'cmp-solo');
+  const asked = [];
+  const deps = { loopDeps: { skipReconcile: true, cli: async () => ({ code: 0, out: '', err: '' }), ask: async (root, view, prompt) => { asked.push(prompt); return { ok: true, engine: 'fake', text: '[]' }; } } };
+  await run(store, ['tick', '--max-steps', '2'], deps);
+  assert.ok(asked.some((p) => /up to 1 mission/i.test(p) || /propose 1 /i.test(p) || /1 mission/i.test(p)), asked.join('\n---\n').slice(0, 400));
+});
