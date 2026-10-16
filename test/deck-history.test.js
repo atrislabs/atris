@@ -5,8 +5,9 @@ const os = require('os');
 const path = require('path');
 const { recordBuild, readHistory, historyFor, specHash } = require('../lib/deck-history');
 
-function tmpLedger() {
+function tmpLedger(t) {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'deck-hist-'));
+  t.after(() => fs.rmSync(dir, { recursive: true, force: true }));
   return path.join(dir, 'deck-history.jsonl');
 }
 
@@ -17,8 +18,8 @@ test('specHash is stable for the same spec and differs for changed specs', () =>
   assert.notEqual(specHash(SPEC), specHash({ ...SPEC, theme: 'noir' }));
 });
 
-test('recordBuild appends a line and readHistory parses it', () => {
-  const ledger = tmpLedger();
+test('recordBuild appends a line and readHistory parses it', (t) => {
+  const ledger = tmpLedger(t);
   const entry = recordBuild({ spec: SPEC, specPath: 'decks/a.json', presentationId: 'P1', mode: 'create', at: '2026-06-24T10:00:00Z' }, ledger);
   assert.equal(entry.slideCount, 2);
   assert.equal(entry.theme, 'ink');
@@ -28,8 +29,8 @@ test('recordBuild appends a line and readHistory parses it', () => {
   assert.equal(all[0].presentationId, 'P1');
 });
 
-test('historyFor filters by spec path, basename, hash, and presentation id', () => {
-  const ledger = tmpLedger();
+test('historyFor filters by spec path, basename, hash, and presentation id', (t) => {
+  const ledger = tmpLedger(t);
   recordBuild({ spec: SPEC, specPath: 'decks/a.json', presentationId: 'P1', mode: 'create', at: '2026-06-24T10:00:00Z' }, ledger);
   recordBuild({ spec: SPEC, specPath: 'decks/a.json', presentationId: 'P1', mode: 'update', at: '2026-06-24T11:00:00Z' }, ledger);
   recordBuild({ spec: { theme: 'noir', slides: [] }, specPath: 'decks/b.json', presentationId: 'P2', mode: 'create', at: '2026-06-24T12:00:00Z' }, ledger);
@@ -40,8 +41,8 @@ test('historyFor filters by spec path, basename, hash, and presentation id', () 
   assert.equal(historyFor(specHash(SPEC), ledger).length, 2);
 });
 
-test('readHistory tolerates a corrupt line', () => {
-  const ledger = tmpLedger();
+test('readHistory tolerates a corrupt line', (t) => {
+  const ledger = tmpLedger(t);
   recordBuild({ spec: SPEC, presentationId: 'P1' }, ledger);
   fs.appendFileSync(ledger, 'not json\n');
   recordBuild({ spec: SPEC, presentationId: 'P3' }, ledger);

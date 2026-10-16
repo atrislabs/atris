@@ -50,8 +50,9 @@ function makeApi(id) {
   };
 }
 
-test('lint -> build -> review -> confirm runs the whole pipeline', async () => {
+test('lint -> build -> review -> confirm runs the whole pipeline', async (t) => {
   const outRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'deck-int-'));
+  t.after(() => fs.rmSync(outRoot, { recursive: true, force: true }));
   const ledger = path.join(outRoot, 'deck-receipts.jsonl');
   const api = makeApi('GP1');
 

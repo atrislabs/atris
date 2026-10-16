@@ -100,8 +100,9 @@ test('every shipped deck spec lints without errors', () => {
   }
 });
 
-test('autoReviewSlides flags missing and near-empty thumbnails, passes real ones', async () => {
+test('autoReviewSlides flags missing and near-empty thumbnails, passes real ones', async (t) => {
   const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'deck-auto-'));
+  t.after(() => fs.rmSync(tmp, { recursive: true, force: true }));
   const good = path.join(tmp, 'good.png');
   const blank = path.join(tmp, 'blank.png');
   fs.writeFileSync(good, Buffer.alloc(500, 1));
@@ -118,8 +119,9 @@ test('autoReviewSlides flags missing and near-empty thumbnails, passes real ones
   assert.equal(summary.results[2].ok, false);
 });
 
-test('autoReviewSlides invokes an optional vision hook and honors its verdict', async () => {
+test('autoReviewSlides invokes an optional vision hook and honors its verdict', async (t) => {
   const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'deck-auto-'));
+  t.after(() => fs.rmSync(tmp, { recursive: true, force: true }));
   const png = path.join(tmp, 'a.png');
   fs.writeFileSync(png, Buffer.alloc(500, 1));
   const summary = await autoReviewSlides([{ index: 1, thumbnail: png }], {
@@ -129,8 +131,9 @@ test('autoReviewSlides invokes an optional vision hook and honors its verdict', 
   assert.match(summary.results[0].reason, /overlaps/);
 });
 
-test('reviewDeck with auto attaches an autoReview summary to the manifest', async () => {
+test('reviewDeck with auto attaches an autoReview summary to the manifest', async (t) => {
   const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'deck-review-'));
+  t.after(() => fs.rmSync(tmp, { recursive: true, force: true }));
   const png = Buffer.from(
     'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==',
     'base64',
@@ -157,8 +160,9 @@ test('reviewDeck with auto attaches an autoReview summary to the manifest', asyn
   }
 });
 
-test('reviewDeck downloads thumbnails and writes manifest', async () => {
+test('reviewDeck downloads thumbnails and writes manifest', async (t) => {
   const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'deck-review-'));
+  t.after(() => fs.rmSync(tmp, { recursive: true, force: true }));
   const png = Buffer.from(
     'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==',
     'base64',
@@ -198,8 +202,9 @@ test('reviewDeck downloads thumbnails and writes manifest', async () => {
   }
 });
 
-test('confirmReview marks manifest ready', () => {
+test('confirmReview marks manifest ready', (t) => {
   const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'deck-review-'));
+  t.after(() => fs.rmSync(tmp, { recursive: true, force: true }));
   const dir = path.join(tmp, 'deck999');
   fs.mkdirSync(dir, { recursive: true });
   fs.writeFileSync(path.join(dir, 'review.json'), `${JSON.stringify({
@@ -215,8 +220,9 @@ test('confirmReview marks manifest ready', () => {
   assert.equal(packet.ready, true);
 });
 
-test('confirmReview emits a Center Study receipt next to the manifest and on the ledger', () => {
+test('confirmReview emits a Center Study receipt next to the manifest and on the ledger', (t) => {
   const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'deck-review-'));
+  t.after(() => fs.rmSync(tmp, { recursive: true, force: true }));
   const ledger = path.join(tmp, 'deck-receipts.jsonl');
   const dir = path.join(tmp, 'deckCS');
   fs.mkdirSync(dir, { recursive: true });
