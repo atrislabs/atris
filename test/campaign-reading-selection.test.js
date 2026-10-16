@@ -75,7 +75,7 @@ test('actual identical judge scores keep their first choice and fair overnight o
   const stages = [sample()];
   const reset = run(['set-judge', 'cmp-high', high]);
   assert.equal(reset.campaign.judge, high, 'the actual measuring command has not changed');
-  assert.equal(reset.campaign.last_judge.reading, null, 'this supported command stores the real score in its summary');
+  assert.equal(reset.campaign.last_judge.reading, 0.8, 'the reset retains the actual measured score');
   assert.equal(reset.campaign.answer.text, '8 of 10 live');
   stages.push(sample());
   run(['judge', 'cmp-high'], 1);
