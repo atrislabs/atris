@@ -14,7 +14,7 @@ function campaign(budget = 10) {
 
 // Missions simulated straight into the store: start holds the reserve, run
 // records one costed tick and ends the mission the way the real hooks do.
-function fakeCli(store, { cost = 0.25, failStart = () => false } = {}) {
+function fakeCli(store, { cost = 0.25, failStart = () => false, neverRuns = null } = {}) {
   const calls = [];
   return {
     calls,
@@ -28,6 +28,7 @@ function fakeCli(store, { cost = 0.25, failStart = () => false } = {}) {
         store.append({ campaign_id: 'cmp-loop', type: 'budget_reserved', actor: owner, data: { mission_id: id, amount_usd: Number(args[args.indexOf('--reserve') + 1]) } });
         return { code: 0, out: '{}', err: '' };
       }
+      if (args[1] === 'run' && neverRuns) return { code: 1, out: '', err: neverRuns };
       if (args[1] === 'run') {
         store.append({ campaign_id: 'cmp-loop', type: 'step', actor: 'builder', data: { mission_id: id, cost_usd: cost } });
         store.append({ campaign_id: 'cmp-loop', type: 'mission_ended', actor: 'builder', data: { mission_id: id, outcome: 'kept', cost_usd: cost } });
@@ -102,6 +103,24 @@ test('a mission that cannot start is vetoed so the queue moves on', async () => 
   const result = await loop.step('cmp-loop');
   assert.equal(result.reason, 'no claimed mission could start');
   assert.equal(getCampaign(store, 'cmp-loop').missions.find((m) => m.id.startsWith('m-')).status, 'vetoed');
+});
+
+test('a job that never ran ends as a fault with its reason, not as failed work', async () => {
+  const store = campaign(10);
+  const { cli, calls } = fakeCli(store, { neverRuns: 'error: engine codex not found on PATH' });
+  const loop = makeLoop('/x', { parallel: 1 }, {
+    store, cli, log: () => {}, skipReconcile: true,
+    judge: () => ({ passed: false, summary: 'no' }),
+    ask: async () => ({ ok: true, text: proposals(1) }),
+  });
+  await loop.step('cmp-loop');
+  await loop.step('cmp-loop');
+  await loop.step('cmp-loop');
+  const m = getCampaign(store, 'cmp-loop').missions.find((x) => x.id.startsWith('m-'));
+  assert.equal(m.status, 'ended');
+  assert.equal(m.outcome, 'fault');
+  assert.equal(m.reason, 'error: engine codex not found on PATH');
+  assert.ok(calls.includes('mission stop'), 'the mission record is still closed');
 });
 
 test('proposals are parsed strictly: unknown members fall back to the owner, verify defaults to the judge', () => {
