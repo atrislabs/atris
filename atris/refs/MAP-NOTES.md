@@ -2383,9 +2383,11 @@ rg "foldMapNotesOnMain|foldNotesText|foldDue|map-notes.d|map_fold|last_map_fold_
 
 ### overnight campaign execution and complete learning reports
 
-`commands/campaign.js:564` wires the real locked campaign step; `lib/campaign-rsi.js:548` awaits it, rotates campaigns, and records failed starts. `lib/campaign-rsi.js:103` leaves members without measured judge gains unproven. `bin/atris.js:2019` drains large reports before exit. Real runtime checks: `test/campaign-overnight-runtime.test.js`, `test/campaign-json-output.test.js`, `test/campaign-rsi-evidence.test.js`, and `test/campaign-rsi-recorder.test.js`.
+`commands/campaign.js:564` wires the real locked campaign step; `lib/campaign-rsi.js:580` awaits it, rotates campaigns, and records failed starts. `lib/campaign-rsi.js:104` leaves members without measured judge gains unproven. `bin/atris.js:2019` drains large reports before exit. Real runtime checks: `test/campaign-overnight-runtime.test.js`, `test/campaign-json-output.test.js`, `test/campaign-rsi-evidence.test.js`, and `test/campaign-rsi-recorder.test.js`.
 
 Legacy skipped proof refresh: the recorder regression also checks that later judge evidence updates the original node once, with identity and unknown/neutral results preserved.
+
+Complete source evidence: `lib/mission-code-provenance.js:78` captures a clean Git base, `lib/mission-code-provenance.js:87` collects every committed path, and `commands/mission.js:6636` puts that evidence in actual mission receipts. `lib/campaign-rsi.js:308` checks the receipt, actual work-step engines, and Git history before export. `lib/rsi-record.js:374` records observed history with original times and no policy credit. Regressions: `test/mission-code-provenance.test.js`, `test/campaign-rsi-recorder.test.js`, `test/rsi-observed.test.js`, and `test/campaign-trace.test.js`.
 
 ### preserve source branches for queued merges
 

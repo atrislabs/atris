@@ -113,6 +113,25 @@ test('redacted by default: no free text, pseudonymous ids, people hidden', () =>
   assert.equal(full.rows[1].judge_output_tail, 'ℹ pass 3\nℹ fail 2\nsecret stack trace');
 });
 
+test('actual work engines override the requested runner and receipt paths stay private by default', () => {
+  seq = 0;
+  const events = [
+    ev('campaign_started', 0, { title: 'Execute', judge: 'false', budget: 10 }),
+    ev('mission_started', 1, { mission_id: 'm-work', member: 'builder', engine: 'codex_goal' }),
+    ev('step', 2, { mission_id: 'm-work', kind: 'plan', engine: 'codex' }),
+    ev('step', 3, { mission_id: 'm-work', engine: 'claude', cost_usd: 0 }),
+    ev('mission_ended', 4, { mission_id: 'm-work', outcome: 'kept', cost_usd: 0, receipt_path: 'atris/runs/private-job.json' }),
+  ];
+  const full = buildTrace(events, { redact: false });
+  assert.equal(full.rows[0].action.engine, 'claude');
+  assert.deepEqual(full.rows[0].execution_engines, ['claude']);
+  assert.equal(full.rows[0].receipt_path, 'atris/runs/private-job.json');
+  const redacted = buildTrace(events);
+  assert.equal(redacted.rows[0].receipt_path, undefined);
+  assert.equal(redacted.rows[0].execution_engines, undefined);
+  assert.doesNotMatch(traceLines(redacted), /private-job/);
+});
+
 test('the same events in any order give the same trace', () => {
   const events = multiBatchLog();
   const shuffled = events.slice().reverse();
