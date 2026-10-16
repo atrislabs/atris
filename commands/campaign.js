@@ -11,7 +11,7 @@ const path = require('path');
 const { spawn } = require('child_process');
 const { readFlag } = require('../lib/arg-parser');
 const { CAMPAIGN_ID, isHumanActor, validateCampaign } = require('../lib/campaign-schema');
-const { decide } = require('../lib/campaign-core');
+const { decide, paysDollars } = require('../lib/campaign-core');
 const { campaignDbPath, getCampaign, listCampaigns, newCampaignId, openCampaignStore } = require('../lib/campaign-store');
 const { findHoldout, moveHoldoutBack, moveHoldoutIn, scrub } = require('../lib/campaign-holdout');
 const { judgeRanData, judgeReading, outputTail } = require('../lib/campaign-reading');
@@ -262,22 +262,15 @@ function requireCampaign(ctx, id) {
   return { view };
 }
 
-// Spend is real dollars only when billing is API or Atris runs the campaign on
-// its own engines (basis atris_cloud). Otherwise the work ran on the person's own
-// subscriptions: they paid $0, and cost_usd is kept as the API-price efficiency figure.
-function paysDollars(ctx, id) {
-  if (!ctx) return true;
-  if (process.env.ATRIS_BILLING === 'api') return true;
-  const start = (ctx.store.read(id) || [])[0];
-  return Boolean(start && start.data && start.data.basis === 'atris_cloud');
-}
-
+// On a subscription the budget is still a cap, measured at API prices, so the
+// person sees how much of it is used without a dollar figure they never paid.
 function spentText(view, paid) {
   if (paid) return `${money(view.budget.spent)} spent of ${money(view.budget.total)}`;
-  return `$0 spent of ${money(view.budget.total)} on your subscription (${money(view.budget.spent)} at API prices)`;
+  const used = view.budget.total > 0 ? Math.round((view.budget.spent / view.budget.total) * 100) : 0;
+  return `on your subscription, nothing spent · ${used}% of the budget used`;
 }
 
-function renderList(views, ctx) {
+function renderList(views) {
   if (!views.length) {
     return 'No campaigns yet. Start one:\n  atris campaign "<goal as a sentence>" --judge "<command that fails today>"';
   }
@@ -286,14 +279,14 @@ function renderList(views, ctx) {
   for (const view of sorted) {
     const running = view.missions.filter((m) => m.status === 'running').length;
     lines.push(`${clip(view.title)}  (${view.id})`);
-    const spend = noLimit(view) ? '' : ` · ${spentText(view, paysDollars(ctx, view.id))}`;
+    const spend = noLimit(view) ? '' : ` · ${spentText(view, paysDollars(view))}`;
     lines.push(`  ${view.state.replace(/_/g, ' ')}${spend} · ${running} mission${running === 1 ? '' : 's'} running · answer ${view.answer.confidence}`);
     lines.push(`  next: ${nextMove(view).text}`);
   }
   return lines.join('\n');
 }
 
-function renderShow(view, ctx) {
+function renderShow(view) {
   const next = nextMove(view).text;
   const lines = [`${clip(view.title)}  (${view.id})`, ''];
   const row = (label, value) => lines.push(`${label.padEnd(9)} ${value}`);
@@ -302,8 +295,8 @@ function renderShow(view, ctx) {
   row('judge', `${view.judge}${last ? ` · last run ${last.passed ? 'passed' : 'failed'} at ${last.at}` : ' · never run'}${view.judge_due && last ? ' · due again' : ''}`);
   row('answer', `${view.answer.confidence}${view.answer.text ? `: ${view.answer.text}` : ''}`);
   if (!noLimit(view)) {
-    const paid = paysDollars(ctx, view.id);
-    row('budget', `${spentText(view, paid)} · ${money(view.budget.reserved)} reserved · ${money(view.budget.available)} left${paid ? '' : ' at API prices'}`);
+    const paid = paysDollars(view);
+    row('budget', paid ? `${spentText(view, paid)} · ${money(view.budget.reserved)} reserved · ${money(view.budget.available)} left` : spentText(view, paid));
   }
   row('owner', view.owner + (view.standing ? ' · standing (a passing judge means healthy, not done)' : ''));
   if (view.bet) row('bet', `${view.bet.text}${view.bet.wrong_if ? ` · wrong if ${view.bet.wrong_if}` : ''}`);
@@ -311,7 +304,7 @@ function renderShow(view, ctx) {
   row('seats', view.seats.length ? view.seats.map((s) => (s.role ? `${s.member} (${s.role})` : s.member)).join(', ') : 'none');
   row('missions', view.missions.length ? '' : 'none');
   for (const m of view.missions) {
-    const cost = m.cost_usd === null ? '' : ` · ${money(m.cost_usd)}`;
+    const cost = m.cost_usd === null || !paysDollars(view) ? '' : ` · ${money(m.cost_usd)}`;
     lines.push(`  ${m.id.padEnd(22)} ${m.status.padEnd(8)} ${m.member || '-'}${m.outcome ? ` · ${m.outcome}` : ''}${cost}`);
   }
   row('asks', view.asks.length ? '' : 'none');
@@ -416,7 +409,7 @@ async function cmdStart(args, ctx) {
   }
   const view = getCampaign(ctx.store, id);
   const synced = cloud && cloud.ok ? `\nin the cloud: ${cloud.pushed} event${cloud.pushed === 1 ? '' : 's'} sent` : '';
-  ctx.out(`started ${view.title} (${id})${synced}\n${renderShow(view, ctx)}`, { ok: true, action: 'campaign_started', campaign: view, next: decide(view), ...(cloud ? { cloud } : {}) });
+  ctx.out(`started ${view.title} (${id})${synced}\n${renderShow(view)}`, { ok: true, action: 'campaign_started', campaign: view, next: decide(view), ...(cloud ? { cloud } : {}) });
   // --run keeps going: plan and run missions until the judge passes or a stop.
   if (args.includes('--run')) return cmdLoop(['run', id, ...args.slice(2)], ctx, 'run');
   return 0;
@@ -444,7 +437,7 @@ async function cmdSync(args, ctx) {
     return 1;
   }
   const after = getCampaign(ctx.store, view.id);
-  ctx.out(`${describeSync(result)}\n${renderShow(after, ctx)}`, { ...result, campaign: after, next: decide(after) });
+  ctx.out(`${describeSync(result)}\n${renderShow(after)}`, { ...result, campaign: after, next: decide(after) });
   return 0;
 }
 
@@ -509,7 +502,7 @@ function describeCloudRun(data) {
 function cmdShow(args, ctx) {
   const { view, error } = requireCampaign(ctx, positionals(args)[1]);
   if (error !== undefined) return error;
-  ctx.out(renderShow(view, ctx), { ok: true, campaign: view, next: decide(view) });
+  ctx.out(renderShow(view), { ok: true, campaign: view, next: decide(view) });
   return 0;
 }
 
@@ -533,7 +526,7 @@ async function cmdSetJudge(args, ctx) {
   ctx.append(view.id, 'judge_set', { judge, from: view.judge });
   ctx.append(view.id, 'judge_ran', { passed: reading.passed, summary: reading.summary || `exit ${reading.exit}`, seconds: reading.seconds }, 'judge');
   const after = getCampaign(ctx.store, view.id);
-  ctx.out(`judge changed to: ${judge}\n${renderShow(after, ctx)}`, { ok: true, action: 'judge_set', campaign: after, next: decide(after) });
+  ctx.out(`judge changed to: ${judge}\n${renderShow(after)}`, { ok: true, action: 'judge_set', campaign: after, next: decide(after) });
   return 0;
 }
 
@@ -546,7 +539,7 @@ async function cmdJudge(args, ctx) {
   ctx.append(view.id, 'judge_ran', judgeRanData(reading), 'judge');
   const after = getCampaign(ctx.store, view.id);
   const verdict = reading.passed ? 'passed' : 'failed';
-  ctx.out(`judge ${verdict} in ${reading.seconds}s: ${reading.summary || `exit ${reading.exit}`}\n${renderShow(after, ctx)}`,
+  ctx.out(`judge ${verdict} in ${reading.seconds}s: ${reading.summary || `exit ${reading.exit}`}\n${renderShow(after)}`,
     { ok: true, action: 'judge_ran', passed: reading.passed, reading, campaign: after, next: decide(after) });
   return reading.passed ? 0 : 1;
 }
@@ -593,7 +586,7 @@ function simpleEvent(type, buildData, describe, toCloud = null) {
     }
     if (via === 'local') ctx.append(view.id, type, built.data);
     const after = getCampaign(ctx.store, view.id);
-    ctx.out(`${describe(built.data, after)}\n${renderShow(after, ctx)}`, { ok: true, action: type, via, campaign: after, next: decide(after) });
+    ctx.out(`${describe(built.data, after)}\n${renderShow(after)}`, { ok: true, action: type, via, campaign: after, next: decide(after) });
     return 0;
   };
 }
@@ -664,7 +657,7 @@ const cmdEvent = (args, ctx) => {
     throw err;
   }
   const after = getCampaign(ctx.store, view.id);
-  ctx.out(`recorded ${type}\n${renderShow(after, ctx)}`, { ok: true, action: type, campaign: after, next: decide(after) });
+  ctx.out(`recorded ${type}\n${renderShow(after)}`, { ok: true, action: type, campaign: after, next: decide(after) });
   return 0;
 };
 
@@ -731,13 +724,13 @@ async function driveLoop(args, ctx, verb, view) {
   if (verb === 'propose') {
     const proposals = await loop.propose(view.id);
     const after = getCampaign(ctx.store, view.id);
-    ctx.out(proposals.length ? `${proposals.length} proposed and claimed\n${renderShow(after, ctx)}` : 'nothing usable was proposed', { ok: proposals.length > 0, proposals, campaign: after, next: decide(after) });
+    ctx.out(proposals.length ? `${proposals.length} proposed and claimed\n${renderShow(after)}` : 'nothing usable was proposed', { ok: proposals.length > 0, proposals, campaign: after, next: decide(after) });
     return proposals.length ? 0 : 1;
   }
   if (verb === 'step') {
     const result = await loop.step(view.id);
     const after = getCampaign(ctx.store, view.id);
-    ctx.out(`${result.stop ? `stopped: ${result.reason}` : `did: ${result.did}`}\n${renderShow(after, ctx)}`, { ok: true, ...result, campaign: after, next: decide(after), sync_warnings: syncWarnings });
+    ctx.out(`${result.stop ? `stopped: ${result.reason}` : `did: ${result.did}`}\n${renderShow(after)}`, { ok: true, ...result, campaign: after, next: decide(after), sync_warnings: syncWarnings });
     return 0;
   }
   const work = readFlag(args, '--work', '');
@@ -753,12 +746,12 @@ async function driveLoop(args, ctx, verb, view) {
       return ctx.fail(err.message);
     }
     const result = await cadence.run(view.id);
-    ctx.out(`stopped after ${result.rounds} round${result.rounds === 1 ? '' : 's'}: ${result.reason}\n${renderShow(result.campaign, ctx)}`, { ok: true, ...result, next: decide(result.campaign) });
+    ctx.out(`stopped after ${result.rounds} round${result.rounds === 1 ? '' : 's'}: ${result.reason}\n${renderShow(result.campaign)}`, { ok: true, ...result, next: decide(result.campaign) });
     return 0;
   }
   const maxSteps = Number(readFlag(args, '--max-steps', '')) || 20;
   const result = await loop.run(view.id, maxSteps);
-  ctx.out(`stopped after ${result.steps} step${result.steps === 1 ? '' : 's'}: ${result.reason}\n${renderShow(result.campaign, ctx)}`, { ok: true, ...result, next: decide(result.campaign), sync_warnings: syncWarnings });
+  ctx.out(`stopped after ${result.steps} step${result.steps === 1 ? '' : 's'}: ${result.reason}\n${renderShow(result.campaign)}`, { ok: true, ...result, next: decide(result.campaign), sync_warnings: syncWarnings });
   return 0;
 }
 
@@ -796,7 +789,7 @@ function campaignCommand(args = [], deps = {}) {
     const views = all.filter((view) => !view.error);
     const unreadable = all.filter((view) => view.error);
     const notes = unreadable.map((view) => `${view.id}  cannot be read (${view.error})`);
-    ctx.out([renderList(views, ctx), ...notes].filter(Boolean).join('\n'), { ok: true, campaigns: views.map((view) => ({ ...view, next: decide(view) })), unreadable });
+    ctx.out([renderList(views), ...notes].filter(Boolean).join('\n'), { ok: true, campaigns: views.map((view) => ({ ...view, next: decide(view) })), unreadable });
     return 0;
   }
   const handler = VERBS[verb];
