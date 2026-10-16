@@ -55,9 +55,15 @@ function escapeRe(value) {
   return String(value).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 }
 
-function notesWorkspace(id, notes) {
-  const cwd = fs.mkdtempSync(path.join(os.tmpdir(), 'atris-yt-notes-save-'));
-  const workDir = fs.mkdtempSync(path.join(os.tmpdir(), 'atris-yt-notes-work-'));
+function makeTempDir(t, prefix) {
+  const tmp = fs.mkdtempSync(path.join(os.tmpdir(), prefix));
+  t.after(() => fs.rmSync(tmp, { recursive: true, force: true }));
+  return tmp;
+}
+
+function notesWorkspace(t, id, notes) {
+  const cwd = makeTempDir(t, 'atris-yt-notes-save-');
+  const workDir = makeTempDir(t, 'atris-yt-notes-work-');
   fs.mkdirSync(path.join(cwd, 'atris', 'wiki'), { recursive: true });
   fs.writeFileSync(path.join(workDir, `yt_${id}.md`), notes);
   return { cwd, workDir };
@@ -99,14 +105,14 @@ test('notesExperimentSlug lowercases the video id', () => {
   assert.equal(notesExperimentSlug('abc_def'), 'notes-abc-def');
 });
 
-test('youtube notes --save refuses a thin brief and writes no atris files', async () => {
+test('youtube notes --save refuses a thin brief and writes no atris files', async (t) => {
   const numbers = extractTeachNumbers(THIN_NOTES);
   const mechanisms = extractTeachMechanisms(THIN_NOTES);
   assert.deepEqual(numbers, []);
   assert.deepEqual(mechanisms, []);
   assert.equal(isThinTeachLesson({ numbers, mechanisms }), true);
 
-  const { cwd, workDir } = notesWorkspace('thin01', THIN_NOTES);
+  const { cwd, workDir } = notesWorkspace(t, 'thin01', THIN_NOTES);
   const out = collect();
   const status = await youtubeCommand(['notes', THIN_URL, '--save'], {
     cwd,
@@ -127,8 +133,8 @@ test('youtube notes --save refuses a thin brief and writes no atris files', asyn
   assert.equal(fs.existsSync(path.join(cwd, 'atris', 'experiments')), false);
 });
 
-test('youtube notes without --save stay stdout only', async () => {
-  const { cwd, workDir } = notesWorkspace('notes01', RICH_NOTES);
+test('youtube notes without --save stay stdout only', async (t) => {
+  const { cwd, workDir } = notesWorkspace(t, 'notes01', RICH_NOTES);
   const out = collect();
   const status = await youtubeCommand(['notes', RICH_URL], {
     cwd,
@@ -150,9 +156,9 @@ test('youtube notes without --save stay stdout only', async () => {
   assert.equal(fs.existsSync(path.join(cwd, 'atris', 'experiments')), false);
 });
 
-test('youtube notes rich --save mints a measure.py that validate.py accepts', async () => {
+test('youtube notes rich --save mints a measure.py that validate.py accepts', async (t) => {
   assert.ok(pythonCmd, 'python3 is required to score the minted pack');
-  const { cwd, workDir } = notesWorkspace('notes01', RICH_NOTES);
+  const { cwd, workDir } = notesWorkspace(t, 'notes01', RICH_NOTES);
   const out = collect();
   const status = await youtubeCommand(['notes', RICH_URL, '--save'], {
     cwd,
@@ -217,9 +223,9 @@ test('youtube notes rich --save mints a measure.py that validate.py accepts', as
   assert.doesNotMatch(claim.sidecar, /omakase model/i);
 });
 
-test('youtube notes rich --save keeps the pack when the runner exits 429', async () => {
+test('youtube notes rich --save keeps the pack when the runner exits 429', async (t) => {
   assert.ok(pythonCmd, 'python3 is required to score the minted pack');
-  const { cwd, workDir } = notesWorkspace('ntrate1', RICH_NOTES);
+  const { cwd, workDir } = notesWorkspace(t, 'ntrate1', RICH_NOTES);
   const out = collect();
   const status = await youtubeCommand(['notes', 'https://www.youtube.com/watch?v=ntrate1', '--save'], {
     cwd,
@@ -244,9 +250,9 @@ test('youtube notes rich --save keeps the pack when the runner exits 429', async
   assert.doesNotMatch(claim.sidecar, /omakase model/i);
 });
 
-test('youtube notes rich --save keeps the pack when the runner exits with a later error', async () => {
+test('youtube notes rich --save keeps the pack when the runner exits with a later error', async (t) => {
   assert.ok(pythonCmd, 'python3 is required to score the minted pack');
-  const { cwd, workDir } = notesWorkspace('ntlater1', RICH_NOTES);
+  const { cwd, workDir } = notesWorkspace(t, 'ntlater1', RICH_NOTES);
   const out = collect();
   const status = await youtubeCommand(['notes', 'https://www.youtube.com/watch?v=ntlater1', '--save'], {
     cwd,
@@ -271,10 +277,10 @@ test('youtube notes rich --save keeps the pack when the runner exits with a late
   assert.doesNotMatch(claim.sidecar, /omakase model/i);
 });
 
-test('two-url notes batch prints teach next for the first ok url', async () => {
+test('two-url notes batch prints teach next for the first ok url', async (t) => {
   const first = 'https://www.youtube.com/watch?v=okfirst';
   const second = 'https://www.youtube.com/watch?v=oksecond';
-  const { cwd, workDir } = notesWorkspace('okfirst', RICH_NOTES);
+  const { cwd, workDir } = notesWorkspace(t, 'okfirst', RICH_NOTES);
   fs.writeFileSync(path.join(workDir, 'yt_oksecond.md'), THIN_NOTES);
   const out = collect();
   const status = await youtubeCommand(['notes', first, second], {
@@ -296,10 +302,10 @@ test('two-url notes batch prints teach next for the first ok url', async () => {
   assert.equal(fs.existsSync(path.join(cwd, 'atris', 'experiments')), false);
 });
 
-test('failed-then-ok notes batch uses the first ok lesson only', async () => {
+test('failed-then-ok notes batch uses the first ok lesson only', async (t) => {
   const failed = 'https://www.youtube.com/watch?v=badfirst';
   const firstOk = 'https://www.youtube.com/watch?v=oklater';
-  const { cwd, workDir } = notesWorkspace('oklater', RICH_NOTES);
+  const { cwd, workDir } = notesWorkspace(t, 'oklater', RICH_NOTES);
   const out = collect();
   const status = await youtubeCommand(['notes', failed, firstOk], {
     cwd,
@@ -320,10 +326,10 @@ test('failed-then-ok notes batch uses the first ok lesson only', async () => {
   assert.equal(fs.existsSync(path.join(cwd, 'atris', 'experiments')), false);
 });
 
-test('notes --save batch prints keep next and no teach next', async () => {
+test('notes --save batch prints keep next and no teach next', async (t) => {
   const first = 'https://www.youtube.com/watch?v=notes01';
   const second = 'https://www.youtube.com/watch?v=notes02';
-  const { cwd, workDir } = notesWorkspace('notes01', RICH_NOTES);
+  const { cwd, workDir } = notesWorkspace(t, 'notes01', RICH_NOTES);
   fs.writeFileSync(path.join(workDir, 'yt_notes02.md'), RICH_NOTES);
   const out = collect();
   const status = await youtubeCommand(['notes', first, second, '--save'], {
@@ -360,9 +366,9 @@ test('all-failed notes batch prints no teach next', async () => {
   assert.equal(out.lines.filter((line) => line === LEARNER_SCORE_ZERO).length, 0);
 });
 
-test('experiments keep refuses a minted notes pack at 0 and keeps after check tokens', async () => {
+test('experiments keep refuses a minted notes pack at 0 and keeps after check tokens', async (t) => {
   assert.ok(pythonCmd, 'python3 is required to score the minted pack');
-  const { cwd, workDir } = notesWorkspace('notes01', RICH_NOTES);
+  const { cwd, workDir } = notesWorkspace(t, 'notes01', RICH_NOTES);
   const status = await youtubeCommand(['notes', RICH_URL, '--save'], {
     cwd,
     workDir,
