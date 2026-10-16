@@ -80,9 +80,24 @@ test('a campaign that needs a person ends the rounds instead of sleeping', async
 });
 
 test('the review prompt carries the round and the lessons so far', () => {
-  const view = { title: 'T', judge: 'npm test', last_judge: { passed: false, reading: 0.5 }, answer: { text: 'pass 1, fail 1' } };
+  const view = { title: 'T', judge: 'npm test', basis: 'atris_cloud', last_judge: { passed: false, reading: 0.5 }, answer: { text: 'pass 1, fail 1' } };
   const prompt = reviewPrompt(view, { kept: 2, failed: 1, vetoed: 0, spent: 0.6, fresh: [] }, '- keep missions small');
   assert.match(prompt, /This round: 2 kept, 1 failed, 0 could not start, \$0\.6 spent/);
   assert.match(prompt, /reading 0\.5/);
   assert.match(prompt, /- keep missions small/);
+});
+
+test('on your own subscription the review prompt shows no dollars, and API billing does', () => {
+  const saved = process.env.ATRIS_BILLING;
+  delete process.env.ATRIS_BILLING;
+  try {
+    const view = { title: 'T', judge: 'npm test', basis: 'own_engines', last_judge: null, answer: { text: null } };
+    const summary = { kept: 1, failed: 0, vetoed: 0, spent: 1.23, fresh: [{ id: 'm-1', status: 'ended', outcome: 'kept', cost_usd: 1.23 }] };
+    assert.doesNotMatch(reviewPrompt(view, summary, ''), /\$/);
+    process.env.ATRIS_BILLING = 'api';
+    assert.match(reviewPrompt(view, summary, ''), /\$1\.23 spent/);
+  } finally {
+    if (saved === undefined) delete process.env.ATRIS_BILLING;
+    else process.env.ATRIS_BILLING = saved;
+  }
 });

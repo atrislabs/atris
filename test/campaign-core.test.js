@@ -5,7 +5,7 @@ const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const path = require('node:path');
 
-const { decide, fold } = require('../lib/campaign-core');
+const { decide, fold, paysDollars } = require('../lib/campaign-core');
 
 const DIR = path.join(__dirname, 'fixtures', 'campaign');
 const goldens = fs.readdirSync(DIR)
@@ -135,4 +135,25 @@ test('events a fraction of a millisecond apart sort as instants, not rounded', (
   assert.equal(fold([s, paused, resumed]).state, 'paused');
   const offset = { ...ev('resumed', {}, 'human:keshav'), at: '2026-10-15T04:00:00.0003-07:00', origin: 'b', id: 'evt-late' };
   assert.equal(fold([s, paused, offset]).state, 'resting');
+});
+
+test('the view carries the basis the start named, and only atris_cloud or API billing pays dollars', () => {
+  const saved = process.env.ATRIS_BILLING;
+  delete process.env.ATRIS_BILLING;
+  try {
+    const cloud = fold([ev('campaign_started', { title: 'C', judge: 'exit 1', budget: 5, basis: 'atris_cloud' }, 'mission-lead')]);
+    const own = fold([ev('campaign_started', { title: 'O', judge: 'exit 1', budget: 5, basis: 'own_engines' }, 'mission-lead')]);
+    const plain = fold([started()]);
+    assert.equal(cloud.basis, 'atris_cloud');
+    assert.equal(own.basis, 'own_engines');
+    assert.equal('basis' in plain, false);
+    assert.equal(paysDollars(cloud), true);
+    assert.equal(paysDollars(own), false);
+    assert.equal(paysDollars(plain), false);
+    process.env.ATRIS_BILLING = 'api';
+    assert.equal(paysDollars(plain), true);
+  } finally {
+    if (saved === undefined) delete process.env.ATRIS_BILLING;
+    else process.env.ATRIS_BILLING = saved;
+  }
 });
