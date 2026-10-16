@@ -64,6 +64,7 @@ const {
   renderMorningCardRow,
 } = require('../lib/receipt-block');
 const { findCachedMissionStepReceipt } = require('../lib/receipt-evidence');
+const { captureCodeBaseline, collectCodeProvenance } = require('../lib/mission-code-provenance');
 const {
   pruneRuns,
   runsPruneLines,
@@ -4402,6 +4403,7 @@ function seedMissionRunContinuation(parent, root = process.cwd(), proof = '') {
   nextMission.next_action = `decide next mission, then run: ${nextPlan.command}`;
   nextMission.next_action_preview = nextPlan.preview;
 
+  const codeBaseline = captureCodeBaseline(root);
   ensureMemberMissionFile(nextMission.owner, root, nextMission.objective);
   const { mission: saved } = saveMission(assignMissionNumber(nextMission, root), root, 'mission_continuation_started', {
     parent_mission_id: parent.id,
@@ -4409,7 +4411,7 @@ function seedMissionRunContinuation(parent, root = process.cwd(), proof = '') {
     proof: proof || null,
   });
   if (saved.campaign_id) campaignMissions().recordCampaignMissionStarted(root, saved, 0);
-  const worktreeBaseline = captureMissionWorktreeBaseline(saved, root);
+  const worktreeBaseline = captureMissionWorktreeBaseline(saved, root, codeBaseline);
   const seededAt = stampIso();
   const { mission: updatedParent } = saveMission({
     ...parent,
@@ -4656,6 +4658,7 @@ function startMission(args, options = {}) {
     if (nodeModulesSource) mission.node_modules_source = nodeModulesSource;
     process.chdir(created.path);
   }
+  const codeBaseline = captureCodeBaseline(process.cwd());
   if (mission.xp_task_enabled) {
     const xpTask = createMissionXpTask(mission, process.cwd(), asJson);
     mission.xp_task = xpTask;
@@ -4696,7 +4699,7 @@ function startMission(args, options = {}) {
     lane: saved.lane,
     verifier: saved.verifier,
   });
-  const worktreeBaseline = captureMissionWorktreeBaseline(saved, process.cwd());
+  const worktreeBaseline = captureMissionWorktreeBaseline(saved, process.cwd(), codeBaseline);
   const nextTickCommand = `atris mission tick ${saved.id}${saved.verifier ? ' --verify' : ''}`;
   const payload = {
     ok: true,
@@ -4738,6 +4741,7 @@ function startMission(args, options = {}) {
 
 async function startMissionFromRunObjective(objective, args) {
   const asJson = wantsJson(args);
+  const codeBaseline = captureCodeBaseline(process.cwd());
   const rawObjective = String(objective || '').trim();
   const landRun = hasFlag(args, '--land');
   const dryRun = hasFlag(args, '--dry-run');
@@ -4939,7 +4943,7 @@ async function startMissionFromRunObjective(objective, args) {
     lane: saved.lane,
     verifier: saved.verifier,
   });
-  const worktreeBaseline = captureMissionWorktreeBaseline(saved, process.cwd());
+  const worktreeBaseline = captureMissionWorktreeBaseline(saved, process.cwd(), codeBaseline);
   const completedContinuationGoal = completeActiveContinuationForStartedMission(saved, process.cwd());
   const nativeGoalOptions = codexNativeGoalOptionsFromArgs(args);
   const goalSlotHandoff = hasFlag(args, '--take-goal-slot') && isCodexGoalMission(saved)
@@ -6629,6 +6633,7 @@ function writeReceipt(mission, result, root = process.cwd()) {
     tree_hash: treeHashFor(root),
     clean: codeState.clean,
     git_tree: codeState.clean ? codeState.tree : null,
+    code_provenance: collectCodeProvenance(root, loadMissionWorktreeBaseline(mission.id, root)?.code),
     mission_id: mission.id,
     objective: mission.objective,
     owner: mission.owner,
@@ -6864,7 +6869,7 @@ function missionBaselinePath(missionId, root = process.cwd()) {
 // Stored outside missions.jsonl because that log re-appends the full mission
 // record on every save. Captured after start bookkeeping so the mission's own
 // state writes land inside the baseline, not in new_since_baseline.
-function captureMissionWorktreeBaseline(mission, root = process.cwd()) {
+function captureMissionWorktreeBaseline(mission, root = process.cwd(), code = captureCodeBaseline(root)) {
   const snapshot = gitWorktreeSnapshot(root);
   if (!snapshot.available) return null;
   const baselineFile = missionBaselinePath(mission.id, root);
@@ -6880,6 +6885,7 @@ function captureMissionWorktreeBaseline(mission, root = process.cwd()) {
     dirty_count: snapshot.dirty_count,
     dirty_hash: snapshot.dirty_hash,
     paths: Array.from(paths).sort(),
+    code,
   };
   writeJson(baselineFile, baseline);
   return baseline;
