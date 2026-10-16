@@ -3,54 +3,12 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
-const os = require('node:os');
 const path = require('node:path');
-const { spawnSync } = require('node:child_process');
-const { scrubAgentEnv } = require('./helpers/agent-env');
+const { createTaskHelpFixture } = require('./helpers/task-help-fixture');
 
-const repoRoot = path.resolve(__dirname, '..');
-const cliPath = path.join(repoRoot, 'bin', 'atris.js');
-const TIMEOUT_MS = 12000;
+const { hasNodeSqlite, makeTempDir, cleanupTempDir, runCli } =
+  createTaskHelpFixture('atris-task-show-help-');
 const SHOW_USAGE = 'Usage: atris task show <id> [--json]';
-
-function hasNodeSqlite() {
-  try {
-    require('node:sqlite');
-    return true;
-  } catch (_) {
-    return false;
-  }
-}
-
-function makeTempDir(prefix = 'atris-task-show-help-') {
-  return fs.mkdtempSync(path.join(os.tmpdir(), prefix));
-}
-
-function cleanupTempDir(dir) {
-  fs.rmSync(dir, { recursive: true, force: true });
-}
-
-function runCli(args, { cwd, env, timeout = TIMEOUT_MS } = {}) {
-  const result = spawnSync(process.execPath, [cliPath, ...args], {
-    cwd,
-    encoding: 'utf8',
-    timeout,
-    stdio: ['ignore', 'pipe', 'pipe'],
-    env: {
-      ...scrubAgentEnv(),
-      ATRIS_SKIP_UPDATE_CHECK: '1',
-      ATRIS_NO_INTERACTIVE: '1',
-      ATRIS_NONINTERACTIVE: '1',
-      NODE_NO_WARNINGS: '1',
-      ...(env || {}),
-    },
-  });
-  if (result.error && result.error.code === 'ETIMEDOUT') {
-    assert.fail(`cli hung past ${timeout}ms (args: ${args.join(' ')})`);
-  }
-  if (result.error) throw result.error;
-  return result;
-}
 
 function assertShowHelpOnly(res, label) {
   assert.equal(res.status, 0, `${label}: ${res.stdout}\n${res.stderr}`);
