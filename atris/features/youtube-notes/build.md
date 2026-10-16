@@ -1,6 +1,6 @@
 # YouTube Notes: Build Plan
 
-> **For Executor Agent.** This describes the feature as it stands on 2026-10-13. Use it to find the code before changing it.
+> **For Executor Agent.** This describes the feature as it stands on 2026-10-16. Use it to find the code before changing it.
 
 ---
 
@@ -121,6 +121,21 @@ These steps name what shipped, in the order it landed on 2026-09-28. Each one is
 **Validation:**
 - `node --test test/ytnotes.test.js`
 - `node scripts/det/ytrail-bench.js --quick --score`
+
+---
+
+### Step 7: A used-up Gemini no longer holds Haiku back (2026-10-15 to 2026-10-16)
+
+**File:** `scripts/det/ytnotes` (`gemini_quota_wall`, `race_writers`, `start_writer`)
+
+**What it does:**
+- A quota error from Gemini is saved to `$TMPDIR/ytnotes/gemini_quota_until` until its reset, at most 3 hours. While it holds, `auto` skips Gemini and its early start, and never sends Gemini a second request in the same run.
+- When Gemini leads and has no saved quota error, it gets a 1s head start, then the first backup writer (Haiku on this Mac) starts too. The first good answer wins, and Gemini wins a tie. The head start is a real background timer; counting 0.05s polls had stretched it to about 2s.
+- `ATRIS_YTNOTES_HEDGE_SECS=off` waits for Gemini first, as before. While Gemini works, Haiku also runs on every notes request.
+- Five paired runs against the code before the head start: median 10.4s against 13.0s, all passing, 0 quotes dropped.
+
+**Validation:**
+- `node --test test/ytnotes.test.js` (the slow-Gemini and quota tests)
 
 ---
 
