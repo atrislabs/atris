@@ -642,9 +642,23 @@ function reap(root, { ttlDays = DEFAULT_TTL_DAYS, staleHours = DEFAULT_STALE_HOU
     const entry = board.branches.find((b) => b.name === name);
     return entry && entry.ahead > 0;
   });
-  if (withCommits.length > 0) {
+  // A detached worktree's commits ride no branch, so pin each HEAD to a
+  // throwaway ref the bundle can carry. A HEAD that cannot be read keeps
+  // its worktree: no backup, no removal.
+  const unsavedDetached = new Set();
+  const detachedRefs = [];
+  worktreeTargets.forEach((w, i) => {
+    if (w.branch || w.ahead <= 0) return;
+    const head = runGit(['rev-parse', 'HEAD'], { cwd: w.path, check: false });
+    const sha = head.status === 0 ? head.stdout.trim() : '';
+    const ref = `refs/atris-salvage/${path.basename(w.path).replace(/[^A-Za-z0-9._-]/g, '_')}-${i}`;
+    const pinned = sha && runGit(['update-ref', ref, sha], { cwd: root, check: false }).status === 0;
+    if (pinned) detachedRefs.push({ w, ref });
+    else unsavedDetached.add(w.path);
+  });
+  if (withCommits.length > 0 || detachedRefs.length > 0) {
     const bundlePath = path.join(dir, `reap-${timeStamp()}.bundle`);
-    const result = runGit(['bundle', 'create', bundlePath, ...withCommits, '--not', board.base], {
+    const result = runGit(['bundle', 'create', bundlePath, ...withCommits, ...detachedRefs.map((d) => d.ref), '--not', board.base], {
       cwd: root,
       check: false,
     });
@@ -655,11 +669,16 @@ function reap(root, { ttlDays = DEFAULT_TTL_DAYS, staleHours = DEFAULT_STALE_HOU
       // actually back them up.
       receipt.bundleError = String(result.stderr || result.stdout || 'bundle failed').trim().slice(0, 200);
       for (const name of withCommits) targetNames.delete(name);
+      for (const d of detachedRefs) unsavedDetached.add(d.w.path);
     }
+    for (const d of detachedRefs) runGit(['update-ref', '-d', d.ref], { cwd: root, check: false });
+  }
+  for (const w of worktreeTargets) {
+    if (unsavedDetached.has(w.path)) receipt.keptWorktrees.push(`${w.path} (backup of detached commits failed, kept to avoid losing work)`);
   }
 
   const survivingWorktreeTargets = worktreeTargets.filter(
-    (w) => targetNames.has(w.branch) || (includeDetached && w.state === 'detached')
+    (w) => !unsavedDetached.has(w.path) && (targetNames.has(w.branch) || (includeDetached && w.state === 'detached'))
   );
   const activeAtRemoval = survivingWorktreeTargets.length ? readActiveCwds() : [];
   for (const w of survivingWorktreeTargets) {

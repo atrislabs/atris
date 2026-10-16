@@ -455,6 +455,33 @@ test('reap keeps a detached worktree holding commits no branch bundle can cover'
   }
 });
 
+test('forced reap bundles a detached worktree commit before removing it', () => {
+  // --force clears a detached worktree holding unlanded commits; the bundle
+  // must carry that HEAD, or the commits survive only as dangling objects.
+  const { base, repo } = makeTempRepo();
+  try {
+    const wt = path.join(base, 'wt-detached');
+    runGit(['worktree', 'add', '--detach', wt, 'master'], repo);
+    fs.writeFileSync(path.join(wt, 'detached-work.md'), 'only here\n');
+    runGit(['add', '.'], wt);
+    runGit(['commit', '-m', 'detached work'], wt);
+    const sha = runGit(['rev-parse', 'HEAD'], wt).stdout.trim();
+    const staleStamp = new Date(Date.now() - 2 * 60 * 60 * 1000);
+    fs.utimesSync(wt, staleStamp, staleStamp);
+
+    const { reap } = require('../commands/land');
+    const receipt = reap(repo, { remote: false, force: true, activeCwds: [] });
+    assert.ok(!fs.existsSync(wt), JSON.stringify(receipt));
+    assert.ok(receipt.bundle, JSON.stringify(receipt));
+    const heads = runGit(['bundle', 'list-heads', receipt.bundle], repo).stdout;
+    assert.ok(heads.includes(sha), heads);
+    const leftover = runGit(['for-each-ref', 'refs/atris-salvage/'], repo).stdout.trim();
+    assert.equal(leftover, '', 'temporary salvage refs must be removed');
+  } finally {
+    cleanupTempDir(base);
+  }
+});
+
 test('reap salvages a worktree whose dirty diff exceeds the 1MB spawn buffer', () => {
   const { base, repo } = makeTempRepo();
   try {
