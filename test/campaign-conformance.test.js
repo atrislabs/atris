@@ -11,12 +11,14 @@ const { diffPath, runJudge, writeManifest } = require('../scripts/campaign-confo
 
 const JUDGE = path.resolve(__dirname, '..', 'scripts', 'campaign-conformance.js');
 
-function tempDir() {
-  return fs.mkdtempSync(path.join(os.tmpdir(), 'atris-campaign-judge-'));
+function tempDir(t) {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'atris-campaign-judge-'));
+  t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+  return root;
 }
 
-function fixtures() {
-  const dir = tempDir();
+function fixtures(t) {
+  const dir = tempDir(t);
   const view = { id: 'cmp-ship', state: 'resting', budget: { total: 1, spent: 0 } };
   fs.writeFileSync(path.join(dir, 'start.json'), JSON.stringify({ name: 'start', events: [], expected: view }));
   fs.writeFileSync(path.join(dir, 'refused.json'), JSON.stringify({ name: 'refused', events: [], expected: { error: 'no_start' } }));
@@ -26,8 +28,8 @@ function fixtures() {
 }
 
 // A fake surface checkout whose runner prints a fixed answer.
-function surface(output) {
-  const repo = tempDir();
+function surface(t, output) {
+  const repo = tempDir(t);
   fs.mkdirSync(path.join(repo, 'scripts'));
   const runner = path.join(repo, 'scripts', 'campaign-fold-runner');
   fs.writeFileSync(runner, `#!/bin/sh\ncat <<'JSON'\n${JSON.stringify(output)}\nJSON\n`);
@@ -42,19 +44,19 @@ test('values compare by meaning: key order and 1 versus 1.0 do not matter', () =
   assert.equal(diffPath({ a: null }, { a: 0 }), '.a');
 });
 
-test('a fold surface and a view surface that agree pass the judge', () => {
-  const { dir, view } = fixtures();
-  const fold = surface({ kind: 'fold', results: { start: view, refused: { error: 'no_start' } }, decide: [{ action: 'run_judge' }] });
-  const screen = surface({ kind: 'view', results: { start: JSON.parse(JSON.stringify(view)) } });
+test('a fold surface and a view surface that agree pass the judge', (t) => {
+  const { dir, view } = fixtures(t);
+  const fold = surface(t, { kind: 'fold', results: { start: view, refused: { error: 'no_start' } }, decide: [{ action: 'run_judge' }] });
+  const screen = surface(t, { kind: 'view', results: { start: JSON.parse(JSON.stringify(view)) } });
   const report = runJudge({ fixtures: dir, only: ['cli', 'terrace'], overrides: { cli: fold, terrace: screen } });
   assert.equal(report.passed, true, JSON.stringify(report, null, 2));
   assert.deepEqual(report.surfaces.map((s) => s.status), ['pass', 'pass']);
 });
 
-test('a missing runner and a wrong answer both fail, naming where', () => {
-  const { dir, view } = fixtures();
-  const wrong = surface({ kind: 'fold', results: { start: { ...view, state: 'running' }, refused: { error: 'no_start' } }, decide: [{ action: 'propose' }] });
-  const report = runJudge({ fixtures: dir, only: ['cli', 'backend'], overrides: { cli: wrong, backend: tempDir() } });
+test('a missing runner and a wrong answer both fail, naming where', (t) => {
+  const { dir, view } = fixtures(t);
+  const wrong = surface(t, { kind: 'fold', results: { start: { ...view, state: 'running' }, refused: { error: 'no_start' } }, decide: [{ action: 'propose' }] });
+  const report = runJudge({ fixtures: dir, only: ['cli', 'backend'], overrides: { cli: wrong, backend: tempDir(t) } });
   assert.equal(report.passed, false);
   const [cli, backend] = report.surfaces;
   assert.equal(cli.status, 'mismatch');
@@ -62,8 +64,8 @@ test('a missing runner and a wrong answer both fail, naming where', () => {
   assert.equal(backend.status, 'not built');
 });
 
-test('an edited golden file stops the judge before any surface runs', () => {
-  const { dir } = fixtures();
+test('an edited golden file stops the judge before any surface runs', (t) => {
+  const { dir } = fixtures(t);
   fs.appendFileSync(path.join(dir, 'start.json'), ' ');
   const report = runJudge({ fixtures: dir, only: ['cli'], overrides: {} });
   assert.equal(report.passed, false);
@@ -71,17 +73,17 @@ test('an edited golden file stops the judge before any surface runs', () => {
   assert.deepEqual(report.surfaces, []);
 });
 
-test('the command exits 1 on failure and prints plain lines', () => {
-  const { dir } = fixtures();
-  const run = spawnSync(process.execPath, [JUDGE, '--fixtures', dir, '--only', 'backend', '--surface', `backend=${tempDir()}`], { encoding: 'utf8' });
+test('the command exits 1 on failure and prints plain lines', (t) => {
+  const { dir } = fixtures(t);
+  const run = spawnSync(process.execPath, [JUDGE, '--fixtures', dir, '--only', 'backend', '--surface', `backend=${tempDir(t)}`], { encoding: 'utf8' });
   assert.equal(run.status, 1);
   assert.match(run.stdout, /backend +not built/);
   assert.match(run.stdout, /judge fails/);
 });
 
-test('a runner that only echoes the answers cannot pass, and checking nothing is not a pass', () => {
-  const { dir } = fixtures();
-  const repo = tempDir();
+test('a runner that only echoes the answers cannot pass, and checking nothing is not a pass', (t) => {
+  const { dir } = fixtures(t);
+  const repo = tempDir(t);
   fs.mkdirSync(path.join(repo, 'scripts'));
   const runner = path.join(repo, 'scripts', 'campaign-fold-runner');
   fs.writeFileSync(runner, `#!${process.execPath}

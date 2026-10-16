@@ -26,8 +26,15 @@ const {
   DEFAULT_THRESHOLD,
 } = require('../commands/compile');
 
+const roots = [];
+test.after(() => {
+  for (const root of roots) fs.rmSync(root, { recursive: true, force: true });
+});
+
 function makeRoot() {
-  return fs.mkdtempSync(path.join(os.tmpdir(), 'atris-compile-'));
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'atris-compile-'));
+  roots.push(root);
+  return root;
 }
 
 function writeRunner(root, name, body) {

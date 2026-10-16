@@ -9,8 +9,7 @@ const { spawnSync } = require('node:child_process');
 
 const taskStore = require('../lib/task-db');
 
-const repoRoot = path.resolve(__dirname, '..');
-const cliPath = path.join(repoRoot, 'bin', 'atris.js');
+const { runCli } = require('./helpers/task-admin-cli');
 
 function hasNodeSqlite() {
   const result = spawnSync(process.execPath, ['-e', 'require("node:sqlite")'], {
@@ -27,22 +26,6 @@ function makeTempDir() {
 function cleanupTempDir(dir) {
   taskStore.close();
   fs.rmSync(dir, { recursive: true, force: true });
-}
-
-function runCli(args, { cwd, env }) {
-  const result = spawnSync(process.execPath, [cliPath, ...args], {
-    cwd,
-    encoding: 'utf8',
-    timeout: 30000,
-    env: {
-      ...process.env,
-      ATRIS_SKIP_UPDATE_CHECK: '1',
-      NODE_NO_WARNINGS: '1',
-      ...env,
-    },
-  });
-  if (result.error) throw result.error;
-  return result;
 }
 
 function addAcceptedTask(db, dir, title, acceptedAt, verify) {

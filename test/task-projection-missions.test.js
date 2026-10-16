@@ -5,18 +5,20 @@ const os = require('node:os');
 const path = require('node:path');
 const { projectionMissions, projectionWishes } = require('../commands/task');
 
-function tempWorkspace() {
-  return fs.mkdtempSync(path.join(os.tmpdir(), 'projection-test-'));
+function tempWorkspace(t) {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'projection-test-'));
+  t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+  return root;
 }
 
-test('empty or missing stores yield empty arrays, never a throw', () => {
-  const root = tempWorkspace();
+test('empty or missing stores yield empty arrays, never a throw', (t) => {
+  const root = tempWorkspace(t);
   assert.deepStrictEqual(projectionMissions(root), []);
   assert.deepStrictEqual(projectionWishes(root), []);
 });
 
-test('an active mission reaches the projection with dashboard fields', () => {
-  const root = tempWorkspace();
+test('an active mission reaches the projection with dashboard fields', (t) => {
+  const root = tempWorkspace(t);
   const dir = path.join(root, '.atris', 'state');
   fs.mkdirSync(dir, { recursive: true });
   fs.writeFileSync(path.join(dir, 'missions.jsonl'), JSON.stringify({
@@ -43,8 +45,8 @@ test('an active mission reaches the projection with dashboard fields', () => {
   assert.strictEqual(m.next_action, 'first tick');
 });
 
-test('stale completed missions are excluded, open wishes included and closed ones dropped', () => {
-  const root = tempWorkspace();
+test('stale completed missions are excluded, open wishes included and closed ones dropped', (t) => {
+  const root = tempWorkspace(t);
   const dir = path.join(root, '.atris', 'state');
   fs.mkdirSync(dir, { recursive: true });
   fs.writeFileSync(path.join(dir, 'missions.jsonl'), JSON.stringify({

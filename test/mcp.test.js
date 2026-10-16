@@ -60,6 +60,7 @@ function closeServer(server) {
 function mcpSession(requests, {
   extraEnv = {}, closeAfterId, closeStdinAfterSend = false,
   timeout = 20000, protocolVersion = '2025-03-26', rawLines = [],
+  onCloseResponse,
 } = {}) {
   return new Promise((resolve, reject) => {
     const home = fs.mkdtempSync(path.join(os.tmpdir(), 'atris-mcp-'));
@@ -83,9 +84,13 @@ function mcpSession(requests, {
     };
     child.stdout.on('data', (chunk) => {
       stdout += chunk;
+      let response;
       if (stdout.split('\n').some((line) => {
-        try { return JSON.parse(line).id === closeAfterId; } catch { return false; }
-      })) finish();
+        try { response = JSON.parse(line); return response.id === closeAfterId; } catch { return false; }
+      })) {
+        onCloseResponse?.(response);
+        finish();
+      }
     });
     child.stderr.on('data', (chunk) => { stderr += chunk; });
     const timer = setTimeout(() => {
@@ -267,9 +272,11 @@ test('atris mcp tools/call runs design_search against the mocked api', async () 
 });
 
 test('atris mcp answers ping while a design call is pending', async () => {
+  let releaseResponse;
+  const responseReleased = new Promise((resolve) => { releaseResponse = resolve; });
   const mock = await startHttpMock(async (request) => {
     assert.equal(request.url, '/api/design/search');
-    await new Promise((resolve) => setTimeout(resolve, 1000));
+    await responseReleased;
     return { body: { results: [{ brand_name: 'Delayed' }] } };
   });
   try {
@@ -279,11 +286,13 @@ test('atris mcp answers ping while a design call is pending', async () => {
       { jsonrpc: '2.0', id: 4, method: 'ping' },
     ], {
       closeAfterId: 4,
+      onCloseResponse: (message) => { if (message.id === 4) releaseResponse(); },
       extraEnv: { ATRIS_API_URL: `http://127.0.0.1:${mock.port}/api` },
     });
     assert.deepEqual(messages.map((message) => message.id), [1, 4, 3]);
     assert.match(messages[2].result.content[0].text, /Delayed/);
   } finally {
+    releaseResponse();
     await closeServer(mock.server);
   }
 });

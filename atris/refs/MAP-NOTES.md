@@ -249,7 +249,7 @@ rg "outbound artifact gate|raw-html-in-plain-body|render-proof-missing|coach-sur
 
 ## By-Feature Map
 
-Design/MCP test isolation: `test/mcp.test.js:65` starts the CLI from its disposable directory. `commands/design.js:360` and `lib/design-api.js:124` export only consumed entry points; `test/repo-hygiene.test.js` guards both boundaries.
+Design/MCP test isolation: `test/mcp.test.js:66` starts the CLI from its disposable directory. `commands/design.js:360` and `lib/design-api.js:124` export only consumed entry points; `test/repo-hygiene.test.js` guards both boundaries.
 MCP stdio request flow: `mcp/atris-mcp/index.mjs:142` reads requests while design calls run, tracks cancellations, and waits for pending replies on stdin close. `test/mcp.test.js` checks ping order, blank lines, cancellations, and stdin close.
 
 - **atris developer api:** `commands/balance.js:21` GET `/credits/balance` and prints dollars first; `commands/usage.js:44` GET `/developer/usage`; `commands/api-key.js:87` create/list/rotate/revoke; `commands/topup.js:22` POST `/credits/purchase` and prints the Stripe checkout url. Shared helpers: `lib/developer-api.js:65`. Help: `bin/atris.js:657`. Dispatch: `bin/atris.js:2219`. Registry: `lib/known-commands.js:6`. 404 on `/developer/*` prints `backend rolling out, try again shortly`. Tests: `test/developer-api.test.js:1`.
@@ -2424,3 +2424,7 @@ Bounded process-reader output: `lib/engine-resource.js:94` gives only ps an eigh
 Task advice test fixtures: `test/helpers/task-next-fixture.js:31` runs the real CLI with the original twenty-second default and error behavior; `test/helpers/task-next-fixture.js:55` writes the unchanged projection shape and `test/helpers/task-next-fixture.js:66` supplies the fixture-owned child home and database. Per-file temporary prefixes and every original desk/next case remain explicit. Check: `node --test test/task-desk-next.test.js test/task-next-truth.test.js`.
 
 Business CLI test runner: `test/helpers/business-cli.js:8` keeps the actual asynchronous child, direct caller environment, fifteen-second SIGTERM timeout and original error/close behavior. Deploy, operations and ship tests retain their local HTTP servers, fixture credentials and every original case. Check: `node --test test/business-deploy.test.js test/business-ops.test.js test/business-ship.test.js`.
+
+Member CLI test runner: `test/helpers/member-cli.js:9` keeps the actual synchronous child, scrubbed environment, caller overrides last, twenty-second limit and original error/status behavior. Member greeting, switches, status and supervisor tests retain their private fixtures and every original case. Check: `node --test test/gm-wake.test.js test/member-switches.test.js test/member.test.js test/supervisor-tick-skip.test.js`.
+
+Task administration CLI tests: `test/helpers/task-admin-cli.js:8` runs the actual CLI with required options, the original thirty-second limit, override-last environment and unchanged launch-error/nonzero-status behavior. Task audit, hygiene and retitle retain their independent workspace, database and SQLite checks and every original case. Check: `node --test test/task-audit.test.js test/task-hygiene.test.js test/task-retitle.test.js`.
