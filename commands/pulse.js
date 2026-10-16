@@ -901,7 +901,6 @@ module.exports = {
   pulseExpiryBreadcrumbPath,
   installCommand,
   runCommand,
-  runEngine,
   uninstallCommand,
   refreshOrbPolicyLessons,
 };
