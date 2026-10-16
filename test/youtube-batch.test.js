@@ -20,9 +20,15 @@ const RICH_NOTES = '# Clip\n\nThe omakase model has 80 people.\n';
 const THIN_NOTES = '# Chat\n\nwelcome back friends this is just a chat about feelings and vibes\n';
 const LEARNER_BASELINE_INCOMPLETE = 'incomplete: check already passes. refuse invented success.';
 
-function richNotesWorkspace(ids) {
-  const cwd = fs.mkdtempSync(path.join(os.tmpdir(), 'atris-yt-batch-'));
-  const workDir = fs.mkdtempSync(path.join(os.tmpdir(), 'atris-yt-batch-notes-'));
+function makeTempDir(t, prefix) {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), prefix));
+  t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+  return root;
+}
+
+function richNotesWorkspace(t, ids) {
+  const cwd = makeTempDir(t, 'atris-yt-batch-');
+  const workDir = makeTempDir(t, 'atris-yt-batch-notes-');
   fs.mkdirSync(path.join(cwd, 'atris', 'wiki'), { recursive: true });
   for (const id of ids) {
     fs.writeFileSync(path.join(workDir, `yt_${id}.md`), RICH_NOTES);
@@ -146,10 +152,10 @@ test('single-url notes still run the existing path with an optional engine', asy
   assert.equal(expanded, 0);
 });
 
-test('single-url notes --save files the brief', async () => {
+test('single-url notes --save files the brief', async (t) => {
   const calls = [];
   const briefs = [];
-  const { cwd, workDir } = richNotesWorkspace(['abc123']);
+  const { cwd, workDir } = richNotesWorkspace(t, ['abc123']);
   const status = await youtubeCommand([
     'notes',
     'https://www.youtube.com/watch?v=abc123',
@@ -212,9 +218,9 @@ test('multi-url notes run sequentially and keep the shared engine', async () => 
   assert.match(log.text(), /url or id  seconds  result/);
 });
 
-test('multi-url notes --save files briefs', async () => {
+test('multi-url notes --save files briefs', async (t) => {
   const log = collect();
-  const { cwd, workDir } = richNotesWorkspace(['aaa111', 'bbb222']);
+  const { cwd, workDir } = richNotesWorkspace(t, ['aaa111', 'bbb222']);
   const status = await youtubeCommand([
     'notes',
     '--save',
@@ -243,10 +249,10 @@ test('multi-url notes --save files briefs', async () => {
   assert.equal(log.lines.filter((line) => line === LEARNER_SCORE_ZERO).length, 0);
 });
 
-test('rich multi-url notes --save proves failing learner baseline for the first saved item', async () => {
+test('rich multi-url notes --save proves failing learner baseline for the first saved item', async (t) => {
   const first = 'https://www.youtube.com/watch?v=aaa111';
   const second = 'https://www.youtube.com/watch?v=bbb222';
-  const { cwd, workDir } = richNotesWorkspace(['aaa111', 'bbb222']);
+  const { cwd, workDir } = richNotesWorkspace(t, ['aaa111', 'bbb222']);
   const log = collect();
   const status = await youtubeCommand([
     'notes',
@@ -276,8 +282,8 @@ test('rich multi-url notes --save proves failing learner baseline for the first 
   assert.equal(fs.existsSync(path.join(cwd, 'atris', 'wiki', 'briefs', 'youtube-aaa111.apply.md')), false);
 });
 
-test('rich notes --save batch --json stays quiet on the learner score', async () => {
-  const { cwd, workDir } = richNotesWorkspace(['jsons1', 'jsons2']);
+test('rich notes --save batch --json stays quiet on the learner score', async (t) => {
+  const { cwd, workDir } = richNotesWorkspace(t, ['jsons1', 'jsons2']);
   const log = collect();
   const status = await youtubeCommand([
     'notes',
@@ -301,9 +307,9 @@ test('rich notes --save batch --json stays quiet on the learner score', async ()
   assert.equal(fs.existsSync(path.join(cwd, 'atris', 'experiments', 'notes-jsons1')), true);
 });
 
-test('rich notes --save batch returns nonzero when the first apply already passes', async () => {
+test('rich notes --save batch returns nonzero when the first apply already passes', async (t) => {
   const first = 'https://www.youtube.com/watch?v=pass01';
-  const { cwd, workDir } = richNotesWorkspace(['pass01', 'pass02']);
+  const { cwd, workDir } = richNotesWorkspace(t, ['pass01', 'pass02']);
   const applyRel = path.join(cwd, 'atris', 'wiki', 'briefs', 'notes-pass01.apply.md');
   fs.mkdirSync(path.dirname(applyRel), { recursive: true });
   fs.writeFileSync(applyRel, [
@@ -330,9 +336,9 @@ test('rich notes --save batch returns nonzero when the first apply already passe
   assert.equal(log.lines.filter((line) => line === LEARNER_SCORE_ZERO).length, 0);
 });
 
-test('thin notes --save batch stays a refuse and does not prove a learner baseline', async () => {
-  const cwd = fs.mkdtempSync(path.join(os.tmpdir(), 'atris-yt-batch-'));
-  const workDir = fs.mkdtempSync(path.join(os.tmpdir(), 'atris-yt-batch-notes-'));
+test('thin notes --save batch stays a refuse and does not prove a learner baseline', async (t) => {
+  const cwd = makeTempDir(t, 'atris-yt-batch-');
+  const workDir = makeTempDir(t, 'atris-yt-batch-notes-');
   fs.mkdirSync(path.join(cwd, 'atris', 'wiki'), { recursive: true });
   fs.writeFileSync(path.join(workDir, 'yt_thin01.md'), THIN_NOTES);
   fs.writeFileSync(path.join(workDir, 'yt_thin02.md'), THIN_NOTES);
@@ -391,10 +397,10 @@ test('playlist expansion caps at 10 and prints a cap note', async () => {
   assert.doesNotMatch(log.text(), /vid12/);
 });
 
-test('playlist notes batch prints apply and check for the first ok video', async () => {
+test('playlist notes batch prints apply and check for the first ok video', async (t) => {
   const playlist = 'https://www.youtube.com/playlist?list=PLlearn';
   const firstUrl = 'https://www.youtube.com/watch?v=vid01';
-  const { cwd, workDir } = richNotesWorkspace(['vid01', 'vid02']);
+  const { cwd, workDir } = richNotesWorkspace(t, ['vid01', 'vid02']);
   const log = collect();
   const status = runYoutubeNotesBatch({ urls: [playlist], engine: null }, {
     cwd,
@@ -466,10 +472,10 @@ test('all-fail notes batch exits 2', async () => {
   assert.match(log.text(), /url or id  seconds  result/);
 });
 
-test('playlist notes batch keeps printed videos when yt-dlp exits 429', async () => {
+test('playlist notes batch keeps printed videos when yt-dlp exits 429', async (t) => {
   const playlist = 'https://www.youtube.com/playlist?list=PLrate';
   const firstUrl = 'https://www.youtube.com/watch?v=plrate1';
-  const { cwd, workDir } = richNotesWorkspace(['plrate1']);
+  const { cwd, workDir } = richNotesWorkspace(t, ['plrate1']);
   const log = collect();
   const ran = [];
   const status = await youtubeCommand(['notes', playlist], {
@@ -505,10 +511,10 @@ test('playlist notes batch keeps printed videos when yt-dlp exits 429', async ()
   assert.doesNotMatch(log.text(), /FAILED|429|Too Many Requests|playlist expand failed/);
 });
 
-test('notes batch keeps written notes when the runner exits with a later error', async () => {
+test('notes batch keeps written notes when the runner exits with a later error', async (t) => {
   const firstUrl = 'https://www.youtube.com/watch?v=ntlater1';
   const secondUrl = 'https://www.youtube.com/watch?v=ntlater2';
-  const { cwd, workDir } = richNotesWorkspace(['ntlater1', 'ntlater2']);
+  const { cwd, workDir } = richNotesWorkspace(t, ['ntlater1', 'ntlater2']);
   const log = collect();
   const status = await youtubeCommand(['notes', firstUrl, secondUrl], {
     cwd,
@@ -533,10 +539,10 @@ test('notes batch keeps written notes when the runner exits with a later error',
   assert.doesNotMatch(log.text(), /FAILED|403|Forbidden/);
 });
 
-test('notes batch keeps written notes when the runner exits 429', async () => {
+test('notes batch keeps written notes when the runner exits 429', async (t) => {
   const firstUrl = 'https://www.youtube.com/watch?v=ntrate1';
   const secondUrl = 'https://www.youtube.com/watch?v=ntrate2';
-  const { cwd, workDir } = richNotesWorkspace(['ntrate1', 'ntrate2']);
+  const { cwd, workDir } = richNotesWorkspace(t, ['ntrate1', 'ntrate2']);
   const log = collect();
   const status = await youtubeCommand(['notes', firstUrl, secondUrl], {
     cwd,
@@ -561,9 +567,9 @@ test('notes batch keeps written notes when the runner exits 429', async () => {
   assert.doesNotMatch(log.text(), /FAILED|429|Too Many Requests/);
 });
 
-test('notes batch still marks FAILED when 429 wrote no notes', async () => {
-  const cwd = fs.mkdtempSync(path.join(os.tmpdir(), 'atris-yt-batch-empty429-'));
-  const workDir = fs.mkdtempSync(path.join(os.tmpdir(), 'atris-yt-batch-empty429-notes-'));
+test('notes batch still marks FAILED when 429 wrote no notes', async (t) => {
+  const cwd = makeTempDir(t, 'atris-yt-batch-empty429-');
+  const workDir = makeTempDir(t, 'atris-yt-batch-empty429-notes-');
   const log = collect();
   const status = await youtubeCommand([
     'notes',
