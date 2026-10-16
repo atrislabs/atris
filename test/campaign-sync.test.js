@@ -295,8 +295,8 @@ test('run pulls a phone answer before stepping, so the loop gets past the ask', 
   const out = JSON.parse(ran.out);
   assert.match(out.reason, /proposed nothing usable/);
   assert.deepEqual(out.sync_warnings, []);
-  // The plan that proposed nothing was pushed by the sync after the step.
-  assert.ok(cloud.events.some((e) => e.type === 'mission_ended'));
+  // The wait saved after the empty plan was pushed by the sync after the step.
+  assert.ok(cloud.events.some((e) => e.type === 'judge_ran' && e.data.wait));
 }));
 
 test('run on a synced campaign keeps going offline and warns', async () => {

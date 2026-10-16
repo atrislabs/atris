@@ -84,9 +84,10 @@ test('the loop stops for money, for asks, and when nothing usable is proposed', 
 
   const empty = campaign(10);
   const loopEmpty = makeLoop('/x', {}, { store: empty, cli: async () => ({ code: 0 }), log: () => {}, skipReconcile: true, judge: () => ({ passed: false, summary: 'no' }), ask: async () => ({ ok: true, text: 'I am not sure.' }) });
-  assert.equal((await loopEmpty.run('cmp-loop')).reason, 'mission-lead proposed nothing usable');
+  assert.match((await loopEmpty.run('cmp-loop')).reason, /^mission-lead proposed nothing usable; next check at /);
   const view = getCampaign(empty, 'cmp-loop');
-  assert.equal(view.missions[0].id.startsWith('plan-'), true);
+  assert.deepEqual(view.missions, [], 'an empty plan is not recorded as failed work');
+  assert.equal(view.next_move.action, 'wait');
 });
 
 test('a mission that cannot start is vetoed so the queue moves on', async () => {
@@ -169,4 +170,38 @@ test('the command runner hands over lines from stderr too, where live engine ste
   assert.notEqual(result.code, 0);
   assert.ok(result.err.length > 0, 'the message went to stderr');
   assert.ok(lines.some((line) => /no campaign cmp-does-not-exist/.test(line)), lines.join('\n'));
+});
+
+test('a campaign waiting on the world saves its wait, backs off, and replans on a new reading', async () => {
+  const store = campaign(10);
+  store.append({ campaign_id: 'cmp-loop', type: 'judge_ran', actor: 'judge', data: { passed: false, summary: '0 of 1' } });
+  const MIN = 60000;
+  let t = Date.UTC(2026, 9, 16, 3, 0, 0);
+  let asks = 0;
+  let summary = '0 of 1';
+  const deps = {
+    store, log: () => {}, skipReconcile: true, now: () => t, cli: async () => ({ code: 0 }),
+    judge: async () => ({ passed: false, summary }),
+    ask: async () => { asks += 1; return { ok: true, text: 'Nothing to do until the payment lands.' }; },
+  };
+  const loop = makeLoop('/x', { parallel: 1 }, deps);
+  await loop.tick('cmp-loop');
+  const first = getCampaign(store, 'cmp-loop').next_move;
+  assert.equal(first.wake_at - t, 10 * MIN);
+  t += 5 * MIN;
+  // A new process honors the saved wait and does nothing early.
+  assert.match((await makeLoop('/x', { parallel: 1 }, deps).tick('cmp-loop')).reason, /^waiting on the world/);
+  t = first.wake_at;
+  await loop.tick('cmp-loop');
+  assert.equal(getCampaign(store, 'cmp-loop').next_move.wait_ms, 20 * MIN);
+  assert.equal(asks, 1);
+  t += 20 * MIN;
+  summary = 'payment seen';
+  await loop.tick('cmp-loop');
+  assert.equal(getCampaign(store, 'cmp-loop').next_move, undefined);
+  await loop.tick('cmp-loop');
+  assert.equal(asks, 2);
+  // Anything new ends a wait: a proposed mission is not held back by it.
+  store.append({ campaign_id: 'cmp-loop', type: 'mission_proposed', actor: 'builder', data: { mission_id: 'm-x', member: 'builder', objective: 'x' } });
+  assert.equal(getCampaign(store, 'cmp-loop').next_move, undefined);
 });
