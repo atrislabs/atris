@@ -203,11 +203,16 @@ test('ax headless turn surfaces the backend result event as output, not leftover
 });
 
 test('ax returns the prompt when the result event lands, without waiting for the stream to close', async () => {
+  let releaseResponse = () => {};
   const server = http.createServer((req, res) => {
     res.writeHead(200, { 'Content-Type': 'text/event-stream' });
     res.write('data: ' + JSON.stringify({ type: 'text_delta', content: 'Hi.' }) + '\n\n');
     res.write('data: ' + JSON.stringify({ type: 'result', result: 'Hi.' }) + '\n\n');
-    setTimeout(() => res.end(), 1500);
+    const responseTimer = setTimeout(() => res.end(), 1500);
+    releaseResponse = () => {
+      clearTimeout(responseTimer);
+      if (!res.writableEnded) res.end();
+    };
   });
   const port = await listenLocal(server);
   const previousBackendUrl = process.env.AX_BACKEND_URL;
@@ -225,6 +230,7 @@ test('ax returns the prompt when the result event lands, without waiting for the
   } finally {
     if (previousBackendUrl === undefined) delete process.env.AX_BACKEND_URL;
     else process.env.AX_BACKEND_URL = previousBackendUrl;
+    releaseResponse();
     await closeServer(server);
   }
 });
