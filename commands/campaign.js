@@ -50,6 +50,7 @@ function printHelp() {
   console.log('        the campaign runs itself: proposes missions, runs them at once, judges, repeats until done, broke, or needing you');
   console.log('        add --work 50m --break 10m [--rounds N] to work in rounds; each break judges and writes lessons the next round plans from');
   console.log('  atris campaign step <id>               one step of that loop');
+  console.log('  atris campaign tick [--max-steps 4]     push the next campaign here that has work (the overnight heartbeat runs this)');
   console.log('  atris campaign propose <id> [--count 3]   ask the owner\'s engine for the next missions');
   console.log('  atris campaign export <id> --trace [--out <file.jsonl>] [--full]   one row per mission for learning; redacted unless --full');
   console.log('  atris campaign rsi [id] [--no-write]   distill trace rewards and lessons across campaigns');
@@ -826,12 +827,48 @@ async function driveLoop(args, ctx, verb, view) {
   return 0;
 }
 
+// atris campaign tick: one bounded push on the next campaign in this workspace that has
+// work to do. The overnight heartbeat (atris pulse tick) calls it, so campaigns stacked
+// before bed keep moving all night: when one finishes, the next tick picks the next.
+// Skipped: done, paused, out of money, waiting on a person, or driven by another run.
+async function cmdTick(args, ctx) {
+  const { listCampaigns } = require('../lib/campaign-store');
+  const { liveHolder } = require('../lib/campaign-run-lock');
+  const maxSteps = Math.max(1, Number(readFlag(args, '--max-steps', '')) || 4);
+  const skipped = [];
+  let pick = null;
+  for (const view of listCampaigns(ctx.store)) {
+    if (view.error) { skipped.push({ id: view.id, why: `unreadable: ${view.error}` }); continue; }
+    const move = decide(view);
+    if (move.action === 'none') continue;
+    if (move.action === 'wait' && move.reason === 'open asks') { skipped.push({ id: view.id, why: `needs you: ${move.asks.length} open ask${move.asks.length === 1 ? '' : 's'}` }); continue; }
+    if (move.action === 'wait' && move.reason === 'budget') { skipped.push({ id: view.id, why: 'waiting for budget' }); continue; }
+    const holder = ctx.campaignHome ? liveHolder(ctx.campaignHome, view.id) : null;
+    if (holder) { skipped.push({ id: view.id, why: `another run drives it (pid ${holder.pid})` }); continue; }
+    pick = view;
+    break;
+  }
+  if (!pick) {
+    const why = skipped.length ? skipped.map((s) => `${s.id}: ${s.why}`).join('; ') : 'every campaign here is done, paused, or out of money';
+    ctx.out(`nothing to advance: ${why}`, { ok: true, picked: null, skipped });
+    return 0;
+  }
+  if (!ctx.asJson) console.log(`advancing ${pick.id} (up to ${maxSteps} steps)${skipped.length ? `; skipped ${skipped.map((s) => s.id).join(', ')}` : ''}`);
+  const passthrough = [];
+  for (const flag of ['--runner', '--parallel', '--max-ticks', '--mission-minutes']) {
+    const value = readFlag(args, flag, '');
+    if (value) passthrough.push(flag, value);
+  }
+  return cmdLoop(['run', pick.id, '--max-steps', String(maxSteps), ...passthrough, ...(ctx.asJson ? ['--json'] : [])], ctx, 'run');
+}
+
 const VERBS = {
   start: cmdStart, show: cmdShow, judge: cmdJudge, guard: cmdGuard, seat: cmdSeat, bet: cmdBet, budget: cmdBudget,
   pause: cmdPause, resume: cmdResume, stop: cmdStop, event: cmdEvent,
   ask: cmdAsk, answer: cmdAnswer, 'set-judge': cmdSetJudge, sync: cmdSync, 'cloud-run': cmdCloudRun,
   rsi: cmdRsi, learn: cmdRsi,
   run: (args, ctx) => cmdLoop(args, ctx, 'run'),
+  tick: cmdTick,
   step: (args, ctx) => cmdLoop(args, ctx, 'step'),
   propose: (args, ctx) => cmdLoop(args, ctx, 'propose'),
   // atris campaign new "<goal>": the owner's engine drafts a judge that fails today (lib/campaign-new.js).
