@@ -133,7 +133,7 @@ test('every golden file folds into a trace that agrees with its expected view', 
   assert.ok(files.length >= 15);
   for (const file of files) {
     const golden = JSON.parse(fs.readFileSync(path.join(FIXTURES, file), 'utf8'));
-    const trace = buildTrace(golden.events, { redact: false });
+    const trace = buildTrace(golden.events, { redact: false, now: golden.now });
     if (golden.expected.error) {
       assert.deepEqual(trace, { error: golden.expected.error }, file);
       continue;

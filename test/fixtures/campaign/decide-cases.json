@@ -754,6 +754,276 @@
         "action": "propose",
         "reason": "no missions queued"
       }
+    },
+    {
+      "about": "a parked ask does not block: the due judge runs",
+      "view": {
+        "id": "cmp-ship",
+        "title": "Ship campaign core",
+        "judge": "npm run validate:campaign",
+        "owner": "mission-lead",
+        "standing": false,
+        "bet": null,
+        "parent": null,
+        "home": "laptop",
+        "created_from": null,
+        "seats": [],
+        "state": "queued",
+        "stop_reason": null,
+        "answer": {
+          "text": null,
+          "confidence": "open"
+        },
+        "budget": {
+          "total": 100,
+          "spent": 0,
+          "reserved": 0,
+          "available": 100
+        },
+        "asks": [
+          {
+            "id": "a1",
+            "question": "q1",
+            "mission_id": null,
+            "default": null,
+            "due_at": "2026-10-15T10:01:00Z",
+            "parked": true
+          }
+        ],
+        "missions": [
+          {
+            "id": "m1",
+            "member": "builder",
+            "status": "claimed",
+            "outcome": null,
+            "cost_usd": null,
+            "estimate_usd": 1,
+            "steps": 0,
+            "kept": 0,
+            "reverted": 0
+          }
+        ],
+        "judge_runs": 0,
+        "judge_due": true,
+        "last_judge": null,
+        "warnings": []
+      },
+      "now": "2026-10-15T10:05:00Z",
+      "expected": {
+        "action": "run_judge"
+      }
+    },
+    {
+      "about": "an ask past its wait with a default goes with the default, before waiting on a fresh ask",
+      "view": {
+        "id": "cmp-ship",
+        "title": "Ship campaign core",
+        "judge": "npm run validate:campaign",
+        "owner": "mission-lead",
+        "standing": false,
+        "bet": null,
+        "parent": null,
+        "home": "laptop",
+        "created_from": null,
+        "seats": [],
+        "state": "needs_you",
+        "stop_reason": null,
+        "answer": {
+          "text": null,
+          "confidence": "open"
+        },
+        "budget": {
+          "total": 100,
+          "spent": 0,
+          "reserved": 0,
+          "available": 100
+        },
+        "asks": [
+          {
+            "id": "a1",
+            "question": "q1",
+            "mission_id": null,
+            "default": null,
+            "due_at": "2026-10-15T12:00:00Z",
+            "parked": false
+          },
+          {
+            "id": "a2",
+            "question": "q2",
+            "mission_id": null,
+            "default": "Citewise",
+            "due_at": "2026-10-15T10:05:00Z",
+            "parked": false
+          }
+        ],
+        "missions": [
+          {
+            "id": "m1",
+            "member": "builder",
+            "status": "claimed",
+            "outcome": null,
+            "cost_usd": null,
+            "estimate_usd": 1,
+            "steps": 0,
+            "kept": 0,
+            "reverted": 0
+          }
+        ],
+        "judge_runs": 0,
+        "judge_due": true,
+        "last_judge": null,
+        "warnings": []
+      },
+      "now": "2026-10-15T10:05:00Z",
+      "expected": {
+        "action": "default_asks",
+        "asks": [
+          {
+            "id": "a2",
+            "answer": "Citewise"
+          }
+        ]
+      }
+    },
+    {
+      "about": "an ask past its wait without a default counts as parked, so only the fresh ask waits",
+      "view": {
+        "id": "cmp-ship",
+        "title": "Ship campaign core",
+        "judge": "npm run validate:campaign",
+        "owner": "mission-lead",
+        "standing": false,
+        "bet": null,
+        "parent": null,
+        "home": "laptop",
+        "created_from": null,
+        "seats": [],
+        "state": "needs_you",
+        "stop_reason": null,
+        "answer": {
+          "text": null,
+          "confidence": "open"
+        },
+        "budget": {
+          "total": 100,
+          "spent": 0,
+          "reserved": 0,
+          "available": 100
+        },
+        "asks": [
+          {
+            "id": "a1",
+            "question": "q1",
+            "mission_id": null,
+            "default": null,
+            "due_at": "2026-10-15T10:01:00Z",
+            "parked": false
+          },
+          {
+            "id": "a2",
+            "question": "q2",
+            "mission_id": null,
+            "default": null,
+            "due_at": "2026-10-15T12:00:00Z",
+            "parked": false
+          }
+        ],
+        "missions": [
+          {
+            "id": "m1",
+            "member": "builder",
+            "status": "claimed",
+            "outcome": null,
+            "cost_usd": null,
+            "estimate_usd": 1,
+            "steps": 0,
+            "kept": 0,
+            "reverted": 0
+          }
+        ],
+        "judge_runs": 0,
+        "judge_due": true,
+        "last_judge": null,
+        "warnings": []
+      },
+      "now": "2026-10-15T10:05:00Z",
+      "expected": {
+        "action": "wait",
+        "reason": "open asks",
+        "asks": [
+          "a2"
+        ]
+      }
+    },
+    {
+      "about": "without now no ask times out, defaults included",
+      "view": {
+        "id": "cmp-ship",
+        "title": "Ship campaign core",
+        "judge": "npm run validate:campaign",
+        "owner": "mission-lead",
+        "standing": false,
+        "bet": null,
+        "parent": null,
+        "home": "laptop",
+        "created_from": null,
+        "seats": [],
+        "state": "needs_you",
+        "stop_reason": null,
+        "answer": {
+          "text": null,
+          "confidence": "open"
+        },
+        "budget": {
+          "total": 100,
+          "spent": 0,
+          "reserved": 0,
+          "available": 100
+        },
+        "asks": [
+          {
+            "id": "a1",
+            "question": "q1",
+            "mission_id": null,
+            "default": "yes",
+            "due_at": "2026-10-15T10:01:00Z",
+            "parked": false
+          },
+          {
+            "id": "a2",
+            "question": "q2",
+            "mission_id": null,
+            "default": null,
+            "due_at": "2026-10-15T10:01:00Z",
+            "parked": false
+          }
+        ],
+        "missions": [
+          {
+            "id": "m1",
+            "member": "builder",
+            "status": "claimed",
+            "outcome": null,
+            "cost_usd": null,
+            "estimate_usd": 1,
+            "steps": 0,
+            "kept": 0,
+            "reverted": 0
+          }
+        ],
+        "judge_runs": 0,
+        "judge_due": true,
+        "last_judge": null,
+        "warnings": []
+      },
+      "expected": {
+        "action": "wait",
+        "reason": "open asks",
+        "asks": [
+          "a1",
+          "a2"
+        ]
+      }
     }
   ]
 }

@@ -169,7 +169,10 @@
       {
         "id": "a1",
         "question": "Send the offer email to the candidate?",
-        "mission_id": "m1"
+        "mission_id": "m1",
+        "default": null,
+        "due_at": null,
+        "parked": false
       }
     ],
     "missions": [

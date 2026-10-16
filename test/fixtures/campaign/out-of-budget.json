@@ -148,7 +148,10 @@
       {
         "id": "a1",
         "question": "Spend more?",
-        "mission_id": null
+        "mission_id": null,
+        "default": null,
+        "due_at": null,
+        "parked": false
       }
     ],
     "missions": [

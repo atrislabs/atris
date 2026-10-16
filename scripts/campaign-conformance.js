@@ -164,7 +164,7 @@ function loadGoldens(dir) {
 }
 
 // Runners never see the answers. A fold runner gets each file's events and
-// each decide case's view; a view runner gets only the views to round-trip.
+// each decide case's view, plus now where one is set; a view runner gets only the views to round-trip.
 function runnerInputs(goldens, decideCases) {
   // Real path: macOS temp folders sit behind a symlink, and runners that
   // compare their own path with argv would otherwise stay silent.
@@ -175,12 +175,14 @@ function runnerInputs(goldens, decideCases) {
   fs.mkdirSync(viewDir);
   for (const golden of goldens) {
     const file = `${golden.name}.json`;
-    fs.writeFileSync(path.join(foldDir, file), JSON.stringify({ name: golden.name, events: golden.events }));
+    const input = { name: golden.name, events: golden.events };
+    if (golden.now !== undefined) input.now = golden.now;
+    fs.writeFileSync(path.join(foldDir, file), JSON.stringify(input));
     if (!('error' in golden.expected)) {
       fs.writeFileSync(path.join(viewDir, file), JSON.stringify({ name: golden.name, expected: golden.expected }));
     }
   }
-  fs.writeFileSync(path.join(foldDir, 'decide-cases.json'), JSON.stringify({ cases: decideCases.map((c) => ({ view: c.view })) }));
+  fs.writeFileSync(path.join(foldDir, 'decide-cases.json'), JSON.stringify({ cases: decideCases.map((c) => (c.now === undefined ? { view: c.view } : { view: c.view, now: c.now })) }));
   return { root, fold: foldDir, view: viewDir };
 }
 
