@@ -70,7 +70,7 @@ checks the refs in both files; `atris doc-health --fix-refs` moves drifted ones.
 | dispatch run history from a linked checkout | `test/roster-runs-worktree.test.js` | remote-landing test creates a local bare origin so it keeps asserting landed and records history in the main checkout |
 | autopilot | `commands/autopilot.js` | one tick plan, do, review |
 | wish intake | `commands/wish.js` | wish to build slices |
-| worktree command | `commands/worktree.js`, `test/worktree-start-retry.test.js`, `test/worktree-ship-queued-merge.test.js` | Isolated checkouts and saved changes; queued merges keep their source branch until GitHub confirms completion. |
+| worktree command | `commands/worktree.js`, `test/worktree-start-retry.test.js`, `test/worktree-ship-queued-merge.test.js`, `test/worktree-push-hooks.test.js` | Isolated checkouts and saved changes; queued merges keep their source branch until GitHub confirms completion. Push allows required local hooks five minutes and preserves their failure output. |
 | brain compile command | `commands/brain.js` | brain artifacts compiled here |
 | activate command | `commands/activate.js` | load context |
 | context gatherer | `lib/context-gatherer.js` | first-contact gather |

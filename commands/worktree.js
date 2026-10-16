@@ -16,6 +16,9 @@ const close = require('./close');
 // parallel landings that each carry a copy always clash.
 const REGEN_ADAPTER_FILES = ['AGENTS.md', 'CLAUDE.md', 'GEMINI.md', '.atris/state/tasks.projection.json'];
 const COMMAND_MAX_BUFFER_BYTES = 64 * 1024 * 1024;
+// Push also runs local hooks. Backend startup and regression checks alone can
+// exceed the short network-only allowance used by fetch and discovery.
+const GIT_PUSH_TIMEOUT_MS = 5 * 60 * 1000;
 const GIT_OID_PATTERN = /^[0-9a-f]{40,64}$/;
 const ONE_LAP_PROOF_REF_PATTERN = /^refs\/atris\/one-lap\/([0-9a-f]{40,64})$/;
 const DAY_MS = 24 * 60 * 60 * 1000;
@@ -37,13 +40,15 @@ function gitNetworkEnvironment(source = process.env, cwd = process.cwd()) {
 // A killed network call leaves stderr empty; name the timeout instead.
 function gitFailureDetail(result) {
   if (result && result.error && result.error.code === 'ETIMEDOUT') return 'timed out';
-  return String((result && (result.stderr || result.stdout)) || '').trim();
+  return [result && result.stdout, result && result.stderr]
+    .map(output => String(output || '').trim()).filter(Boolean).join('\n');
 }
 
 function runGit(args, { cwd = process.cwd(), check = true, timeout } = {}) {
   const network = ['fetch', 'push', 'ls-remote'].includes(args[0]);
   // Only network calls need the SSH probe; local calls skip its extra git spawn.
-  const options = { cwd, encoding: 'utf8', timeout: timeout ?? (network ? 30000 : undefined),
+  const defaultTimeout = args[0] === 'push' ? GIT_PUSH_TIMEOUT_MS : network ? 30000 : undefined;
+  const options = { cwd, encoding: 'utf8', timeout: timeout ?? defaultTimeout,
     killSignal: 'SIGKILL', env: network ? gitNetworkEnvironment(process.env, cwd) : undefined };
   let result = spawnSync('git', args, options);
   // Linked checkouts share config. A concurrent start must not silently lose
