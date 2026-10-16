@@ -1,3 +1,9 @@
+
+// These checks pin the exact codex launch, so they read a Codex config that
+// already chooses a sandbox; the fresh-install flags have their own test.
+const PINNED_CODEX_HOME = require('fs').mkdtempSync(require('path').join(require('os').tmpdir(), 'atris-codex-home-'));
+require('fs').writeFileSync(require('path').join(PINNED_CODEX_HOME, 'config.toml'), 'sandbox_mode = "workspace-write"\n');
+process.env.CODEX_HOME = PINNED_CODEX_HOME;
 const test = require('node:test');
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
@@ -166,7 +172,7 @@ test('mission run hands codex its own model and never a claude one', () => {
     const binDir = path.join(dir, 'bin');
     const argsLog = path.join(dir, 'codex-args.log');
     writeBin(binDir, 'codex', `printf '%s\\n' "$@" | grep -v '^You are' > "${argsLog}"\necho codex tick`);
-    const env = { PATH: `${binDir}${path.delimiter}/usr/bin${path.delimiter}/bin` };
+    const env = { PATH: `${binDir}${path.delimiter}/usr/bin${path.delimiter}/bin`, CODEX_HOME: PINNED_CODEX_HOME };
 
     for (const [model, expected] of [['claude-opus-5-5', null], ['gpt-6-sol', 'gpt-6-sol']]) {
       const started = runCli([

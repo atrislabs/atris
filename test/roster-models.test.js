@@ -1,5 +1,11 @@
 'use strict';
 
+// These checks pin the exact codex launch, so they read a Codex config that
+// already chooses a sandbox; the fresh-install flags have their own test.
+const PINNED_CODEX_HOME = require('fs').mkdtempSync(require('path').join(require('os').tmpdir(), 'atris-codex-home-'));
+require('fs').writeFileSync(require('path').join(PINNED_CODEX_HOME, 'config.toml'), 'sandbox_mode = "workspace-write"\n');
+process.env.CODEX_HOME = PINNED_CODEX_HOME;
+
 // Every roster line runs the model it names, with optional effort and time
 // cap, and the roster view shows the real model and where it came from.
 
