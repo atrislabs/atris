@@ -8,8 +8,12 @@ const path = require('path');
 
 const taskDb = require('../lib/task-db');
 
-function freshDb() {
+function freshDb(t) {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'atris-verify-gate-'));
+  t.after(() => {
+    taskDb.close();
+    fs.rmSync(dir, { recursive: true, force: true });
+  });
   const db = taskDb.open(path.join(dir, 'tasks.db'));
   return { dir, db };
 }
@@ -25,8 +29,8 @@ function addPendingReviewTask(db, dir) {
   return result.id;
 }
 
-test('reviewTask refuses to store a verify the strict parser rejects', () => {
-  const { dir, db } = freshDb();
+test('reviewTask refuses to store a verify the strict parser rejects', (t) => {
+  const { dir, db } = freshDb(t);
   const id = addPendingReviewTask(db, dir);
   assert.throws(
     () => taskDb.reviewTask(db, {
@@ -44,11 +48,10 @@ test('reviewTask refuses to store a verify the strict parser rejects', () => {
   const row = taskDb.getTask(db, id);
   const metadata = row.metadata && typeof row.metadata === 'object' ? row.metadata : JSON.parse(row.metadata || '{}');
   assert.equal(metadata.verify, undefined, 'rejected verify must not be stored');
-  taskDb.close();
 });
 
-test('reviewTask stores an allowlisted verify', () => {
-  const { dir, db } = freshDb();
+test('reviewTask stores an allowlisted verify', (t) => {
+  const { dir, db } = freshDb(t);
   const id = addPendingReviewTask(db, dir);
   const result = taskDb.reviewTask(db, {
     id,
@@ -60,5 +63,4 @@ test('reviewTask stores an allowlisted verify', () => {
   const row = taskDb.getTask(db, id);
   const metadata = row.metadata && typeof row.metadata === 'object' ? row.metadata : JSON.parse(row.metadata || '{}');
   assert.equal(metadata.verify, 'test -s package.json');
-  taskDb.close();
 });

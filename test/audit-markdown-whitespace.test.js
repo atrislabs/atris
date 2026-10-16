@@ -9,8 +9,9 @@ const { spawnSync } = require('child_process');
 
 const SCRIPT = path.resolve(__dirname, '..', 'scripts', 'audit-markdown-whitespace.js');
 
-function makeFixture() {
+function makeFixture(t) {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'atris-md-ws-'));
+  t.after(() => fs.rmSync(dir, { recursive: true, force: true }));
   return dir;
 }
 
@@ -18,16 +19,16 @@ function runScript(dir, args = []) {
   return spawnSync(process.execPath, [SCRIPT, ...args], { cwd: dir, encoding: 'utf8' });
 }
 
-test('clean tree exits 0', () => {
-  const dir = makeFixture();
+test('clean tree exits 0', (t) => {
+  const dir = makeFixture(t);
   fs.writeFileSync(path.join(dir, 'ok.md'), '# title\nno trailing whitespace\n');
   const res = runScript(dir);
   assert.equal(res.status, 0, res.stdout + res.stderr);
   assert.match(res.stdout, /clean/);
 });
 
-test('offending file exits 1 and names the file', () => {
-  const dir = makeFixture();
+test('offending file exits 1 and names the file', (t) => {
+  const dir = makeFixture(t);
   fs.writeFileSync(path.join(dir, 'bad.md'), '# title  \ntrailing tab\t\n');
   const res = runScript(dir);
   assert.equal(res.status, 1, res.stdout + res.stderr);
@@ -35,8 +36,8 @@ test('offending file exits 1 and names the file', () => {
   assert.match(res.stdout, /npm run audit:markdown-whitespace -- --fix/);
 });
 
-test('--fix strips trailing whitespace and exits 0', () => {
-  const dir = makeFixture();
+test('--fix strips trailing whitespace and exits 0', (t) => {
+  const dir = makeFixture(t);
   const target = path.join(dir, 'bad.md');
   fs.writeFileSync(target, 'a  \nb\t\nc\n');
   const fix = runScript(dir, ['--fix']);
@@ -46,8 +47,8 @@ test('--fix strips trailing whitespace and exits 0', () => {
   assert.equal(rerun.status, 0, rerun.stdout + rerun.stderr);
 });
 
-test('skips node_modules and dot directories', () => {
-  const dir = makeFixture();
+test('skips node_modules and dot directories', (t) => {
+  const dir = makeFixture(t);
   fs.mkdirSync(path.join(dir, 'node_modules'), { recursive: true });
   fs.mkdirSync(path.join(dir, '.git'), { recursive: true });
   fs.writeFileSync(path.join(dir, 'node_modules', 'dep.md'), 'trailing  \n');

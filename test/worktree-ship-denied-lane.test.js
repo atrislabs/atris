@@ -6,8 +6,9 @@ const path = require('node:path');
 const { execSync } = require('node:child_process');
 const { deniedLaneForShip } = require('../commands/worktree');
 
-function repoWithProjection(tasks) {
+function repoWithProjection(t, tasks) {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'ship-lane-'));
+  t.after(() => fs.rmSync(root, { recursive: true, force: true }));
   execSync('git init -q && git -c user.email=t@t -c user.name=t commit -q --allow-empty -m init', { cwd: root });
   const dir = path.join(root, '.atris', 'state');
   fs.mkdirSync(dir, { recursive: true });
@@ -15,8 +16,8 @@ function repoWithProjection(tasks) {
   return root;
 }
 
-test('a branch carrying a denied-lane task is blocked at ship', () => {
-  const root = repoWithProjection([
+test('a branch carrying a denied-lane task is blocked at ship', (t) => {
+  const root = repoWithProjection(t, [
     { display_id: 'CLI-1196', tag: 'billing', metadata: {} },
   ]);
   const hit = deniedLaneForShip(root, 'codex/claude-fleet-cli-1196-20260726', 'gift re-land (CLI-1196, built by claude)');
@@ -25,14 +26,14 @@ test('a branch carrying a denied-lane task is blocked at ship', () => {
   assert.strictEqual(hit.tag, 'billing');
 });
 
-test('a safe-lane branch ships without a block', () => {
-  const root = repoWithProjection([
+test('a safe-lane branch ships without a block', (t) => {
+  const root = repoWithProjection(t, [
     { display_id: 'CLI-1200', tag: 'health', metadata: {} },
   ]);
   assert.strictEqual(deniedLaneForShip(root, 'codex/fleet-cli-1200', 'radar fix (CLI-1200)'), null);
 });
 
-test('no task reference means no block', () => {
-  const root = repoWithProjection([]);
+test('no task reference means no block', (t) => {
+  const root = repoWithProjection(t, []);
   assert.strictEqual(deniedLaneForShip(root, 'codex/manual-branch', 'hand work'), null);
 });

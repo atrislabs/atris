@@ -7,7 +7,7 @@ const os = require('node:os');
 const path = require('node:path');
 
 const { campaignCommand } = require('../commands/campaign');
-const { createMemoryStore } = require('../lib/campaign-store');
+const { createMemoryStore, closeCampaignStores } = require('../lib/campaign-store');
 const { nextAt, parseEvery, readSchedule, scheduleFile } = require('../lib/campaign-schedule');
 
 const MIN = 60000;
@@ -22,6 +22,8 @@ function start(store, id, budget = 20) {
 async function run(store, home, args, { at = T0, actor = 'human:keshav', judged } = {}) {
   const logs = [];
   const saved = { log: console.log, error: console.error };
+  const previousDb = process.env.ATRIS_CAMPAIGN_DB;
+  process.env.ATRIS_CAMPAIGN_DB = path.join(home, 'campaign.db');
   console.log = (line) => logs.push(String(line));
   console.error = () => {};
   let code;
@@ -34,13 +36,23 @@ async function run(store, home, args, { at = T0, actor = 'human:keshav', judged 
       loopDeps: { now: () => at, skipReconcile: true, cli: async () => ({ code: 0, out: '', err: '' }), ask: async () => ({ ok: true, text: '[]' }), sync: async () => 0 },
     });
   } finally {
-    console.log = saved.log;
-    console.error = saved.error;
+    try { closeCampaignStores(); } finally {
+      if (previousDb === undefined) delete process.env.ATRIS_CAMPAIGN_DB;
+      else process.env.ATRIS_CAMPAIGN_DB = previousDb;
+      console.log = saved.log;
+      console.error = saved.error;
+    }
   }
   return { code, body: JSON.parse(logs[logs.length - 1]) };
 }
 
-const tmpHome = () => fs.mkdtempSync(path.join(os.tmpdir(), 'atris-schedule-'));
+function makeTempDir(t, prefix) {
+  const tmp = fs.mkdtempSync(path.join(os.tmpdir(), prefix));
+  t.after(() => fs.rmSync(tmp, { recursive: true, force: true }));
+  return tmp;
+}
+
+const tmpHome = (t) => makeTempDir(t, 'atris-schedule-');
 
 test('parseEvery reads intervals, days, and clock times, and refuses what it cannot read', () => {
   assert.deepEqual(parseEvery('30m').rule, { kind: 'interval', ms: 30 * MIN });
@@ -60,9 +72,9 @@ test('nextAt finds the next allowed day, skipping the weekend', () => {
   assert.equal(nextAt(parseEvery('1m').rule, T0 + 19000), T0 + MIN, 'an interval slot lands on the minute it shows');
 });
 
-test('only a person can set a schedule, and only on a campaign with a budget', async () => {
+test('only a person can set a schedule, and only on a campaign with a budget', async (t) => {
   const store = createMemoryStore();
-  const home = tmpHome();
+  const home = tmpHome(t);
   start(store, 'cmp-a');
   start(store, 'cmp-open', 1e9);
   const agent = await run(store, home, ['schedule', 'cmp-a', '--every', 'weekdays 09:00'], { actor: 'mission-lead' });
@@ -86,9 +98,9 @@ test('only a person can set a schedule, and only on a campaign with a budget', a
   assert.equal(fs.existsSync(scheduleFile(home, 'cmp-a')), false);
 });
 
-test('wake leaves a scheduled campaign alone until its time, then runs it once and books the next slot', async () => {
+test('wake leaves a scheduled campaign alone until its time, then runs it once and books the next slot', async (t) => {
   const store = createMemoryStore();
-  const home = tmpHome();
+  const home = tmpHome(t);
   start(store, 'cmp-daily');
   await run(store, home, ['schedule', 'cmp-daily', '--every', 'daily 09:00', '--steps', '1']);
   const judged = { count: 0 };
@@ -109,9 +121,9 @@ test('wake leaves a scheduled campaign alone until its time, then runs it once a
   assert.deepEqual(again.body.woke, [], 'a slot fires once');
 });
 
-test('tick skips a scheduled campaign that is not due and pushes the next one', async () => {
+test('tick skips a scheduled campaign that is not due and pushes the next one', async (t) => {
   const store = createMemoryStore();
-  const home = tmpHome();
+  const home = tmpHome(t);
   start(store, 'cmp-sched');
   start(store, 'cmp-free');
   await run(store, home, ['schedule', 'cmp-sched', '--every', 'weekdays 09:00']);

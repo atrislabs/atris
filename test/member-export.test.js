@@ -15,8 +15,9 @@ const { GENERATED_MARK, exportMembers, frontmatterOf } = require('../lib/member-
 
 const cli = path.resolve(__dirname, '..', 'bin', 'atris.js');
 
-function project(members) {
+function project(t, members) {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'member-export-'));
+  t.after(() => fs.rmSync(root, { recursive: true, force: true }));
   for (const [name, text, skills = []] of members) {
     const dir = path.join(root, 'atris', 'team', name);
     fs.mkdirSync(dir, { recursive: true });
@@ -32,8 +33,8 @@ function project(members) {
 const VALIDATOR = '---\nname: validator\nrole: Reviewer\ndescription: Validate execution, run tests, "ensure" quality\nmodel: opus\nskills:\n  - test-runner\n---\n\n# Validator\n\n## Rules\n\n- Never patch, only judge.\n';
 const SCOUT = '---\nname: scout\nrole: Scout\ndescription: Finds new signal\nstatus: parked\nparked_note: 2026-10-01 quiet\n---\n\n# Scout\n';
 
-test('writes claude, cursor, and codex agents from MEMBER.md and skips parked members', () => {
-  const root = project([['validator', VALIDATOR, ['cross-model-referee']], ['scout', SCOUT]]);
+test('writes claude, cursor, and codex agents from MEMBER.md and skips parked members', (t) => {
+  const root = project(t, [['validator', VALIDATOR, ['cross-model-referee']], ['scout', SCOUT]]);
   const result = exportMembers(root);
 
   assert.deepEqual(result.members, ['validator']);
@@ -64,8 +65,8 @@ test('writes claude, cursor, and codex agents from MEMBER.md and skips parked me
   assert.match(codex, /^developer_instructions = ".*Never patch, only judge\..*"$/m);
 });
 
-test('a second run changes nothing, a parked member loses its old files, hand-written files stay', () => {
-  const root = project([['validator', VALIDATOR], ['scout', SCOUT.replace(/status: parked\n/, '')]]);
+test('a second run changes nothing, a parked member loses its old files, hand-written files stay', (t) => {
+  const root = project(t, [['validator', VALIDATOR], ['scout', SCOUT.replace(/status: parked\n/, '')]]);
   assert.equal(exportMembers(root).written.length, 6);
 
   const again = exportMembers(root);
@@ -82,8 +83,8 @@ test('a second run changes nothing, a parked member loses its old files, hand-wr
   assert.equal(fs.readFileSync(handWritten, 'utf8'), '---\nname: validator\ndescription: mine\n---\nmine\n');
 });
 
-test('atris member export runs for real, and --dry-run writes nothing', () => {
-  const root = project([['validator', VALIDATOR]]);
+test('atris member export runs for real, and --dry-run writes nothing', (t) => {
+  const root = project(t, [['validator', VALIDATOR]]);
   const env = { ...process.env, ATRIS_SKIP_UPDATE_CHECK: '1' };
 
   const dry = spawnSync(process.execPath, [cli, 'member', 'export', '--dry-run'], { cwd: root, env, encoding: 'utf8' });
@@ -97,12 +98,12 @@ test('atris member export runs for real, and --dry-run writes nothing', () => {
   assert.equal(fs.existsSync(path.join(root, '.claude', 'agents', 'validator.md')), true);
 });
 
-test('atris update --yes exports the team in a business project and in a plain project', () => {
+test('atris update --yes exports the team in a business project and in a plain project', (t) => {
   const env = { ...process.env, ATRIS_SKIP_UPDATE_CHECK: '1' };
-  const business = project([['checker', VALIDATOR.replace('name: validator', 'name: checker')]]);
+  const business = project(t, [['checker', VALIDATOR.replace('name: validator', 'name: checker')]]);
   fs.mkdirSync(path.join(business, '.atris'), { recursive: true });
   fs.writeFileSync(path.join(business, '.atris', 'business.json'), JSON.stringify({ name: 'Acme' }));
-  const plain = project([['checker', VALIDATOR.replace('name: validator', 'name: checker')]]);
+  const plain = project(t, [['checker', VALIDATOR.replace('name: validator', 'name: checker')]]);
 
   for (const root of [business, plain]) {
     const run = spawnSync(process.execPath, [cli, 'update', '--yes'], { cwd: root, env, encoding: 'utf8' });
@@ -112,7 +113,7 @@ test('atris update --yes exports the team in a business project and in a plain p
     assert.equal(fs.existsSync(path.join(root, '.codex', 'agents', 'checker.toml')), true, root);
   }
 
-  const dry = project([['checker', VALIDATOR]]);
+  const dry = project(t, [['checker', VALIDATOR]]);
   const plan = spawnSync(process.execPath, [cli, 'update', '--dry-run'], { cwd: dry, env, encoding: 'utf8' });
   assert.doesNotMatch(plan.stdout, /✓ Team:/);
   assert.equal(fs.existsSync(path.join(dry, '.claude', 'agents')), false);

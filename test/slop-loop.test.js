@@ -6,10 +6,14 @@ const path = require('node:path');
 const { execFileSync } = require('node:child_process');
 const { scanFile, applyFixes, loadProjectRules, addProjectRule, gitChangedLines, installHook, RULES } = require('../commands/slop');
 
-function tmpDir() { return fs.mkdtempSync(path.join(os.tmpdir(), 'sloploop-')); }
+function tmpDir(t) {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'sloploop-'));
+  t.after(() => fs.rmSync(dir, { recursive: true, force: true }));
+  return dir;
+}
 
-test('--fix repairs em dashes in place and leaves a comma', () => {
-  const dir = tmpDir();
+test('--fix repairs em dashes in place and leaves a comma', (t) => {
+  const dir = tmpDir(t);
   const f = path.join(dir, 'copy.md');
   fs.writeFileSync(f, 'Fast, reliable — and calm.\nShip it — today.\n');
   const { fixedCount, fixedFiles } = applyFixes([f], RULES);
@@ -22,8 +26,8 @@ test('--fix repairs em dashes in place and leaves a comma', () => {
   assert.equal(scanFile(f).filter((x) => x.rule === 'em-dash').length, 0);
 });
 
-test('--fix never touches tells that need judgment (gradient text stays)', () => {
-  const dir = tmpDir();
+test('--fix never touches tells that need judgment (gradient text stays)', (t) => {
+  const dir = tmpDir(t);
   const f = path.join(dir, 'Hero.tsx');
   fs.writeFileSync(f, '<h1 className="text-transparent bg-clip-text">hi</h1>\n');
   const before = fs.readFileSync(f, 'utf8');
@@ -31,8 +35,8 @@ test('--fix never touches tells that need judgment (gradient text stays)', () =>
   assert.equal(fs.readFileSync(f, 'utf8'), before, 'unsafe tells are not auto-edited');
 });
 
-test('project rules from .atris/slop.rules.json load and fire', () => {
-  const dir = tmpDir();
+test('project rules from .atris/slop.rules.json load and fire', (t) => {
+  const dir = tmpDir(t);
   fs.mkdirSync(path.join(dir, '.atris'), { recursive: true });
   fs.writeFileSync(path.join(dir, '.atris', 'slop.rules.json'),
     JSON.stringify([{ id: 'no-foobar', pattern: 'foobar', why: 'banned word', sev: 'error' }]));
@@ -43,8 +47,8 @@ test('project rules from .atris/slop.rules.json load and fire', () => {
   assert.ok(hits.includes('no-foobar'));
 });
 
-test('addProjectRule writes and dedups by id', () => {
-  const dir = tmpDir();
+test('addProjectRule writes and dedups by id', (t) => {
+  const dir = tmpDir(t);
   addProjectRule({ id: 'r1', pattern: 'aaa', why: 'first', sev: 'warn' }, dir);
   addProjectRule({ id: 'r1', pattern: 'bbb', why: 'updated', sev: 'error' }, dir);
   addProjectRule({ id: 'r2', pattern: 'ccc', why: 'second', sev: 'warn' }, dir);
@@ -55,8 +59,8 @@ test('addProjectRule writes and dedups by id', () => {
   assert.ok(r1.re.test('bbb'));
 });
 
-test('a malformed project rule is skipped, not fatal', () => {
-  const dir = tmpDir();
+test('a malformed project rule is skipped, not fatal', (t) => {
+  const dir = tmpDir(t);
   fs.mkdirSync(path.join(dir, '.atris'), { recursive: true });
   fs.writeFileSync(path.join(dir, '.atris', 'slop.rules.json'),
     JSON.stringify([{ id: 'bad', pattern: '(' }, { id: 'good', pattern: 'ok' }]));
@@ -65,8 +69,8 @@ test('a malformed project rule is skipped, not fatal', () => {
   assert.equal(loaded[0].id, 'good');
 });
 
-test('installHook writes an executable pre-commit gate, idempotently', () => {
-  const dir = tmpDir();
+test('installHook writes an executable pre-commit gate, idempotently', (t) => {
+  const dir = tmpDir(t);
   execFileSync('git', ['init', '-q'], { cwd: dir });
   const r1 = installHook(dir);
   assert.equal(r1.already, false);
@@ -81,12 +85,12 @@ test('installHook writes an executable pre-commit gate, idempotently', () => {
   assert.equal(occurrences, 1);
 });
 
-test('installHook refuses a non-git directory', () => {
-  assert.throws(() => installHook(tmpDir()), /not a git repo/);
+test('installHook refuses a non-git directory', (t) => {
+  assert.throws(() => installHook(tmpDir(t)), /not a git repo/);
 });
 
-test('--diff scopes findings to changed lines only', () => {
-  const dir = tmpDir();
+test('--diff scopes findings to changed lines only', (t) => {
+  const dir = tmpDir(t);
   const git = (...a) => execFileSync('git', a, { cwd: dir, stdio: 'pipe' });
   git('init', '-q');
   git('config', 'user.email', 't@t.t'); git('config', 'user.name', 't');

@@ -73,15 +73,21 @@ test('a mission starts with its reserve and ends once, releasing it with its rea
   assert.equal(getCampaign(store, 'cmp-a').budget.spent, 2.22);
 });
 
-function workspace() {
-  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'atris-campaign-missions-'));
+function makeTempDir(t, prefix) {
+  const tmp = fs.mkdtempSync(path.join(os.tmpdir(), prefix));
+  t.after(() => fs.rmSync(tmp, { recursive: true, force: true }));
+  return tmp;
+}
+
+function workspace(t) {
+  const root = makeTempDir(t, 'atris-campaign-missions-');
   fs.mkdirSync(path.join(root, 'atris', 'team', 'builder'), { recursive: true });
   fs.writeFileSync(path.join(root, 'atris', 'team', 'builder', 'MEMBER.md'), '# Builder\n', 'utf8');
   return root;
 }
 
-test('the real commands: atris mission start --campaign reports into the campaign, and refusals leave no mission', () => {
-  const root = workspace();
+test('the real commands: atris mission start --campaign reports into the campaign, and refusals leave no mission', (t) => {
+  const root = workspace(t);
   const env = { ...process.env, ATRIS_CAMPAIGN_DB: path.join(root, 'campaign.db'), ATRIS_SKIP_UPDATE_CHECK: '1', NODE_NO_WARNINGS: '1' };
   const cli = (...args) => spawnSync(process.execPath, [CLI, ...args], { cwd: root, env, encoding: 'utf8' });
 
