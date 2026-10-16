@@ -115,6 +115,7 @@ checks the refs in both files; `atris doc-health --fix-refs` moves drifted ones.
 | slop detector | `commands/slop.js` | prose lint |
 | design system commands | `commands/design.js` `lib/design-api.js` | atris design extract and check; shared with atris mcp, which also serves the campaign tools |
 | improvement attempt ledger | `commands/rsi.js` `lib/rsi-record.js` | read and record Dream-RSI attempts |
+| human revision report | `commands/improve.js:1309` `test/improve-revisions.test.js:64` | `atris improve revisions` keeps the same lookback and correction window while traversing ancestors behind out-of-order commit dates |
 | workspace tree hash | `commands/tree.js` `lib/tree-hash.js` | atris tree hash over the doctrine files |
 | tests | `test/commands-1.test.js` to `test/commands-8.test.js`, shared setup in `test/helpers/commands-fixtures.js` | node --test test/ |
 | run one test | `package.json` | npm test, node --test |

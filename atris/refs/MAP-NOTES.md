@@ -2392,3 +2392,7 @@ Complete source evidence: `lib/mission-code-provenance.js:78` captures a clean G
 ### preserve source branches for queued merges
 
 `commands/worktree.js:1128` reads GitHub merge state before deleting a source branch; pending work omits the completed-ship marker. Regression: `test/worktree-ship-queued-merge.test.js` runs the actual CLI and git remote for pending, closed, unreadable, malformed, and confirmed-merged results.
+
+### Revision reports across out-of-order commit dates
+
+`commands/improve.js:1309` filters the existing lookback with `--since-as-filter`, so an old-dated descendant cannot prune a real landing or correction. `test/improve-revisions.test.js:64` compares matching landing/correction commits and final trees through the real API and CLI, including agent and outside-window controls. Verify: `node --test test/improve-revisions.test.js`.
