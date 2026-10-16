@@ -30,16 +30,18 @@ function assertRows(text) {
   assert.match(text, /^- note: line one line two$/m);
 }
 
-test('appendMemberGoalLog drops fields that render empty', () => {
+test('appendMemberGoalLog drops fields that render empty', (t) => {
   const memberDir = fs.mkdtempSync(path.join(os.tmpdir(), 'atris-member-log-'));
+  t.after(() => fs.rmSync(memberDir, { recursive: true, force: true }));
   const logPath = appendMemberGoalLog(memberDir, 'tester', 'Member wake decision', fields);
   const text = fs.readFileSync(logPath, 'utf8');
   assert.match(text, /^- team: tester$/m);
   assertRows(text);
 });
 
-test('appendProjectLog drops fields that render empty', () => {
+test('appendProjectLog drops fields that render empty', (t) => {
   const cwd = fs.mkdtempSync(path.join(os.tmpdir(), 'atris-project-log-'));
+  t.after(() => fs.rmSync(cwd, { recursive: true, force: true }));
   const prev = process.cwd();
   process.chdir(cwd);
   try {
