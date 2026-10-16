@@ -69,7 +69,9 @@ test('rounds work, then review: lessons are written and the next plan reads them
 
 test('a campaign that needs a person ends the rounds instead of sleeping', async () => {
   const { root, store } = setup();
-  store.append({ campaign_id: 'cmp-c', type: 'ask_opened', actor: 'builder', data: { ask_id: 'a1', question: 'Deploy?' } });
+  store.append({ campaign_id: 'cmp-c', type: 'mission_proposed', actor: 'builder', data: { mission_id: 'm-deploy', member: 'builder', objective: 'Deploy it' } });
+  store.append({ campaign_id: 'cmp-c', type: 'mission_claimed', actor: 'builder', data: { mission_id: 'm-deploy', claim_key: 'deploy it' } });
+  store.append({ campaign_id: 'cmp-c', type: 'ask_opened', actor: 'builder', data: { ask_id: 'a1', question: 'Deploy?', mission_id: 'm-deploy' } });
   let slept = 0;
   const loop = makeLoop(root, {}, { store, cli: fakeCli(store), log: () => {}, skipReconcile: true, judge: async () => ({ passed: false }), ask: async () => ({ ok: true, text: '[]' }) });
   const cadence = makeCadence(root, loop, { work: '50m', break: '10m' }, { store, log: () => {}, now: () => 0, sleep: async () => { slept++; } });
@@ -100,4 +102,24 @@ test('on your own subscription the review prompt shows no dollars, and API billi
     if (saved === undefined) delete process.env.ATRIS_BILLING;
     else process.env.ATRIS_BILLING = saved;
   }
+});
+
+test('a round where nothing ended and the reading held asks no model and writes no lessons', async () => {
+  const { root, store } = setup();
+  store.append({ campaign_id: 'cmp-c', type: 'judge_ran', actor: 'judge', data: { passed: false, exit: 1, summary: '0 of 1' } });
+  let clock = 0;
+  let asked = 0;
+  const loop = { step: async () => { clock += 60000; return { stop: true, reason: 'waiting: nothing to plan' }; } };
+  const ask = async () => { asked += 1; return { ok: true, text: '- keep waiting' }; };
+  const cadence = makeCadence(root, loop, { work: '5m', break: '1m', rounds: 1 }, { store, log: () => {}, ask, now: () => clock, sleep: async (ms) => { clock += ms; } });
+  await cadence.run('cmp-c');
+  assert.equal(asked, 0);
+  assert.match(fs.readFileSync(lessonsPath(root, 'cmp-c'), 'utf8'), /nothing ended and the reading held/);
+  assert.equal(readLessons(root, 'cmp-c'), '');
+
+  // The same round with a new reading is reviewed as before.
+  const moved = { step: async () => { store.append({ campaign_id: 'cmp-c', type: 'judge_ran', actor: 'judge', data: { passed: false, exit: 1, summary: '1 of 2' } }); return { stop: true, reason: 'waiting: nothing to plan' }; } };
+  await makeCadence(root, moved, { work: '5m', break: '1m', rounds: 1 }, { store, log: () => {}, ask, now: () => clock, sleep: async () => {} }).run('cmp-c');
+  assert.equal(asked, 1);
+  assert.match(fs.readFileSync(lessonsPath(root, 'cmp-c'), 'utf8'), /- keep waiting/);
 });

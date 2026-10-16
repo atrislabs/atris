@@ -177,7 +177,7 @@ Exact keys, in this shape. Lists keep the order their first event was applied.
 - `{ "action": "none", "reason": "finished" }` when done
 - `{ "action": "none", "reason": "budget spent" }` when out of budget
 - `{ "action": "none", "reason": "paused" }` when paused
-- `{ "action": "wait", "reason": "open asks", "asks": [ids] }` when an ask is open
+- `{ "action": "wait", "reason": "open asks", "asks": [ids] }` when there are `claimed` missions and every one is named by an open ask's `mission_id`. An open ask holds only the mission it names; an ask with no `mission_id` holds nothing, so the rest of this list still applies. Claimed missions an ask names are left out of the `start_mission` and `budget` rules below
 - `{ "action": "run_judge" }` when `judge_due`
 - `{ "action": "start_mission", "mission_id": id }` for the first `claimed` mission whose estimate (0 when null) fits in `available`
 - `{ "action": "wait", "reason": "budget" }` when claimed missions exist but none fits

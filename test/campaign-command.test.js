@@ -129,7 +129,7 @@ test('pause, resume, and stop; the list puts what needs you first', async () => 
   await run(store, ['resume', 'cmp-ship']);
   const list = await run(store, []);
   assert.ok(list.out.indexOf('Second') < list.out.indexOf('Ship campaigns'), list.out);
-  assert.match(list.out, /next: answer 1 open ask/);
+  assert.match(list.out, /Second  \(cmp-two\)\n  needs you .*\n  next: plan and run the next missions/);
   await run(store, ['stop', 'cmp-ship']);
   assert.equal(getCampaign(store, 'cmp-ship').stop_reason, 'stopped');
 });
@@ -166,18 +166,22 @@ test('the real command: json on every verb, store from ATRIS_CAMPAIGN_DB, a real
   assert.match(cli('help').stdout, /write a judge that fails first/);
 });
 
-test('ask stops the campaign for a person; an agent cannot answer, a person can', async () => {
+test('ask waits for a person; an agent cannot answer, a person can', async () => {
   const store = createMemoryStore();
   await run(store, startArgs);
   const asked = await run(store, ['ask', 'cmp-ship', 'Email the customer the launch note?', '--as', 'builder']);
   assert.equal(asked.code, 0);
   const askId = getCampaign(store, 'cmp-ship').asks[0].id;
-  assert.match(asked.out, /next: answer 1 open ask: atris campaign answer cmp-ship a-[0-9a-f]{6}/);
+  assert.match(asked.out, /needs you · next: plan and run the next missions/);
+  assert.match(asked.out, /asks {6}\n  a-[0-9a-f]{6}: Email the customer the launch note\?/);
+  const held = await run(store, ['ask', 'cmp-ship', 'Spend $40?', '--mission', 'm-ads', '--as', 'builder']);
+  assert.equal(getCampaign(store, 'cmp-ship').asks[1].mission_id, 'm-ads');
+  assert.equal(held.code, 0);
   const byAgent = await run(store, ['answer', 'cmp-ship', askId, 'yes', '--as', 'builder']);
   assert.match(byAgent.out, /not closed: only a person can answer/);
   assert.equal(getCampaign(store, 'cmp-ship').state, 'needs_you');
   assert.equal((await run(store, ['answer', 'cmp-ship', askId, 'yes, send it'])).code, 0);
-  assert.deepEqual(getCampaign(store, 'cmp-ship').asks, []);
+  assert.deepEqual(getCampaign(store, 'cmp-ship').asks.map((a) => a.mission_id), ['m-ads']);
 });
 
 test('set-judge: only the owner or a person, and the new judge must fail first', async () => {
