@@ -64,6 +64,7 @@ test('agents-v1 tasks fail under null and pass under solution', async () => {
         taskIds: [id],
         stateRoot: nullStateRoot,
         persist: false,
+        pythonCmd: null,
       });
       assert.equal(exitCode, 1, `${id} unexpectedly passed under null:\n${JSON.stringify(record, null, 2)}`);
       assert.deepEqual(record.failed, [id]);
@@ -83,6 +84,7 @@ test('agents-v1 tasks fail under null and pass under solution', async () => {
         taskIds: [id],
         stateRoot: solutionStateRoot,
         persist: false,
+        pythonCmd: null,
       });
       assert.equal(exitCode, 0, `${id} failed under solution:\n${JSON.stringify(record, null, 2)}`);
       assert.deepEqual(record.passed, [id]);
