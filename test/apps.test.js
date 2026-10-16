@@ -10,8 +10,14 @@ const { findAppsPackRoot, listAppManifests } = require('../commands/apps');
 
 const cliPath = path.join(__dirname, '..', 'bin', 'atris.js');
 
-function makePack() {
-  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'atris-apps-test-'));
+function makeTempDir(t, prefix) {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), prefix));
+  t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+  return root;
+}
+
+function makePack(t) {
+  const root = makeTempDir(t, 'atris-apps-test-');
   const pack = path.join(root, 'atris', 'apps-pack');
   const app = path.join(pack, 'apps', 'demo-app');
   fs.mkdirSync(path.join(pack, 'scripts'), { recursive: true });
@@ -47,8 +53,8 @@ function writeArgvScript(pack, name) {
   );
 }
 
-function makeHomeWithCredentials(token = 'test-token') {
-  const home = fs.mkdtempSync(path.join(os.tmpdir(), 'atris-apps-home-'));
+function makeHomeWithCredentials(t, token = 'test-token') {
+  const home = makeTempDir(t, 'atris-apps-home-');
   fs.mkdirSync(path.join(home, '.atris'), { recursive: true });
   fs.writeFileSync(path.join(home, '.atris', 'credentials.json'), JSON.stringify({
     token,
@@ -90,15 +96,15 @@ function spawnCli(args, options = {}) {
   });
 }
 
-test('findAppsPackRoot discovers atris/apps-pack from nested workspace paths', () => {
-  const { root, pack } = makePack();
+test('findAppsPackRoot discovers atris/apps-pack from nested workspace paths', (t) => {
+  const { root, pack } = makePack(t);
   const nested = path.join(root, 'services', 'api');
   fs.mkdirSync(nested, { recursive: true });
   assert.equal(findAppsPackRoot(nested), pack);
 });
 
-test('listAppManifests returns agent-readable APP.md metadata', () => {
-  const { pack } = makePack();
+test('listAppManifests returns agent-readable APP.md metadata', (t) => {
+  const { pack } = makePack(t);
   assert.deepEqual(listAppManifests(pack), [{
     slug: 'demo-app',
     path: path.join(pack, 'apps', 'demo-app', 'APP.md'),
@@ -112,8 +118,8 @@ test('listAppManifests returns agent-readable APP.md metadata', () => {
   }]);
 });
 
-test('atris apps list --json bypasses natural-language planner', () => {
-  const { root, pack } = makePack();
+test('atris apps list --json bypasses natural-language planner', (t) => {
+  const { root, pack } = makePack(t);
   const result = spawnSync(process.execPath, [cliPath, 'apps', 'list', '--json'], {
     cwd: root,
     encoding: 'utf8',
@@ -125,8 +131,8 @@ test('atris apps list --json bypasses natural-language planner', () => {
   assert.equal(payload.apps[0].slug, 'demo-app');
 });
 
-test('atris apps --json is a machine-readable list shorthand', () => {
-  const { root, pack } = makePack();
+test('atris apps --json is a machine-readable list shorthand', (t) => {
+  const { root, pack } = makePack(t);
   const result = spawnSync(process.execPath, [cliPath, 'apps', '--json'], {
     cwd: root,
     encoding: 'utf8',
@@ -138,8 +144,8 @@ test('atris apps --json is a machine-readable list shorthand', () => {
   assert.equal(payload.apps[0].slug, 'demo-app');
 });
 
-test('atris apps --json missing pack returns JSON error', () => {
-  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'atris-apps-test-'));
+test('atris apps --json missing pack returns JSON error', (t) => {
+  const root = makeTempDir(t, 'atris-apps-test-');
   const result = spawnSync(process.execPath, [cliPath, 'apps', '--json'], {
     cwd: root,
     encoding: 'utf8',
@@ -154,9 +160,9 @@ test('atris apps --json missing pack returns JSON error', () => {
   });
 });
 
-test('atris apps load --json fetches owned cloud apps without a local pack', async () => {
-  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'atris-apps-test-'));
-  const home = makeHomeWithCredentials();
+test('atris apps load --json fetches owned cloud apps without a local pack', async (t) => {
+  const root = makeTempDir(t, 'atris-apps-test-');
+  const home = makeHomeWithCredentials(t);
   const requests = [];
   const { server, port } = await startJsonServer((req, res) => {
     requests.push({ url: req.url, method: req.method, authorization: req.headers.authorization });
@@ -219,13 +225,13 @@ test('atris apps load --json fetches owned cloud apps without a local pack', asy
     assert.deepEqual(requests.map(r => r.url), ['/api/auth/validate', '/api/apps?filter=template']);
     assert.equal(requests[1].authorization, 'Bearer test-token');
   } finally {
-    server.close();
+    await new Promise(resolve => server.close(resolve));
   }
 });
 
-test('atris apps load --json returns login guidance without credentials', () => {
-  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'atris-apps-test-'));
-  const home = fs.mkdtempSync(path.join(os.tmpdir(), 'atris-apps-home-'));
+test('atris apps load --json returns login guidance without credentials', (t) => {
+  const root = makeTempDir(t, 'atris-apps-test-');
+  const home = makeTempDir(t, 'atris-apps-home-');
   const result = spawnSync(process.execPath, [cliPath, 'apps', 'load', '--json'], {
     cwd: root,
     encoding: 'utf8',
@@ -245,8 +251,8 @@ test('atris apps load --json returns login guidance without credentials', () => 
   });
 });
 
-test('atris apps run --json missing slug returns JSON usage error', () => {
-  const { root, pack } = makePack();
+test('atris apps run --json missing slug returns JSON usage error', (t) => {
+  const { root, pack } = makePack(t);
   const result = spawnSync(process.execPath, [cliPath, 'apps', 'run', '--json'], {
     cwd: root,
     encoding: 'utf8',
@@ -260,8 +266,8 @@ test('atris apps run --json missing slug returns JSON usage error', () => {
   });
 });
 
-test('atris apps owner --json missing slug returns JSON usage error', () => {
-  const { root, pack } = makePack();
+test('atris apps owner --json missing slug returns JSON usage error', (t) => {
+  const { root, pack } = makePack(t);
   const result = spawnSync(process.execPath, [cliPath, 'apps', 'owner', '--json'], {
     cwd: root,
     encoding: 'utf8',
@@ -275,8 +281,8 @@ test('atris apps owner --json missing slug returns JSON usage error', () => {
   });
 });
 
-test('atris apps unknown --json returns JSON usage error', () => {
-  const { root, pack } = makePack();
+test('atris apps unknown --json returns JSON usage error', (t) => {
+  const { root, pack } = makePack(t);
   const result = spawnSync(process.execPath, [cliPath, 'apps', 'nope', '--json'], {
     cwd: root,
     encoding: 'utf8',
@@ -290,8 +296,8 @@ test('atris apps unknown --json returns JSON usage error', () => {
   assert.ok(payload.usage.some(line => line.includes('atris apps <command>')));
 });
 
-test('atris apps owner forwards json, no-run, and line limit', () => {
-  const { root, pack } = makePack();
+test('atris apps owner forwards json, no-run, and line limit', (t) => {
+  const { root, pack } = makePack(t);
   writeArgvScript(pack, 'app_owner.py');
   const result = spawnSync(
     process.execPath,

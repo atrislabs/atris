@@ -158,7 +158,7 @@ test('taskDayTitle ends long rows at a sentence or honest ellipsis', () => {
   const clipped = taskDayTitle('one '.repeat(40));
   assert.ok(clipped.endsWith('...'));
   assert.ok(clipped.length <= 123);
-  assert.equal(taskDayTitle('A live result — with one move'), 'A live result - with one move');
+  assert.equal(taskDayTitle('A live result \u2014 with one move'), 'A live result - with one move');
 });
 
 test('task day text caps eight rows while full and json keep all tasks', () => {

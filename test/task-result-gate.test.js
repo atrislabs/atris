@@ -7,19 +7,14 @@ const os = require('node:os');
 const path = require('node:path');
 const { spawnSync } = require('node:child_process');
 const { scrubAgentEnv } = require('./helpers/agent-env');
+const { hasNodeSqlite: probeNodeSqlite } = require('./helpers/node-sqlite');
 
 const repoRoot = path.resolve(__dirname, '..');
 const cliPath = path.join(repoRoot, 'bin', 'atris.js');
 const CLEAN_RESULT = 'Operators can now read the whole team day on one page instead of scrolling raw logs.';
 const PROOF = 'Receipt saved at atris/runs/proof.json and the task projection was inspected.';
 
-function hasNodeSqlite() {
-  const result = spawnSync(process.execPath, ['-e', 'require("node:sqlite")'], {
-    encoding: 'utf8',
-    env: { ...process.env, NODE_NO_WARNINGS: '1' },
-  });
-  return result.status === 0;
-}
+const hasNodeSqlite = () => probeNodeSqlite({ NODE_NO_WARNINGS: '1' });
 
 function makeTempDir() {
   return fs.mkdtempSync(path.join(os.tmpdir(), 'atris-task-result-gate-'));
