@@ -33,8 +33,14 @@ function writeJsonl(file, rows) {
   fs.writeFileSync(file, rows.map((row) => JSON.stringify(row)).join('\n') + '\n', 'utf8');
 }
 
-function fixtureRoot() {
-  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'atris-stream-test-'));
+function makeTempDir(t, prefix) {
+  const tmp = fs.mkdtempSync(path.join(os.tmpdir(), prefix));
+  t.after(() => fs.rmSync(tmp, { recursive: true, force: true }));
+  return tmp;
+}
+
+function fixtureRoot(t) {
+  const root = makeTempDir(t, 'atris-stream-test-');
   const stateDir = path.join(root, '.atris', 'state');
   const runsDir = path.join(root, 'atris', 'runs');
   mkdirp(stateDir);
@@ -135,8 +141,8 @@ function fixtureRoot() {
   return root;
 }
 
-test('collectStreamEvents merges sources in chronological order', () => {
-  const root = fixtureRoot();
+test('collectStreamEvents merges sources in chronological order', (t) => {
+  const root = fixtureRoot(t);
   const events = collectStreamEvents({
     root,
     sinceMs: Date.parse('2026-07-06T07:59:00.000Z'),
@@ -187,8 +193,8 @@ test('collectStreamEvents breaks same-ms ties with stable source order', () => {
   assert.deepEqual(forward.map((event) => event.source), ['mission_state', 'mission_receipt', 'mission_landing']);
 });
 
-test('agent filter keeps one agent stream', () => {
-  const root = fixtureRoot();
+test('agent filter keeps one agent stream', (t) => {
+  const root = fixtureRoot(t);
   const events = collectStreamEvents({
     root,
     agent: 'validator',
@@ -202,8 +208,8 @@ test('agent filter keeps one agent stream', () => {
   assert.match(events.map((event) => event.summary).join('\n'), /validated/);
 });
 
-test('NDJSON shape is stable and includes raw source record', () => {
-  const root = fixtureRoot();
+test('NDJSON shape is stable and includes raw source record', (t) => {
+  const root = fixtureRoot(t);
   const event = collectStreamEvents({
     root,
     sinceMs: Date.parse('2026-07-06T08:05:00.000Z'),
@@ -217,8 +223,8 @@ test('NDJSON shape is stable and includes raw source record', () => {
   assert.equal(row.raw.schema, 'atris.mission_receipt.v1');
 });
 
-test('default rendering hides ULIDs, branch names, and file paths', () => {
-  const root = fixtureRoot();
+test('default rendering hides ULIDs, branch names, and file paths', (t) => {
+  const root = fixtureRoot(t);
   const events = collectStreamEvents({
     root,
     sinceMs: Date.parse('2026-07-06T07:59:00.000Z'),
@@ -231,8 +237,8 @@ test('default rendering hides ULIDs, branch names, and file paths', () => {
   assert.doesNotMatch(output, /codex\/[A-Za-z0-9._/-]+/);
 });
 
-test('--since backfills recent history only', () => {
-  const root = fixtureRoot();
+test('--since backfills recent history only', (t) => {
+  const root = fixtureRoot(t);
   const sinceMs = parseSince('2026-07-06T08:03:30.000Z', Date.parse('2026-07-06T08:06:30.000Z'));
   const events = collectStreamEvents({
     root,
@@ -248,8 +254,8 @@ test('--since backfills recent history only', () => {
   assert.equal(parseSince('1h', Date.parse('2026-07-06T08:06:30.000Z')), Date.parse('2026-07-06T07:06:30.000Z'));
 });
 
-test('pollStreamOnce returns one iteration without hanging', () => {
-  const root = fixtureRoot();
+test('pollStreamOnce returns one iteration without hanging', (t) => {
+  const root = fixtureRoot(t);
   const state = createStreamState({
     root,
     sinceMs: Date.parse('2026-07-06T07:59:00.000Z'),
