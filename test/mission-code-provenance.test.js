@@ -165,6 +165,72 @@ test('foreign repositories, nested roots, and unrelated histories cannot reuse a
   assert.equal(verifyCodeProvenance(root, { ...evidence, head_commit: git(root, 'rev-parse', 'HEAD') }).ok, false);
 });
 
+test('local or inherited grafts cannot turn unrelated commits into source evidence', (t) => {
+  const root = repository(t);
+  const { captureCodeBaseline, collectCodeProvenance, verifyCodeProvenance } = provenance();
+  const baseline = captureCodeBaseline(root);
+  write(root, 'base.txt', 'committed product improvement\n');
+  commit(root, 'genuine improvement');
+  const genuine = collectCodeProvenance(root, baseline);
+  assert.equal(genuine.status, 'complete');
+  const tree = git(root, 'rev-parse', 'HEAD^{tree}');
+  const unrelated = git(root, 'commit-tree', tree, '-m', 'physically unrelated root');
+  assert.equal(git(root, 'cat-file', '-p', unrelated).split('\n\n')[0].includes('\nparent '), false);
+  git(root, 'checkout', '-q', '--detach', unrelated);
+  const invented = { ...genuine, head_commit: unrelated };
+  const reject = () => {
+    assert.equal(collectCodeProvenance(root, baseline).reason, 'base_not_ancestor');
+    assert.deepEqual(verifyCodeProvenance(root, invented), { ok: false, reason: 'base_not_ancestor' });
+  };
+  reject();
+  const local = path.join(root, '.git', 'info', 'grafts');
+  fs.writeFileSync(local, `${unrelated} ${baseline.base_commit}\n`);
+  reject();
+  fs.unlinkSync(local);
+  reject();
+  const inherited = path.join(root, '.git', 'alternate-grafts');
+  fs.writeFileSync(inherited, `${unrelated} ${baseline.base_commit}\n`);
+  const saved = process.env.GIT_GRAFT_FILE;
+  try {
+    process.env.GIT_GRAFT_FILE = inherited;
+    reject();
+  } finally {
+    if (saved === undefined) delete process.env.GIT_GRAFT_FILE;
+    else process.env.GIT_GRAFT_FILE = saved;
+  }
+  assert.equal(git(root, 'rev-parse', 'HEAD'), unrelated);
+  assert.equal(git(root, 'rev-parse', 'HEAD^{tree}'), tree);
+});
+
+test('graft views cannot hide a real descendant from complete source evidence', (t) => {
+  const root = repository(t);
+  const { captureCodeBaseline, collectCodeProvenance, verifyCodeProvenance } = provenance();
+  const baseline = captureCodeBaseline(root);
+  const files = changeManyFiles(root);
+  const actual = collectCodeProvenance(root, baseline);
+  assert.equal(actual.status, 'complete');
+  assert.deepEqual(actual.files, files);
+  const check = () => {
+    assert.deepEqual(collectCodeProvenance(root, baseline), actual);
+    assert.deepEqual(verifyCodeProvenance(root, actual), { ok: true });
+  };
+  const local = path.join(root, '.git', 'info', 'grafts');
+  fs.writeFileSync(local, `${actual.head_commit}\n`);
+  check();
+  fs.unlinkSync(local);
+  const inherited = path.join(root, '.git', 'alternate-grafts');
+  fs.writeFileSync(inherited, `${actual.head_commit}\n`);
+  const saved = process.env.GIT_GRAFT_FILE;
+  try {
+    process.env.GIT_GRAFT_FILE = inherited;
+    check();
+  } finally {
+    if (saved === undefined) delete process.env.GIT_GRAFT_FILE;
+    else process.env.GIT_GRAFT_FILE = saved;
+  }
+  check();
+});
+
 test('missing Git history or unreadable full status leaves evidence unavailable', (t) => {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'atris-code-no-git-'));
   t.after(() => fs.rmSync(root, { recursive: true, force: true }));
