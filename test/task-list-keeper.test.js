@@ -13,13 +13,8 @@ const { DAY_MS, keepTaskList } = require('../lib/task-list-keeper');
 const repoRoot = path.resolve(__dirname, '..');
 const cliPath = path.join(repoRoot, 'bin', 'atris.js');
 
-function hasNodeSqlite() {
-  const result = spawnSync(process.execPath, ['-e', 'require("node:sqlite")'], {
-    encoding: 'utf8',
-    env: { ...process.env, NODE_NO_WARNINGS: '1' },
-  });
-  return result.status === 0;
-}
+const { hasNodeSqlite: probeNodeSqlite } = require('./helpers/node-sqlite');
+const hasNodeSqlite = () => probeNodeSqlite({ NODE_NO_WARNINGS: '1' });
 
 function makeWorkspace() {
   const root = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'atris-task-keep-')));
