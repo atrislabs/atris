@@ -131,3 +131,31 @@ test('every mission starts with an explicit time limit, so numbers in its object
     assert.equal(starts[0][starts[0].indexOf('--max-wall') + 1], wall);
   }
 });
+
+test('a mission run passes its live engine steps through to the campaign output', async () => {
+  const store = campaign(10);
+  const logs = [];
+  const loop = makeLoop('/x', { parallel: 1 }, {
+    store, log: (line) => logs.push(line), skipReconcile: true,
+    judge: () => ({ passed: false, summary: '0 of 1' }),
+    ask: async () => ({ ok: true, engine: 'claude', text: proposals(1) }),
+    cli: async (args, extra = {}) => {
+      const id = args.includes('--mission-id') ? args[args.indexOf('--mission-id') + 1] : args[2];
+      if (args[1] === 'start') {
+        store.append({ campaign_id: 'cmp-loop', type: 'mission_started', actor: 'builder', data: { mission_id: id, member: 'builder' } });
+        return { code: 0, out: '{}', err: '' };
+      }
+      if (args[1] === 'run') {
+        for (const line of ['builder does build: codex gpt-6.1-sol', '  builder 06:47  editing src/sort.js', '  builder 06:48  running: node --test', '[tick 1] status=ran']) extra.onLine?.(line);
+        store.append({ campaign_id: 'cmp-loop', type: 'mission_ended', actor: 'builder', data: { mission_id: id, outcome: 'kept', cost_usd: 0 } });
+      }
+      return { code: 0, out: '', err: '' };
+    },
+  });
+  await loop.step('cmp-loop');
+  await loop.step('cmp-loop');
+  await loop.step('cmp-loop');
+  assert.ok(logs.includes('    builder 06:47  editing src/sort.js'), logs.join('\n'));
+  assert.ok(logs.includes('    builder 06:48  running: node --test'));
+  assert.ok(!logs.some((l) => l.includes('[tick 1]')), 'only engine steps pass through');
+});
