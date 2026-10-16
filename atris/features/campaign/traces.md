@@ -59,6 +59,10 @@ reward = (reading_after - reading_before) / batch size
 
 `reading_before` is the last judge run before the mission ended, `reading_after` is the first one after. A reading is the stored graded number, else the counts in the stored summary, else 1 for a pass and 0 for a fail (`reading_source` says which). A mission with no judge run after it yet has `reward: null` and a `credit_note` saying why.
 
+An accepted `set-judge` between those two runs starts a fresh comparison, even when the command text stays the same. Its replacement baseline cannot score earlier work: `reading_after`, `reading_source`, `judge_passed` and `reward` are null, with a note explaining the changed judge. The campaign retains its actual latest reading, costs and outcomes. Work measured on both sides by the new judge can earn credit normally. Stored changes that the fold rejects for lack of ownership do not reset comparisons.
+
+This boundary follows recorded resets. It does not detect silent edits to a judge file without `set-judge`, or retract lessons and observed attempts already written by an earlier version. Real command/store/export/planner controls: `node --test test/campaign-judge-boundary.test.js`.
+
 Splitting a batch equally is honest about what we know: the judge saw the batch land together, not each mission alone. A campaign that wants sharper credit runs the judge after each mission (the loop does this when missions run one at a time).
 
 ## The Goodhart guard
