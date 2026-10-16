@@ -51,6 +51,8 @@ function printHelp() {
   console.log('        add --work 50m --break 10m [--rounds N] to work in rounds; each break judges and writes lessons the next round plans from');
   console.log('  atris campaign step <id>               one step of that loop');
   console.log('  atris campaign tick [--max-steps 4] [--parallel 1]   push the next campaign here that has work, one mission at a time (the overnight heartbeat runs this)');
+  console.log('  atris campaign wake                    one step for every due campaign; a wait not yet due is skipped');
+  console.log('  atris campaign keep --install|--remove [--dry-run]   a one-minute timer that runs wake (launchd or cron)');
   console.log('  atris campaign propose <id> [--count 3]   ask the owner\'s engine for the next missions');
   console.log('  atris campaign export <id> --trace [--out <file.jsonl>] [--full]   one row per mission for learning; redacted unless --full');
   console.log('  atris campaign rsi [id] [--no-write]   distill trace rewards and lessons across campaigns');
@@ -255,7 +257,7 @@ function makeContext(args, deps) {
   const append = (campaignId, type, data, as = actor) => store.append({ campaign_id: campaignId, type, actor: as, data });
   // A campaign's own files (its judge copy, held-out data) live beside the store, outside the repo.
   const folder = deps.campaignFolder || ((id) => path.join(holdoutRoot, 'campaigns', id));
-  return { asJson, store, actor, judge, holdoutRoot, out, fail, append, forgedHuman, folder, loopDeps: deps.loopDeps, cloud: deps.cloud || {} };
+  return { asJson, store, actor, judge, holdoutRoot, out, fail, append, forgedHuman, folder, loopDeps: deps.loopDeps, keepDeps: deps.keep, cloud: deps.cloud || {} };
 }
 
 function requireCampaign(ctx, id) {
@@ -843,6 +845,8 @@ async function cmdTick(args, ctx) {
     if (move.action === 'none') continue;
     if (move.action === 'wait' && move.reason === 'open asks') { skipped.push({ id: view.id, why: `needs you: ${move.asks.length} open ask${move.asks.length === 1 ? '' : 's'}` }); continue; }
     if (move.action === 'wait' && move.reason === 'budget') { skipped.push({ id: view.id, why: 'waiting for budget' }); continue; }
+    // A campaign sleeping until its next check is skipped, so the next one with work gets the push.
+    if (view.next_move && view.next_move.action === 'wait' && Date.now() < view.next_move.wake_at) { skipped.push({ id: view.id, why: `next check at ${new Date(view.next_move.wake_at).toISOString()}` }); continue; }
     const holder = ctx.campaignHome ? liveHolder(ctx.campaignHome, view.id) : null;
     if (holder) { skipped.push({ id: view.id, why: `another run drives it (pid ${holder.pid})` }); continue; }
     pick = view;
@@ -864,7 +868,71 @@ async function cmdTick(args, ctx) {
   return cmdLoop(['run', pick.id, '--max-steps', String(maxSteps), ...passthrough, ...(ctx.asJson ? ['--json'] : [])], ctx, 'run');
 }
 
+// One step for every due campaign: a saved wait whose time has come, or work
+// with no wait saved. Finished, paused, and broke campaigns are skipped, and so
+// is a wait not yet due. Exits 0 when a step fails, so a timer keeps firing;
+// each campaign's result is in the summary.
+async function cmdWake(args, ctx) {
+  const now = (ctx.loopDeps && ctx.loopDeps.now) || Date.now;
+  const flags = args.slice(args.indexOf('wake') + 1);
+  const woke = [];
+  const skipped = [];
+  for (const view of listCampaigns(ctx.store)) {
+    if (view.error) { skipped.push({ campaign_id: view.id, reason: `cannot be read: ${view.error}` }); continue; }
+    const move = decide(view);
+    if (move.action === 'none') { skipped.push({ campaign_id: view.id, reason: move.reason }); continue; }
+    const saved = view.next_move;
+    if (saved && saved.action === 'wait' && now() < saved.wake_at) {
+      skipped.push({ campaign_id: view.id, reason: `next check at ${new Date(saved.wake_at).toISOString()}` });
+      continue;
+    }
+    let step = null;
+    let code;
+    try {
+      code = await cmdLoop(['step', view.id, ...flags], {
+        ...ctx,
+        out: (text, data) => { step = data; },
+        fail: (error, failCode = 2) => { step = { ok: false, error }; return failCode; },
+      }, 'step');
+    } catch (err) {
+      code = 1;
+      step = { ok: false, error: err.message };
+    }
+    const { campaign, next, ...result } = step || {};
+    woke.push({ campaign_id: view.id, ...result, ok: code === 0 && result.ok !== false });
+  }
+  const lines = [
+    ...woke.map((w) => `${w.campaign_id}  ${w.ok ? (w.stop ? `stopped: ${w.reason}` : `did: ${w.did}`) : `failed: ${w.error || w.reason}`}`),
+    ...skipped.map((s) => `${s.campaign_id}  skipped: ${s.reason}`),
+  ];
+  const head = `woke ${woke.length} campaign${woke.length === 1 ? '' : 's'}, skipped ${skipped.length}`;
+  ctx.out([head, ...lines].join('\n'), { ok: true, action: 'campaign_wake', at: new Date(now()).toISOString(), woke, skipped });
+  return 0;
+}
+
+// A one-minute timer that runs `atris campaign wake` for this checkout.
+function cmdKeep(args, ctx) {
+  const { installKeep, planKeep, removeKeep } = require('../lib/campaign-keep');
+  const install = args.includes('--install');
+  if (install === args.includes('--remove')) return ctx.fail('say which: atris campaign keep --install|--remove [--dry-run]');
+  const keepDeps = ctx.keepDeps || {};
+  const plan = planKeep({ root: process.cwd(), home: ctx.campaignHome, atrisBin: path.resolve(__dirname, '..', 'bin', 'atris.js'), ...(keepDeps.plan || {}) });
+  const action = install ? 'keep_install' : 'keep_remove';
+  const where = plan.kind === 'launchd' ? plan.file : 'your crontab';
+  const describe = `a ${plan.kind} timer that runs every minute:\n  ${plan.command}\n  in ${plan.root}\n  at ${where}\n  log ${plan.log_path}`;
+  if (args.includes('--dry-run')) {
+    ctx.out(`would ${install ? 'install' : 'remove'} ${describe}`, { ok: true, action, dry_run: true, plan });
+    return 0;
+  }
+  const result = (install ? installKeep : removeKeep)(plan, keepDeps);
+  if (!result.ok) return ctx.fail(result.error, 1);
+  const done = install ? `installed ${describe}` : (result.removed ? `removed the timer at ${where}` : 'no timer was installed for this checkout');
+  ctx.out(done, { ok: true, action, ...result, plan });
+  return 0;
+}
+
 const VERBS = {
+  wake: cmdWake, keep: cmdKeep,
   start: cmdStart, show: cmdShow, judge: cmdJudge, guard: cmdGuard, seat: cmdSeat, bet: cmdBet, budget: cmdBudget,
   pause: cmdPause, resume: cmdResume, stop: cmdStop, event: cmdEvent,
   ask: cmdAsk, answer: cmdAnswer, 'set-judge': cmdSetJudge, sync: cmdSync, 'cloud-run': cmdCloudRun,
