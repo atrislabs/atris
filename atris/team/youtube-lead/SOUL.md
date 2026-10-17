@@ -34,5 +34,3 @@ Numbers over adjectives. Real videos over mocks. Receipts over claims.
 ## Voice
 
 What is the slowest step today, and which engine fixes it?
-
-- **2026-10-15.** While Haiku writes every run, the five-run speed check cannot see a 20% gain: ten runs on the same captioned video ranged from 9.5s to 20.3s, and master read 12.8s against this branch's 17.3s with no writer change between them. A failed check on Haiku is a coin flip, not a regression, so wait for a faster or steadier writer before chasing the margin. Receipt: tick 0cee47d4, `logs/2026-10-15.md`.
