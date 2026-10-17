@@ -7,8 +7,12 @@ const { execSync, spawnSync } = require('node:child_process');
 
 const { memberCommand } = require('../commands/member');
 
-function setupGitWorkspace() {
-  const cwd = fs.mkdtempSync(path.join(os.tmpdir(), 'atris-member-history-test-'));
+// The identical member history repo is built once and copied per test; each
+// test still gets a private .git whose history it can inspect freely.
+let seedWorkspace = null;
+
+function buildSeed() {
+  const cwd = fs.mkdtempSync(path.join(os.tmpdir(), 'atris-member-history-seed-'));
   const atrisDir = path.join(cwd, 'atris');
   const teamDir = path.join(atrisDir, 'team');
   const memberDir = path.join(teamDir, 'test-member');
@@ -33,7 +37,19 @@ function setupGitWorkspace() {
   fs.writeFileSync(soulMdPath, '# Soul\n\nCore: test\n', 'utf8');
   execSync('git add -A && git commit -qm "add soul file"', { cwd, stdio: 'pipe' });
 
-  return { cwd, memberDir, memberMdPath, soulMdPath };
+  return cwd;
+}
+
+test.after(() => {
+  if (seedWorkspace) cleanup(seedWorkspace);
+});
+
+function setupGitWorkspace() {
+  seedWorkspace ??= buildSeed();
+  const cwd = fs.mkdtempSync(path.join(os.tmpdir(), 'atris-member-history-test-'));
+  fs.cpSync(seedWorkspace, cwd, { recursive: true });
+  const memberDir = path.join(cwd, 'atris', 'team', 'test-member');
+  return { cwd, memberDir, memberMdPath: path.join(memberDir, 'MEMBER.md'), soulMdPath: path.join(memberDir, 'SOUL.md') };
 }
 
 function cleanup(cwd) {
