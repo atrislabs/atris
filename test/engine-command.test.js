@@ -47,8 +47,16 @@ function runCli(args, cwd) {
   return result;
 }
 
+// Every temp folder this file makes is removed when the file finishes, so
+// test runs leave nothing behind in the system temp folder.
+const madeDirs = [];
+test.after(() => {
+  for (const dir of madeDirs) fs.rmSync(dir, { recursive: true, force: true });
+});
+
 function tmpRoot(prefix = 'atris-engine-test-') {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), prefix));
+  madeDirs.push(root);
   fs.mkdirSync(path.join(root, 'atris'), { recursive: true });
   return root;
 }
