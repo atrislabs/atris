@@ -150,3 +150,163 @@ test('atris member report runs for real against diaries and a task list', (t) =>
   assert.equal(bad.status, 1);
   assert.match(bad.stderr, /not a time/);
 });
+
+
+test('report dedup rejected cross-group bridge does not reserve its link', (t) => {
+  const root = workspace(t, { builder: '' });
+  const link = 'https://example.test/pull/shared';
+  const tasks = [{
+    title: ' Alpha ', status: 'review', claimed_by: 'builder',
+    updated_at: new Date(2026, 9, 14, 11, 0).getTime(),
+  }];
+  const merges = [
+    { title: 'alpha', url: link, mergedAt: new Date(2026, 9, 14, 10, 0).toISOString(), headRefName: 'codex/builder-alpha' },
+    { title: 'charlie', url: link, mergedAt: new Date(2026, 9, 14, 9, 0).toISOString(), headRefName: 'codex/builder-charlie' },
+  ];
+  const before = JSON.stringify({ tasks, merges });
+  const report = memberReport(root, { since: 'today', now: NOW, tasks, merges });
+  assert.deepEqual(report, {
+    ok: true, action: 'report', since: '00:00',
+    totals: { merged: 1, finished: 0, turned_down: 0, waiting: 1 },
+    members: [{
+      member: 'builder', total: 2,
+      merged: [{ title: 'charlie', link }], finished: [], turned_down: [],
+      waiting: [{ title: ' Alpha ' }],
+    }],
+  });
+  assert.equal(JSON.stringify({ tasks, merges }), before);
+});
+
+test('report dedup keeps newest rows and stable cross-group and merge ties', (t) => {
+  const root = workspace(t, { builder: entry('10:00', 'Mission run tick 1', {
+    mission: 'Same job', verifier: 'passed', summary: 'Done.',
+  }) });
+  const at10 = new Date(2026, 9, 14, 10, 0);
+  const at11 = new Date(2026, 9, 14, 11, 0);
+  const newest = memberReport(root, {
+    since: 'today', now: NOW,
+    tasks: [{ title: ' SAME JOB ', status: 'review', claimed_by: 'builder', updated_at: at11.getTime() }],
+    merges: [{ title: 'same job', headRefName: 'codex/builder-same', mergedAt: new Date(2026, 9, 14, 9, 0).toISOString() }],
+  });
+  assert.deepEqual(newest.members[0], {
+    member: 'builder', total: 1, merged: [], finished: [], turned_down: [], waiting: [{ title: ' SAME JOB ' }],
+  });
+  const diaryTie = memberReport(root, {
+    since: 'today', now: NOW,
+    tasks: [{ title: ' SAME JOB ', status: 'review', claimed_by: 'builder', updated_at: at10.getTime() }],
+    merges: [{ title: 'same job', headRefName: 'codex/builder-same', mergedAt: at10.toISOString() }],
+  });
+  assert.deepEqual(diaryTie.members[0], {
+    member: 'builder', total: 1, merged: [], finished: [{ title: 'Same job', detail: 'Done.' }], turned_down: [], waiting: [],
+  });
+  const taskTie = memberReport(root, {
+    since: 'today', now: NOW,
+    tasks: [{ title: 'Queue tie', status: 'review', claimed_by: 'builder', updated_at: at11.getTime() }],
+    merges: [{ title: 'queue tie', headRefName: 'codex/builder-queue', mergedAt: at11.toISOString() }],
+  });
+  assert.deepEqual(taskTie.members[0], {
+    member: 'builder', total: 2, merged: [], finished: [{ title: 'Same job', detail: 'Done.' }], turned_down: [], waiting: [{ title: 'Queue tie' }],
+  });
+  const first = { title: 'first choice', url: 'https://example.test/tied', headRefName: 'codex/builder-first', mergedAt: at11.toISOString() };
+  const second = { title: 'second choice', url: first.url, headRefName: 'codex/builder-second', mergedAt: at11.toISOString() };
+  const merges = [first, second];
+  const forward = memberReport(root, { since: 'today', now: NOW, merges });
+  const reverse = memberReport(root, { since: 'today', now: NOW, merges: [...merges].reverse() });
+  assert.deepEqual(forward.members[0].merged, [{ title: 'first choice', link: first.url }]);
+  assert.deepEqual(reverse.members[0].merged, [{ title: 'second choice', link: first.url }]);
+  assert.strictEqual(merges[0], first);
+  assert.strictEqual(merges[1], second);
+});
+
+test('report dedup compares truthy links by strict value or object identity', (t) => {
+  const root = workspace(t, { builder: '' });
+  const shared = { href: 'same' };
+  const distinct = { href: 'same' };
+  const sharedSymbol = Symbol('same');
+  const distinctSymbol = Symbol('same');
+  const rows = [
+    ['url first', 'https://example.test/pull/1'],
+    ['url repeated', 'https://example.test/pull/1'],
+    ['url case', 'https://EXAMPLE.test/pull/1'],
+    ['number link', 1], ['string link', '1'],
+    ['object first', shared], ['object repeated', shared], ['object distinct', distinct],
+    ['symbol first', sharedSymbol], ['symbol repeated', sharedSymbol], ['symbol distinct', distinctSymbol],
+    ['boolean first', true], ['boolean repeated', true],
+  ];
+  const merges = rows.map(([title, url]) => ({
+    title, url, headRefName: 'codex/builder-links', mergedAt: new Date(2026, 9, 14, 11, 0).toISOString(),
+  }));
+  const report = memberReport(root, { since: 'today', now: NOW, merges });
+  const merged = report.members[0].merged;
+  assert.deepEqual(merged.map((item) => item.title), [
+    'url first', 'url case', 'number link', 'string link', 'object first', 'object distinct', 'symbol first', 'symbol distinct', 'boolean first',
+  ]);
+  assert.strictEqual(merged[4].link, shared);
+  assert.strictEqual(merged[5].link, distinct);
+  assert.notStrictEqual(merged[4].link, merged[5].link);
+  assert.strictEqual(merged[6].link, sharedSymbol);
+  assert.strictEqual(merged[7].link, distinctSymbol);
+  assert.deepEqual(report.totals, { merged: 9, finished: 0, turned_down: 0, waiting: 0 });
+});
+
+test('report dedup preserves non-string legacy coercions and comparison errors', (t) => {
+  const root = workspace(t, { builder: '' });
+  const later = new Date(2026, 9, 14, 11, 0).toISOString();
+  const earlier = new Date(2026, 9, 14, 10, 0).toISOString();
+  const isolated = { toString() { throw new Error('an isolated title must not be coerced'); } };
+  const single = memberReport(root, { since: 'today', now: NOW, merges: [
+    { title: isolated, headRefName: 'codex/builder-isolated', mergedAt: later },
+  ] });
+  assert.equal(single.members[0].total, 1);
+  assert.strictEqual(single.members[0].merged[0].title, isolated);
+  const expected = new Error('actual title comparison');
+  const throwing = { toString() { throw expected; } };
+  assert.throws(() => memberReport(root, { since: 'today', now: NOW, merges: [
+    { title: 'first', headRefName: 'codex/builder-first', mergedAt: later },
+    { title: throwing, headRefName: 'codex/builder-throw', mergedAt: earlier },
+  ] }), (error) => error === expected);
+  const calls = [];
+  const coerced = { toString() { calls.push('title'); return 'SAME'; } };
+  const stringFirst = memberReport(root, { since: 'today', now: NOW, merges: [
+    { title: 'same', headRefName: 'codex/builder-string', mergedAt: later },
+    { title: coerced, headRefName: 'codex/builder-object', mergedAt: earlier },
+  ] });
+  assert.deepEqual(stringFirst.members[0].merged, [{ title: 'same', link: null }]);
+  assert.deepEqual(calls, ['title']);
+  calls.length = 0;
+  const objectFirst = memberReport(root, { since: 'today', now: NOW, merges: [
+    { title: coerced, headRefName: 'codex/builder-object', mergedAt: later },
+    { title: 'same', headRefName: 'codex/builder-string', mergedAt: earlier },
+  ] });
+  assert.strictEqual(objectFirst.members[0].merged[0].title, coerced);
+  assert.deepEqual(calls, ['title']);
+  const numbers = memberReport(root, { since: 'today', now: NOW, merges: [
+    { title: 1, headRefName: 'codex/builder-number', mergedAt: later },
+    { title: '1', headRefName: 'codex/builder-string', mergedAt: later },
+    { title: 'other', headRefName: 'codex/builder-other', mergedAt: earlier },
+  ] });
+  assert.deepEqual(numbers.members[0].merged, [{ title: 1, link: null }, { title: 'other', link: null }]);
+});
+
+test('report dedup retains whitespace titles and skips only original falsy titles and links', (t) => {
+  const root = workspace(t, { builder: '' });
+  const rows = [
+    ['   ', null], ['\t', false],
+    ['zero link', 0], ['false link', false], ['empty link', ''], ['null link', null], ['nan link', NaN], ['missing link', undefined],
+    [null, 'null title'], [undefined, 'undefined title'], ['', 'empty title'], [0, 'zero title'], [false, 'false title'], [NaN, 'nan title'], [0n, 'bigint zero title'],
+  ];
+  const merges = rows.map(([title, url]) => ({
+    title, url, headRefName: 'codex/builder-falsy', mergedAt: new Date(2026, 9, 14, 11, 0).toISOString(),
+  }));
+  const report = memberReport(root, { since: 'today', now: NOW, merges });
+  assert.deepEqual(report.members[0], {
+    member: 'builder', total: 7,
+    merged: [
+      { title: '   ', link: null }, { title: 'zero link', link: null }, { title: 'false link', link: null },
+      { title: 'empty link', link: null }, { title: 'null link', link: null }, { title: 'nan link', link: null }, { title: 'missing link', link: null },
+    ],
+    finished: [], turned_down: [], waiting: [],
+  });
+  assert.deepEqual(report.totals, { merged: 7, finished: 0, turned_down: 0, waiting: 0 });
+  assert.equal(merges.at(-1).title, 0n);
+});
