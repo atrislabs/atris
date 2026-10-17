@@ -15,8 +15,9 @@ const { collectTeamPrune, renderTeamPrune, teamCommand } = require('../commands/
 
 const DAY_MS = 24 * 60 * 60 * 1000;
 
-function makeRoot() {
+function makeRoot(t) {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'atris-team-prune-'));
+  t.after(() => fs.rmSync(root, { recursive: true, force: true }));
   fs.mkdirSync(path.join(root, 'atris', 'team'), { recursive: true });
   return root;
 }
@@ -42,8 +43,7 @@ function addMember(root, name, { memberAgeDays, logAgeDays } = {}) {
 }
 
 test('quiet member is flagged, recently active member is not', (t) => {
-  const root = makeRoot();
-  t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+  const root = makeRoot(t);
   addMember(root, 'ghost', { memberAgeDays: 90 });
   addMember(root, 'worker', { memberAgeDays: 90, logAgeDays: 2 });
 
@@ -63,8 +63,7 @@ test('quiet member is flagged, recently active member is not', (t) => {
 });
 
 test('a member with an active mission is not flagged even with old files', (t) => {
-  const root = makeRoot();
-  t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+  const root = makeRoot(t);
   addMember(root, 'pilot', { memberAgeDays: 120, logAgeDays: 120 });
 
   const missions = [{ id: 'm1', owner: 'pilot', status: 'running' }];
@@ -78,8 +77,7 @@ test('a member with an active mission is not flagged even with old files', (t) =
 });
 
 test('--days widens or narrows the window', (t) => {
-  const root = makeRoot();
-  t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+  const root = makeRoot(t);
   addMember(root, 'drifter', { memberAgeDays: 10 });
 
   assert.equal(collectTeamPrune({ root, missions: [], days: 30 }).quiet.length, 0);
@@ -87,8 +85,7 @@ test('--days widens or narrows the window', (t) => {
 });
 
 test('team prune --json returns the report shape through the command', (t) => {
-  const root = makeRoot();
-  t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+  const root = makeRoot(t);
   addMember(root, 'ghost', { memberAgeDays: 60 });
   addMember(root, 'worker', { logAgeDays: 1 });
 
@@ -104,8 +101,7 @@ test('team prune --json returns the report shape through the command', (t) => {
 });
 
 test('empty team renders the create hint and prune deletes nothing', (t) => {
-  const root = makeRoot();
-  t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+  const root = makeRoot(t);
   const before = fs.readdirSync(path.join(root, 'atris', 'team'));
 
   let out = '';
