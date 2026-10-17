@@ -7,8 +7,16 @@ const os = require('node:os');
 const path = require('node:path');
 const { compactMissionLedger, compactRows } = require('../lib/mission-ledger-compact');
 
+// Every temp folder this file makes is removed when the file finishes, so
+// test runs leave nothing behind in the system temp folder.
+const madeDirs = [];
+test.after(() => {
+  for (const dir of madeDirs) fs.rmSync(dir, { recursive: true, force: true });
+});
+
 function tempLedger(rows) {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'atris-ledger-compact-'));
+  madeDirs.push(dir);
   const file = path.join(dir, 'missions.jsonl');
   fs.writeFileSync(file, rows.map((row) => JSON.stringify(row)).join('\n') + '\n', 'utf8');
   return file;
