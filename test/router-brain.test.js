@@ -3,7 +3,7 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
-const os = require('node:os');
+const { createTaskHelpFixture } = require('./helpers/task-help-fixture');
 const path = require('node:path');
 
 const {
@@ -16,13 +16,8 @@ const { resolveEngineForRole } = require('../lib/engine-registry');
 
 const NOW = Date.parse('2026-07-21T12:00:00.000Z');
 
-function makeRoot() {
-  return fs.mkdtempSync(path.join(os.tmpdir(), 'atris-router-brain-'));
-}
-
-function cleanup(root) {
-  fs.rmSync(root, { recursive: true, force: true });
-}
+const { makeTempDir: makeFixtureDir, cleanupTempDir: cleanup } = createTaskHelpFixture('atris-router-brain-');
+const makeRoot = () => makeFixtureDir();
 
 function writeTaskReceipt(root, name, row) {
   const dir = path.join(root, 'atris', 'runs');

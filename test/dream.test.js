@@ -3,7 +3,7 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
-const os = require('node:os');
+const { createTaskHelpFixture } = require('./helpers/task-help-fixture');
 const path = require('node:path');
 
 const dream = require('../commands/dream');
@@ -11,13 +11,8 @@ const nextMoves = require('../lib/next-moves');
 const { nextCommand } = require('../commands/next');
 const { DEFAULT_CLAUDE_RUNNER_MODEL } = require('../lib/runner-command');
 
-function tmp() {
-  return fs.mkdtempSync(path.join(os.tmpdir(), 'atris-dream-'));
-}
-
-function cleanup(root) {
-  fs.rmSync(root, { recursive: true, force: true });
-}
+const { makeTempDir: makeFixtureDir, cleanupTempDir: cleanup } = createTaskHelpFixture('atris-dream-');
+const tmp = () => makeFixtureDir();
 
 function writeJournal(root, date, text) {
   const year = date.slice(0, 4);
