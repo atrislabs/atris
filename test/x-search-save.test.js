@@ -24,6 +24,18 @@ const {
 } = require('../commands/x-search');
 const { ephemeralApplyMessage } = require('../lib/apply-gate');
 
+// Every temp folder this file makes is removed when the file finishes, so
+// repeated runs do not pile folders into the system temp folder.
+const madeDirs = [];
+function tmpDir(prefix) {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), prefix));
+  madeDirs.push(dir);
+  return dir;
+}
+test.after(() => {
+  for (const dir of madeDirs) fs.rmSync(dir, { recursive: true, force: true });
+});
+
 const REPO_ROOT = path.resolve(__dirname, '..');
 const VALIDATE_PY = path.join(REPO_ROOT, 'atris', 'experiments', 'validate.py');
 const CLI_PATH = path.join(REPO_ROOT, 'bin', 'atris.js');
@@ -55,7 +67,7 @@ function escapeRe(value) {
 }
 
 function saveWorkspace() {
-  const cwd = fs.mkdtempSync(path.join(os.tmpdir(), 'atris-x-search-save-'));
+  const cwd = tmpDir('atris-x-search-save-');
   fs.mkdirSync(path.join(cwd, 'atris', 'wiki'), { recursive: true });
   return cwd;
 }
@@ -237,7 +249,7 @@ test('x-search rich --save mints a measure.py that validate.py accepts', async (
 });
 
 test('x-search --save without wiki is incomplete when apply is missing', async () => {
-  const cwd = fs.mkdtempSync(path.join(os.tmpdir(), 'atris-x-search-nowiki-'));
+  const cwd = tmpDir('atris-x-search-nowiki-');
   const out = collect();
   const status = await runSearch('MCP agents', {
     cwd,
@@ -403,7 +415,7 @@ test('x-search unsave removes leftover pack when brief and apply are already gon
 });
 
 test('x-search unsave of a missing source stays quiet', async () => {
-  const cwd = fs.mkdtempSync(path.join(os.tmpdir(), 'atris-x-search-unsave-'));
+  const cwd = tmpDir('atris-x-search-unsave-');
   let apiCalls = 0;
   const out = collect();
   const status = await xSearchCommand(['unsave', 'gone query'], {

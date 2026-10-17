@@ -17,10 +17,20 @@ async function inDir(dir, fn) {
   process.chdir(dir);
   try { return await fn(); } finally { process.chdir(prev); }
 }
-function tmp() { return fs.mkdtempSync(path.join(os.tmpdir(), 'theme-')); }
+// Every temp folder this file makes is removed when the file finishes, so
+// repeated runs do not pile folders into the system temp folder.
+const madeDirs = [];
+function tmp(prefix = 'theme-') {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), prefix));
+  madeDirs.push(dir);
+  return dir;
+}
+test.after(() => {
+  for (const dir of madeDirs) fs.rmSync(dir, { recursive: true, force: true });
+});
 
 function mkProject(json) {
-  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'theme-'));
+  const dir = tmp();
   if (json != null) {
     fs.mkdirSync(path.join(dir, '.atris'), { recursive: true });
     fs.writeFileSync(path.join(dir, '.atris', 'theme.json'), typeof json === 'string' ? json : JSON.stringify(json));
@@ -82,7 +92,7 @@ test('a project theme flows into the deck renderer', () => {
 });
 
 test('writeStarterTheme scaffolds .atris/theme.json idempotently', () => {
-  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'theme-init-'));
+  const dir = tmp('theme-init-');
   const r1 = writeStarterTheme(dir);
   assert.equal(r1.already, false);
   assert.ok(fs.existsSync(r1.file));
