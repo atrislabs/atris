@@ -5,8 +5,17 @@ const os = require('node:os');
 const path = require('node:path');
 const { projectionMissions, projectionWishes } = require('../commands/task');
 
+// Every temp folder this file makes is removed when the file finishes, so
+// test runs leave nothing behind in the system temp folder.
+const madeDirs = [];
+test.after(() => {
+  for (const dir of madeDirs) fs.rmSync(dir, { recursive: true, force: true });
+});
+
 function tempWorkspace() {
-  return fs.mkdtempSync(path.join(os.tmpdir(), 'projection-test-'));
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'projection-test-'));
+  madeDirs.push(dir);
+  return dir;
 }
 
 test('empty or missing stores yield empty arrays, never a throw', () => {
