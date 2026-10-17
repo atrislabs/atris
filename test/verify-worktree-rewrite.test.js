@@ -14,8 +14,17 @@ const { rewriteWorktreeVerify } = require('../lib/verify-worktree-rewrite');
 const { evaluateAutoAccept } = require('../lib/auto-accept-certified');
 const { plainLandingReason } = require('../lib/voice-gate');
 
+// Every temp folder this file makes is removed when the file finishes, so
+// test runs leave nothing behind in the system temp folder.
+const madeDirs = [];
+test.after(() => {
+  for (const dir of madeDirs) fs.rmSync(dir, { recursive: true, force: true });
+});
+
 function arenaWithProject() {
-  const arena = path.join(fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'atris-rewrite-'))), 'arena');
+  const made = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'atris-rewrite-')));
+  madeDirs.push(made);
+  const arena = path.join(made, 'arena');
   const root = path.join(arena, 'demo-project');
   fs.mkdirSync(path.join(root, 'scripts'), { recursive: true });
   fs.writeFileSync(path.join(root, 'scripts', 'test-ok.mjs'), 'process.exit(0);\n');
