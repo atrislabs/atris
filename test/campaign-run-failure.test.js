@@ -15,7 +15,7 @@ function workspace(t) {
   const caller = { ...process.env };
   const unsafe = ['NODE_OPTIONS', 'NODE_PATH', 'NODE_EXTRA_CA_CERTS', 'BASH_ENV', 'ENV',
     'ATRIS_CAMPAIGN_TOKEN_FILE', 'ATRIS_CAMPAIGN_HOLDOUT', 'ATRIS_CAMPAIGN_START_COMMIT',
-    'XDG_CONFIG_HOME', 'GIT_DIR', 'GIT_WORK_TREE', 'GIT_COMMON_DIR', 'GIT_INDEX_FILE',
+    'GIT_DIR', 'GIT_WORK_TREE', 'GIT_COMMON_DIR', 'GIT_INDEX_FILE',
     'GIT_OBJECT_DIRECTORY', 'GIT_ALTERNATE_OBJECT_DIRECTORIES', 'GIT_EXEC_PATH', 'GIT_CONFIG',
     'GIT_CONFIG_SYSTEM', 'GIT_CONFIG_GLOBAL', 'GIT_CONFIG_COUNT', 'GIT_CONFIG_PARAMETERS'];
   for (const key of Object.keys(caller)) {
@@ -40,7 +40,7 @@ function workspace(t) {
   fs.mkdirSync(home);
   fs.writeFileSync(sentinel, 'foreign fixture stays\n');
   const db = path.join(root, '.atris', 'state', 'atris.db');
-  const env = { ...caller, HOME: home, USERPROFILE: home, ATRIS_CAMPAIGN_DB: db,
+  const env = { ...caller, HOME: home, USERPROFILE: home, XDG_CONFIG_HOME: path.join(home, 'config'), ATRIS_CAMPAIGN_DB: db,
     ATRIS_TASKS_DB: path.join(home, 'tasks.db'), ATRIS_TEST_STATE_DIR: path.join(home, 'test-state'),
     ATRIS_SKIP_UPDATE_CHECK: '1' };
   const outsideGit = spawnSync('git', ['rev-parse', 'HEAD'], {
