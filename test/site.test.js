@@ -6,8 +6,20 @@ const path = require('node:path');
 const { buildSite, collectMd, slugFor, firstHeading, firstParagraph } = require('../lib/site');
 const { scanFile } = require('../commands/slop');
 
+// Every temp folder this file makes is removed when the file finishes, so
+// test runs leave nothing behind in the system temp folder.
+const madeDirs = [];
+function tmp(prefix) {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), prefix));
+  madeDirs.push(dir);
+  return dir;
+}
+test.after(() => {
+  for (const dir of madeDirs) fs.rmSync(dir, { recursive: true, force: true });
+});
+
 function mkDocs() {
-  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'site-'));
+  const dir = tmp('site-');
   fs.writeFileSync(path.join(dir, 'intro.md'), '# Getting started\n\nHow to begin with the system.\n\n## Steps\n\n- **One** install it\n- **Two** run it\n');
   fs.mkdirSync(path.join(dir, 'guides'), { recursive: true });
   fs.writeFileSync(path.join(dir, 'guides', 'deep.md'), '# Deep dive\n\nThe details, explained calmly.\n');
@@ -55,7 +67,7 @@ test('buildSite writes an index + a page per doc, all slop-clean', () => {
 });
 
 test('a single markdown file builds a one-page site', () => {
-  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'site1-'));
+  const dir = tmp('site1-');
   const doc = path.join(dir, 'only.md');
   fs.writeFileSync(doc, '# Only page\n\nJust one.\n');
   const res = buildSite(doc, { out: path.join(dir, 'dist') });
