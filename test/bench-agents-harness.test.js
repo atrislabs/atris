@@ -32,6 +32,7 @@ test('unavailable real engines skip every selected task symmetrically', async ()
   const stateRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'atris-bench-agent-skip-'));
   try {
     const { record, exitCode } = await runBench({
+      pythonCmd: null,
       repoRoot,
       pack: 'agents-v1',
       engine: 'atris-fast',
@@ -60,6 +61,7 @@ test('agents-v1 result records include pack and engine fields', async () => {
   const stateRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'atris-bench-agent-record-'));
   try {
     const { record, exitCode } = await runBench({
+      pythonCmd: null,
       repoRoot,
       pack: 'agents-v1',
       engine: 'solution',

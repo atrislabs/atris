@@ -50,7 +50,7 @@ test('runner executes task specs serially', async () => {
         },
       };
     `);
-    const { record, exitCode } = await runBench({ tasksDir, repoRoot: dir, stateRoot: dir });
+    const { record, exitCode } = await runBench({ tasksDir, repoRoot: dir, stateRoot: dir, pythonCmd: null });
     assert.equal(exitCode, 0);
     assert.deepEqual(record.passed, ['first', 'second']);
     assert.equal(fs.readFileSync(orderFile, 'utf8'), 'ab');
@@ -81,7 +81,7 @@ test('runner retries once on infra failures only', async () => {
         },
       };
     `);
-    const { record, exitCode } = await runBench({ tasksDir, repoRoot: dir, stateRoot: dir });
+    const { record, exitCode } = await runBench({ tasksDir, repoRoot: dir, stateRoot: dir, pythonCmd: null });
     assert.equal(exitCode, 0);
     assert.equal(record.tasks[0].passed, true);
     assert.equal(record.tasks[0].retried, true);
@@ -110,7 +110,7 @@ test('runner never retries assertion failures', async () => {
         },
       };
     `);
-    const { record, exitCode } = await runBench({ tasksDir, repoRoot: dir, stateRoot: dir });
+    const { record, exitCode } = await runBench({ tasksDir, repoRoot: dir, stateRoot: dir, pythonCmd: null });
     assert.equal(exitCode, 1);
     assert.deepEqual(record.failed, ['assertion-failure']);
     assert.equal(record.tasks[0].retried, false);
@@ -133,7 +133,7 @@ test('runner records skip semantics without failing the run', async () => {
         },
       };
     `);
-    const { record, exitCode } = await runBench({ tasksDir, repoRoot: dir, stateRoot: dir });
+    const { record, exitCode } = await runBench({ tasksDir, repoRoot: dir, stateRoot: dir, pythonCmd: null });
     assert.equal(exitCode, 0);
     assert.deepEqual(record.passed, []);
     assert.deepEqual(record.failed, []);
@@ -183,6 +183,7 @@ test('runner appends results, writes baseline pointer, and preserves JSON contra
       };
     `);
     const { record, exitCode } = await runBench({
+      pythonCmd: null,
       tasksDir,
       repoRoot: dir,
       stateRoot: dir,
@@ -243,8 +244,8 @@ test('runner exposes exit-code classes 0, 1, and 2', async () => {
     writeTask(failDir, '01-fail.js', `
       module.exports = { id: 'fail', title: 'fail', async run() { throw new Error('boom'); } };
     `);
-    assert.equal((await runBench({ tasksDir: passDir, repoRoot: dir, stateRoot: dir })).exitCode, 0);
-    assert.equal((await runBench({ tasksDir: failDir, repoRoot: dir, stateRoot: dir })).exitCode, 1);
+    assert.equal((await runBench({ tasksDir: passDir, repoRoot: dir, stateRoot: dir, pythonCmd: null })).exitCode, 0);
+    assert.equal((await runBench({ tasksDir: failDir, repoRoot: dir, stateRoot: dir, pythonCmd: null })).exitCode, 1);
     assert.rejects(
       () => runBench({ tasksDir: path.join(dir, 'missing'), repoRoot: dir, stateRoot: dir }),
       (err) => err instanceof BenchInfraError && err.exitCode === 2,
