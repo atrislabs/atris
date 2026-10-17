@@ -7,8 +7,20 @@ const { buildMemorySpec, parseLessons, parseLearnings } = require('../lib/memory
 const { renderHtml } = require('../lib/html-render');
 const { scanFile } = require('../commands/slop');
 
+// Every temp folder this file makes is removed when the file finishes, so
+// test runs leave nothing behind in the system temp folder.
+const madeDirs = [];
+function tmp(prefix) {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), prefix));
+  madeDirs.push(dir);
+  return dir;
+}
+test.after(() => {
+  for (const dir of madeDirs) fs.rmSync(dir, { recursive: true, force: true });
+});
+
 function mkWorkspace(lessonsMd, learningsJsonl) {
-  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'mem-'));
+  const dir = tmp('mem-');
   fs.mkdirSync(path.join(dir, 'atris'), { recursive: true });
   if (lessonsMd != null) fs.writeFileSync(path.join(dir, 'atris', 'lessons.md'), lessonsMd);
   if (learningsJsonl != null) fs.writeFileSync(path.join(dir, 'atris', 'learnings.jsonl'), learningsJsonl);
@@ -51,7 +63,7 @@ test('em dashes in the raw lessons file never reach the rendered page', () => {
 });
 
 test('missing/empty memory still yields a usable spec', () => {
-  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'mem-empty-'));
+  const dir = tmp('mem-empty-');
   const spec = buildMemorySpec(dir);
   assert.ok(spec.slides.length >= 2);
   assert.ok(spec.slides[0].type === 'title');
