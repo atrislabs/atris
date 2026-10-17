@@ -11,8 +11,16 @@ const { scanLoopReceipts, nonPositiveRewardPressure, FINDING_PRIORITY } = requir
 
 const NOW = '2026-07-10T12:00:00.000Z';
 
+// Every temp folder this file makes is removed when the file finishes, so
+// test runs leave nothing behind in the system temp folder.
+const madeDirs = [];
+test.after(() => {
+  for (const dir of madeDirs) fs.rmSync(dir, { recursive: true, force: true });
+});
+
 function workspace() {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'atris-loop-doctor-'));
+  madeDirs.push(root);
   fs.mkdirSync(path.join(root, 'atris', 'runs'), { recursive: true });
   fs.mkdirSync(path.join(root, '.atris', 'state'), { recursive: true });
   return root;
