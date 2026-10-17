@@ -7,8 +7,20 @@ const os = require('node:os');
 const path = require('node:path');
 const { computeTrustTier } = require('../lib/trust-tiers');
 
+// Every temp folder this file makes is removed when the file finishes, so
+// test runs leave nothing behind in the system temp folder.
+const madeDirs = [];
+function tmp(prefix) {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), prefix));
+  madeDirs.push(dir);
+  return dir;
+}
+test.after(() => {
+  for (const dir of madeDirs) fs.rmSync(dir, { recursive: true, force: true });
+});
+
 function historyRoot(receipts, scorecards = []) {
-  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'atris-trust-tiers-'));
+  const root = tmp('atris-trust-tiers-');
   const state = path.join(root, '.atris', 'state');
   fs.mkdirSync(state, { recursive: true });
   fs.writeFileSync(path.join(state, 'career_xp_receipts.jsonl'), `${receipts.map(JSON.stringify).join('\n')}${receipts.length ? '\n' : ''}`);
@@ -39,7 +51,7 @@ test('computeTrustTier groups scorecard engine outcomes and uses only the last 2
 });
 
 test('computeTrustTier falls back to probation for missing or corrupt history', () => {
-  const missing = fs.mkdtempSync(path.join(os.tmpdir(), 'atris-trust-tiers-missing-'));
+  const missing = tmp('atris-trust-tiers-missing-');
   assert.equal(computeTrustTier('member', missing), 'probation');
 
   const corrupt = historyRoot(receipts('member', 10, 0));
@@ -51,7 +63,7 @@ test('computeTrustTier falls back to probation for missing or corrupt history', 
 // id. Trust must follow the builder of that task, found through the episode
 // log, or every builder stays "still earning trust" forever.
 function approvedHistoryRoot({ builder, approver, passes, failures = 0 }) {
-  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'atris-trust-builder-'));
+  const root = tmp('atris-trust-builder-');
   const state = path.join(root, '.atris', 'state');
   fs.mkdirSync(state, { recursive: true });
   const episodes = [];
