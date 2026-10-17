@@ -6,8 +6,16 @@ const path = require('node:path');
 const { execSync } = require('node:child_process');
 const { deniedLaneForShip } = require('../commands/worktree');
 
+// Every temp folder this file makes is removed when the file finishes, so
+// test runs leave nothing behind in the system temp folder.
+const madeDirs = [];
+test.after(() => {
+  for (const dir of madeDirs) fs.rmSync(dir, { recursive: true, force: true });
+});
+
 function repoWithProjection(tasks) {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'ship-lane-'));
+  madeDirs.push(root);
   execSync('git init -q && git -c user.email=t@t -c user.name=t commit -q --allow-empty -m init', { cwd: root });
   const dir = path.join(root, '.atris', 'state');
   fs.mkdirSync(dir, { recursive: true });
