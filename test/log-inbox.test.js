@@ -31,8 +31,9 @@ function localJournal(dir) {
   return path.join(dir, 'atris', 'logs', year, `${year}-${month}-${day}.md`);
 }
 
-function runCli(args, { cwd, env, timeout = TIMEOUT_MS, input = '' } = {}) {
+function runCli(args, { cwd, env, timeout = TIMEOUT_MS, input = '', t } = {}) {
   const home = env && env.HOME ? env.HOME : makeTempDir();
+  if (t && !(env && env.HOME)) t.after(() => cleanupTempDir(home));
   const result = spawnSync(process.execPath, [cliPath, ...args], {
     cwd,
     input,
@@ -111,11 +112,11 @@ test('atris log text --json emits real JSON and writes inbox', () => {
   }
 });
 
-test('atris log --json without a note is real JSON', () => {
+test('atris log --json without a note is real JSON', (t) => {
   const dir = makeTempDir();
   try {
     seedWorkspace(dir);
-    const res = runCli(['log', '--json'], { cwd: dir, input: '' });
+    const res = runCli(['log', '--json'], { cwd: dir, input: '', t });
     assert.equal(res.status, 0, res.stderr || res.stdout);
     const payload = JSON.parse(res.stdout);
     assert.equal(payload.ok, false);
@@ -126,8 +127,10 @@ test('atris log --json without a note is real JSON', () => {
   }
 });
 
-test('log help names local inbox, not a live business slug', () => {
-  const res = runCli(['log', '--help'], { cwd: makeTempDir() });
+test('log help names local inbox, not a live business slug', (t) => {
+  const dir = makeTempDir();
+  t.after(() => cleanupTempDir(dir));
+  const res = runCli(['log', '--help'], { cwd: dir, t });
   assert.equal(res.status, 0, res.stderr);
   assert.match(res.stdout, /Usage: atris log/);
   assert.match(res.stdout, /--json/);
