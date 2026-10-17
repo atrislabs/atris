@@ -1,7 +1,7 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
-const os = require('node:os');
+const { createTaskHelpFixture } = require('./helpers/task-help-fixture');
 const path = require('node:path');
 
 const { buildWeekReportData, renderWeekReport, reportCommand } = require('../commands/report');
@@ -9,13 +9,8 @@ const { buildWeekReportData, renderWeekReport, reportCommand } = require('../com
 const DAY_MS = 24 * 60 * 60 * 1000;
 const NOW = new Date('2026-07-05T12:00:00Z').getTime();
 
-function makeTempDir() {
-  return fs.mkdtempSync(path.join(os.tmpdir(), 'atris-report-test-'));
-}
-
-function cleanup(dir) {
-  fs.rmSync(dir, { recursive: true, force: true });
-}
+const { makeTempDir: makeFixtureDir, cleanupTempDir: cleanup } = createTaskHelpFixture('atris-report-test-');
+const makeTempDir = () => makeFixtureDir();
 
 function captureStdout(fn) {
   const originalLog = console.log;
