@@ -74,7 +74,8 @@ test('tick pushes the first campaign with work and skips done, paused, and waiti
   holdOnYou(store, 'cmp-asking', 'Deploy it?');
   const asks = [];
   const r = await run(store, home, ['tick', '--max-steps', '1'], quiet(asks));
-  assert.equal(r.code, 0, r.out);
+  assert.equal(r.code, 1, r.out);
+  assert.match(r.out, /proposed nothing usable/);
   assert.match(r.out, /advancing cmp-next \(up to 1 steps\)/);
   assert.match(r.out, /skipped cmp-asking/);
   assert.doesNotMatch(r.out, /advancing cmp-later/);

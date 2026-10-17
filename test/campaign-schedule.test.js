@@ -110,7 +110,9 @@ test('wake leaves a scheduled campaign alone until its time, then runs it once a
   assert.equal(judged.count, 0);
 
   const due = await run(store, home, ['wake'], { at: T0 + 61 * MIN, judged });
+  assert.equal(due.code, 0, 'the timer keeps firing after an individual campaign fails');
   assert.equal(due.body.woke.length, 1, JSON.stringify(due.body));
+  assert.equal(due.body.woke[0].ok, false);
   assert.equal(due.body.woke[0].scheduled, true);
   assert.match(due.body.woke[0].reason, /proposed nothing/, "a real run asked the owner for work");
   const saved = readSchedule(home, 'cmp-daily');
@@ -128,13 +130,17 @@ test('tick skips a scheduled campaign that is not due and pushes the next one', 
   start(store, 'cmp-free');
   await run(store, home, ['schedule', 'cmp-sched', '--every', 'weekdays 09:00']);
   const early = await run(store, home, ['tick', '--max-steps', '1'], { at: T0 + 5 * MIN });
-  assert.equal(early.code, 0);
+  assert.equal(early.code, 1);
+  assert.equal(early.body.ok, false);
+  assert.match(early.body.reason, /proposed nothing usable/);
   const skipped = (early.body.skipped || []).map((s) => s.id);
   assert.ok(skipped.includes('cmp-sched') || early.body.campaign?.id === 'cmp-free', JSON.stringify(early.body));
   assert.equal(readSchedule(home, 'cmp-sched').last_fired_at, null, 'the slot is not used up early');
 
   await run(store, home, ['stop', 'cmp-free']);
   const due = await run(store, home, ['tick', '--max-steps', '1'], { at: T0 + 61 * MIN });
-  assert.equal(due.code, 0, JSON.stringify(due.body));
+  assert.equal(due.code, 1, JSON.stringify(due.body));
+  assert.equal(due.body.ok, false);
+  assert.match(due.body.reason, /proposed nothing usable/);
   assert.ok(readSchedule(home, 'cmp-sched').last_fired_at, 'tick fired the due slot');
 });

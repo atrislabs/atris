@@ -291,8 +291,9 @@ test('run pulls a phone answer before stepping, so the loop gets past the ask', 
   await syncCampaign(store, id, loggedIn);
   cloud.answer(id, 'a-ship', 'yes');
   const ran = await command(store, ['run', id, '--json'], { loopDeps: quietLoop });
-  assert.equal(ran.code, 0, ran.err);
+  assert.equal(ran.code, 1, ran.err);
   const out = JSON.parse(ran.out);
+  assert.equal(out.ok, false);
   assert.match(out.reason, /proposed nothing usable/);
   assert.deepEqual(out.sync_warnings, []);
   // The wait saved after the empty plan was pushed by the sync after the step.
@@ -310,7 +311,7 @@ test('run on a synced campaign keeps going offline and warns', async () => {
     assert.equal((await syncCampaign(store, id, loggedIn)).ok, true);
     await cloud.close();
     const ran = await command(store, ['run', id], { loopDeps: quietLoop });
-    assert.equal(ran.code, 0, ran.err);
+    assert.equal(ran.code, 1, ran.err);
     assert.match(ran.err, /sync: could not reach the Atris cloud.*running on offline/);
     assert.equal(ran.err.match(/sync:/g).length, 1, 'the same warning is shown once');
     assert.match(ran.out, /judge failed: not yet/);
@@ -330,8 +331,9 @@ test('run stops syncing after a 403 instead of asking every step', () => withClo
   cloud.state.refuse = { status: 403, error: 'no' };
   const before = cloud.requests.length;
   const ran = await command(store, ['run', id, '--json'], { loopDeps: quietLoop });
-  assert.equal(ran.code, 0, ran.err);
+  assert.equal(ran.code, 1, ran.err);
   const out = JSON.parse(ran.out);
+  assert.equal(out.ok, false);
   assert.deepEqual(out.sync_warnings, ['sync: the Atris cloud refused this (403): no; not syncing again this run']);
   assert.equal(cloud.requests.length - before, 1);
 }));
@@ -340,7 +342,8 @@ test('a campaign never synced runs without touching the cloud', () => withCloud(
   const store = createMemoryStore({ origin: 'laptop' });
   const id = waitingCampaign(store);
   const ran = await command(store, ['run', id, '--json'], { loopDeps: quietLoop });
-  assert.equal(ran.code, 0, ran.err);
+  assert.equal(ran.code, 1, ran.err);
+  assert.equal(JSON.parse(ran.out).ok, false);
   assert.match(JSON.parse(ran.out).reason, /proposed nothing usable/);
   assert.equal(cloud.requests.length, 0);
 }));

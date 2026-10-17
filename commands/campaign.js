@@ -832,7 +832,7 @@ async function driveLoop(args, ctx, verb, view) {
   const maxSteps = Number(readFlag(args, '--max-steps', '')) || 20;
   const result = await loop.run(view.id, maxSteps);
   ctx.out(`stopped after ${result.steps} step${result.steps === 1 ? '' : 's'}: ${result.reason}\n${renderShow(result.campaign)}`, { ok: true, ...result, next: decide(result.campaign), sync_warnings: syncWarnings });
-  return 0;
+  return result.ok === false ? 1 : 0;
 }
 
 // atris campaign tick: one bounded push on the next campaign in this workspace that has
