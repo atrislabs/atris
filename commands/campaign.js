@@ -827,7 +827,7 @@ async function driveLoop(args, ctx, verb, view) {
     }
     const result = await cadence.run(view.id);
     ctx.out(`stopped after ${result.rounds} round${result.rounds === 1 ? '' : 's'}: ${result.reason}\n${renderShow(result.campaign)}`, { ok: true, ...result, next: decide(result.campaign) });
-    return 0;
+    return result.ok === false ? 1 : 0;
   }
   const maxSteps = Number(readFlag(args, '--max-steps', '')) || 20;
   const result = await loop.run(view.id, maxSteps);
