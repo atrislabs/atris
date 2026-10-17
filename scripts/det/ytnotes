@@ -219,8 +219,11 @@ for name in yt_*.en-orig.vtt yt_*.en.vtt yt_*.en-US.vtt yt_*.en-GB.vtt; do
   existing="$existing $name"
 done
 
+# Captions never need the stream lists, so skip fetching them (about 0.2s).
+# A live video may have no other streams; keep going so its captions still land.
 META=$(yt-dlp --no-update --quiet --no-warnings --skip-download \
   --write-subs --write-auto-subs --sub-format vtt --sub-langs "en-orig,en,en-US,en-GB" --ignore-errors \
+  --extractor-args "youtube:skip=hls,dash" --ignore-no-formats-error \
   --no-simulate \
   -o "yt_%(id)s" \
   --print "%(id)s|%(title)s|%(channel)s|%(duration_string)s" \
