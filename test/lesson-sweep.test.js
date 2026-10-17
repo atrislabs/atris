@@ -18,8 +18,8 @@ test('detects P1: same slug with opposite outcomes at later date', (t) => {
   const lessonsMd = [
     '# lessons.md',
     '',
-    '- **[2026-04-09] test-lesson** — pass — Initial success',
-    '- **[2026-04-20] test-lesson** — fail — Later failure contradicts earlier pass',
+    '- **[2026-04-09] test-lesson** \u2014 pass \u2014 Initial success',
+    '- **[2026-04-20] test-lesson** \u2014 fail \u2014 Later failure contradicts earlier pass',
     '',
   ].join('\n');
   fs.writeFileSync(path.join(atrisDir, 'lessons.md'), lessonsMd);
@@ -60,8 +60,8 @@ test('skips [resolved] lessons in P1 check', (t) => {
   const lessonsMd = [
     '# lessons.md',
     '',
-    '- **[2026-04-09] resolved-lesson** — pass — Initial pass',
-    '- **[2026-04-20] resolved-lesson** — fail — [resolved] Contradicts but marked resolved',
+    '- **[2026-04-09] resolved-lesson** \u2014 pass \u2014 Initial pass',
+    '- **[2026-04-20] resolved-lesson** \u2014 fail \u2014 [resolved] Contradicts but marked resolved',
     '',
   ].join('\n');
   fs.writeFileSync(path.join(atrisDir, 'lessons.md'), lessonsMd);
@@ -141,10 +141,10 @@ test('detects multiple contradictions in one run', (t) => {
   const lessonsMd = [
     '# lessons.md',
     '',
-    '- **[2026-04-09] lesson-a** — pass — Pass',
-    '- **[2026-04-20] lesson-a** — fail — Fail',
-    '- **[2026-04-09] lesson-b** — fail — Fail',
-    '- **[2026-04-20] lesson-b** — pass — Pass',
+    '- **[2026-04-09] lesson-a** \u2014 pass \u2014 Pass',
+    '- **[2026-04-20] lesson-a** \u2014 fail \u2014 Fail',
+    '- **[2026-04-09] lesson-b** \u2014 fail \u2014 Fail',
+    '- **[2026-04-20] lesson-b** \u2014 pass \u2014 Pass',
     '',
   ].join('\n');
   fs.writeFileSync(path.join(atrisDir, 'lessons.md'), lessonsMd);
