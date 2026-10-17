@@ -14,8 +14,16 @@ const { memberMarkdown } = require('../lib/member-scaffold');
 
 const CLI = path.join(__dirname, '..', 'bin', 'atris.js');
 
+// Every temp folder this file makes is removed when the file finishes, so
+// test runs leave nothing behind in the system temp folder.
+const madeDirs = [];
+test.after(() => {
+  for (const dir of madeDirs) fs.rmSync(dir, { recursive: true, force: true });
+});
+
 function workspace(members) {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'atris-member-type-'));
+  madeDirs.push(root);
   for (const [name, lines] of Object.entries(members)) {
     const dir = path.join(root, 'atris', 'team', name);
     fs.mkdirSync(dir, { recursive: true });
