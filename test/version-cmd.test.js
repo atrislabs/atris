@@ -1,21 +1,15 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
-const fs = require('node:fs');
-const os = require('node:os');
 const path = require('node:path');
+const { createTaskHelpFixture } = require('./helpers/task-help-fixture');
 const { spawnSync } = require('node:child_process');
 
 const repoRoot = path.resolve(__dirname, '..');
 const cliPath = path.join(repoRoot, 'bin', 'atris.js');
 const packageJson = require('../package.json');
 
-function makeTempDir() {
-  return fs.mkdtempSync(path.join(os.tmpdir(), 'atris-version-cmd-'));
-}
-
-function cleanupTempDir(dir) {
-  fs.rmSync(dir, { recursive: true, force: true });
-}
+const { makeTempDir: makeFixtureDir, cleanupTempDir } = createTaskHelpFixture('atris-version-cmd-');
+const makeTempDir = () => makeFixtureDir();
 
 test('atris version prints version from package.json', () => {
   const dir = makeTempDir();
