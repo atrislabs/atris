@@ -5,8 +5,20 @@ const os = require('os');
 const path = require('path');
 const { recordBuild, readHistory, historyFor, specHash } = require('../lib/deck-history');
 
+// Every temp folder this file makes is removed when the file finishes, so
+// test runs leave nothing behind in the system temp folder.
+const madeDirs = [];
+function tmp(prefix) {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), prefix));
+  madeDirs.push(dir);
+  return dir;
+}
+test.after(() => {
+  for (const dir of madeDirs) fs.rmSync(dir, { recursive: true, force: true });
+});
+
 function tmpLedger() {
-  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'deck-hist-'));
+  const dir = tmp('deck-hist-');
   return path.join(dir, 'deck-history.jsonl');
 }
 
