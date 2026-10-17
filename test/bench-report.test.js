@@ -235,6 +235,7 @@ test('cli: empty state exits 0 with a plain no-runs line, never a stack trace', 
     const result = spawnSync(process.execPath, [cliPath, 'bench', 'report', '--pack', 'agents-v1', '--here'], {
       cwd: stateRoot,
       encoding: 'utf8',
+      env: { ...process.env, ATRIS_SKIP_UPDATE_CHECK: '1' },
     });
     assert.equal(result.status, 0, result.stderr);
     assert.match(result.stdout, /no runs recorded/);
