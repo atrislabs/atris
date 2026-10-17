@@ -13,24 +13,17 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
-const os = require('node:os');
 const path = require('node:path');
 const { spawnSync } = require('node:child_process');
+const { createTaskHelpFixture } = require('./helpers/task-help-fixture');
 
 const REPO_ROOT = path.resolve(__dirname, '..');
 const CLI = path.join(REPO_ROOT, 'bin', 'atris.js');
 
-function hasNodeSqlite() {
-  try {
-    require('node:sqlite');
-    return true;
-  } catch {
-    return false;
-  }
-}
+const { hasNodeSqlite, makeTempDir: makeRawTempDir } = createTaskHelpFixture('atris-task-plan-owner-');
 
 function makeWorkspace() {
-  const dir = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'atris-task-plan-owner-')));
+  const dir = fs.realpathSync(makeRawTempDir());
   fs.mkdirSync(path.join(dir, 'atris'), { recursive: true });
   return dir;
 }
