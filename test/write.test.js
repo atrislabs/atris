@@ -5,8 +5,17 @@ const os = require('os');
 const path = require('path');
 const { start, review, pass, readPlan, draftWordCounts, syncStates, slugify, listSessions } = require('../commands/write');
 
+// Every temp folder this file makes is removed when the file finishes, so
+// test runs leave nothing behind in the system temp folder.
+const madeDirs = [];
+test.after(() => {
+  for (const dir of madeDirs) fs.rmSync(dir, { recursive: true, force: true });
+});
+
 function tmpRoot() {
-  return fs.mkdtempSync(path.join(os.tmpdir(), 'atris-write-'));
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'atris-write-'));
+  madeDirs.push(root);
+  return root;
 }
 
 function draftPath(root, slug) {
