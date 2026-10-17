@@ -107,7 +107,7 @@ test('membership retains any duplicate id-status pair without joined-key collisi
   assert.ok(h.prompts[0].indexOf('- pipe|ended: ended') < h.prompts[0].indexOf('- changed-status: ended'));
   const repeated = await h.review(before);
   assert.deepEqual(repeated.lessons, [], 'a known lesson is not appended twice');
-  assert.equal(readLessons(h.root, ID), LESSON + '\n- (no review written this round)');
+  assert.equal(readLessons(h.root, ID), LESSON);
   assert.equal(h.prompts.length, 2);
   assert.match(h.prompts[1], /Lessons so far:\n- preserve the measured round result/);
   assert.deepEqual(h.store.read(ID), events);
