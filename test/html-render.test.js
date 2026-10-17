@@ -55,8 +55,10 @@ test('renderBlock emits the AppBlock html shape for embedding in an app', () => 
   assert.equal(block.title, 'Aurora deck');
 });
 
-test('generated HTML passes the slop gate (anti-slop by construction)', () => {
+test('generated HTML passes the slop gate (anti-slop by construction)', (t) => {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'html-'));
+  // Remove the temp folder when the test finishes so runs leave nothing behind.
+  t.after(() => fs.rmSync(dir, { recursive: true, force: true }));
   for (const theme of ['atris', 'terminal', 'paper']) {
     const file = path.join(dir, `page-${theme}.html`);
     fs.writeFileSync(file, renderHtml({ ...SPEC, theme }));
