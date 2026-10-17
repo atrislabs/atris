@@ -13,6 +13,18 @@ const {
   isLearnerKeepApply,
 } = require('../lib/apply-gate');
 
+// Every temp folder this file makes is removed when the file finishes, so
+// repeated runs do not pile folders into the system temp folder.
+const madeDirs = [];
+function tmpDir(prefix) {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), prefix));
+  madeDirs.push(dir);
+  return dir;
+}
+test.after(() => {
+  for (const dir of madeDirs) fs.rmSync(dir, { recursive: true, force: true });
+});
+
 test('ephemeralApplyMessage names the surface', () => {
   assert.equal(
     ephemeralApplyMessage('notes'),
@@ -29,7 +41,7 @@ test('ephemeralApplyMessage names the surface', () => {
 });
 
 test('hintEphemeralApply prints once and writes no files', () => {
-  const cwd = fs.mkdtempSync(path.join(os.tmpdir(), 'atris-apply-hint-'));
+  const cwd = tmpDir('atris-apply-hint-');
   const output = [];
   const status = hintEphemeralApply((line) => output.push(line), 'notes');
   assert.equal(status, 0);
@@ -38,7 +50,7 @@ test('hintEphemeralApply prints once and writes no files', () => {
 });
 
 test('ensureApply still files a sidecar when asked', () => {
-  const cwd = fs.mkdtempSync(path.join(os.tmpdir(), 'atris-apply-save-'));
+  const cwd = tmpDir('atris-apply-save-');
   fs.mkdirSync(path.join(cwd, 'atris', 'wiki', 'briefs'), { recursive: true });
   const output = [];
   const rel = 'atris/wiki/briefs/youtube-hint01.apply.md';
@@ -60,7 +72,7 @@ test('ensureApply still files a sidecar when asked', () => {
 });
 
 test('ensureApply human gate refuses a leftover notes keep-sidecar', () => {
-  const cwd = fs.mkdtempSync(path.join(os.tmpdir(), 'atris-apply-human-'));
+  const cwd = tmpDir('atris-apply-human-');
   const applyDir = path.join(cwd, 'atris', 'wiki', 'briefs');
   fs.mkdirSync(applyDir, { recursive: true });
   const rel = 'atris/wiki/briefs/youtube-oldnote1.apply.md';
@@ -90,7 +102,7 @@ test('ensureApply human gate refuses a leftover notes keep-sidecar', () => {
 });
 
 test('ensureApply human gate still accepts a real change and receipt', () => {
-  const cwd = fs.mkdtempSync(path.join(os.tmpdir(), 'atris-apply-human-ok-'));
+  const cwd = tmpDir('atris-apply-human-ok-');
   const applyDir = path.join(cwd, 'atris', 'wiki', 'briefs');
   fs.mkdirSync(applyDir, { recursive: true });
   const rel = 'atris/wiki/briefs/youtube-human01.apply.md';
