@@ -6,7 +6,18 @@ const path = require('node:path');
 const { execFileSync } = require('node:child_process');
 const { scanFile, applyFixes, loadProjectRules, addProjectRule, gitChangedLines, installHook, RULES } = require('../commands/slop');
 
-function tmpDir() { return fs.mkdtempSync(path.join(os.tmpdir(), 'sloploop-')); }
+// Every temp folder this file makes is removed when the file finishes, so
+// test runs leave nothing behind in the system temp folder.
+const madeDirs = [];
+test.after(() => {
+  for (const dir of madeDirs) fs.rmSync(dir, { recursive: true, force: true });
+});
+
+function tmpDir() {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'sloploop-'));
+  madeDirs.push(dir);
+  return dir;
+}
 
 test('--fix repairs em dashes in place and leaves a comma', () => {
   const dir = tmpDir();
