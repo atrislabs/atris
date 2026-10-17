@@ -1,8 +1,8 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
-const os = require('node:os');
 const path = require('node:path');
+const { createTaskHelpFixture } = require('./helpers/task-help-fixture');
 const { spawnSync } = require('node:child_process');
 const { knownCommands } = require('../lib/known-commands');
 const { buildPushChangePlan, buildPushUploadBatches } = require('../commands/push');
@@ -10,13 +10,8 @@ const { buildPushChangePlan, buildPushUploadBatches } = require('../commands/pus
 const repoRoot = path.resolve(__dirname, '..');
 const cliPath = path.join(repoRoot, 'bin', 'atris.js');
 
-function makeTempDir() {
-  return fs.mkdtempSync(path.join(os.tmpdir(), 'atris-watch-alias-'));
-}
-
-function cleanupTempDir(dir) {
-  fs.rmSync(dir, { recursive: true, force: true });
-}
+const { makeTempDir: makeFixtureDir, cleanupTempDir } = createTaskHelpFixture('atris-watch-alias-');
+const makeTempDir = () => makeFixtureDir();
 
 function runCli(args, { cwd, env = {}, timeout = 6000 } = {}) {
   const result = spawnSync(process.execPath, [cliPath, ...args], {

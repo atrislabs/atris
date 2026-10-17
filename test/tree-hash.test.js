@@ -3,7 +3,7 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
-const os = require('node:os');
+const { createTaskHelpFixture } = require('./helpers/task-help-fixture');
 const path = require('node:path');
 const { spawnSync } = require('node:child_process');
 const {
@@ -14,9 +14,8 @@ const {
 
 const cliPath = path.resolve(__dirname, '..', 'bin', 'atris.js');
 
-function makeTempDir() {
-  return fs.mkdtempSync(path.join(os.tmpdir(), 'atris-tree-hash-test-'));
-}
+const { makeTempDir: makeFixtureDir } = createTaskHelpFixture('atris-tree-hash-test-');
+const makeTempDir = () => makeFixtureDir();
 
 function writeFile(root, relativePath, contents) {
   const filePath = path.join(root, ...relativePath.split('/'));

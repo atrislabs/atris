@@ -213,13 +213,11 @@ test('hidden engine: selectable and routable, absent from every public surface',
   assert.ok(!/^.{4}commandcode\s/m.test(rosterOut), 'roster must not list the hidden engine');
 
   // Hidden from the default --json list; present via --all with hidden: true.
-  const jsonPayload = JSON.parse(
-    runCli(['engine', 'list', '--json'], root).stdout.slice(runCli(['engine', 'list', '--json'], root).stdout.indexOf('{'))
-  );
+  const jsonStdout = runCli(['engine', 'list', '--json'], root).stdout;
+  const jsonPayload = JSON.parse(jsonStdout.slice(jsonStdout.indexOf('{')));
   assert.ok(!jsonPayload.engines.some((engine) => engine.id === 'commandcode'));
-  const allPayload = JSON.parse(
-    runCli(['engine', 'list', '--json', '--all'], root).stdout.slice(runCli(['engine', 'list', '--json', '--all'], root).stdout.indexOf('{'))
-  );
+  const allStdout = runCli(['engine', 'list', '--json', '--all'], root).stdout;
+  const allPayload = JSON.parse(allStdout.slice(allStdout.indexOf('{')));
   const commandcode = allPayload.engines.find((engine) => engine.id === 'commandcode');
   assert.ok(commandcode, '--all must include the hidden engine');
   assert.equal(commandcode.hidden, true);

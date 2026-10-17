@@ -3,7 +3,7 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
-const os = require('node:os');
+const { createTaskHelpFixture } = require('./helpers/task-help-fixture');
 const path = require('node:path');
 const { spawnSync } = require('node:child_process');
 const { buildBenchReport, renderBenchReportText } = require('../lib/bench/report');
@@ -11,9 +11,8 @@ const { buildBenchReport, renderBenchReportText } = require('../lib/bench/report
 const repoRoot = path.resolve(__dirname, '..');
 const cliPath = path.join(repoRoot, 'bin', 'atris.js');
 
-function makeTempDir() {
-  return fs.mkdtempSync(path.join(os.tmpdir(), 'atris-bench-report-test-'));
-}
+const { makeTempDir: makeFixtureDir } = createTaskHelpFixture('atris-bench-report-test-');
+const makeTempDir = () => makeFixtureDir();
 
 function cleanupTempDir(dir) {
   fs.rmSync(dir, { recursive: true, force: true, maxRetries: 5, retryDelay: 100 });
@@ -235,6 +234,7 @@ test('cli: empty state exits 0 with a plain no-runs line, never a stack trace', 
     const result = spawnSync(process.execPath, [cliPath, 'bench', 'report', '--pack', 'agents-v1', '--here'], {
       cwd: stateRoot,
       encoding: 'utf8',
+      env: { ...process.env, ATRIS_SKIP_UPDATE_CHECK: '1' },
     });
     assert.equal(result.status, 0, result.stderr);
     assert.match(result.stdout, /no runs recorded/);

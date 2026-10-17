@@ -109,6 +109,7 @@ test('runBench renders a requested tree and records that rendered hash', async (
     const current = writeTree(dir, 'current', 'current');
     const candidate = writeTree(dir, 'candidate', 'candidate');
     const { record, exitCode } = await runBench({
+      pythonCmd: null,
       repoRoot: dir,
       pack: 'pair-v1',
       engine: 'null',
@@ -132,6 +133,7 @@ test('a passing candidate against a failing current tree is selected', async () 
     const current = writeTree(dir, 'current', 'current');
     const candidate = writeTree(dir, 'candidate', 'candidate');
     const { record, exitCode } = await runBenchPair({
+      pythonCmd: null,
       repoRoot: dir,
       pack: 'pair-v1',
       engine: 'null',
@@ -172,6 +174,7 @@ test('equal pair scores are ties and use exit code 2', async () => {
     const current = writeTree(dir, 'current', 'current');
     const candidate = writeTree(dir, 'candidate', 'candidate');
     const { record, exitCode } = await runBenchPair({
+      pythonCmd: null,
       repoRoot: dir,
       pack: 'pair-v1',
       engine: 'null',
@@ -214,6 +217,7 @@ test('a candidate that cannot run ranks below a failing current tree', async () 
     const current = writeTree(dir, 'current', 'current');
     const candidate = writeTree(dir, 'candidate', 'candidate');
     const { record, exitCode } = await runBenchPair({
+      pythonCmd: null,
       repoRoot: dir,
       pack: 'pair-v1',
       engine: 'null',
@@ -239,6 +243,7 @@ test('minimum win margin can reject a single candidate win', async () => {
     const current = writeTree(dir, 'current', 'current');
     const candidate = writeTree(dir, 'candidate', 'candidate');
     const { record, exitCode } = await runBenchPair({
+      pythonCmd: null,
       repoRoot: dir,
       pack: 'pair-v1',
       engine: 'null',
@@ -271,6 +276,7 @@ test('pair execution interleaves current then candidate in pack order', async ()
     const current = writeTree(dir, 'current', 'current');
     const candidate = writeTree(dir, 'candidate', 'candidate');
     const { record } = await runBenchPair({
+      pythonCmd: null,
       repoRoot: dir,
       pack: 'pair-v1',
       engine: 'solution',

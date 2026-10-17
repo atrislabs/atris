@@ -5,19 +5,13 @@ const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
-const { spawnSync } = require('node:child_process');
+const { hasNodeSqlite: probeNodeSqlite } = require('./helpers/node-sqlite');
 
 const taskStore = require('../lib/task-db');
 
 const { runCli } = require('./helpers/task-admin-cli');
 
-function hasNodeSqlite() {
-  const result = spawnSync(process.execPath, ['-e', 'require("node:sqlite")'], {
-    encoding: 'utf8',
-    env: { ...process.env, NODE_NO_WARNINGS: '1' },
-  });
-  return result.status === 0;
-}
+const hasNodeSqlite = () => probeNodeSqlite({ NODE_NO_WARNINGS: '1' });
 
 function makeTempDir() {
   return fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'atris-task-audit-test-')));

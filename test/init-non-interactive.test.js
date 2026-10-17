@@ -43,6 +43,7 @@ function runCli(args, { cwd, input, env, timeout = INIT_TIMEOUT_MS } = {}) {
     timeout,
     env: {
       ...process.env,
+      HOME: cwd,
       ATRIS_SKIP_UPDATE_CHECK: '1',
       ...(env || {}),
     },

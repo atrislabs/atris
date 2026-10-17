@@ -471,10 +471,10 @@ MCP stdio request flow: `mcp/atris-mcp/index.mjs:142` reads requests while desig
 
 **Purpose:** Updates local atris.md to latest package version. `--all` propagates across every atris project under cwd.
 
-- **Entry point (single project):** `commands/sync.js:430` (syncAtris function)
-- **Entry point (workspace):** `commands/sync.js:867` (syncAtrisAll function)
+- **Entry point (single project):** `commands/sync.js:478` (syncAtris function)
+- **Entry point (workspace):** `commands/sync.js:976` (syncAtrisAll function)
 - **Startup/help guard:** `bin/atris.js:207-212` skips global and project skill sync for every help invocation; `bin/atris.js:1765-1791` dispatches `update|sync --help` before command-specific template sync work
-- **Discovery helper:** `commands/sync.js:783` (_findAtrisProjects: walks subtree, max depth 8, skips node_modules/.git/dist/build/worktrees)
+- **Discovery helper:** `commands/sync.js:892` (_findAtrisProjects: walks subtree, max depth 8, skips node_modules/.git/dist/build/worktrees)
 - **Single-project logic:**
 - Validates atris/ folder exists
 - Compares content with package atris.md
@@ -2337,7 +2337,7 @@ Partial socket scan warning: `lib/engine-resource.js:278` names agent sockets un
 - `lib/member-up.js:75` confirms each pending run once before printing wake/start with the claimed title; late confirmations cannot affect a newer run. Pending children still reserve capacity.
 - `commands/member.js:10773` sends `member_task_claimed` only after a real supervised claim; `commands/member.js:10775` carries it over the child IPC channel and `commands/member.js:11013` wires the callback.
 - `test/member-wake-announce-after-claim.test.js:1` exercises real CLI processes and the production spawner against an isolated real task database: a lost preview stays idle, and a replacement job is announced only after its row is claimed. Verify: `node --test test/member-wake-announce-after-claim.test.js`.
-- Bounded member progress: `lib/member-progress.js:15` scans oversized logs backwards in bounded buffers and replaces them with recent whole lines plus the latest start marker; `lib/member-progress.js:185` appends and trims. Regression: `test/member-progress-trim.test.js:1`.
+- Bounded member progress: `lib/member-progress.js:16` scans oversized logs backwards in bounded buffers and replaces them with recent whole lines plus the latest start marker; `lib/member-progress.js:185` appends and trims. Regression: `test/member-progress-trim.test.js:1`.
 
 Younger replacement agent protection: `lib/engine-resource.js:325` keeps each final agent reading, and `lib/engine-resource.js:334` skips a candidate whose age decreased. Regression: `test/engine-resource.test.js:2456` runs the real cleanup CLI against two owned agents with staged ages, verifies the unchanged one stops, and checks the replacement socket still answers. Equal-age reuse and replacement after the final scan remain outside this check.
 
@@ -2444,3 +2444,11 @@ Python discovery for tests: `test/helpers/find-python.js:5` tries real `python3 
 Environment test fixture: `test/helpers/agent-env.js:37` preserves the current shallow-copy scrub with a local mutable marker list. `test/agent-env.test.js:9` checks a fresh actual process for production imports, and `test/agent-env.test.js:40` compares the real task producer export to catch marker drift. Check: `node --test test/agent-env.test.js`.
 
 Task cleanup command setup: `test/helpers/task-admin-cli.js:8` supplies the unchanged real command runner for `test/task-clear-done.test.js`, `test/task-list-keeper.test.js` and `test/task-list-sim.test.js`; each keeps its own database capability guards, workspace cleanup and complete behavior checks.
+
+Task entry test setup: `test/helpers/task-next-fixture.js:30` keeps first-minute command setup with its original child identity and twenty-second deadline. `test/helpers/task-help-fixture.js:43` supplies step-help setup with raw temporary paths and the twelve-second deadline; `test/task-first-minute.test.js` and `test/task-step-help.test.js` keep their complete behavior checks.
+
+Global skill destinations: `commands/sync.js:812` resolves the existing `stateHome` policy at `lib/state-home.js:97` before checking global Claude and Codex skill directories. `test/sync-skills-state-home.test.js:104` exercises actual init with an owned protected-home stand-in; the same file preserves normal sync, explicit temporary HOME, real-home opt-out, project links and custom hooks. Check: `node --test test/sync-skills-state-home.test.js test/update-dry-run.test.js test/update-preserves-team.test.js test/sync-all.test.js test/init-non-interactive.test.js`.
+
+Raw temporary-folder test setup: `test/helpers/task-help-fixture.js:43` supplies the unchanged folder functions to version-cmd, confidence-gate, watch-alias, unknowns, console-packet-shape and agent-proof-only tests. Their local no-argument wrappers retain each exact prefix and raw temporary path; CLI helpers, options and behavior checks remain local. Check: `node --test test/version-cmd.test.js test/confidence-gate.test.js test/watch-alias.test.js test/unknowns.test.js test/console-packet-shape.test.js test/agent-proof-only.test.js`.
+
+Member progress test-home fence: `lib/member-progress.js:137` uses `lib/state-home.js:102` for the default writer directory when retained test state protects the home; the existing early suppression and explicit folder override remain. Real child regressions start at `test/member-progress-state-home.test.js:69`; trimming and board compatibility remain in the unchanged `test/member-progress-trim.test.js`. Check: `node --test test/member-progress-state-home.test.js test/member-progress-trim.test.js`.

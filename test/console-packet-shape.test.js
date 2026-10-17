@@ -1,18 +1,13 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
-const os = require('node:os');
 const path = require('node:path');
+const { createTaskHelpFixture } = require('./helpers/task-help-fixture');
 
 const { gatherAtrisContext, resolveAtrisRoot } = require('../commands/console');
 
-function makeTempDir() {
-  return fs.mkdtempSync(path.join(os.tmpdir(), 'atris-console-shape-test-'));
-}
-
-function cleanupTempDir(dir) {
-  fs.rmSync(dir, { recursive: true, force: true });
-}
+const { makeTempDir: makeFixtureDir, cleanupTempDir } = createTaskHelpFixture('atris-console-shape-test-');
+const makeTempDir = () => makeFixtureDir();
 
 // Writes skills/, team/, TODO.md into whatever root it is handed. The same
 // content, laid out flat or nested, must read the same.
