@@ -14,8 +14,12 @@ function git(root, args) {
   return String(result.stdout || '').trim();
 }
 
-function initRepo() {
-  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'atris-worktree-retention-'));
+// The seeded repo is built once and copied into each test's own root; every
+// test still gets a private .git it can add worktrees and commits to.
+let seedRoot = null;
+
+function buildSeed() {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'atris-worktree-retention-seed-'));
   git(root, ['init', '-q']);
   git(root, ['config', 'user.email', 'test@example.com']);
   git(root, ['config', 'user.name', 'Test User']);
@@ -23,6 +27,17 @@ function initRepo() {
   fs.writeFileSync(path.join(root, '.gitignore'), '.derivedData/\n');
   git(root, ['add', 'README.md', '.gitignore']);
   git(root, ['commit', '-qm', 'init']);
+  return root;
+}
+
+test.after(() => {
+  if (seedRoot) fs.rmSync(seedRoot, { recursive: true, force: true });
+});
+
+function initRepo() {
+  seedRoot ??= buildSeed();
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'atris-worktree-retention-'));
+  fs.cpSync(seedRoot, root, { recursive: true });
   return root;
 }
 
