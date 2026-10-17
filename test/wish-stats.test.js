@@ -4,10 +4,7 @@ const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
-const { spawnSync } = require('node:child_process');
-
-const repoRoot = path.resolve(__dirname, '..');
-const cliPath = path.join(repoRoot, 'bin', 'atris.js');
+const { runWishCli: runCli } = require('./helpers/wish-fixture');
 
 function makeTempDir() {
   return fs.mkdtempSync(path.join(os.tmpdir(), 'atris-wish-stats-test-'));
@@ -19,21 +16,6 @@ function cleanupTempDir(dir) {
 
 function prepareWorkspace(dir) {
   fs.mkdirSync(path.join(dir, 'atris'), { recursive: true });
-}
-
-function runCli(args, { cwd, env = {} } = {}) {
-  return spawnSync(process.execPath, [cliPath, ...args], {
-    cwd,
-    encoding: 'utf8',
-    timeout: 20000,
-    env: {
-      ...process.env,
-      ATRIS_SKIP_UPDATE_CHECK: '1',
-      ATRIS_WISH_NO_DRIVER: '1',
-      NODE_NO_WARNINGS: '1',
-      ...env,
-    },
-  });
 }
 
 function appendWishEvent(dir, event) {

@@ -3,7 +3,7 @@ const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
-const { spawnSync } = require('node:child_process');
+const { createPackCli } = require('./helpers/pack-cli');
 const { readZipFile } = require('../lib/zip');
 const {
   classifyPacketPath,
@@ -13,9 +13,6 @@ const {
   registryLimitFailures,
   REGISTRY_LIMITS,
 } = require('../commands/pack');
-
-const repoRoot = path.resolve(__dirname, '..');
-const cliPath = path.join(repoRoot, 'bin', 'atris.js');
 
 function makeTempDir() {
   return fs.mkdtempSync(path.join(os.tmpdir(), 'atris-packet-test-'));
@@ -66,16 +63,7 @@ function seedWorkspace(dir) {
   return atrisDir;
 }
 
-function runCli(args, { cwd, env = {} }) {
-  const result = spawnSync(process.execPath, [cliPath, ...args], {
-    cwd,
-    encoding: 'utf8',
-    timeout: 20000,
-    env: { ...process.env, ATRIS_SKIP_UPDATE_CHECK: '1', ...env },
-  });
-  if (result.error) throw result.error;
-  return result;
-}
+const runCli = createPackCli(20000);
 
 function snapshotPack(dir) {
   const snapshot = [];
