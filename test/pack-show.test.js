@@ -3,11 +3,8 @@ const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
-const { spawnSync } = require('node:child_process');
+const { createPackCli } = require('./helpers/pack-cli');
 const { createHash } = require('node:crypto');
-
-const repoRoot = path.resolve(__dirname, '..');
-const cliPath = path.join(repoRoot, 'bin', 'atris.js');
 
 function makeTempDir() {
   return fs.mkdtempSync(path.join(os.tmpdir(), 'atris-pack-show-test-'));
@@ -31,16 +28,8 @@ function writePack(dir, manifest, files = {}) {
   for (const [name, contents] of Object.entries(files)) write(path.join(dir, name), contents);
 }
 
-function runCli(args, cwd) {
-  const result = spawnSync(process.execPath, [cliPath, ...args], {
-    cwd,
-    encoding: 'utf8',
-    timeout: 15000,
-    env: { ...process.env, ATRIS_SKIP_UPDATE_CHECK: '1' },
-  });
-  if (result.error) throw result.error;
-  return result;
-}
+const runPackCli = createPackCli(15000);
+const runCli = (args, cwd) => runPackCli(args, { cwd });
 
 function outputLines(result) {
   return result.stdout.trim().split('\n');
