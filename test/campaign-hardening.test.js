@@ -16,8 +16,15 @@ const { createMemoryStore, createSqliteStore, getCampaign, listCampaigns } = req
 const CLI = path.resolve(__dirname, '..', 'bin', 'atris.js');
 const TERMINAL = new Set(['stopped', 'complete']);
 
+const fixtureRoots = [];
+test.after(() => {
+  for (const root of fixtureRoots) fs.rmSync(root, { recursive: true, force: true });
+});
+
 function tempDir() {
-  return fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'atris-campaign-hard-')));
+  const root = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'atris-campaign-hard-')));
+  fixtureRoots.push(root);
+  return root;
 }
 
 function startCampaign(store, budget = 10) {
