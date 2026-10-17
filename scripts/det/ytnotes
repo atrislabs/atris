@@ -596,7 +596,12 @@ warm_gemini() {
     const content = require("fs").readFileSync(0, "utf8");
     process.stdout.write(JSON.stringify({ event: "user", message: { role: "user", content } }) + "\n");
   ' > "$AGY_WARM.msg.tmp" && mv "$AGY_WARM.msg.tmp" "$AGY_WARM.msg" || return 1
-  while kill -0 "$pid" 2>/dev/null; do sleep 0.05; done
+  # The answer is whole once its result line ends; agy takes about 0.3s more to
+  # exit, and stop_agy ends it when the script finishes.
+  while kill -0 "$pid" 2>/dev/null; do
+    grep -q '^{"event":"result".*}$' "$AGY_WARM.out" 2>/dev/null && [ -z "$(tail -c 1 "$AGY_WARM.out")" ] && break
+    sleep 0.05
+  done
   node -e '
     const lines = require("fs").readFileSync(process.argv[1], "utf8").split("\n");
     for (const line of lines.reverse()) {

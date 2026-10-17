@@ -1022,6 +1022,32 @@ test('ytnotes auto writer does not let a fast Haiku refusal win over Gemini note
   assert.doesNotMatch(notes, /produce those notes/);
 });
 
+test('ytnotes auto writer takes the early Gemini answer as soon as its result line lands', () => {
+  const started = Date.now();
+  const lingerAgy = [
+    '#!/bin/sh',
+    '[ "$1" = models ] && { echo gemini-3.8-flash-low; exit 0; }',
+    'case " $* " in',
+    '  *" stream-json "*) read -r line',
+    `    printf '%s\\n' '{"event":"result","result":{"status":"SUCCESS","response":"# From Gemini\\n\\nSpoken only in audio."}}'`,
+    '    sleep 8; exit 0 ;;',
+    'esac',
+    'exit 3',
+    '',
+  ].join('\n');
+  const { result, dir } = runNoCaptionNotes('linger1', {
+    withWhisper: true,
+    whisperVtt: LOCAL_VTT,
+    extraEnv: { ATRIS_YTNOTES_ENGINE: 'auto' },
+    extraBins: { agy: lingerAgy },
+  });
+
+  assert.equal(result.status, 0, result.stderr || result.stdout);
+  assert.match(result.stderr, /^notes by Gemini/m);
+  assert.match(fs.readFileSync(path.join(dir, 'yt_linger1.md'), 'utf8'), /# From Gemini/);
+  assert.ok(Date.now() - started < 7000, 'the run did not wait for agy to exit');
+});
+
 test('ytnotes auto writer sends no second Gemini request after a quota error, then skips Gemini', () => {
   const calls = path.join(tmpDir('atris-ytnotes-quota-'), 'agy.calls');
   const quotaAgy = [
